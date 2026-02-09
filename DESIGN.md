@@ -465,13 +465,15 @@ After install, run `pi` normally. Extensions auto-load, skills auto-discover, to
 
 **Goal**: The core loop works end-to-end. You can plan, create tasks, and have agents implement them on a real project.
 
-- Port forge-tasks core (parser, serializer, TaskManager) as a Pi extension
-- Register task tools: `task_create`, `task_list`, `task_view`, `task_edit`, `task_search`
-- Build chain runner (pipeline + loop modes, completion detection via task state)
-- Write agent skills: planner, task-manager, coordinator, worker
-- Write first language skill: TypeScript
-- Commands: `cosmonauts plan`, `cosmonauts build`
-- Test end-to-end on a real project
+- [x] Port forge-tasks core (parser, serializer, TaskManager) as a Pi extension
+- [x] Register task tools: `task_create`, `task_list`, `task_view`, `task_edit`, `task_search`
+- [x] CLI: `cosmonauts-tasks` with init, create, list, view, edit, delete, search commands
+- [x] Package scaffold: Pi package manifest, tsconfig, 165 tests passing
+- [ ] Build chain runner (pipeline + loop modes, completion detection via task state)
+- [ ] Write agent skills: planner, task-manager, coordinator, worker
+- [ ] Write first language skill: TypeScript
+- [ ] Commands: `cosmonauts plan`, `cosmonauts build`
+- [ ] Test end-to-end on a real project
 
 ### Phase 1: Tools + Skills
 
