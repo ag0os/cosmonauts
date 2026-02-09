@@ -431,6 +431,15 @@ describe("parseTaskIdFromFilename", () => {
 		expect(parseTaskIdFromFilename("task-001 - Test.md")).toBe("task-001");
 	});
 
+	test("handles non-letter characters in IDs", () => {
+		expect(parseTaskIdFromFilename("TASK2-001 - Test.md")).toBe("TASK2-001");
+		expect(parseTaskIdFromFilename("QA_TASK-7 - Test.md")).toBe("QA_TASK-7");
+	});
+
+	test("handles empty titles", () => {
+		expect(parseTaskIdFromFilename("TASK-001 - .md")).toBe("TASK-001");
+	});
+
 	test("returns null for invalid filename format", () => {
 		expect(parseTaskIdFromFilename("invalid.md")).toBeNull();
 		expect(parseTaskIdFromFilename("TASK-001.md")).toBeNull();

@@ -35,6 +35,14 @@ export class TaskManager {
 	private projectRoot: string;
 	private config: ForgeTasksConfig | null = null;
 
+	private assertValidDate(value: Date, fieldName: string): void {
+		if (Number.isNaN(value.getTime())) {
+			throw new Error(
+				`Invalid ${fieldName}: expected a valid Date instance`,
+			);
+		}
+	}
+
 	/**
 	 * Create a new TaskManager instance
 	 * @param projectRoot - The root directory of the project
@@ -79,6 +87,10 @@ export class TaskManager {
 	 */
 	async createTask(input: TaskCreateInput): Promise<Task> {
 		const config = await this.ensureInitialized();
+
+		if (input.dueDate) {
+			this.assertValidDate(input.dueDate, "dueDate");
+		}
 
 		// Load existing tasks to determine next ID
 		const existingTasks = await this.loadAllTasks();
@@ -140,6 +152,10 @@ export class TaskManager {
 	async updateTask(id: string, input: TaskUpdateInput): Promise<Task> {
 		await this.ensureInitialized();
 
+		if (input.dueDate) {
+			this.assertValidDate(input.dueDate, "dueDate");
+		}
+
 		// Load existing task
 		const existingTask = await this.getTask(id);
 		if (!existingTask) {
@@ -164,16 +180,17 @@ export class TaskManager {
 				input.acceptanceCriteria ?? existingTask.acceptanceCriteria,
 		};
 
-		// Check if title changed (affects filename)
-		const newFilename = getTaskFilename(updatedTask);
-		if (oldFilename !== newFilename) {
-			// Delete old file
-			await deleteTaskFile(this.projectRoot, oldFilename);
-		}
-
 		// Serialize and save
 		const content = serializeTask(updatedTask);
-		await saveTaskFile(this.projectRoot, newFilename, content);
+		const newFilename = getTaskFilename(updatedTask);
+
+		if (oldFilename !== newFilename) {
+			// Write new file first to avoid data loss if write fails.
+			await saveTaskFile(this.projectRoot, newFilename, content);
+			await deleteTaskFile(this.projectRoot, oldFilename);
+		} else {
+			await saveTaskFile(this.projectRoot, newFilename, content);
+		}
 
 		return updatedTask;
 	}

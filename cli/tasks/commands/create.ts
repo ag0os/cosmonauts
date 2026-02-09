@@ -44,13 +44,27 @@ export function registerCommand(program: Command): void {
 				process.exit(1);
 			}
 
+			let dueDate: Date | undefined;
+			if (options.due) {
+				dueDate = new Date(options.due);
+				if (Number.isNaN(dueDate.getTime())) {
+					const errorMsg = `Invalid date format: ${options.due}. Use YYYY-MM-DD format.`;
+					if (globalOptions.json) {
+						console.log(JSON.stringify({ error: errorMsg }, null, 2));
+					} else {
+						console.error(`Error: ${errorMsg}`);
+					}
+					process.exit(1);
+				}
+			}
+
 			const input: TaskCreateInput = {
 				title,
 				description: options.description,
 				priority: options.priority as TaskPriority | undefined,
 				assignee: options.assignee,
 				labels: options.label,
-				dueDate: options.due ? new Date(options.due) : undefined,
+				dueDate,
 				dependencies: options.dependsOn,
 				acceptanceCriteria: options.ac,
 				parent: options.parent,

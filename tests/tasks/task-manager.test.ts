@@ -151,6 +151,15 @@ describe("TaskManager", () => {
 			const taskFileExists = await access(join(tasksDir, "TASK-001 - Test Task.md")).then(() => true).catch(() => false);
 			expect(taskFileExists).toBe(true);
 		});
+
+		it("should throw for invalid dueDate", async () => {
+			await manager.init();
+
+			const invalidDate = new Date("invalid");
+			await expect(
+				manager.createTask({ title: "Bad Date", dueDate: invalidDate }),
+			).rejects.toThrow("Invalid dueDate");
+		});
 	});
 
 	describe("getTask", () => {
@@ -266,6 +275,16 @@ describe("TaskManager", () => {
 			expect(updated.acceptanceCriteria.length).toBe(3);
 			expect(updated.acceptanceCriteria[0]?.checked).toBe(true);
 			expect(updated.acceptanceCriteria[2]?.text).toBe("New Item 3");
+		});
+
+		it("should throw for invalid dueDate", async () => {
+			await manager.init();
+			await manager.createTask({ title: "Task" });
+
+			const invalidDate = new Date("invalid");
+			await expect(
+				manager.updateTask("TASK-001", { dueDate: invalidDate }),
+			).rejects.toThrow("Invalid dueDate");
 		});
 	});
 

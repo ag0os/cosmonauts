@@ -191,13 +191,16 @@ export function getTaskFilename(task: { id: string; title: string }): string {
  * @returns The task ID or null if not found
  */
 export function parseTaskIdFromFilename(filename: string): string | null {
-	// Match pattern: {PREFIX}-{NUMBER} - {Title}.md
-	// The ID is everything before " - "
-	const match = filename.match(/^([A-Za-z]+-\d+)\s+-\s+.+\.md$/);
-
-	if (match?.[1]) {
-		return match[1];
+	if (!filename.endsWith(".md")) {
+		return null;
 	}
 
-	return null;
+	const basename = filename.slice(0, -3);
+	const separatorIndex = basename.indexOf(" - ");
+	if (separatorIndex <= 0) {
+		return null;
+	}
+
+	const id = basename.slice(0, separatorIndex).trim();
+	return id || null;
 }
