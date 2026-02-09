@@ -1,6 +1,6 @@
 /**
  * Tests for chain-runner.ts
- * Covers runStage (pipeline and loop modes), runChain (with mocked spawner module),
+ * Covers runStage (one-shot and loop modes), runChain (with mocked spawner module),
  * createDefaultCompletionCheck (with real task system), and event emission.
  */
 
@@ -60,13 +60,11 @@ function createMockSpawner(results?: SpawnResult[]): AgentSpawner {
 
 function makeStage(
 	name: string,
-	maxIterations: number,
+	loop: boolean,
 	completionCheck?: (projectRoot: string) => Promise<boolean>,
 ): ChainStage {
-	const stage: ChainStage = { name, maxIterations };
-	if (completionCheck) {
-		stage.completionCheck = completionCheck;
-	}
+	const stage: ChainStage = { name, loop };
+	if (completionCheck) stage.completionCheck = completionCheck;
 	return stage;
 }
 
@@ -86,10 +84,10 @@ function makeConfig(
 // ============================================================================
 
 describe("runStage", () => {
-	describe("pipeline (single pass)", () => {
-		test("spawns agent once when maxIterations is 1", async () => {
+	describe("one-shot (loop=false)", () => {
+		test("spawns agent once and returns success with iterations=1", async () => {
 			const spawner = createMockSpawner();
-			const stage = makeStage("planner", 1);
+			const stage = makeStage("planner", false);
 			const config = makeConfig([stage]);
 
 			const result = await runStage(stage, config, spawner);
@@ -99,9 +97,9 @@ describe("runStage", () => {
 			expect(spawner.spawn).toHaveBeenCalledTimes(1);
 		});
 
-		test("records duration > 0", async () => {
+		test("records duration >= 0", async () => {
 			const spawner = createMockSpawner();
-			const stage = makeStage("planner", 1);
+			const stage = makeStage("planner", false);
 			const config = makeConfig([stage]);
 
 			const result = await runStage(stage, config, spawner);
@@ -109,11 +107,11 @@ describe("runStage", () => {
 			expect(result.durationMs).toBeGreaterThanOrEqual(0);
 		});
 
-		test("returns failure when spawner fails", async () => {
+		test("returns failure with error when spawner fails", async () => {
 			const spawner = createMockSpawner([
 				{ success: false, sessionId: "", messages: [], error: "boom" },
 			]);
-			const stage = makeStage("planner", 1);
+			const stage = makeStage("planner", false);
 			const config = makeConfig([stage]);
 
 			const result = await runStage(stage, config, spawner);
@@ -124,36 +122,42 @@ describe("runStage", () => {
 		});
 	});
 
-	describe("loop stage", () => {
-		test("iterates maxIterations times when completion check always returns false", async () => {
-			const spawner = createMockSpawner();
-			const completionCheck = vi.fn(async () => false);
-			const stage = makeStage("coordinator", 3, completionCheck);
-			const config = makeConfig([stage]);
-
-			const result = await runStage(stage, config, spawner);
-
-			expect(result.success).toBe(true);
-			expect(result.iterations).toBe(3);
-			expect(spawner.spawn).toHaveBeenCalledTimes(3);
-			expect(completionCheck).toHaveBeenCalledTimes(3);
-		});
-
-		test("exits early when completion check returns true", async () => {
+	describe("loop (loop=true)", () => {
+		test("iterates until completion check returns true", async () => {
 			const spawner = createMockSpawner();
 			let callCount = 0;
 			const completionCheck = vi.fn(async () => {
 				callCount++;
 				return callCount >= 2;
 			});
-			const stage = makeStage("coordinator", 5, completionCheck);
+			const stage = makeStage("coordinator", true, completionCheck);
 			const config = makeConfig([stage]);
 
-			const result = await runStage(stage, config, spawner);
+			const result = await runStage(stage, config, spawner, {
+				maxTotalIterations: 10,
+				deadlineMs: Date.now() + 60_000,
+			});
 
 			expect(result.success).toBe(true);
 			expect(result.iterations).toBe(2);
 			expect(spawner.spawn).toHaveBeenCalledTimes(2);
+		});
+
+		test("exhausts iteration budget when completion never passes", async () => {
+			const spawner = createMockSpawner();
+			const completionCheck = vi.fn(async () => false);
+			const stage = makeStage("coordinator", true, completionCheck);
+			const config = makeConfig([stage]);
+
+			const result = await runStage(stage, config, spawner, {
+				maxTotalIterations: 3,
+				deadlineMs: Date.now() + 60_000,
+			});
+
+			expect(result.success).toBe(true);
+			expect(result.iterations).toBe(3);
+			expect(spawner.spawn).toHaveBeenCalledTimes(3);
+			expect(completionCheck).toHaveBeenCalledTimes(3);
 		});
 
 		test("respects abort signal between iterations", async () => {
@@ -177,25 +181,36 @@ describe("runStage", () => {
 			};
 
 			const completionCheck = vi.fn(async () => false);
-			const stage = makeStage("worker", 10, completionCheck);
+			const stage = makeStage("worker", true, completionCheck);
 			const config = makeConfig([stage], { signal: controller.signal });
 
-			const result = await runStage(stage, config, spawner);
+			const result = await runStage(stage, config, spawner, {
+				maxTotalIterations: 10,
+				deadlineMs: Date.now() + 60_000,
+			});
 
 			expect(result.iterations).toBeLessThan(10);
 			expect(result.success).toBe(true);
 		});
 
-		test("stops iteration on spawner failure", async () => {
+		test("stops on spawner failure", async () => {
 			const spawner = createMockSpawner([
 				{ success: true, sessionId: "session-1", messages: [] },
-				{ success: false, sessionId: "", messages: [], error: "agent crashed" },
+				{
+					success: false,
+					sessionId: "",
+					messages: [],
+					error: "agent crashed",
+				},
 			]);
 			const completionCheck = vi.fn(async () => false);
-			const stage = makeStage("coordinator", 5, completionCheck);
+			const stage = makeStage("coordinator", true, completionCheck);
 			const config = makeConfig([stage]);
 
-			const result = await runStage(stage, config, spawner);
+			const result = await runStage(stage, config, spawner, {
+				maxTotalIterations: 5,
+				deadlineMs: Date.now() + 60_000,
+			});
 
 			expect(result.success).toBe(false);
 			expect(result.error).toBe("agent crashed");
@@ -220,7 +235,7 @@ describe("createDefaultCompletionCheck", () => {
 		await rm(tmpDir, { recursive: true, force: true });
 	});
 
-	test("returns false when there are no tasks", async () => {
+	test("returns false for empty project", async () => {
 		const tm = new TaskManager(tmpDir);
 		await tm.init();
 
@@ -230,7 +245,7 @@ describe("createDefaultCompletionCheck", () => {
 		expect(result).toBe(false);
 	});
 
-	test("returns false when tasks exist but are not all Done", async () => {
+	test("returns false when tasks not all Done", async () => {
 		const tm = new TaskManager(tmpDir);
 		await tm.init();
 		await tm.createTask({ title: "Task A" });
@@ -242,7 +257,7 @@ describe("createDefaultCompletionCheck", () => {
 		expect(result).toBe(false);
 	});
 
-	test("returns true when all tasks are Done", async () => {
+	test("returns true when all tasks Done", async () => {
 		const tm = new TaskManager(tmpDir);
 		await tm.init();
 		const taskA = await tm.createTask({ title: "Task A" });
@@ -257,7 +272,7 @@ describe("createDefaultCompletionCheck", () => {
 		expect(result).toBe(true);
 	});
 
-	test("returns false when some tasks are Done but not all", async () => {
+	test("returns false when only some Done", async () => {
 		const tm = new TaskManager(tmpDir);
 		await tm.init();
 		const taskA = await tm.createTask({ title: "Task A" });
@@ -277,10 +292,10 @@ describe("createDefaultCompletionCheck", () => {
 // ============================================================================
 
 describe("event emission", () => {
-	test("emits stage_start, agent_spawned, agent_completed, stage_end for pipeline stage via runChain", async () => {
+	test("emits agent_spawned and agent_completed for one-shot stage", async () => {
 		const events: ChainEvent[] = [];
 		const spawner = createMockSpawner();
-		const stage = makeStage("planner", 1);
+		const stage = makeStage("planner", false);
 		const config = makeConfig([stage], {
 			onEvent: (event) => events.push(event),
 		});
@@ -296,12 +311,15 @@ describe("event emission", () => {
 		const events: ChainEvent[] = [];
 		const spawner = createMockSpawner();
 		const completionCheck = vi.fn(async () => false);
-		const stage = makeStage("coordinator", 3, completionCheck);
+		const stage = makeStage("coordinator", true, completionCheck);
 		const config = makeConfig([stage], {
 			onEvent: (event) => events.push(event),
 		});
 
-		await runStage(stage, config, spawner);
+		await runStage(stage, config, spawner, {
+			maxTotalIterations: 3,
+			deadlineMs: Date.now() + 60_000,
+		});
 
 		const iterationEvents = events.filter(
 			(e) => e.type === "stage_iteration",
@@ -309,9 +327,9 @@ describe("event emission", () => {
 		expect(iterationEvents).toHaveLength(3);
 	});
 
-	test("does not throw when onEvent callback throws", async () => {
+	test("onEvent errors are swallowed", async () => {
 		const spawner = createMockSpawner();
-		const stage = makeStage("planner", 1);
+		const stage = makeStage("planner", false);
 		const config = makeConfig([stage], {
 			onEvent: () => {
 				throw new Error("listener error");
@@ -333,8 +351,11 @@ describe("runChain", () => {
 		mockSpawnerForModule = createMockSpawner();
 	});
 
-	test("executes sequential stages successfully", async () => {
-		const stages = [makeStage("planner", 1), makeStage("task-manager", 1)];
+	test("sequential one-shot stages succeed", async () => {
+		const stages = [
+			makeStage("planner", false),
+			makeStage("task-manager", false),
+		];
 		const config = makeConfig(stages);
 
 		const result = await runChain(config);
@@ -347,16 +368,21 @@ describe("runChain", () => {
 		expect(result.errors).toHaveLength(0);
 	});
 
-	test("stops chain on stage failure", async () => {
+	test("stage failure stops chain", async () => {
 		mockSpawnerForModule = createMockSpawner([
 			{ success: true, sessionId: "session-1", messages: [] },
-			{ success: false, sessionId: "", messages: [], error: "stage 2 failed" },
+			{
+				success: false,
+				sessionId: "",
+				messages: [],
+				error: "stage 2 failed",
+			},
 		]);
 
 		const stages = [
-			makeStage("planner", 1),
-			makeStage("task-manager", 1),
-			makeStage("worker", 1),
+			makeStage("planner", false),
+			makeStage("task-manager", false),
+			makeStage("worker", false),
 		];
 		const config = makeConfig(stages);
 
@@ -371,7 +397,7 @@ describe("runChain", () => {
 
 	test("emits chain_start and chain_end events", async () => {
 		const events: ChainEvent[] = [];
-		const stages = [makeStage("planner", 1)];
+		const stages = [makeStage("planner", false)];
 		const config = makeConfig(stages, {
 			onEvent: (event) => events.push(event),
 		});
@@ -383,7 +409,7 @@ describe("runChain", () => {
 		expect(eventTypes[eventTypes.length - 1]).toBe("chain_end");
 	});
 
-	test("respects abort signal between stages", async () => {
+	test("abort signal between stages", async () => {
 		const controller = new AbortController();
 
 		// Abort after first stage
@@ -399,7 +425,10 @@ describe("runChain", () => {
 			dispose: vi.fn(),
 		};
 
-		const stages = [makeStage("planner", 1), makeStage("worker", 1)];
+		const stages = [
+			makeStage("planner", false),
+			makeStage("worker", false),
+		];
 		const config = makeConfig(stages, { signal: controller.signal });
 
 		const result = await runChain(config);
@@ -408,12 +437,88 @@ describe("runChain", () => {
 		expect(result.stageResults).toHaveLength(1);
 	});
 
-	test("disposes spawner after execution", async () => {
-		const stages = [makeStage("planner", 1)];
+	test("spawner disposed after execution", async () => {
+		const stages = [makeStage("planner", false)];
 		const config = makeConfig(stages);
 
 		await runChain(config);
 
 		expect(mockSpawnerForModule.dispose).toHaveBeenCalledTimes(1);
+	});
+
+	test("one-shot stages do not consume loop iteration budget", async () => {
+		// Chain: 2 one-shot stages then a loop stage with budget of 3.
+		// Previously, each one-shot consumed 1 from the budget, leaving only 1
+		// for the loop stage. Now one-shot stages are excluded from the budget.
+		const completionCheck = vi.fn(async () => false); // never passes
+
+		let spawnCount = 0;
+		mockSpawnerForModule = {
+			spawn: vi.fn(async () => {
+				spawnCount++;
+				return {
+					success: true,
+					sessionId: `s-${spawnCount}`,
+					messages: [],
+				};
+			}),
+			dispose: vi.fn(),
+		};
+
+		const stages = [
+			makeStage("planner", false),
+			makeStage("task-manager", false),
+			makeStage("coordinator", true, completionCheck),
+		];
+		const config = makeConfig(stages, { maxTotalIterations: 3 });
+
+		const result = await runChain(config);
+
+		expect(result.success).toBe(true);
+		expect(result.stageResults).toHaveLength(3);
+		// One-shot stages still report iterations=1 in their results
+		expect(result.stageResults[0]!.iterations).toBe(1);
+		expect(result.stageResults[1]!.iterations).toBe(1);
+		// Loop stage gets the full budget of 3, not 3 - 2 = 1
+		expect(result.stageResults[2]!.iterations).toBe(3);
+	});
+
+	test("maxTotalIterations budget shared across stages", async () => {
+		// First loop stage uses 2 iterations, second loop stage gets remaining 1
+		let firstStageChecks = 0;
+		const firstCheck = vi.fn(async () => {
+			firstStageChecks++;
+			return firstStageChecks >= 2; // passes after 2 iterations
+		});
+
+		const secondCheck = vi.fn(async () => false); // never passes
+
+		let spawnCount = 0;
+		mockSpawnerForModule = {
+			spawn: vi.fn(async () => {
+				spawnCount++;
+				return {
+					success: true,
+					sessionId: `s-${spawnCount}`,
+					messages: [],
+				};
+			}),
+			dispose: vi.fn(),
+		};
+
+		const stages = [
+			makeStage("coordinator", true, firstCheck),
+			makeStage("worker", true, secondCheck),
+		];
+		const config = makeConfig(stages, { maxTotalIterations: 3 });
+
+		const result = await runChain(config);
+
+		expect(result.success).toBe(true);
+		expect(result.stageResults).toHaveLength(2);
+		// First stage: 2 iterations (completion check passes after 2)
+		expect(result.stageResults[0]!.iterations).toBe(2);
+		// Second stage: only 1 iteration left in budget (3 - 2 = 1)
+		expect(result.stageResults[1]!.iterations).toBe(1);
 	});
 });

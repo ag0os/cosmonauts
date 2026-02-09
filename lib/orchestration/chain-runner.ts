@@ -16,8 +16,11 @@ import type {
 } from "./types.ts";
 
 // ============================================================================
-// Default Prompts per Role
+// Defaults
 // ============================================================================
+
+const DEFAULT_MAX_TOTAL_ITERATIONS = 50;
+const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 const ROLE_PROMPTS: Record<string, string> = {
 	planner: "Analyze the project and design an implementation plan.",
@@ -28,9 +31,6 @@ const ROLE_PROMPTS: Record<string, string> = {
 
 const DEFAULT_PROMPT = "Execute your assigned role.";
 
-/**
- * Return a role-appropriate prompt for an agent stage.
- */
 function getPromptForRole(role: string): string {
 	return ROLE_PROMPTS[role] ?? DEFAULT_PROMPT;
 }
@@ -42,9 +42,6 @@ function getPromptForRole(role: string): string {
 /**
  * Create a completion check that returns true when all tasks in the
  * project have status "Done".
- *
- * @param projectRoot - Project root directory containing the task system
- * @returns An async function that resolves to true when all tasks are done
  */
 export function createDefaultCompletionCheck(
 	projectRoot: string,
@@ -53,8 +50,6 @@ export function createDefaultCompletionCheck(
 		const tm = new TaskManager(projectRoot);
 		const tasks = await tm.listTasks();
 
-		// If there are no tasks at all, treat as not complete
-		// (avoids vacuous truth on empty projects).
 		if (tasks.length === 0) {
 			return false;
 		}
@@ -67,10 +62,6 @@ export function createDefaultCompletionCheck(
 // Emit Helper
 // ============================================================================
 
-/**
- * Safely emit an event via the config callback.
- * Never throws — swallows any error from the listener.
- */
 function emit(config: ChainConfig, event: ChainEvent): void {
 	try {
 		config.onEvent?.(event);
@@ -86,39 +77,47 @@ function emit(config: ChainConfig, event: ChainEvent): void {
 /**
  * Execute a full chain of agent stages.
  *
- * Creates a spawner internally, iterates through stages sequentially,
- * and collects results. If any stage fails the chain stops and returns
- * partial results. Respects `config.signal` for cancellation between stages.
- *
- * @param config - Chain execution configuration
- * @returns Aggregated chain result with per-stage details
+ * Iterates stages sequentially. One-shot stages run once. Loop stages
+ * repeat until their completion check passes, bounded by global safety
+ * caps (maxTotalIterations, timeoutMs).
  */
 export async function runChain(config: ChainConfig): Promise<ChainResult> {
 	const chainStart = Date.now();
+	const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+	const maxTotalIterations =
+		config.maxTotalIterations ?? DEFAULT_MAX_TOTAL_ITERATIONS;
+
 	const stageResults: StageResult[] = [];
 	const errors: string[] = [];
 	const spawner = createPiSpawner();
+	let totalIterations = 0;
 
 	emit(config, { type: "chain_start", stages: config.stages });
 
 	try {
 		for (const [i, stage] of config.stages.entries()) {
-			// Check abort signal between stages
-			if (config.signal?.aborted) {
-				break;
-			}
+			if (config.signal?.aborted) break;
+			if (Date.now() - chainStart >= timeoutMs) break;
 
 			emit(config, { type: "stage_start", stage, stageIndex: i });
 
-			const result = await runStage(stage, config, spawner);
+			const result = await runStage(stage, config, spawner, {
+				maxTotalIterations: maxTotalIterations - totalIterations,
+				deadlineMs: chainStart + timeoutMs,
+			});
+
+			// Only loop stages consume the shared iteration budget.
+			// One-shot stages always report iterations=1 but shouldn't
+			// starve downstream loop stages of their budget.
+			if (stage.loop) {
+				totalIterations += result.iterations;
+			}
 			stageResults.push(result);
 
 			emit(config, { type: "stage_end", stage, result });
 
 			if (!result.success) {
-				if (result.error) {
-					errors.push(result.error);
-				}
+				if (result.error) errors.push(result.error);
 				break;
 			}
 		}
@@ -142,23 +141,25 @@ export async function runChain(config: ChainConfig): Promise<ChainResult> {
 // runStage
 // ============================================================================
 
+interface StageConstraints {
+	/** Remaining iteration budget from the chain level */
+	maxTotalIterations: number;
+	/** Absolute deadline timestamp (ms since epoch) */
+	deadlineMs: number;
+}
+
 /**
  * Execute a single chain stage.
  *
- * - Pipeline stages (maxIterations === 1): spawn the agent once.
- * - Loop stages (maxIterations > 1): iterate up to maxIterations, checking
- *   a completion condition after each spawn. If no completionCheck is
- *   provided on the stage, the default "all tasks Done" check is used.
- *
- * @param stage   - The stage definition
- * @param config  - The overall chain config (for project root, models, signal, events)
- * @param spawner - The agent spawner to use
- * @returns Stage result with timing and iteration count
+ * - One-shot stages (loop=false): spawn the agent once.
+ * - Loop stages (loop=true): repeat until completion check passes,
+ *   bounded by the remaining iteration budget and deadline.
  */
 export async function runStage(
 	stage: ChainStage,
 	config: ChainConfig,
 	spawner: AgentSpawner,
+	constraints?: StageConstraints,
 ): Promise<StageResult> {
 	const stageStart = Date.now();
 	let iterations = 0;
@@ -167,8 +168,8 @@ export async function runStage(
 		const model = getModelForRole(stage.name, config.models);
 		const prompt = getPromptForRole(stage.name);
 
-		if (stage.maxIterations === 1) {
-			// Pipeline stage — single pass
+		if (!stage.loop) {
+			// One-shot stage
 			iterations = 1;
 
 			const spawnResult = await spawner.spawn({
@@ -201,15 +202,17 @@ export async function runStage(
 			};
 		}
 
-		// Loop stage — iterate up to maxIterations
+		// Loop stage — repeat until done or safety cap
 		const completionCheck =
-			stage.completionCheck ?? createDefaultCompletionCheck(config.projectRoot);
+			stage.completionCheck ??
+			createDefaultCompletionCheck(config.projectRoot);
+		const iterationBudget =
+			constraints?.maxTotalIterations ?? DEFAULT_MAX_TOTAL_ITERATIONS;
+		const deadline = constraints?.deadlineMs ?? Date.now() + DEFAULT_TIMEOUT_MS;
 
-		for (let i = 0; i < stage.maxIterations; i++) {
-			// Check abort signal between iterations
-			if (config.signal?.aborted) {
-				break;
-			}
+		for (let i = 0; i < iterationBudget; i++) {
+			if (config.signal?.aborted) break;
+			if (Date.now() >= deadline) break;
 
 			iterations = i + 1;
 
@@ -217,7 +220,6 @@ export async function runStage(
 				type: "stage_iteration",
 				stage,
 				iteration: iterations,
-				maxIterations: stage.maxIterations,
 			});
 
 			const spawnResult = await spawner.spawn({
@@ -251,11 +253,8 @@ export async function runStage(
 				};
 			}
 
-			// Check completion after each iteration
 			const done = await completionCheck(config.projectRoot);
-			if (done) {
-				break;
-			}
+			if (done) break;
 		}
 
 		return {
@@ -266,7 +265,6 @@ export async function runStage(
 		};
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : String(err);
-
 		emit(config, { type: "error", message, stage });
 
 		return {

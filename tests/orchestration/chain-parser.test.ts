@@ -1,7 +1,7 @@
 /**
  * Tests for chain-parser.ts
- * Covers pipeline parsing, loop parsing, combined expressions,
- * whitespace handling, error cases, and completionCheck absence.
+ * Covers pipeline parsing, loop detection from role lifecycle,
+ * unknown roles, whitespace handling, error cases, and completionCheck absence.
  */
 
 import { describe, expect, test } from "vitest";
@@ -9,18 +9,18 @@ import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 
 describe("parseChain", () => {
 	describe("pipeline parsing", () => {
-		test("parses a single stage with default maxIterations", () => {
+		test("parses a single stage", () => {
 			const stages = parseChain("planner");
 
-			expect(stages).toEqual([{ name: "planner", maxIterations: 1 }]);
+			expect(stages).toEqual([{ name: "planner", loop: false }]);
 		});
 
 		test("parses two stages separated by ->", () => {
 			const stages = parseChain("planner -> worker");
 
 			expect(stages).toEqual([
-				{ name: "planner", maxIterations: 1 },
-				{ name: "worker", maxIterations: 1 },
+				{ name: "planner", loop: false },
+				{ name: "worker", loop: false },
 			]);
 		});
 
@@ -28,9 +28,9 @@ describe("parseChain", () => {
 			const stages = parseChain("planner -> task-manager -> coordinator");
 
 			expect(stages).toEqual([
-				{ name: "planner", maxIterations: 1 },
-				{ name: "task-manager", maxIterations: 1 },
-				{ name: "coordinator", maxIterations: 1 },
+				{ name: "planner", loop: false },
+				{ name: "task-manager", loop: false },
+				{ name: "coordinator", loop: true },
 			]);
 		});
 
@@ -38,50 +38,53 @@ describe("parseChain", () => {
 			const stages = parseChain("Planner -> WORKER -> Task-Manager");
 
 			expect(stages).toEqual([
-				{ name: "planner", maxIterations: 1 },
-				{ name: "worker", maxIterations: 1 },
-				{ name: "task-manager", maxIterations: 1 },
+				{ name: "planner", loop: false },
+				{ name: "worker", loop: false },
+				{ name: "task-manager", loop: false },
 			]);
 		});
 	});
 
-	describe("loop parsing", () => {
-		test("parses iteration count after colon", () => {
-			const stages = parseChain("coordinator:20");
+	describe("loop detection from role", () => {
+		test("coordinator gets loop: true", () => {
+			const stages = parseChain("coordinator");
 
-			expect(stages).toEqual([{ name: "coordinator", maxIterations: 20 }]);
+			expect(stages).toEqual([{ name: "coordinator", loop: true }]);
 		});
 
-		test("parses iteration count of 1", () => {
-			const stages = parseChain("coordinator:1");
+		test("planner gets loop: false", () => {
+			const stages = parseChain("planner");
 
-			expect(stages).toEqual([{ name: "coordinator", maxIterations: 1 }]);
+			expect(stages).toEqual([{ name: "planner", loop: false }]);
 		});
 
-		test("parses large iteration count", () => {
-			const stages = parseChain("worker:100");
+		test("worker gets loop: false", () => {
+			const stages = parseChain("worker");
 
-			expect(stages).toEqual([{ name: "worker", maxIterations: 100 }]);
+			expect(stages).toEqual([{ name: "worker", loop: false }]);
+		});
+
+		test("task-manager gets loop: false", () => {
+			const stages = parseChain("task-manager");
+
+			expect(stages).toEqual([{ name: "task-manager", loop: false }]);
 		});
 	});
 
-	describe("combined pipeline and loop", () => {
-		test("parses pipeline with loop on last stage", () => {
-			const stages = parseChain("planner -> coordinator:5");
+	describe("unknown roles", () => {
+		test("unknown role gets loop: false", () => {
+			const stages = parseChain("custom-agent");
 
-			expect(stages).toEqual([
-				{ name: "planner", maxIterations: 1 },
-				{ name: "coordinator", maxIterations: 5 },
-			]);
+			expect(stages).toEqual([{ name: "custom-agent", loop: false }]);
 		});
 
-		test("parses three stages with loop on last stage", () => {
-			const stages = parseChain("planner -> task-manager -> coordinator:20");
+		test("unknown role in pipeline gets loop: false", () => {
+			const stages = parseChain("planner -> reviewer -> coordinator");
 
 			expect(stages).toEqual([
-				{ name: "planner", maxIterations: 1 },
-				{ name: "task-manager", maxIterations: 1 },
-				{ name: "coordinator", maxIterations: 20 },
+				{ name: "planner", loop: false },
+				{ name: "reviewer", loop: false },
+				{ name: "coordinator", loop: true },
 			]);
 		});
 	});
@@ -91,8 +94,8 @@ describe("parseChain", () => {
 			const stages = parseChain("  planner  ->  coordinator  ");
 
 			expect(stages).toEqual([
-				{ name: "planner", maxIterations: 1 },
-				{ name: "coordinator", maxIterations: 1 },
+				{ name: "planner", loop: false },
+				{ name: "coordinator", loop: true },
 			]);
 		});
 
@@ -100,8 +103,8 @@ describe("parseChain", () => {
 			const stages = parseChain("planner->coordinator");
 
 			expect(stages).toEqual([
-				{ name: "planner", maxIterations: 1 },
-				{ name: "coordinator", maxIterations: 1 },
+				{ name: "planner", loop: false },
+				{ name: "coordinator", loop: true },
 			]);
 		});
 	});
@@ -123,26 +126,22 @@ describe("parseChain", () => {
 			expect(() => parseChain("planner ->")).toThrow();
 		});
 
-		test("throws on colon with no name", () => {
-			expect(() => parseChain(":5")).toThrow();
+		test("rejects deprecated role:count syntax", () => {
+			expect(() => parseChain("coordinator:20")).toThrow(
+				/role:count.*no longer supported/,
+			);
 		});
 
-		test("throws on non-numeric iteration count", () => {
-			expect(() => parseChain("coordinator:abc")).toThrow();
-		});
-
-		test("throws on zero iteration count", () => {
-			expect(() => parseChain("coordinator:0")).toThrow();
-		});
-
-		test("throws on negative iteration count", () => {
-			expect(() => parseChain("coordinator:-1")).toThrow();
+		test("rejects role:count syntax in pipeline", () => {
+			expect(() =>
+				parseChain("planner -> coordinator:5 -> worker"),
+			).toThrow(/role:count.*no longer supported/);
 		});
 	});
 
 	describe("completionCheck", () => {
 		test("parser does not set completionCheck on stages", () => {
-			const stages = parseChain("planner -> coordinator:5");
+			const stages = parseChain("planner -> coordinator");
 
 			for (const stage of stages) {
 				expect(stage.completionCheck).toBeUndefined();

@@ -2,14 +2,28 @@
  * Type definitions for the chain runner orchestration system.
  */
 
-import type { AgentSession } from "@mariozechner/pi-coding-agent";
-
 // ============================================================================
 // Agent Roles
 // ============================================================================
 
 /** Agent roles as defined in DESIGN.md */
 export type AgentRole = "planner" | "task-manager" | "coordinator" | "worker";
+
+/** Whether a role loops until done or runs once. */
+export const ROLE_LIFECYCLE: Record<AgentRole, boolean> = {
+	planner: false,
+	"task-manager": false,
+	coordinator: true,
+	worker: false,
+};
+
+/**
+ * Returns true if the given role is a loop stage (repeats until done).
+ * Unknown roles default to one-shot.
+ */
+export function isLoopRole(role: string): boolean {
+	return ROLE_LIFECYCLE[role as AgentRole] ?? false;
+}
 
 // ============================================================================
 // Chain DSL Types
@@ -19,9 +33,9 @@ export type AgentRole = "planner" | "task-manager" | "coordinator" | "worker";
 export interface ChainStage {
 	/** Agent role name (matches AgentRole or custom skill name) */
 	name: string;
-	/** Max iterations for loop stages (1 = pipeline/single-pass, >1 = loop) */
-	maxIterations: number;
-	/** Optional completion check — if provided, loop exits early when it returns true */
+	/** Whether this stage loops until its completion check passes */
+	loop: boolean;
+	/** Optional completion check — loop exits when it returns true */
 	completionCheck?: (projectRoot: string) => Promise<boolean>;
 }
 
@@ -55,6 +69,10 @@ export interface ChainConfig {
 	signal?: AbortSignal;
 	/** Callback for progress events */
 	onEvent?: (event: ChainEvent) => void;
+	/** Global safety cap: max total iterations across all loop stages (default: 50) */
+	maxTotalIterations?: number;
+	/** Global safety cap: timeout in milliseconds (default: 30 minutes) */
+	timeoutMs?: number;
 }
 
 // ============================================================================
@@ -96,12 +114,7 @@ export type ChainEvent =
 	| { type: "chain_end"; result: ChainResult }
 	| { type: "stage_start"; stage: ChainStage; stageIndex: number }
 	| { type: "stage_end"; stage: ChainStage; result: StageResult }
-	| {
-			type: "stage_iteration";
-			stage: ChainStage;
-			iteration: number;
-			maxIterations: number;
-	  }
+	| { type: "stage_iteration"; stage: ChainStage; iteration: number }
 	| { type: "agent_spawned"; role: string; sessionId: string }
 	| { type: "agent_completed"; role: string; sessionId: string }
 	| { type: "error"; message: string; stage?: ChainStage };

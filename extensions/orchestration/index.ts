@@ -10,11 +10,11 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 		name: "chain_run",
 		label: "Run Chain",
 		description:
-			"Run a chain of agent stages using the chain DSL (e.g. \"planner -> task-manager -> coordinator:20\")",
+			"Run a chain of agent stages using the chain DSL (e.g. \"planner -> task-manager -> coordinator\")",
 		parameters: Type.Object({
 			expression: Type.String({
 				description:
-					"Chain DSL expression (e.g. \"planner -> task-manager -> coordinator:20\")",
+					"Chain DSL expression (e.g. \"planner -> task-manager -> coordinator\")",
 			}),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {

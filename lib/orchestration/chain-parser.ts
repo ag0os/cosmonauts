@@ -4,12 +4,14 @@
  *
  * DSL syntax:
  *   Pipeline:  "planner -> task-manager -> coordinator"
- *   Loop:      "coordinator:20"
- *   Combined:  "planner -> task-manager -> coordinator:20"
  *   Single:    "planner"
+ *
+ * Loop behavior is determined by the role's lifecycle, not the DSL.
+ * The parser just extracts stage names.
  */
 
 import type { ChainStage } from "./types.ts";
+import { isLoopRole } from "./types.ts";
 
 // ============================================================================
 // Parser
@@ -18,27 +20,20 @@ import type { ChainStage } from "./types.ts";
 /**
  * Parse a chain DSL expression into an array of ChainStage objects.
  *
+ * Stage names are split on `->`, trimmed, and lowercased. Each stage's
+ * `loop` property is determined by the role's lifecycle (e.g. coordinator
+ * loops, planner does not).
+ *
  * @param expression - The chain DSL expression to parse
  * @returns Array of parsed ChainStage objects
- * @throws Error if the expression is empty or contains invalid stages
+ * @throws Error if the expression is empty or contains empty stage names
  *
  * @example
  * parseChain("planner -> task-manager -> coordinator")
  * // => [
- * //   { name: "planner", maxIterations: 1 },
- * //   { name: "task-manager", maxIterations: 1 },
- * //   { name: "coordinator", maxIterations: 1 },
- * // ]
- *
- * @example
- * parseChain("coordinator:20")
- * // => [{ name: "coordinator", maxIterations: 20 }]
- *
- * @example
- * parseChain("planner -> coordinator:5")
- * // => [
- * //   { name: "planner", maxIterations: 1 },
- * //   { name: "coordinator", maxIterations: 5 },
+ * //   { name: "planner", loop: false },
+ * //   { name: "task-manager", loop: false },
+ * //   { name: "coordinator", loop: true },
  * // ]
  */
 export function parseChain(expression: string): ChainStage[] {
@@ -52,72 +47,20 @@ export function parseChain(expression: string): ChainStage[] {
 	const stages: ChainStage[] = [];
 
 	for (const part of parts) {
-		stages.push(parseStage(part));
-	}
+		const name = part.trim().toLowerCase();
 
-	return stages;
-}
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-/**
- * Parse a single stage segment from the DSL.
- *
- * Accepts formats:
- *   "planner"       => { name: "planner", maxIterations: 1 }
- *   "coordinator:5" => { name: "coordinator", maxIterations: 5 }
- *
- * @param segment - A single stage segment (already split from the pipeline)
- * @returns A parsed ChainStage
- * @throws Error if the stage name is empty or the iteration count is invalid
- */
-function parseStage(segment: string): ChainStage {
-	const trimmed = segment.trim();
-
-	if (!trimmed) {
-		throw new Error("Stage name cannot be empty");
-	}
-
-	const colonIndex = trimmed.indexOf(":");
-
-	// No colon — simple stage with default iterations
-	if (colonIndex === -1) {
-		const name = trimmed.toLowerCase();
 		if (!name) {
 			throw new Error("Stage name cannot be empty");
 		}
-		return { name, maxIterations: 1 };
+
+		if (name.includes(":")) {
+			throw new Error(
+				`Invalid stage name "${name}": the "role:count" syntax is no longer supported. Use maxTotalIterations in chain config instead.`,
+			);
+		}
+
+		stages.push({ name, loop: isLoopRole(name) });
 	}
 
-	// Has colon — extract name and iteration count
-	const name = trimmed.slice(0, colonIndex).trim().toLowerCase();
-	const iterPart = trimmed.slice(colonIndex + 1).trim();
-
-	if (!name) {
-		throw new Error("Stage name cannot be empty");
-	}
-
-	const maxIterations = Number.parseInt(iterPart, 10);
-
-	if (Number.isNaN(maxIterations)) {
-		throw new Error(
-			`Invalid iteration count "${iterPart}" for stage "${name}"`,
-		);
-	}
-
-	if (maxIterations < 1) {
-		throw new Error(
-			`Iteration count must be a positive integer, got ${maxIterations} for stage "${name}"`,
-		);
-	}
-
-	if (!Number.isInteger(maxIterations)) {
-		throw new Error(
-			`Iteration count must be an integer, got ${maxIterations} for stage "${name}"`,
-		);
-	}
-
-	return { name, maxIterations };
+	return stages;
 }
