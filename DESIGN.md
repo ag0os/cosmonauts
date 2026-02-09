@@ -469,7 +469,7 @@ After install, run `pi` normally. Extensions auto-load, skills auto-discover, to
 - [x] CLI: `cosmonauts-tasks` with init, create, list, view, edit, delete, search commands
 - [x] Package scaffold: Pi package manifest, tsconfig, 165 tests passing
 - [x] Build chain runner (role-based lifecycle, completion detection via task state, global safety caps)
-- [ ] Write agent skills: planner, task-manager, coordinator, worker
+- [x] Write agent skills: planner, task-manager, coordinator, worker
 - [ ] Write first language skill: TypeScript
 - [ ] Commands: `cosmonauts plan`, `cosmonauts build`
 - [ ] Test end-to-end on a real project
