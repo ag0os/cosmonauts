@@ -254,13 +254,13 @@ describe("serializeTask", () => {
 			expect(parsed.id).toBe(original.id);
 			expect(parsed.title).toBe(original.title);
 			expect(parsed.status).toBe(original.status);
-			expect(parsed.priority).toBe(original.priority!);
-			expect(parsed.assignee).toBe(original.assignee!);
+			expect(parsed.priority).toBe(original.priority);
+			expect(parsed.assignee).toBe(original.assignee);
 			expect(parsed.labels).toEqual(original.labels);
 			expect(parsed.dependencies).toEqual(original.dependencies);
-			expect(parsed.description).toBe(original.description!);
-			expect(parsed.implementationPlan).toBe(original.implementationPlan!);
-			expect(parsed.implementationNotes).toBe(original.implementationNotes!);
+			expect(parsed.description).toBe(original.description);
+			expect(parsed.implementationPlan).toBe(original.implementationPlan);
+			expect(parsed.implementationNotes).toBe(original.implementationNotes);
 		});
 
 		test("parse(serialize(task)) preserves acceptance criteria", () => {

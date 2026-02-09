@@ -2,11 +2,11 @@
  * Tests for TaskManager class
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { TaskManager } from "../../lib/tasks/task-manager.js";
 import type { ForgeTasksConfig } from "../../lib/tasks/task-types.js";
 
@@ -35,7 +35,11 @@ describe("TaskManager", () => {
 			const tasksDir = join(tempDir, "forge", "tasks");
 			expect(existsSync(forgeDir)).toBe(true);
 			expect(existsSync(tasksDir)).toBe(true);
-			expect(await access(join(tempDir, "forge", "tasks", "config.json")).then(() => true).catch(() => false)).toBe(true);
+			expect(
+				await access(join(tempDir, "forge", "tasks", "config.json"))
+					.then(() => true)
+					.catch(() => false),
+			).toBe(true);
 		});
 
 		it("should merge provided config with defaults", async () => {
@@ -148,7 +152,11 @@ describe("TaskManager", () => {
 
 			// Verify task file exists in forge/tasks/
 			const tasksDir = join(tempDir, "forge", "tasks");
-			const taskFileExists = await access(join(tasksDir, "TASK-001 - Test Task.md")).then(() => true).catch(() => false);
+			const taskFileExists = await access(
+				join(tasksDir, "TASK-001 - Test Task.md"),
+			)
+				.then(() => true)
+				.catch(() => false);
 			expect(taskFileExists).toBe(true);
 		});
 
@@ -517,7 +525,11 @@ describe("TaskManager", () => {
 			expect(task.id).toBe("TASK-001");
 
 			// Verify config was created
-			expect(await access(join(tempDir, "forge", "tasks", "config.json")).then(() => true).catch(() => false)).toBe(true);
+			expect(
+				await access(join(tempDir, "forge", "tasks", "config.json"))
+					.then(() => true)
+					.catch(() => false),
+			).toBe(true);
 		});
 
 		it("should load existing config on first operation", async () => {

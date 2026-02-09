@@ -1,31 +1,42 @@
 {
-  "name": "cosmonauts",
-  "version": "0.1.0",
-  "type": "module",
-  "keywords": ["pi-package"],
-  "pi": {
-    "extensions": ["./extensions"],
-    "skills": ["./skills"]
-  },
-  "bin": {
-    "cosmonauts-tasks": "./bin/cosmonauts-tasks"
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest"
-  },
-  "dependencies": {
-    "@mariozechner/pi-coding-agent": "0.52.9",
-    "@mariozechner/pi-agent-core": "0.52.9",
-    "@mariozechner/pi-ai": "0.52.9",
-    "@sinclair/typebox": "0.34.48",
-    "commander": "^14.0.2",
-    "gray-matter": "^4.0.3"
-  },
-  "devDependencies": {
-    "typescript": "^5.6.2",
-    "vitest": "^3.0.0",
-    "@types/node": "^22.0.0"
-  }
+	"name": "cosmonauts",
+	"version": "0.1.0",
+	"type": "module",
+	"keywords": [
+		"pi-package"
+	],
+	"pi": {
+		"extensions": [
+			"./extensions"
+		],
+		"skills": [
+			"./skills"
+		]
+	},
+	"bin": {
+		"cosmonauts-tasks": "./bin/cosmonauts-tasks"
+	},
+	"scripts": {
+		"lint": "biome check .",
+		"lint:fix": "biome check --write .",
+		"format": "biome format --write .",
+		"format:check": "biome format .",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run",
+		"test:watch": "vitest"
+	},
+	"dependencies": {
+		"@mariozechner/pi-coding-agent": "0.52.9",
+		"@mariozechner/pi-agent-core": "0.52.9",
+		"@mariozechner/pi-ai": "0.52.9",
+		"@sinclair/typebox": "0.34.48",
+		"commander": "^14.0.2",
+		"gray-matter": "^4.0.3"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.3.14",
+		"@types/node": "^22.0.0",
+		"typescript": "^5.6.2",
+		"vitest": "^3.0.0"
+	}
 }

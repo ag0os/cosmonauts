@@ -1,6 +1,9 @@
 import type { Command } from "commander";
 import { TaskManager } from "../../../lib/tasks/task-manager.js";
-import type { TaskCreateInput, TaskPriority } from "../../../lib/tasks/task-types.js";
+import type {
+	TaskCreateInput,
+	TaskPriority,
+} from "../../../lib/tasks/task-types.js";
 
 export function registerCommand(program: Command): void {
 	program

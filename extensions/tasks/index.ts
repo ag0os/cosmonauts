@@ -1,5 +1,5 @@
-import { Type } from "@sinclair/typebox";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Type } from "@sinclair/typebox";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 
 export default function tasksExtension(pi: ExtensionAPI) {
@@ -10,7 +10,9 @@ export default function tasksExtension(pi: ExtensionAPI) {
 		description: "Create a new task in the task system",
 		parameters: Type.Object({
 			title: Type.String({ description: "Task title" }),
-			description: Type.Optional(Type.String({ description: "Task description" })),
+			description: Type.Optional(
+				Type.String({ description: "Task description" }),
+			),
 			priority: Type.Optional(
 				Type.Unsafe<"high" | "medium" | "low">({
 					type: "string",
@@ -19,17 +21,28 @@ export default function tasksExtension(pi: ExtensionAPI) {
 				}),
 			),
 			assignee: Type.Optional(Type.String({ description: "Assignee name" })),
-			labels: Type.Optional(Type.Array(Type.String(), { description: "Labels for categorization" })),
-			dependencies: Type.Optional(Type.Array(Type.String(), { description: "IDs of dependency tasks" })),
+			labels: Type.Optional(
+				Type.Array(Type.String(), { description: "Labels for categorization" }),
+			),
+			dependencies: Type.Optional(
+				Type.Array(Type.String(), { description: "IDs of dependency tasks" }),
+			),
 			acceptanceCriteria: Type.Optional(
-				Type.Array(Type.String(), { description: "Acceptance criteria as text strings" }),
+				Type.Array(Type.String(), {
+					description: "Acceptance criteria as text strings",
+				}),
 			),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const manager = new TaskManager(ctx.cwd);
 			const task = await manager.createTask(params);
 			return {
-				content: [{ type: "text" as const, text: `Created task ${task.id}: ${task.title}` }],
+				content: [
+					{
+						type: "text" as const,
+						text: `Created task ${task.id}: ${task.title}`,
+					},
+				],
 				details: task,
 			};
 		},
@@ -55,19 +68,32 @@ export default function tasksExtension(pi: ExtensionAPI) {
 					description: "Filter by priority",
 				}),
 			),
-			assignee: Type.Optional(Type.String({ description: "Filter by assignee" })),
+			assignee: Type.Optional(
+				Type.String({ description: "Filter by assignee" }),
+			),
 			label: Type.Optional(Type.String({ description: "Filter by label" })),
-			hasNoDependencies: Type.Optional(Type.Boolean({ description: "Only show tasks with no dependencies" })),
+			hasNoDependencies: Type.Optional(
+				Type.Boolean({ description: "Only show tasks with no dependencies" }),
+			),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const manager = new TaskManager(ctx.cwd);
-			const filter = Object.fromEntries(Object.entries(params).filter(([_, v]) => v !== undefined));
-			const tasks = await manager.listTasks(Object.keys(filter).length > 0 ? filter : undefined);
+			const filter = Object.fromEntries(
+				Object.entries(params).filter(([_, v]) => v !== undefined),
+			);
+			const tasks = await manager.listTasks(
+				Object.keys(filter).length > 0 ? filter : undefined,
+			);
 			const lines = tasks.map(
 				(t) => `${t.id} | ${t.status} | ${t.priority || "-"} | ${t.title}`,
 			);
 			return {
-				content: [{ type: "text" as const, text: lines.length > 0 ? lines.join("\n") : "No tasks found" }],
+				content: [
+					{
+						type: "text" as const,
+						text: lines.length > 0 ? lines.join("\n") : "No tasks found",
+					},
+				],
 				details: tasks,
 			};
 		},
@@ -86,7 +112,9 @@ export default function tasksExtension(pi: ExtensionAPI) {
 			const task = await manager.getTask(params.taskId);
 			if (!task) {
 				return {
-					content: [{ type: "text" as const, text: `Task not found: ${params.taskId}` }],
+					content: [
+						{ type: "text" as const, text: `Task not found: ${params.taskId}` },
+					],
 					details: null,
 				};
 			}
@@ -96,17 +124,21 @@ export default function tasksExtension(pi: ExtensionAPI) {
 			];
 			if (task.priority) lines.push(`Priority: ${task.priority}`);
 			if (task.assignee) lines.push(`Assignee: ${task.assignee}`);
-			if (task.labels.length > 0) lines.push(`Labels: ${task.labels.join(", ")}`);
-			if (task.dependencies.length > 0) lines.push(`Dependencies: ${task.dependencies.join(", ")}`);
+			if (task.labels.length > 0)
+				lines.push(`Labels: ${task.labels.join(", ")}`);
+			if (task.dependencies.length > 0)
+				lines.push(`Dependencies: ${task.dependencies.join(", ")}`);
 			if (task.description) lines.push(`\nDescription:\n${task.description}`);
-			if (task.implementationPlan) lines.push(`\nImplementation Plan:\n${task.implementationPlan}`);
+			if (task.implementationPlan)
+				lines.push(`\nImplementation Plan:\n${task.implementationPlan}`);
 			if (task.acceptanceCriteria.length > 0) {
 				lines.push("\nAcceptance Criteria:");
 				for (const ac of task.acceptanceCriteria) {
 					lines.push(`  ${ac.checked ? "[x]" : "[ ]"} #${ac.index} ${ac.text}`);
 				}
 			}
-			if (task.implementationNotes) lines.push(`\nImplementation Notes:\n${task.implementationNotes}`);
+			if (task.implementationNotes)
+				lines.push(`\nImplementation Notes:\n${task.implementationNotes}`);
 			return {
 				content: [{ type: "text" as const, text: lines.join("\n") }],
 				details: task,
@@ -137,17 +169,30 @@ export default function tasksExtension(pi: ExtensionAPI) {
 				}),
 			),
 			assignee: Type.Optional(Type.String({ description: "New assignee" })),
-			description: Type.Optional(Type.String({ description: "New description" })),
-			implementationPlan: Type.Optional(Type.String({ description: "New implementation plan" })),
-			implementationNotes: Type.Optional(Type.String({ description: "New implementation notes" })),
+			description: Type.Optional(
+				Type.String({ description: "New description" }),
+			),
+			implementationPlan: Type.Optional(
+				Type.String({ description: "New implementation plan" }),
+			),
+			implementationNotes: Type.Optional(
+				Type.String({ description: "New implementation notes" }),
+			),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const { taskId, ...updateFields } = params;
-			const update = Object.fromEntries(Object.entries(updateFields).filter(([_, v]) => v !== undefined));
+			const update = Object.fromEntries(
+				Object.entries(updateFields).filter(([_, v]) => v !== undefined),
+			);
 			const manager = new TaskManager(ctx.cwd);
 			const task = await manager.updateTask(taskId, update);
 			return {
-				content: [{ type: "text" as const, text: `Updated task ${task.id}: ${task.title}` }],
+				content: [
+					{
+						type: "text" as const,
+						text: `Updated task ${task.id}: ${task.title}`,
+					},
+				],
 				details: task,
 			};
 		},
@@ -177,9 +222,14 @@ export default function tasksExtension(pi: ExtensionAPI) {
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const { query, ...filterFields } = params;
-			const filter = Object.fromEntries(Object.entries(filterFields).filter(([_, v]) => v !== undefined));
+			const filter = Object.fromEntries(
+				Object.entries(filterFields).filter(([_, v]) => v !== undefined),
+			);
 			const manager = new TaskManager(ctx.cwd);
-			const tasks = await manager.search(query, Object.keys(filter).length > 0 ? filter : undefined);
+			const tasks = await manager.search(
+				query,
+				Object.keys(filter).length > 0 ? filter : undefined,
+			);
 			const lines = tasks.map(
 				(t) => `${t.id} | ${t.status} | ${t.priority || "-"} | ${t.title}`,
 			);
@@ -187,9 +237,10 @@ export default function tasksExtension(pi: ExtensionAPI) {
 				content: [
 					{
 						type: "text" as const,
-						text: lines.length > 0
-							? `Found ${tasks.length} task(s):\n${lines.join("\n")}`
-							: `No tasks found matching "${query}"`,
+						text:
+							lines.length > 0
+								? `Found ${tasks.length} task(s):\n${lines.join("\n")}`
+								: `No tasks found matching "${query}"`,
 					},
 				],
 				details: tasks,

@@ -37,9 +37,7 @@ export class TaskManager {
 
 	private assertValidDate(value: Date, fieldName: string): void {
 		if (Number.isNaN(value.getTime())) {
-			throw new Error(
-				`Invalid ${fieldName}: expected a valid Date instance`,
-			);
+			throw new Error(`Invalid ${fieldName}: expected a valid Date instance`);
 		}
 	}
 

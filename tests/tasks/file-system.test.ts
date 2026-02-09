@@ -3,10 +3,10 @@
  * Covers file I/O operations with temp directory isolation
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
 	deleteTaskFile,
 	ensureForgeDirectory,
@@ -139,7 +139,10 @@ describe("loadConfig / saveConfig", () => {
 
 		await saveConfig(testDir, config);
 
-		const content = await readFile(join(testDir, "forge", "tasks", "config.json"), "utf-8");
+		const content = await readFile(
+			join(testDir, "forge", "tasks", "config.json"),
+			"utf-8",
+		);
 
 		// Should be pretty-printed (contains newlines)
 		expect(content).toContain("\n");
