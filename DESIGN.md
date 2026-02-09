@@ -97,7 +97,7 @@ You (terminal)
   │    ↓
   │  Summary delivered
   │
-  └─ cosmonauts chain "<custom-chain-dsl>"
+  └─ cosmonauts chain "planner -> task-manager -> coordinator"
        (advanced: custom agent pipelines)
 ```
 
@@ -328,24 +328,23 @@ When working on TypeScript projects:
 
 ### Chain Runner
 
-Inspired by Forge's Orchestra. Runs agent pipelines and loops using Pi sessions instead of CLI processes.
+Inspired by Forge's Orchestra. Runs agent pipelines using Pi sessions instead of CLI processes.
 
-**Pipeline mode**: run agents in sequence, each once.
-```
-cosmonauts chain "planner -> task-manager"
-```
+**The DSL is pure topology** — it declares which roles run in what order. Loop behavior is intrinsic to each role (coordinator loops, others run once).
 
-**Loop mode**: run an agent repeatedly until done.
 ```
-cosmonauts chain "coordinator:20"
+cosmonauts chain "planner -> task-manager -> coordinator"
 ```
 
-**Combined**: pipeline stages with loops.
-```
-cosmonauts chain "planner -> task-manager -> coordinator:20"
-```
+Each role knows its own lifecycle:
+- **One-shot roles** (planner, task-manager, worker): run once and exit.
+- **Loop roles** (coordinator): repeat until their completion check passes.
 
-**Completion detection**: instead of stdout markers (Forge), we use Pi's event system. The coordinator checks task state directly — when all tasks are Done, it's complete.
+**Safety caps** are global config, not per-stage DSL:
+- `maxTotalIterations` (default: 50) — shared budget across all loop stages.
+- `timeoutMs` (default: 30 min) — absolute deadline for the entire chain.
+
+**Completion detection**: the coordinator checks task state directly — when all tasks are Done, it's complete. No stdout markers needed.
 
 ### Sub-Agent Spawning
 
@@ -469,7 +468,7 @@ After install, run `pi` normally. Extensions auto-load, skills auto-discover, to
 - [x] Register task tools: `task_create`, `task_list`, `task_view`, `task_edit`, `task_search`
 - [x] CLI: `cosmonauts-tasks` with init, create, list, view, edit, delete, search commands
 - [x] Package scaffold: Pi package manifest, tsconfig, 165 tests passing
-- [ ] Build chain runner (pipeline + loop modes, completion detection via task state)
+- [x] Build chain runner (role-based lifecycle, completion detection via task state, global safety caps)
 - [ ] Write agent skills: planner, task-manager, coordinator, worker
 - [ ] Write first language skill: TypeScript
 - [ ] Commands: `cosmonauts plan`, `cosmonauts build`
