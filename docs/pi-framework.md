@@ -83,10 +83,35 @@ const sm = SessionManager.inMemory();
 
 Pi exports two ready-made tool arrays:
 
-- **`codingTools`**: read, write, edit, bash — full coding capability
-- **`readOnlyTools`**: read, grep, find, ls — exploration only
+- **`codingTools`**: `read`, `bash`, `edit`, `write` — full coding capability
+- **`readOnlyTools`**: `read`, `grep`, `find`, `ls` — exploration only
 
-Tool factory functions (`createCodingTools()`, `createReadOnlyTools()`) accept a custom `cwd` for path resolution.
+Tool factory functions (`createCodingTools(cwd)`, `createReadOnlyTools(cwd)`) accept a custom `cwd` for path resolution. Individual factories are also available: `createReadTool`, `createBashTool`, `createEditTool`, `createWriteTool`, `createGrepTool`, `createFindTool`, `createLsTool`.
+
+The `allTools` object in `packages/coding-agent/src/core/tools/index.ts` lists all available built-in tools by name. Extensions can **override built-in tools** by registering a tool with the same name. The `--no-tools` flag disables all built-ins.
+
+### System Prompt Composition
+
+Pi's `buildSystemPrompt()` assembles the final system prompt from multiple sources:
+
+1. **Base prompt** — default "expert coding assistant" identity
+2. **`SYSTEM.md`** — if present in `.pi/` or `~/.pi/agent/`, replaces the base prompt entirely
+3. **`APPEND_SYSTEM.md`** — appends to the base/custom prompt
+4. **Context files** — `AGENTS.md` / `CLAUDE.md` content, added under a "Project Context" section
+5. **Skills** — formatted as XML, added under `<available_skills>`
+6. **Tools** — tool descriptions and usage guidelines
+
+Programmatic control via `createAgentSession()`:
+
+```typescript
+const { session } = await createAgentSession({
+  // ...
+  systemPrompt: "Replace entire base prompt",      // optional
+  appendSystemPrompt: "Appended after everything",  // optional
+});
+```
+
+Skills compose with the system prompt automatically — no manual injection needed. Write a SKILL.md, load it via the resource loader, and Pi formats and includes it.
 
 ---
 
@@ -114,20 +139,86 @@ export default function myExtension(pi: ExtensionAPI) {
   // Subscribe to lifecycle events
   pi.on("before_agent_start", async (event) => { ... });
   pi.on("tool_call", async (event) => { ... });
+
+  // Inject messages into the session
+  pi.sendMessage({ customType: "my-ext", content: "...", display: true });
+
+  // Persist extension state (survives restarts, branching — not sent to LLM)
+  pi.appendEntry("my-ext-state", { key: "value" });
+
+  // Cross-extension communication
+  pi.events.emit("my-event", data);
+  pi.events.on("other-event", handler);
 }
 ```
 
-### Key Extension Events
+### Key Extension Methods
+
+| Method | Purpose |
+|--------|---------|
+| `pi.registerTool()` | Register a tool the LLM can call |
+| `pi.registerCommand()` | Register a REPL slash-command |
+| `pi.on()` | Subscribe to lifecycle events |
+| `pi.sendMessage()` | Inject a custom message into the session |
+| `pi.sendUserMessage()` | Send a user message, triggering an agent turn |
+| `pi.appendEntry()` | Persist extension state (not sent to LLM) |
+| `pi.events` | Cross-extension event bus |
+| `pi.getActiveTools()` / `pi.setActiveTools()` | Control which tools are available |
+| `pi.setModel()` / `pi.setThinkingLevel()` | Change model or thinking level |
+| `pi.exec()` | Run shell commands |
+
+### Extension Lifecycle Events
 
 | Event | When | Can modify? | Use case |
 |-------|------|-------------|----------|
-| `before_agent_start` | After user prompt, before agent loop | Inject messages, replace system prompt | Inject task context into workers |
-| `context` | Before every LLM call | Modify messages | Cost guardrails, context pruning |
+| `input` | Raw user input received | Transform input | Preprocessing, template expansion |
+| `before_agent_start` | After user prompt, before agent loop | Inject messages, replace system prompt | Context injection, identity customization |
+| `context` | Before every LLM call | Modify messages (non-destructive) | Cost guardrails, context pruning |
+| `agent_start` / `agent_end` | Agent loop lifecycle | — | Logging, cleanup |
+| `turn_start` / `turn_end` | Each agent turn | — | Progress reporting |
 | `tool_call` | Before tool execution | Block execution | Sandbox workers (restrict file access) |
 | `tool_result` | After tool execution | Modify result | Filter/transform output |
-| `turn_start` / `turn_end` | Each agent turn | — | Progress reporting |
-| `agent_start` / `agent_end` | Agent loop lifecycle | — | Logging, cleanup |
-| `session_before_compact` | Before compaction | Cancel or customize | Control context management |
+| `model_select` | When a model is selected | — | Model routing |
+| `session_start` | New session starts | — | Initial setup, state restoration |
+| `session_before_switch` / `session_switch` | Session switching | Can block | State management |
+| `session_before_fork` / `session_fork` | Session forking | Can block | State management |
+| `session_before_compact` / `session_compact` | Before/after compaction | Modify messages | Control context management |
+| `session_shutdown` | Session shutting down | — | Cleanup, state saving |
+| `resources_discover` | Resources discovered | — | React to skill/extension discovery |
+| `user_bash` | User runs a bash command | — | Audit, logging |
+
+### `before_agent_start` Detail
+
+This is the primary hook for context injection. Type signatures:
+
+```typescript
+interface BeforeAgentStartEvent {
+  type: "before_agent_start";
+  prompt: string;           // User's prompt text
+  images?: ImageContent[];  // Attached images
+  systemPrompt: string;     // Current system prompt
+}
+
+interface BeforeAgentStartEventResult {
+  message?: Pick<CustomMessage, "customType" | "content" | "display" | "details">;
+  systemPrompt?: string;  // Replace system prompt (chained across extensions)
+}
+```
+
+Multiple extensions' results are chained: messages accumulate, system prompt modifications apply sequentially.
+
+```typescript
+pi.on("before_agent_start", async (event, ctx) => {
+  return {
+    message: {
+      customType: "my-extension",
+      content: "Additional context for the LLM",
+      display: true,  // true = stored in session + sent to LLM
+    },
+    systemPrompt: event.systemPrompt + "\n\nExtra instructions...",
+  };
+});
+```
 
 ### Tool Override
 
@@ -172,6 +263,38 @@ const resourceLoader = new DefaultResourceLoader({
 ```
 
 **`skillsOverride` is the right approach for worker agents** — completely replaces all skills instead of accumulating. Prevents workers from picking up random project-local skills.
+
+---
+
+## Project Context Files (AGENTS.md / CLAUDE.md)
+
+Pi natively discovers and injects project-level instruction files into the agent's system prompt. No custom extension needed.
+
+### Discovery Order
+
+`DefaultResourceLoader` discovers context files via `discoverContextFiles`:
+
+1. **Global**: `~/.pi/agent/AGENTS.md`
+2. **Parent directories**: walks up from `cwd`, checking each directory for `AGENTS.md` or `CLAUDE.md`
+3. **Current directory**: `./AGENTS.md` or `./CLAUDE.md`
+
+All matching files are **concatenated**. Global files load first, then ancestor directories, then current directory.
+
+### Injection
+
+`buildSystemPrompt` appends discovered context file content under a "Project Context" section in the system prompt automatically. Every agent session using `DefaultResourceLoader` gets this for free.
+
+### Related Files
+
+Pi also supports:
+- **`SYSTEM.md`** — overrides the entire default system prompt
+- **`APPEND_SYSTEM.md`** — appends to the default system prompt
+
+These are distinct from `AGENTS.md` / `CLAUDE.md` which provide project context, not system prompt replacement.
+
+### Controlling Per-Agent Context
+
+To **skip** project context for agents that don't need it (e.g., coordinator, task-manager), use a custom `ResourceLoader` or configure `DefaultResourceLoader` to not load context files. For agents that do need it (planner, worker, cosmo), use the default behavior.
 
 ---
 
@@ -246,20 +369,87 @@ Useful for: task classification, skill routing, plan summarization, quick yes/no
 
 ---
 
-## RPC Mode
+## Execution Modes
 
-Pi supports headless operation via `--mode rpc`: JSON protocol over stdin/stdout.
+Pi supports three execution modes, all available both via CLI flags and programmatic API.
 
-```bash
-pi --mode rpc
+### Interactive Mode (default)
+
+Full TUI/REPL with keyboard input. Requires a TTY.
+
+```typescript
+import { createAgentSession, InteractiveMode } from "@mariozechner/pi-coding-agent";
+
+const { session } = await createAgentSession({ /* ... */ });
+const mode = new InteractiveMode(session, { initialMessage: "optional first prompt" });
+await mode.run();  // Blocks until user exits
 ```
 
-An `RpcClient` class provides a typed API for spawning and controlling agents as child processes. Potential uses:
+CLI: `pi` or `pi "initial prompt"` (opens REPL, optionally with an initial message).
+
+Supports `InteractiveModeOptions`: `initialMessage`, `initialMessages`, `initialImages`, `verbose`.
+
+### Print Mode (`--print`)
+
+Non-interactive single-shot execution. Sends prompt(s), outputs result, exits.
+
+```typescript
+import { createAgentSession, runPrintMode } from "@mariozechner/pi-coding-agent";
+
+const { session } = await createAgentSession({ /* ... */ });
+await runPrintMode(session, {
+  mode: "text",           // "text" (final response to stdout) or "json" (event stream)
+  initialMessage: "...",  // The prompt
+  messages: [],           // Additional messages
+});
+process.exit(0);
+```
+
+CLI: `pi --print "prompt"` or `pi --mode text "prompt"` or `pi --mode json "prompt"`.
+
+- **Text mode**: prints final assistant response to stdout.
+- **JSON mode**: streams all `AgentSessionEvent` objects as JSON lines to stdout.
+
+### RPC Mode (`--mode rpc`)
+
+Headless operation via JSON protocol over stdin/stdout.
+
+```typescript
+import { createAgentSession, runRpcMode } from "@mariozechner/pi-coding-agent";
+
+const { session } = await createAgentSession({ /* ... */ });
+await runRpcMode(session);  // Returns Promise<never>, runs until shutdown
+```
+
+CLI: `pi --mode rpc`.
+
+Supports 20+ RPC commands: `prompt`, `steer`, `follow_up`, `abort`, `set_model`, `cycle_model`, `bash`, `compact`, `new_session`, etc. Each command returns a JSON response with `{ type: "response", command, success, data?, error? }`.
+
+Potential uses:
 - Sandboxed workers in Docker containers
 - Cross-machine distribution
 - Language-agnostic orchestrators
+- IDE integrations
 
 Not needed for Phase 0 (in-process is simpler), but a good option for Phase 3+ parallel/sandboxed workers.
+
+### CLI Flags
+
+Key flags relevant to Cosmonauts:
+
+| Flag | Description |
+|------|-------------|
+| `--print`, `-p` | Non-interactive mode (process prompt and exit) |
+| `--mode <text\|json\|rpc>` | Output mode |
+| `--model <id>` | Model ID (e.g., `anthropic/claude-sonnet-4-5`) |
+| `--thinking <level>` | Thinking level: off, minimal, low, medium, high, xhigh |
+| `--skill <path>` | Load additional skill (repeatable) |
+| `--extension`, `-e <path>` | Load additional extension (repeatable) |
+| `--tools <list>` | Enable specific tools (e.g., `read,bash,edit,write`) |
+| `--no-tools` | Disable all built-in tools (extension tools still work) |
+| `--system-prompt <text>` | Replace default system prompt |
+
+Cosmonauts passes these through to `createAgentSession()` where applicable.
 
 ---
 

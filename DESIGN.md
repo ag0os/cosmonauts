@@ -13,6 +13,37 @@ A system where you can:
 
 The critical insight: **the design and planning phase is where the human adds the most value.** Once the plan is solid and tasks are well-defined, execution is mechanical. Cosmonauts optimizes for this — great planning tools, atomic task creation, and reliable autonomous execution.
 
+## Design Principles
+
+### Pi-First: Use the Framework
+
+Cosmonauts is built on Pi. Before designing any feature, **check what Pi already provides**. This is not optional — it's the first step in every design decision.
+
+The checklist:
+
+1. **Does Pi's core handle it?** — `createAgentSession`, `DefaultResourceLoader`, `buildSystemPrompt`, built-in tools, session management, compaction, cost tracking. If yes, use it directly.
+2. **Does pi-skills provide it?** — `brave-search`, `browser-tools`, and other ready-made skills. If yes, depend on it or adapt it.
+3. **Does Pi's extension/skill system enable it?** — `pi.on()` lifecycle events, `pi.registerTool()`, `pi.appendEntry()` for state, `pi.sendMessage()` for injection. If yes, build an extension that hooks into the right event.
+4. **Only then build custom.** — If Pi doesn't provide it and can't be extended to do it, build it ourselves.
+
+**Examples of getting this right:**
+
+- Project instructions (AGENTS.md) → Pi's `DefaultResourceLoader` discovers and injects them natively. No extension needed.
+- Agent system prompts → Pi's `buildSystemPrompt` composes skills, context files, and custom prompts. We write SKILL.md files, not a custom prompt builder.
+- Built-in coding tools → Pi exports `codingTools` and `readOnlyTools` with factory functions. We use these directly.
+
+**Examples of what Pi deliberately doesn't include** (confirmed — we must build):
+
+- Task system (forge-tasks format)
+- Sub-agent spawning and orchestration (chain runner)
+- Todo/plan tracking ("No built-in to-dos. They confuse models." — Pi README)
+
+### Ongoing Audit
+
+As Pi evolves (207+ releases, lockstep versioning), capabilities change. Before each phase, re-audit the Pi API and pi-skills for new features that might obsolete planned custom work.
+
+---
+
 ## Prior Art
 
 Three projects inform this design. We cherry-pick from each rather than adopting any wholesale.
@@ -41,15 +72,38 @@ Battle-tested implementations we extract as needed:
 
 ### Pi Agent Framework (runtime)
 
-The foundation. We use Pi's REPL, session management, tool framework, skill system, and auth as-is. What Pi gives us over CLI-spawning (Forge's approach):
+The foundation. We build on Pi rather than building from scratch. Understanding what Pi provides is critical — see [Design Principles: Pi-First](#pi-first-use-the-framework).
 
-- In-process agent loop — `createAgentSession()` instead of spawning processes
-- `session.steer()` / `session.subscribe()` for real-time control
-- `SessionManager.inMemory()` for ephemeral workers
+**What Pi gives us (use directly, don't rebuild):**
+
+- `createAgentSession()` — in-process agent loop, no CLI spawning
+- `session.steer()` / `session.subscribe()` — real-time control and event streaming
+- `SessionManager.inMemory()` / `SessionManager.open()` — ephemeral or persistent sessions
+- `DefaultResourceLoader` — discovers `AGENTS.md`, `CLAUDE.md`, `SYSTEM.md`, skills, extensions
+- `buildSystemPrompt()` — composes base prompt + context files + skills + tools + appended instructions
+- `codingTools` / `readOnlyTools` — pre-built tool sets with per-cwd factory functions
+- `InteractiveMode` / `runPrintMode()` / `runRpcMode()` — three execution modes
+- `completeSimple()` — lightweight LLM calls without a full session (routing, classification)
+- Extension system — `pi.on()` lifecycle events, `pi.registerTool()`, `pi.appendEntry()` for state
+- Skill system — `SKILL.md` auto-discovery, compose into system prompt as XML
 - OAuth auth for Claude Max / ChatGPT Plus (zero marginal cost)
-- Built-in TUI/REPL for the interactive planning layer
 - 20+ LLM providers with unified API
-- Skill/extension/package system
+- Session compaction (automatic context management)
+- Cost tracking per model per session
+
+**What pi-skills provides (evaluate before building custom):**
+
+- `brave-search` — web search + content extraction via Brave API
+- `browser-tools` — browser automation via Chrome DevTools Protocol
+- `gdcli` / `gmcli` / `gccli` — Google Drive, Gmail, Calendar
+- `transcribe` — speech-to-text via Groq Whisper
+
+**What Pi deliberately omits (we must build):**
+
+- Sub-agent spawning and orchestration
+- Task/todo tracking ("confuse models" — Pi README)
+- Inter-agent communication
+- Budget enforcement
 
 ## How It Differs from Claude Forge
 
@@ -68,38 +122,47 @@ The foundation. We use Pi's REPL, session management, tool framework, skill syst
 
 ## Core Workflow
 
+Cosmonauts has a single entry point: `cosmonauts`. It supports both interactive and non-interactive modes, like `claude` or `pi`.
+
 ```
-You (terminal)
-  │
-  ├─ cosmonauts plan
-  │    ↓
-  │  Reads codebase context (CLAUDE.md, package.json, structure)
-  │    ↓
-  │  You describe what you want (or point to SPECS.md)
-  │    ↓
-  │  Planner agent explores code, designs solution, proposes approach
-  │    ↓
-  │  You review and approve the plan (this is where humans add value)
-  │    ↓
-  │  Task Manager agent creates atomic tasks (markdown files in project)
-  │    ↓
-  │  You review tasks (optional — can auto-approve)
-  │
-  ├─ cosmonauts build
-  │    ↓
-  │  Coordinator picks up ready tasks (no unresolved dependencies)
-  │    ↓
-  │  Spawns worker agents (in-process via Pi, ephemeral sessions)
-  │    ↓
-  │  Each worker: read task → implement → check ACs → mark done → commit
-  │    ↓
-  │  Coordinator loops until all tasks complete
-  │    ↓
-  │  Summary delivered
-  │
-  └─ cosmonauts chain "planner -> task-manager -> coordinator"
-       (advanced: custom agent pipelines)
+# Interactive (default) — opens REPL, chat with Cosmo
+cosmonauts
+
+# Interactive with initial prompt — opens REPL, starts working
+cosmonauts "design an auth system for this project"
+
+# Non-interactive — runs prompt, outputs result, exits
+cosmonauts --print "create tasks from PLAN.md and implement them"
+
+# Non-interactive with chain — runs a specific agent pipeline
+cosmonauts --print --chain "planner -> task-manager -> coordinator" @PLAN.md
+
+# Interactive with chain — runs the chain, then drops into REPL
+cosmonauts --chain "task-manager -> coordinator" @PLAN.md
 ```
+
+**The `--chain` flag** specifies an orchestration pipeline. Without it, Cosmo (the main agent) decides how to proceed — it might use tools directly, spawn sub-agents, or trigger a chain based on the request.
+
+**The `--print` flag** makes it non-interactive (fire-and-forget). Without it, you stay in the REPL after the initial prompt or chain completes. Pi already provides `--print` support; we pass it through.
+
+```
+     ┌──────────────────────────────────────────┐
+     │  Cosmo (main agent)                       │
+     │  - General-purpose coding assistant        │
+     │  - Coding tools + orchestration tools      │
+     │  - Todo tool for session task tracking     │
+     │  - Swappable system prompt                 │
+     │                                            │
+     │  Can spawn sub-agents or chains:           │
+     │  ├── Planner session                       │
+     │  ├── Task Manager session                  │
+     │  ├── Coordinator session                   │
+     │  │   └── Worker sessions                   │
+     │  └── Any custom chain                      │
+     └──────────────────────────────────────────┘
+```
+
+**Deployment flexibility**: Interactive mode for local development (chat, iterate, trigger chains on the fly). Non-interactive mode (`--print`) for cloud/CI environments where you pipe in a prompt and collect output.
 
 ### The Planning Phase (Most Critical)
 
@@ -178,6 +241,27 @@ Same data format as forge-tasks, but accessed in-process instead of shelling out
 ## Agent Roles
 
 Agents are not separate binaries — they are **Pi sessions with specific skills loaded**. A "planner agent" is just a Pi session with the planner skill and read-only tools. A "worker agent" is a Pi session with a worker skill, language skill, and full coding tools.
+
+**All agents work in both interactive and non-interactive modes.** The role skill defines behavior; the execution mode is determined at session creation (`InteractiveMode` vs `runPrintMode`). In interactive mode, agents can ask clarifying questions. In non-interactive mode, they make reasonable defaults and proceed autonomously.
+
+### Cosmo (Main Agent)
+
+**Purpose**: The default agent you talk to when you start Cosmonauts. A general-purpose coding assistant with orchestration capabilities — like Claude Code, but with the ability to spawn sub-agents and run chains.
+
+**Skills loaded**: `cosmo` (default system prompt) + all orchestration tools
+**Tools**: full coding tools + task tools + orchestration tools (`chain_run`, `spawn_agent`) + `todo` tool
+**System prompt**: Swappable. Default is a Claude Code-style prompt focused on concise, direct software engineering assistance. Can be overridden with `--system-prompt` (Pi flag passthrough).
+
+**What Cosmo does**:
+- Chats, answers questions, reads/writes code — standard coding assistant
+- Triggers chains when asked ("run planner -> task-manager -> coordinator")
+- Spawns individual sub-agents when appropriate
+- Uses the todo tool for multi-step work within a session
+- Delegates to specialized agents rather than trying to do everything itself
+
+**What Cosmo does NOT do**:
+- Act as a planner, coordinator, or worker itself — it delegates to those roles
+- Make autonomous decisions about large-scale changes without user input (in interactive mode)
 
 ### Planner
 
@@ -324,6 +408,52 @@ When working on TypeScript projects:
 
 ---
 
+## Project Instructions (AGENTS.md)
+
+Agentic coding tools use project-level markdown files to provide conventions, constraints, and instructions specific to a codebase. Claude Code uses `CLAUDE.md`, Codex uses `AGENTS.md`, Copilot uses `.github/copilot-instructions.md`. Cosmonauts uses **`AGENTS.md`** — it's tool-agnostic by name and becoming a cross-tool standard.
+
+### Pi Handles This Natively
+
+Pi's `DefaultResourceLoader` automatically discovers and injects `AGENTS.md` and `CLAUDE.md` into the agent's system prompt. Discovery order:
+
+1. Global: `~/.pi/agent/AGENTS.md`
+2. Parent directories (walking up from cwd)
+3. Current directory
+
+All matching files are concatenated and appended to the system prompt as "Project Context." This means **any Cosmonauts agent using `DefaultResourceLoader` gets project instructions for free** — no custom extension needed.
+
+Pi also reads `CLAUDE.md` as a fallback, so Cosmonauts works immediately on projects that already have Claude Code instructions.
+
+### Which Agents Get Project Instructions
+
+Not every agent needs project-level context. The principle: **agents that interact with project artifacts need project instructions; agents that only orchestrate don't.**
+
+| Agent | Needs project context? | Why |
+|-------|----------------------|-----|
+| Cosmo | Yes | Codes directly, needs conventions |
+| Planner | Yes | Designs solutions that must fit the project |
+| Worker | Yes | Implements code, must follow conventions |
+| Task Manager | No | Creates tasks from plans, doesn't touch code |
+| Coordinator | No | Delegates and monitors, no direct project interaction |
+
+For agents that **should** receive project context: use `DefaultResourceLoader` (default behavior).
+
+For agents that **should not**: configure the resource loader to skip context file discovery. This keeps their context window clean and avoids injecting irrelevant information.
+
+As Cosmonauts evolves beyond coding orchestration, new agent types will fall into one category or the other based on whether they interact with project artifacts.
+
+### `cosmonauts init`
+
+Creates `AGENTS.md` for a project. Behavior:
+
+- If `AGENTS.md` already exists → report it, do nothing (or offer to update)
+- If `CLAUDE.md` exists but no `AGENTS.md` → bootstrap `AGENTS.md` from `CLAUDE.md` content
+- If neither exists → create a template `AGENTS.md` by scanning the project (package.json, tsconfig, Cargo.toml, etc.)
+
+This is a convenience command, not a requirement. Cosmonauts works without it — Pi reads whatever `AGENTS.md` or `CLAUDE.md` is already present.
+
+---
+
 ## Orchestration
 
 ### Chain Runner
@@ -333,7 +463,8 @@ Inspired by Forge's Orchestra. Runs agent pipelines using Pi sessions instead of
 **The DSL is pure topology** — it declares which roles run in what order. Loop behavior is intrinsic to each role (coordinator loops, others run once).
 
 ```
-cosmonauts chain "planner -> task-manager -> coordinator"
+cosmonauts --chain "planner -> task-manager -> coordinator" "design and implement auth"
+cosmonauts --print --chain "task-manager -> coordinator" @PLAN.md
 ```
 
 Each role knows its own lifecycle:
@@ -386,25 +517,54 @@ Uses `Promise.all()` on worker sessions. Coordinator batches tasks that have no 
 
 ---
 
-## Custom Tools
+## Tools
 
-Pi provides built-in coding tools (read, write, edit, bash, ls, find, grep). We add these as Pi extensions.
+### What Pi Provides (use directly)
 
-### Core Tools (Phase 0)
+Pi exports two pre-built tool sets:
 
-**Task tools**: `task_create`, `task_list`, `task_view`, `task_edit`, `task_search` — the backbone of the system. Ported from forge-tasks format.
+- **`codingTools`**: `read`, `bash`, `edit`, `write` — full coding capability
+- **`readOnlyTools`**: `read`, `grep`, `find`, `ls` — exploration only
 
-### Phase 1 Tools
+Factory functions (`createCodingTools(cwd)`, `createReadOnlyTools(cwd)`) create tools scoped to a working directory. Individual factories (`createReadTool`, `createBashTool`, etc.) allow mixing.
 
-**`deepwiki_ask`** — ask questions about any public GitHub repo via DeepWiki API.
+Extensions can **override built-in tools** by registering a tool with the same name. The `--no-tools` flag disables all built-ins.
 
-**`web_fetch`** — fetch a web page, strip HTML, return readable text. Port from OpenClaw's implementation.
+### What pi-skills Provides (evaluate before building)
 
-### Phase 2+ Tools
+The `pi-skills` package (`badlogic/pi-skills`) ships ready-made skills compatible with Pi:
 
-**`web_search`** — search the web via Brave Search API or similar.
+- **`brave-search`** — web search + content extraction via Brave API
+- **`browser-tools`** — browser automation via Chrome DevTools Protocol
 
-**`browser`** — Playwright-based browser automation for testing UIs. Port patterns from OpenClaw.
+Before building custom `deepwiki_ask`, `web_fetch`, `web_search`, or `browser` tools, evaluate whether pi-skills already covers the need or can be adapted.
+
+### What We Build (custom extensions)
+
+#### Core Tools (Phase 0)
+
+**Task tools**: `task_create`, `task_list`, `task_view`, `task_edit`, `task_search` — the backbone of the system. Ported from forge-tasks format. Pi has no task system by design.
+
+**Todo tool**: `todo_write`, `todo_read` — in-memory, session-scoped task tracking. Pi deliberately omits this ("No built-in to-dos. They confuse models." — Pi README). We build it as an extension, using `pi.appendEntry()` for state persistence. Pi's `plan-mode.ts` example demonstrates the pattern.
+
+| | **Todo tool** | **Forge-tasks** |
+|---|---|---|
+| Scope | In-session, ephemeral | Project-level, persistent |
+| Purpose | Agent organizes its own work steps | Cross-agent task management |
+| Lifecycle | Dies with the session | Lives in `forge/tasks/` |
+| Who uses it | Any agent, including Cosmo | Task manager, coordinator, workers |
+
+#### Phase 1 Tools
+
+**`deepwiki_ask`** — ask questions about any public GitHub repo via DeepWiki API. Check pi-skills first for existing integration.
+
+**`web_fetch`** — fetch a web page, strip HTML, return readable text. Check if `brave-search` skill's content extraction covers this.
+
+#### Phase 2+ Tools
+
+**`web_search`** — search the web. Evaluate `brave-search` from pi-skills before building custom.
+
+**`browser`** — browser automation for testing UIs. Evaluate `browser-tools` from pi-skills before building custom.
 
 **`memory_search` / `memory_save`** — persistent memory across sessions. Port daily-log + MEMORY.md pattern from OpenClaw.
 
@@ -420,15 +580,24 @@ cosmonauts/
 ├── tsconfig.json
 ├── DESIGN.md
 │
+├── bin/                      # CLI entry points
+│   ├── cosmonauts            # Main entry: creates Pi session, dispatches to mode
+│   └── cosmonauts-tasks      # Task management CLI (standalone, no Pi session)
+│
+├── cli/                      # CLI implementation
+│   ├── main.ts               # Session setup, flag parsing, mode dispatch
+│   └── tasks/                # cosmonauts-tasks commands
+│
 ├── extensions/               # Pi extensions (auto-loaded)
 │   ├── core/index.ts         # Identity injection, project context
 │   ├── tasks/index.ts        # Task tools (create, list, view, edit, search)
+│   ├── todo/index.ts         # Todo tool (in-memory session task tracking)
 │   ├── orchestration/index.ts # Chain runner, sub-agent spawning
-│   ├── deepwiki/index.ts     # deepwiki_ask tool
-│   └── web/index.ts          # web_fetch, web_search tools
+│   ├── deepwiki/index.ts     # deepwiki_ask tool (Phase 1)
+│   └── web/index.ts          # web_fetch, web_search tools (Phase 1+)
 │
 ├── skills/                   # SKILL.md files (Pi auto-discovers)
-│   ├── agents/               # Planner, task-manager, coordinator, worker
+│   ├── agents/               # Cosmo, planner, task-manager, coordinator, worker
 │   ├── languages/            # TypeScript, Rust, Python, Swift, Go
 │   └── domains/              # Testing, code-review, devops, database, etc.
 │
@@ -437,9 +606,11 @@ cosmonauts/
     └── projects.json         # Registered repos
 ```
 
-Install: `pi install ./cosmonauts` (dev) or `pi install npm:cosmonauts` (published).
+**Two install paths**:
+- `pi install ./cosmonauts` (dev) or `pi install npm:cosmonauts` (published) — extensions and skills auto-load into `pi`.
+- `cosmonauts` binary — standalone entry point that creates a Pi session with all cosmonauts extensions/skills loaded, supports `--print`, `--chain`, and all Pi CLI flags.
 
-After install, run `pi` normally. Extensions auto-load, skills auto-discover, tools appear. No separate binary.
+The `cosmonauts` binary is a thin wrapper: it creates a `createAgentSession()` with cosmonauts config, then dispatches to `InteractiveMode` or `runPrintMode` based on flags. Pi's existing `--print`, `--model`, `--thinking`, `--skill` flags are passed through.
 
 ---
 
@@ -460,18 +631,21 @@ After install, run `pi` normally. Extensions auto-load, skills auto-discover, to
 
 > **Important**: Each phase will be revised with more detail and a concrete implementation plan before we start building it. The descriptions below are directional — they establish scope and ordering, not final specifications. Before each phase begins, we'll review what we learned from the previous phase, adjust the plan, and write detailed specs.
 
-### Phase 0: Task System + Chain Runner
+### Phase 0: Task System + Chain Runner + CLI
 
-**Goal**: The core loop works end-to-end. You can plan, create tasks, and have agents implement them on a real project.
+**Goal**: The core loop works end-to-end. You can start Cosmonauts, chat with Cosmo, trigger chains, and have agents implement tasks on a real project.
 
 - [x] Port forge-tasks core (parser, serializer, TaskManager) as a Pi extension
 - [x] Register task tools: `task_create`, `task_list`, `task_view`, `task_edit`, `task_search`
 - [x] CLI: `cosmonauts-tasks` with init, create, list, view, edit, delete, search commands
-- [x] Package scaffold: Pi package manifest, tsconfig, 165 tests passing
+- [x] Package scaffold: Pi package manifest, tsconfig, 209 tests passing
 - [x] Build chain runner (role-based lifecycle, completion detection via task state, global safety caps)
 - [x] Write agent skills: planner, task-manager, coordinator, worker
-- [ ] Write first language skill: TypeScript
-- [ ] Commands: `cosmonauts plan`, `cosmonauts build`
+- [x] Write first language skill: TypeScript
+- [x] Cosmo main agent skill (default system prompt, Claude Code-style)
+- [ ] Todo tool extension (in-memory session task tracking, `todo_write`/`todo_read`)
+- [ ] CLI entry point: `cosmonauts` binary with `--print`, `--chain`, Pi flag passthrough
+- [ ] `cosmonauts init` command (bootstrap AGENTS.md from existing CLAUDE.md or project scan)
 - [ ] Test end-to-end on a real project
 
 ### Phase 1: Tools + Skills
@@ -484,7 +658,6 @@ After install, run `pi` normally. Extensions auto-load, skills auto-discover, to
 - Domain skills: testing, code-review
 - Coordinator skill-routing: match task labels to language/domain skills
 - Auto-project detection (read package.json/Cargo.toml, suggest appropriate skills)
-- `cosmonauts chain` command for custom DSL chains
 
 ### Phase 2: Memory + Codebase Intelligence
 
@@ -492,9 +665,8 @@ After install, run `pi` normally. Extensions auto-load, skills auto-discover, to
 
 - Memory system (port daily-log + MEMORY.md from OpenClaw patterns)
 - Memory tools: `memory_search`, `memory_save`
-- Context injection via `before_agent_start` hook (memory + project context)
+- Context injection via `before_agent_start` hook (memory)
 - `web_search` tool (Brave Search API or similar)
-- Workspace files: AGENTS.md for per-project agent instructions
 
 ### Phase 3: Parallel Workers + Browser
 

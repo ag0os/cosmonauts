@@ -147,24 +147,31 @@ All agent work lands as git commits. This means:
 
 ## What We Don't Need
 
-- **A chain DSL** — the coordinator is code, not a DSL. Start simple.
-- **Separate agent "roles" as first-class concepts** — an agent is a session with context. The "role" is just which skills and tools it gets.
-- **A task manager agent** — task creation is one LLM call or a short session. No dedicated agent role needed.
-- **Separate binaries or commands** — Cosmonauts is a Pi package. `pi` is the command. Extensions add tools. Skills add knowledge.
-- **Session persistence for workers** — they're ephemeral. `SessionManager.inMemory()`. Done.
-- **Streaming/stdout parsing** — Pi gives us event subscription. No markers needed.
+> **Note**: This section was written early in the design process. Some items were later reconsidered as the system took shape. Annotations below reflect what actually happened.
 
-## What We Do Need (Phase 0)
+- ~~**A chain DSL**~~ — We built a lightweight chain DSL (`"planner -> task-manager -> coordinator"`). It's pure topology — role names and arrows, no loop counters or per-stage config. Loop behavior is intrinsic to each role. This turned out to be valuable for composability without adding real complexity.
+- **Separate agent "roles" as first-class concepts** — still true. An agent is a session with context. The "role" is just which skills and tools it gets. *(Validated.)*
+- ~~**A task manager agent**~~ — We created a task-manager skill. Breaking a plan into well-formed atomic tasks benefits from a dedicated skill with clear constraints, even if it runs as a short session.
+- **Separate binaries or commands** — still mostly true. `cosmonauts` is a single entry point (not `cosmonauts plan`, `cosmonauts build`, etc.). It supports `--chain` and `--print` flags for different execution patterns. *(Validated — one binary, many modes.)*
+- **Session persistence for workers** — they're ephemeral. `SessionManager.inMemory()`. Done. *(Validated.)*
+- **Streaming/stdout parsing** — Pi gives us event subscription. No markers needed. *(Validated.)*
 
-1. **Task extension** — tools for creating, listing, viewing, editing tasks (forge-tasks format)
-2. **Orchestration extension** — the coordinator pipeline: create tasks → dispatch implementation → run verification → handle fixes → commit/PR
-3. **Implementation skill** — system prompt teaching an agent to: read a task, implement it, run tests, commit, mark done
-4. **Review skill** — system prompt teaching an agent to: review a diff against acceptance criteria and project conventions, produce actionable findings
-5. **Git integration** — branch creation, commit with task references, basic PR creation
-6. **Project context injection** — read CLAUDE.md / AGENTS.md / package.json and inject into agent system prompts via `before_agent_start`
-7. **One language skill** — TypeScript to start
+## What We Built (Phase 0)
 
-That's it. No planner agent, no chain DSL, no memory system. Just: plan in, verified code out, commits made, PR opened.
+1. **Task extension** — tools for creating, listing, viewing, editing, searching tasks (forge-tasks format). ✓
+2. **Chain runner** — role-based lifecycle, completion detection via task state, global safety caps. ✓
+3. **Agent spawner** — creates Pi sessions with scoped skills and tools per role. ✓
+4. **Agent skills** — planner, task-manager, coordinator, worker. All work in both interactive and non-interactive modes. ✓
+5. **Orchestration extension** — `chain_run` and `spawn_agent` tools registered in Pi. ✓
+6. **CLI** — `cosmonauts-tasks` for standalone task management. ✓
+
+## What's Next (Phase 0 remaining)
+
+1. **Cosmo main agent** — default system prompt (Claude Code-style), the identity you talk to when you start Cosmonauts
+2. **Todo tool** — in-memory session task tracking (`todo_write`/`todo_read`), distinct from forge-tasks
+3. **TypeScript language skill** — first language skill for workers
+4. **CLI entry point** — `cosmonauts` binary with `--print`, `--chain`, Pi flag passthrough
+5. **End-to-end test** — run the full pipeline on a real project
 
 ## How It Grows
 
