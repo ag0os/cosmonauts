@@ -7,13 +7,17 @@
  * content in the user message.
  */
 
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { getModel } from "@mariozechner/pi-ai";
-import type { ResourceLoader } from "@mariozechner/pi-coding-agent";
 import {
 	createAgentSession,
+	createCodingTools,
+	createReadOnlyTools,
 	DefaultResourceLoader,
 	SessionManager,
 } from "@mariozechner/pi-coding-agent";
+import type { AgentToolSet } from "../agents/index.ts";
 import { createDefaultRegistry } from "../agents/index.ts";
 import { loadPrompts } from "../prompts/index.ts";
 import type {
@@ -24,6 +28,17 @@ import type {
 } from "./types.ts";
 
 const DEFAULT_REGISTRY = createDefaultRegistry();
+
+const EXTENSIONS_DIR = resolve(
+	fileURLToPath(import.meta.url),
+	"..",
+	"..",
+	"..",
+	"extensions",
+);
+
+/** Extensions that exist on disk. "skills" extension not built yet — skip gracefully. */
+const KNOWN_EXTENSIONS = new Set(["tasks", "orchestration", "todo", "init"]);
 
 // ============================================================================
 // Model Resolution
@@ -61,6 +76,35 @@ export function getModelForRole(role: string, models?: ModelConfig): string {
 }
 
 // ============================================================================
+// Definition Resolution Helpers
+// ============================================================================
+
+/**
+ * Resolve a tool set name to the appropriate Pi tools for a given cwd.
+ * Uses factory functions so tools resolve paths relative to the agent's cwd.
+ */
+export function resolveTools(toolSet: AgentToolSet, cwd: string) {
+	switch (toolSet) {
+		case "coding":
+			return createCodingTools(cwd);
+		case "readonly":
+			return createReadOnlyTools(cwd);
+		case "none":
+			return [];
+	}
+}
+
+/**
+ * Resolve extension names to absolute paths, filtering to known extensions.
+ * Unknown names (e.g. "skills" which isn't built yet) are silently skipped.
+ */
+export function resolveExtensionPaths(extensions: readonly string[]): string[] {
+	return extensions
+		.filter((name) => KNOWN_EXTENSIONS.has(name))
+		.map((name) => join(EXTENSIONS_DIR, name));
+}
+
+// ============================================================================
 // Agent Spawner Factory
 // ============================================================================
 
@@ -90,26 +134,43 @@ export function createPiSpawner(): AgentSpawner {
 				const modelId = config.model ?? getModelForRole(config.role);
 				const model = resolveModel(modelId);
 
-				// Load identity prompts from agent definition
+				// Resolve full agent definition
 				const def = DEFAULT_REGISTRY.get(config.role);
-				let resourceLoader: ResourceLoader | undefined;
 
-				if (def?.prompts.length) {
-					const promptContent = await loadPrompts(def.prompts);
-					const loader = new DefaultResourceLoader({
-						cwd: config.cwd,
-						appendSystemPrompt: promptContent,
-						noExtensions: true,
-					});
-					await loader.reload();
-					resourceLoader = loader;
-				}
+				// Tools: use definition or fall back to coding tools
+				const tools = def
+					? resolveTools(def.tools, config.cwd)
+					: createCodingTools(config.cwd);
+
+				// System prompt from definition's prompt layers
+				const promptContent = def?.prompts.length
+					? await loadPrompts(def.prompts)
+					: undefined;
+
+				// Extensions: selective loading via additionalExtensionPaths
+				const extensionPaths = def ? resolveExtensionPaths(def.extensions) : [];
+
+				// Build resource loader with all definition fields
+				const loader = new DefaultResourceLoader({
+					cwd: config.cwd,
+					...(promptContent && { appendSystemPrompt: promptContent }),
+					noExtensions: true,
+					...(extensionPaths.length > 0 && {
+						additionalExtensionPaths: extensionPaths,
+					}),
+					noSkills: Array.isArray(def?.skills) && def.skills.length === 0,
+					...(!def?.projectContext && {
+						agentsFilesOverride: () => ({ agentsFiles: [] }),
+					}),
+				});
+				await loader.reload();
 
 				const { session } = await createAgentSession({
 					cwd: config.cwd,
 					model,
+					tools,
 					sessionManager: SessionManager.inMemory(),
-					...(resourceLoader && { resourceLoader }),
+					resourceLoader: loader,
 				});
 
 				try {

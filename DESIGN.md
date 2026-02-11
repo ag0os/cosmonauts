@@ -858,7 +858,7 @@ The `cosmonauts` binary is a thin wrapper: it resolves the Cosmo agent definitio
 - [ ] System prompt separation (move agent prompts from `skills/agents/` to `prompts/`)
 - [ ] Skill loading extension (`skill_read` tool, skill index generation)
 - [ ] Workflow system (named workflows, config loading, built-in defaults)
-- [ ] Agent spawner rewrite (resolve agent definitions instead of role-based switch statements)
+- [x] Agent spawner rewrite (resolve agent definitions instead of role-based switch statements)
 - [ ] CLI entry point: `cosmonauts` binary with `--print`, `--workflow`, `--chain`, `--model`, `--thinking`
 - [ ] `cosmonauts init` command (agent-driven AGENTS.md bootstrap via `/init` Pi command)
 - [ ] Test end-to-end on a real project
