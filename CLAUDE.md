@@ -1,3 +1,1 @@
-# Claude Code Instructions
-
-Read `AGENTS.md` in this directory for project context, conventions, and workflow instructions.
+See @AGENTS.md for project overview and @package.json for available npm commands.
