@@ -2,7 +2,7 @@
 
 Automated coding orchestration system built on `@mariozechner/pi-coding-agent` (Pi). Design solutions, break them into atomic tasks, let agents implement them.
 
-**Status**: Early development (Phase 0). Core infrastructure is built. Architecture is evolving. Expect breaking changes.
+**Status**: Early development. Core infrastructure is built. Architecture is evolving. Expect breaking changes.
 
 ## Documentation
 
@@ -45,11 +45,13 @@ CLI: `cosmonauts-tasks` for standalone task management.
 When implementing non-trivial features (anything spanning multiple files or requiring design decisions):
 
 1. **Read DESIGN.md** to understand the architecture and existing patterns.
-2. **Break the work into tasks** using the task system (`task_create`). Each task should be single-PR scope with 1-7 outcome-focused acceptance criteria.
-3. **Order tasks by dependencies** — foundational types before consumers, core before tests.
-4. **Implement each task in a focused session**. Read the task, explore relevant code, implement, run tests, check off ACs.
-5. **Run verification after each task**: `bun run test`, `bun run lint`, `bun run typecheck`.
+2. **Design the approach** — understand scope, identify files to change, consider trade-offs.
+3. **Break the work into tasks** using the task system (`task_create`). Each task should be single-PR scope with 1-7 outcome-focused acceptance criteria. Order by dependencies.
+4. **Delegate each task to a sub-agent** rather than implementing everything yourself. Spawn a focused sub-agent per task — this keeps each implementation in a clean context window and produces better results than accumulating context across many tasks. Include the full task details (description, ACs, relevant file paths) in the sub-agent's prompt.
+5. **Verify after each task**: `bun run test`, `bun run lint`, `bun run typecheck`.
 6. **Commit per task** with the task ID: `COSMO-XXX: Short description`.
+
+The coordinating agent should focus on planning, task creation, delegation, and verification — not on writing code directly. Each sub-agent gets a fresh context with just the information it needs, which improves implementation quality and avoids context exhaustion.
 
 For small, self-contained changes (a bug fix, a single function, a config tweak), skip the task system and work directly.
 
