@@ -205,8 +205,7 @@ export async function runStage(
 
 		// Loop stage — repeat until done or safety cap
 		const completionCheck =
-			stage.completionCheck ??
-			createDefaultCompletionCheck(config.projectRoot);
+			stage.completionCheck ?? createDefaultCompletionCheck(config.projectRoot);
 		const iterationBudget =
 			constraints?.maxTotalIterations ?? DEFAULT_MAX_TOTAL_ITERATIONS;
 		const deadline = constraints?.deadlineMs ?? Date.now() + DEFAULT_TIMEOUT_MS;

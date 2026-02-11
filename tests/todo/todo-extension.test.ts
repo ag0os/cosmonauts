@@ -4,7 +4,7 @@
  * then tests them directly.
  */
 
-import { describe, expect, test, beforeEach } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 
 // Minimal mock of Pi's ExtensionAPI — captures registrations
 interface RegisteredTool {
@@ -12,9 +12,7 @@ interface RegisteredTool {
 	execute: (...args: unknown[]) => Promise<unknown>;
 }
 
-interface EventHandler {
-	(event: unknown, ctx: unknown): Promise<unknown>;
-}
+type EventHandler = (event: unknown, ctx: unknown) => Promise<unknown>;
 
 function createMockPi() {
 	const tools = new Map<string, RegisteredTool>();
@@ -100,9 +98,7 @@ describe("todo extension", () => {
 
 		test("returns items after todo_write", async () => {
 			await pi.callTool("todo_write", {
-				todos: [
-					{ id: "1", content: "Do thing", status: "pending" },
-				],
+				todos: [{ id: "1", content: "Do thing", status: "pending" }],
 			});
 			const result = (await pi.callTool("todo_read", {})) as {
 				content: { text: string }[];
@@ -291,18 +287,14 @@ describe("todo extension", () => {
 							type: "custom",
 							customType: "todo",
 							data: {
-								items: [
-									{ id: "1", content: "Old", status: "pending" },
-								],
+								items: [{ id: "1", content: "Old", status: "pending" }],
 							},
 						},
 						{
 							type: "custom",
 							customType: "todo",
 							data: {
-								items: [
-									{ id: "1", content: "New", status: "completed" },
-								],
+								items: [{ id: "1", content: "New", status: "completed" }],
 							},
 						},
 					],

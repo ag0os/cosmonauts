@@ -133,9 +133,9 @@ describe("parseChain", () => {
 		});
 
 		test("rejects role:count syntax in pipeline", () => {
-			expect(() =>
-				parseChain("planner -> coordinator:5 -> worker"),
-			).toThrow(/role:count.*no longer supported/);
+			expect(() => parseChain("planner -> coordinator:5 -> worker")).toThrow(
+				/role:count.*no longer supported/,
+			);
 		});
 	});
 

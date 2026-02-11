@@ -7,7 +7,12 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+	createDefaultCompletionCheck,
+	runChain,
+	runStage,
+} from "../../lib/orchestration/chain-runner.ts";
 import type {
 	AgentSpawner,
 	ChainConfig,
@@ -15,11 +20,6 @@ import type {
 	ChainStage,
 	SpawnResult,
 } from "../../lib/orchestration/types.ts";
-import {
-	runStage,
-	runChain,
-	createDefaultCompletionCheck,
-} from "../../lib/orchestration/chain-runner.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 
 // ============================================================================
@@ -321,9 +321,7 @@ describe("event emission", () => {
 			deadlineMs: Date.now() + 60_000,
 		});
 
-		const iterationEvents = events.filter(
-			(e) => e.type === "stage_iteration",
-		);
+		const iterationEvents = events.filter((e) => e.type === "stage_iteration");
 		expect(iterationEvents).toHaveLength(3);
 	});
 
@@ -425,10 +423,7 @@ describe("runChain", () => {
 			dispose: vi.fn(),
 		};
 
-		const stages = [
-			makeStage("planner", false),
-			makeStage("worker", false),
-		];
+		const stages = [makeStage("planner", false), makeStage("worker", false)];
 		const config = makeConfig(stages, { signal: controller.signal });
 
 		const result = await runChain(config);

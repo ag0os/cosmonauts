@@ -1,8 +1,8 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import { runChain } from "../../lib/orchestration/chain-runner.ts";
-import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 
 export default function orchestrationExtension(pi: ExtensionAPI) {
 	// chain_run
@@ -10,11 +10,11 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 		name: "chain_run",
 		label: "Run Chain",
 		description:
-			"Run a chain of agent stages using the chain DSL (e.g. \"planner -> task-manager -> coordinator\")",
+			'Run a chain of agent stages using the chain DSL (e.g. "planner -> task-manager -> coordinator")',
 		parameters: Type.Object({
 			expression: Type.String({
 				description:
-					"Chain DSL expression (e.g. \"planner -> task-manager -> coordinator\")",
+					'Chain DSL expression (e.g. "planner -> task-manager -> coordinator")',
 			}),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
@@ -48,13 +48,10 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 		description: "Spawn a single agent session with a given role and prompt",
 		parameters: Type.Object({
 			role: Type.String({
-				description:
-					"Agent role (planner, task-manager, coordinator, worker)",
+				description: "Agent role (planner, task-manager, coordinator, worker)",
 			}),
 			prompt: Type.String({ description: "The prompt to send to the agent" }),
-			model: Type.Optional(
-				Type.String({ description: "Model override" }),
-			),
+			model: Type.Optional(Type.String({ description: "Model override" })),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const spawner = createPiSpawner();
