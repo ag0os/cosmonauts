@@ -21,6 +21,8 @@ export interface ChainStage {
 	loop: boolean;
 	/** Optional completion check — loop exits when it returns true */
 	completionCheck?: (projectRoot: string) => Promise<boolean>;
+	/** Optional prompt override — replaces the default stage prompt */
+	prompt?: string;
 }
 
 // ============================================================================

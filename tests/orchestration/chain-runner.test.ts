@@ -107,6 +107,36 @@ describe("runStage", () => {
 			expect(result.durationMs).toBeGreaterThanOrEqual(0);
 		});
 
+		test("uses custom stage prompt when provided", async () => {
+			const spawner = createMockSpawner();
+			const stage: ChainStage = {
+				name: "planner",
+				loop: false,
+				prompt: "Custom prompt for this stage",
+			};
+			const config = makeConfig([stage]);
+
+			await runStage(stage, config, spawner);
+
+			expect(spawner.spawn).toHaveBeenCalledWith(
+				expect.objectContaining({ prompt: "Custom prompt for this stage" }),
+			);
+		});
+
+		test("uses default prompt when stage has no custom prompt", async () => {
+			const spawner = createMockSpawner();
+			const stage = makeStage("planner", false);
+			const config = makeConfig([stage]);
+
+			await runStage(stage, config, spawner);
+
+			expect(spawner.spawn).toHaveBeenCalledWith(
+				expect.objectContaining({
+					prompt: "Analyze the project and design an implementation plan.",
+				}),
+			);
+		});
+
 		test("returns failure with error when spawner fails", async () => {
 			const spawner = createMockSpawner([
 				{ success: false, sessionId: "", messages: [], error: "boom" },

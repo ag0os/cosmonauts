@@ -32,7 +32,7 @@ const DEFAULT_STAGE_PROMPTS: Record<string, string> = {
 
 const DEFAULT_PROMPT = "Execute your assigned role.";
 
-function getDefaultStagePrompt(role: string): string {
+export function getDefaultStagePrompt(role: string): string {
 	return DEFAULT_STAGE_PROMPTS[role] ?? DEFAULT_PROMPT;
 }
 
@@ -167,7 +167,7 @@ export async function runStage(
 
 	try {
 		const model = getModelForRole(stage.name, config.models);
-		const prompt = getDefaultStagePrompt(stage.name);
+		const prompt = stage.prompt ?? getDefaultStagePrompt(stage.name);
 
 		if (!stage.loop) {
 			// One-shot stage
