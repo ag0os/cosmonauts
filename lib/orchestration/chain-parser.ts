@@ -10,8 +10,10 @@
  * The parser just extracts stage names.
  */
 
+import { createDefaultRegistry } from "../agents/index.ts";
 import type { ChainStage } from "./types.ts";
-import { isLoopRole } from "./types.ts";
+
+const DEFAULT_REGISTRY = createDefaultRegistry();
 
 // ============================================================================
 // Parser
@@ -59,7 +61,7 @@ export function parseChain(expression: string): ChainStage[] {
 			);
 		}
 
-		stages.push({ name, loop: isLoopRole(name) });
+		stages.push({ name, loop: DEFAULT_REGISTRY.get(name)?.loop ?? false });
 	}
 
 	return stages;

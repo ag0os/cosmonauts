@@ -8,25 +8,19 @@ import {
 	createAgentSession,
 	SessionManager,
 } from "@mariozechner/pi-coding-agent";
+import { createDefaultRegistry } from "../agents/index.ts";
 import type {
-	AgentRole,
 	AgentSpawner,
 	ModelConfig,
 	SpawnConfig,
 	SpawnResult,
 } from "./types.ts";
 
+const DEFAULT_REGISTRY = createDefaultRegistry();
+
 // ============================================================================
 // Model Resolution
 // ============================================================================
-
-/** Default model IDs keyed by role. */
-const DEFAULT_MODELS: Record<AgentRole, string> = {
-	planner: "anthropic/claude-opus-4-0",
-	"task-manager": "anthropic/claude-sonnet-4-5",
-	coordinator: "anthropic/claude-sonnet-4-5",
-	worker: "anthropic/claude-sonnet-4-5",
-};
 
 const FALLBACK_MODEL = "anthropic/claude-sonnet-4-5";
 
@@ -35,7 +29,7 @@ const FALLBACK_MODEL = "anthropic/claude-sonnet-4-5";
  *
  * Resolution order:
  *  1. Explicit override from `models` config (matched by role key)
- *  2. Built-in default for known roles
+ *  2. Agent definition model (from registry)
  *  3. `models.default` if provided
  *  4. Sonnet fallback
  */
@@ -49,9 +43,10 @@ export function getModelForRole(role: string, models?: ModelConfig): string {
 		}
 	}
 
-	// Check built-in defaults for known roles
-	if (isKnownRole(role)) {
-		return DEFAULT_MODELS[role];
+	// Check agent definition for model
+	const def = DEFAULT_REGISTRY.get(role);
+	if (def?.model) {
+		return def.model;
 	}
 
 	// Fallback: models.default or sonnet
@@ -62,8 +57,11 @@ export function getModelForRole(role: string, models?: ModelConfig): string {
 // Role Prompt Prefixes
 // ============================================================================
 
-/** System prompt prefixes keyed by role. */
-const ROLE_PROMPTS: Record<AgentRole, string> = {
+/**
+ * Interim identity prompt prefixes keyed by role.
+ * These will be replaced by prompt file loading in the system prompt separation task.
+ */
+const INTERIM_ROLE_PROMPTS: Record<string, string> = {
 	planner:
 		"You are the Planner. Design solutions but never write code or create tasks.",
 	"task-manager":
@@ -80,10 +78,7 @@ const DEFAULT_PROMPT = "You are an agent.";
  * Return the system prompt prefix for a given agent role.
  */
 export function getRolePromptPrefix(role: string): string {
-	if (isKnownRole(role)) {
-		return ROLE_PROMPTS[role];
-	}
-	return DEFAULT_PROMPT;
+	return INTERIM_ROLE_PROMPTS[role] ?? DEFAULT_PROMPT;
 }
 
 // ============================================================================
@@ -154,11 +149,6 @@ export function createPiSpawner(): AgentSpawner {
 // ============================================================================
 // Helpers
 // ============================================================================
-
-/** Type guard for known agent roles. */
-function isKnownRole(role: string): role is AgentRole {
-	return role in DEFAULT_MODELS;
-}
 
 /**
  * Map a role string to its corresponding ModelConfig key.

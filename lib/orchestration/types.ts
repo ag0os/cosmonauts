@@ -9,22 +9,6 @@
 /** Agent roles as defined in DESIGN.md */
 export type AgentRole = "planner" | "task-manager" | "coordinator" | "worker";
 
-/** Whether a role loops until done or runs once. */
-export const ROLE_LIFECYCLE: Record<AgentRole, boolean> = {
-	planner: false,
-	"task-manager": false,
-	coordinator: true,
-	worker: false,
-};
-
-/**
- * Returns true if the given role is a loop stage (repeats until done).
- * Unknown roles default to one-shot.
- */
-export function isLoopRole(role: string): boolean {
-	return ROLE_LIFECYCLE[role as AgentRole] ?? false;
-}
-
 // ============================================================================
 // Chain DSL Types
 // ============================================================================

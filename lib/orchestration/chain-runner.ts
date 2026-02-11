@@ -22,7 +22,8 @@ import type {
 const DEFAULT_MAX_TOTAL_ITERATIONS = 50;
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
-const ROLE_PROMPTS: Record<string, string> = {
+/** Default operational prompts for chain stages (not agent identity prompts). */
+const DEFAULT_STAGE_PROMPTS: Record<string, string> = {
 	planner: "Analyze the project and design an implementation plan.",
 	"task-manager": "Review the plan and create atomic implementation tasks.",
 	coordinator: "Check for ready tasks and delegate them to workers.",
@@ -31,8 +32,8 @@ const ROLE_PROMPTS: Record<string, string> = {
 
 const DEFAULT_PROMPT = "Execute your assigned role.";
 
-function getPromptForRole(role: string): string {
-	return ROLE_PROMPTS[role] ?? DEFAULT_PROMPT;
+function getDefaultStagePrompt(role: string): string {
+	return DEFAULT_STAGE_PROMPTS[role] ?? DEFAULT_PROMPT;
 }
 
 // ============================================================================
@@ -166,7 +167,7 @@ export async function runStage(
 
 	try {
 		const model = getModelForRole(stage.name, config.models);
-		const prompt = getPromptForRole(stage.name);
+		const prompt = getDefaultStagePrompt(stage.name);
 
 		if (!stage.loop) {
 			// One-shot stage
