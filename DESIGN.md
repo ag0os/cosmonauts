@@ -29,7 +29,7 @@ The checklist:
 **Examples of getting this right:**
 
 - Project instructions (AGENTS.md) → Pi's `DefaultResourceLoader` discovers and injects them natively. No extension needed.
-- Agent system prompts → Pi's `buildSystemPrompt` composes skills, context files, and custom prompts. We write SKILL.md files, not a custom prompt builder.
+- System prompt composition → Pi's `additionalSkillPaths` lets us layer prompt files at session creation. We compose base prompts + role overlays using this mechanism.
 - Built-in coding tools → Pi exports `codingTools` and `readOnlyTools` with factory functions. We use these directly.
 
 **Examples of what Pi deliberately doesn't include** (confirmed — we must build):
@@ -41,6 +41,34 @@ The checklist:
 ### Ongoing Audit
 
 As Pi evolves (207+ releases, lockstep versioning), capabilities change. Before each phase, re-audit the Pi API and pi-skills for new features that might obsolete planned custom work.
+
+### Architecture Vision
+
+Cosmonauts is designed as three layers, each more specialized than the last:
+
+- **Layer 1: Framework** — Orchestration, persistence, tasks, CLI, agent definitions, skill loading. Domain-agnostic infrastructure that any agent domain can build on.
+- **Layer 2: Domain agents** — Coding (Cosmo) is the first domain. Each domain brings its own base system prompt, agent definitions, workflows, and skills. Future domains (marketing, ops, etc.) plug in as new prompts, agent definitions, and skills — requiring no framework changes.
+- **Layer 3: Executive assistant** (future) — An always-on heartbeat that triggers domain workflows, captures decisions, and manages long-running projects.
+
+"Coding with Cosmo" is the DEFAULT domain, not the ONLY possibility. Adding a new domain later means writing new system prompts + agent definitions + skills — the framework stays unchanged.
+
+### Three Pillars: Agents, Prompts, Skills
+
+Cosmonauts separates three concepts that are often conflated:
+
+**Agent definitions** are declarative config objects that describe an agent's identity and capabilities: what model it uses, which tools it has, what system prompt layers compose its behavior, which skills it can access, and which other agents it can spawn. Every agent — including Cosmo — is defined the same way. Any agent can serve as a sub-agent when spawned by another.
+
+**System prompts** are composable prompt layers that define WHO an agent IS. A coding agent gets a base coding prompt (tone, conventions, tool discipline) plus a role overlay (planner constraints, worker workflow, etc.). These are loaded at session creation and injected into the system prompt. They are not fetched on demand — they ARE the agent's identity.
+
+**Skills** are on-demand capability files that teach agents HOW to do specific things. A TypeScript skill teaches TypeScript patterns. A testing skill teaches testing strategies. Unlike system prompts, skills are NOT injected wholesale at session creation. Instead, the agent receives a **skill index** — a list of available skills with one-line descriptions. When the agent decides it needs a skill for the current task, it fetches the full content via a `skill_read` tool. This is the Claude Code approach: give the agent awareness of what's available, let it load what it needs, save tokens.
+
+**Why this separation matters:**
+
+The alternative (everything is a "skill" injected at session creation) creates two problems:
+
+1. **Token waste**: Injecting all skills into every agent's system prompt burns tokens on knowledge the agent may never use. A worker implementing a database migration doesn't need frontend testing patterns in context.
+
+2. **Identity confusion**: When agent role definitions and domain knowledge live in the same mechanism, it's unclear what defines the agent vs what the agent knows. Cosmo's identity prompt is not the same kind of thing as "how to write TypeScript tests."
 
 ---
 
@@ -85,7 +113,7 @@ The foundation. We build on Pi rather than building from scratch. Understanding 
 - `InteractiveMode` / `runPrintMode()` / `runRpcMode()` — three execution modes
 - `completeSimple()` — lightweight LLM calls without a full session (routing, classification)
 - Extension system — `pi.on()` lifecycle events, `pi.registerTool()`, `pi.appendEntry()` for state
-- Skill system — `SKILL.md` auto-discovery, compose into system prompt as XML
+- Skill system — `SKILL.md` auto-discovery via `additionalSkillPaths`, used for system prompt composition
 - OAuth auth for Claude Max / ChatGPT Plus (zero marginal cost)
 - 20+ LLM providers with unified API
 - Session compaction (automatic context management)
@@ -116,7 +144,7 @@ The foundation. We build on Pi rather than building from scratch. Understanding 
 | **Sessions** | Stateless per-spawn | Persistent JSONL transcripts |
 | **Models** | One model per spawn | Switch models mid-session, per-agent |
 | **Task system** | CLI tool (forge-tasks) | In-process Pi tool (same format) |
-| **Orchestration** | Chain DSL + binary agents | In-process chains + skill-based agents |
+| **Orchestration** | Chain DSL + binary agents | In-process chains + definition-based agents |
 
 ---
 
@@ -134,24 +162,29 @@ cosmonauts "design an auth system for this project"
 # Non-interactive — runs prompt, outputs result, exits
 cosmonauts --print "create tasks from PLAN.md and implement them"
 
-# Non-interactive with chain — runs a specific agent pipeline
-cosmonauts --print --chain "planner -> task-manager -> coordinator" @PLAN.md
+# Named workflow — run a predefined agent pipeline
+cosmonauts --workflow plan-and-build "design an auth system"
+cosmonauts --print --workflow implement "create tasks from PLAN.md and implement"
 
-# Interactive with chain — runs the chain, then drops into REPL
-cosmonauts --chain "task-manager -> coordinator" @PLAN.md
+# Raw chain DSL — advanced escape hatch
+cosmonauts --chain "planner -> coordinator" "custom pipeline"
 ```
 
-**The `--chain` flag** specifies an orchestration pipeline. Without it, Cosmo (the main agent) decides how to proceed — it might use tools directly, spawn sub-agents, or trigger a chain based on the request.
+**The `--workflow` flag** is the primary way to run multi-agent pipelines. Named workflows map to chain DSL expressions defined in config. Built-in workflows: `plan-and-build`, `implement`, `plan`. No `@file` references — tell the agent in natural language what document to work with.
 
-**The `--print` flag** makes it non-interactive (fire-and-forget). Without it, you stay in the REPL after the initial prompt or chain completes. Pi already provides `--print` support; we pass it through.
+**The `--chain` flag** is the advanced escape hatch for custom pipelines. Specifies a raw chain DSL expression directly.
+
+**The `--print` flag** makes it non-interactive (fire-and-forget). Without it, you stay in the REPL after the initial prompt or chain completes.
+
+**Explicit flags** (Phase 0): `--print`, `--workflow`, `--chain`, `--model`, `--thinking`. Each declared explicitly in Commander — no catch-all passthrough of Pi flags.
 
 ```
      ┌──────────────────────────────────────────┐
      │  Cosmo (main agent)                       │
      │  - General-purpose coding assistant        │
-     │  - Coding tools + orchestration tools      │
-     │  - Todo tool for session task tracking     │
-     │  - Swappable system prompt                 │
+     │  - Coding + orchestration + skill tools    │
+     │  - Loads skills on demand (skill_read)     │
+     │  - Swappable system prompt (coding-base)   │
      │                                            │
      │  Can spawn sub-agents or chains:           │
      │  ├── Planner session                       │
@@ -238,24 +271,93 @@ Same data format as forge-tasks, but accessed in-process instead of shelling out
 
 ---
 
-## Agent Roles
+## Agent System
 
-Agents are not separate binaries — they are **Pi sessions with specific skills loaded**. A "planner agent" is just a Pi session with the planner skill and read-only tools. A "worker agent" is a Pi session with a worker skill, language skill, and full coding tools.
+Agents are **Pi sessions configured by declarative agent definitions**. An agent definition specifies the model, system prompt layers, tools, extensions, skill access, and sub-agent permissions. Every agent — including Cosmo — is defined the same way and can serve as a sub-agent when spawned by another.
 
-**All agents work in both interactive and non-interactive modes.** The role skill defines behavior; the execution mode is determined at session creation (`InteractiveMode` vs `runPrintMode`). In interactive mode, agents can ask clarifying questions. In non-interactive mode, they make reasonable defaults and proceed autonomously.
+**All agents work in both interactive and non-interactive modes.** The system prompt defines behavior; the execution mode is determined at session creation (`InteractiveMode` vs `runPrintMode`). In interactive mode, agents can ask clarifying questions. In non-interactive mode, they make reasonable defaults and proceed autonomously.
+
+### Agent Definition
+
+Each agent is defined by a declarative config:
+
+```typescript
+interface AgentDefinition {
+  /** Unique agent identifier */
+  id: string;
+  /** Human-readable description */
+  description: string;
+  /** System prompt layers, composed in order (paths to prompt files) */
+  prompts: string[];
+  /** Default model (provider/model-id format) */
+  model: string;
+  /** Tool set: "coding" (full), "readonly" (exploration), "none" */
+  tools: "coding" | "readonly" | "none";
+  /** Pi extensions to load */
+  extensions: string[];
+  /** Skill access: undefined = all available, string[] = allowlist, [] = none */
+  skills?: string[];
+  /** Which agent IDs this agent can spawn as sub-agents */
+  subagents?: string[];
+  /** Whether to load project context (AGENTS.md/CLAUDE.md) */
+  projectContext: boolean;
+  /** Session persistence mode */
+  session: "ephemeral" | "persistent";
+}
+```
+
+Built-in agent definitions:
+
+| Agent | Prompts | Tools | Extensions | Skills | Subagents | Context |
+|-------|---------|-------|------------|--------|-----------|---------|
+| cosmo | coding-base | coding | tasks, orchestration, todo, init, skills | all | planner, task-manager, coordinator, worker | yes |
+| planner | coding-base + planner-role | readonly | skills | all | — | yes |
+| task-manager | task-manager-role | readonly | tasks | — | — | no |
+| coordinator | coordinator-role | none | tasks, orchestration | — | worker | no |
+| worker | coding-base + worker-role | coding | tasks, todo, skills | per-task | — | yes |
+
+### System Prompt Composition
+
+System prompts are composable layers that define the agent's identity and behavior. They are loaded at session creation via Pi's `additionalSkillPaths` mechanism and injected into the system prompt. They are NOT fetched on demand — they ARE the identity.
+
+```
+cosmo        → [coding-base]
+planner      → [coding-base] + [planner-role]
+worker       → [coding-base] + [worker-role]
+coordinator  → [coordinator-role]          (no coding base — orchestration only)
+task-manager → [task-manager-role]         (no coding base — task creation only)
+```
+
+The **coding-base** prompt defines the shared identity for agents that interact with code: tone and style (concise, direct), tool discipline (use dedicated tools over bash), convention-following, git workflow, and professional objectivity. Think of it as the Claude Code personality.
+
+**Role prompts** layer constraints and workflows on top: planners get exploration workflow + output format + "never write code" rules; workers get implementation workflow + AC tracking + "stay in scope" rules; coordinators get delegation workflow + error handling.
+
+Agents that touch project artifacts (cosmo, planner, worker) also get project context (AGENTS.md/CLAUDE.md) via `DefaultResourceLoader`. Orchestration-only agents (coordinator, task-manager) skip it to keep their context clean.
+
+### Sub-Agent Spawning
+
+Every agent can be a sub-agent. When agent A spawns agent B:
+
+- B's session is created from B's agent definition (same prompts, tools, extensions)
+- B is constrained by A's `subagents` allowlist — A can only spawn agents it's permitted to
+- The parent-child relationship is tracked (who spawned whom, session IDs)
+- Sub-agent sessions are always ephemeral regardless of the agent's default session mode
+
+The `spawn_agent` tool takes an agent ID, resolving the full agent definition to configure the session. This replaces the old approach of hardcoded role-to-config switch statements.
 
 ### Cosmo (Main Agent)
 
 **Purpose**: The default agent you talk to when you start Cosmonauts. A general-purpose coding assistant with orchestration capabilities — like Claude Code, but with the ability to spawn sub-agents and run chains.
 
-**Skills loaded**: `cosmo` (default system prompt) + all orchestration tools
-**Tools**: full coding tools + task tools + orchestration tools (`chain_run`, `spawn_agent`) + `todo` tool
-**System prompt**: Swappable. Default is a Claude Code-style prompt focused on concise, direct software engineering assistance. Can be overridden with `--system-prompt` (Pi flag passthrough).
+**System prompt**: coding-base (swappable via `--system-prompt`)
+**Tools**: full coding tools + task tools + orchestration tools (`chain_run`, `spawn_agent`) + `todo` tool + `skill_read`
+**Can spawn**: planner, task-manager, coordinator, worker
 
 **What Cosmo does**:
 - Chats, answers questions, reads/writes code — standard coding assistant
 - Triggers chains when asked ("run planner -> task-manager -> coordinator")
 - Spawns individual sub-agents when appropriate
+- Loads skills on demand via `skill_read` when it needs domain expertise
 - Uses the todo tool for multi-step work within a session
 - Delegates to specialized agents rather than trying to do everything itself
 
@@ -267,31 +369,15 @@ Agents are not separate binaries — they are **Pi sessions with specific skills
 
 **Purpose**: Design solutions. Explore code, understand requirements, propose approaches.
 
-**Skills loaded**: `planner` + relevant domain skills
-**Tools**: read-only (read, grep, glob, ls, find) + `deepwiki_ask` + `web_search`
+**System prompt**: coding-base + planner-role
+**Tools**: read-only (read, grep, glob, ls, find) + `skill_read` + `deepwiki_ask` + `web_search`
 **Critical rule**: **Never writes code. Never creates tasks.** Only produces a plan document.
-
-**System prompt pattern**:
-```
-You are the Planner. You design solutions for codebases.
-
-Your job:
-1. Read and understand the codebase structure
-2. Understand the requirements
-3. Design an implementation approach
-4. Write a clear plan with: scope, approach, files to change, risks, order of operations
-
-You do NOT:
-- Write or modify code
-- Create tasks
-- Make implementation decisions the human hasn't approved
-```
 
 ### Task Manager
 
 **Purpose**: Break approved plans into atomic, implementable tasks.
 
-**Skills loaded**: `task-manager`
+**System prompt**: task-manager-role
 **Tools**: read-only + task tools (`task_create`, `task_list`, `task_view`)
 **Critical rule**: **Creates tasks, does not implement them.**
 
@@ -306,63 +392,83 @@ You do NOT:
 
 **Purpose**: Delegate tasks to workers, monitor progress, verify completion.
 
-**Skills loaded**: `coordinator`
+**System prompt**: coordinator-role
 **Tools**: task tools + `spawn_agent`
+**Can spawn**: worker
 
 **Workflow**:
 1. `task_list --ready` to find unblocked tasks
-2. For each ready task, spawn a worker with appropriate skills
+2. For each ready task, spawn a worker
 3. Monitor worker progress via `session.subscribe()`
 4. Verify task completion (ACs checked, status Done)
 5. Loop until all tasks complete or error
+
+The coordinator tells the worker (via its spawn prompt) which skills to load based on task labels. The worker then uses `skill_read` to load the relevant domain knowledge.
 
 ### Worker
 
 **Purpose**: Implement one task at a time. Focused, ephemeral.
 
-**Skills loaded**: `worker` + language skill (e.g., `typescript`, `rust`) + domain skill if relevant
-**Tools**: full coding tools (read, write, edit, bash, grep, glob) + `task_view` + `task_edit`
-**Session**: `SessionManager.inMemory()` — ephemeral, no persistence needed
+**System prompt**: coding-base + worker-role
+**Tools**: full coding tools (read, write, edit, bash, grep, glob) + `task_view` + `task_edit` + `skill_read`
+**Session**: always ephemeral
 
 **Workflow**:
-1. Read task via `task_view`
-2. Update status to In Progress via `task_edit`
-3. Explore relevant code
-4. Implement changes
-5. Check off ACs incrementally via `task_edit`
-6. Run tests
-7. Commit with task ID reference
-8. Mark task Done
+1. Load relevant skills via `skill_read` based on task labels (e.g., typescript, testing)
+2. Read task via `task_view`
+3. Update status to In Progress via `task_edit`
+4. Explore relevant code
+5. Implement changes
+6. Check off ACs incrementally via `task_edit`
+7. Run tests
+8. Commit with task ID reference
+9. Mark task Done
 
-### Specialist Workers
+### Specialist Routing
 
-A specialist is just a worker with a specific language/domain skill loaded. The coordinator matches task labels to skills:
+The coordinator matches task labels to skills and instructs the worker which to load:
 
-| Task Label | Skill Loaded |
+| Task Label | Skills to Load |
 |-----------|-------------|
-| `backend` + TypeScript project | `worker` + `typescript` |
-| `frontend` | `worker` + `typescript` + `frontend` |
-| `database` | `worker` + `database` |
-| `testing` | `worker` + `testing` |
-| `devops` | `worker` + `devops` |
-| `rust` | `worker` + `rust` |
+| `backend` + TypeScript project | `typescript` |
+| `frontend` | `typescript` + `frontend` |
+| `database` | `database` |
+| `testing` | `testing` |
+| `devops` | `devops` |
+| `rust` | `rust` |
+
+The worker uses `skill_read` to load each skill into its context at the start of its session. A task labeled `backend` + `testing` gets both the typescript and testing skills loaded.
 
 ---
 
 ## Skills
 
-Skills are Pi SKILL.md files — prompt fragments that teach agents domain expertise. Pi auto-discovers them from `skills/` and loads on demand.
+Skills are declarative knowledge files that teach agents domain expertise. They are loaded **on demand** — the agent decides when it needs a skill and fetches it via the `skill_read` tool.
+
+**Skills are NOT system prompts.** System prompts define agent identity and behavior (see [System Prompt Composition](#system-prompt-composition)). Skills provide domain knowledge — TypeScript patterns, testing strategies, database design guidelines. They live in a separate directory and are loaded through a different mechanism.
+
+### How Skills Work
+
+At session creation, every agent with skill access receives a **skill index** in its system prompt — a list of available skills with one-line descriptions:
+
+```
+## Available Skills
+
+You can load any of these skills when needed using `skill_read`:
+- typescript: TypeScript best practices and patterns for Node/Bun projects
+- rust: Rust patterns, ownership, and crate conventions
+- testing: Test strategies, mocking, coverage patterns
+- code-review: Code review guidelines and checklists
+- database: Schema design, migration patterns, query optimization
+- frontend: UI component patterns, accessibility, responsive design
+```
+
+When the agent encounters a task that requires specific domain knowledge, it calls `skill_read("typescript")` to load the full skill content into context. The agent decides what to load — this saves significant tokens compared to injecting all skills into every agent's system prompt.
 
 ### Skill Anatomy
 
 ```
 skills/
-├── agents/                    # Agent role skills
-│   ├── planner/SKILL.md
-│   ├── task-manager/SKILL.md
-│   ├── coordinator/SKILL.md
-│   └── worker/SKILL.md
-│
 ├── languages/                 # Language skills
 │   ├── typescript/SKILL.md
 │   ├── rust/SKILL.md
@@ -379,12 +485,14 @@ skills/
     └── frontend/SKILL.md
 ```
 
+Note: agent system prompts (cosmo, planner, worker, etc.) are NOT in the `skills/` directory. They live in `prompts/` and are loaded as system prompt layers at session creation. See [System Prompt Composition](#system-prompt-composition).
+
 ### SKILL.md Format
 
 ```markdown
 ---
 name: typescript
-description: TypeScript/Node/Bun best practices. Load for TypeScript projects.
+description: TypeScript best practices and patterns. Load for TypeScript projects.
 ---
 
 # TypeScript
@@ -397,13 +505,35 @@ When working on TypeScript projects:
 ...
 ```
 
+The `description` field is what appears in the skill index. Keep it concise — one line that tells the agent when to load this skill.
+
+### Skill Access Control
+
+Agent definitions include a `skills` field that controls which skills the agent can load:
+
+- `undefined` (omitted) — agent can load any skill (cosmo, planner, worker)
+- `["typescript", "testing"]` — agent can only load these specific skills
+- `[]` — agent cannot load any skills (coordinator, task-manager — they don't need domain knowledge)
+
+The coordinator uses task labels to determine which skills a worker should load. It passes this guidance in the worker's spawn prompt: "Load the typescript and testing skills for this task." The worker then calls `skill_read` to load them.
+
+### Skills vs System Prompts
+
+| | **System Prompts** | **Skills** |
+|---|---|---|
+| Purpose | Define agent identity and behavior | Provide domain knowledge |
+| Loading | At session creation (always present) | On demand via `skill_read` |
+| Examples | Coding-base, planner-role, worker-role | TypeScript patterns, testing strategies |
+| Token cost | Always in context | Only when needed |
+| Location | `prompts/` directory | `skills/` directory |
+
 ### Skills vs Agents
 
-| Use a **Skill** when... | Use an **Agent** (separate session) when... |
+| Use a **Skill** when... | Use an **Agent** (sub-agent) when... |
 |---|---|
-| It's knowledge/best practices | It needs its own context window |
-| It's a prompt fragment | It runs in parallel with other work |
-| It composes with other skills | It needs different tools than the parent |
+| It's domain knowledge/best practices | It needs its own context window |
+| Agent selectively loads it for the current task | It runs in parallel with other work |
+| It composes with other knowledge | It needs different tools than the parent |
 | One agent can hold it in context | It would bloat the parent's context |
 
 ---
@@ -426,31 +556,32 @@ Pi also reads `CLAUDE.md` as a fallback, so Cosmonauts works immediately on proj
 
 ### Which Agents Get Project Instructions
 
-Not every agent needs project-level context. The principle: **agents that interact with project artifacts need project instructions; agents that only orchestrate don't.**
+Not every agent needs project-level context. This is controlled by the `projectContext` field in the agent definition. The principle: **agents that interact with project artifacts need project instructions; agents that only orchestrate don't.**
 
-| Agent | Needs project context? | Why |
-|-------|----------------------|-----|
-| Cosmo | Yes | Codes directly, needs conventions |
-| Planner | Yes | Designs solutions that must fit the project |
-| Worker | Yes | Implements code, must follow conventions |
-| Task Manager | No | Creates tasks from plans, doesn't touch code |
-| Coordinator | No | Delegates and monitors, no direct project interaction |
+| Agent | `projectContext` | Why |
+|-------|-----------------|-----|
+| Cosmo | `true` | Codes directly, needs conventions |
+| Planner | `true` | Designs solutions that must fit the project |
+| Worker | `true` | Implements code, must follow conventions |
+| Task Manager | `false` | Creates tasks from plans, doesn't touch code |
+| Coordinator | `false` | Delegates and monitors, no direct project interaction |
 
-For agents that **should** receive project context: use `DefaultResourceLoader` (default behavior).
-
-For agents that **should not**: configure the resource loader to skip context file discovery. This keeps their context window clean and avoids injecting irrelevant information.
-
-As Cosmonauts evolves beyond coding orchestration, new agent types will fall into one category or the other based on whether they interact with project artifacts.
+When `projectContext` is true, `DefaultResourceLoader` discovers and injects AGENTS.md/CLAUDE.md. When false, context file discovery is skipped to keep the agent's context clean.
 
 ### `cosmonauts init`
 
-Creates `AGENTS.md` for a project. Behavior:
+Agent-driven project initialization. Not a hardcoded CLI subcommand — it's a Pi command (`/init`) backed by an extension. The agent analyzes the project and creates `AGENTS.md`.
 
+**Two entry points, same prompt:**
+- REPL: `/init` (Cosmo runs the init prompt interactively)
+- CLI: `cosmonauts init` (runs the init prompt in print mode)
+
+**Behavior:**
 - If `AGENTS.md` already exists → report it, do nothing (or offer to update)
 - If `CLAUDE.md` exists but no `AGENTS.md` → bootstrap `AGENTS.md` from `CLAUDE.md` content
-- If neither exists → create a template `AGENTS.md` by scanning the project (package.json, tsconfig, Cargo.toml, etc.)
+- If neither exists → create `AGENTS.md` by scanning project manifests (package.json, tsconfig, Cargo.toml, etc.)
 
-This is a convenience command, not a requirement. Cosmonauts works without it — Pi reads whatever `AGENTS.md` or `CLAUDE.md` is already present.
+Both paths use the same `buildInitPrompt()` function, which generates a structured prompt telling Cosmo what to do. This is a convenience command, not a requirement — Cosmonauts works without it.
 
 ---
 
@@ -479,27 +610,29 @@ Each role knows its own lifecycle:
 
 ### Sub-Agent Spawning
 
-Each sub-agent is a Pi session with scoped configuration:
+Each sub-agent is a Pi session configured from its agent definition:
 
 ```typescript
-const worker = await createAgentSession({
-  model: "anthropic/claude-sonnet-4-5",
-  sessionManager: SessionManager.inMemory(),
-  resourceLoader: new DefaultResourceLoader({
-    noSkills: true,
-    additionalSkillPaths: ["skills/agents/worker", "skills/languages/typescript"],
-  }),
-  // task tools + coding tools registered
+// The spawner resolves the agent definition for "worker":
+//   prompts: [coding-base, worker-role]
+//   tools: coding
+//   extensions: [tasks, todo, skills]
+//   projectContext: true
+//   session: ephemeral
+const result = await spawner.spawn({
+  agentId: "worker",
+  cwd: projectRoot,
+  prompt: `Implement TASK-003. Load the typescript skill. [full task content]`,
 });
-await worker.prompt(`Implement TASK-003. [full task content]`);
-// Extract result from worker.messages
 ```
 
 **Key properties**:
 - In-process (no CLI spawning overhead)
-- Ephemeral (no session persistence for workers)
-- Scoped skills (only load what's relevant)
+- Always ephemeral (sub-agent sessions are never persisted)
+- Configured by agent definition (no hardcoded switch statements)
+- Skills loaded on demand by the agent itself (via `skill_read`)
 - Different models per agent (Opus for planning, Sonnet for workers, Haiku for scouts)
+- Parent-child relationship tracked (which agent spawned which)
 
 ### Parallel Execution (Phase 3+)
 
@@ -514,6 +647,66 @@ Coordinator
 ```
 
 Uses `Promise.all()` on worker sessions. Coordinator batches tasks that have no mutual dependencies.
+
+### Workflow System
+
+Named workflows are the primary user interface for multi-agent pipelines, replacing raw `--chain` DSL for common use cases.
+
+**Built-in workflows:**
+
+| Name | Chain | Purpose |
+|------|-------|---------|
+| `plan-and-build` | `planner -> task-manager -> coordinator` | Full pipeline: design, create tasks, implement |
+| `implement` | `task-manager -> coordinator` | Create tasks from existing plan and implement |
+| `plan` | `planner` | Design only |
+
+**Custom project workflows** are defined in `.cosmonauts/workflows.json`:
+
+```json
+{
+  "workflows": {
+    "refactor": {
+      "description": "Plan and implement a refactoring",
+      "chain": "planner -> task-manager -> coordinator"
+    }
+  }
+}
+```
+
+Project-level definitions override built-in defaults on name collision. Missing config file = defaults only.
+
+**CLI usage:**
+
+```
+cosmonauts --workflow plan-and-build "design an auth system"
+cosmonauts --list-workflows   # show available workflows
+```
+
+### Chain Output (Non-Interactive Mode)
+
+When running chains with `--print`, events stream to stderr for observability while the final output goes to stdout:
+
+```
+[chain] Starting: planner -> task-manager -> coordinator
+[planner] Starting...
+[planner] Completed (45s)
+[task-manager] Starting...
+[task-manager] Completed (12s)
+[coordinator] Starting iteration 1...
+[coordinator] Spawned worker (session-abc123)
+[coordinator] Iteration 1 complete
+[chain] Complete (5m 23s)
+```
+
+Each `ChainEvent` type maps to a formatted stderr line. This lets you pipe the final result while still seeing progress.
+
+### Session Persistence
+
+Cosmo (the main agent in interactive mode) uses `SessionManager.continueRecent()` for persistent sessions across REPL invocations. This continues the most recent session for the current working directory, or creates a new one.
+
+Workers stay ephemeral (`SessionManager.inMemory()`). Print mode is always ephemeral (one-shot).
+
+Future: extract decisions and important context from persisted sessions for long-term memory.
 
 ---
 
@@ -545,6 +738,8 @@ Before building custom `deepwiki_ask`, `web_fetch`, `web_search`, or `browser` t
 
 **Task tools**: `task_create`, `task_list`, `task_view`, `task_edit`, `task_search` — the backbone of the system. Ported from forge-tasks format. Pi has no task system by design.
 
+**Skill tool**: `skill_read` — on-demand skill loading. Returns the full content of a skill file by name. The agent's system prompt includes a skill index (name + description for each available skill). When the agent needs domain knowledge, it calls `skill_read("typescript")` to load the full skill content into context. See [Skills](#skills).
+
 **Todo tool**: `todo_write`, `todo_read` — in-memory, session-scoped task tracking. Pi deliberately omits this ("No built-in to-dos. They confuse models." — Pi README). We build it as an extension, using `pi.appendEntry()` for state persistence. Pi's `plan-mode.ts` example demonstrates the pattern.
 
 | | **Todo tool** | **Forge-tasks** |
@@ -572,11 +767,11 @@ Before building custom `deepwiki_ask`, `web_fetch`, `web_search`, or `browser` t
 
 ## Architecture
 
-Cosmonauts is a **Pi package** — extensions, skills, and tools that plug into Pi.
+Cosmonauts is a **Pi package** — extensions, agent definitions, system prompts, skills, and tools that plug into Pi.
 
 ```
 cosmonauts/
-├── package.json              # { "pi": { "extensions": [...], "skills": [...] } }
+├── package.json              # { "pi": { "extensions": [...] } }
 ├── tsconfig.json
 ├── DESIGN.md
 │
@@ -588,16 +783,31 @@ cosmonauts/
 │   ├── main.ts               # Session setup, flag parsing, mode dispatch
 │   └── tasks/                # cosmonauts-tasks commands
 │
-├── extensions/               # Pi extensions (auto-loaded)
-│   ├── core/index.ts         # Identity injection, project context
+├── lib/                      # Core libraries (no Pi dependency)
+│   ├── agents/               # Agent definitions, resolver
+│   ├── orchestration/        # Chain parser, runner, agent spawner
+│   ├── tasks/                # Task manager, parser, serializer
+│   └── workflows/            # Workflow definitions, loader, defaults
+│
+├── extensions/               # Pi extensions
 │   ├── tasks/index.ts        # Task tools (create, list, view, edit, search)
 │   ├── todo/index.ts         # Todo tool (in-memory session task tracking)
+│   ├── skills/index.ts       # skill_read tool (on-demand skill loading)
 │   ├── orchestration/index.ts # Chain runner, sub-agent spawning
+│   ├── init/index.ts         # /init command (agent-driven AGENTS.md bootstrap)
 │   ├── deepwiki/index.ts     # deepwiki_ask tool (Phase 1)
 │   └── web/index.ts          # web_fetch, web_search tools (Phase 1+)
 │
-├── skills/                   # SKILL.md files (Pi auto-discovers)
-│   ├── agents/               # Cosmo, planner, task-manager, coordinator, worker
+├── prompts/                  # System prompt layers (loaded at session creation)
+│   ├── base/
+│   │   └── coding.md         # Base coding agent identity (tone, conventions, tools)
+│   └── roles/
+│       ├── planner.md        # Planner constraints and workflow
+│       ├── task-manager.md   # Task creation rules
+│       ├── coordinator.md    # Delegation and monitoring workflow
+│       └── worker.md         # Implementation workflow
+│
+├── skills/                   # On-demand capabilities (loaded via skill_read)
 │   ├── languages/            # TypeScript, Rust, Python, Swift, Go
 │   └── domains/              # Testing, code-review, devops, database, etc.
 │
@@ -607,10 +817,10 @@ cosmonauts/
 ```
 
 **Two install paths**:
-- `pi install ./cosmonauts` (dev) or `pi install npm:cosmonauts` (published) — extensions and skills auto-load into `pi`.
-- `cosmonauts` binary — standalone entry point that creates a Pi session with all cosmonauts extensions/skills loaded, supports `--print`, `--chain`, and all Pi CLI flags.
+- `pi install ./cosmonauts` (dev) or `pi install npm:cosmonauts` (published) — extensions auto-load into `pi`.
+- `cosmonauts` binary — standalone entry point that creates a Pi session with cosmonauts agent definitions, extensions, and prompt layers loaded.
 
-The `cosmonauts` binary is a thin wrapper: it creates a `createAgentSession()` with cosmonauts config, then dispatches to `InteractiveMode` or `runPrintMode` based on flags. Pi's existing `--print`, `--model`, `--thinking`, `--skill` flags are passed through.
+The `cosmonauts` binary is a thin wrapper: it resolves the Cosmo agent definition, creates a `createAgentSession()` with the appropriate prompts/tools/extensions, then dispatches to `InteractiveMode` or `runPrintMode` based on flags.
 
 ---
 
@@ -638,14 +848,19 @@ The `cosmonauts` binary is a thin wrapper: it creates a `createAgentSession()` w
 - [x] Port forge-tasks core (parser, serializer, TaskManager) as a Pi extension
 - [x] Register task tools: `task_create`, `task_list`, `task_view`, `task_edit`, `task_search`
 - [x] CLI: `cosmonauts-tasks` with init, create, list, view, edit, delete, search commands
-- [x] Package scaffold: Pi package manifest, tsconfig, 209 tests passing
+- [x] Package scaffold: Pi package manifest, tsconfig, 228 tests passing
 - [x] Build chain runner (role-based lifecycle, completion detection via task state, global safety caps)
-- [x] Write agent skills: planner, task-manager, coordinator, worker
+- [x] Write agent system prompts: planner, task-manager, coordinator, worker
 - [x] Write first language skill: TypeScript
-- [x] Cosmo main agent skill (default system prompt, Claude Code-style)
-- [ ] Todo tool extension (in-memory session task tracking, `todo_write`/`todo_read`)
-- [ ] CLI entry point: `cosmonauts` binary with `--print`, `--chain`, Pi flag passthrough
-- [ ] `cosmonauts init` command (bootstrap AGENTS.md from existing CLAUDE.md or project scan)
+- [x] Cosmo main agent system prompt (coding-base, Claude Code-style)
+- [x] Todo tool extension (in-memory session task tracking, `todo_write`/`todo_read`)
+- [ ] Agent definitions (declarative config for all agents, replaces hardcoded switch statements)
+- [ ] System prompt separation (move agent prompts from `skills/agents/` to `prompts/`)
+- [ ] Skill loading extension (`skill_read` tool, skill index generation)
+- [ ] Workflow system (named workflows, config loading, built-in defaults)
+- [ ] Agent spawner rewrite (resolve agent definitions instead of role-based switch statements)
+- [ ] CLI entry point: `cosmonauts` binary with `--print`, `--workflow`, `--chain`, `--model`, `--thinking`
+- [ ] `cosmonauts init` command (agent-driven AGENTS.md bootstrap via `/init` Pi command)
 - [ ] Test end-to-end on a real project
 
 ### Phase 1: Tools + Skills
