@@ -1,14 +1,21 @@
 /**
  * Agent spawner for chain orchestration.
  * Creates and runs Pi agent sessions for chain stages.
+ *
+ * Agent identity is loaded from prompt files via DefaultResourceLoader's
+ * appendSystemPrompt, keeping identity in the system prompt and operational
+ * content in the user message.
  */
 
 import { getModel } from "@mariozechner/pi-ai";
+import type { ResourceLoader } from "@mariozechner/pi-coding-agent";
 import {
 	createAgentSession,
+	DefaultResourceLoader,
 	SessionManager,
 } from "@mariozechner/pi-coding-agent";
 import { createDefaultRegistry } from "../agents/index.ts";
+import { loadPrompts } from "../prompts/index.ts";
 import type {
 	AgentSpawner,
 	ModelConfig,
@@ -54,34 +61,6 @@ export function getModelForRole(role: string, models?: ModelConfig): string {
 }
 
 // ============================================================================
-// Role Prompt Prefixes
-// ============================================================================
-
-/**
- * Interim identity prompt prefixes keyed by role.
- * These will be replaced by prompt file loading in the system prompt separation task.
- */
-const INTERIM_ROLE_PROMPTS: Record<string, string> = {
-	planner:
-		"You are the Planner. Design solutions but never write code or create tasks.",
-	"task-manager":
-		"You are the Task Manager. Break plans into atomic, implementable tasks.",
-	coordinator:
-		"You are the Coordinator. Delegate tasks to workers and verify completion.",
-	worker:
-		"You are the Worker. Implement the assigned task, check off acceptance criteria.",
-};
-
-const DEFAULT_PROMPT = "You are an agent.";
-
-/**
- * Return the system prompt prefix for a given agent role.
- */
-export function getRolePromptPrefix(role: string): string {
-	return INTERIM_ROLE_PROMPTS[role] ?? DEFAULT_PROMPT;
-}
-
-// ============================================================================
 // Agent Spawner Factory
 // ============================================================================
 
@@ -89,7 +68,10 @@ export function getRolePromptPrefix(role: string): string {
  * Create an AgentSpawner backed by the Pi coding agent SDK.
  *
  * Each `spawn()` call creates an ephemeral in-memory session, sends the
- * role-prefixed prompt, waits for completion, then disposes the session.
+ * user prompt, waits for completion, then disposes the session.
+ *
+ * Agent identity is injected via the system prompt using prompt files
+ * loaded from the agent definition's `prompts` array.
  */
 export function createPiSpawner(): AgentSpawner {
 	return {
@@ -108,18 +90,31 @@ export function createPiSpawner(): AgentSpawner {
 				const modelId = config.model ?? getModelForRole(config.role);
 				const model = resolveModel(modelId);
 
+				// Load identity prompts from agent definition
+				const def = DEFAULT_REGISTRY.get(config.role);
+				let resourceLoader: ResourceLoader | undefined;
+
+				if (def?.prompts.length) {
+					const promptContent = await loadPrompts(def.prompts);
+					const loader = new DefaultResourceLoader({
+						cwd: config.cwd,
+						appendSystemPrompt: promptContent,
+						noExtensions: true,
+					});
+					await loader.reload();
+					resourceLoader = loader;
+				}
+
 				const { session } = await createAgentSession({
 					cwd: config.cwd,
 					model,
 					sessionManager: SessionManager.inMemory(),
+					...(resourceLoader && { resourceLoader }),
 				});
 
 				try {
-					// Build the full prompt: role prefix + user prompt
-					const prefix = getRolePromptPrefix(config.role);
-					const fullPrompt = `${prefix}\n\n${config.prompt}`;
-
-					await session.prompt(fullPrompt);
+					// Send the user prompt clean — identity is in the system prompt
+					await session.prompt(config.prompt);
 
 					return {
 						success: true,
