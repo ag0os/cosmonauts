@@ -854,10 +854,10 @@ The `cosmonauts` binary is a thin wrapper: it resolves the Cosmo agent definitio
 - [x] Write first language skill: TypeScript
 - [x] Cosmo main agent system prompt (coding-base, Claude Code-style)
 - [x] Todo tool extension (in-memory session task tracking, `todo_write`/`todo_read`)
-- [ ] Agent definitions (declarative config for all agents, replaces hardcoded switch statements)
-- [ ] System prompt separation (move agent prompts from `skills/agents/` to `prompts/`)
-- [ ] Skill loading extension (`skill_read` tool, skill index generation)
-- [ ] Workflow system (named workflows, config loading, built-in defaults)
+- [x] Agent definitions (declarative config for all agents, replaces hardcoded switch statements)
+- [x] System prompt separation (move agent prompts from `skills/agents/` to `prompts/`)
+- [x] Skill loading extension (`skill_read` tool, skill index generation)
+- [x] Workflow system (named workflows, config loading, built-in defaults)
 - [x] Agent spawner rewrite (resolve agent definitions instead of role-based switch statements)
 - [ ] CLI entry point: `cosmonauts` binary with `--print`, `--workflow`, `--chain`, `--model`, `--thinking`
 - [ ] `cosmonauts init` command (agent-driven AGENTS.md bootstrap via `/init` Pi command)

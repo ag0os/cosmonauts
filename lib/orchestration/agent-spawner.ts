@@ -102,7 +102,7 @@ export function resolveTools(toolSet: AgentToolSet, cwd: string) {
 
 /**
  * Resolve extension names to absolute paths, filtering to known extensions.
- * Unknown names (e.g. "skills" which isn't built yet) are silently skipped.
+ * Unknown names are silently skipped.
  */
 export function resolveExtensionPaths(extensions: readonly string[]): string[] {
 	return extensions
