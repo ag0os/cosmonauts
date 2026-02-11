@@ -58,7 +58,7 @@ describe("resolveExtensionPaths", () => {
 	});
 
 	test("filters out unknown extensions", () => {
-		const paths = resolveExtensionPaths(["skills"]);
+		const paths = resolveExtensionPaths(["nonexistent"]);
 		expect(paths).toEqual([]);
 	});
 
@@ -68,20 +68,21 @@ describe("resolveExtensionPaths", () => {
 	});
 
 	test("filters mixed known and unknown extensions", () => {
-		const paths = resolveExtensionPaths(["tasks", "skills", "todo"]);
+		const paths = resolveExtensionPaths(["tasks", "nonexistent", "todo"]);
 		expect(paths).toHaveLength(2);
 		expect(paths[0]).toBe(join(EXTENSIONS_DIR, "tasks"));
 		expect(paths[1]).toBe(join(EXTENSIONS_DIR, "todo"));
 	});
 
-	test("resolves all four known extensions", () => {
+	test("resolves all five known extensions", () => {
 		const paths = resolveExtensionPaths([
 			"tasks",
 			"orchestration",
 			"todo",
 			"init",
+			"skills",
 		]);
-		expect(paths).toHaveLength(4);
+		expect(paths).toHaveLength(5);
 	});
 });
 

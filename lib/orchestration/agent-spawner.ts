@@ -37,8 +37,14 @@ const EXTENSIONS_DIR = resolve(
 	"extensions",
 );
 
-/** Extensions that exist on disk. "skills" extension not built yet — skip gracefully. */
-const KNOWN_EXTENSIONS = new Set(["tasks", "orchestration", "todo", "init"]);
+/** Extensions that exist on disk and can be loaded by the agent spawner. */
+const KNOWN_EXTENSIONS = new Set([
+	"tasks",
+	"orchestration",
+	"todo",
+	"init",
+	"skills",
+]);
 
 // ============================================================================
 // Model Resolution
