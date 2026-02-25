@@ -27,9 +27,9 @@
 		"test:watch": "vitest"
 	},
 	"dependencies": {
-		"@mariozechner/pi-coding-agent": "0.52.9",
-		"@mariozechner/pi-agent-core": "0.52.9",
-		"@mariozechner/pi-ai": "0.52.9",
+		"@mariozechner/pi-coding-agent": "0.55.0",
+		"@mariozechner/pi-agent-core": "0.55.0",
+		"@mariozechner/pi-ai": "0.55.0",
 		"@sinclair/typebox": "0.34.48",
 		"commander": "^14.0.2",
 		"gray-matter": "^4.0.3"

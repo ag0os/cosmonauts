@@ -14,7 +14,7 @@ Automated coding orchestration system built on `@mariozechner/pi-coding-agent` (
 
 - Runtime: Bun
 - Language: TypeScript (ESM, strict mode)
-- Framework: `@mariozechner/pi-coding-agent` v0.52.9 (pinned exact — Pi uses lockstep versioning)
+- Framework: `@mariozechner/pi-coding-agent` v0.55.0 (pinned exact — Pi uses lockstep versioning)
 - Schema: `@sinclair/typebox`
 - Tests: Vitest (`bun run test`)
 - Linter: Biome (`bun run lint`)
