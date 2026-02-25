@@ -15,7 +15,9 @@ import {
 	createCodingTools,
 	createReadOnlyTools,
 	DefaultResourceLoader,
+	type ResourceDiagnostic,
 	SessionManager,
+	type Skill,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentToolSet } from "../agents/index.ts";
 import { createDefaultRegistry } from "../agents/index.ts";
@@ -38,13 +40,7 @@ const EXTENSIONS_DIR = resolve(
 );
 
 /** Extensions that exist on disk and can be loaded by the agent spawner. */
-const KNOWN_EXTENSIONS = new Set([
-	"tasks",
-	"orchestration",
-	"todo",
-	"init",
-	"skills",
-]);
+const KNOWN_EXTENSIONS = new Set(["tasks", "orchestration", "todo", "init"]);
 
 // ============================================================================
 // Model Resolution
@@ -164,7 +160,15 @@ export function createPiSpawner(): AgentSpawner {
 					...(extensionPaths.length > 0 && {
 						additionalExtensionPaths: extensionPaths,
 					}),
-					noSkills: Array.isArray(def?.skills) && def.skills.length === 0,
+					...(Array.isArray(def?.skills) && {
+						skillsOverride: (base: {
+							skills: Skill[];
+							diagnostics: ResourceDiagnostic[];
+						}) => ({
+							skills: base.skills.filter((s) => def?.skills?.includes(s.name)),
+							diagnostics: base.diagnostics,
+						}),
+					}),
 					...(!def?.projectContext && {
 						agentsFilesOverride: () => ({ agentsFiles: [] }),
 					}),

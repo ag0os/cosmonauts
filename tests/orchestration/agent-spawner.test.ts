@@ -74,15 +74,14 @@ describe("resolveExtensionPaths", () => {
 		expect(paths[1]).toBe(join(EXTENSIONS_DIR, "todo"));
 	});
 
-	test("resolves all five known extensions", () => {
+	test("resolves all four known extensions", () => {
 		const paths = resolveExtensionPaths([
 			"tasks",
 			"orchestration",
 			"todo",
 			"init",
-			"skills",
 		]);
-		expect(paths).toHaveLength(5);
+		expect(paths).toHaveLength(4);
 	});
 });
 

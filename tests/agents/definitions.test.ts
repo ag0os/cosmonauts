@@ -90,7 +90,6 @@ describe("COSMO_DEFINITION", () => {
 			"orchestration",
 			"todo",
 			"init",
-			"skills",
 		]);
 		expect(COSMO_DEFINITION.skills).toBeUndefined();
 		expect(COSMO_DEFINITION.subagents).toEqual([
@@ -114,7 +113,7 @@ describe("PLANNER_DEFINITION", () => {
 		]);
 		expect(PLANNER_DEFINITION.model).toBe("anthropic/claude-opus-4-0");
 		expect(PLANNER_DEFINITION.tools).toBe("readonly");
-		expect(PLANNER_DEFINITION.extensions).toEqual(["skills"]);
+		expect(PLANNER_DEFINITION.extensions).toEqual([]);
 		expect(PLANNER_DEFINITION.skills).toBeUndefined();
 		expect(PLANNER_DEFINITION.subagents).toEqual([]);
 		expect(PLANNER_DEFINITION.projectContext).toBe(true);
@@ -162,7 +161,7 @@ describe("WORKER_DEFINITION", () => {
 		expect(WORKER_DEFINITION.prompts).toEqual(["base/coding", "roles/worker"]);
 		expect(WORKER_DEFINITION.model).toBe("anthropic/claude-sonnet-4-5");
 		expect(WORKER_DEFINITION.tools).toBe("coding");
-		expect(WORKER_DEFINITION.extensions).toEqual(["tasks", "todo", "skills"]);
+		expect(WORKER_DEFINITION.extensions).toEqual(["tasks", "todo"]);
 		expect(WORKER_DEFINITION.skills).toBeUndefined();
 		expect(WORKER_DEFINITION.subagents).toEqual([]);
 		expect(WORKER_DEFINITION.projectContext).toBe(true);

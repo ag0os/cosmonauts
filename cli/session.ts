@@ -12,7 +12,9 @@ import {
 	type CreateAgentSessionResult,
 	createAgentSession,
 	DefaultResourceLoader,
+	type ResourceDiagnostic,
 	SessionManager,
+	type Skill,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentDefinition } from "../lib/agents/types.ts";
 import {
@@ -62,7 +64,15 @@ export async function createSession(
 		...(extensionPaths.length > 0 && {
 			additionalExtensionPaths: extensionPaths,
 		}),
-		noSkills: Array.isArray(def.skills) && def.skills.length === 0,
+		...(Array.isArray(def.skills) && {
+			skillsOverride: (base: {
+				skills: Skill[];
+				diagnostics: ResourceDiagnostic[];
+			}) => ({
+				skills: base.skills.filter((s) => def.skills?.includes(s.name)),
+				diagnostics: base.diagnostics,
+			}),
+		}),
 		...(!def.projectContext && {
 			agentsFilesOverride: () => ({ agentsFiles: [] }),
 		}),
