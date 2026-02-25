@@ -59,7 +59,7 @@ For small, self-contained changes (a bug fix, a single function, a config tweak)
 
 ```
 lib/              Core libraries (orchestration, tasks, workflows)
-extensions/       Pi extensions (task tools, todo, orchestration, init)
+extensions/       Pi extensions (tasks, todo, orchestration, init)
 skills/           On-demand capability files (languages, domains)
 prompts/          System prompt layers (planned — currently in skills/agents/)
 cli/              CLI implementation
