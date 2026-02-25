@@ -13,7 +13,7 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import { InteractiveMode, runPrintMode } from "@mariozechner/pi-coding-agent";
-import { Command } from "commander";
+import { Command, CommanderError } from "commander";
 import { buildInitPrompt } from "../extensions/init/index.ts";
 import { COSMO_DEFINITION } from "../lib/agents/definitions.ts";
 import { parseChain } from "../lib/orchestration/chain-parser.ts";
@@ -292,10 +292,21 @@ async function run(options: CliOptions): Promise<void> {
 // Entry Point
 // ============================================================================
 
-const options = parseCliArgs(process.argv.slice(2));
+try {
+	const options = parseCliArgs(process.argv.slice(2));
 
-run(options).catch((err: unknown) => {
-	const message = err instanceof Error ? err.message : String(err);
-	process.stderr.write(`cosmonauts: ${message}\n`);
-	process.exitCode = 1;
-});
+	run(options).catch((err: unknown) => {
+		const message = err instanceof Error ? err.message : String(err);
+		process.stderr.write(`cosmonauts: ${message}\n`);
+		process.exitCode = 1;
+	});
+} catch (err: unknown) {
+	// Commander throws CommanderError for --help and --version (exitOverride mode)
+	if (err instanceof CommanderError) {
+		process.exitCode = err.exitCode;
+	} else {
+		const message = err instanceof Error ? err.message : String(err);
+		process.stderr.write(`cosmonauts: ${message}\n`);
+		process.exitCode = 1;
+	}
+}
