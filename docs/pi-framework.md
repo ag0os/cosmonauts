@@ -13,7 +13,7 @@ Pi ships as four npm packages under `@mariozechner/`:
 | `pi-agent-core` | Core types: `Agent`, `AgentEvent`, `AgentMessage`, `AgentTool`, `ThinkingLevel` |
 | `pi-tui` | Terminal UI library (components, editor, rendering) |
 
-All packages follow lockstep versioning (currently v0.52.9, 207 releases). The binary is `pi`.
+All packages follow lockstep versioning (currently v0.55.0). The binary is `pi`.
 
 ---
 
@@ -27,7 +27,7 @@ import { createAgentSession } from "@mariozechner/pi-coding-agent";
 const { session } = await createAgentSession({
   cwd: string,                    // Working directory (default: process.cwd())
   agentDir: string,               // Config dir (default: ~/.pi/agent)
-  authStorage: AuthStorage,       // API keys + OAuth creds
+  authStorage: AuthStorage,       // API keys + OAuth creds (use static factories: .create(), .fromStorage(), .inMemory())
   modelRegistry: ModelRegistry,   // Available models
   model: Model,                   // Initial model (e.g. "anthropic/claude-sonnet-4-5")
   thinkingLevel: ThinkingLevel,   // "off" | "minimal" | "low" | "medium" | "high" | "xhigh"
@@ -117,7 +117,7 @@ Skills compose with the system prompt automatically — no manual injection need
 
 ## Extension System
 
-Extensions are TypeScript modules that hook into Pi's lifecycle. Auto-discovered from `~/.pi/agent/extensions/` (global) and `.pi/extensions/` (project-local).
+Extensions are TypeScript modules that hook into Pi's lifecycle. Auto-discovered from `~/.pi/agent/extensions/` (global) and `.pi/extensions/` (project-local). As of v0.55.0, project-local resources take precedence over global ones.
 
 ### Extension API
 
@@ -224,6 +224,8 @@ pi.on("before_agent_start", async (event, ctx) => {
 
 Extensions can **replace built-in tools by registering a tool with the same name**. This means we can override `bash` with a sandboxed version or restrict `write` to specific directories. The `--no-tools` flag disables all built-ins, letting extensions provide everything.
 
+As of v0.55.0, extension name collisions are resolved by first-in-load-order (the first registration wins). Collisions no longer unload entire extensions — both extensions remain active, only the conflicting tool name goes to the first registrant.
+
 ---
 
 ## Skills System
@@ -248,8 +250,12 @@ When working on TypeScript projects:
 
 Skills are auto-discovered from:
 - `~/.pi/agent/skills/` (global)
+- `~/.agents/skills/` (global, added in v0.54.0)
 - `.pi/skills/` (project-local)
+- `.agents/skills/` (project-local + ancestor directories, added in v0.54.0)
 - Pi packages (via `pi` manifest in package.json)
+
+As of v0.55.0, project-local skills take precedence over global ones.
 
 ### Scoping via ResourceLoader
 
@@ -332,7 +338,7 @@ After install, extensions auto-load, skills auto-discover, tools appear in the a
 ### Scopes
 
 - **User** (global): `~/.pi/agent/` — shared across projects
-- **Project** (local, `-l` flag): `.pi/` — project-specific
+- **Project** (local, `-l` flag): `.pi/` — project-specific (takes precedence over global as of v0.55.0)
 - **Temporary** (`-e` flag): one-shot, not persisted
 
 ---
@@ -348,7 +354,7 @@ When a session's token count exceeds the model's context window, Pi compacts:
 
 Full history remains in the JSONL file (lossless on disk, lossy in context).
 
-Configurable via `SettingsManager`. For ephemeral workers, either:
+Configurable via `SettingsManager` (note: as of v0.53.0, setters update in-memory only — call `await settingsManager.flush()` for durable persistence). For ephemeral workers, either:
 - Let auto-compaction handle it (simplest)
 - Set `keepRecentTokens` low (workers are short-lived)
 - Abort + restart with fresh session if task is too large
