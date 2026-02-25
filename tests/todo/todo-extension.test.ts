@@ -93,7 +93,7 @@ describe("todo extension", () => {
 			const result = (await pi.callTool("todo_read", {})) as {
 				content: { text: string }[];
 			};
-			expect(result.content[0].text).toBe("No todos.");
+			expect(result.content[0]!.text).toBe("No todos.");
 		});
 
 		test("returns items after todo_write", async () => {
@@ -103,7 +103,7 @@ describe("todo extension", () => {
 			const result = (await pi.callTool("todo_read", {})) as {
 				content: { text: string }[];
 			};
-			expect(result.content[0].text).toContain("[ ] 1: Do thing");
+			expect(result.content[0]!.text).toContain("[ ] 1: Do thing");
 		});
 	});
 
@@ -126,7 +126,7 @@ describe("todo extension", () => {
 				details: unknown[];
 			};
 			expect(result.details).toHaveLength(1);
-			expect(result.content[0].text).toContain("[~] a: Only item");
+			expect(result.content[0]!.text).toContain("[~] a: Only item");
 		});
 
 		test("formats all statuses correctly", async () => {
@@ -141,7 +141,7 @@ describe("todo extension", () => {
 			const result = (await pi.callTool("todo_read", {})) as {
 				content: { text: string }[];
 			};
-			const text = result.content[0].text;
+			const text = result.content[0]!.text;
 			expect(text).toContain("[ ] 1: Pending");
 			expect(text).toContain("[~] 2: Active");
 			expect(text).toContain("[x] 3: Done");
@@ -153,8 +153,8 @@ describe("todo extension", () => {
 			});
 
 			expect(pi.entries).toHaveLength(1);
-			expect(pi.entries[0].customType).toBe("todo");
-			expect(pi.entries[0].data).toEqual({
+			expect(pi.entries[0]!.customType).toBe("todo");
+			expect(pi.entries[0]!.data).toEqual({
 				items: [{ id: "1", content: "Test", status: "pending" }],
 			});
 		});
@@ -181,7 +181,7 @@ describe("todo extension", () => {
 				details: unknown[];
 			};
 			expect(result.details).toHaveLength(0);
-			expect(result.content[0].text).toBe("No todos.");
+			expect(result.content[0]!.text).toBe("No todos.");
 		});
 	});
 
@@ -305,7 +305,7 @@ describe("todo extension", () => {
 			const result = (await pi.callTool("todo_read", {})) as {
 				details: { content: string }[];
 			};
-			expect(result.details[0].content).toBe("New");
+			expect(result.details[0]!.content).toBe("New");
 		});
 
 		test("ignores non-todo entries", async () => {
