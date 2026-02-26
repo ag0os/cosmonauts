@@ -314,6 +314,8 @@ Each agent is defined by a declarative config:
 interface AgentDefinition {
   /** Unique agent identifier */
   id: string;
+  /** Domain namespace for persona resolution, defaults to "coding" */
+  namespace?: string;
   /** Human-readable description */
   description: string;
   /** System prompt layers, composed in order (paths to prompt files) */
@@ -337,29 +339,50 @@ interface AgentDefinition {
 
 Built-in agent definitions:
 
-| Agent | Prompts | Tools | Extensions | Skills | Subagents | Context |
-|-------|---------|-------|------------|--------|-----------|---------|
-| cosmo | coding-base | coding | tasks, plans, orchestration, todo, init | all | planner, task-manager, coordinator, worker | yes |
-| planner | coding-base + planner-role | readonly | plans | all | — | yes |
-| task-manager | task-manager-role | readonly | tasks | — | — | no |
-| coordinator | coordinator-role | none | tasks, orchestration | — | worker | no |
-| worker | coding-base + worker-role | coding | tasks, todo | per-task | — | yes |
+| Agent | Namespace | Prompts | Tools | Extensions | Skills | Subagents | Context |
+|-------|-----------|---------|-------|------------|--------|-----------|---------|
+| cosmo | coding | cosmonauts + core + coding-rw + tasks + spawning + todo + cosmo | coding | tasks, plans, orchestration, todo, init | all | planner, task-manager, coordinator, worker | yes |
+| planner | coding | cosmonauts + core + coding-ro + planner | readonly | plans | all | — | yes |
+| task-manager | coding | cosmonauts + core + tasks + task-manager | readonly | tasks | — | — | no |
+| coordinator | coding | cosmonauts + core + tasks + spawning + coordinator | none | tasks, orchestration | — | worker | no |
+| worker | coding | cosmonauts + core + coding-rw + tasks + todo + worker | coding | tasks, todo | per-task | — | yes |
 
 ### System Prompt Composition
 
-System prompts are composable layers that define the agent's identity and behavior. They are loaded at session creation via Pi's `additionalSkillPaths` mechanism and injected into the system prompt. They are NOT fetched on demand — they ARE the identity.
+System prompts compose in a strict four-layer order with deterministic precedence. They are loaded at session creation via Pi's `additionalSkillPaths` mechanism and injected into the system prompt. They are NOT fetched on demand — they ARE the identity.
+
+#### Layer 0: Platform Base (`prompts/cosmonauts.md`)
+
+Universal operating norms shared by all agents: concision, objectivity, accuracy over validation. Establishes the Cosmonauts platform context.
+
+#### Layer 1: Capabilities (`prompts/capabilities/*.md`)
+
+Reusable discipline bundles aligned to tool surfaces. No identity language. Each agent gets only the capabilities matching its tool set:
+
+- `core.md` — Communication and quality norms (all agents)
+- `coding-readwrite.md` — Coding conventions, editing, bash/git (tools: "coding")
+- `coding-readonly.md` — Exploration and reasoning (tools: "readonly")
+- `tasks.md` — Task system tools (agents with tasks extension)
+- `spawning.md` — Delegation tools (agents that spawn sub-agents)
+- `todo.md` — Todo tool (agents with todo extension)
+
+#### Layer 2: Persona (`prompts/agents/<namespace>/<agent>.md`)
+
+Exactly one persona per agent. Defines identity, workflow, constraints, and role-specific rules. Persona is the final authority for role behavior. The `namespace` field on the agent definition determines the subdirectory (defaults to `"coding"`).
+
+#### Layer 3: Runtime Context (`prompts/runtime/sub-agent.md`)
+
+Optional spawn-time overlay appended only when an agent is spawned as a sub-agent. Contains parent role, objective, and optional task ID. Uses template rendering with `{{parentRole}}`, `{{objective}}`, `{{#taskId}}...{{/taskId}}` placeholders. Top-level spawns skip this layer entirely.
+
+#### Composition Diagram
 
 ```
-cosmo        → [coding-base]
-planner      → [coding-base] + [planner-role]
-worker       → [coding-base] + [worker-role]
-coordinator  → [coordinator-role]          (no coding base — orchestration only)
-task-manager → [task-manager-role]         (no coding base — task creation only)
+cosmo        → [cosmonauts] + [core, coding-rw, tasks, spawning, todo] + [cosmo persona]
+planner      → [cosmonauts] + [core, coding-ro] + [planner persona]
+task-manager → [cosmonauts] + [core, tasks] + [task-manager persona]
+coordinator  → [cosmonauts] + [core, tasks, spawning] + [coordinator persona]
+worker       → [cosmonauts] + [core, coding-rw, tasks, todo] + [worker persona]
 ```
-
-The **coding-base** prompt defines the shared identity for agents that interact with code: tone and style (concise, direct), tool discipline (use dedicated tools over bash), convention-following, git workflow, and professional objectivity. Think of it as the Claude Code personality.
-
-**Role prompts** layer constraints and workflows on top: planners get exploration workflow + output format + "never write code" rules; workers get implementation workflow + AC tracking + "stay in scope" rules; coordinators get delegation workflow + error handling.
 
 Agents that touch project artifacts (cosmo, planner, worker) also get project context (AGENTS.md/CLAUDE.md) via `DefaultResourceLoader`. Orchestration-only agents (coordinator, task-manager) skip it to keep their context clean.
 
@@ -374,11 +397,13 @@ Every agent can be a sub-agent. When agent A spawns agent B:
 
 The `spawn_agent` tool takes an agent ID, resolving the full agent definition to configure the session. This replaces the old approach of hardcoded role-to-config switch statements.
 
+When an agent is spawned as a sub-agent (via `spawn_agent` with `runtimeContext.mode: "sub-agent"`), the spawner appends a runtime context layer (Layer 3) after all static prompt layers. This layer is rendered from `prompts/runtime/sub-agent.md` with the parent role, objective, and optional task ID. Top-level spawns skip this layer entirely.
+
 ### Cosmo (Main Agent)
 
 **Purpose**: The default agent you talk to when you start Cosmonauts. A general-purpose coding assistant with orchestration capabilities — like Claude Code, but with the ability to spawn sub-agents and run chains.
 
-**System prompt**: coding-base (swappable via `--system-prompt`)
+**System prompt**: cosmonauts + core + coding-rw + tasks + spawning + todo + cosmo persona
 **Tools**: full coding tools + task tools + orchestration tools (`chain_run`, `spawn_agent`) + `todo` tool
 **Can spawn**: planner, task-manager, coordinator, worker
 
@@ -398,7 +423,7 @@ The `spawn_agent` tool takes an agent ID, resolving the full agent definition to
 
 **Purpose**: Design solutions. Explore code, understand requirements, propose approaches.
 
-**System prompt**: coding-base + planner-role
+**System prompt**: cosmonauts + core + coding-ro + planner persona
 **Tools**: read-only (read, grep, glob, ls, find) + `deepwiki_ask` + `web_search` + `plan_create`
 **Critical rule**: **Never writes code. Never creates tasks.** Creates plan documents via `plan_create`.
 
@@ -406,7 +431,7 @@ The `spawn_agent` tool takes an agent ID, resolving the full agent definition to
 
 **Purpose**: Break approved plans into atomic, implementable tasks.
 
-**System prompt**: task-manager-role
+**System prompt**: cosmonauts + core + tasks + task-manager persona
 **Tools**: read-only + task tools (`task_create`, `task_list`, `task_view`)
 **Critical rule**: **Creates tasks, does not implement them.**
 
@@ -421,7 +446,7 @@ The `spawn_agent` tool takes an agent ID, resolving the full agent definition to
 
 **Purpose**: Delegate tasks to workers, monitor progress, verify completion.
 
-**System prompt**: coordinator-role
+**System prompt**: cosmonauts + core + tasks + spawning + coordinator persona
 **Tools**: task tools + `spawn_agent`
 **Can spawn**: worker
 
@@ -438,7 +463,7 @@ The coordinator tells the worker (via its spawn prompt) which skills to load bas
 
 **Purpose**: Implement one task at a time. Focused, ephemeral.
 
-**System prompt**: coding-base + worker-role
+**System prompt**: cosmonauts + core + coding-rw + tasks + todo + worker persona
 **Tools**: full coding tools (read, write, edit, bash, grep, glob) + `task_view` + `task_edit`
 **Session**: always ephemeral
 
@@ -812,13 +837,23 @@ cosmonauts/
 │   └── web/index.ts          # web_fetch, web_search tools (Phase 1+)
 │
 ├── prompts/                  # System prompt layers (loaded at session creation)
-│   ├── base/
-│   │   └── coding.md         # Base coding agent identity (tone, conventions, tools)
-│   └── roles/
-│       ├── planner.md        # Planner constraints and workflow
-│       ├── task-manager.md   # Task creation rules
-│       ├── coordinator.md    # Delegation and monitoring workflow
-│       └── worker.md         # Implementation workflow
+│   ├── cosmonauts.md         # Layer 0: Platform base (universal norms)
+│   ├── capabilities/         # Layer 1: Tool-aligned discipline packs
+│   │   ├── core.md           # Communication and quality (all agents)
+│   │   ├── coding-readwrite.md  # Full coding discipline (tools: "coding")
+│   │   ├── coding-readonly.md   # Exploration discipline (tools: "readonly")
+│   │   ├── tasks.md          # Task system usage
+│   │   ├── spawning.md       # Delegation tools
+│   │   └── todo.md           # Todo tool usage
+│   ├── agents/               # Layer 2: Persona files
+│   │   └── coding/           # "coding" namespace
+│   │       ├── cosmo.md
+│   │       ├── planner.md
+│   │       ├── task-manager.md
+│   │       ├── coordinator.md
+│   │       └── worker.md
+│   └── runtime/              # Layer 3: Spawn-time overlays
+│       └── sub-agent.md      # Runtime context template
 │
 ├── skills/                   # On-demand capabilities (loaded via /skill:name)
 │   ├── languages/            # TypeScript, Rust, Python, Swift, Go

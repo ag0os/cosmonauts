@@ -1,7 +1,8 @@
 /**
  * Prompt file loader — reads and concatenates system prompt layers from disk.
  *
- * Prompt references like "base/coding" resolve to `{promptsDir}/base/coding.md`.
+ * Prompt references like "cosmonauts" or "capabilities/core" resolve to
+ * `{promptsDir}/cosmonauts.md` or `{promptsDir}/capabilities/core.md`.
  * If a file contains YAML frontmatter, it is stripped automatically.
  */
 
@@ -30,7 +31,7 @@ export const PROMPTS_DIR: string = resolve(
 /**
  * Load a single prompt file by reference.
  *
- * @param promptRef - Prompt reference (e.g. "base/coding" → reads base/coding.md)
+ * @param promptRef - Prompt reference (e.g. "cosmonauts" → reads cosmonauts.md)
  * @param promptsDir - Base directory to resolve from (defaults to PROMPTS_DIR)
  * @returns The prompt file content with any YAML frontmatter stripped
  * @throws If the file does not exist or cannot be read

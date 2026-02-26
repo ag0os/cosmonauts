@@ -21,7 +21,7 @@ describe("AgentRegistry", () => {
 			const custom: AgentDefinition = {
 				id: "test-agent",
 				description: "A test agent",
-				prompts: ["base/coding"],
+				prompts: ["capabilities/core"],
 				model: "anthropic/claude-sonnet-4-5",
 				tools: "coding",
 				extensions: [],
@@ -119,7 +119,7 @@ describe("AgentRegistry", () => {
 			const custom: AgentDefinition = {
 				id: "scout",
 				description: "A lightweight exploration agent",
-				prompts: ["base/coding"],
+				prompts: ["capabilities/core"],
 				model: "anthropic/claude-haiku-3-5",
 				tools: "readonly",
 				extensions: [],

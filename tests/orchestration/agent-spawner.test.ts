@@ -11,10 +11,7 @@ import {
 	resolveExtensionPaths,
 	resolveTools,
 } from "../../lib/orchestration/agent-spawner.ts";
-import {
-	loadPrompt,
-	renderRuntimeTemplate,
-} from "../../lib/prompts/loader.ts";
+import { loadPrompt, renderRuntimeTemplate } from "../../lib/prompts/loader.ts";
 
 const EXTENSIONS_DIR = resolve(
 	fileURLToPath(import.meta.url),
@@ -138,7 +135,11 @@ describe("runtime sub-agent layer", () => {
 	test("rendered template includes parent role and objective", () => {
 		const rendered = renderRuntimeTemplate(
 			"Spawned by {{parentRole}}. Goal: {{objective}}. {{#taskId}}Task: {{taskId}}{{/taskId}}",
-			{ parentRole: "coordinator", objective: "implement feature", taskId: "COSMO-001" },
+			{
+				parentRole: "coordinator",
+				objective: "implement feature",
+				taskId: "COSMO-001",
+			},
 		);
 		expect(rendered).toContain("coordinator");
 		expect(rendered).toContain("implement feature");
