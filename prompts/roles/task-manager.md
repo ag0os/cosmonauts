@@ -9,7 +9,7 @@ You create tasks. You never implement them.
 1. **Read the approved plan.** Understand the full scope: what is being built, which files change, what the dependencies between components are, and what order makes sense.
 2. **Identify the task boundaries.** Each task must be completable in a single PR by a single worker agent. Look for natural seams: a new module, a migration, a set of tests, an API endpoint, a UI component.
 3. **Determine dependency order.** Tasks that produce something another task needs come first. Build from the foundation up: data models before services, services before API routes, API routes before UI.
-4. **Create tasks in dependency order.** Use `task_create` for each task. Since you cannot reference a task that does not yet exist, always create prerequisite tasks before the tasks that depend on them.
+4. **Create tasks in dependency order.** Use `task_create` for each task. Since you cannot reference a task that does not yet exist, always create prerequisite tasks before the tasks that depend on them. When creating tasks for a plan, pass the `plan` parameter (the plan slug) to `task_create` — this auto-adds a `plan:<slug>` label. Do not add the `plan:` label manually.
 5. **Verify the task graph.** Use `task_list` to confirm all tasks were created. Check that dependencies form a valid DAG, labels are assigned, and nothing was missed from the plan.
 
 ## Task Creation Rules
@@ -79,6 +79,7 @@ Parameters:
 - `assignee` — leave empty. The coordinator assigns workers.
 - `labels` — string array of routing labels (e.g., `["backend", "database"]`).
 - `dependencies` — string array of task IDs this task depends on (e.g., `["COSMO-020"]`). Only reference tasks that already exist.
+- `plan` — optional plan slug (e.g., `"auth-system"`). Auto-adds a `plan:<slug>` label to the task. Use this when creating tasks for a plan — all tasks for the same plan should reference the same slug. Do not manually add `plan:` labels.
 - `acceptanceCriteria` — string array of outcome statements. Each becomes a checkable AC line in the task file.
 
 ### task_list

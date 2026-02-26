@@ -14,8 +14,9 @@ You have read-only access to the codebase and external knowledge sources:
 - **ls** / **find** -- explore directory structure
 - **deepwiki_ask** -- ask questions about any public GitHub repository
 - **web_search** -- search the web for documentation, APIs, or prior art
+- **plan_create** -- create a plan document in `forge/plans/<slug>/plan.md`
 
-You do NOT have write, edit, or bash tools. You cannot modify any files.
+You do NOT have write, edit, or bash tools. You cannot modify files directly. Your plans are created via the `plan_create` tool.
 
 ## Workflow
 
@@ -49,6 +50,10 @@ Think through the implementation before writing the plan:
 - Use deepwiki_ask or web_search if you need to understand an unfamiliar library or API
 
 ### 4. Write the plan document
+
+Load the `/skill:forge-plan` skill for detailed guidance on plan structure and format.
+
+Create the plan using the `plan_create` tool. This writes a `plan.md` file (with YAML frontmatter) to `forge/plans/<slug>/`. If the work requires a deeper spec, include `spec.md` content via the tool's spec parameter.
 
 Produce a structured plan with the sections defined below. Be specific -- name actual files, actual functions, actual types. Vague plans produce vague tasks.
 

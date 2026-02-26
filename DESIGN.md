@@ -269,6 +269,35 @@ Create the User model with email and password fields.
 
 Same data format as forge-tasks, but accessed in-process instead of shelling out to a CLI.
 
+**Plan association**: Tasks can be linked to a plan via `plan:<slug>` labels. The `task_create` tool accepts an optional `plan` parameter that auto-adds the appropriate `plan:<slug>` label — do not add it manually. A task can have at most one `plan:` label. Use `task_list` with `--label plan:<slug>` to see all tasks for a plan.
+
+### Forge Lifecycle
+
+The forge lifecycle manages the full arc of implementation work:
+
+```
+plan → tasks → implement → archive → distill
+```
+
+**Plans** (`forge/plans/<slug>/`): Implementation plans containing `plan.md` (required) and `spec.md` (optional). Created via the `plan_create` tool. A plan scopes a body of work, describes the approach, and produces tasks that agents can implement. Plans have `active` or `completed` status.
+
+**Task-plan linkage**: Tasks associate with plans via `plan:<slug>` labels. The `task_create` tool's `plan` parameter auto-adds this label. Tasks stay flat in `forge/tasks/` — they are not nested under the plan directory. Use `task_list` label filtering to query tasks by plan.
+
+**Archive** (`forge/archive/`): Completed plans and their associated tasks are moved here by `plan_archive`. This is a mechanical operation — no LLM involved. It preserves the original file structure under `archive/plans/` and `archive/tasks/`. The archive is browseable and reversible.
+
+**Memory** (`memory/`): Distilled knowledge from archived work. Written by agents using the `forge-archive` skill. Memory files are a project-level resource, consumed as context the same way AGENTS.md or skills are. The `memory/` directory is the shared storage backend for all distilled knowledge, regardless of source.
+
+**Distillation**: Agent-driven extraction of learnings from archived materials into memory files. Explicitly triggered, not automatic. Implemented as a Pi skill (`forge-archive`) that teaches any agent how to read archived plans and tasks, extract key decisions and patterns, and write a memory file to `memory/<slug>.md`.
+
+**Plan tools**:
+
+| Tool | Description |
+|------|-------------|
+| `plan_create` | Create a new plan directory with `plan.md` and optional `spec.md` |
+| `plan_list` | List plans with status and associated task counts |
+| `plan_view` | View full plan content and summary of associated tasks |
+| `plan_archive` | Archive a completed plan and its associated tasks to `forge/archive/` |
+
 ---
 
 ## Agent System
@@ -792,7 +821,17 @@ cosmonauts/
 │
 ├── skills/                   # On-demand capabilities (loaded via /skill:name)
 │   ├── languages/            # TypeScript, Rust, Python, Swift, Go
-│   └── domains/              # Testing, code-review, devops, database, etc.
+│   └── domains/              # Testing, code-review, devops, database, forge-plan, etc.
+│
+├── forge/                    # Project work lifecycle
+│   ├── tasks/                # Active task files (markdown + YAML frontmatter)
+│   ├── plans/                # Active plan directories (plan.md, optional spec.md)
+│   │   └── <slug>/plan.md
+│   └── archive/              # Completed plans and tasks (preserved after archive)
+│       ├── plans/            # Archived plan directories
+│       └── tasks/            # Archived task files
+│
+├── memory/                   # Distilled knowledge from completed work (project root)
 │
 └── data/                     # Runtime (~/.cosmonauts/)
     ├── memory/               # Long-term memory (Phase 2+)
@@ -843,6 +882,7 @@ The `cosmonauts` binary is a thin wrapper: it resolves the Cosmo agent definitio
 - [x] Agent spawner rewrite (resolve agent definitions instead of role-based switch statements)
 - [x] CLI entry point: `cosmonauts` binary with `--print`, `--workflow`, `--chain`, `--model`, `--thinking`
 - [x] `cosmonauts init` command (agent-driven AGENTS.md bootstrap via `/init` Pi command)
+- [x] Forge lifecycle: plans, archive, memory, distillation (plan tools, task-plan linkage, archive tool, forge-plan and forge-archive skills)
 - [ ] Test end-to-end on a real project
 
 ### Phase 1: Tools + Skills
