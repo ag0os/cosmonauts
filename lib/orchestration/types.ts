@@ -109,6 +109,18 @@ export type ChainEvent =
 // Agent Spawner
 // ============================================================================
 
+/** Runtime context metadata for spawned agents */
+export interface SpawnRuntimeContext {
+	/** Execution mode — "sub-agent" enables runtime prompt injection */
+	readonly mode: "top-level" | "sub-agent";
+	/** Parent agent role (populated when mode is "sub-agent") */
+	readonly parentRole?: string;
+	/** High-level objective for this spawn */
+	readonly objective?: string;
+	/** Task ID being worked on, if applicable */
+	readonly taskId?: string;
+}
+
 /** Configuration for spawning an agent */
 export interface SpawnConfig {
 	/** Agent role to spawn */
@@ -123,6 +135,8 @@ export interface SpawnConfig {
 	signal?: AbortSignal;
 	/** Skill paths to load (overrides role defaults) */
 	skillPaths?: string[];
+	/** Runtime context for prompt layer injection (Layer 3) */
+	runtimeContext?: SpawnRuntimeContext;
 }
 
 /** Result of an agent execution */

@@ -52,6 +52,25 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 			}),
 			prompt: Type.String({ description: "The prompt to send to the agent" }),
 			model: Type.Optional(Type.String({ description: "Model override" })),
+			runtimeContext: Type.Optional(
+				Type.Object({
+					mode: Type.Union([
+						Type.Literal("top-level"),
+						Type.Literal("sub-agent"),
+					]),
+					parentRole: Type.Optional(
+						Type.String({ description: "Parent agent role" }),
+					),
+					objective: Type.Optional(
+						Type.String({
+							description: "High-level objective for this spawn",
+						}),
+					),
+					taskId: Type.Optional(
+						Type.String({ description: "Task ID being worked on" }),
+					),
+				}),
+			),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const spawner = createPiSpawner();
@@ -61,6 +80,7 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 					cwd: ctx.cwd,
 					prompt: params.prompt,
 					model: params.model,
+					runtimeContext: params.runtimeContext,
 				});
 				return {
 					content: [
