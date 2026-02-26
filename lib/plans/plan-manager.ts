@@ -22,6 +22,22 @@ import type {
 	PlanUpdateInput,
 } from "./plan-types.ts";
 
+const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+function validateSlug(slug: string): void {
+	if (!slug) {
+		throw new Error("Plan slug cannot be empty");
+	}
+	if (slug.includes("/") || slug.includes("\\") || slug.includes("..")) {
+		throw new Error(`Invalid plan slug (path traversal): ${slug}`);
+	}
+	if (!SLUG_PATTERN.test(slug)) {
+		throw new Error(
+			`Invalid plan slug "${slug}": must be lowercase alphanumeric with hyphens (e.g. "auth-system")`,
+		);
+	}
+}
+
 /**
  * PlanManager orchestrates all core modules for plan management
  */
@@ -43,6 +59,8 @@ export class PlanManager {
 	 * @returns The created plan
 	 */
 	async createPlan(input: PlanCreateInput): Promise<Plan> {
+		validateSlug(input.slug);
+
 		await ensurePlansDirectory(this.projectRoot);
 
 		// Check if plan already exists

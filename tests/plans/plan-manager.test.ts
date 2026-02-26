@@ -273,6 +273,22 @@ describe("PlanManager", () => {
 				manager.updatePlan("nonexistent", { title: "New Title" }),
 			).rejects.toThrow("Plan not found: nonexistent");
 		});
+
+		it("preserves createdAt after update", async () => {
+			const plan = await manager.createPlan({
+				slug: "preserve-created",
+				title: "Original",
+			});
+			const originalCreatedAt = plan.createdAt.toISOString();
+
+			// Wait a tick to ensure dates differ
+			await new Promise((resolve) => setTimeout(resolve, 10));
+
+			const updated = await manager.updatePlan("preserve-created", {
+				title: "Updated",
+			});
+			expect(updated.createdAt.toISOString()).toBe(originalCreatedAt);
+		});
 	});
 
 	describe("deletePlan", () => {
@@ -425,6 +441,52 @@ describe("PlanManager", () => {
 		it("should return null for non-existent plan", async () => {
 			const summary = await manager.getPlanSummary("nonexistent", taskManager);
 			expect(summary).toBeNull();
+		});
+	});
+
+	describe("slug validation", () => {
+		it("rejects empty slug", async () => {
+			await expect(
+				manager.createPlan({ slug: "", title: "Empty" }),
+			).rejects.toThrow("empty");
+		});
+
+		it("rejects path traversal slug", async () => {
+			await expect(
+				manager.createPlan({ slug: "../../escape", title: "Escape" }),
+			).rejects.toThrow("path traversal");
+		});
+
+		it("rejects slug with forward slash", async () => {
+			await expect(
+				manager.createPlan({ slug: "some/path", title: "Slash" }),
+			).rejects.toThrow("path traversal");
+		});
+
+		it("rejects slug with spaces", async () => {
+			await expect(
+				manager.createPlan({ slug: "has spaces", title: "Spaces" }),
+			).rejects.toThrow("Invalid plan slug");
+		});
+
+		it("rejects slug with uppercase", async () => {
+			await expect(
+				manager.createPlan({ slug: "UpperCase", title: "Upper" }),
+			).rejects.toThrow("Invalid plan slug");
+		});
+
+		it("rejects slug with special characters", async () => {
+			await expect(
+				manager.createPlan({ slug: "plan!", title: "Special" }),
+			).rejects.toThrow("Invalid plan slug");
+		});
+
+		it("accepts valid lowercase-hyphenated slug", async () => {
+			const plan = await manager.createPlan({
+				slug: "valid-slug-123",
+				title: "Valid",
+			});
+			expect(plan.slug).toBe("valid-slug-123");
 		});
 	});
 

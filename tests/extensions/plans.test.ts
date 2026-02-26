@@ -69,10 +69,11 @@ describe("plans extension", () => {
 		await rm(tempDir, { recursive: true, force: true });
 	});
 
-	test("registers plan_create, plan_list, and plan_view tools", () => {
+	test("registers plan_create, plan_list, plan_view, and plan_archive tools", () => {
 		expect(pi.tools.has("plan_create")).toBe(true);
 		expect(pi.tools.has("plan_list")).toBe(true);
 		expect(pi.tools.has("plan_view")).toBe(true);
+		expect(pi.tools.has("plan_archive")).toBe(true);
 	});
 
 	describe("plan_create", () => {
@@ -443,6 +444,90 @@ describe("plans extension", () => {
 			expect(details.plan.spec).toBe("Spec here.");
 			expect(details.summary.slug).toBe("detail-test");
 			expect(details.summary.taskCount).toBe(0);
+		});
+	});
+
+	describe("plan_archive", () => {
+		test("registers plan_archive tool", () => {
+			expect(pi.tools.has("plan_archive")).toBe(true);
+		});
+
+		test("archives plan and associated tasks", async () => {
+			// Create a plan
+			await pi.callTool(
+				"plan_create",
+				{ slug: "archive-test", title: "Archive Test" },
+				tempDir,
+			);
+
+			// Create tasks with plan label and mark them Done
+			const taskManager = new TaskManager(tempDir);
+			await taskManager.init({ prefix: "TEST" });
+			const task = await taskManager.createTask({
+				title: "Test task",
+				labels: ["plan:archive-test"],
+			});
+			await taskManager.updateTask(task.id, { status: "Done" });
+
+			const result = (await pi.callTool(
+				"plan_archive",
+				{ slug: "archive-test" },
+				tempDir,
+			)) as ToolResult;
+
+			expect(result.content[0]?.text).toContain('Archived plan "archive-test"');
+			expect(result.content[0]?.text).toContain("Tasks archived: 1");
+			expect(result.details).toBeDefined();
+
+			const details = result.details as {
+				planSlug: string;
+				archivedTaskFiles: string[];
+			};
+			expect(details.planSlug).toBe("archive-test");
+			expect(details.archivedTaskFiles).toHaveLength(1);
+		});
+
+		test("rejects when plan does not exist", async () => {
+			await expect(
+				pi.callTool("plan_archive", { slug: "nonexistent" }, tempDir),
+			).rejects.toThrow('Plan "nonexistent" not found');
+		});
+
+		test("rejects when tasks are not all Done", async () => {
+			await pi.callTool(
+				"plan_create",
+				{ slug: "incomplete", title: "Incomplete" },
+				tempDir,
+			);
+
+			const taskManager = new TaskManager(tempDir);
+			await taskManager.init({ prefix: "TEST" });
+			await taskManager.createTask({
+				title: "Pending task",
+				labels: ["plan:incomplete"],
+			});
+
+			await expect(
+				pi.callTool("plan_archive", { slug: "incomplete" }, tempDir),
+			).rejects.toThrow("tasks not Done");
+		});
+
+		test("archives plan with zero tasks", async () => {
+			await pi.callTool(
+				"plan_create",
+				{ slug: "no-tasks", title: "No Tasks Plan" },
+				tempDir,
+			);
+
+			const result = (await pi.callTool(
+				"plan_archive",
+				{ slug: "no-tasks" },
+				tempDir,
+			)) as ToolResult;
+
+			expect(result.content[0]?.text).toContain("Tasks archived: 0");
+			const details = result.details as { archivedTaskFiles: string[] };
+			expect(details.archivedTaskFiles).toHaveLength(0);
 		});
 	});
 });

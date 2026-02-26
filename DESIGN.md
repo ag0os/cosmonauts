@@ -283,7 +283,7 @@ plan → tasks → implement → archive → distill
 
 **Task-plan linkage**: Tasks associate with plans via `plan:<slug>` labels. The `task_create` tool's `plan` parameter auto-adds this label. Tasks stay flat in `forge/tasks/` — they are not nested under the plan directory. Use `task_list` label filtering to query tasks by plan.
 
-**Archive** (`forge/archive/`): Completed plans and their associated tasks are moved here by `plan_archive`. This is a mechanical operation — no LLM involved. It preserves the original file structure under `archive/plans/` and `archive/tasks/`. The archive is browseable and reversible.
+**Archive** (`forge/archive/`): Completed plans and their associated tasks are moved here by `plan_archive`. This is a mechanical operation — no LLM involved. It preserves the original file structure under `archive/plans/` and `archive/tasks/`. The archive is browseable and reversible. Safety check: rejects if any associated tasks are not Done.
 
 **Memory** (`memory/`): Distilled knowledge from archived work. Written by agents using the `forge-archive` skill. Memory files are a project-level resource, consumed as context the same way AGENTS.md or skills are. The `memory/` directory is the shared storage backend for all distilled knowledge, regardless of source.
 
@@ -339,8 +339,8 @@ Built-in agent definitions:
 
 | Agent | Prompts | Tools | Extensions | Skills | Subagents | Context |
 |-------|---------|-------|------------|--------|-----------|---------|
-| cosmo | coding-base | coding | tasks, orchestration, todo, init | all | planner, task-manager, coordinator, worker | yes |
-| planner | coding-base + planner-role | readonly | — | all | — | yes |
+| cosmo | coding-base | coding | tasks, plans, orchestration, todo, init | all | planner, task-manager, coordinator, worker | yes |
+| planner | coding-base + planner-role | readonly | plans | all | — | yes |
 | task-manager | task-manager-role | readonly | tasks | — | — | no |
 | coordinator | coordinator-role | none | tasks, orchestration | — | worker | no |
 | worker | coding-base + worker-role | coding | tasks, todo | per-task | — | yes |
@@ -399,8 +399,8 @@ The `spawn_agent` tool takes an agent ID, resolving the full agent definition to
 **Purpose**: Design solutions. Explore code, understand requirements, propose approaches.
 
 **System prompt**: coding-base + planner-role
-**Tools**: read-only (read, grep, glob, ls, find) + `deepwiki_ask` + `web_search`
-**Critical rule**: **Never writes code. Never creates tasks.** Only produces a plan document.
+**Tools**: read-only (read, grep, glob, ls, find) + `deepwiki_ask` + `web_search` + `plan_create`
+**Critical rule**: **Never writes code. Never creates tasks.** Creates plan documents via `plan_create`.
 
 ### Task Manager
 
@@ -804,6 +804,7 @@ cosmonauts/
 │
 ├── extensions/               # Pi extensions
 │   ├── tasks/index.ts        # Task tools (create, list, view, edit, search)
+│   ├── plans/index.ts        # Plan tools (create, list, view, archive)
 │   ├── todo/index.ts         # Todo tool (in-memory session task tracking)
 │   ├── orchestration/index.ts # Chain runner, sub-agent spawning
 │   ├── init/index.ts         # /init command (agent-driven AGENTS.md bootstrap)

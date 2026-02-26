@@ -87,6 +87,7 @@ describe("COSMO_DEFINITION", () => {
 		expect(COSMO_DEFINITION.tools).toBe("coding");
 		expect(COSMO_DEFINITION.extensions).toEqual([
 			"tasks",
+			"plans",
 			"orchestration",
 			"todo",
 			"init",
@@ -113,7 +114,7 @@ describe("PLANNER_DEFINITION", () => {
 		]);
 		expect(PLANNER_DEFINITION.model).toBe("anthropic/claude-opus-4-0");
 		expect(PLANNER_DEFINITION.tools).toBe("readonly");
-		expect(PLANNER_DEFINITION.extensions).toEqual([]);
+		expect(PLANNER_DEFINITION.extensions).toEqual(["plans"]);
 		expect(PLANNER_DEFINITION.skills).toBeUndefined();
 		expect(PLANNER_DEFINITION.subagents).toEqual([]);
 		expect(PLANNER_DEFINITION.projectContext).toBe(true);

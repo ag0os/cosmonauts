@@ -3,14 +3,7 @@
  * Handles all file I/O operations for plan directories and files
  */
 
-import {
-	mkdir,
-	readdir,
-	readFile,
-	rm,
-	stat,
-	writeFile,
-} from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import matter from "gray-matter";
 import type { Plan, PlanStatus } from "./plan-types.ts";
@@ -52,24 +45,12 @@ export async function listPlanSlugs(projectRoot: string): Promise<string[]> {
 	const plansDir = join(projectRoot, FORGE_DIR, PLANS_DIR);
 
 	try {
-		const entries = await readdir(plansDir);
-		const slugs: string[] = [];
-
-		for (const entry of entries) {
-			const entryPath = join(plansDir, entry);
-			try {
-				const stats = await stat(entryPath);
-				if (stats.isDirectory()) {
-					slugs.push(entry);
-				}
-			} catch {
-				// Skip entries that can't be stat'd
-			}
-		}
-
-		return slugs.sort();
+		const entries = await readdir(plansDir, { withFileTypes: true });
+		return entries
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => entry.name)
+			.sort();
 	} catch (error) {
-		// Return empty array if directory doesn't exist
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
 			return [];
 		}

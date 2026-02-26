@@ -214,7 +214,7 @@ describe("archivePlan", () => {
 			taskManager,
 		);
 
-		expect(result.memoryDirCreated).toBe(true);
+		expect(result.memoryDirEnsured).toBe(true);
 
 		const memoryStats = await stat(join(tempDir, "memory"));
 		expect(memoryStats.isDirectory()).toBe(true);
@@ -237,7 +237,7 @@ describe("archivePlan", () => {
 			taskManager,
 		);
 
-		expect(result.memoryDirCreated).toBe(true);
+		expect(result.memoryDirEnsured).toBe(true);
 
 		// Verify existing content was preserved
 		const content = await readFile(join(tempDir, "memory/MEMORY.md"), "utf-8");

@@ -155,7 +155,7 @@ export default function plansExtension(pi: ExtensionAPI) {
 				result.archivedTaskFiles.length > 0
 					? result.archivedTaskFiles.map((f) => `  - ${f}`).join("\n")
 					: "",
-				result.memoryDirCreated ? "memory/ directory ensured" : "",
+				result.memoryDirEnsured ? "memory/ directory ensured" : "",
 			]
 				.filter(Boolean)
 				.join("\n");

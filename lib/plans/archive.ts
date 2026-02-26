@@ -31,8 +31,8 @@ export interface ArchiveResult {
 	archivedPlanPath: string;
 	/** Filenames of archived task files */
 	archivedTaskFiles: string[];
-	/** Whether the memory/ directory was created (or already existed) */
-	memoryDirCreated: boolean;
+	/** Whether the memory/ directory was ensured (created or already existed) */
+	memoryDirEnsured: boolean;
 }
 
 // ============================================================================
@@ -87,13 +87,14 @@ export async function archivePlan(
 	await rename(srcPlanDir, destPlanDir);
 
 	// 5. Move associated task files
+	// Note: Archive is not atomic — if a task file move fails after the plan was
+	// already moved, the system will be in a partially archived state. This is
+	// acceptable for a filesystem-based system; recovery is manual.
 	const archivedTaskFiles: string[] = [];
+	const tasksDir = join(projectRoot, "forge/tasks");
+	const taskFiles = tasks.length > 0 ? await readdir(tasksDir) : [];
 	for (const task of tasks) {
-		// Task files are named: "<id> - <title>.md"
-		// Find the actual filename by listing forge/tasks/ and matching the task ID
-		const tasksDir = join(projectRoot, "forge/tasks");
-		const files = await readdir(tasksDir);
-		const taskFile = files.find((f) => f.startsWith(task.id));
+		const taskFile = taskFiles.find((f) => f.startsWith(task.id));
 		if (taskFile) {
 			const srcPath = join(tasksDir, taskFile);
 			const destPath = join(projectRoot, ARCHIVE_TASKS_DIR, taskFile);
@@ -104,18 +105,12 @@ export async function archivePlan(
 
 	// 6. Ensure memory/ directory exists
 	const memoryDir = join(projectRoot, MEMORY_DIR);
-	let memoryDirCreated = false;
-	try {
-		await mkdir(memoryDir, { recursive: true });
-		memoryDirCreated = true;
-	} catch {
-		memoryDirCreated = false;
-	}
+	await mkdir(memoryDir, { recursive: true });
 
 	return {
 		planSlug: slug,
 		archivedPlanPath: destPlanDir,
 		archivedTaskFiles,
-		memoryDirCreated,
+		memoryDirEnsured: true,
 	};
 }
