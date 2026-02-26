@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { archivePlan } from "../../lib/plans/archive.ts";
 import { PlanManager } from "../../lib/plans/plan-manager.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 
@@ -124,6 +125,44 @@ export default function plansExtension(pi: ExtensionAPI) {
 			return {
 				content: [{ type: "text" as const, text: lines.join("\n") }],
 				details: { plan, summary },
+			};
+		},
+	});
+
+	// plan_archive
+	pi.registerTool({
+		name: "plan_archive",
+		label: "Archive Plan",
+		description:
+			"Archive a completed plan and its associated tasks to forge/archive/. Creates memory/ directory. Rejects if tasks are not all Done.",
+		parameters: Type.Object({
+			slug: Type.String({ description: "Plan slug to archive" }),
+		}),
+		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+			const planManager = new PlanManager(ctx.cwd);
+			const taskManager = new TaskManager(ctx.cwd);
+			const result = await archivePlan(
+				ctx.cwd,
+				params.slug,
+				planManager,
+				taskManager,
+			);
+
+			const text = [
+				`Archived plan "${result.planSlug}"`,
+				`Plan moved to: ${result.archivedPlanPath}`,
+				`Tasks archived: ${result.archivedTaskFiles.length}`,
+				result.archivedTaskFiles.length > 0
+					? result.archivedTaskFiles.map((f) => `  - ${f}`).join("\n")
+					: "",
+				result.memoryDirCreated ? "memory/ directory ensured" : "",
+			]
+				.filter(Boolean)
+				.join("\n");
+
+			return {
+				content: [{ type: "text" as const, text }],
+				details: result,
 			};
 		},
 	});

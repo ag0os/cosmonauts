@@ -3,6 +3,8 @@
  * Re-exports all plan types, file system utilities, and the PlanManager class
  */
 
+export type { ArchiveResult } from "./archive.ts";
+export { archivePlan } from "./archive.ts";
 export {
 	createPlanDirectory,
 	deletePlanDirectory,
