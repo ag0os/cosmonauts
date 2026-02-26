@@ -17,9 +17,11 @@ export type AgentSessionMode = "ephemeral" | "persistent";
 export interface AgentDefinition {
 	/** Unique agent identifier. */
 	readonly id: string;
+	/** Prompt namespace for migration compatibility (e.g. "coding"). Optional for external definitions. */
+	readonly namespace?: string;
 	/** Human-readable description. */
 	readonly description: string;
-	/** System prompt layer paths, composed in order (e.g. "base/coding"). */
+	/** System prompt layer paths, composed in order: base, capabilities, persona. */
 	readonly prompts: readonly string[];
 	/** Default model in "provider/model-id" format. */
 	readonly model: string;

@@ -77,12 +77,57 @@ describe("BUILTIN_DEFINITIONS", () => {
 			}
 		}
 	});
+
+	it("sets namespace to 'coding' on all built-in definitions", () => {
+		for (const def of BUILTIN_DEFINITIONS) {
+			expect(def.namespace).toBe("coding");
+		}
+	});
+
+	it("starts all prompt arrays with 'cosmonauts' (Layer 0 base)", () => {
+		for (const def of BUILTIN_DEFINITIONS) {
+			expect(def.prompts[0]).toBe("cosmonauts");
+		}
+	});
+
+	it("ends all prompt arrays with the persona file matching agents/coding/<id>", () => {
+		for (const def of BUILTIN_DEFINITIONS) {
+			const lastPrompt = def.prompts[def.prompts.length - 1];
+			expect(lastPrompt).toBe(`agents/coding/${def.id}`);
+		}
+	});
+
+	it("does not give readonly agents coding-readwrite capability", () => {
+		for (const def of BUILTIN_DEFINITIONS) {
+			if (def.tools === "readonly") {
+				expect(def.prompts).not.toContain("capabilities/coding-readwrite");
+			}
+		}
+	});
+
+	it("does not give agents with tools 'none' any coding capability prompts", () => {
+		for (const def of BUILTIN_DEFINITIONS) {
+			if (def.tools === "none") {
+				expect(def.prompts).not.toContain("capabilities/coding-readwrite");
+				expect(def.prompts).not.toContain("capabilities/coding-readonly");
+			}
+		}
+	});
 });
 
 describe("COSMO_DEFINITION", () => {
 	it("matches DESIGN.md spec", () => {
 		expect(COSMO_DEFINITION.id).toBe("cosmo");
-		expect(COSMO_DEFINITION.prompts).toEqual(["base/coding"]);
+		expect(COSMO_DEFINITION.namespace).toBe("coding");
+		expect(COSMO_DEFINITION.prompts).toEqual([
+			"cosmonauts",
+			"capabilities/core",
+			"capabilities/coding-readwrite",
+			"capabilities/tasks",
+			"capabilities/spawning",
+			"capabilities/todo",
+			"agents/coding/cosmo",
+		]);
 		expect(COSMO_DEFINITION.model).toBe("anthropic/claude-sonnet-4-5");
 		expect(COSMO_DEFINITION.tools).toBe("coding");
 		expect(COSMO_DEFINITION.extensions).toEqual([
@@ -108,9 +153,12 @@ describe("COSMO_DEFINITION", () => {
 describe("PLANNER_DEFINITION", () => {
 	it("matches DESIGN.md spec", () => {
 		expect(PLANNER_DEFINITION.id).toBe("planner");
+		expect(PLANNER_DEFINITION.namespace).toBe("coding");
 		expect(PLANNER_DEFINITION.prompts).toEqual([
-			"base/coding",
-			"roles/planner",
+			"cosmonauts",
+			"capabilities/core",
+			"capabilities/coding-readonly",
+			"agents/coding/planner",
 		]);
 		expect(PLANNER_DEFINITION.model).toBe("anthropic/claude-opus-4-0");
 		expect(PLANNER_DEFINITION.tools).toBe("readonly");
@@ -126,7 +174,13 @@ describe("PLANNER_DEFINITION", () => {
 describe("TASK_MANAGER_DEFINITION", () => {
 	it("matches DESIGN.md spec", () => {
 		expect(TASK_MANAGER_DEFINITION.id).toBe("task-manager");
-		expect(TASK_MANAGER_DEFINITION.prompts).toEqual(["roles/task-manager"]);
+		expect(TASK_MANAGER_DEFINITION.namespace).toBe("coding");
+		expect(TASK_MANAGER_DEFINITION.prompts).toEqual([
+			"cosmonauts",
+			"capabilities/core",
+			"capabilities/tasks",
+			"agents/coding/task-manager",
+		]);
 		expect(TASK_MANAGER_DEFINITION.model).toBe("anthropic/claude-sonnet-4-5");
 		expect(TASK_MANAGER_DEFINITION.tools).toBe("readonly");
 		expect(TASK_MANAGER_DEFINITION.extensions).toEqual(["tasks"]);
@@ -141,7 +195,14 @@ describe("TASK_MANAGER_DEFINITION", () => {
 describe("COORDINATOR_DEFINITION", () => {
 	it("matches DESIGN.md spec", () => {
 		expect(COORDINATOR_DEFINITION.id).toBe("coordinator");
-		expect(COORDINATOR_DEFINITION.prompts).toEqual(["roles/coordinator"]);
+		expect(COORDINATOR_DEFINITION.namespace).toBe("coding");
+		expect(COORDINATOR_DEFINITION.prompts).toEqual([
+			"cosmonauts",
+			"capabilities/core",
+			"capabilities/tasks",
+			"capabilities/spawning",
+			"agents/coding/coordinator",
+		]);
 		expect(COORDINATOR_DEFINITION.model).toBe("anthropic/claude-sonnet-4-5");
 		expect(COORDINATOR_DEFINITION.tools).toBe("none");
 		expect(COORDINATOR_DEFINITION.extensions).toEqual([
@@ -159,7 +220,15 @@ describe("COORDINATOR_DEFINITION", () => {
 describe("WORKER_DEFINITION", () => {
 	it("matches DESIGN.md spec", () => {
 		expect(WORKER_DEFINITION.id).toBe("worker");
-		expect(WORKER_DEFINITION.prompts).toEqual(["base/coding", "roles/worker"]);
+		expect(WORKER_DEFINITION.namespace).toBe("coding");
+		expect(WORKER_DEFINITION.prompts).toEqual([
+			"cosmonauts",
+			"capabilities/core",
+			"capabilities/coding-readwrite",
+			"capabilities/tasks",
+			"capabilities/todo",
+			"agents/coding/worker",
+		]);
 		expect(WORKER_DEFINITION.model).toBe("anthropic/claude-sonnet-4-5");
 		expect(WORKER_DEFINITION.tools).toBe("coding");
 		expect(WORKER_DEFINITION.extensions).toEqual(["tasks", "todo"]);
@@ -181,5 +250,20 @@ describe("type conformance", () => {
 			WORKER_DEFINITION,
 		];
 		expect(defs).toHaveLength(5);
+	});
+
+	it("namespace is optional for external definitions", () => {
+		const external: AgentDefinition = {
+			id: "custom-agent",
+			description: "An external agent without namespace",
+			prompts: ["custom/prompt"],
+			model: "anthropic/claude-sonnet-4-5",
+			tools: "coding",
+			extensions: [],
+			projectContext: false,
+			session: "ephemeral",
+			loop: false,
+		};
+		expect(external.namespace).toBeUndefined();
 	});
 });

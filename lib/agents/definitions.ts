@@ -9,9 +9,18 @@ import type { AgentDefinition } from "./types.ts";
 
 export const COSMO_DEFINITION = {
 	id: "cosmo",
+	namespace: "coding",
 	description:
 		"Main coding assistant with orchestration capabilities. Delegates to sub-agents for complex workflows.",
-	prompts: ["base/coding"],
+	prompts: [
+		"cosmonauts",
+		"capabilities/core",
+		"capabilities/coding-readwrite",
+		"capabilities/tasks",
+		"capabilities/spawning",
+		"capabilities/todo",
+		"agents/coding/cosmo",
+	],
 	model: "anthropic/claude-sonnet-4-5",
 	tools: "coding",
 	extensions: ["tasks", "plans", "orchestration", "todo", "init"],
@@ -24,9 +33,15 @@ export const COSMO_DEFINITION = {
 
 export const PLANNER_DEFINITION = {
 	id: "planner",
+	namespace: "coding",
 	description:
 		"Designs solutions by exploring the codebase and proposing approaches. Never writes code or creates tasks.",
-	prompts: ["base/coding", "roles/planner"],
+	prompts: [
+		"cosmonauts",
+		"capabilities/core",
+		"capabilities/coding-readonly",
+		"agents/coding/planner",
+	],
 	model: "anthropic/claude-opus-4-0",
 	tools: "readonly",
 	extensions: ["plans"],
@@ -39,9 +54,15 @@ export const PLANNER_DEFINITION = {
 
 export const TASK_MANAGER_DEFINITION = {
 	id: "task-manager",
+	namespace: "coding",
 	description:
 		"Breaks approved plans into atomic, implementable tasks with acceptance criteria.",
-	prompts: ["roles/task-manager"],
+	prompts: [
+		"cosmonauts",
+		"capabilities/core",
+		"capabilities/tasks",
+		"agents/coding/task-manager",
+	],
 	model: "anthropic/claude-sonnet-4-5",
 	tools: "readonly",
 	extensions: ["tasks"],
@@ -54,9 +75,16 @@ export const TASK_MANAGER_DEFINITION = {
 
 export const COORDINATOR_DEFINITION = {
 	id: "coordinator",
+	namespace: "coding",
 	description:
 		"Delegates tasks to workers, monitors progress, and verifies completion. Loops until all tasks are done.",
-	prompts: ["roles/coordinator"],
+	prompts: [
+		"cosmonauts",
+		"capabilities/core",
+		"capabilities/tasks",
+		"capabilities/spawning",
+		"agents/coding/coordinator",
+	],
 	model: "anthropic/claude-sonnet-4-5",
 	tools: "none",
 	extensions: ["tasks", "orchestration"],
@@ -69,9 +97,17 @@ export const COORDINATOR_DEFINITION = {
 
 export const WORKER_DEFINITION = {
 	id: "worker",
+	namespace: "coding",
 	description:
 		"Implements a single task. Loads relevant skills, writes code, checks off acceptance criteria.",
-	prompts: ["base/coding", "roles/worker"],
+	prompts: [
+		"cosmonauts",
+		"capabilities/core",
+		"capabilities/coding-readwrite",
+		"capabilities/tasks",
+		"capabilities/todo",
+		"agents/coding/worker",
+	],
 	model: "anthropic/claude-sonnet-4-5",
 	tools: "coding",
 	extensions: ["tasks", "todo"],
