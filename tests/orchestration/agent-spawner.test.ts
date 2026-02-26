@@ -6,6 +6,8 @@
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
+import { AgentRegistry } from "../../lib/agents/resolver.ts";
+import type { AgentDefinition } from "../../lib/agents/types.ts";
 import {
 	getModelForRole,
 	resolveExtensionPaths,
@@ -20,6 +22,36 @@ const EXTENSIONS_DIR = resolve(
 	"..",
 	"extensions",
 );
+
+// ============================================================================
+// Fixtures — synthetic definitions for getModelForRole tests
+// ============================================================================
+
+const FIXTURE_PLANNER: AgentDefinition = {
+	id: "planner",
+	description: "Fixture planner",
+	prompts: ["base/test"],
+	model: "fixture-provider/fixture-planner-model",
+	tools: "readonly",
+	extensions: [],
+	projectContext: false,
+	session: "ephemeral",
+	loop: false,
+};
+
+const FIXTURE_WORKER: AgentDefinition = {
+	id: "worker",
+	description: "Fixture worker",
+	prompts: ["base/test"],
+	model: "fixture-provider/fixture-worker-model",
+	tools: "coding",
+	extensions: [],
+	projectContext: true,
+	session: "ephemeral",
+	loop: false,
+};
+
+const FIXTURE_REGISTRY = new AgentRegistry([FIXTURE_PLANNER, FIXTURE_WORKER]);
 
 describe("resolveTools", () => {
 	const cwd = "/tmp/test-project";
@@ -88,40 +120,46 @@ describe("resolveExtensionPaths", () => {
 });
 
 describe("getModelForRole", () => {
-	test("returns definition model for known role", () => {
-		const model = getModelForRole("planner");
+	test("returns definition model for known role (tier 2)", () => {
+		const model = getModelForRole("planner", undefined, FIXTURE_REGISTRY);
+		expect(model).toBe("fixture-provider/fixture-planner-model");
+	});
+
+	test("returns definition model for worker (tier 2)", () => {
+		const model = getModelForRole("worker", undefined, FIXTURE_REGISTRY);
+		expect(model).toBe("fixture-provider/fixture-worker-model");
+	});
+
+	test("returns fallback for unknown role (tier 4)", () => {
+		const model = getModelForRole("unknown-role", undefined, FIXTURE_REGISTRY);
 		expect(model).toBe("anthropic/claude-opus-4-6");
 	});
 
-	test("returns definition model for worker", () => {
-		const model = getModelForRole("worker");
-		expect(model).toBe("anthropic/claude-opus-4-6");
+	test("explicit override takes precedence over definition model (tier 1 > tier 2)", () => {
+		const model = getModelForRole(
+			"planner",
+			{ planner: "override-provider/override-model" },
+			FIXTURE_REGISTRY,
+		);
+		expect(model).toBe("override-provider/override-model");
 	});
 
-	test("returns fallback for unknown role", () => {
-		const model = getModelForRole("unknown-role");
-		expect(model).toBe("anthropic/claude-opus-4-6");
+	test("models.default used when role has no definition and no override (tier 3)", () => {
+		const model = getModelForRole(
+			"unknown-role",
+			{ default: "default-provider/default-model" },
+			FIXTURE_REGISTRY,
+		);
+		expect(model).toBe("default-provider/default-model");
 	});
 
-	test("explicit override takes precedence over definition model", () => {
-		const model = getModelForRole("planner", {
-			planner: "anthropic/claude-haiku-3-5",
-		});
-		expect(model).toBe("anthropic/claude-haiku-3-5");
-	});
-
-	test("models.default used when role has no definition and no override", () => {
-		const model = getModelForRole("unknown-role", {
-			default: "anthropic/claude-haiku-3-5",
-		});
-		expect(model).toBe("anthropic/claude-haiku-3-5");
-	});
-
-	test("definition model used when role has no override but has definition", () => {
-		const model = getModelForRole("planner", {
-			default: "anthropic/claude-haiku-3-5",
-		});
-		expect(model).toBe("anthropic/claude-opus-4-6");
+	test("definition model beats models.default (tier 2 > tier 3)", () => {
+		const model = getModelForRole(
+			"planner",
+			{ default: "default-provider/default-model" },
+			FIXTURE_REGISTRY,
+		);
+		expect(model).toBe("fixture-provider/fixture-planner-model");
 	});
 });
 

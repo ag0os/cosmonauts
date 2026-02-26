@@ -20,7 +20,7 @@ import {
 	type Skill,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentToolSet } from "../agents/index.ts";
-import { createDefaultRegistry } from "../agents/index.ts";
+import { type AgentRegistry, createDefaultRegistry } from "../agents/index.ts";
 import {
 	loadPrompt,
 	loadPrompts,
@@ -67,7 +67,11 @@ const FALLBACK_MODEL = "anthropic/claude-opus-4-6";
  *  3. `models.default` if provided
  *  4. Sonnet fallback
  */
-export function getModelForRole(role: string, models?: ModelConfig): string {
+export function getModelForRole(
+	role: string,
+	models?: ModelConfig,
+	registry?: AgentRegistry,
+): string {
 	// Check explicit override from ModelConfig
 	if (models) {
 		const configKey = roleToConfigKey(role);
@@ -78,7 +82,7 @@ export function getModelForRole(role: string, models?: ModelConfig): string {
 	}
 
 	// Check agent definition for model
-	const def = DEFAULT_REGISTRY.get(role);
+	const def = (registry ?? DEFAULT_REGISTRY).get(role);
 	if (def?.model) {
 		return def.model;
 	}

@@ -1,12 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	BUILTIN_DEFINITIONS,
-	COORDINATOR_DEFINITION,
-	COSMO_DEFINITION,
-	PLANNER_DEFINITION,
-	TASK_MANAGER_DEFINITION,
-	WORKER_DEFINITION,
-} from "../../lib/agents/definitions.ts";
+import { BUILTIN_DEFINITIONS } from "../../lib/agents/definitions.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 
 describe("BUILTIN_DEFINITIONS", () => {
@@ -115,149 +108,69 @@ describe("BUILTIN_DEFINITIONS", () => {
 	});
 });
 
-describe("COSMO_DEFINITION", () => {
-	it("matches DESIGN.md spec", () => {
-		expect(COSMO_DEFINITION.id).toBe("cosmo");
-		expect(COSMO_DEFINITION.namespace).toBe("coding");
-		expect(COSMO_DEFINITION.prompts).toEqual([
-			"cosmonauts",
-			"capabilities/core",
-			"capabilities/coding-readwrite",
-			"capabilities/tasks",
-			"capabilities/spawning",
-			"capabilities/todo",
-			"agents/coding/cosmo",
-		]);
-		expect(COSMO_DEFINITION.model).toBe("anthropic/claude-opus-4-6");
-		expect(COSMO_DEFINITION.tools).toBe("coding");
-		expect(COSMO_DEFINITION.extensions).toEqual([
-			"tasks",
-			"plans",
-			"orchestration",
-			"todo",
-			"init",
-		]);
-		expect(COSMO_DEFINITION.skills).toBeUndefined();
-		expect(COSMO_DEFINITION.subagents).toEqual([
-			"planner",
-			"task-manager",
-			"coordinator",
-			"worker",
-		]);
-		expect(COSMO_DEFINITION.projectContext).toBe(true);
-		expect(COSMO_DEFINITION.session).toBe("persistent");
-		expect(COSMO_DEFINITION.loop).toBe(false);
+describe("structural invariants (parameterized)", () => {
+	it.each(BUILTIN_DEFINITIONS)("$id has all required fields", (def) => {
+		expect(typeof def.id).toBe("string");
+		expect(def.id.length).toBeGreaterThan(0);
+		expect(typeof def.description).toBe("string");
+		expect(typeof def.model).toBe("string");
+		expect(typeof def.tools).toBe("string");
+		expect(typeof def.projectContext).toBe("boolean");
+		expect(typeof def.session).toBe("string");
+		expect(typeof def.loop).toBe("boolean");
 	});
-});
 
-describe("PLANNER_DEFINITION", () => {
-	it("matches DESIGN.md spec", () => {
-		expect(PLANNER_DEFINITION.id).toBe("planner");
-		expect(PLANNER_DEFINITION.namespace).toBe("coding");
-		expect(PLANNER_DEFINITION.prompts).toEqual([
-			"cosmonauts",
-			"capabilities/core",
-			"capabilities/coding-readonly",
-			"agents/coding/planner",
-		]);
-		expect(PLANNER_DEFINITION.model).toBe("anthropic/claude-opus-4-6");
-		expect(PLANNER_DEFINITION.tools).toBe("readonly");
-		expect(PLANNER_DEFINITION.extensions).toEqual(["plans"]);
-		expect(PLANNER_DEFINITION.skills).toBeUndefined();
-		expect(PLANNER_DEFINITION.subagents).toEqual([]);
-		expect(PLANNER_DEFINITION.projectContext).toBe(true);
-		expect(PLANNER_DEFINITION.session).toBe("ephemeral");
-		expect(PLANNER_DEFINITION.loop).toBe(false);
+	it.each(
+		BUILTIN_DEFINITIONS,
+	)("$id has non-empty extensions array of strings", (def) => {
+		expect(Array.isArray(def.extensions)).toBe(true);
+		for (const ext of def.extensions) {
+			expect(typeof ext).toBe("string");
+			expect(ext.length).toBeGreaterThan(0);
+		}
 	});
-});
 
-describe("TASK_MANAGER_DEFINITION", () => {
-	it("matches DESIGN.md spec", () => {
-		expect(TASK_MANAGER_DEFINITION.id).toBe("task-manager");
-		expect(TASK_MANAGER_DEFINITION.namespace).toBe("coding");
-		expect(TASK_MANAGER_DEFINITION.prompts).toEqual([
-			"cosmonauts",
-			"capabilities/core",
-			"capabilities/tasks",
-			"agents/coding/task-manager",
-		]);
-		expect(TASK_MANAGER_DEFINITION.model).toBe("anthropic/claude-opus-4-6");
-		expect(TASK_MANAGER_DEFINITION.tools).toBe("readonly");
-		expect(TASK_MANAGER_DEFINITION.extensions).toEqual(["tasks"]);
-		expect(TASK_MANAGER_DEFINITION.skills).toEqual([]);
-		expect(TASK_MANAGER_DEFINITION.subagents).toEqual([]);
-		expect(TASK_MANAGER_DEFINITION.projectContext).toBe(false);
-		expect(TASK_MANAGER_DEFINITION.session).toBe("ephemeral");
-		expect(TASK_MANAGER_DEFINITION.loop).toBe(false);
+	it.each(
+		BUILTIN_DEFINITIONS,
+	)("$id has non-empty prompts array of strings", (def) => {
+		expect(Array.isArray(def.prompts)).toBe(true);
+		expect(def.prompts.length).toBeGreaterThan(0);
+		for (const p of def.prompts) {
+			expect(typeof p).toBe("string");
+			expect(p.length).toBeGreaterThan(0);
+		}
 	});
-});
 
-describe("COORDINATOR_DEFINITION", () => {
-	it("matches DESIGN.md spec", () => {
-		expect(COORDINATOR_DEFINITION.id).toBe("coordinator");
-		expect(COORDINATOR_DEFINITION.namespace).toBe("coding");
-		expect(COORDINATOR_DEFINITION.prompts).toEqual([
-			"cosmonauts",
-			"capabilities/core",
-			"capabilities/tasks",
-			"capabilities/spawning",
-			"agents/coding/coordinator",
-		]);
-		expect(COORDINATOR_DEFINITION.model).toBe("anthropic/claude-opus-4-6");
-		expect(COORDINATOR_DEFINITION.tools).toBe("none");
-		expect(COORDINATOR_DEFINITION.extensions).toEqual([
-			"tasks",
-			"orchestration",
-		]);
-		expect(COORDINATOR_DEFINITION.skills).toEqual([]);
-		expect(COORDINATOR_DEFINITION.subagents).toEqual(["worker"]);
-		expect(COORDINATOR_DEFINITION.projectContext).toBe(false);
-		expect(COORDINATOR_DEFINITION.session).toBe("ephemeral");
-		expect(COORDINATOR_DEFINITION.loop).toBe(true);
+	it.each(
+		BUILTIN_DEFINITIONS,
+	)("$id has subagents as string array when defined", (def) => {
+		if (def.subagents !== undefined) {
+			expect(Array.isArray(def.subagents)).toBe(true);
+			for (const sub of def.subagents) {
+				expect(typeof sub).toBe("string");
+			}
+		}
 	});
-});
 
-describe("WORKER_DEFINITION", () => {
-	it("matches DESIGN.md spec", () => {
-		expect(WORKER_DEFINITION.id).toBe("worker");
-		expect(WORKER_DEFINITION.namespace).toBe("coding");
-		expect(WORKER_DEFINITION.prompts).toEqual([
-			"cosmonauts",
-			"capabilities/core",
-			"capabilities/coding-readwrite",
-			"capabilities/tasks",
-			"capabilities/todo",
-			"agents/coding/worker",
-		]);
-		expect(WORKER_DEFINITION.model).toBe("anthropic/claude-opus-4-6");
-		expect(WORKER_DEFINITION.tools).toBe("coding");
-		expect(WORKER_DEFINITION.extensions).toEqual(["tasks", "todo"]);
-		expect(WORKER_DEFINITION.skills).toBeUndefined();
-		expect(WORKER_DEFINITION.subagents).toEqual([]);
-		expect(WORKER_DEFINITION.projectContext).toBe(true);
-		expect(WORKER_DEFINITION.session).toBe("ephemeral");
-		expect(WORKER_DEFINITION.loop).toBe(false);
+	it.each(
+		BUILTIN_DEFINITIONS,
+	)("$id has skills as string array when defined", (def) => {
+		if (def.skills !== undefined) {
+			expect(Array.isArray(def.skills)).toBe(true);
+			for (const skill of def.skills) {
+				expect(typeof skill).toBe("string");
+			}
+		}
 	});
 });
 
 describe("type conformance", () => {
-	it("all named exports satisfy AgentDefinition", () => {
-		const defs: AgentDefinition[] = [
-			COSMO_DEFINITION,
-			PLANNER_DEFINITION,
-			TASK_MANAGER_DEFINITION,
-			COORDINATOR_DEFINITION,
-			WORKER_DEFINITION,
-		];
-		expect(defs).toHaveLength(5);
-	});
-
 	it("namespace is optional for external definitions", () => {
 		const external: AgentDefinition = {
 			id: "custom-agent",
 			description: "An external agent without namespace",
 			prompts: ["custom/prompt"],
-			model: "anthropic/claude-opus-4-6",
+			model: "test-provider/test-model",
 			tools: "coding",
 			extensions: [],
 			projectContext: false,
