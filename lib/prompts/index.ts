@@ -4,4 +4,10 @@
  * Re-exports the loader's public API.
  */
 
-export { loadPrompt, loadPrompts, PROMPTS_DIR } from "./loader.ts";
+export type { RuntimeTemplateContext } from "./loader.ts";
+export {
+	loadPrompt,
+	loadPrompts,
+	PROMPTS_DIR,
+	renderRuntimeTemplate,
+} from "./loader.ts";

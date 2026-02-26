@@ -21,7 +21,11 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { AgentToolSet } from "../agents/index.ts";
 import { createDefaultRegistry } from "../agents/index.ts";
-import { loadPrompts } from "../prompts/index.ts";
+import {
+	loadPrompt,
+	loadPrompts,
+	renderRuntimeTemplate,
+} from "../prompts/index.ts";
 import type {
 	AgentSpawner,
 	ModelConfig,
@@ -151,9 +155,22 @@ export function createPiSpawner(): AgentSpawner {
 					: createCodingTools(config.cwd);
 
 				// System prompt from definition's prompt layers
-				const promptContent = def?.prompts.length
+				let promptContent = def?.prompts.length
 					? await loadPrompts(def.prompts)
 					: undefined;
+
+				// Append runtime layer for sub-agent mode
+				if (config.runtimeContext?.mode === "sub-agent") {
+					const runtimeTemplate = await loadPrompt("runtime/sub-agent");
+					const rendered = renderRuntimeTemplate(runtimeTemplate, {
+						parentRole: config.runtimeContext.parentRole,
+						objective: config.runtimeContext.objective,
+						taskId: config.runtimeContext.taskId,
+					});
+					promptContent = promptContent
+						? `${promptContent}\n\n${rendered}`
+						: rendered;
+				}
 
 				// Extensions: selective loading via additionalExtensionPaths
 				const extensionPaths = def ? resolveExtensionPaths(def.extensions) : [];

@@ -78,6 +78,64 @@ export async function loadPrompts(
 }
 
 // ============================================================================
+// Runtime Template Rendering
+// ============================================================================
+
+/** Context values for rendering the runtime sub-agent prompt template. */
+export interface RuntimeTemplateContext {
+	parentRole?: string;
+	objective?: string;
+	taskId?: string;
+}
+
+/**
+ * Render a runtime prompt template by replacing known placeholders.
+ *
+ * Handles:
+ * - `{{parentRole}}` — defaults to "unknown"
+ * - `{{objective}}` — defaults to "Complete the assigned work"
+ * - `{{taskId}}` — no default; omitted sections are removed entirely
+ * - `{{#taskId}}...{{/taskId}}` — conditional block, included only when taskId is provided
+ *
+ * After replacement, any remaining `{{...}}` tokens are stripped to prevent
+ * unresolved placeholders from leaking into the system prompt.
+ */
+export function renderRuntimeTemplate(
+	template: string,
+	context: RuntimeTemplateContext,
+): string {
+	let result = template;
+
+	// Handle conditional blocks: {{#taskId}}...{{/taskId}}
+	if (context.taskId) {
+		// Keep block content, remove delimiters
+		result = result.replace(/\{\{#taskId\}\}([\s\S]*?)\{\{\/taskId\}\}/g, "$1");
+	} else {
+		// Remove entire block including delimiters
+		result = result.replace(/\{\{#taskId\}\}[\s\S]*?\{\{\/taskId\}\}/g, "");
+	}
+
+	// Replace simple tokens with values or defaults
+	result = result.replace(
+		/\{\{parentRole\}\}/g,
+		context.parentRole ?? "unknown",
+	);
+	result = result.replace(
+		/\{\{objective\}\}/g,
+		context.objective ?? "Complete the assigned work",
+	);
+	result = result.replace(/\{\{taskId\}\}/g, context.taskId ?? "");
+
+	// Strip any remaining unresolved template tokens
+	result = result.replace(/\{\{[^}]*\}\}/g, "");
+
+	// Clean up blank lines left by removed blocks
+	result = result.replace(/\n{3,}/g, "\n\n");
+
+	return result.trim();
+}
+
+// ============================================================================
 // Helpers
 // ============================================================================
 
