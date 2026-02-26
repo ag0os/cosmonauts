@@ -10,6 +10,8 @@ export interface CliOptions {
 	prompt?: string;
 	/** Non-interactive print mode */
 	print: boolean;
+	/** Agent ID to use instead of cosmo (e.g. "planner", "worker") */
+	agent?: string;
 	/** Named workflow to run */
 	workflow?: string;
 	/** Raw chain DSL expression */
@@ -22,4 +24,6 @@ export interface CliOptions {
 	init: boolean;
 	/** List available workflows and exit */
 	listWorkflows: boolean;
+	/** List available agent IDs and exit */
+	listAgents: boolean;
 }

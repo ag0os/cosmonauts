@@ -16,6 +16,7 @@ import { InteractiveMode, runPrintMode } from "@mariozechner/pi-coding-agent";
 import { Command, CommanderError } from "commander";
 import { buildInitPrompt } from "../extensions/init/index.ts";
 import { COSMO_DEFINITION } from "../lib/agents/definitions.ts";
+import { createDefaultRegistry } from "../lib/agents/index.ts";
 import { parseChain } from "../lib/orchestration/chain-parser.ts";
 import {
 	getDefaultStagePrompt,
@@ -123,6 +124,10 @@ export function parseCliArgs(argv: string[]): CliOptions {
 
 	program
 		.option("-p, --print", "Non-interactive mode (run, output, exit)")
+		.option(
+			"-a, --agent <id>",
+			"Agent to use (e.g. planner, worker, coordinator)",
+		)
 		.option("-w, --workflow <name>", "Run a named workflow")
 		.option("-c, --chain <expression>", "Run a raw chain DSL expression")
 		.option("-m, --model <provider/model-id>", "Override the default model")
@@ -131,6 +136,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
 			"Set thinking level (default: high when flag present)",
 		)
 		.option("--list-workflows", "List available workflows and exit")
+		.option("--list-agents", "List available agent IDs and exit")
 		.argument("[prompt...]", "Prompt text");
 
 	// Parse without calling process.exit on error
@@ -156,12 +162,14 @@ export function parseCliArgs(argv: string[]): CliOptions {
 	return {
 		prompt,
 		print: opts.print ?? false,
+		agent: opts.agent,
 		workflow: opts.workflow,
 		chain: opts.chain,
 		model: opts.model,
 		thinking,
 		init: isInit,
 		listWorkflows: opts.listWorkflows ?? false,
+		listAgents: opts.listAgents ?? false,
 	};
 }
 
@@ -185,13 +193,28 @@ async function run(options: CliOptions): Promise<void> {
 		return;
 	}
 
+	// --list-agents: print available agent IDs and exit
+	if (options.listAgents) {
+		const registry = createDefaultRegistry();
+		for (const def of registry.listAll()) {
+			console.log(`  ${def.id}  ${def.description}`);
+		}
+		return;
+	}
+
+	// Resolve agent definition: --agent overrides the default (cosmo)
+	const registry = createDefaultRegistry();
+	const definition = options.agent
+		? registry.resolve(options.agent)
+		: COSMO_DEFINITION;
+
 	// Resolve model override once (shared across modes)
 	const model = options.model ? resolveModel(options.model) : undefined;
 
 	// 1. init → create Cosmo session in print mode, send init prompt
 	if (options.init) {
 		const { session } = await createSession({
-			definition: COSMO_DEFINITION,
+			definition,
 			cwd,
 			model,
 			thinkingLevel: options.thinking,
@@ -244,14 +267,14 @@ async function run(options: CliOptions): Promise<void> {
 		return;
 	}
 
-	// 4. --print → non-interactive Cosmo session
+	// 4. --print → non-interactive session
 	if (options.print) {
 		if (!options.prompt) {
 			throw new Error("--print requires a prompt argument");
 		}
 
 		const { session } = await createSession({
-			definition: COSMO_DEFINITION,
+			definition,
 			cwd,
 			model,
 			thinkingLevel: options.thinking,
@@ -272,7 +295,7 @@ async function run(options: CliOptions): Promise<void> {
 	// 5. default → interactive REPL
 	// TODO: After --workflow/--chain, drop into Cosmo REPL (DESIGN.md future behavior)
 	const result = await createSession({
-		definition: COSMO_DEFINITION,
+		definition,
 		cwd,
 		model,
 		thinkingLevel: options.thinking,

@@ -13,12 +13,14 @@ describe("parseCliArgs", () => {
 
 		expect(opts.print).toBe(false);
 		expect(opts.prompt).toBeUndefined();
+		expect(opts.agent).toBeUndefined();
 		expect(opts.workflow).toBeUndefined();
 		expect(opts.chain).toBeUndefined();
 		expect(opts.model).toBeUndefined();
 		expect(opts.thinking).toBeUndefined();
 		expect(opts.init).toBe(false);
 		expect(opts.listWorkflows).toBe(false);
+		expect(opts.listAgents).toBe(false);
 	});
 
 	test("positional args joined into prompt", () => {
@@ -152,5 +154,57 @@ describe("parseCliArgs", () => {
 		expect(opts.workflow).toBe("plan-and-build");
 		expect(opts.thinking).toBe("high");
 		expect(opts.prompt).toBe("build feature");
+	});
+
+	test("--agent sets agent ID", () => {
+		const opts = parseCliArgs(["--agent", "planner"]);
+
+		expect(opts.agent).toBe("planner");
+	});
+
+	test("-a shorthand sets agent ID", () => {
+		const opts = parseCliArgs(["-a", "worker"]);
+
+		expect(opts.agent).toBe("worker");
+	});
+
+	test("--agent with prompt", () => {
+		const opts = parseCliArgs(["--agent", "planner", "design auth system"]);
+
+		expect(opts.agent).toBe("planner");
+		expect(opts.prompt).toBe("design auth system");
+	});
+
+	test("--agent with --print and prompt", () => {
+		const opts = parseCliArgs([
+			"--agent",
+			"worker",
+			"--print",
+			"implement COSMO-007",
+		]);
+
+		expect(opts.agent).toBe("worker");
+		expect(opts.print).toBe(true);
+		expect(opts.prompt).toBe("implement COSMO-007");
+	});
+
+	test("--agent with --model override", () => {
+		const opts = parseCliArgs([
+			"-a",
+			"planner",
+			"-m",
+			"anthropic/claude-opus-4-0",
+			"design it",
+		]);
+
+		expect(opts.agent).toBe("planner");
+		expect(opts.model).toBe("anthropic/claude-opus-4-0");
+		expect(opts.prompt).toBe("design it");
+	});
+
+	test("--list-agents flag", () => {
+		const opts = parseCliArgs(["--list-agents"]);
+
+		expect(opts.listAgents).toBe(true);
 	});
 });

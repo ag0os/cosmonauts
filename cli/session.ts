@@ -6,6 +6,7 @@
  * - Returns session without sending a prompt (caller controls execution mode)
  */
 
+import { join } from "node:path";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import {
@@ -22,6 +23,16 @@ import {
 	resolveTools,
 } from "../lib/orchestration/agent-spawner.ts";
 import { loadPrompts } from "../lib/prompts/index.ts";
+
+/**
+ * Default Pi session directory for a given cwd.
+ * Mirrors Pi's internal path: ~/.pi/agent/sessions/<encoded-cwd>/
+ */
+function defaultSessionDir(cwd: string): string {
+	const encoded = cwd.replace(/[/:]/g, "-");
+	const home = process.env.HOME ?? process.env.USERPROFILE ?? "~";
+	return join(home, ".pi", "agent", "sessions", encoded);
+}
 
 export interface CreateSessionOptions {
 	/** Agent definition to build the session from */
@@ -79,8 +90,12 @@ export async function createSession(
 	});
 	await loader.reload();
 
+	// Scope persistent sessions by agent ID so each agent resumes its own history.
+	// cosmo uses the default (unscoped) directory for backward compatibility.
+	const sessionDir =
+		def.id !== "cosmo" ? join(defaultSessionDir(cwd), def.id) : undefined;
 	const sessionManager = persistent
-		? SessionManager.continueRecent(cwd)
+		? SessionManager.continueRecent(cwd, sessionDir)
 		: SessionManager.inMemory();
 
 	return createAgentSession({
