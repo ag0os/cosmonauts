@@ -437,4 +437,16 @@ describe("archivePlan", () => {
 		// Verify archive directory was not created
 		await expect(stat(join(tempDir, "forge/archive"))).rejects.toThrow();
 	});
+
+	it("rejects path traversal slugs in archive", async () => {
+		await expect(
+			archivePlan(tempDir, "../../etc", planManager, taskManager),
+		).rejects.toThrow("path traversal");
+	});
+
+	it("rejects empty slug in archive", async () => {
+		await expect(
+			archivePlan(tempDir, "", planManager, taskManager),
+		).rejects.toThrow("empty");
+	});
 });

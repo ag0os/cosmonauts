@@ -15,7 +15,7 @@ export {
 	writePlanFile,
 	writeSpecFile,
 } from "./file-system.ts";
-export { PlanManager } from "./plan-manager.ts";
+export { PlanManager, validateSlug } from "./plan-manager.ts";
 export type {
 	Plan,
 	PlanCreateInput,

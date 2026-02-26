@@ -40,7 +40,13 @@ const EXTENSIONS_DIR = resolve(
 );
 
 /** Extensions that exist on disk and can be loaded by the agent spawner. */
-const KNOWN_EXTENSIONS = new Set(["tasks", "orchestration", "todo", "init"]);
+const KNOWN_EXTENSIONS = new Set([
+	"tasks",
+	"plans",
+	"orchestration",
+	"todo",
+	"init",
+]);
 
 // ============================================================================
 // Model Resolution

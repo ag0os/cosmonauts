@@ -24,7 +24,7 @@ import type {
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-function validateSlug(slug: string): void {
+export function validateSlug(slug: string): void {
 	if (!slug) {
 		throw new Error("Plan slug cannot be empty");
 	}

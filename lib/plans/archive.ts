@@ -8,6 +8,7 @@ import { mkdir, readdir, rename } from "node:fs/promises";
 import { join } from "node:path";
 import type { TaskManager } from "../tasks/task-manager.ts";
 import type { PlanManager } from "./plan-manager.ts";
+import { validateSlug } from "./plan-manager.ts";
 
 // ============================================================================
 // Constants
@@ -63,6 +64,9 @@ export async function archivePlan(
 	planManager: PlanManager,
 	taskManager: TaskManager,
 ): Promise<ArchiveResult> {
+	// 0. Validate slug to prevent path traversal in archive paths
+	validateSlug(slug);
+
 	// 1. Verify plan exists
 	const plan = await planManager.getPlan(slug);
 	if (!plan) {
