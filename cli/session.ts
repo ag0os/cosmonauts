@@ -13,6 +13,7 @@ import {
 	type CreateAgentSessionResult,
 	createAgentSession,
 	DefaultResourceLoader,
+	getAgentDir,
 	type ResourceDiagnostic,
 	SessionManager,
 	type Skill,
@@ -25,13 +26,13 @@ import {
 import { loadPrompts } from "../lib/prompts/index.ts";
 
 /**
- * Default Pi session directory for a given cwd.
- * Mirrors Pi's internal path: ~/.pi/agent/sessions/<encoded-cwd>/
+ * Encode a cwd into Pi's session directory path.
+ * Uses Pi's getAgentDir() for the base path (respects PI_CODING_AGENT_DIR)
+ * and matches Pi's internal encoding: `--<cwd-with-slashes-replaced>--`.
  */
-function defaultSessionDir(cwd: string): string {
-	const encoded = cwd.replace(/[/:]/g, "-");
-	const home = process.env.HOME ?? process.env.USERPROFILE ?? "~";
-	return join(home, ".pi", "agent", "sessions", encoded);
+function piSessionDir(cwd: string): string {
+	const safePath = `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
+	return join(getAgentDir(), "sessions", safePath);
 }
 
 export interface CreateSessionOptions {
@@ -93,7 +94,7 @@ export async function createSession(
 	// Scope persistent sessions by agent ID so each agent resumes its own history.
 	// cosmo uses the default (unscoped) directory for backward compatibility.
 	const sessionDir =
-		def.id !== "cosmo" ? join(defaultSessionDir(cwd), def.id) : undefined;
+		def.id !== "cosmo" ? join(piSessionDir(cwd), def.id) : undefined;
 	const sessionManager = persistent
 		? SessionManager.continueRecent(cwd, sessionDir)
 		: SessionManager.inMemory();

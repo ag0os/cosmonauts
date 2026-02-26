@@ -211,10 +211,10 @@ async function run(options: CliOptions): Promise<void> {
 	// Resolve model override once (shared across modes)
 	const model = options.model ? resolveModel(options.model) : undefined;
 
-	// 1. init → create Cosmo session in print mode, send init prompt
+	// 1. init → always uses Cosmo (bootstrap requires full coding tools)
 	if (options.init) {
 		const { session } = await createSession({
-			definition,
+			definition: COSMO_DEFINITION,
 			cwd,
 			model,
 			thinkingLevel: options.thinking,
