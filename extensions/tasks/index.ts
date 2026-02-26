@@ -2,6 +2,18 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 
+/**
+ * Validate that a labels array contains at most one plan: prefixed label.
+ * Returns an error message string if invalid, or null if valid.
+ */
+export function validatePlanLabels(labels: string[]): string | null {
+	const planLabels = labels.filter((l) => l.startsWith("plan:"));
+	if (planLabels.length > 1) {
+		return `Task can have at most one plan: label, found: ${planLabels.join(", ")}`;
+	}
+	return null;
+}
+
 export default function tasksExtension(pi: ExtensionAPI) {
 	// task_create
 	pi.registerTool({
@@ -32,10 +44,34 @@ export default function tasksExtension(pi: ExtensionAPI) {
 					description: "Acceptance criteria as text strings",
 				}),
 			),
+			plan: Type.Optional(
+				Type.String({
+					description: "Plan slug — auto-adds plan:<slug> label",
+				}),
+			),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+			const { plan, ...createParams } = params;
+
+			// If plan is provided, inject plan:<slug> into labels
+			if (plan) {
+				const labels = [...(createParams.labels ?? []), `plan:${plan}`];
+				createParams.labels = labels;
+			}
+
+			// Validate plan label uniqueness
+			if (createParams.labels) {
+				const error = validatePlanLabels(createParams.labels);
+				if (error) {
+					return {
+						content: [{ type: "text" as const, text: error }],
+						details: null,
+					};
+				}
+			}
+
 			const manager = new TaskManager(ctx.cwd);
-			const task = await manager.createTask(params);
+			const task = await manager.createTask(createParams);
 			return {
 				content: [
 					{
@@ -169,6 +205,11 @@ export default function tasksExtension(pi: ExtensionAPI) {
 				}),
 			),
 			assignee: Type.Optional(Type.String({ description: "New assignee" })),
+			labels: Type.Optional(
+				Type.Array(Type.String(), {
+					description: "Replace all labels",
+				}),
+			),
 			description: Type.Optional(
 				Type.String({ description: "New description" }),
 			),
@@ -181,6 +222,18 @@ export default function tasksExtension(pi: ExtensionAPI) {
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const { taskId, ...updateFields } = params;
+
+			// Validate plan label uniqueness if labels are being updated
+			if (updateFields.labels) {
+				const error = validatePlanLabels(updateFields.labels);
+				if (error) {
+					return {
+						content: [{ type: "text" as const, text: error }],
+						details: null,
+					};
+				}
+			}
+
 			const update = Object.fromEntries(
 				Object.entries(updateFields).filter(([_, v]) => v !== undefined),
 			);
