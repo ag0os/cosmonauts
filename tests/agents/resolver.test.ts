@@ -133,6 +133,29 @@ describe("AgentRegistry", () => {
 			expect(registry.listIds()).toContain("scout");
 		});
 
+		it("supports definitions without namespace (backward compatibility)", () => {
+			const registry = new AgentRegistry([]);
+			const custom: AgentDefinition = {
+				id: "external-tool",
+				description: "An external agent without namespace",
+				prompts: ["custom/prompt"],
+				model: "anthropic/claude-sonnet-4-5",
+				tools: "coding",
+				extensions: [],
+				projectContext: false,
+				session: "ephemeral",
+				loop: false,
+			};
+			registry.register(custom);
+			expect(registry.has("external-tool")).toBe(true);
+			const resolved = registry.resolve("external-tool");
+			expect(resolved.id).toBe("external-tool");
+			expect(resolved.namespace).toBeUndefined();
+			const got = registry.get("external-tool");
+			expect(got).toBeDefined();
+			expect(got?.namespace).toBeUndefined();
+		});
+
 		it("overwrites an existing definition", () => {
 			const registry = new AgentRegistry();
 			const original = registry.resolve("worker");
