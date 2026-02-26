@@ -56,7 +56,7 @@ const KNOWN_EXTENSIONS = new Set([
 // Model Resolution
 // ============================================================================
 
-const FALLBACK_MODEL = "anthropic/claude-sonnet-4-5";
+const FALLBACK_MODEL = "anthropic/claude-opus-4-6";
 
 /**
  * Return the model ID string for a given agent role.

@@ -128,7 +128,7 @@ describe("COSMO_DEFINITION", () => {
 			"capabilities/todo",
 			"agents/coding/cosmo",
 		]);
-		expect(COSMO_DEFINITION.model).toBe("anthropic/claude-sonnet-4-5");
+		expect(COSMO_DEFINITION.model).toBe("anthropic/claude-opus-4-6");
 		expect(COSMO_DEFINITION.tools).toBe("coding");
 		expect(COSMO_DEFINITION.extensions).toEqual([
 			"tasks",
@@ -160,7 +160,7 @@ describe("PLANNER_DEFINITION", () => {
 			"capabilities/coding-readonly",
 			"agents/coding/planner",
 		]);
-		expect(PLANNER_DEFINITION.model).toBe("anthropic/claude-opus-4-0");
+		expect(PLANNER_DEFINITION.model).toBe("anthropic/claude-opus-4-6");
 		expect(PLANNER_DEFINITION.tools).toBe("readonly");
 		expect(PLANNER_DEFINITION.extensions).toEqual(["plans"]);
 		expect(PLANNER_DEFINITION.skills).toBeUndefined();
@@ -181,7 +181,7 @@ describe("TASK_MANAGER_DEFINITION", () => {
 			"capabilities/tasks",
 			"agents/coding/task-manager",
 		]);
-		expect(TASK_MANAGER_DEFINITION.model).toBe("anthropic/claude-sonnet-4-5");
+		expect(TASK_MANAGER_DEFINITION.model).toBe("anthropic/claude-opus-4-6");
 		expect(TASK_MANAGER_DEFINITION.tools).toBe("readonly");
 		expect(TASK_MANAGER_DEFINITION.extensions).toEqual(["tasks"]);
 		expect(TASK_MANAGER_DEFINITION.skills).toEqual([]);
@@ -203,7 +203,7 @@ describe("COORDINATOR_DEFINITION", () => {
 			"capabilities/spawning",
 			"agents/coding/coordinator",
 		]);
-		expect(COORDINATOR_DEFINITION.model).toBe("anthropic/claude-sonnet-4-5");
+		expect(COORDINATOR_DEFINITION.model).toBe("anthropic/claude-opus-4-6");
 		expect(COORDINATOR_DEFINITION.tools).toBe("none");
 		expect(COORDINATOR_DEFINITION.extensions).toEqual([
 			"tasks",
@@ -229,7 +229,7 @@ describe("WORKER_DEFINITION", () => {
 			"capabilities/todo",
 			"agents/coding/worker",
 		]);
-		expect(WORKER_DEFINITION.model).toBe("anthropic/claude-sonnet-4-5");
+		expect(WORKER_DEFINITION.model).toBe("anthropic/claude-opus-4-6");
 		expect(WORKER_DEFINITION.tools).toBe("coding");
 		expect(WORKER_DEFINITION.extensions).toEqual(["tasks", "todo"]);
 		expect(WORKER_DEFINITION.skills).toBeUndefined();
@@ -257,7 +257,7 @@ describe("type conformance", () => {
 			id: "custom-agent",
 			description: "An external agent without namespace",
 			prompts: ["custom/prompt"],
-			model: "anthropic/claude-sonnet-4-5",
+			model: "anthropic/claude-opus-4-6",
 			tools: "coding",
 			extensions: [],
 			projectContext: false,

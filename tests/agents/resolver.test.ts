@@ -22,7 +22,7 @@ describe("AgentRegistry", () => {
 				id: "test-agent",
 				description: "A test agent",
 				prompts: ["capabilities/core"],
-				model: "anthropic/claude-sonnet-4-5",
+				model: "anthropic/claude-opus-4-6",
 				tools: "coding",
 				extensions: [],
 				projectContext: false,
@@ -139,7 +139,7 @@ describe("AgentRegistry", () => {
 				id: "external-tool",
 				description: "An external agent without namespace",
 				prompts: ["custom/prompt"],
-				model: "anthropic/claude-sonnet-4-5",
+				model: "anthropic/claude-opus-4-6",
 				tools: "coding",
 				extensions: [],
 				projectContext: false,
@@ -161,10 +161,10 @@ describe("AgentRegistry", () => {
 			const original = registry.resolve("worker");
 			const override: AgentDefinition = {
 				...original,
-				model: "anthropic/claude-opus-4-0",
+				model: "anthropic/claude-opus-4-6",
 			};
 			registry.register(override);
-			expect(registry.get("worker")?.model).toBe("anthropic/claude-opus-4-0");
+			expect(registry.get("worker")?.model).toBe("anthropic/claude-opus-4-6");
 			// Count should not change
 			expect(registry.listIds()).toHaveLength(BUILTIN_DEFINITIONS.length);
 		});

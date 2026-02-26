@@ -30,7 +30,7 @@ let mockSpawnerForModule: AgentSpawner;
 
 vi.mock("../../lib/orchestration/agent-spawner.ts", () => ({
 	createPiSpawner: () => mockSpawnerForModule,
-	getModelForRole: () => "anthropic/claude-sonnet-4-5",
+	getModelForRole: () => "anthropic/claude-opus-4-6",
 }));
 
 // ============================================================================

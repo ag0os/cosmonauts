@@ -90,17 +90,17 @@ describe("resolveExtensionPaths", () => {
 describe("getModelForRole", () => {
 	test("returns definition model for known role", () => {
 		const model = getModelForRole("planner");
-		expect(model).toBe("anthropic/claude-opus-4-0");
+		expect(model).toBe("anthropic/claude-opus-4-6");
 	});
 
 	test("returns definition model for worker", () => {
 		const model = getModelForRole("worker");
-		expect(model).toBe("anthropic/claude-sonnet-4-5");
+		expect(model).toBe("anthropic/claude-opus-4-6");
 	});
 
 	test("returns fallback for unknown role", () => {
 		const model = getModelForRole("unknown-role");
-		expect(model).toBe("anthropic/claude-sonnet-4-5");
+		expect(model).toBe("anthropic/claude-opus-4-6");
 	});
 
 	test("explicit override takes precedence over definition model", () => {
@@ -121,7 +121,7 @@ describe("getModelForRole", () => {
 		const model = getModelForRole("planner", {
 			default: "anthropic/claude-haiku-3-5",
 		});
-		expect(model).toBe("anthropic/claude-opus-4-0");
+		expect(model).toBe("anthropic/claude-opus-4-6");
 	});
 });
 
