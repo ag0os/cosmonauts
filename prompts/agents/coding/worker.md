@@ -10,9 +10,9 @@ Follow these steps in order for every task.
 
 Call `task_view` with your assigned task ID. Read the full description and every acceptance criterion (AC). Understand what "done" means before touching any code.
 
-### 2. Mark In Progress
+### 2. Claim the Task
 
-Call `task_edit` to set status to "In Progress". This signals to the coordinator that work has begun.
+Call `task_edit` to set status to "In Progress" and assignee to "worker". This signals to the coordinator that work has begun and who owns it.
 
 ### 3. Explore Before You Edit
 
