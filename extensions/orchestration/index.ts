@@ -1,9 +1,16 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { createDefaultRegistry } from "../../lib/agents/index.ts";
+import { extractAgentIdFromSystemPrompt } from "../../lib/agents/runtime-identity.ts";
 import { loadProjectConfig } from "../../lib/config/index.ts";
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
-import { runChain } from "../../lib/orchestration/chain-runner.ts";
+import {
+	injectUserPrompt,
+	runChain,
+} from "../../lib/orchestration/chain-runner.ts";
+
+const DEFAULT_REGISTRY = createDefaultRegistry();
 
 export default function orchestrationExtension(pi: ExtensionAPI) {
 	// chain_run
@@ -17,14 +24,28 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 				description:
 					'Chain DSL expression (e.g. "planner -> task-manager -> coordinator")',
 			}),
+			prompt: Type.Optional(
+				Type.String({
+					description:
+						"Optional user objective to inject into the first chain stage",
+				}),
+			),
+			completionLabel: Type.Optional(
+				Type.String({
+					description:
+						"Optional task label scope for completion checks (e.g. plan:my-plan)",
+				}),
+			),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const stages = parseChain(params.expression);
+			injectUserPrompt(stages, params.prompt);
 			const projectConfig = await loadProjectConfig(ctx.cwd);
 			const result = await runChain({
 				stages,
 				projectRoot: ctx.cwd,
 				projectSkills: projectConfig.skills,
+				completionLabel: params.completionLabel,
 			});
 			const stagesSummary = result.stageResults
 				.map(
@@ -76,6 +97,58 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 			),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+			const systemPrompt = ctx.getSystemPrompt();
+			const callerRole = extractAgentIdFromSystemPrompt(systemPrompt);
+			if (!callerRole) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: "spawn_agent denied: caller role could not be resolved from runtime identity marker",
+						},
+					],
+					details: null,
+				};
+			}
+
+			const callerDef = DEFAULT_REGISTRY.get(callerRole);
+			if (!callerDef) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `spawn_agent denied: unknown caller role "${callerRole}"`,
+						},
+					],
+					details: null,
+				};
+			}
+
+			const targetDef = DEFAULT_REGISTRY.get(params.role);
+			if (!targetDef) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `spawn_agent denied: unknown target role "${params.role}"`,
+						},
+					],
+					details: null,
+				};
+			}
+
+			if (!(callerDef.subagents ?? []).includes(targetDef.id)) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `spawn_agent denied: ${callerDef.id} cannot spawn ${targetDef.id}`,
+						},
+					],
+					details: null,
+				};
+			}
+
 			const spawner = createPiSpawner();
 			const projectConfig = await loadProjectConfig(ctx.cwd);
 			try {

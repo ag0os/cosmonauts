@@ -16,6 +16,7 @@ import {
 	getAgentDir,
 	SessionManager,
 } from "@mariozechner/pi-coding-agent";
+import { appendAgentIdentityMarker } from "../lib/agents/runtime-identity.ts";
 import { buildSkillsOverride } from "../lib/agents/skills.ts";
 import type { AgentDefinition } from "../lib/agents/types.ts";
 import {
@@ -71,9 +72,10 @@ export async function createSession(
 
 	const tools = resolveTools(def.tools, cwd);
 
-	const promptContent = def.prompts.length
+	let promptContent = def.prompts.length
 		? await loadPrompts(def.prompts)
 		: undefined;
+	promptContent = appendAgentIdentityMarker(promptContent, def.id);
 
 	const extensionPaths = resolveExtensionPaths(def.extensions);
 

@@ -18,7 +18,11 @@ import {
 	SessionManager,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentToolSet } from "../agents/index.ts";
-import { type AgentRegistry, createDefaultRegistry } from "../agents/index.ts";
+import {
+	type AgentRegistry,
+	appendAgentIdentityMarker,
+	createDefaultRegistry,
+} from "../agents/index.ts";
 import { buildSkillsOverride } from "../agents/skills.ts";
 import {
 	loadPrompt,
@@ -149,16 +153,19 @@ export function createPiSpawner(): AgentSpawner {
 				const modelId = config.model ?? getModelForRole(config.role);
 				const model = resolveModel(modelId);
 
-				// Resolve full agent definition
+				// Resolve full agent definition (unknown roles are rejected).
 				const def = DEFAULT_REGISTRY.get(config.role);
+				if (!def) {
+					throw new Error(
+						`Unknown agent role "${config.role}". Available agents: ${DEFAULT_REGISTRY.listIds().join(", ")}`,
+					);
+				}
 
-				// Tools: use definition or fall back to coding tools
-				const tools = def
-					? resolveTools(def.tools, config.cwd)
-					: createCodingTools(config.cwd);
+				// Tools are fully determined by the agent definition.
+				const tools = resolveTools(def.tools, config.cwd);
 
 				// System prompt from definition's prompt layers
-				let promptContent = def?.prompts.length
+				let promptContent = def.prompts.length
 					? await loadPrompts(def.prompts)
 					: undefined;
 
@@ -175,12 +182,15 @@ export function createPiSpawner(): AgentSpawner {
 						: rendered;
 				}
 
+				// Embed caller identity marker for extension-level authorization checks.
+				promptContent = appendAgentIdentityMarker(promptContent, def.id);
+
 				// Extensions: selective loading via additionalExtensionPaths
-				const extensionPaths = def ? resolveExtensionPaths(def.extensions) : [];
+				const extensionPaths = resolveExtensionPaths(def.extensions);
 
 				// Build resource loader with all definition fields
 				const skillsOverride = buildSkillsOverride(
-					def?.skills,
+					def.skills,
 					config.projectSkills,
 				);
 				const loader = new DefaultResourceLoader({
@@ -191,7 +201,7 @@ export function createPiSpawner(): AgentSpawner {
 						additionalExtensionPaths: extensionPaths,
 					}),
 					...(skillsOverride && { skillsOverride }),
-					...(!def?.projectContext && {
+					...(!def.projectContext && {
 						agentsFilesOverride: () => ({ agentsFiles: [] }),
 					}),
 				});

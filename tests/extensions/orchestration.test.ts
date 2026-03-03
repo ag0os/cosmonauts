@@ -15,9 +15,16 @@ vi.mock("../../lib/orchestration/chain-parser.ts", () => ({
 	parseChain: vi.fn(),
 }));
 
-vi.mock("../../lib/orchestration/chain-runner.ts", () => ({
-	runChain: vi.fn(),
-}));
+vi.mock("../../lib/orchestration/chain-runner.ts", async (importOriginal) => {
+	const actual =
+		await importOriginal<
+			typeof import("../../lib/orchestration/chain-runner.ts")
+		>();
+	return {
+		...actual,
+		runChain: vi.fn(),
+	};
+});
 
 vi.mock("../../lib/orchestration/agent-spawner.ts", () => ({
 	createPiSpawner: vi.fn(),
@@ -34,7 +41,11 @@ interface RegisteredTool {
 	execute: (...args: unknown[]) => Promise<unknown>;
 }
 
-function createMockPi(cwd: string) {
+interface MockPiOptions {
+	systemPrompt?: string;
+}
+
+function createMockPi(cwd: string, options?: MockPiOptions) {
 	const tools = new Map<string, RegisteredTool>();
 	return {
 		registerTool(def: RegisteredTool) {
@@ -43,7 +54,10 @@ function createMockPi(cwd: string) {
 		async callTool(name: string, params: unknown) {
 			const tool = tools.get(name);
 			if (!tool) throw new Error(`Tool not found: ${name}`);
-			return tool.execute("call-id", params, undefined, undefined, { cwd });
+			return tool.execute("call-id", params, undefined, undefined, {
+				cwd,
+				getSystemPrompt: () => options?.systemPrompt ?? "",
+			});
 		},
 	};
 }
@@ -84,9 +98,52 @@ describe("orchestration extension", () => {
 		);
 	});
 
-	test("spawn_agent forwards project skills from config", async () => {
+	test("chain_run injects user prompt into first stage and forwards completion label", async () => {
 		const cwd = "/tmp/project";
 		const pi = createMockPi(cwd);
+		orchestrationExtension(pi as never);
+
+		loadProjectConfigMock.mockResolvedValue({
+			skills: ["typescript"],
+		} as ProjectConfig);
+		parseChainMock.mockReturnValue([
+			{ name: "planner", loop: false },
+			{ name: "coordinator", loop: true },
+		]);
+		runChainMock.mockResolvedValue({
+			success: true,
+			stageResults: [],
+			totalDurationMs: 1,
+			errors: [],
+		} as ChainResult);
+
+		await pi.callTool("chain_run", {
+			expression: "planner -> coordinator",
+			prompt: "Build auth with refresh tokens",
+			completionLabel: "plan:auth-system",
+		});
+
+		expect(runChainMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				completionLabel: "plan:auth-system",
+				stages: [
+					{
+						name: "planner",
+						loop: false,
+						prompt:
+							"Analyze the project and design an implementation plan.\n\nUser request: Build auth with refresh tokens",
+					},
+					{ name: "coordinator", loop: true },
+				],
+			}),
+		);
+	});
+
+	test("spawn_agent forwards project skills from config", async () => {
+		const cwd = "/tmp/project";
+		const pi = createMockPi(cwd, {
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
+		});
 		orchestrationExtension(pi as never);
 
 		loadProjectConfigMock.mockResolvedValue({
@@ -114,5 +171,58 @@ describe("orchestration extension", () => {
 			}),
 		);
 		expect(dispose).toHaveBeenCalledTimes(1);
+	});
+
+	test("spawn_agent denies unauthorized target role", async () => {
+		const cwd = "/tmp/project";
+		const pi = createMockPi(cwd, {
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:worker -->",
+		});
+		orchestrationExtension(pi as never);
+
+		loadProjectConfigMock.mockResolvedValue({ skills: [] } as ProjectConfig);
+		const spawn = vi.fn();
+		const dispose = vi.fn();
+		createPiSpawnerMock.mockReturnValue({ spawn, dispose });
+
+		const result = await pi.callTool("spawn_agent", {
+			role: "planner",
+			prompt: "plan this",
+		});
+
+		expect(spawn).not.toHaveBeenCalled();
+		expect(result).toMatchObject({
+			content: [
+				{
+					type: "text",
+					text: "spawn_agent denied: worker cannot spawn planner",
+				},
+			],
+		});
+	});
+
+	test("spawn_agent denies when caller marker is missing", async () => {
+		const cwd = "/tmp/project";
+		const pi = createMockPi(cwd, { systemPrompt: "no marker here" });
+		orchestrationExtension(pi as never);
+
+		const spawn = vi.fn();
+		const dispose = vi.fn();
+		createPiSpawnerMock.mockReturnValue({ spawn, dispose });
+
+		const result = await pi.callTool("spawn_agent", {
+			role: "worker",
+			prompt: "implement this",
+		});
+
+		expect(spawn).not.toHaveBeenCalled();
+		expect(result).toMatchObject({
+			content: [
+				{
+					type: "text",
+					text: "spawn_agent denied: caller role could not be resolved from runtime identity marker",
+				},
+			],
+		});
 	});
 });

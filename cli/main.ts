@@ -20,10 +20,9 @@ import { createDefaultRegistry } from "../lib/agents/index.ts";
 import { loadProjectConfig } from "../lib/config/index.ts";
 import { parseChain } from "../lib/orchestration/chain-parser.ts";
 import {
-	getDefaultStagePrompt,
+	injectUserPrompt,
 	runChain,
 } from "../lib/orchestration/chain-runner.ts";
-import type { ChainStage } from "../lib/orchestration/types.ts";
 import { listWorkflows, resolveWorkflow } from "../lib/workflows/loader.ts";
 import { createChainEventLogger } from "./chain-event-logger.ts";
 import { createSession } from "./session.ts";
@@ -79,28 +78,6 @@ function resolveModel(modelId: string) {
 	}
 
 	return model;
-}
-
-// ============================================================================
-// Chain Prompt Injection
-// ============================================================================
-
-/**
- * Inject a user prompt into the first chain stage by appending it to the
- * stage's default operational prompt.
- */
-function injectUserPrompt(
-	stages: ChainStage[],
-	prompt: string | undefined,
-): void {
-	const first = stages[0];
-	if (!prompt || !first) return;
-
-	const defaultPrompt = getDefaultStagePrompt(first.name);
-	stages[0] = {
-		...first,
-		prompt: `${defaultPrompt}\n\nUser request: ${prompt}`,
-	};
 }
 
 // ============================================================================

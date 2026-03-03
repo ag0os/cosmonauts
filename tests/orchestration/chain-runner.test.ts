@@ -85,6 +85,18 @@ function makeConfig(
 
 describe("runStage", () => {
 	describe("one-shot (loop=false)", () => {
+		test("fails unknown stage role before spawn", async () => {
+			const spawner = createMockSpawner();
+			const stage = makeStage("unknown-role", false);
+			const config = makeConfig([stage]);
+
+			const result = await runStage(stage, config, spawner);
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain('Unknown agent role "unknown-role"');
+			expect(spawner.spawn).not.toHaveBeenCalled();
+		});
+
 		test("spawns agent once and returns success with iterations=1", async () => {
 			const spawner = createMockSpawner();
 			const stage = makeStage("planner", false);
@@ -315,6 +327,36 @@ describe("createDefaultCompletionCheck", () => {
 
 		expect(result).toBe(false);
 	});
+
+	test("label scope ignores unrelated incomplete tasks", async () => {
+		const tm = new TaskManager(tmpDir);
+		await tm.init();
+		const scopedDone = await tm.createTask({
+			title: "Scoped done task",
+			labels: ["plan:alpha"],
+		});
+		await tm.createTask({
+			title: "Scoped pending task in another plan",
+			labels: ["plan:beta"],
+		});
+
+		await tm.updateTask(scopedDone.id, { status: "Done" });
+
+		const scopedCheck = createDefaultCompletionCheck(tmpDir, "plan:alpha");
+		const unscopedCheck = createDefaultCompletionCheck(tmpDir);
+
+		expect(await scopedCheck()).toBe(true);
+		expect(await unscopedCheck()).toBe(false);
+	});
+
+	test("label scope returns false when matching set is empty", async () => {
+		const tm = new TaskManager(tmpDir);
+		await tm.init();
+		await tm.createTask({ title: "General task", labels: ["backend"] });
+
+		const scopedCheck = createDefaultCompletionCheck(tmpDir, "plan:missing");
+		expect(await scopedCheck()).toBe(false);
+	});
 });
 
 // ============================================================================
@@ -421,6 +463,23 @@ describe("runChain", () => {
 		expect(result.stageResults[0]!.success).toBe(true);
 		expect(result.stageResults[1]!.success).toBe(false);
 		expect(result.errors).toContain("stage 2 failed");
+	});
+
+	test("unknown stage role fails chain immediately", async () => {
+		const stages = [
+			makeStage("unknown-role", false),
+			makeStage("worker", false),
+		];
+		const config = makeConfig(stages);
+
+		const result = await runChain(config);
+
+		expect(result.success).toBe(false);
+		expect(result.stageResults).toHaveLength(1);
+		expect(result.stageResults[0]?.success).toBe(false);
+		expect(result.stageResults[0]?.error).toContain(
+			'Unknown agent role "unknown-role"',
+		);
 	});
 
 	test("emits chain_start and chain_end events", async () => {

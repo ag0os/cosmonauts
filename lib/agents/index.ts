@@ -17,6 +17,11 @@ export {
 	createDefaultRegistry,
 	resolveAgent,
 } from "./resolver.ts";
+export {
+	appendAgentIdentityMarker,
+	buildAgentIdentityMarker,
+	extractAgentIdFromSystemPrompt,
+} from "./runtime-identity.ts";
 export type { SkillsOverrideFn } from "./skills.ts";
 export { buildSkillsOverride } from "./skills.ts";
 export type {

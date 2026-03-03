@@ -4,6 +4,7 @@
  * single-pass pipeline stages and iterative loop stages.
  */
 
+import { createDefaultRegistry } from "../agents/index.ts";
 import { TaskManager } from "../tasks/task-manager.ts";
 import { createPiSpawner, getModelForRole } from "./agent-spawner.ts";
 import type {
@@ -21,6 +22,7 @@ import type {
 
 const DEFAULT_MAX_TOTAL_ITERATIONS = 50;
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const DEFAULT_REGISTRY = createDefaultRegistry();
 
 /** Default operational prompts for chain stages (not agent identity prompts). */
 const DEFAULT_STAGE_PROMPTS: Record<string, string> = {
@@ -36,6 +38,24 @@ export function getDefaultStagePrompt(role: string): string {
 	return DEFAULT_STAGE_PROMPTS[role] ?? DEFAULT_PROMPT;
 }
 
+/**
+ * Inject a user prompt into the first chain stage by appending it to that
+ * stage's default operational prompt.
+ */
+export function injectUserPrompt(
+	stages: ChainStage[],
+	prompt: string | undefined,
+): void {
+	const first = stages[0];
+	if (!prompt || !first) return;
+
+	const defaultPrompt = getDefaultStagePrompt(first.name);
+	stages[0] = {
+		...first,
+		prompt: `${defaultPrompt}\n\nUser request: ${prompt}`,
+	};
+}
+
 // ============================================================================
 // Default Completion Check
 // ============================================================================
@@ -46,10 +66,11 @@ export function getDefaultStagePrompt(role: string): string {
  */
 export function createDefaultCompletionCheck(
 	projectRoot: string,
+	label?: string,
 ): () => Promise<boolean> {
 	return async (): Promise<boolean> => {
 		const tm = new TaskManager(projectRoot);
-		const tasks = await tm.listTasks();
+		const tasks = await tm.listTasks(label ? { label } : undefined);
 
 		if (tasks.length === 0) {
 			return false;
@@ -166,6 +187,18 @@ export async function runStage(
 	let iterations = 0;
 
 	try {
+		if (!DEFAULT_REGISTRY.has(stage.name)) {
+			const message = `Unknown agent role "${stage.name}"`;
+			emit(config, { type: "error", message, stage });
+			return {
+				stage,
+				success: false,
+				iterations: 0,
+				durationMs: Date.now() - stageStart,
+				error: message,
+			};
+		}
+
 		const model = getModelForRole(stage.name, config.models);
 		const prompt = stage.prompt ?? getDefaultStagePrompt(stage.name);
 
@@ -206,7 +239,8 @@ export async function runStage(
 
 		// Loop stage — repeat until done or safety cap
 		const completionCheck =
-			stage.completionCheck ?? createDefaultCompletionCheck(config.projectRoot);
+			stage.completionCheck ??
+			createDefaultCompletionCheck(config.projectRoot, config.completionLabel);
 		const iterationBudget =
 			constraints?.maxTotalIterations ?? DEFAULT_MAX_TOTAL_ITERATIONS;
 		const deadline = constraints?.deadlineMs ?? Date.now() + DEFAULT_TIMEOUT_MS;
