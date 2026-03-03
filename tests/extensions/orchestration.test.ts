@@ -98,26 +98,33 @@ describe("orchestration extension", () => {
 		);
 	});
 
-	test("chain_run requires completionLabel when coordinator is present", async () => {
+	test("chain_run allows coordinator without completionLabel", async () => {
 		const cwd = "/tmp/project";
 		const pi = createMockPi(cwd);
 		orchestrationExtension(pi as never);
 
+		loadProjectConfigMock.mockResolvedValue({
+			skills: ["typescript"],
+		} as ProjectConfig);
 		parseChainMock.mockReturnValue([{ name: "coordinator", loop: true }]);
+		runChainMock.mockResolvedValue({
+			success: true,
+			stageResults: [],
+			totalDurationMs: 1,
+			errors: [],
+		} as ChainResult);
 
-		const result = await pi.callTool("chain_run", {
+		await pi.callTool("chain_run", {
 			expression: "coordinator",
 		});
 
-		expect(runChainMock).not.toHaveBeenCalled();
-		expect(result).toMatchObject({
-			content: [
-				{
-					type: "text",
-					text: 'chain_run requires completionLabel when coordinator is present (example: "plan:my-plan")',
-				},
-			],
-		});
+		expect(runChainMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				projectRoot: cwd,
+				completionLabel: undefined,
+				stages: [{ name: "coordinator", loop: true }],
+			}),
+		);
 	});
 
 	test("chain_run injects user prompt into first stage and forwards completion label", async () => {

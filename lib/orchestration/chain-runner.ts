@@ -38,13 +38,6 @@ export function getDefaultStagePrompt(role: string): string {
 	return DEFAULT_STAGE_PROMPTS[role] ?? DEFAULT_PROMPT;
 }
 
-/** Returns true when a chain includes coordinator, which requires scoped completion. */
-export function requiresCompletionLabel(
-	stages: readonly ChainStage[],
-): boolean {
-	return stages.some((stage) => stage.name === "coordinator");
-}
-
 /**
  * Inject a user prompt into the first chain stage by appending it to that
  * stage's default operational prompt.

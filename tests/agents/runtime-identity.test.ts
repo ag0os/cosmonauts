@@ -29,6 +29,17 @@ describe("runtime identity markers", () => {
 		expect(extractAgentIdFromSystemPrompt(systemPrompt)).toBe("task-manager");
 	});
 
+	test("extractAgentIdFromSystemPrompt uses the last marker", () => {
+		const systemPrompt = [
+			"header",
+			"<!-- COSMONAUTS_AGENT_ID:worker -->",
+			"prompt body",
+			"<!-- COSMONAUTS_AGENT_ID:cosmo -->",
+			"footer",
+		].join("\n");
+		expect(extractAgentIdFromSystemPrompt(systemPrompt)).toBe("cosmo");
+	});
+
 	test("extractAgentIdFromSystemPrompt returns undefined when marker missing", () => {
 		expect(extractAgentIdFromSystemPrompt("no marker")).toBeUndefined();
 	});

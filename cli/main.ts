@@ -21,10 +21,8 @@ import { loadProjectConfig } from "../lib/config/index.ts";
 import { parseChain } from "../lib/orchestration/chain-parser.ts";
 import {
 	injectUserPrompt,
-	requiresCompletionLabel,
 	runChain,
 } from "../lib/orchestration/chain-runner.ts";
-import type { ChainStage } from "../lib/orchestration/types.ts";
 import { listWorkflows, resolveWorkflow } from "../lib/workflows/loader.ts";
 import { createChainEventLogger } from "./chain-event-logger.ts";
 import { createSession } from "./session.ts";
@@ -50,17 +48,6 @@ function parseThinkingLevel(value: string): ThinkingLevel {
 		);
 	}
 	return value as ThinkingLevel;
-}
-
-function assertCompletionLabelForCoordinator(
-	stages: readonly ChainStage[],
-	completionLabel: string | undefined,
-): void {
-	if (requiresCompletionLabel(stages) && !completionLabel) {
-		throw new Error(
-			'Coordinator chains require --completion-label (example: --completion-label "plan:my-plan")',
-		);
-	}
 }
 
 // ============================================================================
@@ -236,7 +223,6 @@ async function run(options: CliOptions): Promise<void> {
 	// 2. --chain → parse chain, run, exit
 	if (options.chain) {
 		const stages = parseChain(options.chain);
-		assertCompletionLabelForCoordinator(stages, options.completionLabel);
 		injectUserPrompt(stages, options.prompt);
 
 		const result = await runChain({
@@ -257,7 +243,6 @@ async function run(options: CliOptions): Promise<void> {
 	if (options.workflow) {
 		const wf = await resolveWorkflow(options.workflow, cwd);
 		const stages = parseChain(wf.chain);
-		assertCompletionLabelForCoordinator(stages, options.completionLabel);
 		injectUserPrompt(stages, options.prompt);
 
 		const result = await runChain({

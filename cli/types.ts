@@ -16,7 +16,7 @@ export interface CliOptions {
 	workflow?: string;
 	/** Raw chain DSL expression */
 	chain?: string;
-	/** Task label scope for loop completion checks (required with coordinator) */
+	/** Optional task label scope for loop completion checks */
 	completionLabel?: string;
 	/** Model override in "provider/model-id" format */
 	model?: string;
