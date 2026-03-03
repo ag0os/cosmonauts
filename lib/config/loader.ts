@@ -25,8 +25,17 @@ export async function loadProjectConfig(
 	let raw: string;
 	try {
 		raw = await readFile(configPath, "utf-8");
-	} catch {
-		return {}; // File doesn't exist — empty config
+	} catch (error: unknown) {
+		// Missing config file is expected; other read failures should surface.
+		if (
+			error &&
+			typeof error === "object" &&
+			"code" in error &&
+			(error as NodeJS.ErrnoException).code === "ENOENT"
+		) {
+			return {};
+		}
+		throw error;
 	}
 
 	let parsed: unknown;

@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { loadProjectConfig } from "../../lib/config/index.ts";
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import { runChain } from "../../lib/orchestration/chain-runner.ts";
@@ -19,9 +20,11 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const stages = parseChain(params.expression);
+			const projectConfig = await loadProjectConfig(ctx.cwd);
 			const result = await runChain({
 				stages,
 				projectRoot: ctx.cwd,
+				projectSkills: projectConfig.skills,
 			});
 			const stagesSummary = result.stageResults
 				.map(
@@ -74,6 +77,7 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const spawner = createPiSpawner();
+			const projectConfig = await loadProjectConfig(ctx.cwd);
 			try {
 				const result = await spawner.spawn({
 					role: params.role,
@@ -81,6 +85,7 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 					prompt: params.prompt,
 					model: params.model,
 					runtimeContext: params.runtimeContext,
+					projectSkills: projectConfig.skills,
 				});
 				return {
 					content: [

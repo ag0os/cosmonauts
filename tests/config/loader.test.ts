@@ -30,6 +30,13 @@ describe("loadProjectConfig", () => {
 		expect(config.workflows).toBeUndefined();
 	});
 
+	test("throws on read errors other than missing file", async () => {
+		await mkdir(join(tmpDir, ".cosmonauts", "config.json"), {
+			recursive: true,
+		});
+		await expect(loadProjectConfig(tmpDir)).rejects.toThrow();
+	});
+
 	test("parses skills array", async () => {
 		await mkdir(join(tmpDir, ".cosmonauts"), { recursive: true });
 		await writeFile(
