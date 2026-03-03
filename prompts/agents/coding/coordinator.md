@@ -71,20 +71,6 @@ After each `spawn_agent` call returns, call `task_view` to verify compliance:
 
 After processing all ready tasks (or if none are available), exit. The chain runner will call you again on the next iteration.
 
-## Specialist Routing
-
-Match task labels to determine which skills a worker needs. Include this guidance in the worker's prompt so the worker understands its domain focus.
-
-| Task labels | Worker specialization |
-|-------------|----------------------|
-| `backend` (TypeScript project) | worker + typescript |
-| `frontend` | worker + typescript + frontend |
-| `database` | worker + database |
-| `testing` | worker + testing |
-| `devops` | worker + devops |
-
-When a task has multiple labels, combine the relevant specializations.
-
 ## Error Handling
 
 - **Worker fails once**: If the worker left the task in a non-Done state, set it back to "To Do". Append a note via `task_edit` explaining what went wrong so the next attempt has context.
