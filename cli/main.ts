@@ -21,8 +21,10 @@ import { loadProjectConfig } from "../lib/config/index.ts";
 import { parseChain } from "../lib/orchestration/chain-parser.ts";
 import {
 	injectUserPrompt,
+	requiresCompletionLabel,
 	runChain,
 } from "../lib/orchestration/chain-runner.ts";
+import type { ChainStage } from "../lib/orchestration/types.ts";
 import { listWorkflows, resolveWorkflow } from "../lib/workflows/loader.ts";
 import { createChainEventLogger } from "./chain-event-logger.ts";
 import { createSession } from "./session.ts";
@@ -48,6 +50,17 @@ function parseThinkingLevel(value: string): ThinkingLevel {
 		);
 	}
 	return value as ThinkingLevel;
+}
+
+function assertCompletionLabelForCoordinator(
+	stages: readonly ChainStage[],
+	completionLabel: string | undefined,
+): void {
+	if (requiresCompletionLabel(stages) && !completionLabel) {
+		throw new Error(
+			'Coordinator chains require --completion-label (example: --completion-label "plan:my-plan")',
+		);
+	}
 }
 
 // ============================================================================
@@ -108,6 +121,10 @@ export function parseCliArgs(argv: string[]): CliOptions {
 		)
 		.option("-w, --workflow <name>", "Run a named workflow")
 		.option("-c, --chain <expression>", "Run a raw chain DSL expression")
+		.option(
+			"--completion-label <label>",
+			'Task label scope for loop completion checks (e.g. "plan:auth-system")',
+		)
 		.option("-m, --model <provider/model-id>", "Override the default model")
 		.option(
 			"-t, --thinking [level]",
@@ -143,6 +160,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
 		agent: opts.agent,
 		workflow: opts.workflow,
 		chain: opts.chain,
+		completionLabel: opts.completionLabel,
 		model: opts.model,
 		thinking,
 		init: isInit,
@@ -218,6 +236,7 @@ async function run(options: CliOptions): Promise<void> {
 	// 2. --chain → parse chain, run, exit
 	if (options.chain) {
 		const stages = parseChain(options.chain);
+		assertCompletionLabelForCoordinator(stages, options.completionLabel);
 		injectUserPrompt(stages, options.prompt);
 
 		const result = await runChain({
@@ -225,6 +244,7 @@ async function run(options: CliOptions): Promise<void> {
 			projectRoot: cwd,
 			onEvent: createChainEventLogger(),
 			projectSkills,
+			completionLabel: options.completionLabel,
 		});
 
 		if (!result.success) {
@@ -237,6 +257,7 @@ async function run(options: CliOptions): Promise<void> {
 	if (options.workflow) {
 		const wf = await resolveWorkflow(options.workflow, cwd);
 		const stages = parseChain(wf.chain);
+		assertCompletionLabelForCoordinator(stages, options.completionLabel);
 		injectUserPrompt(stages, options.prompt);
 
 		const result = await runChain({
@@ -244,6 +265,7 @@ async function run(options: CliOptions): Promise<void> {
 			projectRoot: cwd,
 			onEvent: createChainEventLogger(),
 			projectSkills,
+			completionLabel: options.completionLabel,
 		});
 
 		if (!result.success) {

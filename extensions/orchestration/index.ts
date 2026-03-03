@@ -7,6 +7,7 @@ import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import {
 	injectUserPrompt,
+	requiresCompletionLabel,
 	runChain,
 } from "../../lib/orchestration/chain-runner.ts";
 
@@ -39,6 +40,17 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const stages = parseChain(params.expression);
+			if (requiresCompletionLabel(stages) && !params.completionLabel) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: 'chain_run requires completionLabel when coordinator is present (example: "plan:my-plan")',
+						},
+					],
+					details: null,
+				};
+			}
 			injectUserPrompt(stages, params.prompt);
 			const projectConfig = await loadProjectConfig(ctx.cwd);
 			const result = await runChain({

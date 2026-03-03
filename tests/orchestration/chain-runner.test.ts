@@ -181,8 +181,9 @@ describe("runStage", () => {
 			});
 
 			expect(result.success).toBe(true);
-			expect(result.iterations).toBe(2);
-			expect(spawner.spawn).toHaveBeenCalledTimes(2);
+			// completion check runs once before first spawn, then after iteration 1
+			expect(result.iterations).toBe(1);
+			expect(spawner.spawn).toHaveBeenCalledTimes(1);
 		});
 
 		test("exhausts iteration budget when completion never passes", async () => {
@@ -196,10 +197,12 @@ describe("runStage", () => {
 				deadlineMs: Date.now() + 60_000,
 			});
 
-			expect(result.success).toBe(true);
+			expect(result.success).toBe(false);
+			expect(result.error).toContain("reached max iterations");
 			expect(result.iterations).toBe(3);
 			expect(spawner.spawn).toHaveBeenCalledTimes(3);
-			expect(completionCheck).toHaveBeenCalledTimes(3);
+			// one pre-check + once per iteration
+			expect(completionCheck).toHaveBeenCalledTimes(4);
 		});
 
 		test("respects abort signal between iterations", async () => {
@@ -258,6 +261,69 @@ describe("runStage", () => {
 			expect(result.error).toBe("agent crashed");
 			expect(result.iterations).toBe(2);
 			expect(spawner.spawn).toHaveBeenCalledTimes(2);
+		});
+
+		test("fails fast when default completion scope has no tasks", async () => {
+			const tmpDir = await mkdtemp(join(tmpdir(), "chain-runner-stage-empty-"));
+			const spawner = createMockSpawner();
+			const stage = makeStage("coordinator", true);
+			const config = makeConfig([stage], {
+				projectRoot: tmpDir,
+				completionLabel: "plan:missing",
+			});
+
+			try {
+				const result = await runStage(stage, config, spawner, {
+					maxTotalIterations: 10,
+					deadlineMs: Date.now() + 60_000,
+				});
+
+				expect(result.success).toBe(false);
+				expect(result.iterations).toBe(0);
+				expect(result.error).toContain("No tasks found");
+				expect(spawner.spawn).not.toHaveBeenCalled();
+			} finally {
+				await rm(tmpDir, { recursive: true, force: true });
+			}
+		});
+
+		test("fails fast when all scoped tasks are blocked", async () => {
+			const tmpDir = await mkdtemp(
+				join(tmpdir(), "chain-runner-stage-blocked-"),
+			);
+			const tm = new TaskManager(tmpDir);
+			await tm.init();
+			const taskA = await tm.createTask({
+				title: "A",
+				labels: ["plan:alpha"],
+			});
+			const taskB = await tm.createTask({
+				title: "B",
+				labels: ["plan:alpha"],
+			});
+			await tm.updateTask(taskA.id, { status: "Blocked" });
+			await tm.updateTask(taskB.id, { status: "Blocked" });
+
+			const spawner = createMockSpawner();
+			const stage = makeStage("coordinator", true);
+			const config = makeConfig([stage], {
+				projectRoot: tmpDir,
+				completionLabel: "plan:alpha",
+			});
+
+			try {
+				const result = await runStage(stage, config, spawner, {
+					maxTotalIterations: 10,
+					deadlineMs: Date.now() + 60_000,
+				});
+
+				expect(result.success).toBe(false);
+				expect(result.iterations).toBe(0);
+				expect(result.error).toContain("Blocked");
+				expect(spawner.spawn).not.toHaveBeenCalled();
+			} finally {
+				await rm(tmpDir, { recursive: true, force: true });
+			}
 		});
 	});
 });
@@ -558,13 +624,14 @@ describe("runChain", () => {
 
 		const result = await runChain(config);
 
-		expect(result.success).toBe(true);
+		expect(result.success).toBe(false);
 		expect(result.stageResults).toHaveLength(3);
 		// One-shot stages still report iterations=1 in their results
 		expect(result.stageResults[0]!.iterations).toBe(1);
 		expect(result.stageResults[1]!.iterations).toBe(1);
 		// Loop stage gets the full budget of 3, not 3 - 2 = 1
 		expect(result.stageResults[2]!.iterations).toBe(3);
+		expect(result.stageResults[2]!.success).toBe(false);
 	});
 
 	test("maxTotalIterations budget shared across stages", async () => {
@@ -598,11 +665,12 @@ describe("runChain", () => {
 
 		const result = await runChain(config);
 
-		expect(result.success).toBe(true);
+		expect(result.success).toBe(false);
 		expect(result.stageResults).toHaveLength(2);
-		// First stage: 2 iterations (completion check passes after 2)
-		expect(result.stageResults[0]!.iterations).toBe(2);
-		// Second stage: only 1 iteration left in budget (3 - 2 = 1)
-		expect(result.stageResults[1]!.iterations).toBe(1);
+		// First stage: 1 iteration (pre-check + post-iteration check reaches completion)
+		expect(result.stageResults[0]!.iterations).toBe(1);
+		// Second stage: remaining budget is 2 (3 - 1 = 2)
+		expect(result.stageResults[1]!.iterations).toBe(2);
+		expect(result.stageResults[1]!.success).toBe(false);
 	});
 });

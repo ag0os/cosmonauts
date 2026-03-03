@@ -16,6 +16,7 @@ describe("parseCliArgs", () => {
 		expect(opts.agent).toBeUndefined();
 		expect(opts.workflow).toBeUndefined();
 		expect(opts.chain).toBeUndefined();
+		expect(opts.completionLabel).toBeUndefined();
 		expect(opts.model).toBeUndefined();
 		expect(opts.thinking).toBeUndefined();
 		expect(opts.init).toBe(false);
@@ -71,6 +72,17 @@ describe("parseCliArgs", () => {
 
 		expect(opts.chain).toBe("planner -> coordinator");
 		expect(opts.prompt).toBe("build it");
+	});
+
+	test("--completion-label sets completion label", () => {
+		const opts = parseCliArgs([
+			"--completion-label",
+			"plan:auth-system",
+			"--chain",
+			"planner -> coordinator",
+		]);
+
+		expect(opts.completionLabel).toBe("plan:auth-system");
 	});
 
 	test("-c shorthand sets chain expression", () => {

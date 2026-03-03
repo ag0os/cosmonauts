@@ -38,6 +38,13 @@ export function getDefaultStagePrompt(role: string): string {
 	return DEFAULT_STAGE_PROMPTS[role] ?? DEFAULT_PROMPT;
 }
 
+/** Returns true when a chain includes coordinator, which requires scoped completion. */
+export function requiresCompletionLabel(
+	stages: readonly ChainStage[],
+): boolean {
+	return stages.some((stage) => stage.name === "coordinator");
+}
+
 /**
  * Inject a user prompt into the first chain stage by appending it to that
  * stage's default operational prompt.
@@ -69,15 +76,52 @@ export function createDefaultCompletionCheck(
 	label?: string,
 ): () => Promise<boolean> {
 	return async (): Promise<boolean> => {
-		const tm = new TaskManager(projectRoot);
-		const tasks = await tm.listTasks(label ? { label } : undefined);
-
-		if (tasks.length === 0) {
-			return false;
-		}
-
-		return tasks.every((task) => task.status === "Done");
+		const state = await evaluateDefaultCompletionState(projectRoot, label);
+		return state.status === "complete";
 	};
+}
+
+type DefaultCompletionState =
+	| { status: "complete" }
+	| { status: "pending" }
+	| { status: "terminal"; reason: string };
+
+/**
+ * Evaluate completion for the default coordinator loop.
+ *
+ * Terminal states let loop stages exit immediately instead of burning
+ * iterations when there is no actionable work left.
+ */
+async function evaluateDefaultCompletionState(
+	projectRoot: string,
+	label?: string,
+): Promise<DefaultCompletionState> {
+	const tm = new TaskManager(projectRoot);
+	const tasks = await tm.listTasks(label ? { label } : undefined);
+
+	if (tasks.length === 0) {
+		return {
+			status: "terminal",
+			reason: label
+				? `No tasks found for completion label "${label}"`
+				: "No tasks found for completion check",
+		};
+	}
+
+	if (tasks.every((task) => task.status === "Done")) {
+		return { status: "complete" };
+	}
+
+	if (tasks.every((task) => task.status === "Blocked")) {
+		return {
+			status: "terminal",
+			reason: label
+				? `All tasks for completion label "${label}" are Blocked`
+				: "All tasks are Blocked",
+		};
+	}
+
+	return { status: "pending" };
 }
 
 // ============================================================================
@@ -238,12 +282,47 @@ export async function runStage(
 		}
 
 		// Loop stage — repeat until done or safety cap
-		const completionCheck =
-			stage.completionCheck ??
-			createDefaultCompletionCheck(config.projectRoot, config.completionLabel);
+		const completionCheck = stage.completionCheck;
 		const iterationBudget =
 			constraints?.maxTotalIterations ?? DEFAULT_MAX_TOTAL_ITERATIONS;
 		const deadline = constraints?.deadlineMs ?? Date.now() + DEFAULT_TIMEOUT_MS;
+		let completionReached = false;
+		let terminalError: string | undefined;
+
+		// Pre-check once before spawning to avoid unnecessary loop iterations.
+		if (completionCheck) {
+			completionReached = await completionCheck(config.projectRoot);
+		} else {
+			const initialState = await evaluateDefaultCompletionState(
+				config.projectRoot,
+				config.completionLabel,
+			);
+			if (initialState.status === "complete") {
+				completionReached = true;
+			}
+			if (initialState.status === "terminal") {
+				terminalError = initialState.reason;
+			}
+		}
+
+		if (completionReached) {
+			return {
+				stage,
+				success: true,
+				iterations,
+				durationMs: Date.now() - stageStart,
+			};
+		}
+
+		if (terminalError) {
+			return {
+				stage,
+				success: false,
+				iterations,
+				durationMs: Date.now() - stageStart,
+				error: terminalError,
+			};
+		}
 
 		for (let i = 0; i < iterationBudget; i++) {
 			if (config.signal?.aborted) break;
@@ -289,15 +368,75 @@ export async function runStage(
 				};
 			}
 
-			const done = await completionCheck(config.projectRoot);
-			if (done) break;
+			if (completionCheck) {
+				completionReached = await completionCheck(config.projectRoot);
+			} else {
+				const state = await evaluateDefaultCompletionState(
+					config.projectRoot,
+					config.completionLabel,
+				);
+				completionReached = state.status === "complete";
+				if (state.status === "terminal") {
+					terminalError = state.reason;
+				}
+			}
+			if (completionReached || terminalError) break;
+		}
+
+		if (terminalError) {
+			return {
+				stage,
+				success: false,
+				iterations,
+				durationMs: Date.now() - stageStart,
+				error: terminalError,
+			};
+		}
+
+		if (completionReached) {
+			return {
+				stage,
+				success: true,
+				iterations,
+				durationMs: Date.now() - stageStart,
+			};
+		}
+
+		if (config.signal?.aborted) {
+			return {
+				stage,
+				success: true,
+				iterations,
+				durationMs: Date.now() - stageStart,
+			};
+		}
+
+		if (Date.now() >= deadline) {
+			return {
+				stage,
+				success: false,
+				iterations,
+				durationMs: Date.now() - stageStart,
+				error: `Loop stage "${stage.name}" timed out before completion`,
+			};
+		}
+
+		if (iterations >= iterationBudget) {
+			return {
+				stage,
+				success: false,
+				iterations,
+				durationMs: Date.now() - stageStart,
+				error: `Loop stage "${stage.name}" reached max iterations (${iterationBudget}) before completion`,
+			};
 		}
 
 		return {
 			stage,
-			success: true,
+			success: false,
 			iterations,
 			durationMs: Date.now() - stageStart,
+			error: `Loop stage "${stage.name}" exited before completion`,
 		};
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : String(err);
