@@ -179,6 +179,7 @@ export async function runStage(
 				model,
 				prompt,
 				signal: config.signal,
+				projectSkills: config.projectSkills,
 			});
 
 			if (spawnResult.success) {
@@ -228,6 +229,7 @@ export async function runStage(
 				model,
 				prompt,
 				signal: config.signal,
+				projectSkills: config.projectSkills,
 			});
 
 			if (spawnResult.success) {

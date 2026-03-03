@@ -59,6 +59,8 @@ export interface ChainConfig {
 	maxTotalIterations?: number;
 	/** Global safety cap: timeout in milliseconds (default: 30 minutes) */
 	timeoutMs?: number;
+	/** Project-level skill filter list (from .cosmonauts/config.json) */
+	projectSkills?: readonly string[];
 }
 
 // ============================================================================
@@ -137,6 +139,8 @@ export interface SpawnConfig {
 	skillPaths?: string[];
 	/** Runtime context for prompt layer injection (Layer 3) */
 	runtimeContext?: SpawnRuntimeContext;
+	/** Project-level skill filter list (from .cosmonauts/config.json) */
+	projectSkills?: readonly string[];
 }
 
 /** Result of an agent execution */

@@ -14,7 +14,13 @@ Call `task_view` with your assigned task ID. Read the full description and every
 
 Call `task_edit` to set status to "In Progress" and assignee to "worker". This signals to the coordinator that work has begun and who owns it.
 
-### 3. Explore Before You Edit
+### 3. Load Skills
+
+Check the available skills index for skills relevant to this task. The index has already been filtered to skills appropriate for this project and your role. Load relevant ones with `/skill:<name>` before writing any code. These skills contain framework conventions, API patterns, and domain knowledge that will inform your implementation.
+
+If the task description or labels suggest specific skills, prioritize loading those.
+
+### 4. Explore Before You Edit
 
 Before writing any code, read and understand the relevant parts of the codebase:
 
@@ -26,7 +32,7 @@ Before writing any code, read and understand the relevant parts of the codebase:
 
 Do not skip this step. Writing code without understanding context produces code that does not fit the project.
 
-### 4. Implement Changes
+### 5. Implement Changes
 
 Write the code to satisfy the acceptance criteria:
 
@@ -34,13 +40,13 @@ Write the code to satisfy the acceptance criteria:
 - **Do the minimum necessary.** Implement what the ACs require. Do not refactor unrelated code, add features not in the ACs, or "improve" things outside your scope.
 - **No over-engineering.** Do not add abstractions, generics, or flexibility that the ACs do not call for.
 
-### 5. Check ACs Incrementally
+### 6. Check ACs Incrementally
 
 As you complete each acceptance criterion, call `task_edit` to check it off immediately. Do not wait until the end to check all ACs at once.
 
 This gives the coordinator real-time visibility into your progress. If you get blocked on a later AC, the checked-off ones still reflect accurate progress.
 
-### 6. Run Tests
+### 7. Run Tests
 
 Run the project's test suite (or the relevant subset) to verify your changes:
 
@@ -48,7 +54,7 @@ Run the project's test suite (or the relevant subset) to verify your changes:
 - If the task requires new tests, write and run them.
 - If tests fail, fix the issue before proceeding. Do not commit failing tests.
 
-### 7. Commit
+### 8. Commit
 
 Create a git commit with your changes. The commit message must reference the task ID:
 
@@ -58,7 +64,7 @@ COSMO-XXX: Short description of what was done
 
 Use imperative mood. Describe what the commit does, not what you did. Keep the first line under 72 characters. Stage only the files relevant to your task. Do not stage unrelated changes.
 
-### 8. Mark Done
+### 9. Mark Done
 
 Call `task_edit` to set status to "Done". Add implementation notes if anything is worth noting for future agents (unusual decisions, caveats, follow-up suggestions).
 

@@ -15,12 +15,11 @@ import {
 	createCodingTools,
 	createReadOnlyTools,
 	DefaultResourceLoader,
-	type ResourceDiagnostic,
 	SessionManager,
-	type Skill,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentToolSet } from "../agents/index.ts";
 import { type AgentRegistry, createDefaultRegistry } from "../agents/index.ts";
+import { buildSkillsOverride } from "../agents/skills.ts";
 import {
 	loadPrompt,
 	loadPrompts,
@@ -180,6 +179,10 @@ export function createPiSpawner(): AgentSpawner {
 				const extensionPaths = def ? resolveExtensionPaths(def.extensions) : [];
 
 				// Build resource loader with all definition fields
+				const skillsOverride = buildSkillsOverride(
+					def?.skills,
+					config.projectSkills,
+				);
 				const loader = new DefaultResourceLoader({
 					cwd: config.cwd,
 					...(promptContent && { appendSystemPrompt: promptContent }),
@@ -187,15 +190,7 @@ export function createPiSpawner(): AgentSpawner {
 					...(extensionPaths.length > 0 && {
 						additionalExtensionPaths: extensionPaths,
 					}),
-					...(Array.isArray(def?.skills) && {
-						skillsOverride: (base: {
-							skills: Skill[];
-							diagnostics: ResourceDiagnostic[];
-						}) => ({
-							skills: base.skills.filter((s) => def?.skills?.includes(s.name)),
-							diagnostics: base.diagnostics,
-						}),
-					}),
+					...(skillsOverride && { skillsOverride }),
 					...(!def?.projectContext && {
 						agentsFilesOverride: () => ({ agentsFiles: [] }),
 					}),

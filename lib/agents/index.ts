@@ -17,6 +17,8 @@ export {
 	createDefaultRegistry,
 	resolveAgent,
 } from "./resolver.ts";
+export type { SkillsOverrideFn } from "./skills.ts";
+export { buildSkillsOverride } from "./skills.ts";
 export type {
 	AgentDefinition,
 	AgentSessionMode,

@@ -14,10 +14,9 @@ import {
 	createAgentSession,
 	DefaultResourceLoader,
 	getAgentDir,
-	type ResourceDiagnostic,
 	SessionManager,
-	type Skill,
 } from "@mariozechner/pi-coding-agent";
+import { buildSkillsOverride } from "../lib/agents/skills.ts";
 import type { AgentDefinition } from "../lib/agents/types.ts";
 import {
 	resolveExtensionPaths,
@@ -46,6 +45,8 @@ export interface CreateSessionOptions {
 	thinkingLevel?: ThinkingLevel;
 	/** Whether to persist session to disk (interactive) or keep in-memory (print) */
 	persistent: boolean;
+	/** Project-level skill filter list (from .cosmonauts/config.json) */
+	projectSkills?: readonly string[];
 }
 
 /**
@@ -59,7 +60,14 @@ export interface CreateSessionOptions {
 export async function createSession(
 	options: CreateSessionOptions,
 ): Promise<CreateAgentSessionResult> {
-	const { definition: def, cwd, model, thinkingLevel, persistent } = options;
+	const {
+		definition: def,
+		cwd,
+		model,
+		thinkingLevel,
+		persistent,
+		projectSkills,
+	} = options;
 
 	const tools = resolveTools(def.tools, cwd);
 
@@ -69,6 +77,7 @@ export async function createSession(
 
 	const extensionPaths = resolveExtensionPaths(def.extensions);
 
+	const skillsOverride = buildSkillsOverride(def.skills, projectSkills);
 	const loader = new DefaultResourceLoader({
 		cwd,
 		...(promptContent && { appendSystemPrompt: promptContent }),
@@ -76,15 +85,7 @@ export async function createSession(
 		...(extensionPaths.length > 0 && {
 			additionalExtensionPaths: extensionPaths,
 		}),
-		...(Array.isArray(def.skills) && {
-			skillsOverride: (base: {
-				skills: Skill[];
-				diagnostics: ResourceDiagnostic[];
-			}) => ({
-				skills: base.skills.filter((s) => def.skills?.includes(s.name)),
-				diagnostics: base.diagnostics,
-			}),
-		}),
+		...(skillsOverride && { skillsOverride }),
 		...(!def.projectContext && {
 			agentsFilesOverride: () => ({ agentsFiles: [] }),
 		}),

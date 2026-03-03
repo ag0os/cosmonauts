@@ -17,6 +17,7 @@ import { Command, CommanderError } from "commander";
 import { buildInitPrompt } from "../extensions/init/index.ts";
 import { COSMO_DEFINITION } from "../lib/agents/definitions.ts";
 import { createDefaultRegistry } from "../lib/agents/index.ts";
+import { loadProjectConfig } from "../lib/config/index.ts";
 import { parseChain } from "../lib/orchestration/chain-parser.ts";
 import {
 	getDefaultStagePrompt,
@@ -180,6 +181,10 @@ export function parseCliArgs(argv: string[]): CliOptions {
 async function run(options: CliOptions): Promise<void> {
 	const cwd = process.cwd();
 
+	// Load project config once for the session
+	const projectConfig = await loadProjectConfig(cwd);
+	const projectSkills = projectConfig.skills;
+
 	// --list-workflows: print available workflows and exit
 	if (options.listWorkflows) {
 		const workflows = await listWorkflows(cwd);
@@ -219,6 +224,7 @@ async function run(options: CliOptions): Promise<void> {
 			model,
 			thinkingLevel: options.thinking,
 			persistent: false,
+			projectSkills,
 		});
 
 		try {
@@ -241,6 +247,7 @@ async function run(options: CliOptions): Promise<void> {
 			stages,
 			projectRoot: cwd,
 			onEvent: createChainEventLogger(),
+			projectSkills,
 		});
 
 		if (!result.success) {
@@ -259,6 +266,7 @@ async function run(options: CliOptions): Promise<void> {
 			stages,
 			projectRoot: cwd,
 			onEvent: createChainEventLogger(),
+			projectSkills,
 		});
 
 		if (!result.success) {
@@ -279,6 +287,7 @@ async function run(options: CliOptions): Promise<void> {
 			model,
 			thinkingLevel: options.thinking,
 			persistent: false,
+			projectSkills,
 		});
 
 		try {
@@ -300,6 +309,7 @@ async function run(options: CliOptions): Promise<void> {
 		model,
 		thinkingLevel: options.thinking,
 		persistent: true,
+		projectSkills,
 	});
 
 	const interactive = new InteractiveMode(result.session, {

@@ -33,10 +33,10 @@ describe("loadWorkflows", () => {
 		expect(workflows.map((w) => w.name)).toContain("plan");
 	});
 
-	test("loads and merges from project JSON config", async () => {
+	test("loads and merges from project config.json", async () => {
 		await mkdir(join(tmpDir, ".cosmonauts"), { recursive: true });
 		await writeFile(
-			join(tmpDir, ".cosmonauts", "workflows.json"),
+			join(tmpDir, ".cosmonauts", "config.json"),
 			JSON.stringify({
 				workflows: {
 					refactor: {
@@ -56,7 +56,7 @@ describe("loadWorkflows", () => {
 	test("project config overrides built-in on name collision", async () => {
 		await mkdir(join(tmpDir, ".cosmonauts"), { recursive: true });
 		await writeFile(
-			join(tmpDir, ".cosmonauts", "workflows.json"),
+			join(tmpDir, ".cosmonauts", "config.json"),
 			JSON.stringify({
 				workflows: {
 					plan: {
@@ -80,18 +80,29 @@ describe("loadWorkflows", () => {
 	test("invalid JSON throws descriptive error", async () => {
 		await mkdir(join(tmpDir, ".cosmonauts"), { recursive: true });
 		await writeFile(
-			join(tmpDir, ".cosmonauts", "workflows.json"),
+			join(tmpDir, ".cosmonauts", "config.json"),
 			"not valid json {{{",
 		);
 
 		await expect(loadWorkflows(tmpDir)).rejects.toThrow("Invalid JSON");
 	});
 
-	test("empty workflows object returns defaults only", async () => {
+	test("empty config returns defaults only", async () => {
 		await mkdir(join(tmpDir, ".cosmonauts"), { recursive: true });
 		await writeFile(
-			join(tmpDir, ".cosmonauts", "workflows.json"),
-			JSON.stringify({ workflows: {} }),
+			join(tmpDir, ".cosmonauts", "config.json"),
+			JSON.stringify({}),
+		);
+
+		const workflows = await loadWorkflows(tmpDir);
+		expect(workflows).toHaveLength(DEFAULT_WORKFLOWS.length);
+	});
+
+	test("config with only skills and no workflows returns defaults", async () => {
+		await mkdir(join(tmpDir, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmpDir, ".cosmonauts", "config.json"),
+			JSON.stringify({ skills: ["typescript"] }),
 		);
 
 		const workflows = await loadWorkflows(tmpDir);
@@ -116,7 +127,7 @@ describe("resolveWorkflow", () => {
 	test("resolves project-defined workflow", async () => {
 		await mkdir(join(tmpDir, ".cosmonauts"), { recursive: true });
 		await writeFile(
-			join(tmpDir, ".cosmonauts", "workflows.json"),
+			join(tmpDir, ".cosmonauts", "config.json"),
 			JSON.stringify({
 				workflows: {
 					deploy: {

@@ -1,25 +1,11 @@
 /**
  * Workflow loader — resolves named workflows from built-in defaults
- * and optional project-level config (.cosmonauts/workflows.json).
+ * and optional project-level config (.cosmonauts/config.json).
  */
 
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { loadProjectConfig } from "../config/index.ts";
 import { DEFAULT_WORKFLOWS } from "./defaults.ts";
 import type { WorkflowDefinition } from "./types.ts";
-
-const CONFIG_DIR = ".cosmonauts";
-const CONFIG_FILE = "workflows.json";
-
-interface WorkflowConfigFile {
-	workflows: Record<
-		string,
-		{
-			description: string;
-			chain: string;
-		}
-	>;
-}
 
 /**
  * Load all available workflows: built-in defaults merged with project config.
@@ -36,9 +22,17 @@ export async function loadWorkflows(
 	}
 
 	// Merge project config (overrides on collision)
-	const projectWorkflows = await loadProjectWorkflows(projectRoot);
-	for (const wf of projectWorkflows) {
-		byName.set(wf.name, wf);
+	const config = await loadProjectConfig(projectRoot);
+	if (config.workflows) {
+		for (const [name, def] of Object.entries(config.workflows)) {
+			if (def && typeof def.chain === "string") {
+				byName.set(name, {
+					name,
+					description: def.description ?? "",
+					chain: def.chain,
+				});
+			}
+		}
 	}
 
 	return [...byName.values()];
@@ -67,47 +61,4 @@ export async function listWorkflows(
 	projectRoot: string,
 ): Promise<WorkflowDefinition[]> {
 	return loadWorkflows(projectRoot);
-}
-
-/**
- * Load project-level workflow definitions from .cosmonauts/workflows.json.
- * Returns empty array if file doesn't exist or is invalid.
- */
-async function loadProjectWorkflows(
-	projectRoot: string,
-): Promise<WorkflowDefinition[]> {
-	const configPath = join(projectRoot, CONFIG_DIR, CONFIG_FILE);
-
-	let raw: string;
-	try {
-		raw = await readFile(configPath, "utf-8");
-	} catch {
-		return []; // File doesn't exist — that's fine
-	}
-
-	let parsed: WorkflowConfigFile;
-	try {
-		parsed = JSON.parse(raw) as WorkflowConfigFile;
-	} catch {
-		throw new Error(
-			`Invalid JSON in ${configPath}. Expected { "workflows": { ... } }`,
-		);
-	}
-
-	if (!parsed.workflows || typeof parsed.workflows !== "object") {
-		return [];
-	}
-
-	const results: WorkflowDefinition[] = [];
-	for (const [name, def] of Object.entries(parsed.workflows)) {
-		if (def && typeof def.chain === "string") {
-			results.push({
-				name,
-				description: def.description ?? "",
-				chain: def.chain,
-			});
-		}
-	}
-
-	return results;
 }
