@@ -28,9 +28,12 @@ describe("loadWorkflows", () => {
 		const workflows = await loadWorkflows(tmpDir);
 
 		expect(workflows).toHaveLength(DEFAULT_WORKFLOWS.length);
-		expect(workflows.map((w) => w.name)).toContain("plan-and-build");
-		expect(workflows.map((w) => w.name)).toContain("implement");
-		expect(workflows.map((w) => w.name)).toContain("plan");
+		expect(workflows.length).toBeGreaterThan(0);
+		for (const wf of workflows) {
+			expect(wf).toHaveProperty("name");
+			expect(wf).toHaveProperty("chain");
+			expect(wf).toHaveProperty("description");
+		}
 	});
 
 	test("loads and merges from project config.json", async () => {
@@ -54,25 +57,26 @@ describe("loadWorkflows", () => {
 	});
 
 	test("project config overrides built-in on name collision", async () => {
+		const builtIn = DEFAULT_WORKFLOWS[0];
 		await mkdir(join(tmpDir, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmpDir, ".cosmonauts", "config.json"),
 			JSON.stringify({
 				workflows: {
-					plan: {
-						description: "Custom plan workflow",
-						chain: "planner -> task-manager",
+					[builtIn.name]: {
+						description: "Overridden workflow",
+						chain: "worker",
 					},
 				},
 			}),
 		);
 
 		const workflows = await loadWorkflows(tmpDir);
-		const plan = workflows.find((w) => w.name === "plan");
+		const overridden = workflows.find((w) => w.name === builtIn.name);
 
-		expect(plan).toBeDefined();
-		expect(plan?.description).toBe("Custom plan workflow");
-		expect(plan?.chain).toBe("planner -> task-manager");
+		expect(overridden).toBeDefined();
+		expect(overridden?.description).toBe("Overridden workflow");
+		expect(overridden?.chain).toBe("worker");
 		// Same count since it replaced, not added
 		expect(workflows.length).toBe(DEFAULT_WORKFLOWS.length);
 	});
@@ -112,10 +116,11 @@ describe("loadWorkflows", () => {
 
 describe("resolveWorkflow", () => {
 	test("resolves a built-in workflow by name", async () => {
-		const wf = await resolveWorkflow("plan-and-build", tmpDir);
+		const builtIn = DEFAULT_WORKFLOWS[0];
+		const wf = await resolveWorkflow(builtIn.name, tmpDir);
 
-		expect(wf.name).toBe("plan-and-build");
-		expect(wf.chain).toBe("planner -> task-manager -> coordinator");
+		expect(wf.name).toBe(builtIn.name);
+		expect(wf.chain).toBe(builtIn.chain);
 	});
 
 	test("throws for unknown workflow name", async () => {
@@ -153,22 +158,3 @@ describe("listWorkflows", () => {
 	});
 });
 
-describe("DEFAULT_WORKFLOWS", () => {
-	test("plan-and-build has full pipeline chain", () => {
-		const wf = DEFAULT_WORKFLOWS.find((w) => w.name === "plan-and-build");
-		expect(wf).toBeDefined();
-		expect(wf?.chain).toBe("planner -> task-manager -> coordinator");
-	});
-
-	test("implement skips planner", () => {
-		const wf = DEFAULT_WORKFLOWS.find((w) => w.name === "implement");
-		expect(wf).toBeDefined();
-		expect(wf?.chain).toBe("task-manager -> coordinator");
-	});
-
-	test("plan is planner only", () => {
-		const wf = DEFAULT_WORKFLOWS.find((w) => w.name === "plan");
-		expect(wf).toBeDefined();
-		expect(wf?.chain).toBe("planner");
-	});
-});

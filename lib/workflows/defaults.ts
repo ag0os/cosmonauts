@@ -15,9 +15,4 @@ export const DEFAULT_WORKFLOWS: WorkflowDefinition[] = [
 		description: "Create tasks from existing plan and implement",
 		chain: "task-manager -> coordinator",
 	},
-	{
-		name: "plan",
-		description: "Design only — produces a plan document",
-		chain: "planner",
-	},
 ];
