@@ -50,6 +50,10 @@ describe("loadWorkflows", () => {
 
 	test("project config overrides built-in on name collision", async () => {
 		const builtIn = DEFAULT_WORKFLOWS[0];
+		expect(builtIn).toBeDefined();
+		if (!builtIn) {
+			throw new Error("Expected at least one default workflow");
+		}
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
@@ -109,6 +113,10 @@ describe("loadWorkflows", () => {
 describe("resolveWorkflow", () => {
 	test("resolves a built-in workflow by name", async () => {
 		const builtIn = DEFAULT_WORKFLOWS[0];
+		expect(builtIn).toBeDefined();
+		if (!builtIn) {
+			throw new Error("Expected at least one default workflow");
+		}
 		const wf = await resolveWorkflow(builtIn.name, tmp.path);
 
 		expect(wf.name).toBe(builtIn.name);

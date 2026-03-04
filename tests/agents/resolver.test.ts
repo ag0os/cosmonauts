@@ -217,7 +217,12 @@ describe("createDefaultRegistry", () => {
 
 describe("resolveAgent", () => {
 	it("resolves a known agent by ID", () => {
-		const knownId = BUILTIN_DEFINITIONS[0].id;
+		const known = BUILTIN_DEFINITIONS[0];
+		expect(known).toBeDefined();
+		if (!known) {
+			throw new Error("Expected at least one built-in definition");
+		}
+		const knownId = known.id;
 		const def = resolveAgent(knownId);
 		expect(def.id).toBe(knownId);
 	});
