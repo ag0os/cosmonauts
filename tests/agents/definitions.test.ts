@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { BUILTIN_DEFINITIONS } from "../../lib/agents/definitions.ts";
-import type { AgentDefinition } from "../../lib/agents/types.ts";
+import type {
+	AgentDefinition,
+	AgentSessionMode,
+	AgentToolSet,
+} from "../../lib/agents/types.ts";
 
 describe("BUILTIN_DEFINITIONS", () => {
 	it("contains at least one built-in agent", () => {
@@ -18,17 +22,16 @@ describe("BUILTIN_DEFINITIONS", () => {
 		}
 	});
 
-	it("uses valid tool set values", () => {
-		const validTools = new Set(["coding", "readonly", "none"]);
+	it.each`
+		field        | validValues
+		${"tools"}   | ${["coding", "readonly", "none"]}
+		${"session"} | ${["ephemeral", "persistent"]}
+	`("uses valid $field values", ({ field, validValues }) => {
+		const valid = new Set(validValues as string[]);
 		for (const def of BUILTIN_DEFINITIONS) {
-			expect(validTools.has(def.tools)).toBe(true);
-		}
-	});
-
-	it("uses valid session mode values", () => {
-		const validSessions = new Set(["ephemeral", "persistent"]);
-		for (const def of BUILTIN_DEFINITIONS) {
-			expect(validSessions.has(def.session)).toBe(true);
+			expect(valid.has(def[field as keyof AgentDefinition] as string)).toBe(
+				true,
+			);
 		}
 	});
 
@@ -75,22 +78,21 @@ describe("BUILTIN_DEFINITIONS", () => {
 
 describe("structural invariants (parameterized)", () => {
 	it.each(BUILTIN_DEFINITIONS)("$id has all required fields", (def) => {
-		expect(typeof def.id).toBe("string");
+		expectTypeOf(def.id).toBeString();
 		expect(def.id.length).toBeGreaterThan(0);
-		expect(typeof def.description).toBe("string");
-		expect(typeof def.model).toBe("string");
-		expect(typeof def.tools).toBe("string");
-		expect(typeof def.projectContext).toBe("boolean");
-		expect(typeof def.session).toBe("string");
-		expect(typeof def.loop).toBe("boolean");
+		expectTypeOf(def.description).toBeString();
+		expectTypeOf(def.model).toBeString();
+		expectTypeOf(def.tools).toEqualTypeOf<AgentToolSet>();
+		expectTypeOf(def.projectContext).toBeBoolean();
+		expectTypeOf(def.session).toEqualTypeOf<AgentSessionMode>();
+		expectTypeOf(def.loop).toBeBoolean();
 	});
 
 	it.each(
 		BUILTIN_DEFINITIONS,
 	)("$id has non-empty extensions array of strings", (def) => {
-		expect(Array.isArray(def.extensions)).toBe(true);
+		expectTypeOf(def.extensions).toEqualTypeOf<readonly string[]>();
 		for (const ext of def.extensions) {
-			expect(typeof ext).toBe("string");
 			expect(ext.length).toBeGreaterThan(0);
 		}
 	});
@@ -98,10 +100,9 @@ describe("structural invariants (parameterized)", () => {
 	it.each(
 		BUILTIN_DEFINITIONS,
 	)("$id has non-empty prompts array of strings", (def) => {
-		expect(Array.isArray(def.prompts)).toBe(true);
+		expectTypeOf(def.prompts).toEqualTypeOf<readonly string[]>();
 		expect(def.prompts.length).toBeGreaterThan(0);
 		for (const p of def.prompts) {
-			expect(typeof p).toBe("string");
 			expect(p.length).toBeGreaterThan(0);
 		}
 	});
@@ -109,23 +110,13 @@ describe("structural invariants (parameterized)", () => {
 	it.each(
 		BUILTIN_DEFINITIONS,
 	)("$id has subagents as string array when defined", (def) => {
-		if (def.subagents !== undefined) {
-			expect(Array.isArray(def.subagents)).toBe(true);
-			for (const sub of def.subagents) {
-				expect(typeof sub).toBe("string");
-			}
-		}
+		expectTypeOf(def.subagents).toEqualTypeOf<readonly string[] | undefined>();
 	});
 
 	it.each(
 		BUILTIN_DEFINITIONS,
 	)("$id has skills as string array when defined", (def) => {
-		if (def.skills !== undefined) {
-			expect(Array.isArray(def.skills)).toBe(true);
-			for (const skill of def.skills) {
-				expect(typeof skill).toBe("string");
-			}
-		}
+		expectTypeOf(def.skills).toEqualTypeOf<readonly string[] | undefined>();
 	});
 });
 
@@ -142,6 +133,7 @@ describe("type conformance", () => {
 			session: "ephemeral",
 			loop: false,
 		};
+		expectTypeOf(external.namespace).toEqualTypeOf<string | undefined>();
 		expect(external.namespace).toBeUndefined();
 	});
 });
