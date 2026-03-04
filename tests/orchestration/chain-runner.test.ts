@@ -23,13 +23,16 @@ import type {
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 
 // ============================================================================
-// Mock the agent-spawner module so runChain never creates real Pi sessions
+// Mock the agent-spawner module so runChain never creates real Pi sessions.
+// Uses vi.hoisted() to make the pre-import mock reference explicit.
 // ============================================================================
 
-let mockSpawnerForModule: AgentSpawner;
+const spawnerRef = vi.hoisted(() => ({
+	current: undefined as AgentSpawner | undefined,
+}));
 
 vi.mock("../../lib/orchestration/agent-spawner.ts", () => ({
-	createPiSpawner: () => mockSpawnerForModule,
+	createPiSpawner: () => spawnerRef.current,
 	getModelForRole: () => "test-provider/test-model",
 }));
 
@@ -484,7 +487,7 @@ describe("event emission", () => {
 
 describe("runChain", () => {
 	beforeEach(() => {
-		mockSpawnerForModule = createMockSpawner();
+		spawnerRef.current = createMockSpawner();
 	});
 
 	test("sequential one-shot stages succeed", async () => {
@@ -505,7 +508,7 @@ describe("runChain", () => {
 	});
 
 	test("stage failure stops chain", async () => {
-		mockSpawnerForModule = createMockSpawner([
+		spawnerRef.current = createMockSpawner([
 			{ success: true, sessionId: "session-1", messages: [] },
 			{
 				success: false,
@@ -567,7 +570,7 @@ describe("runChain", () => {
 
 		// Abort after first stage
 		let spawnCount = 0;
-		mockSpawnerForModule = {
+		spawnerRef.current = {
 			spawn: vi.fn(async () => {
 				spawnCount++;
 				if (spawnCount === 1) {
@@ -593,7 +596,7 @@ describe("runChain", () => {
 
 		await runChain(config);
 
-		expect(mockSpawnerForModule.dispose).toHaveBeenCalledTimes(1);
+		expect(spawnerRef.current?.dispose).toHaveBeenCalledTimes(1);
 	});
 
 	test("one-shot stages do not consume loop iteration budget", async () => {
@@ -603,7 +606,7 @@ describe("runChain", () => {
 		const completionCheck = vi.fn(async () => false); // never passes
 
 		let spawnCount = 0;
-		mockSpawnerForModule = {
+		spawnerRef.current = {
 			spawn: vi.fn(async () => {
 				spawnCount++;
 				return {
@@ -645,7 +648,7 @@ describe("runChain", () => {
 		const secondCheck = vi.fn(async () => false); // never passes
 
 		let spawnCount = 0;
-		mockSpawnerForModule = {
+		spawnerRef.current = {
 			spawn: vi.fn(async () => {
 				spawnCount++;
 				return {

@@ -7,12 +7,23 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { ProjectConfig } from "../../lib/config/types.ts";
 import type { ChainResult } from "../../lib/orchestration/types.ts";
 
-vi.mock("../../lib/config/index.ts", () => ({
+// ============================================================================
+// Hoisted mock references — declared before imports via vi.hoisted()
+// ============================================================================
+
+const mocks = vi.hoisted(() => ({
 	loadProjectConfig: vi.fn(),
+	parseChain: vi.fn(),
+	runChain: vi.fn(),
+	createPiSpawner: vi.fn(),
+}));
+
+vi.mock("../../lib/config/index.ts", () => ({
+	loadProjectConfig: mocks.loadProjectConfig,
 }));
 
 vi.mock("../../lib/orchestration/chain-parser.ts", () => ({
-	parseChain: vi.fn(),
+	parseChain: mocks.parseChain,
 }));
 
 vi.mock("../../lib/orchestration/chain-runner.ts", async (importOriginal) => {
@@ -22,12 +33,12 @@ vi.mock("../../lib/orchestration/chain-runner.ts", async (importOriginal) => {
 		>();
 	return {
 		...actual,
-		runChain: vi.fn(),
+		runChain: mocks.runChain,
 	};
 });
 
 vi.mock("../../lib/orchestration/agent-spawner.ts", () => ({
-	createPiSpawner: vi.fn(),
+	createPiSpawner: mocks.createPiSpawner,
 }));
 
 import orchestrationExtension from "../../extensions/orchestration/index.ts";

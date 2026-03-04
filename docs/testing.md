@@ -48,11 +48,63 @@ Prefer the simplest approach that gives adequate isolation. Listed from most pre
 4. **`vi.spyOn()`** for observing or overriding a method on a real object without replacing the whole module.
 5. **`vi.mock()` module mocks.** Use as a last resort when a module has side effects or deep dependency chains that cannot be injected. Declare at the top of the file (Vitest hoists them).
 
+### `vi.hoisted()` for Module-Level Mocks
+
+When using `vi.mock()`, declare mock references with `vi.hoisted()` so the hoisting intent is explicit. This avoids relying on Vitest's implicit `vi.mock()` hoisting and keeps mock setup centralized at the top of the file.
+
+```ts
+import { describe, expect, test, vi } from "vitest";
+import type { MyDep } from "../../lib/my-dep.ts";
+
+// 1. Declare mock references in a hoisted block — runs before imports.
+const mocks = vi.hoisted(() => ({
+  myFunction: vi.fn(),
+  myOtherFunction: vi.fn(),
+}));
+
+// 2. Wire mocks into module replacements.
+vi.mock("../../lib/my-dep.ts", () => ({
+  myFunction: mocks.myFunction,
+  myOtherFunction: mocks.myOtherFunction,
+}));
+
+// 3. Import the mocked modules (resolved to the mocks above).
+import { myFunction, myOtherFunction } from "../../lib/my-dep.ts";
+
+describe("consumer", () => {
+  // Use vi.mocked() for typed access in assertions, or reference
+  // the hoisted mocks directly — both work.
+  const myFunctionMock = vi.mocked(myFunction);
+
+  test("calls myFunction", () => {
+    myFunctionMock.mockReturnValue("stubbed");
+    // ...
+    expect(mocks.myFunction).toHaveBeenCalled(); // also works
+  });
+});
+```
+
+For mutable mock state that changes per-test (e.g., a mock module returns different objects), use a ref wrapper:
+
+```ts
+const refs = vi.hoisted(() => ({
+  currentSpawner: undefined as MySpawner | undefined,
+}));
+
+vi.mock("../../lib/spawner.ts", () => ({
+  createSpawner: () => refs.currentSpawner,
+}));
+
+beforeEach(() => {
+  refs.currentSpawner = createMockSpawner();
+});
+```
+
 ### Guidelines
 
 - Always restore mocks after use. The global setup file (`tests/setup.ts`) calls `vi.restoreAllMocks()` in `afterEach`, so manual cleanup is only needed in `beforeEach` or within a test.
 - Prefer dependency injection over module mocking. If a function accepts its collaborators as parameters, pass test doubles directly.
-- When using `vi.mock()`, co-locate the mock setup near the top of the file with a clear comment explaining what is mocked and why.
+- When using `vi.mock()`, co-locate the mock setup near the top of the file with a clear comment explaining what is mocked and why. Use `vi.hoisted()` for any mock references needed before imports.
 
 ## Parameterized Tests
 
