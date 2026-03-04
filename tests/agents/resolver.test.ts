@@ -217,8 +217,9 @@ describe("createDefaultRegistry", () => {
 
 describe("resolveAgent", () => {
 	it("resolves a known agent by ID", () => {
-		const def = resolveAgent("coordinator");
-		expect(def.id).toBe("coordinator");
+		const knownId = BUILTIN_DEFINITIONS[0].id;
+		const def = resolveAgent(knownId);
+		expect(def.id).toBe(knownId);
 	});
 
 	it("throws for unknown agent ID", () => {
