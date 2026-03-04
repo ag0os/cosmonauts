@@ -25,7 +25,15 @@ export const COSMO_DEFINITION = {
 	tools: "coding",
 	extensions: ["tasks", "plans", "orchestration", "todo", "init"],
 	skills: undefined,
-	subagents: ["planner", "task-manager", "coordinator", "worker"],
+	subagents: [
+		"planner",
+		"task-manager",
+		"coordinator",
+		"worker",
+		"quality-manager",
+		"reviewer",
+		"fixer",
+	],
 	projectContext: true,
 	session: "persistent",
 	loop: false,
@@ -120,6 +128,71 @@ export const WORKER_DEFINITION = {
 	loop: false,
 } as const satisfies AgentDefinition;
 
+export const QUALITY_MANAGER_DEFINITION = {
+	id: "quality-manager",
+	namespace: "coding",
+	description:
+		"Runs quality gates and clean-context review, then orchestrates fixes until changes are merge-ready.",
+	prompts: [
+		"cosmonauts",
+		"capabilities/core",
+		"capabilities/coding-readwrite",
+		"capabilities/tasks",
+		"capabilities/spawning",
+		"agents/coding/quality-manager",
+	],
+	model: "anthropic/claude-opus-4-6",
+	tools: "coding",
+	extensions: ["tasks", "orchestration"],
+	skills: undefined,
+	subagents: ["reviewer", "fixer", "coordinator"],
+	projectContext: true,
+	session: "ephemeral",
+	loop: false,
+} as const satisfies AgentDefinition;
+
+export const REVIEWER_DEFINITION = {
+	id: "reviewer",
+	namespace: "coding",
+	description:
+		"Performs clean-context code review against main and writes structured findings for remediation.",
+	prompts: [
+		"cosmonauts",
+		"capabilities/core",
+		"capabilities/coding-readwrite",
+		"agents/coding/reviewer",
+	],
+	model: "anthropic/claude-opus-4-6",
+	tools: "coding",
+	extensions: [],
+	skills: undefined,
+	subagents: [],
+	projectContext: true,
+	session: "ephemeral",
+	loop: false,
+} as const satisfies AgentDefinition;
+
+export const FIXER_DEFINITION = {
+	id: "fixer",
+	namespace: "coding",
+	description:
+		"Applies targeted fixes from quality or review findings and commits remediation changes.",
+	prompts: [
+		"cosmonauts",
+		"capabilities/core",
+		"capabilities/coding-readwrite",
+		"agents/coding/fixer",
+	],
+	model: "anthropic/claude-opus-4-6",
+	tools: "coding",
+	extensions: [],
+	skills: undefined,
+	subagents: [],
+	projectContext: true,
+	session: "ephemeral",
+	loop: false,
+} as const satisfies AgentDefinition;
+
 /** All built-in agent definitions. */
 export const BUILTIN_DEFINITIONS: readonly AgentDefinition[] = [
 	COSMO_DEFINITION,
@@ -127,4 +200,7 @@ export const BUILTIN_DEFINITIONS: readonly AgentDefinition[] = [
 	TASK_MANAGER_DEFINITION,
 	COORDINATOR_DEFINITION,
 	WORKER_DEFINITION,
+	QUALITY_MANAGER_DEFINITION,
+	REVIEWER_DEFINITION,
+	FIXER_DEFINITION,
 ];

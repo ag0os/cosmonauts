@@ -7,7 +7,14 @@
 // ============================================================================
 
 /** Agent roles as defined in DESIGN.md */
-export type AgentRole = "planner" | "task-manager" | "coordinator" | "worker";
+export type AgentRole =
+	| "planner"
+	| "task-manager"
+	| "coordinator"
+	| "worker"
+	| "quality-manager"
+	| "reviewer"
+	| "fixer";
 
 // ============================================================================
 // Chain DSL Types
@@ -39,6 +46,12 @@ export interface ModelConfig {
 	coordinator?: string;
 	/** Model for worker agents (default: sonnet) */
 	worker?: string;
+	/** Model for quality-manager agents */
+	qualityManager?: string;
+	/** Model for reviewer agents */
+	reviewer?: string;
+	/** Model for fixer agents */
+	fixer?: string;
 	/** Fallback model for unknown roles */
 	default?: string;
 }

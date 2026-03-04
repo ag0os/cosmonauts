@@ -24,6 +24,10 @@ For any task marked "Done" since your last check, call `task_view` to confirm al
 
 Call `task_list` with `status: "To Do"` and `hasNoDependencies: true` to find unblocked tasks. These are candidates for delegation.
 
+If your parent objective includes a label scope (for example `review-round:1`), only operate on tasks with that label:
+- Filter every `task_list` call by the scoped label.
+- Ignore and do not modify tasks outside the scope.
+
 ### 4. Delegate to workers
 
 For each ready task:

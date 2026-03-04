@@ -164,13 +164,14 @@ cosmonauts --print "create tasks from PLAN.md and implement them"
 
 # Named workflow — run a predefined agent pipeline
 cosmonauts --workflow plan-and-build "design an auth system"
-cosmonauts --print --workflow implement "create tasks from PLAN.md and implement"
+cosmonauts --print --workflow implement "create tasks from PLAN.md, implement, and verify"
+cosmonauts --print --workflow verify "review current branch against main and fix findings"
 
 # Raw chain DSL — advanced escape hatch
 cosmonauts --chain "planner -> coordinator" "custom pipeline"
 ```
 
-**The `--workflow` flag** is the primary way to run multi-agent pipelines. Named workflows map to chain DSL expressions defined in config. Built-in workflows: `plan-and-build`, `implement`, `plan`. No `@file` references — tell the agent in natural language what document to work with.
+**The `--workflow` flag** is the primary way to run multi-agent pipelines. Named workflows map to chain DSL expressions defined in config. Built-in workflows: `plan-and-build`, `implement`, `verify`, `plan`. No `@file` references — tell the agent in natural language what document to work with.
 
 **The `--chain` flag** is the advanced escape hatch for custom pipelines. Specifies a raw chain DSL expression directly.
 
@@ -341,11 +342,14 @@ Built-in agent definitions:
 
 | Agent | Namespace | Prompts | Tools | Extensions | Skills | Subagents | Context |
 |-------|-----------|---------|-------|------------|--------|-----------|---------|
-| cosmo | coding | cosmonauts + core + coding-rw + tasks + spawning + todo + cosmo | coding | tasks, plans, orchestration, todo, init | all | planner, task-manager, coordinator, worker | yes |
+| cosmo | coding | cosmonauts + core + coding-rw + tasks + spawning + todo + cosmo | coding | tasks, plans, orchestration, todo, init | all | planner, task-manager, coordinator, worker, quality-manager, reviewer, fixer | yes |
 | planner | coding | cosmonauts + core + coding-ro + planner | readonly | plans | all | — | yes |
 | task-manager | coding | cosmonauts + core + tasks + task-manager | readonly | tasks | — | — | no |
 | coordinator | coding | cosmonauts + core + tasks + spawning + coordinator | none | tasks, orchestration | — | worker | no |
 | worker | coding | cosmonauts + core + coding-rw + tasks + todo + worker | coding | tasks, todo | per-task | — | yes |
+| quality-manager | coding | cosmonauts + core + coding-rw + tasks + spawning + quality-manager | coding | tasks, orchestration | all | reviewer, fixer, coordinator | yes |
+| reviewer | coding | cosmonauts + core + coding-rw + reviewer | coding | — | all | — | yes |
+| fixer | coding | cosmonauts + core + coding-rw + fixer | coding | — | all | — | yes |
 
 ### System Prompt Composition
 
@@ -382,6 +386,9 @@ planner      → [cosmonauts] + [core, coding-ro] + [planner persona]
 task-manager → [cosmonauts] + [core, tasks] + [task-manager persona]
 coordinator  → [cosmonauts] + [core, tasks, spawning] + [coordinator persona]
 worker       → [cosmonauts] + [core, coding-rw, tasks, todo] + [worker persona]
+quality-manager → [cosmonauts] + [core, coding-rw, tasks, spawning] + [quality-manager persona]
+reviewer     → [cosmonauts] + [core, coding-rw] + [reviewer persona]
+fixer        → [cosmonauts] + [core, coding-rw] + [fixer persona]
 ```
 
 Agents that touch project artifacts (cosmo, planner, worker) also get project context (AGENTS.md/CLAUDE.md) via `DefaultResourceLoader`. Orchestration-only agents (coordinator, task-manager) skip it to keep their context clean.
@@ -405,11 +412,11 @@ When an agent is spawned as a sub-agent (via `spawn_agent` with `runtimeContext.
 
 **System prompt**: cosmonauts + core + coding-rw + tasks + spawning + todo + cosmo persona
 **Tools**: full coding tools + task tools + orchestration tools (`chain_run`, `spawn_agent`) + `todo` tool
-**Can spawn**: planner, task-manager, coordinator, worker
+**Can spawn**: planner, task-manager, coordinator, worker, quality-manager, reviewer, fixer
 
 **What Cosmo does**:
 - Chats, answers questions, reads/writes code — standard coding assistant
-- Triggers chains when asked ("run planner -> task-manager -> coordinator")
+- Triggers chains when asked ("run planner -> task-manager -> coordinator -> quality-manager")
 - Spawns individual sub-agents when appropriate
 - Loads skills on demand when it needs domain expertise
 - Uses the todo tool for multi-step work within a session
@@ -477,6 +484,38 @@ The coordinator tells the worker (via its spawn prompt) which skills to load bas
 7. Run tests
 8. Commit with task ID reference
 9. Mark task Done
+
+### Quality Manager
+
+**Purpose**: Run post-implementation quality gates, clean-context review, and remediation orchestration until merge-ready.
+
+**System prompt**: cosmonauts + core + coding-rw + tasks + spawning + quality-manager persona
+**Tools**: full coding tools + task tools + orchestration tools (`chain_run`, `spawn_agent`)
+**Can spawn**: reviewer, fixer, coordinator
+
+**Workflow**:
+1. Detect available project checks (lint, format, typecheck, test) and run them
+2. Spawn a clean-context reviewer against `main`/`origin/main`
+3. Route simple findings to fixer
+4. Convert complex findings into remediation tasks and run `coordinator` scoped by label
+5. Re-run checks and review, bounded to 2-3 rounds
+6. Exit only when checks are green and findings are resolved
+
+### Reviewer
+
+**Purpose**: Review branch changes against `main` with fresh context and produce structured findings for remediation.
+
+**System prompt**: cosmonauts + core + coding-rw + reviewer persona
+**Tools**: full coding tools (used for repo inspection and writing a review report artifact)
+**Critical rule**: **Does not implement fixes; writes findings only.**
+
+### Fixer
+
+**Purpose**: Apply targeted remediation for quality/review findings and produce focused commits.
+
+**System prompt**: cosmonauts + core + coding-rw + fixer persona
+**Tools**: full coding tools
+**Critical rule**: **Fixes scoped findings only; no planning/task decomposition.**
 
 ### Specialist Routing
 
@@ -634,12 +673,12 @@ Inspired by Forge's Orchestra. Runs agent pipelines using Pi sessions instead of
 **The DSL is pure topology** — it declares which roles run in what order. Loop behavior is intrinsic to each role (coordinator loops, others run once).
 
 ```
-cosmonauts --chain "planner -> task-manager -> coordinator" "design and implement auth"
-cosmonauts --print --chain "task-manager -> coordinator" @PLAN.md
+cosmonauts --chain "planner -> task-manager -> coordinator -> quality-manager" "design and implement auth"
+cosmonauts --print --chain "task-manager -> coordinator -> quality-manager" "implement approved plan and verify"
 ```
 
 Each role knows its own lifecycle:
-- **One-shot roles** (planner, task-manager, worker): run once and exit.
+- **One-shot roles** (planner, task-manager, worker, quality-manager, reviewer, fixer): run once and exit.
 - **Loop roles** (coordinator): repeat until their completion check passes.
 
 **Safety caps** are global config, not per-stage DSL:
@@ -696,8 +735,9 @@ Named workflows are the primary user interface for multi-agent pipelines, replac
 
 | Name | Chain | Purpose |
 |------|-------|---------|
-| `plan-and-build` | `planner -> task-manager -> coordinator` | Full pipeline: design, create tasks, implement |
-| `implement` | `task-manager -> coordinator` | Create tasks from existing plan and implement |
+| `plan-and-build` | `planner -> task-manager -> coordinator -> quality-manager` | Full pipeline: design, create tasks, implement, verify/review/fix |
+| `implement` | `task-manager -> coordinator -> quality-manager` | Create tasks from existing plan, implement, verify/review/fix |
+| `verify` | `quality-manager` | Run lint/format checks, code review against main, and remediation |
 | `plan` | `planner` | Design only |
 
 **Custom project workflows** are defined in `.cosmonauts/workflows.json`:
@@ -707,7 +747,7 @@ Named workflows are the primary user interface for multi-agent pipelines, replac
   "workflows": {
     "refactor": {
       "description": "Plan and implement a refactoring",
-      "chain": "planner -> task-manager -> coordinator"
+      "chain": "planner -> task-manager -> coordinator -> quality-manager"
     }
   }
 }
@@ -727,14 +767,16 @@ cosmonauts --list-workflows   # show available workflows
 When running chains with `--print`, events stream to stderr for observability while the final output goes to stdout:
 
 ```
-[chain] Starting: planner -> task-manager -> coordinator
+[chain] Starting: planner -> task-manager -> coordinator -> quality-manager
 [planner] Starting...
 [planner] Completed (45s)
 [task-manager] Starting...
 [task-manager] Completed (12s)
 [coordinator] Starting iteration 1...
 [coordinator] Spawned worker (session-abc123)
-[coordinator] Iteration 1 complete
+[coordinator] Completed (3m 58s)
+[quality-manager] Starting...
+[quality-manager] Completed (58s)
 [chain] Complete (5m 23s)
 ```
 

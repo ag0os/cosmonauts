@@ -264,6 +264,12 @@ function roleToConfigKey(
 			return "coordinator";
 		case "worker":
 			return "worker";
+		case "quality-manager":
+			return "qualityManager";
+		case "reviewer":
+			return "reviewer";
+		case "fixer":
+			return "fixer";
 		default:
 			return undefined;
 	}

@@ -69,6 +69,24 @@ describe("parseChain", () => {
 
 			expect(stages).toEqual([{ name: "task-manager", loop: false }]);
 		});
+
+		test("quality-manager gets loop: false", () => {
+			const stages = parseChain("quality-manager");
+
+			expect(stages).toEqual([{ name: "quality-manager", loop: false }]);
+		});
+
+		test("reviewer gets loop: false", () => {
+			const stages = parseChain("reviewer");
+
+			expect(stages).toEqual([{ name: "reviewer", loop: false }]);
+		});
+
+		test("fixer gets loop: false", () => {
+			const stages = parseChain("fixer");
+
+			expect(stages).toEqual([{ name: "fixer", loop: false }]);
+		});
 	});
 
 	describe("unknown roles", () => {

@@ -348,6 +348,34 @@ describe("runStage", () => {
 				await rm(tmpDir, { recursive: true, force: true });
 			}
 		});
+
+		test("adds label-scoping instructions to coordinator prompt", async () => {
+			const spawner = createMockSpawner([
+				{ success: true, sessionId: "session-1", messages: [] },
+			]);
+			const completionCheck = vi
+				.fn()
+				.mockResolvedValueOnce(false)
+				.mockResolvedValueOnce(true);
+			const stage = makeStage("coordinator", true, completionCheck);
+			const config = makeConfig([stage], {
+				completionLabel: "review-round:1",
+			});
+
+			const result = await runStage(stage, config, spawner, {
+				maxTotalIterations: 3,
+				deadlineMs: Date.now() + 60_000,
+			});
+
+			expect(result.success).toBe(true);
+			expect(spawner.spawn).toHaveBeenCalledWith(
+				expect.objectContaining({
+					prompt: expect.stringContaining(
+						'Scope constraint: Operate only on tasks labeled "review-round:1"',
+					),
+				}),
+			);
+		});
 	});
 });
 

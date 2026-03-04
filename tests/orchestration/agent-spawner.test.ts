@@ -144,6 +144,13 @@ describe("getModelForRole", () => {
 		expect(model).toBe("override-provider/override-model");
 	});
 
+	test("supports model override keys for new roles", () => {
+		const model = getModelForRole("quality-manager", {
+			qualityManager: "override-provider/quality-model",
+		});
+		expect(model).toBe("override-provider/quality-model");
+	});
+
 	test("models.default used when role has no definition and no override (tier 3)", () => {
 		const model = getModelForRole(
 			"unknown-role",

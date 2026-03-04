@@ -222,6 +222,9 @@ describe("new prompt file paths", () => {
 			"agents/coding/task-manager",
 			"agents/coding/coordinator",
 			"agents/coding/worker",
+			"agents/coding/quality-manager",
+			"agents/coding/reviewer",
+			"agents/coding/fixer",
 		];
 		for (const ref of personas) {
 			const content = await loadPrompt(ref);

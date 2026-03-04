@@ -30,12 +30,30 @@ const DEFAULT_STAGE_PROMPTS: Record<string, string> = {
 	"task-manager": "Review the plan and create atomic implementation tasks.",
 	coordinator: "Check for ready tasks and delegate them to workers.",
 	worker: "Pick up the next ready task and implement it.",
+	"quality-manager":
+		"Run quality gates, review the diff against main, and orchestrate fixes until merge-ready.",
+	reviewer:
+		"Review the current branch changes against main and write actionable findings.",
+	fixer:
+		"Apply targeted fixes for review findings and verify they pass checks.",
 };
 
 const DEFAULT_PROMPT = "Execute your assigned role.";
 
 export function getDefaultStagePrompt(role: string): string {
 	return DEFAULT_STAGE_PROMPTS[role] ?? DEFAULT_PROMPT;
+}
+
+function buildStagePrompt(stage: ChainStage, config: ChainConfig): string {
+	const basePrompt = stage.prompt ?? getDefaultStagePrompt(stage.name);
+
+	// When loop completion is label-scoped, coordinator must process only that
+	// subset to avoid touching unrelated ready tasks.
+	if (stage.name === "coordinator" && config.completionLabel) {
+		return `${basePrompt}\n\nScope constraint: Operate only on tasks labeled "${config.completionLabel}". Filter all task selection to this label and do not modify tasks without it.`;
+	}
+
+	return basePrompt;
 }
 
 /**
@@ -237,7 +255,7 @@ export async function runStage(
 		}
 
 		const model = getModelForRole(stage.name, config.models);
-		const prompt = stage.prompt ?? getDefaultStagePrompt(stage.name);
+		const prompt = buildStagePrompt(stage, config);
 
 		if (!stage.loop) {
 			// One-shot stage
