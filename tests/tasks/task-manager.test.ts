@@ -6,7 +6,7 @@ import { existsSync } from "node:fs";
 import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskManager } from "../../lib/tasks/task-manager.js";
 import type { ForgeTasksConfig } from "../../lib/tasks/task-types.js";
 
@@ -225,12 +225,15 @@ describe("TaskManager", () => {
 		});
 
 		it("should update the updatedAt timestamp", async () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+
 			await manager.init();
 			const created = await manager.createTask({ title: "Task" });
 			const originalUpdatedAt = created.updatedAt;
 
-			// Small delay to ensure timestamp difference
-			await new Promise((resolve) => setTimeout(resolve, 10));
+			// Advance fake clock to guarantee timestamp difference
+			vi.setSystemTime(new Date("2026-01-01T00:01:00Z"));
 
 			const updated = await manager.updateTask("TASK-001", {
 				title: "Updated",

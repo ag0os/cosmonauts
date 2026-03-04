@@ -5,7 +5,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PlanManager } from "../../lib/plans/plan-manager.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 
@@ -221,6 +221,9 @@ describe("PlanManager", () => {
 		});
 
 		it("should update the updatedAt timestamp", async () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+
 			await manager.createPlan({
 				slug: "timestamp-test",
 				title: "Timestamp Test",
@@ -228,8 +231,8 @@ describe("PlanManager", () => {
 
 			const before = await manager.getPlan("timestamp-test");
 
-			// Small delay to ensure timestamp difference
-			await new Promise((resolve) => setTimeout(resolve, 10));
+			// Advance fake clock to guarantee timestamp difference
+			vi.setSystemTime(new Date("2026-01-01T00:01:00Z"));
 
 			const updated = await manager.updatePlan("timestamp-test", {
 				title: "Updated",
@@ -275,14 +278,17 @@ describe("PlanManager", () => {
 		});
 
 		it("preserves createdAt after update", async () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+
 			const plan = await manager.createPlan({
 				slug: "preserve-created",
 				title: "Original",
 			});
 			const originalCreatedAt = plan.createdAt.toISOString();
 
-			// Wait a tick to ensure dates differ
-			await new Promise((resolve) => setTimeout(resolve, 10));
+			// Advance fake clock to ensure dates differ
+			vi.setSystemTime(new Date("2026-01-01T00:01:00Z"));
 
 			const updated = await manager.updatePlan("preserve-created", {
 				title: "Updated",

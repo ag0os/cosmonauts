@@ -168,7 +168,12 @@ describe("runStage", () => {
 	});
 
 	describe("loop (loop=true)", () => {
+		const FIXED_NOW = new Date("2026-01-01T00:00:00Z").getTime();
+
 		test("iterates until completion check returns true", async () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(FIXED_NOW);
+
 			const spawner = createMockSpawner();
 			let callCount = 0;
 			const completionCheck = vi.fn(async () => {
@@ -180,7 +185,7 @@ describe("runStage", () => {
 
 			const result = await runStage(stage, config, spawner, {
 				maxTotalIterations: 10,
-				deadlineMs: Date.now() + 60_000,
+				deadlineMs: FIXED_NOW + 60_000,
 			});
 
 			expect(result.success).toBe(true);
@@ -190,6 +195,9 @@ describe("runStage", () => {
 		});
 
 		test("exhausts iteration budget when completion never passes", async () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(FIXED_NOW);
+
 			const spawner = createMockSpawner();
 			const completionCheck = vi.fn(async () => false);
 			const stage = makeStage("coordinator", true, completionCheck);
@@ -197,7 +205,7 @@ describe("runStage", () => {
 
 			const result = await runStage(stage, config, spawner, {
 				maxTotalIterations: 3,
-				deadlineMs: Date.now() + 60_000,
+				deadlineMs: FIXED_NOW + 60_000,
 			});
 
 			expect(result.success).toBe(false);
@@ -209,6 +217,9 @@ describe("runStage", () => {
 		});
 
 		test("respects abort signal between iterations", async () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(FIXED_NOW);
+
 			const controller = new AbortController();
 			let spawnCallCount = 0;
 
@@ -234,7 +245,7 @@ describe("runStage", () => {
 
 			const result = await runStage(stage, config, spawner, {
 				maxTotalIterations: 10,
-				deadlineMs: Date.now() + 60_000,
+				deadlineMs: FIXED_NOW + 60_000,
 			});
 
 			expect(result.iterations).toBeLessThan(10);
@@ -242,6 +253,9 @@ describe("runStage", () => {
 		});
 
 		test("stops on spawner failure", async () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(FIXED_NOW);
+
 			const spawner = createMockSpawner([
 				{ success: true, sessionId: "session-1", messages: [] },
 				{
@@ -257,7 +271,7 @@ describe("runStage", () => {
 
 			const result = await runStage(stage, config, spawner, {
 				maxTotalIterations: 5,
-				deadlineMs: Date.now() + 60_000,
+				deadlineMs: FIXED_NOW + 60_000,
 			});
 
 			expect(result.success).toBe(false);
@@ -267,6 +281,9 @@ describe("runStage", () => {
 		});
 
 		test("fails fast when default completion scope has no tasks", async () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(FIXED_NOW);
+
 			const tmpDir = await mkdtemp(join(tmpdir(), "chain-runner-stage-empty-"));
 			const spawner = createMockSpawner();
 			const stage = makeStage("coordinator", true);
@@ -278,7 +295,7 @@ describe("runStage", () => {
 			try {
 				const result = await runStage(stage, config, spawner, {
 					maxTotalIterations: 10,
-					deadlineMs: Date.now() + 60_000,
+					deadlineMs: FIXED_NOW + 60_000,
 				});
 
 				expect(result.success).toBe(false);
@@ -291,6 +308,9 @@ describe("runStage", () => {
 		});
 
 		test("fails fast when all scoped tasks are blocked", async () => {
+			vi.useFakeTimers();
+			vi.setSystemTime(FIXED_NOW);
+
 			const tmpDir = await mkdtemp(
 				join(tmpdir(), "chain-runner-stage-blocked-"),
 			);
@@ -317,7 +337,7 @@ describe("runStage", () => {
 			try {
 				const result = await runStage(stage, config, spawner, {
 					maxTotalIterations: 10,
-					deadlineMs: Date.now() + 60_000,
+					deadlineMs: FIXED_NOW + 60_000,
 				});
 
 				expect(result.success).toBe(false);
@@ -449,6 +469,10 @@ describe("event emission", () => {
 	});
 
 	test("emits stage_iteration events for loop stages", async () => {
+		vi.useFakeTimers();
+		const FIXED_NOW = new Date("2026-01-01T00:00:00Z").getTime();
+		vi.setSystemTime(FIXED_NOW);
+
 		const events: ChainEvent[] = [];
 		const spawner = createMockSpawner();
 		const completionCheck = vi.fn(async () => false);
@@ -459,7 +483,7 @@ describe("event emission", () => {
 
 		await runStage(stage, config, spawner, {
 			maxTotalIterations: 3,
-			deadlineMs: Date.now() + 60_000,
+			deadlineMs: FIXED_NOW + 60_000,
 		});
 
 		const iterationEvents = events.filter((e) => e.type === "stage_iteration");

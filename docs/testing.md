@@ -6,7 +6,7 @@ Guidelines for writing and maintaining tests in Cosmonauts. All tests use [Vites
 
 - **Config**: `vitest.config.ts` at repo root.
 - **Setup file**: `tests/setup.ts` — runs before every test file. Restores mocks and reverts fake timers in `afterEach` so individual tests do not need to.
-- **Coverage**: V8 provider, scoped to `lib/**`. Run with `bun run test -- --coverage`.
+- **Coverage**: V8 provider, scoped to `lib/**`. Run with `bun run test:coverage`. See [Coverage Thresholds](#coverage-thresholds) below.
 
 ## Canonical Test Structure
 
@@ -148,11 +148,64 @@ test("retries after delay", async () => {
 });
 ```
 
+### Testing Timestamp Differences
+
+Use `vi.setSystemTime()` to control `new Date()` and `Date.now()` deterministically instead of inserting real-time sleeps:
+
+```ts
+test("updates the updatedAt timestamp", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+
+  const created = await createItem();
+
+  vi.setSystemTime(new Date("2026-01-01T00:01:00Z"));
+  const updated = await updateItem(created.id);
+
+  expect(updated.updatedAt.getTime()).toBeGreaterThan(created.updatedAt.getTime());
+});
+```
+
 ### Guidelines
 
 - **Only use when necessary.** If the code under test does not use timers, do not install fake timers.
+- **Use `vi.setSystemTime()`** for tests that assert on timestamp ordering or `Date.now()` values — avoids flaky real-time sleeps.
 - **Prefer `vi.advanceTimersByTimeAsync`** over `vi.advanceTimersByTime` when the code uses `async`/`await` or Promises — the async variant flushes microtasks correctly.
 - The global setup file reverts to real timers in `afterEach`, so you do not need to call `vi.useRealTimers()` manually.
+
+## Coverage Thresholds
+
+Coverage thresholds are enforced in `vitest.config.ts` and checked when running `bun run test:coverage`. The build fails if any metric drops below its gate.
+
+### Current Baseline (March 2026)
+
+| Metric     | Threshold | Measured |
+|------------|-----------|----------|
+| Statements | 65%       | ~71%     |
+| Branches   | 85%       | ~89%     |
+| Functions  | 55%       | ~61%     |
+| Lines      | 65%       | ~71%     |
+
+Thresholds are set ~5–6 points below measured values to allow normal fluctuation without false failures.
+
+### Ratchet Strategy
+
+As coverage improves, ratchet thresholds upward:
+
+1. After adding tests that meaningfully increase a metric, raise the threshold to ~5 points below the new measured value.
+2. Never lower a threshold unless code is intentionally removed or restructured.
+3. Review thresholds quarterly or after major refactors.
+4. Target trajectory: statements/lines → 75% by mid-2026, functions → 65%.
+
+### Running Coverage
+
+```bash
+# Run tests with coverage report and threshold enforcement
+bun run test:coverage
+
+# Equivalent manual invocation
+bun run test -- --coverage
+```
 
 ## Filesystem Tests
 
