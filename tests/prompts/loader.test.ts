@@ -1,28 +1,23 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
 	loadPrompt,
 	loadPrompts,
 	PROMPTS_DIR,
 	renderRuntimeTemplate,
 } from "../../lib/prompts/loader.ts";
+import { useTempDir } from "../helpers/fs.ts";
 
 // ============================================================================
 // Fixtures
 // ============================================================================
 
-let tmpDir: string;
+const tmp = useTempDir("prompts-test-");
 
 beforeEach(async () => {
-	tmpDir = await mkdtemp(join(tmpdir(), "prompts-test-"));
-	await mkdir(join(tmpDir, "capabilities"), { recursive: true });
-	await mkdir(join(tmpDir, "agents", "coding"), { recursive: true });
-});
-
-afterEach(async () => {
-	await rm(tmpDir, { recursive: true, force: true });
+	await mkdir(join(tmp.path, "capabilities"), { recursive: true });
+	await mkdir(join(tmp.path, "agents", "coding"), { recursive: true });
 });
 
 // ============================================================================
@@ -32,40 +27,40 @@ afterEach(async () => {
 describe("loadPrompt", () => {
 	it("reads a single file and returns content", async () => {
 		await writeFile(
-			join(tmpDir, "capabilities", "core.md"),
+			join(tmp.path, "capabilities", "core.md"),
 			"# Core\n\nYou are a coding assistant.",
 		);
 
-		const content = await loadPrompt("capabilities/core", tmpDir);
+		const content = await loadPrompt("capabilities/core", tmp.path);
 		expect(content).toBe("# Core\n\nYou are a coding assistant.");
 	});
 
 	it("strips YAML frontmatter if present", async () => {
 		await writeFile(
-			join(tmpDir, "agents", "coding", "planner.md"),
+			join(tmp.path, "agents", "coding", "planner.md"),
 			"---\nname: planner\ndescription: Plans things\n---\n\n# Planner\n\nYou plan.",
 		);
 
-		const content = await loadPrompt("agents/coding/planner", tmpDir);
+		const content = await loadPrompt("agents/coding/planner", tmp.path);
 		expect(content).toBe("# Planner\n\nYou plan.");
 	});
 
 	it("returns content unchanged when no frontmatter", async () => {
 		const raw = "# Worker\n\nYou implement tasks.";
-		await writeFile(join(tmpDir, "agents", "coding", "worker.md"), raw);
+		await writeFile(join(tmp.path, "agents", "coding", "worker.md"), raw);
 
-		const content = await loadPrompt("agents/coding/worker", tmpDir);
+		const content = await loadPrompt("agents/coding/worker", tmp.path);
 		expect(content).toBe(raw);
 	});
 
 	it("throws for missing file with descriptive message", async () => {
 		await expect(
-			loadPrompt("agents/coding/nonexistent", tmpDir),
+			loadPrompt("agents/coding/nonexistent", tmp.path),
 		).rejects.toThrow(/Prompt file not found.*nonexistent/);
 	});
 
 	it("includes the ref in the error message", async () => {
-		await expect(loadPrompt("capabilities/missing", tmpDir)).rejects.toThrow(
+		await expect(loadPrompt("capabilities/missing", tmp.path)).rejects.toThrow(
 			'ref: "capabilities/missing"',
 		);
 	});
@@ -77,53 +72,53 @@ describe("loadPrompt", () => {
 
 describe("loadPrompts", () => {
 	it("concatenates multiple files with double newline", async () => {
-		await writeFile(join(tmpDir, "capabilities", "core.md"), "# Core");
+		await writeFile(join(tmp.path, "capabilities", "core.md"), "# Core");
 		await writeFile(
-			join(tmpDir, "agents", "coding", "planner.md"),
+			join(tmp.path, "agents", "coding", "planner.md"),
 			"# Planner",
 		);
 
 		const content = await loadPrompts(
 			["capabilities/core", "agents/coding/planner"],
-			tmpDir,
+			tmp.path,
 		);
 		expect(content).toBe("# Core\n\n# Planner");
 	});
 
 	it("returns empty string for empty array", async () => {
-		const content = await loadPrompts([], tmpDir);
+		const content = await loadPrompts([], tmp.path);
 		expect(content).toBe("");
 	});
 
 	it("returns single file content without extra separators", async () => {
-		await writeFile(join(tmpDir, "capabilities", "core.md"), "# Core");
+		await writeFile(join(tmp.path, "capabilities", "core.md"), "# Core");
 
-		const content = await loadPrompts(["capabilities/core"], tmpDir);
+		const content = await loadPrompts(["capabilities/core"], tmp.path);
 		expect(content).toBe("# Core");
 	});
 
 	it("strips frontmatter from all files when concatenating", async () => {
 		await writeFile(
-			join(tmpDir, "capabilities", "core.md"),
+			join(tmp.path, "capabilities", "core.md"),
 			"---\nname: core\n---\n\n# Core",
 		);
 		await writeFile(
-			join(tmpDir, "agents", "coding", "worker.md"),
+			join(tmp.path, "agents", "coding", "worker.md"),
 			"---\nname: worker\n---\n\n# Worker",
 		);
 
 		const content = await loadPrompts(
 			["capabilities/core", "agents/coding/worker"],
-			tmpDir,
+			tmp.path,
 		);
 		expect(content).toBe("# Core\n\n# Worker");
 	});
 
 	it("throws if any file is missing", async () => {
-		await writeFile(join(tmpDir, "capabilities", "core.md"), "# Core");
+		await writeFile(join(tmp.path, "capabilities", "core.md"), "# Core");
 
 		await expect(
-			loadPrompts(["capabilities/core", "agents/coding/nonexistent"], tmpDir),
+			loadPrompts(["capabilities/core", "agents/coding/nonexistent"], tmp.path),
 		).rejects.toThrow(/Prompt file not found/);
 	});
 });

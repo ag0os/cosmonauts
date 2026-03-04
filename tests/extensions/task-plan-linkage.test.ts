@@ -6,56 +6,12 @@
  * with real TaskManager on a temp directory for integration testing.
  */
 
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { validatePlanLabels } from "../../extensions/tasks/index.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import type { Task } from "../../lib/tasks/task-types.ts";
-
-// ---------------------------------------------------------------------------
-// Mock Pi (mirrors the pattern from todo-extension.test.ts)
-// ---------------------------------------------------------------------------
-
-interface RegisteredTool {
-	name: string;
-	execute: (...args: unknown[]) => Promise<unknown>;
-}
-
-function createMockPi(cwd: string) {
-	const tools = new Map<string, RegisteredTool>();
-
-	return {
-		tools,
-
-		registerTool(def: {
-			name: string;
-			execute: (...args: unknown[]) => Promise<unknown>;
-		}) {
-			tools.set(def.name, def);
-		},
-
-		// Stubs for API methods the extension doesn't use but may be expected
-		on(_event: string, _handler: unknown) {},
-		appendEntry(_customType: string, _data: unknown) {},
-
-		async callTool(name: string, params: unknown) {
-			const tool = tools.get(name);
-			if (!tool) throw new Error(`Tool not found: ${name}`);
-			return tool.execute("call-id", params, undefined, undefined, { cwd });
-		},
-	};
-}
-
-async function setupExtension(cwd: string) {
-	const { default: tasksExtension } = await import(
-		"../../extensions/tasks/index.ts"
-	);
-	const pi = createMockPi(cwd);
-	tasksExtension(pi as never);
-	return pi;
-}
+import { useTempDir } from "../helpers/fs.ts";
+import { createMockPi, type MockPi } from "../helpers/mocks/index.ts";
 
 // ---------------------------------------------------------------------------
 // Result helpers
@@ -64,6 +20,15 @@ async function setupExtension(cwd: string) {
 interface ToolResult {
 	content: { type: string; text: string }[];
 	details: Task | null;
+}
+
+async function setupExtension(cwd: string): Promise<MockPi> {
+	const { default: tasksExtension } = await import(
+		"../../extensions/tasks/index.ts"
+	);
+	const pi = createMockPi({ cwd });
+	tasksExtension(pi as never);
+	return pi;
 }
 
 // ---------------------------------------------------------------------------
@@ -97,18 +62,13 @@ describe("validatePlanLabels (unit)", () => {
 });
 
 describe("task_create plan parameter (integration)", () => {
-	let tempDir: string;
-	let pi: Awaited<ReturnType<typeof setupExtension>>;
+	const tmp = useTempDir("task-plan-linkage-");
+	let pi: MockPi;
 
 	beforeEach(async () => {
-		tempDir = await mkdtemp(join(tmpdir(), "task-plan-linkage-"));
-		const manager = new TaskManager(tempDir);
+		const manager = new TaskManager(tmp.path);
 		await manager.init();
-		pi = await setupExtension(tempDir);
-	});
-
-	afterEach(async () => {
-		await rm(tempDir, { recursive: true, force: true });
+		pi = await setupExtension(tmp.path);
 	});
 
 	it("adds plan:<slug> label when plan parameter is provided", async () => {
@@ -191,18 +151,13 @@ describe("task_create plan parameter (integration)", () => {
 });
 
 describe("task_edit plan label validation (integration)", () => {
-	let tempDir: string;
-	let pi: Awaited<ReturnType<typeof setupExtension>>;
+	const tmp = useTempDir("task-plan-edit-");
+	let pi: MockPi;
 
 	beforeEach(async () => {
-		tempDir = await mkdtemp(join(tmpdir(), "task-plan-edit-"));
-		const manager = new TaskManager(tempDir);
+		const manager = new TaskManager(tmp.path);
 		await manager.init();
-		pi = await setupExtension(tempDir);
-	});
-
-	afterEach(async () => {
-		await rm(tempDir, { recursive: true, force: true });
+		pi = await setupExtension(tmp.path);
 	});
 
 	it("rejects when labels update would result in multiple plan: labels", async () => {
