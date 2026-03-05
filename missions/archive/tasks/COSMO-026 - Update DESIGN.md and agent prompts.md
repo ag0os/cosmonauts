@@ -1,17 +1,17 @@
 ---
 id: COSMO-026
 title: Update DESIGN.md and agent prompts
-status: To Do
+status: Done
 priority: medium
 labels:
   - forge
   - docs
-  - plan:forge-lifecycle
+  - 'plan:forge-lifecycle'
 dependencies:
   - COSMO-021
   - COSMO-023
 createdAt: '2026-02-26T00:00:00.000Z'
-updatedAt: '2026-02-26T00:00:00.000Z'
+updatedAt: '2026-03-05T15:38:20.538Z'
 ---
 
 ## Description

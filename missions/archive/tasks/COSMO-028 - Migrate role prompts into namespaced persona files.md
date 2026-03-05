@@ -1,7 +1,7 @@
 ---
 id: COSMO-028
 title: Migrate role prompts into namespaced persona files
-status: To Do
+status: Done
 priority: high
 labels:
   - forge
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - COSMO-027
 createdAt: '2026-02-26T20:57:30.318Z'
-updatedAt: '2026-02-26T20:57:30.318Z'
+updatedAt: '2026-03-05T15:38:20.539Z'
 ---
 
 ## Description

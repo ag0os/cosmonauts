@@ -1,16 +1,16 @@
 ---
 id: COSMO-024
 title: Forge archive distillation skill
-status: To Do
+status: Done
 priority: medium
 labels:
   - forge
   - skill
-  - plan:forge-lifecycle
+  - 'plan:forge-lifecycle'
 dependencies:
   - COSMO-023
 createdAt: '2026-02-26T00:00:00.000Z'
-updatedAt: '2026-02-26T00:00:00.000Z'
+updatedAt: '2026-03-05T15:38:20.536Z'
 ---
 
 ## Description

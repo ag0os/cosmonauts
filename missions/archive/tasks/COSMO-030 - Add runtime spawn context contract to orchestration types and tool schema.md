@@ -1,7 +1,7 @@
 ---
 id: COSMO-030
 title: Add runtime spawn context contract to orchestration types and tool schema
-status: To Do
+status: Done
 priority: high
 labels:
   - forge
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - COSMO-029
 createdAt: '2026-02-26T20:57:40.788Z'
-updatedAt: '2026-02-26T20:57:40.788Z'
+updatedAt: '2026-03-05T15:38:20.540Z'
 ---
 
 ## Description

@@ -1,7 +1,7 @@
 ---
 id: COSMO-027
 title: Create layered prompt foundation files
-status: To Do
+status: Done
 priority: high
 labels:
   - forge
@@ -9,7 +9,7 @@ labels:
   - 'plan:prompt-architecture'
 dependencies: []
 createdAt: '2026-02-26T20:57:25.259Z'
-updatedAt: '2026-02-26T20:57:25.259Z'
+updatedAt: '2026-03-05T15:38:20.539Z'
 ---
 
 ## Description

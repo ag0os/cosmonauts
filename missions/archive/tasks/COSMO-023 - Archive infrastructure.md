@@ -1,16 +1,16 @@
 ---
 id: COSMO-023
 title: Archive infrastructure
-status: To Do
+status: Done
 priority: high
 labels:
   - forge
-  - plan:forge-lifecycle
+  - 'plan:forge-lifecycle'
 dependencies:
   - COSMO-020
   - COSMO-022
 createdAt: '2026-02-26T00:00:00.000Z'
-updatedAt: '2026-02-26T00:00:00.000Z'
+updatedAt: '2026-03-05T15:38:20.535Z'
 ---
 
 ## Description

@@ -3,7 +3,7 @@ id: COSMO-032
 title: >-
   Update test suites for layered prompts, namespace defaults, and runtime
   injection
-status: To Do
+status: Done
 priority: medium
 labels:
   - forge
@@ -13,7 +13,7 @@ dependencies:
   - COSMO-029
   - COSMO-031
 createdAt: '2026-02-26T20:57:52.502Z'
-updatedAt: '2026-02-26T20:57:52.502Z'
+updatedAt: '2026-03-05T15:38:20.541Z'
 ---
 
 ## Description

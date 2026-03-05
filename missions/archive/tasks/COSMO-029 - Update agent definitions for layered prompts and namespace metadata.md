@@ -1,7 +1,7 @@
 ---
 id: COSMO-029
 title: Update agent definitions for layered prompts and namespace metadata
-status: To Do
+status: Done
 priority: high
 labels:
   - forge
@@ -11,7 +11,7 @@ dependencies:
   - COSMO-027
   - COSMO-028
 createdAt: '2026-02-26T20:57:35.811Z'
-updatedAt: '2026-02-26T20:57:35.811Z'
+updatedAt: '2026-03-05T15:38:20.540Z'
 ---
 
 ## Description

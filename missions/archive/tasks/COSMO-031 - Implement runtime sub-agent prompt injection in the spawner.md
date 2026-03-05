@@ -1,7 +1,7 @@
 ---
 id: COSMO-031
 title: Implement runtime sub-agent prompt injection in the spawner
-status: To Do
+status: Done
 priority: high
 labels:
   - forge
@@ -11,7 +11,7 @@ dependencies:
   - COSMO-027
   - COSMO-030
 createdAt: '2026-02-26T20:57:47.281Z'
-updatedAt: '2026-02-26T20:57:47.281Z'
+updatedAt: '2026-03-05T15:38:20.541Z'
 ---
 
 ## Description

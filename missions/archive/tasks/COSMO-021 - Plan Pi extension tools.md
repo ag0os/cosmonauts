@@ -1,15 +1,15 @@
 ---
 id: COSMO-021
 title: Plan Pi extension tools
-status: To Do
+status: Done
 priority: high
 labels:
   - forge
-  - plan:forge-lifecycle
+  - 'plan:forge-lifecycle'
 dependencies:
   - COSMO-020
 createdAt: '2026-02-26T00:00:00.000Z'
-updatedAt: '2026-02-26T00:00:00.000Z'
+updatedAt: '2026-03-05T15:38:20.534Z'
 ---
 
 ## Description

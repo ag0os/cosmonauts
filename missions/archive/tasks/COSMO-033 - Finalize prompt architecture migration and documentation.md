@@ -1,7 +1,7 @@
 ---
 id: COSMO-033
 title: Finalize prompt architecture migration and documentation
-status: To Do
+status: Done
 priority: medium
 labels:
   - forge
@@ -11,7 +11,7 @@ labels:
 dependencies:
   - COSMO-032
 createdAt: '2026-02-26T20:57:56.953Z'
-updatedAt: '2026-02-26T20:57:56.953Z'
+updatedAt: '2026-03-05T15:38:20.543Z'
 ---
 
 ## Description
