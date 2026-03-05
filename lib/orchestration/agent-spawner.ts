@@ -191,7 +191,8 @@ export function createPiSpawner(): AgentSpawner {
 			try {
 				const modelId = config.model ?? getModelForRole(config.role);
 				const model = resolveModel(modelId);
-				const thinkingLevel = config.thinkingLevel;
+				const thinkingLevel =
+					config.thinkingLevel ?? getThinkingForRole(config.role);
 
 				// Resolve full agent definition (unknown roles are rejected).
 				const def = DEFAULT_REGISTRY.get(config.role);
