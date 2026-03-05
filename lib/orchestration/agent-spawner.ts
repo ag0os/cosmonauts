@@ -9,6 +9,7 @@
 
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import {
 	createAgentSession,
@@ -34,6 +35,7 @@ import type {
 	ModelConfig,
 	SpawnConfig,
 	SpawnResult,
+	ThinkingConfig,
 } from "./types.ts";
 
 const DEFAULT_REGISTRY = createDefaultRegistry();
@@ -95,6 +97,43 @@ export function getModelForRole(
 }
 
 // ============================================================================
+// Thinking Resolution
+// ============================================================================
+
+/**
+ * Return the thinking level for a given agent role.
+ *
+ * Resolution order:
+ *  1. Explicit override from `thinking` config (matched by role key)
+ *  2. Agent definition thinkingLevel (from registry)
+ *  3. `thinking.default` if provided
+ *  4. `undefined` (no thinking — Pi default)
+ */
+export function getThinkingForRole(
+	role: string,
+	thinking?: ThinkingConfig,
+	registry?: AgentRegistry,
+): ThinkingLevel | undefined {
+	// Check explicit override from ThinkingConfig
+	if (thinking) {
+		const configKey = roleToConfigKey(role);
+		if (configKey) {
+			const override = thinking[configKey];
+			if (override) return override;
+		}
+	}
+
+	// Check agent definition for thinkingLevel
+	const def = (registry ?? DEFAULT_REGISTRY).get(role);
+	if (def?.thinkingLevel) {
+		return def.thinkingLevel;
+	}
+
+	// Fallback: thinking.default or undefined
+	return thinking?.default ?? undefined;
+}
+
+// ============================================================================
 // Definition Resolution Helpers
 // ============================================================================
 
@@ -152,6 +191,7 @@ export function createPiSpawner(): AgentSpawner {
 			try {
 				const modelId = config.model ?? getModelForRole(config.role);
 				const model = resolveModel(modelId);
+				const thinkingLevel = config.thinkingLevel;
 
 				// Resolve full agent definition (unknown roles are rejected).
 				const def = DEFAULT_REGISTRY.get(config.role);
@@ -213,6 +253,7 @@ export function createPiSpawner(): AgentSpawner {
 					tools,
 					sessionManager: SessionManager.inMemory(),
 					resourceLoader: loader,
+					thinkingLevel,
 				});
 
 				try {
