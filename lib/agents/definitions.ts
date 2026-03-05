@@ -59,6 +59,7 @@ export const PLANNER_DEFINITION = {
 	projectContext: true,
 	session: "ephemeral",
 	loop: false,
+	thinkingLevel: "high",
 } as const satisfies AgentDefinition;
 
 export const TASK_MANAGER_DEFINITION = {
@@ -81,6 +82,7 @@ export const TASK_MANAGER_DEFINITION = {
 	projectContext: false,
 	session: "ephemeral",
 	loop: false,
+	thinkingLevel: "high",
 } as const satisfies AgentDefinition;
 
 export const COORDINATOR_DEFINITION = {
