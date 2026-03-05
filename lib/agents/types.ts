@@ -7,6 +7,8 @@
  * the same way.
  */
 
+import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+
 /** Tool set available to an agent. */
 export type AgentToolSet = "coding" | "readonly" | "none";
 
@@ -39,4 +41,6 @@ export interface AgentDefinition {
 	readonly session: AgentSessionMode;
 	/** Whether this agent loops in chain stages (vs one-shot). */
 	readonly loop: boolean;
+	/** Optional thinking/reasoning level for this agent. */
+	readonly thinkingLevel?: ThinkingLevel;
 }

@@ -2,6 +2,8 @@
  * Type definitions for the chain runner orchestration system.
  */
 
+import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+
 // ============================================================================
 // Agent Roles
 // ============================================================================
@@ -56,6 +58,26 @@ export interface ModelConfig {
 	default?: string;
 }
 
+/** Thinking level assignment per agent role */
+export interface ThinkingConfig {
+	/** Thinking level for planner agents */
+	planner?: ThinkingLevel;
+	/** Thinking level for task-manager agents */
+	taskManager?: ThinkingLevel;
+	/** Thinking level for coordinator agents */
+	coordinator?: ThinkingLevel;
+	/** Thinking level for worker agents */
+	worker?: ThinkingLevel;
+	/** Thinking level for quality-manager agents */
+	qualityManager?: ThinkingLevel;
+	/** Thinking level for reviewer agents */
+	reviewer?: ThinkingLevel;
+	/** Thinking level for fixer agents */
+	fixer?: ThinkingLevel;
+	/** Fallback thinking level for unknown roles */
+	default?: ThinkingLevel;
+}
+
 /** Configuration for a chain execution */
 export interface ChainConfig {
 	/** Chain stages to execute (parsed from DSL or provided directly) */
@@ -76,6 +98,8 @@ export interface ChainConfig {
 	projectSkills?: readonly string[];
 	/** Optional task label scope for default completion checks (e.g. plan:<slug>). */
 	completionLabel?: string;
+	/** Thinking level overrides per role */
+	thinking?: ThinkingConfig;
 }
 
 // ============================================================================
@@ -156,6 +180,8 @@ export interface SpawnConfig {
 	runtimeContext?: SpawnRuntimeContext;
 	/** Project-level skill filter list (from .cosmonauts/config.json) */
 	projectSkills?: readonly string[];
+	/** Thinking/reasoning level override */
+	thinkingLevel?: ThinkingLevel;
 }
 
 /** Result of an agent execution */
