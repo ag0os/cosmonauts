@@ -34,6 +34,7 @@ const spawnerRef = vi.hoisted(() => ({
 vi.mock("../../lib/orchestration/agent-spawner.ts", () => ({
 	createPiSpawner: () => spawnerRef.current,
 	getModelForRole: () => "test-provider/test-model",
+	getThinkingForRole: () => undefined,
 }));
 
 // ============================================================================

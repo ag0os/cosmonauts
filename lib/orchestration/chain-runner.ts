@@ -6,7 +6,11 @@
 
 import { createDefaultRegistry } from "../agents/index.ts";
 import { TaskManager } from "../tasks/task-manager.ts";
-import { createPiSpawner, getModelForRole } from "./agent-spawner.ts";
+import {
+	createPiSpawner,
+	getModelForRole,
+	getThinkingForRole,
+} from "./agent-spawner.ts";
 import type {
 	AgentSpawner,
 	ChainConfig,
@@ -255,6 +259,7 @@ export async function runStage(
 		}
 
 		const model = getModelForRole(stage.name, config.models);
+		const thinkingLevel = getThinkingForRole(stage.name, config.thinking);
 		const prompt = buildStagePrompt(stage, config);
 
 		if (!stage.loop) {
@@ -268,6 +273,7 @@ export async function runStage(
 				prompt,
 				signal: config.signal,
 				projectSkills: config.projectSkills,
+				thinkingLevel,
 			});
 
 			if (spawnResult.success) {
@@ -354,6 +360,7 @@ export async function runStage(
 				prompt,
 				signal: config.signal,
 				projectSkills: config.projectSkills,
+				thinkingLevel,
 			});
 
 			if (spawnResult.success) {
