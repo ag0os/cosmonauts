@@ -10,6 +10,7 @@ import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import {
 	getModelForRole,
+	getThinkingForRole,
 	resolveExtensionPaths,
 	resolveTools,
 } from "../../lib/orchestration/agent-spawner.ts";
@@ -37,6 +38,7 @@ const FIXTURE_PLANNER: AgentDefinition = {
 	projectContext: false,
 	session: "ephemeral",
 	loop: false,
+	thinkingLevel: "high",
 };
 
 const FIXTURE_WORKER: AgentDefinition = {
@@ -167,6 +169,81 @@ describe("getModelForRole", () => {
 			FIXTURE_REGISTRY,
 		);
 		expect(model).toBe("fixture-provider/fixture-planner-model");
+	});
+});
+
+describe("getThinkingForRole", () => {
+	test("returns definition thinkingLevel for known role (tier 2)", () => {
+		const thinking = getThinkingForRole("planner", undefined, FIXTURE_REGISTRY);
+		expect(thinking).toBe("high");
+	});
+
+	test("returns undefined for role with no thinkingLevel on definition (tier 4)", () => {
+		const thinking = getThinkingForRole("worker", undefined, FIXTURE_REGISTRY);
+		expect(thinking).toBeUndefined();
+	});
+
+	test("returns undefined when nothing is configured (tier 4)", () => {
+		const thinking = getThinkingForRole(
+			"unknown-role",
+			undefined,
+			FIXTURE_REGISTRY,
+		);
+		expect(thinking).toBeUndefined();
+	});
+
+	test("explicit override takes precedence over definition thinkingLevel (tier 1 > tier 2)", () => {
+		const thinking = getThinkingForRole(
+			"planner",
+			{ planner: "low" },
+			FIXTURE_REGISTRY,
+		);
+		expect(thinking).toBe("low");
+	});
+
+	test("thinking.default used when role has no definition and no override (tier 3)", () => {
+		const thinking = getThinkingForRole(
+			"unknown-role",
+			{ default: "medium" },
+			FIXTURE_REGISTRY,
+		);
+		expect(thinking).toBe("medium");
+	});
+
+	test("definition thinkingLevel beats thinking.default (tier 2 > tier 3)", () => {
+		const thinking = getThinkingForRole(
+			"planner",
+			{ default: "low" },
+			FIXTURE_REGISTRY,
+		);
+		expect(thinking).toBe("high");
+	});
+
+	test("explicit override beats thinking.default (tier 1 > tier 3)", () => {
+		const thinking = getThinkingForRole(
+			"worker",
+			{ worker: "xhigh", default: "low" },
+			FIXTURE_REGISTRY,
+		);
+		expect(thinking).toBe("xhigh");
+	});
+
+	test("thinking.default beats undefined when definition has no thinkingLevel (tier 3 > tier 4)", () => {
+		const thinking = getThinkingForRole(
+			"worker",
+			{ default: "medium" },
+			FIXTURE_REGISTRY,
+		);
+		expect(thinking).toBe("medium");
+	});
+
+	test("explicit override beats definition and default (tier 1 > tier 2 > tier 3)", () => {
+		const thinking = getThinkingForRole(
+			"planner",
+			{ planner: "minimal", default: "low" },
+			FIXTURE_REGISTRY,
+		);
+		expect(thinking).toBe("minimal");
 	});
 });
 

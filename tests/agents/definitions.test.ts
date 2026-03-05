@@ -1,10 +1,23 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { BUILTIN_DEFINITIONS } from "../../lib/agents/definitions.ts";
+import {
+	BUILTIN_DEFINITIONS,
+	PLANNER_DEFINITION,
+	TASK_MANAGER_DEFINITION,
+} from "../../lib/agents/definitions.ts";
 import type {
 	AgentDefinition,
 	AgentSessionMode,
 	AgentToolSet,
 } from "../../lib/agents/types.ts";
+
+const VALID_THINKING_LEVELS = new Set([
+	"off",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+]);
 
 describe("BUILTIN_DEFINITIONS", () => {
 	it("contains at least one built-in agent", () => {
@@ -71,6 +84,28 @@ describe("BUILTIN_DEFINITIONS", () => {
 			if (def.tools === "none") {
 				expect(def.prompts).not.toContain("capabilities/coding-readwrite");
 				expect(def.prompts).not.toContain("capabilities/coding-readonly");
+			}
+		}
+	});
+
+	it("has thinkingLevel that is either a valid ThinkingLevel or undefined", () => {
+		for (const def of BUILTIN_DEFINITIONS) {
+			if (def.thinkingLevel !== undefined) {
+				expect(VALID_THINKING_LEVELS.has(def.thinkingLevel)).toBe(true);
+			}
+		}
+	});
+
+	it("has thinkingLevel 'high' for planner and task-manager", () => {
+		expect(PLANNER_DEFINITION.thinkingLevel).toBe("high");
+		expect(TASK_MANAGER_DEFINITION.thinkingLevel).toBe("high");
+	});
+
+	it("has thinkingLevel undefined for definitions other than planner and task-manager", () => {
+		const highThinkingIds = new Set(["planner", "task-manager"]);
+		for (const def of BUILTIN_DEFINITIONS) {
+			if (!highThinkingIds.has(def.id)) {
+				expect(def.thinkingLevel).toBeUndefined();
 			}
 		}
 	});
