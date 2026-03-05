@@ -34,7 +34,7 @@ What's built:
 - Todo tool for in-session task tracking
 - 565 tests passing
 
-What's next: more language/domain skills, web/deepwiki tools, memory system, parallel workers, browser automation. See the [Roadmap](#roadmap) section in DESIGN.md.
+What's next: more language/domain skills, web/deepwiki tools, memory system, parallel workers, browser automation. See [ROADMAP.md](./ROADMAP.md).
 
 ## Installation
 
@@ -189,7 +189,7 @@ Agents coordinate through task state — no message bus, no shared memory. The c
 
 ## Documentation
 
-- **[DESIGN.md](./DESIGN.md)** — Full system design: architecture, agent system, orchestration, roadmap.
+- **[ROADMAP.md](./ROADMAP.md)** — Prioritized backlog of upcoming work.
 - **[AGENTS.md](./AGENTS.md)** — Project conventions and instructions for agents working on this codebase.
 - **[docs/architecture/approach.md](./docs/architecture/approach.md)** — Design philosophy and evolution notes.
 - **[docs/pi-framework.md](./docs/pi-framework.md)** — Pi framework API reference.

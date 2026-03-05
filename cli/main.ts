@@ -288,7 +288,7 @@ async function run(options: CliOptions): Promise<void> {
 	}
 
 	// 5. default → interactive REPL
-	// TODO: After --workflow/--chain, drop into Cosmo REPL (DESIGN.md future behavior)
+	// TODO: After --workflow/--chain, drop into Cosmo REPL
 	const result = await createSession({
 		definition,
 		cwd,

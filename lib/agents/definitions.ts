@@ -1,5 +1,5 @@
 /**
- * Built-in agent definitions matching the DESIGN.md spec table.
+ * Built-in agent definitions matching the AGENTS.md agent definitions table.
  *
  * Each definition uses `as const satisfies AgentDefinition` so TypeScript
  * narrows the literal types while enforcing the interface contract.

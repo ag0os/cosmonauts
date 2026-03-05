@@ -8,7 +8,7 @@ import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 // Agent Roles
 // ============================================================================
 
-/** Agent roles as defined in DESIGN.md */
+/** Agent roles as defined in AGENTS.md */
 export type AgentRole =
 	| "planner"
 	| "task-manager"
