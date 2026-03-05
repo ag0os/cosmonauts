@@ -8,21 +8,21 @@ distilledAt: 2026-03-05T15:41:00.000Z
 
 ## What Was Built
 
-Added a full work lifecycle to the forge system: plans that group tasks, an archive for completed work, and a project-level memory system for distilled knowledge. Plans are directories under `forge/plans/<slug>/` containing `plan.md` (and optional `spec.md`). Tasks link to plans via a `plan:<slug>` label convention. Completed plans and their tasks are mechanically archived to `forge/archive/`, and an agent-driven distillation skill converts archived materials into concise memory files in `memory/`.
+Added a full work lifecycle to the system: plans that group tasks, an archive for completed work, and a project-level memory system for distilled knowledge. Plans are directories under `missions/plans/<slug>/` containing `plan.md` (and optional `spec.md`). Tasks link to plans via a `plan:<slug>` label convention. Completed plans and their tasks are mechanically archived to `missions/archive/`, and an agent-driven distillation skill converts archived materials into concise memory files in `memory/`.
 
 ## Key Decisions
 
-- **Plans don't own tasks directly.** Tasks stay flat in `forge/tasks/` and associate via `plan:<slug>` labels rather than nesting inside plan directories. This preserves backward compatibility — standalone tasks without plans work unchanged, and `task_list --label plan:<slug>` provides plan-scoped filtering for free.
+- **Plans don't own tasks directly.** Tasks stay flat in `missions/tasks/` and associate via `plan:<slug>` labels rather than nesting inside plan directories. This preserves backward compatibility — standalone tasks without plans work unchanged, and `task_list --label plan:<slug>` provides plan-scoped filtering for free.
 - **Archive is mechanical, distillation is agent-driven.** Archiving is a deterministic file-move operation (no LLM). Distillation is a separate, explicitly-triggered step using a Pi skill. This separation means archiving never blocks on AI availability and distillation quality can improve independently.
-- **Memory lives outside forge.** Memory files go in `memory/` at the project root, not under `forge/`. They are a project-level resource alongside AGENTS.md and skills — consumed by any agent, not just forge-aware ones. This positions memory as a general knowledge layer that multiple producers (archives, sessions, design reviews) can write to.
+- **Memory lives outside missions.** Memory files go in `memory/` at the project root, not under `missions/`. They are a project-level resource alongside AGENTS.md and skills — consumed by any agent, not just missions-aware ones. This positions memory as a general knowledge layer that multiple producers (archives, sessions, design reviews) can write to.
 - **Single `plan:` label enforced.** Validation rejects tasks with more than one `plan:` prefix label, enforced at both `task_create` and `task_edit`. A task belongs to at most one plan.
 - **PlanManager mirrors TaskManager structure.** Separate files for types, file-system operations, and the manager class in `lib/plans/`, following the established pattern from `lib/tasks/`.
 
 ## Patterns Established
 
-- **Plan directory convention**: `forge/plans/<slug>/plan.md` (required) + `spec.md` (optional). Frontmatter: title, status (active | completed), createdAt, updatedAt.
+- **Plan directory convention**: `missions/plans/<slug>/plan.md` (required) + `spec.md` (optional). Frontmatter: title, status (active | completed), createdAt, updatedAt.
 - **Label-based linkage**: `plan:<slug>` labels on tasks. The `task_create` tool's `plan` parameter auto-adds the label. Only one `plan:` label per task.
-- **Archive path mirroring**: `forge/archive/plans/<slug>/` and `forge/archive/tasks/` mirror active directory structure. Files are preserved unmodified.
+- **Archive path mirroring**: `missions/archive/plans/<slug>/` and `missions/archive/tasks/` mirror active directory structure. Files are preserved unmodified.
 - **Skill-based distillation**: The `skills/domains/archive/SKILL.md` skill teaches any agent the distillation procedure. Load via `/skill:archive` when ready to distill.
 - **Memory file format**: YAML frontmatter (`source`, `plan`, `distilledAt`) followed by sections: What Was Built, Key Decisions, Patterns Established, Files Changed, Gotchas & Lessons.
 

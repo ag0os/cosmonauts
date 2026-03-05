@@ -13,7 +13,7 @@ Pi ships as four npm packages under `@mariozechner/`:
 | `pi-agent-core` | Core types: `Agent`, `AgentEvent`, `AgentMessage`, `AgentTool`, `ThinkingLevel` |
 | `pi-tui` | Terminal UI library (components, editor, rendering) |
 
-All packages follow lockstep versioning (currently v0.55.0). The binary is `pi`.
+All packages follow lockstep versioning (currently v0.56.1). The binary is `pi`.
 
 ---
 

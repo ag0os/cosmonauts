@@ -1,0 +1,200 @@
+# Cosmonauts
+
+An automated coding orchestration system built on [Pi](https://github.com/nicholasgasior/pi-coding-agent). Describe what you want, get a designed solution, and let agents implement it — from plan to pull request.
+
+## What It Does
+
+Cosmonauts automates the mechanical parts of software development. You handle the creative work (requirements, design decisions, architecture), and agents handle the execution (implementation, testing, commits, code review).
+
+The workflow:
+
+1. **You describe what you want** — in natural language, a spec file, or interactively.
+2. **A planner agent designs the solution** — explores the codebase, proposes an approach, writes a plan.
+3. **You review and approve the plan** — adjust anything before execution begins.
+4. **A task manager breaks the plan into atomic tasks** — each one is single-PR scope with clear acceptance criteria.
+5. **A coordinator delegates tasks to worker agents** — respecting dependencies, routing skills.
+6. **Workers implement, test, and commit** — each in a fresh context with the right tools.
+7. **A quality manager verifies everything** — lint, typecheck, code review, and remediation.
+
+The key insight: **the design phase is where humans add the most value.** Once the plan is solid and tasks are well-defined, execution is mechanical. Cosmonauts optimizes for great planning and reliable autonomous execution.
+
+## Current Status
+
+**Phase 0 is complete.** The core loop works end-to-end: you can start Cosmonauts, chat with the main agent (Cosmo), trigger multi-agent pipelines, and have agents implement tasks on real projects.
+
+What's built:
+- Task system with markdown files, YAML frontmatter, dependencies, and acceptance criteria
+- Chain runner for multi-agent pipelines (planner → task-manager → coordinator → workers → quality-manager)
+- Agent spawner creating scoped Pi sessions from declarative agent definitions
+- Eight agent roles: Cosmo, planner, task-manager, coordinator, worker, quality-manager, reviewer, fixer
+- Four-layer system prompt architecture with capability-aligned composition
+- Plan lifecycle: create plans, link tasks, archive completed work, distill learnings into memory
+- Named workflows for common pipelines (`plan-and-build`, `implement`, `verify`, `plan`)
+- CLI with interactive and non-interactive modes
+- Todo tool for in-session task tracking
+- 565 tests passing
+
+What's next: more language/domain skills, web/deepwiki tools, memory system, parallel workers, browser automation. See the [Roadmap](#roadmap) section in DESIGN.md.
+
+## Installation
+
+Cosmonauts requires [Bun](https://bun.sh/) and [Pi](https://github.com/nicholasgasior/pi-coding-agent).
+
+```bash
+# Clone and install dependencies
+git clone <repo-url>
+cd cosmonauts
+bun install
+
+# Link the CLI binaries
+bun link
+```
+
+## Usage
+
+### Interactive Mode (default)
+
+Start a REPL session with Cosmo, the main agent:
+
+```bash
+cosmonauts
+```
+
+Chat naturally — Cosmo can read/write code, answer questions, and delegate complex work to specialized agents.
+
+```bash
+# Start with an initial prompt
+cosmonauts "explain how the task system works"
+```
+
+### Non-Interactive Mode
+
+Process a prompt and exit:
+
+```bash
+cosmonauts --print "create tasks from the plan and implement them"
+```
+
+### Multi-Agent Pipelines
+
+Run named workflows for common patterns:
+
+```bash
+# Full pipeline: design → tasks → implement → verify
+cosmonauts --workflow plan-and-build "design an auth system for this project"
+
+# Implement an existing plan
+cosmonauts --workflow implement "implement the plan in missions/plans/auth-system/"
+
+# Run quality checks and remediation on current changes
+cosmonauts --workflow verify "review against main and fix findings"
+
+# List available workflows
+cosmonauts --list-workflows
+```
+
+Or use raw chain DSL for custom pipelines:
+
+```bash
+cosmonauts --chain "planner -> task-manager -> coordinator -> quality-manager" "custom pipeline"
+```
+
+### Task Management
+
+Standalone CLI for managing tasks directly:
+
+```bash
+cosmonauts-tasks init          # Initialize task directory
+cosmonauts-tasks create        # Create a task interactively
+cosmonauts-tasks list          # List all tasks
+cosmonauts-tasks list --ready  # Show unblocked tasks
+cosmonauts-tasks view COSMO-001
+cosmonauts-tasks edit COSMO-001 --status "In Progress"
+```
+
+### Project Setup
+
+Bootstrap project instructions for a new codebase:
+
+```bash
+cosmonauts init
+```
+
+This scans your project and creates an `AGENTS.md` file with conventions, tech stack, and instructions for agents.
+
+## Architecture
+
+Cosmonauts is built as a [Pi package](https://github.com/nicholasgasior/pi-coding-agent) — extensions, agent definitions, system prompts, and skills that plug into the Pi agent framework.
+
+```
+cosmonauts/
+├── lib/              Core libraries (tasks, orchestration, plans, workflows, agents)
+├── extensions/       Pi extensions (tasks, plans, todo, orchestration, init)
+├── prompts/          System prompt layers (platform base, capabilities, personas, runtime)
+├── skills/           On-demand capability files (languages, domains)
+├── cli/              CLI implementation
+├── bin/              CLI entry points (cosmonauts, cosmonauts-tasks)
+├── tests/            Test suites (565 tests, Vitest)
+├── missions/         Active tasks, plans, and archived work
+├── memory/           Distilled knowledge from completed work
+└── docs/             Reference documentation
+```
+
+### Agents
+
+Every agent is a Pi session configured by a declarative definition — model, tools, system prompt layers, extensions, skill access, and sub-agent permissions.
+
+| Agent | Role |
+|-------|------|
+| **Cosmo** | Main interactive agent. Chats, codes, delegates to specialists. |
+| **Planner** | Designs solutions. Explores code, proposes approaches, writes plans. Read-only tools. |
+| **Task Manager** | Breaks plans into atomic, implementable tasks with dependencies and ACs. |
+| **Coordinator** | Delegates tasks to workers, monitors progress, verifies completion. |
+| **Worker** | Implements one task. Full coding tools, ephemeral session. |
+| **Quality Manager** | Runs lint/format/typecheck, spawns reviewers and fixers, ensures merge-readiness. |
+| **Reviewer** | Clean-context code review against main. Writes findings, does not fix. |
+| **Fixer** | Applies targeted remediation from review findings. |
+
+### Task System
+
+File-based, git-trackable. Tasks are markdown files with YAML frontmatter stored in `missions/tasks/`.
+
+```markdown
+---
+id: COSMO-001
+title: Create user model
+status: To Do
+priority: high
+labels: [backend, database]
+dependencies: []
+---
+
+## Description
+Create the User model with email and password fields.
+
+- [ ] #1 User model exists with email and password_digest columns
+- [ ] #2 Email has uniqueness constraint and index
+```
+
+Agents coordinate through task state — no message bus, no shared memory. The coordinator reads task files to decide what's next, workers update their task when done.
+
+## Tech Stack
+
+- **Runtime**: Bun
+- **Language**: TypeScript (ESM, strict mode)
+- **Agent Framework**: `@mariozechner/pi-coding-agent` v0.56.1
+- **Schema**: `@sinclair/typebox`
+- **Tests**: Vitest (`bun run test`)
+- **Linter**: Biome (`bun run lint`)
+
+## Documentation
+
+- **[DESIGN.md](./DESIGN.md)** — Full system design: architecture, agent system, orchestration, roadmap.
+- **[AGENTS.md](./AGENTS.md)** — Project conventions and instructions for agents working on this codebase.
+- **[docs/architecture/approach.md](./docs/architecture/approach.md)** — Design philosophy and evolution notes.
+- **[docs/pi-framework.md](./docs/pi-framework.md)** — Pi framework API reference.
+- **[docs/testing.md](./docs/testing.md)** — Testing standards and patterns.
+
+## License
+
+TBD

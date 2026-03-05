@@ -156,30 +156,55 @@ All agent work lands as git commits. This means:
 - **Session persistence for workers** — they're ephemeral. `SessionManager.inMemory()`. Done. *(Validated.)*
 - **Streaming/stdout parsing** — Pi gives us event subscription. No markers needed. *(Validated.)*
 
-## What We Built (Phase 0)
+## What We Built (Phase 0) ✅
 
-1. **Task extension** — tools for creating, listing, viewing, editing, searching tasks. ✓
-2. **Chain runner** — role-based lifecycle, completion detection via task state, global safety caps. ✓
-3. **Agent spawner** — creates Pi sessions with scoped skills and tools per role. ✓
-4. **Agent skills** — planner, task-manager, coordinator, worker. All work in both interactive and non-interactive modes. ✓
-5. **Orchestration extension** — `chain_run` and `spawn_agent` tools registered in Pi. ✓
-6. **CLI** — `cosmonauts-tasks` for standalone task management. ✓
+Phase 0 is complete. The core loop works end-to-end — from interactive chat to full multi-agent pipelines on real projects.
 
-## What's Next (Phase 0 remaining)
+### Core Infrastructure
+1. **Task system** — parser, serializer, TaskManager, file-system operations, ID generator. Markdown files with YAML frontmatter, dependencies, acceptance criteria. ✓
+2. **Task extension** — Pi tools: `task_create`, `task_list`, `task_view`, `task_edit`, `task_search`. ✓
+3. **Task CLI** — `cosmonauts-tasks` with init, create, list, view, edit, delete, search commands. ✓
 
-1. **Cosmo main agent** — default system prompt (Claude Code-style), the identity you talk to when you start Cosmonauts
-2. **Todo tool** — in-memory session task tracking (`todo_write`/`todo_read`), distinct from the task system
-3. **TypeScript language skill** — first language skill for workers
-4. **CLI entry point** — `cosmonauts` binary with `--print`, `--chain`, Pi flag passthrough
-5. **End-to-end test** — run the full pipeline on a real project
+### Orchestration
+4. **Chain runner** — role-based lifecycle, completion detection via task state, global safety caps (max iterations, timeout). ✓
+5. **Agent spawner** — resolves declarative agent definitions, creates scoped Pi sessions with appropriate tools, extensions, skills, and prompt layers. ✓
+6. **Orchestration extension** — `chain_run` and `spawn_agent` registered as Pi tools. ✓
+
+### Agent System
+7. **Declarative agent definitions** — every agent (including Cosmo) defined the same way: model, prompts, tools, extensions, skills, subagents. ✓
+8. **Eight agent roles** — Cosmo, planner, task-manager, coordinator, worker, quality-manager, reviewer, fixer. ✓
+9. **Four-layer prompt architecture** — platform base → capability packs → persona → runtime context. Capabilities aligned to tool surfaces (read-only vs read-write). ✓
+10. **Runtime spawn context** — sub-agents receive parent role, objective, and task ID as a final prompt layer. ✓
+11. **Per-agent thinking levels** — defaults on definitions, overrides via spawn/chain tools and CLI flags. ✓
+
+### Skills & Knowledge
+12. **TypeScript language skill** — first language skill with reference docs for type patterns and testing patterns. ✓
+13. **Domain skills** — task, plan, and archive skills for teaching agents specific workflows. ✓
+14. **Skill loading** — discovery, index injection, and skill_read tool via extension. ✓
+
+### Work Lifecycle
+15. **Plan system** — PlanManager, plan_create/list/view/archive tools. Plans as directories with plan.md and optional spec.md. ✓
+16. **Task-plan linkage** — `plan:<slug>` label convention, enforced single-plan constraint. ✓
+17. **Archive** — mechanical archival of completed plans and tasks to `missions/archive/`. ✓
+18. **Memory** — distilled knowledge from archived work in `memory/`. Agent-driven distillation via archive skill. ✓
+
+### CLI & UX
+19. **Cosmo main agent** — general-purpose coding assistant with orchestration capabilities (Claude Code-style). ✓
+20. **Todo tool** — in-memory session task tracking (`todo_write`/`todo_read`). ✓
+21. **CLI entry point** — `cosmonauts` binary with `--print`, `--workflow`, `--chain`, `--model`, `--thinking` flags. ✓
+22. **Workflow system** — named workflows mapping to chain DSL expressions, with built-in defaults and project-level config. ✓
+23. **Init command** — agent-driven `AGENTS.md` bootstrap via `/init` command. ✓
+
+### Quality
+24. **565 tests** — comprehensive coverage across all modules (Vitest). ✓
+25. **Testing standards** — documented patterns, coverage thresholds, mock strategy. ✓
+26. **End-to-end validation** — used full pipeline (planner → task-manager → coordinator → workers → quality-manager) to implement the agent-thinking-levels feature on this codebase. ✓
 
 ## How It Grows
 
-Once Phase 0 works end-to-end on a real project:
+Phase 0 is complete. Each subsequent phase gets detailed specs before we build it, informed by what we learned in the previous phase.
 
-- **Phase 1**: More language/domain skills. Web/deepwiki tools for agents that need to look things up. Smarter skill routing based on task labels.
-- **Phase 2**: Memory (agents learn from past sessions). Better test quality assessment. Parallel workers on independent tasks.
-- **Phase 3**: Cost tracking and budget limits. Sandboxed execution via Pi's RPC mode. Progress reporting.
-- **Phase 4**: Run in background. Notify when done. Accept work via messaging channels.
-
-Each phase gets detailed specs before we build it, informed by what we learned in the previous phase.
+- **Phase 1**: More language/domain skills. `deepwiki_ask` and `web_fetch` tools. Coordinator skill-routing. Auto-project detection.
+- **Phase 2**: Memory system (daily logs, MEMORY.md, search). Memory tools (`memory_search`, `memory_save`). `web_search` tool.
+- **Phase 3**: Parallel worker execution. Progress reporting. Browser automation via Playwright. More domain skills.
+- **Phase 4**: Heartbeat system. Decision capture. Messaging transports (Telegram/WhatsApp). Notifications.

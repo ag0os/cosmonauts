@@ -961,7 +961,7 @@ The `cosmonauts` binary is a thin wrapper: it resolves the Cosmo agent definitio
 - [x] CLI entry point: `cosmonauts` binary with `--print`, `--workflow`, `--chain`, `--model`, `--thinking`
 - [x] `cosmonauts init` command (agent-driven AGENTS.md bootstrap via `/init` Pi command)
 - [x] Work lifecycle: plans, archive, memory, distillation (plan tools, task-plan linkage, archive tool, plan and archive skills)
-- [ ] Test end-to-end on a real project
+- [x] Test end-to-end on a real project (used full pipeline — planner, task-manager, coordinator, workers, quality-manager — to implement the agent-thinking-levels feature on this codebase)
 
 ### Phase 1: Tools + Skills
 
@@ -1005,10 +1005,15 @@ The `cosmonauts` binary is a thin wrapper: it resolves the Cosmo agent definitio
 
 ## Open Questions
 
-1. **Pi version pinning**: Pin exact version. Pi uses lockstep versioning, `^` could break us.
-2. **Auth storage**: Use Pi's default `~/.pi/agent/auth.json` — share credentials with pi CLI.
-3. **Data directory**: `~/.cosmonauts/` for memory, projects config. Tasks live in the project directory.
-4. **Task location**: `<project>/missions/tasks/` — decided, lives in project directory.
+### Resolved (Phase 0)
+
+1. **Pi version pinning**: ✅ Pinned exact version (0.56.1). Pi uses lockstep versioning, `^` would break us.
+2. **Auth storage**: ✅ Using Pi's default `~/.pi/agent/auth.json` — shares credentials with pi CLI.
+3. **Data directory**: ✅ `~/.cosmonauts/` for projects config. Tasks and plans live in the project directory under `missions/`.
+4. **Task location**: ✅ `<project>/missions/tasks/` — decided, lives in project directory.
+
+### Open (Phase 1+)
+
 5. **Search API**: Brave Search (free tier), Tavily, or self-hosted SearXNG?
 6. **Browser tool**: Playwright (full, headless) vs CDP direct (lighter, existing Chrome)?
 7. **Memory format**: Start with markdown files, upgrade to vector search later (OpenClaw has both).

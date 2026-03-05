@@ -58,12 +58,14 @@ For small, self-contained changes (a bug fix, a single function, a config tweak)
 ## Key Directories
 
 ```
-lib/              Core libraries (orchestration, tasks, workflows)
-extensions/       Pi extensions (tasks, todo, orchestration, init)
+lib/              Core libraries (agents, orchestration, tasks, plans, workflows, prompts, config)
+extensions/       Pi extensions (tasks, plans, todo, orchestration, init)
 skills/           On-demand capability files (languages, domains)
-prompts/          System prompt layers (planned — currently in skills/agents/)
+prompts/          System prompt layers (base, capabilities, personas, runtime)
 cli/              CLI implementation
+bin/              CLI entry points (cosmonauts, cosmonauts-tasks)
 tests/            Test suites mirroring source structure
-missions/tasks/   Project task files
+missions/         Active tasks, plans, and archived work
+memory/           Distilled knowledge from completed work
 docs/             Reference documentation
 ```
