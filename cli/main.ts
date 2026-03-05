@@ -231,6 +231,7 @@ async function run(options: CliOptions): Promise<void> {
 			onEvent: createChainEventLogger(),
 			projectSkills,
 			completionLabel: options.completionLabel,
+			...(options.thinking && { thinking: { default: options.thinking } }),
 		});
 
 		if (!result.success) {
@@ -251,6 +252,7 @@ async function run(options: CliOptions): Promise<void> {
 			onEvent: createChainEventLogger(),
 			projectSkills,
 			completionLabel: options.completionLabel,
+			...(options.thinking && { thinking: { default: options.thinking } }),
 		});
 
 		if (!result.success) {
