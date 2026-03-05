@@ -1,3 +1,4 @@
+import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { createDefaultRegistry } from "../../lib/agents/index.ts";
@@ -36,16 +37,26 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 						"Optional task label scope for completion checks (e.g. plan:my-plan)",
 				}),
 			),
+			thinkingLevel: Type.Optional(
+				Type.String({
+					description:
+						'Chain-wide default thinking/reasoning level (off, minimal, low, medium, high, xhigh). Applied to all stages unless overridden by agent definitions.',
+				}),
+			),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const stages = parseChain(params.expression);
 			injectUserPrompt(stages, params.prompt);
 			const projectConfig = await loadProjectConfig(ctx.cwd);
+			const thinking = params.thinkingLevel
+				? { default: params.thinkingLevel as ThinkingLevel }
+				: undefined;
 			const result = await runChain({
 				stages,
 				projectRoot: ctx.cwd,
 				projectSkills: projectConfig.skills,
 				completionLabel: params.completionLabel,
+				thinking,
 			});
 			const stagesSummary = result.stageResults
 				.map(
@@ -77,6 +88,12 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 			}),
 			prompt: Type.String({ description: "The prompt to send to the agent" }),
 			model: Type.Optional(Type.String({ description: "Model override" })),
+			thinkingLevel: Type.Optional(
+				Type.String({
+					description:
+						'Thinking/reasoning level override (off, minimal, low, medium, high, xhigh)',
+				}),
+			),
 			runtimeContext: Type.Optional(
 				Type.Object({
 					mode: Type.Union([
@@ -158,6 +175,9 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 					cwd: ctx.cwd,
 					prompt: params.prompt,
 					model: params.model,
+					thinkingLevel: params.thinkingLevel as
+						| import("@mariozechner/pi-agent-core").ThinkingLevel
+						| undefined,
 					runtimeContext: params.runtimeContext,
 					projectSkills: projectConfig.skills,
 				});
