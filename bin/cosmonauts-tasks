@@ -1,2 +1,2 @@
-#!/usr/bin/env node
-import "../cli/tasks/index.js";
+#!/usr/bin/env bun
+import "../cli/tasks/index.ts";
