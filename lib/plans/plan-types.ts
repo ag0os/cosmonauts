@@ -1,5 +1,5 @@
 /**
- * Core type definitions for forge-plans
+ * Core type definitions for plans
  * Plan management types for the Cosmonauts project
  */
 

@@ -1,15 +1,15 @@
 ---
-name: forge-task
-description: How to create well-structured tasks with acceptance criteria, dependencies, labels, and priorities using the forge task system.
+name: task
+description: How to create well-structured tasks with acceptance criteria, dependencies, labels, and priorities using the task system.
 ---
 
-# Forge Tasks
+# Tasks
 
-Tasks are atomic, persistent work items stored as markdown files in `forge/tasks/`. Each task represents a single-PR scope of work that one agent can complete independently.
+Tasks are atomic, persistent work items stored as markdown files in `missions/tasks/`. Each task represents a single-PR scope of work that one agent can complete independently.
 
 ## Task File Format
 
-A task lives at `forge/tasks/COSMO-NNN - Title.md`. It is a markdown file with YAML frontmatter.
+A task lives at `missions/tasks/COSMO-NNN - Title.md`. It is a markdown file with YAML frontmatter.
 
 ### Frontmatter
 
@@ -150,7 +150,7 @@ This auto-adds a `plan:response-cache` label. Query plan tasks with:
 task_list({ label: "plan:response-cache" })
 ```
 
-See the `forge-plan` skill for the full plan-to-task lifecycle.
+See the `plan` skill for the full plan-to-task lifecycle.
 
 ## Tool Reference
 

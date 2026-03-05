@@ -49,17 +49,17 @@ describe("ensurePlansDirectory", () => {
 		await cleanupTestDir(testDir);
 	});
 
-	test("creates forge/plans/ directory", async () => {
+	test("creates missions/plans/ directory", async () => {
 		await ensurePlansDirectory(testDir);
 
-		const plansDir = join(testDir, "forge", "plans");
+		const plansDir = join(testDir, "missions", "plans");
 		const stats = await stat(plansDir);
 		expect(stats.isDirectory()).toBe(true);
 	});
 
-	test("returns path to forge/plans/", async () => {
+	test("returns path to missions/plans/", async () => {
 		const result = await ensurePlansDirectory(testDir);
-		expect(result).toBe(join(testDir, "forge", "plans"));
+		expect(result).toBe(join(testDir, "missions", "plans"));
 	});
 
 	test("is idempotent - calling multiple times succeeds", async () => {
@@ -67,7 +67,7 @@ describe("ensurePlansDirectory", () => {
 		await ensurePlansDirectory(testDir);
 		await ensurePlansDirectory(testDir);
 
-		const plansDir = join(testDir, "forge", "plans");
+		const plansDir = join(testDir, "missions", "plans");
 		const stats = await stat(plansDir);
 		expect(stats.isDirectory()).toBe(true);
 	});
@@ -91,7 +91,7 @@ describe("listPlanSlugs", () => {
 	});
 
 	test("returns only directories, not files", async () => {
-		const plansDir = join(testDir, "forge", "plans");
+		const plansDir = join(testDir, "missions", "plans");
 		await createPlanDirectory(testDir, "auth-system");
 		await createPlanDirectory(testDir, "api-redesign");
 		await writeFile(join(plansDir, "notes.txt"), "content", "utf-8");
@@ -136,10 +136,10 @@ describe("createPlanDirectory / deletePlanDirectory", () => {
 		await cleanupTestDir(testDir);
 	});
 
-	test("creates plan directory under forge/plans/", async () => {
+	test("creates plan directory under missions/plans/", async () => {
 		const dirPath = await createPlanDirectory(testDir, "auth-system");
 
-		expect(dirPath).toBe(join(testDir, "forge", "plans", "auth-system"));
+		expect(dirPath).toBe(join(testDir, "missions", "plans", "auth-system"));
 		const stats = await stat(dirPath);
 		expect(stats.isDirectory()).toBe(true);
 	});
@@ -147,14 +147,14 @@ describe("createPlanDirectory / deletePlanDirectory", () => {
 	test("creates parent directories if needed", async () => {
 		await createPlanDirectory(testDir, "new-plan");
 
-		const forgeDir = join(testDir, "forge");
-		const stats = await stat(forgeDir);
+		const missionsDir = join(testDir, "missions");
+		const stats = await stat(missionsDir);
 		expect(stats.isDirectory()).toBe(true);
 	});
 
 	test("deletes plan directory and contents", async () => {
 		await createPlanDirectory(testDir, "to-delete");
-		const planDir = join(testDir, "forge", "plans", "to-delete");
+		const planDir = join(testDir, "missions", "plans", "to-delete");
 		await writeFile(join(planDir, "plan.md"), "content", "utf-8");
 
 		await deletePlanDirectory(testDir, "to-delete");
@@ -249,7 +249,7 @@ describe("readPlanFile / writePlanFile", () => {
 		await writePlanFile(testDir, "test-plan", plan);
 
 		const content = await readFile(
-			join(testDir, "forge", "plans", "test-plan", "plan.md"),
+			join(testDir, "missions", "plans", "test-plan", "plan.md"),
 			"utf-8",
 		);
 
@@ -299,7 +299,7 @@ describe("readPlanFile / writePlanFile", () => {
 	});
 
 	test("defaults to active status for invalid status values", async () => {
-		const planDir = join(testDir, "forge", "plans", "bad-status");
+		const planDir = join(testDir, "missions", "plans", "bad-status");
 		await createPlanDirectory(testDir, "bad-status");
 		await writeFile(
 			join(planDir, "plan.md"),

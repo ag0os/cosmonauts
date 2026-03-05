@@ -34,7 +34,7 @@ Automated coding orchestration system built on `@mariozechner/pi-coding-agent` (
 
 ## Task System
 
-This project includes a built-in task system in `forge/tasks/`. Tasks are markdown files with YAML frontmatter — atomic, dependency-ordered work items with acceptance criteria.
+This project includes a built-in task system in `missions/tasks/`. Tasks are markdown files with YAML frontmatter — atomic, dependency-ordered work items with acceptance criteria.
 
 Task tools are available as Pi extension tools: `task_create`, `task_list`, `task_view`, `task_edit`, `task_search`.
 
@@ -64,6 +64,6 @@ skills/           On-demand capability files (languages, domains)
 prompts/          System prompt layers (planned — currently in skills/agents/)
 cli/              CLI implementation
 tests/            Test suites mirroring source structure
-forge/tasks/      Project task files
+missions/tasks/   Project task files
 docs/             Reference documentation
 ```

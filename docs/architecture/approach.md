@@ -158,7 +158,7 @@ All agent work lands as git commits. This means:
 
 ## What We Built (Phase 0)
 
-1. **Task extension** — tools for creating, listing, viewing, editing, searching tasks (forge-tasks format). ✓
+1. **Task extension** — tools for creating, listing, viewing, editing, searching tasks. ✓
 2. **Chain runner** — role-based lifecycle, completion detection via task state, global safety caps. ✓
 3. **Agent spawner** — creates Pi sessions with scoped skills and tools per role. ✓
 4. **Agent skills** — planner, task-manager, coordinator, worker. All work in both interactive and non-interactive modes. ✓
@@ -168,7 +168,7 @@ All agent work lands as git commits. This means:
 ## What's Next (Phase 0 remaining)
 
 1. **Cosmo main agent** — default system prompt (Claude Code-style), the identity you talk to when you start Cosmonauts
-2. **Todo tool** — in-memory session task tracking (`todo_write`/`todo_read`), distinct from forge-tasks
+2. **Todo tool** — in-memory session task tracking (`todo_write`/`todo_read`), distinct from the task system
 3. **TypeScript language skill** — first language skill for workers
 4. **CLI entry point** — `cosmonauts` binary with `--print`, `--chain`, Pi flag passthrough
 5. **End-to-end test** — run the full pipeline on a real project

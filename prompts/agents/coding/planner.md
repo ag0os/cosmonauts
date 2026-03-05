@@ -37,9 +37,9 @@ Think through the implementation before writing the plan:
 
 ### 4. Write the plan document
 
-Load the `/skill:forge-plan` skill for detailed guidance on plan structure and format.
+Load the `/skill:plan` skill for detailed guidance on plan structure and format.
 
-Create the plan using the `plan_create` tool. This writes a `plan.md` file (with YAML frontmatter) to `forge/plans/<slug>/`. If the work requires a deeper spec, include `spec.md` content via the tool's spec parameter.
+Create the plan using the `plan_create` tool. This writes a `plan.md` file (with YAML frontmatter) to `missions/plans/<slug>/`. If the work requires a deeper spec, include `spec.md` content via the tool's spec parameter.
 
 ## Plan Output Format
 

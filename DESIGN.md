@@ -34,7 +34,7 @@ The checklist:
 
 **Examples of what Pi deliberately doesn't include** (confirmed — we must build):
 
-- Task system (forge-tasks format)
+- Task system
 - Sub-agent spawning and orchestration (chain runner)
 - Todo/plan tracking ("No built-in to-dos. They confuse models." — Pi README)
 
@@ -81,7 +81,7 @@ Three projects inform this design. We cherry-pick from each rather than adopting
 The workflow that works: **planner creates tasks, coordinator delegates, workers implement.** We take:
 
 - The planner/coordinator/worker agent pattern
-- forge-tasks: markdown files with YAML frontmatter, dependency resolution, acceptance criteria
+- Task system: markdown files with YAML frontmatter, dependency resolution, acceptance criteria
 - Phase separation: planners never code, workers never plan
 - Orchestra's chain concept (pipeline + loop with completion detection)
 - System prompt patterns (role definition, critical rules, workflow steps)
@@ -143,7 +143,7 @@ The foundation. We build on Pi rather than building from scratch. Understanding 
 | **Streaming** | stdout parsing + completion markers | Event subscription (no markers needed) |
 | **Sessions** | Stateless per-spawn | Persistent JSONL transcripts |
 | **Models** | One model per spawn | Switch models mid-session, per-agent |
-| **Task system** | CLI tool (forge-tasks) | In-process Pi tool (same format) |
+| **Task system** | CLI tool | In-process Pi tool (same format) |
 | **Orchestration** | Chain DSL + binary agents | In-process chains + definition-based agents |
 
 ---
@@ -212,12 +212,12 @@ Only after approval does the task manager break the plan into atomic tasks. This
 
 ### The Task System
 
-Ported from Claude Forge's forge-tasks. Simple, file-based, proven.
+Simple, file-based, proven.
 
 **Task format**: markdown files with YAML frontmatter.
 
 ```
-<project>/forge/tasks/
+<project>/missions/tasks/
 ├── config.json
 ├── TASK-001 - Create user model.md
 ├── TASK-002 - Add validation rules.md
@@ -268,27 +268,27 @@ Create the User model with email and password fields.
 | `task_edit` | Update status, check ACs, append notes |
 | `task_search` | Search tasks by text |
 
-Same data format as forge-tasks, but accessed in-process instead of shelling out to a CLI.
+Same data format as the CLI, but accessed in-process instead of shelling out.
 
 **Plan association**: Tasks can be linked to a plan via `plan:<slug>` labels. The `task_create` tool accepts an optional `plan` parameter that auto-adds the appropriate `plan:<slug>` label — do not add it manually. A task can have at most one `plan:` label. Use `task_list` with `--label plan:<slug>` to see all tasks for a plan.
 
-### Forge Lifecycle
+### Work Lifecycle
 
-The forge lifecycle manages the full arc of implementation work:
+The work lifecycle manages the full arc of implementation work:
 
 ```
 plan → tasks → implement → archive → distill
 ```
 
-**Plans** (`forge/plans/<slug>/`): Implementation plans containing `plan.md` (required) and `spec.md` (optional). Created via the `plan_create` tool. A plan scopes a body of work, describes the approach, and produces tasks that agents can implement. Plans have `active` or `completed` status.
+**Plans** (`missions/plans/<slug>/`): Implementation plans containing `plan.md` (required) and `spec.md` (optional). Created via the `plan_create` tool. A plan scopes a body of work, describes the approach, and produces tasks that agents can implement. Plans have `active` or `completed` status.
 
-**Task-plan linkage**: Tasks associate with plans via `plan:<slug>` labels. The `task_create` tool's `plan` parameter auto-adds this label. Tasks stay flat in `forge/tasks/` — they are not nested under the plan directory. Use `task_list` label filtering to query tasks by plan.
+**Task-plan linkage**: Tasks associate with plans via `plan:<slug>` labels. The `task_create` tool's `plan` parameter auto-adds this label. Tasks stay flat in `missions/tasks/` — they are not nested under the plan directory. Use `task_list` label filtering to query tasks by plan.
 
-**Archive** (`forge/archive/`): Completed plans and their associated tasks are moved here by `plan_archive`. This is a mechanical operation — no LLM involved. It preserves the original file structure under `archive/plans/` and `archive/tasks/`. The archive is browseable and reversible. Safety check: rejects if any associated tasks are not Done.
+**Archive** (`missions/archive/`): Completed plans and their associated tasks are moved here by `plan_archive`. This is a mechanical operation — no LLM involved. It preserves the original file structure under `archive/plans/` and `archive/tasks/`. The archive is browseable and reversible. Safety check: rejects if any associated tasks are not Done.
 
-**Memory** (`memory/`): Distilled knowledge from archived work. Written by agents using the `forge-archive` skill. Memory files are a project-level resource, consumed as context the same way AGENTS.md or skills are. The `memory/` directory is the shared storage backend for all distilled knowledge, regardless of source.
+**Memory** (`memory/`): Distilled knowledge from archived work. Written by agents using the `archive` skill. Memory files are a project-level resource, consumed as context the same way AGENTS.md or skills are. The `memory/` directory is the shared storage backend for all distilled knowledge, regardless of source.
 
-**Distillation**: Agent-driven extraction of learnings from archived materials into memory files. Explicitly triggered, not automatic. Implemented as a Pi skill (`forge-archive`) that teaches any agent how to read archived plans and tasks, extract key decisions and patterns, and write a memory file to `memory/<slug>.md`.
+**Distillation**: Agent-driven extraction of learnings from archived materials into memory files. Explicitly triggered, not automatic. Implemented as a Pi skill (`archive`) that teaches any agent how to read archived plans and tasks, extract key decisions and patterns, and write a memory file to `memory/<slug>.md`.
 
 **Plan tools**:
 
@@ -297,7 +297,7 @@ plan → tasks → implement → archive → distill
 | `plan_create` | Create a new plan directory with `plan.md` and optional `spec.md` |
 | `plan_list` | List plans with status and associated task counts |
 | `plan_view` | View full plan content and summary of associated tasks |
-| `plan_archive` | Archive a completed plan and its associated tasks to `forge/archive/` |
+| `plan_archive` | Archive a completed plan and its associated tasks to `missions/archive/` |
 
 ---
 
@@ -818,15 +818,15 @@ Before building custom `deepwiki_ask`, `web_fetch`, `web_search`, or `browser` t
 
 #### Core Tools (Phase 0)
 
-**Task tools**: `task_create`, `task_list`, `task_view`, `task_edit`, `task_search` — the backbone of the system. Ported from forge-tasks format. Pi has no task system by design.
+**Task tools**: `task_create`, `task_list`, `task_view`, `task_edit`, `task_search` — the backbone of the system. Pi has no task system by design.
 
 **Todo tool**: `todo_write`, `todo_read` — in-memory, session-scoped task tracking. Pi deliberately omits this ("No built-in to-dos. They confuse models." — Pi README). We build it as an extension, using `pi.appendEntry()` for state persistence. Pi's `plan-mode.ts` example demonstrates the pattern.
 
-| | **Todo tool** | **Forge-tasks** |
+| | **Todo tool** | **Task system** |
 |---|---|---|
 | Scope | In-session, ephemeral | Project-level, persistent |
 | Purpose | Agent organizes its own work steps | Cross-agent task management |
-| Lifecycle | Dies with the session | Lives in `forge/tasks/` |
+| Lifecycle | Dies with the session | Lives in `missions/tasks/` |
 | Who uses it | Any agent, including Cosmo | Task manager, coordinator, workers |
 
 #### Phase 1 Tools
@@ -899,9 +899,9 @@ cosmonauts/
 │
 ├── skills/                   # On-demand capabilities (loaded via /skill:name)
 │   ├── languages/            # TypeScript, Rust, Python, Swift, Go
-│   └── domains/              # Testing, code-review, devops, database, forge-plan, etc.
+│   └── domains/              # Testing, code-review, devops, database, plan, etc.
 │
-├── forge/                    # Project work lifecycle
+├── missions/                 # Project work lifecycle
 │   ├── tasks/                # Active task files (markdown + YAML frontmatter)
 │   ├── plans/                # Active plan directories (plan.md, optional spec.md)
 │   │   └── <slug>/plan.md
@@ -931,7 +931,7 @@ The `cosmonauts` binary is a thin wrapper: it resolves the Cosmo agent definitio
 - **Agent Framework**: `@mariozechner/pi-coding-agent` + `pi-ai` + `pi-agent-core`
 - **Schema**: `@sinclair/typebox` (tool parameters)
 - **Sessions**: JSONL via Pi's SessionManager
-- **Task storage**: Markdown + YAML frontmatter (forge-tasks format)
+- **Task storage**: Markdown + YAML frontmatter
 - **Browser**: Playwright (Phase 2+)
 - **Build**: Bun bundler
 
@@ -945,7 +945,7 @@ The `cosmonauts` binary is a thin wrapper: it resolves the Cosmo agent definitio
 
 **Goal**: The core loop works end-to-end. You can start Cosmonauts, chat with Cosmo, trigger chains, and have agents implement tasks on a real project.
 
-- [x] Port forge-tasks core (parser, serializer, TaskManager) as a Pi extension
+- [x] Port task system core (parser, serializer, TaskManager) as a Pi extension
 - [x] Register task tools: `task_create`, `task_list`, `task_view`, `task_edit`, `task_search`
 - [x] CLI: `cosmonauts-tasks` with init, create, list, view, edit, delete, search commands
 - [x] Package scaffold: Pi package manifest, tsconfig, 228 tests passing
@@ -960,7 +960,7 @@ The `cosmonauts` binary is a thin wrapper: it resolves the Cosmo agent definitio
 - [x] Agent spawner rewrite (resolve agent definitions instead of role-based switch statements)
 - [x] CLI entry point: `cosmonauts` binary with `--print`, `--workflow`, `--chain`, `--model`, `--thinking`
 - [x] `cosmonauts init` command (agent-driven AGENTS.md bootstrap via `/init` Pi command)
-- [x] Forge lifecycle: plans, archive, memory, distillation (plan tools, task-plan linkage, archive tool, forge-plan and forge-archive skills)
+- [x] Work lifecycle: plans, archive, memory, distillation (plan tools, task-plan linkage, archive tool, plan and archive skills)
 - [ ] Test end-to-end on a real project
 
 ### Phase 1: Tools + Skills
@@ -1008,7 +1008,7 @@ The `cosmonauts` binary is a thin wrapper: it resolves the Cosmo agent definitio
 1. **Pi version pinning**: Pin exact version. Pi uses lockstep versioning, `^` could break us.
 2. **Auth storage**: Use Pi's default `~/.pi/agent/auth.json` — share credentials with pi CLI.
 3. **Data directory**: `~/.cosmonauts/` for memory, projects config. Tasks live in the project directory.
-4. **Task location**: `<project>/forge/tasks/` (same as Forge) or `<project>/.cosmonauts/tasks/`?
+4. **Task location**: `<project>/missions/tasks/` — decided, lives in project directory.
 5. **Search API**: Brave Search (free tier), Tavily, or self-hosted SearXNG?
 6. **Browser tool**: Playwright (full, headless) vs CDP direct (lighter, existing Chrome)?
 7. **Memory format**: Start with markdown files, upgrade to vector search later (OpenClaw has both).

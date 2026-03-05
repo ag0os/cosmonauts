@@ -1,5 +1,5 @@
 /**
- * Plan Manager for forge-plans
+ * Plan Manager for plans
  * Orchestrates all core modules for plan CRUD operations
  */
 

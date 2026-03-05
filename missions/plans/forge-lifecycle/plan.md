@@ -11,7 +11,7 @@ Extend the forge system with a full work lifecycle: plans that group tasks, an a
 
 ## Current State
 
-- Tasks live flat in `forge/tasks/` as markdown files with YAML frontmatter.
+- Tasks live flat in `missions/tasks/` as markdown files with YAML frontmatter.
 - Tasks have no parent concept — they're orphaned files with no grouping.
 - After implementation, completed task files hang around and require manual cleanup.
 - No system for capturing what was learned during implementation.
@@ -22,15 +22,15 @@ Extend the forge system with a full work lifecycle: plans that group tasks, an a
 
 | Concern | Location | Mechanism |
 |---------|----------|-----------|
-| Active work | `forge/plans/`, `forge/tasks/` | Plan + task tools |
-| Completed work | `forge/archive/` | Archive tool (mechanical move) |
+| Active work | `missions/plans/`, `missions/tasks/` | Plan + task tools |
+| Completed work | `missions/archive/` | Archive tool (mechanical move) |
 | Project knowledge | `memory/` (project root) | Distillation skill (agent-driven) |
 
 Forge owns the work lifecycle. Memory owns the knowledge. Distillation bridges them.
 
 ### Plans
 
-A plan is a directory under `forge/plans/<slug>/` containing:
+A plan is a directory under `missions/plans/<slug>/` containing:
 
 - `plan.md` (required) — the implementation plan with frontmatter (title, status, dates) and sections for overview, approach, scope, risks.
 - `spec.md` (optional) — a deeper feature spec or idea document when the plan itself isn't enough.
@@ -50,7 +50,7 @@ updatedAt: 2026-02-25T...
 
 ### Task-to-Plan Linkage
 
-Tasks stay flat in `forge/tasks/`. Plans link to tasks via a `plan:<slug>` label convention:
+Tasks stay flat in `missions/tasks/`. Plans link to tasks via a `plan:<slug>` label convention:
 
 ```yaml
 labels:
@@ -66,16 +66,16 @@ labels:
 
 ### Archive
 
-Archiving is a **mechanical, automatic** operation — no LLM involved. It moves completed plans and their associated tasks from active directories into `forge/archive/`, preserving the original file structure.
+Archiving is a **mechanical, automatic** operation — no LLM involved. It moves completed plans and their associated tasks from active directories into `missions/archive/`, preserving the original file structure.
 
 ```
-forge/archive/
+missions/archive/
   plans/
-    auth-system/              # moved as-is from forge/plans/
+    auth-system/              # moved as-is from missions/plans/
       plan.md
       spec.md
   tasks/
-    COSMO-020 - Create user model.md   # moved from forge/tasks/
+    COSMO-020 - Create user model.md   # moved from missions/tasks/
     COSMO-021 - Add validation.md
 ```
 
@@ -124,10 +124,10 @@ Not blocking on this decision. Archive and distill work independently of cleanup
 
 | Tool | Type | Description |
 |------|------|-------------|
-| `plan_create` | New | Create `forge/plans/<slug>/plan.md`, optionally `spec.md` |
+| `plan_create` | New | Create `missions/plans/<slug>/plan.md`, optionally `spec.md` |
 | `plan_list` | New | List plan directories with status and task counts |
 | `plan_view` | New | Read plan docs + associated task summary |
-| `plan_archive` | New | Move completed plan + associated tasks to `forge/archive/` |
+| `plan_archive` | New | Move completed plan + associated tasks to `missions/archive/` |
 | `task_create` | Modify | Add optional `plan` param → auto-adds `plan:<slug>` label |
 | `task_list` | Existing | Already supports `--label` filtering (no change needed) |
 
@@ -135,8 +135,8 @@ Not blocking on this decision. Archive and distill work independently of cleanup
 
 | Skill | Type | Description |
 |-------|------|-------------|
-| `forge-archive` | New | Teaches agents how to distill archived materials into memory files |
-| `forge-plan` | New | Teaches agents how to create well-structured plans |
+| `archive` | New | Teaches agents how to distill archived materials into memory files |
+| `plan` | New | Teaches agents how to create well-structured plans |
 
 ## Chain Integration
 
@@ -144,7 +144,7 @@ The existing workflow maps cleanly:
 
 ```
 planner (loads forge-plan skill)
-  → creates forge/plans/<slug>/plan.md
+  → creates missions/plans/<slug>/plan.md
 
 task-manager
   → reads plan, creates tasks with plan:<slug> label
@@ -154,14 +154,14 @@ coordinator → workers
 
 (later, explicitly triggered)
 any agent (loads forge-archive skill)
-  → reads from forge/archive/, distills to memory/, optionally cleans up
+  → reads from missions/archive/, distills to memory/, optionally cleans up
 ```
 
 ## Implementation Order
 
 1. Plan infrastructure: directory structure, plan document format, `plan_create`/`plan_list`/`plan_view` tools
 2. Task-plan linkage: `plan:` label convention, `plan` parameter on `task_create`
-3. Archive infrastructure: `forge/archive/` directory, `plan_archive` tool (mechanical move)
+3. Archive infrastructure: `missions/archive/` directory, `plan_archive` tool (mechanical move)
 4. Memory directory: `memory/` at project root
 5. Distillation skill: `skills/domains/forge-archive/SKILL.md`
 6. Plan creation skill: `skills/domains/forge-plan/SKILL.md`
@@ -170,6 +170,6 @@ any agent (loads forge-archive skill)
 
 ## Risks
 
-- **Task tool refactoring scope**: The existing TaskManager is built around a single `forge/tasks/` directory. Archive needs to move files out, which means the manager needs to handle file relocation. Should be straightforward but needs care around config.json and ID counters.
+- **Task tool refactoring scope**: The existing TaskManager is built around a single `missions/tasks/` directory. Archive needs to move files out, which means the manager needs to handle file relocation. Should be straightforward but needs care around config.json and ID counters.
 - **Label convention enforcement**: Nothing prevents an agent from adding two `plan:` labels to a task. May need validation in `task_create`/`task_edit`.
 - **Memory directory conflicts**: If the Phase 2 memory system has different ideas about `memory/` structure, we may need to reconcile. Starting simple (flat markdown files) keeps options open.

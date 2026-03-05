@@ -1,5 +1,5 @@
 /**
- * Task parser for forge-tasks
+ * Task parser for tasks
  * Parses markdown files with YAML frontmatter into Task objects
  */
 

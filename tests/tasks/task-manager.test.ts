@@ -24,19 +24,19 @@ describe("TaskManager", () => {
 	});
 
 	describe("init", () => {
-		it("should create forge directories and config file", async () => {
+		it("should create missions directories and config file", async () => {
 			const config = await manager.init();
 
 			expect(config.prefix).toBe("TASK");
 			expect(config.zeroPadding).toBe(3);
 
 			// Verify directories were created
-			const forgeDir = join(tempDir, "forge");
-			const tasksDir = join(tempDir, "forge", "tasks");
-			expect(existsSync(forgeDir)).toBe(true);
+			const missionsDir = join(tempDir, "missions");
+			const tasksDir = join(tempDir, "missions", "tasks");
+			expect(existsSync(missionsDir)).toBe(true);
 			expect(existsSync(tasksDir)).toBe(true);
 			expect(
-				await access(join(tempDir, "forge", "tasks", "config.json"))
+				await access(join(tempDir, "missions", "tasks", "config.json"))
 					.then(() => true)
 					.catch(() => false),
 			).toBe(true);
@@ -145,13 +145,13 @@ describe("TaskManager", () => {
 			expect(task.priority).toBe("medium");
 		});
 
-		it("should save task file in forge/tasks/ directory", async () => {
+		it("should save task file in missions/tasks/ directory", async () => {
 			await manager.init();
 
 			await manager.createTask({ title: "Test Task" });
 
-			// Verify task file exists in forge/tasks/
-			const tasksDir = join(tempDir, "forge", "tasks");
+			// Verify task file exists in missions/tasks/
+			const tasksDir = join(tempDir, "missions", "tasks");
 			const taskFileExists = await access(
 				join(tasksDir, "TASK-001 - Test Task.md"),
 			)
@@ -529,7 +529,7 @@ describe("TaskManager", () => {
 
 			// Verify config was created
 			expect(
-				await access(join(tempDir, "forge", "tasks", "config.json"))
+				await access(join(tempDir, "missions", "tasks", "config.json"))
 					.then(() => true)
 					.catch(() => false),
 			).toBe(true);
@@ -543,9 +543,9 @@ describe("TaskManager", () => {
 			};
 			// Ensure directories exist first
 			const { mkdir } = await import("node:fs/promises");
-			await mkdir(join(tempDir, "forge", "tasks"), { recursive: true });
+			await mkdir(join(tempDir, "missions", "tasks"), { recursive: true });
 			await writeFile(
-				join(tempDir, "forge", "tasks", "config.json"),
+				join(tempDir, "missions", "tasks", "config.json"),
 				JSON.stringify(config),
 				"utf-8",
 			);

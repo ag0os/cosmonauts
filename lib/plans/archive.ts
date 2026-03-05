@@ -1,7 +1,7 @@
 /**
- * Archive operations for forge-plans
+ * Archive operations for plans
  * Moves completed plans and their associated tasks from active directories
- * into forge/archive/, preserving original file structure.
+ * into missions/archive/, preserving original file structure.
  */
 
 import { mkdir, readdir, rename } from "node:fs/promises";
@@ -14,8 +14,8 @@ import { validateSlug } from "./plan-manager.ts";
 // Constants
 // ============================================================================
 
-const ARCHIVE_PLANS_DIR = "forge/archive/plans";
-const ARCHIVE_TASKS_DIR = "forge/archive/tasks";
+const ARCHIVE_PLANS_DIR = "missions/archive/plans";
+const ARCHIVE_TASKS_DIR = "missions/archive/tasks";
 const MEMORY_DIR = "memory";
 
 // ============================================================================
@@ -47,8 +47,8 @@ export interface ArchiveResult {
  * 1. Verifies the plan exists
  * 2. Checks all associated tasks are in Done status (safety check)
  * 3. Creates archive directories as needed
- * 4. Moves the plan directory to forge/archive/plans/<slug>/
- * 5. Moves all tasks with plan:<slug> label to forge/archive/tasks/
+ * 4. Moves the plan directory to missions/archive/plans/<slug>/
+ * 5. Moves all tasks with plan:<slug> label to missions/archive/tasks/
  * 6. Ensures memory/ directory exists at project root
  *
  * @param projectRoot - The root directory of the project
@@ -86,7 +86,7 @@ export async function archivePlan(
 	await mkdir(join(projectRoot, ARCHIVE_TASKS_DIR), { recursive: true });
 
 	// 4. Move plan directory
-	const srcPlanDir = join(projectRoot, "forge/plans", slug);
+	const srcPlanDir = join(projectRoot, "missions/plans", slug);
 	const destPlanDir = join(projectRoot, ARCHIVE_PLANS_DIR, slug);
 	await rename(srcPlanDir, destPlanDir);
 
@@ -95,7 +95,7 @@ export async function archivePlan(
 	// already moved, the system will be in a partially archived state. This is
 	// acceptable for a filesystem-based system; recovery is manual.
 	const archivedTaskFiles: string[] = [];
-	const tasksDir = join(projectRoot, "forge/tasks");
+	const tasksDir = join(projectRoot, "missions/tasks");
 	const taskFiles = tasks.length > 0 ? await readdir(tasksDir) : [];
 	for (const task of tasks) {
 		const taskFile = taskFiles.find((f) => f.startsWith(task.id));

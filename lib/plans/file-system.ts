@@ -1,5 +1,5 @@
 /**
- * File system utilities for forge-plans
+ * File system utilities for plans
  * Handles all file I/O operations for plan directories and files
  */
 
@@ -12,7 +12,7 @@ import type { Plan, PlanStatus } from "./plan-types.ts";
 // Constants
 // ============================================================================
 
-const FORGE_DIR = "forge";
+const MISSIONS_DIR = "missions";
 const PLANS_DIR = "plans";
 const PLAN_FILE = "plan.md";
 const SPEC_FILE = "spec.md";
@@ -24,25 +24,25 @@ const VALID_STATUSES: PlanStatus[] = ["active", "completed"];
 // ============================================================================
 
 /**
- * Ensure the forge/plans/ directory exists
+ * Ensure the missions/plans/ directory exists
  * @param projectRoot - The project root directory
- * @returns The path to forge/plans/
+ * @returns The path to missions/plans/
  */
 export async function ensurePlansDirectory(
 	projectRoot: string,
 ): Promise<string> {
-	const plansDir = join(projectRoot, FORGE_DIR, PLANS_DIR);
+	const plansDir = join(projectRoot, MISSIONS_DIR, PLANS_DIR);
 	await mkdir(plansDir, { recursive: true });
 	return plansDir;
 }
 
 /**
- * List all plan directory slugs in forge/plans/
+ * List all plan directory slugs in missions/plans/
  * @param projectRoot - The project root directory
  * @returns Array of directory names (slugs)
  */
 export async function listPlanSlugs(projectRoot: string): Promise<string[]> {
-	const plansDir = join(projectRoot, FORGE_DIR, PLANS_DIR);
+	const plansDir = join(projectRoot, MISSIONS_DIR, PLANS_DIR);
 
 	try {
 		const entries = await readdir(plansDir, { withFileTypes: true });
@@ -59,7 +59,7 @@ export async function listPlanSlugs(projectRoot: string): Promise<string[]> {
 }
 
 /**
- * Create a plan directory at forge/plans/<slug>/
+ * Create a plan directory at missions/plans/<slug>/
  * @param projectRoot - The project root directory
  * @param slug - The plan slug (directory name)
  * @returns The path to the created directory
@@ -68,7 +68,7 @@ export async function createPlanDirectory(
 	projectRoot: string,
 	slug: string,
 ): Promise<string> {
-	const planDir = join(projectRoot, FORGE_DIR, PLANS_DIR, slug);
+	const planDir = join(projectRoot, MISSIONS_DIR, PLANS_DIR, slug);
 	await mkdir(planDir, { recursive: true });
 	return planDir;
 }
@@ -82,7 +82,7 @@ export async function deletePlanDirectory(
 	projectRoot: string,
 	slug: string,
 ): Promise<void> {
-	const planDir = join(projectRoot, FORGE_DIR, PLANS_DIR, slug);
+	const planDir = join(projectRoot, MISSIONS_DIR, PLANS_DIR, slug);
 
 	try {
 		await rm(planDir, { recursive: true, force: true });
@@ -142,7 +142,7 @@ export async function readPlanFile(
 	projectRoot: string,
 	slug: string,
 ): Promise<Omit<Plan, "spec"> | null> {
-	const filePath = join(projectRoot, FORGE_DIR, PLANS_DIR, slug, PLAN_FILE);
+	const filePath = join(projectRoot, MISSIONS_DIR, PLANS_DIR, slug, PLAN_FILE);
 
 	try {
 		const content = await readFile(filePath, "utf-8");
@@ -177,7 +177,7 @@ export async function writePlanFile(
 	slug: string,
 	plan: Omit<Plan, "spec">,
 ): Promise<void> {
-	const dirPath = join(projectRoot, FORGE_DIR, PLANS_DIR, slug);
+	const dirPath = join(projectRoot, MISSIONS_DIR, PLANS_DIR, slug);
 	await mkdir(dirPath, { recursive: true });
 
 	const filePath = join(dirPath, PLAN_FILE);
@@ -214,7 +214,7 @@ export async function readSpecFile(
 	projectRoot: string,
 	slug: string,
 ): Promise<string | null> {
-	const filePath = join(projectRoot, FORGE_DIR, PLANS_DIR, slug, SPEC_FILE);
+	const filePath = join(projectRoot, MISSIONS_DIR, PLANS_DIR, slug, SPEC_FILE);
 
 	try {
 		return await readFile(filePath, "utf-8");
@@ -237,7 +237,7 @@ export async function writeSpecFile(
 	slug: string,
 	content: string,
 ): Promise<void> {
-	const dirPath = join(projectRoot, FORGE_DIR, PLANS_DIR, slug);
+	const dirPath = join(projectRoot, MISSIONS_DIR, PLANS_DIR, slug);
 	await mkdir(dirPath, { recursive: true });
 
 	const filePath = join(dirPath, SPEC_FILE);

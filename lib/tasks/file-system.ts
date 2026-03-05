@@ -1,5 +1,5 @@
 /**
- * File system utilities for forge-tasks
+ * File system utilities for tasks
  * Handles all file I/O operations for tasks and configuration
  */
 
@@ -15,36 +15,36 @@ import { join } from "node:path";
 import type { ForgeTasksConfig } from "./task-types.ts";
 
 // Directory constants
-const FORGE_DIR = "forge";
+const MISSIONS_DIR = "missions";
 const TASKS_DIR = "tasks";
 const CONFIG_FILE = "config.json";
 
 /**
- * Ensure the forge/ and forge/tasks/ directories exist
+ * Ensure the missions/ and missions/tasks/ directories exist
  * @param projectRoot - The project root directory
- * @returns The path to forge/tasks/
+ * @returns The path to missions/tasks/
  */
 export async function ensureForgeDirectory(
 	projectRoot: string,
 ): Promise<string> {
-	const forgeDir = join(projectRoot, FORGE_DIR);
-	const tasksDir = join(forgeDir, TASKS_DIR);
+	const missionsDir = join(projectRoot, MISSIONS_DIR);
+	const tasksDir = join(missionsDir, TASKS_DIR);
 
-	await mkdir(forgeDir, { recursive: true });
+	await mkdir(missionsDir, { recursive: true });
 	await mkdir(tasksDir, { recursive: true });
 
 	return tasksDir;
 }
 
 /**
- * Load configuration from forge/tasks/config.json
+ * Load configuration from missions/tasks/config.json
  * @param projectRoot - The project root directory
  * @returns The configuration object or null if file doesn't exist
  */
 export async function loadConfig(
 	projectRoot: string,
 ): Promise<ForgeTasksConfig | null> {
-	const configPath = join(projectRoot, FORGE_DIR, TASKS_DIR, CONFIG_FILE);
+	const configPath = join(projectRoot, MISSIONS_DIR, TASKS_DIR, CONFIG_FILE);
 
 	try {
 		const exists = await access(configPath)
@@ -67,7 +67,7 @@ export async function loadConfig(
 }
 
 /**
- * Save configuration to forge/tasks/config.json
+ * Save configuration to missions/tasks/config.json
  * @param projectRoot - The project root directory
  * @param config - The configuration object to save
  */
@@ -77,18 +77,18 @@ export async function saveConfig(
 ): Promise<void> {
 	// Ensure directories exist before saving config
 	await ensureForgeDirectory(projectRoot);
-	const configPath = join(projectRoot, FORGE_DIR, TASKS_DIR, CONFIG_FILE);
+	const configPath = join(projectRoot, MISSIONS_DIR, TASKS_DIR, CONFIG_FILE);
 	const content = JSON.stringify(config, null, 2);
 	await writeFile(configPath, `${content}\n`, "utf-8");
 }
 
 /**
- * List all .md files in forge/tasks/
+ * List all .md files in missions/tasks/
  * @param projectRoot - The project root directory
  * @returns Array of filenames (not full paths)
  */
 export async function listTaskFiles(projectRoot: string): Promise<string[]> {
-	const tasksDir = join(projectRoot, FORGE_DIR, TASKS_DIR);
+	const tasksDir = join(projectRoot, MISSIONS_DIR, TASKS_DIR);
 
 	try {
 		const entries = await readdir(tasksDir);
@@ -103,7 +103,7 @@ export async function listTaskFiles(projectRoot: string): Promise<string[]> {
 }
 
 /**
- * Read task file content from forge/tasks/
+ * Read task file content from missions/tasks/
  * @param projectRoot - The project root directory
  * @param filename - The filename to read
  * @returns The file content or null if file doesn't exist
@@ -112,7 +112,7 @@ export async function readTaskFile(
 	projectRoot: string,
 	filename: string,
 ): Promise<string | null> {
-	const filePath = join(projectRoot, FORGE_DIR, TASKS_DIR, filename);
+	const filePath = join(projectRoot, MISSIONS_DIR, TASKS_DIR, filename);
 
 	try {
 		const exists = await access(filePath)
@@ -133,7 +133,7 @@ export async function readTaskFile(
 }
 
 /**
- * Write task file to forge/tasks/
+ * Write task file to missions/tasks/
  * @param projectRoot - The project root directory
  * @param filename - The filename to write
  * @param content - The content to write
@@ -146,12 +146,12 @@ export async function saveTaskFile(
 	// Ensure directory exists
 	await ensureForgeDirectory(projectRoot);
 
-	const filePath = join(projectRoot, FORGE_DIR, TASKS_DIR, filename);
+	const filePath = join(projectRoot, MISSIONS_DIR, TASKS_DIR, filename);
 	await writeFile(filePath, content, "utf-8");
 }
 
 /**
- * Remove task file from forge/tasks/
+ * Remove task file from missions/tasks/
  * @param projectRoot - The project root directory
  * @param filename - The filename to delete
  */
@@ -159,7 +159,7 @@ export async function deleteTaskFile(
 	projectRoot: string,
 	filename: string,
 ): Promise<void> {
-	const filePath = join(projectRoot, FORGE_DIR, TASKS_DIR, filename);
+	const filePath = join(projectRoot, MISSIONS_DIR, TASKS_DIR, filename);
 
 	try {
 		await rm(filePath);

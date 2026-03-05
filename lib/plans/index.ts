@@ -1,5 +1,5 @@
 /**
- * forge-plans public API
+ * Plans public API
  * Re-exports all plan types, file system utilities, and the PlanManager class
  */
 

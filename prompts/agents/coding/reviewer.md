@@ -36,7 +36,7 @@ Focus on concrete, actionable issues. Avoid stylistic nitpicks unless they viola
 
 ### 4. Write a structured findings report
 
-Write findings to the report path provided in your spawn prompt (usually under `forge/reviews/`).
+Write findings to the report path provided in your spawn prompt (usually under `missions/reviews/`).
 
 Use this format exactly:
 

@@ -1,5 +1,5 @@
 /**
- * ID Generator for forge-tasks
+ * ID Generator for tasks
  * Generates sequential task IDs with configurable prefix and zero-padding
  */
 

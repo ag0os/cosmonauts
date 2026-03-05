@@ -47,7 +47,7 @@ The planner explores the codebase, designs the solution, and produces a plan doc
 spawn_agent(role: "task-manager", prompt: "Break the following approved plan into tasks:\n\n[paste plan content]")
 ```
 
-The task-manager creates atomic tasks in `forge/tasks/`.
+The task-manager creates atomic tasks in `missions/tasks/`.
 
 ### Running a full chain
 

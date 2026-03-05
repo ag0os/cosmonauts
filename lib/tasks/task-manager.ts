@@ -1,5 +1,5 @@
 /**
- * Task Manager for forge-tasks
+ * Task Manager for tasks
  * Orchestrates all core modules for task CRUD operations, search, and filtering
  */
 
@@ -50,7 +50,7 @@ export class TaskManager {
 	}
 
 	/**
-	 * Initialize the forge-tasks system
+	 * Initialize the task system
 	 * Creates directories and config file if they don't exist
 	 * @param config - Optional partial configuration to merge with defaults
 	 * @returns The final configuration

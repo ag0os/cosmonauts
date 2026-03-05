@@ -1,6 +1,6 @@
 # Task System
 
-Manage the project-level task system (persistent markdown files in `forge/tasks/`).
+Manage the project-level task system (persistent markdown files in `missions/tasks/`).
 
 ## Task Tools
 

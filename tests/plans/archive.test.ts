@@ -36,7 +36,7 @@ describe("archivePlan", () => {
 		await rm(tempDir, { recursive: true, force: true });
 	});
 
-	it("moves plan directory to forge/archive/plans/<slug>/", async () => {
+	it("moves plan directory to missions/archive/plans/<slug>/", async () => {
 		await planManager.createPlan({
 			slug: "test-plan",
 			title: "Test Plan",
@@ -52,29 +52,29 @@ describe("archivePlan", () => {
 
 		expect(result.planSlug).toBe("test-plan");
 		expect(result.archivedPlanPath).toBe(
-			join(tempDir, "forge/archive/plans/test-plan"),
+			join(tempDir, "missions/archive/plans/test-plan"),
 		);
 
 		// Verify plan directory was moved
 		const archiveStats = await stat(
-			join(tempDir, "forge/archive/plans/test-plan"),
+			join(tempDir, "missions/archive/plans/test-plan"),
 		);
 		expect(archiveStats.isDirectory()).toBe(true);
 
 		// Verify plan.md exists in archive
 		const planContent = await readFile(
-			join(tempDir, "forge/archive/plans/test-plan/plan.md"),
+			join(tempDir, "missions/archive/plans/test-plan/plan.md"),
 			"utf-8",
 		);
 		expect(planContent).toContain("Test Plan");
 
 		// Verify original plan directory is gone
 		await expect(
-			stat(join(tempDir, "forge/plans/test-plan")),
+			stat(join(tempDir, "missions/plans/test-plan")),
 		).rejects.toThrow();
 	});
 
-	it("moves associated task files to forge/archive/tasks/", async () => {
+	it("moves associated task files to missions/archive/tasks/", async () => {
 		await planManager.createPlan({
 			slug: "task-plan",
 			title: "Task Plan",
@@ -104,13 +104,13 @@ describe("archivePlan", () => {
 
 		// Verify task files exist in archive
 		const archiveTaskFiles = await readdir(
-			join(tempDir, "forge/archive/tasks"),
+			join(tempDir, "missions/archive/tasks"),
 		);
 		expect(archiveTaskFiles).toHaveLength(2);
 
 		// Verify task files are gone from original location
 		const remainingTaskFiles = (
-			await readdir(join(tempDir, "forge/tasks"))
+			await readdir(join(tempDir, "missions/tasks"))
 		).filter((f) => f.endsWith(".md"));
 		expect(remainingTaskFiles).toHaveLength(0);
 	});
@@ -135,20 +135,20 @@ describe("archivePlan", () => {
 
 		// Read original content before archiving
 		const originalPlanContent = await readFile(
-			join(tempDir, "forge/plans/preserve-test/plan.md"),
+			join(tempDir, "missions/plans/preserve-test/plan.md"),
 			"utf-8",
 		);
 		const originalSpecContent = await readFile(
-			join(tempDir, "forge/plans/preserve-test/spec.md"),
+			join(tempDir, "missions/plans/preserve-test/spec.md"),
 			"utf-8",
 		);
 
 		// Find the task file
-		const taskFiles = (await readdir(join(tempDir, "forge/tasks"))).filter(
+		const taskFiles = (await readdir(join(tempDir, "missions/tasks"))).filter(
 			(f) => f.startsWith(task.id),
 		);
 		const originalTaskContent = await readFile(
-			join(tempDir, "forge/tasks", taskFiles[0] as string),
+			join(tempDir, "missions/tasks", taskFiles[0] as string),
 			"utf-8",
 		);
 
@@ -156,24 +156,24 @@ describe("archivePlan", () => {
 
 		// Verify plan.md content is identical
 		const archivedPlanContent = await readFile(
-			join(tempDir, "forge/archive/plans/preserve-test/plan.md"),
+			join(tempDir, "missions/archive/plans/preserve-test/plan.md"),
 			"utf-8",
 		);
 		expect(archivedPlanContent).toBe(originalPlanContent);
 
 		// Verify spec.md content is identical
 		const archivedSpecContent = await readFile(
-			join(tempDir, "forge/archive/plans/preserve-test/spec.md"),
+			join(tempDir, "missions/archive/plans/preserve-test/spec.md"),
 			"utf-8",
 		);
 		expect(archivedSpecContent).toBe(originalSpecContent);
 
 		// Verify task file content is identical
 		const archivedTaskFiles = await readdir(
-			join(tempDir, "forge/archive/tasks"),
+			join(tempDir, "missions/archive/tasks"),
 		);
 		const archivedTaskContent = await readFile(
-			join(tempDir, "forge/archive/tasks", archivedTaskFiles[0] as string),
+			join(tempDir, "missions/archive/tasks", archivedTaskFiles[0] as string),
 			"utf-8",
 		);
 		expect(archivedTaskContent).toBe(originalTaskContent);
@@ -186,15 +186,19 @@ describe("archivePlan", () => {
 		});
 
 		// Verify archive directories don't exist yet
-		await expect(stat(join(tempDir, "forge/archive"))).rejects.toThrow();
+		await expect(stat(join(tempDir, "missions/archive"))).rejects.toThrow();
 
 		await archivePlan(tempDir, "dir-creation", planManager, taskManager);
 
 		// Verify archive directories were created
-		const archivePlansStats = await stat(join(tempDir, "forge/archive/plans"));
+		const archivePlansStats = await stat(
+			join(tempDir, "missions/archive/plans"),
+		);
 		expect(archivePlansStats.isDirectory()).toBe(true);
 
-		const archiveTasksStats = await stat(join(tempDir, "forge/archive/tasks"));
+		const archiveTasksStats = await stat(
+			join(tempDir, "missions/archive/tasks"),
+		);
 		expect(archiveTasksStats.isDirectory()).toBe(true);
 	});
 
@@ -325,7 +329,7 @@ describe("archivePlan", () => {
 
 		// Verify plan was still moved
 		const archiveStats = await stat(
-			join(tempDir, "forge/archive/plans/no-tasks"),
+			join(tempDir, "missions/archive/plans/no-tasks"),
 		);
 		expect(archiveStats.isDirectory()).toBe(true);
 	});
@@ -369,9 +373,9 @@ describe("archivePlan", () => {
 		expect(result.archivedTaskFiles).toHaveLength(1);
 		expect(result.archivedTaskFiles[0]).toContain(taskA.id);
 
-		// Task B and unlabeled task should still be in forge/tasks/
+		// Task B and unlabeled task should still be in missions/tasks/
 		const remainingTaskFiles = (
-			await readdir(join(tempDir, "forge/tasks"))
+			await readdir(join(tempDir, "missions/tasks"))
 		).filter((f) => f.endsWith(".md"));
 		expect(remainingTaskFiles).toHaveLength(2);
 
@@ -431,11 +435,11 @@ describe("archivePlan", () => {
 		).rejects.toThrow();
 
 		// Verify plan is still in original location
-		const planStats = await stat(join(tempDir, "forge/plans/safe-plan"));
+		const planStats = await stat(join(tempDir, "missions/plans/safe-plan"));
 		expect(planStats.isDirectory()).toBe(true);
 
 		// Verify archive directory was not created
-		await expect(stat(join(tempDir, "forge/archive"))).rejects.toThrow();
+		await expect(stat(join(tempDir, "missions/archive"))).rejects.toThrow();
 	});
 
 	it("rejects path traversal slugs in archive", async () => {

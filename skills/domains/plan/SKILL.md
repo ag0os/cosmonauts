@@ -1,15 +1,15 @@
 ---
-name: forge-plan
-description: How to create well-structured implementation plans using the forge plan system.
+name: plan
+description: How to create well-structured implementation plans using the plan system.
 ---
 
-# Forge Plans
+# Plans
 
 Plans are the bridge between a design idea and a set of implementable tasks. A plan scopes the work, describes the approach, and produces tasks that agents can pick up and implement.
 
 ## Plan File Format
 
-A plan lives at `forge/plans/<slug>/plan.md`. It is a markdown file with YAML frontmatter.
+A plan lives at `missions/plans/<slug>/plan.md`. It is a markdown file with YAML frontmatter.
 
 ### Frontmatter
 
@@ -42,7 +42,7 @@ Not every plan needs all sections. A small plan may only need Overview and Desig
 
 ## When to Use spec.md
 
-An optional companion file at `forge/plans/<slug>/spec.md`. Create one when:
+An optional companion file at `missions/plans/<slug>/spec.md`. Create one when:
 
 - The feature idea is complex enough that separating "what" from "how" helps clarity.
 - The spec might outlive the plan — the problem description stays relevant after the implementation plan is completed and archived.
@@ -52,7 +52,7 @@ Most plans do not need a spec. The plan body handles both the problem and the ap
 
 ## Slug Naming
 
-The slug is the directory name under `forge/plans/` and the identifier used in labels and tool calls.
+The slug is the directory name under `missions/plans/` and the identifier used in labels and tool calls.
 
 - Lowercase, hyphen-separated: `auth-system`, `api-migration`, `forge-lifecycle`
 - Match the concept, not the ticket or sprint: `user-profiles` not `sprint-3-work`
@@ -81,7 +81,7 @@ After creating a plan with `plan_create`, generate tasks using `task_create` wit
 task_create({ title: "Define plan types", plan: "forge-lifecycle" })
 ```
 
-This auto-adds a `plan:forge-lifecycle` label to the task. The label is the linkage mechanism — tasks stay flat in `forge/tasks/`, not nested under the plan directory.
+This auto-adds a `plan:forge-lifecycle` label to the task. The label is the linkage mechanism — tasks stay flat in `missions/tasks/`, not nested under the plan directory.
 
 ### Querying tasks by plan
 
@@ -97,8 +97,8 @@ task_list --label plan:forge-lifecycle
 2. Create tasks with `task_create`, passing the `plan` parameter for each.
 3. Implement tasks. Update status as work progresses.
 4. When all tasks are Done, mark the plan as completed.
-5. Archive with `plan_archive` — moves the plan and associated tasks to `forge/archive/`.
-6. Optionally distill learnings into `memory/<slug>.md` (see the `forge-archive` skill).
+5. Archive with `plan_archive` — moves the plan and associated tasks to `missions/archive/`.
+6. Optionally distill learnings into `memory/<slug>.md` (see the `archive` skill).
 
 ## Tool Reference
 
@@ -107,14 +107,14 @@ task_list --label plan:forge-lifecycle
 | `plan_create` | Create a new plan directory with `plan.md` and optional `spec.md` |
 | `plan_list` | List plans with their status and associated task counts |
 | `plan_view` | View full plan content and a summary of associated tasks |
-| `plan_archive` | Archive a completed plan and its associated tasks to `forge/archive/` |
+| `plan_archive` | Archive a completed plan and its associated tasks to `missions/archive/` |
 
 ## Example
 
 A plan for adding a caching layer:
 
 ```
-forge/plans/response-cache/
+missions/plans/response-cache/
   plan.md
 ```
 

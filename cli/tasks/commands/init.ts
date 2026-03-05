@@ -5,7 +5,7 @@ import { TaskManager } from "../../../lib/tasks/task-manager.js";
 export function registerCommand(program: Command): void {
 	program
 		.command("init")
-		.description("Initialize forge-tasks in the current directory")
+		.description("Initialize task system in the current directory")
 		.option("-p, --prefix <prefix>", "Task ID prefix", "TASK")
 		.option("-n, --name <name>", "Project name")
 		.option("-f, --force", "Force reinitialize even if already initialized")
@@ -23,7 +23,7 @@ export function registerCommand(program: Command): void {
 								status: "already_initialized",
 								path: projectRoot,
 								message:
-									"forge-tasks is already initialized. Use --force to reinitialize.",
+									"Task system is already initialized. Use --force to reinitialize.",
 							},
 							null,
 							2,
@@ -34,7 +34,7 @@ export function registerCommand(program: Command): void {
 					console.log(`path=${projectRoot}`);
 				} else {
 					console.log(
-						"Warning: forge-tasks is already initialized in this directory",
+						"Warning: Task system is already initialized in this directory",
 					);
 					console.log("Use --force to reinitialize");
 				}
@@ -68,10 +68,10 @@ export function registerCommand(program: Command): void {
 					console.log(`name=${config.projectName}`);
 				}
 			} else {
-				console.log(`Initialized forge-tasks in ${projectRoot}`);
-				console.log(`- Created forge/tasks/ directory`);
+				console.log(`Initialized task system in ${projectRoot}`);
+				console.log(`- Created missions/tasks/ directory`);
 				console.log(
-					`- Created forge/tasks/config.json with prefix: ${config.prefix}`,
+					`- Created missions/tasks/config.json with prefix: ${config.prefix}`,
 				);
 				if (config.projectName) {
 					console.log(`- Project name: ${config.projectName}`);

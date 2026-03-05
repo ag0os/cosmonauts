@@ -1,5 +1,5 @@
 /**
- * Task serializer for forge-tasks
+ * Task serializer for tasks
  * Serializes Task objects to markdown files with YAML frontmatter
  */
 

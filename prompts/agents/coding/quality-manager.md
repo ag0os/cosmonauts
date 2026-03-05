@@ -17,7 +17,7 @@ You do not implement fixes directly. You delegate fixes to `fixer` or task-based
    - `origin/main` (preferred when available)
    - `main`
    - `master`
-2. Ensure `forge/reviews/` exists.
+2. Ensure `missions/reviews/` exists.
 3. Run at most 3 quality rounds in a single invocation. If still failing, exit with a clear failure summary.
 
 ### 3. Detect and run project-native checks
@@ -50,7 +50,7 @@ Record failed checks with command, exit status, and the key error lines.
 
 Spawn `reviewer` with a prompt that includes:
 - The base branch (`main` or `origin/main`)
-- A required report path in `forge/reviews/` (for example `forge/reviews/review-round-1.md`)
+- A required report path in `missions/reviews/` (for example `missions/reviews/review-round-1.md`)
 - Instructions to classify each finding as `simple` or `complex`
 - Instructions to include task-ready data for complex findings (title, labels, acceptance criteria)
 

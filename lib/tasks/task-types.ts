@@ -1,6 +1,6 @@
 /**
- * Core type definitions for forge-tasks
- * Task management types for the Claude Forge project
+ * Core type definitions for tasks
+ * Task management types for the Cosmonauts project
  */
 
 // ============================================================================
@@ -152,7 +152,7 @@ export interface TaskListFilter {
 // ============================================================================
 
 /**
- * Configuration for forge-tasks system
+ * Configuration for task system
  */
 export interface ForgeTasksConfig {
 	/** Optional project name for display */

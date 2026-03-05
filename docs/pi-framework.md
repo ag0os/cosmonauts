@@ -502,7 +502,7 @@ Pi's philosophy is "minimal core." These are things Cosmonauts must build:
 
 1. **Sub-agent spawning** — no built-in `spawn_agent`. We create sessions, manage their lifecycle, and collect results ourselves.
 2. **Agent timeout/cancellation** — no timeout API. We need our own abort-after-N-seconds logic.
-3. **Task system** — no task management. We bring forge-tasks format as an extension.
+3. **Task system** — no task management. We bring the task system as an extension.
 4. **Orchestration** — no chain runner, no coordinator loop. We build this.
 5. **Inter-agent communication** — no message passing between sessions. We coordinate through shared task state (files).
 6. **Budget enforcement** — no "stop if cost > $X." We aggregate from events.

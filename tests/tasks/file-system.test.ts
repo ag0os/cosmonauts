@@ -50,26 +50,26 @@ describe("ensureForgeDirectory", () => {
 		await cleanupTestDir(testDir);
 	});
 
-	test("creates forge/ directory", async () => {
+	test("creates missions/ directory", async () => {
 		await ensureForgeDirectory(testDir);
 
-		const forgeDir = join(testDir, "forge");
-		const stats = await stat(forgeDir);
+		const missionsDir = join(testDir, "missions");
+		const stats = await stat(missionsDir);
 		expect(stats.isDirectory()).toBe(true);
 	});
 
-	test("creates forge/tasks/ directory", async () => {
+	test("creates missions/tasks/ directory", async () => {
 		await ensureForgeDirectory(testDir);
 
-		const tasksDir = join(testDir, "forge", "tasks");
+		const tasksDir = join(testDir, "missions", "tasks");
 		const stats = await stat(tasksDir);
 		expect(stats.isDirectory()).toBe(true);
 	});
 
-	test("returns path to forge/tasks/", async () => {
+	test("returns path to missions/tasks/", async () => {
 		const result = await ensureForgeDirectory(testDir);
 
-		expect(result).toBe(join(testDir, "forge", "tasks"));
+		expect(result).toBe(join(testDir, "missions", "tasks"));
 	});
 
 	test("is idempotent - calling multiple times succeeds", async () => {
@@ -77,7 +77,7 @@ describe("ensureForgeDirectory", () => {
 		await ensureForgeDirectory(testDir);
 		await ensureForgeDirectory(testDir);
 
-		const tasksDir = join(testDir, "forge", "tasks");
+		const tasksDir = join(testDir, "missions", "tasks");
 		const stats = await stat(tasksDir);
 		expect(stats.isDirectory()).toBe(true);
 	});
@@ -140,7 +140,7 @@ describe("loadConfig / saveConfig", () => {
 		await saveConfig(testDir, config);
 
 		const content = await readFile(
-			join(testDir, "forge", "tasks", "config.json"),
+			join(testDir, "missions", "tasks", "config.json"),
 			"utf-8",
 		);
 
@@ -181,7 +181,7 @@ describe("listTaskFiles", () => {
 	});
 
 	test("returns only .md files", async () => {
-		const tasksDir = join(testDir, "forge", "tasks");
+		const tasksDir = join(testDir, "missions", "tasks");
 		await writeFile(join(tasksDir, "TASK-001 - Test.md"), "content", "utf-8");
 		await writeFile(join(tasksDir, "TASK-002 - Test.md"), "content", "utf-8");
 		await writeFile(join(tasksDir, "notes.txt"), "content", "utf-8");
@@ -197,7 +197,7 @@ describe("listTaskFiles", () => {
 	});
 
 	test("returns files sorted alphabetically", async () => {
-		const tasksDir = join(testDir, "forge", "tasks");
+		const tasksDir = join(testDir, "missions", "tasks");
 		await writeFile(join(tasksDir, "TASK-003 - Third.md"), "content", "utf-8");
 		await writeFile(join(tasksDir, "TASK-001 - First.md"), "content", "utf-8");
 		await writeFile(join(tasksDir, "TASK-002 - Second.md"), "content", "utf-8");

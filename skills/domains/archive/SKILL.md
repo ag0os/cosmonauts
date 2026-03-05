@@ -1,15 +1,15 @@
 ---
-name: forge-archive
+name: archive
 description: Distill archived plans and tasks into concise memory files that capture decisions, patterns, and lessons.
 ---
 
-# Forge Archive Distillation
+# Archive Distillation
 
 After a plan is archived, its learnings should be distilled into a memory file — a concise record of what was built, why, and what the next person working in this area needs to know.
 
 ## When to Distill
 
-Distill after `plan_archive` moves a completed plan and its tasks to `forge/archive/`. Not every archived plan needs distillation — skip it for trivial plans (single-task, no meaningful decisions). Distill when the work established patterns, made non-obvious decisions, or changed areas of the codebase others will touch.
+Distill after `plan_archive` moves a completed plan and its tasks to `missions/archive/`. Not every archived plan needs distillation — skip it for trivial plans (single-task, no meaningful decisions). Distill when the work established patterns, made non-obvious decisions, or changed areas of the codebase others will touch.
 
 ## Distillation Procedure
 
@@ -17,8 +17,8 @@ Distill after `plan_archive` moves a completed plan and its tasks to `forge/arch
 
 Find the archived plan directory and its associated tasks:
 
-- **Plan**: `forge/archive/plans/<slug>/plan.md` (and optional `spec.md`)
-- **Tasks**: `forge/archive/tasks/` — look for task files containing a `plan:<slug>` label in their frontmatter
+- **Plan**: `missions/archive/plans/<slug>/plan.md` (and optional `spec.md`)
+- **Tasks**: `missions/archive/tasks/` — look for task files containing a `plan:<slug>` label in their frontmatter
 
 The slug is the plan's directory name (e.g., `response-cache`, `auth-system`).
 
@@ -51,7 +51,7 @@ Write to `memory/<slug>.md` at the project root. Create the `memory/` directory 
 
 ```markdown
 ---
-source: forge-archive
+source: archive
 plan: <slug>
 distilledAt: <ISO 8601 date>
 ---
@@ -80,7 +80,7 @@ distilledAt: <ISO 8601 date>
 
 ### Frontmatter Fields
 
-- `source` — Always `forge-archive` for plan distillations. Tracks provenance.
+- `source` — Always `archive` for plan distillations. Tracks provenance.
 - `plan` — The plan slug. Links the memory back to the archived plan.
 - `distilledAt` — ISO 8601 timestamp of when the distillation was created.
 
@@ -122,10 +122,10 @@ distilledAt: <ISO 8601 date>
 
 ## Source-Agnostic Design
 
-The memory format is general. While forge archives are the primary source, the same structure works for any knowledge source:
+The memory format is general. While archives are the primary source, the same structure works for any knowledge source:
 
 - **Session transcripts** — Conversation logs distilled into memory
 - **Design reviews** — Discussion notes distilled into decisions and patterns
 - **Decision records** — ADRs distilled into the same sections
 
-The `source` frontmatter field tracks provenance. Use `forge-archive` for plan distillations, and other values (e.g., `session`, `design-review`) for other sources. The memory format stays the same regardless of where the knowledge came from.
+The `source` frontmatter field tracks provenance. Use `archive` for plan distillations, and other values (e.g., `session`, `design-review`) for other sources. The memory format stays the same regardless of where the knowledge came from.
