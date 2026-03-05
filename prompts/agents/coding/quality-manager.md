@@ -89,6 +89,7 @@ Before exiting successfully:
 - Confirm reviewer report says no findings.
 - Confirm `git status --porcelain` is clean.
 - Confirm remediation tasks for this invocation are not left in `To Do` or `In Progress`.
+- Remove all review report files from `missions/reviews/` that were created during this invocation. These are ephemeral artifacts and must not linger after successful validation.
 
 If the worktree is dirty because a final commit is missing, spawn `fixer` to create the missing commit.
 
