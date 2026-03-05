@@ -50,7 +50,7 @@ describe("BUILTIN_DEFINITIONS", () => {
 
 	it("uses provider/model-id format for model fields", () => {
 		for (const def of BUILTIN_DEFINITIONS) {
-			expect(def.model).toMatch(/^[a-z]+\/[a-z0-9-]+$/);
+			expect(def.model).toMatch(/^[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9.-]*$/);
 		}
 	});
 

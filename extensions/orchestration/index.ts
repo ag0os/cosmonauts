@@ -1,4 +1,3 @@
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { createDefaultRegistry } from "../../lib/agents/index.ts";
@@ -38,10 +37,20 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 				}),
 			),
 			thinkingLevel: Type.Optional(
-				Type.String({
-					description:
-						'Chain-wide default thinking/reasoning level (off, minimal, low, medium, high, xhigh). Applied to all stages unless overridden by agent definitions.',
-				}),
+				Type.Union(
+					[
+						Type.Literal("off"),
+						Type.Literal("minimal"),
+						Type.Literal("low"),
+						Type.Literal("medium"),
+						Type.Literal("high"),
+						Type.Literal("xhigh"),
+					],
+					{
+						description:
+							"Chain-wide default thinking/reasoning level (off, minimal, low, medium, high, xhigh). Applied to all stages unless overridden by agent definitions.",
+					},
+				),
 			),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
@@ -49,7 +58,7 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 			injectUserPrompt(stages, params.prompt);
 			const projectConfig = await loadProjectConfig(ctx.cwd);
 			const thinking = params.thinkingLevel
-				? { default: params.thinkingLevel as ThinkingLevel }
+				? { default: params.thinkingLevel }
 				: undefined;
 			const result = await runChain({
 				stages,
@@ -89,10 +98,20 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 			prompt: Type.String({ description: "The prompt to send to the agent" }),
 			model: Type.Optional(Type.String({ description: "Model override" })),
 			thinkingLevel: Type.Optional(
-				Type.String({
-					description:
-						'Thinking/reasoning level override (off, minimal, low, medium, high, xhigh)',
-				}),
+				Type.Union(
+					[
+						Type.Literal("off"),
+						Type.Literal("minimal"),
+						Type.Literal("low"),
+						Type.Literal("medium"),
+						Type.Literal("high"),
+						Type.Literal("xhigh"),
+					],
+					{
+						description:
+							"Thinking/reasoning level override (off, minimal, low, medium, high, xhigh)",
+					},
+				),
 			),
 			runtimeContext: Type.Optional(
 				Type.Object({
@@ -175,9 +194,7 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 					cwd: ctx.cwd,
 					prompt: params.prompt,
 					model: params.model,
-					thinkingLevel: params.thinkingLevel as
-						| import("@mariozechner/pi-agent-core").ThinkingLevel
-						| undefined,
+					thinkingLevel: params.thinkingLevel,
 					runtimeContext: params.runtimeContext,
 					projectSkills: projectConfig.skills,
 				});
