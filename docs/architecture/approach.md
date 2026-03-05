@@ -200,11 +200,6 @@ Phase 0 is complete. The core loop works end-to-end — from interactive chat to
 25. **Testing standards** — documented patterns, coverage thresholds, mock strategy. ✓
 26. **End-to-end validation** — used full pipeline (planner → task-manager → coordinator → workers → quality-manager) to implement the agent-thinking-levels feature on this codebase. ✓
 
-## How It Grows
+## What's Next
 
-Phase 0 is complete. Each subsequent phase gets detailed specs before we build it, informed by what we learned in the previous phase.
-
-- **Phase 1**: More language/domain skills. `deepwiki_ask` and `web_fetch` tools. Coordinator skill-routing. Auto-project detection.
-- **Phase 2**: Memory system (daily logs, MEMORY.md, search). Memory tools (`memory_search`, `memory_save`). `web_search` tool.
-- **Phase 3**: Parallel worker execution. Progress reporting. Browser automation via Playwright. More domain skills.
-- **Phase 4**: Heartbeat system. Decision capture. Messaging transports (Telegram/WhatsApp). Notifications.
+See `ROADMAP.md` for the prioritized backlog of upcoming work.
