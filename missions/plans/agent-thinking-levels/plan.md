@@ -1,6 +1,6 @@
 ---
 title: Per-Agent Thinking Level Configuration
-status: active
+status: complete
 createdAt: '2026-03-05T15:56:35.089Z'
 updatedAt: '2026-03-05T15:56:35.089Z'
 ---

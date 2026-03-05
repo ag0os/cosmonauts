@@ -50,6 +50,7 @@ import { runChain } from "../../lib/orchestration/chain-runner.ts";
 interface RegisteredTool {
 	name: string;
 	execute: (...args: unknown[]) => Promise<unknown>;
+	renderResult?: (...args: unknown[]) => unknown;
 }
 
 interface MockPiOptions {
@@ -61,6 +62,9 @@ function createMockPi(cwd: string, options?: MockPiOptions) {
 	return {
 		registerTool(def: RegisteredTool) {
 			tools.set(def.name, def);
+		},
+		getTool(name: string) {
+			return tools.get(name);
 		},
 		async callTool(name: string, params: unknown) {
 			const tool = tools.get(name);
@@ -264,5 +268,49 @@ describe("orchestration extension", () => {
 				},
 			],
 		});
+	});
+
+	test("chain_run renderer falls back to result text when details are missing", () => {
+		const cwd = "/tmp/project";
+		const pi = createMockPi(cwd);
+		orchestrationExtension(pi as never);
+
+		const tool = pi.getTool("chain_run");
+		expect(tool?.renderResult).toBeTypeOf("function");
+
+		const component = tool?.renderResult?.(
+			{
+				content: [{ type: "text", text: "config load failed" }],
+				details: null,
+			},
+			{ expanded: false, isPartial: false },
+			{ fg: (_color: "toolOutput", text: string) => text } as never,
+		) as { render: (width: number) => string[] } | undefined;
+
+		expect(component).toBeDefined();
+		expect(component?.render(120).join("\n")).toContain("config load failed");
+	});
+
+	test("spawn_agent renderer falls back to result text when details are missing", () => {
+		const cwd = "/tmp/project";
+		const pi = createMockPi(cwd);
+		orchestrationExtension(pi as never);
+
+		const tool = pi.getTool("spawn_agent");
+		expect(tool?.renderResult).toBeTypeOf("function");
+
+		const component = tool?.renderResult?.(
+			{
+				content: [{ type: "text", text: "failed to load project config" }],
+				details: null,
+			},
+			{ expanded: false, isPartial: false },
+			{ fg: (_color: "toolOutput", text: string) => text } as never,
+		) as { render: (width: number) => string[] } | undefined;
+
+		expect(component).toBeDefined();
+		expect(component?.render(120).join("\n")).toContain(
+			"failed to load project config",
+		);
 	});
 });
