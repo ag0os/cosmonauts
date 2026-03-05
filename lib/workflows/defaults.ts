@@ -23,9 +23,4 @@ export const DEFAULT_WORKFLOWS: WorkflowDefinition[] = [
 			"Run lint/format checks, clean-context review, and remediation on existing changes",
 		chain: "quality-manager",
 	},
-	{
-		name: "plan",
-		description: "Design-only workflow",
-		chain: "planner",
-	},
 ];
