@@ -1,6 +1,6 @@
 # Cosmonauts
 
-An automated coding orchestration system built on [Pi](https://github.com/nicholasgasior/pi-coding-agent). Describe what you want, get a designed solution, and let agents implement it — from plan to pull request.
+An automated coding orchestration system built on [Pi](https://github.com/badlogic/pi-mono). Describe what you want, get a designed solution, and let agents implement it — from plan to pull request.
 
 ## What It Does
 
@@ -38,7 +38,7 @@ What's next: more language/domain skills, web/deepwiki tools, memory system, par
 
 ## Installation
 
-Cosmonauts requires [Bun](https://bun.sh/) and [Pi](https://github.com/nicholasgasior/pi-coding-agent).
+Cosmonauts requires [Bun](https://bun.sh/) and [Pi](https://github.com/badlogic/pi-mono).
 
 ```bash
 # Clone and install dependencies
@@ -140,7 +140,7 @@ This scans your project and creates an `AGENTS.md` file with conventions, tech s
 
 ## Architecture
 
-Cosmonauts is built as a [Pi package](https://github.com/nicholasgasior/pi-coding-agent) — extensions, agent definitions, system prompts, and skills that plug into the Pi agent framework.
+Cosmonauts is built as a [Pi package](https://github.com/badlogic/pi-mono) — extensions, agent definitions, system prompts, and skills that plug into the Pi agent framework.
 
 ```
 cosmonauts/
