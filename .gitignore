@@ -7,5 +7,6 @@ coverage/
 # Work artifacts (local-only)
 missions/
 memory/
-.cosmonauts/
+.cosmonauts/*
+!.cosmonauts/config.example.json
 .claude/

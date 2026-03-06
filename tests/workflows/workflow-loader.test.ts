@@ -5,7 +5,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { DEFAULT_WORKFLOWS } from "../../lib/workflows/defaults.ts";
 import {
 	listWorkflows,
 	loadWorkflows,
@@ -16,19 +15,13 @@ import { useTempDir } from "../helpers/fs.ts";
 const tmp = useTempDir("workflow-test-");
 
 describe("loadWorkflows", () => {
-	test("returns defaults when no config file exists", async () => {
+	test("returns empty array when no config file exists", async () => {
 		const workflows = await loadWorkflows(tmp.path);
 
-		expect(workflows).toHaveLength(DEFAULT_WORKFLOWS.length);
-		expect(workflows.length).toBeGreaterThan(0);
-		for (const wf of workflows) {
-			expect(wf).toHaveProperty("name");
-			expect(wf).toHaveProperty("chain");
-			expect(wf).toHaveProperty("description");
-		}
+		expect(workflows).toHaveLength(0);
 	});
 
-	test("loads and merges from project config.json", async () => {
+	test("loads workflows from project config.json", async () => {
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
@@ -45,22 +38,21 @@ describe("loadWorkflows", () => {
 		const workflows = await loadWorkflows(tmp.path);
 
 		expect(workflows.map((w) => w.name)).toContain("refactor");
-		expect(workflows.length).toBe(DEFAULT_WORKFLOWS.length + 1);
+		expect(workflows.length).toBe(1);
 	});
 
-	test("project config overrides built-in on name collision", async () => {
-		const builtIn = DEFAULT_WORKFLOWS[0];
-		expect(builtIn).toBeDefined();
-		if (!builtIn) {
-			throw new Error("Expected at least one default workflow");
-		}
+	test("loads multiple workflows from config", async () => {
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
 			JSON.stringify({
 				workflows: {
-					[builtIn.name]: {
-						description: "Overridden workflow",
+					build: {
+						description: "Build workflow",
+						chain: "planner -> coordinator",
+					},
+					deploy: {
+						description: "Deploy workflow",
 						chain: "worker",
 					},
 				},
@@ -68,13 +60,10 @@ describe("loadWorkflows", () => {
 		);
 
 		const workflows = await loadWorkflows(tmp.path);
-		const overridden = workflows.find((w) => w.name === builtIn.name);
 
-		expect(overridden).toBeDefined();
-		expect(overridden?.description).toBe("Overridden workflow");
-		expect(overridden?.chain).toBe("worker");
-		// Same count since it replaced, not added
-		expect(workflows.length).toBe(DEFAULT_WORKFLOWS.length);
+		expect(workflows.length).toBe(2);
+		expect(workflows.map((w) => w.name)).toContain("build");
+		expect(workflows.map((w) => w.name)).toContain("deploy");
 	});
 
 	test("invalid JSON throws descriptive error", async () => {
@@ -87,7 +76,7 @@ describe("loadWorkflows", () => {
 		await expect(loadWorkflows(tmp.path)).rejects.toThrow("Invalid JSON");
 	});
 
-	test("empty config returns defaults only", async () => {
+	test("empty config returns empty array", async () => {
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
@@ -95,10 +84,10 @@ describe("loadWorkflows", () => {
 		);
 
 		const workflows = await loadWorkflows(tmp.path);
-		expect(workflows).toHaveLength(DEFAULT_WORKFLOWS.length);
+		expect(workflows).toHaveLength(0);
 	});
 
-	test("config with only skills and no workflows returns defaults", async () => {
+	test("config with only skills and no workflows returns empty array", async () => {
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
@@ -106,21 +95,15 @@ describe("loadWorkflows", () => {
 		);
 
 		const workflows = await loadWorkflows(tmp.path);
-		expect(workflows).toHaveLength(DEFAULT_WORKFLOWS.length);
+		expect(workflows).toHaveLength(0);
 	});
 });
 
 describe("resolveWorkflow", () => {
-	test("resolves a built-in workflow by name", async () => {
-		const builtIn = DEFAULT_WORKFLOWS[0];
-		expect(builtIn).toBeDefined();
-		if (!builtIn) {
-			throw new Error("Expected at least one default workflow");
-		}
-		const wf = await resolveWorkflow(builtIn.name, tmp.path);
-
-		expect(wf.name).toBe(builtIn.name);
-		expect(wf.chain).toBe(builtIn.chain);
+	test("throws when no config and any workflow name requested", async () => {
+		await expect(resolveWorkflow("plan-and-build", tmp.path)).rejects.toThrow(
+			'Unknown workflow "plan-and-build"',
+		);
 	});
 
 	test("throws for unknown workflow name", async () => {
