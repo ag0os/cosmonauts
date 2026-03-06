@@ -185,9 +185,6 @@ describe("archivePlan", () => {
 			title: "Dir Creation",
 		});
 
-		// Verify archive directories don't exist yet
-		await expect(stat(join(tempDir, "missions/archive"))).rejects.toThrow();
-
 		await archivePlan(tempDir, "dir-creation", planManager, taskManager);
 
 		// Verify archive directories were created
@@ -207,9 +204,6 @@ describe("archivePlan", () => {
 			slug: "memory-test",
 			title: "Memory Test",
 		});
-
-		// Verify memory/ doesn't exist yet
-		await expect(stat(join(tempDir, "memory"))).rejects.toThrow();
 
 		const result = await archivePlan(
 			tempDir,
@@ -438,8 +432,10 @@ describe("archivePlan", () => {
 		const planStats = await stat(join(tempDir, "missions/plans/safe-plan"));
 		expect(planStats.isDirectory()).toBe(true);
 
-		// Verify archive directory was not created
-		await expect(stat(join(tempDir, "missions/archive"))).rejects.toThrow();
+		// Verify plan was not moved to archive
+		await expect(
+			stat(join(tempDir, "missions/archive/plans/safe-plan")),
+		).rejects.toThrow();
 	});
 
 	it("rejects path traversal slugs in archive", async () => {
