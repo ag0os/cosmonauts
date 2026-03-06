@@ -77,7 +77,11 @@ function renderTextFallback(
 ): Text {
 	const textItem = result.content?.find((item) => item.type === "text");
 	const text = textItem?.text?.trim();
-	return new Text(theme.fg("toolOutput", text && text.length > 0 ? text : "(no output)"), 0, 0);
+	return new Text(
+		theme.fg("toolOutput", text && text.length > 0 ? text : "(no output)"),
+		0,
+		0,
+	);
 }
 
 // ============================================================================
