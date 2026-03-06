@@ -83,13 +83,15 @@ describe("fresh project bootstrap path", () => {
 		expect(wf.chain).toBeTruthy();
 	});
 
-	test("resolveWorkflow succeeds for plan-and-build without any scaffold", async () => {
-		// Built-in defaults should be enough
-		const wf = await resolveWorkflow("plan-and-build", tmp.path);
-		expect(wf.name).toBe("plan-and-build");
+	test("resolveWorkflow throws without scaffold (no built-in defaults)", async () => {
+		await expect(resolveWorkflow("plan-and-build", tmp.path)).rejects.toThrow(
+			'Unknown workflow "plan-and-build"',
+		);
 	});
 
-	test("all three standard workflows resolve on fresh directory", async () => {
+	test("all three standard workflows resolve after scaffold", async () => {
+		await scaffoldProjectConfig(tmp.path);
+
 		for (const name of ["plan-and-build", "implement", "verify"]) {
 			const wf = await resolveWorkflow(name, tmp.path);
 			expect(wf.name).toBe(name);
