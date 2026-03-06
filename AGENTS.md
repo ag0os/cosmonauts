@@ -43,16 +43,7 @@ Agents are Pi sessions configured by declarative definitions. Each definition sp
 
 ### Agent Definitions
 
-| Agent | Namespace | Tools | Extensions | Skills | Subagents | Context |
-|-------|-----------|-------|------------|--------|-----------|---------|
-| cosmo | coding | coding | tasks, plans, orchestration, todo, init | all | planner, task-manager, coordinator, worker, quality-manager, reviewer, fixer | yes |
-| planner | coding | readonly | plans | all | — | yes |
-| task-manager | coding | readonly | tasks | — | — | no |
-| coordinator | coding | none | tasks, orchestration | — | worker | no |
-| worker | coding | coding | tasks, todo | per-task | — | yes |
-| quality-manager | coding | coding | tasks, orchestration | all | reviewer, fixer, coordinator | yes |
-| reviewer | coding | coding | — | all | — | yes |
-| fixer | coding | coding | — | all | — | yes |
+Agent definitions live in `lib/agents/definitions.ts`. Each definition configures model, tools, prompt layers, extensions, skill access, and sub-agent permissions.
 
 ### Prompt Composition
 
@@ -63,15 +54,12 @@ System prompts compose in a strict four-layer order, loaded at session creation 
 - **Layer 2 — Persona** (`prompts/agents/<namespace>/<agent>.md`): One per agent. Identity, workflow, constraints.
 - **Layer 3 — Runtime Context** (`prompts/runtime/sub-agent.md`): Optional spawn-time overlay with parent role, objective, task ID. Top-level spawns skip this.
 
+Examples:
+
 ```
-cosmo        → [cosmonauts] + [core, coding-rw, tasks, spawning, todo] + [cosmo]
-planner      → [cosmonauts] + [core, coding-ro] + [planner]
-task-manager → [cosmonauts] + [core, tasks] + [task-manager]
-coordinator  → [cosmonauts] + [core, tasks, spawning] + [coordinator]
-worker       → [cosmonauts] + [core, coding-rw, tasks, todo] + [worker]
-quality-mgr  → [cosmonauts] + [core, coding-rw, tasks, spawning] + [quality-manager]
-reviewer     → [cosmonauts] + [core, coding-rw] + [reviewer]
-fixer        → [cosmonauts] + [core, coding-rw] + [fixer]
+cosmo   → [cosmonauts] + [core, coding-rw, tasks, spawning, todo] + [cosmo]       # full-featured orchestrator
+planner → [cosmonauts] + [core, coding-ro] + [planner]                             # read-only design agent
+worker  → [cosmonauts] + [core, coding-rw, tasks, todo] + [worker]                 # coding-focused implementer
 ```
 
 ### Sub-Agent Spawning
