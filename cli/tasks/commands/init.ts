@@ -69,7 +69,12 @@ export function registerCommand(program: Command): void {
 				}
 			} else {
 				console.log(`Initialized task system in ${projectRoot}`);
-				console.log(`- Created missions/tasks/ directory`);
+				console.log(`- Created missions/tasks/`);
+				console.log(`- Created missions/plans/`);
+				console.log(`- Created missions/archive/tasks/`);
+				console.log(`- Created missions/archive/plans/`);
+				console.log(`- Created missions/reviews/`);
+				console.log(`- Created memory/`);
 				console.log(
 					`- Created missions/tasks/config.json with prefix: ${config.prefix}`,
 				);

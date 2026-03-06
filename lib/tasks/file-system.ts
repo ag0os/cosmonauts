@@ -17,10 +17,23 @@ import type { ForgeTasksConfig } from "./task-types.ts";
 // Directory constants
 const MISSIONS_DIR = "missions";
 const TASKS_DIR = "tasks";
+const PLANS_DIR = "plans";
+const ARCHIVE_DIR = "archive";
+const REVIEWS_DIR = "reviews";
+const MEMORY_DIR = "memory";
 const CONFIG_FILE = "config.json";
 
 /**
- * Ensure the missions/ and missions/tasks/ directories exist
+ * Ensure the full project directory scaffold exists:
+ *   missions/tasks/
+ *   missions/plans/
+ *   missions/archive/tasks/
+ *   missions/archive/plans/
+ *   missions/reviews/
+ *   memory/
+ *
+ * Idempotent — safe to call on an already-scaffolded project.
+ *
  * @param projectRoot - The project root directory
  * @returns The path to missions/tasks/
  */
@@ -29,9 +42,20 @@ export async function ensureForgeDirectory(
 ): Promise<string> {
 	const missionsDir = join(projectRoot, MISSIONS_DIR);
 	const tasksDir = join(missionsDir, TASKS_DIR);
+	const plansDir = join(missionsDir, PLANS_DIR);
+	const archiveTasksDir = join(missionsDir, ARCHIVE_DIR, TASKS_DIR);
+	const archivePlansDir = join(missionsDir, ARCHIVE_DIR, PLANS_DIR);
+	const reviewsDir = join(missionsDir, REVIEWS_DIR);
+	const memoryDir = join(projectRoot, MEMORY_DIR);
 
-	await mkdir(missionsDir, { recursive: true });
-	await mkdir(tasksDir, { recursive: true });
+	await Promise.all([
+		mkdir(tasksDir, { recursive: true }),
+		mkdir(plansDir, { recursive: true }),
+		mkdir(archiveTasksDir, { recursive: true }),
+		mkdir(archivePlansDir, { recursive: true }),
+		mkdir(reviewsDir, { recursive: true }),
+		mkdir(memoryDir, { recursive: true }),
+	]);
 
 	return tasksDir;
 }
