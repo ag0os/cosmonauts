@@ -3,3 +3,9 @@ dist/
 coverage/
 *.tsbuildinfo
 .DS_Store
+
+# Work artifacts (local-only)
+missions/
+memory/
+.cosmonauts/
+.claude/
