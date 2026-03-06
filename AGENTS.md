@@ -80,14 +80,15 @@ cosmonauts --chain "planner -> task-manager -> coordinator -> quality-manager" "
 
 ### Named Workflows
 
-The primary user interface for multi-agent pipelines. Defined in config, invoked via `--workflow`.
+The primary user interface for multi-agent pipelines. Workflows are defined in `.cosmonauts/config.json` (not built into the framework) and invoked via `--workflow`. The example config ships with these defaults:
 
 | Name | Chain | Purpose |
 |------|-------|---------|
 | `plan-and-build` | `planner → task-manager → coordinator → quality-manager` | Full pipeline |
 | `implement` | `task-manager → coordinator → quality-manager` | From existing plan |
 | `verify` | `quality-manager` | Review + remediation |
-| `plan` | `planner` | Design only |
+
+Projects can add, remove, or customize workflows by editing their `.cosmonauts/config.json`.
 
 ### CLI
 
@@ -135,11 +136,13 @@ Flags: `--print`, `--workflow`, `--chain`, `--model`, `--thinking`.
 
 Work flows through: **roadmap → plan → tasks → archive → memory**.
 
+All work artifacts live in local, gitignored directories created by `cosmonauts-tasks init`:
+
 - **Roadmap** (`ROADMAP.md`): Prioritized backlog. Items are picked up and turned into plans.
-- **Plans** (`missions/plans/<slug>/`): Implementation plans with `plan.md` and optional `spec.md`. Created via `plan_create`.
-- **Tasks** (`missions/tasks/`): Atomic work items linked to plans via `plan:<slug>` labels. Created via `task_create`.
-- **Archive** (`missions/archive/`): Completed plans and tasks moved here by `plan_archive`. Mechanical, no LLM.
-- **Memory** (`memory/`): Distilled knowledge from archived work. Agent-driven extraction via the `archive` skill.
+- **Plans** (`missions/plans/<slug>/`): Implementation plans with `plan.md` and optional `spec.md`. Created via `plan_create`. Local.
+- **Tasks** (`missions/tasks/`): Atomic work items linked to plans via `plan:<slug>` labels. Created via `task_create`. Local.
+- **Archive** (`missions/archive/`): Completed plans and tasks moved here by `plan_archive`. Mechanical, no LLM. Local.
+- **Memory** (`memory/`): Distilled knowledge from archived work. Agent-driven extraction via the `archive` skill. Local.
 
 See the `roadmap`, `plan`, `task`, and `archive` skills for detailed procedures.
 
@@ -166,6 +169,8 @@ For small, self-contained changes (a bug fix, a single function, a config tweak)
 
 ## Key Directories
 
+**Tracked (in repo):**
+
 ```
 lib/              Core libraries (agents, orchestration, tasks, plans, workflows, prompts, config)
 extensions/       Pi extensions (tasks, plans, todo, orchestration, init)
@@ -174,7 +179,13 @@ prompts/          System prompt layers (base, capabilities, personas, runtime)
 cli/              CLI implementation
 bin/              CLI entry points (cosmonauts, cosmonauts-tasks)
 tests/            Test suites mirroring source structure
+docs/             Reference documentation
+```
+
+**Local (gitignored, created by `cosmonauts-tasks init`):**
+
+```
 missions/         Active tasks, plans, and archived work
 memory/           Distilled knowledge from completed work
-docs/             Reference documentation
+.cosmonauts/      Project config — copy config.example.json to config.json and customize
 ```
