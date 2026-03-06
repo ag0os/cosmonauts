@@ -52,23 +52,19 @@ bun link
 
 ## Getting Started
 
-After installing, set up your local working directories and project config:
+After installing, initialize your project:
 
 ```bash
-# 1. Scaffold local directories (missions/, memory/)
+# 1. Initialize local directories and project config
 cosmonauts-tasks init
 
-# 2. Create your project config from the example
-cp .cosmonauts/config.example.json .cosmonauts/config.json
+# 2. (Optional) Customize .cosmonauts/config.json — adjust skills and workflows
 
-# 3. Customize config — choose skills and define workflows
-#    Edit .cosmonauts/config.json to match your project
-
-# 4. Run your first workflow
+# 3. Run your first workflow
 cosmonauts --workflow plan-and-build "describe what you want to build"
 ```
 
-The `init` command creates `missions/` and `memory/` directories, which are local and gitignored — they hold active tasks, plans, and archived work for your local development. The `.cosmonauts/config.json` file defines your project's available workflows and loaded skills.
+The `init` command creates `missions/` and `memory/` directories for tasks, plans, and archived work, plus `.cosmonauts/config.json` with default workflows and skills. All are local and gitignored. You can customize the config to match your project, or use the defaults as-is.
 
 ## Usage
 
@@ -157,7 +153,7 @@ cosmonauts/
 ├── tests/            Test suites (565 tests, Vitest)
 ├── missions/         Local, gitignored — active tasks, plans, and archived work (created by init)
 ├── memory/           Local, gitignored — distilled knowledge from completed work (created by init)
-├── .cosmonauts/      Local, gitignored — project config (copy from config.example.json)
+├── .cosmonauts/      Local, gitignored — project config (created by init)
 └── docs/             Reference documentation
 ```
 

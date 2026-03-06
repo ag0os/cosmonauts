@@ -80,7 +80,7 @@ cosmonauts --chain "planner -> task-manager -> coordinator -> quality-manager" "
 
 ### Named Workflows
 
-The primary user interface for multi-agent pipelines. Workflows are defined in `.cosmonauts/config.json` (not built into the framework) and invoked via `--workflow`. The example config ships with these defaults:
+The primary user interface for multi-agent pipelines. Built-in defaults are provided in `lib/workflows/defaults.ts` and can be overridden or extended via `.cosmonauts/config.json`. The standard workflows are:
 
 | Name | Chain | Purpose |
 |------|-------|---------|
@@ -187,5 +187,5 @@ docs/             Reference documentation
 ```
 missions/         Active tasks, plans, and archived work
 memory/           Distilled knowledge from completed work
-.cosmonauts/      Project config — copy config.example.json to config.json and customize
+.cosmonauts/      Project config (created by `cosmonauts-tasks init`, customizable)
 ```

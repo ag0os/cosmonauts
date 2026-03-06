@@ -5,7 +5,7 @@
  * Invalid JSON → throws with descriptive message.
  */
 
-import { readFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ProjectConfig } from "./types.ts";
 
@@ -72,4 +72,57 @@ export async function loadProjectConfig(
 	}
 
 	return config;
+}
+
+/**
+ * Default project config scaffolded during `cosmonauts-tasks init`.
+ * Matches `.cosmonauts/config.example.json`.
+ */
+const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
+	skills: ["typescript"],
+	workflows: {
+		"plan-and-build": {
+			description:
+				"Full pipeline: design, create tasks, implement, and run merge-readiness quality gates",
+			chain: "planner -> task-manager -> coordinator -> quality-manager",
+		},
+		implement: {
+			description:
+				"Create tasks from existing plan, implement, and run merge-readiness quality gates",
+			chain: "task-manager -> coordinator -> quality-manager",
+		},
+		verify: {
+			description:
+				"Run lint/format checks, clean-context review, and remediation on existing changes",
+			chain: "quality-manager",
+		},
+	},
+};
+
+/**
+ * Scaffold `.cosmonauts/config.json` if it does not already exist.
+ * Creates the directory and writes a default config with standard workflows.
+ *
+ * Idempotent — safe to call multiple times. Never overwrites an existing file.
+ *
+ * @returns `true` if the file was created, `false` if it already existed.
+ */
+export async function scaffoldProjectConfig(
+	projectRoot: string,
+): Promise<boolean> {
+	const configDir = join(projectRoot, CONFIG_DIR);
+	const configPath = join(configDir, CONFIG_FILE);
+
+	// Check if it already exists
+	try {
+		await access(configPath);
+		return false; // Already exists — do not overwrite
+	} catch {
+		// Does not exist — proceed to create
+	}
+
+	await mkdir(configDir, { recursive: true });
+	const content = JSON.stringify(DEFAULT_PROJECT_CONFIG, null, 2);
+	await writeFile(configPath, `${content}\n`, "utf-8");
+	return true;
 }

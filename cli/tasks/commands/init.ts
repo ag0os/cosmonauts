@@ -1,4 +1,5 @@
 import type { Command } from "commander";
+import { scaffoldProjectConfig } from "../../../lib/config/index.js";
 import { loadConfig } from "../../../lib/tasks/file-system.js";
 import { TaskManager } from "../../../lib/tasks/task-manager.js";
 
@@ -48,6 +49,9 @@ export function registerCommand(program: Command): void {
 				projectName: options.name,
 			});
 
+			// Scaffold .cosmonauts/config.json with default workflows
+			const configCreated = await scaffoldProjectConfig(projectRoot);
+
 			// Output based on format
 			if (globalOptions.json) {
 				console.log(
@@ -56,6 +60,7 @@ export function registerCommand(program: Command): void {
 							status: "initialized",
 							path: projectRoot,
 							config,
+							projectConfigCreated: configCreated,
 						},
 						null,
 						2,
@@ -67,6 +72,7 @@ export function registerCommand(program: Command): void {
 				if (config.projectName) {
 					console.log(`name=${config.projectName}`);
 				}
+				console.log(`projectConfig=${configCreated ? "created" : "exists"}`);
 			} else {
 				console.log(`Initialized task system in ${projectRoot}`);
 				console.log(`- Created missions/tasks/`);
@@ -78,6 +84,13 @@ export function registerCommand(program: Command): void {
 				console.log(
 					`- Created missions/tasks/config.json with prefix: ${config.prefix}`,
 				);
+				if (configCreated) {
+					console.log(
+						`- Created .cosmonauts/config.json with default workflows`,
+					);
+				} else {
+					console.log(`- .cosmonauts/config.json already exists (unchanged)`);
+				}
 				if (config.projectName) {
 					console.log(`- Project name: ${config.projectName}`);
 				}
