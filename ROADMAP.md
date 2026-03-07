@@ -1,6 +1,8 @@
 # Roadmap
 
-Prioritized backlog — top items are highest priority. When an item is picked up, remove it from this list and create a plan via `plan_create`. See the `roadmap` skill for procedures.
+Work backlog in two sections. **Prioritized** items at the top are ordered — pick from the top. **Ideas** below are unordered candidates that haven't been prioritized yet. When an item is picked up from either section, remove it and create a plan via `plan_create`. See the `roadmap` skill for procedures.
+
+## Prioritized
 
 ### `deepwiki-tool`: DeepWiki Integration
 
@@ -42,6 +44,8 @@ Implement automatic skill-routing in the coordinator so workers get the right sk
 - Match task labels to language/domain skills automatically
 - Auto-detect project language from manifests (package.json, Cargo.toml, etc.)
 - Coordinator instructs workers which skills to load based on task labels and project context
+
+## Ideas
 
 ### `memory-system`: Persistent Cross-Session Memory
 

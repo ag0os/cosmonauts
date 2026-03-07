@@ -104,7 +104,7 @@ Flags: `--print`, `--workflow`, `--chain`, `--model`, `--thinking`.
 
 ## Documentation
 
-- `ROADMAP.md` — Prioritized backlog of upcoming work.
+- `ROADMAP.md` — Work backlog: prioritized items on top, unordered ideas below.
 - `docs/architecture/approach.md` — Design philosophy and evolution notes.
 - `docs/pi-framework.md` — Pi API reference (execution modes, tools, skills, extensions).
 - `docs/testing.md` — Testing standards and patterns.
@@ -138,7 +138,7 @@ Work flows through: **roadmap → plan → tasks → archive → memory**.
 
 All work artifacts live in local, gitignored directories created by `cosmonauts-tasks init`:
 
-- **Roadmap** (`ROADMAP.md`): Prioritized backlog. Items are picked up and turned into plans.
+- **Roadmap** (`ROADMAP.md`): Work backlog with prioritized items on top and unordered ideas below. Items are picked up and turned into plans.
 - **Plans** (`missions/plans/<slug>/`): Implementation plans with `plan.md` and optional `spec.md`. Created via `plan_create`. Local.
 - **Tasks** (`missions/tasks/`): Atomic work items linked to plans via `plan:<slug>` labels. Created via `task_create`. Local.
 - **Archive** (`missions/archive/`): Completed plans and tasks moved here by `plan_archive`. Mechanical, no LLM. Local.
