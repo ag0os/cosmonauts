@@ -5,7 +5,12 @@ description: How to read, update, and maintain the project roadmap. Load when pi
 
 # Roadmap
 
-The roadmap (`ROADMAP.md` at project root) is the single source of truth for "what to build next." It is a prioritized backlog — a flat list ordered by priority, top items first. Each item maps to roughly one plan (3-12 tasks).
+The roadmap (`ROADMAP.md` at project root) is the single source of truth for "what to build next." It has two sections:
+
+- **Prioritized** (`## Prioritized`): Ordered by priority, top items first. Pick from the top.
+- **Ideas** (`## Ideas`): Unordered candidates — things we want to build but haven't prioritized yet. Pick only when directed by the user.
+
+Each item maps to roughly one plan (3-12 tasks).
 
 ## Item Format
 
@@ -28,7 +33,7 @@ The slug becomes the plan slug when the item is picked up. Outcomes describe wha
 When starting new work from the roadmap:
 
 1. Read `ROADMAP.md`.
-2. Select the top item (or a specific item if directed by the user).
+2. Select the top item from the **Prioritized** section (or a specific item from either section if directed by the user).
 3. **Remove the item from ROADMAP.md.**
 4. Create the plan via `plan_create` using the item's slug.
 5. If the item is complex, create a `spec.md` inside the plan directory with detailed requirements (the plan system already supports this).
@@ -48,7 +53,9 @@ No roadmap action needed. The item was already removed when the plan was created
 
 1. Write a slug (2-3 word, hyphenated, descriptive).
 2. Write a brief description (1 sentence) and 2-5 outcome bullets.
-3. Place the item in the list by priority — higher priority = higher in the file.
+3. Place the item in the appropriate section:
+   - **Prioritized**: If the item has a clear priority relative to other work, insert it by priority order (higher = higher in the list).
+   - **Ideas**: If the item is a candidate without a clear priority yet, append it to the Ideas section.
 4. Each item should be sized for one plan (3-12 tasks). If it is larger, split it into multiple items.
 
 ## Granularity
