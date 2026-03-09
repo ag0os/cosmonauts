@@ -7,6 +7,7 @@
 export {
 	AgentRegistry,
 	createDefaultRegistry,
+	createRegistryFromDomains,
 	resolveAgent,
 } from "./resolver.ts";
 export {

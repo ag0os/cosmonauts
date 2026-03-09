@@ -33,7 +33,7 @@ const EXTENSIONS_DIR = resolve(
 const FIXTURE_PLANNER: AgentDefinition = {
 	id: "planner",
 	description: "Fixture planner",
-	prompts: ["base/test"],
+	capabilities: ["core"],
 	model: "fixture-provider/fixture-planner-model",
 	tools: "readonly",
 	extensions: [],
@@ -46,7 +46,7 @@ const FIXTURE_PLANNER: AgentDefinition = {
 const FIXTURE_WORKER: AgentDefinition = {
 	id: "worker",
 	description: "Fixture worker",
-	prompts: ["base/test"],
+	capabilities: ["core"],
 	model: "fixture-provider/fixture-worker-model",
 	tools: "coding",
 	extensions: [],
