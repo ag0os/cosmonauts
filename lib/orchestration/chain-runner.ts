@@ -175,7 +175,7 @@ export async function runChain(config: ChainConfig): Promise<ChainResult> {
 
 	const stageResults: StageResult[] = [];
 	const errors: string[] = [];
-	const spawner = createPiSpawner();
+	const spawner = createPiSpawner(resolveRegistry(config));
 	let totalIterations = 0;
 
 	emit(config, { type: "chain_start", stages: config.stages });

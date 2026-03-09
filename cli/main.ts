@@ -264,7 +264,7 @@ async function run(options: CliOptions): Promise<void> {
 
 	// 2. --chain → parse chain, run, exit
 	if (options.chain) {
-		const stages = parseChain(options.chain);
+		const stages = parseChain(options.chain, registry);
 		injectUserPrompt(stages, options.prompt);
 
 		const result = await runChain({
@@ -273,6 +273,7 @@ async function run(options: CliOptions): Promise<void> {
 			onEvent: createChainEventLogger(),
 			projectSkills,
 			completionLabel: options.completionLabel,
+			registry,
 			...(options.thinking && { thinking: { default: options.thinking } }),
 		});
 
@@ -285,7 +286,7 @@ async function run(options: CliOptions): Promise<void> {
 	// 3. --workflow → resolve to chain, run, exit
 	if (options.workflow) {
 		const wf = await resolveWorkflow(options.workflow, cwd, domainWorkflows);
-		const stages = parseChain(wf.chain);
+		const stages = parseChain(wf.chain, registry);
 		injectUserPrompt(stages, options.prompt);
 
 		const result = await runChain({
@@ -294,6 +295,7 @@ async function run(options: CliOptions): Promise<void> {
 			onEvent: createChainEventLogger(),
 			projectSkills,
 			completionLabel: options.completionLabel,
+			registry,
 			...(options.thinking && { thinking: { default: options.thinking } }),
 		});
 

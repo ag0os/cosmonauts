@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
+import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import {
 	createDefaultCompletionCheck,
 	runChain,
@@ -792,5 +793,127 @@ describe("runChain", () => {
 		// Second stage: remaining budget is 2 (3 - 1 = 2)
 		expect(result.stageResults[1]!.iterations).toBe(2);
 		expect(result.stageResults[1]!.success).toBe(false);
+	});
+});
+
+// ============================================================================
+// Qualified Stage End-to-End Tests (parse + run with shared registry)
+// ============================================================================
+
+describe("qualified stage chain end-to-end", () => {
+	function makeDef(
+		id: string,
+		loop: boolean,
+		domain?: string,
+	): AgentDefinition {
+		return {
+			id,
+			description: `Test ${id}`,
+			capabilities: [],
+			model: "test/model",
+			tools: "none",
+			extensions: [],
+			projectContext: false,
+			session: "ephemeral",
+			loop,
+			domain,
+		};
+	}
+
+	beforeEach(() => {
+		spawnerRef.current = createMockSpawner();
+	});
+
+	test("qualified one-shot stages parse and run successfully", async () => {
+		const registry = new AgentRegistry([
+			makeDef("designer", false, "ops"),
+			makeDef("builder", false, "ops"),
+		]);
+
+		// Parse with the same registry that runChain will use
+		const stages = parseChain("ops/designer -> ops/builder", registry);
+
+		expect(stages).toEqual([
+			{ name: "ops/designer", loop: false },
+			{ name: "ops/builder", loop: false },
+		]);
+
+		const result = await runChain(
+			makeConfig(stages, { registry }),
+		);
+
+		expect(result.success).toBe(true);
+		expect(result.stageResults).toHaveLength(2);
+		expect(result.stageResults[0]!.success).toBe(true);
+		expect(result.stageResults[1]!.success).toBe(true);
+	});
+
+	test("qualified loop stage gets loop: true from registry through parse + run", async () => {
+		const registry = new AgentRegistry([
+			makeDef("scheduler", false, "ops"),
+			makeDef("orchestrator", true, "ops"),
+		]);
+
+		const stages = parseChain("ops/scheduler -> ops/orchestrator", registry);
+
+		// Verify loop detection used the registry (not false positive)
+		expect(stages[0]!.loop).toBe(false);
+		expect(stages[1]!.loop).toBe(true);
+
+		// Attach a completion check so the loop stage terminates
+		const completionCheck = vi.fn(async () => true);
+		const loopStage = stages[1];
+		if (loopStage) stages[1] = { ...loopStage, completionCheck };
+
+		const result = await runChain(
+			makeConfig(stages, { registry }),
+		);
+
+		expect(result.success).toBe(true);
+		expect(result.stageResults).toHaveLength(2);
+		expect(result.stageResults[0]!.success).toBe(true);
+		expect(result.stageResults[1]!.success).toBe(true);
+	});
+
+	test("mixed qualified and unqualified names resolve through shared registry", async () => {
+		const registry = new AgentRegistry([
+			makeDef("planner", false, "coding"),
+			makeDef("coordinator", true, "coding"),
+		]);
+
+		// "planner" unqualified resolves via scan-all, "coding/coordinator" qualified
+		const stages = parseChain("planner -> coding/coordinator", registry);
+
+		expect(stages[0]!.loop).toBe(false);
+		expect(stages[1]!.loop).toBe(true);
+
+		const completionCheck = vi.fn(async () => true);
+		const loopStage2 = stages[1];
+		if (loopStage2) stages[1] = { ...loopStage2, completionCheck };
+
+		const result = await runChain(
+			makeConfig(stages, { registry }),
+		);
+
+		expect(result.success).toBe(true);
+		expect(result.stageResults).toHaveLength(2);
+	});
+
+	test("unknown qualified name fails at run time", async () => {
+		const registry = new AgentRegistry([
+			makeDef("designer", false, "ops"),
+		]);
+
+		const stages = parseChain("ops/designer -> ops/missing", registry);
+
+		const result = await runChain(
+			makeConfig(stages, { registry }),
+		);
+
+		expect(result.success).toBe(false);
+		expect(result.stageResults).toHaveLength(2);
+		expect(result.stageResults[0]!.success).toBe(true);
+		expect(result.stageResults[1]!.success).toBe(false);
+		expect(result.stageResults[1]!.error).toContain('Unknown agent role "ops/missing"');
 	});
 });
