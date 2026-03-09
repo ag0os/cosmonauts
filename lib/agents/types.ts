@@ -19,12 +19,10 @@ export type AgentSessionMode = "ephemeral" | "persistent";
 export interface AgentDefinition {
 	/** Unique agent identifier. */
 	readonly id: string;
-	/** Prompt namespace for migration compatibility (e.g. "coding"). Optional for external definitions. */
-	readonly namespace?: string;
 	/** Human-readable description. */
 	readonly description: string;
-	/** System prompt layer paths, composed in order: base, capabilities, persona. */
-	readonly prompts: readonly string[];
+	/** Capability pack names resolved to prompt files during assembly (e.g. ["core", "tasks", "coding-readwrite"]). */
+	readonly capabilities: readonly string[];
 	/** Default model in "provider/model-id" format. */
 	readonly model: string;
 	/** Tool set: "coding" (full), "readonly" (exploration), "none". */
@@ -43,4 +41,6 @@ export interface AgentDefinition {
 	readonly loop: boolean;
 	/** Optional thinking/reasoning level for this agent. */
 	readonly thinkingLevel?: ThinkingLevel;
+	/** Domain this agent belongs to. Set at runtime by the domain loader, not in definition files. */
+	domain?: string;
 }
