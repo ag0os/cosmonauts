@@ -838,9 +838,7 @@ describe("qualified stage chain end-to-end", () => {
 			{ name: "ops/builder", loop: false },
 		]);
 
-		const result = await runChain(
-			makeConfig(stages, { registry }),
-		);
+		const result = await runChain(makeConfig(stages, { registry }));
 
 		expect(result.success).toBe(true);
 		expect(result.stageResults).toHaveLength(2);
@@ -865,9 +863,7 @@ describe("qualified stage chain end-to-end", () => {
 		const loopStage = stages[1];
 		if (loopStage) stages[1] = { ...loopStage, completionCheck };
 
-		const result = await runChain(
-			makeConfig(stages, { registry }),
-		);
+		const result = await runChain(makeConfig(stages, { registry }));
 
 		expect(result.success).toBe(true);
 		expect(result.stageResults).toHaveLength(2);
@@ -891,29 +887,25 @@ describe("qualified stage chain end-to-end", () => {
 		const loopStage2 = stages[1];
 		if (loopStage2) stages[1] = { ...loopStage2, completionCheck };
 
-		const result = await runChain(
-			makeConfig(stages, { registry }),
-		);
+		const result = await runChain(makeConfig(stages, { registry }));
 
 		expect(result.success).toBe(true);
 		expect(result.stageResults).toHaveLength(2);
 	});
 
 	test("unknown qualified name fails at run time", async () => {
-		const registry = new AgentRegistry([
-			makeDef("designer", false, "ops"),
-		]);
+		const registry = new AgentRegistry([makeDef("designer", false, "ops")]);
 
 		const stages = parseChain("ops/designer -> ops/missing", registry);
 
-		const result = await runChain(
-			makeConfig(stages, { registry }),
-		);
+		const result = await runChain(makeConfig(stages, { registry }));
 
 		expect(result.success).toBe(false);
 		expect(result.stageResults).toHaveLength(2);
 		expect(result.stageResults[0]!.success).toBe(true);
 		expect(result.stageResults[1]!.success).toBe(false);
-		expect(result.stageResults[1]!.error).toContain('Unknown agent role "ops/missing"');
+		expect(result.stageResults[1]!.error).toContain(
+			'Unknown agent role "ops/missing"',
+		);
 	});
 });

@@ -32,7 +32,9 @@ const ROLE_LABELS: Record<string, string> = {
 
 function roleLabel(role: string): string {
 	// Strip domain prefix for display (e.g. "coding/worker" → "worker")
-	const unqualified = role.includes("/") ? role.split("/").pop()! : role;
+	const unqualified = role.includes("/")
+		? (role.split("/").pop() ?? role)
+		: role;
 	return ROLE_LABELS[unqualified] ?? role;
 }
 
