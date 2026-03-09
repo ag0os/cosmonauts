@@ -1,0 +1,153 @@
+/**
+ * Dynamic domain discovery and loading.
+ *
+ * Scans a domains directory for subdirectories containing domain.ts manifests,
+ * imports their agent definitions, and indexes their resources (capabilities,
+ * prompts, skills, extensions, workflows).
+ */
+
+import { readdir, stat } from "node:fs/promises";
+import { join } from "node:path";
+import type { AgentDefinition } from "../agents/types.ts";
+import type { WorkflowDefinition } from "../workflows/types.ts";
+import type { DomainManifest, LoadedDomain } from "./types.ts";
+
+/**
+ * Load all domains from a domains directory.
+ *
+ * Scans for subdirectories containing a `domain.ts` manifest file,
+ * imports manifests and agent definitions, and indexes all resources.
+ * The `shared` domain is always loaded first, then remaining domains
+ * in alphabetical order.
+ */
+export async function loadDomains(domainsDir: string): Promise<LoadedDomain[]> {
+	const entries = await readdir(domainsDir, { withFileTypes: true });
+	const domainDirs = entries
+		.filter((e) => e.isDirectory())
+		.map((e) => e.name)
+		.sort((a, b) => {
+			if (a === "shared") return -1;
+			if (b === "shared") return 1;
+			return a.localeCompare(b);
+		});
+
+	const domains: LoadedDomain[] = [];
+	for (const dirName of domainDirs) {
+		const domainDir = join(domainsDir, dirName);
+		if (!(await fileExists(join(domainDir, "domain.ts")))) continue;
+
+		const domain = await loadSingleDomain(domainDir);
+		domains.push(domain);
+	}
+	return domains;
+}
+
+/**
+ * Load a single domain from its root directory.
+ */
+async function loadSingleDomain(domainDir: string): Promise<LoadedDomain> {
+	// Import manifest (supports both default and named `manifest` export)
+	const manifestModule = await import(join(domainDir, "domain.ts"));
+	const manifest: DomainManifest =
+		manifestModule.default ?? manifestModule.manifest;
+
+	// Load agent definitions from agents/*.ts
+	const agents = new Map<string, AgentDefinition>();
+	const agentsDir = join(domainDir, "agents");
+	if (await dirExists(agentsDir)) {
+		const agentFiles = await readdir(agentsDir);
+		for (const file of agentFiles) {
+			if (!file.endsWith(".ts") || file.startsWith(".")) continue;
+			const mod = await import(join(agentsDir, file));
+			const def: AgentDefinition = mod.default;
+			if (def?.id) {
+				def.domain = manifest.id;
+				agents.set(def.id, def);
+			}
+		}
+	}
+
+	// Index resources
+	const capabilities = await indexMarkdownFiles(
+		join(domainDir, "capabilities"),
+	);
+	const prompts = await indexMarkdownFiles(join(domainDir, "prompts"));
+	const skills = await indexSubdirectories(join(domainDir, "skills"));
+	const extensions = await indexSubdirectories(join(domainDir, "extensions"));
+
+	// Load workflows if present
+	let workflows: WorkflowDefinition[] = [];
+	const workflowsPath = join(domainDir, "workflows.ts");
+	if (await fileExists(workflowsPath)) {
+		const mod = await import(workflowsPath);
+		workflows = mod.default ?? mod.workflows ?? [];
+	}
+
+	return {
+		manifest,
+		agents,
+		capabilities,
+		prompts,
+		skills,
+		extensions,
+		workflows,
+		rootDir: domainDir,
+	};
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/** Check if a file exists. */
+async function fileExists(path: string): Promise<boolean> {
+	try {
+		const s = await stat(path);
+		return s.isFile();
+	} catch {
+		return false;
+	}
+}
+
+/** Check if a directory exists. */
+async function dirExists(path: string): Promise<boolean> {
+	try {
+		const s = await stat(path);
+		return s.isDirectory();
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Index markdown files in a directory, returning a Set of names
+ * with the .md extension stripped. Non-recursive — only top-level .md files.
+ */
+async function indexMarkdownFiles(dirPath: string): Promise<Set<string>> {
+	const names = new Set<string>();
+	if (!(await dirExists(dirPath))) return names;
+
+	const entries = await readdir(dirPath);
+	for (const entry of entries) {
+		if (entry.endsWith(".md")) {
+			names.add(entry.slice(0, -3));
+		}
+	}
+	return names;
+}
+
+/**
+ * Index subdirectories in a directory, returning a Set of directory names.
+ */
+async function indexSubdirectories(dirPath: string): Promise<Set<string>> {
+	const names = new Set<string>();
+	if (!(await dirExists(dirPath))) return names;
+
+	const entries = await readdir(dirPath, { withFileTypes: true });
+	for (const entry of entries) {
+		if (entry.isDirectory()) {
+			names.add(entry.name);
+		}
+	}
+	return names;
+}
