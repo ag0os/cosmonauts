@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { BUILTIN_DEFINITIONS } from "../../lib/agents/definitions.ts";
 import {
 	AgentRegistry,
 	createDefaultRegistry,
@@ -14,8 +13,7 @@ import type { AgentDefinition } from "../../lib/agents/types.ts";
 const ALPHA: AgentDefinition = {
 	id: "alpha",
 	description: "First fixture agent",
-	namespace: "test",
-	prompts: ["base/test", "agents/test/alpha"],
+	capabilities: ["core", "coding-readwrite"],
 	model: "test-provider/alpha-model",
 	tools: "coding",
 	extensions: ["tasks"],
@@ -27,8 +25,7 @@ const ALPHA: AgentDefinition = {
 const BETA: AgentDefinition = {
 	id: "beta",
 	description: "Second fixture agent",
-	namespace: "test",
-	prompts: ["base/test", "agents/test/beta"],
+	capabilities: ["core", "coding-readonly"],
 	model: "test-provider/beta-model",
 	tools: "readonly",
 	extensions: ["plans"],
@@ -41,8 +38,7 @@ const BETA: AgentDefinition = {
 const GAMMA: AgentDefinition = {
 	id: "gamma",
 	description: "Third fixture agent",
-	namespace: "test",
-	prompts: ["base/test", "agents/test/gamma"],
+	capabilities: ["core", "tasks", "spawning"],
 	model: "test-provider/gamma-model",
 	tools: "none",
 	extensions: ["orchestration"],
@@ -64,9 +60,9 @@ describe("AgentRegistry", () => {
 			}
 		});
 
-		it("defaults to builtins when no argument given", () => {
+		it("defaults to coding domain definitions when no argument given", () => {
 			const registry = new AgentRegistry();
-			expect(registry.listIds()).toHaveLength(BUILTIN_DEFINITIONS.length);
+			expect(registry.listIds()).toHaveLength(8);
 		});
 
 		it("works with empty array", () => {
@@ -156,7 +152,7 @@ describe("AgentRegistry", () => {
 			const custom: AgentDefinition = {
 				id: "delta",
 				description: "A dynamically registered agent",
-				prompts: ["base/test", "agents/test/delta"],
+				capabilities: ["core"],
 				model: "test-provider/delta-model",
 				tools: "readonly",
 				extensions: [],
@@ -168,29 +164,6 @@ describe("AgentRegistry", () => {
 			expect(registry.has("delta")).toBe(true);
 			expect(registry.get("delta")).toEqual(custom);
 			expect(registry.listIds()).toContain("delta");
-		});
-
-		it("supports definitions without namespace", () => {
-			const registry = new AgentRegistry([]);
-			const custom: AgentDefinition = {
-				id: "external-tool",
-				description: "An external agent without namespace",
-				prompts: ["custom/prompt"],
-				model: "test-provider/external-model",
-				tools: "coding",
-				extensions: [],
-				projectContext: false,
-				session: "ephemeral",
-				loop: false,
-			};
-			registry.register(custom);
-			expect(registry.has("external-tool")).toBe(true);
-			const resolved = registry.resolve("external-tool");
-			expect(resolved.id).toBe("external-tool");
-			expect(resolved.namespace).toBeUndefined();
-			const got = registry.get("external-tool");
-			expect(got).toBeDefined();
-			expect(got?.namespace).toBeUndefined();
 		});
 
 		it("overwrites an existing definition", () => {
@@ -209,22 +182,18 @@ describe("AgentRegistry", () => {
 });
 
 describe("createDefaultRegistry", () => {
-	it("returns a registry with all builtins", () => {
+	it("returns a registry with all coding domain agents", () => {
 		const registry = createDefaultRegistry();
-		expect(registry.listIds()).toHaveLength(BUILTIN_DEFINITIONS.length);
+		expect(registry.listIds()).toHaveLength(8);
+		expect(registry.has("cosmo")).toBe(true);
+		expect(registry.has("coordinator")).toBe(true);
 	});
 });
 
 describe("resolveAgent", () => {
 	it("resolves a known agent by ID", () => {
-		const known = BUILTIN_DEFINITIONS[0];
-		expect(known).toBeDefined();
-		if (!known) {
-			throw new Error("Expected at least one built-in definition");
-		}
-		const knownId = known.id;
-		const def = resolveAgent(knownId);
-		expect(def.id).toBe(knownId);
+		const def = resolveAgent("cosmo");
+		expect(def.id).toBe("cosmo");
 	});
 
 	it("throws for unknown agent ID", () => {

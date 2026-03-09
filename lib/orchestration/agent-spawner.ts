@@ -205,9 +205,15 @@ export function createPiSpawner(): AgentSpawner {
 				// Tools are fully determined by the agent definition.
 				const tools = resolveTools(def.tools, config.cwd);
 
-				// System prompt from definition's prompt layers
-				let promptContent = def.prompts.length
-					? await loadPrompts(def.prompts)
+				// System prompt from definition's capabilities.
+				// TODO(TASK-058): Replace with proper four-layer prompt assembly.
+				const promptPaths = [
+					"cosmonauts",
+					...def.capabilities.map((c) => `capabilities/${c}`),
+					`agents/coding/${def.id}`,
+				];
+				let promptContent = promptPaths.length
+					? await loadPrompts(promptPaths)
 					: undefined;
 
 				// Append runtime layer for sub-agent mode

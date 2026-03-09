@@ -14,8 +14,8 @@ import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import { InteractiveMode, runPrintMode } from "@mariozechner/pi-coding-agent";
 import { Command, CommanderError } from "commander";
+import cosmoDefinition from "../domains/coding/agents/cosmo.ts";
 import { buildInitPrompt } from "../extensions/init/index.ts";
-import { COSMO_DEFINITION } from "../lib/agents/definitions.ts";
 import { createDefaultRegistry } from "../lib/agents/index.ts";
 import { loadProjectConfig } from "../lib/config/index.ts";
 import { parseChain } from "../lib/orchestration/chain-parser.ts";
@@ -193,7 +193,7 @@ async function run(options: CliOptions): Promise<void> {
 	const registry = createDefaultRegistry();
 	const definition = options.agent
 		? registry.resolve(options.agent)
-		: COSMO_DEFINITION;
+		: cosmoDefinition;
 
 	// Resolve model override once (shared across modes)
 	const model = options.model ? resolveModel(options.model) : undefined;
@@ -201,7 +201,7 @@ async function run(options: CliOptions): Promise<void> {
 	// 1. init → always uses Cosmo (bootstrap requires full coding tools)
 	if (options.init) {
 		const { session } = await createSession({
-			definition: COSMO_DEFINITION,
+			definition: cosmoDefinition,
 			cwd,
 			model,
 			thinkingLevel: options.thinking,

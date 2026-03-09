@@ -1,17 +1,42 @@
 /**
  * Agent registry — resolves agent IDs to their definitions.
  *
- * The registry is a Map-backed class seeded with built-in definitions.
+ * The registry is a Map-backed class seeded with agent definitions.
  * It supports runtime registration for future user-defined agents.
  */
 
-import { BUILTIN_DEFINITIONS } from "./definitions.ts";
+import coordinator from "../../domains/coding/agents/coordinator.ts";
+import cosmo from "../../domains/coding/agents/cosmo.ts";
+import fixer from "../../domains/coding/agents/fixer.ts";
+import planner from "../../domains/coding/agents/planner.ts";
+import qualityManager from "../../domains/coding/agents/quality-manager.ts";
+import reviewer from "../../domains/coding/agents/reviewer.ts";
+import taskManager from "../../domains/coding/agents/task-manager.ts";
+import worker from "../../domains/coding/agents/worker.ts";
 import type { AgentDefinition } from "./types.ts";
+
+/**
+ * All coding domain agent definitions.
+ * Temporary bridge until TASK-059 (domain loader) replaces this with
+ * dynamic discovery from domain directories.
+ */
+const CODING_DOMAIN_DEFINITIONS: readonly AgentDefinition[] = [
+	cosmo,
+	planner,
+	taskManager,
+	coordinator,
+	worker,
+	qualityManager,
+	reviewer,
+	fixer,
+];
 
 export class AgentRegistry {
 	private readonly definitions: Map<string, AgentDefinition>;
 
-	constructor(builtins: readonly AgentDefinition[] = BUILTIN_DEFINITIONS) {
+	constructor(
+		builtins: readonly AgentDefinition[] = CODING_DOMAIN_DEFINITIONS,
+	) {
 		this.definitions = new Map();
 		for (const def of builtins) {
 			this.definitions.set(def.id, def);

@@ -72,8 +72,15 @@ export async function createSession(
 
 	const tools = resolveTools(def.tools, cwd);
 
-	let promptContent = def.prompts.length
-		? await loadPrompts(def.prompts)
+	// Reconstruct prompt paths from capabilities.
+	// TODO(TASK-058): Replace with proper four-layer prompt assembly.
+	const promptPaths = [
+		"cosmonauts",
+		...def.capabilities.map((c) => `capabilities/${c}`),
+		`agents/coding/${def.id}`,
+	];
+	let promptContent = promptPaths.length
+		? await loadPrompts(promptPaths)
 		: undefined;
 	promptContent = appendAgentIdentityMarker(promptContent, def.id);
 
