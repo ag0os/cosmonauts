@@ -25,12 +25,7 @@ import {
 	createDefaultRegistry,
 } from "../agents/index.ts";
 import { buildSkillsOverride } from "../agents/skills.ts";
-import {
-	loadPrompt,
-	loadPrompts,
-	PROMPTS_DIR,
-	renderRuntimeTemplate,
-} from "../prompts/index.ts";
+import { assemblePrompts } from "../domains/prompt-assembly.ts";
 import type {
 	AgentSpawner,
 	ModelConfig,
@@ -41,32 +36,15 @@ import type {
 
 const DEFAULT_REGISTRY = createDefaultRegistry();
 
-const EXTENSIONS_DIR = resolve(
+const DOMAINS_DIR = resolve(
 	fileURLToPath(import.meta.url),
 	"..",
 	"..",
 	"..",
 	"domains",
-	"shared",
-	"extensions",
 );
 
-/** Domain directories resolved relative to PROMPTS_DIR (domains/shared/prompts). */
-const SHARED_CAPABILITIES_DIR = resolve(PROMPTS_DIR, "..", "capabilities");
-const CODING_CAPABILITIES_DIR = resolve(
-	PROMPTS_DIR,
-	"..",
-	"..",
-	"coding",
-	"capabilities",
-);
-const CODING_PROMPTS_DIR = resolve(
-	PROMPTS_DIR,
-	"..",
-	"..",
-	"coding",
-	"prompts",
-);
+const EXTENSIONS_DIR = resolve(DOMAINS_DIR, "shared", "extensions");
 
 /** Extensions that exist on disk and can be loaded by the agent spawner. */
 const KNOWN_EXTENSIONS = new Set([
@@ -195,7 +173,8 @@ export function resolveExtensionPaths(extensions: readonly string[]): string[] {
  * Agent identity is injected via the system prompt using prompt files
  * loaded from the agent definition's `prompts` array.
  */
-export function createPiSpawner(): AgentSpawner {
+export function createPiSpawner(registry?: AgentRegistry): AgentSpawner {
+	const reg = registry ?? DEFAULT_REGISTRY;
 	return {
 		async spawn(config: SpawnConfig): Promise<SpawnResult> {
 			// Respect abort signal before doing any work
@@ -209,63 +188,40 @@ export function createPiSpawner(): AgentSpawner {
 			}
 
 			try {
-				const modelId = config.model ?? getModelForRole(config.role);
+				const modelId =
+					config.model ?? getModelForRole(config.role, undefined, reg);
 				const model = resolveModel(modelId);
 				const thinkingLevel =
-					config.thinkingLevel ?? getThinkingForRole(config.role);
+					config.thinkingLevel ??
+					getThinkingForRole(config.role, undefined, reg);
 
 				// Resolve full agent definition (unknown roles are rejected).
-				const def = DEFAULT_REGISTRY.get(config.role);
+				const def = reg.get(config.role);
 				if (!def) {
 					throw new Error(
-						`Unknown agent role "${config.role}". Available agents: ${DEFAULT_REGISTRY.listIds().join(", ")}`,
+						`Unknown agent role "${config.role}". Available agents: ${reg.listIds().join(", ")}`,
 					);
 				}
 
 				// Tools are fully determined by the agent definition.
 				const tools = resolveTools(def.tools, config.cwd);
 
-				// System prompt from definition's capabilities.
-				// TODO(TASK-058): Replace with proper four-layer prompt assembly.
-				const CODING_CAPS = new Set([
-					"coding-readwrite",
-					"coding-readonly",
-				]);
-				const sharedCaps = def.capabilities.filter(
-					(c) => !CODING_CAPS.has(c),
-				);
-				const codingCaps = def.capabilities.filter((c) =>
-					CODING_CAPS.has(c),
-				);
-
-				const parts: string[] = [await loadPrompt("base")];
-				if (sharedCaps.length) {
-					parts.push(
-						await loadPrompts(sharedCaps, SHARED_CAPABILITIES_DIR),
-					);
-				}
-				if (codingCaps.length) {
-					parts.push(
-						await loadPrompts(codingCaps, CODING_CAPABILITIES_DIR),
-					);
-				}
-				parts.push(await loadPrompt(def.id, CODING_PROMPTS_DIR));
-
-				let promptContent: string | undefined =
-					parts.join("\n\n") || undefined;
-
-				// Append runtime layer for sub-agent mode
-				if (config.runtimeContext?.mode === "sub-agent") {
-					const runtimeTemplate = await loadPrompt("runtime/sub-agent");
-					const rendered = renderRuntimeTemplate(runtimeTemplate, {
-						parentRole: config.runtimeContext.parentRole,
-						objective: config.runtimeContext.objective,
-						taskId: config.runtimeContext.taskId,
-					});
-					promptContent = promptContent
-						? `${promptContent}\n\n${rendered}`
-						: rendered;
-				}
+				// System prompt via domain-aware four-layer assembly.
+				let promptContent: string | undefined = await assemblePrompts({
+					agentId: def.id,
+					domain: def.domain ?? "coding",
+					capabilities: def.capabilities,
+					domainsDir: DOMAINS_DIR,
+					runtimeContext:
+						config.runtimeContext?.mode === "sub-agent"
+							? {
+									mode: "sub-agent",
+									parentRole: config.runtimeContext.parentRole,
+									objective: config.runtimeContext.objective,
+									taskId: config.runtimeContext.taskId,
+								}
+							: undefined,
+				});
 
 				// Embed caller identity marker for extension-level authorization checks.
 				promptContent = appendAgentIdentityMarker(promptContent, def.id);

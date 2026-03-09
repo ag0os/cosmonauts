@@ -6,7 +6,8 @@
  * - Returns session without sending a prompt (caller controls execution mode)
  */
 
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import {
@@ -19,11 +20,18 @@ import {
 import { appendAgentIdentityMarker } from "../lib/agents/runtime-identity.ts";
 import { buildSkillsOverride } from "../lib/agents/skills.ts";
 import type { AgentDefinition } from "../lib/agents/types.ts";
+import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
 import {
 	resolveExtensionPaths,
 	resolveTools,
 } from "../lib/orchestration/agent-spawner.ts";
-import { loadPrompts } from "../lib/prompts/index.ts";
+
+const DOMAINS_DIR = resolve(
+	fileURLToPath(import.meta.url),
+	"..",
+	"..",
+	"domains",
+);
 
 /**
  * Encode a cwd into Pi's session directory path.
@@ -72,16 +80,13 @@ export async function createSession(
 
 	const tools = resolveTools(def.tools, cwd);
 
-	// Reconstruct prompt paths from capabilities.
-	// TODO(TASK-058): Replace with proper four-layer prompt assembly.
-	const promptPaths = [
-		"cosmonauts",
-		...def.capabilities.map((c) => `capabilities/${c}`),
-		`agents/coding/${def.id}`,
-	];
-	let promptContent = promptPaths.length
-		? await loadPrompts(promptPaths)
-		: undefined;
+	// Domain-aware four-layer prompt assembly.
+	let promptContent: string | undefined = await assemblePrompts({
+		agentId: def.id,
+		domain: def.domain ?? "coding",
+		capabilities: def.capabilities,
+		domainsDir: DOMAINS_DIR,
+	});
 	promptContent = appendAgentIdentityMarker(promptContent, def.id);
 
 	const extensionPaths = resolveExtensionPaths(def.extensions);
