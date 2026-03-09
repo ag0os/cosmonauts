@@ -28,4 +28,8 @@ export interface CliOptions {
 	listWorkflows: boolean;
 	/** List available agent IDs and exit */
 	listAgents: boolean;
+	/** Domain context for this invocation */
+	domain?: string;
+	/** List all discovered domains and exit */
+	listDomains: boolean;
 }

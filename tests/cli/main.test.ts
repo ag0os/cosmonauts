@@ -22,6 +22,8 @@ describe("parseCliArgs", () => {
 		expect(opts.init).toBe(false);
 		expect(opts.listWorkflows).toBe(false);
 		expect(opts.listAgents).toBe(false);
+		expect(opts.domain).toBeUndefined();
+		expect(opts.listDomains).toBe(false);
 	});
 
 	test("positional args joined into prompt", () => {
@@ -218,5 +220,38 @@ describe("parseCliArgs", () => {
 		const opts = parseCliArgs(["--list-agents"]);
 
 		expect(opts.listAgents).toBe(true);
+	});
+
+	test("--domain sets domain context", () => {
+		const opts = parseCliArgs(["--domain", "coding"]);
+
+		expect(opts.domain).toBe("coding");
+	});
+
+	test("-d shorthand sets domain", () => {
+		const opts = parseCliArgs(["-d", "coding"]);
+
+		expect(opts.domain).toBe("coding");
+	});
+
+	test("--list-domains flag", () => {
+		const opts = parseCliArgs(["--list-domains"]);
+
+		expect(opts.listDomains).toBe(true);
+	});
+
+	test("--domain with --list-agents", () => {
+		const opts = parseCliArgs(["--list-agents", "-d", "coding"]);
+
+		expect(opts.listAgents).toBe(true);
+		expect(opts.domain).toBe("coding");
+	});
+
+	test("--domain with --agent and prompt", () => {
+		const opts = parseCliArgs(["-d", "coding", "-a", "planner", "design it"]);
+
+		expect(opts.domain).toBe("coding");
+		expect(opts.agent).toBe("planner");
+		expect(opts.prompt).toBe("design it");
 	});
 });

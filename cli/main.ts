@@ -13,11 +13,16 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import { InteractiveMode, runPrintMode } from "@mariozechner/pi-coding-agent";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Command, CommanderError } from "commander";
-import cosmoDefinition from "../domains/coding/agents/cosmo.ts";
 import { buildInitPrompt } from "../domains/shared/extensions/init/index.ts";
-import { createDefaultRegistry } from "../lib/agents/index.ts";
+import {
+	type AgentRegistry,
+	createRegistryFromDomains,
+} from "../lib/agents/index.ts";
 import { loadProjectConfig } from "../lib/config/index.ts";
+import { loadDomains } from "../lib/domains/loader.ts";
 import { parseChain } from "../lib/orchestration/chain-parser.ts";
 import {
 	injectUserPrompt,
@@ -117,6 +122,8 @@ export function parseCliArgs(argv: string[]): CliOptions {
 			"-t, --thinking [level]",
 			"Set thinking level (default: high when flag present)",
 		)
+		.option("-d, --domain <id>", "Set domain context for agent resolution")
+		.option("--list-domains", "List all discovered domains and exit")
 		.option("--list-workflows", "List available workflows and exit")
 		.option("--list-agents", "List available agent IDs and exit")
 		.argument("[prompt...]", "Prompt text");
@@ -153,6 +160,8 @@ export function parseCliArgs(argv: string[]): CliOptions {
 		init: isInit,
 		listWorkflows: opts.listWorkflows ?? false,
 		listAgents: opts.listAgents ?? false,
+		domain: opts.domain,
+		listDomains: opts.listDomains ?? false,
 	};
 }
 
@@ -166,6 +175,31 @@ async function run(options: CliOptions): Promise<void> {
 	// Load project config once for the session
 	const projectConfig = await loadProjectConfig(cwd);
 	const projectSkills = projectConfig.skills;
+
+	// Bootstrap domain loading and build registry
+	const domainsDir = resolve(
+		fileURLToPath(import.meta.url),
+		"..",
+		"..",
+		"domains",
+	);
+	const domains = await loadDomains(domainsDir);
+	const registry: AgentRegistry = createRegistryFromDomains(domains);
+
+	// Effective domain context: CLI flag takes priority over project config
+	const domainContext = options.domain ?? projectConfig.domain;
+
+	// --list-domains: print all discovered domains and exit
+	if (options.listDomains) {
+		if (domains.length === 0) {
+			console.log("No domains found.");
+		} else {
+			for (const d of domains) {
+				console.log(`  ${d.manifest.id}  ${d.manifest.description}`);
+			}
+		}
+		return;
+	}
 
 	// --list-workflows: print available workflows and exit
 	if (options.listWorkflows) {
@@ -182,24 +216,26 @@ async function run(options: CliOptions): Promise<void> {
 
 	// --list-agents: print available agent IDs and exit
 	if (options.listAgents) {
-		const registry = createDefaultRegistry();
-		for (const def of registry.listAll()) {
+		const agents = options.domain
+			? registry.resolveInDomain(options.domain)
+			: registry.listAll();
+		for (const def of agents) {
 			console.log(`  ${def.id}  ${def.description}`);
 		}
 		return;
 	}
 
 	// Resolve agent definition: --agent overrides the default (cosmo)
-	const registry = createDefaultRegistry();
 	const definition = options.agent
-		? registry.resolve(options.agent)
-		: cosmoDefinition;
+		? registry.resolve(options.agent, domainContext)
+		: registry.resolve("cosmo", domainContext);
 
 	// Resolve model override once (shared across modes)
 	const model = options.model ? resolveModel(options.model) : undefined;
 
 	// 1. init → always uses Cosmo (bootstrap requires full coding tools)
 	if (options.init) {
+		const cosmoDefinition = registry.resolve("cosmo", domainContext);
 		const { session } = await createSession({
 			definition: cosmoDefinition,
 			cwd,
