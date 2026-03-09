@@ -7,7 +7,7 @@
 	],
 	"pi": {
 		"extensions": [
-			"./extensions"
+			"./domains/shared/extensions"
 		],
 		"skills": [
 			"./domains/shared/skills",

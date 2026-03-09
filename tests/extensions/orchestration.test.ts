@@ -41,7 +41,7 @@ vi.mock("../../lib/orchestration/agent-spawner.ts", () => ({
 	createPiSpawner: mocks.createPiSpawner,
 }));
 
-import orchestrationExtension from "../../extensions/orchestration/index.ts";
+import orchestrationExtension from "../../domains/shared/extensions/orchestration/index.ts";
 import { loadProjectConfig } from "../../lib/config/index.ts";
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";

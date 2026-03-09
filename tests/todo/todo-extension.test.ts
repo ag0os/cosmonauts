@@ -63,7 +63,7 @@ function createMockPi() {
 // Import and initialize the extension
 async function setupExtension() {
 	const { default: todoExtension } = await import(
-		"../../extensions/todo/index.ts"
+		"../../domains/shared/extensions/todo/index.ts"
 	);
 	const pi = createMockPi();
 	todoExtension(pi as never);

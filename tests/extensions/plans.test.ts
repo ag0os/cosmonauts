@@ -44,7 +44,7 @@ function createMockPi() {
 
 async function setupExtension() {
 	const { default: plansExtension } = await import(
-		"../../extensions/plans/index.ts"
+		"../../domains/shared/extensions/plans/index.ts"
 	);
 	const pi = createMockPi();
 	plansExtension(pi as never);

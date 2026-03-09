@@ -7,7 +7,7 @@
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { validatePlanLabels } from "../../extensions/tasks/index.ts";
+import { validatePlanLabels } from "../../domains/shared/extensions/tasks/index.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import type { Task } from "../../lib/tasks/task-types.ts";
 import { useTempDir } from "../helpers/fs.ts";
@@ -24,7 +24,7 @@ interface ToolResult {
 
 async function setupExtension(cwd: string): Promise<MockPi> {
 	const { default: tasksExtension } = await import(
-		"../../extensions/tasks/index.ts"
+		"../../domains/shared/extensions/tasks/index.ts"
 	);
 	const pi = createMockPi({ cwd });
 	tasksExtension(pi as never);

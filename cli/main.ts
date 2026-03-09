@@ -15,7 +15,7 @@ import { getModel } from "@mariozechner/pi-ai";
 import { InteractiveMode, runPrintMode } from "@mariozechner/pi-coding-agent";
 import { Command, CommanderError } from "commander";
 import cosmoDefinition from "../domains/coding/agents/cosmo.ts";
-import { buildInitPrompt } from "../extensions/init/index.ts";
+import { buildInitPrompt } from "../domains/shared/extensions/init/index.ts";
 import { createDefaultRegistry } from "../lib/agents/index.ts";
 import { loadProjectConfig } from "../lib/config/index.ts";
 import { parseChain } from "../lib/orchestration/chain-parser.ts";

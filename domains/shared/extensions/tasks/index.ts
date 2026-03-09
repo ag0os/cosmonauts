@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { TaskManager } from "../../lib/tasks/task-manager.ts";
+import { TaskManager } from "../../../../lib/tasks/task-manager.ts";
 
 /**
  * Validate that a labels array contains at most one plan: prefixed label.

@@ -1,8 +1,8 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { archivePlan } from "../../lib/plans/archive.ts";
-import { PlanManager } from "../../lib/plans/plan-manager.ts";
-import { TaskManager } from "../../lib/tasks/task-manager.ts";
+import { archivePlan } from "../../../../lib/plans/archive.ts";
+import { PlanManager } from "../../../../lib/plans/plan-manager.ts";
+import { TaskManager } from "../../../../lib/tasks/task-manager.ts";
 
 export default function plansExtension(pi: ExtensionAPI) {
 	// plan_create

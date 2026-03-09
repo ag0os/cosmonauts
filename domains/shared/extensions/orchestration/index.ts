@@ -1,16 +1,16 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
-import { createDefaultRegistry } from "../../lib/agents/index.ts";
-import { extractAgentIdFromSystemPrompt } from "../../lib/agents/runtime-identity.ts";
-import { loadProjectConfig } from "../../lib/config/index.ts";
-import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
-import { parseChain } from "../../lib/orchestration/chain-parser.ts";
+import { createDefaultRegistry } from "../../../../lib/agents/index.ts";
+import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
+import { loadProjectConfig } from "../../../../lib/config/index.ts";
+import { createPiSpawner } from "../../../../lib/orchestration/agent-spawner.ts";
+import { parseChain } from "../../../../lib/orchestration/chain-parser.ts";
 import {
 	injectUserPrompt,
 	runChain,
-} from "../../lib/orchestration/chain-runner.ts";
-import type { ChainEvent, ChainResult } from "../../lib/orchestration/types.ts";
+} from "../../../../lib/orchestration/chain-runner.ts";
+import type { ChainEvent, ChainResult } from "../../../../lib/orchestration/types.ts";
 
 const DEFAULT_REGISTRY = createDefaultRegistry();
 

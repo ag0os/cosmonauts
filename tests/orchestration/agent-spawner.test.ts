@@ -21,6 +21,8 @@ const EXTENSIONS_DIR = resolve(
 	"..",
 	"..",
 	"..",
+	"domains",
+	"shared",
 	"extensions",
 );
 
