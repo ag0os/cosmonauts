@@ -21,6 +21,8 @@ export const PROMPTS_DIR: string = resolve(
 	"..",
 	"..",
 	"..",
+	"domains",
+	"shared",
 	"prompts",
 );
 

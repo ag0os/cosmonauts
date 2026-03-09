@@ -28,6 +28,7 @@ import { buildSkillsOverride } from "../agents/skills.ts";
 import {
 	loadPrompt,
 	loadPrompts,
+	PROMPTS_DIR,
 	renderRuntimeTemplate,
 } from "../prompts/index.ts";
 import type {
@@ -46,6 +47,23 @@ const EXTENSIONS_DIR = resolve(
 	"..",
 	"..",
 	"extensions",
+);
+
+/** Domain directories resolved relative to PROMPTS_DIR (domains/shared/prompts). */
+const SHARED_CAPABILITIES_DIR = resolve(PROMPTS_DIR, "..", "capabilities");
+const CODING_CAPABILITIES_DIR = resolve(
+	PROMPTS_DIR,
+	"..",
+	"..",
+	"coding",
+	"capabilities",
+);
+const CODING_PROMPTS_DIR = resolve(
+	PROMPTS_DIR,
+	"..",
+	"..",
+	"coding",
+	"prompts",
 );
 
 /** Extensions that exist on disk and can be loaded by the agent spawner. */
@@ -207,14 +225,32 @@ export function createPiSpawner(): AgentSpawner {
 
 				// System prompt from definition's capabilities.
 				// TODO(TASK-058): Replace with proper four-layer prompt assembly.
-				const promptPaths = [
-					"cosmonauts",
-					...def.capabilities.map((c) => `capabilities/${c}`),
-					`agents/coding/${def.id}`,
-				];
-				let promptContent = promptPaths.length
-					? await loadPrompts(promptPaths)
-					: undefined;
+				const CODING_CAPS = new Set([
+					"coding-readwrite",
+					"coding-readonly",
+				]);
+				const sharedCaps = def.capabilities.filter(
+					(c) => !CODING_CAPS.has(c),
+				);
+				const codingCaps = def.capabilities.filter((c) =>
+					CODING_CAPS.has(c),
+				);
+
+				const parts: string[] = [await loadPrompt("base")];
+				if (sharedCaps.length) {
+					parts.push(
+						await loadPrompts(sharedCaps, SHARED_CAPABILITIES_DIR),
+					);
+				}
+				if (codingCaps.length) {
+					parts.push(
+						await loadPrompts(codingCaps, CODING_CAPABILITIES_DIR),
+					);
+				}
+				parts.push(await loadPrompt(def.id, CODING_PROMPTS_DIR));
+
+				let promptContent: string | undefined =
+					parts.join("\n\n") || undefined;
 
 				// Append runtime layer for sub-agent mode
 				if (config.runtimeContext?.mode === "sub-agent") {

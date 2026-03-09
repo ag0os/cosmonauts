@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
 	loadPrompt,
@@ -128,8 +128,8 @@ describe("loadPrompts", () => {
 // ============================================================================
 
 describe("PROMPTS_DIR", () => {
-	it("points to a prompts directory path", () => {
-		expect(PROMPTS_DIR).toMatch(/prompts$/);
+	it("points to domains/shared/prompts directory", () => {
+		expect(PROMPTS_DIR).toMatch(/domains\/shared\/prompts$/);
 	});
 });
 
@@ -191,63 +191,74 @@ describe("renderRuntimeTemplate", () => {
 });
 
 // ============================================================================
-// New prompt file paths (integration tests against real PROMPTS_DIR)
+// Domain-based prompt file paths (integration tests against real directories)
 // ============================================================================
 
-describe("new prompt file paths", () => {
-	it("loads cosmonauts base prompt", async () => {
-		const content = await loadPrompt("cosmonauts");
+/** Resolve domain directories relative to PROMPTS_DIR (domains/shared/prompts). */
+const SHARED_CAPABILITIES_DIR = resolve(PROMPTS_DIR, "..", "capabilities");
+const CODING_DIR = resolve(PROMPTS_DIR, "..", "..", "coding");
+const CODING_CAPABILITIES_DIR = join(CODING_DIR, "capabilities");
+const CODING_PROMPTS_DIR = join(CODING_DIR, "prompts");
+
+describe("domain-based prompt file paths", () => {
+	it("loads base prompt from domains/shared/prompts", async () => {
+		const content = await loadPrompt("base");
 		expect(content.length).toBeGreaterThan(0);
+		expect(content).toContain("# Cosmonauts");
 	});
 
-	it("loads all capability files", async () => {
-		const capabilities = [
-			"capabilities/core",
-			"capabilities/coding-readwrite",
-			"capabilities/coding-readonly",
-			"capabilities/tasks",
-			"capabilities/spawning",
-			"capabilities/todo",
-		];
-		for (const ref of capabilities) {
-			const content = await loadPrompt(ref);
-			expect(content.length).toBeGreaterThan(0);
-		}
-	});
-
-	it("loads all persona files", async () => {
-		const personas = [
-			"agents/coding/cosmo",
-			"agents/coding/planner",
-			"agents/coding/task-manager",
-			"agents/coding/coordinator",
-			"agents/coding/worker",
-			"agents/coding/quality-manager",
-			"agents/coding/reviewer",
-			"agents/coding/fixer",
-		];
-		for (const ref of personas) {
-			const content = await loadPrompt(ref);
-			expect(content.length).toBeGreaterThan(0);
-		}
-	});
-
-	it("loads runtime sub-agent template", async () => {
+	it("loads runtime sub-agent template from domains/shared/prompts", async () => {
 		const content = await loadPrompt("runtime/sub-agent");
 		expect(content.length).toBeGreaterThan(0);
 		expect(content).toContain("{{parentRole}}");
 	});
 
-	it("loads full layered prompt stack for cosmo", async () => {
-		const content = await loadPrompts([
-			"cosmonauts",
-			"capabilities/core",
-			"capabilities/coding-readwrite",
-			"capabilities/tasks",
-			"capabilities/spawning",
-			"capabilities/todo",
-			"agents/coding/cosmo",
-		]);
+	it("loads shared capability files from domains/shared/capabilities", async () => {
+		const capabilities = ["core", "tasks", "spawning", "todo"];
+		for (const ref of capabilities) {
+			const content = await loadPrompt(ref, SHARED_CAPABILITIES_DIR);
+			expect(content.length).toBeGreaterThan(0);
+		}
+	});
+
+	it("loads coding capability files from domains/coding/capabilities", async () => {
+		const capabilities = ["coding-readwrite", "coding-readonly"];
+		for (const ref of capabilities) {
+			const content = await loadPrompt(ref, CODING_CAPABILITIES_DIR);
+			expect(content.length).toBeGreaterThan(0);
+		}
+	});
+
+	it("loads all coding persona files from domains/coding/prompts", async () => {
+		const personas = [
+			"cosmo",
+			"planner",
+			"task-manager",
+			"coordinator",
+			"worker",
+			"quality-manager",
+			"reviewer",
+			"fixer",
+		];
+		for (const ref of personas) {
+			const content = await loadPrompt(ref, CODING_PROMPTS_DIR);
+			expect(content.length).toBeGreaterThan(0);
+		}
+	});
+
+	it("loads full layered prompt stack for cosmo across directories", async () => {
+		const base = await loadPrompt("base");
+		const sharedCaps = await loadPrompts(
+			["core", "tasks", "spawning", "todo"],
+			SHARED_CAPABILITIES_DIR,
+		);
+		const codingCaps = await loadPrompts(
+			["coding-readwrite"],
+			CODING_CAPABILITIES_DIR,
+		);
+		const persona = await loadPrompt("cosmo", CODING_PROMPTS_DIR);
+
+		const content = [base, sharedCaps, codingCaps, persona].join("\n\n");
 		expect(content.length).toBeGreaterThan(0);
 		// Verify ordering: base content appears before persona
 		const baseIdx = content.indexOf("# Cosmonauts");
