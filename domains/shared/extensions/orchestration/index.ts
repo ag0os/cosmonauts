@@ -3,6 +3,7 @@ import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { createDefaultRegistry } from "../../../../lib/agents/index.ts";
 import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
+import type { AgentDefinition } from "../../../../lib/agents/types.ts";
 import { loadProjectConfig } from "../../../../lib/config/index.ts";
 import { createPiSpawner } from "../../../../lib/orchestration/agent-spawner.ts";
 import { parseChain } from "../../../../lib/orchestration/chain-parser.ts";
@@ -11,8 +12,6 @@ import {
 	runChain,
 } from "../../../../lib/orchestration/chain-runner.ts";
 import type { ChainEvent, ChainResult } from "../../../../lib/orchestration/types.ts";
-
-const DEFAULT_REGISTRY = createDefaultRegistry();
 
 // ============================================================================
 // Rendering Helpers
@@ -29,7 +28,29 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 function roleLabel(role: string): string {
-	return ROLE_LABELS[role] ?? role;
+	// Strip domain prefix for display (e.g. "coding/worker" → "worker")
+	const unqualified = role.includes("/") ? role.split("/").pop()! : role;
+	return ROLE_LABELS[unqualified] ?? role;
+}
+
+/**
+ * Check if a target agent is in the caller's subagents allowlist.
+ * Handles both qualified (domain/id) and unqualified ID formats.
+ */
+function isSubagentAllowed(
+	callerDef: AgentDefinition,
+	targetDef: AgentDefinition,
+): boolean {
+	const allowed = callerDef.subagents ?? [];
+	// Check unqualified match
+	if (allowed.includes(targetDef.id)) return true;
+	// Check qualified match
+	if (
+		targetDef.domain &&
+		allowed.includes(`${targetDef.domain}/${targetDef.id}`)
+	)
+		return true;
+	return false;
 }
 
 function formatDuration(ms: number): string {
@@ -152,7 +173,8 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 			),
 		}),
 		execute: async (_toolCallId, params, _signal, onUpdate, ctx) => {
-			const stages = parseChain(params.expression);
+			const registry = createDefaultRegistry();
+			const stages = parseChain(params.expression, registry);
 			injectUserPrompt(stages, params.prompt);
 			const projectConfig = await loadProjectConfig(ctx.cwd);
 			const thinking = params.thinkingLevel
@@ -167,6 +189,7 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 				projectSkills: projectConfig.skills,
 				completionLabel: params.completionLabel,
 				thinking,
+				registry,
 				onEvent: (event: ChainEvent) => {
 					const line = chainEventToProgressLine(event);
 					if (line) {
@@ -300,6 +323,7 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 			),
 		}),
 		execute: async (_toolCallId, params, _signal, onUpdate, ctx) => {
+			const registry = createDefaultRegistry();
 			const systemPrompt = ctx.getSystemPrompt();
 			const callerRole = extractAgentIdFromSystemPrompt(systemPrompt);
 			if (!callerRole) {
@@ -318,7 +342,7 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 				};
 			}
 
-			const callerDef = DEFAULT_REGISTRY.get(callerRole);
+			const callerDef = registry.get(callerRole);
 			if (!callerDef) {
 				return {
 					content: [
@@ -335,7 +359,7 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 				};
 			}
 
-			const targetDef = DEFAULT_REGISTRY.get(params.role);
+			const targetDef = registry.get(params.role);
 			if (!targetDef) {
 				return {
 					content: [
@@ -352,7 +376,7 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 				};
 			}
 
-			if (!(callerDef.subagents ?? []).includes(targetDef.id)) {
+			if (!isSubagentAllowed(callerDef, targetDef)) {
 				return {
 					content: [
 						{

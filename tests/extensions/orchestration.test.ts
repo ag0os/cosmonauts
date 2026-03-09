@@ -245,6 +245,60 @@ describe("orchestration extension", () => {
 		});
 	});
 
+	test("spawn_agent allows authorized target with unqualified caller resolving via scan-all", async () => {
+		const cwd = "/tmp/project";
+		const pi = createMockPi(cwd, {
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
+		});
+		orchestrationExtension(pi as never);
+
+		loadProjectConfigMock.mockResolvedValue({
+			skills: [],
+		} as ProjectConfig);
+		const spawn = vi.fn().mockResolvedValue({
+			success: true,
+			sessionId: "session-1",
+			messages: [],
+		});
+		const dispose = vi.fn();
+		createPiSpawnerMock.mockReturnValue({ spawn, dispose });
+
+		await pi.callTool("spawn_agent", {
+			role: "worker",
+			prompt: "implement this task",
+		});
+
+		expect(spawn).toHaveBeenCalled();
+		expect(dispose).toHaveBeenCalledTimes(1);
+	});
+
+	test("spawn_agent denies unknown qualified caller ID", async () => {
+		const cwd = "/tmp/project";
+		const pi = createMockPi(cwd, {
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:unknown-domain/cosmo -->",
+		});
+		orchestrationExtension(pi as never);
+
+		const spawn = vi.fn();
+		const dispose = vi.fn();
+		createPiSpawnerMock.mockReturnValue({ spawn, dispose });
+
+		const result = await pi.callTool("spawn_agent", {
+			role: "worker",
+			prompt: "implement this task",
+		});
+
+		expect(spawn).not.toHaveBeenCalled();
+		expect(result).toMatchObject({
+			content: [
+				{
+					type: "text",
+					text: expect.stringContaining("unknown caller"),
+				},
+			],
+		});
+	});
+
 	test("spawn_agent denies when caller marker is missing", async () => {
 		const cwd = "/tmp/project";
 		const pi = createMockPi(cwd, { systemPrompt: "no marker here" });
