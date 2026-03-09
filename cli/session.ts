@@ -17,7 +17,10 @@ import {
 	getAgentDir,
 	SessionManager,
 } from "@mariozechner/pi-coding-agent";
-import { appendAgentIdentityMarker } from "../lib/agents/runtime-identity.ts";
+import {
+	appendAgentIdentityMarker,
+	qualifyAgentId,
+} from "../lib/agents/runtime-identity.ts";
 import { buildSkillsOverride } from "../lib/agents/skills.ts";
 import type { AgentDefinition } from "../lib/agents/types.ts";
 import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
@@ -87,7 +90,10 @@ export async function createSession(
 		capabilities: def.capabilities,
 		domainsDir: DOMAINS_DIR,
 	});
-	promptContent = appendAgentIdentityMarker(promptContent, def.id);
+	promptContent = appendAgentIdentityMarker(
+		promptContent,
+		qualifyAgentId(def.id, def.domain),
+	);
 
 	const extensionPaths = resolveExtensionPaths(def.extensions, {
 		domain: def.domain ?? "coding",

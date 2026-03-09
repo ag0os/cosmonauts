@@ -50,7 +50,7 @@ const DEFAULT_STAGE_PROMPTS: Record<string, string> = {
 const DEFAULT_PROMPT = "Execute your assigned role.";
 
 export function getDefaultStagePrompt(role: string): string {
-	return DEFAULT_STAGE_PROMPTS[role] ?? DEFAULT_PROMPT;
+	return DEFAULT_STAGE_PROMPTS[baseRoleName(role)] ?? DEFAULT_PROMPT;
 }
 
 function buildStagePrompt(stage: ChainStage, config: ChainConfig): string {
@@ -58,11 +58,16 @@ function buildStagePrompt(stage: ChainStage, config: ChainConfig): string {
 
 	// When loop completion is label-scoped, coordinator must process only that
 	// subset to avoid touching unrelated ready tasks.
-	if (stage.name === "coordinator" && config.completionLabel) {
+	if (baseRoleName(stage.name) === "coordinator" && config.completionLabel) {
 		return `${basePrompt}\n\nScope constraint: Operate only on tasks labeled "${config.completionLabel}". Filter all task selection to this label and do not modify tasks without it.`;
 	}
 
 	return basePrompt;
+}
+
+function baseRoleName(role: string): string {
+	const slashIndex = role.lastIndexOf("/");
+	return slashIndex === -1 ? role : role.slice(slashIndex + 1);
 }
 
 /**
@@ -252,7 +257,7 @@ export async function runStage(
 
 	try {
 		const registry = resolveRegistry(config);
-		if (!registry.has(stage.name)) {
+		if (!registry.has(stage.name, config.domainContext)) {
 			const message = `Unknown agent role "${stage.name}"`;
 			emit(config, { type: "error", message, stage });
 			return {
@@ -264,11 +269,17 @@ export async function runStage(
 			};
 		}
 
-		const model = getModelForRole(stage.name, config.models, registry);
+		const model = getModelForRole(
+			stage.name,
+			config.models,
+			registry,
+			config.domainContext,
+		);
 		const thinkingLevel = getThinkingForRole(
 			stage.name,
 			config.thinking,
 			registry,
+			config.domainContext,
 		);
 		const prompt = buildStagePrompt(stage, config);
 
@@ -278,6 +289,7 @@ export async function runStage(
 
 			const spawnResult = await spawner.spawn({
 				role: stage.name,
+				domainContext: config.domainContext,
 				cwd: config.projectRoot,
 				model,
 				prompt,
@@ -365,6 +377,7 @@ export async function runStage(
 
 			const spawnResult = await spawner.spawn({
 				role: stage.name,
+				domainContext: config.domainContext,
 				cwd: config.projectRoot,
 				model,
 				prompt,

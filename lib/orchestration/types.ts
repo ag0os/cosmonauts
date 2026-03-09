@@ -85,6 +85,8 @@ export interface ChainConfig {
 	stages: ChainStage[];
 	/** Project root directory (for task system, cwd) */
 	projectRoot: string;
+	/** Default domain context for resolving unqualified stage names. */
+	domainContext?: string;
 	/** Model overrides per role */
 	models?: ModelConfig;
 	/** AbortSignal for cancellation */
@@ -169,6 +171,8 @@ export interface SpawnRuntimeContext {
 export interface SpawnConfig {
 	/** Agent role to spawn */
 	role: string;
+	/** Default domain context for resolving unqualified role names. */
+	domainContext?: string;
 	/** Working directory */
 	cwd: string;
 	/** Model to use (overrides default for role) */

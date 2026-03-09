@@ -7,7 +7,22 @@
  */
 
 import { loadProjectConfig } from "../config/index.ts";
+import type { LoadedDomain } from "../domains/types.ts";
 import type { WorkflowDefinition } from "./types.ts";
+
+export function selectDomainWorkflows(
+	domains: readonly LoadedDomain[],
+	domainContext?: string,
+): WorkflowDefinition[] {
+	return domains
+		.filter(
+			(domain) =>
+				domainContext === undefined ||
+				domain.manifest.id === "shared" ||
+				domain.manifest.id === domainContext,
+		)
+		.flatMap((domain) => domain.workflows);
+}
 
 /**
  * Load all available workflows by merging domain-provided workflows with

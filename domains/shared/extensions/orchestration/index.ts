@@ -1,10 +1,16 @@
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
-import { createDefaultRegistry } from "../../../../lib/agents/index.ts";
+import {
+	type AgentRegistry,
+	createRegistryFromDomains,
+} from "../../../../lib/agents/index.ts";
 import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
 import type { AgentDefinition } from "../../../../lib/agents/types.ts";
 import { loadProjectConfig } from "../../../../lib/config/index.ts";
+import { loadDomains } from "../../../../lib/domains/index.ts";
 import { createPiSpawner } from "../../../../lib/orchestration/agent-spawner.ts";
 import { parseChain } from "../../../../lib/orchestration/chain-parser.ts";
 import {
@@ -132,6 +138,35 @@ interface SpawnProgressDetails {
 	taskId?: string;
 }
 
+interface RuntimeDomainContext {
+	projectSkills?: readonly string[];
+	domainContext?: string;
+	registry: AgentRegistry;
+}
+
+const DOMAINS_DIR = resolve(
+	fileURLToPath(import.meta.url),
+	"..",
+	"..",
+	"..",
+	"..",
+	"..",
+	"domains",
+);
+
+async function loadRuntimeDomainContext(
+	cwd: string,
+): Promise<RuntimeDomainContext> {
+	const projectConfig = await loadProjectConfig(cwd);
+	const domains = await loadDomains(DOMAINS_DIR);
+
+	return {
+		projectSkills: projectConfig.skills,
+		domainContext: projectConfig.domain,
+		registry: createRegistryFromDomains(domains),
+	};
+}
+
 // ============================================================================
 // Extension
 // ============================================================================
@@ -178,10 +213,10 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 			),
 		}),
 		execute: async (_toolCallId, params, _signal, onUpdate, ctx) => {
-			const registry = createDefaultRegistry();
-			const stages = parseChain(params.expression, registry);
+			const { projectSkills, domainContext, registry } =
+				await loadRuntimeDomainContext(ctx.cwd);
+			const stages = parseChain(params.expression, registry, domainContext);
 			injectUserPrompt(stages, params.prompt);
-			const projectConfig = await loadProjectConfig(ctx.cwd);
 			const thinking = params.thinkingLevel
 				? { default: params.thinkingLevel }
 				: undefined;
@@ -191,7 +226,8 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 			const result = await runChain({
 				stages,
 				projectRoot: ctx.cwd,
-				projectSkills: projectConfig.skills,
+				projectSkills,
+				domainContext,
 				completionLabel: params.completionLabel,
 				thinking,
 				registry,
@@ -328,7 +364,8 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 			),
 		}),
 		execute: async (_toolCallId, params, _signal, onUpdate, ctx) => {
-			const registry = createDefaultRegistry();
+			const { projectSkills, domainContext, registry } =
+				await loadRuntimeDomainContext(ctx.cwd);
 			const systemPrompt = ctx.getSystemPrompt();
 			const callerRole = extractAgentIdFromSystemPrompt(systemPrompt);
 			if (!callerRole) {
@@ -347,7 +384,7 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 				};
 			}
 
-			const callerDef = registry.get(callerRole);
+			const callerDef = registry.get(callerRole, domainContext);
 			if (!callerDef) {
 				return {
 					content: [
@@ -364,7 +401,7 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 				};
 			}
 
-			const targetDef = registry.get(params.role);
+			const targetDef = registry.get(params.role, domainContext);
 			if (!targetDef) {
 				return {
 					content: [
@@ -417,17 +454,17 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 				} as SpawnProgressDetails,
 			});
 
-			const spawner = createPiSpawner();
-			const projectConfig = await loadProjectConfig(ctx.cwd);
+			const spawner = createPiSpawner(registry);
 			try {
 				const result = await spawner.spawn({
 					role: params.role,
+					domainContext,
 					cwd: ctx.cwd,
 					prompt: params.prompt,
 					model: params.model,
 					thinkingLevel: params.thinkingLevel,
 					runtimeContext: params.runtimeContext,
-					projectSkills: projectConfig.skills,
+					projectSkills,
 				});
 				return {
 					content: [

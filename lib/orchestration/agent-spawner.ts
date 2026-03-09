@@ -24,6 +24,7 @@ import {
 	type AgentRegistry,
 	appendAgentIdentityMarker,
 	createDefaultRegistry,
+	qualifyAgentId,
 } from "../agents/index.ts";
 import { buildSkillsOverride } from "../agents/skills.ts";
 import { assemblePrompts } from "../domains/prompt-assembly.ts";
@@ -64,6 +65,7 @@ export function getModelForRole(
 	role: string,
 	models?: ModelConfig,
 	registry?: AgentRegistry,
+	domainContext?: string,
 ): string {
 	// Check explicit override from ModelConfig
 	if (models) {
@@ -75,7 +77,7 @@ export function getModelForRole(
 	}
 
 	// Check agent definition for model
-	const def = (registry ?? DEFAULT_REGISTRY).get(role);
+	const def = (registry ?? DEFAULT_REGISTRY).get(role, domainContext);
 	if (def?.model) {
 		return def.model;
 	}
@@ -101,6 +103,7 @@ export function getThinkingForRole(
 	role: string,
 	thinking?: ThinkingConfig,
 	registry?: AgentRegistry,
+	domainContext?: string,
 ): ThinkingLevel | undefined {
 	// Check explicit override from ThinkingConfig
 	if (thinking) {
@@ -112,7 +115,7 @@ export function getThinkingForRole(
 	}
 
 	// Check agent definition for thinkingLevel
-	const def = (registry ?? DEFAULT_REGISTRY).get(role);
+	const def = (registry ?? DEFAULT_REGISTRY).get(role, domainContext);
 	if (def?.thinkingLevel) {
 		return def.thinkingLevel;
 	}
@@ -222,14 +225,20 @@ export function createPiSpawner(registry?: AgentRegistry): AgentSpawner {
 
 			try {
 				const modelId =
-					config.model ?? getModelForRole(config.role, undefined, reg);
+					config.model ??
+					getModelForRole(config.role, undefined, reg, config.domainContext);
 				const model = resolveModel(modelId);
 				const thinkingLevel =
 					config.thinkingLevel ??
-					getThinkingForRole(config.role, undefined, reg);
+					getThinkingForRole(
+						config.role,
+						undefined,
+						reg,
+						config.domainContext,
+					);
 
 				// Resolve full agent definition (unknown roles are rejected).
-				const def = reg.get(config.role);
+				const def = reg.get(config.role, config.domainContext);
 				if (!def) {
 					throw new Error(
 						`Unknown agent role "${config.role}". Available agents: ${reg.listIds().join(", ")}`,
@@ -257,7 +266,10 @@ export function createPiSpawner(registry?: AgentRegistry): AgentSpawner {
 				});
 
 				// Embed caller identity marker for extension-level authorization checks.
-				promptContent = appendAgentIdentityMarker(promptContent, def.id);
+				promptContent = appendAgentIdentityMarker(
+					promptContent,
+					qualifyAgentId(def.id, def.domain),
+				);
 
 				// Extensions: domain-aware resolution with shared fallback
 				const extensionPaths = resolveExtensionPaths(def.extensions, {
@@ -333,7 +345,7 @@ export function createPiSpawner(registry?: AgentRegistry): AgentSpawner {
 function roleToConfigKey(
 	role: string,
 ): keyof Omit<ModelConfig, "default"> | undefined {
-	switch (role) {
+	switch (baseRoleName(role)) {
 		case "planner":
 			return "planner";
 		case "task-manager":
@@ -351,6 +363,11 @@ function roleToConfigKey(
 		default:
 			return undefined;
 	}
+}
+
+function baseRoleName(role: string): string {
+	const slashIndex = role.lastIndexOf("/");
+	return slashIndex === -1 ? role : role.slice(slashIndex + 1);
 }
 
 /**

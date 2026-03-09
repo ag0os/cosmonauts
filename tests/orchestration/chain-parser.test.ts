@@ -235,6 +235,17 @@ describe("parseChain", () => {
 			expect(stages).toEqual([{ name: "ops/runner", loop: true }]);
 		});
 
+		test("uses domain context to resolve ambiguous unqualified names", () => {
+			const registry = new AgentRegistry([
+				makeDef("planner", false, "coding"),
+				makeDef("planner", true, "docs"),
+			]);
+
+			const stages = parseChain("planner", registry, "docs");
+
+			expect(stages).toEqual([{ name: "planner", loop: true }]);
+		});
+
 		test("falls back to loop: false for names not in custom registry", () => {
 			const registry = new AgentRegistry([]);
 

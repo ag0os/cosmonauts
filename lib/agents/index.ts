@@ -14,6 +14,7 @@ export {
 	appendAgentIdentityMarker,
 	buildAgentIdentityMarker,
 	extractAgentIdFromSystemPrompt,
+	qualifyAgentId,
 } from "./runtime-identity.ts";
 export type { SkillsOverrideFn } from "./skills.ts";
 export { buildSkillsOverride } from "./skills.ts";

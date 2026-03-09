@@ -231,6 +231,29 @@ describe("runStage", () => {
 			expect(result.success).toBe(true);
 			expect(spawner.spawn).toHaveBeenCalledTimes(1);
 		});
+
+		test("uses domainContext to resolve ambiguous unqualified names", async () => {
+			const registry = new AgentRegistry([
+				makeDef("planner", false, "coding"),
+				makeDef("planner", false, "docs"),
+			]);
+			const spawner = createMockSpawner();
+			const stage = makeStage("planner", false);
+			const config = makeConfig([stage], {
+				registry,
+				domainContext: "docs",
+			});
+
+			const result = await runStage(stage, config, spawner);
+
+			expect(result.success).toBe(true);
+			expect(spawner.spawn).toHaveBeenCalledWith(
+				expect.objectContaining({
+					role: "planner",
+					domainContext: "docs",
+				}),
+			);
+		});
 	});
 
 	describe("loop (loop=true)", () => {

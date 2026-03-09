@@ -3,14 +3,19 @@
  * are correctly aggregated and passed through to workflow listing/resolution.
  *
  * These tests validate the integration pattern used in cli/main.ts:
- * domains.flatMap(d => d.workflows) → passed to listWorkflows/resolveWorkflow.
+ * selectDomainWorkflows(domains, domainContext) → passed to
+ * listWorkflows/resolveWorkflow.
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import type { LoadedDomain } from "../../lib/domains/types.ts";
-import { listWorkflows, resolveWorkflow } from "../../lib/workflows/loader.ts";
+import {
+	listWorkflows,
+	resolveWorkflow,
+	selectDomainWorkflows,
+} from "../../lib/workflows/loader.ts";
 import type { WorkflowDefinition } from "../../lib/workflows/types.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
@@ -20,15 +25,17 @@ const tmp = useTempDir("cli-workflow-resolution-");
  * Helper: build domain workflows the same way cli/main.ts does.
  */
 function aggregateDomainWorkflows(
-	domains: Pick<LoadedDomain, "workflows">[],
+	domains: Pick<LoadedDomain, "manifest" | "workflows">[],
+	domainContext?: string,
 ): WorkflowDefinition[] {
-	return domains.flatMap((d) => d.workflows);
+	return selectDomainWorkflows(domains as LoadedDomain[], domainContext);
 }
 
 describe("CLI workflow resolution — domain workflows without project config", () => {
 	test("listWorkflows returns domain defaults when no config exists", async () => {
 		const domains = [
 			{
+				manifest: { id: "coding", description: "Coding" },
 				workflows: [
 					{
 						name: "plan-and-build",
@@ -47,7 +54,10 @@ describe("CLI workflow resolution — domain workflows without project config", 
 					},
 				],
 			},
-			{ workflows: [] }, // shared domain has no workflows
+			{
+				manifest: { id: "shared", description: "Shared" },
+				workflows: [],
+			},
 		];
 
 		const domainWorkflows = aggregateDomainWorkflows(domains);
@@ -62,6 +72,7 @@ describe("CLI workflow resolution — domain workflows without project config", 
 	test("resolveWorkflow finds domain workflow without project config", async () => {
 		const domainWorkflows = aggregateDomainWorkflows([
 			{
+				manifest: { id: "coding", description: "Coding" },
 				workflows: [
 					{
 						name: "plan-and-build",
@@ -87,6 +98,7 @@ describe("CLI workflow resolution — domain workflows without project config", 
 	test("resolveWorkflow throws for unknown name with domain workflows", async () => {
 		const domainWorkflows = aggregateDomainWorkflows([
 			{
+				manifest: { id: "coding", description: "Coding" },
 				workflows: [
 					{
 						name: "plan-and-build",
@@ -120,6 +132,7 @@ describe("CLI workflow resolution — project config overrides domain workflows"
 
 		const domainWorkflows = aggregateDomainWorkflows([
 			{
+				manifest: { id: "coding", description: "Coding" },
 				workflows: [
 					{
 						name: "plan-and-build",
@@ -164,6 +177,7 @@ describe("CLI workflow resolution — project config overrides domain workflows"
 
 		const domainWorkflows = aggregateDomainWorkflows([
 			{
+				manifest: { id: "coding", description: "Coding" },
 				workflows: [
 					{
 						name: "implement",
@@ -196,6 +210,7 @@ describe("CLI workflow resolution — project config overrides domain workflows"
 
 		const domainWorkflows = aggregateDomainWorkflows([
 			{
+				manifest: { id: "coding", description: "Coding" },
 				workflows: [
 					{
 						name: "plan-and-build",
@@ -218,8 +233,12 @@ describe("CLI workflow resolution — project config overrides domain workflows"
 describe("CLI workflow resolution — multiple domains", () => {
 	test("aggregates workflows from multiple domains", async () => {
 		const domainWorkflows = aggregateDomainWorkflows([
-			{ workflows: [] }, // shared domain
 			{
+				manifest: { id: "shared", description: "Shared" },
+				workflows: [],
+			},
+			{
+				manifest: { id: "coding", description: "Coding" },
 				workflows: [
 					{
 						name: "plan-and-build",
@@ -246,6 +265,7 @@ describe("CLI workflow resolution — multiple domains", () => {
 		// Simulates two domains both defining 'build'
 		const domainWorkflows = aggregateDomainWorkflows([
 			{
+				manifest: { id: "shared", description: "Shared" },
 				workflows: [
 					{
 						name: "build",
@@ -255,6 +275,7 @@ describe("CLI workflow resolution — multiple domains", () => {
 				],
 			},
 			{
+				manifest: { id: "coding", description: "Coding" },
 				workflows: [
 					{
 						name: "build",
@@ -272,5 +293,48 @@ describe("CLI workflow resolution — multiple domains", () => {
 		const build = listed.find((w) => w.name === "build");
 		expect(build?.description).toBe("Coding build");
 		expect(build?.chain).toBe("planner -> coordinator");
+	});
+
+	test("filters workflows to the selected domain while keeping shared ones", async () => {
+		const domainWorkflows = aggregateDomainWorkflows(
+			[
+				{
+					manifest: { id: "shared", description: "Shared" },
+					workflows: [
+						{
+							name: "shared-check",
+							description: "Shared workflow",
+							chain: "reviewer",
+						},
+					],
+				},
+				{
+					manifest: { id: "coding", description: "Coding" },
+					workflows: [
+						{
+							name: "plan-and-build",
+							description: "Coding pipeline",
+							chain: "planner -> coordinator",
+						},
+					],
+				},
+				{
+					manifest: { id: "docs", description: "Docs" },
+					workflows: [
+						{
+							name: "publish",
+							description: "Docs pipeline",
+							chain: "writer",
+						},
+					],
+				},
+			],
+			"docs",
+		);
+
+		expect(domainWorkflows.map((w) => w.name)).toEqual([
+			"shared-check",
+			"publish",
+		]);
 	});
 });

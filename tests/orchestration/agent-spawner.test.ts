@@ -230,6 +230,23 @@ describe("getModelForRole", () => {
 		expect(model).toBe("fixture-provider/fixture-planner-model");
 	});
 
+	test("uses domainContext when resolving an ambiguous unqualified role", () => {
+		const registry = new AgentRegistry([
+			{
+				...FIXTURE_PLANNER,
+				domain: "coding",
+			},
+			{
+				...FIXTURE_PLANNER,
+				model: "fixture-provider/docs-planner-model",
+				domain: "docs",
+			},
+		]);
+
+		const model = getModelForRole("planner", undefined, registry, "docs");
+		expect(model).toBe("fixture-provider/docs-planner-model");
+	});
+
 	test("returns definition model for worker (tier 2)", () => {
 		const model = getModelForRole("worker", undefined, FIXTURE_REGISTRY);
 		expect(model).toBe("fixture-provider/fixture-worker-model");
@@ -242,7 +259,7 @@ describe("getModelForRole", () => {
 
 	test("explicit override takes precedence over definition model (tier 1 > tier 2)", () => {
 		const model = getModelForRole(
-			"planner",
+			"docs/planner",
 			{ planner: "override-provider/override-model" },
 			FIXTURE_REGISTRY,
 		);
@@ -281,6 +298,24 @@ describe("getThinkingForRole", () => {
 		expect(thinking).toBe("high");
 	});
 
+	test("uses domainContext when resolving an ambiguous unqualified role", () => {
+		const registry = new AgentRegistry([
+			{
+				...FIXTURE_PLANNER,
+				thinkingLevel: "minimal",
+				domain: "coding",
+			},
+			{
+				...FIXTURE_PLANNER,
+				thinkingLevel: "low",
+				domain: "docs",
+			},
+		]);
+
+		const thinking = getThinkingForRole("planner", undefined, registry, "docs");
+		expect(thinking).toBe("low");
+	});
+
 	test("returns undefined for role with no thinkingLevel on definition (tier 4)", () => {
 		const thinking = getThinkingForRole("worker", undefined, FIXTURE_REGISTRY);
 		expect(thinking).toBeUndefined();
@@ -297,7 +332,7 @@ describe("getThinkingForRole", () => {
 
 	test("explicit override takes precedence over definition thinkingLevel (tier 1 > tier 2)", () => {
 		const thinking = getThinkingForRole(
-			"planner",
+			"docs/planner",
 			{ planner: "low" },
 			FIXTURE_REGISTRY,
 		);

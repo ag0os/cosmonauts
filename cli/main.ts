@@ -28,8 +28,11 @@ import {
 	injectUserPrompt,
 	runChain,
 } from "../lib/orchestration/chain-runner.ts";
-import { listWorkflows, resolveWorkflow } from "../lib/workflows/loader.ts";
-import type { WorkflowDefinition } from "../lib/workflows/types.ts";
+import {
+	listWorkflows,
+	resolveWorkflow,
+	selectDomainWorkflows,
+} from "../lib/workflows/loader.ts";
 import { createChainEventLogger } from "./chain-event-logger.ts";
 import { createSession } from "./session.ts";
 import type { CliOptions } from "./types.ts";
@@ -191,9 +194,7 @@ async function run(options: CliOptions): Promise<void> {
 	const domainContext = options.domain ?? projectConfig.domain;
 
 	// Aggregate workflows from all discovered domains
-	const domainWorkflows: WorkflowDefinition[] = domains.flatMap(
-		(d) => d.workflows,
-	);
+	const domainWorkflows = selectDomainWorkflows(domains, domainContext);
 
 	// --list-domains: print all discovered domains and exit
 	if (options.listDomains) {
@@ -222,8 +223,8 @@ async function run(options: CliOptions): Promise<void> {
 
 	// --list-agents: print available agent IDs and exit
 	if (options.listAgents) {
-		const agents = options.domain
-			? registry.resolveInDomain(options.domain)
+		const agents = domainContext
+			? registry.resolveInDomain(domainContext)
 			: registry.listAll();
 		for (const def of agents) {
 			console.log(`  ${def.id}  ${def.description}`);
@@ -264,12 +265,13 @@ async function run(options: CliOptions): Promise<void> {
 
 	// 2. --chain → parse chain, run, exit
 	if (options.chain) {
-		const stages = parseChain(options.chain, registry);
+		const stages = parseChain(options.chain, registry, domainContext);
 		injectUserPrompt(stages, options.prompt);
 
 		const result = await runChain({
 			stages,
 			projectRoot: cwd,
+			domainContext,
 			onEvent: createChainEventLogger(),
 			projectSkills,
 			completionLabel: options.completionLabel,
@@ -286,12 +288,13 @@ async function run(options: CliOptions): Promise<void> {
 	// 3. --workflow → resolve to chain, run, exit
 	if (options.workflow) {
 		const wf = await resolveWorkflow(options.workflow, cwd, domainWorkflows);
-		const stages = parseChain(wf.chain, registry);
+		const stages = parseChain(wf.chain, registry, domainContext);
 		injectUserPrompt(stages, options.prompt);
 
 		const result = await runChain({
 			stages,
 			projectRoot: cwd,
+			domainContext,
 			onEvent: createChainEventLogger(),
 			projectSkills,
 			completionLabel: options.completionLabel,

@@ -85,6 +85,7 @@ describe("orchestration extension", () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		loadProjectConfigMock.mockResolvedValue({ skills: [] } as ProjectConfig);
 	});
 
 	test("chain_run forwards project skills from config", async () => {
@@ -93,6 +94,7 @@ describe("orchestration extension", () => {
 		orchestrationExtension(pi as never);
 
 		loadProjectConfigMock.mockResolvedValue({
+			domain: "coding",
 			skills: ["typescript", "backend"],
 		} as ProjectConfig);
 		parseChainMock.mockReturnValue([{ name: "planner", loop: false }]);
@@ -108,8 +110,16 @@ describe("orchestration extension", () => {
 		expect(runChainMock).toHaveBeenCalledWith(
 			expect.objectContaining({
 				projectRoot: cwd,
+				domainContext: "coding",
 				projectSkills: ["typescript", "backend"],
 			}),
+		);
+		expect(parseChainMock).toHaveBeenCalledWith(
+			"planner",
+			expect.objectContaining({
+				has: expect.any(Function),
+			}),
+			"coding",
 		);
 	});
 
@@ -191,6 +201,7 @@ describe("orchestration extension", () => {
 		orchestrationExtension(pi as never);
 
 		loadProjectConfigMock.mockResolvedValue({
+			domain: "coding",
 			skills: ["typescript"],
 		} as ProjectConfig);
 
@@ -210,8 +221,14 @@ describe("orchestration extension", () => {
 		expect(spawn).toHaveBeenCalledWith(
 			expect.objectContaining({
 				cwd,
+				domainContext: "coding",
 				role: "worker",
 				projectSkills: ["typescript"],
+			}),
+		);
+		expect(createPiSpawnerMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				has: expect.any(Function),
 			}),
 		);
 		expect(dispose).toHaveBeenCalledTimes(1);

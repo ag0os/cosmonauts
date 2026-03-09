@@ -3,9 +3,18 @@ import {
 	appendAgentIdentityMarker,
 	buildAgentIdentityMarker,
 	extractAgentIdFromSystemPrompt,
+	qualifyAgentId,
 } from "../../lib/agents/runtime-identity.ts";
 
 describe("runtime identity markers", () => {
+	test("qualifyAgentId prefixes the domain when present", () => {
+		expect(qualifyAgentId("worker", "coding")).toBe("coding/worker");
+	});
+
+	test("qualifyAgentId leaves IDs unchanged without a domain", () => {
+		expect(qualifyAgentId("worker")).toBe("worker");
+	});
+
 	test("buildAgentIdentityMarker emits hidden marker format", () => {
 		expect(buildAgentIdentityMarker("cosmo")).toBe(
 			"<!-- COSMONAUTS_AGENT_ID:cosmo -->",

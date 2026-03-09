@@ -31,6 +31,7 @@ import type { ChainStage } from "./types.ts";
  *
  * @param expression - The chain DSL expression to parse
  * @param registry - Optional agent registry for loop property resolution (defaults to built-in registry)
+ * @param domainContext - Optional default domain for resolving unqualified stage names
  * @returns Array of parsed ChainStage objects
  * @throws Error if the expression is empty or contains empty stage names
  *
@@ -52,6 +53,7 @@ import type { ChainStage } from "./types.ts";
 export function parseChain(
 	expression: string,
 	registry?: AgentRegistry,
+	domainContext?: string,
 ): ChainStage[] {
 	const reg = registry ?? createDefaultRegistry();
 	const trimmed = expression.trim();
@@ -76,7 +78,7 @@ export function parseChain(
 			);
 		}
 
-		stages.push({ name, loop: reg.get(name)?.loop ?? false });
+		stages.push({ name, loop: reg.get(name, domainContext)?.loop ?? false });
 	}
 
 	return stages;
