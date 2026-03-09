@@ -43,4 +43,25 @@ describe("runtime identity markers", () => {
 	test("extractAgentIdFromSystemPrompt returns undefined when marker missing", () => {
 		expect(extractAgentIdFromSystemPrompt("no marker")).toBeUndefined();
 	});
+
+	test("buildAgentIdentityMarker supports qualified IDs", () => {
+		expect(buildAgentIdentityMarker("coding/worker")).toBe(
+			"<!-- COSMONAUTS_AGENT_ID:coding/worker -->",
+		);
+	});
+
+	test("extractAgentIdFromSystemPrompt extracts qualified ID", () => {
+		const systemPrompt =
+			"header\n<!-- COSMONAUTS_AGENT_ID:coding/worker -->\nfooter";
+		expect(extractAgentIdFromSystemPrompt(systemPrompt)).toBe("coding/worker");
+	});
+
+	test("extractAgentIdFromSystemPrompt uses last marker with qualified IDs", () => {
+		const systemPrompt = [
+			"<!-- COSMONAUTS_AGENT_ID:shared/diagnostics -->",
+			"body",
+			"<!-- COSMONAUTS_AGENT_ID:coding/cosmo -->",
+		].join("\n");
+		expect(extractAgentIdFromSystemPrompt(systemPrompt)).toBe("coding/cosmo");
+	});
 });

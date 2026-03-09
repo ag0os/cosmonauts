@@ -6,7 +6,7 @@
  */
 
 const AGENT_ID_MARKER_PREFIX = "COSMONAUTS_AGENT_ID:";
-const AGENT_ID_MARKER_REGEX = /<!--\s*COSMONAUTS_AGENT_ID:([a-z0-9-]+)\s*-->/gi;
+const AGENT_ID_MARKER_REGEX = /<!--\s*COSMONAUTS_AGENT_ID:([a-z0-9/-]+)\s*-->/gi;
 
 /** Build a hidden system-prompt marker for an agent ID. */
 export function buildAgentIdentityMarker(agentId: string): string {
