@@ -53,9 +53,14 @@ export async function loadProjectConfig(
 
 	const obj = parsed as Record<string, unknown>;
 	const config: {
+		domain?: string;
 		skills?: readonly string[];
 		workflows?: ProjectConfig["workflows"];
 	} = {};
+
+	if (typeof obj.domain === "string") {
+		config.domain = obj.domain;
+	}
 
 	if (Array.isArray(obj.skills)) {
 		config.skills = obj.skills.filter(

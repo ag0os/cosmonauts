@@ -29,6 +29,39 @@ describe("loadProjectConfig", () => {
 		await expect(loadProjectConfig(tmp.path)).rejects.toThrow();
 	});
 
+	test("parses domain string", async () => {
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({ domain: "coding" }),
+		);
+
+		const config = await loadProjectConfig(tmp.path);
+		expect(config.domain).toBe("coding");
+	});
+
+	test("defaults domain to undefined when not provided", async () => {
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({ skills: ["typescript"] }),
+		);
+
+		const config = await loadProjectConfig(tmp.path);
+		expect(config.domain).toBeUndefined();
+	});
+
+	test("ignores domain when not a string", async () => {
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({ domain: 42 }),
+		);
+
+		const config = await loadProjectConfig(tmp.path);
+		expect(config.domain).toBeUndefined();
+	});
+
 	test("parses skills array", async () => {
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
