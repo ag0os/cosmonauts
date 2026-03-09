@@ -26,7 +26,7 @@ As Pi evolves (lockstep versioning), re-audit its API before each phase for feat
 ### Three-Layer Architecture
 
 - **Layer 1: Framework** — Orchestration, persistence, tasks, CLI, agent definitions, skill loading. Domain-agnostic.
-- **Layer 2: Domain agents** — Coding is the first domain. Each domain brings its own prompts, agent definitions, workflows, and skills. Adding a new domain = new prompts + agent definitions + skills, no framework changes.
+- **Layer 2: Domain agents** — Coding is the first domain. Each domain lives in `domains/{name}/` and brings its own agents, prompts, capabilities, skills, and workflows. Adding a new domain = new domain directory with a `domain.ts` manifest, no framework changes.
 - **Layer 3: Executive assistant** (future) — Always-on heartbeat that triggers domain workflows and manages long-running projects.
 
 ### Three Pillars: Agents, Prompts, Skills
@@ -43,16 +43,16 @@ Agents are Pi sessions configured by declarative definitions. Each definition sp
 
 ### Agent Definitions
 
-Agent definitions live in `lib/agents/definitions.ts`. Each definition configures model, tools, prompt layers, extensions, skill access, and sub-agent permissions.
+Agent definitions live in domain directories (e.g., `domains/coding/agents/*.ts`). Each definition configures model, tools, capabilities, extensions, skill access, and sub-agent permissions. Definitions are discovered automatically by the domain loader.
 
 ### Prompt Composition
 
 System prompts compose in a strict four-layer order, loaded at session creation via Pi's `additionalSkillPaths`:
 
-- **Layer 0 — Platform Base** (`prompts/cosmonauts.md`): Universal operating norms for all agents.
-- **Layer 1 — Capabilities** (`prompts/capabilities/*.md`): Reusable discipline bundles aligned to tool surfaces (core, coding-rw, coding-ro, tasks, spawning, todo).
-- **Layer 2 — Persona** (`prompts/agents/<namespace>/<agent>.md`): One per agent. Identity, workflow, constraints.
-- **Layer 3 — Runtime Context** (`prompts/runtime/sub-agent.md`): Optional spawn-time overlay with parent role, objective, task ID. Top-level spawns skip this.
+- **Layer 0 — Platform Base** (`domains/shared/prompts/base.md`): Universal operating norms for all agents.
+- **Layer 1 — Capabilities** (`domains/{shared,coding}/capabilities/*.md`): Reusable discipline bundles aligned to tool surfaces (core, coding-rw, coding-ro, tasks, spawning, todo).
+- **Layer 2 — Persona** (`domains/{domain}/prompts/{agent}.md`): One per agent. Identity, workflow, constraints.
+- **Layer 3 — Runtime Context** (`domains/shared/prompts/runtime/sub-agent.md`): Optional spawn-time overlay with parent role, objective, task ID. Top-level spawns skip this.
 
 Examples:
 
@@ -100,7 +100,7 @@ cosmonauts --workflow plan-and-build "auth"    # Named workflow
 cosmonauts --chain "planner -> coordinator"   # Raw chain DSL
 ```
 
-Flags: `--print`, `--workflow`, `--chain`, `--model`, `--thinking`.
+Flags: `--print`, `--workflow`, `--chain`, `--model`, `--thinking`, `--domain`/`-d`, `--list-domains`.
 
 ## Documentation
 
@@ -172,10 +172,8 @@ For small, self-contained changes (a bug fix, a single function, a config tweak)
 **Tracked (in repo):**
 
 ```
-lib/              Core libraries (agents, orchestration, tasks, plans, workflows, prompts, config)
-extensions/       Pi extensions (tasks, plans, todo, orchestration, init)
-skills/           On-demand capability files (languages, domains)
-prompts/          System prompt layers (base, capabilities, personas, runtime)
+lib/              Core libraries (agents, orchestration, tasks, plans, workflows, domains, config)
+domains/          Domain directories (shared/, coding/) — agents, prompts, capabilities, skills, extensions
 cli/              CLI implementation
 bin/              CLI entry points (cosmonauts, cosmonauts-tasks)
 tests/            Test suites mirroring source structure

@@ -24,7 +24,7 @@ Add web_fetch tool that fetches a URL, strips HTML, and returns readable text co
 
 Write language skills for Rust, Python, Swift, and Go.
 
-- Follow the established pattern in skills/languages/typescript/SKILL.md
+- Follow the established pattern in domains/coding/skills/languages/typescript/SKILL.md
 - Each skill covers idioms, best practices, toolchain conventions, and testing patterns
 - Workers load the appropriate skill based on project language
 
@@ -32,7 +32,7 @@ Write language skills for Rust, Python, Swift, and Go.
 
 Write domain skills for testing, code-review, frontend, devops, api-design, and database.
 
-- Follow existing conventions in skills/domains/
+- Follow existing conventions in domains/coding/skills/
 - Testing skill covers strategy, coverage, mocking, and test organization
 - Code-review skill covers what to look for, how to structure findings
 - Frontend, devops, api-design, database skills cover domain-specific patterns and best practices
