@@ -7,6 +7,7 @@
  * content in the user message.
  */
 
+import { existsSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
@@ -43,17 +44,6 @@ const DOMAINS_DIR = resolve(
 	"..",
 	"domains",
 );
-
-const EXTENSIONS_DIR = resolve(DOMAINS_DIR, "shared", "extensions");
-
-/** Extensions that exist on disk and can be loaded by the agent spawner. */
-const KNOWN_EXTENSIONS = new Set([
-	"tasks",
-	"plans",
-	"orchestration",
-	"todo",
-	"init",
-]);
 
 // ============================================================================
 // Model Resolution
@@ -150,14 +140,57 @@ export function resolveTools(toolSet: AgentToolSet, cwd: string) {
 	}
 }
 
+/** Options for domain-aware extension resolution. */
+export interface ResolveExtensionOptions {
+	/** Domain the agent belongs to (e.g. "coding", "shared"). */
+	readonly domain: string;
+	/** Absolute path to the root domains directory. */
+	readonly domainsDir: string;
+}
+
 /**
- * Resolve extension names to absolute paths, filtering to known extensions.
- * Unknown names are silently skipped.
+ * Resolve extension names to absolute paths with domain-aware lookup.
+ *
+ * Resolution order per extension name:
+ *  1. `domains/<domain>/extensions/<name>` (if domain is not "shared")
+ *  2. `domains/shared/extensions/<name>` (fallback)
+ *
+ * Throws if an extension name cannot be found in either location.
  */
-export function resolveExtensionPaths(extensions: readonly string[]): string[] {
-	return extensions
-		.filter((name) => KNOWN_EXTENSIONS.has(name))
-		.map((name) => join(EXTENSIONS_DIR, name));
+export function resolveExtensionPaths(
+	extensions: readonly string[],
+	options: ResolveExtensionOptions,
+): string[] {
+	const { domain, domainsDir } = options;
+	return extensions.map((name) => {
+		// Try domain-specific path first (skip if already "shared")
+		if (domain !== "shared") {
+			const domainPath = join(domainsDir, domain, "extensions", name);
+			if (isDirectory(domainPath)) return domainPath;
+		}
+
+		// Fall back to shared
+		const sharedPath = join(domainsDir, "shared", "extensions", name);
+		if (isDirectory(sharedPath)) return sharedPath;
+
+		// Not found anywhere — fail loud
+		const searched =
+			domain !== "shared"
+				? `domains/${domain}/extensions/${name}, domains/shared/extensions/${name}`
+				: `domains/shared/extensions/${name}`;
+		throw new Error(
+			`Unknown extension "${name}" in agent definition. Searched: ${searched}`,
+		);
+	});
+}
+
+/** Check if a path is an existing directory. */
+function isDirectory(path: string): boolean {
+	try {
+		return existsSync(path) && statSync(path).isDirectory();
+	} catch {
+		return false;
+	}
 }
 
 // ============================================================================
@@ -226,8 +259,11 @@ export function createPiSpawner(registry?: AgentRegistry): AgentSpawner {
 				// Embed caller identity marker for extension-level authorization checks.
 				promptContent = appendAgentIdentityMarker(promptContent, def.id);
 
-				// Extensions: selective loading via additionalExtensionPaths
-				const extensionPaths = resolveExtensionPaths(def.extensions);
+				// Extensions: domain-aware resolution with shared fallback
+				const extensionPaths = resolveExtensionPaths(def.extensions, {
+					domain: def.domain ?? "coding",
+					domainsDir: DOMAINS_DIR,
+				});
 
 				// Build resource loader with all definition fields
 				const skillsOverride = buildSkillsOverride(

@@ -89,7 +89,10 @@ export async function createSession(
 	});
 	promptContent = appendAgentIdentityMarker(promptContent, def.id);
 
-	const extensionPaths = resolveExtensionPaths(def.extensions);
+	const extensionPaths = resolveExtensionPaths(def.extensions, {
+		domain: def.domain ?? "coding",
+		domainsDir: DOMAINS_DIR,
+	});
 
 	const skillsOverride = buildSkillsOverride(def.skills, projectSkills);
 	const loader = new DefaultResourceLoader({

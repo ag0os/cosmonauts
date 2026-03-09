@@ -3,9 +3,10 @@
  * Covers helper functions: resolveTools, resolveExtensionPaths, getModelForRole.
  */
 
+import { mkdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import {
@@ -16,15 +17,15 @@ import {
 } from "../../lib/orchestration/agent-spawner.ts";
 import { loadPrompt, renderRuntimeTemplate } from "../../lib/prompts/loader.ts";
 
-const EXTENSIONS_DIR = resolve(
+const DOMAINS_DIR = resolve(
 	fileURLToPath(import.meta.url),
 	"..",
 	"..",
 	"..",
 	"domains",
-	"shared",
-	"extensions",
 );
+
+const SHARED_EXTENSIONS_DIR = join(DOMAINS_DIR, "shared", "extensions");
 
 // ============================================================================
 // Fixtures — synthetic definitions for getModelForRole tests
@@ -87,39 +88,139 @@ describe("resolveTools", () => {
 });
 
 describe("resolveExtensionPaths", () => {
-	test("resolves known extensions to absolute paths", () => {
-		const paths = resolveExtensionPaths(["tasks", "orchestration"]);
+	const sharedOpts = { domain: "shared", domainsDir: DOMAINS_DIR };
+	const codingOpts = { domain: "coding", domainsDir: DOMAINS_DIR };
+
+	// ---- Shared fallback ----
+
+	test("resolves shared extensions to absolute paths", () => {
+		const paths = resolveExtensionPaths(["tasks", "orchestration"], sharedOpts);
 		expect(paths).toHaveLength(2);
-		expect(paths[0]).toBe(join(EXTENSIONS_DIR, "tasks"));
-		expect(paths[1]).toBe(join(EXTENSIONS_DIR, "orchestration"));
+		expect(paths[0]).toBe(join(SHARED_EXTENSIONS_DIR, "tasks"));
+		expect(paths[1]).toBe(join(SHARED_EXTENSIONS_DIR, "orchestration"));
 	});
 
-	test("filters out unknown extensions", () => {
-		const paths = resolveExtensionPaths(["nonexistent"]);
-		expect(paths).toEqual([]);
+	test("non-shared domain falls back to shared extensions", () => {
+		const paths = resolveExtensionPaths(["tasks", "todo"], codingOpts);
+		expect(paths).toHaveLength(2);
+		expect(paths[0]).toBe(join(SHARED_EXTENSIONS_DIR, "tasks"));
+		expect(paths[1]).toBe(join(SHARED_EXTENSIONS_DIR, "todo"));
 	});
 
 	test("returns empty for empty input", () => {
-		const paths = resolveExtensionPaths([]);
+		const paths = resolveExtensionPaths([], sharedOpts);
 		expect(paths).toEqual([]);
 	});
 
-	test("filters mixed known and unknown extensions", () => {
-		const paths = resolveExtensionPaths(["tasks", "nonexistent", "todo"]);
-		expect(paths).toHaveLength(2);
-		expect(paths[0]).toBe(join(EXTENSIONS_DIR, "tasks"));
-		expect(paths[1]).toBe(join(EXTENSIONS_DIR, "todo"));
+	test("resolves all shared extensions", () => {
+		const paths = resolveExtensionPaths(
+			["tasks", "plans", "orchestration", "todo", "init"],
+			sharedOpts,
+		);
+		expect(paths).toHaveLength(5);
 	});
 
-	test("resolves all known extensions", () => {
-		const paths = resolveExtensionPaths([
-			"tasks",
-			"plans",
-			"orchestration",
-			"todo",
-			"init",
-		]);
-		expect(paths).toHaveLength(5);
+	// ---- Error on unknown extensions ----
+
+	test("throws for unknown extension in shared domain", () => {
+		expect(() =>
+			resolveExtensionPaths(["nonexistent"], sharedOpts),
+		).toThrowError(/Unknown extension "nonexistent"/);
+	});
+
+	test("throws for unknown extension in non-shared domain", () => {
+		expect(() =>
+			resolveExtensionPaths(["nonexistent"], codingOpts),
+		).toThrowError(/Unknown extension "nonexistent"/);
+	});
+
+	test("error message includes searched paths", () => {
+		expect(() => resolveExtensionPaths(["bad-ext"], codingOpts)).toThrowError(
+			/domains\/coding\/extensions\/bad-ext.*domains\/shared\/extensions\/bad-ext/,
+		);
+	});
+
+	test("error message for shared domain only lists shared path", () => {
+		expect(() => resolveExtensionPaths(["bad-ext"], sharedOpts)).toThrowError(
+			/domains\/shared\/extensions\/bad-ext/,
+		);
+	});
+
+	test("throws on first unknown in mixed list", () => {
+		expect(() =>
+			resolveExtensionPaths(["tasks", "nonexistent", "todo"], sharedOpts),
+		).toThrowError(/Unknown extension "nonexistent"/);
+	});
+
+	// ---- Domain-specific extension loading ----
+
+	let tmpDomainsDir: string;
+
+	beforeEach(() => {
+		tmpDomainsDir = join(
+			import.meta.dirname ?? ".",
+			".tmp-test-domains-" + Date.now(),
+		);
+		// Create shared extension
+		mkdirSync(join(tmpDomainsDir, "shared", "extensions", "common-ext"), {
+			recursive: true,
+		});
+		// Create domain-specific extension
+		mkdirSync(join(tmpDomainsDir, "custom", "extensions", "custom-ext"), {
+			recursive: true,
+		});
+		// Create override: same name in both domain and shared
+		mkdirSync(join(tmpDomainsDir, "custom", "extensions", "common-ext"), {
+			recursive: true,
+		});
+	});
+
+	afterEach(() => {
+		rmSync(tmpDomainsDir, { recursive: true, force: true });
+	});
+
+	test("domain-specific extension takes precedence over shared", () => {
+		const paths = resolveExtensionPaths(["common-ext"], {
+			domain: "custom",
+			domainsDir: tmpDomainsDir,
+		});
+		expect(paths).toHaveLength(1);
+		expect(paths[0]).toBe(
+			join(tmpDomainsDir, "custom", "extensions", "common-ext"),
+		);
+	});
+
+	test("falls back to shared when domain does not have extension", () => {
+		// custom-ext only exists in custom domain, common-ext in both
+		// Request an extension that only exists in shared
+		const paths = resolveExtensionPaths(["common-ext"], {
+			domain: "shared",
+			domainsDir: tmpDomainsDir,
+		});
+		expect(paths).toHaveLength(1);
+		expect(paths[0]).toBe(
+			join(tmpDomainsDir, "shared", "extensions", "common-ext"),
+		);
+	});
+
+	test("resolves domain-only extension that does not exist in shared", () => {
+		const paths = resolveExtensionPaths(["custom-ext"], {
+			domain: "custom",
+			domainsDir: tmpDomainsDir,
+		});
+		expect(paths).toHaveLength(1);
+		expect(paths[0]).toBe(
+			join(tmpDomainsDir, "custom", "extensions", "custom-ext"),
+		);
+	});
+
+	test("throws when extension not found in domain or shared", () => {
+		expect(() =>
+			resolveExtensionPaths(["missing"], {
+				domain: "custom",
+				domainsDir: tmpDomainsDir,
+			}),
+		).toThrowError(/Unknown extension "missing"/);
 	});
 });
 
