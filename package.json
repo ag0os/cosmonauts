@@ -10,7 +10,8 @@
 			"./extensions"
 		],
 		"skills": [
-			"./skills"
+			"./domains/shared/skills",
+			"./domains/coding/skills"
 		]
 	},
 	"bin": {
