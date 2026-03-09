@@ -1,8 +1,9 @@
 /**
  * Tests for workflow loader.
  *
- * All workflows come from project config (`.cosmonauts/config.json`),
- * scaffolded by `cosmonauts-tasks init`.
+ * Workflows come from two sources: domain-provided defaults and
+ * project config (`.cosmonauts/config.json`). Project config takes
+ * precedence on name collision.
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
@@ -203,5 +204,105 @@ describe("listWorkflows", () => {
 		const listed = await listWorkflows(tmp.path);
 
 		expect(listed).toEqual(loaded);
+	});
+});
+
+describe("domain workflow merging", () => {
+	test("merges domain workflows with project config", async () => {
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				workflows: {
+					deploy: { description: "Deploy", chain: "worker" },
+				},
+			}),
+		);
+
+		const domainWorkflows = [
+			{
+				name: "plan-and-build",
+				description: "Full pipeline",
+				chain: "planner -> coordinator",
+			},
+			{ name: "verify", description: "Review", chain: "quality-manager" },
+		];
+
+		const workflows = await loadWorkflows(tmp.path, domainWorkflows);
+		expect(workflows).toHaveLength(3);
+		expect(workflows.map((w) => w.name)).toContain("plan-and-build");
+		expect(workflows.map((w) => w.name)).toContain("verify");
+		expect(workflows.map((w) => w.name)).toContain("deploy");
+	});
+
+	test("project config overrides domain workflow on name collision", async () => {
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				workflows: {
+					"plan-and-build": {
+						description: "Custom pipeline",
+						chain: "worker",
+					},
+				},
+			}),
+		);
+
+		const domainWorkflows = [
+			{
+				name: "plan-and-build",
+				description: "Default pipeline",
+				chain: "planner -> coordinator",
+			},
+		];
+
+		const workflows = await loadWorkflows(tmp.path, domainWorkflows);
+		expect(workflows).toHaveLength(1);
+		const pab = workflows.find((w) => w.name === "plan-and-build");
+		expect(pab?.chain).toBe("worker"); // project config wins
+		expect(pab?.description).toBe("Custom pipeline");
+	});
+
+	test("domain workflows returned when no project config exists", async () => {
+		const domainWorkflows = [
+			{
+				name: "plan-and-build",
+				description: "Full pipeline",
+				chain: "planner -> coordinator",
+			},
+		];
+
+		const workflows = await loadWorkflows(tmp.path, domainWorkflows);
+		expect(workflows).toHaveLength(1);
+		expect(workflows[0]?.name).toBe("plan-and-build");
+	});
+
+	test("resolveWorkflow finds domain-provided workflow", async () => {
+		const domainWorkflows = [
+			{
+				name: "plan-and-build",
+				description: "Full pipeline",
+				chain: "planner -> coordinator",
+			},
+		];
+
+		const wf = await resolveWorkflow(
+			"plan-and-build",
+			tmp.path,
+			domainWorkflows,
+		);
+		expect(wf.name).toBe("plan-and-build");
+		expect(wf.chain).toBe("planner -> coordinator");
+	});
+
+	test("listWorkflows includes domain workflows", async () => {
+		const domainWorkflows = [
+			{ name: "verify", description: "Review", chain: "quality-manager" },
+		];
+
+		const listed = await listWorkflows(tmp.path, domainWorkflows);
+		expect(listed).toHaveLength(1);
+		expect(listed[0]?.name).toBe("verify");
 	});
 });

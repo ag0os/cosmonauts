@@ -1,24 +1,37 @@
 /**
- * Workflow loader — resolves named workflows from project-level config
- * (`.cosmonauts/config.json`).
+ * Workflow loader — resolves named workflows from domain-provided defaults
+ * and project-level config (`.cosmonauts/config.json`).
+ *
+ * Domain workflows provide baseline definitions. Project config workflows
+ * take precedence on name collision, allowing per-project customization.
  */
 
 import { loadProjectConfig } from "../config/index.ts";
 import type { WorkflowDefinition } from "./types.ts";
 
 /**
- * Load all available workflows from project config.
+ * Load all available workflows by merging domain-provided workflows with
+ * project config. Project config takes precedence on name collision.
  */
 export async function loadWorkflows(
 	projectRoot: string,
+	domainWorkflows?: WorkflowDefinition[],
 ): Promise<WorkflowDefinition[]> {
 	const config = await loadProjectConfig(projectRoot);
-	const workflows: WorkflowDefinition[] = [];
 
+	// Start with domain-provided workflows
+	const workflowMap = new Map<string, WorkflowDefinition>();
+	if (domainWorkflows) {
+		for (const wf of domainWorkflows) {
+			workflowMap.set(wf.name, wf);
+		}
+	}
+
+	// Project config workflows take precedence (overwrite)
 	if (config.workflows) {
 		for (const [name, def] of Object.entries(config.workflows)) {
 			if (def && typeof def.chain === "string") {
-				workflows.push({
+				workflowMap.set(name, {
 					name,
 					description: def.description ?? "",
 					chain: def.chain,
@@ -27,7 +40,7 @@ export async function loadWorkflows(
 		}
 	}
 
-	return workflows;
+	return [...workflowMap.values()];
 }
 
 /**
@@ -36,8 +49,9 @@ export async function loadWorkflows(
 export async function resolveWorkflow(
 	name: string,
 	projectRoot: string,
+	domainWorkflows?: WorkflowDefinition[],
 ): Promise<WorkflowDefinition> {
-	const workflows = await loadWorkflows(projectRoot);
+	const workflows = await loadWorkflows(projectRoot, domainWorkflows);
 	const found = workflows.find((wf) => wf.name === name);
 	if (!found) {
 		const available = workflows.map((wf) => wf.name).join(", ");
@@ -51,6 +65,7 @@ export async function resolveWorkflow(
  */
 export async function listWorkflows(
 	projectRoot: string,
+	domainWorkflows?: WorkflowDefinition[],
 ): Promise<WorkflowDefinition[]> {
-	return loadWorkflows(projectRoot);
+	return loadWorkflows(projectRoot, domainWorkflows);
 }
