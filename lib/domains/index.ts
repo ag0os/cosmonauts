@@ -1,8 +1,8 @@
 export { loadDomains } from "./loader.ts";
-export { DomainRegistry } from "./registry.ts";
-export { assemblePrompts } from "./prompt-assembly.ts";
-export type { DomainManifest, LoadedDomain } from "./types.ts";
 export type {
-	RuntimeContext,
 	AssemblePromptsOptions,
+	RuntimeContext,
 } from "./prompt-assembly.ts";
+export { assemblePrompts } from "./prompt-assembly.ts";
+export { DomainRegistry } from "./registry.ts";
+export type { DomainManifest, LoadedDomain } from "./types.ts";

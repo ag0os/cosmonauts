@@ -5,8 +5,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { assemblePrompts } from "../../lib/domains/prompt-assembly.ts";
 import type { RuntimeContext } from "../../lib/domains/prompt-assembly.ts";
+import { assemblePrompts } from "../../lib/domains/prompt-assembly.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("prompt-assembly-");
@@ -31,8 +31,7 @@ async function setupStandardFixture(domainsDir: string): Promise<void> {
 		"shared/capabilities/tasks.md": "Tasks capability content.",
 		"shared/prompts/runtime/sub-agent.md":
 			"Parent: {{parentRole}}\nObjective: {{objective}}\n{{#taskId}}Task: {{taskId}}{{/taskId}}",
-		"coding/capabilities/coding-readwrite.md":
-			"Coding readwrite capability.",
+		"coding/capabilities/coding-readwrite.md": "Coding readwrite capability.",
 		"coding/prompts/worker.md": "You are a worker agent.",
 	});
 }
@@ -75,10 +74,8 @@ describe("assemblePrompts", () => {
 		it("resolves capabilities from the domain first", async () => {
 			await setupDomains(tmp.path, {
 				"shared/prompts/base.md": "Base.",
-				"coding/capabilities/coding-readwrite.md":
-					"Domain coding-rw content.",
-				"shared/capabilities/coding-readwrite.md":
-					"Shared coding-rw content.",
+				"coding/capabilities/coding-readwrite.md": "Domain coding-rw content.",
+				"shared/capabilities/coding-readwrite.md": "Shared coding-rw content.",
 				"coding/prompts/worker.md": "Worker.",
 			});
 

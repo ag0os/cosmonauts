@@ -14,8 +14,8 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import matter from "gray-matter";
-import { renderRuntimeTemplate } from "../prompts/loader.ts";
 import type { RuntimeTemplateContext } from "../prompts/loader.ts";
+import { renderRuntimeTemplate } from "../prompts/loader.ts";
 
 // ============================================================================
 // Public Types
@@ -53,31 +53,18 @@ export interface AssemblePromptsOptions {
 export async function assemblePrompts(
 	options: AssemblePromptsOptions,
 ): Promise<string> {
-	const { agentId, domain, capabilities, domainsDir, runtimeContext } =
-		options;
+	const { agentId, domain, capabilities, domainsDir, runtimeContext } = options;
 	const parts: string[] = [];
 
 	// Layer 0: Base prompt (always from shared)
 	parts.push(
-		await loadPromptFile(
-			join(domainsDir, "shared", "prompts", "base.md"),
-		),
+		await loadPromptFile(join(domainsDir, "shared", "prompts", "base.md")),
 	);
 
 	// Layer 1: Capabilities (domain-first, fallback to shared)
 	for (const cap of capabilities) {
-		const domainPath = join(
-			domainsDir,
-			domain,
-			"capabilities",
-			`${cap}.md`,
-		);
-		const sharedPath = join(
-			domainsDir,
-			"shared",
-			"capabilities",
-			`${cap}.md`,
-		);
+		const domainPath = join(domainsDir, domain, "capabilities", `${cap}.md`);
+		const sharedPath = join(domainsDir, "shared", "capabilities", `${cap}.md`);
 		const content = await loadWithFallback(domainPath, sharedPath);
 		if (content === null) {
 			throw new Error(
@@ -89,9 +76,7 @@ export async function assemblePrompts(
 
 	// Layer 2: Agent persona prompt
 	parts.push(
-		await loadPromptFile(
-			join(domainsDir, domain, "prompts", `${agentId}.md`),
-		),
+		await loadPromptFile(join(domainsDir, domain, "prompts", `${agentId}.md`)),
 	);
 
 	// Layer 3: Runtime context (sub-agent mode only)

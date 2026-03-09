@@ -10,11 +10,11 @@
  *   cosmonauts init                         → agent-driven AGENTS.md bootstrap
  */
 
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import { InteractiveMode, runPrintMode } from "@mariozechner/pi-coding-agent";
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { Command, CommanderError } from "commander";
 import { buildInitPrompt } from "../domains/shared/extensions/init/index.ts";
 import {
