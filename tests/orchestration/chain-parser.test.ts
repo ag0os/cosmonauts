@@ -5,6 +5,8 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { AgentRegistry } from "../../lib/agents/resolver.ts";
+import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 
 describe("parseChain", () => {
@@ -154,6 +156,91 @@ describe("parseChain", () => {
 			expect(() => parseChain("planner -> coordinator:5 -> worker")).toThrow(
 				/role:count.*no longer supported/,
 			);
+		});
+	});
+
+	describe("qualified names", () => {
+		test("parses qualified names preserving domain/agent format", () => {
+			const stages = parseChain("coding/planner -> coding/worker");
+
+			expect(stages).toEqual([
+				{ name: "coding/planner", loop: false },
+				{ name: "coding/worker", loop: false },
+			]);
+		});
+
+		test("lowercases qualified names", () => {
+			const stages = parseChain("Coding/Planner -> Coding/Worker");
+
+			expect(stages).toEqual([
+				{ name: "coding/planner", loop: false },
+				{ name: "coding/worker", loop: false },
+			]);
+		});
+
+		test("mixes qualified and unqualified names", () => {
+			const stages = parseChain("coding/planner -> coordinator");
+
+			expect(stages).toEqual([
+				{ name: "coding/planner", loop: false },
+				{ name: "coordinator", loop: true },
+			]);
+		});
+
+		test("does not reject / as deprecated syntax", () => {
+			// "/" is not ":" — it should parse fine
+			expect(() => parseChain("coding/planner -> coding/worker")).not.toThrow();
+		});
+	});
+
+	describe("custom registry", () => {
+		function makeDef(
+			id: string,
+			loop: boolean,
+			domain?: string,
+		): AgentDefinition {
+			return {
+				id,
+				description: `Test ${id}`,
+				capabilities: [],
+				model: "test/model",
+				tools: "none",
+				extensions: [],
+				projectContext: false,
+				session: "ephemeral",
+				loop,
+				domain,
+			};
+		}
+
+		test("uses provided registry for loop resolution", () => {
+			const registry = new AgentRegistry([
+				makeDef("alpha", true, "custom"),
+				makeDef("beta", false, "custom"),
+			]);
+
+			const stages = parseChain("alpha -> beta", registry);
+
+			expect(stages).toEqual([
+				{ name: "alpha", loop: true },
+				{ name: "beta", loop: false },
+			]);
+		});
+
+		test("resolves qualified names against custom registry", () => {
+			const registry = new AgentRegistry([makeDef("runner", true, "ops")]);
+
+			const stages = parseChain("ops/runner", registry);
+
+			expect(stages).toEqual([{ name: "ops/runner", loop: true }]);
+		});
+
+		test("falls back to loop: false for names not in custom registry", () => {
+			const registry = new AgentRegistry([]);
+
+			const stages = parseChain("unknown-agent", registry);
+
+			expect(stages).toEqual([{ name: "unknown-agent", loop: false }]);
 		});
 	});
 

@@ -4,16 +4,16 @@
  *
  * DSL syntax:
  *   Pipeline:  "planner -> task-manager -> coordinator"
+ *   Qualified: "coding/planner -> coding/worker"
  *   Single:    "planner"
  *
  * Loop behavior is determined by the role's lifecycle, not the DSL.
  * The parser just extracts stage names.
  */
 
+import type { AgentRegistry } from "../agents/index.ts";
 import { createDefaultRegistry } from "../agents/index.ts";
 import type { ChainStage } from "./types.ts";
-
-const DEFAULT_REGISTRY = createDefaultRegistry();
 
 // ============================================================================
 // Parser
@@ -26,7 +26,11 @@ const DEFAULT_REGISTRY = createDefaultRegistry();
  * `loop` property is determined by the role's lifecycle (e.g. coordinator
  * loops, planner does not).
  *
+ * Qualified names like "coding/planner" are preserved — the "/" separator
+ * is not treated specially by the parser.
+ *
  * @param expression - The chain DSL expression to parse
+ * @param registry - Optional agent registry for loop property resolution (defaults to built-in registry)
  * @returns Array of parsed ChainStage objects
  * @throws Error if the expression is empty or contains empty stage names
  *
@@ -37,8 +41,19 @@ const DEFAULT_REGISTRY = createDefaultRegistry();
  * //   { name: "task-manager", loop: false },
  * //   { name: "coordinator", loop: true },
  * // ]
+ *
+ * @example
+ * parseChain("coding/planner -> coding/worker")
+ * // => [
+ * //   { name: "coding/planner", loop: false },
+ * //   { name: "coding/worker", loop: false },
+ * // ]
  */
-export function parseChain(expression: string): ChainStage[] {
+export function parseChain(
+	expression: string,
+	registry?: AgentRegistry,
+): ChainStage[] {
+	const reg = registry ?? createDefaultRegistry();
 	const trimmed = expression.trim();
 
 	if (!trimmed) {
@@ -61,7 +76,7 @@ export function parseChain(expression: string): ChainStage[] {
 			);
 		}
 
-		stages.push({ name, loop: DEFAULT_REGISTRY.get(name)?.loop ?? false });
+		stages.push({ name, loop: reg.get(name)?.loop ?? false });
 	}
 
 	return stages;

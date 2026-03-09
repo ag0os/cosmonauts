@@ -3,6 +3,7 @@
  */
 
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { AgentRegistry } from "../agents/resolver.ts";
 
 // ============================================================================
 // Agent Roles
@@ -100,6 +101,8 @@ export interface ChainConfig {
 	completionLabel?: string;
 	/** Thinking level overrides per role */
 	thinking?: ThinkingConfig;
+	/** Agent registry for resolving agent definitions. Uses default registry if not provided. */
+	registry?: AgentRegistry;
 }
 
 // ============================================================================

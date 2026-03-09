@@ -8,6 +8,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { AgentRegistry } from "../../lib/agents/resolver.ts";
+import type { AgentDefinition } from "../../lib/agents/types.ts";
 import {
 	createDefaultCompletionCheck,
 	runChain,
@@ -165,6 +167,68 @@ describe("runStage", () => {
 			expect(result.success).toBe(false);
 			expect(result.error).toBe("boom");
 			expect(result.iterations).toBe(1);
+		});
+	});
+
+	describe("registry via config", () => {
+		function makeDef(
+			id: string,
+			loop: boolean,
+			domain?: string,
+		): AgentDefinition {
+			return {
+				id,
+				description: `Test ${id}`,
+				capabilities: [],
+				model: "test/model",
+				tools: "none",
+				extensions: [],
+				projectContext: false,
+				session: "ephemeral",
+				loop,
+				domain,
+			};
+		}
+
+		test("uses config.registry to validate agent roles", async () => {
+			const registry = new AgentRegistry([
+				makeDef("custom-agent", false, "ops"),
+			]);
+			const spawner = createMockSpawner();
+			const stage = makeStage("custom-agent", false);
+			const config = makeConfig([stage], { registry });
+
+			const result = await runStage(stage, config, spawner);
+
+			expect(result.success).toBe(true);
+			expect(spawner.spawn).toHaveBeenCalledTimes(1);
+		});
+
+		test("rejects unknown agent when config.registry is provided", async () => {
+			const registry = new AgentRegistry([
+				makeDef("custom-agent", false, "ops"),
+			]);
+			const spawner = createMockSpawner();
+			const stage = makeStage("nonexistent", false);
+			const config = makeConfig([stage], { registry });
+
+			const result = await runStage(stage, config, spawner);
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain('Unknown agent role "nonexistent"');
+			expect(spawner.spawn).not.toHaveBeenCalled();
+		});
+
+		test("resolves qualified names via config.registry", async () => {
+			const registry = new AgentRegistry([makeDef("runner", false, "ops")]);
+			const spawner = createMockSpawner();
+			const stage = makeStage("ops/runner", false);
+			const config = makeConfig([stage], { registry });
+
+			const result = await runStage(stage, config, spawner);
+
+			expect(result.success).toBe(true);
+			expect(spawner.spawn).toHaveBeenCalledTimes(1);
 		});
 	});
 

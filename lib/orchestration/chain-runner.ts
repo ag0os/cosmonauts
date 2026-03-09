@@ -4,6 +4,7 @@
  * single-pass pipeline stages and iterative loop stages.
  */
 
+import type { AgentRegistry } from "../agents/index.ts";
 import { createDefaultRegistry } from "../agents/index.ts";
 import { TaskManager } from "../tasks/task-manager.ts";
 import {
@@ -26,7 +27,11 @@ import type {
 
 const DEFAULT_MAX_TOTAL_ITERATIONS = 50;
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
-const DEFAULT_REGISTRY = createDefaultRegistry();
+
+/** Resolve the registry from config, falling back to the default built-in registry. */
+function resolveRegistry(config: ChainConfig): AgentRegistry {
+	return config.registry ?? createDefaultRegistry();
+}
 
 /** Default operational prompts for chain stages (not agent identity prompts). */
 const DEFAULT_STAGE_PROMPTS: Record<string, string> = {
@@ -246,7 +251,8 @@ export async function runStage(
 	let iterations = 0;
 
 	try {
-		if (!DEFAULT_REGISTRY.has(stage.name)) {
+		const registry = resolveRegistry(config);
+		if (!registry.has(stage.name)) {
 			const message = `Unknown agent role "${stage.name}"`;
 			emit(config, { type: "error", message, stage });
 			return {
@@ -258,8 +264,12 @@ export async function runStage(
 			};
 		}
 
-		const model = getModelForRole(stage.name, config.models);
-		const thinkingLevel = getThinkingForRole(stage.name, config.thinking);
+		const model = getModelForRole(stage.name, config.models, registry);
+		const thinkingLevel = getThinkingForRole(
+			stage.name,
+			config.thinking,
+			registry,
+		);
 		const prompt = buildStagePrompt(stage, config);
 
 		if (!stage.loop) {
