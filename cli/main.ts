@@ -29,6 +29,7 @@ import {
 	runChain,
 } from "../lib/orchestration/chain-runner.ts";
 import { listWorkflows, resolveWorkflow } from "../lib/workflows/loader.ts";
+import type { WorkflowDefinition } from "../lib/workflows/types.ts";
 import { createChainEventLogger } from "./chain-event-logger.ts";
 import { createSession } from "./session.ts";
 import type { CliOptions } from "./types.ts";
@@ -189,6 +190,11 @@ async function run(options: CliOptions): Promise<void> {
 	// Effective domain context: CLI flag takes priority over project config
 	const domainContext = options.domain ?? projectConfig.domain;
 
+	// Aggregate workflows from all discovered domains
+	const domainWorkflows: WorkflowDefinition[] = domains.flatMap(
+		(d) => d.workflows,
+	);
+
 	// --list-domains: print all discovered domains and exit
 	if (options.listDomains) {
 		if (domains.length === 0) {
@@ -203,7 +209,7 @@ async function run(options: CliOptions): Promise<void> {
 
 	// --list-workflows: print available workflows and exit
 	if (options.listWorkflows) {
-		const workflows = await listWorkflows(cwd);
+		const workflows = await listWorkflows(cwd, domainWorkflows);
 		if (workflows.length === 0) {
 			console.log("No workflows available.");
 		} else {
@@ -278,7 +284,7 @@ async function run(options: CliOptions): Promise<void> {
 
 	// 3. --workflow → resolve to chain, run, exit
 	if (options.workflow) {
-		const wf = await resolveWorkflow(options.workflow, cwd);
+		const wf = await resolveWorkflow(options.workflow, cwd, domainWorkflows);
 		const stages = parseChain(wf.chain);
 		injectUserPrompt(stages, options.prompt);
 
