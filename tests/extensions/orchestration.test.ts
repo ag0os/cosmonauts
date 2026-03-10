@@ -431,4 +431,36 @@ describe("orchestration extension", () => {
 		// CosmonautsRuntime.create should only be called once for the same cwd
 		expect(runtimeCreateMock).toHaveBeenCalledTimes(1);
 	});
+
+	test("runtime cache evicts failed bootstrap attempts", async () => {
+		const cwd = "/tmp/project";
+		const pi = createMockPi(cwd);
+		orchestrationExtension(pi as never);
+
+		runtimeCreateMock
+			.mockRejectedValueOnce(new Error("invalid config"))
+			.mockResolvedValueOnce({
+				agentRegistry: realRegistry,
+				domainContext: undefined,
+				projectSkills: [],
+				domainsDir: testDomainsDir,
+			});
+		parseChainMock.mockReturnValue([{ name: "planner", loop: false }]);
+		runChainMock.mockResolvedValue({
+			success: true,
+			stageResults: [],
+			totalDurationMs: 1,
+			errors: [],
+		} as ChainResult);
+
+		await expect(
+			pi.callTool("chain_run", { expression: "planner" }),
+		).rejects.toThrow("invalid config");
+
+		await expect(
+			pi.callTool("chain_run", { expression: "planner" }),
+		).resolves.toBeDefined();
+
+		expect(runtimeCreateMock).toHaveBeenCalledTimes(2);
+	});
 });

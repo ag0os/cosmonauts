@@ -331,6 +331,32 @@ describe("validateDomains", () => {
 			expect(match).toBeUndefined();
 		});
 
+		it("passes when subagent is domain-qualified", () => {
+			const shared = makeShared();
+			const coding = makeDomain({
+				manifest: { id: "coding", description: "Coding" },
+				agents: new Map([
+					[
+						"cosmo",
+						makeAgent({
+							id: "cosmo",
+							subagents: ["coding/worker"],
+						}),
+					],
+					["worker", makeAgent({ id: "worker" })],
+				]),
+				prompts: new Set(["cosmo", "worker"]),
+			});
+
+			const diagnostics = validateDomains([shared, coding]);
+			const match = diagnostics.find(
+				(d) =>
+					d.agent === "cosmo" &&
+					d.message.includes('"coding/worker"'),
+			);
+			expect(match).toBeUndefined();
+		});
+
 		it("passes when agent has no subagents", () => {
 			const shared = makeShared();
 			const coding = makeDomain({
@@ -460,6 +486,33 @@ describe("validateDomains", () => {
 			const diagnostics = validateDomains([shared, coding]);
 			const match = diagnostics.find(
 				(d) => d.message.includes("Workflow stage"),
+			);
+			expect(match).toBeUndefined();
+		});
+
+		it("passes when workflow stages are domain-qualified", () => {
+			const shared = makeShared();
+			const coding = makeDomain({
+				manifest: { id: "coding", description: "Coding" },
+				agents: new Map([
+					["planner", makeAgent({ id: "planner" })],
+					["worker", makeAgent({ id: "worker" })],
+				]),
+				prompts: new Set(["planner", "worker"]),
+				workflows: [
+					{
+						name: "build",
+						description: "Build",
+						chain: "coding/planner -> coding/worker",
+					},
+				],
+			});
+
+			const diagnostics = validateDomains([shared, coding]);
+			const match = diagnostics.find(
+				(d) =>
+					d.workflow === "build" &&
+					d.message.includes('"coding/worker"'),
 			);
 			expect(match).toBeUndefined();
 		});

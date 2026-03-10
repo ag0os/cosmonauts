@@ -50,11 +50,13 @@ export function validateDomains(
 	const diagnostics: DomainValidationDiagnostic[] = [];
 	const shared = domains.find((d) => d.manifest.id === "shared");
 
-	// Collect all known agent IDs across all domains.
+	// Collect all known agent IDs across all domains in both bare and qualified
+	// forms because workflows/subagent allowlists may use either.
 	const allAgentIds = new Set<string>();
 	for (const domain of domains) {
 		for (const agentId of domain.agents.keys()) {
 			allAgentIds.add(agentId);
+			allAgentIds.add(`${domain.manifest.id}/${agentId}`);
 		}
 	}
 
