@@ -1,10 +1,14 @@
 /**
  * Tests for orchestration extension wiring.
- * Verifies project skill filters are loaded and forwarded to runtime calls.
+ * Verifies the cached CosmonautsRuntime is used and forwarded to runtime calls.
  */
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
-import type { ProjectConfig } from "../../lib/config/types.ts";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import type { AgentRegistry } from "../../lib/agents/index.ts";
+import { createRegistryFromDomains } from "../../lib/agents/index.ts";
+import { loadDomains } from "../../lib/domains/index.ts";
 import type { ChainResult } from "../../lib/orchestration/types.ts";
 
 // ============================================================================
@@ -12,14 +16,16 @@ import type { ChainResult } from "../../lib/orchestration/types.ts";
 // ============================================================================
 
 const mocks = vi.hoisted(() => ({
-	loadProjectConfig: vi.fn(),
+	runtimeCreate: vi.fn(),
 	parseChain: vi.fn(),
 	runChain: vi.fn(),
 	createPiSpawner: vi.fn(),
 }));
 
-vi.mock("../../lib/config/index.ts", () => ({
-	loadProjectConfig: mocks.loadProjectConfig,
+vi.mock("../../lib/runtime.ts", () => ({
+	CosmonautsRuntime: {
+		create: mocks.runtimeCreate,
+	},
 }));
 
 vi.mock("../../lib/orchestration/chain-parser.ts", () => ({
@@ -42,7 +48,6 @@ vi.mock("../../lib/orchestration/agent-spawner.ts", () => ({
 }));
 
 import orchestrationExtension from "../../domains/shared/extensions/orchestration/index.ts";
-import { loadProjectConfig } from "../../lib/config/index.ts";
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import { runChain } from "../../lib/orchestration/chain-runner.ts";
@@ -78,14 +83,40 @@ function createMockPi(cwd: string, options?: MockPiOptions) {
 }
 
 describe("orchestration extension", () => {
-	const loadProjectConfigMock = vi.mocked(loadProjectConfig);
+	const runtimeCreateMock = vi.mocked(mocks.runtimeCreate);
 	const parseChainMock = vi.mocked(parseChain);
 	const runChainMock = vi.mocked(runChain);
 	const createPiSpawnerMock = vi.mocked(createPiSpawner);
 
+	const testDomainsDir = resolve(
+		fileURLToPath(import.meta.url),
+		"..",
+		"..",
+		"..",
+		"domains",
+	);
+	let realRegistry: AgentRegistry;
+
+	beforeAll(async () => {
+		const domains = await loadDomains(testDomainsDir);
+		realRegistry = createRegistryFromDomains(domains);
+	});
+
+	function mockRuntime(overrides?: {
+		domainContext?: string;
+		projectSkills?: readonly string[];
+	}) {
+		runtimeCreateMock.mockResolvedValue({
+			agentRegistry: realRegistry,
+			domainContext: overrides?.domainContext,
+			projectSkills: overrides?.projectSkills ?? [],
+			domainsDir: testDomainsDir,
+		});
+	}
+
 	beforeEach(() => {
 		vi.clearAllMocks();
-		loadProjectConfigMock.mockResolvedValue({ skills: [] } as ProjectConfig);
+		mockRuntime();
 	});
 
 	test("chain_run forwards project skills from config", async () => {
@@ -93,10 +124,10 @@ describe("orchestration extension", () => {
 		const pi = createMockPi(cwd);
 		orchestrationExtension(pi as never);
 
-		loadProjectConfigMock.mockResolvedValue({
-			domain: "coding",
-			skills: ["typescript", "backend"],
-		} as ProjectConfig);
+		mockRuntime({
+			domainContext: "coding",
+			projectSkills: ["typescript", "backend"],
+		});
 		parseChainMock.mockReturnValue([{ name: "planner", loop: false }]);
 		runChainMock.mockResolvedValue({
 			success: true,
@@ -128,9 +159,7 @@ describe("orchestration extension", () => {
 		const pi = createMockPi(cwd);
 		orchestrationExtension(pi as never);
 
-		loadProjectConfigMock.mockResolvedValue({
-			skills: ["typescript"],
-		} as ProjectConfig);
+		mockRuntime({ projectSkills: ["typescript"] });
 		parseChainMock.mockReturnValue([{ name: "coordinator", loop: true }]);
 		runChainMock.mockResolvedValue({
 			success: true,
@@ -157,9 +186,7 @@ describe("orchestration extension", () => {
 		const pi = createMockPi(cwd);
 		orchestrationExtension(pi as never);
 
-		loadProjectConfigMock.mockResolvedValue({
-			skills: ["typescript"],
-		} as ProjectConfig);
+		mockRuntime({ projectSkills: ["typescript"] });
 		parseChainMock.mockReturnValue([
 			{ name: "planner", loop: false },
 			{ name: "coordinator", loop: true },
@@ -200,10 +227,10 @@ describe("orchestration extension", () => {
 		});
 		orchestrationExtension(pi as never);
 
-		loadProjectConfigMock.mockResolvedValue({
-			domain: "coding",
-			skills: ["typescript"],
-		} as ProjectConfig);
+		mockRuntime({
+			domainContext: "coding",
+			projectSkills: ["typescript"],
+		});
 
 		const spawn = vi.fn().mockResolvedValue({
 			success: true,
@@ -242,7 +269,7 @@ describe("orchestration extension", () => {
 		});
 		orchestrationExtension(pi as never);
 
-		loadProjectConfigMock.mockResolvedValue({ skills: [] } as ProjectConfig);
+		mockRuntime();
 		const spawn = vi.fn();
 		const dispose = vi.fn();
 		createPiSpawnerMock.mockReturnValue({ spawn, dispose });
@@ -270,9 +297,7 @@ describe("orchestration extension", () => {
 		});
 		orchestrationExtension(pi as never);
 
-		loadProjectConfigMock.mockResolvedValue({
-			skills: [],
-		} as ProjectConfig);
+		mockRuntime();
 		const spawn = vi.fn().mockResolvedValue({
 			success: true,
 			sessionId: "session-1",
@@ -384,5 +409,26 @@ describe("orchestration extension", () => {
 		expect(component?.render(120).join("\n")).toContain(
 			"failed to load project config",
 		);
+	});
+
+	test("runtime is cached per-cwd across multiple tool calls", async () => {
+		const cwd = "/tmp/project";
+		const pi = createMockPi(cwd);
+		orchestrationExtension(pi as never);
+
+		mockRuntime({ projectSkills: ["typescript"] });
+		parseChainMock.mockReturnValue([{ name: "planner", loop: false }]);
+		runChainMock.mockResolvedValue({
+			success: true,
+			stageResults: [],
+			totalDurationMs: 1,
+			errors: [],
+		} as ChainResult);
+
+		await pi.callTool("chain_run", { expression: "planner" });
+		await pi.callTool("chain_run", { expression: "planner" });
+
+		// CosmonautsRuntime.create should only be called once for the same cwd
+		expect(runtimeCreateMock).toHaveBeenCalledTimes(1);
 	});
 });

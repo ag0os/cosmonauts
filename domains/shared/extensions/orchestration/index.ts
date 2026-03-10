@@ -3,14 +3,9 @@ import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
-import {
-	type AgentRegistry,
-	createRegistryFromDomains,
-} from "../../../../lib/agents/index.ts";
+import { unqualifyRole } from "../../../../lib/agents/qualified-role.ts";
 import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
 import type { AgentDefinition } from "../../../../lib/agents/types.ts";
-import { loadProjectConfig } from "../../../../lib/config/index.ts";
-import { loadDomains } from "../../../../lib/domains/index.ts";
 import { createPiSpawner } from "../../../../lib/orchestration/agent-spawner.ts";
 import { parseChain } from "../../../../lib/orchestration/chain-parser.ts";
 import {
@@ -21,6 +16,7 @@ import type {
 	ChainEvent,
 	ChainResult,
 } from "../../../../lib/orchestration/types.ts";
+import { CosmonautsRuntime } from "../../../../lib/runtime.ts";
 
 // ============================================================================
 // Rendering Helpers
@@ -37,11 +33,7 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 function roleLabel(role: string): string {
-	// Strip domain prefix for display (e.g. "coding/worker" → "worker")
-	const unqualified = role.includes("/")
-		? (role.split("/").pop() ?? role)
-		: role;
-	return ROLE_LABELS[unqualified] ?? role;
+	return ROLE_LABELS[unqualifyRole(role)] ?? role;
 }
 
 /**
@@ -138,40 +130,31 @@ interface SpawnProgressDetails {
 	taskId?: string;
 }
 
-interface RuntimeDomainContext {
-	projectSkills?: readonly string[];
-	domainContext?: string;
-	registry: AgentRegistry;
-}
-
-const DOMAINS_DIR = resolve(
-	fileURLToPath(import.meta.url),
-	"..",
-	"..",
-	"..",
-	"..",
-	"..",
-	"domains",
-);
-
-async function loadRuntimeDomainContext(
-	cwd: string,
-): Promise<RuntimeDomainContext> {
-	const projectConfig = await loadProjectConfig(cwd);
-	const domains = await loadDomains(DOMAINS_DIR);
-
-	return {
-		projectSkills: projectConfig.skills,
-		domainContext: projectConfig.domain,
-		registry: createRegistryFromDomains(domains),
-	};
-}
-
 // ============================================================================
 // Extension
 // ============================================================================
 
 export default function orchestrationExtension(pi: ExtensionAPI) {
+	const runtimeCache = new Map<string, Promise<CosmonautsRuntime>>();
+	const domainsDir = resolve(
+		fileURLToPath(import.meta.url),
+		"..",
+		"..",
+		"..",
+		"..",
+		"..",
+		"domains",
+	);
+
+	function getRuntime(cwd: string): Promise<CosmonautsRuntime> {
+		let promise = runtimeCache.get(cwd);
+		if (!promise) {
+			promise = CosmonautsRuntime.create({ domainsDir, projectRoot: cwd });
+			runtimeCache.set(cwd, promise);
+		}
+		return promise;
+	}
+
 	// chain_run
 	pi.registerTool({
 		name: "chain_run",
@@ -213,9 +196,12 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 			),
 		}),
 		execute: async (_toolCallId, params, _signal, onUpdate, ctx) => {
-			const { projectSkills, domainContext, registry } =
-				await loadRuntimeDomainContext(ctx.cwd);
-			const stages = parseChain(params.expression, registry, domainContext);
+			const runtime = await getRuntime(ctx.cwd);
+			const stages = parseChain(
+				params.expression,
+				runtime.agentRegistry,
+				runtime.domainContext,
+			);
 			injectUserPrompt(stages, params.prompt);
 			const thinking = params.thinkingLevel
 				? { default: params.thinkingLevel }
@@ -226,11 +212,11 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 			const result = await runChain({
 				stages,
 				projectRoot: ctx.cwd,
-				projectSkills,
-				domainContext,
+				projectSkills: runtime.projectSkills,
+				domainContext: runtime.domainContext,
 				completionLabel: params.completionLabel,
 				thinking,
-				registry,
+				registry: runtime.agentRegistry,
 				onEvent: (event: ChainEvent) => {
 					const line = chainEventToProgressLine(event);
 					if (line) {
@@ -364,8 +350,7 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 			),
 		}),
 		execute: async (_toolCallId, params, _signal, onUpdate, ctx) => {
-			const { projectSkills, domainContext, registry } =
-				await loadRuntimeDomainContext(ctx.cwd);
+			const runtime = await getRuntime(ctx.cwd);
 			const systemPrompt = ctx.getSystemPrompt();
 			const callerRole = extractAgentIdFromSystemPrompt(systemPrompt);
 			if (!callerRole) {
@@ -384,7 +369,10 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 				};
 			}
 
-			const callerDef = registry.get(callerRole, domainContext);
+			const callerDef = runtime.agentRegistry.get(
+				callerRole,
+				runtime.domainContext,
+			);
 			if (!callerDef) {
 				return {
 					content: [
@@ -401,7 +389,10 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 				};
 			}
 
-			const targetDef = registry.get(params.role, domainContext);
+			const targetDef = runtime.agentRegistry.get(
+				params.role,
+				runtime.domainContext,
+			);
 			if (!targetDef) {
 				return {
 					content: [
@@ -454,17 +445,20 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 				} as SpawnProgressDetails,
 			});
 
-			const spawner = createPiSpawner(registry, DOMAINS_DIR);
+			const spawner = createPiSpawner(
+				runtime.agentRegistry,
+				runtime.domainsDir,
+			);
 			try {
 				const result = await spawner.spawn({
 					role: params.role,
-					domainContext,
+					domainContext: runtime.domainContext,
 					cwd: ctx.cwd,
 					prompt: params.prompt,
 					model: params.model,
 					thinkingLevel: params.thinkingLevel,
 					runtimeContext: params.runtimeContext,
-					projectSkills,
+					projectSkills: runtime.projectSkills,
 				});
 				return {
 					content: [
