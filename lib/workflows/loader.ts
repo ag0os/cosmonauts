@@ -30,7 +30,7 @@ export function selectDomainWorkflows(
  */
 export async function loadWorkflows(
 	projectRoot: string,
-	domainWorkflows?: WorkflowDefinition[],
+	domainWorkflows?: readonly WorkflowDefinition[],
 ): Promise<WorkflowDefinition[]> {
 	const config = await loadProjectConfig(projectRoot);
 
@@ -64,7 +64,7 @@ export async function loadWorkflows(
 export async function resolveWorkflow(
 	name: string,
 	projectRoot: string,
-	domainWorkflows?: WorkflowDefinition[],
+	domainWorkflows?: readonly WorkflowDefinition[],
 ): Promise<WorkflowDefinition> {
 	const workflows = await loadWorkflows(projectRoot, domainWorkflows);
 	const found = workflows.find((wf) => wf.name === name);
@@ -80,7 +80,7 @@ export async function resolveWorkflow(
  */
 export async function listWorkflows(
 	projectRoot: string,
-	domainWorkflows?: WorkflowDefinition[],
+	domainWorkflows?: readonly WorkflowDefinition[],
 ): Promise<WorkflowDefinition[]> {
 	return loadWorkflows(projectRoot, domainWorkflows);
 }

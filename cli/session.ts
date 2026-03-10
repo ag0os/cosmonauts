@@ -6,8 +6,7 @@
  * - Returns session without sending a prompt (caller controls execution mode)
  */
 
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import {
@@ -29,13 +28,6 @@ import {
 	resolveTools,
 } from "../lib/orchestration/agent-spawner.ts";
 
-const DOMAINS_DIR = resolve(
-	fileURLToPath(import.meta.url),
-	"..",
-	"..",
-	"domains",
-);
-
 /**
  * Encode a cwd into Pi's session directory path.
  * Uses Pi's getAgentDir() for the base path (respects PI_CODING_AGENT_DIR)
@@ -51,6 +43,8 @@ export interface CreateSessionOptions {
 	definition: AgentDefinition;
 	/** Working directory */
 	cwd: string;
+	/** Absolute path to the root domains directory */
+	domainsDir: string;
 	/** Model override (takes precedence over definition.model) */
 	model?: Model<Api>;
 	/** Thinking level override */
@@ -75,6 +69,7 @@ export async function createSession(
 	const {
 		definition: def,
 		cwd,
+		domainsDir,
 		model,
 		thinkingLevel,
 		persistent,
@@ -88,7 +83,7 @@ export async function createSession(
 		agentId: def.id,
 		domain: def.domain ?? "coding",
 		capabilities: def.capabilities,
-		domainsDir: DOMAINS_DIR,
+		domainsDir,
 	});
 	promptContent = appendAgentIdentityMarker(
 		promptContent,
@@ -97,7 +92,7 @@ export async function createSession(
 
 	const extensionPaths = resolveExtensionPaths(def.extensions, {
 		domain: def.domain ?? "coding",
-		domainsDir: DOMAINS_DIR,
+		domainsDir,
 	});
 
 	const skillsOverride = buildSkillsOverride(def.skills, projectSkills);

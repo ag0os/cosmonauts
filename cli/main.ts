@@ -13,26 +13,17 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import { getModel } from "@mariozechner/pi-ai";
 import { InteractiveMode, runPrintMode } from "@mariozechner/pi-coding-agent";
 import { Command, CommanderError } from "commander";
 import { buildInitPrompt } from "../domains/shared/extensions/init/index.ts";
-import {
-	type AgentRegistry,
-	createRegistryFromDomains,
-} from "../lib/agents/index.ts";
-import { loadProjectConfig } from "../lib/config/index.ts";
-import { loadDomains } from "../lib/domains/loader.ts";
+import { resolveModel } from "../lib/orchestration/agent-spawner.ts";
 import { parseChain } from "../lib/orchestration/chain-parser.ts";
 import {
 	injectUserPrompt,
 	runChain,
 } from "../lib/orchestration/chain-runner.ts";
-import {
-	listWorkflows,
-	resolveWorkflow,
-	selectDomainWorkflows,
-} from "../lib/workflows/loader.ts";
+import { CosmonautsRuntime } from "../lib/runtime.ts";
+import { listWorkflows, resolveWorkflow } from "../lib/workflows/loader.ts";
 import { createChainEventLogger } from "./chain-event-logger.ts";
 import { createSession } from "./session.ts";
 import type { CliOptions } from "./types.ts";
@@ -57,36 +48,6 @@ function parseThinkingLevel(value: string): ThinkingLevel {
 		);
 	}
 	return value as ThinkingLevel;
-}
-
-// ============================================================================
-// Model Resolution
-// ============================================================================
-
-/**
- * Resolve a "provider/model-id" string into a Pi Model object.
- * Duplicated from agent-spawner.ts to avoid coupling CLI to spawner internals.
- */
-function resolveModel(modelId: string) {
-	const slashIndex = modelId.indexOf("/");
-	if (slashIndex === -1) {
-		throw new Error(
-			`Invalid model ID "${modelId}": expected "provider/model" format`,
-		);
-	}
-
-	const provider = modelId.slice(0, slashIndex);
-	const id = modelId.slice(slashIndex + 1);
-
-	const model = getModel(
-		provider as Parameters<typeof getModel>[0],
-		id as never,
-	);
-	if (!model) {
-		throw new Error(`Model not found: provider="${provider}", id="${id}"`);
-	}
-
-	return model;
 }
 
 // ============================================================================
@@ -175,33 +136,33 @@ export function parseCliArgs(argv: string[]): CliOptions {
 
 async function run(options: CliOptions): Promise<void> {
 	const cwd = process.cwd();
-
-	// Load project config once for the session
-	const projectConfig = await loadProjectConfig(cwd);
-	const projectSkills = projectConfig.skills;
-
-	// Bootstrap domain loading and build registry
 	const domainsDir = resolve(
 		fileURLToPath(import.meta.url),
 		"..",
 		"..",
 		"domains",
 	);
-	const domains = await loadDomains(domainsDir);
-	const registry: AgentRegistry = createRegistryFromDomains(domains);
 
-	// Effective domain context: CLI flag takes priority over project config
-	const domainContext = options.domain ?? projectConfig.domain;
+	// Bootstrap: load config, discover domains, build registries
+	const runtime = await CosmonautsRuntime.create({
+		domainsDir,
+		projectRoot: cwd,
+		domainOverride: options.domain,
+	});
 
-	// Aggregate workflows from all discovered domains
-	const domainWorkflows = selectDomainWorkflows(domains, domainContext);
+	const {
+		agentRegistry: registry,
+		domainContext,
+		workflows: domainWorkflows,
+		projectSkills,
+	} = runtime;
 
 	// --list-domains: print all discovered domains and exit
 	if (options.listDomains) {
-		if (domains.length === 0) {
+		if (runtime.domains.length === 0) {
 			console.log("No domains found.");
 		} else {
-			for (const d of domains) {
+			for (const d of runtime.domains) {
 				console.log(`  ${d.manifest.id}  ${d.manifest.description}`);
 			}
 		}
@@ -246,6 +207,7 @@ async function run(options: CliOptions): Promise<void> {
 		const { session } = await createSession({
 			definition: cosmoDefinition,
 			cwd,
+			domainsDir: runtime.domainsDir,
 			model,
 			thinkingLevel: options.thinking,
 			persistent: false,
@@ -276,6 +238,7 @@ async function run(options: CliOptions): Promise<void> {
 			projectSkills,
 			completionLabel: options.completionLabel,
 			registry,
+			domainsDir: runtime.domainsDir,
 			...(options.thinking && { thinking: { default: options.thinking } }),
 		});
 
@@ -299,6 +262,7 @@ async function run(options: CliOptions): Promise<void> {
 			projectSkills,
 			completionLabel: options.completionLabel,
 			registry,
+			domainsDir: runtime.domainsDir,
 			...(options.thinking && { thinking: { default: options.thinking } }),
 		});
 
@@ -317,6 +281,7 @@ async function run(options: CliOptions): Promise<void> {
 		const { session } = await createSession({
 			definition,
 			cwd,
+			domainsDir: runtime.domainsDir,
 			model,
 			thinkingLevel: options.thinking,
 			persistent: false,
@@ -339,6 +304,7 @@ async function run(options: CliOptions): Promise<void> {
 	const result = await createSession({
 		definition,
 		cwd,
+		domainsDir: runtime.domainsDir,
 		model,
 		thinkingLevel: options.thinking,
 		persistent: true,
