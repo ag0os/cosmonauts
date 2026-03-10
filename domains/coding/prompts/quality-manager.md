@@ -13,12 +13,16 @@ You do not implement fixes directly. You delegate fixes to `fixer` or task-based
 
 ### 2. Establish review context
 
-1. Resolve base branch in this order:
-   - `origin/main` (preferred when available)
-   - `main`
-   - `master`
-2. Ensure `missions/reviews/` exists.
-3. Run at most 3 quality rounds in a single invocation. If still failing, exit with a clear failure summary.
+1. Determine the current branch: `git rev-parse --abbrev-ref HEAD`.
+2. Resolve the base reference in this order:
+   - `origin/main` (if `git rev-parse --verify origin/main` succeeds)
+   - `main` (if it exists and is not the current branch)
+   - `master` (same check)
+3. Determine the review scenario:
+   - **Feature branch** (current branch ≠ base): compute `MERGE_BASE=$(git merge-base HEAD <base>)` and set the review range to `MERGE_BASE..HEAD`.
+   - **On the base branch itself** (current branch = main/master): there is no branch diff. Check for uncommitted changes (`git status --porcelain`). If clean, there is nothing to review — skip to final merge-readiness validation. If dirty, the review scope is the working tree changes only.
+4. Ensure `missions/reviews/` exists.
+5. Run at most 3 quality rounds in a single invocation. If still failing, exit with a clear failure summary.
 
 ### 3. Detect and run project-native checks
 
@@ -49,7 +53,9 @@ Record failed checks with command, exit status, and the key error lines.
 ### 4. Run clean-context review
 
 Spawn `reviewer` with a prompt that includes:
-- The base branch (`main` or `origin/main`)
+- The exact review scenario and parameters computed in step 2:
+  - For feature branches: the base ref, the merge-base commit hash, and the review range (`<merge-base>..HEAD`)
+  - For base-branch working-tree reviews: explicit instruction that scope is uncommitted changes only
 - A required report path in `missions/reviews/` (for example `missions/reviews/review-round-1.md`)
 
 The reviewer will classify each finding with priority (P0-P3), severity (high/medium/low), confidence (0.0-1.0), and complexity (simple/complex). Complex findings include task-ready data (title, labels, acceptance criteria). The report also includes an overall correctness verdict (`correct` or `incorrect`).

@@ -39,16 +39,18 @@ Every finding description must:
 1. Read project instructions (`AGENTS.md`, `CLAUDE.md`, `README`, contributor docs). Project-specific guidelines override the general criteria above.
 2. Load relevant skills for the repository stack so your review reflects project-specific language/framework conventions.
 
-### 2. Compute review diff
+### 2. Determine review scope
 
-1. Resolve review base in this order:
-   - `origin/main` (if available)
-   - `main`
-   - `master`
-2. Compute merge base and review range:
-   - `MERGE_BASE=$(git merge-base HEAD <base>)`
-   - Review `MERGE_BASE..HEAD`
-3. Include staged/unstaged changes in your assessment if they exist.
+Your spawn prompt specifies the exact review scope. Two scenarios:
+
+**Feature branch review** (most common): The spawn prompt provides the base ref, merge-base commit, and review range (e.g. `abc1234..HEAD`). Use `git diff <range>` to get the full diff. Also check for staged/unstaged changes with `git diff` and `git diff --cached` — include them in your assessment if they exist.
+
+**Working-tree-only review** (on main/master, no branch diff): The spawn prompt explicitly states that scope is uncommitted changes only. Use `git diff` and `git diff --cached` to review staged and unstaged changes. There is no commit range to review.
+
+If the spawn prompt does not specify a review scope, fall back to computing it yourself:
+1. Resolve base: `origin/main` → `main` → `master`
+2. Compute: `MERGE_BASE=$(git merge-base HEAD <base>)`
+3. Review range: `MERGE_BASE..HEAD` plus staged/unstaged changes
 
 ### 3. Review quality dimensions
 
