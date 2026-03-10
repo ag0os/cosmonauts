@@ -105,6 +105,8 @@ export interface ChainConfig {
 	thinking?: ThinkingConfig;
 	/** Agent registry for resolving agent definitions. Uses default registry if not provided. */
 	registry?: AgentRegistry;
+	/** Absolute path to the root domains directory. Computed from package root if not provided. */
+	domainsDir?: string;
 }
 
 // ============================================================================

@@ -454,7 +454,7 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 				} as SpawnProgressDetails,
 			});
 
-			const spawner = createPiSpawner(registry);
+			const spawner = createPiSpawner(registry, DOMAINS_DIR);
 			try {
 				const result = await spawner.spawn({
 					role: params.role,

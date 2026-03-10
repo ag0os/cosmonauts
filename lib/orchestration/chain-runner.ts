@@ -4,6 +4,8 @@
  * single-pass pipeline stages and iterative loop stages.
  */
 
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { AgentRegistry } from "../agents/index.ts";
 import { createDefaultRegistry } from "../agents/index.ts";
 import { TaskManager } from "../tasks/task-manager.ts";
@@ -31,6 +33,20 @@ const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 /** Resolve the registry from config, falling back to the default built-in registry. */
 function resolveRegistry(config: ChainConfig): AgentRegistry {
 	return config.registry ?? createDefaultRegistry();
+}
+
+/** Fallback domains directory derived from this package's source tree. */
+const FALLBACK_DOMAINS_DIR = resolve(
+	fileURLToPath(import.meta.url),
+	"..",
+	"..",
+	"..",
+	"domains",
+);
+
+/** Resolve the domains directory from config, falling back to the package default. */
+function resolveDomainsDir(config: ChainConfig): string {
+	return config.domainsDir ?? FALLBACK_DOMAINS_DIR;
 }
 
 /** Default operational prompts for chain stages (not agent identity prompts). */
@@ -180,7 +196,10 @@ export async function runChain(config: ChainConfig): Promise<ChainResult> {
 
 	const stageResults: StageResult[] = [];
 	const errors: string[] = [];
-	const spawner = createPiSpawner(resolveRegistry(config));
+	const spawner = createPiSpawner(
+		resolveRegistry(config),
+		resolveDomainsDir(config),
+	);
 	let totalIterations = 0;
 
 	emit(config, { type: "chain_start", stages: config.stages });

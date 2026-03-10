@@ -8,8 +8,7 @@
  */
 
 import { existsSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import {
@@ -23,9 +22,9 @@ import type { AgentToolSet } from "../agents/index.ts";
 import {
 	type AgentRegistry,
 	appendAgentIdentityMarker,
-	createDefaultRegistry,
 	qualifyAgentId,
 } from "../agents/index.ts";
+import { roleToConfigKey } from "../agents/qualified-role.ts";
 import { buildSkillsOverride } from "../agents/skills.ts";
 import { assemblePrompts } from "../domains/prompt-assembly.ts";
 import type {
@@ -35,16 +34,6 @@ import type {
 	SpawnResult,
 	ThinkingConfig,
 } from "./types.ts";
-
-const DEFAULT_REGISTRY = createDefaultRegistry();
-
-const DOMAINS_DIR = resolve(
-	fileURLToPath(import.meta.url),
-	"..",
-	"..",
-	"..",
-	"domains",
-);
 
 // ============================================================================
 // Model Resolution
@@ -77,7 +66,7 @@ export function getModelForRole(
 	}
 
 	// Check agent definition for model
-	const def = (registry ?? DEFAULT_REGISTRY).get(role, domainContext);
+	const def = registry?.get(role, domainContext);
 	if (def?.model) {
 		return def.model;
 	}
@@ -115,7 +104,7 @@ export function getThinkingForRole(
 	}
 
 	// Check agent definition for thinkingLevel
-	const def = (registry ?? DEFAULT_REGISTRY).get(role, domainContext);
+	const def = registry?.get(role, domainContext);
 	if (def?.thinkingLevel) {
 		return def.thinkingLevel;
 	}
@@ -209,8 +198,10 @@ function isDirectory(path: string): boolean {
  * Agent identity is injected via the system prompt using prompt files
  * loaded from the agent definition's `prompts` array.
  */
-export function createPiSpawner(registry?: AgentRegistry): AgentSpawner {
-	const reg = registry ?? DEFAULT_REGISTRY;
+export function createPiSpawner(
+	registry: AgentRegistry,
+	domainsDir: string,
+): AgentSpawner {
 	return {
 		async spawn(config: SpawnConfig): Promise<SpawnResult> {
 			// Respect abort signal before doing any work
@@ -226,22 +217,27 @@ export function createPiSpawner(registry?: AgentRegistry): AgentSpawner {
 			try {
 				const modelId =
 					config.model ??
-					getModelForRole(config.role, undefined, reg, config.domainContext);
+					getModelForRole(
+						config.role,
+						undefined,
+						registry,
+						config.domainContext,
+					);
 				const model = resolveModel(modelId);
 				const thinkingLevel =
 					config.thinkingLevel ??
 					getThinkingForRole(
 						config.role,
 						undefined,
-						reg,
+						registry,
 						config.domainContext,
 					);
 
 				// Resolve full agent definition (unknown roles are rejected).
-				const def = reg.get(config.role, config.domainContext);
+				const def = registry.get(config.role, config.domainContext);
 				if (!def) {
 					throw new Error(
-						`Unknown agent role "${config.role}". Available agents: ${reg.listIds().join(", ")}`,
+						`Unknown agent role "${config.role}". Available agents: ${registry.listIds().join(", ")}`,
 					);
 				}
 
@@ -253,7 +249,7 @@ export function createPiSpawner(registry?: AgentRegistry): AgentSpawner {
 					agentId: def.id,
 					domain: def.domain ?? "coding",
 					capabilities: def.capabilities,
-					domainsDir: DOMAINS_DIR,
+					domainsDir,
 					runtimeContext:
 						config.runtimeContext?.mode === "sub-agent"
 							? {
@@ -274,7 +270,7 @@ export function createPiSpawner(registry?: AgentRegistry): AgentSpawner {
 				// Extensions: domain-aware resolution with shared fallback
 				const extensionPaths = resolveExtensionPaths(def.extensions, {
 					domain: def.domain ?? "coding",
-					domainsDir: DOMAINS_DIR,
+					domainsDir,
 				});
 
 				// Build resource loader with all definition fields
@@ -339,42 +335,10 @@ export function createPiSpawner(registry?: AgentRegistry): AgentSpawner {
 // ============================================================================
 
 /**
- * Map a role string to its corresponding ModelConfig key.
- * Returns undefined for unknown roles.
- */
-function roleToConfigKey(
-	role: string,
-): keyof Omit<ModelConfig, "default"> | undefined {
-	switch (baseRoleName(role)) {
-		case "planner":
-			return "planner";
-		case "task-manager":
-			return "taskManager";
-		case "coordinator":
-			return "coordinator";
-		case "worker":
-			return "worker";
-		case "quality-manager":
-			return "qualityManager";
-		case "reviewer":
-			return "reviewer";
-		case "fixer":
-			return "fixer";
-		default:
-			return undefined;
-	}
-}
-
-function baseRoleName(role: string): string {
-	const slashIndex = role.lastIndexOf("/");
-	return slashIndex === -1 ? role : role.slice(slashIndex + 1);
-}
-
-/**
  * Resolve a "provider/model-id" string into a Pi Model object.
  * Throws if the model is not found in the registry.
  */
-function resolveModel(modelId: string) {
+export function resolveModel(modelId: string) {
 	const slashIndex = modelId.indexOf("/");
 	if (slashIndex === -1) {
 		throw new Error(

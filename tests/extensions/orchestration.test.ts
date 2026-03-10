@@ -230,6 +230,7 @@ describe("orchestration extension", () => {
 			expect.objectContaining({
 				has: expect.any(Function),
 			}),
+			expect.any(String),
 		);
 		expect(dispose).toHaveBeenCalledTimes(1);
 	});
