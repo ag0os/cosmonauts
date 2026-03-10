@@ -6,38 +6,14 @@
  * resolution, and runtime registration for user-defined agents.
  */
 
-import coordinator from "../../domains/coding/agents/coordinator.ts";
-import cosmo from "../../domains/coding/agents/cosmo.ts";
-import fixer from "../../domains/coding/agents/fixer.ts";
-import planner from "../../domains/coding/agents/planner.ts";
-import qualityManager from "../../domains/coding/agents/quality-manager.ts";
-import reviewer from "../../domains/coding/agents/reviewer.ts";
-import taskManager from "../../domains/coding/agents/task-manager.ts";
-import worker from "../../domains/coding/agents/worker.ts";
 import type { LoadedDomain } from "../domains/types.ts";
+import { splitRole } from "./qualified-role.ts";
 import type { AgentDefinition } from "./types.ts";
-
-/**
- * All coding domain agent definitions.
- * Temporary bridge until callers migrate to async createRegistryFromDomains().
- */
-const CODING_DOMAIN_DEFINITIONS: readonly AgentDefinition[] = [
-	cosmo,
-	planner,
-	taskManager,
-	coordinator,
-	worker,
-	qualityManager,
-	reviewer,
-	fixer,
-];
 
 export class AgentRegistry {
 	private readonly definitions: Map<string, AgentDefinition>;
 
-	constructor(
-		builtins: readonly AgentDefinition[] = CODING_DOMAIN_DEFINITIONS,
-	) {
+	constructor(builtins: readonly AgentDefinition[]) {
 		this.definitions = new Map();
 		for (const def of builtins) {
 			const key = def.domain ? `${def.domain}/${def.id}` : def.id;
@@ -114,8 +90,7 @@ export class AgentRegistry {
 		// 4. Scan all domains for unqualified match
 		const matches: AgentDefinition[] = [];
 		for (const [key, def] of this.definitions) {
-			const slashIndex = key.indexOf("/");
-			const unqualified = slashIndex >= 0 ? key.slice(slashIndex + 1) : key;
+			const { id: unqualified } = splitRole(key);
 			if (unqualified === id) matches.push(def);
 		}
 
@@ -136,14 +111,4 @@ export function createRegistryFromDomains(
 		}
 	}
 	return new AgentRegistry(allDefs);
-}
-
-/** Create an AgentRegistry pre-loaded with all built-in definitions (synchronous bridge). */
-export function createDefaultRegistry(): AgentRegistry {
-	return new AgentRegistry();
-}
-
-/** One-shot convenience: resolve an agent ID using the default registry. */
-export function resolveAgent(id: string): AgentDefinition {
-	return createDefaultRegistry().resolve(id);
 }

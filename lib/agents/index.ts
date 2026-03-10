@@ -5,11 +5,12 @@
  */
 
 export {
-	AgentRegistry,
-	createDefaultRegistry,
-	createRegistryFromDomains,
-	resolveAgent,
-} from "./resolver.ts";
+	qualifyRole,
+	roleToConfigKey,
+	splitRole,
+	unqualifyRole,
+} from "./qualified-role.ts";
+export { AgentRegistry, createRegistryFromDomains } from "./resolver.ts";
 export {
 	appendAgentIdentityMarker,
 	buildAgentIdentityMarker,

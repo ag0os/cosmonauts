@@ -8,7 +8,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { AgentRegistry, createDefaultRegistry } from "../../lib/agents/resolver.ts";
+import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import {
@@ -75,7 +75,33 @@ function makeStage(
 	return stage;
 }
 
-const defaultRegistry = createDefaultRegistry();
+/** Build a minimal agent definition for testing. */
+function makeCodingDef(id: string, loop: boolean): AgentDefinition {
+	return {
+		id,
+		description: `Test ${id}`,
+		capabilities: [],
+		model: "test/model",
+		tools: "none",
+		extensions: [],
+		projectContext: false,
+		session: "ephemeral",
+		loop,
+		domain: "coding",
+	};
+}
+
+/** Test registry with the coding domain agents used across chain-runner tests. */
+const defaultRegistry = new AgentRegistry([
+	makeCodingDef("cosmo", false),
+	makeCodingDef("planner", false),
+	makeCodingDef("task-manager", false),
+	makeCodingDef("coordinator", true),
+	makeCodingDef("worker", false),
+	makeCodingDef("quality-manager", false),
+	makeCodingDef("reviewer", false),
+	makeCodingDef("fixer", false),
+]);
 
 function makeConfig(
 	stages: ChainStage[],

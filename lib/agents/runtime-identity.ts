@@ -9,10 +9,8 @@ const AGENT_ID_MARKER_PREFIX = "COSMONAUTS_AGENT_ID:";
 const AGENT_ID_MARKER_REGEX =
 	/<!--\s*COSMONAUTS_AGENT_ID:([a-z0-9/-]+)\s*-->/gi;
 
-/** Qualify an agent ID with its domain when one is available. */
-export function qualifyAgentId(id: string, domain?: string): string {
-	return domain ? `${domain}/${id}` : id;
-}
+/** @deprecated Use `qualifyRole` from `qualified-role.ts` instead. */
+export { qualifyRole as qualifyAgentId } from "./qualified-role.ts";
 
 /** Build a hidden system-prompt marker for an agent ID. */
 export function buildAgentIdentityMarker(agentId: string): string {

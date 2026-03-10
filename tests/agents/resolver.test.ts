@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	AgentRegistry,
-	createDefaultRegistry,
 	createRegistryFromDomains,
-	resolveAgent,
 } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import type { LoadedDomain } from "../../lib/domains/types.ts";
@@ -83,11 +81,6 @@ describe("AgentRegistry", () => {
 			for (const def of FIXTURES) {
 				expect(registry.has(def.id)).toBe(true);
 			}
-		});
-
-		it("defaults to coding domain definitions when no argument given", () => {
-			const registry = new AgentRegistry();
-			expect(registry.listIds()).toHaveLength(8);
 		});
 
 		it("works with empty array", () => {
@@ -438,27 +431,5 @@ describe("createRegistryFromDomains", () => {
 	it("returns empty registry for empty domains", () => {
 		const registry = createRegistryFromDomains([]);
 		expect(registry.listIds()).toEqual([]);
-	});
-});
-
-describe("createDefaultRegistry", () => {
-	it("returns a registry with all coding domain agents", () => {
-		const registry = createDefaultRegistry();
-		expect(registry.listIds()).toHaveLength(8);
-		expect(registry.has("cosmo")).toBe(true);
-		expect(registry.has("coordinator")).toBe(true);
-	});
-});
-
-describe("resolveAgent", () => {
-	it("resolves a known agent by ID", () => {
-		const def = resolveAgent("cosmo");
-		expect(def.id).toBe("cosmo");
-	});
-
-	it("throws for unknown agent ID", () => {
-		expect(() => resolveAgent("nonexistent")).toThrow(
-			/Unknown agent ID "nonexistent"/,
-		);
 	});
 });
