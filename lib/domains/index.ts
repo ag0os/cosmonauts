@@ -6,3 +6,5 @@ export type {
 export { assemblePrompts } from "./prompt-assembly.ts";
 export { DomainRegistry } from "./registry.ts";
 export type { DomainManifest, LoadedDomain } from "./types.ts";
+export type { DomainValidationDiagnostic } from "./validator.ts";
+export { DomainValidationError, validateDomains } from "./validator.ts";
