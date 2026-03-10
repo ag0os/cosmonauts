@@ -254,4 +254,46 @@ describe("parseCliArgs", () => {
 		expect(opts.agent).toBe("planner");
 		expect(opts.prompt).toBe("design it");
 	});
+
+	test("--dump-prompt flag defaults", () => {
+		const opts = parseCliArgs(["--dump-prompt"]);
+
+		expect(opts.dumpPrompt).toBe(true);
+		expect(opts.dumpPromptFile).toBeUndefined();
+	});
+
+	test("--dump-prompt with --agent", () => {
+		const opts = parseCliArgs(["--dump-prompt", "--agent", "worker"]);
+
+		expect(opts.dumpPrompt).toBe(true);
+		expect(opts.agent).toBe("worker");
+	});
+
+	test("--dump-prompt with --file", () => {
+		const opts = parseCliArgs(["--dump-prompt", "--file", "/tmp/prompt.md"]);
+
+		expect(opts.dumpPrompt).toBe(true);
+		expect(opts.dumpPromptFile).toBe("/tmp/prompt.md");
+	});
+
+	test("--dump-prompt with --agent and --file", () => {
+		const opts = parseCliArgs([
+			"--dump-prompt",
+			"-a",
+			"planner",
+			"--file",
+			"/tmp/planner.md",
+		]);
+
+		expect(opts.dumpPrompt).toBe(true);
+		expect(opts.agent).toBe("planner");
+		expect(opts.dumpPromptFile).toBe("/tmp/planner.md");
+	});
+
+	test("defaults include dumpPrompt false", () => {
+		const opts = parseCliArgs([]);
+
+		expect(opts.dumpPrompt).toBe(false);
+		expect(opts.dumpPromptFile).toBeUndefined();
+	});
 });

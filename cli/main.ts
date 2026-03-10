@@ -7,15 +7,23 @@
  *   cosmonauts --print "prompt"             → non-interactive (run, output, exit)
  *   cosmonauts --workflow name "prompt"     → named workflow (non-interactive)
  *   cosmonauts --chain "a -> b" "prompt"    → raw chain DSL (non-interactive)
+ *   cosmonauts --dump-prompt [-a agent]     → dump composed system prompt to stdout
+ *   cosmonauts --dump-prompt --file path    → dump composed system prompt to file
  *   cosmonauts init                         → agent-driven AGENTS.md bootstrap
  */
 
+import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { InteractiveMode, runPrintMode } from "@mariozechner/pi-coding-agent";
 import { Command, CommanderError } from "commander";
 import { buildInitPrompt } from "../domains/shared/extensions/init/index.ts";
+import {
+	appendAgentIdentityMarker,
+	qualifyAgentId,
+} from "../lib/agents/runtime-identity.ts";
+import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
 import { resolveModel } from "../lib/orchestration/agent-spawner.ts";
 import { parseChain } from "../lib/orchestration/chain-parser.ts";
 import {
@@ -91,6 +99,14 @@ export function parseCliArgs(argv: string[]): CliOptions {
 		.option("--list-domains", "List all discovered domains and exit")
 		.option("--list-workflows", "List available workflows and exit")
 		.option("--list-agents", "List available agent IDs and exit")
+		.option(
+			"--dump-prompt",
+			"Dump the composed system prompt for an agent and exit",
+		)
+		.option(
+			"--file <path>",
+			"Write output to a file instead of stdout (used with --dump-prompt)",
+		)
 		.argument("[prompt...]", "Prompt text");
 
 	// Parse without calling process.exit on error
@@ -127,6 +143,8 @@ export function parseCliArgs(argv: string[]): CliOptions {
 		listAgents: opts.listAgents ?? false,
 		domain: opts.domain,
 		listDomains: opts.listDomains ?? false,
+		dumpPrompt: opts.dumpPrompt ?? false,
+		dumpPromptFile: opts.file,
 	};
 }
 
@@ -189,6 +207,30 @@ async function run(options: CliOptions): Promise<void> {
 			: registry.listAll();
 		for (const def of agents) {
 			console.log(`  ${def.id}  ${def.description}`);
+		}
+		return;
+	}
+
+	// --dump-prompt: assemble and output the full system prompt for an agent
+	if (options.dumpPrompt) {
+		const agentId = options.agent ?? "cosmo";
+		const def = registry.resolve(agentId, domainContext);
+		const domain = def.domain ?? "coding";
+
+		let prompt = await assemblePrompts({
+			agentId: def.id,
+			domain,
+			capabilities: def.capabilities,
+			domainsDir: runtime.domainsDir,
+		});
+		prompt = appendAgentIdentityMarker(prompt, qualifyAgentId(def.id, domain));
+
+		if (options.dumpPromptFile) {
+			await writeFile(options.dumpPromptFile, prompt, "utf-8");
+			console.log(`Wrote ${def.id} prompt to ${options.dumpPromptFile}`);
+		} else {
+			process.stdout.write(prompt);
+			process.stdout.write("\n");
 		}
 		return;
 	}

@@ -32,4 +32,8 @@ export interface CliOptions {
 	domain?: string;
 	/** List all discovered domains and exit */
 	listDomains: boolean;
+	/** Dump the composed system prompt for an agent and exit */
+	dumpPrompt: boolean;
+	/** File path to write the dumped prompt to (used with --dump-prompt) */
+	dumpPromptFile?: string;
 }
