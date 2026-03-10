@@ -51,23 +51,24 @@ Record failed checks with command, exit status, and the key error lines.
 Spawn `reviewer` with a prompt that includes:
 - The base branch (`main` or `origin/main`)
 - A required report path in `missions/reviews/` (for example `missions/reviews/review-round-1.md`)
-- Instructions to classify each finding as `simple` or `complex`
-- Instructions to include task-ready data for complex findings (title, labels, acceptance criteria)
+
+The reviewer will classify each finding with priority (P0-P3), severity (high/medium/low), confidence (0.0-1.0), and complexity (simple/complex). Complex findings include task-ready data (title, labels, acceptance criteria). The report also includes an overall correctness verdict (`correct` or `incorrect`).
 
 After reviewer completion, read the report file.
 
 ### 5. Decide remediation path
 
-If there are no findings and all checks pass, proceed to final merge-readiness validation.
+If the overall verdict is `correct` and all checks pass, proceed to final merge-readiness validation.
 
 If there are findings:
 
+- **Dismiss low-confidence findings** (confidence < 0.3). Note them in your status output but do not act on them.
 - **Simple findings**: spawn `fixer` with the finding IDs/details and ask for a single targeted remediation commit.
 - **Complex findings**: create tasks with `task_create` (one per finding), include:
   - Clear title and description tied to the finding
   - 1-7 outcome-focused acceptance criteria
   - Labels including `review-fix` and a round label like `review-round:1`
-  - Priority based on reviewer severity
+  - Priority based on reviewer priority level (P0 → high, P1 → high, P2 → medium, P3 → low)
 
 After creating complex-finding tasks, call:
 
@@ -86,7 +87,7 @@ After each remediation pass:
 
 Before exiting successfully:
 - Confirm check commands pass.
-- Confirm reviewer report says no findings.
+- Confirm reviewer report verdict is `correct` and has no findings.
 - Confirm `git status --porcelain` is clean.
 - Confirm remediation tasks for this invocation are not left in `To Do` or `In Progress`.
 - Remove all review report files from `missions/reviews/` that were created during this invocation. These are ephemeral artifacts and must not linger after successful validation.
