@@ -6,8 +6,7 @@
 
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { AgentRegistry } from "../agents/index.ts";
-import { createDefaultRegistry } from "../agents/index.ts";
+import { unqualifyRole } from "../agents/qualified-role.ts";
 import { TaskManager } from "../tasks/task-manager.ts";
 import {
 	createPiSpawner,
@@ -29,11 +28,6 @@ import type {
 
 const DEFAULT_MAX_TOTAL_ITERATIONS = 50;
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
-
-/** Resolve the registry from config, falling back to the default built-in registry. */
-function resolveRegistry(config: ChainConfig): AgentRegistry {
-	return config.registry ?? createDefaultRegistry();
-}
 
 /** Fallback domains directory derived from this package's source tree. */
 const FALLBACK_DOMAINS_DIR = resolve(
@@ -66,7 +60,7 @@ const DEFAULT_STAGE_PROMPTS: Record<string, string> = {
 const DEFAULT_PROMPT = "Execute your assigned role.";
 
 export function getDefaultStagePrompt(role: string): string {
-	return DEFAULT_STAGE_PROMPTS[baseRoleName(role)] ?? DEFAULT_PROMPT;
+	return DEFAULT_STAGE_PROMPTS[unqualifyRole(role)] ?? DEFAULT_PROMPT;
 }
 
 function buildStagePrompt(stage: ChainStage, config: ChainConfig): string {
@@ -74,16 +68,11 @@ function buildStagePrompt(stage: ChainStage, config: ChainConfig): string {
 
 	// When loop completion is label-scoped, coordinator must process only that
 	// subset to avoid touching unrelated ready tasks.
-	if (baseRoleName(stage.name) === "coordinator" && config.completionLabel) {
+	if (unqualifyRole(stage.name) === "coordinator" && config.completionLabel) {
 		return `${basePrompt}\n\nScope constraint: Operate only on tasks labeled "${config.completionLabel}". Filter all task selection to this label and do not modify tasks without it.`;
 	}
 
 	return basePrompt;
-}
-
-function baseRoleName(role: string): string {
-	const slashIndex = role.lastIndexOf("/");
-	return slashIndex === -1 ? role : role.slice(slashIndex + 1);
 }
 
 /**
@@ -196,10 +185,7 @@ export async function runChain(config: ChainConfig): Promise<ChainResult> {
 
 	const stageResults: StageResult[] = [];
 	const errors: string[] = [];
-	const spawner = createPiSpawner(
-		resolveRegistry(config),
-		resolveDomainsDir(config),
-	);
+	const spawner = createPiSpawner(config.registry, resolveDomainsDir(config));
 	let totalIterations = 0;
 
 	emit(config, { type: "chain_start", stages: config.stages });
@@ -275,8 +261,7 @@ export async function runStage(
 	let iterations = 0;
 
 	try {
-		const registry = resolveRegistry(config);
-		if (!registry.has(stage.name, config.domainContext)) {
+		if (!config.registry.has(stage.name, config.domainContext)) {
 			const message = `Unknown agent role "${stage.name}"`;
 			emit(config, { type: "error", message, stage });
 			return {
@@ -291,13 +276,13 @@ export async function runStage(
 		const model = getModelForRole(
 			stage.name,
 			config.models,
-			registry,
+			config.registry,
 			config.domainContext,
 		);
 		const thinkingLevel = getThinkingForRole(
 			stage.name,
 			config.thinking,
-			registry,
+			config.registry,
 			config.domainContext,
 		);
 		const prompt = buildStagePrompt(stage, config);

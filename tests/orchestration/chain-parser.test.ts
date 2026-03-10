@@ -5,20 +5,25 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { AgentRegistry } from "../../lib/agents/resolver.ts";
+import {
+	AgentRegistry,
+	createDefaultRegistry,
+} from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
+
+const defaultRegistry = createDefaultRegistry();
 
 describe("parseChain", () => {
 	describe("pipeline parsing", () => {
 		test("parses a single stage", () => {
-			const stages = parseChain("planner");
+			const stages = parseChain("planner", defaultRegistry);
 
 			expect(stages).toEqual([{ name: "planner", loop: false }]);
 		});
 
 		test("parses two stages separated by ->", () => {
-			const stages = parseChain("planner -> worker");
+			const stages = parseChain("planner -> worker", defaultRegistry);
 
 			expect(stages).toEqual([
 				{ name: "planner", loop: false },
@@ -27,7 +32,10 @@ describe("parseChain", () => {
 		});
 
 		test("parses three stages separated by ->", () => {
-			const stages = parseChain("planner -> task-manager -> coordinator");
+			const stages = parseChain(
+				"planner -> task-manager -> coordinator",
+				defaultRegistry,
+			);
 
 			expect(stages).toEqual([
 				{ name: "planner", loop: false },
@@ -37,7 +45,10 @@ describe("parseChain", () => {
 		});
 
 		test("lowercases stage names", () => {
-			const stages = parseChain("Planner -> WORKER -> Task-Manager");
+			const stages = parseChain(
+				"Planner -> WORKER -> Task-Manager",
+				defaultRegistry,
+			);
 
 			expect(stages).toEqual([
 				{ name: "planner", loop: false },
@@ -49,43 +60,43 @@ describe("parseChain", () => {
 
 	describe("loop detection from role", () => {
 		test("coordinator gets loop: true", () => {
-			const stages = parseChain("coordinator");
+			const stages = parseChain("coordinator", defaultRegistry);
 
 			expect(stages).toEqual([{ name: "coordinator", loop: true }]);
 		});
 
 		test("planner gets loop: false", () => {
-			const stages = parseChain("planner");
+			const stages = parseChain("planner", defaultRegistry);
 
 			expect(stages).toEqual([{ name: "planner", loop: false }]);
 		});
 
 		test("worker gets loop: false", () => {
-			const stages = parseChain("worker");
+			const stages = parseChain("worker", defaultRegistry);
 
 			expect(stages).toEqual([{ name: "worker", loop: false }]);
 		});
 
 		test("task-manager gets loop: false", () => {
-			const stages = parseChain("task-manager");
+			const stages = parseChain("task-manager", defaultRegistry);
 
 			expect(stages).toEqual([{ name: "task-manager", loop: false }]);
 		});
 
 		test("quality-manager gets loop: false", () => {
-			const stages = parseChain("quality-manager");
+			const stages = parseChain("quality-manager", defaultRegistry);
 
 			expect(stages).toEqual([{ name: "quality-manager", loop: false }]);
 		});
 
 		test("reviewer gets loop: false", () => {
-			const stages = parseChain("reviewer");
+			const stages = parseChain("reviewer", defaultRegistry);
 
 			expect(stages).toEqual([{ name: "reviewer", loop: false }]);
 		});
 
 		test("fixer gets loop: false", () => {
-			const stages = parseChain("fixer");
+			const stages = parseChain("fixer", defaultRegistry);
 
 			expect(stages).toEqual([{ name: "fixer", loop: false }]);
 		});
@@ -93,13 +104,16 @@ describe("parseChain", () => {
 
 	describe("unknown roles", () => {
 		test("unknown role gets loop: false", () => {
-			const stages = parseChain("custom-agent");
+			const stages = parseChain("custom-agent", defaultRegistry);
 
 			expect(stages).toEqual([{ name: "custom-agent", loop: false }]);
 		});
 
 		test("unknown role in pipeline gets loop: false", () => {
-			const stages = parseChain("planner -> reviewer -> coordinator");
+			const stages = parseChain(
+				"planner -> reviewer -> coordinator",
+				defaultRegistry,
+			);
 
 			expect(stages).toEqual([
 				{ name: "planner", loop: false },
@@ -111,7 +125,10 @@ describe("parseChain", () => {
 
 	describe("whitespace handling", () => {
 		test("handles extra whitespace around stages and arrows", () => {
-			const stages = parseChain("  planner  ->  coordinator  ");
+			const stages = parseChain(
+				"  planner  ->  coordinator  ",
+				defaultRegistry,
+			);
 
 			expect(stages).toEqual([
 				{ name: "planner", loop: false },
@@ -120,7 +137,7 @@ describe("parseChain", () => {
 		});
 
 		test("handles no spaces around arrows", () => {
-			const stages = parseChain("planner->coordinator");
+			const stages = parseChain("planner->coordinator", defaultRegistry);
 
 			expect(stages).toEqual([
 				{ name: "planner", loop: false },
@@ -131,37 +148,40 @@ describe("parseChain", () => {
 
 	describe("error cases", () => {
 		test("throws on empty string", () => {
-			expect(() => parseChain("")).toThrow();
+			expect(() => parseChain("", defaultRegistry)).toThrow();
 		});
 
 		test("throws on whitespace-only string", () => {
-			expect(() => parseChain("   ")).toThrow();
+			expect(() => parseChain("   ", defaultRegistry)).toThrow();
 		});
 
 		test("throws on empty first stage (leading ->)", () => {
-			expect(() => parseChain("-> planner")).toThrow();
+			expect(() => parseChain("-> planner", defaultRegistry)).toThrow();
 		});
 
 		test("throws on empty last stage (trailing ->)", () => {
-			expect(() => parseChain("planner ->")).toThrow();
+			expect(() => parseChain("planner ->", defaultRegistry)).toThrow();
 		});
 
 		test("rejects deprecated role:count syntax", () => {
-			expect(() => parseChain("coordinator:20")).toThrow(
+			expect(() => parseChain("coordinator:20", defaultRegistry)).toThrow(
 				/role:count.*no longer supported/,
 			);
 		});
 
 		test("rejects role:count syntax in pipeline", () => {
-			expect(() => parseChain("planner -> coordinator:5 -> worker")).toThrow(
-				/role:count.*no longer supported/,
-			);
+			expect(() =>
+				parseChain("planner -> coordinator:5 -> worker", defaultRegistry),
+			).toThrow(/role:count.*no longer supported/);
 		});
 	});
 
 	describe("qualified names", () => {
 		test("parses qualified names preserving domain/agent format", () => {
-			const stages = parseChain("coding/planner -> coding/worker");
+			const stages = parseChain(
+				"coding/planner -> coding/worker",
+				defaultRegistry,
+			);
 
 			expect(stages).toEqual([
 				{ name: "coding/planner", loop: false },
@@ -170,7 +190,10 @@ describe("parseChain", () => {
 		});
 
 		test("lowercases qualified names", () => {
-			const stages = parseChain("Coding/Planner -> Coding/Worker");
+			const stages = parseChain(
+				"Coding/Planner -> Coding/Worker",
+				defaultRegistry,
+			);
 
 			expect(stages).toEqual([
 				{ name: "coding/planner", loop: false },
@@ -179,7 +202,10 @@ describe("parseChain", () => {
 		});
 
 		test("mixes qualified and unqualified names", () => {
-			const stages = parseChain("coding/planner -> coordinator");
+			const stages = parseChain(
+				"coding/planner -> coordinator",
+				defaultRegistry,
+			);
 
 			expect(stages).toEqual([
 				{ name: "coding/planner", loop: false },
@@ -189,7 +215,9 @@ describe("parseChain", () => {
 
 		test("does not reject / as deprecated syntax", () => {
 			// "/" is not ":" — it should parse fine
-			expect(() => parseChain("coding/planner -> coding/worker")).not.toThrow();
+			expect(() =>
+				parseChain("coding/planner -> coding/worker", defaultRegistry),
+			).not.toThrow();
 		});
 	});
 
@@ -257,7 +285,7 @@ describe("parseChain", () => {
 
 	describe("completionCheck", () => {
 		test("parser does not set completionCheck on stages", () => {
-			const stages = parseChain("planner -> coordinator");
+			const stages = parseChain("planner -> coordinator", defaultRegistry);
 
 			for (const stage of stages) {
 				expect(stage.completionCheck).toBeUndefined();

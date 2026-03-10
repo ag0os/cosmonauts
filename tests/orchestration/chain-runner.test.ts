@@ -8,7 +8,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { AgentRegistry } from "../../lib/agents/resolver.ts";
+import { AgentRegistry, createDefaultRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import {
@@ -75,6 +75,8 @@ function makeStage(
 	return stage;
 }
 
+const defaultRegistry = createDefaultRegistry();
+
 function makeConfig(
 	stages: ChainStage[],
 	overrides?: Partial<ChainConfig>,
@@ -82,6 +84,7 @@ function makeConfig(
 	return {
 		stages,
 		projectRoot: "/tmp/test-project",
+		registry: defaultRegistry,
 		...overrides,
 	};
 }
