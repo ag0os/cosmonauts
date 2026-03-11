@@ -110,6 +110,55 @@ export interface ChainConfig {
 }
 
 // ============================================================================
+// Cost / Stats Tracking
+// ============================================================================
+
+/** Token usage breakdown */
+export interface TokenStats {
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+	total: number;
+}
+
+/** Stats captured from a single agent spawn (mirrors Pi SessionStats + durationMs) */
+export interface SpawnStats {
+	/** Token usage breakdown */
+	tokens: TokenStats;
+	/** Estimated cost in USD */
+	cost: number;
+	/** Wall-clock duration in milliseconds */
+	durationMs: number;
+	/** Number of user↔assistant turns */
+	turns: number;
+	/** Number of tool calls made */
+	toolCalls: number;
+}
+
+/** Per-stage stats within a chain run */
+export interface StageStats {
+	/** Stage name (agent role) */
+	stageName: string;
+	/** Number of iterations (1 for non-loop stages) */
+	iterations: number;
+	/** Aggregated spawn stats across all iterations in this stage */
+	stats: SpawnStats;
+}
+
+/** Aggregate stats for a full chain execution */
+export interface ChainStats {
+	/** Per-stage breakdown */
+	stages: StageStats[];
+	/** Sum of cost across all stages */
+	totalCost: number;
+	/** Sum of total tokens across all stages */
+	totalTokens: number;
+	/** Sum of durationMs across all stages */
+	totalDurationMs: number;
+}
+
+// ============================================================================
 // Execution Results
 // ============================================================================
 
@@ -203,6 +252,8 @@ export interface SpawnResult {
 	messages: unknown[];
 	/** Error if failed */
 	error?: string;
+	/** Session stats (tokens, cost, duration) — populated on success */
+	stats?: SpawnStats;
 }
 
 /** Interface for spawning and running agents */

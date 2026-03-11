@@ -32,6 +32,7 @@ import type {
 	ModelConfig,
 	SpawnConfig,
 	SpawnResult,
+	SpawnStats,
 	ThinkingConfig,
 } from "./types.ts";
 
@@ -303,12 +304,25 @@ export function createPiSpawner(
 
 				try {
 					// Send the user prompt clean — identity is in the system prompt
+					const startMs = Date.now();
 					await session.prompt(config.prompt);
+					const durationMs = Date.now() - startMs;
+
+					// Extract session stats before dispose
+					const sessionStats = session.getSessionStats();
+					const stats: SpawnStats = {
+						tokens: { ...sessionStats.tokens },
+						cost: sessionStats.cost,
+						durationMs,
+						turns: sessionStats.userMessages,
+						toolCalls: sessionStats.toolCalls,
+					};
 
 					return {
 						success: true,
 						sessionId: session.sessionId,
 						messages: [...session.messages],
+						stats,
 					};
 				} finally {
 					session.dispose();
