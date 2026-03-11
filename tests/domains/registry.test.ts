@@ -60,8 +60,8 @@ describe("DomainRegistry", () => {
 		const registry = new DomainRegistry(domains);
 		const all = registry.listAll();
 		expect(all).toHaveLength(2);
-		expect(all[0]!.manifest.id).toBe("shared");
-		expect(all[1]!.manifest.id).toBe("coding");
+		expect(all[0]?.manifest.id).toBe("shared");
+		expect(all[1]?.manifest.id).toBe("coding");
 	});
 
 	it("handles empty domain list", () => {

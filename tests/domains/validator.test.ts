@@ -73,9 +73,7 @@ describe("validateDomains", () => {
 			const shared = makeShared();
 			const coding = makeDomain({
 				manifest: { id: "coding", description: "Coding" },
-				agents: new Map([
-					["worker", makeAgent({ id: "worker" })],
-				]),
+				agents: new Map([["worker", makeAgent({ id: "worker" })]]),
 				prompts: new Set(), // no "worker" prompt
 			});
 
@@ -84,17 +82,15 @@ describe("validateDomains", () => {
 				(d) => d.agent === "worker" && d.message.includes("persona prompt"),
 			);
 			expect(match).toBeDefined();
-			expect(match!.severity).toBe("error");
-			expect(match!.domain).toBe("coding");
+			expect(match?.severity).toBe("error");
+			expect(match?.domain).toBe("coding");
 		});
 
 		it("passes when persona prompt exists", () => {
 			const shared = makeShared();
 			const coding = makeDomain({
 				manifest: { id: "coding", description: "Coding" },
-				agents: new Map([
-					["worker", makeAgent({ id: "worker" })],
-				]),
+				agents: new Map([["worker", makeAgent({ id: "worker" })]]),
 				prompts: new Set(["worker"]),
 			});
 
@@ -107,15 +103,13 @@ describe("validateDomains", () => {
 
 		it("skips persona check for shared domain agents", () => {
 			const shared = makeShared({
-				agents: new Map([
-					["helper", makeAgent({ id: "helper" })],
-				]),
+				agents: new Map([["helper", makeAgent({ id: "helper" })]]),
 				prompts: new Set(), // no "helper" prompt, but shared is exempt
 			});
 
 			const diagnostics = validateDomains([shared]);
-			const match = diagnostics.find(
-				(d) => d.message.includes("persona prompt"),
+			const match = diagnostics.find((d) =>
+				d.message.includes("persona prompt"),
 			);
 			expect(match).toBeUndefined();
 		});
@@ -141,12 +135,12 @@ describe("validateDomains", () => {
 			});
 
 			const diagnostics = validateDomains([shared, coding]);
-			const match = diagnostics.find(
-				(d) => d.message.includes('"nonexistent"'),
+			const match = diagnostics.find((d) =>
+				d.message.includes('"nonexistent"'),
 			);
 			expect(match).toBeDefined();
-			expect(match!.severity).toBe("error");
-			expect(match!.agent).toBe("worker");
+			expect(match?.severity).toBe("error");
+			expect(match?.agent).toBe("worker");
 		});
 
 		it("passes when capability exists in own domain", () => {
@@ -167,9 +161,7 @@ describe("validateDomains", () => {
 			});
 
 			const diagnostics = validateDomains([shared, coding]);
-			const match = diagnostics.find(
-				(d) => d.message.includes("Capability"),
-			);
+			const match = diagnostics.find((d) => d.message.includes("Capability"));
 			expect(match).toBeUndefined();
 		});
 
@@ -192,9 +184,7 @@ describe("validateDomains", () => {
 			});
 
 			const diagnostics = validateDomains([shared, coding]);
-			const match = diagnostics.find(
-				(d) => d.message.includes("Capability"),
-			);
+			const match = diagnostics.find((d) => d.message.includes("Capability"));
 			expect(match).toBeUndefined();
 		});
 	});
@@ -219,12 +209,12 @@ describe("validateDomains", () => {
 			});
 
 			const diagnostics = validateDomains([shared, coding]);
-			const match = diagnostics.find(
-				(d) => d.message.includes('"missing-ext"'),
+			const match = diagnostics.find((d) =>
+				d.message.includes('"missing-ext"'),
 			);
 			expect(match).toBeDefined();
-			expect(match!.severity).toBe("error");
-			expect(match!.agent).toBe("worker");
+			expect(match?.severity).toBe("error");
+			expect(match?.agent).toBe("worker");
 		});
 
 		it("passes when extension exists in own domain", () => {
@@ -245,9 +235,7 @@ describe("validateDomains", () => {
 			});
 
 			const diagnostics = validateDomains([shared, coding]);
-			const match = diagnostics.find(
-				(d) => d.message.includes("Extension"),
-			);
+			const match = diagnostics.find((d) => d.message.includes("Extension"));
 			expect(match).toBeUndefined();
 		});
 
@@ -270,9 +258,7 @@ describe("validateDomains", () => {
 			});
 
 			const diagnostics = validateDomains([shared, coding]);
-			const match = diagnostics.find(
-				(d) => d.message.includes("Extension"),
-			);
+			const match = diagnostics.find((d) => d.message.includes("Extension"));
 			expect(match).toBeUndefined();
 		});
 	});
@@ -296,19 +282,17 @@ describe("validateDomains", () => {
 			});
 
 			const diagnostics = validateDomains([shared, coding]);
-			const match = diagnostics.find(
-				(d) => d.message.includes('"ghost-agent"'),
+			const match = diagnostics.find((d) =>
+				d.message.includes('"ghost-agent"'),
 			);
 			expect(match).toBeDefined();
-			expect(match!.severity).toBe("warning");
-			expect(match!.agent).toBe("cosmo");
+			expect(match?.severity).toBe("warning");
+			expect(match?.agent).toBe("cosmo");
 		});
 
 		it("passes when subagent exists in another domain", () => {
 			const shared = makeShared({
-				agents: new Map([
-					["helper", makeAgent({ id: "helper" })],
-				]),
+				agents: new Map([["helper", makeAgent({ id: "helper" })]]),
 			});
 			const coding = makeDomain({
 				manifest: { id: "coding", description: "Coding" },
@@ -325,9 +309,7 @@ describe("validateDomains", () => {
 			});
 
 			const diagnostics = validateDomains([shared, coding]);
-			const match = diagnostics.find(
-				(d) => d.message.includes("Subagent"),
-			);
+			const match = diagnostics.find((d) => d.message.includes("Subagent"));
 			expect(match).toBeUndefined();
 		});
 
@@ -350,9 +332,7 @@ describe("validateDomains", () => {
 
 			const diagnostics = validateDomains([shared, coding]);
 			const match = diagnostics.find(
-				(d) =>
-					d.agent === "cosmo" &&
-					d.message.includes('"coding/worker"'),
+				(d) => d.agent === "cosmo" && d.message.includes('"coding/worker"'),
 			);
 			expect(match).toBeUndefined();
 		});
@@ -361,16 +341,12 @@ describe("validateDomains", () => {
 			const shared = makeShared();
 			const coding = makeDomain({
 				manifest: { id: "coding", description: "Coding" },
-				agents: new Map([
-					["worker", makeAgent({ id: "worker" })],
-				]),
+				agents: new Map([["worker", makeAgent({ id: "worker" })]]),
 				prompts: new Set(["worker"]),
 			});
 
 			const diagnostics = validateDomains([shared, coding]);
-			const match = diagnostics.find(
-				(d) => d.message.includes("Subagent"),
-			);
+			const match = diagnostics.find((d) => d.message.includes("Subagent"));
 			expect(match).toBeUndefined();
 		});
 	});
@@ -383,19 +359,17 @@ describe("validateDomains", () => {
 					description: "Coding",
 					lead: "nonexistent-lead",
 				},
-				agents: new Map([
-					["worker", makeAgent({ id: "worker" })],
-				]),
+				agents: new Map([["worker", makeAgent({ id: "worker" })]]),
 				prompts: new Set(["worker"]),
 			});
 
 			const diagnostics = validateDomains([domain]);
-			const match = diagnostics.find(
-				(d) => d.message.includes('"nonexistent-lead"'),
+			const match = diagnostics.find((d) =>
+				d.message.includes('"nonexistent-lead"'),
 			);
 			expect(match).toBeDefined();
-			expect(match!.severity).toBe("error");
-			expect(match!.domain).toBe("coding");
+			expect(match?.severity).toBe("error");
+			expect(match?.domain).toBe("coding");
 		});
 
 		it("passes when lead exists in domain agents", () => {
@@ -405,16 +379,12 @@ describe("validateDomains", () => {
 					description: "Coding",
 					lead: "cosmo",
 				},
-				agents: new Map([
-					["cosmo", makeAgent({ id: "cosmo" })],
-				]),
+				agents: new Map([["cosmo", makeAgent({ id: "cosmo" })]]),
 				prompts: new Set(["cosmo"]),
 			});
 
 			const diagnostics = validateDomains([domain]);
-			const match = diagnostics.find(
-				(d) => d.message.includes("Lead agent"),
-			);
+			const match = diagnostics.find((d) => d.message.includes("Lead agent"));
 			expect(match).toBeUndefined();
 		});
 
@@ -424,9 +394,7 @@ describe("validateDomains", () => {
 			});
 
 			const diagnostics = validateDomains([domain]);
-			const match = diagnostics.find(
-				(d) => d.message.includes("Lead agent"),
-			);
+			const match = diagnostics.find((d) => d.message.includes("Lead agent"));
 			expect(match).toBeUndefined();
 		});
 	});
@@ -436,9 +404,7 @@ describe("validateDomains", () => {
 			const shared = makeShared();
 			const coding = makeDomain({
 				manifest: { id: "coding", description: "Coding" },
-				agents: new Map([
-					["planner", makeAgent({ id: "planner" })],
-				]),
+				agents: new Map([["planner", makeAgent({ id: "planner" })]]),
 				prompts: new Set(["planner"]),
 				workflows: [
 					{
@@ -464,15 +430,11 @@ describe("validateDomains", () => {
 
 		it("passes when all workflow stages are known agents", () => {
 			const shared = makeShared({
-				agents: new Map([
-					["planner", makeAgent({ id: "planner" })],
-				]),
+				agents: new Map([["planner", makeAgent({ id: "planner" })]]),
 			});
 			const coding = makeDomain({
 				manifest: { id: "coding", description: "Coding" },
-				agents: new Map([
-					["worker", makeAgent({ id: "worker" })],
-				]),
+				agents: new Map([["worker", makeAgent({ id: "worker" })]]),
 				prompts: new Set(["worker"]),
 				workflows: [
 					{
@@ -484,8 +446,8 @@ describe("validateDomains", () => {
 			});
 
 			const diagnostics = validateDomains([shared, coding]);
-			const match = diagnostics.find(
-				(d) => d.message.includes("Workflow stage"),
+			const match = diagnostics.find((d) =>
+				d.message.includes("Workflow stage"),
 			);
 			expect(match).toBeUndefined();
 		});
@@ -510,9 +472,7 @@ describe("validateDomains", () => {
 
 			const diagnostics = validateDomains([shared, coding]);
 			const match = diagnostics.find(
-				(d) =>
-					d.workflow === "build" &&
-					d.message.includes('"coding/worker"'),
+				(d) => d.workflow === "build" && d.message.includes('"coding/worker"'),
 			);
 			expect(match).toBeUndefined();
 		});

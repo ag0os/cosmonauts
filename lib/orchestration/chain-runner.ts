@@ -178,24 +178,37 @@ function emit(config: ChainConfig, event: ChainEvent): void {
 function createSpawnEventForwarder(
 	config: ChainConfig,
 	role: string,
-	sessionIdRef: { current: string },
 ): ((event: SpawnEvent) => void) | undefined {
 	if (!config.onEvent) return undefined;
 	return (event: SpawnEvent) => {
-		const sessionId = sessionIdRef.current;
 		if (event.type === "turn_start" || event.type === "turn_end") {
-			emit(config, { type: "agent_turn", role, sessionId, event });
+			emit(config, {
+				type: "agent_turn",
+				role,
+				sessionId: event.sessionId,
+				event,
+			});
 		} else if (
 			event.type === "tool_execution_start" ||
 			event.type === "tool_execution_end"
 		) {
-			emit(config, { type: "agent_tool_use", role, sessionId, event });
+			emit(config, {
+				type: "agent_tool_use",
+				role,
+				sessionId: event.sessionId,
+				event,
+			});
 		} else if (
 			event.type === "auto_compaction_start" ||
 			event.type === "auto_compaction_end"
 		) {
 			// Forward compaction events as agent_turn (lifecycle-level)
-			emit(config, { type: "agent_turn", role, sessionId, event });
+			emit(config, {
+				type: "agent_turn",
+				role,
+				sessionId: event.sessionId,
+				event,
+			});
 		}
 	};
 }
@@ -385,12 +398,7 @@ export async function runStage(
 			// One-shot stage
 			iterations = 1;
 
-			const sessionIdRef = { current: "" };
-			const onEvent = createSpawnEventForwarder(
-				config,
-				stage.name,
-				sessionIdRef,
-			);
+			const onEvent = createSpawnEventForwarder(config, stage.name);
 
 			const spawnResult = await spawner.spawn({
 				role: stage.name,
@@ -404,8 +412,6 @@ export async function runStage(
 				compaction: config.compaction,
 				onEvent,
 			});
-
-			sessionIdRef.current = spawnResult.sessionId;
 
 			if (spawnResult.success) {
 				emit(config, {
@@ -475,8 +481,7 @@ export async function runStage(
 			};
 		}
 
-		const sessionIdRef = { current: "" };
-		const onEvent = createSpawnEventForwarder(config, stage.name, sessionIdRef);
+		const onEvent = createSpawnEventForwarder(config, stage.name);
 
 		for (let i = 0; i < iterationBudget; i++) {
 			if (config.signal?.aborted) break;
@@ -502,8 +507,6 @@ export async function runStage(
 				compaction: config.compaction,
 				onEvent,
 			});
-
-			sessionIdRef.current = spawnResult.sessionId;
 
 			if (spawnResult.stats) {
 				aggregatedStats = addSpawnStats(aggregatedStats, spawnResult.stats);

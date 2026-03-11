@@ -46,7 +46,7 @@ describe("loadDomains", () => {
 
 		const domains = await loadDomains(tmp.path);
 		expect(domains).toHaveLength(1);
-		expect(domains[0]!.manifest.id).toBe("alpha");
+		expect(domains[0]?.manifest.id).toBe("alpha");
 	});
 
 	it("sorts shared first, then alphabetical", async () => {
@@ -78,7 +78,7 @@ describe("loadDomains", () => {
 
 		const domains = await loadDomains(tmp.path);
 		expect(domains).toHaveLength(1);
-		expect(domains[0]!.manifest.id).toBe("valid");
+		expect(domains[0]?.manifest.id).toBe("valid");
 	});
 
 	it("loads agent definitions and stamps domain ID", async () => {
@@ -91,10 +91,12 @@ describe("loadDomains", () => {
 		const domains = await loadDomains(tmp.path);
 		expect(domains).toHaveLength(1);
 
-		const agents = domains[0]!.agents;
+		const agents = domains[0]?.agents;
+		expect(agents).toBeDefined();
+		if (!agents) throw new Error("Expected agents map to be defined");
 		expect(agents.size).toBe(1);
 		expect(agents.has("my-agent")).toBe(true);
-		expect(agents.get("my-agent")!.domain).toBe("testdomain");
+		expect(agents.get("my-agent")?.domain).toBe("testdomain");
 	});
 
 	it("indexes capabilities from .md files", async () => {
@@ -107,7 +109,7 @@ describe("loadDomains", () => {
 		await writeFile(join(capsDir, "not-markdown.txt"), "skip me");
 
 		const domains = await loadDomains(tmp.path);
-		expect(domains[0]!.capabilities).toEqual(new Set(["core", "tasks"]));
+		expect(domains[0]?.capabilities).toEqual(new Set(["core", "tasks"]));
 	});
 
 	it("indexes prompts from .md files", async () => {
@@ -118,7 +120,7 @@ describe("loadDomains", () => {
 		await writeFile(join(promptsDir, "worker.md"), "# Worker");
 
 		const domains = await loadDomains(tmp.path);
-		expect(domains[0]!.prompts).toEqual(new Set(["worker"]));
+		expect(domains[0]?.prompts).toEqual(new Set(["worker"]));
 	});
 
 	it("indexes skills as subdirectories", async () => {
@@ -129,7 +131,7 @@ describe("loadDomains", () => {
 		await writeDomainManifest(domainDir, "sk");
 
 		const domains = await loadDomains(tmp.path);
-		expect(domains[0]!.skills).toEqual(new Set(["typescript", "python"]));
+		expect(domains[0]?.skills).toEqual(new Set(["typescript", "python"]));
 	});
 
 	it("indexes extensions as subdirectories", async () => {
@@ -140,7 +142,7 @@ describe("loadDomains", () => {
 		await writeDomainManifest(domainDir, "ext");
 
 		const domains = await loadDomains(tmp.path);
-		expect(domains[0]!.extensions).toEqual(new Set(["tasks", "todo"]));
+		expect(domains[0]?.extensions).toEqual(new Set(["tasks", "todo"]));
 	});
 
 	it("returns empty sets when resource directories are missing", async () => {
@@ -149,7 +151,9 @@ describe("loadDomains", () => {
 		await writeDomainManifest(domainDir, "minimal");
 
 		const domains = await loadDomains(tmp.path);
-		const domain = domains[0]!;
+		const domain = domains[0];
+		expect(domain).toBeDefined();
+		if (!domain) throw new Error("Expected domain to be defined");
 		expect(domain.agents.size).toBe(0);
 		expect(domain.capabilities.size).toBe(0);
 		expect(domain.prompts.size).toBe(0);
@@ -168,7 +172,7 @@ describe("loadDomains", () => {
 		);
 
 		const domains = await loadDomains(tmp.path);
-		expect(domains[0]!.workflows).toEqual([
+		expect(domains[0]?.workflows).toEqual([
 			{ name: "test-flow", description: "Test", chain: "a -> b" },
 		]);
 	});
@@ -179,7 +183,7 @@ describe("loadDomains", () => {
 		await writeDomainManifest(domainDir, "rooted");
 
 		const domains = await loadDomains(tmp.path);
-		expect(domains[0]!.rootDir).toBe(domainDir);
+		expect(domains[0]?.rootDir).toBe(domainDir);
 	});
 
 	it("returns empty array for empty domains directory", async () => {
@@ -196,8 +200,8 @@ describe("loadDomains", () => {
 		await writeAgentDef(agentsDir, "agent-b");
 
 		const domains = await loadDomains(tmp.path);
-		expect(domains[0]!.agents.size).toBe(2);
-		expect(domains[0]!.agents.has("agent-a")).toBe(true);
-		expect(domains[0]!.agents.has("agent-b")).toBe(true);
+		expect(domains[0]?.agents.size).toBe(2);
+		expect(domains[0]?.agents.has("agent-a")).toBe(true);
+		expect(domains[0]?.agents.has("agent-b")).toBe(true);
 	});
 });

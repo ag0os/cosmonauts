@@ -696,25 +696,28 @@ describe("event emission", () => {
 
 	test("forwards agent_turn and agent_tool_use events from spawner onEvent", async () => {
 		const events: ChainEvent[] = [];
+		const sessionId = "mock-session";
 		const spawner: AgentSpawner = {
 			spawn: vi.fn(async (config) => {
 				// Simulate events from the spawner's onEvent callback
-				config.onEvent?.({ type: "turn_start" });
+				config.onEvent?.({ type: "turn_start", sessionId });
 				config.onEvent?.({
 					type: "tool_execution_start",
 					toolName: "read",
 					toolCallId: "tc-1",
+					sessionId,
 				});
 				config.onEvent?.({
 					type: "tool_execution_end",
 					toolName: "read",
 					toolCallId: "tc-1",
 					isError: false,
+					sessionId,
 				});
-				config.onEvent?.({ type: "turn_end" });
+				config.onEvent?.({ type: "turn_end", sessionId });
 				return {
 					success: true,
-					sessionId: "mock-session",
+					sessionId,
 					messages: [],
 				};
 			}),
@@ -738,6 +741,7 @@ describe("event emission", () => {
 			{ type: "agent_turn" }
 		>;
 		expect(firstTurn.role).toBe("planner");
+		expect(firstTurn.sessionId).toBe(sessionId);
 		expect(firstTurn.event.type).toBe("turn_start");
 
 		const firstTool = toolEvents[0] as Extract<
@@ -745,21 +749,68 @@ describe("event emission", () => {
 			{ type: "agent_tool_use" }
 		>;
 		expect(firstTool.role).toBe("planner");
+		expect(firstTool.sessionId).toBe(sessionId);
 		expect(firstTool.event.type).toBe("tool_execution_start");
+	});
+
+	test("uses each loop spawn sessionId when forwarding events", async () => {
+		const events: ChainEvent[] = [];
+		let spawnCount = 0;
+		const completionCheck = vi.fn(async () => spawnCount >= 2);
+		const spawner: AgentSpawner = {
+			spawn: vi.fn(async (config) => {
+				spawnCount++;
+				const sessionId = `loop-session-${spawnCount}`;
+				config.onEvent?.({ type: "turn_start", sessionId });
+				config.onEvent?.({ type: "turn_end", sessionId });
+				return {
+					success: true,
+					sessionId,
+					messages: [],
+				};
+			}),
+			dispose: vi.fn(),
+		};
+		const stage = makeStage("coordinator", true, completionCheck);
+		const config = makeConfig([stage], {
+			onEvent: (event) => events.push(event),
+		});
+
+		await runStage(stage, config, spawner, {
+			maxTotalIterations: 3,
+			deadlineMs: Date.now() + 60_000,
+		});
+
+		const turnEvents = events.filter((e) => e.type === "agent_turn") as Extract<
+			ChainEvent,
+			{ type: "agent_turn" }
+		>[];
+		expect(turnEvents.map((event) => event.sessionId)).toEqual([
+			"loop-session-1",
+			"loop-session-1",
+			"loop-session-2",
+			"loop-session-2",
+		]);
 	});
 
 	test("forwards auto_compaction events as agent_turn", async () => {
 		const events: ChainEvent[] = [];
+		const sessionId = "mock-session";
 		const spawner: AgentSpawner = {
 			spawn: vi.fn(async (config) => {
 				config.onEvent?.({
 					type: "auto_compaction_start",
 					reason: "threshold",
+					sessionId,
 				});
-				config.onEvent?.({ type: "auto_compaction_end", aborted: false });
+				config.onEvent?.({
+					type: "auto_compaction_end",
+					aborted: false,
+					sessionId,
+				});
 				return {
 					success: true,
-					sessionId: "mock-session",
+					sessionId,
 					messages: [],
 				};
 			}),
@@ -777,8 +828,10 @@ describe("event emission", () => {
 			{ type: "agent_turn" }
 		>[];
 		expect(turnEvents).toHaveLength(2);
-		expect(turnEvents[0]!.event.type).toBe("auto_compaction_start");
-		expect(turnEvents[1]!.event.type).toBe("auto_compaction_end");
+		expect(turnEvents[0]?.sessionId).toBe(sessionId);
+		expect(turnEvents[0]?.event.type).toBe("auto_compaction_start");
+		expect(turnEvents[1]?.sessionId).toBe(sessionId);
+		expect(turnEvents[1]?.event.type).toBe("auto_compaction_end");
 	});
 
 	test("does not pass onEvent to spawner when chain has no onEvent", async () => {
@@ -836,8 +889,8 @@ describe("runChain", () => {
 
 		expect(result.success).toBe(true);
 		expect(result.stageResults).toHaveLength(2);
-		expect(result.stageResults[0]!.success).toBe(true);
-		expect(result.stageResults[1]!.success).toBe(true);
+		expect(result.stageResults[0]?.success).toBe(true);
+		expect(result.stageResults[1]?.success).toBe(true);
 		expect(result.totalDurationMs).toBeGreaterThanOrEqual(0);
 		expect(result.errors).toHaveLength(0);
 	});
@@ -864,8 +917,8 @@ describe("runChain", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.stageResults).toHaveLength(2);
-		expect(result.stageResults[0]!.success).toBe(true);
-		expect(result.stageResults[1]!.success).toBe(false);
+		expect(result.stageResults[0]?.success).toBe(true);
+		expect(result.stageResults[1]?.success).toBe(false);
 		expect(result.errors).toContain("stage 2 failed");
 	});
 
@@ -965,11 +1018,11 @@ describe("runChain", () => {
 		expect(result.success).toBe(false);
 		expect(result.stageResults).toHaveLength(3);
 		// One-shot stages still report iterations=1 in their results
-		expect(result.stageResults[0]!.iterations).toBe(1);
-		expect(result.stageResults[1]!.iterations).toBe(1);
+		expect(result.stageResults[0]?.iterations).toBe(1);
+		expect(result.stageResults[1]?.iterations).toBe(1);
 		// Loop stage gets the full budget of 3, not 3 - 2 = 1
-		expect(result.stageResults[2]!.iterations).toBe(3);
-		expect(result.stageResults[2]!.success).toBe(false);
+		expect(result.stageResults[2]?.iterations).toBe(3);
+		expect(result.stageResults[2]?.success).toBe(false);
 	});
 
 	test("maxTotalIterations budget shared across stages", async () => {
@@ -1006,10 +1059,10 @@ describe("runChain", () => {
 		expect(result.success).toBe(false);
 		expect(result.stageResults).toHaveLength(2);
 		// First stage: 1 iteration (pre-check + post-iteration check reaches completion)
-		expect(result.stageResults[0]!.iterations).toBe(1);
+		expect(result.stageResults[0]?.iterations).toBe(1);
 		// Second stage: remaining budget is 2 (3 - 1 = 2)
-		expect(result.stageResults[1]!.iterations).toBe(2);
-		expect(result.stageResults[1]!.success).toBe(false);
+		expect(result.stageResults[1]?.iterations).toBe(2);
+		expect(result.stageResults[1]?.success).toBe(false);
 	});
 });
 
@@ -1059,8 +1112,8 @@ describe("qualified stage chain end-to-end", () => {
 
 		expect(result.success).toBe(true);
 		expect(result.stageResults).toHaveLength(2);
-		expect(result.stageResults[0]!.success).toBe(true);
-		expect(result.stageResults[1]!.success).toBe(true);
+		expect(result.stageResults[0]?.success).toBe(true);
+		expect(result.stageResults[1]?.success).toBe(true);
 	});
 
 	test("qualified loop stage gets loop: true from registry through parse + run", async () => {
@@ -1072,8 +1125,8 @@ describe("qualified stage chain end-to-end", () => {
 		const stages = parseChain("ops/scheduler -> ops/orchestrator", registry);
 
 		// Verify loop detection used the registry (not false positive)
-		expect(stages[0]!.loop).toBe(false);
-		expect(stages[1]!.loop).toBe(true);
+		expect(stages[0]?.loop).toBe(false);
+		expect(stages[1]?.loop).toBe(true);
 
 		// Attach a completion check so the loop stage terminates
 		const completionCheck = vi.fn(async () => true);
@@ -1084,8 +1137,8 @@ describe("qualified stage chain end-to-end", () => {
 
 		expect(result.success).toBe(true);
 		expect(result.stageResults).toHaveLength(2);
-		expect(result.stageResults[0]!.success).toBe(true);
-		expect(result.stageResults[1]!.success).toBe(true);
+		expect(result.stageResults[0]?.success).toBe(true);
+		expect(result.stageResults[1]?.success).toBe(true);
 	});
 
 	test("mixed qualified and unqualified names resolve through shared registry", async () => {
@@ -1097,8 +1150,8 @@ describe("qualified stage chain end-to-end", () => {
 		// "planner" unqualified resolves via scan-all, "coding/coordinator" qualified
 		const stages = parseChain("planner -> coding/coordinator", registry);
 
-		expect(stages[0]!.loop).toBe(false);
-		expect(stages[1]!.loop).toBe(true);
+		expect(stages[0]?.loop).toBe(false);
+		expect(stages[1]?.loop).toBe(true);
 
 		const completionCheck = vi.fn(async () => true);
 		const loopStage2 = stages[1];
@@ -1119,9 +1172,9 @@ describe("qualified stage chain end-to-end", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.stageResults).toHaveLength(2);
-		expect(result.stageResults[0]!.success).toBe(true);
-		expect(result.stageResults[1]!.success).toBe(false);
-		expect(result.stageResults[1]!.error).toContain(
+		expect(result.stageResults[0]?.success).toBe(true);
+		expect(result.stageResults[1]?.success).toBe(false);
+		expect(result.stageResults[1]?.error).toContain(
 			'Unknown agent role "ops/missing"',
 		);
 	});
@@ -1202,15 +1255,15 @@ describe("stats tracking", () => {
 			expect(result.iterations).toBe(3);
 			expect(result.stats).toBeDefined();
 			// Sum of seeds 1+2+3 = 6
-			expect(result.stats!.tokens.input).toBe(600);
-			expect(result.stats!.tokens.output).toBe(300);
-			expect(result.stats!.tokens.cacheRead).toBe(60);
-			expect(result.stats!.tokens.cacheWrite).toBe(30);
-			expect(result.stats!.tokens.total).toBe(990);
-			expect(result.stats!.cost).toBeCloseTo(0.06);
-			expect(result.stats!.durationMs).toBe(6000);
-			expect(result.stats!.turns).toBe(6);
-			expect(result.stats!.toolCalls).toBe(12);
+			expect(result.stats?.tokens.input).toBe(600);
+			expect(result.stats?.tokens.output).toBe(300);
+			expect(result.stats?.tokens.cacheRead).toBe(60);
+			expect(result.stats?.tokens.cacheWrite).toBe(30);
+			expect(result.stats?.tokens.total).toBe(990);
+			expect(result.stats?.cost).toBeCloseTo(0.06);
+			expect(result.stats?.durationMs).toBe(6000);
+			expect(result.stats?.turns).toBe(6);
+			expect(result.stats?.toolCalls).toBe(12);
 		});
 
 		test("loop stage includes partial stats on spawn failure", async () => {
@@ -1239,8 +1292,8 @@ describe("stats tracking", () => {
 
 			expect(result.success).toBe(false);
 			expect(result.stats).toBeDefined();
-			expect(result.stats!.tokens.input).toBe(100);
-			expect(result.stats!.cost).toBeCloseTo(0.01);
+			expect(result.stats?.tokens.input).toBe(100);
+			expect(result.stats?.cost).toBeCloseTo(0.01);
 		});
 	});
 
@@ -1263,16 +1316,16 @@ describe("stats tracking", () => {
 
 			expect(result.success).toBe(true);
 			expect(result.stats).toBeDefined();
-			expect(result.stats!.stages).toHaveLength(2);
-			expect(result.stats!.stages[0]!.stageName).toBe("planner");
-			expect(result.stats!.stages[0]!.stats).toEqual(stats1);
-			expect(result.stats!.stages[0]!.iterations).toBe(1);
-			expect(result.stats!.stages[1]!.stageName).toBe("task-manager");
-			expect(result.stats!.stages[1]!.stats).toEqual(stats2);
+			expect(result.stats?.stages).toHaveLength(2);
+			expect(result.stats?.stages[0]?.stageName).toBe("planner");
+			expect(result.stats?.stages[0]?.stats).toEqual(stats1);
+			expect(result.stats?.stages[0]?.iterations).toBe(1);
+			expect(result.stats?.stages[1]?.stageName).toBe("task-manager");
+			expect(result.stats?.stages[1]?.stats).toEqual(stats2);
 			// Totals: sum of seeds 1+2 = 3
-			expect(result.stats!.totalCost).toBeCloseTo(0.03);
-			expect(result.stats!.totalTokens).toBe(495); // 165 + 330
-			expect(result.stats!.totalDurationMs).toBe(3000);
+			expect(result.stats?.totalCost).toBeCloseTo(0.03);
+			expect(result.stats?.totalTokens).toBe(495); // 165 + 330
+			expect(result.stats?.totalDurationMs).toBe(3000);
 		});
 
 		test("chain_end event payload includes ChainStats", async () => {
@@ -1291,11 +1344,14 @@ describe("stats tracking", () => {
 
 			const chainEnd = events.find((e) => e.type === "chain_end");
 			expect(chainEnd).toBeDefined();
-			expect(
-				chainEnd!.type === "chain_end" && chainEnd!.result.stats,
-			).toBeDefined();
-			const stats = (chainEnd as Extract<ChainEvent, { type: "chain_end" }>)
-				.result.stats!;
+			if (
+				!chainEnd ||
+				chainEnd.type !== "chain_end" ||
+				!chainEnd.result.stats
+			) {
+				throw new Error("Expected chain_end event with stats");
+			}
+			const stats = chainEnd.result.stats;
 			expect(stats.totalCost).toBeCloseTo(0.01);
 			expect(stats.totalTokens).toBe(165);
 		});
@@ -1323,10 +1379,10 @@ describe("stats tracking", () => {
 				(e) => e.type === "stage_stats",
 			) as Extract<ChainEvent, { type: "stage_stats" }>[];
 			expect(stageStatsEvents).toHaveLength(2);
-			expect(stageStatsEvents[0]!.stage.name).toBe("planner");
-			expect(stageStatsEvents[0]!.stats).toEqual(stats1);
-			expect(stageStatsEvents[1]!.stage.name).toBe("task-manager");
-			expect(stageStatsEvents[1]!.stats).toEqual(stats2);
+			expect(stageStatsEvents[0]?.stage.name).toBe("planner");
+			expect(stageStatsEvents[0]?.stats).toEqual(stats1);
+			expect(stageStatsEvents[1]?.stage.name).toBe("task-manager");
+			expect(stageStatsEvents[1]?.stats).toEqual(stats2);
 		});
 
 		test("stage_stats emitted before stage_end", async () => {
@@ -1387,8 +1443,8 @@ describe("stats tracking", () => {
 			const result = await runChain(config);
 
 			expect(result.stats).toBeDefined();
-			expect(result.stats!.stages).toHaveLength(1);
-			expect(result.stats!.stages[0]!.stageName).toBe("task-manager");
+			expect(result.stats?.stages).toHaveLength(1);
+			expect(result.stats?.stages[0]?.stageName).toBe("task-manager");
 		});
 
 		test("stats accumulate across loop iterations in chain result", async () => {
@@ -1408,7 +1464,11 @@ describe("stats tracking", () => {
 			];
 			spawnerRef.current = {
 				spawn: vi.fn(async () => {
-					const result = spawnResults[spawnIdx] ?? spawnResults[0]!;
+					const fallbackResult = spawnResults[0];
+					if (!fallbackResult) {
+						throw new Error("Expected at least one spawn result");
+					}
+					const result = spawnResults[spawnIdx] ?? fallbackResult;
 					spawnIdx++;
 					return result;
 				}),
@@ -1432,23 +1492,23 @@ describe("stats tracking", () => {
 
 			expect(result.success).toBe(true);
 			expect(result.stats).toBeDefined();
-			expect(result.stats!.stages).toHaveLength(2);
+			expect(result.stats?.stages).toHaveLength(2);
 
 			// First stage: one-shot, stats from seed=1
-			expect(result.stats!.stages[0]!.stageName).toBe("planner");
-			expect(result.stats!.stages[0]!.iterations).toBe(1);
-			expect(result.stats!.stages[0]!.stats.cost).toBeCloseTo(0.01);
+			expect(result.stats?.stages[0]?.stageName).toBe("planner");
+			expect(result.stats?.stages[0]?.iterations).toBe(1);
+			expect(result.stats?.stages[0]?.stats.cost).toBeCloseTo(0.01);
 
 			// Second stage: loop with 2 iterations, stats from seeds 2+3
-			expect(result.stats!.stages[1]!.stageName).toBe("coordinator");
-			expect(result.stats!.stages[1]!.iterations).toBe(2);
-			expect(result.stats!.stages[1]!.stats.cost).toBeCloseTo(0.05);
-			expect(result.stats!.stages[1]!.stats.tokens.input).toBe(500); // 200+300
+			expect(result.stats?.stages[1]?.stageName).toBe("coordinator");
+			expect(result.stats?.stages[1]?.iterations).toBe(2);
+			expect(result.stats?.stages[1]?.stats.cost).toBeCloseTo(0.05);
+			expect(result.stats?.stages[1]?.stats.tokens.input).toBe(500); // 200+300
 
 			// Totals: seeds 1+2+3
-			expect(result.stats!.totalCost).toBeCloseTo(0.06);
-			expect(result.stats!.totalTokens).toBe(990);
-			expect(result.stats!.totalDurationMs).toBe(6000);
+			expect(result.stats?.totalCost).toBeCloseTo(0.06);
+			expect(result.stats?.totalTokens).toBe(990);
+			expect(result.stats?.totalDurationMs).toBe(6000);
 		});
 	});
 
@@ -1469,7 +1529,7 @@ describe("stats tracking", () => {
 			// No disk writes — stats only live on the returned ChainResult/StageResult
 			// (The chain runner writes no files; this test just asserts the stats
 			// are returned in-memory and there's no serialization code.)
-			expect(result.stageResults[0]!.stats).toEqual(stats1);
+			expect(result.stageResults[0]?.stats).toEqual(stats1);
 		});
 	});
 });

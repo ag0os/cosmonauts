@@ -159,7 +159,7 @@ describe("resolveExtensionPaths", () => {
 	beforeEach(() => {
 		tmpDomainsDir = join(
 			import.meta.dirname ?? ".",
-			".tmp-test-domains-" + Date.now(),
+			`.tmp-test-domains-${Date.now()}`,
 		);
 		// Create shared extension
 		mkdirSync(join(tmpDomainsDir, "shared", "extensions", "common-ext"), {

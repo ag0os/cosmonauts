@@ -336,8 +336,8 @@ describe("createPiSpawner", () => {
 			});
 
 			expect(receivedEvents).toEqual([
-				{ type: "turn_start" },
-				{ type: "turn_end" },
+				{ type: "turn_start", sessionId: "session-1" },
+				{ type: "turn_end", sessionId: "session-1" },
 			]);
 		});
 
@@ -376,12 +376,18 @@ describe("createPiSpawner", () => {
 			});
 
 			expect(receivedEvents).toEqual([
-				{ type: "tool_execution_start", toolName: "read", toolCallId: "tc-1" },
+				{
+					type: "tool_execution_start",
+					toolName: "read",
+					toolCallId: "tc-1",
+					sessionId: "session-1",
+				},
 				{
 					type: "tool_execution_end",
 					toolName: "read",
 					toolCallId: "tc-1",
 					isError: false,
+					sessionId: "session-1",
 				},
 			]);
 		});
@@ -418,8 +424,12 @@ describe("createPiSpawner", () => {
 			});
 
 			expect(receivedEvents).toEqual([
-				{ type: "auto_compaction_start", reason: "threshold" },
-				{ type: "auto_compaction_end", aborted: false },
+				{
+					type: "auto_compaction_start",
+					reason: "threshold",
+					sessionId: "session-1",
+				},
+				{ type: "auto_compaction_end", aborted: false, sessionId: "session-1" },
 			]);
 		});
 

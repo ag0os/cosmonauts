@@ -324,7 +324,7 @@ export function createPiSpawner(
 							const mapped = mapSessionEvent(event);
 							if (mapped) {
 								try {
-									config.onEvent?.(mapped);
+									config.onEvent?.(attachSessionId(mapped, session.sessionId));
 								} catch {
 									// Listeners must not break the spawner.
 								}
@@ -379,14 +379,34 @@ export function createPiSpawner(
 // Helpers
 // ============================================================================
 
+type SpawnEventPayload =
+	| { type: "turn_start" }
+	| { type: "turn_end" }
+	| { type: "tool_execution_start"; toolName: string; toolCallId: string }
+	| {
+			type: "tool_execution_end";
+			toolName: string;
+			toolCallId: string;
+			isError: boolean;
+	  }
+	| { type: "auto_compaction_start"; reason: "threshold" | "overflow" }
+	| { type: "auto_compaction_end"; aborted: boolean };
+
+function attachSessionId(
+	event: SpawnEventPayload,
+	sessionId: string,
+): SpawnEvent {
+	return { ...event, sessionId } as SpawnEvent;
+}
+
 /**
- * Map a Pi AgentSessionEvent to a SpawnEvent, or return undefined for
+ * Map a Pi AgentSessionEvent to a SpawnEvent payload, or return undefined for
  * events we don't forward.
  */
 function mapSessionEvent(event: {
 	type: string;
 	[key: string]: unknown;
-}): SpawnEvent | undefined {
+}): SpawnEventPayload | undefined {
 	switch (event.type) {
 		case "turn_start":
 			return { type: "turn_start" };

@@ -207,18 +207,29 @@ export interface ChainResult {
 // ============================================================================
 
 /** Events forwarded from Pi session subscriptions during agent spawns. */
+interface SpawnEventBase {
+	sessionId: string;
+}
+
 export type SpawnEvent =
-	| { type: "turn_start" }
-	| { type: "turn_end" }
-	| { type: "tool_execution_start"; toolName: string; toolCallId: string }
-	| {
+	| (SpawnEventBase & { type: "turn_start" })
+	| (SpawnEventBase & { type: "turn_end" })
+	| (SpawnEventBase & {
+			type: "tool_execution_start";
+			toolName: string;
+			toolCallId: string;
+	  })
+	| (SpawnEventBase & {
 			type: "tool_execution_end";
 			toolName: string;
 			toolCallId: string;
 			isError: boolean;
-	  }
-	| { type: "auto_compaction_start"; reason: "threshold" | "overflow" }
-	| { type: "auto_compaction_end"; aborted: boolean };
+	  })
+	| (SpawnEventBase & {
+			type: "auto_compaction_start";
+			reason: "threshold" | "overflow";
+	  })
+	| (SpawnEventBase & { type: "auto_compaction_end"; aborted: boolean });
 
 export type ChainEvent =
 	| { type: "chain_start"; stages: ChainStage[] }
