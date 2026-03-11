@@ -509,5 +509,31 @@ describe("createPiSpawner", () => {
 			expect(result.success).toBe(false);
 			expect(unsubscribe).toHaveBeenCalledTimes(1);
 		});
+
+		test("disposes session when subscribe throws", async () => {
+			const mockSession = createMockSession({
+				subscribe: vi.fn(() => {
+					throw new Error("subscribe failed");
+				}),
+			});
+			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
+
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const result = await spawner.spawn({
+				role: "planner",
+				cwd: "/tmp/test-project",
+				prompt: "Plan the work.",
+				onEvent: () => {},
+			});
+
+			expect(result).toEqual({
+				success: false,
+				sessionId: "",
+				messages: [],
+				error: "subscribe failed",
+			});
+			expect(mockSession.dispose).toHaveBeenCalledTimes(1);
+			expect(mockSession.prompt).not.toHaveBeenCalled();
+		});
 	});
 });

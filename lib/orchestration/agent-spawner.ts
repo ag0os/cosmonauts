@@ -318,21 +318,24 @@ export function createPiSpawner(
 
 				const { session } = await createAgentSession(sessionOptions);
 
-				// Subscribe to session events before prompt for progress streaming
-				const unsubscribe = config.onEvent
-					? session.subscribe((event) => {
-							const mapped = mapSessionEvent(event);
-							if (mapped) {
-								try {
-									config.onEvent?.(attachSessionId(mapped, session.sessionId));
-								} catch {
-									// Listeners must not break the spawner.
-								}
-							}
-						})
-					: undefined;
-
+				let unsubscribe: (() => void) | undefined;
 				try {
+					// Subscribe to session events before prompt for progress streaming
+					unsubscribe = config.onEvent
+						? session.subscribe((event) => {
+								const mapped = mapSessionEvent(event);
+								if (mapped) {
+									try {
+										config.onEvent?.(
+											attachSessionId(mapped, session.sessionId),
+										);
+									} catch {
+										// Listeners must not break the spawner.
+									}
+								}
+							})
+						: undefined;
+
 					// Send the user prompt clean — identity is in the system prompt
 					const startMs = Date.now();
 					await session.prompt(config.prompt);
