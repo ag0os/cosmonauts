@@ -15,6 +15,7 @@ import {
 import type {
 	ChainEvent,
 	ChainResult,
+	ChainStats,
 } from "../../../../lib/orchestration/types.ts";
 import { CosmonautsRuntime } from "../../../../lib/runtime.ts";
 
@@ -94,6 +95,77 @@ function chainEventToProgressLine(event: ChainEvent): string | undefined {
 
 /** Build a full summary from accumulated progress lines. */
 function buildProgressText(lines: string[]): string {
+	return lines.join("\n");
+}
+
+/** Build a cost summary table from ChainStats. Returns empty string if stats unavailable. */
+function buildCostTable(
+	stats: ChainStats | undefined,
+	theme: {
+		fg: (color: "accent" | "dim" | "toolOutput", text: string) => string;
+		bold: (text: string) => string;
+	},
+): string {
+	if (!stats?.stages?.length) return "";
+
+	const header = {
+		name: "Stage",
+		tokens: "Tokens",
+		cost: "Cost (USD)",
+		duration: "Duration",
+	};
+	const rows = stats.stages.map((s) => ({
+		name: roleLabel(s.stageName),
+		tokens: s.stats.tokens.total.toLocaleString(),
+		cost: `$${s.stats.cost.toFixed(4)}`,
+		duration: formatDuration(s.stats.durationMs),
+	}));
+	const totals = {
+		name: "Total",
+		tokens: stats.totalTokens.toLocaleString(),
+		cost: `$${stats.totalCost.toFixed(4)}`,
+		duration: formatDuration(stats.totalDurationMs),
+	};
+
+	// Calculate column widths
+	const all = [header, ...rows, totals];
+	const w = {
+		name: Math.max(...all.map((r) => r.name.length)),
+		tokens: Math.max(...all.map((r) => r.tokens.length)),
+		cost: Math.max(...all.map((r) => r.cost.length)),
+		duration: Math.max(...all.map((r) => r.duration.length)),
+	};
+
+	const pad = (s: string, len: number) => s.padEnd(len);
+	const padR = (s: string, len: number) => s.padStart(len);
+	const sep = `${"─".repeat(w.name + 2)}┼${"─".repeat(w.tokens + 2)}┼${"─".repeat(w.cost + 2)}┼${"─".repeat(w.duration + 2)}`;
+
+	const lines: string[] = [];
+	lines.push("");
+	lines.push(theme.fg("accent", "💰 Cost Summary"));
+	lines.push(
+		theme.fg(
+			"dim",
+			` ${pad(header.name, w.name)} │ ${padR(header.tokens, w.tokens)} │ ${padR(header.cost, w.cost)} │ ${padR(header.duration, w.duration)} `,
+		),
+	);
+	lines.push(theme.fg("dim", `─${sep}─`));
+	for (const row of rows) {
+		lines.push(
+			theme.fg(
+				"dim",
+				` ${pad(row.name, w.name)} │ ${padR(row.tokens, w.tokens)} │ ${padR(row.cost, w.cost)} │ ${padR(row.duration, w.duration)} `,
+			),
+		);
+	}
+	lines.push(theme.fg("dim", `─${sep}─`));
+	lines.push(
+		theme.fg(
+			"toolOutput",
+			` ${theme.bold(pad(totals.name, w.name))} │ ${padR(totals.tokens, w.tokens)} │ ${padR(totals.cost, w.cost)} │ ${padR(totals.duration, w.duration)} `,
+		),
+	);
+
 	return lines.join("\n");
 }
 
@@ -295,7 +367,7 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 			}
 
 			const lines = details.lines;
-			const rendered = lines
+			let rendered = lines
 				.map((line) => {
 					if (line.startsWith("✗")) return theme.fg("error", line);
 					if (line.startsWith("✓")) return theme.fg("success", line);
@@ -304,6 +376,14 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 					return theme.fg("dim", line);
 				})
 				.join("\n");
+
+			// Append cost summary table when chain is complete and stats are available
+			if (!isPartial && details.result?.stats) {
+				const costTable = buildCostTable(details.result.stats, theme);
+				if (costTable) {
+					rendered += `\n${costTable}`;
+				}
+			}
 
 			return new Text(rendered, 0, 0);
 		},

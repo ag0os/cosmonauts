@@ -167,25 +167,69 @@ export default function myExtension(pi: ExtensionAPI) {
 | `pi.setModel()` / `pi.setThinkingLevel()` | Change model or thinking level |
 | `pi.exec()` | Run shell commands |
 
-### Extension Lifecycle Events
+### Extension Lifecycle Events — Full Catalog
 
-| Event | When | Can modify? | Use case |
-|-------|------|-------------|----------|
-| `input` | Raw user input received | Transform input | Preprocessing, template expansion |
-| `before_agent_start` | After user prompt, before agent loop | Inject messages, replace system prompt | Context injection, identity customization |
-| `context` | Before every LLM call | Modify messages (non-destructive) | Cost guardrails, context pruning |
-| `agent_start` / `agent_end` | Agent loop lifecycle | — | Logging, cleanup |
-| `turn_start` / `turn_end` | Each agent turn | — | Progress reporting |
-| `tool_call` | Before tool execution | Block execution | Sandbox workers (restrict file access) |
-| `tool_result` | After tool execution | Modify result | Filter/transform output |
-| `model_select` | When a model is selected | — | Model routing |
-| `session_start` | New session starts | — | Initial setup, state restoration |
-| `session_before_switch` / `session_switch` | Session switching | Can block | State management |
-| `session_before_fork` / `session_fork` | Session forking | Can block | State management |
-| `session_before_compact` / `session_compact` | Before/after compaction | Modify messages | Control context management |
-| `session_shutdown` | Session shutting down | — | Cleanup, state saving |
-| `resources_discover` | Resources discovered | — | React to skill/extension discovery |
-| `user_bash` | User runs a bash command | — | Audit, logging |
+Pi exposes ~25 lifecycle events via `pi.on()`. Events are grouped by category below. Each entry lists the event name, when it fires, its payload fields, and whether the handler can return a result to modify behavior.
+
+#### Input & Agent Lifecycle
+
+| Event | When | Payload | Can modify? |
+|-------|------|---------|-------------|
+| `input` | Raw user input received (before any processing) | `text: string`, `images?: ImageContent[]`, `source: "interactive" \| "rpc" \| "extension"` | Yes — return `{ action: "transform", text, images? }` to rewrite, or `{ action: "handled" }` to consume |
+| `before_agent_start` | After user prompt submitted, before agent loop begins | `prompt: string`, `images?: ImageContent[]`, `systemPrompt: string` | Yes — return `{ message?, systemPrompt? }` to inject context or replace system prompt |
+| `agent_start` | Agent loop starts (after `before_agent_start` hooks) | *(empty)* | No |
+| `agent_end` | Agent loop finishes | `messages: AgentMessage[]` | No |
+
+#### Turn & Message Streaming
+
+| Event | When | Payload | Can modify? |
+|-------|------|---------|-------------|
+| `turn_start` | Each LLM turn begins | `turnIndex: number`, `timestamp: number` | No |
+| `turn_end` | Each LLM turn ends | `turnIndex: number`, `message: AgentMessage`, `toolResults: ToolResultMessage[]` | No |
+| `message_start` | A message begins (user, assistant, or tool result) | `message: AgentMessage` | No |
+| `message_update` | Assistant message streaming (token-by-token) | `message: AgentMessage`, `assistantMessageEvent: AssistantMessageEvent` | No |
+| `message_end` | A message ends | `message: AgentMessage` | No |
+
+#### Context & Provider
+
+| Event | When | Payload | Can modify? |
+|-------|------|---------|-------------|
+| `context` | Before every LLM call | `messages: AgentMessage[]` | Yes — return `{ messages }` to replace the message list (non-destructive, original session unaffected) |
+| `before_provider_request` | Before the raw provider HTTP request is sent | `payload: unknown` (provider-specific) | Yes — return replacement payload |
+
+#### Tool Execution
+
+| Event | When | Payload | Can modify? |
+|-------|------|---------|-------------|
+| `tool_call` | Before a tool executes | `toolCallId: string`, `toolName: string`, `input: Record<string, unknown>` (typed per built-in tool) | Yes — return `{ block: true, reason? }` to prevent execution |
+| `tool_result` | After a tool executes | `toolCallId: string`, `toolName: string`, `input`, `content: (TextContent \| ImageContent)[]`, `isError: boolean`, `details` | Yes — return `{ content?, details?, isError? }` to modify the result |
+| `tool_execution_start` | Tool begins executing (for UI/progress) | `toolCallId: string`, `toolName: string`, `args: any` | No |
+| `tool_execution_update` | Tool streaming partial output | `toolCallId: string`, `toolName: string`, `args: any`, `partialResult: any` | No |
+| `tool_execution_end` | Tool finishes executing | `toolCallId: string`, `toolName: string`, `result: any`, `isError: boolean` | No |
+
+#### Session Management
+
+| Event | When | Payload | Can modify? |
+|-------|------|---------|-------------|
+| `session_directory` | Before session manager creation | `cwd: string` | Yes — return custom session directory path |
+| `session_start` | Session initially loaded | *(empty)* | No |
+| `session_before_switch` | Before switching to another session | `reason: "new" \| "resume"`, `targetSessionFile?: string` | Yes — return `{ cancel: true }` to block |
+| `session_switch` | After switching sessions | `reason: "new" \| "resume"`, `previousSessionFile: string \| undefined` | No |
+| `session_before_fork` | Before forking a session | `entryId: string` | Yes — return `{ cancel: true }` to block |
+| `session_fork` | After forking | `previousSessionFile: string \| undefined` | No |
+| `session_before_compact` | Before context compaction | `preparation: CompactionPreparation`, `branchEntries: SessionEntry[]`, `signal: AbortSignal` | Yes — return custom compaction instructions |
+| `session_compact` | After compaction completes | `compactionEntry: CompactionEntry`, `fromExtension: boolean` | No |
+| `session_before_tree` | Before navigating session tree | `preparation: TreePreparation`, `signal: AbortSignal` | Yes — can cancel or customize |
+| `session_tree` | After tree navigation | `newLeafId`, `oldLeafId`, `summaryEntry?`, `fromExtension?` | No |
+| `session_shutdown` | Process exit / session cleanup | *(empty)* | No |
+
+#### Resource Discovery & Model
+
+| Event | When | Payload | Can modify? |
+|-------|------|---------|-------------|
+| `resources_discover` | Skills/extensions/prompts discovered (startup or reload) | `cwd: string`, `reason: "startup" \| "reload"` | Yes — return `{ skillPaths?, promptPaths?, themePaths? }` to add extra paths |
+| `model_select` | Model changed (set, cycle, or restore) | `model: Model`, `previousModel: Model \| undefined`, `source: "set" \| "cycle" \| "restore"` | No |
+| `user_bash` | User runs a shell command via `!` or `!!` prefix | `command: string`, `excludeFromContext: boolean`, `cwd: string` | Yes — return `{ operations?, result? }` to override execution |
 
 ### `before_agent_start` Detail
 
@@ -461,7 +505,72 @@ Cosmonauts passes these through to `createAgentSession()` where applicable.
 
 ## Cost Tracking
 
-Pi tracks token usage and costs per model per session. This data is available through the event system. The orchestration layer should aggregate costs across all spawned workers for budget enforcement.
+Pi tracks token usage and costs per model per session. This data is available through the event system. The orchestration layer aggregates costs across all spawned workers for budget enforcement and reporting.
+
+### Cosmonauts Chain Events
+
+The chain runner emits `ChainEvent` variants during orchestration. These are Cosmonauts-level events (not Pi lifecycle events) delivered via the `onEvent` callback in `ChainConfig`.
+
+#### Event Catalog
+
+| Event | When | Key Payload |
+|-------|------|-------------|
+| `chain_start` | Chain execution begins | `stages: ChainStage[]` |
+| `chain_end` | Chain execution completes (success or failure) | `result: ChainResult` (includes `stats?: ChainStats`) |
+| `stage_start` | A stage begins | `stage: ChainStage`, `stageIndex: number` |
+| `stage_end` | A stage completes | `stage: ChainStage`, `result: StageResult` |
+| `stage_iteration` | A loop stage starts a new iteration | `stage: ChainStage`, `iteration: number` |
+| `stage_stats` | Stats captured for a completed stage spawn | `stage: ChainStage`, `stats: SpawnStats` |
+| `agent_spawned` | An agent session is created | `role: string`, `sessionId: string` |
+| `agent_completed` | An agent session finishes | `role: string`, `sessionId: string` |
+| `agent_turn` | Forwarded Pi session lifecycle event (turn boundaries, compaction) | `role: string`, `sessionId: string`, `event: SpawnEvent` |
+| `agent_tool_use` | Forwarded Pi tool execution event | `role: string`, `sessionId: string`, `event: SpawnEvent` |
+| `error` | An error occurred during chain execution | `message: string`, `stage?: ChainStage` |
+
+#### `stage_stats` — Per-Stage Cost Data
+
+Emitted after each successful agent spawn within a stage. Contains a `SpawnStats` object:
+
+```typescript
+interface SpawnStats {
+  tokens: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
+  cost: number;       // Estimated cost in USD
+  durationMs: number; // Wall-clock duration
+  turns: number;      // User↔assistant turns
+  toolCalls: number;  // Total tool calls made
+}
+```
+
+For loop stages, `stage_stats` fires once per iteration. The `StageResult.stats` aggregates all iterations.
+
+#### `agent_turn` — Session Lifecycle Forwarding
+
+Wraps Pi's internal session events (`turn_start`, `turn_end`, `auto_compaction_start`, `auto_compaction_end`) with the agent role and session ID. Useful for progress monitoring and debugging.
+
+#### `agent_tool_use` — Tool Execution Forwarding
+
+Wraps Pi's `tool_execution_start` and `tool_execution_end` events. Enables tool-level observability across spawned agents without subscribing to each session individually.
+
+#### Aggregate Chain Stats
+
+The `chain_end` event's `result.stats` contains `ChainStats`:
+
+```typescript
+interface ChainStats {
+  stages: StageStats[];     // Per-stage breakdown
+  totalCost: number;        // Sum of cost across all stages (USD)
+  totalTokens: number;      // Sum of total tokens across all stages
+  totalDurationMs: number;  // Sum of durationMs across all stages
+}
+
+interface StageStats {
+  stageName: string;        // Agent role name
+  iterations: number;       // Iteration count (1 for non-loop stages)
+  stats: SpawnStats;        // Aggregated tokens, cost, duration
+}
+```
+
+Cost data is ephemeral — displayed in CLI output and included in chain events. No disk persistence.
 
 ---
 
