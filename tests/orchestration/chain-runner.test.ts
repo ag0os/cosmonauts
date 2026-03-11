@@ -22,6 +22,7 @@ import type {
 	ChainEvent,
 	ChainStage,
 	SpawnResult,
+	SpawnStats,
 } from "../../lib/orchestration/types.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 
@@ -1016,5 +1017,349 @@ describe("qualified stage chain end-to-end", () => {
 		expect(result.stageResults[1]!.error).toContain(
 			'Unknown agent role "ops/missing"',
 		);
+	});
+});
+
+// ============================================================================
+// Stats Tracking Tests
+// ============================================================================
+
+/** Create a mock SpawnStats with distinguishable values. */
+function makeMockStats(seed: number): SpawnStats {
+	return {
+		tokens: {
+			input: seed * 100,
+			output: seed * 50,
+			cacheRead: seed * 10,
+			cacheWrite: seed * 5,
+			total: seed * 165,
+		},
+		cost: seed * 0.01,
+		durationMs: seed * 1000,
+		turns: seed,
+		toolCalls: seed * 2,
+	};
+}
+
+describe("stats tracking", () => {
+	describe("runStage stats", () => {
+		test("one-shot stage includes spawn stats in result", async () => {
+			const stats = makeMockStats(1);
+			const spawner = createMockSpawner([
+				{ success: true, sessionId: "s-1", messages: [], stats },
+			]);
+			const stage = makeStage("planner", false);
+			const config = makeConfig([stage]);
+
+			const result = await runStage(stage, config, spawner);
+
+			expect(result.success).toBe(true);
+			expect(result.stats).toEqual(stats);
+		});
+
+		test("one-shot stage has no stats when spawner returns none", async () => {
+			const spawner = createMockSpawner([
+				{ success: true, sessionId: "s-1", messages: [] },
+			]);
+			const stage = makeStage("planner", false);
+			const config = makeConfig([stage]);
+
+			const result = await runStage(stage, config, spawner);
+
+			expect(result.stats).toBeUndefined();
+		});
+
+		test("loop stage aggregates stats across iterations", async () => {
+			vi.useFakeTimers();
+			const FIXED_NOW = new Date("2026-01-01T00:00:00Z").getTime();
+			vi.setSystemTime(FIXED_NOW);
+
+			const stats1 = makeMockStats(1);
+			const stats2 = makeMockStats(2);
+			const stats3 = makeMockStats(3);
+
+			const spawner = createMockSpawner([
+				{ success: true, sessionId: "s-1", messages: [], stats: stats1 },
+				{ success: true, sessionId: "s-2", messages: [], stats: stats2 },
+				{ success: true, sessionId: "s-3", messages: [], stats: stats3 },
+			]);
+			const completionCheck = vi.fn(async () => false);
+			const stage = makeStage("coordinator", true, completionCheck);
+			const config = makeConfig([stage]);
+
+			const result = await runStage(stage, config, spawner, {
+				maxTotalIterations: 3,
+				deadlineMs: FIXED_NOW + 60_000,
+			});
+
+			expect(result.iterations).toBe(3);
+			expect(result.stats).toBeDefined();
+			// Sum of seeds 1+2+3 = 6
+			expect(result.stats!.tokens.input).toBe(600);
+			expect(result.stats!.tokens.output).toBe(300);
+			expect(result.stats!.tokens.cacheRead).toBe(60);
+			expect(result.stats!.tokens.cacheWrite).toBe(30);
+			expect(result.stats!.tokens.total).toBe(990);
+			expect(result.stats!.cost).toBeCloseTo(0.06);
+			expect(result.stats!.durationMs).toBe(6000);
+			expect(result.stats!.turns).toBe(6);
+			expect(result.stats!.toolCalls).toBe(12);
+		});
+
+		test("loop stage includes partial stats on spawn failure", async () => {
+			vi.useFakeTimers();
+			const FIXED_NOW = new Date("2026-01-01T00:00:00Z").getTime();
+			vi.setSystemTime(FIXED_NOW);
+
+			const stats1 = makeMockStats(1);
+			const spawner = createMockSpawner([
+				{ success: true, sessionId: "s-1", messages: [], stats: stats1 },
+				{
+					success: false,
+					sessionId: "",
+					messages: [],
+					error: "crashed",
+				},
+			]);
+			const completionCheck = vi.fn(async () => false);
+			const stage = makeStage("coordinator", true, completionCheck);
+			const config = makeConfig([stage]);
+
+			const result = await runStage(stage, config, spawner, {
+				maxTotalIterations: 5,
+				deadlineMs: FIXED_NOW + 60_000,
+			});
+
+			expect(result.success).toBe(false);
+			expect(result.stats).toBeDefined();
+			expect(result.stats!.tokens.input).toBe(100);
+			expect(result.stats!.cost).toBeCloseTo(0.01);
+		});
+	});
+
+	describe("runChain stats", () => {
+		test("chain result includes ChainStats with per-stage breakdown", async () => {
+			const stats1 = makeMockStats(1);
+			const stats2 = makeMockStats(2);
+			spawnerRef.current = createMockSpawner([
+				{ success: true, sessionId: "s-1", messages: [], stats: stats1 },
+				{ success: true, sessionId: "s-2", messages: [], stats: stats2 },
+			]);
+
+			const stages = [
+				makeStage("planner", false),
+				makeStage("task-manager", false),
+			];
+			const config = makeConfig(stages);
+
+			const result = await runChain(config);
+
+			expect(result.success).toBe(true);
+			expect(result.stats).toBeDefined();
+			expect(result.stats!.stages).toHaveLength(2);
+			expect(result.stats!.stages[0]!.stageName).toBe("planner");
+			expect(result.stats!.stages[0]!.stats).toEqual(stats1);
+			expect(result.stats!.stages[0]!.iterations).toBe(1);
+			expect(result.stats!.stages[1]!.stageName).toBe("task-manager");
+			expect(result.stats!.stages[1]!.stats).toEqual(stats2);
+			// Totals: sum of seeds 1+2 = 3
+			expect(result.stats!.totalCost).toBeCloseTo(0.03);
+			expect(result.stats!.totalTokens).toBe(495); // 165 + 330
+			expect(result.stats!.totalDurationMs).toBe(3000);
+		});
+
+		test("chain_end event payload includes ChainStats", async () => {
+			const stats1 = makeMockStats(1);
+			spawnerRef.current = createMockSpawner([
+				{ success: true, sessionId: "s-1", messages: [], stats: stats1 },
+			]);
+
+			const events: ChainEvent[] = [];
+			const stages = [makeStage("planner", false)];
+			const config = makeConfig(stages, {
+				onEvent: (event) => events.push(event),
+			});
+
+			await runChain(config);
+
+			const chainEnd = events.find((e) => e.type === "chain_end");
+			expect(chainEnd).toBeDefined();
+			expect(chainEnd!.type === "chain_end" && chainEnd!.result.stats).toBeDefined();
+			const stats = (chainEnd as Extract<ChainEvent, { type: "chain_end" }>).result.stats!;
+			expect(stats.totalCost).toBeCloseTo(0.01);
+			expect(stats.totalTokens).toBe(165);
+		});
+
+		test("stage_stats event emitted after each stage", async () => {
+			const stats1 = makeMockStats(1);
+			const stats2 = makeMockStats(2);
+			spawnerRef.current = createMockSpawner([
+				{ success: true, sessionId: "s-1", messages: [], stats: stats1 },
+				{ success: true, sessionId: "s-2", messages: [], stats: stats2 },
+			]);
+
+			const events: ChainEvent[] = [];
+			const stages = [
+				makeStage("planner", false),
+				makeStage("task-manager", false),
+			];
+			const config = makeConfig(stages, {
+				onEvent: (event) => events.push(event),
+			});
+
+			await runChain(config);
+
+			const stageStatsEvents = events.filter(
+				(e) => e.type === "stage_stats",
+			) as Extract<ChainEvent, { type: "stage_stats" }>[];
+			expect(stageStatsEvents).toHaveLength(2);
+			expect(stageStatsEvents[0]!.stage.name).toBe("planner");
+			expect(stageStatsEvents[0]!.stats).toEqual(stats1);
+			expect(stageStatsEvents[1]!.stage.name).toBe("task-manager");
+			expect(stageStatsEvents[1]!.stats).toEqual(stats2);
+		});
+
+		test("stage_stats emitted before stage_end", async () => {
+			const stats1 = makeMockStats(1);
+			spawnerRef.current = createMockSpawner([
+				{ success: true, sessionId: "s-1", messages: [], stats: stats1 },
+			]);
+
+			const events: ChainEvent[] = [];
+			const stages = [makeStage("planner", false)];
+			const config = makeConfig(stages, {
+				onEvent: (event) => events.push(event),
+			});
+
+			await runChain(config);
+
+			const eventTypes = events.map((e) => e.type);
+			const statsIdx = eventTypes.indexOf("stage_stats");
+			const endIdx = eventTypes.indexOf("stage_end");
+			expect(statsIdx).toBeGreaterThan(-1);
+			expect(endIdx).toBeGreaterThan(statsIdx);
+		});
+
+		test("no stage_stats event when spawn has no stats", async () => {
+			spawnerRef.current = createMockSpawner([
+				{ success: true, sessionId: "s-1", messages: [] },
+			]);
+
+			const events: ChainEvent[] = [];
+			const stages = [makeStage("planner", false)];
+			const config = makeConfig(stages, {
+				onEvent: (event) => events.push(event),
+			});
+
+			await runChain(config);
+
+			const stageStatsEvents = events.filter((e) => e.type === "stage_stats");
+			expect(stageStatsEvents).toHaveLength(0);
+		});
+
+		test("ChainStats excludes stages without stats", async () => {
+			spawnerRef.current = createMockSpawner([
+				{ success: true, sessionId: "s-1", messages: [] },
+				{
+					success: true,
+					sessionId: "s-2",
+					messages: [],
+					stats: makeMockStats(2),
+				},
+			]);
+
+			const stages = [
+				makeStage("planner", false),
+				makeStage("task-manager", false),
+			];
+			const config = makeConfig(stages);
+
+			const result = await runChain(config);
+
+			expect(result.stats).toBeDefined();
+			expect(result.stats!.stages).toHaveLength(1);
+			expect(result.stats!.stages[0]!.stageName).toBe("task-manager");
+		});
+
+		test("stats accumulate across loop iterations in chain result", async () => {
+			vi.useFakeTimers();
+			const FIXED_NOW = new Date("2026-01-01T00:00:00Z").getTime();
+			vi.setSystemTime(FIXED_NOW);
+
+			const stats1 = makeMockStats(1);
+			const stats2 = makeMockStats(2);
+			const stats3 = makeMockStats(3);
+
+			let spawnIdx = 0;
+			const spawnResults: SpawnResult[] = [
+				{ success: true, sessionId: "s-1", messages: [], stats: stats1 },
+				{ success: true, sessionId: "s-2", messages: [], stats: stats2 },
+				{ success: true, sessionId: "s-3", messages: [], stats: stats3 },
+			];
+			spawnerRef.current = {
+				spawn: vi.fn(async () => {
+					const result = spawnResults[spawnIdx] ?? spawnResults[0]!;
+					spawnIdx++;
+					return result;
+				}),
+				dispose: vi.fn(),
+			};
+
+			// One-shot stage followed by a 2-iteration loop stage
+			let loopChecks = 0;
+			const completionCheck = vi.fn(async () => {
+				loopChecks++;
+				return loopChecks >= 3; // pre-check(1), post-iter1(2), post-iter2(3) → done
+			});
+
+			const stages = [
+				makeStage("planner", false),
+				makeStage("coordinator", true, completionCheck),
+			];
+			const config = makeConfig(stages, { maxTotalIterations: 10 });
+
+			const result = await runChain(config);
+
+			expect(result.success).toBe(true);
+			expect(result.stats).toBeDefined();
+			expect(result.stats!.stages).toHaveLength(2);
+
+			// First stage: one-shot, stats from seed=1
+			expect(result.stats!.stages[0]!.stageName).toBe("planner");
+			expect(result.stats!.stages[0]!.iterations).toBe(1);
+			expect(result.stats!.stages[0]!.stats.cost).toBeCloseTo(0.01);
+
+			// Second stage: loop with 2 iterations, stats from seeds 2+3
+			expect(result.stats!.stages[1]!.stageName).toBe("coordinator");
+			expect(result.stats!.stages[1]!.iterations).toBe(2);
+			expect(result.stats!.stages[1]!.stats.cost).toBeCloseTo(0.05);
+			expect(result.stats!.stages[1]!.stats.tokens.input).toBe(500); // 200+300
+
+			// Totals: seeds 1+2+3
+			expect(result.stats!.totalCost).toBeCloseTo(0.06);
+			expect(result.stats!.totalTokens).toBe(990);
+			expect(result.stats!.totalDurationMs).toBe(6000);
+		});
+	});
+
+	describe("stats stay ephemeral", () => {
+		test("stats are in-memory only — no persistence to disk", async () => {
+			const stats1 = makeMockStats(1);
+			spawnerRef.current = createMockSpawner([
+				{ success: true, sessionId: "s-1", messages: [], stats: stats1 },
+			]);
+
+			const stages = [makeStage("planner", false)];
+			const config = makeConfig(stages);
+
+			const result = await runChain(config);
+
+			// Stats exist on the returned object
+			expect(result.stats).toBeDefined();
+			// No disk writes — stats only live on the returned ChainResult/StageResult
+			// (The chain runner writes no files; this test just asserts the stats
+			// are returned in-memory and there's no serialization code.)
+			expect(result.stageResults[0]!.stats).toEqual(stats1);
+		});
 	});
 });

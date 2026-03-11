@@ -46,6 +46,11 @@ export function formatChainEvent(event: ChainEvent): string {
 			const error = event.result.error ? ` — ${event.result.error}` : "";
 			return `[${event.stage.name}] ${status} (${duration})${error}`;
 		}
+		case "stage_stats": {
+			const cost = event.stats.cost.toFixed(4);
+			const tokens = event.stats.tokens.total;
+			return `[${event.stage.name}] Stats: $${cost}, ${tokens} tokens`;
+		}
 		case "stage_iteration":
 			return `[${event.stage.name}] Starting iteration ${event.iteration}...`;
 		case "agent_spawned":

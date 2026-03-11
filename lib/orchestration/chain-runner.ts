@@ -19,7 +19,10 @@ import type {
 	ChainEvent,
 	ChainResult,
 	ChainStage,
+	ChainStats,
+	SpawnStats,
 	StageResult,
+	StageStats,
 } from "./types.ts";
 
 // ============================================================================
@@ -167,6 +170,61 @@ function emit(config: ChainConfig, event: ChainEvent): void {
 }
 
 // ============================================================================
+// Stats Aggregation Helpers
+// ============================================================================
+
+/** Create a zero-valued SpawnStats. */
+function emptySpawnStats(): SpawnStats {
+	return {
+		tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		cost: 0,
+		durationMs: 0,
+		turns: 0,
+		toolCalls: 0,
+	};
+}
+
+/** Sum two SpawnStats together. */
+function addSpawnStats(a: SpawnStats, b: SpawnStats): SpawnStats {
+	return {
+		tokens: {
+			input: a.tokens.input + b.tokens.input,
+			output: a.tokens.output + b.tokens.output,
+			cacheRead: a.tokens.cacheRead + b.tokens.cacheRead,
+			cacheWrite: a.tokens.cacheWrite + b.tokens.cacheWrite,
+			total: a.tokens.total + b.tokens.total,
+		},
+		cost: a.cost + b.cost,
+		durationMs: a.durationMs + b.durationMs,
+		turns: a.turns + b.turns,
+		toolCalls: a.toolCalls + b.toolCalls,
+	};
+}
+
+/** Build ChainStats from completed stage results. */
+function buildChainStats(stageResults: StageResult[]): ChainStats {
+	const stages: StageStats[] = [];
+	let totalCost = 0;
+	let totalTokens = 0;
+	let totalDurationMs = 0;
+
+	for (const sr of stageResults) {
+		if (sr.stats) {
+			stages.push({
+				stageName: sr.stage.name,
+				iterations: sr.iterations,
+				stats: sr.stats,
+			});
+			totalCost += sr.stats.cost;
+			totalTokens += sr.stats.tokens.total;
+			totalDurationMs += sr.stats.durationMs;
+		}
+	}
+
+	return { stages, totalCost, totalTokens, totalDurationMs };
+}
+
+// ============================================================================
 // runChain
 // ============================================================================
 
@@ -210,6 +268,9 @@ export async function runChain(config: ChainConfig): Promise<ChainResult> {
 			}
 			stageResults.push(result);
 
+			if (result.stats) {
+				emit(config, { type: "stage_stats", stage, stats: result.stats });
+			}
 			emit(config, { type: "stage_end", stage, result });
 
 			if (!result.success) {
@@ -221,11 +282,13 @@ export async function runChain(config: ChainConfig): Promise<ChainResult> {
 		spawner.dispose();
 	}
 
+	const chainStats = buildChainStats(stageResults);
 	const chainResult: ChainResult = {
 		success: errors.length === 0 && !config.signal?.aborted,
 		stageResults,
 		totalDurationMs: Date.now() - chainStart,
 		errors,
+		stats: chainStats,
 	};
 
 	emit(config, { type: "chain_end", result: chainResult });
@@ -322,6 +385,7 @@ export async function runStage(
 				iterations,
 				durationMs: Date.now() - stageStart,
 				error: spawnResult.error,
+				stats: spawnResult.stats,
 			};
 		}
 
@@ -332,6 +396,8 @@ export async function runStage(
 		const deadline = constraints?.deadlineMs ?? Date.now() + DEFAULT_TIMEOUT_MS;
 		let completionReached = false;
 		let terminalError: string | undefined;
+		let aggregatedStats = emptySpawnStats();
+		let hasStats = false;
 
 		// Pre-check once before spawning to avoid unnecessary loop iterations.
 		if (completionCheck) {
@@ -392,6 +458,11 @@ export async function runStage(
 				compaction: config.compaction,
 			});
 
+			if (spawnResult.stats) {
+				aggregatedStats = addSpawnStats(aggregatedStats, spawnResult.stats);
+				hasStats = true;
+			}
+
 			if (spawnResult.success) {
 				emit(config, {
 					type: "agent_spawned",
@@ -412,6 +483,7 @@ export async function runStage(
 					iterations,
 					durationMs: Date.now() - stageStart,
 					error: spawnResult.error,
+					stats: hasStats ? aggregatedStats : undefined,
 				};
 			}
 
@@ -430,6 +502,8 @@ export async function runStage(
 			if (completionReached || terminalError) break;
 		}
 
+		const loopStats = hasStats ? aggregatedStats : undefined;
+
 		if (terminalError) {
 			return {
 				stage,
@@ -437,6 +511,7 @@ export async function runStage(
 				iterations,
 				durationMs: Date.now() - stageStart,
 				error: terminalError,
+				stats: loopStats,
 			};
 		}
 
@@ -446,6 +521,7 @@ export async function runStage(
 				success: true,
 				iterations,
 				durationMs: Date.now() - stageStart,
+				stats: loopStats,
 			};
 		}
 
@@ -455,6 +531,7 @@ export async function runStage(
 				success: true,
 				iterations,
 				durationMs: Date.now() - stageStart,
+				stats: loopStats,
 			};
 		}
 
@@ -465,6 +542,7 @@ export async function runStage(
 				iterations,
 				durationMs: Date.now() - stageStart,
 				error: `Loop stage "${stage.name}" timed out before completion`,
+				stats: loopStats,
 			};
 		}
 
@@ -475,6 +553,7 @@ export async function runStage(
 				iterations,
 				durationMs: Date.now() - stageStart,
 				error: `Loop stage "${stage.name}" reached max iterations (${iterationBudget}) before completion`,
+				stats: loopStats,
 			};
 		}
 
@@ -484,6 +563,7 @@ export async function runStage(
 			iterations,
 			durationMs: Date.now() - stageStart,
 			error: `Loop stage "${stage.name}" exited before completion`,
+			stats: loopStats,
 		};
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : String(err);

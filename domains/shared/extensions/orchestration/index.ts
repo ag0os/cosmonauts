@@ -85,6 +85,8 @@ function chainEventToProgressLine(event: ChainEvent): string | undefined {
 			return `✗ ${roleLabel(event.stage.name)} failed: ${event.result.error ?? "unknown error"}`;
 		case "error":
 			return `✗ Error${event.stage ? ` in ${roleLabel(event.stage.name)}` : ""}: ${event.message}`;
+		case "stage_stats":
+			return `  💰 ${roleLabel(event.stage.name)}: $${event.stats.cost.toFixed(4)}, ${event.stats.tokens.total} tokens`;
 		case "chain_end":
 			return undefined; // Final result handled by execute return
 	}

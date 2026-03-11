@@ -184,6 +184,8 @@ export interface StageResult {
 	durationMs: number;
 	/** Error message if failed */
 	error?: string;
+	/** Aggregated stats across all iterations in this stage */
+	stats?: SpawnStats;
 }
 
 /** Result of executing a full chain */
@@ -196,6 +198,8 @@ export interface ChainResult {
 	totalDurationMs: number;
 	/** Errors from failed stages */
 	errors: string[];
+	/** Aggregate cost/token stats across all stages */
+	stats?: ChainStats;
 }
 
 // ============================================================================
@@ -207,6 +211,7 @@ export type ChainEvent =
 	| { type: "chain_end"; result: ChainResult }
 	| { type: "stage_start"; stage: ChainStage; stageIndex: number }
 	| { type: "stage_end"; stage: ChainStage; result: StageResult }
+	| { type: "stage_stats"; stage: ChainStage; stats: SpawnStats }
 	| { type: "stage_iteration"; stage: ChainStage; iteration: number }
 	| { type: "agent_spawned"; role: string; sessionId: string }
 	| { type: "agent_completed"; role: string; sessionId: string }
