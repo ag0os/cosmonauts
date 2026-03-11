@@ -84,6 +84,7 @@ function createMockSession(overrides?: Record<string, unknown>) {
 		messages: [],
 		prompt: vi.fn(async () => undefined),
 		dispose: vi.fn(),
+		subscribe: vi.fn(() => vi.fn()),
 		getSessionStats: vi.fn(() => MOCK_SESSION_STATS),
 		...overrides,
 	};
@@ -234,5 +235,269 @@ describe("createPiSpawner", () => {
 
 		const callArgs = mocks.createAgentSession.mock.calls[0]?.[0];
 		expect(callArgs).not.toHaveProperty("settingsManager");
+	});
+
+	describe("event subscription", () => {
+		test("calls session.subscribe before session.prompt when onEvent is provided", async () => {
+			const callOrder: string[] = [];
+			const mockSession = createMockSession({
+				subscribe: vi.fn(() => {
+					callOrder.push("subscribe");
+					return vi.fn();
+				}),
+				prompt: vi.fn(async () => {
+					callOrder.push("prompt");
+				}),
+			});
+			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
+
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			await spawner.spawn({
+				role: "planner",
+				cwd: "/tmp/test-project",
+				prompt: "Plan the work.",
+				onEvent: () => {},
+			});
+
+			expect(callOrder).toEqual(
+				expect.arrayContaining(["subscribe", "prompt"]),
+			);
+			expect(callOrder.indexOf("subscribe")).toBeLessThan(
+				callOrder.indexOf("prompt"),
+			);
+		});
+
+		test("does not call session.subscribe when onEvent is not provided", async () => {
+			const mockSession = createMockSession();
+			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
+
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			await spawner.spawn({
+				role: "planner",
+				cwd: "/tmp/test-project",
+				prompt: "Plan the work.",
+			});
+
+			expect(mockSession.subscribe).not.toHaveBeenCalled();
+		});
+
+		test("calls unsubscribe before session.dispose", async () => {
+			const callOrder: string[] = [];
+			const unsubscribe = vi.fn(() => callOrder.push("unsubscribe"));
+			const mockSession = createMockSession({
+				subscribe: vi.fn(() => {
+					callOrder.push("subscribe");
+					return unsubscribe;
+				}),
+				dispose: vi.fn(() => callOrder.push("dispose")),
+			});
+			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
+
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			await spawner.spawn({
+				role: "planner",
+				cwd: "/tmp/test-project",
+				prompt: "Plan the work.",
+				onEvent: () => {},
+			});
+
+			expect(unsubscribe).toHaveBeenCalledTimes(1);
+			expect(callOrder.indexOf("unsubscribe")).toBeLessThan(
+				callOrder.indexOf("dispose"),
+			);
+		});
+
+		test("forwards turn_start/end events through onEvent", async () => {
+			let subscribeListener: ((event: unknown) => void) | undefined;
+			const mockSession = createMockSession({
+				subscribe: vi.fn((listener: (event: unknown) => void) => {
+					subscribeListener = listener;
+					return vi.fn();
+				}),
+				prompt: vi.fn(async () => {
+					// Simulate events during prompt execution
+					subscribeListener?.({ type: "turn_start" });
+					subscribeListener?.({
+						type: "turn_end",
+						message: {},
+						toolResults: [],
+					});
+				}),
+			});
+			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
+
+			const receivedEvents: unknown[] = [];
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			await spawner.spawn({
+				role: "planner",
+				cwd: "/tmp/test-project",
+				prompt: "Plan the work.",
+				onEvent: (event) => receivedEvents.push(event),
+			});
+
+			expect(receivedEvents).toEqual([
+				{ type: "turn_start" },
+				{ type: "turn_end" },
+			]);
+		});
+
+		test("forwards tool_execution_start/end events through onEvent", async () => {
+			let subscribeListener: ((event: unknown) => void) | undefined;
+			const mockSession = createMockSession({
+				subscribe: vi.fn((listener: (event: unknown) => void) => {
+					subscribeListener = listener;
+					return vi.fn();
+				}),
+				prompt: vi.fn(async () => {
+					subscribeListener?.({
+						type: "tool_execution_start",
+						toolCallId: "tc-1",
+						toolName: "read",
+						args: {},
+					});
+					subscribeListener?.({
+						type: "tool_execution_end",
+						toolCallId: "tc-1",
+						toolName: "read",
+						result: "ok",
+						isError: false,
+					});
+				}),
+			});
+			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
+
+			const receivedEvents: unknown[] = [];
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			await spawner.spawn({
+				role: "planner",
+				cwd: "/tmp/test-project",
+				prompt: "Plan the work.",
+				onEvent: (event) => receivedEvents.push(event),
+			});
+
+			expect(receivedEvents).toEqual([
+				{ type: "tool_execution_start", toolName: "read", toolCallId: "tc-1" },
+				{
+					type: "tool_execution_end",
+					toolName: "read",
+					toolCallId: "tc-1",
+					isError: false,
+				},
+			]);
+		});
+
+		test("forwards auto_compaction_start/end events through onEvent", async () => {
+			let subscribeListener: ((event: unknown) => void) | undefined;
+			const mockSession = createMockSession({
+				subscribe: vi.fn((listener: (event: unknown) => void) => {
+					subscribeListener = listener;
+					return vi.fn();
+				}),
+				prompt: vi.fn(async () => {
+					subscribeListener?.({
+						type: "auto_compaction_start",
+						reason: "threshold",
+					});
+					subscribeListener?.({
+						type: "auto_compaction_end",
+						result: undefined,
+						aborted: false,
+						willRetry: false,
+					});
+				}),
+			});
+			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
+
+			const receivedEvents: unknown[] = [];
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			await spawner.spawn({
+				role: "planner",
+				cwd: "/tmp/test-project",
+				prompt: "Plan the work.",
+				onEvent: (event) => receivedEvents.push(event),
+			});
+
+			expect(receivedEvents).toEqual([
+				{ type: "auto_compaction_start", reason: "threshold" },
+				{ type: "auto_compaction_end", aborted: false },
+			]);
+		});
+
+		test("does not forward unrelated events (message_start, etc.)", async () => {
+			let subscribeListener: ((event: unknown) => void) | undefined;
+			const mockSession = createMockSession({
+				subscribe: vi.fn((listener: (event: unknown) => void) => {
+					subscribeListener = listener;
+					return vi.fn();
+				}),
+				prompt: vi.fn(async () => {
+					subscribeListener?.({ type: "agent_start" });
+					subscribeListener?.({ type: "message_start", message: {} });
+					subscribeListener?.({ type: "message_update", message: {} });
+					subscribeListener?.({ type: "message_end", message: {} });
+					subscribeListener?.({ type: "agent_end", messages: [] });
+				}),
+			});
+			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
+
+			const receivedEvents: unknown[] = [];
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			await spawner.spawn({
+				role: "planner",
+				cwd: "/tmp/test-project",
+				prompt: "Plan the work.",
+				onEvent: (event) => receivedEvents.push(event),
+			});
+
+			expect(receivedEvents).toHaveLength(0);
+		});
+
+		test("onEvent listener errors are swallowed", async () => {
+			let subscribeListener: ((event: unknown) => void) | undefined;
+			const mockSession = createMockSession({
+				subscribe: vi.fn((listener: (event: unknown) => void) => {
+					subscribeListener = listener;
+					return vi.fn();
+				}),
+				prompt: vi.fn(async () => {
+					subscribeListener?.({ type: "turn_start" });
+				}),
+			});
+			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
+
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const result = await spawner.spawn({
+				role: "planner",
+				cwd: "/tmp/test-project",
+				prompt: "Plan the work.",
+				onEvent: () => {
+					throw new Error("listener error");
+				},
+			});
+
+			expect(result.success).toBe(true);
+		});
+
+		test("unsubscribe is called even when prompt throws", async () => {
+			const unsubscribe = vi.fn();
+			const mockSession = createMockSession({
+				subscribe: vi.fn(() => unsubscribe),
+				prompt: vi.fn(async () => {
+					throw new Error("prompt failed");
+				}),
+			});
+			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
+
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const result = await spawner.spawn({
+				role: "planner",
+				cwd: "/tmp/test-project",
+				prompt: "Plan the work.",
+				onEvent: () => {},
+			});
+
+			expect(result.success).toBe(false);
+			expect(unsubscribe).toHaveBeenCalledTimes(1);
+		});
 	});
 });

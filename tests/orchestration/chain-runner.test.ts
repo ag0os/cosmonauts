@@ -694,6 +694,113 @@ describe("event emission", () => {
 		expect(iterationEvents).toHaveLength(3);
 	});
 
+	test("forwards agent_turn and agent_tool_use events from spawner onEvent", async () => {
+		const events: ChainEvent[] = [];
+		const spawner: AgentSpawner = {
+			spawn: vi.fn(async (config) => {
+				// Simulate events from the spawner's onEvent callback
+				config.onEvent?.({ type: "turn_start" });
+				config.onEvent?.({
+					type: "tool_execution_start",
+					toolName: "read",
+					toolCallId: "tc-1",
+				});
+				config.onEvent?.({
+					type: "tool_execution_end",
+					toolName: "read",
+					toolCallId: "tc-1",
+					isError: false,
+				});
+				config.onEvent?.({ type: "turn_end" });
+				return {
+					success: true,
+					sessionId: "mock-session",
+					messages: [],
+				};
+			}),
+			dispose: vi.fn(),
+		};
+		const stage = makeStage("planner", false);
+		const config = makeConfig([stage], {
+			onEvent: (event) => events.push(event),
+		});
+
+		await runStage(stage, config, spawner);
+
+		const turnEvents = events.filter((e) => e.type === "agent_turn");
+		const toolEvents = events.filter((e) => e.type === "agent_tool_use");
+		expect(turnEvents).toHaveLength(2);
+		expect(toolEvents).toHaveLength(2);
+
+		// Verify structure of forwarded events
+		const firstTurn = turnEvents[0] as Extract<
+			ChainEvent,
+			{ type: "agent_turn" }
+		>;
+		expect(firstTurn.role).toBe("planner");
+		expect(firstTurn.event.type).toBe("turn_start");
+
+		const firstTool = toolEvents[0] as Extract<
+			ChainEvent,
+			{ type: "agent_tool_use" }
+		>;
+		expect(firstTool.role).toBe("planner");
+		expect(firstTool.event.type).toBe("tool_execution_start");
+	});
+
+	test("forwards auto_compaction events as agent_turn", async () => {
+		const events: ChainEvent[] = [];
+		const spawner: AgentSpawner = {
+			spawn: vi.fn(async (config) => {
+				config.onEvent?.({
+					type: "auto_compaction_start",
+					reason: "threshold",
+				});
+				config.onEvent?.({ type: "auto_compaction_end", aborted: false });
+				return {
+					success: true,
+					sessionId: "mock-session",
+					messages: [],
+				};
+			}),
+			dispose: vi.fn(),
+		};
+		const stage = makeStage("planner", false);
+		const config = makeConfig([stage], {
+			onEvent: (event) => events.push(event),
+		});
+
+		await runStage(stage, config, spawner);
+
+		const turnEvents = events.filter((e) => e.type === "agent_turn") as Extract<
+			ChainEvent,
+			{ type: "agent_turn" }
+		>[];
+		expect(turnEvents).toHaveLength(2);
+		expect(turnEvents[0]!.event.type).toBe("auto_compaction_start");
+		expect(turnEvents[1]!.event.type).toBe("auto_compaction_end");
+	});
+
+	test("does not pass onEvent to spawner when chain has no onEvent", async () => {
+		const spawner: AgentSpawner = {
+			spawn: vi.fn(async (config) => {
+				expect(config.onEvent).toBeUndefined();
+				return {
+					success: true,
+					sessionId: "mock-session",
+					messages: [],
+				};
+			}),
+			dispose: vi.fn(),
+		};
+		const stage = makeStage("planner", false);
+		const config = makeConfig([stage]); // no onEvent
+
+		await runStage(stage, config, spawner);
+
+		expect(spawner.spawn).toHaveBeenCalledTimes(1);
+	});
+
 	test("onEvent errors are swallowed", async () => {
 		const spawner = createMockSpawner();
 		const stage = makeStage("planner", false);
@@ -1184,8 +1291,11 @@ describe("stats tracking", () => {
 
 			const chainEnd = events.find((e) => e.type === "chain_end");
 			expect(chainEnd).toBeDefined();
-			expect(chainEnd!.type === "chain_end" && chainEnd!.result.stats).toBeDefined();
-			const stats = (chainEnd as Extract<ChainEvent, { type: "chain_end" }>).result.stats!;
+			expect(
+				chainEnd!.type === "chain_end" && chainEnd!.result.stats,
+			).toBeDefined();
+			const stats = (chainEnd as Extract<ChainEvent, { type: "chain_end" }>)
+				.result.stats!;
 			expect(stats.totalCost).toBeCloseTo(0.01);
 			expect(stats.totalTokens).toBe(165);
 		});

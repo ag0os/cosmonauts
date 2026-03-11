@@ -206,6 +206,20 @@ export interface ChainResult {
 // Events
 // ============================================================================
 
+/** Events forwarded from Pi session subscriptions during agent spawns. */
+export type SpawnEvent =
+	| { type: "turn_start" }
+	| { type: "turn_end" }
+	| { type: "tool_execution_start"; toolName: string; toolCallId: string }
+	| {
+			type: "tool_execution_end";
+			toolName: string;
+			toolCallId: string;
+			isError: boolean;
+	  }
+	| { type: "auto_compaction_start"; reason: "threshold" | "overflow" }
+	| { type: "auto_compaction_end"; aborted: boolean };
+
 export type ChainEvent =
 	| { type: "chain_start"; stages: ChainStage[] }
 	| { type: "chain_end"; result: ChainResult }
@@ -215,6 +229,13 @@ export type ChainEvent =
 	| { type: "stage_iteration"; stage: ChainStage; iteration: number }
 	| { type: "agent_spawned"; role: string; sessionId: string }
 	| { type: "agent_completed"; role: string; sessionId: string }
+	| { type: "agent_turn"; role: string; sessionId: string; event: SpawnEvent }
+	| {
+			type: "agent_tool_use";
+			role: string;
+			sessionId: string;
+			event: SpawnEvent;
+	  }
 	| { type: "error"; message: string; stage?: ChainStage };
 
 // ============================================================================
@@ -257,6 +278,8 @@ export interface SpawnConfig {
 	thinkingLevel?: ThinkingLevel;
 	/** Compaction settings for the spawned session */
 	compaction?: CompactionConfig;
+	/** Callback for receiving Pi session events during the spawn */
+	onEvent?: (event: SpawnEvent) => void;
 }
 
 /** Result of an agent execution */

@@ -32,6 +32,7 @@ import type {
 	AgentSpawner,
 	ModelConfig,
 	SpawnConfig,
+	SpawnEvent,
 	SpawnResult,
 	SpawnStats,
 	ThinkingConfig,
@@ -317,6 +318,20 @@ export function createPiSpawner(
 
 				const { session } = await createAgentSession(sessionOptions);
 
+				// Subscribe to session events before prompt for progress streaming
+				const unsubscribe = config.onEvent
+					? session.subscribe((event) => {
+							const mapped = mapSessionEvent(event);
+							if (mapped) {
+								try {
+									config.onEvent?.(mapped);
+								} catch {
+									// Listeners must not break the spawner.
+								}
+							}
+						})
+					: undefined;
+
 				try {
 					// Send the user prompt clean — identity is in the system prompt
 					const startMs = Date.now();
@@ -340,6 +355,7 @@ export function createPiSpawner(
 						stats,
 					};
 				} finally {
+					unsubscribe?.();
 					session.dispose();
 				}
 			} catch (err: unknown) {
@@ -362,6 +378,47 @@ export function createPiSpawner(
 // ============================================================================
 // Helpers
 // ============================================================================
+
+/**
+ * Map a Pi AgentSessionEvent to a SpawnEvent, or return undefined for
+ * events we don't forward.
+ */
+function mapSessionEvent(event: {
+	type: string;
+	[key: string]: unknown;
+}): SpawnEvent | undefined {
+	switch (event.type) {
+		case "turn_start":
+			return { type: "turn_start" };
+		case "turn_end":
+			return { type: "turn_end" };
+		case "tool_execution_start":
+			return {
+				type: "tool_execution_start",
+				toolName: event.toolName as string,
+				toolCallId: event.toolCallId as string,
+			};
+		case "tool_execution_end":
+			return {
+				type: "tool_execution_end",
+				toolName: event.toolName as string,
+				toolCallId: event.toolCallId as string,
+				isError: event.isError as boolean,
+			};
+		case "auto_compaction_start":
+			return {
+				type: "auto_compaction_start",
+				reason: event.reason as "threshold" | "overflow",
+			};
+		case "auto_compaction_end":
+			return {
+				type: "auto_compaction_end",
+				aborted: event.aborted as boolean,
+			};
+		default:
+			return undefined;
+	}
+}
 
 /**
  * Resolve a "provider/model-id" string into a Pi Model object.

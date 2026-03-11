@@ -57,6 +57,10 @@ export function formatChainEvent(event: ChainEvent): string {
 			return `[${event.role}] Spawned worker (${event.sessionId})`;
 		case "agent_completed":
 			return `[${event.role}] Agent completed (${event.sessionId})`;
+		case "agent_turn":
+			return `[${event.role}] Turn event: ${event.event.type}`;
+		case "agent_tool_use":
+			return `[${event.role}] Tool event: ${event.event.type}${event.event.type === "tool_execution_start" || event.event.type === "tool_execution_end" ? ` (${event.event.toolName})` : ""}`;
 		case "error": {
 			const stage = event.stage ? `[${event.stage.name}] ` : "";
 			return `${stage}Error: ${event.message}`;

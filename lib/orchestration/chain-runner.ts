@@ -20,6 +20,7 @@ import type {
 	ChainResult,
 	ChainStage,
 	ChainStats,
+	SpawnEvent,
 	SpawnStats,
 	StageResult,
 	StageStats,
@@ -167,6 +168,36 @@ function emit(config: ChainConfig, event: ChainEvent): void {
 	} catch {
 		// Listeners must not break the runner.
 	}
+}
+
+/**
+ * Create an onEvent callback for SpawnConfig that forwards selected
+ * spawn events as ChainEvent variants through the chain's onEvent.
+ * Returns undefined if the chain has no onEvent listener.
+ */
+function createSpawnEventForwarder(
+	config: ChainConfig,
+	role: string,
+	sessionIdRef: { current: string },
+): ((event: SpawnEvent) => void) | undefined {
+	if (!config.onEvent) return undefined;
+	return (event: SpawnEvent) => {
+		const sessionId = sessionIdRef.current;
+		if (event.type === "turn_start" || event.type === "turn_end") {
+			emit(config, { type: "agent_turn", role, sessionId, event });
+		} else if (
+			event.type === "tool_execution_start" ||
+			event.type === "tool_execution_end"
+		) {
+			emit(config, { type: "agent_tool_use", role, sessionId, event });
+		} else if (
+			event.type === "auto_compaction_start" ||
+			event.type === "auto_compaction_end"
+		) {
+			// Forward compaction events as agent_turn (lifecycle-level)
+			emit(config, { type: "agent_turn", role, sessionId, event });
+		}
+	};
 }
 
 // ============================================================================
@@ -354,6 +385,13 @@ export async function runStage(
 			// One-shot stage
 			iterations = 1;
 
+			const sessionIdRef = { current: "" };
+			const onEvent = createSpawnEventForwarder(
+				config,
+				stage.name,
+				sessionIdRef,
+			);
+
 			const spawnResult = await spawner.spawn({
 				role: stage.name,
 				domainContext: config.domainContext,
@@ -364,7 +402,10 @@ export async function runStage(
 				projectSkills: config.projectSkills,
 				thinkingLevel,
 				compaction: config.compaction,
+				onEvent,
 			});
+
+			sessionIdRef.current = spawnResult.sessionId;
 
 			if (spawnResult.success) {
 				emit(config, {
@@ -434,6 +475,9 @@ export async function runStage(
 			};
 		}
 
+		const sessionIdRef = { current: "" };
+		const onEvent = createSpawnEventForwarder(config, stage.name, sessionIdRef);
+
 		for (let i = 0; i < iterationBudget; i++) {
 			if (config.signal?.aborted) break;
 			if (Date.now() >= deadline) break;
@@ -456,7 +500,10 @@ export async function runStage(
 				projectSkills: config.projectSkills,
 				thinkingLevel,
 				compaction: config.compaction,
+				onEvent,
 			});
+
+			sessionIdRef.current = spawnResult.sessionId;
 
 			if (spawnResult.stats) {
 				aggregatedStats = addSpawnStats(aggregatedStats, spawnResult.stats);
