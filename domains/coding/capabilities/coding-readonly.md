@@ -2,13 +2,6 @@
 
 Discipline for agents with read-only access to the codebase. No file modification, no shell execution.
 
-## Available Tools
-
-- **read** -- read file contents
-- **grep** -- search file contents by pattern
-- **glob** -- find files by name pattern
-- **ls** / **find** -- explore directory structure
-
 ## Exploration Discipline
 
 - Read project root files first: package.json, tsconfig.json, or equivalent manifest.

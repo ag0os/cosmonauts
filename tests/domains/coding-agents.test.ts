@@ -227,15 +227,10 @@ describe("individual agent values", () => {
 
 	it("worker has correct values", () => {
 		expect(worker.id).toBe("worker");
-		expect(worker.capabilities).toEqual([
-			"core",
-			"coding-readwrite",
-			"tasks",
-			"todo",
-		]);
+		expect(worker.capabilities).toEqual(["core", "coding-readwrite", "tasks"]);
 		expect(worker.model).toBe("anthropic/claude-opus-4-6");
 		expect(worker.tools).toBe("coding");
-		expect(worker.extensions).toEqual(["tasks", "todo"]);
+		expect(worker.extensions).toEqual(["tasks"]);
 		expect(worker.skills).toBeUndefined();
 		expect(worker.subagents).toEqual([]);
 		expect(worker.projectContext).toBe(true);

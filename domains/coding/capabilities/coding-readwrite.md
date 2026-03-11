@@ -8,7 +8,7 @@ Discipline for agents with full coding tool access: read, write, edit, bash, gre
 2. Implement the solution using available tools.
 3. Verify with tests. Never assume a specific test framework -- check the project to determine the testing approach.
 4. Run lint and typecheck commands (e.g., `npm run lint`, `npm run typecheck`, `biome check`) if the project provides them.
-5. Never commit changes unless explicitly asked.
+5. Do not commit unless your role's workflow requires it or you are explicitly asked.
 
 ## Following Conventions
 
