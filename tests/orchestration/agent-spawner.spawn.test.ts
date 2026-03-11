@@ -27,6 +27,12 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
 	SessionManager: {
 		inMemory: () => ({ kind: "in-memory" }),
 	},
+	SettingsManager: {
+		inMemory: (settings?: Record<string, unknown>) => ({
+			kind: "in-memory-settings",
+			settings,
+		}),
+	},
 }));
 
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
@@ -166,5 +172,67 @@ describe("createPiSpawner", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.stats).toBeUndefined();
+	});
+
+	test("passes settingsManager with compaction settings when compaction config is provided", async () => {
+		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+
+		await spawner.spawn({
+			role: "planner",
+			cwd: "/tmp/test-project",
+			prompt: "Plan the work.",
+			compaction: { enabled: true, keepRecentTokens: 5000 },
+		});
+
+		expect(mocks.createAgentSession).toHaveBeenCalledWith(
+			expect.objectContaining({
+				settingsManager: {
+					kind: "in-memory-settings",
+					settings: {
+						compaction: {
+							enabled: true,
+							keepRecentTokens: 5000,
+						},
+					},
+				},
+			}),
+		);
+	});
+
+	test("passes settingsManager with compaction enabled only (no keepRecentTokens)", async () => {
+		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+
+		await spawner.spawn({
+			role: "planner",
+			cwd: "/tmp/test-project",
+			prompt: "Plan the work.",
+			compaction: { enabled: true },
+		});
+
+		expect(mocks.createAgentSession).toHaveBeenCalledWith(
+			expect.objectContaining({
+				settingsManager: {
+					kind: "in-memory-settings",
+					settings: {
+						compaction: {
+							enabled: true,
+						},
+					},
+				},
+			}),
+		);
+	});
+
+	test("does not pass settingsManager when compaction config is not provided", async () => {
+		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+
+		await spawner.spawn({
+			role: "planner",
+			cwd: "/tmp/test-project",
+			prompt: "Plan the work.",
+		});
+
+		const callArgs = mocks.createAgentSession.mock.calls[0]?.[0];
+		expect(callArgs).not.toHaveProperty("settingsManager");
 	});
 });

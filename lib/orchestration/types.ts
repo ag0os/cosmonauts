@@ -79,6 +79,14 @@ export interface ThinkingConfig {
 	default?: ThinkingLevel;
 }
 
+/** Compaction settings for spawned agent sessions */
+export interface CompactionConfig {
+	/** Whether compaction is enabled */
+	enabled: boolean;
+	/** Number of recent tokens to keep when compacting (optional) */
+	keepRecentTokens?: number;
+}
+
 /** Configuration for a chain execution */
 export interface ChainConfig {
 	/** Chain stages to execute (parsed from DSL or provided directly) */
@@ -103,6 +111,8 @@ export interface ChainConfig {
 	completionLabel?: string;
 	/** Thinking level overrides per role */
 	thinking?: ThinkingConfig;
+	/** Compaction settings for spawned agent sessions */
+	compaction?: CompactionConfig;
 	/** Agent registry for resolving agent definitions. */
 	registry: AgentRegistry;
 	/** Absolute path to the root domains directory. Computed from package root if not provided. */
@@ -240,6 +250,8 @@ export interface SpawnConfig {
 	projectSkills?: readonly string[];
 	/** Thinking/reasoning level override */
 	thinkingLevel?: ThinkingLevel;
+	/** Compaction settings for the spawned session */
+	compaction?: CompactionConfig;
 }
 
 /** Result of an agent execution */

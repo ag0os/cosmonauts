@@ -198,6 +198,34 @@ describe("runStage", () => {
 			expect(result.error).toBe("boom");
 			expect(result.iterations).toBe(1);
 		});
+
+		test("forwards compaction config from ChainConfig to spawn call", async () => {
+			const spawner = createMockSpawner();
+			const stage = makeStage("planner", false);
+			const config = makeConfig([stage], {
+				compaction: { enabled: true, keepRecentTokens: 8000 },
+			});
+
+			await runStage(stage, config, spawner);
+
+			expect(spawner.spawn).toHaveBeenCalledWith(
+				expect.objectContaining({
+					compaction: { enabled: true, keepRecentTokens: 8000 },
+				}),
+			);
+		});
+
+		test("does not include compaction when not set in ChainConfig", async () => {
+			const spawner = createMockSpawner();
+			const stage = makeStage("planner", false);
+			const config = makeConfig([stage]);
+
+			await runStage(stage, config, spawner);
+
+			const spawnArgs = (spawner.spawn as ReturnType<typeof vi.fn>).mock
+				.calls[0]?.[0];
+			expect(spawnArgs?.compaction).toBeUndefined();
+		});
 	});
 
 	describe("registry via config", () => {
@@ -465,6 +493,35 @@ describe("runStage", () => {
 			} finally {
 				await rm(tmpDir, { recursive: true, force: true });
 			}
+		});
+
+		test("forwards compaction config to spawn call in loop stage", async () => {
+			vi.useFakeTimers();
+			const FIXED_NOW = new Date("2026-01-01T00:00:00Z").getTime();
+			vi.setSystemTime(FIXED_NOW);
+
+			const spawner = createMockSpawner([
+				{ success: true, sessionId: "session-1", messages: [] },
+			]);
+			const completionCheck = vi
+				.fn()
+				.mockResolvedValueOnce(false)
+				.mockResolvedValueOnce(true);
+			const stage = makeStage("coordinator", true, completionCheck);
+			const config = makeConfig([stage], {
+				compaction: { enabled: true, keepRecentTokens: 4000 },
+			});
+
+			await runStage(stage, config, spawner, {
+				maxTotalIterations: 5,
+				deadlineMs: FIXED_NOW + 60_000,
+			});
+
+			expect(spawner.spawn).toHaveBeenCalledWith(
+				expect.objectContaining({
+					compaction: { enabled: true, keepRecentTokens: 4000 },
+				}),
+			);
 		});
 
 		test("adds label-scoping instructions to coordinator prompt", async () => {

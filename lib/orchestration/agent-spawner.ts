@@ -17,6 +17,7 @@ import {
 	createReadOnlyTools,
 	DefaultResourceLoader,
 	SessionManager,
+	SettingsManager,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentToolSet } from "../agents/index.ts";
 import {
@@ -293,14 +294,28 @@ export function createPiSpawner(
 				});
 				await loader.reload();
 
-				const { session } = await createAgentSession({
+				// Build session options, conditionally adding settingsManager for compaction
+				const sessionOptions: Parameters<typeof createAgentSession>[0] = {
 					cwd: config.cwd,
 					model,
 					tools,
 					sessionManager: SessionManager.inMemory(),
 					resourceLoader: loader,
 					thinkingLevel,
-				});
+				};
+
+				if (config.compaction) {
+					sessionOptions.settingsManager = SettingsManager.inMemory({
+						compaction: {
+							enabled: config.compaction.enabled,
+							...(config.compaction.keepRecentTokens !== undefined && {
+								keepRecentTokens: config.compaction.keepRecentTokens,
+							}),
+						},
+					});
+				}
+
+				const { session } = await createAgentSession(sessionOptions);
 
 				try {
 					// Send the user prompt clean — identity is in the system prompt

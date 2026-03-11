@@ -300,6 +300,7 @@ export async function runStage(
 				signal: config.signal,
 				projectSkills: config.projectSkills,
 				thinkingLevel,
+				compaction: config.compaction,
 			});
 
 			if (spawnResult.success) {
@@ -388,6 +389,7 @@ export async function runStage(
 				signal: config.signal,
 				projectSkills: config.projectSkills,
 				thinkingLevel,
+				compaction: config.compaction,
 			});
 
 			if (spawnResult.success) {
