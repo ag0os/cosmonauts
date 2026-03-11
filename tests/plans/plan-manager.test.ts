@@ -277,6 +277,16 @@ describe("PlanManager", () => {
 			).rejects.toThrow("Plan not found: nonexistent");
 		});
 
+		it("rejects path traversal slugs before updating", async () => {
+			await expect(
+				manager.updatePlan("../archive/plans/archived", {
+					title: "Should Fail",
+				}),
+			).rejects.toThrow(
+				"Invalid plan slug (path traversal): ../archive/plans/archived",
+			);
+		});
+
 		it("preserves createdAt after update", async () => {
 			vi.useFakeTimers();
 			vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));

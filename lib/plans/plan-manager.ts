@@ -143,6 +143,8 @@ export class PlanManager {
 	 * @throws Error if plan not found
 	 */
 	async updatePlan(slug: string, input: PlanUpdateInput): Promise<Plan> {
+		validateSlug(slug);
+
 		const existing = await readPlanFile(this.projectRoot, slug);
 		if (!existing) {
 			throw new Error(`Plan not found: ${slug}`);
@@ -152,16 +154,23 @@ export class PlanManager {
 			...existing,
 			title: input.title ?? existing.title,
 			status: input.status ?? existing.status,
+			body: input.body ?? existing.body,
 			updatedAt: new Date(),
 		};
 
 		await writePlanFile(this.projectRoot, slug, updated);
 
-		const spec = await readSpecFile(this.projectRoot, slug);
+		// Update spec if provided
+		if (input.spec !== undefined) {
+			await writeSpecFile(this.projectRoot, slug, input.spec);
+		}
+
+		const spec =
+			input.spec ?? (await readSpecFile(this.projectRoot, slug)) ?? undefined;
 
 		return {
 			...updated,
-			spec: spec ?? undefined,
+			spec,
 		};
 	}
 

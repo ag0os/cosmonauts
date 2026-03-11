@@ -69,10 +69,11 @@ describe("plans extension", () => {
 		await rm(tempDir, { recursive: true, force: true });
 	});
 
-	test("registers plan_create, plan_list, plan_view, and plan_archive tools", () => {
+	test("registers plan_create, plan_list, plan_view, plan_edit, and plan_archive tools", () => {
 		expect(pi.tools.has("plan_create")).toBe(true);
 		expect(pi.tools.has("plan_list")).toBe(true);
 		expect(pi.tools.has("plan_view")).toBe(true);
+		expect(pi.tools.has("plan_edit")).toBe(true);
 		expect(pi.tools.has("plan_archive")).toBe(true);
 	});
 
@@ -444,6 +445,48 @@ describe("plans extension", () => {
 			expect(details.plan.spec).toBe("Spec here.");
 			expect(details.summary.slug).toBe("detail-test");
 			expect(details.summary.taskCount).toBe(0);
+		});
+	});
+
+	describe("plan_edit", () => {
+		test("updates an existing plan", async () => {
+			await pi.callTool(
+				"plan_create",
+				{ slug: "editable", title: "Original", description: "Body" },
+				tempDir,
+			);
+
+			const result = (await pi.callTool(
+				"plan_edit",
+				{ slug: "editable", title: "Updated", body: "New body" },
+				tempDir,
+			)) as ToolResult;
+
+			expect(result.content[0]?.text).toContain('Updated plan "editable"');
+
+			const details = result.details as {
+				title: string;
+				body: string;
+				slug: string;
+			};
+			expect(details.slug).toBe("editable");
+			expect(details.title).toBe("Updated");
+			expect(details.body).toBe("New body");
+		});
+
+		test("rejects path traversal slugs", async () => {
+			await expect(
+				pi.callTool(
+					"plan_edit",
+					{
+						slug: "../archive/plans/archived",
+						title: "Should Fail",
+					},
+					tempDir,
+				),
+			).rejects.toThrow(
+				"Invalid plan slug (path traversal): ../archive/plans/archived",
+			);
 		});
 	});
 

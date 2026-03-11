@@ -64,6 +64,10 @@ export interface PlanUpdateInput {
 	title?: string;
 	/** Update status */
 	status?: PlanStatus;
+	/** Update plan body (description) */
+	body?: string;
+	/** Update or create spec content */
+	spec?: string;
 }
 
 // ============================================================================

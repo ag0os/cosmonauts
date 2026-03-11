@@ -129,6 +129,76 @@ export default function plansExtension(pi: ExtensionAPI) {
 		},
 	});
 
+	// plan_edit
+	pi.registerTool({
+		name: "plan_edit",
+		label: "Edit Plan",
+		description:
+			"Update an existing plan's title, status, body (description), or spec content. All fields are optional — only provided fields are updated.",
+		parameters: Type.Object({
+			slug: Type.String({ description: "Plan slug to edit" }),
+			title: Type.Optional(Type.String({ description: "New plan title" })),
+			status: Type.Optional(
+				Type.Unsafe<"active" | "completed">({
+					type: "string",
+					enum: ["active", "completed"],
+					description: "New plan status",
+				}),
+			),
+			body: Type.Optional(
+				Type.String({
+					description:
+						"New plan body/description (replaces existing content in plan.md)",
+				}),
+			),
+			spec: Type.Optional(
+				Type.String({
+					description:
+						"New spec content (replaces existing spec.md, or creates it)",
+				}),
+			),
+		}),
+		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+			const { slug, ...updates } = params;
+			// Check at least one field is provided
+			if (
+				!updates.title &&
+				!updates.status &&
+				updates.body === undefined &&
+				updates.spec === undefined
+			) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: "No fields to update. Provide at least one of: title, status, body, spec.",
+						},
+					],
+					details: null,
+				};
+			}
+			const manager = new PlanManager(ctx.cwd);
+			const plan = await manager.updatePlan(slug, updates);
+			const changed = [
+				updates.title ? "title" : null,
+				updates.status ? "status" : null,
+				updates.body !== undefined ? "body" : null,
+				updates.spec !== undefined ? "spec" : null,
+			]
+				.filter(Boolean)
+				.join(", ");
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: `Updated plan "${plan.slug}" (${changed})\nTitle: ${plan.title}\nStatus: ${plan.status}`,
+					},
+				],
+				details: plan,
+			};
+		},
+	});
+
 	// plan_archive
 	pi.registerTool({
 		name: "plan_archive",

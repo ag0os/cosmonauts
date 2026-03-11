@@ -36,6 +36,8 @@ Load the `/skill:plan` skill for detailed guidance on plan structure and format.
 
 Create the plan using the `plan_create` tool. This writes a `plan.md` file (with YAML frontmatter) to `missions/plans/<slug>/`. If the work requires a deeper spec, include `spec.md` content via the tool's spec parameter.
 
+When reviewing or revising an existing plan, use `plan_view` to read it and `plan_edit` to update its body, spec, title, or status. You can update any combination of fields — only the fields you provide will change.
+
 ## Plan Output Format
 
 Your final output must follow this structure:
