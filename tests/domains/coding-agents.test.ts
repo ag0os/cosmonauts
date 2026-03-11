@@ -182,7 +182,7 @@ describe("individual agent values", () => {
 		expect(planner.model).toBe("anthropic/claude-opus-4-6");
 		expect(planner.tools).toBe("readonly");
 		expect(planner.extensions).toEqual(["plans", "orchestration"]);
-		expect(planner.skills).toBeUndefined();
+		expect(planner.skills).toEqual(["pi"]);
 		expect(planner.subagents).toEqual([
 			"task-manager",
 			"coordinator",
