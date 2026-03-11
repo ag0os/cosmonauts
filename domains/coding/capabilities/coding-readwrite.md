@@ -19,15 +19,6 @@ When making changes, first understand the file's code conventions:
 - Prefer editing existing files over creating new ones.
 - Do the minimum necessary. Do not refactor unrelated code or add features not requested.
 
-## Coding Tools
-
-- **read** -- read file contents
-- **write** -- create or overwrite files
-- **edit** -- make targeted edits to existing files
-- **bash** -- run shell commands (use dedicated tools instead when possible -- see Bash discipline below)
-- **grep** -- search file contents by pattern
-- **glob** -- find files by name pattern
-
 ## Bash Discipline
 
 Do NOT use bash for operations that have dedicated tools:
