@@ -7,7 +7,14 @@ const definition: AgentDefinition = {
 	capabilities: ["core", "coding-readwrite", "tasks", "spawning", "todo"],
 	model: "anthropic/claude-opus-4-6",
 	tools: "coding",
-	extensions: ["tasks", "plans", "orchestration", "todo", "init"],
+	extensions: [
+		"tasks",
+		"plans",
+		"orchestration",
+		"todo",
+		"init",
+		"observability",
+	],
 	skills: undefined,
 	subagents: [
 		"planner",

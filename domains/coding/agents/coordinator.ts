@@ -7,7 +7,7 @@ const definition: AgentDefinition = {
 	capabilities: ["core", "tasks", "spawning"],
 	model: "anthropic/claude-opus-4-6",
 	tools: "none",
-	extensions: ["tasks", "orchestration"],
+	extensions: ["tasks", "orchestration", "observability"],
 	skills: [],
 	subagents: ["worker"],
 	projectContext: false,

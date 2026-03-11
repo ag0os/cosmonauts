@@ -155,6 +155,7 @@ describe("individual agent values", () => {
 			"orchestration",
 			"todo",
 			"init",
+			"observability",
 		]);
 		expect(cosmo.skills).toBeUndefined();
 		expect(cosmo.subagents).toEqual([
@@ -217,7 +218,7 @@ describe("individual agent values", () => {
 		expect(coordinator.capabilities).toEqual(["core", "tasks", "spawning"]);
 		expect(coordinator.model).toBe("anthropic/claude-opus-4-6");
 		expect(coordinator.tools).toBe("none");
-		expect(coordinator.extensions).toEqual(["tasks", "orchestration"]);
+		expect(coordinator.extensions).toEqual(["tasks", "orchestration", "observability"]);
 		expect(coordinator.skills).toEqual([]);
 		expect(coordinator.subagents).toEqual(["worker"]);
 		expect(coordinator.projectContext).toBe(false);
