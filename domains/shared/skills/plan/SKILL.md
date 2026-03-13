@@ -102,12 +102,13 @@ task_list --label plan:forge-lifecycle
 
 ## Tool Reference
 
-| Tool | Purpose |
-|------|---------|
-| `plan_create` | Create a new plan directory with `plan.md` and optional `spec.md` |
-| `plan_list` | List plans with their status and associated task counts |
-| `plan_view` | View full plan content and a summary of associated tasks |
-| `plan_archive` | Archive a completed plan and its associated tasks to `missions/archive/` |
+| Tool | CLI Equivalent | Purpose |
+|------|---------------|---------|
+| `plan_create` | `cosmonauts plan create --slug <s> --title <t>` | Create a new plan directory with `plan.md` and optional `spec.md` |
+| `plan_list` | `cosmonauts plan list` | List plans with their status and associated task counts |
+| `plan_view` | `cosmonauts plan view <slug>` | View full plan content and a summary of associated tasks |
+| `plan_edit` | `cosmonauts plan edit <slug>` | Update plan fields (title, status, body, spec) |
+| `plan_archive` | `cosmonauts plan archive <slug>` | Archive a completed plan and its associated tasks to `missions/archive/` |
 
 ## Example
 

@@ -56,7 +56,7 @@ After installing, initialize your project:
 
 ```bash
 # 1. Initialize local directories and project config
-cosmonauts-tasks init
+cosmonauts task init
 
 # 2. (Optional) Customize .cosmonauts/config.json — adjust skills and workflows
 
@@ -117,15 +117,27 @@ cosmonauts --chain "planner -> task-manager -> coordinator -> quality-manager" "
 
 ### Task Management
 
-Standalone CLI for managing tasks directly:
+Manage tasks directly via subcommands:
 
 ```bash
-cosmonauts-tasks init          # Initialize task directory
-cosmonauts-tasks create        # Create a task interactively
-cosmonauts-tasks list          # List all tasks
-cosmonauts-tasks list --ready  # Show unblocked tasks
-cosmonauts-tasks view COSMO-001
-cosmonauts-tasks edit COSMO-001 --status "In Progress"
+cosmonauts task init          # Initialize task directory
+cosmonauts task create        # Create a task interactively
+cosmonauts task list          # List all tasks
+cosmonauts task list --ready  # Show unblocked tasks
+cosmonauts task view COSMO-001
+cosmonauts task edit COSMO-001 --status "In Progress"
+```
+
+### Plan Management
+
+Manage plans directly via subcommands:
+
+```bash
+cosmonauts plan create --slug auth-system --title "Auth System"
+cosmonauts plan list
+cosmonauts plan view auth-system
+cosmonauts plan edit auth-system --status completed
+cosmonauts plan archive auth-system
 ```
 
 ### Project Setup
@@ -149,7 +161,7 @@ cosmonauts/
 ├── prompts/          System prompt layers (platform base, capabilities, personas, runtime)
 ├── skills/           On-demand capability files (languages, domains)
 ├── cli/              CLI implementation
-├── bin/              CLI entry points (cosmonauts, cosmonauts-tasks)
+├── bin/              CLI entry points (cosmonauts)
 ├── tests/            Test suites (565 tests, Vitest)
 ├── missions/         Local, gitignored — active tasks, plans, and archived work (created by init)
 ├── memory/           Local, gitignored — distilled knowledge from completed work (created by init)

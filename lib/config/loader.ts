@@ -80,7 +80,7 @@ export async function loadProjectConfig(
 }
 
 /**
- * Default project config scaffolded during `cosmonauts-tasks init`.
+ * Default project config scaffolded during `cosmonauts task init`.
  * Matches `.cosmonauts/config.example.json`.
  */
 const DEFAULT_PROJECT_CONFIG: ProjectConfig = {

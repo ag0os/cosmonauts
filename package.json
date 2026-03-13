@@ -15,8 +15,7 @@
 		]
 	},
 	"bin": {
-		"cosmonauts": "./bin/cosmonauts",
-		"cosmonauts-tasks": "./bin/cosmonauts-tasks"
+		"cosmonauts": "./bin/cosmonauts"
 	},
 	"scripts": {
 		"lint": "biome check .",

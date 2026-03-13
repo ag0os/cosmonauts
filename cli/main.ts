@@ -10,6 +10,8 @@
  *   cosmonauts --dump-prompt [-a agent]     → dump composed system prompt to stdout
  *   cosmonauts --dump-prompt --file path    → dump composed system prompt to file
  *   cosmonauts init                         → agent-driven AGENTS.md bootstrap
+ *   cosmonauts task <command>               → task management subcommands
+ *   cosmonauts plan <command>               → plan management subcommands
  */
 
 import { writeFile } from "node:fs/promises";
@@ -33,7 +35,9 @@ import {
 import { CosmonautsRuntime } from "../lib/runtime.ts";
 import { listWorkflows, resolveWorkflow } from "../lib/workflows/loader.ts";
 import { createChainEventLogger } from "./chain-event-logger.ts";
+import { createPlanProgram } from "./plans/index.ts";
 import { createSession } from "./session.ts";
+import { createTaskProgram } from "./tasks/subcommand.ts";
 import type { CliOptions } from "./types.ts";
 
 // ============================================================================
@@ -366,21 +370,34 @@ async function run(options: CliOptions): Promise<void> {
 // Entry Point
 // ============================================================================
 
-try {
-	const options = parseCliArgs(process.argv.slice(2));
+const subcommand = process.argv[2];
+if (subcommand === "task" || subcommand === "plan") {
+	const program =
+		subcommand === "task" ? createTaskProgram() : createPlanProgram();
+	program
+		.parseAsync(process.argv.slice(3), { from: "user" })
+		.catch((err: unknown) => {
+			const message = err instanceof Error ? err.message : String(err);
+			process.stderr.write(`cosmonauts ${subcommand}: ${message}\n`);
+			process.exitCode = 1;
+		});
+} else {
+	try {
+		const options = parseCliArgs(process.argv.slice(2));
 
-	run(options).catch((err: unknown) => {
-		const message = err instanceof Error ? err.message : String(err);
-		process.stderr.write(`cosmonauts: ${message}\n`);
-		process.exitCode = 1;
-	});
-} catch (err: unknown) {
-	// Commander throws CommanderError for --help and --version (exitOverride mode)
-	if (err instanceof CommanderError) {
-		process.exitCode = err.exitCode;
-	} else {
-		const message = err instanceof Error ? err.message : String(err);
-		process.stderr.write(`cosmonauts: ${message}\n`);
-		process.exitCode = 1;
+		run(options).catch((err: unknown) => {
+			const message = err instanceof Error ? err.message : String(err);
+			process.stderr.write(`cosmonauts: ${message}\n`);
+			process.exitCode = 1;
+		});
+	} catch (err: unknown) {
+		// Commander throws CommanderError for --help and --version (exitOverride mode)
+		if (err instanceof CommanderError) {
+			process.exitCode = err.exitCode;
+		} else {
+			const message = err instanceof Error ? err.message : String(err);
+			process.stderr.write(`cosmonauts: ${message}\n`);
+			process.exitCode = 1;
+		}
 	}
-}
+} // end else (non-subcommand path)

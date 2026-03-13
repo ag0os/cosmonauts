@@ -136,7 +136,7 @@ Flags: `--print`, `--workflow`, `--chain`, `--model`, `--thinking`, `--domain`/`
 
 Work flows through: **roadmap → plan → tasks → archive → memory**.
 
-All work artifacts live in local, gitignored directories created by `cosmonauts-tasks init`:
+All work artifacts live in local, gitignored directories created by `cosmonauts task init`:
 
 - **Roadmap** (`ROADMAP.md`): Work backlog with prioritized items on top and unordered ideas below. Items are picked up and turned into plans.
 - **Plans** (`missions/plans/<slug>/`): Implementation plans with `plan.md` and optional `spec.md`. Created via `plan_create`. Local.
@@ -152,7 +152,7 @@ Built-in task system in `missions/tasks/`. Tasks are markdown files with YAML fr
 
 Task tools: `task_create`, `task_list`, `task_view`, `task_edit`, `task_search` (Pi extension tools).
 
-CLI: `cosmonauts-tasks` for standalone task management.
+CLI: `cosmonauts task` for task management, `cosmonauts plan` for plan management.
 
 ## Implementation Workflow
 
@@ -175,15 +175,15 @@ For small, self-contained changes (a bug fix, a single function, a config tweak)
 lib/              Core libraries (agents, orchestration, tasks, plans, workflows, domains, config)
 domains/          Domain directories (shared/, coding/) — agents, prompts, capabilities, skills, extensions
 cli/              CLI implementation
-bin/              CLI entry points (cosmonauts, cosmonauts-tasks)
+bin/              CLI entry points (cosmonauts)
 tests/            Test suites mirroring source structure
 docs/             Reference documentation
 ```
 
-**Local (gitignored, created by `cosmonauts-tasks init`):**
+**Local (gitignored, created by `cosmonauts task init`):**
 
 ```
 missions/         Active tasks, plans, and archived work
 memory/           Distilled knowledge from completed work
-.cosmonauts/      Project config (created by `cosmonauts-tasks init`, customizable)
+.cosmonauts/      Project config (created by `cosmonauts task init`, customizable)
 ```

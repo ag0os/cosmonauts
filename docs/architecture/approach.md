@@ -163,7 +163,7 @@ Phase 0 is complete. The core loop works end-to-end — from interactive chat to
 ### Core Infrastructure
 1. **Task system** — parser, serializer, TaskManager, file-system operations, ID generator. Markdown files with YAML frontmatter, dependencies, acceptance criteria. ✓
 2. **Task extension** — Pi tools: `task_create`, `task_list`, `task_view`, `task_edit`, `task_search`. ✓
-3. **Task CLI** — `cosmonauts-tasks` with init, create, list, view, edit, delete, search commands. ✓
+3. **Task CLI** — `cosmonauts task` with init, create, list, view, edit, delete, search commands. ✓
 
 ### Orchestration
 4. **Chain runner** — role-based lifecycle, completion detection via task state, global safety caps (max iterations, timeout). ✓
