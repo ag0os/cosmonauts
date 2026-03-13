@@ -4,17 +4,78 @@ Work backlog in two sections. **Prioritized** items at the top are ordered — p
 
 ## Prioritized
 
-(empty)
+### `parallel-agent-spawning`: Parallel Agent Spawning
+
+Fan-out in chain stages and concurrent spawns from coordinator. Single biggest capability gap vs OpenClaw.
+
+- Add parallel stage syntax to chain DSL (e.g., `"worker[3]"` for fan-out)
+- Concurrent spawn support in the orchestration extension via Promise.all()
+- Depth and breadth limits (max active children per parent, max spawn depth)
+- Progress reporting via coordinator subscribing to worker events
+- Handle partial failures (some workers succeed, others fail)
+- Subsumes and replaces the `parallel-workers` idea
+
+### `agent-messaging`: Agent-to-Agent Messaging
+
+Replace filesystem polling with push-based communication between agents. OpenClaw has a subagent announcement system where children push completion events to parents.
+
+- Event bus or completion callback system for spawned agents
+- Coordinator receives results directly instead of re-reading task files each iteration
+- In-memory pub/sub that the orchestration extension hooks into
+- Idempotency keys to prevent duplicate processing
+- Depth-aware dispatch (only direct requester receives completion events)
+
+### `chain-checkpointing`: Chain Checkpointing & Resumption
+
+Serialize chain state after each stage so workflows survive crashes and can be resumed mid-execution.
+
+- Persist chain progress (completed stages, pending stages, accumulated stats) to disk
+- Resume from last completed stage on restart
+- CLI flag: `--resume <chain-id>` to continue a previously interrupted workflow
+- Stage results cached for replay during debugging
+- Enables long-running `plan-and-build` workflows to survive interruptions
+
+### `model-failover`: Model Failover & Retry
+
+Wrap the spawner with retry logic that classifies errors and falls back to alternate models/providers. OpenClaw has sophisticated error classification, backoff with jitter, and multi-key rotation.
+
+- Error classification: auth, billing, rate-limit, context overflow, transient
+- Configurable backup models per role (e.g., fall back from opus to sonnet)
+- Backoff strategy with jitter to avoid thundering herd
+- Multi-key rotation with cooldown tracking per provider
+- Usage stats preserved per attempt for cost tracking accuracy
+
+### `embedding-memory`: Embedding-Based Memory
+
+Semantic search over past work for automatic context injection during prompt assembly. Goes beyond the markdown-file memory system.
+
+- Embedding-based memory store with query-driven retrieval
+- Temporal decay (older memories weighted lower)
+- Multiple embedding backends (local via Ollama, or API-based)
+- Automatic injection at prompt assembly time (Layer 0.5 or hook)
+- Subsumes and extends the `memory-system` idea with vector search from the start
+
+### `hook-system`: Plugin & Hook System
+
+Lifecycle hooks at chain, stage, and spawn levels for extensibility without modifying core code. OpenClaw has 15+ hooks with fire-and-forget and modifying patterns.
+
+- Hook categories: chain lifecycle, stage lifecycle, agent spawn, tool execution
+- Fire-and-forget hooks (parallel, void) and modifying hooks (sequential, merged results)
+- Hook registration via config or extension API
+- Key hooks: before_chain_start, after_stage_end, before_agent_spawn, after_tool_call
+- Enables plugins for logging, metrics, custom validation, and external integrations
+
+### `context-budget`: Context Budget Management
+
+Smart pruning for coordinator loops that accumulate large tool outputs over many iterations. OpenClaw has custom context pruning extensions and compaction safeguards.
+
+- Cache-TTL based token counting for context budget awareness
+- Automatic compaction safeguards to prevent over-compaction
+- Configurable token budget per agent role
+- Preserve recent tool results within budget, summarize older ones
+- Critical for long-running coordinator and quality-manager loops
 
 ## Ideas
-
-### `memory-system`: Persistent Cross-Session Memory
-
-Port the daily-log + MEMORY.md pattern from OpenClaw so agents retain context across sessions.
-
-- memory_search and memory_save tools for reading/writing persistent memories
-- Inject relevant memories at agent start via before_agent_start hook
-- Start with markdown files, design for future upgrade to vector search
 
 ### `web-search-tool`: Web Search
 
@@ -23,14 +84,6 @@ Add web_search tool for searching the web from agent sessions.
 - Evaluate brave-search from pi-skills before building custom
 - Choose search API: Brave Search (free tier), Tavily, or SearXNG
 - Return structured results with titles, URLs, and snippets
-
-### `parallel-workers`: Parallel Worker Execution
-
-Fan-out independent tasks to multiple workers running concurrently.
-
-- Coordinator batches tasks with no mutual dependencies and runs them via Promise.all()
-- Progress reporting via coordinator subscribing to worker events
-- Handle partial failures (some workers succeed, others fail)
 
 ### `browser-tool`: Browser Automation
 
