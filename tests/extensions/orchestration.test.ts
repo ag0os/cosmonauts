@@ -105,11 +105,13 @@ describe("orchestration extension", () => {
 	function mockRuntime(overrides?: {
 		domainContext?: string;
 		projectSkills?: readonly string[];
+		skillPaths?: readonly string[];
 	}) {
 		runtimeCreateMock.mockResolvedValue({
 			agentRegistry: realRegistry,
 			domainContext: overrides?.domainContext,
 			projectSkills: overrides?.projectSkills ?? [],
+			skillPaths: overrides?.skillPaths ?? [],
 			domainsDir: testDomainsDir,
 		});
 	}
@@ -127,6 +129,7 @@ describe("orchestration extension", () => {
 		mockRuntime({
 			domainContext: "coding",
 			projectSkills: ["typescript", "backend"],
+			skillPaths: ["/skills/shared", "/skills/project"],
 		});
 		parseChainMock.mockReturnValue([{ name: "planner", loop: false }]);
 		runChainMock.mockResolvedValue({
@@ -143,6 +146,7 @@ describe("orchestration extension", () => {
 				projectRoot: cwd,
 				domainContext: "coding",
 				projectSkills: ["typescript", "backend"],
+				skillPaths: ["/skills/shared", "/skills/project"],
 			}),
 		);
 		expect(parseChainMock).toHaveBeenCalledWith(
@@ -230,6 +234,7 @@ describe("orchestration extension", () => {
 		mockRuntime({
 			domainContext: "coding",
 			projectSkills: ["typescript"],
+			skillPaths: ["/skills/shared", "/skills/project"],
 		});
 
 		const spawn = vi.fn().mockResolvedValue({
@@ -251,6 +256,7 @@ describe("orchestration extension", () => {
 				domainContext: "coding",
 				role: "worker",
 				projectSkills: ["typescript"],
+				skillPaths: ["/skills/shared", "/skills/project"],
 			}),
 		);
 		expect(createPiSpawnerMock).toHaveBeenCalledWith(
@@ -443,6 +449,7 @@ describe("orchestration extension", () => {
 				agentRegistry: realRegistry,
 				domainContext: undefined,
 				projectSkills: [],
+				skillPaths: [],
 				domainsDir: testDomainsDir,
 			});
 		parseChainMock.mockReturnValue([{ name: "planner", loop: false }]);

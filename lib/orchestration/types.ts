@@ -107,6 +107,8 @@ export interface ChainConfig {
 	timeoutMs?: number;
 	/** Project-level skill filter list (from .cosmonauts/config.json) */
 	projectSkills?: readonly string[];
+	/** Explicit skill directories (domain dirs + config skillPaths). */
+	skillPaths?: readonly string[];
 	/** Optional task label scope for default completion checks (e.g. plan:<slug>). */
 	completionLabel?: string;
 	/** Thinking level overrides per role */

@@ -6,8 +6,18 @@
  */
 
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import type { ProjectConfig } from "./types.ts";
+
+/** Expand leading `~` or `~/` to the user's home directory. */
+function expandTilde(p: string): string {
+	if (p === "~") return homedir();
+	if (p.startsWith("~/") || p.startsWith("~\\")) {
+		return join(homedir(), p.slice(2));
+	}
+	return p;
+}
 
 const CONFIG_DIR = ".cosmonauts";
 const CONFIG_FILE = "config.json";
@@ -55,6 +65,7 @@ export async function loadProjectConfig(
 	const config: {
 		domain?: string;
 		skills?: readonly string[];
+		skillPaths?: readonly string[];
 		workflows?: ProjectConfig["workflows"];
 	} = {};
 
@@ -66,6 +77,12 @@ export async function loadProjectConfig(
 		config.skills = obj.skills.filter(
 			(s: unknown): s is string => typeof s === "string",
 		);
+	}
+
+	if (Array.isArray(obj.skillPaths)) {
+		config.skillPaths = obj.skillPaths
+			.filter((s: unknown): s is string => typeof s === "string")
+			.map((p) => resolve(projectRoot, expandTilde(p)));
 	}
 
 	if (

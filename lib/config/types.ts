@@ -16,6 +16,8 @@ export interface ProjectConfig {
 	readonly domain?: string;
 	/** Skills relevant to this project. Filters agent skill indices to this set. */
 	readonly skills?: readonly string[];
+	/** Additional skill directories (e.g. "~/.claude/skills", ".codex/skills"). */
+	readonly skillPaths?: readonly string[];
 	/** Custom workflow definitions (name → config). */
 	readonly workflows?: Readonly<Record<string, ProjectWorkflowConfig>>;
 }

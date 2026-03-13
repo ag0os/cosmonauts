@@ -282,14 +282,19 @@ export function createPiSpawner(
 					def.skills,
 					config.projectSkills,
 				);
+				const additionalSkillPaths = config.skillPaths?.length
+					? [...config.skillPaths]
+					: undefined;
 				const loader = new DefaultResourceLoader({
 					cwd: config.cwd,
 					...(promptContent && { systemPrompt: promptContent }),
 					noExtensions: true,
+					noSkills: true,
 					...(extensionPaths.length > 0 && {
 						additionalExtensionPaths: extensionPaths,
 					}),
 					...(skillsOverride && { skillsOverride }),
+					...(additionalSkillPaths && { additionalSkillPaths }),
 					...(!def.projectContext && {
 						agentsFilesOverride: () => ({ agentsFiles: [] }),
 					}),

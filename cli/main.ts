@@ -177,6 +177,7 @@ async function run(options: CliOptions): Promise<void> {
 		domainContext,
 		workflows: domainWorkflows,
 		projectSkills,
+		skillPaths,
 	} = runtime;
 
 	// --list-domains: print all discovered domains and exit
@@ -258,6 +259,7 @@ async function run(options: CliOptions): Promise<void> {
 			thinkingLevel: options.thinking,
 			persistent: false,
 			projectSkills,
+			skillPaths,
 		});
 
 		try {
@@ -282,6 +284,7 @@ async function run(options: CliOptions): Promise<void> {
 			domainContext,
 			onEvent: createChainEventLogger(),
 			projectSkills,
+			skillPaths,
 			completionLabel: options.completionLabel,
 			registry,
 			domainsDir: runtime.domainsDir,
@@ -306,6 +309,7 @@ async function run(options: CliOptions): Promise<void> {
 			domainContext,
 			onEvent: createChainEventLogger(),
 			projectSkills,
+			skillPaths,
 			completionLabel: options.completionLabel,
 			registry,
 			domainsDir: runtime.domainsDir,
@@ -332,6 +336,7 @@ async function run(options: CliOptions): Promise<void> {
 			thinkingLevel: options.thinking,
 			persistent: false,
 			projectSkills,
+			skillPaths,
 		});
 
 		try {
@@ -355,6 +360,7 @@ async function run(options: CliOptions): Promise<void> {
 		thinkingLevel: options.thinking,
 		persistent: true,
 		projectSkills,
+		skillPaths,
 	});
 
 	const interactive = new InteractiveMode(result.session, {

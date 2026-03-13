@@ -8,10 +8,6 @@
 	"pi": {
 		"extensions": [
 			"./domains/shared/extensions"
-		],
-		"skills": [
-			"./domains/shared/skills",
-			"./domains/coding/skills"
 		]
 	},
 	"bin": {
