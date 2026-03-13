@@ -124,6 +124,37 @@ describe("discoverSkills", () => {
 		expect(skills.find((s) => s.name === "my-skill")).toBeDefined();
 	});
 
+	test("discovers flat .md skills at root level", async () => {
+		const domainDir = join(tmp.path, "shared");
+		const skillsDir = join(domainDir, "skills");
+		await mkdir(skillsDir, { recursive: true });
+		await writeFile(
+			join(skillsDir, "quick-ref.md"),
+			"---\nname: quick-ref\ndescription: A flat skill\n---\n",
+		);
+
+		const skills = await discoverSkills([makeDomain("shared", domainDir)]);
+		expect(skills).toHaveLength(1);
+		const skill = skills.find((s) => s.name === "quick-ref");
+		expect(skill).toBeDefined();
+		expect(skill?.description).toBe("A flat skill");
+		expect(skill?.dirPath).toBe(join(skillsDir, "quick-ref.md"));
+	});
+
+	test("discovers both flat .md and directory skills", async () => {
+		const domainDir = join(tmp.path, "shared");
+		const skillsDir = join(domainDir, "skills");
+		await writeSkill(skillsDir, "plan", "Plan skill");
+		await writeFile(
+			join(skillsDir, "quick.md"),
+			"---\nname: quick\ndescription: Quick\n---\n",
+		);
+
+		const skills = await discoverSkills([makeDomain("shared", domainDir)]);
+		expect(skills).toHaveLength(2);
+		expect(skills.map((s) => s.name).sort()).toEqual(["plan", "quick"]);
+	});
+
 	test("returns empty description when frontmatter has none", async () => {
 		const domainDir = join(tmp.path, "shared");
 		const skillDir = join(domainDir, "skills", "bare");

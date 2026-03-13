@@ -95,6 +95,37 @@ describe("exportSkill", () => {
 		expect(refContent).toBe("# Patterns\n");
 	});
 
+	test("removes stale files from previous export", async () => {
+		const sourceDir = join(tmp.path, "source", "plan");
+		const refsDir = join(sourceDir, "references");
+		await mkdir(refsDir, { recursive: true });
+		await writeFile(join(sourceDir, "SKILL.md"), "v1");
+		await writeFile(join(refsDir, "old-ref.md"), "old content");
+
+		// First export includes old-ref.md
+		const first = await exportSkill(sourceDir, "plan", {
+			target: "claude",
+			projectRoot: tmp.path,
+		});
+
+		// Remove the reference file from source, then re-export
+		const { rm } = await import("node:fs/promises");
+		await rm(refsDir, { recursive: true });
+		const second = await exportSkill(sourceDir, "plan", {
+			target: "claude",
+			projectRoot: tmp.path,
+		});
+
+		// The stale reference should not exist in the export
+		const { stat } = await import("node:fs/promises");
+		const staleRef = join(second.targetPath, "references", "old-ref.md");
+		await expect(stat(staleRef)).rejects.toThrow();
+
+		// But SKILL.md should still be there
+		const content = await readFile(join(first.targetPath, "SKILL.md"), "utf-8");
+		expect(content).toBe("v1");
+	});
+
 	test("overwrites existing export", async () => {
 		const sourceDir = join(tmp.path, "source", "plan");
 		await mkdir(sourceDir, { recursive: true });

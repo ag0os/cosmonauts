@@ -5,7 +5,7 @@
  * at both project and personal (user-level) scope.
  */
 
-import { cp, mkdir } from "node:fs/promises";
+import { cp, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -73,7 +73,7 @@ export async function exportSkill(
 	options: ExportOptions,
 ): Promise<ExportResult> {
 	const targetPath = resolveTargetDir(name, options);
-	await mkdir(targetPath, { recursive: true });
+	await rm(targetPath, { recursive: true, force: true });
 	await cp(sourcePath, targetPath, { recursive: true });
 	return { name, targetPath };
 }

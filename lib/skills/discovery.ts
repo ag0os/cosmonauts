@@ -45,18 +45,33 @@ export async function discoverSkills(
 }
 
 /**
- * Recursively scan a directory for SKILL.md files.
- * When a SKILL.md is found, the containing directory is the skill directory.
- * When a directory has no SKILL.md, recurse into its subdirectories.
+ * Scan a skills directory following Pi's discovery rules:
+ * - Direct .md children at root level (flat skills)
+ * - Recursive SKILL.md under subdirectories (directory skills)
+ *
+ * The `isRoot` flag distinguishes the top-level skills dir (where flat
+ * .md files are valid) from nested dirs (where only SKILL.md matters).
  */
 async function scanForSkills(
 	dirPath: string,
 	domain: string,
 	results: DiscoveredSkill[],
+	isRoot = true,
 ): Promise<void> {
 	const entries = await readdir(dirPath, { withFileTypes: true });
 
 	for (const entry of entries) {
+		// Flat .md files at the root level (e.g. skills/foo.md)
+		if (isRoot && entry.isFile() && entry.name.endsWith(".md")) {
+			const skill = await loadFlatSkillMeta(
+				join(dirPath, entry.name),
+				entry.name.slice(0, -3),
+				domain,
+			);
+			if (skill) results.push(skill);
+			continue;
+		}
+
 		if (!entry.isDirectory()) continue;
 
 		const childDir = join(dirPath, entry.name);
@@ -65,9 +80,34 @@ async function scanForSkills(
 			results.push(skill);
 		} else {
 			// No SKILL.md here — recurse deeper
-			await scanForSkills(childDir, domain, results);
+			await scanForSkills(childDir, domain, results, false);
 		}
 	}
+}
+
+/**
+ * Load skill metadata from a flat .md file (e.g. skills/foo.md).
+ * Returns null if the file cannot be read.
+ */
+async function loadFlatSkillMeta(
+	filePath: string,
+	baseName: string,
+	domain: string,
+): Promise<DiscoveredSkill | null> {
+	let content: string;
+	try {
+		content = await readFile(filePath, "utf-8");
+	} catch {
+		return null;
+	}
+
+	const { data } = matter(content);
+	return {
+		name: typeof data.name === "string" ? data.name : baseName,
+		description: typeof data.description === "string" ? data.description : "",
+		domain,
+		dirPath: filePath,
+	};
 }
 
 /**
