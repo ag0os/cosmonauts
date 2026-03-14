@@ -59,6 +59,15 @@ const DEFAULT_STAGE_PROMPTS: Record<string, string> = {
 		"Review the current branch changes against main and write actionable findings.",
 	fixer:
 		"Apply targeted fixes for review findings and verify they pass checks.",
+	"tdd-planner":
+		"Analyze the project and design a behavior-driven plan with testable specifications.",
+	"tdd-coordinator":
+		"Check for ready tasks and run the Red-Green-Refactor cycle for each.",
+	"test-writer":
+		"Write failing tests that capture the task's acceptance criteria as executable specifications.",
+	implementer:
+		"Write the minimum production code to make the failing tests pass.",
+	refactorer: "Improve code structure while keeping all tests green.",
 };
 
 const DEFAULT_PROMPT = "Execute your assigned role.";

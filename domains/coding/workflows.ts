@@ -19,6 +19,12 @@ export const workflows: WorkflowDefinition[] = [
 		description: "Review and remediation of completed work",
 		chain: "quality-manager",
 	},
+	{
+		name: "tdd",
+		description:
+			"Test-driven development: design behaviors, Red-Green-Refactor cycle, and review",
+		chain: "tdd-planner -> task-manager -> tdd-coordinator -> quality-manager",
+	},
 ];
 
 export default workflows;
