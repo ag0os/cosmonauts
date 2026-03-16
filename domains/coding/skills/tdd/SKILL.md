@@ -51,6 +51,16 @@ Rules:
 - **Do not add behavior.** Refactoring changes structure, not behavior. If you want new behavior, go back to RED.
 - **Small steps.** Each refactoring should be a single, easily reversible change. Do not combine three refactorings into one.
 
+## Phase Handoffs
+
+Each phase should leave a structured handoff in `implementationNotes` so the next phase knows the exact tests in scope:
+
+- **RED complete**: list `Test Targets` with `AC #`, test file path, exact test name, and `status: failing`.
+- **GREEN complete**: copy the same targets into `Passing Targets` and mark them `status: passing`.
+- **REFACTOR complete**: copy the same targets into `Verified Targets` and mark them `status: still passing`.
+
+The target list is the stable contract across phases. Do not replace it with prose summaries.
+
 ## Recognizing Phase Violations
 
 You are violating the cycle if:

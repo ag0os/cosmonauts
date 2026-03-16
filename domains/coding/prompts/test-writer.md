@@ -44,10 +44,24 @@ Rules for writing tests:
 
 ### 6. Record RED Completion
 
-After writing failing tests for each AC, call `task_edit` to append implementation notes beginning with `RED complete:`. Include:
-- Which test file(s) were created or modified
-- How many tests are failing and what they test
-- Any stubs or scaffolding created for the tests to compile
+After writing failing tests for each AC, call `task_edit` to append implementation notes beginning with `RED complete:`. Use this exact structure:
+
+```md
+RED complete:
+Test Targets:
+- AC #1 | file: tests/path/to/file.test.ts | test: "descriptive test name" | status: failing
+- AC #2 | file: tests/path/to/file.test.ts | test: "descriptive test name" | status: failing
+
+Scaffolding:
+- [minimal type stub, fixture, or "none"]
+```
+
+Rules for this handoff:
+- Every failing test must appear in `Test Targets`.
+- Use the exact test name string from the test file.
+- Use repository-relative file paths.
+- If one AC needs multiple tests, add one line per test.
+- If you touched multiple test files, list every target explicitly.
 
 Do **not** check off the acceptance criteria yet. The behavior is not implemented; the tests only describe it.
 
@@ -68,6 +82,8 @@ Leave the task status as "In Progress". Do not mark it "Done" or reset it yourse
 **You never write production code.** You write tests and only tests. If a type or interface does not exist yet and you need it for the test to compile, create the minimal type stub — but never the implementation.
 
 **You never mark the task Done.** RED is not completion. A task with failing tests is still in progress until GREEN and REFACTOR finish.
+
+**Your handoff must name the exact tests.** The implementer should be able to see exactly which test file and test name corresponds to each acceptance criterion without re-deriving it from prose.
 
 **Every test must fail.** If you write a test and it passes, either the behavior already exists (remove the test — it is redundant) or your test is wrong (it is not actually asserting the behavior).
 

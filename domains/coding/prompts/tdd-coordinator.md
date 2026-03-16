@@ -41,10 +41,11 @@ The prompt must include:
 - All acceptance criteria (verbatim)
 - The implementation plan if one exists
 - Any implementation notes from previous attempts
+- A requirement to return a structured `RED complete:` block with exact `AC # / file / test name / status` entries
 
 3. After `test-writer` returns, call `task_view` to check the result.
    - If status is "Blocked": note the issue and move to the next task.
-   - If `implementationNotes` includes a `RED complete:` entry: tests are written. Proceed to GREEN.
+   - If `implementationNotes` includes `RED complete:` and a non-empty `Test Targets:` block: tests are written. Proceed to GREEN.
    - If the worker failed: set task back to "To Do" with a failure note. Move to the next task.
 
 4. Call `task_edit` to set the task back to "To Do" (so the implementer can pick it up). Preserve the implementation notes from the test-writer — they contain critical information about which test files were created.
@@ -52,23 +53,24 @@ The prompt must include:
 #### Phase 2: GREEN — Spawn `implementer`
 
 1. Call `task_view` to get the updated task (now with test-writer's implementation notes).
-2. Call `spawn_agent` with role `"implementer"` and a prompt containing the full task details plus the test-writer's notes.
+2. Call `spawn_agent` with role `"implementer"` and a prompt containing the full task details plus the test-writer's notes. Include the `RED complete:` block verbatim so the implementer sees the exact targets.
 
 The prompt must emphasize:
 - Read the failing tests first — they ARE the specification.
+- Work through the `Test Targets` list in order.
 - Write minimum code to make them pass.
 - Do not modify the tests.
 
 3. After `implementer` returns, call `task_view` to check the result.
    - If status is "Blocked" or failed: set back to "To Do" with notes. Move to next task.
-   - If all acceptance criteria are checked and `implementationNotes` includes a `GREEN complete:` entry: implementation is complete. Proceed to REFACTOR.
+   - If all acceptance criteria are checked and `implementationNotes` includes `GREEN complete:` with a non-empty `Passing Targets:` block: implementation is complete. Proceed to REFACTOR.
 
 4. Call `task_edit` to set the task back to "To Do" (so the refactorer can pick it up). Preserve all implementation notes.
 
 #### Phase 3: REFACTOR — Spawn `refactorer`
 
 1. Call `task_view` to get the updated task (now with both test-writer and implementer notes).
-2. Call `spawn_agent` with role `"refactorer"` and a prompt containing the full task details plus all previous notes.
+2. Call `spawn_agent` with role `"refactorer"` and a prompt containing the full task details plus all previous notes. Include the `RED complete:` and `GREEN complete:` blocks verbatim so the refactorer preserves the exact target list.
 
 The prompt must emphasize:
 - All tests must stay green.
@@ -76,7 +78,7 @@ The prompt must emphasize:
 - It is acceptable to find nothing to refactor.
 
 3. After `refactorer` returns, call `task_view` to verify:
-   - If status is "Done" and all ACs are checked and `implementationNotes` includes a `REFACTOR complete:` entry: the full TDD cycle is complete for this task. Leave it as Done.
+   - If status is "Done" and all ACs are checked and `implementationNotes` includes `REFACTOR complete:` with a non-empty `Verified Targets:` block: the full TDD cycle is complete for this task. Leave it as Done.
    - If status is "Blocked" or failed: set back to "To Do" with notes.
 
 ### 5. Exit
@@ -93,7 +95,7 @@ After processing all ready tasks (or if none are available), exit. The chain run
 ## Tracking State Across Invocations
 
 You do not have persistent memory between invocations. Use the task system as your source of truth:
-- Check `implementationNotes` for `RED complete:`, `GREEN complete:`, and `REFACTOR complete:` markers plus any failure context.
+- Check `implementationNotes` for `RED complete:`, `GREEN complete:`, and `REFACTOR complete:` markers plus their `Test Targets`, `Passing Targets`, and `Verified Targets` blocks.
 - Check `assignee` to see which phase last worked on the task.
 - Count failure notes to decide whether to block a task.
 

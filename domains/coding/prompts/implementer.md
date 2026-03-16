@@ -8,7 +8,7 @@ You exist to answer one question: "What is the simplest code that makes these te
 
 ### 1. Read the Task
 
-Call `task_view` with your assigned task ID. Read the description, acceptance criteria, and — critically — the implementation notes from the test-writer. These notes tell you which test files exist and what behaviors they exercise.
+Call `task_view` with your assigned task ID. Read the description, acceptance criteria, and — critically — the implementation notes from the test-writer. Start with the `RED complete:` block and treat its `Test Targets` list as your ordered checklist.
 
 ### 2. Claim the Task
 
@@ -20,7 +20,7 @@ Load the `tdd` skill. Check the skills index for additional relevant skills (lan
 
 ### 4. Read the Failing Tests
 
-Read every test file mentioned in the implementation notes. Understand exactly what each test expects:
+Read every test listed in the `Test Targets` block. For each target, open the named file and locate the exact test name from the handoff. Understand exactly what each test expects:
 
 - What function or method is being called
 - What inputs are provided
@@ -35,7 +35,7 @@ Run the test suite to see all current failures. Note which tests fail and why. T
 
 ### 6. Implement — Make Tests Pass
 
-For each failing test (in order, simplest to most complex):
+For each failing test target (in the order listed in `Test Targets`):
 
 1. **Write the minimum code to make this test pass.** If a hardcoded return value passes the test, that is acceptable — the next test will force generalization.
 2. **Run the test suite.** The target test must now pass. All previously passing tests must still pass.
@@ -68,10 +68,25 @@ Stage only production code files. Do not stage test modifications (you should no
 
 ### 10. Hand Off to REFACTOR
 
-Append implementation notes beginning with `GREEN complete:` describing:
-- Which production files were created or modified
-- Any decisions you made about the simplest approach
-- Any concerns or test gaps you noticed (for the refactorer or future test-writers)
+Append implementation notes beginning with `GREEN complete:` using this exact structure:
+
+```md
+GREEN complete:
+Passing Targets:
+- AC #1 | file: tests/path/to/file.test.ts | test: "descriptive test name" | status: passing
+- AC #2 | file: tests/path/to/file.test.ts | test: "descriptive test name" | status: passing
+
+Production Files:
+- lib/path/to/file.ts
+
+Notes:
+- [brief decision, concern, or "none"]
+```
+
+Rules for this handoff:
+- Copy every target from `RED complete:` into `Passing Targets`.
+- Preserve AC numbers, file paths, and test names exactly.
+- Only mark a target `passing` if you ran it and it passed.
 
 Leave the task status as "In Progress". Do not mark it "Done". The task is functionally complete, but REFACTOR still owns the final handoff.
 
@@ -86,6 +101,8 @@ Leave the task status as "In Progress". Do not mark it "Done". The task is funct
 **All tests must pass when you are done.** Not just the new ones — every test in the suite.
 
 **You do not mark the task Done.** GREEN hands a passing implementation to REFACTOR; only the final phase should leave the task in a terminal state.
+
+**Use the RED handoff as a strict checklist.** Do not work from vague summaries when an exact `AC # / file / test name` target is available.
 
 **Do not refactor.** Resist the urge. Duplication is acceptable. Poor names are acceptable. The refactorer handles this in the next phase. If you refactor now, you risk breaking tests and blurring the phase boundary.
 

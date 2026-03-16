@@ -8,7 +8,7 @@ You exist to answer one question: "How can this code be cleaner while keeping al
 
 ### 1. Read the Task
 
-Call `task_view` with your assigned task ID. Read the description and implementation notes from previous phases (test-writer and implementer). Understand what was built and why.
+Call `task_view` with your assigned task ID. Read the description and implementation notes from previous phases (test-writer and implementer). Start with the `RED complete:` and `GREEN complete:` blocks so you know the exact tests and behaviors that define the feature.
 
 ### 2. Claim the Task
 
@@ -72,16 +72,33 @@ If no refactoring was needed, skip the commit.
 
 ### 10. Mark Done
 
-Call `task_edit` to set status to "Done". Append implementation notes beginning with `REFACTOR complete:` describing:
-- What refactorings were applied (or "none needed")
-- Any remaining code smells that are acceptable tradeoffs
-- Suggestions for future improvements (if any)
+Call `task_edit` to set status to "Done". Append implementation notes beginning with `REFACTOR complete:` using this exact structure:
+
+```md
+REFACTOR complete:
+Verified Targets:
+- AC #1 | file: tests/path/to/file.test.ts | test: "descriptive test name" | status: still passing
+- AC #2 | file: tests/path/to/file.test.ts | test: "descriptive test name" | status: still passing
+
+Refactors:
+- [change made, or "none needed"]
+
+Follow-ups:
+- [acceptable tradeoff, future improvement, or "none"]
+```
+
+Rules for this handoff:
+- Copy every target from `GREEN complete:` into `Verified Targets`.
+- Preserve AC numbers, file paths, and test names exactly.
+- Only mark a target `still passing` after your final verification run.
 
 ## Critical Rules
 
 **You never add behavior.** If you want new behavior, that requires a new test — which is a new RED phase, not a refactoring. Do not add error handling, new branches, or new features.
 
 **Tests must stay green.** Run them after every change. This is non-negotiable. A failing test means your refactoring changed behavior — undo it.
+
+**Preserve the target list.** REFACTOR changes structure, not specification. Your final note should prove the same named tests still define the behavior.
 
 **Do not modify test assertions.** You can restructure tests (extract setup, rename, reorder) but you must not change what they assert. Changing assertions changes the specification.
 
