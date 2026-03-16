@@ -53,6 +53,8 @@ export interface CreateSessionOptions {
 	persistent: boolean;
 	/** Project-level skill filter list (from .cosmonauts/config.json) */
 	projectSkills?: readonly string[];
+	/** Explicit skill directories (domain dirs + config skillPaths). */
+	skillPaths?: readonly string[];
 }
 
 /**
@@ -74,6 +76,7 @@ export async function createSession(
 		thinkingLevel,
 		persistent,
 		projectSkills,
+		skillPaths,
 	} = options;
 
 	const tools = resolveTools(def.tools, cwd);
@@ -96,14 +99,17 @@ export async function createSession(
 	});
 
 	const skillsOverride = buildSkillsOverride(def.skills, projectSkills);
+	const additionalSkillPaths = skillPaths?.length ? [...skillPaths] : undefined;
 	const loader = new DefaultResourceLoader({
 		cwd,
 		...(promptContent && { appendSystemPrompt: promptContent }),
 		noExtensions: true,
+		noSkills: true,
 		...(extensionPaths.length > 0 && {
 			additionalExtensionPaths: extensionPaths,
 		}),
 		...(skillsOverride && { skillsOverride }),
+		...(additionalSkillPaths && { additionalSkillPaths }),
 		...(!def.projectContext && {
 			agentsFilesOverride: () => ({ agentsFiles: [] }),
 		}),

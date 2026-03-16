@@ -6,6 +6,7 @@
  * domains, validates them, and builds all registries in a single factory call.
  */
 
+import { join } from "node:path";
 import type { AgentRegistry } from "./agents/index.ts";
 import { createRegistryFromDomains } from "./agents/index.ts";
 import type { ProjectConfig } from "./config/index.ts";
@@ -41,6 +42,13 @@ export class CosmonautsRuntime {
 	readonly domainsDir: string;
 	readonly workflows: readonly WorkflowDefinition[];
 	readonly projectSkills: readonly string[] | undefined;
+	/**
+	 * Complete list of skill directories Cosmonauts should discover from.
+	 * Combines domain skill directories (`domains/* /skills/`) with
+	 * user-configured `skillPaths` from `.cosmonauts/config.json`.
+	 * Used with `noSkills: true` to fully control Pi's skill discovery.
+	 */
+	readonly skillPaths: readonly string[];
 
 	private constructor(fields: {
 		projectConfig: ProjectConfig;
@@ -51,6 +59,7 @@ export class CosmonautsRuntime {
 		domainsDir: string;
 		workflows: readonly WorkflowDefinition[];
 		projectSkills: readonly string[] | undefined;
+		skillPaths: readonly string[];
 	}) {
 		this.projectConfig = fields.projectConfig;
 		this.domains = fields.domains;
@@ -60,6 +69,7 @@ export class CosmonautsRuntime {
 		this.domainsDir = fields.domainsDir;
 		this.workflows = fields.workflows;
 		this.projectSkills = fields.projectSkills;
+		this.skillPaths = fields.skillPaths;
 	}
 
 	/**
@@ -105,7 +115,14 @@ export class CosmonautsRuntime {
 		// 6. Compute effective workflows
 		const workflows = selectDomainWorkflows(domains, domainContext);
 
-		// 7. Return frozen immutable runtime
+		// 7. Compute explicit skill paths: domain dirs + user config paths
+		const domainSkillDirs = domains.map((d) => join(d.rootDir, "skills"));
+		const skillPaths = [
+			...domainSkillDirs,
+			...(projectConfig.skillPaths ?? []),
+		];
+
+		// 8. Return frozen immutable runtime
 		const runtime = new CosmonautsRuntime({
 			projectConfig,
 			domains,
@@ -115,6 +132,7 @@ export class CosmonautsRuntime {
 			domainsDir: options.domainsDir,
 			workflows,
 			projectSkills: projectConfig.skills,
+			skillPaths,
 		});
 
 		return Object.freeze(runtime);

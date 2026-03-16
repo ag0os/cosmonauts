@@ -3,8 +3,9 @@
  * Creates and runs Pi agent sessions for chain stages.
  *
  * Agent identity is loaded from prompt files via DefaultResourceLoader's
- * appendSystemPrompt, keeping identity in the system prompt and operational
- * content in the user message.
+ * systemPrompt override, replacing Pi's default prompt with Cosmonauts'
+ * composed prompt layers while keeping Pi's auto-injected context
+ * (skills, AGENTS.md, date/time, cwd).
  */
 
 import { existsSync, statSync } from "node:fs";
@@ -281,14 +282,19 @@ export function createPiSpawner(
 					def.skills,
 					config.projectSkills,
 				);
+				const additionalSkillPaths = config.skillPaths?.length
+					? [...config.skillPaths]
+					: undefined;
 				const loader = new DefaultResourceLoader({
 					cwd: config.cwd,
-					...(promptContent && { appendSystemPrompt: promptContent }),
+					...(promptContent && { systemPrompt: promptContent }),
 					noExtensions: true,
+					noSkills: true,
 					...(extensionPaths.length > 0 && {
 						additionalExtensionPaths: extensionPaths,
 					}),
 					...(skillsOverride && { skillsOverride }),
+					...(additionalSkillPaths && { additionalSkillPaths }),
 					...(!def.projectContext && {
 						agentsFilesOverride: () => ({ agentsFiles: [] }),
 					}),

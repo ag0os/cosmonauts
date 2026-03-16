@@ -37,6 +37,7 @@ import { listWorkflows, resolveWorkflow } from "../lib/workflows/loader.ts";
 import { createChainEventLogger } from "./chain-event-logger.ts";
 import { createPlanProgram } from "./plans/index.ts";
 import { createSession } from "./session.ts";
+import { createSkillsProgram } from "./skills/subcommand.ts";
 import { createTaskProgram } from "./tasks/subcommand.ts";
 import type { CliOptions } from "./types.ts";
 
@@ -177,6 +178,7 @@ async function run(options: CliOptions): Promise<void> {
 		domainContext,
 		workflows: domainWorkflows,
 		projectSkills,
+		skillPaths,
 	} = runtime;
 
 	// --list-domains: print all discovered domains and exit
@@ -258,6 +260,7 @@ async function run(options: CliOptions): Promise<void> {
 			thinkingLevel: options.thinking,
 			persistent: false,
 			projectSkills,
+			skillPaths,
 		});
 
 		try {
@@ -282,6 +285,7 @@ async function run(options: CliOptions): Promise<void> {
 			domainContext,
 			onEvent: createChainEventLogger(),
 			projectSkills,
+			skillPaths,
 			completionLabel: options.completionLabel,
 			registry,
 			domainsDir: runtime.domainsDir,
@@ -306,6 +310,7 @@ async function run(options: CliOptions): Promise<void> {
 			domainContext,
 			onEvent: createChainEventLogger(),
 			projectSkills,
+			skillPaths,
 			completionLabel: options.completionLabel,
 			registry,
 			domainsDir: runtime.domainsDir,
@@ -332,6 +337,7 @@ async function run(options: CliOptions): Promise<void> {
 			thinkingLevel: options.thinking,
 			persistent: false,
 			projectSkills,
+			skillPaths,
 		});
 
 		try {
@@ -355,6 +361,7 @@ async function run(options: CliOptions): Promise<void> {
 		thinkingLevel: options.thinking,
 		persistent: true,
 		projectSkills,
+		skillPaths,
 	});
 
 	const interactive = new InteractiveMode(result.session, {
@@ -371,9 +378,16 @@ async function run(options: CliOptions): Promise<void> {
 // ============================================================================
 
 const subcommand = process.argv[2];
-if (subcommand === "task" || subcommand === "plan") {
-	const program =
-		subcommand === "task" ? createTaskProgram() : createPlanProgram();
+if (subcommand === "task" || subcommand === "plan" || subcommand === "skills") {
+	const programs: Record<string, () => Command> = {
+		task: createTaskProgram,
+		plan: createPlanProgram,
+		skills: createSkillsProgram,
+	};
+	// subcommand is guaranteed to be in the map by the if-check above
+	const createProgram = programs[subcommand];
+	if (!createProgram) throw new Error(`Unknown subcommand: ${subcommand}`);
+	const program = createProgram();
 	program
 		.parseAsync(process.argv.slice(3), { from: "user" })
 		.catch((err: unknown) => {

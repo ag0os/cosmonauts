@@ -3,7 +3,8 @@
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 import { loadProjectConfig } from "../../lib/config/loader.ts";
 import { useTempDir } from "../helpers/fs.ts";
@@ -162,5 +163,52 @@ describe("loadProjectConfig", () => {
 
 		const config = await loadProjectConfig(tmp.path);
 		expect(config.skills).toBeUndefined();
+	});
+
+	test("parses skillPaths and resolves them relative to project root", async () => {
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({ skillPaths: [".claude/skills", ".codex/skills"] }),
+		);
+
+		const config = await loadProjectConfig(tmp.path);
+		expect(config.skillPaths).toEqual([
+			resolve(tmp.path, ".claude/skills"),
+			resolve(tmp.path, ".codex/skills"),
+		]);
+	});
+
+	test("expands tilde in skillPaths to home directory", async () => {
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({ skillPaths: ["~/.claude/skills"] }),
+		);
+
+		const config = await loadProjectConfig(tmp.path);
+		expect(config.skillPaths).toEqual([join(homedir(), ".claude/skills")]);
+	});
+
+	test("filters non-string values from skillPaths", async () => {
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({ skillPaths: ["./skills", 42, null] }),
+		);
+
+		const config = await loadProjectConfig(tmp.path);
+		expect(config.skillPaths).toEqual([resolve(tmp.path, "./skills")]);
+	});
+
+	test("ignores skillPaths when not an array", async () => {
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({ skillPaths: "/some/path" }),
+		);
+
+		const config = await loadProjectConfig(tmp.path);
+		expect(config.skillPaths).toBeUndefined();
 	});
 });

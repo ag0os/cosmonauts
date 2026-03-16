@@ -293,6 +293,7 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 				stages,
 				projectRoot: ctx.cwd,
 				projectSkills: runtime.projectSkills,
+				skillPaths: [...runtime.skillPaths],
 				domainContext: runtime.domainContext,
 				completionLabel: params.completionLabel,
 				thinking,
@@ -547,6 +548,7 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 					thinkingLevel: params.thinkingLevel,
 					runtimeContext: params.runtimeContext,
 					projectSkills: runtime.projectSkills,
+					skillPaths: [...runtime.skillPaths],
 				});
 				return {
 					content: [
