@@ -79,9 +79,12 @@ export function getDefaultStagePrompt(role: string): string {
 function buildStagePrompt(stage: ChainStage, config: ChainConfig): string {
 	const basePrompt = stage.prompt ?? getDefaultStagePrompt(stage.name);
 
-	// When loop completion is label-scoped, coordinator must process only that
-	// subset to avoid touching unrelated ready tasks.
-	if (unqualifyRole(stage.name) === "coordinator" && config.completionLabel) {
+	// When loop completion is label-scoped, loop coordinators must process only
+	// that subset to avoid touching unrelated ready tasks.
+	if (
+		["coordinator", "tdd-coordinator"].includes(unqualifyRole(stage.name)) &&
+		config.completionLabel
+	) {
 		return `${basePrompt}\n\nScope constraint: Operate only on tasks labeled "${config.completionLabel}". Filter all task selection to this label and do not modify tasks without it.`;
 	}
 

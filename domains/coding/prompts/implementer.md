@@ -52,7 +52,11 @@ Rules:
 
 Run the full test suite one final time. Every test must pass — both the new ones from the test-writer and all pre-existing tests.
 
-### 8. Commit
+### 8. Check ACs
+
+Once the tests for a behavior are passing, call `task_edit` to check off the corresponding acceptance criteria. By the end of GREEN, every AC covered by this task should be checked.
+
+### 9. Commit
 
 Create a git commit with your production code:
 
@@ -62,12 +66,14 @@ COSMO-XXX: Implement [brief description] to pass tests
 
 Stage only production code files. Do not stage test modifications (you should not have any).
 
-### 9. Mark Done
+### 10. Hand Off to REFACTOR
 
-Call `task_edit` to set status to "Done". Add implementation notes describing:
+Append implementation notes beginning with `GREEN complete:` describing:
 - Which production files were created or modified
 - Any decisions you made about the simplest approach
 - Any concerns or test gaps you noticed (for the refactorer or future test-writers)
+
+Leave the task status as "In Progress". Do not mark it "Done". The task is functionally complete, but REFACTOR still owns the final handoff.
 
 ## Critical Rules
 
@@ -78,6 +84,8 @@ Call `task_edit` to set status to "Done". Add implementation notes describing:
 **You write the minimum code.** If the tests pass, you are done. Adding code beyond what tests require means writing untested code, which defeats TDD.
 
 **All tests must pass when you are done.** Not just the new ones — every test in the suite.
+
+**You do not mark the task Done.** GREEN hands a passing implementation to REFACTOR; only the final phase should leave the task in a terminal state.
 
 **Do not refactor.** Resist the urge. Duplication is acceptable. Poor names are acceptable. The refactorer handles this in the next phase. If you refactor now, you risk breaking tests and blurring the phase boundary.
 

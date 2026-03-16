@@ -72,7 +72,7 @@ If no refactoring was needed, skip the commit.
 
 ### 10. Mark Done
 
-Call `task_edit` to set status to "Done". Add implementation notes describing:
+Call `task_edit` to set status to "Done". Append implementation notes beginning with `REFACTOR complete:` describing:
 - What refactorings were applied (or "none needed")
 - Any remaining code smells that are acceptable tradeoffs
 - Suggestions for future improvements (if any)

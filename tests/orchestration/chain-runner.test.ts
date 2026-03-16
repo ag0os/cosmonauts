@@ -98,6 +98,7 @@ const defaultRegistry = new AgentRegistry([
 	makeCodingDef("planner", false),
 	makeCodingDef("task-manager", false),
 	makeCodingDef("coordinator", true),
+	makeCodingDef("tdd-coordinator", true),
 	makeCodingDef("worker", false),
 	makeCodingDef("quality-manager", false),
 	makeCodingDef("reviewer", false),
@@ -548,6 +549,34 @@ describe("runStage", () => {
 				expect.objectContaining({
 					prompt: expect.stringContaining(
 						'Scope constraint: Operate only on tasks labeled "review-round:1"',
+					),
+				}),
+			);
+		});
+
+		test("adds label-scoping instructions to tdd-coordinator prompt", async () => {
+			const spawner = createMockSpawner([
+				{ success: true, sessionId: "session-1", messages: [] },
+			]);
+			const completionCheck = vi
+				.fn()
+				.mockResolvedValueOnce(false)
+				.mockResolvedValueOnce(true);
+			const stage = makeStage("tdd-coordinator", true, completionCheck);
+			const config = makeConfig([stage], {
+				completionLabel: "plan:alpha",
+			});
+
+			const result = await runStage(stage, config, spawner, {
+				maxTotalIterations: 3,
+				deadlineMs: Date.now() + 60_000,
+			});
+
+			expect(result.success).toBe(true);
+			expect(spawner.spawn).toHaveBeenCalledWith(
+				expect.objectContaining({
+					prompt: expect.stringContaining(
+						'Scope constraint: Operate only on tasks labeled "plan:alpha"',
 					),
 				}),
 			);

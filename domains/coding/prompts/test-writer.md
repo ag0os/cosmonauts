@@ -42,9 +42,14 @@ Rules for writing tests:
 - **Follow project conventions.** Use the same test framework, assertion style, file naming, and directory structure as the existing tests.
 - **Create minimal scaffolding only.** If you need a type definition or interface stub to make the test compile, create only what is necessary for the test to run and fail on the assertion. Do not implement the actual logic.
 
-### 6. Check ACs
+### 6. Record RED Completion
 
-After writing failing tests for each AC, call `task_edit` to check off the ACs. Add a note that tests are written and failing, ready for the GREEN phase.
+After writing failing tests for each AC, call `task_edit` to append implementation notes beginning with `RED complete:`. Include:
+- Which test file(s) were created or modified
+- How many tests are failing and what they test
+- Any stubs or scaffolding created for the tests to compile
+
+Do **not** check off the acceptance criteria yet. The behavior is not implemented; the tests only describe it.
 
 ### 7. Commit
 
@@ -54,16 +59,15 @@ Create a git commit with your test files:
 COSMO-XXX: Write failing tests for [brief description]
 ```
 
-### 8. Mark Done
+### 8. Hand Off to GREEN
 
-Call `task_edit` to set status to "Done". Add implementation notes describing:
-- Which test file(s) were created or modified
-- How many tests are failing and what they test
-- Any stubs or scaffolding created for the tests to compile
+Leave the task status as "In Progress". Do not mark it "Done" or reset it yourself. The TDD coordinator will verify your `RED complete:` note and hand the task to the implementer.
 
 ## Critical Rules
 
 **You never write production code.** You write tests and only tests. If a type or interface does not exist yet and you need it for the test to compile, create the minimal type stub — but never the implementation.
+
+**You never mark the task Done.** RED is not completion. A task with failing tests is still in progress until GREEN and REFACTOR finish.
 
 **Every test must fail.** If you write a test and it passes, either the behavior already exists (remove the test — it is redundant) or your test is wrong (it is not actually asserting the behavior).
 

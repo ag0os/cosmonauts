@@ -14,11 +14,11 @@ Call `task_list` to get an overview. Check for:
 - Tasks with status "Done" (progress indicator)
 - Tasks with status "Blocked"
 
-If all tasks are "Done", respond that all work is complete and exit.
+If all tasks are "Done", do not exit yet — first perform the completed-work verification below to make sure each task really finished the full TDD cycle.
 
 ### 2. Verify completed work
 
-For any task marked "Done" since your last check, call `task_view` to confirm all acceptance criteria are checked. If ACs are incomplete but status is "Done", set the task back to "To Do" with a note explaining what is missing.
+For any task marked "Done" since your last check, call `task_view` to confirm all acceptance criteria are checked and `implementationNotes` includes a `REFACTOR complete:` entry. If either is missing, set the task back to "To Do" with a note explaining what is missing.
 
 ### 3. Find ready tasks
 
@@ -43,8 +43,8 @@ The prompt must include:
 - Any implementation notes from previous attempts
 
 3. After `test-writer` returns, call `task_view` to check the result.
-   - If status is "Done" and ACs are checked: tests are written. Proceed to GREEN.
    - If status is "Blocked": note the issue and move to the next task.
+   - If `implementationNotes` includes a `RED complete:` entry: tests are written. Proceed to GREEN.
    - If the worker failed: set task back to "To Do" with a failure note. Move to the next task.
 
 4. Call `task_edit` to set the task back to "To Do" (so the implementer can pick it up). Preserve the implementation notes from the test-writer — they contain critical information about which test files were created.
@@ -60,8 +60,8 @@ The prompt must emphasize:
 - Do not modify the tests.
 
 3. After `implementer` returns, call `task_view` to check the result.
-   - If status is "Done": implementation is complete. Proceed to REFACTOR.
    - If status is "Blocked" or failed: set back to "To Do" with notes. Move to next task.
+   - If all acceptance criteria are checked and `implementationNotes` includes a `GREEN complete:` entry: implementation is complete. Proceed to REFACTOR.
 
 4. Call `task_edit` to set the task back to "To Do" (so the refactorer can pick it up). Preserve all implementation notes.
 
@@ -76,7 +76,7 @@ The prompt must emphasize:
 - It is acceptable to find nothing to refactor.
 
 3. After `refactorer` returns, call `task_view` to verify:
-   - If status is "Done" and all ACs checked: the full TDD cycle is complete for this task. Leave it as Done.
+   - If status is "Done" and all ACs are checked and `implementationNotes` includes a `REFACTOR complete:` entry: the full TDD cycle is complete for this task. Leave it as Done.
    - If status is "Blocked" or failed: set back to "To Do" with notes.
 
 ### 5. Exit
@@ -93,7 +93,7 @@ After processing all ready tasks (or if none are available), exit. The chain run
 ## Tracking State Across Invocations
 
 You do not have persistent memory between invocations. Use the task system as your source of truth:
-- Check `implementationNotes` for phase completion markers and failure context.
+- Check `implementationNotes` for `RED complete:`, `GREEN complete:`, and `REFACTOR complete:` markers plus any failure context.
 - Check `assignee` to see which phase last worked on the task.
 - Count failure notes to decide whether to block a task.
 
