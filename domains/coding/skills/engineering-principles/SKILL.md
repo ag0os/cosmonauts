@@ -80,9 +80,54 @@ Not all code changes at the same rate. Identify the **seams** — the points whe
 
 **But**: only invest in flexibility where you have evidence of change. Do not speculatively generalize. The wrong abstraction is harder to fix than no abstraction.
 
-## Testing as Design Feedback
+## Testing Principles
 
-Tests are not just verification — they are the first consumer of your API:
+### Test Behavior, Not Implementation
+
+The most important testing principle: assert on **what** the code does, not **how** it does it. A test that breaks when you rename an internal function, change a config shape, or reorder private steps is testing implementation — it creates drag without catching real bugs.
+
+**What to assert:**
+- Return values and output state — the observable result of calling the public API.
+- Side effects at boundaries — did it write the file, send the request, emit the event?
+- Error conditions — does it reject invalid input with the right category of error?
+
+**What NOT to assert:**
+- Internal function call order or call counts (unless order is the contract).
+- Exact error message strings when the contract is just "throws an error".
+- Private state or intermediate values that aren't part of the public surface.
+- Specific implementation choices (which internal helper was called, which branch was taken).
+
+**The refactor test:** if you can refactor the implementation without changing observable behavior and a test breaks, that test is coupled to implementation. Fix the test.
+
+### Test Through the Public API
+
+Don't test private methods directly. Test them through the public functions that use them. If a code path is unreachable through the public API, it's dead code — delete it, don't test it.
+
+This means: one test file per module, exercising the module's exports. Not one test per internal function.
+
+### Mock Boundaries, Not Internals
+
+Mock at the edges of your system — external services, filesystem, network, databases. Do not mock your own modules or internal functions. When tests mock internals:
+- They break on every refactor.
+- They test the wiring, not the behavior.
+- They can pass even when the real integration is broken.
+
+```
+Bad:  mock(internalParser).toReturn(fakeResult)    // coupled to implementation
+Good: mock(fileSystem.readFile).toReturn(testData)  // mocking a boundary
+```
+
+If you need to mock an internal module, that's a design signal — the boundary between modules is unclear.
+
+### Write Resilient Test Assertions
+
+- Use `toContain` / `toMatchObject` over exact equality when only part of the result matters.
+- Assert on structural properties (`expect(result).toHaveProperty("id")`) rather than snapshot-matching entire objects that include volatile fields.
+- Name tests after the behavior they verify: "rejects expired tokens", "returns empty list when no tasks match" — not "test1" or "calls validateToken".
+
+### Testing as Design Feedback
+
+Tests are the first consumer of your API. Listen to what they tell you:
 
 - **Hard to construct**: the object has too many dependencies. Simplify or inject them.
 - **Hard to invoke**: the function signature is too complex. Decompose it.
