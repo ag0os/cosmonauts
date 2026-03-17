@@ -5,7 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"Orchestrates the Red-Green-Refactor cycle per task. Spawns test-writer, implementer, and refactorer in sequence for each task.",
 	capabilities: ["core", "tasks", "spawning"],
-	model: "anthropic/claude-opus-4-6",
+	model: "anthropic/claude-sonnet-4-6",
 	tools: "none",
 	extensions: ["tasks", "orchestration", "observability"],
 	skills: ["tdd"],
