@@ -4,7 +4,7 @@ const definition: AgentDefinition = {
 	id: "fixer",
 	description:
 		"Applies targeted fixes from quality or review findings and commits remediation changes.",
-	capabilities: ["core", "coding-readwrite"],
+	capabilities: ["core", "engineering-discipline", "coding-readwrite"],
 	model: "openai-codex/gpt-5.3-codex",
 	tools: "coding",
 	extensions: [],

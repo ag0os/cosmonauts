@@ -101,7 +101,7 @@ export async function loadProjectConfig(
  * Matches `.cosmonauts/config.example.json`.
  */
 const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
-	skills: ["typescript"],
+	skills: ["typescript", "engineering-principles"],
 	workflows: {
 		"plan-and-build": {
 			description:

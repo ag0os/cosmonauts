@@ -142,6 +142,7 @@ describe("individual agent values", () => {
 		expect(cosmo.id).toBe("cosmo");
 		expect(cosmo.capabilities).toEqual([
 			"core",
+			"engineering-discipline",
 			"coding-readwrite",
 			"tasks",
 			"spawning",
@@ -177,13 +178,14 @@ describe("individual agent values", () => {
 		expect(planner.id).toBe("planner");
 		expect(planner.capabilities).toEqual([
 			"core",
+			"engineering-discipline",
 			"coding-readonly",
 			"spawning",
 		]);
 		expect(planner.model).toBe("anthropic/claude-opus-4-6");
 		expect(planner.tools).toBe("readonly");
 		expect(planner.extensions).toEqual(["plans", "orchestration"]);
-		expect(planner.skills).toEqual(["pi", "plan"]);
+		expect(planner.skills).toEqual(["pi", "plan", "engineering-principles"]);
 		expect(planner.subagents).toEqual([
 			"task-manager",
 			"coordinator",
@@ -232,7 +234,12 @@ describe("individual agent values", () => {
 
 	it("worker has correct values", () => {
 		expect(worker.id).toBe("worker");
-		expect(worker.capabilities).toEqual(["core", "coding-readwrite", "tasks"]);
+		expect(worker.capabilities).toEqual([
+			"core",
+			"engineering-discipline",
+			"coding-readwrite",
+			"tasks",
+		]);
 		expect(worker.model).toBe("anthropic/claude-opus-4-6");
 		expect(worker.tools).toBe("coding");
 		expect(worker.extensions).toEqual(["tasks"]);
@@ -247,6 +254,7 @@ describe("individual agent values", () => {
 		expect(qualityManager.id).toBe("quality-manager");
 		expect(qualityManager.capabilities).toEqual([
 			"core",
+			"engineering-discipline",
 			"coding-readwrite",
 			"tasks",
 			"spawning",
@@ -267,7 +275,11 @@ describe("individual agent values", () => {
 
 	it("reviewer has correct values", () => {
 		expect(reviewer.id).toBe("reviewer");
-		expect(reviewer.capabilities).toEqual(["core", "coding-readwrite"]);
+		expect(reviewer.capabilities).toEqual([
+			"core",
+			"engineering-discipline",
+			"coding-readwrite",
+		]);
 		expect(reviewer.model).toBe("openai-codex/gpt-5.3-codex");
 		expect(reviewer.tools).toBe("coding");
 		expect(reviewer.extensions).toEqual([]);
@@ -280,7 +292,11 @@ describe("individual agent values", () => {
 
 	it("fixer has correct values", () => {
 		expect(fixer.id).toBe("fixer");
-		expect(fixer.capabilities).toEqual(["core", "coding-readwrite"]);
+		expect(fixer.capabilities).toEqual([
+			"core",
+			"engineering-discipline",
+			"coding-readwrite",
+		]);
 		expect(fixer.model).toBe("openai-codex/gpt-5.3-codex");
 		expect(fixer.tools).toBe("coding");
 		expect(fixer.extensions).toEqual([]);

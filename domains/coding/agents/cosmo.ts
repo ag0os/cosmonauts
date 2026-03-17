@@ -4,7 +4,14 @@ const definition: AgentDefinition = {
 	id: "cosmo",
 	description:
 		"Main coding assistant with orchestration capabilities. Delegates to sub-agents for complex workflows.",
-	capabilities: ["core", "coding-readwrite", "tasks", "spawning", "todo"],
+	capabilities: [
+		"core",
+		"engineering-discipline",
+		"coding-readwrite",
+		"tasks",
+		"spawning",
+		"todo",
+	],
 	model: "anthropic/claude-opus-4-6",
 	tools: "coding",
 	extensions: [

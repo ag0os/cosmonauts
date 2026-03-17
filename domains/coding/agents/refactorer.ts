@@ -4,11 +4,11 @@ const definition: AgentDefinition = {
 	id: "refactorer",
 	description:
 		"REFACTOR phase: improves code structure without changing behavior. All tests must stay green throughout.",
-	capabilities: ["core", "coding-readwrite", "tasks"],
+	capabilities: ["core", "engineering-discipline", "coding-readwrite", "tasks"],
 	model: "anthropic/claude-opus-4-6",
 	tools: "coding",
 	extensions: ["tasks"],
-	skills: ["tdd", "refactoring"],
+	skills: ["tdd", "refactoring", "engineering-principles"],
 	subagents: [],
 	projectContext: true,
 	session: "ephemeral",

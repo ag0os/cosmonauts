@@ -4,11 +4,16 @@ const definition: AgentDefinition = {
 	id: "planner",
 	description:
 		"Designs solutions by exploring the codebase and proposing approaches. Never writes code or creates tasks.",
-	capabilities: ["core", "coding-readonly", "spawning"],
+	capabilities: [
+		"core",
+		"engineering-discipline",
+		"coding-readonly",
+		"spawning",
+	],
 	model: "anthropic/claude-opus-4-6",
 	tools: "readonly",
 	extensions: ["plans", "orchestration"],
-	skills: ["pi", "plan"],
+	skills: ["pi", "plan", "engineering-principles"],
 	subagents: ["task-manager", "coordinator", "worker"],
 	projectContext: true,
 	session: "ephemeral",
