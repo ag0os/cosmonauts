@@ -24,9 +24,9 @@
 		"test:coverage": "vitest run --coverage"
 	},
 	"dependencies": {
-		"@mariozechner/pi-coding-agent": "0.57.1",
-		"@mariozechner/pi-agent-core": "0.57.1",
-		"@mariozechner/pi-ai": "0.57.1",
+		"@mariozechner/pi-coding-agent": "0.58.4",
+		"@mariozechner/pi-agent-core": "0.58.4",
+		"@mariozechner/pi-ai": "0.58.4",
 		"@sinclair/typebox": "0.34.48",
 		"commander": "^14.0.2",
 		"gray-matter": "^4.0.3"

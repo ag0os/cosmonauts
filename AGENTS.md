@@ -114,7 +114,7 @@ Flags: `--print`, `--workflow`, `--chain`, `--model`, `--thinking`, `--domain`/`
 
 - Runtime: Bun
 - Language: TypeScript (ESM, strict mode)
-- Framework: `@mariozechner/pi-coding-agent` v0.57.1 (pinned exact — Pi uses lockstep versioning)
+- Framework: `@mariozechner/pi-coding-agent` (pinned exact in package.json — Pi uses lockstep versioning)
 - Schema: `@sinclair/typebox`
 - Tests: Vitest (`bun run test`)
 - Linter: Biome (`bun run lint`)
