@@ -1,4 +1,5 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
+import adaptationPlanner from "../../domains/coding/agents/adaptation-planner.ts";
 import coordinator from "../../domains/coding/agents/coordinator.ts";
 import cosmo from "../../domains/coding/agents/cosmo.ts";
 import fixer from "../../domains/coding/agents/fixer.ts";
@@ -16,6 +17,7 @@ import type {
 const ALL_DEFINITIONS: AgentDefinition[] = [
 	cosmo,
 	planner,
+	adaptationPlanner,
 	taskManager,
 	coordinator,
 	worker,
@@ -34,8 +36,8 @@ const VALID_THINKING_LEVELS = new Set([
 ]);
 
 describe("domain agent definitions", () => {
-	it("exports exactly 8 agent definitions", () => {
-		expect(ALL_DEFINITIONS).toHaveLength(8);
+	it("exports exactly 9 agent definitions", () => {
+		expect(ALL_DEFINITIONS).toHaveLength(9);
 	});
 
 	it("has unique IDs across all definitions", () => {
@@ -49,6 +51,7 @@ describe("domain agent definitions", () => {
 			new Set([
 				"cosmo",
 				"planner",
+				"adaptation-planner",
 				"task-manager",
 				"coordinator",
 				"worker",
@@ -161,6 +164,7 @@ describe("individual agent values", () => {
 		expect(cosmo.skills).toBeUndefined();
 		expect(cosmo.subagents).toEqual([
 			"planner",
+			"adaptation-planner",
 			"task-manager",
 			"coordinator",
 			"worker",
@@ -197,6 +201,34 @@ describe("individual agent values", () => {
 		expect(planner.thinkingLevel).toBe("high");
 	});
 
+	it("adaptation-planner has correct values", () => {
+		expect(adaptationPlanner.id).toBe("adaptation-planner");
+		expect(adaptationPlanner.capabilities).toEqual([
+			"core",
+			"engineering-discipline",
+			"coding-readonly",
+			"spawning",
+		]);
+		expect(adaptationPlanner.model).toBe("anthropic/claude-opus-4-6");
+		expect(adaptationPlanner.tools).toBe("readonly");
+		expect(adaptationPlanner.extensions).toEqual(["plans", "orchestration"]);
+		expect(adaptationPlanner.skills).toEqual([
+			"pi",
+			"plan",
+			"engineering-principles",
+			"reference-adaptation",
+		]);
+		expect(adaptationPlanner.subagents).toEqual([
+			"task-manager",
+			"coordinator",
+			"worker",
+		]);
+		expect(adaptationPlanner.projectContext).toBe(true);
+		expect(adaptationPlanner.session).toBe("ephemeral");
+		expect(adaptationPlanner.loop).toBe(false);
+		expect(adaptationPlanner.thinkingLevel).toBe("high");
+	});
+
 	it("task-manager has correct values", () => {
 		expect(taskManager.id).toBe("task-manager");
 		expect(taskManager.capabilities).toEqual([
@@ -204,7 +236,7 @@ describe("individual agent values", () => {
 			"coding-readonly",
 			"tasks",
 		]);
-		expect(taskManager.model).toBe("anthropic/claude-opus-4-6");
+		expect(taskManager.model).toBe("anthropic/claude-sonnet-4-6");
 		expect(taskManager.tools).toBe("readonly");
 		expect(taskManager.extensions).toEqual(["tasks", "plans"]);
 		expect(taskManager.skills).toEqual([]);
@@ -218,7 +250,7 @@ describe("individual agent values", () => {
 	it("coordinator has correct values", () => {
 		expect(coordinator.id).toBe("coordinator");
 		expect(coordinator.capabilities).toEqual(["core", "tasks", "spawning"]);
-		expect(coordinator.model).toBe("anthropic/claude-opus-4-6");
+		expect(coordinator.model).toBe("anthropic/claude-sonnet-4-6");
 		expect(coordinator.tools).toBe("none");
 		expect(coordinator.extensions).toEqual([
 			"tasks",
@@ -240,7 +272,7 @@ describe("individual agent values", () => {
 			"coding-readwrite",
 			"tasks",
 		]);
-		expect(worker.model).toBe("anthropic/claude-opus-4-6");
+		expect(worker.model).toBe("anthropic/claude-sonnet-4-6");
 		expect(worker.tools).toBe("coding");
 		expect(worker.extensions).toEqual(["tasks"]);
 		expect(worker.skills).toBeUndefined();

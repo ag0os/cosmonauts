@@ -25,6 +25,13 @@ export const workflows: WorkflowDefinition[] = [
 			"Test-driven development: design behaviors, Red-Green-Refactor cycle, and review",
 		chain: "tdd-planner -> task-manager -> tdd-coordinator -> quality-manager",
 	},
+	{
+		name: "adapt",
+		description:
+			"Adapt a feature from a reference codebase: study reference, design adaptation plan, implement, and review",
+		chain:
+			"adaptation-planner -> task-manager -> coordinator -> quality-manager",
+	},
 ];
 
 export default workflows;

@@ -13,6 +13,7 @@ import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import {
 	createDefaultCompletionCheck,
+	getDefaultStagePrompt,
 	runChain,
 	runStage,
 } from "../../lib/orchestration/chain-runner.ts";
@@ -116,6 +117,17 @@ function makeConfig(
 		...overrides,
 	};
 }
+
+describe("getDefaultStagePrompt", () => {
+	test("returns a role-specific prompt for adaptation-planner", () => {
+		expect(getDefaultStagePrompt("adaptation-planner")).toBe(
+			"Study the reference implementation and design an adaptation plan for this project.",
+		);
+		expect(getDefaultStagePrompt("coding/adaptation-planner")).toBe(
+			"Study the reference implementation and design an adaptation plan for this project.",
+		);
+	});
+});
 
 // ============================================================================
 // runStage Tests

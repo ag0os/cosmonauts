@@ -25,6 +25,7 @@ const definition: AgentDefinition = {
 	skills: undefined,
 	subagents: [
 		"planner",
+		"adaptation-planner",
 		"task-manager",
 		"coordinator",
 		"worker",

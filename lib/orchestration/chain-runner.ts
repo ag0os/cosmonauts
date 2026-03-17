@@ -50,6 +50,8 @@ function resolveDomainsDir(config: ChainConfig): string {
 /** Default operational prompts for chain stages (not agent identity prompts). */
 const DEFAULT_STAGE_PROMPTS: Record<string, string> = {
 	planner: "Analyze the project and design an implementation plan.",
+	"adaptation-planner":
+		"Study the reference implementation and design an adaptation plan for this project.",
 	"task-manager": "Review the plan and create atomic implementation tasks.",
 	coordinator: "Check for ready tasks and delegate them to workers.",
 	worker: "Pick up the next ready task and implement it.",
