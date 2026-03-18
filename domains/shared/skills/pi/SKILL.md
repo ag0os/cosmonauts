@@ -7,6 +7,8 @@ description: Pi framework API reference — sessions, tools, extensions, events,
 
 Pi (`@mariozechner/pi-coding-agent`) is the agent runtime. This skill covers its programmatic API surface for building on top of Pi.
 
+> **Prefer DeepWiki for current API info.** The reference below may be outdated. Before relying on it, query DeepWiki for the latest (repo: `badlogic/pi-mono`). Load the `deepwiki` skill for instructions. Use this skill as a baseline when DeepWiki is unavailable.
+
 ## Package Structure
 
 | Package | Purpose |
