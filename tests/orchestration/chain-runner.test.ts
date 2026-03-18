@@ -1105,6 +1105,46 @@ describe("runChain", () => {
 		expect(result.stageResults[1]?.iterations).toBe(2);
 		expect(result.stageResults[1]?.success).toBe(false);
 	});
+
+	test("chain-level timeout stops execution between stages", async () => {
+		vi.useFakeTimers();
+		const FIXED_NOW = new Date("2026-01-01T00:00:00Z").getTime();
+		vi.setSystemTime(FIXED_NOW);
+
+		let spawnCount = 0;
+		spawnerRef.current = {
+			spawn: vi.fn(async () => {
+				spawnCount++;
+				// After first stage completes, advance time past the timeout
+				if (spawnCount === 1) {
+					vi.setSystemTime(FIXED_NOW + 5000);
+				}
+				return {
+					success: true,
+					sessionId: `s-${spawnCount}`,
+					messages: [],
+				};
+			}),
+			dispose: vi.fn(),
+		};
+
+		const stages = [
+			makeStage("planner", false),
+			makeStage("task-manager", false),
+			makeStage("worker", false),
+		];
+		const config = makeConfig(stages, { timeoutMs: 3000 });
+
+		const result = await runChain(config);
+
+		// Timeout skips remaining stages — only the first stage ran
+		expect(result.stageResults).toHaveLength(1);
+		expect(result.stageResults[0]?.success).toBe(true);
+		// Chain reports success since no stage actually failed (timeout is
+		// a silent exit, not an error — matching abort signal behavior)
+		expect(result.success).toBe(true);
+		expect(spawnCount).toBe(1);
+	});
 });
 
 // ============================================================================

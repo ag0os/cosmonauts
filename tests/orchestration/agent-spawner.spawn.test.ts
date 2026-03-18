@@ -35,7 +35,10 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
 	},
 }));
 
-import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
+import {
+	createPiSpawner,
+	resolveModel,
+} from "../../lib/orchestration/agent-spawner.ts";
 
 const DOMAINS_DIR = resolve(
 	fileURLToPath(import.meta.url),
@@ -535,5 +538,52 @@ describe("createPiSpawner", () => {
 			expect(mockSession.dispose).toHaveBeenCalledTimes(1);
 			expect(mockSession.prompt).not.toHaveBeenCalled();
 		});
+	});
+});
+
+describe("resolveModel", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	test("throws for model ID without provider/id separator", () => {
+		expect(() => resolveModel("just-a-model")).toThrow(
+			'Invalid model ID "just-a-model": expected "provider/model" format',
+		);
+	});
+
+	test("throws for empty string", () => {
+		expect(() => resolveModel("")).toThrow('expected "provider/model" format');
+	});
+
+	test("returns model for valid provider/id format", () => {
+		const mockModel = { id: "test-model", provider: "anthropic" };
+		mocks.getModel.mockReturnValue(mockModel);
+
+		const result = resolveModel("anthropic/claude-sonnet-4-20250514");
+
+		expect(result).toBe(mockModel);
+		expect(mocks.getModel).toHaveBeenCalledWith(
+			"anthropic",
+			"claude-sonnet-4-20250514",
+		);
+	});
+
+	test("throws when getModel returns undefined", () => {
+		mocks.getModel.mockReturnValue(undefined);
+
+		expect(() => resolveModel("fake-provider/fake-model")).toThrow(
+			'Model not found: provider="fake-provider", id="fake-model"',
+		);
+	});
+
+	test("handles model IDs with dots in the model name", () => {
+		const mockModel = { id: "gpt-4.1" };
+		mocks.getModel.mockReturnValue(mockModel);
+
+		const result = resolveModel("openai/gpt-4.1");
+
+		expect(result).toBe(mockModel);
+		expect(mocks.getModel).toHaveBeenCalledWith("openai", "gpt-4.1");
 	});
 });
