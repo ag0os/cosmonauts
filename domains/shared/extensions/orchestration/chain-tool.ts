@@ -6,7 +6,10 @@ import {
 	injectUserPrompt,
 	runChain,
 } from "../../../../lib/orchestration/chain-runner.ts";
-import type { ChainEvent, ChainResult } from "../../../../lib/orchestration/types.ts";
+import type {
+	ChainEvent,
+	ChainResult,
+} from "../../../../lib/orchestration/types.ts";
 import type { CosmonautsRuntime } from "../../../../lib/runtime.ts";
 import {
 	buildCostTable,

@@ -1,6 +1,9 @@
 import { Text } from "@mariozechner/pi-tui";
 import { unqualifyRole } from "../../../../lib/agents/qualified-role.ts";
-import type { ChainEvent, ChainStats } from "../../../../lib/orchestration/types.ts";
+import type {
+	ChainEvent,
+	ChainStats,
+} from "../../../../lib/orchestration/types.ts";
 
 // ============================================================================
 // Rendering Helpers
@@ -30,7 +33,9 @@ export function formatDuration(ms: number): string {
 }
 
 /** Build a progress line from a chain event for onUpdate streaming. */
-export function chainEventToProgressLine(event: ChainEvent): string | undefined {
+export function chainEventToProgressLine(
+	event: ChainEvent,
+): string | undefined {
 	switch (event.type) {
 		case "chain_start":
 			return `▶ Chain started: ${event.stages.map((s) => roleLabel(s.name)).join(" → ")}`;
