@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
 	parseChain: vi.fn(),
 	runChain: vi.fn(),
 	createPiSpawner: vi.fn(),
+	createAgentSessionFromDefinition: vi.fn(),
 }));
 
 vi.mock("../../lib/runtime.ts", () => ({
@@ -47,6 +48,10 @@ vi.mock("../../lib/orchestration/agent-spawner.ts", () => ({
 	createPiSpawner: mocks.createPiSpawner,
 }));
 
+vi.mock("../../lib/orchestration/session-factory.ts", () => ({
+	createAgentSessionFromDefinition: mocks.createAgentSessionFromDefinition,
+}));
+
 import orchestrationExtension from "../../domains/shared/extensions/orchestration/index.ts";
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
@@ -60,10 +65,13 @@ interface RegisteredTool {
 
 interface MockPiOptions {
 	systemPrompt?: string;
+	/** Session ID for the parent session (used by spawn_agent depth tracking). */
+	sessionId?: string;
 }
 
 function createMockPi(cwd: string, options?: MockPiOptions) {
 	const tools = new Map<string, RegisteredTool>();
+	const sessionId = options?.sessionId ?? `test-session-${Math.random()}`;
 	return {
 		registerTool(def: RegisteredTool) {
 			tools.set(def.name, def);
@@ -77,6 +85,7 @@ function createMockPi(cwd: string, options?: MockPiOptions) {
 			return tool.execute("call-id", params, undefined, undefined, {
 				cwd,
 				getSystemPrompt: () => options?.systemPrompt ?? "",
+				sessionManager: { getSessionId: () => sessionId },
 			});
 		},
 	};
@@ -237,20 +246,27 @@ describe("orchestration extension", () => {
 			skillPaths: ["/skills/shared", "/skills/project"],
 		});
 
-		const spawn = vi.fn().mockResolvedValue({
-			success: true,
-			sessionId: "session-1",
+		const mockSession = {
+			sessionId: "child-session-1",
 			messages: [],
-		});
-		const dispose = vi.fn();
-		createPiSpawnerMock.mockReturnValue({ spawn, dispose });
+			prompt: vi.fn().mockResolvedValue(undefined),
+			dispose: vi.fn(),
+		};
+		mocks.createAgentSessionFromDefinition.mockResolvedValue(mockSession);
 
-		await pi.callTool("spawn_agent", {
+		const result = (await pi.callTool("spawn_agent", {
 			role: "worker",
 			prompt: "implement this task",
-		});
+		})) as { details: { status: string; spawnId: string } };
 
-		expect(spawn).toHaveBeenCalledWith(
+		// Let background Promise settle so session factory was called
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(result.details.status).toBe("accepted");
+		expect(typeof result.details.spawnId).toBe("string");
+
+		expect(mocks.createAgentSessionFromDefinition).toHaveBeenCalledWith(
+			expect.any(Object), // targetDef
 			expect.objectContaining({
 				cwd,
 				domainContext: "coding",
@@ -258,14 +274,9 @@ describe("orchestration extension", () => {
 				projectSkills: ["typescript"],
 				skillPaths: ["/skills/shared", "/skills/project"],
 			}),
+			testDomainsDir,
 		);
-		expect(createPiSpawnerMock).toHaveBeenCalledWith(
-			expect.objectContaining({
-				has: expect.any(Function),
-			}),
-			expect.any(String),
-		);
-		expect(dispose).toHaveBeenCalledTimes(1);
+		expect(mockSession.dispose).toHaveBeenCalledTimes(1);
 	});
 
 	test("spawn_agent denies unauthorized target role", async () => {
@@ -304,21 +315,20 @@ describe("orchestration extension", () => {
 		orchestrationExtension(pi as never);
 
 		mockRuntime();
-		const spawn = vi.fn().mockResolvedValue({
-			success: true,
-			sessionId: "session-1",
+		const mockSession = {
+			sessionId: "child-session-1",
 			messages: [],
-		});
-		const dispose = vi.fn();
-		createPiSpawnerMock.mockReturnValue({ spawn, dispose });
+			prompt: vi.fn().mockResolvedValue(undefined),
+			dispose: vi.fn(),
+		};
+		mocks.createAgentSessionFromDefinition.mockResolvedValue(mockSession);
 
-		await pi.callTool("spawn_agent", {
+		const result = (await pi.callTool("spawn_agent", {
 			role: "worker",
 			prompt: "implement this task",
-		});
+		})) as { details: { status: string } };
 
-		expect(spawn).toHaveBeenCalled();
-		expect(dispose).toHaveBeenCalledTimes(1);
+		expect(result.details.status).toBe("accepted");
 	});
 
 	test("spawn_agent denies unknown qualified caller ID", async () => {

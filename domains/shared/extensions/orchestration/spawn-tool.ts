@@ -2,10 +2,35 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
-import { createPiSpawner } from "../../../../lib/orchestration/agent-spawner.ts";
+import { MessageBus } from "../../../../lib/orchestration/message-bus.ts";
+import { createAgentSessionFromDefinition } from "../../../../lib/orchestration/session-factory.ts";
+import { getOrCreateTracker } from "../../../../lib/orchestration/spawn-tracker.ts";
 import type { CosmonautsRuntime } from "../../../../lib/runtime.ts";
 import { isSubagentAllowed } from "./authorization.ts";
 import { renderTextFallback, roleLabel } from "./rendering.ts";
+
+// ============================================================================
+// Module-level per-session state (shared across all spawn tool invocations)
+// ============================================================================
+
+/** Per-parent-session message buses for spawn event routing. */
+const sessionBuses = new Map<string, MessageBus>();
+
+/**
+ * Tracks the nesting depth of each active session by sessionId.
+ * Top-level sessions are absent (treated as depth 0).
+ * Populated when a child session is created; cleaned up on completion.
+ */
+const sessionDepths = new Map<string, number>();
+
+function getOrCreateBus(sessionId: string): MessageBus {
+	let bus = sessionBuses.get(sessionId);
+	if (!bus) {
+		bus = new MessageBus();
+		sessionBuses.set(sessionId, bus);
+	}
+	return bus;
+}
 
 // ============================================================================
 // Spawn Details Type
@@ -13,9 +38,40 @@ import { renderTextFallback, roleLabel } from "./rendering.ts";
 
 interface SpawnProgressDetails {
 	role: string;
-	status: "spawning" | "completed" | "failed" | "denied";
+	status:
+		| "spawning"
+		| "accepted"
+		| "completed"
+		| "failed"
+		| "denied"
+		| "rejected";
+	spawnId?: string;
 	error?: string;
+	reason?: string;
 	taskId?: string;
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Extract a brief summary from the last assistant message in a completed
+ * session. Falls back to "<role> completed" if no text content is found.
+ */
+function extractSummary(messages: unknown[], role: string): string {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i] as { role?: string; content?: unknown };
+		if (msg.role === "assistant" && Array.isArray(msg.content)) {
+			for (const block of msg.content) {
+				const b = block as { type?: string; text?: string };
+				if (b.type === "text" && typeof b.text === "string" && b.text.trim()) {
+					return b.text.slice(0, 200);
+				}
+			}
+		}
+	}
+	return `${role} completed`;
 }
 
 // ============================================================================
@@ -149,7 +205,35 @@ export function registerSpawnTool(
 				};
 			}
 
-			// Stream "spawning" status
+			// Determine nesting depth: parent depth + 1
+			const parentSessionId = ctx.sessionManager.getSessionId();
+			const parentDepth = sessionDepths.get(parentSessionId) ?? 0;
+			const childDepth = parentDepth + 1;
+
+			// Get or create the tracker for this parent session
+			const bus = getOrCreateBus(parentSessionId);
+			const tracker = getOrCreateTracker(parentSessionId, bus);
+
+			// Precheck before acquiring semaphore slot
+			if (!tracker.canSpawn(childDepth)) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: "spawn_agent rejected: depth or concurrency limit reached",
+						},
+					],
+					details: {
+						role: params.role,
+						status: "rejected",
+						reason: "depth or concurrency limit reached",
+					} as SpawnProgressDetails,
+				};
+			}
+
+			// Generate a unique identifier for this spawn
+			const spawnId = crypto.randomUUID();
+
 			const taskId = params.runtimeContext?.taskId;
 			const spawnLabel = taskId
 				? `${roleLabel(params.role)} (${taskId})`
@@ -169,39 +253,81 @@ export function registerSpawnTool(
 				} as SpawnProgressDetails,
 			});
 
-			const spawner = createPiSpawner(
-				runtime.agentRegistry,
-				runtime.domainsDir,
-			);
+			// Register before launching — acquires semaphore slot synchronously
 			try {
-				const result = await spawner.spawn({
-					role: params.role,
-					domainContext: runtime.domainContext,
-					cwd: ctx.cwd,
-					prompt: params.prompt,
-					model: params.model,
-					thinkingLevel: params.thinkingLevel,
-					runtimeContext: params.runtimeContext,
-					projectSkills: runtime.projectSkills,
-					skillPaths: [...runtime.skillPaths],
-				});
+				tracker.register(spawnId, params.role, childDepth);
+			} catch (err: unknown) {
+				const reason = err instanceof Error ? err.message : String(err);
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: `Agent ${params.role} ${result.success ? "completed" : "failed"}${result.error ? `: ${result.error}` : ""}`,
+							text: `spawn_agent rejected: ${reason}`,
 						},
 					],
 					details: {
 						role: params.role,
-						status: result.success ? "completed" : "failed",
-						error: result.error,
-						taskId,
+						status: "rejected",
+						reason,
 					} as SpawnProgressDetails,
 				};
-			} finally {
-				spawner.dispose();
 			}
+
+			const spawnConfig = {
+				role: params.role,
+				domainContext: runtime.domainContext,
+				cwd: ctx.cwd,
+				prompt: params.prompt,
+				model: params.model,
+				thinkingLevel: params.thinkingLevel,
+				runtimeContext: params.runtimeContext,
+				projectSkills: runtime.projectSkills,
+				skillPaths: [...runtime.skillPaths],
+				spawnDepth: childDepth,
+				parentSessionId,
+			};
+
+			// Launch as a detached background Promise — no await
+			void createAgentSessionFromDefinition(
+				targetDef,
+				spawnConfig,
+				runtime.domainsDir,
+			)
+				.then(async (session) => {
+					// Register child depth so grandchild spawns can compute their depth
+					sessionDepths.set(session.sessionId, childDepth);
+					try {
+						await session.prompt(params.prompt);
+						const summary = extractSummary(session.messages, params.role);
+						tracker.complete(spawnId, summary);
+					} catch (err: unknown) {
+						const message = err instanceof Error ? err.message : String(err);
+						tracker.fail(spawnId, message);
+					} finally {
+						sessionDepths.delete(session.sessionId);
+						session.dispose();
+					}
+				})
+				.catch((err: unknown) => {
+					// createAgentSessionFromDefinition() itself failed
+					const message = err instanceof Error ? err.message : String(err);
+					tracker.fail(spawnId, message);
+				});
+
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: `Accepted spawn of ${params.role} (spawnId: ${spawnId})`,
+					},
+				],
+				details: {
+					role: params.role,
+					status: "accepted",
+					spawnId,
+					taskId,
+				} as SpawnProgressDetails,
+			};
 		},
 
 		renderCall(args, theme) {
@@ -229,6 +355,16 @@ export function registerSpawnTool(
 						: roleLabel(details.role);
 					return new Text(theme.fg("warning", `⬆ Spawning ${label}...`), 0, 0);
 				}
+				case "accepted": {
+					const label = details.taskId
+						? `${roleLabel(details.role)} (${details.taskId})`
+						: roleLabel(details.role);
+					return new Text(
+						theme.fg("success", `⬆ ${label} accepted (${details.spawnId})`),
+						0,
+						0,
+					);
+				}
 				case "completed":
 					return new Text(
 						theme.fg("success", `✓ ${roleLabel(details.role)} completed`),
@@ -249,6 +385,15 @@ export function registerSpawnTool(
 						theme.fg(
 							"error",
 							`⊘ ${roleLabel(details.role)} denied${details.error ? `: ${details.error}` : ""}`,
+						),
+						0,
+						0,
+					);
+				case "rejected":
+					return new Text(
+						theme.fg(
+							"error",
+							`⊘ ${roleLabel(details.role)} rejected${details.reason ? `: ${details.reason}` : ""}`,
 						),
 						0,
 						0,
