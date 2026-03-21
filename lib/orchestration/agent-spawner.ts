@@ -8,115 +8,47 @@
  * (skills, AGENTS.md, date/time, cwd).
  */
 
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import { getModel } from "@mariozechner/pi-ai";
 import {
 	createAgentSession,
 	DefaultResourceLoader,
 	SessionManager,
 	SettingsManager,
 } from "@mariozechner/pi-coding-agent";
-export type { ResolveExtensionOptions } from "./definition-resolution.ts";
-export { isDirectory, resolveExtensionPaths, resolveTools } from "./definition-resolution.ts";
-import {
-	resolveExtensionPaths,
-	resolveTools,
-} from "./definition-resolution.ts";
 import {
 	type AgentRegistry,
 	appendAgentIdentityMarker,
 	qualifyAgentId,
 } from "../agents/index.ts";
-import { roleToConfigKey } from "../agents/qualified-role.ts";
 import { buildSkillsOverride } from "../agents/skills.ts";
 import { assemblePrompts } from "../domains/prompt-assembly.ts";
+import {
+	resolveExtensionPaths,
+	resolveTools,
+} from "./definition-resolution.ts";
+import {
+	FALLBACK_MODEL,
+	getModelForRole,
+	getThinkingForRole,
+	resolveModel,
+} from "./model-resolution.ts";
 import type {
 	AgentSpawner,
-	ModelConfig,
 	SpawnConfig,
 	SpawnEvent,
 	SpawnResult,
 	SpawnStats,
-	ThinkingConfig,
 } from "./types.ts";
 
-// ============================================================================
-// Model Resolution
-// ============================================================================
+// Re-export definition-resolution symbols for backwards compatibility.
+export {
+	type ResolveExtensionOptions,
+	isDirectory,
+	resolveExtensionPaths,
+	resolveTools,
+} from "./definition-resolution.ts";
 
-const FALLBACK_MODEL = "anthropic/claude-opus-4-6";
-
-/**
- * Return the model ID string for a given agent role.
- *
- * Resolution order:
- *  1. Explicit override from `models` config (matched by role key)
- *  2. Agent definition model (from registry)
- *  3. `models.default` if provided
- *  4. Sonnet fallback
- */
-export function getModelForRole(
-	role: string,
-	models?: ModelConfig,
-	registry?: AgentRegistry,
-	domainContext?: string,
-): string {
-	// Check explicit override from ModelConfig
-	if (models) {
-		const configKey = roleToConfigKey(role);
-		if (configKey) {
-			const override = models[configKey];
-			if (override) return override;
-		}
-	}
-
-	// Check agent definition for model
-	const def = registry?.get(role, domainContext);
-	if (def?.model) {
-		return def.model;
-	}
-
-	// Fallback: models.default or sonnet
-	return models?.default ?? FALLBACK_MODEL;
-}
-
-// ============================================================================
-// Thinking Resolution
-// ============================================================================
-
-/**
- * Return the thinking level for a given agent role.
- *
- * Resolution order:
- *  1. Explicit override from `thinking` config (matched by role key)
- *  2. Agent definition thinkingLevel (from registry)
- *  3. `thinking.default` if provided
- *  4. `undefined` (no thinking — Pi default)
- */
-export function getThinkingForRole(
-	role: string,
-	thinking?: ThinkingConfig,
-	registry?: AgentRegistry,
-	domainContext?: string,
-): ThinkingLevel | undefined {
-	// Check explicit override from ThinkingConfig
-	if (thinking) {
-		const configKey = roleToConfigKey(role);
-		if (configKey) {
-			const override = thinking[configKey];
-			if (override) return override;
-		}
-	}
-
-	// Check agent definition for thinkingLevel
-	const def = registry?.get(role, domainContext);
-	if (def?.thinkingLevel) {
-		return def.thinkingLevel;
-	}
-
-	// Fallback: thinking.default or undefined
-	return thinking?.default ?? undefined;
-}
+// Re-export model-resolution symbols for backwards compatibility.
+export { FALLBACK_MODEL, getModelForRole, getThinkingForRole, resolveModel };
 
 // ============================================================================
 // Agent Spawner Factory
@@ -376,30 +308,4 @@ function mapSessionEvent(event: {
 		default:
 			return undefined;
 	}
-}
-
-/**
- * Resolve a "provider/model-id" string into a Pi Model object.
- * Throws if the model is not found in the registry.
- */
-export function resolveModel(modelId: string) {
-	const slashIndex = modelId.indexOf("/");
-	if (slashIndex === -1) {
-		throw new Error(
-			`Invalid model ID "${modelId}": expected "provider/model" format`,
-		);
-	}
-
-	const provider = modelId.slice(0, slashIndex);
-	const id = modelId.slice(slashIndex + 1);
-
-	const model = getModel(
-		provider as Parameters<typeof getModel>[0],
-		id as never,
-	);
-	if (!model) {
-		throw new Error(`Model not found: provider="${provider}", id="${id}"`);
-	}
-
-	return model;
 }

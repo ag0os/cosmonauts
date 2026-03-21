@@ -8,11 +8,8 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { unqualifyRole } from "../agents/qualified-role.ts";
 import { TaskManager } from "../tasks/task-manager.ts";
-import {
-	createPiSpawner,
-	getModelForRole,
-	getThinkingForRole,
-} from "./agent-spawner.ts";
+import { createPiSpawner } from "./agent-spawner.ts";
+import { getModelForRole, getThinkingForRole } from "./model-resolution.ts";
 import type {
 	AgentSpawner,
 	ChainConfig,
