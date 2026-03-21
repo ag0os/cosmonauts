@@ -65,6 +65,10 @@ export function formatChainEvent(event: ChainEvent): string {
 			const stage = event.stage ? `[${event.stage.name}] ` : "";
 			return `${stage}Error: ${event.message}`;
 		}
+		case "spawn_completion": {
+			const status = event.outcome === "success" ? "Completed" : "Failed";
+			return `[${event.role}] Spawn ${event.spawnId} ${status}: ${event.summary}`;
+		}
 	}
 }
 

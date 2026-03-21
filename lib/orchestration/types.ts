@@ -249,7 +249,14 @@ export type ChainEvent =
 			sessionId: string;
 			event: SpawnEvent;
 	  }
-	| { type: "error"; message: string; stage?: ChainStage };
+	| { type: "error"; message: string; stage?: ChainStage }
+	| {
+			type: "spawn_completion";
+			spawnId: string;
+			role: string;
+			outcome: "success" | "failure";
+			summary: string;
+	  };
 
 // ============================================================================
 // Agent Spawner
@@ -265,6 +272,16 @@ export interface SpawnRuntimeContext {
 	readonly objective?: string;
 	/** Task ID being worked on, if applicable */
 	readonly taskId?: string;
+}
+
+/** Handle representing an in-flight or completed parallel spawn */
+export interface SpawnHandle {
+	/** Unique identifier for this spawn */
+	spawnId: string;
+	/** Agent role that was spawned */
+	role: string;
+	/** Current lifecycle status of the spawn */
+	status: "accepted" | "running" | "completed" | "failed";
 }
 
 /** Configuration for spawning an agent */
@@ -293,6 +310,10 @@ export interface SpawnConfig {
 	compaction?: CompactionConfig;
 	/** Callback for receiving Pi session events during the spawn */
 	onEvent?: (event: SpawnEvent) => void;
+	/** Nesting depth of this spawn (0 = top-level, increments for each layer) */
+	spawnDepth?: number;
+	/** Session ID of the parent agent that initiated this spawn */
+	parentSessionId?: string;
 }
 
 /** Result of an agent execution */
