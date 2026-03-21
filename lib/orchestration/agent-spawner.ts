@@ -8,19 +8,20 @@
  * (skills, AGENTS.md, date/time, cwd).
  */
 
-import { existsSync, statSync } from "node:fs";
-import { join } from "node:path";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { getModel } from "@mariozechner/pi-ai";
 import {
 	createAgentSession,
-	createCodingTools,
-	createReadOnlyTools,
 	DefaultResourceLoader,
 	SessionManager,
 	SettingsManager,
 } from "@mariozechner/pi-coding-agent";
-import type { AgentToolSet } from "../agents/index.ts";
+export type { ResolveExtensionOptions } from "./definition-resolution.ts";
+export { isDirectory, resolveExtensionPaths, resolveTools } from "./definition-resolution.ts";
+import {
+	resolveExtensionPaths,
+	resolveTools,
+} from "./definition-resolution.ts";
 import {
 	type AgentRegistry,
 	appendAgentIdentityMarker,
@@ -115,78 +116,6 @@ export function getThinkingForRole(
 
 	// Fallback: thinking.default or undefined
 	return thinking?.default ?? undefined;
-}
-
-// ============================================================================
-// Definition Resolution Helpers
-// ============================================================================
-
-/**
- * Resolve a tool set name to the appropriate Pi tools for a given cwd.
- * Uses factory functions so tools resolve paths relative to the agent's cwd.
- */
-export function resolveTools(toolSet: AgentToolSet, cwd: string) {
-	switch (toolSet) {
-		case "coding":
-			return createCodingTools(cwd);
-		case "readonly":
-			return createReadOnlyTools(cwd);
-		case "none":
-			return [];
-	}
-}
-
-/** Options for domain-aware extension resolution. */
-export interface ResolveExtensionOptions {
-	/** Domain the agent belongs to (e.g. "coding", "shared"). */
-	readonly domain: string;
-	/** Absolute path to the root domains directory. */
-	readonly domainsDir: string;
-}
-
-/**
- * Resolve extension names to absolute paths with domain-aware lookup.
- *
- * Resolution order per extension name:
- *  1. `domains/<domain>/extensions/<name>` (if domain is not "shared")
- *  2. `domains/shared/extensions/<name>` (fallback)
- *
- * Throws if an extension name cannot be found in either location.
- */
-export function resolveExtensionPaths(
-	extensions: readonly string[],
-	options: ResolveExtensionOptions,
-): string[] {
-	const { domain, domainsDir } = options;
-	return extensions.map((name) => {
-		// Try domain-specific path first (skip if already "shared")
-		if (domain !== "shared") {
-			const domainPath = join(domainsDir, domain, "extensions", name);
-			if (isDirectory(domainPath)) return domainPath;
-		}
-
-		// Fall back to shared
-		const sharedPath = join(domainsDir, "shared", "extensions", name);
-		if (isDirectory(sharedPath)) return sharedPath;
-
-		// Not found anywhere — fail loud
-		const searched =
-			domain !== "shared"
-				? `domains/${domain}/extensions/${name}, domains/shared/extensions/${name}`
-				: `domains/shared/extensions/${name}`;
-		throw new Error(
-			`Unknown extension "${name}" in agent definition. Searched: ${searched}`,
-		);
-	});
-}
-
-/** Check if a path is an existing directory. */
-function isDirectory(path: string): boolean {
-	try {
-		return existsSync(path) && statSync(path).isDirectory();
-	} catch {
-		return false;
-	}
 }
 
 // ============================================================================
