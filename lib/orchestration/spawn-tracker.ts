@@ -194,6 +194,22 @@ export class SpawnTracker {
 		return count;
 	}
 
+	/** Returns the role for a given spawnId, or undefined if unknown. */
+	spawnRole(spawnId: string): string | undefined {
+		return this.spawns.get(spawnId)?.role;
+	}
+
+	/** Returns all currently-running spawns as { spawnId, role } pairs. */
+	runningSpawns(): Array<{ spawnId: string; role: string }> {
+		const result: Array<{ spawnId: string; role: string }> = [];
+		for (const [spawnId, record] of this.spawns.entries()) {
+			if (record.status === "running") {
+				result.push({ spawnId, role: record.role });
+			}
+		}
+		return result;
+	}
+
 	/** Returns true if both the depth and breadth limits allow another spawn. */
 	canSpawn(depth: number): boolean {
 		return depth <= this.maxDepth && this.semaphore.available > 0;

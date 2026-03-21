@@ -9,6 +9,8 @@
  */
 
 import type { AgentRegistry } from "../agents/index.ts";
+import type { SpawnCompletedEvent, SpawnFailedEvent } from "./message-bus.ts";
+import { MessageBus } from "./message-bus.ts";
 import {
 	FALLBACK_MODEL,
 	getModelForRole,
@@ -16,6 +18,11 @@ import {
 	resolveModel,
 } from "./model-resolution.ts";
 import { createAgentSessionFromDefinition } from "./session-factory.ts";
+import {
+	getOrCreateTracker,
+	removeTracker,
+	type SpawnTracker,
+} from "./spawn-tracker.ts";
 import type {
 	AgentSpawner,
 	SpawnConfig,
@@ -42,11 +49,26 @@ export { createAgentSessionFromDefinition } from "./session-factory.ts";
 // Agent Spawner Factory
 // ============================================================================
 
+/** Default per-spawn completion wait timeout (5 minutes). */
+const DEFAULT_SPAWN_TIMEOUT_MS = 5 * 60 * 1000;
+
+/** Options for {@link createPiSpawner}. */
+export interface PiSpawnerOptions {
+	/** Shared message bus for parallel spawn coordination. */
+	bus?: MessageBus;
+	/** Per-spawn completion wait timeout in ms (default: 5 minutes). */
+	spawnTimeoutMs?: number;
+}
+
 /**
  * Create an AgentSpawner backed by the Pi coding agent SDK.
  *
  * Each `spawn()` call creates an ephemeral in-memory session, sends the
  * user prompt, waits for completion, then disposes the session.
+ *
+ * When child agents are spawned during the session (via the spawn tool),
+ * a multi-turn completion loop delivers each child's result back to the
+ * parent session until all children have finished.
  *
  * Agent identity is injected via the system prompt using prompt files
  * loaded from the agent definition's `prompts` array.
@@ -54,7 +76,11 @@ export { createAgentSessionFromDefinition } from "./session-factory.ts";
 export function createPiSpawner(
 	registry: AgentRegistry,
 	domainsDir: string,
+	options?: PiSpawnerOptions,
 ): AgentSpawner {
+	const bus = options?.bus ?? new MessageBus();
+	const spawnTimeoutMs = options?.spawnTimeoutMs ?? DEFAULT_SPAWN_TIMEOUT_MS;
+
 	return {
 		async spawn(config: SpawnConfig): Promise<SpawnResult> {
 			// Respect abort signal before doing any work
@@ -82,6 +108,10 @@ export function createPiSpawner(
 					domainsDir,
 				);
 
+				// Create tracker before prompt so the spawn tool can register
+				// children as soon as the first tool call fires.
+				const tracker = getOrCreateTracker(session.sessionId, bus);
+
 				let unsubscribe: (() => void) | undefined;
 				try {
 					// Subscribe to session events before prompt for progress streaming
@@ -103,6 +133,17 @@ export function createPiSpawner(
 					// Send the user prompt clean — identity is in the system prompt
 					const startMs = Date.now();
 					await session.prompt(config.prompt);
+
+					// Multi-turn completion loop: deliver child results back to the
+					// parent until all spawned children have finished.  Sessions that
+					// spawn no children skip this loop entirely (activeCount() == 0).
+					while (tracker.activeCount() > 0) {
+						const messages = await awaitNextCompletion(tracker, spawnTimeoutMs);
+						for (const message of messages) {
+							await session.prompt(message);
+						}
+					}
+
 					const durationMs = Date.now() - startMs;
 
 					// Extract session stats before dispose
@@ -123,6 +164,7 @@ export function createPiSpawner(
 					};
 				} finally {
 					unsubscribe?.();
+					removeTracker(session.sessionId);
 					session.dispose();
 				}
 			} catch (err: unknown) {
@@ -140,6 +182,83 @@ export function createPiSpawner(
 			// No-op for now; interface-required placeholder.
 		},
 	};
+}
+
+// ============================================================================
+// Completion Loop Helpers
+// ============================================================================
+
+/**
+ * Format a child completion result as a concise user message for the parent
+ * session. The parent agent uses these messages to track child outcomes.
+ */
+function formatCompletionMessage(
+	spawnId: string,
+	role: string,
+	outcome: "success" | "failed",
+	summary: string,
+): string {
+	return `[spawn_completion] spawnId=${spawnId} role=${role} outcome=${outcome} summary=${summary}`;
+}
+
+/**
+ * Wait for the next child spawn completion, with a per-spawn timeout.
+ *
+ * Returns an array of formatted completion messages — normally one entry,
+ * but multiple when a timeout fires and several children are failed at once.
+ *
+ * On timeout every currently-running spawn is marked failed via the tracker,
+ * which keeps `activeCount()` accurate so the caller's loop can exit cleanly.
+ */
+async function awaitNextCompletion(
+	tracker: SpawnTracker,
+	timeoutMs: number,
+): Promise<string[]> {
+	type Result =
+		| { kind: "event"; event: SpawnCompletedEvent | SpawnFailedEvent }
+		| { kind: "timeout" };
+
+	let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+	const timeoutPromise = new Promise<{ kind: "timeout" }>((resolve) => {
+		timeoutHandle = setTimeout(() => resolve({ kind: "timeout" }), timeoutMs);
+	});
+
+	const result: Result = await Promise.race([
+		tracker
+			.nextCompletion()
+			.then((event) => ({ kind: "event" as const, event })),
+		timeoutPromise,
+	]);
+
+	clearTimeout(timeoutHandle);
+
+	if (result.kind === "event") {
+		const { event } = result;
+		const role = tracker.spawnRole(event.spawnId) ?? "unknown";
+		const outcome: "success" | "failed" =
+			event.type === "spawn_completed" ? "success" : "failed";
+		const summary =
+			event.type === "spawn_completed"
+				? `Completed in ${event.durationMs}ms`
+				: event.error;
+		return [formatCompletionMessage(event.spawnId, role, outcome, summary)];
+	}
+
+	// Timeout: fail every running spawn and return their failure messages.
+	// Calling tracker.fail() resolves any pending nextCompletion() waiter
+	// (benign — the promise has no consumer) and keeps activeCount() accurate.
+	const running = tracker.runningSpawns();
+	if (running.length === 0) return [];
+
+	return running.map(({ spawnId, role }) => {
+		tracker.fail(spawnId, `Timed out after ${timeoutMs}ms`);
+		return formatCompletionMessage(
+			spawnId,
+			role,
+			"failed",
+			`Timed out after ${timeoutMs}ms`,
+		);
+	});
 }
 
 // ============================================================================
