@@ -300,4 +300,38 @@ export default function tasksExtension(pi: ExtensionAPI) {
 			};
 		},
 	});
+
+	// task_delete
+	pi.registerTool({
+		name: "task_delete",
+		label: "Delete Task",
+		description: "Delete a task by ID",
+		parameters: Type.Object({
+			taskId: Type.String({
+				description: "Task ID to delete (e.g., TASK-001)",
+			}),
+		}),
+		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+			const manager = new TaskManager(ctx.cwd);
+			const task = await manager.getTask(params.taskId);
+			if (!task) {
+				return {
+					content: [
+						{ type: "text" as const, text: `Task not found: ${params.taskId}` },
+					],
+					details: null,
+				};
+			}
+			await manager.deleteTask(params.taskId);
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: `Deleted task ${task.id}: ${task.title}`,
+					},
+				],
+				details: { deleted: true, id: task.id, title: task.title },
+			};
+		},
+	});
 }
