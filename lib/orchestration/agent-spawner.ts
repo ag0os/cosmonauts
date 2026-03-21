@@ -8,29 +8,14 @@
  * (skills, AGENTS.md, date/time, cwd).
  */
 
-import {
-	createAgentSession,
-	DefaultResourceLoader,
-	SessionManager,
-	SettingsManager,
-} from "@mariozechner/pi-coding-agent";
-import {
-	type AgentRegistry,
-	appendAgentIdentityMarker,
-	qualifyAgentId,
-} from "../agents/index.ts";
-import { buildSkillsOverride } from "../agents/skills.ts";
-import { assemblePrompts } from "../domains/prompt-assembly.ts";
-import {
-	resolveExtensionPaths,
-	resolveTools,
-} from "./definition-resolution.ts";
+import type { AgentRegistry } from "../agents/index.ts";
 import {
 	FALLBACK_MODEL,
 	getModelForRole,
 	getThinkingForRole,
 	resolveModel,
 } from "./model-resolution.ts";
+import { createAgentSessionFromDefinition } from "./session-factory.ts";
 import type {
 	AgentSpawner,
 	SpawnConfig,
@@ -41,14 +26,17 @@ import type {
 
 // Re-export definition-resolution symbols for backwards compatibility.
 export {
-	type ResolveExtensionOptions,
 	isDirectory,
+	type ResolveExtensionOptions,
 	resolveExtensionPaths,
 	resolveTools,
 } from "./definition-resolution.ts";
 
 // Re-export model-resolution symbols for backwards compatibility.
 export { FALLBACK_MODEL, getModelForRole, getThinkingForRole, resolveModel };
+
+// Re-export session-factory symbol.
+export { createAgentSessionFromDefinition } from "./session-factory.ts";
 
 // ============================================================================
 // Agent Spawner Factory
@@ -80,24 +68,6 @@ export function createPiSpawner(
 			}
 
 			try {
-				const modelId =
-					config.model ??
-					getModelForRole(
-						config.role,
-						undefined,
-						registry,
-						config.domainContext,
-					);
-				const model = resolveModel(modelId);
-				const thinkingLevel =
-					config.thinkingLevel ??
-					getThinkingForRole(
-						config.role,
-						undefined,
-						registry,
-						config.domainContext,
-					);
-
 				// Resolve full agent definition (unknown roles are rejected).
 				const def = registry.get(config.role, config.domainContext);
 				if (!def) {
@@ -106,84 +76,11 @@ export function createPiSpawner(
 					);
 				}
 
-				// Tools are fully determined by the agent definition.
-				const tools = resolveTools(def.tools, config.cwd);
-
-				// System prompt via domain-aware four-layer assembly.
-				let promptContent: string | undefined = await assemblePrompts({
-					agentId: def.id,
-					domain: def.domain ?? "coding",
-					capabilities: def.capabilities,
+				const session = await createAgentSessionFromDefinition(
+					def,
+					config,
 					domainsDir,
-					runtimeContext:
-						config.runtimeContext?.mode === "sub-agent"
-							? {
-									mode: "sub-agent",
-									parentRole: config.runtimeContext.parentRole,
-									objective: config.runtimeContext.objective,
-									taskId: config.runtimeContext.taskId,
-								}
-							: undefined,
-				});
-
-				// Embed caller identity marker for extension-level authorization checks.
-				promptContent = appendAgentIdentityMarker(
-					promptContent,
-					qualifyAgentId(def.id, def.domain),
 				);
-
-				// Extensions: domain-aware resolution with shared fallback
-				const extensionPaths = resolveExtensionPaths(def.extensions, {
-					domain: def.domain ?? "coding",
-					domainsDir,
-				});
-
-				// Build resource loader with all definition fields
-				const skillsOverride = buildSkillsOverride(
-					def.skills,
-					config.projectSkills,
-				);
-				const additionalSkillPaths = config.skillPaths?.length
-					? [...config.skillPaths]
-					: undefined;
-				const loader = new DefaultResourceLoader({
-					cwd: config.cwd,
-					...(promptContent && { systemPrompt: promptContent }),
-					noExtensions: true,
-					noSkills: true,
-					...(extensionPaths.length > 0 && {
-						additionalExtensionPaths: extensionPaths,
-					}),
-					...(skillsOverride && { skillsOverride }),
-					...(additionalSkillPaths && { additionalSkillPaths }),
-					...(!def.projectContext && {
-						agentsFilesOverride: () => ({ agentsFiles: [] }),
-					}),
-				});
-				await loader.reload();
-
-				// Build session options, conditionally adding settingsManager for compaction
-				const sessionOptions: Parameters<typeof createAgentSession>[0] = {
-					cwd: config.cwd,
-					model,
-					tools,
-					sessionManager: SessionManager.inMemory(),
-					resourceLoader: loader,
-					thinkingLevel,
-				};
-
-				if (config.compaction) {
-					sessionOptions.settingsManager = SettingsManager.inMemory({
-						compaction: {
-							enabled: config.compaction.enabled,
-							...(config.compaction.keepRecentTokens !== undefined && {
-								keepRecentTokens: config.compaction.keepRecentTokens,
-							}),
-						},
-					});
-				}
-
-				const { session } = await createAgentSession(sessionOptions);
 
 				let unsubscribe: (() => void) | undefined;
 				try {
