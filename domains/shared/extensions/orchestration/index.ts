@@ -5,7 +5,6 @@ import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { unqualifyRole } from "../../../../lib/agents/qualified-role.ts";
 import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
-import type { AgentDefinition } from "../../../../lib/agents/types.ts";
 import { createPiSpawner } from "../../../../lib/orchestration/agent-spawner.ts";
 import { parseChain } from "../../../../lib/orchestration/chain-parser.ts";
 import {
@@ -18,6 +17,7 @@ import type {
 	ChainStats,
 } from "../../../../lib/orchestration/types.ts";
 import { CosmonautsRuntime } from "../../../../lib/runtime.ts";
+import { isSubagentAllowed } from "./authorization.ts";
 
 // ============================================================================
 // Rendering Helpers
@@ -35,26 +35,6 @@ const ROLE_LABELS: Record<string, string> = {
 
 function roleLabel(role: string): string {
 	return ROLE_LABELS[unqualifyRole(role)] ?? role;
-}
-
-/**
- * Check if a target agent is in the caller's subagents allowlist.
- * Handles both qualified (domain/id) and unqualified ID formats.
- */
-function isSubagentAllowed(
-	callerDef: AgentDefinition,
-	targetDef: AgentDefinition,
-): boolean {
-	const allowed = callerDef.subagents ?? [];
-	// Check unqualified match
-	if (allowed.includes(targetDef.id)) return true;
-	// Check qualified match
-	if (
-		targetDef.domain &&
-		allowed.includes(`${targetDef.domain}/${targetDef.id}`)
-	)
-		return true;
-	return false;
 }
 
 function formatDuration(ms: number): string {
