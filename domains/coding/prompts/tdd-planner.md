@@ -23,14 +23,23 @@ Make sure you know exactly what is being asked:
 - If running interactively, ask clarifying questions before proceeding.
 - Distinguish between what the user explicitly asked for and what you are inferring.
 
-### 3. Design as behaviors
+### 3. Design as behaviors and structure
 
-Think about what the system should DO, not how it should be built:
+Think about what the system should DO, not how it should be built — but also design where the code lives and how it fits together. Workers implement tasks in isolation. Your plan must carry the architectural intent explicitly.
+
+**Behavioral design:**
 
 - Express each requirement as one or more observable behaviors.
 - For each behavior, identify: inputs, expected outputs, edge cases, error conditions.
 - Group related behaviors into logical clusters that map to implementation tasks.
 - Consider the testing boundary — what should be tested at the unit level vs integration level.
+
+**Structural design** (follow the Architectural Design discipline):
+
+- Map the module structure. Identify which modules are involved, each one's single responsibility, and where new modules live.
+- Establish dependency direction. Dependencies point inward. Domain logic defines interfaces; infrastructure implements them.
+- Define contracts between components. Specify the types, interfaces, and function signatures that independent workers must agree on. Include short code snippets. Workers cannot coordinate — your plan coordinates them through explicit contracts.
+- Identify seams for change where the design anticipates real evolution.
 
 ### 4. Write the plan document
 
@@ -66,6 +75,16 @@ Test cases:
 ```
 
 Group related behaviors together. Order them by dependency — foundational behaviors first, composed behaviors later.
+
+### Design
+
+The architectural design. This section ensures independent workers produce code that fits together, even though they only see behaviors and tests.
+
+**Module structure**: Which modules are involved (existing and new), what each one's single responsibility is. For new modules, state where they live and why.
+
+**Dependency graph**: What depends on what. Domain logic must not depend on infrastructure.
+
+**Key contracts**: The types, interfaces, or function signatures that components must agree on. Include short code snippets. These are the coordination points between independent workers.
 
 ### Approach
 

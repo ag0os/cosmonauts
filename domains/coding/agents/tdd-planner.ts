@@ -4,7 +4,13 @@ const definition: AgentDefinition = {
 	id: "tdd-planner",
 	description:
 		"Designs solutions as testable behaviors. Explores the codebase and produces a behavior-driven plan with expected test cases, not implementation details.",
-	capabilities: ["core", "coding-readonly", "spawning"],
+	capabilities: [
+		"core",
+		"engineering-discipline",
+		"architectural-design",
+		"coding-readonly",
+		"spawning",
+	],
 	model: "anthropic/claude-opus-4-6",
 	tools: "readonly",
 	extensions: ["plans", "orchestration"],

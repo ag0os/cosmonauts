@@ -7,6 +7,7 @@ const definition: AgentDefinition = {
 	capabilities: [
 		"core",
 		"engineering-discipline",
+		"architectural-design",
 		"coding-readonly",
 		"spawning",
 	],

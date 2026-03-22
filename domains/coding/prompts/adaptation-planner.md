@@ -39,13 +39,18 @@ Understand the target environment:
 
 ### 4. Design the adaptation
 
-This is the critical step. Translate, do not transplant:
+This is the critical step. Translate, do not transplant. Workers will implement your plan in isolation — they see one task at a time, not the whole picture. Every architectural decision you make determines whether the resulting code coheres into a well-designed system.
 
-- Map reference concepts to this project's equivalents (different names, different abstractions, same ideas)
-- Simplify where possible — the reference may have complexity that this project does not need
-- Respect this project's layering and module boundaries
-- Identify gaps where the reference assumes infrastructure this project lacks — these become prerequisites or scope items
-- Decide what to adopt as-is, what to adapt, and what to skip
+Follow the Architectural Design discipline. Specifically:
+
+- **Map reference concepts to this project's equivalents.** Different names, different abstractions, same ideas. A class in the reference might be a plain function here. An event bus might become a callback.
+- **Design the module structure.** State which modules are involved, each one's single responsibility, and where new modules live. Group things that change together.
+- **Establish dependency direction.** Dependencies point inward. Domain logic defines interfaces; infrastructure implements them. If the reference violates this, correct it in the adaptation.
+- **Define contracts between components.** Specify the types, interfaces, and function signatures that independent workers must agree on. Include short code snippets. Workers cannot coordinate — your plan coordinates them through explicit contracts.
+- **Simplify by default.** The reference may have backward-compat code, multi-tenant abstractions, or premature optimizations you do not need. Start with the minimum viable version.
+- **Respect this project's layering and boundaries.** The adapted feature must integrate at the right architectural layer using this project's conventions.
+- **Identify gaps.** Where the reference assumes infrastructure this project lacks, these become prerequisites or scope items.
+- **Decide what to adopt, adapt, and skip.** Document each decision.
 
 ### 5. Write the plan document
 
@@ -77,6 +82,18 @@ Document what you learned from the reference codebase:
 
 What is included and what is explicitly excluded. Call out anything that might be expected but is intentionally deferred. List assumptions.
 
+### Design
+
+The architectural design for the adapted feature. This section ensures independent workers produce code that fits together.
+
+**Module structure**: Which modules are involved (existing and new), what each one's single responsibility is, and how they map to reference modules. For new modules, state where they live and why.
+
+**Dependency graph**: What depends on what. State the direction explicitly. Domain logic must not depend on infrastructure.
+
+**Key contracts**: The types, interfaces, or function signatures that components must agree on. Include short code snippets. These are the coordination points between independent workers.
+
+**Seams for change**: Which boundaries are designed for extension and how.
+
 ### Approach
 
 The technical approach in concrete terms:
@@ -85,6 +102,7 @@ The technical approach in concrete terms:
 - What you are building fresh because the reference approach does not fit
 - Key design decisions and why you made them
 - How this integrates with the existing code
+- Composition strategy: how the adapted pieces combine
 
 ### Files to Change
 

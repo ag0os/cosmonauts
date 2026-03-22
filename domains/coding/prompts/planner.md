@@ -21,14 +21,19 @@ Make sure you know exactly what is being asked:
 - If running interactively, ask clarifying questions before proceeding
 - Distinguish between what the user explicitly asked for and what you are inferring
 
-### 3. Design the approach
+### 3. Design the architecture
 
-Think through the implementation before writing the plan:
+This is the most important step. Workers will implement your plan in isolation — they see one task at a time, not the whole picture. Every architectural decision you make (or fail to make) determines whether the resulting code coheres into a well-designed system or becomes a collection of parts that happen to work.
 
-- Identify which existing patterns to follow (do not invent new patterns when the codebase has established ones)
-- Consider edge cases, error handling, and backward compatibility
-- Evaluate trade-offs between approaches and pick the simplest one that meets requirements
-- Check for existing code that can be reused or extended rather than written from scratch
+Follow the Architectural Design discipline. Specifically:
+
+- **Map the module structure.** Identify which modules exist, which need to change, and which need to be created. State each module's single responsibility. Group things that change together.
+- **Establish dependency direction.** Draw the dependency graph. Dependencies point inward: infrastructure depends on domain logic. Domain logic defines interfaces; infrastructure implements them. If your design has a domain module importing from an infrastructure module, restructure.
+- **Define contracts between components.** When different tasks will produce code that must interoperate, specify the shared interface — the types, function signatures, or data shapes both sides must agree on. Include short code snippets for key interfaces and types. Workers cannot coordinate; your plan coordinates them through explicit contracts.
+- **Identify seams for change.** Which parts of the design are likely to evolve? Place stable interfaces at those boundaries so future changes do not ripple. But only where there is evidence of change — do not speculatively generalize.
+- **Follow existing patterns.** Do not invent new patterns when the codebase has established ones. If you diverge from a convention, state why.
+- **Check for reuse.** Look for existing code that can be extended rather than written from scratch.
+- **Evaluate trade-offs.** Consider edge cases, error handling, and backward compatibility. Pick the simplest approach that meets requirements.
 
 ### 4. Write the plan document
 
@@ -50,6 +55,18 @@ One to three sentences describing what this plan accomplishes and why.
 
 What is included and what is explicitly excluded. Call out anything the user might expect that you are intentionally deferring. List any assumptions you are making.
 
+### Design
+
+The architectural design. This section is the blueprint that ensures independent workers produce code that fits together. It must be specific enough that a worker seeing only their task still builds to the right boundaries.
+
+**Module structure**: Which modules are involved (existing and new), what each one's single responsibility is, and how they relate. For new modules, state where they live in the directory structure and why.
+
+**Dependency graph**: What depends on what. State the direction explicitly. If module A uses module B, say so. Domain logic must not depend on infrastructure — if it needs IO, specify the interface it defines.
+
+**Key contracts**: The types, interfaces, or function signatures that components must agree on. Include short code snippets for interfaces and type definitions that workers will implement against. These are the coordination points — without them, workers build to different assumptions.
+
+**Seams for change**: Which boundaries are designed for extension and how. Only where the design anticipates real change, not speculative flexibility.
+
 ### Approach
 
 The technical approach in concrete terms:
@@ -57,6 +74,7 @@ The technical approach in concrete terms:
 - What patterns or abstractions you will use (reference existing codebase patterns by file path)
 - Key design decisions and why you made them
 - How this integrates with the existing code
+- Composition strategy: how the pieces combine (pipelines, delegation, event-driven, etc.)
 
 ### Files to Change
 
