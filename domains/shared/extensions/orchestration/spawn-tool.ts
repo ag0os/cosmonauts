@@ -2,7 +2,6 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
-import { MessageBus } from "../../../../lib/orchestration/message-bus.ts";
 import { createAgentSessionFromDefinition } from "../../../../lib/orchestration/session-factory.ts";
 import { getOrCreateTracker } from "../../../../lib/orchestration/spawn-tracker.ts";
 import type { CosmonautsRuntime } from "../../../../lib/runtime.ts";
@@ -13,24 +12,12 @@ import { renderTextFallback, roleLabel } from "./rendering.ts";
 // Module-level per-session state (shared across all spawn tool invocations)
 // ============================================================================
 
-/** Per-parent-session message buses for spawn event routing. */
-const sessionBuses = new Map<string, MessageBus>();
-
 /**
  * Tracks the nesting depth of each active session by sessionId.
  * Top-level sessions are absent (treated as depth 0).
  * Populated when a child session is created; cleaned up on completion.
  */
 const sessionDepths = new Map<string, number>();
-
-function getOrCreateBus(sessionId: string): MessageBus {
-	let bus = sessionBuses.get(sessionId);
-	if (!bus) {
-		bus = new MessageBus();
-		sessionBuses.set(sessionId, bus);
-	}
-	return bus;
-}
 
 // ============================================================================
 // Spawn Details Type
@@ -211,8 +198,7 @@ export function registerSpawnTool(
 			const childDepth = parentDepth + 1;
 
 			// Get or create the tracker for this parent session
-			const bus = getOrCreateBus(parentSessionId);
-			const tracker = getOrCreateTracker(parentSessionId, bus);
+			const tracker = getOrCreateTracker(parentSessionId);
 
 			// Precheck before acquiring semaphore slot
 			if (!tracker.canSpawn(childDepth)) {

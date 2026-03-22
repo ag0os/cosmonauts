@@ -5,12 +5,12 @@
  * tool calls).
  */
 
-import type {
+import {
 	MessageBus,
-	SpawnCompletedEvent,
-	SpawnFailedEvent,
-	SpawnRegisteredEvent,
-	SubscriptionToken,
+	type SpawnCompletedEvent,
+	type SpawnFailedEvent,
+	type SpawnRegisteredEvent,
+	type SubscriptionToken,
 } from "./message-bus.ts";
 import { Semaphore } from "./semaphore.ts";
 import {
@@ -52,6 +52,7 @@ export class SpawnTracker {
 	private readonly maxDepth: number;
 	private readonly maxConcurrent: number;
 	private readonly spawns = new Map<string, SpawnRecord>();
+	private _activeCount = 0;
 
 	/** Events that have arrived but not yet consumed by nextCompletion(). */
 	private readonly buffer: Array<SpawnCompletedEvent | SpawnFailedEvent> = [];
@@ -121,6 +122,7 @@ export class SpawnTracker {
 		}
 		// acquire() resolves synchronously when available > 0
 		void this.semaphore.acquire();
+		this._activeCount++;
 		this.spawns.set(spawnId, {
 			role,
 			depth,
@@ -151,6 +153,7 @@ export class SpawnTracker {
 		}
 		spawn.status = "completed";
 		spawn.summary = summary;
+		this._activeCount--;
 		const durationMs = Date.now() - spawn.startedAt;
 		this.semaphore.release();
 		this.bus.publish<SpawnCompletedEvent>({
@@ -176,6 +179,7 @@ export class SpawnTracker {
 			);
 		}
 		spawn.status = "failed";
+		this._activeCount--;
 		this.semaphore.release();
 		this.bus.publish<SpawnFailedEvent>({
 			type: "spawn_failed",
@@ -187,11 +191,7 @@ export class SpawnTracker {
 
 	/** Number of currently running children. */
 	activeCount(): number {
-		let count = 0;
-		for (const record of this.spawns.values()) {
-			if (record.status === "running") count++;
-		}
-		return count;
+		return this._activeCount;
 	}
 
 	/** Returns the role for a given spawnId, or undefined if unknown. */
@@ -259,15 +259,19 @@ const trackerRegistry = new Map<string, SpawnTracker>();
  * Returns the existing SpawnTracker for a session, or creates and registers
  * a new one. The bus and options are only used when creating a new tracker;
  * subsequent calls with the same sessionId return the existing instance.
+ *
+ * When bus is omitted, a new MessageBus is created for the tracker. This
+ * keeps bus lifecycle tied to the tracker — no separate cleanup needed.
  */
 export function getOrCreateTracker(
 	sessionId: string,
-	bus: MessageBus,
+	bus?: MessageBus,
 	options?: SpawnTrackerOptions,
 ): SpawnTracker {
 	let tracker = trackerRegistry.get(sessionId);
 	if (!tracker) {
-		tracker = new SpawnTracker(sessionId, bus, options);
+		const resolvedBus = bus ?? new MessageBus();
+		tracker = new SpawnTracker(sessionId, resolvedBus, options);
 		trackerRegistry.set(sessionId, tracker);
 	}
 	return tracker;
