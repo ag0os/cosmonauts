@@ -4,6 +4,8 @@
  */
 
 export { loadManifest, validateManifest } from "./manifest.ts";
+export { installPackage, uninstallPackage } from "./installer.ts";
+export type { DomainMergeResult, InstallOptions, InstallResult } from "./installer.ts";
 export {
 	listInstalledPackages,
 	packageExists,
