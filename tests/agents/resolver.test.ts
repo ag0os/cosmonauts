@@ -349,6 +349,7 @@ describe("createRegistryFromDomains", () => {
 		const domains: LoadedDomain[] = [
 			{
 				manifest: { id: "coding", description: "Coding domain" },
+				portable: false,
 				agents: new Map([
 					["worker", workerDef],
 					["planner", plannerDef],
@@ -400,6 +401,7 @@ describe("createRegistryFromDomains", () => {
 		const domains: LoadedDomain[] = [
 			{
 				manifest: { id: "coding", description: "Coding domain" },
+				portable: false,
 				agents: new Map([["worker", codingWorker]]),
 				capabilities: new Set(),
 				prompts: new Set(),
@@ -410,6 +412,7 @@ describe("createRegistryFromDomains", () => {
 			},
 			{
 				manifest: { id: "docs", description: "Docs domain" },
+				portable: false,
 				agents: new Map([["writer", docsWorker]]),
 				capabilities: new Set(),
 				prompts: new Set(),

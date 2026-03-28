@@ -15,6 +15,7 @@ const tmp = useTempDir("skills-discovery-");
 function makeDomain(id: string, rootDir: string): LoadedDomain {
 	return {
 		manifest: { id, description: `${id} domain` },
+		portable: false,
 		agents: new Map(),
 		capabilities: new Set(),
 		prompts: new Set(),

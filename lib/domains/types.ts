@@ -19,12 +19,16 @@ export interface DomainManifest {
 	readonly lead?: string;
 	/** Default model in "provider/model-id" format for agents in this domain. */
 	readonly defaultModel?: string;
+	/** Whether this domain is portable (can be installed as a package). Defaults to false. */
+	readonly portable?: boolean;
 }
 
 /** A fully discovered and indexed domain, produced by the domain loader. */
 export interface LoadedDomain {
 	/** The domain's manifest. */
 	readonly manifest: DomainManifest;
+	/** Whether this domain is portable. Defaults to false for domains without the field. */
+	readonly portable: boolean;
 	/** Unqualified agent ID → definition. */
 	readonly agents: Map<string, AgentDefinition>;
 	/** Available capability names (from capabilities/*.md). */

@@ -85,6 +85,7 @@ async function loadSingleDomain(domainDir: string): Promise<LoadedDomain> {
 
 	return {
 		manifest,
+		portable: manifest.portable ?? false,
 		agents,
 		capabilities,
 		prompts,

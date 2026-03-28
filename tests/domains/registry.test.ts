@@ -9,6 +9,7 @@ function makeDomain(
 ): LoadedDomain {
 	return {
 		manifest: { id, description: `Domain ${id}` },
+		portable: false,
 		agents: new Map<string, AgentDefinition>(),
 		capabilities: new Set<string>(),
 		prompts: new Set<string>(),

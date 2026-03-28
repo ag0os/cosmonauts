@@ -26,6 +26,7 @@ function makeAgent(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
 function makeDomain(overrides: Partial<LoadedDomain> = {}): LoadedDomain {
 	return {
 		manifest: { id: "test", description: "Test domain" },
+		portable: false,
 		agents: new Map(),
 		capabilities: new Set(),
 		prompts: new Set(),
