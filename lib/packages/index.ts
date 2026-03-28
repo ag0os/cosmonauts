@@ -4,6 +4,11 @@
  */
 
 export { loadManifest, validateManifest } from "./manifest.ts";
+export {
+	listInstalledPackages,
+	packageExists,
+	resolveStorePath,
+} from "./store.ts";
 export type {
 	DomainSource,
 	InstalledPackage,
