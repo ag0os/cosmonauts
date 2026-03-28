@@ -35,6 +35,7 @@ import {
 import { CosmonautsRuntime } from "../lib/runtime.ts";
 import { listWorkflows, resolveWorkflow } from "../lib/workflows/loader.ts";
 import { createChainEventLogger } from "./chain-event-logger.ts";
+import { createCreateProgram } from "./create/subcommand.ts";
 import { createPlanProgram } from "./plans/index.ts";
 import { createSession } from "./session.ts";
 import { createSkillsProgram } from "./skills/subcommand.ts";
@@ -378,11 +379,17 @@ async function run(options: CliOptions): Promise<void> {
 // ============================================================================
 
 const subcommand = process.argv[2];
-if (subcommand === "task" || subcommand === "plan" || subcommand === "skills") {
+if (
+	subcommand === "task" ||
+	subcommand === "plan" ||
+	subcommand === "skills" ||
+	subcommand === "create"
+) {
 	const programs: Record<string, () => Command> = {
 		task: createTaskProgram,
 		plan: createPlanProgram,
 		skills: createSkillsProgram,
+		create: createCreateProgram,
 	};
 	// subcommand is guaranteed to be in the map by the if-check above
 	const createProgram = programs[subcommand];
