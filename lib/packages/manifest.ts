@@ -6,9 +6,9 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
-	DomainSource,
 	ManifestValidationError,
 	ManifestValidationResult,
+	PackageDomain,
 	PackageManifest,
 } from "./types.ts";
 
@@ -115,7 +115,7 @@ export function validateManifest(raw: unknown): ManifestValidationResult {
 		name: obj.name as string,
 		version: obj.version as string,
 		description: obj.description as string,
-		domains: obj.domains as DomainSource[],
+		domains: obj.domains as PackageDomain[],
 	};
 
 	return { valid: true, manifest };

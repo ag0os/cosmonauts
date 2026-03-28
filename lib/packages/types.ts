@@ -14,18 +14,35 @@
 export type PackageScope = "user" | "project";
 
 // ============================================================================
-// Domain Source
+// Package Domain
 // ============================================================================
 
 /**
- * Describes a domain contributed by a package.
+ * A single domain entry declared in a package manifest.
  * The path is relative to the package root directory.
  */
-export interface DomainSource {
+export interface PackageDomain {
 	/** Domain identifier (e.g., "coding", "devops") */
 	name: string;
 	/** Relative path within the package to the domain directory */
 	path: string;
+}
+
+// ============================================================================
+// Domain Source
+// ============================================================================
+
+/**
+ * A resolved directory containing domain subdirectories, with origin tracking.
+ * Produced by the package scanner and consumed by the domain loader.
+ */
+export interface DomainSource {
+	/** Absolute path to the directory containing domain subdirectories. */
+	domainsDir: string;
+	/** Human-readable origin label for diagnostics (e.g. "builtin", "global:@org/pkg"). */
+	origin: string;
+	/** Precedence tier — lower number = lower precedence. Built-in=0, global=1, local=2, plugin=3. */
+	precedence: number;
 }
 
 // ============================================================================
@@ -44,7 +61,7 @@ export interface PackageManifest {
 	/** Human-readable description of the package */
 	description: string;
 	/** Domains provided by this package */
-	domains: DomainSource[];
+	domains: PackageDomain[];
 }
 
 // ============================================================================
