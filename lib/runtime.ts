@@ -116,7 +116,7 @@ export class CosmonautsRuntime {
 		const workflows = selectDomainWorkflows(domains, domainContext);
 
 		// 7. Compute explicit skill paths: domain dirs + user config paths
-		const domainSkillDirs = domains.map((d) => join(d.rootDir, "skills"));
+		const domainSkillDirs = domains.map((d) => join(d.rootDirs[0]!, "skills"));
 		const skillPaths = [
 			...domainSkillDirs,
 			...(projectConfig.skillPaths ?? []),

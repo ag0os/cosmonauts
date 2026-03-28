@@ -5,8 +5,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { DomainRegistry } from "../../lib/domains/registry.ts";
+import { DomainResolver } from "../../lib/domains/resolver.ts";
 import type { RuntimeContext } from "../../lib/domains/prompt-assembly.ts";
 import { assemblePrompts } from "../../lib/domains/prompt-assembly.ts";
+import type { LoadedDomain } from "../../lib/domains/types.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("prompt-assembly-");
@@ -285,6 +288,165 @@ describe("assemblePrompts", () => {
 			});
 
 			expect(result).toBe("BASE\n\nCORE\n\nWORKER");
+		});
+	});
+
+	describe("Three-tier capability resolution via DomainResolver", () => {
+		/** Build a LoadedDomain pointing at a subdirectory of the temp dir. */
+		function makeLoadedDomain(
+			id: string,
+			overrides: Partial<LoadedDomain> = {},
+		): LoadedDomain {
+			return {
+				manifest: { id, description: `Domain ${id}` },
+				portable: false,
+				agents: new Map(),
+				capabilities: new Set(),
+				prompts: new Set(),
+				skills: new Set(),
+				extensions: new Set(),
+				workflows: [],
+				rootDirs: [join(tmp.path, id)],
+				...overrides,
+			};
+		}
+
+		it("resolves capability from portable domain (tier 2) when not in agent domain", async () => {
+			await setupDomains(tmp.path, {
+				"shared/prompts/base.md": "Base.",
+				"portable-pkg/capabilities/portable-cap.md": "Portable cap content.",
+				"coding/prompts/worker.md": "Worker.",
+			});
+
+			const resolver = new DomainResolver(
+				new DomainRegistry([
+					makeLoadedDomain("shared", { prompts: new Set(["base"]) }),
+					makeLoadedDomain("portable-pkg", {
+						manifest: {
+							id: "portable-pkg",
+							description: "Portable",
+							portable: true,
+						},
+						portable: true,
+						capabilities: new Set(["portable-cap"]),
+					}),
+					makeLoadedDomain("coding", { prompts: new Set(["worker"]) }),
+				]),
+			);
+
+			const result = await assemblePrompts({
+				agentId: "worker",
+				domain: "coding",
+				capabilities: ["portable-cap"],
+				domainsDir: tmp.path,
+				resolver,
+			});
+
+			expect(result).toContain("Portable cap content.");
+		});
+
+		it("agent domain (tier 1) wins over portable domain (tier 2)", async () => {
+			await setupDomains(tmp.path, {
+				"shared/prompts/base.md": "Base.",
+				"portable-pkg/capabilities/cap.md": "Portable cap.",
+				"coding/capabilities/cap.md": "Domain cap.",
+				"coding/prompts/worker.md": "Worker.",
+			});
+
+			const resolver = new DomainResolver(
+				new DomainRegistry([
+					makeLoadedDomain("shared", { prompts: new Set(["base"]) }),
+					makeLoadedDomain("portable-pkg", {
+						manifest: {
+							id: "portable-pkg",
+							description: "Portable",
+							portable: true,
+						},
+						portable: true,
+						capabilities: new Set(["cap"]),
+					}),
+					makeLoadedDomain("coding", {
+						capabilities: new Set(["cap"]),
+						prompts: new Set(["worker"]),
+					}),
+				]),
+			);
+
+			const result = await assemblePrompts({
+				agentId: "worker",
+				domain: "coding",
+				capabilities: ["cap"],
+				domainsDir: tmp.path,
+				resolver,
+			});
+
+			expect(result).toContain("Domain cap.");
+			expect(result).not.toContain("Portable cap.");
+		});
+
+		it("portable domain (tier 2) wins over shared (tier 3)", async () => {
+			await setupDomains(tmp.path, {
+				"shared/prompts/base.md": "Base.",
+				"shared/capabilities/cap.md": "Shared cap.",
+				"portable-pkg/capabilities/cap.md": "Portable cap.",
+				"coding/prompts/worker.md": "Worker.",
+			});
+
+			const resolver = new DomainResolver(
+				new DomainRegistry([
+					makeLoadedDomain("shared", {
+						capabilities: new Set(["cap"]),
+						prompts: new Set(["base"]),
+					}),
+					makeLoadedDomain("portable-pkg", {
+						manifest: {
+							id: "portable-pkg",
+							description: "Portable",
+							portable: true,
+						},
+						portable: true,
+						capabilities: new Set(["cap"]),
+					}),
+					makeLoadedDomain("coding", { prompts: new Set(["worker"]) }),
+				]),
+			);
+
+			const result = await assemblePrompts({
+				agentId: "worker",
+				domain: "coding",
+				capabilities: ["cap"],
+				domainsDir: tmp.path,
+				resolver,
+			});
+
+			expect(result).toContain("Portable cap.");
+			expect(result).not.toContain("Shared cap.");
+		});
+
+		it("throws when capability is not found in any tier", async () => {
+			await setupDomains(tmp.path, {
+				"shared/prompts/base.md": "Base.",
+				"coding/prompts/worker.md": "Worker.",
+			});
+
+			const resolver = new DomainResolver(
+				new DomainRegistry([
+					makeLoadedDomain("shared", { prompts: new Set(["base"]) }),
+					makeLoadedDomain("coding", { prompts: new Set(["worker"]) }),
+				]),
+			);
+
+			await expect(
+				assemblePrompts({
+					agentId: "worker",
+					domain: "coding",
+					capabilities: ["nonexistent"],
+					domainsDir: tmp.path,
+					resolver,
+				}),
+			).rejects.toThrow(
+				'Capability "nonexistent" not found in domain "coding" or shared',
+			);
 		});
 	});
 });

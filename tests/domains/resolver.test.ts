@@ -21,7 +21,7 @@ function makeDomain(
 		skills: new Set<string>(),
 		extensions: new Set<string>(),
 		workflows: [],
-		rootDir: `/domains/${id}`,
+		rootDirs: [`/domains/${id}`],
 		...overrides,
 	} as LoadedDomain;
 }
@@ -56,7 +56,7 @@ describe("DomainResolver", () => {
 		expect(resolver.registry.listIds()).toEqual(["shared", "coding"]);
 	});
 
-	it("fromSingleDir ignores the dir argument (domains carry their own rootDir)", () => {
+	it("fromSingleDir ignores the dir argument (domains carry their own rootDirs)", () => {
 		const domains = [makeDomain("shared")];
 		const resolver = DomainResolver.fromSingleDir("/ignored", domains);
 		expect(resolver.resolveBasePath()).toBe("/domains/shared/prompts/base.md");
@@ -306,7 +306,7 @@ describe("shared domain resolution order", () => {
 			skills: new Set(),
 			extensions: new Set(),
 			workflows: [],
-			rootDir: "/domains/shared",
+			rootDirs: ["/domains/shared"],
 		};
 		const resolver = new DomainResolver(
 			new DomainRegistry([

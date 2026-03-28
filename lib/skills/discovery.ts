@@ -35,7 +35,7 @@ export async function discoverSkills(
 	const skills: DiscoveredSkill[] = [];
 
 	for (const domain of domains) {
-		const skillsDir = join(domain.rootDir, "skills");
+		const skillsDir = join(domain.rootDirs[0]!, "skills");
 		if (!(await isDirectory(skillsDir))) continue;
 
 		await scanForSkills(skillsDir, domain.manifest.id, skills);

@@ -27,7 +27,7 @@ export class DomainResolver {
 	 * Static factory for backward-compatible single-directory use.
 	 * Constructs a resolver from an array of already-loaded domains.
 	 *
-	 * @param _dir - The domains root directory (accepted for caller clarity, not used internally since domains carry their own rootDir).
+	 * @param _dir - The domains root directory (accepted for caller clarity, not used internally since domains carry their own rootDirs).
 	 * @param domains - Pre-loaded domains from that directory.
 	 */
 	static fromSingleDir(_dir: string, domains: LoadedDomain[]): DomainResolver {
@@ -41,7 +41,7 @@ export class DomainResolver {
 	resolveBasePath(): string | undefined {
 		const shared = this._registry.get("shared");
 		if (!shared) return undefined;
-		return join(shared.rootDir, "prompts", "base.md");
+		return join(shared.rootDirs[0]!, "prompts", "base.md");
 	}
 
 	/**
@@ -51,7 +51,7 @@ export class DomainResolver {
 	resolveRuntimeTemplatePath(): string | undefined {
 		const shared = this._registry.get("shared");
 		if (!shared) return undefined;
-		return join(shared.rootDir, "prompts", "runtime", "sub-agent.md");
+		return join(shared.rootDirs[0]!, "prompts", "runtime", "sub-agent.md");
 	}
 
 	/**
@@ -63,7 +63,7 @@ export class DomainResolver {
 		return this.resolveInTiers(
 			agentDomain,
 			(domain) => domain.capabilities.has(name),
-			(domain) => join(domain.rootDir, "capabilities", `${name}.md`),
+			(domain) => join(domain.rootDirs[0]!, "capabilities", `${name}.md`),
 		);
 	}
 
@@ -76,7 +76,7 @@ export class DomainResolver {
 		return this.resolveInTiers(
 			agentDomain,
 			(domain) => domain.prompts.has(agentId),
-			(domain) => join(domain.rootDir, "prompts", `${agentId}.md`),
+			(domain) => join(domain.rootDirs[0]!, "prompts", `${agentId}.md`),
 		);
 	}
 
@@ -89,7 +89,7 @@ export class DomainResolver {
 		return this.resolveInTiers(
 			agentDomain,
 			(domain) => domain.extensions.has(name),
-			(domain) => join(domain.rootDir, "extensions", name),
+			(domain) => join(domain.rootDirs[0]!, "extensions", name),
 		);
 	}
 
@@ -103,12 +103,12 @@ export class DomainResolver {
 		const dirs: string[] = [];
 		for (const domain of this._registry.listAll()) {
 			if (domain.manifest.id !== "shared" && domain.skills.size > 0) {
-				dirs.push(join(domain.rootDir, "skills"));
+				dirs.push(join(domain.rootDirs[0]!, "skills"));
 			}
 		}
 		const shared = this._registry.get("shared");
 		if (shared && shared.skills.size > 0) {
-			dirs.push(join(shared.rootDir, "skills"));
+			dirs.push(join(shared.rootDirs[0]!, "skills"));
 		}
 		return dirs;
 	}

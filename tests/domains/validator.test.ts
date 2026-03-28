@@ -33,7 +33,7 @@ function makeDomain(overrides: Partial<LoadedDomain> = {}): LoadedDomain {
 		skills: new Set(),
 		extensions: new Set(),
 		workflows: [],
-		rootDir: "/tmp/test",
+		rootDirs: ["/tmp/test"],
 		...overrides,
 	};
 }
@@ -188,6 +188,71 @@ describe("validateDomains", () => {
 			const match = diagnostics.find((d) => d.message.includes("Capability"));
 			expect(match).toBeUndefined();
 		});
+
+		it("passes when capability exists in a portable domain", () => {
+			const shared = makeShared();
+			const pkg = makeDomain({
+				manifest: {
+					id: "pkg",
+					description: "Portable package",
+					portable: true,
+				},
+				portable: true,
+				capabilities: new Set(["portable-cap"]),
+			});
+			const coding = makeDomain({
+				manifest: { id: "coding", description: "Coding" },
+				agents: new Map([
+					[
+						"worker",
+						makeAgent({
+							id: "worker",
+							capabilities: ["portable-cap"],
+						}),
+					],
+				]),
+				prompts: new Set(["worker"]),
+			});
+
+			const diagnostics = validateDomains([shared, pkg, coding]);
+			const match = diagnostics.find((d) =>
+				d.message.includes('"portable-cap"'),
+			);
+			expect(match).toBeUndefined();
+		});
+
+		it("still reports error when capability is absent from all tiers", () => {
+			const shared = makeShared();
+			const pkg = makeDomain({
+				manifest: {
+					id: "pkg",
+					description: "Portable package",
+					portable: true,
+				},
+				portable: true,
+				capabilities: new Set(["other-cap"]),
+			});
+			const coding = makeDomain({
+				manifest: { id: "coding", description: "Coding" },
+				agents: new Map([
+					[
+						"worker",
+						makeAgent({
+							id: "worker",
+							capabilities: ["missing-cap"],
+						}),
+					],
+				]),
+				prompts: new Set(["worker"]),
+			});
+
+			const diagnostics = validateDomains([shared, pkg, coding]);
+			const match = diagnostics.find((d) =>
+				d.message.includes('"missing-cap"'),
+			);
+			expect(match).toBeDefined();
+			expect(match?.severity).toBe("error");
+		});
 	});
 
 	describe("Rule 3: Extensions resolve", () => {
@@ -260,6 +325,38 @@ describe("validateDomains", () => {
 
 			const diagnostics = validateDomains([shared, coding]);
 			const match = diagnostics.find((d) => d.message.includes("Extension"));
+			expect(match).toBeUndefined();
+		});
+
+		it("passes when extension exists in a portable domain", () => {
+			const shared = makeShared();
+			const pkg = makeDomain({
+				manifest: {
+					id: "pkg",
+					description: "Portable package",
+					portable: true,
+				},
+				portable: true,
+				extensions: new Set(["portable-ext"]),
+			});
+			const coding = makeDomain({
+				manifest: { id: "coding", description: "Coding" },
+				agents: new Map([
+					[
+						"worker",
+						makeAgent({
+							id: "worker",
+							extensions: ["portable-ext"],
+						}),
+					],
+				]),
+				prompts: new Set(["worker"]),
+			});
+
+			const diagnostics = validateDomains([shared, pkg, coding]);
+			const match = diagnostics.find((d) =>
+				d.message.includes('"portable-ext"'),
+			);
 			expect(match).toBeUndefined();
 		});
 	});
@@ -349,6 +446,94 @@ describe("validateDomains", () => {
 			const diagnostics = validateDomains([shared, coding]);
 			const match = diagnostics.find((d) => d.message.includes("Subagent"));
 			expect(match).toBeUndefined();
+		});
+	});
+
+	describe("Rule 4b: Portable domain capability overlap warning", () => {
+		it("emits a warning when two portable domains provide the same capability", () => {
+			const shared = makeShared();
+			const pkg1 = makeDomain({
+				manifest: {
+					id: "pkg1",
+					description: "Portable 1",
+					portable: true,
+				},
+				portable: true,
+				capabilities: new Set(["shared-cap"]),
+			});
+			const pkg2 = makeDomain({
+				manifest: {
+					id: "pkg2",
+					description: "Portable 2",
+					portable: true,
+				},
+				portable: true,
+				capabilities: new Set(["shared-cap"]),
+			});
+
+			const diagnostics = validateDomains([shared, pkg1, pkg2]);
+			const overlap = diagnostics.find(
+				(d) =>
+					d.message.includes('"shared-cap"') &&
+					d.message.includes("multiple portable domains"),
+			);
+			expect(overlap).toBeDefined();
+			expect(overlap?.severity).toBe("warning");
+			expect(overlap?.message).toContain("pkg1");
+			expect(overlap?.message).toContain("pkg2");
+		});
+
+		it("does not warn when only one portable domain provides a capability", () => {
+			const shared = makeShared();
+			const pkg = makeDomain({
+				manifest: {
+					id: "pkg",
+					description: "Portable",
+					portable: true,
+				},
+				portable: true,
+				capabilities: new Set(["unique-cap"]),
+			});
+
+			const diagnostics = validateDomains([shared, pkg]);
+			const overlap = diagnostics.find(
+				(d) =>
+					d.severity === "warning" &&
+					d.message.includes("multiple portable domains"),
+			);
+			expect(overlap).toBeUndefined();
+		});
+
+		it("does not warn for shared domain capabilities even if shared is marked portable", () => {
+			// shared is always excluded from portable overlap checks
+			const shared: LoadedDomain = {
+				manifest: { id: "shared", description: "Shared", portable: true },
+				portable: true,
+				agents: new Map(),
+				capabilities: new Set(["core"]),
+				prompts: new Set(),
+				skills: new Set(),
+				extensions: new Set(),
+				workflows: [],
+				rootDir: "/tmp/shared",
+			};
+			const pkg = makeDomain({
+				manifest: {
+					id: "pkg",
+					description: "Portable",
+					portable: true,
+				},
+				portable: true,
+				capabilities: new Set(["core"]),
+			});
+
+			const diagnostics = validateDomains([shared, pkg]);
+			const overlap = diagnostics.find(
+				(d) =>
+					d.severity === "warning" &&
+					d.message.includes("multiple portable domains"),
+			);
+			expect(overlap).toBeUndefined();
 		});
 	});
 

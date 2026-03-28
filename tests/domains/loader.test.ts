@@ -1,7 +1,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadDomains } from "../../lib/domains/loader.ts";
+import {
+	loadDomains,
+	loadDomainsFromSources,
+} from "../../lib/domains/loader.ts";
+import type { DomainMergeConflict } from "../../lib/domains/types.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("domain-loader-");
@@ -177,13 +181,13 @@ describe("loadDomains", () => {
 		]);
 	});
 
-	it("sets rootDir to the absolute domain directory path", async () => {
+	it("sets rootDirs to a single-element array with the absolute domain directory path", async () => {
 		const domainDir = join(tmp.path, "rooted");
 		await mkdir(domainDir, { recursive: true });
 		await writeDomainManifest(domainDir, "rooted");
 
 		const domains = await loadDomains(tmp.path);
-		expect(domains[0]?.rootDir).toBe(domainDir);
+		expect(domains[0]?.rootDirs).toEqual([domainDir]);
 	});
 
 	it("returns empty array for empty domains directory", async () => {
@@ -203,5 +207,189 @@ describe("loadDomains", () => {
 		expect(domains[0]?.agents.size).toBe(2);
 		expect(domains[0]?.agents.has("agent-a")).toBe(true);
 		expect(domains[0]?.agents.has("agent-b")).toBe(true);
+	});
+});
+
+// ============================================================================
+// loadDomainsFromSources
+// ============================================================================
+
+const tmpA = useTempDir("domain-sources-a-");
+const tmpB = useTempDir("domain-sources-b-");
+
+describe("loadDomainsFromSources", () => {
+	it("loads domains from a single source", async () => {
+		const domainDir = join(tmpA.path, "alpha");
+		await mkdir(domainDir, { recursive: true });
+		await writeDomainManifest(domainDir, "alpha");
+
+		const result = await loadDomainsFromSources([
+			{ domainsDir: tmpA.path, origin: "built-in", precedence: 0 },
+		]);
+
+		expect(result).toHaveLength(1);
+		expect(result[0]?.manifest.id).toBe("alpha");
+		expect(result[0]?.rootDirs).toEqual([domainDir]);
+	});
+
+	it("loads from multiple sources with no conflicts (different domain IDs)", async () => {
+		const alphaDir = join(tmpA.path, "alpha");
+		await mkdir(alphaDir, { recursive: true });
+		await writeDomainManifest(alphaDir, "alpha");
+
+		const betaDir = join(tmpB.path, "beta");
+		await mkdir(betaDir, { recursive: true });
+		await writeDomainManifest(betaDir, "beta");
+
+		const result = await loadDomainsFromSources([
+			{ domainsDir: tmpA.path, origin: "built-in", precedence: 0 },
+			{ domainsDir: tmpB.path, origin: "user-package", precedence: 10 },
+		]);
+
+		expect(result).toHaveLength(2);
+		expect(result.map((d) => d.manifest.id).sort()).toEqual(["alpha", "beta"]);
+	});
+
+	it("applies default merge strategy: unions resources, higher precedence wins on agent conflicts", async () => {
+		// Source A (lower precedence): domain "shared" with capability "core" and agent "worker"
+		const sharedA = join(tmpA.path, "shared");
+		const capsA = join(sharedA, "capabilities");
+		const agentsA = join(sharedA, "agents");
+		await mkdir(capsA, { recursive: true });
+		await mkdir(agentsA, { recursive: true });
+		await writeDomainManifest(sharedA, "shared");
+		await writeFile(join(capsA, "core.md"), "# Core A");
+		await writeAgentDef(agentsA, "worker");
+
+		// Source B (higher precedence): domain "shared" with capability "extra" and same agent "worker"
+		const sharedB = join(tmpB.path, "shared");
+		const capsB = join(sharedB, "capabilities");
+		const agentsB = join(sharedB, "agents");
+		await mkdir(capsB, { recursive: true });
+		await mkdir(agentsB, { recursive: true });
+		await writeDomainManifest(sharedB, "shared");
+		await writeFile(join(capsB, "extra.md"), "# Extra B");
+		await writeAgentDef(agentsB, "worker");
+
+		const result = await loadDomainsFromSources([
+			{ domainsDir: tmpA.path, origin: "built-in", precedence: 0 },
+			{ domainsDir: tmpB.path, origin: "user-package", precedence: 10 },
+		]);
+
+		expect(result).toHaveLength(1);
+		const merged = result[0];
+		expect(merged).toBeDefined();
+		if (!merged) throw new Error("Expected merged domain");
+		expect(merged.manifest.id).toBe("shared");
+		// Union of capabilities from both sources
+		expect(merged.capabilities).toEqual(new Set(["core", "extra"]));
+		// Higher-precedence rootDir comes first
+		expect(merged.rootDirs[0]).toBe(sharedB);
+		expect(merged.rootDirs[1]).toBe(sharedA);
+		// Agent from higher-precedence source wins
+		expect(merged.agents.has("worker")).toBe(true);
+	});
+
+	it("invokes merge strategy callback for each conflict", async () => {
+		const domainA = join(tmpA.path, "coding");
+		await mkdir(domainA, { recursive: true });
+		await writeDomainManifest(domainA, "coding");
+
+		const domainB = join(tmpB.path, "coding");
+		await mkdir(domainB, { recursive: true });
+		await writeDomainManifest(domainB, "coding");
+
+		const conflicts: DomainMergeConflict[] = [];
+		await loadDomainsFromSources(
+			[
+				{ domainsDir: tmpA.path, origin: "built-in", precedence: 0 },
+				{ domainsDir: tmpB.path, origin: "user-package", precedence: 10 },
+			],
+			(conflict) => {
+				conflicts.push(conflict);
+				return "merge";
+			},
+		);
+
+		expect(conflicts).toHaveLength(1);
+		expect(conflicts[0]?.domainId).toBe("coding");
+	});
+
+	it("replace strategy: incoming domain completely replaces existing", async () => {
+		const domainA = join(tmpA.path, "coding");
+		const capsA = join(domainA, "capabilities");
+		await mkdir(capsA, { recursive: true });
+		await writeDomainManifest(domainA, "coding");
+		await writeFile(join(capsA, "from-a.md"), "# A");
+
+		const domainB = join(tmpB.path, "coding");
+		const capsB = join(domainB, "capabilities");
+		await mkdir(capsB, { recursive: true });
+		await writeDomainManifest(domainB, "coding");
+		await writeFile(join(capsB, "from-b.md"), "# B");
+
+		const result = await loadDomainsFromSources(
+			[
+				{ domainsDir: tmpA.path, origin: "built-in", precedence: 0 },
+				{ domainsDir: tmpB.path, origin: "user-package", precedence: 10 },
+			],
+			() => "replace",
+		);
+
+		expect(result).toHaveLength(1);
+		const domain = result[0];
+		expect(domain).toBeDefined();
+		if (!domain) throw new Error("Expected domain");
+		// Only source B's capabilities (the higher-precedence replacement)
+		expect(domain.capabilities).toEqual(new Set(["from-b"]));
+		expect(domain.rootDirs).toEqual([domainB]);
+	});
+
+	it("skip strategy: incoming (higher-precedence) domain is discarded", async () => {
+		const domainA = join(tmpA.path, "coding");
+		const capsA = join(domainA, "capabilities");
+		await mkdir(capsA, { recursive: true });
+		await writeDomainManifest(domainA, "coding");
+		await writeFile(join(capsA, "from-a.md"), "# A");
+
+		const domainB = join(tmpB.path, "coding");
+		const capsB = join(domainB, "capabilities");
+		await mkdir(capsB, { recursive: true });
+		await writeDomainManifest(domainB, "coding");
+		await writeFile(join(capsB, "from-b.md"), "# B");
+
+		const result = await loadDomainsFromSources(
+			[
+				{ domainsDir: tmpA.path, origin: "built-in", precedence: 0 },
+				{ domainsDir: tmpB.path, origin: "user-package", precedence: 10 },
+			],
+			() => "skip",
+		);
+
+		expect(result).toHaveLength(1);
+		const domain = result[0];
+		expect(domain).toBeDefined();
+		if (!domain) throw new Error("Expected domain");
+		// Only source A's capabilities (lower-precedence, kept because incoming was skipped)
+		expect(domain.capabilities).toEqual(new Set(["from-a"]));
+		expect(domain.rootDirs).toEqual([domainA]);
+	});
+
+	it("result is sorted with shared first, then alphabetical", async () => {
+		for (const name of ["zeta", "shared", "alpha"]) {
+			const dir = join(tmpA.path, name);
+			await mkdir(dir, { recursive: true });
+			await writeDomainManifest(dir, name);
+		}
+
+		const result = await loadDomainsFromSources([
+			{ domainsDir: tmpA.path, origin: "built-in", precedence: 0 },
+		]);
+
+		expect(result.map((d) => d.manifest.id)).toEqual([
+			"shared",
+			"alpha",
+			"zeta",
+		]);
 	});
 });

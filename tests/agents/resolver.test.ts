@@ -359,7 +359,7 @@ describe("createRegistryFromDomains", () => {
 				skills: new Set([]),
 				extensions: new Set(["tasks"]),
 				workflows: [],
-				rootDir: "/tmp/domains/coding",
+				rootDirs: ["/tmp/domains/coding"],
 			},
 		];
 
@@ -408,7 +408,7 @@ describe("createRegistryFromDomains", () => {
 				skills: new Set(),
 				extensions: new Set(),
 				workflows: [],
-				rootDir: "/tmp/domains/coding",
+				rootDirs: ["/tmp/domains/coding"],
 			},
 			{
 				manifest: { id: "docs", description: "Docs domain" },
@@ -419,7 +419,7 @@ describe("createRegistryFromDomains", () => {
 				skills: new Set(),
 				extensions: new Set(),
 				workflows: [],
-				rootDir: "/tmp/domains/docs",
+				rootDirs: ["/tmp/domains/docs"],
 			},
 		];
 

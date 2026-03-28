@@ -41,6 +41,59 @@ export interface LoadedDomain {
 	readonly extensions: Set<string>;
 	/** Workflow definitions from this domain. */
 	readonly workflows: WorkflowDefinition[];
-	/** Absolute path to the domain's root directory. */
-	readonly rootDir: string;
+	/**
+	 * Absolute paths to the domain's root directories, ordered by descending precedence.
+	 * Single-source domains have one entry. Merged domains have multiple entries,
+	 * with the highest-precedence source first.
+	 */
+	readonly rootDirs: readonly string[];
 }
+
+// ============================================================================
+// Multi-source loading types
+// ============================================================================
+
+/**
+ * Describes a source of domains for multi-source loading.
+ * Used with loadDomainsFromSources() to combine domains from multiple locations.
+ */
+export interface DomainSource {
+	/** Absolute path to a directory containing domain subdirectories. */
+	domainsDir: string;
+	/** Human-readable label identifying this source (e.g., "built-in", "user-package"). */
+	origin: string;
+	/** Precedence level. Higher numbers win on resource conflicts during merging. */
+	precedence: number;
+}
+
+/**
+ * Describes a conflict when the same domain ID appears in multiple sources.
+ * Passed to a MergeStrategy callback to decide how to resolve it.
+ */
+export interface DomainMergeConflict {
+	/** The domain ID that appears in both sources. */
+	domainId: string;
+	/** The domain accumulated so far (from lower-precedence sources). */
+	existing: LoadedDomain;
+	/** The domain from the current higher-precedence source. */
+	incoming: LoadedDomain;
+	/** Resource names that exist in both domains. */
+	overlapping: {
+		agents: string[];
+		capabilities: string[];
+		skills: string[];
+		extensions: string[];
+		prompts: string[];
+	};
+}
+
+/**
+ * Callback invoked for each same-ID domain conflict during multi-source loading.
+ * Returns how to resolve the conflict:
+ * - "merge"   — union of resources; incoming (higher precedence) wins on key conflicts.
+ * - "replace" — incoming domain completely replaces the existing one.
+ * - "skip"    — incoming domain is discarded; existing domain is kept unchanged.
+ */
+export type MergeStrategy = (
+	conflict: DomainMergeConflict,
+) => "merge" | "replace" | "skip";

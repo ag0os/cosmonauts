@@ -22,7 +22,7 @@ function makeDomain(id: string, rootDir: string): LoadedDomain {
 		skills: new Set(),
 		extensions: new Set(),
 		workflows: [],
-		rootDir,
+		rootDirs: [rootDir],
 	};
 }
 
