@@ -24,6 +24,8 @@ export interface InstallOptions {
 	projectRoot?: string;
 	/** Create a symlink instead of copying (local paths only, ignored for git sources) */
 	link?: boolean;
+	/** Git branch or tag to checkout (git sources only) */
+	branch?: string;
 }
 
 /** A domain ID conflict detected during installation */
@@ -56,8 +58,10 @@ export interface InstallResult {
  * Validates the manifest and all declared domain directories before writing
  * anything to the store.
  */
-export async function installPackage(options: InstallOptions): Promise<InstallResult> {
-	const { source, scope, projectRoot, link = false } = options;
+export async function installPackage(
+	options: InstallOptions,
+): Promise<InstallResult> {
+	const { source, scope, projectRoot, link = false, branch } = options;
 
 	const isGitSource =
 		source.startsWith("https://") || source.startsWith("github:");
@@ -69,7 +73,7 @@ export async function installPackage(options: InstallOptions): Promise<InstallRe
 		tempDir = await makeTempDir();
 		sourceDir = join(tempDir, "clone");
 		const url = resolveGitUrl(source);
-		await shallowClone(url, sourceDir);
+		await shallowClone(url, sourceDir, branch);
 	} else {
 		sourceDir = source;
 	}
@@ -132,7 +136,9 @@ export async function uninstallPackage(
 // Validation helpers
 // ============================================================================
 
-async function readAndValidateManifest(dirPath: string): Promise<PackageManifest> {
+async function readAndValidateManifest(
+	dirPath: string,
+): Promise<PackageManifest> {
 	let raw: unknown;
 	try {
 		raw = await loadManifest(dirPath);
@@ -218,10 +224,18 @@ function resolveGitUrl(source: string): string {
 	return source;
 }
 
-/** Shallow-clone a git repository into destDir. */
-function shallowClone(url: string, destDir: string): Promise<void> {
+/** Shallow-clone a git repository into destDir, optionally checking out a specific branch. */
+function shallowClone(
+	url: string,
+	destDir: string,
+	branch?: string,
+): Promise<void> {
+	const args = ["clone", "--depth", "1"];
+	if (branch) args.push("--branch", branch);
+	args.push(url, destDir);
+
 	return new Promise((resolve, reject) => {
-		const child = spawn("git", ["clone", "--depth", "1", url, destDir], {
+		const child = spawn("git", args, {
 			stdio: "pipe",
 		});
 		const stderr: Buffer[] = [];

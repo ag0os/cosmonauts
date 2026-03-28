@@ -36,6 +36,11 @@ import { CosmonautsRuntime } from "../lib/runtime.ts";
 import { listWorkflows, resolveWorkflow } from "../lib/workflows/loader.ts";
 import { createChainEventLogger } from "./chain-event-logger.ts";
 import { createCreateProgram } from "./create/subcommand.ts";
+import {
+	createInstallProgram,
+	createPackagesProgram,
+	createUninstallProgram,
+} from "./packages/subcommand.ts";
 import { createPlanProgram } from "./plans/index.ts";
 import { createSession } from "./session.ts";
 import { createSkillsProgram } from "./skills/subcommand.ts";
@@ -383,13 +388,19 @@ if (
 	subcommand === "task" ||
 	subcommand === "plan" ||
 	subcommand === "skills" ||
-	subcommand === "create"
+	subcommand === "create" ||
+	subcommand === "install" ||
+	subcommand === "uninstall" ||
+	subcommand === "packages"
 ) {
 	const programs: Record<string, () => Command> = {
 		task: createTaskProgram,
 		plan: createPlanProgram,
 		skills: createSkillsProgram,
 		create: createCreateProgram,
+		install: createInstallProgram,
+		uninstall: createUninstallProgram,
+		packages: createPackagesProgram,
 	};
 	// subcommand is guaranteed to be in the map by the if-check above
 	const createProgram = programs[subcommand];
