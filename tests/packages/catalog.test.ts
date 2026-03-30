@@ -57,7 +57,7 @@ describe("resolveCatalogEntry", () => {
 		const entry = resolveCatalogEntry("coding-minimal");
 		expect(entry).toBeDefined();
 		expect(entry?.name).toBe("coding-minimal");
-		expect(entry?.source).toBe("./domains/coding-minimal");
+		expect(entry?.source).toBe("./bundled/coding-minimal");
 	});
 
 	test("returns undefined for an unknown name", () => {

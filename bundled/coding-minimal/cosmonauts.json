@@ -1,0 +1,6 @@
+{
+  "name": "coding-minimal",
+  "version": "0.1.0",
+  "description": "Minimal coding domain with essential agents for getting started",
+  "domains": [{ "name": "coding", "path": "coding" }]
+}
