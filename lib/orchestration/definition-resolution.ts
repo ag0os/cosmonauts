@@ -39,8 +39,8 @@ export function resolveTools(toolSet: AgentToolSet, cwd: string) {
 export interface ResolveExtensionOptions {
 	/** Domain the agent belongs to (e.g. "coding", "shared"). */
 	readonly domain: string;
-	/** Absolute path to the root domains directory (fallback when no resolver). */
-	readonly domainsDir: string;
+	/** Absolute path to the root domains directory. Required when no resolver is provided. */
+	readonly domainsDir?: string;
 	/** Domain resolver for multi-source path resolution. Takes precedence over domainsDir. */
 	readonly resolver?: DomainResolver;
 }
@@ -66,16 +66,18 @@ export function resolveExtensionPaths(
 			if (resolved && isDirectory(resolved)) return resolved;
 		}
 
-		// Fallback: two-tier directory-based resolution
-		// Try domain-specific path first (skip if already "shared")
-		if (domain !== "shared") {
-			const domainPath = join(domainsDir, domain, "extensions", name);
-			if (isDirectory(domainPath)) return domainPath;
-		}
+		// Fallback: two-tier directory-based resolution (requires domainsDir)
+		if (domainsDir) {
+			// Try domain-specific path first (skip if already "shared")
+			if (domain !== "shared") {
+				const domainPath = join(domainsDir, domain, "extensions", name);
+				if (isDirectory(domainPath)) return domainPath;
+			}
 
-		// Fall back to shared
-		const sharedPath = join(domainsDir, "shared", "extensions", name);
-		if (isDirectory(sharedPath)) return sharedPath;
+			// Fall back to shared
+			const sharedPath = join(domainsDir, "shared", "extensions", name);
+			if (isDirectory(sharedPath)) return sharedPath;
+		}
 
 		// Not found anywhere — fail loud
 		const searched =

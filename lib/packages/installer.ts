@@ -6,7 +6,7 @@
 import { spawn } from "node:child_process";
 import { cp, mkdir, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { loadManifest, validateManifest } from "./manifest.ts";
 import { listInstalledPackages, resolveStorePath } from "./store.ts";
 import type { PackageManifest, PackageScope } from "./types.ts";
@@ -98,7 +98,7 @@ export async function installPackage(
 		await mkdir(dirname(installPath), { recursive: true });
 
 		if (link && !isGitSource) {
-			await symlink(sourceDir, installPath);
+			await symlink(resolve(sourceDir), installPath);
 		} else {
 			await cp(sourceDir, installPath, { recursive: true });
 		}

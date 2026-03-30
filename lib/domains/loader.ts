@@ -208,7 +208,9 @@ function mergeDomains(
 		prompts: new Set([...existing.prompts, ...incoming.prompts]),
 		skills: new Set([...existing.skills, ...incoming.skills]),
 		extensions: new Set([...existing.extensions, ...incoming.extensions]),
-		workflows: [...incoming.workflows, ...existing.workflows],
+		// Existing (lower-precedence) first so that incoming (higher-precedence)
+		// overwrites by name when consumers fold into a Map.
+		workflows: [...existing.workflows, ...incoming.workflows],
 		// Incoming dirs first — higher precedence for file resolution.
 		rootDirs: [...incoming.rootDirs, ...existing.rootDirs],
 	};

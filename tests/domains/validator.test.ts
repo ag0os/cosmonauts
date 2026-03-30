@@ -515,7 +515,7 @@ describe("validateDomains", () => {
 				skills: new Set(),
 				extensions: new Set(),
 				workflows: [],
-				rootDir: "/tmp/shared",
+				rootDirs: ["/tmp/shared"],
 			};
 			const pkg = makeDomain({
 				manifest: {

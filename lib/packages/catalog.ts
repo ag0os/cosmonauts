@@ -27,13 +27,13 @@ const BUNDLED_CATALOG: readonly CatalogEntry[] = [
 		name: "coding",
 		description:
 			"Full-featured coding domain with agents, tools, and skills for software development",
-		source: "./bundled/coding",
+		source: "./domains/coding",
 	},
 	{
 		name: "coding-minimal",
 		description:
 			"Minimal coding domain with essential agents only, for lightweight setups",
-		source: "./bundled/coding-minimal",
+		source: "./domains/coding-minimal",
 	},
 ] as const;
 
