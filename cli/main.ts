@@ -261,6 +261,28 @@ async function run(options: CliOptions): Promise<void> {
 		skillPaths,
 	} = runtime;
 
+	// First-run detection: guide users to install a domain when none are present.
+	// Meta commands (install, uninstall, packages, create, update) are routed
+	// before run() is called and never reach this check.
+	// Informational flags and init are allowed through to handle the domain-less state gracefully.
+	const hasNonSharedDomain =
+		runtime.domains.filter((d) => d.manifest.id !== "shared").length > 0;
+	const isBypassCommand =
+		options.init ||
+		options.listDomains ||
+		options.listWorkflows ||
+		options.listAgents ||
+		options.dumpPrompt;
+	if (!hasNonSharedDomain && !isBypassCommand) {
+		console.error(
+			"No domains installed. Install the coding domain to get started:",
+		);
+		console.error("  cosmonauts install coding");
+		console.error("  cosmonauts install coding-minimal  (lightweight)");
+		process.exitCode = 1;
+		return;
+	}
+
 	// --list-domains: print all discovered domains and exit
 	if (options.listDomains) {
 		if (runtime.domains.length === 0) {
@@ -332,6 +354,21 @@ async function run(options: CliOptions): Promise<void> {
 
 	// 1. init → always uses Cosmo (bootstrap requires full coding tools)
 	if (options.init) {
+		// Without a domain, Cosmo is not available. Guide the user to install one first.
+		if (!hasNonSharedDomain) {
+			console.log(
+				"No domains installed. Install a domain to use cosmonauts init:",
+			);
+			console.log("  cosmonauts install coding");
+			console.log("  cosmonauts install coding-minimal  (lightweight)");
+			console.log();
+			console.log(
+				"After installing a domain, run `cosmonauts init` again to set up your project.",
+			);
+			process.exitCode = 1;
+			return;
+		}
+
 		const cosmoDefinition = registry.resolve("cosmo", domainContext);
 		const { session } = await createSession({
 			definition: cosmoDefinition,
