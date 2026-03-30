@@ -27,7 +27,7 @@ const BUNDLED_CATALOG: readonly CatalogEntry[] = [
 		name: "coding",
 		description:
 			"Full-featured coding domain with agents, tools, and skills for software development",
-		source: "./domains/coding",
+		source: "./bundled/coding",
 	},
 	{
 		name: "coding-minimal",

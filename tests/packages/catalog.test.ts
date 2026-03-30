@@ -50,7 +50,7 @@ describe("resolveCatalogEntry", () => {
 		const entry = resolveCatalogEntry("coding");
 		expect(entry).toBeDefined();
 		expect(entry?.name).toBe("coding");
-		expect(entry?.source).toBe("./domains/coding");
+		expect(entry?.source).toBe("./bundled/coding");
 	});
 
 	test("returns the correct entry for 'coding-minimal'", () => {
