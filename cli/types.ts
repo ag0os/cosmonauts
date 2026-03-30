@@ -36,4 +36,6 @@ export interface CliOptions {
 	dumpPrompt: boolean;
 	/** File path to write the dumped prompt to (used with --dump-prompt) */
 	dumpPromptFile?: string;
+	/** Session-only domain source directories (from --plugin-dir flags) */
+	pluginDirs?: string[];
 }

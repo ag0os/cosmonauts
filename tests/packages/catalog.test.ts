@@ -4,7 +4,10 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { getBundledCatalog, resolveCatalogEntry } from "../../lib/packages/catalog.ts";
+import {
+	getBundledCatalog,
+	resolveCatalogEntry,
+} from "../../lib/packages/catalog.ts";
 
 describe("getBundledCatalog", () => {
 	test("returns an array", () => {

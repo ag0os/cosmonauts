@@ -2,7 +2,8 @@
  * Domain registry — stores and queries loaded domains.
  *
  * Provides lookup methods for domains and their resources,
- * including capability resolution with domain-first fallback to shared.
+ * including capability resolution with three-tier fallback:
+ * agent domain → portable domains → shared.
  */
 
 import type { LoadedDomain } from "./types.ts";
@@ -37,24 +38,41 @@ export class DomainRegistry {
 		return [...this.domains.values()];
 	}
 
+	/** Returns all domains with portable = true. */
+	listPortable(): LoadedDomain[] {
+		return [...this.domains.values()].filter((d) => d.portable);
+	}
+
 	/**
 	 * Find which domain provides a given capability.
 	 *
 	 * Resolution order:
-	 * 1. If `preferDomain` is specified and has the capability, return it.
-	 * 2. Fall back to the "shared" domain.
-	 * 3. Return undefined if no domain provides the capability.
+	 * 1. `preferDomain` (agent's own domain) — if specified and has the capability.
+	 * 2. Portable domains in registry discovery order, excluding agent domain and shared.
+	 * 3. "shared" domain.
+	 * 4. Return undefined if no domain provides the capability.
 	 */
 	resolveCapability(
 		name: string,
 		preferDomain?: string,
 	): LoadedDomain | undefined {
+		// Tier 1: agent's own domain
 		if (preferDomain) {
 			const domain = this.domains.get(preferDomain);
 			if (domain?.capabilities.has(name)) return domain;
 		}
+
+		// Tier 2: portable domains (registry order, skip agent domain and shared)
+		for (const domain of this.domains.values()) {
+			if (preferDomain && domain.manifest.id === preferDomain) continue;
+			if (domain.manifest.id === "shared") continue;
+			if (domain.portable && domain.capabilities.has(name)) return domain;
+		}
+
+		// Tier 3: shared
 		const shared = this.domains.get("shared");
 		if (shared?.capabilities.has(name)) return shared;
+
 		return undefined;
 	}
 }

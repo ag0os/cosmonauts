@@ -3,11 +3,21 @@
  * Covers installPackage() and uninstallPackage()
  */
 
-import { mkdir, mkdtemp, readlink, rm, stat, writeFile } from "node:fs/promises";
+import {
+	mkdir,
+	mkdtemp,
+	readlink,
+	rm,
+	stat,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { installPackage, uninstallPackage } from "../../lib/packages/installer.ts";
+import {
+	installPackage,
+	uninstallPackage,
+} from "../../lib/packages/installer.ts";
 
 // ============================================================================
 // Helpers
@@ -128,8 +138,16 @@ describe("installPackage — local copy", () => {
 	});
 
 	test("domainMergeResults reports conflict when another installed package provides the same domain", async () => {
-		const { dir: dirA } = await createPackageFixture(tmpRoot, "pkg-a", "coding");
-		const { dir: dirB } = await createPackageFixture(tmpRoot, "pkg-b", "coding");
+		const { dir: dirA } = await createPackageFixture(
+			tmpRoot,
+			"pkg-a",
+			"coding",
+		);
+		const { dir: dirB } = await createPackageFixture(
+			tmpRoot,
+			"pkg-b",
+			"coding",
+		);
 
 		// Install first package
 		await installPackage({ source: dirA, scope: "project", projectRoot });

@@ -131,7 +131,7 @@ describe("CosmonautsRuntime", () => {
 			]);
 
 			const runtime = await CosmonautsRuntime.create({
-				domainsDir,
+				builtinDomainsDir: domainsDir,
 				projectRoot: tmp.path,
 			});
 
@@ -149,7 +149,7 @@ describe("CosmonautsRuntime", () => {
 			await writeProjectConfig(tmp.path, { skills: ["typescript", "react"] });
 
 			const runtime = await CosmonautsRuntime.create({
-				domainsDir,
+				builtinDomainsDir: domainsDir,
 				projectRoot: tmp.path,
 			});
 
@@ -162,7 +162,7 @@ describe("CosmonautsRuntime", () => {
 			await setupSharedDomain(domainsDir);
 
 			const runtime = await CosmonautsRuntime.create({
-				domainsDir,
+				builtinDomainsDir: domainsDir,
 				projectRoot: tmp.path,
 			});
 
@@ -179,7 +179,7 @@ describe("CosmonautsRuntime", () => {
 			]);
 
 			const runtime = await CosmonautsRuntime.create({
-				domainsDir,
+				builtinDomainsDir: domainsDir,
 				projectRoot: tmp.path,
 			});
 
@@ -194,7 +194,7 @@ describe("CosmonautsRuntime", () => {
 			await setupCodingDomain(domainsDir, []);
 
 			const runtime = await CosmonautsRuntime.create({
-				domainsDir,
+				builtinDomainsDir: domainsDir,
 				projectRoot: tmp.path,
 			});
 
@@ -211,7 +211,7 @@ describe("CosmonautsRuntime", () => {
 			await setupSharedDomain(domainsDir);
 
 			const runtime = await CosmonautsRuntime.create({
-				domainsDir,
+				builtinDomainsDir: domainsDir,
 				projectRoot: tmp.path,
 			});
 
@@ -224,7 +224,7 @@ describe("CosmonautsRuntime", () => {
 			await setupSharedDomain(domainsDir);
 
 			const runtime = await CosmonautsRuntime.create({
-				domainsDir,
+				builtinDomainsDir: domainsDir,
 				projectRoot: tmp.path,
 			});
 
@@ -243,7 +243,7 @@ describe("CosmonautsRuntime", () => {
 			await writeProjectConfig(tmp.path, { domain: "from-config" });
 
 			const runtime = await CosmonautsRuntime.create({
-				domainsDir,
+				builtinDomainsDir: domainsDir,
 				projectRoot: tmp.path,
 				domainOverride: "from-override",
 			});
@@ -258,7 +258,7 @@ describe("CosmonautsRuntime", () => {
 			await writeProjectConfig(tmp.path, { domain: "from-config" });
 
 			const runtime = await CosmonautsRuntime.create({
-				domainsDir,
+				builtinDomainsDir: domainsDir,
 				projectRoot: tmp.path,
 			});
 
@@ -271,7 +271,7 @@ describe("CosmonautsRuntime", () => {
 			await setupSharedDomain(domainsDir);
 
 			const runtime = await CosmonautsRuntime.create({
-				domainsDir,
+				builtinDomainsDir: domainsDir,
 				projectRoot: tmp.path,
 			});
 
@@ -291,7 +291,7 @@ describe("CosmonautsRuntime", () => {
 			});
 
 			const runtime = await CosmonautsRuntime.create({
-				domainsDir,
+				builtinDomainsDir: domainsDir,
 				projectRoot: tmp.path,
 				domainOverride: "coding",
 			});
@@ -311,7 +311,7 @@ describe("CosmonautsRuntime", () => {
 			});
 
 			const runtime = await CosmonautsRuntime.create({
-				domainsDir,
+				builtinDomainsDir: domainsDir,
 				projectRoot: tmp.path,
 			});
 
@@ -340,7 +340,7 @@ describe("CosmonautsRuntime", () => {
 			);
 
 			const runtime = await CosmonautsRuntime.create({
-				domainsDir,
+				builtinDomainsDir: domainsDir,
 				projectRoot: tmp.path,
 				domainOverride: "coding",
 			});
@@ -376,7 +376,7 @@ describe("CosmonautsRuntime", () => {
 
 			await expect(
 				CosmonautsRuntime.create({
-					domainsDir,
+					builtinDomainsDir: domainsDir,
 					projectRoot: tmp.path,
 				}),
 			).rejects.toThrow(DomainValidationError);
@@ -401,7 +401,7 @@ describe("CosmonautsRuntime", () => {
 
 			try {
 				await CosmonautsRuntime.create({
-					domainsDir,
+					builtinDomainsDir: domainsDir,
 					projectRoot: tmp.path,
 				});
 				expect.unreachable("Should have thrown");
@@ -436,7 +436,7 @@ describe("CosmonautsRuntime", () => {
 			const stderrSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 			try {
 				const runtime = await CosmonautsRuntime.create({
-					domainsDir,
+					builtinDomainsDir: domainsDir,
 					projectRoot: tmp.path,
 				});
 
@@ -479,7 +479,7 @@ describe("CosmonautsRuntime", () => {
 			const stderrSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 			try {
 				const runtime = await CosmonautsRuntime.create({
-					domainsDir,
+					builtinDomainsDir: domainsDir,
 					projectRoot: tmp.path,
 				});
 				expect(runtime).toBeDefined();
@@ -507,7 +507,7 @@ describe("CosmonautsRuntime", () => {
 			});
 
 			const runtime = await CosmonautsRuntime.create({
-				domainsDir,
+				builtinDomainsDir: domainsDir,
 				projectRoot: tmp.path,
 			});
 

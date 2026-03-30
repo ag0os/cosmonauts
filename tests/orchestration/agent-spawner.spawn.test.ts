@@ -4,7 +4,7 @@
 
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 
@@ -35,6 +35,8 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
 	},
 }));
 
+import { loadDomains } from "../../lib/domains/index.ts";
+import { DomainResolver } from "../../lib/domains/resolver.ts";
 import {
 	createPiSpawner,
 	resolveModel,
@@ -47,6 +49,13 @@ const DOMAINS_DIR = resolve(
 	"..",
 	"domains",
 );
+
+let realResolver: DomainResolver;
+
+beforeAll(async () => {
+	const domains = await loadDomains(DOMAINS_DIR);
+	realResolver = DomainResolver.fromSingleDir(DOMAINS_DIR, domains);
+});
 
 const FIXTURE_PLANNER: AgentDefinition = {
 	id: "planner",
@@ -103,7 +112,7 @@ describe("createPiSpawner", () => {
 	});
 
 	test("uses definition thinkingLevel when spawn thinkingLevel is omitted", async () => {
-		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+		const spawner = createPiSpawner(FIXTURE_REGISTRY, realResolver);
 
 		await spawner.spawn({
 			role: "planner",
@@ -119,7 +128,7 @@ describe("createPiSpawner", () => {
 	});
 
 	test("populates stats on successful spawn result", async () => {
-		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+		const spawner = createPiSpawner(FIXTURE_REGISTRY, realResolver);
 
 		const result = await spawner.spawn({
 			role: "planner",
@@ -154,7 +163,7 @@ describe("createPiSpawner", () => {
 		});
 		mocks.createAgentSession.mockResolvedValue({ session: mockSession });
 
-		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+		const spawner = createPiSpawner(FIXTURE_REGISTRY, realResolver);
 		await spawner.spawn({
 			role: "planner",
 			cwd: "/tmp/test-project",
@@ -165,7 +174,7 @@ describe("createPiSpawner", () => {
 	});
 
 	test("stats not populated on failed spawn", async () => {
-		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+		const spawner = createPiSpawner(FIXTURE_REGISTRY, realResolver);
 
 		const result = await spawner.spawn({
 			role: "planner",
@@ -179,7 +188,7 @@ describe("createPiSpawner", () => {
 	});
 
 	test("passes settingsManager with compaction settings when compaction config is provided", async () => {
-		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+		const spawner = createPiSpawner(FIXTURE_REGISTRY, realResolver);
 
 		await spawner.spawn({
 			role: "planner",
@@ -204,7 +213,7 @@ describe("createPiSpawner", () => {
 	});
 
 	test("passes settingsManager with compaction enabled only (no keepRecentTokens)", async () => {
-		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+		const spawner = createPiSpawner(FIXTURE_REGISTRY, realResolver);
 
 		await spawner.spawn({
 			role: "planner",
@@ -228,7 +237,7 @@ describe("createPiSpawner", () => {
 	});
 
 	test("does not pass settingsManager when compaction config is not provided", async () => {
-		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+		const spawner = createPiSpawner(FIXTURE_REGISTRY, realResolver);
 
 		await spawner.spawn({
 			role: "planner",
@@ -254,7 +263,7 @@ describe("createPiSpawner", () => {
 			});
 			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
 
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, realResolver);
 			await spawner.spawn({
 				role: "planner",
 				cwd: "/tmp/test-project",
@@ -274,7 +283,7 @@ describe("createPiSpawner", () => {
 			const mockSession = createMockSession();
 			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
 
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, realResolver);
 			await spawner.spawn({
 				role: "planner",
 				cwd: "/tmp/test-project",
@@ -296,7 +305,7 @@ describe("createPiSpawner", () => {
 			});
 			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
 
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, realResolver);
 			await spawner.spawn({
 				role: "planner",
 				cwd: "/tmp/test-project",
@@ -330,7 +339,7 @@ describe("createPiSpawner", () => {
 			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
 
 			const receivedEvents: unknown[] = [];
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, realResolver);
 			await spawner.spawn({
 				role: "planner",
 				cwd: "/tmp/test-project",
@@ -370,7 +379,7 @@ describe("createPiSpawner", () => {
 			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
 
 			const receivedEvents: unknown[] = [];
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, realResolver);
 			await spawner.spawn({
 				role: "planner",
 				cwd: "/tmp/test-project",
@@ -418,7 +427,7 @@ describe("createPiSpawner", () => {
 			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
 
 			const receivedEvents: unknown[] = [];
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, realResolver);
 			await spawner.spawn({
 				role: "planner",
 				cwd: "/tmp/test-project",
@@ -454,7 +463,7 @@ describe("createPiSpawner", () => {
 			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
 
 			const receivedEvents: unknown[] = [];
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, realResolver);
 			await spawner.spawn({
 				role: "planner",
 				cwd: "/tmp/test-project",
@@ -478,7 +487,7 @@ describe("createPiSpawner", () => {
 			});
 			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
 
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, realResolver);
 			const result = await spawner.spawn({
 				role: "planner",
 				cwd: "/tmp/test-project",
@@ -501,7 +510,7 @@ describe("createPiSpawner", () => {
 			});
 			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
 
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, realResolver);
 			const result = await spawner.spawn({
 				role: "planner",
 				cwd: "/tmp/test-project",
@@ -521,7 +530,7 @@ describe("createPiSpawner", () => {
 			});
 			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
 
-			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, realResolver);
 			const result = await spawner.spawn({
 				role: "planner",
 				cwd: "/tmp/test-project",

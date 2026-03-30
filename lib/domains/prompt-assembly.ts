@@ -5,8 +5,9 @@
  * four-layer order:
  *
  *   Layer 0: domains/shared/prompts/base.md              (always)
- *   Layer 1: domains/{domain}/capabilities/{cap}.md       (per capability, domain-first)
- *            → fallback: domains/shared/capabilities/{cap}.md
+ *   Layer 1: domains/{domain}/capabilities/{cap}.md       (per capability)
+ *            → three-tier resolution via resolver (domain → portable → shared)
+ *              OR two-tier directory fallback when no resolver is provided
  *   Layer 2: domains/{domain}/prompts/{agent-id}.md       (auto-loaded persona)
  *   Layer 3: domains/shared/prompts/runtime/sub-agent.md  (if sub-agent mode)
  */
@@ -16,6 +17,7 @@ import { join } from "node:path";
 import matter from "gray-matter";
 import type { RuntimeTemplateContext } from "../prompts/loader.ts";
 import { renderRuntimeTemplate } from "../prompts/loader.ts";
+import type { DomainResolver } from "./resolver.ts";
 
 // ============================================================================
 // Public Types
@@ -35,10 +37,16 @@ export interface AssemblePromptsOptions {
 	domain: string;
 	/** Capability pack names (e.g. ["core", "tasks", "coding-readwrite"]). */
 	capabilities: readonly string[];
-	/** Absolute path to the domains/ directory. */
+	/** Absolute path to the domains/ directory. Used when no resolver is provided. */
 	domainsDir: string;
 	/** Optional runtime context for sub-agent mode. */
 	runtimeContext?: RuntimeContext;
+	/**
+	 * Optional domain resolver for three-tier capability lookup
+	 * (agent domain → portable domains → shared). When omitted,
+	 * falls back to two-tier directory-based resolution (domain → shared).
+	 */
+	resolver?: DomainResolver;
 }
 
 // ============================================================================
@@ -53,19 +61,34 @@ export interface AssemblePromptsOptions {
 export async function assemblePrompts(
 	options: AssemblePromptsOptions,
 ): Promise<string> {
-	const { agentId, domain, capabilities, domainsDir, runtimeContext } = options;
+	const { agentId, domain, capabilities, domainsDir, runtimeContext, resolver } =
+		options;
 	const parts: string[] = [];
 
 	// Layer 0: Base prompt (always from shared)
-	parts.push(
-		await loadPromptFile(join(domainsDir, "shared", "prompts", "base.md")),
-	);
+	const basePath =
+		resolver?.resolveBasePath() ??
+		join(domainsDir, "shared", "prompts", "base.md");
+	parts.push(await loadPromptFile(basePath));
 
-	// Layer 1: Capabilities (domain-first, fallback to shared)
+	// Layer 1: Capabilities
+	// With resolver: three-tier (agent domain → portable domains → shared).
+	// Without resolver: two-tier directory-based (domain → shared).
 	for (const cap of capabilities) {
-		const domainPath = join(domainsDir, domain, "capabilities", `${cap}.md`);
-		const sharedPath = join(domainsDir, "shared", "capabilities", `${cap}.md`);
-		const content = await loadWithFallback(domainPath, sharedPath);
+		let content: string | null;
+		if (resolver) {
+			const capPath = resolver.resolveCapabilityPath(cap, domain);
+			content = capPath ? await loadPromptFile(capPath) : null;
+		} else {
+			const domainPath = join(domainsDir, domain, "capabilities", `${cap}.md`);
+			const sharedPath = join(
+				domainsDir,
+				"shared",
+				"capabilities",
+				`${cap}.md`,
+			);
+			content = await loadWithFallback(domainPath, sharedPath);
+		}
 		if (content === null) {
 			throw new Error(
 				`Capability "${cap}" not found in domain "${domain}" or shared`,
@@ -75,19 +98,16 @@ export async function assemblePrompts(
 	}
 
 	// Layer 2: Agent persona prompt
-	parts.push(
-		await loadPromptFile(join(domainsDir, domain, "prompts", `${agentId}.md`)),
-	);
+	const personaPath =
+		resolver?.resolvePersonaPath(agentId, domain) ??
+		join(domainsDir, domain, "prompts", `${agentId}.md`);
+	parts.push(await loadPromptFile(personaPath));
 
 	// Layer 3: Runtime context (sub-agent mode only)
 	if (runtimeContext?.mode === "sub-agent") {
-		const templatePath = join(
-			domainsDir,
-			"shared",
-			"prompts",
-			"runtime",
-			"sub-agent.md",
-		);
+		const templatePath =
+			resolver?.resolveRuntimeTemplatePath() ??
+			join(domainsDir, "shared", "prompts", "runtime", "sub-agent.md");
 		const template = await loadPromptFile(templatePath);
 		const ctx: RuntimeTemplateContext = {
 			parentRole: runtimeContext.parentRole,

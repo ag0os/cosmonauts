@@ -173,10 +173,9 @@ export class SpawnTracker {
 		if (!spawn) {
 			throw new Error(`Unknown spawnId: ${spawnId}`);
 		}
+		// Idempotent: if already terminated (by timeout or prior error), skip.
 		if (spawn.status !== "running") {
-			throw new Error(
-				`Spawn ${spawnId} is not running (status: ${spawn.status})`,
-			);
+			return;
 		}
 		spawn.status = "failed";
 		this._activeCount--;

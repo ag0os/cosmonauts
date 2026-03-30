@@ -210,11 +210,11 @@ describe("SpawnTracker — complete() and fail()", () => {
 		expect(() => tracker.complete("s1", "done again")).toThrow();
 	});
 
-	test("fail() throws when called after complete()", () => {
+	test("fail() is idempotent after complete()", () => {
 		const { tracker } = makeTracker();
 		tracker.register("s1", "worker", 1);
 		tracker.complete("s1", "done");
-		expect(() => tracker.fail("s1", "late error")).toThrow();
+		expect(() => tracker.fail("s1", "late error")).not.toThrow();
 	});
 });
 

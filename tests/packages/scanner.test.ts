@@ -139,7 +139,13 @@ describe("local packages only", () => {
 	test("returns built-in + local sources in precedence order", async () => {
 		mockListInstalledPackages.mockImplementation(async (scope) => {
 			if (scope === "project") {
-				return [makePackage("local-pkg", "/project/.cosmonauts/packages/local-pkg", "project")];
+				return [
+					makePackage(
+						"local-pkg",
+						"/project/.cosmonauts/packages/local-pkg",
+						"project",
+					),
+				];
 			}
 			return [];
 		});
@@ -169,7 +175,13 @@ describe("global and local packages", () => {
 			if (scope === "user") {
 				return [makePackage("global-pkg", "/global/store/global-pkg", "user")];
 			}
-			return [makePackage("local-pkg", "/project/.cosmonauts/packages/local-pkg", "project")];
+			return [
+				makePackage(
+					"local-pkg",
+					"/project/.cosmonauts/packages/local-pkg",
+					"project",
+				),
+			];
 		});
 
 		const sources = await scanDomainSources({
@@ -179,8 +191,14 @@ describe("global and local packages", () => {
 
 		expect(sources).toHaveLength(3);
 		expect(sources[0]).toMatchObject({ origin: "builtin", precedence: 0 });
-		expect(sources[1]).toMatchObject({ origin: "global:global-pkg", precedence: 1 });
-		expect(sources[2]).toMatchObject({ origin: "local:local-pkg", precedence: 2 });
+		expect(sources[1]).toMatchObject({
+			origin: "global:global-pkg",
+			precedence: 1,
+		});
+		expect(sources[2]).toMatchObject({
+			origin: "local:local-pkg",
+			precedence: 2,
+		});
 	});
 
 	test("precedence values are strictly ordered", async () => {

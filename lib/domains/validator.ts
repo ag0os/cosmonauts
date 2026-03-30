@@ -50,6 +50,30 @@ export function validateDomains(
 	const diagnostics: DomainValidationDiagnostic[] = [];
 	const shared = domains.find((d) => d.manifest.id === "shared");
 
+	// Portable domains: all domains with portable = true (shared excluded by convention).
+	const portableDomains = domains.filter(
+		(d) => d.portable && d.manifest.id !== "shared",
+	);
+
+	// Rule 7: Warn when two portable domains provide the same capability name.
+	const portableCapProviders = new Map<string, string[]>();
+	for (const domain of portableDomains) {
+		for (const cap of domain.capabilities) {
+			const providers = portableCapProviders.get(cap) ?? [];
+			providers.push(domain.manifest.id);
+			portableCapProviders.set(cap, providers);
+		}
+	}
+	for (const [cap, providers] of portableCapProviders) {
+		if (providers.length > 1) {
+			diagnostics.push({
+				domain: providers[0]!,
+				message: `Capability "${cap}" is provided by multiple portable domains: ${providers.join(", ")}`,
+				severity: "warning",
+			});
+		}
+	}
+
 	// Collect all known agent IDs across all domains in both bare and qualified
 	// forms because workflows/subagent allowlists may use either.
 	const allAgentIds = new Set<string>();
@@ -105,11 +129,12 @@ export function validateDomains(
 				});
 			}
 
-			// Rule 2: Capabilities resolve (domain-first, fallback to shared)
+			// Rule 2: Capabilities resolve (agent domain → portable domains → shared)
 			for (const cap of agent.capabilities) {
 				const inDomain = domain.capabilities.has(cap);
 				const inShared = shared?.capabilities.has(cap) ?? false;
-				if (!inDomain && !inShared) {
+				const inPortable = portableDomains.some((p) => p.capabilities.has(cap));
+				if (!inDomain && !inShared && !inPortable) {
 					diagnostics.push({
 						domain: domainId,
 						agent: agentId,
@@ -119,11 +144,12 @@ export function validateDomains(
 				}
 			}
 
-			// Rule 3: Extensions resolve (domain-first, fallback to shared)
+			// Rule 3: Extensions resolve (agent domain → portable domains → shared)
 			for (const ext of agent.extensions) {
 				const inDomain = domain.extensions.has(ext);
 				const inShared = shared?.extensions.has(ext) ?? false;
-				if (!inDomain && !inShared) {
+				const inPortable = portableDomains.some((p) => p.extensions.has(ext));
+				if (!inDomain && !inShared && !inPortable) {
 					diagnostics.push({
 						domain: domainId,
 						agent: agentId,

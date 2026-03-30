@@ -3,11 +3,15 @@
  * Re-exports all package types and manifest utilities
  */
 
-export { getBundledCatalog, resolveCatalogEntry } from "./catalog.ts";
 export type { CatalogEntry } from "./catalog.ts";
-export { loadManifest, validateManifest } from "./manifest.ts";
+export { getBundledCatalog, resolveCatalogEntry } from "./catalog.ts";
+export type {
+	DomainMergeResult,
+	InstallOptions,
+	InstallResult,
+} from "./installer.ts";
 export { installPackage, uninstallPackage } from "./installer.ts";
-export type { DomainMergeResult, InstallOptions, InstallResult } from "./installer.ts";
+export { loadManifest, validateManifest } from "./manifest.ts";
 export {
 	listInstalledPackages,
 	packageExists,

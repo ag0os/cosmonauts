@@ -9,6 +9,8 @@ import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AgentRegistry } from "../../lib/agents/index.ts";
 import { createRegistryFromDomains } from "../../lib/agents/index.ts";
 import { loadDomains } from "../../lib/domains/index.ts";
+import { DomainRegistry } from "../../lib/domains/registry.ts";
+import { DomainResolver } from "../../lib/domains/resolver.ts";
 import type { ChainResult } from "../../lib/orchestration/types.ts";
 
 // ============================================================================
@@ -105,10 +107,12 @@ describe("orchestration extension", () => {
 		"domains",
 	);
 	let realRegistry: AgentRegistry;
+	let realDomainRegistry: DomainRegistry;
 
 	beforeAll(async () => {
 		const domains = await loadDomains(testDomainsDir);
 		realRegistry = createRegistryFromDomains(domains);
+		realDomainRegistry = new DomainRegistry(domains);
 	});
 
 	function mockRuntime(overrides?: {
@@ -121,7 +125,7 @@ describe("orchestration extension", () => {
 			domainContext: overrides?.domainContext,
 			projectSkills: overrides?.projectSkills ?? [],
 			skillPaths: overrides?.skillPaths ?? [],
-			domainsDir: testDomainsDir,
+			domainRegistry: realDomainRegistry,
 		});
 	}
 
@@ -274,7 +278,7 @@ describe("orchestration extension", () => {
 				projectSkills: ["typescript"],
 				skillPaths: ["/skills/shared", "/skills/project"],
 			}),
-			testDomainsDir,
+			expect.any(DomainResolver), // resolver
 		);
 		expect(mockSession.dispose).toHaveBeenCalledTimes(1);
 	});
@@ -460,7 +464,7 @@ describe("orchestration extension", () => {
 				domainContext: undefined,
 				projectSkills: [],
 				skillPaths: [],
-				domainsDir: testDomainsDir,
+				domainRegistry: realDomainRegistry,
 			});
 		parseChainMock.mockReturnValue([{ name: "planner", loop: false }]);
 		runChainMock.mockResolvedValue({

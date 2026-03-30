@@ -118,6 +118,12 @@ export function parseCliArgs(argv: string[]): CliOptions {
 			"--file <path>",
 			"Write output to a file instead of stdout (used with --dump-prompt)",
 		)
+		.option(
+			"--plugin-dir <path>",
+			"Add a directory as a session-only domain source (repeatable)",
+			(val: string, prev: string[]) => [...prev, val],
+			[] as string[],
+		)
 		.argument("[prompt...]", "Prompt text");
 
 	// Parse without calling process.exit on error
@@ -140,6 +146,8 @@ export function parseCliArgs(argv: string[]): CliOptions {
 	const promptArgs: string[] = program.args;
 	const prompt = promptArgs.length > 0 ? promptArgs.join(" ") : undefined;
 
+	const pluginDirs: string[] = opts.pluginDir ?? [];
+
 	return {
 		prompt,
 		print: opts.print ?? false,
@@ -156,6 +164,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
 		listDomains: opts.listDomains ?? false,
 		dumpPrompt: opts.dumpPrompt ?? false,
 		dumpPromptFile: opts.file,
+		pluginDirs: pluginDirs.length > 0 ? pluginDirs : undefined,
 	};
 }
 
@@ -174,9 +183,10 @@ async function run(options: CliOptions): Promise<void> {
 
 	// Bootstrap: load config, discover domains, build registries
 	const runtime = await CosmonautsRuntime.create({
-		domainsDir,
+		builtinDomainsDir: domainsDir,
 		projectRoot: cwd,
 		domainOverride: options.domain,
+		pluginDirs: options.pluginDirs,
 	});
 
 	const {

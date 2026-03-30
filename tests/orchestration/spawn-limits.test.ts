@@ -32,7 +32,9 @@ describe("resolveMaxConcurrentSpawns", () => {
 
 	it("returns default for negative values", () => {
 		expect(resolveMaxConcurrentSpawns(-1)).toBe(DEFAULT_MAX_CONCURRENT_SPAWNS);
-		expect(resolveMaxConcurrentSpawns(-100)).toBe(DEFAULT_MAX_CONCURRENT_SPAWNS);
+		expect(resolveMaxConcurrentSpawns(-100)).toBe(
+			DEFAULT_MAX_CONCURRENT_SPAWNS,
+		);
 	});
 
 	it("returns default for non-integer numbers", () => {
