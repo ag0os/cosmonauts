@@ -489,6 +489,84 @@ describe("CosmonautsRuntime", () => {
 		});
 	});
 
+	describe("no installed domains (only shared)", () => {
+		it("succeeds when only the shared domain is present", async () => {
+			const domainsDir = join(tmp.path, "domains");
+			await mkdir(domainsDir, { recursive: true });
+			await setupSharedDomain(domainsDir, { capabilities: ["core"] });
+			// No coding domain or any other non-shared domain installed.
+
+			await expect(
+				CosmonautsRuntime.create({
+					builtinDomainsDir: domainsDir,
+					projectRoot: tmp.path,
+				}),
+			).resolves.toBeDefined();
+		});
+
+		it("exposes only the shared domain in the registry", async () => {
+			const domainsDir = join(tmp.path, "domains");
+			await mkdir(domainsDir, { recursive: true });
+			await setupSharedDomain(domainsDir);
+
+			const runtime = await CosmonautsRuntime.create({
+				builtinDomainsDir: domainsDir,
+				projectRoot: tmp.path,
+			});
+
+			expect(runtime.domains).toHaveLength(1);
+			expect(runtime.domains[0]?.manifest.id).toBe("shared");
+			expect(runtime.domainRegistry.has("shared")).toBe(true);
+		});
+
+		it("produces an empty agent registry", async () => {
+			const domainsDir = join(tmp.path, "domains");
+			await mkdir(domainsDir, { recursive: true });
+			await setupSharedDomain(domainsDir);
+
+			const runtime = await CosmonautsRuntime.create({
+				builtinDomainsDir: domainsDir,
+				projectRoot: tmp.path,
+			});
+
+			expect(runtime.agentRegistry.listAll()).toHaveLength(0);
+		});
+
+		it("produces empty workflows", async () => {
+			const domainsDir = join(tmp.path, "domains");
+			await mkdir(domainsDir, { recursive: true });
+			await setupSharedDomain(domainsDir);
+
+			const runtime = await CosmonautsRuntime.create({
+				builtinDomainsDir: domainsDir,
+				projectRoot: tmp.path,
+			});
+
+			expect(runtime.workflows).toHaveLength(0);
+		});
+
+		it("validator does not produce error diagnostics for shared-only config", async () => {
+			const domainsDir = join(tmp.path, "domains");
+			await mkdir(domainsDir, { recursive: true });
+			await setupSharedDomain(domainsDir, { capabilities: ["core"] });
+
+			// DomainValidationError is only thrown on error-severity diagnostics;
+			// if this resolves, the validator passed the shared-only domain list cleanly.
+			const stderrSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+			try {
+				const runtime = await CosmonautsRuntime.create({
+					builtinDomainsDir: domainsDir,
+					projectRoot: tmp.path,
+				});
+				expect(runtime).toBeDefined();
+				// No warnings either for a clean shared-only setup.
+				expect(stderrSpy).not.toHaveBeenCalled();
+			} finally {
+				stderrSpy.mockRestore();
+			}
+		});
+	});
+
 	describe("full bootstrap integration", () => {
 		it("produces a complete runtime with all fields populated", async () => {
 			const domainsDir = join(tmp.path, "domains");
