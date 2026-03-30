@@ -120,12 +120,15 @@ describe("orchestration extension", () => {
 		projectSkills?: readonly string[];
 		skillPaths?: readonly string[];
 	}) {
+		const resolver = new DomainResolver(realDomainRegistry);
 		runtimeCreateMock.mockResolvedValue({
 			agentRegistry: realRegistry,
 			domainContext: overrides?.domainContext,
 			projectSkills: overrides?.projectSkills ?? [],
 			skillPaths: overrides?.skillPaths ?? [],
 			domainRegistry: realDomainRegistry,
+			domainResolver: resolver,
+			domainsDir: testDomainsDir,
 		});
 	}
 
@@ -278,6 +281,7 @@ describe("orchestration extension", () => {
 				projectSkills: ["typescript"],
 				skillPaths: ["/skills/shared", "/skills/project"],
 			}),
+			testDomainsDir, // domainsDir
 			expect.any(DomainResolver), // resolver
 		);
 		expect(mockSession.dispose).toHaveBeenCalledTimes(1);
