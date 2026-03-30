@@ -76,7 +76,9 @@ export interface PiSpawnerOptions {
 export function createPiSpawner(
 	registry: AgentRegistry,
 	domainsDir: string,
-	options?: PiSpawnerOptions,
+	options?: PiSpawnerOptions & {
+		resolver?: import("../domains/resolver.ts").DomainResolver;
+	},
 ): AgentSpawner {
 	const bus = options?.bus ?? new MessageBus();
 	const spawnTimeoutMs = options?.spawnTimeoutMs ?? DEFAULT_SPAWN_TIMEOUT_MS;
@@ -106,6 +108,7 @@ export function createPiSpawner(
 					def,
 					config,
 					domainsDir,
+					options?.resolver,
 				);
 
 				// Create tracker before prompt so the spawn tool can register

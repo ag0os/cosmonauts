@@ -37,7 +37,7 @@ function generateManifest(name: string): string {
 function generateDomainTs(name: string): string {
 	return `import type { DomainManifest } from "cosmonauts/lib/domains/types.ts";
 
-export const domain: DomainManifest = {
+export const manifest: DomainManifest = {
 	id: "${name}",
 	description: "${name} domain",
 	portable: false,

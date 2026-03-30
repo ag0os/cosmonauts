@@ -76,17 +76,48 @@ export async function listInstalledPackages(
 
 	const packages: InstalledPackage[] = [];
 
+	// Collect candidate directories, descending into @scope dirs
+	const candidateDirs: Array<{ path: string; birthtime: Date }> = [];
 	for (const entry of entries) {
-		const installPath = join(storeRoot, entry);
+		const entryPath = join(storeRoot, entry);
 
 		let dirStat: Awaited<ReturnType<typeof stat>>;
 		try {
-			dirStat = await stat(installPath);
+			dirStat = await stat(entryPath);
 		} catch {
 			continue;
 		}
 		if (!dirStat.isDirectory()) continue;
 
+		if (entry.startsWith("@")) {
+			// Scoped package: @scope/name — descend one level
+			let scopeEntries: string[];
+			try {
+				scopeEntries = await readdir(entryPath);
+			} catch {
+				continue;
+			}
+			for (const scopeChild of scopeEntries) {
+				const childPath = join(entryPath, scopeChild);
+				let childStat: Awaited<ReturnType<typeof stat>>;
+				try {
+					childStat = await stat(childPath);
+				} catch {
+					continue;
+				}
+				if (childStat.isDirectory()) {
+					candidateDirs.push({
+						path: childPath,
+						birthtime: childStat.birthtime,
+					});
+				}
+			}
+		} else {
+			candidateDirs.push({ path: entryPath, birthtime: dirStat.birthtime });
+		}
+	}
+
+	for (const { path: installPath, birthtime } of candidateDirs) {
 		let raw: unknown;
 		try {
 			raw = await loadManifest(installPath);
@@ -102,7 +133,7 @@ export async function listInstalledPackages(
 			manifest: result.manifest,
 			installPath,
 			scope,
-			installedAt: dirStat.birthtime,
+			installedAt: birthtime,
 		});
 	}
 

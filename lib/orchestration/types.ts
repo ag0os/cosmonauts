@@ -119,6 +119,8 @@ export interface ChainConfig {
 	registry: AgentRegistry;
 	/** Absolute path to the root domains directory. Computed from package root if not provided. */
 	domainsDir?: string;
+	/** Domain resolver for multi-source path resolution. Takes precedence over domainsDir. */
+	resolver?: import("../domains/resolver.ts").DomainResolver;
 }
 
 // ============================================================================

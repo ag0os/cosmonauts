@@ -244,6 +244,7 @@ async function run(options: CliOptions): Promise<void> {
 			domain,
 			capabilities: def.capabilities,
 			domainsDir: runtime.domainsDir,
+			resolver: runtime.domainResolver,
 		});
 		prompt = appendAgentIdentityMarker(prompt, qualifyAgentId(def.id, domain));
 
@@ -272,6 +273,7 @@ async function run(options: CliOptions): Promise<void> {
 			definition: cosmoDefinition,
 			cwd,
 			domainsDir: runtime.domainsDir,
+			resolver: runtime.domainResolver,
 			model,
 			thinkingLevel: options.thinking,
 			persistent: false,
@@ -305,6 +307,7 @@ async function run(options: CliOptions): Promise<void> {
 			completionLabel: options.completionLabel,
 			registry,
 			domainsDir: runtime.domainsDir,
+			resolver: runtime.domainResolver,
 			...(options.thinking && { thinking: { default: options.thinking } }),
 		});
 
@@ -330,6 +333,7 @@ async function run(options: CliOptions): Promise<void> {
 			completionLabel: options.completionLabel,
 			registry,
 			domainsDir: runtime.domainsDir,
+			resolver: runtime.domainResolver,
 			...(options.thinking && { thinking: { default: options.thinking } }),
 		});
 
@@ -349,6 +353,7 @@ async function run(options: CliOptions): Promise<void> {
 			definition,
 			cwd,
 			domainsDir: runtime.domainsDir,
+			resolver: runtime.domainResolver,
 			model,
 			thinkingLevel: options.thinking,
 			persistent: false,
@@ -373,6 +378,7 @@ async function run(options: CliOptions): Promise<void> {
 		definition,
 		cwd,
 		domainsDir: runtime.domainsDir,
+		resolver: runtime.domainResolver,
 		model,
 		thinkingLevel: options.thinking,
 		persistent: true,

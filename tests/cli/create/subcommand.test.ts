@@ -60,6 +60,7 @@ describe("scaffoldDomain", () => {
 			"utf-8",
 		);
 
+		expect(source).toContain("export const manifest");
 		expect(source).toContain('id: "mypkg"');
 		expect(source).toContain("portable: false");
 	});

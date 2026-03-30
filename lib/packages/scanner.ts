@@ -4,8 +4,9 @@
  * in precedence order: built-in (0) → global (1) → local (2) → plugin (3).
  */
 
+import { dirname, join } from "node:path";
 import { listInstalledPackages } from "./store.ts";
-import type { DomainSource } from "./types.ts";
+import type { DomainSource, InstalledPackage } from "./types.ts";
 
 // ============================================================================
 // Public API
@@ -46,25 +47,11 @@ export async function scanDomainSources(
 
 	// Global packages (user scope)
 	const globalPackages = await listInstalledPackages("user");
-	for (const pkg of globalPackages) {
-		if (pkg.manifest.domains.length === 0) continue;
-		sources.push({
-			domainsDir: pkg.installPath,
-			origin: `global:${pkg.manifest.name}`,
-			precedence: 1,
-		});
-	}
+	addPackageSources(sources, globalPackages, "global", 1);
 
 	// Local packages (project scope)
 	const localPackages = await listInstalledPackages("project", projectRoot);
-	for (const pkg of localPackages) {
-		if (pkg.manifest.domains.length === 0) continue;
-		sources.push({
-			domainsDir: pkg.installPath,
-			origin: `local:${pkg.manifest.name}`,
-			precedence: 2,
-		});
-	}
+	addPackageSources(sources, localPackages, "local", 2);
 
 	// Plugin dirs: session-only sources, not stored in the package store
 	if (pluginDirs) {
@@ -78,4 +65,44 @@ export async function scanDomainSources(
 	}
 
 	return sources;
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Add domain sources for each domain declared in each package.
+ *
+ * Uses `PackageDomain.path` to resolve the actual domain directory within
+ * the package root, then exposes the *parent* of that directory as the
+ * `domainsDir` (since `loadDomains()` scans immediate children).
+ *
+ * For the common case where `path` equals `name` (e.g. `{ name: "coding",
+ * path: "coding" }`), the parent is `pkg.installPath` itself.
+ */
+function addPackageSources(
+	sources: DomainSource[],
+	packages: InstalledPackage[],
+	scopeLabel: string,
+	precedence: number,
+): void {
+	for (const pkg of packages) {
+		if (pkg.manifest.domains.length === 0) continue;
+
+		// Deduplicate parent dirs when multiple domains share the same parent
+		const parentDirs = new Set<string>();
+		for (const domain of pkg.manifest.domains) {
+			const domainAbsPath = join(pkg.installPath, domain.path);
+			parentDirs.add(dirname(domainAbsPath));
+		}
+
+		for (const parentDir of parentDirs) {
+			sources.push({
+				domainsDir: parentDir,
+				origin: `${scopeLabel}:${pkg.manifest.name}`,
+				precedence,
+			});
+		}
+	}
 }

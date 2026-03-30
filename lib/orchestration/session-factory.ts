@@ -15,6 +15,7 @@ import { appendAgentIdentityMarker, qualifyAgentId } from "../agents/index.ts";
 import { buildSkillsOverride } from "../agents/skills.ts";
 import type { AgentDefinition } from "../agents/types.ts";
 import { assemblePrompts } from "../domains/prompt-assembly.ts";
+import type { DomainResolver } from "../domains/resolver.ts";
 import {
 	resolveExtensionPaths,
 	resolveTools,
@@ -38,6 +39,7 @@ export async function createAgentSessionFromDefinition(
 	def: AgentDefinition,
 	config: SpawnConfig,
 	domainsDir: string,
+	resolver?: DomainResolver,
 ): Promise<AgentSession> {
 	const modelId = config.model ?? def.model ?? FALLBACK_MODEL;
 	const model = resolveModel(modelId);
@@ -51,6 +53,7 @@ export async function createAgentSessionFromDefinition(
 		domain: def.domain ?? "coding",
 		capabilities: def.capabilities,
 		domainsDir,
+		resolver,
 		runtimeContext:
 			config.runtimeContext?.mode === "sub-agent"
 				? {
@@ -72,6 +75,7 @@ export async function createAgentSessionFromDefinition(
 	const extensionPaths = resolveExtensionPaths(def.extensions, {
 		domain: def.domain ?? "coding",
 		domainsDir,
+		resolver,
 	});
 
 	// Build resource loader with all definition fields.

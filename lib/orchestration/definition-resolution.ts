@@ -10,6 +10,7 @@ import {
 	createReadOnlyTools,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentToolSet } from "../agents/index.ts";
+import type { DomainResolver } from "../domains/resolver.ts";
 
 // ============================================================================
 // Tool Resolution
@@ -38,8 +39,10 @@ export function resolveTools(toolSet: AgentToolSet, cwd: string) {
 export interface ResolveExtensionOptions {
 	/** Domain the agent belongs to (e.g. "coding", "shared"). */
 	readonly domain: string;
-	/** Absolute path to the root domains directory. */
+	/** Absolute path to the root domains directory (fallback when no resolver). */
 	readonly domainsDir: string;
+	/** Domain resolver for multi-source path resolution. Takes precedence over domainsDir. */
+	readonly resolver?: DomainResolver;
 }
 
 /**
@@ -55,8 +58,15 @@ export function resolveExtensionPaths(
 	extensions: readonly string[],
 	options: ResolveExtensionOptions,
 ): string[] {
-	const { domain, domainsDir } = options;
+	const { domain, domainsDir, resolver } = options;
 	return extensions.map((name) => {
+		// Prefer resolver for multi-source resolution (agent domain → portable → shared)
+		if (resolver) {
+			const resolved = resolver.resolveExtensionPath(name, domain);
+			if (resolved && isDirectory(resolved)) return resolved;
+		}
+
+		// Fallback: two-tier directory-based resolution
 		// Try domain-specific path first (skip if already "shared")
 		if (domain !== "shared") {
 			const domainPath = join(domainsDir, domain, "extensions", name);

@@ -23,6 +23,7 @@ import {
 import { buildSkillsOverride } from "../lib/agents/skills.ts";
 import type { AgentDefinition } from "../lib/agents/types.ts";
 import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
+import type { DomainResolver } from "../lib/domains/resolver.ts";
 import {
 	resolveExtensionPaths,
 	resolveTools,
@@ -43,8 +44,10 @@ export interface CreateSessionOptions {
 	definition: AgentDefinition;
 	/** Working directory */
 	cwd: string;
-	/** Absolute path to the root domains directory */
+	/** Absolute path to the root domains directory (fallback when no resolver) */
 	domainsDir: string;
+	/** Domain resolver for multi-source path resolution. When provided, takes precedence over domainsDir. */
+	resolver?: DomainResolver;
 	/** Model override (takes precedence over definition.model) */
 	model?: Model<Api>;
 	/** Thinking level override */
@@ -72,6 +75,7 @@ export async function createSession(
 		definition: def,
 		cwd,
 		domainsDir,
+		resolver,
 		model,
 		thinkingLevel,
 		persistent,
@@ -87,6 +91,7 @@ export async function createSession(
 		domain: def.domain ?? "coding",
 		capabilities: def.capabilities,
 		domainsDir,
+		resolver,
 	});
 	promptContent = appendAgentIdentityMarker(
 		promptContent,
@@ -96,6 +101,7 @@ export async function createSession(
 	const extensionPaths = resolveExtensionPaths(def.extensions, {
 		domain: def.domain ?? "coding",
 		domainsDir,
+		resolver,
 	});
 
 	const skillsOverride = buildSkillsOverride(def.skills, projectSkills);

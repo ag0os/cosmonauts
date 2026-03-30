@@ -21,7 +21,7 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 		let promise = runtimeCache.get(cwd);
 		if (!promise) {
 			promise = CosmonautsRuntime.create({
-				domainsDir,
+				builtinDomainsDir: domainsDir,
 				projectRoot: cwd,
 			}).catch((error: unknown) => {
 				runtimeCache.delete(cwd);

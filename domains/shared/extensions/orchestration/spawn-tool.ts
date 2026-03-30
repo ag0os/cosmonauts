@@ -278,6 +278,7 @@ export function registerSpawnTool(
 				targetDef,
 				spawnConfig,
 				runtime.domainsDir,
+				runtime.domainResolver,
 			)
 				.then(async (session) => {
 					// Register child depth so grandchild spawns can compute their depth

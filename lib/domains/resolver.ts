@@ -5,8 +5,13 @@
  *   Tier 1: Agent's own domain
  *   Tier 2: Portable domains (in registry discovery order)
  *   Tier 3: Shared domain (always last)
+ *
+ * Within a merged domain (multiple rootDirs), files are searched in
+ * precedence order (rootDirs[0] = highest precedence) so that a
+ * higher-precedence package's file wins over a lower-precedence one.
  */
 
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { DomainRegistry } from "./registry.ts";
 import type { LoadedDomain } from "./types.ts";
@@ -41,7 +46,7 @@ export class DomainResolver {
 	resolveBasePath(): string | undefined {
 		const shared = this._registry.get("shared");
 		if (!shared) return undefined;
-		return join(shared.rootDirs[0]!, "prompts", "base.md");
+		return findInRootDirs(shared.rootDirs, "prompts", "base.md");
 	}
 
 	/**
@@ -51,7 +56,12 @@ export class DomainResolver {
 	resolveRuntimeTemplatePath(): string | undefined {
 		const shared = this._registry.get("shared");
 		if (!shared) return undefined;
-		return join(shared.rootDirs[0]!, "prompts", "runtime", "sub-agent.md");
+		return findInRootDirs(
+			shared.rootDirs,
+			"prompts",
+			"runtime",
+			"sub-agent.md",
+		);
 	}
 
 	/**
@@ -63,7 +73,8 @@ export class DomainResolver {
 		return this.resolveInTiers(
 			agentDomain,
 			(domain) => domain.capabilities.has(name),
-			(domain) => join(domain.rootDirs[0]!, "capabilities", `${name}.md`),
+			(domain) =>
+				findInRootDirs(domain.rootDirs, "capabilities", `${name}.md`),
 		);
 	}
 
@@ -76,7 +87,8 @@ export class DomainResolver {
 		return this.resolveInTiers(
 			agentDomain,
 			(domain) => domain.prompts.has(agentId),
-			(domain) => join(domain.rootDirs[0]!, "prompts", `${agentId}.md`),
+			(domain) =>
+				findInRootDirs(domain.rootDirs, "prompts", `${agentId}.md`),
 		);
 	}
 
@@ -89,7 +101,7 @@ export class DomainResolver {
 		return this.resolveInTiers(
 			agentDomain,
 			(domain) => domain.extensions.has(name),
-			(domain) => join(domain.rootDirs[0]!, "extensions", name),
+			(domain) => findInRootDirs(domain.rootDirs, "extensions", name),
 		);
 	}
 
@@ -97,18 +109,25 @@ export class DomainResolver {
 	 * Returns all skill directories across all domains.
 	 *
 	 * Order: non-shared domains (registry order) → shared domain.
-	 * Only includes domains that have at least one skill.
+	 * For merged domains with multiple rootDirs, includes the skills/
+	 * directory from each rootDir (highest precedence first).
 	 */
 	allSkillDirs(): string[] {
 		const dirs: string[] = [];
+		const addSkillDirs = (domain: LoadedDomain) => {
+			for (const rootDir of domain.rootDirs) {
+				dirs.push(join(rootDir, "skills"));
+			}
+		};
+
 		for (const domain of this._registry.listAll()) {
 			if (domain.manifest.id !== "shared" && domain.skills.size > 0) {
-				dirs.push(join(domain.rootDirs[0]!, "skills"));
+				addSkillDirs(domain);
 			}
 		}
 		const shared = this._registry.get("shared");
 		if (shared && shared.skills.size > 0) {
-			dirs.push(join(shared.rootDirs[0]!, "skills"));
+			addSkillDirs(shared);
 		}
 		return dirs;
 	}
@@ -124,10 +143,13 @@ export class DomainResolver {
 	private resolveInTiers(
 		agentDomain: string,
 		hasResource: (domain: LoadedDomain) => boolean,
-		buildPath: (domain: LoadedDomain) => string,
+		buildPath: (domain: LoadedDomain) => string | undefined,
 	): string | undefined {
 		for (const domain of this.tieredOrder(agentDomain)) {
-			if (hasResource(domain)) return buildPath(domain);
+			if (hasResource(domain)) {
+				const path = buildPath(domain);
+				if (path) return path;
+			}
 		}
 		return undefined;
 	}
@@ -164,4 +186,30 @@ export class DomainResolver {
 
 		return result;
 	}
+}
+
+// ============================================================================
+// Module-level helpers
+// ============================================================================
+
+/**
+ * Search through rootDirs in order (highest precedence first) and return the
+ * first path where the file/directory exists. Falls back to rootDirs[0] if
+ * the resource is not found in any rootDir (lets the caller produce a clear
+ * ENOENT with the expected path).
+ */
+function findInRootDirs(
+	rootDirs: readonly string[],
+	...segments: string[]
+): string | undefined {
+	if (rootDirs.length === 0) return undefined;
+
+	for (const rootDir of rootDirs) {
+		const candidate = join(rootDir, ...segments);
+		if (existsSync(candidate)) return candidate;
+	}
+
+	// Fallback: return the highest-precedence path so the caller gets a
+	// meaningful ENOENT rather than undefined (the resource *is* declared).
+	return join(rootDirs[0]!, ...segments);
 }
