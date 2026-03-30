@@ -14,8 +14,8 @@
  *   cosmonauts plan <command>               → plan management subcommands
  */
 
-import { writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { InteractiveMode, runPrintMode } from "@mariozechner/pi-coding-agent";
@@ -41,12 +41,12 @@ import {
 	createPackagesProgram,
 	createUninstallProgram,
 } from "./packages/subcommand.ts";
-import { createUpdateProgram } from "./update/subcommand.ts";
 import { createPlanProgram } from "./plans/index.ts";
 import { createSession } from "./session.ts";
 import { createSkillsProgram } from "./skills/subcommand.ts";
 import { createTaskProgram } from "./tasks/subcommand.ts";
 import type { CliOptions } from "./types.ts";
+import { createUpdateProgram } from "./update/subcommand.ts";
 
 // ============================================================================
 // Thinking Level Validation
@@ -68,6 +68,62 @@ function parseThinkingLevel(value: string): ThinkingLevel {
 		);
 	}
 	return value as ThinkingLevel;
+}
+
+// ============================================================================
+// Framework Dev-Mode Detection
+// ============================================================================
+
+/**
+ * Returns true when the CLI is running from inside the Cosmonauts framework
+ * repo itself. Detection heuristic: package.json at root has name "cosmonauts"
+ * AND a bundled/ directory exists.
+ *
+ * Exported for testing.
+ */
+export async function isCosmonautsFrameworkRepo(
+	root: string,
+): Promise<boolean> {
+	try {
+		const content = await readFile(join(root, "package.json"), "utf-8");
+		const pkg = JSON.parse(content) as Record<string, unknown>;
+		if (pkg.name !== "cosmonauts") return false;
+	} catch {
+		return false;
+	}
+	try {
+		const s = await stat(join(root, "bundled"));
+		return s.isDirectory();
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Returns the absolute path of each package directory directly under
+ * `bundledDir` that contains a `cosmonauts.json` manifest.
+ *
+ * Exported for testing.
+ */
+export async function discoverBundledPackageDirs(
+	bundledDir: string,
+): Promise<string[]> {
+	const dirs: string[] = [];
+	const entries = await readdir(bundledDir, { withFileTypes: true }).catch(
+		() => null,
+	);
+	if (!entries) return dirs;
+	for (const entry of entries) {
+		if (!entry.isDirectory()) continue;
+		const pkgDir = join(bundledDir, entry.name);
+		try {
+			await stat(join(pkgDir, "cosmonauts.json"));
+			dirs.push(pkgDir);
+		} catch {
+			// no cosmonauts.json — not a bundled package
+		}
+	}
+	return dirs;
 }
 
 // ============================================================================
@@ -175,18 +231,25 @@ export function parseCliArgs(argv: string[]): CliOptions {
 
 async function run(options: CliOptions): Promise<void> {
 	const cwd = process.cwd();
-	const domainsDir = resolve(
-		fileURLToPath(import.meta.url),
-		"..",
-		"..",
-		"domains",
-	);
+	const frameworkRoot = resolve(fileURLToPath(import.meta.url), "..", "..");
+	const domainsDir = join(frameworkRoot, "domains");
+
+	// Dev-mode auto-detection: auto-include bundled/ packages when running
+	// from inside the framework repo (name='cosmonauts', bundled/ exists).
+	let bundledDirs: string[] | undefined;
+	if (await isCosmonautsFrameworkRepo(frameworkRoot)) {
+		const discovered = await discoverBundledPackageDirs(
+			join(frameworkRoot, "bundled"),
+		);
+		if (discovered.length > 0) bundledDirs = discovered;
+	}
 
 	// Bootstrap: load config, discover domains, build registries
 	const runtime = await CosmonautsRuntime.create({
 		builtinDomainsDir: domainsDir,
 		projectRoot: cwd,
 		domainOverride: options.domain,
+		bundledDirs,
 		pluginDirs: options.pluginDirs,
 	});
 

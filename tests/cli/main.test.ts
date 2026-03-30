@@ -1,11 +1,16 @@
 /**
- * Tests for CLI argument parsing (parseCliArgs).
- *
- * Only tests the pure argument-parsing logic — no real Pi sessions or API keys.
+ * Tests for CLI argument parsing (parseCliArgs) and framework dev-mode
+ * detection helpers (isCosmonautsFrameworkRepo, discoverBundledPackageDirs).
  */
 
-import { describe, expect, test } from "vitest";
-import { parseCliArgs } from "../../cli/main.ts";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import {
+	discoverBundledPackageDirs,
+	isCosmonautsFrameworkRepo,
+	parseCliArgs,
+} from "../../cli/main.ts";
 
 describe("parseCliArgs", () => {
 	test("defaults: interactive mode, no prompt", () => {
@@ -295,5 +300,152 @@ describe("parseCliArgs", () => {
 
 		expect(opts.dumpPrompt).toBe(false);
 		expect(opts.dumpPromptFile).toBeUndefined();
+	});
+});
+
+// ============================================================================
+// isCosmonautsFrameworkRepo
+// ============================================================================
+
+describe("isCosmonautsFrameworkRepo", () => {
+	let tmpDir: string;
+
+	beforeEach(async () => {
+		tmpDir = join(
+			import.meta.dirname,
+			`.tmp-framework-repo-${Math.random().toString(36).slice(2)}`,
+		);
+		await mkdir(tmpDir, { recursive: true });
+	});
+
+	afterEach(async () => {
+		await rm(tmpDir, { recursive: true, force: true });
+	});
+
+	test("returns true when package.json name is 'cosmonauts' and bundled/ exists", async () => {
+		await writeFile(
+			join(tmpDir, "package.json"),
+			JSON.stringify({ name: "cosmonauts", version: "0.1.0" }),
+		);
+		await mkdir(join(tmpDir, "bundled"));
+
+		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(true);
+	});
+
+	test("returns false when package.json name is not 'cosmonauts'", async () => {
+		await writeFile(
+			join(tmpDir, "package.json"),
+			JSON.stringify({ name: "my-project", version: "1.0.0" }),
+		);
+		await mkdir(join(tmpDir, "bundled"));
+
+		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(false);
+	});
+
+	test("returns false when bundled/ directory does not exist", async () => {
+		await writeFile(
+			join(tmpDir, "package.json"),
+			JSON.stringify({ name: "cosmonauts", version: "0.1.0" }),
+		);
+
+		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(false);
+	});
+
+	test("returns false when package.json is absent", async () => {
+		await mkdir(join(tmpDir, "bundled"));
+
+		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(false);
+	});
+
+	test("returns false when package.json is malformed JSON", async () => {
+		await writeFile(join(tmpDir, "package.json"), "not json {{{");
+		await mkdir(join(tmpDir, "bundled"));
+
+		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(false);
+	});
+
+	test("returns false when root directory does not exist", async () => {
+		expect(await isCosmonautsFrameworkRepo("/no/such/path")).toBe(false);
+	});
+});
+
+// ============================================================================
+// discoverBundledPackageDirs
+// ============================================================================
+
+describe("discoverBundledPackageDirs", () => {
+	let tmpDir: string;
+
+	beforeEach(async () => {
+		tmpDir = join(
+			import.meta.dirname,
+			`.tmp-bundled-${Math.random().toString(36).slice(2)}`,
+		);
+		await mkdir(tmpDir, { recursive: true });
+	});
+
+	afterEach(async () => {
+		await rm(tmpDir, { recursive: true, force: true });
+	});
+
+	test("returns directories that contain cosmonauts.json", async () => {
+		await mkdir(join(tmpDir, "coding"));
+		await writeFile(
+			join(tmpDir, "coding", "cosmonauts.json"),
+			JSON.stringify({ name: "coding" }),
+		);
+
+		const dirs = await discoverBundledPackageDirs(tmpDir);
+
+		expect(dirs).toEqual([join(tmpDir, "coding")]);
+	});
+
+	test("returns multiple package directories", async () => {
+		for (const pkg of ["coding", "coding-minimal"]) {
+			await mkdir(join(tmpDir, pkg));
+			await writeFile(
+				join(tmpDir, pkg, "cosmonauts.json"),
+				JSON.stringify({ name: pkg }),
+			);
+		}
+
+		const dirs = await discoverBundledPackageDirs(tmpDir);
+
+		expect(dirs.sort()).toEqual(
+			[join(tmpDir, "coding"), join(tmpDir, "coding-minimal")].sort(),
+		);
+	});
+
+	test("skips directories without cosmonauts.json", async () => {
+		await mkdir(join(tmpDir, "with-manifest"));
+		await writeFile(
+			join(tmpDir, "with-manifest", "cosmonauts.json"),
+			JSON.stringify({ name: "with-manifest" }),
+		);
+		await mkdir(join(tmpDir, "no-manifest"));
+
+		const dirs = await discoverBundledPackageDirs(tmpDir);
+
+		expect(dirs).toEqual([join(tmpDir, "with-manifest")]);
+	});
+
+	test("skips files (non-directories)", async () => {
+		await writeFile(join(tmpDir, "cosmonauts.json"), "{}");
+
+		const dirs = await discoverBundledPackageDirs(tmpDir);
+
+		expect(dirs).toEqual([]);
+	});
+
+	test("returns empty array when bundledDir does not exist", async () => {
+		const dirs = await discoverBundledPackageDirs("/no/such/bundled/dir");
+
+		expect(dirs).toEqual([]);
+	});
+
+	test("returns empty array when bundledDir is empty", async () => {
+		const dirs = await discoverBundledPackageDirs(tmpDir);
+
+		expect(dirs).toEqual([]);
 	});
 });

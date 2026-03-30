@@ -25,6 +25,12 @@ export interface CosmonautsRuntimeOptions {
 	builtinDomainsDir: string;
 	/** Absolute path to the project root (where .cosmonauts/ lives). */
 	projectRoot: string;
+	/**
+	 * Bundled package directories for framework dev-mode auto-include.
+	 * Added at the lowest precedence — global packages override bundled,
+	 * local packages override global.
+	 */
+	bundledDirs?: string[];
 	/** Optional extra domain source directories (e.g. from --plugin-dir flag). */
 	pluginDirs?: string[];
 	/** CLI-level domain override (takes priority over project config). */
@@ -107,10 +113,11 @@ export class CosmonautsRuntime {
 		// 1. Load project config
 		const projectConfig = await loadProjectConfig(options.projectRoot);
 
-		// 2. Scan all domain sources (built-in, global packages, local packages, plugins)
+		// 2. Scan all domain sources (built-in, bundled, global packages, local packages, plugins)
 		const sources = await scanDomainSources({
 			builtinDomainsDir: options.builtinDomainsDir,
 			projectRoot: options.projectRoot,
+			bundledDirs: options.bundledDirs,
 			pluginDirs: options.pluginDirs,
 		});
 
