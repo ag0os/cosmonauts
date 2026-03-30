@@ -41,6 +41,7 @@ import {
 	createPackagesProgram,
 	createUninstallProgram,
 } from "./packages/subcommand.ts";
+import { createUpdateProgram } from "./update/subcommand.ts";
 import { createPlanProgram } from "./plans/index.ts";
 import { createSession } from "./session.ts";
 import { createSkillsProgram } from "./skills/subcommand.ts";
@@ -407,7 +408,8 @@ if (
 	subcommand === "create" ||
 	subcommand === "install" ||
 	subcommand === "uninstall" ||
-	subcommand === "packages"
+	subcommand === "packages" ||
+	subcommand === "update"
 ) {
 	const programs: Record<string, () => Command> = {
 		task: createTaskProgram,
@@ -417,6 +419,7 @@ if (
 		install: createInstallProgram,
 		uninstall: createUninstallProgram,
 		packages: createPackagesProgram,
+		update: createUpdateProgram,
 	};
 	// subcommand is guaranteed to be in the map by the if-check above
 	const createProgram = programs[subcommand];
