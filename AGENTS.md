@@ -173,7 +173,8 @@ For small, self-contained changes (a bug fix, a single function, a config tweak)
 
 ```
 lib/              Core libraries (agents, orchestration, tasks, plans, workflows, domains, config)
-domains/          Domain directories (shared/, coding/) — agents, prompts, capabilities, skills, extensions
+domains/          Framework-level domain directory — contains only shared/ (base prompts, capabilities, extensions)
+bundled/          Installable domain packages (coding/, coding-minimal/) — the source of truth for bundled domains
 cli/              CLI implementation
 bin/              CLI entry points (cosmonauts)
 tests/            Test suites mirroring source structure
