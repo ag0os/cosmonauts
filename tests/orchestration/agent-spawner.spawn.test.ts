@@ -35,7 +35,7 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
 	},
 }));
 
-import { loadDomains } from "../../lib/domains/index.ts";
+import { loadDomainsFromSources } from "../../lib/domains/index.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
 import {
 	createPiSpawner,
@@ -50,10 +50,22 @@ const DOMAINS_DIR = resolve(
 	"domains",
 );
 
+const BUNDLED_CODING_DIR = resolve(
+	fileURLToPath(import.meta.url),
+	"..",
+	"..",
+	"..",
+	"bundled",
+	"coding",
+);
+
 let realResolver: DomainResolver;
 
 beforeAll(async () => {
-	const domains = await loadDomains(DOMAINS_DIR);
+	const domains = await loadDomainsFromSources([
+		{ domainsDir: DOMAINS_DIR, origin: "framework", precedence: 1 },
+		{ domainsDir: BUNDLED_CODING_DIR, origin: "bundled", precedence: 2 },
+	]);
 	realResolver = DomainResolver.fromSingleDir(DOMAINS_DIR, domains);
 });
 

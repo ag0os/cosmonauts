@@ -196,7 +196,7 @@ describe("renderRuntimeTemplate", () => {
 
 /** Resolve domain directories relative to PROMPTS_DIR (domains/shared/prompts). */
 const SHARED_CAPABILITIES_DIR = resolve(PROMPTS_DIR, "..", "capabilities");
-const CODING_DIR = resolve(PROMPTS_DIR, "..", "..", "coding");
+const CODING_DIR = resolve(PROMPTS_DIR, "..", "..", "..", "bundled", "coding", "coding");
 const CODING_CAPABILITIES_DIR = join(CODING_DIR, "capabilities");
 const CODING_PROMPTS_DIR = join(CODING_DIR, "prompts");
 
@@ -221,7 +221,7 @@ describe("domain-based prompt file paths", () => {
 		}
 	});
 
-	it("loads coding capability files from domains/coding/capabilities", async () => {
+	it("loads coding capability files from bundled/coding/coding/capabilities", async () => {
 		const capabilities = ["coding-readwrite", "coding-readonly"];
 		for (const ref of capabilities) {
 			const content = await loadPrompt(ref, CODING_CAPABILITIES_DIR);
@@ -229,7 +229,7 @@ describe("domain-based prompt file paths", () => {
 		}
 	});
 
-	it("loads all coding persona files from domains/coding/prompts", async () => {
+	it("loads all coding persona files from bundled/coding/coding/prompts", async () => {
 		const personas = [
 			"cosmo",
 			"planner",
