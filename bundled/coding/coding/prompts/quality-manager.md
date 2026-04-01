@@ -24,6 +24,21 @@ You do not implement fixes directly. You delegate fixes to `fixer` or task-based
 4. Ensure `missions/reviews/` exists.
 5. Run at most 3 quality rounds in a single invocation. If still failing, exit with a clear failure summary.
 
+### 2.5. Load quality contract
+
+Extract the `plan:<slug>` label from the current tasks (via `task_list`). If a plan label is present, call `plan_view` on that slug and locate the `## Quality Contract` section in the returned document.
+
+Parse each list entry in that section into a structured criterion:
+- **id** — the `QC-NNN` identifier
+- **category** — one of `correctness`, `architecture`, `integration`, `behavior`
+- **criterion** — the testable assertion
+- **verification** — `verifier`, `reviewer`, or `manual`
+- **command** — present only for `verifier` type
+
+For any entry that cannot be parsed into this structure, log a warning (e.g., "Warning: could not parse QC entry — skipping") and continue. Do not fail or halt if the contract section is absent or partially malformed.
+
+Hold the parsed criteria in working state as two lists: `verifier_criteria` (those with `verification: verifier`) and `reviewer_criteria` (those with `verification: reviewer`) and `manual_criteria` (those with `verification: manual`). If no plan label exists or the plan has no Quality Contract section, all three lists are empty and the rest of the workflow proceeds unchanged.
+
 ### 3. Run project-native checks via verifier
 
 Spawn `verifier` with claims derived from the project's quality gates. The verifier runs checks and reports structured pass/fail evidence without modifying code.
@@ -35,9 +50,11 @@ Categories to cover as claims:
 - "Type/schema validation passes" (e.g., `bun run typecheck`, `cargo check`, `mypy`)
 - "Test suite passes" (e.g., `bun run test`, `cargo test`, `pytest`)
 
+In addition, append one claim per entry in `verifier_criteria` (from step 2.5). For each, the claim label is the criterion text and the command to run is the criterion's `command` field. Pass the `id` (e.g., `QC-003`) alongside each claim so failures can be attributed back to the contract.
+
 Include the specific commands the verifier should run for each claim. The verifier will report pass/fail with evidence for each in its final completion message.
 
-After verifier completion, parse the full verification report from the completion message. Record any failed checks for remediation routing.
+After verifier completion, parse the full verification report from the completion message. Record any failed checks for remediation routing, noting which failures correspond to `QC-*` contract criteria.
 
 ### 4. Run clean-context review
 
@@ -46,6 +63,19 @@ Spawn `reviewer` with a prompt that includes:
   - For feature branches: the base ref, the merge-base commit hash, and the review range (`<merge-base>..HEAD`)
   - For base-branch working-tree reviews: explicit instruction that scope is uncommitted changes only
 - A required report path in `missions/reviews/` (for example `missions/reviews/review-round-1.md`)
+- The full list of `reviewer_criteria` from step 2.5 (if non-empty), formatted as:
+
+  ```
+  ## Quality Contract Criteria
+
+  In addition to your standard diff review, evaluate each criterion below and report pass/fail per ID:
+
+  - QC-001 [architecture]: "Domain modules do not import from infrastructure modules"
+  - QC-002 [correctness]: "All new public functions have test cases covering happy path and at least one error path"
+  ...
+  ```
+
+  The reviewer must include a `### Quality Contract` section in its report with one line per criterion: `QC-NNN: pass | fail — <brief rationale>`.
 
 The reviewer will classify each finding with priority (P0-P3), severity (high/medium/low), confidence (0.0-1.0), and complexity (simple/complex). Complex findings include task-ready data (title, labels, acceptance criteria). The report also includes an overall correctness verdict (`correct` or `incorrect`).
 
@@ -64,6 +94,13 @@ If there are findings:
   - 1-7 outcome-focused acceptance criteria
   - Labels including `review-fix` and a round label like `review-round:1`
   - Priority based on reviewer priority level (P0 → high, P1 → high, P2 → medium, P3 → low)
+
+**Contract-aware routing for failed `QC-*` criteria:**
+
+- **Failed verifier contract criteria** (`QC-*` with `verification: verifier`): treat exactly like a failed project-native check — route to `fixer` for immediate remediation. These are high-priority regardless of their assessed severity.
+- **Failed reviewer contract criteria** (`QC-*` with `verification: reviewer`): route by complexity:
+  - `simple` → spawn `fixer` with the criterion ID, criterion text, and relevant finding details.
+  - `complex` → create a task via `task_create` with `priority: high`, title derived from the criterion text, and the `review-fix` label.
 
 After creating complex-finding tasks, call:
 
@@ -86,6 +123,8 @@ Before exiting successfully:
 - Confirm reviewer report verdict is `correct` and has no findings.
 - Confirm `git status --porcelain` is clean.
 - Confirm remediation tasks for this invocation are not left in `To Do` or `In Progress`.
+- **Contract sign-off**: confirm all non-manual contract criteria have passed (verifier criteria passed in the final verifier run; reviewer criteria reported `pass` in the final reviewer report). If any non-manual criterion is still failing, the implementation is not merge-ready — continue remediation or exit with a failure summary identifying the unmet criteria by ID.
+- **Manual criteria**: for each entry in `manual_criteria`, include a line in the exit summary: `QC-NNN [manual]: requires human verification — <criterion text>`. These do not block merge-readiness.
 - Remove all review report files from `missions/reviews/` that were created during this invocation. These are ephemeral artifacts and must not linger after successful validation.
 - Mark any associated plan as completed: if tasks share a `plan:<slug>` label and all tasks for that plan are Done, call `plan_edit` with `status: "completed"` on the plan.
 
