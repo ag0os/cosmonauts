@@ -3,7 +3,11 @@ import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
 import { createAgentSessionFromDefinition } from "../../../../lib/orchestration/session-factory.ts";
-import { getOrCreateTracker } from "../../../../lib/orchestration/spawn-tracker.ts";
+import {
+	formatCompletionMessage,
+	getOrCreateTracker,
+	isTrackerCompletionLoopManaged,
+} from "../../../../lib/orchestration/spawn-tracker.ts";
 import type { CosmonautsRuntime } from "../../../../lib/runtime.ts";
 import { isSubagentAllowed } from "./authorization.ts";
 import { renderTextFallback, roleLabel } from "./rendering.ts";
@@ -287,9 +291,31 @@ export function registerSpawnTool(
 						await session.prompt(params.prompt);
 						const summary = extractSummary(session.messages, params.role);
 						tracker.complete(spawnId, summary);
+						if (!isTrackerCompletionLoopManaged(parentSessionId)) {
+							pi.sendUserMessage(
+								formatCompletionMessage(
+									spawnId,
+									params.role,
+									"success",
+									summary,
+								),
+								{ deliverAs: "followUp" },
+							);
+						}
 					} catch (err: unknown) {
 						const message = err instanceof Error ? err.message : String(err);
 						tracker.fail(spawnId, message);
+						if (!isTrackerCompletionLoopManaged(parentSessionId)) {
+							pi.sendUserMessage(
+								formatCompletionMessage(
+									spawnId,
+									params.role,
+									"failed",
+									message,
+								),
+								{ deliverAs: "followUp" },
+							);
+						}
 					} finally {
 						sessionDepths.delete(session.sessionId);
 						session.dispose();
@@ -299,6 +325,12 @@ export function registerSpawnTool(
 					// createAgentSessionFromDefinition() itself failed
 					const message = err instanceof Error ? err.message : String(err);
 					tracker.fail(spawnId, message);
+					if (!isTrackerCompletionLoopManaged(parentSessionId)) {
+						pi.sendUserMessage(
+							formatCompletionMessage(spawnId, params.role, "failed", message),
+							{ deliverAs: "followUp" },
+						);
+					}
 				});
 
 			return {

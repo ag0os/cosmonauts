@@ -6,6 +6,8 @@ import {
 } from "../../lib/orchestration/spawn-limits.ts";
 import {
 	getOrCreateTracker,
+	isTrackerCompletionLoopManaged,
+	markTrackerCompletionLoopManaged,
 	removeTracker,
 	SpawnTracker,
 } from "../../lib/orchestration/spawn-tracker.ts";
@@ -435,6 +437,18 @@ describe("getOrCreateTracker() and removeTracker()", () => {
 			durationMs: 0,
 		});
 		expect(tracker.drainCompleted()).toEqual([]);
+	});
+
+	test("removeTracker() clears completion-loop-managed session state", () => {
+		const bus = new MessageBus();
+		getOrCreateTracker(TEST_SESSION, bus);
+		markTrackerCompletionLoopManaged(TEST_SESSION);
+
+		expect(isTrackerCompletionLoopManaged(TEST_SESSION)).toBe(true);
+
+		removeTracker(TEST_SESSION);
+
+		expect(isTrackerCompletionLoopManaged(TEST_SESSION)).toBe(false);
 	});
 
 	test("removeTracker() is a no-op for an unknown sessionId", () => {

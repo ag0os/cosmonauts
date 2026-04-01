@@ -5,12 +5,25 @@
 
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+	afterEach,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	test,
+	vi,
+} from "vitest";
 import type { AgentRegistry } from "../../lib/agents/index.ts";
 import { createRegistryFromDomains } from "../../lib/agents/index.ts";
 import { loadDomains } from "../../lib/domains/index.ts";
 import { DomainRegistry } from "../../lib/domains/registry.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
+import {
+	getOrCreateTracker,
+	markTrackerCompletionLoopManaged,
+	removeTracker,
+} from "../../lib/orchestration/spawn-tracker.ts";
 import type { ChainResult } from "../../lib/orchestration/types.ts";
 
 // ============================================================================
@@ -74,10 +87,12 @@ interface MockPiOptions {
 function createMockPi(cwd: string, options?: MockPiOptions) {
 	const tools = new Map<string, RegisteredTool>();
 	const sessionId = options?.sessionId ?? `test-session-${Math.random()}`;
+	const sendUserMessage = vi.fn();
 	return {
 		registerTool(def: RegisteredTool) {
 			tools.set(def.name, def);
 		},
+		sendUserMessage,
 		getTool(name: string) {
 			return tools.get(name);
 		},
@@ -135,6 +150,10 @@ describe("orchestration extension", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockRuntime();
+	});
+
+	afterEach(() => {
+		removeTracker("chain-parent-session");
 	});
 
 	test("chain_run forwards project skills from config", async () => {
@@ -283,6 +302,111 @@ describe("orchestration extension", () => {
 			}),
 			testDomainsDir, // domainsDir
 			expect.any(DomainResolver), // resolver
+		);
+		expect(mockSession.dispose).toHaveBeenCalledTimes(1);
+	});
+
+	test("spawn_agent sends a follow-up completion message back to the parent session", async () => {
+		const cwd = "/tmp/project";
+		const pi = createMockPi(cwd, {
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:planner -->",
+		});
+		orchestrationExtension(pi as never);
+
+		mockRuntime({ domainContext: "coding" });
+		const mockSession = {
+			sessionId: "child-session-success",
+			messages: [
+				{
+					role: "assistant",
+					content: [{ type: "text", text: "Verification complete." }],
+				},
+			],
+			prompt: vi.fn().mockResolvedValue(undefined),
+			dispose: vi.fn(),
+		};
+		mocks.createAgentSessionFromDefinition.mockResolvedValue(mockSession);
+
+		const result = (await pi.callTool("spawn_agent", {
+			role: "worker",
+			prompt: "Run verification",
+		})) as { details: { status: string; spawnId: string } };
+
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(result.details.status).toBe("accepted");
+		expect(pi.sendUserMessage).toHaveBeenCalledWith(
+			`[spawn_completion] spawnId=${result.details.spawnId} role=worker outcome=success summary=Verification complete.`,
+			{ deliverAs: "followUp" },
+		);
+		expect(mockSession.dispose).toHaveBeenCalledTimes(1);
+	});
+
+	test("spawn_agent does not send a follow-up completion when the parent is completion-loop managed", async () => {
+		const cwd = "/tmp/project";
+		const sessionId = "chain-parent-session";
+		const pi = createMockPi(cwd, {
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:planner -->",
+			sessionId,
+		});
+		orchestrationExtension(pi as never);
+
+		mockRuntime({ domainContext: "coding" });
+		getOrCreateTracker(sessionId);
+		markTrackerCompletionLoopManaged(sessionId);
+
+		const mockSession = {
+			sessionId: "child-session-success",
+			messages: [
+				{
+					role: "assistant",
+					content: [{ type: "text", text: "Verification complete." }],
+				},
+			],
+			prompt: vi.fn().mockResolvedValue(undefined),
+			dispose: vi.fn(),
+		};
+		mocks.createAgentSessionFromDefinition.mockResolvedValue(mockSession);
+
+		const result = (await pi.callTool("spawn_agent", {
+			role: "worker",
+			prompt: "Run verification",
+		})) as { details: { status: string } };
+
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(result.details.status).toBe("accepted");
+		expect(pi.sendUserMessage).not.toHaveBeenCalled();
+		expect(mockSession.dispose).toHaveBeenCalledTimes(1);
+	});
+
+	test("spawn_agent sends a follow-up failure message when the child session errors", async () => {
+		const cwd = "/tmp/project";
+		const pi = createMockPi(cwd, {
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:planner -->",
+		});
+		orchestrationExtension(pi as never);
+
+		mockRuntime({ domainContext: "coding" });
+		const mockSession = {
+			sessionId: "child-session-failure",
+			messages: [],
+			prompt: vi.fn().mockRejectedValue(new Error("verification failed")),
+			dispose: vi.fn(),
+		};
+		mocks.createAgentSessionFromDefinition.mockResolvedValue(mockSession);
+
+		const result = (await pi.callTool("spawn_agent", {
+			role: "worker",
+			prompt: "Run verification",
+		})) as { details: { status: string; spawnId: string } };
+
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(result.details.status).toBe("accepted");
+		expect(pi.sendUserMessage).toHaveBeenCalledWith(
+			`[spawn_completion] spawnId=${result.details.spawnId} role=worker outcome=failed summary=verification failed`,
+			{ deliverAs: "followUp" },
 		);
 		expect(mockSession.dispose).toHaveBeenCalledTimes(1);
 	});

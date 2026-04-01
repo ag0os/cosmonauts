@@ -19,7 +19,9 @@ import {
 } from "./model-resolution.ts";
 import { createAgentSessionFromDefinition } from "./session-factory.ts";
 import {
+	formatCompletionMessage,
 	getOrCreateTracker,
+	markTrackerCompletionLoopManaged,
 	removeTracker,
 	type SpawnTracker,
 } from "./spawn-tracker.ts";
@@ -114,6 +116,7 @@ export function createPiSpawner(
 				// Create tracker before prompt so the spawn tool can register
 				// children as soon as the first tool call fires.
 				const tracker = getOrCreateTracker(session.sessionId, bus);
+				markTrackerCompletionLoopManaged(session.sessionId);
 
 				let unsubscribe: (() => void) | undefined;
 				try {
@@ -190,19 +193,6 @@ export function createPiSpawner(
 // ============================================================================
 // Completion Loop Helpers
 // ============================================================================
-
-/**
- * Format a child completion result as a concise user message for the parent
- * session. The parent agent uses these messages to track child outcomes.
- */
-function formatCompletionMessage(
-	spawnId: string,
-	role: string,
-	outcome: "success" | "failed",
-	summary: string,
-): string {
-	return `[spawn_completion] spawnId=${spawnId} role=${role} outcome=${outcome} summary=${summary}`;
-}
 
 /**
  * Wait for the next child spawn completion, with a per-spawn timeout.
