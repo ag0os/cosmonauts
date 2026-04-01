@@ -54,13 +54,6 @@ export class SpawnTracker {
 	private readonly spawns = new Map<string, SpawnRecord>();
 	private _activeCount = 0;
 
-	/**
-	 * When true, child completions are delivered by the spawner's completion
-	 * loop (e.g. chain runner) and should not also be injected as follow-up
-	 * turns by the spawn tool.
-	 */
-	completionLoopManaged = false;
-
 	/** Events that have arrived but not yet consumed by nextCompletion(). */
 	private readonly buffer: Array<SpawnCompletedEvent | SpawnFailedEvent> = [];
 	/** Pending nextCompletion() resolvers waiting for the next event. */
@@ -284,25 +277,6 @@ export function getOrCreateTracker(
 }
 
 /**
- * Marks a session as having its child completions delivered by the spawner's
- * completion loop instead of the spawn tool's follow-up injection path.
- */
-export function markTrackerCompletionLoopManaged(sessionId: string): void {
-	const tracker = trackerRegistry.get(sessionId);
-	if (tracker) {
-		tracker.completionLoopManaged = true;
-	}
-}
-
-/**
- * Returns true when a parent session's child completions are handled by the
- * spawner completion loop and should not be re-delivered as follow-up turns.
- */
-export function isTrackerCompletionLoopManaged(sessionId: string): boolean {
-	return trackerRegistry.get(sessionId)?.completionLoopManaged ?? false;
-}
-
-/**
  * Disposes and removes the SpawnTracker for a session. No-op if the session
  * has no registered tracker.
  */
@@ -312,17 +286,4 @@ export function removeTracker(sessionId: string): void {
 		tracker.dispose();
 		trackerRegistry.delete(sessionId);
 	}
-}
-
-/**
- * Format a child completion/failure as a concise message string.
- * Shared by the spawner completion loop and the spawn tool follow-up path.
- */
-export function formatCompletionMessage(
-	spawnId: string,
-	role: string,
-	outcome: "success" | "failed",
-	summary: string,
-): string {
-	return `[spawn_completion] spawnId=${spawnId} role=${role} outcome=${outcome} summary=${summary}`;
 }
