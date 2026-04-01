@@ -303,7 +303,7 @@ describe("packages with no declared domains are skipped", () => {
 
 		// Only built-in; the package with 0 domains is skipped
 		expect(sources).toHaveLength(1);
-		expect(sources[0]!.origin).toBe("builtin");
+		expect(sources[0]?.origin).toBe("builtin");
 	});
 
 	test("local package with no domains is excluded", async () => {
@@ -339,7 +339,7 @@ describe("packages with no declared domains are skipped", () => {
 		});
 
 		expect(sources).toHaveLength(2); // builtin + has-domains
-		expect(sources[1]!.origin).toBe("global:has-domains");
+		expect(sources[1]?.origin).toBe("global:has-domains");
 	});
 });
 
@@ -463,6 +463,6 @@ describe("DomainSource fields", () => {
 			projectRoot: PROJECT_ROOT,
 		});
 
-		expect(sources[1]!.origin).toBe("global:@org/my-pkg");
+		expect(sources[1]?.origin).toBe("global:@org/my-pkg");
 	});
 });

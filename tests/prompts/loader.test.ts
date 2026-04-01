@@ -196,7 +196,15 @@ describe("renderRuntimeTemplate", () => {
 
 /** Resolve domain directories relative to PROMPTS_DIR (domains/shared/prompts). */
 const SHARED_CAPABILITIES_DIR = resolve(PROMPTS_DIR, "..", "capabilities");
-const CODING_DIR = resolve(PROMPTS_DIR, "..", "..", "..", "bundled", "coding", "coding");
+const CODING_DIR = resolve(
+	PROMPTS_DIR,
+	"..",
+	"..",
+	"..",
+	"bundled",
+	"coding",
+	"coding",
+);
 const CODING_CAPABILITIES_DIR = join(CODING_DIR, "capabilities");
 const CODING_PROMPTS_DIR = join(CODING_DIR, "prompts");
 

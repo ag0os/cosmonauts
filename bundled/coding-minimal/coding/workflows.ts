@@ -1,4 +1,4 @@
-import type { WorkflowDefinition } from "../../lib/workflows/types.ts";
+import type { WorkflowDefinition } from "../../../lib/workflows/types.ts";
 
 /** Core workflows for the minimal coding domain. */
 export const workflows: WorkflowDefinition[] = [

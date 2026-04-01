@@ -73,8 +73,7 @@ export class DomainResolver {
 		return this.resolveInTiers(
 			agentDomain,
 			(domain) => domain.capabilities.has(name),
-			(domain) =>
-				findInRootDirs(domain.rootDirs, "capabilities", `${name}.md`),
+			(domain) => findInRootDirs(domain.rootDirs, "capabilities", `${name}.md`),
 		);
 	}
 
@@ -87,8 +86,7 @@ export class DomainResolver {
 		return this.resolveInTiers(
 			agentDomain,
 			(domain) => domain.prompts.has(agentId),
-			(domain) =>
-				findInRootDirs(domain.rootDirs, "prompts", `${agentId}.md`),
+			(domain) => findInRootDirs(domain.rootDirs, "prompts", `${agentId}.md`),
 		);
 	}
 
@@ -211,5 +209,7 @@ function findInRootDirs(
 
 	// Fallback: return the highest-precedence path so the caller gets a
 	// meaningful ENOENT rather than undefined (the resource *is* declared).
-	return join(rootDirs[0]!, ...segments);
+	const firstDir = rootDirs[0];
+	if (firstDir === undefined) return undefined;
+	return join(firstDir, ...segments);
 }

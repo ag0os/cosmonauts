@@ -32,12 +32,13 @@ vi.mock("../../../lib/packages/catalog.ts", () => ({
 	resolveCatalogEntry: vi.fn(),
 }));
 
-import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import {
 	createUpdateProgram,
 	updateAction,
 } from "../../../cli/update/subcommand.ts";
+import { resolveCatalogEntry } from "../../../lib/packages/catalog.ts";
 import {
 	installPackage,
 	uninstallPackage,
@@ -46,7 +47,6 @@ import {
 	listInstalledPackages,
 	resolveStorePath,
 } from "../../../lib/packages/store.ts";
-import { resolveCatalogEntry } from "../../../lib/packages/catalog.ts";
 import type { InstalledPackage } from "../../../lib/packages/types.ts";
 
 const mockReadFile = vi.mocked(readFile);
@@ -79,7 +79,11 @@ function makeInstalledPackage(
 }
 
 function makeMeta(source: string, extra: Record<string, unknown> = {}): string {
-	return JSON.stringify({ source, installedAt: "2024-01-01T00:00:00.000Z", ...extra });
+	return JSON.stringify({
+		source,
+		installedAt: "2024-01-01T00:00:00.000Z",
+		...extra,
+	});
 }
 
 /** Creates a mock spawn child process that exits with the given code. */
@@ -161,7 +165,11 @@ describe("catalog source", () => {
 
 		await updateAction({ target: "coding", projectRoot: "/project" });
 
-		expect(mockUninstallPackage).toHaveBeenCalledWith("coding", "user", "/project");
+		expect(mockUninstallPackage).toHaveBeenCalledWith(
+			"coding",
+			"user",
+			"/project",
+		);
 		expect(mockInstallPackage).toHaveBeenCalledWith(
 			expect.objectContaining({
 				scope: "user",
@@ -251,7 +259,9 @@ describe("link source", () => {
 
 		await updateAction({ target: "my-pkg", projectRoot: "/project" });
 
-		expect(stdoutOutput).toContain("Symlinked package — already live, no update needed");
+		expect(stdoutOutput).toContain(
+			"Symlinked package — already live, no update needed",
+		);
 		expect(process.exitCode).toBeUndefined();
 		expect(mockInstallPackage).not.toHaveBeenCalled();
 		expect(mockSpawn).not.toHaveBeenCalled();
@@ -283,7 +293,9 @@ describe("local source", () => {
 
 describe("missing .cosmonauts-meta.json", () => {
 	it("warns with a clear message — no exitCode", async () => {
-		mockReadFile.mockRejectedValue(Object.assign(new Error("ENOENT"), { code: "ENOENT" }));
+		mockReadFile.mockRejectedValue(
+			Object.assign(new Error("ENOENT"), { code: "ENOENT" }),
+		);
 
 		await updateAction({ target: "my-pkg", projectRoot: "/project" });
 
@@ -316,13 +328,19 @@ describe("--all flag", () => {
 			if (p.includes("pkg-b")) {
 				return Promise.resolve(makeMeta("link", { targetPath: "/abs" }));
 			}
-			return Promise.reject(Object.assign(new Error("ENOENT"), { code: "ENOENT" }));
+			return Promise.reject(
+				Object.assign(new Error("ENOENT"), { code: "ENOENT" }),
+			);
 		});
 
 		await updateAction({ all: true, projectRoot: "/project" });
 
 		// catalog update should have been attempted
-		expect(mockUninstallPackage).toHaveBeenCalledWith("pkg-a", "user", "/project");
+		expect(mockUninstallPackage).toHaveBeenCalledWith(
+			"pkg-a",
+			"user",
+			"/project",
+		);
 		expect(mockInstallPackage).toHaveBeenCalledTimes(1);
 
 		// link: skip message
@@ -342,14 +360,17 @@ describe("--all flag", () => {
 	});
 
 	it("uses project scope with --local", async () => {
-		mockListInstalledPackages.mockResolvedValue([makeInstalledPackage("pkg-a", "project")]);
-		mockReadFile.mockResolvedValue(
-			makeMeta("link", { targetPath: "/abs" }),
-		);
+		mockListInstalledPackages.mockResolvedValue([
+			makeInstalledPackage("pkg-a", "project"),
+		]);
+		mockReadFile.mockResolvedValue(makeMeta("link", { targetPath: "/abs" }));
 
 		await updateAction({ all: true, local: true, projectRoot: "/project" });
 
-		expect(mockListInstalledPackages).toHaveBeenCalledWith("project", "/project");
+		expect(mockListInstalledPackages).toHaveBeenCalledWith(
+			"project",
+			"/project",
+		);
 	});
 });
 

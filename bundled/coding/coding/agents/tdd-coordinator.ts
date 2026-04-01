@@ -1,4 +1,4 @@
-import type { AgentDefinition } from "../../../lib/agents/types.ts";
+import type { AgentDefinition } from "../../../../lib/agents/types.ts";
 
 const definition: AgentDefinition = {
 	id: "tdd-coordinator",

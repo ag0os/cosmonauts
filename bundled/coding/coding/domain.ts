@@ -1,4 +1,4 @@
-import type { DomainManifest } from "../../lib/domains/types.ts";
+import type { DomainManifest } from "../../../lib/domains/types.ts";
 
 /** Coding domain — agents, skills, and workflows for software development. */
 export const manifest: DomainManifest = {

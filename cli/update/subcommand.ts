@@ -172,7 +172,10 @@ export async function updateAction(options: UpdateOptions): Promise<void> {
 	}
 
 	if (options.all) {
-		const packages = await listInstalledPackages(scope, scope === "project" ? cwd : undefined);
+		const packages = await listInstalledPackages(
+			scope,
+			scope === "project" ? cwd : undefined,
+		);
 		if (packages.length === 0) {
 			console.log("No packages installed.");
 			return;
