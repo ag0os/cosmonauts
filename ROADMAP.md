@@ -77,6 +77,14 @@ Smart pruning for coordinator loops that accumulate large tool outputs over many
 
 ## Ideas
 
+### `domain-aware-skills`: Domain-Aware Skill Discovery
+
+Skill filtering should be domain-aware. When `projectConfig.skills` is unset, default to showing all skills from the active domain context rather than all skills globally. Prevents cross-domain noise as new domains are added.
+
+- `buildSkillsOverride` gains a `domainContext` parameter
+- Filter discovered skills by domain when no explicit skill list is given
+- Projects can still override with an explicit `skills` list to restrict further
+
 ### `web-search-tool`: Web Search
 
 Add web_search tool for searching the web from agent sessions.
