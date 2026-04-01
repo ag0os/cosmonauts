@@ -35,7 +35,29 @@ Follow the Architectural Design discipline. Specifically:
 - **Check for reuse.** Look for existing code that can be extended rather than written from scratch.
 - **Evaluate trade-offs.** Consider edge cases, error handling, and backward compatibility. Pick the simplest approach that meets requirements.
 
-### 4. Write the plan document
+### 4. Define quality criteria
+
+After completing the architecture design, identify 3–8 plan-specific quality criteria that the quality-manager will evaluate after implementation. These are the agreed-upon bars that define "done correctly" for this plan.
+
+**What makes a good criterion:**
+- A concrete, testable assertion tied to a specific design decision or requirement — something you can check with a command or inspect in code
+- Bad: "The code is well-tested" (vague platitude — not testable, not specific)
+- Good: "All public API functions have test coverage for the happy path and at least one error path" (specific assertion, inspectable by a reviewer)
+- Bad: "The implementation is performant" (no threshold, no measurement)
+- Good: "Cache invalidation triggers on every write — no stale reads after writes in the test suite" (specific behavior, verifiable by running tests)
+
+**Required fields for each criterion:**
+- **ID**: Sequential identifier in the format `QC-NNN` (e.g., `QC-001`, `QC-002`)
+- **Category**: One of `correctness`, `architecture`, `integration`, or `behavior`
+- **Criterion**: The testable assertion — one sentence, precise
+- **Verification**: How the quality-manager verifies it — `verifier` (run a command), `reviewer` (inspect code), or `manual` (human check)
+- **Command** (optional, for `verifier` type only): The exact shell command to run
+
+Prefer `verifier` criteria where possible — automated checks are more reliable than code inspection. Use `reviewer` for structural or architectural properties that cannot be captured in a command. Use `manual` sparingly, only for behavioral properties that require human judgment.
+
+Aim for signal over coverage — 3 precise criteria beat 8 vague ones. Every criterion must be tied to a real risk or design decision in this specific plan, not copied from a generic checklist.
+
+### 5. Write the plan document
 
 Load the `/skill:plan` skill for detailed guidance on plan structure and format.
 
@@ -94,6 +116,38 @@ Anything that could go wrong or needs careful attention:
 - Dependencies on external services or libraries that may behave unexpectedly
 - Performance concerns
 - Areas where the requirements are ambiguous and you made a judgment call
+
+### Quality Contract
+
+The plan-specific quality criteria produced in step 4. List 3–8 criteria using YAML-like list items:
+
+```markdown
+## Quality Contract
+
+- id: QC-001
+  category: architecture
+  criterion: "Domain modules do not import from infrastructure modules — dependency direction is inward only"
+  verification: reviewer
+
+- id: QC-002
+  category: correctness
+  criterion: "All new public functions have corresponding test cases covering happy path and at least one error path"
+  verification: reviewer
+
+- id: QC-003
+  category: integration
+  criterion: "The new API endpoints return valid responses matching the OpenAPI schema"
+  verification: verifier
+  command: "bun run test -- --grep 'api schema'"
+
+- id: QC-004
+  category: behavior
+  criterion: "Cache invalidation triggers on every write operation — no stale reads after writes"
+  verification: verifier
+  command: "bun run test -- --grep 'cache invalidation'"
+```
+
+Each entry must have `id`, `category`, `criterion`, and `verification`. Include `command` only for `verifier`-type criteria.
 
 ### Implementation Order
 

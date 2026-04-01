@@ -22,9 +22,20 @@ import {
 // Types
 // ============================================================================
 
+/**
+ * Controls who delivers child completion messages to the parent session.
+ *
+ * - `"self"` (default): The spawn tool delivers via `pi.sendUserMessage()`.
+ *   Used in interactive sessions (e.g., Cosmo).
+ * - `"external"`: An external driver (e.g., the chain runner's completion
+ *   loop) delivers via `session.prompt()`. The spawn tool skips delivery.
+ */
+export type DeliveryMode = "self" | "external";
+
 export interface SpawnTrackerOptions {
 	maxConcurrentSpawns?: number;
 	maxDepth?: number;
+	deliveryMode?: DeliveryMode;
 }
 
 interface SpawnRecord {
@@ -51,6 +62,7 @@ export class SpawnTracker {
 	private readonly semaphore: Semaphore;
 	private readonly maxDepth: number;
 	private readonly maxConcurrent: number;
+	private readonly _deliveryMode: DeliveryMode;
 	private readonly spawns = new Map<string, SpawnRecord>();
 	private _activeCount = 0;
 
@@ -73,6 +85,7 @@ export class SpawnTracker {
 			options?.maxConcurrentSpawns,
 		);
 		this.maxDepth = resolveMaxSpawnDepth(options?.maxDepth);
+		this._deliveryMode = options?.deliveryMode ?? "self";
 		this.semaphore = new Semaphore(this.maxConcurrent);
 
 		this.subscriptionTokens.push(
@@ -186,6 +199,11 @@ export class SpawnTracker {
 			sessionId: this.sessionId,
 			error,
 		});
+	}
+
+	/** Whether completion delivery is handled by the spawn tool or an external driver. */
+	get deliveryMode(): DeliveryMode {
+		return this._deliveryMode;
 	}
 
 	/** Number of currently running children. */

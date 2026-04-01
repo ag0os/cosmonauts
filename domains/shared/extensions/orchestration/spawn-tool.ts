@@ -314,23 +314,32 @@ export function registerSpawnTool(
 						);
 						const summary = extractSummary(assistantText, params.role);
 						tracker.complete(spawnId, summary);
-						pi.sendUserMessage(
-							formatCompletionMessage(
-								spawnId,
-								params.role,
-								"success",
-								summary,
-								params.role === "verifier" ? assistantText : undefined,
-							),
-							{ deliverAs: "followUp" },
-						);
+						if (tracker.deliveryMode === "self") {
+							pi.sendUserMessage(
+								formatCompletionMessage(
+									spawnId,
+									params.role,
+									"success",
+									summary,
+									params.role === "verifier" ? assistantText : undefined,
+								),
+								{ deliverAs: "followUp" },
+							);
+						}
 					} catch (err: unknown) {
 						const message = err instanceof Error ? err.message : String(err);
 						tracker.fail(spawnId, message);
-						pi.sendUserMessage(
-							formatCompletionMessage(spawnId, params.role, "failed", message),
-							{ deliverAs: "followUp" },
-						);
+						if (tracker.deliveryMode === "self") {
+							pi.sendUserMessage(
+								formatCompletionMessage(
+									spawnId,
+									params.role,
+									"failed",
+									message,
+								),
+								{ deliverAs: "followUp" },
+							);
+						}
 					} finally {
 						sessionDepths.delete(session.sessionId);
 						session.dispose();
@@ -340,10 +349,12 @@ export function registerSpawnTool(
 					// createAgentSessionFromDefinition() itself failed
 					const message = err instanceof Error ? err.message : String(err);
 					tracker.fail(spawnId, message);
-					pi.sendUserMessage(
-						formatCompletionMessage(spawnId, params.role, "failed", message),
-						{ deliverAs: "followUp" },
-					);
+					if (tracker.deliveryMode === "self") {
+						pi.sendUserMessage(
+							formatCompletionMessage(spawnId, params.role, "failed", message),
+							{ deliverAs: "followUp" },
+						);
+					}
 				});
 
 			return {
