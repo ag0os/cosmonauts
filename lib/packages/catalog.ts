@@ -2,6 +2,9 @@
  * Bundled domain catalog — static registry of officially bundled domains.
  */
 
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -54,4 +57,18 @@ export function getBundledCatalog(): readonly CatalogEntry[] {
  */
 export function resolveCatalogEntry(name: string): CatalogEntry | undefined {
 	return BUNDLED_CATALOG.find((entry) => entry.name === name);
+}
+
+/**
+ * Resolve a framework-relative catalog source path to an absolute path.
+ * e.g. "./bundled/coding" → "/usr/local/lib/cosmonauts/bundled/coding"
+ */
+export function resolveCatalogSource(catalogSource: string): string {
+	const frameworkRoot = resolve(
+		fileURLToPath(import.meta.url),
+		"..",
+		"..",
+		"..",
+	);
+	return join(frameworkRoot, catalogSource);
 }

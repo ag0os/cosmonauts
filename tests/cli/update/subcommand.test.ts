@@ -10,10 +10,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Mocks
 // ============================================================================
 
-vi.mock("node:fs/promises", () => ({
-	readFile: vi.fn(),
-}));
-
 vi.mock("node:child_process", () => ({
 	spawn: vi.fn(),
 }));
@@ -21,6 +17,7 @@ vi.mock("node:child_process", () => ({
 vi.mock("../../../lib/packages/installer.ts", () => ({
 	installPackage: vi.fn(),
 	uninstallPackage: vi.fn(),
+	loadInstallMeta: vi.fn(),
 }));
 
 vi.mock("../../../lib/packages/store.ts", () => ({
@@ -28,19 +25,25 @@ vi.mock("../../../lib/packages/store.ts", () => ({
 	resolveStorePath: vi.fn(),
 }));
 
-vi.mock("../../../lib/packages/catalog.ts", () => ({
-	resolveCatalogEntry: vi.fn(),
-}));
+vi.mock("../../../lib/packages/catalog.ts", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("../../../lib/packages/catalog.ts")>();
+	return {
+		...actual,
+		resolveCatalogEntry: vi.fn(),
+	};
+});
 
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
 import {
 	createUpdateProgram,
 	updateAction,
 } from "../../../cli/update/subcommand.ts";
 import { resolveCatalogEntry } from "../../../lib/packages/catalog.ts";
 import {
+	type InstallMeta,
 	installPackage,
+	loadInstallMeta,
 	uninstallPackage,
 } from "../../../lib/packages/installer.ts";
 import {
@@ -49,7 +52,7 @@ import {
 } from "../../../lib/packages/store.ts";
 import type { InstalledPackage } from "../../../lib/packages/types.ts";
 
-const mockReadFile = vi.mocked(readFile);
+const mockLoadInstallMeta = vi.mocked(loadInstallMeta);
 const mockSpawn = vi.mocked(spawn);
 const mockInstallPackage = vi.mocked(installPackage);
 const mockUninstallPackage = vi.mocked(uninstallPackage);
@@ -78,12 +81,15 @@ function makeInstalledPackage(
 	};
 }
 
-function makeMeta(source: string, extra: Record<string, unknown> = {}): string {
-	return JSON.stringify({
+function makeMeta(
+	source: string,
+	extra: Record<string, unknown> = {},
+): InstallMeta {
+	return {
 		source,
 		installedAt: "2024-01-01T00:00:00.000Z",
 		...extra,
-	});
+	} as InstallMeta;
 }
 
 /** Creates a mock spawn child process that exits with the given code. */
@@ -154,7 +160,7 @@ afterEach(() => {
 
 describe("catalog source", () => {
 	it("uninstalls and re-installs from the catalog source path", async () => {
-		mockReadFile.mockResolvedValue(
+		mockLoadInstallMeta.mockResolvedValue(
 			makeMeta("catalog", { catalogName: "coding" }),
 		);
 		mockResolveCatalogEntry.mockReturnValue({
@@ -183,7 +189,7 @@ describe("catalog source", () => {
 	});
 
 	it("falls back to ./bundled/<catalogName> when catalog entry not found", async () => {
-		mockReadFile.mockResolvedValue(
+		mockLoadInstallMeta.mockResolvedValue(
 			makeMeta("catalog", { catalogName: "custom-domain" }),
 		);
 		mockResolveCatalogEntry.mockReturnValue(undefined);
@@ -196,7 +202,7 @@ describe("catalog source", () => {
 	});
 
 	it("writes an error and sets exitCode when re-install fails", async () => {
-		mockReadFile.mockResolvedValue(
+		mockLoadInstallMeta.mockResolvedValue(
 			makeMeta("catalog", { catalogName: "coding" }),
 		);
 		mockInstallPackage.mockRejectedValue(new Error("disk full"));
@@ -215,7 +221,7 @@ describe("catalog source", () => {
 
 describe("git source", () => {
 	it("runs git pull in the install path on success", async () => {
-		mockReadFile.mockResolvedValue(
+		mockLoadInstallMeta.mockResolvedValue(
 			makeMeta("git", { url: "https://github.com/owner/repo", branch: null }),
 		);
 		mockSpawn.mockReturnValue(mockSpawnProcess(0) as ReturnType<typeof spawn>);
@@ -232,7 +238,7 @@ describe("git source", () => {
 	});
 
 	it("sets exitCode and writes error when git pull fails", async () => {
-		mockReadFile.mockResolvedValue(
+		mockLoadInstallMeta.mockResolvedValue(
 			makeMeta("git", { url: "https://github.com/owner/repo", branch: null }),
 		);
 		mockSpawn.mockReturnValue(
@@ -253,7 +259,7 @@ describe("git source", () => {
 
 describe("link source", () => {
 	it("skips with a message — no error, no exitCode", async () => {
-		mockReadFile.mockResolvedValue(
+		mockLoadInstallMeta.mockResolvedValue(
 			makeMeta("link", { targetPath: "/abs/path/to/pkg" }),
 		);
 
@@ -274,7 +280,7 @@ describe("link source", () => {
 
 describe("local source", () => {
 	it("warns and suggests re-install — no exitCode", async () => {
-		mockReadFile.mockResolvedValue(
+		mockLoadInstallMeta.mockResolvedValue(
 			makeMeta("local", { originalPath: "/original/path" }),
 		);
 
@@ -293,9 +299,7 @@ describe("local source", () => {
 
 describe("missing .cosmonauts-meta.json", () => {
 	it("warns with a clear message — no exitCode", async () => {
-		mockReadFile.mockRejectedValue(
-			Object.assign(new Error("ENOENT"), { code: "ENOENT" }),
-		);
+		mockLoadInstallMeta.mockResolvedValue(null);
 
 		await updateAction({ target: "my-pkg", projectRoot: "/project" });
 
@@ -320,7 +324,7 @@ describe("--all flag", () => {
 		]);
 
 		// pkg-a: catalog, pkg-b: link, pkg-c: missing meta
-		mockReadFile.mockImplementation((path: unknown) => {
+		mockLoadInstallMeta.mockImplementation((path: unknown) => {
 			const p = String(path);
 			if (p.includes("pkg-a")) {
 				return Promise.resolve(makeMeta("catalog", { catalogName: "coding" }));
@@ -328,9 +332,7 @@ describe("--all flag", () => {
 			if (p.includes("pkg-b")) {
 				return Promise.resolve(makeMeta("link", { targetPath: "/abs" }));
 			}
-			return Promise.reject(
-				Object.assign(new Error("ENOENT"), { code: "ENOENT" }),
-			);
+			return Promise.resolve(null);
 		});
 
 		await updateAction({ all: true, projectRoot: "/project" });
@@ -363,7 +365,9 @@ describe("--all flag", () => {
 		mockListInstalledPackages.mockResolvedValue([
 			makeInstalledPackage("pkg-a", "project"),
 		]);
-		mockReadFile.mockResolvedValue(makeMeta("link", { targetPath: "/abs" }));
+		mockLoadInstallMeta.mockResolvedValue(
+			makeMeta("link", { targetPath: "/abs" }),
+		);
 
 		await updateAction({ all: true, local: true, projectRoot: "/project" });
 

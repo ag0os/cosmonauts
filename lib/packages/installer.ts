@@ -4,7 +4,15 @@
  */
 
 import { spawn } from "node:child_process";
-import { cp, mkdir, rm, stat, symlink, writeFile } from "node:fs/promises";
+import {
+	cp,
+	mkdir,
+	readFile,
+	rm,
+	stat,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { loadManifest, validateManifest } from "./manifest.ts";
@@ -49,11 +57,25 @@ export interface InstallResult {
 // Install metadata
 // ============================================================================
 
-type InstallMeta =
+export type InstallMeta =
 	| { source: "catalog"; catalogName: string; installedAt: string }
 	| { source: "git"; url: string; branch: string | null; installedAt: string }
 	| { source: "local"; originalPath: string; installedAt: string }
 	| { source: "link"; targetPath: string; installedAt: string };
+
+export async function loadInstallMeta(
+	installDir: string,
+): Promise<InstallMeta | null> {
+	try {
+		const raw = await readFile(
+			join(installDir, ".cosmonauts-meta.json"),
+			"utf-8",
+		);
+		return JSON.parse(raw) as InstallMeta;
+	} catch {
+		return null;
+	}
+}
 
 async function writeInstallMeta(
 	installDir: string,

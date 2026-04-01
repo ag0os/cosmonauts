@@ -18,9 +18,14 @@ vi.mock("../../../lib/packages/store.ts", () => ({
 	listInstalledPackages: vi.fn(),
 }));
 
-vi.mock("../../../lib/packages/catalog.ts", () => ({
-	resolveCatalogEntry: vi.fn(),
-}));
+vi.mock("../../../lib/packages/catalog.ts", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("../../../lib/packages/catalog.ts")>();
+	return {
+		...actual,
+		resolveCatalogEntry: vi.fn(),
+	};
+});
 
 import {
 	createInstallProgram,

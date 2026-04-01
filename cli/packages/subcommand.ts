@@ -6,11 +6,13 @@
  * packages [list]    List all installed packages.
  */
 
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
 import { Command } from "commander";
-import { resolveCatalogEntry } from "../../lib/packages/catalog.ts";
+import {
+	resolveCatalogEntry,
+	resolveCatalogSource,
+} from "../../lib/packages/catalog.ts";
 import type { DomainMergeResult } from "../../lib/packages/installer.ts";
 import {
 	installPackage,
@@ -51,20 +53,6 @@ type ConflictChoice = "merge" | "replace" | "skip" | "cancel";
 // ============================================================================
 // Source resolution
 // ============================================================================
-
-/**
- * Resolve a framework-relative catalog source path to an absolute path.
- * e.g. "./bundled/coding" → "/usr/local/lib/cosmonauts/bundled/coding"
- */
-function resolveCatalogSource(catalogSource: string): string {
-	const frameworkRoot = resolve(
-		fileURLToPath(import.meta.url),
-		"..",
-		"..",
-		"..",
-	);
-	return join(frameworkRoot, catalogSource);
-}
 
 /**
  * Resolve the install source: try catalog short name first, then pass through.

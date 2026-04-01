@@ -6,13 +6,14 @@
  */
 
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { Command } from "commander";
-import { resolveCatalogEntry } from "../../lib/packages/catalog.ts";
+import {
+	resolveCatalogEntry,
+	resolveCatalogSource,
+} from "../../lib/packages/catalog.ts";
 import {
 	installPackage,
+	loadInstallMeta,
 	uninstallPackage,
 } from "../../lib/packages/installer.ts";
 import {
@@ -33,36 +34,9 @@ export interface UpdateOptions {
 	projectRoot?: string;
 }
 
-type InstallMeta =
-	| { source: "catalog"; catalogName: string; installedAt: string }
-	| { source: "git"; url: string; branch: string | null; installedAt: string }
-	| { source: "local"; originalPath: string; installedAt: string }
-	| { source: "link"; targetPath: string; installedAt: string };
-
 // ============================================================================
 // Helpers
 // ============================================================================
-
-async function loadMeta(installPath: string): Promise<InstallMeta | null> {
-	const metaPath = join(installPath, ".cosmonauts-meta.json");
-	try {
-		const raw = await readFile(metaPath, "utf-8");
-		return JSON.parse(raw) as InstallMeta;
-	} catch {
-		return null;
-	}
-}
-
-/** Resolve a framework-relative catalog source path to an absolute path. */
-function resolveCatalogSource(catalogSource: string): string {
-	const frameworkRoot = resolve(
-		fileURLToPath(import.meta.url),
-		"..",
-		"..",
-		"..",
-	);
-	return join(frameworkRoot, catalogSource);
-}
 
 function gitPull(installPath: string): Promise<void> {
 	return new Promise((res, rej) => {
@@ -93,7 +67,7 @@ async function updateOne(
 	cwd: string,
 ): Promise<void> {
 	const installPath = resolveStorePath(name, scope, cwd);
-	const meta = await loadMeta(installPath);
+	const meta = await loadInstallMeta(installPath);
 
 	if (meta === null) {
 		process.stderr.write(
