@@ -32,6 +32,8 @@ const definition: AgentDefinition = {
 		"quality-manager",
 		"reviewer",
 		"fixer",
+		"explorer",
+		"verifier",
 	],
 	projectContext: true,
 	session: "persistent",

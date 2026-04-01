@@ -1,0 +1,18 @@
+import type { AgentDefinition } from "../../../../lib/agents/types.ts";
+
+const definition: AgentDefinition = {
+	id: "verifier",
+	description:
+		"Validates explicit claims against the codebase with structured pass/fail evidence. Runs checks but never writes code.",
+	capabilities: ["core", "engineering-discipline", "coding-readwrite"],
+	model: "anthropic/claude-sonnet-4-6",
+	tools: "coding",
+	extensions: [],
+	skills: undefined,
+	subagents: [],
+	projectContext: true,
+	session: "ephemeral",
+	loop: false,
+};
+
+export default definition;

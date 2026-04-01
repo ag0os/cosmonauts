@@ -15,7 +15,7 @@ const definition: AgentDefinition = {
 	tools: "readonly",
 	extensions: ["plans", "orchestration"],
 	skills: ["pi", "plan", "engineering-principles", "reference-adaptation"],
-	subagents: ["task-manager", "coordinator", "worker"],
+	subagents: ["task-manager", "explorer", "verifier"],
 	projectContext: true,
 	session: "ephemeral",
 	loop: false,

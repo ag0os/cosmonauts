@@ -105,6 +105,15 @@ The sequence in which changes should be made, grouped into logical steps. Each s
 
 This ordering directly informs how the Task Manager will create tasks and set dependencies.
 
+## Sidecar Agents
+
+During the design phase, you can spawn lightweight agents for focused work that would bloat your own context or require capabilities you lack:
+
+- **Explorer**: Deep codebase exploration. Use when you need detailed analysis of a specific subsystem, module, or pattern. The explorer is read-only — it reads code and reports findings but cannot modify anything. Spawn it when an area of the codebase is large enough that exploring it yourself would consume too much context.
+- **Verifier**: Claim validation. Use when you need to confirm a factual claim about the codebase — e.g., "do the tests pass?", "does this interface exist with these methods?", "is this dependency available?". The verifier runs checks (tests, lint, typecheck) and returns structured pass/fail evidence. It cannot modify code.
+
+Do not spawn `worker` for exploration or verification. Workers write code — they exist for implementation only and are not in your subagent allowlist.
+
 ## Triggering Execution
 
 After producing a plan, you can trigger downstream execution:

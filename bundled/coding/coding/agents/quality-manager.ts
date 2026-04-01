@@ -15,7 +15,7 @@ const definition: AgentDefinition = {
 	tools: "coding",
 	extensions: ["tasks", "orchestration"],
 	skills: undefined,
-	subagents: ["reviewer", "fixer", "coordinator"],
+	subagents: ["reviewer", "fixer", "coordinator", "verifier"],
 	projectContext: true,
 	session: "ephemeral",
 	loop: false,

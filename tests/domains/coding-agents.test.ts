@@ -11,11 +11,13 @@ import { describe, expect, it } from "vitest";
 import adaptationPlanner from "../../bundled/coding/coding/agents/adaptation-planner.ts";
 import coordinator from "../../bundled/coding/coding/agents/coordinator.ts";
 import cosmo from "../../bundled/coding/coding/agents/cosmo.ts";
+import explorer from "../../bundled/coding/coding/agents/explorer.ts";
 import fixer from "../../bundled/coding/coding/agents/fixer.ts";
 import planner from "../../bundled/coding/coding/agents/planner.ts";
 import qualityManager from "../../bundled/coding/coding/agents/quality-manager.ts";
 import reviewer from "../../bundled/coding/coding/agents/reviewer.ts";
 import taskManager from "../../bundled/coding/coding/agents/task-manager.ts";
+import verifier from "../../bundled/coding/coding/agents/verifier.ts";
 import worker from "../../bundled/coding/coding/agents/worker.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 
@@ -29,6 +31,8 @@ const ALL_DEFINITIONS: AgentDefinition[] = [
 	qualityManager,
 	reviewer,
 	fixer,
+	explorer,
+	verifier,
 ];
 
 describe("coding domain agent invariants", () => {

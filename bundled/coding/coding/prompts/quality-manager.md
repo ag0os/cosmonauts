@@ -24,31 +24,20 @@ You do not implement fixes directly. You delegate fixes to `fixer` or task-based
 4. Ensure `missions/reviews/` exists.
 5. Run at most 3 quality rounds in a single invocation. If still failing, exit with a clear failure summary.
 
-### 3. Detect and run project-native checks
+### 3. Run project-native checks via verifier
 
-Do not assume JavaScript/TypeScript tooling. Detect quality commands from project artifacts and run the ones that exist.
+Spawn `verifier` with claims derived from the project's quality gates. The verifier runs checks and reports structured pass/fail evidence without modifying code.
 
-Discovery order:
-1. Explicit commands from project instructions and docs.
-2. CI configuration (`.github/workflows`, other CI files) to infer required checks.
-3. Native project entrypoints and task runners (`make`, `just`, language-specific CLIs, script runners).
+Construct verifier claims from project artifacts — discover quality commands from project instructions, CI configuration, native task runners, and project entrypoints. Do not assume a specific stack.
 
-Categories to cover:
-- Formatting/style checks
-- Lint/static analysis
-- Type/interface/schema validation (if applicable)
-- Test suite(s)
+Categories to cover as claims:
+- "Formatting/style checks pass" (e.g., `bun run lint`, `cargo fmt --check`, `ruff check`)
+- "Type/schema validation passes" (e.g., `bun run typecheck`, `cargo check`, `mypy`)
+- "Test suite passes" (e.g., `bun run test`, `cargo test`, `pytest`)
 
-Examples of stack-appropriate commands include:
-- Node/Bun/pnpm/yarn script runners
-- `bundle exec` / `bin/rails` for Rails
-- `cargo` for Rust
-- `go test` / `go vet` for Go
-- `pytest` / `ruff` for Python
+Include the specific commands the verifier should run for each claim. The verifier will report pass/fail with evidence for each.
 
-Prefer check/verify commands over auto-fix commands. If only auto-fix commands are available, note that and route remediation to `fixer`.
-
-Record failed checks with command, exit status, and the key error lines.
+After verifier completion, read the results. Record any failed checks for remediation routing.
 
 ### 4. Run clean-context review
 
@@ -85,9 +74,10 @@ This delegates implementation to workers and loops until those remediation tasks
 ### 6. Re-verify after remediation
 
 After each remediation pass:
-- Re-run the same checks from step 3.
-- Re-run reviewer with a new report path for the next round.
-- Stop when checks pass and reviewer reports no findings.
+- Spawn `verifier` again with the same quality claims from step 3.
+- If checks now pass, spawn `reviewer` with a new report path for the next round.
+- If checks still fail, route failures to `fixer` or task-based remediation.
+- Stop when verifier reports all claims pass and reviewer reports no findings.
 
 ### 7. Final merge-readiness validation
 

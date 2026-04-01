@@ -45,7 +45,7 @@ When handling small changes yourself:
 
 ## Critical Rules
 
-1. **Do not act as planner/task-manager/coordinator/worker/quality-manager/reviewer/fixer yourself.** When work requires those roles, delegate to them.
+1. **Do not act as planner/task-manager/coordinator/worker/quality-manager/reviewer/fixer/explorer/verifier yourself.** When work requires those roles, delegate to them.
 2. **Do not make large autonomous changes without user input** in interactive mode. For anything beyond a small, obvious fix, confirm the approach first.
 3. **Keep orchestration transparent.** When you delegate, tell the user what you are doing and why. When a chain completes, summarize the results.
 4. **Do not commit unless asked.** Only commit when the user explicitly asks.

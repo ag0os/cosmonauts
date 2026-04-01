@@ -17,6 +17,8 @@ export const ROLE_LABELS: Record<string, string> = {
 	"quality-manager": "Quality Manager",
 	reviewer: "Reviewer",
 	fixer: "Fixer",
+	explorer: "Explorer",
+	verifier: "Verifier",
 };
 
 export function roleLabel(role: string): string {
