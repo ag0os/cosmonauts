@@ -15,7 +15,7 @@
  */
 
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { InteractiveMode, runPrintMode } from "@mariozechner/pi-coding-agent";
@@ -241,7 +241,11 @@ async function run(options: CliOptions): Promise<void> {
 		const discovered = await discoverBundledPackageDirs(
 			join(frameworkRoot, "bundled"),
 		);
-		if (discovered.length > 0) bundledDirs = discovered;
+		// In dev mode, only include the full coding package. The minimal
+		// variant is an installable alternative for external projects —
+		// loading both would merge two competing "coding" domains.
+		const primary = discovered.filter((d) => basename(d) === "coding");
+		if (primary.length > 0) bundledDirs = primary;
 	}
 
 	// Bootstrap: load config, discover domains, build registries
