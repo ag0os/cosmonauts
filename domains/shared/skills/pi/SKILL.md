@@ -7,7 +7,7 @@ description: Pi framework API reference — sessions, tools, extensions, events,
 
 Pi (`@mariozechner/pi-coding-agent`) is the agent runtime. This skill covers its programmatic API surface for building on top of Pi.
 
-> **Note:** The reference below may be outdated. Use this skill as a baseline and verify against the actual Pi source when in doubt.
+> **Note:** The reference below may be outdated. Use this skill as a baseline and load the `find-docs` skill to query current Pi API docs when in doubt.
 
 ## Package Structure
 
