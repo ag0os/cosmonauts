@@ -113,7 +113,9 @@ export function createPiSpawner(
 
 				// Create tracker before prompt so the spawn tool can register
 				// children as soon as the first tool call fires.
-				const tracker = getOrCreateTracker(session.sessionId, bus);
+				const tracker = getOrCreateTracker(session.sessionId, bus, {
+					deliveryMode: "external",
+				});
 
 				let unsubscribe: (() => void) | undefined;
 				try {

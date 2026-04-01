@@ -293,6 +293,33 @@ describe("SpawnTracker — nextCompletion()", () => {
 });
 
 // ============================================================================
+// deliveryMode
+// ============================================================================
+
+describe("SpawnTracker — deliveryMode", () => {
+	test("defaults to 'self' when no option is provided", () => {
+		const { tracker } = makeTracker();
+		expect(tracker.deliveryMode).toBe("self");
+	});
+
+	test("returns 'external' when set via options", () => {
+		const bus = new MessageBus();
+		const tracker = new SpawnTracker("sess-dm", bus, {
+			deliveryMode: "external",
+		});
+		expect(tracker.deliveryMode).toBe("external");
+	});
+
+	test("returns 'self' when explicitly set via options", () => {
+		const bus = new MessageBus();
+		const tracker = new SpawnTracker("sess-dm2", bus, {
+			deliveryMode: "self",
+		});
+		expect(tracker.deliveryMode).toBe("self");
+	});
+});
+
+// ============================================================================
 // drainCompleted()
 // ============================================================================
 
