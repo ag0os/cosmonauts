@@ -14,8 +14,8 @@
  *   cosmonauts plan <command>               → plan management subcommands
  */
 
-import { writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { InteractiveMode, runPrintMode } from "@mariozechner/pi-coding-agent";
@@ -46,6 +46,7 @@ import { createSession } from "./session.ts";
 import { createSkillsProgram } from "./skills/subcommand.ts";
 import { createTaskProgram } from "./tasks/subcommand.ts";
 import type { CliOptions } from "./types.ts";
+import { createUpdateProgram } from "./update/subcommand.ts";
 
 // ============================================================================
 // Thinking Level Validation
@@ -67,6 +68,62 @@ function parseThinkingLevel(value: string): ThinkingLevel {
 		);
 	}
 	return value as ThinkingLevel;
+}
+
+// ============================================================================
+// Framework Dev-Mode Detection
+// ============================================================================
+
+/**
+ * Returns true when the CLI is running from inside the Cosmonauts framework
+ * repo itself. Detection heuristic: package.json at root has name "cosmonauts"
+ * AND a bundled/ directory exists.
+ *
+ * Exported for testing.
+ */
+export async function isCosmonautsFrameworkRepo(
+	root: string,
+): Promise<boolean> {
+	try {
+		const content = await readFile(join(root, "package.json"), "utf-8");
+		const pkg = JSON.parse(content) as Record<string, unknown>;
+		if (pkg.name !== "cosmonauts") return false;
+	} catch {
+		return false;
+	}
+	try {
+		const s = await stat(join(root, "bundled"));
+		return s.isDirectory();
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Returns the absolute path of each package directory directly under
+ * `bundledDir` that contains a `cosmonauts.json` manifest.
+ *
+ * Exported for testing.
+ */
+export async function discoverBundledPackageDirs(
+	bundledDir: string,
+): Promise<string[]> {
+	const dirs: string[] = [];
+	const entries = await readdir(bundledDir, { withFileTypes: true }).catch(
+		() => null,
+	);
+	if (!entries) return dirs;
+	for (const entry of entries) {
+		if (!entry.isDirectory()) continue;
+		const pkgDir = join(bundledDir, entry.name);
+		try {
+			await stat(join(pkgDir, "cosmonauts.json"));
+			dirs.push(pkgDir);
+		} catch {
+			// no cosmonauts.json — not a bundled package
+		}
+	}
+	return dirs;
 }
 
 // ============================================================================
@@ -174,18 +231,25 @@ export function parseCliArgs(argv: string[]): CliOptions {
 
 async function run(options: CliOptions): Promise<void> {
 	const cwd = process.cwd();
-	const domainsDir = resolve(
-		fileURLToPath(import.meta.url),
-		"..",
-		"..",
-		"domains",
-	);
+	const frameworkRoot = resolve(fileURLToPath(import.meta.url), "..", "..");
+	const domainsDir = join(frameworkRoot, "domains");
+
+	// Dev-mode auto-detection: auto-include bundled/ packages when running
+	// from inside the framework repo (name='cosmonauts', bundled/ exists).
+	let bundledDirs: string[] | undefined;
+	if (await isCosmonautsFrameworkRepo(frameworkRoot)) {
+		const discovered = await discoverBundledPackageDirs(
+			join(frameworkRoot, "bundled"),
+		);
+		if (discovered.length > 0) bundledDirs = discovered;
+	}
 
 	// Bootstrap: load config, discover domains, build registries
 	const runtime = await CosmonautsRuntime.create({
 		builtinDomainsDir: domainsDir,
 		projectRoot: cwd,
 		domainOverride: options.domain,
+		bundledDirs,
 		pluginDirs: options.pluginDirs,
 	});
 
@@ -196,6 +260,28 @@ async function run(options: CliOptions): Promise<void> {
 		projectSkills,
 		skillPaths,
 	} = runtime;
+
+	// First-run detection: guide users to install a domain when none are present.
+	// Meta commands (install, uninstall, packages, create, update) are routed
+	// before run() is called and never reach this check.
+	// Informational flags and init are allowed through to handle the domain-less state gracefully.
+	const hasNonSharedDomain =
+		runtime.domains.filter((d) => d.manifest.id !== "shared").length > 0;
+	const isBypassCommand =
+		options.init ||
+		options.listDomains ||
+		options.listWorkflows ||
+		options.listAgents ||
+		options.dumpPrompt;
+	if (!hasNonSharedDomain && !isBypassCommand) {
+		console.error(
+			"No domains installed. Install the coding domain to get started:",
+		);
+		console.error("  cosmonauts install coding");
+		console.error("  cosmonauts install coding-minimal  (lightweight)");
+		process.exitCode = 1;
+		return;
+	}
 
 	// --list-domains: print all discovered domains and exit
 	if (options.listDomains) {
@@ -268,6 +354,21 @@ async function run(options: CliOptions): Promise<void> {
 
 	// 1. init → always uses Cosmo (bootstrap requires full coding tools)
 	if (options.init) {
+		// Without a domain, Cosmo is not available. Guide the user to install one first.
+		if (!hasNonSharedDomain) {
+			console.log(
+				"No domains installed. Install a domain to use cosmonauts init:",
+			);
+			console.log("  cosmonauts install coding");
+			console.log("  cosmonauts install coding-minimal  (lightweight)");
+			console.log();
+			console.log(
+				"After installing a domain, run `cosmonauts init` again to set up your project.",
+			);
+			process.exitCode = 1;
+			return;
+		}
+
 		const cosmoDefinition = registry.resolve("cosmo", domainContext);
 		const { session } = await createSession({
 			definition: cosmoDefinition,
@@ -407,7 +508,8 @@ if (
 	subcommand === "create" ||
 	subcommand === "install" ||
 	subcommand === "uninstall" ||
-	subcommand === "packages"
+	subcommand === "packages" ||
+	subcommand === "update"
 ) {
 	const programs: Record<string, () => Command> = {
 		task: createTaskProgram,
@@ -417,6 +519,7 @@ if (
 		install: createInstallProgram,
 		uninstall: createUninstallProgram,
 		packages: createPackagesProgram,
+		update: createUpdateProgram,
 	};
 	// subcommand is guaranteed to be in the map by the if-check above
 	const createProgram = programs[subcommand];

@@ -1,0 +1,6 @@
+{
+	"name": "coding",
+	"version": "0.1.0",
+	"description": "Full-featured coding domain with agents, tools, and skills for software development",
+	"domains": [{ "name": "coding", "path": "coding" }]
+}

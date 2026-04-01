@@ -4,7 +4,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { cp, mkdir, rm, stat, symlink } from "node:fs/promises";
+import { cp, mkdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { loadManifest, validateManifest } from "./manifest.ts";
@@ -16,7 +16,7 @@ import type { PackageManifest, PackageScope } from "./types.ts";
 // ============================================================================
 
 export interface InstallOptions {
-	/** Local filesystem path or URL (https:// or github:owner/repo) */
+	/** Local filesystem path or URL (https://, github:owner/repo, or file://) */
 	source: string;
 	/** Installation scope */
 	scope: PackageScope;
@@ -26,6 +26,8 @@ export interface InstallOptions {
 	link?: boolean;
 	/** Git branch or tag to checkout (git sources only) */
 	branch?: string;
+	/** When installing from a catalog, the catalog entry short name (e.g., "coding") */
+	catalogName?: string;
 }
 
 /** A domain ID conflict detected during installation */
@@ -41,6 +43,27 @@ export interface InstallResult {
 	manifest: PackageManifest;
 	installedTo: string;
 	domainMergeResults: DomainMergeResult[];
+}
+
+// ============================================================================
+// Install metadata
+// ============================================================================
+
+type InstallMeta =
+	| { source: "catalog"; catalogName: string; installedAt: string }
+	| { source: "git"; url: string; branch: string | null; installedAt: string }
+	| { source: "local"; originalPath: string; installedAt: string }
+	| { source: "link"; targetPath: string; installedAt: string };
+
+async function writeInstallMeta(
+	installDir: string,
+	meta: InstallMeta,
+): Promise<void> {
+	await writeFile(
+		join(installDir, ".cosmonauts-meta.json"),
+		JSON.stringify(meta, null, 2),
+		"utf-8",
+	);
 }
 
 // ============================================================================
@@ -61,10 +84,19 @@ export interface InstallResult {
 export async function installPackage(
 	options: InstallOptions,
 ): Promise<InstallResult> {
-	const { source, scope, projectRoot, link = false, branch } = options;
+	const {
+		source,
+		scope,
+		projectRoot,
+		link = false,
+		branch,
+		catalogName,
+	} = options;
 
 	const isGitSource =
-		source.startsWith("https://") || source.startsWith("github:");
+		source.startsWith("https://") ||
+		source.startsWith("github:") ||
+		source.startsWith("file://");
 
 	let sourceDir: string;
 	let tempDir: string | undefined;
@@ -97,10 +129,38 @@ export async function installPackage(
 		// Ensure store parent directory exists
 		await mkdir(dirname(installPath), { recursive: true });
 
+		const installedAt = new Date().toISOString();
+
 		if (link && !isGitSource) {
-			await symlink(resolve(sourceDir), installPath);
+			const targetPath = resolve(sourceDir);
+			await symlink(targetPath, installPath);
+			await writeInstallMeta(installPath, {
+				source: "link",
+				targetPath,
+				installedAt,
+			});
 		} else {
 			await cp(sourceDir, installPath, { recursive: true });
+			if (isGitSource) {
+				await writeInstallMeta(installPath, {
+					source: "git",
+					url: resolveGitUrl(source),
+					branch: branch ?? null,
+					installedAt,
+				});
+			} else if (catalogName !== undefined) {
+				await writeInstallMeta(installPath, {
+					source: "catalog",
+					catalogName,
+					installedAt,
+				});
+			} else {
+				await writeInstallMeta(installPath, {
+					source: "local",
+					originalPath: resolve(sourceDir),
+					installedAt,
+				});
+			}
 		}
 
 		return { manifest, installedTo: installPath, domainMergeResults };

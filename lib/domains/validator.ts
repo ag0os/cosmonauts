@@ -65,9 +65,10 @@ export function validateDomains(
 		}
 	}
 	for (const [cap, providers] of portableCapProviders) {
-		if (providers.length > 1) {
+		const firstProvider = providers[0];
+		if (providers.length > 1 && firstProvider !== undefined) {
 			diagnostics.push({
-				domain: providers[0]!,
+				domain: firstProvider,
 				message: `Capability "${cap}" is provided by multiple portable domains: ${providers.join(", ")}`,
 				severity: "warning",
 			});

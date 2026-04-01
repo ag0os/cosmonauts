@@ -1,10 +1,10 @@
 /**
  * Package scanner — discovers DomainSource[] from all package sources.
  * Scans built-in domains, global store, local store, and optional plugin dirs
- * in precedence order: built-in (0) → global (1) → local (2) → plugin (3).
+ * in precedence order: built-in (0) → bundled (0.5) → global (1) → local (2) → plugin (3).
  */
 
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { listInstalledPackages } from "./store.ts";
 import type { DomainSource, InstalledPackage } from "./types.ts";
 
@@ -17,6 +17,12 @@ export interface ScanDomainSourcesOptions {
 	builtinDomainsDir: string;
 	/** Absolute path to the project root (used to locate the local package store). */
 	projectRoot: string;
+	/**
+	 * Optional bundled package directories for framework dev-mode auto-include.
+	 * Lower precedence than global packages — global overrides bundled, local
+	 * overrides global.
+	 */
+	bundledDirs?: string[];
 	/** Optional extra domain source directories (e.g. from --plugin-dir flag). */
 	pluginDirs?: string[];
 }
@@ -25,17 +31,18 @@ export interface ScanDomainSourcesOptions {
  * Scan all package sources and return an ordered DomainSource[].
  *
  * Precedence order (lowest to highest):
- *   0 — framework built-in domains directory
- *   1 — global (user-scope) installed packages
- *   2 — local (project-scope) installed packages
- *   3 — plugin dirs (session-only, highest precedence)
+ *   0   — framework built-in domains directory
+ *   0.5 — bundled packages (framework dev-mode only)
+ *   1   — global (user-scope) installed packages
+ *   2   — local (project-scope) installed packages
+ *   3   — plugin dirs (session-only, highest precedence)
  *
  * Packages with no declared domains are skipped.
  */
 export async function scanDomainSources(
 	options: ScanDomainSourcesOptions,
 ): Promise<DomainSource[]> {
-	const { builtinDomainsDir, projectRoot, pluginDirs } = options;
+	const { builtinDomainsDir, projectRoot, bundledDirs, pluginDirs } = options;
 	const sources: DomainSource[] = [];
 
 	// Built-in: the framework's domains directory
@@ -44,6 +51,17 @@ export async function scanDomainSources(
 		origin: "builtin",
 		precedence: 0,
 	});
+
+	// Bundled packages: framework dev-mode auto-include (lower than global)
+	if (bundledDirs) {
+		for (const dir of bundledDirs) {
+			sources.push({
+				domainsDir: dir,
+				origin: `bundled:${basename(dir)}`,
+				precedence: 0.5,
+			});
+		}
+	}
 
 	// Global packages (user scope)
 	const globalPackages = await listInstalledPackages("user");

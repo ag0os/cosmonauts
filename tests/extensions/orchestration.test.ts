@@ -16,7 +16,7 @@ import {
 } from "vitest";
 import type { AgentRegistry } from "../../lib/agents/index.ts";
 import { createRegistryFromDomains } from "../../lib/agents/index.ts";
-import { loadDomains } from "../../lib/domains/index.ts";
+import { loadDomainsFromSources } from "../../lib/domains/index.ts";
 import { DomainRegistry } from "../../lib/domains/registry.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
 import {
@@ -121,11 +121,22 @@ describe("orchestration extension", () => {
 		"..",
 		"domains",
 	);
+	const testBundledCodingDir = resolve(
+		fileURLToPath(import.meta.url),
+		"..",
+		"..",
+		"..",
+		"bundled",
+		"coding",
+	);
 	let realRegistry: AgentRegistry;
 	let realDomainRegistry: DomainRegistry;
 
 	beforeAll(async () => {
-		const domains = await loadDomains(testDomainsDir);
+		const domains = await loadDomainsFromSources([
+			{ domainsDir: testDomainsDir, origin: "framework", precedence: 1 },
+			{ domainsDir: testBundledCodingDir, origin: "bundled", precedence: 2 },
+		]);
 		realRegistry = createRegistryFromDomains(domains);
 		realDomainRegistry = new DomainRegistry(domains);
 	});

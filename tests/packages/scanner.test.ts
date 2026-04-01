@@ -303,7 +303,7 @@ describe("packages with no declared domains are skipped", () => {
 
 		// Only built-in; the package with 0 domains is skipped
 		expect(sources).toHaveLength(1);
-		expect(sources[0]!.origin).toBe("builtin");
+		expect(sources[0]?.origin).toBe("builtin");
 	});
 
 	test("local package with no domains is excluded", async () => {
@@ -339,7 +339,88 @@ describe("packages with no declared domains are skipped", () => {
 		});
 
 		expect(sources).toHaveLength(2); // builtin + has-domains
-		expect(sources[1]!.origin).toBe("global:has-domains");
+		expect(sources[1]?.origin).toBe("global:has-domains");
+	});
+});
+
+// ============================================================================
+// Bundled dirs
+// ============================================================================
+
+describe("bundled dirs", () => {
+	test("bundled dirs appear between built-in (0) and global (1) at precedence 0.5", async () => {
+		mockListInstalledPackages.mockResolvedValue([]);
+
+		const sources = await scanDomainSources({
+			builtinDomainsDir: BUILTIN_DIR,
+			projectRoot: PROJECT_ROOT,
+			bundledDirs: ["/bundled/coding"],
+		});
+
+		expect(sources).toHaveLength(2);
+		expect(sources[0]).toMatchObject({ origin: "builtin", precedence: 0 });
+		expect(sources[1]).toMatchObject({
+			domainsDir: "/bundled/coding",
+			origin: "bundled:coding",
+			precedence: 0.5,
+		});
+	});
+
+	test("full ordering: built-in → bundled → global → local → plugin", async () => {
+		mockListInstalledPackages.mockImplementation(async (scope) => {
+			if (scope === "user") {
+				return [makePackage("g", "/g/pkg", "user")];
+			}
+			return [makePackage("l", "/l/pkg", "project")];
+		});
+
+		const sources = await scanDomainSources({
+			builtinDomainsDir: BUILTIN_DIR,
+			projectRoot: PROJECT_ROOT,
+			bundledDirs: ["/bundled/coding"],
+			pluginDirs: ["/plugin/dev"],
+		});
+
+		expect(sources).toHaveLength(5);
+		expect(sources.map((s) => s.origin)).toEqual([
+			"builtin",
+			"bundled:coding",
+			"global:g",
+			"local:l",
+			"/plugin/dev",
+		]);
+		expect(sources.map((s) => s.precedence)).toEqual([0, 0.5, 1, 2, 3]);
+	});
+
+	test("multiple bundled dirs all get precedence 0.5", async () => {
+		mockListInstalledPackages.mockResolvedValue([]);
+
+		const sources = await scanDomainSources({
+			builtinDomainsDir: BUILTIN_DIR,
+			projectRoot: PROJECT_ROOT,
+			bundledDirs: ["/bundled/coding", "/bundled/coding-minimal"],
+		});
+
+		expect(sources).toHaveLength(3);
+		expect(sources[1]).toMatchObject({
+			origin: "bundled:coding",
+			precedence: 0.5,
+		});
+		expect(sources[2]).toMatchObject({
+			origin: "bundled:coding-minimal",
+			precedence: 0.5,
+		});
+	});
+
+	test("omitting bundledDirs does not add any bundled sources", async () => {
+		mockListInstalledPackages.mockResolvedValue([]);
+
+		const sources = await scanDomainSources({
+			builtinDomainsDir: BUILTIN_DIR,
+			projectRoot: PROJECT_ROOT,
+		});
+
+		expect(sources.every((s) => s.precedence !== 0.5)).toBe(true);
 	});
 });
 
@@ -382,6 +463,6 @@ describe("DomainSource fields", () => {
 			projectRoot: PROJECT_ROOT,
 		});
 
-		expect(sources[1]!.origin).toBe("global:@org/my-pkg");
+		expect(sources[1]?.origin).toBe("global:@org/my-pkg");
 	});
 });

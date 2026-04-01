@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
-import { loadDomains } from "../../lib/domains/index.ts";
+import { loadDomainsFromSources } from "../../lib/domains/index.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
 import { MessageBus } from "../../lib/orchestration/message-bus.ts";
 import { getOrCreateTracker } from "../../lib/orchestration/spawn-tracker.ts";
@@ -50,10 +50,22 @@ const DOMAINS_DIR = resolve(
 	"domains",
 );
 
+const BUNDLED_CODING_DIR = resolve(
+	fileURLToPath(import.meta.url),
+	"..",
+	"..",
+	"..",
+	"bundled",
+	"coding",
+);
+
 let realResolver: DomainResolver;
 
 beforeAll(async () => {
-	const domains = await loadDomains(DOMAINS_DIR);
+	const domains = await loadDomainsFromSources([
+		{ domainsDir: DOMAINS_DIR, origin: "framework", precedence: 1 },
+		{ domainsDir: BUNDLED_CODING_DIR, origin: "bundled", precedence: 2 },
+	]);
 	realResolver = DomainResolver.fromSingleDir(DOMAINS_DIR, domains);
 });
 
@@ -115,7 +127,10 @@ describe("createPiSpawner — completion loop", () => {
 		const session = createMockSession(sessionId);
 		mocks.createAgentSession.mockResolvedValue({ session });
 
-		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, { bus, resolver: realResolver });
+		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			bus,
+			resolver: realResolver,
+		});
 		const result = await spawner.spawn({
 			role: "planner",
 			cwd: "/tmp",
@@ -144,7 +159,10 @@ describe("createPiSpawner — completion loop", () => {
 		});
 		mocks.createAgentSession.mockResolvedValue({ session });
 
-		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, { bus, resolver: realResolver });
+		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			bus,
+			resolver: realResolver,
+		});
 		await spawner.spawn({ role: "planner", cwd: "/tmp", prompt: "go" });
 
 		// initial prompt + one completion prompt
@@ -174,7 +192,10 @@ describe("createPiSpawner — completion loop", () => {
 		});
 		mocks.createAgentSession.mockResolvedValue({ session });
 
-		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, { bus, resolver: realResolver });
+		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			bus,
+			resolver: realResolver,
+		});
 		await spawner.spawn({ role: "planner", cwd: "/tmp", prompt: "go" });
 
 		expect(session.prompt).toHaveBeenCalledTimes(2);
@@ -204,7 +225,10 @@ describe("createPiSpawner — completion loop", () => {
 		});
 		mocks.createAgentSession.mockResolvedValue({ session });
 
-		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, { bus, resolver: realResolver });
+		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			bus,
+			resolver: realResolver,
+		});
 		await spawner.spawn({ role: "planner", cwd: "/tmp", prompt: "go" });
 
 		// initial + one message per child
@@ -292,7 +316,10 @@ describe("createPiSpawner — completion loop", () => {
 		session.prompt = vi.fn().mockRejectedValue(new Error("prompt failed"));
 		mocks.createAgentSession.mockResolvedValue({ session });
 
-		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, { bus, resolver: realResolver });
+		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			bus,
+			resolver: realResolver,
+		});
 		const result = await spawner.spawn({
 			role: "planner",
 			cwd: "/tmp",
@@ -327,7 +354,10 @@ describe("createPiSpawner — completion loop", () => {
 		});
 		mocks.createAgentSession.mockResolvedValue({ session });
 
-		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, { bus, resolver: realResolver });
+		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+			bus,
+			resolver: realResolver,
+		});
 		const result = await spawner.spawn({
 			role: "planner",
 			cwd: "/tmp",

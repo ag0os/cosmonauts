@@ -3,16 +3,18 @@
  * Covers installPackage() and uninstallPackage()
  */
 
+import { execSync } from "node:child_process";
 import {
 	mkdir,
 	mkdtemp,
+	readFile,
 	readlink,
 	rm,
 	stat,
 	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
 	installPackage,
@@ -276,5 +278,196 @@ describe("uninstallPackage", () => {
 		);
 
 		expect(removed).toBe(false);
+	});
+});
+
+// ============================================================================
+// Install metadata (.cosmonauts-meta.json)
+// ============================================================================
+
+async function readMeta(installDir: string): Promise<Record<string, unknown>> {
+	const raw = await readFile(
+		join(installDir, ".cosmonauts-meta.json"),
+		"utf-8",
+	);
+	return JSON.parse(raw) as Record<string, unknown>;
+}
+
+function isIso8601(value: unknown): boolean {
+	if (typeof value !== "string") return false;
+	const date = new Date(value);
+	return !Number.isNaN(date.getTime()) && value === date.toISOString();
+}
+
+describe("install metadata — local copy", () => {
+	test("writes .cosmonauts-meta.json with source=local and originalPath", async () => {
+		const { dir } = await createPackageFixture(tmpRoot, "my-pkg");
+
+		const result = await installPackage({
+			source: dir,
+			scope: "project",
+			projectRoot,
+		});
+
+		const meta = await readMeta(result.installedTo);
+		expect(meta.source).toBe("local");
+		expect(meta.originalPath).toBe(resolve(dir));
+	});
+
+	test("installedAt is a valid ISO 8601 timestamp", async () => {
+		const { dir } = await createPackageFixture(tmpRoot, "my-pkg");
+
+		const result = await installPackage({
+			source: dir,
+			scope: "project",
+			projectRoot,
+		});
+
+		const meta = await readMeta(result.installedTo);
+		expect(isIso8601(meta.installedAt)).toBe(true);
+	});
+});
+
+describe("install metadata — catalog", () => {
+	test("writes .cosmonauts-meta.json with source=catalog and catalogName", async () => {
+		const { dir } = await createPackageFixture(tmpRoot, "my-pkg");
+
+		const result = await installPackage({
+			source: dir,
+			scope: "project",
+			projectRoot,
+			catalogName: "coding",
+		});
+
+		const meta = await readMeta(result.installedTo);
+		expect(meta.source).toBe("catalog");
+		expect(meta.catalogName).toBe("coding");
+	});
+
+	test("installedAt is a valid ISO 8601 timestamp", async () => {
+		const { dir } = await createPackageFixture(tmpRoot, "my-pkg");
+
+		const result = await installPackage({
+			source: dir,
+			scope: "project",
+			projectRoot,
+			catalogName: "coding",
+		});
+
+		const meta = await readMeta(result.installedTo);
+		expect(isIso8601(meta.installedAt)).toBe(true);
+	});
+});
+
+describe("install metadata — symlink", () => {
+	test("writes .cosmonauts-meta.json with source=link and targetPath", async () => {
+		const { dir } = await createPackageFixture(tmpRoot, "my-pkg");
+
+		const result = await installPackage({
+			source: dir,
+			scope: "project",
+			projectRoot,
+			link: true,
+		});
+
+		const meta = await readMeta(result.installedTo);
+		expect(meta.source).toBe("link");
+		expect(meta.targetPath).toBe(resolve(dir));
+	});
+
+	test("installedAt is a valid ISO 8601 timestamp", async () => {
+		const { dir } = await createPackageFixture(tmpRoot, "my-pkg");
+
+		const result = await installPackage({
+			source: dir,
+			scope: "project",
+			projectRoot,
+			link: true,
+		});
+
+		const meta = await readMeta(result.installedTo);
+		expect(isIso8601(meta.installedAt)).toBe(true);
+	});
+});
+
+describe("install metadata — git", () => {
+	/**
+	 * Creates a minimal local git repo containing a valid package, so we can
+	 * clone it via file:// without network access.
+	 */
+	async function createGitRepoFixture(
+		root: string,
+		name: string,
+	): Promise<string> {
+		const repoDir = join(root, `${name}-repo`);
+		const domainDir = join(repoDir, "domains", "coding");
+		await mkdir(domainDir, { recursive: true });
+		// Git does not track empty directories; add a placeholder
+		await writeFile(join(domainDir, ".gitkeep"), "", "utf-8");
+		await writeFile(
+			join(repoDir, "cosmonauts.json"),
+			JSON.stringify({
+				name,
+				version: "1.0.0",
+				description: `Package ${name}`,
+				domains: [{ name: "coding", path: "domains/coding" }],
+			}),
+			"utf-8",
+		);
+		execSync("git init -b main", { cwd: repoDir, stdio: "pipe" });
+		execSync("git config user.email test@example.com", {
+			cwd: repoDir,
+			stdio: "pipe",
+		});
+		execSync("git config user.name Test", { cwd: repoDir, stdio: "pipe" });
+		execSync("git add .", { cwd: repoDir, stdio: "pipe" });
+		execSync("git commit -m init", { cwd: repoDir, stdio: "pipe" });
+		return repoDir;
+	}
+
+	test("writes .cosmonauts-meta.json with source=git, url, and branch", async () => {
+		const repoDir = await createGitRepoFixture(tmpRoot, "git-pkg");
+		const fileUrl = `file://${repoDir}`;
+
+		const result = await installPackage({
+			source: fileUrl,
+			scope: "project",
+			projectRoot,
+			branch: "main",
+		});
+
+		const meta = await readMeta(result.installedTo);
+		expect(meta.source).toBe("git");
+		expect(meta.url).toBe(fileUrl);
+		expect(meta.branch).toBe("main");
+	});
+
+	test("branch is null when not specified", async () => {
+		const repoDir = await createGitRepoFixture(tmpRoot, "git-pkg-nobranch");
+		const fileUrl = `file://${repoDir}`;
+
+		const result = await installPackage({
+			source: fileUrl,
+			scope: "project",
+			projectRoot,
+		});
+
+		const meta = await readMeta(result.installedTo);
+		expect(meta.source).toBe("git");
+		expect(meta.branch).toBeNull();
+	});
+
+	test("installedAt is a valid ISO 8601 timestamp", async () => {
+		const repoDir = await createGitRepoFixture(tmpRoot, "git-pkg-ts");
+		const fileUrl = `file://${repoDir}`;
+
+		const result = await installPackage({
+			source: fileUrl,
+			scope: "project",
+			projectRoot,
+		});
+
+		const meta = await readMeta(result.installedTo);
+		expect(isIso8601(meta.installedAt)).toBe(true);
 	});
 });
