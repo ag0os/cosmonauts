@@ -42,7 +42,7 @@ describe("coding domain agent invariants", () => {
 	});
 
 	it("uses valid tools values", () => {
-		const valid = new Set(["coding", "readonly", "none"]);
+		const valid = new Set(["coding", "readonly", "verification", "none"]);
 		for (const def of ALL_DEFINITIONS) {
 			expect(valid.has(def.tools)).toBe(true);
 		}
@@ -74,7 +74,7 @@ describe("coding domain agent invariants", () => {
 
 	it("does not give readonly agents coding-readwrite capability", () => {
 		for (const def of ALL_DEFINITIONS) {
-			if (def.tools === "readonly") {
+			if (def.tools === "readonly" || def.tools === "verification") {
 				expect(def.capabilities).not.toContain("coding-readwrite");
 			}
 		}

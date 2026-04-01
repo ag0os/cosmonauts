@@ -73,6 +73,12 @@ describe("resolveTools", () => {
 		expect(tools.length).toBeGreaterThan(0);
 	});
 
+	test("verification returns an array of tools", () => {
+		const tools = resolveTools("verification", cwd);
+		expect(Array.isArray(tools)).toBe(true);
+		expect(tools.length).toBeGreaterThan(0);
+	});
+
 	test("none returns empty array", () => {
 		const tools = resolveTools("none", cwd);
 		expect(tools).toEqual([]);
@@ -84,6 +90,15 @@ describe("resolveTools", () => {
 		const codingNames = coding.map((t) => t.name).sort();
 		const readonlyNames = readonly.map((t) => t.name).sort();
 		expect(codingNames).not.toEqual(readonlyNames);
+	});
+
+	test("verification includes bash but excludes edit and write", () => {
+		const verification = resolveTools("verification", cwd);
+		const verificationNames = verification.map((t) => t.name).sort();
+		expect(verificationNames).toContain("bash");
+		expect(verificationNames).toContain("read");
+		expect(verificationNames).not.toContain("edit");
+		expect(verificationNames).not.toContain("write");
 	});
 });
 

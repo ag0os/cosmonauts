@@ -43,22 +43,45 @@ interface SpawnProgressDetails {
 // ============================================================================
 
 /**
- * Extract a brief summary from the last assistant message in a completed
+ * Extract the text content from the last assistant message in a completed
  * session. Falls back to "<role> completed" if no text content is found.
  */
-function extractSummary(messages: unknown[], role: string): string {
+function extractAssistantText(messages: unknown[], role: string): string {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const msg = messages[i] as { role?: string; content?: unknown };
 		if (msg.role === "assistant" && Array.isArray(msg.content)) {
+			const textBlocks: string[] = [];
 			for (const block of msg.content) {
 				const b = block as { type?: string; text?: string };
 				if (b.type === "text" && typeof b.text === "string" && b.text.trim()) {
-					return b.text.slice(0, 200);
+					textBlocks.push(b.text.trim());
 				}
+			}
+			if (textBlocks.length > 0) {
+				return textBlocks.join("\n\n");
 			}
 		}
 	}
 	return `${role} completed`;
+}
+
+function extractSummary(text: string, role: string): string {
+	const trimmed = text.trim();
+	if (trimmed.length === 0) return `${role} completed`;
+	return trimmed.slice(0, 200);
+}
+
+function formatCompletionMessage(
+	spawnId: string,
+	role: string,
+	outcome: "success" | "failed",
+	summary: string,
+	fullText?: string,
+): string {
+	const base = `[spawn_completion] spawnId=${spawnId} role=${role} outcome=${outcome} summary=${summary}`;
+	const details = fullText?.trim();
+	if (!details || details === summary) return base;
+	return `${base}\n\n${details}`;
 }
 
 // ============================================================================
@@ -285,11 +308,29 @@ export function registerSpawnTool(
 					sessionDepths.set(session.sessionId, childDepth);
 					try {
 						await session.prompt(params.prompt);
-						const summary = extractSummary(session.messages, params.role);
+						const assistantText = extractAssistantText(
+							session.messages,
+							params.role,
+						);
+						const summary = extractSummary(assistantText, params.role);
 						tracker.complete(spawnId, summary);
+						pi.sendUserMessage(
+							formatCompletionMessage(
+								spawnId,
+								params.role,
+								"success",
+								summary,
+								params.role === "verifier" ? assistantText : undefined,
+							),
+							{ deliverAs: "followUp" },
+						);
 					} catch (err: unknown) {
 						const message = err instanceof Error ? err.message : String(err);
 						tracker.fail(spawnId, message);
+						pi.sendUserMessage(
+							formatCompletionMessage(spawnId, params.role, "failed", message),
+							{ deliverAs: "followUp" },
+						);
 					} finally {
 						sessionDepths.delete(session.sessionId);
 						session.dispose();
@@ -299,6 +340,10 @@ export function registerSpawnTool(
 					// createAgentSessionFromDefinition() itself failed
 					const message = err instanceof Error ? err.message : String(err);
 					tracker.fail(spawnId, message);
+					pi.sendUserMessage(
+						formatCompletionMessage(spawnId, params.role, "failed", message),
+						{ deliverAs: "followUp" },
+					);
 				});
 
 			return {

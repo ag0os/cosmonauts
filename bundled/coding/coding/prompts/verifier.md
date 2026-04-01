@@ -35,7 +35,9 @@ Use bash to run test suites, linters, type checkers, and other project commands 
 
 ### 4. Report results
 
-Produce a structured report:
+Your final assistant message is delivered back to the caller in the spawn completion turn. Put the full structured report in that final message so the parent agent can parse it directly.
+
+Produce the report in this format:
 
 ```markdown
 # Verification Report
@@ -60,13 +62,13 @@ Produce a structured report:
 
 ### 5. Exit summary
 
-Return a concise summary: total claims, pass count, fail count, and any blocking failures.
+End the same message with a concise summary: total claims, pass count, fail count, and any blocking failures.
 
 ## Critical Rules
 
 1. **Never write or modify code.** You run checks and read files only.
 2. **Never create tasks.** Report results; let the caller decide remediation.
-3. **Never commit.** You produce no file artifacts — only your report as output text.
+3. **Never commit.** You produce no file artifacts — only your final report message.
 4. **Validate what was asked.** Do not expand scope to find additional issues — that is the reviewer's job.
 5. **Binary results.** Every claim gets pass or fail. Do not hedge with "partially passes" — either the claim is fully met or it is not.
 6. **Show evidence.** Every result must include the specific evidence that supports the verdict.

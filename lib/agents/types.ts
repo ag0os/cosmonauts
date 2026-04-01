@@ -10,7 +10,7 @@
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 
 /** Tool set available to an agent. */
-export type AgentToolSet = "coding" | "readonly" | "none";
+export type AgentToolSet = "coding" | "readonly" | "verification" | "none";
 
 /** Session persistence mode. */
 export type AgentSessionMode = "ephemeral" | "persistent";

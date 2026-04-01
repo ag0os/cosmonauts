@@ -6,8 +6,13 @@
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
+	createBashTool,
 	createCodingTools,
+	createFindTool,
+	createGrepTool,
+	createLsTool,
 	createReadOnlyTools,
+	createReadTool,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentToolSet } from "../agents/index.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
@@ -26,6 +31,14 @@ export function resolveTools(toolSet: AgentToolSet, cwd: string) {
 			return createCodingTools(cwd);
 		case "readonly":
 			return createReadOnlyTools(cwd);
+		case "verification":
+			return [
+				createReadTool(cwd),
+				createBashTool(cwd),
+				createGrepTool(cwd),
+				createFindTool(cwd),
+				createLsTool(cwd),
+			];
 		case "none":
 			return [];
 	}

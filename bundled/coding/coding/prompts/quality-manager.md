@@ -35,9 +35,9 @@ Categories to cover as claims:
 - "Type/schema validation passes" (e.g., `bun run typecheck`, `cargo check`, `mypy`)
 - "Test suite passes" (e.g., `bun run test`, `cargo test`, `pytest`)
 
-Include the specific commands the verifier should run for each claim. The verifier will report pass/fail with evidence for each.
+Include the specific commands the verifier should run for each claim. The verifier will report pass/fail with evidence for each in its final completion message.
 
-After verifier completion, read the results. Record any failed checks for remediation routing.
+After verifier completion, parse the full verification report from the completion message. Record any failed checks for remediation routing.
 
 ### 4. Run clean-context review
 
@@ -77,7 +77,7 @@ After each remediation pass:
 - Spawn `verifier` again with the same quality claims from step 3.
 - If checks now pass, spawn `reviewer` with a new report path for the next round.
 - If checks still fail, route failures to `fixer` or task-based remediation.
-- Stop when verifier reports all claims pass and reviewer reports no findings.
+- Stop when the verifier completion report shows all claims pass and reviewer reports no findings.
 
 ### 7. Final merge-readiness validation
 

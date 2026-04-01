@@ -74,10 +74,12 @@ interface MockPiOptions {
 function createMockPi(cwd: string, options?: MockPiOptions) {
 	const tools = new Map<string, RegisteredTool>();
 	const sessionId = options?.sessionId ?? `test-session-${Math.random()}`;
+	const sendUserMessage = vi.fn();
 	return {
 		registerTool(def: RegisteredTool) {
 			tools.set(def.name, def);
 		},
+		sendUserMessage,
 		getTool(name: string) {
 			return tools.get(name);
 		},
@@ -296,6 +298,64 @@ describe("orchestration extension", () => {
 			expect.any(DomainResolver), // resolver
 		);
 		expect(mockSession.dispose).toHaveBeenCalledTimes(1);
+	});
+
+	test("spawn_agent includes the verifier's full final report in the completion message", async () => {
+		const cwd = "/tmp/project";
+		const pi = createMockPi(cwd, {
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:quality-manager -->",
+		});
+		orchestrationExtension(pi as never);
+
+		mockRuntime({ domainContext: "coding" });
+		const verifierReport = `# Verification Report
+
+## Summary
+
+2/3 claims passed
+
+## Claims
+
+- id: C-001
+  claim: "All tests pass"
+  result: pass
+  evidence: "bun run test exited 0"
+
+- id: C-002
+  claim: "Lint passes"
+  result: fail
+  evidence: "bun run lint exited 1"`;
+		const mockSession = {
+			sessionId: "child-session-verifier",
+			messages: [
+				{
+					role: "assistant",
+					content: [{ type: "text", text: verifierReport }],
+				},
+			],
+			prompt: vi.fn().mockResolvedValue(undefined),
+			dispose: vi.fn(),
+		};
+		mocks.createAgentSessionFromDefinition.mockResolvedValue(mockSession);
+
+		const result = (await pi.callTool("spawn_agent", {
+			role: "verifier",
+			prompt: "Validate these claims",
+		})) as { details: { status: string; spawnId: string } };
+
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(result.details.status).toBe("accepted");
+		expect(pi.sendUserMessage).toHaveBeenCalledWith(
+			expect.stringContaining(
+				`[spawn_completion] spawnId=${result.details.spawnId} role=verifier outcome=success`,
+			),
+			{ deliverAs: "followUp" },
+		);
+		expect(pi.sendUserMessage).toHaveBeenCalledWith(
+			expect.stringContaining(verifierReport),
+			{ deliverAs: "followUp" },
+		);
 	});
 
 	test("spawn_agent denies unauthorized target role", async () => {
