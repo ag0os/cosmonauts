@@ -47,4 +47,3 @@ claude -p --dangerously-skip-permissions "Bun SQLite API — what methods are av
 
 - Be specific. "Research: TypeBox 0.34 breaking changes" gets better results than "Research: TypeBox changes."
 - Claude Code returns synthesized answers with source URLs — check the sources if you need to verify details.
-- For deep dives into a specific open-source repo's internals, prefer the `deepwiki` skill instead.

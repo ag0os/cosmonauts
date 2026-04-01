@@ -109,14 +109,6 @@ Capture key decisions made during sessions for long-term project memory.
 - Structured output compatible with the memory/ format
 - Decisions feed into the persistent memory system
 
-### `deepwiki-tool`: DeepWiki Integration
-
-Add deepwiki_ask tool for querying documentation about public GitHub repositories via the DeepWiki API.
-
-- Agents can ask questions about any public repo's architecture and API usage
-- Evaluate pi-skills for existing integration before building custom
-- Single tool with simple request/response interface
-
 ### `web-fetch-tool`: Web Page Fetching
 
 Add web_fetch tool that fetches a URL, strips HTML, and returns readable text content.

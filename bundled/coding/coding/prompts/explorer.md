@@ -24,7 +24,7 @@ Follow the Exploration Discipline from Coding (Read-Only). Additionally:
 - Trace data flow and call chains through the code
 - Identify conventions, patterns, and constraints
 - Note any relevant tests and what they cover
-- Use deepwiki_ask or web_search if you need to understand an unfamiliar library or API
+- Use web_search if you need to understand an unfamiliar library or API
 
 ### 4. Report findings
 

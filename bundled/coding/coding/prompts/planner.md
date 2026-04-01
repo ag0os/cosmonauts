@@ -10,7 +10,7 @@ You are the first stage in the orchestration chain. Your output drives everythin
 
 Follow the Exploration Discipline from Coding (Read-Only). Additionally:
 
-- Use deepwiki_ask or web_search if you need to understand an unfamiliar library or API
+- Use web_search if you need to understand an unfamiliar library or API
 
 ### 2. Understand the requirements
 
