@@ -14,8 +14,8 @@
  *   cosmonauts plan <command>               → plan management subcommands
  */
 
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { InteractiveMode, runPrintMode } from "@mariozechner/pi-coding-agent";
@@ -32,6 +32,11 @@ import {
 	injectUserPrompt,
 	runChain,
 } from "../lib/orchestration/chain-runner.ts";
+import {
+	discoverBundledPackageDirs,
+	discoverFrameworkBundledPackageDirs,
+	isCosmonautsFrameworkRepo,
+} from "../lib/packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../lib/runtime.ts";
 import { listWorkflows, resolveWorkflow } from "../lib/workflows/loader.ts";
 import { createChainEventLogger } from "./chain-event-logger.ts";
@@ -47,6 +52,8 @@ import { createSkillsProgram } from "./skills/subcommand.ts";
 import { createTaskProgram } from "./tasks/subcommand.ts";
 import type { CliOptions } from "./types.ts";
 import { createUpdateProgram } from "./update/subcommand.ts";
+
+export { discoverBundledPackageDirs, isCosmonautsFrameworkRepo };
 
 // ============================================================================
 // Thinking Level Validation
@@ -68,62 +75,6 @@ function parseThinkingLevel(value: string): ThinkingLevel {
 		);
 	}
 	return value as ThinkingLevel;
-}
-
-// ============================================================================
-// Framework Dev-Mode Detection
-// ============================================================================
-
-/**
- * Returns true when the CLI is running from inside the Cosmonauts framework
- * repo itself. Detection heuristic: package.json at root has name "cosmonauts"
- * AND a bundled/ directory exists.
- *
- * Exported for testing.
- */
-export async function isCosmonautsFrameworkRepo(
-	root: string,
-): Promise<boolean> {
-	try {
-		const content = await readFile(join(root, "package.json"), "utf-8");
-		const pkg = JSON.parse(content) as Record<string, unknown>;
-		if (pkg.name !== "cosmonauts") return false;
-	} catch {
-		return false;
-	}
-	try {
-		const s = await stat(join(root, "bundled"));
-		return s.isDirectory();
-	} catch {
-		return false;
-	}
-}
-
-/**
- * Returns the absolute path of each package directory directly under
- * `bundledDir` that contains a `cosmonauts.json` manifest.
- *
- * Exported for testing.
- */
-export async function discoverBundledPackageDirs(
-	bundledDir: string,
-): Promise<string[]> {
-	const dirs: string[] = [];
-	const entries = await readdir(bundledDir, { withFileTypes: true }).catch(
-		() => null,
-	);
-	if (!entries) return dirs;
-	for (const entry of entries) {
-		if (!entry.isDirectory()) continue;
-		const pkgDir = join(bundledDir, entry.name);
-		try {
-			await stat(join(pkgDir, "cosmonauts.json"));
-			dirs.push(pkgDir);
-		} catch {
-			// no cosmonauts.json — not a bundled package
-		}
-	}
-	return dirs;
 }
 
 // ============================================================================
@@ -236,17 +187,7 @@ async function run(options: CliOptions): Promise<void> {
 
 	// Dev-mode auto-detection: auto-include bundled/ packages when running
 	// from inside the framework repo (name='cosmonauts', bundled/ exists).
-	let bundledDirs: string[] | undefined;
-	if (await isCosmonautsFrameworkRepo(frameworkRoot)) {
-		const discovered = await discoverBundledPackageDirs(
-			join(frameworkRoot, "bundled"),
-		);
-		// In dev mode, only include the full coding package. The minimal
-		// variant is an installable alternative for external projects —
-		// loading both would merge two competing "coding" domains.
-		const primary = discovered.filter((d) => basename(d) === "coding");
-		if (primary.length > 0) bundledDirs = primary;
-	}
+	const bundledDirs = await discoverFrameworkBundledPackageDirs(frameworkRoot);
 
 	// Bootstrap: load config, discover domains, build registries
 	const runtime = await CosmonautsRuntime.create({

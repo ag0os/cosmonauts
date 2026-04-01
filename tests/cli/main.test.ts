@@ -322,12 +322,13 @@ describe("isCosmonautsFrameworkRepo", () => {
 		await rm(tmpDir, { recursive: true, force: true });
 	});
 
-	test("returns true when package.json name is 'cosmonauts' and bundled/ exists", async () => {
+	test("returns true when package.json name is 'cosmonauts', bundled/ exists, and .git/ is present", async () => {
 		await writeFile(
 			join(tmpDir, "package.json"),
 			JSON.stringify({ name: "cosmonauts", version: "0.1.0" }),
 		);
 		await mkdir(join(tmpDir, "bundled"));
+		await mkdir(join(tmpDir, ".git"));
 
 		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(true);
 	});
@@ -338,6 +339,7 @@ describe("isCosmonautsFrameworkRepo", () => {
 			JSON.stringify({ name: "my-project", version: "1.0.0" }),
 		);
 		await mkdir(join(tmpDir, "bundled"));
+		await mkdir(join(tmpDir, ".git"));
 
 		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(false);
 	});
@@ -347,12 +349,24 @@ describe("isCosmonautsFrameworkRepo", () => {
 			join(tmpDir, "package.json"),
 			JSON.stringify({ name: "cosmonauts", version: "0.1.0" }),
 		);
+		await mkdir(join(tmpDir, ".git"));
+
+		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(false);
+	});
+
+	test("returns false for installed package shape without repo marker", async () => {
+		await writeFile(
+			join(tmpDir, "package.json"),
+			JSON.stringify({ name: "cosmonauts", version: "0.1.0" }),
+		);
+		await mkdir(join(tmpDir, "bundled"));
 
 		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(false);
 	});
 
 	test("returns false when package.json is absent", async () => {
 		await mkdir(join(tmpDir, "bundled"));
+		await mkdir(join(tmpDir, ".git"));
 
 		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(false);
 	});
@@ -360,6 +374,7 @@ describe("isCosmonautsFrameworkRepo", () => {
 	test("returns false when package.json is malformed JSON", async () => {
 		await writeFile(join(tmpDir, "package.json"), "not json {{{");
 		await mkdir(join(tmpDir, "bundled"));
+		await mkdir(join(tmpDir, ".git"));
 
 		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(false);
 	});

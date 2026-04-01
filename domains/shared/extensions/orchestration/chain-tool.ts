@@ -100,6 +100,8 @@ export function registerChainTool(
 				completionLabel: params.completionLabel,
 				thinking,
 				registry: runtime.agentRegistry,
+				domainsDir: runtime.domainsDir,
+				resolver: runtime.domainResolver,
 				onEvent: (event: ChainEvent) => {
 					const line = chainEventToProgressLine(event);
 					if (line) {

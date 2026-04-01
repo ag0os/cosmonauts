@@ -176,6 +176,8 @@ describe("orchestration extension", () => {
 				domainContext: "coding",
 				projectSkills: ["typescript", "backend"],
 				skillPaths: ["/skills/shared", "/skills/project"],
+				domainsDir: testDomainsDir,
+				resolver: expect.any(DomainResolver),
 			}),
 		);
 		expect(parseChainMock).toHaveBeenCalledWith(
@@ -184,6 +186,30 @@ describe("orchestration extension", () => {
 				has: expect.any(Function),
 			}),
 			"coding",
+		);
+	});
+
+	test("orchestration runtime includes bundled coding package in framework dev mode", async () => {
+		const cwd = "/tmp/project";
+		const pi = createMockPi(cwd);
+		orchestrationExtension(pi as never);
+
+		parseChainMock.mockReturnValue([{ name: "planner", loop: false }]);
+		runChainMock.mockResolvedValue({
+			success: true,
+			stageResults: [],
+			totalDurationMs: 1,
+			errors: [],
+		} as ChainResult);
+
+		await pi.callTool("chain_run", { expression: "planner" });
+
+		expect(runtimeCreateMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				builtinDomainsDir: testDomainsDir,
+				projectRoot: cwd,
+				bundledDirs: expect.arrayContaining([testBundledCodingDir]),
+			}),
 		);
 	});
 
