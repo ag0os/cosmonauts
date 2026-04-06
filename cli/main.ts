@@ -315,7 +315,7 @@ async function run(options: CliOptions): Promise<void> {
 		}
 
 		const cosmoDefinition = registry.resolve("cosmo", domainContext);
-		const { session } = await createSession({
+		const initRuntime = await createSession({
 			definition: cosmoDefinition,
 			cwd,
 			domainsDir: runtime.domainsDir,
@@ -327,14 +327,10 @@ async function run(options: CliOptions): Promise<void> {
 			skillPaths,
 		});
 
-		try {
-			await runPrintMode(session, {
-				mode: "text",
-				initialMessage: buildInitPrompt(cwd),
-			});
-		} finally {
-			session.dispose();
-		}
+		await runPrintMode(initRuntime, {
+			mode: "text",
+			initialMessage: buildInitPrompt(cwd),
+		});
 		return;
 	}
 
@@ -395,7 +391,7 @@ async function run(options: CliOptions): Promise<void> {
 			throw new Error("--print requires a prompt argument");
 		}
 
-		const { session } = await createSession({
+		const printRuntime = await createSession({
 			definition,
 			cwd,
 			domainsDir: runtime.domainsDir,
@@ -407,20 +403,16 @@ async function run(options: CliOptions): Promise<void> {
 			skillPaths,
 		});
 
-		try {
-			await runPrintMode(session, {
-				mode: "text",
-				initialMessage: options.prompt,
-			});
-		} finally {
-			session.dispose();
-		}
+		await runPrintMode(printRuntime, {
+			mode: "text",
+			initialMessage: options.prompt,
+		});
 		return;
 	}
 
 	// 5. default → interactive REPL
 	// TODO: After --workflow/--chain, drop into Cosmo REPL
-	const result = await createSession({
+	const interactiveRuntime = await createSession({
 		definition,
 		cwd,
 		domainsDir: runtime.domainsDir,
@@ -432,8 +424,8 @@ async function run(options: CliOptions): Promise<void> {
 		skillPaths,
 	});
 
-	const interactive = new InteractiveMode(result.session, {
-		modelFallbackMessage: result.modelFallbackMessage,
+	const interactive = new InteractiveMode(interactiveRuntime, {
+		modelFallbackMessage: interactiveRuntime.modelFallbackMessage,
 		initialMessage: options.prompt,
 	});
 
