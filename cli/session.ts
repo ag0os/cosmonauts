@@ -3,16 +3,18 @@
  *
  * Mirrors agent-spawner.ts logic but differs in two key ways:
  * - Configurable session persistence (persistent for interactive, ephemeral for print)
- * - Returns session without sending a prompt (caller controls execution mode)
+ * - Returns AgentSessionRuntime for use with InteractiveMode / runPrintMode
  */
 
 import { join } from "node:path";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import {
-	type CreateAgentSessionResult,
-	createAgentSession,
-	DefaultResourceLoader,
+	type AgentSessionRuntime,
+	type CreateAgentSessionRuntimeFactory,
+	createAgentSessionFromServices,
+	createAgentSessionRuntime,
+	createAgentSessionServices,
 	getAgentDir,
 	SessionManager,
 } from "@mariozechner/pi-coding-agent";
@@ -61,16 +63,15 @@ export interface CreateSessionOptions {
 }
 
 /**
- * Create a Pi agent session from an AgentDefinition without sending a prompt.
+ * Create a Pi AgentSessionRuntime from an AgentDefinition.
  *
- * The caller is responsible for choosing the execution mode:
+ * The caller chooses the execution mode:
  * - InteractiveMode for REPL
  * - runPrintMode for non-interactive
- * - session.prompt() for direct invocation
  */
 export async function createSession(
 	options: CreateSessionOptions,
-): Promise<CreateAgentSessionResult> {
+): Promise<AgentSessionRuntime> {
 	const {
 		definition: def,
 		cwd,
@@ -106,8 +107,9 @@ export async function createSession(
 
 	const skillsOverride = buildSkillsOverride(def.skills, projectSkills);
 	const additionalSkillPaths = skillPaths?.length ? [...skillPaths] : undefined;
-	const loader = new DefaultResourceLoader({
-		cwd,
+
+	// Resource loader options for our custom prompt/extension/skill setup.
+	const resourceLoaderOptions = {
 		...(promptContent && { appendSystemPrompt: promptContent }),
 		noExtensions: true,
 		noSkills: true,
@@ -119,8 +121,7 @@ export async function createSession(
 		...(!def.projectContext && {
 			agentsFilesOverride: () => ({ agentsFiles: [] }),
 		}),
-	});
-	await loader.reload();
+	};
 
 	// Scope persistent sessions by agent ID so each agent resumes its own history.
 	// cosmo uses the default (unscoped) directory for backward compatibility.
@@ -130,12 +131,33 @@ export async function createSession(
 		? SessionManager.continueRecent(cwd, sessionDir)
 		: SessionManager.inMemory();
 
-	return createAgentSession({
+	const createRuntime: CreateAgentSessionRuntimeFactory = async ({
+		cwd: effectiveCwd,
+		sessionManager: sm,
+		sessionStartEvent,
+	}) => {
+		const services = await createAgentSessionServices({
+			cwd: effectiveCwd,
+			resourceLoaderOptions,
+		});
+		const result = await createAgentSessionFromServices({
+			services,
+			sessionManager: sm,
+			sessionStartEvent,
+			model,
+			thinkingLevel,
+			tools,
+		});
+		return {
+			...result,
+			services,
+			diagnostics: services.diagnostics,
+		};
+	};
+
+	return createAgentSessionRuntime(createRuntime, {
 		cwd,
-		model,
-		thinkingLevel,
-		tools,
+		agentDir: getAgentDir(),
 		sessionManager,
-		resourceLoader: loader,
 	});
 }
