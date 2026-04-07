@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { archivePlan } from "../../lib/plans/archive.ts";
 import { PlanManager } from "../../lib/plans/plan-manager.ts";
+import { sessionsDirForPlan } from "../../lib/sessions/session-store.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 
 describe("archivePlan", () => {
@@ -448,5 +449,97 @@ describe("archivePlan", () => {
 		await expect(
 			archivePlan(tempDir, "", planManager, taskManager),
 		).rejects.toThrow("empty");
+	});
+
+	describe("sessions directory archiving", () => {
+		it("moves missions/sessions/<slug>/ to missions/archive/sessions/<slug>/ when sessions exist", async () => {
+			await planManager.createPlan({
+				slug: "sessions-plan",
+				title: "Sessions Plan",
+			});
+
+			// Create a sessions directory with a transcript file
+			const sessionsDir = sessionsDirForPlan(tempDir, "sessions-plan");
+			await mkdir(sessionsDir, { recursive: true });
+			await writeFile(
+				join(sessionsDir, "worker-session.md"),
+				"# Transcript",
+				"utf-8",
+			);
+
+			const result = await archivePlan(
+				tempDir,
+				"sessions-plan",
+				planManager,
+				taskManager,
+			);
+
+			const expectedDest = join(
+				tempDir,
+				"missions/archive/sessions/sessions-plan",
+			);
+			expect(result.archivedSessionsPath).toBe(expectedDest);
+
+			// Verify sessions were moved to archive
+			const archiveSessionStats = await stat(expectedDest);
+			expect(archiveSessionStats.isDirectory()).toBe(true);
+
+			const content = await readFile(
+				join(expectedDest, "worker-session.md"),
+				"utf-8",
+			);
+			expect(content).toBe("# Transcript");
+
+			// Verify original sessions directory is gone
+			await expect(stat(sessionsDir)).rejects.toThrow();
+		});
+
+		it("succeeds normally when no sessions directory exists for the plan", async () => {
+			await planManager.createPlan({
+				slug: "no-sessions-plan",
+				title: "No Sessions Plan",
+			});
+
+			const result = await archivePlan(
+				tempDir,
+				"no-sessions-plan",
+				planManager,
+				taskManager,
+			);
+
+			expect(result.archivedSessionsPath).toBeUndefined();
+			expect(result.planSlug).toBe("no-sessions-plan");
+
+			// Verify plan was still archived
+			const planStats = await stat(
+				join(tempDir, "missions/archive/plans/no-sessions-plan"),
+			);
+			expect(planStats.isDirectory()).toBe(true);
+		});
+
+		it("does not move memory/ files during archive", async () => {
+			await planManager.createPlan({
+				slug: "memory-check-plan",
+				title: "Memory Check Plan",
+			});
+
+			// Create memory file that should NOT be moved
+			const memoryDir = join(tempDir, "memory");
+			await mkdir(memoryDir, { recursive: true });
+			await writeFile(
+				join(memoryDir, "memory-check-plan.md"),
+				"# Knowledge",
+				"utf-8",
+			);
+
+			await archivePlan(tempDir, "memory-check-plan", planManager, taskManager);
+
+			// memory file must still be at original location
+			const content = await readFile(
+				join(memoryDir, "memory-check-plan.md"),
+				"utf-8",
+			);
+			expect(content).toBe("# Knowledge");
+		});
 	});
 });
