@@ -24,6 +24,10 @@ import {
 	getThinkingForRole,
 	resolveModel,
 } from "./model-resolution.ts";
+import {
+	registerPlanContext,
+	removePlanContext,
+} from "./plan-session-context.ts";
 import { createAgentSessionFromDefinition } from "./session-factory.ts";
 import {
 	getOrCreateTracker,
@@ -125,6 +129,12 @@ export function createPiSpawner(
 					deliveryMode: "external",
 				});
 
+				// Register plan context so child spawns (via spawn_agent) can
+				// inherit the planSlug and persist their own lineage artifacts.
+				if (config.planSlug) {
+					registerPlanContext(session.sessionId, config.planSlug);
+				}
+
 				let unsubscribe: (() => void) | undefined;
 				const startedAt = new Date().toISOString();
 				let spawnOutcome: "success" | "failed" = "failed";
@@ -184,6 +194,7 @@ export function createPiSpawner(
 				} finally {
 					unsubscribe?.();
 					removeTracker(session.sessionId);
+					removePlanContext(session.sessionId);
 					const finalMessages = [...session.messages];
 					session.dispose();
 
