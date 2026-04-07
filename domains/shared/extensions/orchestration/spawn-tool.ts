@@ -3,7 +3,11 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
-import { getPlanSlugForSession } from "../../../../lib/orchestration/plan-session-context.ts";
+import {
+	getPlanSlugForSession,
+	registerPlanContext,
+	removePlanContext,
+} from "../../../../lib/orchestration/plan-session-context.ts";
 import { createAgentSessionFromDefinition } from "../../../../lib/orchestration/session-factory.ts";
 import { getOrCreateTracker } from "../../../../lib/orchestration/spawn-tracker.ts";
 import type { CosmonautsRuntime } from "../../../../lib/runtime.ts";
@@ -319,6 +323,10 @@ export function registerSpawnTool(
 				.then(async ({ session, sessionFilePath }) => {
 					// Register child depth so grandchild spawns can compute their depth
 					sessionDepths.set(session.sessionId, childDepth);
+					// Register plan context so grandchild spawns can also inherit it
+					if (planSlug) {
+						registerPlanContext(session.sessionId, planSlug);
+					}
 					const startedAt = new Date().toISOString();
 					const startMs = Date.now();
 					let spawnOutcome: "success" | "failed" = "failed";
@@ -384,6 +392,7 @@ export function registerSpawnTool(
 						}
 					} finally {
 						sessionDepths.delete(session.sessionId);
+						removePlanContext(session.sessionId);
 						const finalMessages = [...session.messages];
 						session.dispose();
 

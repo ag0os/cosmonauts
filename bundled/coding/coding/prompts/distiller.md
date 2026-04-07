@@ -141,21 +141,19 @@ Write the bundle to `memory/<planSlug>.knowledge.jsonl` at the project root. Cre
 
 **JSONL format**: Write one JSON object per line, no trailing comma, no outer array wrapper.
 
-- **First line**: the `KnowledgeBundle` metadata object (without the `records` field, or with `records: []`)
+- **First line**: metadata header with `_meta: true`
 - **Subsequent lines**: one `KnowledgeRecord` per line
 
-Alternatively, you may write the bundle header on line 1 and each record on subsequent lines as separate JSON objects. Either way, each line must be valid, parseable JSON.
-
-The canonical format is:
+Use this canonical format exactly:
 
 ```
-{"planSlug":"...","planTitle":"...","distilledAt":"...","distilledBy":"distiller","recordCount":<N>}
-{"id":"...","planSlug":"...","type":"decision","content":"...","files":[...],"tags":[...],"createdAt":"...","sourceRole":"..."}
-{"id":"...","planSlug":"...","type":"pattern","content":"...","files":[...],"tags":[...],"createdAt":"...","sourceRole":"..."}
+{"_meta":true,"planSlug":"...","planTitle":"...","distilledAt":"...","distilledBy":"distiller"}
+{"id":"...","planSlug":"...","taskId":"TASK-001","sourceRole":"worker","type":"decision","content":"...","files":[...],"tags":[...],"createdAt":"..."}
+{"id":"...","planSlug":"...","sourceRole":"planner","type":"pattern","content":"...","files":[...],"tags":[...],"createdAt":"..."}
 ...
 ```
 
-Each `KnowledgeRecord` line must be a complete, standalone JSON object (not nested inside the bundle object).
+Each `KnowledgeRecord` line must be a complete, standalone JSON object (not nested inside the header).
 
 ### 8. Write the Human-Readable Summary (Optional)
 

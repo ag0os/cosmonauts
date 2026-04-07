@@ -13,6 +13,7 @@ import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import {
 	createDefaultCompletionCheck,
+	derivePlanSlug,
 	getDefaultStagePrompt,
 	runChain,
 	runStage,
@@ -129,6 +130,18 @@ describe("getDefaultStagePrompt", () => {
 	});
 });
 
+describe("derivePlanSlug", () => {
+	test("extracts slug from plan completion labels", () => {
+		expect(derivePlanSlug("plan:session-lineage")).toBe("session-lineage");
+	});
+
+	test("throws for path traversal slugs", () => {
+		expect(() => derivePlanSlug("plan:../../etc/passwd")).toThrow(
+			"Invalid plan slug",
+		);
+	});
+});
+
 // ============================================================================
 // runStage Tests
 // ============================================================================
@@ -144,6 +157,34 @@ describe("runStage", () => {
 
 			expect(result.success).toBe(false);
 			expect(result.error).toContain('Unknown agent role "unknown-role"');
+			expect(spawner.spawn).not.toHaveBeenCalled();
+		});
+
+		test("rejects invalid derived planSlug before spawn", async () => {
+			const spawner = createMockSpawner();
+			const stage = makeStage("planner", false);
+			const config = makeConfig([stage], {
+				completionLabel: "plan:../../escape",
+			});
+
+			const result = await runStage(stage, config, spawner);
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain("Invalid plan slug");
+			expect(spawner.spawn).not.toHaveBeenCalled();
+		});
+
+		test("rejects invalid explicit planSlug before spawn", async () => {
+			const spawner = createMockSpawner();
+			const stage = makeStage("planner", false);
+			const config = makeConfig([stage], {
+				planSlug: "..\\escape",
+			});
+
+			const result = await runStage(stage, config, spawner);
+
+			expect(result.success).toBe(false);
+			expect(result.error).toContain("Invalid plan slug");
 			expect(spawner.spawn).not.toHaveBeenCalled();
 		});
 

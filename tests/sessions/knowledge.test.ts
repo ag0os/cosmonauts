@@ -154,6 +154,28 @@ describe("readKnowledgeBundle", () => {
 		expect(result).toBeUndefined();
 	});
 
+	test("returns undefined for non-canonical metadata header", async () => {
+		const filePath = join(tempDir, "memory", "test-plan.knowledge.jsonl");
+		await mkdir(join(tempDir, "memory"), { recursive: true });
+		await writeFile(
+			filePath,
+			[
+				JSON.stringify({
+					planSlug: "test-plan",
+					planTitle: "Test Plan",
+					distilledAt: "2026-04-07T01:00:00.000Z",
+					distilledBy: "distiller",
+					recordCount: 1,
+				}),
+				JSON.stringify(makeRecord()),
+			].join("\n"),
+			"utf-8",
+		);
+
+		const result = await readKnowledgeBundle(tempDir, "test-plan");
+		expect(result).toBeUndefined();
+	});
+
 	test("roundtrip — reads back identical bundle (QC-007)", async () => {
 		const bundle = makeBundle();
 		await writeKnowledgeBundle(tempDir, bundle);

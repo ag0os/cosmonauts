@@ -49,9 +49,23 @@ function parseBundle(content: string): KnowledgeBundle | undefined {
 	if (lines.length === 0) return undefined;
 
 	const firstRaw = JSON.parse(lines[0] as string) as Record<string, unknown>;
-	if (!firstRaw._meta) return undefined;
+	if (
+		firstRaw._meta !== true ||
+		typeof firstRaw.planSlug !== "string" ||
+		typeof firstRaw.planTitle !== "string" ||
+		typeof firstRaw.distilledAt !== "string" ||
+		typeof firstRaw.distilledBy !== "string"
+	) {
+		return undefined;
+	}
 
-	const meta = firstRaw as unknown as MetaRecord;
+	const meta: MetaRecord = {
+		_meta: true,
+		planSlug: firstRaw.planSlug,
+		planTitle: firstRaw.planTitle,
+		distilledAt: firstRaw.distilledAt,
+		distilledBy: firstRaw.distilledBy,
+	};
 	const records: KnowledgeRecord[] = [];
 
 	for (let i = 1; i < lines.length; i++) {

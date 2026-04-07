@@ -73,6 +73,7 @@ vi.mock("../../lib/orchestration/agent-spawner.ts", () => ({
 
 import orchestrationExtension from "../../domains/shared/extensions/orchestration/index.ts";
 import {
+	getPlanSlugForSession,
 	registerPlanContext,
 	removePlanContext,
 } from "../../lib/orchestration/plan-session-context.ts";
@@ -419,6 +420,36 @@ describe("spawn_agent child session lineage", () => {
 
 			// Spawn still accepted despite lineage error
 			expect(result.details.status).toBe("accepted");
+		});
+
+		test("child session plan context is registered during execution for grandchild propagation (AC#1)", async () => {
+			let planSlugDuringPrompt: string | undefined;
+			const childSessionId = "child-session-abc";
+			mocks.createAgentSessionFromDefinition.mockResolvedValue({
+				session: createMockChildSession({
+					prompt: vi.fn(async () => {
+						// During child's execution, its plan context should be registered
+						// so any grandchildren spawned here can inherit it.
+						planSlugDuringPrompt = getPlanSlugForSession(childSessionId);
+					}),
+				}),
+				sessionFilePath: SESSION_FILE_PATH,
+			});
+
+			const cwd = "/tmp/project";
+			const pi = createMockPi(cwd, { sessionId: PARENT_SESSION_ID });
+			orchestrationExtension(pi as never);
+
+			await pi.callTool("spawn_agent", {
+				role: "worker",
+				prompt: "implement the task",
+			});
+
+			await flushAsync();
+
+			expect(planSlugDuringPrompt).toBe(PLAN_SLUG);
+			// After completion, plan context is cleaned up
+			expect(getPlanSlugForSession(childSessionId)).toBeUndefined();
 		});
 	});
 

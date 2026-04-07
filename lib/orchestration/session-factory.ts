@@ -18,6 +18,7 @@ import { buildSkillsOverride } from "../agents/skills.ts";
 import type { AgentDefinition } from "../agents/types.ts";
 import { assemblePrompts } from "../domains/prompt-assembly.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
+import { validateSlug } from "../plans/plan-manager.ts";
 import { sessionsDirForPlan } from "../sessions/session-store.ts";
 import {
 	resolveExtensionPaths,
@@ -112,6 +113,7 @@ export async function createAgentSessionFromDefinition(
 	let sessionFilePath: string | undefined;
 	let sessionManager: SessionManager;
 	if (config.planSlug) {
+		validateSlug(config.planSlug);
 		const sessionsDir = sessionsDirForPlan(config.cwd, config.planSlug);
 		const uuid = crypto.randomUUID();
 		sessionFilePath = join(sessionsDir, `${config.role}-${uuid}.jsonl`);

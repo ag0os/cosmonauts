@@ -100,7 +100,15 @@ function createMockSession(overrides?: Record<string, unknown>) {
 	};
 }
 
-describe("agent-spawner lineage recording", () => {
+function firstCall<T>(calls: T[]): T {
+	const call = calls[0];
+	if (call === undefined) {
+		throw new Error("Expected first mock call");
+	}
+	return call;
+}
+
+describe("agent-spawner session persistence lineage recording", () => {
 	const SESSION_FILE_PATH =
 		"/tmp/project/missions/sessions/my-plan/planner-uuid-123.jsonl";
 
@@ -140,7 +148,7 @@ describe("agent-spawner lineage recording", () => {
 			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
 			await spawner.spawn(PLAN_CONFIG);
 
-			const [, filename] = mocks.writeTranscript.mock.calls[0]!;
+			const [, filename] = firstCall(mocks.writeTranscript.mock.calls);
 			expect(filename).toBe("planner-uuid-123.transcript.md");
 		});
 
@@ -149,7 +157,9 @@ describe("agent-spawner lineage recording", () => {
 			await spawner.spawn(PLAN_CONFIG);
 
 			expect(mocks.appendSession).toHaveBeenCalledOnce();
-			const [baseDir, planSlug, record] = mocks.appendSession.mock.calls[0]!;
+			const [baseDir, planSlug, record] = firstCall(
+				mocks.appendSession.mock.calls,
+			);
 			expect(baseDir).toBe("/tmp/project/missions/sessions");
 			expect(planSlug).toBe("my-plan");
 			expect(record).toMatchObject({
@@ -165,7 +175,7 @@ describe("agent-spawner lineage recording", () => {
 			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
 			await spawner.spawn(PLAN_CONFIG);
 
-			const [, , record] = mocks.appendSession.mock.calls[0]!;
+			const [, , record] = firstCall(mocks.appendSession.mock.calls);
 			expect(record.stats).toBeDefined();
 			expect(record.stats.tokens).toEqual({
 				input: 500,
@@ -182,7 +192,7 @@ describe("agent-spawner lineage recording", () => {
 			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
 			await spawner.spawn(PLAN_CONFIG);
 
-			const [, , record] = mocks.appendSession.mock.calls[0]!;
+			const [, , record] = firstCall(mocks.appendSession.mock.calls);
 			expect(record.stats.tokens).not.toHaveProperty("cacheRead");
 			expect(record.stats.tokens).not.toHaveProperty("cacheWrite");
 		});
@@ -191,7 +201,7 @@ describe("agent-spawner lineage recording", () => {
 			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
 			await spawner.spawn(PLAN_CONFIG);
 
-			const [, , record] = mocks.appendSession.mock.calls[0]!;
+			const [, , record] = firstCall(mocks.appendSession.mock.calls);
 			expect(record.startedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 			expect(record.completedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 		});
@@ -212,7 +222,7 @@ describe("agent-spawner lineage recording", () => {
 
 			expect(result.success).toBe(false);
 			expect(mocks.appendSession).toHaveBeenCalledOnce();
-			const [, , record] = mocks.appendSession.mock.calls[0]!;
+			const [, , record] = firstCall(mocks.appendSession.mock.calls);
 			expect(record.outcome).toBe("failed");
 		});
 
@@ -247,7 +257,7 @@ describe("agent-spawner lineage recording", () => {
 			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
 			await spawner.spawn(PLAN_CONFIG);
 
-			const [, , record] = mocks.appendSession.mock.calls[0]!;
+			const [, , record] = firstCall(mocks.appendSession.mock.calls);
 			expect(record.stats).toBeUndefined();
 		});
 
@@ -255,7 +265,7 @@ describe("agent-spawner lineage recording", () => {
 			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
 			await spawner.spawn({ ...PLAN_CONFIG, parentSessionId: "parent-xyz" });
 
-			const [, , record] = mocks.appendSession.mock.calls[0]!;
+			const [, , record] = firstCall(mocks.appendSession.mock.calls);
 			expect(record.parentSessionId).toBe("parent-xyz");
 		});
 
@@ -270,7 +280,7 @@ describe("agent-spawner lineage recording", () => {
 				},
 			});
 
-			const [, , record] = mocks.appendSession.mock.calls[0]!;
+			const [, , record] = firstCall(mocks.appendSession.mock.calls);
 			expect(record.taskId).toBe("COSMO-042");
 		});
 
@@ -285,7 +295,7 @@ describe("agent-spawner lineage recording", () => {
 		});
 	});
 
-	describe("non-plan spawn (planSlug absent) — AC#4, AC#5", () => {
+	describe("non-plan spawn (no planSlug) — AC#4, AC#5", () => {
 		const NO_PLAN_CONFIG = {
 			role: "planner",
 			cwd: "/tmp/project",
