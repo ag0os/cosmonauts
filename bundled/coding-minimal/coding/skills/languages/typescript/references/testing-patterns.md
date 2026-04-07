@@ -214,101 +214,34 @@ it.each([
 });
 ```
 
-## TypeScript-Specific Patterns
+## TypeScript-Specific Testing
 
-### Type-Level Assertions (Vitest)
+### Keep the Type System Engaged
 
-When a function's return type is part of its contract, assert the type directly with `expectTypeOf`:
+The most common testing mistake in TypeScript is escaping the type system with `any` or `as unknown as X` to make test data easier to construct. This defeats the purpose -- when the production type changes, untyped test data silently drifts and tests pass against stale shapes.
 
-```typescript
-import { expectTypeOf } from "vitest";
+**Principle**: All test data (fixtures, mocks, factory return values) should be typed against the production types. Use `satisfies` for fixtures to validate the shape without widening, so the compiler catches drift immediately. If constructing valid test data is painful, that is design feedback -- the type has too many required fields or the constructor is too complex.
 
-it("returns a readonly array", () => {
-  const result = freeze([1, 2, 3]);
-  expectTypeOf(result).toEqualTypeOf<readonly number[]>();
-});
+### Type Mock Return Values
 
-it("infers generic parameter correctly", () => {
-  const result = createResult({ id: "1", name: "test" });
-  expectTypeOf(result).toMatchTypeOf<Result<{ id: string; name: string }>>();
-});
-```
+When mocking a function or module, use the test runner's type parameter support to type the mock against the real function signature. An untyped mock that returns `{ id: 1 }` will not break when the real function starts returning `{ id: string }` -- the test silently passes against wrong data. A typed mock fails at compile time.
 
-Use `toEqualTypeOf` for exact matches and `toMatchTypeOf` for structural compatibility (the value type extends the expected type).
+Check how the project's test runner supports typed mocks -- most modern runners accept type parameters on their mock/spy factory functions.
 
-### Typing Mocks
+### Test Discriminated Unions Exhaustively
 
-Ensure mock return values match the real types. Untyped mocks hide contract breakage:
+When production code handles a discriminated union, write a test case for each variant. If the code uses exhaustive checking with `never`, verify that an unrecognized variant throws. The test suite should mirror the union -- when a new variant is added, a missing test case should be obvious.
 
-```typescript
-// Vitest: type the mock function
-const fetchUser = vi.fn<(id: string) => Promise<User>>().mockResolvedValue({
-  id: "1",
-  name: "Test",
-  role: "admin",
-});
+### Test Type Guards on Both Paths
 
-// Type the module mock
-vi.mock("./user-store", () => ({
-  loadUser: vi.fn<(id: string) => Promise<User>>(),
-}));
-```
+A type guard has two contracts: what it accepts and what it rejects. Test both:
 
-If the mock's return type does not satisfy the real function's return type, the compiler catches it immediately.
+- **Positive**: valid inputs that should narrow successfully.
+- **Negative**: `null`, `undefined`, wrong primitive types, objects missing required fields, objects with wrong field types. The negative path is where type guards earn their keep -- a guard that accepts everything is worse than no guard.
 
-### Testing Discriminated Unions
+### Assert Types When Types Are the Contract
 
-Write a test case for each variant. If the code uses exhaustive checking (`never`), verify that unrecognized variants throw:
-
-```typescript
-describe("formatResult", () => {
-  it("formats success result", () => {
-    const result: Result<string> = { ok: true, value: "data" };
-    expect(formatResult(result)).toBe("Success: data");
-  });
-
-  it("formats error result", () => {
-    const result: Result<string> = { ok: false, error: new Error("fail") };
-    expect(formatResult(result)).toBe("Error: fail");
-  });
-});
-```
-
-### Testing Type Guards
-
-Verify both the positive and negative paths, and check that TypeScript narrows correctly:
-
-```typescript
-describe("isUser", () => {
-  it("returns true for valid user objects", () => {
-    const input: unknown = { id: "1", name: "Test" };
-    expect(isUser(input)).toBe(true);
-  });
-
-  it("returns false for non-objects", () => {
-    expect(isUser(null)).toBe(false);
-    expect(isUser("string")).toBe(false);
-  });
-
-  it("returns false for objects missing required fields", () => {
-    expect(isUser({ id: "1" })).toBe(false);
-  });
-});
-```
-
-### Test Fixtures with `satisfies`
-
-Use `satisfies` for test fixtures to validate the shape without widening:
-
-```typescript
-const testConfig = {
-  port: 3000,
-  host: "localhost",
-  debug: true,
-} as const satisfies Config;
-// Type errors if the fixture drifts from the Config type
-// Literals are preserved for precise assertions
-```
+For generic utilities, builder patterns, or type narrowing functions where the return type IS the primary value, assert the type directly. Most modern test runners provide a type-level assertion API. If the runner does not, a compile-time check via `satisfies` or assignment to a typed variable achieves the same goal -- the test file fails to compile if the type contract breaks.
 
 ## Debugging Failing Tests
 

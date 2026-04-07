@@ -162,25 +162,17 @@ Why: explicit return types on public APIs prevent accidental signature changes. 
 
 ## Testing
 
-Identify the project's test runner (Vitest, Jest, node:test, etc.) by reading `package.json` scripts and devDependencies. Use that runner, not a different one.
+Identify the project's test runner by reading `package.json` scripts and devDependencies. Use that runner, not a different one.
 
 For general testing philosophy (test behavior not implementation, mock boundaries not internals, testing as design feedback), load `/skill:engineering-principles`.
 
-**TypeScript-specific testing guidance**:
+**TypeScript-specific testing principles**:
 
-- **Type your test helpers.** Factory functions that create test data should return the correct type, not `any`. Use `satisfies` to validate test fixtures against the real type without widening.
-- **Type mock return values.** When mocking a function, ensure the mock returns the correct type. Vitest's `vi.fn<() => ReturnType>()` and Jest's `jest.fn<() => ReturnType>()` accept type parameters.
-- **Test discriminated unions exhaustively.** When the code under test handles a union, write a test case for each variant. If exhaustive checking with `never` is part of the contract, test that an unrecognized variant throws.
-- **Use `expectTypeOf` for type-level assertions** (Vitest). When a function's return type IS the contract (generic utilities, type narrowing functions), assert the type directly:
-
-```typescript
-import { expectTypeOf } from "vitest";
-
-it("narrows to string", () => {
-  const result = narrow(input);
-  expectTypeOf(result).toEqualTypeOf<string>();
-});
-```
+- **Keep the type system engaged in tests.** Type test data, mock return values, and factory functions using the real types from production code. An untyped mock (`as any`) hides contract breakage that the compiler would otherwise catch at test-writing time.
+- **Use `satisfies` for test fixtures.** It validates the shape matches the production type without widening, so literals are preserved for precise assertions and refactors that change the type surface break the fixture immediately.
+- **Test each variant of a discriminated union.** When code handles a union, write a test case per variant. If the code uses exhaustive checking with `never`, verify that unrecognized variants throw.
+- **Test type guards on both paths.** A type guard that only returns `true` for valid shapes is half-tested. Verify it rejects non-objects, partial objects, and structurally similar but wrong shapes.
+- **Assert types when types are the contract.** For generic utilities, type narrowing functions, or builder patterns where the return type is the primary value, use the test runner's type-level assertion API (e.g., Vitest's `expectTypeOf`) if available. If not, a compile-time check via `satisfies` or an assignment to a typed variable is sufficient.
 
 ## Reference Guides
 
