@@ -145,6 +145,14 @@ function createMockChildSession(overrides?: Record<string, unknown>) {
 	};
 }
 
+function firstCall<T>(calls: T[]): T {
+	const call = calls[0];
+	if (call === undefined) {
+		throw new Error("Expected first mock call");
+	}
+	return call;
+}
+
 interface MockPiOptions {
 	systemPrompt?: string;
 	sessionId?: string;
@@ -277,7 +285,9 @@ describe("spawn_agent child session lineage", () => {
 			await flushAsync();
 
 			expect(mocks.appendSession).toHaveBeenCalledOnce();
-			const [baseDir, planSlug, record] = mocks.appendSession.mock.calls[0]!;
+			const [baseDir, planSlug, record] = firstCall(
+				mocks.appendSession.mock.calls,
+			);
 			expect(baseDir).toBe("/tmp/project/missions/sessions");
 			expect(planSlug).toBe(PLAN_SLUG);
 			expect(record).toMatchObject({
@@ -302,7 +312,7 @@ describe("spawn_agent child session lineage", () => {
 
 			await flushAsync();
 
-			const [, , record] = mocks.appendSession.mock.calls[0]!;
+			const [, , record] = firstCall(mocks.appendSession.mock.calls);
 			expect(record.stats).toBeDefined();
 			expect(record.stats.tokens).toEqual({
 				input: 800,
@@ -327,7 +337,7 @@ describe("spawn_agent child session lineage", () => {
 
 			await flushAsync();
 
-			const [, , record] = mocks.appendSession.mock.calls[0]!;
+			const [, , record] = firstCall(mocks.appendSession.mock.calls);
 			expect(record.startedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 			expect(record.completedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 		});
@@ -349,7 +359,7 @@ describe("spawn_agent child session lineage", () => {
 
 			await flushAsync();
 
-			const [, , record] = mocks.appendSession.mock.calls[0]!;
+			const [, , record] = firstCall(mocks.appendSession.mock.calls);
 			expect(record.taskId).toBe("COSMO-042");
 		});
 
@@ -375,7 +385,7 @@ describe("spawn_agent child session lineage", () => {
 			await flushAsync();
 
 			expect(mocks.appendSession).toHaveBeenCalledOnce();
-			const [, , record] = mocks.appendSession.mock.calls[0]!;
+			const [, , record] = firstCall(mocks.appendSession.mock.calls);
 			expect(record.outcome).toBe("failed");
 			expect(record.stats).toBeUndefined();
 		});
@@ -474,8 +484,9 @@ describe("spawn_agent child session lineage", () => {
 
 			await flushAsync();
 
-			const [, spawnConfig] =
-				mocks.createAgentSessionFromDefinition.mock.calls[0]!;
+			const [, spawnConfig] = firstCall(
+				mocks.createAgentSessionFromDefinition.mock.calls,
+			);
 			expect((spawnConfig as Record<string, unknown>).planSlug).toBeUndefined();
 		});
 
