@@ -104,7 +104,7 @@ export function createPiSpawner(
 					);
 				}
 
-				const session = await createAgentSessionFromDefinition(
+				const { session } = await createAgentSessionFromDefinition(
 					def,
 					config,
 					domainsDir,

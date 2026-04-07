@@ -4,6 +4,8 @@
  * extension loading, skill overrides, and compaction configuration.
  */
 
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import {
 	type AgentSession,
 	createAgentSession,
@@ -16,6 +18,7 @@ import { buildSkillsOverride } from "../agents/skills.ts";
 import type { AgentDefinition } from "../agents/types.ts";
 import { assemblePrompts } from "../domains/prompt-assembly.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
+import { sessionsDirForPlan } from "../sessions/session-store.ts";
 import {
 	resolveExtensionPaths,
 	resolveTools,
@@ -35,12 +38,18 @@ import type { SpawnConfig } from "./types.ts";
  *
  * Does NOT prompt the session — caller is responsible for session lifecycle.
  */
+export interface SessionCreateResult {
+	session: AgentSession;
+	/** Absolute path to the JSONL session file, or undefined for in-memory sessions. */
+	sessionFilePath: string | undefined;
+}
+
 export async function createAgentSessionFromDefinition(
 	def: AgentDefinition,
 	config: SpawnConfig,
 	domainsDir: string,
 	resolver?: DomainResolver,
-): Promise<AgentSession> {
+): Promise<SessionCreateResult> {
 	const modelId = config.model ?? def.model ?? FALLBACK_MODEL;
 	const model = resolveModel(modelId);
 	const thinkingLevel = config.thinkingLevel ?? def.thinkingLevel;
@@ -99,12 +108,25 @@ export async function createAgentSessionFromDefinition(
 	});
 	await loader.reload();
 
+	// Determine session manager: file-backed when planSlug is set, in-memory otherwise.
+	let sessionFilePath: string | undefined;
+	let sessionManager: SessionManager;
+	if (config.planSlug) {
+		const sessionsDir = sessionsDirForPlan(config.cwd, config.planSlug);
+		const uuid = crypto.randomUUID();
+		sessionFilePath = join(sessionsDir, `${config.role}-${uuid}.jsonl`);
+		await mkdir(sessionsDir, { recursive: true });
+		sessionManager = SessionManager.open(sessionFilePath);
+	} else {
+		sessionManager = SessionManager.inMemory();
+	}
+
 	// Build session options, conditionally adding settingsManager for compaction.
 	const sessionOptions: Parameters<typeof createAgentSession>[0] = {
 		cwd: config.cwd,
 		model,
 		tools,
-		sessionManager: SessionManager.inMemory(),
+		sessionManager,
 		resourceLoader: loader,
 		thinkingLevel,
 	};
@@ -121,5 +143,5 @@ export async function createAgentSessionFromDefinition(
 	}
 
 	const { session } = await createAgentSession(sessionOptions);
-	return session;
+	return { session, sessionFilePath };
 }

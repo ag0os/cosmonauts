@@ -303,7 +303,7 @@ export function registerSpawnTool(
 				runtime.domainsDir,
 				runtime.domainResolver,
 			)
-				.then(async (session) => {
+				.then(async ({ session }) => {
 					// Register child depth so grandchild spawns can compute their depth
 					sessionDepths.set(session.sessionId, childDepth);
 					try {
