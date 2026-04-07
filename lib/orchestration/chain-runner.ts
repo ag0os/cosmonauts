@@ -71,6 +71,15 @@ const DEFAULT_STAGE_PROMPTS: Record<string, string> = {
 
 const DEFAULT_PROMPT = "Execute your assigned role.";
 
+/**
+ * Derive planSlug from a completionLabel that follows the `plan:<slug>` pattern.
+ * Returns undefined when completionLabel is absent or uses a different format.
+ */
+export function derivePlanSlug(completionLabel?: string): string | undefined {
+	if (!completionLabel?.startsWith("plan:")) return undefined;
+	return completionLabel.slice("plan:".length) || undefined;
+}
+
 export function getDefaultStagePrompt(role: string): string {
 	return DEFAULT_STAGE_PROMPTS[unqualifyRole(role)] ?? DEFAULT_PROMPT;
 }
@@ -407,6 +416,8 @@ export async function runStage(
 		);
 		const prompt = buildStagePrompt(stage, config);
 
+		const planSlug = config.planSlug ?? derivePlanSlug(config.completionLabel);
+
 		if (!stage.loop) {
 			// One-shot stage
 			iterations = 1;
@@ -425,6 +436,7 @@ export async function runStage(
 				thinkingLevel,
 				compaction: config.compaction,
 				onEvent,
+				planSlug,
 			});
 
 			if (spawnResult.success) {
@@ -521,6 +533,7 @@ export async function runStage(
 				thinkingLevel,
 				compaction: config.compaction,
 				onEvent,
+				planSlug,
 			});
 
 			if (spawnResult.stats) {

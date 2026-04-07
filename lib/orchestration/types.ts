@@ -111,6 +111,8 @@ export interface ChainConfig {
 	skillPaths?: readonly string[];
 	/** Optional task label scope for default completion checks (e.g. plan:<slug>). */
 	completionLabel?: string;
+	/** Optional plan slug derived from completionLabel (e.g. "session-lineage"). */
+	planSlug?: string;
 	/** Thinking level overrides per role */
 	thinking?: ThinkingConfig;
 	/** Compaction settings for spawned agent sessions */
@@ -316,6 +318,8 @@ export interface SpawnConfig {
 	spawnDepth?: number;
 	/** Session ID of the parent agent that initiated this spawn */
 	parentSessionId?: string;
+	/** Plan slug for session lineage tracking */
+	planSlug?: string;
 }
 
 /** Result of an agent execution */
