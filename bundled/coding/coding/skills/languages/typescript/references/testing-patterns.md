@@ -214,6 +214,102 @@ it.each([
 });
 ```
 
+## TypeScript-Specific Patterns
+
+### Type-Level Assertions (Vitest)
+
+When a function's return type is part of its contract, assert the type directly with `expectTypeOf`:
+
+```typescript
+import { expectTypeOf } from "vitest";
+
+it("returns a readonly array", () => {
+  const result = freeze([1, 2, 3]);
+  expectTypeOf(result).toEqualTypeOf<readonly number[]>();
+});
+
+it("infers generic parameter correctly", () => {
+  const result = createResult({ id: "1", name: "test" });
+  expectTypeOf(result).toMatchTypeOf<Result<{ id: string; name: string }>>();
+});
+```
+
+Use `toEqualTypeOf` for exact matches and `toMatchTypeOf` for structural compatibility (the value type extends the expected type).
+
+### Typing Mocks
+
+Ensure mock return values match the real types. Untyped mocks hide contract breakage:
+
+```typescript
+// Vitest: type the mock function
+const fetchUser = vi.fn<(id: string) => Promise<User>>().mockResolvedValue({
+  id: "1",
+  name: "Test",
+  role: "admin",
+});
+
+// Type the module mock
+vi.mock("./user-store", () => ({
+  loadUser: vi.fn<(id: string) => Promise<User>>(),
+}));
+```
+
+If the mock's return type does not satisfy the real function's return type, the compiler catches it immediately.
+
+### Testing Discriminated Unions
+
+Write a test case for each variant. If the code uses exhaustive checking (`never`), verify that unrecognized variants throw:
+
+```typescript
+describe("formatResult", () => {
+  it("formats success result", () => {
+    const result: Result<string> = { ok: true, value: "data" };
+    expect(formatResult(result)).toBe("Success: data");
+  });
+
+  it("formats error result", () => {
+    const result: Result<string> = { ok: false, error: new Error("fail") };
+    expect(formatResult(result)).toBe("Error: fail");
+  });
+});
+```
+
+### Testing Type Guards
+
+Verify both the positive and negative paths, and check that TypeScript narrows correctly:
+
+```typescript
+describe("isUser", () => {
+  it("returns true for valid user objects", () => {
+    const input: unknown = { id: "1", name: "Test" };
+    expect(isUser(input)).toBe(true);
+  });
+
+  it("returns false for non-objects", () => {
+    expect(isUser(null)).toBe(false);
+    expect(isUser("string")).toBe(false);
+  });
+
+  it("returns false for objects missing required fields", () => {
+    expect(isUser({ id: "1" })).toBe(false);
+  });
+});
+```
+
+### Test Fixtures with `satisfies`
+
+Use `satisfies` for test fixtures to validate the shape without widening:
+
+```typescript
+const testConfig = {
+  port: 3000,
+  host: "localhost",
+  debug: true,
+} as const satisfies Config;
+// Type errors if the fixture drifts from the Config type
+// Literals are preserved for precise assertions
+```
+
 ## Debugging Failing Tests
 
 1. **Run the single failing test in isolation.** Most runners support filtering by file path and test name.

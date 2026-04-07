@@ -164,14 +164,23 @@ Why: explicit return types on public APIs prevent accidental signature changes. 
 
 Identify the project's test runner (Vitest, Jest, node:test, etc.) by reading `package.json` scripts and devDependencies. Use that runner, not a different one.
 
-**Testing principles** (framework-agnostic):
+For general testing philosophy (test behavior not implementation, mock boundaries not internals, testing as design feedback), load `/skill:engineering-principles`.
 
-- **Test behavior, not implementation.** Assert observable outcomes. Do not assert internal state or call counts unless the behavior under test *is* the interaction.
-- **One concept per test.** Multiple assertions are fine if they verify the same behavior. Split unrelated assertions into separate tests.
-- **Descriptive names.** State what is being tested and the expected result: `"returns undefined for missing keys"`, not `"test1"`.
-- **Isolate tests.** Each test gets fresh setup via `beforeEach`. Do not share mutable state between tests.
-- **Use temp directories** for filesystem tests. Clean up in `afterEach`.
-- **Minimize mocking.** Mock external services and I/O boundaries. Do not mock the code under test or its direct collaborators -- that tests your mocks, not your code.
+**TypeScript-specific testing guidance**:
+
+- **Type your test helpers.** Factory functions that create test data should return the correct type, not `any`. Use `satisfies` to validate test fixtures against the real type without widening.
+- **Type mock return values.** When mocking a function, ensure the mock returns the correct type. Vitest's `vi.fn<() => ReturnType>()` and Jest's `jest.fn<() => ReturnType>()` accept type parameters.
+- **Test discriminated unions exhaustively.** When the code under test handles a union, write a test case for each variant. If exhaustive checking with `never` is part of the contract, test that an unrecognized variant throws.
+- **Use `expectTypeOf` for type-level assertions** (Vitest). When a function's return type IS the contract (generic utilities, type narrowing functions), assert the type directly:
+
+```typescript
+import { expectTypeOf } from "vitest";
+
+it("narrows to string", () => {
+  const result = narrow(input);
+  expectTypeOf(result).toEqualTypeOf<string>();
+});
+```
 
 ## Reference Guides
 
@@ -181,3 +190,5 @@ For advanced topics, read the relevant reference file:
 |-------|-----------|--------------|
 | Type Patterns | `references/type-patterns.md` | Generics, conditional types, mapped types, branded types, template literals |
 | Testing Patterns | `references/testing-patterns.md` | Test structure, mocking strategies, async testing, parameterized tests |
+
+For design principles that apply across all languages (cohesion, naming, dependency direction, complexity management), load `/skill:engineering-principles`.
