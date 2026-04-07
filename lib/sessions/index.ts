@@ -10,6 +10,9 @@ export {
 	writeKnowledgeBundle,
 } from "./knowledge.ts";
 
+// Session manifest I/O
+export { appendSession, createManifest, readManifest } from "./manifest.ts";
+
 // Types
 export type {
 	KnowledgeBundle,
