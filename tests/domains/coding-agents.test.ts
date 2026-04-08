@@ -19,6 +19,7 @@ import reviewer from "../../bundled/coding/coding/agents/reviewer.ts";
 import taskManager from "../../bundled/coding/coding/agents/task-manager.ts";
 import verifier from "../../bundled/coding/coding/agents/verifier.ts";
 import worker from "../../bundled/coding/coding/agents/worker.ts";
+import planReviewer from "../../bundled/coding/coding/agents/plan-reviewer.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 
 const ALL_DEFINITIONS: AgentDefinition[] = [
@@ -33,6 +34,7 @@ const ALL_DEFINITIONS: AgentDefinition[] = [
 	fixer,
 	explorer,
 	verifier,
+	planReviewer,
 ];
 
 describe("coding domain agent invariants", () => {
