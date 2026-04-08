@@ -40,10 +40,17 @@ interface RegisteredCommand {
 
 interface CommandContext {
 	cwd: string;
-	newSession: () => Promise<{ cancelled: boolean }>;
+	newSession: (options?: {
+		parentSession?: string;
+		setup?: (sm: unknown) => Promise<void>;
+	}) => Promise<{ cancelled: boolean }>;
 	ui: {
 		notify: (message: string, level: string) => void;
 		select: (prompt: string, options: string[]) => Promise<string | null>;
+	};
+	sessionManager: {
+		getSessionFile: () => string | undefined;
+		getBranch: () => unknown[];
 	};
 	getSystemPrompt: () => string;
 	model?: { name?: string; id?: string };
@@ -90,6 +97,10 @@ function createMockCtx(
 		ui: {
 			notify: vi.fn(),
 			select: vi.fn().mockResolvedValue(null),
+		},
+		sessionManager: {
+			getSessionFile: () => "/tmp/sessions/test-session.jsonl",
+			getBranch: () => [],
 		},
 		getSystemPrompt: () => "test prompt",
 		model: { name: "Claude Sonnet", id: "claude-sonnet-4-20250514" },
@@ -163,7 +174,7 @@ describe("agent-switch extension", () => {
 			expect(registry.resolve).toHaveBeenCalledWith("planner", undefined);
 			expect(ctx.ui.notify).toHaveBeenCalledWith(
 				expect.stringContaining("planner"),
-				"warning",
+				"info",
 			);
 			expect(ctx.newSession).toHaveBeenCalled();
 		});
@@ -261,6 +272,120 @@ describe("agent-switch extension", () => {
 			);
 			// Pending switch should be cleaned up
 			expect(consumePendingSwitch()).toBeUndefined();
+		});
+	});
+
+	describe("context handoff", () => {
+		test("passes parentSession and setup callback to newSession", async () => {
+			const pi = createMockPi();
+			agentSwitchExtension(pi as never);
+			setupSharedRegistry(["planner"]);
+			mocks.extractAgentId.mockReturnValue("cosmo");
+
+			const ctx = createMockCtx({
+				sessionManager: {
+					getSessionFile: () => "/tmp/sessions/cosmo-123.jsonl",
+					getBranch: () => [
+						{
+							type: "message",
+							message: {
+								role: "user",
+								content: "design an auth system",
+							},
+						},
+						{
+							type: "message",
+							message: {
+								role: "assistant",
+								content: [
+									{ type: "text", text: "I suggest using JWT tokens." },
+								],
+							},
+						},
+					],
+				},
+			});
+			const cmd = getAgentCommand(pi);
+			await cmd.handler("planner", ctx);
+
+			expect(ctx.newSession).toHaveBeenCalledWith(
+				expect.objectContaining({
+					parentSession: "/tmp/sessions/cosmo-123.jsonl",
+					setup: expect.any(Function),
+				}),
+			);
+		});
+
+		test("setup callback appends handoff brief as user message", async () => {
+			const pi = createMockPi();
+			agentSwitchExtension(pi as never);
+			setupSharedRegistry(["planner"]);
+			mocks.extractAgentId.mockReturnValue("cosmo");
+
+			let capturedSetup: ((sm: unknown) => Promise<void>) | undefined;
+			const ctx = createMockCtx({
+				sessionManager: {
+					getSessionFile: () => "/tmp/sessions/test.jsonl",
+					getBranch: () => [
+						{
+							type: "message",
+							message: { role: "user", content: "hello" },
+						},
+						{
+							type: "message",
+							message: {
+								role: "assistant",
+								content: [{ type: "text", text: "hi there" }],
+							},
+						},
+					],
+				},
+				newSession: vi.fn().mockImplementation(async (opts) => {
+					capturedSetup = opts?.setup;
+					return { cancelled: false };
+				}),
+			});
+
+			const cmd = getAgentCommand(pi);
+			await cmd.handler("planner", ctx);
+
+			expect(capturedSetup).toBeDefined();
+			const mockSm = { appendMessage: vi.fn() };
+			await capturedSetup?.(mockSm);
+
+			expect(mockSm.appendMessage).toHaveBeenCalledWith(
+				expect.objectContaining({
+					role: "user",
+					content: [
+						expect.objectContaining({
+							type: "text",
+							text: expect.stringContaining("cosmo"),
+						}),
+					],
+				}),
+			);
+		});
+
+		test("skips setup when session has no conversation", async () => {
+			const pi = createMockPi();
+			agentSwitchExtension(pi as never);
+			setupSharedRegistry(["planner"]);
+
+			const ctx = createMockCtx({
+				sessionManager: {
+					getSessionFile: () => "/tmp/sessions/test.jsonl",
+					getBranch: () => [],
+				},
+			});
+			const cmd = getAgentCommand(pi);
+			await cmd.handler("planner", ctx);
+
+			expect(ctx.newSession).toHaveBeenCalledWith(
+				expect.objectContaining({
+					parentSession: "/tmp/sessions/test.jsonl",
+					setup: undefined,
+				}),
+			);
 		});
 	});
 
