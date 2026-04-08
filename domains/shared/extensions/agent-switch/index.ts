@@ -98,18 +98,9 @@ export default function agentSwitchExtension(pi: ExtensionAPI): void {
 			const agentId = args.trim();
 			const runtime = await getRuntime(ctx.cwd);
 			const registry = runtime.agentRegistry;
-			const domainContext = runtime.domainContext;
 
 			if (agentId) {
-				// With argument: validate agent ID, then switch.
-				if (!registry.has(agentId, domainContext)) {
-					const available = registry.listIds().join(", ");
-					ctx.ui.notify(
-						`Unknown agent "${agentId}". Available: ${available}`,
-						"error",
-					);
-					return;
-				}
+				// With argument: defer final validation to CLI runtime session creation.
 				await switchToAgent(agentId, ctx);
 			} else {
 				// No argument: show interactive selector.

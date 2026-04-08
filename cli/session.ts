@@ -97,6 +97,7 @@ export async function createSession(
 		skillPaths,
 		modelOverride,
 		thinkingLevelOverride,
+		extraExtensionPaths,
 	});
 
 	// Resource loader options for our custom prompt/extension/skill setup.

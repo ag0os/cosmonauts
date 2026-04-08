@@ -1,8 +1,8 @@
 /**
  * Tests for the agent-switch extension (/agent command).
  *
- * Covers: invalid ID rejection (QC-008), cancellation cleanup (QC-010),
- * session_start notification, and argument completions.
+ * Covers: argument-based switch delegation (QC-012), cancellation cleanup
+ * (QC-010), session_start notification, and argument completions.
  */
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
@@ -103,8 +103,8 @@ function createMockCtx(
 
 function mockRuntime(agentIds: string[], domainContext?: string) {
 	const registry = {
-		has: (id: string, _ctx?: string) => agentIds.includes(id),
-		listIds: () => agentIds,
+		has: vi.fn((id: string, _ctx?: string) => agentIds.includes(id)),
+		listIds: vi.fn(() => agentIds),
 		resolve: vi.fn(),
 	};
 	mocks.runtimeCreate.mockResolvedValue({
@@ -153,28 +153,28 @@ describe("agent-switch extension", () => {
 		});
 	});
 
-	describe("/agent with invalid ID (QC-008)", () => {
-		test("shows error and does NOT call newSession", async () => {
+	describe("/agent with unknown ID (QC-012)", () => {
+		test("defers validation to runtime and cleans pending switch on error", async () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);
-			mockRuntime(["planner", "worker"]);
+			const registry = mockRuntime(["planner", "worker"]);
 
-			const ctx = createMockCtx();
+			const ctx = createMockCtx({
+				newSession: vi
+					.fn()
+					.mockRejectedValue(new Error('Unknown agent ID "nonexistent"')),
+			});
 			const cmd = pi.getCommand("agent")!;
 			await cmd.handler("nonexistent", ctx);
 
-			// Should show error notification with available agents
+			expect(registry.has).not.toHaveBeenCalled();
+			expect(ctx.newSession).toHaveBeenCalled();
 			expect(ctx.ui.notify).toHaveBeenCalledWith(
-				expect.stringContaining('Unknown agent "nonexistent"'),
+				expect.stringContaining(
+					'Agent switch failed: Unknown agent ID "nonexistent"',
+				),
 				"error",
 			);
-			expect(ctx.ui.notify).toHaveBeenCalledWith(
-				expect.stringContaining("planner"),
-				"error",
-			);
-			// Must NOT call newSession — this is the critical QC-008 check
-			expect(ctx.newSession).not.toHaveBeenCalled();
-			// Port must be clean
 			expect(consumePendingSwitch()).toBeUndefined();
 		});
 	});
