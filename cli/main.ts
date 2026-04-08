@@ -409,6 +409,7 @@ async function run(options: CliOptions): Promise<void> {
 
 	// 5. default → interactive REPL
 	// TODO: After --workflow/--chain, drop into Cosmo REPL
+	const agentSwitchExtPath = join(domainsDir, "shared", "extensions", "agent-switch");
 	const interactiveRuntime = await createSession({
 		definition,
 		cwd,
@@ -419,6 +420,9 @@ async function run(options: CliOptions): Promise<void> {
 		persistent: true,
 		projectSkills,
 		skillPaths,
+		agentRegistry: registry,
+		domainContext,
+		extraExtensionPaths: [agentSwitchExtPath],
 	});
 
 	const interactive = new InteractiveMode(interactiveRuntime, {
