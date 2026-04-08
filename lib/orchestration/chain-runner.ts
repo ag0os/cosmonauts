@@ -57,6 +57,8 @@ const DEFAULT_STAGE_PROMPTS: Record<string, string> = {
 		"Run quality gates, review the diff against main, and orchestrate fixes until merge-ready.",
 	reviewer:
 		"Review the current branch changes against main and write actionable findings.",
+	"plan-reviewer":
+		"Review the active plan and verify its claims against the codebase. Write structured findings.",
 	fixer:
 		"Apply targeted fixes for review findings and verify they pass checks.",
 	"tdd-planner":

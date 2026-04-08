@@ -1,21 +1,20 @@
 import type { AgentDefinition } from "../../../../lib/agents/types.ts";
 
 const definition: AgentDefinition = {
-	id: "planner",
+	id: "plan-reviewer",
 	description:
-		"Designs solutions by exploring the codebase and proposing approaches. Never writes code or creates tasks.",
+		"Adversarial review of implementation plans. Verifies claims against the codebase and produces structured findings for the planner to address.",
 	capabilities: [
 		"core",
 		"engineering-discipline",
 		"architectural-design",
 		"coding-readonly",
-		"spawning",
 	],
 	model: "anthropic/claude-opus-4-6",
-	tools: "readonly",
-	extensions: ["plans", "orchestration"],
+	tools: "coding",
+	extensions: ["plans"],
 	skills: ["pi", "plan", "engineering-principles"],
-	subagents: ["task-manager", "plan-reviewer", "explorer", "verifier"],
+	subagents: [],
 	projectContext: true,
 	session: "ephemeral",
 	loop: false,

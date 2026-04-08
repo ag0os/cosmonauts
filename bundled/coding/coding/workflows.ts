@@ -9,6 +9,13 @@ export const workflows: WorkflowDefinition[] = [
 		chain: "planner -> task-manager -> coordinator -> quality-manager",
 	},
 	{
+		name: "reviewed-plan-and-build",
+		description:
+			"Full pipeline with adversarial plan review before task creation",
+		chain:
+			"planner -> plan-reviewer -> planner -> task-manager -> coordinator -> quality-manager",
+	},
+	{
 		name: "implement",
 		description:
 			"Implementation from existing plan: task creation, build, and review",
