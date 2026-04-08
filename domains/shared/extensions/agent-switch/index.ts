@@ -98,10 +98,11 @@ export default function agentSwitchExtension(pi: ExtensionAPI): void {
 			const agentId = args.trim();
 			const runtime = await getRuntime(ctx.cwd);
 			const registry = runtime.agentRegistry;
+			const domainContext = runtime.domainContext;
 
 			if (agentId) {
 				// With argument: validate agent ID, then switch.
-				if (!registry.has(agentId)) {
+				if (!registry.has(agentId, domainContext)) {
 					const available = registry.listIds().join(", ");
 					ctx.ui.notify(
 						`Unknown agent "${agentId}". Available: ${available}`,
