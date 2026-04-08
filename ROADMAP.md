@@ -47,13 +47,13 @@ Wrap the spawner with retry logic that classifies errors and falls back to alter
 
 ### `embedding-memory`: Embedding-Based Memory
 
-Semantic search over past work for automatic context injection during prompt assembly. Goes beyond the markdown-file memory system.
+Semantic search over past work for automatic context injection during prompt assembly. The data capture layer is built — session-lineage writes structured KnowledgeRecord JSONL files during plan execution. Remaining work is the query and injection pipeline.
 
-- Embedding-based memory store with query-driven retrieval
-- Temporal decay (older memories weighted lower)
+- SQLite storage with vector columns for embeddings
 - Multiple embedding backends (local via Ollama, or API-based)
+- Semantic query interface over KnowledgeRecord entries
 - Automatic injection at prompt assembly time (Layer 0.5 or hook)
-- Subsumes and extends the `memory-system` idea with vector search from the start
+- Temporal decay (older memories weighted lower)
 
 ### `hook-system`: Plugin & Hook System
 
@@ -108,14 +108,6 @@ Port heartbeat system from OpenClaw for autonomous background work.
 - Periodic timer with HEARTBEAT.md conventions
 - Cost-efficient: skip empty cycles, silent acknowledgment, deduplication
 - Agent can be triggered on schedule without human intervention
-
-### `decision-capture`: Decision Capture System
-
-Capture key decisions made during sessions for long-term project memory.
-
-- Manual recording during sessions + automatic end-of-session extraction
-- Structured output compatible with the memory/ format
-- Decisions feed into the persistent memory system
 
 ### `web-fetch-tool`: Web Page Fetching
 

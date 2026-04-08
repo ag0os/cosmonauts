@@ -4,8 +4,9 @@
  * into missions/archive/, preserving original file structure.
  */
 
-import { mkdir, readdir, rename } from "node:fs/promises";
+import { mkdir, readdir, rename, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { sessionsDirForPlan } from "../sessions/session-store.ts";
 import type { TaskManager } from "../tasks/task-manager.ts";
 import type { PlanManager } from "./plan-manager.ts";
 import { validateSlug } from "./plan-manager.ts";
@@ -16,6 +17,7 @@ import { validateSlug } from "./plan-manager.ts";
 
 const ARCHIVE_PLANS_DIR = "missions/archive/plans";
 const ARCHIVE_TASKS_DIR = "missions/archive/tasks";
+const ARCHIVE_SESSIONS_DIR = "missions/archive/sessions";
 const MEMORY_DIR = "memory";
 
 // ============================================================================
@@ -34,6 +36,8 @@ export interface ArchiveResult {
 	archivedTaskFiles: string[];
 	/** Whether the memory/ directory was ensured (created or already existed) */
 	memoryDirEnsured: boolean;
+	/** Absolute path where the sessions directory was moved, if it existed */
+	archivedSessionsPath?: string;
 }
 
 // ============================================================================
@@ -107,7 +111,20 @@ export async function archivePlan(
 		}
 	}
 
-	// 6. Ensure memory/ directory exists
+	// 6. Move sessions directory if it exists
+	let archivedSessionsPath: string | undefined;
+	const srcSessionsDir = sessionsDirForPlan(projectRoot, slug);
+	const sessionsDirExists = await stat(srcSessionsDir)
+		.then((s) => s.isDirectory())
+		.catch(() => false);
+	if (sessionsDirExists) {
+		const destSessionsDir = join(projectRoot, ARCHIVE_SESSIONS_DIR, slug);
+		await mkdir(join(projectRoot, ARCHIVE_SESSIONS_DIR), { recursive: true });
+		await rename(srcSessionsDir, destSessionsDir);
+		archivedSessionsPath = destSessionsDir;
+	}
+
+	// 7. Ensure memory/ directory exists
 	const memoryDir = join(projectRoot, MEMORY_DIR);
 	await mkdir(memoryDir, { recursive: true });
 
@@ -116,5 +133,6 @@ export async function archivePlan(
 		archivedPlanPath: destPlanDir,
 		archivedTaskFiles,
 		memoryDirEnsured: true,
+		archivedSessionsPath,
 	};
 }

@@ -7,6 +7,7 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { unqualifyRole } from "../agents/qualified-role.ts";
+import { validateSlug } from "../plans/plan-manager.ts";
 import { TaskManager } from "../tasks/task-manager.ts";
 import { createPiSpawner } from "./agent-spawner.ts";
 import { getModelForRole, getThinkingForRole } from "./model-resolution.ts";
@@ -70,6 +71,27 @@ const DEFAULT_STAGE_PROMPTS: Record<string, string> = {
 };
 
 const DEFAULT_PROMPT = "Execute your assigned role.";
+
+/**
+ * Derive planSlug from a completionLabel that follows the `plan:<slug>` pattern.
+ * Returns undefined when completionLabel is absent or uses a different format.
+ * Throws when a derived slug fails plan slug validation.
+ */
+export function derivePlanSlug(completionLabel?: string): string | undefined {
+	if (!completionLabel?.startsWith("plan:")) return undefined;
+	const planSlug = completionLabel.slice("plan:".length);
+	if (!planSlug) return undefined;
+	validateSlug(planSlug);
+	return planSlug;
+}
+
+function resolvePlanSlug(config: ChainConfig): string | undefined {
+	if (config.planSlug) {
+		validateSlug(config.planSlug);
+		return config.planSlug;
+	}
+	return derivePlanSlug(config.completionLabel);
+}
 
 export function getDefaultStagePrompt(role: string): string {
 	return DEFAULT_STAGE_PROMPTS[unqualifyRole(role)] ?? DEFAULT_PROMPT;
@@ -407,6 +429,8 @@ export async function runStage(
 		);
 		const prompt = buildStagePrompt(stage, config);
 
+		const planSlug = resolvePlanSlug(config);
+
 		if (!stage.loop) {
 			// One-shot stage
 			iterations = 1;
@@ -425,6 +449,7 @@ export async function runStage(
 				thinkingLevel,
 				compaction: config.compaction,
 				onEvent,
+				planSlug,
 			});
 
 			if (spawnResult.success) {
@@ -521,6 +546,7 @@ export async function runStage(
 				thinkingLevel,
 				compaction: config.compaction,
 				onEvent,
+				planSlug,
 			});
 
 			if (spawnResult.stats) {

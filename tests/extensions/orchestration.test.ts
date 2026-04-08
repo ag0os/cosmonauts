@@ -298,7 +298,10 @@ describe("orchestration extension", () => {
 			prompt: vi.fn().mockResolvedValue(undefined),
 			dispose: vi.fn(),
 		};
-		mocks.createAgentSessionFromDefinition.mockResolvedValue(mockSession);
+		mocks.createAgentSessionFromDefinition.mockResolvedValue({
+			session: mockSession,
+			sessionFilePath: undefined,
+		});
 
 		const result = (await pi.callTool("spawn_agent", {
 			role: "worker",
@@ -362,7 +365,10 @@ describe("orchestration extension", () => {
 			prompt: vi.fn().mockResolvedValue(undefined),
 			dispose: vi.fn(),
 		};
-		mocks.createAgentSessionFromDefinition.mockResolvedValue(mockSession);
+		mocks.createAgentSessionFromDefinition.mockResolvedValue({
+			session: mockSession,
+			sessionFilePath: undefined,
+		});
 
 		const result = (await pi.callTool("spawn_agent", {
 			role: "verifier",
@@ -426,7 +432,10 @@ describe("orchestration extension", () => {
 			prompt: vi.fn().mockResolvedValue(undefined),
 			dispose: vi.fn(),
 		};
-		mocks.createAgentSessionFromDefinition.mockResolvedValue(mockSession);
+		mocks.createAgentSessionFromDefinition.mockResolvedValue({
+			session: mockSession,
+			sessionFilePath: undefined,
+		});
 
 		const result = (await pi.callTool("spawn_agent", {
 			role: "worker",

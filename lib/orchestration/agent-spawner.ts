@@ -8,7 +8,14 @@
  * (skills, AGENTS.md, date/time, cwd).
  */
 
+import { basename, dirname } from "node:path";
 import type { AgentRegistry } from "../agents/index.ts";
+import { appendSession } from "../sessions/manifest.ts";
+import {
+	generateTranscript,
+	writeTranscript,
+} from "../sessions/session-store.ts";
+import type { SessionRecord } from "../sessions/types.ts";
 import type { SpawnCompletedEvent, SpawnFailedEvent } from "./message-bus.ts";
 import { MessageBus } from "./message-bus.ts";
 import {
@@ -17,6 +24,10 @@ import {
 	getThinkingForRole,
 	resolveModel,
 } from "./model-resolution.ts";
+import {
+	registerPlanContext,
+	removePlanContext,
+} from "./plan-session-context.ts";
 import { createAgentSessionFromDefinition } from "./session-factory.ts";
 import {
 	getOrCreateTracker,
@@ -104,12 +115,13 @@ export function createPiSpawner(
 					);
 				}
 
-				const session = await createAgentSessionFromDefinition(
-					def,
-					config,
-					domainsDir,
-					options?.resolver,
-				);
+				const { session, sessionFilePath } =
+					await createAgentSessionFromDefinition(
+						def,
+						config,
+						domainsDir,
+						options?.resolver,
+					);
 
 				// Create tracker before prompt so the spawn tool can register
 				// children as soon as the first tool call fires.
@@ -117,7 +129,16 @@ export function createPiSpawner(
 					deliveryMode: "external",
 				});
 
+				// Register plan context so child spawns (via spawn_agent) can
+				// inherit the planSlug and persist their own lineage artifacts.
+				if (config.planSlug) {
+					registerPlanContext(session.sessionId, config.planSlug);
+				}
+
 				let unsubscribe: (() => void) | undefined;
+				const startedAt = new Date().toISOString();
+				let spawnOutcome: "success" | "failed" = "failed";
+				let capturedStats: SpawnStats | undefined;
 				try {
 					// Subscribe to session events before prompt for progress streaming
 					unsubscribe = config.onEvent
@@ -161,6 +182,9 @@ export function createPiSpawner(
 						toolCalls: sessionStats.toolCalls,
 					};
 
+					spawnOutcome = "success";
+					capturedStats = stats;
+
 					return {
 						success: true,
 						sessionId: session.sessionId,
@@ -170,7 +194,60 @@ export function createPiSpawner(
 				} finally {
 					unsubscribe?.();
 					removeTracker(session.sessionId);
+					removePlanContext(session.sessionId);
+					const finalMessages = [...session.messages];
 					session.dispose();
+
+					if (config.planSlug && sessionFilePath) {
+						try {
+							const planSessionsDir = dirname(sessionFilePath);
+							const baseSessionsDir = dirname(planSessionsDir);
+							const sessionBasename = basename(sessionFilePath);
+							const transcriptBasename = sessionBasename.replace(
+								/\.jsonl$/,
+								".transcript.md",
+							);
+
+							const transcript = generateTranscript(finalMessages, config.role);
+							await writeTranscript(
+								planSessionsDir,
+								transcriptBasename,
+								transcript,
+							);
+
+							const record: SessionRecord = {
+								sessionId: session.sessionId,
+								role: config.role,
+								...(config.parentSessionId !== undefined && {
+									parentSessionId: config.parentSessionId,
+								}),
+								...(config.runtimeContext?.taskId !== undefined && {
+									taskId: config.runtimeContext.taskId,
+								}),
+								startedAt,
+								completedAt: new Date().toISOString(),
+								outcome: spawnOutcome,
+								sessionFile: sessionBasename,
+								transcriptFile: transcriptBasename,
+								...(capturedStats !== undefined && {
+									stats: {
+										tokens: {
+											input: capturedStats.tokens.input,
+											output: capturedStats.tokens.output,
+											total: capturedStats.tokens.total,
+										},
+										cost: capturedStats.cost,
+										durationMs: capturedStats.durationMs,
+										turns: capturedStats.turns,
+										toolCalls: capturedStats.toolCalls,
+									},
+								}),
+							};
+							await appendSession(baseSessionsDir, config.planSlug, record);
+						} catch {
+							// Lineage recording must not crash the spawn.
+						}
+					}
 				}
 			} catch (err: unknown) {
 				const message = err instanceof Error ? err.message : String(err);

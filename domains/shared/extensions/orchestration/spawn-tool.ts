@@ -1,10 +1,22 @@
+import { basename, dirname } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
+import {
+	getPlanSlugForSession,
+	registerPlanContext,
+	removePlanContext,
+} from "../../../../lib/orchestration/plan-session-context.ts";
 import { createAgentSessionFromDefinition } from "../../../../lib/orchestration/session-factory.ts";
 import { getOrCreateTracker } from "../../../../lib/orchestration/spawn-tracker.ts";
 import type { CosmonautsRuntime } from "../../../../lib/runtime.ts";
+import { appendSession } from "../../../../lib/sessions/manifest.ts";
+import {
+	generateTranscript,
+	writeTranscript,
+} from "../../../../lib/sessions/session-store.ts";
+import type { SessionRecord } from "../../../../lib/sessions/types.ts";
 import { isSubagentAllowed } from "./authorization.ts";
 import { renderTextFallback, roleLabel } from "./rendering.ts";
 
@@ -282,6 +294,10 @@ export function registerSpawnTool(
 				};
 			}
 
+			// Propagate plan context from parent session so child lineage
+			// artifacts land in the same missions/sessions/<planSlug>/ directory.
+			const planSlug = getPlanSlugForSession(parentSessionId);
+
 			const spawnConfig = {
 				role: params.role,
 				domainContext: runtime.domainContext,
@@ -294,6 +310,7 @@ export function registerSpawnTool(
 				skillPaths: [...runtime.skillPaths],
 				spawnDepth: childDepth,
 				parentSessionId,
+				...(planSlug !== undefined && { planSlug }),
 			};
 
 			// Launch as a detached background Promise — no await
@@ -303,9 +320,25 @@ export function registerSpawnTool(
 				runtime.domainsDir,
 				runtime.domainResolver,
 			)
-				.then(async (session) => {
+				.then(async ({ session, sessionFilePath }) => {
 					// Register child depth so grandchild spawns can compute their depth
 					sessionDepths.set(session.sessionId, childDepth);
+					// Register plan context so grandchild spawns can also inherit it
+					if (planSlug) {
+						registerPlanContext(session.sessionId, planSlug);
+					}
+					const startedAt = new Date().toISOString();
+					const startMs = Date.now();
+					let spawnOutcome: "success" | "failed" = "failed";
+					let capturedStats:
+						| {
+								tokens: { input: number; output: number; total: number };
+								cost: number;
+								durationMs: number;
+								turns: number;
+								toolCalls: number;
+						  }
+						| undefined;
 					try {
 						await session.prompt(params.prompt);
 						const assistantText = extractAssistantText(
@@ -313,6 +346,23 @@ export function registerSpawnTool(
 							params.role,
 						);
 						const summary = extractSummary(assistantText, params.role);
+						spawnOutcome = "success";
+						// Capture stats before dispose (only needed for lineage)
+						if (planSlug && sessionFilePath) {
+							const sessionStats = session.getSessionStats();
+							const durationMs = Date.now() - startMs;
+							capturedStats = {
+								tokens: {
+									input: sessionStats.tokens.input,
+									output: sessionStats.tokens.output,
+									total: sessionStats.tokens.total,
+								},
+								cost: sessionStats.cost,
+								durationMs,
+								turns: sessionStats.userMessages,
+								toolCalls: sessionStats.toolCalls,
+							};
+						}
 						tracker.complete(spawnId, summary);
 						if (tracker.deliveryMode === "self") {
 							pi.sendUserMessage(
@@ -342,7 +392,52 @@ export function registerSpawnTool(
 						}
 					} finally {
 						sessionDepths.delete(session.sessionId);
+						removePlanContext(session.sessionId);
+						const finalMessages = [...session.messages];
 						session.dispose();
+
+						// Persist lineage artifacts when the child session ran under a plan.
+						if (planSlug && sessionFilePath) {
+							try {
+								const planSessionsDir = dirname(sessionFilePath);
+								const baseSessionsDir = dirname(planSessionsDir);
+								const sessionBasename = basename(sessionFilePath);
+								const transcriptBasename = sessionBasename.replace(
+									/\.jsonl$/,
+									".transcript.md",
+								);
+
+								const transcript = generateTranscript(
+									finalMessages,
+									params.role,
+								);
+								await writeTranscript(
+									planSessionsDir,
+									transcriptBasename,
+									transcript,
+								);
+
+								const record: SessionRecord = {
+									sessionId: session.sessionId,
+									role: params.role,
+									parentSessionId,
+									...(params.runtimeContext?.taskId !== undefined && {
+										taskId: params.runtimeContext.taskId,
+									}),
+									startedAt,
+									completedAt: new Date().toISOString(),
+									outcome: spawnOutcome,
+									sessionFile: sessionBasename,
+									transcriptFile: transcriptBasename,
+									...(capturedStats !== undefined && {
+										stats: capturedStats,
+									}),
+								};
+								await appendSession(baseSessionsDir, planSlug, record);
+							} catch {
+								// Lineage errors must not crash the spawn.
+							}
+						}
 					}
 				})
 				.catch((err: unknown) => {
