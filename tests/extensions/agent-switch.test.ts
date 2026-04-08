@@ -359,6 +359,65 @@ describe("agent-switch extension", () => {
 			expect(ctx.waitForIdle).toHaveBeenCalled();
 		});
 
+		test("waits for streaming turn to finish before switching", async () => {
+			const pi = createMockPi();
+			agentSwitchExtension(pi as never);
+			setupSharedRegistry(["planner"]);
+			mocks.extractAgentId.mockReturnValue("cosmo");
+
+			// Track the order of operations to verify sequencing
+			const callOrder: string[] = [];
+
+			// Simulate a streaming turn: waitForIdle resolves only after
+			// the "agent" finishes (getBranch returns the summary).
+			// Initially the branch has no assistant summary.
+			let branchEntries: unknown[] = [];
+
+			const ctx = createMockCtx({
+				sessionManager: {
+					getSessionFile: () => "/tmp/sessions/cosmo.jsonl",
+					getBranch: () => branchEntries,
+				},
+				waitForIdle: vi.fn().mockImplementation(async () => {
+					callOrder.push("waitForIdle");
+					// Simulate the agent finishing: the summary appears in the branch
+					branchEntries = [
+						{
+							type: "message",
+							message: {
+								role: "assistant",
+								content: [{ type: "text", text: "Summary after streaming." }],
+							},
+						},
+					];
+				}),
+				newSession: vi.fn().mockImplementation(async () => {
+					callOrder.push("newSession");
+					return { cancelled: false };
+				}),
+			});
+
+			// Make sendUserMessage track its call order too
+			pi.sendUserMessage.mockImplementation(() => {
+				callOrder.push("sendUserMessage");
+			});
+
+			await getCommand(pi, "handoff").handler("planner", ctx);
+
+			// Verify strict ordering: prompt sent → wait for idle → switch
+			expect(callOrder).toEqual([
+				"sendUserMessage",
+				"waitForIdle",
+				"newSession",
+			]);
+			// The summary produced after streaming should be in the handoff
+			expect(ctx.newSession).toHaveBeenCalledWith(
+				expect.objectContaining({
+					setup: expect.any(Function),
+				}),
+			);
+		});
+
 		test("injects handoff brief with agent source into new session", async () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);

@@ -91,6 +91,54 @@ describe("createSession", () => {
 		);
 	});
 
+	test("switch path uses the session manager Pi provides, not a new one", async () => {
+		const PLANNER_DEF: AgentDefinition = {
+			...TEST_DEF,
+			id: "planner",
+			domain: "coding",
+		};
+		setPendingSwitch("planner");
+
+		const injectedSm = { kind: "pi-provided-sm" };
+		mocks.createAgentSessionRuntime.mockImplementation(
+			(
+				createRuntime: (args: {
+					cwd: string;
+					sessionManager: unknown;
+					sessionStartEvent?: unknown;
+				}) => Promise<unknown>,
+				runtimeOptions: { cwd: string; sessionManager: unknown },
+			) =>
+				createRuntime({
+					cwd: runtimeOptions.cwd,
+					sessionManager: injectedSm,
+					sessionStartEvent: undefined,
+				}),
+		);
+
+		const resolve = vi.fn(() => PLANNER_DEF);
+
+		await createSession({
+			definition: TEST_DEF,
+			cwd: "/tmp/project",
+			domainsDir: "/tmp/domains",
+			persistent: true,
+			agentRegistry: { resolve } as unknown as AgentRegistry,
+			domainContext: "coding",
+		});
+
+		// The switch path must pass Pi's session manager (injectedSm) to
+		// createAgentSessionFromServices, NOT create its own via continueRecent.
+		expect(mocks.createAgentSessionFromServices).toHaveBeenCalledWith(
+			expect.objectContaining({
+				sessionManager: injectedSm,
+			}),
+		);
+		// continueRecent is called once for the initial session setup,
+		// but NOT a second time for the switch target.
+		expect(mocks.continueRecent).toHaveBeenCalledTimes(1);
+	});
+
 	test("clears pending switch when runtime resolution rejects unknown ID", async () => {
 		setPendingSwitch("ghost");
 		mocks.createAgentSessionRuntime.mockImplementation(
