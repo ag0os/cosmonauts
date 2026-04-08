@@ -134,15 +134,16 @@ Flags: `--print`, `--workflow`, `--chain`, `--model`, `--thinking`, `--domain`/`
 
 ## Work Lifecycle
 
-Work flows through: **roadmap → plan → tasks → archive → memory**.
+Work flows through: **roadmap → plan → tasks → sessions → archive → memory**.
 
 All work artifacts live in local, gitignored directories created by `cosmonauts task init`:
 
 - **Roadmap** (`ROADMAP.md`): Work backlog with prioritized items on top and unordered ideas below. Items are picked up and turned into plans.
 - **Plans** (`missions/plans/<slug>/`): Implementation plans with `plan.md` and optional `spec.md`. Created via `plan_create`. Local.
 - **Tasks** (`missions/tasks/`): Atomic work items linked to plans via `plan:<slug>` labels. Created via `task_create`. Local.
+- **Sessions** (`missions/sessions/<plan>/`): Agent session transcripts and lineage manifests captured during plan execution. Each session records parent-child relationships and produces structured knowledge records.
 - **Archive** (`missions/archive/`): Completed plans and tasks moved here by `plan_archive`. Mechanical, no LLM. Local.
-- **Memory** (`memory/`): Distilled knowledge from archived work. Agent-driven extraction via the `archive` skill. Local.
+- **Memory** (`memory/`): Distilled knowledge from archived work. The `.knowledge.jsonl` files from sessions provide structured input; a distiller agent extracts durable insights. Local.
 
 See the `roadmap`, `plan`, `task`, and `archive` skills for detailed procedures.
 
@@ -173,6 +174,7 @@ For small, self-contained changes (a bug fix, a single function, a config tweak)
 
 ```
 lib/              Core libraries (agents, orchestration, tasks, plans, workflows, domains, config)
+lib/sessions/     Session persistence, lineage tracking, and knowledge record format
 domains/          Framework-level domain directory — contains only shared/ (base prompts, capabilities, extensions)
 bundled/          Installable domain packages (coding/, coding-minimal/) — the source of truth for bundled domains
 cli/              CLI implementation
@@ -185,6 +187,7 @@ docs/             Reference documentation
 
 ```
 missions/         Active tasks, plans, and archived work
+missions/sessions/ Agent session transcripts and lineage manifests (per-plan)
 memory/           Distilled knowledge from completed work
 .cosmonauts/      Project config (created by `cosmonauts task init`, customizable)
 ```
