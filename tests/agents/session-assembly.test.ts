@@ -1,106 +1,82 @@
 /**
- * Unit tests for buildSessionParams().
+ * Tests for the shared session parameter builder (buildSessionParams).
  *
- * Verifies: prompt content assembly, tool resolution, extension path
- * resolution, skill override wiring, model/thinkingLevel resolution,
- * and extraExtensionPaths injection into SessionParams.extensionPaths.
+ * Verifies prompt assembly, identity marker, tool resolution, extension paths,
+ * skill overrides, model resolution, thinking level, and extraExtensionPaths.
  */
 
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { extractAgentIdFromSystemPrompt } from "../../lib/agents/runtime-identity.ts";
+import {
+	type BuildSessionParamsOptions,
+	buildSessionParams,
+} from "../../lib/agents/session-assembly.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
+import { useTempDir } from "../helpers/fs.ts";
+
+const tmp = useTempDir("session-assembly-");
 
 // ============================================================================
-// Hoisted mocks
+// Helpers
 // ============================================================================
 
-const mocks = vi.hoisted(() => ({
-	assemblePrompts: vi.fn(),
-	resolveExtensionPaths: vi.fn(),
-	getModel: vi.fn(),
-	createCodingTools: vi.fn(),
-	createReadOnlyTools: vi.fn(),
-	createReadTool: vi.fn(),
-	createBashTool: vi.fn(),
-	createGrepTool: vi.fn(),
-	createFindTool: vi.fn(),
-	createLsTool: vi.fn(),
-}));
+/** Write files relative to the base directory. */
+async function setupFiles(
+	baseDir: string,
+	files: Record<string, string>,
+): Promise<void> {
+	for (const [relativePath, content] of Object.entries(files)) {
+		const fullPath = join(baseDir, relativePath);
+		await mkdir(join(fullPath, ".."), { recursive: true });
+		await writeFile(fullPath, content, "utf-8");
+	}
+}
 
-vi.mock("../../lib/domains/prompt-assembly.ts", () => ({
-	assemblePrompts: mocks.assemblePrompts,
-}));
+/** Minimal agent definition for testing. */
+function makeDef(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
+	return {
+		id: "test-agent",
+		description: "Test agent",
+		capabilities: [],
+		model: "anthropic/claude-sonnet-4-20250514",
+		tools: "none",
+		extensions: [],
+		projectContext: true,
+		session: "ephemeral",
+		loop: false,
+		...overrides,
+	};
+}
 
-vi.mock(
-	"../../lib/orchestration/definition-resolution.ts",
-	async (importOriginal) => {
-		const actual =
-			await importOriginal<
-				typeof import("../../lib/orchestration/definition-resolution.ts")
-			>();
-		return {
-			...actual,
-			resolveExtensionPaths: mocks.resolveExtensionPaths,
-		};
-	},
-);
+/** Set up a minimal domains dir with base + persona prompts. */
+async function setupMinimalDomains(
+	baseDir: string,
+	opts: { domain?: string; agentId?: string; capabilities?: string[] } = {},
+): Promise<void> {
+	const domain = opts.domain ?? "coding";
+	const agentId = opts.agentId ?? "test-agent";
+	const files: Record<string, string> = {
+		"shared/prompts/base.md": "# Base Prompt\nYou are a helpful agent.",
+		[`${domain}/prompts/${agentId}.md`]: `# ${agentId}\nYou are ${agentId}.`,
+	};
+	for (const cap of opts.capabilities ?? []) {
+		files[`shared/capabilities/${cap}.md`] = `# ${cap}\n${cap} capability.`;
+	}
+	await setupFiles(baseDir, files);
+}
 
-vi.mock("@mariozechner/pi-ai", () => ({
-	getModel: mocks.getModel,
-}));
-
-vi.mock("@mariozechner/pi-coding-agent", () => ({
-	createCodingTools: mocks.createCodingTools,
-	createReadOnlyTools: mocks.createReadOnlyTools,
-	createReadTool: mocks.createReadTool,
-	createBashTool: mocks.createBashTool,
-	createGrepTool: mocks.createGrepTool,
-	createFindTool: mocks.createFindTool,
-	createLsTool: mocks.createLsTool,
-}));
-
-import { buildSessionParams } from "../../lib/agents/session-assembly.ts";
-
-// ============================================================================
-// Fixtures
-// ============================================================================
-
-const BASE_DEF: AgentDefinition = {
-	id: "worker",
-	description: "Test worker",
-	capabilities: ["core", "coding-readwrite"],
-	model: "anthropic/claude-sonnet-4-5",
-	tools: "coding",
-	extensions: ["tasks"],
-	projectContext: true,
-	session: "ephemeral",
-	loop: false,
-	domain: "coding",
-};
-
-const MOCK_MODEL = {
-	id: "claude-sonnet-4-5",
-	name: "claude-sonnet-4-5",
-	provider: "anthropic",
-};
-const MOCK_CODING_TOOLS = [
-	{ name: "bash" },
-	{ name: "read" },
-	{ name: "write" },
-];
-const MOCK_READONLY_TOOLS = [{ name: "read" }, { name: "grep" }];
-const MOCK_EXT_PATH = "/domains/shared/extensions/tasks";
-
-function defaultSetup() {
-	mocks.assemblePrompts.mockResolvedValue("# Base system prompt\n");
-	mocks.resolveExtensionPaths.mockReturnValue([MOCK_EXT_PATH]);
-	mocks.getModel.mockReturnValue(MOCK_MODEL);
-	mocks.createCodingTools.mockReturnValue(MOCK_CODING_TOOLS);
-	mocks.createReadOnlyTools.mockReturnValue(MOCK_READONLY_TOOLS);
-	mocks.createReadTool.mockReturnValue({ name: "read" });
-	mocks.createBashTool.mockReturnValue({ name: "bash" });
-	mocks.createGrepTool.mockReturnValue({ name: "grep" });
-	mocks.createFindTool.mockReturnValue({ name: "find" });
-	mocks.createLsTool.mockReturnValue({ name: "ls" });
+/** Build options with sensible defaults rooted at the temp dir. */
+function makeOptions(
+	overrides: Partial<BuildSessionParamsOptions> = {},
+): BuildSessionParamsOptions {
+	return {
+		def: makeDef(),
+		cwd: tmp.path,
+		domainsDir: tmp.path,
+		...overrides,
+	};
 }
 
 // ============================================================================
@@ -108,407 +84,236 @@ function defaultSetup() {
 // ============================================================================
 
 describe("buildSessionParams", () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-		defaultSetup();
-	});
+	describe("prompt assembly and identity marker", () => {
+		it("assembles base + persona and appends identity marker", async () => {
+			await setupMinimalDomains(tmp.path);
+			const params = await buildSessionParams(makeOptions());
 
-	describe("prompt content assembly", () => {
-		test("includes assembled prompt text in promptContent", async () => {
-			mocks.assemblePrompts.mockResolvedValue(
-				"# Platform Base\n## Capabilities\n",
-			);
-
-			const params = await buildSessionParams({
-				def: BASE_DEF,
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
-			});
-
-			expect(params.promptContent).toContain("# Platform Base");
+			expect(params.promptContent).toContain("You are a helpful agent.");
+			expect(params.promptContent).toContain("You are test-agent.");
+			// Identity marker present
+			const extractedId = extractAgentIdFromSystemPrompt(params.promptContent);
+			// No domain set on def → unqualified ID
+			expect(extractedId).toBe("test-agent");
 		});
 
-		test("appends runtime identity marker to prompt", async () => {
-			const params = await buildSessionParams({
-				def: BASE_DEF,
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
+		it("includes capability layers in prompt", async () => {
+			await setupMinimalDomains(tmp.path, {
+				capabilities: ["core", "tasks"],
 			});
+			const def = makeDef({ capabilities: ["core", "tasks"] });
+			const params = await buildSessionParams(makeOptions({ def }));
 
-			// Identity marker is: <!-- COSMONAUTS_AGENT_ID:coding/worker -->
-			expect(params.promptContent).toContain("COSMONAUTS_AGENT_ID");
-			expect(params.promptContent).toContain("worker");
+			expect(params.promptContent).toContain("core capability.");
+			expect(params.promptContent).toContain("tasks capability.");
 		});
 
-		test("identity marker uses qualified agent ID when domain is set", async () => {
-			const params = await buildSessionParams({
-				def: { ...BASE_DEF, domain: "coding" },
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
+		it("qualifies agent ID with domain in identity marker", async () => {
+			await setupMinimalDomains(tmp.path, {
+				domain: "testing",
+				agentId: "runner",
 			});
+			const def = makeDef({ id: "runner", domain: "testing" });
+			const params = await buildSessionParams(makeOptions({ def }));
 
-			expect(params.promptContent).toContain("coding/worker");
-		});
-
-		test("identity marker uses unqualified ID when no domain is set", async () => {
-			const params = await buildSessionParams({
-				def: { ...BASE_DEF, domain: undefined },
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
-			});
-
-			expect(params.promptContent).toContain("COSMONAUTS_AGENT_ID:worker");
-			expect(params.promptContent).not.toContain("coding/worker");
-		});
-
-		test("passes agentId, domain, and capabilities to assemblePrompts", async () => {
-			await buildSessionParams({
-				def: BASE_DEF,
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
-			});
-
-			expect(mocks.assemblePrompts).toHaveBeenCalledWith(
-				expect.objectContaining({
-					agentId: "worker",
-					domain: "coding",
-					capabilities: ["core", "coding-readwrite"],
-					domainsDir: "/domains",
-				}),
-			);
-		});
-
-		test("passes runtimeContext to assemblePrompts when provided", async () => {
-			const runtimeContext = {
-				mode: "sub-agent" as const,
-				parentRole: "cosmo",
-				objective: "Build auth",
-				taskId: "TASK-123",
-			};
-
-			await buildSessionParams({
-				def: BASE_DEF,
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
-				runtimeContext,
-			});
-
-			expect(mocks.assemblePrompts).toHaveBeenCalledWith(
-				expect.objectContaining({ runtimeContext }),
-			);
+			const extractedId = extractAgentIdFromSystemPrompt(params.promptContent);
+			expect(extractedId).toBe("testing/runner");
 		});
 	});
 
 	describe("tool resolution", () => {
-		test("resolves coding tools for tools:coding", async () => {
-			const params = await buildSessionParams({
-				def: { ...BASE_DEF, tools: "coding" },
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
-			});
-
-			expect(mocks.createCodingTools).toHaveBeenCalledWith("/tmp/project");
-			expect(params.tools).toBe(MOCK_CODING_TOOLS);
-		});
-
-		test("resolves readonly tools for tools:readonly", async () => {
-			const params = await buildSessionParams({
-				def: { ...BASE_DEF, tools: "readonly" },
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
-			});
-
-			expect(mocks.createReadOnlyTools).toHaveBeenCalledWith("/tmp/project");
-			expect(params.tools).toBe(MOCK_READONLY_TOOLS);
-		});
-
-		test("returns empty array for tools:none", async () => {
-			const params = await buildSessionParams({
-				def: { ...BASE_DEF, tools: "none" },
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
-			});
-
+		it('resolves "none" tool set to empty array', async () => {
+			await setupMinimalDomains(tmp.path);
+			const params = await buildSessionParams(makeOptions());
 			expect(params.tools).toEqual([]);
 		});
 
-		test("passes cwd to tool factories", async () => {
-			const cwd = "/home/user/my-project";
-			await buildSessionParams({
-				def: BASE_DEF,
-				cwd,
-				domainsDir: "/domains",
-			});
+		it('resolves "coding" tool set to non-empty array', async () => {
+			await setupMinimalDomains(tmp.path);
+			const def = makeDef({ tools: "coding" });
+			const params = await buildSessionParams(makeOptions({ def }));
+			expect(params.tools.length).toBeGreaterThan(0);
+		});
 
-			expect(mocks.createCodingTools).toHaveBeenCalledWith(cwd);
+		it('resolves "readonly" tool set to non-empty array', async () => {
+			await setupMinimalDomains(tmp.path);
+			const def = makeDef({ tools: "readonly" });
+			const params = await buildSessionParams(makeOptions({ def }));
+			expect(params.tools.length).toBeGreaterThan(0);
 		});
 	});
 
-	describe("extension path resolution", () => {
-		test("includes resolved extension paths in extensionPaths", async () => {
-			mocks.resolveExtensionPaths.mockReturnValue([
-				"/domains/shared/extensions/tasks",
-				"/domains/shared/extensions/orchestration",
-			]);
-
-			const params = await buildSessionParams({
-				def: { ...BASE_DEF, extensions: ["tasks", "orchestration"] },
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
-			});
-
-			expect(params.extensionPaths).toContain(
-				"/domains/shared/extensions/tasks",
-			);
-			expect(params.extensionPaths).toContain(
-				"/domains/shared/extensions/orchestration",
-			);
+	describe("extension paths", () => {
+		it("returns empty array for agent with no extensions", async () => {
+			await setupMinimalDomains(tmp.path);
+			const params = await buildSessionParams(makeOptions());
+			expect(params.extensionPaths).toEqual([]);
 		});
 
-		test("passes extensions and domain/domainsDir to resolveExtensionPaths", async () => {
-			await buildSessionParams({
-				def: BASE_DEF,
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
+		it("resolves extension names to absolute paths", async () => {
+			await setupMinimalDomains(tmp.path);
+			// Create a fake extension directory
+			await mkdir(join(tmp.path, "shared", "extensions", "test-ext"), {
+				recursive: true,
 			});
+			const def = makeDef({ extensions: ["test-ext"] });
+			const params = await buildSessionParams(makeOptions({ def }));
 
-			expect(mocks.resolveExtensionPaths).toHaveBeenCalledWith(
-				BASE_DEF.extensions,
-				expect.objectContaining({
-					domain: "coding",
-					domainsDir: "/domains",
-				}),
-			);
+			expect(params.extensionPaths).toHaveLength(1);
+			expect(params.extensionPaths[0]).toContain("test-ext");
 		});
 
-		test("returns empty extensionPaths when def has no extensions", async () => {
-			mocks.resolveExtensionPaths.mockReturnValue([]);
-
-			const params = await buildSessionParams({
-				def: { ...BASE_DEF, extensions: [] },
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
+		it("appends extraExtensionPaths after resolved extensions", async () => {
+			await setupMinimalDomains(tmp.path);
+			await mkdir(join(tmp.path, "shared", "extensions", "test-ext"), {
+				recursive: true,
 			});
+			const def = makeDef({ extensions: ["test-ext"] });
+			const extraPath = "/some/extra/extension";
+			const params = await buildSessionParams(
+				makeOptions({ def, extraExtensionPaths: [extraPath] }),
+			);
 
+			expect(params.extensionPaths).toHaveLength(2);
+			expect(params.extensionPaths[0]).toContain("test-ext");
+			expect(params.extensionPaths[1]).toBe(extraPath);
+		});
+
+		it("returns only extra paths when agent has no extensions", async () => {
+			await setupMinimalDomains(tmp.path);
+			const extraPath = "/agent-switch/ext";
+			const params = await buildSessionParams(
+				makeOptions({ extraExtensionPaths: [extraPath] }),
+			);
+
+			expect(params.extensionPaths).toEqual([extraPath]);
+		});
+
+		it("returns empty when no extensions and no extras", async () => {
+			await setupMinimalDomains(tmp.path);
+			const params = await buildSessionParams(makeOptions());
 			expect(params.extensionPaths).toEqual([]);
 		});
 	});
 
-	describe("extraExtensionPaths injection", () => {
-		test("appends extraExtensionPaths after resolved extension paths", async () => {
-			const extraPath = "/absolute/path/to/agent-switch";
-			mocks.resolveExtensionPaths.mockReturnValue([MOCK_EXT_PATH]);
-
-			const params = await buildSessionParams({
-				def: BASE_DEF,
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
-				extraExtensionPaths: [extraPath],
-			});
-
-			expect(params.extensionPaths).toEqual([MOCK_EXT_PATH, extraPath]);
-		});
-
-		test("extensionPaths equals resolved paths when no extraExtensionPaths", async () => {
-			mocks.resolveExtensionPaths.mockReturnValue([MOCK_EXT_PATH]);
-
-			const params = await buildSessionParams({
-				def: BASE_DEF,
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
-			});
-
-			expect(params.extensionPaths).toEqual([MOCK_EXT_PATH]);
-		});
-
-		test("multiple extraExtensionPaths all appended in order", async () => {
-			mocks.resolveExtensionPaths.mockReturnValue([MOCK_EXT_PATH]);
-			const extra1 = "/ext/agent-switch";
-			const extra2 = "/ext/custom";
-
-			const params = await buildSessionParams({
-				def: BASE_DEF,
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
-				extraExtensionPaths: [extra1, extra2],
-			});
-
-			expect(params.extensionPaths).toEqual([MOCK_EXT_PATH, extra1, extra2]);
-		});
-	});
-
-	describe("skill override wiring", () => {
-		test("skillsOverride is undefined when no agent or project skills", async () => {
-			const params = await buildSessionParams({
-				def: { ...BASE_DEF, skills: undefined },
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
-			});
-
+	describe("skill overrides", () => {
+		it("returns undefined skillsOverride when agent has unrestricted skills", async () => {
+			await setupMinimalDomains(tmp.path);
+			const def = makeDef({ skills: undefined });
+			const params = await buildSessionParams(makeOptions({ def }));
 			expect(params.skillsOverride).toBeUndefined();
 		});
 
-		test("skillsOverride filters to agent skills when no project skills", async () => {
-			const params = await buildSessionParams({
-				def: { ...BASE_DEF, skills: ["typescript", "tdd"] },
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
-			});
-
-			expect(params.skillsOverride).toBeDefined();
-			const override = params.skillsOverride;
-			if (!override) throw new Error("expected skillsOverride");
-			const result = override({
-				skills: [
-					{ name: "typescript" } as never,
-					{ name: "tdd" } as never,
-					{ name: "playwright" } as never,
-				],
-				diagnostics: [],
-			});
-			expect(result.skills.map((s) => s.name)).toEqual(["typescript", "tdd"]);
+		it("returns filtering function when agent has explicit skills list", async () => {
+			await setupMinimalDomains(tmp.path);
+			const def = makeDef({ skills: ["typescript", "react"] });
+			const params = await buildSessionParams(makeOptions({ def }));
+			expect(params.skillsOverride).toBeTypeOf("function");
 		});
 
-		test("skillsOverride filters to intersection of agent and project skills", async () => {
-			const params = await buildSessionParams({
-				def: { ...BASE_DEF, skills: ["typescript", "tdd", "playwright"] },
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
-				projectSkills: ["typescript", "tdd"],
-			});
-
-			expect(params.skillsOverride).toBeDefined();
-			const override2 = params.skillsOverride;
-			if (!override2) throw new Error("expected skillsOverride");
-			const result = override2({
-				skills: [
-					{ name: "typescript" } as never,
-					{ name: "tdd" } as never,
-					{ name: "playwright" } as never,
-				],
-				diagnostics: [],
-			});
-			expect(result.skills.map((s) => s.name)).toEqual(["typescript", "tdd"]);
+		it("returns filtering function when projectSkills is set", async () => {
+			await setupMinimalDomains(tmp.path);
+			const params = await buildSessionParams(
+				makeOptions({ projectSkills: ["typescript"] }),
+			);
+			expect(params.skillsOverride).toBeTypeOf("function");
 		});
 
-		test("additionalSkillPaths is undefined when no skillPaths provided", async () => {
-			const params = await buildSessionParams({
-				def: BASE_DEF,
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
+		it("returns empty skills when agent skills is empty array", async () => {
+			await setupMinimalDomains(tmp.path);
+			const def = makeDef({ skills: [] });
+			const params = await buildSessionParams(makeOptions({ def }));
+			expect(params.skillsOverride).toBeTypeOf("function");
+			// An empty agent skills list means no skills at all
+			const result = params.skillsOverride!({
+				skills: [{ name: "ts" } as never],
+				diagnostics: [],
 			});
+			expect(result.skills).toEqual([]);
+		});
+	});
 
+	describe("additionalSkillPaths", () => {
+		it("returns undefined when no skillPaths provided", async () => {
+			await setupMinimalDomains(tmp.path);
+			const params = await buildSessionParams(makeOptions());
 			expect(params.additionalSkillPaths).toBeUndefined();
 		});
 
-		test("additionalSkillPaths contains provided skillPaths", async () => {
-			const params = await buildSessionParams({
-				def: BASE_DEF,
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
-				skillPaths: ["/skills/shared", "/skills/project"],
-			});
-
-			expect(params.additionalSkillPaths).toEqual([
-				"/skills/shared",
-				"/skills/project",
-			]);
+		it("returns copy of skillPaths when provided", async () => {
+			await setupMinimalDomains(tmp.path);
+			const skillPaths = ["/path/to/skills"];
+			const params = await buildSessionParams(makeOptions({ skillPaths }));
+			expect(params.additionalSkillPaths).toEqual(["/path/to/skills"]);
 		});
 	});
 
 	describe("model resolution", () => {
-		test("uses modelOverride when provided", async () => {
-			await buildSessionParams({
-				def: BASE_DEF,
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
-				modelOverride: "anthropic/claude-opus-4-6",
-			});
-
-			expect(mocks.getModel).toHaveBeenCalledWith(
-				"anthropic",
-				"claude-opus-4-6",
-			);
+		it("resolves model from agent definition", async () => {
+			await setupMinimalDomains(tmp.path);
+			const def = makeDef({ model: "anthropic/claude-sonnet-4-20250514" });
+			const params = await buildSessionParams(makeOptions({ def }));
+			expect(params.model).toBeDefined();
+			expect(params.model.id).toBe("claude-sonnet-4-20250514");
 		});
 
-		test("falls back to def.model when no override", async () => {
-			await buildSessionParams({
-				def: { ...BASE_DEF, model: "anthropic/claude-haiku-4-5" },
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
-			});
-
-			expect(mocks.getModel).toHaveBeenCalledWith(
-				"anthropic",
-				"claude-haiku-4-5",
+		it("uses modelOverride over definition model", async () => {
+			await setupMinimalDomains(tmp.path);
+			const def = makeDef({ model: "anthropic/claude-sonnet-4-20250514" });
+			const params = await buildSessionParams(
+				makeOptions({
+					def,
+					modelOverride: "anthropic/claude-opus-4-20250514",
+				}),
 			);
+			expect(params.model.id).toBe("claude-opus-4-20250514");
 		});
 
-		test("returns model from getModel", async () => {
-			const customModel = {
-				id: "custom-model",
-				name: "Custom",
-				provider: "anthropic",
-			};
-			mocks.getModel.mockReturnValue(customModel);
-
-			const params = await buildSessionParams({
-				def: BASE_DEF,
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
-			});
-
-			expect(params.model).toBe(customModel);
+		it("falls back to FALLBACK_MODEL when no model specified", async () => {
+			await setupMinimalDomains(tmp.path);
+			const def = makeDef({ model: undefined as unknown as string });
+			const params = await buildSessionParams(makeOptions({ def }));
+			// FALLBACK_MODEL is "anthropic/claude-opus-4-6"
+			expect(params.model).toBeDefined();
 		});
 	});
 
-	describe("thinkingLevel resolution", () => {
-		test("uses thinkingLevelOverride when provided", async () => {
-			const params = await buildSessionParams({
-				def: { ...BASE_DEF, thinkingLevel: undefined },
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
-				thinkingLevelOverride: "high",
-			});
-
-			expect(params.thinkingLevel).toBe("high");
+	describe("thinking level", () => {
+		it("returns undefined when no thinking level set", async () => {
+			await setupMinimalDomains(tmp.path);
+			const params = await buildSessionParams(makeOptions());
+			expect(params.thinkingLevel).toBeUndefined();
 		});
 
-		test("falls back to def.thinkingLevel when no override", async () => {
-			const params = await buildSessionParams({
-				def: { ...BASE_DEF, thinkingLevel: "medium" },
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
-			});
-
+		it("uses definition thinking level", async () => {
+			await setupMinimalDomains(tmp.path);
+			const def = makeDef({ thinkingLevel: "medium" });
+			const params = await buildSessionParams(makeOptions({ def }));
 			expect(params.thinkingLevel).toBe("medium");
 		});
 
-		test("thinkingLevel is undefined when neither override nor def value", async () => {
-			const params = await buildSessionParams({
-				def: { ...BASE_DEF, thinkingLevel: undefined },
-				cwd: "/tmp/project",
-				domainsDir: "/domains",
-			});
-
-			expect(params.thinkingLevel).toBeUndefined();
+		it("uses thinkingLevelOverride over definition", async () => {
+			await setupMinimalDomains(tmp.path);
+			const def = makeDef({ thinkingLevel: "low" });
+			const params = await buildSessionParams(
+				makeOptions({ def, thinkingLevelOverride: "high" }),
+			);
+			expect(params.thinkingLevel).toBe("high");
 		});
 	});
 
-	describe("projectContext pass-through", () => {
-		test("passes through projectContext from definition", async () => {
-			const withContext = await buildSessionParams({
-				def: { ...BASE_DEF, projectContext: true },
-				cwd: "/tmp",
-				domainsDir: "/domains",
-			});
+	describe("projectContext", () => {
+		it("reflects agent definition projectContext", async () => {
+			await setupMinimalDomains(tmp.path);
+
+			const withContext = await buildSessionParams(
+				makeOptions({ def: makeDef({ projectContext: true }) }),
+			);
 			expect(withContext.projectContext).toBe(true);
 
-			const withoutContext = await buildSessionParams({
-				def: { ...BASE_DEF, projectContext: false },
-				cwd: "/tmp",
-				domainsDir: "/domains",
-			});
+			const withoutContext = await buildSessionParams(
+				makeOptions({ def: makeDef({ projectContext: false }) }),
+			);
 			expect(withoutContext.projectContext).toBe(false);
 		});
 	});

@@ -409,7 +409,12 @@ async function run(options: CliOptions): Promise<void> {
 
 	// 5. default → interactive REPL
 	// TODO: After --workflow/--chain, drop into Cosmo REPL
-	const agentSwitchExtPath = join(domainsDir, "shared", "extensions", "agent-switch");
+	const agentSwitchExtPath = join(
+		domainsDir,
+		"shared",
+		"extensions",
+		"agent-switch",
+	);
 	const interactiveRuntime = await createSession({
 		definition,
 		cwd,

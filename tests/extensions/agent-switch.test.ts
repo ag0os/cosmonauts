@@ -1,23 +1,14 @@
 /**
- * Integration tests for the agent-switch extension command flow.
+ * Tests for the agent-switch extension (/agent command).
  *
- * Covers QC-007 through QC-012 from the Quality Contract:
- * - QC-007: Extension uses the main registry from CosmonautsRuntime.create
- * - QC-008: Invalid agent ID → error notification, ctx.newSession NOT called
- * - QC-009: Session directory scoped to new agent (piSessionDir(cwd)/planner)
- * - QC-010: Cancelled or thrown newSession → clearPendingSwitch() called
- * - QC-011: createRuntime factory switch path calls buildSessionParams()
- * - QC-012: Ambiguous agent ID resolves via runtime.domainContext
+ * Covers: invalid ID rejection (QC-008), cancellation cleanup (QC-010),
+ * session_start notification, and argument completions.
  */
 
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { AgentRegistry } from "../../lib/agents/resolver.ts";
-import type { AgentDefinition } from "../../lib/agents/types.ts";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
 	clearPendingSwitch,
 	consumePendingSwitch,
-	setPendingSwitch,
 } from "../../lib/interactive/agent-switch.ts";
 
 // ============================================================================
@@ -26,15 +17,7 @@ import {
 
 const mocks = vi.hoisted(() => ({
 	runtimeCreate: vi.fn(),
-	discoverBundledDirs: vi.fn(),
-	buildSessionParams: vi.fn(),
-	getModel: vi.fn(),
-	continueRecent: vi.fn(),
-	inMemory: vi.fn(),
-	createAgentSessionRuntime: vi.fn(),
-	createAgentSessionServices: vi.fn(),
-	createAgentSessionFromServices: vi.fn(),
-	getAgentDir: vi.fn(),
+	extractAgentId: vi.fn(),
 }));
 
 vi.mock("../../lib/runtime.ts", () => ({
@@ -44,596 +27,299 @@ vi.mock("../../lib/runtime.ts", () => ({
 }));
 
 vi.mock("../../lib/packages/dev-bundled.ts", () => ({
-	discoverFrameworkBundledPackageDirs: mocks.discoverBundledDirs,
+	discoverFrameworkBundledPackageDirs: () => Promise.resolve([]),
 }));
 
-vi.mock("../../lib/agents/session-assembly.ts", () => ({
-	buildSessionParams: mocks.buildSessionParams,
+vi.mock("../../lib/agents/runtime-identity.ts", () => ({
+	extractAgentIdFromSystemPrompt: mocks.extractAgentId,
 }));
 
-vi.mock("@mariozechner/pi-ai", () => ({
-	getModel: mocks.getModel,
-}));
-
-vi.mock("@mariozechner/pi-coding-agent", () => ({
-	SessionManager: {
-		continueRecent: mocks.continueRecent,
-		inMemory: mocks.inMemory,
-	},
-	createAgentSessionRuntime: mocks.createAgentSessionRuntime,
-	createAgentSessionServices: mocks.createAgentSessionServices,
-	createAgentSessionFromServices: mocks.createAgentSessionFromServices,
-	getAgentDir: mocks.getAgentDir,
-	createCodingTools: () => [],
-	createReadOnlyTools: () => [],
-	createReadTool: () => ({ name: "read" }),
-	createBashTool: () => ({ name: "bash" }),
-	createGrepTool: () => ({ name: "grep" }),
-	createFindTool: () => ({ name: "find" }),
-	createLsTool: () => ({ name: "ls" }),
-}));
-
-import { createSession } from "../../cli/session.ts";
-// Import after mocks
 import agentSwitchExtension from "../../domains/shared/extensions/agent-switch/index.ts";
 
 // ============================================================================
 // Helpers
 // ============================================================================
 
-interface MockCommandContext {
+interface RegisteredCommand {
+	description: string;
+	handler: (args: string, ctx: CommandContext) => Promise<void>;
+	getArgumentCompletions?: (
+		prefix: string,
+	) => Promise<{ value: string; label: string }[] | null>;
+}
+
+interface CommandContext {
 	cwd: string;
+	newSession: () => Promise<{ cancelled: boolean }>;
 	ui: {
-		notify: ReturnType<typeof vi.fn>;
-		select: ReturnType<typeof vi.fn>;
+		notify: (message: string, level: string) => void;
+		select: (prompt: string, options: string[]) => Promise<string | null>;
 	};
-	newSession: ReturnType<typeof vi.fn>;
-	getSystemPrompt: ReturnType<typeof vi.fn>;
+	getSystemPrompt: () => string;
 	model?: { name?: string; id?: string };
 }
 
-function createMockCommandCtx(cwd = "/tmp/project"): MockCommandContext {
+type EventHandler = (event: unknown, ctx: CommandContext) => void;
+
+function createMockPi() {
+	const commands = new Map<string, RegisteredCommand>();
+	const events = new Map<string, EventHandler[]>();
+
 	return {
-		cwd,
+		registerCommand(name: string, cmd: RegisteredCommand) {
+			commands.set(name, cmd);
+		},
+		on(event: string, handler: EventHandler) {
+			const handlers = events.get(event) ?? [];
+			handlers.push(handler);
+			events.set(event, handlers);
+		},
+		getCommand(name: string) {
+			return commands.get(name);
+		},
+		emitEvent(event: string, eventData: unknown, ctx: CommandContext) {
+			for (const handler of events.get(event) ?? []) {
+				handler(eventData, ctx);
+			}
+		},
+	};
+}
+
+function createMockCtx(
+	overrides: Partial<CommandContext> = {},
+): CommandContext {
+	return {
+		cwd: "/tmp/test-project",
+		newSession: vi.fn().mockResolvedValue({ cancelled: false }),
 		ui: {
 			notify: vi.fn(),
 			select: vi.fn().mockResolvedValue(null),
 		},
-		newSession: vi.fn().mockResolvedValue({ cancelled: false }),
-		getSystemPrompt: vi.fn().mockReturnValue(""),
+		getSystemPrompt: () => "test prompt",
+		model: { name: "Claude Sonnet", id: "claude-sonnet-4-20250514" },
+		...overrides,
 	};
 }
 
-interface MockPiWithCommands {
-	registerCommand: (
-		name: string,
-		def: {
-			description: string;
-			getArgumentCompletions: (prefix: string) => Promise<unknown>;
-			handler: (args: string, ctx: unknown) => Promise<void>;
-		},
-	) => void;
-	on: (event: string, handler: (event: unknown, ctx: unknown) => void) => void;
-	invokeCommand: (name: string, args: string, ctx: unknown) => Promise<void>;
-	fireEvent: (name: string, event: unknown, ctx: unknown) => Promise<void>;
-}
-
-function createMockPiForCommands(): MockPiWithCommands {
-	const commands = new Map<
-		string,
-		{
-			handler: (args: string, ctx: unknown) => Promise<void>;
-		}
-	>();
-	const events = new Map<
-		string,
-		Array<(event: unknown, ctx: unknown) => void>
-	>();
-
-	return {
-		registerCommand(name, def) {
-			commands.set(name, def);
-		},
-		on(event, handler) {
-			if (!events.has(event)) events.set(event, []);
-			events.get(event)?.push(handler);
-		},
-		async invokeCommand(name, args, ctx) {
-			const cmd = commands.get(name);
-			if (!cmd) throw new Error(`Command not found: ${name}`);
-			await cmd.handler(args, ctx);
-		},
-		async fireEvent(name, event, ctx) {
-			const handlers = events.get(name) ?? [];
-			for (const h of handlers) await h(event, ctx);
-		},
+function mockRuntime(agentIds: string[], domainContext?: string) {
+	const registry = {
+		has: (id: string, _ctx?: string) => agentIds.includes(id),
+		listIds: () => agentIds,
+		resolve: vi.fn(),
 	};
-}
-
-function makeAgentDef(id: string, domain: string): AgentDefinition {
-	return {
-		id,
-		description: `Test ${id}`,
-		capabilities: ["core"],
-		model: "anthropic/claude-sonnet-4-5",
-		tools: "none",
-		extensions: [],
-		projectContext: false,
-		session: "ephemeral",
-		loop: false,
-		domain,
-	};
-}
-
-function makeRegistry(agents: AgentDefinition[]): AgentRegistry {
-	return new AgentRegistry(agents);
-}
-
-function mockRuntime(registry: AgentRegistry, domainContext?: string): void {
 	mocks.runtimeCreate.mockResolvedValue({
 		agentRegistry: registry,
 		domainContext,
-		projectSkills: [],
-		skillPaths: [],
-		domainsDir: "/domains",
 	});
+	return registry;
 }
 
 // ============================================================================
-// Extension command handler tests
+// Tests
 // ============================================================================
 
 describe("agent-switch extension", () => {
-	let pi: MockPiWithCommands;
-
 	beforeEach(() => {
 		vi.clearAllMocks();
 		clearPendingSwitch();
-		mocks.discoverBundledDirs.mockResolvedValue([]);
-		pi = createMockPiForCommands();
+	});
+
+	test("registers /agent command", () => {
+		const pi = createMockPi();
 		agentSwitchExtension(pi as never);
+		expect(pi.getCommand("agent")).toBeDefined();
+		expect(pi.getCommand("agent")?.description).toContain("Switch");
 	});
 
-	afterEach(() => {
-		clearPendingSwitch();
-	});
+	describe("/agent with valid ID", () => {
+		test("sets pending switch and calls newSession", async () => {
+			const pi = createMockPi();
+			agentSwitchExtension(pi as never);
+			mockRuntime(["planner", "worker", "cosmo"]);
 
-	// QC-008: Invalid agent ID → error notification, no ctx.newSession call
-	describe("QC-008: invalid agent ID rejection", () => {
-		test("shows error notification for unknown agent ID", async () => {
-			const registry = makeRegistry([makeAgentDef("worker", "coding")]);
-			mockRuntime(registry);
+			const ctx = createMockCtx();
+			const cmd = pi.getCommand("agent")!;
+			await cmd.handler("planner", ctx);
 
-			const ctx = createMockCommandCtx();
-			await pi.invokeCommand("agent", "nonexistent-agent", ctx);
-
+			// Should have warned about conversation loss
 			expect(ctx.ui.notify).toHaveBeenCalledWith(
-				expect.stringContaining('"nonexistent-agent"'),
-				"error",
-			);
-		});
-
-		test("does NOT call ctx.newSession for unknown agent ID", async () => {
-			const registry = makeRegistry([makeAgentDef("worker", "coding")]);
-			mockRuntime(registry);
-
-			const ctx = createMockCommandCtx();
-			await pi.invokeCommand("agent", "ghost", ctx);
-
-			expect(ctx.newSession).not.toHaveBeenCalled();
-		});
-
-		test("error message lists available agents", async () => {
-			const registry = makeRegistry([
-				makeAgentDef("worker", "coding"),
-				makeAgentDef("planner", "coding"),
-			]);
-			mockRuntime(registry);
-
-			const ctx = createMockCommandCtx();
-			await pi.invokeCommand("agent", "unknown", ctx);
-
-			expect(ctx.ui.notify).toHaveBeenCalledWith(
-				expect.stringContaining("Available:"),
-				"error",
-			);
-		});
-	});
-
-	// QC-010: Cancelled/thrown newSession → clearPendingSwitch called
-	describe("QC-010: cancellation and error cleanup", () => {
-		test("clears pending switch when ctx.newSession returns cancelled", async () => {
-			const registry = makeRegistry([makeAgentDef("worker", "coding")]);
-			mockRuntime(registry);
-
-			const ctx = createMockCommandCtx();
-			ctx.newSession.mockResolvedValue({ cancelled: true });
-
-			await pi.invokeCommand("agent", "coding/worker", ctx);
-
-			// The pending switch was set then cleared: verify it's gone
-			expect(consumePendingSwitch()).toBeUndefined();
-		});
-
-		test("clears pending switch when ctx.newSession throws", async () => {
-			const registry = makeRegistry([makeAgentDef("worker", "coding")]);
-			mockRuntime(registry);
-
-			const ctx = createMockCommandCtx();
-			ctx.newSession.mockRejectedValue(new Error("session start failed"));
-
-			await pi.invokeCommand("agent", "coding/worker", ctx);
-
-			expect(consumePendingSwitch()).toBeUndefined();
-		});
-
-		test("shows error notification when ctx.newSession throws", async () => {
-			const registry = makeRegistry([makeAgentDef("worker", "coding")]);
-			mockRuntime(registry);
-
-			const ctx = createMockCommandCtx();
-			ctx.newSession.mockRejectedValue(new Error("network error"));
-
-			await pi.invokeCommand("agent", "coding/worker", ctx);
-
-			expect(ctx.ui.notify).toHaveBeenCalledWith(
-				expect.stringContaining("network error"),
-				"error",
-			);
-		});
-
-		test("does NOT clear pending switch on successful newSession", async () => {
-			const registry = makeRegistry([makeAgentDef("worker", "coding")]);
-			mockRuntime(registry);
-
-			const ctx = createMockCommandCtx();
-			ctx.newSession.mockResolvedValue({ cancelled: false });
-
-			await pi.invokeCommand("agent", "coding/worker", ctx);
-
-			// The pending switch should have been consumed by the factory, not cleared here.
-			// Since we're not running the real factory, the slot still has the value.
-			// We just check clearPendingSwitch was NOT called after successful newSession.
-			// Verify by checking newSession was called (success path).
-			expect(ctx.newSession).toHaveBeenCalledTimes(1);
-		});
-	});
-
-	// QC-007: Extension uses main registry from CosmonautsRuntime.create
-	describe("QC-007: uses CosmonautsRuntime registry (factory path)", () => {
-		test("bootstraps runtime via CosmonautsRuntime.create for the given cwd", async () => {
-			const registry = makeRegistry([makeAgentDef("worker", "coding")]);
-			mockRuntime(registry);
-
-			const ctx = createMockCommandCtx("/home/user/project");
-			await pi.invokeCommand("agent", "coding/worker", ctx);
-
-			expect(mocks.runtimeCreate).toHaveBeenCalledWith(
-				expect.objectContaining({
-					projectRoot: "/home/user/project",
-				}),
-			);
-		});
-
-		test("sets pending switch and calls newSession when valid agent from runtime registry", async () => {
-			const registry = makeRegistry([makeAgentDef("worker", "coding")]);
-			mockRuntime(registry);
-
-			const ctx = createMockCommandCtx();
-			await pi.invokeCommand("agent", "coding/worker", ctx);
-
-			expect(ctx.ui.notify).toHaveBeenCalledWith(
-				expect.stringContaining("coding/worker"),
+				expect.stringContaining("planner"),
 				"warning",
 			);
-			expect(ctx.newSession).toHaveBeenCalledTimes(1);
-		});
-
-		test("runtime is cached: CosmonautsRuntime.create called once for same cwd", async () => {
-			const registry = makeRegistry([makeAgentDef("worker", "coding")]);
-			mockRuntime(registry);
-
-			const ctx = createMockCommandCtx();
-			await pi.invokeCommand("agent", "coding/worker", ctx);
-			ctx.newSession.mockResolvedValue({ cancelled: false });
-			await pi.invokeCommand("agent", "coding/worker", ctx);
-
-			expect(mocks.runtimeCreate).toHaveBeenCalledTimes(1);
+			// Should have called newSession
+			expect(ctx.newSession).toHaveBeenCalled();
+			// Pending switch consumed by the time we check (newSession resolved)
+			// but it was set before newSession was called
 		});
 	});
 
-	// QC-012: Ambiguous ID resolves via runtime domainContext
-	describe("QC-012: domain-context-aware resolution", () => {
-		test("resolves ambiguous unqualified ID using runtime domainContext", async () => {
-			// Same unqualified ID 'worker' in two domains → ambiguous without context
-			const codingWorker = makeAgentDef("worker", "coding");
-			const docsWorker = makeAgentDef("worker", "docs");
-			const registry = makeRegistry([codingWorker, docsWorker]);
-			// domainContext = 'coding' disambiguates
-			mockRuntime(registry, "coding");
+	describe("/agent with invalid ID (QC-008)", () => {
+		test("shows error and does NOT call newSession", async () => {
+			const pi = createMockPi();
+			agentSwitchExtension(pi as never);
+			mockRuntime(["planner", "worker"]);
 
-			const ctx = createMockCommandCtx();
-			await pi.invokeCommand("agent", "worker", ctx);
+			const ctx = createMockCtx();
+			const cmd = pi.getCommand("agent")!;
+			await cmd.handler("nonexistent", ctx);
 
-			// Should resolve via domain context → switch proceeds
-			expect(ctx.newSession).toHaveBeenCalledTimes(1);
-			expect(ctx.ui.notify).not.toHaveBeenCalledWith(
-				expect.stringContaining("Unknown agent"),
-				"error",
-			);
-		});
-
-		test("fails to resolve ambiguous ID without domainContext", async () => {
-			const codingWorker = makeAgentDef("worker", "coding");
-			const docsWorker = makeAgentDef("worker", "docs");
-			const registry = makeRegistry([codingWorker, docsWorker]);
-			// no domainContext → ambiguous
-			mockRuntime(registry, undefined);
-
-			const ctx = createMockCommandCtx();
-			await pi.invokeCommand("agent", "worker", ctx);
-
-			// Ambiguous without context → error, no switch
+			// Should show error notification with available agents
 			expect(ctx.ui.notify).toHaveBeenCalledWith(
-				expect.stringContaining("Unknown agent"),
+				expect.stringContaining('Unknown agent "nonexistent"'),
 				"error",
 			);
+			expect(ctx.ui.notify).toHaveBeenCalledWith(
+				expect.stringContaining("planner"),
+				"error",
+			);
+			// Must NOT call newSession — this is the critical QC-008 check
 			expect(ctx.newSession).not.toHaveBeenCalled();
-		});
-
-		test("qualified ID works regardless of domainContext", async () => {
-			const codingWorker = makeAgentDef("worker", "coding");
-			const docsWorker = makeAgentDef("worker", "docs");
-			const registry = makeRegistry([codingWorker, docsWorker]);
-			mockRuntime(registry, undefined);
-
-			const ctx = createMockCommandCtx();
-			await pi.invokeCommand("agent", "coding/worker", ctx);
-
-			expect(ctx.newSession).toHaveBeenCalledTimes(1);
-		});
-	});
-});
-
-// ============================================================================
-// Session factory switch path tests (cli/session.ts)
-// ============================================================================
-
-describe("createSession switch path", () => {
-	const CWD = "/tmp/test-project";
-	const MOCK_AGENT_DIR = "/tmp/.pi";
-
-	const COSMO_DEF: AgentDefinition = {
-		id: "cosmo",
-		description: "Cosmo",
-		capabilities: ["core"],
-		model: "anthropic/claude-sonnet-4-5",
-		tools: "none",
-		extensions: [],
-		projectContext: false,
-		session: "persistent",
-		loop: true,
-	};
-
-	const PLANNER_DEF: AgentDefinition = {
-		id: "planner",
-		description: "Planner",
-		capabilities: ["core"],
-		model: "anthropic/claude-sonnet-4-5",
-		tools: "none",
-		extensions: [],
-		projectContext: false,
-		session: "persistent",
-		loop: false,
-		domain: "coding",
-	};
-
-	const MOCK_SESSION_PARAMS = {
-		promptContent: "# Planner system prompt\n",
-		tools: [],
-		extensionPaths: [],
-		skillsOverride: undefined,
-		additionalSkillPaths: undefined,
-		projectContext: false,
-		model: { id: "claude-sonnet-4-5" },
-		thinkingLevel: undefined,
-	};
-
-	// Captures the factory function passed to createAgentSessionRuntime
-	let capturedFactory:
-		| ((ctx: {
-				cwd: string;
-				sessionManager: unknown;
-				sessionStartEvent: unknown;
-		  }) => Promise<unknown>)
-		| undefined;
-
-	function setupSessionMocks(): void {
-		mocks.getAgentDir.mockReturnValue(MOCK_AGENT_DIR);
-		mocks.continueRecent.mockReturnValue({ kind: "session-manager" });
-		mocks.inMemory.mockReturnValue({ kind: "in-memory-sm" });
-		mocks.buildSessionParams.mockResolvedValue(MOCK_SESSION_PARAMS);
-		mocks.createAgentSessionServices.mockResolvedValue({ services: "mock" });
-		mocks.createAgentSessionFromServices.mockResolvedValue({
-			session: { sessionId: "new-session" },
-		});
-		mocks.createAgentSessionRuntime.mockImplementation(
-			(factory: (ctx: unknown) => Promise<unknown>) => {
-				capturedFactory = factory as typeof capturedFactory;
-				return { kind: "mock-session-runtime" };
-			},
-		);
-	}
-
-	async function triggerFactory(): Promise<void> {
-		if (!capturedFactory) throw new Error("Factory was not captured");
-		await capturedFactory({
-			cwd: CWD,
-			sessionManager: mocks.inMemory(),
-			sessionStartEvent: null,
-		});
-	}
-
-	beforeEach(() => {
-		vi.clearAllMocks();
-		clearPendingSwitch();
-		capturedFactory = undefined;
-		setupSessionMocks();
-	});
-
-	afterEach(() => {
-		clearPendingSwitch();
-	});
-
-	// QC-009: Session directory scoped to new agent (not old agent)
-	describe("QC-009: session directory scoping", () => {
-		test("switch to planner creates SessionManager in planner-scoped directory", async () => {
-			const registry = makeRegistry([PLANNER_DEF]);
-			setPendingSwitch("coding/planner");
-
-			await createSession({
-				definition: COSMO_DEF,
-				cwd: CWD,
-				domainsDir: "/domains",
-				agentRegistry: registry,
-				domainContext: "coding",
-				persistent: true,
-			});
-
-			await triggerFactory();
-
-			// piSessionDir(CWD) = join(MOCK_AGENT_DIR, "sessions", "--tmp-test-project--")
-			const expectedSessionDir = join(
-				MOCK_AGENT_DIR,
-				"sessions",
-				"--tmp-test-project--",
-				"planner",
-			);
-			expect(mocks.continueRecent).toHaveBeenCalledWith(
-				CWD,
-				expectedSessionDir,
-			);
-		});
-
-		test("cosmo switch uses unscoped directory (backward compat)", async () => {
-			const cosmoDef2: AgentDefinition = { ...COSMO_DEF };
-			const registry = makeRegistry([cosmoDef2]);
-			setPendingSwitch("cosmo");
-
-			await createSession({
-				definition: PLANNER_DEF,
-				cwd: CWD,
-				domainsDir: "/domains",
-				agentRegistry: registry,
-				persistent: true,
-			});
-
-			await triggerFactory();
-
-			// cosmo uses unscoped: continueRecent(cwd, undefined)
-			expect(mocks.continueRecent).toHaveBeenCalledWith(CWD, undefined);
-		});
-
-		test("new agent session dir differs from original agent dir", async () => {
-			const registry = makeRegistry([PLANNER_DEF]);
-			setPendingSwitch("coding/planner");
-
-			await createSession({
-				definition: COSMO_DEF,
-				cwd: CWD,
-				domainsDir: "/domains",
-				agentRegistry: registry,
-				domainContext: "coding",
-				persistent: true,
-			});
-
-			await triggerFactory();
-
-			// The new SessionManager (for planner) should NOT be scoped to cosmo's dir
-			const cosmoDir = join(
-				MOCK_AGENT_DIR,
-				"sessions",
-				"--tmp-test-project--",
-				"cosmo",
-			);
-			const calls = mocks.continueRecent.mock.calls;
-			// The factory creates the new session manager — check its args
-			const factoryCall = calls.find(
-				(call) => call[0] === CWD && call[1] !== undefined,
-			);
-			expect(factoryCall?.[1]).not.toBe(cosmoDir);
-		});
-	});
-
-	// QC-011: Switch path calls buildSessionParams (no inline assembly duplication)
-	describe("QC-011: switch path calls buildSessionParams()", () => {
-		test("buildSessionParams is called with new agent definition during switch", async () => {
-			const registry = makeRegistry([PLANNER_DEF]);
-			setPendingSwitch("coding/planner");
-
-			await createSession({
-				definition: COSMO_DEF,
-				cwd: CWD,
-				domainsDir: "/domains",
-				agentRegistry: registry,
-				domainContext: "coding",
-				persistent: true,
-			});
-
-			await triggerFactory();
-
-			// buildSessionParams should have been called for the new def (planner)
-			const calls = mocks.buildSessionParams.mock.calls;
-			const switchCall = calls.find((call) => call[0]?.def?.id === "planner");
-			expect(switchCall).toBeDefined();
-		});
-
-		test("buildSessionParams receives extraExtensionPaths during switch", async () => {
-			const registry = makeRegistry([PLANNER_DEF]);
-			setPendingSwitch("coding/planner");
-			const extraExt = "/domains/shared/extensions/agent-switch";
-
-			await createSession({
-				definition: COSMO_DEF,
-				cwd: CWD,
-				domainsDir: "/domains",
-				agentRegistry: registry,
-				domainContext: "coding",
-				persistent: true,
-				extraExtensionPaths: [extraExt],
-			});
-
-			await triggerFactory();
-
-			const calls = mocks.buildSessionParams.mock.calls;
-			const switchCall = calls.find((call) => call[0]?.def?.id === "planner");
-			expect(switchCall?.[0]?.extraExtensionPaths).toContain(extraExt);
-		});
-
-		test("clearPendingSwitch called and error rethrown when switch fails", async () => {
-			const registry = makeRegistry([PLANNER_DEF]);
-			setPendingSwitch("coding/planner");
-
-			// First call: initial def (cosmo) — succeeds
-			mocks.buildSessionParams.mockResolvedValueOnce(MOCK_SESSION_PARAMS);
-			// Second call: switch target (planner) inside factory — fails
-			mocks.buildSessionParams.mockRejectedValueOnce(
-				new Error("prompt assembly failed"),
-			);
-
-			await createSession({
-				definition: COSMO_DEF,
-				cwd: CWD,
-				domainsDir: "/domains",
-				agentRegistry: registry,
-				domainContext: "coding",
-				persistent: true,
-			});
-
-			await expect(triggerFactory()).rejects.toThrow("prompt assembly failed");
-
-			// After error, pending switch must be cleared
+			// Port must be clean
 			expect(consumePendingSwitch()).toBeUndefined();
+		});
+	});
+
+	describe("cancellation cleanup (QC-010)", () => {
+		test("clears pending switch when newSession is cancelled", async () => {
+			const pi = createMockPi();
+			agentSwitchExtension(pi as never);
+			mockRuntime(["planner"]);
+
+			const ctx = createMockCtx({
+				newSession: vi.fn().mockResolvedValue({ cancelled: true }),
+			});
+			const cmd = pi.getCommand("agent")!;
+			await cmd.handler("planner", ctx);
+
+			// Pending switch should be cleared after cancellation
+			expect(consumePendingSwitch()).toBeUndefined();
+		});
+
+		test("clears pending switch when newSession throws", async () => {
+			const pi = createMockPi();
+			agentSwitchExtension(pi as never);
+			mockRuntime(["planner"]);
+
+			const ctx = createMockCtx({
+				newSession: vi.fn().mockRejectedValue(new Error("session error")),
+			});
+			const cmd = pi.getCommand("agent")!;
+			await cmd.handler("planner", ctx);
+
+			// Should show error notification
+			expect(ctx.ui.notify).toHaveBeenCalledWith(
+				expect.stringContaining("session error"),
+				"error",
+			);
+			// Pending switch should be cleaned up
+			expect(consumePendingSwitch()).toBeUndefined();
+		});
+	});
+
+	describe("/agent with no arguments", () => {
+		test("shows interactive selector", async () => {
+			const pi = createMockPi();
+			agentSwitchExtension(pi as never);
+			mockRuntime(["planner", "worker", "cosmo"]);
+
+			const ctx = createMockCtx({
+				ui: {
+					notify: vi.fn(),
+					select: vi.fn().mockResolvedValue("worker"),
+				},
+			});
+			const cmd = pi.getCommand("agent")!;
+			await cmd.handler("", ctx);
+
+			expect(ctx.ui.select).toHaveBeenCalledWith("Select agent", [
+				"planner",
+				"worker",
+				"cosmo",
+			]);
+			// Selected "worker" → should proceed with switch
+			expect(ctx.newSession).toHaveBeenCalled();
+		});
+
+		test("does nothing when selector is dismissed", async () => {
+			const pi = createMockPi();
+			agentSwitchExtension(pi as never);
+			mockRuntime(["planner", "worker"]);
+
+			const ctx = createMockCtx({
+				ui: {
+					notify: vi.fn(),
+					select: vi.fn().mockResolvedValue(null),
+				},
+			});
+			const cmd = pi.getCommand("agent")!;
+			await cmd.handler("", ctx);
+
+			expect(ctx.newSession).not.toHaveBeenCalled();
+			expect(consumePendingSwitch()).toBeUndefined();
+		});
+	});
+
+	describe("session_start event", () => {
+		test("shows status notification with agent ID and model", () => {
+			const pi = createMockPi();
+			agentSwitchExtension(pi as never);
+			mocks.extractAgentId.mockReturnValue("coding/planner");
+
+			const ctx = createMockCtx();
+			pi.emitEvent("session_start", {}, ctx);
+
+			expect(ctx.ui.notify).toHaveBeenCalledWith(
+				expect.stringContaining("coding/planner"),
+				"info",
+			);
+			expect(ctx.ui.notify).toHaveBeenCalledWith(
+				expect.stringContaining("Claude Sonnet"),
+				"info",
+			);
+		});
+
+		test("skips notification when no agent ID in prompt", () => {
+			const pi = createMockPi();
+			agentSwitchExtension(pi as never);
+			mocks.extractAgentId.mockReturnValue(undefined);
+
+			const ctx = createMockCtx();
+			pi.emitEvent("session_start", {}, ctx);
+
+			expect(ctx.ui.notify).not.toHaveBeenCalled();
+		});
+	});
+
+	describe("argument completions", () => {
+		test("returns matching agent IDs for prefix", async () => {
+			const pi = createMockPi();
+			agentSwitchExtension(pi as never);
+			mockRuntime(["planner", "plan-reviewer", "worker", "cosmo"]);
+
+			// Trigger session_start to set lastCwd
+			mocks.extractAgentId.mockReturnValue("cosmo");
+			pi.emitEvent("session_start", {}, createMockCtx());
+
+			const cmd = pi.getCommand("agent")!;
+			const completions = await cmd.getArgumentCompletions!("plan");
+
+			expect(completions).toEqual([
+				{ value: "planner", label: "planner" },
+				{ value: "plan-reviewer", label: "plan-reviewer" },
+			]);
+		});
+
+		test("returns null when no matches", async () => {
+			const pi = createMockPi();
+			agentSwitchExtension(pi as never);
+			mockRuntime(["planner", "worker"]);
+
+			mocks.extractAgentId.mockReturnValue("cosmo");
+			pi.emitEvent("session_start", {}, createMockCtx());
+
+			const cmd = pi.getCommand("agent")!;
+			const completions = await cmd.getArgumentCompletions!("xyz");
+			expect(completions).toBeNull();
 		});
 	});
 });

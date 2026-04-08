@@ -13,8 +13,8 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@mariozechner/pi-coding-agent";
-import type { AgentDefinition } from "../agents/types.ts";
 import { buildSessionParams } from "../agents/session-assembly.ts";
+import type { AgentDefinition } from "../agents/types.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import { validateSlug } from "../plans/plan-manager.ts";
 import { sessionsDirForPlan } from "../sessions/session-store.ts";

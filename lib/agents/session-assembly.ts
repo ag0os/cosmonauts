@@ -7,12 +7,6 @@
 
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
-import {
-	appendAgentIdentityMarker,
-	qualifyAgentId,
-} from "./runtime-identity.ts";
-import { buildSkillsOverride, type SkillsOverrideFn } from "./skills.ts";
-import type { AgentDefinition } from "./types.ts";
 import type { RuntimeContext } from "../domains/prompt-assembly.ts";
 import { assemblePrompts } from "../domains/prompt-assembly.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
@@ -20,7 +14,16 @@ import {
 	resolveExtensionPaths,
 	resolveTools,
 } from "../orchestration/definition-resolution.ts";
-import { FALLBACK_MODEL, resolveModel } from "../orchestration/model-resolution.ts";
+import {
+	FALLBACK_MODEL,
+	resolveModel,
+} from "../orchestration/model-resolution.ts";
+import {
+	appendAgentIdentityMarker,
+	qualifyAgentId,
+} from "./runtime-identity.ts";
+import { buildSkillsOverride, type SkillsOverrideFn } from "./skills.ts";
+import type { AgentDefinition } from "./types.ts";
 
 // ============================================================================
 // Interfaces
@@ -120,10 +123,9 @@ export async function buildSessionParams(
 		domainsDir,
 		resolver,
 	});
-	const extensionPaths =
-		extraExtensionPaths?.length
-			? [...resolvedExtensionPaths, ...extraExtensionPaths]
-			: resolvedExtensionPaths;
+	const extensionPaths = extraExtensionPaths?.length
+		? [...resolvedExtensionPaths, ...extraExtensionPaths]
+		: resolvedExtensionPaths;
 
 	// Skill override construction
 	const skillsOverride = buildSkillsOverride(def.skills, projectSkills);

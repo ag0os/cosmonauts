@@ -17,8 +17,8 @@ import {
 	getAgentDir,
 	SessionManager,
 } from "@mariozechner/pi-coding-agent";
-import { buildSessionParams } from "../lib/agents/session-assembly.ts";
 import type { AgentRegistry } from "../lib/agents/resolver.ts";
+import { buildSessionParams } from "../lib/agents/session-assembly.ts";
 import type { AgentDefinition } from "../lib/agents/types.ts";
 import type { DomainResolver } from "../lib/domains/resolver.ts";
 import {
