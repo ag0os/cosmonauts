@@ -229,6 +229,7 @@ This ordering directly informs how the Task Manager will create tasks and set de
 
 During the design phase, you can spawn lightweight agents for focused work that would bloat your own context or require capabilities you lack:
 
+- **Plan Reviewer**: Adversarial plan review. After writing your plan, spawn the plan-reviewer to get independent verification of your design claims against the codebase. It checks interface fidelity, code path duplication, state synchronization, risk blast radius, user experience, and quality contract completeness. It writes structured findings to `missions/plans/<slug>/review.md`. Read the findings and revise your plan before presenting it. Use this for non-trivial plans — it catches design flaws that are invisible from the designer's perspective.
 - **Explorer**: Deep codebase exploration. Use when you need detailed analysis of a specific subsystem, module, or pattern. The explorer is read-only — it reads code and reports findings but cannot modify anything. Spawn it when an area of the codebase is large enough that exploring it yourself would consume too much context.
 - **Verifier**: Claim validation. Use when you need to confirm a factual claim about the codebase — e.g., "do the tests pass?", "does this interface exist with these methods?", "is this dependency available?". The verifier runs checks (tests, lint, typecheck) and returns structured pass/fail evidence. It cannot modify code.
 
