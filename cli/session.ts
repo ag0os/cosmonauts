@@ -155,20 +155,17 @@ export async function createSession(
 						extraExtensionPaths,
 					});
 					const newResourceLoaderOptions = toResourceLoaderOptions(newParams);
-					const newSessionDir =
-						newDef.id !== "cosmo"
-							? join(piSessionDir(cwd), newDef.id)
-							: undefined;
-					const newSessionManager = persistent
-						? SessionManager.continueRecent(cwd, newSessionDir)
-						: SessionManager.inMemory();
+					// Use the session manager Pi already prepared (sm) — it carries
+					// the new session header and parentSession lineage from
+					// ctx.newSession({ parentSession, setup }). Creating our own
+					// SessionManager would reopen old history and drop the link.
 					const services = await createAgentSessionServices({
 						cwd: effectiveCwd,
 						resourceLoaderOptions: newResourceLoaderOptions,
 					});
 					const result = await createAgentSessionFromServices({
 						services,
-						sessionManager: newSessionManager,
+						sessionManager: sm,
 						sessionStartEvent,
 						model: newParams.model,
 						thinkingLevel: newParams.thinkingLevel,

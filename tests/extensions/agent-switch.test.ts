@@ -354,6 +354,7 @@ describe("agent-switch extension", () => {
 
 			expect(pi.sendUserMessage).toHaveBeenCalledWith(
 				expect.stringContaining("Summarize this conversation"),
+				{ deliverAs: "followUp" },
 			);
 			expect(ctx.waitForIdle).toHaveBeenCalled();
 		});

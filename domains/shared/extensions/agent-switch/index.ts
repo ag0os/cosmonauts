@@ -192,8 +192,10 @@ export default function agentSwitchExtension(pi: ExtensionAPI): void {
 				"info",
 			);
 
-			// Ask the current agent to produce a handoff summary
-			pi.sendUserMessage(HANDOFF_PROMPT);
+			// Ask the current agent to produce a handoff summary.
+			// Use "followUp" so this works whether the agent is idle or
+			// mid-stream — Pi queues it after the current turn finishes.
+			pi.sendUserMessage(HANDOFF_PROMPT, { deliverAs: "followUp" });
 			await ctx.waitForIdle();
 
 			// Extract the summary the agent just produced
