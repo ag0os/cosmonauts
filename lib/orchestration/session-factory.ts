@@ -13,18 +13,11 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@mariozechner/pi-coding-agent";
-import { appendAgentIdentityMarker, qualifyAgentId } from "../agents/index.ts";
-import { buildSkillsOverride } from "../agents/skills.ts";
 import type { AgentDefinition } from "../agents/types.ts";
-import { assemblePrompts } from "../domains/prompt-assembly.ts";
+import { buildSessionParams } from "../agents/session-assembly.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import { validateSlug } from "../plans/plan-manager.ts";
 import { sessionsDirForPlan } from "../sessions/session-store.ts";
-import {
-	resolveExtensionPaths,
-	resolveTools,
-} from "./definition-resolution.ts";
-import { FALLBACK_MODEL, resolveModel } from "./model-resolution.ts";
 import type { SpawnConfig } from "./types.ts";
 
 // ============================================================================
@@ -51,17 +44,9 @@ export async function createAgentSessionFromDefinition(
 	domainsDir: string,
 	resolver?: DomainResolver,
 ): Promise<SessionCreateResult> {
-	const modelId = config.model ?? def.model ?? FALLBACK_MODEL;
-	const model = resolveModel(modelId);
-	const thinkingLevel = config.thinkingLevel ?? def.thinkingLevel;
-
-	const tools = resolveTools(def.tools, config.cwd);
-
-	// System prompt via domain-aware four-layer assembly.
-	let promptContent: string | undefined = await assemblePrompts({
-		agentId: def.id,
-		domain: def.domain ?? "coding",
-		capabilities: def.capabilities,
+	const params = await buildSessionParams({
+		def,
+		cwd: config.cwd,
 		domainsDir,
 		resolver,
 		runtimeContext:
@@ -73,37 +58,26 @@ export async function createAgentSessionFromDefinition(
 						taskId: config.runtimeContext.taskId,
 					}
 				: undefined,
-	});
-
-	// Embed caller identity marker for extension-level authorization checks.
-	promptContent = appendAgentIdentityMarker(
-		promptContent,
-		qualifyAgentId(def.id, def.domain),
-	);
-
-	// Extensions: domain-aware resolution with shared fallback.
-	const extensionPaths = resolveExtensionPaths(def.extensions, {
-		domain: def.domain ?? "coding",
-		domainsDir,
-		resolver,
+		projectSkills: config.projectSkills,
+		skillPaths: config.skillPaths,
+		modelOverride: config.model,
+		thinkingLevelOverride: config.thinkingLevel,
 	});
 
 	// Build resource loader with all definition fields.
-	const skillsOverride = buildSkillsOverride(def.skills, config.projectSkills);
-	const additionalSkillPaths = config.skillPaths?.length
-		? [...config.skillPaths]
-		: undefined;
 	const loader = new DefaultResourceLoader({
 		cwd: config.cwd,
-		...(promptContent && { systemPrompt: promptContent }),
+		...(params.promptContent && { systemPrompt: params.promptContent }),
 		noExtensions: true,
 		noSkills: true,
-		...(extensionPaths.length > 0 && {
-			additionalExtensionPaths: extensionPaths,
+		...(params.extensionPaths.length > 0 && {
+			additionalExtensionPaths: params.extensionPaths,
 		}),
-		...(skillsOverride && { skillsOverride }),
-		...(additionalSkillPaths && { additionalSkillPaths }),
-		...(!def.projectContext && {
+		...(params.skillsOverride && { skillsOverride: params.skillsOverride }),
+		...(params.additionalSkillPaths && {
+			additionalSkillPaths: params.additionalSkillPaths,
+		}),
+		...(!params.projectContext && {
 			agentsFilesOverride: () => ({ agentsFiles: [] }),
 		}),
 	});
@@ -126,11 +100,11 @@ export async function createAgentSessionFromDefinition(
 	// Build session options, conditionally adding settingsManager for compaction.
 	const sessionOptions: Parameters<typeof createAgentSession>[0] = {
 		cwd: config.cwd,
-		model,
-		tools,
+		model: params.model,
+		tools: params.tools,
 		sessionManager,
 		resourceLoader: loader,
-		thinkingLevel,
+		thinkingLevel: params.thinkingLevel,
 	};
 
 	if (config.compaction) {

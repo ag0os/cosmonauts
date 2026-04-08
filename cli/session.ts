@@ -8,7 +8,6 @@
 
 import { join } from "node:path";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import type { Api, Model } from "@mariozechner/pi-ai";
 import {
 	type AgentSessionRuntime,
 	type CreateAgentSessionRuntimeFactory,
@@ -18,18 +17,9 @@ import {
 	getAgentDir,
 	SessionManager,
 } from "@mariozechner/pi-coding-agent";
-import {
-	appendAgentIdentityMarker,
-	qualifyAgentId,
-} from "../lib/agents/runtime-identity.ts";
-import { buildSkillsOverride } from "../lib/agents/skills.ts";
+import { buildSessionParams } from "../lib/agents/session-assembly.ts";
 import type { AgentDefinition } from "../lib/agents/types.ts";
-import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
 import type { DomainResolver } from "../lib/domains/resolver.ts";
-import {
-	resolveExtensionPaths,
-	resolveTools,
-} from "../lib/orchestration/agent-spawner.ts";
 
 /**
  * Encode a cwd into Pi's session directory path.
@@ -50,8 +40,8 @@ export interface CreateSessionOptions {
 	domainsDir: string;
 	/** Domain resolver for multi-source path resolution. When provided, takes precedence over domainsDir. */
 	resolver?: DomainResolver;
-	/** Model override (takes precedence over definition.model) */
-	model?: Model<Api>;
+	/** Model ID override string, e.g. "anthropic/claude-sonnet-4-5" */
+	model?: string;
 	/** Thinking level override */
 	thinkingLevel?: ThinkingLevel;
 	/** Whether to persist session to disk (interactive) or keep in-memory (print) */
@@ -77,48 +67,37 @@ export async function createSession(
 		cwd,
 		domainsDir,
 		resolver,
-		model,
-		thinkingLevel,
+		model: modelOverride,
+		thinkingLevel: thinkingLevelOverride,
 		persistent,
 		projectSkills,
 		skillPaths,
 	} = options;
 
-	const tools = resolveTools(def.tools, cwd);
-
-	// Domain-aware four-layer prompt assembly.
-	let promptContent: string | undefined = await assemblePrompts({
-		agentId: def.id,
-		domain: def.domain ?? "coding",
-		capabilities: def.capabilities,
+	const params = await buildSessionParams({
+		def,
+		cwd,
 		domainsDir,
 		resolver,
+		projectSkills,
+		skillPaths,
+		modelOverride,
+		thinkingLevelOverride,
 	});
-	promptContent = appendAgentIdentityMarker(
-		promptContent,
-		qualifyAgentId(def.id, def.domain),
-	);
-
-	const extensionPaths = resolveExtensionPaths(def.extensions, {
-		domain: def.domain ?? "coding",
-		domainsDir,
-		resolver,
-	});
-
-	const skillsOverride = buildSkillsOverride(def.skills, projectSkills);
-	const additionalSkillPaths = skillPaths?.length ? [...skillPaths] : undefined;
 
 	// Resource loader options for our custom prompt/extension/skill setup.
 	const resourceLoaderOptions = {
-		...(promptContent && { appendSystemPrompt: promptContent }),
+		...(params.promptContent && { appendSystemPrompt: params.promptContent }),
 		noExtensions: true,
 		noSkills: true,
-		...(extensionPaths.length > 0 && {
-			additionalExtensionPaths: extensionPaths,
+		...(params.extensionPaths.length > 0 && {
+			additionalExtensionPaths: params.extensionPaths,
 		}),
-		...(skillsOverride && { skillsOverride }),
-		...(additionalSkillPaths && { additionalSkillPaths }),
-		...(!def.projectContext && {
+		...(params.skillsOverride && { skillsOverride: params.skillsOverride }),
+		...(params.additionalSkillPaths && {
+			additionalSkillPaths: params.additionalSkillPaths,
+		}),
+		...(!params.projectContext && {
 			agentsFilesOverride: () => ({ agentsFiles: [] }),
 		}),
 	};
@@ -144,9 +123,9 @@ export async function createSession(
 			services,
 			sessionManager: sm,
 			sessionStartEvent,
-			model,
-			thinkingLevel,
-			tools,
+			model: params.model,
+			thinkingLevel: params.thinkingLevel,
+			tools: params.tools,
 		});
 		return {
 			...result,

@@ -26,7 +26,7 @@ import {
 	qualifyAgentId,
 } from "../lib/agents/runtime-identity.ts";
 import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
-import { resolveModel } from "../lib/orchestration/agent-spawner.ts";
+
 import { parseChain } from "../lib/orchestration/chain-parser.ts";
 import {
 	injectUserPrompt,
@@ -294,9 +294,6 @@ async function run(options: CliOptions): Promise<void> {
 		? registry.resolve(options.agent, domainContext)
 		: registry.resolve("cosmo", domainContext);
 
-	// Resolve model override once (shared across modes)
-	const model = options.model ? resolveModel(options.model) : undefined;
-
 	// 1. init → always uses Cosmo (bootstrap requires full coding tools)
 	if (options.init) {
 		// Without a domain, Cosmo is not available. Guide the user to install one first.
@@ -320,7 +317,7 @@ async function run(options: CliOptions): Promise<void> {
 			cwd,
 			domainsDir: runtime.domainsDir,
 			resolver: runtime.domainResolver,
-			model,
+			model: options.model,
 			thinkingLevel: options.thinking,
 			persistent: false,
 			projectSkills,
@@ -396,7 +393,7 @@ async function run(options: CliOptions): Promise<void> {
 			cwd,
 			domainsDir: runtime.domainsDir,
 			resolver: runtime.domainResolver,
-			model,
+			model: options.model,
 			thinkingLevel: options.thinking,
 			persistent: false,
 			projectSkills,
@@ -417,7 +414,7 @@ async function run(options: CliOptions): Promise<void> {
 		cwd,
 		domainsDir: runtime.domainsDir,
 		resolver: runtime.domainResolver,
-		model,
+		model: options.model,
 		thinkingLevel: options.thinking,
 		persistent: true,
 		projectSkills,

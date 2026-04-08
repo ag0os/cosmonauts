@@ -5,13 +5,7 @@ const mocks = vi.hoisted(() => ({
 	createAgentSession: vi.fn(),
 	sessionOpen: vi.fn(),
 	sessionInMemory: vi.fn(),
-	resolveTools: vi.fn(),
-	resolveExtensionPaths: vi.fn(),
-	resolveModel: vi.fn(),
-	assemblePrompts: vi.fn(),
-	buildSkillsOverride: vi.fn(),
-	appendAgentIdentityMarker: vi.fn(),
-	qualifyAgentId: vi.fn(),
+	buildSessionParams: vi.fn(),
 }));
 
 vi.mock("@mariozechner/pi-coding-agent", () => ({
@@ -28,27 +22,8 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
 	},
 }));
 
-vi.mock("../../lib/orchestration/definition-resolution.ts", () => ({
-	resolveTools: mocks.resolveTools,
-	resolveExtensionPaths: mocks.resolveExtensionPaths,
-}));
-
-vi.mock("../../lib/orchestration/model-resolution.ts", () => ({
-	FALLBACK_MODEL: "test/model",
-	resolveModel: mocks.resolveModel,
-}));
-
-vi.mock("../../lib/domains/prompt-assembly.ts", () => ({
-	assemblePrompts: mocks.assemblePrompts,
-}));
-
-vi.mock("../../lib/agents/skills.ts", () => ({
-	buildSkillsOverride: mocks.buildSkillsOverride,
-}));
-
-vi.mock("../../lib/agents/index.ts", () => ({
-	appendAgentIdentityMarker: mocks.appendAgentIdentityMarker,
-	qualifyAgentId: mocks.qualifyAgentId,
+vi.mock("../../lib/agents/session-assembly.ts", () => ({
+	buildSessionParams: mocks.buildSessionParams,
 }));
 
 import { createAgentSessionFromDefinition } from "../../lib/orchestration/session-factory.ts";
@@ -69,13 +44,16 @@ const TEST_AGENT: AgentDefinition = {
 describe("session-factory planSlug validation", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		mocks.resolveModel.mockReturnValue({ id: "test/model" });
-		mocks.resolveTools.mockReturnValue([]);
-		mocks.resolveExtensionPaths.mockReturnValue([]);
-		mocks.assemblePrompts.mockResolvedValue("system prompt");
-		mocks.buildSkillsOverride.mockReturnValue(undefined);
-		mocks.appendAgentIdentityMarker.mockImplementation((prompt) => prompt);
-		mocks.qualifyAgentId.mockReturnValue("coding/planner");
+		mocks.buildSessionParams.mockResolvedValue({
+			promptContent: "system prompt",
+			tools: [],
+			extensionPaths: [],
+			skillsOverride: undefined,
+			additionalSkillPaths: undefined,
+			projectContext: false,
+			model: { id: "test/model" },
+			thinkingLevel: undefined,
+		});
 		mocks.sessionInMemory.mockReturnValue({ kind: "in-memory" });
 		mocks.sessionOpen.mockReturnValue({ kind: "file-backed" });
 		mocks.createAgentSession.mockResolvedValue({
