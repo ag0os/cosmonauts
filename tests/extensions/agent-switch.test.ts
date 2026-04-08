@@ -1,7 +1,7 @@
 /**
  * Tests for the agent-switch extension (/agent command).
  *
- * Covers: argument-based switch delegation (QC-012), cancellation cleanup
+ * Covers: argument validation (QC-008/QC-012), cancellation cleanup
  * (QC-010), session_start notification, and argument completions.
  */
 
@@ -102,10 +102,35 @@ function createMockCtx(
 }
 
 function mockRuntime(agentIds: string[], domainContext?: string) {
+	const resolveInContext = (id: string, ctx?: string) => {
+		if (agentIds.includes(id)) {
+			return { id };
+		}
+		if (!id.includes("/") && ctx && agentIds.includes(`${ctx}/${id}`)) {
+			return { id: `${ctx}/${id}` };
+		}
+		if (!id.includes("/")) {
+			const matches = agentIds.filter(
+				(candidate) => candidate === id || candidate.endsWith(`/${id}`),
+			);
+			if (matches.length === 1) {
+				return { id: matches[0] };
+			}
+		}
+		throw new Error(`Unknown agent ID "${id}"`);
+	};
+
 	const registry = {
-		has: vi.fn((id: string, _ctx?: string) => agentIds.includes(id)),
+		has: vi.fn((id: string, ctx?: string) => {
+			try {
+				resolveInContext(id, ctx);
+				return true;
+			} catch {
+				return false;
+			}
+		}),
 		listIds: vi.fn(() => agentIds),
-		resolve: vi.fn(),
+		resolve: vi.fn(resolveInContext),
 	};
 	mocks.runtimeCreate.mockResolvedValue({
 		agentRegistry: registry,
@@ -132,47 +157,54 @@ describe("agent-switch extension", () => {
 	});
 
 	describe("/agent with valid ID", () => {
-		test("sets pending switch and calls newSession", async () => {
+		test("validates ID and calls newSession", async () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);
-			mockRuntime(["planner", "worker", "cosmo"]);
+			const registry = mockRuntime(["planner", "worker", "cosmo"]);
 
 			const ctx = createMockCtx();
 			const cmd = pi.getCommand("agent")!;
 			await cmd.handler("planner", ctx);
 
-			// Should have warned about conversation loss
+			expect(registry.resolve).toHaveBeenCalledWith("planner", undefined);
 			expect(ctx.ui.notify).toHaveBeenCalledWith(
 				expect.stringContaining("planner"),
 				"warning",
 			);
-			// Should have called newSession
 			expect(ctx.newSession).toHaveBeenCalled();
-			// Pending switch consumed by the time we check (newSession resolved)
-			// but it was set before newSession was called
+		});
+
+		test("uses runtime domain context during validation (QC-012)", async () => {
+			const pi = createMockPi();
+			agentSwitchExtension(pi as never);
+			const registry = mockRuntime(
+				["coding/planner", "coding/worker"],
+				"coding",
+			);
+
+			const ctx = createMockCtx();
+			const cmd = pi.getCommand("agent")!;
+			await cmd.handler("planner", ctx);
+
+			expect(registry.resolve).toHaveBeenCalledWith("planner", "coding");
+			expect(ctx.newSession).toHaveBeenCalled();
 		});
 	});
 
-	describe("/agent with unknown ID (QC-012)", () => {
-		test("defers validation to runtime and cleans pending switch on error", async () => {
+	describe("/agent with unknown ID", () => {
+		test("notifies error and skips newSession (QC-008)", async () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);
 			const registry = mockRuntime(["planner", "worker"]);
 
-			const ctx = createMockCtx({
-				newSession: vi
-					.fn()
-					.mockRejectedValue(new Error('Unknown agent ID "nonexistent"')),
-			});
+			const ctx = createMockCtx();
 			const cmd = pi.getCommand("agent")!;
 			await cmd.handler("nonexistent", ctx);
 
-			expect(registry.has).not.toHaveBeenCalled();
-			expect(ctx.newSession).toHaveBeenCalled();
+			expect(registry.resolve).toHaveBeenCalledWith("nonexistent", undefined);
+			expect(ctx.newSession).not.toHaveBeenCalled();
 			expect(ctx.ui.notify).toHaveBeenCalledWith(
-				expect.stringContaining(
-					'Agent switch failed: Unknown agent ID "nonexistent"',
-				),
+				expect.stringContaining('Unknown agent ID "nonexistent"'),
 				"error",
 			);
 			expect(consumePendingSwitch()).toBeUndefined();

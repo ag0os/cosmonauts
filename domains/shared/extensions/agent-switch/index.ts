@@ -100,7 +100,14 @@ export default function agentSwitchExtension(pi: ExtensionAPI): void {
 			const registry = runtime.agentRegistry;
 
 			if (agentId) {
-				// With argument: defer final validation to CLI runtime session creation.
+				try {
+					registry.resolve(agentId, runtime.domainContext);
+				} catch (error: unknown) {
+					const message =
+						error instanceof Error ? error.message : String(error);
+					ctx.ui.notify(message, "error");
+					return;
+				}
 				await switchToAgent(agentId, ctx);
 			} else {
 				// No argument: show interactive selector.
