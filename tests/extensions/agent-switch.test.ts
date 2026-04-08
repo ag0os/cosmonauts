@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
 	clearPendingSwitch,
 	consumePendingSwitch,
+	setSharedRegistry,
 } from "../../lib/interactive/agent-switch.ts";
 
 // ============================================================================
@@ -16,18 +17,7 @@ import {
 // ============================================================================
 
 const mocks = vi.hoisted(() => ({
-	runtimeCreate: vi.fn(),
 	extractAgentId: vi.fn(),
-}));
-
-vi.mock("../../lib/runtime.ts", () => ({
-	CosmonautsRuntime: {
-		create: mocks.runtimeCreate,
-	},
-}));
-
-vi.mock("../../lib/packages/dev-bundled.ts", () => ({
-	discoverFrameworkBundledPackageDirs: () => Promise.resolve([]),
 }));
 
 vi.mock("../../lib/agents/runtime-identity.ts", () => ({
@@ -85,6 +75,12 @@ function createMockPi() {
 	};
 }
 
+function getAgentCommand(pi: ReturnType<typeof createMockPi>) {
+	const cmd = pi.getCommand("agent");
+	if (!cmd) throw new Error("agent command not registered");
+	return cmd;
+}
+
 function createMockCtx(
 	overrides: Partial<CommandContext> = {},
 ): CommandContext {
@@ -101,7 +97,7 @@ function createMockCtx(
 	};
 }
 
-function mockRuntime(agentIds: string[], domainContext?: string) {
+function setupSharedRegistry(agentIds: string[], domainContext?: string) {
 	const resolveInContext = (id: string, ctx?: string) => {
 		if (agentIds.includes(id)) {
 			return { id };
@@ -132,10 +128,8 @@ function mockRuntime(agentIds: string[], domainContext?: string) {
 		listIds: vi.fn(() => agentIds),
 		resolve: vi.fn(resolveInContext),
 	};
-	mocks.runtimeCreate.mockResolvedValue({
-		agentRegistry: registry,
-		domainContext,
-	});
+
+	setSharedRegistry(registry as never, domainContext);
 	return registry;
 }
 
@@ -160,10 +154,10 @@ describe("agent-switch extension", () => {
 		test("validates ID and calls newSession", async () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);
-			const registry = mockRuntime(["planner", "worker", "cosmo"]);
+			const registry = setupSharedRegistry(["planner", "worker", "cosmo"]);
 
 			const ctx = createMockCtx();
-			const cmd = pi.getCommand("agent")!;
+			const cmd = getAgentCommand(pi);
 			await cmd.handler("planner", ctx);
 
 			expect(registry.resolve).toHaveBeenCalledWith("planner", undefined);
@@ -177,13 +171,13 @@ describe("agent-switch extension", () => {
 		test("uses runtime domain context during validation (QC-012)", async () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);
-			const registry = mockRuntime(
+			const registry = setupSharedRegistry(
 				["coding/planner", "coding/worker"],
 				"coding",
 			);
 
 			const ctx = createMockCtx();
-			const cmd = pi.getCommand("agent")!;
+			const cmd = getAgentCommand(pi);
 			await cmd.handler("planner", ctx);
 
 			expect(registry.resolve).toHaveBeenCalledWith("planner", "coding");
@@ -195,10 +189,10 @@ describe("agent-switch extension", () => {
 		test("notifies error and skips newSession (QC-008)", async () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);
-			const registry = mockRuntime(["planner", "worker"]);
+			const registry = setupSharedRegistry(["planner", "worker"]);
 
 			const ctx = createMockCtx();
-			const cmd = pi.getCommand("agent")!;
+			const cmd = getAgentCommand(pi);
 			await cmd.handler("nonexistent", ctx);
 
 			expect(registry.resolve).toHaveBeenCalledWith("nonexistent", undefined);
@@ -211,16 +205,38 @@ describe("agent-switch extension", () => {
 		});
 	});
 
+	describe("/agent without shared registry", () => {
+		test("notifies error when no registry is available", async () => {
+			// Clear the shared registry by setting it to a known state
+			// then accessing without setup
+			const REGISTRY_KEY = Symbol.for("cosmonauts:agent-registry");
+			(globalThis as Record<symbol, unknown>)[REGISTRY_KEY] = undefined;
+
+			const pi = createMockPi();
+			agentSwitchExtension(pi as never);
+
+			const ctx = createMockCtx();
+			const cmd = getAgentCommand(pi);
+			await cmd.handler("planner", ctx);
+
+			expect(ctx.newSession).not.toHaveBeenCalled();
+			expect(ctx.ui.notify).toHaveBeenCalledWith(
+				expect.stringContaining("not available"),
+				"error",
+			);
+		});
+	});
+
 	describe("cancellation cleanup (QC-010)", () => {
 		test("clears pending switch when newSession is cancelled", async () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);
-			mockRuntime(["planner"]);
+			setupSharedRegistry(["planner"]);
 
 			const ctx = createMockCtx({
 				newSession: vi.fn().mockResolvedValue({ cancelled: true }),
 			});
-			const cmd = pi.getCommand("agent")!;
+			const cmd = getAgentCommand(pi);
 			await cmd.handler("planner", ctx);
 
 			// Pending switch should be cleared after cancellation
@@ -230,12 +246,12 @@ describe("agent-switch extension", () => {
 		test("clears pending switch when newSession throws", async () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);
-			mockRuntime(["planner"]);
+			setupSharedRegistry(["planner"]);
 
 			const ctx = createMockCtx({
 				newSession: vi.fn().mockRejectedValue(new Error("session error")),
 			});
-			const cmd = pi.getCommand("agent")!;
+			const cmd = getAgentCommand(pi);
 			await cmd.handler("planner", ctx);
 
 			// Should show error notification
@@ -252,7 +268,7 @@ describe("agent-switch extension", () => {
 		test("shows interactive selector", async () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);
-			mockRuntime(["planner", "worker", "cosmo"]);
+			setupSharedRegistry(["planner", "worker", "cosmo"]);
 
 			const ctx = createMockCtx({
 				ui: {
@@ -260,7 +276,7 @@ describe("agent-switch extension", () => {
 					select: vi.fn().mockResolvedValue("worker"),
 				},
 			});
-			const cmd = pi.getCommand("agent")!;
+			const cmd = getAgentCommand(pi);
 			await cmd.handler("", ctx);
 
 			expect(ctx.ui.select).toHaveBeenCalledWith("Select agent", [
@@ -275,7 +291,7 @@ describe("agent-switch extension", () => {
 		test("does nothing when selector is dismissed", async () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);
-			mockRuntime(["planner", "worker"]);
+			setupSharedRegistry(["planner", "worker"]);
 
 			const ctx = createMockCtx({
 				ui: {
@@ -283,7 +299,7 @@ describe("agent-switch extension", () => {
 					select: vi.fn().mockResolvedValue(null),
 				},
 			});
-			const cmd = pi.getCommand("agent")!;
+			const cmd = getAgentCommand(pi);
 			await cmd.handler("", ctx);
 
 			expect(ctx.newSession).not.toHaveBeenCalled();
@@ -326,14 +342,10 @@ describe("agent-switch extension", () => {
 		test("returns matching agent IDs for prefix", async () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);
-			mockRuntime(["planner", "plan-reviewer", "worker", "cosmo"]);
+			setupSharedRegistry(["planner", "plan-reviewer", "worker", "cosmo"]);
 
-			// Trigger session_start to set lastCwd
-			mocks.extractAgentId.mockReturnValue("cosmo");
-			pi.emitEvent("session_start", {}, createMockCtx());
-
-			const cmd = pi.getCommand("agent")!;
-			const completions = await cmd.getArgumentCompletions!("plan");
+			const cmd = getAgentCommand(pi);
+			const completions = await cmd.getArgumentCompletions?.("plan");
 
 			expect(completions).toEqual([
 				{ value: "planner", label: "planner" },
@@ -344,13 +356,22 @@ describe("agent-switch extension", () => {
 		test("returns null when no matches", async () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);
-			mockRuntime(["planner", "worker"]);
+			setupSharedRegistry(["planner", "worker"]);
 
-			mocks.extractAgentId.mockReturnValue("cosmo");
-			pi.emitEvent("session_start", {}, createMockCtx());
+			const cmd = getAgentCommand(pi);
+			const completions = await cmd.getArgumentCompletions?.("xyz");
+			expect(completions).toBeNull();
+		});
 
-			const cmd = pi.getCommand("agent")!;
-			const completions = await cmd.getArgumentCompletions!("xyz");
+		test("returns null when no shared registry", async () => {
+			const REGISTRY_KEY = Symbol.for("cosmonauts:agent-registry");
+			(globalThis as Record<symbol, unknown>)[REGISTRY_KEY] = undefined;
+
+			const pi = createMockPi();
+			agentSwitchExtension(pi as never);
+
+			const cmd = getAgentCommand(pi);
+			const completions = await cmd.getArgumentCompletions?.("plan");
 			expect(completions).toBeNull();
 		});
 	});

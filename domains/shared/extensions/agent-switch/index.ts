@@ -5,10 +5,12 @@
  * session configured for the target agent. The pending switch is stored in a
  * globalThis slot (lib/interactive/agent-switch.ts) so the CLI's session setup
  * can pick up the target agent ID.
+ *
+ * Agent validation uses the shared registry set by the CLI at startup, ensuring
+ * the extension validates against the same agent set the factory resolves from
+ * (including --domain and --plugin-dir overrides).
  */
 
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
@@ -16,48 +18,11 @@ import type {
 import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
 import {
 	clearPendingSwitch,
+	getSharedRegistry,
 	setPendingSwitch,
 } from "../../../../lib/interactive/agent-switch.ts";
-import { discoverFrameworkBundledPackageDirs } from "../../../../lib/packages/dev-bundled.ts";
-import { CosmonautsRuntime } from "../../../../lib/runtime.ts";
 
 export default function agentSwitchExtension(pi: ExtensionAPI): void {
-	const runtimeCache = new Map<string, Promise<CosmonautsRuntime>>();
-	const frameworkRoot = resolve(
-		fileURLToPath(import.meta.url),
-		"..",
-		"..",
-		"..",
-		"..",
-		"..",
-	);
-	const domainsDir = join(frameworkRoot, "domains");
-	const bundledDirsPromise = discoverFrameworkBundledPackageDirs(frameworkRoot);
-
-	function getRuntime(cwd: string): Promise<CosmonautsRuntime> {
-		let promise = runtimeCache.get(cwd);
-		if (!promise) {
-			promise = bundledDirsPromise
-				.then((bundledDirs) =>
-					CosmonautsRuntime.create({
-						builtinDomainsDir: domainsDir,
-						projectRoot: cwd,
-						bundledDirs,
-					}),
-				)
-				.catch((error: unknown) => {
-					runtimeCache.delete(cwd);
-					throw error;
-				});
-			runtimeCache.set(cwd, promise);
-		}
-		return promise;
-	}
-
-	// Tracks the most-recent cwd so getArgumentCompletions can bootstrap
-	// the runtime without having access to the command context.
-	let lastCwd: string | undefined;
-
 	async function switchToAgent(
 		agentId: string,
 		ctx: ExtensionCommandContext,
@@ -82,10 +47,10 @@ export default function agentSwitchExtension(pi: ExtensionAPI): void {
 	pi.registerCommand("agent", {
 		description: "Switch to a different Cosmonauts agent",
 		getArgumentCompletions: async (prefix) => {
-			const cwd = lastCwd ?? process.cwd();
+			const shared = getSharedRegistry();
+			if (!shared) return null;
 			try {
-				const runtime = await getRuntime(cwd);
-				const ids = runtime.agentRegistry.listIds();
+				const ids = shared.registry.listIds();
 				const filtered = ids.filter((id) => id.startsWith(prefix));
 				return filtered.length > 0
 					? filtered.map((id) => ({ value: id, label: id }))
@@ -95,13 +60,20 @@ export default function agentSwitchExtension(pi: ExtensionAPI): void {
 			}
 		},
 		handler: async (args, ctx) => {
+			const shared = getSharedRegistry();
+			if (!shared) {
+				ctx.ui.notify(
+					"Agent switching is not available (no registry).",
+					"error",
+				);
+				return;
+			}
+			const { registry, domainContext } = shared;
 			const agentId = args.trim();
-			const runtime = await getRuntime(ctx.cwd);
-			const registry = runtime.agentRegistry;
 
 			if (agentId) {
 				try {
-					registry.resolve(agentId, runtime.domainContext);
+					registry.resolve(agentId, domainContext);
 				} catch (error: unknown) {
 					const message =
 						error instanceof Error ? error.message : String(error);
@@ -121,7 +93,6 @@ export default function agentSwitchExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_start", (_event, ctx) => {
-		lastCwd = ctx.cwd;
 		const agentId = extractAgentIdFromSystemPrompt(ctx.getSystemPrompt());
 		if (!agentId) return;
 		const modelName = ctx.model?.name ?? ctx.model?.id ?? "unknown";

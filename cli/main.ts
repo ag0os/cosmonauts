@@ -26,7 +26,7 @@ import {
 	qualifyAgentId,
 } from "../lib/agents/runtime-identity.ts";
 import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
-
+import { setSharedRegistry } from "../lib/interactive/agent-switch.ts";
 import { parseChain } from "../lib/orchestration/chain-parser.ts";
 import {
 	injectUserPrompt,
@@ -409,6 +409,12 @@ async function run(options: CliOptions): Promise<void> {
 
 	// 5. default → interactive REPL
 	// TODO: After --workflow/--chain, drop into Cosmo REPL
+
+	// Expose the main registry to extensions via process-global slot.
+	// This ensures the /agent command validates against the same registry
+	// the session factory uses, including --domain and --plugin-dir overrides.
+	setSharedRegistry(registry, domainContext);
+
 	const agentSwitchExtPath = join(
 		domainsDir,
 		"shared",

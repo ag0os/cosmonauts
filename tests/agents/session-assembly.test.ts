@@ -225,11 +225,11 @@ describe("buildSessionParams", () => {
 			const params = await buildSessionParams(makeOptions({ def }));
 			expect(params.skillsOverride).toBeTypeOf("function");
 			// An empty agent skills list means no skills at all
-			const result = params.skillsOverride!({
+			const result = params.skillsOverride?.({
 				skills: [{ name: "ts" } as never],
 				diagnostics: [],
 			});
-			expect(result.skills).toEqual([]);
+			expect(result?.skills).toEqual([]);
 		});
 	});
 

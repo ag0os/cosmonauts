@@ -18,7 +18,10 @@ import {
 	SessionManager,
 } from "@mariozechner/pi-coding-agent";
 import type { AgentRegistry } from "../lib/agents/resolver.ts";
-import { buildSessionParams } from "../lib/agents/session-assembly.ts";
+import {
+	buildSessionParams,
+	type SessionParams,
+} from "../lib/agents/session-assembly.ts";
 import type { AgentDefinition } from "../lib/agents/types.ts";
 import type { DomainResolver } from "../lib/domains/resolver.ts";
 import {
@@ -34,6 +37,25 @@ import {
 function piSessionDir(cwd: string): string {
 	const safePath = `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
 	return join(getAgentDir(), "sessions", safePath);
+}
+
+/** Convert SessionParams to Pi's resource loader options object. */
+function toResourceLoaderOptions(params: SessionParams) {
+	return {
+		...(params.promptContent && { appendSystemPrompt: params.promptContent }),
+		noExtensions: true,
+		noSkills: true,
+		...(params.extensionPaths.length > 0 && {
+			additionalExtensionPaths: params.extensionPaths,
+		}),
+		...(params.skillsOverride && { skillsOverride: params.skillsOverride }),
+		...(params.additionalSkillPaths && {
+			additionalSkillPaths: params.additionalSkillPaths,
+		}),
+		...(!params.projectContext && {
+			agentsFilesOverride: () => ({ agentsFiles: [] }),
+		}),
+	};
 }
 
 export interface CreateSessionOptions {
@@ -100,22 +122,7 @@ export async function createSession(
 		extraExtensionPaths,
 	});
 
-	// Resource loader options for our custom prompt/extension/skill setup.
-	const resourceLoaderOptions = {
-		...(params.promptContent && { appendSystemPrompt: params.promptContent }),
-		noExtensions: true,
-		noSkills: true,
-		...(params.extensionPaths.length > 0 && {
-			additionalExtensionPaths: params.extensionPaths,
-		}),
-		...(params.skillsOverride && { skillsOverride: params.skillsOverride }),
-		...(params.additionalSkillPaths && {
-			additionalSkillPaths: params.additionalSkillPaths,
-		}),
-		...(!params.projectContext && {
-			agentsFilesOverride: () => ({ agentsFiles: [] }),
-		}),
-	};
+	const resourceLoaderOptions = toResourceLoaderOptions(params);
 
 	// Scope persistent sessions by agent ID so each agent resumes its own history.
 	// cosmo uses the default (unscoped) directory for backward compatibility.
@@ -147,25 +154,7 @@ export async function createSession(
 						thinkingLevelOverride,
 						extraExtensionPaths,
 					});
-					const newResourceLoaderOptions = {
-						...(newParams.promptContent && {
-							appendSystemPrompt: newParams.promptContent,
-						}),
-						noExtensions: true,
-						noSkills: true,
-						...(newParams.extensionPaths.length > 0 && {
-							additionalExtensionPaths: newParams.extensionPaths,
-						}),
-						...(newParams.skillsOverride && {
-							skillsOverride: newParams.skillsOverride,
-						}),
-						...(newParams.additionalSkillPaths && {
-							additionalSkillPaths: newParams.additionalSkillPaths,
-						}),
-						...(!newParams.projectContext && {
-							agentsFilesOverride: () => ({ agentsFiles: [] }),
-						}),
-					};
+					const newResourceLoaderOptions = toResourceLoaderOptions(newParams);
 					const newSessionDir =
 						newDef.id !== "cosmo"
 							? join(piSessionDir(cwd), newDef.id)
