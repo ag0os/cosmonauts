@@ -18,8 +18,13 @@ import {
 	SessionManager,
 } from "@mariozechner/pi-coding-agent";
 import { buildSessionParams } from "../lib/agents/session-assembly.ts";
+import type { AgentRegistry } from "../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../lib/agents/types.ts";
 import type { DomainResolver } from "../lib/domains/resolver.ts";
+import {
+	clearPendingSwitch,
+	consumePendingSwitch,
+} from "../lib/interactive/agent-switch.ts";
 
 /**
  * Encode a cwd into Pi's session directory path.
@@ -50,6 +55,12 @@ export interface CreateSessionOptions {
 	projectSkills?: readonly string[];
 	/** Explicit skill directories (domain dirs + config skillPaths). */
 	skillPaths?: readonly string[];
+	/** Registry for resolving pending agent switch IDs. */
+	agentRegistry?: AgentRegistry;
+	/** Domain context from --domain flag or runtime config, for agent ID resolution. */
+	domainContext?: string;
+	/** Absolute extension paths always injected (e.g. the agent-switch extension). */
+	extraExtensionPaths?: string[];
 }
 
 /**
@@ -72,6 +83,9 @@ export async function createSession(
 		persistent,
 		projectSkills,
 		skillPaths,
+		agentRegistry,
+		domainContext,
+		extraExtensionPaths,
 	} = options;
 
 	const params = await buildSessionParams({
@@ -115,6 +129,77 @@ export async function createSession(
 		sessionManager: sm,
 		sessionStartEvent,
 	}) => {
+		const pendingAgentId = consumePendingSwitch();
+
+		if (pendingAgentId !== undefined) {
+			if (agentRegistry !== undefined) {
+				try {
+					const newDef = agentRegistry.resolve(pendingAgentId, domainContext);
+					const newParams = await buildSessionParams({
+						def: newDef,
+						cwd,
+						domainsDir,
+						resolver,
+						projectSkills,
+						skillPaths,
+						modelOverride,
+						thinkingLevelOverride,
+						extraExtensionPaths,
+					});
+					const newResourceLoaderOptions = {
+						...(newParams.promptContent && {
+							appendSystemPrompt: newParams.promptContent,
+						}),
+						noExtensions: true,
+						noSkills: true,
+						...(newParams.extensionPaths.length > 0 && {
+							additionalExtensionPaths: newParams.extensionPaths,
+						}),
+						...(newParams.skillsOverride && {
+							skillsOverride: newParams.skillsOverride,
+						}),
+						...(newParams.additionalSkillPaths && {
+							additionalSkillPaths: newParams.additionalSkillPaths,
+						}),
+						...(!newParams.projectContext && {
+							agentsFilesOverride: () => ({ agentsFiles: [] }),
+						}),
+					};
+					const newSessionDir =
+						newDef.id !== "cosmo"
+							? join(piSessionDir(cwd), newDef.id)
+							: undefined;
+					const newSessionManager = persistent
+						? SessionManager.continueRecent(cwd, newSessionDir)
+						: SessionManager.inMemory();
+					const services = await createAgentSessionServices({
+						cwd: effectiveCwd,
+						resourceLoaderOptions: newResourceLoaderOptions,
+					});
+					const result = await createAgentSessionFromServices({
+						services,
+						sessionManager: newSessionManager,
+						sessionStartEvent,
+						model: newParams.model,
+						thinkingLevel: newParams.thinkingLevel,
+						tools: newParams.tools,
+					});
+					return {
+						...result,
+						services,
+						diagnostics: services.diagnostics,
+					};
+				} catch (error) {
+					clearPendingSwitch();
+					throw error;
+				}
+			} else {
+				console.warn(
+					`[cosmonauts] Agent switch requested for "${pendingAgentId}" but no agent registry is available. Continuing with current agent.`,
+				);
+			}
+		}
+
 		const services = await createAgentSessionServices({
 			cwd: effectiveCwd,
 			resourceLoaderOptions,
