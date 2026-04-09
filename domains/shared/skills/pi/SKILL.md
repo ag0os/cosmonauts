@@ -1,6 +1,6 @@
 ---
 name: pi
-description: Pi framework API reference — sessions, tools, extensions, events, compaction, cost tracking, skills, and execution modes.
+description: Pi framework API reference — sessions, tools, extensions, events, compaction, cost tracking, skills, and execution modes. Use when building on Pi's programmatic API, creating extensions, registering tools, or configuring sessions. Do NOT load for using cosmonauts CLI or managing tasks/plans.
 ---
 
 # Pi Framework

@@ -1,6 +1,6 @@
 ---
 name: typescript
-description: TypeScript best practices and patterns. Load for TypeScript projects.
+description: TypeScript best practices and patterns. Use when working with types, generics, strict mode, module systems, or TypeScript-specific testing. Load for any TypeScript project. Do NOT load for plain JavaScript projects or non-TypeScript configuration files.
 ---
 
 # TypeScript
@@ -183,4 +183,7 @@ For advanced topics, read the relevant reference file:
 | Type Patterns | `references/type-patterns.md` | Generics, conditional types, mapped types, branded types, template literals |
 | Testing Patterns | `references/testing-patterns.md` | Test structure, mocking strategies, async testing, parameterized tests |
 
-For design principles that apply across all languages (cohesion, naming, dependency direction, complexity management), load `/skill:engineering-principles`.
+## Related Skills
+
+- `/skill:engineering-principles` — Design principles that apply across all languages (cohesion, naming, dependency direction, complexity management)
+- `/skill:react` — React-specific patterns when working on React + TypeScript projects

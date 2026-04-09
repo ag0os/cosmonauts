@@ -1,6 +1,6 @@
 ---
 name: task
-description: How to create well-structured tasks with acceptance criteria, dependencies, labels, and priorities using the task system.
+description: How to create well-structured tasks with acceptance criteria, dependencies, labels, and priorities using the task system. Use when creating tasks from a plan, checking task status, updating progress, or scoping work items. Do NOT load for plan design or roadmap management.
 ---
 
 # Tasks
@@ -197,3 +197,16 @@ verify it against the signing key, and attach the decoded payload to the request
 - [ ] #5 Tests cover valid, expired, malformed, and missing token cases
 <!-- AC:END -->
 ```
+
+## Common Problems
+
+- **Task is blocked with no resolution path.** Add a note explaining the blocker, then either: (a) create a new task to resolve the blocker, or (b) restructure the blocked task to work around it. Don't leave tasks in `Blocked` indefinitely.
+- **Acceptance criteria turn out to be wrong mid-implementation.** Update the ACs via `task_edit` before continuing. ACs are a contract — changing them is fine, but working against outdated ACs wastes effort.
+- **Task is too large once implementation starts.** Split it. Create new tasks for the overflow, link them to the same plan, and update dependencies. Finish the original task with its reduced scope.
+- **Dependency chain is too deep.** If a task is blocked by 3+ levels of dependencies, look for opportunities to parallelize. Often tasks that seem sequential can be split into independent parts.
+
+## Related Skills
+
+- `/skill:plan` — Creating plans that produce tasks
+- `/skill:roadmap` — Where plan items originate
+- `/skill:archive` — Archiving completed tasks with their plans

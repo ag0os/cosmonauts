@@ -1,6 +1,6 @@
 ---
 name: web-search
-description: Search the web for current information using Claude Code CLI — library versions, changelogs, API docs, error solutions, release notes.
+description: Search the web for current information using Claude Code CLI. Use when you need library versions, changelogs, breaking changes, error solutions, release notes, or any information that may have changed since training. Do NOT load for codebase questions, local documentation, or tasks that find-docs can handle.
 ---
 
 # Web Search

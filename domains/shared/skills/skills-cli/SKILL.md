@@ -1,6 +1,6 @@
 ---
 name: skills-cli
-description: How to list and export cosmonauts skills to other agent harnesses (Claude Code, Codex) using the CLI.
+description: How to list and export cosmonauts skills to other agent harnesses (Claude Code, Codex) using the CLI. Use when listing available skills, exporting skills to Claude Code or Codex, or syncing skills across harnesses.
 ---
 
 # Skills CLI

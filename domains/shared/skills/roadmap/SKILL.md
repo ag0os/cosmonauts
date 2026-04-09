@@ -1,6 +1,6 @@
 ---
 name: roadmap
-description: How to read, update, and maintain the project roadmap. Load when picking up new work or completing a plan.
+description: How to read, update, and maintain the project roadmap. Use when picking up new work, adding ideas, prioritizing items, or starting a plan from the backlog. Do NOT load for task creation, plan design, or implementation — use the plan and task skills instead.
 ---
 
 # Roadmap
@@ -69,9 +69,21 @@ A well-sized roadmap item:
 
 If an item needs more than 10 lines of requirements, it is either too large (split it) or too detailed (save the detail for the plan's spec.md).
 
+## Common Problems
+
+- **Forgot to remove the item after creating a plan.** The plan and roadmap item are now both "truth." Fix: remove the roadmap item immediately. The plan supersedes it.
+- **Item is too large to scope as one plan.** Split it into 2-3 items along natural seams before picking it up. Each item should produce 3-12 tasks.
+- **Item outcomes are too vague to plan against.** Add specific, verifiable outcomes before picking it up. If you can't state what "done" looks like, the item isn't ready.
+
 ## What NOT to Do
 
 - **Don't keep items that have plans.** Once a plan is created, the item is removed. The plan is the source of truth, not the roadmap.
 - **Don't track completed work here.** That's what `memory/` is for. The roadmap only looks forward.
 - **Don't add implementation details.** Outcomes and constraints only. The planner decides the approach.
 - **Don't create tasks directly from roadmap items.** Always create a plan first. The plan is the design step between "idea" and "implementation."
+
+## Related Skills
+
+- `/skill:plan` — Creating plans from roadmap items
+- `/skill:task` — Creating tasks from plans
+- `/skill:archive` — Distilling completed plans into memory

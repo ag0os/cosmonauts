@@ -1,6 +1,6 @@
 ---
 name: tdd
-description: Test-Driven Development methodology. Red-Green-Refactor cycle, writing failing tests first, minimal implementations, and disciplined refactoring.
+description: Test-Driven Development methodology. Red-Green-Refactor cycle, writing failing tests first, minimal implementations, and disciplined refactoring. Use when the user explicitly requests TDD, or when building new logic where test-first is the agreed approach. Do NOT load when writing tests for existing code or adding tests after implementation — use engineering-principles testing section instead.
 ---
 
 # Test-Driven Development (TDD)
@@ -115,3 +115,17 @@ The cycle is Red-Green-Refactor, not Red-Green-Red-Green-Red-Green. Skipping ref
 
 ### Making tests pass by weakening assertions
 If a test is hard to pass, the solution is better code, not a weaker test. Never change `toEqual(expected)` to `toBeDefined()` to make a test pass.
+
+## When to Stop a TDD Session
+
+Stop the Red-Green-Refactor cycle when:
+- All acceptance criteria for the current task have corresponding passing tests.
+- The refactoring phase produces no further improvements.
+- The code is clean, well-named, and readable.
+
+Do not keep adding tests speculatively. Every test should trace back to a required behavior.
+
+## Related Skills
+
+- `/skill:engineering-principles` — Testing principles (behavior not implementation, mock boundaries, testing as design feedback) and design guidance for the code you're building
+- `/skill:refactoring` — Refactoring techniques applied during the REFACTOR phase

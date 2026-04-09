@@ -1,6 +1,6 @@
 ---
 name: refactoring
-description: Code refactoring techniques and discipline. When to refactor, what patterns to apply, and how to keep tests green throughout.
+description: Code refactoring techniques and discipline. When to refactor, what patterns to apply, and how to keep tests green throughout. Use when simplifying conditionals, extracting functions, removing duplication, cleaning up code structure, or when asked to "clean up" or "refactor" code. Do NOT load for new feature implementation or bug fixes that don't involve restructuring.
 ---
 
 # Refactoring
@@ -144,3 +144,18 @@ Tests are code. They deserve the same care:
 Do not abstract on the first occurrence. Do not abstract on the second occurrence. On the third occurrence, you have enough data points to see the real pattern. Then extract.
 
 This applies to: helper functions, shared types, configuration constants, test utilities.
+
+## When to Stop
+
+A refactoring session is done when:
+- The targeted smell is resolved and tests pass.
+- The code is readable and names are clear.
+- No obvious duplication remains in the touched area.
+- A new team member could follow the logic without a guide.
+
+Do not chase perfection. "Measurably better" is the goal, not "ideal." If the next improvement would add as much indirection as it removes complexity, stop.
+
+## Related Skills
+
+- `/skill:engineering-principles` — Design principles that inform refactoring decisions (cohesion, coupling, naming, dependency direction)
+- `/skill:tdd` — Red-Green-Refactor cycle, where the refactoring phase applies these techniques

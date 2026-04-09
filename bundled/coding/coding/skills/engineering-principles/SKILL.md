@@ -1,6 +1,6 @@
 ---
 name: engineering-principles
-description: Software engineering principles for maintainable, extensible code. Design guidance for boundaries, naming, dependencies, composition, and managing complexity.
+description: Software engineering principles for maintainable, extensible code. Design guidance for boundaries, naming, dependencies, composition, and managing complexity. Use when making design decisions, reviewing code quality, planning architecture, or evaluating trade-offs between approaches. Do NOT load for straightforward bug fixes or implementation where the design is already clear.
 ---
 
 # Engineering Principles
@@ -159,3 +159,10 @@ Before refactoring code that lacks test coverage, write characterization tests f
 - **Composition over inheritance**: inheritance creates rigid hierarchies. Composition (mixing behaviors via functions, interfaces, delegation) keeps things flexible.
 - **Fewer moving parts**: every abstraction, layer, and indirection has a cost. The right amount of complexity is the minimum needed for the current requirements.
 - **Delete freely**: unused code is not an asset, it is a liability. Version control remembers everything. Remove dead code, dead parameters, dead branches.
+
+## Related Skills
+
+- `/skill:refactoring` — Techniques for restructuring code safely (extract, inline, rename, guard clauses)
+- `/skill:tdd` — Test-Driven Development discipline (Red-Green-Refactor cycle)
+- `/skill:typescript` — TypeScript-specific type safety and patterns
+- `/skill:react` — React-specific architecture and component design

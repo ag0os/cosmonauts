@@ -1,6 +1,6 @@
 ---
 name: plan
-description: How to create well-structured implementation plans using the plan system.
+description: How to create well-structured implementation plans using the plan system. Use when designing a feature, scoping work into tasks, or creating a plan from a roadmap item. Do NOT load for task implementation or code changes — use the task skill instead.
 ---
 
 # Plans
@@ -151,3 +151,16 @@ LRU cache keyed by normalized URL. Configurable max entries (default 1000) and T
 ```
 
 Tasks generated from this plan would each carry the `plan:response-cache` label.
+
+## Common Problems
+
+- **Plan scope keeps growing.** If you're past 12 tasks, split the plan along natural seams (infrastructure vs feature, core vs integrations). Create a second plan for the overflow.
+- **Design doesn't survive contact with the codebase.** Update the plan body (especially the Design section) as you learn. Plans are living documents until archived — `plan_edit` exists for this reason.
+- **Tasks don't map cleanly to plan stages.** A plan stage can produce 1-3 tasks, not always exactly one. Split or combine as needed during task creation.
+- **Plan needs to be abandoned.** If the approach is fundamentally wrong, archive the plan as-is (status: `completed` is optional — you can archive active plans). Distill what was learned, then create a new plan with the revised approach.
+
+## Related Skills
+
+- `/skill:roadmap` — Where plan items originate
+- `/skill:task` — Creating and managing tasks from plans
+- `/skill:archive` — Archiving completed plans and distilling learnings

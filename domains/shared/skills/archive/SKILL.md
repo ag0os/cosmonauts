@@ -1,6 +1,6 @@
 ---
 name: archive
-description: Distill archived plans and tasks into concise memory files that capture decisions, patterns, and lessons.
+description: Distill archived plans and tasks into concise memory files that capture decisions, patterns, and lessons. Use after completing and archiving a plan, or when distilling session transcripts into knowledge records. Do NOT load for creating plans, managing tasks, or active implementation.
 ---
 
 # Archive Distillation
@@ -201,3 +201,16 @@ Knowledge records in `memory/` are the **durable layer** of the pipeline:
 - `memory/<slug>.md` is **not moved or deleted** when a plan is archived
 - Session files (`missions/sessions/<slug>/`) are moved to `missions/archive/sessions/<slug>/` during archive — transcripts go with them
 - Knowledge records accumulate in `memory/` across all plans and are the canonical long-term memory store
+
+## Common Problems
+
+- **Distillation is too detailed — reads like the plan copy.** Apply the litmus test: if someone needs the plan to understand the memory file, it failed. Focus on decisions and gotchas, not design walkthrough.
+- **Memory file is missing the "Gotchas" section.** This is the highest-value section. If nothing surprised you, look harder — edge cases, ordering constraints, things that broke during implementation.
+- **No session transcripts available for the distiller.** The distiller falls back to plan + task content. Invoke it anyway — it produces useful records from whatever source material exists.
+- **Memory file duplicates what's obvious from the code.** Don't document what `git blame` can tell you. Document the *why* behind decisions and the *context* that code can't capture.
+
+## Related Skills
+
+- `/skill:plan` — Creating and managing the plans that feed into archives
+- `/skill:task` — Task lifecycle that precedes archival
+- `/skill:roadmap` — Where work items originate before becoming plans

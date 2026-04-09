@@ -1,6 +1,6 @@
 ---
 name: reference-adaptation
-description: Methodology for studying a reference codebase and adapting its proven patterns to this project. Load when designing features that exist in another codebase.
+description: Methodology for studying a reference codebase and adapting its proven patterns to this project. Use when designing features that exist in another codebase, porting patterns from a reference implementation, or evaluating how another project solves a similar problem. Do NOT load for greenfield design or when no reference codebase exists.
 ---
 
 # Reference Adaptation

@@ -1,6 +1,6 @@
 ---
 name: playwright-cli
-description: Browser automation via playwright-cli — navigation, form filling, screenshots, network mocking, storage management. Token-efficient alternative to browser MCP tools.
+description: Browser automation via playwright-cli — navigation, form filling, screenshots, network mocking, storage management. Use when testing UI flows, taking screenshots, filling forms, extracting page data, or debugging browser issues. Token-efficient alternative to browser MCP tools. Do NOT load for API testing or non-browser tasks.
 ---
 
 # Playwright CLI

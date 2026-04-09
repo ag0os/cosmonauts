@@ -1,11 +1,29 @@
 ---
 name: react
-description: React best practices and architecture decisions. Load for React 18+ projects.
+description: React best practices and architecture decisions. Use when building components, managing state, working with hooks, Server Components, or React 19 APIs. Load for any React 18+ project. Do NOT load for non-React frontend work (Vue, Svelte, vanilla JS).
 ---
 
 # React
 
 You are working on a React project. Follow these guidelines for all code you write.
+
+## Constraints
+
+### Must
+
+- Use TypeScript with strict mode. Type all props interfaces.
+- Use `key` props with stable, unique identifiers (IDs, not array indices for dynamic lists).
+- Clean up all effects (subscriptions, timers, listeners, abort controllers).
+- Wrap async component trees in `<Suspense>` with meaningful fallbacks.
+- Handle error states — use error boundaries for unexpected failures and explicit UI for expected ones.
+
+### Must Not
+
+- Mutate state directly. Always produce new references.
+- Use array index as `key` for lists that reorder, filter, or have items added/removed.
+- Define components inside other components (creates a new component identity every render).
+- Ignore React strict mode warnings — they surface real bugs.
+- Suppress ESLint exhaustive-deps warnings without understanding why the dependency is needed.
 
 ## Discover Project Conventions First
 
@@ -152,24 +170,6 @@ Identify the project's test runner and testing library from `package.json`. Use 
 - Interactive custom components need `role`, `aria-*` attributes, and keyboard handlers.
 - Error boundaries should render accessible error messages, not blank screens.
 
-## Constraints
-
-### Must
-
-- Use TypeScript with strict mode. Type all props interfaces.
-- Use `key` props with stable, unique identifiers (IDs, not array indices for dynamic lists).
-- Clean up all effects (subscriptions, timers, listeners, abort controllers).
-- Wrap async component trees in `<Suspense>` with meaningful fallbacks.
-- Handle error states — use error boundaries for unexpected failures and explicit UI for expected ones.
-
-### Must Not
-
-- Mutate state directly. Always produce new references.
-- Use array index as `key` for lists that reorder, filter, or have items added/removed.
-- Define components inside other components (creates a new component identity every render).
-- Ignore React strict mode warnings — they surface real bugs.
-- Suppress ESLint exhaustive-deps warnings without understanding why the dependency is needed.
-
 ## Reference Guides
 
 | Topic | Reference | When to Load |
@@ -177,4 +177,7 @@ Identify the project's test runner and testing library from `package.json`. Use 
 | Server Components | `references/server-components.md` | RSC data fetching, streaming, Server Actions, boundary decisions |
 | React 19 | `references/react-19.md` | use() hook, useActionState, useFormStatus, useOptimistic, migration from older patterns |
 
-For TypeScript patterns (generics, type guards, discriminated unions), load `/skill:typescript`.
+## Related Skills
+
+- `/skill:typescript` — TypeScript type safety, generics, discriminated unions
+- `/skill:engineering-principles` — Design principles (cohesion, coupling, testing philosophy)

@@ -2,8 +2,9 @@
 name: find-docs
 description: >-
   Retrieves up-to-date documentation, API references, and code examples for any
-  library, framework, SDK, CLI tool, or cloud service. Use even when you think
-  you know the answer -- training data may not reflect recent API changes.
+  library, framework, SDK, CLI tool, or cloud service. Use when checking API syntax,
+  library versions, migration guides, or any question where training data may be
+  stale. Do NOT load for general programming concepts, refactoring, or code review.
 ---
 
 # Documentation Lookup
