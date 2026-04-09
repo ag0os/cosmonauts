@@ -14,6 +14,19 @@ const mocks = vi.hoisted(() => ({
 	createAgentSessionServices: vi.fn(),
 	continueRecent: vi.fn(),
 	inMemory: vi.fn(),
+	open: vi.fn(),
+	create: vi.fn(),
+	forkFrom: vi.fn(),
+	list: vi.fn(),
+	listAll: vi.fn(),
+	readlineQuestion: vi.fn(),
+}));
+
+vi.mock("node:readline", () => ({
+	createInterface: () => ({
+		question: mocks.readlineQuestion,
+		close: vi.fn(),
+	}),
 }));
 
 vi.mock("../../lib/agents/session-assembly.ts", () => ({
@@ -28,10 +41,15 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
 	SessionManager: {
 		continueRecent: mocks.continueRecent,
 		inMemory: mocks.inMemory,
+		open: mocks.open,
+		create: mocks.create,
+		forkFrom: mocks.forkFrom,
+		list: mocks.list,
+		listAll: mocks.listAll,
 	},
 }));
 
-import { createSession } from "../../cli/session.ts";
+import { createSession, GracefulExitError } from "../../cli/session.ts";
 
 const TEST_DEF: AgentDefinition = {
 	id: "cosmo",
@@ -173,5 +191,233 @@ describe("createSession", () => {
 
 		expect(resolve).toHaveBeenCalledWith("ghost", "coding");
 		expect(consumePendingSwitch()).toBeUndefined();
+	});
+});
+
+// ============================================================================
+// Session flag handling and graceful abort paths
+// ============================================================================
+
+describe("session flag handling", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mocks.buildSessionParams.mockResolvedValue(BASE_PARAMS);
+		mocks.createAgentSessionRuntime.mockReturnValue({ runtime: true });
+		mocks.createAgentSessionServices.mockResolvedValue({ diagnostics: {} });
+		mocks.createAgentSessionFromServices.mockResolvedValue({
+			session: { sessionId: "session-1" },
+		});
+		mocks.continueRecent.mockReturnValue({ kind: "continue" });
+		mocks.inMemory.mockReturnValue({ kind: "memory" });
+		mocks.open.mockReturnValue({ kind: "open" });
+		mocks.create.mockReturnValue({ kind: "create" });
+		mocks.forkFrom.mockReturnValue({ kind: "fork" });
+		mocks.list.mockResolvedValue([]);
+		mocks.listAll.mockResolvedValue([]);
+	});
+
+	test("--continue uses SessionManager.continueRecent", async () => {
+		await createSession({
+			definition: TEST_DEF,
+			cwd: "/tmp/project",
+			domainsDir: "/tmp/domains",
+			persistent: false,
+			piFlags: { continue: true },
+		});
+
+		expect(mocks.continueRecent).toHaveBeenCalled();
+	});
+
+	test("--no-session uses SessionManager.inMemory", async () => {
+		await createSession({
+			definition: TEST_DEF,
+			cwd: "/tmp/project",
+			domainsDir: "/tmp/domains",
+			persistent: true,
+			piFlags: { noSession: true },
+		});
+
+		expect(mocks.inMemory).toHaveBeenCalled();
+		expect(mocks.continueRecent).not.toHaveBeenCalled();
+	});
+
+	test("--session with file path uses SessionManager.open", async () => {
+		await createSession({
+			definition: TEST_DEF,
+			cwd: "/tmp/project",
+			domainsDir: "/tmp/domains",
+			persistent: false,
+			piFlags: { session: "/tmp/session.jsonl" },
+		});
+
+		expect(mocks.open).toHaveBeenCalledWith("/tmp/session.jsonl", undefined);
+	});
+
+	test("--session with unknown partial UUID throws", async () => {
+		mocks.list.mockResolvedValue([]);
+		mocks.listAll.mockResolvedValue([]);
+
+		await expect(
+			createSession({
+				definition: TEST_DEF,
+				cwd: "/tmp/project",
+				domainsDir: "/tmp/domains",
+				persistent: false,
+				piFlags: { session: "abc123" },
+			}),
+		).rejects.toThrow("No session found matching 'abc123'");
+	});
+
+	test("--session with local partial UUID resolves to open", async () => {
+		mocks.list.mockResolvedValue([
+			{
+				id: "abc123-full-id",
+				path: "/tmp/sessions/abc.jsonl",
+				firstMessage: "hello",
+			},
+		]);
+
+		await createSession({
+			definition: TEST_DEF,
+			cwd: "/tmp/project",
+			domainsDir: "/tmp/domains",
+			persistent: false,
+			piFlags: { session: "abc" },
+		});
+
+		expect(mocks.open).toHaveBeenCalledWith(
+			"/tmp/sessions/abc.jsonl",
+			undefined,
+		);
+	});
+
+	test("--fork with file path uses SessionManager.forkFrom", async () => {
+		await createSession({
+			definition: TEST_DEF,
+			cwd: "/tmp/project",
+			domainsDir: "/tmp/domains",
+			persistent: false,
+			piFlags: { fork: "/tmp/session.jsonl" },
+		});
+
+		expect(mocks.forkFrom).toHaveBeenCalledWith(
+			"/tmp/session.jsonl",
+			"/tmp/project",
+			undefined,
+		);
+	});
+
+	test("--fork with unknown partial UUID throws", async () => {
+		await expect(
+			createSession({
+				definition: TEST_DEF,
+				cwd: "/tmp/project",
+				domainsDir: "/tmp/domains",
+				persistent: false,
+				piFlags: { fork: "xyz999" },
+			}),
+		).rejects.toThrow("No session found matching 'xyz999'");
+	});
+
+	test("--fork combined with --session throws conflict error", async () => {
+		await expect(
+			createSession({
+				definition: TEST_DEF,
+				cwd: "/tmp/project",
+				domainsDir: "/tmp/domains",
+				persistent: false,
+				piFlags: { fork: "/tmp/a.jsonl", session: "/tmp/b.jsonl" },
+			}),
+		).rejects.toThrow("--fork cannot be combined with --session");
+	});
+
+	test("--fork combined with --continue throws conflict error", async () => {
+		await expect(
+			createSession({
+				definition: TEST_DEF,
+				cwd: "/tmp/project",
+				domainsDir: "/tmp/domains",
+				persistent: false,
+				piFlags: { fork: "/tmp/a.jsonl", continue: true },
+			}),
+		).rejects.toThrow("--fork cannot be combined with --continue");
+	});
+
+	test("--fork combined with --no-session throws conflict error", async () => {
+		await expect(
+			createSession({
+				definition: TEST_DEF,
+				cwd: "/tmp/project",
+				domainsDir: "/tmp/domains",
+				persistent: false,
+				piFlags: { fork: "/tmp/a.jsonl", noSession: true },
+			}),
+		).rejects.toThrow("--fork cannot be combined with --no-session");
+	});
+
+	test("--resume with no sessions throws GracefulExitError", async () => {
+		mocks.list.mockResolvedValue([]);
+		mocks.listAll.mockResolvedValue([]);
+
+		await expect(
+			createSession({
+				definition: TEST_DEF,
+				cwd: "/tmp/project",
+				domainsDir: "/tmp/domains",
+				persistent: false,
+				piFlags: { resume: true },
+			}),
+		).rejects.toThrow(GracefulExitError);
+	});
+
+	test("--session with cross-project match and declined fork throws GracefulExitError", async () => {
+		mocks.list.mockResolvedValue([]);
+		mocks.listAll.mockResolvedValue([
+			{
+				id: "cross123-full",
+				path: "/other/project/session.jsonl",
+				cwd: "/other/project",
+				firstMessage: "other",
+			},
+		]);
+
+		// Mock readline to answer "n" to fork prompt
+		mocks.readlineQuestion.mockImplementation(
+			(_prompt: string, cb: (answer: string) => void) => cb("n"),
+		);
+
+		await expect(
+			createSession({
+				definition: TEST_DEF,
+				cwd: "/tmp/project",
+				domainsDir: "/tmp/domains",
+				persistent: false,
+				piFlags: { session: "cross" },
+			}),
+		).rejects.toThrow(GracefulExitError);
+	});
+
+	test("--resume cancel throws GracefulExitError", async () => {
+		mocks.list.mockResolvedValue([
+			{ id: "sess-1", path: "/tmp/s1.jsonl", firstMessage: "hello" },
+		]);
+		mocks.listAll.mockResolvedValue([
+			{ id: "sess-1", path: "/tmp/s1.jsonl", firstMessage: "hello" },
+		]);
+
+		// Mock readline to enter blank (cancel)
+		mocks.readlineQuestion.mockImplementation(
+			(_prompt: string, cb: (answer: string) => void) => cb(""),
+		);
+
+		await expect(
+			createSession({
+				definition: TEST_DEF,
+				cwd: "/tmp/project",
+				domainsDir: "/tmp/domains",
+				persistent: false,
+				piFlags: { resume: true },
+			}),
+		).rejects.toThrow(GracefulExitError);
 	});
 });
