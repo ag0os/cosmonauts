@@ -29,7 +29,8 @@ Workers follow the plan literally. Vague architectural guidance produces inconsi
 
 These apply whether the codebase is object-oriented, functional, or mixed:
 
-- **Cohesion over convention.** Group by what changes together, not by technical category. A feature module containing its types, logic, and tests is often better than scattering types in `types/`, logic in `services/`, and tests in `tests/`.
+- **Cohesion over convention.** Group by what changes together, not by technical category. A feature module containing its types, logic, and tests is often better than scattering types in `types/`, logic in `services/`, and tests in `tests/`. If a single feature change would touch 4+ files across layers, the related logic is too scattered — colocate it.
+- **Variants as data.** Model variants as data — discriminated unions, sum types, enums with behavior — not as string flags with scattered conditionals. When the same type or status check would appear in multiple places, centralize it with polymorphic dispatch or pattern matching.
 - **Composition over inheritance.** Combine focused behaviors through functions, interfaces, or delegation. Avoid deep hierarchies that create rigid coupling.
 - **Explicit over implicit.** Prefer pure functions, explicit parameters, and visible state transitions. Avoid action at a distance through shared mutable state or hidden side effects.
 - **Small surface area.** Export only what consumers need. A module's public API should be the minimum necessary for its purpose. Internal helpers stay internal.

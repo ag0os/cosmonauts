@@ -23,7 +23,9 @@ When making changes, first understand the file's code conventions:
 
 ## Code Comments
 
-Add succinct comments only when code is not self-explanatory. A brief comment ahead of a complex block is useful; a comment like "Assigns the value to the variable" is noise. When in doubt, improve the name instead of adding a comment.
+Only comment **why**, never **what**. If a comment restates the code, delete it. If the code needs a comment to explain what it does, rewrite the code. When in doubt, improve the name instead of adding a comment.
+
+Do not leave working comments (`// TODO: refactor this`, `// added to fix X`, `// handles the edge case from issue #123`). These are scaffolding — remove them once the code works.
 
 ## Bash Discipline
 

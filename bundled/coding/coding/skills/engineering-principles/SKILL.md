@@ -19,6 +19,15 @@ Practical checks:
 - If a change to one file forces changes in many others, coupling is too tight.
 - If a module mixes unrelated responsibilities (e.g., HTTP handling and business rules), cohesion is too low.
 - If you cannot describe what a module does in one sentence without "and", it is doing too much.
+- If a single feature change touches 4+ files across layers, the related logic is too scattered. Colocate things that change together.
+
+### Coupling Depth
+
+Keep coupling shallow. Callers should only talk to immediate collaborators:
+
+- Do not reach through `a.b.c.d`. If you need something deep in a collaborator's structure, the collaborator should expose it directly.
+- Do not pass parameters through functions just to relay them to a callee. If a parameter is only forwarded, the dependency graph needs restructuring — the caller should talk to the dependency directly, or the dependency should be injected closer to where it is used.
+- Group fields that always travel together into their own type rather than passing them individually. If three arguments always appear as a triple, they are a concept — name it.
 
 ## Small, Composable Units
 
@@ -27,6 +36,8 @@ Practical checks:
 **Files/modules**: When a file exceeds ~300 lines, look for natural seams. Types that are used together, functions that call each other — these suggest a module boundary.
 
 **Parameters**: When a function takes 3+ parameters, use an options object. This is self-documenting and order-independent.
+
+**Data structures**: Start with the simplest structure (hash/dict, tuple, plain object). Graduate to a class only when you need behavior, validation, or encapsulation — not before. A function is not a class: do not wrap stateless logic in a class just to give it a method.
 
 **Composition**: Build complex behavior by combining simple, focused pieces. A pipeline of `validate → transform → persist` is easier to understand and test than one function that does all three.
 
@@ -40,7 +51,7 @@ Good names are the cheapest documentation:
 
 If you struggle to name something, the design is likely unclear. Naming difficulty is a design signal — refactor the concept until the name is obvious.
 
-Avoid: generic names (`data`, `result`, `item`, `handle`, `process`, `manager`), abbreviations that save a few characters but cost clarity, names that describe implementation instead of intent.
+Avoid: generic names (`data`, `result`, `item`, `handle`, `process`, `manager`), abbreviations that save a few characters but cost clarity, names that describe implementation instead of intent, and names that are design-pattern labels (`UserFactory`, `OrderBuilder`, `PaymentStrategy`). Name after domain purpose, not the pattern you used.
 
 ## Dependency Direction
 
@@ -75,7 +86,7 @@ Good: function createUser(store: UserStore, data: UserInput)  // injected
 Not all code changes at the same rate. Identify the **seams** — the points where change is most likely — and make those flexible:
 
 - Configuration changes → externalize as config, not code changes.
-- New variants of existing behavior → design for polymorphism at that point (strategy pattern, discriminated unions).
+- New variants of existing behavior → model variants as data (discriminated unions, sum types, enums with behavior) rather than string flags with scattered conditionals. When the same type or status check appears in multiple places, centralize it with polymorphic dispatch or pattern matching.
 - New features → ensure the module boundary allows addition without modification (open-closed at the module level).
 
 **But**: only invest in flexibility where you have evidence of change. Do not speculatively generalize. The wrong abstraction is harder to fix than no abstraction.
@@ -136,10 +147,15 @@ Tests are the first consumer of your API. Listen to what they tell you:
 
 When tests are easy to write, the design is usually good. When they are painful, listen to the pain.
 
+### Characterization Tests
+
+Before refactoring code that lacks test coverage, write characterization tests first. These tests capture the current behavior — right or wrong — so you can refactor with confidence that you are preserving it. Only after the characterization tests are green should you change the structure.
+
 ## Managing Complexity
 
 - **YAGNI** (You Aren't Gonna Need It): do not build for hypothetical future requirements. Build for today, refactor when the need is real.
 - **Rule of Three**: tolerate duplication until you see three instances. Then the real pattern is visible and the abstraction will be correct.
+- **Duplication nuance**: same code is not always real duplication. If two blocks look identical but would change for different reasons, leave them separate. When duplication is real, extract it — but do not DRY across module or service boundaries just to eliminate surface similarity. Cross-boundary extraction creates coupling that is worse than the duplication it removes.
 - **Composition over inheritance**: inheritance creates rigid hierarchies. Composition (mixing behaviors via functions, interfaces, delegation) keeps things flexible.
 - **Fewer moving parts**: every abstraction, layer, and indirection has a cost. The right amount of complexity is the minimum needed for the current requirements.
 - **Delete freely**: unused code is not an asset, it is a liability. Version control remembers everything. Remove dead code, dead parameters, dead branches.

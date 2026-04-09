@@ -82,11 +82,19 @@ When you see the same pattern in two or more places:
 
 Important: do not extract a shared abstraction from a single occurrence. Wait until you have two or three concrete instances to see the real pattern. Premature abstraction is worse than duplication.
 
+Same code is not always real duplication. If two blocks look identical but would change for different reasons, leave them separate — they are coincidentally similar, not truly duplicated. When duplication is real, extract it. But do not DRY across module or service boundaries just to eliminate surface similarity — the coupling you create is worse than the duplication you remove.
+
 ### Simplify Conditional Logic
 
 - **Consolidate conditionals**: Combine multiple conditions that lead to the same outcome.
 - **Decompose conditionals**: Replace a complex condition with a well-named function or variable.
 - **Replace nested conditionals with early returns**: Reduce nesting depth.
+
+## Refactoring Safety
+
+- **One structural change per commit.** Verify tests pass after each step.
+- **Never change behavior and structure in the same commit.** If you need to change behavior, do it in a separate commit with its own tests. Mixing the two makes it impossible to tell whether a test failure is from the behavior change or the restructuring.
+- **If test coverage does not exist, write characterization tests before refactoring.** Characterization tests capture the current behavior — right or wrong — so you can refactor with confidence. Only after they are green should you change the structure.
 
 ## Refactoring Workflow
 
