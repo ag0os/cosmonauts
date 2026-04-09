@@ -26,6 +26,16 @@ When making changes, first understand the file's code conventions:
 - One structural change per commit. Never change behavior and structure in the same commit.
 - When the same type or status check is scattered across multiple places, centralize it with polymorphic dispatch or pattern matching rather than adding another copy.
 
+## Conditional Logic
+
+Avoid nested or complex conditionals. They are hard to read and hard to modify. Prefer these alternatives:
+
+- **Early returns / guard clauses**: Handle edge cases and invalid states at the top of the function, then proceed with the main logic flat.
+- **Extract to a named function**: When a condition is complex or multi-part, extract it into a function whose name describes the intent (`isEligibleForDiscount`, `canRetryRequest`).
+- **Lookup objects**: When branching on a value to select a result or action, use an object/map/record instead of `if`/`else` or `switch` chains.
+
+If a conditional block is more than a few lines deep or spans more than two levels of nesting, restructure it.
+
 ## Code Comments
 
 Only comment **why**, never **what**. If a comment restates the code, delete it. If the code needs a comment to explain what it does, rewrite the code. When in doubt, improve the name instead of adding a comment.

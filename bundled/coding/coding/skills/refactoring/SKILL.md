@@ -11,13 +11,21 @@ Refactoring changes the structure of code without changing its behavior. The tes
 
 Refactor when you see a clear structural problem in code that already works and has passing tests. Do not refactor speculatively, and do not refactor code that is not covered by tests (write tests first).
 
-Trigger refactoring when you see:
+Trigger refactoring when you see structural problems, but prioritize by real-world cost, not textbook severity:
+
+- **Fix now**: Code that causes bugs across the team, blocks feature work, or sits in a file that appears in >30% of recent commits.
+- **Fix soon**: Duplication across 3+ call sites, functions that require 20+ lines of test setup, logic scattered across 4+ files for one concept.
+- **Leave alone**: One-off long parameter lists, single naming nitpicks, style inconsistencies in stable code nobody edits.
+
+Common smells, in rough priority order:
 - **Duplication** — the same logic appears in two or more places
 - **Poor naming** — a variable, function, or type name does not describe what it represents
 - **Long functions** — a function does more than one thing and is hard to follow
 - **Deep nesting** — multiple levels of conditionals or loops that obscure the logic
 - **Primitive obsession** — raw strings or numbers used where a named type would add clarity
 - **Dead code** — unused imports, variables, functions, or branches
+
+A working codebase the team understands beats a theoretically perfect one.
 
 Do NOT refactor when:
 - Tests are failing (fix the tests first)
@@ -71,6 +79,16 @@ After:  if (!input) return null;
         ...main logic...
 ```
 
+### Choosing the Right Technique
+
+Apply the simplest pattern that resolves the smell. Escalate only when specific criteria are met:
+
+- **Extract function** is the default. Escalate to a method object or dedicated class only when: 4+ interacting local variables, would need 3+ params passed between extracted pieces, or the logic warrants its own test suite.
+- **Keep logic inline** is the default. Extract to a separate module or class only when: 2+ call sites need it, it has its own state, or it is independently testable and worth testing alone.
+- **A simple conditional is fine.** Escalate to polymorphism or pattern matching only when the same type/status dispatch appears in 3+ places.
+
+If you cannot articulate why the heavier pattern is necessary, use the lighter one.
+
 ### Remove Duplication
 
 When you see the same pattern in two or more places:
@@ -95,6 +113,14 @@ Same code is not always real duplication. If two blocks look identical but would
 - **One structural change per commit.** Verify tests pass after each step.
 - **Never change behavior and structure in the same commit.** If you need to change behavior, do it in a separate commit with its own tests. Mixing the two makes it impossible to tell whether a test failure is from the behavior change or the restructuring.
 - **If test coverage does not exist, write characterization tests before refactoring.** Characterization tests capture the current behavior — right or wrong — so you can refactor with confidence. Only after they are green should you change the structure.
+
+## Judging a Refactoring
+
+After making a change, evaluate whether it actually helped:
+
+- If a refactoring introduces as much indirection as it removes duplication, it is a lateral move. Revert it.
+- Ask: would a new team member find this easier to understand? If the answer is ambiguous, the refactoring is not worth it.
+- The goal is "measurably better," not "perfect." Stop when complexity is reduced and the code is easier to change.
 
 ## Refactoring Workflow
 

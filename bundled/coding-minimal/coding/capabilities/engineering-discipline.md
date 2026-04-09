@@ -9,6 +9,7 @@ Corrective guidelines for code generation. These address common tendencies that 
 - Start with the simplest data structure (object, tuple, record). Graduate to a class only when you need behavior, validation, or encapsulation — not before.
 - Do not name things after design patterns (`UserFactory`, `OrderBuilder`, `PaymentStrategy`). Name after domain purpose.
 - Do only what was asked. Do not add features, error handling, or abstractions for scenarios that cannot happen.
+- Extracting code to a new file does not reduce complexity — it relocates it. The result must be simpler to understand, not just shorter in each file. A shared abstraction with one call site is premature — inline it.
 
 ## Keep Coupling Shallow
 
