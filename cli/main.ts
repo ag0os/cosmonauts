@@ -52,7 +52,7 @@ import {
 } from "./packages/subcommand.ts";
 import { parsePiFlags } from "./pi-flags.ts";
 import { createPlanProgram } from "./plans/index.ts";
-import { createSession } from "./session.ts";
+import { createSession, GracefulExitError } from "./session.ts";
 import { createSkillsProgram } from "./skills/subcommand.ts";
 import { createTaskProgram } from "./tasks/subcommand.ts";
 import type { CliOptions } from "./types.ts";
@@ -482,6 +482,10 @@ if (
 		const options = parseCliArgs(process.argv.slice(2));
 
 		run(options).catch((err: unknown) => {
+			if (err instanceof GracefulExitError) {
+				// Benign abort (cancel resume, decline fork) — exit cleanly
+				return;
+			}
 			const message = err instanceof Error ? err.message : String(err);
 			process.stderr.write(`cosmonauts: ${message}\n`);
 			process.exitCode = 1;

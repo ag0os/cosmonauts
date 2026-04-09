@@ -8,6 +8,19 @@
 
 import { join } from "node:path";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+
+/**
+ * Thrown for benign user-initiated aborts (cancel resume, decline fork).
+ * The top-level error handler checks for this to exit with status 0
+ * instead of printing an error and setting status 1.
+ */
+export class GracefulExitError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = "GracefulExitError";
+	}
+}
+
 import {
 	type AgentSessionRuntime,
 	type CreateAgentSessionRuntimeFactory,
@@ -228,7 +241,7 @@ async function resolveSessionManager(opts: {
 					"Fork this session into current directory?",
 				);
 				if (!shouldFork) {
-					throw new Error("Aborted.");
+					throw new GracefulExitError("Aborted.");
 				}
 				return SessionManager.forkFrom(
 					resolved.path as string,
@@ -252,8 +265,7 @@ async function resolveSessionManager(opts: {
 
 		if (sessions.length === 0) {
 			console.log("No sessions found.");
-			process.exitCode = 0;
-			throw new Error("No sessions available to resume.");
+			throw new GracefulExitError("No sessions available to resume.");
 		}
 
 		// Display sessions for selection
@@ -286,8 +298,7 @@ async function resolveSessionManager(opts: {
 		if (selected === null) {
 			// Cancel — abort, don't create a new session
 			console.log("No session selected.");
-			process.exitCode = 0;
-			throw new Error("No session selected.");
+			throw new GracefulExitError("No session selected.");
 		}
 
 		const chosen = sessions[selected] as (typeof sessions)[number];
