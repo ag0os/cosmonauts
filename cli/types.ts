@@ -3,8 +3,9 @@
  */
 
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { PiFlags } from "./pi-flags.ts";
 
-/** Parsed CLI options from Commander. */
+/** Parsed CLI options from Commander + Pi passthrough. */
 export interface CliOptions {
 	/** User prompt (positional args joined) */
 	prompt?: string;
@@ -12,10 +13,8 @@ export interface CliOptions {
 	print: boolean;
 	/** Agent ID to use instead of cosmo (e.g. "planner", "worker") */
 	agent?: string;
-	/** Named workflow to run */
+	/** Named workflow or raw chain DSL expression (detects by presence of "->") */
 	workflow?: string;
-	/** Raw chain DSL expression */
-	chain?: string;
 	/** Optional task label scope for loop completion checks */
 	completionLabel?: string;
 	/** Model override in "provider/model-id" format */
@@ -38,4 +37,6 @@ export interface CliOptions {
 	dumpPromptFile?: string;
 	/** Session-only domain source directories (from --plugin-dir flags) */
 	pluginDirs?: string[];
+	/** Pi CLI flags passed through (session, provider, tools, mode, etc.) */
+	piFlags: PiFlags;
 }

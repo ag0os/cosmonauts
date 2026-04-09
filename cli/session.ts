@@ -28,6 +28,7 @@ import {
 	clearPendingSwitch,
 	consumePendingSwitch,
 } from "../lib/interactive/agent-switch.ts";
+import type { PiFlags } from "./pi-flags.ts";
 
 /**
  * Encode a cwd into Pi's session directory path.
@@ -71,8 +72,13 @@ export interface CreateSessionOptions {
 	model?: string;
 	/** Thinking level override */
 	thinkingLevel?: ThinkingLevel;
-	/** Whether to persist session to disk (interactive) or keep in-memory (print) */
+	/**
+	 * Whether to persist session to disk (interactive) or keep in-memory (print).
+	 * When piFlags are provided, session management is derived from them instead.
+	 */
 	persistent: boolean;
+	/** Pi CLI flags for session management (continue, resume, session, fork, etc.). */
+	piFlags?: PiFlags;
 	/** Project-level skill filter list (from .cosmonauts/config.json) */
 	projectSkills?: readonly string[];
 	/** Explicit skill directories (domain dirs + config skillPaths). */
@@ -83,6 +89,144 @@ export interface CreateSessionOptions {
 	domainContext?: string;
 	/** Absolute extension paths always injected (e.g. the agent-switch extension). */
 	extraExtensionPaths?: string[];
+}
+
+// ============================================================================
+// Session Path Resolution (mirrors Pi's resolveSessionPath)
+// ============================================================================
+
+interface ResolvedSession {
+	type: "path" | "local" | "global" | "not_found";
+	path?: string;
+	cwd?: string;
+	arg: string;
+}
+
+/**
+ * Resolve a session argument to an actual file path.
+ * Accepts file paths, partial UUIDs (matched against local then global sessions).
+ */
+async function resolveSessionPath(
+	sessionArg: string,
+	cwd: string,
+	sessionDir?: string,
+): Promise<ResolvedSession> {
+	// If it looks like a file path, use as-is
+	if (
+		sessionArg.includes("/") ||
+		sessionArg.includes("\\") ||
+		sessionArg.endsWith(".jsonl")
+	) {
+		return { type: "path", path: sessionArg, arg: sessionArg };
+	}
+
+	// Try to match as session ID in current project first
+	const localSessions = await SessionManager.list(cwd, sessionDir);
+	const localMatch = localSessions.find((s) => s.id.startsWith(sessionArg));
+	if (localMatch) {
+		return { type: "local", path: localMatch.path, arg: sessionArg };
+	}
+
+	// Try global search across all projects
+	const allSessions = await SessionManager.listAll();
+	const globalMatch = allSessions.find((s) => s.id.startsWith(sessionArg));
+	if (globalMatch) {
+		return {
+			type: "global",
+			path: globalMatch.path,
+			cwd: globalMatch.cwd,
+			arg: sessionArg,
+		};
+	}
+
+	return { type: "not_found", arg: sessionArg };
+}
+
+// ============================================================================
+// Session Manager Resolution
+// ============================================================================
+
+/**
+ * Resolve which SessionManager to use based on Pi flags and fallback behavior.
+ * Follows Pi's priority cascade: noSession → fork → session → resume → continue → default.
+ */
+async function resolveSessionManager(opts: {
+	piFlags?: PiFlags;
+	persistent: boolean;
+	cwd: string;
+	sessionDir?: string;
+}): Promise<SessionManager> {
+	const { piFlags, persistent, cwd, sessionDir } = opts;
+
+	// Explicit Pi session flags take precedence
+	if (piFlags?.noSession) {
+		return SessionManager.inMemory();
+	}
+	if (piFlags?.fork) {
+		const resolved = await resolveSessionPath(piFlags.fork, cwd, sessionDir);
+		if (resolved.type === "not_found") {
+			throw new Error(`No session found matching '${resolved.arg}'`);
+		}
+		return SessionManager.forkFrom(resolved.path as string, cwd, sessionDir);
+	}
+	if (piFlags?.session) {
+		const resolved = await resolveSessionPath(piFlags.session, cwd, sessionDir);
+		if (resolved.type === "not_found") {
+			throw new Error(`No session found matching '${resolved.arg}'`);
+		}
+		return SessionManager.open(resolved.path as string, sessionDir);
+	}
+	if (piFlags?.resume) {
+		// Show available sessions and let user pick.
+		// List local sessions; if none, tell user.
+		const sessions = await SessionManager.list(cwd, sessionDir);
+		if (sessions.length === 0) {
+			console.log("No sessions found. Starting a new session.");
+			return SessionManager.create(cwd, sessionDir);
+		}
+
+		// Display sessions for selection
+		console.log("Available sessions:");
+		for (let i = 0; i < sessions.length; i++) {
+			const s = sessions[i] as (typeof sessions)[number];
+			const preview = s.firstMessage?.slice(0, 60) ?? "(no messages)";
+			console.log(`  ${i + 1}. [${s.id.slice(0, 8)}] ${preview}`);
+		}
+
+		// Read selection from stdin
+		const { createInterface } = await import("node:readline");
+		const selected = await new Promise<number | null>((resolve) => {
+			const rl = createInterface({
+				input: process.stdin,
+				output: process.stdout,
+			});
+			rl.question("Select session number (or Enter to cancel): ", (answer) => {
+				rl.close();
+				const num = Number.parseInt(answer, 10);
+				if (Number.isNaN(num) || num < 1 || num > sessions.length) {
+					resolve(null);
+				} else {
+					resolve(num - 1);
+				}
+			});
+		});
+
+		if (selected === null) {
+			console.log("No session selected. Starting a new session.");
+			return SessionManager.create(cwd, sessionDir);
+		}
+
+		const chosen = sessions[selected] as (typeof sessions)[number];
+		return SessionManager.open(chosen.path, sessionDir);
+	}
+	if (piFlags?.continue) {
+		return SessionManager.continueRecent(cwd, sessionDir);
+	}
+
+	// Fallback: cosmonauts' own persistent flag
+	return persistent
+		? SessionManager.continueRecent(cwd, sessionDir)
+		: SessionManager.inMemory();
 }
 
 /**
@@ -103,6 +247,7 @@ export async function createSession(
 		model: modelOverride,
 		thinkingLevel: thinkingLevelOverride,
 		persistent,
+		piFlags,
 		projectSkills,
 		skillPaths,
 		agentRegistry,
@@ -126,11 +271,21 @@ export async function createSession(
 
 	// Scope persistent sessions by agent ID so each agent resumes its own history.
 	// cosmo uses the default (unscoped) directory for backward compatibility.
-	const sessionDir =
-		def.id !== "cosmo" ? join(piSessionDir(cwd), def.id) : undefined;
-	const sessionManager = persistent
-		? SessionManager.continueRecent(cwd, sessionDir)
-		: SessionManager.inMemory();
+	const baseSessionDir = piFlags?.sessionDir ?? undefined;
+	const sessionDir = baseSessionDir
+		? baseSessionDir
+		: def.id !== "cosmo"
+			? join(piSessionDir(cwd), def.id)
+			: undefined;
+
+	// Session manager cascade (matches Pi's priority order):
+	// noSession → fork → session → resume → continue → persistent default → inMemory
+	const sessionManager = await resolveSessionManager({
+		piFlags,
+		persistent,
+		cwd,
+		sessionDir,
+	});
 
 	const createRuntime: CreateAgentSessionRuntimeFactory = async ({
 		cwd: effectiveCwd,

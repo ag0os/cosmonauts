@@ -2,16 +2,20 @@
  * CLI entry point for cosmonauts.
  *
  * Modes:
- *   cosmonauts                              → interactive REPL
- *   cosmonauts "prompt"                     → interactive with initial prompt
- *   cosmonauts --print "prompt"             → non-interactive (run, output, exit)
- *   cosmonauts --workflow name "prompt"     → named workflow (non-interactive)
- *   cosmonauts --chain "a -> b" "prompt"    → raw chain DSL (non-interactive)
- *   cosmonauts --dump-prompt [-a agent]     → dump composed system prompt to stdout
- *   cosmonauts --dump-prompt --file path    → dump composed system prompt to file
- *   cosmonauts init                         → agent-driven AGENTS.md bootstrap
- *   cosmonauts task <command>               → task management subcommands
- *   cosmonauts plan <command>               → plan management subcommands
+ *   cosmonauts                                    → interactive REPL
+ *   cosmonauts "prompt"                           → interactive with initial prompt
+ *   cosmonauts --print "prompt"                   → non-interactive (run, output, exit)
+ *   cosmonauts -w name "prompt"                   → named workflow (non-interactive)
+ *   cosmonauts -w "a -> b" "prompt"               → raw chain DSL (non-interactive)
+ *   cosmonauts -c                                 → continue most recent session
+ *   cosmonauts --dump-prompt [-a agent]           → dump composed system prompt to stdout
+ *   cosmonauts --dump-prompt --file path          → dump composed system prompt to file
+ *   cosmonauts init                               → agent-driven AGENTS.md bootstrap
+ *   cosmonauts task <command>                     → task management subcommands
+ *   cosmonauts plan <command>                     → plan management subcommands
+ *
+ * Pi flags (session, provider, tools, mode, etc.) pass through automatically.
+ * See cli/pi-flags.ts for the full registry.
  */
 
 import { writeFile } from "node:fs/promises";
@@ -46,6 +50,7 @@ import {
 	createPackagesProgram,
 	createUninstallProgram,
 } from "./packages/subcommand.ts";
+import { parsePiFlags } from "./pi-flags.ts";
 import { createPlanProgram } from "./plans/index.ts";
 import { createSession } from "./session.ts";
 import { createSkillsProgram } from "./skills/subcommand.ts";
@@ -90,6 +95,13 @@ export function parseCliArgs(argv: string[]): CliOptions {
 	const isInit = argv.length > 0 && argv[0] === "init";
 	const effectiveArgv = isInit ? argv.slice(1) : argv;
 
+	// --- Phase 1: extract Pi flags first, leaving cosmonauts flags + positionals ---
+	const piResult = parsePiFlags(effectiveArgv);
+	for (const w of piResult.warnings) {
+		console.warn(`[cosmonauts] ${w}`);
+	}
+
+	// --- Phase 2: parse cosmonauts-specific flags from the remainder ---
 	const program = new Command();
 
 	program
@@ -103,8 +115,10 @@ export function parseCliArgs(argv: string[]): CliOptions {
 			"-a, --agent <id>",
 			"Agent to use (e.g. planner, worker, coordinator)",
 		)
-		.option("-w, --workflow <name>", "Run a named workflow")
-		.option("-c, --chain <expression>", "Run a raw chain DSL expression")
+		.option(
+			"-w, --workflow <expression>",
+			"Run a named workflow or raw chain DSL (e.g. 'plan-and-build' or 'planner -> coordinator')",
+		)
 		.option(
 			"--completion-label <label>",
 			'Task label scope for loop completion checks (e.g. "plan:auth-system")',
@@ -136,7 +150,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
 
 	// Parse without calling process.exit on error
 	program.exitOverride();
-	program.parse(effectiveArgv, { from: "user" });
+	program.parse(piResult.remaining, { from: "user" });
 
 	const opts = program.opts();
 
@@ -161,7 +175,6 @@ export function parseCliArgs(argv: string[]): CliOptions {
 		print: opts.print ?? false,
 		agent: opts.agent,
 		workflow: opts.workflow,
-		chain: opts.chain,
 		completionLabel: opts.completionLabel,
 		model: opts.model,
 		thinking,
@@ -173,6 +186,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
 		dumpPrompt: opts.dumpPrompt ?? false,
 		dumpPromptFile: opts.file,
 		pluginDirs: pluginDirs.length > 0 ? pluginDirs : undefined,
+		piFlags: piResult.flags,
 	};
 }
 
@@ -320,6 +334,7 @@ async function run(options: CliOptions): Promise<void> {
 			model: options.model,
 			thinkingLevel: options.thinking,
 			persistent: false,
+			piFlags: options.piFlags,
 			projectSkills,
 			skillPaths,
 		});
@@ -331,35 +346,14 @@ async function run(options: CliOptions): Promise<void> {
 		return;
 	}
 
-	// 2. --chain → parse chain, run, exit
-	if (options.chain) {
-		const stages = parseChain(options.chain, registry, domainContext);
-		injectUserPrompt(stages, options.prompt);
-
-		const result = await runChain({
-			stages,
-			projectRoot: cwd,
-			domainContext,
-			onEvent: createChainEventLogger(),
-			projectSkills,
-			skillPaths,
-			completionLabel: options.completionLabel,
-			registry,
-			domainsDir: runtime.domainsDir,
-			resolver: runtime.domainResolver,
-			...(options.thinking && { thinking: { default: options.thinking } }),
-		});
-
-		if (!result.success) {
-			process.exitCode = 1;
-		}
-		return;
-	}
-
-	// 3. --workflow → resolve to chain, run, exit
+	// 2. --workflow → named workflow or raw chain DSL, run, exit
 	if (options.workflow) {
-		const wf = await resolveWorkflow(options.workflow, cwd, domainWorkflows);
-		const stages = parseChain(wf.chain, registry, domainContext);
+		// Detect raw chain DSL (contains "->") vs named workflow
+		const isChainDsl = options.workflow.includes("->");
+		const chainExpr = isChainDsl
+			? options.workflow
+			: (await resolveWorkflow(options.workflow, cwd, domainWorkflows)).chain;
+		const stages = parseChain(chainExpr, registry, domainContext);
 		injectUserPrompt(stages, options.prompt);
 
 		const result = await runChain({
@@ -396,6 +390,7 @@ async function run(options: CliOptions): Promise<void> {
 			model: options.model,
 			thinkingLevel: options.thinking,
 			persistent: false,
+			piFlags: options.piFlags,
 			projectSkills,
 			skillPaths,
 		});
@@ -429,6 +424,7 @@ async function run(options: CliOptions): Promise<void> {
 		model: options.model,
 		thinkingLevel: options.thinking,
 		persistent: true,
+		piFlags: options.piFlags,
 		projectSkills,
 		skillPaths,
 		agentRegistry: registry,

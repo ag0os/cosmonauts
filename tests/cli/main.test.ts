@@ -20,7 +20,6 @@ describe("parseCliArgs", () => {
 		expect(opts.prompt).toBeUndefined();
 		expect(opts.agent).toBeUndefined();
 		expect(opts.workflow).toBeUndefined();
-		expect(opts.chain).toBeUndefined();
 		expect(opts.completionLabel).toBeUndefined();
 		expect(opts.model).toBeUndefined();
 		expect(opts.thinking).toBeUndefined();
@@ -29,6 +28,7 @@ describe("parseCliArgs", () => {
 		expect(opts.listAgents).toBe(false);
 		expect(opts.domain).toBeUndefined();
 		expect(opts.listDomains).toBe(false);
+		expect(opts.piFlags).toEqual({});
 	});
 
 	test("positional args joined into prompt", () => {
@@ -70,14 +70,14 @@ describe("parseCliArgs", () => {
 		expect(opts.workflow).toBe("plan-and-build");
 	});
 
-	test("--chain sets chain expression", () => {
+	test("--workflow with chain DSL sets workflow to raw expression", () => {
 		const opts = parseCliArgs([
-			"--chain",
+			"--workflow",
 			"planner -> coordinator",
 			"build it",
 		]);
 
-		expect(opts.chain).toBe("planner -> coordinator");
+		expect(opts.workflow).toBe("planner -> coordinator");
 		expect(opts.prompt).toBe("build it");
 	});
 
@@ -85,17 +85,17 @@ describe("parseCliArgs", () => {
 		const opts = parseCliArgs([
 			"--completion-label",
 			"plan:auth-system",
-			"--chain",
+			"-w",
 			"planner -> coordinator",
 		]);
 
 		expect(opts.completionLabel).toBe("plan:auth-system");
 	});
 
-	test("-c shorthand sets chain expression", () => {
-		const opts = parseCliArgs(["-c", "planner -> worker"]);
+	test("-c passes through as Pi --continue flag", () => {
+		const opts = parseCliArgs(["-c"]);
 
-		expect(opts.chain).toBe("planner -> worker");
+		expect(opts.piFlags.continue).toBe(true);
 	});
 
 	test("--model sets model override", () => {
@@ -173,6 +173,45 @@ describe("parseCliArgs", () => {
 		expect(opts.workflow).toBe("plan-and-build");
 		expect(opts.thinking).toBe("high");
 		expect(opts.prompt).toBe("build feature");
+	});
+
+	// Pi flag passthrough tests
+	test("-r passes through as Pi --resume flag", () => {
+		const opts = parseCliArgs(["-r"]);
+
+		expect(opts.piFlags.resume).toBe(true);
+	});
+
+	test("--session passes through with path", () => {
+		const opts = parseCliArgs(["--session", "/tmp/session.jsonl"]);
+
+		expect(opts.piFlags.session).toBe("/tmp/session.jsonl");
+	});
+
+	test("--fork passes through with path", () => {
+		const opts = parseCliArgs(["--fork", "/tmp/session.jsonl"]);
+
+		expect(opts.piFlags.fork).toBe("/tmp/session.jsonl");
+	});
+
+	test("--no-session passes through", () => {
+		const opts = parseCliArgs(["--no-session"]);
+
+		expect(opts.piFlags.noSession).toBe(true);
+	});
+
+	test("--session-dir passes through", () => {
+		const opts = parseCliArgs(["--session-dir", "/tmp/sessions"]);
+
+		expect(opts.piFlags.sessionDir).toBe("/tmp/sessions");
+	});
+
+	test("Pi flags combine with cosmonauts flags", () => {
+		const opts = parseCliArgs(["-c", "-a", "planner", "design it"]);
+
+		expect(opts.piFlags.continue).toBe(true);
+		expect(opts.agent).toBe("planner");
+		expect(opts.prompt).toBe("design it");
 	});
 
 	test("--agent sets agent ID", () => {
