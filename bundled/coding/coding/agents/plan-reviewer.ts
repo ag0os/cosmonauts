@@ -10,7 +10,7 @@ const definition: AgentDefinition = {
 		"architectural-design",
 		"coding-readonly",
 	],
-	model: "anthropic/claude-opus-4-6",
+	model: "openai-codex/gpt-5.4",
 	tools: "coding",
 	extensions: ["plans"],
 	skills: ["pi", "plan", "engineering-principles"],

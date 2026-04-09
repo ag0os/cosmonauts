@@ -11,7 +11,7 @@ const definition: AgentDefinition = {
 		"tasks",
 		"spawning",
 	],
-	model: "openai-codex/gpt-5.3-codex",
+	model: "openai-codex/gpt-5.4",
 	tools: "coding",
 	extensions: ["tasks", "orchestration"],
 	skills: undefined,
