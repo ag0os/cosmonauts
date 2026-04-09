@@ -21,6 +21,11 @@ When making changes, first understand the file's code conventions:
 - Prefer editing existing files over creating new ones.
 - Do the minimum necessary. Do not refactor unrelated code or add features not requested.
 
+## Refactoring Safety
+
+- One structural change per commit. Never change behavior and structure in the same commit.
+- When the same type or status check is scattered across multiple places, centralize it with polymorphic dispatch or pattern matching rather than adding another copy.
+
 ## Code Comments
 
 Only comment **why**, never **what**. If a comment restates the code, delete it. If the code needs a comment to explain what it does, rewrite the code. When in doubt, improve the name instead of adding a comment.
