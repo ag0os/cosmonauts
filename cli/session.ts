@@ -143,6 +143,48 @@ async function resolveSessionPath(
 }
 
 // ============================================================================
+// Interactive Prompts
+// ============================================================================
+
+/** Prompt user for yes/no confirmation via stdin. */
+async function promptConfirm(message: string): Promise<boolean> {
+	const { createInterface } = await import("node:readline");
+	return new Promise((resolve) => {
+		const rl = createInterface({
+			input: process.stdin,
+			output: process.stdout,
+		});
+		rl.question(`${message} [y/N] `, (answer) => {
+			rl.close();
+			resolve(answer.toLowerCase() === "y" || answer.toLowerCase() === "yes");
+		});
+	});
+}
+
+// ============================================================================
+// Session Flag Validation
+// ============================================================================
+
+/**
+ * Validate that session flags don't conflict.
+ * Mirrors Pi's validateForkFlags — --fork cannot be combined with
+ * --session, --continue, --resume, or --no-session.
+ */
+function validateSessionFlags(piFlags: PiFlags): void {
+	if (!piFlags.fork) return;
+
+	const conflicts: string[] = [];
+	if (piFlags.session) conflicts.push("--session");
+	if (piFlags.continue) conflicts.push("--continue");
+	if (piFlags.resume) conflicts.push("--resume");
+	if (piFlags.noSession) conflicts.push("--no-session");
+
+	if (conflicts.length > 0) {
+		throw new Error(`--fork cannot be combined with ${conflicts.join(", ")}`);
+	}
+}
+
+// ============================================================================
 // Session Manager Resolution
 // ============================================================================
 
@@ -158,6 +200,10 @@ async function resolveSessionManager(opts: {
 }): Promise<SessionManager> {
 	const { piFlags, persistent, cwd, sessionDir } = opts;
 
+	if (piFlags) {
+		validateSessionFlags(piFlags);
+	}
+
 	// Explicit Pi session flags take precedence
 	if (piFlags?.noSession) {
 		return SessionManager.inMemory();
@@ -171,18 +217,43 @@ async function resolveSessionManager(opts: {
 	}
 	if (piFlags?.session) {
 		const resolved = await resolveSessionPath(piFlags.session, cwd, sessionDir);
-		if (resolved.type === "not_found") {
-			throw new Error(`No session found matching '${resolved.arg}'`);
+		switch (resolved.type) {
+			case "path":
+			case "local":
+				return SessionManager.open(resolved.path as string, sessionDir);
+			case "global": {
+				// Session belongs to another project — offer to fork (mirrors Pi)
+				console.warn(`Session found in different project: ${resolved.cwd}`);
+				const shouldFork = await promptConfirm(
+					"Fork this session into current directory?",
+				);
+				if (!shouldFork) {
+					throw new Error("Aborted.");
+				}
+				return SessionManager.forkFrom(
+					resolved.path as string,
+					cwd,
+					sessionDir,
+				);
+			}
+			case "not_found":
+				throw new Error(`No session found matching '${resolved.arg}'`);
 		}
-		return SessionManager.open(resolved.path as string, sessionDir);
 	}
 	if (piFlags?.resume) {
-		// Show available sessions and let user pick.
-		// List local sessions; if none, tell user.
-		const sessions = await SessionManager.list(cwd, sessionDir);
+		// List local + global sessions, let user pick (mirrors Pi's selectSession)
+		const localSessions = await SessionManager.list(cwd, sessionDir);
+		const allSessions = await SessionManager.listAll();
+
+		// Merge: local sessions first, then global (excluding duplicates)
+		const localPaths = new Set(localSessions.map((s) => s.path));
+		const globalOnly = allSessions.filter((s) => !localPaths.has(s.path));
+		const sessions = [...localSessions, ...globalOnly];
+
 		if (sessions.length === 0) {
-			console.log("No sessions found. Starting a new session.");
-			return SessionManager.create(cwd, sessionDir);
+			console.log("No sessions found.");
+			process.exitCode = 0;
+			throw new Error("No sessions available to resume.");
 		}
 
 		// Display sessions for selection
@@ -190,7 +261,8 @@ async function resolveSessionManager(opts: {
 		for (let i = 0; i < sessions.length; i++) {
 			const s = sessions[i] as (typeof sessions)[number];
 			const preview = s.firstMessage?.slice(0, 60) ?? "(no messages)";
-			console.log(`  ${i + 1}. [${s.id.slice(0, 8)}] ${preview}`);
+			const marker = i >= localSessions.length ? " (other project)" : "";
+			console.log(`  ${i + 1}. [${s.id.slice(0, 8)}] ${preview}${marker}`);
 		}
 
 		// Read selection from stdin
@@ -212,11 +284,18 @@ async function resolveSessionManager(opts: {
 		});
 
 		if (selected === null) {
-			console.log("No session selected. Starting a new session.");
-			return SessionManager.create(cwd, sessionDir);
+			// Cancel — abort, don't create a new session
+			console.log("No session selected.");
+			process.exitCode = 0;
+			throw new Error("No session selected.");
 		}
 
 		const chosen = sessions[selected] as (typeof sessions)[number];
+
+		// If the chosen session is from another project, fork it
+		if (selected >= localSessions.length) {
+			return SessionManager.forkFrom(chosen.path, cwd, sessionDir);
+		}
 		return SessionManager.open(chosen.path, sessionDir);
 	}
 	if (piFlags?.continue) {
