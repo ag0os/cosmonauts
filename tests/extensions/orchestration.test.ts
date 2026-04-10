@@ -11,7 +11,7 @@ import { createRegistryFromDomains } from "../../lib/agents/index.ts";
 import { loadDomainsFromSources } from "../../lib/domains/index.ts";
 import { DomainRegistry } from "../../lib/domains/registry.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
-import type { ChainResult } from "../../lib/orchestration/types.ts";
+import type { ChainResult, ChainStep } from "../../lib/orchestration/types.ts";
 
 // ============================================================================
 // Hoisted mock references — declared before imports via vi.hoisted()
@@ -163,7 +163,7 @@ describe("orchestration extension", () => {
 			projectSkills: ["typescript", "backend"],
 			skillPaths: ["/skills/shared", "/skills/project"],
 		});
-		parseChainMock.mockReturnValue([{ name: "planner", loop: false }]);
+		parseChainMock.mockReturnValue([{ name: "planner", loop: false }] as ChainStep[]);
 		runChainMock.mockResolvedValue({
 			success: true,
 			stageResults: [],
@@ -197,7 +197,7 @@ describe("orchestration extension", () => {
 		const pi = createMockPi(cwd);
 		orchestrationExtension(pi as never);
 
-		parseChainMock.mockReturnValue([{ name: "planner", loop: false }]);
+		parseChainMock.mockReturnValue([{ name: "planner", loop: false }] as ChainStep[]);
 		runChainMock.mockResolvedValue({
 			success: true,
 			stageResults: [],
@@ -222,7 +222,7 @@ describe("orchestration extension", () => {
 		orchestrationExtension(pi as never);
 
 		mockRuntime({ projectSkills: ["typescript"] });
-		parseChainMock.mockReturnValue([{ name: "coordinator", loop: true }]);
+		parseChainMock.mockReturnValue([{ name: "coordinator", loop: true }] as ChainStep[]);
 		runChainMock.mockResolvedValue({
 			success: true,
 			stageResults: [],
@@ -252,7 +252,7 @@ describe("orchestration extension", () => {
 		parseChainMock.mockReturnValue([
 			{ name: "planner", loop: false },
 			{ name: "coordinator", loop: true },
-		]);
+		] as ChainStep[]);
 		runChainMock.mockResolvedValue({
 			success: true,
 			stageResults: [],
@@ -277,6 +277,35 @@ describe("orchestration extension", () => {
 					},
 					{ name: "coordinator", loop: true },
 				],
+			}),
+		);
+	});
+
+	test("chain_run forwards abort signal to runChain", async () => {
+		const cwd = "/tmp/project";
+		const pi = createMockPi(cwd);
+		orchestrationExtension(pi as never);
+
+		mockRuntime({ projectSkills: [] });
+		parseChainMock.mockReturnValue([{ name: "planner", loop: false }] as ChainStep[]);
+		runChainMock.mockResolvedValue({
+			success: true,
+			stageResults: [],
+			totalDurationMs: 1,
+			errors: [],
+		} as ChainResult);
+
+		const controller = new AbortController();
+		const tool = pi.getTool("chain_run");
+		await tool!.execute("call-id", { expression: "planner" }, controller.signal, undefined, {
+			cwd,
+			getSystemPrompt: () => "",
+			sessionManager: { getSessionId: () => "test-session" },
+		});
+
+		expect(runChainMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				signal: controller.signal,
 			}),
 		);
 	});
@@ -551,7 +580,7 @@ describe("orchestration extension", () => {
 		orchestrationExtension(pi as never);
 
 		mockRuntime({ projectSkills: ["typescript"] });
-		parseChainMock.mockReturnValue([{ name: "planner", loop: false }]);
+		parseChainMock.mockReturnValue([{ name: "planner", loop: false }] as ChainStep[]);
 		runChainMock.mockResolvedValue({
 			success: true,
 			stageResults: [],
@@ -580,7 +609,7 @@ describe("orchestration extension", () => {
 				skillPaths: [],
 				domainRegistry: realDomainRegistry,
 			});
-		parseChainMock.mockReturnValue([{ name: "planner", loop: false }]);
+		parseChainMock.mockReturnValue([{ name: "planner", loop: false }] as ChainStep[]);
 		runChainMock.mockResolvedValue({
 			success: true,
 			stageResults: [],
