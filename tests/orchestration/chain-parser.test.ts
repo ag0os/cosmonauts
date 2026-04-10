@@ -198,6 +198,18 @@ describe("parseChain", () => {
 				parseChain("planner -> coordinator:5 -> worker", defaultRegistry),
 			).toThrow(/role:count.*no longer supported/);
 		});
+
+		test("throws on missing closing bracket", () => {
+			expect(() => parseChain("[planner, reviewer", defaultRegistry)).toThrow(
+				/Unmatched opening bracket/,
+			);
+		});
+
+		test("throws on stray closing bracket", () => {
+			expect(() => parseChain("planner] -> worker", defaultRegistry)).toThrow(
+				/Unmatched closing bracket/,
+			);
+		});
 	});
 
 	describe("qualified names", () => {

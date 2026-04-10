@@ -34,6 +34,9 @@ function splitOnTopLevelArrows(expression: string): string[] {
 			depth++;
 			i++;
 		} else if (ch === "]") {
+			if (depth === 0) {
+				throw new Error('Unmatched closing bracket "]" in chain expression');
+			}
 			depth--;
 			i++;
 		} else if (depth === 0 && expression.startsWith("->", i)) {
@@ -44,6 +47,11 @@ function splitOnTopLevelArrows(expression: string): string[] {
 			i++;
 		}
 	}
+
+	if (depth !== 0) {
+		throw new Error('Unmatched opening bracket "[" in chain expression');
+	}
+
 	parts.push(expression.slice(start));
 	return parts;
 }
