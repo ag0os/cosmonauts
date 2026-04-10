@@ -24,6 +24,7 @@ import type {
 	ChainEvent,
 	ChainStage,
 	ChainStep,
+	ParallelGroupStep,
 	SpawnResult,
 	SpawnStats,
 } from "../../lib/orchestration/types.ts";
@@ -1654,5 +1655,332 @@ describe("stats tracking", () => {
 			// are returned in-memory and there's no serialization code.)
 			expect(result.stageResults[0]?.stats).toEqual(stats1);
 		});
+	});
+});
+
+// ============================================================================
+// Parallel Group Tests
+// ============================================================================
+
+describe("parallel group execution", () => {
+	beforeEach(() => {
+		spawnerRef.current = createMockSpawner();
+	});
+
+	/** Build a parallel group step with a group syntax. */
+	function makeParallelStep(
+		...stages: [ChainStage, ChainStage, ...ChainStage[]]
+	): ParallelGroupStep {
+		return { kind: "parallel", stages, syntax: { kind: "group" } };
+	}
+
+	test("parallel members are launched concurrently, not sequentially", async () => {
+		// Planner blocks until worker has started its spawn.
+		// Sequential execution would deadlock; concurrent execution resolves normally.
+		const resolvers: Array<() => void> = [];
+
+		spawnerRef.current = {
+			spawn: vi.fn(async (spawnConfig) => {
+				if (spawnConfig.role === "planner") {
+					// Block until worker unblocks us.
+					await new Promise<void>((r) => resolvers.push(r));
+				} else {
+					// Worker unblocks planner, then completes.
+					resolvers[0]?.();
+				}
+				return {
+					success: true,
+					sessionId: `s-${spawnConfig.role}`,
+					messages: [],
+				};
+			}),
+			dispose: vi.fn(),
+		};
+
+		const step = makeParallelStep(
+			makeStage("planner", false),
+			makeStage("worker", false),
+		);
+		const result = await runChain(makeConfig([step]));
+
+		// Completing without deadlock proves worker was started while planner was blocked.
+		expect(result.success).toBe(true);
+		expect(spawnerRef.current.spawn).toHaveBeenCalledTimes(2);
+	});
+
+	test("parallel_start fires before member stage_start events; parallel_end fires after all stage_end/stage_stats", async () => {
+		const events: ChainEvent[] = [];
+		spawnerRef.current = createMockSpawner([
+			{
+				success: true,
+				sessionId: "s-1",
+				messages: [],
+				stats: makeMockStats(1),
+			},
+			{
+				success: true,
+				sessionId: "s-2",
+				messages: [],
+				stats: makeMockStats(2),
+			},
+		]);
+
+		const step = makeParallelStep(
+			makeStage("planner", false),
+			makeStage("worker", false),
+		);
+		await runChain(makeConfig([step], { onEvent: (e) => events.push(e) }));
+
+		const types = events.map((e) => e.type);
+		const parallelStartIdx = types.indexOf("parallel_start");
+		const parallelEndIdx = types.indexOf("parallel_end");
+		const stageStartIndices = types.reduce<number[]>(
+			(acc, t, i) => (t === "stage_start" ? [...acc, i] : acc),
+			[],
+		);
+		const stageEndIndices = types.reduce<number[]>(
+			(acc, t, i) => (t === "stage_end" ? [...acc, i] : acc),
+			[],
+		);
+		const stageStatsIndices = types.reduce<number[]>(
+			(acc, t, i) => (t === "stage_stats" ? [...acc, i] : acc),
+			[],
+		);
+
+		expect(parallelStartIdx).toBeGreaterThan(-1);
+		expect(parallelEndIdx).toBeGreaterThan(-1);
+
+		// parallel_start precedes every stage_start
+		for (const idx of stageStartIndices) {
+			expect(parallelStartIdx).toBeLessThan(idx);
+		}
+
+		// parallel_end follows every stage_end and stage_stats
+		for (const idx of [...stageEndIndices, ...stageStatsIndices]) {
+			expect(parallelEndIdx).toBeGreaterThan(idx);
+		}
+	});
+
+	test("stageResults append members in declaration order regardless of completion order", async () => {
+		// Worker finishes first; planner waits for worker before completing.
+		let resolveWorker!: () => void;
+		const workerDone = new Promise<void>((r) => {
+			resolveWorker = r;
+		});
+
+		spawnerRef.current = {
+			spawn: vi.fn(async (spawnConfig) => {
+				if (spawnConfig.role === "planner") {
+					await workerDone;
+				} else {
+					// Worker resolves before planner completes.
+					resolveWorker();
+				}
+				return {
+					success: true,
+					sessionId: `s-${spawnConfig.role}`,
+					messages: [],
+				};
+			}),
+			dispose: vi.fn(),
+		};
+
+		// Declaration order: planner first, worker second.
+		const step = makeParallelStep(
+			makeStage("planner", false),
+			makeStage("worker", false),
+		);
+		const result = await runChain(makeConfig([step]));
+
+		expect(result.success).toBe(true);
+		expect(result.stageResults).toHaveLength(2);
+		// Worker finished first but results are in declaration order.
+		expect(result.stageResults[0]?.stage.name).toBe("planner");
+		expect(result.stageResults[1]?.stage.name).toBe("worker");
+	});
+
+	test("failing member causes parallel_end with success:false and stops subsequent steps", async () => {
+		const events: ChainEvent[] = [];
+		spawnerRef.current = createMockSpawner([
+			{
+				success: false,
+				sessionId: "",
+				messages: [],
+				error: "planner-failed",
+			},
+			{ success: true, sessionId: "s-worker", messages: [] },
+		]);
+
+		const parallelStep = makeParallelStep(
+			makeStage("planner", false),
+			makeStage("worker", false),
+		);
+		const nextStep = makeStage("task-manager", false);
+
+		const result = await runChain(
+			makeConfig([parallelStep, nextStep], {
+				onEvent: (e) => events.push(e),
+			}),
+		);
+
+		// parallel_end carries success: false
+		const parallelEnd = events.find((e) => e.type === "parallel_end") as
+			| Extract<ChainEvent, { type: "parallel_end" }>
+			| undefined;
+		expect(parallelEnd?.success).toBe(false);
+
+		// Both parallel members ran; task-manager was skipped.
+		expect(result.stageResults).toHaveLength(2);
+		expect(spawnerRef.current?.spawn).not.toHaveBeenCalledWith(
+			expect.objectContaining({ role: "task-manager" }),
+		);
+
+		// Overall chain failed.
+		expect(result.success).toBe(false);
+		expect(result.errors).toContain("planner-failed");
+	});
+
+	test("all-settled: runner waits for all members before emitting parallel_end", async () => {
+		let workerSettled = false;
+		let parallelEndEmittedEarly = false;
+
+		const events: ChainEvent[] = [];
+		let resolveWorker!: () => void;
+
+		spawnerRef.current = {
+			spawn: vi.fn(async (spawnConfig) => {
+				if (spawnConfig.role === "planner") {
+					// Fail immediately — no await.
+					return {
+						success: false,
+						sessionId: "",
+						messages: [],
+						error: "planner-err",
+					};
+				}
+				// Worker blocks until explicitly resolved.
+				await new Promise<void>((r) => {
+					resolveWorker = r;
+				});
+				workerSettled = true;
+				return { success: true, sessionId: "s-worker", messages: [] };
+			}),
+			dispose: vi.fn(),
+		};
+
+		const onEvent = (e: ChainEvent) => {
+			if (e.type === "parallel_end" && !workerSettled) {
+				parallelEndEmittedEarly = true;
+			}
+			events.push(e);
+		};
+
+		const step = makeParallelStep(
+			makeStage("planner", false),
+			makeStage("worker", false),
+		);
+		const chainPromise = runChain(makeConfig([step], { onEvent }));
+
+		// Yield to let planner's synchronous failure propagate through promises.
+		// A macrotask boundary ensures all pending microtasks (planner's chain)
+		// have been processed before we assert the intermediate state.
+		await new Promise<void>((r) => setTimeout(r, 0));
+
+		// Worker is still blocked — parallel_end must NOT have been emitted yet.
+		expect(parallelEndEmittedEarly).toBe(false);
+
+		// Unblock worker.
+		resolveWorker();
+		await chainPromise;
+
+		// parallel_end now exists and carries the failure.
+		expect(workerSettled).toBe(true);
+		expect(parallelEndEmittedEarly).toBe(false);
+		const pe = events.find((e) => e.type === "parallel_end") as Extract<
+			ChainEvent,
+			{ type: "parallel_end" }
+		>;
+		expect(pe?.success).toBe(false);
+	});
+
+	test("abort signal between parallel group and next step prevents next step from starting", async () => {
+		const controller = new AbortController();
+
+		spawnerRef.current = {
+			spawn: vi.fn(async (spawnConfig) => {
+				// Either parallel member firing abort is sufficient; idempotent.
+				if (
+					spawnConfig.role === "planner" ||
+					spawnConfig.role === "worker"
+				) {
+					controller.abort();
+				}
+				return {
+					success: true,
+					sessionId: `s-${spawnConfig.role}`,
+					messages: [],
+				};
+			}),
+			dispose: vi.fn(),
+		};
+
+		const parallelStep = makeParallelStep(
+			makeStage("planner", false),
+			makeStage("worker", false),
+		);
+		const afterStep = makeStage("task-manager", false);
+
+		const result = await runChain(
+			makeConfig([parallelStep, afterStep], { signal: controller.signal }),
+		);
+
+		// Both parallel members ran.
+		expect(result.stageResults).toHaveLength(2);
+		// task-manager was skipped because signal was aborted.
+		expect(spawnerRef.current?.spawn).not.toHaveBeenCalledWith(
+			expect.objectContaining({ role: "task-manager" }),
+		);
+		expect(result.success).toBe(false);
+	});
+
+	test("parallel stats sum tokens/cost/turns/toolCalls; totalDurationMs is not the sum of member durations", async () => {
+		const stats1 = makeMockStats(1); // durationMs: 1000
+		const stats2 = makeMockStats(2); // durationMs: 2000 — sum would be 3000
+
+		spawnerRef.current = createMockSpawner([
+			{ success: true, sessionId: "s-1", messages: [], stats: stats1 },
+			{ success: true, sessionId: "s-2", messages: [], stats: stats2 },
+		]);
+
+		const step = makeParallelStep(
+			makeStage("planner", false),
+			makeStage("worker", false),
+		);
+		const result = await runChain(makeConfig([step]));
+
+		expect(result.success).toBe(true);
+		expect(result.stats).toBeDefined();
+
+		// Tokens and cost are summed across parallel members (seeds 1+2).
+		expect(result.stats?.totalCost).toBeCloseTo(0.03); // 0.01 + 0.02
+		expect(result.stats?.totalTokens).toBe(495); // 165 + 330
+
+		// Both stages are individually tracked in the breakdown.
+		expect(result.stats?.stages).toHaveLength(2);
+		const plannerStats = result.stats?.stages.find(
+			(s) => s.stageName === "planner",
+		);
+		const workerStats = result.stats?.stages.find(
+			(s) => s.stageName === "worker",
+		);
+		expect(plannerStats?.stats.turns).toBe(1); // seed 1
+		expect(workerStats?.stats.turns).toBe(2); // seed 2
+		expect(plannerStats?.stats.toolCalls).toBe(2); // seed 1 × 2
+		expect(workerStats?.stats.toolCalls).toBe(4); // seed 2 × 2
+
+		// totalDurationMs uses the group wall-clock (≈ max member duration with real
+		// concurrency), NOT the sum of spawn-stats durations.
+		const sumOfMemberDurations = stats1.durationMs + stats2.durationMs; // 3000
+		expect(result.stats?.totalDurationMs).toBeLessThan(sumOfMemberDurations);
 	});
 });
