@@ -306,18 +306,15 @@ Events are subscribed via `pi.on(eventName, handler)`. Handlers receive `(event,
 
 | Event | When | Return type | Use case |
 |-------|------|-------------|----------|
-| `session_start` | Session loads | — | State restoration |
+| `session_start` | Session starts, reloads, or replaces the active session | — | State restoration, rebind per-session state |
 | `session_before_switch` | Before session switch | Can cancel | State management |
-| `session_switch` | After session switch | — | Post-switch setup |
 | `session_before_fork` | Before fork | Can cancel | State management |
-| `session_fork` | After fork | — | Post-fork setup |
 | `session_before_compact` | Before compaction | Can modify | Custom compaction |
 | `session_compact` | After compaction | — | Post-compact updates |
 | `session_before_tree` | Before tree navigation | Can cancel | State management |
 | `session_tree` | After tree navigation | — | Post-navigate setup |
 | `session_shutdown` | Process exit | — | Cleanup, saving |
 | `resources_discover` | Resources discovered | `ResourcesDiscoverResult` | Add skill/prompt/theme paths |
-| `session_directory` | Before session dir creation | Custom path | Session storage location |
 
 **Other Events:**
 
@@ -604,26 +601,58 @@ Supports 20+ commands: `prompt`, `steer`, `follow_up`, `abort`, `set_model`, `co
 ## Session Branching and Navigation
 
 ```typescript
-// Fork from a specific entry (creates new session file)
-const { selectedText, cancelled } = await session.fork(entryId);
+import {
+  type CreateAgentSessionRuntimeFactory,
+  createAgentSessionFromServices,
+  createAgentSessionRuntime,
+  createAgentSessionServices,
+  getAgentDir,
+  SessionManager,
+} from "@mariozechner/pi-coding-agent";
+
+const createRuntime: CreateAgentSessionRuntimeFactory = async ({
+  cwd,
+  sessionManager,
+  sessionStartEvent,
+}) => {
+  const services = await createAgentSessionServices({ cwd });
+  return {
+    ...(await createAgentSessionFromServices({
+      services,
+      sessionManager,
+      sessionStartEvent,
+    })),
+    services,
+    diagnostics: services.diagnostics,
+  };
+};
+
+const runtime = await createAgentSessionRuntime(createRuntime, {
+  cwd: process.cwd(),
+  agentDir: getAgentDir(),
+  sessionManager: SessionManager.create(process.cwd()),
+});
+
+// Fork from a specific entry (creates/replaces the active session)
+await runtime.fork(entryId);
 
 // Navigate within session tree (same file)
-const result = await session.navigateTree(targetId, {
+const result = await runtime.session.navigateTree(targetId, {
   summarize: true,
   customInstructions: "Focus on...",
 });
 
 // Start fresh session
-const completed = await session.newSession({
+await runtime.newSession({
   parentSession: "/path/to/parent.jsonl",
   setup: async (sm) => { /* initialize session entries */ },
 });
 
 // Switch to different session file
-const completed = await session.switchSession("/path/to/other.jsonl");
+await runtime.switchSession("/path/to/other.jsonl");
 
 // Get user messages for fork selector
-const messages = session.getUserMessagesForForking();
+const messages = runtime.session.getUserMessagesForForking();
 ```
 
 ## Auth Storage
@@ -640,7 +669,7 @@ const auth = AuthStorage.inMemory();                     // Ephemeral
 ```typescript
 import { ModelRegistry } from "@mariozechner/pi-coding-agent";
 
-const registry = new ModelRegistry(authStorage, "/path/to/models.json");
+const registry = ModelRegistry.create(authStorage, "/path/to/models.json");
 ```
 
 Models are identified by `"provider/model-id"` strings. Use `getModel()` from `pi-ai` to resolve:

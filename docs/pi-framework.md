@@ -13,7 +13,7 @@ Pi ships as four npm packages under `@mariozechner/`:
 | `pi-agent-core` | Core types: `Agent`, `AgentEvent`, `AgentMessage`, `AgentTool`, `ThinkingLevel` |
 | `pi-tui` | Terminal UI library (components, editor, rendering) |
 
-All packages follow lockstep versioning (currently v0.56.1). The binary is `pi`.
+All packages follow lockstep versioning (currently v0.66.1 in this repo). The binary is `pi`.
 
 ---
 
@@ -65,6 +65,8 @@ interface AgentSession {
   dispose(): void;
 }
 ```
+
+Session replacement APIs such as new-session, resume, fork, and import no longer live on `AgentSession`. Use `createAgentSessionRuntime()` and `AgentSessionRuntime` for `newSession()`, `switchSession()`, `fork()`, and `importFromJsonl()`.
 
 ### Session Persistence
 
@@ -211,12 +213,9 @@ Pi exposes ~25 lifecycle events via `pi.on()`. Events are grouped by category be
 
 | Event | When | Payload | Can modify? |
 |-------|------|---------|-------------|
-| `session_directory` | Before session manager creation | `cwd: string` | Yes — return custom session directory path |
-| `session_start` | Session initially loaded | *(empty)* | No |
+| `session_start` | Session started, loaded, or reloaded | `reason: "startup" \| "reload" \| "new" \| "resume" \| "fork"`, `previousSessionFile?: string` | No |
 | `session_before_switch` | Before switching to another session | `reason: "new" \| "resume"`, `targetSessionFile?: string` | Yes — return `{ cancel: true }` to block |
-| `session_switch` | After switching sessions | `reason: "new" \| "resume"`, `previousSessionFile: string \| undefined` | No |
 | `session_before_fork` | Before forking a session | `entryId: string` | Yes — return `{ cancel: true }` to block |
-| `session_fork` | After forking | `previousSessionFile: string \| undefined` | No |
 | `session_before_compact` | Before context compaction | `preparation: CompactionPreparation`, `branchEntries: SessionEntry[]`, `signal: AbortSignal` | Yes — return custom compaction instructions |
 | `session_compact` | After compaction completes | `compactionEntry: CompactionEntry`, `fromExtension: boolean` | No |
 | `session_before_tree` | Before navigating session tree | `preparation: TreePreparation`, `signal: AbortSignal` | Yes — can cancel or customize |
