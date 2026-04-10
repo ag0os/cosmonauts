@@ -255,6 +255,49 @@ describe("installAction — success", () => {
 		const call = mockInstallPackage.mock.calls[0]?.[0];
 		expect(call?.source).toMatch(/bundled[\\/]coding$/);
 	});
+
+	it("passes catalogName to installPackage for catalog entries", async () => {
+		mockResolveCatalogEntry.mockReturnValue({
+			name: "coding",
+			description: "Coding domain",
+			source: "./bundled/coding",
+		});
+		mockInstallPackage.mockResolvedValue({
+			manifest: {
+				name: "coding",
+				version: "1.0.0",
+				description: "Test",
+				domains: [{ name: "coding", path: "coding" }],
+			},
+			installedTo: "/store/coding",
+			domainMergeResults: [],
+		});
+
+		await installAction("coding", { projectRoot: "/project" });
+
+		expect(mockInstallPackage).toHaveBeenCalledWith(
+			expect.objectContaining({ catalogName: "coding" }),
+		);
+	});
+
+	it("does not pass catalogName for non-catalog sources", async () => {
+		mockResolveCatalogEntry.mockReturnValue(undefined);
+		mockInstallPackage.mockResolvedValue({
+			manifest: {
+				name: "my-pkg",
+				version: "1.0.0",
+				description: "Test",
+				domains: [{ name: "coding", path: "coding" }],
+			},
+			installedTo: "/store/my-pkg",
+			domainMergeResults: [],
+		});
+
+		await installAction("https://github.com/owner/repo", { projectRoot: "/project" });
+
+		const call = mockInstallPackage.mock.calls[0]?.[0];
+		expect(call?.catalogName).toBeUndefined();
+	});
 });
 
 // ============================================================================
