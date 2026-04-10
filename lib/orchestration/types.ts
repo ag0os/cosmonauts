@@ -35,6 +35,23 @@ export interface ChainStage {
 	prompt?: string;
 }
 
+/** Syntax descriptor for a parallel group step */
+type ParallelGroupSyntax =
+	| { kind: "group" }
+	| { kind: "fanout"; role: string; count: number };
+
+/** A parallel group step that runs multiple stages concurrently */
+export interface ParallelGroupStep {
+	kind: "parallel";
+	/** At least two stages to run concurrently */
+	stages: [ChainStage, ChainStage, ...ChainStage[]];
+	/** Discriminated syntax — describes how this group was expressed in the DSL */
+	syntax: ParallelGroupSyntax;
+}
+
+/** A single step in a chain — either a sequential stage or a parallel group */
+export type ChainStep = ChainStage | ParallelGroupStep;
+
 // ============================================================================
 // Configuration
 // ============================================================================
@@ -89,8 +106,8 @@ export interface CompactionConfig {
 
 /** Configuration for a chain execution */
 export interface ChainConfig {
-	/** Chain stages to execute (parsed from DSL or provided directly) */
-	stages: ChainStage[];
+	/** Chain steps to execute (parsed from DSL or provided directly) */
+	steps: ChainStep[];
 	/** Project root directory (for task system, cwd) */
 	projectRoot: string;
 	/** Default domain context for resolving unqualified stage names. */
@@ -239,12 +256,21 @@ export type SpawnEvent =
 	| (SpawnEventBase & { type: "auto_compaction_end"; aborted: boolean });
 
 export type ChainEvent =
-	| { type: "chain_start"; stages: ChainStage[] }
+	| { type: "chain_start"; steps: ChainStep[] }
 	| { type: "chain_end"; result: ChainResult }
 	| { type: "stage_start"; stage: ChainStage; stageIndex: number }
 	| { type: "stage_end"; stage: ChainStage; result: StageResult }
 	| { type: "stage_stats"; stage: ChainStage; stats: SpawnStats }
 	| { type: "stage_iteration"; stage: ChainStage; iteration: number }
+	| { type: "parallel_start"; step: ParallelGroupStep; stepIndex: number }
+	| {
+			type: "parallel_end";
+			step: ParallelGroupStep;
+			stepIndex: number;
+			results: StageResult[];
+			success: boolean;
+			error?: string;
+	  }
 	| { type: "agent_spawned"; role: string; sessionId: string }
 	| { type: "agent_completed"; role: string; sessionId: string }
 	| { type: "agent_turn"; role: string; sessionId: string; event: SpawnEvent }
