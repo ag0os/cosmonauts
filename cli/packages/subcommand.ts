@@ -125,7 +125,9 @@ export async function installAction(
 ): Promise<void> {
 	const cwd = options.projectRoot ?? process.cwd();
 	const scope: PackageScope = options.local ? "project" : "user";
-	const source = resolveSource(arg);
+	const entry = resolveCatalogEntry(arg);
+	const source = entry ? resolveCatalogSource(entry.source) : arg;
+	const catalogName = entry?.name;
 
 	let result: Awaited<ReturnType<typeof installPackage>>;
 	try {
@@ -135,6 +137,7 @@ export async function installAction(
 			projectRoot: cwd,
 			link: options.link,
 			branch: options.branch,
+			catalogName,
 		});
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : String(err);

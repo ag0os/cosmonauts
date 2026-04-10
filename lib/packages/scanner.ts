@@ -1,9 +1,11 @@
 /**
  * Package scanner — discovers DomainSource[] from all package sources.
  * Scans built-in domains, global store, local store, and optional plugin dirs
- * in precedence order: built-in (0) → bundled (0.5) → global (1) → local (2) → plugin (3).
+ * in precedence order: built-in (0) → bundled (0.5) → global (1) → user-domains (1.5) → local (2) → project-domains (2.5) → plugin (3).
  */
 
+import { stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { listInstalledPackages } from "./store.ts";
 import type { DomainSource, InstalledPackage } from "./types.ts";
@@ -34,7 +36,9 @@ export interface ScanDomainSourcesOptions {
  *   0   — framework built-in domains directory
  *   0.5 — bundled packages (framework dev-mode only)
  *   1   — global (user-scope) installed packages
+ *   1.5 — user-domains directory (~/.cosmonauts/domains/)
  *   2   — local (project-scope) installed packages
+ *   2.5 — project-domains directory (.cosmonauts/domains/)
  *   3   — plugin dirs (session-only, highest precedence)
  *
  * Packages with no declared domains are skipped.
@@ -67,9 +71,39 @@ export async function scanDomainSources(
 	const globalPackages = await listInstalledPackages("user");
 	addPackageSources(sources, globalPackages, "global", 1);
 
+	// User-domains: ~/.cosmonauts/domains/
+	const userDomainsDir = join(homedir(), ".cosmonauts", "domains");
+	try {
+		const userDomainsStat = await stat(userDomainsDir);
+		if (userDomainsStat.isDirectory()) {
+			sources.push({
+				domainsDir: userDomainsDir,
+				origin: "user-domains",
+				precedence: 1.5,
+			});
+		}
+	} catch {
+		// Directory does not exist — skip silently
+	}
+
 	// Local packages (project scope)
 	const localPackages = await listInstalledPackages("project", projectRoot);
 	addPackageSources(sources, localPackages, "local", 2);
+
+	// Project-domains: .cosmonauts/domains/ relative to projectRoot
+	const projectDomainsDir = join(projectRoot, ".cosmonauts", "domains");
+	try {
+		const projectDomainsStat = await stat(projectDomainsDir);
+		if (projectDomainsStat.isDirectory()) {
+			sources.push({
+				domainsDir: projectDomainsDir,
+				origin: "project-domains",
+				precedence: 2.5,
+			});
+		}
+	} catch {
+		// Directory does not exist — skip silently
+	}
 
 	// Plugin dirs: session-only sources, not stored in the package store
 	if (pluginDirs) {
