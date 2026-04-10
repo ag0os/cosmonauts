@@ -1,8 +1,8 @@
 import { Command } from "commander";
+import { scaffoldMissions } from "../scaffold/commands/missions.ts";
 import { registerCommand as registerCreate } from "./commands/create.ts";
 import { registerCommand as registerDelete } from "./commands/delete.ts";
 import { registerCommand as registerEdit } from "./commands/edit.ts";
-import { registerCommand as registerInit } from "./commands/init.ts";
 import { registerCommand as registerList } from "./commands/list.ts";
 import { registerCommand as registerSearch } from "./commands/search.ts";
 import { registerCommand as registerView } from "./commands/view.ts";
@@ -19,7 +19,7 @@ export function createTaskProgram(): Command {
 		.option("--plain", "Output in plain text format (for agents)")
 		.option("--json", "Output in JSON format");
 
-	registerInit(program);
+	registerInitAlias(program);
 	registerCreate(program);
 	registerList(program);
 	registerView(program);
@@ -28,4 +28,20 @@ export function createTaskProgram(): Command {
 	registerSearch(program);
 
 	return program;
+}
+
+/** Deprecated alias: `task init` → `scaffold missions`. */
+function registerInitAlias(program: Command): void {
+	program
+		.command("init")
+		.description("[deprecated: use `cosmonauts scaffold missions`]")
+		.option("-p, --prefix <prefix>", "Task ID prefix", "TASK")
+		.option("-n, --name <name>", "Project name")
+		.option("-f, --force", "Force reinitialize even if already initialized")
+		.action(async (options) => {
+			console.warn(
+				"Warning: `cosmonauts task init` is deprecated. Use `cosmonauts scaffold missions` instead.",
+			);
+			await scaffoldMissions(options, program.opts());
+		});
 }

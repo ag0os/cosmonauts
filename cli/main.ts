@@ -53,6 +53,7 @@ import {
 } from "./packages/subcommand.ts";
 import { parsePiFlags } from "./pi-flags.ts";
 import { createPlanProgram } from "./plans/index.ts";
+import { createScaffoldProgram } from "./scaffold/subcommand.ts";
 import { createSession, GracefulExitError } from "./session.ts";
 import { createSkillsProgram } from "./skills/subcommand.ts";
 import { createTaskProgram } from "./tasks/subcommand.ts";
@@ -450,6 +451,7 @@ const subcommand = process.argv[2];
 if (
 	subcommand === "task" ||
 	subcommand === "plan" ||
+	subcommand === "scaffold" ||
 	subcommand === "skills" ||
 	subcommand === "create" ||
 	subcommand === "install" ||
@@ -461,6 +463,7 @@ if (
 	const programs: Record<string, () => Command> = {
 		task: createTaskProgram,
 		plan: createPlanProgram,
+		scaffold: createScaffoldProgram,
 		skills: createSkillsProgram,
 		create: createCreateProgram,
 		install: createInstallProgram,

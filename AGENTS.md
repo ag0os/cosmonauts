@@ -136,7 +136,7 @@ Flags: `--print`, `--workflow`, `--chain`, `--model`, `--thinking`, `--domain`/`
 
 Work flows through: **roadmap → plan → tasks → sessions → archive → memory**.
 
-All work artifacts live in local, gitignored directories created by `cosmonauts task init`:
+All work artifacts live in local, gitignored directories created by `cosmonauts scaffold missions`:
 
 - **Roadmap** (`ROADMAP.md`): Work backlog with prioritized items on top and unordered ideas below. Items are picked up and turned into plans.
 - **Plans** (`missions/plans/<slug>/`): Implementation plans with `plan.md` and optional `spec.md`. Created via `plan_create`. Local.
@@ -183,11 +183,11 @@ tests/            Test suites mirroring source structure
 docs/             Reference documentation
 ```
 
-**Local (gitignored, created by `cosmonauts task init`):**
+**Local (gitignored, created by `cosmonauts scaffold missions`):**
 
 ```
 missions/         Active tasks, plans, and archived work
 missions/sessions/ Agent session transcripts and lineage manifests (per-plan)
 memory/           Distilled knowledge from completed work
-.cosmonauts/      Project config (created by `cosmonauts task init`, customizable)
+.cosmonauts/      Project config (created by `cosmonauts scaffold missions`, customizable)
 ```

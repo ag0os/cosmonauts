@@ -56,7 +56,7 @@ After installing, initialize your project:
 
 ```bash
 # 1. Initialize local directories and project config
-cosmonauts task init
+cosmonauts scaffold missions
 
 # 2. (Optional) Customize .cosmonauts/config.json — adjust skills and workflows
 
@@ -64,7 +64,7 @@ cosmonauts task init
 cosmonauts --workflow plan-and-build "describe what you want to build"
 ```
 
-The `init` command creates `missions/` and `memory/` directories for tasks, plans, and archived work, plus `.cosmonauts/config.json` with default workflows and skills. All are local and gitignored. You can customize the config to match your project, or use the defaults as-is.
+The `scaffold missions` command creates `missions/` and `memory/` directories for tasks, plans, and archived work, plus `.cosmonauts/config.json` with default workflows and skills. All are local and gitignored. You can customize the config to match your project, or use the defaults as-is.
 
 ## Usage
 
@@ -120,7 +120,7 @@ cosmonauts --chain "planner -> task-manager -> coordinator -> quality-manager" "
 Manage tasks directly via subcommands:
 
 ```bash
-cosmonauts task init          # Initialize task directory
+cosmonauts scaffold missions  # Scaffold missions directories
 cosmonauts task create        # Create a task interactively
 cosmonauts task list          # List all tasks
 cosmonauts task list --ready  # Show unblocked tasks

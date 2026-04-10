@@ -97,7 +97,7 @@ export async function loadProjectConfig(
 }
 
 /**
- * Default project config scaffolded during `cosmonauts task init`.
+ * Default project config scaffolded during `cosmonauts scaffold missions`.
  * Matches `.cosmonauts/config.example.json`.
  */
 const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
