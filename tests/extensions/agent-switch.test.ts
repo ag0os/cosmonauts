@@ -46,6 +46,7 @@ interface CommandContext {
 		setup?: (sm: unknown) => Promise<void>;
 	}) => Promise<{ cancelled: boolean }>;
 	waitForIdle: () => Promise<void>;
+	isIdle: () => boolean;
 	ui: {
 		notify: (message: string, level: string) => void;
 		select: (prompt: string, options: string[]) => Promise<string | null>;
@@ -106,6 +107,7 @@ function createMockCtx(
 		cwd: "/tmp/test-project",
 		newSession: vi.fn().mockResolvedValue({ cancelled: false }),
 		waitForIdle: vi.fn().mockResolvedValue(undefined),
+		isIdle: vi.fn().mockReturnValue(false),
 		ui: {
 			notify: vi.fn(),
 			select: vi.fn().mockResolvedValue(null),
@@ -324,12 +326,15 @@ describe("agent-switch extension", () => {
 	// ========================================================================
 
 	describe("/handoff with valid ID", () => {
-		test("sends summarization prompt and waits for idle", async () => {
+		test("sends summarization prompt and waits for completion", async () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);
 			setupSharedRegistry(["planner"]);
 			mocks.extractAgentId.mockReturnValue("cosmo");
 
+			// Simulate: sendUserMessage makes agent busy, then waitForIdle
+			// resolves once the agent finishes the summary turn.
+			let idle = true;
 			const ctx = createMockCtx({
 				sessionManager: {
 					getSessionFile: () => "/tmp/sessions/cosmo.jsonl",
@@ -348,6 +353,15 @@ describe("agent-switch extension", () => {
 						},
 					],
 				},
+				isIdle: (() => idle) as () => boolean,
+				waitForIdle: vi.fn().mockImplementation(async () => {
+					idle = true;
+				}),
+			});
+
+			// sendUserMessage triggers the agent, making it non-idle
+			pi.sendUserMessage.mockImplementation(() => {
+				idle = false;
 			});
 
 			await getCommand(pi, "handoff").handler("planner", ctx);
@@ -359,7 +373,7 @@ describe("agent-switch extension", () => {
 			expect(ctx.waitForIdle).toHaveBeenCalled();
 		});
 
-		test("waits for streaming turn to finish before switching", async () => {
+		test("waits for agent to become busy then idle before switching", async () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);
 			setupSharedRegistry(["planner"]);
@@ -367,21 +381,12 @@ describe("agent-switch extension", () => {
 
 			// Track the order of operations to verify sequencing
 			const callOrder: string[] = [];
-
-			// Simulate a streaming turn: waitForIdle resolves only after
-			// the "agent" finishes (getBranch returns the summary).
-			// Initially the branch has no assistant summary.
-			let branchEntries: unknown[] = [];
+			let idle = true;
 
 			const ctx = createMockCtx({
 				sessionManager: {
 					getSessionFile: () => "/tmp/sessions/cosmo.jsonl",
-					getBranch: () => branchEntries,
-				},
-				waitForIdle: vi.fn().mockImplementation(async () => {
-					callOrder.push("waitForIdle");
-					// Simulate the agent finishing: the summary appears in the branch
-					branchEntries = [
+					getBranch: () => [
 						{
 							type: "message",
 							message: {
@@ -389,7 +394,12 @@ describe("agent-switch extension", () => {
 								content: [{ type: "text", text: "Summary after streaming." }],
 							},
 						},
-					];
+					],
+				},
+				isIdle: (() => idle) as () => boolean,
+				waitForIdle: vi.fn().mockImplementation(async () => {
+					callOrder.push("waitForIdle");
+					idle = true;
 				}),
 				newSession: vi.fn().mockImplementation(async () => {
 					callOrder.push("newSession");
@@ -397,20 +407,20 @@ describe("agent-switch extension", () => {
 				}),
 			});
 
-			// Make sendUserMessage track its call order too
+			// sendUserMessage makes agent busy (non-idle)
 			pi.sendUserMessage.mockImplementation(() => {
 				callOrder.push("sendUserMessage");
+				idle = false;
 			});
 
 			await getCommand(pi, "handoff").handler("planner", ctx);
 
-			// Verify strict ordering: prompt sent → wait for idle → switch
+			// Verify: prompt sent → wait for idle → switch
 			expect(callOrder).toEqual([
 				"sendUserMessage",
 				"waitForIdle",
 				"newSession",
 			]);
-			// The summary produced after streaming should be in the handoff
 			expect(ctx.newSession).toHaveBeenCalledWith(
 				expect.objectContaining({
 					setup: expect.any(Function),
@@ -466,6 +476,50 @@ describe("agent-switch extension", () => {
 			// Should contain the agent's summary
 			const text = mockSm.appendMessage.mock.calls[0]?.[0]?.content?.[0]?.text;
 			expect(text).toContain("JWT with refresh tokens");
+		});
+
+		test("fails fast when the summary turn never starts", async () => {
+			vi.useFakeTimers();
+			try {
+				const pi = createMockPi();
+				agentSwitchExtension(pi as never);
+				setupSharedRegistry(["planner"]);
+
+				const ctx = createMockCtx({
+					isIdle: vi.fn().mockReturnValue(true),
+					waitForIdle: vi.fn().mockResolvedValue(undefined),
+					sessionManager: {
+						getSessionFile: () => "/tmp/sessions/test.jsonl",
+						getBranch: () => [
+							{
+								type: "message",
+								message: {
+									role: "assistant",
+									content: [{ type: "text", text: "Earlier assistant reply." }],
+								},
+							},
+						],
+					},
+				});
+
+				const handoffPromise = getCommand(pi, "handoff").handler(
+					"planner",
+					ctx,
+				);
+				await vi.advanceTimersByTimeAsync(500);
+				await handoffPromise;
+
+				expect(ctx.waitForIdle).not.toHaveBeenCalled();
+				expect(ctx.ui.notify).toHaveBeenCalledWith(
+					expect.stringContaining("without context"),
+					"warning",
+				);
+				expect(ctx.newSession).toHaveBeenCalledWith(
+					expect.objectContaining({ setup: undefined }),
+				);
+			} finally {
+				vi.useRealTimers();
+			}
 		});
 
 		test("switches without context when summary is empty", async () => {

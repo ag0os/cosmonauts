@@ -32,6 +32,7 @@ const HANDOFF_PROMPT = `Summarize this conversation for handoff to a different a
 - What the user wants to do next
 
 Format as a brief (under 300 words). Do not add preamble — start directly with the summary.`;
+const HANDOFF_START_GRACE_MS = 500;
 
 // ============================================================================
 // Helpers
@@ -93,6 +94,23 @@ function getLastAssistantText(
 		if (text.trim()) return text.trim();
 	}
 	return undefined;
+}
+
+/**
+ * Wait until the agent transitions from idle to busy (streaming).
+ * Polls with short delays to bridge the gap between fire-and-forget
+ * sendUserMessage and the agent loop actually starting.
+ */
+async function waitUntilBusy(
+	ctx: ExtensionCommandContext,
+	timeoutMs = HANDOFF_START_GRACE_MS,
+): Promise<boolean> {
+	const start = Date.now();
+	while (ctx.isIdle()) {
+		if (Date.now() - start >= timeoutMs) return false;
+		await new Promise((r) => setTimeout(r, 50));
+	}
+	return true;
 }
 
 // ============================================================================
@@ -193,13 +211,25 @@ export default function agentSwitchExtension(pi: ExtensionAPI): void {
 			);
 
 			// Ask the current agent to produce a handoff summary.
-			// Use "followUp" so this works whether the agent is idle or
-			// mid-stream — Pi queues it after the current turn finishes.
+			// pi.sendUserMessage is fire-and-forget (returns void), so we must
+			// wait for the triggered turn to complete before extracting the summary.
 			pi.sendUserMessage(HANDOFF_PROMPT, { deliverAs: "followUp" });
-			await ctx.waitForIdle();
+
+			// sendUserMessage triggers prompt() internally, which sets up the
+			// agent run after several async steps. We need the run to be active
+			// before calling waitForIdle (which resolves immediately if no run
+			// exists). Poll until the agent is no longer idle, then wait for
+			// it to finish. If the run never starts, fail fast and fall back
+			// without context instead of hanging on a long fixed timeout.
+			const summaryStarted = await waitUntilBusy(ctx);
+			if (summaryStarted) {
+				await ctx.waitForIdle();
+			}
 
 			// Extract the summary the agent just produced
-			const summary = getLastAssistantText(ctx.sessionManager);
+			const summary = summaryStarted
+				? getLastAssistantText(ctx.sessionManager)
+				: undefined;
 			if (!summary) {
 				ctx.ui.notify(
 					"Could not generate handoff summary. Switching without context.",
