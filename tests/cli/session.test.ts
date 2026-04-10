@@ -34,6 +34,9 @@ vi.mock("../../lib/agents/session-assembly.ts", () => ({
 }));
 
 vi.mock("@mariozechner/pi-coding-agent", () => ({
+	AuthStorage: {
+		create: () => ({ reload: vi.fn(), hasAuth: vi.fn(() => false) }),
+	},
 	createAgentSessionFromServices: mocks.createAgentSessionFromServices,
 	createAgentSessionRuntime: mocks.createAgentSessionRuntime,
 	createAgentSessionServices: mocks.createAgentSessionServices,

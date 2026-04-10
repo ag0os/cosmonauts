@@ -23,6 +23,7 @@ export class GracefulExitError extends Error {
 
 import {
 	type AgentSessionRuntime,
+	AuthStorage,
 	type CreateAgentSessionRuntimeFactory,
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
@@ -377,6 +378,10 @@ export async function createSession(
 		sessionDir,
 	});
 
+	// Share a single AuthStorage across session switches (handoff, /agent, /new)
+	// to avoid file lock contention with in-flight OAuth token refreshes.
+	const sharedAuthStorage = AuthStorage.create();
+
 	const createRuntime: CreateAgentSessionRuntimeFactory = async ({
 		cwd: effectiveCwd,
 		sessionManager: sm,
@@ -406,6 +411,7 @@ export async function createSession(
 					// SessionManager would reopen old history and drop the link.
 					const services = await createAgentSessionServices({
 						cwd: effectiveCwd,
+						authStorage: sharedAuthStorage,
 						resourceLoaderOptions: newResourceLoaderOptions,
 					});
 					const result = await createAgentSessionFromServices({
@@ -434,6 +440,7 @@ export async function createSession(
 
 		const services = await createAgentSessionServices({
 			cwd: effectiveCwd,
+			authStorage: sharedAuthStorage,
 			resourceLoaderOptions,
 		});
 		const result = await createAgentSessionFromServices({
