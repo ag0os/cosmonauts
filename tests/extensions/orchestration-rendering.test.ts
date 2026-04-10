@@ -3,7 +3,10 @@ import {
 	chainEventToProgressLine,
 	summarizeToolCall,
 } from "../../domains/shared/extensions/orchestration/rendering.ts";
-import type { ChainEvent } from "../../lib/orchestration/types.ts";
+import type {
+	ChainEvent,
+	ParallelGroupStep,
+} from "../../lib/orchestration/types.ts";
 
 describe("summarizeToolCall", () => {
 	test("read extracts file basename", () => {
@@ -75,6 +78,130 @@ describe("summarizeToolCall", () => {
 
 	test("undefined args returns tool name", () => {
 		expect(summarizeToolCall("bash")).toBe("bash ");
+	});
+});
+
+describe("chainEventToProgressLine — chain_start", () => {
+	test("sequential steps renders DSL string via formatChainSteps", () => {
+		const event: ChainEvent = {
+			type: "chain_start",
+			steps: [
+				{ name: "planner", loop: false },
+				{ name: "coordinator", loop: false },
+			],
+		};
+		expect(chainEventToProgressLine(event)).toBe(
+			"▶ Chain started: planner -> coordinator",
+		);
+	});
+
+	test("single sequential step renders just the role name", () => {
+		const event: ChainEvent = {
+			type: "chain_start",
+			steps: [{ name: "worker", loop: false }],
+		};
+		expect(chainEventToProgressLine(event)).toBe("▶ Chain started: worker");
+	});
+
+	test("bracket group step renders bracket DSL string", () => {
+		const event: ChainEvent = {
+			type: "chain_start",
+			steps: [
+				{ name: "planner", loop: false },
+				{
+					kind: "parallel",
+					stages: [
+						{ name: "task-manager", loop: false },
+						{ name: "reviewer", loop: false },
+					],
+					syntax: { kind: "group" },
+				},
+			],
+		};
+		expect(chainEventToProgressLine(event)).toBe(
+			"▶ Chain started: planner -> [task-manager, reviewer]",
+		);
+	});
+
+	test("fanout step renders fanout DSL string", () => {
+		const event: ChainEvent = {
+			type: "chain_start",
+			steps: [
+				{
+					kind: "parallel",
+					stages: [
+						{ name: "reviewer", loop: false },
+						{ name: "reviewer", loop: false },
+					],
+					syntax: { kind: "fanout", role: "reviewer", count: 2 },
+				},
+			],
+		};
+		expect(chainEventToProgressLine(event)).toBe(
+			"▶ Chain started: reviewer[2]",
+		);
+	});
+});
+
+describe("chainEventToProgressLine — parallel events", () => {
+	const parallelStep: ParallelGroupStep = {
+		kind: "parallel",
+		stages: [
+			{ name: "task-manager", loop: false },
+			{ name: "reviewer", loop: false },
+		],
+		syntax: { kind: "group" },
+	};
+
+	test("parallel_start produces a TUI progress entry for the group", () => {
+		const event: ChainEvent = {
+			type: "parallel_start",
+			step: parallelStep,
+			stepIndex: 0,
+		};
+		expect(chainEventToProgressLine(event)).toBe(
+			"▶ Parallel [task-manager, reviewer] starting...",
+		);
+	});
+
+	test("parallel_end success:true shows group success in TUI output", () => {
+		const event: ChainEvent = {
+			type: "parallel_end",
+			step: parallelStep,
+			stepIndex: 0,
+			results: [],
+			success: true,
+		};
+		expect(chainEventToProgressLine(event)).toBe(
+			"● Parallel [task-manager, reviewer] done",
+		);
+	});
+
+	test("parallel_end success:false shows group failure in TUI output", () => {
+		const event: ChainEvent = {
+			type: "parallel_end",
+			step: parallelStep,
+			stepIndex: 0,
+			results: [],
+			success: false,
+		};
+		expect(chainEventToProgressLine(event)).toBe(
+			"✗ Parallel [task-manager, reviewer] failed",
+		);
+	});
+
+	test("parallel_end success:false with error message includes error in TUI output", () => {
+		const event: ChainEvent = {
+			type: "parallel_end",
+			step: parallelStep,
+			stepIndex: 0,
+			results: [],
+			success: false,
+			error: "timeout",
+		};
+		expect(chainEventToProgressLine(event)).toBe(
+			"✗ Parallel [task-manager, reviewer] failed: timeout",
+		);
 	});
 });
 
