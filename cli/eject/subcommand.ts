@@ -40,10 +40,14 @@ export async function ejectAction(
 		console.log(`Ejected "${domainId}" to ${ejectedRelative}/`);
 		console.log(`Source: ${result.sourcePackage} (${result.sourcePath})`);
 		console.log();
+		const uninstallCommand =
+			result.sourceScope === "project"
+				? `cosmonauts uninstall ${result.sourcePackage} --local`
+				: `cosmonauts uninstall ${result.sourcePackage}`;
 		console.log(
 			"The installed package is still active as a fallback. To remove it:",
 		);
-		console.log(`  cosmonauts uninstall ${result.sourcePackage}`);
+		console.log(`  ${uninstallCommand}`);
 		console.log();
 		console.log(
 			'Tip: Add "cosmonauts" as a dev dependency for IDE type support in ejected files.',

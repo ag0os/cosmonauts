@@ -14,6 +14,7 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 import { listInstalledPackages } from "./store.ts";
+import type { PackageScope } from "./types.ts";
 
 // ============================================================================
 // Types
@@ -33,6 +34,8 @@ export interface EjectResult {
 	ejectedTo: string;
 	/** Name of the source package */
 	sourcePackage: string;
+	/** Scope of the source package */
+	sourceScope: PackageScope;
 	/** Absolute path of the source domain directory */
 	sourcePath: string;
 }
@@ -104,6 +107,7 @@ export async function ejectDomain(options: EjectOptions): Promise<EjectResult> {
 	return {
 		ejectedTo: target,
 		sourcePackage: foundPkg.manifest.name,
+		sourceScope: foundPkg.scope,
 		sourcePath: foundDomainPath,
 	};
 }

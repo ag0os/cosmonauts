@@ -64,6 +64,7 @@ describe("ejectAction — success", () => {
 		mockEjectDomain.mockResolvedValue({
 			ejectedTo: "/project/.cosmonauts/domains/coding",
 			sourcePackage: "coding",
+			sourceScope: "user",
 			sourcePath: "/home/user/.cosmonauts/packages/coding/domains/coding",
 		});
 
@@ -77,6 +78,7 @@ describe("ejectAction — success", () => {
 		mockEjectDomain.mockResolvedValue({
 			ejectedTo: "/project/.cosmonauts/domains/coding",
 			sourcePackage: "coding",
+			sourceScope: "user",
 			sourcePath: "/home/user/.cosmonauts/packages/coding/domains/coding",
 		});
 
@@ -88,23 +90,41 @@ describe("ejectAction — success", () => {
 		);
 	});
 
-	it("prints uninstall guidance with source package name", async () => {
+	it("prints global uninstall guidance without --local for user scope", async () => {
 		mockEjectDomain.mockResolvedValue({
 			ejectedTo: "/project/.cosmonauts/domains/coding",
 			sourcePackage: "coding-minimal",
+			sourceScope: "user",
 			sourcePath: "/store/coding-minimal/domains/coding",
 		});
 
 		await ejectAction("coding", { projectRoot: "/project" });
 
 		expect(stdoutOutput).toContain("cosmonauts uninstall coding-minimal");
+		expect(stdoutOutput).not.toContain("coding-minimal --local");
 		expect(stdoutOutput).toContain("fallback");
+	});
+
+	it("prints local uninstall guidance with --local for project scope", async () => {
+		mockEjectDomain.mockResolvedValue({
+			ejectedTo: "/project/.cosmonauts/domains/coding",
+			sourcePackage: "coding-minimal",
+			sourceScope: "project",
+			sourcePath: "/project/.cosmonauts/packages/coding-minimal/domains/coding",
+		});
+
+		await ejectAction("coding", { projectRoot: "/project" });
+
+		expect(stdoutOutput).toContain(
+			"cosmonauts uninstall coding-minimal --local",
+		);
 	});
 
 	it("prints IDE tip", async () => {
 		mockEjectDomain.mockResolvedValue({
 			ejectedTo: "/project/.cosmonauts/domains/coding",
 			sourcePackage: "coding",
+			sourceScope: "user",
 			sourcePath: "/store/coding/domains/coding",
 		});
 
@@ -161,6 +181,7 @@ describe("ejectAction — --force flag", () => {
 		mockEjectDomain.mockResolvedValue({
 			ejectedTo: "/project/.cosmonauts/domains/coding",
 			sourcePackage: "coding",
+			sourceScope: "user",
 			sourcePath: "/store/coding/domains/coding",
 		});
 
@@ -175,6 +196,7 @@ describe("ejectAction — --force flag", () => {
 		mockEjectDomain.mockResolvedValue({
 			ejectedTo: "/project/.cosmonauts/domains/coding",
 			sourcePackage: "coding",
+			sourceScope: "user",
 			sourcePath: "/store/coding/domains/coding",
 		});
 

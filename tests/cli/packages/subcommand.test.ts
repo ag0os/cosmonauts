@@ -293,7 +293,9 @@ describe("installAction — success", () => {
 			domainMergeResults: [],
 		});
 
-		await installAction("https://github.com/owner/repo", { projectRoot: "/project" });
+		await installAction("https://github.com/owner/repo", {
+			projectRoot: "/project",
+		});
 
 		const call = mockInstallPackage.mock.calls[0]?.[0];
 		expect(call?.catalogName).toBeUndefined();

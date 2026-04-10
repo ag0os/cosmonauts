@@ -74,12 +74,14 @@ export async function scanDomainSources(
 	// User-domains: ~/.cosmonauts/domains/
 	const userDomainsDir = join(homedir(), ".cosmonauts", "domains");
 	try {
-		await stat(userDomainsDir);
-		sources.push({
-			domainsDir: userDomainsDir,
-			origin: "user-domains",
-			precedence: 1.5,
-		});
+		const userDomainsStat = await stat(userDomainsDir);
+		if (userDomainsStat.isDirectory()) {
+			sources.push({
+				domainsDir: userDomainsDir,
+				origin: "user-domains",
+				precedence: 1.5,
+			});
+		}
 	} catch {
 		// Directory does not exist — skip silently
 	}
@@ -91,12 +93,14 @@ export async function scanDomainSources(
 	// Project-domains: .cosmonauts/domains/ relative to projectRoot
 	const projectDomainsDir = join(projectRoot, ".cosmonauts", "domains");
 	try {
-		await stat(projectDomainsDir);
-		sources.push({
-			domainsDir: projectDomainsDir,
-			origin: "project-domains",
-			precedence: 2.5,
-		});
+		const projectDomainsStat = await stat(projectDomainsDir);
+		if (projectDomainsStat.isDirectory()) {
+			sources.push({
+				domainsDir: projectDomainsDir,
+				origin: "project-domains",
+				precedence: 2.5,
+			});
+		}
 	} catch {
 		// Directory does not exist — skip silently
 	}

@@ -44,8 +44,22 @@ function statRejects(): void {
 
 function statExistsFor(...existingPaths: string[]): void {
 	mockStat.mockImplementation(async (p) => {
-		if (existingPaths.includes(p as string))
-			return {} as Awaited<ReturnType<typeof stat>>;
+		if (existingPaths.includes(p as string)) {
+			return {
+				isDirectory: () => true,
+			} as Awaited<ReturnType<typeof stat>>;
+		}
+		throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+	});
+}
+
+function statAsFileFor(...filePaths: string[]): void {
+	mockStat.mockImplementation(async (p) => {
+		if (filePaths.includes(p as string)) {
+			return {
+				isDirectory: () => false,
+			} as Awaited<ReturnType<typeof stat>>;
+		}
 		throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
 	});
 }
@@ -495,6 +509,18 @@ describe("user-domains tier (1.5)", () => {
 		expect(sources.every((s) => s.origin !== "user-domains")).toBe(true);
 	});
 
+	test("when ~/.cosmonauts/domains/ exists as a file, user-domains source is not added", async () => {
+		mockListInstalledPackages.mockResolvedValue([]);
+		statAsFileFor(USER_DOMAINS_DIR);
+
+		const sources = await scanDomainSources({
+			builtinDomainsDir: BUILTIN_DIR,
+			projectRoot: PROJECT_ROOT,
+		});
+
+		expect(sources.every((s) => s.origin !== "user-domains")).toBe(true);
+	});
+
 	test("user-domains (1.5) appears after global-packages (1)", async () => {
 		mockListInstalledPackages.mockImplementation(async (scope) => {
 			if (scope === "user") return [makePackage("g", "/g/pkg", "user")];
@@ -566,6 +592,18 @@ describe("project-domains tier (2.5)", () => {
 		});
 
 		expect(sources).toHaveLength(1);
+		expect(sources.every((s) => s.origin !== "project-domains")).toBe(true);
+	});
+
+	test("when .cosmonauts/domains/ exists as a file, project-domains source is not added", async () => {
+		mockListInstalledPackages.mockResolvedValue([]);
+		statAsFileFor(PROJECT_DOMAINS_DIR);
+
+		const sources = await scanDomainSources({
+			builtinDomainsDir: BUILTIN_DIR,
+			projectRoot: PROJECT_ROOT,
+		});
+
 		expect(sources.every((s) => s.origin !== "project-domains")).toBe(true);
 	});
 

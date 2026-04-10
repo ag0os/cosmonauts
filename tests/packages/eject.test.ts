@@ -84,6 +84,7 @@ let tmpRoot: string;
 let projectRoot: string;
 let localStore: string;
 let globalStore: string;
+let originalHome: string | undefined;
 
 beforeEach(async () => {
 	tmpRoot = await mkdtemp(join(tmpdir(), "cosmo-eject-test-"));
@@ -91,11 +92,14 @@ beforeEach(async () => {
 	localStore = join(projectRoot, ".cosmonauts", "packages");
 	// Use an isolated home-like dir so tests don't touch the real global store
 	globalStore = join(tmpRoot, "global", ".cosmonauts", "packages");
+	originalHome = process.env.HOME;
+	process.env.HOME = join(tmpRoot, "global");
 	await mkdir(projectRoot, { recursive: true });
 	await mkdir(globalStore, { recursive: true });
 });
 
 afterEach(async () => {
+	process.env.HOME = originalHome;
 	try {
 		await rm(tmpRoot, { recursive: true, force: true });
 	} catch {
@@ -128,15 +132,32 @@ describe("ejectDomain — basic copy", () => {
 		expect(domainTs.isFile()).toBe(true);
 	});
 
-	test("result includes correct sourcePackage and sourcePath", async () => {
+	test("result includes correct source package metadata", async () => {
 		await createPkgFixture(localStore, { name: "my-pkg" });
 
 		const result = await ejectDomain({ domainId: "coding", projectRoot });
 
 		expect(result.sourcePackage).toBe("my-pkg");
+		expect(result.sourceScope).toBe("project");
 		expect(result.sourcePath).toBe(
 			join(localStore, "my-pkg", "domains", "coding"),
 		);
+	});
+});
+
+// ============================================================================
+// Source scope metadata
+// ============================================================================
+
+describe("ejectDomain — source scope metadata", () => {
+	test("reports user scope when domain comes from global store", async () => {
+		await createPkgFixture(globalStore, { name: "global-pkg" });
+
+		const result = await ejectDomain({ domainId: "coding", projectRoot });
+
+		expect(result.sourcePackage).toBe("global-pkg");
+		expect(result.sourceScope).toBe("user");
+		expect(result.sourcePath).toContain(globalStore);
 	});
 });
 
