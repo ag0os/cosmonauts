@@ -115,6 +115,18 @@ Or use raw chain DSL for custom pipelines:
 cosmonauts --chain "planner -> task-manager -> coordinator -> quality-manager" "custom pipeline"
 ```
 
+The chain DSL supports **bracket groups** for parallel steps and **fan-out** for multiple instances of the same role:
+
+```bash
+# Parallel steps: run task-manager and reviewer concurrently, then coordinator
+cosmonauts --chain "planner -> [task-manager, reviewer] -> coordinator" "design with review"
+
+# Fan-out: run 3 reviewer instances in parallel
+cosmonauts --chain "coordinator -> reviewer[3]" "multi-pass review"
+```
+
+> **Fan-out note:** `reviewer[3]` spawns three instances that each receive the **same prompt** — it does not partition work or assign different tasks to each instance. Use fan-out for independent parallel passes, not for task distribution.
+
 ### Task Management
 
 Manage tasks directly via subcommands:

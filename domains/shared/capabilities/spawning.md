@@ -57,6 +57,8 @@ Each completion triggers a new turn. You must stay active (do not exit premature
 - The full pipeline is needed: plan, create tasks, implement, and verify. Use `chain_run` with `"planner -> task-manager -> coordinator -> quality-manager"`.
 - Part of the pipeline is already done (e.g., plan exists): use `"task-manager -> coordinator -> quality-manager"`.
 - You only need final quality/review/remediation for existing changes: use `"quality-manager"`.
+- You want parallel steps at the same stage: use bracket groups, e.g., `"planner -> [task-manager, reviewer] -> coordinator"`.
+- You want multiple instances of the same role running in parallel: use fan-out, e.g., `"coordinator -> reviewer[3]"`. **Fan-out sends the same prompt to every instance — it does not partition work or assign different tasks to each.**
 
 ## How to Delegate
 
@@ -83,6 +85,22 @@ chain_run(expression: "planner -> task-manager -> coordinator -> quality-manager
 ```
 
 Runs the complete pipeline: design, task creation, implementation, and quality verification.
+
+### Parallel steps with bracket groups
+
+```
+chain_run(expression: "planner -> [task-manager, reviewer] -> coordinator")
+```
+
+Bracket groups run two or more roles concurrently at the same pipeline stage. All roles in the group must complete before the next stage starts.
+
+### Fan-out: multiple instances of the same role
+
+```
+chain_run(expression: "coordinator -> reviewer[3]")
+```
+
+Spawns N instances of the same role in parallel. **All instances receive the same prompt — fan-out does not partition work or assign different tasks to each instance.** Use it for independent parallel passes (e.g., redundant review), not for distributing a workload.
 
 ### Spawning a worker directly
 

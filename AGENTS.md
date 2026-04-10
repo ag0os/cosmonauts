@@ -76,6 +76,20 @@ Runs agent pipelines using Pi sessions. The DSL is pure topology — it declares
 cosmonauts --chain "planner -> task-manager -> coordinator -> quality-manager" "design and implement auth"
 ```
 
+**Bracket groups** run two or more roles concurrently at the same pipeline stage:
+
+```
+cosmonauts --chain "planner -> [task-manager, reviewer] -> coordinator" "design with parallel review"
+```
+
+**Fan-out** spawns N instances of the same role in parallel:
+
+```
+cosmonauts --chain "coordinator -> reviewer[3]" "review with multiple reviewers"
+```
+
+> **Fan-out note:** `reviewer[3]` sends the **same prompt** to all three instances — it does not shard tasks or assign different work to each instance.
+
 **Safety caps**: `maxTotalIterations` (50), `timeoutMs` (30 min) — global, not per-stage.
 
 ### Named Workflows
@@ -93,11 +107,13 @@ Projects can add, remove, or customize workflows by editing their `.cosmonauts/c
 ### CLI
 
 ```
-cosmonauts                                    # Interactive REPL
-cosmonauts "design an auth system"            # Interactive with initial prompt
-cosmonauts --print "create tasks and go"      # Non-interactive (fire-and-forget)
-cosmonauts --workflow plan-and-build "auth"    # Named workflow
-cosmonauts --chain "planner -> coordinator"   # Raw chain DSL
+cosmonauts                                                          # Interactive REPL
+cosmonauts "design an auth system"                                  # Interactive with initial prompt
+cosmonauts --print "create tasks and go"                            # Non-interactive (fire-and-forget)
+cosmonauts --workflow plan-and-build "auth"                          # Named workflow
+cosmonauts --chain "planner -> coordinator"                         # Raw chain DSL
+cosmonauts --chain "planner -> [task-manager, reviewer] -> coord"   # Parallel bracket group
+cosmonauts --chain "coordinator -> reviewer[3]"                     # Fan-out (same prompt x3)
 ```
 
 Flags: `--print`, `--workflow`, `--chain`, `--model`, `--thinking`, `--domain`/`-d`, `--list-domains`.
