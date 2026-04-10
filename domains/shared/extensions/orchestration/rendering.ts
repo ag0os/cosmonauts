@@ -1,5 +1,6 @@
 import { Text } from "@mariozechner/pi-tui";
 import { unqualifyRole } from "../../../../lib/agents/qualified-role.ts";
+import { formatChainSteps } from "../../../../lib/orchestration/chain-steps.ts";
 import type {
 	ChainEvent,
 	ChainStats,
@@ -77,7 +78,7 @@ export function chainEventToProgressLine(
 ): string | undefined {
 	switch (event.type) {
 		case "chain_start":
-			return `▶ Chain started: ${event.stages.map((s) => roleLabel(s.name)).join(" → ")}`;
+			return `▶ Chain started: ${formatChainSteps(event.steps)}`;
 		case "stage_start":
 			return `● Starting ${roleLabel(event.stage.name)}${event.stage.loop ? " (loop)" : ""}`;
 		case "stage_iteration":
@@ -104,6 +105,13 @@ export function chainEventToProgressLine(
 				return `  🔧 ${roleLabel(event.role)}: ${summary}`;
 			}
 			return undefined;
+		case "parallel_start":
+			return `▶ Parallel ${formatChainSteps([event.step])} starting...`;
+		case "parallel_end":
+			if (event.success) {
+				return `● Parallel ${formatChainSteps([event.step])} done`;
+			}
+			return `✗ Parallel ${formatChainSteps([event.step])} failed${event.error ? `: ${event.error}` : ""}`;
 		case "chain_end":
 			return undefined; // Final result handled by execute return
 	}

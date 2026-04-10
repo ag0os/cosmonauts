@@ -32,16 +32,95 @@ describe("formatDuration", () => {
 });
 
 describe("formatChainEvent", () => {
-	test("formats chain_start event", () => {
+	test("formats chain_start event with sequential steps", () => {
 		const event: ChainEvent = {
 			type: "chain_start",
-			stages: [
+			steps: [
 				{ name: "planner", loop: false },
 				{ name: "coordinator", loop: true },
 			],
 		};
 		expect(formatChainEvent(event)).toBe(
 			"[chain] Starting: planner -> coordinator",
+		);
+	});
+
+	test("formats chain_start event with parallel group step", () => {
+		const event: ChainEvent = {
+			type: "chain_start",
+			steps: [
+				{ name: "planner", loop: false },
+				{
+					kind: "parallel",
+					stages: [
+						{ name: "task-manager", loop: false },
+						{ name: "reviewer", loop: false },
+					],
+					syntax: { kind: "group" },
+				},
+			],
+		};
+		expect(formatChainEvent(event)).toBe(
+			"[chain] Starting: planner -> [task-manager, reviewer]",
+		);
+	});
+
+	test("formats parallel_start event", () => {
+		const event: ChainEvent = {
+			type: "parallel_start",
+			step: {
+				kind: "parallel",
+				stages: [
+					{ name: "task-manager", loop: false },
+					{ name: "reviewer", loop: false },
+				],
+				syntax: { kind: "group" },
+			},
+			stepIndex: 1,
+		};
+		expect(formatChainEvent(event)).toBe(
+			"[chain] Parallel [task-manager, reviewer] starting...",
+		);
+	});
+
+	test("formats parallel_end success event", () => {
+		const event: ChainEvent = {
+			type: "parallel_end",
+			step: {
+				kind: "parallel",
+				stages: [
+					{ name: "task-manager", loop: false },
+					{ name: "reviewer", loop: false },
+				],
+				syntax: { kind: "group" },
+			},
+			stepIndex: 1,
+			results: [],
+			success: true,
+		};
+		expect(formatChainEvent(event)).toBe(
+			"[chain] Parallel [task-manager, reviewer] Completed",
+		);
+	});
+
+	test("formats parallel_end failure event with error", () => {
+		const event: ChainEvent = {
+			type: "parallel_end",
+			step: {
+				kind: "parallel",
+				stages: [
+					{ name: "task-manager", loop: false },
+					{ name: "reviewer", loop: false },
+				],
+				syntax: { kind: "group" },
+			},
+			stepIndex: 1,
+			results: [],
+			success: false,
+			error: "reviewer timed out",
+		};
+		expect(formatChainEvent(event)).toBe(
+			"[chain] Parallel [task-manager, reviewer] Failed — reviewer timed out",
 		);
 	});
 

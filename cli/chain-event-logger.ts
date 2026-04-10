@@ -3,7 +3,8 @@
  * Events are written to stderr so stdout remains clean for final output.
  */
 
-import type { ChainEvent, ChainStage } from "../lib/orchestration/types.ts";
+import { formatChainSteps } from "../lib/orchestration/chain-steps.ts";
+import type { ChainEvent } from "../lib/orchestration/types.ts";
 
 /**
  * Format a duration in milliseconds to a human-readable string.
@@ -20,19 +21,12 @@ export function formatDuration(ms: number): string {
 }
 
 /**
- * Format a chain stage list as a readable pipeline string.
- */
-function formatPipeline(stages: ChainStage[]): string {
-	return stages.map((s) => s.name).join(" -> ");
-}
-
-/**
  * Format a ChainEvent into a terminal-friendly log line.
  */
 export function formatChainEvent(event: ChainEvent): string {
 	switch (event.type) {
 		case "chain_start":
-			return `[chain] Starting: ${formatPipeline(event.stages)}`;
+			return `[chain] Starting: ${formatChainSteps(event.steps)}`;
 		case "chain_end": {
 			const status = event.result.success ? "Complete" : "Failed";
 			const duration = formatDuration(event.result.totalDurationMs);
@@ -64,6 +58,16 @@ export function formatChainEvent(event: ChainEvent): string {
 		case "error": {
 			const stage = event.stage ? `[${event.stage.name}] ` : "";
 			return `${stage}Error: ${event.message}`;
+		}
+		case "parallel_start": {
+			const groupLabel = formatChainSteps([event.step]);
+			return `[chain] Parallel ${groupLabel} starting...`;
+		}
+		case "parallel_end": {
+			const groupLabel = formatChainSteps([event.step]);
+			const status = event.success ? "Completed" : "Failed";
+			const error = event.error ? ` — ${event.error}` : "";
+			return `[chain] Parallel ${groupLabel} ${status}${error}`;
 		}
 		case "spawn_completion": {
 			const status = event.outcome === "success" ? "Completed" : "Failed";
