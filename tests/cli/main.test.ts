@@ -6,6 +6,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { isChainDslExpression } from "../../lib/orchestration/chain-steps.ts";
 import {
 	discoverBundledPackageDirs,
 	isCosmonautsFrameworkRepo,
@@ -68,6 +69,20 @@ describe("parseCliArgs", () => {
 		const opts = parseCliArgs(["-w", "plan-and-build"]);
 
 		expect(opts.workflow).toBe("plan-and-build");
+	});
+
+	test("--workflow with fanout DSL sets workflow to raw expression", () => {
+		const opts = parseCliArgs(["--workflow", "reviewer[2]", "run it"]);
+
+		expect(opts.workflow).toBe("reviewer[2]");
+		expect(opts.prompt).toBe("run it");
+	});
+
+	test("--workflow with bracket-group DSL sets workflow to raw expression", () => {
+		const opts = parseCliArgs(["--workflow", "[planner, reviewer]", "run it"]);
+
+		expect(opts.workflow).toBe("[planner, reviewer]");
+		expect(opts.prompt).toBe("run it");
 	});
 
 	test("--workflow with chain DSL sets workflow to raw expression", () => {
@@ -339,6 +354,55 @@ describe("parseCliArgs", () => {
 
 		expect(opts.dumpPrompt).toBe(false);
 		expect(opts.dumpPromptFile).toBeUndefined();
+	});
+});
+
+// ============================================================================
+// --workflow DSL dispatch routing
+// ============================================================================
+
+/**
+ * These tests verify that isChainDslExpression() — the routing guard used in
+ * cli/main.ts run() — correctly identifies which --workflow values dispatch to
+ * parseChain vs resolveWorkflow.
+ */
+describe("--workflow DSL dispatch routing", () => {
+	test("reviewer[2] dispatches to parseChain not resolveWorkflow", () => {
+		const opts = parseCliArgs(["--workflow", "reviewer[2]"]);
+
+		expect(opts.workflow).toBe("reviewer[2]");
+		expect(isChainDslExpression(opts.workflow!)).toBe(true);
+	});
+
+	test("[planner, reviewer] dispatches to parseChain not resolveWorkflow", () => {
+		const opts = parseCliArgs(["--workflow", "[planner, reviewer]"]);
+
+		expect(opts.workflow).toBe("[planner, reviewer]");
+		expect(isChainDslExpression(opts.workflow!)).toBe(true);
+	});
+
+	test("planner -> [task-manager, reviewer] dispatches to parseChain", () => {
+		const opts = parseCliArgs([
+			"--workflow",
+			"planner -> [task-manager, reviewer]",
+		]);
+
+		expect(opts.workflow).toBe("planner -> [task-manager, reviewer]");
+		expect(isChainDslExpression(opts.workflow!)).toBe(true);
+	});
+
+	test("plain workflow name dispatches to resolveWorkflow not parseChain", () => {
+		const opts = parseCliArgs(["--workflow", "plan-and-build"]);
+
+		expect(opts.workflow).toBe("plan-and-build");
+		expect(isChainDslExpression(opts.workflow!)).toBe(false);
+	});
+
+	test("existing sequential DSL continues to dispatch to parseChain", () => {
+		const opts = parseCliArgs(["--workflow", "planner -> reviewer"]);
+
+		expect(opts.workflow).toBe("planner -> reviewer");
+		expect(isChainDslExpression(opts.workflow!)).toBe(true);
 	});
 });
 
