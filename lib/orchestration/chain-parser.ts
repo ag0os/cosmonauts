@@ -136,20 +136,20 @@ function parseBracketGroup(
 
 	return {
 		kind: "parallel",
-		stages: stages as [ChainStage, ChainStage, ...ChainStage[]],
+		stages: stages as [ChainStage, ...ChainStage[]],
 		syntax: { kind: "group" },
 	};
 }
 
 /** Parse a fan-out token `role[n]` into a ParallelGroupStep. */
 function parseFanOut(
-	token: string,
 	match: RegExpMatchArray,
 	registry: AgentRegistry,
 	domainContext: string | undefined,
 ): ParallelGroupStep {
-	const role = match[1]!.toLowerCase();
-	const count = Number(match[2]);
+	const [, rawRole = "", rawCount = "0"] = match;
+	const role = rawRole.toLowerCase();
+	const count = Number(rawCount);
 
 	if (count < 1 || count > 10) {
 		throw new Error(
@@ -167,7 +167,7 @@ function parseFanOut(
 
 	const stages = Array.from({ length: count }, () => ({
 		...stage,
-	})) as [ChainStage, ChainStage, ...ChainStage[]];
+	})) as [ChainStage, ...ChainStage[]];
 
 	return {
 		kind: "parallel",
@@ -242,7 +242,7 @@ export function parseChain(
 
 		const fanOutMatch = token.match(FAN_OUT_RE);
 		if (fanOutMatch) {
-			steps.push(parseFanOut(token, fanOutMatch, registry, domainContext));
+			steps.push(parseFanOut(fanOutMatch, registry, domainContext));
 			continue;
 		}
 

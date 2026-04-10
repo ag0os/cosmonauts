@@ -43,8 +43,8 @@ type ParallelGroupSyntax =
 /** A parallel group step that runs multiple stages concurrently */
 export interface ParallelGroupStep {
 	kind: "parallel";
-	/** At least two stages to run concurrently */
-	stages: [ChainStage, ChainStage, ...ChainStage[]];
+	/** One or more stages to run concurrently */
+	stages: [ChainStage, ...ChainStage[]];
 	/** Discriminated syntax — describes how this group was expressed in the DSL */
 	syntax: ParallelGroupSyntax;
 }

@@ -313,7 +313,7 @@ describe("parseChain", () => {
 
 			for (const step of stages) {
 				// Only sequential ChainStage nodes have completionCheck
-				if (!('kind' in step)) {
+				if (!("kind" in step)) {
 					expect(step.completionCheck).toBeUndefined();
 				}
 			}
@@ -325,9 +325,14 @@ describe("parseChain", () => {
 			const steps = parseChain("reviewer[3]", defaultRegistry);
 
 			expect(steps).toHaveLength(1);
-			const step = steps[0] as import("../../lib/orchestration/types.ts").ParallelGroupStep;
+			const step =
+				steps[0] as import("../../lib/orchestration/types.ts").ParallelGroupStep;
 			expect(step.kind).toBe("parallel");
-			expect(step.syntax).toEqual({ kind: "fanout", role: "reviewer", count: 3 });
+			expect(step.syntax).toEqual({
+				kind: "fanout",
+				role: "reviewer",
+				count: 3,
+			});
 			expect(step.stages).toHaveLength(3);
 			for (const s of step.stages) {
 				expect(s.name).toBe("reviewer");
@@ -338,10 +343,15 @@ describe("parseChain", () => {
 		test("fan-out with count 1 produces a ParallelGroupStep with 1 stage", () => {
 			const steps = parseChain("reviewer[1]", defaultRegistry);
 
-			const step = steps[0] as import("../../lib/orchestration/types.ts").ParallelGroupStep;
+			const step =
+				steps[0] as import("../../lib/orchestration/types.ts").ParallelGroupStep;
 			expect(step.kind).toBe("parallel");
 			expect(step.stages).toHaveLength(1);
-			expect(step.syntax).toEqual({ kind: "fanout", role: "reviewer", count: 1 });
+			expect(step.syntax).toEqual({
+				kind: "fanout",
+				role: "reviewer",
+				count: 1,
+			});
 		});
 
 		test("fan-out with count 10 is accepted", () => {
@@ -351,24 +361,31 @@ describe("parseChain", () => {
 		test("fan-out lowercases the role name", () => {
 			const steps = parseChain("Reviewer[2]", defaultRegistry);
 
-			const step = steps[0] as import("../../lib/orchestration/types.ts").ParallelGroupStep;
-			expect(step.syntax).toEqual({ kind: "fanout", role: "reviewer", count: 2 });
+			const step =
+				steps[0] as import("../../lib/orchestration/types.ts").ParallelGroupStep;
+			expect(step.syntax).toEqual({
+				kind: "fanout",
+				role: "reviewer",
+				count: 2,
+			});
 			for (const s of step.stages) {
 				expect(s.name).toBe("reviewer");
 			}
 		});
 
 		test("fan-out in a mixed chain", () => {
-			const steps = parseChain(
-				"coordinator -> reviewer[3]",
-				defaultRegistry,
-			);
+			const steps = parseChain("coordinator -> reviewer[3]", defaultRegistry);
 
 			expect(steps).toHaveLength(2);
 			expect(steps[0]).toEqual({ name: "coordinator", loop: true });
-			const step = steps[1] as import("../../lib/orchestration/types.ts").ParallelGroupStep;
+			const step =
+				steps[1] as import("../../lib/orchestration/types.ts").ParallelGroupStep;
 			expect(step.kind).toBe("parallel");
-			expect(step.syntax).toEqual({ kind: "fanout", role: "reviewer", count: 3 });
+			expect(step.syntax).toEqual({
+				kind: "fanout",
+				role: "reviewer",
+				count: 3,
+			});
 		});
 
 		test("rejects fan-out with count 0", () => {
@@ -395,7 +412,8 @@ describe("parseChain", () => {
 			const steps = parseChain("[planner, reviewer]", defaultRegistry);
 
 			expect(steps).toHaveLength(1);
-			const step = steps[0] as import("../../lib/orchestration/types.ts").ParallelGroupStep;
+			const step =
+				steps[0] as import("../../lib/orchestration/types.ts").ParallelGroupStep;
 			expect(step.kind).toBe("parallel");
 			expect(step.syntax).toEqual({ kind: "group" });
 			expect(step.stages).toHaveLength(2);
@@ -409,7 +427,8 @@ describe("parseChain", () => {
 				defaultRegistry,
 			);
 
-			const step = steps[0] as import("../../lib/orchestration/types.ts").ParallelGroupStep;
+			const step =
+				steps[0] as import("../../lib/orchestration/types.ts").ParallelGroupStep;
 			expect(step.stages).toHaveLength(3);
 			expect(step.stages.map((s) => s.name)).toEqual([
 				"planner",
@@ -421,7 +440,8 @@ describe("parseChain", () => {
 		test("lowercases member names in bracket group", () => {
 			const steps = parseChain("[Planner, Reviewer]", defaultRegistry);
 
-			const step = steps[0] as import("../../lib/orchestration/types.ts").ParallelGroupStep;
+			const step =
+				steps[0] as import("../../lib/orchestration/types.ts").ParallelGroupStep;
 			expect(step.stages.map((s) => s.name)).toEqual(["planner", "reviewer"]);
 		});
 
@@ -433,7 +453,8 @@ describe("parseChain", () => {
 
 			expect(steps).toHaveLength(3);
 			expect(steps[0]).toEqual({ name: "planner", loop: false });
-			const group = steps[1] as import("../../lib/orchestration/types.ts").ParallelGroupStep;
+			const group =
+				steps[1] as import("../../lib/orchestration/types.ts").ParallelGroupStep;
 			expect(group.kind).toBe("parallel");
 			expect(group.syntax).toEqual({ kind: "group" });
 			expect(steps[2]).toEqual({ name: "coordinator", loop: true });

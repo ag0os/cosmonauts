@@ -34,7 +34,6 @@ import {
 import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
 import { setSharedRegistry } from "../lib/interactive/agent-switch.ts";
 import { parseChain } from "../lib/orchestration/chain-parser.ts";
-import { isChainDslExpression } from "../lib/orchestration/chain-steps.ts";
 import {
 	injectUserPrompt,
 	runChain,
@@ -46,6 +45,7 @@ import {
 } from "../lib/packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../lib/runtime.ts";
 import { listWorkflows, resolveWorkflow } from "../lib/workflows/loader.ts";
+import type { WorkflowDefinition } from "../lib/workflows/types.ts";
 import { createChainEventLogger } from "./chain-event-logger.ts";
 import { createCreateProgram } from "./create/subcommand.ts";
 import { createEjectProgram } from "./eject/subcommand.ts";
@@ -193,6 +193,46 @@ export function parseCliArgs(argv: string[]): CliOptions {
 		pluginDirs: pluginDirs.length > 0 ? pluginDirs : undefined,
 		piFlags: piResult.flags,
 	};
+}
+
+// ============================================================================
+// Workflow routing
+// ============================================================================
+
+export function shouldParseWorkflowAsRawChainExpression(
+	expression: string,
+): boolean {
+	const trimmed = expression.trim();
+	return (
+		trimmed.includes("->") || trimmed.includes("[") || trimmed.includes("]")
+	);
+}
+
+export async function resolveWorkflowExpression(
+	expression: string,
+	projectRoot: string,
+	domainWorkflows?: readonly WorkflowDefinition[],
+): Promise<string> {
+	if (shouldParseWorkflowAsRawChainExpression(expression)) {
+		return expression;
+	}
+
+	try {
+		const workflow = await resolveWorkflow(
+			expression,
+			projectRoot,
+			domainWorkflows,
+		);
+		return workflow.chain;
+	} catch (error) {
+		if (
+			error instanceof Error &&
+			error.message.startsWith(`Unknown workflow "${expression}"`)
+		) {
+			return expression;
+		}
+		throw error;
+	}
 }
 
 // ============================================================================
@@ -353,10 +393,11 @@ async function run(options: CliOptions): Promise<void> {
 
 	// 2. --workflow → named workflow or raw chain DSL, run, exit
 	if (options.workflow) {
-		// Route DSL expressions (arrows, brackets, fan-out) to parseChain; named workflows to resolveWorkflow
-		const chainExpr = isChainDslExpression(options.workflow)
-			? options.workflow
-			: (await resolveWorkflow(options.workflow, cwd, domainWorkflows)).chain;
+		const chainExpr = await resolveWorkflowExpression(
+			options.workflow,
+			cwd,
+			domainWorkflows,
+		);
 		const steps = parseChain(chainExpr, registry, domainContext);
 		injectUserPrompt(steps, options.prompt);
 

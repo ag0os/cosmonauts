@@ -1734,18 +1734,20 @@ describe("parallel group execution", () => {
 		const types = events.map((e) => e.type);
 		const parallelStartIdx = types.indexOf("parallel_start");
 		const parallelEndIdx = types.indexOf("parallel_end");
-		const stageStartIndices = types.reduce<number[]>(
-			(acc, t, i) => (t === "stage_start" ? [...acc, i] : acc),
-			[],
-		);
-		const stageEndIndices = types.reduce<number[]>(
-			(acc, t, i) => (t === "stage_end" ? [...acc, i] : acc),
-			[],
-		);
-		const stageStatsIndices = types.reduce<number[]>(
-			(acc, t, i) => (t === "stage_stats" ? [...acc, i] : acc),
-			[],
-		);
+		const stageStartIndices: number[] = [];
+		const stageEndIndices: number[] = [];
+		const stageStatsIndices: number[] = [];
+		types.forEach((type, index) => {
+			if (type === "stage_start") {
+				stageStartIndices.push(index);
+			}
+			if (type === "stage_end") {
+				stageEndIndices.push(index);
+			}
+			if (type === "stage_stats") {
+				stageStatsIndices.push(index);
+			}
+		});
 
 		expect(parallelStartIdx).toBeGreaterThan(-1);
 		expect(parallelEndIdx).toBeGreaterThan(-1);
@@ -1909,10 +1911,7 @@ describe("parallel group execution", () => {
 		spawnerRef.current = {
 			spawn: vi.fn(async (spawnConfig) => {
 				// Either parallel member firing abort is sufficient; idempotent.
-				if (
-					spawnConfig.role === "planner" ||
-					spawnConfig.role === "worker"
-				) {
+				if (spawnConfig.role === "planner" || spawnConfig.role === "worker") {
 					controller.abort();
 				}
 				return {

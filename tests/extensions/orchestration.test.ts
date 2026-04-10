@@ -163,7 +163,9 @@ describe("orchestration extension", () => {
 			projectSkills: ["typescript", "backend"],
 			skillPaths: ["/skills/shared", "/skills/project"],
 		});
-		parseChainMock.mockReturnValue([{ name: "planner", loop: false }] as ChainStep[]);
+		parseChainMock.mockReturnValue([
+			{ name: "planner", loop: false },
+		] as ChainStep[]);
 		runChainMock.mockResolvedValue({
 			success: true,
 			stageResults: [],
@@ -197,7 +199,9 @@ describe("orchestration extension", () => {
 		const pi = createMockPi(cwd);
 		orchestrationExtension(pi as never);
 
-		parseChainMock.mockReturnValue([{ name: "planner", loop: false }] as ChainStep[]);
+		parseChainMock.mockReturnValue([
+			{ name: "planner", loop: false },
+		] as ChainStep[]);
 		runChainMock.mockResolvedValue({
 			success: true,
 			stageResults: [],
@@ -222,7 +226,9 @@ describe("orchestration extension", () => {
 		orchestrationExtension(pi as never);
 
 		mockRuntime({ projectSkills: ["typescript"] });
-		parseChainMock.mockReturnValue([{ name: "coordinator", loop: true }] as ChainStep[]);
+		parseChainMock.mockReturnValue([
+			{ name: "coordinator", loop: true },
+		] as ChainStep[]);
 		runChainMock.mockResolvedValue({
 			success: true,
 			stageResults: [],
@@ -287,7 +293,9 @@ describe("orchestration extension", () => {
 		orchestrationExtension(pi as never);
 
 		mockRuntime({ projectSkills: [] });
-		parseChainMock.mockReturnValue([{ name: "planner", loop: false }] as ChainStep[]);
+		parseChainMock.mockReturnValue([
+			{ name: "planner", loop: false },
+		] as ChainStep[]);
 		runChainMock.mockResolvedValue({
 			success: true,
 			stageResults: [],
@@ -297,11 +305,21 @@ describe("orchestration extension", () => {
 
 		const controller = new AbortController();
 		const tool = pi.getTool("chain_run");
-		await tool!.execute("call-id", { expression: "planner" }, controller.signal, undefined, {
-			cwd,
-			getSystemPrompt: () => "",
-			sessionManager: { getSessionId: () => "test-session" },
-		});
+		expect(tool).toBeDefined();
+		if (!tool) {
+			throw new Error("chain_run tool is not registered");
+		}
+		await tool.execute(
+			"call-id",
+			{ expression: "planner" },
+			controller.signal,
+			undefined,
+			{
+				cwd,
+				getSystemPrompt: () => "",
+				sessionManager: { getSessionId: () => "test-session" },
+			},
+		);
 
 		expect(runChainMock).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -580,7 +598,9 @@ describe("orchestration extension", () => {
 		orchestrationExtension(pi as never);
 
 		mockRuntime({ projectSkills: ["typescript"] });
-		parseChainMock.mockReturnValue([{ name: "planner", loop: false }] as ChainStep[]);
+		parseChainMock.mockReturnValue([
+			{ name: "planner", loop: false },
+		] as ChainStep[]);
 		runChainMock.mockResolvedValue({
 			success: true,
 			stageResults: [],
@@ -609,7 +629,9 @@ describe("orchestration extension", () => {
 				skillPaths: [],
 				domainRegistry: realDomainRegistry,
 			});
-		parseChainMock.mockReturnValue([{ name: "planner", loop: false }] as ChainStep[]);
+		parseChainMock.mockReturnValue([
+			{ name: "planner", loop: false },
+		] as ChainStep[]);
 		runChainMock.mockResolvedValue({
 			success: true,
 			stageResults: [],
