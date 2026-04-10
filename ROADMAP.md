@@ -4,17 +4,6 @@ Work backlog in two sections. **Prioritized** items at the top are ordered — p
 
 ## Prioritized
 
-### `parallel-agent-spawning`: Parallel Agent Spawning
-
-Fan-out in chain stages and concurrent spawns from coordinator. Single biggest capability gap vs OpenClaw.
-
-- Add parallel stage syntax to chain DSL (e.g., `"worker[3]"` for fan-out)
-- Concurrent spawn support in the orchestration extension via Promise.all()
-- Depth and breadth limits (max active children per parent, max spawn depth)
-- Progress reporting via coordinator subscribing to worker events
-- Handle partial failures (some workers succeed, others fail)
-- Subsumes and replaces the `parallel-workers` idea
-
 ### `agent-messaging`: Agent-to-Agent Messaging
 
 Replace filesystem polling with push-based communication between agents. OpenClaw has a subagent announcement system where children push completion events to parents.
