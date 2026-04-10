@@ -2,10 +2,8 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { parseChain } from "../../../../lib/orchestration/chain-parser.ts";
-import {
-	injectUserPrompt,
-	runChain,
-} from "../../../../lib/orchestration/chain-runner.ts";
+import { runChain } from "../../../../lib/orchestration/chain-runner.ts";
+import { injectUserPrompt } from "../../../../lib/orchestration/chain-steps.ts";
 import type {
 	ChainEvent,
 	ChainResult,
@@ -42,11 +40,11 @@ export function registerChainTool(
 		name: "chain_run",
 		label: "Run Chain",
 		description:
-			'Run a chain of agent stages using the chain DSL (e.g. "planner -> task-manager -> coordinator -> quality-manager")',
+			'Run a chain of agent stages using the chain DSL. Supports sequential ("planner -> coordinator"), bracket-group ("planner -> [task-manager, reviewer] -> coordinator"), and fan-out ("coordinator -> reviewer[3]") syntax.',
 		parameters: Type.Object({
 			expression: Type.String({
 				description:
-					'Chain DSL expression (e.g. "planner -> task-manager -> coordinator -> quality-manager")',
+					'Chain DSL expression. Examples: "planner -> task-manager -> coordinator" (sequential), "planner -> [task-manager, reviewer] -> coordinator" (bracket group), "coordinator -> reviewer[3]" (fan-out)',
 			}),
 			prompt: Type.Optional(
 				Type.String({
@@ -77,7 +75,7 @@ export function registerChainTool(
 				),
 			),
 		}),
-		execute: async (_toolCallId, params, _signal, onUpdate, ctx) => {
+		execute: async (_toolCallId, params, signal, onUpdate, ctx) => {
 			const runtime = await getRuntime(ctx.cwd);
 			const steps = parseChain(
 				params.expression,
@@ -92,6 +90,7 @@ export function registerChainTool(
 			const progressLines: string[] = [];
 
 			const result = await runChain({
+				signal,
 				steps,
 				projectRoot: ctx.cwd,
 				projectSkills: runtime.projectSkills,
