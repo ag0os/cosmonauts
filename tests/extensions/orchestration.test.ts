@@ -79,6 +79,9 @@ function createMockPi(cwd: string, options?: MockPiOptions) {
 		registerTool(def: RegisteredTool) {
 			tools.set(def.name, def);
 		},
+		registerMessageRenderer: vi.fn(),
+		sendMessage: vi.fn(),
+		on: vi.fn(),
 		sendUserMessage,
 		getTool(name: string) {
 			return tools.get(name);
@@ -296,6 +299,7 @@ describe("orchestration extension", () => {
 			sessionId: "child-session-1",
 			messages: [],
 			prompt: vi.fn().mockResolvedValue(undefined),
+			subscribe: vi.fn(() => vi.fn()),
 			dispose: vi.fn(),
 		};
 		mocks.createAgentSessionFromDefinition.mockResolvedValue({
@@ -363,6 +367,7 @@ describe("orchestration extension", () => {
 				},
 			],
 			prompt: vi.fn().mockResolvedValue(undefined),
+			subscribe: vi.fn(() => vi.fn()),
 			dispose: vi.fn(),
 		};
 		mocks.createAgentSessionFromDefinition.mockResolvedValue({

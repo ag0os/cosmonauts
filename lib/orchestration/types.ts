@@ -224,6 +224,7 @@ export type SpawnEvent =
 			type: "tool_execution_start";
 			toolName: string;
 			toolCallId: string;
+			args?: unknown;
 	  })
 	| (SpawnEventBase & {
 			type: "tool_execution_end";

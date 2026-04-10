@@ -34,6 +34,43 @@ export function formatDuration(ms: number): string {
 	return remaining > 0 ? `${minutes}m ${remaining}s` : `${minutes}m`;
 }
 
+/**
+ * Produce a one-line summary of a tool call for progress display.
+ * Extracts the most useful argument (file path, command, pattern) per tool.
+ */
+export function summarizeToolCall(toolName: string, args?: unknown): string {
+	const a = args as Record<string, unknown> | undefined;
+	switch (toolName) {
+		case "read":
+		case "write":
+		case "edit": {
+			const filePath =
+				(a?.file_path as string | undefined) ?? (a?.path as string | undefined);
+			if (filePath) {
+				const base = filePath.split("/").pop() ?? filePath;
+				return `${toolName} ${base}`;
+			}
+			return toolName;
+		}
+		case "bash": {
+			const cmd = (a?.command as string | undefined) ?? "";
+			return cmd.length > 60 ? `bash ${cmd.slice(0, 57)}...` : `bash ${cmd}`;
+		}
+		case "grep": {
+			const pattern = (a?.pattern as string | undefined) ?? "";
+			return pattern.length > 50
+				? `grep ${pattern.slice(0, 47)}...`
+				: `grep ${pattern}`;
+		}
+		case "spawn_agent": {
+			const role = (a?.role as string | undefined) ?? "";
+			return role ? `spawn ${role}` : "spawn_agent";
+		}
+		default:
+			return toolName;
+	}
+}
+
 /** Build a progress line from a chain event for onUpdate streaming. */
 export function chainEventToProgressLine(
 	event: ChainEvent,
@@ -58,6 +95,15 @@ export function chainEventToProgressLine(
 			return `✗ Error${event.stage ? ` in ${roleLabel(event.stage.name)}` : ""}: ${event.message}`;
 		case "stage_stats":
 			return `  💰 ${roleLabel(event.stage.name)}: $${event.stats.cost.toFixed(4)}, ${event.stats.tokens.total} tokens`;
+		case "agent_tool_use":
+			if (event.event.type === "tool_execution_start") {
+				const summary = summarizeToolCall(
+					event.event.toolName,
+					event.event.args,
+				);
+				return `  🔧 ${roleLabel(event.role)}: ${summary}`;
+			}
+			return undefined;
 		case "chain_end":
 			return undefined; // Final result handled by execute return
 	}

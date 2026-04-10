@@ -350,7 +350,12 @@ async function awaitNextCompletion(
 type SpawnEventPayload =
 	| { type: "turn_start" }
 	| { type: "turn_end" }
-	| { type: "tool_execution_start"; toolName: string; toolCallId: string }
+	| {
+			type: "tool_execution_start";
+			toolName: string;
+			toolCallId: string;
+			args?: unknown;
+	  }
 	| {
 			type: "tool_execution_end";
 			toolName: string;
@@ -385,6 +390,7 @@ function mapSessionEvent(event: {
 				type: "tool_execution_start",
 				toolName: event.toolName as string,
 				toolCallId: event.toolCallId as string,
+				...(event.args !== undefined && { args: event.args }),
 			};
 		case "tool_execution_end":
 			return {

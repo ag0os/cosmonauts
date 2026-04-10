@@ -172,6 +172,9 @@ function createMockPi(cwd: string, options?: MockPiOptions) {
 		}) {
 			tools.set(def.name, def);
 		},
+		registerMessageRenderer: vi.fn(),
+		sendMessage: vi.fn(),
+		on: vi.fn(),
 		sendUserMessage,
 		async callTool(name: string, params: unknown) {
 			const tool = tools.get(name);

@@ -39,11 +39,27 @@ export interface SpawnFailedEvent extends BusEvent {
 	error: string;
 }
 
+/** Activity update from a running sub-agent spawn (tool calls, turns, compaction). */
+export interface SpawnActivityEvent extends BusEvent {
+	type: "spawn_activity";
+	spawnId: string;
+	parentSessionId: string;
+	role: string;
+	taskId?: string;
+	activity:
+		| { kind: "tool_start"; toolName: string; summary: string }
+		| { kind: "tool_end"; toolName: string; isError: boolean }
+		| { kind: "turn_start" }
+		| { kind: "turn_end" }
+		| { kind: "compaction" };
+}
+
 /** Union of all known bus event types. */
 export type KnownBusEvent =
 	| SpawnRegisteredEvent
 	| SpawnCompletedEvent
-	| SpawnFailedEvent;
+	| SpawnFailedEvent
+	| SpawnActivityEvent;
 
 // ============================================================================
 // Subscription Token

@@ -4,6 +4,11 @@ import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
 import {
+	activityBus,
+	runSessionCleanup,
+} from "../../../../lib/orchestration/activity-bus.ts";
+import type { SpawnActivityEvent } from "../../../../lib/orchestration/message-bus.ts";
+import {
 	getPlanSlugForSession,
 	registerPlanContext,
 	removePlanContext,
@@ -18,7 +23,11 @@ import {
 } from "../../../../lib/sessions/session-store.ts";
 import type { SessionRecord } from "../../../../lib/sessions/types.ts";
 import { isSubagentAllowed } from "./authorization.ts";
-import { renderTextFallback, roleLabel } from "./rendering.ts";
+import {
+	renderTextFallback,
+	roleLabel,
+	summarizeToolCall,
+} from "./rendering.ts";
 
 // ============================================================================
 // Module-level per-session state (shared across all spawn tool invocations)
@@ -327,6 +336,56 @@ export function registerSpawnTool(
 					if (planSlug) {
 						registerPlanContext(session.sessionId, planSlug);
 					}
+					// Subscribe to child session events for activity broadcasting
+					const unsubActivity = session.subscribe(
+						(event: { type: string; [key: string]: unknown }) => {
+							const activityBase = {
+								type: "spawn_activity" as const,
+								spawnId,
+								parentSessionId,
+								role: params.role,
+								taskId: params.runtimeContext?.taskId,
+							};
+							if (event.type === "tool_execution_start") {
+								activityBus.publish({
+									...activityBase,
+									activity: {
+										kind: "tool_start",
+										toolName: event.toolName as string,
+										summary: summarizeToolCall(
+											event.toolName as string,
+											event.args,
+										),
+									},
+								} satisfies SpawnActivityEvent);
+							} else if (event.type === "tool_execution_end") {
+								activityBus.publish({
+									...activityBase,
+									activity: {
+										kind: "tool_end",
+										toolName: event.toolName as string,
+										isError: event.isError as boolean,
+									},
+								} satisfies SpawnActivityEvent);
+							} else if (event.type === "turn_start") {
+								activityBus.publish({
+									...activityBase,
+									activity: { kind: "turn_start" },
+								} satisfies SpawnActivityEvent);
+							} else if (event.type === "turn_end") {
+								activityBus.publish({
+									...activityBase,
+									activity: { kind: "turn_end" },
+								} satisfies SpawnActivityEvent);
+							} else if (event.type === "auto_compaction_start") {
+								activityBus.publish({
+									...activityBase,
+									activity: { kind: "compaction" },
+								} satisfies SpawnActivityEvent);
+							}
+						},
+					);
+
 					const startedAt = new Date().toISOString();
 					const startMs = Date.now();
 					let spawnOutcome: "success" | "failed" = "failed";
@@ -391,9 +450,13 @@ export function registerSpawnTool(
 							);
 						}
 					} finally {
+						unsubActivity();
 						sessionDepths.delete(session.sessionId);
 						removePlanContext(session.sessionId);
 						const finalMessages = [...session.messages];
+						// Clean up the child session's activity bus subscription
+						// before dispose, since Pi has no dispose-time lifecycle event.
+						runSessionCleanup(session.sessionId);
 						session.dispose();
 
 						// Persist lineage artifacts when the child session ran under a plan.

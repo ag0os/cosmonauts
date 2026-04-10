@@ -428,6 +428,7 @@ describe("createPiSpawner", () => {
 					type: "tool_execution_start",
 					toolName: "read",
 					toolCallId: "tc-1",
+					args: {},
 					sessionId: "session-1",
 				},
 				{
