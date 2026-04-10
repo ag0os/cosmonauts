@@ -238,7 +238,7 @@ describe("orchestration extension", () => {
 			expect.objectContaining({
 				projectRoot: cwd,
 				completionLabel: undefined,
-				stages: [{ name: "coordinator", loop: true }],
+				steps: [{ name: "coordinator", loop: true }],
 			}),
 		);
 	});
@@ -269,12 +269,11 @@ describe("orchestration extension", () => {
 		expect(runChainMock).toHaveBeenCalledWith(
 			expect.objectContaining({
 				completionLabel: "plan:auth-system",
-				stages: [
+				steps: [
 					{
 						name: "planner",
 						loop: false,
-						prompt:
-							"Analyze the project and design an implementation plan.\n\nUser request: Build auth with refresh tokens",
+						prompt: "Build auth with refresh tokens",
 					},
 					{ name: "coordinator", loop: true },
 				],

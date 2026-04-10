@@ -113,8 +113,7 @@ function makeConfig(
 	overrides?: Partial<ChainConfig>,
 ): ChainConfig {
 	return {
-		// @ts-expect-error chain-runner.ts still reads config.stages (TASK-167 will migrate to steps)
-		stages: steps,
+		steps,
 		projectRoot: "/tmp/test-project",
 		registry: defaultRegistry,
 		...overrides,

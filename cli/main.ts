@@ -357,11 +357,11 @@ async function run(options: CliOptions): Promise<void> {
 		const chainExpr = isChainDslExpression(options.workflow)
 			? options.workflow
 			: (await resolveWorkflow(options.workflow, cwd, domainWorkflows)).chain;
-		const stages = parseChain(chainExpr, registry, domainContext);
-		injectUserPrompt(stages, options.prompt);
+		const steps = parseChain(chainExpr, registry, domainContext);
+		injectUserPrompt(steps, options.prompt);
 
 		const result = await runChain({
-			stages,
+			steps,
 			projectRoot: cwd,
 			domainContext,
 			onEvent: createChainEventLogger(),

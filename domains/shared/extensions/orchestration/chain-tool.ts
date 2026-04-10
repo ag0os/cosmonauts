@@ -79,12 +79,12 @@ export function registerChainTool(
 		}),
 		execute: async (_toolCallId, params, _signal, onUpdate, ctx) => {
 			const runtime = await getRuntime(ctx.cwd);
-			const stages = parseChain(
+			const steps = parseChain(
 				params.expression,
 				runtime.agentRegistry,
 				runtime.domainContext,
 			);
-			injectUserPrompt(stages, params.prompt);
+			injectUserPrompt(steps, params.prompt);
 			const thinking = params.thinkingLevel
 				? { default: params.thinkingLevel }
 				: undefined;
@@ -92,7 +92,7 @@ export function registerChainTool(
 			const progressLines: string[] = [];
 
 			const result = await runChain({
-				stages,
+				steps,
 				projectRoot: ctx.cwd,
 				projectSkills: runtime.projectSkills,
 				skillPaths: [...runtime.skillPaths],
