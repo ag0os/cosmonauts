@@ -48,23 +48,18 @@ export interface EjectResult {
 export async function ejectDomain(options: EjectOptions): Promise<EjectResult> {
 	const { domainId, projectRoot, force = false } = options;
 
-	// Local scope (precedence 2) first, then global (precedence 1)
+	// Match runtime merge semantics:
+	// - Local (precedence 2) wins over global (precedence 1)
+	// - Within the same precedence, later sources win
 	const localPackages = await listInstalledPackages("project", projectRoot);
 	const globalPackages = await listInstalledPackages("user");
-	const allPackages = [...localPackages, ...globalPackages];
 
-	// Find the first package providing this domain
-	let foundPkg: (typeof allPackages)[number] | undefined;
-	let foundDomainPath: string | undefined;
+	const foundLocal = findLastDomainProvider(localPackages, domainId);
+	const foundGlobal = findLastDomainProvider(globalPackages, domainId);
+	const found = foundLocal ?? foundGlobal;
 
-	for (const pkg of allPackages) {
-		const domain = pkg.manifest.domains.find((d) => d.name === domainId);
-		if (domain) {
-			foundPkg = pkg;
-			foundDomainPath = join(pkg.installPath, domain.path);
-			break;
-		}
-	}
+	const foundPkg = found?.pkg;
+	const foundDomainPath = found?.path;
 
 	if (!foundPkg || !foundDomainPath) {
 		throw new Error(
@@ -122,8 +117,8 @@ export async function ejectDomain(options: EjectOptions): Promise<EjectResult> {
  * (e.g. from "../../lib/) with package paths (from "cosmonauts/lib/).
  */
 async function rewriteImports(dir: string): Promise<void> {
-	const pattern = /from\s+"(\.\.\/)+lib\//g;
-	const replacement = 'from "cosmonauts/lib/';
+	const pattern = /from\s+(["'])(\.\.\/)+lib\//g;
+	const replacement = "from $1cosmonauts/lib/";
 
 	for (const file of await collectTsFiles(dir)) {
 		const original = await readFile(file, "utf-8");
@@ -132,6 +127,21 @@ async function rewriteImports(dir: string): Promise<void> {
 			await writeFile(file, rewritten, "utf-8");
 		}
 	}
+}
+
+function findLastDomainProvider(
+	packages: Awaited<ReturnType<typeof listInstalledPackages>>,
+	domainId: string,
+): { pkg: (typeof packages)[number]; path: string } | undefined {
+	let found: { pkg: (typeof packages)[number]; path: string } | undefined;
+
+	for (const pkg of packages) {
+		const domain = pkg.manifest.domains.find((d) => d.name === domainId);
+		if (!domain) continue;
+		found = { pkg, path: join(pkg.installPath, domain.path) };
+	}
+
+	return found;
 }
 
 async function collectTsFiles(dir: string): Promise<string[]> {

@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { ejectDomain } from "../../lib/packages/eject.ts";
+import { listInstalledPackages } from "../../lib/packages/store.ts";
 
 // ============================================================================
 // Helpers
@@ -145,26 +146,43 @@ describe("ejectDomain — basic copy", () => {
 
 describe("ejectDomain — local takes precedence over global", () => {
 	test("uses local package when same domain exists in both scopes", async () => {
-		// Install coding domain in both scopes
 		await createPkgFixture(localStore, { name: "local-pkg" });
-		await createPkgFixture(globalStore, { name: "global-pkg" });
-
-		// Patch global store resolution — we need to pass a custom home dir.
-		// Since listInstalledPackages("user") reads from homedir(), we can't override
-		// the global path in these tests without mocking. Instead we verify that
-		// local packages are returned first by checking that a local-only install
-		// is found correctly, and a second test below exercises precedence via
-		// the package order in the result.
-		//
-		// The actual global store test depends on ~/.cosmonauts/packages which is
-		// not something we can inject. To exercise AC #2 we use the fact that
-		// ejectDomain returns sourcePath — we install "coding" in local and verify
-		// that the local path is used even when both have it.
-
 		const result = await ejectDomain({ domainId: "coding", projectRoot });
-
 		expect(result.sourcePackage).toBe("local-pkg");
 		expect(result.sourcePath).toContain(localStore);
+	});
+});
+
+// ============================================================================
+// AC #2b — within same scope, effective runtime winner is selected
+// ============================================================================
+
+describe("ejectDomain — same-scope conflicts", () => {
+	test("selects the same local package that wins by source order", async () => {
+		await createPkgFixture(localStore, {
+			name: "alpha",
+			extraFiles: { "marker.ts": "export const marker = 'alpha';\n" },
+		});
+		await createPkgFixture(localStore, {
+			name: "beta",
+			extraFiles: { "marker.ts": "export const marker = 'beta';\n" },
+		});
+
+		const localPackages = await listInstalledPackages("project", projectRoot);
+		const localMatches = localPackages.filter((pkg) =>
+			pkg.manifest.domains.some((domain) => domain.name === "coding"),
+		);
+		const expectedWinner = localMatches.at(-1);
+		expect(expectedWinner).toBeDefined();
+
+		const result = await ejectDomain({ domainId: "coding", projectRoot });
+		expect(result.sourcePackage).toBe(expectedWinner?.manifest.name);
+
+		const marker = await readFile(
+			join(projectRoot, ".cosmonauts", "domains", "coding", "marker.ts"),
+			"utf-8",
+		);
+		expect(marker).toContain(expectedWinner?.manifest.name ?? "");
 	});
 });
 
@@ -254,6 +272,32 @@ describe("ejectDomain — import rewriting", () => {
 		);
 		expect(content).toContain('from "cosmonauts/lib/something.ts"');
 		expect(content).not.toContain("../../lib/");
+	});
+
+	test("rewrites single-quoted relative lib imports", async () => {
+		await createPkgFixture(localStore, {
+			name: "my-pkg",
+			extraFiles: {
+				"agents/single-quote.ts":
+					"import { bar } from '../../../lib/core.ts';\n",
+			},
+		});
+
+		await ejectDomain({ domainId: "coding", projectRoot });
+
+		const content = await readFile(
+			join(
+				projectRoot,
+				".cosmonauts",
+				"domains",
+				"coding",
+				"agents",
+				"single-quote.ts",
+			),
+			"utf-8",
+		);
+		expect(content).toContain("from 'cosmonauts/lib/core.ts'");
+		expect(content).not.toContain("../../../lib/");
 	});
 
 	test("rewrites imports in nested agents/ files", async () => {
