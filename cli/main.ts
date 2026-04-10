@@ -38,6 +38,7 @@ import {
 	injectUserPrompt,
 	runChain,
 } from "../lib/orchestration/chain-runner.ts";
+import { isChainDslExpression } from "../lib/orchestration/chain-steps.ts";
 import {
 	discoverBundledPackageDirs,
 	discoverFrameworkBundledPackageDirs,
@@ -202,10 +203,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
 export function shouldParseWorkflowAsRawChainExpression(
 	expression: string,
 ): boolean {
-	const trimmed = expression.trim();
-	return (
-		trimmed.includes("->") || trimmed.includes("[") || trimmed.includes("]")
-	);
+	return isChainDslExpression(expression);
 }
 
 export async function resolveWorkflowExpression(

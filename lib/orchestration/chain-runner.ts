@@ -10,7 +10,7 @@ import { unqualifyRole } from "../agents/qualified-role.ts";
 import { validateSlug } from "../plans/plan-manager.ts";
 import { TaskManager } from "../tasks/task-manager.ts";
 import { createPiSpawner } from "./agent-spawner.ts";
-import { isParallelGroupStep } from "./chain-steps.ts";
+import { isParallelGroupStep, resolveStagePrompt } from "./chain-steps.ts";
 import { getModelForRole, getThinkingForRole } from "./model-resolution.ts";
 import type {
 	AgentSpawner,
@@ -104,7 +104,10 @@ export function getDefaultStagePrompt(role: string): string {
 }
 
 function buildStagePrompt(stage: ChainStage, config: ChainConfig): string {
-	const basePrompt = stage.prompt ?? getDefaultStagePrompt(stage.name);
+	const basePrompt = resolveStagePrompt(
+		stage.prompt,
+		getDefaultStagePrompt(stage.name),
+	);
 
 	// When loop completion is label-scoped, loop coordinators must process only
 	// that subset to avoid touching unrelated ready tasks.

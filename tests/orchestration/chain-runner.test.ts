@@ -15,6 +15,7 @@ import {
 	createDefaultCompletionCheck,
 	derivePlanSlug,
 	getDefaultStagePrompt,
+	injectUserPrompt,
 	runChain,
 	runStage,
 } from "../../lib/orchestration/chain-runner.ts";
@@ -977,6 +978,45 @@ describe("runChain", () => {
 		expect(result.stageResults[1]?.success).toBe(true);
 		expect(result.totalDurationMs).toBeGreaterThanOrEqual(0);
 		expect(result.errors).toHaveLength(0);
+	});
+
+	test("user prompt injection preserves default first-stage role prompt", async () => {
+		const steps = parseChain("planner -> task-manager", defaultRegistry);
+		injectUserPrompt(steps, "build auth");
+
+		await runChain(makeConfig(steps));
+
+		expect(spawnerRef.current?.spawn).toHaveBeenCalledWith(
+			expect.objectContaining({
+				role: "planner",
+				prompt:
+					"Analyze the project and design an implementation plan.\n\nUser request: build auth",
+			}),
+		);
+	});
+
+	test("parallel first-stage members preserve role prompts with injected user request", async () => {
+		const steps = parseChain(
+			"[planner, reviewer] -> task-manager",
+			defaultRegistry,
+		);
+		injectUserPrompt(steps, "focus on security");
+
+		await runChain(makeConfig(steps));
+
+		const spawnMock = spawnerRef.current?.spawn;
+		expect(spawnMock).toBeDefined();
+		if (!spawnMock) return;
+		const calls = vi.mocked(spawnMock).mock.calls;
+		const plannerCall = calls.find(([args]) => args.role === "planner")?.[0];
+		const reviewerCall = calls.find(([args]) => args.role === "reviewer")?.[0];
+
+		expect(plannerCall?.prompt).toBe(
+			"Analyze the project and design an implementation plan.\n\nUser request: focus on security",
+		);
+		expect(reviewerCall?.prompt).toBe(
+			"Review the current branch changes against main and write actionable findings.\n\nUser request: focus on security",
+		);
 	});
 
 	test("stage failure stops chain", async () => {

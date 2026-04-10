@@ -11,6 +11,7 @@ import {
 	isChainDslExpression,
 	isChainStage,
 	isParallelGroupStep,
+	resolveStagePrompt,
 } from "../../lib/orchestration/chain-steps.ts";
 import type {
 	ChainStage,
@@ -160,7 +161,7 @@ describe("injectUserPrompt", () => {
 		const s = stage("planner");
 		const steps: ChainStep[] = [s, stage("coordinator")];
 		injectUserPrompt(steps, "build an auth system");
-		expect(s.prompt).toBe("build an auth system");
+		expect(s.prompt).toBe("User request: build an auth system");
 	});
 
 	test("does not inject into later sequential stages", () => {
@@ -189,8 +190,8 @@ describe("injectUserPrompt", () => {
 		};
 		const steps: ChainStep[] = [parallelStep, stage("coordinator")];
 		injectUserPrompt(steps, "design the system");
-		expect(s1.prompt).toBe("design the system");
-		expect(s2.prompt).toBe("design the system");
+		expect(s1.prompt).toBe("User request: design the system");
+		expect(s2.prompt).toBe("User request: design the system");
 	});
 
 	test("does not inject into stages of non-first parallel steps", () => {
@@ -221,6 +222,30 @@ describe("injectUserPrompt", () => {
 		expect(s2.prompt).toBe(
 			"Review the code.\n\nUser request: focus on security",
 		);
+	});
+});
+
+// ============================================================================
+// resolveStagePrompt
+// ============================================================================
+
+describe("resolveStagePrompt", () => {
+	test("returns default prompt when stage prompt is undefined", () => {
+		expect(resolveStagePrompt(undefined, "Default prompt")).toBe(
+			"Default prompt",
+		);
+	});
+
+	test("preserves explicit stage prompt overrides", () => {
+		expect(resolveStagePrompt("Custom prompt", "Default prompt")).toBe(
+			"Custom prompt",
+		);
+	});
+
+	test("prepends default prompt for user-request-only stage prompt", () => {
+		expect(
+			resolveStagePrompt("User request: focus on auth", "Default prompt"),
+		).toBe("Default prompt\n\nUser request: focus on auth");
 	});
 });
 

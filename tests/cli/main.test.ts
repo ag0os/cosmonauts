@@ -381,21 +381,30 @@ describe("--workflow DSL dispatch routing", () => {
 		).toBe(true);
 	});
 
-	test("routes named single-word workflows through workflow resolution", () => {
-		expect(shouldParseWorkflowAsRawChainExpression("verify")).toBe(false);
-		expect(shouldParseWorkflowAsRawChainExpression("implement")).toBe(false);
+	test("routes single-stage DSL expressions as raw chains", () => {
+		expect(shouldParseWorkflowAsRawChainExpression("planner")).toBe(true);
+		expect(shouldParseWorkflowAsRawChainExpression("coding/planner")).toBe(
+			true,
+		);
 	});
 
-	test("resolves named single-word workflows to their configured chain", async () => {
+	test("routes named workflow identifiers through workflow resolution", () => {
+		expect(shouldParseWorkflowAsRawChainExpression("verify")).toBe(true);
+		expect(shouldParseWorkflowAsRawChainExpression("plan-and-build")).toBe(
+			false,
+		);
+	});
+
+	test("resolves named compound workflows to their configured chain", async () => {
 		await expect(
-			resolveWorkflowExpression("verify", process.cwd(), [
+			resolveWorkflowExpression("ship-and-check", process.cwd(), [
 				{
-					name: "verify",
-					description: "Review + remediation",
-					chain: "quality-manager",
+					name: "ship-and-check",
+					description: "Plan then execute",
+					chain: "planner -> coordinator",
 				},
 			]),
-		).resolves.toBe("quality-manager");
+		).resolves.toBe("planner -> coordinator");
 	});
 
 	test("falls back to raw single-stage chain when workflow name is unknown", async () => {

@@ -279,7 +279,7 @@ describe("orchestration extension", () => {
 					{
 						name: "planner",
 						loop: false,
-						prompt: "Build auth with refresh tokens",
+						prompt: "User request: Build auth with refresh tokens",
 					},
 					{ name: "coordinator", loop: true },
 				],

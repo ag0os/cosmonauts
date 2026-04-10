@@ -44,7 +44,8 @@ export function getFirstExecutableStages(steps: ChainStep[]): ChainStage[] {
  * Parallel first step: appends to every member stage.
  *
  * When the stage already has a prompt, the user request is appended.
- * When it has none, the prompt is stored as the full stage prompt.
+ * When it has none, only a `User request:` suffix is stored so runtime
+ * prompt building can preserve the role default instructions.
  */
 export function injectUserPrompt(steps: ChainStep[], prompt?: string): void {
 	if (!prompt) return;
@@ -64,7 +65,23 @@ export function injectUserPrompt(steps: ChainStep[], prompt?: string): void {
 function injectIntoStage(stage: ChainStage, prompt: string): void {
 	stage.prompt = stage.prompt
 		? `${stage.prompt}\n\nUser request: ${prompt}`
-		: prompt;
+		: `User request: ${prompt}`;
+}
+
+/**
+ * Resolves a stage prompt against a role default prompt.
+ *
+ * A prompt that starts with `User request:` is treated as user-request-only
+ * content and appended to the default role prompt.
+ */
+export function resolveStagePrompt(
+	stagePrompt: string | undefined,
+	defaultPrompt: string,
+): string {
+	if (!stagePrompt) return defaultPrompt;
+	return stagePrompt.startsWith("User request:")
+		? `${defaultPrompt}\n\n${stagePrompt}`
+		: stagePrompt;
 }
 
 // ============================================================================
