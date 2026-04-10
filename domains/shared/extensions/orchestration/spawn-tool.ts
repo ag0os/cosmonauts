@@ -535,13 +535,13 @@ export function registerSpawnTool(
 			let text = theme.fg("toolTitle", theme.bold("spawn_agent "));
 			text += theme.fg("muted", roleLabel(args.role));
 			if (args.runtimeContext?.taskId) {
-				text += theme.fg("dim", ` (${args.runtimeContext.taskId})`);
+				text += theme.fg("muted", ` (${args.runtimeContext.taskId})`);
 			}
 			const truncated =
 				args.prompt.length > 100
 					? `${args.prompt.slice(0, 97)}...`
 					: args.prompt;
-			text += `\n${theme.fg("dim", `  ${truncated}`)}`;
+			text += `\n${theme.fg("muted", `  ${truncated}`)}`;
 			return new Text(text, 0, 0);
 		},
 

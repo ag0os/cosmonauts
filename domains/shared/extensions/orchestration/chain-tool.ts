@@ -153,10 +153,10 @@ export function registerChainTool(
 					args.prompt.length > 80
 						? `${args.prompt.slice(0, 77)}...`
 						: args.prompt;
-				text += `\n${theme.fg("dim", `  prompt: "${truncated}"`)}`;
+				text += `\n${theme.fg("muted", `  prompt: "${truncated}"`)}`;
 			}
 			if (args.completionLabel) {
-				text += theme.fg("dim", ` [${args.completionLabel}]`);
+				text += theme.fg("muted", ` [${args.completionLabel}]`);
 			}
 			return new Text(text, 0, 0);
 		},
@@ -177,7 +177,7 @@ export function registerChainTool(
 					if (line.startsWith("✓")) return theme.fg("success", line);
 					if (line.startsWith("●")) return theme.fg("accent", line);
 					if (line.startsWith("▶")) return theme.fg("toolTitle", line);
-					return theme.fg("dim", line);
+					return theme.fg("muted", line);
 				})
 				.join("\n");
 

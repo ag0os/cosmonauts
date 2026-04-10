@@ -126,7 +126,10 @@ export function buildProgressText(lines: string[]): string {
 export function buildCostTable(
 	stats: ChainStats | undefined,
 	theme: {
-		fg: (color: "accent" | "dim" | "toolOutput", text: string) => string;
+		fg: (
+			color: "accent" | "dim" | "muted" | "toolOutput",
+			text: string,
+		) => string;
 		bold: (text: string) => string;
 	},
 ): string {
@@ -169,20 +172,20 @@ export function buildCostTable(
 	lines.push(theme.fg("accent", "💰 Cost Summary"));
 	lines.push(
 		theme.fg(
-			"dim",
+			"muted",
 			` ${pad(header.name, w.name)} │ ${padR(header.tokens, w.tokens)} │ ${padR(header.cost, w.cost)} │ ${padR(header.duration, w.duration)} `,
 		),
 	);
-	lines.push(theme.fg("dim", `─${sep}─`));
+	lines.push(theme.fg("muted", `─${sep}─`));
 	for (const row of rows) {
 		lines.push(
 			theme.fg(
-				"dim",
+				"muted",
 				` ${pad(row.name, w.name)} │ ${padR(row.tokens, w.tokens)} │ ${padR(row.cost, w.cost)} │ ${padR(row.duration, w.duration)} `,
 			),
 		);
 	}
-	lines.push(theme.fg("dim", `─${sep}─`));
+	lines.push(theme.fg("muted", `─${sep}─`));
 	lines.push(
 		theme.fg(
 			"toolOutput",

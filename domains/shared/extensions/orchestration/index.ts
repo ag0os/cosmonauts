@@ -57,14 +57,14 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 		if (!details) {
 			const text =
 				typeof message.content === "string" ? message.content : "(activity)";
-			return new Text(theme.fg("dim", text), 0, 0);
+			return new Text(theme.fg("muted", text), 0, 0);
 		}
 		const label = details.taskId
 			? `${roleLabel(details.role)} (${details.taskId})`
 			: roleLabel(details.role);
 		const box = new Box(1, 1, (t) => theme.bg("customMessageBg", t));
 		box.addChild(
-			new Text(theme.fg("dim", `  🔧 ${label}: ${details.summary}`), 0, 0),
+			new Text(theme.fg("muted", `  🔧 ${label}: ${details.summary}`), 0, 0),
 		);
 		return box;
 	});
