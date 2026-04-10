@@ -7,6 +7,8 @@
  *   cosmonauts --print "prompt"                   → non-interactive (run, output, exit)
  *   cosmonauts -w name "prompt"                   → named workflow (non-interactive)
  *   cosmonauts -w "a -> b" "prompt"               → raw chain DSL (non-interactive)
+ *   cosmonauts -w "reviewer[2]" "prompt"           → fan-out DSL (non-interactive)
+ *   cosmonauts -w "[planner, reviewer]" "prompt"   → bracket-group DSL (non-interactive)
  *   cosmonauts -c                                 → continue most recent session
  *   cosmonauts --dump-prompt [-a agent]           → dump composed system prompt to stdout
  *   cosmonauts --dump-prompt --file path          → dump composed system prompt to file
@@ -32,6 +34,7 @@ import {
 import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
 import { setSharedRegistry } from "../lib/interactive/agent-switch.ts";
 import { parseChain } from "../lib/orchestration/chain-parser.ts";
+import { isChainDslExpression } from "../lib/orchestration/chain-steps.ts";
 import {
 	injectUserPrompt,
 	runChain,
@@ -119,7 +122,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
 		)
 		.option(
 			"-w, --workflow <expression>",
-			"Run a named workflow or raw chain DSL (e.g. 'plan-and-build' or 'planner -> coordinator')",
+			"Run a named workflow or chain DSL. Named: 'plan-and-build'. Arrow: 'planner -> coordinator'. Fan-out: 'reviewer[2]'. Bracket: '[planner, reviewer]'.",
 		)
 		.option(
 			"--completion-label <label>",
@@ -350,9 +353,8 @@ async function run(options: CliOptions): Promise<void> {
 
 	// 2. --workflow → named workflow or raw chain DSL, run, exit
 	if (options.workflow) {
-		// Detect raw chain DSL (contains "->") vs named workflow
-		const isChainDsl = options.workflow.includes("->");
-		const chainExpr = isChainDsl
+		// Route DSL expressions (arrows, brackets, fan-out) to parseChain; named workflows to resolveWorkflow
+		const chainExpr = isChainDslExpression(options.workflow)
 			? options.workflow
 			: (await resolveWorkflow(options.workflow, cwd, domainWorkflows)).chain;
 		const stages = parseChain(chainExpr, registry, domainContext);
