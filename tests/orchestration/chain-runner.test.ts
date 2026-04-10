@@ -23,6 +23,7 @@ import type {
 	ChainConfig,
 	ChainEvent,
 	ChainStage,
+	ChainStep,
 	SpawnResult,
 	SpawnStats,
 } from "../../lib/orchestration/types.ts";
@@ -108,11 +109,12 @@ const defaultRegistry = new AgentRegistry([
 ]);
 
 function makeConfig(
-	stages: ChainStage[],
+	steps: ChainStep[],
 	overrides?: Partial<ChainConfig>,
 ): ChainConfig {
 	return {
-		stages,
+		// @ts-expect-error chain-runner.ts still reads config.stages (TASK-167 will migrate to steps)
+		stages: steps,
 		projectRoot: "/tmp/test-project",
 		registry: defaultRegistry,
 		...overrides,
@@ -1247,12 +1249,12 @@ describe("qualified stage chain end-to-end", () => {
 		const stages = parseChain("ops/scheduler -> ops/orchestrator", registry);
 
 		// Verify loop detection used the registry (not false positive)
-		expect(stages[0]?.loop).toBe(false);
-		expect(stages[1]?.loop).toBe(true);
+		expect((stages[0] as ChainStage | undefined)?.loop).toBe(false);
+		expect((stages[1] as ChainStage | undefined)?.loop).toBe(true);
 
 		// Attach a completion check so the loop stage terminates
 		const completionCheck = vi.fn(async () => true);
-		const loopStage = stages[1];
+		const loopStage = stages[1] as ChainStage | undefined;
 		if (loopStage) stages[1] = { ...loopStage, completionCheck };
 
 		const result = await runChain(makeConfig(stages, { registry }));
@@ -1272,11 +1274,11 @@ describe("qualified stage chain end-to-end", () => {
 		// "planner" unqualified resolves via scan-all, "coding/coordinator" qualified
 		const stages = parseChain("planner -> coding/coordinator", registry);
 
-		expect(stages[0]?.loop).toBe(false);
-		expect(stages[1]?.loop).toBe(true);
+		expect((stages[0] as ChainStage | undefined)?.loop).toBe(false);
+		expect((stages[1] as ChainStage | undefined)?.loop).toBe(true);
 
 		const completionCheck = vi.fn(async () => true);
-		const loopStage2 = stages[1];
+		const loopStage2 = stages[1] as ChainStage | undefined;
 		if (loopStage2) stages[1] = { ...loopStage2, completionCheck };
 
 		const result = await runChain(makeConfig(stages, { registry }));
