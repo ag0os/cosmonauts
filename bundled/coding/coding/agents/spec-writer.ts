@@ -9,7 +9,7 @@ const definition: AgentDefinition = {
 	tools: "readonly",
 	extensions: ["plans"],
 	skills: ["pi", "plan"],
-	subagents: ["explorer"],
+	subagents: [],
 	projectContext: true,
 	session: "ephemeral",
 	loop: false,
