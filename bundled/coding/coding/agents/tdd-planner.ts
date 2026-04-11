@@ -13,7 +13,7 @@ const definition: AgentDefinition = {
 	],
 	model: "anthropic/claude-opus-4-6",
 	tools: "readonly",
-	extensions: ["plans", "orchestration"],
+	extensions: ["tasks", "plans", "orchestration"],
 	skills: ["pi", "plan", "tdd"],
 	subagents: [
 		"task-manager",
