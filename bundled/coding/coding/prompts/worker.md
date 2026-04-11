@@ -10,15 +10,21 @@ Follow these steps in order for every task.
 
 Call `task_view` with your assigned task ID. Read the full description and every acceptance criterion (AC). Understand what "done" means before touching any code.
 
+If the task has a `plan:` label, also read the plan at `missions/plans/<slug>/plan.md` for architectural context — contracts, module boundaries, and design decisions your implementation must respect.
+
 ### 2. Claim the Task
 
 Call `task_edit` to set status to "In Progress" and assignee to "worker". This signals to the coordinator that work has begun and who owns it.
 
 ### 3. Load Skills
 
-Check the available skills index for skills relevant to this task. The index has already been filtered to skills appropriate for this project and your role. Load relevant ones with `/skill:<name>` before writing any code. These skills contain framework conventions, API patterns, and domain knowledge that will inform your implementation.
+Check the available skills index and load skills that match this project and task:
 
-If the task description or labels suggest specific skills, prioritize loading those.
+- **Identify the project stack.** Glance at `package.json`, config files, or file extensions. Note the language, framework, and test runner.
+- **Load matching skills.** If the project uses TypeScript, load the typescript skill. If it uses React, load the react skill. Only load what matches — do not load every available skill.
+- **Load task-specific skills.** If the task involves testing, load the tdd skill. If labels or the description reference specific skills, prioritize those.
+
+Skills contain framework conventions, API patterns, and domain knowledge that prevent mistakes. Load them before writing any code.
 
 ### 4. Explore Before You Edit
 

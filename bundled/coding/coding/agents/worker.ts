@@ -8,7 +8,7 @@ const definition: AgentDefinition = {
 	model: "anthropic/claude-sonnet-4-6",
 	tools: "coding",
 	extensions: ["tasks"],
-	skills: undefined,
+	skills: ["engineering-principles"],
 	subagents: [],
 	projectContext: true,
 	session: "ephemeral",

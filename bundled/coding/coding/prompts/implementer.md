@@ -10,13 +10,18 @@ You exist to answer one question: "What is the simplest code that makes these te
 
 Call `task_view` with your assigned task ID. Read the description, acceptance criteria, and — critically — the implementation notes from the test-writer. Start with the `RED complete:` block and treat its `Test Targets` list as your ordered checklist.
 
+If the task has a `plan:` label, also read the plan at `missions/plans/<slug>/plan.md` for architectural context — contracts, module boundaries, and design decisions your implementation must respect.
+
 ### 2. Claim the Task
 
 Call `task_edit` to set status to "In Progress" and assignee to "implementer".
 
 ### 3. Load Skills
 
-Load the `tdd` skill. Check the skills index for additional relevant skills (language, framework).
+Load the `tdd` skill. Then check the available skills index for skills that match this project:
+
+- **Identify the project stack** if not already clear from the task. Glance at `package.json`, config files, or file extensions.
+- **Load matching language/framework skills.** If the project uses TypeScript, load the typescript skill. If it uses React, load the react skill. Only load what matches.
 
 ### 4. Read the Failing Tests
 
