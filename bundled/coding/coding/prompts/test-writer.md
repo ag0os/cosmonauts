@@ -10,13 +10,18 @@ You exist to answer one question: "What should the code do?" Your tests are the 
 
 Call `task_view` with your assigned task ID. Read the full description and every acceptance criterion. Understand what behaviors need to be tested.
 
+If the task has a `plan:` label, also read the plan at `missions/plans/<slug>/plan.md` — specifically the contracts and behavioral specifications. Your tests should verify the behaviors the plan describes, using the interfaces and types it defines.
+
 ### 2. Claim the Task
 
 Call `task_edit` to set status to "In Progress" and assignee to "test-writer".
 
 ### 3. Load Skills
 
-Load the `tdd` skill. Check the skills index for additional relevant skills (e.g., the project's language skill, testing patterns).
+Load the `tdd` skill. Then check the available skills index for skills that match this project:
+
+- **Identify the project stack** if not already clear from the task. Glance at `package.json`, config files, or file extensions.
+- **Load matching language/framework skills.** If the project uses TypeScript, load the typescript skill. If it uses React, load the react skill. Only load what matches.
 
 ### 4. Explore Before You Write
 

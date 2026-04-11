@@ -14,7 +14,9 @@ Follow the Exploration Discipline from Coding (Read-Only). Additionally:
 
 ### 2. Understand the requirements
 
-Make sure you know exactly what is being asked:
+**Spec-driven planning.** Before defining requirements yourself, check if a spec already exists for this work (`plan_list` and `plan_view`). If a spec writer has already captured product requirements into a `spec.md`, treat it as the authoritative source for what needs to be built. Your job shifts from "understand what the user wants" to "design the architecture that delivers what the spec describes." Do not re-derive requirements from the user prompt — the spec has already done that work, likely through interactive conversation with the human.
+
+If no spec exists, make sure you know exactly what is being asked:
 
 - Parse the user's request or the specs document you have been pointed to
 - Identify ambiguities or gaps in the requirements

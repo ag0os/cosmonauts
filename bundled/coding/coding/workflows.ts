@@ -33,6 +33,27 @@ export const workflows: WorkflowDefinition[] = [
 		chain: "tdd-planner -> task-manager -> tdd-coordinator -> quality-manager",
 	},
 	{
+		name: "plan-and-tdd",
+		description:
+			"Architecture-first TDD: design the structure, create tasks with ACs, then enrich with testable behaviors and Red-Green-Refactor",
+		chain:
+			"planner -> task-manager -> tdd-planner -> tdd-coordinator -> quality-manager",
+	},
+	{
+		name: "spec-and-build",
+		description:
+			"Full pipeline with interactive requirements capture: gather spec, design, implement, and review",
+		chain:
+			"spec-writer -> planner -> task-manager -> coordinator -> quality-manager",
+	},
+	{
+		name: "spec-and-tdd",
+		description:
+			"Full pipeline with interactive requirements capture and TDD: gather spec, design, create tasks, enrich with behaviors, and Red-Green-Refactor",
+		chain:
+			"spec-writer -> planner -> task-manager -> tdd-planner -> tdd-coordinator -> quality-manager",
+	},
+	{
 		name: "adapt",
 		description:
 			"Adapt a feature from a reference codebase: study reference, design adaptation plan, implement, and review",

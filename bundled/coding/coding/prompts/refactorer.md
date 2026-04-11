@@ -16,7 +16,10 @@ Call `task_edit` to set status to "In Progress" and assignee to "refactorer".
 
 ### 3. Load Skills
 
-Load the `tdd` and `refactoring` skills. These contain the specific techniques and discipline you need.
+Load the `tdd` and `refactoring` skills. Then check the available skills index for project-specific skills:
+
+- **Identify the project stack** if not already clear. Glance at `package.json`, config files, or file extensions.
+- **Load matching language/framework skills.** If the project uses TypeScript, load the typescript skill — it has type patterns relevant to refactoring. If it uses React, load the react skill.
 
 ### 4. Run All Tests
 
