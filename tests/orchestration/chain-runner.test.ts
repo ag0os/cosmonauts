@@ -838,6 +838,62 @@ describe("event emission", () => {
 		expect(firstTool.event.type).toBe("tool_execution_start");
 	});
 
+	test("emits agent_spawned before forwarded tool events and agent_completed after spawn settles", async () => {
+		const events: ChainEvent[] = [];
+		const sessionId = "parallel-session";
+		let resolveSpawn!: () => void;
+
+		const spawner: AgentSpawner = {
+			spawn: vi.fn(async (config) => {
+				config.onEvent?.({
+					type: "tool_execution_start",
+					toolName: "read",
+					toolCallId: "tc-early",
+					sessionId,
+				});
+				await new Promise<void>((resolve) => {
+					resolveSpawn = resolve;
+				});
+				config.onEvent?.({
+					type: "tool_execution_end",
+					toolName: "read",
+					toolCallId: "tc-early",
+					isError: false,
+					sessionId,
+				});
+				return {
+					success: true,
+					sessionId,
+					messages: [],
+				};
+			}),
+			dispose: vi.fn(),
+		};
+
+		const stage = makeStage("planner", false);
+		const config = makeConfig([stage], {
+			onEvent: (event) => events.push(event),
+		});
+		const runPromise = runStage(stage, config, spawner);
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+		const earlyTypes = events.map((event) => event.type);
+		expect(earlyTypes).toContain("agent_spawned");
+		expect(earlyTypes).not.toContain("agent_completed");
+		resolveSpawn();
+		await runPromise;
+
+		const types = events.map((event) => event.type);
+		const spawnedIndex = types.indexOf("agent_spawned");
+		const firstToolIndex = types.indexOf("agent_tool_use");
+		const completedIndex = types.indexOf("agent_completed");
+		expect(spawnedIndex).toBeGreaterThan(-1);
+		expect(firstToolIndex).toBeGreaterThan(-1);
+		expect(completedIndex).toBeGreaterThan(-1);
+		expect(spawnedIndex).toBeLessThan(firstToolIndex);
+		expect(firstToolIndex).toBeLessThan(completedIndex);
+	});
+
 	test("uses each loop spawn sessionId when forwarding events", async () => {
 		const events: ChainEvent[] = [];
 		let spawnCount = 0;

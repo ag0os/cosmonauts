@@ -413,7 +413,7 @@ describe("chain-profiler: parallel fan-out scope tags", () => {
 		expect(summary).toContain("Parallel Group Breakdown");
 	});
 
-	test("tool events from parallel sessions inherit scope", () => {
+	test("tool events from parallel same-role sessions carry distinct scope tags", () => {
 		const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
 		const step = makeParallelStep(["reviewer", "reviewer"]);
 
@@ -421,25 +421,96 @@ describe("chain-profiler: parallel fan-out scope tags", () => {
 			{ type: "chain_start", steps: [step] },
 			{ type: "parallel_start", step, stepIndex: 0 },
 			{ type: "agent_spawned", role: "reviewer", sessionId: "sess-r0" },
-			{ type: "agent_spawned", role: "reviewer", sessionId: "sess-r1" },
-		]);
-
-		profiler.handleEvent({
-			type: "agent_tool_use",
-			role: "reviewer",
-			sessionId: "sess-r0",
-			event: {
-				type: "tool_execution_start",
+			{
+				type: "agent_tool_use",
+				role: "reviewer",
 				sessionId: "sess-r0",
-				toolName: "Read",
-				toolCallId: "t0",
+				event: {
+					type: "tool_execution_start",
+					sessionId: "sess-r0",
+					toolName: "Read",
+					toolCallId: "t0",
+				},
 			},
-		});
+			{ type: "agent_spawned", role: "reviewer", sessionId: "sess-r1" },
+			{
+				type: "agent_tool_use",
+				role: "reviewer",
+				sessionId: "sess-r1",
+				event: {
+					type: "tool_execution_start",
+					sessionId: "sess-r1",
+					toolName: "Read",
+					toolCallId: "t1",
+				},
+			},
+		]);
 
 		const entries = (profiler as unknown as { entries: ProfileTraceEntry[] })
 			.entries;
-		const toolEntry = entries.find((e) => e.cat === "tool" && e.ph === "B");
-		expect(toolEntry?.scope).toBe("reviewer.0");
+		const toolBegins = entries.filter((e) => e.cat === "tool" && e.ph === "B");
+		expect(toolBegins).toHaveLength(2);
+		expect(toolBegins[0]?.scope).toBe("reviewer.0");
+		expect(toolBegins[1]?.scope).toBe("reviewer.1");
+	});
+
+	test("parallel summary reports member durations from real execution windows", () => {
+		const originalNow = Date.now;
+		let now = new Date("2026-01-01T00:00:00.000Z").getTime();
+		Date.now = () => now;
+		try {
+			const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
+			const step = makeParallelStep(["reviewer", "reviewer"]);
+
+			feed(profiler, [
+				{ type: "chain_start", steps: [step] },
+				{ type: "parallel_start", step, stepIndex: 0 },
+				{ type: "agent_spawned", role: "reviewer", sessionId: "sess-r0" },
+			]);
+			now += 100;
+			profiler.handleEvent({
+				type: "agent_spawned",
+				role: "reviewer",
+				sessionId: "sess-r1",
+			});
+			now += 200;
+			profiler.handleEvent({
+				type: "agent_completed",
+				role: "reviewer",
+				sessionId: "sess-r0",
+			});
+			now += 100;
+			feed(profiler, [
+				{ type: "agent_completed", role: "reviewer", sessionId: "sess-r1" },
+				{
+					type: "parallel_end",
+					step,
+					stepIndex: 0,
+					results: [],
+					success: true,
+				},
+			]);
+
+			const entries = (profiler as unknown as { entries: ProfileTraceEntry[] })
+				.entries;
+			const spans = (profiler as unknown as { spans: ToolSpan[] }).spans;
+			const pending = (
+				profiler as unknown as { pendingTools: Map<string, unknown> }
+			).pendingTools;
+			const summary = buildSummary(
+				entries,
+				spans,
+				pending as Parameters<typeof buildSummary>[2],
+			);
+
+			expect(summary).toContain("reviewer.0: 300ms");
+			expect(summary).toContain("reviewer.1: 300ms");
+			expect(summary).toContain(
+				"Overlap ratio (sum-of-members / group wall-clock): 1.50x",
+			);
+		} finally {
+			Date.now = originalNow;
+		}
 	});
 });
 
@@ -481,7 +552,10 @@ describe("chain-profiler: writeOutput", () => {
 		const profiler = new ChainProfiler({ outputDir });
 		profiler.handleEvent({ type: "chain_start", steps: [] });
 
-		await expect(profiler.writeOutput()).resolves.not.toThrow();
+		await expect(profiler.writeOutput()).resolves.toMatchObject({
+			tracePath: expect.any(String),
+			summaryPath: expect.any(String),
+		});
 	});
 
 	test("each trace line is valid JSON conforming to ProfileTraceEntry schema", async () => {

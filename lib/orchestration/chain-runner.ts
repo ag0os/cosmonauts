@@ -202,9 +202,12 @@ function emit(config: ChainConfig, event: ChainEvent): void {
 function createSpawnEventForwarder(
 	config: ChainConfig,
 	role: string,
+	onSessionObserved?: (sessionId: string) => void,
 ): ((event: SpawnEvent) => void) | undefined {
 	if (!config.onEvent) return undefined;
 	return (event: SpawnEvent) => {
+		onSessionObserved?.(event.sessionId);
+
 		if (event.type === "turn_start" || event.type === "turn_end") {
 			emit(config, {
 				type: "agent_turn",
@@ -537,7 +540,21 @@ export async function runStage(
 			// One-shot stage
 			iterations = 1;
 
-			const onEvent = createSpawnEventForwarder(config, stage.name);
+			let spawnedSessionId: string | undefined;
+			const emitSpawned = (sessionId: string) => {
+				if (spawnedSessionId !== undefined) return;
+				spawnedSessionId = sessionId;
+				emit(config, {
+					type: "agent_spawned",
+					role: stage.name,
+					sessionId,
+				});
+			};
+			const onEvent = createSpawnEventForwarder(
+				config,
+				stage.name,
+				emitSpawned,
+			);
 
 			const spawnResult = await spawner.spawn({
 				role: stage.name,
@@ -555,11 +572,7 @@ export async function runStage(
 			});
 
 			if (spawnResult.success) {
-				emit(config, {
-					type: "agent_spawned",
-					role: stage.name,
-					sessionId: spawnResult.sessionId,
-				});
+				emitSpawned(spawnResult.sessionId);
 				emit(config, {
 					type: "agent_completed",
 					role: stage.name,
@@ -622,8 +635,6 @@ export async function runStage(
 			};
 		}
 
-		const onEvent = createSpawnEventForwarder(config, stage.name);
-
 		for (let i = 0; i < iterationBudget; i++) {
 			if (config.signal?.aborted) break;
 			if (Date.now() >= deadline) break;
@@ -635,6 +646,22 @@ export async function runStage(
 				stage,
 				iteration: iterations,
 			});
+
+			let spawnedSessionId: string | undefined;
+			const emitSpawned = (sessionId: string) => {
+				if (spawnedSessionId !== undefined) return;
+				spawnedSessionId = sessionId;
+				emit(config, {
+					type: "agent_spawned",
+					role: stage.name,
+					sessionId,
+				});
+			};
+			const onEvent = createSpawnEventForwarder(
+				config,
+				stage.name,
+				emitSpawned,
+			);
 
 			const spawnResult = await spawner.spawn({
 				role: stage.name,
@@ -657,11 +684,7 @@ export async function runStage(
 			}
 
 			if (spawnResult.success) {
-				emit(config, {
-					type: "agent_spawned",
-					role: stage.name,
-					sessionId: spawnResult.sessionId,
-				});
+				emitSpawned(spawnResult.sessionId);
 				emit(config, {
 					type: "agent_completed",
 					role: stage.name,
