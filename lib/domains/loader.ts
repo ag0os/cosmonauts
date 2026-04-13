@@ -65,9 +65,8 @@ async function loadSingleDomain(domainDir: string): Promise<LoadedDomain> {
 		for (const file of agentFiles) {
 			if (!file.endsWith(".ts") || file.startsWith(".")) continue;
 			const mod = await import(join(agentsDir, file));
-			const def: AgentDefinition = mod.default;
-			if (def?.id) {
-				def.domain = manifest.id;
+			const def = normalizeAgentDefinition(mod.default, manifest.id);
+			if (def) {
 				agents.set(def.id, def);
 			}
 		}
@@ -100,6 +99,27 @@ async function loadSingleDomain(domainDir: string): Promise<LoadedDomain> {
 		workflows,
 		rootDirs: [domainDir],
 	};
+}
+
+function normalizeAgentDefinition(
+	definition: unknown,
+	domainId: string,
+): AgentDefinition | undefined {
+	if (!definition || typeof definition !== "object") return undefined;
+	if (!("id" in definition) || typeof definition.id !== "string") {
+		return undefined;
+	}
+
+	const normalized = {
+		...definition,
+		domain: domainId,
+		skills:
+			"skills" in definition && definition.skills !== undefined
+				? definition.skills
+				: ["*"],
+	};
+
+	return normalized as AgentDefinition;
 }
 
 // ============================================================================

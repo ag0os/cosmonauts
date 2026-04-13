@@ -85,7 +85,7 @@ describe("loadDomains", () => {
 		expect(domains[0]?.manifest.id).toBe("valid");
 	});
 
-	it("loads agent definitions and stamps domain ID", async () => {
+	it("loads legacy agent definitions without skills using wildcard fallback", async () => {
 		const domainDir = join(tmp.path, "testdomain");
 		const agentsDir = join(domainDir, "agents");
 		await mkdir(agentsDir, { recursive: true });
@@ -101,6 +101,7 @@ describe("loadDomains", () => {
 		expect(agents.size).toBe(1);
 		expect(agents.has("my-agent")).toBe(true);
 		expect(agents.get("my-agent")?.domain).toBe("testdomain");
+		expect(agents.get("my-agent")?.skills).toEqual(["*"]);
 	});
 
 	it("indexes capabilities from .md files", async () => {
