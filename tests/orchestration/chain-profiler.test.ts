@@ -39,7 +39,7 @@ function feed(profiler: ChainProfiler, events: ChainEvent[]): void {
 // Basic event collection
 // ============================================================================
 
-describe("ChainProfiler — basic event collection", () => {
+describe("chain-profiler: basic event collection", () => {
 	test("records chain_start as Begin entry", () => {
 		const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
 		profiler.handleEvent({ type: "chain_start", steps: [] });
@@ -103,7 +103,7 @@ describe("ChainProfiler — basic event collection", () => {
 // Tool pairing (AC #3)
 // ============================================================================
 
-describe("ChainProfiler — tool pairing", () => {
+describe("chain-profiler: tool pairing", () => {
 	test("paired tool_execution_start/end produce a ToolSpan with correct durationMs", () => {
 		const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
 
@@ -227,7 +227,7 @@ describe("ChainProfiler — tool pairing", () => {
 // Orphaned tools (AC #4)
 // ============================================================================
 
-describe("ChainProfiler — orphaned tool calls", () => {
+describe("chain-profiler: orphaned tool calls", () => {
 	test("tool_execution_start without matching end remains in pendingTools", () => {
 		const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
 		profiler.handleEvent({ type: "chain_start", steps: [] });
@@ -325,7 +325,7 @@ describe("ChainProfiler — orphaned tool calls", () => {
 // Parallel scope disambiguation (AC #5)
 // ============================================================================
 
-describe("ChainProfiler — parallel fan-out scope tags", () => {
+describe("chain-profiler: parallel fan-out scope tags", () => {
 	test("parallel members with same role get sequential scope tags", () => {
 		const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
 		const step = makeParallelStep(["reviewer", "reviewer", "reviewer"]);
@@ -381,6 +381,38 @@ describe("ChainProfiler — parallel fan-out scope tags", () => {
 		expect(spawned?.scope).toBeUndefined();
 	});
 
+	test("parallel fan-out with two reviewers produces reviewer.0 and reviewer.1 in trace and summary", () => {
+		const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
+		const step = makeParallelStep(["reviewer", "reviewer"]);
+
+		feed(profiler, [
+			{ type: "chain_start", steps: [step] },
+			{ type: "parallel_start", step, stepIndex: 0 },
+			{ type: "agent_spawned", role: "reviewer", sessionId: "sess-r0" },
+			{ type: "agent_spawned", role: "reviewer", sessionId: "sess-r1" },
+			{ type: "parallel_end", step, stepIndex: 0, results: [], success: true },
+		]);
+
+		const entries = (profiler as unknown as { entries: ProfileTraceEntry[] })
+			.entries;
+		const spawned = entries.filter((e) => e.name === "agent_spawned");
+		expect(spawned[0]?.scope).toBe("reviewer.0");
+		expect(spawned[1]?.scope).toBe("reviewer.1");
+
+		const spans = (profiler as unknown as { spans: ToolSpan[] }).spans;
+		const pending = (
+			profiler as unknown as { pendingTools: Map<string, unknown> }
+		).pendingTools;
+		const summary = buildSummary(
+			entries,
+			spans,
+			pending as Parameters<typeof buildSummary>[2],
+		);
+		expect(summary).toContain("reviewer.0");
+		expect(summary).toContain("reviewer.1");
+		expect(summary).toContain("Parallel Group Breakdown");
+	});
+
 	test("tool events from parallel sessions inherit scope", () => {
 		const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
 		const step = makeParallelStep(["reviewer", "reviewer"]);
@@ -415,7 +447,7 @@ describe("ChainProfiler — parallel fan-out scope tags", () => {
 // writeOutput (AC #6)
 // ============================================================================
 
-describe("ChainProfiler — writeOutput", () => {
+describe("chain-profiler: writeOutput", () => {
 	let tmpDir: string;
 
 	beforeEach(async () => {
@@ -513,7 +545,7 @@ describe("ChainProfiler — writeOutput", () => {
 // buildSummary content
 // ============================================================================
 
-describe("buildSummary — content sections", () => {
+describe("chain-profiler: buildSummary content sections", () => {
 	test("includes all required sections", () => {
 		const summary = buildSummary([], [], new Map());
 		expect(summary).toContain("Chain Overview");
@@ -617,7 +649,7 @@ describe("buildSummary — content sections", () => {
 // Import constraint verification (AC #7)
 // ============================================================================
 
-describe("chain-profiler import constraints", () => {
+describe("chain-profiler: import constraints", () => {
 	test("module only imports from lib/orchestration/types.ts and node:*", async () => {
 		// Read the source file and verify no forbidden imports
 		const src = await readFile(
