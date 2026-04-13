@@ -62,6 +62,7 @@ const FIXTURE_AGENT: AgentDefinition = {
 	model: "fixture-provider/fixture-model",
 	tools: "readonly",
 	extensions: [],
+	skills: ["*"],
 	projectContext: false,
 	session: "ephemeral",
 	loop: false,

@@ -22,7 +22,7 @@ const definition: AgentDefinition = {
 		"init",
 		"observability",
 	],
-	skills: undefined,
+	skills: ["*"],
 	subagents: [
 		"planner",
 		"adaptation-planner",

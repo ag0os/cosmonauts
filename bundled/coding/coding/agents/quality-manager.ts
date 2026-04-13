@@ -14,7 +14,7 @@ const definition: AgentDefinition = {
 	model: "openai-codex/gpt-5.4",
 	tools: "coding",
 	extensions: ["tasks", "orchestration"],
-	skills: undefined,
+	skills: ["*"],
 	subagents: ["reviewer", "fixer", "coordinator", "verifier"],
 	projectContext: true,
 	session: "ephemeral",

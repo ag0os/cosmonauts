@@ -43,6 +43,7 @@ function makeDef(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
 		model: "anthropic/claude-sonnet-4-20250514",
 		tools: "none",
 		extensions: [],
+		skills: ["*"],
 		projectContext: true,
 		session: "ephemeral",
 		loop: false,
@@ -197,9 +198,9 @@ describe("buildSessionParams", () => {
 	});
 
 	describe("skill overrides", () => {
-		it("returns undefined skillsOverride when agent has unrestricted skills", async () => {
+		it("returns undefined skillsOverride when agent has wildcard skills", async () => {
 			await setupMinimalDomains(tmp.path);
-			const def = makeDef({ skills: undefined });
+			const def = makeDef({ skills: ["*"] });
 			const params = await buildSessionParams(makeOptions({ def }));
 			expect(params.skillsOverride).toBeUndefined();
 		});

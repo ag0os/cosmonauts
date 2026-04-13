@@ -29,8 +29,8 @@ export interface AgentDefinition {
 	readonly tools: AgentToolSet;
 	/** Pi extension directory names to load (e.g. "tasks"). */
 	readonly extensions: readonly string[];
-	/** Skill access: undefined = all, [] = none, [...] = allowlist. */
-	readonly skills?: readonly string[];
+	/** Skill access: `["*"]` = all, `[]` = none, `[...names]` = allowlist. */
+	readonly skills: readonly string[];
 	/** Agent IDs this agent can spawn as sub-agents. */
 	readonly subagents?: readonly string[];
 	/** Whether to load project context (AGENTS.md/CLAUDE.md). */

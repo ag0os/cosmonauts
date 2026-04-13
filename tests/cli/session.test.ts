@@ -61,6 +61,7 @@ const TEST_DEF: AgentDefinition = {
 	model: "test/model",
 	tools: "none",
 	extensions: [],
+	skills: ["*"],
 	projectContext: false,
 	session: "persistent",
 	loop: false,

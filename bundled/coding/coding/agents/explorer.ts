@@ -8,7 +8,7 @@ const definition: AgentDefinition = {
 	model: "openai-codex/gpt-5.4",
 	tools: "readonly",
 	extensions: [],
-	skills: undefined,
+	skills: ["*"],
 	subagents: [],
 	projectContext: true,
 	session: "ephemeral",

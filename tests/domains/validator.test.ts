@@ -15,6 +15,7 @@ function makeAgent(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
 		model: "test/model",
 		tools: "none",
 		extensions: [],
+		skills: ["*"],
 		projectContext: false,
 		session: "ephemeral",
 		loop: false,

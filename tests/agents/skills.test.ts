@@ -27,8 +27,8 @@ function assertDefined(
 }
 
 describe("buildSkillsOverride", () => {
-	test("undefined agent + undefined project → no override", () => {
-		const override = buildSkillsOverride(undefined, undefined);
+	test("wildcard agent + undefined project → no override", () => {
+		const override = buildSkillsOverride(["*"], undefined);
 		expect(override).toBeUndefined();
 	});
 
@@ -44,8 +44,8 @@ describe("buildSkillsOverride", () => {
 		expect(result.skills).toEqual([]);
 	});
 
-	test("undefined agent + project skills → filters to project list", () => {
-		const fn = assertDefined(buildSkillsOverride(undefined, ["ts", "react"]));
+	test("wildcard agent + project skills → filters to project list", () => {
+		const fn = assertDefined(buildSkillsOverride(["*"], ["ts", "react"]));
 		const result = fn(makeBase(["ts", "react", "python", "go"]));
 		expect(result.skills.map((s) => s.name)).toEqual(["ts", "react"]);
 	});
