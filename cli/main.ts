@@ -34,7 +34,9 @@ import {
 import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
 import { setSharedRegistry } from "../lib/interactive/agent-switch.ts";
 import { parseChain } from "../lib/orchestration/chain-parser.ts";
+import { ChainProfiler } from "../lib/orchestration/chain-profiler.ts";
 import {
+	derivePlanSlug,
 	injectUserPrompt,
 	runChain,
 } from "../lib/orchestration/chain-runner.ts";
@@ -45,6 +47,7 @@ import {
 	isCosmonautsFrameworkRepo,
 } from "../lib/packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../lib/runtime.ts";
+import { sessionsDirForPlan } from "../lib/sessions/session-store.ts";
 import { listWorkflows, resolveWorkflow } from "../lib/workflows/loader.ts";
 import type { WorkflowDefinition } from "../lib/workflows/types.ts";
 import { createChainEventLogger } from "./chain-event-logger.ts";
@@ -152,6 +155,10 @@ export function parseCliArgs(argv: string[]): CliOptions {
 			(val: string, prev: string[]) => [...prev, val],
 			[] as string[],
 		)
+		.option(
+			"--profile",
+			"Write profiling trace and summary files after a chain run",
+		)
 		.argument("[prompt...]", "Prompt text");
 
 	// Parse without calling process.exit on error
@@ -191,6 +198,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
 		listDomains: opts.listDomains ?? false,
 		dumpPrompt: opts.dumpPrompt ?? false,
 		dumpPromptFile: opts.file,
+		profile: opts.profile ?? undefined,
 		pluginDirs: pluginDirs.length > 0 ? pluginDirs : undefined,
 		piFlags: piResult.flags,
 	};
@@ -399,19 +407,49 @@ async function run(options: CliOptions): Promise<void> {
 		const steps = parseChain(chainExpr, registry, domainContext);
 		injectUserPrompt(steps, options.prompt);
 
-		const result = await runChain({
-			steps,
-			projectRoot: cwd,
-			domainContext,
-			onEvent: createChainEventLogger(),
-			projectSkills,
-			skillPaths,
-			completionLabel: options.completionLabel,
-			registry,
-			domainsDir: runtime.domainsDir,
-			resolver: runtime.domainResolver,
-			...(options.thinking && { thinking: { default: options.thinking } }),
-		});
+		let profiler: ChainProfiler | undefined;
+		let onEvent = createChainEventLogger();
+
+		if (options.profile) {
+			const planSlug = derivePlanSlug(options.completionLabel);
+			const outputDir = planSlug
+				? sessionsDirForPlan(cwd, planSlug)
+				: join(cwd, "missions", "sessions", "_profiles");
+			profiler = new ChainProfiler({ outputDir });
+			const logger = onEvent;
+			onEvent = (event) => {
+				logger(event);
+				// biome-ignore lint/style/noNonNullAssertion: profiler is set in this branch
+				profiler!.handleEvent(event);
+			};
+		}
+
+		let result: Awaited<ReturnType<typeof runChain>>;
+		try {
+			result = await runChain({
+				steps,
+				projectRoot: cwd,
+				domainContext,
+				onEvent,
+				projectSkills,
+				skillPaths,
+				completionLabel: options.completionLabel,
+				registry,
+				domainsDir: runtime.domainsDir,
+				resolver: runtime.domainResolver,
+				...(options.thinking && { thinking: { default: options.thinking } }),
+			});
+		} finally {
+			if (profiler) {
+				try {
+					const { tracePath, summaryPath } = await profiler.writeOutput();
+					process.stderr.write(`Profile trace:   ${tracePath}\n`);
+					process.stderr.write(`Profile summary: ${summaryPath}\n`);
+				} catch (err) {
+					process.stderr.write(`Failed to write profile output: ${err}\n`);
+				}
+			}
+		}
 
 		if (!result.success) {
 			process.exitCode = 1;

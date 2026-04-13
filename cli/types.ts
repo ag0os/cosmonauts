@@ -35,6 +35,8 @@ export interface CliOptions {
 	dumpPrompt: boolean;
 	/** File path to write the dumped prompt to (used with --dump-prompt) */
 	dumpPromptFile?: string;
+	/** Write profiling trace and summary files after a chain run */
+	profile?: boolean;
 	/** Session-only domain source directories (from --plugin-dir flags) */
 	pluginDirs?: string[];
 	/** Pi CLI flags passed through (session, provider, tools, mode, etc.) */
