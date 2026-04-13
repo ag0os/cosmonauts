@@ -5,7 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"Validates explicit claims against the codebase with structured pass/fail evidence. Runs checks but never writes code.",
 	capabilities: ["core", "engineering-discipline", "coding-readonly"],
-	model: "anthropic/claude-sonnet-4-6",
+	model: "openai-codex/gpt-5.4",
 	tools: "verification",
 	extensions: [],
 	skills: undefined,

@@ -5,7 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"GREEN phase: writes the minimum production code to make failing tests pass. No refactoring, no extras.",
 	capabilities: ["core", "engineering-discipline", "coding-readwrite", "tasks"],
-	model: "anthropic/claude-sonnet-4-6",
+	model: "openai-codex/gpt-5.4",
 	tools: "coding",
 	extensions: ["tasks"],
 	skills: ["tdd", "engineering-principles"],

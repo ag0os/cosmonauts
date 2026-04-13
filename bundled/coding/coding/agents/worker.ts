@@ -5,7 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"Implements a single task. Loads relevant skills, writes code, checks off acceptance criteria.",
 	capabilities: ["core", "engineering-discipline", "coding-readwrite", "tasks"],
-	model: "anthropic/claude-sonnet-4-6",
+	model: "openai-codex/gpt-5.4",
 	tools: "coding",
 	extensions: ["tasks"],
 	skills: ["engineering-principles"],

@@ -5,7 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"REFACTOR phase: improves code structure without changing behavior. All tests must stay green throughout.",
 	capabilities: ["core", "engineering-discipline", "coding-readwrite", "tasks"],
-	model: "anthropic/claude-opus-4-6",
+	model: "openai-codex/gpt-5.4",
 	tools: "coding",
 	extensions: ["tasks"],
 	skills: ["tdd", "refactoring", "engineering-principles"],
