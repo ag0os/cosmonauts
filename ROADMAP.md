@@ -4,6 +4,80 @@ Work backlog in two sections. **Prioritized** items at the top are ordered — p
 
 ## Prioritized
 
+### `integration-verifier`: Cross-Task Integration Verifier Agent
+
+**Complexity: medium.** New agent that runs between `coordinator` and `quality-manager` to verify that workers who ran in parallel actually respected the plan's declared contracts. `reviewer` compares diff to main; this compares implementation to **plan**. Closes the biggest real gap in parallel execution today.
+
+- Reads plan's declared contracts (interfaces, module boundaries, data shapes, file ownership) from `missions/plans/<slug>/plan.md`
+- Greps for consumer sites of each contract and validates signatures and usage match what the plan declared
+- Detects divergence: worker A changed an interface shape, worker B still consumes the old shape
+- Produces `missions/plans/<slug>/integration-report.md` with findings per contract
+- Routes findings through `quality-manager`: simple mismatches → `fixer`, complex → new remediation task
+- Inserted as a new stage in `plan-and-build`, `reviewed-plan-and-build`, `tdd`, `spec-and-build`, `adapt` workflows between coordinator and quality-manager
+- Prompt layers: core, engineering-discipline, architectural-design, coding-readonly
+
+### `prd-ingestion`: PRD Ingestion Skill + Non-Interactive Spec-Writer Mode
+
+**Complexity: low.** Enable the system to accept a written PRD as input and either proceed (if complete) or refuse with a structured gap list (if ambiguous). Unlocks the "PRD → merge-ready PR" automation story without making the system hallucinate product judgment.
+
+- New shared skill `prd-ingestion/SKILL.md` with a PRD completeness checklist (goals, users, success criteria, scope, edge cases, non-goals, constraints, acceptance signals)
+- New `spec-writer` mode: `--prd <path>` reads a PRD and validates against the checklist
+- If PRD complete: generate `spec.md` without interactive questions
+- If PRD has gaps: refuse with structured `missions/plans/<slug>/gaps.md` listing each missing or ambiguous item against the checklist reference
+- Non-interactive chain mode treats the gap list as a chain abort condition rather than proceeding with flagged assumptions (current behavior)
+- Distinct from current "flag assumptions" behavior — this refuses rather than guesses when product judgment is required
+
+### `plan-auto-approval`: Plan Auto-Approval Predicate
+
+**Complexity: low.** Remove the human bottleneck between `plan-reviewer` and `task-manager` for the common case where the reviewer's findings are all addressed. A rule, not an agent.
+
+- Predicate over `missions/plans/<slug>/review.md`: auto-approve when no unaddressed P0/P1 findings remain after planner revision
+- `plan-reviewer` marks each finding with a state: `open` | `addressed` | `wont-fix` (with rationale)
+- Planner's revision cycle updates finding states as it addresses them; reviewer can re-verify on a subsequent pass
+- Chain DSL gains a conditional stage inside `reviewed-plan-and-build`: `plan-reviewer -> planner -> approve? -> task-manager`
+- Fallback: any unaddressed P0/P1 aborts the chain with the review report path surfaced to the human
+- No new workflow needed; upgrades `reviewed-plan-and-build` from human-gated to auto-gated for the common case
+
+### `architecture-of-record`: Cross-Plan Architectural Memory
+
+**Complexity: medium.** Today `memory/<slug>.knowledge.jsonl` is per-plan. Decisions in plan N drift from plans 1..N-1 because no agent reads across plans. Introduce a living architecture document that `distiller` maintains and planners consult. Compounding value over time.
+
+- New artifact: `memory/architecture.md` — module map, dependency rules, public contracts, key ADRs, conventions
+- `distiller` extended: after writing each per-plan knowledge bundle, merge durable decisions into the architecture-of-record (filter by `type: decision | convention | trade-off`)
+- Planners, `adaptation-planner`, and `tdd-planner` load `memory/architecture.md` at session start as context alongside capability packs
+- `plan-reviewer` gains a review dimension: "proposed design is consistent with architecture-of-record, or the deviation is explicit and justified"
+- Format: section per concern (modules, data, APIs, conventions, ADRs); each entry dated and linked to its source plan slug
+- Rebuild command `cosmonauts memory rebuild` reconstructs the document from all archived plan knowledge bundles
+
+### `reuse-scan`: Mandatory Reuse Scan Skill for Planners
+
+**Complexity: low.** `coding-readonly.md` tells planners to "check for reusable code" but no role is accountable and no structured check exists. Add a skill that makes the check mandatory and evidenced in the plan.
+
+- New skill `reuse-scan/SKILL.md` loaded by `planner`, `adaptation-planner`, and `tdd-planner`
+- Procedure: for each proposed new module or major function, grep for existing implementations; document findings in the plan under a new **Reuse Analysis** section
+- Plan template gains **Reuse Analysis**: what was searched, what was found, why existing code is or isn't sufficient
+- `plan-reviewer` adds a review dimension: "reuse analysis present, searches credible, conclusions sound"
+- Prevents codebase drift: each plan leaves evidence of what was considered for reuse, visible to future planners via the architecture-of-record
+
+### `behavioral-regression`: Behavioral Regression Skill
+
+**Complexity: medium.** Tests passing ≠ behavior unchanged. For bug fixes and refactors where preservation is the point, add a skill that guides workers to capture golden outputs and characterization tests before changing code.
+
+- New skill `behavioral-regression/SKILL.md` covering characterization tests, golden output files, snapshot testing, approval testing patterns
+- Loaded by `worker`, `refactorer`, and `fixer` when the task carries the label `preserve-behavior` or `refactor`
+- Task template for preservation-work adds a mandatory AC: "existing behavior verified unchanged via golden outputs or characterization tests"
+- `quality-manager` runs regression checks as part of verification for tasks with these labels
+- Complements product tests rather than replacing them — targets the "change code, not behavior" case that tests alone don't cover
+
+### `bug-triager`: Bug Triage Capability
+
+**Complexity: low as skill, medium as agent.** Today bug reports route through `cosmo` or `planner` with no named role or artifact. Add structured triage that produces either a minimal plan (complex bug) or a direct task (simple bug). Start as a skill; promote to an agent only if bug volume warrants.
+
+- Phase 1 (low complexity): new shared skill `bug-triage/SKILL.md` loaded by `cosmo` — covers repro steps, blast radius, duplicate check against archived plans, severity assessment, routing decision
+- Phase 2 (medium complexity, deferred): promote to a `triager` agent with a dedicated prompt, bug-specific tool surface, and the ability to spawn `explorer` for repro investigation
+- Triage artifact `missions/triage/<slug>.md` links to either a plan slug (complex bug → full plan) or a task ID (simple bug → direct fix)
+- Standard severity labels feed into quality-manager priority handling (e.g., P0 bug skips the design-review gate entirely)
+
 ### `agent-messaging`: Agent-to-Agent Messaging
 
 Replace filesystem polling with push-based communication between agents. OpenClaw has a subagent announcement system where children push completion events to parents.
