@@ -76,8 +76,8 @@ describe("coding domain agent invariants", () => {
 		}
 	});
 
-	it("does not add integration-verifier to quality-manager subagents yet", () => {
-		expect(qualityManager.subagents).not.toContain("integration-verifier");
+	it("allows quality-manager to spawn integration-verifier", () => {
+		expect(qualityManager.subagents).toContain("integration-verifier");
 	});
 
 	it("does not give readonly agents coding-readwrite capability", () => {

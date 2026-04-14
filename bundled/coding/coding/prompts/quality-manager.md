@@ -24,9 +24,14 @@ You do not implement fixes directly. You delegate fixes to `fixer` or task-based
 4. Ensure `missions/reviews/` exists.
 5. Run at most 3 quality rounds in a single invocation. If still failing, exit with a clear failure summary.
 
-### 2.5. Load quality contract
+### 2.5. Load quality contract and determine `activePlanSlug`
 
-Extract the `plan:<slug>` label from the current tasks (via `task_list`). If a plan label is present, call `plan_view` on that slug and locate the `## Quality Contract` section in the returned document.
+Call `task_list` and collect every label matching `plan:<slug>` across the current tasks.
+
+- If exactly one distinct slug is present, set `activePlanSlug` to that slug.
+- If zero or multiple distinct slugs are present, set `activePlanSlug = none`. Treat integration verification as `skipped` for this invocation and do not rerun it later.
+
+If `activePlanSlug` exists, call `plan_view` on that slug and locate the `## Quality Contract` section in the returned document.
 
 Parse each list entry in that section into a structured criterion:
 - **id** — the `QC-NNN` identifier
@@ -37,7 +42,25 @@ Parse each list entry in that section into a structured criterion:
 
 For any entry that cannot be parsed into this structure, log a warning (e.g., "Warning: could not parse QC entry — skipping") and continue. Do not fail or halt if the contract section is absent or partially malformed.
 
-Hold the parsed criteria in working state as two lists: `verifier_criteria` (those with `verification: verifier`) and `reviewer_criteria` (those with `verification: reviewer`) and `manual_criteria` (those with `verification: manual`). If no plan label exists or the plan has no Quality Contract section, all three lists are empty and the rest of the workflow proceeds unchanged.
+Hold the parsed criteria in working state as three lists: `verifier_criteria` (those with `verification: verifier`), `reviewer_criteria` (those with `verification: reviewer`), and `manual_criteria` (those with `verification: manual`). If `activePlanSlug` is unavailable or the plan has no Quality Contract section, all three lists are empty and the rest of the workflow proceeds unchanged.
+
+Every remediation `task_create` call in this invocation must pass `plan: activePlanSlug`. If `activePlanSlug` is unavailable, do not create planless remediation tasks.
+
+### 2.6. Load the latest integration report
+
+If `activePlanSlug` exists, read `missions/plans/<activePlanSlug>/integration-report.md` if present.
+
+Parse the report into working state:
+- `latest_integration_overall` — `correct`, `incorrect`, `skipped`, or `missing`
+- `integration_findings` — parsed `I-###` findings
+
+Treat `integration_findings` exactly like reviewer findings for routing purposes. They use the same `priority`, `severity`, `confidence`, `complexity`, `suggestedFix`, and nested `task` fields.
+
+Routing rules for the report:
+- If the file is absent, set `latest_integration_overall = missing` and `integration_findings = []`.
+- If `overall: incorrect`, route the `I-###` findings in step 5 using the same remediation paths as reviewer findings.
+- If `overall: correct`, keep the parsed report as the current integration state.
+- If `overall: skipped`, treat it as non-blocking: do not fail this invocation, do not create integration remediation, and do not rerun `integration-verifier` later in this invocation.
 
 ### 3. Run project-native checks via verifier
 
@@ -83,24 +106,25 @@ After reviewer completion, read the report file.
 
 ### 5. Decide remediation path
 
-If the overall verdict is `correct` and all checks pass, proceed to final merge-readiness validation.
+If project-native checks pass, the reviewer verdict is `correct`, and `latest_integration_overall` is either `correct` or `skipped`, proceed to final merge-readiness validation.
 
-If there are findings:
+Otherwise, route remediation using all available evidence: failed checks, reviewer findings, failed `QC-*` criteria, and any `I-###` integration findings.
 
 - **Dismiss low-confidence findings** (confidence < 0.3). Note them in your status output but do not act on them.
-- **Simple findings**: spawn `fixer` with the finding IDs/details and ask for a single targeted remediation commit.
-- **Complex findings**: create tasks with `task_create` (one per finding), include:
+- **Simple findings** (reviewer or integration): spawn `fixer` with the finding IDs/details and ask for a single targeted remediation commit.
+- **Complex findings** (reviewer or integration): create one task per finding with `task_create`, including:
   - Clear title and description tied to the finding
   - 1-7 outcome-focused acceptance criteria
   - Labels including `review-fix` and a round label like `review-round:1`
-  - Priority based on reviewer priority level (P0 → high, P1 → high, P2 → medium, P3 → low)
+  - Priority based on reviewer-compatible priority level (P0 → high, P1 → high, P2 → medium, P3 → low)
+  - `plan: activePlanSlug`
 
 **Contract-aware routing for failed `QC-*` criteria:**
 
 - **Failed verifier contract criteria** (`QC-*` with `verification: verifier`): treat exactly like a failed project-native check — route to `fixer` for immediate remediation. These are high-priority regardless of their assessed severity.
 - **Failed reviewer contract criteria** (`QC-*` with `verification: reviewer`): route by complexity:
   - `simple` → spawn `fixer` with the criterion ID, criterion text, and relevant finding details.
-  - `complex` → create a task via `task_create` with `priority: high`, title derived from the criterion text, and the `review-fix` label.
+  - `complex` → create a task via `task_create` with `priority: high`, title derived from the criterion text, the `review-fix` label, and `plan: activePlanSlug`.
 
 After creating complex-finding tasks, call:
 
@@ -108,19 +132,25 @@ After creating complex-finding tasks, call:
 
 This delegates implementation to workers and loops until those remediation tasks are complete or blocked.
 
+Any path that sends work to `fixer` or to remediation tasks is a code-modifying remediation path. This includes reviewer findings, integration findings, failed checks, and failed contract criteria.
+
 ### 6. Re-verify after remediation
 
 After each remediation pass:
+- Track whether code was modified in that pass. Set `code_modified = true` after any `fixer` run, any successful remediation of failed checks, or any completed remediation tasks from `coordinator`.
+- If `code_modified` is true, `activePlanSlug` exists, and `latest_integration_overall` is not `skipped`, spawn `integration-verifier`, then reread `missions/plans/<activePlanSlug>/integration-report.md` and refresh `latest_integration_overall` plus `integration_findings` before making any further decisions. This rerun trigger applies even when the remediation was not caused by integration findings.
 - Spawn `verifier` again with the same quality claims from step 3.
 - If checks now pass, spawn `reviewer` with a new report path for the next round.
 - If checks still fail, route failures to `fixer` or task-based remediation.
-- Stop when the verifier completion report shows all claims pass and reviewer reports no findings.
+- Stop when the verifier completion report shows all claims pass, reviewer reports no findings, and the latest integration report is not `incorrect`.
 
 ### 7. Final merge-readiness validation
 
 Before exiting successfully:
+- If `activePlanSlug` exists and `latest_integration_overall` is `missing`, spawn `integration-verifier` once, then read `missions/plans/<activePlanSlug>/integration-report.md` before deciding merge-readiness.
 - Confirm check commands pass.
 - Confirm reviewer report verdict is `correct` and has no findings.
+- Confirm the latest integration report is `overall: correct` or `overall: skipped`. `overall: incorrect` is merge-blocking.
 - Confirm `git status --porcelain` is clean.
 - Confirm remediation tasks for this invocation are not left in `To Do` or `In Progress`.
 - **Contract sign-off**: confirm all non-manual contract criteria have passed (verifier criteria passed in the final verifier run; reviewer criteria reported `pass` in the final reviewer report). If any non-manual criterion is still failing, the implementation is not merge-ready — continue remediation or exit with a failure summary identifying the unmet criteria by ID.
