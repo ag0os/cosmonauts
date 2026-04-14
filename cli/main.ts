@@ -26,12 +26,13 @@ import { fileURLToPath } from "node:url";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { InteractiveMode, runPrintMode } from "@mariozechner/pi-coding-agent";
 import { Command, CommanderError } from "commander";
-import { buildInitPrompt } from "../domains/shared/extensions/init/index.ts";
 import {
 	appendAgentIdentityMarker,
 	qualifyAgentId,
 } from "../lib/agents/runtime-identity.ts";
+import { createDefaultProjectConfig } from "../lib/config/defaults.ts";
 import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
+import { buildInitBootstrapPrompt } from "../lib/init/prompt.ts";
 import { setSharedRegistry } from "../lib/interactive/agent-switch.ts";
 import { parseChain } from "../lib/orchestration/chain-parser.ts";
 import { ChainProfiler } from "../lib/orchestration/chain-profiler.ts";
@@ -241,6 +242,16 @@ export async function resolveWorkflowExpression(
 	}
 }
 
+export function buildInitSessionConfig(cwd: string) {
+	return {
+		ignoreProjectSkills: true as const,
+		initialMessage: buildInitBootstrapPrompt({
+			cwd,
+			defaultConfig: createDefaultProjectConfig(),
+		}),
+	};
+}
+
 // ============================================================================
 // Mode Dispatch
 // ============================================================================
@@ -376,6 +387,7 @@ async function run(options: CliOptions): Promise<void> {
 			return;
 		}
 
+		const initSessionConfig = buildInitSessionConfig(cwd);
 		const cosmoDefinition = registry.resolve("cosmo", domainContext);
 		const initRuntime = await createSession({
 			definition: cosmoDefinition,
@@ -388,12 +400,15 @@ async function run(options: CliOptions): Promise<void> {
 			piFlags: options.piFlags,
 			projectSkills,
 			skillPaths,
+			ignoreProjectSkills: initSessionConfig.ignoreProjectSkills,
 		});
 
-		await runPrintMode(initRuntime, {
-			mode: "text",
-			initialMessage: buildInitPrompt(cwd),
+		const interactive = new InteractiveMode(initRuntime, {
+			modelFallbackMessage: initRuntime.modelFallbackMessage,
+			initialMessage: initSessionConfig.initialMessage,
 		});
+		await interactive.init();
+		await interactive.run();
 		return;
 	}
 

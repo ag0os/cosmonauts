@@ -7,6 +7,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
+	buildInitSessionConfig,
 	discoverBundledPackageDirs,
 	isCosmonautsFrameworkRepo,
 	parseCliArgs,
@@ -156,6 +157,13 @@ describe("parseCliArgs", () => {
 
 		expect(opts.init).toBe(true);
 		expect(opts.prompt).toBeUndefined();
+	});
+
+	test("init subcommand preserves passthrough flags after the subcommand", () => {
+		const opts = parseCliArgs(["init", "--thinking", "medium"]);
+
+		expect(opts.init).toBe(true);
+		expect(opts.thinking).toBe("medium");
 	});
 
 	test("--list-workflows flag", () => {
@@ -355,6 +363,25 @@ describe("parseCliArgs", () => {
 
 		expect(opts.dumpPrompt).toBe(false);
 		expect(opts.dumpPromptFile).toBeUndefined();
+	});
+});
+
+// ============================================================================
+// --workflow DSL dispatch routing
+// ============================================================================
+
+describe("buildInitSessionConfig", () => {
+	test("uses the bootstrap prompt and bypasses project skill filtering", () => {
+		const config = buildInitSessionConfig("/tmp/project");
+
+		expect(config.ignoreProjectSkills).toBe(true);
+		expect(config.initialMessage).toContain(
+			"You are running Cosmonauts init for /tmp/project.",
+		);
+		expect(config.initialMessage).toContain("Load /skill:init");
+		expect(config.initialMessage).toContain('"skills": [');
+		expect(config.initialMessage).toContain('"typescript"');
+		expect(config.initialMessage).toContain('"engineering-principles"');
 	});
 });
 
