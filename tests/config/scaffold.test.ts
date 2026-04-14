@@ -5,10 +5,8 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import {
-	loadProjectConfig,
-	scaffoldProjectConfig,
-} from "../../lib/config/loader.ts";
+import { createDefaultProjectConfig } from "../../lib/config/defaults.ts";
+import { scaffoldProjectConfig } from "../../lib/config/loader.ts";
 import { resolveWorkflow } from "../../lib/workflows/loader.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
@@ -24,22 +22,33 @@ describe("scaffoldProjectConfig", () => {
 		await expect(access(configPath)).resolves.toBeUndefined();
 	});
 
-	test("scaffolded config contains default workflows", async () => {
+	test("scaffolded config matches canonical defaults", async () => {
 		await scaffoldProjectConfig(tmp.path);
 
-		const config = await loadProjectConfig(tmp.path);
-		expect(config.workflows).toBeDefined();
-		expect(config.workflows?.["plan-and-build"]).toBeDefined();
-		expect(config.workflows?.implement).toBeDefined();
-		expect(config.workflows?.verify).toBeDefined();
+		const configPath = join(tmp.path, ".cosmonauts", "config.json");
+		const raw = await readFile(configPath, "utf-8");
+		const config = JSON.parse(raw);
+		const expected = createDefaultProjectConfig();
+
+		expect(config).toEqual(expected);
+		expect(config.skills).toEqual(expected.skills);
+		expect(config.workflows).toEqual(expected.workflows);
+		expect(config.workflows["plan-and-build"]).toBeDefined();
+		expect(config.workflows.implement).toBeDefined();
+		expect(config.workflows.verify).toBeDefined();
 	});
 
-	test("scaffolded config contains skills", async () => {
-		await scaffoldProjectConfig(tmp.path);
+	test("createDefaultProjectConfig returns a fresh object", () => {
+		const first = createDefaultProjectConfig();
+		const second = createDefaultProjectConfig();
 
-		const config = await loadProjectConfig(tmp.path);
-		expect(config.skills).toBeDefined();
-		expect(config.skills).toContain("typescript");
+		expect(first).toEqual(second);
+		expect(first).not.toBe(second);
+		expect(first.skills).not.toBe(second.skills);
+		expect(first.workflows).not.toBe(second.workflows);
+		expect(first.workflows?.["plan-and-build"]).not.toBe(
+			second.workflows?.["plan-and-build"],
+		);
 	});
 
 	test("does not overwrite existing config.json", async () => {

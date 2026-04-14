@@ -8,6 +8,7 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { createDefaultProjectConfig } from "./defaults.ts";
 import type { ProjectConfig } from "./types.ts";
 
 /** Expand leading `~` or `~/` to the user's home directory. */
@@ -97,31 +98,6 @@ export async function loadProjectConfig(
 }
 
 /**
- * Default project config scaffolded during `cosmonauts scaffold missions`.
- * Matches `.cosmonauts/config.example.json`.
- */
-const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
-	skills: ["typescript", "engineering-principles"],
-	workflows: {
-		"plan-and-build": {
-			description:
-				"Full pipeline: design, create tasks, implement, and run merge-readiness quality gates",
-			chain: "planner -> task-manager -> coordinator -> quality-manager",
-		},
-		implement: {
-			description:
-				"Create tasks from existing plan, implement, and run merge-readiness quality gates",
-			chain: "task-manager -> coordinator -> quality-manager",
-		},
-		verify: {
-			description:
-				"Run lint/format checks, clean-context review, and remediation on existing changes",
-			chain: "quality-manager",
-		},
-	},
-};
-
-/**
  * Scaffold `.cosmonauts/config.json` if it does not already exist.
  * Creates the directory and writes a default config with standard workflows.
  *
@@ -144,7 +120,7 @@ export async function scaffoldProjectConfig(
 	}
 
 	await mkdir(configDir, { recursive: true });
-	const content = JSON.stringify(DEFAULT_PROJECT_CONFIG, null, 2);
+	const content = JSON.stringify(createDefaultProjectConfig(), null, 2);
 	await writeFile(configPath, `${content}\n`, "utf-8");
 	return true;
 }
