@@ -97,6 +97,8 @@ export interface CreateSessionOptions {
 	projectSkills?: readonly string[];
 	/** Explicit skill directories (domain dirs + config skillPaths). */
 	skillPaths?: readonly string[];
+	/** Ignore project-level skill filtering and expose the full discovered catalogue. */
+	ignoreProjectSkills?: boolean;
 	/** Registry for resolving pending agent switch IDs. */
 	agentRegistry?: AgentRegistry;
 	/** Domain context from --domain flag or runtime config, for agent ID resolution. */
@@ -341,6 +343,7 @@ export async function createSession(
 		piFlags,
 		projectSkills,
 		skillPaths,
+		ignoreProjectSkills,
 		agentRegistry,
 		domainContext,
 		extraExtensionPaths,
@@ -353,6 +356,7 @@ export async function createSession(
 		resolver,
 		projectSkills,
 		skillPaths,
+		ignoreProjectSkills,
 		modelOverride,
 		thinkingLevelOverride,
 		extraExtensionPaths,
@@ -400,6 +404,7 @@ export async function createSession(
 						resolver,
 						projectSkills,
 						skillPaths,
+						ignoreProjectSkills,
 						modelOverride,
 						thinkingLevelOverride,
 						extraExtensionPaths,

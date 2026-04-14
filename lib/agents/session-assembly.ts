@@ -5,11 +5,13 @@
  * cli/session.ts and lib/orchestration/session-factory.ts.
  */
 
+import { join } from "node:path";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import type { RuntimeContext } from "../domains/prompt-assembly.ts";
 import { assemblePrompts } from "../domains/prompt-assembly.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
+import type { LoadedDomain } from "../domains/types.ts";
 import {
 	resolveExtensionPaths,
 	resolveTools,
@@ -18,6 +20,7 @@ import {
 	FALLBACK_MODEL,
 	resolveModel,
 } from "../orchestration/model-resolution.ts";
+import { discoverSkills } from "../skills/discovery.ts";
 import {
 	appendAgentIdentityMarker,
 	qualifyAgentId,
@@ -44,6 +47,8 @@ export interface BuildSessionParamsOptions {
 	projectSkills?: readonly string[];
 	/** Explicit skill directories (domain dirs + config skillPaths). */
 	skillPaths?: readonly string[];
+	/** Ignore project-level skill filtering and expose the full discovered catalogue. */
+	ignoreProjectSkills?: boolean;
 	/** Model ID string override (e.g. "anthropic/claude-sonnet-4-5"). Falls back to def.model. */
 	modelOverride?: string;
 	/** Thinking level override. Falls back to def.thinkingLevel. */
@@ -72,6 +77,42 @@ export interface SessionParams {
 }
 
 // ============================================================================
+// Helpers
+// ============================================================================
+
+function buildSyntheticSharedDomain(domainsDir: string): LoadedDomain {
+	return {
+		manifest: {
+			id: "shared",
+			description: "shared",
+		},
+		portable: false,
+		agents: new Map(),
+		capabilities: new Set(),
+		prompts: new Set(),
+		skills: new Set(),
+		extensions: new Set(),
+		workflows: [],
+		rootDirs: [join(domainsDir, "shared")],
+	};
+}
+
+async function listSharedSkillNames(options: {
+	domainsDir?: string;
+	resolver?: DomainResolver;
+}): Promise<readonly string[]> {
+	const sharedDomain =
+		options.resolver?.registry.get("shared") ??
+		(options.domainsDir
+			? buildSyntheticSharedDomain(options.domainsDir)
+			: undefined);
+	if (!sharedDomain) return [];
+
+	const skills = await discoverSkills([sharedDomain]);
+	return [...new Set(skills.map((skill) => skill.name))];
+}
+
+// ============================================================================
 // Builder
 // ============================================================================
 
@@ -93,6 +134,7 @@ export async function buildSessionParams(
 		runtimeContext,
 		projectSkills,
 		skillPaths,
+		ignoreProjectSkills,
 		modelOverride,
 		thinkingLevelOverride,
 		extraExtensionPaths,
@@ -128,7 +170,17 @@ export async function buildSessionParams(
 		: resolvedExtensionPaths;
 
 	// Skill override construction
-	const skillsOverride = buildSkillsOverride(def.skills, projectSkills);
+	const effectiveProjectSkills =
+		ignoreProjectSkills || projectSkills === undefined
+			? undefined
+			: [
+					...(await listSharedSkillNames({ domainsDir, resolver })),
+					...projectSkills,
+				];
+	const skillsOverride = buildSkillsOverride(
+		def.skills,
+		effectiveProjectSkills,
+	);
 	const additionalSkillPaths = skillPaths?.length ? [...skillPaths] : undefined;
 
 	// Model resolution: override → definition → fallback

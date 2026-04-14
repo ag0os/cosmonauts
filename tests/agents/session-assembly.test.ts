@@ -68,6 +68,21 @@ async function setupMinimalDomains(
 	await setupFiles(baseDir, files);
 }
 
+async function setupSharedSkills(
+	baseDir: string,
+	skillNames: readonly string[],
+): Promise<void> {
+	await setupFiles(
+		baseDir,
+		Object.fromEntries(
+			skillNames.map((skillName) => [
+				`shared/skills/${skillName}/SKILL.md`,
+				`---\nname: ${skillName}\ndescription: ${skillName}\n---`,
+			]),
+		),
+	);
+}
+
 /** Build options with sensible defaults rooted at the temp dir. */
 function makeOptions(
 	overrides: Partial<BuildSessionParamsOptions> = {},
@@ -198,7 +213,7 @@ describe("buildSessionParams", () => {
 	});
 
 	describe("skill overrides", () => {
-		it("returns undefined skillsOverride when agent has wildcard skills", async () => {
+		it("keeps wildcard agents unfiltered when projectSkills is absent", async () => {
 			await setupMinimalDomains(tmp.path);
 			const def = makeDef({ skills: ["*"] });
 			const params = await buildSessionParams(makeOptions({ def }));
@@ -212,12 +227,40 @@ describe("buildSessionParams", () => {
 			expect(params.skillsOverride).toBeTypeOf("function");
 		});
 
-		it("returns filtering function when projectSkills is set", async () => {
+		it("preserves shared skills alongside project skills when filtering wildcard agents", async () => {
 			await setupMinimalDomains(tmp.path);
+			await setupSharedSkills(tmp.path, ["plan", "init"]);
 			const params = await buildSessionParams(
 				makeOptions({ projectSkills: ["typescript"] }),
 			);
+
 			expect(params.skillsOverride).toBeTypeOf("function");
+			const result = params.skillsOverride?.({
+				skills: [
+					{ name: "plan" },
+					{ name: "init" },
+					{ name: "typescript" },
+					{ name: "react" },
+				] as never,
+				diagnostics: [],
+			});
+			expect(result?.skills.map((skill) => skill.name)).toEqual([
+				"plan",
+				"init",
+				"typescript",
+			]);
+		});
+
+		it("ignores project skill filtering when requested for wildcard agents", async () => {
+			await setupMinimalDomains(tmp.path);
+			await setupSharedSkills(tmp.path, ["plan"]);
+			const params = await buildSessionParams(
+				makeOptions({
+					projectSkills: ["typescript"],
+					ignoreProjectSkills: true,
+				}),
+			);
+			expect(params.skillsOverride).toBeUndefined();
 		});
 
 		it("returns empty skills when agent skills is empty array", async () => {
@@ -225,7 +268,6 @@ describe("buildSessionParams", () => {
 			const def = makeDef({ skills: [] });
 			const params = await buildSessionParams(makeOptions({ def }));
 			expect(params.skillsOverride).toBeTypeOf("function");
-			// An empty agent skills list means no skills at all
 			const result = params.skillsOverride?.({
 				skills: [{ name: "ts" } as never],
 				diagnostics: [],
