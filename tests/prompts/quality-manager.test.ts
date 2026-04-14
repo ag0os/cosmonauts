@@ -22,6 +22,21 @@ describe("quality-manager prompt", () => {
 		expect(content).toContain("plan: activePlanSlug");
 	});
 
+	it("falls back to fixer-only remediation on planless runs", async () => {
+		const content = await readFile(PROMPT_PATH, "utf-8");
+
+		expect(content).toContain("This is a planless review run");
+		expect(content).toContain(
+			"do not create planless remediation tasks; use `fixer` as the fallback remediation path",
+		);
+		expect(content).toContain(
+			"If `activePlanSlug` is unavailable, spawn `fixer` instead",
+		);
+		expect(content).toContain(
+			"`complex` without `activePlanSlug` → spawn `fixer`",
+		);
+	});
+
 	it("reruns integration verification after code-modifying remediation and accepts skipped reports", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 

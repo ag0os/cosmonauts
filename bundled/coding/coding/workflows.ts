@@ -24,7 +24,8 @@ export const workflows: WorkflowDefinition[] = [
 	},
 	{
 		name: "verify",
-		description: "Review and remediation of completed work",
+		description:
+			"Review and remediate existing changes, falling back to fixer-only remediation when no active plan exists",
 		chain: "quality-manager",
 	},
 	{

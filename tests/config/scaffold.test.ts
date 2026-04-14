@@ -37,6 +37,9 @@ describe("scaffoldProjectConfig", () => {
 		expect(config.workflows["plan-and-build"]).toBeDefined();
 		expect(config.workflows.implement).toBeDefined();
 		expect(config.workflows.verify).toBeDefined();
+		expect(config.workflows.verify.description).toContain(
+			"fixer-only remediation",
+		);
 		expect(planAndBuildChain).toContain("integration-verifier");
 		expect(planAndBuildChain.indexOf("integration-verifier")).toBeLessThan(
 			planAndBuildChain.indexOf("quality-manager"),
@@ -54,6 +57,9 @@ describe("scaffoldProjectConfig", () => {
 		expect(first.workflows).not.toBe(second.workflows);
 		expect(first.workflows?.["plan-and-build"]).not.toBe(
 			second.workflows?.["plan-and-build"],
+		);
+		expect(first.workflows?.verify?.description).toContain(
+			"fixer-only remediation",
 		);
 		expect(firstPlanAndBuild).toContain("integration-verifier");
 		expect(firstPlanAndBuild).toContain(

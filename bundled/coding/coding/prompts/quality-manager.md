@@ -29,7 +29,7 @@ You do not implement fixes directly. You delegate fixes to `fixer` or task-based
 Call `task_list` and collect every label matching `plan:<slug>` across the current tasks.
 
 - If exactly one distinct slug is present, set `activePlanSlug` to that slug.
-- If zero or multiple distinct slugs are present, set `activePlanSlug = none`. Treat integration verification as `skipped` for this invocation and do not rerun it later.
+- If zero or multiple distinct slugs are present, set `activePlanSlug = none`. Treat integration verification as `skipped` for this invocation and do not rerun it later. This is a planless review run: do not create remediation tasks, and route every otherwise-complex remediation item through `fixer` instead.
 
 If `activePlanSlug` exists, call `plan_view` on that slug and locate the `## Quality Contract` section in the returned document.
 
@@ -44,7 +44,7 @@ For any entry that cannot be parsed into this structure, log a warning (e.g., "W
 
 Hold the parsed criteria in working state as three lists: `verifier_criteria` (those with `verification: verifier`), `reviewer_criteria` (those with `verification: reviewer`), and `manual_criteria` (those with `verification: manual`). If `activePlanSlug` is unavailable or the plan has no Quality Contract section, all three lists are empty and the rest of the workflow proceeds unchanged.
 
-Every remediation `task_create` call in this invocation must pass `plan: activePlanSlug`. If `activePlanSlug` is unavailable, do not create planless remediation tasks.
+Every remediation `task_create` call in this invocation must pass `plan: activePlanSlug`. If `activePlanSlug` is unavailable, do not create planless remediation tasks; use `fixer` as the fallback remediation path for otherwise-complex findings and failed reviewer `QC-*` criteria.
 
 ### 2.6. Load the latest integration report
 
@@ -112,21 +112,24 @@ Otherwise, route remediation using all available evidence: failed checks, review
 
 - **Dismiss low-confidence findings** (confidence < 0.3). Note them in your status output but do not act on them.
 - **Simple findings** (reviewer or integration): spawn `fixer` with the finding IDs/details and ask for a single targeted remediation commit.
-- **Complex findings** (reviewer or integration): create one task per finding with `task_create`, including:
-  - Clear title and description tied to the finding
-  - 1-7 outcome-focused acceptance criteria
-  - Labels including `review-fix` and a round label like `review-round:1`
-  - Priority based on reviewer-compatible priority level (P0 → high, P1 → high, P2 → medium, P3 → low)
-  - `plan: activePlanSlug`
+- **Complex findings** (reviewer or integration):
+  - If `activePlanSlug` exists, create one task per finding with `task_create`, including:
+    - Clear title and description tied to the finding
+    - 1-7 outcome-focused acceptance criteria
+    - Labels including `review-fix` and a round label like `review-round:1`
+    - Priority based on reviewer-compatible priority level (P0 → high, P1 → high, P2 → medium, P3 → low)
+    - `plan: activePlanSlug`
+  - If `activePlanSlug` is unavailable, spawn `fixer` instead with the finding details and an explicit instruction to apply the narrowest viable remediation on this planless run.
 
 **Contract-aware routing for failed `QC-*` criteria:**
 
 - **Failed verifier contract criteria** (`QC-*` with `verification: verifier`): treat exactly like a failed project-native check — route to `fixer` for immediate remediation. These are high-priority regardless of their assessed severity.
 - **Failed reviewer contract criteria** (`QC-*` with `verification: reviewer`): route by complexity:
   - `simple` → spawn `fixer` with the criterion ID, criterion text, and relevant finding details.
-  - `complex` → create a task via `task_create` with `priority: high`, title derived from the criterion text, the `review-fix` label, and `plan: activePlanSlug`.
+  - `complex` with `activePlanSlug` → create a task via `task_create` with `priority: high`, title derived from the criterion text, the `review-fix` label, and `plan: activePlanSlug`.
+  - `complex` without `activePlanSlug` → spawn `fixer` with the criterion ID, criterion text, and relevant finding details.
 
-After creating complex-finding tasks, call:
+After creating any complex-finding tasks, call:
 
 `chain_run(expression: "coordinator", prompt: "Process only tasks labeled review-round:1. Do not modify tasks without this label.", completionLabel: "review-round:1")`
 

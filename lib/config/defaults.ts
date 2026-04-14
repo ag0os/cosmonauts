@@ -17,7 +17,7 @@ export function createDefaultProjectConfig(): ProjectConfig {
 			},
 			verify: {
 				description:
-					"Run lint/format checks, clean-context review, and remediation on existing changes",
+					"Run lint/format checks, clean-context review, and remediation on existing changes, falling back to fixer-only remediation when no active plan exists",
 				chain: "quality-manager",
 			},
 		},

@@ -37,4 +37,10 @@ describe("coding domain workflows", () => {
 			expect(getWorkflowChain(name)).not.toContain("integration-verifier");
 		}
 	});
+
+	it("documents the planless remediation fallback on verify", () => {
+		const verify = workflows.find((candidate) => candidate.name === "verify");
+		expect(verify?.description).toContain("fixer-only remediation");
+		expect(verify?.chain).toBe("quality-manager");
+	});
 });
