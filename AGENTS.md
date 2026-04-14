@@ -73,7 +73,7 @@ Agents are Pi sessions configured from definitions. Sub-agents are always epheme
 Runs agent pipelines using Pi sessions. The DSL is pure topology — it declares which roles run in what order. Loop behavior is intrinsic to each role (coordinator loops until all tasks are Done, others run once).
 
 ```
-cosmonauts --chain "planner -> task-manager -> coordinator -> quality-manager" "design and implement auth"
+cosmonauts --chain "planner -> task-manager -> coordinator -> integration-verifier -> quality-manager" "design and implement auth"
 ```
 
 **Bracket groups** run two or more roles concurrently at the same pipeline stage:
@@ -98,7 +98,7 @@ The primary user interface for multi-agent pipelines. Built-in defaults are prov
 
 | Name | Chain | Purpose |
 |------|-------|---------|
-| `plan-and-build` | `planner → task-manager → coordinator → quality-manager` | Full pipeline |
+| `plan-and-build` | `planner → task-manager → coordinator → integration-verifier → quality-manager` | Full pipeline |
 | `implement` | `task-manager → coordinator → quality-manager` | From existing plan |
 | `verify` | `quality-manager` | Review + remediation |
 

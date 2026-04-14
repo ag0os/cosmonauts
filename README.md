@@ -14,7 +14,8 @@ The workflow:
 4. **A task manager breaks the plan into atomic tasks** — each one is single-PR scope with clear acceptance criteria.
 5. **A coordinator delegates tasks to worker agents** — respecting dependencies, routing skills.
 6. **Workers implement, test, and commit** — each in a fresh context with the right tools.
-7. **A quality manager verifies everything** — lint, typecheck, code review, and remediation.
+7. **An integration verifier checks plan-level contracts** — comparing the implemented changes against the approved plan.
+8. **A quality manager verifies everything** — lint, typecheck, code review, and remediation.
 
 The key insight: **the design phase is where humans add the most value.** Once the plan is solid and tasks are well-defined, execution is mechanical. Cosmonauts optimizes for great planning and reliable autonomous execution.
 
@@ -24,9 +25,9 @@ The key insight: **the design phase is where humans add the most value.** Once t
 
 What's built:
 - Task system with markdown files, YAML frontmatter, dependencies, and acceptance criteria
-- Chain runner for multi-agent pipelines (planner → task-manager → coordinator → workers → quality-manager)
+- Chain runner for multi-agent pipelines (planner → task-manager → coordinator → workers → integration-verifier → quality-manager)
 - Agent spawner creating scoped Pi sessions from declarative agent definitions
-- Eight agent roles: Cosmo, planner, task-manager, coordinator, worker, quality-manager, reviewer, fixer
+- Nine agent roles: Cosmo, planner, task-manager, coordinator, worker, integration-verifier, quality-manager, reviewer, fixer
 - Four-layer system prompt architecture with capability-aligned composition
 - Plan lifecycle: create plans, link tasks, archive completed work, distill learnings into memory
 - Named workflows for common pipelines (`plan-and-build`, `implement`, `verify`, `plan`)
@@ -112,7 +113,7 @@ cosmonauts --list-workflows
 Or use raw chain DSL for custom pipelines:
 
 ```bash
-cosmonauts --chain "planner -> task-manager -> coordinator -> quality-manager" "custom pipeline"
+cosmonauts --chain "planner -> task-manager -> coordinator -> integration-verifier -> quality-manager" "custom pipeline"
 ```
 
 The chain DSL supports **bracket groups** for parallel steps and **fan-out** for multiple instances of the same role:
