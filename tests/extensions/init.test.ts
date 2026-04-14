@@ -1,8 +1,3 @@
-/**
- * Tests for init extension.
- * Verifies the buildInitPrompt function and command registration.
- */
-
 import { describe, expect, test } from "vitest";
 import {
 	buildInitPrompt,
@@ -11,22 +6,19 @@ import {
 import { createMockPi } from "../helpers/mocks/index.ts";
 
 describe("buildInitPrompt", () => {
-	test("includes the project directory in the prompt", () => {
+	test("includes the project directory and init skill instruction", () => {
 		const prompt = buildInitPrompt("/home/user/my-project");
 
 		expect(prompt).toContain("/home/user/my-project");
+		expect(prompt).toContain("/skill:init");
 	});
 
-	test("instructs to check for existing AGENTS.md", () => {
+	test("does not embed the old workflow checklist", () => {
 		const prompt = buildInitPrompt("/tmp/project");
 
-		expect(prompt).toContain("AGENTS.md already exists");
-	});
-
-	test("instructs to check for CLAUDE.md as foundation", () => {
-		const prompt = buildInitPrompt("/tmp/project");
-
-		expect(prompt).toContain("CLAUDE.md");
+		expect(prompt).not.toContain("Follow these steps:");
+		expect(prompt).not.toContain("AGENTS.md already exists");
+		expect(prompt).not.toContain("CLAUDE.md exists in the project root");
 	});
 });
 
