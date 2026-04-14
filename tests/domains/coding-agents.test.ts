@@ -13,6 +13,7 @@ import coordinator from "../../bundled/coding/coding/agents/coordinator.ts";
 import cosmo from "../../bundled/coding/coding/agents/cosmo.ts";
 import explorer from "../../bundled/coding/coding/agents/explorer.ts";
 import fixer from "../../bundled/coding/coding/agents/fixer.ts";
+import integrationVerifier from "../../bundled/coding/coding/agents/integration-verifier.ts";
 import planReviewer from "../../bundled/coding/coding/agents/plan-reviewer.ts";
 import planner from "../../bundled/coding/coding/agents/planner.ts";
 import qualityManager from "../../bundled/coding/coding/agents/quality-manager.ts";
@@ -30,6 +31,7 @@ const ALL_DEFINITIONS: AgentDefinition[] = [
 	coordinator,
 	worker,
 	qualityManager,
+	integrationVerifier,
 	reviewer,
 	fixer,
 	explorer,
@@ -72,6 +74,10 @@ describe("coding domain agent invariants", () => {
 				}
 			}
 		}
+	});
+
+	it("does not add integration-verifier to quality-manager subagents yet", () => {
+		expect(qualityManager.subagents).not.toContain("integration-verifier");
 	});
 
 	it("does not give readonly agents coding-readwrite capability", () => {

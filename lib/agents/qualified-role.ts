@@ -67,6 +67,8 @@ export function roleToConfigKey(
 			return "worker";
 		case "quality-manager":
 			return "qualityManager";
+		case "integration-verifier":
+			return "integrationVerifier";
 		case "reviewer":
 			return "reviewer";
 		case "fixer":

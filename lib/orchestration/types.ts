@@ -16,6 +16,7 @@ export type AgentRole =
 	| "coordinator"
 	| "worker"
 	| "quality-manager"
+	| "integration-verifier"
 	| "reviewer"
 	| "fixer";
 
@@ -68,6 +69,8 @@ export interface ModelConfig {
 	worker?: string;
 	/** Model for quality-manager agents */
 	qualityManager?: string;
+	/** Model for integration-verifier agents */
+	integrationVerifier?: string;
 	/** Model for reviewer agents */
 	reviewer?: string;
 	/** Model for fixer agents */
@@ -88,6 +91,8 @@ export interface ThinkingConfig {
 	worker?: ThinkingLevel;
 	/** Thinking level for quality-manager agents */
 	qualityManager?: ThinkingLevel;
+	/** Thinking level for integration-verifier agents */
+	integrationVerifier?: ThinkingLevel;
 	/** Thinking level for reviewer agents */
 	reviewer?: ThinkingLevel;
 	/** Thinking level for fixer agents */

@@ -59,6 +59,8 @@ const DEFAULT_STAGE_PROMPTS: Record<string, string> = {
 	worker: "Pick up the next ready task and implement it.",
 	"quality-manager":
 		"Run quality gates, review the diff against main, and orchestrate fixes until merge-ready.",
+	"integration-verifier":
+		"Read the active plan, verify implementation against declared contracts, and write missions/plans/<slug>/integration-report.md.",
 	reviewer:
 		"Review the current branch changes against main and write actionable findings.",
 	"plan-reviewer":

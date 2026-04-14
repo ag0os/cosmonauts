@@ -290,6 +290,13 @@ describe("getModelForRole", () => {
 		expect(model).toBe("override-provider/quality-model");
 	});
 
+	test("supports model override keys for integration-verifier", () => {
+		const model = getModelForRole("integration-verifier", {
+			integrationVerifier: "override-provider/integration-model",
+		});
+		expect(model).toBe("override-provider/integration-model");
+	});
+
 	test("models.default used when role has no definition and no override (tier 3)", () => {
 		const model = getModelForRole(
 			"unknown-role",
@@ -363,6 +370,13 @@ describe("getThinkingForRole", () => {
 			FIXTURE_REGISTRY,
 		);
 		expect(thinking).toBe("medium");
+	});
+
+	test("supports thinking override keys for integration-verifier", () => {
+		const thinking = getThinkingForRole("integration-verifier", {
+			integrationVerifier: "xhigh",
+		});
+		expect(thinking).toBe("xhigh");
 	});
 
 	test("definition thinkingLevel beats thinking.default (tier 2 > tier 3)", () => {

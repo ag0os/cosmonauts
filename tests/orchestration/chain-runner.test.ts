@@ -132,6 +132,14 @@ describe("getDefaultStagePrompt", () => {
 			"Study the reference implementation and design an adaptation plan for this project.",
 		);
 	});
+
+	test("returns a role-specific prompt for integration-verifier", () => {
+		const prompt = getDefaultStagePrompt("integration-verifier");
+		expect(prompt).toBe(
+			"Read the active plan, verify implementation against declared contracts, and write missions/plans/<slug>/integration-report.md.",
+		);
+		expect(prompt).not.toBe("Execute your assigned role.");
+	});
 });
 
 describe("derivePlanSlug", () => {

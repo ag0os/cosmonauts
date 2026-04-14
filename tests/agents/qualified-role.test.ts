@@ -95,6 +95,7 @@ describe("roleToConfigKey", () => {
 		["coordinator", "coordinator"],
 		["worker", "worker"],
 		["quality-manager", "qualityManager"],
+		["integration-verifier", "integrationVerifier"],
 		["reviewer", "reviewer"],
 		["fixer", "fixer"],
 	])("maps unqualified '%s' to '%s'", (role, expected) => {
@@ -104,6 +105,9 @@ describe("roleToConfigKey", () => {
 	it("maps a qualified role by stripping the domain first", () => {
 		expect(roleToConfigKey("coding/task-manager")).toBe("taskManager");
 		expect(roleToConfigKey("coding/worker")).toBe("worker");
+		expect(roleToConfigKey("coding/integration-verifier")).toBe(
+			"integrationVerifier",
+		);
 	});
 
 	it("returns undefined for unknown roles", () => {

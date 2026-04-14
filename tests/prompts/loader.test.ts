@@ -245,6 +245,7 @@ describe("domain-based prompt file paths", () => {
 			"coordinator",
 			"worker",
 			"quality-manager",
+			"integration-verifier",
 			"reviewer",
 			"fixer",
 		];
