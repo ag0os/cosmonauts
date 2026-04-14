@@ -1,5 +1,5 @@
 {
-	"skills": ["typescript"],
+	"skills": ["typescript", "engineering-principles"],
 	"workflows": {
 		"plan-and-build": {
 			"description": "Full pipeline: design, create tasks, implement, and run merge-readiness quality gates",

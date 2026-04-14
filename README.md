@@ -160,7 +160,7 @@ Bootstrap project instructions for a new codebase:
 cosmonauts init
 ```
 
-This scans your project and creates an `AGENTS.md` file with conventions, tech stack, and instructions for agents.
+This launches an interactive bootstrap session: Cosmo scans the project, asks clarifying questions, proposes `AGENTS.md` content and skill suggestions, and waits for your confirmation before writing any files. Re-running `cosmonauts init` reviews the existing setup and proposes improvements instead of stopping when `AGENTS.md` already exists.
 
 ## Architecture
 
