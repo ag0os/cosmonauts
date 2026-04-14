@@ -193,6 +193,7 @@ Every agent is a Pi session configured by a declarative definition — model, to
 | **Task Manager** | Breaks plans into atomic, implementable tasks with dependencies and ACs. |
 | **Coordinator** | Delegates tasks to workers, monitors progress, verifies completion. |
 | **Worker** | Implements one task. Full coding tools, ephemeral session. |
+| **Integration Verifier** | Checks implemented changes against the approved plan and plan-level contracts. |
 | **Quality Manager** | Runs lint/format/typecheck, spawns reviewers and fixers, ensures merge-readiness. |
 | **Reviewer** | Clean-context code review against main. Writes findings, does not fix. |
 | **Fixer** | Applies targeted remediation from review findings. |
