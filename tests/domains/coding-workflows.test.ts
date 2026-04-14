@@ -1,0 +1,40 @@
+import { describe, expect, it } from "vitest";
+import workflows from "../../bundled/coding/coding/workflows.ts";
+
+function getWorkflowChain(name: string): string {
+	const workflow = workflows.find((candidate) => candidate.name === name);
+	expect(workflow).toBeDefined();
+	return workflow?.chain ?? "";
+}
+
+describe("coding domain workflows", () => {
+	it("places integration-verifier immediately before quality-manager in the rollout workflows", () => {
+		for (const name of [
+			"plan-and-build",
+			"reviewed-plan-and-build",
+			"tdd",
+			"spec-and-build",
+			"adapt",
+		]) {
+			const stages = getWorkflowChain(name).split(" -> ");
+			const verifierIndex = stages.indexOf("integration-verifier");
+
+			expect(verifierIndex).toBeGreaterThan(-1);
+			expect(stages[verifierIndex + 1]).toBe("quality-manager");
+			expect(
+				stages.filter((stage) => stage === "integration-verifier"),
+			).toHaveLength(1);
+		}
+	});
+
+	it("does not add integration-verifier to out-of-scope workflows", () => {
+		for (const name of [
+			"implement",
+			"plan-and-tdd",
+			"spec-and-tdd",
+			"verify",
+		]) {
+			expect(getWorkflowChain(name)).not.toContain("integration-verifier");
+		}
+	});
+});

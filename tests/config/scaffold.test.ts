@@ -29,6 +29,7 @@ describe("scaffoldProjectConfig", () => {
 		const raw = await readFile(configPath, "utf-8");
 		const config = JSON.parse(raw);
 		const expected = createDefaultProjectConfig();
+		const planAndBuildChain = config.workflows["plan-and-build"]?.chain ?? "";
 
 		expect(config).toEqual(expected);
 		expect(config.skills).toEqual(expected.skills);
@@ -36,11 +37,16 @@ describe("scaffoldProjectConfig", () => {
 		expect(config.workflows["plan-and-build"]).toBeDefined();
 		expect(config.workflows.implement).toBeDefined();
 		expect(config.workflows.verify).toBeDefined();
+		expect(planAndBuildChain).toContain("integration-verifier");
+		expect(planAndBuildChain.indexOf("integration-verifier")).toBeLessThan(
+			planAndBuildChain.indexOf("quality-manager"),
+		);
 	});
 
 	test("createDefaultProjectConfig returns a fresh object", () => {
 		const first = createDefaultProjectConfig();
 		const second = createDefaultProjectConfig();
+		const firstPlanAndBuild = first.workflows?.["plan-and-build"]?.chain ?? "";
 
 		expect(first).toEqual(second);
 		expect(first).not.toBe(second);
@@ -48,6 +54,10 @@ describe("scaffoldProjectConfig", () => {
 		expect(first.workflows).not.toBe(second.workflows);
 		expect(first.workflows?.["plan-and-build"]).not.toBe(
 			second.workflows?.["plan-and-build"],
+		);
+		expect(firstPlanAndBuild).toContain("integration-verifier");
+		expect(firstPlanAndBuild).toContain(
+			"integration-verifier -> quality-manager",
 		);
 	});
 

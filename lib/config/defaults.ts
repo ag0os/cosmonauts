@@ -7,7 +7,8 @@ export function createDefaultProjectConfig(): ProjectConfig {
 			"plan-and-build": {
 				description:
 					"Full pipeline: design, create tasks, implement, and run merge-readiness quality gates",
-				chain: "planner -> task-manager -> coordinator -> quality-manager",
+				chain:
+					"planner -> task-manager -> coordinator -> integration-verifier -> quality-manager",
 			},
 			implement: {
 				description:

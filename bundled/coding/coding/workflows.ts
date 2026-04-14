@@ -6,14 +6,15 @@ export const workflows: WorkflowDefinition[] = [
 		name: "plan-and-build",
 		description:
 			"Full pipeline: design, task creation, implementation, and review",
-		chain: "planner -> task-manager -> coordinator -> quality-manager",
+		chain:
+			"planner -> task-manager -> coordinator -> integration-verifier -> quality-manager",
 	},
 	{
 		name: "reviewed-plan-and-build",
 		description:
 			"Full pipeline with adversarial plan review before task creation",
 		chain:
-			"planner -> plan-reviewer -> planner -> task-manager -> coordinator -> quality-manager",
+			"planner -> plan-reviewer -> planner -> task-manager -> coordinator -> integration-verifier -> quality-manager",
 	},
 	{
 		name: "implement",
@@ -30,7 +31,8 @@ export const workflows: WorkflowDefinition[] = [
 		name: "tdd",
 		description:
 			"Test-driven development: design behaviors, Red-Green-Refactor cycle, and review",
-		chain: "tdd-planner -> task-manager -> tdd-coordinator -> quality-manager",
+		chain:
+			"tdd-planner -> task-manager -> tdd-coordinator -> integration-verifier -> quality-manager",
 	},
 	{
 		name: "plan-and-tdd",
@@ -44,7 +46,7 @@ export const workflows: WorkflowDefinition[] = [
 		description:
 			"Full pipeline with interactive requirements capture: gather spec, design, implement, and review",
 		chain:
-			"spec-writer -> planner -> task-manager -> coordinator -> quality-manager",
+			"spec-writer -> planner -> task-manager -> coordinator -> integration-verifier -> quality-manager",
 	},
 	{
 		name: "spec-and-tdd",
@@ -58,7 +60,7 @@ export const workflows: WorkflowDefinition[] = [
 		description:
 			"Adapt a feature from a reference codebase: study reference, design adaptation plan, implement, and review",
 		chain:
-			"adaptation-planner -> task-manager -> coordinator -> quality-manager",
+			"adaptation-planner -> task-manager -> coordinator -> integration-verifier -> quality-manager",
 	},
 ];
 

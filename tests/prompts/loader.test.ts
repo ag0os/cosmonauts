@@ -255,6 +255,15 @@ describe("domain-based prompt file paths", () => {
 		}
 	});
 
+	it("loads the integration-verifier persona prompt", async () => {
+		const content = await loadPrompt(
+			"integration-verifier",
+			CODING_PROMPTS_DIR,
+		);
+		expect(content.length).toBeGreaterThan(0);
+		expect(content).toContain("# Integration Verifier");
+	});
+
 	it("loads full layered prompt stack for cosmo across directories", async () => {
 		const base = await loadPrompt("base");
 		const sharedCaps = await loadPrompts(
