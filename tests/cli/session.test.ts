@@ -401,6 +401,98 @@ describe("session flag handling", () => {
 		).rejects.toThrow(GracefulExitError);
 	});
 
+	test("bundled themes directory is auto-injected into additionalThemePaths", async () => {
+		mocks.createAgentSessionRuntime.mockImplementation(
+			(
+				createRuntime: (args: {
+					cwd: string;
+					sessionManager: unknown;
+					sessionStartEvent?: unknown;
+				}) => Promise<unknown>,
+				runtimeOptions: { cwd: string; sessionManager: unknown },
+			) =>
+				createRuntime({
+					cwd: runtimeOptions.cwd,
+					sessionManager: runtimeOptions.sessionManager,
+					sessionStartEvent: undefined,
+				}),
+		);
+
+		await createSession({
+			definition: TEST_DEF,
+			cwd: "/tmp/project",
+			domainsDir: "/tmp/domains",
+			persistent: false,
+		});
+
+		const call = mocks.createAgentSessionServices.mock.calls[0]?.[0];
+		const paths: string[] | undefined =
+			call?.resourceLoaderOptions?.additionalThemePaths;
+		expect(paths?.some((p: string) => p.endsWith("/themes"))).toBe(true);
+	});
+
+	test("--theme resolves relative paths against invocation cwd", async () => {
+		mocks.createAgentSessionRuntime.mockImplementation(
+			(
+				createRuntime: (args: {
+					cwd: string;
+					sessionManager: unknown;
+					sessionStartEvent?: unknown;
+				}) => Promise<unknown>,
+				runtimeOptions: { cwd: string; sessionManager: unknown },
+			) =>
+				createRuntime({
+					cwd: runtimeOptions.cwd,
+					sessionManager: runtimeOptions.sessionManager,
+					sessionStartEvent: undefined,
+				}),
+		);
+
+		await createSession({
+			definition: TEST_DEF,
+			cwd: "/tmp/project",
+			domainsDir: "/tmp/domains",
+			persistent: false,
+			piFlags: { themes: ["./custom.json"] },
+		});
+
+		const call = mocks.createAgentSessionServices.mock.calls[0]?.[0];
+		const paths: string[] =
+			call?.resourceLoaderOptions?.additionalThemePaths ?? [];
+		expect(paths).toContain("/tmp/project/custom.json");
+	});
+
+	test("--no-themes preserves explicit --theme paths but drops the bundled dir", async () => {
+		mocks.createAgentSessionRuntime.mockImplementation(
+			(
+				createRuntime: (args: {
+					cwd: string;
+					sessionManager: unknown;
+					sessionStartEvent?: unknown;
+				}) => Promise<unknown>,
+				runtimeOptions: { cwd: string; sessionManager: unknown },
+			) =>
+				createRuntime({
+					cwd: runtimeOptions.cwd,
+					sessionManager: runtimeOptions.sessionManager,
+					sessionStartEvent: undefined,
+				}),
+		);
+
+		await createSession({
+			definition: TEST_DEF,
+			cwd: "/tmp/project",
+			domainsDir: "/tmp/domains",
+			persistent: false,
+			piFlags: { noThemes: true, themes: ["./custom.json"] },
+		});
+
+		const call = mocks.createAgentSessionServices.mock.calls[0]?.[0];
+		const opts = call?.resourceLoaderOptions;
+		expect(opts?.noThemes).toBe(true);
+		expect(opts?.additionalThemePaths).toEqual(["/tmp/project/custom.json"]);
+	});
+
 	test("--resume cancel throws GracefulExitError", async () => {
 		mocks.list.mockResolvedValue([
 			{ id: "sess-1", path: "/tmp/s1.jsonl", firstMessage: "hello" },

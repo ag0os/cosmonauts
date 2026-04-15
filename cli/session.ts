@@ -6,8 +6,21 @@
  * - Returns AgentSessionRuntime for use with InteractiveMode / runPrintMode
  */
 
-import { join } from "node:path";
+import { existsSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+
+/**
+ * Absolute path to the cosmonauts-shipped themes directory (advertised via
+ * `pi.themes` in package.json). Only populated when the directory actually
+ * exists — packaged installs that omit the themes/ dir skip this silently
+ * instead of triggering a Pi theme-path diagnostic.
+ */
+const COSMONAUTS_THEMES_DIR: string | undefined = (() => {
+	const dir = resolve(fileURLToPath(import.meta.url), "..", "..", "themes");
+	return existsSync(dir) ? dir : undefined;
+})();
 
 /**
  * Thrown for benign user-initiated aborts (cancel resume, decline fork).
@@ -55,7 +68,25 @@ function piSessionDir(cwd: string): string {
 }
 
 /** Convert SessionParams to Pi's resource loader options object. */
-function toResourceLoaderOptions(params: SessionParams) {
+function toResourceLoaderOptions(
+	params: SessionParams,
+	piFlags?: PiFlags,
+	invocationCwd?: string,
+) {
+	const noThemes = piFlags?.noThemes === true;
+	// Resolve --theme paths against the original invocation cwd, not Pi's
+	// effective cwd (which may change on session switch/fork/resume).
+	const baseCwd = invocationCwd ?? process.cwd();
+	const explicitThemePaths = (piFlags?.themes ?? []).map((p) =>
+		resolve(baseCwd, p),
+	);
+	// --no-themes disables auto-discovery but still honors explicit --theme files
+	// (matches Pi's semantics).
+	const themePaths =
+		noThemes || COSMONAUTS_THEMES_DIR === undefined
+			? explicitThemePaths
+			: [COSMONAUTS_THEMES_DIR, ...explicitThemePaths];
+
 	return {
 		...(params.promptContent && { appendSystemPrompt: params.promptContent }),
 		noExtensions: true,
@@ -67,6 +98,8 @@ function toResourceLoaderOptions(params: SessionParams) {
 		...(params.additionalSkillPaths && {
 			additionalSkillPaths: params.additionalSkillPaths,
 		}),
+		...(noThemes && { noThemes: true }),
+		...(themePaths.length > 0 && { additionalThemePaths: themePaths }),
 		...(!params.projectContext && {
 			agentsFilesOverride: () => ({ agentsFiles: [] }),
 		}),
@@ -362,7 +395,7 @@ export async function createSession(
 		extraExtensionPaths,
 	});
 
-	const resourceLoaderOptions = toResourceLoaderOptions(params);
+	const resourceLoaderOptions = toResourceLoaderOptions(params, piFlags, cwd);
 
 	// Scope persistent sessions by agent ID so each agent resumes its own history.
 	// cosmo uses the default (unscoped) directory for backward compatibility.
@@ -409,7 +442,11 @@ export async function createSession(
 						thinkingLevelOverride,
 						extraExtensionPaths,
 					});
-					const newResourceLoaderOptions = toResourceLoaderOptions(newParams);
+					const newResourceLoaderOptions = toResourceLoaderOptions(
+						newParams,
+						piFlags,
+						cwd,
+					);
 					// Use the session manager Pi already prepared (sm) — it carries
 					// the new session header and parentSession lineage from
 					// ctx.newSession({ parentSession, setup }). Creating our own

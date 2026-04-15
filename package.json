@@ -21,7 +21,8 @@
 		"domains/",
 		"lib/",
 		"cli/",
-		"bin/"
+		"bin/",
+		"themes/"
 	],
 	"scripts": {
 		"lint": "biome check .",

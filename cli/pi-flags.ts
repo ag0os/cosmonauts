@@ -82,8 +82,8 @@ const PI_FLAG_DEFS = {
 		type: "boolean",
 	},
 	noSkills: { enabled: false, cli: ["--no-skills", "-ns"], type: "boolean" },
-	themes: { enabled: false, cli: ["--theme"], type: "string[]" },
-	noThemes: { enabled: false, cli: ["--no-themes"], type: "boolean" },
+	themes: { enabled: true, cli: ["--theme"], type: "string[]" },
+	noThemes: { enabled: true, cli: ["--no-themes"], type: "boolean" },
 
 	// Auth — prefer env vars over CLI flags
 	apiKey: { enabled: false, cli: ["--api-key"], type: "string" },
@@ -104,6 +104,9 @@ export interface PiFlags {
 	fork?: string;
 	sessionDir?: string;
 	noSession?: boolean;
+	// Themes
+	themes?: string[];
+	noThemes?: boolean;
 }
 
 // ============================================================================
