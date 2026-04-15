@@ -30,6 +30,7 @@ describe("scaffoldProjectConfig", () => {
 		const config = JSON.parse(raw);
 		const expected = createDefaultProjectConfig();
 		const planAndBuildChain = config.workflows["plan-and-build"]?.chain ?? "";
+		const implementChain = config.workflows.implement?.chain ?? "";
 
 		expect(config).toEqual(expected);
 		expect(config.skills).toEqual(expected.skills);
@@ -44,12 +45,15 @@ describe("scaffoldProjectConfig", () => {
 		expect(planAndBuildChain.indexOf("integration-verifier")).toBeLessThan(
 			planAndBuildChain.indexOf("quality-manager"),
 		);
+		expect(implementChain).toContain("integration-verifier");
+		expect(implementChain).toContain("integration-verifier -> quality-manager");
 	});
 
 	test("createDefaultProjectConfig returns a fresh object", () => {
 		const first = createDefaultProjectConfig();
 		const second = createDefaultProjectConfig();
 		const firstPlanAndBuild = first.workflows?.["plan-and-build"]?.chain ?? "";
+		const firstImplement = first.workflows?.implement?.chain ?? "";
 
 		expect(first).toEqual(second);
 		expect(first).not.toBe(second);
@@ -65,6 +69,8 @@ describe("scaffoldProjectConfig", () => {
 		expect(firstPlanAndBuild).toContain(
 			"integration-verifier -> quality-manager",
 		);
+		expect(firstImplement).toContain("integration-verifier");
+		expect(firstImplement).toContain("integration-verifier -> quality-manager");
 	});
 
 	test("does not overwrite existing config.json", async () => {

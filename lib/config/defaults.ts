@@ -13,7 +13,8 @@ export function createDefaultProjectConfig(): ProjectConfig {
 			implement: {
 				description:
 					"Create tasks from existing plan, implement, and run merge-readiness quality gates",
-				chain: "task-manager -> coordinator -> quality-manager",
+				chain:
+					"task-manager -> coordinator -> integration-verifier -> quality-manager",
 			},
 			verify: {
 				description:

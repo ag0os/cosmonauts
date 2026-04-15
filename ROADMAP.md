@@ -4,18 +4,6 @@ Work backlog in two sections. **Prioritized** items at the top are ordered — p
 
 ## Prioritized
 
-### `integration-verifier`: Cross-Task Integration Verifier Agent
-
-**Complexity: medium.** New agent that runs between `coordinator` and `quality-manager` to verify that workers who ran in parallel actually respected the plan's declared contracts. `reviewer` compares diff to main; this compares implementation to **plan**. Closes the biggest real gap in parallel execution today.
-
-- Reads plan's declared contracts (interfaces, module boundaries, data shapes, file ownership) from `missions/plans/<slug>/plan.md`
-- Greps for consumer sites of each contract and validates signatures and usage match what the plan declared
-- Detects divergence: worker A changed an interface shape, worker B still consumes the old shape
-- Produces `missions/plans/<slug>/integration-report.md` with findings per contract
-- Routes findings through `quality-manager`: simple mismatches → `fixer`, complex → new remediation task
-- Inserted as a new stage in `plan-and-build`, `reviewed-plan-and-build`, `tdd`, `spec-and-build`, `adapt` workflows between coordinator and quality-manager
-- Prompt layers: core, engineering-discipline, architectural-design, coding-readonly
-
 ### `prd-ingestion`: PRD Ingestion Skill + Non-Interactive Spec-Writer Mode
 
 **Complexity: low.** Enable the system to accept a written PRD as input and either proceed (if complete) or refuse with a structured gap list (if ambiguous). Unlocks the "PRD → merge-ready PR" automation story without making the system hallucinate product judgment.

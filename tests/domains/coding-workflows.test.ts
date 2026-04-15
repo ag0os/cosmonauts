@@ -8,12 +8,15 @@ function getWorkflowChain(name: string): string {
 }
 
 describe("coding domain workflows", () => {
-	it("places integration-verifier immediately before quality-manager in the rollout workflows", () => {
+	it("places integration-verifier immediately before quality-manager in every plan-driven build workflow", () => {
 		for (const name of [
 			"plan-and-build",
 			"reviewed-plan-and-build",
+			"implement",
 			"tdd",
+			"plan-and-tdd",
 			"spec-and-build",
+			"spec-and-tdd",
 			"adapt",
 		]) {
 			const stages = getWorkflowChain(name).split(" -> ");
@@ -27,13 +30,8 @@ describe("coding domain workflows", () => {
 		}
 	});
 
-	it("does not add integration-verifier to out-of-scope workflows", () => {
-		for (const name of [
-			"implement",
-			"plan-and-tdd",
-			"spec-and-tdd",
-			"verify",
-		]) {
+	it("keeps verify as the only workflow without integration-verifier", () => {
+		for (const name of ["verify"]) {
 			expect(getWorkflowChain(name)).not.toContain("integration-verifier");
 		}
 	});

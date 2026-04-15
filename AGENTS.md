@@ -99,7 +99,7 @@ The primary user interface for multi-agent pipelines. Built-in defaults are prov
 | Name | Chain | Purpose |
 |------|-------|---------|
 | `plan-and-build` | `planner → task-manager → coordinator → integration-verifier → quality-manager` | Full pipeline |
-| `implement` | `task-manager → coordinator → quality-manager` | From existing plan |
+| `implement` | `task-manager → coordinator → integration-verifier → quality-manager` | From existing plan |
 | `verify` | `quality-manager` | Review + remediation |
 
 Projects can add, remove, or customize workflows by editing their `.cosmonauts/config.json`.
