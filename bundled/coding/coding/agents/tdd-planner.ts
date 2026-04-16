@@ -11,7 +11,7 @@ const definition: AgentDefinition = {
 		"coding-readonly",
 		"spawning",
 	],
-	model: "anthropic/claude-opus-4-6",
+	model: "anthropic/claude-opus-4-7",
 	tools: "readonly",
 	extensions: ["tasks", "plans", "orchestration"],
 	skills: ["pi", "plan", "tdd"],

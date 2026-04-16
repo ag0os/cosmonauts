@@ -316,7 +316,7 @@ describe("buildSessionParams", () => {
 			await setupMinimalDomains(tmp.path);
 			const def = makeDef({ model: undefined as unknown as string });
 			const params = await buildSessionParams(makeOptions({ def }));
-			// FALLBACK_MODEL is "anthropic/claude-opus-4-6"
+			// FALLBACK_MODEL is "anthropic/claude-opus-4-7"
 			expect(params.model).toBeDefined();
 		});
 	});

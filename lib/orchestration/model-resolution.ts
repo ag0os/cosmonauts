@@ -14,7 +14,7 @@ import type { ModelConfig, ThinkingConfig } from "./types.ts";
 // Model Resolution
 // ============================================================================
 
-export const FALLBACK_MODEL = "anthropic/claude-opus-4-6";
+export const FALLBACK_MODEL = "anthropic/claude-opus-4-7";
 
 /**
  * Return the model ID string for a given agent role.

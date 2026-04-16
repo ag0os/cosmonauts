@@ -271,7 +271,7 @@ describe("getModelForRole", () => {
 
 	test("returns fallback for unknown role (tier 4)", () => {
 		const model = getModelForRole("unknown-role", undefined, FIXTURE_REGISTRY);
-		expect(model).toBe("anthropic/claude-opus-4-6");
+		expect(model).toBe("anthropic/claude-opus-4-7");
 	});
 
 	test("explicit override takes precedence over definition model (tier 1 > tier 2)", () => {

@@ -5,7 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"Captures product requirements through interactive conversation. Explores the codebase for context, asks clarifying questions, and produces a structured spec document.",
 	capabilities: ["core", "coding-readonly"],
-	model: "anthropic/claude-opus-4-6",
+	model: "anthropic/claude-opus-4-7",
 	tools: "readonly",
 	extensions: ["plans"],
 	skills: ["pi", "plan"],
