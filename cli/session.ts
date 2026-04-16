@@ -88,7 +88,7 @@ function toResourceLoaderOptions(
 			: [COSMONAUTS_THEMES_DIR, ...explicitThemePaths];
 
 	return {
-		...(params.promptContent && { appendSystemPrompt: params.promptContent }),
+		...(params.promptContent && { appendSystemPrompt: [params.promptContent] }),
 		noExtensions: true,
 		noSkills: true,
 		...(params.extensionPaths.length > 0 && {
