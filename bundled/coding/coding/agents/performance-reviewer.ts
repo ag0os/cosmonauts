@@ -1,21 +1,20 @@
 import type { AgentDefinition } from "../../../../lib/agents/types.ts";
 
 const definition: AgentDefinition = {
-	id: "planner",
+	id: "performance-reviewer",
 	description:
-		"Designs solutions by exploring the codebase and proposing approaches. Never writes code or creates tasks.",
+		"Performance-focused plan review. Looks for algorithmic hotspots, N+1 queries, missing indexes, unbounded memory, chatty I/O, and scaling cliffs. Does not redesign.",
 	capabilities: [
 		"core",
 		"engineering-discipline",
 		"architectural-design",
 		"coding-readonly",
-		"spawning",
 	],
 	model: "openai-codex/gpt-5.4",
-	tools: "readonly",
-	extensions: ["plans", "orchestration"],
-	skills: ["pi", "plan", "engineering-principles", "design-dialogue"],
-	subagents: ["task-manager", "plan-reviewer", "explorer", "verifier"],
+	tools: "coding",
+	extensions: ["plans"],
+	skills: ["pi", "plan", "engineering-principles"],
+	subagents: [],
 	projectContext: true,
 	session: "ephemeral",
 	loop: false,

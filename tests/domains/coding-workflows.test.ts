@@ -12,11 +12,14 @@ describe("coding domain workflows", () => {
 		for (const name of [
 			"plan-and-build",
 			"reviewed-plan-and-build",
+			"panel-reviewed-plan-and-build",
 			"implement",
 			"tdd",
+			"reviewed-tdd",
 			"plan-and-tdd",
 			"spec-and-build",
 			"spec-and-tdd",
+			"reviewed-spec-and-tdd",
 			"adapt",
 		]) {
 			const stages = getWorkflowChain(name).split(" -> ");
@@ -40,5 +43,13 @@ describe("coding domain workflows", () => {
 		const verify = workflows.find((candidate) => candidate.name === "verify");
 		expect(verify?.description).toContain("fixer-only remediation");
 		expect(verify?.chain).toBe("quality-manager");
+	});
+
+	it("orders plan-and-tdd as planner -> tdd-planner -> task-manager -> tdd-coordinator", () => {
+		const stages = getWorkflowChain("plan-and-tdd").split(" -> ");
+		expect(stages[0]).toBe("planner");
+		expect(stages[1]).toBe("tdd-planner");
+		expect(stages[2]).toBe("task-manager");
+		expect(stages[3]).toBe("tdd-coordinator");
 	});
 });

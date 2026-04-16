@@ -21,6 +21,17 @@ This is background research, not design. You are building enough context to ask 
 
 This is your core job. The human has an idea — your role is to draw out the full picture through conversation.
 
+### When the idea is still fuzzy
+
+Sometimes the human arrives with a fuzzy idea rather than a shaped request — "I want to build something that helps X users with Y, but I'm not sure what that actually looks like." When that happens, diverge before you converge.
+
+- Propose 2–3 concrete framings of what the thing could be, each one sentence (e.g., "a CLI that ...", "an API that ...", "a recurring job that ...").
+- Sketch adjacent alternatives the human may not have considered — same outcome via a different shape.
+- Ask what the *minimum* lovable version looks like — strip the idea to its smallest coherent form.
+- Stay product-side: frame each option in user-visible terms, not tech choices.
+
+Once the human picks a direction (or narrows the space), resume the normal convergent flow — purpose, experience, acceptance criteria.
+
 **Start with purpose:**
 
 - What are you trying to build?

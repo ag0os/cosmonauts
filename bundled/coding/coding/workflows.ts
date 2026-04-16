@@ -17,6 +17,13 @@ export const workflows: WorkflowDefinition[] = [
 			"planner -> plan-reviewer -> planner -> task-manager -> coordinator -> integration-verifier -> quality-manager",
 	},
 	{
+		name: "panel-reviewed-plan-and-build",
+		description:
+			"Full pipeline with parallel multi-lens plan review (security, performance, UX) before task creation",
+		chain:
+			"planner -> [security-reviewer, performance-reviewer, ux-reviewer] -> planner -> task-manager -> coordinator -> integration-verifier -> quality-manager",
+	},
+	{
 		name: "implement",
 		description:
 			"Implementation from existing plan: task creation, build, and review",
@@ -37,11 +44,18 @@ export const workflows: WorkflowDefinition[] = [
 			"tdd-planner -> task-manager -> tdd-coordinator -> integration-verifier -> quality-manager",
 	},
 	{
+		name: "reviewed-tdd",
+		description:
+			"TDD pipeline with adversarial plan review before task creation",
+		chain:
+			"tdd-planner -> plan-reviewer -> tdd-planner -> task-manager -> tdd-coordinator -> integration-verifier -> quality-manager",
+	},
+	{
 		name: "plan-and-tdd",
 		description:
-			"Architecture-first TDD: design the structure, create tasks with ACs, then enrich with testable behaviors and Red-Green-Refactor",
+			"Architecture-first TDD: design the structure, enrich with testable behaviors, create tasks, and Red-Green-Refactor",
 		chain:
-			"planner -> task-manager -> tdd-planner -> tdd-coordinator -> integration-verifier -> quality-manager",
+			"planner -> tdd-planner -> task-manager -> tdd-coordinator -> integration-verifier -> quality-manager",
 	},
 	{
 		name: "spec-and-build",
@@ -56,6 +70,13 @@ export const workflows: WorkflowDefinition[] = [
 			"Full pipeline with interactive requirements capture and TDD: gather spec, design, create tasks, enrich with behaviors, and Red-Green-Refactor",
 		chain:
 			"spec-writer -> planner -> task-manager -> tdd-planner -> tdd-coordinator -> integration-verifier -> quality-manager",
+	},
+	{
+		name: "reviewed-spec-and-tdd",
+		description:
+			"Full TDD pipeline with interactive spec capture and adversarial plan review",
+		chain:
+			"spec-writer -> planner -> plan-reviewer -> planner -> task-manager -> tdd-planner -> tdd-coordinator -> integration-verifier -> quality-manager",
 	},
 	{
 		name: "adapt",

@@ -14,7 +14,7 @@ const definition: AgentDefinition = {
 	model: "anthropic/claude-opus-4-7",
 	tools: "readonly",
 	extensions: ["tasks", "plans", "orchestration"],
-	skills: ["pi", "plan", "tdd"],
+	skills: ["pi", "plan", "tdd", "design-dialogue"],
 	subagents: [
 		"task-manager",
 		"tdd-coordinator",

@@ -34,6 +34,9 @@ Additional Cosmo-specific delegation rules:
 - When spawning a task-manager, include the approved plan content.
 - When spawning a worker directly, include the complete task details: ID, description, acceptance criteria, and relevant file paths.
 - When spawning quality-manager, include merge target context and state whether commits already exist.
+- For a planning request, first determine whether the work needs product framing (what/why, users, experience) or engineering design (how, modules, contracts). If the idea is fuzzy and no spec exists, route to `spec-writer` first so it can run an interactive product conversation. If a spec already exists or the user has a concrete technical ask, route to `planner`.
+- When spawning a `planner` or `tdd-planner` interactively, tell the user the planner will walk the design in passes (frame → shape → detail) and surface trade-offs rather than drop a finished plan. The planner loads `/skill:design-dialogue` automatically in interactive mode.
+- If the user signals they want to skip the dialogue ("just decide", "go ahead", "commit"), pass that explicitly in the spawn prompt so the planner switches to autonomous mode and produces the plan in one pass.
 
 ## Direct Coding Discipline
 
