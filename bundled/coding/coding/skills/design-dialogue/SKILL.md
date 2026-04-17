@@ -11,13 +11,21 @@ This skill changes the **cadence** of planning, not its rigor. You still follow 
 
 ## When to load this skill
 
-Load only when you are running interactively. Signals:
+Default to NOT loading this skill. Load it only when ONE of these is true:
 
-- The user addressed you directly and is present in the session.
-- You were not invoked as a predefined chain stage with a fixed prompt pipeline.
-- The parent explicitly asked you to engage with the human or confirm direction before committing.
+- Your spawn prompt (or initial user instruction) explicitly asks you to dialogue. Trigger phrases: "walk me through", "let's discuss", "work with me on", "dialogic", "step by step", "frame this with me", or a literal `[dialogic]` tag.
+- You are the main agent in an interactive REPL with no chain-stage parent (your runtime context has no parent role, or the parent is "user"/"human"). This is the `cosmonauts -a planner "..."` pattern.
+- A facilitating agent (e.g., cosmo) that has already loaded this skill is using you as a sub-agent and has passed the Decision Log or dialogue artifacts forward.
 
-In autonomous mode (chain stage, `--print`, non-interactive), do NOT load this skill. Produce the plan document, mark inferences as assumptions, and hand off cleanly. Trying to ask questions of a chain runner wastes tokens and delays execution.
+If you cannot confirm at least one of these signals, stay autonomous: produce the plan document in one pass, mark inferences as assumptions, do not ask questions. Dialoguing with a chain runner wastes tokens.
+
+## Compatible invocation patterns
+
+**Direct planner REPL**: the user invokes the planner as the main agent (`cosmonauts -a planner "..."`). You have a direct channel with the human across turns. Full dialogic cadence applies.
+
+**Cosmo-as-facilitator**: cosmo (persistent, interactive) loads this skill, runs the dialogue with the user directly, captures decisions in a Decision Log in its working context, and spawns the planner only once direction is settled. The planner itself runs autonomously but receives the Decision Log in its spawn prompt and reflects those decisions in the plan document.
+
+If you are a planner sub-agent spawned via `spawn_agent` WITHOUT the facilitator having run dialogue first, you do NOT have a direct channel. Do not load this skill — you cannot dialogue; any questions you ask will never reach the user. Run autonomous.
 
 ## What counts as a major decision
 
@@ -67,9 +75,9 @@ This serves two purposes: downstream agents see the reasoning; a future revision
 
 ### Approval is incremental
 
-Each decision, once captured in the Decision Log, is locked in. You do not re-ask about it later. The human approves the plan AS A WHOLE only at the end — but individual decisions are already settled from earlier passes.
+Decisions captured in the Decision Log are approved at the moment the human directs them. Once logged, you do not re-ask about them — but the human can reopen any entry at any later pass by saying so. When they do, update the entry to record the revision (see plan_edit note below). In autonomous mode you still record decisions in the Decision Log, but mark each one `Decided by: planner-proposed` — that flags it for human review rather than treating it as approved.
 
-If the human pushes back on a prior decision during the detail pass, update the Decision Log entry to record the revision (preserve history: "initially chose A, revised to B after learning X").
+If the human reopens a prior decision, re-emit the full plan body via `plan_edit` with the Decision Log entry updated (preserve history: "initially chose A; revised to B after learning X"). `plan_edit` replaces the entire body — there is no partial section patch — so include every other section unchanged.
 
 ## Switching modes mid-session
 
@@ -100,9 +108,9 @@ In the plan document, add a section near the top (after Scope, before Design):
 
 - **D-001 — [short title]**
   - Decision: [what was chosen]
-  - Alternatives: [A, B, C with one-line each]
-  - Why: [rationale in one or two sentences]
-  - Decided by: [planner-proposed / user-directed / user-chose]
+  - Alternatives: [one line each for the options considered]
+  - Why: [one or two sentences of rationale]
+  - Decided by: [planner-proposed / user-directed / user-chose-among-options]
 
 - **D-002 — ...**
 ```

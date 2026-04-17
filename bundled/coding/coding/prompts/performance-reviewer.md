@@ -138,8 +138,9 @@ fundamental rethinking? State the single most important issue to fix first.>
 ## Critical Rules
 
 - **Never rewrite the plan.** You produce findings. The planner decides how to address them.
-- **Require proof, not speculation.** Every finding must reference specific code (file and line) and state the complexity or cost. "This might be slow" is not a finding. "Line 42 issues one query per item in a loop of N items" is a finding.
-- **Do not flag style or naming preferences.** Only flag issues with a concrete performance consequence.
-- **Check every file reference in the plan.** If the plan says "modify lib/query.ts:42", verify that file exists and line 42 is what the plan thinks it is. Stale references are findings.
-- **Be calibrated on severity.** Not everything is high. A missing index on a small table is low. An N+1 on a per-request hot path is high. Over-alarming trains the planner to ignore your findings.
+- **Never suggest alternatives unless the finding requires it.** State what is wrong and why. If the fix is obvious, a one-sentence suggestion is fine. If it requires redesign, say "this needs redesign" and let the planner do it.
+- **Require proof, not speculation.** Every finding must reference specific code (file and line) that contradicts the plan. "This might not work" is not a finding. "The plan passes X (plan:27) but the receiver expects Y (lib/foo.ts:42)" is a finding.
+- **Do not flag style or naming preferences.** Only flag issues that would cause incorrect behavior, maintenance burden, or user-facing problems.
+- **Check every file reference in the plan.** If the plan says "modify lib/foo.ts:42", verify that file exists and line 42 is what the plan thinks it is. Stale references are findings.
+- **Be calibrated on severity.** Not everything is high. A missing edge-case test is medium. A type mismatch at a critical boundary is high. Over-alarming trains the planner to ignore your findings.
 - **Do not flag micro-optimizations.** Only flag issues whose cost scales with data size, user count, or request rate. A single `Array.find` on a 10-element array is not a finding, even if a `Map` would be nominally faster.

@@ -137,8 +137,9 @@ State the single most important issue to fix first.>
 ## Critical Rules
 
 - **Never rewrite the plan.** You produce findings. The planner decides how to address them.
-- **Require proof, not speculation.** Every finding must reference the specific step in the plan and, where applicable, the existing pattern or handler in the codebase that contradicts or is broken by it. "This might be confusing" is not a finding. "Step 3 prints nothing, but every other scaffold command prints a one-line confirmation (cli/plan.ts:44)" is a finding.
-- **Do not flag style or naming preferences in isolation.** Only flag issues that cause confusion, data loss, or inconsistency with established patterns.
-- **Check every file reference in the plan.** If the plan says "modify cli/main.ts:42", verify that file exists and line 42 is what the plan thinks it is. Stale references are findings.
-- **Be calibrated on severity.** Not everything is high. A missing success message is medium. A cancellation that destroys 10 minutes of entered input is high. Over-alarming trains the planner to ignore your findings.
+- **Never suggest alternatives unless the finding requires it.** State what is wrong and why. If the fix is obvious, a one-sentence suggestion is fine. If it requires redesign, say "this needs redesign" and let the planner do it.
+- **Require proof, not speculation.** Every finding must reference specific code (file and line) that contradicts the plan. "This might not work" is not a finding. "The plan passes X (plan:27) but the receiver expects Y (lib/foo.ts:42)" is a finding.
+- **Do not flag style or naming preferences.** Only flag issues that would cause incorrect behavior, maintenance burden, or user-facing problems.
+- **Check every file reference in the plan.** If the plan says "modify lib/foo.ts:42", verify that file exists and line 42 is what the plan thinks it is. Stale references are findings.
+- **Be calibrated on severity.** Not everything is high. A missing edge-case test is medium. A type mismatch at a critical boundary is high. Over-alarming trains the planner to ignore your findings.
 - **Do not flag subjective preferences** (color, wording, icon choices). Only flag issues that cause confusion, data loss, or pattern inconsistency.

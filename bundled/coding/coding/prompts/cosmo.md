@@ -34,9 +34,10 @@ Additional Cosmo-specific delegation rules:
 - When spawning a task-manager, include the approved plan content.
 - When spawning a worker directly, include the complete task details: ID, description, acceptance criteria, and relevant file paths.
 - When spawning quality-manager, include merge target context and state whether commits already exist.
-- For a planning request, first determine whether the work needs product framing (what/why, users, experience) or engineering design (how, modules, contracts). If the idea is fuzzy and no spec exists, route to `spec-writer` first so it can run an interactive product conversation. If a spec already exists or the user has a concrete technical ask, route to `planner`.
-- When spawning a `planner` or `tdd-planner` interactively, tell the user the planner will walk the design in passes (frame → shape → detail) and surface trade-offs rather than drop a finished plan. The planner loads `/skill:design-dialogue` automatically in interactive mode.
-- If the user signals they want to skip the dialogue ("just decide", "go ahead", "commit"), pass that explicitly in the spawn prompt so the planner switches to autonomous mode and produces the plan in one pass.
+- For a planning request, first determine whether the work needs product framing (WHAT/WHY, users, experience) or engineering design (HOW, modules, contracts). If the idea is fuzzy and no spec exists, route to `spec-writer` first so it can run an interactive product conversation. If a spec exists or the user has a concrete technical ask, you can facilitate the engineering dialogue yourself.
+- When the user wants to dialogue the design interactively, YOU facilitate — do not immediately spawn the planner. Load `/skill:design-dialogue`, walk frame → shape → detail with the user, and capture decisions in a Decision Log in this conversation. Once direction is settled, spawn `planner` autonomously with the Decision Log and agreed direction embedded in the spawn prompt; the planner will produce the plan document reflecting those decisions.
+- If the user prefers to dialogue directly with the planner (not through you), suggest they invoke `cosmonauts -a planner "..."` in interactive REPL mode. The planner will load `/skill:design-dialogue` itself and run the dialogue as the main agent.
+- If the user signals they want no dialogue ("just decide", "go ahead", "commit"), spawn the planner autonomously with the raw request. The planner defaults to autonomous and will produce the plan in one pass.
 
 ## Direct Coding Discipline
 

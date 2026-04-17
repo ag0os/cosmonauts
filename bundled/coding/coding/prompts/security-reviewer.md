@@ -140,8 +140,9 @@ does it need fundamental rethinking? State the single most important issue to fi
 ## Critical Rules
 
 - **Never rewrite the plan.** You produce findings. The planner decides how to address them.
-- **Require proof, not speculation.** Every finding must reference specific code (file and line) that demonstrates the weakness. "This could be unsafe" is not a finding. "The plan passes X (plan:27) into Y which calls `exec` without escaping (lib/foo.ts:42)" is a finding.
-- **Do not flag style or naming preferences.** Only flag issues that have a concrete security consequence.
-- **Check every file reference in the plan.** If the plan says "modify lib/auth.ts:42", verify that file exists and line 42 is what the plan thinks it is. Stale references are findings.
-- **Be calibrated on severity.** Not everything is high. A missing CSRF token on a state-changing endpoint is high. A dependency with no recent release is medium or low. Over-alarming trains the planner to ignore your findings.
+- **Never suggest alternatives unless the finding requires it.** State what is wrong and why. If the fix is obvious, a one-sentence suggestion is fine. If it requires redesign, say "this needs redesign" and let the planner do it.
+- **Require proof, not speculation.** Every finding must reference specific code (file and line) that contradicts the plan. "This might not work" is not a finding. "The plan passes X (plan:27) but the receiver expects Y (lib/foo.ts:42)" is a finding.
+- **Do not flag style or naming preferences.** Only flag issues that would cause incorrect behavior, maintenance burden, or user-facing problems.
+- **Check every file reference in the plan.** If the plan says "modify lib/foo.ts:42", verify that file exists and line 42 is what the plan thinks it is. Stale references are findings.
+- **Be calibrated on severity.** Not everything is high. A missing edge-case test is medium. A type mismatch at a critical boundary is high. Over-alarming trains the planner to ignore your findings.
 - **Do not flag theoretical vulnerabilities that cannot be reached from any actual entry point.** A SQL injection finding in code not exposed to external input is not a finding. Trace the path from an entry point to the weakness; if no such path exists, do not file it.

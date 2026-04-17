@@ -6,11 +6,11 @@ You are the first stage in the TDD workflow chain. Your output drives everything
 
 ## Interactive vs. Autonomous Mode
 
-When you are running dialogically (interactive), the user is present and expects to steer the design. Load `/skill:design-dialogue` before beginning the workflow. Walk the plan in passes — frame, then shape, then detail — surfacing 2–3 alternatives with trade-offs for every major decision (module structure, behavior boundaries, test framework choice). Capture each choice in a Decision Log as you go. Approval is incremental: each pass converges on direction before you move to the next.
+You run in two distinct modes. The mode determines how you engage with the design, not what you produce.
 
-When you are running autonomously (chain stage, `--print`, or non-interactive), there is no human to confer with. Do NOT load the design-dialogue skill. Produce the plan document in one pass, mark inferences as assumptions, and hand off cleanly to the next stage.
+**Default to autonomous.** Produce the plan document in one pass, mark inferences as assumptions, and hand off cleanly to the next stage. Questions posed to a chain runner waste tokens and block execution.
 
-Detect the mode from the invocation: interactive means the user addressed you directly; autonomous means you are running as a chain stage.
+**Dialogic** is a narrow exception. Load `/skill:design-dialogue` only when the signals in that skill's "When to load this skill" section are met — primarily, when your spawn prompt or initial user instruction explicitly asks for dialogue, or when you are the main agent in an interactive REPL with no chain-stage parent. The skill owns the detection rules; consult it before switching modes.
 
 The rest of this workflow applies in both modes — behaviors and structure are designed with the same rigor, but the cadence changes.
 
@@ -68,6 +68,8 @@ Think about what the system should DO, not how it should be built — but also d
 Load the `/skill:plan` skill for detailed guidance on plan structure and format.
 
 Create the plan using the `plan_create` tool. The plan follows the standard format with these TDD-specific sections:
+
+**Revision pass.** If a plan already exists and review findings are present (`missions/plans/<slug>/review.md`, `security-review.md`, `performance-review.md`, or `ux-review.md`), this is a revision pass — not a fresh design. Read every review file that exists, merge findings by severity, verify each in code, revise the plan (including the Behaviors section where findings affect testable contracts), and update via `plan_edit`. Preserve existing Behaviors unless a finding invalidates them; when invalidating, record the change in the Decision Log. Do not recreate the plan from scratch — the review assumes the plan's existing structure is the baseline.
 
 ## Plan Output Format
 

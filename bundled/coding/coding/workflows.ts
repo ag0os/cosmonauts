@@ -67,16 +67,16 @@ export const workflows: WorkflowDefinition[] = [
 	{
 		name: "spec-and-tdd",
 		description:
-			"Full pipeline with interactive requirements capture and TDD: gather spec, design, create tasks, enrich with behaviors, and Red-Green-Refactor",
+			"Full pipeline with interactive requirements capture and TDD: gather spec, design, enrich with behaviors, create tasks, and Red-Green-Refactor",
 		chain:
-			"spec-writer -> planner -> task-manager -> tdd-planner -> tdd-coordinator -> integration-verifier -> quality-manager",
+			"spec-writer -> planner -> tdd-planner -> task-manager -> tdd-coordinator -> integration-verifier -> quality-manager",
 	},
 	{
 		name: "reviewed-spec-and-tdd",
 		description:
 			"Full TDD pipeline with interactive spec capture and adversarial plan review",
 		chain:
-			"spec-writer -> planner -> plan-reviewer -> planner -> task-manager -> tdd-planner -> tdd-coordinator -> integration-verifier -> quality-manager",
+			"spec-writer -> planner -> plan-reviewer -> planner -> tdd-planner -> task-manager -> tdd-coordinator -> integration-verifier -> quality-manager",
 	},
 	{
 		name: "adapt",
