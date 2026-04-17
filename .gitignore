@@ -4,9 +4,11 @@ coverage/
 *.tsbuildinfo
 .DS_Store
 
-# Work artifacts (local-only)
-missions/
-memory/
-.cosmonauts/*
-!.cosmonauts/config.example.json
+# Session transcripts: high-volume, low-diff-value, regenerable.
+# Everything else under missions/ is tracked — we dogfood cosmonauts
+# on itself. None of this ships to npm (tarball is scoped by package.json
+# "files", which excludes missions/, memory/, and .cosmonauts/).
+missions/sessions/
+missions/archive/sessions/
+
 .claude/
