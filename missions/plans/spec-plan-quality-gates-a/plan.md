@@ -1,8 +1,8 @@
 ---
 title: Prompt-Only Spec/Plan Quality Gates (Plan A)
-status: active
+status: completed
 createdAt: '2026-04-17T14:55:43.511Z'
-updatedAt: '2026-04-17T15:24:23.002Z'
+updatedAt: '2026-04-17T16:11:34.184Z'
 ---
 
 ## Summary
