@@ -1,6 +1,6 @@
 # Spec & Plan Quality Gates for Human-Agent Conversations
 
-**Status:** Design. Plan A is approved for implementation; Plan B is deferred.
+**Status:** Plan A shipped (plan `spec-plan-quality-gates-a`, completed 2026-04-17). Plan B deferred pending evidence from Plan A in production.
 
 ## Problem
 
@@ -164,20 +164,22 @@ Writes findings to `missions/plans/<slug>/spec-review.md`. The spec-writer reads
 
 ## Phasing
 
-### Plan A — Prompt-only changes (approved, ship now)
+### Plan A — Prompt-only changes (shipped)
 
 Low-risk, high-leverage. No framework changes, no new agents, no workflow rewiring.
 
-- **M1** Cosmo router: prompt-level decision tree added to `bundled/coding/coding/prompts/cosmo.md`.
-- **M2** Readiness rubric: required output block in `bundled/coding/coding/prompts/spec-writer.md` and `bundled/coding/coding/prompts/planner.md` before `plan_create`.
-- **M3** Phase transitions: promote `design-dialogue` cadence from advisory to mandatory in `spec-writer.md` interactive mode; announce transitions explicitly.
-- **M4** Assumption budget: explicit counting and escalation threshold in `spec-writer.md`.
+- **M1** Cosmo router: three-path decision tree (`spec-writer` | Cosmo-facilitated dialogue | autonomous planner) in `bundled/coding/coding/prompts/cosmo.md`.
+- **M2** Readiness rubric: visible four-factor block in `bundled/coding/coding/prompts/spec-writer.md` and `bundled/coding/coding/prompts/planner.md` before `plan_create`, with shared headings and role-tailored items.
+- **M3** Phase transitions: mandatory Frame → Shape → Detail handoffs encoded in `spec-writer.md` (skill `design-dialogue` unchanged).
+- **M4** Assumption budget: `critical >= 3` escalation in `spec-writer.md` with explicit `proceed with assumptions` waiver and autonomous-mode conversion to Open Questions.
 
-Expected outcome: 80% of the quality-gate value from prompt changes alone, with a one-week observation window before committing to Plan B.
+Shipping record:
+- Plan: `missions/plans/spec-plan-quality-gates-a/plan.md`
+- Implementation commits: `TASK-189` (spec-writer), `TASK-190` (cosmo router), `TASK-191` (planner readiness), `TASK-192` (prompt-contract tests)
+- Review-round commits: `review-round:1` (lint, routing precedence), `review-round:2` (anti-fourth-route guard)
+- Prompt-contract tests at `tests/prompts/{cosmo,spec-writer,planner}.test.ts` lock the router signals, three-path guard, readiness rubric headings, waiver wording, critical-assumption categories, QC-rule reference, and non-persisted boundary.
 
-### Plan B — Structural changes (deferred, pending evidence)
-
-Revisit after Plan A has run long enough to see residual failure modes.
+### Plan B — Structural changes (deferred, pending evidence from Plan A)
 
 - **M5** Typed spec schema in `lib/plans/` with validation at `plan_create`.
 - **M6** `spec-reviewer` agent definition, prompt, and workflow wiring in `bundled/coding/coding/` plus updates to `spec-and-build` and `spec-and-tdd` workflows.
@@ -186,8 +188,9 @@ Trigger conditions for proceeding to Plan B:
 - Plan A specs still regularly omit error paths or edge cases.
 - Downstream planners still frequently request clarification on spec content.
 - Specs pass through the pipeline with undetected factual errors (hallucinated file refs, nonexistent APIs).
+- The readiness rubric is being emitted but its required items are routinely waived without resolution.
 
-If Plan A is sufficient, Plan B can be dropped entirely.
+If Plan A is sufficient in practice, Plan B can be dropped entirely.
 
 ## Decision Log
 
