@@ -30,7 +30,7 @@ What's built:
 - Nine agent roles: Cosmo, planner, task-manager, coordinator, worker, integration-verifier, quality-manager, reviewer, fixer
 - Four-layer system prompt architecture with capability-aligned composition
 - Plan lifecycle: create plans, link tasks, archive completed work, distill learnings into memory
-- Named workflows for common pipelines (`plan-and-build`, `implement`, `verify`, `plan`)
+- Named workflows for common pipelines (`plan-and-build`, `tdd`, `spec-and-build`, `spec-and-tdd`, `implement`, `verify`, `adapt`) with adversarial plan review as the default
 - CLI with interactive and non-interactive modes
 - Todo tool for in-session task tracking
 - 565 tests passing

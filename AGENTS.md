@@ -94,13 +94,19 @@ cosmonauts --chain "coordinator -> reviewer[3]" "review with multiple reviewers"
 
 ### Named Workflows
 
-The primary user interface for multi-agent pipelines. Built-in defaults are provided in `lib/workflows/defaults.ts` and can be overridden or extended via `.cosmonauts/config.json`. The standard workflows are:
+The primary user interface for multi-agent pipelines. Built-in defaults live in `bundled/coding/coding/workflows.ts` (also mirrored in `lib/config/defaults.ts` for the scaffolded config) and can be overridden or extended via `.cosmonauts/config.json`. The standard workflows are:
 
 | Name | Chain | Purpose |
 |------|-------|---------|
-| `plan-and-build` | `planner → task-manager → coordinator → integration-verifier → quality-manager` | Full pipeline |
-| `implement` | `task-manager → coordinator → integration-verifier → quality-manager` | From existing plan |
-| `verify` | `quality-manager` | Review + remediation |
+| `plan-and-build` | `planner → plan-reviewer → planner → task-manager → coordinator → integration-verifier → quality-manager` | Full pipeline with adversarial plan review |
+| `implement` | `task-manager → coordinator → integration-verifier → quality-manager` | From an existing approved plan |
+| `verify` | `quality-manager` | Review + remediation on existing changes |
+| `tdd` | `planner → plan-reviewer → planner → tdd-planner → task-manager → tdd-coordinator → integration-verifier → quality-manager` | Architecture-first TDD with Red-Green-Refactor |
+| `spec-and-build` | `spec-writer → planner → plan-reviewer → planner → task-manager → coordinator → integration-verifier → quality-manager` | Interactive spec capture then reviewed build |
+| `spec-and-tdd` | `spec-writer → planner → plan-reviewer → planner → tdd-planner → task-manager → tdd-coordinator → integration-verifier → quality-manager` | Interactive spec capture then reviewed TDD |
+| `adapt` | `adaptation-planner → task-manager → coordinator → integration-verifier → quality-manager` | Study a reference codebase and adapt patterns |
+
+Every design-driven default includes `plan-reviewer` as a mandatory adversarial step before task creation — review is the norm, not an opt-in. For code-time review, `quality-manager` internally triages which specialist lenses (security, performance, UX) apply to the diff and spawns the applicable ones in parallel alongside the generalist `reviewer`. Panel membership is not a workflow-level concern.
 
 Projects can add, remove, or customize workflows by editing their `.cosmonauts/config.json`.
 
