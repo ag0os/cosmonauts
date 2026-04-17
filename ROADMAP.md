@@ -200,3 +200,15 @@ Connect Cosmonauts to external messaging platforms.
 - Telegram and/or WhatsApp transports via Pi RPC mode or SDK
 - Notification delivery when autonomous work completes
 - Bidirectional: receive prompts and send results through messaging apps
+
+### `dialogic-planner-followups`: Review-Derived Followups from `dialogic-planner`
+
+Post-implementation review (`dialogic-planner` branch, commits `d38ee8d`, `dcb0441`) surfaced items deferred from the initial ship. Polish items pruned; load-bearing ones kept.
+
+- **Additional reviewer lenses.** Panel covers security, performance, UX. Missing: data-integrity/migration-safety (schema changes, reversibility, lock duration), reliability/failure-recovery (retries, timeouts, idempotency, circuit breakers), observability-as-a-concern (tracing, alerting — distinct from perf metrics). Each a focused reviewer following the `plan-reviewer.md` template.
+- **TDD-specific review lens.** `plan-reviewer` has no "Behaviors completeness" or "test-spec atomicity" dimensions, so `reviewed-tdd` reviews architecture but misses TDD-discipline gaps. Either add a `tdd-reviewer` or extend `plan-reviewer` with a conditional dimension when a `## Behaviors` section is present.
+- **Dialogic idle fallback.** The skill waits for user direction at pass boundaries with no timeout guidance — agent hangs on silence. Rule: if the user does not respond within the session, commit current defaults and document them as assumptions in the plan.
+- **Canonical trigger-phrase vocabulary.** The "just decide" signal works but is informal. Document a list (`[autonomous]` tag, "just do it", "commit", "go ahead") that `cosmo` and the planner agree on, so mode switches are deterministic.
+- **Plan-slug propagation runtime test.** `panel-reviewed-plan-and-build` relies on the first `planner` stage publishing `config.planSlug` before the bracket group runs. Add a test that the three panel reviewers resolve the correct slug when invoked without a `--plan` flag.
+- **Chain-parser test for bracket groups.** `tests/domains/coding-workflows.test.ts` splits on `" -> "` — a malformed bracket survives string checks but breaks at runtime. Add `expect(() => parseChain(workflow.chain)).not.toThrow()` per workflow; for panel workflows assert the bracket stage parses as a `ParallelGroupStep` with N members.
+- **Polish (single-commit cleanups):** narrow `plan-reviewer`'s UX dimension when `ux-reviewer` is in the chain; tighten performance/quality-contract overlap; rename `plan-reviewer` → `structural-reviewer` for symmetry with the specialist panel; add a second review gate after `tdd-planner` enrichment in `reviewed-spec-and-tdd`.
