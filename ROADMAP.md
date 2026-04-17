@@ -79,6 +79,20 @@ Replace filesystem polling with push-based communication between agents. Address
 - Idempotency keys to prevent duplicate processing
 - Depth-aware dispatch (only direct requester receives completion events)
 
+### `executive-assistant`: Autonomous Executive-Assistant Domain
+
+See [`docs/designs/executive-assistant.md`](docs/designs/executive-assistant.md) for the full investigation.
+
+New Layer 3 domain that drives coding workflows autonomously: watches `ROADMAP.md`, picks prioritized items, runs `plan-and-build`, handles failures, reports back. Real-time agent-to-agent communication is the substrate — without it, the EA is just a cron scheduler.
+
+- New `domains/executive/` domain with triage, supervisor, escalator, reporter agents
+- `cosmonauts daemon` mode: long-running process with heartbeat, durable state, survives restarts
+- Real-time comms primitives: peer registry, `send_to_peer` / `wait_for_peer_message` tools built on the existing `MessageBus` and `pi.sendUserMessage` injection
+- Human steering channel — always-open injection point for mid-flight redirection
+- Cross-plan arbitration: EA serializes or merges plans that touch the same files
+- Hard safety caps: round limits on dialogues, budget ceilings, escalate-to-human after N autonomous retries
+- Prototype sequence: daemon + steering channel first (single roadmap item → plan-and-build loop), then real-time dialogue (EA ↔ planner roadmap disambiguation), then supervision (mid-flight escalation)
+
 ### `chain-checkpointing`: Chain Checkpointing & Resumption
 
 Serialize chain state after each stage so workflows survive crashes and can be resumed mid-execution. Address when long-running autonomous durations justify the complexity.
