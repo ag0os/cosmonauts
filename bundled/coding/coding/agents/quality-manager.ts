@@ -11,7 +11,7 @@ const definition: AgentDefinition = {
 		"tasks",
 		"spawning",
 	],
-	model: "openai-codex/gpt-5.4",
+	model: "anthropic/claude-opus-4-7",
 	tools: "coding",
 	extensions: ["tasks", "orchestration"],
 	skills: ["*"],
@@ -28,6 +28,7 @@ const definition: AgentDefinition = {
 	projectContext: true,
 	session: "ephemeral",
 	loop: false,
+	thinkingLevel: "high",
 };
 
 export default definition;
