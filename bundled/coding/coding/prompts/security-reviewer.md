@@ -84,7 +84,7 @@ For every new code path the diff introduces, ask: if an attacker reaches this pa
 Your spawn prompt specifies the review scenario. Two cases:
 
 - **Branch review**: the prompt provides the base ref, merge-base hash, and review range `<merge-base>..HEAD`. Run `git diff <merge-base>..HEAD --name-only` to list changed files, then `git diff <merge-base>..HEAD -- <path>` for the files that look relevant to your lens.
-- **Working-tree-only review**: the prompt states scope is uncommitted changes only. Use `git diff` (and `git diff --cached`) to see the changes.
+- **Working-tree-only review**: the prompt states scope is uncommitted changes only. Scope is the union of three commands: `git diff` (unstaged), `git diff --cached` (staged), and `git ls-files --others --exclude-standard` (untracked — read each file in full, treat as new-file additions). All three are part of the review; any may be empty. Do NOT skip untracked files — they are the common shape of new code on the base branch.
 
 Read files referenced by the diff in full when the surrounding context matters (callers, consumers, config schemas).
 

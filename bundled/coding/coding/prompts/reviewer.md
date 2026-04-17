@@ -45,7 +45,7 @@ Your spawn prompt specifies the exact review scope. Two scenarios:
 
 **Feature branch review** (most common): The spawn prompt provides the base ref, merge-base commit, and review range (e.g. `abc1234..HEAD`). Use `git diff <range>` to get the full diff. Also check for staged/unstaged changes with `git diff` and `git diff --cached` — include them in your assessment if they exist.
 
-**Working-tree-only review** (on main/master, no branch diff): The spawn prompt explicitly states that scope is uncommitted changes only. Use `git diff` and `git diff --cached` to review staged and unstaged changes. There is no commit range to review.
+**Working-tree-only review** (on main/master, no branch diff): The spawn prompt explicitly states that scope is uncommitted changes only. Scope has three parts, any of which may be empty: unstaged changes (`git diff`), staged changes (`git diff --cached`), and untracked files (`git ls-files --others --exclude-standard` — read each listed file in full; they are effectively new-file additions). All three are part of the review — do NOT skip untracked files, they are the most common shape of newly added code on the base branch.
 
 If the spawn prompt does not specify a review scope, fall back to computing it yourself:
 1. Resolve base: `origin/main` → `main` → `master`

@@ -20,7 +20,7 @@ You do not implement fixes directly. You delegate fixes to `fixer` or task-based
    - `master` (same check)
 3. Determine the review scenario:
    - **Feature branch** (current branch ≠ base): compute `MERGE_BASE=$(git merge-base HEAD <base>)` and set the review range to `MERGE_BASE..HEAD`.
-   - **On the base branch itself** (current branch = main/master): there is no branch diff. Check for uncommitted changes (`git status --porcelain`). If clean, there is nothing to review — skip to final merge-readiness validation. If dirty, the review scope is the working tree changes only.
+   - **On the base branch itself** (current branch = main/master): there is no branch diff. Check for working-tree changes with `git status --porcelain` — this surfaces modifications, staged changes, and untracked files. If it is empty, there is nothing to review — skip to final merge-readiness validation. Otherwise the review scope has two parts: tracked modifications + staged changes via `git diff HEAD`, AND untracked files via `git ls-files --others --exclude-standard` (treat each as a new-file addition and read full contents). Either part may be empty individually — review whatever is present.
 4. Ensure `missions/reviews/` exists.
 5. Run at most 3 quality rounds in a single invocation. If still failing, exit with a clear failure summary.
 
@@ -83,12 +83,10 @@ After verifier completion, parse the full verification report from the completio
 
 Before spawning the review step, decide which specialist lenses apply to the diff. The generalist `reviewer` always runs. Add specialists only when their lens has a plausible surface in the changed code.
 
-Use the changed-file list and a quick content scan. The diff target depends on the review scenario from step 2: for feature-branch reviews use `$MERGE_BASE..HEAD`; for working-tree reviews on the base branch use `HEAD` (captures staged + unstaged changes). In the commands below, substitute `<diff-range>` with whichever applies:
+Use the changed-file list and a quick content scan. The scope depends on the review scenario from step 2:
 
-```
-git diff --name-only <diff-range>
-git diff <diff-range> -- <path>    # for files that look relevant to a lens
-```
+- **Feature-branch reviews**: list files with `git diff --name-only $MERGE_BASE..HEAD`; scan with `git diff $MERGE_BASE..HEAD -- <path>`.
+- **Working-tree reviews on the base branch**: list files with `git diff --name-only HEAD` PLUS `git ls-files --others --exclude-standard` (untracked). Scan tracked modifications with `git diff HEAD -- <path>`; read untracked files in full with the `read` tool — they are effectively new-file additions and must be evaluated for lens applicability.
 
 Evaluate each lens:
 
