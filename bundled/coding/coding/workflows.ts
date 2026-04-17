@@ -5,28 +5,14 @@ export const workflows: WorkflowDefinition[] = [
 	{
 		name: "plan-and-build",
 		description:
-			"Full pipeline: design, task creation, implementation, and review",
-		chain:
-			"planner -> task-manager -> coordinator -> integration-verifier -> quality-manager",
-	},
-	{
-		name: "reviewed-plan-and-build",
-		description:
-			"Full pipeline with adversarial plan review before task creation",
+			"Full pipeline with adversarial plan review: design, review, revise, task creation, implementation, and verification",
 		chain:
 			"planner -> plan-reviewer -> planner -> task-manager -> coordinator -> integration-verifier -> quality-manager",
 	},
 	{
-		name: "panel-reviewed-plan-and-build",
-		description:
-			"Full pipeline with parallel multi-lens plan review (security, performance, UX) before task creation",
-		chain:
-			"planner -> [security-reviewer, performance-reviewer, ux-reviewer] -> planner -> task-manager -> coordinator -> integration-verifier -> quality-manager",
-	},
-	{
 		name: "implement",
 		description:
-			"Implementation from existing plan: task creation, build, and review",
+			"Implementation from existing plan: task creation, build, and verification",
 		chain:
 			"task-manager -> coordinator -> integration-verifier -> quality-manager",
 	},
@@ -39,40 +25,19 @@ export const workflows: WorkflowDefinition[] = [
 	{
 		name: "tdd",
 		description:
-			"Test-driven development: design behaviors, Red-Green-Refactor cycle, and review",
+			"Full TDD pipeline with adversarial plan review: architecture, review, revise, behaviors, tasks, Red-Green-Refactor, and verification",
 		chain:
-			"tdd-planner -> task-manager -> tdd-coordinator -> integration-verifier -> quality-manager",
-	},
-	{
-		name: "reviewed-tdd",
-		description:
-			"TDD pipeline with adversarial plan review before task creation",
-		chain:
-			"tdd-planner -> plan-reviewer -> tdd-planner -> task-manager -> tdd-coordinator -> integration-verifier -> quality-manager",
-	},
-	{
-		name: "plan-and-tdd",
-		description:
-			"Architecture-first TDD: design the structure, enrich with testable behaviors, create tasks, and Red-Green-Refactor",
-		chain:
-			"planner -> tdd-planner -> task-manager -> tdd-coordinator -> integration-verifier -> quality-manager",
+			"planner -> plan-reviewer -> planner -> tdd-planner -> task-manager -> tdd-coordinator -> integration-verifier -> quality-manager",
 	},
 	{
 		name: "spec-and-build",
 		description:
-			"Full pipeline with interactive requirements capture: gather spec, design, implement, and review",
+			"Full pipeline with interactive spec capture and adversarial plan review",
 		chain:
-			"spec-writer -> planner -> task-manager -> coordinator -> integration-verifier -> quality-manager",
+			"spec-writer -> planner -> plan-reviewer -> planner -> task-manager -> coordinator -> integration-verifier -> quality-manager",
 	},
 	{
 		name: "spec-and-tdd",
-		description:
-			"Full pipeline with interactive requirements capture and TDD: gather spec, design, enrich with behaviors, create tasks, and Red-Green-Refactor",
-		chain:
-			"spec-writer -> planner -> tdd-planner -> task-manager -> tdd-coordinator -> integration-verifier -> quality-manager",
-	},
-	{
-		name: "reviewed-spec-and-tdd",
 		description:
 			"Full TDD pipeline with interactive spec capture and adversarial plan review",
 		chain:

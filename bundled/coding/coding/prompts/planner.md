@@ -132,14 +132,13 @@ Create the plan using the `plan_create` tool. This writes a `plan.md` file (with
 
 When reviewing or revising an existing plan, use `plan_view` to read it and `plan_edit` to update its body, spec, title, or status. You can update any combination of fields — only the fields you provide will change.
 
-**Revision pass.** If a plan already exists for this work (check with `plan_list` and `plan_view`), look for review findings files in the plan directory: `missions/plans/<slug>/review.md` (plan-reviewer), `security-review.md`, `performance-review.md`, and `ux-review.md` (panel reviewers). Read every file that exists — multiple reviewers may run in parallel. This is a revision pass if any of them exist; do not start from scratch. Instead:
+**Revision pass.** If a plan already exists for this work (check with `plan_list` and `plan_view`), look for a review findings file at `missions/plans/<slug>/review.md`. If review findings exist, this is a revision pass — do not start from scratch. Instead:
 
-1. Read the existing plan and every review file present
-2. Merge findings by severity (collapse duplicates pointing to the same plan reference; preserve distinct findings)
-3. For each finding, trace the issue in the codebase to confirm it is valid
-4. Revise the design to address all high and medium severity findings
-5. Update the plan using `plan_edit` with the revised design
-6. Low severity findings can be addressed or deferred with explicit justification
+1. Read the existing plan and the review findings
+2. For each finding, trace the issue in the codebase to confirm it is valid
+3. Revise the design to address all high and medium severity findings
+4. Update the plan using `plan_edit` with the revised design
+5. Low severity findings can be addressed or deferred with explicit justification
 
 ## Plan Output Format
 

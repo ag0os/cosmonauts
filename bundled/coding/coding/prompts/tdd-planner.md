@@ -69,7 +69,7 @@ Load the `/skill:plan` skill for detailed guidance on plan structure and format.
 
 Create the plan using the `plan_create` tool. The plan follows the standard format with these TDD-specific sections:
 
-**Revision pass.** If a plan already exists and review findings are present (`missions/plans/<slug>/review.md`, `security-review.md`, `performance-review.md`, or `ux-review.md`), this is a revision pass — not a fresh design. Read every review file that exists, merge findings by severity, verify each in code, revise the plan (including the Behaviors section where findings affect testable contracts), and update via `plan_edit`. Preserve existing Behaviors unless a finding invalidates them; when invalidating, record the change in the Decision Log. Do not recreate the plan from scratch — the review assumes the plan's existing structure is the baseline.
+**Revision pass.** If a plan already exists and review findings are present at `missions/plans/<slug>/review.md`, this is a revision pass — not a fresh design. Read the review findings, merge with the plan structure in working memory, verify each finding in the code, and revise the plan (including the Behaviors section where findings affect testable contracts). Update via `plan_edit`. Preserve existing Behaviors unless a finding invalidates them; when invalidating, record the change in the Decision Log. Do not recreate the plan from scratch — the review assumes the plan's existing structure is the baseline.
 
 ## Plan Output Format
 

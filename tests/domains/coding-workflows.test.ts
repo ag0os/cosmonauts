@@ -11,15 +11,10 @@ describe("coding domain workflows", () => {
 	it("places integration-verifier immediately before quality-manager in every plan-driven build workflow", () => {
 		for (const name of [
 			"plan-and-build",
-			"reviewed-plan-and-build",
-			"panel-reviewed-plan-and-build",
 			"implement",
 			"tdd",
-			"reviewed-tdd",
-			"plan-and-tdd",
 			"spec-and-build",
 			"spec-and-tdd",
-			"reviewed-spec-and-tdd",
 			"adapt",
 		]) {
 			const stages = getWorkflowChain(name).split(" -> ");
@@ -46,13 +41,7 @@ describe("coding domain workflows", () => {
 	});
 
 	it("orders tdd-planner before task-manager in every TDD workflow that contains both", () => {
-		for (const name of [
-			"tdd",
-			"reviewed-tdd",
-			"plan-and-tdd",
-			"spec-and-tdd",
-			"reviewed-spec-and-tdd",
-		]) {
+		for (const name of ["tdd", "spec-and-tdd"]) {
 			const stages = getWorkflowChain(name).split(" -> ");
 			const tddPlannerIndex = stages.indexOf("tdd-planner");
 			const taskManagerIndex = stages.indexOf("task-manager");

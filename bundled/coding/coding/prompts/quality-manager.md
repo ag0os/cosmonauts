@@ -79,30 +79,41 @@ Include the specific commands the verifier should run for each claim. The verifi
 
 After verifier completion, parse the full verification report from the completion message. Record any failed checks for remediation routing, noting which failures correspond to `QC-*` contract criteria.
 
+### 3.5. Panel triage
+
+Before spawning the review step, decide which specialist lenses apply to the diff. The generalist `reviewer` always runs. Add specialists only when their lens has a plausible surface in the changed code.
+
+Use the changed-file list and a quick content scan (`git diff --name-only $MERGE_BASE..HEAD`, plus `git diff $MERGE_BASE..HEAD -- <path>` for files that look relevant) to evaluate each lens:
+
+- **security-reviewer** applies when the diff touches: auth/authn/authz code, input parsing or validation, SQL or DB query construction, external input surfaces (HTTP handlers, CLI args, file parsers, message queues, IPC), secret or credential handling, crypto/hashing/signing, or adds/bumps a third-party dependency.
+- **performance-reviewer** applies when the diff touches: code paths that run in hot loops or request handlers, DB schemas or queries, data structures or algorithms on paths with user/data scale, caching or batching code, or I/O patterns on critical paths.
+- **ux-reviewer** applies when the diff touches: frontend files (`.tsx`, `.jsx`, `.vue`, `.svelte`, `.html`, CSS/styling), user-visible CLI strings (help text, error messages, prompts), API response shapes consumed by external clients, or adds/changes commands, flags, or user-facing flows.
+
+Record the applicable lenses in working state as `active_specialists`. If none apply, the review step spawns only `reviewer`.
+
+This triage is your judgment — err toward inclusion when a lens plausibly applies, but do NOT spawn a specialist when its lens has no surface in the diff. A specialist that returns `Overall: no findings in scope` is wasted cost. The generalist `reviewer` is the safety net for borderline cases.
+
 ### 4. Run clean-context review
 
-Spawn `reviewer` with a prompt that includes:
-- The exact review scenario and parameters computed in step 2:
-  - For feature branches: the base ref, the merge-base commit hash, and the review range (`<merge-base>..HEAD`)
-  - For base-branch working-tree reviews: explicit instruction that scope is uncommitted changes only
-- A required report path in `missions/reviews/` (for example `missions/reviews/review-round-1.md`)
-- The full list of `reviewer_criteria` from step 2.5 (if non-empty), formatted as:
+Spawn the generalist `reviewer` plus every specialist in `active_specialists` (from step 3.5) as a parallel bracket group. Each reviewer gets its own report path:
+- `reviewer` → `missions/reviews/review-round-<n>.md`
+- `security-reviewer` → `missions/reviews/security-review-round-<n>.md`
+- `performance-reviewer` → `missions/reviews/performance-review-round-<n>.md`
+- `ux-reviewer` → `missions/reviews/ux-review-round-<n>.md`
 
-  ```
-  ## Quality Contract Criteria
+Each spawn prompt must include:
+- The review scenario and parameters from step 2 (base ref, merge-base, review range OR uncommitted-only indicator)
+- The required output path as listed above
+- The round number `<n>`
+- For `reviewer` only: the full `reviewer_criteria` list from step 2.5 (if non-empty), formatted with the same "Quality Contract Criteria" block used today. Specialists do not receive the QC list unless a specific criterion text explicitly invokes their lens.
 
-  In addition to your standard diff review, evaluate each criterion below and report pass/fail per ID:
+After all reviewers complete, read every report file. Each report has an `Overall` field: `correct`, `incorrect`, or `no findings in scope`. Merge the findings:
 
-  - QC-001 [architecture]: "Domain modules do not import from infrastructure modules"
-  - QC-002 [correctness]: "All new public functions have test cases covering happy path and at least one error path"
-  ...
-  ```
+- **Dedupe by location**: if two or more reviewers flag the same `file:lineRange`, collapse into one merged finding whose dimensions is a union (`security + correctness`). Keep the highest severity and priority across the inputs. Concatenate the summaries with lens attribution.
+- **Keep distinct findings distinct**: different file:lineRange entries remain separate even if they touch the same file.
+- **Ignore `no findings in scope` reports**: those specialists contribute nothing to the merge.
 
-  The reviewer must include a `### Quality Contract` section in its report with one line per criterion: `QC-NNN: pass | fail — <brief rationale>`.
-
-The reviewer will classify each finding with priority (P0-P3), severity (high/medium/low), confidence (0.0-1.0), and complexity (simple/complex). Complex findings include task-ready data (title, labels, acceptance criteria). The report also includes an overall correctness verdict (`correct` or `incorrect`).
-
-After reviewer completion, read the report file.
+The merged findings list feeds step 5 (remediation routing). A report with `Overall: incorrect` marks the run as needing remediation regardless of which reviewer flagged it. A report with `Overall: correct` or `no findings in scope` contributes nothing to the incorrect verdict.
 
 ### 5. Decide remediation path
 
@@ -143,7 +154,7 @@ After each remediation pass:
 - Track whether code was modified in that pass. Set `code_modified = true` after any `fixer` run, any successful remediation of failed checks, or any completed remediation tasks from `coordinator`.
 - If `code_modified` is true, `activePlanSlug` exists, and `latest_integration_overall` is not `skipped`, spawn `integration-verifier`, then reread `missions/plans/<activePlanSlug>/integration-report.md` and refresh `latest_integration_overall` plus `integration_findings` before making any further decisions. This rerun trigger applies even when the remediation was not caused by integration findings.
 - Spawn `verifier` again with the same quality claims from step 3.
-- If checks now pass, spawn `reviewer` with a new report path for the next round.
+- If checks now pass, repeat step 3.5 (re-triage) and step 4 (spawn generalist + active specialists in a bracket group with round `<n+1>` paths).
 - If checks still fail, route failures to `fixer` or task-based remediation.
 - Stop when the verifier completion report shows all claims pass, reviewer reports no findings, and the latest integration report is not `incorrect`.
 
@@ -152,7 +163,7 @@ After each remediation pass:
 Before exiting successfully:
 - If `activePlanSlug` exists and `latest_integration_overall` is `missing`, spawn `integration-verifier` once, then read `missions/plans/<activePlanSlug>/integration-report.md` before deciding merge-readiness.
 - Confirm check commands pass.
-- Confirm reviewer report verdict is `correct` and has no findings.
+- Confirm all review reports from the final round have `Overall: correct` or `Overall: no findings in scope`, and the merged findings list is empty.
 - Confirm the latest integration report is `overall: correct` or `overall: skipped`. `overall: incorrect` is merge-blocking.
 - Confirm `git status --porcelain` is clean.
 - Confirm remediation tasks for this invocation are not left in `To Do` or `In Progress`.
@@ -169,4 +180,5 @@ If the worktree is dirty because a final commit is missing, spawn `fixer` to cre
 2. **Always review against `main` (or `origin/main` when available).**
 3. **Bound remediation loops to 3 rounds.** Escalate if not converging.
 4. **Do not silently ignore failed checks or unresolved findings.**
-5. **Produce concrete status at exit**: pass/fail, checks run, findings count, and unresolved blockers.
+5. **Do not spawn a specialist outside its lens.** Panel triage is mandatory — a specialist run against a diff where its lens has no surface produces `no findings in scope` reports that waste cost and add noise.
+6. **Produce concrete status at exit**: pass/fail, checks run, findings count, and unresolved blockers.

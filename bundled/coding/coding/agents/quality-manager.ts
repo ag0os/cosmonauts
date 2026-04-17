@@ -17,6 +17,9 @@ const definition: AgentDefinition = {
 	skills: ["*"],
 	subagents: [
 		"reviewer",
+		"security-reviewer",
+		"performance-reviewer",
+		"ux-reviewer",
 		"fixer",
 		"coordinator",
 		"verifier",
