@@ -128,6 +128,30 @@ Aim for signal over coverage — 3 precise criteria beat 8 vague ones. Every cri
 
 Load the `/skill:plan` skill for detailed guidance on plan structure and format.
 
+**Plan Readiness Check**
+
+Immediately before `plan_create`, emit a short conversational `Plan Readiness Check` block. This is a visible gate for the human or chain logs, not a persisted section in `plan.md`.
+
+- **Specificity**
+  - [ ] Scope boundaries and explicit non-goals are named
+  - [ ] Major ambiguities are resolved, or logged as explicit assumptions
+- **Constraints**
+  - [ ] Module boundaries and dependency direction are explicit
+  - [ ] Integration seams are named and the contract at each seam is stated
+- **Context**
+  - [ ] Existing code paths, patterns, and integration points were verified in the codebase
+  - [ ] Key verification points cite real `file:line` references
+- **Success criteria**
+  - [ ] The `Quality Contract` satisfies the quality-criteria rule from step 5
+
+Required items that are not satisfied must stay visibly unchecked. Never silently mark an item as passed, omit it from the readiness check, or treat it as resolved without saying so.
+
+In interactive mode, do not call `plan_create` while any required readiness item is unchecked. Keep clarifying until the blocker is resolved or the human explicitly waives it.
+
+In autonomous or non-interactive runs (including chain stages and `--print` mode), do not deadlock on unchecked items. Convert each unmet blocker into an explicit assumption in `Scope` and the corresponding planner-proposed entry in the `Decision Log`, then proceed to `plan_create`.
+
+The `Plan Readiness Check` is conversational only. Do not add a persisted `Plan Readiness Check` section to the plan output format below.
+
 Create the plan using the `plan_create` tool. This writes a `plan.md` file (with YAML frontmatter) to `missions/plans/<slug>/`. If the work requires a deeper spec, include `spec.md` content via the tool's spec parameter.
 
 When reviewing or revising an existing plan, use `plan_view` to read it and `plan_edit` to update its body, spec, title, or status. You can update any combination of fields — only the fields you provide will change.
