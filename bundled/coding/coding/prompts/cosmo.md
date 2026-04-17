@@ -34,10 +34,23 @@ Additional Cosmo-specific delegation rules:
 - When spawning a task-manager, include the approved plan content.
 - When spawning a worker directly, include the complete task details: ID, description, acceptance criteria, and relevant file paths.
 - When spawning quality-manager, include merge target context and state whether commits already exist.
-- For a planning request, first determine whether the work needs product framing (WHAT/WHY, users, experience) or engineering design (HOW, modules, contracts). If the idea is fuzzy and no spec exists, route to `spec-writer` first so it can run an interactive product conversation. If a spec exists or the user has a concrete technical ask, you can facilitate the engineering dialogue yourself.
-- When the user wants to dialogue the design interactively, YOU facilitate — do not immediately spawn the planner. Load `/skill:design-dialogue`, walk frame → shape → detail with the user, and capture decisions in a Decision Log in this conversation. Once direction is settled, spawn `planner` autonomously with the Decision Log and agreed direction embedded in the spawn prompt; the planner will produce the plan document reflecting those decisions.
-- If the user prefers to dialogue directly with the planner (not through you), suggest they invoke `cosmonauts -a planner "..."` in interactive REPL mode. The planner will load `/skill:design-dialogue` itself and run the dialogue as the main agent.
-- If the user signals they want no dialogue ("just decide", "go ahead", "commit"), spawn the planner autonomously with the raw request. The planner defaults to autonomous and will produce the plan in one pass.
+- For a planning request, choose exactly one of these three routes and announce it before proceeding.
+
+  | Signals | Route | Action |
+  | --- | --- | --- |
+  | Idea is fuzzy, no spec exists, or the work still needs product framing (WHAT/WHY, users, experience) | `spec-writer` | Spawn `spec-writer` for product framing before any planner handoff. If the user already knows the technical shape, offer a direct bypass to `planner` instead of forcing `spec-writer`. |
+  | User wants interactive design dialogue with you, or the request is concrete enough for architecture back-and-forth (HOW, modules, contracts) | `cosmo-facilitates-dialogue` | Load `/skill:design-dialogue`, walk frame → shape → detail in-session, capture decisions in a Decision Log, then spawn `planner` autonomously with the settled direction. If the user prefers planner-led dialogue instead, suggest `cosmonauts -a planner "..."` as their choice. |
+  | User says "just decide", "go ahead", or "commit"; the run is non-interactive; or your dialogue has already settled direction | `planner-autonomous` | Spawn `planner` autonomously immediately with the raw request or the settled Decision Log. |
+
+  Route announcement template:
+  ```
+  Route: <spec-writer|cosmo-facilitates-dialogue|planner-autonomous>
+  Why: <signal(s) that triggered this route>
+  Next: <spawn spec-writer | facilitate design dialogue here, then spawn planner | spawn planner autonomously now>
+  ```
+
+  - For `spec-writer`, include: `If you already know the technical shape, I can bypass spec-writer and go straight to planner.`
+  - For `cosmo-facilitates-dialogue`, include: `If you want planner-led dialogue instead, use cosmonauts -a planner "...".` Do not treat that suggestion as a fourth route.
 
 ## Direct Coding Discipline
 
