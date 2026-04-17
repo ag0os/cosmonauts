@@ -7,73 +7,74 @@
  * configuration, not behavior, and should not be snapshot-tested.
  */
 
-import { describe, expect, it } from "vitest";
-import adaptationPlanner from "../../bundled/coding/coding/agents/adaptation-planner.ts";
-import coordinator from "../../bundled/coding/coding/agents/coordinator.ts";
-import cosmo from "../../bundled/coding/coding/agents/cosmo.ts";
-import explorer from "../../bundled/coding/coding/agents/explorer.ts";
-import fixer from "../../bundled/coding/coding/agents/fixer.ts";
-import integrationVerifier from "../../bundled/coding/coding/agents/integration-verifier.ts";
-import performanceReviewer from "../../bundled/coding/coding/agents/performance-reviewer.ts";
-import planReviewer from "../../bundled/coding/coding/agents/plan-reviewer.ts";
-import planner from "../../bundled/coding/coding/agents/planner.ts";
-import qualityManager from "../../bundled/coding/coding/agents/quality-manager.ts";
-import reviewer from "../../bundled/coding/coding/agents/reviewer.ts";
-import securityReviewer from "../../bundled/coding/coding/agents/security-reviewer.ts";
-import taskManager from "../../bundled/coding/coding/agents/task-manager.ts";
-import uxReviewer from "../../bundled/coding/coding/agents/ux-reviewer.ts";
-import verifier from "../../bundled/coding/coding/agents/verifier.ts";
-import worker from "../../bundled/coding/coding/agents/worker.ts";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { beforeAll, describe, expect, it } from "vitest";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
+import { loadDomainsFromSources } from "../../lib/domains/index.ts";
 
-const ALL_DEFINITIONS: AgentDefinition[] = [
-	cosmo,
-	planner,
-	adaptationPlanner,
-	taskManager,
-	coordinator,
-	worker,
-	qualityManager,
-	integrationVerifier,
-	reviewer,
-	fixer,
-	explorer,
-	verifier,
-	planReviewer,
-	securityReviewer,
-	performanceReviewer,
-	uxReviewer,
-];
+const DOMAINS_DIR = resolve(
+	fileURLToPath(import.meta.url),
+	"..",
+	"..",
+	"..",
+	"domains",
+);
+const BUNDLED_CODING_DIR = resolve(
+	fileURLToPath(import.meta.url),
+	"..",
+	"..",
+	"..",
+	"bundled",
+	"coding",
+);
+
+let allDefinitions: AgentDefinition[] = [];
+
+beforeAll(async () => {
+	const domains = await loadDomainsFromSources([
+		{ domainsDir: DOMAINS_DIR, origin: "framework", precedence: 1 },
+		{ domainsDir: BUNDLED_CODING_DIR, origin: "bundled", precedence: 2 },
+	]);
+	const codingDomain = domains.find(
+		(domain) => domain.manifest.id === "coding",
+	);
+	if (!codingDomain) {
+		throw new Error("Coding domain not loaded");
+	}
+
+	allDefinitions = [...codingDomain.agents.values()];
+});
 
 describe("coding domain agent invariants", () => {
 	it("has unique IDs across all definitions", () => {
-		const ids = ALL_DEFINITIONS.map((d) => d.id);
+		const ids = allDefinitions.map((d) => d.id);
 		expect(new Set(ids).size).toBe(ids.length);
 	});
 
 	it("uses valid tools values", () => {
 		const valid = new Set(["coding", "readonly", "verification", "none"]);
-		for (const def of ALL_DEFINITIONS) {
+		for (const def of allDefinitions) {
 			expect(valid.has(def.tools)).toBe(true);
 		}
 	});
 
 	it("uses valid session values", () => {
 		const valid = new Set(["ephemeral", "persistent"]);
-		for (const def of ALL_DEFINITIONS) {
+		for (const def of allDefinitions) {
 			expect(valid.has(def.session)).toBe(true);
 		}
 	});
 
 	it("uses provider/model-id format for model fields", () => {
-		for (const def of ALL_DEFINITIONS) {
+		for (const def of allDefinitions) {
 			expect(def.model).toMatch(/^[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9.-]*$/);
 		}
 	});
 
 	it("has subagent references that point to existing definition IDs", () => {
-		const allIds = new Set(ALL_DEFINITIONS.map((d) => d.id));
-		for (const def of ALL_DEFINITIONS) {
+		const allIds = new Set(allDefinitions.map((d) => d.id));
+		for (const def of allDefinitions) {
 			if (def.subagents) {
 				for (const sub of def.subagents) {
 					expect(allIds.has(sub)).toBe(true);
@@ -83,11 +84,16 @@ describe("coding domain agent invariants", () => {
 	});
 
 	it("allows quality-manager to spawn integration-verifier", () => {
-		expect(qualityManager.subagents).toContain("integration-verifier");
+		const qualityManager = allDefinitions.find(
+			(def) => def.id === "quality-manager",
+		);
+
+		expect(qualityManager).toBeDefined();
+		expect(qualityManager?.subagents).toContain("integration-verifier");
 	});
 
 	it("does not give readonly agents coding-readwrite capability", () => {
-		for (const def of ALL_DEFINITIONS) {
+		for (const def of allDefinitions) {
 			if (def.tools === "readonly" || def.tools === "verification") {
 				expect(def.capabilities).not.toContain("coding-readwrite");
 			}
@@ -95,7 +101,7 @@ describe("coding domain agent invariants", () => {
 	});
 
 	it("does not give agents with tools 'none' any coding capability", () => {
-		for (const def of ALL_DEFINITIONS) {
+		for (const def of allDefinitions) {
 			if (def.tools === "none") {
 				expect(def.capabilities).not.toContain("coding-readwrite");
 				expect(def.capabilities).not.toContain("coding-readonly");
@@ -104,13 +110,13 @@ describe("coding domain agent invariants", () => {
 	});
 
 	it("has at least one capability per definition", () => {
-		for (const def of ALL_DEFINITIONS) {
+		for (const def of allDefinitions) {
 			expect(def.capabilities.length).toBeGreaterThan(0);
 		}
 	});
 
 	it("has non-empty ID and description for all definitions", () => {
-		for (const def of ALL_DEFINITIONS) {
+		for (const def of allDefinitions) {
 			expect(def.id.length).toBeGreaterThan(0);
 			expect(def.description.length).toBeGreaterThan(0);
 		}

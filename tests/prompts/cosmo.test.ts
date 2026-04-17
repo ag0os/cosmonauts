@@ -24,6 +24,14 @@ describe("cosmo prompt", () => {
 		);
 	});
 
+	it("states that autonomous-planner signals override the other routes", async () => {
+		const content = await readFile(PROMPT_PATH, "utf-8");
+
+		expect(content).toContain(
+			"Precedence: non-interactive runs and explicit dialogue waivers (`just decide`, `go ahead`, `commit`) override the other rows and select `planner-autonomous`.",
+		);
+	});
+
 	it("keeps the route announcement template", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 

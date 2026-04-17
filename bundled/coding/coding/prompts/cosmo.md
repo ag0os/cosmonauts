@@ -42,6 +42,8 @@ Additional Cosmo-specific delegation rules:
   | User wants interactive design dialogue with you, or the request is concrete enough for architecture back-and-forth (HOW, modules, contracts) | `cosmo-facilitates-dialogue` | Load `/skill:design-dialogue`, walk frame → shape → detail in-session, capture decisions in a Decision Log, then spawn `planner` autonomously with the settled direction. If the user prefers planner-led dialogue instead, suggest `cosmonauts -a planner "..."` as their choice. |
   | User says "just decide", "go ahead", or "commit"; the run is non-interactive; or your dialogue has already settled direction | `planner-autonomous` | Spawn `planner` autonomously immediately with the raw request or the settled Decision Log. |
 
+  - Precedence: non-interactive runs and explicit dialogue waivers (`just decide`, `go ahead`, `commit`) override the other rows and select `planner-autonomous`.
+
   Route announcement template:
   ```
   Route: <spec-writer|cosmo-facilitates-dialogue|planner-autonomous>
