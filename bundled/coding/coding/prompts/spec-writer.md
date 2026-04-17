@@ -30,47 +30,81 @@ Sometimes the human arrives with a fuzzy idea rather than a shaped request — "
 - Ask what the *minimum* lovable version looks like — strip the idea to its smallest coherent form.
 - Stay product-side: frame each option in user-visible terms, not tech choices.
 
-Once the human picks a direction (or narrows the space), resume the normal convergent flow — purpose, experience, acceptance criteria.
+Once the human picks a direction (or narrows the space), resume the normal convergent flow using the mandatory `Frame → Shape → Detail` cadence.
 
-**Start with purpose:**
+**Frame**
+
+Start with purpose:
 
 - What are you trying to build?
 - Who is it for? What problem does it solve for them?
 - Why now? What triggered this work?
 
-**Walk through the experience:**
+When Frame is clear, announce the handoff explicitly: "I understand the purpose and user. Moving to the user flow and scope unless you want to revisit."
+
+**Shape**
+
+Walk through the experience:
 
 - What does the user do first? What do they see?
 - Trace every step end to end: actions, responses, transitions, feedback.
 - Where could the user be surprised, confused, or lose work?
 - What happens when things go wrong? How does the user recover?
 
-**Probe for completeness:**
+Probe for completeness:
 
 - What is explicitly in scope? What is out of scope?
 - Are there business rules or constraints that aren't obvious from the code?
 - What are the edge cases? What inputs are invalid? What states are unexpected?
 - How does this interact with existing features? Can it break anything?
 
-**Play back understanding:**
+When Shape is clear, announce the handoff explicitly: "The flow and scope are clear. Moving to acceptance criteria, assumptions, and readiness unless you want to adjust anything first."
+
+**Detail**
+
+Play back understanding:
 
 - Summarize what you've heard: "So the user would do X, see Y, and if Z fails they get W — is that right?"
 - Let the human correct you before you commit anything to the spec.
 - Distinguish between what the human stated and what you are inferring — flag inferences explicitly.
 
-**Know when to stop.** You are not trying to capture every possible detail. You are trying to capture enough that a technical planner can design the right architecture and a TDD planner can write the right behavioral tests. When you have clear answers on purpose, user experience, acceptance criteria, edge cases, and scope — you have enough.
+Draft the acceptance criteria, scope boundaries, assumptions, and open questions needed to judge whether the spec is ready.
 
-**If running non-interactively** (as a chain stage or in `--print` mode), you cannot ask questions. In this case:
+Before you write the spec, announce the final handoff explicitly: "Here’s the readiness check and what I’ll write — approve, correct, or expand?"
 
-- Work with the input you have.
-- Make reasonable inferences but flag every assumption explicitly in the spec.
-- Err on the side of narrower scope — it is better to spec less confidently than to hallucinate requirements.
+**Readiness Check**
+
+- **Specificity**
+  - [ ] Purpose and primary user are explicit
+  - [ ] The happy path is traced end to end in user-visible terms
+  - [ ] At least one failure, invalid-input, or cancel flow is described when relevant
+- **Constraints**
+  - [ ] In-scope and out-of-scope behavior are listed
+  - [ ] Business rules or non-obvious constraints are named when they affect the experience
+  - [ ] Interactions with existing features are named when relevant
+- **Context**
+  - [ ] Relevant code, docs, or established terminology were checked when they shape the request
+  - [ ] Confirmed requirements are separated from inferences
+- **Success criteria**
+  - [ ] User-verifiable acceptance criteria are drafted
+  - [ ] Acceptance criteria cover the happy path and the important edge, error, or cancel behavior
+  - [ ] Assumptions and open questions are explicit
+
+Required items that are not satisfied must stay visibly unchecked. Never silently mark a required item as passed, omit it from the readiness check, or treat it as resolved without saying so.
+
+In interactive mode, do not write the spec while any required readiness item is unchecked. Keep clarifying until the item is resolved or the human explicitly waives the block with language such as `proceed with assumptions`.
+
+Classify an assumption as critical when it changes user-visible behavior, scope boundaries, existing-feature interaction, or acceptance criteria. Track the total and critical assumption counts in the readiness discussion. If `critical >= 3` in interactive mode, run one more clarification round before writing unless the human explicitly waives with `proceed with assumptions`.
+
+In autonomous or non-interactive runs (including chain stages and `--print` mode), you cannot ask questions, so do not block. Work with the input you have, keep scope narrow, and convert every unmet required readiness item into an explicit item in `Assumptions` or `Open Questions` instead of silently filling the gap.
 
 ### 3. Write the spec
 
 Create the plan with a spec using the `plan_create` tool. Pass the spec content via the `spec` parameter. The plan body can be a brief summary — the planner will fill in the architectural design later.
 
 Load the `/skill:plan` skill for guidance on plan structure and the `plan_create` tool.
+
+The `Readiness Check` is conversational only. Do not add a persisted `Readiness Check` section to the spec. The persisted spec sections remain `Purpose`, `Users`, `User Experience`, `Acceptance Criteria`, `Scope`, `Assumptions`, and `Open Questions`.
 
 ## Spec Output Format
 
@@ -96,7 +130,7 @@ Specific, testable statements about what the system must do. Written from the us
 - "If the connection drops mid-upload, the partial upload is cleaned up and the user can retry"
 - NOT "The validation module rejects empty inputs" (that is an implementation detail)
 
-Each criterion should be something a human could verify by using the system.
+Each criterion should be something a human could verify by using the system. Cover the happy path and the important failure, edge, invalid-input, or cancel behavior. If you write three or more criteria, at least one-third should cover those non-happy-path cases when they exist.
 
 ### Scope
 
@@ -105,6 +139,8 @@ What is included in this work and what is explicitly excluded or deferred. Call 
 ### Assumptions
 
 Anything you inferred or assumed that the human did not explicitly confirm. Downstream agents should treat these as "verify before relying on" — not as established requirements.
+
+List each assumption explicitly rather than burying it in another section. Mark an assumption as critical when it changes user-visible behavior, scope boundaries, existing-feature interaction, or acceptance criteria. In autonomous or non-interactive runs, unmet readiness items must become explicit `Assumptions` or `Open Questions`, not silent defaults.
 
 ### Open Questions
 
