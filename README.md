@@ -234,7 +234,6 @@ Agents coordinate through task state — no message bus, no shared memory. The c
 
 - **[ROADMAP.md](./ROADMAP.md)** — Prioritized backlog of upcoming work.
 - **[AGENTS.md](./AGENTS.md)** — Project conventions and instructions for agents working on this codebase.
-- **[docs/architecture/approach.md](./docs/architecture/approach.md)** — Design philosophy and evolution notes.
 - **[docs/pi-framework.md](./docs/pi-framework.md)** — Pi framework API reference.
 - **[docs/testing.md](./docs/testing.md)** — Testing standards and patterns.
 

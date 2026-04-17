@@ -127,7 +127,6 @@ Flags: `--print`, `--workflow`, `--chain`, `--model`, `--thinking`, `--domain`/`
 ## Documentation
 
 - `ROADMAP.md` — Work backlog: prioritized items on top, unordered ideas below.
-- `docs/architecture/approach.md` — Design philosophy and evolution notes.
 - `docs/pi-framework.md` — Pi API reference (execution modes, tools, skills, extensions).
 - `docs/testing.md` — Testing standards and patterns.
 - `memory/` — Distilled knowledge from completed work.
