@@ -379,9 +379,8 @@ describe("buildInitSessionConfig", () => {
 			"You are running Cosmonauts init for /tmp/project.",
 		);
 		expect(config.initialMessage).toContain("Load /skill:init");
-		expect(config.initialMessage).toContain('"skills": [');
-		expect(config.initialMessage).toContain('"typescript"');
-		expect(config.initialMessage).toContain('"engineering-principles"');
+		expect(config.initialMessage).toContain('"workflows"');
+		expect(config.initialMessage).toContain('"plan-and-build"');
 	});
 });
 

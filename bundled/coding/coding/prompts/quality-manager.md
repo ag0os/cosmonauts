@@ -83,7 +83,14 @@ After verifier completion, parse the full verification report from the completio
 
 Before spawning the review step, decide which specialist lenses apply to the diff. The generalist `reviewer` always runs. Add specialists only when their lens has a plausible surface in the changed code.
 
-Use the changed-file list and a quick content scan (`git diff --name-only $MERGE_BASE..HEAD`, plus `git diff $MERGE_BASE..HEAD -- <path>` for files that look relevant) to evaluate each lens:
+Use the changed-file list and a quick content scan. The diff target depends on the review scenario from step 2: for feature-branch reviews use `$MERGE_BASE..HEAD`; for working-tree reviews on the base branch use `HEAD` (captures staged + unstaged changes). In the commands below, substitute `<diff-range>` with whichever applies:
+
+```
+git diff --name-only <diff-range>
+git diff <diff-range> -- <path>    # for files that look relevant to a lens
+```
+
+Evaluate each lens:
 
 - **security-reviewer** applies when the diff touches: auth/authn/authz code, input parsing or validation, SQL or DB query construction, external input surfaces (HTTP handlers, CLI args, file parsers, message queues, IPC), secret or credential handling, crypto/hashing/signing, or adds/bumps a third-party dependency.
 - **performance-reviewer** applies when the diff touches: code paths that run in hot loops or request handlers, DB schemas or queries, data structures or algorithms on paths with user/data scale, caching or batching code, or I/O patterns on critical paths.

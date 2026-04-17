@@ -57,7 +57,6 @@ describe("scaffoldProjectConfig", () => {
 
 		expect(first).toEqual(second);
 		expect(first).not.toBe(second);
-		expect(first.skills).not.toBe(second.skills);
 		expect(first.workflows).not.toBe(second.workflows);
 		expect(first.workflows?.["plan-and-build"]).not.toBe(
 			second.workflows?.["plan-and-build"],
