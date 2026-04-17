@@ -53,5 +53,8 @@ describe("cosmo prompt", () => {
 		expect(content).toContain(
 			'If you want planner-led dialogue instead, use cosmonauts -a planner "...".',
 		);
+		expect(content).toContain(
+			"Do not treat that suggestion as a fourth route.",
+		);
 	});
 });
