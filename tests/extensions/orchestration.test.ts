@@ -379,7 +379,7 @@ describe("orchestration extension", () => {
 		expect(mockSession.dispose).toHaveBeenCalledTimes(1);
 	});
 
-	test("spawn_agent includes the verifier's full final report in the completion message", async () => {
+	test("spawn_agent includes the child's full final report in the completion message", async () => {
 		const cwd = "/tmp/project";
 		const pi = createMockPi(cwd, {
 			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:quality-manager -->",
@@ -437,6 +437,69 @@ describe("orchestration extension", () => {
 		);
 		expect(pi.sendUserMessage).toHaveBeenCalledWith(
 			expect.stringContaining(verifierReport),
+			{ deliverAs: "followUp" },
+		);
+	});
+
+	test("spawn_agent includes full final report for non-verifier roles (e.g. explorer)", async () => {
+		const cwd = "/tmp/project";
+		const pi = createMockPi(cwd, {
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
+		});
+		orchestrationExtension(pi as never);
+
+		mockRuntime({ domainContext: "coding" });
+		const explorerReport = `# Codebase Exploration
+
+## Entry points
+- bin/cosmonauts — CLI shim
+- cli/index.ts — commander setup
+
+## Key modules
+- lib/orchestration/agent-spawner.ts — spawner factory
+- lib/orchestration/spawn-tracker.ts — per-session tracker
+
+## Notes
+Spawns are detached Promises that deliver completions via sendUserMessage.`;
+		const mockSession = {
+			sessionId: "child-session-explorer",
+			messages: [
+				{
+					role: "assistant",
+					content: [{ type: "text", text: explorerReport }],
+				},
+			],
+			prompt: vi.fn().mockResolvedValue(undefined),
+			subscribe: vi.fn(() => vi.fn()),
+			dispose: vi.fn(),
+			getSessionStats: vi.fn(() => ({
+				tokens: { input: 0, output: 0, total: 0 },
+				cost: 0,
+				userMessages: 1,
+				toolCalls: 0,
+			})),
+		};
+		mocks.createAgentSessionFromDefinition.mockResolvedValue({
+			session: mockSession,
+			sessionFilePath: undefined,
+		});
+
+		const result = (await pi.callTool("spawn_agent", {
+			role: "explorer",
+			prompt: "explore the orchestration layer",
+		})) as { details: { status: string; spawnId: string } };
+
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(result.details.status).toBe("accepted");
+		expect(pi.sendUserMessage).toHaveBeenCalledWith(
+			expect.stringContaining(
+				`[spawn_completion] spawnId=${result.details.spawnId} role=explorer outcome=success`,
+			),
+			{ deliverAs: "followUp" },
+		);
+		expect(pi.sendUserMessage).toHaveBeenCalledWith(
+			expect.stringContaining(explorerReport),
 			{ deliverAs: "followUp" },
 		);
 	});
