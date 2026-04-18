@@ -430,7 +430,7 @@ export function registerSpawnTool(
 									params.role,
 									"success",
 									summary,
-									params.role === "verifier" ? assistantText : undefined,
+									assistantText,
 								),
 								{ deliverAs: "followUp" },
 							);
