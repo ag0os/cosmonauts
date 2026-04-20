@@ -39,6 +39,22 @@ Three items, in order. They stack: `reuse-scan` produces evidence, `distiller` c
 
 ## Ideas
 
+### `architecture-viz`: Architecture Visualization & Health Analysis
+
+As agents write more of the code, the human loses visibility of how the target codebase is actually organized. A module that scans the active project, renders its architecture visually, and lets an LLM co-analyze with the human — catching drift, dead modules, cyclic deps, and unhealthy growth patterns that would otherwise hide until refactor pain. Findings feed back into prompt engineering for the coding agents.
+
+- Target is the **user's project** (any codebase cosmonauts is invoked in), not cosmonauts itself
+- **Mechanical layer**: AST/import scan produces a structured dependency graph as JSON (modules, files, imports, sizes, fan-in/fan-out, cycles). Start with TypeScript/JavaScript; extend via tree-sitter for polyglot
+- **Narrative layer**: LLM analyst agent consumes the JSON and produces Mermaid diagrams + markdown reports (C4-style context, component maps, layering violations, refactor candidates)
+- **Local web server**: `cosmonauts arch serve` renders the JSON with an interactive graph lib (cytoscape.js or d3-force) for zoom/pan/filter; embedded Mermaid for the narrative diagrams — no build step, single static bundle
+- **Text fallback** (`--text`): ASCII tree + Mermaid source for agent consumption and terminal-only environments
+- **Storage**: `.cosmonauts/architecture/graph.json` (latest scan), `snapshots/<date>/` (history, diffable), `analyses/<topic>.md` (saved LLM reports with embedded Mermaid)
+- **Dual consumer**: the same artifacts are read by humans (browser) and by agents (`plan-reviewer`, `quality-manager`) as context for architectural review
+- **Health metrics**: cyclic deps, god-modules, orphan files, churn hotspots, layering violations vs the architecture-of-record
+- **Feedback loop**: if drift is detected, flag for prompt-engineering review of the coding agents that produced it
+- Likely a new domain (`domains/architecture/`) with an `architect-analyst` agent, or a cross-domain capability — decide during planning
+- Pairs naturally with `architecture-of-record`: this feature surfaces the *actual* architecture; architecture-of-record holds the *intended* one; divergence between them is the signal
+
 ### `prd-ingestion`: PRD Ingestion Skill + Non-Interactive Spec-Writer Mode
 
 Accept a written PRD as input and either proceed (if complete) or refuse with a structured gap list (if ambiguous). Unlocks PRD → merge-ready PR automation without making the system hallucinate product judgment. Needed only when a real PRD input stream exists.
