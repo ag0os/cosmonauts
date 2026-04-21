@@ -1,8 +1,7 @@
 /**
  * CosmonautsRuntime — centralized bootstrap sequence.
  *
- * Replaces the duplicated bootstrap logic scattered across cli/main.ts,
- * orchestration/index.ts, and agent-spawner.ts. Loads config, discovers
+ * Loads config, discovers
  * domains from all sources, validates them, and builds all registries in
  * a single factory call.
  */
