@@ -8,8 +8,10 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	type AgentSession,
+	type CreateAgentSessionOptions,
 	createAgentSession,
 	DefaultResourceLoader,
+	getAgentDir,
 	SessionManager,
 	SettingsManager,
 } from "@mariozechner/pi-coding-agent";
@@ -18,6 +20,7 @@ import type { AgentDefinition } from "../agents/types.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import { validateSlug } from "../plans/plan-manager.ts";
 import { sessionsDirForPlan } from "../sessions/session-store.ts";
+import { buildToolAllowlist } from "./definition-resolution.ts";
 import type { SpawnConfig } from "./types.ts";
 
 // ============================================================================
@@ -67,6 +70,7 @@ export async function createAgentSessionFromDefinition(
 	// Build resource loader with all definition fields.
 	const loader = new DefaultResourceLoader({
 		cwd: config.cwd,
+		agentDir: getAgentDir(),
 		...(params.promptContent && { systemPrompt: params.promptContent }),
 		noExtensions: true,
 		noSkills: true,
@@ -83,6 +87,8 @@ export async function createAgentSessionFromDefinition(
 	});
 	await loader.reload();
 
+	const toolAllowlist = buildToolAllowlist(params.tools, loader);
+
 	// Determine session manager: file-backed when planSlug is set, in-memory otherwise.
 	let sessionFilePath: string | undefined;
 	let sessionManager: SessionManager;
@@ -98,10 +104,10 @@ export async function createAgentSessionFromDefinition(
 	}
 
 	// Build session options, conditionally adding settingsManager for compaction.
-	const sessionOptions: Parameters<typeof createAgentSession>[0] = {
+	const sessionOptions: CreateAgentSessionOptions = {
 		cwd: config.cwd,
 		model: params.model,
-		tools: params.tools,
+		tools: toolAllowlist,
 		sessionManager,
 		resourceLoader: loader,
 		thinkingLevel: params.thinkingLevel,

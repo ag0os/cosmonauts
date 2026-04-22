@@ -55,6 +55,7 @@ import {
 	clearPendingSwitch,
 	consumePendingSwitch,
 } from "../lib/interactive/agent-switch.ts";
+import { buildToolAllowlist } from "../lib/orchestration/definition-resolution.ts";
 import type { PiFlags } from "./pi-flags.ts";
 
 /**
@@ -462,7 +463,7 @@ export async function createSession(
 						sessionStartEvent,
 						model: newParams.model,
 						thinkingLevel: newParams.thinkingLevel,
-						tools: newParams.tools,
+						tools: buildToolAllowlist(newParams.tools, services.resourceLoader),
 					});
 					return {
 						...result,
@@ -491,7 +492,7 @@ export async function createSession(
 			sessionStartEvent,
 			model: params.model,
 			thinkingLevel: params.thinkingLevel,
-			tools: params.tools,
+			tools: buildToolAllowlist(params.tools, services.resourceLoader),
 		});
 		return {
 			...result,

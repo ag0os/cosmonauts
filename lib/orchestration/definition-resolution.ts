@@ -5,15 +5,7 @@
 
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
-import {
-	createBashTool,
-	createCodingTools,
-	createFindTool,
-	createGrepTool,
-	createLsTool,
-	createReadOnlyTools,
-	createReadTool,
-} from "@mariozechner/pi-coding-agent";
+import type { ResourceLoader } from "@mariozechner/pi-coding-agent";
 import type { AgentToolSet } from "../agents/index.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 
@@ -22,26 +14,43 @@ import type { DomainResolver } from "../domains/resolver.ts";
 // ============================================================================
 
 /**
- * Resolve a tool set name to the appropriate Pi tools for a given cwd.
- * Uses factory functions so tools resolve paths relative to the agent's cwd.
+ * Resolve a tool set name to the Pi built-in tool-name allowlist.
+ * Pi's createAgentSession binds these to the session cwd internally.
  */
-export function resolveTools(toolSet: AgentToolSet, cwd: string) {
+export function resolveTools(toolSet: AgentToolSet, _cwd: string): string[] {
 	switch (toolSet) {
 		case "coding":
-			return createCodingTools(cwd);
+			return ["read", "bash", "edit", "write"];
 		case "readonly":
-			return createReadOnlyTools(cwd);
+			return ["read", "grep", "find", "ls"];
 		case "verification":
-			return [
-				createReadTool(cwd),
-				createBashTool(cwd),
-				createGrepTool(cwd),
-				createFindTool(cwd),
-				createLsTool(cwd),
-			];
+			return ["read", "bash", "grep", "find", "ls"];
 		case "none":
 			return [];
 	}
+}
+
+/**
+ * Build the final tool allowlist passed to createAgentSession / createAgentSessionFromServices.
+ *
+ * In Pi 0.68+ the `tools` option is a global allowlist: any tool name not
+ * listed — including extension tools like `spawn_agent`, `plan_*`, `task_*`,
+ * `todo_*` — is disabled. resolveTools() returns only built-in names, so we
+ * union the names registered by the loader's extensions to keep them callable.
+ *
+ * Returns an empty array only when the built-in allowlist is empty AND no
+ * extensions registered tools, so agents with `tools: "none"` still gate
+ * everything off when they load no extension tools.
+ */
+export function buildToolAllowlist(
+	builtIns: readonly string[],
+	loader: ResourceLoader,
+): string[] {
+	const names = new Set<string>(builtIns);
+	for (const ext of loader.getExtensions().extensions) {
+		for (const name of ext.tools.keys()) names.add(name);
+	}
+	return [...names];
 }
 
 // ============================================================================

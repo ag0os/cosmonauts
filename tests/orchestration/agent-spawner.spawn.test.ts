@@ -19,11 +19,13 @@ vi.mock("@mariozechner/pi-ai", () => ({
 
 vi.mock("@mariozechner/pi-coding-agent", () => ({
 	createAgentSession: mocks.createAgentSession,
-	createCodingTools: () => [],
-	createReadOnlyTools: () => [],
 	DefaultResourceLoader: class {
 		async reload() {}
+		getExtensions() {
+			return { extensions: [], errors: [], runtime: {} };
+		}
 	},
+	getAgentDir: () => "/tmp/test-agent-dir",
 	SessionManager: {
 		inMemory: () => ({ kind: "in-memory" }),
 	},

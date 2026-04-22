@@ -85,7 +85,12 @@ describe("createSession", () => {
 		clearPendingSwitch();
 		mocks.buildSessionParams.mockResolvedValue(BASE_PARAMS);
 		mocks.createAgentSessionRuntime.mockReturnValue({ runtime: true });
-		mocks.createAgentSessionServices.mockResolvedValue({ diagnostics: {} });
+		mocks.createAgentSessionServices.mockResolvedValue({
+			diagnostics: {},
+			resourceLoader: {
+				getExtensions: () => ({ extensions: [], errors: [], runtime: {} }),
+			},
+		});
 		mocks.createAgentSessionFromServices.mockResolvedValue({
 			session: { sessionId: "session-1" },
 		});
@@ -207,7 +212,12 @@ describe("session flag handling", () => {
 		vi.clearAllMocks();
 		mocks.buildSessionParams.mockResolvedValue(BASE_PARAMS);
 		mocks.createAgentSessionRuntime.mockReturnValue({ runtime: true });
-		mocks.createAgentSessionServices.mockResolvedValue({ diagnostics: {} });
+		mocks.createAgentSessionServices.mockResolvedValue({
+			diagnostics: {},
+			resourceLoader: {
+				getExtensions: () => ({ extensions: [], errors: [], runtime: {} }),
+			},
+		});
 		mocks.createAgentSessionFromServices.mockResolvedValue({
 			session: { sessionId: "session-1" },
 		});

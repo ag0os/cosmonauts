@@ -59,7 +59,7 @@ const { session } = await createAgentSession({
 | `model` | `Model` | From settings | LLM model |
 | `thinkingLevel` | `ThinkingLevel` | `"medium"` | `"off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"` |
 | `scopedModels` | `Array<{model, thinkingLevel?}>` | — | Models for cycling |
-| `tools` | `Tool[]` | `codingTools` | Built-in tool set |
+| `tools` | `string[]` | `["read", "bash", "edit", "write"]` | Built-in tool-name allowlist |
 | `customTools` | `ToolDefinition[]` | — | Additional tools |
 | `resourceLoader` | `ResourceLoader` | `DefaultResourceLoader` | Skill/extension/prompt discovery |
 | `sessionManager` | `SessionManager` | File-based | Session persistence |
@@ -175,12 +175,20 @@ Session files use JSONL format with a tree structure supporting branching withou
 
 ## Built-in Tools
 
-Pi exports two ready-made tool arrays plus individual factories:
+Pass `tools` as a string allowlist of built-in tool names. Omit the option to
+get the default coding set. Factories are still exported for SDK code that
+needs direct `Tool` objects (e.g. custom tool wrappers), but `createAgentSession`
+no longer accepts them:
 
 ```typescript
+const { session } = await createAgentSession({
+  tools: ["read", "bash", "edit", "write"], // coding set
+  // tools: ["read", "grep", "find", "ls"], // read-only set
+  // tools: [],                              // disable all built-ins
+});
+
+// Factories (for custom tool composition outside createAgentSession):
 import {
-  codingTools,       // [read, bash, edit, write]
-  readOnlyTools,     // [read, grep, find, ls]
   createCodingTools,     // (cwd) => Tool[]
   createReadOnlyTools,   // (cwd) => Tool[]
   createReadTool,        // (cwd) => Tool

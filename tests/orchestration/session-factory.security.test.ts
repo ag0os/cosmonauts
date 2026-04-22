@@ -12,7 +12,11 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
 	createAgentSession: mocks.createAgentSession,
 	DefaultResourceLoader: class {
 		async reload() {}
+		getExtensions() {
+			return { extensions: [], errors: [], runtime: {} };
+		}
 	},
+	getAgentDir: () => "/tmp/test-agent-dir",
 	SessionManager: {
 		open: mocks.sessionOpen,
 		inMemory: mocks.sessionInMemory,

@@ -15,6 +15,7 @@ import {
 	resolveExtensionPaths,
 	resolveTools,
 } from "../../lib/orchestration/agent-spawner.ts";
+import { buildToolAllowlist } from "../../lib/orchestration/definition-resolution.ts";
 import { loadPrompt, renderRuntimeTemplate } from "../../lib/prompts/loader.ts";
 
 const DOMAINS_DIR = resolve(
@@ -87,20 +88,92 @@ describe("resolveTools", () => {
 	});
 
 	test("coding and readonly return different tool sets", () => {
-		const coding = resolveTools("coding", cwd);
-		const readonly = resolveTools("readonly", cwd);
-		const codingNames = coding.map((t) => t.name).sort();
-		const readonlyNames = readonly.map((t) => t.name).sort();
-		expect(codingNames).not.toEqual(readonlyNames);
+		const coding = [...resolveTools("coding", cwd)].sort();
+		const readonly = [...resolveTools("readonly", cwd)].sort();
+		expect(coding).not.toEqual(readonly);
 	});
 
 	test("verification includes bash but excludes edit and write", () => {
 		const verification = resolveTools("verification", cwd);
-		const verificationNames = verification.map((t) => t.name).sort();
-		expect(verificationNames).toContain("bash");
-		expect(verificationNames).toContain("read");
-		expect(verificationNames).not.toContain("edit");
-		expect(verificationNames).not.toContain("write");
+		expect(verification).toContain("bash");
+		expect(verification).toContain("read");
+		expect(verification).not.toContain("edit");
+		expect(verification).not.toContain("write");
+	});
+});
+
+// ============================================================================
+// buildToolAllowlist
+// ============================================================================
+
+/**
+ * Minimal ResourceLoader stub — only the fields buildToolAllowlist touches
+ * are populated. Cast to ResourceLoader at the call site to satisfy the
+ * helper's signature without implementing unused methods.
+ */
+function fakeLoader(
+	extensionTools: readonly (readonly string[])[],
+): Parameters<typeof buildToolAllowlist>[1] {
+	const extensions = extensionTools.map((names) => ({
+		tools: new Map(names.map((n) => [n, { name: n }])),
+	}));
+	return {
+		getExtensions: () => ({ extensions, errors: [], runtime: {} }),
+	} as unknown as Parameters<typeof buildToolAllowlist>[1];
+}
+
+describe("buildToolAllowlist", () => {
+	test("preserves extension tool names when built-in set is empty (coordinator case)", () => {
+		// Regression: in Pi 0.68+ the `tools` field is a global allowlist. An
+		// agent with tools:"none" must still surface extension-provided tools
+		// like spawn_agent; otherwise coordinators lose the ability to spawn.
+		const loader = fakeLoader([
+			["spawn_agent", "chain_run"],
+			["plan_create", "plan_list"],
+		]);
+		const allowlist = buildToolAllowlist([], loader).sort();
+		expect(allowlist).toEqual([
+			"chain_run",
+			"plan_create",
+			"plan_list",
+			"spawn_agent",
+		]);
+	});
+
+	test("unions built-in names with extension tool names", () => {
+		const loader = fakeLoader([["spawn_agent"], ["task_create", "task_list"]]);
+		const allowlist = buildToolAllowlist(
+			["read", "bash", "edit", "write"],
+			loader,
+		).sort();
+		expect(allowlist).toEqual([
+			"bash",
+			"edit",
+			"read",
+			"spawn_agent",
+			"task_create",
+			"task_list",
+			"write",
+		]);
+	});
+
+	test("deduplicates when an extension tool shadows a built-in name", () => {
+		const loader = fakeLoader([["read", "custom_tool"]]);
+		const allowlist = buildToolAllowlist(["read", "bash"], loader).sort();
+		expect(allowlist).toEqual(["bash", "custom_tool", "read"]);
+	});
+
+	test("returns an empty allowlist when no built-ins and no extension tools", () => {
+		const loader = fakeLoader([]);
+		expect(buildToolAllowlist([], loader)).toEqual([]);
+	});
+
+	test("returns an empty allowlist when extensions registered zero tools", () => {
+		// Agents with tools:"none" that load a command-only extension (e.g.
+		// agent-switch registers /agent and /handoff but no tools) should get
+		// an empty allowlist, which Pi treats as 'no tools enabled'.
+		const loader = fakeLoader([[], []]);
+		expect(buildToolAllowlist([], loader)).toEqual([]);
 	});
 });
 
