@@ -1,4 +1,24 @@
 {
+	"skills": [
+		"archive",
+		"design-dialogue",
+		"engineering-principles",
+		"find-docs",
+		"init",
+		"pi",
+		"plan",
+		"playwright-cli",
+		"react",
+		"refactoring",
+		"reference-adaptation",
+		"roadmap",
+		"skill-writing",
+		"skills-cli",
+		"task",
+		"tdd",
+		"typescript",
+		"web-search"
+	],
 	"workflows": {
 		"plan-and-build": {
 			"description": "Full pipeline: design, create tasks, implement, and run merge-readiness quality gates",
