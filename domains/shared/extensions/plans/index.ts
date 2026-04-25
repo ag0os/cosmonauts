@@ -1,8 +1,10 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { archivePlan } from "../../../../lib/plans/archive.ts";
 import { PlanManager } from "../../../../lib/plans/plan-manager.ts";
 import { TaskManager } from "../../../../lib/tasks/task-manager.ts";
+
+const PlanStatusLiterals = [Type.Literal("active"), Type.Literal("completed")];
 
 export default function plansExtension(pi: ExtensionAPI) {
 	// plan_create
@@ -55,9 +57,7 @@ export default function plansExtension(pi: ExtensionAPI) {
 		description: "List plans with optional status filter",
 		parameters: Type.Object({
 			status: Type.Optional(
-				Type.Unsafe<"active" | "completed">({
-					type: "string",
-					enum: ["active", "completed"],
+				Type.Union(PlanStatusLiterals, {
 					description: "Filter by plan status",
 				}),
 			),
@@ -139,11 +139,7 @@ export default function plansExtension(pi: ExtensionAPI) {
 			slug: Type.String({ description: "Plan slug to edit" }),
 			title: Type.Optional(Type.String({ description: "New plan title" })),
 			status: Type.Optional(
-				Type.Unsafe<"active" | "completed">({
-					type: "string",
-					enum: ["active", "completed"],
-					description: "New plan status",
-				}),
+				Type.Union(PlanStatusLiterals, { description: "New plan status" }),
 			),
 			body: Type.Optional(
 				Type.String({

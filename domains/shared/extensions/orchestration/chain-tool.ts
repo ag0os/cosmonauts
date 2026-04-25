@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { parseChain } from "../../../../lib/orchestration/chain-parser.ts";
 import { runChain } from "../../../../lib/orchestration/chain-runner.ts";
 import { injectUserPrompt } from "../../../../lib/orchestration/chain-steps.ts";

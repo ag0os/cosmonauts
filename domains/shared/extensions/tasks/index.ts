@@ -1,6 +1,19 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { TaskManager } from "../../../../lib/tasks/task-manager.ts";
+
+const PriorityLiterals = [
+	Type.Literal("high"),
+	Type.Literal("medium"),
+	Type.Literal("low"),
+];
+
+const StatusLiterals = [
+	Type.Literal("To Do"),
+	Type.Literal("In Progress"),
+	Type.Literal("Done"),
+	Type.Literal("Blocked"),
+];
 
 /**
  * Validate that a labels array contains at most one plan: prefixed label.
@@ -26,11 +39,7 @@ export default function tasksExtension(pi: ExtensionAPI) {
 				Type.String({ description: "Task description" }),
 			),
 			priority: Type.Optional(
-				Type.Unsafe<"high" | "medium" | "low">({
-					type: "string",
-					enum: ["high", "medium", "low"],
-					description: "Priority level",
-				}),
+				Type.Union(PriorityLiterals, { description: "Priority level" }),
 			),
 			assignee: Type.Optional(Type.String({ description: "Assignee name" })),
 			labels: Type.Optional(
@@ -91,18 +100,10 @@ export default function tasksExtension(pi: ExtensionAPI) {
 		description: "List tasks with optional filters",
 		parameters: Type.Object({
 			status: Type.Optional(
-				Type.Unsafe<"To Do" | "In Progress" | "Done" | "Blocked">({
-					type: "string",
-					enum: ["To Do", "In Progress", "Done", "Blocked"],
-					description: "Filter by status",
-				}),
+				Type.Union(StatusLiterals, { description: "Filter by status" }),
 			),
 			priority: Type.Optional(
-				Type.Unsafe<"high" | "medium" | "low">({
-					type: "string",
-					enum: ["high", "medium", "low"],
-					description: "Filter by priority",
-				}),
+				Type.Union(PriorityLiterals, { description: "Filter by priority" }),
 			),
 			assignee: Type.Optional(
 				Type.String({ description: "Filter by assignee" }),
@@ -191,18 +192,10 @@ export default function tasksExtension(pi: ExtensionAPI) {
 			taskId: Type.String({ description: "Task ID to edit" }),
 			title: Type.Optional(Type.String({ description: "New title" })),
 			status: Type.Optional(
-				Type.Unsafe<"To Do" | "In Progress" | "Done" | "Blocked">({
-					type: "string",
-					enum: ["To Do", "In Progress", "Done", "Blocked"],
-					description: "New status",
-				}),
+				Type.Union(StatusLiterals, { description: "New status" }),
 			),
 			priority: Type.Optional(
-				Type.Unsafe<"high" | "medium" | "low">({
-					type: "string",
-					enum: ["high", "medium", "low"],
-					description: "New priority",
-				}),
+				Type.Union(PriorityLiterals, { description: "New priority" }),
 			),
 			assignee: Type.Optional(Type.String({ description: "New assignee" })),
 			labels: Type.Optional(
@@ -259,18 +252,10 @@ export default function tasksExtension(pi: ExtensionAPI) {
 		parameters: Type.Object({
 			query: Type.String({ description: "Search query" }),
 			status: Type.Optional(
-				Type.Unsafe<"To Do" | "In Progress" | "Done" | "Blocked">({
-					type: "string",
-					enum: ["To Do", "In Progress", "Done", "Blocked"],
-					description: "Filter by status",
-				}),
+				Type.Union(StatusLiterals, { description: "Filter by status" }),
 			),
 			priority: Type.Optional(
-				Type.Unsafe<"high" | "medium" | "low">({
-					type: "string",
-					enum: ["high", "medium", "low"],
-					description: "Filter by priority",
-				}),
+				Type.Union(PriorityLiterals, { description: "Filter by priority" }),
 			),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {

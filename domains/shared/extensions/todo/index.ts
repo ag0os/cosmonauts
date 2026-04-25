@@ -1,5 +1,11 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
+
+const TodoStatusLiterals = [
+	Type.Literal("pending"),
+	Type.Literal("in_progress"),
+	Type.Literal("completed"),
+];
 
 interface TodoItem {
 	id: string;
@@ -56,9 +62,7 @@ export default function todoExtension(pi: ExtensionAPI): void {
 					content: Type.String({
 						description: "What needs to be done (imperative form)",
 					}),
-					status: Type.Unsafe<"pending" | "in_progress" | "completed">({
-						type: "string",
-						enum: ["pending", "in_progress", "completed"],
+					status: Type.Union(TodoStatusLiterals, {
 						description: "Task status",
 					}),
 				}),
