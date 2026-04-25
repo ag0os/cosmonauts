@@ -11,7 +11,7 @@ const definition: AgentDefinition = {
 		"coding-readonly",
 		"spawning",
 	],
-	model: "openai-codex/gpt-5.4",
+	model: "openai-codex/gpt-5.5",
 	tools: "readonly",
 	extensions: ["plans", "orchestration"],
 	skills: ["pi", "plan", "engineering-principles", "reference-adaptation"],

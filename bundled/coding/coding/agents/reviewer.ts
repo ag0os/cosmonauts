@@ -5,7 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"Performs clean-context code review against main and writes structured findings for remediation.",
 	capabilities: ["core", "engineering-discipline", "coding-readwrite"],
-	model: "openai-codex/gpt-5.4",
+	model: "openai-codex/gpt-5.5",
 	tools: "coding",
 	extensions: [],
 	skills: ["*"],
