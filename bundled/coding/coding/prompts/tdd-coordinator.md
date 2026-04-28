@@ -34,6 +34,7 @@ If all scoped tasks are `Done`, report completion and exit.
 For any scoped task marked `Done` since your last check, call `task_view` to confirm all acceptance criteria are checked. If the task is `Done` but its acceptance criteria are incomplete, set it back to `To Do` with a note explaining what is missing.
 
 Do not infer the next phase from notes. The next phase becomes ready only when its dependency task is `Done`.
+`implementationNotes` are diagnostic only. Never use them to determine readiness, phase, or completion state.
 
 ### 3. Discover ready phase tasks manually
 
@@ -115,6 +116,7 @@ For that completion:
 2. **You never create or delete tasks.** You only dispatch and verify existing phase tasks.
 3. **Phase order comes only from the dependency graph.** Do not invent or persist extra phase state.
 4. **No marker-driven orchestration.** Use only task status, dependencies, labels, and parsed file sets.
-5. **Unknown `phase:*` labels are task-definition errors.** Block them instead of guessing.
-6. **File-conflict sequencing is mandatory.** Overlapping file sets must run sequentially.
-7. **Parse failures are terminal until someone fixes the task description.** Block malformed tasks instead of retrying them.
+5. **`implementationNotes` are never orchestration state.** Use them only to record diagnostics when you reset or block a task.
+6. **Unknown `phase:*` labels are task-definition errors.** Block them instead of guessing.
+7. **File-conflict sequencing is mandatory.** Overlapping file sets must run sequentially.
+8. **Parse failures are terminal until someone fixes the task description.** Block malformed tasks instead of retrying them.

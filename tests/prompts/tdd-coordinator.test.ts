@@ -22,6 +22,9 @@ describe("tdd-coordinator prompt", () => {
 			"If a task is missing a `phase:*` label or uses an unknown one, call `task_edit` to set it to `Blocked` and record the problem in `implementationNotes`.",
 		);
 		expect(content).toContain("Do not guess.");
+		expect(content).toContain(
+			"`implementationNotes` are diagnostic only. Never use them to determine readiness, phase, or completion state.",
+		);
 	});
 
 	it("computes readiness manually from scoped To Do tasks and dependency status", async () => {
@@ -89,6 +92,9 @@ describe("tdd-coordinator prompt", () => {
 		);
 		expect(content).not.toContain(
 			'Call `task_list` with `status: "To Do"` and `hasNoDependencies: true` to find unblocked tasks.',
+		);
+		expect(content).toContain(
+			"**`implementationNotes` are never orchestration state.** Use them only to record diagnostics when you reset or block a task.",
 		);
 	});
 });
