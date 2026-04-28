@@ -29,6 +29,8 @@ export interface SpawnCompletedEvent extends BusEvent {
 	spawnId: string;
 	sessionId: string;
 	durationMs: number;
+	summary?: string;
+	fullText?: string;
 }
 
 /** Published when a sub-agent spawn fails. */

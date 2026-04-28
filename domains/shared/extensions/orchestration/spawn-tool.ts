@@ -14,7 +14,14 @@ import {
 	removePlanContext,
 } from "../../../../lib/orchestration/plan-session-context.ts";
 import { createAgentSessionFromDefinition } from "../../../../lib/orchestration/session-factory.ts";
-import { getOrCreateTracker } from "../../../../lib/orchestration/spawn-tracker.ts";
+import {
+	awaitNextCompletionMessages,
+	formatSpawnCompletionMessage,
+} from "../../../../lib/orchestration/spawn-completion-loop.ts";
+import {
+	getOrCreateTracker,
+	removeTracker,
+} from "../../../../lib/orchestration/spawn-tracker.ts";
 import type { CosmonautsRuntime } from "../../../../lib/runtime.ts";
 import { appendSession } from "../../../../lib/sessions/manifest.ts";
 import {
@@ -99,10 +106,22 @@ function formatCompletionMessage(
 	summary: string,
 	fullText?: string,
 ): string {
-	const base = `[spawn_completion] spawnId=${spawnId} role=${role} outcome=${outcome} summary=${summary}`;
-	const details = fullText?.trim();
-	if (!details || details === summary) return base;
-	return `${base}\n\n${details}`;
+	return formatSpawnCompletionMessage(
+		spawnId,
+		role,
+		outcome,
+		summary,
+		fullText,
+	);
+}
+
+function sendSpawnCompletion(pi: ExtensionAPI, message: string): void {
+	try {
+		pi.sendUserMessage(message, { deliverAs: "followUp" });
+	} catch {
+		// Detached spawns can finish after the owning Pi extension runtime has
+		// been replaced or reloaded. The tracker/lineage already has the result.
+	}
 }
 
 // ============================================================================
@@ -332,6 +351,16 @@ export function registerSpawnTool(
 				.then(async ({ session, sessionFilePath }) => {
 					// Register child depth so grandchild spawns can compute their depth
 					sessionDepths.set(session.sessionId, childDepth);
+					// Spawned sessions can spawn their own children. Those nested
+					// completions must be delivered to this session before it is
+					// considered finished and disposed.
+					const childTracker = getOrCreateTracker(
+						session.sessionId,
+						undefined,
+						{
+							deliveryMode: "external",
+						},
+					);
 					// Register plan context so grandchild spawns can also inherit it
 					if (planSlug) {
 						registerPlanContext(session.sessionId, planSlug);
@@ -400,6 +429,12 @@ export function registerSpawnTool(
 						| undefined;
 					try {
 						await session.prompt(params.prompt);
+						while (childTracker.activeCount() > 0) {
+							const messages = await awaitNextCompletionMessages(childTracker);
+							for (const message of messages) {
+								await session.prompt(message);
+							}
+						}
 						const assistantText = extractAssistantText(
 							session.messages,
 							params.role,
@@ -422,9 +457,10 @@ export function registerSpawnTool(
 								toolCalls: sessionStats.toolCalls,
 							};
 						}
-						tracker.complete(spawnId, summary);
+						tracker.complete(spawnId, summary, assistantText);
 						if (tracker.deliveryMode === "self") {
-							pi.sendUserMessage(
+							sendSpawnCompletion(
+								pi,
 								formatCompletionMessage(
 									spawnId,
 									params.role,
@@ -432,25 +468,25 @@ export function registerSpawnTool(
 									summary,
 									assistantText,
 								),
-								{ deliverAs: "followUp" },
 							);
 						}
 					} catch (err: unknown) {
 						const message = err instanceof Error ? err.message : String(err);
 						tracker.fail(spawnId, message);
 						if (tracker.deliveryMode === "self") {
-							pi.sendUserMessage(
+							sendSpawnCompletion(
+								pi,
 								formatCompletionMessage(
 									spawnId,
 									params.role,
 									"failed",
 									message,
 								),
-								{ deliverAs: "followUp" },
 							);
 						}
 					} finally {
 						unsubActivity();
+						removeTracker(session.sessionId);
 						sessionDepths.delete(session.sessionId);
 						removePlanContext(session.sessionId);
 						const finalMessages = [...session.messages];
@@ -508,9 +544,9 @@ export function registerSpawnTool(
 					const message = err instanceof Error ? err.message : String(err);
 					tracker.fail(spawnId, message);
 					if (tracker.deliveryMode === "self") {
-						pi.sendUserMessage(
+						sendSpawnCompletion(
+							pi,
 							formatCompletionMessage(spawnId, params.role, "failed", message),
-							{ deliverAs: "followUp" },
 						);
 					}
 				});

@@ -16,7 +16,6 @@ import {
 	writeTranscript,
 } from "../sessions/session-store.ts";
 import type { SessionRecord } from "../sessions/types.ts";
-import type { SpawnCompletedEvent, SpawnFailedEvent } from "./message-bus.ts";
 import { MessageBus } from "./message-bus.ts";
 import {
 	FALLBACK_MODEL,
@@ -30,10 +29,10 @@ import {
 } from "./plan-session-context.ts";
 import { createAgentSessionFromDefinition } from "./session-factory.ts";
 import {
-	getOrCreateTracker,
-	removeTracker,
-	type SpawnTracker,
-} from "./spawn-tracker.ts";
+	awaitNextCompletionMessages,
+	DEFAULT_SPAWN_TIMEOUT_MS,
+} from "./spawn-completion-loop.ts";
+import { getOrCreateTracker, removeTracker } from "./spawn-tracker.ts";
 import type {
 	AgentSpawner,
 	SpawnConfig,
@@ -59,9 +58,6 @@ export { createAgentSessionFromDefinition } from "./session-factory.ts";
 // ============================================================================
 // Agent Spawner Factory
 // ============================================================================
-
-/** Default per-spawn completion wait timeout (5 minutes). */
-const DEFAULT_SPAWN_TIMEOUT_MS = 5 * 60 * 1000;
 
 /** Options for {@link createPiSpawner}. */
 export interface PiSpawnerOptions {
@@ -164,7 +160,10 @@ export function createPiSpawner(
 					// parent until all spawned children have finished.  Sessions that
 					// spawn no children skip this loop entirely (activeCount() == 0).
 					while (tracker.activeCount() > 0) {
-						const messages = await awaitNextCompletion(tracker, spawnTimeoutMs);
+						const messages = await awaitNextCompletionMessages(
+							tracker,
+							spawnTimeoutMs,
+						);
 						for (const message of messages) {
 							await session.prompt(message);
 						}
@@ -264,83 +263,6 @@ export function createPiSpawner(
 			// No-op for now; interface-required placeholder.
 		},
 	};
-}
-
-// ============================================================================
-// Completion Loop Helpers
-// ============================================================================
-
-/**
- * Format a child completion result as a concise user message for the parent
- * session. The parent agent uses these messages to track child outcomes.
- */
-function formatCompletionMessage(
-	spawnId: string,
-	role: string,
-	outcome: "success" | "failed",
-	summary: string,
-): string {
-	return `[spawn_completion] spawnId=${spawnId} role=${role} outcome=${outcome} summary=${summary}`;
-}
-
-/**
- * Wait for the next child spawn completion, with a per-spawn timeout.
- *
- * Returns an array of formatted completion messages — normally one entry,
- * but multiple when a timeout fires and several children are failed at once.
- *
- * On timeout every currently-running spawn is marked failed via the tracker,
- * which keeps `activeCount()` accurate so the caller's loop can exit cleanly.
- */
-async function awaitNextCompletion(
-	tracker: SpawnTracker,
-	timeoutMs: number,
-): Promise<string[]> {
-	type Result =
-		| { kind: "event"; event: SpawnCompletedEvent | SpawnFailedEvent }
-		| { kind: "timeout" };
-
-	let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-	const timeoutPromise = new Promise<{ kind: "timeout" }>((resolve) => {
-		timeoutHandle = setTimeout(() => resolve({ kind: "timeout" }), timeoutMs);
-	});
-
-	const result: Result = await Promise.race([
-		tracker
-			.nextCompletion()
-			.then((event) => ({ kind: "event" as const, event })),
-		timeoutPromise,
-	]);
-
-	clearTimeout(timeoutHandle);
-
-	if (result.kind === "event") {
-		const { event } = result;
-		const role = tracker.spawnRole(event.spawnId) ?? "unknown";
-		const outcome: "success" | "failed" =
-			event.type === "spawn_completed" ? "success" : "failed";
-		const summary =
-			event.type === "spawn_completed"
-				? `Completed in ${event.durationMs}ms`
-				: event.error;
-		return [formatCompletionMessage(event.spawnId, role, outcome, summary)];
-	}
-
-	// Timeout: fail every running spawn and return their failure messages.
-	// Calling tracker.fail() resolves any pending nextCompletion() waiter
-	// (benign — the promise has no consumer) and keeps activeCount() accurate.
-	const running = tracker.runningSpawns();
-	if (running.length === 0) return [];
-
-	return running.map(({ spawnId, role }) => {
-		tracker.fail(spawnId, `Timed out after ${timeoutMs}ms`);
-		return formatCompletionMessage(
-			spawnId,
-			role,
-			"failed",
-			`Timed out after ${timeoutMs}ms`,
-		);
-	});
 }
 
 // ============================================================================

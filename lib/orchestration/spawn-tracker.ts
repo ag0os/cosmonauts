@@ -154,7 +154,7 @@ export class SpawnTracker {
 	 * Marks a spawn complete, releases the semaphore slot, and publishes
 	 * SpawnCompletedEvent on the bus.
 	 */
-	complete(spawnId: string, summary: string): void {
+	complete(spawnId: string, summary: string, fullText?: string): void {
 		const spawn = this.spawns.get(spawnId);
 		if (!spawn) {
 			throw new Error(`Unknown spawnId: ${spawnId}`);
@@ -174,6 +174,8 @@ export class SpawnTracker {
 			spawnId,
 			sessionId: this.sessionId,
 			durationMs,
+			summary,
+			...(fullText !== undefined && { fullText }),
 		});
 	}
 

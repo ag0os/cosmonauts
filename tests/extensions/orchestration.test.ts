@@ -58,6 +58,7 @@ import orchestrationExtension from "../../domains/shared/extensions/orchestratio
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import { runChain } from "../../lib/orchestration/chain-runner.ts";
+import { getOrCreateTracker } from "../../lib/orchestration/spawn-tracker.ts";
 
 interface RegisteredTool {
 	name: string;
@@ -500,6 +501,73 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 		);
 		expect(pi.sendUserMessage).toHaveBeenCalledWith(
 			expect.stringContaining(explorerReport),
+			{ deliverAs: "followUp" },
+		);
+	});
+
+	test("spawn_agent waits for nested child completions before completing the spawned session", async () => {
+		const cwd = "/tmp/project";
+		const pi = createMockPi(cwd, {
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
+		});
+		orchestrationExtension(pi as never);
+
+		mockRuntime({ domainContext: "coding" });
+
+		const childSessionId = "child-session-quality-manager";
+		const nestedReport = "# Nested verifier report\n\nAll checks passed.";
+		const finalReport = "Quality manager synthesized nested verifier result.";
+		const mockSession = {
+			sessionId: childSessionId,
+			messages: [] as Array<{
+				role: string;
+				content: Array<{ type: string; text: string }>;
+			}>,
+			prompt: vi.fn(async (message: string) => {
+				if (message === "run quality checks") {
+					const tracker = getOrCreateTracker(childSessionId);
+					expect(tracker.deliveryMode).toBe("external");
+					tracker.register("nested-spawn", "verifier", 2);
+					setTimeout(
+						() =>
+							tracker.complete("nested-spawn", "checks passed", nestedReport),
+						0,
+					);
+					mockSession.messages.push({
+						role: "assistant",
+						content: [{ type: "text", text: "Waiting for nested verifier." }],
+					});
+					return;
+				}
+
+				expect(message).toContain("[spawn_completion]");
+				expect(message).toContain("summary=checks passed");
+				expect(message).toContain(nestedReport);
+				mockSession.messages.push({
+					role: "assistant",
+					content: [{ type: "text", text: finalReport }],
+				});
+			}),
+			subscribe: vi.fn(() => vi.fn()),
+			dispose: vi.fn(),
+		};
+		mocks.createAgentSessionFromDefinition.mockResolvedValue({
+			session: mockSession,
+			sessionFilePath: undefined,
+		});
+
+		const result = (await pi.callTool("spawn_agent", {
+			role: "quality-manager",
+			prompt: "run quality checks",
+		})) as { details: { status: string; spawnId: string } };
+
+		await new Promise((resolve) => setTimeout(resolve, 20));
+
+		expect(result.details.status).toBe("accepted");
+		expect(mockSession.prompt).toHaveBeenCalledTimes(2);
+		expect(mockSession.dispose).toHaveBeenCalledTimes(1);
+		expect(pi.sendUserMessage).toHaveBeenCalledWith(
+			expect.stringContaining(finalReport),
 			{ deliverAs: "followUp" },
 		);
 	});
