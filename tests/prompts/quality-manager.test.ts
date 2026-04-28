@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
+import definition from "../../bundled/coding/coding/agents/quality-manager.ts";
 
 const PROMPT_PATH = new URL(
 	"../../bundled/coding/coding/prompts/quality-manager.md",
@@ -11,6 +12,11 @@ async function readPrompt() {
 }
 
 describe("quality-manager prompt", () => {
+	it("allows both coordinator and tdd-coordinator remediation paths", () => {
+		expect(definition.subagents).toContain("coordinator");
+		expect(definition.subagents).toContain("tdd-coordinator");
+	});
+
 	it("routes integration findings through the existing remediation flow", async () => {
 		const content = await readPrompt();
 
@@ -50,7 +56,7 @@ describe("quality-manager prompt", () => {
 			"If `activePlanHasBehaviors` is true and the finding is behavior-shaped, create the same four phase tasks used by `task-manager` (`-red`, `-red-verify`, `-green`, `-refactor`).",
 		);
 		expect(content).toContain(
-			"Each task must include `review-fix` and `review-round:<n>` labels, pass `plan: activePlanSlug`, carry the appropriate `phase:*` label, and use captured `task_create` IDs for the dependency chain.",
+			"Each task must include `review-fix` and `review-round:<n>` labels, pass `plan: activePlanSlug` so the task also carries the `plan:<slug>` label, carry the appropriate `phase:*` label, and use captured `task_create` IDs for the dependency chain.",
 		);
 		expect(content).toContain(
 			'`chain_run(expression: "tdd-coordinator", prompt: "Process only tasks labeled review-round:<n>. Do not modify tasks without this label.", completionLabel: "review-round:<n>")`',
@@ -62,6 +68,9 @@ describe("quality-manager prompt", () => {
 
 		expect(content).toContain(
 			"create one `phase:green` task for the finding with a clear title and description, 1-7 outcome-focused acceptance criteria, labels `review-fix`, `review-round:<n>`, and `phase:green`,",
+		);
+		expect(content).toContain(
+			"pass `plan: activePlanSlug` so the task also carries the `plan:<slug>` label.",
 		);
 		expect(content).toContain(
 			"Use this path for structural findings, findings with no meaningful test target, and any planned run where the active plan does not expose a `## Behaviors` section.",
@@ -80,6 +89,9 @@ describe("quality-manager prompt", () => {
 		);
 		expect(content).toContain(
 			"Complex reviewer or integration findings on planless runs",
+		);
+		expect(content).toContain(
+			"Planless runs and verifier-native failures keep the existing `fixer` fallback.",
 		);
 		expect(content).toContain("**Verifier-native failures**:");
 		expect(content).toContain("route to `fixer` for immediate remediation.");
