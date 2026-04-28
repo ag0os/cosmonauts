@@ -271,6 +271,40 @@ describe("PlanManager", () => {
 			expect(updated.spec).toBe("Spec content.");
 		});
 
+		it("round-trips behaviorsReviewPending across updates", async () => {
+			await manager.createPlan({
+				slug: "behavior-review-state",
+				title: "Behavior Review State",
+				description: "Initial body.",
+			});
+
+			const flagged = await manager.updatePlan("behavior-review-state", {
+				behaviorsReviewPending: true,
+			});
+			expect(flagged.behaviorsReviewPending).toBe(true);
+
+			const reloadedAfterFlag = await manager.getPlan("behavior-review-state");
+			expect(reloadedAfterFlag?.behaviorsReviewPending).toBe(true);
+
+			const updatedTitle = await manager.updatePlan("behavior-review-state", {
+				title: "Updated Behavior Review State",
+			});
+			expect(updatedTitle.behaviorsReviewPending).toBe(true);
+
+			const reloadedAfterTitleUpdate = await manager.getPlan(
+				"behavior-review-state",
+			);
+			expect(reloadedAfterTitleUpdate?.behaviorsReviewPending).toBe(true);
+
+			const cleared = await manager.updatePlan("behavior-review-state", {
+				behaviorsReviewPending: false,
+			});
+			expect(cleared.behaviorsReviewPending).toBe(false);
+
+			const reloadedAfterClear = await manager.getPlan("behavior-review-state");
+			expect(reloadedAfterClear?.behaviorsReviewPending).toBe(false);
+		});
+
 		it("should throw error for non-existent plan", async () => {
 			await expect(
 				manager.updatePlan("nonexistent", { title: "New Title" }),

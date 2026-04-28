@@ -91,7 +91,8 @@ export default function plansExtension(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "plan_view",
 		label: "View Plan",
-		description: "View a plan's full content and associated task summary",
+		description:
+			"View a plan's full content, frontmatter state, and associated task summary",
 		parameters: Type.Object({
 			slug: Type.String({ description: "Plan slug (directory name)" }),
 		}),
@@ -116,6 +117,9 @@ export default function plansExtension(pi: ExtensionAPI) {
 				`Status: ${plan.status}`,
 				`Tasks: ${summary?.taskCount ?? 0}`,
 			];
+			if (plan.behaviorsReviewPending !== undefined) {
+				lines.push(`Behaviors review pending: ${plan.behaviorsReviewPending}`);
+			}
 			if (plan.body) {
 				lines.push(`\nDescription:\n${plan.body}`);
 			}
@@ -134,7 +138,7 @@ export default function plansExtension(pi: ExtensionAPI) {
 		name: "plan_edit",
 		label: "Edit Plan",
 		description:
-			"Update an existing plan's title, status, body (description), or spec content. All fields are optional — only provided fields are updated.",
+			"Update an existing plan's title, status, body (description), spec content, or behaviorsReviewPending flag. All fields are optional — only provided fields are updated.",
 		parameters: Type.Object({
 			slug: Type.String({ description: "Plan slug to edit" }),
 			title: Type.Optional(Type.String({ description: "New plan title" })),
@@ -145,6 +149,12 @@ export default function plansExtension(pi: ExtensionAPI) {
 				Type.String({
 					description:
 						"New plan body/description (replaces existing content in plan.md)",
+				}),
+			),
+			behaviorsReviewPending: Type.Optional(
+				Type.Boolean({
+					description:
+						"Set or clear the pending behavior-review revision flag in plan frontmatter",
 				}),
 			),
 			spec: Type.Optional(
@@ -158,16 +168,17 @@ export default function plansExtension(pi: ExtensionAPI) {
 			const { slug, ...updates } = params;
 			// Check at least one field is provided
 			if (
-				!updates.title &&
-				!updates.status &&
+				updates.title === undefined &&
+				updates.status === undefined &&
 				updates.body === undefined &&
+				updates.behaviorsReviewPending === undefined &&
 				updates.spec === undefined
 			) {
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: "No fields to update. Provide at least one of: title, status, body, spec.",
+							text: "No fields to update. Provide at least one of: title, status, body, behaviorsReviewPending, spec.",
 						},
 					],
 					details: null,
@@ -176,9 +187,12 @@ export default function plansExtension(pi: ExtensionAPI) {
 			const manager = new PlanManager(ctx.cwd);
 			const plan = await manager.updatePlan(slug, updates);
 			const changed = [
-				updates.title ? "title" : null,
-				updates.status ? "status" : null,
+				updates.title !== undefined ? "title" : null,
+				updates.status !== undefined ? "status" : null,
 				updates.body !== undefined ? "body" : null,
+				updates.behaviorsReviewPending !== undefined
+					? "behaviorsReviewPending"
+					: null,
 				updates.spec !== undefined ? "spec" : null,
 			]
 				.filter(Boolean)
