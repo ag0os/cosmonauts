@@ -83,13 +83,23 @@ describe("coding domain agent invariants", () => {
 		}
 	});
 
-	it("allows quality-manager to spawn integration-verifier", () => {
+	it("allows quality-manager to spawn integration-verifier and tdd-coordinator", () => {
 		const qualityManager = allDefinitions.find(
 			(def) => def.id === "quality-manager",
 		);
 
 		expect(qualityManager).toBeDefined();
 		expect(qualityManager?.subagents).toContain("integration-verifier");
+		expect(qualityManager?.subagents).toContain("tdd-coordinator");
+	});
+
+	it("allows tdd-coordinator to spawn verifier", () => {
+		const tddCoordinator = allDefinitions.find(
+			(def) => def.id === "tdd-coordinator",
+		);
+
+		expect(tddCoordinator).toBeDefined();
+		expect(tddCoordinator?.subagents).toContain("verifier");
 	});
 
 	it("does not give readonly agents coding-readwrite capability", () => {

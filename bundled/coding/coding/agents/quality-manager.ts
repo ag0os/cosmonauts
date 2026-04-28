@@ -22,6 +22,7 @@ const definition: AgentDefinition = {
 		"ux-reviewer",
 		"fixer",
 		"coordinator",
+		"tdd-coordinator",
 		"verifier",
 		"integration-verifier",
 	],
