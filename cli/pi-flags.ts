@@ -127,7 +127,7 @@ function buildCliLookup(): Map<string, { key: FlagKey; def: FlagDef }> {
 
 const CLI_LOOKUP = buildCliLookup();
 
-export interface PiFlagParseResult {
+interface PiFlagParseResult {
 	/** Enabled Pi flags extracted from argv. */
 	flags: PiFlags;
 	/** Remaining args that were not Pi flags (positional args, @files, etc.). */
@@ -142,6 +142,8 @@ export interface PiFlagParseResult {
  * Disabled flags produce a warning and are dropped.
  * Unknown flags are left in `remaining` for the caller.
  */
+// Temporary migration debt: passthrough parsing retains Pi compatibility branches.
+// fallow-ignore-next-line complexity
 export function parsePiFlags(argv: string[]): PiFlagParseResult {
 	const flags: Record<string, unknown> = {};
 	const remaining: string[] = [];
@@ -215,12 +217,4 @@ export function parsePiFlags(argv: string[]): PiFlagParseResult {
 	}
 
 	return { flags: flags as PiFlags, remaining, warnings };
-}
-
-/**
- * Returns the set of all CLI strings that the Pi passthrough layer handles.
- * Useful for Commander's `allowUnknownOption` to avoid conflicts.
- */
-export function getEnabledPiCliFlags(): ReadonlySet<string> {
-	return new Set(CLI_LOOKUP.keys());
 }

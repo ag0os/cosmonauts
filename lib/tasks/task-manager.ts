@@ -347,6 +347,8 @@ export class TaskManager {
 	 * @param filter - Filter criteria
 	 * @returns True if task matches all filter criteria
 	 */
+	// Temporary migration debt: task filtering supports all CLI predicates inline.
+	// fallow-ignore-next-line complexity
 	private matchesFilter(task: Task, filter: TaskListFilter): boolean {
 		// Check status
 		if (filter.status) {

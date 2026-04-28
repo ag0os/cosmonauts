@@ -97,7 +97,7 @@ function escapeRegExp(string: string): string {
 	return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-export function registerCommand(program: Command): void {
+export function registerSearchCommand(program: Command): void {
 	program
 		.command("search")
 		.description("Search tasks by query")
@@ -112,6 +112,8 @@ export function registerCommand(program: Command): void {
 		)
 		.option("-l, --label <label>", "Filter by label")
 		.option("--limit <number>", "Maximum number of results", "10")
+		// Temporary migration debt: search command formatting/filtering need separation.
+		// fallow-ignore-next-line complexity
 		.action(async (query, options) => {
 			const projectRoot = process.cwd();
 			const globalOptions = program.opts();

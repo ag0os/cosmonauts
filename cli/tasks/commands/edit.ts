@@ -83,7 +83,7 @@ function formatChange(change: FieldChange): string {
 	}
 }
 
-export function registerCommand(program: Command): void {
+export function registerEditCommand(program: Command): void {
 	program
 		.command("edit")
 		.alias("update")
@@ -155,6 +155,8 @@ export function registerCommand(program: Command): void {
 			collectIndices,
 			[],
 		)
+		// Temporary migration debt: existing edit command flow needs a focused split.
+		// fallow-ignore-next-line complexity
 		.action(async (taskId, options) => {
 			const projectRoot = process.cwd();
 			const globalOptions = program.opts();

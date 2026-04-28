@@ -34,7 +34,7 @@ function normalizePriority(priority: string): TaskPriority | null {
 		: null;
 }
 
-export function registerCommand(program: Command): void {
+export function registerListCommand(program: Command): void {
 	program
 		.command("list")
 		.alias("ls")
@@ -50,6 +50,8 @@ export function registerCommand(program: Command): void {
 		.option("-a, --assignee <name>", "Filter by assignee")
 		.option("-l, --label <label>", "Filter by label")
 		.option("--ready", "Show only tasks with no dependencies")
+		// Temporary migration debt: task listing owns filtering and presentation.
+		// fallow-ignore-next-line complexity
 		.action(async (options) => {
 			const projectRoot = process.cwd();
 			const globalOptions = program.opts();

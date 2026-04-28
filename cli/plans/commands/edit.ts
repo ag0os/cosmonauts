@@ -11,7 +11,7 @@ function processEscapedNewlines(value: string): string {
 	return value.replace(/\\n/g, "\n");
 }
 
-export function registerCommand(program: Command): void {
+export function registerEditCommand(program: Command): void {
 	program
 		.command("edit")
 		.alias("update")
@@ -21,6 +21,8 @@ export function registerCommand(program: Command): void {
 		.option("-s, --status <status>", "Update status: active, completed")
 		.option("-b, --body <text>", "Update plan body/description")
 		.option("--spec <text>", "Update spec content")
+		// Temporary migration debt: plan edit validation/persistence are still inline.
+		// fallow-ignore-next-line complexity
 		.action(async (slug, options) => {
 			const projectRoot = process.cwd();
 			const globalOptions = program.opts();

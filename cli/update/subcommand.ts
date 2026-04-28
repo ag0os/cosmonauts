@@ -26,7 +26,7 @@ import type { PackageScope } from "../../lib/packages/types.ts";
 // Types
 // ============================================================================
 
-export interface UpdateOptions {
+interface UpdateOptions {
 	target?: string;
 	all?: boolean;
 	local?: boolean;

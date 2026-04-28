@@ -51,7 +51,7 @@ function outputFormatted(plan: Plan, taskCount: number): void {
 	}
 }
 
-export function registerCommand(program: Command): void {
+export function registerViewCommand(program: Command): void {
 	program
 		.command("view")
 		.alias("show")

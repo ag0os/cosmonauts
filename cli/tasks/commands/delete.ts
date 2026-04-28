@@ -22,13 +22,15 @@ async function promptConfirm(message: string): Promise<boolean> {
 	});
 }
 
-export function registerCommand(program: Command): void {
+export function registerDeleteCommand(program: Command): void {
 	program
 		.command("delete")
 		.alias("rm")
 		.description("Delete a task")
 		.argument("<taskId>", "Task ID to delete (e.g., TASK-001)")
 		.option("-f, --force", "Skip confirmation prompt")
+		// Temporary migration debt: task delete prompt and dependency checks are inline.
+		// fallow-ignore-next-line complexity
 		.action(async (taskId, options) => {
 			const projectRoot = process.cwd();
 			const globalOptions = program.opts();

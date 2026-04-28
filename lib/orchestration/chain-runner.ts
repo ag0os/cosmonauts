@@ -315,6 +315,8 @@ function buildChainStats(
  * repeat until their completion check passes, bounded by global safety
  * caps (maxTotalIterations, timeoutMs).
  */
+// Temporary migration debt: chain orchestration is being kept stable before extraction.
+// fallow-ignore-next-line complexity
 export async function runChain(config: ChainConfig): Promise<ChainResult> {
 	const chainStart = Date.now();
 	const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -502,6 +504,8 @@ interface StageConstraints {
  * - Loop stages (loop=true): repeat until completion check passes,
  *   bounded by the remaining iteration budget and deadline.
  */
+// Temporary migration debt: stage execution has coupled lifecycle handling.
+// fallow-ignore-next-line complexity
 export async function runStage(
 	stage: ChainStage,
 	config: ChainConfig,

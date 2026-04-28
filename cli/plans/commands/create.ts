@@ -2,7 +2,7 @@ import type { Command } from "commander";
 import { PlanManager } from "../../../lib/plans/plan-manager.ts";
 import type { PlanCreateInput } from "../../../lib/plans/plan-types.ts";
 
-export function registerCommand(program: Command): void {
+export function registerCreateCommand(program: Command): void {
 	program
 		.command("create")
 		.description("Create a new plan")

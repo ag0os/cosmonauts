@@ -7,14 +7,14 @@
  */
 
 /** A tool registration captured by the mock. */
-export interface RegisteredTool {
+interface RegisteredTool {
 	name: string;
 	execute: (...args: unknown[]) => Promise<unknown>;
 }
 
 type EventHandler = (event: unknown, ctx: unknown) => Promise<unknown>;
 
-export interface MockPiOptions {
+interface MockPiOptions {
 	/** Working directory passed to tool execute contexts. Defaults to "/tmp". */
 	cwd?: string;
 }

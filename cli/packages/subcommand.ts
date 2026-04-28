@@ -28,7 +28,7 @@ import type {
 // Types
 // ============================================================================
 
-export interface InstallCliOptions {
+interface InstallCliOptions {
 	link?: boolean;
 	local?: boolean;
 	branch?: string;
@@ -37,13 +37,13 @@ export interface InstallCliOptions {
 	projectRoot?: string;
 }
 
-export interface UninstallCliOptions {
+interface UninstallCliOptions {
 	local?: boolean;
 	/** Override project root for testing */
 	projectRoot?: string;
 }
 
-export interface PackagesListCliOptions {
+interface PackagesListCliOptions {
 	/** Override project root for testing */
 	projectRoot?: string;
 }
@@ -119,6 +119,8 @@ async function promptConflictChoice(
 // Action: install
 // ============================================================================
 
+// Temporary migration debt: install handles source resolution, conflicts, and output.
+// fallow-ignore-next-line complexity
 export async function installAction(
 	arg: string,
 	options: InstallCliOptions,

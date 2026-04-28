@@ -9,7 +9,7 @@
 import type { LoadedDomain } from "./types.ts";
 
 /** Severity level for a validation diagnostic. */
-export type DiagnosticSeverity = "error" | "warning";
+type DiagnosticSeverity = "error" | "warning";
 
 /** A single validation issue found during domain validation. */
 export interface DomainValidationDiagnostic {
@@ -44,6 +44,8 @@ export class DomainValidationError extends Error {
  * Returns an array of diagnostics (may be empty if everything is valid).
  * Does not throw — callers decide how to handle the diagnostics.
  */
+// Temporary migration debt: validation rules are consolidated until rule extraction.
+// fallow-ignore-next-line complexity
 export function validateDomains(
 	domains: readonly LoadedDomain[],
 ): DomainValidationDiagnostic[] {

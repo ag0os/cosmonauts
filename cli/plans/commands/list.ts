@@ -5,12 +5,14 @@ import { TaskManager } from "../../../lib/tasks/task-manager.ts";
 
 const VALID_STATUSES: ReadonlySet<string> = new Set(["active", "completed"]);
 
-export function registerCommand(program: Command): void {
+export function registerListCommand(program: Command): void {
 	program
 		.command("list")
 		.alias("ls")
 		.description("List all plans")
 		.option("-s, --status <status>", "Filter by status: active, completed")
+		// Temporary migration debt: plan listing mixes filtering and output modes.
+		// fallow-ignore-next-line complexity
 		.action(async (options) => {
 			const projectRoot = process.cwd();
 			const globalOptions = program.opts();

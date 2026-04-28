@@ -91,6 +91,8 @@ export function createPiSpawner(
 	const spawnTimeoutMs = options?.spawnTimeoutMs ?? DEFAULT_SPAWN_TIMEOUT_MS;
 
 	return {
+		// Temporary migration debt: spawn lifecycle persists lineage and child coordination.
+		// fallow-ignore-next-line complexity
 		async spawn(config: SpawnConfig): Promise<SpawnResult> {
 			// Respect abort signal before doing any work
 			if (config.signal?.aborted) {

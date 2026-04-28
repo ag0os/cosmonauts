@@ -1,0 +1,38 @@
+# Cosmonauts publishes TypeScript source and allows consumers/tests to deep-import
+# these stable module entry points. Treat their exports as public API.
+entry = [
+  "lib/agents/index.ts",
+  "lib/config/index.ts",
+  "lib/domains/index.ts",
+  "lib/packages/index.ts",
+  "lib/plans/index.ts",
+  "lib/prompts/index.ts",
+  "lib/sessions/index.ts",
+  "lib/skills/index.ts",
+  "lib/runtime.ts",
+  "lib/orchestration/agent-spawner.ts",
+  "lib/orchestration/chain-profiler.ts",
+  "lib/orchestration/definition-resolution.ts",
+  "lib/orchestration/message-bus.ts",
+  "lib/orchestration/session-factory.ts",
+  "lib/orchestration/spawn-tracker.ts",
+  "lib/orchestration/types.ts",
+  "lib/packages/scanner.ts",
+]
+
+# Framework convention: domain packages and extension entry points are loaded by
+# Cosmonauts/Pi through runtime discovery and dynamic import, not static imports.
+dynamicallyLoaded = [
+  "bundled/*/*/agents/*.ts",
+  "bundled/*/*/domain.ts",
+  "bundled/*/*/workflows.ts",
+  "domains/shared/domain.ts",
+  "domains/shared/extensions/*/index.ts",
+  "domains/shared/workflows.ts",
+]
+
+[audit]
+# Temporary migration debt: duplication cleanup is too large for one pass.
+# This baseline gates new duplicate-code findings while follow-up refactors
+# collapse the existing command/test repetition.
+dupesBaseline = ".fallow/baselines/dupes.json"

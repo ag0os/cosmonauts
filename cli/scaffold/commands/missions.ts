@@ -15,6 +15,8 @@ interface GlobalOptions {
 }
 
 /** Core scaffolding logic shared by `scaffold missions` and the `task init` alias. */
+// Temporary migration debt: scaffold writes all mission artifacts in one flow.
+// fallow-ignore-next-line complexity
 export async function scaffoldMissions(
 	options: MissionsOptions,
 	globalOptions: GlobalOptions,
@@ -102,7 +104,7 @@ export async function scaffoldMissions(
 	}
 }
 
-export function registerCommand(program: Command): void {
+export function registerMissionsCommand(program: Command): void {
 	program
 		.command("missions")
 		.description(

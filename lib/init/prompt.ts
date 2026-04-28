@@ -1,6 +1,6 @@
 import type { ProjectConfig } from "../config/types.ts";
 
-export interface InitPromptOptions {
+interface InitPromptOptions {
 	cwd: string;
 	defaultConfig: ProjectConfig;
 }

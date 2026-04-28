@@ -23,6 +23,8 @@ export function formatDuration(ms: number): string {
 /**
  * Format a ChainEvent into a terminal-friendly log line.
  */
+// Temporary migration debt: event formatting switch stays local until renderer extraction.
+// fallow-ignore-next-line complexity
 export function formatChainEvent(event: ChainEvent): string {
 	switch (event.type) {
 		case "chain_start":

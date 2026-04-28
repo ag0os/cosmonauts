@@ -348,6 +348,8 @@ export function registerSpawnTool(
 				runtime.domainsDir,
 				runtime.domainResolver,
 			)
+				// Temporary migration debt: child session lifecycle is handled inline.
+				// fallow-ignore-next-line complexity
 				.then(async ({ session, sessionFilePath }) => {
 					// Register child depth so grandchild spawns can compute their depth
 					sessionDepths.set(session.sessionId, childDepth);

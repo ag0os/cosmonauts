@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { registerCommand as registerMissions } from "./commands/missions.ts";
+import { registerMissionsCommand } from "./commands/missions.ts";
 
 export function createScaffoldProgram(): Command {
 	const program = new Command();
@@ -13,7 +13,7 @@ export function createScaffoldProgram(): Command {
 		.option("--plain", "Output in plain text format (for agents)")
 		.option("--json", "Output in JSON format");
 
-	registerMissions(program);
+	registerMissionsCommand(program);
 
 	return program;
 }

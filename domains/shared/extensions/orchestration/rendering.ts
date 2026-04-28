@@ -10,7 +10,7 @@ import type {
 // Rendering Helpers
 // ============================================================================
 
-export const ROLE_LABELS: Record<string, string> = {
+const ROLE_LABELS: Record<string, string> = {
 	planner: "Planner",
 	"task-manager": "Task Manager",
 	coordinator: "Coordinator",
@@ -39,6 +39,8 @@ export function formatDuration(ms: number): string {
  * Produce a one-line summary of a tool call for progress display.
  * Extracts the most useful argument (file path, command, pattern) per tool.
  */
+// Temporary migration debt: renderer-specific tool cases remain in one formatter.
+// fallow-ignore-next-line complexity
 export function summarizeToolCall(toolName: string, args?: unknown): string {
 	const a = args as Record<string, unknown> | undefined;
 	switch (toolName) {

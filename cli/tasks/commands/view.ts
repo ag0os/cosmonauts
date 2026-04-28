@@ -78,6 +78,8 @@ function outputPlain(task: Task): void {
 /**
  * Output task in formatted, human-readable view
  */
+// Temporary migration debt: task view formatting will be split by section.
+// fallow-ignore-next-line complexity
 function outputFormatted(task: Task): void {
 	// Header line with ID and title
 	const headerText = `${task.id}: ${task.title}`;
@@ -148,7 +150,7 @@ function outputFormatted(task: Task): void {
 	}
 }
 
-export function registerCommand(program: Command): void {
+export function registerViewCommand(program: Command): void {
 	program
 		.command("view")
 		.alias("show")

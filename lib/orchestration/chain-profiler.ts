@@ -333,6 +333,8 @@ export class ChainProfiler {
 // Summary Builder (pure function)
 // ============================================================================
 
+// Temporary migration debt: profiler summary formatting is intentionally baselined.
+// fallow-ignore-next-line complexity
 export function buildSummary(
 	entries: ProfileTraceEntry[],
 	spans: ToolSpan[],

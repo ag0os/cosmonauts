@@ -17,13 +17,15 @@ async function promptConfirm(message: string): Promise<boolean> {
 	});
 }
 
-export function registerCommand(program: Command): void {
+export function registerDeleteCommand(program: Command): void {
 	program
 		.command("delete")
 		.alias("rm")
 		.description("Delete a plan")
 		.argument("<slug>", "Plan slug to delete")
 		.option("-f, --force", "Skip confirmation prompt")
+		// Temporary migration debt: delete command prompt and archive checks are inline.
+		// fallow-ignore-next-line complexity
 		.action(async (slug, options) => {
 			const projectRoot = process.cwd();
 			const globalOptions = program.opts();

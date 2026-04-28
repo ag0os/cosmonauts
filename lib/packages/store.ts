@@ -60,6 +60,8 @@ export function resolveStorePath(
  * @param scope - "user" (global) or "project" (local)
  * @param projectRoot - Required when scope is "project"
  */
+// Temporary migration debt: package store listing handles scoped manifest recovery.
+// fallow-ignore-next-line complexity
 export async function listInstalledPackages(
 	scope: PackageScope,
 	projectRoot?: string,

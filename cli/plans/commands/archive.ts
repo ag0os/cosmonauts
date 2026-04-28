@@ -3,7 +3,7 @@ import { archivePlan } from "../../../lib/plans/archive.ts";
 import { PlanManager } from "../../../lib/plans/plan-manager.ts";
 import { TaskManager } from "../../../lib/tasks/task-manager.ts";
 
-export function registerCommand(program: Command): void {
+export function registerArchiveCommand(program: Command): void {
 	program
 		.command("archive")
 		.description("Archive a completed plan and its tasks")

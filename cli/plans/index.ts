@@ -1,10 +1,10 @@
 import { Command } from "commander";
-import { registerCommand as registerArchive } from "./commands/archive.ts";
-import { registerCommand as registerCreate } from "./commands/create.ts";
-import { registerCommand as registerDelete } from "./commands/delete.ts";
-import { registerCommand as registerEdit } from "./commands/edit.ts";
-import { registerCommand as registerList } from "./commands/list.ts";
-import { registerCommand as registerView } from "./commands/view.ts";
+import { registerArchiveCommand } from "./commands/archive.ts";
+import { registerCreateCommand } from "./commands/create.ts";
+import { registerDeleteCommand } from "./commands/delete.ts";
+import { registerEditCommand } from "./commands/edit.ts";
+import { registerListCommand } from "./commands/list.ts";
+import { registerViewCommand } from "./commands/view.ts";
 
 export function createPlanProgram(): Command {
 	const program = new Command();
@@ -18,12 +18,12 @@ export function createPlanProgram(): Command {
 		.option("--plain", "Output in plain text format (for agents)")
 		.option("--json", "Output in JSON format");
 
-	registerCreate(program);
-	registerList(program);
-	registerView(program);
-	registerEdit(program);
-	registerDelete(program);
-	registerArchive(program);
+	registerCreateCommand(program);
+	registerListCommand(program);
+	registerViewCommand(program);
+	registerEditCommand(program);
+	registerDeleteCommand(program);
+	registerArchiveCommand(program);
 
 	return program;
 }

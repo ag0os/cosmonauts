@@ -107,6 +107,8 @@ function extractAssistantParts(content: unknown): AssistantParts {
  *
  * Unknown or malformed message shapes are silently skipped — does not throw.
  */
+// Temporary migration debt: transcript rendering supports several Pi message shapes.
+// fallow-ignore-next-line complexity
 export function generateTranscript(messages: unknown[], role: string): string {
 	const lines: string[] = [`# Session Transcript: ${role}`, ""];
 

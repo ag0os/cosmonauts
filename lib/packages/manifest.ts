@@ -56,6 +56,8 @@ export async function loadManifest(dirPath: string): Promise<unknown> {
  *
  * @param raw - The unknown value to validate (typically from loadManifest)
  */
+// Temporary migration debt: manifest validation checks are consolidated here.
+// fallow-ignore-next-line complexity
 export function validateManifest(raw: unknown): ManifestValidationResult {
 	const errors: ManifestValidationError[] = [];
 

@@ -1,11 +1,11 @@
 import { Command } from "commander";
 import { scaffoldMissions } from "../scaffold/commands/missions.ts";
-import { registerCommand as registerCreate } from "./commands/create.ts";
-import { registerCommand as registerDelete } from "./commands/delete.ts";
-import { registerCommand as registerEdit } from "./commands/edit.ts";
-import { registerCommand as registerList } from "./commands/list.ts";
-import { registerCommand as registerSearch } from "./commands/search.ts";
-import { registerCommand as registerView } from "./commands/view.ts";
+import { registerCreateCommand } from "./commands/create.ts";
+import { registerDeleteCommand } from "./commands/delete.ts";
+import { registerEditCommand } from "./commands/edit.ts";
+import { registerListCommand } from "./commands/list.ts";
+import { registerSearchCommand } from "./commands/search.ts";
+import { registerViewCommand } from "./commands/view.ts";
 
 export function createTaskProgram(): Command {
 	const program = new Command();
@@ -20,12 +20,12 @@ export function createTaskProgram(): Command {
 		.option("--json", "Output in JSON format");
 
 	registerInitAlias(program);
-	registerCreate(program);
-	registerList(program);
-	registerView(program);
-	registerEdit(program);
-	registerDelete(program);
-	registerSearch(program);
+	registerCreateCommand(program);
+	registerListCommand(program);
+	registerViewCommand(program);
+	registerEditCommand(program);
+	registerDeleteCommand(program);
+	registerSearchCommand(program);
 
 	return program;
 }

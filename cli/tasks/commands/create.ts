@@ -5,7 +5,7 @@ import type {
 	TaskPriority,
 } from "../../../lib/tasks/task-types.js";
 
-export function registerCommand(program: Command): void {
+export function registerCreateCommand(program: Command): void {
 	program
 		.command("create")
 		.description("Create a new task")
@@ -33,6 +33,8 @@ export function registerCommand(program: Command): void {
 			[],
 		)
 		.option("--parent <taskId>", "Parent task ID")
+		// Temporary migration debt: task create validation and output are inline.
+		// fallow-ignore-next-line complexity
 		.action(async (title, options) => {
 			const projectRoot = process.cwd();
 			const globalOptions = program.opts();

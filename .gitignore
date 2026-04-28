@@ -12,3 +12,8 @@ missions/sessions/
 missions/archive/sessions/
 
 .claude/
+
+# Fallow local analysis cache. Baselines under .fallow/baselines/ are tracked.
+.fallow/cache.bin
+.fallow/churn.bin
+.fallow/snapshots/

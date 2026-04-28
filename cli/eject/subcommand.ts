@@ -12,7 +12,7 @@ import { ejectDomain } from "../../lib/packages/eject.ts";
 // Types
 // ============================================================================
 
-export interface EjectCliOptions {
+interface EjectCliOptions {
 	force?: boolean;
 	/** Override project root for testing */
 	projectRoot?: string;

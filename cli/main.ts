@@ -100,6 +100,8 @@ function parseThinkingLevel(value: string): ThinkingLevel {
  * Parse CLI arguments into CliOptions.
  * Exported for testing — not intended for external use.
  */
+// Temporary migration debt: CLI parsing still owns compatibility branches.
+// fallow-ignore-next-line complexity
 export function parseCliArgs(argv: string[]): CliOptions {
 	// Detect "init" subcommand before Commander sees it
 	const isInit = argv.length > 0 && argv[0] === "init";
@@ -256,6 +258,8 @@ export function buildInitSessionConfig(cwd: string) {
 // Mode Dispatch
 // ============================================================================
 
+// Temporary migration debt: top-level CLI dispatch will be split by mode.
+// fallow-ignore-next-line complexity
 async function run(options: CliOptions): Promise<void> {
 	const cwd = process.cwd();
 	const frameworkRoot = resolve(fileURLToPath(import.meta.url), "..", "..");

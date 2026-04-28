@@ -36,7 +36,7 @@ export function clearPendingSwitch(): void {
 // Shared agent registry (set by CLI, read by extensions)
 // ============================================================================
 
-export interface SharedRegistrySlot {
+interface SharedRegistrySlot {
 	registry: AgentRegistry;
 	domainContext: string | undefined;
 }

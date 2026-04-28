@@ -107,7 +107,7 @@ function toResourceLoaderOptions(
 	};
 }
 
-export interface CreateSessionOptions {
+interface CreateSessionOptions {
 	/** Agent definition to build the session from */
 	definition: AgentDefinition;
 	/** Working directory */
@@ -242,6 +242,8 @@ function validateSessionFlags(piFlags: PiFlags): void {
  * Resolve which SessionManager to use based on Pi flags and fallback behavior.
  * Follows Pi's priority cascade: noSession → fork → session → resume → continue → default.
  */
+// Temporary migration debt: Pi session resolution needs a staged extraction.
+// fallow-ignore-next-line complexity
 async function resolveSessionManager(opts: {
 	piFlags?: PiFlags;
 	persistent: boolean;
