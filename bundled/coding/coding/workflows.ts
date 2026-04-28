@@ -27,7 +27,7 @@ export const workflows: WorkflowDefinition[] = [
 		description:
 			"Full TDD pipeline with adversarial plan review: architecture, review, revise, behaviors, tasks, Red-Green-Refactor, and verification",
 		chain:
-			"planner -> plan-reviewer -> planner -> tdd-planner -> task-manager -> tdd-coordinator -> integration-verifier -> quality-manager",
+			"planner -> plan-reviewer -> planner -> tdd-planner -> behavior-reviewer -> tdd-planner -> task-manager -> tdd-coordinator -> integration-verifier -> quality-manager",
 	},
 	{
 		name: "spec-and-build",
@@ -41,7 +41,7 @@ export const workflows: WorkflowDefinition[] = [
 		description:
 			"Full TDD pipeline with interactive spec capture and adversarial plan review",
 		chain:
-			"spec-writer -> planner -> plan-reviewer -> planner -> tdd-planner -> task-manager -> tdd-coordinator -> integration-verifier -> quality-manager",
+			"spec-writer -> planner -> plan-reviewer -> planner -> tdd-planner -> behavior-reviewer -> tdd-planner -> task-manager -> tdd-coordinator -> integration-verifier -> quality-manager",
 	},
 	{
 		name: "adapt",

@@ -40,18 +40,24 @@ describe("coding domain workflows", () => {
 		expect(verify?.chain).toBe("quality-manager");
 	});
 
-	it("orders tdd-planner before task-manager in every TDD workflow that contains both", () => {
+	it("keeps the reviewed TDD planning loop before task creation", () => {
 		for (const name of ["tdd", "spec-and-tdd"]) {
 			const stages = getWorkflowChain(name).split(" -> ");
-			const tddPlannerIndex = stages.indexOf("tdd-planner");
-			const taskManagerIndex = stages.indexOf("task-manager");
+			const behaviorReviewerIndex = stages.indexOf("behavior-reviewer");
 
-			if (tddPlannerIndex !== -1 && taskManagerIndex !== -1) {
-				expect(tddPlannerIndex).toBeLessThan(taskManagerIndex);
-			} else {
-				expect(tddPlannerIndex).toBeGreaterThan(-1);
-				expect(taskManagerIndex).toBeGreaterThan(-1);
-			}
+			expect(behaviorReviewerIndex).toBeGreaterThan(0);
+			expect(
+				stages.slice(behaviorReviewerIndex - 1, behaviorReviewerIndex + 3),
+			).toEqual([
+				"tdd-planner",
+				"behavior-reviewer",
+				"tdd-planner",
+				"task-manager",
+			]);
+			expect(stages.filter((stage) => stage === "tdd-planner")).toHaveLength(2);
+			expect(
+				stages.filter((stage) => stage === "behavior-reviewer"),
+			).toHaveLength(1);
 		}
 	});
 });

@@ -337,6 +337,34 @@ describe("plans extension", () => {
 			expect(text).toContain("Description:\nPlan body content.");
 		});
 
+		test("shows behaviorsReviewPending when present", async () => {
+			await pi.callTool(
+				"plan_create",
+				{ slug: "behavior-view", title: "Behavior View" },
+				tempDir,
+			);
+			await pi.callTool(
+				"plan_edit",
+				{ slug: "behavior-view", behaviorsReviewPending: true },
+				tempDir,
+			);
+
+			const result = (await pi.callTool(
+				"plan_view",
+				{ slug: "behavior-view" },
+				tempDir,
+			)) as ToolResult;
+
+			expect(result.content[0]?.text).toContain(
+				"Behaviors review pending: true",
+			);
+
+			const details = result.details as {
+				plan: { behaviorsReviewPending?: boolean };
+			};
+			expect(details.plan.behaviorsReviewPending).toBe(true);
+		});
+
 		test("includes spec content when present", async () => {
 			await pi.callTool(
 				"plan_create",
@@ -472,6 +500,36 @@ describe("plans extension", () => {
 			expect(details.slug).toBe("editable");
 			expect(details.title).toBe("Updated");
 			expect(details.body).toBe("New body");
+		});
+
+		test("sets and clears behaviorsReviewPending", async () => {
+			await pi.callTool(
+				"plan_create",
+				{ slug: "editable-flag", title: "Editable Flag" },
+				tempDir,
+			);
+
+			const flagged = (await pi.callTool(
+				"plan_edit",
+				{ slug: "editable-flag", behaviorsReviewPending: true },
+				tempDir,
+			)) as ToolResult;
+			expect(flagged.content[0]?.text).toContain("behaviorsReviewPending");
+			expect(
+				(flagged.details as { behaviorsReviewPending?: boolean })
+					.behaviorsReviewPending,
+			).toBe(true);
+
+			const cleared = (await pi.callTool(
+				"plan_edit",
+				{ slug: "editable-flag", behaviorsReviewPending: false },
+				tempDir,
+			)) as ToolResult;
+			expect(cleared.content[0]?.text).toContain("behaviorsReviewPending");
+			expect(
+				(cleared.details as { behaviorsReviewPending?: boolean })
+					.behaviorsReviewPending,
+			).toBe(false);
 		});
 
 		test("rejects path traversal slugs", async () => {

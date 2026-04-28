@@ -132,6 +132,24 @@ function parseDate(value: unknown, defaultDate: Date): Date {
 	return defaultDate;
 }
 
+function parseBehaviorsReviewPending(value: unknown): boolean | undefined {
+	if (typeof value === "boolean") {
+		return value;
+	}
+
+	if (typeof value === "string") {
+		const normalized = value.trim().toLowerCase();
+		if (normalized === "true") {
+			return true;
+		}
+		if (normalized === "false") {
+			return false;
+		}
+	}
+
+	return undefined;
+}
+
 /**
  * Read and parse a plan.md file
  * @param projectRoot - The project root directory
@@ -157,6 +175,9 @@ export async function readPlanFile(
 			createdAt: parseDate(frontmatter.createdAt, now),
 			updatedAt: parseDate(frontmatter.updatedAt, now),
 			body: parsed.content.trim(),
+			behaviorsReviewPending: parseBehaviorsReviewPending(
+				frontmatter.behaviorsReviewPending,
+			),
 		};
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
@@ -188,6 +209,9 @@ export async function writePlanFile(
 		createdAt: plan.createdAt.toISOString(),
 		updatedAt: plan.updatedAt.toISOString(),
 	};
+	if (plan.behaviorsReviewPending !== undefined) {
+		frontmatter.behaviorsReviewPending = plan.behaviorsReviewPending;
+	}
 
 	const serialized = matter.stringify(plan.body, frontmatter);
 

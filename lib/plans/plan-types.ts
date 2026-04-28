@@ -32,6 +32,8 @@ export interface Plan {
 	updatedAt: Date;
 	/** Raw markdown body from plan.md */
 	body: string;
+	/** Whether a behavior-review revision pass is pending */
+	behaviorsReviewPending?: boolean;
 	/** Raw markdown body from spec.md, if it exists */
 	spec?: string;
 }
@@ -66,6 +68,8 @@ export interface PlanUpdateInput {
 	status?: PlanStatus;
 	/** Update plan body (description) */
 	body?: string;
+	/** Set or clear the pending behavior-review revision flag */
+	behaviorsReviewPending?: boolean;
 	/** Update or create spec content */
 	spec?: string;
 }

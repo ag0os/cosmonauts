@@ -69,7 +69,13 @@ Load the `/skill:plan` skill for detailed guidance on plan structure and format.
 
 Create the plan using the `plan_create` tool. The plan follows the standard format with these TDD-specific sections:
 
-**Revision pass.** If a plan already exists and review findings are present at `missions/plans/<slug>/review.md`, this is a revision pass — not a fresh design. Read the review findings, merge with the plan structure in working memory, verify each finding in the code, and revise the plan (including the Behaviors section where findings affect testable contracts). Update via `plan_edit`. Preserve existing Behaviors unless a finding invalidates them; when invalidating, record the change in the Decision Log. Do not recreate the plan from scratch — the review assumes the plan's existing structure is the baseline.
+**First pass vs revision pass.** Determine mode from `plan_view` frontmatter only: `behaviorsReviewPending === true` means revision pass; absent or `false` means first pass. `missions/plans/<slug>/behavior-review.md` existence alone is never a mode signal, so stale files do not trigger revision mode.
+
+**First pass.** If `behaviorsReviewPending` is absent or `false`, design the `## Behaviors` section from the current plan and codebase state. If the plan has no `## Behaviors` section yet, create it.
+
+**Revision pass.** If `behaviorsReviewPending === true`, read `missions/plans/<slug>/behavior-review.md`, verify the findings in code, and revise the existing `## Behaviors` section instead of recreating the plan from scratch. If `behavior-review.md` is absent, empty, or yields zero parseable findings, hard-fail with a clear error that names both the `behaviorsReviewPending` flag and the file problem. Do not silently clear the flag.
+
+**Atomic consume-side update.** When you apply a revision pass, make exactly one `plan_edit` call that includes both the full revised plan `body` and `behaviorsReviewPending: false`. Never split the revised `## Behaviors` write and the flag clear into separate `plan_edit` calls.
 
 ## Plan Output Format
 

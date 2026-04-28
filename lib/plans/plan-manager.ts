@@ -155,6 +155,10 @@ export class PlanManager {
 			title: input.title ?? existing.title,
 			status: input.status ?? existing.status,
 			body: input.body ?? existing.body,
+			behaviorsReviewPending:
+				input.behaviorsReviewPending === undefined
+					? existing.behaviorsReviewPending
+					: input.behaviorsReviewPending,
 			updatedAt: new Date(),
 		};
 
