@@ -61,6 +61,19 @@ describe("quality-manager prompt", () => {
 		expect(content).toContain(
 			'`chain_run(expression: "tdd-coordinator", prompt: "Process only tasks labeled review-round:<n>. Do not modify tasks without this label.", completionLabel: "review-round:<n>")`',
 		);
+		expect(content).toContain(
+			"This route applies regardless of the finding's `complexity`; do not route simple behavior-shaped TDD findings to `fixer`.",
+		);
+
+		const tddRouteIndex = content.indexOf(
+			"**Behavior-shaped reviewer or integration findings in TDD mode**",
+		);
+		const simpleRouteIndex = content.indexOf(
+			"**Simple structural reviewer or integration findings, and simple findings outside TDD mode**",
+		);
+
+		expect(tddRouteIndex).toBeGreaterThanOrEqual(0);
+		expect(simpleRouteIndex).toBeGreaterThan(tddRouteIndex);
 	});
 
 	it("routes structural no-test-target findings through coordinator", async () => {
