@@ -49,6 +49,8 @@ A phase task is ready iff:
 - its own status is `To Do`, and
 - every dependency ID resolves to `Done`.
 
+If any dependency resolves to `Blocked`, the candidate is not waiting; it is a candidate for cascade-blocking on this scan.
+
 MUST NOT use `task_list(hasNoDependencies: true)` or `task_list(status: "To Do", hasNoDependencies: true)` for phase-task readiness. That helper only returns tasks with empty dependency arrays, so it can never surface ready `-red-verify`, `-green`, or `-refactor` tasks.
 
 ### 4. Parse file sets and sequence conflicts before spawning
@@ -68,6 +70,8 @@ Fail closed:
 - If a bullet is malformed, set the task to `Blocked` with `implementationNotes: file-set parse failed: malformed bullet in <section>`.
 - If parsing yields an empty file set, set the task to `Blocked` with `implementationNotes: file-set parse failed: empty file set`.
 - Do not spawn malformed tasks, and do not leave them in `To Do`.
+
+**Cascade on block**: Whenever you set a phase task to `Blocked` for any reason — file-set parse failure, repeated worker failure, malformed handoff, unknown phase, or missing phase — also transitively set every scoped task that depends directly or indirectly on it to `Blocked` with `implementationNotes: dependency-blocked: <upstream-task-id>`. Use `task_list` to find dependents whose `dependencies` array contains the blocked task ID, call `task_view` before editing each dependent, and recurse from every newly blocked dependent. This makes the affected DAG branch terminal so the chain-runner loop can exit when remaining ready work completes.
 
 After parsing the ready tasks, compare file sets. If two ready tasks touch overlapping files, sequence them even when their dependency checks passed. Spawn only a non-conflicting wave; defer overlapping tasks until the earlier task completes.
 
