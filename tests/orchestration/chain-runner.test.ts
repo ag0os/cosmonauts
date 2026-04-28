@@ -140,6 +140,15 @@ describe("getDefaultStagePrompt", () => {
 		);
 		expect(prompt).not.toBe("Execute your assigned role.");
 	});
+
+	test("returns a role-specific prompt for behavior-reviewer", () => {
+		expect(getDefaultStagePrompt("behavior-reviewer")).toBe(
+			"Review the active plan's ## Behaviors section and write structured findings to missions/plans/<slug>/behavior-review.md.",
+		);
+		expect(getDefaultStagePrompt("coding/behavior-reviewer")).toBe(
+			"Review the active plan's ## Behaviors section and write structured findings to missions/plans/<slug>/behavior-review.md.",
+		);
+	});
 });
 
 describe("derivePlanSlug", () => {

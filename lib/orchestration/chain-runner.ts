@@ -69,6 +69,8 @@ const DEFAULT_STAGE_PROMPTS: Record<string, string> = {
 		"Apply targeted fixes for review findings and verify they pass checks.",
 	"tdd-planner":
 		"Analyze the project and design a behavior-driven plan with testable specifications.",
+	"behavior-reviewer":
+		"Review the active plan's ## Behaviors section and write structured findings to missions/plans/<slug>/behavior-review.md.",
 	"tdd-coordinator":
 		"Check for ready tasks and run the Red-Green-Refactor cycle for each.",
 	"test-writer":
