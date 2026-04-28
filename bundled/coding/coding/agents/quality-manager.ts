@@ -13,7 +13,7 @@ const definition: AgentDefinition = {
 	],
 	model: "anthropic/claude-opus-4-7",
 	tools: "coding",
-	extensions: ["tasks", "orchestration"],
+	extensions: ["tasks", "orchestration", "project-tools"],
 	skills: ["*"],
 	subagents: [
 		"reviewer",
