@@ -1,38 +1,51 @@
 import type { Command } from "commander";
-import { TaskManager } from "../../../lib/tasks/task-manager.js";
+import { TaskManager } from "../../../lib/tasks/task-manager.ts";
 import type {
 	AcceptanceCriterion,
-	TaskPriority,
-	TaskStatus,
+	Task,
 	TaskUpdateInput,
-} from "../../../lib/tasks/task-types.js";
+} from "../../../lib/tasks/task-types.ts";
+import { printCliError } from "../../shared/errors.ts";
+import type { CliOutputMode, CliParseResult } from "../../shared/output.ts";
+import { getOutputMode, printJson, printLines } from "../../shared/output.ts";
+import { parseTaskPriorityOption, parseTaskStatusOption } from "./shared.ts";
 
-/**
- * Map CLI status shorthand to TaskStatus
- */
-function normalizeStatus(status: string): TaskStatus | null {
-	const statusMap: Record<string, TaskStatus> = {
-		todo: "To Do",
-		"to-do": "To Do",
-		"to do": "To Do",
-		"in-progress": "In Progress",
-		inprogress: "In Progress",
-		"in progress": "In Progress",
-		done: "Done",
-		blocked: "Blocked",
-	};
-	return statusMap[status.toLowerCase()] ?? null;
+export interface TaskEditCliOptions {
+	title?: string;
+	description?: string;
+	status?: string;
+	priority?: string;
+	assignee?: string;
+	due?: string;
+	plan?: string;
+	appendPlan?: string;
+	notes?: string;
+	appendNotes?: string;
+	addLabel?: string[];
+	removeLabel?: string[];
+	addDep?: string[];
+	removeDep?: string[];
+	addAc?: string[];
+	removeAc?: number[];
+	checkAc?: number[];
+	uncheckAc?: number[];
 }
 
-/**
- * Validate and normalize priority value
- */
-function normalizePriority(priority: string): TaskPriority | null {
-	const validPriorities: TaskPriority[] = ["high", "medium", "low"];
-	const normalized = priority.toLowerCase();
-	return validPriorities.includes(normalized as TaskPriority)
-		? (normalized as TaskPriority)
-		: null;
+export interface LabelEditOptions {
+	addLabels?: readonly string[];
+	removeLabels?: readonly string[];
+}
+
+export interface DependencyEditOptions {
+	addDependencies?: readonly string[];
+	removeDependencies?: readonly string[];
+}
+
+export interface AcceptanceCriterionEditOptions {
+	addCriteria?: readonly string[];
+	removeIndices?: readonly number[];
+	checkIndices?: readonly number[];
+	uncheckIndices?: readonly number[];
 }
 
 /**
@@ -64,7 +77,7 @@ function processEscapedNewlines(value: string): string {
 /**
  * Track which fields were changed for output
  */
-interface FieldChange {
+export interface FieldChange {
 	field: string;
 	oldValue: string;
 	newValue: string;
@@ -155,394 +168,641 @@ export function registerEditCommand(program: Command): void {
 			collectIndices,
 			[],
 		)
-		// Temporary migration debt: existing edit command flow needs a focused split.
-		// fallow-ignore-next-line complexity
-		.action(async (taskId, options) => {
+		.action(async (taskId: string, options: TaskEditCliOptions) => {
 			const projectRoot = process.cwd();
 			const globalOptions = program.opts();
+			const mode = getOutputMode(globalOptions);
 
 			const manager = new TaskManager(projectRoot);
 
 			try {
-				// First, get the existing task
 				const existingTask = await manager.getTask(taskId);
 
 				if (!existingTask) {
-					const errorMsg = `Task not found: ${taskId}`;
-					if (globalOptions.json) {
-						console.log(JSON.stringify({ error: errorMsg }, null, 2));
-					} else {
-						console.error(`Error: ${errorMsg}`);
-					}
+					printCliError(`Task not found: ${taskId}`, globalOptions, {
+						prefix: "Error",
+					});
 					process.exit(1);
+					return;
 				}
 
-				// Track changes for output
-				const changes: FieldChange[] = [];
-
-				// Build the update input
-				const updateInput: TaskUpdateInput = {};
-
-				// Basic fields
-				if (options.title) {
-					changes.push({
-						field: "title",
-						oldValue: existingTask.title,
-						newValue: options.title,
-					});
-					updateInput.title = options.title;
-				}
-
-				if (options.description) {
-					changes.push({
-						field: "description",
-						oldValue: existingTask.description ? "existing" : "",
-						newValue: "updated",
-					});
-					updateInput.description = processEscapedNewlines(options.description);
-				}
-
-				if (options.status) {
-					const normalizedStatus = normalizeStatus(options.status);
-					if (!normalizedStatus) {
-						const errorMsg = `Invalid status: ${options.status}. Must be one of: todo, in-progress, done, blocked`;
-						if (globalOptions.json) {
-							console.log(JSON.stringify({ error: errorMsg }, null, 2));
-						} else {
-							console.error(`Error: ${errorMsg}`);
-						}
-						process.exit(1);
-					}
-					changes.push({
-						field: "status",
-						oldValue: existingTask.status,
-						newValue: normalizedStatus,
-					});
-					updateInput.status = normalizedStatus;
-				}
-
-				if (options.priority) {
-					const normalizedPriority = normalizePriority(options.priority);
-					if (!normalizedPriority) {
-						const errorMsg = `Invalid priority: ${options.priority}. Must be one of: high, medium, low`;
-						if (globalOptions.json) {
-							console.log(JSON.stringify({ error: errorMsg }, null, 2));
-						} else {
-							console.error(`Error: ${errorMsg}`);
-						}
-						process.exit(1);
-					}
-					changes.push({
-						field: "priority",
-						oldValue: existingTask.priority || "none",
-						newValue: normalizedPriority,
-					});
-					updateInput.priority = normalizedPriority;
-				}
-
-				if (options.assignee) {
-					changes.push({
-						field: "assignee",
-						oldValue: existingTask.assignee || "none",
-						newValue: options.assignee,
-					});
-					updateInput.assignee = options.assignee;
-				}
-
-				if (options.due) {
-					const dueDate = new Date(options.due);
-					if (Number.isNaN(dueDate.getTime())) {
-						const errorMsg = `Invalid date format: ${options.due}. Use YYYY-MM-DD format.`;
-						if (globalOptions.json) {
-							console.log(JSON.stringify({ error: errorMsg }, null, 2));
-						} else {
-							console.error(`Error: ${errorMsg}`);
-						}
-						process.exit(1);
-					}
-					changes.push({
-						field: "dueDate",
-						oldValue: existingTask.dueDate
-							? existingTask.dueDate.toISOString().split("T")[0] || ""
-							: "none",
-						newValue: dueDate.toISOString().split("T")[0] || options.due,
-					});
-					updateInput.dueDate = dueDate;
-				}
-
-				// Plan handling (process escaped newlines for better CLI experience)
-				if (options.plan) {
-					changes.push({
-						field: "plan",
-						oldValue: existingTask.implementationPlan ? "existing" : "",
-						newValue: "replaced",
-					});
-					updateInput.implementationPlan = processEscapedNewlines(options.plan);
-				} else if (options.appendPlan) {
-					const currentPlan = existingTask.implementationPlan || "";
-					const separator = currentPlan ? "\n\n" : "";
-					changes.push({
-						field: "plan",
-						oldValue: "",
-						newValue: "",
-					});
-					updateInput.implementationPlan =
-						currentPlan +
-						separator +
-						processEscapedNewlines(options.appendPlan);
-				}
-
-				// Notes handling (process escaped newlines for better CLI experience)
-				if (options.notes) {
-					changes.push({
-						field: "notes",
-						oldValue: existingTask.implementationNotes ? "existing" : "",
-						newValue: "replaced",
-					});
-					updateInput.implementationNotes = processEscapedNewlines(
-						options.notes,
-					);
-				} else if (options.appendNotes) {
-					const currentNotes = existingTask.implementationNotes || "";
-					const separator = currentNotes ? "\n\n" : "";
-					changes.push({
-						field: "notes",
-						oldValue: "",
-						newValue: "",
-					});
-					updateInput.implementationNotes =
-						currentNotes +
-						separator +
-						processEscapedNewlines(options.appendNotes);
-				}
-
-				// Labels (add/remove)
-				const addLabels: string[] = options.addLabel || [];
-				const removeLabels: string[] = options.removeLabel || [];
-				if (addLabels.length > 0 || removeLabels.length > 0) {
-					let labels = [...existingTask.labels];
-
-					// Remove labels first
-					for (const label of removeLabels) {
-						const labelLower = label.toLowerCase();
-						labels = labels.filter((l) => l.toLowerCase() !== labelLower);
-					}
-
-					// Then add new labels
-					for (const label of addLabels) {
-						if (!labels.some((l) => l.toLowerCase() === label.toLowerCase())) {
-							labels.push(label);
-						}
-					}
-
-					if (addLabels.length > 0) {
-						changes.push({
-							field: "labels",
-							oldValue: "",
-							newValue: `+${addLabels.join(", +")}`,
-						});
-					}
-					if (removeLabels.length > 0) {
-						changes.push({
-							field: "labels",
-							oldValue: `-${removeLabels.join(", -")}`,
-							newValue: "",
-						});
-					}
-					updateInput.labels = labels;
-				}
-
-				// Dependencies (add/remove)
-				const addDeps: string[] = options.addDep || [];
-				const removeDeps: string[] = options.removeDep || [];
-				if (addDeps.length > 0 || removeDeps.length > 0) {
-					let dependencies = [...existingTask.dependencies];
-
-					// Remove dependencies first
-					for (const dep of removeDeps) {
-						const depUpper = dep.toUpperCase();
-						dependencies = dependencies.filter(
-							(d) => d.toUpperCase() !== depUpper,
-						);
-					}
-
-					// Then add new dependencies
-					for (const dep of addDeps) {
-						if (
-							!dependencies.some((d) => d.toUpperCase() === dep.toUpperCase())
-						) {
-							dependencies.push(dep);
-						}
-					}
-
-					if (addDeps.length > 0) {
-						changes.push({
-							field: "dependencies",
-							oldValue: "",
-							newValue: `+${addDeps.join(", +")}`,
-						});
-					}
-					if (removeDeps.length > 0) {
-						changes.push({
-							field: "dependencies",
-							oldValue: `-${removeDeps.join(", -")}`,
-							newValue: "",
-						});
-					}
-					updateInput.dependencies = dependencies;
-				}
-
-				// Acceptance criteria handling
-				const addAcs: string[] = options.addAc || [];
-				const removeAcIndices: number[] = options.removeAc || [];
-				const checkAcIndices: number[] = options.checkAc || [];
-				const uncheckAcIndices: number[] = options.uncheckAc || [];
-
-				if (
-					addAcs.length > 0 ||
-					removeAcIndices.length > 0 ||
-					checkAcIndices.length > 0 ||
-					uncheckAcIndices.length > 0
-				) {
-					let criteria: AcceptanceCriterion[] = [
-						...existingTask.acceptanceCriteria,
-					];
-
-					// Remove criteria by index (sort in reverse to avoid index shifting issues)
-					const sortedRemoveIndices = [...removeAcIndices].sort(
-						(a, b) => b - a,
-					);
-					for (const indexToRemove of sortedRemoveIndices) {
-						const criterionIndex = criteria.findIndex(
-							(c) => c.index === indexToRemove,
-						);
-						if (criterionIndex !== -1) {
-							criteria.splice(criterionIndex, 1);
-						}
-					}
-
-					// Re-index after removal
-					criteria = criteria.map((c, i) => ({
-						...c,
-						index: i + 1,
-					}));
-
-					// Add new criteria
-					for (const text of addAcs) {
-						const newIndex = criteria.length + 1;
-						criteria.push({
-							index: newIndex,
-							text,
-							checked: false,
-						});
-					}
-
-					// Check/uncheck criteria
-					for (const indexToCheck of checkAcIndices) {
-						const criterion = criteria.find((c) => c.index === indexToCheck);
-						if (criterion) {
-							criterion.checked = true;
-						}
-					}
-
-					for (const indexToUncheck of uncheckAcIndices) {
-						const criterion = criteria.find((c) => c.index === indexToUncheck);
-						if (criterion) {
-							criterion.checked = false;
-						}
-					}
-
-					// Track changes
-					if (addAcs.length > 0) {
-						changes.push({
-							field: "acceptanceCriteria",
-							oldValue: "",
-							newValue: `+${addAcs.length} criteria`,
-						});
-					}
-					if (removeAcIndices.length > 0) {
-						changes.push({
-							field: "acceptanceCriteria",
-							oldValue: `-indices ${removeAcIndices.join(", ")}`,
-							newValue: "",
-						});
-					}
-					if (checkAcIndices.length > 0) {
-						changes.push({
-							field: "acceptanceCriteria",
-							oldValue: "",
-							newValue: `checked #${checkAcIndices.join(", #")}`,
-						});
-					}
-					if (uncheckAcIndices.length > 0) {
-						changes.push({
-							field: "acceptanceCriteria",
-							oldValue: "",
-							newValue: `unchecked #${uncheckAcIndices.join(", #")}`,
-						});
-					}
-
-					updateInput.acceptanceCriteria = criteria;
-				}
-
-				// Check if any changes were requested
-				if (changes.length === 0) {
-					const errorMsg =
-						"No changes specified. Use --help to see available options.";
-					if (globalOptions.json) {
-						console.log(JSON.stringify({ error: errorMsg }, null, 2));
-					} else {
-						console.error(`Error: ${errorMsg}`);
-					}
+				const update = buildTaskUpdate(existingTask, options);
+				if (!update.ok) {
+					printCliError(update.error, globalOptions, { prefix: "Error" });
 					process.exit(1);
+					return;
 				}
 
-				// Perform the update
-				const updatedTask = await manager.updateTask(taskId, updateInput);
-
-				// Output based on format
-				if (globalOptions.json) {
-					console.log(JSON.stringify(updatedTask, null, 2));
-				} else if (globalOptions.plain) {
-					console.log(`updated ${updatedTask.id}`);
-					// Output changed fields in plain format
-					if (updateInput.status) {
-						console.log(`status=${updateInput.status}`);
-					}
-					if (updateInput.priority) {
-						console.log(`priority=${updateInput.priority}`);
-					}
-					if (updateInput.title) {
-						console.log(`title=${updateInput.title}`);
-					}
-					if (updateInput.assignee) {
-						console.log(`assignee=${updateInput.assignee}`);
-					}
-					if (updateInput.dueDate) {
-						console.log(
-							`dueDate=${updateInput.dueDate.toISOString().split("T")[0]}`,
-						);
-					}
-					if (updateInput.labels) {
-						console.log(`labels=${updateInput.labels.join(",")}`);
-					}
-					if (updateInput.dependencies) {
-						console.log(`dependencies=${updateInput.dependencies.join(",")}`);
-					}
-				} else {
-					// Default formatted output
-					console.log(`Updated task ${updatedTask.id}: ${updatedTask.title}`);
-					const changeDescriptions = changes.map(formatChange);
-					console.log(`Changed: ${changeDescriptions.join(", ")}`);
-				}
+				const updatedTask = await manager.updateTask(
+					taskId,
+					update.value.updateInput,
+				);
+				printTaskEditSuccess(
+					updatedTask,
+					update.value.updateInput,
+					update.value.changes,
+					mode,
+				);
 			} catch (error) {
-				const errorMsg = `Error updating task: ${error}`;
-				if (globalOptions.json) {
-					console.log(JSON.stringify({ error: errorMsg }, null, 2));
-				} else {
-					console.error(errorMsg);
-				}
+				printCliError(`Error updating task: ${String(error)}`, globalOptions);
 				process.exit(1);
 			}
 		});
+}
+
+export function buildTaskUpdate(
+	existing: Task,
+	options: TaskEditCliOptions,
+): CliParseResult<{
+	updateInput: TaskUpdateInput;
+	changes: FieldChange[];
+}> {
+	const updateInput: TaskUpdateInput = {};
+	const changes: FieldChange[] = [];
+
+	const basicFields = applyBasicFieldEdits(existing, options, updateInput);
+	if (!basicFields.ok) {
+		return basicFields;
+	}
+	changes.push(...basicFields.value);
+
+	changes.push(...applyPlanEdits(existing, options, updateInput));
+	changes.push(...applyNotesEdits(existing, options, updateInput));
+	changes.push(...applyCollectionEdits(existing, options, updateInput));
+	changes.push(
+		...applyAcceptanceCriteriaUpdate(existing, options, updateInput),
+	);
+
+	if (changes.length === 0) {
+		return {
+			ok: false,
+			error: "No changes specified. Use --help to see available options.",
+		};
+	}
+
+	return { ok: true, value: { updateInput, changes } };
+}
+
+export function applyTaskLabelEdits(
+	existing: readonly string[],
+	edits: LabelEditOptions,
+): string[] {
+	const removeLabels = edits.removeLabels ?? [];
+	const addLabels = edits.addLabels ?? [];
+	let labels = [...existing];
+
+	for (const label of removeLabels) {
+		const labelLower = label.toLowerCase();
+		labels = labels.filter((existingLabel) => {
+			return existingLabel.toLowerCase() !== labelLower;
+		});
+	}
+
+	for (const label of addLabels) {
+		if (!labels.some((existingLabel) => isSameLabel(existingLabel, label))) {
+			labels.push(label);
+		}
+	}
+
+	return labels;
+}
+
+export function applyTaskDependencyEdits(
+	existing: readonly string[],
+	edits: DependencyEditOptions,
+): string[] {
+	const removeDependencies = edits.removeDependencies ?? [];
+	const addDependencies = edits.addDependencies ?? [];
+	let dependencies = [...existing];
+
+	for (const dependency of removeDependencies) {
+		const dependencyUpper = dependency.toUpperCase();
+		dependencies = dependencies.filter((existingDependency) => {
+			return existingDependency.toUpperCase() !== dependencyUpper;
+		});
+	}
+
+	for (const dependency of addDependencies) {
+		if (
+			!dependencies.some((existingDependency) =>
+				isSameDependency(existingDependency, dependency),
+			)
+		) {
+			dependencies.push(dependency);
+		}
+	}
+
+	return dependencies;
+}
+
+export function applyAcceptanceCriterionEdits(
+	existing: readonly AcceptanceCriterion[],
+	edits: AcceptanceCriterionEditOptions,
+): AcceptanceCriterion[] {
+	const removeIndices = edits.removeIndices ?? [];
+	const addCriteria = edits.addCriteria ?? [];
+	const checkIndices = edits.checkIndices ?? [];
+	const uncheckIndices = edits.uncheckIndices ?? [];
+	let criteria = existing.map((criterion) => ({ ...criterion }));
+
+	for (const indexToRemove of [...removeIndices].sort((a, b) => b - a)) {
+		const criterionIndex = criteria.findIndex(
+			(criterion) => criterion.index === indexToRemove,
+		);
+		if (criterionIndex !== -1) {
+			criteria.splice(criterionIndex, 1);
+		}
+	}
+
+	criteria = criteria.map((criterion, index) => ({
+		...criterion,
+		index: index + 1,
+	}));
+
+	for (const text of addCriteria) {
+		criteria.push({
+			index: criteria.length + 1,
+			text,
+			checked: false,
+		});
+	}
+
+	for (const indexToCheck of checkIndices) {
+		criteria = setCriterionChecked(criteria, indexToCheck, true);
+	}
+
+	for (const indexToUncheck of uncheckIndices) {
+		criteria = setCriterionChecked(criteria, indexToUncheck, false);
+	}
+
+	return criteria;
+}
+
+export function renderTaskEditSuccess(
+	task: Task,
+	update: TaskUpdateInput,
+	changes: readonly FieldChange[],
+	mode: CliOutputMode,
+): unknown | string[] {
+	if (mode === "json") {
+		return task;
+	}
+
+	if (mode === "plain") {
+		return renderPlainTaskEditSuccess(task, update);
+	}
+
+	return [
+		`Updated task ${task.id}: ${task.title}`,
+		`Changed: ${changes.map(formatChange).join(", ")}`,
+	];
+}
+
+function applyBasicFieldEdits(
+	existing: Task,
+	options: TaskEditCliOptions,
+	updateInput: TaskUpdateInput,
+): CliParseResult<FieldChange[]> {
+	const status = parseTaskStatusOption(options.status);
+	if (!status.ok) {
+		return status;
+	}
+	const priority = parseTaskPriorityOption(options.priority);
+	if (!priority.ok) {
+		return priority;
+	}
+
+	const dueDate = parseTaskEditDueDate(options.due);
+	if (!dueDate.ok) {
+		return dueDate;
+	}
+
+	return {
+		ok: true,
+		value: [
+			...applyTitleEdit(existing, options, updateInput),
+			...applyDescriptionEdit(existing, options, updateInput),
+			...applyStatusEdit(existing, status.value, updateInput),
+			...applyPriorityEdit(existing, priority.value, updateInput),
+			...applyAssigneeEdit(existing, options, updateInput),
+			...applyDueDateEdit(existing, options.due, dueDate.value, updateInput),
+		],
+	};
+}
+
+function applyTitleEdit(
+	existing: Task,
+	options: TaskEditCliOptions,
+	updateInput: TaskUpdateInput,
+): FieldChange[] {
+	if (options.title) {
+		updateInput.title = options.title;
+		return [
+			{
+				field: "title",
+				oldValue: existing.title,
+				newValue: options.title,
+			},
+		];
+	}
+
+	return [];
+}
+
+function applyDescriptionEdit(
+	existing: Task,
+	options: TaskEditCliOptions,
+	updateInput: TaskUpdateInput,
+): FieldChange[] {
+	if (options.description) {
+		updateInput.description = processEscapedNewlines(options.description);
+		return [
+			{
+				field: "description",
+				oldValue: existing.description ? "existing" : "",
+				newValue: "updated",
+			},
+		];
+	}
+
+	return [];
+}
+
+function applyStatusEdit(
+	existing: Task,
+	status: TaskUpdateInput["status"],
+	updateInput: TaskUpdateInput,
+): FieldChange[] {
+	if (!status) {
+		return [];
+	}
+
+	updateInput.status = status;
+	return [{ field: "status", oldValue: existing.status, newValue: status }];
+}
+
+function applyPriorityEdit(
+	existing: Task,
+	priority: TaskUpdateInput["priority"],
+	updateInput: TaskUpdateInput,
+): FieldChange[] {
+	if (!priority) {
+		return [];
+	}
+
+	updateInput.priority = priority;
+	return [
+		{
+			field: "priority",
+			oldValue: existing.priority || "none",
+			newValue: priority,
+		},
+	];
+}
+
+function applyAssigneeEdit(
+	existing: Task,
+	options: TaskEditCliOptions,
+	updateInput: TaskUpdateInput,
+): FieldChange[] {
+	if (options.assignee) {
+		updateInput.assignee = options.assignee;
+		return [
+			{
+				field: "assignee",
+				oldValue: existing.assignee || "none",
+				newValue: options.assignee,
+			},
+		];
+	}
+
+	return [];
+}
+
+function applyDueDateEdit(
+	existing: Task,
+	rawDueDate: string | undefined,
+	dueDate: Date | undefined,
+	updateInput: TaskUpdateInput,
+): FieldChange[] {
+	if (!dueDate) {
+		return [];
+	}
+
+	updateInput.dueDate = dueDate;
+	return [
+		{
+			field: "dueDate",
+			oldValue: existing.dueDate
+				? existing.dueDate.toISOString().split("T")[0] || ""
+				: "none",
+			newValue: dueDate.toISOString().split("T")[0] || rawDueDate || "",
+		},
+	];
+}
+
+function parseTaskEditDueDate(
+	value: string | undefined,
+): CliParseResult<Date | undefined> {
+	if (value === undefined) {
+		return { ok: true, value: undefined };
+	}
+
+	const dueDate = new Date(value);
+	return Number.isNaN(dueDate.getTime())
+		? {
+				ok: false,
+				error: `Invalid date format: ${value}. Use YYYY-MM-DD format.`,
+			}
+		: { ok: true, value: dueDate };
+}
+
+function applyPlanEdits(
+	existing: Task,
+	options: TaskEditCliOptions,
+	updateInput: TaskUpdateInput,
+): FieldChange[] {
+	if (options.plan) {
+		updateInput.implementationPlan = processEscapedNewlines(options.plan);
+		return [
+			{
+				field: "plan",
+				oldValue: existing.implementationPlan ? "existing" : "",
+				newValue: "replaced",
+			},
+		];
+	}
+
+	if (!options.appendPlan) {
+		return [];
+	}
+
+	const currentPlan = existing.implementationPlan || "";
+	const separator = currentPlan ? "\n\n" : "";
+	updateInput.implementationPlan =
+		currentPlan + separator + processEscapedNewlines(options.appendPlan);
+	return [{ field: "plan", oldValue: "", newValue: "" }];
+}
+
+function applyNotesEdits(
+	existing: Task,
+	options: TaskEditCliOptions,
+	updateInput: TaskUpdateInput,
+): FieldChange[] {
+	if (options.notes) {
+		updateInput.implementationNotes = processEscapedNewlines(options.notes);
+		return [
+			{
+				field: "notes",
+				oldValue: existing.implementationNotes ? "existing" : "",
+				newValue: "replaced",
+			},
+		];
+	}
+
+	if (!options.appendNotes) {
+		return [];
+	}
+
+	const currentNotes = existing.implementationNotes || "";
+	const separator = currentNotes ? "\n\n" : "";
+	updateInput.implementationNotes =
+		currentNotes + separator + processEscapedNewlines(options.appendNotes);
+	return [{ field: "notes", oldValue: "", newValue: "" }];
+}
+
+function applyCollectionEdits(
+	existing: Task,
+	options: TaskEditCliOptions,
+	updateInput: TaskUpdateInput,
+): FieldChange[] {
+	return [
+		...applyLabelUpdate(existing, options, updateInput),
+		...applyDependencyUpdate(existing, options, updateInput),
+	];
+}
+
+function applyLabelUpdate(
+	existing: Task,
+	options: TaskEditCliOptions,
+	updateInput: TaskUpdateInput,
+): FieldChange[] {
+	const addLabels = options.addLabel ?? [];
+	const removeLabels = options.removeLabel ?? [];
+	if (addLabels.length === 0 && removeLabels.length === 0) {
+		return [];
+	}
+
+	updateInput.labels = applyTaskLabelEdits(existing.labels, {
+		addLabels,
+		removeLabels,
+	});
+
+	return [
+		...(addLabels.length > 0
+			? [
+					{
+						field: "labels",
+						oldValue: "",
+						newValue: `+${addLabels.join(", +")}`,
+					},
+				]
+			: []),
+		...(removeLabels.length > 0
+			? [
+					{
+						field: "labels",
+						oldValue: `-${removeLabels.join(", -")}`,
+						newValue: "",
+					},
+				]
+			: []),
+	];
+}
+
+function applyDependencyUpdate(
+	existing: Task,
+	options: TaskEditCliOptions,
+	updateInput: TaskUpdateInput,
+): FieldChange[] {
+	const addDependencies = options.addDep ?? [];
+	const removeDependencies = options.removeDep ?? [];
+	if (addDependencies.length === 0 && removeDependencies.length === 0) {
+		return [];
+	}
+
+	updateInput.dependencies = applyTaskDependencyEdits(existing.dependencies, {
+		addDependencies,
+		removeDependencies,
+	});
+
+	return [
+		...(addDependencies.length > 0
+			? [
+					{
+						field: "dependencies",
+						oldValue: "",
+						newValue: `+${addDependencies.join(", +")}`,
+					},
+				]
+			: []),
+		...(removeDependencies.length > 0
+			? [
+					{
+						field: "dependencies",
+						oldValue: `-${removeDependencies.join(", -")}`,
+						newValue: "",
+					},
+				]
+			: []),
+	];
+}
+
+function applyAcceptanceCriteriaUpdate(
+	existing: Task,
+	options: TaskEditCliOptions,
+	updateInput: TaskUpdateInput,
+): FieldChange[] {
+	const addCriteria = options.addAc ?? [];
+	const removeIndices = options.removeAc ?? [];
+	const checkIndices = options.checkAc ?? [];
+	const uncheckIndices = options.uncheckAc ?? [];
+
+	if (
+		addCriteria.length === 0 &&
+		removeIndices.length === 0 &&
+		checkIndices.length === 0 &&
+		uncheckIndices.length === 0
+	) {
+		return [];
+	}
+
+	updateInput.acceptanceCriteria = applyAcceptanceCriterionEdits(
+		existing.acceptanceCriteria,
+		{ addCriteria, removeIndices, checkIndices, uncheckIndices },
+	);
+
+	return [
+		...renderAcceptanceAddChanges(addCriteria),
+		...renderAcceptanceRemoveChanges(removeIndices),
+		...renderAcceptanceCheckChanges(checkIndices),
+		...renderAcceptanceUncheckChanges(uncheckIndices),
+	];
+}
+
+function renderAcceptanceAddChanges(
+	addCriteria: readonly string[],
+): FieldChange[] {
+	if (addCriteria.length === 0) {
+		return [];
+	}
+
+	return [
+		{
+			field: "acceptanceCriteria",
+			oldValue: "",
+			newValue: `+${addCriteria.length} criteria`,
+		},
+	];
+}
+
+function renderAcceptanceRemoveChanges(
+	removeIndices: readonly number[],
+): FieldChange[] {
+	if (removeIndices.length === 0) {
+		return [];
+	}
+
+	return [
+		{
+			field: "acceptanceCriteria",
+			oldValue: `-indices ${removeIndices.join(", ")}`,
+			newValue: "",
+		},
+	];
+}
+
+function renderAcceptanceCheckChanges(
+	checkIndices: readonly number[],
+): FieldChange[] {
+	if (checkIndices.length === 0) {
+		return [];
+	}
+
+	return [
+		{
+			field: "acceptanceCriteria",
+			oldValue: "",
+			newValue: `checked #${checkIndices.join(", #")}`,
+		},
+	];
+}
+
+function renderAcceptanceUncheckChanges(
+	uncheckIndices: readonly number[],
+): FieldChange[] {
+	if (uncheckIndices.length === 0) {
+		return [];
+	}
+
+	return [
+		{
+			field: "acceptanceCriteria",
+			oldValue: "",
+			newValue: `unchecked #${uncheckIndices.join(", #")}`,
+		},
+	];
+}
+
+function renderPlainTaskEditSuccess(
+	task: Task,
+	update: TaskUpdateInput,
+): string[] {
+	return [
+		`updated ${task.id}`,
+		...(update.status ? [`status=${update.status}`] : []),
+		...(update.priority ? [`priority=${update.priority}`] : []),
+		...(update.title ? [`title=${update.title}`] : []),
+		...(update.assignee ? [`assignee=${update.assignee}`] : []),
+		...(update.dueDate
+			? [`dueDate=${update.dueDate.toISOString().split("T")[0]}`]
+			: []),
+		...(update.labels ? [`labels=${update.labels.join(",")}`] : []),
+		...(update.dependencies
+			? [`dependencies=${update.dependencies.join(",")}`]
+			: []),
+	];
+}
+
+function printTaskEditSuccess(
+	task: Task,
+	update: TaskUpdateInput,
+	changes: readonly FieldChange[],
+	mode: CliOutputMode,
+): void {
+	const rendered = renderTaskEditSuccess(task, update, changes, mode);
+	if (mode === "json") {
+		printJson(rendered);
+		return;
+	}
+
+	printLines(rendered as string[]);
+}
+
+function setCriterionChecked(
+	criteria: readonly AcceptanceCriterion[],
+	indexToUpdate: number,
+	checked: boolean,
+): AcceptanceCriterion[] {
+	return criteria.map((criterion) =>
+		criterion.index === indexToUpdate ? { ...criterion, checked } : criterion,
+	);
+}
+
+function isSameLabel(left: string, right: string): boolean {
+	return left.toLowerCase() === right.toLowerCase();
+}
+
+function isSameDependency(left: string, right: string): boolean {
+	return left.toUpperCase() === right.toUpperCase();
 }
