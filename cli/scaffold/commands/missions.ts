@@ -2,6 +2,9 @@ import type { Command } from "commander";
 import { scaffoldProjectConfig } from "../../../lib/config/index.js";
 import { loadConfig } from "../../../lib/tasks/file-system.js";
 import { TaskManager } from "../../../lib/tasks/task-manager.js";
+import type { ForgeTasksConfig } from "../../../lib/tasks/task-types.ts";
+import type { CliGlobalOptions, CliOutputMode } from "../../shared/output.ts";
+import { getOutputMode, printJson, printLines } from "../../shared/output.ts";
 
 interface MissionsOptions {
 	prefix: string;
@@ -9,99 +12,86 @@ interface MissionsOptions {
 	force?: boolean;
 }
 
-interface GlobalOptions {
-	json?: boolean;
-	plain?: boolean;
+type MissionsScaffoldState = "already_initialized" | "should_initialize";
+
+interface MissionsAlreadyInitializedResult {
+	status: "already_initialized";
+	path: string;
+	message: string;
 }
 
+interface MissionsInitializedResult {
+	status: "initialized";
+	path: string;
+	config: ForgeTasksConfig;
+	projectConfigCreated: boolean;
+}
+
+export type MissionsScaffoldResult =
+	| MissionsAlreadyInitializedResult
+	| MissionsInitializedResult;
+
 /** Core scaffolding logic shared by `scaffold missions` and the `task init` alias. */
-// Temporary migration debt: scaffold writes all mission artifacts in one flow.
-// fallow-ignore-next-line complexity
 export async function scaffoldMissions(
 	options: MissionsOptions,
-	globalOptions: GlobalOptions,
+	globalOptions: CliGlobalOptions,
 ): Promise<void> {
 	const projectRoot = process.cwd();
+	const mode = getOutputMode(globalOptions);
+	const state = await getMissionsScaffoldState(projectRoot, options.force);
+	const result =
+		state === "already_initialized"
+			? createAlreadyInitializedResult(projectRoot)
+			: await initializeMissions(projectRoot, options);
 
-	// Check if already initialized
+	printMissionsScaffoldResult(result, mode);
+}
+
+export async function getMissionsScaffoldState(
+	projectRoot: string,
+	force = false,
+): Promise<MissionsScaffoldState> {
 	const existingConfig = await loadConfig(projectRoot);
-	if (existingConfig && !options.force) {
-		if (globalOptions.json) {
-			console.log(
-				JSON.stringify(
-					{
-						status: "already_initialized",
-						path: projectRoot,
-						message:
-							"Task system is already initialized. Use --force to reinitialize.",
-					},
-					null,
-					2,
-				),
-			);
-		} else if (globalOptions.plain) {
-			console.log("already_initialized");
-			console.log(`path=${projectRoot}`);
-		} else {
-			console.log(
-				"Warning: Task system is already initialized in this directory",
-			);
-			console.log("Use --force to reinitialize");
-		}
-		return;
+	if (existingConfig && !force) {
+		return "already_initialized";
 	}
 
-	// Initialize TaskManager
+	return "should_initialize";
+}
+
+export async function initializeMissions(
+	projectRoot: string,
+	options: MissionsOptions,
+): Promise<MissionsScaffoldResult> {
 	const manager = new TaskManager(projectRoot);
 	const config = await manager.init({
 		prefix: options.prefix,
 		projectName: options.name,
 	});
 
-	// Scaffold .cosmonauts/config.json with default workflows
 	const configCreated = await scaffoldProjectConfig(projectRoot);
 
-	// Output based on format
-	if (globalOptions.json) {
-		console.log(
-			JSON.stringify(
-				{
-					status: "initialized",
-					path: projectRoot,
-					config,
-					projectConfigCreated: configCreated,
-				},
-				null,
-				2,
-			),
-		);
-	} else if (globalOptions.plain) {
-		console.log(`initialized ${projectRoot}`);
-		console.log(`prefix=${config.prefix}`);
-		if (config.projectName) {
-			console.log(`name=${config.projectName}`);
-		}
-		console.log(`projectConfig=${configCreated ? "created" : "exists"}`);
-	} else {
-		console.log(`Initialized task system in ${projectRoot}`);
-		console.log(`- Created missions/tasks/`);
-		console.log(`- Created missions/plans/`);
-		console.log(`- Created missions/archive/tasks/`);
-		console.log(`- Created missions/archive/plans/`);
-		console.log(`- Created missions/reviews/`);
-		console.log(`- Created memory/`);
-		console.log(
-			`- Created missions/tasks/config.json with prefix: ${config.prefix}`,
-		);
-		if (configCreated) {
-			console.log(`- Created .cosmonauts/config.json with default workflows`);
-		} else {
-			console.log(`- .cosmonauts/config.json already exists (unchanged)`);
-		}
-		if (config.projectName) {
-			console.log(`- Project name: ${config.projectName}`);
-		}
+	return {
+		status: "initialized",
+		path: projectRoot,
+		config,
+		projectConfigCreated: configCreated,
+	};
+}
+
+export function renderMissionsScaffoldResult(
+	result: MissionsScaffoldResult,
+	mode: CliOutputMode,
+): unknown | string[] {
+	if (mode === "json") {
+		return result;
 	}
+
+	if (result.status === "already_initialized") {
+		return renderAlreadyInitializedResult(result, mode);
+	}
+
+	return renderInitializedResult(result, mode);
 }
 
 export function registerMissionsCommand(program: Command): void {
@@ -116,4 +106,99 @@ export function registerMissionsCommand(program: Command): void {
 		.action(async (options) => {
 			await scaffoldMissions(options, program.opts());
 		});
+}
+
+function createAlreadyInitializedResult(
+	projectRoot: string,
+): MissionsScaffoldResult {
+	return {
+		status: "already_initialized",
+		path: projectRoot,
+		message: "Task system is already initialized. Use --force to reinitialize.",
+	};
+}
+
+function printMissionsScaffoldResult(
+	result: MissionsScaffoldResult,
+	mode: CliOutputMode,
+): void {
+	const rendered = renderMissionsScaffoldResult(result, mode);
+
+	if (mode === "json") {
+		printJson(rendered);
+		return;
+	}
+
+	printLines(rendered as string[]);
+}
+
+function renderAlreadyInitializedResult(
+	result: MissionsAlreadyInitializedResult,
+	mode: CliOutputMode,
+): string[] {
+	if (mode === "plain") {
+		return [result.status, `path=${result.path}`];
+	}
+
+	return [
+		"Warning: Task system is already initialized in this directory",
+		"Use --force to reinitialize",
+	];
+}
+
+function renderInitializedResult(
+	result: MissionsInitializedResult,
+	mode: CliOutputMode,
+): string[] {
+	if (mode === "plain") {
+		return renderInitializedPlainResult(result);
+	}
+
+	return renderInitializedHumanResult(result);
+}
+
+function renderInitializedPlainResult(
+	result: MissionsInitializedResult,
+): string[] {
+	const lines = [
+		`initialized ${result.path}`,
+		`prefix=${result.config.prefix}`,
+	];
+
+	if (result.config.projectName) {
+		lines.push(`name=${result.config.projectName}`);
+	}
+
+	lines.push(
+		`projectConfig=${result.projectConfigCreated ? "created" : "exists"}`,
+	);
+	return lines;
+}
+
+function renderInitializedHumanResult(
+	result: MissionsInitializedResult,
+): string[] {
+	const lines = [
+		`Initialized task system in ${result.path}`,
+		"- Created missions/tasks/",
+		"- Created missions/plans/",
+		"- Created missions/archive/tasks/",
+		"- Created missions/archive/plans/",
+		"- Created missions/reviews/",
+		"- Created memory/",
+		`- Created missions/tasks/config.json with prefix: ${result.config.prefix}`,
+		renderProjectConfigLine(result.projectConfigCreated),
+	];
+
+	if (result.config.projectName) {
+		lines.push(`- Project name: ${result.config.projectName}`);
+	}
+
+	return lines;
+}
+
+function renderProjectConfigLine(created: boolean): string {
+	return created
+		? "- Created .cosmonauts/config.json with default workflows"
+		: "- .cosmonauts/config.json already exists (unchanged)";
 }
