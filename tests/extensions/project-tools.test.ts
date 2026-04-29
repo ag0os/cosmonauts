@@ -124,10 +124,9 @@ describe("project-tools extension", () => {
 	describe("system prompt injection", () => {
 		test("appends tools block after existing system prompt content", async () => {
 			await writeFile(join(tmpDir, "fallow.toml"), "");
-			const result = (await fireBeforeAgentStart(
-				tmpDir,
-				"my base prompt",
-			)) as { systemPrompt: string };
+			const result = (await fireBeforeAgentStart(tmpDir, "my base prompt")) as {
+				systemPrompt: string;
+			};
 			expect(result.systemPrompt).toMatch(/^my base prompt/);
 			expect(result.systemPrompt).toContain("## Detected Analysis Tools");
 		});
