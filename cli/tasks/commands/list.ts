@@ -1,18 +1,15 @@
 import type { Command } from "commander";
 import { TaskManager } from "../../../lib/tasks/task-manager.ts";
-import type {
-	Task,
-	TaskListFilter,
-	TaskStatus,
-} from "../../../lib/tasks/task-types.ts";
+import type { Task, TaskListFilter } from "../../../lib/tasks/task-types.ts";
 import { printCliError } from "../../shared/errors.ts";
 import type { CliOutputMode, CliParseResult } from "../../shared/output.ts";
+import { getOutputMode, printJson, printLines } from "../../shared/output.ts";
 import {
-	getOutputMode,
-	printJson,
-	printLines,
-	renderTable,
-} from "../../shared/output.ts";
+	parseTaskPriorityOption,
+	parseTaskStatusOption,
+	renderTaskSummaryRow,
+	renderTaskSummaryTable,
+} from "./shared.ts";
 
 interface TaskListCliOptions {
 	status?: string;
@@ -20,36 +17,6 @@ interface TaskListCliOptions {
 	assignee?: string;
 	label?: string;
 	ready?: boolean;
-}
-
-const TASK_STATUS_ALIASES = new Map<string, TaskStatus>([
-	["todo", "To Do"],
-	["to-do", "To Do"],
-	["to do", "To Do"],
-	["in-progress", "In Progress"],
-	["inprogress", "In Progress"],
-	["in progress", "In Progress"],
-	["done", "Done"],
-	["blocked", "Blocked"],
-]);
-
-const TASK_PRIORITY_VALUES = ["high", "medium", "low"] as const;
-
-/**
- * Map CLI status shorthand to TaskStatus
- */
-function normalizeStatus(status: string): TaskStatus | null {
-	return TASK_STATUS_ALIASES.get(status.toLowerCase()) ?? null;
-}
-
-/**
- * Validate and normalize priority value
- */
-function normalizePriority(
-	priority: string,
-): (typeof TASK_PRIORITY_VALUES)[number] | null {
-	const normalized = priority.toLowerCase();
-	return TASK_PRIORITY_VALUES.find((value) => value === normalized) ?? null;
 }
 
 export function registerListCommand(program: Command): void {
@@ -98,26 +65,20 @@ export function parseTaskListFilter(
 ): CliParseResult<TaskListFilter> {
 	const filter: TaskListFilter = {};
 
-	if (options.status) {
-		const normalizedStatus = normalizeStatus(options.status);
-		if (!normalizedStatus) {
-			return {
-				ok: false,
-				error: `Invalid status: ${options.status}. Must be one of: todo, in-progress, done, blocked`,
-			};
-		}
-		filter.status = normalizedStatus;
+	const status = parseTaskStatusOption(options.status);
+	if (!status.ok) {
+		return status;
+	}
+	if (status.value) {
+		filter.status = status.value;
 	}
 
-	if (options.priority) {
-		const normalizedPriority = normalizePriority(options.priority);
-		if (!normalizedPriority) {
-			return {
-				ok: false,
-				error: `Invalid priority: ${options.priority}. Must be one of: high, medium, low`,
-			};
-		}
-		filter.priority = normalizedPriority;
+	const priority = parseTaskPriorityOption(options.priority);
+	if (!priority.ok) {
+		return priority;
+	}
+	if (priority.value) {
+		filter.priority = priority.value;
 	}
 
 	if (options.assignee) {
@@ -151,33 +112,11 @@ export function renderTaskList(
 		return ["No tasks found"];
 	}
 
-	return renderTable(tasks, [
-		{
-			header: "ID",
-			width: (rows) => Math.max(8, ...rows.map((task) => task.id.length)),
-			render: (task) => task.id,
-		},
-		{
-			header: "STATUS",
-			width: (rows) => Math.max(11, ...rows.map((task) => task.status.length)),
-			render: (task) => task.status,
-		},
-		{
-			header: "PRIORITY",
-			width: () => 9,
-			render: (task) => task.priority ?? "-",
-		},
-		{
-			header: "TITLE",
-			width: (rows) =>
-				Math.max(...rows.map((task) => task.title.length), "TITLE".length),
-			render: (task) => task.title,
-		},
-	]);
+	return renderTaskSummaryTable(tasks);
 }
 
 export function renderTaskRow(task: Task): string {
-	return `${task.id} | ${task.status} | ${task.priority ?? "-"} | ${task.title}`;
+	return renderTaskSummaryRow(task);
 }
 
 function printTaskList(tasks: readonly Task[], mode: CliOutputMode): void {
