@@ -3,28 +3,20 @@
  * Covers install, uninstall, and packages list actions.
  */
 
+import "../../helpers/readline.ts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { captureCommandOutput } from "../../helpers/cli.ts";
 import {
 	createInstalledPackageFixture,
 	createInstallResultFixture,
 } from "../../helpers/packages.ts";
+import { getReadlineMocks } from "../../helpers/readline.ts";
+
+const readlineMocks = getReadlineMocks();
 
 // ============================================================================
 // Mocks
 // ============================================================================
-
-const readlineMocks = vi.hoisted(() => ({
-	close: vi.fn(),
-	question: vi.fn(),
-}));
-
-vi.mock("node:readline", () => ({
-	createInterface: () => ({
-		close: readlineMocks.close,
-		question: readlineMocks.question,
-	}),
-}));
 
 vi.mock("../../../lib/packages/installer.ts", () => ({
 	installPackage: vi.fn(),

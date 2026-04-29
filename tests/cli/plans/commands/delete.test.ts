@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import "../../../helpers/readline.ts";
+import { describe, expect, it, vi } from "vitest";
 import type { PlanDeleteResult } from "../../../../cli/plans/commands/delete.ts";
 import {
 	confirmPlanDeletion,
@@ -9,27 +10,13 @@ import {
 import { PlanManager } from "../../../../lib/plans/plan-manager.ts";
 import type { Plan } from "../../../../lib/plans/plan-types.ts";
 import {
-	type CommandTestContext,
-	type captureCommandOutput,
-	createCommandProgram,
-	createCommandTestContext,
-	type mockProcessExitThrow,
-	ProcessExitError,
-} from "../../../helpers/cli.ts";
+	runCommonDeleteCommandTests,
+	setupDeleteCommandContext,
+} from "../../../helpers/delete-command-tests.ts";
 import { createPlanFixture } from "../../../helpers/plans.ts";
+import { getReadlineMocks } from "../../../helpers/readline.ts";
 
-const readlineMocks = vi.hoisted(() => ({
-	close: vi.fn<() => void>(),
-	question:
-		vi.fn<(query: string, callback: (answer: string) => void) => void>(),
-}));
-
-vi.mock("node:readline", () => ({
-	createInterface: () => ({
-		close: readlineMocks.close,
-		question: readlineMocks.question,
-	}),
-}));
+const readlineMocks = getReadlineMocks();
 
 describe("renderPlanDeleteResult", () => {
 	const plan: Plan = {
@@ -86,122 +73,58 @@ describe("renderPlanDeleteResult", () => {
 });
 
 describe("plan delete CLI", () => {
-	let tempDir: string;
-	let output: ReturnType<typeof captureCommandOutput>;
-	let exit: ReturnType<typeof mockProcessExitThrow>;
-	let context: CommandTestContext;
+	const getContext = setupDeleteCommandContext("plan-delete-command-test-");
 
-	beforeEach(async () => {
-		context = await createCommandTestContext("plan-delete-command-test-");
-		tempDir = context.tempDir;
-		output = context.output;
-		exit = context.exit;
-		readlineMocks.close.mockReset();
-		readlineMocks.question.mockReset();
-	});
-
-	afterEach(async () => {
-		await context.restore();
-	});
-
-	it("force deletes a plan in human mode without prompting", async () => {
-		const { manager, plan } = await createPlanInTempDir(
-			tempDir,
-			"remove-me",
-			"Remove Me",
-		);
-
-		await createProgram().parseAsync([
-			"node",
-			"test",
-			"delete",
-			plan.slug,
-			"--force",
-		]);
-
-		await expect(manager.getPlan(plan.slug)).resolves.toBeNull();
-		expect(readlineMocks.question).not.toHaveBeenCalled();
-		expect(output.stdout()).toBe("Deleted plan remove-me: Remove Me\n");
-		expect(output.stderr()).toBe("");
-		expect(exit.calls()).toEqual([]);
-	});
-
-	it("prints not found errors in JSON mode", async () => {
-		await expectDeleteToExit(["--json", "delete", "missing-plan", "--force"]);
-
-		expect(output.stdout()).toContain(
-			'{\n  "error": "Plan not found: missing-plan"\n}\n',
-		);
-		expect(output.stderr()).toBe("");
-		expect(exit.calls()[0]).toBe(1);
-	});
-
-	it("prints not found errors in human mode", async () => {
-		await expectDeleteToExit(["delete", "missing-plan", "--force"]);
-
-		expect(output.stdout()).toBe("");
-		expect(output.stderr()).toContain("Error: Plan not found: missing-plan\n");
-		expect(exit.calls()[0]).toBe(1);
-	});
-
-	it("prints cancellation in JSON mode without deleting", async () => {
-		await expectCancelledDeletion({
-			tempDir,
-			answer: "n",
-			modeArgs: ["--json"],
-			expectedStdout: '{\n  "cancelled": true,\n  "slug": "keep-me"\n}\n',
-			output,
-			exit,
-		});
-	});
-
-	it("prints cancellation in plain mode without deleting", async () => {
-		await expectCancelledDeletion({
-			tempDir,
-			answer: "no",
-			modeArgs: ["--plain"],
-			expectedStdout: "cancelled\n",
-			output,
-			exit,
-		});
-	});
-
-	it("prints cancellation in human mode without deleting", async () => {
-		await expectCancelledDeletion({
-			tempDir,
-			answer: "",
-			modeArgs: [],
-			expectedStdout: "Deletion cancelled.\n",
-			output,
-			exit,
-		});
-	});
-
-	it("prints manager errors in JSON mode", async () => {
-		await createPlanInTempDir(tempDir, "delete-fails", "Delete Fails");
-		mockDeletePlanFailure();
-
-		await expectDeleteToExit(["--json", "delete", "delete-fails", "--force"]);
-
-		expect(output.stdout()).toBe(
-			'{\n  "error": "Error deleting plan: Error: disk full"\n}\n',
-		);
-		expect(output.stderr()).toBe("");
-		expect(exit.calls()).toEqual([1]);
-	});
-
-	it("prints manager errors in human mode", async () => {
-		await createPlanInTempDir(tempDir, "delete-fails", "Delete Fails");
-		mockDeletePlanFailure();
-
-		await expectDeleteToExit(["delete", "delete-fails", "--force"]);
-
-		expect(output.stdout()).toBe("");
-		expect(output.stderr()).toBe("Error deleting plan: Error: disk full\n");
-		expect(exit.calls()).toEqual([1]);
+	runCommonDeleteCommandTests<Plan, PlanManager>({
+		entityName: "plan",
+		registerDeleteCommand,
+		getContext,
+		forceCase: {
+			create: async (tempDir) => {
+				const { manager, plan } = await createPlanInTempDir(
+					tempDir,
+					"remove-me",
+					"Remove Me",
+				);
+				return { manager, entity: plan };
+			},
+			id: (plan) => plan.slug,
+			get: (manager, slug) => manager.getPlan(slug),
+			args: (plan) => ["delete", plan.slug, "--force"],
+			expectedStdout: "Deleted plan remove-me: Remove Me\n",
+		},
+		notFound: {
+			id: "missing-plan",
+			jsonError: '{\n  "error": "Plan not found: missing-plan"\n}\n',
+			humanError: "Error: Plan not found: missing-plan\n",
+		},
+		cancellation: {
+			create: async (tempDir) => {
+				const { manager, plan } = await createPlanInTempDir(
+					tempDir,
+					"keep-me",
+					"Keep Me",
+				);
+				return { manager, entity: plan };
+			},
+			id: (plan) => plan.slug,
+			get: (manager, slug) => manager.getPlan(slug),
+			spyOnDelete: () => vi.spyOn(PlanManager.prototype, "deletePlan"),
+			jsonStdout: '{\n  "cancelled": true,\n  "slug": "keep-me"\n}\n',
+		},
+		managerError: {
+			create: async (tempDir) => {
+				await createPlanInTempDir(tempDir, "delete-fails", "Delete Fails");
+			},
+			mockFailure: mockDeletePlanFailure,
+			id: "delete-fails",
+			jsonStdout: '{\n  "error": "Error deleting plan: Error: disk full"\n}\n',
+			humanStderr: "Error deleting plan: Error: disk full\n",
+		},
 	});
 
 	it("loads an existing plan for deletion", async () => {
+		const { tempDir } = getContext();
 		const { manager, plan } = await createPlanInTempDir(
 			tempDir,
 			"load-me",
@@ -215,6 +138,7 @@ describe("plan delete CLI", () => {
 	});
 
 	it("returns a parse error when the plan cannot be loaded", async () => {
+		const { tempDir } = getContext();
 		const manager = new PlanManager(tempDir);
 
 		await expect(loadPlanForDeletion(manager, "missing-plan")).resolves.toEqual(
@@ -226,28 +150,13 @@ describe("plan delete CLI", () => {
 	});
 
 	it("confirms deletion without prompting when force is set", async () => {
+		const { tempDir } = getContext();
 		const { plan } = await createPlanInTempDir(tempDir, "forced", "Forced");
 
 		await expect(confirmPlanDeletion(plan, true)).resolves.toBe(true);
 		expect(readlineMocks.question).not.toHaveBeenCalled();
 	});
 });
-
-function createProgram() {
-	return createCommandProgram(registerDeleteCommand);
-}
-
-async function expectDeleteToExit(args: string[]): Promise<void> {
-	await expect(
-		createProgram().parseAsync(["node", "test", ...args]),
-	).rejects.toThrow(ProcessExitError);
-}
-
-function answerPrompt(answer: string): void {
-	readlineMocks.question.mockImplementation((_query, callback) => {
-		callback(answer);
-	});
-}
 
 async function createPlanInTempDir(
 	tempDir: string,
@@ -263,44 +172,4 @@ function mockDeletePlanFailure(): void {
 	vi.spyOn(PlanManager.prototype, "deletePlan").mockRejectedValue(
 		new Error("disk full"),
 	);
-}
-
-interface CancelledDeletionExpectation {
-	tempDir: string;
-	answer: string;
-	modeArgs: string[];
-	expectedStdout: string;
-	output: ReturnType<typeof captureCommandOutput>;
-	exit: ReturnType<typeof mockProcessExitThrow>;
-}
-
-async function expectCancelledDeletion({
-	tempDir,
-	answer,
-	modeArgs,
-	expectedStdout,
-	output,
-	exit,
-}: CancelledDeletionExpectation): Promise<void> {
-	const { manager, plan } = await createPlanInTempDir(
-		tempDir,
-		"keep-me",
-		"Keep Me",
-	);
-	answerPrompt(answer);
-	const deletePlan = vi.spyOn(PlanManager.prototype, "deletePlan");
-
-	await createProgram().parseAsync([
-		"node",
-		"test",
-		...modeArgs,
-		"delete",
-		plan.slug,
-	]);
-
-	await expect(manager.getPlan(plan.slug)).resolves.not.toBeNull();
-	expect(deletePlan).not.toHaveBeenCalled();
-	expect(output.stdout()).toBe(expectedStdout);
-	expect(output.stderr()).toBe("");
-	expect(exit.calls()).toEqual([]);
 }

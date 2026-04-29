@@ -3,103 +3,30 @@
  * Verifies the cached CosmonautsRuntime is used and forwarded to runtime calls.
  */
 
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
-import type { AgentRegistry } from "../../lib/agents/index.ts";
-import { createRegistryFromDomains } from "../../lib/agents/index.ts";
-import { loadDomainsFromSources } from "../../lib/domains/index.ts";
-import { DomainRegistry } from "../../lib/domains/registry.ts";
-import { DomainResolver } from "../../lib/domains/resolver.ts";
-import type { ChainResult, ChainStep } from "../../lib/orchestration/types.ts";
-
-// ============================================================================
-// Hoisted mock references — declared before imports via vi.hoisted()
-// ============================================================================
-
-const mocks = vi.hoisted(() => ({
-	runtimeCreate: vi.fn(),
-	parseChain: vi.fn(),
-	runChain: vi.fn(),
-	createPiSpawner: vi.fn(),
-	createAgentSessionFromDefinition: vi.fn(),
-}));
-
-vi.mock("../../lib/runtime.ts", () => ({
-	CosmonautsRuntime: {
-		create: mocks.runtimeCreate,
-	},
-}));
-
-vi.mock("../../lib/orchestration/chain-parser.ts", () => ({
-	parseChain: mocks.parseChain,
-}));
-
-vi.mock("../../lib/orchestration/chain-runner.ts", async (importOriginal) => {
-	const actual =
-		await importOriginal<
-			typeof import("../../lib/orchestration/chain-runner.ts")
-		>();
-	return {
-		...actual,
-		runChain: mocks.runChain,
-	};
-});
-
-vi.mock("../../lib/orchestration/agent-spawner.ts", () => ({
-	createPiSpawner: mocks.createPiSpawner,
-}));
-
-vi.mock("../../lib/orchestration/session-factory.ts", () => ({
-	createAgentSessionFromDefinition: mocks.createAgentSessionFromDefinition,
-}));
+import "./orchestration-mocks.ts";
 
 import orchestrationExtension from "../../domains/shared/extensions/orchestration/index.ts";
+import type { AgentRegistry } from "../../lib/agents/index.ts";
+import type { DomainRegistry } from "../../lib/domains/registry.ts";
+import { DomainResolver } from "../../lib/domains/resolver.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import { runChain } from "../../lib/orchestration/chain-runner.ts";
 import type { SpawnActivityEvent } from "../../lib/orchestration/message-bus.ts";
 import { getOrCreateTracker } from "../../lib/orchestration/spawn-tracker.ts";
+import type { ChainResult, ChainStep } from "../../lib/orchestration/types.ts";
+import {
+	createMockPi,
+	flushAsync,
+	loadOrchestrationDomainFixtures,
+	testBundledCodingDir,
+	testDomainsDir,
+} from "./orchestration-helpers.ts";
+import { getOrchestrationMocks } from "./orchestration-mocks.ts";
 
-interface RegisteredTool {
-	name: string;
-	execute: (...args: unknown[]) => Promise<unknown>;
-	renderResult?: (...args: unknown[]) => unknown;
-}
-
-interface MockPiOptions {
-	systemPrompt?: string;
-	/** Session ID for the parent session (used by spawn_agent depth tracking). */
-	sessionId?: string;
-}
-
-function createMockPi(cwd: string, options?: MockPiOptions) {
-	const tools = new Map<string, RegisteredTool>();
-	const sessionId = options?.sessionId ?? `test-session-${Math.random()}`;
-	const sendUserMessage = vi.fn();
-	return {
-		registerTool(def: RegisteredTool) {
-			tools.set(def.name, def);
-		},
-		registerMessageRenderer: vi.fn(),
-		sendMessage: vi.fn(),
-		on: vi.fn(),
-		sendUserMessage,
-		getTool(name: string) {
-			return tools.get(name);
-		},
-		async callTool(name: string, params: unknown) {
-			const tool = tools.get(name);
-			if (!tool) throw new Error(`Tool not found: ${name}`);
-			return tool.execute("call-id", params, undefined, undefined, {
-				cwd,
-				getSystemPrompt: () => options?.systemPrompt ?? "",
-				sessionManager: { getSessionId: () => sessionId },
-			});
-		},
-	};
-}
+const mocks = getOrchestrationMocks();
 
 describe("orchestration extension", () => {
 	const runtimeCreateMock = vi.mocked(mocks.runtimeCreate);
@@ -107,31 +34,13 @@ describe("orchestration extension", () => {
 	const runChainMock = vi.mocked(runChain);
 	const createPiSpawnerMock = vi.mocked(createPiSpawner);
 
-	const testDomainsDir = resolve(
-		fileURLToPath(import.meta.url),
-		"..",
-		"..",
-		"..",
-		"domains",
-	);
-	const testBundledCodingDir = resolve(
-		fileURLToPath(import.meta.url),
-		"..",
-		"..",
-		"..",
-		"bundled",
-		"coding",
-	);
 	let realRegistry: AgentRegistry;
 	let realDomainRegistry: DomainRegistry;
 
 	beforeAll(async () => {
-		const domains = await loadDomainsFromSources([
-			{ domainsDir: testDomainsDir, origin: "framework", precedence: 1 },
-			{ domainsDir: testBundledCodingDir, origin: "bundled", precedence: 2 },
-		]);
-		realRegistry = createRegistryFromDomains(domains);
-		realDomainRegistry = new DomainRegistry(domains);
+		const fixtures = await loadOrchestrationDomainFixtures();
+		realRegistry = fixtures.agentRegistry;
+		realDomainRegistry = fixtures.domainRegistry;
 	});
 
 	function mockRuntime(overrides?: {
@@ -156,25 +65,112 @@ describe("orchestration extension", () => {
 		mockRuntime();
 	});
 
-	test("chain_run forwards project skills from config", async () => {
-		const cwd = "/tmp/project";
-		const pi = createMockPi(cwd);
+	function createExtensionPi(
+		cwd = "/tmp/project",
+		options?: Parameters<typeof createMockPi>[1],
+	) {
+		const pi = createMockPi(cwd, options);
 		orchestrationExtension(pi as never);
+		return { cwd, pi };
+	}
 
-		mockRuntime({
-			domainContext: "coding",
-			projectSkills: ["typescript", "backend"],
-			skillPaths: ["/skills/shared", "/skills/project"],
-		});
-		parseChainMock.mockReturnValue([
-			{ name: "planner", loop: false },
-		] as ChainStep[]);
+	function mockSuccessfulChain(steps: ChainStep[]) {
+		parseChainMock.mockReturnValue(steps);
 		runChainMock.mockResolvedValue({
 			success: true,
 			stageResults: [],
 			totalDurationMs: 1,
 			errors: [],
 		} as ChainResult);
+	}
+
+	function mockChildSession(session: Record<string, unknown>) {
+		mocks.createAgentSessionFromDefinition.mockResolvedValue({
+			session,
+			sessionFilePath: undefined,
+		});
+	}
+
+	function createIdleChildSession(
+		sessionId: string,
+		extra?: Record<string, unknown>,
+	) {
+		return Object.assign(
+			{
+				sessionId,
+				messages: [],
+				prompt: vi.fn().mockResolvedValue(undefined),
+				subscribe: vi.fn(() => vi.fn()),
+				dispose: vi.fn(),
+			},
+			extra,
+		);
+	}
+
+	function createReportChildSession(sessionId: string, report: string) {
+		return createIdleChildSession(sessionId, {
+			messages: [
+				{
+					role: "assistant",
+					content: [{ type: "text", text: report }],
+				},
+			],
+		});
+	}
+
+	async function expectAcceptedSpawn(
+		pi: ReturnType<typeof createMockPi>,
+		params: Record<string, unknown>,
+		delayMs = 0,
+	): Promise<{ status: string; spawnId: string }> {
+		const result = (await pi.callTool("spawn_agent", params)) as {
+			details: { status: string; spawnId: string };
+		};
+		await flushAsync(delayMs);
+		expect(result.details.status).toBe("accepted");
+		return result.details;
+	}
+
+	function expectFollowUpContaining(
+		pi: ReturnType<typeof createMockPi>,
+		text: string,
+	) {
+		expect(pi.sendUserMessage).toHaveBeenCalledWith(
+			expect.stringContaining(text),
+			{ deliverAs: "followUp" },
+		);
+	}
+
+	function renderFallbackResult(
+		toolName: "chain_run" | "spawn_agent",
+		text: string,
+	) {
+		const { pi } = createExtensionPi();
+		const tool = pi.getTool(toolName);
+		expect(tool?.renderResult).toBeTypeOf("function");
+
+		const component = tool?.renderResult?.(
+			{
+				content: [{ type: "text", text }],
+				details: null,
+			},
+			{ expanded: false, isPartial: false },
+			{ fg: (_color: "toolOutput", value: string) => value } as never,
+		) as { render: (width: number) => string[] } | undefined;
+
+		expect(component).toBeDefined();
+		return component?.render(120).join("\n");
+	}
+
+	test("chain_run forwards project skills from config", async () => {
+		const { cwd, pi } = createExtensionPi();
+
+		mockRuntime({
+			domainContext: "coding",
+			projectSkills: ["typescript", "backend"],
+			skillPaths: ["/skills/shared", "/skills/project"],
+		});
+		mockSuccessfulChain([{ name: "planner", loop: false }]);
 
 		await pi.callTool("chain_run", { expression: "planner" });
 
@@ -198,19 +194,9 @@ describe("orchestration extension", () => {
 	});
 
 	test("orchestration runtime includes bundled coding package in framework dev mode", async () => {
-		const cwd = "/tmp/project";
-		const pi = createMockPi(cwd);
-		orchestrationExtension(pi as never);
+		const { cwd, pi } = createExtensionPi();
 
-		parseChainMock.mockReturnValue([
-			{ name: "planner", loop: false },
-		] as ChainStep[]);
-		runChainMock.mockResolvedValue({
-			success: true,
-			stageResults: [],
-			totalDurationMs: 1,
-			errors: [],
-		} as ChainResult);
+		mockSuccessfulChain([{ name: "planner", loop: false }]);
 
 		await pi.callTool("chain_run", { expression: "planner" });
 
@@ -224,20 +210,10 @@ describe("orchestration extension", () => {
 	});
 
 	test("chain_run allows coordinator without completionLabel", async () => {
-		const cwd = "/tmp/project";
-		const pi = createMockPi(cwd);
-		orchestrationExtension(pi as never);
+		const { cwd, pi } = createExtensionPi();
 
 		mockRuntime({ projectSkills: ["typescript"] });
-		parseChainMock.mockReturnValue([
-			{ name: "coordinator", loop: true },
-		] as ChainStep[]);
-		runChainMock.mockResolvedValue({
-			success: true,
-			stageResults: [],
-			totalDurationMs: 1,
-			errors: [],
-		} as ChainResult);
+		mockSuccessfulChain([{ name: "coordinator", loop: true }]);
 
 		await pi.callTool("chain_run", {
 			expression: "coordinator",
@@ -253,21 +229,13 @@ describe("orchestration extension", () => {
 	});
 
 	test("chain_run injects user prompt into first stage and forwards completion label", async () => {
-		const cwd = "/tmp/project";
-		const pi = createMockPi(cwd);
-		orchestrationExtension(pi as never);
+		const { pi } = createExtensionPi();
 
 		mockRuntime({ projectSkills: ["typescript"] });
-		parseChainMock.mockReturnValue([
+		mockSuccessfulChain([
 			{ name: "planner", loop: false },
 			{ name: "coordinator", loop: true },
-		] as ChainStep[]);
-		runChainMock.mockResolvedValue({
-			success: true,
-			stageResults: [],
-			totalDurationMs: 1,
-			errors: [],
-		} as ChainResult);
+		]);
 
 		await pi.callTool("chain_run", {
 			expression: "planner -> coordinator",
@@ -291,20 +259,10 @@ describe("orchestration extension", () => {
 	});
 
 	test("chain_run forwards abort signal to runChain", async () => {
-		const cwd = "/tmp/project";
-		const pi = createMockPi(cwd);
-		orchestrationExtension(pi as never);
+		const { cwd, pi } = createExtensionPi();
 
 		mockRuntime({ projectSkills: [] });
-		parseChainMock.mockReturnValue([
-			{ name: "planner", loop: false },
-		] as ChainStep[]);
-		runChainMock.mockResolvedValue({
-			success: true,
-			stageResults: [],
-			totalDurationMs: 1,
-			errors: [],
-		} as ChainResult);
+		mockSuccessfulChain([{ name: "planner", loop: false }]);
 
 		const controller = new AbortController();
 		const tool = pi.getTool("chain_run");
@@ -332,11 +290,9 @@ describe("orchestration extension", () => {
 	});
 
 	test("spawn_agent forwards project skills from config", async () => {
-		const cwd = "/tmp/project";
-		const pi = createMockPi(cwd, {
+		const { cwd, pi } = createExtensionPi("/tmp/project", {
 			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
 		});
-		orchestrationExtension(pi as never);
 
 		mockRuntime({
 			domainContext: "coding",
@@ -344,28 +300,14 @@ describe("orchestration extension", () => {
 			skillPaths: ["/skills/shared", "/skills/project"],
 		});
 
-		const mockSession = {
-			sessionId: "child-session-1",
-			messages: [],
-			prompt: vi.fn().mockResolvedValue(undefined),
-			subscribe: vi.fn(() => vi.fn()),
-			dispose: vi.fn(),
-		};
-		mocks.createAgentSessionFromDefinition.mockResolvedValue({
-			session: mockSession,
-			sessionFilePath: undefined,
-		});
+		const mockSession = createIdleChildSession("child-session-1");
+		mockChildSession(mockSession);
 
-		const result = (await pi.callTool("spawn_agent", {
+		const result = await expectAcceptedSpawn(pi, {
 			role: "worker",
 			prompt: "implement this task",
-		})) as { details: { status: string; spawnId: string } };
-
-		// Let background Promise settle so session factory was called
-		await new Promise((resolve) => setTimeout(resolve, 0));
-
-		expect(result.details.status).toBe("accepted");
-		expect(typeof result.details.spawnId).toBe("string");
+		});
+		expect(typeof result.spawnId).toBe("string");
 
 		expect(mocks.createAgentSessionFromDefinition).toHaveBeenCalledWith(
 			expect.any(Object), // targetDef
@@ -383,11 +325,9 @@ describe("orchestration extension", () => {
 	});
 
 	test("spawn_agent includes the child's full final report in the completion message", async () => {
-		const cwd = "/tmp/project";
-		const pi = createMockPi(cwd, {
+		const { pi } = createExtensionPi("/tmp/project", {
 			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:quality-manager -->",
 		});
-		orchestrationExtension(pi as never);
 
 		mockRuntime({ domainContext: "coding" });
 		const verifierReport = `# Verification Report
@@ -407,49 +347,28 @@ describe("orchestration extension", () => {
   claim: "Lint passes"
   result: fail
   evidence: "bun run lint exited 1"`;
-		const mockSession = {
-			sessionId: "child-session-verifier",
-			messages: [
-				{
-					role: "assistant",
-					content: [{ type: "text", text: verifierReport }],
-				},
-			],
-			prompt: vi.fn().mockResolvedValue(undefined),
-			subscribe: vi.fn(() => vi.fn()),
-			dispose: vi.fn(),
-		};
-		mocks.createAgentSessionFromDefinition.mockResolvedValue({
-			session: mockSession,
-			sessionFilePath: undefined,
-		});
+		const mockSession = createReportChildSession(
+			"child-session-verifier",
+			verifierReport,
+		);
+		mockChildSession(mockSession);
 
-		const result = (await pi.callTool("spawn_agent", {
+		const result = await expectAcceptedSpawn(pi, {
 			role: "verifier",
 			prompt: "Validate these claims",
-		})) as { details: { status: string; spawnId: string } };
+		});
 
-		await new Promise((resolve) => setTimeout(resolve, 0));
-
-		expect(result.details.status).toBe("accepted");
-		expect(pi.sendUserMessage).toHaveBeenCalledWith(
-			expect.stringContaining(
-				`[spawn_completion] spawnId=${result.details.spawnId} role=verifier outcome=success`,
-			),
-			{ deliverAs: "followUp" },
+		expectFollowUpContaining(
+			pi,
+			`[spawn_completion] spawnId=${result.spawnId} role=verifier outcome=success`,
 		);
-		expect(pi.sendUserMessage).toHaveBeenCalledWith(
-			expect.stringContaining(verifierReport),
-			{ deliverAs: "followUp" },
-		);
+		expectFollowUpContaining(pi, verifierReport);
 	});
 
 	test("spawn_agent includes full final report for non-verifier roles (e.g. explorer)", async () => {
-		const cwd = "/tmp/project";
-		const pi = createMockPi(cwd, {
+		const { pi } = createExtensionPi("/tmp/project", {
 			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
 		});
-		orchestrationExtension(pi as never);
 
 		mockRuntime({ domainContext: "coding" });
 		const explorerReport = `# Codebase Exploration
@@ -482,38 +401,25 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 				toolCalls: 0,
 			})),
 		};
-		mocks.createAgentSessionFromDefinition.mockResolvedValue({
-			session: mockSession,
-			sessionFilePath: undefined,
-		});
+		mockChildSession(mockSession);
 
-		const result = (await pi.callTool("spawn_agent", {
+		const result = await expectAcceptedSpawn(pi, {
 			role: "explorer",
 			prompt: "explore the orchestration layer",
-		})) as { details: { status: string; spawnId: string } };
+		});
 
-		await new Promise((resolve) => setTimeout(resolve, 0));
-
-		expect(result.details.status).toBe("accepted");
-		expect(pi.sendUserMessage).toHaveBeenCalledWith(
-			expect.stringContaining(
-				`[spawn_completion] spawnId=${result.details.spawnId} role=explorer outcome=success`,
-			),
-			{ deliverAs: "followUp" },
+		expectFollowUpContaining(
+			pi,
+			`[spawn_completion] spawnId=${result.spawnId} role=explorer outcome=success`,
 		);
-		expect(pi.sendUserMessage).toHaveBeenCalledWith(
-			expect.stringContaining(explorerReport),
-			{ deliverAs: "followUp" },
-		);
+		expectFollowUpContaining(pi, explorerReport);
 	});
 
 	test("spawn_agent publishes child session activity events", async () => {
-		const cwd = "/tmp/project";
-		const pi = createMockPi(cwd, {
+		const { pi } = createExtensionPi("/tmp/project", {
 			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
 			sessionId: "parent-session-activity",
 		});
-		orchestrationExtension(pi as never);
 
 		mockRuntime({ domainContext: "coding" });
 
@@ -549,13 +455,10 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 			}),
 			dispose: vi.fn(),
 		};
-		mocks.createAgentSessionFromDefinition.mockResolvedValue({
-			session: mockSession,
-			sessionFilePath: undefined,
-		});
+		mockChildSession(mockSession);
 
 		try {
-			const result = (await pi.callTool("spawn_agent", {
+			const result = await expectAcceptedSpawn(pi, {
 				role: "worker",
 				prompt: "emit activity",
 				runtimeContext: {
@@ -563,15 +466,12 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 					parentRole: "cosmo",
 					taskId: "TASK-238",
 				},
-			})) as { details: { status: string; spawnId: string } };
+			});
 
-			await new Promise((resolve) => setTimeout(resolve, 0));
-
-			expect(result.details.status).toBe("accepted");
 			expect(activityEvents).toMatchObject([
 				{
 					type: "spawn_activity",
-					spawnId: result.details.spawnId,
+					spawnId: result.spawnId,
 					parentSessionId: "parent-session-activity",
 					role: "worker",
 					taskId: "TASK-238",
@@ -594,11 +494,9 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 	});
 
 	test("spawn_agent cleans up child session subscriptions when prompt throws", async () => {
-		const cwd = "/tmp/project";
-		const pi = createMockPi(cwd, {
+		const { pi } = createExtensionPi("/tmp/project", {
 			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
 		});
-		orchestrationExtension(pi as never);
 
 		mockRuntime({ domainContext: "coding" });
 		const unsubscribeActivity = vi.fn();
@@ -611,34 +509,23 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 			subscribe: vi.fn(() => unsubscribeActivity),
 			dispose: vi.fn(),
 		};
-		mocks.createAgentSessionFromDefinition.mockResolvedValue({
-			session: mockSession,
-			sessionFilePath: undefined,
-		});
+		mockChildSession(mockSession);
 
-		const result = (await pi.callTool("spawn_agent", {
+		await expectAcceptedSpawn(pi, {
 			role: "worker",
 			prompt: "fail after subscribing",
-		})) as { details: { status: string } };
+		});
 
-		await new Promise((resolve) => setTimeout(resolve, 0));
-
-		expect(result.details.status).toBe("accepted");
 		expect(mockSession.subscribe).toHaveBeenCalledOnce();
 		expect(unsubscribeActivity).toHaveBeenCalledOnce();
 		expect(mockSession.dispose).toHaveBeenCalledOnce();
-		expect(pi.sendUserMessage).toHaveBeenCalledWith(
-			expect.stringContaining("prompt failed after subscribe"),
-			{ deliverAs: "followUp" },
-		);
+		expectFollowUpContaining(pi, "prompt failed after subscribe");
 	});
 
 	test("spawn_agent waits for nested child completions before completing the spawned session", async () => {
-		const cwd = "/tmp/project";
-		const pi = createMockPi(cwd, {
+		const { pi } = createExtensionPi("/tmp/project", {
 			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
 		});
-		orchestrationExtension(pi as never);
 
 		mockRuntime({ domainContext: "coding" });
 
@@ -679,33 +566,26 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 			subscribe: vi.fn(() => vi.fn()),
 			dispose: vi.fn(),
 		};
-		mocks.createAgentSessionFromDefinition.mockResolvedValue({
-			session: mockSession,
-			sessionFilePath: undefined,
-		});
+		mockChildSession(mockSession);
 
-		const result = (await pi.callTool("spawn_agent", {
-			role: "quality-manager",
-			prompt: "run quality checks",
-		})) as { details: { status: string; spawnId: string } };
+		await expectAcceptedSpawn(
+			pi,
+			{
+				role: "quality-manager",
+				prompt: "run quality checks",
+			},
+			20,
+		);
 
-		await new Promise((resolve) => setTimeout(resolve, 20));
-
-		expect(result.details.status).toBe("accepted");
 		expect(mockSession.prompt).toHaveBeenCalledTimes(2);
 		expect(mockSession.dispose).toHaveBeenCalledTimes(1);
-		expect(pi.sendUserMessage).toHaveBeenCalledWith(
-			expect.stringContaining(finalReport),
-			{ deliverAs: "followUp" },
-		);
+		expectFollowUpContaining(pi, finalReport);
 	});
 
 	test("spawn_agent denies unauthorized target role", async () => {
-		const cwd = "/tmp/project";
-		const pi = createMockPi(cwd, {
+		const { pi } = createExtensionPi("/tmp/project", {
 			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:worker -->",
 		});
-		orchestrationExtension(pi as never);
 
 		mockRuntime();
 		const spawn = vi.fn();
@@ -729,11 +609,9 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 	});
 
 	test("spawn_agent allows authorized target with unqualified caller resolving via scan-all", async () => {
-		const cwd = "/tmp/project";
-		const pi = createMockPi(cwd, {
+		const { pi } = createExtensionPi("/tmp/project", {
 			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
 		});
-		orchestrationExtension(pi as never);
 
 		mockRuntime();
 		const mockSession = {
@@ -742,10 +620,7 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 			prompt: vi.fn().mockResolvedValue(undefined),
 			dispose: vi.fn(),
 		};
-		mocks.createAgentSessionFromDefinition.mockResolvedValue({
-			session: mockSession,
-			sessionFilePath: undefined,
-		});
+		mockChildSession(mockSession);
 
 		const result = (await pi.callTool("spawn_agent", {
 			role: "worker",
@@ -756,11 +631,9 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 	});
 
 	test("spawn_agent denies unknown qualified caller ID", async () => {
-		const cwd = "/tmp/project";
-		const pi = createMockPi(cwd, {
+		const { pi } = createExtensionPi("/tmp/project", {
 			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:unknown-domain/cosmo -->",
 		});
-		orchestrationExtension(pi as never);
 
 		const spawn = vi.fn();
 		const dispose = vi.fn();
@@ -783,9 +656,9 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 	});
 
 	test("spawn_agent denies when caller marker is missing", async () => {
-		const cwd = "/tmp/project";
-		const pi = createMockPi(cwd, { systemPrompt: "no marker here" });
-		orchestrationExtension(pi as never);
+		const { pi } = createExtensionPi("/tmp/project", {
+			systemPrompt: "no marker here",
+		});
 
 		const spawn = vi.fn();
 		const dispose = vi.fn();
@@ -808,64 +681,22 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 	});
 
 	test("chain_run renderer falls back to result text when details are missing", () => {
-		const cwd = "/tmp/project";
-		const pi = createMockPi(cwd);
-		orchestrationExtension(pi as never);
-
-		const tool = pi.getTool("chain_run");
-		expect(tool?.renderResult).toBeTypeOf("function");
-
-		const component = tool?.renderResult?.(
-			{
-				content: [{ type: "text", text: "config load failed" }],
-				details: null,
-			},
-			{ expanded: false, isPartial: false },
-			{ fg: (_color: "toolOutput", text: string) => text } as never,
-		) as { render: (width: number) => string[] } | undefined;
-
-		expect(component).toBeDefined();
-		expect(component?.render(120).join("\n")).toContain("config load failed");
-	});
-
-	test("spawn_agent renderer falls back to result text when details are missing", () => {
-		const cwd = "/tmp/project";
-		const pi = createMockPi(cwd);
-		orchestrationExtension(pi as never);
-
-		const tool = pi.getTool("spawn_agent");
-		expect(tool?.renderResult).toBeTypeOf("function");
-
-		const component = tool?.renderResult?.(
-			{
-				content: [{ type: "text", text: "failed to load project config" }],
-				details: null,
-			},
-			{ expanded: false, isPartial: false },
-			{ fg: (_color: "toolOutput", text: string) => text } as never,
-		) as { render: (width: number) => string[] } | undefined;
-
-		expect(component).toBeDefined();
-		expect(component?.render(120).join("\n")).toContain(
-			"failed to load project config",
+		expect(renderFallbackResult("chain_run", "config load failed")).toContain(
+			"config load failed",
 		);
 	});
 
+	test("spawn_agent renderer falls back to result text when details are missing", () => {
+		expect(
+			renderFallbackResult("spawn_agent", "failed to load project config"),
+		).toContain("failed to load project config");
+	});
+
 	test("runtime is cached per-cwd across multiple tool calls", async () => {
-		const cwd = "/tmp/project";
-		const pi = createMockPi(cwd);
-		orchestrationExtension(pi as never);
+		const { pi } = createExtensionPi();
 
 		mockRuntime({ projectSkills: ["typescript"] });
-		parseChainMock.mockReturnValue([
-			{ name: "planner", loop: false },
-		] as ChainStep[]);
-		runChainMock.mockResolvedValue({
-			success: true,
-			stageResults: [],
-			totalDurationMs: 1,
-			errors: [],
-		} as ChainResult);
+		mockSuccessfulChain([{ name: "planner", loop: false }]);
 
 		await pi.callTool("chain_run", { expression: "planner" });
 		await pi.callTool("chain_run", { expression: "planner" });
@@ -875,9 +706,7 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 	});
 
 	test("runtime cache evicts failed bootstrap attempts", async () => {
-		const cwd = "/tmp/project";
-		const pi = createMockPi(cwd);
-		orchestrationExtension(pi as never);
+		const { pi } = createExtensionPi();
 
 		runtimeCreateMock
 			.mockRejectedValueOnce(new Error("invalid config"))
@@ -888,15 +717,7 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 				skillPaths: [],
 				domainRegistry: realDomainRegistry,
 			});
-		parseChainMock.mockReturnValue([
-			{ name: "planner", loop: false },
-		] as ChainStep[]);
-		runChainMock.mockResolvedValue({
-			success: true,
-			stageResults: [],
-			totalDurationMs: 1,
-			errors: [],
-		} as ChainResult);
+		mockSuccessfulChain([{ name: "planner", loop: false }]);
 
 		await expect(
 			pi.callTool("chain_run", { expression: "planner" }),

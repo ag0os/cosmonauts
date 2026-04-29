@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import "../../../helpers/readline.ts";
+import { describe, expect, it, vi } from "vitest";
 import type { TaskDeleteResult } from "../../../../cli/tasks/commands/delete.ts";
 import {
 	confirmTaskDeletion,
@@ -9,30 +10,16 @@ import {
 import { TaskManager } from "../../../../lib/tasks/task-manager.ts";
 import type { Task } from "../../../../lib/tasks/task-types.ts";
 import {
-	type CommandTestContext,
-	type captureCommandOutput,
-	createCommandProgram,
-	createCommandTestContext,
-	type mockProcessExitThrow,
-	ProcessExitError,
-} from "../../../helpers/cli.ts";
+	runCommonDeleteCommandTests,
+	setupDeleteCommandContext,
+} from "../../../helpers/delete-command-tests.ts";
+import { getReadlineMocks } from "../../../helpers/readline.ts";
 import {
 	createInitializedTaskManager,
 	createTaskFixture,
 } from "../../../helpers/tasks.ts";
 
-const readlineMocks = vi.hoisted(() => ({
-	close: vi.fn<() => void>(),
-	question:
-		vi.fn<(query: string, callback: (answer: string) => void) => void>(),
-}));
-
-vi.mock("node:readline", () => ({
-	createInterface: () => ({
-		close: readlineMocks.close,
-		question: readlineMocks.question,
-	}),
-}));
+const readlineMocks = getReadlineMocks();
 
 describe("renderTaskDeleteResult", () => {
 	const task: Task = {
@@ -91,122 +78,56 @@ describe("renderTaskDeleteResult", () => {
 });
 
 describe("task delete command", () => {
-	let tempDir: string;
-	let output: ReturnType<typeof captureCommandOutput>;
-	let exit: ReturnType<typeof mockProcessExitThrow>;
-	let context: CommandTestContext;
+	const getContext = setupDeleteCommandContext("task-delete-command-test-");
 
-	beforeEach(async () => {
-		context = await createCommandTestContext("task-delete-command-test-");
-		tempDir = context.tempDir;
-		output = context.output;
-		exit = context.exit;
-		readlineMocks.close.mockReset();
-		readlineMocks.question.mockReset();
-	});
-
-	afterEach(async () => {
-		await context.restore();
-	});
-
-	it("force deletes a task in human mode without prompting", async () => {
-		const { manager } = await createTaskInTempDir(tempDir, "Remove Me");
-
-		await createProgram().parseAsync([
-			"node",
-			"test",
-			"delete",
-			"TASK-001",
-			"--force",
-		]);
-
-		await expect(manager.getTask("TASK-001")).resolves.toBeNull();
-		expect(readlineMocks.question).not.toHaveBeenCalled();
-		expect(output.stdout()).toBe("Deleted task TASK-001: Remove Me\n");
-		expect(output.stderr()).toBe("");
-		expect(exit.calls()).toEqual([]);
-	});
-
-	it("prints not found errors in JSON mode", async () => {
-		await createInitializedTaskManager(tempDir, "TASK");
-
-		await expectDeleteToExit(["--json", "delete", "TASK-404", "--force"]);
-
-		expect(output.stdout()).toContain(
-			'{\n  "error": "Task not found: TASK-404"\n}\n',
-		);
-		expect(output.stderr()).toBe("");
-		expect(exit.calls()[0]).toBe(1);
-	});
-
-	it("prints not found errors in human mode", async () => {
-		await createInitializedTaskManager(tempDir, "TASK");
-
-		await expectDeleteToExit(["delete", "TASK-404", "--force"]);
-
-		expect(output.stdout()).toBe("");
-		expect(output.stderr()).toContain("Error: Task not found: TASK-404\n");
-		expect(exit.calls()[0]).toBe(1);
-	});
-
-	it("prints cancellation in JSON mode without deleting", async () => {
-		await expectCancelledDeletion({
-			tempDir,
-			answer: "n",
-			modeArgs: ["--json"],
-			expectedStdout: '{\n  "cancelled": true,\n  "id": "TASK-001"\n}\n',
-			output,
-			exit,
-		});
-	});
-
-	it("prints cancellation in plain mode without deleting", async () => {
-		await expectCancelledDeletion({
-			tempDir,
-			answer: "no",
-			modeArgs: ["--plain"],
-			expectedStdout: "cancelled\n",
-			output,
-			exit,
-		});
-	});
-
-	it("prints cancellation in human mode without deleting", async () => {
-		await expectCancelledDeletion({
-			tempDir,
-			answer: "",
-			modeArgs: [],
-			expectedStdout: "Deletion cancelled.\n",
-			output,
-			exit,
-		});
-	});
-
-	it("prints manager errors in JSON mode", async () => {
-		await createTaskInTempDir(tempDir, "Delete Fails");
-		mockDeleteTaskFailure();
-
-		await expectDeleteToExit(["--json", "delete", "TASK-001", "--force"]);
-
-		expect(output.stdout()).toBe(
-			'{\n  "error": "Error deleting task: Error: disk full"\n}\n',
-		);
-		expect(output.stderr()).toBe("");
-		expect(exit.calls()).toEqual([1]);
-	});
-
-	it("prints manager errors in human mode", async () => {
-		await createTaskInTempDir(tempDir, "Delete Fails");
-		mockDeleteTaskFailure();
-
-		await expectDeleteToExit(["delete", "TASK-001", "--force"]);
-
-		expect(output.stdout()).toBe("");
-		expect(output.stderr()).toBe("Error deleting task: Error: disk full\n");
-		expect(exit.calls()).toEqual([1]);
+	runCommonDeleteCommandTests<Task, TaskManager>({
+		entityName: "task",
+		registerDeleteCommand,
+		getContext,
+		forceCase: {
+			create: async (tempDir) => {
+				const { manager, task } = await createTaskInTempDir(
+					tempDir,
+					"Remove Me",
+				);
+				return { manager, entity: task };
+			},
+			id: (task) => task.id,
+			get: (manager, id) => manager.getTask(id),
+			args: () => ["delete", "TASK-001", "--force"],
+			expectedStdout: "Deleted task TASK-001: Remove Me\n",
+		},
+		notFound: {
+			setup: async (tempDir) => {
+				await createInitializedTaskManager(tempDir, "TASK");
+			},
+			id: "TASK-404",
+			jsonError: '{\n  "error": "Task not found: TASK-404"\n}\n',
+			humanError: "Error: Task not found: TASK-404\n",
+		},
+		cancellation: {
+			create: async (tempDir) => {
+				const { manager, task } = await createTaskInTempDir(tempDir, "Keep Me");
+				return { manager, entity: task };
+			},
+			id: (task) => task.id,
+			get: (manager, id) => manager.getTask(id),
+			spyOnDelete: () => vi.spyOn(TaskManager.prototype, "deleteTask"),
+			jsonStdout: '{\n  "cancelled": true,\n  "id": "TASK-001"\n}\n',
+		},
+		managerError: {
+			create: async (tempDir) => {
+				await createTaskInTempDir(tempDir, "Delete Fails");
+			},
+			mockFailure: mockDeleteTaskFailure,
+			id: "TASK-001",
+			jsonStdout: '{\n  "error": "Error deleting task: Error: disk full"\n}\n',
+			humanStderr: "Error deleting task: Error: disk full\n",
+		},
 	});
 
 	it("loads an existing task for deletion", async () => {
+		const { tempDir } = getContext();
 		const { manager, task } = await createTaskInTempDir(tempDir, "Load Me");
 
 		await expect(loadTaskForDeletion(manager, task.id)).resolves.toEqual({
@@ -216,6 +137,7 @@ describe("task delete command", () => {
 	});
 
 	it("returns a parse error when the task cannot be loaded", async () => {
+		const { tempDir } = getContext();
 		const manager = await createInitializedTaskManager(tempDir, "TASK");
 
 		await expect(loadTaskForDeletion(manager, "TASK-404")).resolves.toEqual({
@@ -225,28 +147,13 @@ describe("task delete command", () => {
 	});
 
 	it("confirms deletion without prompting when force is set", async () => {
+		const { tempDir } = getContext();
 		const { task } = await createTaskInTempDir(tempDir, "Forced");
 
 		await expect(confirmTaskDeletion(task, true)).resolves.toBe(true);
 		expect(readlineMocks.question).not.toHaveBeenCalled();
 	});
 });
-
-function createProgram() {
-	return createCommandProgram(registerDeleteCommand);
-}
-
-async function expectDeleteToExit(args: string[]): Promise<void> {
-	await expect(
-		createProgram().parseAsync(["node", "test", ...args]),
-	).rejects.toThrow(ProcessExitError);
-}
-
-function answerPrompt(answer: string): void {
-	readlineMocks.question.mockImplementation((_query, callback) => {
-		callback(answer);
-	});
-}
 
 async function createTaskInTempDir(
 	tempDir: string,
@@ -261,40 +168,4 @@ function mockDeleteTaskFailure(): void {
 	vi.spyOn(TaskManager.prototype, "deleteTask").mockRejectedValue(
 		new Error("disk full"),
 	);
-}
-
-interface CancelledDeletionExpectation {
-	tempDir: string;
-	answer: string;
-	modeArgs: string[];
-	expectedStdout: string;
-	output: ReturnType<typeof captureCommandOutput>;
-	exit: ReturnType<typeof mockProcessExitThrow>;
-}
-
-async function expectCancelledDeletion({
-	tempDir,
-	answer,
-	modeArgs,
-	expectedStdout,
-	output,
-	exit,
-}: CancelledDeletionExpectation): Promise<void> {
-	const { manager, task } = await createTaskInTempDir(tempDir, "Keep Me");
-	answerPrompt(answer);
-	const deleteTask = vi.spyOn(TaskManager.prototype, "deleteTask");
-
-	await createProgram().parseAsync([
-		"node",
-		"test",
-		...modeArgs,
-		"delete",
-		task.id,
-	]);
-
-	await expect(manager.getTask(task.id)).resolves.not.toBeNull();
-	expect(deleteTask).not.toHaveBeenCalled();
-	expect(output.stdout()).toBe(expectedStdout);
-	expect(output.stderr()).toBe("");
-	expect(exit.calls()).toEqual([]);
 }
