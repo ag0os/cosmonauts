@@ -1,24 +1,18 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { PlanManager } from "../../../../lib/plans/plan-manager.ts";
-import { TaskManager } from "../../../../lib/tasks/task-manager.ts";
+import type { TaskManager } from "../../../../lib/tasks/task-manager.ts";
+import { useTempDir } from "../../../helpers/fs.ts";
+import { createPlanFixture } from "../../../helpers/plans.ts";
+import { createInitializedTaskManager } from "../../../helpers/tasks.ts";
 
 describe("plan list command", () => {
-	let tempDir: string;
+	const tmp = useTempDir("plan-list-test-");
 	let planManager: PlanManager;
 	let taskManager: TaskManager;
 
 	beforeEach(async () => {
-		tempDir = await mkdtemp(join(tmpdir(), "plan-list-test-"));
-		planManager = new PlanManager(tempDir);
-		taskManager = new TaskManager(tempDir);
-		await taskManager.init({ prefix: "TEST" });
-	});
-
-	afterEach(async () => {
-		await rm(tempDir, { recursive: true, force: true });
+		planManager = new PlanManager(tmp.path);
+		taskManager = await createInitializedTaskManager(tmp.path);
 	});
 
 	it("returns empty list when no plans exist", async () => {
@@ -27,8 +21,8 @@ describe("plan list command", () => {
 	});
 
 	it("lists all plans", async () => {
-		await planManager.createPlan({ slug: "plan-a", title: "Plan A" });
-		await planManager.createPlan({ slug: "plan-b", title: "Plan B" });
+		await createPlanFixture(planManager, { slug: "plan-a", title: "Plan A" });
+		await createPlanFixture(planManager, { slug: "plan-b", title: "Plan B" });
 
 		const plans = await planManager.listPlans();
 		expect(plans).toHaveLength(2);
@@ -52,7 +46,7 @@ describe("plan list command", () => {
 	});
 
 	it("gets plan summary with task count", async () => {
-		await planManager.createPlan({ slug: "counted", title: "Counted" });
+		await createPlanFixture(planManager, { slug: "counted", title: "Counted" });
 		await taskManager.createTask({
 			title: "Task 1",
 			labels: ["plan:counted"],
