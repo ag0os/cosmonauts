@@ -1,6 +1,18 @@
 import * as readline from "node:readline";
 import type { Command } from "commander";
 import { PlanManager } from "../../../lib/plans/plan-manager.ts";
+import type { Plan } from "../../../lib/plans/plan-types.ts";
+import { printCliError } from "../../shared/errors.ts";
+import type { CliOutputMode, CliParseResult } from "../../shared/output.ts";
+import { getOutputMode, printJson, printLines } from "../../shared/output.ts";
+
+interface PlanDeleteCliOptions {
+	force?: boolean;
+}
+
+export type PlanDeleteResult =
+	| { status: "deleted"; plan: Plan }
+	| { status: "cancelled"; plan: Plan };
 
 async function promptConfirm(message: string): Promise<boolean> {
 	const rl = readline.createInterface({
@@ -9,12 +21,20 @@ async function promptConfirm(message: string): Promise<boolean> {
 	});
 
 	return new Promise((resolve) => {
-		rl.question(`${message} (y/N): `, (answer) => {
+		rl.question(formatConfirmQuestion(message), (answer) => {
 			rl.close();
-			const normalized = answer.trim().toLowerCase();
-			resolve(normalized === "y" || normalized === "yes");
+			resolve(isConfirmedAnswer(answer));
 		});
 	});
+}
+
+function formatConfirmQuestion(message: string): string {
+	return `${message} (y/N): `;
+}
+
+function isConfirmedAnswer(answer: string): boolean {
+	const normalized = answer.trim().toLowerCase();
+	return normalized === "y" || normalized === "yes";
 }
 
 export function registerDeleteCommand(program: Command): void {
@@ -24,72 +44,117 @@ export function registerDeleteCommand(program: Command): void {
 		.description("Delete a plan")
 		.argument("<slug>", "Plan slug to delete")
 		.option("-f, --force", "Skip confirmation prompt")
-		// Temporary migration debt: delete command prompt and archive checks are inline.
-		// fallow-ignore-next-line complexity
-		.action(async (slug, options) => {
+		.action(async (slug: string, options: PlanDeleteCliOptions) => {
 			const projectRoot = process.cwd();
 			const globalOptions = program.opts();
+			const mode = getOutputMode(globalOptions);
 
 			const manager = new PlanManager(projectRoot);
 
 			try {
-				const plan = await manager.getPlan(slug);
-
-				if (!plan) {
-					const errorMsg = `Plan not found: ${slug}`;
-					if (globalOptions.json) {
-						console.log(JSON.stringify({ error: errorMsg }, null, 2));
-					} else {
-						console.error(`Error: ${errorMsg}`);
-					}
+				const plan = await loadPlanForDeletion(manager, slug);
+				if (!plan.ok) {
+					printCliError(plan.error, globalOptions, { prefix: "Error" });
 					process.exit(1);
+					return;
 				}
 
-				if (!options.force) {
-					const confirmed = await promptConfirm(
-						`Delete plan "${plan.slug}: ${plan.title}"?`,
+				const confirmed = await confirmPlanDeletion(plan.value, options.force);
+				if (!confirmed) {
+					printPlanDeleteResult(
+						{ status: "cancelled", plan: plan.value },
+						mode,
 					);
-					if (!confirmed) {
-						if (globalOptions.json) {
-							console.log(
-								JSON.stringify({ cancelled: true, slug: plan.slug }, null, 2),
-							);
-						} else if (globalOptions.plain) {
-							console.log("cancelled");
-						} else {
-							console.log("Deletion cancelled.");
-						}
-						return;
-					}
+					return;
 				}
 
 				await manager.deletePlan(slug);
-
-				if (globalOptions.json) {
-					console.log(
-						JSON.stringify(
-							{
-								deleted: true,
-								slug: plan.slug,
-								title: plan.title,
-							},
-							null,
-							2,
-						),
-					);
-				} else if (globalOptions.plain) {
-					console.log(`deleted ${plan.slug}`);
-				} else {
-					console.log(`Deleted plan ${plan.slug}: ${plan.title}`);
-				}
+				printPlanDeleteResult({ status: "deleted", plan: plan.value }, mode);
 			} catch (error) {
-				const errorMsg = `Error deleting plan: ${error}`;
-				if (globalOptions.json) {
-					console.log(JSON.stringify({ error: errorMsg }, null, 2));
-				} else {
-					console.error(errorMsg);
-				}
+				printCliError(`Error deleting plan: ${String(error)}`, globalOptions);
 				process.exit(1);
 			}
 		});
+}
+
+export async function loadPlanForDeletion(
+	manager: PlanManager,
+	slug: string,
+): Promise<CliParseResult<Plan>> {
+	const plan = await manager.getPlan(slug);
+
+	if (!plan) {
+		return { ok: false, error: `Plan not found: ${slug}` };
+	}
+
+	return { ok: true, value: plan };
+}
+
+export async function confirmPlanDeletion(
+	plan: Plan,
+	force = false,
+): Promise<boolean> {
+	if (force) {
+		return true;
+	}
+
+	return promptConfirm(`Delete plan "${plan.slug}: ${plan.title}"?`);
+}
+
+export function renderPlanDeleteResult(
+	result: PlanDeleteResult,
+	mode: CliOutputMode,
+): unknown | string[] {
+	if (result.status === "cancelled") {
+		return renderPlanDeleteCancellation(result.plan, mode);
+	}
+
+	return renderPlanDeleteSuccess(result.plan, mode);
+}
+
+function printPlanDeleteResult(
+	result: PlanDeleteResult,
+	mode: CliOutputMode,
+): void {
+	const rendered = renderPlanDeleteResult(result, mode);
+	if (mode === "json") {
+		printJson(rendered);
+		return;
+	}
+
+	printLines(rendered as string[]);
+}
+
+function renderPlanDeleteCancellation(
+	plan: Plan,
+	mode: CliOutputMode,
+): unknown | string[] {
+	if (mode === "json") {
+		return { cancelled: true, slug: plan.slug };
+	}
+
+	if (mode === "plain") {
+		return ["cancelled"];
+	}
+
+	return ["Deletion cancelled."];
+}
+
+function renderPlanDeleteSuccess(
+	plan: Plan,
+	mode: CliOutputMode,
+): unknown | string[] {
+	if (mode === "json") {
+		return {
+			deleted: true,
+			slug: plan.slug,
+			title: plan.title,
+		};
+	}
+
+	if (mode === "plain") {
+		return [`deleted ${plan.slug}`];
+	}
+
+	return [`Deleted plan ${plan.slug}: ${plan.title}`];
 }
