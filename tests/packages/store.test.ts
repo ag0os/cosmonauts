@@ -3,7 +3,7 @@
  * Covers resolveStorePath, listInstalledPackages, and packageExists
  */
 
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -12,6 +12,7 @@ import {
 	packageExists,
 	resolveStorePath,
 } from "../../lib/packages/store.ts";
+import type { InstalledPackage } from "../../lib/packages/types.ts";
 
 // ============================================================================
 // Helpers
@@ -32,6 +33,18 @@ const VALID_MANIFEST = {
 	domains: [{ name: "coding", path: "domains/coding" }],
 };
 
+let testDir: string;
+let storeRoot: string;
+
+beforeEach(async () => {
+	testDir = await mkdtemp(join(tmpdir(), "cosmo-store-test-"));
+	storeRoot = join(testDir, ".cosmonauts/packages");
+});
+
+afterEach(async () => {
+	await cleanupTestDir(testDir);
+});
+
 /**
  * Creates a package directory with a cosmonauts.json inside the store root.
  */
@@ -48,6 +61,21 @@ async function writePackage(
 		"utf-8",
 	);
 	return pkgDir;
+}
+
+function expectSingleInstalledPackage(
+	result: readonly InstalledPackage[],
+	name: string,
+): void {
+	expect(result).toHaveLength(1);
+	expect(result[0]?.manifest.name).toBe(name);
+}
+
+async function listSinglePackage(): Promise<InstalledPackage | undefined> {
+	await writePackage(storeRoot, "my-pkg");
+
+	const result = await listInstalledPackages("project", testDir);
+	return result.find((p) => p.manifest.name === "my-pkg");
 }
 
 // ============================================================================
@@ -92,18 +120,6 @@ describe("listInstalledPackages — user scope", () => {
 // ============================================================================
 
 describe("listInstalledPackages — project scope", () => {
-	let testDir: string;
-	let storeRoot: string;
-
-	beforeEach(async () => {
-		testDir = await mkdtemp(join(tmpdir(), "cosmo-store-test-"));
-		storeRoot = join(testDir, ".cosmonauts/packages");
-	});
-
-	afterEach(async () => {
-		await cleanupTestDir(testDir);
-	});
-
 	test("returns empty array when store directory does not exist", async () => {
 		const result = await listInstalledPackages("project", testDir);
 		expect(result).toEqual([]);
@@ -132,28 +148,19 @@ describe("listInstalledPackages — project scope", () => {
 	});
 
 	test("each InstalledPackage has correct installPath", async () => {
-		await writePackage(storeRoot, "my-pkg");
-
-		const result = await listInstalledPackages("project", testDir);
-		const pkg = result.find((p) => p.manifest.name === "my-pkg");
+		const pkg = await listSinglePackage();
 
 		expect(pkg?.installPath).toBe(join(storeRoot, "my-pkg"));
 	});
 
 	test("each InstalledPackage has correct scope", async () => {
-		await writePackage(storeRoot, "my-pkg");
-
-		const result = await listInstalledPackages("project", testDir);
-		const pkg = result.find((p) => p.manifest.name === "my-pkg");
+		const pkg = await listSinglePackage();
 
 		expect(pkg?.scope).toBe("project");
 	});
 
 	test("each InstalledPackage has an installedAt Date", async () => {
-		await writePackage(storeRoot, "my-pkg");
-
-		const result = await listInstalledPackages("project", testDir);
-		const pkg = result.find((p) => p.manifest.name === "my-pkg");
+		const pkg = await listSinglePackage();
 
 		expect(pkg?.installedAt).toBeInstanceOf(Date);
 	});
@@ -165,8 +172,7 @@ describe("listInstalledPackages — project scope", () => {
 
 		const result = await listInstalledPackages("project", testDir);
 
-		expect(result).toHaveLength(1);
-		expect(result[0]?.manifest.name).toBe("my-pkg");
+		expectSingleInstalledPackage(result, "my-pkg");
 	});
 
 	test("skips entries with corrupt (invalid JSON) manifest", async () => {
@@ -208,6 +214,44 @@ describe("listInstalledPackages — project scope", () => {
 
 		expect(result).toHaveLength(1);
 	});
+
+	test("discovers valid scoped packages", async () => {
+		await writePackage(storeRoot, "@org/pkg", {
+			...VALID_MANIFEST,
+			name: "@org/pkg",
+		});
+
+		const result = await listInstalledPackages("project", testDir);
+
+		expectSingleInstalledPackage(result, "@org/pkg");
+		expect(result[0]?.installPath).toBe(join(storeRoot, "@org/pkg"));
+	});
+
+	test("skips invalid scoped child manifests", async () => {
+		await writePackage(storeRoot, "@org/valid", {
+			...VALID_MANIFEST,
+			name: "@org/valid",
+		});
+		await writePackage(storeRoot, "@org/invalid", { name: "@org/invalid" });
+
+		const result = await listInstalledPackages("project", testDir);
+
+		expectSingleInstalledPackage(result, "@org/valid");
+	});
+
+	test("skips scoped children whose stat fails", async () => {
+		const scopeDir = join(storeRoot, "@org");
+		await mkdir(scopeDir, { recursive: true });
+		await symlink(join(testDir, "missing-target"), join(scopeDir, "missing"));
+		await writePackage(storeRoot, "@org/valid", {
+			...VALID_MANIFEST,
+			name: "@org/valid",
+		});
+
+		const result = await listInstalledPackages("project", testDir);
+
+		expectSingleInstalledPackage(result, "@org/valid");
+	});
 });
 
 // ============================================================================
@@ -215,18 +259,6 @@ describe("listInstalledPackages — project scope", () => {
 // ============================================================================
 
 describe("packageExists", () => {
-	let testDir: string;
-	let storeRoot: string;
-
-	beforeEach(async () => {
-		testDir = await mkdtemp(join(tmpdir(), "cosmo-store-test-"));
-		storeRoot = join(testDir, ".cosmonauts/packages");
-	});
-
-	afterEach(async () => {
-		await cleanupTestDir(testDir);
-	});
-
 	test("returns true when package directory with valid manifest exists", async () => {
 		await writePackage(storeRoot, "my-pkg");
 

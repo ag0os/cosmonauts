@@ -15,6 +15,11 @@ import type { InstalledPackage, PackageScope } from "./types.ts";
 
 const PACKAGES_DIR = ".cosmonauts/packages";
 
+interface CandidatePackageDir {
+	path: string;
+	birthtime: Date;
+}
+
 // ============================================================================
 // Path Resolution
 // ============================================================================
@@ -60,26 +65,43 @@ export function resolveStorePath(
  * @param scope - "user" (global) or "project" (local)
  * @param projectRoot - Required when scope is "project"
  */
-// Temporary migration debt: package store listing handles scoped manifest recovery.
-// fallow-ignore-next-line complexity
 export async function listInstalledPackages(
 	scope: PackageScope,
 	projectRoot?: string,
 ): Promise<InstalledPackage[]> {
 	const storeRoot = resolveStoreRoot(scope, projectRoot);
-
-	let entries: string[];
-	try {
-		entries = await readdir(storeRoot);
-	} catch {
-		// Missing store directory is not an error
-		return [];
-	}
-
+	const entries = await readStoreEntries(storeRoot);
+	const candidateDirs = await collectCandidatePackageDirs(storeRoot, entries);
 	const packages: InstalledPackage[] = [];
 
-	// Collect candidate directories, descending into @scope dirs
-	const candidateDirs: Array<{ path: string; birthtime: Date }> = [];
+	for (const { path: installPath, birthtime } of candidateDirs) {
+		const installedPackage = await readInstalledPackage(
+			installPath,
+			birthtime,
+			scope,
+		);
+		if (installedPackage) {
+			packages.push(installedPackage);
+		}
+	}
+
+	return packages;
+}
+
+async function readStoreEntries(storeRoot: string): Promise<string[]> {
+	try {
+		return await readdir(storeRoot);
+	} catch {
+		return [];
+	}
+}
+
+async function collectCandidatePackageDirs(
+	storeRoot: string,
+	entries: readonly string[],
+): Promise<CandidatePackageDir[]> {
+	const candidateDirs: CandidatePackageDir[] = [];
+
 	for (const entry of entries) {
 		const entryPath = join(storeRoot, entry);
 
@@ -92,54 +114,71 @@ export async function listInstalledPackages(
 		if (!dirStat.isDirectory()) continue;
 
 		if (entry.startsWith("@")) {
-			// Scoped package: @scope/name — descend one level
-			let scopeEntries: string[];
-			try {
-				scopeEntries = await readdir(entryPath);
-			} catch {
-				continue;
-			}
-			for (const scopeChild of scopeEntries) {
-				const childPath = join(entryPath, scopeChild);
-				let childStat: Awaited<ReturnType<typeof stat>>;
-				try {
-					childStat = await stat(childPath);
-				} catch {
-					continue;
-				}
-				if (childStat.isDirectory()) {
-					candidateDirs.push({
-						path: childPath,
-						birthtime: childStat.birthtime,
-					});
-				}
-			}
-		} else {
-			candidateDirs.push({ path: entryPath, birthtime: dirStat.birthtime });
-		}
-	}
-
-	for (const { path: installPath, birthtime } of candidateDirs) {
-		let raw: unknown;
-		try {
-			raw = await loadManifest(installPath);
-		} catch {
-			// Skip packages with missing or unreadable manifests
+			candidateDirs.push(...(await collectScopedPackageDirs(entryPath)));
 			continue;
 		}
 
-		const result = validateManifest(raw);
-		if (!result.valid) continue;
-
-		packages.push({
-			manifest: result.manifest,
-			installPath,
-			scope,
-			installedAt: birthtime,
-		});
+		candidateDirs.push({ path: entryPath, birthtime: dirStat.birthtime });
 	}
 
-	return packages;
+	return candidateDirs;
+}
+
+async function collectScopedPackageDirs(
+	scopeDir: string,
+): Promise<CandidatePackageDir[]> {
+	let scopeEntries: string[];
+	try {
+		scopeEntries = await readdir(scopeDir);
+	} catch {
+		return [];
+	}
+
+	const candidateDirs: CandidatePackageDir[] = [];
+	for (const scopeChild of scopeEntries) {
+		const childPath = join(scopeDir, scopeChild);
+
+		let childStat: Awaited<ReturnType<typeof stat>>;
+		try {
+			childStat = await stat(childPath);
+		} catch {
+			continue;
+		}
+
+		if (childStat.isDirectory()) {
+			candidateDirs.push({
+				path: childPath,
+				birthtime: childStat.birthtime,
+			});
+		}
+	}
+
+	return candidateDirs;
+}
+
+async function readInstalledPackage(
+	installPath: string,
+	birthtime: Date,
+	scope: PackageScope,
+): Promise<InstalledPackage | undefined> {
+	let raw: unknown;
+	try {
+		raw = await loadManifest(installPath);
+	} catch {
+		return undefined;
+	}
+
+	const result = validateManifest(raw);
+	if (!result.valid) {
+		return undefined;
+	}
+
+	return {
+		manifest: result.manifest,
+		installPath,
+		scope,
+		installedAt: birthtime,
+	};
 }
 
 /**
