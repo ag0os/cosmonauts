@@ -30,9 +30,3 @@ dynamicallyLoaded = [
   "domains/shared/extensions/*/index.ts",
   "domains/shared/workflows.ts",
 ]
-
-[audit]
-# Temporary migration debt: duplication cleanup is too large for one pass.
-# This baseline gates new duplicate-code findings while follow-up refactors
-# collapse the existing command/test repetition.
-dupesBaseline = ".fallow/baselines/dupes.json"
