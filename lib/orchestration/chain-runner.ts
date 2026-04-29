@@ -21,6 +21,7 @@ import type {
 	ChainStats,
 	ChainStep,
 	ParallelGroupStep,
+	SpawnConfig,
 	SpawnEvent,
 	SpawnStats,
 	StageResult,
@@ -567,6 +568,32 @@ interface StageConstraints {
 	deadlineMs: number;
 }
 
+interface PreparedStageExecutionContext {
+	stage: ChainStage;
+	config: ChainConfig;
+	stageStart: number;
+	model: string | undefined;
+	thinkingLevel: ReturnType<typeof getThinkingForRole>;
+	prompt: string;
+	planSlug: string | undefined;
+	iterations: number;
+	aggregatedStats: SpawnStats;
+	hasStats: boolean;
+}
+
+interface StageExecutionContext extends PreparedStageExecutionContext {
+	spawner: AgentSpawner;
+}
+
+type LoopState =
+	| { status: "pending" }
+	| { status: "complete" }
+	| { status: "terminal"; error?: string }
+	| { status: "aborted" }
+	| { status: "timed_out" }
+	| { status: "budget_exhausted"; iterationBudget: number }
+	| { status: "exited" };
+
 /**
  * Execute a single chain stage.
  *
@@ -574,8 +601,6 @@ interface StageConstraints {
  * - Loop stages (loop=true): repeat until completion check passes,
  *   bounded by the remaining iteration budget and deadline.
  */
-// Temporary migration debt: stage execution has coupled lifecycle handling.
-// fallow-ignore-next-line complexity
 export async function runStage(
 	stage: ChainStage,
 	config: ChainConfig,
@@ -583,282 +608,16 @@ export async function runStage(
 	constraints?: StageConstraints,
 ): Promise<StageResult> {
 	const stageStart = Date.now();
-	let iterations = 0;
+	let context: StageExecutionContext | undefined;
 
 	try {
-		if (!config.registry.has(stage.name, config.domainContext)) {
-			const message = `Unknown agent role "${stage.name}"`;
-			emit(config, { type: "error", message, stage });
-			return {
-				stage,
-				success: false,
-				iterations: 0,
-				durationMs: Date.now() - stageStart,
-				error: message,
-			};
-		}
+		const prepared = prepareStageExecution(stage, config);
+		if (isStageResult(prepared)) return prepared;
 
-		const model = getModelForRole(
-			stage.name,
-			config.models,
-			config.registry,
-			config.domainContext,
-		);
-		const thinkingLevel = getThinkingForRole(
-			stage.name,
-			config.thinking,
-			config.registry,
-			config.domainContext,
-		);
-		const prompt = buildStagePrompt(stage, config);
-
-		const planSlug = resolvePlanSlug(config);
-
-		if (!stage.loop) {
-			// One-shot stage
-			iterations = 1;
-
-			let spawnedSessionId: string | undefined;
-			const emitSpawned = (sessionId: string) => {
-				if (spawnedSessionId !== undefined) return;
-				spawnedSessionId = sessionId;
-				emit(config, {
-					type: "agent_spawned",
-					role: stage.name,
-					sessionId,
-				});
-			};
-			const onEvent = createSpawnEventForwarder(
-				config,
-				stage.name,
-				emitSpawned,
-			);
-
-			const spawnResult = await spawner.spawn({
-				role: stage.name,
-				domainContext: config.domainContext,
-				cwd: config.projectRoot,
-				model,
-				prompt,
-				signal: config.signal,
-				projectSkills: config.projectSkills,
-				skillPaths: config.skillPaths ? [...config.skillPaths] : undefined,
-				thinkingLevel,
-				compaction: config.compaction,
-				onEvent,
-				planSlug,
-			});
-
-			if (spawnResult.success) {
-				emitSpawned(spawnResult.sessionId);
-				emit(config, {
-					type: "agent_completed",
-					role: stage.name,
-					sessionId: spawnResult.sessionId,
-				});
-			}
-
-			return {
-				stage,
-				success: spawnResult.success,
-				iterations,
-				durationMs: Date.now() - stageStart,
-				error: spawnResult.error,
-				stats: spawnResult.stats,
-			};
-		}
-
-		// Loop stage — repeat until done or safety cap
-		const completionCheck = stage.completionCheck;
-		const iterationBudget =
-			constraints?.maxTotalIterations ?? DEFAULT_MAX_TOTAL_ITERATIONS;
-		const deadline = constraints?.deadlineMs ?? Date.now() + DEFAULT_TIMEOUT_MS;
-		let completionReached = false;
-		let terminalError: string | undefined;
-		let aggregatedStats = emptySpawnStats();
-		let hasStats = false;
-
-		// Pre-check once before spawning to avoid unnecessary loop iterations.
-		if (completionCheck) {
-			completionReached = await completionCheck(config.projectRoot);
-		} else {
-			const initialState = await evaluateDefaultCompletionState(
-				config.projectRoot,
-				config.completionLabel,
-			);
-			if (initialState.status === "complete") {
-				completionReached = true;
-			}
-			if (initialState.status === "terminal") {
-				terminalError = initialState.reason;
-			}
-		}
-
-		if (completionReached) {
-			return {
-				stage,
-				success: true,
-				iterations,
-				durationMs: Date.now() - stageStart,
-			};
-		}
-
-		if (terminalError) {
-			return {
-				stage,
-				success: false,
-				iterations,
-				durationMs: Date.now() - stageStart,
-				error: terminalError,
-			};
-		}
-
-		for (let i = 0; i < iterationBudget; i++) {
-			if (config.signal?.aborted) break;
-			if (Date.now() >= deadline) break;
-
-			iterations = i + 1;
-
-			emit(config, {
-				type: "stage_iteration",
-				stage,
-				iteration: iterations,
-			});
-
-			let spawnedSessionId: string | undefined;
-			const emitSpawned = (sessionId: string) => {
-				if (spawnedSessionId !== undefined) return;
-				spawnedSessionId = sessionId;
-				emit(config, {
-					type: "agent_spawned",
-					role: stage.name,
-					sessionId,
-				});
-			};
-			const onEvent = createSpawnEventForwarder(
-				config,
-				stage.name,
-				emitSpawned,
-			);
-
-			const spawnResult = await spawner.spawn({
-				role: stage.name,
-				domainContext: config.domainContext,
-				cwd: config.projectRoot,
-				model,
-				prompt,
-				signal: config.signal,
-				projectSkills: config.projectSkills,
-				skillPaths: config.skillPaths ? [...config.skillPaths] : undefined,
-				thinkingLevel,
-				compaction: config.compaction,
-				onEvent,
-				planSlug,
-			});
-
-			if (spawnResult.stats) {
-				aggregatedStats = addSpawnStats(aggregatedStats, spawnResult.stats);
-				hasStats = true;
-			}
-
-			if (spawnResult.success) {
-				emitSpawned(spawnResult.sessionId);
-				emit(config, {
-					type: "agent_completed",
-					role: stage.name,
-					sessionId: spawnResult.sessionId,
-				});
-			}
-
-			if (!spawnResult.success) {
-				return {
-					stage,
-					success: false,
-					iterations,
-					durationMs: Date.now() - stageStart,
-					error: spawnResult.error,
-					stats: hasStats ? aggregatedStats : undefined,
-				};
-			}
-
-			if (completionCheck) {
-				completionReached = await completionCheck(config.projectRoot);
-			} else {
-				const state = await evaluateDefaultCompletionState(
-					config.projectRoot,
-					config.completionLabel,
-				);
-				completionReached = state.status === "complete";
-				if (state.status === "terminal") {
-					terminalError = state.reason;
-				}
-			}
-			if (completionReached || terminalError) break;
-		}
-
-		const loopStats = hasStats ? aggregatedStats : undefined;
-
-		if (terminalError) {
-			return {
-				stage,
-				success: false,
-				iterations,
-				durationMs: Date.now() - stageStart,
-				error: terminalError,
-				stats: loopStats,
-			};
-		}
-
-		if (completionReached) {
-			return {
-				stage,
-				success: true,
-				iterations,
-				durationMs: Date.now() - stageStart,
-				stats: loopStats,
-			};
-		}
-
-		if (config.signal?.aborted) {
-			return {
-				stage,
-				success: true,
-				iterations,
-				durationMs: Date.now() - stageStart,
-				stats: loopStats,
-			};
-		}
-
-		if (Date.now() >= deadline) {
-			return {
-				stage,
-				success: false,
-				iterations,
-				durationMs: Date.now() - stageStart,
-				error: `Loop stage "${stage.name}" timed out before completion`,
-				stats: loopStats,
-			};
-		}
-
-		if (iterations >= iterationBudget) {
-			return {
-				stage,
-				success: false,
-				iterations,
-				durationMs: Date.now() - stageStart,
-				error: `Loop stage "${stage.name}" reached max iterations (${iterationBudget}) before completion`,
-				stats: loopStats,
-			};
-		}
-
-		return {
-			stage,
-			success: false,
-			iterations,
-			durationMs: Date.now() - stageStart,
-			error: `Loop stage "${stage.name}" exited before completion`,
-			stats: loopStats,
-		};
+		context = { ...prepared, spawner };
+		return stage.loop
+			? runLoopStage(context, constraints)
+			: runOneShotStage(context);
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : String(err);
 		emit(config, { type: "error", message, stage });
@@ -866,9 +625,283 @@ export async function runStage(
 		return {
 			stage,
 			success: false,
-			iterations,
+			iterations: context?.iterations ?? 0,
 			durationMs: Date.now() - stageStart,
 			error: message,
 		};
 	}
+}
+
+function prepareStageExecution(
+	stage: ChainStage,
+	config: ChainConfig,
+): PreparedStageExecutionContext | StageResult {
+	const stageStart = Date.now();
+
+	if (!config.registry.has(stage.name, config.domainContext)) {
+		const message = `Unknown agent role "${stage.name}"`;
+		emit(config, { type: "error", message, stage });
+		return {
+			stage,
+			success: false,
+			iterations: 0,
+			durationMs: Date.now() - stageStart,
+			error: message,
+		};
+	}
+
+	return {
+		stage,
+		config,
+		stageStart,
+		model: getModelForRole(
+			stage.name,
+			config.models,
+			config.registry,
+			config.domainContext,
+		),
+		thinkingLevel: getThinkingForRole(
+			stage.name,
+			config.thinking,
+			config.registry,
+			config.domainContext,
+		),
+		prompt: buildStagePrompt(stage, config),
+		planSlug: resolvePlanSlug(config),
+		iterations: 0,
+		aggregatedStats: emptySpawnStats(),
+		hasStats: false,
+	};
+}
+
+function isStageResult(
+	value: PreparedStageExecutionContext | StageResult,
+): value is StageResult {
+	return "success" in value;
+}
+
+function createStageSpawnConfig(
+	context: StageExecutionContext,
+	onEvent: ((event: SpawnEvent) => void) | undefined,
+): SpawnConfig {
+	const { config, stage } = context;
+
+	return {
+		role: stage.name,
+		domainContext: config.domainContext,
+		cwd: config.projectRoot,
+		model: context.model,
+		prompt: context.prompt,
+		signal: config.signal,
+		projectSkills: config.projectSkills,
+		skillPaths: config.skillPaths ? [...config.skillPaths] : undefined,
+		thinkingLevel: context.thinkingLevel,
+		compaction: config.compaction,
+		onEvent,
+		planSlug: context.planSlug,
+	};
+}
+
+async function runOneShotStage(
+	context: StageExecutionContext,
+): Promise<StageResult> {
+	context.iterations = 1;
+
+	const { emitSpawned, onEvent } = createSpawnLifecycle(context);
+	const spawnResult = await context.spawner.spawn(
+		createStageSpawnConfig(context, onEvent),
+	);
+
+	if (spawnResult.success) {
+		emitSpawned(spawnResult.sessionId);
+		emit(context.config, {
+			type: "agent_completed",
+			role: context.stage.name,
+			sessionId: spawnResult.sessionId,
+		});
+	}
+
+	return {
+		stage: context.stage,
+		success: spawnResult.success,
+		iterations: context.iterations,
+		durationMs: Date.now() - context.stageStart,
+		error: spawnResult.error,
+		stats: spawnResult.stats,
+	};
+}
+
+async function runLoopStage(
+	context: StageExecutionContext,
+	constraints?: StageConstraints,
+): Promise<StageResult> {
+	const iterationBudget =
+		constraints?.maxTotalIterations ?? DEFAULT_MAX_TOTAL_ITERATIONS;
+	const deadline = constraints?.deadlineMs ?? Date.now() + DEFAULT_TIMEOUT_MS;
+	let loopState = await evaluateLoopState(context.stage, context.config);
+
+	if (loopState.status !== "pending") {
+		return buildLoopExitResult(context, loopState);
+	}
+
+	for (let i = 0; i < iterationBudget; i++) {
+		if (context.config.signal?.aborted) break;
+		if (Date.now() >= deadline) break;
+
+		context.iterations = i + 1;
+		emit(context.config, {
+			type: "stage_iteration",
+			stage: context.stage,
+			iteration: context.iterations,
+		});
+
+		const spawnResult = await spawnLoopIteration(context);
+		if (!spawnResult.success) {
+			return buildLoopExitResult(context, {
+				status: "terminal",
+				error: spawnResult.error,
+			});
+		}
+
+		loopState = await evaluateLoopState(context.stage, context.config);
+		if (loopState.status !== "pending") break;
+	}
+
+	return buildLoopExitResult(
+		context,
+		loopState.status === "pending"
+			? getLoopCapState(context, deadline, iterationBudget)
+			: loopState,
+	);
+}
+
+async function evaluateLoopState(
+	stage: ChainStage,
+	config: ChainConfig,
+): Promise<LoopState> {
+	if (stage.completionCheck) {
+		return (await stage.completionCheck(config.projectRoot))
+			? { status: "complete" }
+			: { status: "pending" };
+	}
+
+	const state = await evaluateDefaultCompletionState(
+		config.projectRoot,
+		config.completionLabel,
+	);
+
+	if (state.status === "complete") return { status: "complete" };
+	if (state.status === "terminal") {
+		return { status: "terminal", error: state.reason };
+	}
+	return { status: "pending" };
+}
+
+function buildLoopExitResult(
+	context: StageExecutionContext,
+	loopState: LoopState,
+): StageResult {
+	const stats = context.hasStats ? context.aggregatedStats : undefined;
+	const base = {
+		stage: context.stage,
+		iterations: context.iterations,
+		durationMs: Date.now() - context.stageStart,
+		stats,
+	};
+
+	if (loopState.status === "complete" || loopState.status === "aborted") {
+		return { ...base, success: true };
+	}
+
+	if (loopState.status === "terminal") {
+		return { ...base, success: false, error: loopState.error };
+	}
+
+	if (loopState.status === "timed_out") {
+		return {
+			...base,
+			success: false,
+			error: `Loop stage "${context.stage.name}" timed out before completion`,
+		};
+	}
+
+	if (loopState.status === "budget_exhausted") {
+		return {
+			...base,
+			success: false,
+			error: `Loop stage "${context.stage.name}" reached max iterations (${loopState.iterationBudget}) before completion`,
+		};
+	}
+
+	return {
+		...base,
+		success: false,
+		error: `Loop stage "${context.stage.name}" exited before completion`,
+	};
+}
+
+function getLoopCapState(
+	context: StageExecutionContext,
+	deadline: number,
+	iterationBudget: number,
+): LoopState {
+	if (context.config.signal?.aborted) return { status: "aborted" };
+	if (Date.now() >= deadline) return { status: "timed_out" };
+	if (context.iterations >= iterationBudget) {
+		return { status: "budget_exhausted", iterationBudget };
+	}
+	return { status: "exited" };
+}
+
+async function spawnLoopIteration(
+	context: StageExecutionContext,
+): Promise<Awaited<ReturnType<AgentSpawner["spawn"]>>> {
+	const { emitSpawned, onEvent } = createSpawnLifecycle(context);
+	const spawnResult = await context.spawner.spawn(
+		createStageSpawnConfig(context, onEvent),
+	);
+
+	if (spawnResult.stats) {
+		context.aggregatedStats = addSpawnStats(
+			context.aggregatedStats,
+			spawnResult.stats,
+		);
+		context.hasStats = true;
+	}
+
+	if (spawnResult.success) {
+		emitSpawned(spawnResult.sessionId);
+		emit(context.config, {
+			type: "agent_completed",
+			role: context.stage.name,
+			sessionId: spawnResult.sessionId,
+		});
+	}
+
+	return spawnResult;
+}
+
+function createSpawnLifecycle(context: StageExecutionContext): {
+	emitSpawned: (sessionId: string) => void;
+	onEvent: ((event: SpawnEvent) => void) | undefined;
+} {
+	let spawnedSessionId: string | undefined;
+	const emitSpawned = (sessionId: string) => {
+		if (spawnedSessionId !== undefined) return;
+		spawnedSessionId = sessionId;
+		emit(context.config, {
+			type: "agent_spawned",
+			role: context.stage.name,
+			sessionId,
+		});
+	};
+
+	return {
+		emitSpawned,
+		onEvent: createSpawnEventForwarder(
+			context.config,
+			context.stage.name,
+			emitSpawned,
+		),
+	};
 }
