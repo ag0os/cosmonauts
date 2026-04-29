@@ -6,6 +6,16 @@ import { TaskManager } from "../../../../lib/tasks/task-manager.ts";
 
 const PlanStatusLiterals = [Type.Literal("active"), Type.Literal("completed")];
 
+function createPlanManagers(cwd: string): {
+	manager: PlanManager;
+	taskManager: TaskManager;
+} {
+	return {
+		manager: new PlanManager(cwd),
+		taskManager: new TaskManager(cwd),
+	};
+}
+
 export default function plansExtension(pi: ExtensionAPI) {
 	// plan_create
 	pi.registerTool({
@@ -63,8 +73,7 @@ export default function plansExtension(pi: ExtensionAPI) {
 			),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
-			const manager = new PlanManager(ctx.cwd);
-			const taskManager = new TaskManager(ctx.cwd);
+			const { manager, taskManager } = createPlanManagers(ctx.cwd);
 			const plans = await manager.listPlans(params.status);
 			const summaries = await Promise.all(
 				plans.map((p) => manager.getPlanSummary(p.slug, taskManager)),
@@ -97,8 +106,7 @@ export default function plansExtension(pi: ExtensionAPI) {
 			slug: Type.String({ description: "Plan slug (directory name)" }),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
-			const manager = new PlanManager(ctx.cwd);
-			const taskManager = new TaskManager(ctx.cwd);
+			const { manager, taskManager } = createPlanManagers(ctx.cwd);
 			const plan = await manager.getPlan(params.slug);
 			if (!plan) {
 				return {

@@ -3,6 +3,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { captureCommandOutput } from "../../helpers/cli.ts";
 
 // ============================================================================
 // Mocks
@@ -24,33 +25,18 @@ const mockEjectDomain = vi.mocked(ejectDomain);
 // Setup
 // ============================================================================
 
-let stdoutOutput: string;
-let stderrOutput: string;
+let output: ReturnType<typeof captureCommandOutput>;
 let originalExitCode: number | undefined;
 
 beforeEach(() => {
-	stdoutOutput = "";
-	stderrOutput = "";
+	output = captureCommandOutput();
 	originalExitCode = process.exitCode as number | undefined;
-
-	vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
-		stdoutOutput += String(chunk);
-		return true;
-	});
-	vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
-		stderrOutput += String(chunk);
-		return true;
-	});
-	vi.spyOn(console, "log").mockImplementation(
-		(msg: unknown, ...rest: unknown[]) => {
-			stdoutOutput += `${[msg, ...rest].map(String).join(" ")}\n`;
-		},
-	);
 
 	process.exitCode = undefined;
 });
 
 afterEach(() => {
+	output.restore();
 	vi.restoreAllMocks();
 	process.exitCode = originalExitCode;
 });
@@ -70,7 +56,7 @@ describe("ejectAction — success", () => {
 
 		await ejectAction("coding", { projectRoot: "/project" });
 
-		expect(stdoutOutput).toContain(".cosmonauts/domains/coding/");
+		expect(output.stdout()).toContain(".cosmonauts/domains/coding/");
 		expect(process.exitCode).toBeUndefined();
 	});
 
@@ -84,8 +70,8 @@ describe("ejectAction — success", () => {
 
 		await ejectAction("coding", { projectRoot: "/project" });
 
-		expect(stdoutOutput).toContain("coding");
-		expect(stdoutOutput).toContain(
+		expect(output.stdout()).toContain("coding");
+		expect(output.stdout()).toContain(
 			"/home/user/.cosmonauts/packages/coding/domains/coding",
 		);
 	});
@@ -100,9 +86,9 @@ describe("ejectAction — success", () => {
 
 		await ejectAction("coding", { projectRoot: "/project" });
 
-		expect(stdoutOutput).toContain("cosmonauts uninstall coding-minimal");
-		expect(stdoutOutput).not.toContain("coding-minimal --local");
-		expect(stdoutOutput).toContain("fallback");
+		expect(output.stdout()).toContain("cosmonauts uninstall coding-minimal");
+		expect(output.stdout()).not.toContain("coding-minimal --local");
+		expect(output.stdout()).toContain("fallback");
 	});
 
 	it("prints local uninstall guidance with --local for project scope", async () => {
@@ -115,7 +101,7 @@ describe("ejectAction — success", () => {
 
 		await ejectAction("coding", { projectRoot: "/project" });
 
-		expect(stdoutOutput).toContain(
+		expect(output.stdout()).toContain(
 			"cosmonauts uninstall coding-minimal --local",
 		);
 	});
@@ -130,8 +116,8 @@ describe("ejectAction — success", () => {
 
 		await ejectAction("coding", { projectRoot: "/project" });
 
-		expect(stdoutOutput).toContain("dev dependency");
-		expect(stdoutOutput).toContain("cosmonauts");
+		expect(output.stdout()).toContain("dev dependency");
+		expect(output.stdout()).toContain("cosmonauts");
 	});
 });
 
@@ -147,8 +133,8 @@ describe("ejectAction — errors", () => {
 
 		await ejectAction("coding", { projectRoot: "/project" });
 
-		expect(stderrOutput).toContain("cosmonauts eject:");
-		expect(stderrOutput).toContain(
+		expect(output.stderr()).toContain("cosmonauts eject:");
+		expect(output.stderr()).toContain(
 			'Domain "coding" not found in any installed package',
 		);
 	});
@@ -166,8 +152,8 @@ describe("ejectAction — errors", () => {
 
 		await ejectAction("coding", { projectRoot: "/project" });
 
-		expect(stderrOutput).toContain("cosmonauts eject:");
-		expect(stderrOutput).toContain("plain string error");
+		expect(output.stderr()).toContain("cosmonauts eject:");
+		expect(output.stderr()).toContain("plain string error");
 		expect(process.exitCode).toBe(1);
 	});
 });

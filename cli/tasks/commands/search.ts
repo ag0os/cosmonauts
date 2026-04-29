@@ -1,12 +1,11 @@
 import type { Command } from "commander";
 import { TaskManager } from "../../../lib/tasks/task-manager.ts";
-import type { Task, TaskListFilter } from "../../../lib/tasks/task-types.ts";
+import type * as TaskTypes from "../../../lib/tasks/task-types.ts";
 import { printCliError } from "../../shared/errors.ts";
 import type { CliOutputMode, CliParseResult } from "../../shared/output.ts";
 import { getOutputMode, printJson, printLines } from "../../shared/output.ts";
 import {
-	parseTaskPriorityOption,
-	parseTaskStatusOption,
+	parseTaskFilterOptions,
 	renderTaskSummaryRow,
 	renderTaskSummaryTable,
 } from "./shared.ts";
@@ -22,7 +21,7 @@ interface TaskSearchCliOptions {
  * Calculate relevance score for a task based on search query
  * Higher score = more relevant
  */
-export function scoreTaskForQuery(task: Task, query: string): number {
+export function scoreTaskForQuery(task: TaskTypes.Task, query: string): number {
 	const queryLower = query.toLowerCase();
 	let score = 0;
 
@@ -127,28 +126,12 @@ export function registerSearchCommand(program: Command): void {
 
 export function parseTaskSearchOptions(
 	options: TaskSearchCliOptions,
-): CliParseResult<{ filter?: TaskListFilter; limit: number }> {
-	const filter: TaskListFilter = {};
-
-	const status = parseTaskStatusOption(options.status);
-	if (!status.ok) {
-		return status;
+): CliParseResult<{ filter?: TaskTypes.TaskListFilter; limit: number }> {
+	const parsed = parseTaskFilterOptions(options);
+	if (!parsed.ok) {
+		return parsed;
 	}
-	if (status.value) {
-		filter.status = status.value;
-	}
-
-	const priority = parseTaskPriorityOption(options.priority);
-	if (!priority.ok) {
-		return priority;
-	}
-	if (priority.value) {
-		filter.priority = priority.value;
-	}
-
-	if (options.label) {
-		filter.label = options.label;
-	}
+	const filter = parsed.value;
 
 	const limit = parseInt(options.limit ?? "10", 10);
 	if (Number.isNaN(limit) || limit < 1) {
@@ -168,10 +151,10 @@ export function parseTaskSearchOptions(
 }
 
 export function rankTaskSearchResults(
-	tasks: readonly Task[],
+	tasks: readonly TaskTypes.Task[],
 	query: string,
 	limit: number,
-): Task[] {
+): TaskTypes.Task[] {
 	return tasks
 		.map((task) => ({
 			task,
@@ -183,7 +166,7 @@ export function rankTaskSearchResults(
 }
 
 export function renderTaskSearchResults(
-	tasks: readonly Task[],
+	tasks: readonly TaskTypes.Task[],
 	query: string,
 	mode: CliOutputMode,
 ): unknown | string[] {
@@ -206,12 +189,12 @@ export function renderTaskSearchResults(
 	];
 }
 
-function renderTaskSearchRow(task: Task): string {
+function renderTaskSearchRow(task: TaskTypes.Task): string {
 	return renderTaskSummaryRow(task);
 }
 
 function printTaskSearchResults(
-	tasks: readonly Task[],
+	tasks: readonly TaskTypes.Task[],
 	query: string,
 	mode: CliOutputMode,
 ): void {

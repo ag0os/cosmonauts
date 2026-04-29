@@ -12,6 +12,7 @@ import {
 	type captureCommandOutput,
 	createCommandProgram,
 	createCommandTestContext,
+	expectInvalidPriorityDiagnostics,
 	type mockProcessExitThrow,
 	ProcessExitError,
 } from "../../../helpers/cli.ts";
@@ -275,9 +276,5 @@ async function expectInvalidPriorityError(
 	exit: ReturnType<typeof mockProcessExitThrow>,
 ): Promise<void> {
 	await expectCreateToExit(args);
-	expect(output.stdout()).toBe("");
-	expect(output.stderr()).toBe(
-		"Invalid priority: urgent. Must be one of: high, medium, low\n",
-	);
-	expect(exit.calls()).toEqual([1]);
+	expectInvalidPriorityDiagnostics(output, exit);
 }

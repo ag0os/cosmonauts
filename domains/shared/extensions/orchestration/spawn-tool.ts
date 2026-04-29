@@ -36,6 +36,7 @@ import {
 	roleLabel,
 	summarizeToolCall,
 } from "./rendering.ts";
+import { thinkingLevelSchema } from "./schema.ts";
 
 // ============================================================================
 // Module-level per-session state (shared across all spawn tool invocations)
@@ -420,21 +421,8 @@ export function registerSpawnTool(
 			}),
 			prompt: Type.String({ description: "The prompt to send to the agent" }),
 			model: Type.Optional(Type.String({ description: "Model override" })),
-			thinkingLevel: Type.Optional(
-				Type.Union(
-					[
-						Type.Literal("off"),
-						Type.Literal("minimal"),
-						Type.Literal("low"),
-						Type.Literal("medium"),
-						Type.Literal("high"),
-						Type.Literal("xhigh"),
-					],
-					{
-						description:
-							"Thinking/reasoning level override (off, minimal, low, medium, high, xhigh)",
-					},
-				),
+			thinkingLevel: thinkingLevelSchema(
+				"Thinking/reasoning level override (off, minimal, low, medium, high, xhigh)",
 			),
 			runtimeContext: Type.Optional(
 				Type.Object({

@@ -1,10 +1,10 @@
-import * as readline from "node:readline";
 import type { Command } from "commander";
 import { PlanManager } from "../../../lib/plans/plan-manager.ts";
 import type { Plan } from "../../../lib/plans/plan-types.ts";
 import { printCliError } from "../../shared/errors.ts";
 import type { CliOutputMode, CliParseResult } from "../../shared/output.ts";
 import { getOutputMode, printJson, printLines } from "../../shared/output.ts";
+import { promptConfirm } from "../../shared/prompt.ts";
 
 interface PlanDeleteCliOptions {
 	force?: boolean;
@@ -13,29 +13,6 @@ interface PlanDeleteCliOptions {
 export type PlanDeleteResult =
 	| { status: "deleted"; plan: Plan }
 	| { status: "cancelled"; plan: Plan };
-
-async function promptConfirm(message: string): Promise<boolean> {
-	const rl = readline.createInterface({
-		input: process.stdin,
-		output: process.stdout,
-	});
-
-	return new Promise((resolve) => {
-		rl.question(formatConfirmQuestion(message), (answer) => {
-			rl.close();
-			resolve(isConfirmedAnswer(answer));
-		});
-	});
-}
-
-function formatConfirmQuestion(message: string): string {
-	return `${message} (y/N): `;
-}
-
-function isConfirmedAnswer(answer: string): boolean {
-	const normalized = answer.trim().toLowerCase();
-	return normalized === "y" || normalized === "yes";
-}
 
 export function registerDeleteCommand(program: Command): void {
 	program

@@ -640,15 +640,32 @@ describe("--workflow DSL dispatch routing", () => {
 // isCosmonautsFrameworkRepo
 // ============================================================================
 
+async function createTempDir(name: string): Promise<string> {
+	const tmpDir = join(
+		import.meta.dirname,
+		`.tmp-${name}-${Math.random().toString(36).slice(2)}`,
+	);
+	await mkdir(tmpDir, { recursive: true });
+	return tmpDir;
+}
+
+async function writeFrameworkPackage(
+	root: string,
+	name = "cosmonauts",
+): Promise<void> {
+	await writeFile(
+		join(root, "package.json"),
+		JSON.stringify({ name, version: "0.1.0" }),
+	);
+	await mkdir(join(root, "bundled"));
+	await mkdir(join(root, ".git"));
+}
+
 describe("isCosmonautsFrameworkRepo", () => {
 	let tmpDir: string;
 
 	beforeEach(async () => {
-		tmpDir = join(
-			import.meta.dirname,
-			`.tmp-framework-repo-${Math.random().toString(36).slice(2)}`,
-		);
-		await mkdir(tmpDir, { recursive: true });
+		tmpDir = await createTempDir("framework-repo");
 	});
 
 	afterEach(async () => {
@@ -667,12 +684,7 @@ describe("isCosmonautsFrameworkRepo", () => {
 	});
 
 	test("returns false when package.json name is not 'cosmonauts'", async () => {
-		await writeFile(
-			join(tmpDir, "package.json"),
-			JSON.stringify({ name: "my-project", version: "1.0.0" }),
-		);
-		await mkdir(join(tmpDir, "bundled"));
-		await mkdir(join(tmpDir, ".git"));
+		await writeFrameworkPackage(tmpDir, "my-project");
 
 		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(false);
 	});
@@ -725,11 +737,7 @@ describe("discoverBundledPackageDirs", () => {
 	let tmpDir: string;
 
 	beforeEach(async () => {
-		tmpDir = join(
-			import.meta.dirname,
-			`.tmp-bundled-${Math.random().toString(36).slice(2)}`,
-		);
-		await mkdir(tmpDir, { recursive: true });
+		tmpDir = await createTempDir("bundled");
 	});
 
 	afterEach(async () => {

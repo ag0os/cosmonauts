@@ -36,11 +36,7 @@ describe("TaskManager", () => {
 			const tasksDir = join(tempDir, "missions", "tasks");
 			expect(existsSync(missionsDir)).toBe(true);
 			expect(existsSync(tasksDir)).toBe(true);
-			expect(
-				await access(join(tempDir, "missions", "tasks", "config.json"))
-					.then(() => true)
-					.catch(() => false),
-			).toBe(true);
+			await expectTaskConfigExists(tempDir);
 		});
 
 		it("should merge provided config with defaults", async () => {
@@ -343,10 +339,7 @@ describe("TaskManager", () => {
 		});
 
 		it("should filter by status", async () => {
-			await manager.init();
-			await manager.createTask({ title: "Task 1" });
-			await manager.updateTask("TASK-001", { status: "In Progress" });
-			await manager.createTask({ title: "Task 2" });
+			await createTasksWithInProgressFirst(manager);
 
 			const inProgressTasks = await manager.listTasks({
 				status: "In Progress",
@@ -557,12 +550,7 @@ describe("TaskManager", () => {
 
 			expect(task.id).toBe("TASK-001");
 
-			// Verify config was created
-			expect(
-				await access(join(tempDir, "missions", "tasks", "config.json"))
-					.then(() => true)
-					.catch(() => false),
-			).toBe(true);
+			await expectTaskConfigExists(tempDir);
 		});
 
 		it("should load existing config on first operation", async () => {
@@ -677,3 +665,20 @@ describe("TaskManager", () => {
 		});
 	});
 });
+
+async function expectTaskConfigExists(projectRoot: string): Promise<void> {
+	await expect(
+		access(join(projectRoot, "missions", "tasks", "config.json"))
+			.then(() => true)
+			.catch(() => false),
+	).resolves.toBe(true);
+}
+
+async function createTasksWithInProgressFirst(
+	manager: TaskManager,
+): Promise<void> {
+	await manager.init();
+	await manager.createTask({ title: "Task 1" });
+	await manager.updateTask("TASK-001", { status: "In Progress" });
+	await manager.createTask({ title: "Task 2" });
+}

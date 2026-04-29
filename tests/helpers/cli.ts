@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
-import { vi } from "vitest";
+import { expect, vi } from "vitest";
 
 export class ProcessExitError extends Error {
 	constructor(readonly code: number) {
@@ -93,9 +93,11 @@ export function captureCommandOutput(): {
 	let stdoutOutput = "";
 	let stderrOutput = "";
 	const streamOutput = captureCliOutput();
-	const log = vi.spyOn(console, "log").mockImplementation((message) => {
-		stdoutOutput += `${String(message)}\n`;
-	});
+	const log = vi
+		.spyOn(console, "log")
+		.mockImplementation((message, ...rest) => {
+			stdoutOutput += `${[message, ...rest].map(String).join(" ")}\n`;
+		});
 	const error = vi.spyOn(console, "error").mockImplementation((message) => {
 		stderrOutput += `${String(message)}\n`;
 	});
@@ -146,6 +148,45 @@ export function mockProcessExitThrow(): {
 			exit.mockRestore();
 		},
 	};
+}
+
+export function expectInvalidPriorityDiagnostics(
+	output: ReturnType<typeof captureCommandOutput>,
+	exit: ReturnType<typeof mockProcessExitThrow>,
+): void {
+	expect(output.stdout()).toBe("");
+	expect(output.stderr()).toBe(
+		"Invalid priority: urgent. Must be one of: high, medium, low\n",
+	);
+	expect(exit.calls()).toEqual([1]);
+}
+
+export function expectInvalidStatusDiagnostics(
+	output: ReturnType<typeof captureCommandOutput>,
+	exit: ReturnType<typeof mockProcessExitThrow>,
+): void {
+	expect(output.stdout()).toBe("");
+	expect(output.stderr()).toBe(
+		"Invalid status: waiting. Must be one of: todo, in-progress, done, blocked\n",
+	);
+	expect(exit.calls()).toEqual([1]);
+}
+
+export function expectNoCommandDiagnostics(
+	output: ReturnType<typeof captureCommandOutput>,
+	exit: ReturnType<typeof mockProcessExitThrow>,
+): void {
+	expect(output.stderr()).toBe("");
+	expect(exit.calls()).toEqual([]);
+}
+
+export function expectSingleJsonTaskTitle(
+	output: ReturnType<typeof captureCommandOutput>,
+	expectedTitle: string,
+): void {
+	const tasks = JSON.parse(output.stdout()) as Array<{ title: string }>;
+	expect(tasks).toHaveLength(1);
+	expect(tasks[0]?.title).toBe(expectedTitle);
 }
 
 function normalizeExitCode(code: string | number | null | undefined): number {

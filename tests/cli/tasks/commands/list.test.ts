@@ -12,25 +12,19 @@ import {
 	type captureCommandOutput,
 	createCommandProgram,
 	createCommandTestContext,
+	expectInvalidStatusDiagnostics,
+	expectNoCommandDiagnostics,
+	expectSingleJsonTaskTitle,
 	type mockProcessExitThrow,
 	ProcessExitError,
 } from "../../../helpers/cli.ts";
 import {
 	createInitializedTaskManager,
 	createTaskFixture,
+	createTaskRecordFixture,
 } from "../../../helpers/tasks.ts";
 
-const renderedTask: Task = {
-	id: "TASK-001",
-	title: "Rendered Task",
-	status: "To Do",
-	priority: "high",
-	createdAt: new Date("2026-01-01"),
-	updatedAt: new Date("2026-01-01"),
-	labels: [],
-	dependencies: [],
-	acceptanceCriteria: [],
-};
+const renderedTask: Task = createTaskRecordFixture();
 
 describe("parseTaskListFilter", () => {
 	it("normalizes all filter options", () => {
@@ -121,11 +115,7 @@ describe("task list command", () => {
 	it("prints invalid status errors in human mode", async () => {
 		await expectListToExit(["list", "--status", "waiting"]);
 
-		expect(output.stdout()).toBe("");
-		expect(output.stderr()).toBe(
-			"Invalid status: waiting. Must be one of: todo, in-progress, done, blocked\n",
-		);
-		expect(exit.calls()).toEqual([1]);
+		expectInvalidStatusDiagnostics(output, exit);
 	});
 
 	it("prints invalid priority errors in human mode", async () => {
@@ -146,15 +136,14 @@ describe("task list command", () => {
 		await createProgram().parseAsync(["node", "test", "list", "--ready"]);
 
 		expect(listTasks).toHaveBeenCalledWith({ hasNoDependencies: true });
-		expect(exit.calls()).toEqual([]);
+		expectNoCommandDiagnostics(output, exit);
 	});
 
 	it("prints empty human output", async () => {
 		await createProgram().parseAsync(["node", "test", "list"]);
 
 		expect(output.stdout()).toBe("No tasks found\n");
-		expect(output.stderr()).toBe("");
-		expect(exit.calls()).toEqual([]);
+		expectNoCommandDiagnostics(output, exit);
 	});
 
 	it("prints table columns in human mode", async () => {
@@ -166,8 +155,7 @@ describe("task list command", () => {
 		const lines = output.stdout().trimEnd().split("\n");
 		expect(lines[0]).toBe("ID        STATUS       PRIORITY   TITLE");
 		expect(lines[1]).toBe("TASK-001  To Do        high       Build CLI");
-		expect(output.stderr()).toBe("");
-		expect(exit.calls()).toEqual([]);
+		expectNoCommandDiagnostics(output, exit);
 	});
 
 	it("prints plain output", async () => {
@@ -180,8 +168,7 @@ describe("task list command", () => {
 		await createProgram().parseAsync(["node", "test", "--plain", "list"]);
 
 		expect(output.stdout()).toBe("TASK-001 | To Do | medium | Plain Task\n");
-		expect(output.stderr()).toBe("");
-		expect(exit.calls()).toEqual([]);
+		expectNoCommandDiagnostics(output, exit);
 	});
 
 	it("prints JSON output", async () => {
@@ -190,11 +177,8 @@ describe("task list command", () => {
 
 		await createProgram().parseAsync(["node", "test", "--json", "list"]);
 
-		const tasks = JSON.parse(output.stdout()) as Array<{ title: string }>;
-		expect(tasks).toHaveLength(1);
-		expect(tasks[0]?.title).toBe("JSON Task");
-		expect(output.stderr()).toBe("");
-		expect(exit.calls()).toEqual([]);
+		expectSingleJsonTaskTitle(output, "JSON Task");
+		expectNoCommandDiagnostics(output, exit);
 	});
 
 	it("prints manager errors in human mode", async () => {

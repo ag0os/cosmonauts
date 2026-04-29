@@ -211,13 +211,7 @@ export class TaskManager {
 	async deleteTask(id: string): Promise<void> {
 		await this.ensureInitialized();
 
-		// Find the task file
-		const files = await listTaskFiles(this.projectRoot);
-		const targetFile = files.find((file) => {
-			const fileId = parseTaskIdFromFilename(file);
-			return fileId?.toUpperCase() === id.toUpperCase();
-		});
-
+		const targetFile = await this.findTaskFilenameById(id);
 		if (!targetFile) {
 			throw new Error(`Task not found: ${id}`);
 		}
@@ -233,13 +227,7 @@ export class TaskManager {
 	async getTask(id: string): Promise<Task | null> {
 		await this.ensureInitialized();
 
-		// Find the task file
-		const files = await listTaskFiles(this.projectRoot);
-		const targetFile = files.find((file) => {
-			const fileId = parseTaskIdFromFilename(file);
-			return fileId?.toUpperCase() === id.toUpperCase();
-		});
-
+		const targetFile = await this.findTaskFilenameById(id);
 		if (!targetFile) {
 			return null;
 		}
@@ -250,6 +238,15 @@ export class TaskManager {
 		}
 
 		return parseTask(content);
+	}
+
+	private async findTaskFilenameById(id: string): Promise<string | undefined> {
+		const normalizedId = id.toUpperCase();
+		const files = await listTaskFiles(this.projectRoot);
+		return files.find((file) => {
+			const fileId = parseTaskIdFromFilename(file);
+			return fileId?.toUpperCase() === normalizedId;
+		});
 	}
 
 	/**

@@ -1,5 +1,6 @@
 import type {
 	Task,
+	TaskListFilter,
 	TaskPriority,
 	TaskStatus,
 } from "../../../lib/tasks/task-types.ts";
@@ -55,6 +56,40 @@ export function parseTaskPriorityOption(
 	}
 
 	return { ok: true, value: normalizedPriority };
+}
+
+interface TaskFilterCliOptions {
+	status?: string;
+	priority?: string;
+	label?: string;
+}
+
+export function parseTaskFilterOptions(
+	options: TaskFilterCliOptions,
+): CliParseResult<TaskListFilter> {
+	const filter: TaskListFilter = {};
+
+	const status = parseTaskStatusOption(options.status);
+	if (!status.ok) {
+		return status;
+	}
+	if (status.value) {
+		filter.status = status.value;
+	}
+
+	const priority = parseTaskPriorityOption(options.priority);
+	if (!priority.ok) {
+		return priority;
+	}
+	if (priority.value) {
+		filter.priority = priority.value;
+	}
+
+	if (options.label) {
+		filter.label = options.label;
+	}
+
+	return { ok: true, value: filter };
 }
 
 export function renderTaskSummaryRow(task: Task): string {

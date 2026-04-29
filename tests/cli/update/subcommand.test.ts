@@ -5,6 +5,11 @@
 
 import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { captureCommandOutput } from "../../helpers/cli.ts";
+import {
+	createInstalledPackageFixture,
+	createInstallMetaFixture,
+} from "../../helpers/packages.ts";
 
 // ============================================================================
 // Mocks
@@ -41,7 +46,6 @@ import {
 } from "../../../cli/update/subcommand.ts";
 import { resolveCatalogEntry } from "../../../lib/packages/catalog.ts";
 import {
-	type InstallMeta,
 	installPackage,
 	loadInstallMeta,
 	uninstallPackage,
@@ -50,7 +54,6 @@ import {
 	listInstalledPackages,
 	resolveStorePath,
 } from "../../../lib/packages/store.ts";
-import type { InstalledPackage } from "../../../lib/packages/types.ts";
 
 const mockLoadInstallMeta = vi.mocked(loadInstallMeta);
 const mockSpawn = vi.mocked(spawn);
@@ -63,34 +66,6 @@ const mockResolveCatalogEntry = vi.mocked(resolveCatalogEntry);
 // ============================================================================
 // Helpers
 // ============================================================================
-
-function makeInstalledPackage(
-	name: string,
-	scope: "user" | "project" = "user",
-): InstalledPackage {
-	return {
-		manifest: {
-			name,
-			version: "1.0.0",
-			description: `Package ${name}`,
-			domains: [{ name: "coding", path: "domains/coding" }],
-		},
-		installPath: `/store/${name}`,
-		scope,
-		installedAt: new Date(),
-	};
-}
-
-function makeMeta(
-	source: string,
-	extra: Record<string, unknown> = {},
-): InstallMeta {
-	return {
-		source,
-		installedAt: "2024-01-01T00:00:00.000Z",
-		...extra,
-	} as InstallMeta;
-}
 
 /** Creates a mock spawn child process that exits with the given code. */
 function mockSpawnProcess(exitCode: number, stderrData?: string): EventEmitter {
@@ -108,26 +83,12 @@ function mockSpawnProcess(exitCode: number, stderrData?: string): EventEmitter {
 // Setup
 // ============================================================================
 
-let stdoutOutput: string;
-let stderrOutput: string;
+let output: ReturnType<typeof captureCommandOutput>;
 let originalExitCode: number | undefined;
 
 beforeEach(() => {
-	stdoutOutput = "";
-	stderrOutput = "";
+	output = captureCommandOutput();
 	originalExitCode = process.exitCode as number | undefined;
-
-	vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
-		stdoutOutput += String(chunk);
-		return true;
-	});
-	vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
-		stderrOutput += String(chunk);
-		return true;
-	});
-	vi.spyOn(console, "log").mockImplementation((msg: unknown) => {
-		stdoutOutput += `${String(msg)}\n`;
-	});
 
 	process.exitCode = undefined;
 
@@ -150,6 +111,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+	output.restore();
 	vi.restoreAllMocks();
 	process.exitCode = originalExitCode;
 });
@@ -161,7 +123,7 @@ afterEach(() => {
 describe("catalog source", () => {
 	it("uninstalls and re-installs from the catalog source path", async () => {
 		mockLoadInstallMeta.mockResolvedValue(
-			makeMeta("catalog", { catalogName: "coding" }),
+			createInstallMetaFixture("catalog", { catalogName: "coding" }),
 		);
 		mockResolveCatalogEntry.mockReturnValue({
 			name: "coding",
@@ -183,14 +145,14 @@ describe("catalog source", () => {
 				catalogName: "coding",
 			}),
 		);
-		expect(stdoutOutput).toContain('Updated "coding"');
-		expect(stdoutOutput).toContain("catalog");
+		expect(output.stdout()).toContain('Updated "coding"');
+		expect(output.stdout()).toContain("catalog");
 		expect(process.exitCode).toBeUndefined();
 	});
 
 	it("falls back to ./bundled/<catalogName> when catalog entry not found", async () => {
 		mockLoadInstallMeta.mockResolvedValue(
-			makeMeta("catalog", { catalogName: "custom-domain" }),
+			createInstallMetaFixture("catalog", { catalogName: "custom-domain" }),
 		);
 		mockResolveCatalogEntry.mockReturnValue(undefined);
 
@@ -203,14 +165,14 @@ describe("catalog source", () => {
 
 	it("writes an error and sets exitCode when re-install fails", async () => {
 		mockLoadInstallMeta.mockResolvedValue(
-			makeMeta("catalog", { catalogName: "coding" }),
+			createInstallMetaFixture("catalog", { catalogName: "coding" }),
 		);
 		mockInstallPackage.mockRejectedValue(new Error("disk full"));
 
 		await updateAction({ target: "coding", projectRoot: "/project" });
 
-		expect(stderrOutput).toContain("failed to update");
-		expect(stderrOutput).toContain("disk full");
+		expect(output.stderr()).toContain("failed to update");
+		expect(output.stderr()).toContain("disk full");
 		expect(process.exitCode).toBe(1);
 	});
 });
@@ -222,7 +184,10 @@ describe("catalog source", () => {
 describe("git source", () => {
 	it("runs git pull in the install path on success", async () => {
 		mockLoadInstallMeta.mockResolvedValue(
-			makeMeta("git", { url: "https://github.com/owner/repo", branch: null }),
+			createInstallMetaFixture("git", {
+				url: "https://github.com/owner/repo",
+				branch: null,
+			}),
 		);
 		mockSpawn.mockReturnValue(mockSpawnProcess(0) as ReturnType<typeof spawn>);
 
@@ -233,13 +198,16 @@ describe("git source", () => {
 			["-C", "/store/my-pkg", "pull"],
 			{ stdio: "pipe" },
 		);
-		expect(stdoutOutput).toContain('Updated "my-pkg" via git pull');
+		expect(output.stdout()).toContain('Updated "my-pkg" via git pull');
 		expect(process.exitCode).toBeUndefined();
 	});
 
 	it("sets exitCode and writes error when git pull fails", async () => {
 		mockLoadInstallMeta.mockResolvedValue(
-			makeMeta("git", { url: "https://github.com/owner/repo", branch: null }),
+			createInstallMetaFixture("git", {
+				url: "https://github.com/owner/repo",
+				branch: null,
+			}),
 		);
 		mockSpawn.mockReturnValue(
 			mockSpawnProcess(1, "fatal: no upstream") as ReturnType<typeof spawn>,
@@ -247,8 +215,8 @@ describe("git source", () => {
 
 		await updateAction({ target: "my-pkg", projectRoot: "/project" });
 
-		expect(stderrOutput).toContain("failed to update");
-		expect(stderrOutput).toContain("git pull failed");
+		expect(output.stderr()).toContain("failed to update");
+		expect(output.stderr()).toContain("git pull failed");
 		expect(process.exitCode).toBe(1);
 	});
 });
@@ -260,12 +228,12 @@ describe("git source", () => {
 describe("link source", () => {
 	it("skips with a message — no error, no exitCode", async () => {
 		mockLoadInstallMeta.mockResolvedValue(
-			makeMeta("link", { targetPath: "/abs/path/to/pkg" }),
+			createInstallMetaFixture("link", { targetPath: "/abs/path/to/pkg" }),
 		);
 
 		await updateAction({ target: "my-pkg", projectRoot: "/project" });
 
-		expect(stdoutOutput).toContain(
+		expect(output.stdout()).toContain(
 			"Symlinked package — already live, no update needed",
 		);
 		expect(process.exitCode).toBeUndefined();
@@ -281,13 +249,13 @@ describe("link source", () => {
 describe("local source", () => {
 	it("warns and suggests re-install — no exitCode", async () => {
 		mockLoadInstallMeta.mockResolvedValue(
-			makeMeta("local", { originalPath: "/original/path" }),
+			createInstallMetaFixture("local", { originalPath: "/original/path" }),
 		);
 
 		await updateAction({ target: "my-pkg", projectRoot: "/project" });
 
-		expect(stderrOutput).toContain("Local package source unknown");
-		expect(stderrOutput).toContain("cosmonauts install <path>");
+		expect(output.stderr()).toContain("Local package source unknown");
+		expect(output.stderr()).toContain("cosmonauts install <path>");
 		expect(process.exitCode).toBeUndefined();
 		expect(mockInstallPackage).not.toHaveBeenCalled();
 	});
@@ -303,9 +271,9 @@ describe("missing .cosmonauts-meta.json", () => {
 
 		await updateAction({ target: "my-pkg", projectRoot: "/project" });
 
-		expect(stderrOutput).toContain("No metadata found");
-		expect(stderrOutput).toContain('"my-pkg"');
-		expect(stderrOutput).toContain("cannot determine update strategy");
+		expect(output.stderr()).toContain("No metadata found");
+		expect(output.stderr()).toContain('"my-pkg"');
+		expect(output.stderr()).toContain("cannot determine update strategy");
 		expect(process.exitCode).toBeUndefined();
 		expect(mockInstallPackage).not.toHaveBeenCalled();
 	});
@@ -318,19 +286,23 @@ describe("missing .cosmonauts-meta.json", () => {
 describe("--all flag", () => {
 	it("iterates all installed packages and applies the correct strategy to each", async () => {
 		mockListInstalledPackages.mockResolvedValue([
-			makeInstalledPackage("pkg-a"),
-			makeInstalledPackage("pkg-b"),
-			makeInstalledPackage("pkg-c"),
+			createInstalledPackageFixture("pkg-a"),
+			createInstalledPackageFixture("pkg-b"),
+			createInstalledPackageFixture("pkg-c"),
 		]);
 
 		// pkg-a: catalog, pkg-b: link, pkg-c: missing meta
 		mockLoadInstallMeta.mockImplementation((path: unknown) => {
 			const p = String(path);
 			if (p.includes("pkg-a")) {
-				return Promise.resolve(makeMeta("catalog", { catalogName: "coding" }));
+				return Promise.resolve(
+					createInstallMetaFixture("catalog", { catalogName: "coding" }),
+				);
 			}
 			if (p.includes("pkg-b")) {
-				return Promise.resolve(makeMeta("link", { targetPath: "/abs" }));
+				return Promise.resolve(
+					createInstallMetaFixture("link", { targetPath: "/abs" }),
+				);
 			}
 			return Promise.resolve(null);
 		});
@@ -346,10 +318,10 @@ describe("--all flag", () => {
 		expect(mockInstallPackage).toHaveBeenCalledTimes(1);
 
 		// link: skip message
-		expect(stdoutOutput).toContain("already live, no update needed");
+		expect(output.stdout()).toContain("already live, no update needed");
 
 		// missing meta: warning
-		expect(stderrOutput).toContain('No metadata found for "pkg-c"');
+		expect(output.stderr()).toContain('No metadata found for "pkg-c"');
 	});
 
 	it("reports no packages when none are installed", async () => {
@@ -357,16 +329,16 @@ describe("--all flag", () => {
 
 		await updateAction({ all: true, projectRoot: "/project" });
 
-		expect(stdoutOutput).toContain("No packages installed.");
+		expect(output.stdout()).toContain("No packages installed.");
 		expect(process.exitCode).toBeUndefined();
 	});
 
 	it("uses project scope with --local", async () => {
 		mockListInstalledPackages.mockResolvedValue([
-			makeInstalledPackage("pkg-a", "project"),
+			createInstalledPackageFixture("pkg-a", "project"),
 		]);
 		mockLoadInstallMeta.mockResolvedValue(
-			makeMeta("link", { targetPath: "/abs" }),
+			createInstallMetaFixture("link", { targetPath: "/abs" }),
 		);
 
 		await updateAction({ all: true, local: true, projectRoot: "/project" });
@@ -386,7 +358,7 @@ describe("no target and no --all", () => {
 	it("writes an error and sets exitCode", async () => {
 		await updateAction({ projectRoot: "/project" });
 
-		expect(stderrOutput).toContain("specify a package name or use --all");
+		expect(output.stderr()).toContain("specify a package name or use --all");
 		expect(process.exitCode).toBe(1);
 	});
 });

@@ -19,6 +19,7 @@ import type {
 import {
 	createCommandProgram,
 	createCommandTestContext,
+	expectNoCommandDiagnostics,
 } from "../../helpers/cli.ts";
 import { createInitializedTaskManager } from "../../helpers/tasks.ts";
 
@@ -309,9 +310,7 @@ describe("scaffold missions command", () => {
 
 		await expect(runMissions()).rejects.toThrow("disk full");
 
-		expect(output.stdout()).toBe("");
-		expect(output.stderr()).toBe("");
-		expect(exit.calls()).toEqual([]);
+		expectNoCommandDiagnostics(output, exit);
 	});
 
 	it("rejects project config scaffold errors without printing output", async () => {
@@ -319,9 +318,7 @@ describe("scaffold missions command", () => {
 
 		await expect(runMissions()).rejects.toThrow();
 
-		expect(output.stdout()).toBe("");
-		expect(output.stderr()).toBe("");
-		expect(exit.calls()).toEqual([]);
+		expectNoCommandDiagnostics(output, exit);
 	});
 });
 
@@ -345,14 +342,6 @@ async function runMissions({
 		"missions",
 		...commandArgs,
 	]);
-}
-
-function expectNoCommandDiagnostics(
-	output: ReturnType<typeof captureCommandOutput>,
-	exit: ReturnType<typeof mockProcessExitThrow>,
-): void {
-	expect(output.stderr()).toBe("");
-	expect(exit.calls()).toEqual([]);
 }
 
 interface HumanInitializedOutputExpectation {

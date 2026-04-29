@@ -1,10 +1,10 @@
-import * as readline from "node:readline";
 import type { Command } from "commander";
 import { TaskManager } from "../../../lib/tasks/task-manager.ts";
 import type { Task } from "../../../lib/tasks/task-types.ts";
 import { printCliError } from "../../shared/errors.ts";
 import type { CliOutputMode, CliParseResult } from "../../shared/output.ts";
 import { getOutputMode, printJson, printLines } from "../../shared/output.ts";
+import { promptConfirm } from "../../shared/prompt.ts";
 
 interface TaskDeleteCliOptions {
 	force?: boolean;
@@ -13,34 +13,6 @@ interface TaskDeleteCliOptions {
 export type TaskDeleteResult =
 	| { status: "deleted"; task: Task }
 	| { status: "cancelled"; task: Task };
-
-/**
- * Prompt user for confirmation
- * @param message - Message to display
- * @returns Promise that resolves to true if user confirms, false otherwise
- */
-async function promptConfirm(message: string): Promise<boolean> {
-	const prompt = readline.createInterface({
-		input: process.stdin,
-		output: process.stdout,
-	});
-
-	return new Promise((resolve) => {
-		prompt.question(formatConfirmQuestion(message), (answer) => {
-			prompt.close();
-			resolve(isConfirmedAnswer(answer));
-		});
-	});
-}
-
-function formatConfirmQuestion(message: string): string {
-	return `${message} (y/N): `;
-}
-
-function isConfirmedAnswer(answer: string): boolean {
-	const normalized = answer.trim().toLowerCase();
-	return normalized === "y" || normalized === "yes";
-}
 
 export function registerDeleteCommand(program: Command): void {
 	program

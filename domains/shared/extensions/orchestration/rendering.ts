@@ -1,10 +1,13 @@
 import { Text } from "@mariozechner/pi-tui";
 import { unqualifyRole } from "../../../../lib/agents/qualified-role.ts";
 import { formatChainSteps } from "../../../../lib/orchestration/chain-steps.ts";
+import { formatDuration } from "../../../../lib/orchestration/duration.ts";
 import type {
 	ChainEvent,
 	ChainStats,
 } from "../../../../lib/orchestration/types.ts";
+
+export { formatDuration } from "../../../../lib/orchestration/duration.ts";
 
 // ============================================================================
 // Rendering Helpers
@@ -24,15 +27,6 @@ const ROLE_LABELS: Record<string, string> = {
 
 export function roleLabel(role: string): string {
 	return ROLE_LABELS[unqualifyRole(role)] ?? role;
-}
-
-export function formatDuration(ms: number): string {
-	if (ms < 1000) return `${ms}ms`;
-	const seconds = Math.floor(ms / 1000);
-	if (seconds < 60) return `${seconds}s`;
-	const minutes = Math.floor(seconds / 60);
-	const remaining = seconds % 60;
-	return remaining > 0 ? `${minutes}m ${remaining}s` : `${minutes}m`;
 }
 
 /**

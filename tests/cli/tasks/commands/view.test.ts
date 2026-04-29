@@ -12,6 +12,7 @@ import {
 	type captureCommandOutput,
 	createCommandProgram,
 	createCommandTestContext,
+	expectNoCommandDiagnostics,
 	type mockProcessExitThrow,
 	ProcessExitError,
 } from "../../../helpers/cli.ts";
@@ -199,8 +200,7 @@ describe("task view command", () => {
 				"",
 			].join("\n"),
 		);
-		expect(output.stderr()).toBe("");
-		expect(exit.calls()).toEqual([]);
+		expectNoCommandDiagnostics(output, exit);
 	});
 
 	it("prints manager errors in human mode", async () => {

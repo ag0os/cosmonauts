@@ -5,8 +5,7 @@ import { printCliError } from "../../shared/errors.ts";
 import type { CliOutputMode, CliParseResult } from "../../shared/output.ts";
 import { getOutputMode, printJson, printLines } from "../../shared/output.ts";
 import {
-	parseTaskPriorityOption,
-	parseTaskStatusOption,
+	parseTaskFilterOptions,
 	renderTaskSummaryRow,
 	renderTaskSummaryTable,
 } from "./shared.ts";
@@ -63,23 +62,11 @@ export function registerListCommand(program: Command): void {
 export function parseTaskListFilter(
 	options: TaskListCliOptions,
 ): CliParseResult<TaskListFilter> {
-	const filter: TaskListFilter = {};
-
-	const status = parseTaskStatusOption(options.status);
-	if (!status.ok) {
-		return status;
+	const parsed = parseTaskFilterOptions(options);
+	if (!parsed.ok) {
+		return parsed;
 	}
-	if (status.value) {
-		filter.status = status.value;
-	}
-
-	const priority = parseTaskPriorityOption(options.priority);
-	if (!priority.ok) {
-		return priority;
-	}
-	if (priority.value) {
-		filter.priority = priority.value;
-	}
+	const filter = parsed.value;
 
 	if (options.assignee) {
 		filter.assignee = options.assignee;

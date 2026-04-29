@@ -4,21 +4,10 @@
  */
 
 import { formatChainSteps } from "../lib/orchestration/chain-steps.ts";
+import { formatDuration } from "../lib/orchestration/duration.ts";
 import type { ChainEvent } from "../lib/orchestration/types.ts";
 
-/**
- * Format a duration in milliseconds to a human-readable string.
- */
-export function formatDuration(ms: number): string {
-	if (ms < 1000) return `${ms}ms`;
-	const seconds = Math.floor(ms / 1000);
-	if (seconds < 60) return `${seconds}s`;
-	const minutes = Math.floor(seconds / 60);
-	const remainingSeconds = seconds % 60;
-	return remainingSeconds > 0
-		? `${minutes}m ${remainingSeconds}s`
-		: `${minutes}m`;
-}
+export { formatDuration } from "../lib/orchestration/duration.ts";
 
 /**
  * Format a ChainEvent into a terminal-friendly log line.

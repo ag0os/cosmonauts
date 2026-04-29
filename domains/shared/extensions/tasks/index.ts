@@ -15,6 +15,69 @@ const StatusLiterals = [
 	Type.Literal("Blocked"),
 ];
 
+interface ToolTextContent {
+	type: "text";
+	text: string;
+}
+
+function textResult(
+	text: string,
+	details: unknown,
+): {
+	content: ToolTextContent[];
+	details: unknown;
+} {
+	return {
+		content: [{ type: "text", text }],
+		details,
+	};
+}
+
+function definedFilter<T extends Record<string, unknown>>(
+	fields: T,
+): Partial<T> | undefined {
+	const filter = Object.fromEntries(
+		Object.entries(fields).filter(([, value]) => value !== undefined),
+	) as Partial<T>;
+	return Object.keys(filter).length > 0 ? filter : undefined;
+}
+
+function formatTaskSummaryLine(task: {
+	id: string;
+	status: string;
+	priority?: string;
+	title: string;
+}): string {
+	return `${task.id} | ${task.status} | ${task.priority || "-"} | ${task.title}`;
+}
+
+function renderTaskSummaryLines(
+	tasks: readonly {
+		id: string;
+		status: string;
+		priority?: string;
+		title: string;
+	}[],
+): string[] {
+	return tasks.map(formatTaskSummaryLine);
+}
+
+function taskNotFoundResult(taskId: string) {
+	return textResult(`Task not found: ${taskId}`, null);
+}
+
+function taskIdParameter(description: string) {
+	return Type.String({ description });
+}
+
+async function getTaskForTool(cwd: string, taskId: string) {
+	const manager = new TaskManager(cwd);
+	const task = await manager.getTask(taskId);
+	return task
+		? { ok: true as const, manager, task }
+		: { ok: false as const, response: taskNotFoundResult(taskId) };
+}
+
 /**
  * Validate that a labels array contains at most one plan: prefixed label.
  * Returns an error message string if invalid, or null if valid.
@@ -115,24 +178,12 @@ export default function tasksExtension(pi: ExtensionAPI) {
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const manager = new TaskManager(ctx.cwd);
-			const filter = Object.fromEntries(
-				Object.entries(params).filter(([_, v]) => v !== undefined),
+			const tasks = await manager.listTasks(definedFilter(params));
+			const lines = renderTaskSummaryLines(tasks);
+			return textResult(
+				lines.length > 0 ? lines.join("\n") : "No tasks found",
+				tasks,
 			);
-			const tasks = await manager.listTasks(
-				Object.keys(filter).length > 0 ? filter : undefined,
-			);
-			const lines = tasks.map(
-				(t) => `${t.id} | ${t.status} | ${t.priority || "-"} | ${t.title}`,
-			);
-			return {
-				content: [
-					{
-						type: "text" as const,
-						text: lines.length > 0 ? lines.join("\n") : "No tasks found",
-					},
-				],
-				details: tasks,
-			};
 		},
 	});
 
@@ -142,19 +193,14 @@ export default function tasksExtension(pi: ExtensionAPI) {
 		label: "View Task",
 		description: "View a single task by ID",
 		parameters: Type.Object({
-			taskId: Type.String({ description: "Task ID (e.g., TASK-001)" }),
+			taskId: taskIdParameter("Task ID (e.g., TASK-001)"),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
-			const manager = new TaskManager(ctx.cwd);
-			const task = await manager.getTask(params.taskId);
-			if (!task) {
-				return {
-					content: [
-						{ type: "text" as const, text: `Task not found: ${params.taskId}` },
-					],
-					details: null,
-				};
+			const result = await getTaskForTool(ctx.cwd, params.taskId);
+			if (!result.ok) {
+				return result.response;
 			}
+			const { task } = result;
 			const lines: string[] = [
 				`${task.id}: ${task.title}`,
 				`Status: ${task.status}`,
@@ -260,29 +306,15 @@ export default function tasksExtension(pi: ExtensionAPI) {
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const { query, ...filterFields } = params;
-			const filter = Object.fromEntries(
-				Object.entries(filterFields).filter(([_, v]) => v !== undefined),
-			);
 			const manager = new TaskManager(ctx.cwd);
-			const tasks = await manager.search(
-				query,
-				Object.keys(filter).length > 0 ? filter : undefined,
+			const tasks = await manager.search(query, definedFilter(filterFields));
+			const lines = renderTaskSummaryLines(tasks);
+			return textResult(
+				lines.length > 0
+					? `Found ${tasks.length} task(s):\n${lines.join("\n")}`
+					: `No tasks found matching "${query}"`,
+				tasks,
 			);
-			const lines = tasks.map(
-				(t) => `${t.id} | ${t.status} | ${t.priority || "-"} | ${t.title}`,
-			);
-			return {
-				content: [
-					{
-						type: "text" as const,
-						text:
-							lines.length > 0
-								? `Found ${tasks.length} task(s):\n${lines.join("\n")}`
-								: `No tasks found matching "${query}"`,
-					},
-				],
-				details: tasks,
-			};
 		},
 	});
 
@@ -292,21 +324,14 @@ export default function tasksExtension(pi: ExtensionAPI) {
 		label: "Delete Task",
 		description: "Delete a task by ID",
 		parameters: Type.Object({
-			taskId: Type.String({
-				description: "Task ID to delete (e.g., TASK-001)",
-			}),
+			taskId: taskIdParameter("Task ID to delete (e.g., TASK-001)"),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
-			const manager = new TaskManager(ctx.cwd);
-			const task = await manager.getTask(params.taskId);
-			if (!task) {
-				return {
-					content: [
-						{ type: "text" as const, text: `Task not found: ${params.taskId}` },
-					],
-					details: null,
-				};
+			const lookup = await getTaskForTool(ctx.cwd, params.taskId);
+			if (!lookup.ok) {
+				return lookup.response;
 			}
+			const { manager, task } = lookup;
 			await manager.deleteTask(params.taskId);
 			return {
 				content: [

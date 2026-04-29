@@ -13,25 +13,20 @@ import {
 	type captureCommandOutput,
 	createCommandProgram,
 	createCommandTestContext,
+	expectInvalidPriorityDiagnostics,
+	expectInvalidStatusDiagnostics,
+	expectNoCommandDiagnostics,
+	expectSingleJsonTaskTitle,
 	type mockProcessExitThrow,
 	ProcessExitError,
 } from "../../../helpers/cli.ts";
 import {
 	createInitializedTaskManager,
 	createTaskFixture,
+	createTaskRecordFixture,
 } from "../../../helpers/tasks.ts";
 
-const renderedTask: Task = {
-	id: "TASK-001",
-	title: "Rendered Task",
-	status: "To Do",
-	priority: "high",
-	createdAt: new Date("2026-01-01"),
-	updatedAt: new Date("2026-01-01"),
-	labels: [],
-	dependencies: [],
-	acceptanceCriteria: [],
-};
+const renderedTask: Task = createTaskRecordFixture();
 
 describe("parseTaskSearchOptions", () => {
 	it("normalizes filters and limit", () => {
@@ -177,18 +172,7 @@ describe("task search command", () => {
 	});
 
 	it("ranks exact title matches before title prefix and contains matches", async () => {
-		const manager = await createInitializedTaskManager(tempDir, "TASK");
-		await createTaskFixture(manager, { title: "Build auth middleware" });
-		await createTaskFixture(manager, { title: "auth service" });
-		await createTaskFixture(manager, { title: "auth" });
-
-		await createProgram().parseAsync([
-			"node",
-			"test",
-			"--plain",
-			"search",
-			"auth",
-		]);
+		await runPlainAuthSearch();
 
 		const lines = output.stdout().trimEnd().split("\n");
 		expect(lines).toEqual([
@@ -196,11 +180,19 @@ describe("task search command", () => {
 			"TASK-002 | To Do | - | auth service",
 			"TASK-001 | To Do | - | Build auth middleware",
 		]);
-		expect(output.stderr()).toBe("");
-		expect(exit.calls()).toEqual([]);
+		expectNoCommandDiagnostics(output, exit);
 	});
 
 	it("applies the result limit after ranking", async () => {
+		await runPlainAuthSearch("--limit", "2");
+
+		expect(output.stdout()).toBe(
+			"TASK-003 | To Do | - | auth\nTASK-002 | To Do | - | auth service\n",
+		);
+		expectNoCommandDiagnostics(output, exit);
+	});
+
+	async function runPlainAuthSearch(...extraArgs: string[]): Promise<void> {
 		const manager = await createInitializedTaskManager(tempDir, "TASK");
 		await createTaskFixture(manager, { title: "Build auth middleware" });
 		await createTaskFixture(manager, { title: "auth service" });
@@ -212,35 +204,20 @@ describe("task search command", () => {
 			"--plain",
 			"search",
 			"auth",
-			"--limit",
-			"2",
+			...extraArgs,
 		]);
-
-		expect(output.stdout()).toBe(
-			"TASK-003 | To Do | - | auth\nTASK-002 | To Do | - | auth service\n",
-		);
-		expect(output.stderr()).toBe("");
-		expect(exit.calls()).toEqual([]);
-	});
+	}
 
 	it("prints invalid status errors in human mode", async () => {
 		await expectSearchToExit(["search", "auth", "--status", "waiting"]);
 
-		expect(output.stdout()).toBe("");
-		expect(output.stderr()).toBe(
-			"Invalid status: waiting. Must be one of: todo, in-progress, done, blocked\n",
-		);
-		expect(exit.calls()).toEqual([1]);
+		expectInvalidStatusDiagnostics(output, exit);
 	});
 
 	it("prints invalid priority errors in human mode", async () => {
 		await expectSearchToExit(["search", "auth", "--priority", "urgent"]);
 
-		expect(output.stdout()).toBe("");
-		expect(output.stderr()).toBe(
-			"Invalid priority: urgent. Must be one of: high, medium, low\n",
-		);
-		expect(exit.calls()).toEqual([1]);
+		expectInvalidPriorityDiagnostics(output, exit);
 	});
 
 	it("prints invalid limit errors in human mode", async () => {
@@ -259,8 +236,7 @@ describe("task search command", () => {
 		await createProgram().parseAsync(["node", "test", "search", "missing"]);
 
 		expect(output.stdout()).toBe('No tasks found matching "missing"\n');
-		expect(output.stderr()).toBe("");
-		expect(exit.calls()).toEqual([]);
+		expectNoCommandDiagnostics(output, exit);
 	});
 
 	it("prints table output in human mode", async () => {
@@ -275,8 +251,7 @@ describe("task search command", () => {
 		expect(normalizeCapturedBlankLines(output.stdout())).toBe(
 			'Found 1 task(s) matching "search":\n\nID        STATUS       PRIORITY   TITLE\nTASK-001  To Do        medium     Build search\n',
 		);
-		expect(output.stderr()).toBe("");
-		expect(exit.calls()).toEqual([]);
+		expectNoCommandDiagnostics(output, exit);
 	});
 
 	it("prints plain output", async () => {
@@ -295,8 +270,7 @@ describe("task search command", () => {
 		]);
 
 		expect(output.stdout()).toBe("TASK-001 | To Do | low | Plain search\n");
-		expect(output.stderr()).toBe("");
-		expect(exit.calls()).toEqual([]);
+		expectNoCommandDiagnostics(output, exit);
 	});
 
 	it("prints JSON output", async () => {
@@ -314,11 +288,8 @@ describe("task search command", () => {
 			"search",
 		]);
 
-		const tasks = JSON.parse(output.stdout()) as Array<{ title: string }>;
-		expect(tasks).toHaveLength(1);
-		expect(tasks[0]?.title).toBe("JSON search");
-		expect(output.stderr()).toBe("");
-		expect(exit.calls()).toEqual([]);
+		expectSingleJsonTaskTitle(output, "JSON search");
+		expectNoCommandDiagnostics(output, exit);
 	});
 
 	it("prints manager errors in human mode", async () => {
