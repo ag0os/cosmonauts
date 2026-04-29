@@ -28,6 +28,16 @@ import type {
 } from "./task-types.ts";
 import { DEFAULT_CONFIG } from "./task-types.ts";
 
+type TaskFilterPredicate = (task: Task, filter: TaskListFilter) => boolean;
+
+const TASK_FILTER_PREDICATES: readonly TaskFilterPredicate[] = [
+	matchesStatusFilter,
+	matchesPriorityFilter,
+	matchesAssigneeFilter,
+	matchesLabelFilter,
+	matchesDependencyFilter,
+];
+
 /**
  * TaskManager orchestrates all core modules for task management
  */
@@ -201,13 +211,7 @@ export class TaskManager {
 	async deleteTask(id: string): Promise<void> {
 		await this.ensureInitialized();
 
-		// Find the task file
-		const files = await listTaskFiles(this.projectRoot);
-		const targetFile = files.find((file) => {
-			const fileId = parseTaskIdFromFilename(file);
-			return fileId?.toUpperCase() === id.toUpperCase();
-		});
-
+		const targetFile = await this.findTaskFilenameById(id);
 		if (!targetFile) {
 			throw new Error(`Task not found: ${id}`);
 		}
@@ -223,13 +227,7 @@ export class TaskManager {
 	async getTask(id: string): Promise<Task | null> {
 		await this.ensureInitialized();
 
-		// Find the task file
-		const files = await listTaskFiles(this.projectRoot);
-		const targetFile = files.find((file) => {
-			const fileId = parseTaskIdFromFilename(file);
-			return fileId?.toUpperCase() === id.toUpperCase();
-		});
-
+		const targetFile = await this.findTaskFilenameById(id);
 		if (!targetFile) {
 			return null;
 		}
@@ -240,6 +238,15 @@ export class TaskManager {
 		}
 
 		return parseTask(content);
+	}
+
+	private async findTaskFilenameById(id: string): Promise<string | undefined> {
+		const normalizedId = id.toUpperCase();
+		const files = await listTaskFiles(this.projectRoot);
+		return files.find((file) => {
+			const fileId = parseTaskIdFromFilename(file);
+			return fileId?.toUpperCase() === normalizedId;
+		});
 	}
 
 	/**
@@ -347,51 +354,54 @@ export class TaskManager {
 	 * @param filter - Filter criteria
 	 * @returns True if task matches all filter criteria
 	 */
-	// Temporary migration debt: task filtering supports all CLI predicates inline.
-	// fallow-ignore-next-line complexity
 	private matchesFilter(task: Task, filter: TaskListFilter): boolean {
-		// Check status
-		if (filter.status) {
-			const statuses = Array.isArray(filter.status)
-				? filter.status
-				: [filter.status];
-			if (!statuses.includes(task.status)) {
-				return false;
-			}
-		}
+		return TASK_FILTER_PREDICATES.every((predicate) => predicate(task, filter));
+	}
+}
 
-		// Check priority
-		if (filter.priority) {
-			const priorities = Array.isArray(filter.priority)
-				? filter.priority
-				: [filter.priority];
-			if (!task.priority || !priorities.includes(task.priority)) {
-				return false;
-			}
-		}
-
-		// Check assignee
-		if (filter.assignee) {
-			if (task.assignee?.toLowerCase() !== filter.assignee.toLowerCase()) {
-				return false;
-			}
-		}
-
-		// Check label
-		if (filter.label) {
-			const labelLower = filter.label.toLowerCase();
-			if (!task.labels.some((l) => l.toLowerCase() === labelLower)) {
-				return false;
-			}
-		}
-
-		// Check hasNoDependencies
-		if (filter.hasNoDependencies) {
-			if (task.dependencies.length > 0) {
-				return false;
-			}
-		}
-
+function matchesStatusFilter(task: Task, filter: TaskListFilter): boolean {
+	if (!filter.status) {
 		return true;
 	}
+
+	const statuses = Array.isArray(filter.status)
+		? filter.status
+		: [filter.status];
+	return statuses.includes(task.status);
+}
+
+function matchesPriorityFilter(task: Task, filter: TaskListFilter): boolean {
+	if (!filter.priority) {
+		return true;
+	}
+
+	const priorities = Array.isArray(filter.priority)
+		? filter.priority
+		: [filter.priority];
+	return task.priority ? priorities.includes(task.priority) : false;
+}
+
+function matchesAssigneeFilter(task: Task, filter: TaskListFilter): boolean {
+	if (!filter.assignee) {
+		return true;
+	}
+
+	return task.assignee?.toLowerCase() === filter.assignee.toLowerCase();
+}
+
+function matchesLabelFilter(task: Task, filter: TaskListFilter): boolean {
+	if (!filter.label) {
+		return true;
+	}
+
+	const labelLower = filter.label.toLowerCase();
+	return task.labels.some((label) => label.toLowerCase() === labelLower);
+}
+
+function matchesDependencyFilter(task: Task, filter: TaskListFilter): boolean {
+	if (!filter.hasNoDependencies) {
+		return true;
+	}
+
+	return task.dependencies.length === 0;
 }

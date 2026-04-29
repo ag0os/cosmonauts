@@ -10,6 +10,8 @@ import type { LoadedDomain } from "./types.ts";
 
 /** Severity level for a validation diagnostic. */
 type DiagnosticSeverity = "error" | "warning";
+type LoadedAgent =
+	LoadedDomain["agents"] extends Map<string, infer Agent> ? Agent : never;
 
 /** A single validation issue found during domain validation. */
 export interface DomainValidationDiagnostic {
@@ -44,21 +46,41 @@ export class DomainValidationError extends Error {
  * Returns an array of diagnostics (may be empty if everything is valid).
  * Does not throw — callers decide how to handle the diagnostics.
  */
-// Temporary migration debt: validation rules are consolidated until rule extraction.
-// fallow-ignore-next-line complexity
 export function validateDomains(
 	domains: readonly LoadedDomain[],
 ): DomainValidationDiagnostic[] {
-	const diagnostics: DomainValidationDiagnostic[] = [];
-	const shared = domains.find((d) => d.manifest.id === "shared");
+	const shared = findSharedDomain(domains);
+	const portableDomains = findPortableDomains(domains);
+	const allAgentIds = collectKnownAgentIds(domains);
 
-	// Portable domains: all domains with portable = true (shared excluded by convention).
-	const portableDomains = domains.filter(
-		(d) => d.portable && d.manifest.id !== "shared",
+	return [
+		...validatePortableCapabilityOverlap(portableDomains),
+		...domains.flatMap((domain) => [
+			...validateDomainLead(domain),
+			...validateWorkflowAgents(domain, allAgentIds),
+			...validateDomainAgents(domain, shared, portableDomains, allAgentIds),
+		]),
+	];
+}
+
+function findSharedDomain(
+	domains: readonly LoadedDomain[],
+): LoadedDomain | undefined {
+	return domains.find((domain) => domain.manifest.id === "shared");
+}
+
+function findPortableDomains(domains: readonly LoadedDomain[]): LoadedDomain[] {
+	return domains.filter(
+		(domain) => domain.portable && domain.manifest.id !== "shared",
 	);
+}
 
-	// Rule 7: Warn when two portable domains provide the same capability name.
+function validatePortableCapabilityOverlap(
+	portableDomains: readonly LoadedDomain[],
+): DomainValidationDiagnostic[] {
+	const diagnostics: DomainValidationDiagnostic[] = [];
 	const portableCapProviders = new Map<string, string[]>();
+
 	for (const domain of portableDomains) {
 		for (const cap of domain.capabilities) {
 			const providers = portableCapProviders.get(cap) ?? [];
@@ -77,9 +99,12 @@ export function validateDomains(
 		}
 	}
 
-	// Collect all known agent IDs across all domains in both bare and qualified
-	// forms because workflows/subagent allowlists may use either.
+	return diagnostics;
+}
+
+function collectKnownAgentIds(domains: readonly LoadedDomain[]): Set<string> {
 	const allAgentIds = new Set<string>();
+
 	for (const domain of domains) {
 		for (const agentId of domain.agents.keys()) {
 			allAgentIds.add(agentId);
@@ -87,94 +112,190 @@ export function validateDomains(
 		}
 	}
 
-	for (const domain of domains) {
-		const domainId = domain.manifest.id;
-		const isShared = domainId === "shared";
+	return allAgentIds;
+}
 
-		// Rule 5: Domain lead resolves
-		if (domain.manifest.lead !== undefined) {
-			if (!domain.agents.has(domain.manifest.lead)) {
+function validateDomainLead(
+	domain: LoadedDomain,
+): DomainValidationDiagnostic[] {
+	const lead = domain.manifest.lead;
+
+	if (lead === undefined || domain.agents.has(lead)) {
+		return [];
+	}
+
+	return [
+		{
+			domain: domain.manifest.id,
+			message: `Lead agent "${lead}" is not in this domain's agents`,
+			severity: "error",
+		},
+	];
+}
+
+function validateWorkflowAgents(
+	domain: LoadedDomain,
+	allAgentIds: ReadonlySet<string>,
+): DomainValidationDiagnostic[] {
+	const diagnostics: DomainValidationDiagnostic[] = [];
+
+	for (const workflow of domain.workflows) {
+		for (const stage of parseWorkflowStages(workflow.chain)) {
+			if (!allAgentIds.has(stage)) {
 				diagnostics.push({
-					domain: domainId,
-					message: `Lead agent "${domain.manifest.lead}" is not in this domain's agents`,
-					severity: "error",
+					domain: domain.manifest.id,
+					workflow: workflow.name,
+					message: `Workflow stage "${stage}" does not resolve to any known agent`,
+					severity: "warning",
 				});
 			}
 		}
+	}
 
-		// Rule 6: Workflow agents resolve
-		for (const workflow of domain.workflows) {
-			const stages = workflow.chain
-				.split("->")
-				.map((s) => s.trim())
-				.filter((s) => s.length > 0);
-			for (const stage of stages) {
-				if (!allAgentIds.has(stage)) {
-					diagnostics.push({
-						domain: domainId,
-						workflow: workflow.name,
-						message: `Workflow stage "${stage}" does not resolve to any known agent`,
-						severity: "warning",
-					});
-				}
-			}
+	return diagnostics;
+}
+
+function parseWorkflowStages(chain: string): string[] {
+	return chain
+		.split("->")
+		.map((stage) => stage.trim())
+		.filter((stage) => stage.length > 0);
+}
+
+function validateAgentPrompts(
+	agentId: string,
+	domain: LoadedDomain,
+): DomainValidationDiagnostic[] {
+	if (domain.manifest.id === "shared") {
+		return [];
+	}
+
+	if (domain.prompts.has(agentId)) {
+		return [];
+	}
+
+	return [
+		{
+			domain: domain.manifest.id,
+			agent: agentId,
+			message: `Missing persona prompt "${agentId}" in domain prompts`,
+			severity: "error",
+		},
+	];
+}
+
+function validateDomainAgents(
+	domain: LoadedDomain,
+	shared: LoadedDomain | undefined,
+	portableDomains: readonly LoadedDomain[],
+	allAgentIds: ReadonlySet<string>,
+): DomainValidationDiagnostic[] {
+	return [...domain.agents].flatMap(([agentId, agent]) => [
+		...validateAgentPrompts(agentId, domain),
+		...validateAgentCapabilities(
+			agentId,
+			agent,
+			domain,
+			shared,
+			portableDomains,
+		),
+		...validateAgentExtensions(agentId, agent, domain, shared, portableDomains),
+		...validateAgentSubagents(agentId, agent, domain, allAgentIds),
+	]);
+}
+
+function validateAgentCapabilities(
+	agentId: string,
+	agent: LoadedAgent,
+	domain: LoadedDomain,
+	shared: LoadedDomain | undefined,
+	portableDomains: readonly LoadedDomain[],
+): DomainValidationDiagnostic[] {
+	const diagnostics: DomainValidationDiagnostic[] = [];
+
+	for (const cap of agent.capabilities) {
+		if (isCapabilityResolvable(cap, domain, shared, portableDomains)) {
+			continue;
 		}
 
-		// Per-agent validations
-		for (const [agentId, agent] of domain.agents) {
-			// Rule 1: Persona prompt exists (non-shared domains only)
-			if (!isShared && !domain.prompts.has(agentId)) {
-				diagnostics.push({
-					domain: domainId,
-					agent: agentId,
-					message: `Missing persona prompt "${agentId}" in domain prompts`,
-					severity: "error",
-				});
-			}
+		diagnostics.push({
+			domain: domain.manifest.id,
+			agent: agentId,
+			message: `Capability "${cap}" not found in domain "${domain.manifest.id}" or "shared"`,
+			severity: "error",
+		});
+	}
 
-			// Rule 2: Capabilities resolve (agent domain → portable domains → shared)
-			for (const cap of agent.capabilities) {
-				const inDomain = domain.capabilities.has(cap);
-				const inShared = shared?.capabilities.has(cap) ?? false;
-				const inPortable = portableDomains.some((p) => p.capabilities.has(cap));
-				if (!inDomain && !inShared && !inPortable) {
-					diagnostics.push({
-						domain: domainId,
-						agent: agentId,
-						message: `Capability "${cap}" not found in domain "${domainId}" or "shared"`,
-						severity: "error",
-					});
-				}
-			}
+	return diagnostics;
+}
 
-			// Rule 3: Extensions resolve (agent domain → portable domains → shared)
-			for (const ext of agent.extensions) {
-				const inDomain = domain.extensions.has(ext);
-				const inShared = shared?.extensions.has(ext) ?? false;
-				const inPortable = portableDomains.some((p) => p.extensions.has(ext));
-				if (!inDomain && !inShared && !inPortable) {
-					diagnostics.push({
-						domain: domainId,
-						agent: agentId,
-						message: `Extension "${ext}" not found in domain "${domainId}" or "shared"`,
-						severity: "error",
-					});
-				}
-			}
+function isCapabilityResolvable(
+	capability: string,
+	domain: LoadedDomain,
+	shared: LoadedDomain | undefined,
+	portableDomains: readonly LoadedDomain[],
+): boolean {
+	return (
+		domain.capabilities.has(capability) ||
+		(shared?.capabilities.has(capability) ?? false) ||
+		portableDomains.some((portable) => portable.capabilities.has(capability))
+	);
+}
 
-			// Rule 4: Subagent entries resolve
-			if (agent.subagents) {
-				for (const sub of agent.subagents) {
-					if (!allAgentIds.has(sub)) {
-						diagnostics.push({
-							domain: domainId,
-							agent: agentId,
-							message: `Subagent "${sub}" does not resolve to any known agent`,
-							severity: "warning",
-						});
-					}
-				}
-			}
+function validateAgentExtensions(
+	agentId: string,
+	agent: LoadedAgent,
+	domain: LoadedDomain,
+	shared: LoadedDomain | undefined,
+	portableDomains: readonly LoadedDomain[],
+): DomainValidationDiagnostic[] {
+	const diagnostics: DomainValidationDiagnostic[] = [];
+
+	for (const extension of agent.extensions) {
+		if (isExtensionResolvable(extension, domain, shared, portableDomains)) {
+			continue;
+		}
+
+		diagnostics.push({
+			domain: domain.manifest.id,
+			agent: agentId,
+			message: `Extension "${extension}" not found in domain "${domain.manifest.id}" or "shared"`,
+			severity: "error",
+		});
+	}
+
+	return diagnostics;
+}
+
+function isExtensionResolvable(
+	extension: string,
+	domain: LoadedDomain,
+	shared: LoadedDomain | undefined,
+	portableDomains: readonly LoadedDomain[],
+): boolean {
+	return (
+		domain.extensions.has(extension) ||
+		(shared?.extensions.has(extension) ?? false) ||
+		portableDomains.some((portable) => portable.extensions.has(extension))
+	);
+}
+
+function validateAgentSubagents(
+	agentId: string,
+	agent: LoadedAgent,
+	domain: LoadedDomain,
+	allAgentIds: ReadonlySet<string>,
+): DomainValidationDiagnostic[] {
+	const diagnostics: DomainValidationDiagnostic[] = [];
+
+	for (const subagent of agent.subagents ?? []) {
+		if (!allAgentIds.has(subagent)) {
+			diagnostics.push({
+				domain: domain.manifest.id,
+				agent: agentId,
+				message: `Subagent "${subagent}" does not resolve to any known agent`,
+				severity: "warning",
+			});
 		}
 	}
 

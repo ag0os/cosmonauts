@@ -1,5 +1,5 @@
 import { basename, dirname } from "node:path";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { AgentSession, ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "typebox";
 import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
@@ -18,6 +18,7 @@ import {
 	awaitNextCompletionMessages,
 	formatSpawnCompletionMessage,
 } from "../../../../lib/orchestration/spawn-completion-loop.ts";
+import type { SpawnTracker } from "../../../../lib/orchestration/spawn-tracker.ts";
 import {
 	getOrCreateTracker,
 	removeTracker,
@@ -35,6 +36,7 @@ import {
 	roleLabel,
 	summarizeToolCall,
 } from "./rendering.ts";
+import { thinkingLevelSchema } from "./schema.ts";
 
 // ============================================================================
 // Module-level per-session state (shared across all spawn tool invocations)
@@ -64,6 +66,42 @@ interface SpawnProgressDetails {
 	error?: string;
 	reason?: string;
 	taskId?: string;
+}
+
+interface ChildActivityBase {
+	spawnId: string;
+	parentSessionId: string;
+	role: string;
+	taskId?: string;
+}
+
+interface DetachedChildSessionParams extends ChildActivityBase {
+	session: AgentSession;
+	sessionFilePath: string | undefined;
+	childDepth: number;
+	prompt: string;
+	planSlug: string | undefined;
+	tracker: SpawnTracker;
+	pi: ExtensionAPI;
+}
+
+interface ChildPromptRequest {
+	text: string;
+	role: string;
+}
+
+interface ChildPromptResult {
+	role: string;
+	startedAt: string;
+	outcome: "success" | "failed";
+	summary: string;
+	fullText?: string;
+	stats?: SessionRecord["stats"];
+}
+
+interface ChildSessionEvent {
+	type: string;
+	[key: string]: unknown;
 }
 
 // ============================================================================
@@ -124,6 +162,246 @@ function sendSpawnCompletion(pi: ExtensionAPI, message: string): void {
 	}
 }
 
+async function runDetachedChildSession(
+	params: DetachedChildSessionParams,
+): Promise<void> {
+	const { session, childDepth, planSlug } = params;
+	sessionDepths.set(session.sessionId, childDepth);
+	const childTracker = getOrCreateTracker(session.sessionId, undefined, {
+		deliveryMode: "external",
+	});
+	if (planSlug) {
+		registerPlanContext(session.sessionId, planSlug);
+	}
+
+	const startedAt = new Date().toISOString();
+	const startMs = Date.now();
+	let unsubscribeActivity: (() => void) | undefined;
+	let result: ChildPromptResult | undefined;
+
+	try {
+		unsubscribeActivity = subscribeChildActivity(
+			session,
+			params.spawnId,
+			params,
+		);
+		result = await executeChildPromptLoop(session, childTracker, {
+			text: params.prompt,
+			role: params.role,
+		});
+		result = {
+			...result,
+			stats: captureLineageStats(params, startMs),
+		};
+		settleSpawnTracker(params.tracker, params.spawnId, result, params.pi);
+	} catch (err: unknown) {
+		const message = err instanceof Error ? err.message : String(err);
+		result = {
+			role: params.role,
+			startedAt,
+			outcome: "failed",
+			summary: message,
+		};
+		settleSpawnTracker(params.tracker, params.spawnId, result, params.pi);
+	} finally {
+		unsubscribeActivity?.();
+		removeTracker(session.sessionId);
+		sessionDepths.delete(session.sessionId);
+		removePlanContext(session.sessionId);
+		const finalMessages = [...session.messages];
+		runSessionCleanup(session.sessionId);
+		session.dispose();
+		if (result) {
+			await persistChildLineage(params, result, finalMessages);
+		}
+	}
+}
+
+function subscribeChildActivity(
+	session: AgentSession,
+	spawnId: string,
+	params: ChildActivityBase,
+): () => void {
+	return session.subscribe((event: ChildSessionEvent) => {
+		const activityEvent = mapChildActivityEvent(event, {
+			spawnId,
+			parentSessionId: params.parentSessionId,
+			role: params.role,
+			taskId: params.taskId,
+		});
+		if (activityEvent) {
+			activityBus.publish(activityEvent);
+		}
+	});
+}
+
+function mapChildActivityEvent(
+	event: ChildSessionEvent,
+	base: ChildActivityBase,
+): SpawnActivityEvent | undefined {
+	if (event.type === "tool_execution_start") {
+		const toolName = String(event.toolName);
+		return {
+			...base,
+			type: "spawn_activity",
+			activity: {
+				kind: "tool_start",
+				toolName,
+				summary: summarizeToolCall(toolName, event.args),
+			},
+		};
+	}
+	if (event.type === "tool_execution_end") {
+		return {
+			...base,
+			type: "spawn_activity",
+			activity: {
+				kind: "tool_end",
+				toolName: String(event.toolName),
+				isError: event.isError === true,
+			},
+		};
+	}
+	if (event.type === "turn_start") {
+		return {
+			...base,
+			type: "spawn_activity",
+			activity: { kind: "turn_start" },
+		};
+	}
+	if (event.type === "turn_end") {
+		return {
+			...base,
+			type: "spawn_activity",
+			activity: { kind: "turn_end" },
+		};
+	}
+	if (event.type === "auto_compaction_start") {
+		return {
+			...base,
+			type: "spawn_activity",
+			activity: { kind: "compaction" },
+		};
+	}
+	return undefined;
+}
+
+async function executeChildPromptLoop(
+	session: AgentSession,
+	childTracker: SpawnTracker,
+	prompt: ChildPromptRequest,
+): Promise<ChildPromptResult> {
+	const startedAt = new Date().toISOString();
+	await session.prompt(prompt.text);
+	while (childTracker.activeCount() > 0) {
+		const messages = await awaitNextCompletionMessages(childTracker);
+		for (const message of messages) {
+			await session.prompt(message);
+		}
+	}
+	const fullText = extractAssistantText(session.messages, prompt.role);
+	return {
+		role: prompt.role,
+		startedAt,
+		outcome: "success",
+		summary: extractSummary(fullText, prompt.role),
+		fullText,
+	};
+}
+
+function settleSpawnTracker(
+	tracker: SpawnTracker,
+	spawnId: string,
+	result: ChildPromptResult,
+	pi: ExtensionAPI,
+): void {
+	if (result.outcome === "success") {
+		tracker.complete(spawnId, result.summary, result.fullText);
+		if (tracker.deliveryMode === "self") {
+			sendSpawnCompletion(
+				pi,
+				formatCompletionMessage(
+					spawnId,
+					result.role,
+					"success",
+					result.summary,
+					result.fullText,
+				),
+			);
+		}
+		return;
+	}
+
+	tracker.fail(spawnId, result.summary);
+	if (tracker.deliveryMode === "self") {
+		sendSpawnCompletion(
+			pi,
+			formatCompletionMessage(spawnId, result.role, "failed", result.summary),
+		);
+	}
+}
+
+async function persistChildLineage(
+	params: DetachedChildSessionParams,
+	result: ChildPromptResult,
+	finalMessages: unknown[],
+): Promise<void> {
+	if (!params.planSlug || !params.sessionFilePath) {
+		return;
+	}
+
+	try {
+		const planSessionsDir = dirname(params.sessionFilePath);
+		const baseSessionsDir = dirname(planSessionsDir);
+		const sessionBasename = basename(params.sessionFilePath);
+		const transcriptBasename = sessionBasename.replace(
+			/\.jsonl$/,
+			".transcript.md",
+		);
+
+		const transcript = generateTranscript(finalMessages, params.role);
+		await writeTranscript(planSessionsDir, transcriptBasename, transcript);
+
+		const record: SessionRecord = {
+			sessionId: params.session.sessionId,
+			role: params.role,
+			parentSessionId: params.parentSessionId,
+			...(params.taskId !== undefined && { taskId: params.taskId }),
+			startedAt: result.startedAt,
+			completedAt: new Date().toISOString(),
+			outcome: result.outcome,
+			sessionFile: sessionBasename,
+			transcriptFile: transcriptBasename,
+			...(result.stats !== undefined && { stats: result.stats }),
+		};
+		await appendSession(baseSessionsDir, params.planSlug, record);
+	} catch {
+		// Lineage errors must not crash the spawn.
+	}
+}
+
+function captureLineageStats(
+	params: DetachedChildSessionParams,
+	startMs: number,
+): SessionRecord["stats"] | undefined {
+	if (!params.planSlug || !params.sessionFilePath) {
+		return undefined;
+	}
+
+	const sessionStats = params.session.getSessionStats();
+	return {
+		tokens: {
+			input: sessionStats.tokens.input,
+			output: sessionStats.tokens.output,
+			total: sessionStats.tokens.total,
+		},
+		cost: sessionStats.cost,
+		durationMs: Date.now() - startMs,
+		turns: sessionStats.userMessages,
+		toolCalls: sessionStats.toolCalls,
+	};
+}
+
 // ============================================================================
 // Tool Registration
 // ============================================================================
@@ -143,21 +421,8 @@ export function registerSpawnTool(
 			}),
 			prompt: Type.String({ description: "The prompt to send to the agent" }),
 			model: Type.Optional(Type.String({ description: "Model override" })),
-			thinkingLevel: Type.Optional(
-				Type.Union(
-					[
-						Type.Literal("off"),
-						Type.Literal("minimal"),
-						Type.Literal("low"),
-						Type.Literal("medium"),
-						Type.Literal("high"),
-						Type.Literal("xhigh"),
-					],
-					{
-						description:
-							"Thinking/reasoning level override (off, minimal, low, medium, high, xhigh)",
-					},
-				),
+			thinkingLevel: thinkingLevelSchema(
+				"Thinking/reasoning level override (off, minimal, low, medium, high, xhigh)",
 			),
 			runtimeContext: Type.Optional(
 				Type.Object({
@@ -348,199 +613,21 @@ export function registerSpawnTool(
 				runtime.domainsDir,
 				runtime.domainResolver,
 			)
-				// Temporary migration debt: child session lifecycle is handled inline.
-				// fallow-ignore-next-line complexity
-				.then(async ({ session, sessionFilePath }) => {
-					// Register child depth so grandchild spawns can compute their depth
-					sessionDepths.set(session.sessionId, childDepth);
-					// Spawned sessions can spawn their own children. Those nested
-					// completions must be delivered to this session before it is
-					// considered finished and disposed.
-					const childTracker = getOrCreateTracker(
-						session.sessionId,
-						undefined,
-						{
-							deliveryMode: "external",
-						},
-					);
-					// Register plan context so grandchild spawns can also inherit it
-					if (planSlug) {
-						registerPlanContext(session.sessionId, planSlug);
-					}
-					// Subscribe to child session events for activity broadcasting
-					const unsubActivity = session.subscribe(
-						(event: { type: string; [key: string]: unknown }) => {
-							const activityBase = {
-								type: "spawn_activity" as const,
-								spawnId,
-								parentSessionId,
-								role: params.role,
-								taskId: params.runtimeContext?.taskId,
-							};
-							if (event.type === "tool_execution_start") {
-								activityBus.publish({
-									...activityBase,
-									activity: {
-										kind: "tool_start",
-										toolName: event.toolName as string,
-										summary: summarizeToolCall(
-											event.toolName as string,
-											event.args,
-										),
-									},
-								} satisfies SpawnActivityEvent);
-							} else if (event.type === "tool_execution_end") {
-								activityBus.publish({
-									...activityBase,
-									activity: {
-										kind: "tool_end",
-										toolName: event.toolName as string,
-										isError: event.isError as boolean,
-									},
-								} satisfies SpawnActivityEvent);
-							} else if (event.type === "turn_start") {
-								activityBus.publish({
-									...activityBase,
-									activity: { kind: "turn_start" },
-								} satisfies SpawnActivityEvent);
-							} else if (event.type === "turn_end") {
-								activityBus.publish({
-									...activityBase,
-									activity: { kind: "turn_end" },
-								} satisfies SpawnActivityEvent);
-							} else if (event.type === "auto_compaction_start") {
-								activityBus.publish({
-									...activityBase,
-									activity: { kind: "compaction" },
-								} satisfies SpawnActivityEvent);
-							}
-						},
-					);
-
-					const startedAt = new Date().toISOString();
-					const startMs = Date.now();
-					let spawnOutcome: "success" | "failed" = "failed";
-					let capturedStats:
-						| {
-								tokens: { input: number; output: number; total: number };
-								cost: number;
-								durationMs: number;
-								turns: number;
-								toolCalls: number;
-						  }
-						| undefined;
-					try {
-						await session.prompt(params.prompt);
-						while (childTracker.activeCount() > 0) {
-							const messages = await awaitNextCompletionMessages(childTracker);
-							for (const message of messages) {
-								await session.prompt(message);
-							}
-						}
-						const assistantText = extractAssistantText(
-							session.messages,
-							params.role,
-						);
-						const summary = extractSummary(assistantText, params.role);
-						spawnOutcome = "success";
-						// Capture stats before dispose (only needed for lineage)
-						if (planSlug && sessionFilePath) {
-							const sessionStats = session.getSessionStats();
-							const durationMs = Date.now() - startMs;
-							capturedStats = {
-								tokens: {
-									input: sessionStats.tokens.input,
-									output: sessionStats.tokens.output,
-									total: sessionStats.tokens.total,
-								},
-								cost: sessionStats.cost,
-								durationMs,
-								turns: sessionStats.userMessages,
-								toolCalls: sessionStats.toolCalls,
-							};
-						}
-						tracker.complete(spawnId, summary, assistantText);
-						if (tracker.deliveryMode === "self") {
-							sendSpawnCompletion(
-								pi,
-								formatCompletionMessage(
-									spawnId,
-									params.role,
-									"success",
-									summary,
-									assistantText,
-								),
-							);
-						}
-					} catch (err: unknown) {
-						const message = err instanceof Error ? err.message : String(err);
-						tracker.fail(spawnId, message);
-						if (tracker.deliveryMode === "self") {
-							sendSpawnCompletion(
-								pi,
-								formatCompletionMessage(
-									spawnId,
-									params.role,
-									"failed",
-									message,
-								),
-							);
-						}
-					} finally {
-						unsubActivity();
-						removeTracker(session.sessionId);
-						sessionDepths.delete(session.sessionId);
-						removePlanContext(session.sessionId);
-						const finalMessages = [...session.messages];
-						// Clean up the child session's activity bus subscription
-						// before dispose, since Pi has no dispose-time lifecycle event.
-						runSessionCleanup(session.sessionId);
-						session.dispose();
-
-						// Persist lineage artifacts when the child session ran under a plan.
-						if (planSlug && sessionFilePath) {
-							try {
-								const planSessionsDir = dirname(sessionFilePath);
-								const baseSessionsDir = dirname(planSessionsDir);
-								const sessionBasename = basename(sessionFilePath);
-								const transcriptBasename = sessionBasename.replace(
-									/\.jsonl$/,
-									".transcript.md",
-								);
-
-								const transcript = generateTranscript(
-									finalMessages,
-									params.role,
-								);
-								await writeTranscript(
-									planSessionsDir,
-									transcriptBasename,
-									transcript,
-								);
-
-								const record: SessionRecord = {
-									sessionId: session.sessionId,
-									role: params.role,
-									parentSessionId,
-									...(params.runtimeContext?.taskId !== undefined && {
-										taskId: params.runtimeContext.taskId,
-									}),
-									startedAt,
-									completedAt: new Date().toISOString(),
-									outcome: spawnOutcome,
-									sessionFile: sessionBasename,
-									transcriptFile: transcriptBasename,
-									...(capturedStats !== undefined && {
-										stats: capturedStats,
-									}),
-								};
-								await appendSession(baseSessionsDir, planSlug, record);
-							} catch {
-								// Lineage errors must not crash the spawn.
-							}
-						}
-					}
-				})
+				.then(({ session, sessionFilePath }) =>
+					runDetachedChildSession({
+						session,
+						sessionFilePath,
+						spawnId,
+						parentSessionId,
+						childDepth,
+						role: params.role,
+						prompt: params.prompt,
+						planSlug,
+						tracker,
+						pi,
+						taskId: params.runtimeContext?.taskId,
+					}),
+				)
 				.catch((err: unknown) => {
 					// createAgentSessionFromDefinition() itself failed
 					const message = err instanceof Error ? err.message : String(err);

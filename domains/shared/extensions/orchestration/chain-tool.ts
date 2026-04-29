@@ -16,6 +16,7 @@ import {
 	formatDuration,
 	renderTextFallback,
 } from "./rendering.ts";
+import { thinkingLevelSchema } from "./schema.ts";
 
 // ============================================================================
 // Chain Details Type
@@ -58,21 +59,8 @@ export function registerChainTool(
 						"Optional task label scope for completion checks (e.g. plan:my-plan)",
 				}),
 			),
-			thinkingLevel: Type.Optional(
-				Type.Union(
-					[
-						Type.Literal("off"),
-						Type.Literal("minimal"),
-						Type.Literal("low"),
-						Type.Literal("medium"),
-						Type.Literal("high"),
-						Type.Literal("xhigh"),
-					],
-					{
-						description:
-							"Chain-wide default thinking/reasoning level (off, minimal, low, medium, high, xhigh). Applied to all stages unless overridden by agent definitions.",
-					},
-				),
+			thinkingLevel: thinkingLevelSchema(
+				"Chain-wide default thinking/reasoning level (off, minimal, low, medium, high, xhigh). Applied to all stages unless overridden by agent definitions.",
 			),
 		}),
 		execute: async (_toolCallId, params, signal, onUpdate, ctx) => {

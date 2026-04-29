@@ -1,45 +1,27 @@
 import type { Command } from "commander";
-import { TaskManager } from "../../../lib/tasks/task-manager.js";
-import type {
-	Task,
-	TaskListFilter,
-	TaskPriority,
-	TaskStatus,
-} from "../../../lib/tasks/task-types.js";
+import { TaskManager } from "../../../lib/tasks/task-manager.ts";
+import type * as TaskTypes from "../../../lib/tasks/task-types.ts";
+import { printCliError } from "../../shared/errors.ts";
+import type { CliOutputMode, CliParseResult } from "../../shared/output.ts";
+import { getOutputMode, printJson, printLines } from "../../shared/output.ts";
+import {
+	parseTaskFilterOptions,
+	renderTaskSummaryRow,
+	renderTaskSummaryTable,
+} from "./shared.ts";
 
-/**
- * Map CLI status shorthand to TaskStatus
- */
-function normalizeStatus(status: string): TaskStatus | null {
-	const statusMap: Record<string, TaskStatus> = {
-		todo: "To Do",
-		"to-do": "To Do",
-		"to do": "To Do",
-		"in-progress": "In Progress",
-		inprogress: "In Progress",
-		"in progress": "In Progress",
-		done: "Done",
-		blocked: "Blocked",
-	};
-	return statusMap[status.toLowerCase()] ?? null;
-}
-
-/**
- * Validate and normalize priority value
- */
-function normalizePriority(priority: string): TaskPriority | null {
-	const validPriorities: TaskPriority[] = ["high", "medium", "low"];
-	const normalized = priority.toLowerCase();
-	return validPriorities.includes(normalized as TaskPriority)
-		? (normalized as TaskPriority)
-		: null;
+interface TaskSearchCliOptions {
+	status?: string;
+	priority?: string;
+	label?: string;
+	limit?: string;
 }
 
 /**
  * Calculate relevance score for a task based on search query
  * Higher score = more relevant
  */
-function calculateRelevance(task: Task, query: string): number {
+export function scoreTaskForQuery(task: TaskTypes.Task, query: string): number {
 	const queryLower = query.toLowerCase();
 	let score = 0;
 
@@ -112,131 +94,115 @@ export function registerSearchCommand(program: Command): void {
 		)
 		.option("-l, --label <label>", "Filter by label")
 		.option("--limit <number>", "Maximum number of results", "10")
-		// Temporary migration debt: search command formatting/filtering need separation.
-		// fallow-ignore-next-line complexity
-		.action(async (query, options) => {
+		.action(async (query: string, options: TaskSearchCliOptions) => {
 			const projectRoot = process.cwd();
 			const globalOptions = program.opts();
+			const mode = getOutputMode(globalOptions);
 
 			const manager = new TaskManager(projectRoot);
+			const parsed = parseTaskSearchOptions(options);
 
-			// Build the filter object
-			const filter: TaskListFilter = {};
-
-			if (options.status) {
-				const normalizedStatus = normalizeStatus(options.status);
-				if (!normalizedStatus) {
-					const errorMsg = `Invalid status: ${options.status}. Must be one of: todo, in-progress, done, blocked`;
-					if (globalOptions.json) {
-						console.log(JSON.stringify({ error: errorMsg }, null, 2));
-					} else {
-						console.error(errorMsg);
-					}
-					process.exit(1);
-				}
-				filter.status = normalizedStatus;
-			}
-
-			if (options.priority) {
-				const normalizedPriority = normalizePriority(options.priority);
-				if (!normalizedPriority) {
-					const errorMsg = `Invalid priority: ${options.priority}. Must be one of: high, medium, low`;
-					if (globalOptions.json) {
-						console.log(JSON.stringify({ error: errorMsg }, null, 2));
-					} else {
-						console.error(errorMsg);
-					}
-					process.exit(1);
-				}
-				filter.priority = normalizedPriority;
-			}
-
-			if (options.label) {
-				filter.label = options.label;
-			}
-
-			// Parse limit
-			const limit = parseInt(options.limit, 10);
-			if (Number.isNaN(limit) || limit < 1) {
-				const errorMsg = `Invalid limit: ${options.limit}. Must be a positive number`;
-				if (globalOptions.json) {
-					console.log(JSON.stringify({ error: errorMsg }, null, 2));
-				} else {
-					console.error(errorMsg);
-				}
+			if (!parsed.ok) {
+				printCliError(parsed.error, globalOptions);
 				process.exit(1);
 			}
 
 			try {
-				// Search tasks using TaskManager
-				const tasks = await manager.search(
+				const tasks = await manager.search(query, parsed.value.filter);
+				const rankedTasks = rankTaskSearchResults(
+					tasks,
 					query,
-					Object.keys(filter).length > 0 ? filter : undefined,
+					parsed.value.limit,
 				);
-
-				// Sort by relevance score (descending)
-				const scoredTasks = tasks.map((task) => ({
-					task,
-					score: calculateRelevance(task, query),
-				}));
-				scoredTasks.sort((a, b) => b.score - a.score);
-
-				// Apply limit
-				const limitedTasks = scoredTasks.slice(0, limit).map((st) => st.task);
-
-				// Output based on format
-				if (globalOptions.json) {
-					console.log(JSON.stringify(limitedTasks, null, 2));
-				} else if (globalOptions.plain) {
-					for (const task of limitedTasks) {
-						console.log(
-							`${task.id} | ${task.status} | ${task.priority || "-"} | ${task.title}`,
-						);
-					}
-				} else {
-					// Table format
-					if (limitedTasks.length === 0) {
-						console.log(`No tasks found matching "${query}"`);
-						return;
-					}
-
-					console.log(
-						`Found ${limitedTasks.length} task(s) matching "${query}":`,
-					);
-					console.log();
-
-					// Calculate column widths dynamically
-					const idWidth = Math.max(8, ...limitedTasks.map((t) => t.id.length));
-					const statusWidth = Math.max(
-						11,
-						...limitedTasks.map((t) => t.status.length),
-					);
-					const priorityWidth = 9;
-
-					// Print header
-					const header = [
-						"ID".padEnd(idWidth),
-						"STATUS".padEnd(statusWidth),
-						"PRIORITY".padEnd(priorityWidth),
-						"TITLE",
-					].join("  ");
-					console.log(header);
-
-					// Print tasks
-					for (const task of limitedTasks) {
-						const id = task.id.padEnd(idWidth);
-						const status = task.status.padEnd(statusWidth);
-						const priority = (task.priority || "-").padEnd(priorityWidth);
-						console.log(`${id}  ${status}  ${priority}  ${task.title}`);
-					}
-				}
+				printTaskSearchResults(rankedTasks, query, mode);
 			} catch (error) {
-				if (globalOptions.json) {
-					console.log(JSON.stringify({ error: String(error) }, null, 2));
-				} else {
-					console.error(`Error searching tasks: ${error}`);
-				}
+				printCliError(String(error), globalOptions, {
+					prefix: "Error searching tasks",
+				});
 				process.exit(1);
 			}
 		});
+}
+
+export function parseTaskSearchOptions(
+	options: TaskSearchCliOptions,
+): CliParseResult<{ filter?: TaskTypes.TaskListFilter; limit: number }> {
+	const parsed = parseTaskFilterOptions(options);
+	if (!parsed.ok) {
+		return parsed;
+	}
+	const filter = parsed.value;
+
+	const limit = parseInt(options.limit ?? "10", 10);
+	if (Number.isNaN(limit) || limit < 1) {
+		return {
+			ok: false,
+			error: `Invalid limit: ${options.limit}. Must be a positive number`,
+		};
+	}
+
+	return {
+		ok: true,
+		value: {
+			filter: Object.keys(filter).length > 0 ? filter : undefined,
+			limit,
+		},
+	};
+}
+
+export function rankTaskSearchResults(
+	tasks: readonly TaskTypes.Task[],
+	query: string,
+	limit: number,
+): TaskTypes.Task[] {
+	return tasks
+		.map((task) => ({
+			task,
+			score: scoreTaskForQuery(task, query),
+		}))
+		.sort((a, b) => b.score - a.score)
+		.slice(0, limit)
+		.map((scoredTask) => scoredTask.task);
+}
+
+export function renderTaskSearchResults(
+	tasks: readonly TaskTypes.Task[],
+	query: string,
+	mode: CliOutputMode,
+): unknown | string[] {
+	if (mode === "json") {
+		return tasks;
+	}
+
+	if (mode === "plain") {
+		return tasks.map(renderTaskSearchRow);
+	}
+
+	if (tasks.length === 0) {
+		return [`No tasks found matching "${query}"`];
+	}
+
+	return [
+		`Found ${tasks.length} task(s) matching "${query}":`,
+		"",
+		...renderTaskSummaryTable(tasks),
+	];
+}
+
+function renderTaskSearchRow(task: TaskTypes.Task): string {
+	return renderTaskSummaryRow(task);
+}
+
+function printTaskSearchResults(
+	tasks: readonly TaskTypes.Task[],
+	query: string,
+	mode: CliOutputMode,
+): void {
+	const rendered = renderTaskSearchResults(tasks, query, mode);
+	if (mode === "json") {
+		printJson(rendered);
+		return;
+	}
+
+	printLines(rendered as string[]);
 }

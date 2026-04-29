@@ -15,44 +15,7 @@ import type {
 	SpawnActivityEvent,
 	SubscriptionToken,
 } from "../../lib/orchestration/message-bus.ts";
-
-// ============================================================================
-// Hoisted mocks — prevent real runtime/session creation
-// ============================================================================
-
-const mocks = vi.hoisted(() => ({
-	runtimeCreate: vi.fn(),
-	parseChain: vi.fn(),
-	runChain: vi.fn(),
-	createPiSpawner: vi.fn(),
-	createAgentSessionFromDefinition: vi.fn(),
-}));
-
-vi.mock("../../lib/runtime.ts", () => ({
-	CosmonautsRuntime: {
-		create: mocks.runtimeCreate,
-	},
-}));
-
-vi.mock("../../lib/orchestration/chain-parser.ts", () => ({
-	parseChain: mocks.parseChain,
-}));
-
-vi.mock("../../lib/orchestration/chain-runner.ts", async (importOriginal) => {
-	const actual =
-		await importOriginal<
-			typeof import("../../lib/orchestration/chain-runner.ts")
-		>();
-	return { ...actual, runChain: mocks.runChain };
-});
-
-vi.mock("../../lib/orchestration/agent-spawner.ts", () => ({
-	createPiSpawner: mocks.createPiSpawner,
-}));
-
-vi.mock("../../lib/orchestration/session-factory.ts", () => ({
-	createAgentSessionFromDefinition: mocks.createAgentSessionFromDefinition,
-}));
+import "./orchestration-mocks.ts";
 
 import orchestrationExtension from "../../domains/shared/extensions/orchestration/index.ts";
 

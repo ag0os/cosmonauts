@@ -242,8 +242,6 @@ function validateSessionFlags(piFlags: PiFlags): void {
  * Resolve which SessionManager to use based on Pi flags and fallback behavior.
  * Follows Pi's priority cascade: noSession → fork → session → resume → continue → default.
  */
-// Temporary migration debt: Pi session resolution needs a staged extraction.
-// fallow-ignore-next-line complexity
 async function resolveSessionManager(opts: {
 	piFlags?: PiFlags;
 	persistent: boolean;
@@ -256,23 +254,65 @@ async function resolveSessionManager(opts: {
 		validateSessionFlags(piFlags);
 	}
 
-	// Explicit Pi session flags take precedence
 	if (piFlags?.noSession) {
-		return SessionManager.inMemory();
+		const manager = resolveNoSessionStrategy();
+		if (manager) {
+			return manager;
+		}
 	}
+
+	const forkManager = await resolveForkStrategy(piFlags, cwd, sessionDir);
+	if (forkManager) {
+		return forkManager;
+	}
+
+	const sessionManager = await resolveSessionStrategy(piFlags, cwd, sessionDir);
+	if (sessionManager) {
+		return sessionManager;
+	}
+
+	const resumeManager = await resolveResumeStrategy(piFlags, cwd, sessionDir);
+	if (resumeManager) {
+		return resumeManager;
+	}
+
+	return resolveContinueOrDefaultStrategy(piFlags, persistent, cwd, sessionDir);
+}
+
+function resolveNoSessionStrategy(): SessionManager | undefined {
+	return SessionManager.inMemory();
+}
+
+async function resolveForkStrategy(
+	piFlags: PiFlags | undefined,
+	cwd: string,
+	sessionDir?: string,
+): Promise<SessionManager | undefined> {
 	if (piFlags?.fork) {
 		const resolved = await resolveSessionPath(piFlags.fork, cwd, sessionDir);
 		if (resolved.type === "not_found") {
 			throw new Error(`No session found matching '${resolved.arg}'`);
 		}
-		return SessionManager.forkFrom(resolved.path as string, cwd, sessionDir);
+		return SessionManager.forkFrom(
+			requireResolvedPath(resolved),
+			cwd,
+			sessionDir,
+		);
 	}
+	return undefined;
+}
+
+async function resolveSessionStrategy(
+	piFlags: PiFlags | undefined,
+	cwd: string,
+	sessionDir?: string,
+): Promise<SessionManager | undefined> {
 	if (piFlags?.session) {
 		const resolved = await resolveSessionPath(piFlags.session, cwd, sessionDir);
 		switch (resolved.type) {
 			case "path":
 			case "local":
-				return SessionManager.open(resolved.path as string, sessionDir);
+				return SessionManager.open(requireResolvedPath(resolved), sessionDir);
 			case "global": {
 				// Session belongs to another project — offer to fork (mirrors Pi)
 				console.warn(`Session found in different project: ${resolved.cwd}`);
@@ -283,7 +323,7 @@ async function resolveSessionManager(opts: {
 					throw new GracefulExitError("Aborted.");
 				}
 				return SessionManager.forkFrom(
-					resolved.path as string,
+					requireResolvedPath(resolved),
 					cwd,
 					sessionDir,
 				);
@@ -292,47 +332,27 @@ async function resolveSessionManager(opts: {
 				throw new Error(`No session found matching '${resolved.arg}'`);
 		}
 	}
+	return undefined;
+}
+
+async function resolveResumeStrategy(
+	piFlags: PiFlags | undefined,
+	cwd: string,
+	sessionDir?: string,
+): Promise<SessionManager | undefined> {
 	if (piFlags?.resume) {
 		// List local + global sessions, let user pick (mirrors Pi's selectSession)
 		const localSessions = await SessionManager.list(cwd, sessionDir);
 		const allSessions = await SessionManager.listAll();
-
-		// Merge: local sessions first, then global (excluding duplicates)
-		const localPaths = new Set(localSessions.map((s) => s.path));
-		const globalOnly = allSessions.filter((s) => !localPaths.has(s.path));
-		const sessions = [...localSessions, ...globalOnly];
+		const sessions = mergeResumeSessions(localSessions, allSessions);
 
 		if (sessions.length === 0) {
 			console.log("No sessions found.");
 			throw new GracefulExitError("No sessions available to resume.");
 		}
 
-		// Display sessions for selection
-		console.log("Available sessions:");
-		for (let i = 0; i < sessions.length; i++) {
-			const s = sessions[i] as (typeof sessions)[number];
-			const preview = s.firstMessage?.slice(0, 60) ?? "(no messages)";
-			const marker = i >= localSessions.length ? " (other project)" : "";
-			console.log(`  ${i + 1}. [${s.id.slice(0, 8)}] ${preview}${marker}`);
-		}
-
-		// Read selection from stdin
-		const { createInterface } = await import("node:readline");
-		const selected = await new Promise<number | null>((resolve) => {
-			const rl = createInterface({
-				input: process.stdin,
-				output: process.stdout,
-			});
-			rl.question("Select session number (or Enter to cancel): ", (answer) => {
-				rl.close();
-				const num = Number.parseInt(answer, 10);
-				if (Number.isNaN(num) || num < 1 || num > sessions.length) {
-					resolve(null);
-				} else {
-					resolve(num - 1);
-				}
-			});
-		});
+		printResumeSessionChoices(sessions, localSessions.length);
+		const selected = await promptResumeSelection(sessions.length);
 
 		if (selected === null) {
 			// Cancel — abort, don't create a new session
@@ -340,22 +360,110 @@ async function resolveSessionManager(opts: {
 			throw new GracefulExitError("No session selected.");
 		}
 
-		const chosen = sessions[selected] as (typeof sessions)[number];
-
-		// If the chosen session is from another project, fork it
-		if (selected >= localSessions.length) {
-			return SessionManager.forkFrom(chosen.path, cwd, sessionDir);
-		}
-		return SessionManager.open(chosen.path, sessionDir);
+		return openSelectedResumeSession(
+			sessions,
+			selected,
+			localSessions.length,
+			cwd,
+			sessionDir,
+		);
 	}
+	return undefined;
+}
+
+function resolveContinueOrDefaultStrategy(
+	piFlags: PiFlags | undefined,
+	persistent: boolean,
+	cwd: string,
+	sessionDir?: string,
+): SessionManager {
 	if (piFlags?.continue) {
 		return SessionManager.continueRecent(cwd, sessionDir);
 	}
-
-	// Fallback: cosmonauts' own persistent flag
 	return persistent
 		? SessionManager.continueRecent(cwd, sessionDir)
 		: SessionManager.inMemory();
+}
+
+type ListedSession = Awaited<ReturnType<typeof SessionManager.list>>[number];
+
+function mergeResumeSessions(
+	localSessions: readonly ListedSession[],
+	allSessions: readonly ListedSession[],
+): ListedSession[] {
+	const localPaths = new Set(localSessions.map((session) => session.path));
+	const globalOnly = allSessions.filter(
+		(session) => !localPaths.has(session.path),
+	);
+	return [...localSessions, ...globalOnly];
+}
+
+function printResumeSessionChoices(
+	sessions: readonly ListedSession[],
+	localSessionCount: number,
+): void {
+	console.log("Available sessions:");
+	for (let i = 0; i < sessions.length; i++) {
+		const session = sessions[i];
+		if (session === undefined) {
+			continue;
+		}
+		const preview = session.firstMessage?.slice(0, 60) ?? "(no messages)";
+		const marker = i >= localSessionCount ? " (other project)" : "";
+		console.log(`  ${i + 1}. [${session.id.slice(0, 8)}] ${preview}${marker}`);
+	}
+}
+
+async function promptResumeSelection(
+	sessionCount: number,
+): Promise<number | null> {
+	const { createInterface } = await import("node:readline");
+	return new Promise((resolve) => {
+		const rl = createInterface({
+			input: process.stdin,
+			output: process.stdout,
+		});
+		rl.question("Select session number (or Enter to cancel): ", (answer) => {
+			rl.close();
+			const selectedIndex = parseSessionSelection(answer, sessionCount);
+			resolve(selectedIndex);
+		});
+	});
+}
+
+function parseSessionSelection(
+	answer: string,
+	sessionCount: number,
+): number | null {
+	const num = Number.parseInt(answer, 10);
+	if (Number.isNaN(num) || num < 1 || num > sessionCount) {
+		return null;
+	}
+	return num - 1;
+}
+
+function openSelectedResumeSession(
+	sessions: readonly ListedSession[],
+	selected: number,
+	localSessionCount: number,
+	cwd: string,
+	sessionDir?: string,
+): SessionManager {
+	const chosen = sessions[selected];
+	if (chosen === undefined) {
+		throw new GracefulExitError("No session selected.");
+	}
+	if (selected >= localSessionCount) {
+		return SessionManager.forkFrom(chosen.path, cwd, sessionDir);
+	}
+	return SessionManager.open(chosen.path, sessionDir);
+}
+
+function requireResolvedPath(resolved: ResolvedSession): string {
+	if (resolved.path === undefined) {
+		throw new Error(`No session found matching '${resolved.arg}'`);
+	}
+	return resolved.path;
 }
 
 /**

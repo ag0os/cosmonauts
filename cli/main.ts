@@ -30,6 +30,7 @@ import {
 	appendAgentIdentityMarker,
 	qualifyAgentId,
 } from "../lib/agents/runtime-identity.ts";
+import type { AgentDefinition } from "../lib/agents/types.ts";
 import { createDefaultProjectConfig } from "../lib/config/defaults.ts";
 import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
 import { buildInitBootstrapPrompt } from "../lib/init/prompt.ts";
@@ -59,10 +60,12 @@ import {
 	createPackagesProgram,
 	createUninstallProgram,
 } from "./packages/subcommand.ts";
-import { parsePiFlags } from "./pi-flags.ts";
+import { type PiFlagParseResult, parsePiFlags } from "./pi-flags.ts";
 import { createPlanProgram } from "./plans/index.ts";
 import { createScaffoldProgram } from "./scaffold/subcommand.ts";
 import { createSession, GracefulExitError } from "./session.ts";
+import { printCliError } from "./shared/errors.ts";
+import { printLines } from "./shared/output.ts";
 import { createSkillsProgram } from "./skills/subcommand.ts";
 import { createTaskProgram } from "./tasks/subcommand.ts";
 import type { CliOptions } from "./types.ts";
@@ -100,20 +103,31 @@ function parseThinkingLevel(value: string): ThinkingLevel {
  * Parse CLI arguments into CliOptions.
  * Exported for testing — not intended for external use.
  */
-// Temporary migration debt: CLI parsing still owns compatibility branches.
-// fallow-ignore-next-line complexity
 export function parseCliArgs(argv: string[]): CliOptions {
-	// Detect "init" subcommand before Commander sees it
-	const isInit = argv.length > 0 && argv[0] === "init";
-	const effectiveArgv = isInit ? argv.slice(1) : argv;
-
-	// --- Phase 1: extract Pi flags first, leaving cosmonauts flags + positionals ---
+	const { isInit, effectiveArgv } = detectInitSubcommand(argv);
 	const piResult = parsePiFlags(effectiveArgv);
 	for (const w of piResult.warnings) {
 		console.warn(`[cosmonauts] ${w}`);
 	}
 
-	// --- Phase 2: parse cosmonauts-specific flags from the remainder ---
+	const program = buildCliParser();
+	program.parse(piResult.remaining, { from: "user" });
+
+	return normalizeCliOptions(program, isInit, piResult);
+}
+
+function detectInitSubcommand(argv: readonly string[]): {
+	isInit: boolean;
+	effectiveArgv: string[];
+} {
+	const isInit = argv.length > 0 && argv[0] === "init";
+	return {
+		isInit,
+		effectiveArgv: isInit ? argv.slice(1) : [...argv],
+	};
+}
+
+function buildCliParser(): Command {
 	const program = new Command();
 
 	program
@@ -164,22 +178,50 @@ export function parseCliArgs(argv: string[]): CliOptions {
 		)
 		.argument("[prompt...]", "Prompt text");
 
-	// Parse without calling process.exit on error
 	program.exitOverride();
-	program.parse(piResult.remaining, { from: "user" });
+	return program;
+}
 
-	const opts = program.opts();
-
-	// Handle thinking level: flag present without value defaults to "high"
-	let thinking: ThinkingLevel | undefined;
-	if (opts.thinking !== undefined) {
-		if (opts.thinking === true) {
-			// --thinking without a value
-			thinking = "high";
-		} else {
-			thinking = parseThinkingLevel(opts.thinking);
-		}
+function parseThinkingOption(value: unknown): ThinkingLevel | undefined {
+	if (value === undefined) {
+		return undefined;
 	}
+
+	if (value === true) {
+		return "high";
+	}
+
+	if (typeof value === "string") {
+		return parseThinkingLevel(value);
+	}
+
+	throw new Error(`Invalid thinking option value: ${String(value)}`);
+}
+
+interface ParsedCliOptionValues {
+	print?: boolean;
+	agent?: string;
+	workflow?: string;
+	completionLabel?: string;
+	model?: string;
+	thinking?: unknown;
+	domain?: string;
+	listDomains?: boolean;
+	listWorkflows?: boolean;
+	listAgents?: boolean;
+	dumpPrompt?: boolean;
+	file?: string;
+	profile?: boolean;
+	pluginDir?: string[];
+}
+
+function normalizeCliOptions(
+	program: Command,
+	isInit: boolean,
+	piResult: PiFlagParseResult,
+): CliOptions {
+	const opts = program.opts<ParsedCliOptionValues>();
+	const thinking = parseThinkingOption(opts.thinking);
 
 	const promptArgs: string[] = program.args;
 	const prompt = promptArgs.length > 0 ? promptArgs.join(" ") : undefined;
@@ -258,8 +300,41 @@ export function buildInitSessionConfig(cwd: string) {
 // Mode Dispatch
 // ============================================================================
 
-// Temporary migration debt: top-level CLI dispatch will be split by mode.
-// fallow-ignore-next-line complexity
+type CliRunMode =
+	| "no-domain-guard"
+	| "list-domains"
+	| "list-workflows"
+	| "list-agents"
+	| "dump-prompt"
+	| "init"
+	| "workflow"
+	| "print"
+	| "interactive";
+
+export function selectRunMode(
+	options: CliOptions,
+	hasNonSharedDomain: boolean,
+): CliRunMode {
+	const isBypassCommand =
+		options.init ||
+		options.listDomains ||
+		options.listWorkflows ||
+		options.listAgents ||
+		options.dumpPrompt;
+	if (!hasNonSharedDomain && !isBypassCommand) {
+		return "no-domain-guard";
+	}
+
+	if (options.listDomains) return "list-domains";
+	if (options.listWorkflows) return "list-workflows";
+	if (options.listAgents) return "list-agents";
+	if (options.dumpPrompt) return "dump-prompt";
+	if (options.init) return "init";
+	if (options.workflow) return "workflow";
+	if (options.print) return "print";
+	return "interactive";
+}
+
 async function run(options: CliOptions): Promise<void> {
 	const cwd = process.cwd();
 	const frameworkRoot = resolve(fileURLToPath(import.meta.url), "..", "..");
@@ -278,6 +353,158 @@ async function run(options: CliOptions): Promise<void> {
 		pluginDirs: options.pluginDirs,
 	});
 
+	const mode = selectRunMode(options, hasInstalledDomain(runtime));
+	const handlers: Record<CliRunMode, () => Promise<void>> = {
+		"no-domain-guard": async () => handleNoDomainGuard(),
+		"list-domains": () => handleListDomains(runtime),
+		"list-workflows": () => handleListWorkflows(cwd, runtime.workflows),
+		"list-agents": () => handleListAgents(runtime, options),
+		"dump-prompt": () => handleDumpPrompt(runtime, options),
+		init: () => handleInitMode(runtime, options, cwd),
+		workflow: () => handleWorkflowMode(runtime, options, cwd),
+		print: () => handlePrintMode(runtime, options, cwd),
+		interactive: () => handleInteractiveMode(runtime, options, cwd),
+	};
+
+	await handlers[mode]();
+}
+
+function hasInstalledDomain(runtime: CosmonautsRuntime): boolean {
+	return runtime.domains.some((domain) => domain.manifest.id !== "shared");
+}
+
+function handleNoDomainGuard(): void {
+	printCliError(
+		"No domains installed. Install the coding domain to get started:",
+		{},
+	);
+	printLines(
+		[
+			"  cosmonauts install coding",
+			"  cosmonauts install coding-minimal  (lightweight)",
+		],
+		"stderr",
+	);
+	process.exitCode = 1;
+}
+
+async function handleListDomains(runtime: CosmonautsRuntime): Promise<void> {
+	const lines =
+		runtime.domains.length === 0
+			? ["No domains found."]
+			: runtime.domains.map(
+					(domain) => `  ${domain.manifest.id}  ${domain.manifest.description}`,
+				);
+	printLines(lines);
+}
+
+async function handleListWorkflows(
+	cwd: string,
+	domainWorkflows: readonly WorkflowDefinition[],
+): Promise<void> {
+	const workflows = await listWorkflows(cwd, domainWorkflows);
+	const lines =
+		workflows.length === 0
+			? ["No workflows available."]
+			: workflows.map(
+					(workflow) => `  ${workflow.name}  ${workflow.description}`,
+				);
+	printLines(lines);
+}
+
+async function handleListAgents(
+	runtime: CosmonautsRuntime,
+	_options: CliOptions,
+): Promise<void> {
+	const agents = runtime.domainContext
+		? runtime.agentRegistry.resolveInDomain(runtime.domainContext)
+		: runtime.agentRegistry.listAll();
+	const lines = agents.map((agent) => `  ${agent.id}  ${agent.description}`);
+	printLines(lines);
+}
+
+async function handleDumpPrompt(
+	runtime: CosmonautsRuntime,
+	options: CliOptions,
+): Promise<void> {
+	const agentId = options.agent ?? "cosmo";
+	const definition = runtime.agentRegistry.resolve(
+		agentId,
+		runtime.domainContext,
+	);
+	const domain = definition.domain ?? "coding";
+
+	let prompt = await assemblePrompts({
+		agentId: definition.id,
+		domain,
+		capabilities: definition.capabilities,
+		domainsDir: runtime.domainsDir,
+		resolver: runtime.domainResolver,
+	});
+	prompt = appendAgentIdentityMarker(
+		prompt,
+		qualifyAgentId(definition.id, domain),
+	);
+
+	if (options.dumpPromptFile) {
+		await writeFile(options.dumpPromptFile, prompt, "utf-8");
+		printLines([`Wrote ${definition.id} prompt to ${options.dumpPromptFile}`]);
+		return;
+	}
+
+	process.stdout.write(prompt);
+	process.stdout.write("\n");
+}
+
+async function handleInitMode(
+	runtime: CosmonautsRuntime,
+	options: CliOptions,
+	cwd: string,
+): Promise<void> {
+	if (!hasInstalledDomain(runtime)) {
+		printLines([
+			"No domains installed. Install a domain to use cosmonauts init:",
+			"  cosmonauts install coding",
+			"  cosmonauts install coding-minimal  (lightweight)",
+			"",
+			"After installing a domain, run `cosmonauts init` again to set up your project.",
+		]);
+		process.exitCode = 1;
+		return;
+	}
+
+	const initSessionConfig = buildInitSessionConfig(cwd);
+	const cosmoDefinition = runtime.agentRegistry.resolve(
+		"cosmo",
+		runtime.domainContext,
+	);
+	const initRuntime = await createSession({
+		definition: cosmoDefinition,
+		cwd,
+		domainsDir: runtime.domainsDir,
+		resolver: runtime.domainResolver,
+		model: options.model,
+		thinkingLevel: options.thinking,
+		persistent: false,
+		piFlags: options.piFlags,
+		projectSkills: runtime.projectSkills,
+		skillPaths: runtime.skillPaths,
+		ignoreProjectSkills: initSessionConfig.ignoreProjectSkills,
+	});
+
+	const interactive = new InteractiveMode(initRuntime, {
+		modelFallbackMessage: initRuntime.modelFallbackMessage,
+		initialMessage: initSessionConfig.initialMessage,
+	});
+	await interactive.init();
+	await interactive.run();
+}
+
+async function handleWorkflowMode(
+	runtime: CosmonautsRuntime,
+	options: CliOptions,
+	cwd: string,
+): Promise<void> {
 	const {
 		agentRegistry: registry,
 		domainContext,
@@ -286,232 +513,106 @@ async function run(options: CliOptions): Promise<void> {
 		skillPaths,
 	} = runtime;
 
-	// First-run detection: guide users to install a domain when none are present.
-	// Meta commands (install, uninstall, packages, create, update) are routed
-	// before run() is called and never reach this check.
-	// Informational flags and init are allowed through to handle the domain-less state gracefully.
-	const hasNonSharedDomain =
-		runtime.domains.filter((d) => d.manifest.id !== "shared").length > 0;
-	const isBypassCommand =
-		options.init ||
-		options.listDomains ||
-		options.listWorkflows ||
-		options.listAgents ||
-		options.dumpPrompt;
-	if (!hasNonSharedDomain && !isBypassCommand) {
-		console.error(
-			"No domains installed. Install the coding domain to get started:",
-		);
-		console.error("  cosmonauts install coding");
-		console.error("  cosmonauts install coding-minimal  (lightweight)");
+	const chainExpr = await resolveWorkflowExpression(
+		options.workflow ?? "",
+		cwd,
+		domainWorkflows,
+	);
+	const steps = parseChain(chainExpr, registry, domainContext);
+	injectUserPrompt(steps, options.prompt);
+
+	let profiler: ChainProfiler | undefined;
+	let onEvent = createChainEventLogger();
+
+	if (options.profile) {
+		const planSlug = derivePlanSlug(options.completionLabel);
+		const outputDir = planSlug
+			? sessionsDirForPlan(cwd, planSlug)
+			: join(cwd, "missions", "sessions", "_profiles");
+		const activeProfiler = new ChainProfiler({ outputDir });
+		profiler = activeProfiler;
+		const logger = onEvent;
+		onEvent = (event) => {
+			logger(event);
+			activeProfiler.handleEvent(event);
+		};
+	}
+
+	let result: Awaited<ReturnType<typeof runChain>>;
+	try {
+		result = await runChain({
+			steps,
+			projectRoot: cwd,
+			domainContext,
+			onEvent,
+			projectSkills,
+			skillPaths,
+			completionLabel: options.completionLabel,
+			registry,
+			domainsDir: runtime.domainsDir,
+			resolver: runtime.domainResolver,
+			...(options.thinking && { thinking: { default: options.thinking } }),
+		});
+	} finally {
+		if (profiler) {
+			try {
+				const { tracePath, summaryPath } = await profiler.writeOutput();
+				process.stderr.write(`Profile trace:   ${tracePath}\n`);
+				process.stderr.write(`Profile summary: ${summaryPath}\n`);
+			} catch (err) {
+				process.stderr.write(`Failed to write profile output: ${err}\n`);
+			}
+		}
+	}
+
+	if (!result.success) {
 		process.exitCode = 1;
-		return;
+	}
+}
+
+async function handlePrintMode(
+	runtime: CosmonautsRuntime,
+	options: CliOptions,
+	cwd: string,
+): Promise<void> {
+	if (!options.prompt) {
+		throw new Error("--print requires a prompt argument");
 	}
 
-	// --list-domains: print all discovered domains and exit
-	if (options.listDomains) {
-		if (runtime.domains.length === 0) {
-			console.log("No domains found.");
-		} else {
-			for (const d of runtime.domains) {
-				console.log(`  ${d.manifest.id}  ${d.manifest.description}`);
-			}
-		}
-		return;
-	}
+	const definition = resolveCliAgent(runtime, options);
+	const printRuntime = await createSession({
+		definition,
+		cwd,
+		domainsDir: runtime.domainsDir,
+		resolver: runtime.domainResolver,
+		model: options.model,
+		thinkingLevel: options.thinking,
+		persistent: false,
+		piFlags: options.piFlags,
+		projectSkills: runtime.projectSkills,
+		skillPaths: runtime.skillPaths,
+	});
 
-	// --list-workflows: print available workflows and exit
-	if (options.listWorkflows) {
-		const workflows = await listWorkflows(cwd, domainWorkflows);
-		if (workflows.length === 0) {
-			console.log("No workflows available.");
-		} else {
-			for (const wf of workflows) {
-				console.log(`  ${wf.name}  ${wf.description}`);
-			}
-		}
-		return;
-	}
+	await runPrintMode(printRuntime, {
+		mode: "text",
+		initialMessage: options.prompt,
+	});
+}
 
-	// --list-agents: print available agent IDs and exit
-	if (options.listAgents) {
-		const agents = domainContext
-			? registry.resolveInDomain(domainContext)
-			: registry.listAll();
-		for (const def of agents) {
-			console.log(`  ${def.id}  ${def.description}`);
-		}
-		return;
-	}
-
-	// --dump-prompt: assemble and output the full system prompt for an agent
-	if (options.dumpPrompt) {
-		const agentId = options.agent ?? "cosmo";
-		const def = registry.resolve(agentId, domainContext);
-		const domain = def.domain ?? "coding";
-
-		let prompt = await assemblePrompts({
-			agentId: def.id,
-			domain,
-			capabilities: def.capabilities,
-			domainsDir: runtime.domainsDir,
-			resolver: runtime.domainResolver,
-		});
-		prompt = appendAgentIdentityMarker(prompt, qualifyAgentId(def.id, domain));
-
-		if (options.dumpPromptFile) {
-			await writeFile(options.dumpPromptFile, prompt, "utf-8");
-			console.log(`Wrote ${def.id} prompt to ${options.dumpPromptFile}`);
-		} else {
-			process.stdout.write(prompt);
-			process.stdout.write("\n");
-		}
-		return;
-	}
-
-	// Resolve agent definition: --agent overrides the default (cosmo)
-	const definition = options.agent
-		? registry.resolve(options.agent, domainContext)
-		: registry.resolve("cosmo", domainContext);
-
-	// 1. init → always uses Cosmo (bootstrap requires full coding tools)
-	if (options.init) {
-		// Without a domain, Cosmo is not available. Guide the user to install one first.
-		if (!hasNonSharedDomain) {
-			console.log(
-				"No domains installed. Install a domain to use cosmonauts init:",
-			);
-			console.log("  cosmonauts install coding");
-			console.log("  cosmonauts install coding-minimal  (lightweight)");
-			console.log();
-			console.log(
-				"After installing a domain, run `cosmonauts init` again to set up your project.",
-			);
-			process.exitCode = 1;
-			return;
-		}
-
-		const initSessionConfig = buildInitSessionConfig(cwd);
-		const cosmoDefinition = registry.resolve("cosmo", domainContext);
-		const initRuntime = await createSession({
-			definition: cosmoDefinition,
-			cwd,
-			domainsDir: runtime.domainsDir,
-			resolver: runtime.domainResolver,
-			model: options.model,
-			thinkingLevel: options.thinking,
-			persistent: false,
-			piFlags: options.piFlags,
-			projectSkills,
-			skillPaths,
-			ignoreProjectSkills: initSessionConfig.ignoreProjectSkills,
-		});
-
-		const interactive = new InteractiveMode(initRuntime, {
-			modelFallbackMessage: initRuntime.modelFallbackMessage,
-			initialMessage: initSessionConfig.initialMessage,
-		});
-		await interactive.init();
-		await interactive.run();
-		return;
-	}
-
-	// 2. --workflow → named workflow or raw chain DSL, run, exit
-	if (options.workflow) {
-		const chainExpr = await resolveWorkflowExpression(
-			options.workflow,
-			cwd,
-			domainWorkflows,
-		);
-		const steps = parseChain(chainExpr, registry, domainContext);
-		injectUserPrompt(steps, options.prompt);
-
-		let profiler: ChainProfiler | undefined;
-		let onEvent = createChainEventLogger();
-
-		if (options.profile) {
-			const planSlug = derivePlanSlug(options.completionLabel);
-			const outputDir = planSlug
-				? sessionsDirForPlan(cwd, planSlug)
-				: join(cwd, "missions", "sessions", "_profiles");
-			profiler = new ChainProfiler({ outputDir });
-			const logger = onEvent;
-			onEvent = (event) => {
-				logger(event);
-				// biome-ignore lint/style/noNonNullAssertion: profiler is set in this branch
-				profiler!.handleEvent(event);
-			};
-		}
-
-		let result: Awaited<ReturnType<typeof runChain>>;
-		try {
-			result = await runChain({
-				steps,
-				projectRoot: cwd,
-				domainContext,
-				onEvent,
-				projectSkills,
-				skillPaths,
-				completionLabel: options.completionLabel,
-				registry,
-				domainsDir: runtime.domainsDir,
-				resolver: runtime.domainResolver,
-				...(options.thinking && { thinking: { default: options.thinking } }),
-			});
-		} finally {
-			if (profiler) {
-				try {
-					const { tracePath, summaryPath } = await profiler.writeOutput();
-					process.stderr.write(`Profile trace:   ${tracePath}\n`);
-					process.stderr.write(`Profile summary: ${summaryPath}\n`);
-				} catch (err) {
-					process.stderr.write(`Failed to write profile output: ${err}\n`);
-				}
-			}
-		}
-
-		if (!result.success) {
-			process.exitCode = 1;
-		}
-		return;
-	}
-
-	// 4. --print → non-interactive session
-	if (options.print) {
-		if (!options.prompt) {
-			throw new Error("--print requires a prompt argument");
-		}
-
-		const printRuntime = await createSession({
-			definition,
-			cwd,
-			domainsDir: runtime.domainsDir,
-			resolver: runtime.domainResolver,
-			model: options.model,
-			thinkingLevel: options.thinking,
-			persistent: false,
-			piFlags: options.piFlags,
-			projectSkills,
-			skillPaths,
-		});
-
-		await runPrintMode(printRuntime, {
-			mode: "text",
-			initialMessage: options.prompt,
-		});
-		return;
-	}
-
-	// 5. default → interactive REPL
-	// TODO: After --workflow/--chain, drop into Cosmo REPL
+async function handleInteractiveMode(
+	runtime: CosmonautsRuntime,
+	options: CliOptions,
+	cwd: string,
+): Promise<void> {
+	const definition = resolveCliAgent(runtime, options);
 
 	// Expose the main registry to extensions via process-global slot.
 	// This ensures the /agent command validates against the same registry
 	// the session factory uses, including --domain and --plugin-dir overrides.
-	setSharedRegistry(registry, domainContext);
+	setSharedRegistry(runtime.agentRegistry, runtime.domainContext);
 
 	const agentSwitchExtPath = join(
-		domainsDir,
+		runtime.domainsDir,
 		"shared",
 		"extensions",
 		"agent-switch",
@@ -525,10 +626,10 @@ async function run(options: CliOptions): Promise<void> {
 		thinkingLevel: options.thinking,
 		persistent: true,
 		piFlags: options.piFlags,
-		projectSkills,
-		skillPaths,
-		agentRegistry: registry,
-		domainContext,
+		projectSkills: runtime.projectSkills,
+		skillPaths: runtime.skillPaths,
+		agentRegistry: runtime.agentRegistry,
+		domainContext: runtime.domainContext,
 		extraExtensionPaths: [agentSwitchExtPath],
 	});
 
@@ -539,6 +640,15 @@ async function run(options: CliOptions): Promise<void> {
 
 	await interactive.init();
 	await interactive.run();
+}
+
+function resolveCliAgent(
+	runtime: CosmonautsRuntime,
+	options: CliOptions,
+): AgentDefinition {
+	return options.agent
+		? runtime.agentRegistry.resolve(options.agent, runtime.domainContext)
+		: runtime.agentRegistry.resolve("cosmo", runtime.domainContext);
 }
 
 // ============================================================================
@@ -578,7 +688,7 @@ if (
 		.parseAsync(process.argv.slice(3), { from: "user" })
 		.catch((err: unknown) => {
 			const message = err instanceof Error ? err.message : String(err);
-			process.stderr.write(`cosmonauts ${subcommand}: ${message}\n`);
+			printCliError(message, {}, { prefix: `cosmonauts ${subcommand}` });
 			process.exitCode = 1;
 		});
 } else {
@@ -591,7 +701,7 @@ if (
 				return;
 			}
 			const message = err instanceof Error ? err.message : String(err);
-			process.stderr.write(`cosmonauts: ${message}\n`);
+			printCliError(message, {}, { prefix: "cosmonauts" });
 			process.exitCode = 1;
 		});
 	} catch (err: unknown) {
@@ -600,7 +710,7 @@ if (
 			process.exitCode = err.exitCode;
 		} else {
 			const message = err instanceof Error ? err.message : String(err);
-			process.stderr.write(`cosmonauts: ${message}\n`);
+			printCliError(message, {}, { prefix: "cosmonauts" });
 			process.exitCode = 1;
 		}
 	}

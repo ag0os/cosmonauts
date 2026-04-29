@@ -33,6 +33,17 @@ async function writeManifest(dir: string, content: unknown): Promise<void> {
 	);
 }
 
+function expectManifestError(
+	result: ReturnType<typeof validateManifest>,
+	field: string,
+	reason: string,
+): void {
+	expect(result.valid).toBe(false);
+	if (!result.valid) {
+		expect(result.errors).toContainEqual({ field, reason });
+	}
+}
+
 // ============================================================================
 // loadManifest
 // ============================================================================
@@ -143,72 +154,46 @@ describe("validateManifest — valid manifests", () => {
 // ============================================================================
 
 describe("validateManifest — missing required fields", () => {
-	test("returns error for missing name", () => {
-		const raw = {
-			version: "1.0.0",
-			description: "A package",
-			domains: [{ name: "x", path: "x" }],
-		};
+	const requiredMissingFieldErrors = [
+		{ field: "name", reason: "missing" },
+		{ field: "version", reason: "missing" },
+		{ field: "description", reason: "missing" },
+		{ field: "domains", reason: "missing" },
+	];
 
-		const result = validateManifest(raw);
-
-		expect(result.valid).toBe(false);
-		if (!result.valid) {
-			expect(result.errors).toContainEqual({
-				field: "name",
-				reason: "missing",
-			});
-		}
-	});
-
-	test("returns error for missing version", () => {
-		const raw = {
-			name: "my-pkg",
-			description: "A package",
-			domains: [{ name: "x", path: "x" }],
-		};
-
-		const result = validateManifest(raw);
-
-		expect(result.valid).toBe(false);
-		if (!result.valid) {
-			expect(result.errors).toContainEqual({
-				field: "version",
-				reason: "missing",
-			});
-		}
-	});
-
-	test("returns error for missing description", () => {
-		const raw = {
-			name: "my-pkg",
-			version: "1.0.0",
-			domains: [{ name: "x", path: "x" }],
-		};
-
-		const result = validateManifest(raw);
-
-		expect(result.valid).toBe(false);
-		if (!result.valid) {
-			expect(result.errors).toContainEqual({
-				field: "description",
-				reason: "missing",
-			});
-		}
+	test.each([
+		[
+			"name",
+			{
+				version: "1.0.0",
+				description: "A package",
+				domains: [{ name: "x", path: "x" }],
+			},
+		],
+		[
+			"version",
+			{
+				name: "my-pkg",
+				description: "A package",
+				domains: [{ name: "x", path: "x" }],
+			},
+		],
+		[
+			"description",
+			{
+				name: "my-pkg",
+				version: "1.0.0",
+				domains: [{ name: "x", path: "x" }],
+			},
+		],
+	])("returns error for missing %s", (field, raw) => {
+		expectManifestError(validateManifest(raw), field, "missing");
 	});
 
 	test("returns error for missing domains", () => {
 		const raw = { name: "my-pkg", version: "1.0.0", description: "A package" };
 
-		const result = validateManifest(raw);
-
-		expect(result.valid).toBe(false);
-		if (!result.valid) {
-			expect(result.errors).toContainEqual({
-				field: "domains",
-				reason: "missing",
-			});
-		}
+		expectManifestError(validateManifest(raw), "domains", "missing");
 	});
 
 	test("collects all missing field errors at once", () => {
@@ -232,6 +217,20 @@ describe("validateManifest — missing required fields", () => {
 			expect(result.errors.length).toBeGreaterThan(0);
 		}
 	});
+
+	test.each([
+		["null", null],
+		["array", []],
+		["string", "not an object"],
+		["number", 42],
+	])("returns exactly the required missing field errors for %s input", (_label, raw) => {
+		const result = validateManifest(raw);
+
+		expect(result.valid).toBe(false);
+		if (!result.valid) {
+			expect(result.errors).toEqual(requiredMissingFieldErrors);
+		}
+	});
 });
 
 // ============================================================================
@@ -248,52 +247,17 @@ describe("validateManifest — invalid name format", () => {
 		};
 	}
 
-	test("rejects uppercase letters in name", () => {
-		const result = validateManifest(makeRaw("MyPackage"));
-
-		expect(result.valid).toBe(false);
-		if (!result.valid) {
-			expect(result.errors).toContainEqual({
-				field: "name",
-				reason: "invalid-format",
-			});
-		}
-	});
-
-	test("rejects name starting with hyphen", () => {
-		const result = validateManifest(makeRaw("-my-pkg"));
-
-		expect(result.valid).toBe(false);
-		if (!result.valid) {
-			expect(result.errors).toContainEqual({
-				field: "name",
-				reason: "invalid-format",
-			});
-		}
-	});
-
-	test("rejects name with spaces", () => {
-		const result = validateManifest(makeRaw("my package"));
-
-		expect(result.valid).toBe(false);
-		if (!result.valid) {
-			expect(result.errors).toContainEqual({
-				field: "name",
-				reason: "invalid-format",
-			});
-		}
-	});
-
-	test("rejects non-string name", () => {
-		const result = validateManifest(makeRaw(42));
-
-		expect(result.valid).toBe(false);
-		if (!result.valid) {
-			expect(result.errors).toContainEqual({
-				field: "name",
-				reason: "invalid-format",
-			});
-		}
+	test.each([
+		["uppercase letters", "MyPackage"],
+		["name starting with hyphen", "-my-pkg"],
+		["name with spaces", "my package"],
+		["non-string name", 42],
+	])("rejects %s", (_label, name) => {
+		expectManifestError(
+			validateManifest(makeRaw(name)),
+			"name",
+			"invalid-format",
+		);
 	});
 
 	test("accepts name with underscores and hyphens", () => {
@@ -316,15 +280,7 @@ describe("validateManifest — empty domains array", () => {
 			domains: [],
 		};
 
-		const result = validateManifest(raw);
-
-		expect(result.valid).toBe(false);
-		if (!result.valid) {
-			expect(result.errors).toContainEqual({
-				field: "domains",
-				reason: "empty",
-			});
-		}
+		expectManifestError(validateManifest(raw), "domains", "empty");
 	});
 
 	test("returns invalid-entry error for non-array domains", () => {
@@ -335,15 +291,7 @@ describe("validateManifest — empty domains array", () => {
 			domains: "coding",
 		};
 
-		const result = validateManifest(raw);
-
-		expect(result.valid).toBe(false);
-		if (!result.valid) {
-			expect(result.errors).toContainEqual({
-				field: "domains",
-				reason: "invalid-entry",
-			});
-		}
+		expectManifestError(validateManifest(raw), "domains", "invalid-entry");
 	});
 
 	test("returns invalid-entry error for domains with missing path", () => {
@@ -354,14 +302,6 @@ describe("validateManifest — empty domains array", () => {
 			domains: [{ name: "coding" }], // missing path
 		};
 
-		const result = validateManifest(raw);
-
-		expect(result.valid).toBe(false);
-		if (!result.valid) {
-			expect(result.errors).toContainEqual({
-				field: "domains",
-				reason: "invalid-entry",
-			});
-		}
+		expectManifestError(validateManifest(raw), "domains", "invalid-entry");
 	});
 });

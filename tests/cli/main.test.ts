@@ -5,15 +5,48 @@
 
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
 	buildInitSessionConfig,
 	discoverBundledPackageDirs,
 	isCosmonautsFrameworkRepo,
 	parseCliArgs,
 	resolveWorkflowExpression,
+	selectRunMode,
 	shouldParseWorkflowAsRawChainExpression,
 } from "../../cli/main.ts";
+import type { CliOptions } from "../../cli/types.ts";
+
+function cliOptions(overrides: Partial<CliOptions> = {}): CliOptions {
+	return {
+		print: false,
+		init: false,
+		listWorkflows: false,
+		listAgents: false,
+		listDomains: false,
+		dumpPrompt: false,
+		piFlags: {},
+		...overrides,
+	};
+}
+
+type ExpectedRunMode = ReturnType<typeof selectRunMode>;
+
+interface RunModeScenario {
+	name: string;
+	options: Partial<CliOptions>;
+	hasNonSharedDomain: boolean;
+	expected: ExpectedRunMode;
+}
+
+function expectRunModes(scenarios: readonly RunModeScenario[]): void {
+	for (const scenario of scenarios) {
+		expect(
+			selectRunMode(cliOptions(scenario.options), scenario.hasNonSharedDomain),
+			scenario.name,
+		).toBe(scenario.expected);
+	}
+}
 
 describe("parseCliArgs", () => {
 	test("defaults: interactive mode, no prompt", () => {
@@ -144,6 +177,21 @@ describe("parseCliArgs", () => {
 			const opts = parseCliArgs(["--thinking", level]);
 			expect(opts.thinking).toBe(level);
 		}
+	});
+
+	test("--thinking before another option defaults to high", () => {
+		const opts = parseCliArgs(["--thinking", "--print", "do something"]);
+
+		expect(opts.thinking).toBe("high");
+		expect(opts.print).toBe(true);
+		expect(opts.prompt).toBe("do something");
+	});
+
+	test("--thinking with value before prompt preserves the prompt", () => {
+		const opts = parseCliArgs(["--thinking", "low", "do something"]);
+
+		expect(opts.thinking).toBe("low");
+		expect(opts.prompt).toBe("do something");
 	});
 
 	test("--thinking with invalid value throws", () => {
@@ -290,6 +338,38 @@ describe("parseCliArgs", () => {
 		expect(opts.listAgents).toBe(true);
 	});
 
+	test("--plugin-dir is repeatable", () => {
+		const opts = parseCliArgs([
+			"--plugin-dir",
+			"/tmp/plugin-a",
+			"--plugin-dir",
+			"/tmp/plugin-b",
+		]);
+
+		expect(opts.pluginDirs).toEqual(["/tmp/plugin-a", "/tmp/plugin-b"]);
+	});
+
+	test("--profile enables chain profiling", () => {
+		const opts = parseCliArgs(["--profile"]);
+
+		expect(opts.profile).toBe(true);
+	});
+
+	test("disabled Pi flags are forwarded as warnings and removed", () => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			const opts = parseCliArgs(["--provider", "anthropic", "do something"]);
+
+			expect(opts.prompt).toBe("do something");
+			expect(opts.piFlags).toEqual({});
+			expect(warn).toHaveBeenCalledWith(
+				'[cosmonauts] Flag "--provider" is not supported by cosmonauts (Pi flag "provider" is disabled)',
+			);
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
 	test("--domain sets domain context", () => {
 		const opts = parseCliArgs(["--domain", "coding"]);
 
@@ -385,6 +465,122 @@ describe("buildInitSessionConfig", () => {
 });
 
 // ============================================================================
+// Mode dispatch
+// ============================================================================
+
+describe("selectRunMode", () => {
+	test("routes non-bypass commands to no-domain guard when no domain is installed", () => {
+		expectRunModes([
+			{
+				name: "interactive",
+				options: {},
+				hasNonSharedDomain: false,
+				expected: "no-domain-guard",
+			},
+			{
+				name: "print",
+				options: { print: true, prompt: "run it" },
+				hasNonSharedDomain: false,
+				expected: "no-domain-guard",
+			},
+			{
+				name: "workflow",
+				options: { workflow: "plan-and-build" },
+				hasNonSharedDomain: false,
+				expected: "no-domain-guard",
+			},
+		]);
+	});
+
+	test("lets informational modes and init bypass the no-domain guard", () => {
+		expectRunModes([
+			{
+				name: "list domains",
+				options: { listDomains: true },
+				hasNonSharedDomain: false,
+				expected: "list-domains",
+			},
+			{
+				name: "list workflows",
+				options: { listWorkflows: true },
+				hasNonSharedDomain: false,
+				expected: "list-workflows",
+			},
+			{
+				name: "list agents",
+				options: { listAgents: true },
+				hasNonSharedDomain: false,
+				expected: "list-agents",
+			},
+			{
+				name: "dump prompt",
+				options: { dumpPrompt: true },
+				hasNonSharedDomain: false,
+				expected: "dump-prompt",
+			},
+			{
+				name: "init",
+				options: { init: true },
+				hasNonSharedDomain: false,
+				expected: "init",
+			},
+		]);
+	});
+
+	test("preserves existing dispatch precedence for overlapping flags", () => {
+		expectRunModes([
+			{
+				name: "domains before workflows",
+				options: { listDomains: true, listWorkflows: true },
+				hasNonSharedDomain: true,
+				expected: "list-domains",
+			},
+			{
+				name: "dump before init",
+				options: { dumpPrompt: true, init: true },
+				hasNonSharedDomain: true,
+				expected: "dump-prompt",
+			},
+			{
+				name: "init before workflow",
+				options: { init: true, workflow: "plan-and-build" },
+				hasNonSharedDomain: true,
+				expected: "init",
+			},
+			{
+				name: "workflow before print",
+				options: { print: true, workflow: "plan-and-build", prompt: "go" },
+				hasNonSharedDomain: true,
+				expected: "workflow",
+			},
+		]);
+	});
+
+	test("routes normal domain-backed execution modes", () => {
+		expectRunModes([
+			{
+				name: "workflow",
+				options: { workflow: "plan-and-build" },
+				hasNonSharedDomain: true,
+				expected: "workflow",
+			},
+			{
+				name: "print",
+				options: { print: true },
+				hasNonSharedDomain: true,
+				expected: "print",
+			},
+			{
+				name: "interactive",
+				options: { prompt: "hello" },
+				hasNonSharedDomain: true,
+				expected: "interactive",
+			},
+		]);
+	});
+});
+
+// ============================================================================
 // --workflow DSL dispatch routing
 // ============================================================================
 
@@ -444,15 +640,32 @@ describe("--workflow DSL dispatch routing", () => {
 // isCosmonautsFrameworkRepo
 // ============================================================================
 
+async function createTempDir(name: string): Promise<string> {
+	const tmpDir = join(
+		import.meta.dirname,
+		`.tmp-${name}-${Math.random().toString(36).slice(2)}`,
+	);
+	await mkdir(tmpDir, { recursive: true });
+	return tmpDir;
+}
+
+async function writeFrameworkPackage(
+	root: string,
+	name = "cosmonauts",
+): Promise<void> {
+	await writeFile(
+		join(root, "package.json"),
+		JSON.stringify({ name, version: "0.1.0" }),
+	);
+	await mkdir(join(root, "bundled"));
+	await mkdir(join(root, ".git"));
+}
+
 describe("isCosmonautsFrameworkRepo", () => {
 	let tmpDir: string;
 
 	beforeEach(async () => {
-		tmpDir = join(
-			import.meta.dirname,
-			`.tmp-framework-repo-${Math.random().toString(36).slice(2)}`,
-		);
-		await mkdir(tmpDir, { recursive: true });
+		tmpDir = await createTempDir("framework-repo");
 	});
 
 	afterEach(async () => {
@@ -471,12 +684,7 @@ describe("isCosmonautsFrameworkRepo", () => {
 	});
 
 	test("returns false when package.json name is not 'cosmonauts'", async () => {
-		await writeFile(
-			join(tmpDir, "package.json"),
-			JSON.stringify({ name: "my-project", version: "1.0.0" }),
-		);
-		await mkdir(join(tmpDir, "bundled"));
-		await mkdir(join(tmpDir, ".git"));
+		await writeFrameworkPackage(tmpDir, "my-project");
 
 		expect(await isCosmonautsFrameworkRepo(tmpDir)).toBe(false);
 	});
@@ -529,11 +737,7 @@ describe("discoverBundledPackageDirs", () => {
 	let tmpDir: string;
 
 	beforeEach(async () => {
-		tmpDir = join(
-			import.meta.dirname,
-			`.tmp-bundled-${Math.random().toString(36).slice(2)}`,
-		);
-		await mkdir(tmpDir, { recursive: true });
+		tmpDir = await createTempDir("bundled");
 	});
 
 	afterEach(async () => {

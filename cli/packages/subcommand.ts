@@ -23,6 +23,8 @@ import type {
 	InstalledPackage,
 	PackageScope,
 } from "../../lib/packages/types.ts";
+import { printCliError } from "../shared/errors.ts";
+import { printLines } from "../shared/output.ts";
 
 // ============================================================================
 // Types
@@ -48,6 +50,15 @@ interface PackagesListCliOptions {
 	projectRoot?: string;
 }
 
+interface InstallRequest {
+	source: string;
+	scope: PackageScope;
+	cwd: string;
+	catalogName?: string;
+}
+
+type InstallPackageResult = Awaited<ReturnType<typeof installPackage>>;
+
 type ConflictChoice = "merge" | "replace" | "skip" | "cancel";
 
 // ============================================================================
@@ -64,6 +75,23 @@ export function resolveSource(arg: string): string {
 		return resolveCatalogSource(entry.source);
 	}
 	return arg;
+}
+
+export function resolveInstallRequest(
+	arg: string,
+	options: InstallCliOptions,
+): InstallRequest {
+	const cwd = options.projectRoot ?? process.cwd();
+	const scope: PackageScope = options.local ? "project" : "user";
+	const entry = resolveCatalogEntry(arg);
+	const source = entry ? resolveCatalogSource(entry.source) : arg;
+
+	return {
+		source,
+		scope,
+		cwd,
+		catalogName: entry?.name,
+	};
 }
 
 // ============================================================================
@@ -119,82 +147,102 @@ async function promptConflictChoice(
 // Action: install
 // ============================================================================
 
-// Temporary migration debt: install handles source resolution, conflicts, and output.
-// fallow-ignore-next-line complexity
 export async function installAction(
 	arg: string,
 	options: InstallCliOptions,
 ): Promise<void> {
-	const cwd = options.projectRoot ?? process.cwd();
-	const scope: PackageScope = options.local ? "project" : "user";
-	const entry = resolveCatalogEntry(arg);
-	const source = entry ? resolveCatalogSource(entry.source) : arg;
-	const catalogName = entry?.name;
+	const request = resolveInstallRequest(arg, options);
 
-	let result: Awaited<ReturnType<typeof installPackage>>;
+	let result: InstallPackageResult;
 	try {
 		result = await installPackage({
-			source,
-			scope,
-			projectRoot: cwd,
+			source: request.source,
+			scope: request.scope,
+			projectRoot: request.cwd,
 			link: options.link,
 			branch: options.branch,
-			catalogName,
+			catalogName: request.catalogName,
 		});
 	} catch (err: unknown) {
 		const message = err instanceof Error ? err.message : String(err);
-		process.stderr.write(`cosmonauts install: ${message}\n`);
+		printCliError(message, {}, { prefix: "cosmonauts install" });
 		process.exitCode = 1;
 		return;
 	}
 
-	const { manifest, installedTo, domainMergeResults } = result;
-
-	// Handle domain conflicts
-	if (domainMergeResults.length > 0) {
-		let choice: ConflictChoice;
-
-		if (options.yes) {
-			choice = "merge";
-		} else {
-			choice = await promptConflictChoice(domainMergeResults);
-		}
-
-		if (choice === "skip") {
-			await uninstallPackage(manifest.name, scope, cwd);
-			console.log(`Skipped: "${manifest.name}" was not installed.`);
-			return;
-		}
-
-		if (choice === "cancel") {
-			await uninstallPackage(manifest.name, scope, cwd);
-			process.stderr.write(
-				`cosmonauts install: cancelled — "${manifest.name}" was not installed.\n`,
-			);
-			process.exitCode = 1;
-			return;
-		}
-
-		if (choice === "replace") {
-			// Remove packages that conflict
-			const conflictingPkgs = [
-				...new Set(domainMergeResults.map((r) => r.existingPackage)),
-			];
-			for (const pkgName of conflictingPkgs) {
-				await uninstallPackage(pkgName, scope, cwd);
-				console.log(`Removed conflicting package: "${pkgName}"`);
-			}
-		}
-		// merge: fall through — install already in place
+	const conflictStatus = await handleInstallConflicts(result, request, options);
+	if (conflictStatus === "stopped") {
+		return;
 	}
 
+	printLines(renderInstallSuccess(result, request.scope));
+}
+
+async function handleInstallConflicts(
+	result: InstallPackageResult,
+	request: InstallRequest,
+	options: InstallCliOptions,
+): Promise<"continue" | "stopped"> {
+	const { manifest, domainMergeResults } = result;
+
+	if (domainMergeResults.length === 0) {
+		return "continue";
+	}
+
+	const choice = options.yes
+		? "merge"
+		: await promptConflictChoice(domainMergeResults);
+
+	if (choice === "skip") {
+		await rollbackInstalledPackage(manifest.name, request.scope, request.cwd);
+		printLines([`Skipped: "${manifest.name}" was not installed.`]);
+		return "stopped";
+	}
+
+	if (choice === "cancel") {
+		await rollbackInstalledPackage(manifest.name, request.scope, request.cwd);
+		printCliError(
+			`cancelled — "${manifest.name}" was not installed.`,
+			{},
+			{ prefix: "cosmonauts install" },
+		);
+		process.exitCode = 1;
+		return "stopped";
+	}
+
+	if (choice === "replace") {
+		const conflictingPackages = [
+			...new Set(domainMergeResults.map((r) => r.existingPackage)),
+		];
+		for (const packageName of conflictingPackages) {
+			await uninstallPackage(packageName, request.scope, request.cwd);
+			printLines([`Removed conflicting package: "${packageName}"`]);
+		}
+	}
+
+	return "continue";
+}
+
+async function rollbackInstalledPackage(
+	manifestName: string,
+	scope: PackageScope,
+	cwd: string,
+): Promise<void> {
+	await uninstallPackage(manifestName, scope, cwd);
+}
+
+export function renderInstallSuccess(
+	result: InstallPackageResult,
+	scope: PackageScope,
+): string[] {
+	const { manifest, installedTo } = result;
 	const domainNames = manifest.domains.map((d) => d.name).join(", ");
 	const scopeLabel = scope === "user" ? "global" : "local";
-	console.log(
+	return [
 		`Installed "${manifest.name}" v${manifest.version} [${scopeLabel}]`,
-	);
-	console.log(`  Domains: ${domainNames}`);
-	console.log(`  Path:    ${installedTo}`);
+		`  Domains: ${domainNames}`,
+		`  Path:    ${installedTo}`,
+	];
 }
 
 // ============================================================================

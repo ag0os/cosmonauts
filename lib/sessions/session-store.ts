@@ -91,6 +91,71 @@ function extractAssistantParts(content: unknown): AssistantParts {
 	return { texts, thinkings, toolNames };
 }
 
+function renderTranscriptMessage(message: unknown): string[] {
+	if (!message || typeof message !== "object" || !("role" in message)) {
+		return [];
+	}
+
+	const msg = message as { role: unknown; content?: unknown };
+
+	if (msg.role === "user") {
+		return renderUserMessage(msg.content);
+	}
+
+	if (msg.role === "assistant") {
+		return renderAssistantMessage(msg.content);
+	}
+
+	// toolResult messages are intentionally skipped — content is too noisy
+	return [];
+}
+
+function renderUserMessage(content: unknown): string[] {
+	const text = extractUserContent(content);
+	if (!text.trim()) {
+		return [];
+	}
+
+	return ["---", "", "## User", "", text, ""];
+}
+
+function renderAssistantMessage(content: unknown): string[] {
+	const { texts, thinkings, toolNames } = extractAssistantParts(content);
+
+	if (texts.length === 0 && thinkings.length === 0 && toolNames.length === 0) {
+		return [];
+	}
+
+	const lines: string[] = ["---", "", "## Assistant", ""];
+	lines.push(...renderThinkingBlocks(thinkings));
+
+	for (const text of texts) {
+		lines.push(text, "");
+	}
+
+	lines.push(...renderToolCallSummary(toolNames));
+	return lines;
+}
+
+function renderThinkingBlocks(thinkings: readonly string[]): string[] {
+	const lines: string[] = [];
+
+	for (const thinking of thinkings) {
+		lines.push("<thinking>", "", thinking, "", "</thinking>", "");
+	}
+
+	return lines;
+}
+
+function renderToolCallSummary(toolNames: readonly string[]): string[] {
+	if (toolNames.length === 0) {
+		return [];
+	}
+
+	const list = toolNames.map((name) => `\`${name}\``).join(", ");
+	return [`**Tool calls:** ${list}`, ""];
+}
+
 /**
  * Generates a human-readable markdown transcript from an array of agent messages.
  * Pure function — no I/O, no side effects.
@@ -107,52 +172,11 @@ function extractAssistantParts(content: unknown): AssistantParts {
  *
  * Unknown or malformed message shapes are silently skipped — does not throw.
  */
-// Temporary migration debt: transcript rendering supports several Pi message shapes.
-// fallow-ignore-next-line complexity
 export function generateTranscript(messages: unknown[], role: string): string {
 	const lines: string[] = [`# Session Transcript: ${role}`, ""];
 
 	for (const message of messages) {
-		if (!message || typeof message !== "object" || !("role" in message)) {
-			continue;
-		}
-
-		const msg = message as { role: unknown; content?: unknown };
-
-		if (msg.role === "user") {
-			const text = extractUserContent(msg.content);
-			if (!text.trim()) continue;
-
-			lines.push("---", "", "## User", "", text, "");
-		} else if (msg.role === "assistant") {
-			const { texts, thinkings, toolNames } = extractAssistantParts(
-				msg.content,
-			);
-
-			if (
-				texts.length === 0 &&
-				thinkings.length === 0 &&
-				toolNames.length === 0
-			) {
-				continue;
-			}
-
-			lines.push("---", "", "## Assistant", "");
-
-			for (const thinking of thinkings) {
-				lines.push("<thinking>", "", thinking, "", "</thinking>", "");
-			}
-
-			for (const text of texts) {
-				lines.push(text, "");
-			}
-
-			if (toolNames.length > 0) {
-				const list = toolNames.map((n) => `\`${n}\``).join(", ");
-				lines.push(`**Tool calls:** ${list}`, "");
-			}
-		}
-		// toolResult messages are intentionally skipped — content is too noisy
+		lines.push(...renderTranscriptMessage(message));
 	}
 
 	return lines.join("\n");

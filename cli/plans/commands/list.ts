@@ -1,9 +1,21 @@
 import type { Command } from "commander";
 import { PlanManager } from "../../../lib/plans/plan-manager.ts";
-import type { PlanStatus } from "../../../lib/plans/plan-types.ts";
+import type { PlanStatus, PlanSummary } from "../../../lib/plans/plan-types.ts";
 import { TaskManager } from "../../../lib/tasks/task-manager.ts";
+import { printCliError } from "../../shared/errors.ts";
+import type { CliOutputMode, CliParseResult } from "../../shared/output.ts";
+import {
+	getOutputMode,
+	printJson,
+	printLines,
+	renderTable,
+} from "../../shared/output.ts";
 
 const VALID_STATUSES: ReadonlySet<string> = new Set(["active", "completed"]);
+
+interface PlanListCliOptions {
+	status?: string;
+}
 
 export function registerListCommand(program: Command): void {
 	program
@@ -11,81 +23,132 @@ export function registerListCommand(program: Command): void {
 		.alias("ls")
 		.description("List all plans")
 		.option("-s, --status <status>", "Filter by status: active, completed")
-		// Temporary migration debt: plan listing mixes filtering and output modes.
-		// fallow-ignore-next-line complexity
-		.action(async (options) => {
+		.action(async (options: PlanListCliOptions) => {
 			const projectRoot = process.cwd();
 			const globalOptions = program.opts();
+			const mode = getOutputMode(globalOptions);
 
 			const planManager = new PlanManager(projectRoot);
 			const taskManager = new TaskManager(projectRoot);
+			const status = parsePlanStatusFilter(options.status);
 
-			if (options.status && !VALID_STATUSES.has(options.status)) {
-				const errorMsg = `Invalid status: ${options.status}. Must be one of: active, completed`;
-				if (globalOptions.json) {
-					console.log(JSON.stringify({ error: errorMsg }, null, 2));
-				} else {
-					console.error(errorMsg);
-				}
+			if (!status.ok) {
+				printCliError(status.error, globalOptions);
 				process.exit(1);
 			}
 
 			try {
-				const statusFilter = options.status as PlanStatus | undefined;
-				const plans = await planManager.listPlans(statusFilter);
-
-				// Get summaries with task counts
-				const summaries = await Promise.all(
-					plans.map((p) => planManager.getPlanSummary(p.slug, taskManager)),
+				const summaries = await loadPlanSummaries(
+					planManager,
+					taskManager,
+					status.value,
 				);
-
-				if (globalOptions.json) {
-					console.log(JSON.stringify(summaries, null, 2));
-				} else if (globalOptions.plain) {
-					for (const summary of summaries) {
-						if (summary) {
-							console.log(
-								`${summary.slug} | ${summary.status} | ${summary.taskCount} tasks | ${summary.title}`,
-							);
-						}
-					}
-				} else {
-					if (summaries.length === 0) {
-						console.log("No plans found");
-						return;
-					}
-
-					const slugWidth = Math.max(
-						6,
-						...summaries.map((s) => s?.slug.length ?? 0),
-					);
-					const statusWidth = 11;
-					const tasksWidth = 7;
-
-					const header = [
-						"SLUG".padEnd(slugWidth),
-						"STATUS".padEnd(statusWidth),
-						"TASKS".padEnd(tasksWidth),
-						"TITLE",
-					].join("  ");
-					console.log(header);
-
-					for (const summary of summaries) {
-						if (summary) {
-							const slug = summary.slug.padEnd(slugWidth);
-							const status = summary.status.padEnd(statusWidth);
-							const tasks = String(summary.taskCount).padEnd(tasksWidth);
-							console.log(`${slug}  ${status}  ${tasks}  ${summary.title}`);
-						}
-					}
-				}
+				printPlanSummaries(summaries, mode);
 			} catch (error) {
-				if (globalOptions.json) {
-					console.log(JSON.stringify({ error: String(error) }, null, 2));
-				} else {
-					console.error(`Error listing plans: ${error}`);
-				}
+				printCliError(String(error), globalOptions, {
+					prefix: "Error listing plans",
+				});
 				process.exit(1);
 			}
 		});
+}
+
+export function parsePlanStatusFilter(
+	status: string | undefined,
+): CliParseResult<PlanStatus | undefined> {
+	if (!status) {
+		return { ok: true, value: undefined };
+	}
+
+	if (!VALID_STATUSES.has(status)) {
+		return {
+			ok: false,
+			error: `Invalid status: ${status}. Must be one of: active, completed`,
+		};
+	}
+
+	return { ok: true, value: status as PlanStatus };
+}
+
+export async function loadPlanSummaries(
+	planManager: PlanManager,
+	taskManager: TaskManager,
+	status?: PlanStatus,
+): Promise<PlanSummary[]> {
+	const plans = await planManager.listPlans(status);
+	const summaries = await Promise.all(
+		plans.map((plan) => planManager.getPlanSummary(plan.slug, taskManager)),
+	);
+
+	return summaries.filter(isPlanSummary);
+}
+
+export function renderPlanSummaries(
+	summaries: readonly PlanSummary[],
+	mode: CliOutputMode,
+): unknown | string[] {
+	if (mode === "json") {
+		return summaries;
+	}
+
+	if (mode === "plain") {
+		return summaries.map(renderPlanSummaryRow);
+	}
+
+	if (summaries.length === 0) {
+		return ["No plans found"];
+	}
+
+	return renderPlanSummaryTable(summaries);
+}
+
+function printPlanSummaries(
+	summaries: readonly PlanSummary[],
+	mode: CliOutputMode,
+): void {
+	const rendered = renderPlanSummaries(summaries, mode);
+	if (mode === "json") {
+		printJson(rendered);
+		return;
+	}
+
+	printLines(rendered as string[]);
+}
+
+function renderPlanSummaryRow(summary: PlanSummary): string {
+	return `${summary.slug} | ${summary.status} | ${summary.taskCount} tasks | ${summary.title}`;
+}
+
+function renderPlanSummaryTable(summaries: readonly PlanSummary[]): string[] {
+	return renderTable(summaries, [
+		{
+			header: "SLUG",
+			width: (rows) =>
+				Math.max(6, ...rows.map((summary) => summary.slug.length)),
+			render: (summary) => summary.slug,
+		},
+		{
+			header: "STATUS",
+			width: () => 11,
+			render: (summary) => summary.status,
+		},
+		{
+			header: "TASKS",
+			width: () => 7,
+			render: (summary) => String(summary.taskCount),
+		},
+		{
+			header: "TITLE",
+			width: (rows) =>
+				Math.max(
+					...rows.map((summary) => summary.title.length),
+					"TITLE".length,
+				),
+			render: (summary) => summary.title,
+		},
+	]);
+}
+
+function isPlanSummary(summary: PlanSummary | null): summary is PlanSummary {
+	return summary !== null;
 }

@@ -63,25 +63,17 @@ describe("project-tools extension", () => {
 		});
 
 		test("detects fallow from package.json devDependencies", async () => {
-			await writeFile(
-				join(tmpDir, "package.json"),
-				JSON.stringify({ devDependencies: { fallow: "^1.0.0" } }),
-			);
-			const result = (await fireBeforeAgentStart(tmpDir)) as {
-				systemPrompt: string;
-			};
+			const result = await detectFallowPackage({
+				devDependencies: { fallow: "^1.0.0" },
+			});
 			expect(result.systemPrompt).toContain("**fallow**");
 			expect(result.systemPrompt).toContain("`package.json`");
 		});
 
 		test("detects fallow from package.json dependencies", async () => {
-			await writeFile(
-				join(tmpDir, "package.json"),
-				JSON.stringify({ dependencies: { fallow: "^1.0.0" } }),
-			);
-			const result = (await fireBeforeAgentStart(tmpDir)) as {
-				systemPrompt: string;
-			};
+			const result = await detectFallowPackage({
+				dependencies: { fallow: "^1.0.0" },
+			});
 			expect(result.systemPrompt).toContain("**fallow**");
 		});
 
@@ -124,10 +116,9 @@ describe("project-tools extension", () => {
 	describe("system prompt injection", () => {
 		test("appends tools block after existing system prompt content", async () => {
 			await writeFile(join(tmpDir, "fallow.toml"), "");
-			const result = (await fireBeforeAgentStart(
-				tmpDir,
-				"my base prompt",
-			)) as { systemPrompt: string };
+			const result = (await fireBeforeAgentStart(tmpDir, "my base prompt")) as {
+				systemPrompt: string;
+			};
 			expect(result.systemPrompt).toMatch(/^my base prompt/);
 			expect(result.systemPrompt).toContain("## Detected Analysis Tools");
 		});
@@ -149,3 +140,10 @@ describe("project-tools extension", () => {
 		});
 	});
 });
+
+async function detectFallowPackage(packageJson: object): Promise<{
+	systemPrompt: string;
+}> {
+	await writeFile(join(tmpDir, "package.json"), JSON.stringify(packageJson));
+	return (await fireBeforeAgentStart(tmpDir)) as { systemPrompt: string };
+}

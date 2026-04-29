@@ -35,6 +35,144 @@ function feed(profiler: ChainProfiler, events: ChainEvent[]): void {
 	for (const e of events) profiler.handleEvent(e);
 }
 
+interface SpawnedAgent {
+	role: string;
+	sessionId: string;
+}
+
+interface ToolEventOptions {
+	role?: string;
+	sessionId?: string;
+	toolName: string;
+	toolCallId: string;
+	isError?: boolean;
+}
+
+function toolStartEvent({
+	role = "worker",
+	sessionId = "sess-1",
+	toolName,
+	toolCallId,
+}: ToolEventOptions): ChainEvent {
+	return {
+		type: "agent_tool_use",
+		role,
+		sessionId,
+		event: {
+			type: "tool_execution_start",
+			sessionId,
+			toolName,
+			toolCallId,
+		},
+	};
+}
+
+function toolEndEvent({
+	role = "worker",
+	sessionId = "sess-1",
+	toolName,
+	toolCallId,
+	isError = false,
+}: ToolEventOptions): ChainEvent {
+	return {
+		type: "agent_tool_use",
+		role,
+		sessionId,
+		event: {
+			type: "tool_execution_end",
+			sessionId,
+			toolName,
+			toolCallId,
+			isError,
+		},
+	};
+}
+
+function getEntries(profiler: ChainProfiler): ProfileTraceEntry[] {
+	return (profiler as unknown as { entries: ProfileTraceEntry[] }).entries;
+}
+
+function getSpans(profiler: ChainProfiler): ToolSpan[] {
+	return (profiler as unknown as { spans: ToolSpan[] }).spans;
+}
+
+function getPendingTools(
+	profiler: ChainProfiler,
+): Parameters<typeof buildSummary>[2] {
+	return (
+		profiler as unknown as { pendingTools: Parameters<typeof buildSummary>[2] }
+	).pendingTools;
+}
+
+function buildProfilerSummary(profiler: ChainProfiler): string {
+	return buildSummary(
+		getEntries(profiler),
+		getSpans(profiler),
+		getPendingTools(profiler),
+	);
+}
+
+function expectSpawnedScopes(
+	profiler: ChainProfiler,
+	expectedScopes: readonly (string | undefined)[],
+): void {
+	const spawned = getEntries(profiler).filter(
+		(e) => e.name === "agent_spawned",
+	);
+	expect(spawned.map((entry) => entry.scope)).toEqual(expectedScopes);
+}
+
+function startParallelGroup(
+	profiler: ChainProfiler,
+	roles: string[],
+	spawned: readonly SpawnedAgent[],
+	options: { end?: boolean } = {},
+): ParallelGroupStep {
+	const step = makeParallelStep(roles);
+	const events: ChainEvent[] = [
+		{ type: "chain_start", steps: [step] },
+		{ type: "parallel_start", step, stepIndex: 0 },
+		...spawned.map(
+			(agent) => ({ type: "agent_spawned", ...agent }) as ChainEvent,
+		),
+	];
+	if (options.end) {
+		events.push({
+			type: "parallel_end",
+			step,
+			stepIndex: 0,
+			results: [],
+			success: true,
+		});
+	}
+	feed(profiler, events);
+	return step;
+}
+
+async function writeStartedProfile(outputDir: string): Promise<{
+	tracePath: string;
+	summaryPath: string;
+}> {
+	const profiler = new ChainProfiler({ outputDir });
+	profiler.handleEvent({ type: "chain_start", steps: [] });
+	return profiler.writeOutput();
+}
+
+function getSummarySection(summary: string, heading: string): string[] {
+	const lines = summary.split("\n");
+	const headingIndex = lines.indexOf(heading);
+	expect(headingIndex).toBeGreaterThanOrEqual(0);
+	const nextHeadingIndex = lines.findIndex(
+		(line, index) => index > headingIndex && line.startsWith("==="),
+	);
+	return lines
+		.slice(
+			headingIndex + 1,
+			nextHeadingIndex === -1 ? undefined : nextHeadingIndex - 1,
+		)
+		.filter((line) => line.length > 0);
+}
+
 // ============================================================================
 // Basic event collection
 // ============================================================================
@@ -44,8 +182,7 @@ describe("chain-profiler: basic event collection", () => {
 		const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
 		profiler.handleEvent({ type: "chain_start", steps: [] });
 
-		const entries = (profiler as unknown as { entries: ProfileTraceEntry[] })
-			.entries;
+		const entries = getEntries(profiler);
 		expect(entries).toHaveLength(1);
 		expect(entries[0]).toMatchObject({
 			cat: "chain",
@@ -57,8 +194,7 @@ describe("chain-profiler: basic event collection", () => {
 	test("chain_start ts is 0 (relative to itself)", () => {
 		const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
 		profiler.handleEvent({ type: "chain_start", steps: [] });
-		const entries = (profiler as unknown as { entries: ProfileTraceEntry[] })
-			.entries;
+		const entries = getEntries(profiler);
 		expect(entries[0]?.ts).toBe(0);
 	});
 
@@ -74,8 +210,7 @@ describe("chain-profiler: basic event collection", () => {
 				result: { stage, success: true, iterations: 1, durationMs: 100 },
 			},
 		]);
-		const entries = (profiler as unknown as { entries: ProfileTraceEntry[] })
-			.entries;
+		const entries = getEntries(profiler);
 		const stageEntries = entries.filter((e) => e.cat === "stage");
 		expect(stageEntries).toHaveLength(2);
 		expect(stageEntries[0]).toMatchObject({ ph: "B", name: "coordinator" });
@@ -88,8 +223,7 @@ describe("chain-profiler: basic event collection", () => {
 			{ type: "chain_start", steps: [] },
 			{ type: "error", message: "boom" },
 		]);
-		const entries = (profiler as unknown as { entries: ProfileTraceEntry[] })
-			.entries;
+		const entries = getEntries(profiler);
 		const errorEntry = entries.find((e) => e.cat === "error");
 		expect(errorEntry).toMatchObject({
 			ph: "I",
@@ -111,32 +245,14 @@ describe("chain-profiler: tool pairing", () => {
 		profiler.handleEvent({ type: "chain_start", steps: [] });
 
 		// Feed events and trust that durationMs = endTs - startTs
-		profiler.handleEvent({
-			type: "agent_tool_use",
-			role: "worker",
-			sessionId: "sess-1",
-			event: {
-				type: "tool_execution_start",
-				sessionId: "sess-1",
-				toolName: "Read",
-				toolCallId: "call-abc",
-			},
-		});
+		profiler.handleEvent(
+			toolStartEvent({ toolName: "Read", toolCallId: "call-abc" }),
+		);
+		profiler.handleEvent(
+			toolEndEvent({ toolName: "Read", toolCallId: "call-abc" }),
+		);
 
-		profiler.handleEvent({
-			type: "agent_tool_use",
-			role: "worker",
-			sessionId: "sess-1",
-			event: {
-				type: "tool_execution_end",
-				sessionId: "sess-1",
-				toolName: "Read",
-				toolCallId: "call-abc",
-				isError: false,
-			},
-		});
-
-		const spans = (profiler as unknown as { spans: ToolSpan[] }).spans;
+		const spans = getSpans(profiler);
 		expect(spans).toHaveLength(1);
 		expect(spans[0]?.toolName).toBe("Read");
 		expect(spans[0]?.toolCallId).toBe("call-abc");
@@ -152,31 +268,12 @@ describe("chain-profiler: tool pairing", () => {
 		const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
 		profiler.handleEvent({ type: "chain_start", steps: [] });
 
-		profiler.handleEvent({
-			type: "agent_tool_use",
-			role: "worker",
-			sessionId: "sess-1",
-			event: {
-				type: "tool_execution_start",
-				sessionId: "sess-1",
-				toolName: "Bash",
-				toolCallId: "c1",
-			},
-		});
-		profiler.handleEvent({
-			type: "agent_tool_use",
-			role: "worker",
-			sessionId: "sess-1",
-			event: {
-				type: "tool_execution_end",
-				sessionId: "sess-1",
-				toolName: "Bash",
-				toolCallId: "c1",
-				isError: false,
-			},
-		});
+		profiler.handleEvent(
+			toolStartEvent({ toolName: "Bash", toolCallId: "c1" }),
+		);
+		profiler.handleEvent(toolEndEvent({ toolName: "Bash", toolCallId: "c1" }));
 
-		const spans = (profiler as unknown as { spans: ToolSpan[] }).spans;
+		const spans = getSpans(profiler);
 		const s0 = spans[0];
 		expect(s0).toBeDefined();
 		if (s0) expect(s0.durationMs).toBe(s0.endTs - s0.startTs);
@@ -188,34 +285,15 @@ describe("chain-profiler: tool pairing", () => {
 
 		const toolIds = ["call-1", "call-2", "call-3"];
 		for (const id of toolIds) {
-			profiler.handleEvent({
-				type: "agent_tool_use",
-				role: "worker",
-				sessionId: "sess-1",
-				event: {
-					type: "tool_execution_start",
-					sessionId: "sess-1",
-					toolName: "Read",
-					toolCallId: id,
-				},
-			});
+			profiler.handleEvent(
+				toolStartEvent({ toolName: "Read", toolCallId: id }),
+			);
 		}
 		for (const id of toolIds) {
-			profiler.handleEvent({
-				type: "agent_tool_use",
-				role: "worker",
-				sessionId: "sess-1",
-				event: {
-					type: "tool_execution_end",
-					sessionId: "sess-1",
-					toolName: "Read",
-					toolCallId: id,
-					isError: false,
-				},
-			});
+			profiler.handleEvent(toolEndEvent({ toolName: "Read", toolCallId: id }));
 		}
 
-		const spans = (profiler as unknown as { spans: ToolSpan[] }).spans;
+		const spans = getSpans(profiler);
 		expect(spans).toHaveLength(3);
 		for (const span of spans) {
 			expect(span.durationMs).toBe(span.endTs - span.startTs);
@@ -232,21 +310,15 @@ describe("chain-profiler: orphaned tool calls", () => {
 		const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
 		profiler.handleEvent({ type: "chain_start", steps: [] });
 
-		profiler.handleEvent({
-			type: "agent_tool_use",
-			role: "worker",
-			sessionId: "sess-x",
-			event: {
-				type: "tool_execution_start",
+		profiler.handleEvent(
+			toolStartEvent({
 				sessionId: "sess-x",
 				toolName: "Bash",
 				toolCallId: "orphan-1",
-			},
-		});
+			}),
+		);
 
-		const pending = (
-			profiler as unknown as { pendingTools: Map<string, unknown> }
-		).pendingTools;
+		const pending = getPendingTools(profiler);
 		expect(pending.size).toBe(1);
 		expect(pending.has("orphan-1")).toBe(true);
 	});
@@ -254,35 +326,15 @@ describe("chain-profiler: orphaned tool calls", () => {
 	test("orphaned tools appear in buildSummary output", () => {
 		const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
 		profiler.handleEvent({ type: "chain_start", steps: [] });
-		profiler.handleEvent({
-			type: "agent_tool_use",
-			role: "worker",
-			sessionId: "sess-x",
-			event: {
-				type: "tool_execution_start",
+		profiler.handleEvent(
+			toolStartEvent({
 				sessionId: "sess-x",
 				toolName: "Write",
 				toolCallId: "orphan-2",
-			},
-		});
-
-		const entries = (profiler as unknown as { entries: ProfileTraceEntry[] })
-			.entries;
-		const spans = (profiler as unknown as { spans: ToolSpan[] }).spans;
-		const pending = (
-			profiler as unknown as { pendingTools: Map<string, unknown> }
-		).pendingTools;
-
-		const summary = buildSummary(
-			entries,
-			spans,
-			pending as Map<
-				string,
-				Parameters<typeof buildSummary>[2] extends Map<string, infer V>
-					? V
-					: never
-			>,
+			}),
 		);
+
+		const summary = buildProfilerSummary(profiler);
 		expect(summary).toContain("orphan-2");
 		expect(summary).toContain("Write");
 	});
@@ -290,33 +342,14 @@ describe("chain-profiler: orphaned tool calls", () => {
 	test("completed tool calls do not remain in pendingTools", () => {
 		const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
 		profiler.handleEvent({ type: "chain_start", steps: [] });
-		profiler.handleEvent({
-			type: "agent_tool_use",
-			role: "worker",
-			sessionId: "sess-1",
-			event: {
-				type: "tool_execution_start",
-				sessionId: "sess-1",
-				toolName: "Read",
-				toolCallId: "done-1",
-			},
-		});
-		profiler.handleEvent({
-			type: "agent_tool_use",
-			role: "worker",
-			sessionId: "sess-1",
-			event: {
-				type: "tool_execution_end",
-				sessionId: "sess-1",
-				toolName: "Read",
-				toolCallId: "done-1",
-				isError: false,
-			},
-		});
+		profiler.handleEvent(
+			toolStartEvent({ toolName: "Read", toolCallId: "done-1" }),
+		);
+		profiler.handleEvent(
+			toolEndEvent({ toolName: "Read", toolCallId: "done-1" }),
+		);
 
-		const pending = (
-			profiler as unknown as { pendingTools: Map<string, unknown> }
-		).pendingTools;
+		const pending = getPendingTools(profiler);
 		expect(pending.size).toBe(0);
 	});
 });
@@ -328,42 +361,33 @@ describe("chain-profiler: orphaned tool calls", () => {
 describe("chain-profiler: parallel fan-out scope tags", () => {
 	test("parallel members with same role get sequential scope tags", () => {
 		const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
-		const step = makeParallelStep(["reviewer", "reviewer", "reviewer"]);
+		startParallelGroup(
+			profiler,
+			["reviewer", "reviewer", "reviewer"],
+			[
+				{ role: "reviewer", sessionId: "sess-r0" },
+				{ role: "reviewer", sessionId: "sess-r1" },
+				{ role: "reviewer", sessionId: "sess-r2" },
+			],
+			{ end: true },
+		);
 
-		feed(profiler, [
-			{ type: "chain_start", steps: [step] },
-			{ type: "parallel_start", step, stepIndex: 0 },
-			{ type: "agent_spawned", role: "reviewer", sessionId: "sess-r0" },
-			{ type: "agent_spawned", role: "reviewer", sessionId: "sess-r1" },
-			{ type: "agent_spawned", role: "reviewer", sessionId: "sess-r2" },
-			{ type: "parallel_end", step, stepIndex: 0, results: [], success: true },
-		]);
-
-		const entries = (profiler as unknown as { entries: ProfileTraceEntry[] })
-			.entries;
-		const spawned = entries.filter((e) => e.name === "agent_spawned");
-		expect(spawned[0]?.scope).toBe("reviewer.0");
-		expect(spawned[1]?.scope).toBe("reviewer.1");
-		expect(spawned[2]?.scope).toBe("reviewer.2");
+		expectSpawnedScopes(profiler, ["reviewer.0", "reviewer.1", "reviewer.2"]);
 	});
 
 	test("different roles in a group each get their own indexing", () => {
 		const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
-		const step = makeParallelStep(["reviewer", "fixer"]);
+		startParallelGroup(
+			profiler,
+			["reviewer", "fixer"],
+			[
+				{ role: "reviewer", sessionId: "sess-r0" },
+				{ role: "fixer", sessionId: "sess-f0" },
+			],
+			{ end: true },
+		);
 
-		feed(profiler, [
-			{ type: "chain_start", steps: [step] },
-			{ type: "parallel_start", step, stepIndex: 0 },
-			{ type: "agent_spawned", role: "reviewer", sessionId: "sess-r0" },
-			{ type: "agent_spawned", role: "fixer", sessionId: "sess-f0" },
-			{ type: "parallel_end", step, stepIndex: 0, results: [], success: true },
-		]);
-
-		const entries = (profiler as unknown as { entries: ProfileTraceEntry[] })
-			.entries;
-		const spawned = entries.filter((e) => e.name === "agent_spawned");
-		expect(spawned[0]?.scope).toBe("reviewer.0");
-		expect(spawned[1]?.scope).toBe("fixer.0");
+		expectSpawnedScopes(profiler, ["reviewer.0", "fixer.0"]);
 	});
 
 	test("agent_spawned outside parallel group has no scope", () => {
@@ -375,39 +399,27 @@ describe("chain-profiler: parallel fan-out scope tags", () => {
 			{ type: "agent_spawned", role: "coordinator", sessionId: "sess-c1" },
 		]);
 
-		const entries = (profiler as unknown as { entries: ProfileTraceEntry[] })
-			.entries;
-		const spawned = entries.find((e) => e.name === "agent_spawned");
+		const spawned = getEntries(profiler).find(
+			(e) => e.name === "agent_spawned",
+		);
 		expect(spawned?.scope).toBeUndefined();
 	});
 
 	test("parallel fan-out with two reviewers produces reviewer.0 and reviewer.1 in trace and summary", () => {
 		const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
-		const step = makeParallelStep(["reviewer", "reviewer"]);
-
-		feed(profiler, [
-			{ type: "chain_start", steps: [step] },
-			{ type: "parallel_start", step, stepIndex: 0 },
-			{ type: "agent_spawned", role: "reviewer", sessionId: "sess-r0" },
-			{ type: "agent_spawned", role: "reviewer", sessionId: "sess-r1" },
-			{ type: "parallel_end", step, stepIndex: 0, results: [], success: true },
-		]);
-
-		const entries = (profiler as unknown as { entries: ProfileTraceEntry[] })
-			.entries;
-		const spawned = entries.filter((e) => e.name === "agent_spawned");
-		expect(spawned[0]?.scope).toBe("reviewer.0");
-		expect(spawned[1]?.scope).toBe("reviewer.1");
-
-		const spans = (profiler as unknown as { spans: ToolSpan[] }).spans;
-		const pending = (
-			profiler as unknown as { pendingTools: Map<string, unknown> }
-		).pendingTools;
-		const summary = buildSummary(
-			entries,
-			spans,
-			pending as Parameters<typeof buildSummary>[2],
+		startParallelGroup(
+			profiler,
+			["reviewer", "reviewer"],
+			[
+				{ role: "reviewer", sessionId: "sess-r0" },
+				{ role: "reviewer", sessionId: "sess-r1" },
+			],
+			{ end: true },
 		);
+
+		expectSpawnedScopes(profiler, ["reviewer.0", "reviewer.1"]);
+
+		const summary = buildProfilerSummary(profiler);
 		expect(summary).toContain("reviewer.0");
 		expect(summary).toContain("reviewer.1");
 		expect(summary).toContain("Parallel Group Breakdown");
@@ -415,40 +427,31 @@ describe("chain-profiler: parallel fan-out scope tags", () => {
 
 	test("tool events from parallel same-role sessions carry distinct scope tags", () => {
 		const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
-		const step = makeParallelStep(["reviewer", "reviewer"]);
+		startParallelGroup(
+			profiler,
+			["reviewer", "reviewer"],
+			[{ role: "reviewer", sessionId: "sess-r0" }],
+		);
 
 		feed(profiler, [
-			{ type: "chain_start", steps: [step] },
-			{ type: "parallel_start", step, stepIndex: 0 },
-			{ type: "agent_spawned", role: "reviewer", sessionId: "sess-r0" },
-			{
-				type: "agent_tool_use",
+			toolStartEvent({
 				role: "reviewer",
 				sessionId: "sess-r0",
-				event: {
-					type: "tool_execution_start",
-					sessionId: "sess-r0",
-					toolName: "Read",
-					toolCallId: "t0",
-				},
-			},
+				toolName: "Read",
+				toolCallId: "t0",
+			}),
 			{ type: "agent_spawned", role: "reviewer", sessionId: "sess-r1" },
-			{
-				type: "agent_tool_use",
+			toolStartEvent({
 				role: "reviewer",
 				sessionId: "sess-r1",
-				event: {
-					type: "tool_execution_start",
-					sessionId: "sess-r1",
-					toolName: "Read",
-					toolCallId: "t1",
-				},
-			},
+				toolName: "Read",
+				toolCallId: "t1",
+			}),
 		]);
 
-		const entries = (profiler as unknown as { entries: ProfileTraceEntry[] })
-			.entries;
-		const toolBegins = entries.filter((e) => e.cat === "tool" && e.ph === "B");
+		const toolBegins = getEntries(profiler).filter(
+			(e) => e.cat === "tool" && e.ph === "B",
+		);
 		expect(toolBegins).toHaveLength(2);
 		expect(toolBegins[0]?.scope).toBe("reviewer.0");
 		expect(toolBegins[1]?.scope).toBe("reviewer.1");
@@ -460,13 +463,11 @@ describe("chain-profiler: parallel fan-out scope tags", () => {
 		Date.now = () => now;
 		try {
 			const profiler = new ChainProfiler({ outputDir: "/tmp/test" });
-			const step = makeParallelStep(["reviewer", "reviewer"]);
-
-			feed(profiler, [
-				{ type: "chain_start", steps: [step] },
-				{ type: "parallel_start", step, stepIndex: 0 },
-				{ type: "agent_spawned", role: "reviewer", sessionId: "sess-r0" },
-			]);
+			const step = startParallelGroup(
+				profiler,
+				["reviewer", "reviewer"],
+				[{ role: "reviewer", sessionId: "sess-r0" }],
+			);
 			now += 100;
 			profiler.handleEvent({
 				type: "agent_spawned",
@@ -491,17 +492,7 @@ describe("chain-profiler: parallel fan-out scope tags", () => {
 				},
 			]);
 
-			const entries = (profiler as unknown as { entries: ProfileTraceEntry[] })
-				.entries;
-			const spans = (profiler as unknown as { spans: ToolSpan[] }).spans;
-			const pending = (
-				profiler as unknown as { pendingTools: Map<string, unknown> }
-			).pendingTools;
-			const summary = buildSummary(
-				entries,
-				spans,
-				pending as Parameters<typeof buildSummary>[2],
-			);
+			const summary = buildProfilerSummary(profiler);
 
 			expect(summary).toContain("reviewer.0: 300ms");
 			expect(summary).toContain("reviewer.1: 300ms");
@@ -531,11 +522,7 @@ describe("chain-profiler: writeOutput", () => {
 
 	test("writeOutput creates both trace.jsonl and summary.txt files", async () => {
 		const outputDir = join(tmpDir, "profiles");
-		const profiler = new ChainProfiler({ outputDir });
-
-		profiler.handleEvent({ type: "chain_start", steps: [] });
-
-		const { tracePath, summaryPath } = await profiler.writeOutput();
+		const { tracePath, summaryPath } = await writeStartedProfile(outputDir);
 
 		expect(tracePath).toContain(".trace.jsonl");
 		expect(summaryPath).toContain(".summary.txt");
@@ -549,10 +536,7 @@ describe("chain-profiler: writeOutput", () => {
 
 	test("writeOutput creates outputDir with mkdir recursive", async () => {
 		const outputDir = join(tmpDir, "deep", "nested", "dir");
-		const profiler = new ChainProfiler({ outputDir });
-		profiler.handleEvent({ type: "chain_start", steps: [] });
-
-		await expect(profiler.writeOutput()).resolves.toMatchObject({
+		await expect(writeStartedProfile(outputDir)).resolves.toMatchObject({
 			tracePath: expect.any(String),
 			summaryPath: expect.any(String),
 		});
@@ -588,10 +572,7 @@ describe("chain-profiler: writeOutput", () => {
 
 	test("writeOutput returns correct paths and filename pattern", async () => {
 		const outputDir = join(tmpDir, "profiles");
-		const profiler = new ChainProfiler({ outputDir });
-		profiler.handleEvent({ type: "chain_start", steps: [] });
-
-		const { tracePath, summaryPath } = await profiler.writeOutput();
+		const { tracePath, summaryPath } = await writeStartedProfile(outputDir);
 
 		expect(tracePath).toMatch(/profile-\d{8}-\d{6}\.trace\.jsonl$/);
 		expect(summaryPath).toMatch(/profile-\d{8}-\d{6}\.summary\.txt$/);
@@ -627,6 +608,55 @@ describe("chain-profiler: buildSummary content sections", () => {
 		expect(summary).toContain("Slowest Tools");
 		expect(summary).toContain("Per-Agent Tool Breakdown");
 		expect(summary).toContain("Orphaned / Incomplete Tool Calls");
+	});
+
+	test("shows stage rows with stage names and computed durations", () => {
+		const entries: ProfileTraceEntry[] = [
+			{ ts: 0, cat: "chain", name: "chain_start", ph: "B" },
+			{
+				ts: 100,
+				cat: "stage",
+				name: "planner",
+				ph: "B",
+				data: { stageIndex: 0 },
+			},
+			{
+				ts: 350,
+				cat: "stage",
+				name: "planner",
+				ph: "E",
+				data: { success: true, durationMs: 250 },
+			},
+			{
+				ts: 400,
+				cat: "stage",
+				name: "worker",
+				ph: "B",
+				data: { stageIndex: 1 },
+			},
+			{
+				ts: 1500,
+				cat: "stage",
+				name: "worker",
+				ph: "E",
+				data: { success: true, durationMs: 1100 },
+			},
+		];
+
+		const summary = buildSummary(entries, [], new Map());
+
+		expect(getSummarySection(summary, "=== Stage Breakdown ===")).toEqual([
+			"  planner: 250ms",
+			"  worker: 1.10s",
+		]);
+	});
+
+	test("shows no-stage placeholder when no stage entries exist", () => {
+		const summary = buildSummary([], [], new Map());
+
+		expect(getSummarySection(summary, "=== Stage Breakdown ===")).toEqual([
+			"  (no stages recorded)",
+		]);
 	});
 
 	test("shows total wall-clock when chain_end is present", () => {
@@ -666,6 +696,51 @@ describe("chain-profiler: buildSummary content sections", () => {
 		expect(summary).not.toContain("Tool4");
 	});
 
+	test("marks errored tool spans in slowest tools", () => {
+		const spans: ToolSpan[] = [
+			{
+				toolName: "Read",
+				toolCallId: "c1",
+				role: "worker",
+				sessionId: "sess-1",
+				startTs: 0,
+				endTs: 100,
+				durationMs: 100,
+				isError: false,
+			},
+			{
+				toolName: "Bash",
+				toolCallId: "c2",
+				role: "worker",
+				sessionId: "sess-1",
+				startTs: 0,
+				endTs: 250,
+				durationMs: 250,
+				isError: true,
+			},
+		];
+
+		const summary = buildSummary([], spans, new Map());
+
+		expect(
+			getSummarySection(summary, "=== Slowest Tools (top 20) ==="),
+		).toEqual([
+			"  Bash [error]  250ms  (worker, sess-1)",
+			"  Read  100ms  (worker, sess-1)",
+		]);
+	});
+
+	test("shows empty tool placeholders in slowest and per-agent sections", () => {
+		const summary = buildSummary([], [], new Map());
+
+		expect(
+			getSummarySection(summary, "=== Slowest Tools (top 20) ==="),
+		).toEqual(["  (no tool calls recorded)"]);
+		expect(
+			getSummarySection(summary, "=== Per-Agent Tool Breakdown ==="),
+		).toEqual(["  (no tool calls recorded)"]);
+	});
+
 	test("orphaned tools section lists incomplete calls", () => {
 		const pending = new Map([
 			[
@@ -676,6 +751,28 @@ describe("chain-profiler: buildSummary content sections", () => {
 		const summary = buildSummary([], [], pending);
 		expect(summary).toContain("call-orphan");
 		expect(summary).toContain("Bash");
+	});
+
+	test("pending tool lines include call id, role, session id, and start timestamp", () => {
+		const pending = new Map([
+			[
+				"call-pending",
+				{
+					startTs: 750,
+					toolName: "Write",
+					role: "coordinator",
+					sessionId: "sess-c1",
+				},
+			],
+		]);
+
+		const summary = buildSummary([], [], pending);
+
+		expect(
+			getSummarySection(summary, "=== Orphaned / Incomplete Tool Calls ==="),
+		).toEqual([
+			"  Write  callId=call-pending  role=coordinator  sessionId=sess-c1  startTs=750ms",
+		]);
 	});
 
 	test("per-agent breakdown aggregates by role", () => {

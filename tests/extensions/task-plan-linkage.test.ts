@@ -8,10 +8,10 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 import { validatePlanLabels } from "../../domains/shared/extensions/tasks/index.ts";
-import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import type { Task } from "../../lib/tasks/task-types.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import { createMockPi, type MockPi } from "../helpers/mocks/index.ts";
+import { createInitializedTaskManager } from "../helpers/tasks.ts";
 
 // ---------------------------------------------------------------------------
 // Result helpers
@@ -66,8 +66,7 @@ describe("task_create plan parameter (integration)", () => {
 	let pi: MockPi;
 
 	beforeEach(async () => {
-		const manager = new TaskManager(tmp.path);
-		await manager.init();
+		await createInitializedTaskManager(tmp.path, "TASK");
 		pi = await setupExtension(tmp.path);
 	});
 
@@ -155,8 +154,7 @@ describe("task_edit plan label validation (integration)", () => {
 	let pi: MockPi;
 
 	beforeEach(async () => {
-		const manager = new TaskManager(tmp.path);
-		await manager.init();
+		await createInitializedTaskManager(tmp.path, "TASK");
 		pi = await setupExtension(tmp.path);
 	});
 

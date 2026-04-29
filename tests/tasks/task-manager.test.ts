@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskManager } from "../../lib/tasks/task-manager.js";
 import type { ForgeTasksConfig } from "../../lib/tasks/task-types.js";
+import { createTaskFixture } from "../helpers/tasks.ts";
 
 describe("TaskManager", () => {
 	let tempDir: string;
@@ -35,11 +36,7 @@ describe("TaskManager", () => {
 			const tasksDir = join(tempDir, "missions", "tasks");
 			expect(existsSync(missionsDir)).toBe(true);
 			expect(existsSync(tasksDir)).toBe(true);
-			expect(
-				await access(join(tempDir, "missions", "tasks", "config.json"))
-					.then(() => true)
-					.catch(() => false),
-			).toBe(true);
+			await expectTaskConfigExists(tempDir);
 		});
 
 		it("should merge provided config with defaults", async () => {
@@ -342,10 +339,7 @@ describe("TaskManager", () => {
 		});
 
 		it("should filter by status", async () => {
-			await manager.init();
-			await manager.createTask({ title: "Task 1" });
-			await manager.updateTask("TASK-001", { status: "In Progress" });
-			await manager.createTask({ title: "Task 2" });
+			await createTasksWithInProgressFirst(manager);
 
 			const inProgressTasks = await manager.listTasks({
 				status: "In Progress",
@@ -379,6 +373,35 @@ describe("TaskManager", () => {
 			const highPriorityTasks = await manager.listTasks({ priority: "high" });
 
 			expect(highPriorityTasks.length).toBe(2);
+		});
+
+		it("should filter by multiple priorities", async () => {
+			await manager.init();
+			await createTaskFixture(manager, { title: "Task 1", priority: "high" });
+			await createTaskFixture(manager, { title: "Task 2", priority: "medium" });
+			await createTaskFixture(manager, { title: "Task 3", priority: "low" });
+
+			const tasks = await manager.listTasks({ priority: ["high", "low"] });
+
+			expect(tasks.map((task) => task.id)).toEqual(["TASK-001", "TASK-003"]);
+		});
+
+		it("should exclude tasks without priority when filtering by priority", async () => {
+			await manager.init();
+			await createTaskFixture(manager, { title: "Task 1", priority: "high" });
+			await createTaskFixture(manager, { title: "Task 2" });
+			await createTaskFixture(manager, { title: "Task 3", priority: "low" });
+
+			const highPriorityTasks = await manager.listTasks({ priority: "high" });
+			const multiplePriorityTasks = await manager.listTasks({
+				priority: ["high", "low"],
+			});
+
+			expect(highPriorityTasks.map((task) => task.id)).toEqual(["TASK-001"]);
+			expect(multiplePriorityTasks.map((task) => task.id)).toEqual([
+				"TASK-001",
+				"TASK-003",
+			]);
 		});
 
 		it("should filter by assignee", async () => {
@@ -527,12 +550,7 @@ describe("TaskManager", () => {
 
 			expect(task.id).toBe("TASK-001");
 
-			// Verify config was created
-			expect(
-				await access(join(tempDir, "missions", "tasks", "config.json"))
-					.then(() => true)
-					.catch(() => false),
-			).toBe(true);
+			await expectTaskConfigExists(tempDir);
 		});
 
 		it("should load existing config on first operation", async () => {
@@ -647,3 +665,20 @@ describe("TaskManager", () => {
 		});
 	});
 });
+
+async function expectTaskConfigExists(projectRoot: string): Promise<void> {
+	await expect(
+		access(join(projectRoot, "missions", "tasks", "config.json"))
+			.then(() => true)
+			.catch(() => false),
+	).resolves.toBe(true);
+}
+
+async function createTasksWithInProgressFirst(
+	manager: TaskManager,
+): Promise<void> {
+	await manager.init();
+	await manager.createTask({ title: "Task 1" });
+	await manager.updateTask("TASK-001", { status: "In Progress" });
+	await manager.createTask({ title: "Task 2" });
+}

@@ -1,37 +1,21 @@
 import type { Command } from "commander";
-import { TaskManager } from "../../../lib/tasks/task-manager.js";
-import type {
-	TaskListFilter,
-	TaskPriority,
-	TaskStatus,
-} from "../../../lib/tasks/task-types.js";
+import { TaskManager } from "../../../lib/tasks/task-manager.ts";
+import type { Task, TaskListFilter } from "../../../lib/tasks/task-types.ts";
+import { printCliError } from "../../shared/errors.ts";
+import type { CliOutputMode, CliParseResult } from "../../shared/output.ts";
+import { getOutputMode, printJson, printLines } from "../../shared/output.ts";
+import {
+	parseTaskFilterOptions,
+	renderTaskSummaryRow,
+	renderTaskSummaryTable,
+} from "./shared.ts";
 
-/**
- * Map CLI status shorthand to TaskStatus
- */
-function normalizeStatus(status: string): TaskStatus | null {
-	const statusMap: Record<string, TaskStatus> = {
-		todo: "To Do",
-		"to-do": "To Do",
-		"to do": "To Do",
-		"in-progress": "In Progress",
-		inprogress: "In Progress",
-		"in progress": "In Progress",
-		done: "Done",
-		blocked: "Blocked",
-	};
-	return statusMap[status.toLowerCase()] ?? null;
-}
-
-/**
- * Validate and normalize priority value
- */
-function normalizePriority(priority: string): TaskPriority | null {
-	const validPriorities: TaskPriority[] = ["high", "medium", "low"];
-	const normalized = priority.toLowerCase();
-	return validPriorities.includes(normalized as TaskPriority)
-		? (normalized as TaskPriority)
-		: null;
+interface TaskListCliOptions {
+	status?: string;
+	priority?: string;
+	assignee?: string;
+	label?: string;
+	ready?: boolean;
 }
 
 export function registerListCommand(program: Command): void {
@@ -50,108 +34,84 @@ export function registerListCommand(program: Command): void {
 		.option("-a, --assignee <name>", "Filter by assignee")
 		.option("-l, --label <label>", "Filter by label")
 		.option("--ready", "Show only tasks with no dependencies")
-		// Temporary migration debt: task listing owns filtering and presentation.
-		// fallow-ignore-next-line complexity
-		.action(async (options) => {
+		.action(async (options: TaskListCliOptions) => {
 			const projectRoot = process.cwd();
 			const globalOptions = program.opts();
+			const mode = getOutputMode(globalOptions);
 
 			const manager = new TaskManager(projectRoot);
+			const filter = parseTaskListFilter(options);
 
-			// Build the filter object
-			const filter: TaskListFilter = {};
-
-			if (options.status) {
-				const normalizedStatus = normalizeStatus(options.status);
-				if (!normalizedStatus) {
-					const errorMsg = `Invalid status: ${options.status}. Must be one of: todo, in-progress, done, blocked`;
-					if (globalOptions.json) {
-						console.log(JSON.stringify({ error: errorMsg }, null, 2));
-					} else {
-						console.error(errorMsg);
-					}
-					process.exit(1);
-				}
-				filter.status = normalizedStatus;
-			}
-
-			if (options.priority) {
-				const normalizedPriority = normalizePriority(options.priority);
-				if (!normalizedPriority) {
-					const errorMsg = `Invalid priority: ${options.priority}. Must be one of: high, medium, low`;
-					if (globalOptions.json) {
-						console.log(JSON.stringify({ error: errorMsg }, null, 2));
-					} else {
-						console.error(errorMsg);
-					}
-					process.exit(1);
-				}
-				filter.priority = normalizedPriority;
-			}
-
-			if (options.assignee) {
-				filter.assignee = options.assignee;
-			}
-
-			if (options.label) {
-				filter.label = options.label;
-			}
-
-			if (options.ready) {
-				filter.hasNoDependencies = true;
+			if (!filter.ok) {
+				printCliError(filter.error, globalOptions);
+				process.exit(1);
 			}
 
 			try {
-				const tasks = await manager.listTasks(filter);
-
-				// Output based on format
-				if (globalOptions.json) {
-					console.log(JSON.stringify(tasks, null, 2));
-				} else if (globalOptions.plain) {
-					for (const task of tasks) {
-						console.log(
-							`${task.id} | ${task.status} | ${task.priority || "-"} | ${task.title}`,
-						);
-					}
-				} else {
-					// Table format
-					if (tasks.length === 0) {
-						console.log("No tasks found");
-						return;
-					}
-
-					// Calculate column widths dynamically
-					const idWidth = Math.max(8, ...tasks.map((t) => t.id.length));
-					const statusWidth = Math.max(
-						11,
-						...tasks.map((t) => t.status.length),
-					);
-					const priorityWidth = 9;
-
-					// Print header
-					const header = [
-						"ID".padEnd(idWidth),
-						"STATUS".padEnd(statusWidth),
-						"PRIORITY".padEnd(priorityWidth),
-						"TITLE",
-					].join("  ");
-					console.log(header);
-
-					// Print tasks
-					for (const task of tasks) {
-						const id = task.id.padEnd(idWidth);
-						const status = task.status.padEnd(statusWidth);
-						const priority = (task.priority || "-").padEnd(priorityWidth);
-						console.log(`${id}  ${status}  ${priority}  ${task.title}`);
-					}
-				}
+				const tasks = await manager.listTasks(filter.value);
+				printTaskList(tasks, mode);
 			} catch (error) {
-				if (globalOptions.json) {
-					console.log(JSON.stringify({ error: String(error) }, null, 2));
-				} else {
-					console.error(`Error listing tasks: ${error}`);
-				}
+				printCliError(String(error), globalOptions, {
+					prefix: "Error listing tasks",
+				});
 				process.exit(1);
 			}
 		});
+}
+
+export function parseTaskListFilter(
+	options: TaskListCliOptions,
+): CliParseResult<TaskListFilter> {
+	const parsed = parseTaskFilterOptions(options);
+	if (!parsed.ok) {
+		return parsed;
+	}
+	const filter = parsed.value;
+
+	if (options.assignee) {
+		filter.assignee = options.assignee;
+	}
+
+	if (options.label) {
+		filter.label = options.label;
+	}
+
+	if (options.ready) {
+		filter.hasNoDependencies = true;
+	}
+
+	return { ok: true, value: filter };
+}
+
+export function renderTaskList(
+	tasks: readonly Task[],
+	mode: CliOutputMode,
+): unknown | string[] {
+	if (mode === "json") {
+		return tasks;
+	}
+
+	if (mode === "plain") {
+		return tasks.map(renderTaskRow);
+	}
+
+	if (tasks.length === 0) {
+		return ["No tasks found"];
+	}
+
+	return renderTaskSummaryTable(tasks);
+}
+
+export function renderTaskRow(task: Task): string {
+	return renderTaskSummaryRow(task);
+}
+
+function printTaskList(tasks: readonly Task[], mode: CliOutputMode): void {
+	const rendered = renderTaskList(tasks, mode);
+	if (mode === "json") {
+		printJson(rendered);
+		return;
+	}
+
+	printLines(rendered as string[]);
 }

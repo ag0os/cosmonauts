@@ -4,10 +4,12 @@
 
 import { describe, expect, test } from "vitest";
 import {
+	createChainEventLogger,
 	formatChainEvent,
 	formatDuration,
 } from "../../cli/chain-event-logger.ts";
 import type { ChainEvent } from "../../lib/orchestration/types.ts";
+import { captureCliOutput } from "../helpers/cli.ts";
 
 describe("formatDuration", () => {
 	test("formats milliseconds under 1 second", () => {
@@ -201,6 +203,29 @@ describe("formatChainEvent", () => {
 		);
 	});
 
+	test("formats stage_stats event", () => {
+		const event: ChainEvent = {
+			type: "stage_stats",
+			stage: { name: "planner", loop: false },
+			stats: {
+				tokens: {
+					input: 100,
+					output: 50,
+					cacheRead: 25,
+					cacheWrite: 10,
+					total: 185,
+				},
+				cost: 0.123456,
+				durationMs: 2000,
+				turns: 2,
+				toolCalls: 1,
+			},
+		};
+		expect(formatChainEvent(event)).toBe(
+			"[planner] Stats: $0.1235, 185 tokens",
+		);
+	});
+
 	test("formats agent_spawned event", () => {
 		const event: ChainEvent = {
 			type: "agent_spawned",
@@ -223,6 +248,52 @@ describe("formatChainEvent", () => {
 		);
 	});
 
+	test("formats agent_turn event", () => {
+		const event: ChainEvent = {
+			type: "agent_turn",
+			role: "worker",
+			sessionId: "session-abc123",
+			event: {
+				type: "turn_start",
+				sessionId: "session-abc123",
+			},
+		};
+		expect(formatChainEvent(event)).toBe("[worker] Turn event: turn_start");
+	});
+
+	test("formats agent_tool_use event with tool name", () => {
+		const event: ChainEvent = {
+			type: "agent_tool_use",
+			role: "worker",
+			sessionId: "session-abc123",
+			event: {
+				type: "tool_execution_start",
+				sessionId: "session-abc123",
+				toolName: "task_view",
+				toolCallId: "tool-call-1",
+			},
+		};
+		expect(formatChainEvent(event)).toBe(
+			"[worker] Tool event: tool_execution_start (task_view)",
+		);
+	});
+
+	test("formats agent_tool_use event without tool name", () => {
+		const event: ChainEvent = {
+			type: "agent_tool_use",
+			role: "worker",
+			sessionId: "session-abc123",
+			event: {
+				type: "auto_compaction_start",
+				sessionId: "session-abc123",
+				reason: "threshold",
+			},
+		};
+		expect(formatChainEvent(event)).toBe(
+			"[worker] Tool event: auto_compaction_start",
+		);
+	});
+
 	test("formats error event with stage", () => {
 		const event: ChainEvent = {
 			type: "error",
@@ -240,5 +311,51 @@ describe("formatChainEvent", () => {
 			message: "chain aborted",
 		};
 		expect(formatChainEvent(event)).toBe("Error: chain aborted");
+	});
+
+	test("formats spawn_completion success event", () => {
+		const event: ChainEvent = {
+			type: "spawn_completion",
+			spawnId: "spawn-1",
+			role: "worker",
+			outcome: "success",
+			summary: "implemented task",
+		};
+		expect(formatChainEvent(event)).toBe(
+			"[worker] Spawn spawn-1 Completed: implemented task",
+		);
+	});
+
+	test("formats spawn_completion failure event", () => {
+		const event: ChainEvent = {
+			type: "spawn_completion",
+			spawnId: "spawn-2",
+			role: "reviewer",
+			outcome: "failure",
+			summary: "tests failed",
+		};
+		expect(formatChainEvent(event)).toBe(
+			"[reviewer] Spawn spawn-2 Failed: tests failed",
+		);
+	});
+});
+
+describe("createChainEventLogger", () => {
+	test("writes one formatted event line to stderr", () => {
+		const output = captureCliOutput();
+		try {
+			const logger = createChainEventLogger();
+
+			logger({
+				type: "stage_start",
+				stage: { name: "planner", loop: false },
+				stageIndex: 0,
+			});
+
+			expect(output.stdout()).toBe("");
+			expect(output.stderr()).toBe("[planner] Starting...\n");
+		} finally {
+			output.restore();
+		}
 	});
 });

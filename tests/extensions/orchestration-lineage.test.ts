@@ -7,8 +7,6 @@
  *   - do not write any files when no plan context is registered (AC#3)
  */
 
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
 	afterEach,
 	beforeAll,
@@ -19,10 +17,14 @@ import {
 	vi,
 } from "vitest";
 import type { AgentRegistry } from "../../lib/agents/index.ts";
-import { createRegistryFromDomains } from "../../lib/agents/index.ts";
-import { loadDomainsFromSources } from "../../lib/domains/index.ts";
-import { DomainRegistry } from "../../lib/domains/registry.ts";
+import type { DomainRegistry } from "../../lib/domains/registry.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
+import {
+	createMockPi as createSharedMockPi,
+	flushAsync,
+	loadOrchestrationDomainFixtures,
+	testDomainsDir,
+} from "./orchestration-helpers.ts";
 
 // ============================================================================
 // Hoisted mock references
@@ -36,22 +38,23 @@ const mocks = vi.hoisted(() => ({
 	appendSession: vi.fn(),
 }));
 
-vi.mock("../../lib/runtime.ts", () => ({
-	CosmonautsRuntime: {
-		create: mocks.runtimeCreate,
-	},
-}));
+vi.mock("../../lib/runtime.ts", () => {
+	return { CosmonautsRuntime: { create: mocks.runtimeCreate } };
+});
 
 vi.mock("../../lib/orchestration/session-factory.ts", () => ({
 	createAgentSessionFromDefinition: mocks.createAgentSessionFromDefinition,
 }));
 
-vi.mock("../../lib/sessions/session-store.ts", () => ({
-	generateTranscript: mocks.generateTranscript,
-	writeTranscript: mocks.writeTranscript,
-	sessionsDirForPlan: (cwd: string, planSlug: string) =>
-		`${cwd}/missions/sessions/${planSlug}`,
-}));
+vi.mock("../../lib/sessions/session-store.ts", () => {
+	const sessionsDirForPlan = (cwd: string, planSlug: string) =>
+		`${cwd}/missions/sessions/${planSlug}`;
+	return {
+		generateTranscript: mocks.generateTranscript,
+		writeTranscript: mocks.writeTranscript,
+		sessionsDirForPlan,
+	};
+});
 
 vi.mock("../../lib/sessions/manifest.ts", () => ({
 	appendSession: mocks.appendSession,
@@ -82,32 +85,13 @@ import {
 // Helpers
 // ============================================================================
 
-const testDomainsDir = resolve(
-	fileURLToPath(import.meta.url),
-	"..",
-	"..",
-	"..",
-	"domains",
-);
-const testBundledCodingDir = resolve(
-	fileURLToPath(import.meta.url),
-	"..",
-	"..",
-	"..",
-	"bundled",
-	"coding",
-);
-
 let realRegistry: AgentRegistry;
 let realDomainRegistry: DomainRegistry;
 
 beforeAll(async () => {
-	const domains = await loadDomainsFromSources([
-		{ domainsDir: testDomainsDir, origin: "framework", precedence: 1 },
-		{ domainsDir: testBundledCodingDir, origin: "bundled", precedence: 2 },
-	]);
-	realRegistry = createRegistryFromDomains(domains);
-	realDomainRegistry = new DomainRegistry(domains);
+	const fixtures = await loadOrchestrationDomainFixtures();
+	realRegistry = fixtures.agentRegistry;
+	realDomainRegistry = fixtures.domainRegistry;
 });
 
 const PARENT_SESSION_ID = "parent-session-xyz";
@@ -134,15 +118,15 @@ const MOCK_SESSION_STATS = {
 };
 
 function createMockChildSession(overrides?: Record<string, unknown>) {
-	return {
+	const session = {
 		sessionId: "child-session-abc",
 		messages: [{ role: "user", content: "Do the task." }],
 		prompt: vi.fn(async () => undefined),
 		dispose: vi.fn(),
 		subscribe: vi.fn(() => vi.fn()),
 		getSessionStats: vi.fn(() => MOCK_SESSION_STATS),
-		...overrides,
 	};
+	return Object.assign(session, overrides);
 }
 
 function firstCall<T>(calls: T[]): T {
@@ -153,40 +137,50 @@ function firstCall<T>(calls: T[]): T {
 	return call;
 }
 
-interface MockPiOptions {
-	systemPrompt?: string;
-	sessionId?: string;
+function createMockPi(
+	cwd: string,
+	options?: { systemPrompt?: string; sessionId?: string },
+) {
+	return createSharedMockPi(cwd, {
+		...options,
+		defaultSystemPrompt: "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
+		sessionId: options?.sessionId ?? PARENT_SESSION_ID,
+	});
 }
 
-function createMockPi(cwd: string, options?: MockPiOptions) {
-	const tools = new Map<
-		string,
-		{ execute: (...args: unknown[]) => Promise<unknown> }
-	>();
-	const sessionId = options?.sessionId ?? PARENT_SESSION_ID;
-	const sendUserMessage = vi.fn();
-	return {
-		registerTool(def: {
-			name: string;
-			execute: (...args: unknown[]) => Promise<unknown>;
-		}) {
-			tools.set(def.name, def);
-		},
-		registerMessageRenderer: vi.fn(),
-		sendMessage: vi.fn(),
-		on: vi.fn(),
-		sendUserMessage,
-		async callTool(name: string, params: unknown) {
-			const tool = tools.get(name);
-			if (!tool) throw new Error(`Tool not found: ${name}`);
-			return tool.execute("call-id", params, undefined, undefined, {
-				cwd,
-				getSystemPrompt: () =>
-					options?.systemPrompt ?? "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
-				sessionManager: { getSessionId: () => sessionId },
-			});
-		},
-	};
+function createExtensionPi() {
+	const pi = createMockPi("/tmp/project", { sessionId: PARENT_SESSION_ID });
+	orchestrationExtension(pi as never);
+	return pi;
+}
+
+function mockChildSession(
+	session = createMockChildSession(),
+	sessionFilePath: string | undefined = SESSION_FILE_PATH,
+) {
+	mocks.createAgentSessionFromDefinition.mockResolvedValue({
+		session,
+		sessionFilePath,
+	});
+}
+
+async function spawnWorker(
+	params: Record<string, unknown> = {},
+): Promise<{ details: { status: string } }> {
+	const pi = createExtensionPi();
+	const result = (await pi.callTool("spawn_agent", {
+		role: "worker",
+		prompt: "implement the task",
+		...params,
+	})) as { details: { status: string } };
+	await flushAsync();
+	return result;
+}
+
+async function appendRecordAfterWorkerSpawn() {
+	await spawnWorker();
+	const [, , record] = firstCall(mocks.appendSession.mock.calls);
+	return record;
 }
 
 function mockRuntime() {
@@ -200,11 +194,6 @@ function mockRuntime() {
 		domainResolver: resolver,
 		domainsDir: testDomainsDir,
 	});
-}
-
-/** Flush all pending microtasks and one event-loop tick. */
-async function flushAsync() {
-	await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 // ============================================================================
@@ -229,23 +218,11 @@ describe("spawn_agent child session lineage", () => {
 		beforeEach(() => {
 			// Simulate the parent session being spawned with planSlug.
 			registerPlanContext(PARENT_SESSION_ID, PLAN_SLUG);
-			mocks.createAgentSessionFromDefinition.mockResolvedValue({
-				session: createMockChildSession(),
-				sessionFilePath: SESSION_FILE_PATH,
-			});
+			mockChildSession();
 		});
 
 		test("passes planSlug to createAgentSessionFromDefinition (AC#1)", async () => {
-			const cwd = "/tmp/project";
-			const pi = createMockPi(cwd, { sessionId: PARENT_SESSION_ID });
-			orchestrationExtension(pi as never);
-
-			await pi.callTool("spawn_agent", {
-				role: "worker",
-				prompt: "implement the task",
-			});
-
-			await flushAsync();
+			await spawnWorker();
 
 			expect(mocks.createAgentSessionFromDefinition).toHaveBeenCalledWith(
 				expect.any(Object),
@@ -256,16 +233,7 @@ describe("spawn_agent child session lineage", () => {
 		});
 
 		test("writes transcript under plan sessions dir after completion (AC#1)", async () => {
-			const cwd = "/tmp/project";
-			const pi = createMockPi(cwd, { sessionId: PARENT_SESSION_ID });
-			orchestrationExtension(pi as never);
-
-			await pi.callTool("spawn_agent", {
-				role: "worker",
-				prompt: "implement the task",
-			});
-
-			await flushAsync();
+			await spawnWorker();
 
 			expect(mocks.writeTranscript).toHaveBeenCalledOnce();
 			expect(mocks.writeTranscript).toHaveBeenCalledWith(
@@ -276,21 +244,13 @@ describe("spawn_agent child session lineage", () => {
 		});
 
 		test("appends manifest entry with correct shape after completion (AC#2)", async () => {
-			const cwd = "/tmp/project";
-			const pi = createMockPi(cwd, { sessionId: PARENT_SESSION_ID });
-			orchestrationExtension(pi as never);
-
-			await pi.callTool("spawn_agent", {
-				role: "worker",
-				prompt: "implement the task",
-			});
-
-			await flushAsync();
+			await spawnWorker();
 
 			expect(mocks.appendSession).toHaveBeenCalledOnce();
-			const [baseDir, planSlug, record] = firstCall(
-				mocks.appendSession.mock.calls,
-			);
+			const manifestCall = firstCall(mocks.appendSession.mock.calls);
+			const baseDir = manifestCall[0];
+			const planSlug = manifestCall[1];
+			const record = manifestCall[2];
 			expect(baseDir).toBe("/tmp/project/missions/sessions");
 			expect(planSlug).toBe(PLAN_SLUG);
 			expect(record).toMatchObject({
@@ -304,18 +264,7 @@ describe("spawn_agent child session lineage", () => {
 		});
 
 		test("manifest record contains stats on success (AC#2)", async () => {
-			const cwd = "/tmp/project";
-			const pi = createMockPi(cwd, { sessionId: PARENT_SESSION_ID });
-			orchestrationExtension(pi as never);
-
-			await pi.callTool("spawn_agent", {
-				role: "worker",
-				prompt: "implement the task",
-			});
-
-			await flushAsync();
-
-			const [, , record] = firstCall(mocks.appendSession.mock.calls);
+			const record = await appendRecordAfterWorkerSpawn();
 			expect(record.stats).toBeDefined();
 			expect(record.stats.tokens).toEqual({
 				input: 800,
@@ -329,30 +278,13 @@ describe("spawn_agent child session lineage", () => {
 		});
 
 		test("manifest record contains startedAt and completedAt ISO timestamps (AC#2)", async () => {
-			const cwd = "/tmp/project";
-			const pi = createMockPi(cwd, { sessionId: PARENT_SESSION_ID });
-			orchestrationExtension(pi as never);
-
-			await pi.callTool("spawn_agent", {
-				role: "worker",
-				prompt: "implement the task",
-			});
-
-			await flushAsync();
-
-			const [, , record] = firstCall(mocks.appendSession.mock.calls);
+			const record = await appendRecordAfterWorkerSpawn();
 			expect(record.startedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 			expect(record.completedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 		});
 
 		test("includes taskId in manifest record when provided via runtimeContext (AC#2)", async () => {
-			const cwd = "/tmp/project";
-			const pi = createMockPi(cwd, { sessionId: PARENT_SESSION_ID });
-			orchestrationExtension(pi as never);
-
-			await pi.callTool("spawn_agent", {
-				role: "worker",
-				prompt: "implement the task",
+			await spawnWorker({
 				runtimeContext: {
 					mode: "sub-agent",
 					parentRole: "coordinator",
@@ -360,32 +292,19 @@ describe("spawn_agent child session lineage", () => {
 				},
 			});
 
-			await flushAsync();
-
 			const [, , record] = firstCall(mocks.appendSession.mock.calls);
 			expect(record.taskId).toBe("COSMO-042");
 		});
 
 		test("failed child session still appends manifest entry with outcome: failed (AC#2)", async () => {
-			mocks.createAgentSessionFromDefinition.mockResolvedValue({
-				session: createMockChildSession({
+			mockChildSession(
+				createMockChildSession({
 					prompt: vi.fn(async () => {
 						throw new Error("worker crashed");
 					}),
 				}),
-				sessionFilePath: SESSION_FILE_PATH,
-			});
-
-			const cwd = "/tmp/project";
-			const pi = createMockPi(cwd, { sessionId: PARENT_SESSION_ID });
-			orchestrationExtension(pi as never);
-
-			await pi.callTool("spawn_agent", {
-				role: "worker",
-				prompt: "implement the task",
-			});
-
-			await flushAsync();
+			);
+			await spawnWorker();
 
 			expect(mocks.appendSession).toHaveBeenCalledOnce();
 			const [, , record] = firstCall(mocks.appendSession.mock.calls);
@@ -394,25 +313,14 @@ describe("spawn_agent child session lineage", () => {
 		});
 
 		test("failed child session still writes transcript (AC#2)", async () => {
-			mocks.createAgentSessionFromDefinition.mockResolvedValue({
-				session: createMockChildSession({
+			mockChildSession(
+				createMockChildSession({
 					prompt: vi.fn(async () => {
 						throw new Error("worker crashed");
 					}),
 				}),
-				sessionFilePath: SESSION_FILE_PATH,
-			});
-
-			const cwd = "/tmp/project";
-			const pi = createMockPi(cwd, { sessionId: PARENT_SESSION_ID });
-			orchestrationExtension(pi as never);
-
-			await pi.callTool("spawn_agent", {
-				role: "worker",
-				prompt: "implement the task",
-			});
-
-			await flushAsync();
+			);
+			await spawnWorker();
 
 			expect(mocks.writeTranscript).toHaveBeenCalledOnce();
 		});
@@ -420,16 +328,7 @@ describe("spawn_agent child session lineage", () => {
 		test("lineage errors do not crash the spawn (AC#1)", async () => {
 			mocks.appendSession.mockRejectedValue(new Error("disk full"));
 
-			const cwd = "/tmp/project";
-			const pi = createMockPi(cwd, { sessionId: PARENT_SESSION_ID });
-			orchestrationExtension(pi as never);
-
-			const result = (await pi.callTool("spawn_agent", {
-				role: "worker",
-				prompt: "implement the task",
-			})) as { details: { status: string } };
-
-			await flushAsync();
+			const result = await spawnWorker();
 
 			// Spawn still accepted despite lineage error
 			expect(result.details.status).toBe("accepted");
@@ -438,27 +337,16 @@ describe("spawn_agent child session lineage", () => {
 		test("child session plan context is registered during execution for grandchild propagation (AC#1)", async () => {
 			let planSlugDuringPrompt: string | undefined;
 			const childSessionId = "child-session-abc";
-			mocks.createAgentSessionFromDefinition.mockResolvedValue({
-				session: createMockChildSession({
+			mockChildSession(
+				createMockChildSession({
 					prompt: vi.fn(async () => {
 						// During child's execution, its plan context should be registered
 						// so any grandchildren spawned here can inherit it.
 						planSlugDuringPrompt = getPlanSlugForSession(childSessionId);
 					}),
 				}),
-				sessionFilePath: SESSION_FILE_PATH,
-			});
-
-			const cwd = "/tmp/project";
-			const pi = createMockPi(cwd, { sessionId: PARENT_SESSION_ID });
-			orchestrationExtension(pi as never);
-
-			await pi.callTool("spawn_agent", {
-				role: "worker",
-				prompt: "implement the task",
-			});
-
-			await flushAsync();
+			);
+			await spawnWorker();
 
 			expect(planSlugDuringPrompt).toBe(PLAN_SLUG);
 			// After completion, plan context is cleaned up
@@ -469,23 +357,11 @@ describe("spawn_agent child session lineage", () => {
 	describe("non-plan spawn (parent session has no registered planSlug) — AC#3", () => {
 		beforeEach(() => {
 			// No registerPlanContext call — no plan context for parent session.
-			mocks.createAgentSessionFromDefinition.mockResolvedValue({
-				session: createMockChildSession(),
-				sessionFilePath: undefined,
-			});
+			mockChildSession(createMockChildSession(), undefined);
 		});
 
 		test("does not call createAgentSessionFromDefinition with planSlug when no context (AC#3)", async () => {
-			const cwd = "/tmp/project";
-			const pi = createMockPi(cwd, { sessionId: PARENT_SESSION_ID });
-			orchestrationExtension(pi as never);
-
-			await pi.callTool("spawn_agent", {
-				role: "worker",
-				prompt: "implement the task",
-			});
-
-			await flushAsync();
+			await spawnWorker();
 
 			const [, spawnConfig] = firstCall(
 				mocks.createAgentSessionFromDefinition.mock.calls,
@@ -494,44 +370,19 @@ describe("spawn_agent child session lineage", () => {
 		});
 
 		test("does not write transcript when no plan context (AC#3)", async () => {
-			const cwd = "/tmp/project";
-			const pi = createMockPi(cwd, { sessionId: PARENT_SESSION_ID });
-			orchestrationExtension(pi as never);
-
-			await pi.callTool("spawn_agent", {
-				role: "worker",
-				prompt: "implement the task",
-			});
-
-			await flushAsync();
+			await spawnWorker();
 
 			expect(mocks.writeTranscript).not.toHaveBeenCalled();
 		});
 
 		test("does not append manifest when no plan context (AC#3)", async () => {
-			const cwd = "/tmp/project";
-			const pi = createMockPi(cwd, { sessionId: PARENT_SESSION_ID });
-			orchestrationExtension(pi as never);
-
-			await pi.callTool("spawn_agent", {
-				role: "worker",
-				prompt: "implement the task",
-			});
-
-			await flushAsync();
+			await spawnWorker();
 
 			expect(mocks.appendSession).not.toHaveBeenCalled();
 		});
 
 		test("non-plan spawn still returns accepted status (AC#3)", async () => {
-			const cwd = "/tmp/project";
-			const pi = createMockPi(cwd, { sessionId: PARENT_SESSION_ID });
-			orchestrationExtension(pi as never);
-
-			const result = (await pi.callTool("spawn_agent", {
-				role: "worker",
-				prompt: "implement the task",
-			})) as { details: { status: string } };
+			const result = await spawnWorker();
 
 			expect(result.details.status).toBe("accepted");
 		});
