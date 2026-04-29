@@ -1,6 +1,9 @@
 import type { Command } from "commander";
-import { TaskManager } from "../../../lib/tasks/task-manager.js";
-import type { Task } from "../../../lib/tasks/task-types.js";
+import { TaskManager } from "../../../lib/tasks/task-manager.ts";
+import type { Task } from "../../../lib/tasks/task-types.ts";
+import { printCliError } from "../../shared/errors.ts";
+import type { CliOutputMode } from "../../shared/output.ts";
+import { getOutputMode, printJson, printLines } from "../../shared/output.ts";
 
 // AC markers used in markdown files
 const AC_BEGIN_MARKER = "<!-- AC:BEGIN -->";
@@ -44,110 +47,151 @@ function formatAcceptanceCriteriaPlain(task: Task): string[] {
 /**
  * Output task in plain key=value format
  */
-function outputPlain(task: Task): void {
-	console.log(`id=${task.id}`);
-	console.log(`title=${task.title}`);
-	console.log(`status=${task.status}`);
-	console.log(`priority=${task.priority || ""}`);
-	console.log(`assignee=${task.assignee || ""}`);
-	console.log(`labels=${task.labels.join(",")}`);
-	console.log(`dependencies=${task.dependencies.join(",")}`);
-	console.log(`created=${task.createdAt.toISOString()}`);
-	console.log(`updated=${task.updatedAt.toISOString()}`);
+function renderTaskPlain(task: Task): string[] {
+	const lines = [
+		`id=${task.id}`,
+		`title=${task.title}`,
+		`status=${task.status}`,
+		`priority=${task.priority || ""}`,
+		`assignee=${task.assignee || ""}`,
+		`labels=${task.labels.join(",")}`,
+		`dependencies=${task.dependencies.join(",")}`,
+		`created=${task.createdAt.toISOString()}`,
+		`updated=${task.updatedAt.toISOString()}`,
+	];
+
 	if (task.dueDate) {
-		console.log(`dueDate=${task.dueDate.toISOString()}`);
+		lines.push(`dueDate=${task.dueDate.toISOString()}`);
 	}
+
 	// Strip AC markers from description for clean output
 	const cleanDescription = task.description
 		? stripAcMarkers(task.description)
 		: "";
-	console.log(`description=${cleanDescription.replace(/\n/g, "\\n")}`);
+	lines.push(`description=${cleanDescription.replace(/\n/g, "\\n")}`);
+
 	if (task.implementationPlan) {
 		// Escape newlines for plain format
-		console.log(`plan=${task.implementationPlan.replace(/\n/g, "\\n")}`);
+		lines.push(`plan=${task.implementationPlan.replace(/\n/g, "\\n")}`);
 	}
-	for (const line of formatAcceptanceCriteriaPlain(task)) {
-		console.log(line);
-	}
+
+	lines.push(...formatAcceptanceCriteriaPlain(task));
+
 	if (task.implementationNotes) {
 		// Escape newlines for plain format
-		console.log(`notes=${task.implementationNotes.replace(/\n/g, "\\n")}`);
+		lines.push(`notes=${task.implementationNotes.replace(/\n/g, "\\n")}`);
 	}
+
+	return lines;
 }
 
-/**
- * Output task in formatted, human-readable view
- */
-// Temporary migration debt: task view formatting will be split by section.
-// fallow-ignore-next-line complexity
-function outputFormatted(task: Task): void {
-	// Header line with ID and title
+function renderTaskHeader(task: Task): string[] {
 	const headerText = `${task.id}: ${task.title}`;
-	console.log(headerText);
-	console.log("\u2501".repeat(Math.min(headerText.length + 2, 60)));
-	console.log();
+	return [headerText, "\u2501".repeat(Math.min(headerText.length + 2, 60))];
+}
 
-	// Core metadata
-	console.log(`Status: ${task.status}`);
+export function renderTaskMetadata(task: Task): string[] {
+	const lines = [`Status: ${task.status}`];
 	if (task.priority) {
-		console.log(`Priority: ${task.priority}`);
+		lines.push(`Priority: ${task.priority}`);
 	}
 	if (task.assignee) {
-		console.log(`Assignee: ${task.assignee}`);
+		lines.push(`Assignee: ${task.assignee}`);
 	}
 	if (task.labels.length > 0) {
-		console.log(`Labels: ${task.labels.join(", ")}`);
+		lines.push(`Labels: ${task.labels.join(", ")}`);
 	}
 	if (task.dependencies.length > 0) {
-		console.log(`Dependencies: ${task.dependencies.join(", ")}`);
+		lines.push(`Dependencies: ${task.dependencies.join(", ")}`);
 	}
 	if (task.dueDate) {
-		console.log(`Due Date: ${formatDate(task.dueDate)}`);
+		lines.push(`Due Date: ${formatDate(task.dueDate)}`);
 	}
-	console.log(`Created: ${formatDate(task.createdAt)}`);
-	console.log(`Updated: ${formatDate(task.updatedAt)}`);
+	lines.push(`Created: ${formatDate(task.createdAt)}`);
+	lines.push(`Updated: ${formatDate(task.updatedAt)}`);
 
-	// Description section
-	if (task.description) {
-		// Strip AC markers from description for clean output
-		const cleanDescription = stripAcMarkers(task.description);
-		if (cleanDescription) {
-			console.log();
-			console.log("Description:");
-			// Indent each line of description
-			for (const line of cleanDescription.split("\n")) {
-				console.log(`  ${line}`);
-			}
-		}
+	return lines;
+}
+
+export function renderTaskDescription(task: Task): string[] {
+	if (!task.description) {
+		return [];
 	}
 
-	// Implementation Plan section
-	if (task.implementationPlan) {
-		console.log();
-		console.log("Implementation Plan:");
-		for (const line of task.implementationPlan.split("\n")) {
-			console.log(`  ${line}`);
-		}
+	const cleanDescription = stripAcMarkers(task.description);
+	if (!cleanDescription) {
+		return [];
 	}
 
-	// Acceptance Criteria section
-	if (task.acceptanceCriteria.length > 0) {
-		console.log();
-		console.log("Acceptance Criteria:");
-		for (const ac of task.acceptanceCriteria) {
+	return ["Description:", ...renderIndentedLines(cleanDescription)];
+}
+
+function renderTaskImplementationPlan(task: Task): string[] {
+	if (!task.implementationPlan) {
+		return [];
+	}
+
+	return [
+		"Implementation Plan:",
+		...renderIndentedLines(task.implementationPlan),
+	];
+}
+
+function renderTaskAcceptanceCriteria(task: Task): string[] {
+	if (task.acceptanceCriteria.length === 0) {
+		return [];
+	}
+
+	return [
+		"Acceptance Criteria:",
+		...task.acceptanceCriteria.map((ac) => {
 			const checkbox = ac.checked ? "[x]" : "[ ]";
-			console.log(`  ${checkbox} #${ac.index} ${ac.text}`);
-		}
+			return `  ${checkbox} #${ac.index} ${ac.text}`;
+		}),
+	];
+}
+
+function renderTaskImplementationNotes(task: Task): string[] {
+	if (!task.implementationNotes) {
+		return [];
 	}
 
-	// Implementation Notes section
-	if (task.implementationNotes) {
-		console.log();
-		console.log("Implementation Notes:");
-		for (const line of task.implementationNotes.split("\n")) {
-			console.log(`  ${line}`);
+	return [
+		"Implementation Notes:",
+		...renderIndentedLines(task.implementationNotes),
+	];
+}
+
+export function renderFormattedTask(task: Task): string[] {
+	return joinSections([
+		renderTaskHeader(task),
+		renderTaskMetadata(task),
+		renderTaskDescription(task),
+		renderTaskImplementationPlan(task),
+		renderTaskAcceptanceCriteria(task),
+		renderTaskImplementationNotes(task),
+	]);
+}
+
+function renderIndentedLines(text: string): string[] {
+	return text.split("\n").map((line) => `  ${line}`);
+}
+
+function joinSections(sections: readonly string[][]): string[] {
+	const rendered: string[] = [];
+
+	for (const section of sections) {
+		if (section.length === 0) {
+			continue;
 		}
+
+		if (rendered.length > 0) {
+			rendered.push("");
+		}
+		rendered.push(...section);
 	}
+
+	return rendered;
 }
 
 export function registerViewCommand(program: Command): void {
@@ -159,6 +203,7 @@ export function registerViewCommand(program: Command): void {
 		.action(async (taskId) => {
 			const projectRoot = process.cwd();
 			const globalOptions = program.opts();
+			const mode = getOutputMode(globalOptions);
 
 			const manager = new TaskManager(projectRoot);
 
@@ -166,31 +211,34 @@ export function registerViewCommand(program: Command): void {
 				const task = await manager.getTask(taskId);
 
 				if (!task) {
-					const errorMsg = `Error: Task not found: ${taskId}`;
-					if (globalOptions.json) {
-						console.log(JSON.stringify({ error: errorMsg }, null, 2));
-					} else {
-						console.error(errorMsg);
-					}
+					printCliError(`Task not found: ${taskId}`, globalOptions, {
+						prefix: "Error",
+						jsonMessage: `Error: Task not found: ${taskId}`,
+					});
 					process.exit(1);
+					return;
 				}
 
-				// Output based on format
-				if (globalOptions.json) {
-					console.log(JSON.stringify(task, null, 2));
-				} else if (globalOptions.plain) {
-					outputPlain(task);
-				} else {
-					outputFormatted(task);
-				}
+				printTask(task, mode);
 			} catch (error) {
-				const errorMsg = `Error viewing task: ${error}`;
-				if (globalOptions.json) {
-					console.log(JSON.stringify({ error: errorMsg }, null, 2));
-				} else {
-					console.error(errorMsg);
-				}
+				printCliError(String(error), globalOptions, {
+					prefix: "Error viewing task",
+				});
 				process.exit(1);
 			}
 		});
+}
+
+function printTask(task: Task, mode: CliOutputMode): void {
+	if (mode === "json") {
+		printJson(task);
+		return;
+	}
+
+	if (mode === "plain") {
+		printLines(renderTaskPlain(task));
+		return;
+	}
+
+	printLines(renderFormattedTask(task));
 }
