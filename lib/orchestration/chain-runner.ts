@@ -19,6 +19,7 @@ import type {
 	ChainResult,
 	ChainStage,
 	ChainStats,
+	ChainStep,
 	ParallelGroupStep,
 	SpawnEvent,
 	SpawnStats,
@@ -308,6 +309,145 @@ function buildChainStats(
 // runChain
 // ============================================================================
 
+interface ChainExecutionState {
+	chainStart: number;
+	timeoutMs: number;
+	maxTotalIterations: number;
+	stageResults: StageResult[];
+	errors: string[];
+	totalIterations: number;
+	statsDurationMs: number;
+}
+
+interface ChainStepOutcome {
+	results: StageResult[];
+	success: boolean;
+	loopIterations: number;
+	statsDurationMs: number;
+	error?: string;
+}
+
+function createChainExecutionState(config: ChainConfig): ChainExecutionState {
+	return {
+		chainStart: Date.now(),
+		timeoutMs: config.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+		maxTotalIterations:
+			config.maxTotalIterations ?? DEFAULT_MAX_TOTAL_ITERATIONS,
+		stageResults: [],
+		errors: [],
+		totalIterations: 0,
+		statsDurationMs: 0,
+	};
+}
+
+function shouldStopBeforeStep(
+	state: ChainExecutionState,
+	config: ChainConfig,
+): boolean {
+	return (
+		config.signal?.aborted === true ||
+		Date.now() - state.chainStart >= state.timeoutMs
+	);
+}
+
+async function runChainStep(
+	step: ChainStep,
+	stepIndex: number,
+	config: ChainConfig,
+	spawner: AgentSpawner,
+	state: ChainExecutionState,
+): Promise<ChainStepOutcome> {
+	const constraints: StageConstraints = {
+		maxTotalIterations: state.maxTotalIterations - state.totalIterations,
+		deadlineMs: state.chainStart + state.timeoutMs,
+	};
+
+	if (isParallelGroupStep(step)) {
+		const groupStart = Date.now();
+		const { results, success, error } = await runParallelGroup(
+			step,
+			stepIndex,
+			config,
+			spawner,
+			constraints,
+		);
+
+		return {
+			results,
+			success,
+			error,
+			loopIterations: 0,
+			// Wall-clock contribution is the actual group elapsed time.
+			statsDurationMs: Date.now() - groupStart,
+		};
+	}
+
+	const stage = step;
+	const result = await runObservedStage(
+		stage,
+		stepIndex,
+		config,
+		spawner,
+		constraints,
+	);
+
+	return {
+		results: [result],
+		success: result.success,
+		error: result.error,
+		loopIterations: stage.loop ? result.iterations : 0,
+		statsDurationMs: result.stats?.durationMs ?? 0,
+	};
+}
+
+async function runObservedStage(
+	stage: ChainStage,
+	stageIndex: number,
+	config: ChainConfig,
+	spawner: AgentSpawner,
+	constraints: StageConstraints,
+): Promise<StageResult> {
+	emit(config, { type: "stage_start", stage, stageIndex });
+
+	const result = await runStage(stage, config, spawner, constraints);
+
+	if (result.stats) {
+		emit(config, { type: "stage_stats", stage, stats: result.stats });
+	}
+	emit(config, { type: "stage_end", stage, result });
+
+	return result;
+}
+
+function recordChainStepOutcome(
+	state: ChainExecutionState,
+	outcome: ChainStepOutcome,
+): void {
+	state.stageResults.push(...outcome.results);
+	state.totalIterations += outcome.loopIterations;
+	state.statsDurationMs += outcome.statsDurationMs;
+
+	if (!outcome.success && outcome.error) {
+		state.errors.push(outcome.error);
+	}
+}
+
+function finalizeChainResult(
+	state: ChainExecutionState,
+	config: ChainConfig,
+	chainStart: number,
+): ChainResult {
+	const chainStats = buildChainStats(state.stageResults, state.statsDurationMs);
+
+	return {
+		success: state.errors.length === 0 && !config.signal?.aborted,
+		stageResults: state.stageResults,
+		totalDurationMs: Date.now() - chainStart,
+		errors: state.errors,
+		stats: chainStats,
+	};
+}
+
 /**
  * Execute a full chain of agent stages.
  *
@@ -315,92 +455,28 @@ function buildChainStats(
  * repeat until their completion check passes, bounded by global safety
  * caps (maxTotalIterations, timeoutMs).
  */
-// Temporary migration debt: chain orchestration is being kept stable before extraction.
-// fallow-ignore-next-line complexity
 export async function runChain(config: ChainConfig): Promise<ChainResult> {
-	const chainStart = Date.now();
-	const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-	const maxTotalIterations =
-		config.maxTotalIterations ?? DEFAULT_MAX_TOTAL_ITERATIONS;
-
-	const stageResults: StageResult[] = [];
-	const errors: string[] = [];
+	const state = createChainExecutionState(config);
+	const chainStart = state.chainStart;
 	const spawner = createPiSpawner(config.registry, resolveDomainsDir(config), {
 		resolver: config.resolver,
 	});
-	let totalIterations = 0;
-	let statsDurationMs = 0;
 
 	emit(config, { type: "chain_start", steps: config.steps });
 
 	try {
 		for (const [i, step] of config.steps.entries()) {
-			if (config.signal?.aborted) break;
-			if (Date.now() - chainStart >= timeoutMs) break;
+			if (shouldStopBeforeStep(state, config)) break;
 
-			const constraints: StageConstraints = {
-				maxTotalIterations: maxTotalIterations - totalIterations,
-				deadlineMs: chainStart + timeoutMs,
-			};
-
-			if (isParallelGroupStep(step)) {
-				const groupStart = Date.now();
-				const { results, success, error } = await runParallelGroup(
-					step,
-					i,
-					config,
-					spawner,
-					constraints,
-				);
-				const groupDurationMs = Date.now() - groupStart;
-
-				for (const r of results) {
-					stageResults.push(r);
-				}
-
-				// Wall-clock contribution is the actual group elapsed time (≈ max member duration).
-				statsDurationMs += groupDurationMs;
-
-				if (!success) {
-					if (error) errors.push(error);
-					break;
-				}
-			} else {
-				const stage = step;
-				emit(config, { type: "stage_start", stage, stageIndex: i });
-
-				const result = await runStage(stage, config, spawner, constraints);
-
-				// Only loop stages consume the shared iteration budget.
-				if (stage.loop) {
-					totalIterations += result.iterations;
-				}
-				stageResults.push(result);
-				statsDurationMs += result.stats?.durationMs ?? 0;
-
-				if (result.stats) {
-					emit(config, { type: "stage_stats", stage, stats: result.stats });
-				}
-				emit(config, { type: "stage_end", stage, result });
-
-				if (!result.success) {
-					if (result.error) errors.push(result.error);
-					break;
-				}
-			}
+			const outcome = await runChainStep(step, i, config, spawner, state);
+			recordChainStepOutcome(state, outcome);
+			if (!outcome.success) break;
 		}
 	} finally {
 		spawner.dispose();
 	}
 
-	const chainStats = buildChainStats(stageResults, statsDurationMs);
-	const chainResult: ChainResult = {
-		success: errors.length === 0 && !config.signal?.aborted,
-		stageResults,
-		totalDurationMs: Date.now() - chainStart,
-		errors,
-		stats: chainStats,
-	};
+	const chainResult = finalizeChainResult(state, config, chainStart);
 
 	emit(config, { type: "chain_end", result: chainResult });
 
@@ -435,13 +511,7 @@ async function runParallelGroup(
 
 	// Launch all members concurrently; emit per-member events in completion order.
 	const memberPromises = step.stages.map(async (stage) => {
-		emit(config, { type: "stage_start", stage, stageIndex: stepIndex });
-		const result = await runStage(stage, config, spawner, constraints);
-		if (result.stats) {
-			emit(config, { type: "stage_stats", stage, stats: result.stats });
-		}
-		emit(config, { type: "stage_end", stage, result });
-		return result;
+		return runObservedStage(stage, stepIndex, config, spawner, constraints);
 	});
 
 	// Collect results in declaration order.
