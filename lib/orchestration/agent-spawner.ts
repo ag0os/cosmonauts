@@ -9,7 +9,9 @@
  */
 
 import { basename, dirname } from "node:path";
+import type { AgentSession } from "@mariozechner/pi-coding-agent";
 import type { AgentRegistry } from "../agents/index.ts";
+import type { DomainResolver } from "../domains/resolver.ts";
 import { appendSession } from "../sessions/manifest.ts";
 import {
 	generateTranscript,
@@ -32,7 +34,11 @@ import {
 	awaitNextCompletionMessages,
 	DEFAULT_SPAWN_TIMEOUT_MS,
 } from "./spawn-completion-loop.ts";
-import { getOrCreateTracker, removeTracker } from "./spawn-tracker.ts";
+import {
+	getOrCreateTracker,
+	removeTracker,
+	type SpawnTracker,
+} from "./spawn-tracker.ts";
 import type {
 	AgentSpawner,
 	SpawnConfig,
@@ -67,6 +73,25 @@ export interface PiSpawnerOptions {
 	spawnTimeoutMs?: number;
 }
 
+interface PreparedSpawnSession {
+	session: AgentSession;
+	sessionFilePath: string | undefined;
+	tracker: SpawnTracker;
+	startedAt: string;
+	unsubscribe?: () => void;
+}
+
+interface SpawnExecutionResult {
+	outcome: "success" | "failed";
+	stats?: SpawnStats;
+}
+
+interface CompletedSpawnExecution extends SpawnExecutionResult {
+	result: SpawnResult;
+}
+
+type FinalMessages = unknown[];
+
 /**
  * Create an AgentSpawner backed by the Pi coding agent SDK.
  *
@@ -91,179 +116,239 @@ export function createPiSpawner(
 	const spawnTimeoutMs = options?.spawnTimeoutMs ?? DEFAULT_SPAWN_TIMEOUT_MS;
 
 	return {
-		// Temporary migration debt: spawn lifecycle persists lineage and child coordination.
-		// fallow-ignore-next-line complexity
 		async spawn(config: SpawnConfig): Promise<SpawnResult> {
-			// Respect abort signal before doing any work
 			if (config.signal?.aborted) {
-				return {
-					success: false,
-					sessionId: "",
-					messages: [],
-					error: "Aborted before spawn",
-				};
+				return toSpawnFailure(new Error("Aborted before spawn"));
 			}
 
+			let prepared: PreparedSpawnSession | undefined;
+			let execution: SpawnExecutionResult = { outcome: "failed" };
+
 			try {
-				// Resolve full agent definition (unknown roles are rejected).
-				const def = registry.get(config.role, config.domainContext);
-				if (!def) {
-					throw new Error(
-						`Unknown agent role "${config.role}". Available agents: ${registry.listIds().join(", ")}`,
-					);
-				}
+				prepared = await prepareSpawnSession(
+					registry,
+					config,
+					domainsDir,
+					options?.resolver,
+					bus,
+				);
 
-				const { session, sessionFilePath } =
-					await createAgentSessionFromDefinition(
-						def,
-						config,
-						domainsDir,
-						options?.resolver,
-					);
-
-				// Create tracker before prompt so the spawn tool can register
-				// children as soon as the first tool call fires.
-				const tracker = getOrCreateTracker(session.sessionId, bus, {
-					deliveryMode: "external",
-				});
-
-				// Register plan context so child spawns (via spawn_agent) can
-				// inherit the planSlug and persist their own lineage artifacts.
-				if (config.planSlug) {
-					registerPlanContext(session.sessionId, config.planSlug);
-				}
-
-				let unsubscribe: (() => void) | undefined;
-				const startedAt = new Date().toISOString();
-				let spawnOutcome: "success" | "failed" = "failed";
-				let capturedStats: SpawnStats | undefined;
 				try {
-					// Subscribe to session events before prompt for progress streaming
-					unsubscribe = config.onEvent
-						? session.subscribe((event) => {
-								const mapped = mapSessionEvent(event);
-								if (mapped) {
-									try {
-										config.onEvent?.(
-											attachSessionId(mapped, session.sessionId),
-										);
-									} catch {
-										// Listeners must not break the spawner.
-									}
-								}
-							})
-						: undefined;
-
-					// Send the user prompt clean — identity is in the system prompt
-					const startMs = Date.now();
-					await session.prompt(config.prompt);
-
-					// Multi-turn completion loop: deliver child results back to the
-					// parent until all spawned children have finished.  Sessions that
-					// spawn no children skip this loop entirely (activeCount() == 0).
-					while (tracker.activeCount() > 0) {
-						const messages = await awaitNextCompletionMessages(
-							tracker,
-							spawnTimeoutMs,
-						);
-						for (const message of messages) {
-							await session.prompt(message);
-						}
-					}
-
-					const durationMs = Date.now() - startMs;
-
-					// Extract session stats before dispose
-					const sessionStats = session.getSessionStats();
-					const stats: SpawnStats = {
-						tokens: { ...sessionStats.tokens },
-						cost: sessionStats.cost,
-						durationMs,
-						turns: sessionStats.userMessages,
-						toolCalls: sessionStats.toolCalls,
-					};
-
-					spawnOutcome = "success";
-					capturedStats = stats;
-
-					return {
-						success: true,
-						sessionId: session.sessionId,
-						messages: [...session.messages],
-						stats,
-					};
+					const completed = await runSpawnSession(
+						prepared,
+						config,
+						spawnTimeoutMs,
+					);
+					execution = completed;
+					return completed.result;
 				} finally {
-					unsubscribe?.();
-					removeTracker(session.sessionId);
-					removePlanContext(session.sessionId);
-					const finalMessages = [...session.messages];
-					session.dispose();
-
-					if (config.planSlug && sessionFilePath) {
-						try {
-							const planSessionsDir = dirname(sessionFilePath);
-							const baseSessionsDir = dirname(planSessionsDir);
-							const sessionBasename = basename(sessionFilePath);
-							const transcriptBasename = sessionBasename.replace(
-								/\.jsonl$/,
-								".transcript.md",
-							);
-
-							const transcript = generateTranscript(finalMessages, config.role);
-							await writeTranscript(
-								planSessionsDir,
-								transcriptBasename,
-								transcript,
-							);
-
-							const record: SessionRecord = {
-								sessionId: session.sessionId,
-								role: config.role,
-								...(config.parentSessionId !== undefined && {
-									parentSessionId: config.parentSessionId,
-								}),
-								...(config.runtimeContext?.taskId !== undefined && {
-									taskId: config.runtimeContext.taskId,
-								}),
-								startedAt,
-								completedAt: new Date().toISOString(),
-								outcome: spawnOutcome,
-								sessionFile: sessionBasename,
-								transcriptFile: transcriptBasename,
-								...(capturedStats !== undefined && {
-									stats: {
-										tokens: {
-											input: capturedStats.tokens.input,
-											output: capturedStats.tokens.output,
-											total: capturedStats.tokens.total,
-										},
-										cost: capturedStats.cost,
-										durationMs: capturedStats.durationMs,
-										turns: capturedStats.turns,
-										toolCalls: capturedStats.toolCalls,
-									},
-								}),
-							};
-							await appendSession(baseSessionsDir, config.planSlug, record);
-						} catch {
-							// Lineage recording must not crash the spawn.
-						}
-					}
+					const finalMessages = cleanupSpawnSession(prepared, config);
+					await persistPlanLinkedSpawn(
+						prepared,
+						execution,
+						finalMessages,
+						config,
+					);
 				}
 			} catch (err: unknown) {
-				const message = err instanceof Error ? err.message : String(err);
-				return {
-					success: false,
-					sessionId: "",
-					messages: [],
-					error: message,
-				};
+				return toSpawnFailure(err);
 			}
 		},
 
 		dispose(): void {
 			// No-op for now; interface-required placeholder.
 		},
+	};
+}
+
+async function prepareSpawnSession(
+	registry: AgentRegistry,
+	config: SpawnConfig,
+	domainsDir: string,
+	resolver: DomainResolver | undefined,
+	bus: MessageBus,
+): Promise<PreparedSpawnSession> {
+	const def = registry.get(config.role, config.domainContext);
+	if (!def) {
+		throw new Error(
+			`Unknown agent role "${config.role}". Available agents: ${registry.listIds().join(", ")}`,
+		);
+	}
+
+	const { session, sessionFilePath } = await createAgentSessionFromDefinition(
+		def,
+		config,
+		domainsDir,
+		resolver,
+	);
+
+	// Create the tracker before prompt so spawn_agent tool calls can register
+	// children as soon as the first turn starts.
+	const tracker = getOrCreateTracker(session.sessionId, bus, {
+		deliveryMode: "external",
+	});
+
+	if (config.planSlug) {
+		registerPlanContext(session.sessionId, config.planSlug);
+	}
+
+	return {
+		session,
+		sessionFilePath,
+		tracker,
+		startedAt: new Date().toISOString(),
+	};
+}
+
+async function runSpawnSession(
+	prepared: PreparedSpawnSession,
+	config: SpawnConfig,
+	spawnTimeoutMs: number,
+): Promise<CompletedSpawnExecution> {
+	const { session, tracker } = prepared;
+
+	prepared.unsubscribe = subscribeToSpawnEvents(session, config);
+
+	const startMs = Date.now();
+	await session.prompt(config.prompt);
+
+	while (tracker.activeCount() > 0) {
+		const messages = await awaitNextCompletionMessages(tracker, spawnTimeoutMs);
+		for (const message of messages) {
+			await session.prompt(message);
+		}
+	}
+
+	const stats = captureSpawnStats(session, Date.now() - startMs);
+
+	return {
+		outcome: "success",
+		stats,
+		result: {
+			success: true,
+			sessionId: session.sessionId,
+			messages: [...session.messages],
+			stats,
+		},
+	};
+}
+
+function cleanupSpawnSession(
+	prepared: PreparedSpawnSession,
+	config: SpawnConfig,
+): FinalMessages {
+	const { session } = prepared;
+
+	prepared.unsubscribe?.();
+	removeTracker(session.sessionId);
+	if (config.planSlug) {
+		removePlanContext(session.sessionId);
+	}
+	const finalMessages = [...session.messages];
+	session.dispose();
+
+	return finalMessages;
+}
+
+async function persistPlanLinkedSpawn(
+	prepared: PreparedSpawnSession,
+	execution: SpawnExecutionResult,
+	finalMessages: FinalMessages,
+	config: SpawnConfig,
+): Promise<void> {
+	if (!config.planSlug || !prepared.sessionFilePath) {
+		return;
+	}
+
+	try {
+		const planSessionsDir = dirname(prepared.sessionFilePath);
+		const baseSessionsDir = dirname(planSessionsDir);
+		const sessionBasename = basename(prepared.sessionFilePath);
+		const transcriptBasename = sessionBasename.replace(
+			/\.jsonl$/,
+			".transcript.md",
+		);
+
+		const transcript = generateTranscript(finalMessages, config.role);
+		await writeTranscript(planSessionsDir, transcriptBasename, transcript);
+
+		const record: SessionRecord = {
+			sessionId: prepared.session.sessionId,
+			role: config.role,
+			...(config.parentSessionId !== undefined && {
+				parentSessionId: config.parentSessionId,
+			}),
+			...(config.runtimeContext?.taskId !== undefined && {
+				taskId: config.runtimeContext.taskId,
+			}),
+			startedAt: prepared.startedAt,
+			completedAt: new Date().toISOString(),
+			outcome: execution.outcome,
+			sessionFile: sessionBasename,
+			transcriptFile: transcriptBasename,
+			...(execution.stats !== undefined && {
+				stats: {
+					tokens: {
+						input: execution.stats.tokens.input,
+						output: execution.stats.tokens.output,
+						total: execution.stats.tokens.total,
+					},
+					cost: execution.stats.cost,
+					durationMs: execution.stats.durationMs,
+					turns: execution.stats.turns,
+					toolCalls: execution.stats.toolCalls,
+				},
+			}),
+		};
+		await appendSession(baseSessionsDir, config.planSlug, record);
+	} catch {
+		// Lineage recording must not crash the spawn.
+	}
+}
+
+function toSpawnFailure(err: unknown): SpawnResult {
+	return {
+		success: false,
+		sessionId: "",
+		messages: [],
+		error: err instanceof Error ? err.message : String(err),
+	};
+}
+
+function subscribeToSpawnEvents(
+	session: AgentSession,
+	config: SpawnConfig,
+): (() => void) | undefined {
+	if (!config.onEvent) {
+		return undefined;
+	}
+
+	return session.subscribe((event) => {
+		const mapped = mapSessionEvent(event);
+		if (!mapped) {
+			return;
+		}
+
+		try {
+			config.onEvent?.(attachSessionId(mapped, session.sessionId));
+		} catch {
+			// Listeners must not break the spawner.
+		}
+	});
+}
+
+function captureSpawnStats(
+	session: AgentSession,
+	durationMs: number,
+): SpawnStats {
+	const sessionStats = session.getSessionStats();
+
+	return {
+		tokens: { ...sessionStats.tokens },
+		cost: sessionStats.cost,
+		durationMs,
+		turns: sessionStats.userMessages,
+		toolCalls: sessionStats.toolCalls,
 	};
 }
 
