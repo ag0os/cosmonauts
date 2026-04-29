@@ -12,8 +12,41 @@ import {
 	isCosmonautsFrameworkRepo,
 	parseCliArgs,
 	resolveWorkflowExpression,
+	selectRunMode,
 	shouldParseWorkflowAsRawChainExpression,
 } from "../../cli/main.ts";
+import type { CliOptions } from "../../cli/types.ts";
+
+function cliOptions(overrides: Partial<CliOptions> = {}): CliOptions {
+	return {
+		print: false,
+		init: false,
+		listWorkflows: false,
+		listAgents: false,
+		listDomains: false,
+		dumpPrompt: false,
+		piFlags: {},
+		...overrides,
+	};
+}
+
+type ExpectedRunMode = ReturnType<typeof selectRunMode>;
+
+interface RunModeScenario {
+	name: string;
+	options: Partial<CliOptions>;
+	hasNonSharedDomain: boolean;
+	expected: ExpectedRunMode;
+}
+
+function expectRunModes(scenarios: readonly RunModeScenario[]): void {
+	for (const scenario of scenarios) {
+		expect(
+			selectRunMode(cliOptions(scenario.options), scenario.hasNonSharedDomain),
+			scenario.name,
+		).toBe(scenario.expected);
+	}
+}
 
 describe("parseCliArgs", () => {
 	test("defaults: interactive mode, no prompt", () => {
@@ -428,6 +461,122 @@ describe("buildInitSessionConfig", () => {
 		expect(config.initialMessage).toContain("Load /skill:init");
 		expect(config.initialMessage).toContain('"workflows"');
 		expect(config.initialMessage).toContain('"plan-and-build"');
+	});
+});
+
+// ============================================================================
+// Mode dispatch
+// ============================================================================
+
+describe("selectRunMode", () => {
+	test("routes non-bypass commands to no-domain guard when no domain is installed", () => {
+		expectRunModes([
+			{
+				name: "interactive",
+				options: {},
+				hasNonSharedDomain: false,
+				expected: "no-domain-guard",
+			},
+			{
+				name: "print",
+				options: { print: true, prompt: "run it" },
+				hasNonSharedDomain: false,
+				expected: "no-domain-guard",
+			},
+			{
+				name: "workflow",
+				options: { workflow: "plan-and-build" },
+				hasNonSharedDomain: false,
+				expected: "no-domain-guard",
+			},
+		]);
+	});
+
+	test("lets informational modes and init bypass the no-domain guard", () => {
+		expectRunModes([
+			{
+				name: "list domains",
+				options: { listDomains: true },
+				hasNonSharedDomain: false,
+				expected: "list-domains",
+			},
+			{
+				name: "list workflows",
+				options: { listWorkflows: true },
+				hasNonSharedDomain: false,
+				expected: "list-workflows",
+			},
+			{
+				name: "list agents",
+				options: { listAgents: true },
+				hasNonSharedDomain: false,
+				expected: "list-agents",
+			},
+			{
+				name: "dump prompt",
+				options: { dumpPrompt: true },
+				hasNonSharedDomain: false,
+				expected: "dump-prompt",
+			},
+			{
+				name: "init",
+				options: { init: true },
+				hasNonSharedDomain: false,
+				expected: "init",
+			},
+		]);
+	});
+
+	test("preserves existing dispatch precedence for overlapping flags", () => {
+		expectRunModes([
+			{
+				name: "domains before workflows",
+				options: { listDomains: true, listWorkflows: true },
+				hasNonSharedDomain: true,
+				expected: "list-domains",
+			},
+			{
+				name: "dump before init",
+				options: { dumpPrompt: true, init: true },
+				hasNonSharedDomain: true,
+				expected: "dump-prompt",
+			},
+			{
+				name: "init before workflow",
+				options: { init: true, workflow: "plan-and-build" },
+				hasNonSharedDomain: true,
+				expected: "init",
+			},
+			{
+				name: "workflow before print",
+				options: { print: true, workflow: "plan-and-build", prompt: "go" },
+				hasNonSharedDomain: true,
+				expected: "workflow",
+			},
+		]);
+	});
+
+	test("routes normal domain-backed execution modes", () => {
+		expectRunModes([
+			{
+				name: "workflow",
+				options: { workflow: "plan-and-build" },
+				hasNonSharedDomain: true,
+				expected: "workflow",
+			},
+			{
+				name: "print",
+				options: { print: true },
+				hasNonSharedDomain: true,
+				expected: "print",
+			},
+			{
+				name: "interactive",
+				options: { prompt: "hello" },
+				hasNonSharedDomain: true,
+				expected: "interactive",
+			},
+		]);
 	});
 });
 
