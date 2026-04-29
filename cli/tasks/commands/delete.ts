@@ -1,6 +1,18 @@
 import * as readline from "node:readline";
 import type { Command } from "commander";
-import { TaskManager } from "../../../lib/tasks/task-manager.js";
+import { TaskManager } from "../../../lib/tasks/task-manager.ts";
+import type { Task } from "../../../lib/tasks/task-types.ts";
+import { printCliError } from "../../shared/errors.ts";
+import type { CliOutputMode, CliParseResult } from "../../shared/output.ts";
+import { getOutputMode, printJson, printLines } from "../../shared/output.ts";
+
+interface TaskDeleteCliOptions {
+	force?: boolean;
+}
+
+export type TaskDeleteResult =
+	| { status: "deleted"; task: Task }
+	| { status: "cancelled"; task: Task };
 
 /**
  * Prompt user for confirmation
@@ -8,18 +20,26 @@ import { TaskManager } from "../../../lib/tasks/task-manager.js";
  * @returns Promise that resolves to true if user confirms, false otherwise
  */
 async function promptConfirm(message: string): Promise<boolean> {
-	const rl = readline.createInterface({
+	const prompt = readline.createInterface({
 		input: process.stdin,
 		output: process.stdout,
 	});
 
 	return new Promise((resolve) => {
-		rl.question(`${message} (y/N): `, (answer) => {
-			rl.close();
-			const normalized = answer.trim().toLowerCase();
-			resolve(normalized === "y" || normalized === "yes");
+		prompt.question(formatConfirmQuestion(message), (answer) => {
+			prompt.close();
+			resolve(isConfirmedAnswer(answer));
 		});
 	});
+}
+
+function formatConfirmQuestion(message: string): string {
+	return `${message} (y/N): `;
+}
+
+function isConfirmedAnswer(answer: string): boolean {
+	const normalized = answer.trim().toLowerCase();
+	return normalized === "y" || normalized === "yes";
 }
 
 export function registerDeleteCommand(program: Command): void {
@@ -29,76 +49,117 @@ export function registerDeleteCommand(program: Command): void {
 		.description("Delete a task")
 		.argument("<taskId>", "Task ID to delete (e.g., TASK-001)")
 		.option("-f, --force", "Skip confirmation prompt")
-		// Temporary migration debt: task delete prompt and dependency checks are inline.
-		// fallow-ignore-next-line complexity
-		.action(async (taskId, options) => {
+		.action(async (taskId: string, options: TaskDeleteCliOptions) => {
 			const projectRoot = process.cwd();
 			const globalOptions = program.opts();
+			const mode = getOutputMode(globalOptions);
 
 			const manager = new TaskManager(projectRoot);
 
 			try {
-				// First, verify the task exists
-				const task = await manager.getTask(taskId);
-
-				if (!task) {
-					const errorMsg = `Task not found: ${taskId}`;
-					if (globalOptions.json) {
-						console.log(JSON.stringify({ error: errorMsg }, null, 2));
-					} else {
-						console.error(`Error: ${errorMsg}`);
-					}
+				const task = await loadTaskForDeletion(manager, taskId);
+				if (!task.ok) {
+					printCliError(task.error, globalOptions, { prefix: "Error" });
 					process.exit(1);
+					return;
 				}
 
-				// Confirm deletion unless --force is specified
-				if (!options.force) {
-					const confirmed = await promptConfirm(
-						`Delete task ${task.id}: "${task.title}"?`,
+				const confirmed = await confirmTaskDeletion(task.value, options.force);
+				if (!confirmed) {
+					printTaskDeleteResult(
+						{ status: "cancelled", task: task.value },
+						mode,
 					);
-					if (!confirmed) {
-						if (globalOptions.json) {
-							console.log(
-								JSON.stringify({ cancelled: true, id: task.id }, null, 2),
-							);
-						} else if (globalOptions.plain) {
-							console.log("cancelled");
-						} else {
-							console.log("Deletion cancelled.");
-						}
-						return;
-					}
+					return;
 				}
 
-				// Perform the deletion
 				await manager.deleteTask(taskId);
-
-				// Output based on format
-				if (globalOptions.json) {
-					console.log(
-						JSON.stringify(
-							{
-								deleted: true,
-								id: task.id,
-								title: task.title,
-							},
-							null,
-							2,
-						),
-					);
-				} else if (globalOptions.plain) {
-					console.log(`deleted ${task.id}`);
-				} else {
-					console.log(`Deleted task ${task.id}: ${task.title}`);
-				}
+				printTaskDeleteResult({ status: "deleted", task: task.value }, mode);
 			} catch (error) {
-				const errorMsg = `Error deleting task: ${error}`;
-				if (globalOptions.json) {
-					console.log(JSON.stringify({ error: errorMsg }, null, 2));
-				} else {
-					console.error(errorMsg);
-				}
+				printCliError(`Error deleting task: ${String(error)}`, globalOptions);
 				process.exit(1);
 			}
 		});
+}
+
+export async function loadTaskForDeletion(
+	manager: TaskManager,
+	taskId: string,
+): Promise<CliParseResult<Task>> {
+	const task = await manager.getTask(taskId);
+
+	if (!task) {
+		return { ok: false, error: `Task not found: ${taskId}` };
+	}
+
+	return { ok: true, value: task };
+}
+
+export async function confirmTaskDeletion(
+	task: Task,
+	force = false,
+): Promise<boolean> {
+	if (force) {
+		return true;
+	}
+
+	return promptConfirm(`Delete task ${task.id}: "${task.title}"?`);
+}
+
+export function renderTaskDeleteResult(
+	result: TaskDeleteResult,
+	mode: CliOutputMode,
+): unknown | string[] {
+	if (result.status === "cancelled") {
+		return renderTaskDeleteCancellation(result.task, mode);
+	}
+
+	return renderTaskDeleteSuccess(result.task, mode);
+}
+
+function printTaskDeleteResult(
+	result: TaskDeleteResult,
+	mode: CliOutputMode,
+): void {
+	const rendered = renderTaskDeleteResult(result, mode);
+	if (mode === "json") {
+		printJson(rendered);
+		return;
+	}
+
+	printLines(rendered as string[]);
+}
+
+function renderTaskDeleteCancellation(
+	task: Task,
+	mode: CliOutputMode,
+): unknown | string[] {
+	if (mode === "json") {
+		return { cancelled: true, id: task.id };
+	}
+
+	if (mode === "plain") {
+		return ["cancelled"];
+	}
+
+	return ["Deletion cancelled."];
+}
+
+function renderTaskDeleteSuccess(
+	task: Task,
+	mode: CliOutputMode,
+): unknown | string[] {
+	if (mode === "json") {
+		return {
+			deleted: true,
+			id: task.id,
+			title: task.title,
+		};
+	}
+
+	if (mode === "plain") {
+		return [`deleted ${task.id}`];
+	}
+
+	return [`Deleted task ${task.id}: ${task.title}`];
 }

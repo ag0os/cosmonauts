@@ -1,7 +1,3 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	parseTaskCreateInput,
@@ -11,7 +7,14 @@ import {
 } from "../../../../cli/tasks/commands/create.ts";
 import { TaskManager } from "../../../../lib/tasks/task-manager.ts";
 import type { Task } from "../../../../lib/tasks/task-types.ts";
-import { captureCliOutput } from "../../../helpers/cli.ts";
+import {
+	type CommandTestContext,
+	type captureCommandOutput,
+	createCommandProgram,
+	createCommandTestContext,
+	type mockProcessExitThrow,
+	ProcessExitError,
+} from "../../../helpers/cli.ts";
 import { createInitializedTaskManager } from "../../../helpers/tasks.ts";
 
 describe("parseTaskCreateInput", () => {
@@ -105,24 +108,19 @@ describe("renderTaskCreateSuccess", () => {
 
 describe("task create command", () => {
 	let tempDir: string;
-	let originalCwd: string;
 	let output: ReturnType<typeof captureCommandOutput>;
 	let exit: ReturnType<typeof mockProcessExitThrow>;
+	let context: CommandTestContext;
 
 	beforeEach(async () => {
-		tempDir = await mkdtemp(join(tmpdir(), "task-create-command-test-"));
-		originalCwd = process.cwd();
-		process.chdir(tempDir);
-		output = captureCommandOutput();
-		exit = mockProcessExitThrow();
+		context = await createCommandTestContext("task-create-command-test-");
+		tempDir = context.tempDir;
+		output = context.output;
+		exit = context.exit;
 	});
 
 	afterEach(async () => {
-		exit.restore();
-		output.restore();
-		process.chdir(originalCwd);
-		vi.restoreAllMocks();
-		await rm(tempDir, { recursive: true, force: true });
+		await context.restore();
 	});
 
 	it("creates a task with all create options in human mode", async () => {
@@ -261,15 +259,8 @@ describe("task create command", () => {
 	});
 });
 
-function createProgram(): Command {
-	const program = new Command();
-	program.exitOverride();
-	program
-		.name("cosmonauts task")
-		.option("--plain", "Output in plain text format (for agents)")
-		.option("--json", "Output in JSON format");
-	registerCreateCommand(program);
-	return program;
+function createProgram() {
+	return createCommandProgram(registerCreateCommand);
 }
 
 async function expectCreateToExit(args: string[]): Promise<void> {
@@ -289,55 +280,4 @@ async function expectInvalidPriorityError(
 		"Invalid priority: urgent. Must be one of: high, medium, low\n",
 	);
 	expect(exit.calls()).toEqual([1]);
-}
-
-function captureCommandOutput(): {
-	stdout: () => string;
-	stderr: () => string;
-	restore: () => void;
-} {
-	let stdoutOutput = "";
-	let stderrOutput = "";
-	const streamOutput = captureCliOutput();
-	const log = vi.spyOn(console, "log").mockImplementation((message) => {
-		stdoutOutput += `${String(message)}\n`;
-	});
-	const error = vi.spyOn(console, "error").mockImplementation((message) => {
-		stderrOutput += `${String(message)}\n`;
-	});
-
-	return {
-		stdout: () => `${streamOutput.stdout()}${stdoutOutput}`,
-		stderr: () => `${streamOutput.stderr()}${stderrOutput}`,
-		restore: () => {
-			log.mockRestore();
-			error.mockRestore();
-			streamOutput.restore();
-		},
-	};
-}
-
-class ProcessExitError extends Error {
-	constructor(readonly code: number) {
-		super(`process.exit(${code})`);
-	}
-}
-
-function mockProcessExitThrow(): {
-	calls: () => readonly number[];
-	restore: () => void;
-} {
-	const exitCalls: number[] = [];
-	const exit = vi.spyOn(process, "exit").mockImplementation((code) => {
-		const normalizedCode = typeof code === "number" ? code : 1;
-		exitCalls.push(normalizedCode);
-		throw new ProcessExitError(normalizedCode);
-	});
-
-	return {
-		calls: () => exitCalls,
-		restore: () => {
-			exit.mockRestore();
-		},
-	};
 }
