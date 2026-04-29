@@ -143,6 +143,13 @@ describe("validateManifest — valid manifests", () => {
 // ============================================================================
 
 describe("validateManifest — missing required fields", () => {
+	const requiredMissingFieldErrors = [
+		{ field: "name", reason: "missing" },
+		{ field: "version", reason: "missing" },
+		{ field: "description", reason: "missing" },
+		{ field: "domains", reason: "missing" },
+	];
+
 	test("returns error for missing name", () => {
 		const raw = {
 			version: "1.0.0",
@@ -230,6 +237,20 @@ describe("validateManifest — missing required fields", () => {
 		expect(result.valid).toBe(false);
 		if (!result.valid) {
 			expect(result.errors.length).toBeGreaterThan(0);
+		}
+	});
+
+	test.each([
+		["null", null],
+		["array", []],
+		["string", "not an object"],
+		["number", 42],
+	])("returns exactly the required missing field errors for %s input", (_label, raw) => {
+		const result = validateManifest(raw);
+
+		expect(result.valid).toBe(false);
+		if (!result.valid) {
+			expect(result.errors).toEqual(requiredMissingFieldErrors);
 		}
 	});
 });

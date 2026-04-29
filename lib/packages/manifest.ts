@@ -56,69 +56,106 @@ export async function loadManifest(dirPath: string): Promise<unknown> {
  *
  * @param raw - The unknown value to validate (typically from loadManifest)
  */
-// Temporary migration debt: manifest validation checks are consolidated here.
-// fallow-ignore-next-line complexity
 export function validateManifest(raw: unknown): ManifestValidationResult {
-	const errors: ManifestValidationError[] = [];
-
-	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-		// Cannot extract any fields — report all required fields as missing
-		errors.push({ field: "name", reason: "missing" });
-		errors.push({ field: "version", reason: "missing" });
-		errors.push({ field: "description", reason: "missing" });
-		errors.push({ field: "domains", reason: "missing" });
-		return { valid: false, errors };
+	const manifestObject = validateManifestObject(raw);
+	if (!manifestObject.ok) {
+		return { valid: false, errors: manifestObject.errors };
 	}
 
-	const obj = raw as Record<string, unknown>;
-
-	// Validate name
-	if (obj.name === undefined || obj.name === null || obj.name === "") {
-		errors.push({ field: "name", reason: "missing" });
-	} else if (typeof obj.name !== "string" || !PACKAGE_NAME_RE.test(obj.name)) {
-		errors.push({ field: "name", reason: "invalid-format" });
-	}
-
-	// Validate version
-	if (!obj.version || typeof obj.version !== "string") {
-		errors.push({ field: "version", reason: "missing" });
-	}
-
-	// Validate description
-	if (!obj.description || typeof obj.description !== "string") {
-		errors.push({ field: "description", reason: "missing" });
-	}
-
-	// Validate domains
-	if (obj.domains === undefined || obj.domains === null) {
-		errors.push({ field: "domains", reason: "missing" });
-	} else if (!Array.isArray(obj.domains)) {
-		errors.push({ field: "domains", reason: "invalid-entry" });
-	} else if (obj.domains.length === 0) {
-		errors.push({ field: "domains", reason: "empty" });
-	} else {
-		const allValid = obj.domains.every(
-			(d) =>
-				typeof d === "object" &&
-				d !== null &&
-				typeof (d as Record<string, unknown>).name === "string" &&
-				typeof (d as Record<string, unknown>).path === "string",
-		);
-		if (!allValid) {
-			errors.push({ field: "domains", reason: "invalid-entry" });
-		}
-	}
+	const obj = manifestObject.value;
+	const errors = [
+		validatePackageName(obj.name),
+		validateRequiredString("version", obj.version),
+		validateRequiredString("description", obj.description),
+		validateDomainsField(obj.domains),
+	].filter((error): error is ManifestValidationError => error !== undefined);
 
 	if (errors.length > 0) {
 		return { valid: false, errors };
 	}
 
-	const manifest: PackageManifest = {
+	return { valid: true, manifest: toPackageManifest(obj) };
+}
+
+type ManifestObjectValidationResult =
+	| { ok: true; value: Record<string, unknown> }
+	| { ok: false; errors: ManifestValidationError[] };
+
+function validateManifestObject(raw: unknown): ManifestObjectValidationResult {
+	if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) {
+		return { ok: true, value: raw as Record<string, unknown> };
+	}
+
+	return {
+		ok: false,
+		errors: [
+			{ field: "name", reason: "missing" },
+			{ field: "version", reason: "missing" },
+			{ field: "description", reason: "missing" },
+			{ field: "domains", reason: "missing" },
+		],
+	};
+}
+
+function validatePackageName(
+	value: unknown,
+): ManifestValidationError | undefined {
+	if (value === undefined || value === null || value === "") {
+		return { field: "name", reason: "missing" };
+	}
+
+	if (typeof value !== "string" || !PACKAGE_NAME_RE.test(value)) {
+		return { field: "name", reason: "invalid-format" };
+	}
+}
+
+function validateRequiredString(
+	field: "version" | "description",
+	value: unknown,
+): ManifestValidationError | undefined {
+	if (value && typeof value === "string") {
+		return undefined;
+	}
+
+	return field === "version"
+		? { field: "version", reason: "missing" }
+		: { field: "description", reason: "missing" };
+}
+
+function validateDomainsField(
+	value: unknown,
+): ManifestValidationError | undefined {
+	if (value === undefined || value === null) {
+		return { field: "domains", reason: "missing" };
+	}
+
+	if (!Array.isArray(value)) {
+		return { field: "domains", reason: "invalid-entry" };
+	}
+
+	if (value.length === 0) {
+		return { field: "domains", reason: "empty" };
+	}
+
+	if (!value.every(isPackageDomain)) {
+		return { field: "domains", reason: "invalid-entry" };
+	}
+}
+
+function isPackageDomain(value: unknown): value is PackageDomain {
+	if (typeof value !== "object" || value === null) {
+		return false;
+	}
+
+	const domain = value as Record<string, unknown>;
+	return typeof domain.name === "string" && typeof domain.path === "string";
+}
+
+function toPackageManifest(obj: Record<string, unknown>): PackageManifest {
+	return {
 		name: obj.name as string,
 		version: obj.version as string,
 		description: obj.description as string,
 		domains: obj.domains as PackageDomain[],
 	};
-
-	return { valid: true, manifest };
 }
