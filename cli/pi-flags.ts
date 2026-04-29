@@ -125,7 +125,19 @@ function buildCliLookup(): Map<string, { key: FlagKey; def: FlagDef }> {
 	return map;
 }
 
+function buildDisabledCliLookup(): Map<string, FlagKey> {
+	const map = new Map<string, FlagKey>();
+	for (const [key, def] of Object.entries(PI_FLAG_DEFS)) {
+		if (def.enabled) continue;
+		for (const alias of def.cli) {
+			map.set(alias, key as FlagKey);
+		}
+	}
+	return map;
+}
+
 const CLI_LOOKUP = buildCliLookup();
+const DISABLED_CLI_LOOKUP = buildDisabledCliLookup();
 
 export interface PiFlagParseResult {
 	/** Enabled Pi flags extracted from argv. */
@@ -142,79 +154,126 @@ export interface PiFlagParseResult {
  * Disabled flags produce a warning and are dropped.
  * Unknown flags are left in `remaining` for the caller.
  */
-// Temporary migration debt: passthrough parsing retains Pi compatibility branches.
-// fallow-ignore-next-line complexity
 export function parsePiFlags(argv: string[]): PiFlagParseResult {
 	const flags: Record<string, unknown> = {};
 	const remaining: string[] = [];
 	const warnings: string[] = [];
 
-	// Also build a lookup for disabled flags so we can warn
-	const disabledCli = new Map<string, FlagKey>();
-	for (const [key, def] of Object.entries(PI_FLAG_DEFS)) {
-		if (def.enabled) continue;
-		for (const alias of def.cli) {
-			disabledCli.set(alias, key as FlagKey);
-		}
-	}
-
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i] as string; // bounds-checked by loop condition
-		const match = CLI_LOOKUP.get(arg);
-
-		if (match) {
-			const { key, def } = match;
-			if (def.type === "boolean") {
-				flags[key] = true;
-			} else if (def.type === "string") {
-				const next = argv[i + 1] as string | undefined;
-				// --list-models can be used without a value (boolean-ish)
-				if (
-					key === "listModels" &&
-					(next === undefined || next.startsWith("-"))
-				) {
-					flags[key] = true;
-				} else if (next !== undefined) {
-					i++;
-					flags[key] = next;
-				}
-			} else {
-				// string[] — accumulate
-				const next = argv[i + 1] as string | undefined;
-				if (next !== undefined) {
-					i++;
-					const arr = (flags[key] as string[] | undefined) ?? [];
-					arr.push(next);
-					flags[key] = arr;
-				}
-			}
+		if (CLI_LOOKUP.has(arg)) {
+			i = consumeEnabledFlag(argv, i, flags);
 			continue;
 		}
 
-		// Check if it's a disabled Pi flag
-		const disabledKey = disabledCli.get(arg);
-		if (disabledKey) {
-			const def = PI_FLAG_DEFS[disabledKey];
-			warnings.push(
-				`Flag "${arg}" is not supported by cosmonauts (Pi flag "${disabledKey}" is disabled)`,
-			);
-			// Skip its value arg if it takes one
-			if (def.type !== "boolean" && i + 1 < argv.length) {
-				i++;
-			}
+		if (DISABLED_CLI_LOOKUP.has(arg)) {
+			i = consumeDisabledFlag(argv, i, warnings);
 			continue;
 		}
 
 		remaining.push(arg);
 	}
 
-	// Post-process: split comma-separated values
-	if (typeof flags.models === "string") {
-		flags.models = (flags.models as string).split(",").map((s) => s.trim());
-	}
-	if (typeof flags.tools === "string") {
-		flags.tools = (flags.tools as string).split(",").map((s) => s.trim());
+	return { flags: postProcessPiFlags(flags), remaining, warnings };
+}
+
+function consumeEnabledFlag(
+	argv: readonly string[],
+	index: number,
+	flags: Record<string, unknown>,
+): number {
+	const arg = argv[index] as string;
+	const match = CLI_LOOKUP.get(arg);
+	if (!match) {
+		return index;
 	}
 
-	return { flags: flags as PiFlags, remaining, warnings };
+	if (match.def.type === "boolean") {
+		flags[match.key] = true;
+		return index;
+	}
+
+	const next = argv[index + 1] as string | undefined;
+	if (match.def.type === "string") {
+		return consumeEnabledStringFlag(match.key, next, index, flags);
+	}
+
+	return consumeEnabledStringArrayFlag(match.key, next, index, flags);
+}
+
+function consumeEnabledStringFlag(
+	key: FlagKey,
+	next: string | undefined,
+	index: number,
+	flags: Record<string, unknown>,
+): number {
+	if (key === "listModels" && (next === undefined || next.startsWith("-"))) {
+		flags[key] = true;
+		return index;
+	}
+
+	if (next === undefined) {
+		return index;
+	}
+
+	flags[key] = next;
+	return index + 1;
+}
+
+function consumeEnabledStringArrayFlag(
+	key: FlagKey,
+	next: string | undefined,
+	index: number,
+	flags: Record<string, unknown>,
+): number {
+	if (next === undefined) {
+		return index;
+	}
+
+	const values = readStringArrayFlag(flags[key]);
+	values.push(next);
+	flags[key] = values;
+	return index + 1;
+}
+
+function readStringArrayFlag(value: unknown): string[] {
+	return Array.isArray(value) ? value.filter(isString) : [];
+}
+
+function isString(value: unknown): value is string {
+	return typeof value === "string";
+}
+
+function consumeDisabledFlag(
+	argv: readonly string[],
+	index: number,
+	warnings: string[],
+): number {
+	const arg = argv[index] as string;
+	const disabledKey = DISABLED_CLI_LOOKUP.get(arg);
+	if (!disabledKey) {
+		return index;
+	}
+
+	const def = PI_FLAG_DEFS[disabledKey];
+	warnings.push(
+		`Flag "${arg}" is not supported by cosmonauts (Pi flag "${disabledKey}" is disabled)`,
+	);
+
+	if (def.type !== "boolean" && index + 1 < argv.length) {
+		return index + 1;
+	}
+
+	return index;
+}
+
+function postProcessPiFlags(flags: Record<string, unknown>): PiFlags {
+	if (typeof flags.models === "string") {
+		flags.models = flags.models.split(",").map((s) => s.trim());
+	}
+	if (typeof flags.tools === "string") {
+		flags.tools = flags.tools.split(",").map((s) => s.trim());
+	}
+
+	return flags as PiFlags;
 }
