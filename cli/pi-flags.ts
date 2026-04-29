@@ -127,7 +127,7 @@ function buildCliLookup(): Map<string, { key: FlagKey; def: FlagDef }> {
 
 const CLI_LOOKUP = buildCliLookup();
 
-interface PiFlagParseResult {
+export interface PiFlagParseResult {
 	/** Enabled Pi flags extracted from argv. */
 	flags: PiFlags;
 	/** Remaining args that were not Pi flags (positional args, @files, etc.). */

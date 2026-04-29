@@ -59,7 +59,7 @@ import {
 	createPackagesProgram,
 	createUninstallProgram,
 } from "./packages/subcommand.ts";
-import { parsePiFlags } from "./pi-flags.ts";
+import { type PiFlagParseResult, parsePiFlags } from "./pi-flags.ts";
 import { createPlanProgram } from "./plans/index.ts";
 import { createScaffoldProgram } from "./scaffold/subcommand.ts";
 import { createSession, GracefulExitError } from "./session.ts";
@@ -100,20 +100,31 @@ function parseThinkingLevel(value: string): ThinkingLevel {
  * Parse CLI arguments into CliOptions.
  * Exported for testing — not intended for external use.
  */
-// Temporary migration debt: CLI parsing still owns compatibility branches.
-// fallow-ignore-next-line complexity
 export function parseCliArgs(argv: string[]): CliOptions {
-	// Detect "init" subcommand before Commander sees it
-	const isInit = argv.length > 0 && argv[0] === "init";
-	const effectiveArgv = isInit ? argv.slice(1) : argv;
-
-	// --- Phase 1: extract Pi flags first, leaving cosmonauts flags + positionals ---
+	const { isInit, effectiveArgv } = detectInitSubcommand(argv);
 	const piResult = parsePiFlags(effectiveArgv);
 	for (const w of piResult.warnings) {
 		console.warn(`[cosmonauts] ${w}`);
 	}
 
-	// --- Phase 2: parse cosmonauts-specific flags from the remainder ---
+	const program = buildCliParser();
+	program.parse(piResult.remaining, { from: "user" });
+
+	return normalizeCliOptions(program, isInit, piResult);
+}
+
+function detectInitSubcommand(argv: readonly string[]): {
+	isInit: boolean;
+	effectiveArgv: string[];
+} {
+	const isInit = argv.length > 0 && argv[0] === "init";
+	return {
+		isInit,
+		effectiveArgv: isInit ? argv.slice(1) : [...argv],
+	};
+}
+
+function buildCliParser(): Command {
 	const program = new Command();
 
 	program
@@ -164,22 +175,50 @@ export function parseCliArgs(argv: string[]): CliOptions {
 		)
 		.argument("[prompt...]", "Prompt text");
 
-	// Parse without calling process.exit on error
 	program.exitOverride();
-	program.parse(piResult.remaining, { from: "user" });
+	return program;
+}
 
-	const opts = program.opts();
-
-	// Handle thinking level: flag present without value defaults to "high"
-	let thinking: ThinkingLevel | undefined;
-	if (opts.thinking !== undefined) {
-		if (opts.thinking === true) {
-			// --thinking without a value
-			thinking = "high";
-		} else {
-			thinking = parseThinkingLevel(opts.thinking);
-		}
+function parseThinkingOption(value: unknown): ThinkingLevel | undefined {
+	if (value === undefined) {
+		return undefined;
 	}
+
+	if (value === true) {
+		return "high";
+	}
+
+	if (typeof value === "string") {
+		return parseThinkingLevel(value);
+	}
+
+	throw new Error(`Invalid thinking option value: ${String(value)}`);
+}
+
+interface ParsedCliOptionValues {
+	print?: boolean;
+	agent?: string;
+	workflow?: string;
+	completionLabel?: string;
+	model?: string;
+	thinking?: unknown;
+	domain?: string;
+	listDomains?: boolean;
+	listWorkflows?: boolean;
+	listAgents?: boolean;
+	dumpPrompt?: boolean;
+	file?: string;
+	profile?: boolean;
+	pluginDir?: string[];
+}
+
+function normalizeCliOptions(
+	program: Command,
+	isInit: boolean,
+	piResult: PiFlagParseResult,
+): CliOptions {
+	const opts = program.opts<ParsedCliOptionValues>();
+	const thinking = parseThinkingOption(opts.thinking);
 
 	const promptArgs: string[] = program.args;
 	const prompt = promptArgs.length > 0 ? promptArgs.join(" ") : undefined;

@@ -5,7 +5,7 @@
 
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
 	buildInitSessionConfig,
 	discoverBundledPackageDirs,
@@ -144,6 +144,21 @@ describe("parseCliArgs", () => {
 			const opts = parseCliArgs(["--thinking", level]);
 			expect(opts.thinking).toBe(level);
 		}
+	});
+
+	test("--thinking before another option defaults to high", () => {
+		const opts = parseCliArgs(["--thinking", "--print", "do something"]);
+
+		expect(opts.thinking).toBe("high");
+		expect(opts.print).toBe(true);
+		expect(opts.prompt).toBe("do something");
+	});
+
+	test("--thinking with value before prompt preserves the prompt", () => {
+		const opts = parseCliArgs(["--thinking", "low", "do something"]);
+
+		expect(opts.thinking).toBe("low");
+		expect(opts.prompt).toBe("do something");
 	});
 
 	test("--thinking with invalid value throws", () => {
@@ -288,6 +303,38 @@ describe("parseCliArgs", () => {
 		const opts = parseCliArgs(["--list-agents"]);
 
 		expect(opts.listAgents).toBe(true);
+	});
+
+	test("--plugin-dir is repeatable", () => {
+		const opts = parseCliArgs([
+			"--plugin-dir",
+			"/tmp/plugin-a",
+			"--plugin-dir",
+			"/tmp/plugin-b",
+		]);
+
+		expect(opts.pluginDirs).toEqual(["/tmp/plugin-a", "/tmp/plugin-b"]);
+	});
+
+	test("--profile enables chain profiling", () => {
+		const opts = parseCliArgs(["--profile"]);
+
+		expect(opts.profile).toBe(true);
+	});
+
+	test("disabled Pi flags are forwarded as warnings and removed", () => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			const opts = parseCliArgs(["--provider", "anthropic", "do something"]);
+
+			expect(opts.prompt).toBe("do something");
+			expect(opts.piFlags).toEqual({});
+			expect(warn).toHaveBeenCalledWith(
+				'[cosmonauts] Flag "--provider" is not supported by cosmonauts (Pi flag "provider" is disabled)',
+			);
+		} finally {
+			warn.mockRestore();
+		}
 	});
 
 	test("--domain sets domain context", () => {
