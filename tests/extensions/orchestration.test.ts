@@ -55,9 +55,11 @@ vi.mock("../../lib/orchestration/session-factory.ts", () => ({
 }));
 
 import orchestrationExtension from "../../domains/shared/extensions/orchestration/index.ts";
+import { activityBus } from "../../lib/orchestration/activity-bus.ts";
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import { runChain } from "../../lib/orchestration/chain-runner.ts";
+import type { SpawnActivityEvent } from "../../lib/orchestration/message-bus.ts";
 import { getOrCreateTracker } from "../../lib/orchestration/spawn-tracker.ts";
 
 interface RegisteredTool {
@@ -501,6 +503,132 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 		);
 		expect(pi.sendUserMessage).toHaveBeenCalledWith(
 			expect.stringContaining(explorerReport),
+			{ deliverAs: "followUp" },
+		);
+	});
+
+	test("spawn_agent publishes child session activity events", async () => {
+		const cwd = "/tmp/project";
+		const pi = createMockPi(cwd, {
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
+			sessionId: "parent-session-activity",
+		});
+		orchestrationExtension(pi as never);
+
+		mockRuntime({ domainContext: "coding" });
+
+		const activityEvents: SpawnActivityEvent[] = [];
+		const activityToken = activityBus.subscribe<SpawnActivityEvent>(
+			"spawn_activity",
+			(event) => activityEvents.push(event),
+		);
+		let childEventHandler:
+			| ((event: { type: string; [key: string]: unknown }) => void)
+			| undefined;
+		const mockSession = {
+			sessionId: "child-session-activity",
+			messages: [],
+			prompt: vi.fn(async () => {
+				childEventHandler?.({
+					type: "tool_execution_start",
+					toolName: "read",
+					args: { file_path: "/tmp/project/src/index.ts" },
+				});
+				childEventHandler?.({
+					type: "tool_execution_end",
+					toolName: "read",
+					isError: false,
+				});
+				childEventHandler?.({ type: "turn_start" });
+				childEventHandler?.({ type: "turn_end" });
+				childEventHandler?.({ type: "auto_compaction_start" });
+			}),
+			subscribe: vi.fn((handler) => {
+				childEventHandler = handler;
+				return vi.fn();
+			}),
+			dispose: vi.fn(),
+		};
+		mocks.createAgentSessionFromDefinition.mockResolvedValue({
+			session: mockSession,
+			sessionFilePath: undefined,
+		});
+
+		try {
+			const result = (await pi.callTool("spawn_agent", {
+				role: "worker",
+				prompt: "emit activity",
+				runtimeContext: {
+					mode: "sub-agent",
+					parentRole: "cosmo",
+					taskId: "TASK-238",
+				},
+			})) as { details: { status: string; spawnId: string } };
+
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(result.details.status).toBe("accepted");
+			expect(activityEvents).toMatchObject([
+				{
+					type: "spawn_activity",
+					spawnId: result.details.spawnId,
+					parentSessionId: "parent-session-activity",
+					role: "worker",
+					taskId: "TASK-238",
+					activity: {
+						kind: "tool_start",
+						toolName: "read",
+						summary: "read index.ts",
+					},
+				},
+				{
+					activity: { kind: "tool_end", toolName: "read", isError: false },
+				},
+				{ activity: { kind: "turn_start" } },
+				{ activity: { kind: "turn_end" } },
+				{ activity: { kind: "compaction" } },
+			]);
+		} finally {
+			activityBus.unsubscribe(activityToken);
+		}
+	});
+
+	test("spawn_agent cleans up child session subscriptions when prompt throws", async () => {
+		const cwd = "/tmp/project";
+		const pi = createMockPi(cwd, {
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
+		});
+		orchestrationExtension(pi as never);
+
+		mockRuntime({ domainContext: "coding" });
+		const unsubscribeActivity = vi.fn();
+		const mockSession = {
+			sessionId: "child-session-throws",
+			messages: [],
+			prompt: vi.fn(async () => {
+				throw new Error("prompt failed after subscribe");
+			}),
+			subscribe: vi.fn(() => unsubscribeActivity),
+			dispose: vi.fn(),
+		};
+		mocks.createAgentSessionFromDefinition.mockResolvedValue({
+			session: mockSession,
+			sessionFilePath: undefined,
+		});
+
+		const result = (await pi.callTool("spawn_agent", {
+			role: "worker",
+			prompt: "fail after subscribing",
+		})) as { details: { status: string } };
+
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(result.details.status).toBe("accepted");
+		expect(mockSession.subscribe).toHaveBeenCalledOnce();
+		expect(unsubscribeActivity).toHaveBeenCalledOnce();
+		expect(mockSession.dispose).toHaveBeenCalledOnce();
+		expect(pi.sendUserMessage).toHaveBeenCalledWith(
+			expect.stringContaining("prompt failed after subscribe"),
 			{ deliverAs: "followUp" },
 		);
 	});
