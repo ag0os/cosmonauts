@@ -9,6 +9,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Mocks
 // ============================================================================
 
+const readlineMocks = vi.hoisted(() => ({
+	close: vi.fn(),
+	question: vi.fn(),
+}));
+
+vi.mock("node:readline", () => ({
+	createInterface: () => ({
+		close: readlineMocks.close,
+		question: readlineMocks.question,
+	}),
+}));
+
 vi.mock("../../../lib/packages/installer.ts", () => ({
 	installPackage: vi.fn(),
 	uninstallPackage: vi.fn(),
@@ -33,10 +45,13 @@ import {
 	createUninstallProgram,
 	installAction,
 	packagesListAction,
+	renderInstallSuccess,
+	resolveInstallRequest,
 	resolveSource,
 	uninstallAction,
 } from "../../../cli/packages/subcommand.ts";
 import { resolveCatalogEntry } from "../../../lib/packages/catalog.ts";
+import type { InstallResult } from "../../../lib/packages/installer.ts";
 import {
 	installPackage,
 	uninstallPackage,
@@ -53,6 +68,8 @@ const mockResolveCatalogEntry = vi.mocked(resolveCatalogEntry);
 // Helpers
 // ============================================================================
 
+type QuestionCallback = (answer: string) => void;
+
 function makeInstalledPackage(
 	name: string,
 	scope: "user" | "project" = "user",
@@ -68,6 +85,30 @@ function makeInstalledPackage(
 		scope,
 		installedAt: new Date(),
 	};
+}
+
+function makeInstallResult(
+	overrides: Partial<InstallResult> = {},
+): InstallResult {
+	return {
+		manifest: overrides.manifest ?? {
+			name: "new-pkg",
+			version: "1.0.0",
+			description: "Test",
+			domains: [{ name: "coding", path: "domains/coding" }],
+		},
+		installedTo: overrides.installedTo ?? "/store/new-pkg",
+		domainMergeResults: overrides.domainMergeResults ?? [],
+	};
+}
+
+function answerConflictPrompts(...answers: string[]): void {
+	readlineMocks.question.mockImplementation(
+		(_query: string, callback: QuestionCallback) => {
+			const answer = answers.shift() ?? "";
+			callback(answer);
+		},
+	);
 }
 
 // ============================================================================
@@ -97,6 +138,8 @@ beforeEach(() => {
 
 	process.exitCode = undefined;
 	mockResolveCatalogEntry.mockReturnValue(undefined);
+	readlineMocks.close.mockReset();
+	readlineMocks.question.mockReset();
 });
 
 afterEach(() => {
@@ -136,6 +179,88 @@ describe("resolveSource", () => {
 		mockResolveCatalogEntry.mockReturnValue(undefined);
 		resolveSource("some-name");
 		expect(mockResolveCatalogEntry).toHaveBeenCalledWith("some-name");
+	});
+});
+
+// ============================================================================
+// install helper rendering/resolution
+// ============================================================================
+
+describe("resolveInstallRequest", () => {
+	it("resolves catalog short names with catalog metadata", () => {
+		mockResolveCatalogEntry.mockReturnValue({
+			name: "coding",
+			description: "Coding domain",
+			source: "./bundled/coding",
+		});
+
+		const request = resolveInstallRequest("coding", {
+			projectRoot: "/project",
+		});
+
+		expect(request.scope).toBe("user");
+		expect(request.cwd).toBe("/project");
+		expect(request.catalogName).toBe("coding");
+		expect(request.source).toMatch(/bundled[\\/]coding$/);
+	});
+
+	it("resolves project scope and passes through non-catalog sources", () => {
+		mockResolveCatalogEntry.mockReturnValue(undefined);
+
+		const request = resolveInstallRequest("./my-pkg", {
+			local: true,
+			projectRoot: "/project",
+		});
+
+		expect(request).toEqual({
+			source: "./my-pkg",
+			scope: "project",
+			cwd: "/project",
+			catalogName: undefined,
+		});
+	});
+});
+
+describe("renderInstallSuccess", () => {
+	it("renders global install success lines", () => {
+		const lines = renderInstallSuccess(
+			makeInstallResult({
+				manifest: {
+					name: "my-pkg",
+					version: "1.2.3",
+					description: "Test",
+					domains: [
+						{ name: "coding", path: "domains/coding" },
+						{ name: "review", path: "domains/review" },
+					],
+				},
+				installedTo: "/store/my-pkg",
+			}),
+			"user",
+		);
+
+		expect(lines).toEqual([
+			'Installed "my-pkg" v1.2.3 [global]',
+			"  Domains: coding, review",
+			"  Path:    /store/my-pkg",
+		]);
+	});
+
+	it("renders local install success lines", () => {
+		const lines = renderInstallSuccess(
+			makeInstallResult({
+				manifest: {
+					name: "my-pkg",
+					version: "1.2.3",
+					description: "Test",
+					domains: [{ name: "coding", path: "domains/coding" }],
+				},
+				installedTo: "/project/.cosmonauts/packages/my-pkg",
+			}),
+			"project",
+		);
+
+		expect(lines[0]).toBe('Installed "my-pkg" v1.2.3 [local]');
 	});
 });
 
@@ -328,6 +453,141 @@ describe("installAction — --yes flag", () => {
 		expect(mockUninstallPackage).not.toHaveBeenCalled();
 		// Install should succeed
 		expect(stdoutOutput).toContain('"new-pkg"');
+		expect(process.exitCode).toBeUndefined();
+	});
+});
+
+// ============================================================================
+// installAction — conflict prompt
+// ============================================================================
+
+describe("installAction — conflict prompt", () => {
+	it("skips installation and rolls back the installed package", async () => {
+		answerConflictPrompts("s");
+		mockInstallPackage.mockResolvedValue(
+			makeInstallResult({
+				domainMergeResults: [
+					{ domainId: "coding", existingPackage: "old-pkg" },
+				],
+			}),
+		);
+		mockUninstallPackage.mockResolvedValue(true);
+
+		await installAction("./new-pkg", {
+			projectRoot: "/project",
+		});
+
+		expect(mockUninstallPackage).toHaveBeenCalledWith(
+			"new-pkg",
+			"user",
+			"/project",
+		);
+		expect(stdoutOutput).toContain('Skipped: "new-pkg" was not installed.');
+		expect(stdoutOutput).not.toContain('Installed "new-pkg"');
+		expect(process.exitCode).toBeUndefined();
+	});
+
+	it("cancels installation, rolls back, and sets exitCode = 1", async () => {
+		answerConflictPrompts("c");
+		mockInstallPackage.mockResolvedValue(
+			makeInstallResult({
+				domainMergeResults: [
+					{ domainId: "coding", existingPackage: "old-pkg" },
+				],
+			}),
+		);
+		mockUninstallPackage.mockResolvedValue(true);
+
+		await installAction("./new-pkg", {
+			projectRoot: "/project",
+		});
+
+		expect(mockUninstallPackage).toHaveBeenCalledWith(
+			"new-pkg",
+			"user",
+			"/project",
+		);
+		expect(stderrOutput).toContain(
+			'cosmonauts install: cancelled — "new-pkg" was not installed.',
+		);
+		expect(stdoutOutput).not.toContain('Installed "new-pkg"');
+		expect(process.exitCode).toBe(1);
+	});
+
+	it("replaces each unique conflicting package before printing success", async () => {
+		answerConflictPrompts("r");
+		mockInstallPackage.mockResolvedValue(
+			makeInstallResult({
+				domainMergeResults: [
+					{ domainId: "coding", existingPackage: "old-pkg" },
+					{ domainId: "coding-tools", existingPackage: "old-pkg" },
+					{ domainId: "review", existingPackage: "review-pkg" },
+				],
+			}),
+		);
+		mockUninstallPackage.mockResolvedValue(true);
+
+		await installAction("./new-pkg", {
+			projectRoot: "/project",
+		});
+
+		expect(mockUninstallPackage).toHaveBeenCalledTimes(2);
+		expect(mockUninstallPackage).toHaveBeenNthCalledWith(
+			1,
+			"old-pkg",
+			"user",
+			"/project",
+		);
+		expect(mockUninstallPackage).toHaveBeenNthCalledWith(
+			2,
+			"review-pkg",
+			"user",
+			"/project",
+		);
+		expect(stdoutOutput).toContain('Removed conflicting package: "old-pkg"');
+		expect(stdoutOutput).toContain('Removed conflicting package: "review-pkg"');
+		expect(stdoutOutput).toContain('Installed "new-pkg"');
+		expect(process.exitCode).toBeUndefined();
+	});
+
+	it("prompts again after an invalid answer", async () => {
+		answerConflictPrompts("invalid", "m");
+		mockInstallPackage.mockResolvedValue(
+			makeInstallResult({
+				domainMergeResults: [
+					{ domainId: "coding", existingPackage: "old-pkg" },
+				],
+			}),
+		);
+
+		await installAction("./new-pkg", {
+			projectRoot: "/project",
+		});
+
+		expect(readlineMocks.question).toHaveBeenCalledTimes(2);
+		expect(mockUninstallPackage).not.toHaveBeenCalled();
+		expect(stdoutOutput).toContain('Installed "new-pkg"');
+		expect(process.exitCode).toBeUndefined();
+	});
+
+	it("propagates rollback failures when skip is selected", async () => {
+		answerConflictPrompts("s");
+		mockInstallPackage.mockResolvedValue(
+			makeInstallResult({
+				domainMergeResults: [
+					{ domainId: "coding", existingPackage: "old-pkg" },
+				],
+			}),
+		);
+		mockUninstallPackage.mockRejectedValue(new Error("rollback failed"));
+
+		await expect(
+			installAction("./new-pkg", {
+				projectRoot: "/project",
+			}),
+		).rejects.toThrow("rollback failed");
+
+		expect(stdoutOutput).not.toContain("Skipped:");
 		expect(process.exitCode).toBeUndefined();
 	});
 });
