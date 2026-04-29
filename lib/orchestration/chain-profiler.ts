@@ -333,16 +333,30 @@ export class ChainProfiler {
 // Summary Builder (pure function)
 // ============================================================================
 
-// Temporary migration debt: profiler summary formatting is intentionally baselined.
-// fallow-ignore-next-line complexity
 export function buildSummary(
-	entries: ProfileTraceEntry[],
-	spans: ToolSpan[],
-	pendingTools: Map<string, PendingTool>,
+	entries: readonly ProfileTraceEntry[],
+	spans: readonly ToolSpan[],
+	pendingTools: ReadonlyMap<string, PendingTool>,
 ): string {
 	const lines: string[] = [];
+	const sections = [
+		renderChainOverview(entries),
+		renderStageBreakdown(entries),
+		renderParallelBreakdown(entries),
+		renderSlowestTools(spans),
+		renderPerAgentToolBreakdown(spans),
+		renderPendingTools(pendingTools),
+	];
 
-	// ---- Chain Overview ----
+	for (const section of sections) {
+		if (section.length === 0) continue;
+		lines.push(...section, "");
+	}
+
+	return lines.join("\n");
+}
+
+function renderChainOverview(entries: readonly ProfileTraceEntry[]): string[] {
 	const chainStart = entries.find((e) => e.cat === "chain" && e.ph === "B");
 	const chainEnd = entries.find((e) => e.cat === "chain" && e.ph === "E");
 	const totalMs =
@@ -350,18 +364,20 @@ export function buildSummary(
 			? chainEnd.ts - chainStart.ts
 			: undefined;
 
+	const lines: string[] = [];
 	lines.push("=== Chain Overview ===");
 	if (totalMs !== undefined) {
 		lines.push(`Total wall-clock: ${formatDuration(totalMs)}`);
 	} else {
 		lines.push("Total wall-clock: (chain did not complete)");
 	}
-	lines.push("");
+	return lines;
+}
 
-	// ---- Stage Breakdown ----
-	lines.push("=== Stage Breakdown ===");
+function renderStageBreakdown(entries: readonly ProfileTraceEntry[]): string[] {
 	const stageBegins = entries.filter((e) => e.cat === "stage" && e.ph === "B");
 	const stageEnds = entries.filter((e) => e.cat === "stage" && e.ph === "E");
+	const lines = ["=== Stage Breakdown ==="];
 
 	if (stageBegins.length === 0) {
 		lines.push("  (no stages recorded)");
@@ -375,72 +391,110 @@ export function buildSummary(
 			lines.push(`  ${begin.name}: ${durStr}`);
 		}
 	}
-	lines.push("");
+	return lines;
+}
 
-	// ---- Parallel Group Breakdown ----
+function renderParallelBreakdown(
+	entries: readonly ProfileTraceEntry[],
+): string[] {
 	const parallelBegins = entries.filter(
 		(e) => e.cat === "parallel" && e.ph === "B",
 	);
+	if (parallelBegins.length === 0) return [];
+
 	const parallelEnds = entries.filter(
 		(e) => e.cat === "parallel" && e.ph === "E",
 	);
+	const lines = ["=== Parallel Group Breakdown ==="];
 
-	if (parallelBegins.length > 0) {
-		lines.push("=== Parallel Group Breakdown ===");
-		for (const pgBegin of parallelBegins) {
-			const pgEnd = parallelEnds.find(
-				(e) =>
-					e.data?.stepIndex === pgBegin.data?.stepIndex && e.ts >= pgBegin.ts,
-			);
-			const groupDur = pgEnd !== undefined ? pgEnd.ts - pgBegin.ts : undefined;
-			const groupDurStr =
-				groupDur !== undefined ? formatDuration(groupDur) : "(incomplete)";
-			lines.push(
-				`  Group [stepIndex=${pgBegin.data?.stepIndex}]: ${groupDurStr}`,
-			);
-
-			// Find agent_spawned events between begin and end of this group
-			const groupEndTs = pgEnd?.ts ?? Number.MAX_SAFE_INTEGER;
-			const members = entries.filter(
-				(e) =>
-					e.cat === "agent" &&
-					e.name === "agent_spawned" &&
-					e.ts >= pgBegin.ts &&
-					e.ts <= groupEndTs &&
-					e.scope !== undefined,
-			);
-
-			let sumOfMembers = 0;
-			for (const member of members) {
-				const sessionId = member.data?.sessionId as string | undefined;
-				const scope = member.scope ?? "unknown";
-				// Find agent_completed for this session
-				const completed = entries.find(
-					(e) =>
-						e.cat === "agent" &&
-						e.name === "agent_completed" &&
-						e.data?.sessionId === sessionId,
-				);
-				const memberDur =
-					completed !== undefined ? completed.ts - member.ts : undefined;
-				const memberDurStr =
-					memberDur !== undefined ? formatDuration(memberDur) : "(incomplete)";
-				if (memberDur !== undefined) sumOfMembers += memberDur;
-				lines.push(`    ${scope}: ${memberDurStr}`);
-			}
-
-			if (groupDur !== undefined && sumOfMembers > 0) {
-				const overlapRatio = sumOfMembers / groupDur;
-				lines.push(
-					`    Overlap ratio (sum-of-members / group wall-clock): ${overlapRatio.toFixed(2)}x`,
-				);
-			}
-		}
-		lines.push("");
+	for (const pgBegin of parallelBegins) {
+		lines.push(...renderParallelGroup(entries, parallelEnds, pgBegin));
 	}
 
-	// ---- Slowest Tools (top 20) ----
-	lines.push("=== Slowest Tools (top 20) ===");
+	return lines;
+}
+
+function renderParallelGroup(
+	entries: readonly ProfileTraceEntry[],
+	parallelEnds: readonly ProfileTraceEntry[],
+	pgBegin: ProfileTraceEntry,
+): string[] {
+	const pgEnd = parallelEnds.find(
+		(e) => e.data?.stepIndex === pgBegin.data?.stepIndex && e.ts >= pgBegin.ts,
+	);
+	const groupDur = pgEnd !== undefined ? pgEnd.ts - pgBegin.ts : undefined;
+	const groupDurStr =
+		groupDur !== undefined ? formatDuration(groupDur) : "(incomplete)";
+	const lines = [
+		`  Group [stepIndex=${pgBegin.data?.stepIndex}]: ${groupDurStr}`,
+	];
+	const members = findParallelMembers(entries, pgBegin, pgEnd);
+
+	let sumOfMembers = 0;
+	for (const member of members) {
+		const memberSummary = summarizeParallelMember(entries, member);
+		if (memberSummary.durationMs !== undefined) {
+			sumOfMembers += memberSummary.durationMs;
+		}
+		lines.push(`    ${memberSummary.scope}: ${memberSummary.duration}`);
+	}
+
+	if (groupDur !== undefined && sumOfMembers > 0) {
+		const overlapRatio = sumOfMembers / groupDur;
+		lines.push(
+			`    Overlap ratio (sum-of-members / group wall-clock): ${overlapRatio.toFixed(2)}x`,
+		);
+	}
+
+	return lines;
+}
+
+function findParallelMembers(
+	entries: readonly ProfileTraceEntry[],
+	pgBegin: ProfileTraceEntry,
+	pgEnd: ProfileTraceEntry | undefined,
+): ProfileTraceEntry[] {
+	const groupEndTs = pgEnd?.ts ?? Number.MAX_SAFE_INTEGER;
+	return entries.filter(
+		(e) =>
+			e.cat === "agent" &&
+			e.name === "agent_spawned" &&
+			e.ts >= pgBegin.ts &&
+			e.ts <= groupEndTs &&
+			e.scope !== undefined,
+	);
+}
+
+interface ParallelMemberSummary {
+	scope: string;
+	duration: string;
+	durationMs: number | undefined;
+}
+
+function summarizeParallelMember(
+	entries: readonly ProfileTraceEntry[],
+	member: ProfileTraceEntry,
+): ParallelMemberSummary {
+	const sessionId = member.data?.sessionId as string | undefined;
+	const completed = entries.find(
+		(e) =>
+			e.cat === "agent" &&
+			e.name === "agent_completed" &&
+			e.data?.sessionId === sessionId,
+	);
+	const durationMs =
+		completed !== undefined ? completed.ts - member.ts : undefined;
+
+	return {
+		scope: member.scope ?? "unknown",
+		duration:
+			durationMs !== undefined ? formatDuration(durationMs) : "(incomplete)",
+		durationMs,
+	};
+}
+
+function renderSlowestTools(spans: readonly ToolSpan[]): string[] {
+	const lines = ["=== Slowest Tools (top 20) ==="];
 	if (spans.length === 0) {
 		lines.push("  (no tool calls recorded)");
 	} else {
@@ -454,10 +508,11 @@ export function buildSummary(
 			);
 		}
 	}
-	lines.push("");
+	return lines;
+}
 
-	// ---- Per-Agent Tool Breakdown ----
-	lines.push("=== Per-Agent Tool Breakdown ===");
+function renderPerAgentToolBreakdown(spans: readonly ToolSpan[]): string[] {
+	const lines = ["=== Per-Agent Tool Breakdown ==="];
 	if (spans.length === 0) {
 		lines.push("  (no tool calls recorded)");
 	} else {
@@ -477,10 +532,13 @@ export function buildSummary(
 			);
 		}
 	}
-	lines.push("");
+	return lines;
+}
 
-	// ---- Orphaned / Incomplete Tool Calls ----
-	lines.push("=== Orphaned / Incomplete Tool Calls ===");
+function renderPendingTools(
+	pendingTools: ReadonlyMap<string, PendingTool>,
+): string[] {
+	const lines = ["=== Orphaned / Incomplete Tool Calls ==="];
 	if (pendingTools.size === 0) {
 		lines.push("  (none)");
 	} else {
@@ -490,9 +548,7 @@ export function buildSummary(
 			);
 		}
 	}
-	lines.push("");
-
-	return lines.join("\n");
+	return lines;
 }
 
 // ============================================================================
