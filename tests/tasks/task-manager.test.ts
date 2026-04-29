@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskManager } from "../../lib/tasks/task-manager.js";
 import type { ForgeTasksConfig } from "../../lib/tasks/task-types.js";
+import { createTaskFixture } from "../helpers/tasks.ts";
 
 describe("TaskManager", () => {
 	let tempDir: string;
@@ -379,6 +380,35 @@ describe("TaskManager", () => {
 			const highPriorityTasks = await manager.listTasks({ priority: "high" });
 
 			expect(highPriorityTasks.length).toBe(2);
+		});
+
+		it("should filter by multiple priorities", async () => {
+			await manager.init();
+			await createTaskFixture(manager, { title: "Task 1", priority: "high" });
+			await createTaskFixture(manager, { title: "Task 2", priority: "medium" });
+			await createTaskFixture(manager, { title: "Task 3", priority: "low" });
+
+			const tasks = await manager.listTasks({ priority: ["high", "low"] });
+
+			expect(tasks.map((task) => task.id)).toEqual(["TASK-001", "TASK-003"]);
+		});
+
+		it("should exclude tasks without priority when filtering by priority", async () => {
+			await manager.init();
+			await createTaskFixture(manager, { title: "Task 1", priority: "high" });
+			await createTaskFixture(manager, { title: "Task 2" });
+			await createTaskFixture(manager, { title: "Task 3", priority: "low" });
+
+			const highPriorityTasks = await manager.listTasks({ priority: "high" });
+			const multiplePriorityTasks = await manager.listTasks({
+				priority: ["high", "low"],
+			});
+
+			expect(highPriorityTasks.map((task) => task.id)).toEqual(["TASK-001"]);
+			expect(multiplePriorityTasks.map((task) => task.id)).toEqual([
+				"TASK-001",
+				"TASK-003",
+			]);
 		});
 
 		it("should filter by assignee", async () => {
