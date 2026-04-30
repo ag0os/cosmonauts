@@ -15,11 +15,19 @@ const definition: AgentDefinition = {
 	tools: "readonly",
 	extensions: ["plans", "orchestration"],
 	skills: ["pi", "plan", "engineering-principles", "design-dialogue"],
-	subagents: ["task-manager", "plan-reviewer", "explorer", "verifier"],
+	subagents: [
+		"task-manager",
+		"plan-reviewer",
+		"explorer",
+		"verifier",
+		"worker",
+		"spec-writer",
+		"tdd-planner",
+	],
 	projectContext: true,
 	session: "ephemeral",
 	loop: false,
-	thinkingLevel: "high",
+	thinkingLevel: "xhigh",
 };
 
 export default definition;
