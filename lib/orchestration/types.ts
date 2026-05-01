@@ -352,6 +352,12 @@ export interface SpawnConfig {
 	parentSessionId?: string;
 	/** Plan slug for session lineage tracking */
 	planSlug?: string;
+	/**
+	 * Optional correlation key for spawn timing instrumentation.
+	 * When set and `COSMONAUTS_SPAWN_TIMING=1`, session-factory and spawn-tool
+	 * emit per-stage timing markers keyed by this value to stderr.
+	 */
+	timingKey?: string;
 }
 
 /** Result of an agent execution */

@@ -21,6 +21,7 @@ import type { DomainResolver } from "../domains/resolver.ts";
 import { validateSlug } from "../plans/plan-manager.ts";
 import { sessionsDirForPlan } from "../sessions/session-store.ts";
 import { buildToolAllowlist } from "./definition-resolution.ts";
+import { markSpawnStage } from "./spawn-timing.ts";
 import type { SpawnConfig } from "./types.ts";
 
 // ============================================================================
@@ -47,6 +48,8 @@ export async function createAgentSessionFromDefinition(
 	domainsDir: string,
 	resolver?: DomainResolver,
 ): Promise<SessionCreateResult> {
+	const tk = config.timingKey;
+	markSpawnStage(tk, "factory_start", { role: config.role });
 	const params = await buildSessionParams({
 		def,
 		cwd: config.cwd,
@@ -65,6 +68,10 @@ export async function createAgentSessionFromDefinition(
 		skillPaths: config.skillPaths,
 		modelOverride: config.model,
 		thinkingLevelOverride: config.thinkingLevel,
+	});
+	markSpawnStage(tk, "params_built", {
+		caps: def.capabilities.length,
+		exts: params.extensionPaths.length,
 	});
 
 	// Build resource loader with all definition fields.
@@ -86,6 +93,7 @@ export async function createAgentSessionFromDefinition(
 		}),
 	});
 	await loader.reload();
+	markSpawnStage(tk, "loader_reloaded");
 
 	const toolAllowlist = buildToolAllowlist(params.tools, loader);
 
@@ -125,5 +133,6 @@ export async function createAgentSessionFromDefinition(
 	}
 
 	const { session } = await createAgentSession(sessionOptions);
+	markSpawnStage(tk, "session_created", { sessionId: session.sessionId });
 	return { session, sessionFilePath };
 }

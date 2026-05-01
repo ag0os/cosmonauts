@@ -18,6 +18,10 @@ import {
 	awaitNextCompletionMessages,
 	formatSpawnCompletionMessage,
 } from "../../../../lib/orchestration/spawn-completion-loop.ts";
+import {
+	clearSpawnTiming,
+	markSpawnStage,
+} from "../../../../lib/orchestration/spawn-timing.ts";
 import type { SpawnTracker } from "../../../../lib/orchestration/spawn-tracker.ts";
 import {
 	getOrCreateTracker,
@@ -166,6 +170,9 @@ async function runDetachedChildSession(
 	params: DetachedChildSessionParams,
 ): Promise<void> {
 	const { session, childDepth, planSlug } = params;
+	markSpawnStage(params.spawnId, "child_runner_start", {
+		sessionId: session.sessionId,
+	});
 	sessionDepths.set(session.sessionId, childDepth);
 	const childTracker = getOrCreateTracker(session.sessionId, undefined, {
 		deliveryMode: "external",
@@ -185,6 +192,7 @@ async function runDetachedChildSession(
 			params.spawnId,
 			params,
 		);
+		markSpawnStage(params.spawnId, "child_subscribed");
 		result = await executeChildPromptLoop(session, childTracker, {
 			text: params.prompt,
 			role: params.role,
@@ -214,6 +222,10 @@ async function runDetachedChildSession(
 		if (result) {
 			await persistChildLineage(params, result, finalMessages);
 		}
+		markSpawnStage(params.spawnId, "child_completed", {
+			outcome: result?.outcome ?? "unknown",
+		});
+		clearSpawnTiming(params.spawnId);
 	}
 }
 
@@ -222,7 +234,17 @@ function subscribeChildActivity(
 	spawnId: string,
 	params: ChildActivityBase,
 ): () => void {
+	let firstEventSeen = false;
 	return session.subscribe((event: ChildSessionEvent) => {
+		if (!firstEventSeen) {
+			firstEventSeen = true;
+			markSpawnStage(spawnId, "child_first_event", {
+				eventType: String(event.type),
+				...(typeof event.toolName === "string" && {
+					toolName: event.toolName,
+				}),
+			});
+		}
 		const activityEvent = mapChildActivityEvent(event, {
 			spawnId,
 			parentSessionId: params.parentSessionId,
@@ -604,7 +626,14 @@ export function registerSpawnTool(
 				spawnDepth: childDepth,
 				parentSessionId,
 				...(planSlug !== undefined && { planSlug }),
+				timingKey: spawnId,
 			};
+
+			markSpawnStage(spawnId, "tool_accepted", {
+				role: params.role,
+				depth: childDepth,
+				...(taskId !== undefined && { taskId }),
+			});
 
 			// Launch as a detached background Promise — no await
 			void createAgentSessionFromDefinition(
