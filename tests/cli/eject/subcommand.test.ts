@@ -79,31 +79,29 @@ describe("ejectAction — success", () => {
 	it("prints global uninstall guidance without --local for user scope", async () => {
 		mockEjectDomain.mockResolvedValue({
 			ejectedTo: "/project/.cosmonauts/domains/coding",
-			sourcePackage: "coding-minimal",
+			sourcePackage: "some-pkg",
 			sourceScope: "user",
-			sourcePath: "/store/coding-minimal/domains/coding",
+			sourcePath: "/store/some-pkg/domains/coding",
 		});
 
 		await ejectAction("coding", { projectRoot: "/project" });
 
-		expect(output.stdout()).toContain("cosmonauts uninstall coding-minimal");
-		expect(output.stdout()).not.toContain("coding-minimal --local");
+		expect(output.stdout()).toContain("cosmonauts uninstall some-pkg");
+		expect(output.stdout()).not.toContain("some-pkg --local");
 		expect(output.stdout()).toContain("fallback");
 	});
 
 	it("prints local uninstall guidance with --local for project scope", async () => {
 		mockEjectDomain.mockResolvedValue({
 			ejectedTo: "/project/.cosmonauts/domains/coding",
-			sourcePackage: "coding-minimal",
+			sourcePackage: "some-pkg",
 			sourceScope: "project",
-			sourcePath: "/project/.cosmonauts/packages/coding-minimal/domains/coding",
+			sourcePath: "/project/.cosmonauts/packages/some-pkg/domains/coding",
 		});
 
 		await ejectAction("coding", { projectRoot: "/project" });
 
-		expect(output.stdout()).toContain(
-			"cosmonauts uninstall coding-minimal --local",
-		);
+		expect(output.stdout()).toContain("cosmonauts uninstall some-pkg --local");
 	});
 
 	it("prints IDE tip", async () => {

@@ -445,7 +445,7 @@ describe("bundled dirs", () => {
 		const sources = await scanDomainSources({
 			builtinDomainsDir: BUILTIN_DIR,
 			projectRoot: PROJECT_ROOT,
-			bundledDirs: ["/bundled/coding", "/bundled/coding-minimal"],
+			bundledDirs: ["/bundled/coding", "/bundled/extra"],
 		});
 
 		expect(sources).toHaveLength(3);
@@ -454,7 +454,7 @@ describe("bundled dirs", () => {
 			precedence: 0.5,
 		});
 		expect(sources[2]).toMatchObject({
-			origin: "bundled:coding-minimal",
+			origin: "bundled:extra",
 			precedence: 0.5,
 		});
 	});

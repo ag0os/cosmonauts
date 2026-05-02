@@ -197,7 +197,7 @@ For small, self-contained changes (a bug fix, a single function, a config tweak)
 lib/              Core libraries (agents, orchestration, tasks, plans, workflows, domains, config)
 lib/sessions/     Session persistence, lineage tracking, and knowledge record format
 domains/          Framework-level domain directory — contains only shared/ (base prompts, capabilities, extensions)
-bundled/          Installable domain packages (coding/, coding-minimal/) — the source of truth for bundled domains
+bundled/          Installable domain packages (coding/) — the source of truth for bundled domains
 cli/              CLI implementation
 bin/              CLI entry points (cosmonauts)
 tests/            Test suites mirroring source structure

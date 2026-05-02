@@ -378,13 +378,7 @@ function handleNoDomainGuard(): void {
 		"No domains installed. Install the coding domain to get started:",
 		{},
 	);
-	printLines(
-		[
-			"  cosmonauts install coding",
-			"  cosmonauts install coding-minimal  (lightweight)",
-		],
-		"stderr",
-	);
+	printLines(["  cosmonauts install coding"], "stderr");
 	process.exitCode = 1;
 }
 
@@ -465,7 +459,6 @@ async function handleInitMode(
 		printLines([
 			"No domains installed. Install a domain to use cosmonauts init:",
 			"  cosmonauts install coding",
-			"  cosmonauts install coding-minimal  (lightweight)",
 			"",
 			"After installing a domain, run `cosmonauts init` again to set up your project.",
 		]);
