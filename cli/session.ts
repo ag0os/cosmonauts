@@ -238,6 +238,26 @@ function validateSessionFlags(piFlags: PiFlags): void {
 // Session Manager Resolution
 // ============================================================================
 
+function getDomainLead(
+	resolver: DomainResolver | undefined,
+	domain: string | undefined,
+): string | undefined {
+	return domain ? resolver?.registry.get(domain)?.manifest.lead : undefined;
+}
+
+function resolveSessionDir(opts: {
+	def: AgentDefinition;
+	cwd: string;
+	baseSessionDir?: string;
+	resolver?: DomainResolver;
+}): string {
+	const { def, cwd, baseSessionDir, resolver } = opts;
+	const domainLead = getDomainLead(resolver, def.domain);
+	const isLead = def.id === domainLead;
+	const subDir = isLead && def.domain ? def.domain : def.id;
+	return join(baseSessionDir ?? piSessionDir(cwd), subDir);
+}
+
 /**
  * Resolve which SessionManager to use based on Pi flags and fallback behavior.
  * Follows Pi's priority cascade: noSession → fork → session → resume → continue → default.
@@ -508,14 +528,12 @@ export async function createSession(
 
 	const resourceLoaderOptions = toResourceLoaderOptions(params, piFlags, cwd);
 
-	// Scope persistent sessions by agent ID so each agent resumes its own history.
-	// cosmo uses the default (unscoped) directory for backward compatibility.
-	const baseSessionDir = piFlags?.sessionDir ?? undefined;
-	const sessionDir = baseSessionDir
-		? baseSessionDir
-		: def.id !== "cosmo"
-			? join(piSessionDir(cwd), def.id)
-			: undefined;
+	const sessionDir = resolveSessionDir({
+		def,
+		cwd,
+		baseSessionDir: piFlags?.sessionDir,
+		resolver,
+	});
 
 	// Session manager cascade (matches Pi's priority order):
 	// noSession → fork → session → resume → continue → persistent default → inMemory
