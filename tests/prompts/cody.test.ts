@@ -2,16 +2,23 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 const PROMPT_PATH = new URL(
-	"../../bundled/coding/coding/prompts/cosmo.md",
+	"../../bundled/coding/coding/prompts/cody.md",
 	import.meta.url,
 );
 
-describe("cosmo prompt", () => {
+describe("cody prompt", () => {
+	it("self-identifies as Cody", async () => {
+		const content = await readFile(PROMPT_PATH, "utf-8");
+
+		expect(content).not.toContain("You are Cosmo");
+		expect(content).toContain("You are Cody");
+	});
+
 	it("defines the three planning routes and their signals", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
 		expect(content).toContain("`spec-writer`");
-		expect(content).toContain("`cosmo-facilitates-dialogue`");
+		expect(content).toContain("`cody-facilitates-dialogue`");
 		expect(content).toContain("`planner-autonomous`");
 		expect(content).toContain(
 			"Idea is fuzzy, no spec exists, or the work still needs product framing (WHAT/WHY, users, experience)",
@@ -36,7 +43,7 @@ describe("cosmo prompt", () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
 		expect(content).toContain(
-			"Route: <spec-writer|cosmo-facilitates-dialogue|planner-autonomous>",
+			"Route: <spec-writer|cody-facilitates-dialogue|planner-autonomous>",
 		);
 		expect(content).toContain("Why: <signal(s) that triggered this route>");
 		expect(content).toContain(
