@@ -1,9 +1,9 @@
 import type { AgentDefinition } from "../../../../lib/agents/types.ts";
 
 const definition: AgentDefinition = {
-	id: "cosmo",
+	id: "cody",
 	description:
-		"Main coding assistant with orchestration capabilities. Delegates to sub-agents for complex workflows.",
+		"Coding-domain coordinator. Coordinates coding-focused planning, implementation, and review workflows.",
 	capabilities: [
 		"core",
 		"engineering-discipline",

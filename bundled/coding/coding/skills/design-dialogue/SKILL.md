@@ -15,7 +15,7 @@ Default to NOT loading this skill. Load it only when ONE of these is true:
 
 - Your spawn prompt (or initial user instruction) explicitly asks you to dialogue. Trigger phrases: "walk me through", "let's discuss", "work with me on", "dialogic", "step by step", "frame this with me", or a literal `[dialogic]` tag.
 - You are the main agent in an interactive REPL with no chain-stage parent (your runtime context has no parent role, or the parent is "user"/"human"). This is the `cosmonauts -a planner "..."` pattern.
-- A facilitating agent (e.g., cosmo) that has already loaded this skill is using you as a sub-agent and has passed the Decision Log or dialogue artifacts forward.
+- A facilitating agent (e.g., cody) that has already loaded this skill is using you as a sub-agent and has passed the Decision Log or dialogue artifacts forward.
 
 If you cannot confirm at least one of these signals, stay autonomous: produce the plan document in one pass, mark inferences as assumptions, do not ask questions. Dialoguing with a chain runner wastes tokens.
 
@@ -23,7 +23,7 @@ If you cannot confirm at least one of these signals, stay autonomous: produce th
 
 **Direct planner REPL**: the user invokes the planner as the main agent (`cosmonauts -a planner "..."`). You have a direct channel with the human across turns. Full dialogic cadence applies.
 
-**Cosmo-as-facilitator**: cosmo (persistent, interactive) loads this skill, runs the dialogue with the user directly, captures decisions in a Decision Log in its working context, and spawns the planner only once direction is settled. The planner itself runs autonomously but receives the Decision Log in its spawn prompt and reflects those decisions in the plan document.
+**Cody-as-facilitator**: cody (persistent, interactive) loads this skill, runs the dialogue with the user directly, captures decisions in a Decision Log in its working context, and spawns the planner only once direction is settled. The planner itself runs autonomously but receives the Decision Log in its spawn prompt and reflects those decisions in the plan document.
 
 If you are a planner sub-agent spawned via `spawn_agent` WITHOUT the facilitator having run dialogue first, you do NOT have a direct channel. Do not load this skill — you cannot dialogue; any questions you ask will never reach the user. Run autonomous.
 
