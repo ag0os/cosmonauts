@@ -1,8 +1,8 @@
 ---
 title: Main Domain and Cosmo Rename — top-level cross-domain assistant
-status: active
+status: completed
 createdAt: '2026-04-30T17:23:00.988Z'
-updatedAt: '2026-05-04T16:31:54.152Z'
+updatedAt: '2026-05-04T21:09:14.040Z'
 ---
 
 ## Summary

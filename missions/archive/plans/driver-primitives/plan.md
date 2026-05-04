@@ -1,8 +1,8 @@
 ---
 title: Driver Primitives — Layer 1 fleet/loop substrate
-status: active
+status: completed
 createdAt: '2026-04-30T16:39:55.948Z'
-updatedAt: '2026-05-04T16:28:45.913Z'
+updatedAt: '2026-05-04T20:14:02.943Z'
 ---
 
 ## Summary
