@@ -37,11 +37,19 @@ async function dumpPrompt(args: readonly string[] = []): Promise<string> {
 }
 
 describe("--dump-prompt", () => {
-	test("defaults to main/cosmo when no agent is provided", async () => {
+	test("default routing main installed defaults to main/cosmo when no agent is provided", async () => {
 		const prompt = await dumpPrompt();
 
 		expect(prompt).toContain("You are Cosmo");
 		expect(prompt).toContain("<!-- COSMONAUTS_AGENT_ID:main/cosmo -->");
+	});
+
+	test("default routing coding domain uses coding/cody when no agent is provided", async () => {
+		const prompt = await dumpPrompt(["-d", "coding"]);
+
+		expect(prompt).toContain("You are Cody");
+		expect(prompt).not.toContain("You are Cosmo");
+		expect(prompt).toContain("<!-- COSMONAUTS_AGENT_ID:coding/cody -->");
 	});
 
 	test("uses the explicit cody agent when provided", async () => {
