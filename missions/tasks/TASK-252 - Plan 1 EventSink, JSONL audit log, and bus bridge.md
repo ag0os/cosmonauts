@@ -1,15 +1,16 @@
 ---
 id: TASK-252
 title: 'Plan 1: EventSink, JSONL audit log, and bus bridge'
-status: To Do
+status: Done
 priority: high
+assignee: worker
 labels:
   - backend
   - 'plan:driver-primitives'
 dependencies:
   - TASK-248
 createdAt: '2026-05-04T17:32:49.706Z'
-updatedAt: '2026-05-04T18:25:57.795Z'
+updatedAt: '2026-05-04T19:08:07.111Z'
 ---
 
 ## Description
@@ -24,14 +25,14 @@ Cross-plan invariants encoded here:
 - `appendFile` failure throws `EventLogWriteError`; caller (`runRunLoop`) catches it and aborts.
 
 <!-- AC:BEGIN -->
-- [ ] #1 createEventSink({ logPath, runId, parentSessionId, activityBus }): EventSink is exported; returned function awaits appendFile (JSONL write) before calling activityBus.publish.
-- [ ] #2 appendFile failure throws EventLogWriteError (custom error class exported from this module).
-- [ ] #3 shouldBridge whitelist covers: driver_activity, preflight:failed, task_done, task_blocked, commit_made, lock_warning, run_completed, run_aborted. Non-whitelisted events go to JSONL only.
-- [ ] #4 toBusEvent maps DriverEvent{type:'driver_activity'} → bus event {type:'driver_activity'}; all other bridged events → {type:'driver_event'}. Neither ever emits 'spawn_activity'.
-- [ ] #5 tailEvents(path, since): Promise<{events, cursor}> skips malformed JSON lines (logs to stderr, advances cursor); returns empty events with same cursor when cursor is beyond EOF.
-- [ ] #6 tests/driver/event-stream.test.ts verifies JSONL write precedes bus publish, distinct bus types (no spawn_activity), tailEvents cursor, malformed-line skip, and EOF handling; bun run test passes.
+- [x] #1 createEventSink({ logPath, runId, parentSessionId, activityBus }): EventSink is exported; returned function awaits appendFile (JSONL write) before calling activityBus.publish.
+- [x] #2 appendFile failure throws EventLogWriteError (custom error class exported from this module).
+- [x] #3 shouldBridge whitelist covers: driver_activity, preflight:failed, task_done, task_blocked, commit_made, lock_warning, run_completed, run_aborted. Non-whitelisted events go to JSONL only.
+- [x] #4 toBusEvent maps DriverEvent{type:'driver_activity'} → bus event {type:'driver_activity'}; all other bridged events → {type:'driver_event'}. Neither ever emits 'spawn_activity'.
+- [x] #5 tailEvents(path, since): Promise<{events, cursor}> skips malformed JSON lines (logs to stderr, advances cursor); returns empty events with same cursor when cursor is beyond EOF.
+- [x] #6 tests/driver/event-stream.test.ts verifies JSONL write precedes bus publish, distinct bus types (no spawn_activity), tailEvents cursor, malformed-line skip, and EOF handling; bun run test passes.
 <!-- AC:END -->
 
 ## Implementation Notes
 
-Reset from false Done to To Do. Provider failure during chain run on 2026-05-04 — openai-codex/gpt-5.5 returned empty responses; coordinator confabulated success. No implementation landed. Retry pending.
+Implemented lib/driver/event-stream.ts and tests/driver/event-stream.test.ts. Verified file existence checks returned EXISTS, bun run test --grep "event-stream" passed, bun run test passed, bun run lint passed, and bun run typecheck passed. Commit: be4f3fa.

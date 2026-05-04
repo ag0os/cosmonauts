@@ -1,15 +1,16 @@
 ---
 id: TASK-254
 title: 'Plan 1: cosmonauts-subagent backend'
-status: To Do
+status: Done
 priority: medium
+assignee: worker
 labels:
   - backend
   - 'plan:driver-primitives'
 dependencies:
   - TASK-248
 createdAt: '2026-05-04T17:33:14.198Z'
-updatedAt: '2026-05-04T18:25:57.795Z'
+updatedAt: '2026-05-04T19:02:06.863Z'
 ---
 
 ## Description
@@ -23,14 +24,14 @@ Cross-plan invariant: `spawner.spawn()` MUST pass the **full SpawnConfig** — `
 QC-001: `lib/driver/` must NOT import from any `domains/` directory. `AgentSpawner` is injected via `deps`.
 
 <!-- AC:BEGIN -->
-- [ ] #1 createCosmonautsSubagentBackend(deps: CosmonautsSubagentBackendDeps): Backend is exported; Backend.name === 'cosmonauts-subagent'; capabilities.canCommit === true.
-- [ ] #2 Backend.run() calls deps.spawner.spawn() forwarding all of: role, prompt, cwd, signal, planSlug, parentSessionId, runtimeContext:{mode:'sub-agent',taskId,parentRole:'driver'}, domainContext, projectSkills, skillPaths, onEvent.
-- [ ] #3 onEvent callback maps incoming spawn events to DriverEvent entries of variant {type:'driver_activity'} carrying runId, parentSessionId, taskId from BackendInvocation.
-- [ ] #4 stdout is derived from spawned agent's last assistant message via extractAssistantText (mirrors spawn-tool.ts:127).
-- [ ] #5 lib/driver/backends/cosmonauts-subagent.ts has zero imports from any domains/ directory.
-- [ ] #6 tests/driver/backends/cosmonauts-subagent.test.ts mocks AgentSpawner and asserts all SpawnConfig fields including planSlug, parentSessionId, runtimeContext.taskId, runtimeContext.parentRole='driver', domainContext, projectSkills, skillPaths, onEvent; bun run test passes.
+- [x] #1 createCosmonautsSubagentBackend(deps: CosmonautsSubagentBackendDeps): Backend is exported; Backend.name === 'cosmonauts-subagent'; capabilities.canCommit === true.
+- [x] #2 Backend.run() calls deps.spawner.spawn() forwarding all of: role, prompt, cwd, signal, planSlug, parentSessionId, runtimeContext:{mode:'sub-agent',taskId,parentRole:'driver'}, domainContext, projectSkills, skillPaths, onEvent.
+- [x] #3 onEvent callback maps incoming spawn events to DriverEvent entries of variant {type:'driver_activity'} carrying runId, parentSessionId, taskId from BackendInvocation.
+- [x] #4 stdout is derived from spawned agent's last assistant message via extractAssistantText (mirrors spawn-tool.ts:127).
+- [x] #5 lib/driver/backends/cosmonauts-subagent.ts has zero imports from any domains/ directory.
+- [x] #6 tests/driver/backends/cosmonauts-subagent.test.ts mocks AgentSpawner and asserts all SpawnConfig fields including planSlug, parentSessionId, runtimeContext.taskId, runtimeContext.parentRole='driver', domainContext, projectSkills, skillPaths, onEvent; bun run test passes.
 <!-- AC:END -->
 
 ## Implementation Notes
 
-Reset from false Done to To Do. Provider failure during chain run on 2026-05-04 — openai-codex/gpt-5.5 returned empty responses; coordinator confabulated success. No implementation landed. Retry pending.
+Implemented and committed 16e16d3. Verification: `bun run test --grep "cosmonauts-subagent"` passes; targeted Biome check for the two new files passes; `bun run typecheck` passed before unrelated untracked driver prompt-template/lock files appeared in the shared worktree.

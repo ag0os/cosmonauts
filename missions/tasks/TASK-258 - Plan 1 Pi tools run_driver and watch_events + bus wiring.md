@@ -1,8 +1,9 @@
 ---
 id: TASK-258
 title: 'Plan 1: Pi tools run_driver and watch_events + bus wiring'
-status: To Do
+status: Done
 priority: medium
+assignee: worker
 labels:
   - backend
   - 'plan:driver-primitives'
@@ -10,7 +11,7 @@ dependencies:
   - TASK-254
   - TASK-257
 createdAt: '2026-05-04T17:34:11.134Z'
-updatedAt: '2026-05-04T18:25:57.795Z'
+updatedAt: '2026-05-04T19:48:27.567Z'
 ---
 
 ## Description
@@ -25,15 +26,15 @@ Cross-plan invariants:
 - `driver_activity`/`driver_event` bus events forwarded to `pi.sendMessage(deliverAs:"nextTurn")` filtered by `parentSessionId` matching the current Pi session.
 
 <!-- AC:BEGIN -->
-- [ ] #1 run_driver tool registered via pi.registerTool({ parameters: Type.Object(...), execute: ... }) — not {inputSchema, handler}.
-- [ ] #2 run_driver constructs a Backend instance for the requested backend parameter and calls runInline; returns {runId, planSlug, workdir, eventLogPath} immediately (not after run completes).
-- [ ] #3 Concurrent run_driver for the same planSlug returns {error:'active', activeRunId, activeAt} without starting a second loop.
-- [ ] #4 watch_events({ planSlug, runId, since? }) resolves missions/sessions/<planSlug>/runs/<runId>/events.jsonl via tailEvents; returns {events, cursor}.
-- [ ] #5 index.ts adds subscriptions to 'driver_activity' AND 'driver_event' on activityBus, separate from the existing 'spawn_activity' subscription (lines 105-126 must remain untouched).
-- [ ] #6 Bus forwarding filters by parentSessionId: only events matching the current Pi session's parentSessionId are passed to pi.sendMessage(deliverAs:'nextTurn').
-- [ ] #7 QC-001: no file under lib/driver/ imports from any domains/ directory (verify by reading import lines).
+- [x] #1 run_driver tool registered via pi.registerTool({ parameters: Type.Object(...), execute: ... }) — not {inputSchema, handler}.
+- [x] #2 run_driver constructs a Backend instance for the requested backend parameter and calls runInline; returns {runId, planSlug, workdir, eventLogPath} immediately (not after run completes).
+- [x] #3 Concurrent run_driver for the same planSlug returns {error:'active', activeRunId, activeAt} without starting a second loop.
+- [x] #4 watch_events({ planSlug, runId, since? }) resolves missions/sessions/<planSlug>/runs/<runId>/events.jsonl via tailEvents; returns {events, cursor}.
+- [x] #5 index.ts adds subscriptions to 'driver_activity' AND 'driver_event' on activityBus, separate from the existing 'spawn_activity' subscription (lines 105-126 must remain untouched).
+- [x] #6 Bus forwarding filters by parentSessionId: only events matching the current Pi session's parentSessionId are passed to pi.sendMessage(deliverAs:'nextTurn').
+- [x] #7 QC-001: no file under lib/driver/ imports from any domains/ directory (verify by reading import lines).
 <!-- AC:END -->
 
 ## Implementation Notes
 
-Reset from false Done to To Do. Provider failure during chain run on 2026-05-04 — openai-codex/gpt-5.5 returned empty responses; coordinator confabulated success. No implementation landed. Retry pending.
+Implemented run_driver and watch_events Pi tools; wired driver_activity and driver_event bus subscriptions with parentSessionId filtering. Verified driver-tool.ts exists, QC-001 grep returned no lib/driver domains imports, bun run test, bun run typecheck, and bun run lint pass. Commit: 430cd87.

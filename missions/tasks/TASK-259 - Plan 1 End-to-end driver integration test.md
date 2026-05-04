@@ -1,8 +1,9 @@
 ---
 id: TASK-259
 title: 'Plan 1: End-to-end driver integration test'
-status: To Do
+status: Done
 priority: medium
+assignee: worker
 labels:
   - backend
   - testing
@@ -10,7 +11,7 @@ labels:
 dependencies:
   - TASK-258
 createdAt: '2026-05-04T17:34:20.943Z'
-updatedAt: '2026-05-04T18:25:57.795Z'
+updatedAt: '2026-05-04T20:06:08.961Z'
 ---
 
 ## Description
@@ -22,13 +23,15 @@ See **Implementation Order step 11**, `tests/extensions/orchestration-driver-too
 Use a stub/mock backend (not a real spawner) to drive a 2-task fixture plan through the full call path: `run_driver` → `runInline` → `runRunLoop` → `runOneTask` × 2.
 
 <!-- AC:BEGIN -->
-- [ ] #1 Happy-path 2-task run: both tasks marked 'Done', JSONL event log contains run_started, two task_done events, and run_completed; tailEvents reads the log correctly.
-- [ ] #2 Pre-flight failure path: run_aborted emitted; no TaskManager status changes recorded.
-- [ ] #3 Branch-mismatch abort path: structured preflight(failed) event emitted before any status transition.
-- [ ] #4 Post-verify failure path: task marked 'Blocked' with implementationNotes; task_blocked + run_aborted emitted; no commit made.
-- [ ] #5 tests/extensions/orchestration-driver-tool.test.ts passes under bun run test --grep 'driver e2e'.
+- [x] #1 Happy-path 2-task run: both tasks marked 'Done', JSONL event log contains run_started, two task_done events, and run_completed; tailEvents reads the log correctly.
+- [x] #2 Pre-flight failure path: run_aborted emitted; no TaskManager status changes recorded.
+- [x] #3 Branch-mismatch abort path: structured preflight(failed) event emitted before any status transition.
+- [x] #4 Post-verify failure path: task marked 'Blocked' with implementationNotes; task_blocked + run_aborted emitted; no commit made.
+- [x] #5 tests/extensions/orchestration-driver-tool.test.ts passes under bun run test --grep 'driver e2e'.
 <!-- AC:END -->
 
 ## Implementation Notes
 
-Reset from false Done to To Do. Provider failure during chain run on 2026-05-04 — openai-codex/gpt-5.5 returned empty responses; coordinator confabulated success. No implementation landed. Retry pending.
+Attempt 1 failed (2026-05-04): worker reported success but tests/extensions/orchestration-driver-tool.test.ts was MISSING on disk. No file written. Re-spawn required.
+
+Attempt 2 complete (2026-05-04): committed tests/extensions/orchestration-driver-tool.test.ts in e383904. Verified bun run test --grep "driver e2e", bun run typecheck, and bun run lint pass.

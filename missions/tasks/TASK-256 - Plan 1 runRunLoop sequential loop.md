@@ -1,15 +1,16 @@
 ---
 id: TASK-256
 title: 'Plan 1: runRunLoop sequential loop'
-status: To Do
+status: Done
 priority: high
+assignee: worker
 labels:
   - backend
   - 'plan:driver-primitives'
 dependencies:
   - TASK-255
 createdAt: '2026-05-04T17:33:46.388Z'
-updatedAt: '2026-05-04T18:25:57.794Z'
+updatedAt: '2026-05-04T19:30:42.812Z'
 ---
 
 ## Description
@@ -27,15 +28,15 @@ Loop body:
 4. Top-level catch on `EventLogWriteError`: best-effort sync write of `run_aborted("log write failed")`; return aborted result.
 
 <!-- AC:BEGIN -->
-- [ ] #1 runRunLoop(spec: DriverRunSpec, ctx: RunRunLoopCtx): Promise<DriverResult> is exported as a named export from lib/driver/run-run-loop.ts.
-- [ ] #2 Emits run_started before the task loop begins; emits run_completed with {total, done, blocked} summary after all tasks finish cleanly.
-- [ ] #3 blocked outcome from runOneTask: emits run_aborted and breaks the loop; returns DriverResult{outcome:'blocked'}.
-- [ ] #4 partial outcome with spec.partialMode !== 'continue': emits run_aborted('partial: stopping per partialMode') and breaks.
-- [ ] #5 partial outcome with spec.partialMode === 'continue': proceeds to the next task without aborting.
-- [ ] #6 EventLogWriteError caught at top level: best-effort sync write of run_aborted('log write failed'); returns DriverResult{outcome:'aborted'}.
-- [ ] #7 tests/driver/run-run-loop.test.ts covers run_started/completed/aborted emission, partialMode:stop, partialMode:continue, and EventLogWriteError abort; bun run test passes.
+- [x] #1 runRunLoop(spec: DriverRunSpec, ctx: RunRunLoopCtx): Promise<DriverResult> is exported as a named export from lib/driver/run-run-loop.ts.
+- [x] #2 Emits run_started before the task loop begins; emits run_completed with {total, done, blocked} summary after all tasks finish cleanly.
+- [x] #3 blocked outcome from runOneTask: emits run_aborted and breaks the loop; returns DriverResult{outcome:'blocked'}.
+- [x] #4 partial outcome with spec.partialMode !== 'continue': emits run_aborted('partial: stopping per partialMode') and breaks.
+- [x] #5 partial outcome with spec.partialMode === 'continue': proceeds to the next task without aborting.
+- [x] #6 EventLogWriteError caught at top level: best-effort sync write of run_aborted('log write failed'); returns DriverResult{outcome:'aborted'}.
+- [x] #7 tests/driver/run-run-loop.test.ts covers run_started/completed/aborted emission, partialMode:stop, partialMode:continue, and EventLogWriteError abort; bun run test passes.
 <!-- AC:END -->
 
 ## Implementation Notes
 
-Reset from false Done to To Do. Provider failure during chain run on 2026-05-04 — openai-codex/gpt-5.5 returned empty responses; coordinator confabulated success. No implementation landed. Retry pending.
+Verified and fixed `runRunLoop` so `run_completed` is emitted only for clean finishes; blocked and partial-stop paths emit `run_aborted` and return without completion. EventLogWriteError fallback writes `run_aborted("log write failed")` and returns aborted with the reason. Verified: `bun run test --grep "run-run-loop"`, `bun run typecheck`, `bun run lint`. Committed 93a3de7.
