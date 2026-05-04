@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { InteractiveMode, runPrintMode } from "@mariozechner/pi-coding-agent";
 import { Command, CommanderError } from "commander";
+import { resolveDefaultLead } from "../lib/agents/resolve-default-lead.ts";
 import {
 	appendAgentIdentityMarker,
 	qualifyAgentId,
@@ -423,11 +424,7 @@ async function handleDumpPrompt(
 	runtime: CosmonautsRuntime,
 	options: CliOptions,
 ): Promise<void> {
-	const agentId = options.agent ?? "cosmo";
-	const definition = runtime.agentRegistry.resolve(
-		agentId,
-		runtime.domainContext,
-	);
+	const definition = resolveDefaultLead(runtime, options);
 	const domain = definition.domain ?? "coding";
 
 	let prompt = await assemblePrompts({
@@ -469,12 +466,9 @@ async function handleInitMode(
 	}
 
 	const initSessionConfig = buildInitSessionConfig(cwd);
-	const cosmoDefinition = runtime.agentRegistry.resolve(
-		"cosmo",
-		runtime.domainContext,
-	);
+	const defaultLeadDefinition = resolveDefaultLead(runtime, options);
 	const initRuntime = await createSession({
-		definition: cosmoDefinition,
+		definition: defaultLeadDefinition,
 		cwd,
 		domainsDir: runtime.domainsDir,
 		resolver: runtime.domainResolver,
@@ -641,9 +635,7 @@ function resolveCliAgent(
 	runtime: CosmonautsRuntime,
 	options: CliOptions,
 ): AgentDefinition {
-	return options.agent
-		? runtime.agentRegistry.resolve(options.agent, runtime.domainContext)
-		: runtime.agentRegistry.resolve("cosmo", runtime.domainContext);
+	return resolveDefaultLead(runtime, options);
 }
 
 // ============================================================================
