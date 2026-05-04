@@ -2,6 +2,10 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Box, Text } from "@mariozechner/pi-tui";
+import type {
+	DriverActivityBusEvent,
+	DriverEventBusEvent,
+} from "../../../../lib/driver/event-stream.ts";
 import {
 	activityBus,
 	registerSessionCleanup,
@@ -11,8 +15,10 @@ import type { SpawnActivityEvent } from "../../../../lib/orchestration/message-b
 import { discoverFrameworkBundledPackageDirs } from "../../../../lib/packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../../../../lib/runtime.ts";
 import { registerChainTool } from "./chain-tool.ts";
+import { registerDriverTool } from "./driver-tool.ts";
 import { roleLabel } from "./rendering.ts";
 import { registerSpawnTool } from "./spawn-tool.ts";
+import { registerWatchEventsTool } from "./watch-events-tool.ts";
 
 export default function orchestrationExtension(pi: ExtensionAPI) {
 	const runtimeCache = new Map<string, Promise<CosmonautsRuntime>>();
@@ -78,12 +84,22 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 	// register a cleanup callback so spawn-tool can tear it down when
 	// the child session is disposed (Pi has no dispose-time event).
 	let activityToken: ReturnType<typeof activityBus.subscribe> | undefined;
+	let driverActivityToken: ReturnType<typeof activityBus.subscribe> | undefined;
+	let driverEventToken: ReturnType<typeof activityBus.subscribe> | undefined;
 	let boundSessionId: string | undefined;
 
 	function teardownActivitySubscription() {
 		if (activityToken !== undefined) {
 			activityBus.unsubscribe(activityToken);
 			activityToken = undefined;
+		}
+		if (driverActivityToken !== undefined) {
+			activityBus.unsubscribe(driverActivityToken);
+			driverActivityToken = undefined;
+		}
+		if (driverEventToken !== undefined) {
+			activityBus.unsubscribe(driverEventToken);
+			driverEventToken = undefined;
 		}
 		if (boundSessionId !== undefined) {
 			unregisterSessionCleanup(boundSessionId);
@@ -135,6 +151,40 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 				);
 			},
 		);
+
+		driverActivityToken = activityBus.subscribe<DriverActivityBusEvent>(
+			"driver_activity",
+			(event) => {
+				if (event.parentSessionId !== sessionId) return;
+
+				pi.sendMessage(
+					{
+						customType: "driver-activity",
+						content: formatDriverActivityMessage(event),
+						display: true,
+						details: event,
+					},
+					{ deliverAs: "nextTurn" },
+				);
+			},
+		);
+
+		driverEventToken = activityBus.subscribe<DriverEventBusEvent>(
+			"driver_event",
+			(event) => {
+				if (event.parentSessionId !== sessionId) return;
+
+				pi.sendMessage(
+					{
+						customType: "driver-event",
+						content: formatDriverEventMessage(event),
+						display: true,
+						details: event,
+					},
+					{ deliverAs: "nextTurn" },
+				);
+			},
+		);
 	});
 
 	// Clean up on process exit as a safety net
@@ -146,4 +196,44 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 
 	registerChainTool(pi, getRuntime);
 	registerSpawnTool(pi, getRuntime);
+	registerDriverTool(pi, getRuntime);
+	registerWatchEventsTool(pi);
+}
+
+function formatDriverActivityMessage(event: DriverActivityBusEvent): string {
+	const prefix = `Driver ${event.runId} ${event.taskId}`;
+	switch (event.activity.kind) {
+		case "tool_start":
+			return `${prefix}: ${event.activity.summary}`;
+		case "tool_end":
+			return `${prefix}: ${event.activity.toolName} ${event.activity.isError ? "failed" : "completed"}`;
+		case "turn_start":
+			return `${prefix}: turn started`;
+		case "turn_end":
+			return `${prefix}: turn ended`;
+		case "compaction":
+			return `${prefix}: compaction`;
+	}
+}
+
+function formatDriverEventMessage(busEvent: DriverEventBusEvent): string {
+	const event = busEvent.event;
+	switch (event.type) {
+		case "preflight":
+			return `Driver ${event.runId} ${event.taskId}: preflight failed`;
+		case "task_done":
+			return `Driver ${event.runId} ${event.taskId}: done`;
+		case "task_blocked":
+			return `Driver ${event.runId} ${event.taskId}: blocked — ${event.reason}`;
+		case "commit_made":
+			return `Driver ${event.runId} ${event.taskId}: committed ${event.sha.slice(0, 12)}`;
+		case "lock_warning":
+			return `Driver ${event.runId}: ${event.reason}`;
+		case "run_completed":
+			return `Driver ${event.runId}: completed ${event.summary.done}/${event.summary.total}`;
+		case "run_aborted":
+			return `Driver ${event.runId}: aborted — ${event.reason}`;
+		default:
+			return `Driver ${busEvent.runId}: ${event.type}`;
+	}
 }
