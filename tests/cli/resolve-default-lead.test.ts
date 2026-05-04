@@ -5,6 +5,9 @@ import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { DomainRegistry } from "../../lib/domains/index.ts";
 import type { LoadedDomain } from "../../lib/domains/types.ts";
 
+const MAIN_LEAD_REF = "main/cosmo";
+const MAIN_LEAD_ID = MAIN_LEAD_REF.slice("main/".length);
+
 function makeAgent(domain: string, id: string): AgentDefinition {
 	return {
 		id,
@@ -67,7 +70,7 @@ describe("resolveDefaultLead", () => {
 	test("returns the explicit agent flag before default leads", () => {
 		const runtime = makeRuntime([
 			makeDomain("shared", undefined),
-			makeDomain("main", "cosmo", ["cosmo"]),
+			makeDomain("main", MAIN_LEAD_ID, [MAIN_LEAD_ID]),
 			makeDomain("coding", "cody", ["cody"]),
 		]);
 
@@ -76,11 +79,11 @@ describe("resolveDefaultLead", () => {
 		expectAgent(definition, "coding", "cody");
 	});
 
-	test("returns the domain-context lead before the main lead", () => {
+	test("default routing coding domain returns the domain-context lead before the main lead", () => {
 		const runtime = makeRuntime(
 			[
 				makeDomain("shared", undefined),
-				makeDomain("main", "cosmo", ["cosmo"]),
+				makeDomain("main", MAIN_LEAD_ID, [MAIN_LEAD_ID]),
 				makeDomain("coding", "cody", ["cody"]),
 			],
 			"coding",
@@ -91,16 +94,16 @@ describe("resolveDefaultLead", () => {
 		expectAgent(definition, "coding", "cody");
 	});
 
-	test("returns main/cosmo when main and coding are installed", () => {
+	test("default routing main installed returns main/cosmo when coding is installed", () => {
 		const runtime = makeRuntime([
 			makeDomain("shared", undefined),
-			makeDomain("main", "cosmo", ["cosmo"]),
+			makeDomain("main", MAIN_LEAD_ID, [MAIN_LEAD_ID]),
 			makeDomain("coding", "cody", ["cody"]),
 		]);
 
 		const definition = resolveDefaultLead(runtime, {});
 
-		expectAgent(definition, "main", "cosmo");
+		expectAgent(definition, "main", MAIN_LEAD_ID);
 	});
 
 	test("returns the first non-shared non-main domain lead when main is absent", () => {

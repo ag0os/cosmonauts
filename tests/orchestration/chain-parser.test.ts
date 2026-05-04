@@ -29,7 +29,7 @@ function makeCodingDef(id: string, loop: boolean): AgentDefinition {
 
 /** Test registry with the coding domain agents used across chain-parser tests. */
 const defaultRegistry = new AgentRegistry([
-	makeCodingDef("cosmo", false),
+	makeCodingDef("cody", false),
 	makeCodingDef("planner", false),
 	makeCodingDef("task-manager", false),
 	makeCodingDef("coordinator", true),

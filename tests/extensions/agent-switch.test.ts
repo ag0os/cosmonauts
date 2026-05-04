@@ -184,7 +184,7 @@ describe("agent-switch extension", () => {
 		test("validates ID and calls newSession without setup", async () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);
-			const registry = setupSharedRegistry(["planner", "worker", "cosmo"]);
+			const registry = setupSharedRegistry(["planner", "worker", "cody"]);
 
 			const ctx = createMockCtx();
 			await getCommand(pi, "agent").handler("planner", ctx);
@@ -285,7 +285,7 @@ describe("agent-switch extension", () => {
 		test("shows interactive selector", async () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);
-			setupSharedRegistry(["planner", "worker", "cosmo"]);
+			setupSharedRegistry(["planner", "worker", "cody"]);
 
 			const ctx = createMockCtx({
 				ui: {
@@ -298,7 +298,7 @@ describe("agent-switch extension", () => {
 			expect(ctx.ui.select).toHaveBeenCalledWith("Select agent", [
 				"planner",
 				"worker",
-				"cosmo",
+				"cody",
 			]);
 			expect(ctx.newSession).toHaveBeenCalled();
 		});
@@ -330,14 +330,14 @@ describe("agent-switch extension", () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);
 			setupSharedRegistry(["planner"]);
-			mocks.extractAgentId.mockReturnValue("cosmo");
+			mocks.extractAgentId.mockReturnValue("cody");
 
 			// Simulate: sendUserMessage makes agent busy, then waitForIdle
 			// resolves once the agent finishes the summary turn.
 			let idle = true;
 			const ctx = createMockCtx({
 				sessionManager: {
-					getSessionFile: () => "/tmp/sessions/cosmo.jsonl",
+					getSessionFile: () => "/tmp/sessions/cody.jsonl",
 					getBranch: () => [
 						{
 							type: "message",
@@ -377,7 +377,7 @@ describe("agent-switch extension", () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);
 			setupSharedRegistry(["planner"]);
-			mocks.extractAgentId.mockReturnValue("cosmo");
+			mocks.extractAgentId.mockReturnValue("cody");
 
 			// Track the order of operations to verify sequencing
 			const callOrder: string[] = [];
@@ -385,7 +385,7 @@ describe("agent-switch extension", () => {
 
 			const ctx = createMockCtx({
 				sessionManager: {
-					getSessionFile: () => "/tmp/sessions/cosmo.jsonl",
+					getSessionFile: () => "/tmp/sessions/cody.jsonl",
 					getBranch: () => [
 						{
 							type: "message",
@@ -432,12 +432,12 @@ describe("agent-switch extension", () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);
 			setupSharedRegistry(["planner"]);
-			mocks.extractAgentId.mockReturnValue("cosmo");
+			mocks.extractAgentId.mockReturnValue("cody");
 
 			let capturedSetup: ((sm: unknown) => Promise<void>) | undefined;
 			const ctx = createMockCtx({
 				sessionManager: {
-					getSessionFile: () => "/tmp/sessions/cosmo.jsonl",
+					getSessionFile: () => "/tmp/sessions/cody.jsonl",
 					getBranch: () => [
 						{
 							type: "message",
@@ -468,7 +468,7 @@ describe("agent-switch extension", () => {
 					content: [
 						expect.objectContaining({
 							type: "text",
-							text: expect.stringContaining("cosmo"),
+							text: expect.stringContaining("cody"),
 						}),
 					],
 				}),
@@ -622,7 +622,7 @@ describe("agent-switch extension", () => {
 		test("returns matching agent IDs for prefix", async () => {
 			const pi = createMockPi();
 			agentSwitchExtension(pi as never);
-			setupSharedRegistry(["planner", "plan-reviewer", "worker", "cosmo"]);
+			setupSharedRegistry(["planner", "plan-reviewer", "worker", "cody"]);
 
 			const completions = await getCommand(
 				pi,

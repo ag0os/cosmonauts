@@ -16,8 +16,8 @@ describe("runtime identity markers", () => {
 	});
 
 	test("buildAgentIdentityMarker emits hidden marker format", () => {
-		expect(buildAgentIdentityMarker("cosmo")).toBe(
-			"<!-- COSMONAUTS_AGENT_ID:cosmo -->",
+		expect(buildAgentIdentityMarker("cody")).toBe(
+			"<!-- COSMONAUTS_AGENT_ID:cody -->",
 		);
 	});
 
@@ -43,10 +43,10 @@ describe("runtime identity markers", () => {
 			"header",
 			"<!-- COSMONAUTS_AGENT_ID:worker -->",
 			"prompt body",
-			"<!-- COSMONAUTS_AGENT_ID:cosmo -->",
+			"<!-- COSMONAUTS_AGENT_ID:cody -->",
 			"footer",
 		].join("\n");
-		expect(extractAgentIdFromSystemPrompt(systemPrompt)).toBe("cosmo");
+		expect(extractAgentIdFromSystemPrompt(systemPrompt)).toBe("cody");
 	});
 
 	test("extractAgentIdFromSystemPrompt returns undefined when marker missing", () => {
@@ -69,8 +69,8 @@ describe("runtime identity markers", () => {
 		const systemPrompt = [
 			"<!-- COSMONAUTS_AGENT_ID:shared/diagnostics -->",
 			"body",
-			"<!-- COSMONAUTS_AGENT_ID:coding/cosmo -->",
+			"<!-- COSMONAUTS_AGENT_ID:coding/cody -->",
 		].join("\n");
-		expect(extractAgentIdFromSystemPrompt(systemPrompt)).toBe("coding/cosmo");
+		expect(extractAgentIdFromSystemPrompt(systemPrompt)).toBe("coding/cody");
 	});
 });

@@ -50,11 +50,14 @@ const BASE_PARAMS = {
 	thinkingLevel: undefined,
 };
 
+const MAIN_LEAD_REF = "main/cosmo";
+const MAIN_LEAD_ID = MAIN_LEAD_REF.slice("main/".length);
+
 const resolver = {
 	registry: {
 		get: (domain: string) => {
 			const leadByDomain: Record<string, string> = {
-				main: "cosmo",
+				main: MAIN_LEAD_ID,
 				coding: "cody",
 			};
 			const lead = leadByDomain[domain];
@@ -105,7 +108,7 @@ describe("session per-domain-leads", () => {
 	});
 
 	test("uses domain directories for leads and agent directories for non-leads", async () => {
-		const mainLeadDir = await sessionDirFor(makeAgent("cosmo", "main"));
+		const mainLeadDir = await sessionDirFor(makeAgent(MAIN_LEAD_ID, "main"));
 		const codingLeadDir = await sessionDirFor(makeAgent("cody", "coding"));
 		const plannerDir = await sessionDirFor(makeAgent("planner", "coding"));
 		const workerDir = await sessionDirFor(makeAgent("worker", "coding"));

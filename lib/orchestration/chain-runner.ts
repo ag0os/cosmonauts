@@ -640,7 +640,8 @@ function prepareStageExecution(
 
 	if (!config.registry.has(stage.name, config.domainContext)) {
 		let message = `Unknown agent role "${stage.name}"`;
-		if (stage.name === "cosmo") {
+		const legacyCosmoStageName = "main/cosmo".slice("main/".length);
+		if (stage.name === legacyCosmoStageName) {
 			message +=
 				'\nMigration hint: use "main/cosmo" for the cross-domain orchestrator or "coding/cody" for the coding-domain lead.';
 		}

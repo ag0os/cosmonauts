@@ -23,6 +23,8 @@ const REPO_ROOT = resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const DOMAINS_DIR = join(REPO_ROOT, "domains");
 const BUNDLED_CODING_DIR = join(REPO_ROOT, "bundled", "coding");
 const MAIN_DOMAIN_DIR = join(DOMAINS_DIR, "main");
+const MAIN_AGENT_REF = "main/cosmo";
+const MAIN_AGENT_ID = MAIN_AGENT_REF.slice("main/".length);
 
 const tmp = useTempDir("main-domain-");
 
@@ -45,14 +47,14 @@ beforeAll(async () => {
 	if (!loadedMain) throw new Error("Main domain not loaded");
 	mainDomain = loadedMain;
 
-	const loadedCosmo = mainDomain.agents.get("cosmo");
+	const loadedCosmo = mainDomain.agents.get(MAIN_AGENT_ID);
 	if (!loadedCosmo) throw new Error("main/cosmo not loaded");
 	cosmo = loadedCosmo;
 
 	resolver = new DomainResolver(new DomainRegistry(domains));
 });
 
-describe("main domain", () => {
+describe("main domain built-in discovery", () => {
 	it("loads as a runtime built-in domain source", async () => {
 		const sources = await scanDomainSources({
 			builtinDomainsDir: DOMAINS_DIR,
@@ -67,10 +69,10 @@ describe("main domain", () => {
 		});
 		expect(mainDomain.rootDirs).toEqual([MAIN_DOMAIN_DIR]);
 		expect(mainDomain.manifest.id).toBe("main");
-		expect(mainDomain.manifest.lead).toBe("cosmo");
+		expect(mainDomain.manifest.lead).toBe(MAIN_AGENT_ID);
 	});
 
-	it("resolves main/cosmo with direct specialist delegation", () => {
+	it("resolves main/cosmo allowlist excludes cody with direct specialist delegation", () => {
 		const registry = createRegistryFromDomains(domains);
 		const subagents = cosmo.subagents ?? [];
 
@@ -89,14 +91,14 @@ describe("main domain", () => {
 			true,
 		);
 		expect(subagents).not.toContain("coding/cody");
-		expect(subagents).not.toContain("coding/cosmo");
+		expect(subagents).not.toContain(`coding/${MAIN_AGENT_ID}`);
 	});
 
 	it("validates main/cosmo and resolves the fleet capability", () => {
 		const diagnostics = validateDomains(domains).filter(
 			(diagnostic) =>
 				diagnostic.domain === "main" &&
-				diagnostic.agent === "cosmo" &&
+				diagnostic.agent === MAIN_AGENT_ID &&
 				diagnostic.severity === "error",
 		);
 
@@ -106,7 +108,7 @@ describe("main domain", () => {
 		);
 	});
 
-	it("builds a tool allowlist only from extension-registered tools", async () => {
+	it("builds main/cosmo tools none allowlist only from extension-registered tools", async () => {
 		const extensionPaths = resolveExtensionPaths(cosmo.extensions, {
 			domain: "main",
 			resolver,

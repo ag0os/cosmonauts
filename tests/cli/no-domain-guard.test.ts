@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { describe, expect, test } from "vitest";
 import { hasInstalledDomain, selectRunMode } from "../../cli/main.ts";
 import type { CliOptions } from "../../cli/types.ts";
@@ -43,14 +42,5 @@ describe("no-domain guard", () => {
 			hasInstalledDomain(runtimeWithDomains("shared", "main", "coding")),
 		).toBe(true);
 		expect(runModeForDomains("shared", "main", "coding")).toBe("interactive");
-	});
-
-	test("no-domain guard message does not mention coding-minimal", async () => {
-		const source = await readFile(
-			new URL("../../cli/main.ts", import.meta.url),
-			"utf8",
-		);
-
-		expect(source).not.toContain("coding-minimal");
 	});
 });

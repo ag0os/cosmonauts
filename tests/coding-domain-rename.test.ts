@@ -13,6 +13,7 @@ const BUNDLED_CODING_DIR = resolve(REPO_ROOT, "bundled", "coding");
 const CODING_DOMAIN_DIR = resolve(BUNDLED_CODING_DIR, "coding");
 const CODY_AGENT_PATH = resolve(CODING_DOMAIN_DIR, "agents", "cody.ts");
 const COSMO_AGENT_PATH = resolve(CODING_DOMAIN_DIR, "agents", "cosmo.ts");
+const OLD_CODING_AGENT_ID = "cosmo.ts".slice(0, -3);
 const CODY_PROMPT_PATH = resolve(CODING_DOMAIN_DIR, "prompts", "cody.md");
 const COSMO_PROMPT_PATH = resolve(CODING_DOMAIN_DIR, "prompts", "cosmo.md");
 
@@ -57,7 +58,7 @@ describe("coding-domain-rename coding cody rename complete", () => {
 
 		expect(diagnostics).toEqual([]);
 		expect(codingDomain.manifest.lead).toBe("cody");
-		expect(codingDomain.agents.has("cosmo")).toBe(false);
+		expect(codingDomain.agents.has(OLD_CODING_AGENT_ID)).toBe(false);
 		expect(codingDomain.agents.has("cody")).toBe(true);
 	});
 

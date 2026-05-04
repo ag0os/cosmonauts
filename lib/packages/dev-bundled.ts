@@ -1,5 +1,5 @@
 import { readdir, readFile, stat } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 
 /**
  * Returns true when running from inside the Cosmonauts framework repo itself.
@@ -61,10 +61,6 @@ export async function discoverBundledPackageDirs(
 /**
  * Discover the bundled packages to auto-load when running from the framework
  * repo in dev mode.
- *
- * If both `coding` and `coding-minimal` are present, only `coding` is loaded
- * because both provide the same `coding` domain and the full package is the
- * default dev-time experience.
  */
 export async function discoverFrameworkBundledPackageDirs(
 	frameworkRoot: string,
@@ -78,10 +74,5 @@ export async function discoverFrameworkBundledPackageDirs(
 	);
 	if (discovered.length === 0) return undefined;
 
-	const hasFullCoding = discovered.some((dir) => basename(dir) === "coding");
-	const selected = hasFullCoding
-		? discovered.filter((dir) => basename(dir) !== "coding-minimal")
-		: discovered;
-
-	return selected.length > 0 ? selected : undefined;
+	return discovered.length > 0 ? discovered : undefined;
 }
