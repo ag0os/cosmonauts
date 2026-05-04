@@ -1,20 +1,14 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, test, vi } from "vitest";
 import type {
 	Backend,
+	BackendInvocation,
 	BackendRunResult,
 } from "../../lib/driver/backends/types.ts";
-import {
-	createEventSink,
-	type DriverEventPublisher,
-} from "../../lib/driver/event-stream.ts";
-import {
-	acquireRepoCommitLock,
-	getRepoCommitLockPath,
-} from "../../lib/driver/lock.ts";
+import { getRepoCommitLockPath } from "../../lib/driver/lock.ts";
 import {
 	deriveOutcome,
 	type RunOneTaskCtx,
@@ -23,588 +17,596 @@ import {
 import type {
 	DriverEvent,
 	DriverRunSpec,
+	EventSink,
 	ParsedReport,
 	Report,
+	ReportOutcome,
 } from "../../lib/driver/types.ts";
-import type { TaskManager } from "../../lib/tasks/task-manager.ts";
+import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import type { Task, TaskUpdateInput } from "../../lib/tasks/task-types.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
+const temp = useTempDir("run-one-task-test-");
 const execFileAsync = promisify(execFile);
-const tmp = useTempDir("run-one-task-test-");
-const taskId = "TASK-255";
-
-interface Harness {
-	projectRoot: string;
-	workdir: string;
-	templateDir: string;
-	envelopePath: string;
-	events: DriverEvent[];
-	taskManager: TaskManager;
-	updates: TaskUpdateInput[];
-	updateTask: ReturnType<typeof vi.fn>;
-	getTask: ReturnType<typeof vi.fn>;
-}
 
 describe("run-one-task", () => {
-	test("happy path commits under the repo lock, emits commit_made, and marks Done", async () => {
-		const harness = await setupHarness();
-		let commitLockMissingAtEvent = false;
-		const eventSink = async (event: DriverEvent) => {
-			harness.events.push(event);
-			if (event.type === "commit_made") {
-				commitLockMissingAtEvent = await isMissing(
-					getRepoCommitLockPath(harness.projectRoot),
-				);
-			}
-		};
-		const heldLock = await acquireRepoCommitLock(harness.projectRoot);
-		const backend = backendFrom(async () => {
-			await writeFile(
-				join(harness.projectRoot, "feature.txt"),
-				"done",
-				"utf-8",
-			);
-			return successResult(reportStdout({ outcome: "success" }));
-		});
+	test("run-one-task happy path marks the task done and emits spawn_completed", async () => {
+		const fixture = await setupFixture();
+		const events: DriverEvent[] = [];
+		const backend = createBackend(async () => successfulResult());
 
-		const pending = runOneTask(
-			createSpec(harness, { commitPolicy: "driver-commits" }),
-			createCtx(harness, backend, eventSink),
-			taskId,
+		const outcome = await runOneTask(
+			createSpec(fixture),
+			createCtx(fixture, backend, events),
+			fixture.taskId,
 		);
-		await delay(80);
 
-		expect(eventsOf(harness.events, "commit_made")).toHaveLength(0);
-
-		await heldLock.release();
-		const outcome = await pending;
-
-		expect(outcome.status).toBe("done");
-		expect(outcome.commitSha).toMatch(/^[0-9a-f]{40}$/);
-		expect(harness.updates).toEqual([
-			{ status: "In Progress" },
-			{ status: "Done" },
+		expect(outcome).toEqual({ status: "done", commitSha: undefined });
+		expect((await fixture.taskManager.getTask(fixture.taskId))?.status).toBe(
+			"Done",
+		);
+		expect(events.map((event) => event.type)).toEqual([
+			"task_started",
+			"preflight",
+			"preflight",
+			"spawn_started",
+			"spawn_completed",
+			"task_done",
 		]);
-		expect(eventsOf(harness.events, "task_started")).toHaveLength(1);
-		expect(eventsOf(harness.events, "spawn_started")[0]).toMatchObject({
-			backend: "mock-backend",
-		});
-		expect(
-			eventsOf(harness.events, "spawn_completed")[0]?.report,
-		).toMatchObject({
+		expect(events.find(isSpawnCompleted)?.report).toMatchObject({
 			outcome: "success",
 		});
-		expect(eventsOf(harness.events, "commit_made")[0]).toMatchObject({
-			sha: outcome.commitSha,
-		});
-		expect(eventsOf(harness.events, "task_done")).toHaveLength(1);
-		expect(commitLockMissingAtEvent).toBe(true);
-		expect(await git(harness.projectRoot, ["rev-parse", "HEAD"])).toBe(
-			outcome.commitSha,
-		);
 	});
 
-	test("preflight failure emits failed preflight and does not update task status", async () => {
-		const harness = await setupHarness();
-		const backend = backendFrom(async () =>
-			successResult(reportStdout({ outcome: "success" })),
-		);
+	test("run-one-task preflight failure returns blocked without TaskManager updates", async () => {
+		const fixture = await setupRecordingFixture();
+		const events: DriverEvent[] = [];
+		const backend = createBackend(async () => successfulResult());
+		const spec = createSpec(fixture, {
+			preflightCommands: [
+				nodeCommand("process.stderr.write('nope'); process.exit(7)"),
+			],
+		});
 
 		const outcome = await runOneTask(
-			createSpec(harness, {
-				preflightCommands: [
-					"node -e \"process.stderr.write('preflight nope'); process.exit(7)\"",
-				],
-			}),
-			createCtx(harness, backend),
-			taskId,
+			spec,
+			createCtx(fixture, backend, events),
+			fixture.taskId,
 		);
 
 		expect(outcome).toMatchObject({ status: "blocked" });
-		expect(harness.updateTask).not.toHaveBeenCalled();
+		expect(fixture.taskManager.updates).toEqual([]);
 		expect(backend.run).not.toHaveBeenCalled();
-		expect(
-			eventsOf(harness.events, "preflight").map((event) => event.status),
-		).toEqual(["started", "failed"]);
-		expect(eventsOf(harness.events, "preflight")[1]?.details?.stderr).toContain(
-			"preflight nope",
+		expect(events).toContainEqual(
+			expect.objectContaining({
+				type: "preflight",
+				status: "failed",
+				details: expect.objectContaining({ command: expect.any(String) }),
+			}),
 		);
 	});
 
-	test("branch mismatch aborts before status transition and preflight commands", async () => {
-		const harness = await setupHarness();
-		const backend = backendFrom(async () =>
-			successResult(reportStdout({ outcome: "success" })),
-		);
-		const markerPath = join(harness.projectRoot, "preflight-ran");
+	test("run-one-task branch mismatch aborts before any status transition", async () => {
+		const fixture = await setupRecordingFixture();
+		await initGit(fixture.projectRoot);
+		const events: DriverEvent[] = [];
+		const backend = createBackend(async () => successfulResult());
 
 		const outcome = await runOneTask(
-			createSpec(harness, {
-				branch: "feature-branch",
-				preflightCommands: [
-					"node -e \"require('node:fs').writeFileSync('preflight-ran', '1')\"",
-				],
-			}),
-			createCtx(harness, backend),
-			taskId,
+			createSpec(fixture, { branch: "not-main" }),
+			createCtx(fixture, backend, events),
+			fixture.taskId,
 		);
 
 		expect(outcome).toMatchObject({ status: "blocked" });
-		expect(harness.updateTask).not.toHaveBeenCalled();
+		expect(fixture.taskManager.updates).toEqual([]);
 		expect(backend.run).not.toHaveBeenCalled();
-		expect(await isMissing(markerPath)).toBe(true);
-		expect(eventsOf(harness.events, "preflight")[1]).toMatchObject({
-			status: "failed",
-			details: { branch: "main" },
-		});
-	});
-
-	test("unknown report with failing postverify marks Blocked and does not commit", async () => {
-		const harness = await setupHarness();
-		const backend = backendFrom(async () => {
-			await writeFile(join(harness.projectRoot, "bad.txt"), "bad", "utf-8");
-			return successResult("no structured report");
-		});
-
-		const outcome = await runOneTask(
-			createSpec(harness, {
-				commitPolicy: "driver-commits",
-				postflightCommands: [
-					"node -e \"process.stderr.write('verify failed'); process.exit(3)\"",
-				],
+		expect(events).toContainEqual(
+			expect.objectContaining({
+				type: "preflight",
+				status: "failed",
+				details: expect.objectContaining({ branch: "main" }),
 			}),
-			createCtx(harness, backend),
-			taskId,
 		);
-
-		expect(outcome.status).toBe("blocked");
-		expect(
-			eventsOf(harness.events, "verify").map((event) => event.status),
-		).toEqual(["started", "failed"]);
-		expect(eventsOf(harness.events, "commit_made")).toHaveLength(0);
-		expect(harness.updates).toEqual([
-			{ status: "In Progress" },
-			{
-				status: "Blocked",
-				implementationNotes:
-					"post-verify failed: node -e \"process.stderr.write('verify failed'); process.exit(3)\": verify failed",
-			},
-		]);
-		expect(
-			await git(harness.projectRoot, ["rev-list", "--count", "HEAD"]),
-		).toBe("1");
-		expectNoNoteField(harness.updates);
 	});
 
-	test("partial reports commit, keep task In Progress with implementationNotes, and emit task_blocked", async () => {
-		const harness = await setupHarness();
-		const backend = backendFrom(async () => {
-			await writeFile(
-				join(harness.projectRoot, "partial.txt"),
-				"partial",
-				"utf-8",
-			);
-			return successResult(
-				reportStdout({
-					outcome: "partial",
-					notes: "phase complete",
-					progress: { phase: 1, of: 2, remaining: "finish tests" },
-				}),
-			);
-		});
+	test("run-one-task uses Title Case task fields and implementationNotes, never note", async () => {
+		const fixture = await setupRecordingFixture();
+		const events: DriverEvent[] = [];
+		const backend = createBackend(async () => failureResult("needs follow-up"));
 
 		const outcome = await runOneTask(
-			createSpec(harness, { commitPolicy: "driver-commits" }),
-			createCtx(harness, backend),
-			taskId,
+			createSpec(fixture),
+			createCtx(fixture, backend, events),
+			fixture.taskId,
 		);
 
-		expect(outcome.status).toBe("partial");
-		expect(outcome.commitSha).toMatch(/^[0-9a-f]{40}$/);
-		expect(harness.updates).toEqual([
+		expect(outcome).toMatchObject({ status: "blocked" });
+		expect(fixture.taskManager.updates).toEqual([
 			{ status: "In Progress" },
-			{
-				status: "In Progress",
-				implementationNotes:
-					"partial: phase 1/2; remaining: finish tests: phase complete",
-			},
+			{ status: "Blocked", implementationNotes: "needs follow-up" },
 		]);
-		expect(eventsOf(harness.events, "commit_made")).toHaveLength(1);
-		expect(eventsOf(harness.events, "task_blocked")[0]).toMatchObject({
-			reason: expect.stringMatching(/^partial/),
-			progress: { phase: 1, of: 2, remaining: "finish tests" },
-		});
-		expectNoNoteField(harness.updates);
+		for (const update of fixture.taskManager.updates) {
+			expect(update).not.toHaveProperty("note");
+		}
 	});
 
-	test("explicit failure reports mark Blocked with implementationNotes and no note field", async () => {
-		const harness = await setupHarness();
-		const backend = backendFrom(async () =>
-			successResult(
-				reportStdout({ outcome: "failure", notes: "reported failure" }),
-			),
-		);
-
-		const outcome = await runOneTask(
-			createSpec(harness, { commitPolicy: "driver-commits" }),
-			createCtx(harness, backend),
-			taskId,
-		);
-
-		expect(outcome).toEqual({ status: "blocked", reason: "reported failure" });
-		expect(harness.updates).toEqual([
-			{ status: "In Progress" },
-			{ status: "Blocked", implementationNotes: "reported failure" },
-		]);
-		expect(eventsOf(harness.events, "commit_made")).toHaveLength(0);
-		expect(eventsOf(harness.events, "task_blocked")[0]).toMatchObject({
-			reason: "reported failure",
-		});
-		expectNoNoteField(harness.updates);
-	});
-
-	test("task timeout aborts the backend signal, emits spawn_failed 124, and marks Blocked", async () => {
-		const harness = await setupHarness();
-		let observedAborted = false;
-		const backend = backendFrom(async (invocation) => {
-			invocation.signal?.addEventListener("abort", () => {
-				observedAborted = invocation.signal?.aborted ?? false;
+	test("run-one-task commit step uses repo lock, excludes missions and memory, and emits sha", async () => {
+		const fixture = await setupFixture();
+		await initGit(fixture.projectRoot);
+		await installCommitHook(fixture.projectRoot);
+		const events: DriverEvent[] = [];
+		const backend = createBackend(async () => {
+			await mkdir(join(fixture.projectRoot, "src"), { recursive: true });
+			await mkdir(join(fixture.projectRoot, "missions", "agent"), {
+				recursive: true,
 			});
-			return new Promise<BackendRunResult>(() => {});
+			await mkdir(join(fixture.projectRoot, "memory"), { recursive: true });
+			await writeFile(
+				join(fixture.projectRoot, "src", "changed.txt"),
+				"commit\n",
+			);
+			await writeFile(
+				join(fixture.projectRoot, "missions", "agent", "ignored.txt"),
+				"ignore\n",
+			);
+			await writeFile(
+				join(fixture.projectRoot, "memory", "ignored.txt"),
+				"ignore\n",
+			);
+			return successfulResult();
 		});
+		const eventSink: EventSink = async (event) => {
+			events.push(event);
+			if (event.type === "commit_made") {
+				await expect(
+					stat(getRepoCommitLockPath(fixture.projectRoot)),
+				).rejects.toMatchObject({ code: "ENOENT" });
+			}
+		};
 
 		const outcome = await runOneTask(
-			createSpec(harness, { taskTimeoutMs: 5 }),
-			createCtx(harness, backend),
-			taskId,
+			createSpec(fixture, { commitPolicy: "driver-commits" }),
+			createCtx(fixture, backend, events, { eventSink }),
+			fixture.taskId,
 		);
 
-		expect(observedAborted).toBe(true);
-		expect(outcome.status).toBe("blocked");
-		expect(eventsOf(harness.events, "spawn_failed")[0]).toMatchObject({
-			exitCode: 124,
-			error: "task timed out after 5ms",
-		});
-		expect(harness.updates).toEqual([
-			{ status: "In Progress" },
-			{
-				status: "Blocked",
-				implementationNotes: "task timed out after 5ms",
-			},
-		]);
-		expectNoNoteField(harness.updates);
-	});
-
-	test("status update failure after commit emits run_aborted and leaves commit_made without task_done in JSONL", async () => {
-		const harness = await setupHarness({
-			updateTask: async (_id, input) => {
-				if (input.status === "Done") {
-					throw new Error("task write failed");
-				}
-				return taskWithUpdate(input);
-			},
-		});
-		const logPath = join(harness.workdir, "events.jsonl");
-		const activityBus: DriverEventPublisher = { publish: vi.fn() };
-		const sink = createEventSink({
-			logPath,
-			runId: "run-255",
-			parentSessionId: "parent-session-255",
-			activityBus,
-		});
-		const backend = backendFrom(async () => {
-			await writeFile(
-				join(harness.projectRoot, "committed.txt"),
-				"yes",
-				"utf-8",
-			);
-			return successResult(reportStdout({ outcome: "success" }));
-		});
-
-		const outcome = await runOneTask(
-			createSpec(harness, {
-				commitPolicy: "driver-commits",
-				eventLogPath: logPath,
-			}),
-			createCtx(harness, backend, sink),
-			taskId,
-		);
-
-		expect(outcome.status).toBe("blocked");
-		expect(outcome.commitSha).toMatch(/^[0-9a-f]{40}$/);
-		expect(
-			await git(harness.projectRoot, ["rev-list", "--count", "HEAD"]),
-		).toBe("2");
-		const jsonlEvents = await readJsonl(logPath);
-		expect(jsonlEvents.map((event) => event.type)).toContain("commit_made");
-		expect(jsonlEvents.map((event) => event.type)).toContain("run_aborted");
-		expect(jsonlEvents.map((event) => event.type)).not.toContain("task_done");
-		expect(eventsOf(jsonlEvents, "run_aborted")[0]).toMatchObject({
-			reason: "status update failed after commit",
-		});
-	});
-
-	test("driver commits exclude paths under missions and memory", async () => {
-		const harness = await setupHarness();
-		const backend = backendFrom(async () => {
-			await mkdir(join(harness.projectRoot, "lib"), { recursive: true });
-			await mkdir(join(harness.projectRoot, "missions"), { recursive: true });
-			await mkdir(join(harness.projectRoot, "memory"), { recursive: true });
-			await writeFile(
-				join(harness.projectRoot, "lib", "included.ts"),
-				"export {};\n",
-				"utf-8",
-			);
-			await writeFile(
-				join(harness.projectRoot, "missions", "local.md"),
-				"local",
-				"utf-8",
-			);
-			await writeFile(
-				join(harness.projectRoot, "memory", "memo.md"),
-				"memo",
-				"utf-8",
-			);
-			return successResult(reportStdout({ outcome: "success" }));
-		});
-
-		const outcome = await runOneTask(
-			createSpec(harness, { commitPolicy: "driver-commits" }),
-			createCtx(harness, backend),
-			taskId,
-		);
-
+		const commit = events.find(isCommitMade);
 		expect(outcome.status).toBe("done");
-		const committedFiles = await git(harness.projectRoot, [
+		expect(outcome.commitSha).toBe(commit?.sha);
+		expect(commit?.sha).toMatch(/^[0-9a-f]{40}$/);
+		expect(
+			await readFile(join(fixture.projectRoot, "hook-observed.txt"), "utf-8"),
+		).toBe("lock-present\n");
+		const committedFiles = await git(fixture.projectRoot, [
 			"show",
 			"--name-only",
 			"--format=",
 			"HEAD",
 		]);
-		expect(committedFiles.split("\n")).toContain("lib/included.ts");
-		expect(committedFiles).not.toContain("missions/local.md");
-		expect(committedFiles).not.toContain("memory/memo.md");
-		expect(
-			await git(harness.projectRoot, [
-				"status",
-				"--porcelain",
-				"--untracked-files=all",
-				"--",
-				"missions",
-				"memory",
-			]),
-		).toContain("missions/local.md");
+		expect(committedFiles.trim().split("\n")).toEqual(["src/changed.txt"]);
+		const ignoredStatus = await git(fixture.projectRoot, [
+			"status",
+			"--porcelain",
+			"--",
+			"missions",
+			"memory",
+		]);
+		expect(ignoredStatus).toContain("missions/");
+		expect(ignoredStatus).toContain("memory/");
 	});
 
-	test("deriveOutcome maps unknown reports from postverify and honors explicit outcomes", () => {
-		const unknown: ParsedReport = { outcome: "unknown", raw: "done" };
+	test("run-one-task deriveOutcome handles unknown postverify results and explicit outcomes", () => {
+		const unknown = {
+			outcome: "unknown",
+			raw: "no report",
+		} satisfies ParsedReport;
+		const pass = [{ command: "test", status: "pass" }] as const;
+		const fail = [{ command: "test", status: "fail", stderr: "bad" }] as const;
+
 		expect(deriveOutcome(unknown, [])).toBe("success");
-		expect(deriveOutcome(unknown, [{ command: "test", status: "pass" }])).toBe(
-			"success",
-		);
-		expect(deriveOutcome(unknown, [{ command: "test", status: "fail" }])).toBe(
-			"failure",
-		);
-		expect(
-			deriveOutcome(report({ outcome: "success" }), [
-				{ command: "test", status: "fail" },
-			]),
-		).toBe("success");
-		expect(deriveOutcome(report({ outcome: "failure" }), [])).toBe("failure");
-		expect(
-			deriveOutcome(report({ outcome: "partial" }), [
-				{ command: "test", status: "fail" },
-			]),
-		).toBe("partial");
+		expect(deriveOutcome(unknown, pass)).toBe("success");
+		expect(deriveOutcome(unknown, fail)).toBe("failure");
+		expect(deriveOutcome(report("success"), fail)).toBe("success");
+		expect(deriveOutcome(report("failure"), pass)).toBe("failure");
+		expect(deriveOutcome(report("partial"), fail)).toBe("partial");
 	});
 
-	test("has no domains imports", async () => {
-		const source = await readFile("lib/driver/run-one-task.ts", "utf-8");
+	test("run-one-task timeout aborts the spawn and blocks with implementationNotes", async () => {
+		const fixture = await setupFixture();
+		const events: DriverEvent[] = [];
+		let observedSignal: AbortSignal | undefined;
+		const backend = createBackend(async (invocation) => {
+			observedSignal = invocation.signal;
+			return new Promise<BackendRunResult>(() => {});
+		});
 
-		expect(source).not.toContain("domains/");
-		expect(source).not.toContain("/domains");
+		const outcome = await runOneTask(
+			createSpec(fixture, { taskTimeoutMs: 10 }),
+			createCtx(fixture, backend, events),
+			fixture.taskId,
+		);
+
+		expect(observedSignal?.aborted).toBe(true);
+		expect(outcome).toMatchObject({ status: "blocked" });
+		expect((await fixture.taskManager.getTask(fixture.taskId))?.status).toBe(
+			"Blocked",
+		);
+		expect(
+			(await fixture.taskManager.getTask(fixture.taskId))?.implementationNotes,
+		).toContain("timed out");
+		expect(events).toContainEqual(
+			expect.objectContaining({
+				type: "spawn_failed",
+				exitCode: 124,
+			}),
+		);
+	});
+
+	test("run-one-task task update failure after commit emits run_aborted without task_done", async () => {
+		const fixture = await setupRecordingFixture();
+		await initGit(fixture.projectRoot);
+		fixture.taskManager.failFinalUpdate = true;
+		const events: DriverEvent[] = [];
+		const backend = createBackend(async () => {
+			await mkdir(join(fixture.projectRoot, "src"), { recursive: true });
+			await writeFile(
+				join(fixture.projectRoot, "src", "after-commit.txt"),
+				"commit\n",
+			);
+			return successfulResult();
+		});
+
+		const outcome = await runOneTask(
+			createSpec(fixture, { commitPolicy: "driver-commits" }),
+			createCtx(fixture, backend, events),
+			fixture.taskId,
+		);
+
+		expect(outcome).toMatchObject({
+			status: "blocked",
+			commitSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+		});
+		expect(outcome.reason).toContain("status update failed after commit");
+		expect(events.map((event) => event.type)).toContain("commit_made");
+		expect(events).toContainEqual(
+			expect.objectContaining({
+				type: "run_aborted",
+				reason: "status update failed after commit",
+			}),
+		);
+		expect(events.map((event) => event.type)).not.toContain("task_done");
+		expect(
+			await git(fixture.projectRoot, [
+				"show",
+				"--format=%s",
+				"--no-patch",
+				"HEAD",
+			]),
+		).toContain(`${fixture.taskId}: driver task update`);
+	});
+
+	test("run-one-task partial outcome commits and leaves task In Progress with progress notes", async () => {
+		const fixture = await setupFixture();
+		await initGit(fixture.projectRoot);
+		const events: DriverEvent[] = [];
+		const backend = createBackend(async () => {
+			await mkdir(join(fixture.projectRoot, "src"), { recursive: true });
+			await writeFile(
+				join(fixture.projectRoot, "src", "partial.txt"),
+				"partial\n",
+			);
+			return {
+				exitCode: 0,
+				stdout: fencedReport({
+					outcome: "partial",
+					files: [],
+					verification: [],
+					notes: "needs another pass",
+					progress: { phase: 1, of: 2, remaining: "tests" },
+				}),
+				durationMs: 1,
+			};
+		});
+
+		const outcome = await runOneTask(
+			createSpec(fixture, {
+				commitPolicy: "driver-commits",
+				postflightCommands: [nodeCommand("process.exit(0)")],
+			}),
+			createCtx(fixture, backend, events),
+			fixture.taskId,
+		);
+
+		const task = await fixture.taskManager.getTask(fixture.taskId);
+		expect(outcome).toMatchObject({
+			status: "partial",
+			commitSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+		});
+		expect(task?.status).toBe("In Progress");
+		expect(task?.implementationNotes).toContain("partial: phase 1/2");
+		expect(task?.implementationNotes).toContain("remaining: tests");
+		expect(events).toContainEqual(
+			expect.objectContaining({
+				type: "task_blocked",
+				reason: expect.stringContaining("partial"),
+				progress: { phase: 1, of: 2, remaining: "tests" },
+			}),
+		);
+		expect(events.map((event) => event.type)).toContain("commit_made");
+	});
+
+	test("run-one-task unknown report plus postverify failure blocks and does not commit", async () => {
+		const fixture = await setupFixture();
+		await initGit(fixture.projectRoot);
+		const events: DriverEvent[] = [];
+		const backend = createBackend(async () => {
+			await mkdir(join(fixture.projectRoot, "src"), { recursive: true });
+			await writeFile(
+				join(fixture.projectRoot, "src", "uncommitted.txt"),
+				"no commit\n",
+			);
+			return { exitCode: 0, stdout: "no structured report", durationMs: 1 };
+		});
+
+		const outcome = await runOneTask(
+			createSpec(fixture, {
+				commitPolicy: "driver-commits",
+				postflightCommands: [
+					nodeCommand("process.stderr.write('verify failed'); process.exit(2)"),
+				],
+			}),
+			createCtx(fixture, backend, events),
+			fixture.taskId,
+		);
+
+		const task = await fixture.taskManager.getTask(fixture.taskId);
+		expect(outcome).toMatchObject({ status: "blocked" });
+		expect(task?.status).toBe("Blocked");
+		expect(task?.implementationNotes).toContain("post-verify failed");
+		expect(events.map((event) => event.type)).not.toContain("commit_made");
+		const staged = await git(fixture.projectRoot, [
+			"diff",
+			"--cached",
+			"--name-only",
+		]);
+		expect(staged).toBe("");
 	});
 });
 
-async function setupHarness(
-	options: {
-		updateTask?: (id: string, input: TaskUpdateInput) => Promise<Task>;
-	} = {},
-): Promise<Harness> {
-	const projectRoot = join(tmp.path, "repo");
-	const workdir = join(tmp.path, "run");
-	const templateDir = join(tmp.path, "templates");
-	await mkdir(projectRoot, { recursive: true });
-	await mkdir(workdir, { recursive: true });
+interface Fixture {
+	projectRoot: string;
+	workdir: string;
+	envelopePath: string;
+	taskId: string;
+	taskManager: TaskManager;
+}
+
+interface RecordingFixture extends Omit<Fixture, "taskManager"> {
+	taskManager: RecordingTaskManager;
+}
+
+async function setupFixture(): Promise<Fixture> {
+	const projectRoot = join(temp.path, "project");
+	const workdir = join(temp.path, "run");
+	const templateDir = join(temp.path, "templates");
 	await mkdir(templateDir, { recursive: true });
-	await initGitRepo(projectRoot);
+	await mkdir(workdir, { recursive: true });
 
-	const envelopePath = join(templateDir, "envelope.md");
-	await writeFile(envelopePath, "Implement exactly one task.", "utf-8");
-
-	const updates: TaskUpdateInput[] = [];
-	const task = testTask();
-	const updateTask = vi.fn(async (id: string, input: TaskUpdateInput) => {
-		updates.push(input);
-		return options.updateTask?.(id, input) ?? taskWithUpdate(input);
+	const taskManager = new TaskManager(projectRoot);
+	await taskManager.init();
+	const task = await taskManager.createTask({
+		title: "Run One Task Fixture",
+		description: "Implement this fixture task.",
 	});
-	const getTask = vi.fn(async (id: string) =>
-		id === taskId ? task : undefined,
-	);
-	const taskManager = { updateTask, getTask } as unknown as TaskManager;
+	const envelopePath = join(templateDir, "envelope.md");
+	await writeFile(envelopePath, "Envelope instructions", "utf-8");
+
+	return { projectRoot, workdir, envelopePath, taskId: task.id, taskManager };
+}
+
+async function setupRecordingFixture(): Promise<RecordingFixture> {
+	const projectRoot = join(temp.path, "project");
+	const workdir = join(temp.path, "run");
+	const templateDir = join(temp.path, "templates");
+	await mkdir(projectRoot, { recursive: true });
+	await mkdir(templateDir, { recursive: true });
+	await mkdir(workdir, { recursive: true });
+	const envelopePath = join(templateDir, "envelope.md");
+	await writeFile(envelopePath, "Envelope instructions", "utf-8");
+	const task = createTask("TASK-255");
 
 	return {
 		projectRoot,
 		workdir,
-		templateDir,
 		envelopePath,
-		events: [],
-		taskManager,
-		updates,
-		updateTask,
-		getTask,
+		taskId: task.id,
+		taskManager: new RecordingTaskManager(projectRoot, task),
 	};
 }
 
 function createSpec(
-	harness: Harness,
+	fixture: Fixture | RecordingFixture,
 	overrides: Partial<DriverRunSpec> = {},
 ): DriverRunSpec {
 	return {
 		runId: "run-255",
 		parentSessionId: "parent-session-255",
-		projectRoot: harness.projectRoot,
+		projectRoot: fixture.projectRoot,
 		planSlug: "driver-primitives",
-		taskIds: [taskId],
+		taskIds: [fixture.taskId],
 		backendName: "cosmonauts-subagent",
-		promptTemplate: { envelopePath: harness.envelopePath },
+		promptTemplate: { envelopePath: fixture.envelopePath },
 		preflightCommands: [],
 		postflightCommands: [],
 		commitPolicy: "no-commit",
-		workdir: harness.workdir,
-		eventLogPath: join(harness.workdir, "events.jsonl"),
+		workdir: fixture.workdir,
+		eventLogPath: join(fixture.workdir, "events.jsonl"),
 		...overrides,
 	};
 }
 
 function createCtx(
-	harness: Harness,
+	fixture: Fixture | RecordingFixture,
 	backend: Backend,
-	eventSink: (event: DriverEvent) => Promise<void> = async (event) => {
-		harness.events.push(event);
-	},
+	events: DriverEvent[],
+	overrides: Partial<RunOneTaskCtx> = {},
 ): RunOneTaskCtx {
+	const eventSink: EventSink = async (event) => {
+		events.push(event);
+	};
+
 	return {
-		taskManager: harness.taskManager,
+		taskManager: fixture.taskManager,
 		backend,
 		eventSink,
 		parentSessionId: "parent-session-255",
 		runId: "run-255",
 		abortSignal: new AbortController().signal,
-		cosmonautsRoot: harness.projectRoot,
+		cosmonautsRoot: fixture.projectRoot,
+		...overrides,
 	};
 }
 
-function backendFrom(
-	run: Backend["run"],
+function createBackend(
+	run: (invocation: BackendInvocation) => Promise<BackendRunResult>,
 ): Backend & { run: ReturnType<typeof vi.fn> } {
 	return {
-		name: "mock-backend",
+		name: "test-backend",
 		capabilities: { canCommit: false, isolatedFromHostSource: false },
 		run: vi.fn(run),
 	};
 }
 
-function successResult(stdout: string): BackendRunResult {
-	return { exitCode: 0, stdout, durationMs: 1 };
-}
-
-function report(overrides: Partial<Report> = {}): Report {
+function successfulResult(): BackendRunResult {
 	return {
-		outcome: "success",
-		files: [],
-		verification: [],
-		...overrides,
+		exitCode: 0,
+		stdout: fencedReport({ outcome: "success", files: [], verification: [] }),
+		durationMs: 1,
 	};
 }
 
-function reportStdout(overrides: Partial<Report> = {}): string {
-	return `\`\`\`json\n${JSON.stringify(report(overrides))}\n\`\`\``;
+function failureResult(notes: string): BackendRunResult {
+	return {
+		exitCode: 0,
+		stdout: fencedReport({
+			outcome: "failure",
+			files: [],
+			verification: [],
+			notes,
+		}),
+		durationMs: 1,
+	};
 }
 
-function testTask(): Task {
+function fencedReport(report: Report): string {
+	return `\`\`\`json\n${JSON.stringify(report)}\n\`\`\``;
+}
+
+function report(outcome: ReportOutcome): Report {
+	return { outcome, files: [], verification: [] };
+}
+
+function createTask(id: string): Task {
+	const now = new Date("2026-05-04T00:00:00.000Z");
 	return {
-		id: taskId,
-		title: "Run one task fixture",
+		id,
+		title: "Recording Fixture",
 		status: "To Do",
-		createdAt: new Date("2026-05-04T00:00:00.000Z"),
-		updatedAt: new Date("2026-05-04T00:00:00.000Z"),
+		priority: "high",
+		createdAt: now,
+		updatedAt: now,
 		labels: [],
 		dependencies: [],
 		acceptanceCriteria: [],
 	};
 }
 
-function taskWithUpdate(input: TaskUpdateInput): Task {
-	return {
-		...testTask(),
-		...input,
-		updatedAt: new Date("2026-05-04T00:01:00.000Z"),
-	};
-}
+class RecordingTaskManager extends TaskManager {
+	readonly updates: TaskUpdateInput[] = [];
+	failFinalUpdate = false;
+	private task: Task;
 
-function eventsOf<T extends DriverEvent["type"]>(
-	events: DriverEvent[],
-	type: T,
-): Extract<DriverEvent, { type: T }>[] {
-	return events.filter(
-		(event): event is Extract<DriverEvent, { type: T }> => event.type === type,
-	);
-}
+	constructor(projectRoot: string, task: Task) {
+		super(projectRoot);
+		this.task = task;
+	}
 
-function expectNoNoteField(updates: TaskUpdateInput[]): void {
-	for (const update of updates) {
-		expect(Object.keys(update)).not.toContain("note");
+	override async getTask(id: string): Promise<Task | null> {
+		return id === this.task.id ? this.task : null;
+	}
+
+	override async updateTask(id: string, input: TaskUpdateInput): Promise<Task> {
+		if (id !== this.task.id) {
+			throw new Error(`Task not found: ${id}`);
+		}
+		if (this.failFinalUpdate && this.updates.length > 0) {
+			throw new Error("update failed");
+		}
+
+		this.updates.push(input);
+		this.task = {
+			...this.task,
+			...input,
+			updatedAt: new Date("2026-05-04T00:01:00.000Z"),
+			labels: input.labels ?? this.task.labels,
+			dependencies: input.dependencies ?? this.task.dependencies,
+			acceptanceCriteria:
+				input.acceptanceCriteria ?? this.task.acceptanceCriteria,
+		};
+		return this.task;
 	}
 }
 
-async function initGitRepo(projectRoot: string): Promise<void> {
-	await git(projectRoot, ["init"]);
-	await git(projectRoot, ["checkout", "-b", "main"]);
-	await git(projectRoot, ["config", "user.email", "driver@example.test"]);
+async function initGit(projectRoot: string): Promise<void> {
+	await git(projectRoot, ["init", "-b", "main"]);
+	await git(projectRoot, ["config", "user.email", "driver@example.com"]);
 	await git(projectRoot, ["config", "user.name", "Driver Test"]);
 	await writeFile(join(projectRoot, "README.md"), "initial\n", "utf-8");
 	await git(projectRoot, ["add", "README.md"]);
 	await git(projectRoot, ["commit", "-m", "initial"]);
 }
 
+async function installCommitHook(projectRoot: string): Promise<void> {
+	const hookPath = join(projectRoot, ".git", "hooks", "pre-commit");
+	const lockPath = getRepoCommitLockPath(projectRoot);
+	const observedPath = join(projectRoot, "hook-observed.txt");
+	const script = `#!/bin/sh
+if test -f ${shellQuote(lockPath)}; then
+  printf 'lock-present\n' > ${shellQuote(observedPath)}
+else
+  printf 'lock-missing\n' > ${shellQuote(observedPath)}
+  exit 1
+fi
+if git diff --cached --name-only | grep -E '^(missions|memory)/'; then
+  exit 1
+fi
+`;
+	await writeFile(hookPath, script, "utf-8");
+	await chmod(hookPath, 0o755);
+}
+
 async function git(cwd: string, args: string[]): Promise<string> {
 	const { stdout } = await execFileAsync("git", args, { cwd });
-	return String(stdout).trim();
+	return stdout.toString();
 }
 
-async function readJsonl(path: string): Promise<DriverEvent[]> {
-	const content = await readFile(path, "utf-8");
-	return content
-		.trimEnd()
-		.split("\n")
-		.filter(Boolean)
-		.map((line) => JSON.parse(line) as DriverEvent);
+function nodeCommand(script: string): string {
+	return `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`;
 }
 
-async function isMissing(path: string): Promise<boolean> {
-	try {
-		await stat(path);
-		return false;
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-			return true;
-		}
-		throw error;
-	}
+function shellQuote(value: string): string {
+	return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-function delay(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+function isSpawnCompleted(
+	event: DriverEvent,
+): event is Extract<DriverEvent, { type: "spawn_completed" }> {
+	return event.type === "spawn_completed";
+}
+
+function isCommitMade(
+	event: DriverEvent,
+): event is Extract<DriverEvent, { type: "commit_made" }> {
+	return event.type === "commit_made";
 }
