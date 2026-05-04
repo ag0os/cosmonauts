@@ -416,7 +416,10 @@ async function handleListAgents(
 	const agents = runtime.domainContext
 		? runtime.agentRegistry.resolveInDomain(runtime.domainContext)
 		: runtime.agentRegistry.listAll();
-	const lines = agents.map((agent) => `  ${agent.id}  ${agent.description}`);
+	const lines = agents.map(
+		(agent) =>
+			`  ${qualifyAgentId(agent.id, agent.domain ?? runtime.domainContext)}  ${agent.description}`,
+	);
 	printLines(lines);
 }
 

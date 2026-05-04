@@ -26,8 +26,8 @@ As Pi evolves (lockstep versioning), re-audit its API before each phase for feat
 ### Three-Layer Architecture
 
 - **Layer 1: Framework** — Orchestration, persistence, tasks, CLI, agent definitions, skill loading. Domain-agnostic.
-- **Layer 2: Domain agents** — Coding is the first domain. Each domain lives in `domains/{name}/` and brings its own agents, prompts, capabilities, skills, and workflows. Adding a new domain = new domain directory with a `domain.ts` manifest, no framework changes.
-- **Layer 3: Executive assistant** (future) — Always-on heartbeat that triggers domain workflows and manages long-running projects.
+- **Layer 2: Domain agents** — Built-in domains live in `domains/`: `domains/shared/` provides shared prompts, capabilities, and extensions; `domains/main/` provides the cross-domain `cosmo` lead. Installable domains live in package directories such as `bundled/coding/coding/`. Adding a new domain = new domain directory with a `domain.ts` manifest, no framework changes.
+- **Layer 3: Executive assistant** — `domains/main/` hosts `main/cosmo`, the top-level cross-domain orchestrator. The future always-on heartbeat will trigger domain workflows and manage long-running projects.
 
 ### Three Pillars: Agents, Prompts, Skills
 
@@ -43,23 +43,29 @@ Agents are Pi sessions configured by declarative definitions. Each definition sp
 
 ### Agent Definitions
 
-Agent definitions live in domain directories (e.g., `domains/coding/agents/*.ts`). Each definition configures model, tools, capabilities, extensions, skill access, and sub-agent permissions. Definitions are discovered automatically by the domain loader.
+Agent definitions live in domain directories (e.g., `domains/main/agents/*.ts` for built-ins and `bundled/coding/coding/agents/*.ts` for the coding package). Each definition configures model, tools, capabilities, extensions, skill access, and sub-agent permissions. Definitions are discovered automatically by the domain loader.
+
+Built-in/default leads:
+
+- `main/cosmo` (`domains/main/`) — cross-domain orchestrator and top-level assistant; delegates directly to specialists across installed domains.
+- `coding/cody` (`bundled/coding/`) — coding-domain coordinator for `cosmonauts -d coding`; coordinates planners, workers, reviewers, and other coding specialists.
 
 ### Prompt Composition
 
 System prompts compose in a strict four-layer order, loaded at session creation via Pi's `additionalSkillPaths`:
 
 - **Layer 0 — Platform Base** (`domains/shared/prompts/base.md`): Universal operating norms for all agents.
-- **Layer 1 — Capabilities** (`domains/{shared,coding}/capabilities/*.md`): Reusable discipline bundles aligned to tool surfaces (core, coding-rw, coding-ro, tasks, spawning, todo).
-- **Layer 2 — Persona** (`domains/{domain}/prompts/{agent}.md`): One per agent. Identity, workflow, constraints.
+- **Layer 1 — Capabilities** (`domains/shared/capabilities/*.md`, `domains/main/capabilities/*.md`, or bundled domain capability dirs such as `bundled/coding/coding/capabilities/*.md`): Reusable discipline bundles aligned to tool surfaces (core, coding-rw, coding-ro, tasks, spawning, todo).
+- **Layer 2 — Persona** (`domains/main/prompts/{agent}.md` or bundled domain prompt dirs such as `bundled/coding/coding/prompts/{agent}.md`): One per agent. Identity, workflow, constraints.
 - **Layer 3 — Runtime Context** (`domains/shared/prompts/runtime/sub-agent.md`): Optional spawn-time overlay with parent role, objective, task ID. Top-level spawns skip this.
 
 Examples:
 
 ```
-cosmo   → [cosmonauts] + [core, coding-rw, tasks, spawning, todo] + [cosmo]       # full-featured orchestrator
-planner → [cosmonauts] + [core, coding-ro] + [planner]                             # read-only design agent
-worker  → [cosmonauts] + [core, coding-rw, tasks, todo] + [worker]                 # coding-focused implementer
+main/cosmo     → [cosmonauts] + [core, tasks, spawning, todo, fleet] + [cosmo]                         # cross-domain orchestrator
+coding/cody    → [cosmonauts] + [core, engineering-discipline, coding-rw, tasks, spawning, todo] + [cody] # coding-domain coordinator
+coding/planner → [cosmonauts] + [core, coding-ro] + [planner]                                            # read-only design agent
+coding/worker  → [cosmonauts] + [core, coding-rw, tasks, todo] + [worker]                                # coding-focused implementer
 ```
 
 ### Sub-Agent Spawning
@@ -113,8 +119,10 @@ Projects can add, remove, or customize workflows by editing their `.cosmonauts/c
 ### CLI
 
 ```
-cosmonauts                                                          # Interactive REPL
-cosmonauts "design an auth system"                                  # Interactive with initial prompt
+cosmonauts                                                          # Interactive REPL with main/cosmo
+cosmonauts -d coding                                                 # Interactive REPL with coding/cody
+cosmonauts "design an auth system"                                  # Interactive with initial prompt to main/cosmo
+cosmonauts -d coding "implement this task"                           # Coding-focused initial prompt to coding/cody
 cosmonauts --print "create tasks and go"                            # Non-interactive (fire-and-forget)
 cosmonauts --workflow plan-and-build "auth"                          # Named workflow
 cosmonauts --chain "planner -> coordinator"                         # Raw chain DSL
@@ -122,7 +130,7 @@ cosmonauts --chain "planner -> [task-manager, reviewer] -> coord"   # Parallel b
 cosmonauts --chain "coordinator -> reviewer[3]"                     # Fan-out (same prompt x3)
 ```
 
-Flags: `--print`, `--workflow`, `--chain`, `--model`, `--thinking`, `--domain`/`-d`, `--list-domains`.
+Flags: `--print`, `--workflow`, `--chain`, `--model`, `--thinking`, `--domain`/`-d`, `--list-domains`, `--list-agents`. `--list-agents` prints qualified IDs such as `main/cosmo` and `coding/cody`.
 
 ## Documentation
 
@@ -196,8 +204,8 @@ For small, self-contained changes (a bug fix, a single function, a config tweak)
 ```
 lib/              Core libraries (agents, orchestration, tasks, plans, workflows, domains, config)
 lib/sessions/     Session persistence, lineage tracking, and knowledge record format
-domains/          Framework-level domain directory — contains only shared/ (base prompts, capabilities, extensions)
-bundled/          Installable domain packages (coding/, coding-minimal/) — the source of truth for bundled domains
+domains/          Built-in domains: shared/ (base prompts, capabilities, extensions) and main/ (main/cosmo)
+bundled/          Installable domain packages (coding/) — the source of truth for bundled domains
 cli/              CLI implementation
 bin/              CLI entry points (cosmonauts)
 tests/            Test suites mirroring source structure
