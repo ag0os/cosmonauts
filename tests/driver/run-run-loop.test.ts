@@ -168,7 +168,7 @@ describe("run-run-loop", () => {
 		});
 	});
 
-	test("run-run-loop EventLogWriteError writes fallback run_aborted", async () => {
+	test("driver log write failure writes fallback run_aborted", async () => {
 		const events: DriverEvent[] = [];
 		const spec = createSpec();
 		const ctx = createCtx(events, {

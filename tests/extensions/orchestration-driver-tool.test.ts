@@ -114,7 +114,7 @@ describe("driver e2e run_driver integration", () => {
 		}
 	});
 
-	test("driver e2e preflight failure aborts without task status updates", async () => {
+	test("driver preflight failure aborts without task status updates", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		const updateSpy = vi.spyOn(TaskManager.prototype, "updateTask");
 		backendMocks.run.mockResolvedValue(successResult());
@@ -147,7 +147,7 @@ describe("driver e2e run_driver integration", () => {
 		expect(backendMocks.run).not.toHaveBeenCalled();
 	});
 
-	test("driver e2e branch mismatch emits structured preflight failure before transitions", async () => {
+	test("driver branch mismatch emits structured preflight failure before transitions", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		await initGit(fixture.projectRoot);
 		const updateSpy = vi.spyOn(TaskManager.prototype, "updateTask");
@@ -176,7 +176,7 @@ describe("driver e2e run_driver integration", () => {
 		expect(backendMocks.run).not.toHaveBeenCalled();
 	});
 
-	test("driver e2e postverify failure blocks task and does not commit", async () => {
+	test("driver postverify failure blocks task and does not commit", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		await initGit(fixture.projectRoot);
 		const beforeHead = await git(fixture.projectRoot, ["rev-parse", "HEAD"]);

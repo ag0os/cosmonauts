@@ -218,6 +218,7 @@ async function createRunSpec({
 		},
 		preflightCommands: params.preflightCommands ?? [],
 		postflightCommands: params.postflightCommands ?? [],
+		branch: params.branch,
 		commitPolicy: params.commitPolicy ?? "driver-commits",
 		partialMode: params.partialMode,
 		workdir,

@@ -110,7 +110,7 @@ describe("run-one-task", () => {
 		);
 	});
 
-	test("run-one-task uses Title Case task fields and implementationNotes, never note", async () => {
+	test("driver task fields literal uses Title Case and implementationNotes, never note", async () => {
 		const fixture = await setupRecordingFixture();
 		const events: DriverEvent[] = [];
 		const backend = createBackend(async () => failureResult("needs follow-up"));
@@ -131,7 +131,7 @@ describe("run-one-task", () => {
 		}
 	});
 
-	test("run-one-task commit step uses repo lock, excludes missions and memory, and emits sha", async () => {
+	test("driver commit exclusion uses repo lock, excludes missions and memory, and emits sha", async () => {
 		const fixture = await setupFixture();
 		await initGit(fixture.projectRoot);
 		await installCommitHook(fixture.projectRoot);
@@ -196,7 +196,7 @@ describe("run-one-task", () => {
 		expect(ignoredStatus).toContain("memory/");
 	});
 
-	test("run-one-task deriveOutcome handles unknown postverify results and explicit outcomes", () => {
+	test("driver derive outcome handles unknown postverify results and explicit outcomes", () => {
 		const unknown = {
 			outcome: "unknown",
 			raw: "no report",
@@ -212,7 +212,7 @@ describe("run-one-task", () => {
 		expect(deriveOutcome(report("partial"), fail)).toBe("partial");
 	});
 
-	test("run-one-task timeout aborts the spawn and blocks with implementationNotes", async () => {
+	test("driver task timeout aborts the spawn and blocks with implementationNotes", async () => {
 		const fixture = await setupFixture();
 		const events: DriverEvent[] = [];
 		let observedSignal: AbortSignal | undefined;
@@ -243,7 +243,7 @@ describe("run-one-task", () => {
 		);
 	});
 
-	test("run-one-task task update failure after commit emits run_aborted without task_done", async () => {
+	test("driver post-commit task update failure emits run_aborted without task_done", async () => {
 		const fixture = await setupRecordingFixture();
 		await initGit(fixture.projectRoot);
 		fixture.taskManager.failFinalUpdate = true;
@@ -286,7 +286,7 @@ describe("run-one-task", () => {
 		).toContain(`${fixture.taskId}: driver task update`);
 	});
 
-	test("run-one-task partial outcome commits and leaves task In Progress with progress notes", async () => {
+	test("driver partial outcome commits and leaves task In Progress with progress notes", async () => {
 		const fixture = await setupFixture();
 		await initGit(fixture.projectRoot);
 		const events: DriverEvent[] = [];
