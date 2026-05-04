@@ -73,14 +73,16 @@ export async function runRunLoop(
 			}
 		}
 
-		await emit(spec, ctx, {
-			type: "run_completed",
-			summary: {
-				total: spec.taskIds.length,
-				done: state.done,
-				blocked: state.blocked,
-			},
-		});
+		if (state.outcome === "completed") {
+			await emit(spec, ctx, {
+				type: "run_completed",
+				summary: {
+					total: spec.taskIds.length,
+					done: state.done,
+					blocked: state.blocked,
+				},
+			});
+		}
 
 		return toDriverResult(spec, state);
 	} catch (error) {
@@ -91,6 +93,7 @@ export async function runRunLoop(
 				outcome: "aborted",
 				tasksDone: state.done,
 				tasksBlocked: state.blocked,
+				blockedReason: "log write failed",
 			};
 		}
 

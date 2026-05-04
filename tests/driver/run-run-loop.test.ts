@@ -91,15 +91,10 @@ describe("run-run-loop", () => {
 		expect(events.map((event) => event.type)).toEqual([
 			"run_started",
 			"run_aborted",
-			"run_completed",
 		]);
 		expect(events[1]).toMatchObject({
 			type: "run_aborted",
 			reason: "needs input",
-		});
-		expect(events[2]).toMatchObject({
-			type: "run_completed",
-			summary: { total: 3, done: 1, blocked: 1 },
 		});
 		expect(result).toMatchObject({
 			runId: spec.runId,
@@ -113,7 +108,10 @@ describe("run-run-loop", () => {
 
 	test("run-run-loop partialMode stop emits run_aborted and stops", async () => {
 		const events: DriverEvent[] = [];
-		const spec = createSpec({ taskIds: ["TASK-1", "TASK-2"] });
+		const spec = createSpec({
+			taskIds: ["TASK-1", "TASK-2"],
+			partialMode: "stop",
+		});
 		const ctx = createCtx(events);
 		mocks.runOneTask
 			.mockResolvedValueOnce({ status: "partial", reason: "half done" })
@@ -125,7 +123,6 @@ describe("run-run-loop", () => {
 		expect(events.map((event) => event.type)).toEqual([
 			"run_started",
 			"run_aborted",
-			"run_completed",
 		]);
 		expect(events[1]).toMatchObject({
 			type: "run_aborted",
@@ -192,6 +189,7 @@ describe("run-run-loop", () => {
 			outcome: "aborted",
 			tasksDone: 0,
 			tasksBlocked: 0,
+			blockedReason: "log write failed",
 		});
 		const line = (await readFile(spec.eventLogPath, "utf-8")).trimEnd();
 		expect(JSON.parse(line)).toMatchObject({
