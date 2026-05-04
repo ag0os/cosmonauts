@@ -370,7 +370,9 @@ async function run(options: CliOptions): Promise<void> {
 }
 
 function hasInstalledDomain(runtime: CosmonautsRuntime): boolean {
-	return runtime.domains.some((domain) => domain.manifest.id !== "shared");
+	return runtime.domains.some(
+		(domain) => !["shared", "main"].includes(domain.manifest.id),
+	);
 }
 
 function handleNoDomainGuard(): void {
