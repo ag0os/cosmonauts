@@ -639,7 +639,11 @@ function prepareStageExecution(
 	const stageStart = Date.now();
 
 	if (!config.registry.has(stage.name, config.domainContext)) {
-		const message = `Unknown agent role "${stage.name}"`;
+		let message = `Unknown agent role "${stage.name}"`;
+		if (stage.name === "cosmo") {
+			message +=
+				'\nMigration hint: use "main/cosmo" for the cross-domain orchestrator or "coding/cody" for the coding-domain lead.';
+		}
 		emit(config, { type: "error", message, stage });
 		return {
 			stage,
