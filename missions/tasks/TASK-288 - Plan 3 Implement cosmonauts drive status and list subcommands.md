@@ -1,7 +1,7 @@
 ---
 id: TASK-288
 title: 'Plan 3: Implement cosmonauts drive status and list subcommands'
-status: To Do
+status: Done
 priority: medium
 labels:
   - cli
@@ -9,7 +9,7 @@ labels:
 dependencies:
   - TASK-284
 createdAt: '2026-05-04T20:22:33.840Z'
-updatedAt: '2026-05-04T20:22:33.840Z'
+updatedAt: '2026-05-05T16:08:03.781Z'
 ---
 
 ## Description
@@ -38,3 +38,7 @@ Read `run.completion.json` first → if present, report terminal state (`outcome
 - [ ] #4 Tests in tests/cli/drive/status.test.ts exercise all four classification branches: completion record present, PID alive+matching, PID dead, PID alive+start-time mismatch (reuse).
 - [ ] #5 Tests in tests/cli/drive/list.test.ts enumerate and classify multiple runs across multiple plans.
 <!-- AC:END -->
+
+## Implementation Notes
+
+Added drive status <runId> [--plan] and drive list. Status resolves run directories, reads run.completion.json before pidfiles, classifies terminal outcomes, running/dead/orphaned via process.kill and ps lstart comparison, and emits structured JSON/errors. List scans missions/sessions/*/runs/* and classifies stateful runs across plans. Added status/list CLI tests covering completion-first, running, dead, orphaned, and multi-plan list classification. Verified focused drive tests, typecheck, and lint pass.

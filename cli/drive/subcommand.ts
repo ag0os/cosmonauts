@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -17,6 +17,7 @@ import type {
 import type {
 	BackendName,
 	DriverEvent,
+	DriverResult,
 	DriverRunSpec,
 } from "../../lib/driver/types.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
@@ -54,6 +55,35 @@ interface JsonError {
 	[key: string]: unknown;
 }
 
+interface DriveStatusOptions {
+	plan?: string;
+}
+
+interface RunPidFile {
+	pid: number;
+	startedAt: string;
+	runArgv?: string[];
+	cosmonautsPath?: string;
+}
+
+type RunStatus = DriverResult["outcome"] | "dead" | "running" | "orphaned";
+
+interface RunStatusRecord {
+	runId: string;
+	planSlug: string;
+	status: RunStatus;
+	workdir: string;
+	pid?: number;
+	startedAt?: string;
+	result?: DriverResult;
+}
+
+interface RunDir {
+	runId: string;
+	planSlug: string;
+	workdir: string;
+}
+
 const BACKENDS: readonly BackendName[] = [
 	"codex",
 	"claude-cli",
@@ -65,6 +95,7 @@ const COMMIT_POLICIES: readonly DriverRunSpec["commitPolicy"][] = [
 	"backend-commits",
 	"no-commit",
 ];
+const PROCESS_START_TOLERANCE_MS = 5_000;
 const execFileAsync = promisify(execFile);
 
 export function createDriveProgram(): Command {
@@ -79,6 +110,21 @@ export function createDriveProgram(): Command {
 		.command("run", { isDefault: true })
 		.description("Run a driver task fleet");
 	configureRunCommand(run);
+
+	program
+		.command("status <runId>")
+		.description("Report a detached driver run status")
+		.option("--plan <slug>", "Plan slug containing the run")
+		.action(async (runId: string, options: DriveStatusOptions) => {
+			await reportDriveStatus(runId, options);
+		});
+
+	program
+		.command("list")
+		.description("List driver runs")
+		.action(async () => {
+			await listDriveRuns();
+		});
 
 	return program;
 }
@@ -204,6 +250,278 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 	} finally {
 		unsubscribe();
 	}
+}
+
+async function reportDriveStatus(
+	runId: string,
+	options: DriveStatusOptions,
+): Promise<void> {
+	const projectRoot = process.cwd();
+	const runDir = options.plan
+		? {
+				runId,
+				planSlug: options.plan,
+				workdir: runWorkdir(projectRoot, options.plan, runId),
+			}
+		: await findUniqueRunDir(projectRoot, runId);
+
+	if (!runDir) {
+		process.exitCode = 1;
+		return;
+	}
+
+	const record = await classifyRunDir(runDir);
+	if (!record) {
+		printJsonStderr({
+			error: "run_state_not_found",
+			runId,
+			planSlug: runDir.planSlug,
+			workdir: runDir.workdir,
+			message: "Run directory has neither run.completion.json nor run.pid.",
+		});
+		process.exitCode = 1;
+		return;
+	}
+
+	printJsonStdout(record);
+}
+
+async function listDriveRuns(): Promise<void> {
+	const runDirs = await findRunDirsWithState(process.cwd());
+	const runs: RunStatusRecord[] = [];
+	for (const runDir of runDirs) {
+		const record = await classifyRunDir(runDir);
+		if (record) {
+			runs.push(record);
+		}
+	}
+	printJsonStdout({ runs });
+}
+
+async function findUniqueRunDir(
+	projectRoot: string,
+	runId: string,
+): Promise<RunDir | undefined> {
+	const runDirs = await findRunDirs(projectRoot, runId);
+	if (runDirs.length === 1) {
+		return runDirs[0];
+	}
+	if (runDirs.length === 0) {
+		printJsonStderr({
+			error: "run_not_found",
+			runId,
+			message:
+				"No matching run directory found. Pass --plan <slug> to select a plan.",
+		});
+	} else {
+		printJsonStderr({
+			error: "ambiguous_run_id",
+			runId,
+			matches: runDirs.map(({ planSlug, workdir }) => ({ planSlug, workdir })),
+			message:
+				"Multiple matching run directories found. Pass --plan <slug> to select one.",
+		});
+	}
+	return undefined;
+}
+
+async function findRunDirs(
+	projectRoot: string,
+	runIdFilter?: string,
+): Promise<RunDir[]> {
+	const sessionsDir = join(projectRoot, "missions", "sessions");
+	const plans = await readDirectoryEntries(sessionsDir);
+	const runDirs: RunDir[] = [];
+
+	for (const plan of plans) {
+		if (!plan.isDirectory()) {
+			continue;
+		}
+		const planSlug = plan.name;
+		const runsDir = join(sessionsDir, planSlug, "runs");
+		const runs = await readDirectoryEntries(runsDir);
+		for (const run of runs) {
+			if (!run.isDirectory()) {
+				continue;
+			}
+			if (runIdFilter && run.name !== runIdFilter) {
+				continue;
+			}
+			runDirs.push({
+				runId: run.name,
+				planSlug,
+				workdir: join(runsDir, run.name),
+			});
+		}
+	}
+
+	return runDirs.sort((a, b) =>
+		a.planSlug === b.planSlug
+			? a.runId.localeCompare(b.runId)
+			: a.planSlug.localeCompare(b.planSlug),
+	);
+}
+
+async function findRunDirsWithState(projectRoot: string): Promise<RunDir[]> {
+	const runDirs = await findRunDirs(projectRoot);
+	const stateful: RunDir[] = [];
+	for (const runDir of runDirs) {
+		if (await hasRunState(runDir.workdir)) {
+			stateful.push(runDir);
+		}
+	}
+	return stateful;
+}
+
+async function hasRunState(workdir: string): Promise<boolean> {
+	return (
+		(await fileExists(join(workdir, "run.completion.json"))) ||
+		(await fileExists(join(workdir, "run.pid")))
+	);
+}
+
+async function classifyRunDir(
+	runDir: RunDir,
+): Promise<RunStatusRecord | undefined> {
+	const result = await readCompletion(runDir.workdir);
+	if (result) {
+		return {
+			runId: runDir.runId,
+			planSlug: runDir.planSlug,
+			status: result.outcome,
+			workdir: runDir.workdir,
+			result,
+		};
+	}
+
+	const pidFile = await readRunPid(runDir.workdir);
+	if (!pidFile) {
+		return undefined;
+	}
+
+	const status = await classifyPidStatus(pidFile);
+	return {
+		runId: runDir.runId,
+		planSlug: runDir.planSlug,
+		status,
+		workdir: runDir.workdir,
+		pid: pidFile.pid,
+		startedAt: pidFile.startedAt,
+	};
+}
+
+async function classifyPidStatus(pidFile: RunPidFile): Promise<RunStatus> {
+	if (!isProcessAlive(pidFile.pid)) {
+		return "dead";
+	}
+
+	const actualStartedAt = await readProcessStartedAt(pidFile.pid);
+	const pidStartedAt = Date.parse(pidFile.startedAt);
+	if (!Number.isFinite(pidStartedAt)) {
+		return "orphaned";
+	}
+
+	return Math.abs(actualStartedAt.getTime() - pidStartedAt) <=
+		PROCESS_START_TOLERANCE_MS
+		? "running"
+		: "orphaned";
+}
+
+function isProcessAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		if (isErrnoError(error) && error.code === "ESRCH") {
+			return false;
+		}
+		if (isErrnoError(error) && error.code === "EPERM") {
+			return true;
+		}
+		throw error;
+	}
+}
+
+async function readProcessStartedAt(pid: number): Promise<Date> {
+	const { stdout } = await execFileAsync(
+		"ps",
+		["-p", String(pid), "-o", "lstart="],
+		{ encoding: "utf-8" },
+	);
+	const startedAt = new Date(stdout.trim());
+	if (Number.isNaN(startedAt.getTime())) {
+		throw new Error(`Unable to parse process start time for pid ${pid}`);
+	}
+	return startedAt;
+}
+
+async function readCompletion(
+	workdir: string,
+): Promise<DriverResult | undefined> {
+	try {
+		const raw = await readFile(join(workdir, "run.completion.json"), "utf-8");
+		return JSON.parse(raw) as DriverResult;
+	} catch (error) {
+		if (isErrnoError(error) && error.code === "ENOENT") {
+			return undefined;
+		}
+		throw error;
+	}
+}
+
+async function readRunPid(workdir: string): Promise<RunPidFile | undefined> {
+	try {
+		const raw = await readFile(join(workdir, "run.pid"), "utf-8");
+		const parsed = JSON.parse(raw) as Partial<RunPidFile>;
+		if (
+			typeof parsed.pid !== "number" ||
+			typeof parsed.startedAt !== "string"
+		) {
+			throw new Error(`Invalid run.pid in ${workdir}`);
+		}
+		return {
+			pid: parsed.pid,
+			startedAt: parsed.startedAt,
+			runArgv: parsed.runArgv,
+			cosmonautsPath: parsed.cosmonautsPath,
+		};
+	} catch (error) {
+		if (isErrnoError(error) && error.code === "ENOENT") {
+			return undefined;
+		}
+		throw error;
+	}
+}
+
+async function readDirectoryEntries(path: string) {
+	try {
+		return await readdir(path, { withFileTypes: true });
+	} catch (error) {
+		if (isErrnoError(error) && error.code === "ENOENT") {
+			return [];
+		}
+		throw error;
+	}
+}
+
+async function fileExists(path: string): Promise<boolean> {
+	try {
+		await readFile(path, "utf-8");
+		return true;
+	} catch (error) {
+		if (isErrnoError(error) && error.code === "ENOENT") {
+			return false;
+		}
+		throw error;
+	}
+}
+
+function runWorkdir(
+	projectRoot: string,
+	planSlug: string,
+	runId: string,
+): string {
+	return join(projectRoot, "missions", "sessions", planSlug, "runs", runId);
 }
 
 async function resolveTaskIds(
