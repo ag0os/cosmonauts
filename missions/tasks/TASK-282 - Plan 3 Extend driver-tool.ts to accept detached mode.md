@@ -1,7 +1,7 @@
 ---
 id: TASK-282
 title: 'Plan 3: Extend driver-tool.ts to accept detached mode'
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-278
 createdAt: '2026-05-04T20:21:47.318Z'
-updatedAt: '2026-05-04T20:21:47.318Z'
+updatedAt: '2026-05-05T15:52:29.436Z'
 ---
 
 ## Description
@@ -35,3 +35,7 @@ Extend `domains/shared/extensions/orchestration/driver-tool.ts` (Plan 1 file) to
 - [ ] #5 Existing tool registration shape (name, label, description, execute signature) is fully preserved — no regressions on inline-mode tests (P3-INV-5).
 - [ ] #6 Tests in tests/extensions/orchestration-driver-detached.test.ts verify: (a) detached call returns runId; (b) cosmonauts-subagent + detached is rejected (QC-002).
 <!-- AC:END -->
+
+## Implementation Notes
+
+Extended run_driver parameters to accept mode inline/detached and backend union including codex/claude-cli. Detached mode rejects cosmonauts-subagent with structured result before workdir/startDetached, routes external backends to startDetached, and leaves inline behavior/workdir preparation unchanged. Added tests/extensions/orchestration-driver-detached.test.ts. Verified focused extension tests, typecheck, and lint pass.

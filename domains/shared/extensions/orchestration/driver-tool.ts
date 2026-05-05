@@ -3,9 +3,11 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
+import { createClaudeCliBackend } from "../../../../lib/driver/backends/claude-cli.ts";
+import { createCodexBackend } from "../../../../lib/driver/backends/codex.ts";
 import { createCosmonautsSubagentBackend } from "../../../../lib/driver/backends/cosmonauts-subagent.ts";
 import type { Backend } from "../../../../lib/driver/backends/types.ts";
-import { runInline } from "../../../../lib/driver/driver.ts";
+import { runInline, startDetached } from "../../../../lib/driver/driver.ts";
 import type {
 	BackendName,
 	DriverHandle,
@@ -34,7 +36,19 @@ interface RunDriverActive {
 	activeAt: string;
 }
 
-type RunDriverResponse = RunDriverStarted | RunDriverActive;
+interface RunDriverUnsupportedDetachedBackend {
+	error: "detached_backend_not_supported";
+	backend: BackendName;
+	mode: "detached";
+	message: string;
+}
+
+type RunDriverResponse =
+	| RunDriverStarted
+	| RunDriverActive
+	| RunDriverUnsupportedDetachedBackend;
+
+type DriverMode = "inline" | "detached";
 
 const activeRuns = new Map<string, ActiveDriverRun>();
 
@@ -55,12 +69,19 @@ export function registerDriverTool(
 						"Optional ordered task IDs. Defaults to non-Done tasks labeled plan:<planSlug>.",
 				}),
 			),
-			backend: Type.Literal("cosmonauts-subagent", {
-				description: "Driver backend to execute tasks",
-			}),
+			backend: Type.Union(
+				[
+					Type.Literal("cosmonauts-subagent"),
+					Type.Literal("codex"),
+					Type.Literal("claude-cli"),
+				],
+				{
+					description: "Driver backend to execute tasks",
+				},
+			),
 			mode: Type.Optional(
-				Type.Literal("inline", {
-					description: "Plan 1 supports inline mode only",
+				Type.Union([Type.Literal("inline"), Type.Literal("detached")], {
+					description: "Driver execution mode. Defaults to inline.",
 				}),
 			),
 			branch: Type.Optional(
@@ -101,6 +122,17 @@ export function registerDriverTool(
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const planSlug = params.planSlug;
+			const mode = params.mode ?? "inline";
+			if (mode === "detached" && params.backend === "cosmonauts-subagent") {
+				return runDriverResult({
+					error: "detached_backend_not_supported",
+					backend: params.backend,
+					mode,
+					message:
+						"Backend cosmonauts-subagent is not supported for detached mode.",
+				});
+			}
+
 			const activeKey = activeRunKey(ctx.cwd, planSlug);
 			const activeRun = activeRuns.get(activeKey);
 			if (activeRun) {
@@ -116,7 +148,8 @@ export function registerDriverTool(
 			activeRuns.set(activeKey, { runId, activeAt });
 
 			try {
-				const runtime = await getRuntime(ctx.cwd);
+				const runtime =
+					mode === "inline" ? await getRuntime(ctx.cwd) : undefined;
 				const taskManager = new TaskManager(ctx.cwd);
 				await taskManager.init();
 				const taskIds = await resolveTaskIds(
@@ -130,14 +163,19 @@ export function registerDriverTool(
 					runId,
 					planSlug,
 					taskIds,
+					prepareWorkdir: mode === "inline",
 				});
-				const backend = createBackend(params.backend, runtime, ctx.cwd);
-				const handle = runInline(spec, {
+				const backend = createBackend(params.backend, mode, runtime, ctx.cwd);
+				const deps = {
 					taskManager,
 					backend,
 					activityBus,
 					cosmonautsRoot: ctx.cwd,
-				});
+				};
+				const handle =
+					mode === "detached"
+						? startDetached(spec, deps)
+						: runInline(spec, deps);
 
 				clearActiveRunOnCompletion(activeKey, handle);
 				return runDriverResult({
@@ -173,6 +211,7 @@ async function createRunSpec({
 	runId,
 	planSlug,
 	taskIds,
+	prepareWorkdir,
 }: {
 	params: {
 		backend: BackendName;
@@ -190,6 +229,7 @@ async function createRunSpec({
 	runId: string;
 	planSlug: string;
 	taskIds: string[];
+	prepareWorkdir: boolean;
 }): Promise<DriverRunSpec> {
 	const workdir = join(
 		ctx.cwd,
@@ -226,23 +266,36 @@ async function createRunSpec({
 		taskTimeoutMs: params.taskTimeoutMs,
 	};
 
-	await mkdir(workdir, { recursive: true });
-	await writeFile(
-		join(workdir, "spec.json"),
-		`${JSON.stringify(spec, null, 2)}\n`,
-	);
-	await writeFile(join(workdir, "task-queue.txt"), `${taskIds.join("\n")}\n`);
+	if (prepareWorkdir) {
+		await mkdir(workdir, { recursive: true });
+		await writeFile(
+			join(workdir, "spec.json"),
+			`${JSON.stringify(spec, null, 2)}\n`,
+		);
+		await writeFile(join(workdir, "task-queue.txt"), `${taskIds.join("\n")}\n`);
+	}
 
 	return spec;
 }
 
 function createBackend(
 	backendName: BackendName,
-	runtime: CosmonautsRuntime,
+	mode: DriverMode,
+	runtime: CosmonautsRuntime | undefined,
 	cwd: string,
 ): Backend {
 	switch (backendName) {
 		case "cosmonauts-subagent": {
+			if (mode === "detached") {
+				throw new Error(
+					`Unsupported driver backend in detached mode: ${backendName}`,
+				);
+			}
+			if (!runtime) {
+				throw new Error(
+					"Cosmonauts runtime is required for cosmonauts-subagent backend",
+				);
+			}
 			const spawner = createPiSpawner(
 				runtime.agentRegistry,
 				runtime.domainsDir,
@@ -259,10 +312,19 @@ function createBackend(
 			});
 		}
 		case "codex":
+			if (mode === "inline") {
+				throw new Error(
+					`Unsupported driver backend in inline mode: ${backendName}`,
+				);
+			}
+			return createCodexBackend();
 		case "claude-cli":
-			throw new Error(
-				`Unsupported driver backend in inline mode: ${backendName}`,
-			);
+			if (mode === "inline") {
+				throw new Error(
+					`Unsupported driver backend in inline mode: ${backendName}`,
+				);
+			}
+			return createClaudeCliBackend();
 	}
 }
 
@@ -287,12 +349,25 @@ function activeRunKey(cwd: string, planSlug: string): string {
 
 function runDriverResult(response: RunDriverResponse) {
 	if ("error" in response) {
+		if (response.error === "active") {
+			return {
+				...response,
+				content: [
+					{
+						type: "text" as const,
+						text: `Driver run already active: ${response.activeRunId}`,
+					},
+				],
+				details: response,
+			};
+		}
+
 		return {
 			...response,
 			content: [
 				{
 					type: "text" as const,
-					text: `Driver run already active: ${response.activeRunId}`,
+					text: response.message,
 				},
 			],
 			details: response,
