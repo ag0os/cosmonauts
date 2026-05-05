@@ -25,7 +25,7 @@ import {
 	type DriverEventPublisher,
 	type JsonlActivityBusBridge,
 } from "./event-stream.ts";
-import { acquirePlanLock } from "./lock.ts";
+import { acquirePlanLock, isProcessAlive } from "./lock.ts";
 import { renderPromptForTask } from "./prompt-template.ts";
 import { runRunLoop } from "./run-run-loop.ts";
 import type {
@@ -43,6 +43,7 @@ export interface DriverDeps {
 }
 
 export class DetachedNotSupportedError extends Error {
+	// fallow-ignore-next-line unused-class-member
 	readonly code = "DETACHED_NOT_SUPPORTED";
 	readonly backendName: string;
 
@@ -54,6 +55,7 @@ export class DetachedNotSupportedError extends Error {
 }
 
 export class BackendLivenessCheckError extends Error {
+	// fallow-ignore-next-line unused-class-member
 	readonly code = "BACKEND_LIVENESS_CHECK_FAILED";
 	readonly argv: string[];
 	readonly exitCode?: number;
@@ -449,14 +451,5 @@ async function writeCompletion(
 function throwIfAborted(signal: AbortSignal): void {
 	if (signal.aborted) {
 		throw new Error("Detached driver start aborted");
-	}
-}
-
-function isProcessAlive(pid: number): boolean {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (error) {
-		return (error as NodeJS.ErrnoException).code !== "ESRCH";
 	}
 }

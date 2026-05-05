@@ -6,7 +6,7 @@ import type { LockHandle } from "./types.ts";
 
 export type { LockHandle } from "./types.ts";
 
-export interface ActivePlanLock {
+interface ActivePlanLock {
 	error: "active";
 	activeRunId: string;
 	activeAt: string;
@@ -21,7 +21,7 @@ export interface LockWarning {
 	};
 }
 
-export interface LockAcquireOptions {
+interface LockAcquireOptions {
 	onLockWarning?: (warning: LockWarning) => void | Promise<void>;
 	retryDelayMs?: number;
 }

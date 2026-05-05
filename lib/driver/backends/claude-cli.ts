@@ -1,26 +1,8 @@
+import type { BunRuntime } from "./bun-runtime.ts";
 import type { Backend } from "./types.ts";
 
-export interface ClaudeCliBackendDeps {
+interface ClaudeCliBackendDeps {
 	binary?: string;
-}
-
-interface BunSubprocess {
-	readonly exited: Promise<number>;
-	readonly stdout: ConstructorParameters<typeof Response>[0];
-	readonly stderr: ConstructorParameters<typeof Response>[0];
-}
-
-interface BunSpawnOptions {
-	cwd: string;
-	stdin: unknown;
-	stdout: "pipe";
-	stderr: "pipe";
-	signal?: AbortSignal;
-}
-
-interface BunRuntime {
-	file(path: string): unknown;
-	spawn(argv: string[], options: BunSpawnOptions): BunSubprocess;
 }
 
 declare const Bun: BunRuntime;

@@ -25,7 +25,7 @@ export interface RunOneTaskCtx {
 	cosmonautsRoot: string;
 }
 
-export interface PostVerifyResult {
+interface PostVerifyResult {
 	command: string;
 	status: "pass" | "fail";
 	stderr?: string;

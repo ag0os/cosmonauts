@@ -7,7 +7,7 @@ import type {
 import type { DriverEvent, SpawnActivity } from "../types.ts";
 import type { Backend } from "./types.ts";
 
-export interface CosmonautsSubagentBackendDeps {
+interface CosmonautsSubagentBackendDeps {
 	spawner: AgentSpawner;
 	defaultRole?: string;
 	cwd: string;

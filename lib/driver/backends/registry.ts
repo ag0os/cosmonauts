@@ -2,7 +2,7 @@ import { createClaudeCliBackend } from "./claude-cli.ts";
 import { createCodexBackend } from "./codex.ts";
 import type { Backend } from "./types.ts";
 
-export interface BackendRegistryDeps {
+interface BackendRegistryDeps {
 	codexBinary?: string;
 	claudeBinary?: string;
 }

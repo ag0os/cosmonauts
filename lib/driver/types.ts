@@ -38,7 +38,7 @@ export interface Report {
 
 export type ParsedReport = Report | { outcome: "unknown"; raw: string };
 
-export interface DriverEventBase {
+interface DriverEventBase {
 	runId: string;
 	parentSessionId: string;
 	timestamp: string;

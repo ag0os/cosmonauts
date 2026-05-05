@@ -12,7 +12,7 @@ interface DefaultLeadRuntime {
 	};
 }
 
-export interface ResolveDefaultLeadOptions {
+interface ResolveDefaultLeadOptions {
 	readonly agent?: string;
 	readonly domain?: string;
 }

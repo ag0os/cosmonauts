@@ -34,7 +34,7 @@ export interface CreateEventSinkOptions {
 	activityBus: DriverEventPublisher;
 }
 
-export interface TailEventsResult {
+interface TailEventsResult {
 	events: DriverEvent[];
 	cursor: number;
 }

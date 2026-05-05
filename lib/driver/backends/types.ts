@@ -1,6 +1,6 @@
 import type { EventSink } from "../types.ts";
 
-export interface BackendCapabilities {
+interface BackendCapabilities {
 	canCommit: boolean;
 	isolatedFromHostSource: boolean;
 }

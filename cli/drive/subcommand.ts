@@ -14,6 +14,7 @@ import type {
 	DriverActivityBusEvent,
 	DriverEventBusEvent,
 } from "../../lib/driver/event-stream.ts";
+import { isProcessAlive } from "../../lib/driver/lock.ts";
 import type {
 	BackendName,
 	DriverEvent,
@@ -425,21 +426,6 @@ async function classifyPidStatus(pidFile: RunPidFile): Promise<RunStatus> {
 		PROCESS_START_TOLERANCE_MS
 		? "running"
 		: "orphaned";
-}
-
-function isProcessAlive(pid: number): boolean {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (error) {
-		if (isErrnoError(error) && error.code === "ESRCH") {
-			return false;
-		}
-		if (isErrnoError(error) && error.code === "EPERM") {
-			return true;
-		}
-		throw error;
-	}
 }
 
 async function readProcessStartedAt(pid: number): Promise<Date> {
