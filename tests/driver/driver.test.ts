@@ -28,9 +28,11 @@ type RunRunLoopFn = (
 	spec: DriverRunSpec,
 	ctx: RunRunLoopCtx,
 ) => Promise<DriverResult>;
+type BridgeJsonlToActivityBusFn = () => { stop(): void };
 
 const mocks = vi.hoisted(() => ({
 	acquirePlanLock: vi.fn<AcquirePlanLockFn>(),
+	bridgeJsonlToActivityBus: vi.fn<BridgeJsonlToActivityBusFn>(),
 	createEventSink: vi.fn<CreateEventSinkFn>(),
 	eventSink: vi.fn<EventSink>(),
 	runRunLoop: vi.fn<RunRunLoopFn>(),
@@ -41,6 +43,7 @@ vi.mock("../../lib/driver/lock.ts", () => ({
 }));
 
 vi.mock("../../lib/driver/event-stream.ts", () => ({
+	bridgeJsonlToActivityBus: mocks.bridgeJsonlToActivityBus,
 	createEventSink: mocks.createEventSink,
 }));
 
@@ -51,9 +54,11 @@ vi.mock("../../lib/driver/run-run-loop.ts", () => ({
 describe("driver", () => {
 	beforeEach(() => {
 		mocks.acquirePlanLock.mockReset();
+		mocks.bridgeJsonlToActivityBus.mockReset();
 		mocks.createEventSink.mockReset();
 		mocks.eventSink.mockReset();
 		mocks.runRunLoop.mockReset();
+		mocks.bridgeJsonlToActivityBus.mockReturnValue({ stop: vi.fn() });
 		mocks.createEventSink.mockReturnValue(mocks.eventSink);
 	});
 

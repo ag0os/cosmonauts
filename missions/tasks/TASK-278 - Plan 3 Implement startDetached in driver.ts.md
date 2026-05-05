@@ -1,7 +1,7 @@
 ---
 id: TASK-278
 title: 'Plan 3: Implement startDetached in driver.ts'
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -12,7 +12,7 @@ dependencies:
   - TASK-270
   - TASK-272
 createdAt: '2026-05-04T20:21:19.847Z'
-updatedAt: '2026-05-04T20:21:19.847Z'
+updatedAt: '2026-05-05T15:46:57.100Z'
 ---
 
 ## Description
@@ -52,3 +52,7 @@ Add `startDetached(spec, deps): DriverHandle` to `lib/driver/driver.ts`, composi
 - [ ] #6 Returns DriverHandle with runId, workdir, eventLogPath, abort() method, and result promise.
 - [ ] #7 End-to-end test in tests/driver/driver-detached.test.ts verifies workdir layout (run.sh, prompts/, spec.json, bin/cosmonauts-drive-step, events.jsonl, run.pid), plan lock owned by binary not parent, JSONL events received by bridge, and run.completion.json written on clean exit (QC-001).
 <!-- AC:END -->
+
+## Implementation Notes
+
+Implemented startDetached in lib/driver/driver.ts with structured unsupported/liveness errors, liveness-before-workdir, prompt rendering, spec.json/task-queue, runtime bun build --compile, generated run.sh, detached spawn/run.pid, JSONL bridge startup, abort handling, and result promise reading run.completion.json. Added tests/driver/driver-detached.test.ts and updated driver.test mocks. Verified focused detached/run-step/bridge tests, typecheck, and lint pass.
