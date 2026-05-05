@@ -1,8 +1,8 @@
 ---
 title: 'External Backends and CLI — codex, claude, detached mode, drive verb'
-status: active
+status: completed
 createdAt: '2026-04-30T19:06:26.563Z'
-updatedAt: '2026-05-04T16:36:18.351Z'
+updatedAt: '2026-05-05T16:24:56.227Z'
 ---
 
 ## Summary
