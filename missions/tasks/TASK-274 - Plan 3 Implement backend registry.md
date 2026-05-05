@@ -1,7 +1,7 @@
 ---
 id: TASK-274
 title: 'Plan 3: Implement backend registry'
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -11,7 +11,7 @@ dependencies:
   - TASK-267
   - TASK-268
 createdAt: '2026-05-04T20:20:38.997Z'
-updatedAt: '2026-05-04T20:20:38.997Z'
+updatedAt: '2026-05-05T15:32:21.367Z'
 ---
 
 ## Description
@@ -48,3 +48,7 @@ export function resolveBackend(name: string, deps: BackendRegistryDeps): Backend
 - [ ] #4 resolveBackend("<unknown>", deps) throws a structured error.
 - [ ] #5 Tests in tests/driver/backends/registry.test.ts cover all four cases above.
 <!-- AC:END -->
+
+## Implementation Notes
+
+Implemented lib/driver/backends/registry.ts with resolveBackend, BackendRegistryDeps, DetachedBackendNotSupportedError, and UnknownBackendError. Added tests/driver/backends/registry.test.ts covering codex/claude resolution, cosmonauts-subagent rejection, and unknown backend rejection. Verified backend tests, typecheck, and lint pass.
