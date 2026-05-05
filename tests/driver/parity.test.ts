@@ -50,7 +50,7 @@ afterEach(() => {
 	}
 });
 
-describe("driver inline/detached parity", () => {
+describe("driver inline vs detached parity", () => {
 	test("keeps behavioral output equivalent while detached commits differ by metadata", async () => {
 		const fakeCodex = await writeFakeCodex(join(temp.path, "bin"));
 		const baseRoot = join(temp.path, "base-project");

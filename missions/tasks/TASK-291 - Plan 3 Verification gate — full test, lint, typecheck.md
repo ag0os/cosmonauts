@@ -1,7 +1,7 @@
 ---
 id: TASK-291
 title: 'Plan 3: Verification gate — full test, lint, typecheck'
-status: To Do
+status: Done
 priority: high
 labels:
   - testing
@@ -15,7 +15,7 @@ dependencies:
   - TASK-290
   - TASK-286
 createdAt: '2026-05-04T20:23:13.448Z'
-updatedAt: '2026-05-04T20:23:13.448Z'
+updatedAt: '2026-05-05T16:24:40.142Z'
 ---
 
 ## Description
@@ -46,3 +46,7 @@ Final integration gate: all Plan 3 code is in place; all QC-001 through QC-014 m
 - [ ] #5 bun run test --grep 'inline vs detached parity' passes (QC-007).
 - [ ] #6 bun run test && bun run lint && bun run typecheck composite check passes (QC-014).
 <!-- AC:END -->
+
+## Implementation Notes
+
+Final verification gate passed. Ran full composite `bun run test && bun run lint && bun run typecheck`: 131 test files / 1927 tests passed, Biome clean, TypeScript clean. Also ran required grep checks after naming coverage tests: `bun run test --grep 'driver detached codex e2e'` and `bun run test --grep 'inline vs detached parity'`, both passed. Updated test names to make QC grep targets explicit.

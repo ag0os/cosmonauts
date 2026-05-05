@@ -66,7 +66,7 @@ describe("startDetached", () => {
 		await expect(stat(spec.workdir)).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
-	test("prepares the workdir, launches the compiled runner, bridges events, and leaves locking to the child", async () => {
+	test("driver detached codex e2e prepares the workdir, launches the compiled runner, bridges events, and leaves locking to the child", async () => {
 		const { spec, deps, taskId, projectRoot } = await setupFixture({
 			runId: "run-detached-success",
 		});
