@@ -1,14 +1,14 @@
 ---
 id: TASK-265
 title: 'Plan 3: Extend Backend interface with optional livenessCheck'
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
   - 'plan:external-backends-and-cli'
 dependencies: []
 createdAt: '2026-05-04T20:19:39.629Z'
-updatedAt: '2026-05-04T20:19:39.629Z'
+updatedAt: '2026-05-05T15:17:33.454Z'
 ---
 
 ## Description
@@ -32,3 +32,7 @@ Each backend declares its own check (e.g., codex: `["codex", "--version"]`, clau
 - [ ] #2 Backends that do not implement livenessCheck compile without type errors (optional field).
 - [ ] #3 All existing Plan 1 tests pass without modification after this change.
 <!-- AC:END -->
+
+## Implementation Notes
+
+Implemented optional Backend.livenessCheck method in lib/driver/backends/types.ts. Verified with bun run typecheck and bun run test tests/driver tests/extensions/orchestration-driver-tool.test.ts (50 tests passing).

@@ -25,5 +25,6 @@ export interface BackendRunResult {
 export interface Backend {
 	readonly name: string;
 	readonly capabilities: BackendCapabilities;
+	livenessCheck?(): { argv: string[]; expectExitZero: boolean };
 	run(invocation: BackendInvocation): Promise<BackendRunResult>;
 }
