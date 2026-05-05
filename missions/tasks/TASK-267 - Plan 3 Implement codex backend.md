@@ -1,7 +1,7 @@
 ---
 id: TASK-267
 title: 'Plan 3: Implement codex backend'
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-265
 createdAt: '2026-05-04T20:19:55.309Z'
-updatedAt: '2026-05-04T20:19:55.309Z'
+updatedAt: '2026-05-05T15:28:05.699Z'
 ---
 
 ## Description
@@ -43,3 +43,7 @@ export function createCodexBackend(deps: CodexBackendDeps = {}): Backend {
 - [ ] #4 AbortSignal passed via invocation is forwarded to the child process.
 - [ ] #5 Tests in tests/driver/backends/codex.test.ts verify: argv array shape matches expected invocation; signal abort stops the child; livenessCheck structure is correct.
 <!-- AC:END -->
+
+## Implementation Notes
+
+Implemented lib/driver/backends/codex.ts with livenessCheck, Bun.spawn argv-array invocation, prompt file stdin, signal forwarding, summary-file preference, and tests/driver/backends/codex.test.ts. Verified focused tests, typecheck, and lint pass. Patched stdout/stderr handling to use Response(stream).text() for Bun subprocess compatibility.
