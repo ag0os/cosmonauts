@@ -1,7 +1,7 @@
 ---
 id: TASK-284
 title: 'Plan 3: Implement cosmonauts drive CLI verb — run subcommand'
-status: To Do
+status: Done
 priority: high
 labels:
   - cli
@@ -9,7 +9,7 @@ labels:
 dependencies:
   - TASK-278
 createdAt: '2026-05-04T20:22:08.798Z'
-updatedAt: '2026-05-04T20:22:08.798Z'
+updatedAt: '2026-05-05T16:03:09.712Z'
 ---
 
 ## Description
@@ -47,3 +47,7 @@ Detached mode: call `startDetached`; print `{ runId, workdir, eventLogPath }` to
 - [ ] #5 --resume <runId> reads existing JSONL, identifies last-completed task, slices spec.taskIds from that point; runs git status --porcelain and refuses with structured error on dirty tree unless --resume-dirty is passed (P3-INV-12, QC-008).
 - [ ] #6 Tests in tests/cli/drive/run.test.ts verify argument parsing, mode heuristic, inline/detached routing, and resume + dirty-tree guard.
 <!-- AC:END -->
+
+## Implementation Notes
+
+Added zero-argument createDriveProgram() with default run subcommand and wired drive into cli/main.ts dispatch. Implemented run options, task resolution, mode heuristic, inline/detached routing, structured detached subagent rejection, inline event/result JSON output, resume spec/event reading with task slicing, and dirty-tree guard. Added tests/cli/drive/run.test.ts. Verified drive/main focused tests, typecheck, and lint pass.
