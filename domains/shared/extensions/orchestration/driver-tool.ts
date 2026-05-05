@@ -59,8 +59,7 @@ export function registerDriverTool(
 	pi.registerTool({
 		name: "run_driver",
 		label: "Run Driver",
-		description:
-			"Run a plan-linked task fleet through the Cosmonauts driver loop.",
+		description: "Run plan-linked tasks through the Cosmonauts driver loop.",
 		parameters: Type.Object({
 			planSlug: Type.String({ description: "Plan slug to run" }),
 			taskIds: Type.Optional(

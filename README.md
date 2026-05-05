@@ -30,10 +30,11 @@ What's built:
 - `main/cosmo` cross-domain orchestration, `coding/cody` coding-domain coordination, and specialist roles such as planner, task-manager, worker, reviewer, and fixer
 - Four-layer system prompt architecture with capability-aligned composition
 - Plan lifecycle: create plans, link tasks, archive completed work, distill learnings into memory
+- Drive runs for approved plan-linked task batches via `run_driver`, `watch_events`, and `cosmonauts drive`
 - Named workflows for common pipelines (`plan-and-build`, `tdd`, `spec-and-build`, `spec-and-tdd`, `implement`, `verify`, `adapt`) with adversarial plan review as the default
 - CLI with interactive and non-interactive modes
 - Todo tool for in-session task tracking
-- 565 tests passing
+- Vitest test suite passing
 
 What's next: more language/domain skills, web/deepwiki tools, memory system, parallel workers, browser automation. See [ROADMAP.md](./ROADMAP.md).
 
@@ -143,6 +144,24 @@ cosmonauts --chain "coordinator -> reviewer[3]" "multi-pass review"
 
 > **Fan-out note:** `reviewer[3]` spawns three instances that each receive the **same prompt** — it does not partition work or assign different tasks to each instance. Use fan-out for independent parallel passes, not for task distribution.
 
+### Drive Runs
+
+Run approved plan-linked task batches through the driver loop:
+
+```bash
+# Launch a detached external-agent run
+cosmonauts drive run --plan auth-system --backend codex --mode detached --branch feature/auth
+
+# Check a detached run and list known runs
+cosmonauts drive status run-abc --plan auth-system
+cosmonauts drive list
+
+# Resume a previous run
+cosmonauts drive run --plan auth-system --resume run-abc
+```
+
+Agents use the same driver through `run_driver` and monitor with `watch_events`. Driver runs write artifacts under `missions/sessions/<plan>/runs/<runId>/`.
+
 ### Task Management
 
 Manage tasks directly via subcommands:
@@ -189,7 +208,7 @@ cosmonauts/
 ├── bundled/coding/   Installable coding domain (coding/cody and specialists)
 ├── cli/              CLI implementation
 ├── bin/              CLI entry points (cosmonauts)
-├── tests/            Test suites (565 tests, Vitest)
+├── tests/            Test suites (Vitest)
 ├── missions/         Local, gitignored — active tasks, plans, and archived work (created by init)
 ├── memory/           Local, gitignored — distilled knowledge from completed work (created by init)
 ├── .cosmonauts/      Local, gitignored — project config (created by init)

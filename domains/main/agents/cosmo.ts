@@ -3,8 +3,8 @@ import type { AgentDefinition } from "../../../lib/agents/types.ts";
 const definition: AgentDefinition = {
 	id: "cosmo",
 	description:
-		"Executive assistant and cross-domain orchestrator. Delegates directly to specialists and dispatches task fleets through driver primitives when available.",
-	capabilities: ["core", "tasks", "spawning", "todo", "fleet"],
+		"Executive assistant and cross-domain orchestrator. Delegates directly to specialists and dispatches plan-linked task runs through Drive when available.",
+	capabilities: ["core", "tasks", "spawning", "todo", "drive"],
 	model: "anthropic/claude-opus-4-7",
 	tools: "none",
 	extensions: [

@@ -103,12 +103,12 @@ export function createDriveProgram(): Command {
 
 	program
 		.name("cosmonauts drive")
-		.description("Run Cosmonauts driver task fleets")
+		.description("Run plan-linked tasks with Cosmonauts Drive")
 		.version("1.0.0");
 
 	const run = program
 		.command("run", { isDefault: true })
-		.description("Run a driver task fleet");
+		.description("Start a Drive run");
 	configureRunCommand(run);
 
 	program

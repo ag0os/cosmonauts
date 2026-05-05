@@ -1,8 +1,9 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { MessageBus } from "../orchestration/message-bus.ts";
 import { TaskManager } from "../tasks/task-manager.ts";
+import { writeFileAtomically } from "./atomic-file.ts";
 import { resolveBackend } from "./backends/registry.ts";
 import { createEventSink } from "./event-stream.ts";
 import { acquirePlanLock } from "./lock.ts";
@@ -94,10 +95,9 @@ async function writeCompletion(
 	workdir: string,
 	result: DriverResult,
 ): Promise<void> {
-	await writeFile(
+	await writeFileAtomically(
 		join(workdir, COMPLETION_FILENAME),
 		`${JSON.stringify(result, null, 2)}\n`,
-		"utf-8",
 	);
 }
 

@@ -114,9 +114,14 @@ Excluded or future backends:
 `cosmonauts-subagent` is an internal inline backend used by the orchestration
 extension. It is not supported for detached driver runs.
 
-## Detached Runner Compilation
+## Detached Runner Binary
 
-`compile:drive-step` is a dev-time package-script convenience for compiling the
-detached step runner while developing. Runtime detached runs compile their frozen
-runner artifact inside `startDetached` (TASK-278), so production driver starts do
-not depend on that script being invoked by the caller.
+Detached runs execute `bin/cosmonauts-drive-step` from the run workdir. At run
+startup, `startDetached` first copies a prebuilt runner from
+`<cosmonautsRoot>/bin/cosmonauts-drive-step` when it exists. If no prebuilt
+runner is present, it falls back to compiling `lib/driver/run-step.ts` into the
+run workdir with `bun build --compile`.
+
+`compile:drive-step` builds the optional prebuilt runner at
+`bin/cosmonauts-drive-step`. Run workdirs still receive their own immutable copy
+so detached runs survive later source or package changes.

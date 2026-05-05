@@ -5,10 +5,18 @@ import {
 	spawn,
 } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+	chmod,
+	copyFile,
+	mkdir,
+	readFile,
+	rm,
+	writeFile,
+} from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { TaskManager } from "../tasks/task-manager.ts";
+import { writeFileAtomically } from "./atomic-file.ts";
 import type { Backend } from "./backends/types.ts";
 import { generateBashRunner } from "./driver-script.ts";
 import {
@@ -228,7 +236,7 @@ async function startDetachedProcess({
 	throwIfAborted(signal);
 
 	const binaryPath = join(spec.workdir, "bin", "cosmonauts-drive-step");
-	await compileRunStep(deps.cosmonautsRoot, binaryPath);
+	await prepareRunStepBinary(deps.cosmonautsRoot, binaryPath);
 	throwIfAborted(signal);
 
 	const runScriptPath = join(spec.workdir, "run.sh");
@@ -317,6 +325,21 @@ function stringifyOutput(output: string | Buffer | undefined): string {
 		return "";
 	}
 	return Buffer.isBuffer(output) ? output.toString("utf-8") : output;
+}
+
+async function prepareRunStepBinary(
+	cosmonautsRoot: string,
+	outfile: string,
+): Promise<void> {
+	const prebuiltPath = join(cosmonautsRoot, "bin", "cosmonauts-drive-step");
+	if (existsSync(prebuiltPath)) {
+		await copyFile(prebuiltPath, outfile);
+		await chmod(outfile, 0o755);
+		return;
+	}
+
+	await compileRunStep(cosmonautsRoot, outfile);
+	await chmod(outfile, 0o755);
 }
 
 async function compileRunStep(
@@ -417,10 +440,9 @@ async function writeCompletion(
 	workdir: string,
 	result: DriverResult,
 ): Promise<void> {
-	await writeFile(
+	await writeFileAtomically(
 		join(workdir, "run.completion.json"),
 		`${JSON.stringify(result, null, 2)}\n`,
-		"utf-8",
 	);
 }
 

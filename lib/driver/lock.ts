@@ -1,5 +1,5 @@
-import { constants } from "node:fs";
-import { mkdir, open, readFile, unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { link, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { LockHandle } from "./types.ts";
@@ -132,21 +132,17 @@ async function tryCreateLock(
 ): Promise<LockHandle | "exists"> {
 	await mkdir(dirname(lockPath), { recursive: true });
 
-	let file: Awaited<ReturnType<typeof open>> | undefined;
+	const tempPath = `${lockPath}.${process.pid}.${randomUUID()}.tmp`;
 	try {
-		file = await open(
-			lockPath,
-			constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY,
-			0o600,
-		);
-		await file.writeFile(`${JSON.stringify(content)}\n`, "utf-8");
-		await file.close();
+		await writeFile(tempPath, `${JSON.stringify(content)}\n`, {
+			encoding: "utf-8",
+			mode: 0o600,
+		});
+		await link(tempPath, lockPath);
+		await unlink(tempPath).catch(() => undefined);
 		return createHandle(lockPath, content);
 	} catch (error) {
-		if (file) {
-			await file.close().catch(() => undefined);
-			await unlink(lockPath).catch(() => undefined);
-		}
+		await unlink(tempPath).catch(() => undefined);
 		if ((error as NodeJS.ErrnoException).code === "EEXIST") {
 			return "exists";
 		}

@@ -66,6 +66,31 @@ describe("startDetached", () => {
 		await expect(stat(spec.workdir)).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
+	test("copies a prebuilt runner binary into the run workdir when available", async () => {
+		const { spec, deps } = await setupFixture({
+			runId: "run-detached-prebuilt",
+		});
+		const prebuiltRoot = join(temp.path, "prebuilt-root");
+		await writeFakePrebuiltRunner(prebuiltRoot, spec.runId);
+
+		const result = await startDetached(spec, {
+			...deps,
+			cosmonautsRoot: prebuiltRoot,
+		}).result;
+
+		expect(result).toEqual({
+			runId: spec.runId,
+			outcome: "completed",
+			tasksDone: 0,
+			tasksBlocked: 0,
+		});
+		const copiedBinary = await readFile(
+			join(spec.workdir, "bin", "cosmonauts-drive-step"),
+			"utf-8",
+		);
+		expect(copiedBinary).toContain("prebuilt-test-runner");
+	});
+
 	test("driver detached codex e2e prepares the workdir, launches the compiled runner, bridges events, and leaves locking to the child", async () => {
 		const { spec, deps, taskId, projectRoot } = await setupFixture({
 			runId: "run-detached-success",
@@ -137,7 +162,7 @@ describe("startDetached", () => {
 		expect(publishedEventTypes(deps.published)).toContain("task_done");
 		expect(publishedEventTypes(deps.published)).toContain("run_completed");
 		await expect(stat(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
-	});
+	}, 30_000);
 });
 
 interface FixtureOptions {
@@ -215,6 +240,33 @@ function createLivenessBackend(exitCode: number): Backend {
 	};
 }
 
+async function writeFakePrebuiltRunner(
+	cosmonautsRoot: string,
+	runId: string,
+): Promise<string> {
+	const binDir = join(cosmonautsRoot, "bin");
+	await mkdir(binDir, { recursive: true });
+	const path = join(binDir, "cosmonauts-drive-step");
+	await writeFile(
+		path,
+		`#!/usr/bin/env bash
+set -euo pipefail
+# prebuilt-test-runner
+if [ "\${1:-}" != "--workdir" ] || [ -z "\${2:-}" ]; then
+  echo "usage: cosmonauts-drive-step --workdir <dir>" >&2
+  exit 64
+fi
+workdir="$2"
+completion_tmp="$workdir/run.completion.json.$$"
+printf '{"runId":"${runId}","outcome":"completed","tasksDone":0,"tasksBlocked":0}\n' > "$completion_tmp"
+mv "$completion_tmp" "$workdir/run.completion.json"
+`,
+		"utf-8",
+	);
+	await chmod(path, 0o755);
+	return path;
+}
+
 async function writeFakeCodex(binDir: string): Promise<string> {
 	await mkdir(binDir, { recursive: true });
 	const path = join(binDir, "fake-codex");
@@ -239,9 +291,11 @@ if [ -z "$summary_path" ]; then
   exit 64
 fi
 if [ -n "\${COSMONAUTS_TEST_LOCK_PATH:-}" ] && [ -n "\${COSMONAUTS_TEST_LOCK_OBSERVED:-}" ]; then
-  cat "$COSMONAUTS_TEST_LOCK_PATH" > "$COSMONAUTS_TEST_LOCK_OBSERVED"
+  observed_tmp="$COSMONAUTS_TEST_LOCK_OBSERVED.$$"
+  cat "$COSMONAUTS_TEST_LOCK_PATH" > "$observed_tmp"
+  mv "$observed_tmp" "$COSMONAUTS_TEST_LOCK_OBSERVED"
 fi
-sleep 0.8
+sleep 0.05
 printf '\`\`\`json\\n{"outcome":"success","files":[],"verification":[]}\\n\`\`\`\\n' > "$summary_path"
 `,
 		"utf-8",

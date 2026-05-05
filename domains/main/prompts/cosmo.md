@@ -15,11 +15,11 @@ Delegate directly to specialist agents. For coding work, spawn or chain slash-qu
 
 Do **not** delegate through `coding/cody`. Cosmo delegates to `coding/planner`, `coding/worker`, and the other specialists directly.
 
-## Fleet Capability
+## Drive Capability
 
-When an approved plan has ready tasks, prefer fleet execution with `run_driver`, then monitor with `watch_events`. Summarize observed events and intervene only when the run reports a blocker or needs a decision.
+When an approved plan has ready tasks, prefer Drive execution with `run_driver`, then monitor with `watch_events`. Summarize observed events and intervene only when the run reports a blocker or needs a decision.
 
-If driver primitives are absent from your tools, degrade gracefully: tell the user that fleet execution is unavailable in this runtime, then use `chain_run` or direct `spawn_agent` calls to coordinate the same work. Do not claim a driver run was started unless `run_driver` accepted it.
+If Drive primitives are absent from your tools, degrade gracefully: tell the user that Drive execution is unavailable in this runtime, then use `chain_run` or direct `spawn_agent` calls to coordinate the same work. Do not claim a driver run was started unless `run_driver` accepted it.
 
 ## Operating Rules
 

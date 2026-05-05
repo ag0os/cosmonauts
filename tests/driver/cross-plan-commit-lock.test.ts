@@ -311,7 +311,9 @@ wait_for_file() {
 task_id="$(basename "$summary_path" "-summary.txt")"
 project_root="$(git rev-parse --show-toplevel)"
 if [ "$task_id" = "\${COSMONAUTS_TEST_FIRST_TASK_ID:-}" ]; then
-  cat "$COSMONAUTS_TEST_FIRST_PLAN_LOCK_PATH" > "$COSMONAUTS_TEST_FIRST_PLAN_LOCK_OBSERVED"
+  observed_tmp="$COSMONAUTS_TEST_FIRST_PLAN_LOCK_OBSERVED.$$"
+  cat "$COSMONAUTS_TEST_FIRST_PLAN_LOCK_PATH" > "$observed_tmp"
+  mv "$observed_tmp" "$COSMONAUTS_TEST_FIRST_PLAN_LOCK_OBSERVED"
   sleep "\${COSMONAUTS_TEST_FIRST_BACKEND_SLEEP_SECONDS:-0.3}"
 elif [ "$task_id" = "\${COSMONAUTS_TEST_SECOND_TASK_ID:-}" ]; then
   wait_for_file "$COSMONAUTS_TEST_FIRST_COMMIT_HOOK_BEGIN"

@@ -62,7 +62,7 @@ System prompts compose in a strict four-layer order, loaded at session creation 
 Examples:
 
 ```
-main/cosmo     → [cosmonauts] + [core, tasks, spawning, todo, fleet] + [cosmo]                         # cross-domain orchestrator
+main/cosmo     → [cosmonauts] + [core, tasks, spawning, todo, drive] + [cosmo]                         # cross-domain orchestrator
 coding/cody    → [cosmonauts] + [core, engineering-discipline, coding-rw, tasks, spawning, todo] + [cody] # coding-domain coordinator
 coding/planner → [cosmonauts] + [core, coding-ro] + [planner]                                            # read-only design agent
 coding/worker  → [cosmonauts] + [core, coding-rw, tasks, todo] + [worker]                                # coding-focused implementer

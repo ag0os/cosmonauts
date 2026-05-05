@@ -23,6 +23,7 @@ const REPO_ROOT = resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const DOMAINS_DIR = join(REPO_ROOT, "domains");
 const BUNDLED_CODING_DIR = join(REPO_ROOT, "bundled", "coding");
 const MAIN_DOMAIN_DIR = join(DOMAINS_DIR, "main");
+const SHARED_DOMAIN_DIR = join(DOMAINS_DIR, "shared");
 const MAIN_AGENT_REF = "main/cosmo";
 const MAIN_AGENT_ID = MAIN_AGENT_REF.slice("main/".length);
 
@@ -83,7 +84,7 @@ describe("main domain built-in discovery", () => {
 			"tasks",
 			"spawning",
 			"todo",
-			"fleet",
+			"drive",
 		]);
 		expect(cosmo.capabilities).not.toContain("engineering-discipline");
 		expect(subagents.length).toBeGreaterThan(0);
@@ -94,7 +95,7 @@ describe("main domain built-in discovery", () => {
 		expect(subagents).not.toContain(`coding/${MAIN_AGENT_ID}`);
 	});
 
-	it("validates main/cosmo and resolves the fleet capability", () => {
+	it("validates main/cosmo and resolves the drive capability", () => {
 		const diagnostics = validateDomains(domains).filter(
 			(diagnostic) =>
 				diagnostic.domain === "main" &&
@@ -103,8 +104,8 @@ describe("main domain built-in discovery", () => {
 		);
 
 		expect(diagnostics).toEqual([]);
-		expect(resolver.resolveCapabilityPath("fleet", "main")).toBe(
-			join(MAIN_DOMAIN_DIR, "capabilities", "fleet.md"),
+		expect(resolver.resolveCapabilityPath("drive", "main")).toBe(
+			join(SHARED_DOMAIN_DIR, "capabilities", "drive.md"),
 		);
 	});
 
@@ -140,7 +141,7 @@ describe("main domain built-in discovery", () => {
 		}
 	});
 
-	it("documents direct delegation and fleet fallback behavior", async () => {
+	it("documents direct delegation and Drive fallback behavior", async () => {
 		const prompt = await readFile(
 			join(MAIN_DOMAIN_DIR, "prompts", "cosmo.md"),
 			"utf-8",
@@ -149,7 +150,7 @@ describe("main domain built-in discovery", () => {
 		expect(prompt).toContain("`coding/planner`");
 		expect(prompt).toContain("`coding/worker`");
 		expect(prompt).toContain("Do **not** delegate through `coding/cody`");
-		expect(prompt).toContain("driver primitives are absent");
+		expect(prompt).toContain("Drive primitives are absent");
 		expect(prompt).toContain("degrade gracefully");
 	});
 });
