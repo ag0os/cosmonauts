@@ -1,7 +1,7 @@
 ---
 id: TASK-290
 title: 'Plan 3: Cross-plan commit serialization test'
-status: To Do
+status: Done
 priority: medium
 labels:
   - testing
@@ -9,7 +9,7 @@ labels:
 dependencies:
   - TASK-278
 createdAt: '2026-05-04T20:22:55.858Z'
-updatedAt: '2026-05-04T20:22:55.858Z'
+updatedAt: '2026-05-05T16:23:01.112Z'
 ---
 
 ## Description
@@ -30,3 +30,7 @@ The detached plan lock is owned by the binary process, not the parent CLI or too
 - [ ] #3 Commits appear in the expected order relative to acquireRepoCommitLock acquisition times.
 - [ ] #4 Detached plan lock is owned by the binary process, not the parent; a second cosmonauts drive --plan X invocation while the binary holds the lock receives the active-lock error citing the binary's PID (QC-013).
 <!-- AC:END -->
+
+## Implementation Notes
+
+Added tests/driver/cross-plan-commit-lock.test.ts. The test runs two concurrent detached codex-backed driver runs on different plans in one git repo, coordinates fake backend timing, verifies child-owned plan lock and active same-plan acquisition, asserts both runs complete/commit with no spawn_failed events or .git/index.lock, and records commit-msg hook entries showing repo commit lock is held and commits serialize in expected order. Verified focused test, typecheck, and lint pass.
