@@ -26,7 +26,8 @@ dynamicallyLoaded = [
   "bundled/*/*/agents/*.ts",
   "bundled/*/*/domain.ts",
   "bundled/*/*/workflows.ts",
-  "domains/shared/domain.ts",
-  "domains/shared/extensions/*/index.ts",
-  "domains/shared/workflows.ts",
+  "domains/*/agents/*.ts",
+  "domains/*/domain.ts",
+  "domains/*/extensions/*/index.ts",
+  "domains/*/workflows.ts",
 ]
