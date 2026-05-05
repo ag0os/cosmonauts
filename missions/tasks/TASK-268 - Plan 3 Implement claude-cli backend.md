@@ -1,7 +1,7 @@
 ---
 id: TASK-268
 title: 'Plan 3: Implement claude-cli backend'
-status: To Do
+status: Done
 priority: medium
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-265
 createdAt: '2026-05-04T20:20:03.681Z'
-updatedAt: '2026-05-04T20:20:03.681Z'
+updatedAt: '2026-05-05T15:30:38.593Z'
 ---
 
 ## Description
@@ -41,3 +41,7 @@ export function createClaudeCliBackend(deps: { binary?: string } = {}): Backend 
 - [ ] #4 AbortSignal passed via invocation is propagated to the child process.
 - [ ] #5 Tests in tests/driver/backends/claude-cli.test.ts verify argv shape, signal abort, and livenessCheck structure.
 <!-- AC:END -->
+
+## Implementation Notes
+
+Implemented lib/driver/backends/claude-cli.ts with livenessCheck, Bun.spawn argv-array invocation, prompt file stdin, signal forwarding, and tests/driver/backends/claude-cli.test.ts. Verified claude/codex backend tests, typecheck, and lint pass.
