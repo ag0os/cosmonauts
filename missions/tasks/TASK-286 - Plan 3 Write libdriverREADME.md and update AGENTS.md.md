@@ -1,7 +1,7 @@
 ---
 id: TASK-286
 title: 'Plan 3: Write lib/driver/README.md and update AGENTS.md'
-status: To Do
+status: Done
 priority: low
 labels:
   - devops
@@ -9,7 +9,7 @@ labels:
 dependencies:
   - TASK-274
 createdAt: '2026-05-04T20:22:16.149Z'
-updatedAt: '2026-05-04T20:22:16.149Z'
+updatedAt: '2026-05-05T15:39:01.880Z'
 ---
 
 ## Description
@@ -26,3 +26,7 @@ No code changes required — documentation only.
 - [ ] #3 README lists supported backends (codex, claude-cli) and documents excluded backends (gemini-cli, qwen, generic shell) as future work per the plan Scope section.
 - [ ] #4 AGENTS.md mentions cosmonauts drive as the CLI verb for driver runs, with a one-line description of inline vs. detached mode.
 <!-- AC:END -->
+
+## Implementation Notes
+
+Created lib/driver/README.md documenting Backend contract, adapter authoring guide, supported backends, future/excluded backends, and compile:drive-step dev-time note. Updated AGENTS.md with cosmonauts drive CLI description. Verified lint and required doc strings.

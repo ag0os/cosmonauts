@@ -128,9 +128,12 @@ cosmonauts --workflow plan-and-build "auth"                          # Named wor
 cosmonauts --chain "planner -> coordinator"                         # Raw chain DSL
 cosmonauts --chain "planner -> [task-manager, reviewer] -> coord"   # Parallel bracket group
 cosmonauts --chain "coordinator -> reviewer[3]"                     # Fan-out (same prompt x3)
+cosmonauts drive                                                     # Driver task runs
 ```
 
 Flags: `--print`, `--workflow`, `--chain`, `--model`, `--thinking`, `--domain`/`-d`, `--list-domains`, `--list-agents`. `--list-agents` prints qualified IDs such as `main/cosmo` and `coding/cody`.
+
+`cosmonauts drive` is the CLI verb for driver runs: inline mode runs inside the host assistant session, while detached mode writes a frozen run directory and continues independently.
 
 ## Documentation
 
