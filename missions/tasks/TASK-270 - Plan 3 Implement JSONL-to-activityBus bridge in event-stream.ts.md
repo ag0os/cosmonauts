@@ -1,7 +1,7 @@
 ---
 id: TASK-270
 title: 'Plan 3: Implement JSONL-to-activityBus bridge in event-stream.ts'
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -9,7 +9,7 @@ labels:
   - 'plan:external-backends-and-cli'
 dependencies: []
 createdAt: '2026-05-04T20:20:17.006Z'
-updatedAt: '2026-05-04T20:20:17.006Z'
+updatedAt: '2026-05-05T15:23:20.273Z'
 ---
 
 ## Description
@@ -39,3 +39,7 @@ Extend `lib/driver/event-stream.ts` with `bridgeJsonlToActivityBus`.
 - [ ] #5 Bridge calls stop() automatically and ceases publishing when run_completed or run_aborted is observed.
 - [ ] #6 Tests in tests/driver/event-stream-bridge.test.ts exercise all four edge cases from QC-004: (a) missing initial file, (b) partial-line read, (c) parse error retry, (d) auto-stop on terminal event.
 <!-- AC:END -->
+
+## Implementation Notes
+
+Implemented bridgeJsonlToActivityBus in lib/driver/event-stream.ts with parent-dir watch/missing-file timeout, partial-line buffering, parse-error retry without cursor advance, and terminal-event auto-stop. Added tests/driver/event-stream-bridge.test.ts covering QC-004. Verified focused event-stream tests, typecheck, and lint pass.
