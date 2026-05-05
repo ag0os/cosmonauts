@@ -1,7 +1,7 @@
 ---
 id: TASK-276
 title: 'Plan 3: Implement run-step Bun binary entry point'
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-274
 createdAt: '2026-05-04T20:20:57.252Z'
-updatedAt: '2026-05-04T20:20:57.252Z'
+updatedAt: '2026-05-05T15:37:09.977Z'
 ---
 
 ## Description
@@ -48,3 +48,7 @@ Create `lib/driver/run-step.ts` as the Bun binary entry point. This process runs
 - [ ] #6 Test in tests/driver/run-step.test.ts compiles the binary, invokes it against a fixture workdir with a mock backend, and verifies: lock acquired, runRunLoop called, run.completion.json written with expected DriverResult.
 - [ ] #7 Binary runs correctly without the cosmonauts source tree present (move source; invoke binary; verify completion record written — QC-011).
 <!-- AC:END -->
+
+## Implementation Notes
+
+Implemented lib/driver/run-step.ts Bun binary entry point. It reads spec.json as DriverRunSpec, acquires/release plan lock, resolves backend via registry with env binary overrides, initializes TaskManager.init(), creates EventSink, calls runRunLoop directly in detached mode, and writes run.completion.json before releasing the lock. Added tests/driver/run-step.test.ts compiling and invoking the binary with fake Codex backend, verifying events, completion record, task status, and active-lock failure. Verified focused run-step test, typecheck, and lint pass.
