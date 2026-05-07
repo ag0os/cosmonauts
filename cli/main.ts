@@ -15,6 +15,7 @@
  *   cosmonauts init                               → agent-driven AGENTS.md bootstrap
  *   cosmonauts task <command>                     → task management subcommands
  *   cosmonauts plan <command>                     → plan management subcommands
+ *   cosmonauts drive <command>                    → driver run management subcommands
  *
  * Pi flags (session, provider, tools, mode, etc.) pass through automatically.
  * See cli/pi-flags.ts for the full registry.
@@ -26,6 +27,7 @@ import { fileURLToPath } from "node:url";
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { InteractiveMode, runPrintMode } from "@mariozechner/pi-coding-agent";
 import { Command, CommanderError } from "commander";
+import { resolveDefaultLead } from "../lib/agents/resolve-default-lead.ts";
 import {
 	appendAgentIdentityMarker,
 	qualifyAgentId,
@@ -54,6 +56,7 @@ import { listWorkflows, resolveWorkflow } from "../lib/workflows/loader.ts";
 import type { WorkflowDefinition } from "../lib/workflows/types.ts";
 import { createChainEventLogger } from "./chain-event-logger.ts";
 import { createCreateProgram } from "./create/subcommand.ts";
+import { createDriveProgram } from "./drive/subcommand.ts";
 import { createEjectProgram } from "./eject/subcommand.ts";
 import {
 	createInstallProgram,
@@ -369,8 +372,10 @@ async function run(options: CliOptions): Promise<void> {
 	await handlers[mode]();
 }
 
-function hasInstalledDomain(runtime: CosmonautsRuntime): boolean {
-	return runtime.domains.some((domain) => domain.manifest.id !== "shared");
+export function hasInstalledDomain(runtime: CosmonautsRuntime): boolean {
+	return runtime.domains.some(
+		(domain) => !["shared", "main"].includes(domain.manifest.id),
+	);
 }
 
 function handleNoDomainGuard(): void {
@@ -378,13 +383,7 @@ function handleNoDomainGuard(): void {
 		"No domains installed. Install the coding domain to get started:",
 		{},
 	);
-	printLines(
-		[
-			"  cosmonauts install coding",
-			"  cosmonauts install coding-minimal  (lightweight)",
-		],
-		"stderr",
-	);
+	printLines(["  cosmonauts install coding"], "stderr");
 	process.exitCode = 1;
 }
 
@@ -419,7 +418,10 @@ async function handleListAgents(
 	const agents = runtime.domainContext
 		? runtime.agentRegistry.resolveInDomain(runtime.domainContext)
 		: runtime.agentRegistry.listAll();
-	const lines = agents.map((agent) => `  ${agent.id}  ${agent.description}`);
+	const lines = agents.map(
+		(agent) =>
+			`  ${qualifyAgentId(agent.id, agent.domain ?? runtime.domainContext)}  ${agent.description}`,
+	);
 	printLines(lines);
 }
 
@@ -427,11 +429,7 @@ async function handleDumpPrompt(
 	runtime: CosmonautsRuntime,
 	options: CliOptions,
 ): Promise<void> {
-	const agentId = options.agent ?? "cosmo";
-	const definition = runtime.agentRegistry.resolve(
-		agentId,
-		runtime.domainContext,
-	);
+	const definition = resolveDefaultLead(runtime, options);
 	const domain = definition.domain ?? "coding";
 
 	let prompt = await assemblePrompts({
@@ -465,7 +463,6 @@ async function handleInitMode(
 		printLines([
 			"No domains installed. Install a domain to use cosmonauts init:",
 			"  cosmonauts install coding",
-			"  cosmonauts install coding-minimal  (lightweight)",
 			"",
 			"After installing a domain, run `cosmonauts init` again to set up your project.",
 		]);
@@ -474,12 +471,9 @@ async function handleInitMode(
 	}
 
 	const initSessionConfig = buildInitSessionConfig(cwd);
-	const cosmoDefinition = runtime.agentRegistry.resolve(
-		"cosmo",
-		runtime.domainContext,
-	);
+	const defaultLeadDefinition = resolveDefaultLead(runtime, options);
 	const initRuntime = await createSession({
-		definition: cosmoDefinition,
+		definition: defaultLeadDefinition,
 		cwd,
 		domainsDir: runtime.domainsDir,
 		resolver: runtime.domainResolver,
@@ -646,9 +640,7 @@ function resolveCliAgent(
 	runtime: CosmonautsRuntime,
 	options: CliOptions,
 ): AgentDefinition {
-	return options.agent
-		? runtime.agentRegistry.resolve(options.agent, runtime.domainContext)
-		: runtime.agentRegistry.resolve("cosmo", runtime.domainContext);
+	return resolveDefaultLead(runtime, options);
 }
 
 // ============================================================================
@@ -666,7 +658,8 @@ if (
 	subcommand === "uninstall" ||
 	subcommand === "packages" ||
 	subcommand === "update" ||
-	subcommand === "eject"
+	subcommand === "eject" ||
+	subcommand === "drive"
 ) {
 	const programs: Record<string, () => Command> = {
 		task: createTaskProgram,
@@ -679,6 +672,7 @@ if (
 		packages: createPackagesProgram,
 		update: createUpdateProgram,
 		eject: createEjectProgram,
+		drive: createDriveProgram,
 	};
 	// subcommand is guaranteed to be in the map by the if-check above
 	const createProgram = programs[subcommand];

@@ -757,7 +757,7 @@ describe("discoverBundledPackageDirs", () => {
 	});
 
 	test("returns multiple package directories", async () => {
-		for (const pkg of ["coding", "coding-minimal"]) {
+		for (const pkg of ["coding", "review"]) {
 			await mkdir(join(tmpDir, pkg));
 			await writeFile(
 				join(tmpDir, pkg, "cosmonauts.json"),
@@ -768,7 +768,7 @@ describe("discoverBundledPackageDirs", () => {
 		const dirs = await discoverBundledPackageDirs(tmpDir);
 
 		expect(dirs.sort()).toEqual(
-			[join(tmpDir, "coding"), join(tmpDir, "coding-minimal")].sort(),
+			[join(tmpDir, "coding"), join(tmpDir, "review")].sort(),
 		);
 	});
 

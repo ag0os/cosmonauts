@@ -21,19 +21,20 @@ The key insight: **the design phase is where humans add the most value.** Once t
 
 ## Current Status
 
-**Phase 0 is complete.** The core loop works end-to-end: you can start Cosmonauts, chat with the main agent (Cosmo), trigger multi-agent pipelines, and have agents implement tasks on real projects.
+**Phase 0 is complete.** The core loop works end-to-end: you can start Cosmonauts, chat with `main/cosmo` (Cosmo), trigger multi-agent pipelines, and have agents implement tasks on real projects.
 
 What's built:
 - Task system with markdown files, YAML frontmatter, dependencies, and acceptance criteria
 - Chain runner for multi-agent pipelines (planner → task-manager → coordinator → workers → integration-verifier → quality-manager)
 - Agent spawner creating scoped Pi sessions from declarative agent definitions
-- Nine agent roles: Cosmo, planner, task-manager, coordinator, worker, integration-verifier, quality-manager, reviewer, fixer
+- `main/cosmo` cross-domain orchestration, `coding/cody` coding-domain coordination, and specialist roles such as planner, task-manager, worker, reviewer, and fixer
 - Four-layer system prompt architecture with capability-aligned composition
 - Plan lifecycle: create plans, link tasks, archive completed work, distill learnings into memory
+- Drive runs for approved plan-linked task batches via `run_driver`, `watch_events`, and `cosmonauts drive`
 - Named workflows for common pipelines (`plan-and-build`, `tdd`, `spec-and-build`, `spec-and-tdd`, `implement`, `verify`, `adapt`) with adversarial plan review as the default
 - CLI with interactive and non-interactive modes
 - Todo tool for in-session task tracking
-- 565 tests passing
+- Vitest test suite passing
 
 What's next: more language/domain skills, web/deepwiki tools, memory system, parallel workers, browser automation. See [ROADMAP.md](./ROADMAP.md).
 
@@ -59,9 +60,12 @@ After installing, initialize your project:
 # 1. Initialize local directories and project config
 cosmonauts scaffold missions
 
-# 2. (Optional) Customize .cosmonauts/config.json — adjust skills and workflows
+# 2. Install the coding domain if your project has not installed one yet
+cosmonauts install coding
 
-# 3. Run your first workflow
+# 3. (Optional) Customize .cosmonauts/config.json — adjust skills and workflows
+
+# 4. Run your first workflow
 cosmonauts --workflow plan-and-build "describe what you want to build"
 ```
 
@@ -71,17 +75,26 @@ The `scaffold missions` command creates `missions/` and `memory/` directories fo
 
 ### Interactive Mode (default)
 
-Start a REPL session with Cosmo, the main agent:
+Start a REPL session with Cosmo (`main/cosmo`), the cross-domain orchestrator:
 
 ```bash
 cosmonauts
 ```
 
-Chat naturally — Cosmo can read/write code, answer questions, and delegate complex work to specialized agents.
+For a coding-focused REPL session with Cody (`coding/cody`):
 
 ```bash
-# Start with an initial prompt
+cosmonauts -d coding
+```
+
+Chat naturally — Cosmo clarifies goals and delegates across installed domains; Cody can read/write code and coordinate coding specialists.
+
+```bash
+# Start with an initial prompt to main/cosmo
 cosmonauts "explain how the task system works"
+
+# Start with an initial prompt to coding/cody
+cosmonauts -d coding "explain the worker agent"
 ```
 
 ### Non-Interactive Mode
@@ -108,6 +121,9 @@ cosmonauts --workflow verify "review against main and fix findings"
 
 # List available workflows
 cosmonauts --list-workflows
+
+# List agents with qualified IDs such as main/cosmo and coding/cody
+cosmonauts --list-agents
 ```
 
 Or use raw chain DSL for custom pipelines:
@@ -127,6 +143,24 @@ cosmonauts --chain "coordinator -> reviewer[3]" "multi-pass review"
 ```
 
 > **Fan-out note:** `reviewer[3]` spawns three instances that each receive the **same prompt** — it does not partition work or assign different tasks to each instance. Use fan-out for independent parallel passes, not for task distribution.
+
+### Drive Runs
+
+Run approved plan-linked task batches through the driver loop:
+
+```bash
+# Launch a detached external-agent run
+cosmonauts drive run --plan auth-system --backend codex --mode detached --branch feature/auth
+
+# Check a detached run and list known runs
+cosmonauts drive status run-abc --plan auth-system
+cosmonauts drive list
+
+# Resume a previous run
+cosmonauts drive run --plan auth-system --resume run-abc
+```
+
+Agents use the same driver through `run_driver` and monitor with `watch_events`. Driver runs write artifacts under `missions/sessions/<plan>/runs/<runId>/`.
 
 ### Task Management
 
@@ -161,7 +195,7 @@ Bootstrap project instructions for a new codebase:
 cosmonauts init
 ```
 
-This launches an interactive bootstrap session: Cosmo scans the project, asks clarifying questions, proposes `AGENTS.md` content and skill suggestions, and waits for your confirmation before writing any files. Re-running `cosmonauts init` reviews the existing setup and proposes improvements instead of stopping when `AGENTS.md` already exists.
+This launches an interactive bootstrap session with the default domain lead (`main/cosmo`, or `coding/cody` when using `-d coding`). The agent scans the project, asks clarifying questions, proposes `AGENTS.md` content and skill suggestions, and waits for your confirmation before writing any files. Re-running `cosmonauts init` reviews the existing setup and proposes improvements instead of stopping when `AGENTS.md` already exists.
 
 ## Architecture
 
@@ -170,12 +204,11 @@ Cosmonauts is built as a [Pi package](https://github.com/badlogic/pi-mono) — e
 ```
 cosmonauts/
 ├── lib/              Core libraries (tasks, orchestration, plans, workflows, agents)
-├── extensions/       Pi extensions (tasks, plans, todo, orchestration, init)
-├── prompts/          System prompt layers (platform base, capabilities, personas, runtime)
-├── skills/           On-demand capability files (languages, domains)
+├── domains/          Built-in domains: shared/ and main/
+├── bundled/coding/   Installable coding domain (coding/cody and specialists)
 ├── cli/              CLI implementation
 ├── bin/              CLI entry points (cosmonauts)
-├── tests/            Test suites (565 tests, Vitest)
+├── tests/            Test suites (Vitest)
 ├── missions/         Local, gitignored — active tasks, plans, and archived work (created by init)
 ├── memory/           Local, gitignored — distilled knowledge from completed work (created by init)
 ├── .cosmonauts/      Local, gitignored — project config (created by init)
@@ -188,7 +221,8 @@ Every agent is a Pi session configured by a declarative definition — model, to
 
 | Agent | Role |
 |-------|------|
-| **Cosmo** | Main interactive agent. Chats, codes, delegates to specialists. |
+| **Cosmo (`main/cosmo`)** | Cross-domain orchestrator and top-level assistant. Clarifies goals and delegates directly to specialists. |
+| **Cody (`coding/cody`)** | Coding-domain coordinator for `cosmonauts -d coding`. Handles coding sessions and delegates to coding specialists. |
 | **Planner** | Designs solutions. Explores code, proposes approaches, writes plans. Read-only tools. |
 | **Task Manager** | Breaks plans into atomic, implementable tasks with dependencies and ACs. |
 | **Coordinator** | Delegates tasks to workers, monitors progress, verifies completion. |

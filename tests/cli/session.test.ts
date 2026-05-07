@@ -55,7 +55,7 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
 import { createSession, GracefulExitError } from "../../cli/session.ts";
 
 const TEST_DEF: AgentDefinition = {
-	id: "cosmo",
+	id: "worker",
 	description: "Test agent",
 	capabilities: [],
 	model: "test/model",
@@ -78,6 +78,8 @@ const BASE_PARAMS = {
 	model: { id: "test/model" },
 	thinkingLevel: undefined,
 };
+
+const TEST_SESSION_DIR = "/tmp/pi-agent/sessions/--tmp-project--/worker";
 
 describe("createSession", () => {
 	beforeEach(() => {
@@ -264,7 +266,10 @@ describe("session flag handling", () => {
 			piFlags: { session: "/tmp/session.jsonl" },
 		});
 
-		expect(mocks.open).toHaveBeenCalledWith("/tmp/session.jsonl", undefined);
+		expect(mocks.open).toHaveBeenCalledWith(
+			"/tmp/session.jsonl",
+			TEST_SESSION_DIR,
+		);
 	});
 
 	test("--session with unknown partial UUID throws", async () => {
@@ -301,7 +306,7 @@ describe("session flag handling", () => {
 
 		expect(mocks.open).toHaveBeenCalledWith(
 			"/tmp/sessions/abc.jsonl",
-			undefined,
+			TEST_SESSION_DIR,
 		);
 	});
 
@@ -317,7 +322,7 @@ describe("session flag handling", () => {
 		expect(mocks.forkFrom).toHaveBeenCalledWith(
 			"/tmp/session.jsonl",
 			"/tmp/project",
-			undefined,
+			TEST_SESSION_DIR,
 		);
 	});
 

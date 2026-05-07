@@ -15,7 +15,7 @@ export interface DomainManifest {
 	readonly id: string;
 	/** Human-readable description of the domain's purpose. */
 	readonly description: string;
-	/** Lead agent ID for this domain (e.g. "cosmo"). */
+	/** Lead agent ID for this domain (e.g. "cody"). */
 	readonly lead?: string;
 	/** Default model in "provider/model-id" format for agents in this domain. */
 	readonly defaultModel?: string;

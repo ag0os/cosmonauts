@@ -1,0 +1,55 @@
+import type { AgentDefinition } from "../../../../lib/agents/types.ts";
+
+const definition: AgentDefinition = {
+	id: "cody",
+	description:
+		"Coding-domain coordinator. Coordinates coding-focused planning, implementation, and review workflows.",
+	capabilities: [
+		"core",
+		"engineering-discipline",
+		"coding-readwrite",
+		"tasks",
+		"spawning",
+		"todo",
+	],
+	model: "anthropic/claude-opus-4-7",
+	tools: "coding",
+	extensions: [
+		"tasks",
+		"plans",
+		"orchestration",
+		"todo",
+		"init",
+		"observability",
+	],
+	skills: ["*"],
+	subagents: [
+		"adaptation-planner",
+		"coordinator",
+		"distiller",
+		"explorer",
+		"fixer",
+		"implementer",
+		"integration-verifier",
+		"performance-reviewer",
+		"plan-reviewer",
+		"planner",
+		"quality-manager",
+		"refactorer",
+		"reviewer",
+		"security-reviewer",
+		"spec-writer",
+		"task-manager",
+		"tdd-coordinator",
+		"tdd-planner",
+		"test-writer",
+		"ux-reviewer",
+		"verifier",
+		"worker",
+	],
+	projectContext: true,
+	session: "persistent",
+	loop: false,
+};
+
+export default definition;

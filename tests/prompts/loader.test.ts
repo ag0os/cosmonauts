@@ -239,7 +239,7 @@ describe("domain-based prompt file paths", () => {
 
 	it("loads all coding persona files from bundled/coding/coding/prompts", async () => {
 		const personas = [
-			"cosmo",
+			"cody",
 			"planner",
 			"task-manager",
 			"coordinator",
@@ -264,7 +264,7 @@ describe("domain-based prompt file paths", () => {
 		expect(content).toContain("# Integration Verifier");
 	});
 
-	it("loads full layered prompt stack for cosmo across directories", async () => {
+	it("loads full layered prompt stack for cody across directories", async () => {
 		const base = await loadPrompt("base");
 		const sharedCaps = await loadPrompts(
 			["core", "tasks", "spawning", "todo"],
@@ -274,13 +274,13 @@ describe("domain-based prompt file paths", () => {
 			["coding-readwrite"],
 			CODING_CAPABILITIES_DIR,
 		);
-		const persona = await loadPrompt("cosmo", CODING_PROMPTS_DIR);
+		const persona = await loadPrompt("cody", CODING_PROMPTS_DIR);
 
 		const content = [base, sharedCaps, codingCaps, persona].join("\n\n");
 		expect(content.length).toBeGreaterThan(0);
 		// Verify ordering: base content appears before persona
 		const baseIdx = content.indexOf("# Cosmonauts");
-		const personaIdx = content.indexOf("# Cosmo\n");
+		const personaIdx = content.indexOf("# Cody\n");
 		expect(baseIdx).toBeGreaterThanOrEqual(0);
 		expect(personaIdx).toBeGreaterThan(0);
 		expect(baseIdx).toBeLessThan(personaIdx);

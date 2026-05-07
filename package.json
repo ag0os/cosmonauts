@@ -30,15 +30,16 @@
 		"format": "biome format --write .",
 		"format:check": "biome format .",
 		"typecheck": "tsc --noEmit",
+		"compile:drive-step": "bun build --compile lib/driver/run-step.ts --outfile bin/cosmonauts-drive-step",
 		"test": "node ./scripts/vitest-runner.mjs",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage"
 	},
 	"dependencies": {
-		"@mariozechner/pi-agent-core": "0.70.2",
-		"@mariozechner/pi-ai": "0.70.2",
-		"@mariozechner/pi-coding-agent": "0.70.2",
-		"@mariozechner/pi-tui": "0.70.2",
+		"@mariozechner/pi-agent-core": "0.72.1",
+		"@mariozechner/pi-ai": "0.72.1",
+		"@mariozechner/pi-coding-agent": "0.72.1",
+		"@mariozechner/pi-tui": "0.72.1",
 		"typebox": "1.1.33",
 		"commander": "^14.0.2",
 		"gray-matter": "^4.0.3"

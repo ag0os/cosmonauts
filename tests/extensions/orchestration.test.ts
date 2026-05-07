@@ -291,7 +291,7 @@ describe("orchestration extension", () => {
 
 	test("spawn_agent forwards project skills from config", async () => {
 		const { cwd, pi } = createExtensionPi("/tmp/project", {
-			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cody -->",
 		});
 
 		mockRuntime({
@@ -367,7 +367,7 @@ describe("orchestration extension", () => {
 
 	test("spawn_agent includes full final report for non-verifier roles (e.g. explorer)", async () => {
 		const { pi } = createExtensionPi("/tmp/project", {
-			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cody -->",
 		});
 
 		mockRuntime({ domainContext: "coding" });
@@ -417,7 +417,7 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 
 	test("spawn_agent publishes child session activity events", async () => {
 		const { pi } = createExtensionPi("/tmp/project", {
-			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cody -->",
 			sessionId: "parent-session-activity",
 		});
 
@@ -463,7 +463,7 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 				prompt: "emit activity",
 				runtimeContext: {
 					mode: "sub-agent",
-					parentRole: "cosmo",
+					parentRole: "coordinator",
 					taskId: "TASK-238",
 				},
 			});
@@ -495,7 +495,7 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 
 	test("spawn_agent cleans up child session subscriptions when prompt throws", async () => {
 		const { pi } = createExtensionPi("/tmp/project", {
-			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cody -->",
 		});
 
 		mockRuntime({ domainContext: "coding" });
@@ -524,7 +524,7 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 
 	test("spawn_agent waits for nested child completions before completing the spawned session", async () => {
 		const { pi } = createExtensionPi("/tmp/project", {
-			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cody -->",
 		});
 
 		mockRuntime({ domainContext: "coding" });
@@ -610,7 +610,7 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 
 	test("spawn_agent allows authorized target with unqualified caller resolving via scan-all", async () => {
 		const { pi } = createExtensionPi("/tmp/project", {
-			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cosmo -->",
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cody -->",
 		});
 
 		mockRuntime();
@@ -632,7 +632,7 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 
 	test("spawn_agent denies unknown qualified caller ID", async () => {
 		const { pi } = createExtensionPi("/tmp/project", {
-			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:unknown-domain/cosmo -->",
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:unknown-domain/cody -->",
 		});
 
 		const spawn = vi.fn();

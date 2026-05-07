@@ -369,15 +369,15 @@ describe("validateDomains", () => {
 				manifest: { id: "coding", description: "Coding" },
 				agents: new Map([
 					[
-						"cosmo",
+						"coordinator",
 						makeAgent({
-							id: "cosmo",
+							id: "coordinator",
 							subagents: ["worker", "ghost-agent"],
 						}),
 					],
 					["worker", makeAgent({ id: "worker" })],
 				]),
-				prompts: new Set(["cosmo", "worker"]),
+				prompts: new Set(["coordinator", "worker"]),
 			});
 
 			const diagnostics = validateDomains([shared, coding]);
@@ -386,7 +386,7 @@ describe("validateDomains", () => {
 			);
 			expect(match).toBeDefined();
 			expect(match?.severity).toBe("warning");
-			expect(match?.agent).toBe("cosmo");
+			expect(match?.agent).toBe("coordinator");
 		});
 
 		it("passes when subagent exists in another domain", () => {
@@ -397,14 +397,14 @@ describe("validateDomains", () => {
 				manifest: { id: "coding", description: "Coding" },
 				agents: new Map([
 					[
-						"cosmo",
+						"coordinator",
 						makeAgent({
-							id: "cosmo",
+							id: "coordinator",
 							subagents: ["helper"],
 						}),
 					],
 				]),
-				prompts: new Set(["cosmo"]),
+				prompts: new Set(["coordinator"]),
 			});
 
 			const diagnostics = validateDomains([shared, coding]);
@@ -418,20 +418,21 @@ describe("validateDomains", () => {
 				manifest: { id: "coding", description: "Coding" },
 				agents: new Map([
 					[
-						"cosmo",
+						"coordinator",
 						makeAgent({
-							id: "cosmo",
+							id: "coordinator",
 							subagents: ["coding/worker"],
 						}),
 					],
 					["worker", makeAgent({ id: "worker" })],
 				]),
-				prompts: new Set(["cosmo", "worker"]),
+				prompts: new Set(["coordinator", "worker"]),
 			});
 
 			const diagnostics = validateDomains([shared, coding]);
 			const match = diagnostics.find(
-				(d) => d.agent === "cosmo" && d.message.includes('"coding/worker"'),
+				(d) =>
+					d.agent === "coordinator" && d.message.includes('"coding/worker"'),
 			);
 			expect(match).toBeUndefined();
 		});
@@ -564,10 +565,10 @@ describe("validateDomains", () => {
 				manifest: {
 					id: "coding",
 					description: "Coding",
-					lead: "cosmo",
+					lead: "cody",
 				},
-				agents: new Map([["cosmo", makeAgent({ id: "cosmo" })]]),
-				prompts: new Set(["cosmo"]),
+				agents: new Map([["cody", makeAgent({ id: "cody" })]]),
+				prompts: new Set(["cody"]),
 			});
 
 			const diagnostics = validateDomains([domain]);
@@ -677,7 +678,7 @@ describe("DomainValidationError", () => {
 			},
 			{
 				domain: "coding",
-				agent: "cosmo",
+				agent: "coordinator",
 				message: 'Subagent "ghost" not found',
 				severity: "warning" as const,
 			},

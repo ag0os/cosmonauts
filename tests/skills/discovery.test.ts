@@ -2,8 +2,8 @@
  * Tests for skill discovery across domains.
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import { describe, expect, test } from "vitest";
 import type { LoadedDomain } from "../../lib/domains/types.ts";
 import { discoverSkills } from "../../lib/skills/discovery.ts";
@@ -38,6 +38,22 @@ async function writeSkill(
 		join(dir, "SKILL.md"),
 		`---\nname: ${name}\ndescription: ${description}\n---\n\n# ${name}\n`,
 	);
+}
+
+async function findSkillFiles(dirPath: string): Promise<string[]> {
+	const files: string[] = [];
+	const entries = await readdir(dirPath, { withFileTypes: true });
+
+	for (const entry of entries) {
+		const entryPath = join(dirPath, entry.name);
+		if (entry.isDirectory()) {
+			files.push(...(await findSkillFiles(entryPath)));
+		} else if (entry.isFile() && entry.name === "SKILL.md") {
+			files.push(entryPath);
+		}
+	}
+
+	return files;
 }
 
 describe("discoverSkills", () => {
@@ -165,5 +181,28 @@ describe("discoverSkills", () => {
 		const skills = await discoverSkills([makeDomain("shared", domainDir)]);
 		const bare = skills.find((s) => s.name === "bare");
 		expect(bare?.description).toBe("");
+	});
+
+	test("packaged skill directory names match frontmatter names", async () => {
+		const skillRoots = [
+			join(process.cwd(), "bundled", "coding", "coding", "skills"),
+			join(process.cwd(), "domains", "main", "skills"),
+			join(process.cwd(), "domains", "shared", "skills"),
+		];
+		const skillFiles = (
+			await Promise.all(skillRoots.map(findSkillFiles))
+		).flat();
+		const mismatches: string[] = [];
+
+		for (const skillFile of skillFiles) {
+			const content = await readFile(skillFile, "utf-8");
+			const name = content.match(/^name:\s*(.+)$/m)?.[1]?.trim();
+			const dirName = basename(dirname(skillFile));
+			if (name !== undefined && name !== dirName) {
+				mismatches.push(`${skillFile}: ${name} != ${dirName}`);
+			}
+		}
+
+		expect(mismatches).toEqual([]);
 	});
 });

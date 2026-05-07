@@ -168,7 +168,7 @@ Writes findings to `missions/plans/<slug>/spec-review.md`. The spec-writer reads
 
 Low-risk, high-leverage. No framework changes, no new agents, no workflow rewiring.
 
-- **M1** Cosmo router: three-path decision tree (`spec-writer` | Cosmo-facilitated dialogue | autonomous planner) in `bundled/coding/coding/prompts/cosmo.md`.
+- **M1** Cody router: three-path decision tree (`spec-writer` | Cody-facilitated dialogue | autonomous planner) in `bundled/coding/coding/prompts/cody.md`.
 - **M2** Readiness rubric: visible four-factor block in `bundled/coding/coding/prompts/spec-writer.md` and `bundled/coding/coding/prompts/planner.md` before `plan_create`, with shared headings and role-tailored items.
 - **M3** Phase transitions: mandatory Frame → Shape → Detail handoffs encoded in `spec-writer.md` (skill `design-dialogue` unchanged).
 - **M4** Assumption budget: `critical >= 3` escalation in `spec-writer.md` with explicit `proceed with assumptions` waiver and autonomous-mode conversion to Open Questions.
@@ -177,7 +177,7 @@ Shipping record:
 - Plan: `missions/plans/spec-plan-quality-gates-a/plan.md`
 - Implementation commits: `TASK-189` (spec-writer), `TASK-190` (cosmo router), `TASK-191` (planner readiness), `TASK-192` (prompt-contract tests)
 - Review-round commits: `review-round:1` (lint, routing precedence), `review-round:2` (anti-fourth-route guard)
-- Prompt-contract tests at `tests/prompts/{cosmo,spec-writer,planner}.test.ts` lock the router signals, three-path guard, readiness rubric headings, waiver wording, critical-assumption categories, QC-rule reference, and non-persisted boundary.
+- Prompt-contract tests at `tests/prompts/{cody,spec-writer,planner}.test.ts` lock the router signals, three-path guard, readiness rubric headings, waiver wording, critical-assumption categories, QC-rule reference, and non-persisted boundary.
 
 ### Plan B — Structural changes (deferred, pending evidence from Plan A)
 
@@ -200,10 +200,10 @@ If Plan A is sufficient in practice, Plan B can be dropped entirely.
   - Why: prompt-only changes are lowest risk, fastest to ship, and produce observable evidence about whether structural changes are needed. Avoids speculative framework work.
   - Decided by: user-directed.
 
-- **D-002 — Router lives at Cosmo prompt level, not as a typed classifier tool**
-  - Decision: M1 is a decision tree embedded in `cosmo.md`, not a new tool.
+- **D-002 — Router lives at Cody prompt level, not as a typed classifier tool**
+  - Decision: M1 is a decision tree embedded in `cody.md`, not a new tool.
   - Alternatives: (a) new `classify_request` tool with typed output; (b) hard-coded keyword rules in `lib/`.
-  - Why: keeps the change in the prompt surface, consistent with how Cosmo's other routing rules already work. A tool can be added later if prompt-level classification proves unreliable.
+  - Why: keeps the change in the prompt surface, consistent with how Cody's other routing rules already work. A tool can be added later if prompt-level classification proves unreliable.
   - Decided by: planner-proposed, user-approved implicitly by approving Plan A scope.
 
 - **D-003 — Readiness rubric is a shared artifact, not a private check**

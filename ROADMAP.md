@@ -95,13 +95,11 @@ Replace filesystem polling with push-based communication between agents. Address
 - Idempotency keys to prevent duplicate processing
 - Depth-aware dispatch (only direct requester receives completion events)
 
-### `executive-assistant`: Autonomous Executive-Assistant Domain
+### `executive-assistant`: Autonomous Executive-Assistant Follow-Up
 
-See [`docs/designs/executive-assistant.md`](docs/designs/executive-assistant.md) for the full investigation.
+`main/cosmo` and Drive are implemented. This item tracks the remaining always-on supervision layer: watches `ROADMAP.md`, picks prioritized items, runs workflows or Drive, handles failures, and reports back. Real-time agent-to-agent communication is the substrate — without it, this is just a cron scheduler.
 
-New Layer 3 domain that drives coding workflows autonomously: watches `ROADMAP.md`, picks prioritized items, runs `plan-and-build`, handles failures, reports back. Real-time agent-to-agent communication is the substrate — without it, the EA is just a cron scheduler.
-
-- New `domains/executive/` domain with triage, supervisor, escalator, reporter agents
+- Extend `domains/main/` with monitor/supervisor/escalator/reporter agents only if the daemon needs specialized roles
 - `cosmonauts daemon` mode: long-running process with heartbeat, durable state, survives restarts
 - Real-time comms primitives: peer registry, `send_to_peer` / `wait_for_peer_message` tools built on the existing `MessageBus` and `pi.sendUserMessage` injection
 - Human steering channel — always-open injection point for mid-flight redirection

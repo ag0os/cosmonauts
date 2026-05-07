@@ -21,10 +21,11 @@ describe("getBundledCatalog", () => {
 		expect(names).toContain("coding");
 	});
 
-	test("contains the 'coding-minimal' entry", () => {
+	test("coding-minimal retired from bundled catalog", () => {
 		const catalog = getBundledCatalog();
 		const names = catalog.map((e) => e.name);
-		expect(names).toContain("coding-minimal");
+		expect(names).not.toContain("coding-minimal");
+		expect(resolveCatalogEntry("coding-minimal")).toBeUndefined();
 	});
 
 	test("every entry has name, description, and source fields", () => {
@@ -51,13 +52,6 @@ describe("resolveCatalogEntry", () => {
 		expect(entry).toBeDefined();
 		expect(entry?.name).toBe("coding");
 		expect(entry?.source).toBe("./bundled/coding");
-	});
-
-	test("returns the correct entry for 'coding-minimal'", () => {
-		const entry = resolveCatalogEntry("coding-minimal");
-		expect(entry).toBeDefined();
-		expect(entry?.name).toBe("coding-minimal");
-		expect(entry?.source).toBe("./bundled/coding-minimal");
 	});
 
 	test("returns undefined for an unknown name", () => {
