@@ -20,6 +20,8 @@ import { roleLabel } from "./rendering.ts";
 import { registerSpawnTool } from "./spawn-tool.ts";
 import { registerWatchEventsTool } from "./watch-events-tool.ts";
 
+type LiveActivityMessage = Parameters<ExtensionAPI["sendMessage"]>[0];
+
 export default function orchestrationExtension(pi: ExtensionAPI) {
 	const runtimeCache = new Map<string, Promise<CosmonautsRuntime>>();
 	const frameworkRoot = resolve(
@@ -77,7 +79,10 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 
 	// Throttle: track last emit time per spawnId, debounce at 1s
 	const lastEmit = new Map<string, number>();
+	const pendingLiveMessages: LiveActivityMessage[] = [];
 	const THROTTLE_MS = 1000;
+	const LIVE_MESSAGE_FLUSH_MS = 100;
+	let liveMessageFlushTimer: ReturnType<typeof setTimeout> | undefined;
 
 	// Activity bus subscription is scoped to the owning session.
 	// We subscribe at session_start (when the session ID is known) and
@@ -105,6 +110,11 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 			unregisterSessionCleanup(boundSessionId);
 			boundSessionId = undefined;
 		}
+		if (liveMessageFlushTimer !== undefined) {
+			clearTimeout(liveMessageFlushTimer);
+			liveMessageFlushTimer = undefined;
+		}
+		pendingLiveMessages.length = 0;
 		lastEmit.clear();
 	}
 
@@ -114,6 +124,37 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 
 		const sessionId = ctx.sessionManager.getSessionId();
 		boundSessionId = sessionId;
+
+		function flushLiveMessages() {
+			liveMessageFlushTimer = undefined;
+			if (!ctx.isIdle()) {
+				scheduleLiveMessageFlush();
+				return;
+			}
+
+			const messages = pendingLiveMessages.splice(0);
+			for (const message of messages) {
+				pi.sendMessage(message);
+			}
+		}
+
+		function scheduleLiveMessageFlush() {
+			if (liveMessageFlushTimer !== undefined) return;
+			liveMessageFlushTimer = setTimeout(
+				flushLiveMessages,
+				LIVE_MESSAGE_FLUSH_MS,
+			);
+		}
+
+		function sendLiveMessage(message: LiveActivityMessage) {
+			if (ctx.isIdle()) {
+				pi.sendMessage(message);
+				return;
+			}
+
+			pendingLiveMessages.push(message);
+			scheduleLiveMessageFlush();
+		}
 
 		// Register cleanup so spawn-tool can tear us down on session.dispose()
 		registerSessionCleanup(sessionId, teardownActivitySubscription);
@@ -136,19 +177,16 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 					? `${roleLabel(event.role)} (${event.taskId})`
 					: roleLabel(event.role);
 
-				pi.sendMessage(
-					{
-						customType: "spawn-activity",
-						content: `${label}: ${event.activity.summary}`,
-						display: true,
-						details: {
-							role: event.role,
-							taskId: event.taskId,
-							summary: event.activity.summary,
-						},
+				sendLiveMessage({
+					customType: "spawn-activity",
+					content: `${label}: ${event.activity.summary}`,
+					display: true,
+					details: {
+						role: event.role,
+						taskId: event.taskId,
+						summary: event.activity.summary,
 					},
-					{ deliverAs: "nextTurn" },
-				);
+				});
 			},
 		);
 
@@ -157,15 +195,12 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 			(event) => {
 				if (event.parentSessionId !== sessionId) return;
 
-				pi.sendMessage(
-					{
-						customType: "driver-activity",
-						content: formatDriverActivityMessage(event),
-						display: true,
-						details: event,
-					},
-					{ deliverAs: "nextTurn" },
-				);
+				sendLiveMessage({
+					customType: "driver-activity",
+					content: formatDriverActivityMessage(event),
+					display: true,
+					details: event,
+				});
 			},
 		);
 
@@ -174,15 +209,12 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 			(event) => {
 				if (event.parentSessionId !== sessionId) return;
 
-				pi.sendMessage(
-					{
-						customType: "driver-event",
-						content: formatDriverEventMessage(event),
-						display: true,
-						details: event,
-					},
-					{ deliverAs: "nextTurn" },
-				);
+				sendLiveMessage({
+					customType: "driver-event",
+					content: formatDriverEventMessage(event),
+					display: true,
+					details: event,
+				});
 			},
 		);
 	});

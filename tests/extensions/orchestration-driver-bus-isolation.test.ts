@@ -87,7 +87,10 @@ async function startOrchestrationSession(sessionId: string): Promise<{
 	orchestrationExtension(pi as never);
 
 	for (const handler of handlers.get("session_start") ?? []) {
-		await handler({}, { sessionManager: { getSessionId: () => sessionId } });
+		await handler(
+			{},
+			{ sessionManager: { getSessionId: () => sessionId }, isIdle: () => true },
+		);
 	}
 	activeSessionIds.add(sessionId);
 

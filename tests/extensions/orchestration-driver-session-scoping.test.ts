@@ -137,7 +137,6 @@ describe("driver session scoping", () => {
 					taskId: TASK_ID,
 				}),
 			}),
-			{ deliverAs: "nextTurn" },
 		);
 		expect(sessionA.sendMessage).toHaveBeenNthCalledWith(
 			2,
@@ -152,7 +151,6 @@ describe("driver session scoping", () => {
 					}),
 				}),
 			}),
-			{ deliverAs: "nextTurn" },
 		);
 		expect(sessionB.sendMessage).not.toHaveBeenCalled();
 	});
@@ -179,7 +177,10 @@ function createLifecyclePi(sessionId: string) {
 			for (const handler of handlers.get("session_start") ?? []) {
 				await handler(
 					{},
-					{ sessionManager: { getSessionId: () => sessionId } },
+					{
+						sessionManager: { getSessionId: () => sessionId },
+						isIdle: () => true,
+					},
 				);
 			}
 		},

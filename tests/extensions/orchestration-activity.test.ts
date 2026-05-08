@@ -45,9 +45,12 @@ function createLifecyclePi(sessionId: string) {
 			},
 		},
 		sendMessage,
-		async fireSessionStart() {
+		async fireSessionStart(isIdle = () => true) {
 			for (const h of handlers.get("session_start") ?? []) {
-				await h({}, { sessionManager: { getSessionId: () => sessionId } });
+				await h(
+					{},
+					{ sessionManager: { getSessionId: () => sessionId }, isIdle },
+				);
 			}
 		},
 		async fireSessionShutdown() {
@@ -81,6 +84,7 @@ describe("orchestration extension — activity bus scoping", () => {
 			activityBus.unsubscribe(token);
 		}
 		activeTokens.length = 0;
+		vi.useRealTimers();
 	});
 
 	test("only forwards events whose parentSessionId matches the owning session", async () => {
@@ -97,6 +101,27 @@ describe("orchestration extension — activity bus scoping", () => {
 		sendMessage.mockClear();
 		activityBus.publish(makeEvent("session-B"));
 		expect(sendMessage).not.toHaveBeenCalled();
+	});
+
+	test("buffers activity while parent session is busy and flushes when idle", async () => {
+		vi.useFakeTimers();
+		let isIdle = false;
+		const { pi, sendMessage, fireSessionStart } =
+			createLifecyclePi("session-buffer");
+		orchestrationExtension(pi as never);
+		await fireSessionStart(() => isIdle);
+
+		activityBus.publish(makeEvent("session-buffer"));
+		expect(sendMessage).not.toHaveBeenCalled();
+
+		await vi.advanceTimersByTimeAsync(100);
+		expect(sendMessage).not.toHaveBeenCalled();
+
+		isIdle = true;
+		await vi.advanceTimersByTimeAsync(100);
+		expect(sendMessage).toHaveBeenCalledTimes(1);
+
+		runSessionCleanup("session-buffer");
 	});
 
 	test("session_shutdown removes the bus subscription", async () => {
@@ -188,7 +213,10 @@ describe("orchestration extension — activity bus scoping", () => {
 		// First session_start
 		await sessionStartHandler?.(
 			{},
-			{ sessionManager: { getSessionId: () => currentSessionId } },
+			{
+				sessionManager: { getSessionId: () => currentSessionId },
+				isIdle: () => true,
+			},
 		);
 
 		activityBus.publish(makeEvent("session-E"));
@@ -199,7 +227,10 @@ describe("orchestration extension — activity bus scoping", () => {
 		currentSessionId = "session-F";
 		await sessionStartHandler?.(
 			{},
-			{ sessionManager: { getSessionId: () => currentSessionId } },
+			{
+				sessionManager: { getSessionId: () => currentSessionId },
+				isIdle: () => true,
+			},
 		);
 
 		// Old session-E events no longer forwarded
