@@ -5,12 +5,12 @@ const definition: AgentDefinition = {
 	description:
 		"Coding-domain coordinator. Coordinates coding-focused planning, implementation, and review workflows.",
 	capabilities: [
-		"core",
 		"engineering-discipline",
 		"coding-readwrite",
 		"tasks",
 		"spawning",
 		"todo",
+		"drive",
 	],
 	model: "anthropic/claude-opus-4-7",
 	tools: "coding",
