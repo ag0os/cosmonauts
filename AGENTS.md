@@ -1,14 +1,8 @@
 # Cosmonauts
 
-Automated coding orchestration system built on `@mariozechner/pi-coding-agent` (Pi). Design solutions, break them into atomic tasks, let agents implement them.
+Cosmonauts is an AI agent orchestration framework built on `@mariozechner/pi-coding-agent` (Pi). Agents and humans imagine, design, and build together across a spectrum — from fully automated chain runs to always-on, side-by-side pairing.
 
-**Status**: Early development. Core infrastructure is built. Architecture is evolving. Expect breaking changes.
-
-## Vision
-
-Humans design, agents execute. The critical insight: **the design and planning phase is where the human adds the most value.** Once the plan is solid and tasks are well-defined, execution is mechanical.
-
-The flow: (1) go to any project directory, (2) describe what you want, (3) get a designed, reviewed solution plan, (4) have agents create atomic tasks from the plan, (5) watch agents implement those tasks autonomously. Cosmonauts optimizes for great planning tools, atomic task creation, and reliable autonomous execution.
+**Status**: Early development. Architecture is evolving. Expect breaking changes.
 
 ## Design Principles
 
@@ -23,130 +17,21 @@ Before designing any feature, check what Pi already provides. The checklist:
 
 As Pi evolves (lockstep versioning), re-audit its API before each phase for features that might obsolete planned custom work.
 
-### Three-Layer Architecture
+### Architecture at a glance
 
-- **Layer 1: Framework** — Orchestration, persistence, tasks, CLI, agent definitions, skill loading. Domain-agnostic.
-- **Layer 2: Domain agents** — Built-in domains live in `domains/`: `domains/shared/` provides shared prompts, capabilities, and extensions; `domains/main/` provides the cross-domain `cosmo` lead. Installable domains live in package directories such as `bundled/coding/coding/`. Adding a new domain = new domain directory with a `domain.ts` manifest, no framework changes.
-- **Layer 3: Executive assistant** — `domains/main/` hosts `main/cosmo`, the top-level cross-domain orchestrator. The future always-on heartbeat will trigger domain workflows and manage long-running projects.
-
-### Three Pillars: Agents, Prompts, Skills
-
-**Agent definitions** are declarative config: model, tools, prompt layers, extensions, skill access, sub-agent permissions. Every agent is defined the same way.
-
-**System prompts** are composable layers that define WHO an agent IS. Loaded at session creation, not on demand — they ARE the identity. A coding agent gets a base prompt + capability packs + a role persona.
-
-**Skills** are on-demand knowledge files that teach agents HOW to do specific things. Agents receive a skill index (list + one-line descriptions) and load what they need via `/skill:name`. This saves tokens vs injecting all skills into every agent.
-
-## Agent System
-
-Agents are Pi sessions configured by declarative definitions. Each definition specifies model, prompt layers, tools, extensions, skill access, and sub-agent permissions.
-
-### Agent Definitions
-
-Agent definitions live in domain directories (e.g., `domains/main/agents/*.ts` for built-ins and `bundled/coding/coding/agents/*.ts` for the coding package). Each definition configures model, tools, capabilities, extensions, skill access, and sub-agent permissions. Definitions are discovered automatically by the domain loader.
-
-Built-in/default leads:
-
-- `main/cosmo` (`domains/main/`) — cross-domain orchestrator and top-level assistant; delegates directly to specialists across installed domains.
-- `coding/cody` (`bundled/coding/`) — coding-domain coordinator for `cosmonauts -d coding`; coordinates planners, workers, reviewers, and other coding specialists.
-
-### Prompt Composition
-
-System prompts compose in a strict four-layer order, loaded at session creation via Pi's `additionalSkillPaths`:
-
-- **Layer 0 — Platform Base** (`domains/shared/prompts/base.md`): Universal operating norms for all agents.
-- **Layer 1 — Capabilities** (`domains/shared/capabilities/*.md`, `domains/main/capabilities/*.md`, or bundled domain capability dirs such as `bundled/coding/coding/capabilities/*.md`): Reusable discipline bundles aligned to tool surfaces (core, coding-rw, coding-ro, tasks, spawning, todo).
-- **Layer 2 — Persona** (`domains/main/prompts/{agent}.md` or bundled domain prompt dirs such as `bundled/coding/coding/prompts/{agent}.md`): One per agent. Identity, workflow, constraints.
-- **Layer 3 — Runtime Context** (`domains/shared/prompts/runtime/sub-agent.md`): Optional spawn-time overlay with parent role, objective, task ID. Top-level spawns skip this.
-
-Examples:
-
-```
-main/cosmo     → [cosmonauts] + [core, tasks, spawning, todo, drive] + [cosmo]                         # cross-domain orchestrator
-coding/cody    → [cosmonauts] + [core, engineering-discipline, coding-rw, tasks, spawning, todo] + [cody] # coding-domain coordinator
-coding/planner → [cosmonauts] + [core, coding-ro] + [planner]                                            # read-only design agent
-coding/worker  → [cosmonauts] + [core, coding-rw, tasks, todo] + [worker]                                # coding-focused implementer
-```
-
-### Sub-Agent Spawning
-
-Agents are Pi sessions configured from definitions. Sub-agents are always ephemeral. The `spawn_agent` tool resolves the agent ID to its full definition and creates a scoped session. Parents can only spawn agents listed in their `subagents` allowlist. Parent-child relationships are tracked (who spawned whom, session IDs).
-
-## Orchestration
-
-### Chain Runner
-
-Runs agent pipelines using Pi sessions. The DSL is pure topology — it declares which roles run in what order. Loop behavior is intrinsic to each role (coordinator loops until all tasks are Done, others run once).
-
-```
-cosmonauts --chain "planner -> task-manager -> coordinator -> integration-verifier -> quality-manager" "design and implement auth"
-```
-
-**Bracket groups** run two or more roles concurrently at the same pipeline stage:
-
-```
-cosmonauts --chain "planner -> [task-manager, reviewer] -> coordinator" "design with parallel review"
-```
-
-**Fan-out** spawns N instances of the same role in parallel:
-
-```
-cosmonauts --chain "coordinator -> reviewer[3]" "review with multiple reviewers"
-```
-
-> **Fan-out note:** `reviewer[3]` sends the **same prompt** to all three instances — it does not shard tasks or assign different work to each instance.
-
-**Safety caps**: `maxTotalIterations` (50), `timeoutMs` (30 min) — global, not per-stage.
-
-### Named Workflows
-
-The primary user interface for multi-agent pipelines. Built-in defaults live in `bundled/coding/coding/workflows.ts` (also mirrored in `lib/config/defaults.ts` for the scaffolded config) and can be overridden or extended via `.cosmonauts/config.json`. The standard workflows are:
-
-| Name | Chain | Purpose |
-|------|-------|---------|
-| `plan-and-build` | `planner → plan-reviewer → planner → task-manager → coordinator → integration-verifier → quality-manager` | Full pipeline with adversarial plan review |
-| `implement` | `task-manager → coordinator → integration-verifier → quality-manager` | From an existing approved plan |
-| `verify` | `quality-manager` | Review + remediation on existing changes |
-| `tdd` | `planner → plan-reviewer → planner → tdd-planner → task-manager → tdd-coordinator → integration-verifier → quality-manager` | Architecture-first TDD with Red-Green-Refactor |
-| `spec-and-build` | `spec-writer → planner → plan-reviewer → planner → task-manager → coordinator → integration-verifier → quality-manager` | Interactive spec capture then reviewed build |
-| `spec-and-tdd` | `spec-writer → planner → plan-reviewer → planner → tdd-planner → task-manager → tdd-coordinator → integration-verifier → quality-manager` | Interactive spec capture then reviewed TDD |
-| `adapt` | `adaptation-planner → task-manager → coordinator → integration-verifier → quality-manager` | Study a reference codebase and adapt patterns |
-
-Every design-driven default includes `plan-reviewer` as a mandatory adversarial step before task creation — review is the norm, not an opt-in. For code-time review, `quality-manager` internally triages which specialist lenses (security, performance, UX) apply to the diff and spawns the applicable ones in parallel alongside the generalist `reviewer`. Panel membership is not a workflow-level concern.
-
-Projects can add, remove, or customize workflows by editing their `.cosmonauts/config.json`.
-
-### CLI
-
-```
-cosmonauts                                                          # Interactive REPL with main/cosmo
-cosmonauts -d coding                                                 # Interactive REPL with coding/cody
-cosmonauts "design an auth system"                                  # Interactive with initial prompt to main/cosmo
-cosmonauts -d coding "implement this task"                           # Coding-focused initial prompt to coding/cody
-cosmonauts --print "create tasks and go"                            # Non-interactive (fire-and-forget)
-cosmonauts --workflow plan-and-build "auth"                          # Named workflow
-cosmonauts --chain "planner -> coordinator"                         # Raw chain DSL
-cosmonauts --chain "planner -> [task-manager, reviewer] -> coord"   # Parallel bracket group
-cosmonauts --chain "coordinator -> reviewer[3]"                     # Fan-out (same prompt x3)
-cosmonauts drive                                                     # Driver task runs
-```
-
-Flags: `--print`, `--workflow`, `--chain`, `--model`, `--thinking`, `--domain`/`-d`, `--list-domains`, `--list-agents`. `--list-agents` prints qualified IDs such as `main/cosmo` and `coding/cody`.
-
-`cosmonauts drive` is the CLI verb for driver runs: inline mode runs inside the host assistant session, while detached mode writes a frozen run directory and continues independently.
-
-## Documentation
-
-- `ROADMAP.md` — Work backlog: prioritized items on top, unordered ideas below.
-- `docs/pi-framework.md` — Pi API reference (execution modes, tools, skills, extensions).
-- `docs/testing.md` — Testing standards and patterns.
-- `memory/` — Distilled knowledge from completed work.
+- **Three layers**:
+  - **Framework** (`lib/`) — orchestration, persistence, tasks, CLI, agent loading. Domain-agnostic.
+  - **Domain agents** — built-in domains live in `domains/` (`shared/`, `main/`); installable domains live in `bundled/` (`coding/`). Each domain ships its own agents, prompts, capabilities, and skills.
+  - **Executive layer** (`domains/main/`) — hosts `cosmo`, the cross-domain top-level assistant.
+- **Three pillars** — agent definitions (declarative config), system prompts (composable layers), and skills (on-demand knowledge). See `docs/prompts.md` for the four-layer composition.
+- **Adding a new domain = adding a new domain directory with a `domain.ts` manifest.** No framework changes needed.
+- **Built-in leads**: `main/cosmo` (executive, cross-domain) and `coding/cody` (coding-domain interactive lead).
 
 ## Tech Stack
 
 - Runtime: Bun
 - Language: TypeScript (ESM, strict mode)
-- Framework: `@mariozechner/pi-coding-agent` (pinned exact in package.json — Pi uses lockstep versioning)
+- Framework: `@mariozechner/pi-coding-agent` — pinned exactly (Pi uses lockstep versioning)
 - Schema: `@sinclair/typebox`
 - Tests: Vitest (`bun run test`)
 - Linter: Biome (`bun run lint`)
@@ -166,60 +51,38 @@ Flags: `--print`, `--workflow`, `--chain`, `--model`, `--thinking`, `--domain`/`
 
 ## Work Lifecycle
 
-Work flows through: **roadmap → plan → tasks → sessions → archive → memory**.
+Work flows: **roadmap → plan → tasks → sessions → archive → memory**. Each stage has a skill: `/skill:roadmap`, `/skill:plan`, `/skill:task`, `/skill:archive`. Plans, tasks, reviews, and archives live in `missions/`; distilled knowledge in `memory/`. We dogfood cosmonauts on itself, so most of these directories are tracked here — only `missions/sessions/` (and its archive counterpart) are gitignored as high-volume, regenerable transcripts.
 
-All work artifacts live in local, gitignored directories created by `cosmonauts scaffold missions`:
+## When Working on This Codebase
 
-- **Roadmap** (`ROADMAP.md`): Work backlog with prioritized items on top and unordered ideas below. Items are picked up and turned into plans.
-- **Plans** (`missions/plans/<slug>/`): Implementation plans with `plan.md` and optional `spec.md`. Created via `plan_create`. Local.
-- **Tasks** (`missions/tasks/`): Atomic work items linked to plans via `plan:<slug>` labels. Created via `task_create`. Local.
-- **Sessions** (`missions/sessions/<plan>/`): Agent session transcripts and lineage manifests captured during plan execution. Each session records parent-child relationships and produces structured knowledge records.
-- **Archive** (`missions/archive/`): Completed plans and tasks moved here by `plan_archive`. Mechanical, no LLM. Local.
-- **Memory** (`memory/`): Distilled knowledge from archived work. The `.knowledge.jsonl` files from sessions provide structured input; a distiller agent extracts durable insights. Local.
-
-See the `roadmap`, `plan`, `task`, and `archive` skills for detailed procedures.
-
-## Task System
-
-Built-in task system in `missions/tasks/`. Tasks are markdown files with YAML frontmatter — atomic, dependency-ordered work items with acceptance criteria.
-
-Task tools: `task_create`, `task_list`, `task_view`, `task_edit`, `task_search` (Pi extension tools).
-
-CLI: `cosmonauts task` for task management, `cosmonauts plan` for plan management.
-
-## Implementation Workflow
-
-When implementing non-trivial features (anything spanning multiple files or requiring design decisions):
-
-1. **Understand the architecture** — read this file and relevant docs/skills.
-2. **Design the approach** — understand scope, identify files to change, consider trade-offs.
-3. **Break the work into tasks** using the task system (`task_create`). Each task should be single-PR scope with 1-7 outcome-focused acceptance criteria. Order by dependencies.
-4. **Delegate each task to a sub-agent** rather than implementing everything yourself. Spawn a focused sub-agent per task — this keeps each implementation in a clean context window and produces better results than accumulating context across many tasks.
-5. **Verify after each task**: `bun run test`, `bun run lint`, `bun run typecheck`.
-6. **Commit per task** with the task ID: `COSMO-XXX: Short description`.
-
-For small, self-contained changes (a bug fix, a single function, a config tweak), skip the task system and work directly.
+- Verify after changes: `bun run test`, `bun run lint`, `bun run typecheck`.
+- For non-trivial features (multi-file or design decisions), scope into tasks before implementing — see `/skill:plan` and `/skill:task`.
+- For small, self-contained changes, skip the task system.
 
 ## Key Directories
 
-**Tracked (in repo):**
+**Source code:**
+- `lib/` — framework code (agents, orchestration, tasks, plans, workflows, domains, config)
+- `domains/` — built-in domains (`shared/`, `main/`)
+- `bundled/` — installable domain packages (`coding/`)
+- `cli/`, `bin/` — CLI implementation and entry points
+- `tests/` — Vitest suites mirroring source
+- `docs/` — reference documentation
 
-```
-lib/              Core libraries (agents, orchestration, tasks, plans, workflows, domains, config)
-lib/sessions/     Session persistence, lineage tracking, and knowledge record format
-domains/          Built-in domains: shared/ (base prompts, capabilities, extensions) and main/ (main/cosmo)
-bundled/          Installable domain packages (coding/) — the source of truth for bundled domains
-cli/              CLI implementation
-bin/              CLI entry points (cosmonauts)
-tests/            Test suites mirroring source structure
-docs/             Reference documentation
-```
+**Project artifacts (tracked — we dogfood cosmonauts on itself):**
+- `missions/plans/`, `missions/tasks/`, `missions/reviews/`, `missions/archive/` — work artifacts
+- `memory/` — distilled knowledge from completed work
+- `.cosmonauts/` — project config
 
-**Local (gitignored, created by `cosmonauts scaffold missions`):**
+**Gitignored:** `missions/sessions/` and `missions/archive/sessions/` — high-volume, regenerable transcripts.
 
-```
-missions/         Active tasks, plans, and archived work
-missions/sessions/ Agent session transcripts and lineage manifests (per-plan)
-memory/           Distilled knowledge from completed work
-.cosmonauts/      Project config (created by `cosmonauts scaffold missions`, customizable)
-```
+`package.json` "files" controls the npm tarball — `missions/`, `memory/`, `.cosmonauts/`, `tests/`, and `docs/` are not shipped to consumers.
+
+## Documentation
+
+- `ROADMAP.md` — work backlog (prioritized items first, ideas below)
+- `docs/pi-framework.md` — Pi API reference (execution modes, tools, skills, extensions)
+- `docs/prompts.md` — four-layer prompt composition
+- `docs/orchestration.md` — chains, workflows, drive, CLI surface
+- `docs/testing.md` — testing standards and patterns
+- `memory/` — distilled knowledge from completed work
