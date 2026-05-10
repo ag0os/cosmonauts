@@ -4,7 +4,7 @@ const definition: AgentDefinition = {
 	id: "cosmo",
 	description:
 		"Executive assistant and cross-domain orchestrator. Delegates directly to specialists and dispatches plan-linked task runs through Drive when available.",
-	capabilities: ["core", "tasks", "spawning", "todo", "drive"],
+	capabilities: ["tasks", "spawning", "todo", "drive"],
 	model: "anthropic/claude-opus-4-7",
 	tools: "none",
 	extensions: [
