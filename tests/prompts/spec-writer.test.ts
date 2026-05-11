@@ -7,47 +7,71 @@ const PROMPT_PATH = new URL(
 );
 
 describe("spec-writer prompt", () => {
-	it("defines the mandatory phase transitions", async () => {
+	it("captures the WHAT/WHY and stays out of architecture", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
+		expect(content).toContain("WHAT and WHY");
+		expect(content).toContain("You do **not** design the HOW");
+		expect(content).toContain("hand off to the planner");
+		expect(content).toContain("/skill:plan");
+	});
+
+	it("puts the end user first", async () => {
+		const content = await readFile(PROMPT_PATH, "utf-8");
+
+		expect(content).toContain("## Users first");
 		expect(content).toContain(
-			"I understand the purpose and user. Moving to the user flow and scope unless you want to revisit.",
+			"Every change you spec must trace to an end user.",
 		);
+		expect(content).toContain("there's always one, and they come first");
 		expect(content).toContain(
-			"The flow and scope are clear. Moving to acceptance criteria, assumptions, and readiness unless you want to adjust anything first.",
-		);
-		expect(content).toContain(
-			"Here’s the readiness check and what I’ll write — approve, correct, or expand?",
+			"Spec a change you can't tie to a user. If you can't say who benefits and how, it's not ready.",
 		);
 	});
 
-	it("keeps the readiness rubric visible and blocked until waived", async () => {
+	it("is a creative brainstorming partner, not a stenographer", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
-		expect(content).toContain("- **Specificity**");
-		expect(content).toContain("- **Constraints**");
-		expect(content).toContain("- **Context**");
-		expect(content).toContain("- **Success criteria**");
+		expect(content).toContain("creative like an artist");
+		expect(content).toContain("a brainstorming partner, not a stenographer");
 		expect(content).toContain(
-			"Required items that are not satisfied must stay visibly unchecked.",
+			"the spec reflects the *human's* choices, not your pet ideas",
 		);
 		expect(content).toContain(
-			"In interactive mode, do not write the spec while any required readiness item is unchecked.",
+			"Carry an unpicked framing into the spec. Propose freely; the spec reflects only what the human chose.",
 		);
-		expect(content).toContain("`proceed with assumptions`");
 	});
 
-	it("defines critical assumption categories, escalation, and autonomous fallback", async () => {
+	it("runs the mandatory Frame -> Shape -> Detail cadence with a fuzzy-idea diverge step", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
+		expect(content).toContain("Frame → Shape → Detail");
 		expect(content).toContain(
-			"Classify an assumption as critical when it changes user-visible behavior, scope boundaries, existing-feature interaction, or acceptance criteria.",
+			"This cadence is mandatory; move through it in order.",
+		);
+		expect(content).toContain("diverge before you converge");
+		expect(content).toContain("minimum lovable version");
+	});
+
+	it("keeps the readiness check visible and blocking until waived", async () => {
+		const content = await readFile(PROMPT_PATH, "utf-8");
+
+		expect(content).toContain("Readiness check before you write.");
+		expect(content).toContain(
+			"Required items that aren't met stay visibly unchecked — never quietly mark one passed.",
 		);
 		expect(content).toContain(
-			"If `critical >= 3` in interactive mode, run one more clarification round before writing unless the human explicitly waives with `proceed with assumptions`.",
+			"In interactive mode, don't write the spec while a required item is unchecked unless the human explicitly waives it.",
 		);
+		expect(content).toContain("3+ *critical* ones");
+	});
+
+	it("falls back to assumptions/open-questions in autonomous runs", async () => {
+		const content = await readFile(PROMPT_PATH, "utf-8");
+
+		expect(content).toContain("Autonomous / non-interactive runs");
 		expect(content).toContain(
-			"convert every unmet required readiness item into an explicit item in `Assumptions` or `Open Questions` instead of silently filling the gap.",
+			"convert every unmet readiness item into an explicit `Assumptions` or `Open Questions` entry — never a silent default.",
 		);
 	});
 });

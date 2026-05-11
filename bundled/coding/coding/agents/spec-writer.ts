@@ -3,8 +3,8 @@ import type { AgentDefinition } from "../../../../lib/agents/types.ts";
 const definition: AgentDefinition = {
 	id: "spec-writer",
 	description:
-		"Captures product requirements through interactive conversation. Explores the codebase for context, asks clarifying questions, and produces a structured spec document.",
-	capabilities: ["core", "coding-readonly"],
+		"Captures the WHAT and WHY of a feature through brainstorming conversation with the human — what it does, who uses it, how they benefit. Produces a spec document the planner designs against. Never designs architecture or writes code.",
+	capabilities: ["coding-readonly"],
 	model: "anthropic/claude-opus-4-7",
 	tools: "readonly",
 	extensions: ["plans"],

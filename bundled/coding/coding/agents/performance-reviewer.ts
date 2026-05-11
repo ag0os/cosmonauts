@@ -3,17 +3,12 @@ import type { AgentDefinition } from "../../../../lib/agents/types.ts";
 const definition: AgentDefinition = {
 	id: "performance-reviewer",
 	description:
-		"Performance-focused plan review. Looks for algorithmic hotspots, N+1 queries, missing indexes, unbounded memory, chatty I/O, and scaling cliffs. Does not redesign.",
-	capabilities: [
-		"core",
-		"engineering-discipline",
-		"architectural-design",
-		"coding-readonly",
-	],
+		"Performance-lens review of code diffs — algorithmic hotspots, N+1 queries, missing indexes, unbounded memory, chatty I/O, scaling cliffs, missing instrumentation. Part of the quality-manager's review panel. Does not redesign or implement fixes.",
+	capabilities: ["engineering-discipline", "coding-readonly"],
 	model: "openai-codex/gpt-5.5",
 	tools: "coding",
-	extensions: ["plans"],
-	skills: ["pi", "plan", "engineering-principles"],
+	extensions: [],
+	skills: ["*"],
 	subagents: [],
 	projectContext: true,
 	session: "ephemeral",

@@ -3,17 +3,12 @@ import type { AgentDefinition } from "../../../../lib/agents/types.ts";
 const definition: AgentDefinition = {
 	id: "ux-reviewer",
 	description:
-		"User-experience-focused plan review. Walks the end-to-end flow, flags data-loss scenarios, confusing states, missing feedback, and inconsistencies with existing UX patterns. Does not redesign.",
-	capabilities: [
-		"core",
-		"engineering-discipline",
-		"architectural-design",
-		"coding-readonly",
-	],
+		"UX-lens review of code diffs — end-to-end flow, data-loss scenarios, missing feedback, confusing states, inconsistency with existing patterns, accessibility. Part of the quality-manager's review panel. Does not redesign or implement fixes.",
+	capabilities: ["engineering-discipline", "coding-readonly"],
 	model: "openai-codex/gpt-5.5",
 	tools: "coding",
-	extensions: ["plans"],
-	skills: ["pi", "plan", "engineering-principles"],
+	extensions: [],
+	skills: ["*"],
 	subagents: [],
 	projectContext: true,
 	session: "ephemeral",
