@@ -35,7 +35,7 @@ export interface AssemblePromptsOptions {
 	agentId: string;
 	/** The agent's domain (e.g. "coding"). */
 	domain: string;
-	/** Capability pack names (e.g. ["core", "tasks", "coding-readwrite"]). */
+	/** Capability pack names (e.g. ["tasks", "coding-readwrite", "spawning"]). */
 	capabilities: readonly string[];
 	/** Absolute path to the domains/ directory. Required when no resolver is provided. */
 	domainsDir?: string;

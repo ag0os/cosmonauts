@@ -21,7 +21,7 @@ export interface AgentDefinition {
 	readonly id: string;
 	/** Human-readable description. */
 	readonly description: string;
-	/** Capability pack names resolved to prompt files during assembly (e.g. ["core", "tasks", "coding-readwrite"]). */
+	/** Capability pack names resolved to prompt files during assembly (e.g. ["tasks", "coding-readwrite", "spawning"]). */
 	readonly capabilities: readonly string[];
 	/** Default model in "provider/model-id" format. */
 	readonly model: string;

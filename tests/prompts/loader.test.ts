@@ -222,7 +222,7 @@ describe("domain-based prompt file paths", () => {
 	});
 
 	it("loads shared capability files from domains/shared/capabilities", async () => {
-		const capabilities = ["core", "tasks", "spawning", "todo"];
+		const capabilities = ["tasks", "spawning", "todo"];
 		for (const ref of capabilities) {
 			const content = await loadPrompt(ref, SHARED_CAPABILITIES_DIR);
 			expect(content.length).toBeGreaterThan(0);
@@ -267,7 +267,7 @@ describe("domain-based prompt file paths", () => {
 	it("loads full layered prompt stack for cody across directories", async () => {
 		const base = await loadPrompt("base");
 		const sharedCaps = await loadPrompts(
-			["core", "tasks", "spawning", "todo"],
+			["tasks", "spawning", "todo"],
 			SHARED_CAPABILITIES_DIR,
 		);
 		const codingCaps = await loadPrompts(

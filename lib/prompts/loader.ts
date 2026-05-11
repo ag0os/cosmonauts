@@ -1,8 +1,8 @@
 /**
  * Prompt file loader — reads and concatenates system prompt layers from disk.
  *
- * Prompt references like "cosmonauts" or "capabilities/core" resolve to
- * `{promptsDir}/cosmonauts.md` or `{promptsDir}/capabilities/core.md`.
+ * Prompt references like "cosmonauts" or "capabilities/tasks" resolve to
+ * `{promptsDir}/cosmonauts.md` or `{promptsDir}/capabilities/tasks.md`.
  * If a file contains YAML frontmatter, it is stripped automatically.
  */
 

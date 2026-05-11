@@ -74,7 +74,7 @@ beforeAll(async () => {
 const FIXTURE_PLANNER: AgentDefinition = {
 	id: "planner",
 	description: "Fixture planner",
-	capabilities: ["core"],
+	capabilities: ["tasks"],
 	model: "fixture-provider/fixture-planner-model",
 	tools: "readonly",
 	extensions: [],
