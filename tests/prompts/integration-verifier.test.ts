@@ -11,7 +11,7 @@ describe("integration-verifier prompt", () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
 		expect(content).toContain(
-			"If there is no unique active plan slug, write no repository file and return a skipped summary.",
+			"otherwise you write no repository file and return a skipped summary",
 		);
 		expect(content).toContain(
 			"If zero distinct plan labels are present, do not write a report file; return a skipped summary.",

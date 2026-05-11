@@ -14,10 +14,8 @@ describe("verifier prompt", () => {
 	it("validates known claims and never modifies code", async () => {
 		const content = await readPrompt();
 
-		expect(content).toContain("You are the Verifier.");
-		expect(content).toContain(
-			"You validate explicit claims against the codebase and produce structured pass/fail evidence.",
-		);
+		expect(content).toContain("You're the Verifier.");
+		expect(content).toContain("you validate known claims the caller hands you");
 		expect(content).toContain(
 			"**Do NOT use bash or any tool to write, edit, or create files.**",
 		);

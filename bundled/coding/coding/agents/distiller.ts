@@ -4,11 +4,11 @@ const definition: AgentDefinition = {
 	id: "distiller",
 	description:
 		"Reads plan artifacts and session transcripts, then produces structured KnowledgeBundle JSONL files for future SQLite + vector embedding ingestion.",
-	capabilities: ["core", "coding-readonly"],
+	capabilities: ["coding-readonly"],
 	model: "anthropic/claude-sonnet-4-6",
 	tools: "coding",
 	extensions: [],
-	skills: ["archive"],
+	skills: ["*"],
 	subagents: [],
 	projectContext: true,
 	session: "ephemeral",
