@@ -3,7 +3,7 @@ import type { AgentDefinition } from "../../../../lib/agents/types.ts";
 const definition: AgentDefinition = {
 	id: "refactorer",
 	description:
-		"REFACTOR phase: improves code structure without changing behavior. All tests must stay green throughout.",
+		"Dedicated refactoring agent: restructures existing code without changing observable behavior. All tests must stay green throughout.",
 	capabilities: ["core", "engineering-discipline", "coding-readwrite", "tasks"],
 	model: "openai-codex/gpt-5.5",
 	tools: "coding",

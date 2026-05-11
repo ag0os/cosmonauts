@@ -46,6 +46,8 @@ Write the code to satisfy the acceptance criteria:
 - **Do the minimum necessary.** Implement what the ACs require. Do not refactor unrelated code, add features not in the ACs, or "improve" things outside your scope.
 - **No over-engineering.** Do not add abstractions, generics, or flexibility that the ACs do not call for.
 
+**Work test-first when the plan has behaviors.** If the plan has a `## Behaviors` section (it usually will), those behaviors are your test targets — work through them one at a time. For each behavior: write the failing test first, run it to confirm it fails for the right reason (not a typo or missing import), write the minimal code to make it pass, then refactor before moving to the next behavior. Don't batch the tests at the end; the red-green-refactor loop per behavior is what keeps the implementation honest.
+
 ### 6. Check ACs Incrementally
 
 As you complete each acceptance criterion, call `task_edit` to check it off immediately. Do not wait until the end to check all ACs at once.

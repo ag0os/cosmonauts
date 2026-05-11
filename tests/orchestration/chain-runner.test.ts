@@ -104,7 +104,6 @@ const defaultRegistry = new AgentRegistry([
 	makeCodingDef("planner", false),
 	makeCodingDef("task-manager", false),
 	makeCodingDef("coordinator", true),
-	makeCodingDef("tdd-coordinator", true),
 	makeCodingDef("worker", false),
 	makeCodingDef("quality-manager", false),
 	makeCodingDef("reviewer", false),
@@ -124,15 +123,6 @@ function makeConfig(
 }
 
 describe("getDefaultStagePrompt", () => {
-	test("returns a role-specific prompt for adaptation-planner", () => {
-		expect(getDefaultStagePrompt("adaptation-planner")).toBe(
-			"Study the reference implementation and design an adaptation plan for this project.",
-		);
-		expect(getDefaultStagePrompt("coding/adaptation-planner")).toBe(
-			"Study the reference implementation and design an adaptation plan for this project.",
-		);
-	});
-
 	test("returns a role-specific prompt for integration-verifier", () => {
 		const prompt = getDefaultStagePrompt("integration-verifier");
 		expect(prompt).toBe(
@@ -141,12 +131,12 @@ describe("getDefaultStagePrompt", () => {
 		expect(prompt).not.toBe("Execute your assigned role.");
 	});
 
-	test("returns a role-specific prompt for behavior-reviewer", () => {
-		expect(getDefaultStagePrompt("behavior-reviewer")).toBe(
-			"Review the active plan's ## Behaviors section and write structured findings to missions/plans/<slug>/behavior-review.md.",
+	test("falls back to the generic prompt for unknown roles", () => {
+		expect(getDefaultStagePrompt("adaptation-planner")).toBe(
+			"Execute your assigned role.",
 		);
-		expect(getDefaultStagePrompt("coding/behavior-reviewer")).toBe(
-			"Review the active plan's ## Behaviors section and write structured findings to missions/plans/<slug>/behavior-review.md.",
+		expect(getDefaultStagePrompt("behavior-reviewer")).toBe(
+			"Execute your assigned role.",
 		);
 	});
 });
@@ -624,34 +614,6 @@ describe("runStage", () => {
 				expect.objectContaining({
 					prompt: expect.stringContaining(
 						'Scope constraint: Operate only on tasks labeled "review-round:1"',
-					),
-				}),
-			);
-		});
-
-		test("adds label-scoping instructions to tdd-coordinator prompt", async () => {
-			const spawner = createMockSpawner([
-				{ success: true, sessionId: "session-1", messages: [] },
-			]);
-			const completionCheck = vi
-				.fn()
-				.mockResolvedValueOnce(false)
-				.mockResolvedValueOnce(true);
-			const stage = makeStage("tdd-coordinator", true, completionCheck);
-			const config = makeConfig([stage], {
-				completionLabel: "plan:alpha",
-			});
-
-			const result = await runStage(stage, config, spawner, {
-				maxTotalIterations: 3,
-				deadlineMs: Date.now() + 60_000,
-			});
-
-			expect(result.success).toBe(true);
-			expect(spawner.spawn).toHaveBeenCalledWith(
-				expect.objectContaining({
-					prompt: expect.stringContaining(
-						'Scope constraint: Operate only on tasks labeled "plan:alpha"',
 					),
 				}),
 			);

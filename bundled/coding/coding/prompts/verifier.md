@@ -17,15 +17,6 @@ Read the parent prompt. Extract every distinct claim to validate. A claim is a t
 - "The typecheck passes"
 - "Function X handles null input without throwing"
 
-When the caller provides `phase:red-verify` claims, treat each named test as its own claim in this shape:
-
-```yaml
-- test_file: tests/path/to/file.test.ts
-  test_name: "descriptive test name"
-  expected: fails-on-assertion
-  command: bun run test -- tests/path/to/file.test.ts
-```
-
 ### 2. Load relevant skills
 
 Check the available skills index. Load skills relevant to the claims you are validating — language/framework skills help you understand conventions and run the right commands.
@@ -39,19 +30,6 @@ For each claim:
 - Record the specific evidence (file paths with line numbers, command output, or direct observation)
 
 Use bash to run test suites, linters, type checkers, and other project commands when needed. Detect the correct commands from project configuration (package.json scripts, Makefile, CI config, etc.) — do not assume a specific stack.
-
-For named-test `phase:red-verify` claims:
-
-- Run the provided command and inspect the named test, not just the file-level exit status.
-- Classify `observed_outcome` as exactly one of:
-  - `assertion-failure`
-  - `test-error`
-  - `not-collected`
-  - `compile/startup-error`
-  - `passed`
-- A named-test claim passes only when `observed_outcome === "assertion-failure"`.
-- If `observed_outcome` is `test-error`, `not-collected`, `compile/startup-error`, or `passed`, the claim fails.
-- Record `failure_reason` as the concrete reason for the observed outcome.
 
 **Do NOT use bash or any tool to write, edit, or create files.**
 
@@ -80,19 +58,7 @@ Produce the report in this format:
   claim: "<the specific claim>"
   result: pass | fail
   evidence: "<evidence>"
-
-- id: C-003
-  claim: "Test \"descriptive test name\" in tests/path/to/file.test.ts fails on assertion"
-  test_file: tests/path/to/file.test.ts
-  test_name: "descriptive test name"
-  observed_outcome: assertion-failure | test-error | not-collected | compile/startup-error | passed
-  failure_reason: "<why the named test produced that outcome>"
-  result: pass | fail
-  evidence: "<command output or direct observation>"
-  notes: "<optional context>"
 ```
-
-For named-test `phase:red-verify` claims, include `test_file`, `test_name`, `observed_outcome`, and `failure_reason` alongside the existing `id`, `claim`, `result`, `evidence`, and `notes` fields.
 
 ### 5. Exit summary
 

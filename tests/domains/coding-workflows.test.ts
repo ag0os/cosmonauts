@@ -12,9 +12,7 @@ describe("coding domain workflows", () => {
 		for (const name of [
 			"plan-and-build",
 			"implement",
-			"tdd",
 			"spec-and-build",
-			"spec-and-tdd",
 			"adapt",
 		]) {
 			const stages = getWorkflowChain(name).split(" -> ");
@@ -40,24 +38,39 @@ describe("coding domain workflows", () => {
 		expect(verify?.chain).toBe("quality-manager");
 	});
 
-	it("keeps the reviewed TDD planning loop before task creation", () => {
-		for (const name of ["tdd", "spec-and-tdd"]) {
+	it("keeps the adversarial plan-review loop before task creation in design workflows", () => {
+		for (const name of ["plan-and-build", "spec-and-build"]) {
 			const stages = getWorkflowChain(name).split(" -> ");
-			const behaviorReviewerIndex = stages.indexOf("behavior-reviewer");
+			const reviewerIndex = stages.indexOf("plan-reviewer");
 
-			expect(behaviorReviewerIndex).toBeGreaterThan(0);
-			expect(
-				stages.slice(behaviorReviewerIndex - 1, behaviorReviewerIndex + 3),
-			).toEqual([
-				"tdd-planner",
-				"behavior-reviewer",
-				"tdd-planner",
+			expect(reviewerIndex).toBeGreaterThan(0);
+			expect(stages.slice(reviewerIndex - 1, reviewerIndex + 3)).toEqual([
+				"planner",
+				"plan-reviewer",
+				"planner",
 				"task-manager",
 			]);
-			expect(stages.filter((stage) => stage === "tdd-planner")).toHaveLength(2);
-			expect(
-				stages.filter((stage) => stage === "behavior-reviewer"),
-			).toHaveLength(1);
+			expect(stages.filter((stage) => stage === "plan-reviewer")).toHaveLength(
+				1,
+			);
 		}
+	});
+
+	it("uses a single planner adaptation pass for the adapt workflow", () => {
+		const stages = getWorkflowChain("adapt").split(" -> ");
+
+		expect(stages).toEqual([
+			"planner",
+			"task-manager",
+			"coordinator",
+			"integration-verifier",
+			"quality-manager",
+		]);
+	});
+
+	it("no longer exposes tdd or spec-and-tdd workflows", () => {
+		const names = workflows.map((workflow) => workflow.name);
+		expect(names).not.toContain("tdd");
+		expect(names).not.toContain("spec-and-tdd");
 	});
 });

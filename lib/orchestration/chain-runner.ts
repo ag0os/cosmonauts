@@ -54,8 +54,6 @@ function resolveDomainsDir(config: ChainConfig): string {
 /** Default operational prompts for chain stages (not agent identity prompts). */
 const DEFAULT_STAGE_PROMPTS: Record<string, string> = {
 	planner: "Analyze the project and design an implementation plan.",
-	"adaptation-planner":
-		"Study the reference implementation and design an adaptation plan for this project.",
 	"task-manager": "Review the plan and create atomic implementation tasks.",
 	coordinator: "Check for ready tasks and delegate them to workers.",
 	worker: "Pick up the next ready task and implement it.",
@@ -69,16 +67,6 @@ const DEFAULT_STAGE_PROMPTS: Record<string, string> = {
 		"Review the active plan and verify its claims against the codebase. Write structured findings.",
 	fixer:
 		"Apply targeted fixes for review findings and verify they pass checks.",
-	"tdd-planner":
-		"Analyze the project and design a behavior-driven plan with testable specifications.",
-	"behavior-reviewer":
-		"Review the active plan's ## Behaviors section and write structured findings to missions/plans/<slug>/behavior-review.md.",
-	"tdd-coordinator":
-		"Check for ready tasks and run the Red-Green-Refactor cycle for each.",
-	"test-writer":
-		"Write failing tests that capture the task's acceptance criteria as executable specifications.",
-	implementer:
-		"Write the minimum production code to make the failing tests pass.",
 	refactorer: "Improve code structure while keeping all tests green.",
 };
 
@@ -117,10 +105,7 @@ function buildStagePrompt(stage: ChainStage, config: ChainConfig): string {
 
 	// When loop completion is label-scoped, loop coordinators must process only
 	// that subset to avoid touching unrelated ready tasks.
-	if (
-		["coordinator", "tdd-coordinator"].includes(unqualifyRole(stage.name)) &&
-		config.completionLabel
-	) {
+	if (unqualifyRole(stage.name) === "coordinator" && config.completionLabel) {
 		return `${basePrompt}\n\nScope constraint: Operate only on tasks labeled "${config.completionLabel}". Filter all task selection to this label and do not modify tasks without it.`;
 	}
 

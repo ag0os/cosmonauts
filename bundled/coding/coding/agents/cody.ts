@@ -3,7 +3,7 @@ import type { AgentDefinition } from "../../../../lib/agents/types.ts";
 const definition: AgentDefinition = {
 	id: "cody",
 	description:
-		"Coding-domain coordinator. Coordinates coding-focused planning, implementation, and review workflows.",
+		"Coding-domain interactive partner. Pairs on code, brainstorms architecture, or conducts drive runs — and delegates to coding specialists when the work warrants it.",
 	capabilities: [
 		"engineering-discipline",
 		"coding-readwrite",
@@ -24,12 +24,10 @@ const definition: AgentDefinition = {
 	],
 	skills: ["*"],
 	subagents: [
-		"adaptation-planner",
 		"coordinator",
 		"distiller",
 		"explorer",
 		"fixer",
-		"implementer",
 		"integration-verifier",
 		"performance-reviewer",
 		"plan-reviewer",
@@ -40,9 +38,6 @@ const definition: AgentDefinition = {
 		"security-reviewer",
 		"spec-writer",
 		"task-manager",
-		"tdd-coordinator",
-		"tdd-planner",
-		"test-writer",
 		"ux-reviewer",
 		"verifier",
 		"worker",

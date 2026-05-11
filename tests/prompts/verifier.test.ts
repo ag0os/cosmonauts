@@ -11,75 +11,31 @@ async function readPrompt() {
 }
 
 describe("verifier prompt", () => {
-	it("defines the named-test claim shape for phase:red-verify tasks", async () => {
+	it("validates known claims and never modifies code", async () => {
 		const content = await readPrompt();
 
+		expect(content).toContain("You are the Verifier.");
 		expect(content).toContain(
-			"When the caller provides `phase:red-verify` claims",
+			"You validate explicit claims against the codebase and produce structured pass/fail evidence.",
 		);
-		expect(content).toContain("- test_file: tests/path/to/file.test.ts");
-		expect(content).toContain('  test_name: "descriptive test name"');
-		expect(content).toContain("  expected: fails-on-assertion");
 		expect(content).toContain(
-			"  command: bun run test -- tests/path/to/file.test.ts",
+			"**Do NOT use bash or any tool to write, edit, or create files.**",
 		);
 	});
 
-	it("defines exactly five observed_outcome classes for named-test red verification", async () => {
+	it("produces binary pass/fail results with evidence", async () => {
 		const content = await readPrompt();
-		const outcomeBlock = content.match(
-			/- Classify `observed_outcome` as exactly one of:\n((?: {2}- `[^`]+`\n)+)/,
-		);
 
-		expect(outcomeBlock?.[1]).toBeDefined();
-		if (!outcomeBlock?.[1]) {
-			throw new Error("Missing observed_outcome block");
-		}
-
-		const outcomes = Array.from(
-			outcomeBlock[1].matchAll(/`([^`]+)`/g),
-			([, outcome]) => outcome,
-		);
-
-		expect(outcomes).toEqual([
-			"assertion-failure",
-			"test-error",
-			"not-collected",
-			"compile/startup-error",
-			"passed",
-		]);
+		expect(content).toContain("result: pass | fail");
+		expect(content).toContain("**Binary results.**");
+		expect(content).toContain("**Show evidence.**");
 	});
 
-	it("states that only assertion-failure passes and all other named-test outcomes fail", async () => {
+	it("no longer carries phase:red-verify named-test handling", async () => {
 		const content = await readPrompt();
 
-		expect(content).toContain(
-			'A named-test claim passes only when `observed_outcome === "assertion-failure"`.',
-		);
-		expect(content).toContain(
-			"If `observed_outcome` is `test-error`, `not-collected`, `compile/startup-error`, or `passed`, the claim fails.",
-		);
-	});
-
-	it("extends named-test results with outcome classification fields", async () => {
-		const content = await readPrompt();
-		const namedTestResult = content.match(
-			/- id: C-003[\s\S]*?notes: "<optional context>"/,
-		)?.[0];
-
-		expect(namedTestResult).toContain(
-			'claim: "Test \\"descriptive test name\\" in tests/path/to/file.test.ts fails on assertion"',
-		);
-		expect(namedTestResult).toContain("test_file: tests/path/to/file.test.ts");
-		expect(namedTestResult).toContain('test_name: "descriptive test name"');
-		expect(namedTestResult).toContain(
-			"observed_outcome: assertion-failure | test-error | not-collected | compile/startup-error | passed",
-		);
-		expect(namedTestResult).toContain(
-			'failure_reason: "<why the named test produced that outcome>"',
-		);
-		expect(content).toContain(
-			"For named-test `phase:red-verify` claims, include `test_file`, `test_name`, `observed_outcome`, and `failure_reason` alongside the existing `id`, `claim`, `result`, `evidence`, and `notes` fields.",
-		);
+		expect(content).not.toContain("phase:red-verify");
+		expect(content).not.toContain("observed_outcome");
+		expect(content).not.toContain("assertion-failure");
 	});
 });

@@ -12,9 +12,9 @@ async function readPrompt() {
 }
 
 describe("quality-manager prompt", () => {
-	it("allows both coordinator and tdd-coordinator remediation paths", () => {
+	it("can spawn coordinator for task-driven remediation but not tdd-coordinator", () => {
 		expect(definition.subagents).toContain("coordinator");
-		expect(definition.subagents).toContain("tdd-coordinator");
+		expect(definition.subagents).not.toContain("tdd-coordinator");
 	});
 
 	it("routes integration findings through the existing remediation flow", async () => {
@@ -32,64 +32,17 @@ describe("quality-manager prompt", () => {
 		expect(content).toContain("plan: activePlanSlug");
 	});
 
-	it("defines the behavior-shaped predicate and applies it to finding prose", async () => {
+	it("routes complex planned findings to a coordinator-driven review-fix task", async () => {
 		const content = await readPrompt();
 
 		expect(content).toContain(
-			"Only reviewer findings and `integration_findings` use behavior-shaped vs structural routing.",
+			"Complex reviewer or integration findings on planned runs",
 		);
+		expect(content).toContain("create one remediation task via `task_create`");
+		expect(content).toContain("labels `review-fix` and `review-round:<n>`");
+		expect(content).toContain("pass `plan: activePlanSlug`");
 		expect(content).toContain(
-			"> A finding is **behavior-shaped** iff it identifies (a) a code path that can be exercised by the project's test runner AND (b) at least one specific input or scenario that produces an observable wrong outcome a failing test could capture (a wrong return value, a missing error, an incorrect side effect on a known surface). Otherwise the finding is **structural**.",
-		);
-		expect(content).toContain(
-			"Apply this predicate to finding prose: `summary`, `suggestedFix`, and any task acceptance criteria.",
-		);
-		expect(content).toContain(
-			"Do not rely on structured `code_path`, `scenario`, or similar behavior fields; finding producers do not emit them yet.",
-		);
-	});
-
-	it("routes behavior-shaped TDD findings through tdd-coordinator", async () => {
-		const content = await readPrompt();
-
-		expect(content).toContain(
-			"If `activePlanHasBehaviors` is true and the finding is behavior-shaped, create the same four phase tasks used by `task-manager` (`-red`, `-red-verify`, `-green`, `-refactor`).",
-		);
-		expect(content).toContain(
-			"Each task must include `review-fix` and `review-round:<n>` labels, pass `plan: activePlanSlug` so the task also carries the `plan:<slug>` label, carry the appropriate `phase:*` label, and use captured `task_create` IDs for the dependency chain.",
-		);
-		expect(content).toContain(
-			'`chain_run(expression: "tdd-coordinator", prompt: "Process only tasks labeled review-round:<n>. Do not modify tasks without this label.", completionLabel: "review-round:<n>")`',
-		);
-		expect(content).toContain(
-			"This route applies regardless of the finding's `complexity`; do not route simple behavior-shaped TDD findings to `fixer`.",
-		);
-
-		const tddRouteIndex = content.indexOf(
-			"**Behavior-shaped reviewer or integration findings in TDD mode**",
-		);
-		const simpleRouteIndex = content.indexOf(
-			"**Simple structural reviewer or integration findings, and simple findings outside TDD mode**",
-		);
-
-		expect(tddRouteIndex).toBeGreaterThanOrEqual(0);
-		expect(simpleRouteIndex).toBeGreaterThan(tddRouteIndex);
-	});
-
-	it("routes structural no-test-target findings through coordinator", async () => {
-		const content = await readPrompt();
-
-		expect(content).toContain(
-			"create one `phase:green` task for the finding with a clear title and description, 1-7 outcome-focused acceptance criteria, labels `review-fix`, `review-round:<n>`, and `phase:green`,",
-		);
-		expect(content).toContain(
-			"pass `plan: activePlanSlug` so the task also carries the `plan:<slug>` label.",
-		);
-		expect(content).toContain(
-			"Use this path for structural findings, findings with no meaningful test target, and any planned run where the active plan does not expose a `## Behaviors` section.",
-		);
-		expect(content).toContain(
-			'`chain_run(expression: "coordinator", prompt: "Process only structural green-only review tasks labeled review-round:<n>. Do not modify tasks without this label.", completionLabel: "review-round:<n>")`',
+			'`chain_run(expression: "coordinator", prompt: "Process only tasks labeled review-round:<n>. Do not modify tasks without this label.", completionLabel: "review-round:<n>")`',
 		);
 	});
 
@@ -102,9 +55,6 @@ describe("quality-manager prompt", () => {
 		);
 		expect(content).toContain(
 			"Complex reviewer or integration findings on planless runs",
-		);
-		expect(content).toContain(
-			"Planless runs and verifier-native failures keep the existing `fixer` fallback.",
 		);
 		expect(content).toContain("**Verifier-native failures**:");
 		expect(content).toContain("route to `fixer` for immediate remediation.");
@@ -127,7 +77,8 @@ describe("quality-manager prompt", () => {
 			"If `overall: skipped`, treat it as non-blocking",
 		);
 		expect(content).toContain(
-			"any completed remediation tasks from `coordinator` or `tdd-coordinator`",
+			"any completed remediation tasks from `coordinator`",
 		);
+		expect(content).not.toContain("tdd-coordinator");
 	});
 });

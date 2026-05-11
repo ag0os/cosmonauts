@@ -3,7 +3,7 @@ import type { AgentDefinition } from "../../../lib/agents/types.ts";
 const definition: AgentDefinition = {
 	id: "cosmo",
 	description:
-		"Executive assistant and cross-domain orchestrator. Delegates directly to specialists and dispatches plan-linked task runs through Drive when available.",
+		"Personal assistant — helps with the user's files, email, calendar, notes, and general work; aware of other Cosmonauts domains and can pull in specialists when the work warrants it.",
 	capabilities: ["tasks", "spawning", "todo", "drive"],
 	model: "anthropic/claude-opus-4-7",
 	tools: "none",
@@ -17,13 +17,10 @@ const definition: AgentDefinition = {
 	],
 	skills: ["*"],
 	subagents: [
-		"coding/adaptation-planner",
-		"coding/behavior-reviewer",
 		"coding/coordinator",
 		"coding/distiller",
 		"coding/explorer",
 		"coding/fixer",
-		"coding/implementer",
 		"coding/integration-verifier",
 		"coding/performance-reviewer",
 		"coding/plan-reviewer",
@@ -34,9 +31,6 @@ const definition: AgentDefinition = {
 		"coding/security-reviewer",
 		"coding/spec-writer",
 		"coding/task-manager",
-		"coding/tdd-coordinator",
-		"coding/tdd-planner",
-		"coding/test-writer",
 		"coding/ux-reviewer",
 		"coding/verifier",
 		"coding/worker",

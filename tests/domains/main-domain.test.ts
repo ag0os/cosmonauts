@@ -79,13 +79,7 @@ describe("main domain built-in discovery", () => {
 
 		expect(registry.resolve("main/cosmo")).toBe(cosmo);
 		expect(cosmo.tools).toBe("none");
-		expect(cosmo.capabilities).toEqual([
-			"core",
-			"tasks",
-			"spawning",
-			"todo",
-			"drive",
-		]);
+		expect(cosmo.capabilities).toEqual(["tasks", "spawning", "todo", "drive"]);
 		expect(cosmo.capabilities).not.toContain("engineering-discipline");
 		expect(subagents.length).toBeGreaterThan(0);
 		expect(subagents.every((subagent) => subagent.startsWith("coding/"))).toBe(
@@ -141,17 +135,16 @@ describe("main domain built-in discovery", () => {
 		}
 	});
 
-	it("documents direct delegation and Drive fallback behavior", async () => {
+	it("frames cosmo as a personal assistant who pulls in specialists when needed", async () => {
 		const prompt = await readFile(
 			join(MAIN_DOMAIN_DIR, "prompts", "cosmo.md"),
 			"utf-8",
 		);
 
-		expect(prompt).toContain("`coding/planner`");
-		expect(prompt).toContain("`coding/worker`");
-		expect(prompt).toContain("Do **not** delegate through `coding/cody`");
-		expect(prompt).toContain("Drive primitives are absent");
-		expect(prompt).toContain("degrade gracefully");
+		expect(prompt).toContain("You're Cosmo.");
+		expect(prompt).toContain("You're a personal assistant.");
+		expect(prompt).toContain("You're not a coding agent");
+		expect(prompt).toContain("**Pull in specialists when needed.**");
 	});
 });
 

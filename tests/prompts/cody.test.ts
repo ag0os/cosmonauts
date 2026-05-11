@@ -10,58 +10,36 @@ describe("cody prompt", () => {
 	it("self-identifies as Cody", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
-		expect(content).not.toContain("You are Cosmo");
-		expect(content).toContain("You are Cody");
+		expect(content).not.toContain("You're Cosmo");
+		expect(content).toContain("You're Cody");
 	});
 
-	it("defines the three planning routes and their signals", async () => {
+	it("defines the three working modes", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
-		expect(content).toContain("`spec-writer`");
-		expect(content).toContain("`cody-facilitates-dialogue`");
-		expect(content).toContain("`planner-autonomous`");
-		expect(content).toContain(
-			"Idea is fuzzy, no spec exists, or the work still needs product framing (WHAT/WHY, users, experience)",
-		);
-		expect(content).toContain(
-			"User wants interactive design dialogue with you, or the request is concrete enough for architecture back-and-forth (HOW, modules, contracts)",
-		);
-		expect(content).toContain(
-			'User says "just decide", "go ahead", or "commit"; the run is non-interactive; or your dialogue has already settled direction',
-		);
+		expect(content).toContain("## How you work — three modes");
+		expect(content).toContain("**Pair mode.**");
+		expect(content).toContain("**Brainstorm mode.**");
+		expect(content).toContain("**Conductor mode.**");
+		expect(content).toContain("You don't announce the mode.");
 	});
 
-	it("states that autonomous-planner signals override the other routes", async () => {
+	it("treats specialists as teammates pulled in for scale and clean context", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
+		expect(content).toContain("## Specialists are your teammates");
+		expect(content).toContain("`planner`");
+		expect(content).toContain("`worker`");
 		expect(content).toContain(
-			"Precedence: non-interactive runs and explicit dialogue waivers (`just decide`, `go ahead`, `commit`) override the other rows and select `planner-autonomous`.",
+			"Delegation is about *scale and clean context*, not role purity.",
 		);
 	});
 
-	it("keeps the route announcement template", async () => {
+	it("describes test-first as the planner's baseline with no separate TDD pipeline", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
 		expect(content).toContain(
-			"Route: <spec-writer|cody-facilitates-dialogue|planner-autonomous>",
-		);
-		expect(content).toContain("Why: <signal(s) that triggered this route>");
-		expect(content).toContain(
-			"Next: <spawn spec-writer | facilitate design dialogue here, then spawn planner | spawn planner autonomously now>",
-		);
-	});
-
-	it("preserves planner bypass and direct planner dialogue wording", async () => {
-		const content = await readFile(PROMPT_PATH, "utf-8");
-
-		expect(content).toContain(
-			"If you already know the technical shape, I can bypass spec-writer and go straight to planner.",
-		);
-		expect(content).toContain(
-			'If you want planner-led dialogue instead, use cosmonauts -a planner "...".',
-		);
-		expect(content).toContain(
-			"Do not treat that suggestion as a fourth route.",
+			"Test-first is the planner's baseline now — there's no separate TDD pipeline.",
 		);
 	});
 });

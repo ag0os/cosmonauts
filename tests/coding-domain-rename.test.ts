@@ -74,12 +74,11 @@ describe("coding-domain-rename coding cody rename complete", () => {
 		);
 	});
 
-	it("renames the prompt identity and route labels", async () => {
+	it("renames the prompt identity", async () => {
 		const content = await readFile(CODY_PROMPT_PATH, "utf-8");
 
-		expect(content).toContain("You are Cody");
+		expect(content).toContain("You're Cody");
+		expect(content).not.toContain("You're Cosmo");
 		expect(content).not.toContain("You are Cosmo");
-		expect(content).toContain("`cody-facilitates-dialogue`");
-		expect(content).not.toContain("cosmo-facilitates-dialogue");
 	});
 });

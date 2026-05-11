@@ -3,9 +3,8 @@ import type { AgentDefinition } from "../../../../lib/agents/types.ts";
 const definition: AgentDefinition = {
 	id: "planner",
 	description:
-		"Designs solutions by exploring the codebase and proposing approaches. Never writes code or creates tasks.",
+		"Designs the technical architecture and testable behaviors for a feature — module structure, contracts, integration seams, behavior specs, implementation order. Test-first by default; adaptation mode studies a reference codebase. Never writes code or creates tasks.",
 	capabilities: [
-		"core",
 		"engineering-discipline",
 		"architectural-design",
 		"coding-readonly",
@@ -14,7 +13,14 @@ const definition: AgentDefinition = {
 	model: "openai-codex/gpt-5.5",
 	tools: "readonly",
 	extensions: ["plans", "orchestration"],
-	skills: ["pi", "plan", "engineering-principles", "design-dialogue"],
+	skills: [
+		"pi",
+		"plan",
+		"engineering-principles",
+		"design-dialogue",
+		"tdd",
+		"reference-adaptation",
+	],
 	subagents: [
 		"task-manager",
 		"plan-reviewer",
@@ -22,7 +28,6 @@ const definition: AgentDefinition = {
 		"verifier",
 		"worker",
 		"spec-writer",
-		"tdd-planner",
 	],
 	projectContext: true,
 	session: "ephemeral",

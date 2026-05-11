@@ -76,7 +76,7 @@ Ask: "Can an agent pick this up with no context beyond the task description and 
 
 ## Writing Acceptance Criteria
 
-ACs describe **outcomes, not implementation steps**. They tell the implementer what must be true when the task is done — the implementer decides how to get there.
+ACs describe **outcomes, not implementation steps**. They tell the worker what must be true when the task is done — the worker decides how to get there.
 
 **Good ACs (outcomes):**
 

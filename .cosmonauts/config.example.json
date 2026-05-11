@@ -12,21 +12,13 @@
 			"description": "Run lint/format checks, clean-context review, and remediation on existing changes, falling back to fixer-only remediation when no active plan exists",
 			"chain": "quality-manager"
 		},
-		"tdd": {
-			"description": "Full TDD pipeline with adversarial plan review: architecture, review, revise, behaviors, tasks, Red-Green-Refactor, and verification",
-			"chain": "planner -> plan-reviewer -> planner -> tdd-planner -> task-manager -> tdd-coordinator -> integration-verifier -> quality-manager"
-		},
 		"spec-and-build": {
 			"description": "Full pipeline with interactive spec capture and adversarial plan review",
 			"chain": "spec-writer -> planner -> plan-reviewer -> planner -> task-manager -> coordinator -> integration-verifier -> quality-manager"
 		},
-		"spec-and-tdd": {
-			"description": "Full TDD pipeline with interactive spec capture and adversarial plan review",
-			"chain": "spec-writer -> planner -> plan-reviewer -> planner -> tdd-planner -> task-manager -> tdd-coordinator -> integration-verifier -> quality-manager"
-		},
 		"adapt": {
-			"description": "Adapt a feature from a reference codebase: study reference, design adaptation plan, implement, and review",
-			"chain": "adaptation-planner -> task-manager -> coordinator -> integration-verifier -> quality-manager"
+			"description": "Adapt a feature from a reference codebase: the planner studies the reference codebase path and designs an adaptation plan, then implement and review",
+			"chain": "planner -> task-manager -> coordinator -> integration-verifier -> quality-manager"
 		}
 	}
 }
