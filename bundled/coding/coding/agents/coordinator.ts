@@ -4,7 +4,7 @@ const definition: AgentDefinition = {
 	id: "coordinator",
 	description:
 		"Delegates tasks to workers, monitors progress, and verifies completion. Loops until all tasks are done.",
-	capabilities: ["core", "tasks", "spawning"],
+	capabilities: ["tasks", "spawning"],
 	model: "anthropic/claude-sonnet-4-6",
 	tools: "none",
 	extensions: ["tasks", "orchestration", "observability"],
