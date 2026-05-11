@@ -2,7 +2,10 @@
  * Tests for shared skill filter helper.
  */
 
-import type { ResourceDiagnostic, Skill } from "@mariozechner/pi-coding-agent";
+import type {
+	ResourceDiagnostic,
+	Skill,
+} from "@earendil-works/pi-coding-agent";
 import { describe, expect, test } from "vitest";
 import {
 	buildSkillsOverride,

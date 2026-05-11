@@ -1,6 +1,6 @@
 # Cosmonauts
 
-An automated coding orchestration system built on [Pi](https://github.com/badlogic/pi-mono). Describe what you want, get a designed solution, and let agents implement it — from plan to pull request.
+An automated coding orchestration system built on [Pi](https://github.com/earendil-works/pi). Describe what you want, get a designed solution, and let agents implement it — from plan to pull request.
 
 ## What It Does
 
@@ -40,7 +40,7 @@ What's next: more language/domain skills, web/deepwiki tools, memory system, par
 
 ## Installation
 
-Cosmonauts requires [Bun](https://bun.sh/) and [Pi](https://github.com/badlogic/pi-mono).
+Cosmonauts requires [Bun](https://bun.sh/) and [Pi](https://github.com/earendil-works/pi).
 
 ```bash
 # Clone and install dependencies
@@ -199,7 +199,7 @@ This launches an interactive bootstrap session with the default domain lead (`ma
 
 ## Architecture
 
-Cosmonauts is built as a [Pi package](https://github.com/badlogic/pi-mono) — extensions, agent definitions, system prompts, and skills that plug into the Pi agent framework.
+Cosmonauts is built as a [Pi package](https://github.com/earendil-works/pi) — extensions, agent definitions, system prompts, and skills that plug into the Pi agent framework.
 
 ```
 cosmonauts/
@@ -259,7 +259,7 @@ Agents coordinate through task state — no message bus, no shared memory. The c
 
 - **Runtime**: Bun (Node as a fallback)
 - **Language**: TypeScript (ESM, strict mode)
-- **Agent Framework**: `@mariozechner/pi-coding-agent` — pinned exactly, lockstep with the other `pi-*` packages (see `package.json`)
+- **Agent Framework**: `@earendil-works/pi-coding-agent` — pinned exactly, lockstep with the other `pi-*` packages (see `package.json`)
 - **Schema**: TypeBox (`typebox`)
 - **Tests**: Vitest (`bun run test`)
 - **Linter**: Biome (`bun run lint`)
@@ -271,7 +271,7 @@ Agents coordinate through task state — no message bus, no shared memory. The c
 - **[docs/orchestration.md](./docs/orchestration.md)** — Chains, workflows, drive, CLI surface.
 - **[docs/prompts.md](./docs/prompts.md)** — Four-layer prompt composition.
 - **[docs/testing.md](./docs/testing.md)** — Testing standards and patterns.
-- Pi framework API reference: the **`pi` skill** (`domains/shared/skills/pi/SKILL.md`), loaded on demand.
+- Pi framework API reference: the **`pi` skill** (`domains/shared/skills/pi/SKILL.md`), loaded on demand. It tracks the pinned `@earendil-works/pi-*` packages and points agents to the current Pi repo and docs.
 
 ## License
 

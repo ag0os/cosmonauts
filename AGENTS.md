@@ -1,6 +1,6 @@
 # Cosmonauts
 
-Cosmonauts is an AI agent orchestration framework built on `@mariozechner/pi-coding-agent` (Pi). Agents and humans imagine, design, and build together across a spectrum — from fully automated chain runs to always-on, side-by-side pairing.
+Cosmonauts is an AI agent orchestration framework built on `@earendil-works/pi-coding-agent` (Pi). Agents and humans imagine, design, and build together across a spectrum — from fully automated chain runs to always-on, side-by-side pairing.
 
 **Status**: Early development. Architecture is evolving. Expect breaking changes.
 
@@ -33,7 +33,7 @@ As Pi evolves (lockstep versioning), re-audit its API before each phase for feat
 
 - Runtime: Bun for dev; the CLI also runs under Node as a fallback.
 - Language: TypeScript — ESM, strict mode.
-- Pi (`@mariozechner/pi-*`) uses **lockstep versioning**: keep all four packages (`pi-agent-core`, `pi-ai`, `pi-coding-agent`, `pi-tui`) on the same exact version and bump them together. Re-audit Pi's API on each bump (see the Pi-First principle). Heads up: Pi v0.74.0+ moves to the `@earendil-works/` scope.
+- Pi (`@earendil-works/pi-*`, repo: https://github.com/earendil-works/pi) uses **lockstep versioning**: keep all four packages (`pi-agent-core`, `pi-ai`, `pi-coding-agent`, `pi-tui`) on the same exact version and bump them together. Re-audit Pi's API on each bump (see the Pi-First principle).
 
 ## Conventions
 
@@ -83,4 +83,4 @@ Work flows: **roadmap → plan → tasks → sessions → archive → memory**. 
 - `docs/orchestration.md` — chains, workflows, drive, CLI surface, chain events/stats
 - `docs/testing.md` — testing standards and patterns
 - `memory/` — distilled knowledge from completed work
-- Pi framework API reference lives in the **`pi` skill** (`domains/shared/skills/pi/SKILL.md`) — loaded on demand, not a standalone doc
+- Pi framework API reference lives in the **`pi` skill** (`domains/shared/skills/pi/SKILL.md`) — loaded on demand, not a standalone doc. It should track the pinned `@earendil-works/pi-*` version and current Pi repo/docs.

@@ -4,8 +4,8 @@
  * based on explicit overrides, agent definitions, and fallbacks.
  */
 
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import { getModel } from "@mariozechner/pi-ai";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { getModel } from "@earendil-works/pi-ai";
 import type { AgentRegistry } from "../agents/index.ts";
 import { roleToConfigKey } from "../agents/qualified-role.ts";
 import type { ModelConfig, ThinkingConfig } from "./types.ts";

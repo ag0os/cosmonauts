@@ -1,4 +1,4 @@
-import { Text } from "@mariozechner/pi-tui";
+import { Text } from "@earendil-works/pi-tui";
 import { unqualifyRole } from "../../../../lib/agents/qualified-role.ts";
 import { formatChainSteps } from "../../../../lib/orchestration/chain-steps.ts";
 import { formatDuration } from "../../../../lib/orchestration/duration.ts";

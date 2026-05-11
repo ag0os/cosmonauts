@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { createClaudeCliBackend } from "../../../../lib/driver/backends/claude-cli.ts";
 import { createCodexBackend } from "../../../../lib/driver/backends/codex.ts";

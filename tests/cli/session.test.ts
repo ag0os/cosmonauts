@@ -33,7 +33,7 @@ vi.mock("../../lib/agents/session-assembly.ts", () => ({
 	buildSessionParams: mocks.buildSessionParams,
 }));
 
-vi.mock("@mariozechner/pi-coding-agent", () => ({
+vi.mock("@earendil-works/pi-coding-agent", () => ({
 	AuthStorage: {
 		create: () => ({ reload: vi.fn(), hasAuth: vi.fn(() => false) }),
 	},

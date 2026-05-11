@@ -5,7 +5,7 @@
 
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
-import type { ResourceLoader } from "@mariozechner/pi-coding-agent";
+import type { ResourceLoader } from "@earendil-works/pi-coding-agent";
 import type { AgentToolSet } from "../agents/index.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 

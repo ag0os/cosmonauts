@@ -18,11 +18,11 @@ const mocks = vi.hoisted(() => ({
 	getModel: vi.fn(),
 }));
 
-vi.mock("@mariozechner/pi-ai", () => ({
+vi.mock("@earendil-works/pi-ai", () => ({
 	getModel: mocks.getModel,
 }));
 
-vi.mock("@mariozechner/pi-coding-agent", () => ({
+vi.mock("@earendil-works/pi-coding-agent", () => ({
 	createAgentSession: mocks.createAgentSession,
 	DefaultResourceLoader: class {
 		async reload() {}

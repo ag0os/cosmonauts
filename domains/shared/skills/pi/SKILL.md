@@ -5,22 +5,32 @@ description: Pi framework API reference — sessions, tools, extensions, events,
 
 # Pi Framework
 
-Pi (`@mariozechner/pi-coding-agent`) is the agent runtime. This skill covers its programmatic API surface for building on top of Pi.
+Pi (`@earendil-works/pi-coding-agent`) is the agent runtime. This skill covers its programmatic API surface for building on top of Pi.
 
-> **Note:** The reference below tracks `@mariozechner/pi-coding-agent` v0.73.1 (the version this repo pins). Use it as a baseline and load the `find-docs` skill to query current Pi API docs when in doubt.
->
-> **Upcoming rename:** from v0.74.0 onward Pi publishes under `@earendil-works/` (e.g. `@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai`). The `@mariozechner/` imports below stay correct until this repo bumps past 0.73.1.
+> **Note:** The reference below tracks `@earendil-works/pi-coding-agent` v0.74.0 (the version this repo pins). Use it as a baseline and query current Pi docs with Context7 when in doubt.
+
+## Source Of Truth
+
+- **Repository:** https://github.com/earendil-works/pi
+- **Changelog:** https://github.com/earendil-works/pi/blob/main/packages/coding-agent/CHANGELOG.md
+- **Coding agent docs:** https://github.com/earendil-works/pi/tree/main/packages/coding-agent/docs
+- **SDK docs:** https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/sdk.md
+- **Extension docs:** https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md
+- **Local installed docs:** `node_modules/@earendil-works/pi-coding-agent/docs/`
+- **Local installed types:** `node_modules/@earendil-works/pi-coding-agent/dist/**/*.d.ts`
+
+From v0.74.0 onward Pi publishes under `@earendil-works/`. Do not use the old `@mariozechner/pi-*` package names in active code or examples; `@mariozechner/pi-coding-agent@0.74.0` is not published.
 
 ## Package Structure
 
 | Package | Purpose |
 |---------|---------|
-| `pi-coding-agent` | Main runtime: sessions, tools, skills, extensions, modes |
-| `pi-ai` | Multi-provider LLM API, streaming, model registry |
-| `pi-agent-core` | Core types: `Agent`, `AgentEvent`, `AgentMessage`, `AgentTool`, `ThinkingLevel` |
-| `pi-tui` | Terminal UI library |
+| `@earendil-works/pi-coding-agent` | Main runtime: sessions, tools, skills, extensions, modes |
+| `@earendil-works/pi-ai` | Multi-provider LLM API, streaming, model registry |
+| `@earendil-works/pi-agent-core` | Core types: `Agent`, `AgentEvent`, `AgentMessage`, `AgentTool`, `ThinkingLevel` |
+| `@earendil-works/pi-tui` | Terminal UI library |
 
-All packages use lockstep versioning (currently under `@mariozechner/`; see the rename note above).
+All packages use lockstep versioning under the `@earendil-works/` scope.
 
 ## Session Creation
 
@@ -29,12 +39,10 @@ All packages use lockstep versioning (currently under `@mariozechner/`; see the 
 ```typescript
 import {
   createAgentSession,
-  createCodingTools,
-  createReadOnlyTools,
   DefaultResourceLoader,
   SessionManager,
-} from "@mariozechner/pi-coding-agent";
-import { getModel } from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-coding-agent";
+import { getModel } from "@earendil-works/pi-ai";
 
 // Minimal — uses all defaults
 const { session } = await createAgentSession();
@@ -44,7 +52,7 @@ const { session } = await createAgentSession({
   cwd: "/path/to/project",
   model: getModel("anthropic", "claude-sonnet-4-5"),
   thinkingLevel: "high",
-  tools: createCodingTools("/path/to/project"),
+  tools: ["read", "bash", "edit", "write"],
   sessionManager: SessionManager.inMemory(),
   resourceLoader: loader,
 });
@@ -219,7 +227,7 @@ import {
   createGrepTool,        // (cwd) => Tool
   createFindTool,        // (cwd) => Tool
   createLsTool,          // (cwd) => Tool
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 ```
 
 Factory functions accept a custom `cwd` for path resolution. Extensions can **override built-in tools** by registering a tool with the same name.
@@ -231,7 +239,7 @@ Extensions are TypeScript modules that hook into Pi's lifecycle. Auto-discovered
 ### Extension Factory
 
 ```typescript
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 export default function myExtension(pi: ExtensionAPI) {
   // Register tools, commands, event handlers, etc.
@@ -400,7 +408,7 @@ Programmatic control goes through the resource loader (not `createAgentSession` 
 const loader = new DefaultResourceLoader({
   cwd,
   systemPrompt: "Replace entire base prompt",
-  appendSystemPrompt: "Appended after everything",
+  appendSystemPrompt: ["Appended after everything"],
 });
 const { session } = await createAgentSession({ resourceLoader: loader });
 ```
@@ -415,7 +423,7 @@ Controls what resources (skills, extensions, prompts, themes, context files) a s
 const loader = new DefaultResourceLoader({
   cwd: "/project",
   agentDir: "~/.pi/agent",
-  settingsManager: SettingsManager.create(),
+  settingsManager: SettingsManager.create("/project", "~/.pi/agent"),
 
   // Add paths on top of discovered ones
   additionalSkillPaths: ["/path/to/skills"],
@@ -431,7 +439,7 @@ const loader = new DefaultResourceLoader({
   agentsFilesOverride: () => ({ agentsFiles: [] }),
 
   // Direct prompt injection
-  appendSystemPrompt: "Agent identity and persona content",
+  appendSystemPrompt: ["Agent identity and persona content"],
   systemPrompt: "Replace the entire default system prompt",
 
   // Disable resource types
@@ -472,7 +480,7 @@ Discovery rules: direct `.md` children in the root directory, recursive `SKILL.m
 ### Loading and Formatting
 
 ```typescript
-import { loadSkills, loadSkillsFromDir, formatSkillsForPrompt } from "@mariozechner/pi-coding-agent";
+import { loadSkills, loadSkillsFromDir, formatSkillsForPrompt } from "@earendil-works/pi-coding-agent";
 
 // Load from all configured locations
 const { skills, diagnostics } = loadSkills({ cwd: "/project" });
@@ -520,7 +528,7 @@ session.abortCompaction();  // Cancel in-progress compaction
 ### Configuration
 
 ```typescript
-const settings = SettingsManager.create();
+const settings = SettingsManager.create(cwd, agentDir);
 settings.setCompactionEnabled(true);
 settings.getCompactionSettings();
 // { enabled: boolean, reserveTokens: number, keepRecentTokens: number }
@@ -608,7 +616,7 @@ All three modes take an `AgentSessionRuntime` (from `createAgentSessionRuntime`,
 Full TUI/REPL. Requires a TTY.
 
 ```typescript
-import { InteractiveMode } from "@mariozechner/pi-coding-agent";
+import { InteractiveMode } from "@earendil-works/pi-coding-agent";
 
 const runtime = await createAgentSessionRuntime(createRuntime, { cwd, agentDir, sessionManager });
 const mode = new InteractiveMode(runtime, { initialMessage: "optional first prompt" });
@@ -620,7 +628,7 @@ await mode.run();  // Blocks until user exits
 Non-interactive single-shot. Send prompt, output result, exit. Returns the process exit code.
 
 ```typescript
-import { runPrintMode } from "@mariozechner/pi-coding-agent";
+import { runPrintMode } from "@earendil-works/pi-coding-agent";
 
 const exitCode = await runPrintMode(runtime, {
   mode: "text",            // "text" = final response to stdout; "json" = event stream
@@ -633,7 +641,7 @@ const exitCode = await runPrintMode(runtime, {
 Headless JSON protocol over stdin/stdout.
 
 ```typescript
-import { runRpcMode } from "@mariozechner/pi-coding-agent";
+import { runRpcMode } from "@earendil-works/pi-coding-agent";
 
 await runRpcMode(runtime);  // Returns Promise<never>
 ```
@@ -650,7 +658,7 @@ import {
   createAgentSessionServices,
   getAgentDir,
   SessionManager,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 
 const createRuntime: CreateAgentSessionRuntimeFactory = async ({
   cwd,
@@ -700,7 +708,7 @@ const messages = runtime.session.getUserMessagesForForking();
 ## Auth Storage
 
 ```typescript
-import { AuthStorage } from "@mariozechner/pi-coding-agent";
+import { AuthStorage } from "@earendil-works/pi-coding-agent";
 
 const auth = AuthStorage.create("/path/to/auth.json");  // File-backed
 const auth = AuthStorage.inMemory();                     // Ephemeral
@@ -709,7 +717,7 @@ const auth = AuthStorage.inMemory();                     // Ephemeral
 ## Model Registry
 
 ```typescript
-import { ModelRegistry } from "@mariozechner/pi-coding-agent";
+import { ModelRegistry } from "@earendil-works/pi-coding-agent";
 
 const registry = ModelRegistry.create(authStorage, "/path/to/models.json");
 ```
@@ -717,7 +725,7 @@ const registry = ModelRegistry.create(authStorage, "/path/to/models.json");
 Models are identified by `"provider/model-id"` strings. Use `getModel()` from `pi-ai` to resolve:
 
 ```typescript
-import { getModel } from "@mariozechner/pi-ai";
+import { getModel } from "@earendil-works/pi-ai";
 const model = getModel("anthropic", "claude-sonnet-4-5");
 ```
 
@@ -726,7 +734,7 @@ const model = getModel("anthropic", "claude-sonnet-4-5");
 For one-off classification/routing without spinning up a full `AgentSession`, call the `pi-ai` stream helpers directly. They take a `Context` object (`{ systemPrompt?, messages, tools? }`) plus options:
 
 ```typescript
-import { completeSimple, streamSimple } from "@mariozechner/pi-ai";
+import { completeSimple, streamSimple } from "@earendil-works/pi-ai";
 
 const context = { systemPrompt: "Classify the request.", messages: [{ role: "user", content: "..." }] };
 

@@ -9,7 +9,7 @@
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 
 /**
  * Absolute path to the cosmonauts-shipped themes directory (advertised via
@@ -43,7 +43,7 @@ import {
 	createAgentSessionServices,
 	getAgentDir,
 	SessionManager,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import type { AgentRegistry } from "../lib/agents/resolver.ts";
 import {
 	buildSessionParams,

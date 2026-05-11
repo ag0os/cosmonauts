@@ -5,7 +5,10 @@
  * based on the intersection of agent-level and project-level skill lists.
  */
 
-import type { ResourceDiagnostic, Skill } from "@mariozechner/pi-coding-agent";
+import type {
+	ResourceDiagnostic,
+	Skill,
+} from "@earendil-works/pi-coding-agent";
 
 /** The callback type accepted by Pi's DefaultResourceLoader.skillsOverride. */
 export type SkillsOverrideFn = (base: {

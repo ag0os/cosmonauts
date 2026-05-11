@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createDefaultProjectConfig } from "../../../../lib/config/defaults.ts";
 import { buildInitBootstrapPrompt } from "../../../../lib/init/prompt.ts";
 

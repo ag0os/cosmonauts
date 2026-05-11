@@ -17,7 +17,7 @@ import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
 	SessionManager,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
 import {
 	clearPendingSwitch,

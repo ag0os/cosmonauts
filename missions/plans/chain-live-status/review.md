@@ -7,7 +7,7 @@
   severity: high
   title: "The plan is built on event fields and renderer hooks that do not exist"
   plan_refs: plan.md:24-45, plan.md:66-68, plan.md:75
-  code_refs: lib/orchestration/message-bus.ts:42-55, domains/shared/extensions/orchestration/spawn-tool.ts:120-161, domains/shared/extensions/orchestration/spawn-tool.ts:339-384, node_modules/@mariozechner/pi-coding-agent/docs/extensions.md:1764-1793
+  code_refs: lib/orchestration/message-bus.ts:42-55, domains/shared/extensions/orchestration/spawn-tool.ts:120-161, domains/shared/extensions/orchestration/spawn-tool.ts:339-384, node_modules/@earendil-works/pi-coding-agent/docs/extensions.md:1764-1793
   description: |
     The plan specifies a translator over `tool_call_start { name, args }`, `assistant_text`, and a subscription filtered by the spawned session ID, then says to add a custom tool `render` function. None of those boundaries match the current code. `SpawnActivityEvent` carries `activity.kind` plus `toolName` and a preformatted `summary`; it has no raw `args`, no `assistant_text` variant, and no child `sessionId` field. The `spawn_agent` tool schema also uses `role`, not `agent`.
 

@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { archivePlan } from "../../../../lib/plans/archive.ts";
 import { PlanManager } from "../../../../lib/plans/plan-manager.ts";

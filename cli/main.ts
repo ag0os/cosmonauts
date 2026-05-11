@@ -24,8 +24,8 @@
 import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
-import { InteractiveMode, runPrintMode } from "@mariozechner/pi-coding-agent";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import { InteractiveMode, runPrintMode } from "@earendil-works/pi-coding-agent";
 import { Command, CommanderError } from "commander";
 import { resolveDefaultLead } from "../lib/agents/resolve-default-lead.ts";
 import {

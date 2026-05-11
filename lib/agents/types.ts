@@ -7,7 +7,7 @@
  * the same way.
  */
 
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 
 /** Tool set available to an agent. */
 export type AgentToolSet = "coding" | "readonly" | "verification" | "none";

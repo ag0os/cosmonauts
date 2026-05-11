@@ -2,7 +2,7 @@
  * Type definitions for the chain runner orchestration system.
  */
 
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { AgentRegistry } from "../agents/resolver.ts";
 
 // ============================================================================

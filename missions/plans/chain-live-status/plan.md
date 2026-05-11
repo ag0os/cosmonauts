@@ -140,8 +140,8 @@ Rules:
 - `rendering.ts:76-101` already turns `ChainEvent` into textual log lines via `chainEventToProgressLine()` and `summarizeToolCall()`. The revised design keeps this as the expanded-history path and layers the compact live snapshot on top.
 - `session-factory.ts:97` confirms non-plan child sessions use `SessionManager.inMemory()`. The history/view path therefore must not assume a transcript file exists.
 - `todo/index.ts:14` and `todo/index.ts:104` establish the existing Pi pattern for extension-local persistence with `pi.appendEntry(...)` plus restore via `ctx.sessionManager.getEntries()`.
-- `node_modules/@mariozechner/pi-coding-agent/docs/extensions.md:1768-1790` confirms the available tool rendering API is `renderCall` / `renderResult` with `renderShell: "self"`, not a separate tool-level `render` hook.
-- `node_modules/@mariozechner/pi-coding-agent/docs/extensions.md:746-748` and `:2203` confirm UI behavior must be gated with `ctx.hasUI` instead of stdout/CLI heuristics.
+- `node_modules/@earendil-works/pi-coding-agent/docs/extensions.md:1768-1790` confirms the available tool rendering API is `renderCall` / `renderResult` with `renderShell: "self"`, not a separate tool-level `render` hook.
+- `node_modules/@earendil-works/pi-coding-agent/docs/extensions.md:746-748` and `:2203` confirm UI behavior must be gated with `ctx.hasUI` instead of stdout/CLI heuristics.
 
 ### Seams for change
 

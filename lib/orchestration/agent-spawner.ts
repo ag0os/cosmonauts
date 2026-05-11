@@ -12,7 +12,7 @@ import { basename, dirname } from "node:path";
 import type {
 	AgentSession,
 	AgentSessionEvent,
-} from "@mariozechner/pi-coding-agent";
+} from "@earendil-works/pi-coding-agent";
 import type { AgentRegistry } from "../agents/index.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import { appendSession } from "../sessions/manifest.ts";

@@ -2,7 +2,7 @@
  * CLI option types for the cosmonauts entry point.
  */
 
-import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { PiFlags } from "./pi-flags.ts";
 
 /** Parsed CLI options from Commander + Pi passthrough. */

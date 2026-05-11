@@ -16,13 +16,13 @@ const mocks = vi.hoisted(() => ({
 	appendSession: vi.fn(),
 }));
 
-vi.mock("@mariozechner/pi-ai", () => ({
+vi.mock("@earendil-works/pi-ai", () => ({
 	getModel: mocks.getModel,
 }));
 
 // Pi SDK mock — only SessionManager.inMemory is used when planSlug is absent;
 // the session-factory is mocked so these are here for DefaultResourceLoader etc.
-vi.mock("@mariozechner/pi-coding-agent", () => ({
+vi.mock("@earendil-works/pi-coding-agent", () => ({
 	createAgentSession: vi.fn(),
 	createCodingTools: () => [],
 	createReadOnlyTools: () => [],
