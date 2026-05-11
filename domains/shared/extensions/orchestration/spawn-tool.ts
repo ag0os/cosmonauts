@@ -276,7 +276,7 @@ function mapChildActivityEvent(
 			activity: { kind: "turn_end" },
 		};
 	}
-	if (event.type === "auto_compaction_start") {
+	if (event.type === "compaction_start") {
 		return {
 			...base,
 			type: "spawn_activity",

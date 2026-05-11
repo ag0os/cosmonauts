@@ -444,7 +444,7 @@ describe("createPiSpawner", () => {
 			]);
 		});
 
-		test("forwards auto_compaction_start/end events through onEvent", async () => {
+		test("forwards compaction_start/end events through onEvent", async () => {
 			let subscribeListener: ((event: unknown) => void) | undefined;
 			const mockSession = createMockSession({
 				subscribe: vi.fn((listener: (event: unknown) => void) => {
@@ -453,11 +453,12 @@ describe("createPiSpawner", () => {
 				}),
 				prompt: vi.fn(async () => {
 					subscribeListener?.({
-						type: "auto_compaction_start",
-						reason: "threshold",
+						type: "compaction_start",
+						reason: "manual",
 					});
 					subscribeListener?.({
-						type: "auto_compaction_end",
+						type: "compaction_end",
+						reason: "manual",
 						result: undefined,
 						aborted: false,
 						willRetry: false,
@@ -479,11 +480,17 @@ describe("createPiSpawner", () => {
 
 			expect(receivedEvents).toEqual([
 				{
-					type: "auto_compaction_start",
-					reason: "threshold",
+					type: "compaction_start",
+					reason: "manual",
 					sessionId: "session-1",
 				},
-				{ type: "auto_compaction_end", aborted: false, sessionId: "session-1" },
+				{
+					type: "compaction_end",
+					reason: "manual",
+					aborted: false,
+					willRetry: false,
+					sessionId: "session-1",
+				},
 			]);
 		});
 

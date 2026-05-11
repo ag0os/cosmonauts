@@ -447,7 +447,7 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 				});
 				childEventHandler?.({ type: "turn_start" });
 				childEventHandler?.({ type: "turn_end" });
-				childEventHandler?.({ type: "auto_compaction_start" });
+				childEventHandler?.({ type: "compaction_start" });
 			}),
 			subscribe: vi.fn((handler) => {
 				childEventHandler = handler;

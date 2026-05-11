@@ -9,7 +9,10 @@
  */
 
 import { basename, dirname } from "node:path";
-import type { AgentSession } from "@mariozechner/pi-coding-agent";
+import type {
+	AgentSession,
+	AgentSessionEvent,
+} from "@mariozechner/pi-coding-agent";
 import type { AgentRegistry } from "../agents/index.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import { appendSession } from "../sessions/manifest.ts";
@@ -41,6 +44,7 @@ import {
 } from "./spawn-tracker.ts";
 import type {
 	AgentSpawner,
+	CompactionReason,
 	SpawnConfig,
 	SpawnEvent,
 	SpawnResult,
@@ -371,8 +375,14 @@ type SpawnEventPayload =
 			toolCallId: string;
 			isError: boolean;
 	  }
-	| { type: "auto_compaction_start"; reason: "threshold" | "overflow" }
-	| { type: "auto_compaction_end"; aborted: boolean };
+	| { type: "compaction_start"; reason: CompactionReason }
+	| {
+			type: "compaction_end";
+			reason: CompactionReason;
+			aborted: boolean;
+			willRetry: boolean;
+			errorMessage?: string;
+	  };
 
 function attachSessionId(
 	event: SpawnEventPayload,
@@ -385,10 +395,9 @@ function attachSessionId(
  * Map a Pi AgentSessionEvent to a SpawnEvent payload, or return undefined for
  * events we don't forward.
  */
-function mapSessionEvent(event: {
-	type: string;
-	[key: string]: unknown;
-}): SpawnEventPayload | undefined {
+function mapSessionEvent(
+	event: AgentSessionEvent,
+): SpawnEventPayload | undefined {
 	switch (event.type) {
 		case "turn_start":
 			return { type: "turn_start" };
@@ -408,15 +417,20 @@ function mapSessionEvent(event: {
 				toolCallId: event.toolCallId as string,
 				isError: event.isError as boolean,
 			};
-		case "auto_compaction_start":
+		case "compaction_start":
 			return {
-				type: "auto_compaction_start",
-				reason: event.reason as "threshold" | "overflow",
+				type: "compaction_start",
+				reason: event.reason,
 			};
-		case "auto_compaction_end":
+		case "compaction_end":
 			return {
-				type: "auto_compaction_end",
-				aborted: event.aborted as boolean,
+				type: "compaction_end",
+				reason: event.reason,
+				aborted: event.aborted,
+				willRetry: event.willRetry,
+				...(event.errorMessage !== undefined && {
+					errorMessage: event.errorMessage,
+				}),
 			};
 		default:
 			return undefined;

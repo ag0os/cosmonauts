@@ -109,9 +109,9 @@ function mapSpawnActivity(event: SpawnEvent): SpawnActivity | undefined {
 			return { kind: "turn_start" };
 		case "turn_end":
 			return { kind: "turn_end" };
-		case "auto_compaction_start":
+		case "compaction_start":
 			return { kind: "compaction" };
-		case "auto_compaction_end":
+		case "compaction_end":
 			return undefined;
 	}
 }

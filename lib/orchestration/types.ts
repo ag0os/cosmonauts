@@ -239,6 +239,8 @@ interface SpawnEventBase {
 	sessionId: string;
 }
 
+export type CompactionReason = "manual" | "threshold" | "overflow";
+
 export type SpawnEvent =
 	| (SpawnEventBase & { type: "turn_start" })
 	| (SpawnEventBase & { type: "turn_end" })
@@ -255,10 +257,16 @@ export type SpawnEvent =
 			isError: boolean;
 	  })
 	| (SpawnEventBase & {
-			type: "auto_compaction_start";
-			reason: "threshold" | "overflow";
+			type: "compaction_start";
+			reason: CompactionReason;
 	  })
-	| (SpawnEventBase & { type: "auto_compaction_end"; aborted: boolean });
+	| (SpawnEventBase & {
+			type: "compaction_end";
+			reason: CompactionReason;
+			aborted: boolean;
+			willRetry: boolean;
+			errorMessage?: string;
+	  });
 
 export type ChainEvent =
 	| { type: "chain_start"; steps: ChainStep[] }

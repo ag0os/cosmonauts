@@ -217,8 +217,8 @@ function createSpawnEventForwarder(
 				event,
 			});
 		} else if (
-			event.type === "auto_compaction_start" ||
-			event.type === "auto_compaction_end"
+			event.type === "compaction_start" ||
+			event.type === "compaction_end"
 		) {
 			// Forward compaction events as agent_turn (lifecycle-level)
 			emit(config, {

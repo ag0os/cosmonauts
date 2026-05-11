@@ -284,13 +284,13 @@ describe("formatChainEvent", () => {
 			role: "worker",
 			sessionId: "session-abc123",
 			event: {
-				type: "auto_compaction_start",
+				type: "compaction_start",
 				sessionId: "session-abc123",
 				reason: "threshold",
 			},
 		};
 		expect(formatChainEvent(event)).toBe(
-			"[worker] Tool event: auto_compaction_start",
+			"[worker] Tool event: compaction_start",
 		);
 	});
 

@@ -915,19 +915,21 @@ describe("event emission", () => {
 		]);
 	});
 
-	test("forwards auto_compaction events as agent_turn", async () => {
+	test("forwards compaction events as agent_turn", async () => {
 		const events: ChainEvent[] = [];
 		const sessionId = "mock-session";
 		const spawner: AgentSpawner = {
 			spawn: vi.fn(async (config) => {
 				config.onEvent?.({
-					type: "auto_compaction_start",
+					type: "compaction_start",
 					reason: "threshold",
 					sessionId,
 				});
 				config.onEvent?.({
-					type: "auto_compaction_end",
+					type: "compaction_end",
+					reason: "threshold",
 					aborted: false,
+					willRetry: false,
 					sessionId,
 				});
 				return {
@@ -951,9 +953,9 @@ describe("event emission", () => {
 		>[];
 		expect(turnEvents).toHaveLength(2);
 		expect(turnEvents[0]?.sessionId).toBe(sessionId);
-		expect(turnEvents[0]?.event.type).toBe("auto_compaction_start");
+		expect(turnEvents[0]?.event.type).toBe("compaction_start");
 		expect(turnEvents[1]?.sessionId).toBe(sessionId);
-		expect(turnEvents[1]?.event.type).toBe("auto_compaction_end");
+		expect(turnEvents[1]?.event.type).toBe("compaction_end");
 	});
 
 	test("does not pass onEvent to spawner when chain has no onEvent", async () => {
