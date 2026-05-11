@@ -32,6 +32,24 @@ cosmonauts --chain "coordinator -> reviewer[3]" "review with multiple reviewers"
 
 `maxTotalIterations` (default 50) and `timeoutMs` (default 30 min) are global, not per-stage.
 
+### Events & stats
+
+`runChain()` emits `ChainEvent`s via the `onEvent` callback in `ChainConfig` (these are Cosmonauts-level events, distinct from Pi's lifecycle events). The authoritative union is `ChainEvent` in `lib/orchestration/types.ts`; the families are:
+
+- **Chain**: `chain_start` (`steps`), `chain_end` (`result`, includes `result.stats?: ChainStats`)
+- **Stage**: `stage_start`, `stage_end`, `stage_iteration` (per loop iteration), `stage_stats` (per successful spawn — carries a `SpawnStats`)
+- **Parallel groups**: `parallel_start`, `parallel_end`
+- **Agent**: `agent_spawned`, `agent_completed`, `spawn_completion`; `agent_turn` and `agent_tool_use` forward a Pi `SpawnEvent` (turn boundaries, compaction, `tool_execution_*`) annotated with `role`/`sessionId` — useful for cross-agent progress monitoring without subscribing to each session
+- **`error`**: `message`, optional `stage`
+
+Cost/usage data is ephemeral (shown in CLI output and on events; not persisted to disk):
+
+```typescript
+interface SpawnStats { tokens: TokenStats; cost: number; durationMs: number; turns: number; toolCalls: number }
+interface StageStats { stageName: string; iterations: number; stats: SpawnStats }
+interface ChainStats { stages: StageStats[]; totalCost: number; totalTokens: number; totalDurationMs: number }
+```
+
 ## Named Workflows
 
 The primary user interface for multi-agent pipelines. Built-in defaults live in `bundled/coding/coding/workflows.ts` (mirrored in `lib/config/defaults.ts`) and can be overridden or extended via `.cosmonauts/config.json`.

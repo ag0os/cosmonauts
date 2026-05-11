@@ -29,13 +29,11 @@ As Pi evolves (lockstep versioning), re-audit its API before each phase for feat
 
 ## Tech Stack
 
-- Runtime: Bun
-- Language: TypeScript (ESM, strict mode)
-- Framework: `@mariozechner/pi-coding-agent` — pinned exactly (Pi uses lockstep versioning)
-- Schema: `@sinclair/typebox`
-- Tests: Vitest (`bun run test`)
-- Linter: Biome (`bun run lint`)
-- Typecheck: `bun run typecheck`
+(See `package.json` for the actual dependency versions and scripts — only the non-obvious constraints are noted here.)
+
+- Runtime: Bun for dev; the CLI also runs under Node as a fallback.
+- Language: TypeScript — ESM, strict mode.
+- Pi (`@mariozechner/pi-*`) uses **lockstep versioning**: keep all four packages (`pi-agent-core`, `pi-ai`, `pi-coding-agent`, `pi-tui`) on the same exact version and bump them together. Re-audit Pi's API on each bump (see the Pi-First principle). Heads up: Pi v0.74.0+ moves to the `@earendil-works/` scope.
 
 ## Conventions
 
@@ -81,8 +79,8 @@ Work flows: **roadmap → plan → tasks → sessions → archive → memory**. 
 ## Documentation
 
 - `ROADMAP.md` — work backlog (prioritized items first, ideas below)
-- `docs/pi-framework.md` — Pi API reference (execution modes, tools, skills, extensions)
 - `docs/prompts.md` — four-layer prompt composition
-- `docs/orchestration.md` — chains, workflows, drive, CLI surface
+- `docs/orchestration.md` — chains, workflows, drive, CLI surface, chain events/stats
 - `docs/testing.md` — testing standards and patterns
 - `memory/` — distilled knowledge from completed work
+- Pi framework API reference lives in the **`pi` skill** (`domains/shared/skills/pi/SKILL.md`) — loaded on demand, not a standalone doc

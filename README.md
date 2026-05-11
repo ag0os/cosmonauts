@@ -257,10 +257,10 @@ Agents coordinate through task state — no message bus, no shared memory. The c
 
 ## Tech Stack
 
-- **Runtime**: Bun
+- **Runtime**: Bun (Node as a fallback)
 - **Language**: TypeScript (ESM, strict mode)
-- **Agent Framework**: `@mariozechner/pi-coding-agent` v0.56.1
-- **Schema**: `@sinclair/typebox`
+- **Agent Framework**: `@mariozechner/pi-coding-agent` — pinned exactly, lockstep with the other `pi-*` packages (see `package.json`)
+- **Schema**: TypeBox (`typebox`)
 - **Tests**: Vitest (`bun run test`)
 - **Linter**: Biome (`bun run lint`)
 
@@ -268,8 +268,10 @@ Agents coordinate through task state — no message bus, no shared memory. The c
 
 - **[ROADMAP.md](./ROADMAP.md)** — Prioritized backlog of upcoming work.
 - **[AGENTS.md](./AGENTS.md)** — Project conventions and instructions for agents working on this codebase.
-- **[docs/pi-framework.md](./docs/pi-framework.md)** — Pi framework API reference.
+- **[docs/orchestration.md](./docs/orchestration.md)** — Chains, workflows, drive, CLI surface.
+- **[docs/prompts.md](./docs/prompts.md)** — Four-layer prompt composition.
 - **[docs/testing.md](./docs/testing.md)** — Testing standards and patterns.
+- Pi framework API reference: the **`pi` skill** (`domains/shared/skills/pi/SKILL.md`), loaded on demand.
 
 ## License
 

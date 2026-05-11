@@ -197,5 +197,5 @@ These need a human decision before or during planning. Listed in priority order.
 - Claude Code CLI reference: `https://code.claude.com/docs/en/cli-reference`
 - Claude Code authentication: `https://code.claude.com/docs/en/authentication`
 - Claude Agent SDK overview: `https://code.claude.com/docs/en/agent-sdk`
-- Pi framework reference: `docs/pi-framework.md`
+- Pi framework reference: the `pi` skill (`domains/shared/skills/pi/SKILL.md`)
 - Cosmonauts agent system overview: `AGENTS.md` (Agent System and Three Pillars sections)

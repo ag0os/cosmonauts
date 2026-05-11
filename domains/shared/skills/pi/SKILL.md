@@ -7,7 +7,9 @@ description: Pi framework API reference — sessions, tools, extensions, events,
 
 Pi (`@mariozechner/pi-coding-agent`) is the agent runtime. This skill covers its programmatic API surface for building on top of Pi.
 
-> **Note:** The reference below may be outdated. Use this skill as a baseline and load the `find-docs` skill to query current Pi API docs when in doubt.
+> **Note:** The reference below tracks `@mariozechner/pi-coding-agent` v0.73.1 (the version this repo pins). Use it as a baseline and load the `find-docs` skill to query current Pi API docs when in doubt.
+>
+> **Upcoming rename:** from v0.74.0 onward Pi publishes under `@earendil-works/` (e.g. `@earendil-works/pi-coding-agent`, `@earendil-works/pi-ai`). The `@mariozechner/` imports below stay correct until this repo bumps past 0.73.1.
 
 ## Package Structure
 
@@ -18,7 +20,7 @@ Pi (`@mariozechner/pi-coding-agent`) is the agent runtime. This skill covers its
 | `pi-agent-core` | Core types: `Agent`, `AgentEvent`, `AgentMessage`, `AgentTool`, `ThinkingLevel` |
 | `pi-tui` | Terminal UI library |
 
-All packages use lockstep versioning under `@mariozechner/`.
+All packages use lockstep versioning (currently under `@mariozechner/`; see the rename note above).
 
 ## Session Creation
 
@@ -59,11 +61,15 @@ const { session } = await createAgentSession({
 | `model` | `Model` | From settings | LLM model |
 | `thinkingLevel` | `ThinkingLevel` | `"medium"` | `"off" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"` |
 | `scopedModels` | `Array<{model, thinkingLevel?}>` | — | Models for cycling |
-| `tools` | `string[]` | `["read", "bash", "edit", "write"]` | Built-in tool-name allowlist |
+| `tools` | `string[]` | `["read", "bash", "edit", "write"]` | When set, only these tool names are enabled |
+| `noTools` | `"all" \| "builtin"` | — | `"all"` = start with no tools; `"builtin"` = disable default built-ins but keep extension/custom tools |
 | `customTools` | `ToolDefinition[]` | — | Additional tools |
-| `resourceLoader` | `ResourceLoader` | `DefaultResourceLoader` | Skill/extension/prompt discovery |
-| `sessionManager` | `SessionManager` | File-based | Session persistence |
-| `settingsManager` | `SettingsManager` | File-based | Compaction, retry settings |
+| `resourceLoader` | `ResourceLoader` | `DefaultResourceLoader` | Skill/extension/prompt discovery; also where `systemPrompt` / `appendSystemPrompt` overrides live |
+| `sessionManager` | `SessionManager` | `SessionManager.create(cwd)` | Session persistence |
+| `settingsManager` | `SettingsManager` | `SettingsManager.create(cwd, agentDir)` | Compaction, retry settings |
+| `sessionStartEvent` | `SessionStartEvent` | — | Session-start metadata for extension runtime startup |
+
+`createAgentSession` does **not** accept `systemPrompt` / `appendSystemPrompt` directly — pass them via the resource loader (see [DefaultResourceLoader](#defaultresourceloader)).
 
 ## AgentSession
 
@@ -115,15 +121,21 @@ session.sessionName       // Display name, if set
 ```typescript
 const unsubscribe = session.subscribe((event) => {
   switch (event.type) {
+    // AgentEvent stream (from pi-agent-core): message_start/update/end,
+    // tool_execution_start/update/end, turn_start/end, ...
     case "message_start":
     case "message_update":
     case "message_end":
     case "tool_execution_start":
     case "tool_execution_end":
-    case "auto_compaction_start":
-    case "auto_compaction_end":
+    // AgentSession-only events:
+    case "queue_update":            // pending steering/follow-up changed
+    case "compaction_start":        // event.reason: "manual" | "threshold" | "overflow"
+    case "compaction_end":          // event.result, .aborted, .willRetry, .errorMessage?
     case "auto_retry_start":
     case "auto_retry_end":
+    case "session_info_changed":    // event.name
+    case "thinking_level_changed":  // event.level
       // ... handle events
   }
 });
@@ -167,8 +179,16 @@ const sm = SessionManager.open("/path/to/session.jsonl");
 // In-memory (ephemeral) — for short-lived agents
 const sm = SessionManager.inMemory();
 
-// Factory that auto-selects session directory
+// Factory that auto-selects the session directory under cwd (new session)
 const sm = SessionManager.create(cwd);
+
+// Resume the most recent session for cwd (else start fresh)
+const sm = SessionManager.continueRecent(cwd);
+
+// Fork from an existing session file into a new one
+const sm = SessionManager.forkFrom("/path/to/source.jsonl", targetCwd);
+
+// Discovery (static, async): SessionManager.list(cwd), SessionManager.listAll()
 ```
 
 Session files use JSONL format with a tree structure supporting branching without creating new files. Operations: `appendMessage()`, `branch()`, `appendCompaction()`.
@@ -182,9 +202,10 @@ no longer accepts them:
 
 ```typescript
 const { session } = await createAgentSession({
-  tools: ["read", "bash", "edit", "write"], // coding set
+  tools: ["read", "bash", "edit", "write"], // explicit allowlist (only these enabled)
   // tools: ["read", "grep", "find", "ls"], // read-only set
-  // tools: [],                              // disable all built-ins
+  // noTools: "all",                         // start with no tools at all
+  // noTools: "builtin",                     // drop built-ins, keep extension/custom tools
 });
 
 // Factories (for custom tool composition outside createAgentSession):
@@ -249,24 +270,31 @@ export default function myExtension(pi: ExtensionAPI) {
 ### Tool Registration
 
 ```typescript
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";   // typebox v1 — the codebase's schema package
 
 pi.registerTool({
   name: "my_tool",
   label: "My Tool",
   description: "Does something useful",
-  promptSnippet: "One-line description for system prompt",
-  promptGuidelines: ["Guideline bullet for system prompt"],
+  promptSnippet: "One-line description for system prompt",   // optional; omitted custom tools don't show in the prompt's tool list
+  promptGuidelines: ["Guideline bullet for system prompt"],  // optional
   parameters: Type.Object({
     input: Type.String({ description: "The input" }),
     verbose: Type.Optional(Type.Boolean()),
   }),
+  // Optional: "self" lets the tool render its own framing instead of the standard colored shell
+  renderShell: "default",
+  // Optional: normalize raw args before schema validation (compat shim)
+  prepareArguments: (args) => args as { input: string; verbose?: boolean },
+  // Optional per-tool override: "sequential" | "parallel"
+  executionMode: "parallel",
   execute: async (toolCallId, params, signal, onUpdate, ctx) => {
+    // signal: AbortSignal | undefined, onUpdate: streaming callback | undefined
     // ctx: ExtensionContext — has ui, cwd, sessionManager, model, etc.
     return { content: "result text", details: { extra: "data" } };
   },
-  renderCall: (args, theme) => undefined,     // Optional custom UI
-  renderResult: (result, opts, theme) => undefined,
+  renderCall: (args, theme, context) => undefined,            // Optional custom UI
+  renderResult: (result, opts, theme, context) => undefined,
 });
 ```
 
@@ -282,6 +310,7 @@ Events are subscribed via `pi.on(eventName, handler)`. Handlers receive `(event,
 | `before_agent_start` | After prompt, before agent loop | `BeforeAgentStartEventResult` | Context injection, system prompt modification |
 | `context` | Before every LLM call | `ContextEventResult` | Message pruning, injection |
 | `before_provider_request` | Before provider HTTP call | `BeforeProviderRequestEventResult` | Payload inspection/replacement |
+| `after_provider_response` | After provider HTTP response | — | Response inspection, logging |
 
 **Agent Loop Events:**
 
@@ -329,6 +358,7 @@ Events are subscribed via `pi.on(eventName, handler)`. Handlers receive `(event,
 | Event | When | Use case |
 |-------|------|----------|
 | `model_select` | Model changes | Model routing |
+| `thinking_level_select` | Thinking level changes | Thinking-level routing |
 | `user_bash` | User runs `!` or `!!` command | Audit, logging |
 
 ### before_agent_start Detail
@@ -364,14 +394,18 @@ Pi's `buildSystemPrompt()` assembles the final prompt from:
 5. **Skills** — formatted as XML in `<available_skills>`
 6. **Tools** — tool descriptions and guidelines
 
-Programmatic control:
+Programmatic control goes through the resource loader (not `createAgentSession` directly):
 
 ```typescript
-const { session } = await createAgentSession({
+const loader = new DefaultResourceLoader({
+  cwd,
   systemPrompt: "Replace entire base prompt",
   appendSystemPrompt: "Appended after everything",
 });
+const { session } = await createAgentSession({ resourceLoader: loader });
 ```
+
+For per-turn dynamic injection, an extension can return a `systemPrompt` from the `before_agent_start` event (see below).
 
 ### DefaultResourceLoader
 
@@ -496,11 +530,11 @@ settings.getCompactionSettings();
 
 ```typescript
 session.subscribe((event) => {
-  if (event.type === "auto_compaction_start") {
-    // event.reason: "threshold" | "overflow"
+  if (event.type === "compaction_start") {
+    // event.reason: "manual" | "threshold" | "overflow"
   }
-  if (event.type === "auto_compaction_end") {
-    // event.result: CompactionResult | undefined
+  if (event.type === "compaction_end") {
+    // event.reason, event.result: CompactionResult | undefined
     // event.aborted, event.willRetry, event.errorMessage
   }
 });
@@ -567,6 +601,8 @@ await settings.flush();  // Write pending changes to disk
 
 ## Execution Modes
 
+All three modes take an `AgentSessionRuntime` (from `createAgentSessionRuntime`, see below), **not** a bare `AgentSession` — the runtime is what owns session replacement (new/resume/fork/import).
+
 ### Interactive Mode
 
 Full TUI/REPL. Requires a TTY.
@@ -574,20 +610,19 @@ Full TUI/REPL. Requires a TTY.
 ```typescript
 import { InteractiveMode } from "@mariozechner/pi-coding-agent";
 
-const { session } = await createAgentSession({ /* ... */ });
-const mode = new InteractiveMode(session, { initialMessage: "optional first prompt" });
+const runtime = await createAgentSessionRuntime(createRuntime, { cwd, agentDir, sessionManager });
+const mode = new InteractiveMode(runtime, { initialMessage: "optional first prompt" });
 await mode.run();  // Blocks until user exits
 ```
 
 ### Print Mode
 
-Non-interactive single-shot. Send prompt, output result, exit.
+Non-interactive single-shot. Send prompt, output result, exit. Returns the process exit code.
 
 ```typescript
 import { runPrintMode } from "@mariozechner/pi-coding-agent";
 
-const { session } = await createAgentSession({ /* ... */ });
-await runPrintMode(session, {
+const exitCode = await runPrintMode(runtime, {
   mode: "text",            // "text" = final response to stdout; "json" = event stream
   initialMessage: "...",
 });
@@ -600,8 +635,7 @@ Headless JSON protocol over stdin/stdout.
 ```typescript
 import { runRpcMode } from "@mariozechner/pi-coding-agent";
 
-const { session } = await createAgentSession({ /* ... */ });
-await runRpcMode(session);  // Returns Promise<never>
+await runRpcMode(runtime);  // Returns Promise<never>
 ```
 
 Supports 20+ commands: `prompt`, `steer`, `follow_up`, `abort`, `set_model`, `compact`, `new_session`, etc.
@@ -686,6 +720,23 @@ Models are identified by `"provider/model-id"` strings. Use `getModel()` from `p
 import { getModel } from "@mariozechner/pi-ai";
 const model = getModel("anthropic", "claude-sonnet-4-5");
 ```
+
+## Lightweight LLM Calls (`pi-ai`)
+
+For one-off classification/routing without spinning up a full `AgentSession`, call the `pi-ai` stream helpers directly. They take a `Context` object (`{ systemPrompt?, messages, tools? }`) plus options:
+
+```typescript
+import { completeSimple, streamSimple } from "@mariozechner/pi-ai";
+
+const context = { systemPrompt: "Classify the request.", messages: [{ role: "user", content: "..." }] };
+
+const msg = await completeSimple(model, context, { reasoning: "low" });  // resolves to the final AssistantMessage
+const events = streamSimple(model, context);                              // AssistantMessageEventStream
+
+// Lower-level (full ProviderStreamOptions): complete(model, context, options?) / stream(model, context, options?)
+```
+
+Useful for task classification, skill routing, plan summarization, quick yes/no decisions.
 
 ## Package System
 
