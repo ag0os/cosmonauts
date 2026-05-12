@@ -7,6 +7,7 @@ const definition: AgentDefinition = {
 	capabilities: [
 		"engineering-discipline",
 		"coding-readwrite",
+		"git-workflow",
 		"tasks",
 		"spawning",
 		"todo",

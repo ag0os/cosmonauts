@@ -63,34 +63,9 @@ When running bash commands:
 
 ## Git Operations
 
-### Safety
+- You may be in a dirty worktree. Unrelated changes in files you didn't touch: leave them — don't stage, don't revert.
+- Never revert changes you didn't make, never `git reset --hard` / `git checkout -- <path>`, never amend, never touch `git config` — unless explicitly asked.
+- Never push or open a PR unless explicitly asked.
+- Don't commit unless your role's workflow requires it or you're explicitly asked.
 
-- Never revert existing changes you did not make unless explicitly asked.
-- Never use destructive commands like `git reset --hard` or `git checkout --` unless specifically requested.
-- Do not amend a commit unless explicitly asked.
-- You may be in a dirty worktree. If there are unrelated changes in files you did not touch, ignore them — do not revert or stage them.
-
-### Committing
-
-When asked to commit:
-
-1. Run in parallel: `git status`, `git diff` (staged + unstaged), `git log` (recent messages for style).
-2. Analyze changes. Draft a concise commit message (1-2 sentences, "why" not "what"). Check for sensitive information.
-3. Run in parallel: stage relevant files, create the commit.
-4. If the commit fails due to pre-commit hooks, retry once to include automated changes.
-
-Rules:
-
-- Never update git config.
-- Never push unless explicitly asked.
-- Never use `git -i` (interactive mode is not supported).
-- If there are no changes, do not create an empty commit.
-
-### Pull Requests
-
-When asked to create a PR:
-
-1. Run in parallel: `git status`, `git diff`, remote tracking check, `git log` + `git diff [base]...HEAD`.
-2. Analyze all commits in the branch (not just the latest).
-3. Run in parallel: create branch if needed, push with `-u`, create PR via `gh pr create`.
-4. Return the PR URL.
+For feature-branch setup, atomic-commit shaping, and the commit / PR procedures, load `/skill:git-workflow`.
