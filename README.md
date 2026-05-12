@@ -187,6 +187,87 @@ cosmonauts plan edit auth-system --status completed
 cosmonauts plan archive auth-system
 ```
 
+### Export Packaged Agents
+
+Phase 1 packaged-agent export builds standalone Claude Code CLI-backed binaries from an `AgentPackageDefinition` JSON file, or from a compatible source agent shorthand.
+
+Export from an explicit package definition:
+
+```bash
+cosmonauts export --definition packages/cosmo-planner/package.json --out bin/cosmo-planner
+```
+
+Export from a source agent shorthand:
+
+```bash
+cosmonauts export coding/explorer --target claude-cli --out bin/explorer-claude
+```
+
+`--target` defaults to `claude-cli`; Phase 1 rejects other export targets before compiling. Provide exactly one of `--definition <path>` or `<agent-id>`. The shorthand normalizes through a generated package definition that uses the source agent prompt, tools, and skills, so it is compatibility-gated and rejects agents whose raw internal prompts depend on Cosmonauts-only extensions, subagents, or extension-backed capabilities. For planner-like exports, write an explicit definition with an external-safe prompt instead.
+
+Package definitions are JSON:
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "cosmo-planner-claude",
+  "description": "Cosmonauts planning discipline packaged for Claude Code subscription use.",
+  "sourceAgent": "coding/planner",
+  "prompt": {
+    "kind": "file",
+    "path": "planner-claude-system.md"
+  },
+  "tools": {
+    "preset": "coding",
+    "notes": "Claude Code-native tools are declared in the target block."
+  },
+  "skills": {
+    "mode": "allowlist",
+    "names": ["plan", "engineering-principles", "tdd"]
+  },
+  "projectContext": "omit",
+  "targets": {
+    "claude-cli": {
+      "promptMode": "append",
+      "skillDelivery": "inline",
+      "allowedTools": ["Read", "Glob", "Grep", "Bash", "Edit", "Write", "TodoWrite", "Task"]
+    }
+  }
+}
+```
+
+Fields:
+
+- `schemaVersion` must be `1`.
+- `id` and `description` identify the package.
+- `sourceAgent` is optional provenance and metadata, and is required when `prompt.kind` or `skills.mode` is `source-agent`.
+- `prompt.kind` is `file`, `inline`, or `source-agent`; file paths resolve relative to the definition JSON.
+- `tools.preset` is `coding`, `readonly`, `verification`, or `none`.
+- `skills.mode` is `none`, `source-agent`, or `allowlist` with `names`; selected skills are embedded as inline markdown.
+- `projectContext` must be `omit` in Phase 1.
+- `targets["claude-cli"]` accepts `promptMode` (`append` or `replace`), `skillDelivery` (`inline`), and optional exact Claude `allowedTools`.
+
+The export command prints one JSON success line with `packageId`, `target`, and `outputPath` when compilation succeeds.
+
+Run an exported binary like this:
+
+```bash
+bin/cosmo-planner "design a cache layer"
+printf "design a cache layer" | bin/cosmo-planner
+bin/cosmo-planner --claude-binary /opt/bin/claude --prompt-mode replace "review this repo"
+bin/cosmo-planner --allow-api-billing "use API billing intentionally"
+```
+
+Runtime flags:
+
+- `--allow-api-billing` preserves `ANTHROPIC_API_KEY` in the spawned Claude environment.
+- `--claude-binary <path>` runs a specific Claude Code CLI binary instead of `claude`.
+- `--prompt-mode append|replace` overrides the package's Claude system-prompt mode.
+
+Trailing prompt arguments are joined and passed to Claude; if no prompt arguments are provided, the binary reads stdin. If both are empty, it prints usage and exits non-zero.
+
+By default, exported binaries remove `ANTHROPIC_API_KEY` before launching Claude and print a warning when they do so. This subscription-safety default prevents accidental Anthropic API billing and keeps Claude Code subscription authentication as the default. Pass `--allow-api-billing` only when you intentionally want API-key billing.
+
 ### Project Setup
 
 Bootstrap project instructions for a new codebase:

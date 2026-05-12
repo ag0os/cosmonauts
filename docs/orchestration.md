@@ -2,6 +2,23 @@
 
 Cosmonauts coordinates agents across a spectrum: from a single agent answering directly, to fully automated chain runs, to always-on agents pairing with humans. Drive and chains will merge into a unified surface; for now they're complementary.
 
+## Packaged agents and export
+
+Phase 1 adds a standalone packaged-agent export path. A packaged agent is an external-safe agent bundle designed for a target runtime instead of a normal Pi-backed Cosmonauts session. The initial target is `claude-cli`: `cosmonauts export` compiles a package into a Claude Code CLI-backed binary that can be moved to another project and invoked directly.
+
+The source of truth is an `AgentPackageDefinition` JSON file. A definition declares the package id, optional source-agent provenance, prompt source (`file`, `inline`, or compatible `source-agent`), tool preset, skill selection, omitted project context, and target options such as Claude prompt mode or exact allowed tools. The builder derives an `AgentPackage` from that definition: the compiled artifact contains final system-prompt text, embedded full skill markdown, source metadata, tool policy, and Claude target options. The binary embeds the `AgentPackage`; it does not read package data from the Cosmonauts repo at runtime.
+
+There are two export invocation forms:
+
+```bash
+cosmonauts export --definition packages/cosmo-planner/package.json --out bin/cosmo-planner
+cosmonauts export coding/explorer --target claude-cli --out bin/explorer-claude
+```
+
+Every export flows through an `AgentPackageDefinition`. The `<agent-id>` shorthand generates one from the source agent and is compatibility-gated because raw internal prompts may mention Cosmonauts-only tools, extensions, or subagents. Planner-like packages should use an explicit definition with a reviewed external-safe prompt.
+
+Phase 1 export is intentionally separate from orchestration execution. Existing chain runner behavior is unchanged, and Drive behavior is unchanged; chains do not dispatch stages to packaged-agent binaries, and Drive still uses its existing backends. Exported binaries are standalone runtime artifacts only.
+
 ## Chain Runner
 
 Runs agent pipelines using Pi sessions. The DSL is pure topology — it declares which roles run in what order. Loop behavior is intrinsic to each role (coordinator loops until all tasks are Done; others run once).
@@ -85,6 +102,8 @@ cosmonauts --print "create tasks and go"     # Non-interactive (fire-and-forget)
 cosmonauts --workflow plan-and-build "auth"   # Named workflow
 cosmonauts --chain "planner -> coordinator"  # Raw chain DSL
 cosmonauts drive                              # Driver task runs
+cosmonauts export --definition package.json --out bin/agent
+cosmonauts export coding/explorer --target claude-cli --out bin/explorer
 ```
 
 Key flags:
