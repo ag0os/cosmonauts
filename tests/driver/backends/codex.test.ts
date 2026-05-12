@@ -52,6 +52,7 @@ function createInvocation(
 		runId: "run-1",
 		promptPath,
 		workdir: "/tmp/codex-backend-workdir",
+		projectRoot: "/tmp/codex-backend-project-root",
 		taskId: "TASK-267",
 		parentSessionId: "parent-session-1",
 		planSlug: "external-backends-and-cli",
@@ -130,6 +131,7 @@ describe("codex backend", () => {
 
 	test("run spawns codex exec with argv array, prompt file stdin, pipes, cwd, and signal", async () => {
 		const workdir = await createTempDir();
+		const projectRoot = "/tmp/codex-backend-project-root";
 		const promptPath = await createPromptFile("Task prompt");
 		const child = createChild({
 			stdout: "OUTCOME: success\n",
@@ -140,7 +142,7 @@ describe("codex backend", () => {
 		const backend = createCodexBackend({ binary: "codex-dev" });
 
 		const result = await backend.run(
-			createInvocation(promptPath, { workdir, signal }),
+			createInvocation(promptPath, { workdir, projectRoot, signal }),
 		);
 
 		expect(bun.file).toHaveBeenCalledWith(promptPath);
@@ -156,7 +158,7 @@ describe("codex backend", () => {
 			"-",
 		]);
 		expect(options).toEqual({
-			cwd: workdir,
+			cwd: projectRoot,
 			stdin: bun.file.mock.results[0]?.value,
 			stdout: "pipe",
 			stderr: "pipe",

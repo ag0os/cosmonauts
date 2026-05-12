@@ -21,7 +21,7 @@ export function createClaudeCliBackend(
 		async run(invocation) {
 			const start = Date.now();
 			const child = Bun.spawn([binary, "-p"], {
-				cwd: invocation.workdir,
+				cwd: invocation.projectRoot,
 				stdin: Bun.file(invocation.promptPath),
 				stdout: "pipe",
 				stderr: "pipe",

@@ -1,10 +1,13 @@
 import { spawn } from "node:child_process";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
 import type { TaskManager } from "../tasks/task-manager.ts";
 import type { Backend, BackendRunResult } from "./backends/types.ts";
 import { acquireRepoCommitLock } from "./lock.ts";
 import { renderPromptForTask } from "./prompt-template.ts";
 import { parseReport } from "./report-parser.ts";
 import type {
+	ContradictedBlockAnnotation,
 	DriverEvent,
 	DriverRunSpec,
 	EventSink,
@@ -81,6 +84,56 @@ export async function runOneTask(
 
 	await ctx.taskManager.updateTask(taskId, { status: "In Progress" });
 
+	let appendedNote: string | undefined;
+	let retried = false;
+
+	while (true) {
+		const attempt = await runTaskAttempt(spec, ctx, taskId, appendedNote);
+		if (attempt.kind === "outcome") {
+			return attempt.outcome;
+		}
+
+		const contradicted =
+			!retried && retryOnContradictedBlockEnabled(spec)
+				? findContradictedPath(attempt.reason, spec.projectRoot)
+				: undefined;
+		if (!contradicted) {
+			return attempt.finalize(undefined);
+		}
+
+		retried = true;
+		await attempt.finalize(contradicted.annotation, { skipTaskUpdate: true });
+		appendedNote = buildContradictionNote(contradicted);
+	}
+}
+
+interface TaskAttemptOutcome {
+	kind: "outcome";
+	outcome: TaskOutcome;
+}
+
+interface TaskAttemptBlockCandidate {
+	kind: "block-candidate";
+	reason: string;
+	/**
+	 * Commits the block: updates the task (unless `skipTaskUpdate`) and emits the
+	 * terminal event, optionally annotated with the contradiction. Returns the
+	 * resulting `TaskOutcome`.
+	 */
+	finalize(
+		contradicted: ContradictedBlockAnnotation | undefined,
+		options?: { skipTaskUpdate?: boolean },
+	): Promise<TaskOutcome>;
+}
+
+type TaskAttemptResult = TaskAttemptOutcome | TaskAttemptBlockCandidate;
+
+async function runTaskAttempt(
+	spec: DriverRunSpec,
+	ctx: RunOneTaskCtx,
+	taskId: string,
+	appendedNote: string | undefined,
+): Promise<TaskAttemptResult> {
 	const promptLayers: PromptLayersWithWorkdir = {
 		...spec.promptTemplate,
 		workdir: spec.workdir,
@@ -89,6 +142,7 @@ export async function runOneTask(
 		taskId,
 		promptLayers,
 		ctx.taskManager,
+		{ appendedNote },
 	);
 
 	await emit(ctx, spec, {
@@ -99,24 +153,24 @@ export async function runOneTask(
 
 	const spawnResult = await runBackend(spec, ctx, taskId, promptPath);
 	if (spawnResult.status === "failure") {
-		await emit(ctx, spec, {
-			type: "spawn_failed",
+		return spawnFailureCandidate(
+			ctx,
+			spec,
 			taskId,
-			error: spawnResult.error,
-			exitCode: spawnResult.exitCode,
-		});
-		return blockTask(ctx, spec, taskId, spawnResult.error);
+			spawnResult.error,
+			spawnResult.exitCode,
+		);
 	}
 
 	if (spawnResult.result.exitCode !== 0) {
 		const reason = `spawn failed with exit code ${spawnResult.result.exitCode}`;
-		await emit(ctx, spec, {
-			type: "spawn_failed",
+		return spawnFailureCandidate(
+			ctx,
+			spec,
 			taskId,
-			error: reason,
-			exitCode: spawnResult.result.exitCode,
-		});
-		return blockTask(ctx, spec, taskId, reason);
+			reason,
+			spawnResult.result.exitCode,
+		);
 	}
 
 	const parsedReport = parseReport(spawnResult.result.stdout);
@@ -134,20 +188,198 @@ export async function runOneTask(
 		commitSha = await maybeCommit(spec, ctx, taskId, outcome);
 	} catch (error) {
 		if (error instanceof CommitFailedError) {
-			return { status: "blocked", reason: error.message };
+			return {
+				kind: "outcome",
+				outcome: { status: "blocked", reason: error.message },
+			};
 		}
 		throw error;
 	}
 
-	return transitionTaskStatus({
-		spec,
-		ctx,
-		taskId,
-		outcome,
-		parsedReport,
-		failureReason,
-		commitSha,
-	});
+	if (outcome === "success") {
+		return {
+			kind: "outcome",
+			outcome: await transitionTaskStatus({
+				spec,
+				ctx,
+				taskId,
+				outcome,
+				parsedReport,
+				failureReason,
+				commitSha,
+			}),
+		};
+	}
+
+	const reason =
+		outcome === "partial" ? partialReason(parsedReport) : failureReason;
+	return {
+		kind: "block-candidate",
+		reason,
+		finalize: (contradicted, options) =>
+			transitionTaskStatus({
+				spec,
+				ctx,
+				taskId,
+				outcome,
+				parsedReport,
+				failureReason,
+				commitSha,
+				contradicted,
+				skipTaskUpdate: options?.skipTaskUpdate,
+			}),
+	};
+}
+
+function spawnFailureCandidate(
+	ctx: RunOneTaskCtx,
+	spec: DriverRunSpec,
+	taskId: string,
+	error: string,
+	exitCode: number | undefined,
+): TaskAttemptBlockCandidate {
+	return {
+		kind: "block-candidate",
+		reason: error,
+		finalize: async (contradicted, options) => {
+			await emit(ctx, spec, {
+				type: "spawn_failed",
+				taskId,
+				error,
+				exitCode,
+				...(contradicted ? { contradicted } : {}),
+			});
+			if (options?.skipTaskUpdate) {
+				return { status: "blocked", reason: error };
+			}
+			return blockTask(ctx, spec, taskId, error);
+		},
+	};
+}
+
+function retryOnContradictedBlockEnabled(spec: DriverRunSpec): boolean {
+	return spec.retryOnContradictedBlock ?? true;
+}
+
+interface ContradictedPath {
+	token: string;
+	absolutePath: string;
+	isDirectory: boolean;
+	lineCount?: number;
+	annotation: ContradictedBlockAnnotation;
+}
+
+function findContradictedPath(
+	reason: string,
+	projectRoot: string,
+): ContradictedPath | undefined {
+	for (const token of extractPathTokens(reason)) {
+		if (isAbsolute(token)) {
+			continue;
+		}
+		const absolutePath = resolve(projectRoot, token);
+		if (!isWithin(projectRoot, absolutePath) || !existsSync(absolutePath)) {
+			continue;
+		}
+		const stats = statSync(absolutePath);
+		const isDirectory = stats.isDirectory();
+		return {
+			token,
+			absolutePath,
+			isDirectory,
+			lineCount: isDirectory ? undefined : countLines(absolutePath),
+			annotation: { path: token, existsOnDisk: true },
+		};
+	}
+	return undefined;
+}
+
+const FILE_EXTENSION_PATTERN =
+	/\.(ts|tsx|js|jsx|mjs|cjs|json|md|mdx|yml|yaml|toml|txt|sh|css|scss|html|py|go|rs|java|rb|sql|lock|env|config)$/i;
+
+function extractPathTokens(reason: string): string[] {
+	const tokens: string[] = [];
+	const seen = new Set<string>();
+	for (const raw of reason.split(/\s+/)) {
+		const token = stripWrappers(raw);
+		if (!token || seen.has(token)) {
+			continue;
+		}
+		if (token.includes("/") || FILE_EXTENSION_PATTERN.test(token)) {
+			seen.add(token);
+			tokens.push(token);
+		}
+	}
+	return tokens;
+}
+
+function stripWrappers(raw: string): string {
+	let token = raw.trim();
+	// Drop trailing sentence punctuation.
+	token = token.replace(/[.,;:!?]+$/, "");
+	// Strip matched surrounding quotes/backticks/brackets.
+	const pairs: Array<[string, string]> = [
+		["`", "`"],
+		['"', '"'],
+		["'", "'"],
+		["(", ")"],
+		["[", "]"],
+		["{", "}"],
+		["<", ">"],
+	];
+	let changed = true;
+	while (changed) {
+		changed = false;
+		for (const [open, close] of pairs) {
+			if (
+				token.length >= 2 &&
+				token.startsWith(open) &&
+				token.endsWith(close)
+			) {
+				token = token.slice(1, -1);
+				changed = true;
+			}
+		}
+		const trimmed = token
+			.replace(/^[`"'([{<]+/, "")
+			.replace(/[`"')\]}>]+$/, "");
+		if (trimmed !== token) {
+			token = trimmed;
+			changed = true;
+		}
+	}
+	return token;
+}
+
+function isWithin(root: string, candidate: string): boolean {
+	const normalizedRoot = resolve(root);
+	return (
+		candidate === normalizedRoot || candidate.startsWith(`${normalizedRoot}/`)
+	);
+}
+
+function countLines(absolutePath: string): number | undefined {
+	try {
+		const text = readFileSync(absolutePath, "utf-8");
+		if (text.length === 0) {
+			return 0;
+		}
+		return text.split("\n").length - (text.endsWith("\n") ? 1 : 0);
+	} catch {
+		return undefined;
+	}
+}
+
+function buildContradictionNote(contradicted: ContradictedPath): string {
+	const kind = contradicted.isDirectory
+		? "a directory"
+		: contradicted.lineCount === undefined
+			? "a file"
+			: `a file of ${contradicted.lineCount} line${contradicted.lineCount === 1 ? "" : "s"}`;
+	return [
+		"---",
+		`Note from the driver: \`${contradicted.token}\` exists at \`${contradicted.absolutePath}\` (${kind}). Read it directly from the filesystem (\`cat\`, \`ls\`, \`test -f\`); do not infer its absence from \`git ls-files\` (which only lists tracked files and is scoped to the current directory).`,
+	].join("\n");
 }
 
 export function deriveOutcome(
@@ -260,6 +492,7 @@ async function runBackend(
 			runId: spec.runId,
 			promptPath,
 			workdir: spec.workdir,
+			projectRoot: spec.projectRoot,
 			taskId,
 			parentSessionId: spec.parentSessionId,
 			planSlug: spec.planSlug,
@@ -474,6 +707,9 @@ interface TransitionOptions {
 	parsedReport: ParsedReport;
 	failureReason: string;
 	commitSha?: string;
+	contradicted?: ContradictedBlockAnnotation;
+	/** When set, emit the terminal event but skip the TaskManager status write (a retry follows). */
+	skipTaskUpdate?: boolean;
 }
 
 async function transitionTaskStatus({
@@ -484,6 +720,8 @@ async function transitionTaskStatus({
 	parsedReport,
 	failureReason,
 	commitSha,
+	contradicted,
+	skipTaskUpdate,
 }: TransitionOptions): Promise<TaskOutcome> {
 	try {
 		if (outcome === "success") {
@@ -494,27 +732,33 @@ async function transitionTaskStatus({
 
 		if (outcome === "partial") {
 			const reason = partialReason(parsedReport);
-			await ctx.taskManager.updateTask(taskId, {
-				status: "In Progress",
-				implementationNotes: reason,
-			});
+			if (!skipTaskUpdate) {
+				await ctx.taskManager.updateTask(taskId, {
+					status: "In Progress",
+					implementationNotes: reason,
+				});
+			}
 			await emit(ctx, spec, {
 				type: "task_blocked",
 				taskId,
 				reason,
 				progress: reportProgress(parsedReport),
+				...(contradicted ? { contradicted } : {}),
 			});
 			return { status: "partial", reason, commitSha };
 		}
 
-		await ctx.taskManager.updateTask(taskId, {
-			status: "Blocked",
-			implementationNotes: failureReason,
-		});
+		if (!skipTaskUpdate) {
+			await ctx.taskManager.updateTask(taskId, {
+				status: "Blocked",
+				implementationNotes: failureReason,
+			});
+		}
 		await emit(ctx, spec, {
 			type: "task_blocked",
 			taskId,
 			reason: failureReason,
+			...(contradicted ? { contradicted } : {}),
 		});
 		return { status: "blocked", reason: failureReason, commitSha };
 	} catch (error) {

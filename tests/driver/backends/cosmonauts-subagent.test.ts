@@ -31,6 +31,7 @@ function createInvocation(
 		runId: "run-1",
 		promptPath,
 		workdir: "/tmp/run-workdir",
+		projectRoot: "/tmp/run-project-root",
 		taskId: "TASK-1",
 		parentSessionId: "parent-session-1",
 		planSlug: "driver-primitives",

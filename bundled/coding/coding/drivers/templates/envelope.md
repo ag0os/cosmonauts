@@ -20,12 +20,14 @@ Use this envelope for coding-domain driver tasks. Follow the task body and any p
 - Never remove suppression comments without a replacement fix that makes the suppression unnecessary.
 - Never commit and never run `git add`; the driver owns staging and commits.
 - Never edit `missions/` or `memory/` directories.
+- For "does file X exist?" questions, check the **filesystem** (`ls`, `cat`, `test -f path`). `git ls-files` only lists *tracked* files and is scoped to the current directory, so a negative result there does not mean the file is absent — it may be untracked or outside the cwd.
 
 ## Failure Protocol
 
 - On command failure, capture the command and approximately the last 30 lines of stderr.
 - Distinguish failures caused by your changes from pre-existing failures observed before or outside your work.
 - Report pre-existing failures separately, with the command and stderr excerpt, and do not treat them as completed work.
+- A blocked or failure report must **quote the actual command you ran and an excerpt of its real output** — not a paraphrase or a from-memory summary. If you claim an input file is missing, show the literal `ls`/`cat`/`test` command and its output that you relied on; do not infer absence from `git ls-files` (tracked-only, cwd-scoped).
 
 ## Final Report Format
 

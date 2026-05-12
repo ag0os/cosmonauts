@@ -1,8 +1,8 @@
 ---
 title: Drive smoke-test fixes (2026-05-12)
-status: active
+status: completed
 createdAt: '2026-05-12T19:33:13.887Z'
-updatedAt: '2026-05-12T19:33:13.887Z'
+updatedAt: '2026-05-12T20:55:00.000Z'
 ---
 
 ## Overview

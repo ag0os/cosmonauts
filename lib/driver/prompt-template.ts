@@ -9,10 +9,16 @@ interface PromptLayersWithWorkdir extends PromptLayers {
 	workdir?: string;
 }
 
+interface RenderPromptOptions {
+	/** Extra text appended as a final section (e.g. a driver retry note). */
+	appendedNote?: string;
+}
+
 export async function renderPromptForTask(
 	taskId: string,
 	layers: PromptLayers,
 	taskManager: TaskManager,
+	options: RenderPromptOptions = {},
 ): Promise<string> {
 	const promptLayers = layers as PromptLayersWithWorkdir;
 	const sections = [await readFile(promptLayers.envelopePath, "utf-8")];
@@ -35,6 +41,10 @@ export async function renderPromptForTask(
 		: undefined;
 	if (override) {
 		sections.push(override);
+	}
+
+	if (options.appendedNote) {
+		sections.push(options.appendedNote);
 	}
 
 	const promptPath = join(

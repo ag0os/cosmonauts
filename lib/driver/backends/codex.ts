@@ -27,7 +27,7 @@ export function createCodexBackend(deps: CodexBackendDeps = {}): Backend {
 			const child = Bun.spawn(
 				[binary, "exec", "--full-auto", "-o", summaryPath, "-"],
 				{
-					cwd: invocation.workdir,
+					cwd: invocation.projectRoot,
 					stdin: Bun.file(invocation.promptPath),
 					stdout: "pipe",
 					stderr: "pipe",

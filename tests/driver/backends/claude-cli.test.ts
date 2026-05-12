@@ -52,6 +52,7 @@ function createInvocation(
 		runId: "run-1",
 		promptPath,
 		workdir: "/tmp/claude-cli-backend-workdir",
+		projectRoot: "/tmp/claude-cli-backend-project-root",
 		taskId: "TASK-268",
 		parentSessionId: "parent-session-1",
 		planSlug: "external-backends-and-cli",
@@ -140,7 +141,11 @@ describe("claude-cli backend", () => {
 		const backend = createClaudeCliBackend({ binary: "claude-dev" });
 
 		const result = await backend.run(
-			createInvocation(promptPath, { workdir, signal }),
+			createInvocation(promptPath, {
+				workdir,
+				projectRoot: "/tmp/claude-cli-backend-project-root",
+				signal,
+			}),
 		);
 
 		expect(bun.file).toHaveBeenCalledWith(promptPath);
@@ -149,7 +154,7 @@ describe("claude-cli backend", () => {
 		expect(Array.isArray(argv)).toBe(true);
 		expect(argv).toEqual(["claude-dev", "-p"]);
 		expect(options).toEqual({
-			cwd: workdir,
+			cwd: "/tmp/claude-cli-backend-project-root",
 			stdin: bun.file.mock.results[0]?.value,
 			stdout: "pipe",
 			stderr: "pipe",

@@ -9,6 +9,7 @@ export interface BackendInvocation {
 	runId: string;
 	promptPath: string;
 	workdir: string;
+	projectRoot: string;
 	taskId: string;
 	parentSessionId: string;
 	planSlug: string;

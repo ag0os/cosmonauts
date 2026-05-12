@@ -18,6 +18,21 @@ export interface DriverRunSpec {
 	workdir: string;
 	eventLogPath: string;
 	taskTimeoutMs?: number;
+	/**
+	 * When a backend blocks/fails citing a path that the driver can see on disk
+	 * under `projectRoot`, retry the task once with a clarifying note. Defaults
+	 * to `true` (an `undefined` value is treated as enabled).
+	 */
+	retryOnContradictedBlock?: boolean;
+}
+
+/**
+ * Annotation added to a block/fail event when the cited reason names a path the
+ * driver can independently confirm exists on disk under `projectRoot`.
+ */
+export interface ContradictedBlockAnnotation {
+	path: string;
+	existsOnDisk: true;
 }
 
 export interface PromptLayers {
@@ -83,6 +98,7 @@ export type DriverEvent =
 			taskId: string;
 			error: string;
 			exitCode?: number;
+			contradicted?: ContradictedBlockAnnotation;
 	  })
 	| (DriverEventBase & {
 			type: "verify";
@@ -103,6 +119,7 @@ export type DriverEvent =
 			taskId: string;
 			reason: string;
 			progress?: { phase: number; of: number; remaining?: string };
+			contradicted?: ContradictedBlockAnnotation;
 	  })
 	| (DriverEventBase & {
 			type: "lock_warning";
