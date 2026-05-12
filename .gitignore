@@ -1,6 +1,8 @@
 node_modules/
 dist/
 coverage/
+packages/
+bin/cosmo-*-claude
 *.tsbuildinfo
 .DS_Store
 
