@@ -5,13 +5,11 @@
  * cli/session.ts and lib/orchestration/session-factory.ts.
  */
 
-import { join } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { RuntimeContext } from "../domains/prompt-assembly.ts";
 import { assemblePrompts } from "../domains/prompt-assembly.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
-import type { LoadedDomain } from "../domains/types.ts";
 import {
 	resolveExtensionPaths,
 	resolveTools,
@@ -20,12 +18,15 @@ import {
 	FALLBACK_MODEL,
 	resolveModel,
 } from "../orchestration/model-resolution.ts";
-import { discoverSkills } from "../skills/discovery.ts";
 import {
 	appendAgentIdentityMarker,
 	qualifyAgentId,
 } from "./runtime-identity.ts";
-import { buildSkillsOverride, type SkillsOverrideFn } from "./skills.ts";
+import {
+	buildSkillsOverride,
+	resolveEffectiveProjectSkills,
+	type SkillsOverrideFn,
+} from "./skills.ts";
 import type { AgentDefinition } from "./types.ts";
 
 // ============================================================================
@@ -74,42 +75,6 @@ export interface SessionParams {
 	model: Model<Api>;
 	/** Thinking level, or undefined to use Pi's default. */
 	thinkingLevel: ThinkingLevel | undefined;
-}
-
-// ============================================================================
-// Helpers
-// ============================================================================
-
-function buildSyntheticSharedDomain(domainsDir: string): LoadedDomain {
-	return {
-		manifest: {
-			id: "shared",
-			description: "shared",
-		},
-		portable: false,
-		agents: new Map(),
-		capabilities: new Set(),
-		prompts: new Set(),
-		skills: new Set(),
-		extensions: new Set(),
-		workflows: [],
-		rootDirs: [join(domainsDir, "shared")],
-	};
-}
-
-async function listSharedSkillNames(options: {
-	domainsDir?: string;
-	resolver?: DomainResolver;
-}): Promise<readonly string[]> {
-	const sharedDomain =
-		options.resolver?.registry.get("shared") ??
-		(options.domainsDir
-			? buildSyntheticSharedDomain(options.domainsDir)
-			: undefined);
-	if (!sharedDomain) return [];
-
-	const skills = await discoverSkills([sharedDomain]);
-	return [...new Set(skills.map((skill) => skill.name))];
 }
 
 // ============================================================================
@@ -170,13 +135,13 @@ export async function buildSessionParams(
 		: resolvedExtensionPaths;
 
 	// Skill override construction
-	const effectiveProjectSkills =
-		ignoreProjectSkills || projectSkills === undefined
-			? undefined
-			: [
-					...(await listSharedSkillNames({ domainsDir, resolver })),
-					...projectSkills,
-				];
+	const effectiveProjectSkills = ignoreProjectSkills
+		? undefined
+		: await resolveEffectiveProjectSkills({
+				projectSkills,
+				domainsDir,
+				resolver,
+			});
 	const skillsOverride = buildSkillsOverride(
 		def.skills,
 		effectiveProjectSkills,

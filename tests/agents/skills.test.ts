@@ -2,6 +2,8 @@
  * Tests for shared skill filter helper.
  */
 
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type {
 	ResourceDiagnostic,
 	Skill,
@@ -9,8 +11,12 @@ import type {
 import { describe, expect, test } from "vitest";
 import {
 	buildSkillsOverride,
+	resolveEffectiveProjectSkills,
 	type SkillsOverrideFn,
 } from "../../lib/agents/skills.ts";
+import { useTempDir } from "../helpers/fs.ts";
+
+const tmp = useTempDir("agent-skills-");
 
 /** Helper to create a mock skills base for testing the override function. */
 function makeBase(skillNames: string[]) {
@@ -28,6 +34,51 @@ function assertDefined(
 	if (!override) throw new Error("Expected override to be defined");
 	return override;
 }
+
+async function writeSharedSkill(name: string): Promise<void> {
+	const skillDir = join(tmp.path, "shared", "skills", name);
+	await mkdir(skillDir, { recursive: true });
+	await writeFile(
+		join(skillDir, "SKILL.md"),
+		`---\nname: ${name}\ndescription: ${name}\n---\n`,
+	);
+}
+
+describe("resolveEffectiveProjectSkills", () => {
+	test("preserves shared skills under project-level filters", async () => {
+		await writeSharedSkill("plan");
+
+		const result = await resolveEffectiveProjectSkills({
+			projectSkills: ["typescript"],
+			domainsDir: tmp.path,
+		});
+
+		expect(result).toEqual(["plan", "typescript"]);
+	});
+
+	test("does not crash when declared shared skill files are missing", async () => {
+		await mkdir(join(tmp.path, "shared", "skills", "missing"), {
+			recursive: true,
+		});
+
+		const result = await resolveEffectiveProjectSkills({
+			projectSkills: ["typescript"],
+			domainsDir: tmp.path,
+		});
+
+		expect(result).toEqual(["typescript"]);
+	});
+
+	test("returns undefined when no projectSkills config is present", async () => {
+		await writeSharedSkill("plan");
+
+		const result = await resolveEffectiveProjectSkills({
+			domainsDir: tmp.path,
+		});
+
+		expect(result).toBeUndefined();
+	});
+});
 
 describe("buildSkillsOverride", () => {
 	test("wildcard agent + undefined project → no override", () => {
