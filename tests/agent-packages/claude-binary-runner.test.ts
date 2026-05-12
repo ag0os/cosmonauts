@@ -100,14 +100,52 @@ function spawnClosingChild(
 	return { spawn, calls };
 }
 
+type TestSignal = "SIGINT" | "SIGTERM";
+type TestSignalHandler = (signal: TestSignal) => void | Promise<void>;
+
+interface TestSignalRuntime {
+	on(signal: TestSignal, handler: TestSignalHandler): void;
+	off(signal: TestSignal, handler: TestSignalHandler): void;
+	reemit(signal: TestSignal): void;
+}
+
+function signalHarness(): {
+	readonly runtime: TestSignalRuntime;
+	readonly reemit: ReturnType<typeof vi.fn>;
+	emit(signal: TestSignal): Promise<void>;
+} {
+	const handlers = new Map<TestSignal, TestSignalHandler>();
+	const reemit = vi.fn();
+	return {
+		runtime: {
+			on(signal, handler) {
+				handlers.set(signal, handler);
+			},
+			off(signal, handler) {
+				if (handlers.get(signal) === handler) handlers.delete(signal);
+			},
+			reemit,
+		},
+		reemit,
+		async emit(signal) {
+			await handlers.get(signal)?.(signal);
+		},
+	};
+}
+
 describe("runClaudeBinary", () => {
 	it("joins trailing args into the prompt, pipes Claude output, exits with Claude's code, and cleans up", async () => {
 		const child = new FakeChild();
 		const stdout = captureStream();
 		const stderr = captureStream();
-		const exit = vi.fn();
+		const events: string[] = [];
+		const exit = vi.fn(() => events.push("exit"));
 		const readStdin = vi.fn(async () => "stdin should not be read");
-		const cleanup = vi.fn(async () => {});
+		const cleanup = vi.fn(async () => {
+			events.push("cleanup-start");
+			await Promise.resolve();
+			events.push("cleanup-end");
+		});
 		const materializeInvocation = vi.fn(async () =>
 			materializedInvocation(
 				{
@@ -159,6 +197,7 @@ describe("runClaudeBinary", () => {
 		expect(stderr.text()).toBe("removed API key\nclaude err\n");
 		expect(exit).toHaveBeenCalledWith(7);
 		expect(cleanup).toHaveBeenCalledOnce();
+		expect(events).toEqual(["cleanup-start", "cleanup-end", "exit"]);
 	});
 
 	it("reads stdin only when no prompt args are provided", async () => {
@@ -201,6 +240,86 @@ describe("runClaudeBinary", () => {
 		expect(exit).toHaveBeenCalledWith(1);
 		expect(materializeInvocation).not.toHaveBeenCalled();
 		expect(spawn).not.toHaveBeenCalled();
+	});
+
+	it("prints help and exits successfully for --help", async () => {
+		const stdout = captureStream();
+		const exit = vi.fn();
+		const materializeInvocation = vi.fn();
+		const spawn = vi.fn();
+
+		await runClaudeBinary(basePackage, {
+			argv: ["--help"],
+			stdout: stdout.stream,
+			exit,
+			materializeInvocation,
+			spawn,
+		});
+
+		expect(stdout.text()).toMatch(/Usage: .*--help/);
+		expect(exit).toHaveBeenCalledWith(0);
+		expect(materializeInvocation).not.toHaveBeenCalled();
+		expect(spawn).not.toHaveBeenCalled();
+	});
+
+	it("rejects unknown runtime flags before the prompt escape", async () => {
+		const stderr = captureStream();
+		const exit = vi.fn();
+		const materializeInvocation = vi.fn();
+		const spawn = vi.fn();
+
+		await runClaudeBinary(basePackage, {
+			argv: ["--bogus", "hello"],
+			stderr: stderr.stream,
+			exit,
+			materializeInvocation,
+			spawn,
+		});
+
+		expect(stderr.text()).toContain("Unknown option: --bogus");
+		expect(stderr.text()).toMatch(/Usage:/);
+		expect(exit).toHaveBeenCalledWith(1);
+		expect(materializeInvocation).not.toHaveBeenCalled();
+		expect(spawn).not.toHaveBeenCalled();
+	});
+
+	it("allows prompts starting with dashes after --", async () => {
+		const child = new FakeChild();
+		const materializeInvocation = vi.fn(async () => materializedInvocation());
+		const spawned = spawnClosingChild(child);
+
+		await runClaudeBinary(basePackage, {
+			argv: ["--", "--not-a-flag"],
+			readStdin: vi.fn(async () => "stdin should not be read"),
+			exit: vi.fn(),
+			materializeInvocation,
+			spawn: spawned.spawn,
+		});
+
+		expect(materializeInvocation).toHaveBeenCalledWith(
+			basePackage,
+			expect.objectContaining({ stdin: "--not-a-flag" }),
+		);
+	});
+
+	it("does not wait for stdin when no prompt is supplied in a TTY", async () => {
+		const stderr = captureStream();
+		const readStdin = vi.fn(async () => "prompt from stdin");
+		const materializeInvocation = vi.fn();
+
+		await runClaudeBinary(basePackage, {
+			argv: [],
+			readStdin,
+			isStdinTTY: () => true,
+			stderr: stderr.stream,
+			exit: vi.fn(),
+			materializeInvocation,
+			spawn: vi.fn(),
+		});
+
+		expect(stderr.text()).toMatch(/Usage:/);
+		expect(readStdin).not.toHaveBeenCalled();
+		expect(materializeInvocation).not.toHaveBeenCalled();
 	});
 
 	it("preserves ANTHROPIC_API_KEY when --allow-api-billing is provided", async () => {
@@ -253,8 +372,13 @@ describe("runClaudeBinary", () => {
 
 	it("prints a claude-cli diagnostic and still cleans up when spawn throws", async () => {
 		const stderr = captureStream();
-		const cleanup = vi.fn(async () => {});
-		const exit = vi.fn();
+		const events: string[] = [];
+		const cleanup = vi.fn(async () => {
+			events.push("cleanup-start");
+			await Promise.resolve();
+			events.push("cleanup-end");
+		});
+		const exit = vi.fn(() => events.push("exit"));
 		await runClaudeBinary(basePackage, {
 			argv: ["hello"],
 			stderr: stderr.stream,
@@ -274,6 +398,31 @@ describe("runClaudeBinary", () => {
 		);
 		expect(exit).toHaveBeenCalledWith(1);
 		expect(cleanup).toHaveBeenCalledOnce();
+		expect(events).toEqual(["cleanup-start", "cleanup-end", "exit"]);
+	});
+
+	it("cleans up and re-emits when SIGINT is received", async () => {
+		const child = new FakeChild();
+		const signals = signalHarness();
+		const cleanup = vi.fn(async () => {});
+		const spawn = vi.fn<SpawnClaudeProcess>(() => child);
+		const run = runClaudeBinary(basePackage, {
+			argv: ["hello"],
+			exit: vi.fn(),
+			materializeInvocation: vi.fn(async () =>
+				materializedInvocation({}, cleanup),
+			),
+			spawn,
+			signals: signals.runtime,
+		});
+
+		await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+		await signals.emit("SIGINT");
+		child.close(130);
+		await run;
+
+		expect(cleanup).toHaveBeenCalledOnce();
+		expect(signals.reemit).toHaveBeenCalledWith("SIGINT");
 	});
 
 	it("runs Claude in process.cwd() by default and removes temp assets after completion", async () => {

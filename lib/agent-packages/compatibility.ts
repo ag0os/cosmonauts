@@ -9,7 +9,7 @@ const EXTENSION_BACKED_CAPABILITIES = new Set([
 	"drive",
 ]);
 
-export interface RawSourcePromptExportOptions {
+interface RawSourcePromptExportOptions {
 	readonly definition: AgentPackageDefinition;
 	readonly sourceAgent: AgentDefinition;
 }

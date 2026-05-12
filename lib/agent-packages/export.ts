@@ -6,12 +6,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import type { AgentPackage } from "./types.ts";
 
-export type ExecFileBoundary = (
+type ExecFileBoundary = (
 	command: string,
 	args: readonly string[],
 ) => Promise<void>;
 
-export interface CompileAgentPackageBinaryOptions {
+interface CompileAgentPackageBinaryOptions {
 	readonly agentPackage: AgentPackage;
 	readonly outFile: string;
 	readonly execFile?: ExecFileBoundary;

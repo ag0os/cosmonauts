@@ -148,6 +148,23 @@ describe("createExportProgram", () => {
 		process.exitCode = undefined;
 	});
 
+	it("documents input modes, supported target, examples, and billing safety in help", () => {
+		const help = createExportProgram().helpInformation();
+
+		expect(help).toMatch(/Provide exactly one\s+input/);
+		expect(help).toContain("[agent-id] or --definition <path>");
+		expect(help).toContain("Phase 1 supports target: claude-cli");
+		expect(help).toContain(
+			"cosmonauts export --definition ./agent-package.json --out ./bin/agent",
+		);
+		expect(help).toContain(
+			"cosmonauts export coding/explorer --target claude-cli --out",
+		);
+		expect(help).toContain("./bin/explorer-claude");
+		expect(help).toContain("ANTHROPIC_API_KEY");
+		expect(help).toContain("--allow-api-billing");
+	});
+
 	it("exports a package definition and prints one success JSON line", async () => {
 		const definitionPath = join(tmp.path, "package.json");
 		const outPath = join(tmp.path, "bin", "explorer-claude");

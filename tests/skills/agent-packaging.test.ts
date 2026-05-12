@@ -39,6 +39,10 @@ describe("agent-packaging skill", () => {
 		expect(content).toMatch(
 			/cosmonauts export --definition <path> --out <path>/,
 		);
+		expect(content).toMatch(/stable package `id`/i);
+		expect(content).toMatch(/output binary name/i);
+		expect(content).toContain("ANTHROPIC_API_KEY");
+		expect(content).toContain("--allow-api-billing");
 	});
 
 	test("warns against blind raw export of internal prompts with unavailable Cosmonauts tools", async () => {

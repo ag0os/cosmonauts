@@ -38,11 +38,17 @@ export function createExportProgram(): Command {
 
 	program
 		.name("cosmonauts export")
-		.description("Export a Cosmonauts agent package as a standalone binary")
+		.description(
+			`Export a Cosmonauts agent package as a standalone binary. Provide exactly one input: [agent-id] or --definition <path>. Phase 1 supports target: ${SUPPORTED_TARGET}. Examples: cosmonauts export --definition ./agent-package.json --out ./bin/agent; cosmonauts export coding/explorer --target claude-cli --out ./bin/explorer-claude. The exported binary omits ANTHROPIC_API_KEY from Claude's environment by default to preserve subscription auth; pass --allow-api-billing to the exported binary to opt into API billing.`,
+		)
 		.argument("[agent-id]", "Source agent id to export as shorthand")
 		.option("--definition <path>", "Agent package definition JSON path")
 		.requiredOption("--out <path>", "Output binary path")
-		.option("--target <target>", "Export target", SUPPORTED_TARGET)
+		.option(
+			"--target <target>",
+			`Export target. Phase 1 supports: ${SUPPORTED_TARGET}`,
+			SUPPORTED_TARGET,
+		)
 		.option("--domain <id>", "Set domain context for agent resolution")
 		.option(
 			"--plugin-dir <path>",

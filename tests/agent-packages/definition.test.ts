@@ -162,6 +162,28 @@ describe("loadAgentPackageDefinition", () => {
 		);
 	});
 
+	it("rejects absolute file prompt paths", async () => {
+		const filePath = await writeDefinition("absolute-path.json", {
+			...baseDefinition,
+			prompt: { kind: "file", path: join(tmp.path, "secret.md") },
+		});
+
+		await expect(loadAgentPackageDefinition(filePath)).rejects.toThrow(
+			/prompt\.path must be relative to the package definition directory/,
+		);
+	});
+
+	it("rejects file prompt paths that escape the definition directory", async () => {
+		const filePath = await writeDefinition("package/escape.json", {
+			...baseDefinition,
+			prompt: { kind: "file", path: "../escape.md" },
+		});
+
+		await expect(loadAgentPackageDefinition(filePath)).rejects.toThrow(
+			/prompt\.path must stay within the package definition directory/,
+		);
+	});
+
 	it("reads inline prompts without changing their content", async () => {
 		const content =
 			"---\nnot frontmatter for inline prompts\n---\n\nUse exactly this.";

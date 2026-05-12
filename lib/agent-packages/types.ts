@@ -1,14 +1,14 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { AgentToolSet } from "../agents/types.ts";
 
-export type AgentPackageSchemaVersion = 1;
+type AgentPackageSchemaVersion = 1;
 export type ExternalRuntimeTarget =
 	| "claude-cli"
 	| "codex"
 	| "gemini-cli"
 	| "open-code";
 export type SupportedExportTarget = "claude-cli";
-export type SkillDeliveryMode = "inline";
+type SkillDeliveryMode = "inline";
 export type SystemPromptMode = "append" | "replace";
 
 export interface AgentPackageDefinition {

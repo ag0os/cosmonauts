@@ -56,3 +56,9 @@ cosmonauts export --definition <path> --out <path>
 ```
 
 Run the command only after the package definition, prompt, skill selection, and target tool policy have been reviewed for the target runtime.
+
+## Final handoff checklist
+
+- Use a stable package `id` and output binary name that describe the packaged role and target, such as `cosmo-planner-claude` with `--out ./bin/cosmo-planner-claude`.
+- Tell the human that the binary may print a subscription-safety message: Cosmonauts removes `ANTHROPIC_API_KEY` from Claude's environment by default so Claude Code uses subscription auth.
+- Mention that `--allow-api-billing` is the explicit runtime opt-in when the human wants the exported binary to allow API-key billing.

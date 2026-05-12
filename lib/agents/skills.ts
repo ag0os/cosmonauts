@@ -25,7 +25,7 @@ export type SkillsOverrideFn = (base: {
 
 const WILDCARD = "*";
 
-export interface ResolveEffectiveProjectSkillsOptions {
+interface ResolveEffectiveProjectSkillsOptions {
 	/** Project-level skill filter list (from .cosmonauts/config.json). */
 	readonly projectSkills?: readonly string[];
 	/** Absolute path to the root domains directory (required when no resolver). */

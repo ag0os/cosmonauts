@@ -7,19 +7,21 @@ import type {
 	SystemPromptMode,
 } from "./types.ts";
 
-export interface RunClaudeBinaryOptions {
+interface RunClaudeBinaryOptions {
 	readonly argv?: readonly string[];
 	readonly env?: NodeJS.ProcessEnv;
 	readonly cwd?: () => string;
 	readonly readStdin?: () => Promise<string>;
+	readonly isStdinTTY?: () => boolean;
 	readonly stdout?: Writable;
 	readonly stderr?: Writable;
 	readonly exit?: (code: number) => void;
 	readonly spawn?: SpawnClaudeProcess;
 	readonly materializeInvocation?: MaterializeClaudeInvocation;
+	readonly signals?: SignalRuntime;
 }
 
-export interface MaterializeClaudeInvocationOptions {
+interface MaterializeClaudeInvocationOptions {
 	readonly cwd: string;
 	readonly stdin: string;
 	readonly env: NodeJS.ProcessEnv;
@@ -28,7 +30,7 @@ export interface MaterializeClaudeInvocationOptions {
 	readonly promptMode?: SystemPromptMode;
 }
 
-export type MaterializeClaudeInvocation = (
+type MaterializeClaudeInvocation = (
 	agentPackage: AgentPackage,
 	options: MaterializeClaudeInvocationOptions,
 ) => Promise<MaterializedInvocation>;
@@ -39,7 +41,7 @@ export interface SpawnOptions {
 	readonly stdio: ["pipe", "pipe", "pipe"];
 }
 
-export interface SpawnedClaudeProcess {
+interface SpawnedClaudeProcess {
 	readonly stdout: Readable;
 	readonly stderr: Readable;
 	readonly stdin: Writable;
@@ -58,124 +60,328 @@ export type SpawnClaudeProcess = (
 ) => SpawnedClaudeProcess;
 
 interface ParsedArgs {
+	readonly kind: "run";
 	readonly allowApiBilling: boolean;
 	readonly claudeBinary?: string;
 	readonly promptMode?: SystemPromptMode;
 	readonly promptArgs: readonly string[];
 }
 
+interface HelpArgs {
+	readonly kind: "help";
+}
+
+interface ArgsState {
+	allowApiBilling: boolean;
+	claudeBinary?: string;
+	promptMode?: SystemPromptMode;
+	promptArgs: string[];
+}
+
+type FlagSpec =
+	| {
+			readonly kind: "boolean";
+			readonly flag: string;
+			readonly apply: (state: ArgsState) => void;
+	  }
+	| {
+			readonly kind: "value";
+			readonly flag: string;
+			readonly apply: (state: ArgsState, next: string) => Error | undefined;
+	  };
+
+const FLAG_SPECS: readonly FlagSpec[] = [
+	{
+		kind: "boolean",
+		flag: "--allow-api-billing",
+		apply: (state) => {
+			state.allowApiBilling = true;
+		},
+	},
+	{
+		kind: "value",
+		flag: "--claude-binary",
+		apply: applyClaudeBinary,
+	},
+	{
+		kind: "value",
+		flag: "--prompt-mode",
+		apply: applyPromptMode,
+	},
+];
+const FLAG_BY_NAME = new Map(FLAG_SPECS.map((flag) => [flag.flag, flag]));
+
+type RuntimeSignal = "SIGINT" | "SIGTERM";
+
+type SignalHandler = (signal: RuntimeSignal) => void | Promise<void>;
+
+interface SignalRuntime {
+	on(signal: RuntimeSignal, handler: SignalHandler): void;
+	off(signal: RuntimeSignal, handler: SignalHandler): void;
+	reemit(signal: RuntimeSignal): void;
+}
+
+const HANDLED_SIGNALS: readonly RuntimeSignal[] = ["SIGINT", "SIGTERM"];
 const USAGE =
-	"Usage: <exported-agent> [--allow-api-billing] [--claude-binary <path>] [--prompt-mode append|replace] [prompt...]";
+	"Usage: <exported-agent> [--help] [--allow-api-billing] [--claude-binary <path>] [--prompt-mode append|replace] [--] [prompt...]";
 
 export async function runClaudeBinary(
 	agentPackage: AgentPackage,
 	options: RunClaudeBinaryOptions = {},
 ): Promise<void> {
-	const stderr = options.stderr ?? process.stderr;
-	const exit = options.exit ?? ((code: number) => process.exit(code));
+	const runtime = resolveRuntime(options);
+	const input = await resolveRunInput(options, runtime);
+	if (!input) return;
+
+	let materialized: MaterializedInvocation | undefined;
+	let cleanupPromise: Promise<void> | undefined;
+	const cleanup = async () => {
+		if (!materialized) return;
+		cleanupPromise ??= materialized.cleanup();
+		await cleanupPromise;
+	};
+	const uninstallSignals = installCleanupSignalHandlers(
+		cleanup,
+		options.signals ?? defaultSignalRuntime,
+	);
+	let result: RunMaterializedClaudeResult = { exitCode: 1 };
+
+	try {
+		result = await runMaterializedClaude(
+			agentPackage,
+			input,
+			options,
+			runtime,
+			(invocation) => {
+				materialized = invocation;
+			},
+		);
+		materialized = result.materialized;
+	} finally {
+		uninstallSignals();
+		await cleanup();
+	}
+
+	runtime.exit(result.exitCode);
+}
+
+interface RuntimeIO {
+	readonly stdout: Writable;
+	readonly stderr: Writable;
+	readonly exit: (code: number) => void;
+}
+
+interface RunInput {
+	readonly parsed: ParsedArgs;
+	readonly prompt: string;
+}
+
+interface RunMaterializedClaudeResult {
+	readonly exitCode: number;
+	readonly materialized?: MaterializedInvocation;
+}
+
+type MaterializedCallback = (materialized: MaterializedInvocation) => void;
+
+function resolveRuntime(options: RunClaudeBinaryOptions): RuntimeIO {
+	return {
+		stdout: options.stdout ?? process.stdout,
+		stderr: options.stderr ?? process.stderr,
+		exit: options.exit ?? ((code: number) => process.exit(code)),
+	};
+}
+
+async function resolveRunInput(
+	options: RunClaudeBinaryOptions,
+	runtime: RuntimeIO,
+): Promise<RunInput | undefined> {
 	const parsed = parseArgs(options.argv ?? process.argv.slice(2));
 
 	if (parsed instanceof Error) {
-		stderr.write(`${parsed.message}\n${USAGE}\n`);
-		exit(1);
-		return;
+		runtime.stderr.write(`${parsed.message}\n${USAGE}\n`);
+		runtime.exit(1);
+		return undefined;
+	}
+	if (parsed.kind === "help") {
+		runtime.stdout.write(`${USAGE}\n`);
+		runtime.exit(0);
+		return undefined;
 	}
 
-	const prompt = await resolvePrompt(parsed.promptArgs, options.readStdin);
+	const prompt = await resolvePrompt(
+		parsed.promptArgs,
+		options.readStdin,
+		options.isStdinTTY,
+	);
 	if (prompt.trim().length === 0) {
-		stderr.write(`${USAGE}\n`);
-		exit(1);
-		return;
+		runtime.stderr.write(`${USAGE}\n`);
+		runtime.exit(1);
+		return undefined;
 	}
 
+	return { parsed, prompt };
+}
+
+async function runMaterializedClaude(
+	agentPackage: AgentPackage,
+	input: RunInput,
+	options: RunClaudeBinaryOptions,
+	runtime: RuntimeIO,
+	onMaterialized: MaterializedCallback,
+): Promise<RunMaterializedClaudeResult> {
 	let materialized: MaterializedInvocation | undefined;
+
 	try {
-		materialized = await (
-			options.materializeInvocation ?? createClaudeCliInvocation
-		)(agentPackage, {
-			allowApiBilling: parsed.allowApiBilling,
-			cwd: (options.cwd ?? process.cwd)(),
-			env: options.env ?? process.env,
-			stdin: prompt,
-			...(parsed.claudeBinary ? { claudeBinary: parsed.claudeBinary } : {}),
-			...(parsed.promptMode ? { promptMode: parsed.promptMode } : {}),
-		});
-
-		for (const warning of materialized.spec.warnings) {
-			stderr.write(`${warning.message}\n`);
-		}
-
+		materialized = await materializeClaudeInvocation(
+			agentPackage,
+			input,
+			options,
+		);
+		onMaterialized(materialized);
+		writeWarnings(materialized, runtime.stderr);
 		const exitCode = await spawnClaude(materialized, {
 			spawn: options.spawn ?? defaultSpawn,
-			stdout: options.stdout ?? process.stdout,
-			stderr,
+			stdout: runtime.stdout,
+			stderr: runtime.stderr,
 		});
-		exit(exitCode);
+		return { exitCode, materialized };
 	} catch (error: unknown) {
-		stderr.write(
+		runtime.stderr.write(
 			spawnDiagnostic(materialized?.spec.command ?? "claude", error),
 		);
-		exit(1);
-	} finally {
-		await materialized?.cleanup();
+		return { exitCode: 1, ...(materialized ? { materialized } : {}) };
 	}
 }
 
-function parseArgs(argv: readonly string[]): ParsedArgs | Error {
-	let allowApiBilling = false;
-	let claudeBinary: string | undefined;
-	let promptMode: SystemPromptMode | undefined;
-	const promptArgs: string[] = [];
-	let parsingFlags = true;
+async function materializeClaudeInvocation(
+	agentPackage: AgentPackage,
+	input: RunInput,
+	options: RunClaudeBinaryOptions,
+): Promise<MaterializedInvocation> {
+	const parsed = input.parsed;
+	return (options.materializeInvocation ?? createClaudeCliInvocation)(
+		agentPackage,
+		{
+			allowApiBilling: parsed.allowApiBilling,
+			cwd: (options.cwd ?? process.cwd)(),
+			env: options.env ?? process.env,
+			stdin: input.prompt,
+			...(parsed.claudeBinary ? { claudeBinary: parsed.claudeBinary } : {}),
+			...(parsed.promptMode ? { promptMode: parsed.promptMode } : {}),
+		},
+	);
+}
 
-	for (let index = 0; index < argv.length; index += 1) {
+function writeWarnings(
+	materialized: MaterializedInvocation,
+	stderr: Writable,
+): void {
+	for (const warning of materialized.spec.warnings) {
+		stderr.write(`${warning.message}\n`);
+	}
+}
+
+function parseArgs(argv: readonly string[]): ParsedArgs | HelpArgs | Error {
+	const state: ArgsState = {
+		allowApiBilling: false,
+		promptArgs: [],
+	};
+
+	for (let index = 0; index < argv.length; ) {
 		const arg = argv[index];
-		if (arg === undefined) continue;
-		if (!parsingFlags) {
-			promptArgs.push(arg);
+		if (arg === undefined) {
+			index += 1;
 			continue;
 		}
+		if (isHelpArg(arg)) return { kind: "help" };
 		if (arg === "--") {
-			parsingFlags = false;
+			state.promptArgs.push(...argv.slice(index + 1));
+			break;
+		}
+
+		const consumed = consumeFlagArg(arg, argv[index + 1], state);
+		if (consumed instanceof Error) return consumed;
+		if (consumed) {
+			index += consumed;
 			continue;
 		}
-		if (arg === "--allow-api-billing") {
-			allowApiBilling = true;
-			continue;
-		}
-		if (arg === "--claude-binary") {
-			const next = argv[index + 1];
-			if (!next) return new Error("--claude-binary requires a path");
-			claudeBinary = next;
-			index += 1;
-			continue;
-		}
-		if (arg === "--prompt-mode") {
-			const next = argv[index + 1];
-			if (next !== "append" && next !== "replace") {
-				return new Error("--prompt-mode must be append or replace");
-			}
-			promptMode = next;
-			index += 1;
-			continue;
-		}
-		promptArgs.push(arg);
+		if (arg.startsWith("--")) return new Error(`Unknown option: ${arg}`);
+		state.promptArgs.push(arg);
+		index += 1;
 	}
 
+	return parsedArgsFromState(state);
+}
+
+function isHelpArg(arg: string): boolean {
+	return arg === "-h" || arg === "--help";
+}
+
+function consumeFlagArg(
+	arg: string,
+	next: string | undefined,
+	state: ArgsState,
+): number | Error | undefined {
+	const flag = FLAG_BY_NAME.get(arg);
+	if (!flag) return undefined;
+
+	const error = applyFlag(flag, state, next ?? "");
+	if (error) return error;
+	return flag.kind === "value" ? 2 : 1;
+}
+
+function applyFlag(
+	flag: FlagSpec,
+	state: ArgsState,
+	next: string,
+): Error | undefined {
+	if (flag.kind === "boolean") {
+		flag.apply(state);
+		return undefined;
+	}
+	const result = flag.apply(state, next);
+	return result instanceof Error ? result : undefined;
+}
+
+function parsedArgsFromState(state: ArgsState): ParsedArgs {
 	return {
-		allowApiBilling,
-		...(claudeBinary ? { claudeBinary } : {}),
-		...(promptMode ? { promptMode } : {}),
-		promptArgs,
+		kind: "run",
+		allowApiBilling: state.allowApiBilling,
+		...(state.claudeBinary ? { claudeBinary: state.claudeBinary } : {}),
+		...(state.promptMode ? { promptMode: state.promptMode } : {}),
+		promptArgs: state.promptArgs,
 	};
+}
+
+function applyClaudeBinary(state: ArgsState, next: string): Error | undefined {
+	if (!next) return new Error("--claude-binary requires a path");
+	state.claudeBinary = next;
+	return undefined;
+}
+
+function applyPromptMode(state: ArgsState, next: string): Error | undefined {
+	if (next !== "append" && next !== "replace") {
+		return new Error("--prompt-mode must be append or replace");
+	}
+	state.promptMode = next;
+	return undefined;
 }
 
 async function resolvePrompt(
 	promptArgs: readonly string[],
 	readStdin: (() => Promise<string>) | undefined,
+	isStdinTTY: (() => boolean) | undefined,
 ): Promise<string> {
 	if (promptArgs.length > 0) return promptArgs.join(" ");
+	const stdinIsTTY = isStdinTTY
+		? isStdinTTY()
+		: readStdin === undefined && defaultIsStdinTTY();
+	if (stdinIsTTY) return "";
 	return (readStdin ?? readProcessStdin)();
+}
+
+function defaultIsStdinTTY(): boolean {
+	return process.stdin.isTTY === true;
 }
 
 async function readProcessStdin(): Promise<string> {
@@ -185,6 +391,47 @@ async function readProcessStdin(): Promise<string> {
 	}
 	return Buffer.concat(chunks).toString("utf-8");
 }
+
+function installCleanupSignalHandlers(
+	cleanup: () => Promise<void>,
+	signals: SignalRuntime,
+): () => void {
+	const handlers = new Map<RuntimeSignal, SignalHandler>();
+
+	for (const signal of HANDLED_SIGNALS) {
+		const handler: SignalHandler = async () => {
+			try {
+				await cleanup();
+			} finally {
+				uninstall();
+				signals.reemit(signal);
+			}
+		};
+		handlers.set(signal, handler);
+		signals.on(signal, handler);
+	}
+
+	function uninstall() {
+		for (const [signal, handler] of handlers) {
+			signals.off(signal, handler);
+		}
+		handlers.clear();
+	}
+
+	return uninstall;
+}
+
+const defaultSignalRuntime: SignalRuntime = {
+	on(signal, handler) {
+		process.on(signal, handler as NodeJS.SignalsListener);
+	},
+	off(signal, handler) {
+		process.off(signal, handler as NodeJS.SignalsListener);
+	},
+	reemit(signal) {
+		process.kill(process.pid, signal);
+	},
+};
 
 async function spawnClaude(
 	materialized: MaterializedInvocation,
@@ -226,8 +473,4 @@ function defaultSpawn(
 function spawnDiagnostic(command: string, error: unknown): string {
 	const message = error instanceof Error ? error.message : String(error);
 	return `claude-cli runtime failed to spawn "${command}". likely fix: install Claude Code CLI or pass --claude-binary <path>. ${message}\n`;
-}
-
-export async function main(agentPackage: AgentPackage): Promise<void> {
-	await runClaudeBinary(agentPackage);
 }

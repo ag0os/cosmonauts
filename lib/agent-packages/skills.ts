@@ -11,7 +11,7 @@ import type { AgentDefinition } from "../agents/types.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import type { PackagedSkill, PackageSkillSelection } from "./types.ts";
 
-export interface ResolvePackageSkillsOptions {
+interface ResolvePackageSkillsOptions {
 	readonly selection: PackageSkillSelection;
 	readonly skillPaths: readonly string[];
 	readonly sourceAgent?: Pick<AgentDefinition, "skills">;

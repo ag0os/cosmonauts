@@ -8,7 +8,7 @@ import type {
 	SystemPromptMode,
 } from "./types.ts";
 
-export interface CreateClaudeCliInvocationOptions {
+interface CreateClaudeCliInvocationOptions {
 	readonly cwd: string;
 	readonly stdin: string;
 	readonly env?: NodeJS.ProcessEnv;

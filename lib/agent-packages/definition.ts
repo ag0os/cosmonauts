@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import matter from "gray-matter";
 import { qualifyRole } from "../agents/qualified-role.ts";
 import type { AgentDefinition, AgentToolSet } from "../agents/types.ts";
@@ -54,9 +54,7 @@ export async function loadAgentPackageDefinition(
 	return validateAgentPackageDefinition(parsed, { definitionPath });
 }
 
-export const readAgentPackageDefinition = loadAgentPackageDefinition;
-
-export function validateAgentPackageDefinition(
+function validateAgentPackageDefinition(
 	value: unknown,
 	options: { readonly definitionPath?: string } = {},
 ): AgentPackageDefinition {
@@ -239,10 +237,30 @@ function parseTargetOptions(
 function resolveDefinitionPath(
 	path: string,
 	definitionPath: string | undefined,
-) {
-	if (isAbsolute(path)) return path;
-	if (!definitionPath) return resolve(path);
-	return resolve(dirname(definitionPath), path);
+): string {
+	if (isAbsolute(path)) {
+		throw new Error(
+			"prompt.path must be relative to the package definition directory",
+		);
+	}
+
+	const root = definitionPath
+		? dirname(resolve(definitionPath))
+		: process.cwd();
+	const resolved = resolve(root, path);
+	const relativePath = relative(root, resolved);
+	if (
+		relativePath === "" ||
+		(!isAbsolute(relativePath) &&
+			relativePath !== ".." &&
+			!relativePath.startsWith(`..${sep}`))
+	) {
+		return resolved;
+	}
+
+	throw new Error(
+		"prompt.path must stay within the package definition directory",
+	);
 }
 
 function requireObject(value: unknown, field: string): Record<string, unknown> {
