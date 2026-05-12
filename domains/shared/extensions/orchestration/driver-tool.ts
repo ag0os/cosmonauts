@@ -59,13 +59,14 @@ export function registerDriverTool(
 	pi.registerTool({
 		name: "run_driver",
 		label: "Run Driver",
-		description: "Run plan-linked tasks through the Cosmonauts driver loop.",
+		description:
+			"Start a plan-linked task run through the Cosmonauts driver loop. Returns a `runId` immediately; the run proceeds in the background — monitor it with `watch_events`. Load /skill:drive before configuring a run.",
 		parameters: Type.Object({
 			planSlug: Type.String({ description: "Plan slug to run" }),
 			taskIds: Type.Optional(
 				Type.Array(Type.String(), {
 					description:
-						"Optional ordered task IDs. Defaults to non-Done tasks labeled plan:<planSlug>.",
+						"Ordered task IDs to run. Pass them when dependency order matters. Defaults to all non-Done tasks labeled plan:<planSlug>.",
 				}),
 			),
 			backend: Type.Union(
@@ -75,23 +76,34 @@ export function registerDriverTool(
 					Type.Literal("claude-cli"),
 				],
 				{
-					description: "Driver backend to execute tasks",
+					description:
+						"Backend that executes each task's rendered prompt. `cosmonauts-subagent` runs in-process and is inline-only; `codex` and `claude-cli` are external CLI agents (use them for detached runs).",
 				},
 			),
 			mode: Type.Optional(
 				Type.Union([Type.Literal("inline"), Type.Literal("detached")], {
-					description: "Driver execution mode. Defaults to inline.",
+					description:
+						"Execution mode. `inline` (default) runs inside this session. `detached` writes a frozen run directory that survives session death and source edits — required for long or self-modifying work, not supported with the `cosmonauts-subagent` backend.",
 				}),
 			),
 			branch: Type.Optional(
-				Type.String({ description: "Expected git branch for each task" }),
+				Type.String({
+					description:
+						"Expected git branch for each task. Set this to a feature branch — per-task commits land here.",
+				}),
 			),
 			commitPolicy: Type.Optional(
-				Type.Union([
-					Type.Literal("driver-commits"),
-					Type.Literal("backend-commits"),
-					Type.Literal("no-commit"),
-				]),
+				Type.Union(
+					[
+						Type.Literal("driver-commits"),
+						Type.Literal("backend-commits"),
+						Type.Literal("no-commit"),
+					],
+					{
+						description:
+							"Who creates per-task commits. `driver-commits` (default): the driver commits each completed task. `backend-commits`: the backend agent commits its own work. `no-commit`: changes are left uncommitted.",
+					},
+				),
 			),
 			promptOverridesDir: Type.Optional(
 				Type.String({
@@ -100,23 +112,34 @@ export function registerDriverTool(
 			),
 			preflightCommands: Type.Optional(
 				Type.Array(Type.String(), {
-					description: "Commands to run before each task",
+					description:
+						"Commands run before each task. A non-zero exit aborts the run before that task starts.",
 				}),
 			),
 			postflightCommands: Type.Optional(
 				Type.Array(Type.String(), {
-					description: "Commands to run after each task",
+					description:
+						"Commands run after each task (not just at the end) — e.g. test, lint, typecheck. A non-zero exit blocks the run.",
 				}),
 			),
-			envelopePath: Type.String({ description: "Base prompt envelope path" }),
+			envelopePath: Type.String({
+				description:
+					"Base prompt envelope path, relative to the project root. For coding work use `bundled/coding/coding/drivers/templates/envelope.md` unless the project ships its own envelope.",
+			}),
 			preconditionPath: Type.Optional(
 				Type.String({ description: "Optional run precondition prompt path" }),
 			),
 			partialMode: Type.Optional(
-				Type.Union([Type.Literal("stop"), Type.Literal("continue")]),
+				Type.Union([Type.Literal("stop"), Type.Literal("continue")], {
+					description:
+						"What to do when a task returns partial progress. `stop` (default): halt the run for inspection. `continue`: move on to the next task.",
+				}),
 			),
 			taskTimeoutMs: Type.Optional(
-				Type.Number({ description: "Per-task timeout in milliseconds" }),
+				Type.Number({
+					description:
+						"Per-task timeout in milliseconds, applied to each task's backend invocation.",
+				}),
 			),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
