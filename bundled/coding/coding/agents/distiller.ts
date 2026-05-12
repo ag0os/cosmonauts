@@ -5,7 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"Reads plan artifacts and session transcripts, then produces structured KnowledgeBundle JSONL files for future SQLite + vector embedding ingestion.",
 	capabilities: ["coding-readonly"],
-	model: "anthropic/claude-sonnet-4-6",
+	model: "openai-codex/gpt-5.5",
 	tools: "coding",
 	extensions: [],
 	skills: ["*"],
@@ -13,6 +13,7 @@ const definition: AgentDefinition = {
 	projectContext: true,
 	session: "ephemeral",
 	loop: false,
+	thinkingLevel: "medium",
 };
 
 export default definition;

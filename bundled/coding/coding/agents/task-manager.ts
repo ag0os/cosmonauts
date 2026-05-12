@@ -5,7 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"Breaks approved plans into atomic, implementable tasks with acceptance criteria.",
 	capabilities: ["coding-readonly", "tasks"],
-	model: "anthropic/claude-sonnet-4-6",
+	model: "openai-codex/gpt-5.5",
 	tools: "readonly",
 	extensions: ["tasks", "plans"],
 	skills: [],
