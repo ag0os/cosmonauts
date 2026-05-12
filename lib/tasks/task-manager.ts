@@ -15,6 +15,7 @@ import {
 	saveTaskFile,
 } from "./file-system.ts";
 import { generateNextId, parseIdNumber } from "./id-generator.ts";
+import { withTaskCreateLock } from "./lock.ts";
 import { parseTask } from "./task-parser.ts";
 import { serializeTask } from "./task-serializer.ts";
 import type {
@@ -100,7 +101,19 @@ export class TaskManager {
 			this.assertValidDate(input.dueDate, "dueDate");
 		}
 
-		// Load existing tasks to determine next ID
+		// Serialize ID allocation + file write + config bump behind a
+		// process+filesystem lock so concurrent creates don't collide on IDs.
+		return await withTaskCreateLock(this.projectRoot, () =>
+			this.createTaskLocked(input, config),
+		);
+	}
+
+	private async createTaskLocked(
+		input: TaskCreateInput,
+		config: ForgeTasksConfig,
+	): Promise<Task> {
+		// Re-read existing tasks inside the lock so allocation accounts for any
+		// task a concurrent writer just created.
 		const existingTasks = await this.loadAllTasks();
 
 		// Generate new ID

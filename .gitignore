@@ -15,6 +15,9 @@ missions/archive/sessions/
 
 .claude/
 
+# Transient lock files (released after their critical section).
+.cosmonauts/*.lock
+
 # Fallow local analysis cache. Baselines under .fallow/baselines/ are tracked.
 .fallow/cache.bin
 .fallow/churn.bin
