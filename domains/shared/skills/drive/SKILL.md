@@ -40,7 +40,7 @@ If the tools are unavailable, say so and fall back to `chain_run` or direct `spa
 ## Agent Tool Workflow
 
 1. Confirm `planSlug`, ready task IDs, target branch, backend, mode, and commit policy.
-2. Use the coding envelope unless a project-specific envelope exists: `bundled/coding/coding/drivers/templates/envelope.md`.
+2. Omit `envelopePath` to use the bundled coding envelope shipped with Cosmonauts. Pass `envelopePath` (relative to the project root, or absolute) only when the project ships its own envelope — never pass the `bundled/...` path yourself; that directory lives inside the Cosmonauts package, not the project.
 3. Start the run with `run_driver`.
 4. Monitor with `watch_events({ planSlug, runId, since })`; preserve the returned cursor.
 5. If the run blocks or aborts, summarize the observed event and route the next action to the right specialist.
@@ -55,7 +55,7 @@ run_driver({
   mode: "detached",
   branch: "feature/auth",
   commitPolicy: "driver-commits",
-  envelopePath: "bundled/coding/coding/drivers/templates/envelope.md",
+  // envelopePath omitted — uses the bundled coding envelope
   postflightCommands: ["bun run test", "bun run lint", "bun run typecheck"],
   partialMode: "stop"
 })

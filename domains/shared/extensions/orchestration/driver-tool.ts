@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { createClaudeCliBackend } from "../../../../lib/driver/backends/claude-cli.ts";
@@ -55,6 +56,7 @@ const activeRuns = new Map<string, ActiveDriverRun>();
 export function registerDriverTool(
 	pi: ExtensionAPI,
 	getRuntime: (cwd: string) => Promise<CosmonautsRuntime>,
+	frameworkRoot: string,
 ): void {
 	pi.registerTool({
 		name: "run_driver",
@@ -122,10 +124,12 @@ export function registerDriverTool(
 						"Commands run after each task (not just at the end) — e.g. test, lint, typecheck. A non-zero exit blocks the run.",
 				}),
 			),
-			envelopePath: Type.String({
-				description:
-					"Base prompt envelope path, relative to the project root. For coding work use `bundled/coding/coding/drivers/templates/envelope.md` unless the project ships its own envelope.",
-			}),
+			envelopePath: Type.Optional(
+				Type.String({
+					description:
+						"Base prompt envelope path, relative to the project root (absolute paths are honored as-is). Omit it to use the bundled coding envelope shipped with Cosmonauts; pass a path only when the project ships its own envelope.",
+				}),
+			),
 			preconditionPath: Type.Optional(
 				Type.String({ description: "Optional run precondition prompt path" }),
 			),
@@ -185,6 +189,7 @@ export function registerDriverTool(
 					runId,
 					planSlug,
 					taskIds,
+					frameworkRoot,
 					prepareWorkdir: mode === "inline",
 				});
 				const backend = createBackend(params.backend, mode, runtime, ctx.cwd);
@@ -192,7 +197,7 @@ export function registerDriverTool(
 					taskManager,
 					backend,
 					activityBus,
-					cosmonautsRoot: ctx.cwd,
+					cosmonautsRoot: frameworkRoot,
 				};
 				const handle =
 					mode === "detached"
@@ -233,13 +238,14 @@ async function createRunSpec({
 	runId,
 	planSlug,
 	taskIds,
+	frameworkRoot,
 	prepareWorkdir,
 }: {
 	params: {
 		backend: BackendName;
 		branch?: string;
 		commitPolicy?: DriverRunSpec["commitPolicy"];
-		envelopePath: string;
+		envelopePath?: string;
 		preconditionPath?: string;
 		promptOverridesDir?: string;
 		preflightCommands?: string[];
@@ -251,6 +257,7 @@ async function createRunSpec({
 	runId: string;
 	planSlug: string;
 	taskIds: string[];
+	frameworkRoot: string;
 	prepareWorkdir: boolean;
 }): Promise<DriverRunSpec> {
 	const workdir = join(
@@ -270,7 +277,11 @@ async function createRunSpec({
 		taskIds,
 		backendName: params.backend,
 		promptTemplate: {
-			envelopePath: resolve(ctx.cwd, params.envelopePath),
+			envelopePath: resolveEnvelopePath(
+				params.envelopePath,
+				ctx.cwd,
+				frameworkRoot,
+			),
 			preconditionPath: params.preconditionPath
 				? resolve(ctx.cwd, params.preconditionPath)
 				: undefined,
@@ -298,6 +309,35 @@ async function createRunSpec({
 	}
 
 	return spec;
+}
+
+const BUNDLED_CODING_ENVELOPE = join(
+	"bundled",
+	"coding",
+	"coding",
+	"drivers",
+	"templates",
+	"envelope.md",
+);
+
+function resolveEnvelopePath(
+	envelopePath: string | undefined,
+	projectRoot: string,
+	frameworkRoot: string,
+): string {
+	if (envelopePath) {
+		return isAbsolute(envelopePath)
+			? envelopePath
+			: resolve(projectRoot, envelopePath);
+	}
+
+	const bundled = join(frameworkRoot, BUNDLED_CODING_ENVELOPE);
+	if (!existsSync(bundled)) {
+		throw new Error(
+			`No envelopePath provided and the bundled coding envelope was not found at ${bundled}. Pass envelopePath explicitly.`,
+		);
+	}
+	return bundled;
 }
 
 function createBackend(

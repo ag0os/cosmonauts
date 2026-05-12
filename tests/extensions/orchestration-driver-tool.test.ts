@@ -318,6 +318,7 @@ async function runDriver(
 				projectSkills: [],
 				skillPaths: [],
 			}) as never,
+		fixture.projectRoot,
 	);
 	registerWatchEventsTool(pi as never);
 

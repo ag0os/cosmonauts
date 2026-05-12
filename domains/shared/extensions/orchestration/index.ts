@@ -228,7 +228,7 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 
 	registerChainTool(pi, getRuntime);
 	registerSpawnTool(pi, getRuntime);
-	registerDriverTool(pi, getRuntime);
+	registerDriverTool(pi, getRuntime, frameworkRoot);
 	registerWatchEventsTool(pi);
 }
 

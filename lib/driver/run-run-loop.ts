@@ -97,8 +97,26 @@ export async function runRunLoop(
 			};
 		}
 
+		await emitRunAborted(spec, ctx, formatError(error));
 		throw error;
 	}
+}
+
+async function emitRunAborted(
+	spec: DriverRunSpec,
+	ctx: RunRunLoopCtx,
+	reason: string,
+): Promise<void> {
+	try {
+		await emit(spec, ctx, { type: "run_aborted", reason });
+	} catch {
+		// The event log is unwritable; nothing more we can do here. The
+		// original error still propagates to the caller.
+	}
+}
+
+function formatError(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }
 
 async function emit(

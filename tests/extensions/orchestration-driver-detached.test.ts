@@ -55,7 +55,7 @@ describe("run_driver detached mode", () => {
 		const fixture = await setupFixture("schema");
 		const pi = createMockPi(fixture.projectRoot);
 
-		registerDriverTool(pi as never, vi.fn());
+		registerDriverTool(pi as never, vi.fn(), fixture.projectRoot);
 
 		const tool = pi.getTool("run_driver") as
 			| { execute: unknown; parameters: unknown; label?: string }
@@ -76,7 +76,7 @@ describe("run_driver detached mode", () => {
 			sessionId: PARENT_SESSION_ID,
 		});
 		const getRuntime = vi.fn();
-		registerDriverTool(pi as never, getRuntime as never);
+		registerDriverTool(pi as never, getRuntime as never, fixture.projectRoot);
 
 		const response = (await pi.callTool("run_driver", {
 			planSlug: fixture.planSlug,
@@ -121,7 +121,7 @@ describe("run_driver detached mode", () => {
 		const fixture = await setupFixture("unsupported");
 		const pi = createMockPi(fixture.projectRoot);
 		const getRuntime = vi.fn();
-		registerDriverTool(pi as never, getRuntime as never);
+		registerDriverTool(pi as never, getRuntime as never, fixture.projectRoot);
 
 		const response = (await pi.callTool("run_driver", {
 			planSlug: fixture.planSlug,
