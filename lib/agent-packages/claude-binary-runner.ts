@@ -11,8 +11,6 @@ interface RunClaudeBinaryOptions {
 	readonly argv?: readonly string[];
 	readonly env?: NodeJS.ProcessEnv;
 	readonly cwd?: () => string;
-	readonly readStdin?: () => Promise<string>;
-	readonly isStdinTTY?: () => boolean;
 	readonly stdout?: Writable;
 	readonly stderr?: Writable;
 	readonly exit?: (code: number) => void;
@@ -23,7 +21,7 @@ interface RunClaudeBinaryOptions {
 
 interface MaterializeClaudeInvocationOptions {
 	readonly cwd: string;
-	readonly stdin: string;
+	readonly claudeArgs: readonly string[];
 	readonly env: NodeJS.ProcessEnv;
 	readonly allowApiBilling: boolean;
 	readonly claudeBinary?: string;
@@ -38,13 +36,13 @@ type MaterializeClaudeInvocation = (
 export interface SpawnOptions {
 	readonly cwd: string;
 	readonly env: NodeJS.ProcessEnv;
-	readonly stdio: ["pipe", "pipe", "pipe"];
+	readonly stdio: "inherit";
 }
 
 interface SpawnedClaudeProcess {
-	readonly stdout: Readable;
-	readonly stderr: Readable;
-	readonly stdin: Writable;
+	readonly stdout?: Readable | null;
+	readonly stderr?: Readable | null;
+	readonly stdin?: Writable | null;
 	on(
 		event: "close",
 		listener: (code: number | null, signal: string | null) => void,
@@ -67,15 +65,11 @@ interface ParsedArgs {
 	readonly promptArgs: readonly string[];
 }
 
-interface HelpArgs {
-	readonly kind: "help";
-}
-
 interface ArgsState {
 	allowApiBilling: boolean;
 	claudeBinary?: string;
 	promptMode?: SystemPromptMode;
-	promptArgs: string[];
+	claudeArgs: string[];
 }
 
 type FlagSpec =
@@ -122,8 +116,6 @@ interface SignalRuntime {
 }
 
 const HANDLED_SIGNALS: readonly RuntimeSignal[] = ["SIGINT", "SIGTERM"];
-const USAGE =
-	"Usage: <exported-agent> [--help] [--allow-api-billing] [--claude-binary <path>] [--prompt-mode append|replace] [--] [prompt...]";
 
 export async function runClaudeBinary(
 	agentPackage: AgentPackage,
@@ -173,7 +165,6 @@ interface RuntimeIO {
 
 interface RunInput {
 	readonly parsed: ParsedArgs;
-	readonly prompt: string;
 }
 
 interface RunMaterializedClaudeResult {
@@ -198,28 +189,12 @@ async function resolveRunInput(
 	const parsed = parseArgs(options.argv ?? process.argv.slice(2));
 
 	if (parsed instanceof Error) {
-		runtime.stderr.write(`${parsed.message}\n${USAGE}\n`);
-		runtime.exit(1);
-		return undefined;
-	}
-	if (parsed.kind === "help") {
-		runtime.stdout.write(`${USAGE}\n`);
-		runtime.exit(0);
-		return undefined;
-	}
-
-	const prompt = await resolvePrompt(
-		parsed.promptArgs,
-		options.readStdin,
-		options.isStdinTTY,
-	);
-	if (prompt.trim().length === 0) {
-		runtime.stderr.write(`${USAGE}\n`);
+		runtime.stderr.write(`${parsed.message}\n`);
 		runtime.exit(1);
 		return undefined;
 	}
 
-	return { parsed, prompt };
+	return { parsed };
 }
 
 async function runMaterializedClaude(
@@ -265,7 +240,7 @@ async function materializeClaudeInvocation(
 			allowApiBilling: parsed.allowApiBilling,
 			cwd: (options.cwd ?? process.cwd)(),
 			env: options.env ?? process.env,
-			stdin: input.prompt,
+			claudeArgs: parsed.promptArgs,
 			...(parsed.claudeBinary ? { claudeBinary: parsed.claudeBinary } : {}),
 			...(parsed.promptMode ? { promptMode: parsed.promptMode } : {}),
 		},
@@ -281,10 +256,10 @@ function writeWarnings(
 	}
 }
 
-function parseArgs(argv: readonly string[]): ParsedArgs | HelpArgs | Error {
+function parseArgs(argv: readonly string[]): ParsedArgs | Error {
 	const state: ArgsState = {
 		allowApiBilling: false,
-		promptArgs: [],
+		claudeArgs: [],
 	};
 
 	for (let index = 0; index < argv.length; ) {
@@ -293,11 +268,6 @@ function parseArgs(argv: readonly string[]): ParsedArgs | HelpArgs | Error {
 			index += 1;
 			continue;
 		}
-		if (isHelpArg(arg)) return { kind: "help" };
-		if (arg === "--") {
-			state.promptArgs.push(...argv.slice(index + 1));
-			break;
-		}
 
 		const consumed = consumeFlagArg(arg, argv[index + 1], state);
 		if (consumed instanceof Error) return consumed;
@@ -305,16 +275,11 @@ function parseArgs(argv: readonly string[]): ParsedArgs | HelpArgs | Error {
 			index += consumed;
 			continue;
 		}
-		if (arg.startsWith("--")) return new Error(`Unknown option: ${arg}`);
-		state.promptArgs.push(arg);
+		state.claudeArgs.push(arg);
 		index += 1;
 	}
 
 	return parsedArgsFromState(state);
-}
-
-function isHelpArg(arg: string): boolean {
-	return arg === "-h" || arg === "--help";
 }
 
 function consumeFlagArg(
@@ -349,7 +314,7 @@ function parsedArgsFromState(state: ArgsState): ParsedArgs {
 		allowApiBilling: state.allowApiBilling,
 		...(state.claudeBinary ? { claudeBinary: state.claudeBinary } : {}),
 		...(state.promptMode ? { promptMode: state.promptMode } : {}),
-		promptArgs: state.promptArgs,
+		promptArgs: state.claudeArgs,
 	};
 }
 
@@ -365,31 +330,6 @@ function applyPromptMode(state: ArgsState, next: string): Error | undefined {
 	}
 	state.promptMode = next;
 	return undefined;
-}
-
-async function resolvePrompt(
-	promptArgs: readonly string[],
-	readStdin: (() => Promise<string>) | undefined,
-	isStdinTTY: (() => boolean) | undefined,
-): Promise<string> {
-	if (promptArgs.length > 0) return promptArgs.join(" ");
-	const stdinIsTTY = isStdinTTY
-		? isStdinTTY()
-		: readStdin === undefined && defaultIsStdinTTY();
-	if (stdinIsTTY) return "";
-	return (readStdin ?? readProcessStdin)();
-}
-
-function defaultIsStdinTTY(): boolean {
-	return process.stdin.isTTY === true;
-}
-
-async function readProcessStdin(): Promise<string> {
-	const chunks: Buffer[] = [];
-	for await (const chunk of process.stdin) {
-		chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
-	}
-	return Buffer.concat(chunks).toString("utf-8");
 }
 
 function installCleanupSignalHandlers(
@@ -445,12 +385,12 @@ async function spawnClaude(
 	const child = options.spawn(spec.command, spec.args, {
 		cwd: spec.cwd,
 		env: spec.env,
-		stdio: ["pipe", "pipe", "pipe"],
+		stdio: "inherit",
 	});
 
-	child.stdout.pipe(options.stdout, { end: false });
-	child.stderr.pipe(options.stderr, { end: false });
-	child.stdin.end(spec.stdin);
+	child.stdout?.pipe(options.stdout, { end: false });
+	child.stderr?.pipe(options.stderr, { end: false });
+	child.stdin?.end(spec.stdin);
 
 	return waitForChild(child);
 }

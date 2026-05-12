@@ -37,7 +37,7 @@ async function materialize(
 ) {
 	return createClaudeCliInvocation(agentPackage, {
 		cwd: tmp.path,
-		stdin: "inspect the repository",
+		claudeArgs: [],
 		env: { PATH: "/usr/bin", ANTHROPIC_API_KEY: "secret" },
 		...overrides,
 	});
@@ -63,10 +63,6 @@ describe("createClaudeCliInvocation", () => {
 
 			expect(invocation.spec.command).toBe("claude");
 			expect(invocation.spec.args).toEqual([
-				"-p",
-				"--bare",
-				"--setting-sources",
-				"",
 				"--append-system-prompt-file",
 				systemPromptPath,
 				"--tools",
@@ -91,10 +87,6 @@ describe("createClaudeCliInvocation", () => {
 			expect(invocation.spec.args).toContain("--system-prompt-file");
 			expect(invocation.spec.args).not.toContain("--append-system-prompt-file");
 			expect(invocation.spec.args).toEqual([
-				"-p",
-				"--bare",
-				"--setting-sources",
-				"",
 				"--system-prompt-file",
 				systemPromptPath,
 				"--tools",
@@ -116,7 +108,12 @@ describe("createClaudeCliInvocation", () => {
 	][])("maps the %s tool preset to Claude tool names", async (tools, expectedTools) => {
 		const invocation = await materialize(makePackage({ tools }));
 		try {
-			expect(invocation.spec.args.at(-1)).toBe(expectedTools);
+			if (expectedTools === "") {
+				expect(invocation.spec.args).not.toContain("--tools");
+			} else {
+				const toolsIndex = invocation.spec.args.indexOf("--tools");
+				expect(invocation.spec.args[toolsIndex + 1]).toBe(expectedTools);
+			}
 		} finally {
 			await invocation.cleanup();
 		}

@@ -10,7 +10,7 @@ import type {
 
 interface CreateClaudeCliInvocationOptions {
 	readonly cwd: string;
-	readonly stdin: string;
+	readonly claudeArgs?: readonly string[];
 	readonly env?: NodeJS.ProcessEnv;
 	readonly allowApiBilling?: boolean;
 	readonly claudeBinary?: string;
@@ -48,18 +48,14 @@ export async function createClaudeCliInvocation(
 		spec: {
 			command: options.claudeBinary ?? "claude",
 			args: [
-				"-p",
-				"--bare",
-				"--setting-sources",
-				"",
 				promptFlag,
 				systemPromptPath,
-				"--tools",
-				tools.join(","),
+				...toolArgs(tools),
+				...(options.claudeArgs ?? []),
 			],
 			env,
 			cwd: options.cwd,
-			stdin: options.stdin,
+			stdin: "",
 			warnings,
 		},
 		async cleanup() {
@@ -72,6 +68,10 @@ function promptModeFlag(promptMode: SystemPromptMode): string {
 	return promptMode === "replace"
 		? "--system-prompt-file"
 		: "--append-system-prompt-file";
+}
+
+function toolArgs(tools: readonly string[]): readonly string[] {
+	return tools.length === 0 ? [] : ["--tools", tools.join(",")];
 }
 
 function buildChildEnv(

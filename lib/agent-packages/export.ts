@@ -2,7 +2,7 @@ import { execFile as execFileCallback } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { AgentPackage } from "./types.ts";
 
@@ -45,13 +45,13 @@ export async function compileAgentPackageBinary(
 }
 
 function renderClaudeBinaryEntry(agentPackage: AgentPackage): string {
-	const runnerModuleUrl = pathToFileURL(
-		fileURLToPath(new URL("./claude-binary-runner.ts", import.meta.url)),
-	).href;
+	const runnerModulePath = fileURLToPath(
+		new URL("./claude-binary-runner.ts", import.meta.url),
+	);
 	const serializedPackage = JSON.stringify(agentPackage);
 
 	return [
-		`import { runClaudeBinary } from ${JSON.stringify(runnerModuleUrl)};`,
+		`import { runClaudeBinary } from ${JSON.stringify(runnerModulePath)};`,
 		"",
 		`const packageJson = ${JSON.stringify(serializedPackage)};`,
 		"await runClaudeBinary(JSON.parse(packageJson));",

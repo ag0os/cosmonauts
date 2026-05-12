@@ -26,7 +26,7 @@ Work with the human to produce a prompt that makes sense in the destination runt
 2. Propose an external-safe prompt that describes only capabilities the exported agent can actually use.
 3. Review the prompt with the human and revise it until internal-only references are removed or replaced.
 4. Choose skill delivery declaratively: usually `mode: "none"`, `mode: "source-agent"`, or an allowlist of skill names that should be embedded.
-5. Choose the target tool policy declaratively. Pick the package `tools.preset` and, when needed, target-specific `targets["claude-cli"].allowedTools` rather than copying internal tool names by habit.
+5. Choose the target tool policy declaratively. Pick the package `tools.preset` and, when needed, target-specific `targets["claude-cli"].allowedTools` rather than copying internal tool names by habit. For full Claude Code capability, use a coding preset with Claude-native `allowedTools: ["default"]` instead of enumerating stale tool names.
 
 ## Author the AgentPackageDefinition
 
@@ -57,8 +57,11 @@ cosmonauts export --definition <path> --out <path>
 
 Run the command only after the package definition, prompt, skill selection, and target tool policy have been reviewed for the target runtime.
 
+For `claude-cli`, exported binaries should wrap the user's normal Claude Code installation by default: preserve Claude's local login/config behavior, allow invocation without an initial prompt, and pass Claude-native flags through to Claude. Do not assume package export implies non-interactive `-p` mode or `--bare` mode unless the human explicitly wants that behavior.
+
 ## Final handoff checklist
 
 - Use a stable package `id` and output binary name that describe the packaged role and target, such as `cosmo-planner-claude` with `--out ./bin/cosmo-planner-claude`.
+- Tell the human that Claude flags pass through and the binary can be launched with no prompt for an interactive Claude Code session, or with `-p`/`--print` for non-interactive output.
 - Tell the human that the binary may print a subscription-safety message: Cosmonauts removes `ANTHROPIC_API_KEY` from Claude's environment by default so Claude Code uses subscription auth.
 - Mention that `--allow-api-billing` is the explicit runtime opt-in when the human wants the exported binary to allow API-key billing.

@@ -39,9 +39,8 @@ describe("compileAgentPackageBinary", () => {
 			execFile,
 		});
 
-		expect(generatedSource).toContain(
-			'import { runClaudeBinary } from "file://',
-		);
+		expect(generatedSource).toContain('import { runClaudeBinary } from "');
+		expect(generatedSource).not.toContain("file://");
 		expect(generatedSource).toContain(
 			"/lib/agent-packages/claude-binary-runner.ts",
 		);

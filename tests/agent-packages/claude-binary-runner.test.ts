@@ -134,13 +134,12 @@ function signalHarness(): {
 }
 
 describe("runClaudeBinary", () => {
-	it("joins trailing args into the prompt, pipes Claude output, exits with Claude's code, and cleans up", async () => {
+	it("passes Claude args through, pipes Claude output from tests, exits with Claude's code, and cleans up", async () => {
 		const child = new FakeChild();
 		const stdout = captureStream();
 		const stderr = captureStream();
 		const events: string[] = [];
 		const exit = vi.fn(() => events.push("exit"));
-		const readStdin = vi.fn(async () => "stdin should not be read");
 		const cleanup = vi.fn(async () => {
 			events.push("cleanup-start");
 			await Promise.resolve();
@@ -169,7 +168,6 @@ describe("runClaudeBinary", () => {
 		await runClaudeBinary(basePackage, {
 			argv: ["design", "a", "cache", "layer"],
 			cwd: () => "/repo",
-			readStdin,
 			stdout: stdout.stream,
 			stderr: stderr.stream,
 			exit,
@@ -177,12 +175,11 @@ describe("runClaudeBinary", () => {
 			spawn: spawned.spawn,
 		});
 
-		expect(readStdin).not.toHaveBeenCalled();
 		expect(materializeInvocation).toHaveBeenCalledWith(basePackage, {
 			allowApiBilling: false,
 			cwd: "/repo",
 			env: process.env,
-			stdin: "design a cache layer",
+			claudeArgs: ["design", "a", "cache", "layer"],
 		});
 		expect(spawned.calls[0]).toEqual({
 			command: "claude",
@@ -190,7 +187,7 @@ describe("runClaudeBinary", () => {
 			options: {
 				cwd: "/repo",
 				env: {},
-				stdio: ["pipe", "pipe", "pipe"],
+				stdio: "inherit",
 			},
 		});
 		expect(stdout.text()).toBe("claude out\n");
@@ -200,7 +197,7 @@ describe("runClaudeBinary", () => {
 		expect(events).toEqual(["cleanup-start", "cleanup-end", "exit"]);
 	});
 
-	it("reads stdin only when no prompt args are provided", async () => {
+	it("launches Claude with no args when no prompt is provided", async () => {
 		const child = new FakeChild();
 		const exit = vi.fn();
 		const materializeInvocation = vi.fn(async () => materializedInvocation());
@@ -208,7 +205,6 @@ describe("runClaudeBinary", () => {
 		const spawned = spawnClosingChild(child);
 		await runClaudeBinary(basePackage, {
 			argv: [],
-			readStdin: vi.fn(async () => "prompt from stdin"),
 			exit,
 			materializeInvocation,
 			spawn: spawned.spawn,
@@ -216,71 +212,66 @@ describe("runClaudeBinary", () => {
 
 		expect(materializeInvocation).toHaveBeenCalledWith(
 			basePackage,
-			expect.objectContaining({ stdin: "prompt from stdin" }),
+			expect.objectContaining({ claudeArgs: [] }),
 		);
 		expect(exit).toHaveBeenCalledWith(0);
 	});
 
-	it("prints usage and exits non-zero when prompt args and stdin are empty", async () => {
-		const stderr = captureStream();
+	it("does not require a prompt", async () => {
+		const child = new FakeChild();
 		const exit = vi.fn();
-		const materializeInvocation = vi.fn();
-		const spawn = vi.fn();
+		const materializeInvocation = vi.fn(async () => materializedInvocation());
+		const spawned = spawnClosingChild(child);
 
 		await runClaudeBinary(basePackage, {
 			argv: [],
-			readStdin: vi.fn(async () => ""),
-			stderr: stderr.stream,
 			exit,
 			materializeInvocation,
-			spawn,
+			spawn: spawned.spawn,
 		});
 
-		expect(stderr.text()).toMatch(/Usage: .*\[prompt\.\.\.\]/);
-		expect(exit).toHaveBeenCalledWith(1);
-		expect(materializeInvocation).not.toHaveBeenCalled();
-		expect(spawn).not.toHaveBeenCalled();
+		expect(materializeInvocation).toHaveBeenCalled();
+		expect(exit).toHaveBeenCalledWith(0);
 	});
 
-	it("prints help and exits successfully for --help", async () => {
-		const stdout = captureStream();
+	it("passes --help through to Claude", async () => {
+		const child = new FakeChild();
 		const exit = vi.fn();
-		const materializeInvocation = vi.fn();
-		const spawn = vi.fn();
+		const materializeInvocation = vi.fn(async () => materializedInvocation());
+		const spawned = spawnClosingChild(child);
 
 		await runClaudeBinary(basePackage, {
 			argv: ["--help"],
-			stdout: stdout.stream,
 			exit,
 			materializeInvocation,
-			spawn,
+			spawn: spawned.spawn,
 		});
 
-		expect(stdout.text()).toMatch(/Usage: .*--help/);
+		expect(materializeInvocation).toHaveBeenCalledWith(
+			basePackage,
+			expect.objectContaining({ claudeArgs: ["--help"] }),
+		);
 		expect(exit).toHaveBeenCalledWith(0);
-		expect(materializeInvocation).not.toHaveBeenCalled();
-		expect(spawn).not.toHaveBeenCalled();
 	});
 
-	it("rejects unknown runtime flags before the prompt escape", async () => {
-		const stderr = captureStream();
+	it("passes unknown flags through to Claude", async () => {
+		const child = new FakeChild();
 		const exit = vi.fn();
-		const materializeInvocation = vi.fn();
-		const spawn = vi.fn();
+		const materializeInvocation = vi.fn(async () => materializedInvocation());
+		const spawned = spawnClosingChild(child);
 
 		await runClaudeBinary(basePackage, {
 			argv: ["--bogus", "hello"],
-			stderr: stderr.stream,
 			exit,
 			materializeInvocation,
-			spawn,
+			spawn: spawned.spawn,
 		});
 
-		expect(stderr.text()).toContain("Unknown option: --bogus");
-		expect(stderr.text()).toMatch(/Usage:/);
-		expect(exit).toHaveBeenCalledWith(1);
-		expect(materializeInvocation).not.toHaveBeenCalled();
-		expect(spawn).not.toHaveBeenCalled();
+		expect(materializeInvocation).toHaveBeenCalledWith(
+			basePackage,
+			expect.objectContaining({ claudeArgs: ["--bogus", "hello"] }),
+		);
+		expect(exit).toHaveBeenCalledWith(0);
 	});
 
 	it("allows prompts starting with dashes after --", async () => {
@@ -290,7 +281,6 @@ describe("runClaudeBinary", () => {
 
 		await runClaudeBinary(basePackage, {
 			argv: ["--", "--not-a-flag"],
-			readStdin: vi.fn(async () => "stdin should not be read"),
 			exit: vi.fn(),
 			materializeInvocation,
 			spawn: spawned.spawn,
@@ -298,28 +288,23 @@ describe("runClaudeBinary", () => {
 
 		expect(materializeInvocation).toHaveBeenCalledWith(
 			basePackage,
-			expect.objectContaining({ stdin: "--not-a-flag" }),
+			expect.objectContaining({ claudeArgs: ["--", "--not-a-flag"] }),
 		);
 	});
 
-	it("does not wait for stdin when no prompt is supplied in a TTY", async () => {
-		const stderr = captureStream();
-		const readStdin = vi.fn(async () => "prompt from stdin");
-		const materializeInvocation = vi.fn();
+	it("starts interactive Claude when no prompt is supplied", async () => {
+		const child = new FakeChild();
+		const materializeInvocation = vi.fn(async () => materializedInvocation());
+		const spawned = spawnClosingChild(child);
 
 		await runClaudeBinary(basePackage, {
 			argv: [],
-			readStdin,
-			isStdinTTY: () => true,
-			stderr: stderr.stream,
 			exit: vi.fn(),
 			materializeInvocation,
-			spawn: vi.fn(),
+			spawn: spawned.spawn,
 		});
 
-		expect(stderr.text()).toMatch(/Usage:/);
-		expect(readStdin).not.toHaveBeenCalled();
-		expect(materializeInvocation).not.toHaveBeenCalled();
+		expect(materializeInvocation).toHaveBeenCalled();
 	});
 
 	it("preserves ANTHROPIC_API_KEY when --allow-api-billing is provided", async () => {
@@ -416,7 +401,8 @@ describe("runClaudeBinary", () => {
 			signals: signals.runtime,
 		});
 
-		await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(spawn).toHaveBeenCalled();
 		await signals.emit("SIGINT");
 		child.close(130);
 		await run;
