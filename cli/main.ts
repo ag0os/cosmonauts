@@ -16,6 +16,7 @@
  *   cosmonauts task <command>                     → task management subcommands
  *   cosmonauts plan <command>                     → plan management subcommands
  *   cosmonauts drive <command>                    → driver run management subcommands
+ *   cosmonauts export ...                         → export packaged agents as binaries
  *
  * Pi flags (session, provider, tools, mode, etc.) pass through automatically.
  * See cli/pi-flags.ts for the full registry.
@@ -58,6 +59,7 @@ import { createChainEventLogger } from "./chain-event-logger.ts";
 import { createCreateProgram } from "./create/subcommand.ts";
 import { createDriveProgram } from "./drive/subcommand.ts";
 import { createEjectProgram } from "./eject/subcommand.ts";
+import { createExportProgram } from "./export/subcommand.ts";
 import {
 	createInstallProgram,
 	createPackagesProgram,
@@ -659,7 +661,8 @@ if (
 	subcommand === "packages" ||
 	subcommand === "update" ||
 	subcommand === "eject" ||
-	subcommand === "drive"
+	subcommand === "drive" ||
+	subcommand === "export"
 ) {
 	const programs: Record<string, () => Command> = {
 		task: createTaskProgram,
@@ -673,6 +676,7 @@ if (
 		update: createUpdateProgram,
 		eject: createEjectProgram,
 		drive: createDriveProgram,
+		export: createExportProgram,
 	};
 	// subcommand is guaranteed to be in the map by the if-check above
 	const createProgram = programs[subcommand];
