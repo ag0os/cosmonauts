@@ -89,7 +89,7 @@ Run `cosmonauts --list-workflows` for the live list, including any project-level
 
 `cosmonauts drive` is the CLI verb for driver runs: inline mode runs inside the host assistant session, while detached mode writes a frozen run directory and continues independently. The driver tools (`run_driver`, `watch_events`) are exposed via the `drive` capability, loaded by `main/cosmo` and `coding/cody`. The detailed run knowledge (backends, modes, commit policy, resume) lives in `/skill:drive`.
 
-> Drive and chains will eventually merge into one orchestration surface. For now they overlap: chains are the established, well-exercised path (a bit slower); Drive is newer and adds detached execution and external backends (`codex`, `claude-cli`). Agents that can do both follow what the user asks for and default to a chain when unspecified.
+> Drive and chains will eventually merge into one orchestration surface. For now they overlap: chains are the established, well-exercised path; Drive is newer and adds detached execution and external backends (`codex`, `claude-cli`). Agents that can do both follow what the user asks for and default to a chain when unspecified.
 
 ## CLI Surface
 
