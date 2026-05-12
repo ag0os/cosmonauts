@@ -289,6 +289,40 @@ describe("orchestration extension", () => {
 		);
 	});
 
+	test("chain_run includes partial summaries for failed stages", async () => {
+		const { pi } = createExtensionPi();
+		const stage = { name: "coordinator", loop: true };
+
+		mockRuntime({ projectSkills: [] });
+		parseChainMock.mockReturnValue([stage]);
+		runChainMock.mockResolvedValue({
+			success: false,
+			stageResults: [
+				{
+					stage,
+					success: false,
+					iterations: 2,
+					durationMs: 1000,
+					error:
+						'Loop stage "coordinator" reached max iterations (2) before completion',
+					summary: "Implemented TASK-123 and blocked TASK-124.",
+				},
+			],
+			totalDurationMs: 1000,
+			errors: [
+				'Loop stage "coordinator" reached max iterations (2) before completion',
+			],
+		} as ChainResult);
+
+		const result = (await pi.callTool("chain_run", {
+			expression: "coordinator",
+		})) as { content: Array<{ type: "text"; text: string }> };
+
+		expect(result.content[0]?.text).toContain(
+			'- coordinator: FAILED — Loop stage "coordinator" reached max iterations (2) before completion — Implemented TASK-123 and blocked TASK-124.',
+		);
+	});
+
 	test("spawn_agent forwards project skills from config", async () => {
 		const { cwd, pi } = createExtensionPi("/tmp/project", {
 			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cody -->",

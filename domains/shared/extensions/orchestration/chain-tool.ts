@@ -43,7 +43,12 @@ function buildChainResultText(result: ChainResult): string {
 
 	const stageLines = result.stageResults.map((s) => {
 		const status = s.success ? "ok" : "FAILED";
-		const note = s.success ? s.summary : (s.error ?? s.summary);
+		const notes = s.success
+			? [s.summary]
+			: [s.error, s.summary === s.error ? undefined : s.summary];
+		const note = notes
+			.filter((value): value is string => Boolean(value))
+			.join(" — ");
 		return `- ${s.stage.name}: ${status}${note ? ` — ${note}` : ""}`;
 	});
 
