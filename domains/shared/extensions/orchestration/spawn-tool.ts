@@ -10,6 +10,10 @@ import {
 	activityBus,
 	runSessionCleanup,
 } from "../../../../lib/orchestration/activity-bus.ts";
+import {
+	extractAssistantText,
+	summarizeAssistantText,
+} from "../../../../lib/orchestration/assistant-text.ts";
 import type { SpawnActivityEvent } from "../../../../lib/orchestration/message-bus.ts";
 import {
 	getPlanSlugForSession,
@@ -110,35 +114,6 @@ interface ChildSessionEvent {
 // ============================================================================
 // Helpers
 // ============================================================================
-
-/**
- * Extract the text content from the last assistant message in a completed
- * session. Falls back to "<role> completed" if no text content is found.
- */
-function extractAssistantText(messages: unknown[], role: string): string {
-	for (let i = messages.length - 1; i >= 0; i--) {
-		const msg = messages[i] as { role?: string; content?: unknown };
-		if (msg.role === "assistant" && Array.isArray(msg.content)) {
-			const textBlocks: string[] = [];
-			for (const block of msg.content) {
-				const b = block as { type?: string; text?: string };
-				if (b.type === "text" && typeof b.text === "string" && b.text.trim()) {
-					textBlocks.push(b.text.trim());
-				}
-			}
-			if (textBlocks.length > 0) {
-				return textBlocks.join("\n\n");
-			}
-		}
-	}
-	return `${role} completed`;
-}
-
-function extractSummary(text: string, role: string): string {
-	const trimmed = text.trim();
-	if (trimmed.length === 0) return `${role} completed`;
-	return trimmed.slice(0, 200);
-}
 
 function formatCompletionMessage(
 	spawnId: string,
@@ -307,7 +282,7 @@ async function executeChildPromptLoop(
 		role: prompt.role,
 		startedAt,
 		outcome: "success",
-		summary: extractSummary(fullText, prompt.role),
+		summary: summarizeAssistantText(fullText, prompt.role),
 		fullText,
 	};
 }

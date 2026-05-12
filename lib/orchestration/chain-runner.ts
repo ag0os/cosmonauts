@@ -10,6 +10,10 @@ import { unqualifyRole } from "../agents/qualified-role.ts";
 import { validateSlug } from "../plans/plan-manager.ts";
 import { TaskManager } from "../tasks/task-manager.ts";
 import { createPiSpawner } from "./agent-spawner.ts";
+import {
+	extractAssistantText,
+	summarizeAssistantText,
+} from "./assistant-text.ts";
 import { isParallelGroupStep, resolveStagePrompt } from "./chain-steps.ts";
 import { getModelForRole, getThinkingForRole } from "./model-resolution.ts";
 import type {
@@ -564,6 +568,8 @@ interface PreparedStageExecutionContext {
 	iterations: number;
 	aggregatedStats: SpawnStats;
 	hasStats: boolean;
+	/** Condensed final-message text from the most recent spawn in this stage */
+	lastSummary: string | undefined;
 }
 
 interface StageExecutionContext extends PreparedStageExecutionContext {
@@ -661,6 +667,7 @@ function prepareStageExecution(
 		iterations: 0,
 		aggregatedStats: emptySpawnStats(),
 		hasStats: false,
+		lastSummary: undefined,
 	};
 }
 
@@ -704,6 +711,7 @@ async function runOneShotStage(
 
 	if (spawnResult.success) {
 		emitSpawned(spawnResult.sessionId);
+		recordStageSummary(context, spawnResult.messages);
 		emit(context.config, {
 			type: "agent_completed",
 			role: context.stage.name,
@@ -718,7 +726,18 @@ async function runOneShotStage(
 		durationMs: Date.now() - context.stageStart,
 		error: spawnResult.error,
 		stats: spawnResult.stats,
+		summary: context.lastSummary,
 	};
+}
+
+function recordStageSummary(
+	context: StageExecutionContext,
+	messages: unknown[],
+): void {
+	context.lastSummary = summarizeAssistantText(
+		extractAssistantText(messages, context.stage.name),
+		context.stage.name,
+	);
 }
 
 async function runLoopStage(
@@ -797,6 +816,7 @@ function buildLoopExitResult(
 		iterations: context.iterations,
 		durationMs: Date.now() - context.stageStart,
 		stats,
+		summary: context.lastSummary,
 	};
 
 	if (loopState.status === "complete" || loopState.status === "aborted") {
@@ -861,6 +881,7 @@ async function spawnLoopIteration(
 
 	if (spawnResult.success) {
 		emitSpawned(spawnResult.sessionId);
+		recordStageSummary(context, spawnResult.messages);
 		emit(context.config, {
 			type: "agent_completed",
 			role: context.stage.name,

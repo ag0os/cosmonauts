@@ -214,6 +214,8 @@ export interface StageResult {
 	error?: string;
 	/** Aggregated stats across all iterations in this stage */
 	stats?: SpawnStats;
+	/** Condensed text from the stage agent's final message (last iteration for loops) */
+	summary?: string;
 }
 
 /** Result of executing a full chain */

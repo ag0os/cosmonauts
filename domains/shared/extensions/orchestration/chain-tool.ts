@@ -30,6 +30,32 @@ interface ChainProgressDetails {
 }
 
 // ============================================================================
+// Result Text
+// ============================================================================
+
+/**
+ * Build the text the calling agent sees when the chain finishes — a header plus
+ * one line per stage carrying its outcome and a condensed summary of the stage
+ * agent's final message. This is what ran, not the work product itself.
+ */
+function buildChainResultText(result: ChainResult): string {
+	const header = `Chain ${result.success ? "completed" : "failed"} (${formatDuration(result.totalDurationMs)}) · ${result.stageResults.length} stage${result.stageResults.length === 1 ? "" : "s"}`;
+
+	const stageLines = result.stageResults.map((s) => {
+		const status = s.success ? "ok" : "FAILED";
+		const note = s.success ? s.summary : (s.error ?? s.summary);
+		return `- ${s.stage.name}: ${status}${note ? ` — ${note}` : ""}`;
+	});
+
+	return [
+		header,
+		...stageLines,
+		"",
+		"Stage lines are the agents' final messages, not the changes — check task_list and git log for the actual state.",
+	].join("\n");
+}
+
+// ============================================================================
 // Tool Registration
 // ============================================================================
 
@@ -106,13 +132,6 @@ export function registerChainTool(
 				},
 			});
 
-			const stagesSummary = result.stageResults
-				.map(
-					(s) =>
-						`${s.stage.name}: ${s.success ? "ok" : "FAILED"}${s.error ? ` (${s.error})` : ""}`,
-				)
-				.join(", ");
-
 			// Add final summary line
 			const finalLine = result.success
 				? `✓ Chain completed (${formatDuration(result.totalDurationMs)})`
@@ -123,7 +142,7 @@ export function registerChainTool(
 				content: [
 					{
 						type: "text" as const,
-						text: `Chain ${result.success ? "completed" : "failed"} (${result.totalDurationMs}ms) — ${stagesSummary}`,
+						text: buildChainResultText(result),
 					},
 				],
 				details: {

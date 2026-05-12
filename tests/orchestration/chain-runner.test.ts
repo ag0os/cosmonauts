@@ -221,6 +221,39 @@ describe("runStage", () => {
 			expect(result.durationMs).toBeGreaterThanOrEqual(0);
 		});
 
+		test("summary reflects the agent's final assistant message", async () => {
+			const spawner = createMockSpawner([
+				{
+					success: true,
+					sessionId: "mock-session",
+					messages: [
+						{
+							role: "assistant",
+							content: [
+								{ type: "text", text: "Created 7 tasks under the plan." },
+							],
+						},
+					],
+				},
+			]);
+			const stage = makeStage("task-manager", false);
+			const config = makeConfig([stage]);
+
+			const result = await runStage(stage, config, spawner);
+
+			expect(result.summary).toBe("Created 7 tasks under the plan.");
+		});
+
+		test("summary falls back to '<role> completed' when the agent ends on a tool call", async () => {
+			const spawner = createMockSpawner();
+			const stage = makeStage("planner", false);
+			const config = makeConfig([stage]);
+
+			const result = await runStage(stage, config, spawner);
+
+			expect(result.summary).toBe("planner completed");
+		});
+
 		test("uses custom stage prompt when provided", async () => {
 			const spawner = createMockSpawner();
 			const stage: ChainStage = {

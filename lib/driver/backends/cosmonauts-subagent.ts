@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { extractAssistantText } from "../../orchestration/assistant-text.ts";
 import type {
 	AgentSpawner,
 	SpawnConfig,
@@ -173,30 +174,4 @@ function getStringProperty(
 
 	const candidate = (value as Record<string, unknown>)[property];
 	return typeof candidate === "string" ? candidate : undefined;
-}
-
-function extractAssistantText(messages: unknown[], role: string): string {
-	for (let i = messages.length - 1; i >= 0; i--) {
-		const message = messages[i] as { role?: string; content?: unknown };
-		if (message.role !== "assistant" || !Array.isArray(message.content)) {
-			continue;
-		}
-
-		const textBlocks: string[] = [];
-		for (const block of message.content) {
-			const candidate = block as { type?: string; text?: string };
-			if (
-				candidate.type === "text" &&
-				typeof candidate.text === "string" &&
-				candidate.text.trim()
-			) {
-				textBlocks.push(candidate.text.trim());
-			}
-		}
-		if (textBlocks.length > 0) {
-			return textBlocks.join("\n\n");
-		}
-	}
-
-	return `${role} completed`;
 }
