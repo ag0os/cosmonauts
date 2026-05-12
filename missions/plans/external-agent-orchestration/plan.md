@@ -1,8 +1,8 @@
 ---
 title: 'External Agent Orchestration Phase 1: Packaged Claude Export'
-status: active
+status: completed
 createdAt: '2026-05-11T20:50:06.113Z'
-updatedAt: '2026-05-11T21:35:04.233Z'
+updatedAt: '2026-05-12T14:49:53.204Z'
 behaviorsReviewPending: false
 ---
 
