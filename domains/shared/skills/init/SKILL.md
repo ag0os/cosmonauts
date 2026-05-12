@@ -79,6 +79,8 @@ Rules:
 - Shared/framework skills remain available automatically; do not add them just to preserve access.
 - Present the suggested skills as a proposal the user can accept or modify.
 
+Do **not** add a `workflows` block. The active domain's workflows (e.g. `plan-and-build`, `implement`, `verify`, `spec-and-build`, `adapt`) are inherited automatically — `cosmonauts --list-workflows` shows them with no config. A `workflows` entry in project config *overrides* the domain definition of that name, so only add one when the user explicitly wants to customize or add a chain. The canonical catalog lives in `docs/orchestration.md`.
+
 ### 5. Write
 
 Only after explicit confirmation:
@@ -86,10 +88,11 @@ Only after explicit confirmation:
 - create or update `.cosmonauts/config.json`
 
 Config merge rules:
-- If `.cosmonauts/config.json` does not exist, start from the injected canonical default template.
+- If `.cosmonauts/config.json` does not exist, start from the injected canonical default template (which is intentionally minimal — typically just an empty object).
 - If it exists, merge into the existing config instead of replacing it wholesale.
 - Preserve existing `domain`, `skillPaths`, and custom `workflows` unless the user asked to change them.
 - Update `skills` deliberately: keep existing relevant entries, add approved suggestions, and avoid removing user-defined values without confirmation.
+- Do not introduce a `workflows` block on a fresh init — workflows are inherited from the domain (see phase 4). Only write one if the user is customizing a chain.
 - Preserve valid user formatting when practical, but correctness matters more than formatting fidelity.
 
 Rerun behavior:

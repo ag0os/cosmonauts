@@ -69,7 +69,7 @@ interface ChainStats { stages: StageStats[]; totalCost: number; totalTokens: num
 
 ## Named Workflows
 
-The primary user interface for multi-agent pipelines. Built-in defaults live in `bundled/coding/coding/workflows.ts` (mirrored in `lib/config/defaults.ts`) and can be overridden or extended via `.cosmonauts/config.json`.
+The primary user interface for multi-agent pipelines. Built-in defaults live in `bundled/coding/coding/workflows.ts` and are inherited automatically — a fresh project needs no `workflows` config to use them. Add a `workflows` block to `.cosmonauts/config.json` only to override a chain by name or define a new one; project entries take precedence over the domain's on name collision.
 
 | Name | Chain | Purpose |
 |------|-------|---------|

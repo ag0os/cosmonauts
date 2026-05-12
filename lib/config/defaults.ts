@@ -1,49 +1,21 @@
 import type { ProjectConfig } from "./types.ts";
 
 /**
- * Default project config written by `cosmonauts scaffold missions`.
+ * Default project config used by `cosmonauts init` (as the template injected
+ * into the bootstrap prompt) and written by `cosmonauts scaffold missions`.
  *
- * Intentionally omits the `skills` allowlist: when absent, session setup falls
- * back to each agent's declared skills rather than intersecting with a project
- * filter. An explicit `skills` list is an opt-in way to restrict further — not
- * a necessary base case.
+ * Intentionally minimal — both `skills` and `workflows` are omitted on purpose:
  *
- * Workflows are synced to the current coding-domain defaults so users see them
- * in their config and can customize. Keep this table in lockstep with
- * `bundled/coding/coding/workflows.ts`.
+ * - `skills` absent → session setup falls back to each agent's declared skills
+ *   rather than intersecting with a project filter. An explicit list is an
+ *   opt-in way to restrict further, not a necessary base case.
+ * - `workflows` absent → the active domain's workflows are used as-is. The
+ *   workflow loader treats domain workflows as the baseline and only lets
+ *   project config override on name collision (see `lib/workflows/loader.ts`),
+ *   so shipping a copy of the domain table here would shadow it and silently
+ *   drift out of sync. Projects customize a chain by adding a `workflows` block
+ *   explicitly — see the catalog in `docs/orchestration.md`.
  */
 export function createDefaultProjectConfig(): ProjectConfig {
-	return {
-		workflows: {
-			"plan-and-build": {
-				description:
-					"Full pipeline with adversarial plan review: design, review, revise, task creation, implementation, and verification",
-				chain:
-					"planner -> plan-reviewer -> planner -> task-manager -> coordinator -> integration-verifier -> quality-manager",
-			},
-			implement: {
-				description:
-					"Create tasks from existing plan, implement, and run merge-readiness quality gates",
-				chain:
-					"task-manager -> coordinator -> integration-verifier -> quality-manager",
-			},
-			verify: {
-				description:
-					"Run lint/format checks, clean-context review, and remediation on existing changes, falling back to fixer-only remediation when no active plan exists",
-				chain: "quality-manager",
-			},
-			"spec-and-build": {
-				description:
-					"Full pipeline with interactive spec capture and adversarial plan review",
-				chain:
-					"spec-writer -> planner -> plan-reviewer -> planner -> task-manager -> coordinator -> integration-verifier -> quality-manager",
-			},
-			adapt: {
-				description:
-					"Adapt a feature from a reference codebase: the planner studies the reference codebase path and designs an adaptation plan, then implement and review",
-				chain:
-					"planner -> task-manager -> coordinator -> integration-verifier -> quality-manager",
-			},
-		},
-	};
+	return {};
 }

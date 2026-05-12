@@ -459,8 +459,8 @@ describe("buildInitSessionConfig", () => {
 			"You are running Cosmonauts init for /tmp/project.",
 		);
 		expect(config.initialMessage).toContain("Load /skill:init");
-		expect(config.initialMessage).toContain('"workflows"');
-		expect(config.initialMessage).toContain('"plan-and-build"');
+		// The injected config template is intentionally minimal — no workflows table.
+		expect(config.initialMessage).not.toContain('"workflows"');
 	});
 });
 

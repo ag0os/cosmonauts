@@ -5,6 +5,7 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import workflows from "../../bundled/coding/coding/workflows.ts";
 import { createDefaultProjectConfig } from "../../lib/config/defaults.ts";
 import { scaffoldProjectConfig } from "../../lib/config/loader.ts";
 import { resolveWorkflow } from "../../lib/workflows/loader.ts";
@@ -22,54 +23,30 @@ describe("scaffoldProjectConfig", () => {
 		await expect(access(configPath)).resolves.toBeUndefined();
 	});
 
-	test("scaffolded config matches canonical defaults", async () => {
+	test("scaffolded config matches the canonical (minimal) default", async () => {
 		await scaffoldProjectConfig(tmp.path);
 
 		const configPath = join(tmp.path, ".cosmonauts", "config.json");
-		const raw = await readFile(configPath, "utf-8");
-		const config = JSON.parse(raw);
-		const expected = createDefaultProjectConfig();
-		const planAndBuildChain = config.workflows["plan-and-build"]?.chain ?? "";
-		const implementChain = config.workflows.implement?.chain ?? "";
+		const config = JSON.parse(await readFile(configPath, "utf-8"));
 
-		expect(config).toEqual(expected);
-		expect(config.skills).toEqual(expected.skills);
-		expect(config.workflows).toEqual(expected.workflows);
-		expect(config.workflows["plan-and-build"]).toBeDefined();
-		expect(config.workflows.implement).toBeDefined();
-		expect(config.workflows.verify).toBeDefined();
-		expect(config.workflows.verify.description).toContain(
-			"fixer-only remediation",
-		);
-		expect(planAndBuildChain).toContain("integration-verifier");
-		expect(planAndBuildChain.indexOf("integration-verifier")).toBeLessThan(
-			planAndBuildChain.indexOf("quality-manager"),
-		);
-		expect(implementChain).toContain("integration-verifier");
-		expect(implementChain).toContain("integration-verifier -> quality-manager");
+		expect(config).toEqual(createDefaultProjectConfig());
 	});
 
-	test("createDefaultProjectConfig returns a fresh object", () => {
+	test("scaffolded config does not declare workflows", async () => {
+		await scaffoldProjectConfig(tmp.path);
+
+		const configPath = join(tmp.path, ".cosmonauts", "config.json");
+		const config = JSON.parse(await readFile(configPath, "utf-8"));
+
+		expect(config.workflows).toBeUndefined();
+	});
+
+	test("createDefaultProjectConfig returns a fresh object each call", () => {
 		const first = createDefaultProjectConfig();
 		const second = createDefaultProjectConfig();
-		const firstPlanAndBuild = first.workflows?.["plan-and-build"]?.chain ?? "";
-		const firstImplement = first.workflows?.implement?.chain ?? "";
 
 		expect(first).toEqual(second);
 		expect(first).not.toBe(second);
-		expect(first.workflows).not.toBe(second.workflows);
-		expect(first.workflows?.["plan-and-build"]).not.toBe(
-			second.workflows?.["plan-and-build"],
-		);
-		expect(first.workflows?.verify?.description).toContain(
-			"fixer-only remediation",
-		);
-		expect(firstPlanAndBuild).toContain("integration-verifier");
-		expect(firstPlanAndBuild).toContain(
-			"integration-verifier -> quality-manager",
-		);
-		expect(firstImplement).toContain("integration-verifier");
-		expect(firstImplement).toContain("integration-verifier -> quality-manager");
 	});
 
 	test("does not overwrite existing config.json", async () => {
@@ -104,28 +81,42 @@ describe("scaffoldProjectConfig", () => {
 	});
 });
 
-describe("fresh project bootstrap path", () => {
-	test("resolveWorkflow succeeds for plan-and-build after scaffold", async () => {
+describe("workflow resolution after scaffold", () => {
+	test("domain workflows resolve whether or not a config was scaffolded", async () => {
+		const before = await resolveWorkflow("plan-and-build", tmp.path, workflows);
+		expect(before.name).toBe("plan-and-build");
+		expect(before.chain).toBeTruthy();
+
 		await scaffoldProjectConfig(tmp.path);
 
-		const wf = await resolveWorkflow("plan-and-build", tmp.path);
-		expect(wf.name).toBe("plan-and-build");
-		expect(wf.chain).toBeTruthy();
+		// The scaffolded (empty) config adds nothing — resolution is unchanged.
+		const after = await resolveWorkflow("plan-and-build", tmp.path, workflows);
+		expect(after.chain).toBe(before.chain);
 	});
 
-	test("resolveWorkflow throws without scaffold (no built-in defaults)", async () => {
-		await expect(resolveWorkflow("plan-and-build", tmp.path)).rejects.toThrow(
-			'Unknown workflow "plan-and-build"',
-		);
-	});
-
-	test("all three standard workflows resolve after scaffold", async () => {
+	test("standard domain workflows resolve after scaffold", async () => {
 		await scaffoldProjectConfig(tmp.path);
 
 		for (const name of ["plan-and-build", "implement", "verify"]) {
-			const wf = await resolveWorkflow(name, tmp.path);
+			const wf = await resolveWorkflow(name, tmp.path, workflows);
 			expect(wf.name).toBe(name);
 			expect(wf.chain).toBeTruthy();
 		}
+	});
+
+	test("resolveWorkflow throws for an unknown workflow", async () => {
+		await scaffoldProjectConfig(tmp.path);
+
+		await expect(
+			resolveWorkflow("does-not-exist", tmp.path, workflows),
+		).rejects.toThrow('Unknown workflow "does-not-exist"');
+	});
+
+	test("resolveWorkflow throws when no domain workflows are available", async () => {
+		await scaffoldProjectConfig(tmp.path);
+
+		await expect(resolveWorkflow("plan-and-build", tmp.path)).rejects.toThrow(
+			'Unknown workflow "plan-and-build"',
+		);
 	});
 });
