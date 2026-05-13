@@ -218,6 +218,27 @@ Connect Cosmonauts to external messaging platforms.
 - Notification delivery when autonomous work completes
 - Bidirectional: receive prompts and send results through messaging apps
 
+### `headless-init`: Headless Project Bootstrap (`init --print` / `--emit-files`)
+
+`cosmonauts init` is REPL-only today: it launches the domain lead to chat about `AGENTS.md` and skill choices, then writes files after the user confirms. External orchestrators (Claude Code, Codex driving cosmonauts from outside) can't bootstrap a fresh project without a human at the terminal. Surface a non-interactive mode that produces the same artifacts as a single-shot proposal.
+
+- `cosmonauts init --print` runs the bootstrap agent in print mode and emits the proposed `AGENTS.md` content to stdout; no files written
+- `cosmonauts init --emit-files <dir>` writes proposed `AGENTS.md` and any skill-suggestion files into `<dir>` without prompting; reports a summary on stderr; exits non-zero if the bootstrap agent declines
+- Bootstrap prompt reworked so the agent produces a structured, single-shot proposal (no clarifying questions in this mode); structured envelope documented in the bootstrap persona
+- Existing interactive `cosmonauts init` REPL remains the default — unchanged
+- Tests cover both new modes against a fixture project; assert produced `AGENTS.md` is non-empty and carries the expected section headings
+
+### `streaming-events`: NDJSON Event Stream for `--print` and `--workflow`
+
+External orchestrators currently can't watch intermediate progress — `cosmonauts --print` and `cosmonauts --workflow` only surface the final response, leaving long runs (multi-agent chains, drives) opaque for minutes. Expose a stable NDJSON event stream so callers can render progress and react to state changes mid-run. Pairs naturally with the existing `cosmonauts drive` event log; this generalizes the surface to print and workflow modes.
+
+- `--output-format stream-json` (exact flag chosen during planning) emits one JSON event per line to stdout; coexists with or replaces the final response per a mode flag
+- Stable event vocabulary: `turn_started`, `turn_ended`, `tool_call`, `tool_result`, `agent_switch`, `stage_started`, `stage_ended`, `chain_completed`, `error` — each with `timestamp`, `sessionId`, `agentId`, plus event-specific fields
+- Hooks into Pi's existing event bus via `pi.on()` rather than instrumenting from scratch; no new event source for things Pi already emits
+- Works for both `--print` (single agent) and `--workflow` / chain DSL (multi-stage); chains emit `stage_*` events around each stage's `turn_*` stream
+- Schema documented in `docs/orchestration.md` and versioned via a `schemaVersion` field on every event; breaking changes bump it
+- Tests cover per-event-type shape, ordering invariants (`turn_started` before `turn_ended`, `stage_started` before its turns), and chain stage boundaries
+
 ### `dialogic-planner-followups`: Review-Derived Followups from `dialogic-planner`
 
 Items deferred from the `dialogic-planner` branch. Polish items pruned; load-bearing ones kept.
