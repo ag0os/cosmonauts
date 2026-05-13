@@ -41,8 +41,10 @@ import {
 	createPackagesProgram,
 	createUninstallProgram,
 	installAction,
+	type PackageListRow,
 	packagesListAction,
 	renderInstallSuccess,
+	renderPackagesList,
 	resolveInstallRequest,
 	resolveSource,
 	uninstallAction,
@@ -663,6 +665,94 @@ describe("packagesListAction — with packages", () => {
 });
 
 // ============================================================================
+// renderPackagesList — pure renderer
+// ============================================================================
+
+describe("renderPackagesList", () => {
+	const sample: PackageListRow[] = [
+		{
+			name: "coding",
+			version: "1.0.0",
+			scope: "global",
+			portable: true,
+			domains: [{ name: "coding", portable: true }],
+		},
+		{
+			name: "devops",
+			version: "0.2.1",
+			scope: "local",
+			portable: false,
+			domains: [
+				{ name: "devops", portable: false },
+				{ name: "infra", portable: false },
+			],
+		},
+	];
+
+	it("emits the structured rows verbatim in JSON mode", () => {
+		expect(renderPackagesList(sample, "json")).toEqual({
+			kind: "json",
+			value: sample,
+		});
+	});
+
+	it("plain mode emits one tab-separated row per package", () => {
+		expect(renderPackagesList(sample, "plain")).toEqual({
+			kind: "lines",
+			lines: [
+				"coding\t1.0.0\tglobal\tyes\tcoding(portable)",
+				"devops\t0.2.1\tlocal\tno\tdevops(local),infra(local)",
+			],
+		});
+	});
+
+	it("human mode includes a header and dashed separator", () => {
+		const rendered = renderPackagesList(sample, "human");
+		expect(rendered.kind).toBe("lines");
+		if (rendered.kind === "lines") {
+			expect(rendered.lines[0]).toMatch(/^PACKAGE.*VERSION.*SCOPE.*PORTABLE.*DOMAINS/);
+			expect(rendered.lines[1]).toMatch(/^-+/);
+		}
+	});
+
+	it("human mode falls back to 'No packages installed.' on empty", () => {
+		expect(renderPackagesList([], "human")).toEqual({
+			kind: "lines",
+			lines: ["No packages installed."],
+		});
+	});
+
+	it("JSON mode on empty input emits an empty array, not a sentinel", () => {
+		expect(renderPackagesList([], "json")).toEqual({ kind: "json", value: [] });
+	});
+});
+
+describe("packagesListAction — JSON mode", () => {
+	it("emits a JSON array of rows when mode is 'json'", async () => {
+		const pkg = createInstalledPackageFixture("json-pkg", "user");
+		mockListInstalledPackages
+			.mockResolvedValueOnce([pkg])
+			.mockResolvedValueOnce([]);
+
+		await packagesListAction({ projectRoot: "/project", mode: "json" });
+
+		const parsed = JSON.parse(output.stdout()) as PackageListRow[];
+		expect(Array.isArray(parsed)).toBe(true);
+		expect(parsed).toHaveLength(1);
+		expect(parsed[0]?.name).toBe("json-pkg");
+		expect(parsed[0]?.scope).toBe("global");
+	});
+
+	it("emits an empty JSON array when no packages are installed", async () => {
+		mockListInstalledPackages.mockResolvedValue([]);
+
+		await packagesListAction({ projectRoot: "/project", mode: "json" });
+
+		expect(JSON.parse(output.stdout())).toEqual([]);
+	});
+});
+
+// ============================================================================
 // Program structure
 // ============================================================================
 
@@ -705,5 +795,12 @@ describe("createPackagesProgram", () => {
 		const program = createPackagesProgram();
 		const commandNames = program.commands.map((c) => c.name());
 		expect(commandNames).toContain("list");
+	});
+
+	it("exposes --json and --plain output options", () => {
+		const program = createPackagesProgram();
+		const optionNames = program.options.map((o) => o.long);
+		expect(optionNames).toContain("--json");
+		expect(optionNames).toContain("--plain");
 	});
 });

@@ -24,7 +24,8 @@ import type {
 	PackageScope,
 } from "../../lib/packages/types.ts";
 import { printCliError } from "../shared/errors.ts";
-import { printLines } from "../shared/output.ts";
+import type { CliOutputMode } from "../shared/output.ts";
+import { getOutputMode, printJson, printLines } from "../shared/output.ts";
 
 // ============================================================================
 // Types
@@ -48,6 +49,23 @@ interface UninstallCliOptions {
 interface PackagesListCliOptions {
 	/** Override project root for testing */
 	projectRoot?: string;
+	/** Output mode for the package listing */
+	mode?: CliOutputMode;
+}
+
+/** Per-domain entry in `packages list --json` rows. */
+export interface PackageListDomainItem {
+	name: string;
+	portable: boolean;
+}
+
+/** Row shape for `packages list --json`. */
+export interface PackageListRow {
+	name: string;
+	version: string;
+	scope: "global" | "local";
+	portable: boolean;
+	domains: PackageListDomainItem[];
 }
 
 interface InstallRequest {
@@ -303,10 +321,75 @@ async function loadDomainPortable(
 	}
 }
 
+async function buildPackageListRows(
+	packages: ReadonlyArray<InstalledPackage & { scopeLabel: "global" | "local" }>,
+): Promise<PackageListRow[]> {
+	const rows: PackageListRow[] = [];
+	for (const pkg of packages) {
+		const domains: PackageListDomainItem[] = [];
+		for (const domain of pkg.manifest.domains) {
+			const portable = await loadDomainPortable(pkg.installPath, domain.path);
+			domains.push({ name: domain.name, portable });
+		}
+		rows.push({
+			name: pkg.manifest.name,
+			version: pkg.manifest.version,
+			scope: pkg.scopeLabel,
+			portable: domains.some((d) => d.portable),
+			domains,
+		});
+	}
+	return rows;
+}
+
+export function renderPackagesList(
+	rows: readonly PackageListRow[],
+	mode: CliOutputMode,
+): { kind: "json"; value: unknown } | { kind: "lines"; lines: string[] } {
+	if (mode === "json") {
+		return { kind: "json", value: rows };
+	}
+
+	if (mode === "plain") {
+		return {
+			kind: "lines",
+			lines: rows.map(
+				(row) =>
+					`${row.name}\t${row.version}\t${row.scope}\t${row.portable ? "yes" : "no"}\t${row.domains
+						.map((d) => `${d.name}(${d.portable ? "portable" : "local"})`)
+						.join(",")}`,
+			),
+		};
+	}
+
+	if (rows.length === 0) {
+		return { kind: "lines", lines: ["No packages installed."] };
+	}
+
+	const nameWidth = Math.max(7, ...rows.map((row) => row.name.length));
+	const versionWidth = Math.max(7, ...rows.map((row) => row.version.length));
+	const lines = [
+		`${"PACKAGE".padEnd(nameWidth)}  ${"VERSION".padEnd(versionWidth)}  SCOPE   PORTABLE  DOMAINS`,
+		`${"-".repeat(nameWidth)}  ${"-".repeat(versionWidth)}  ------  --------  -------`,
+	];
+	for (const row of rows) {
+		const domainsStr = row.domains
+			.map((d) => `${d.name}(${d.portable ? "portable" : "local"})`)
+			.join(", ");
+		lines.push(
+			`${row.name.padEnd(nameWidth)}  ${row.version.padEnd(versionWidth)}  ${row.scope.padEnd(6)}  ${(
+				row.portable ? "yes" : "no"
+			).padEnd(8)}  ${domainsStr}`,
+		);
+	}
+	return { kind: "lines", lines };
+}
+
 export async function packagesListAction(
 	options: PackagesListCliOptions = {},
 ): Promise<void> {
 	const cwd = options.projectRoot ?? process.cwd();
+	const mode = options.mode ?? "human";
 
 	let [globalPkgs, localPkgs]: [InstalledPackage[], InstalledPackage[]] = [
 		[],
@@ -324,53 +407,19 @@ export async function packagesListAction(
 		return;
 	}
 
-	const allPkgs: Array<InstalledPackage & { scopeLabel: string }> = [
-		...globalPkgs.map((p) => ({ ...p, scopeLabel: "global" })),
-		...localPkgs.map((p) => ({ ...p, scopeLabel: "local" })),
+	const allPkgs: Array<
+		InstalledPackage & { scopeLabel: "global" | "local" }
+	> = [
+		...globalPkgs.map((p) => ({ ...p, scopeLabel: "global" as const })),
+		...localPkgs.map((p) => ({ ...p, scopeLabel: "local" as const })),
 	];
 
-	if (allPkgs.length === 0) {
-		console.log("No packages installed.");
-		return;
-	}
-
-	// Compute column widths
-	const nameWidth = Math.max(7, ...allPkgs.map((p) => p.manifest.name.length));
-	const versionWidth = Math.max(
-		7,
-		...allPkgs.map((p) => p.manifest.version.length),
-	);
-
-	// Header
-	console.log(
-		`${"PACKAGE".padEnd(nameWidth)}  ${"VERSION".padEnd(versionWidth)}  SCOPE   PORTABLE  DOMAINS`,
-	);
-	console.log(
-		`${"-".repeat(nameWidth)}  ${"-".repeat(versionWidth)}  ------  --------  -------`,
-	);
-
-	for (const pkg of allPkgs) {
-		const { manifest, installPath, scopeLabel } = pkg;
-
-		// Build domain info with portable flags
-		const domainParts: string[] = [];
-		for (const domain of manifest.domains) {
-			const portable = await loadDomainPortable(installPath, domain.path);
-			domainParts.push(`${domain.name}(${portable ? "portable" : "local"})`);
-		}
-
-		const name = manifest.name.padEnd(nameWidth);
-		const version = manifest.version.padEnd(versionWidth);
-		const scope = scopeLabel.padEnd(6);
-		// Show whether any domain is portable as the package-level indicator
-		const anyPortable = await Promise.all(
-			manifest.domains.map((d) => loadDomainPortable(installPath, d.path)),
-		).then((flags) => flags.some(Boolean));
-		const portableStr = anyPortable ? "yes" : "no";
-
-		console.log(
-			`${name}  ${version}  ${scope}  ${portableStr.padEnd(8)}  ${domainParts.join(", ")}`,
-		);
+	const rows = await buildPackageListRows(allPkgs);
+	const rendered = renderPackagesList(rows, mode);
+	if (rendered.kind === "json") {
+		printJson(rendered.value);
+	} else {
+		printLines(rendered.lines);
 	}
 }
 
@@ -424,11 +473,13 @@ export function createPackagesProgram(): Command {
 
 	program
 		.name("cosmonauts packages")
-		.description("Manage installed domain packages");
+		.description("Manage installed domain packages")
+		.option("--plain", "Output in plain text format (for agents)")
+		.option("--json", "Output in JSON format");
 
 	// Default action: list packages when invoked without a subcommand
 	program.action(async () => {
-		await packagesListAction();
+		await packagesListAction({ mode: getOutputMode(program.opts()) });
 	});
 
 	program
@@ -438,7 +489,7 @@ export function createPackagesProgram(): Command {
 			"List all installed packages with version, domains, and portable indicators",
 		)
 		.action(async () => {
-			await packagesListAction();
+			await packagesListAction({ mode: getOutputMode(program.opts()) });
 		});
 
 	return program;

@@ -11,6 +11,8 @@ function cliOptions(overrides: Partial<CliOptions> = {}): CliOptions {
 		listAgents: false,
 		listDomains: false,
 		dumpPrompt: false,
+		json: false,
+		plain: false,
 		piFlags: {},
 		...overrides,
 	};

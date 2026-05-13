@@ -39,6 +39,10 @@ export interface CliOptions {
 	profile?: boolean;
 	/** Session-only domain source directories (from --plugin-dir flags) */
 	pluginDirs?: string[];
+	/** Emit machine-readable JSON output (currently honored by --list-* handlers). */
+	json: boolean;
+	/** Emit minimal plain-text output for agents (currently honored by --list-* handlers). */
+	plain: boolean;
 	/** Pi CLI flags passed through (session, provider, tools, mode, etc.) */
 	piFlags: PiFlags;
 }

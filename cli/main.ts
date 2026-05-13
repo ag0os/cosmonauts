@@ -70,7 +70,12 @@ import { createPlanProgram } from "./plans/index.ts";
 import { createScaffoldProgram } from "./scaffold/subcommand.ts";
 import { createSession, GracefulExitError } from "./session.ts";
 import { printCliError } from "./shared/errors.ts";
-import { printLines } from "./shared/output.ts";
+import {
+	type CliOutputMode,
+	getOutputMode,
+	printJson,
+	printLines,
+} from "./shared/output.ts";
 import { createSkillsProgram } from "./skills/subcommand.ts";
 import { createTaskProgram } from "./tasks/subcommand.ts";
 import type { CliOptions } from "./types.ts";
@@ -181,6 +186,14 @@ function buildCliParser(): Command {
 			"--profile",
 			"Write profiling trace and summary files after a chain run",
 		)
+		.option(
+			"--json",
+			"Emit machine-readable JSON output (for --list-domains, --list-agents, --list-workflows)",
+		)
+		.option(
+			"--plain",
+			"Emit minimal plain-text output for agents (for --list-domains, --list-agents, --list-workflows)",
+		)
 		.argument("[prompt...]", "Prompt text");
 
 	program.exitOverride();
@@ -218,6 +231,8 @@ interface ParsedCliOptionValues {
 	file?: string;
 	profile?: boolean;
 	pluginDir?: string[];
+	json?: boolean;
+	plain?: boolean;
 }
 
 function normalizeCliOptions(
@@ -250,6 +265,8 @@ function normalizeCliOptions(
 		dumpPromptFile: opts.file,
 		profile: opts.profile ?? undefined,
 		pluginDirs: pluginDirs.length > 0 ? pluginDirs : undefined,
+		json: opts.json ?? false,
+		plain: opts.plain ?? false,
 		piFlags: piResult.flags,
 	};
 }
@@ -361,8 +378,9 @@ async function run(options: CliOptions): Promise<void> {
 	const mode = selectRunMode(options, hasInstalledDomain(runtime));
 	const handlers: Record<CliRunMode, () => Promise<void>> = {
 		"no-domain-guard": async () => handleNoDomainGuard(),
-		"list-domains": () => handleListDomains(runtime),
-		"list-workflows": () => handleListWorkflows(cwd, runtime.workflows),
+		"list-domains": () => handleListDomains(runtime, options),
+		"list-workflows": () =>
+			handleListWorkflows(cwd, runtime.workflows, options),
 		"list-agents": () => handleListAgents(runtime, options),
 		"dump-prompt": () => handleDumpPrompt(runtime, options),
 		init: () => handleInitMode(runtime, options, cwd),
@@ -389,42 +407,159 @@ function handleNoDomainGuard(): void {
 	process.exitCode = 1;
 }
 
-async function handleListDomains(runtime: CosmonautsRuntime): Promise<void> {
-	const lines =
-		runtime.domains.length === 0
-			? ["No domains found."]
-			: runtime.domains.map(
-					(domain) => `  ${domain.manifest.id}  ${domain.manifest.description}`,
-				);
-	printLines(lines);
+function resolveCliOutputMode(options: CliOptions): CliOutputMode {
+	return getOutputMode({ json: options.json, plain: options.plain });
+}
+
+/** Domain entry shape used by `--list-domains --json`. */
+export interface DomainListItem {
+	id: string;
+	description: string;
+	portable: boolean;
+}
+
+/** Workflow entry shape used by `--list-workflows --json`. */
+export interface WorkflowListItem {
+	name: string;
+	description: string;
+	chain: string;
+}
+
+/** Agent entry shape used by `--list-agents --json`. */
+export interface AgentListItem {
+	id: string;
+	domain: string | null;
+	description: string;
+	model: string;
+	tools: AgentDefinition["tools"];
+	session: AgentDefinition["session"];
+}
+
+export function renderDomainsList(
+	domains: readonly DomainListItem[],
+	mode: CliOutputMode,
+): { kind: "json"; value: unknown } | { kind: "lines"; lines: string[] } {
+	if (mode === "json") {
+		return { kind: "json", value: domains };
+	}
+
+	if (mode === "plain") {
+		return {
+			kind: "lines",
+			lines: domains.map((item) => `${item.id}\t${item.description}`),
+		};
+	}
+
+	return {
+		kind: "lines",
+		lines:
+			domains.length === 0
+				? ["No domains found."]
+				: domains.map((item) => `  ${item.id}  ${item.description}`),
+	};
+}
+
+export function renderWorkflowsList(
+	workflows: readonly WorkflowListItem[],
+	mode: CliOutputMode,
+): { kind: "json"; value: unknown } | { kind: "lines"; lines: string[] } {
+	if (mode === "json") {
+		return { kind: "json", value: workflows };
+	}
+
+	if (mode === "plain") {
+		return {
+			kind: "lines",
+			lines: workflows.map(
+				(item) => `${item.name}\t${item.description}\t${item.chain}`,
+			),
+		};
+	}
+
+	return {
+		kind: "lines",
+		lines:
+			workflows.length === 0
+				? ["No workflows available."]
+				: workflows.map((item) => `  ${item.name}  ${item.description}`),
+	};
+}
+
+export function renderAgentsList(
+	agents: readonly AgentListItem[],
+	mode: CliOutputMode,
+): { kind: "json"; value: unknown } | { kind: "lines"; lines: string[] } {
+	if (mode === "json") {
+		return { kind: "json", value: agents };
+	}
+
+	if (mode === "plain") {
+		return {
+			kind: "lines",
+			lines: agents.map((item) => `${item.id}\t${item.description}`),
+		};
+	}
+
+	return {
+		kind: "lines",
+		lines: agents.map((item) => `  ${item.id}  ${item.description}`),
+	};
+}
+
+function emit(
+	rendered:
+		| { kind: "json"; value: unknown }
+		| { kind: "lines"; lines: string[] },
+): void {
+	if (rendered.kind === "json") {
+		printJson(rendered.value);
+		return;
+	}
+	printLines(rendered.lines);
+}
+
+async function handleListDomains(
+	runtime: CosmonautsRuntime,
+	options: CliOptions,
+): Promise<void> {
+	const items: DomainListItem[] = runtime.domains.map((domain) => ({
+		id: domain.manifest.id,
+		description: domain.manifest.description,
+		portable: domain.portable,
+	}));
+	emit(renderDomainsList(items, resolveCliOutputMode(options)));
 }
 
 async function handleListWorkflows(
 	cwd: string,
 	domainWorkflows: readonly WorkflowDefinition[],
+	options: CliOptions,
 ): Promise<void> {
 	const workflows = await listWorkflows(cwd, domainWorkflows);
-	const lines =
-		workflows.length === 0
-			? ["No workflows available."]
-			: workflows.map(
-					(workflow) => `  ${workflow.name}  ${workflow.description}`,
-				);
-	printLines(lines);
+	const items: WorkflowListItem[] = workflows.map((workflow) => ({
+		name: workflow.name,
+		description: workflow.description,
+		chain: workflow.chain,
+	}));
+	emit(renderWorkflowsList(items, resolveCliOutputMode(options)));
 }
 
 async function handleListAgents(
 	runtime: CosmonautsRuntime,
-	_options: CliOptions,
+	options: CliOptions,
 ): Promise<void> {
 	const agents = runtime.domainContext
 		? runtime.agentRegistry.resolveInDomain(runtime.domainContext)
 		: runtime.agentRegistry.listAll();
-	const lines = agents.map(
-		(agent) =>
-			`  ${qualifyAgentId(agent.id, agent.domain ?? runtime.domainContext)}  ${agent.description}`,
-	);
-	printLines(lines);
+	const items: AgentListItem[] = agents.map((agent) => ({
+		id: qualifyAgentId(agent.id, agent.domain ?? runtime.domainContext),
+		domain: agent.domain ?? runtime.domainContext ?? null,
+		description: agent.description,
+		model: agent.model,
+		tools: agent.tools,
+		session: agent.session,
+	}));
+	emit(renderAgentsList(items, resolveCliOutputMode(options)));
 }
 
 async function handleDumpPrompt(

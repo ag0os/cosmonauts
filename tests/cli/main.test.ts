@@ -7,13 +7,19 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
+	type AgentListItem,
 	buildInitSessionConfig,
+	type DomainListItem,
 	discoverBundledPackageDirs,
 	isCosmonautsFrameworkRepo,
 	parseCliArgs,
+	renderAgentsList,
+	renderDomainsList,
+	renderWorkflowsList,
 	resolveWorkflowExpression,
 	selectRunMode,
 	shouldParseWorkflowAsRawChainExpression,
+	type WorkflowListItem,
 } from "../../cli/main.ts";
 import type { CliOptions } from "../../cli/types.ts";
 
@@ -25,6 +31,8 @@ function cliOptions(overrides: Partial<CliOptions> = {}): CliOptions {
 		listAgents: false,
 		listDomains: false,
 		dumpPrompt: false,
+		json: false,
+		plain: false,
 		piFlags: {},
 		...overrides,
 	};
@@ -388,6 +396,23 @@ describe("parseCliArgs", () => {
 		expect(opts.listDomains).toBe(true);
 	});
 
+	test("--json defaults to false; flag flips it to true", () => {
+		expect(parseCliArgs([]).json).toBe(false);
+		expect(parseCliArgs(["--json"]).json).toBe(true);
+	});
+
+	test("--plain defaults to false; flag flips it to true", () => {
+		expect(parseCliArgs([]).plain).toBe(false);
+		expect(parseCliArgs(["--plain"]).plain).toBe(true);
+	});
+
+	test("--json combines with --list-agents", () => {
+		const opts = parseCliArgs(["--list-agents", "--json"]);
+
+		expect(opts.listAgents).toBe(true);
+		expect(opts.json).toBe(true);
+	});
+
 	test("--domain with --list-agents", () => {
 		const opts = parseCliArgs(["--list-agents", "-d", "coding"]);
 
@@ -443,6 +468,121 @@ describe("parseCliArgs", () => {
 
 		expect(opts.dumpPrompt).toBe(false);
 		expect(opts.dumpPromptFile).toBeUndefined();
+	});
+});
+
+// ============================================================================
+// List output renderers (--list-domains / --list-agents / --list-workflows)
+// ============================================================================
+
+describe("renderDomainsList", () => {
+	const sample: DomainListItem[] = [
+		{ id: "coding", description: "Software development", portable: true },
+		{ id: "shared", description: "Cross-cutting helpers", portable: false },
+	];
+
+	test("emits JSON payload with portable field intact", () => {
+		const result = renderDomainsList(sample, "json");
+		expect(result).toEqual({ kind: "json", value: sample });
+	});
+
+	test("plain mode emits tab-separated id and description, no padding", () => {
+		const result = renderDomainsList(sample, "plain");
+		expect(result).toEqual({
+			kind: "lines",
+			lines: ["coding\tSoftware development", "shared\tCross-cutting helpers"],
+		});
+	});
+
+	test("human mode includes leading indent and 'No domains found.' on empty", () => {
+		expect(renderDomainsList([], "human")).toEqual({
+			kind: "lines",
+			lines: ["No domains found."],
+		});
+		expect(renderDomainsList(sample, "human")).toEqual({
+			kind: "lines",
+			lines: [
+				"  coding  Software development",
+				"  shared  Cross-cutting helpers",
+			],
+		});
+	});
+
+	test("empty input in JSON mode emits an empty array, not a sentinel string", () => {
+		expect(renderDomainsList([], "json")).toEqual({
+			kind: "json",
+			value: [],
+		});
+	});
+});
+
+describe("renderWorkflowsList", () => {
+	const sample: WorkflowListItem[] = [
+		{
+			name: "plan-and-build",
+			description: "Design → tasks → implement → verify",
+			chain: "planner -> task-manager -> coordinator",
+		},
+	];
+
+	test("JSON mode includes the chain DSL for each workflow", () => {
+		const result = renderWorkflowsList(sample, "json");
+		expect(result).toEqual({ kind: "json", value: sample });
+	});
+
+	test("plain mode emits name, description, and chain as tab-separated", () => {
+		expect(renderWorkflowsList(sample, "plain")).toEqual({
+			kind: "lines",
+			lines: [
+				"plan-and-build\tDesign → tasks → implement → verify\tplanner -> task-manager -> coordinator",
+			],
+		});
+	});
+
+	test("human mode shows only name and description (chain omitted)", () => {
+		expect(renderWorkflowsList(sample, "human")).toEqual({
+			kind: "lines",
+			lines: ["  plan-and-build  Design → tasks → implement → verify"],
+		});
+	});
+
+	test("human mode emits 'No workflows available.' for empty input", () => {
+		expect(renderWorkflowsList([], "human")).toEqual({
+			kind: "lines",
+			lines: ["No workflows available."],
+		});
+	});
+});
+
+describe("renderAgentsList", () => {
+	const sample: AgentListItem[] = [
+		{
+			id: "coding/planner",
+			domain: "coding",
+			description: "Designs solutions",
+			model: "anthropic/claude-opus-4-7",
+			tools: "readonly",
+			session: "ephemeral",
+		},
+	];
+
+	test("JSON mode includes domain, model, tools, and session per agent", () => {
+		const result = renderAgentsList(sample, "json");
+		expect(result).toEqual({ kind: "json", value: sample });
+	});
+
+	test("plain mode emits qualified id and description tab-separated", () => {
+		expect(renderAgentsList(sample, "plain")).toEqual({
+			kind: "lines",
+			lines: ["coding/planner\tDesigns solutions"],
+		});
+	});
+
+	test("human mode emits indented qualified id and description", () => {
+		expect(renderAgentsList(sample, "human")).toEqual({
+			kind: "lines",
+			lines: ["  coding/planner  Designs solutions"],
+		});
 	});
 });
 

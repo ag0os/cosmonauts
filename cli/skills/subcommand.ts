@@ -8,11 +8,14 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import { loadDomains } from "../../lib/domains/loader.ts";
+import type { DiscoveredSkill } from "../../lib/skills/index.ts";
 import {
 	discoverSkills,
 	type ExportTarget,
 	exportSkill,
 } from "../../lib/skills/index.ts";
+import type { CliOutputMode } from "../shared/output.ts";
+import { getOutputMode, printJson, printLines } from "../shared/output.ts";
 
 const VALID_TARGETS: ReadonlySet<string> = new Set(["claude", "codex"]);
 
@@ -20,12 +23,59 @@ function resolveDomainsDir(): string {
 	return resolve(fileURLToPath(import.meta.url), "..", "..", "..", "domains");
 }
 
+/** JSON shape for `cosmonauts skills list --json`. */
+export interface SkillListItem {
+	name: string;
+	domain: string;
+	description: string;
+}
+
+export function renderSkillsList(
+	skills: readonly DiscoveredSkill[],
+	mode: CliOutputMode,
+): { kind: "json"; value: unknown } | { kind: "lines"; lines: string[] } {
+	const items: SkillListItem[] = skills.map((skill) => ({
+		name: skill.name,
+		domain: skill.domain,
+		description: skill.description,
+	}));
+
+	if (mode === "json") {
+		return { kind: "json", value: items };
+	}
+
+	if (mode === "plain") {
+		return {
+			kind: "lines",
+			lines: items.map(
+				(item) => `${item.name}\t${item.domain}\t${item.description}`,
+			),
+		};
+	}
+
+	if (items.length === 0) {
+		return { kind: "lines", lines: ["No skills found."] };
+	}
+
+	const nameWidth = Math.max(6, ...items.map((item) => item.name.length));
+	const domainWidth = Math.max(6, ...items.map((item) => item.domain.length));
+	return {
+		kind: "lines",
+		lines: items.map(
+			(item) =>
+				`  ${item.name.padEnd(nameWidth)}  ${item.domain.padEnd(domainWidth)}  ${item.description}`,
+		),
+	};
+}
+
 export function createSkillsProgram(): Command {
 	const program = new Command();
 
 	program
 		.name("cosmonauts skills")
-		.description("Skill management and cross-harness export");
+		.description("Skill management and cross-harness export")
+		.option("--plain", "Output in plain text format (for agents)")
+		.option("--json", "Output in JSON format");
 
 	// ── list ──────────────────────────────────────────────────────────
 	program
@@ -33,22 +83,15 @@ export function createSkillsProgram(): Command {
 		.alias("ls")
 		.description("List all skills across domains")
 		.action(async () => {
+			const mode = getOutputMode(program.opts());
 			try {
 				const domains = await loadDomains(resolveDomainsDir());
 				const skills = await discoverSkills(domains);
-
-				if (skills.length === 0) {
-					console.log("No skills found.");
-					return;
-				}
-
-				const nameWidth = Math.max(6, ...skills.map((s) => s.name.length));
-				const domainWidth = Math.max(6, ...skills.map((s) => s.domain.length));
-
-				for (const skill of skills) {
-					const name = skill.name.padEnd(nameWidth);
-					const domain = skill.domain.padEnd(domainWidth);
-					console.log(`  ${name}  ${domain}  ${skill.description}`);
+				const rendered = renderSkillsList(skills, mode);
+				if (rendered.kind === "json") {
+					printJson(rendered.value);
+				} else {
+					printLines(rendered.lines);
 				}
 			} catch (error) {
 				console.error(`Error listing skills: ${error}`);

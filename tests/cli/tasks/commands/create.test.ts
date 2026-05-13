@@ -1,5 +1,9 @@
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	parseTaskBatchInputs,
+	parseTaskBatchYaml,
 	parseTaskCreateInput,
 	parseTaskDueDate,
 	registerCreateCommand,
@@ -256,6 +260,379 @@ describe("task create command", () => {
 
 		expect(output.stdout()).toBe("");
 		expect(output.stderr()).toBe("Error creating task: Error: disk full\n");
+		expect(exit.calls()).toEqual([1]);
+	});
+});
+
+describe("parseTaskBatchYaml", () => {
+	it("parses a YAML array of task specs", () => {
+		const result = parseTaskBatchYaml("- title: First\n- title: Second\n");
+		expect(result).toEqual({
+			ok: true,
+			value: [{ title: "First" }, { title: "Second" }],
+		});
+	});
+
+	it("reports a clean error message for malformed YAML", () => {
+		const result = parseTaskBatchYaml("- title: ok\n  bad: [unterminated\n");
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.error).toMatch(/^Invalid YAML in batch file:/);
+		}
+	});
+});
+
+describe("parseTaskBatchInputs", () => {
+	it("normalizes rich rows into TaskCreateInput objects in order", () => {
+		const rows = [
+			{
+				title: "Build login",
+				description: "Auth UI",
+				priority: "high",
+				labels: ["frontend", "auth"],
+				ac: ["Email validates", "Password meter"],
+				dependencies: ["TASK-099"],
+				parent: "TASK-100",
+				due: "2026-06-01",
+				assignee: "alice",
+			},
+			{ title: "Wire OAuth" },
+		];
+
+		const result = parseTaskBatchInputs(rows);
+		expect(result).toEqual({
+			ok: true,
+			value: [
+				{
+					title: "Build login",
+					description: "Auth UI",
+					priority: "high",
+					assignee: "alice",
+					labels: ["frontend", "auth"],
+					dueDate: new Date("2026-06-01"),
+					dependencies: ["TASK-099"],
+					acceptanceCriteria: ["Email validates", "Password meter"],
+					parent: "TASK-100",
+				},
+				{
+					title: "Wire OAuth",
+					description: undefined,
+					priority: undefined,
+					assignee: undefined,
+					labels: undefined,
+					dueDate: undefined,
+					dependencies: undefined,
+					acceptanceCriteria: undefined,
+					parent: undefined,
+				},
+			],
+		});
+	});
+
+	it("rejects non-array top-level values", () => {
+		expect(parseTaskBatchInputs({ title: "lonely" })).toEqual({
+			ok: false,
+			error:
+				"Batch file must contain a YAML array of task specs at the top level.",
+		});
+	});
+
+	it("rejects an empty array", () => {
+		expect(parseTaskBatchInputs([])).toEqual({
+			ok: false,
+			error: "Batch file contains no task rows.",
+		});
+	});
+
+	it("rejects a row missing a title", () => {
+		expect(parseTaskBatchInputs([{ description: "no title" }])).toEqual({
+			ok: false,
+			error: 'row 1: missing required field "title".',
+		});
+	});
+
+	it("reports the row index when a later row is invalid", () => {
+		expect(parseTaskBatchInputs([{ title: "ok" }, { title: 7 }])).toEqual({
+			ok: false,
+			error: 'row 2: missing required field "title".',
+		});
+	});
+
+	it("rejects invalid priority values per row", () => {
+		expect(
+			parseTaskBatchInputs([{ title: "bad", priority: "urgent" }]),
+		).toEqual({
+			ok: false,
+			error:
+				'row 1: invalid priority "urgent". Must be one of: high, medium, low.',
+		});
+	});
+
+	it("rejects non-string-array labels", () => {
+		expect(
+			parseTaskBatchInputs([{ title: "ok", labels: ["frontend", 5] }]),
+		).toEqual({
+			ok: false,
+			error: 'row 1: "labels" must be an array of strings.',
+		});
+	});
+
+	it("rejects rows that are arrays rather than mappings", () => {
+		expect(parseTaskBatchInputs([["title", "ok"]])).toEqual({
+			ok: false,
+			error: "row 1: expected a mapping of task fields.",
+		});
+	});
+
+	it("accepts a Date object for `due` (what js-yaml produces for unquoted YAML timestamps)", () => {
+		const due = new Date("2026-06-01T00:00:00.000Z");
+		const result = parseTaskBatchInputs([{ title: "ok", due }]);
+		expect(result.ok).toBe(true);
+		if (result.ok) {
+			expect(result.value[0]?.dueDate).toEqual(due);
+		}
+	});
+
+	it("rejects a Date object whose timestamp is NaN", () => {
+		const result = parseTaskBatchInputs([
+			{ title: "ok", due: new Date("not-a-date") },
+		]);
+		expect(result).toEqual({
+			ok: false,
+			error: 'row 1: "due" is not a valid date.',
+		});
+	});
+
+	it("rejects `due` values that are neither a string nor a Date", () => {
+		expect(parseTaskBatchInputs([{ title: "ok", due: 12345 }])).toEqual({
+			ok: false,
+			error:
+				'row 1: "due" must be a date string (YYYY-MM-DD) or a YAML date value.',
+		});
+	});
+});
+
+describe("task create --from-file", () => {
+	let tempDir: string;
+	let output: ReturnType<typeof captureCommandOutput>;
+	let exit: ReturnType<typeof mockProcessExitThrow>;
+	let context: CommandTestContext;
+
+	beforeEach(async () => {
+		context = await createCommandTestContext("task-create-batch-test-");
+		tempDir = context.tempDir;
+		output = context.output;
+		exit = context.exit;
+	});
+
+	afterEach(async () => {
+		await context.restore();
+	});
+
+	async function writeBatch(name: string, contents: string): Promise<string> {
+		const path = join(tempDir, name);
+		await writeFile(path, contents, "utf-8");
+		return path;
+	}
+
+	it("creates each row in order and prints a human summary by default", async () => {
+		const path = await writeBatch(
+			"tasks.yaml",
+			"- title: First task\n- title: Second task\n  priority: high\n",
+		);
+
+		await createProgram().parseAsync([
+			"node",
+			"test",
+			"create",
+			"--from-file",
+			path,
+		]);
+
+		const manager = new TaskManager(tempDir);
+		const first = await manager.getTask("TASK-001");
+		const second = await manager.getTask("TASK-002");
+		expect(first?.title).toBe("First task");
+		expect(second?.title).toBe("Second task");
+		expect(second?.priority).toBe("high");
+		expect(output.stdout()).toBe(
+			"Created task TASK-001: First task\nCreated task TASK-002: Second task\n",
+		);
+		expect(output.stderr()).toBe("");
+		expect(exit.calls()).toEqual([]);
+	});
+
+	it("accepts unquoted YAML dates in `due` and stores the parsed dueDate", async () => {
+		const path = await writeBatch(
+			"with-date.yaml",
+			"- title: Has a due date\n  due: 2026-06-01\n",
+		);
+
+		await createProgram().parseAsync([
+			"node",
+			"test",
+			"create",
+			"--from-file",
+			path,
+		]);
+
+		const manager = new TaskManager(tempDir);
+		const task = await manager.getTask("TASK-001");
+		expect(task?.dueDate).toEqual(new Date("2026-06-01T00:00:00.000Z"));
+		expect(output.stderr()).toBe("");
+		expect(exit.calls()).toEqual([]);
+	});
+
+	it("emits a JSON array of created tasks when --json is set", async () => {
+		const path = await writeBatch("tasks.yaml", "- title: Only\n");
+
+		await createProgram().parseAsync([
+			"node",
+			"test",
+			"--json",
+			"create",
+			"--from-file",
+			path,
+		]);
+
+		const parsed = JSON.parse(output.stdout()) as Array<{
+			id: string;
+			title: string;
+		}>;
+		expect(parsed).toHaveLength(1);
+		expect(parsed[0]?.title).toBe("Only");
+		expect(exit.calls()).toEqual([]);
+	});
+
+	it("emits one task ID per line when --plain is set", async () => {
+		const path = await writeBatch("tasks.yaml", "- title: A\n- title: B\n");
+
+		await createProgram().parseAsync([
+			"node",
+			"test",
+			"--plain",
+			"create",
+			"--from-file",
+			path,
+		]);
+
+		expect(output.stdout()).toBe("TASK-001\nTASK-002\n");
+		expect(exit.calls()).toEqual([]);
+	});
+
+	it("rejects combining --from-file with a positional title", async () => {
+		const path = await writeBatch("tasks.yaml", "- title: ok\n");
+
+		await expect(
+			createProgram().parseAsync([
+				"node",
+				"test",
+				"create",
+				"Inline title",
+				"--from-file",
+				path,
+			]),
+		).rejects.toThrow(ProcessExitError);
+
+		expect(output.stderr()).toContain(
+			"Cannot combine positional <title> with --from-file",
+		);
+		expect(exit.calls()).toEqual([1]);
+	});
+
+	it("rejects combining --from-file with per-task flags", async () => {
+		const path = await writeBatch("tasks.yaml", "- title: ok\n");
+
+		await expect(
+			createProgram().parseAsync([
+				"node",
+				"test",
+				"create",
+				"--from-file",
+				path,
+				"--priority",
+				"high",
+			]),
+		).rejects.toThrow(ProcessExitError);
+
+		expect(output.stderr()).toContain("Per-task flags");
+		expect(exit.calls()).toEqual([1]);
+	});
+
+	it("rejects an invalid YAML payload with a helpful error", async () => {
+		const path = await writeBatch(
+			"bad.yaml",
+			"- title: ok\n  labels: [unterminated\n",
+		);
+
+		await expect(
+			createProgram().parseAsync([
+				"node",
+				"test",
+				"create",
+				"--from-file",
+				path,
+			]),
+		).rejects.toThrow(ProcessExitError);
+
+		expect(output.stderr()).toContain("Invalid YAML in batch file");
+		expect(exit.calls()).toEqual([1]);
+	});
+
+	it("rejects a non-array top-level YAML payload", async () => {
+		const path = await writeBatch("scalar.yaml", "title: lonely\n");
+
+		await expect(
+			createProgram().parseAsync([
+				"node",
+				"test",
+				"create",
+				"--from-file",
+				path,
+			]),
+		).rejects.toThrow(ProcessExitError);
+
+		expect(output.stderr()).toContain("Batch file must contain a YAML array");
+		expect(exit.calls()).toEqual([1]);
+	});
+
+	it("exits with an error when --from-file points at a missing file", async () => {
+		await expect(
+			createProgram().parseAsync([
+				"node",
+				"test",
+				"create",
+				"--from-file",
+				join(tempDir, "does-not-exist.yaml"),
+			]),
+		).rejects.toThrow(ProcessExitError);
+
+		expect(output.stderr()).toContain("Failed to read");
+		expect(exit.calls()).toEqual([1]);
+	});
+});
+
+describe("task create (no batch)", () => {
+	let output: ReturnType<typeof captureCommandOutput>;
+	let exit: ReturnType<typeof mockProcessExitThrow>;
+	let context: CommandTestContext;
+
+	beforeEach(async () => {
+		context = await createCommandTestContext("task-create-no-args-test-");
+		output = context.output;
+		exit = context.exit;
+	});
+
+	afterEach(async () => {
+		await context.restore();
+	});
+
+	it("exits with an error when neither <title> nor --from-file is provided", async () => {
+		await expect(
+			createProgram().parseAsync(["node", "test", "create"]),
+		).rejects.toThrow(ProcessExitError);
+
+		expect(output.stderr()).toContain("Missing required argument: <title>");
 		expect(exit.calls()).toEqual([1]);
 	});
 });
