@@ -91,7 +91,15 @@ cosmonauts task list --json
 cosmonauts task list --status todo --json
 cosmonauts task list --status in-progress --priority high --json
 cosmonauts task list --label backend --assignee alice --json
-cosmonauts task list --ready --json   # only tasks with no open dependencies
+cosmonauts task list --ready --json   # tasks with an empty dependencies list (see below)
+```
+
+**`--ready` is shallow:** it matches tasks whose `dependencies:` frontmatter is empty. It does **not** check whether listed dependencies are `Done`. A task with `dependencies: [TASK-001]` will not appear in `--ready` results even after TASK-001 is marked Done — the dependency still exists in the task's frontmatter. To find tasks whose dependencies have all completed, post-filter in `jq`:
+
+```bash
+DONE=$(cosmonauts task list --status done --json | jq -c '[.[].id]')
+cosmonauts task list --status todo --json \
+  | jq --argjson done "$DONE" '[.[] | select((.dependencies // []) - $done | length == 0)]'
 ```
 
 Status values: `todo`, `in-progress`, `done`, `blocked` (the CLI normalizes these to the title-case form on disk).
@@ -119,11 +127,21 @@ cosmonauts task search "oauth" --json
 
 ### Find the next thing to work on
 
+For tasks that were intentionally authored as standalone (no `dependencies:` frontmatter):
+
 ```bash
 cosmonauts task list --status todo --ready --priority high --json | jq '.[0]'
 ```
 
-`--ready` filters out tasks whose dependencies aren't `Done`. Sorting/picking is up to the caller.
+For tasks whose dependencies have all completed (computed manually — see the `--ready is shallow` note above):
+
+```bash
+DONE=$(cosmonauts task list --status done --json | jq -c '[.[].id]')
+cosmonauts task list --status todo --priority high --json \
+  | jq --argjson done "$DONE" '[.[] | select((.dependencies // []) - $done | length == 0)] | .[0]'
+```
+
+Sorting/picking is up to the caller.
 
 ### Convert a plan's section into tasks
 
@@ -144,21 +162,48 @@ cosmonauts task create --from-file /tmp/tasks.yaml --json
 
 The minted IDs are sequential (TASK-1, TASK-2, TASK-3 in this example, assuming an empty board) so dependency references are predictable.
 
-### Mark progress and unblock dependents
+### Mark progress and find newly-satisfied dependents
 
 ```bash
 cosmonauts task edit TASK-006 --status done --check-ac 1 --check-ac 2 --json
-cosmonauts task list --ready --json   # TASK-007 should now appear if it depended on TASK-006
+
+# --ready won't help here (TASK-007 still has TASK-006 listed in its deps).
+# Compute "all deps now Done" manually:
+DONE=$(cosmonauts task list --status done --json | jq -c '[.[].id]')
+cosmonauts task list --status todo --json \
+  | jq --argjson done "$DONE" '[.[] | select((.dependencies // []) - $done | length == 0)]'
 ```
 
 ## Linking tasks to a plan
 
-The CLI doesn't yet have a structured `task --plan` flag at create time. Two patterns:
+Cosmonauts links tasks to plans via a **`plan:<slug>` label** on each task — *not* via the `--plan` flag, which controls the task's implementation-plan notes (an unrelated field). The plan view, `drive run --plan <slug>`, and `plan archive` all enumerate associated tasks by querying `listTasks({ label: "plan:<slug>" })`.
 
-1. **`task edit <id> --plan <slug>`** after creation — records the plan slug in the task's plan field.
-2. **Manual frontmatter** — add `plan: <slug>` to the YAML row, or edit the file afterward.
+To link a task, give it the label:
 
-When tasks reference a plan, `cosmonauts drive run --plan <slug>` enumerates them automatically.
+```bash
+# At create time, in a YAML batch:
+cat > tasks.yaml <<EOF
+- title: Migrate schema
+  labels:
+    - "plan:auth-system"       # quoted because of the colon
+    - backend
+- title: Wire OAuth provider
+  labels: ["plan:auth-system"]
+  dependencies: [TASK-1]
+EOF
+cosmonauts task create --from-file tasks.yaml --json
+
+# Or, single-task create:
+cosmonauts task create "Wire OAuth provider" \
+  --label "plan:auth-system" --label backend --json
+
+# Or, retroactively on an existing task:
+cosmonauts task edit TASK-007 --add-label "plan:auth-system" --json
+```
+
+After linking, `cosmonauts drive run --plan auth-system` enumerates every task carrying `plan:auth-system` automatically. `cosmonauts plan view auth-system --json` reports the task count via the same label query.
+
+**Don't use `--plan`:** `cosmonauts task edit <id> --plan "<text>"` writes to the task's `implementationPlan` field (a free-form notes section visible in `task view`), not a plan link. Setting it does not associate the task with a plan slug.
 
 ## Exit codes & errors
 

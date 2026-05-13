@@ -92,8 +92,8 @@ cosmonauts plan archive auth-system --json          # moves to missions/archive/
 The intended lifecycle for a plan:
 
 1. **Create.** Either by hand (`plan create --slug X --title Y --spec "$(cat …)"`) or by a planner agent in a workflow (`cosmonauts --workflow plan-and-build "…"`).
-2. **Link tasks.** Task files reference the plan via their `plan:` frontmatter field. The `task-manager` agent does this automatically; from outside, you can set it via `cosmonauts task edit <id> --plan <slug>`.
-3. **Drive execution.** `cosmonauts drive run --plan <slug> --backend claude-cli|codex --mode detached` walks the plan's tasks in dependency order, dispatching each to the chosen backend.
+2. **Link tasks via the `plan:<slug>` label.** Cosmonauts associates tasks with a plan by labeling them `plan:<slug>` — `plan view`, `drive run --plan <slug>`, and `plan archive` all use that label as the query. The `task-manager` agent adds it automatically. From outside, set it explicitly: `cosmonauts task create "..." --label "plan:auth-system"`, or on an existing task `cosmonauts task edit <id> --add-label "plan:auth-system"`. (See `cosmonauts-tasks` → "Linking tasks to a plan" for the YAML batch form.) **Do not use `task edit --plan`** — that flag writes free-form implementation notes, it does not link to a plan slug.
+3. **Drive execution.** `cosmonauts drive run --plan <slug> --backend claude-cli|codex --mode detached` walks the plan's `plan:<slug>`-labeled tasks in dependency order, dispatching each to the chosen backend.
 4. **Verify & complete.** When all tasks are `Done` and acceptance criteria are checked, set status: `cosmonauts plan edit <slug> --status completed`.
 5. **Archive.** `cosmonauts plan archive <slug>` moves the plan and its tasks into `missions/archive/`.
 
@@ -112,18 +112,24 @@ cosmonauts plan create \
   --spec "$(cat ~/notes/auth.md)" \
   --json
 
-# Optionally seed the task list (see cosmonauts-tasks for --from-file YAML):
+# Optionally seed the task list (every row needs labels: ["plan:auth-system"]
+# so the plan view and the driver can find them):
 cosmonauts task create --from-file tasks.yaml --json
 
-cosmonauts drive run --plan "$SLUG" --backend claude-cli --mode detached --json
+# drive emits JSON natively and does NOT accept --json:
+cosmonauts drive run --plan "$SLUG" --backend claude-cli --mode detached
 ```
 
 ### Resume a half-built plan
 
 ```bash
 cosmonauts plan view auth-system --json | jq '.taskCount, .status'
-cosmonauts task list --status todo --json | jq '[.[] | select(.plan == "auth-system")]'
-cosmonauts drive list --json | jq '[.runs[] | select(.planSlug == "auth-system")]'
+
+# Tasks belonging to the plan — found by the plan:<slug> label, not a .plan field
+cosmonauts task list --status todo --label "plan:auth-system" --json
+
+# drive subcommand emits JSON natively (no --json flag):
+cosmonauts drive list | jq '[.runs[] | select(.planSlug == "auth-system")]'
 ```
 
 If a previous run died (`status: dead`), resume it:

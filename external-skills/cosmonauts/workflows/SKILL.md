@@ -32,13 +32,22 @@ Exact names depend on the project's `.cosmonauts/config.json` and installed doma
 cosmonauts --workflow plan-and-build "design an auth system with email + OAuth"
 ```
 
-Interactive by default — the planner asks clarifying questions, the user confirms the plan, then execution proceeds. For one-shot non-interactive runs add `--print`:
+**Workflows are always non-interactive.** `--workflow` routes through `handleWorkflowMode` → `runChain`; it never enters a REPL, never pauses for plan approval, and `--print` does not gate execution. The chain runs straight through from the first stage to the last; whatever the chain itself outputs goes to stdout (and per-stage progress goes to stderr). Exit code `0` on success, `1` on failure.
+
+If the user expects an approval boundary between "design" and "implement", split the chain explicitly:
 
 ```bash
-cosmonauts --workflow plan-and-build --print "design an auth system"
+# Stage 1: design only — output the plan, exit.
+cosmonauts --workflow "planner -> plan-reviewer" "design an auth system"
+
+# Human (or external orchestrator) reviews the produced plan and any tasks
+# written to missions/plans/<slug>/ and missions/tasks/.
+
+# Stage 2: execute the approved plan via drive (long-running, observable):
+cosmonauts drive run --plan auth-system --backend claude-cli --mode detached
 ```
 
-`--print` skips the REPL: the agent runs to completion and exits. The chain's final response is printed to stdout. Exit code `0` on success, `1` on failure.
+Use the `implement`-style workflow names (or a custom chain like `task-manager -> coordinator -> workers`) when you want the execution half without re-running the planner.
 
 ## Chain DSL — custom pipelines
 

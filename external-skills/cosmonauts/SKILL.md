@@ -46,9 +46,10 @@ Every JSON-emitting cosmonauts command accepts `--json` (machine output) or `--p
 
 ## Output conventions
 
-- `--json` on any subcommand: parseable JSON to stdout, errors to stderr. Exit code 0 = success, 1 = failure.
-- `--plain`: tab-separated, no headers, no padding. Good for piping.
+- `--json` on **task**, **plan**, **skills**, **packages**, **session**, **scaffold**, and the top-level `--list-*` flags: parseable JSON to stdout, errors to stderr. Exit code 0 = success, 1 = failure.
+- `--plain` on the same set: tab-separated, no headers, no padding. Good for piping.
 - Default (neither flag): human-formatted with headers and dashed separators. Don't parse this — use `--json`.
+- **`cosmonauts drive` is different.** It emits JSON natively and does **not** accept `--json` / `--plain` — passing them errors with `unknown option '--json'`. Just parse `drive run`, `drive status`, and `drive list` output directly.
 - Long-running ops (`cosmonauts drive run`) accept `--mode detached` to fork and return a `runId` immediately; poll status with `drive status <runId>`.
 
 ## Common recipes
@@ -61,9 +62,7 @@ The user says "design and build an auth system." Don't decompose manually:
 cosmonauts --workflow plan-and-build "design an auth system with email and OAuth"
 ```
 
-`plan-and-build` is a named workflow that chains `planner → task-manager → coordinator → workers → integration-verifier → quality-manager`. The user reviews/approves at plan boundaries (it's interactive by default). Add `--print` for non-interactive single-shot.
-
-For the chain DSL syntax (`planner -> [task-manager, reviewer] -> coordinator`, fan-out, etc.), see `cosmonauts-workflows`.
+`plan-and-build` is a named workflow that chains `planner → task-manager → coordinator → workers → integration-verifier → quality-manager`. **It runs end-to-end non-interactively** — no REPL, no approval prompt between design and implementation. If the user expects a review gate before code is written, split into two calls: a design-only chain (`--workflow "planner -> plan-reviewer"`) first, then `cosmonauts drive run --plan <slug>` once the plan and tasks are reviewed. See `cosmonauts-workflows` for the split-pipeline recipe and the chain DSL syntax.
 
 ### Recipe 2 — Run a known plan through an external backend (drive)
 
@@ -142,7 +141,8 @@ This skill is about the **second** form.
 - **Don't parse human-formatted output.** Always pass `--json` or `--plain`.
 - **Don't shell out to cosmonauts from inside a cosmonauts session.** If you're already running as a cosmonauts internal agent (e.g. `coding/cody`), you have native tools for tasks/plans/drive; use those.
 - **Don't assume the project has a coding domain installed.** Check `cosmonauts --list-domains --json` first. If empty, suggest `cosmonauts install coding`.
-- **Don't run interactive workflows headlessly.** `cosmonauts --workflow plan-and-build "..."` is interactive by default (planner asks clarifying questions). Add `--print` for one-shot, or expect to handle prompts.
+- **Don't expect a `--workflow` run to pause for approval.** Workflows run from first stage to last without pausing — there is no REPL, no plan-approval gate, no clarifying-question loop in the CLI. If you need a design-review gate, split the pipeline (design-only chain → human/agent review → `cosmonauts drive run --plan <slug>`). See `cosmonauts-workflows` → "Run a named workflow".
+- **Don't pass `--json` to `cosmonauts drive` commands.** They emit JSON natively and don't define the flag — commander rejects it. The other subcommands (task, plan, skills, packages, session, scaffold) do accept `--json`.
 
 ## Updating this bundle
 
