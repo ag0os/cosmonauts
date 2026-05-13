@@ -219,6 +219,17 @@ describe("buildAgentPackage", () => {
 		expect(agentPackage.systemPrompt).toContain("Practice red-green-refactor.");
 	});
 
+	it("fails clearly when the selected target was not declared", async () => {
+		await expect(
+			buildAgentPackage({
+				definition: makeDefinition({ targets: { "claude-cli": {} } }),
+				agentRegistry: new AgentRegistry([]),
+				skillPaths: [],
+				target: "codex",
+			}),
+		).rejects.toThrow(/does not declare target.*codex/i);
+	});
+
 	it("fails clearly when source-agent prompt mode cannot resolve the source agent", async () => {
 		await expect(
 			buildAgentPackage({

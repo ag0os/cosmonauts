@@ -29,7 +29,7 @@ export async function compileAgentPackageBinary(
 		const entryPath = join(tempDir, "entry.ts");
 		await writeFile(
 			entryPath,
-			renderClaudeBinaryEntry(options.agentPackage),
+			renderBinaryEntry(options.agentPackage),
 			"utf-8",
 		);
 		await execFile("bun", [
@@ -44,17 +44,39 @@ export async function compileAgentPackageBinary(
 	}
 }
 
-function renderClaudeBinaryEntry(agentPackage: AgentPackage): string {
+function renderBinaryEntry(agentPackage: AgentPackage): string {
+	if (agentPackage.target === "codex") {
+		return renderRunnerEntry({
+			agentPackage,
+			runnerModule: "./codex-binary-runner.ts",
+			runnerFunction: "runCodexBinary",
+		});
+	}
+
+	return renderRunnerEntry({
+		agentPackage,
+		runnerModule: "./claude-binary-runner.ts",
+		runnerFunction: "runClaudeBinary",
+	});
+}
+
+function renderRunnerEntry(options: {
+	readonly agentPackage: AgentPackage;
+	readonly runnerModule: string;
+	readonly runnerFunction: string;
+}): string {
 	const runnerModulePath = fileURLToPath(
-		new URL("./claude-binary-runner.ts", import.meta.url),
+		new URL(options.runnerModule, import.meta.url),
 	);
-	const serializedPackage = JSON.stringify(agentPackage);
+	const serializedPackage = JSON.stringify(options.agentPackage);
 
 	return [
-		`import { runClaudeBinary } from ${JSON.stringify(runnerModulePath)};`,
+		`import { ${options.runnerFunction} } from ${JSON.stringify(
+			runnerModulePath,
+		)};`,
 		"",
 		`const packageJson = ${JSON.stringify(serializedPackage)};`,
-		"await runClaudeBinary(JSON.parse(packageJson));",
+		`await ${options.runnerFunction}(JSON.parse(packageJson));`,
 		"",
 	].join("\n");
 }

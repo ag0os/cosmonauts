@@ -153,7 +153,7 @@ describe("createExportProgram", () => {
 
 		expect(help).toMatch(/Provide exactly one\s+input/);
 		expect(help).toContain("[agent-id] or --definition <path>");
-		expect(help).toContain("Phase 1 supports target: claude-cli");
+		expect(help).toContain("Supported targets: claude-cli, codex");
 		expect(help).toContain(
 			"cosmonauts export --definition ./agent-package.json --out ./bin/agent",
 		);
@@ -161,8 +161,12 @@ describe("createExportProgram", () => {
 			"cosmonauts export coding/explorer --target claude-cli --out",
 		);
 		expect(help).toContain("./bin/explorer-claude");
+		expect(help).toContain("./packages/cosmo-worker-codex/package.json");
+		expect(help).toContain("--target codex --out");
+		expect(help).toContain("./bin/cosmo-worker-codex");
 		expect(help).toContain("ANTHROPIC_API_KEY");
 		expect(help).toContain("--allow-api-billing");
+		expect(help).toContain("model_instructions_file");
 	});
 
 	it("exports a package definition and prints one success JSON line", async () => {
@@ -253,7 +257,7 @@ describe("createExportProgram", () => {
 				tools: { preset: "none" },
 				skills: { mode: "none" },
 				projectContext: "omit",
-				targets: {},
+				targets: { "claude-cli": {} },
 			}),
 			"utf-8",
 		);
@@ -272,29 +276,64 @@ describe("createExportProgram", () => {
 		});
 	});
 
-	it("fails unknown agent-id before building or compiling", async () => {
-		setupRuntime([]);
+	it("exports a Codex package definition when --target codex is selected", async () => {
+		const definitionPath = join(tmp.path, "codex.json");
+		const outPath = join(tmp.path, "cosmo-worker-codex");
+		const definition = {
+			schemaVersion: 1,
+			id: "cosmo-worker-codex",
+			description: "Worker packaged for Codex.",
+			sourceAgent: "coding/worker",
+			prompt: { kind: "inline", content: "Work safely." },
+			tools: { preset: "coding" },
+			skills: { mode: "none" },
+			projectContext: "omit",
+			targets: { codex: {} },
+		} satisfies AgentPackageDefinition;
+		await writeFile(definitionPath, JSON.stringify(definition), "utf-8");
+		packageMocks.buildAgentPackage.mockResolvedValue(
+			makePackage({ packageId: definition.id, target: "codex" }),
+		);
 
-		await expect(
-			parseExport(["coding/missing", "--out", join(tmp.path, "missing")]),
-		).rejects.toThrow(/unknown agent.*coding\/missing/i);
-		expect(packageMocks.buildAgentPackage).not.toHaveBeenCalled();
-		expect(packageMocks.compileAgentPackageBinary).not.toHaveBeenCalled();
+		await parseExport([
+			"--definition",
+			definitionPath,
+			"--target",
+			"codex",
+			"--out",
+			outPath,
+		]);
+
+		expect(packageMocks.buildAgentPackage).toHaveBeenCalledWith(
+			expect.objectContaining({ definition, target: "codex" }),
+		);
+		expect(packageMocks.compileAgentPackageBinary).toHaveBeenCalledWith({
+			agentPackage: expect.objectContaining({
+				packageId: definition.id,
+				target: "codex",
+			}),
+			outFile: outPath,
+		});
+		expect(JSON.parse(output.stdout().trim())).toEqual({
+			packageId: definition.id,
+			target: "codex",
+			outputPath: outPath,
+		});
 	});
 
-	it("rejects unsupported targets before building or compiling", async () => {
-		const definitionPath = join(tmp.path, "codex.json");
+	it("rejects definitions that do not declare the selected target before building", async () => {
+		const definitionPath = join(tmp.path, "claude-only.json");
 		await writeFile(
 			definitionPath,
 			JSON.stringify({
 				schemaVersion: 1,
-				id: "future-agent",
-				description: "Future agent.",
-				prompt: { kind: "inline", content: "Future." },
+				id: "claude-only",
+				description: "Reviewed only for Claude.",
+				prompt: { kind: "inline", content: "Claude only." },
 				tools: { preset: "readonly" },
 				skills: { mode: "none" },
 				projectContext: "omit",
-				targets: { codex: {} },
+				targets: { "claude-cli": {} },
 			}),
 			"utf-8",
 		);
@@ -306,9 +345,50 @@ describe("createExportProgram", () => {
 				"--target",
 				"codex",
 				"--out",
+				join(tmp.path, "codex"),
+			]),
+		).rejects.toThrow(/does not declare target.*codex/i);
+		expect(packageMocks.buildAgentPackage).not.toHaveBeenCalled();
+		expect(packageMocks.compileAgentPackageBinary).not.toHaveBeenCalled();
+	});
+
+	it("fails unknown agent-id before building or compiling", async () => {
+		setupRuntime([]);
+
+		await expect(
+			parseExport(["coding/missing", "--out", join(tmp.path, "missing")]),
+		).rejects.toThrow(/unknown agent.*coding\/missing/i);
+		expect(packageMocks.buildAgentPackage).not.toHaveBeenCalled();
+		expect(packageMocks.compileAgentPackageBinary).not.toHaveBeenCalled();
+	});
+
+	it("rejects unsupported targets before building or compiling", async () => {
+		const definitionPath = join(tmp.path, "gemini.json");
+		await writeFile(
+			definitionPath,
+			JSON.stringify({
+				schemaVersion: 1,
+				id: "future-agent",
+				description: "Future agent.",
+				prompt: { kind: "inline", content: "Future." },
+				tools: { preset: "readonly" },
+				skills: { mode: "none" },
+				projectContext: "omit",
+				targets: { "gemini-cli": {} },
+			}),
+			"utf-8",
+		);
+
+		await expect(
+			parseExport([
+				"--definition",
+				definitionPath,
+				"--target",
+				"gemini-cli",
+				"--out",
 				"x",
 			]),
-		).rejects.toThrow(/unsupported-target.*codex.*claude-cli/i);
+		).rejects.toThrow(/unsupported-target.*gemini-cli.*claude-cli, codex/i);
 		expect(packageMocks.buildAgentPackage).not.toHaveBeenCalled();
 		expect(packageMocks.compileAgentPackageBinary).not.toHaveBeenCalled();
 	});

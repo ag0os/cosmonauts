@@ -43,6 +43,8 @@ describe("agent-packaging skill", () => {
 		expect(content).toMatch(/output binary name/i);
 		expect(content).toContain("ANTHROPIC_API_KEY");
 		expect(content).toContain("--allow-api-billing");
+		expect(content).toContain("model_instructions_file");
+		expect(content).toContain("--codex-binary");
 	});
 
 	test("warns against blind raw export of internal prompts with unavailable Cosmonauts tools", async () => {

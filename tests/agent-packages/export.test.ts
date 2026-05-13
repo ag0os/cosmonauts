@@ -7,7 +7,7 @@ import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("agent-package-export-");
 
-const basePackage = {
+const claudePackage = {
 	schemaVersion: 1,
 	packageId: "sample-agent-claude",
 	description: "Sample packaged agent.",
@@ -17,6 +17,12 @@ const basePackage = {
 	projectContext: "omit",
 	target: "claude-cli",
 	targetOptions: {},
+} satisfies AgentPackage;
+
+const codexPackage = {
+	...claudePackage,
+	packageId: "sample-agent-codex",
+	target: "codex",
 } satisfies AgentPackage;
 
 describe("compileAgentPackageBinary", () => {
@@ -34,7 +40,7 @@ describe("compileAgentPackageBinary", () => {
 		);
 
 		await compileAgentPackageBinary({
-			agentPackage: basePackage,
+			agentPackage: claudePackage,
 			outFile,
 			execFile,
 		});
@@ -45,7 +51,7 @@ describe("compileAgentPackageBinary", () => {
 			"/lib/agent-packages/claude-binary-runner.ts",
 		);
 		expect(generatedSource).toContain(
-			JSON.stringify(JSON.stringify(basePackage)),
+			JSON.stringify(JSON.stringify(claudePackage)),
 		);
 		expect(generatedSource).not.toMatch(
 			/readFile|CosmonautsRuntime|missions\//,
@@ -54,6 +60,39 @@ describe("compileAgentPackageBinary", () => {
 			"build",
 			"--compile",
 			generatedEntry,
+			"--outfile",
+			outFile,
+		]);
+	});
+
+	it("embeds a Codex package with the Codex runner", async () => {
+		const outFile = join(tmp.path, "sample-agent-codex");
+		let generatedSource = "";
+		const execFile = vi.fn(
+			async (_command: string, args: readonly string[]) => {
+				const entryPath = args[2];
+				expect(entryPath).toBeDefined();
+				generatedSource = await readFile(entryPath ?? "", "utf-8");
+			},
+		);
+
+		await compileAgentPackageBinary({
+			agentPackage: codexPackage,
+			outFile,
+			execFile,
+		});
+
+		expect(generatedSource).toContain('import { runCodexBinary } from "');
+		expect(generatedSource).toContain(
+			"/lib/agent-packages/codex-binary-runner.ts",
+		);
+		expect(generatedSource).toContain(
+			JSON.stringify(JSON.stringify(codexPackage)),
+		);
+		expect(execFile).toHaveBeenCalledWith("bun", [
+			"build",
+			"--compile",
+			expect.any(String),
 			"--outfile",
 			outFile,
 		]);

@@ -1,0 +1,23 @@
+{
+	"schemaVersion": 1,
+	"id": "cosmo-worker-codex",
+	"description": "Cosmonauts worker packaged for Codex CLI: single-task, test-first implementation with Codex-native project editing and shell execution.",
+	"sourceAgent": "coding/worker",
+	"prompt": {
+		"kind": "file",
+		"path": "worker-codex-system.md"
+	},
+	"tools": {
+		"preset": "coding",
+		"notes": "Packaged worker uses Codex CLI's native code-editing and shell capabilities. Cosmonauts task tools are not available; task status updates are handled by the caller or by direct task-file edits only when explicitly requested."
+	},
+	"skills": {
+		"mode": "none"
+	},
+	"projectContext": "omit",
+	"targets": {
+		"codex": {
+			"skillDelivery": "inline"
+		}
+	}
+}

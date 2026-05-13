@@ -39,7 +39,7 @@ Write or present a complete `AgentPackageDefinition` for human review. Include:
 - a declarative `tools` policy
 - a declarative `skills` selection
 - `projectContext: "omit"`
-- a target block such as `targets["claude-cli"]` with prompt mode, inline skill delivery, and any target-native allowed tools
+- a target block such as `targets["claude-cli"]` or `targets.codex` with prompt mode, inline skill delivery, and any target-native allowed tools
 
 Prefer an explicit external-safe prompt for agents whose internal instructions depend on Cosmonauts orchestration. Use `prompt.kind: "source-agent"` only when compatibility checks show the internal prompt and tool assumptions are safe for the target runtime.
 
@@ -59,9 +59,12 @@ Run the command only after the package definition, prompt, skill selection, and 
 
 For `claude-cli`, exported binaries should wrap the user's normal Claude Code installation by default: preserve Claude's local login/config behavior, allow invocation without an initial prompt, and pass Claude-native flags through to Claude. Do not assume package export implies non-interactive `-p` mode or `--bare` mode unless the human explicitly wants that behavior.
 
+For `codex`, exported binaries should wrap the user's normal Codex CLI installation by default: preserve Codex auth/config behavior, allow invocation without an initial prompt for interactive TUI use, and pass Codex-native flags/subcommands through. Package instructions are injected with Codex's `-c model_instructions_file=<temp-file>` override; wrapper-only flags should be clearly named, such as `--codex-binary <path>`.
+
 ## Final handoff checklist
 
 - Use a stable package `id` and output binary name that describe the packaged role and target, such as `cosmo-planner-claude` with `--out ./bin/cosmo-planner-claude`.
-- Tell the human that Claude flags pass through and the binary can be launched with no prompt for an interactive Claude Code session, or with `-p`/`--print` for non-interactive output.
-- Tell the human that the binary may print a subscription-safety message: Cosmonauts removes `ANTHROPIC_API_KEY` from Claude's environment by default so Claude Code uses subscription auth.
-- Mention that `--allow-api-billing` is the explicit runtime opt-in when the human wants the exported binary to allow API-key billing.
+- For Claude exports, tell the human that Claude flags pass through and the binary can be launched with no prompt for an interactive Claude Code session, or with `-p`/`--print` for non-interactive output.
+- For Claude exports, tell the human that the binary may print a subscription-safety message: Cosmonauts removes `ANTHROPIC_API_KEY` from Claude's environment by default so Claude Code uses subscription auth.
+- For Claude exports, mention that `--allow-api-billing` is the explicit runtime opt-in when the human wants the exported binary to allow API-key billing.
+- For Codex exports, tell the human that Codex flags and subcommands pass through, e.g. no args for interactive TUI or `exec --sandbox workspace-write -` for non-interactive stdin-driven runs, and `--codex-binary <path>` selects a non-default Codex executable.

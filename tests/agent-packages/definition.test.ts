@@ -84,7 +84,7 @@ describe("agent package type contracts", () => {
 			tools: toolPolicy.preset,
 			skills: [packagedSkill],
 			projectContext: "omit",
-			target: "claude-cli",
+			target: "codex",
 			targetOptions: target,
 		};
 		const warning: InvocationWarning = {
@@ -294,6 +294,16 @@ describe("definitionFromAgent", () => {
 			skills: { mode: "source-agent" },
 			projectContext: "omit",
 			targets: { "claude-cli": {} },
+		});
+	});
+
+	it("uses the selected supported export target in generated definition ids", () => {
+		const definition = definitionFromAgent(sourceAgent, "codex");
+
+		expect(definition).toMatchObject({
+			id: "coding-explorer-codex",
+			sourceAgent: "coding/explorer",
+			targets: { codex: {} },
 		});
 	});
 });

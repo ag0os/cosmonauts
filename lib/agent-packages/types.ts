@@ -7,7 +7,7 @@ export type ExternalRuntimeTarget =
 	| "codex"
 	| "gemini-cli"
 	| "open-code";
-export type SupportedExportTarget = "claude-cli";
+export type SupportedExportTarget = "claude-cli" | "codex";
 type SkillDeliveryMode = "inline";
 export type SystemPromptMode = "append" | "replace";
 

@@ -28,6 +28,7 @@ export async function buildAgentPackage(
 	options: BuildAgentPackageOptions,
 ): Promise<AgentPackage> {
 	const { definition, target } = options;
+	const targetOptions = requireTargetOptions(definition, target);
 	const sourceAgent = resolveSourceAgent(options);
 	const sourceAgentId = sourceAgent
 		? qualifyRole(sourceAgent.id, sourceAgent.domain)
@@ -61,8 +62,19 @@ export async function buildAgentPackage(
 			: {}),
 		projectContext: "omit",
 		target,
-		targetOptions: definition.targets[target] ?? {},
+		targetOptions,
 	};
+}
+
+function requireTargetOptions(
+	definition: AgentPackageDefinition,
+	target: SupportedExportTarget,
+) {
+	const targetOptions = definition.targets[target];
+	if (targetOptions) return targetOptions;
+	throw new Error(
+		`Agent package definition "${definition.id}" does not declare target "${target}". Add targets.${target} after reviewing the package for that runtime.`,
+	);
 }
 
 function resolveSourceAgent(

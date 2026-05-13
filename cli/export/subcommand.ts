@@ -31,7 +31,12 @@ interface ResolvedExportInput {
 	readonly shorthandAgentId?: string;
 }
 
-const SUPPORTED_TARGET: SupportedExportTarget = "claude-cli";
+const DEFAULT_TARGET: SupportedExportTarget = "claude-cli";
+const SUPPORTED_TARGETS = [
+	"claude-cli",
+	"codex",
+] as const satisfies readonly SupportedExportTarget[];
+const SUPPORTED_TARGET_LABEL = SUPPORTED_TARGETS.join(", ");
 
 export function createExportProgram(): Command {
 	const program = new Command();
@@ -39,15 +44,15 @@ export function createExportProgram(): Command {
 	program
 		.name("cosmonauts export")
 		.description(
-			`Export a Cosmonauts agent package as a standalone binary. Provide exactly one input: [agent-id] or --definition <path>. Phase 1 supports target: ${SUPPORTED_TARGET}. Examples: cosmonauts export --definition ./agent-package.json --out ./bin/agent; cosmonauts export coding/explorer --target claude-cli --out ./bin/explorer-claude. The exported binary omits ANTHROPIC_API_KEY from Claude's environment by default to preserve subscription auth; pass --allow-api-billing to the exported binary to opt into API billing.`,
+			`Export a Cosmonauts agent package as a standalone binary. Provide exactly one input: [agent-id] or --definition <path>. Supported targets: ${SUPPORTED_TARGET_LABEL}. Examples: cosmonauts export --definition ./agent-package.json --out ./bin/agent; cosmonauts export coding/explorer --target claude-cli --out ./bin/explorer-claude; cosmonauts export --definition ./packages/cosmo-worker-codex/package.json --target codex --out ./bin/cosmo-worker-codex. Claude exports omit ANTHROPIC_API_KEY by default to preserve subscription auth; pass --allow-api-billing to the exported Claude binary to opt into API billing. Codex exports pass package instructions through -c model_instructions_file=<temp-system-prompt> while preserving normal Codex CLI flags.`,
 		)
 		.argument("[agent-id]", "Source agent id to export as shorthand")
 		.option("--definition <path>", "Agent package definition JSON path")
 		.requiredOption("--out <path>", "Output binary path")
 		.option(
 			"--target <target>",
-			`Export target. Phase 1 supports: ${SUPPORTED_TARGET}`,
-			SUPPORTED_TARGET,
+			`Export target. Supported: ${SUPPORTED_TARGET_LABEL}`,
+			DEFAULT_TARGET,
 		)
 		.option("--domain <id>", "Set domain context for agent resolution")
 		.option(
@@ -68,7 +73,7 @@ async function exportAgentPackage(
 	options: ExportOptions,
 ): Promise<void> {
 	const outFile = requireOutFile(options.out);
-	const target = parseTarget(options.target ?? SUPPORTED_TARGET);
+	const target = parseTarget(options.target ?? DEFAULT_TARGET);
 	validateInputMode(agentId, options.definition);
 
 	const runtime = await createExportRuntime(options);
@@ -82,6 +87,7 @@ async function exportAgentPackage(
 	if (input.sourceAgent && input.shorthandAgentId) {
 		assertPortableShorthand(input.shorthandAgentId, input.sourceAgent);
 	}
+	assertDefinitionDeclaresTarget(input.definition, target);
 
 	const agentPackage = await buildAgentPackage({
 		definition: input.definition,
@@ -112,9 +118,23 @@ function requireOutFile(outFile: string | undefined): string {
 }
 
 function parseTarget(value: string): SupportedExportTarget {
-	if (value === SUPPORTED_TARGET) return value;
+	if (isSupportedTarget(value)) return value;
 	throw new Error(
-		`unsupported-target: "${value}" is not supported. Supported export targets in Phase 1: ${SUPPORTED_TARGET}`,
+		`unsupported-target: "${value}" is not supported. Supported export targets: ${SUPPORTED_TARGET_LABEL}`,
+	);
+}
+
+function isSupportedTarget(value: string): value is SupportedExportTarget {
+	return SUPPORTED_TARGETS.includes(value as SupportedExportTarget);
+}
+
+function assertDefinitionDeclaresTarget(
+	definition: AgentPackageDefinition,
+	target: SupportedExportTarget,
+): void {
+	if (definition.targets[target]) return;
+	throw new Error(
+		`Agent package definition "${definition.id}" does not declare target "${target}". Add targets.${target} after reviewing the package for that runtime.`,
 	);
 }
 
