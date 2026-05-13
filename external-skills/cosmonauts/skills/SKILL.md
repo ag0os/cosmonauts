@@ -54,6 +54,33 @@ cosmonauts skills export -t claude --all
 
 Each skill's `SKILL.md` is copied verbatim into a directory named after the skill. The exported files follow the [Agent Skills](https://github.com/anthropics/skills) standard.
 
+## External framework integration stack
+
+For Claude Code, Codex, Gemini CLI, or another framework that can call shell commands, use the integration surfaces in this order:
+
+1. **External `cosmonauts` skill bundle.** Install `external-skills/cosmonauts/` first. It teaches the outside agent the public CLI contract, including discovery, plan/task commands, workflows, and drive usage. This bundle is installed by manual copy, not by `cosmonauts skills export`.
+2. **Drive-oriented internal skills.** Export `plan`, `task`, and `drive` when the outside agent should create structured work and then run it through `cosmonauts drive`.
+
+```bash
+cosmonauts skills export -t claude plan task drive
+cosmonauts skills export -t codex plan task drive
+```
+
+The actual execution surface is still the CLI:
+
+```bash
+cosmonauts drive run --plan <slug> --backend codex --mode detached
+cosmonauts drive status <runId> --plan <slug>
+cosmonauts drive list
+```
+
+3. **Agent packaging skill.** Export `agent-packaging` only when the external framework wants to build portable specialist agents from Cosmonauts agent definitions. This teaches the package-design workflow; the actual binary export is done with `cosmonauts export`.
+
+```bash
+cosmonauts skills export -t claude agent-packaging
+cosmonauts export --definition ./agent-package.json --out ./bin/<agent-name>
+```
+
 ## What to actually export
 
 Most cosmonauts internal skills are written for cosmonauts' own agents (cosmo, cody, planner, worker, etc.) and reference internal tools you don't have. Useful to an outside agent:
@@ -61,12 +88,13 @@ Most cosmonauts internal skills are written for cosmonauts' own agents (cosmo, c
 - **`plan`** — explains the plan file format, the planning protocol, what makes a good plan. Useful when authoring plans to push into cosmonauts via `cosmonauts plan create --spec "..."`.
 - **`task`** — explains the task file format, AC checklists, dependency rules. Useful when authoring tasks for `cosmonauts task create --from-file`.
 - **`drive`** — explains the driver loop and commit policies. Useful when invoking `cosmonauts drive run` and interpreting the run output.
+- **`agent-packaging`** — useful when designing an external-safe packaged agent for `cosmonauts export`; skip it for ordinary plan/task/drive automation.
 - **`pi`** — Pi framework API reference. Only useful if you're modifying cosmonauts itself.
 
 Skip these unless you have a specific need; they assume an internal-agent perspective:
 
 - `skills-cli` (internal version of this skill)
-- `agent-packaging`, `spawning`, `archive`, `init`, `roadmap`, `skill-writing`
+- `spawning`, `archive`, `init`, `roadmap`, `skill-writing`
 
 ## Keeping them in sync
 

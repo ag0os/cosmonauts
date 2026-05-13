@@ -107,7 +107,7 @@ cosmonauts session info <id-prefix> --include-text --json  # full transcript
 ## What workflows don't do (yet)
 
 - **No stdout output.** `--workflow` writes nothing to stdout — neither progress nor the final response. Per-stage progress is logged to **stderr** via `cli/chain-event-logger.ts`; everything substantive lives in on-disk artifacts (`missions/plans/`, `missions/tasks/`) and per-stage Pi sessions. Use `cosmonauts session list --json` + `session info <id> --include-text --json` to read the actual outputs.
-- **No streaming progress events.** The stderr log shows stage starts/ends with status and duration, but not intermediate tool calls or turn boundaries. The roadmap item `streaming-events` tracks adding an NDJSON event stream for this.
+- **No structured streaming event API.** The stderr log is human-formatted and may include lifecycle, turn, and tool lines such as stage starts/ends, `Turn event: ...`, and `Tool event: ...`. It is useful for watching progress, but it is not a stable machine-readable event stream. The roadmap item `streaming-events` tracks adding an NDJSON event stream for this.
 - **No per-stage configuration from the CLI.** You can't pass different `--model` or `--thinking` to different stages from the CLI — the workflow definition controls that. Edit `.cosmonauts/config.json` to change stage-level config.
 - **No mid-run pause/inspect.** A running workflow runs straight through every stage. For long autonomous runs that need pause/resume, use `cosmonauts drive` instead — drive supports detached mode (`--mode detached` returns a `runId` immediately) and explicit resume (`--resume <runId>`).
 
