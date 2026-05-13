@@ -1,23 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-// vi.mock is hoisted above all imports, so we declare the mock functions
-// inside vi.hoisted to make them available to the factory.
-const { mockList, mockListAll } = vi.hoisted(() => ({
-	mockList: vi.fn(),
-	mockListAll: vi.fn(),
-}));
-vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import("@earendil-works/pi-coding-agent")>();
-	return {
-		...actual,
-		SessionManager: {
-			...actual.SessionManager,
-			list: mockList,
-			listAll: mockListAll,
-		},
-	};
-});
+import { mkdir, utimes, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
 	collectProjectSessions,
@@ -36,6 +19,75 @@ import {
 	ProcessExitError,
 } from "../../helpers/cli.ts";
 
+// ============================================================================
+// Fixture helpers — write real Pi-format JSONL files into temp directories
+// so we exercise SessionManager.list end-to-end. These fixtures are what the
+// reviewer-flagged bugs (--all skipping nested cosmonauts sessions,
+// --session-dir treating the base as a leaf) would slip past mock-only tests.
+// ============================================================================
+
+interface FixtureSession {
+	id: string;
+	modifiedAt?: Date;
+	cwd?: string;
+	messageCount?: number;
+	firstMessage?: string;
+}
+
+async function writeFixtureSession(
+	dir: string,
+	opts: FixtureSession,
+): Promise<string> {
+	await mkdir(dir, { recursive: true });
+	const modifiedAt = opts.modifiedAt ?? new Date("2026-01-01T00:00:00.000Z");
+	const filename = `${modifiedAt.toISOString().replace(/[:.]/g, "-")}_${opts.id}.jsonl`;
+	const path = join(dir, filename);
+	const messageCount = opts.messageCount ?? 1;
+	const firstMessage = opts.firstMessage ?? "hello";
+	const cwd = opts.cwd ?? "/test/cwd";
+
+	const lines: string[] = [
+		JSON.stringify({
+			type: "session",
+			version: 3,
+			id: opts.id,
+			timestamp: modifiedAt.toISOString(),
+			cwd,
+		}),
+	];
+	for (let i = 0; i < messageCount; i += 1) {
+		lines.push(
+			JSON.stringify({
+				type: "message",
+				id: `msg-${opts.id}-${i}`,
+				parentId: i === 0 ? null : `msg-${opts.id}-${i - 1}`,
+				timestamp: modifiedAt.toISOString(),
+				message: {
+					role: i % 2 === 0 ? "user" : "assistant",
+					content: [
+						{
+							type: "text",
+							text: i === 0 ? firstMessage : `reply ${i}`,
+						},
+					],
+					timestamp: modifiedAt.getTime(),
+				},
+			}),
+		);
+	}
+	await writeFile(path, `${lines.join("\n")}\n`);
+	await utimes(path, modifiedAt, modifiedAt);
+	return path;
+}
+
+// Use distinct uuids so id-prefix lookups remain unambiguous across fixtures.
+const ID_FLAT_A = "11111111-1111-1111-1111-111111111111";
+const ID_CODING = "22222222-2222-2222-2222-222222222222";
+const ID_PLANNER = "33333333-3333-3333-3333-333333333333";
+const ID_OTHER_PROJECT = "44444444-4444-4444-4444-444444444444";
+const ID_AMBIG_A = "ABCDEFGH-aaaa-aaaa-aaaa-aaaaaaaaaaaa".toLowerCase();
+const ID_AMBIG_B = "ABCDEFGH-bbbb-bbbb-bbbb-bbbbbbbbbbbb".toLowerCase();
+
 function row(overrides: Partial<SessionListItem> = {}): SessionListItem {
 	return {
 		id: "019e1a02-47ab-702b-affa-3dab3ed4ec03",
@@ -51,6 +103,10 @@ function row(overrides: Partial<SessionListItem> = {}): SessionListItem {
 		...overrides,
 	};
 }
+
+// ============================================================================
+// Pure helpers
+// ============================================================================
 
 describe("sessionInfoToListItem", () => {
 	it("converts Pi SessionInfo into our flat shape with ISO timestamps", () => {
@@ -211,7 +267,6 @@ describe("renderSessionsList", () => {
 				/^ID\s+AGENT\s+MODIFIED\s+MSGS\s+FIRST MESSAGE$/,
 			);
 			expect(rendered.lines[1]).toMatch(/^-+\s+-+\s+-+\s+----\s+-+$/);
-			// 8-char short id, agent shown verbatim, message count right-padded
 			expect(rendered.lines[2]).toContain("019e1a02");
 			expect(rendered.lines[2]).toContain("coding");
 		}
@@ -304,37 +359,363 @@ describe("renderSessionInfo", () => {
 	});
 });
 
-describe("collectProjectSessions — with explicit --session-dir", () => {
-	beforeEach(() => {
-		mockList.mockReset();
-		mockListAll.mockReset();
+// ============================================================================
+// Data collection — real fixture directories
+// ============================================================================
+
+describe("collectProjectSessions — dual layout walk", () => {
+	let context: CommandTestContext;
+	let base: string;
+
+	beforeEach(async () => {
+		context = await createCommandTestContext("collect-project-");
+		base = join(context.tempDir, "sessions-base");
 	});
 
-	it("calls SessionManager.list once and labels rows with the dir basename", async () => {
-		mockList.mockResolvedValueOnce([
-			{
-				id: "abc",
-				path: "/explicit/abc.jsonl",
-				cwd: "/p",
-				created: new Date("2026-01-01"),
-				modified: new Date("2026-01-02"),
-				messageCount: 3,
-				firstMessage: "hi",
-				allMessagesText: "",
-			},
-		]);
+	afterEach(async () => {
+		await context.restore();
+	});
 
+	it("returns an empty array when the base dir does not exist yet", async () => {
 		const rows = await collectProjectSessions({
 			cwd: "/p",
-			explicitSessionDir: "/explicit",
+			explicitSessionDir: join(context.tempDir, "never-created"),
+		});
+		expect(rows).toEqual([]);
+	});
+
+	it("walks both flat .jsonl files AND nested agent subdirs (regression for the --session-dir-as-base bug)", async () => {
+		await writeFixtureSession(base, {
+			id: ID_FLAT_A,
+			modifiedAt: new Date("2026-01-01T00:00:00Z"),
+			firstMessage: "flat one",
+		});
+		await writeFixtureSession(join(base, "coding"), {
+			id: ID_CODING,
+			modifiedAt: new Date("2026-02-01T00:00:00Z"),
+			firstMessage: "nested coding",
+		});
+		await writeFixtureSession(join(base, "planner"), {
+			id: ID_PLANNER,
+			modifiedAt: new Date("2026-03-01T00:00:00Z"),
+			firstMessage: "nested planner",
 		});
 
-		expect(mockList).toHaveBeenCalledExactlyOnceWith("/p", "/explicit");
-		expect(rows).toHaveLength(1);
-		expect(rows[0]?.agent).toBe("explicit");
-		expect(rows[0]?.id).toBe("abc");
+		const rows = await collectProjectSessions({
+			cwd: "/test/cwd",
+			explicitSessionDir: base,
+		});
+
+		// All three layouts surface, each tagged with the correct agent label.
+		const byId = new Map(rows.map((r) => [r.id, r]));
+		expect(rows).toHaveLength(3);
+		expect(byId.get(ID_FLAT_A)?.agent).toBeNull();
+		expect(byId.get(ID_CODING)?.agent).toBe("coding");
+		expect(byId.get(ID_PLANNER)?.agent).toBe("planner");
+	});
+
+	it("--agent filter scopes to one subdir and skips flat-base files", async () => {
+		await writeFixtureSession(base, { id: ID_FLAT_A });
+		await writeFixtureSession(join(base, "coding"), { id: ID_CODING });
+		await writeFixtureSession(join(base, "planner"), { id: ID_PLANNER });
+
+		const rows = await collectProjectSessions({
+			cwd: "/test/cwd",
+			explicitSessionDir: base,
+			agentFilter: "coding",
+		});
+
+		expect(rows.map((r) => r.id)).toEqual([ID_CODING]);
+		expect(rows[0]?.agent).toBe("coding");
+	});
+
+	it("--agent filter that matches nothing returns an empty list", async () => {
+		await writeFixtureSession(join(base, "coding"), { id: ID_CODING });
+
+		const rows = await collectProjectSessions({
+			cwd: "/test/cwd",
+			explicitSessionDir: base,
+			agentFilter: "never-existed",
+		});
+
+		expect(rows).toEqual([]);
 	});
 });
+
+describe("session list command — end to end (real fixtures)", () => {
+	let context: CommandTestContext;
+	let base: string;
+	const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+
+	beforeEach(async () => {
+		context = await createCommandTestContext("session-list-cmd-");
+		base = join(context.tempDir, "sessions-base");
+	});
+
+	afterEach(async () => {
+		await context.restore();
+		if (originalAgentDir === undefined) {
+			delete process.env.PI_CODING_AGENT_DIR;
+		} else {
+			process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		}
+	});
+
+	it("--session-dir <base> walks subdirs and emits a sorted JSON array", async () => {
+		await writeFixtureSession(base, {
+			id: ID_FLAT_A,
+			modifiedAt: new Date("2026-01-01T00:00:00Z"),
+		});
+		await writeFixtureSession(join(base, "coding"), {
+			id: ID_CODING,
+			modifiedAt: new Date("2026-05-01T00:00:00Z"),
+		});
+
+		await createSessionsProgram().parseAsync([
+			"node",
+			"test",
+			"--json",
+			"list",
+			"--session-dir",
+			base,
+		]);
+
+		const parsed = JSON.parse(context.output.stdout()) as SessionListItem[];
+		// Newest first.
+		expect(parsed.map((r) => r.id)).toEqual([ID_CODING, ID_FLAT_A]);
+		// Nested file is tagged with its agent subdir, flat file is null.
+		expect(parsed[0]?.agent).toBe("coding");
+		expect(parsed[1]?.agent).toBeNull();
+		expect(context.exit.calls()).toEqual([]);
+	});
+
+	it("--limit caps the row count after sort", async () => {
+		await writeFixtureSession(join(base, "coding"), {
+			id: ID_CODING,
+			modifiedAt: new Date("2026-03-01T00:00:00Z"),
+		});
+		await writeFixtureSession(join(base, "planner"), {
+			id: ID_PLANNER,
+			modifiedAt: new Date("2026-04-01T00:00:00Z"),
+		});
+		await writeFixtureSession(base, {
+			id: ID_FLAT_A,
+			modifiedAt: new Date("2026-01-01T00:00:00Z"),
+		});
+
+		await createSessionsProgram().parseAsync([
+			"node",
+			"test",
+			"--json",
+			"list",
+			"--session-dir",
+			base,
+			"--limit",
+			"2",
+		]);
+
+		const parsed = JSON.parse(context.output.stdout()) as SessionListItem[];
+		expect(parsed.map((r) => r.id)).toEqual([ID_PLANNER, ID_CODING]);
+	});
+
+	it("rejects --all combined with --agent", async () => {
+		await expect(
+			createSessionsProgram().parseAsync([
+				"node",
+				"test",
+				"list",
+				"--all",
+				"--agent",
+				"coding",
+			]),
+		).rejects.toThrow(ProcessExitError);
+
+		expect(context.output.stderr()).toContain(
+			"--all and --agent are mutually exclusive",
+		);
+		expect(context.exit.calls()).toEqual([1]);
+	});
+
+	it("rejects --all combined with --session-dir", async () => {
+		await expect(
+			createSessionsProgram().parseAsync([
+				"node",
+				"test",
+				"list",
+				"--all",
+				"--session-dir",
+				base,
+			]),
+		).rejects.toThrow(ProcessExitError);
+
+		expect(context.output.stderr()).toContain(
+			"--all and --session-dir are mutually exclusive",
+		);
+		expect(context.exit.calls()).toEqual([1]);
+	});
+
+	it("rejects a non-positive --limit", async () => {
+		await expect(
+			createSessionsProgram().parseAsync([
+				"node",
+				"test",
+				"list",
+				"--session-dir",
+				base,
+				"--limit",
+				"0",
+			]),
+		).rejects.toThrow(ProcessExitError);
+
+		expect(context.output.stderr()).toContain("Invalid --limit");
+		expect(context.exit.calls()).toEqual([1]);
+	});
+
+	it("--all walks every cwd's nested agent subdirs (regression for the listAll-bypass bug)", async () => {
+		// Point Pi (and our --all walker) at an isolated agent dir.
+		const agentDir = join(context.tempDir, "agent-root");
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		const sessionsRoot = join(agentDir, "sessions");
+
+		// Two cwds, each laid out the way cosmonauts writes:
+		//   <sessionsRoot>/<encoded-cwd>/<agent>/<file>.jsonl
+		await writeFixtureSession(
+			join(sessionsRoot, "--Users-cosmos-Projects-a--", "coding"),
+			{ id: ID_CODING, cwd: "/Users/cosmos/Projects/a" },
+		);
+		await writeFixtureSession(
+			join(sessionsRoot, "--Users-cosmos-Projects-b--", "planner"),
+			{ id: ID_PLANNER, cwd: "/Users/cosmos/Projects/b" },
+		);
+		// And one flat (Pi-direct) session in a third cwd — also expected to surface.
+		await writeFixtureSession(
+			join(sessionsRoot, "--Users-cosmos-Projects-c--"),
+			{ id: ID_OTHER_PROJECT, cwd: "/Users/cosmos/Projects/c" },
+		);
+
+		await createSessionsProgram().parseAsync([
+			"node",
+			"test",
+			"--json",
+			"list",
+			"--all",
+		]);
+
+		const parsed = JSON.parse(context.output.stdout()) as SessionListItem[];
+		const ids = parsed.map((r) => r.id).sort();
+		expect(ids).toEqual([ID_CODING, ID_PLANNER, ID_OTHER_PROJECT].sort());
+
+		const byId = new Map(parsed.map((r) => [r.id, r]));
+		expect(byId.get(ID_CODING)?.agent).toBe("coding");
+		expect(byId.get(ID_PLANNER)?.agent).toBe("planner");
+		expect(byId.get(ID_OTHER_PROJECT)?.agent).toBeNull();
+		// Real cwd comes from each session file's header, not the encoded dir name.
+		expect(byId.get(ID_CODING)?.cwd).toBe("/Users/cosmos/Projects/a");
+	});
+});
+
+describe("session info command — end to end (real fixtures)", () => {
+	let context: CommandTestContext;
+	let base: string;
+
+	beforeEach(async () => {
+		context = await createCommandTestContext("session-info-cmd-");
+		base = join(context.tempDir, "sessions-base");
+	});
+
+	afterEach(async () => {
+		await context.restore();
+	});
+
+	it("resolves an id prefix against a nested agent subdir", async () => {
+		await writeFixtureSession(join(base, "coding"), {
+			id: ID_CODING,
+			modifiedAt: new Date("2026-05-12T14:49:53Z"),
+			firstMessage: "hello",
+		});
+
+		await createSessionsProgram().parseAsync([
+			"node",
+			"test",
+			"--json",
+			"info",
+			ID_CODING.slice(0, 8),
+			"--session-dir",
+			base,
+		]);
+
+		const parsed = JSON.parse(context.output.stdout()) as SessionInfoOutput;
+		expect(parsed.id).toBe(ID_CODING);
+		expect(parsed.agent).toBe("coding");
+		expect(parsed.allMessagesText).toBeUndefined();
+	});
+
+	it("appends allMessagesText when --include-text is set", async () => {
+		await writeFixtureSession(join(base, "coding"), {
+			id: ID_CODING,
+			firstMessage: "transcript opener",
+		});
+
+		await createSessionsProgram().parseAsync([
+			"node",
+			"test",
+			"--json",
+			"info",
+			ID_CODING.slice(0, 8),
+			"--include-text",
+			"--session-dir",
+			base,
+		]);
+
+		const parsed = JSON.parse(context.output.stdout()) as SessionInfoOutput;
+		expect(parsed.allMessagesText).toContain("transcript opener");
+	});
+
+	it("exits 1 with stderr diagnostics when the id prefix matches nothing", async () => {
+		await writeFixtureSession(join(base, "coding"), { id: ID_CODING });
+
+		await expect(
+			createSessionsProgram().parseAsync([
+				"node",
+				"test",
+				"info",
+				"deadbeef",
+				"--session-dir",
+				base,
+			]),
+		).rejects.toThrow(ProcessExitError);
+
+		expect(context.output.stderr()).toContain('no session matches "deadbeef"');
+		expect(context.exit.calls()).toEqual([1]);
+	});
+
+	it("exits 1 listing candidates when the id prefix is ambiguous across layouts", async () => {
+		// Two sessions whose IDs share a prefix, one flat at base, one nested.
+		await writeFixtureSession(base, { id: ID_AMBIG_A });
+		await writeFixtureSession(join(base, "coding"), { id: ID_AMBIG_B });
+		const ambiguousPrefix = ID_AMBIG_A.slice(0, 6);
+
+		await expect(
+			createSessionsProgram().parseAsync([
+				"node",
+				"test",
+				"info",
+				ambiguousPrefix,
+				"--session-dir",
+				base,
+			]),
+		).rejects.toThrow(ProcessExitError);
+
+		expect(context.output.stderr()).toContain("is ambiguous");
+		expect(context.output.stderr()).toContain(ID_AMBIG_A);
+		expect(context.output.stderr()).toContain(ID_AMBIG_B);
+		expect(context.exit.calls()).toEqual([1]);
+	});
+});
+
+// ============================================================================
+// Commander program structure
+// ============================================================================
 
 describe("createSessionsProgram", () => {
 	it("registers list and info subcommands", () => {
@@ -367,302 +748,5 @@ describe("createSessionsProgram", () => {
 		const optionNames = info?.options.map((o) => o.long) ?? [];
 		expect(optionNames).toContain("--include-text");
 		expect(optionNames).toContain("--session-dir");
-	});
-});
-
-describe("session list command — end to end", () => {
-	let context: CommandTestContext;
-
-	beforeEach(async () => {
-		mockList.mockReset();
-		mockListAll.mockReset();
-		context = await createCommandTestContext("session-list-cmd-");
-	});
-
-	afterEach(async () => {
-		await context.restore();
-	});
-
-	it("emits a JSON array of rows sorted by modified desc when --json is set", async () => {
-		mockList.mockResolvedValueOnce([
-			{
-				id: "old",
-				path: "/old.jsonl",
-				cwd: context.tempDir,
-				created: new Date("2026-01-01"),
-				modified: new Date("2026-01-01"),
-				messageCount: 1,
-				firstMessage: "old",
-				allMessagesText: "",
-			},
-			{
-				id: "new",
-				path: "/new.jsonl",
-				cwd: context.tempDir,
-				created: new Date("2026-05-01"),
-				modified: new Date("2026-05-01"),
-				messageCount: 2,
-				firstMessage: "new",
-				allMessagesText: "",
-			},
-		]);
-
-		const program = createSessionsProgram();
-		await program.parseAsync([
-			"node",
-			"test",
-			"--json",
-			"list",
-			"--session-dir",
-			"/abs/explicit",
-		]);
-
-		const parsed = JSON.parse(context.output.stdout()) as SessionListItem[];
-		expect(parsed.map((r) => r.id)).toEqual(["new", "old"]);
-		expect(context.exit.calls()).toEqual([]);
-	});
-
-	it("--limit caps the row count after sort", async () => {
-		mockList.mockResolvedValueOnce([
-			{
-				id: "a",
-				path: "/a.jsonl",
-				cwd: context.tempDir,
-				created: new Date("2026-01-01"),
-				modified: new Date("2026-01-01"),
-				messageCount: 1,
-				firstMessage: "",
-				allMessagesText: "",
-			},
-			{
-				id: "b",
-				path: "/b.jsonl",
-				cwd: context.tempDir,
-				created: new Date("2026-02-01"),
-				modified: new Date("2026-02-01"),
-				messageCount: 1,
-				firstMessage: "",
-				allMessagesText: "",
-			},
-			{
-				id: "c",
-				path: "/c.jsonl",
-				cwd: context.tempDir,
-				created: new Date("2026-03-01"),
-				modified: new Date("2026-03-01"),
-				messageCount: 1,
-				firstMessage: "",
-				allMessagesText: "",
-			},
-		]);
-
-		const program = createSessionsProgram();
-		await program.parseAsync([
-			"node",
-			"test",
-			"--json",
-			"list",
-			"--session-dir",
-			"/abs/explicit",
-			"--limit",
-			"2",
-		]);
-
-		const parsed = JSON.parse(context.output.stdout()) as SessionListItem[];
-		expect(parsed.map((r) => r.id)).toEqual(["c", "b"]);
-	});
-
-	it("rejects --all combined with --agent", async () => {
-		const program = createSessionsProgram();
-		await expect(
-			program.parseAsync([
-				"node",
-				"test",
-				"list",
-				"--all",
-				"--agent",
-				"coding",
-			]),
-		).rejects.toThrow(ProcessExitError);
-
-		expect(context.output.stderr()).toContain(
-			"--all and --agent are mutually exclusive",
-		);
-		expect(context.exit.calls()).toEqual([1]);
-	});
-
-	it("rejects a non-positive --limit", async () => {
-		const program = createSessionsProgram();
-		await expect(
-			program.parseAsync([
-				"node",
-				"test",
-				"list",
-				"--session-dir",
-				"/abs/explicit",
-				"--limit",
-				"0",
-			]),
-		).rejects.toThrow(ProcessExitError);
-
-		expect(context.output.stderr()).toContain("Invalid --limit");
-		expect(context.exit.calls()).toEqual([1]);
-	});
-
-	it("falls back to SessionManager.listAll when --all is set", async () => {
-		mockListAll.mockResolvedValueOnce([
-			{
-				id: "x",
-				path: "/x.jsonl",
-				cwd: "/some/other/project",
-				created: new Date("2026-04-01"),
-				modified: new Date("2026-04-01"),
-				messageCount: 1,
-				firstMessage: "",
-				allMessagesText: "",
-			},
-		]);
-
-		const program = createSessionsProgram();
-		await program.parseAsync(["node", "test", "--json", "list", "--all"]);
-
-		expect(mockListAll).toHaveBeenCalledTimes(1);
-		const parsed = JSON.parse(context.output.stdout()) as SessionListItem[];
-		expect(parsed[0]?.agent).toBeNull();
-		expect(parsed[0]?.cwd).toBe("/some/other/project");
-	});
-});
-
-describe("session info command — end to end", () => {
-	let context: CommandTestContext;
-
-	beforeEach(async () => {
-		mockList.mockReset();
-		mockListAll.mockReset();
-		context = await createCommandTestContext("session-info-cmd-");
-	});
-
-	afterEach(async () => {
-		await context.restore();
-	});
-
-	it("resolves an id prefix and emits a JSON payload", async () => {
-		mockList.mockResolvedValueOnce([
-			{
-				id: "019e1a02-47ab-702b-affa-3dab3ed4ec03",
-				path: "/abs/coding/sess.jsonl",
-				cwd: context.tempDir,
-				created: new Date("2026-05-12"),
-				modified: new Date("2026-05-12T14:49:53Z"),
-				messageCount: 244,
-				firstMessage: "hello",
-				allMessagesText: "full transcript",
-			},
-		]);
-
-		const program = createSessionsProgram();
-		await program.parseAsync([
-			"node",
-			"test",
-			"--json",
-			"info",
-			"019e1a02",
-			"--session-dir",
-			"/abs/coding",
-		]);
-
-		const parsed = JSON.parse(context.output.stdout()) as SessionInfoOutput;
-		expect(parsed.id).toBe("019e1a02-47ab-702b-affa-3dab3ed4ec03");
-		expect(parsed.allMessagesText).toBeUndefined();
-	});
-
-	it("appends allMessagesText when --include-text is set", async () => {
-		const info = {
-			id: "019e1a02-47ab-702b-affa-3dab3ed4ec03",
-			path: "/abs/coding/sess.jsonl",
-			cwd: context.tempDir,
-			created: new Date("2026-05-12"),
-			modified: new Date("2026-05-12T14:49:53Z"),
-			messageCount: 1,
-			firstMessage: "hello",
-			allMessagesText: "full transcript",
-		};
-		mockList.mockResolvedValueOnce([info]).mockResolvedValueOnce([info]);
-
-		const program = createSessionsProgram();
-		await program.parseAsync([
-			"node",
-			"test",
-			"--json",
-			"info",
-			"019e1a02",
-			"--include-text",
-			"--session-dir",
-			"/abs/coding",
-		]);
-
-		const parsed = JSON.parse(context.output.stdout()) as SessionInfoOutput;
-		expect(parsed.allMessagesText).toBe("full transcript");
-	});
-
-	it("exits 1 with stderr diagnostics when the id prefix matches nothing", async () => {
-		mockList.mockResolvedValueOnce([]);
-
-		const program = createSessionsProgram();
-		await expect(
-			program.parseAsync([
-				"node",
-				"test",
-				"info",
-				"deadbeef",
-				"--session-dir",
-				"/abs/coding",
-			]),
-		).rejects.toThrow(ProcessExitError);
-
-		expect(context.output.stderr()).toContain('no session matches "deadbeef"');
-		expect(context.exit.calls()).toEqual([1]);
-	});
-
-	it("exits 1 listing candidates when the id prefix is ambiguous", async () => {
-		mockList.mockResolvedValueOnce([
-			{
-				id: "019e1a02-aaaa",
-				path: "/a.jsonl",
-				cwd: context.tempDir,
-				created: new Date(),
-				modified: new Date(),
-				messageCount: 0,
-				firstMessage: "",
-				allMessagesText: "",
-			},
-			{
-				id: "019e1a02-bbbb",
-				path: "/b.jsonl",
-				cwd: context.tempDir,
-				created: new Date(),
-				modified: new Date(),
-				messageCount: 0,
-				firstMessage: "",
-				allMessagesText: "",
-			},
-		]);
-
-		const program = createSessionsProgram();
-		await expect(
-			program.parseAsync([
-				"node",
-				"test",
-				"info",
-				"019e1a02",
-				"--session-dir",
-				"/abs/coding",
-			]),
-		).rejects.toThrow(ProcessExitError);
-
-		expect(context.output.stderr()).toContain("is ambiguous");
-		expect(context.output.stderr()).toContain("/a.jsonl");
-		expect(context.output.stderr()).toContain("/b.jsonl");
-		expect(context.exit.calls()).toEqual([1]);
 	});
 });

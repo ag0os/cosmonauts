@@ -11,8 +11,9 @@
  */
 
 import { readdir, stat } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import {
+	getAgentDir,
 	type SessionInfo,
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
@@ -207,40 +208,78 @@ export function renderSessionInfo(
 
 interface CollectOptions {
 	cwd: string;
-	/** Explicit override; when set we list this dir directly and skip agent enumeration. */
+	/**
+	 * Base session dir to scan. When omitted we default to `piSessionDir(cwd)`.
+	 * Cosmonauts (see `cli/session.ts:resolveSessionDir`) treats this value as a
+	 * *base* and writes sessions under `<base>/<agent>/`, so we enumerate the
+	 * agent subdirs underneath rather than reading <base> as a leaf.
+	 */
 	explicitSessionDir?: string;
-	/** Restrict to a single agent subdir under piSessionDir(cwd). */
+	/** Restrict to a single agent subdir under the base. */
 	agentFilter?: string;
 }
 
 /**
- * Enumerate session rows for the current project by scanning each agent
- * subdirectory under `piSessionDir(cwd)`. Returns an empty array if the dir
- * does not exist yet.
+ * Enumerate session rows for the current project. Walks both the
+ * per-agent subdirectories cosmonauts writes (`<base>/<agent>/*.jsonl`)
+ * and any direct .jsonl files at the base (Pi-flat / legacy layout).
+ * Returns an empty array if the base does not exist yet.
  */
 export async function collectProjectSessions(
 	opts: CollectOptions,
 ): Promise<SessionListItem[]> {
-	if (opts.explicitSessionDir) {
-		const agentLabel = basename(opts.explicitSessionDir);
-		const infos = await SessionManager.list(opts.cwd, opts.explicitSessionDir);
-		return infos.map((info) => sessionInfoToListItem(info, agentLabel || null));
-	}
+	const base = opts.explicitSessionDir ?? piSessionDir(opts.cwd);
+	return collectSessionsFromBase(base, opts.cwd, opts.agentFilter);
+}
 
-	const base = piSessionDir(opts.cwd);
+/**
+ * Scan one `base` directory using the dual layout: agent subdirs underneath
+ * for cosmonauts-written sessions, plus any flat .jsonl files at the base
+ * for Pi-direct usage.
+ *
+ * Flat-base files are skipped when `agentFilter` is set — the user has
+ * explicitly scoped to one agent subdir.
+ */
+async function collectSessionsFromBase(
+	base: string,
+	cwd: string,
+	agentFilter: string | undefined,
+): Promise<SessionListItem[]> {
 	const subdirs = await listAgentSubdirs(base);
-	const filtered = opts.agentFilter
-		? subdirs.filter((subdir) => subdir.name === opts.agentFilter)
+	const filteredSubdirs = agentFilter
+		? subdirs.filter((subdir) => subdir.name === agentFilter)
 		: subdirs;
 
 	const rows: SessionListItem[] = [];
-	for (const subdir of filtered) {
-		const infos = await SessionManager.list(opts.cwd, subdir.path);
+
+	if (!agentFilter) {
+		// Pi-flat / legacy: .jsonl files written directly into `base`.
+		const flatInfos = await listSessionsInDir(base, cwd);
+		for (const info of flatInfos) {
+			rows.push(sessionInfoToListItem(info, null));
+		}
+	}
+
+	for (const subdir of filteredSubdirs) {
+		const infos = await listSessionsInDir(subdir.path, cwd);
 		for (const info of infos) {
 			rows.push(sessionInfoToListItem(info, subdir.name));
 		}
 	}
+
 	return rows;
+}
+
+async function listSessionsInDir(
+	dir: string,
+	cwd: string,
+): Promise<SessionInfo[]> {
+	try {
+		return await SessionManager.list(cwd, dir);
+	} catch (err: unknown) {
+		if (isNoEntError(err)) return [];
+		throw err;
+	}
 }
 
 interface AgentSubdir {
@@ -272,9 +311,25 @@ function isNoEntError(err: unknown): boolean {
 	);
 }
 
+/**
+ * Scan every cwd-encoded directory under Pi's global sessions root and apply
+ * the same dual-layout walk per cwd. Replaces a previous use of
+ * `SessionManager.listAll()`, which only sees direct .jsonl files under each
+ * cwd dir and would skip every cosmonauts session (cosmonauts always writes
+ * one level deeper, under `<cwd>/<agent>/`).
+ */
 async function collectAllSessions(): Promise<SessionListItem[]> {
-	const infos = await SessionManager.listAll();
-	return infos.map((info) => sessionInfoToListItem(info, null));
+	const root = join(getAgentDir(), "sessions");
+	const cwdDirs = await listAgentSubdirs(root);
+
+	const rows: SessionListItem[] = [];
+	for (const cwdDir of cwdDirs) {
+		// The session-file's header carries the real cwd; the `cwd` arg to
+		// SessionManager.list only matters when sessionDir is undefined.
+		// Pass empty string here — we always pass an explicit sessionDir below.
+		rows.push(...(await collectSessionsFromBase(cwdDir.path, "", undefined)));
+	}
+	return rows;
 }
 
 function parseLimit(raw: string | undefined): number | undefined {
