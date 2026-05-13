@@ -62,8 +62,11 @@ import type { PiFlags } from "./pi-flags.ts";
  * Encode a cwd into Pi's session directory path.
  * Uses Pi's getAgentDir() for the base path (respects PI_CODING_AGENT_DIR)
  * and matches Pi's internal encoding: `--<cwd-with-slashes-replaced>--`.
+ *
+ * Exported for the `cosmonauts session` subcommand, which enumerates the
+ * per-agent subdirectories cosmonauts writes underneath this path.
  */
-function piSessionDir(cwd: string): string {
+export function piSessionDir(cwd: string): string {
 	const safePath = `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
 	return join(getAgentDir(), "sessions", safePath);
 }

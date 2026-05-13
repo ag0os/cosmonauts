@@ -69,6 +69,7 @@ import { type PiFlagParseResult, parsePiFlags } from "./pi-flags.ts";
 import { createPlanProgram } from "./plans/index.ts";
 import { createScaffoldProgram } from "./scaffold/subcommand.ts";
 import { createSession, GracefulExitError } from "./session.ts";
+import { createSessionsProgram } from "./sessions/subcommand.ts";
 import { printCliError } from "./shared/errors.ts";
 import {
 	type CliOutputMode,
@@ -797,7 +798,8 @@ if (
 	subcommand === "update" ||
 	subcommand === "eject" ||
 	subcommand === "drive" ||
-	subcommand === "export"
+	subcommand === "export" ||
+	subcommand === "session"
 ) {
 	const programs: Record<string, () => Command> = {
 		task: createTaskProgram,
@@ -812,6 +814,7 @@ if (
 		eject: createEjectProgram,
 		drive: createDriveProgram,
 		export: createExportProgram,
+		session: createSessionsProgram,
 	};
 	// subcommand is guaranteed to be in the map by the if-check above
 	const createProgram = programs[subcommand];
