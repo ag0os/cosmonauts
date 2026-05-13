@@ -1,6 +1,6 @@
 ---
 name: cosmonauts-workflows
-description: Run cosmonauts named workflows and chain DSL expressions from outside (Claude Code, Codex, Gemini CLI). Use this skill when the user wants to run a multi-agent pipeline (plan-and-build, tdd, verify, etc.), compose a custom chain of agents, or kick off cosmonauts non-interactively. Covers --print mode, completion labels, and profiling.
+description: Run cosmonauts named workflows and chain DSL expressions from outside (Claude Code, Codex, Gemini CLI). Use this skill when the user wants to run a multi-agent pipeline (plan-and-build, tdd, verify, etc.), compose a custom chain of agents, or kick off cosmonauts non-interactively. Covers chain DSL syntax, completion labels, profiling, and how to inspect results (workflows produce file artifacts and sessions, not stdout output).
 ---
 
 # `cosmonauts --workflow`
@@ -32,7 +32,14 @@ Exact names depend on the project's `.cosmonauts/config.json` and installed doma
 cosmonauts --workflow plan-and-build "design an auth system with email + OAuth"
 ```
 
-**Workflows are always non-interactive.** `--workflow` routes through `handleWorkflowMode` → `runChain`; it never enters a REPL, never pauses for plan approval, and `--print` does not gate execution. The chain runs straight through from the first stage to the last; whatever the chain itself outputs goes to stdout (and per-stage progress goes to stderr). Exit code `0` on success, `1` on failure.
+**Workflows are always non-interactive.** `--workflow` routes through `handleWorkflowMode` → `runChain`; it never enters a REPL, never pauses for plan approval, and `--print` does not gate execution (when both `--workflow` and `--print` are passed, workflow mode takes precedence and `--print` is ignored).
+
+**Workflows do not write to stdout.** The chain event logger emits per-stage progress to **stderr**; the chain's final response is **not** echoed anywhere on stdout. What you get is:
+
+- **Files on disk** — `missions/plans/<slug>/plan.md`, `missions/tasks/<ID>.md`, plus any other artifacts each stage writes.
+- **Pi sessions** — one per stage, in `~/.pi/agent/sessions/--<encoded-cwd>--/<agent>/<file>.jsonl`. Inspect via `cosmonauts session list --json` (most recent first) and `cosmonauts session info <id-prefix> --include-text --json`.
+
+Exit code `0` on success, `1` on failure.
 
 If the user expects an approval boundary between "design" and "implement", split the chain explicitly:
 
@@ -79,7 +86,7 @@ Stage identifiers are agent IDs (qualified or unqualified). `--list-agents --jso
 | `-d, --domain <id>` | Set the domain context for agent resolution (e.g. `-d coding` to prefer `coding/*` IDs). |
 | `-m, --model <provider/id>` | Override the default model for all stages. |
 | `-t, --thinking <level>` | `off|minimal|low|medium|high|xhigh`. Per-run override. |
-| `-p, --print` | Run, output, exit. No REPL. |
+| `-p, --print` | Top-level print mode (run a single agent, print to stdout, exit). **Ignored when `--workflow` is set** — workflow mode always takes precedence. |
 | `--completion-label <label>` | Task label scope for loop completion checks (e.g. `--completion-label "plan:auth-system"`). |
 | `--profile` | Write chain profiling trace + summary to `missions/sessions/<plan>/_profiles/` (or `_profiles/` if no plan slug). Useful for performance/cost analysis. |
 | `--plugin-dir <path>` | Add a session-only domain source directory. Repeatable. |
@@ -99,30 +106,43 @@ cosmonauts session info <id-prefix> --include-text --json  # full transcript
 
 ## What workflows don't do (yet)
 
-- **No streaming progress events.** `--print` / `--workflow` only surface the final response. Intermediate tool calls, turn boundaries, and stage transitions aren't observable from outside today. The cosmonauts roadmap item `streaming-events` tracks adding an NDJSON event stream for this.
+- **No stdout output.** `--workflow` writes nothing to stdout — neither progress nor the final response. Per-stage progress is logged to **stderr** via `cli/chain-event-logger.ts`; everything substantive lives in on-disk artifacts (`missions/plans/`, `missions/tasks/`) and per-stage Pi sessions. Use `cosmonauts session list --json` + `session info <id> --include-text --json` to read the actual outputs.
+- **No streaming progress events.** The stderr log shows stage starts/ends with status and duration, but not intermediate tool calls or turn boundaries. The roadmap item `streaming-events` tracks adding an NDJSON event stream for this.
 - **No per-stage configuration from the CLI.** You can't pass different `--model` or `--thinking` to different stages from the CLI — the workflow definition controls that. Edit `.cosmonauts/config.json` to change stage-level config.
-- **No mid-run pause/inspect.** A running workflow is either interactive (and you respond inline) or `--print` (and you wait). For long autonomous runs that need pause/resume, use `cosmonauts drive` instead — drive supports detached mode and explicit resume.
+- **No mid-run pause/inspect.** A running workflow runs straight through every stage. For long autonomous runs that need pause/resume, use `cosmonauts drive` instead — drive supports detached mode (`--mode detached` returns a `runId` immediately) and explicit resume (`--resume <runId>`).
 
 ## Recipes
 
-### Run a full pipeline and capture the result
+### Run a full pipeline and read the result
+
+Workflows don't print to stdout (see "What workflows don't do"), so `> result.txt` captures nothing. The correct pattern is: log stderr for progress, then read artifacts and sessions afterward.
 
 ```bash
-cosmonauts --workflow plan-and-build --print \
+cosmonauts --workflow plan-and-build \
   "design an HTTP rate limiter with a token bucket strategy" \
-  > result.txt 2>chain.log
-echo "Exit: $?"
+  2> chain.log
+EXIT=$?
+echo "Exit: $EXIT"
+
+# What landed on disk:
+cosmonauts plan list --json
+cosmonauts task list --json
+
+# Per-stage transcripts (each stage runs as its own Pi session):
+cosmonauts session list --json | jq '.[0:5]'             # 5 most recent
+cosmonauts session info <id-prefix> --include-text --json   # full text for one
 ```
 
-`result.txt` gets the final agent response; `chain.log` gets stage-by-stage progress. Inspect later via `cosmonauts session list --json | jq '.[0:3]'`.
+`chain.log` contains stage start/end lines (`[chain] Starting: ...`, `[stage] Completed (..ms)`) — useful for seeing which stage ran when. The actual *content* lives in `missions/` and the session JSONL files.
 
 ### Plan-only run (skip execution)
 
 ```bash
-cosmonauts --workflow "planner -> plan-reviewer" --print "build feature X"
+cosmonauts --workflow "planner -> plan-reviewer" "build feature X" 2> chain.log
+cosmonauts plan list --json
 ```
 
-Drops the task-manager → coordinator → workers tail. The planner produces a design, the reviewer critiques it; nothing gets implemented.
+Drops the task-manager → coordinator → workers tail. The planner produces a design (written to `missions/plans/<slug>/`), the reviewer critiques it; nothing gets implemented. Read the produced plan from disk (`cosmonauts plan view <slug> --json`) or the reviewer's session.
 
 ### Profile a workflow run
 

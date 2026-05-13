@@ -122,7 +122,7 @@ Load these for procedure-level detail when you need it:
 
 - **`cosmonauts-tasks`** — Task CRUD, batch creation from YAML, dependency awareness, filter recipes.
 - **`cosmonauts-plans`** — Plan CRUD, attaching a spec, archiving.
-- **`cosmonauts-workflows`** — Named workflows, chain DSL syntax, `--print` vs interactive, profiling.
+- **`cosmonauts-workflows`** — Named workflows, chain DSL syntax, how to read workflow output (it lands in files and sessions, not stdout), profiling.
 - **`cosmonauts-skills`** — How to install ADDITIONAL cosmonauts skills (the internal-agent skills, distinct from this bundle) into your harness.
 
 Two subcommands don't have dedicated sub-skills yet — they're self-documenting via `--help`:
