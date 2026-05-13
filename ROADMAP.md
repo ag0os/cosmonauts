@@ -234,3 +234,13 @@ Items scoped out of the `tdd-orchestration-hardening` plan. Captured here so the
 
 - **Commit cadence inside TDD tasks.** Each task currently produces three commits (RED + GREEN + REFACTOR), which ships failing tests at every RED commit (red CI on every push) and ~3× history noise. Switch to single-commit-per-task: only `refactorer` commits; `test-writer` and `implementer` stage only; on phase failure the coordinator uses `git reset --mixed` to preserve unstaged files as a recovery point. Touches `test-writer.md`, `implementer.md`, `refactorer.md`, and `tdd-coordinator.md` failure paths. Revisit when red-CI cost or history noise becomes measured.
 - **Merge `implementer` + `refactorer` into one agent.** The GREEN/REFACTOR phase boundary is currently enforced across two separate agents for a relatively weak discipline win, at the cost of an extra spawn per task (~33% of per-task orchestration overhead). The load-bearing boundary is RED/GREEN between `test-writer` and the implementer; REFACTOR can be a second step inside the same session. Touches both agent definitions, both prompts, and the `GREEN complete:` → `REFACTOR complete:` handoff contract in `tdd-coordinator.md`. Revisit if per-task orchestration cost becomes measured.
+
+### `task-id-system`: Improve Task Naming / Numbering
+
+The current scheme persists a `lastIdNumber` counter in `missions/tasks/config.json` and allocates `max(counter, highest ID on disk) + 1` at create time. Problems: the config file is rewritten (with 2-space JSON) on every create — churn and merge-conflict bait — and client-side sequential allocation can't prevent cross-branch ID collisions (two branches both mint `TASK-N`, merge produces duplicates). For now `missions/` is excluded from Biome to stop the lint churn; this item replaces the band-aid.
+
+- Decide direction: derive next number from `missions/tasks/` ∪ `missions/archive/tasks/` and drop the config counter; or keep a counter but move it to an un-linted state file; or switch to collision-resistant non-sequential IDs (nanoid/ULID/short hash) — losing sequential readability but eliminating conflicts entirely
+- Whichever path: `task create`/`task edit` must stop reformatting tracked config on every write (or stop touching it at all)
+- If staying sequential: document the cross-branch collision caveat, or add a lightweight reconciliation step (e.g. `cosmonauts task renumber` after a merge)
+- Update `lib/tasks/id-generator.ts`, `lib/tasks/task-manager.ts`, `lib/tasks/file-system.ts` and the task CLI accordingly; keep `generateNextId` behavior covered by tests
+- Revisit the Biome `missions/` exclusion afterward — narrow or remove it if the config churn is gone

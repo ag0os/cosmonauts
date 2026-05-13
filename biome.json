@@ -4,6 +4,9 @@
 		"clientKind": "git",
 		"useIgnoreFile": true
 	},
+	"files": {
+		"includes": ["**", "!missions"]
+	},
 	"formatter": {
 		"enabled": true
 	},
