@@ -173,7 +173,7 @@ function configureRunCommand(command: Command): void {
 		.option("--max-tasks <n>", "Limit the resolved task list", parsePositiveInt)
 		.option(
 			"--task-timeout <ms>",
-			`Per-task timeout in milliseconds (default: ${DEFAULT_TASK_TIMEOUT_MS})`,
+			`Per-task timeout in milliseconds (default: ${DEFAULT_TASK_TIMEOUT_MS}ms / 30 minutes)`,
 			parsePositiveInt,
 		)
 		.option("--resume <runId>", "Resume a previous run ID")

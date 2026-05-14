@@ -112,6 +112,21 @@ describe("prompt-template renderPromptForTask", () => {
 		expect(reportContractIndex).toBeGreaterThan(
 			rendered.indexOf("Driver retry note"),
 		);
+		const exampleMarkerIndex = rendered.indexOf(
+			"\n\noutcome: success\n\n",
+			reportContractIndex,
+		);
+		const jsonClosingFenceIndex = rendered.indexOf(
+			"\n```\n\noutcome: success",
+			reportContractIndex,
+		);
+		const hardRulesIndex = rendered.indexOf(
+			"\n\nHard rules:",
+			reportContractIndex,
+		);
+		expect(jsonClosingFenceIndex).toBeGreaterThan(reportContractIndex);
+		expect(exampleMarkerIndex).toBeGreaterThan(jsonClosingFenceIndex);
+		expect(exampleMarkerIndex).toBeLessThan(hardRulesIndex);
 		expect(rendered.trimEnd()).toMatch(
 			/Do not write anything after the final outcome line\.$/,
 		);

@@ -140,8 +140,12 @@ describe("cosmonauts drive run", () => {
 			(command) => command.name() === "run",
 		);
 
-		expect(runCommand?.helpInformation()).toContain(
-			`--task-timeout <ms>       Per-task timeout in milliseconds (default: ${DEFAULT_TASK_TIMEOUT_MS})`,
+		const normalizedHelp = (runCommand?.helpInformation() ?? "").replace(
+			/\s+/g,
+			" ",
+		);
+		expect(normalizedHelp).toContain(
+			`--task-timeout <ms> Per-task timeout in milliseconds (default: ${DEFAULT_TASK_TIMEOUT_MS}ms / 30 minutes)`,
 		);
 	});
 
