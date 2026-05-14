@@ -13,7 +13,7 @@ interface TestPromptLayers extends PromptLayers {
 const tmp = useTempDir("prompt-template-test-");
 
 describe("prompt-template renderPromptForTask", () => {
-	test("renders envelope-only prompt and writes it to the run prompts directory", async () => {
+	test("renders the envelope and task into the run prompts directory", async () => {
 		const { taskManager, taskId, envelopePath, workdir } =
 			await setupPromptTest({
 				envelope: "Envelope instructions",
@@ -86,6 +86,35 @@ describe("prompt-template renderPromptForTask", () => {
 		const rendered = await readFile(promptPath, "utf-8");
 		expect(rendered).toContain("Envelope instructions");
 		expect(rendered).not.toContain("Task-specific override");
+	});
+
+	test("always appends the Drive report contract as the final section", async () => {
+		const { taskManager, taskId, envelopePath, overrideDir, workdir } =
+			await setupPromptTest({
+				envelope: "Custom envelope instructions",
+				override: "Task-specific override",
+			});
+
+		const layers = {
+			envelopePath,
+			perTaskOverrideDir: overrideDir,
+			workdir,
+		} satisfies TestPromptLayers;
+		const promptPath = await renderPromptForTask(taskId, layers, taskManager, {
+			appendedNote: "Driver retry note",
+		});
+
+		const rendered = await readFile(promptPath, "utf-8");
+		const reportContractIndex = rendered.indexOf("## Drive Report Contract");
+		expect(reportContractIndex).toBeGreaterThan(
+			rendered.indexOf("Task-specific override"),
+		);
+		expect(reportContractIndex).toBeGreaterThan(
+			rendered.indexOf("Driver retry note"),
+		);
+		expect(rendered.trimEnd()).toMatch(
+			/Do not write anything after the final outcome line\.$/,
+		);
 	});
 });
 

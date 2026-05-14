@@ -14,6 +14,7 @@ Use Drive for approved plan-linked task batches where a mechanical loop should r
 - Pass ordered `taskIds` when dependency order matters. The default task selection is all non-Done tasks labeled `plan:<slug>`.
 - Keep runs observable: record the `runId`, `planSlug`, `workdir`, and `eventLogPath`; monitor with `watch_events` or `cosmonauts drive status`.
 - Backends execute prompts; the driver owns task status transitions, event logging, postflight verification, and commits according to `commitPolicy`.
+- Drive appends a mandatory report contract after the envelope/task content so custom envelopes cannot omit the machine-readable `outcome:` marker instructions.
 - Treat backend success reports as evidence, not proof. Prefer postflight checks such as tests, lint, and typecheck. If a backend emits only prose, Drive can infer success from passing postflight checks; without those objective checks it blocks as `report outcome unknown`.
 - Use `driver-commits` unless there is a concrete reason for `backend-commits` or `no-commit`.
 

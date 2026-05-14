@@ -5,6 +5,15 @@ selection, prompt rendering, verification, event logging, locking, and commit
 policy. Backends only execute the rendered prompt and report the subprocess
 result.
 
+## Prompt Rendering
+
+For each task, Drive writes `prompts/<task-id>.md` in the run workdir by
+concatenating the configured envelope, optional precondition, serialized task,
+optional per-task override, optional retry note, and a mandatory Drive report
+contract. The report contract is injected by code after custom envelope content
+so backends always receive the machine-readable outcome instructions Drive needs
+for parsing.
+
 ## Backend Contract
 
 Backends implement `Backend` from `lib/driver/backends/types.ts`:

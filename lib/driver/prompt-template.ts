@@ -10,9 +10,34 @@ interface PromptLayersWithWorkdir extends PromptLayers {
 }
 
 interface RenderPromptOptions {
-	/** Extra text appended as a final section (e.g. a driver retry note). */
+	/** Extra text appended before the mandatory report contract (e.g. a driver retry note). */
 	appendedNote?: string;
 }
+
+const DRIVE_REPORT_CONTRACT = [
+	"## Drive Report Contract",
+	"",
+	"Drive parses your final response to decide whether this task is complete. Make the result machine-readable.",
+	"",
+	"Preferred report:",
+	"",
+	"```json",
+	"{",
+	'  "outcome": "success",',
+	'  "files": [{ "path": "path/to/file.ts", "change": "modified" }],',
+	'  "verification": [{ "command": "bun run test", "status": "pass" }],',
+	'  "notes": "Optional concise context."',
+	"}",
+	"```",
+	"",
+	"Hard rules:",
+	"- The very last non-empty line of your response MUST be exactly one of: `outcome: success`, `outcome: failure`, `outcome: partial`, or `outcome: completed`.",
+	"- Use `outcome: success` only when every acceptance criterion is met and required verification passed, or you explicitly explain why verification was not run.",
+	"- Use `outcome: failure` for unmet acceptance criteria, blockers, or required gates that failed and could not be fixed in this task.",
+	"- Use `outcome: partial` only when the report clearly identifies completed work and remaining work.",
+	"- Do not invent other values such as `outcome: blocked`; Drive will not recognize them.",
+	"- Do not write anything after the final outcome line.",
+].join("\n");
 
 export async function renderPromptForTask(
 	taskId: string,
@@ -46,6 +71,7 @@ export async function renderPromptForTask(
 	if (options.appendedNote) {
 		sections.push(options.appendedNote);
 	}
+	sections.push(DRIVE_REPORT_CONTRACT);
 
 	const promptPath = join(
 		resolvePromptWorkdir(promptLayers, taskManager),
