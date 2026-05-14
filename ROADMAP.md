@@ -107,6 +107,15 @@ Replace filesystem polling with push-based communication between agents. Address
 - Hard safety caps: round limits on dialogues, budget ceilings, escalate-to-human after N autonomous retries
 - Prototype sequence: daemon + steering channel first (single roadmap item → plan-and-build loop), then real-time dialogue (EA ↔ planner roadmap disambiguation), then supervision (mid-flight escalation)
 
+### `chain-timeouts`: Flexible Activity-Based Chain Timeouts
+
+Chain/workflow timeouts are currently too rigid for long autonomous implementation work and can break active work mid-flight. Make timeout behavior configurable and progress-aware across CLI workflows and interactive spawned agents.
+
+- Expose chain timeout and child-spawn completion timeout in `cosmonauts --workflow` and `chain_run`
+- Prefer activity-based timeout: fail only after no turn/tool/progress activity for a configurable idle window, not just elapsed wall time
+- Apply consistently to coordinator-spawned workers in both CLI workflow mode and interactive `spawn_agent` nesting
+- On timeout, leave tasks and session lineage in a recoverable state with a clear reason and resume guidance
+
 ### `chain-checkpointing`: Chain Checkpointing & Resumption
 
 Serialize chain state after each stage so workflows survive crashes and can be resumed mid-execution. Address when long-running autonomous durations justify the complexity.
