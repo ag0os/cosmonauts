@@ -63,7 +63,7 @@ chain_run(expression: "coordinator -> reviewer[3]")
 
 Optional `prompt` injects a user objective into the first stage; `completionLabel` (e.g. `plan:my-plan`) scopes the chain's completion checks; `thinkingLevel` sets a chain-wide default.
 
-Safety caps are global, not per-stage: `maxTotalIterations` (default 50), `timeoutMs` (default 30 min).
+Safety caps are global, not per-stage: `maxTotalIterations` (default 50), `timeoutMs` (default 30 min). For implementation batches of roughly four or more tasks, prefer `/skill:drive`; long coordinator loops can exhaust the shared chain deadline while waiting on worker dispatches.
 
 ### Named workflows
 

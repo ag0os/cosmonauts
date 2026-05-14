@@ -87,7 +87,7 @@ Most cosmonauts internal skills are written for cosmonauts' own agents (cosmo, c
 
 - **`plan`** — explains the plan file format, the planning protocol, what makes a good plan. Useful when authoring plans to push into cosmonauts via `cosmonauts plan create --spec "..."`.
 - **`task`** — explains the task file format, AC checklists, dependency rules. Useful when authoring tasks for `cosmonauts task create --from-file`.
-- **`drive`** — explains the driver loop and commit policies. Useful when invoking `cosmonauts drive run` and interpreting the run output.
+- **`drive`** — explains the driver loop, commit policies, run state/status values, and Codex/Claude backend environment controls. Useful when invoking `cosmonauts drive run` and interpreting the run output.
 - **`agent-packaging`** — useful when designing an external-safe packaged agent for `cosmonauts export`; skip it for ordinary plan/task/drive automation.
 - **`pi`** — Pi framework API reference. Only useful if you're modifying cosmonauts itself.
 

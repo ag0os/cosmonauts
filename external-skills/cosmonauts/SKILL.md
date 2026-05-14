@@ -78,10 +78,20 @@ cosmonauts drive run \
 
 # Poll:
 cosmonauts drive status run-abc --plan auth-system
-# → {"status":"running"|"completed"|"failed"|"blocked"|"dead", ...}
+# → {"status":"running"|"completed"|"aborted"|"blocked"|"dead"|"orphaned", ...}
 ```
 
-Backends: `codex` (calls `codex exec --full-auto`), `claude-cli` (calls `claude -p`), `cosmonauts-subagent` (internal). See `cosmonauts drive run --help` for the full flag set (commit policies, max cost, resume, etc.).
+Backends: `codex` (calls `codex exec --full-auto` by default), `claude-cli` (calls `claude -p` by default), `cosmonauts-subagent` (internal inline-only). See `cosmonauts drive run --help` for the full flag set (commit policies, task timeout, resume, etc.).
+
+Backend environment controls:
+
+- `COSMONAUTS_DRIVER_CODEX_YOLO=1`: run Codex as `codex --yolo exec ...` and omit `--full-auto`.
+- `COSMONAUTS_DRIVER_CODEX_ARGS`: top-level Codex args before `exec`.
+- `COSMONAUTS_DRIVER_CODEX_EXEC_ARGS`: Codex exec args after `exec`.
+- `COSMONAUTS_DRIVER_CLAUDE_SKIP_PERMISSIONS=1`: run Claude as `claude --dangerously-skip-permissions -p`.
+- `COSMONAUTS_DRIVER_CLAUDE_ARGS`: Claude args before `-p`.
+
+The arg env vars accept shell-style words or JSON string arrays. Prefer JSON arrays for arguments that contain spaces.
 
 ### Recipe 3 — Inspect what was done
 

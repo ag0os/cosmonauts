@@ -35,7 +35,7 @@ If the tools are unavailable, say so and fall back to `chain_run` or direct `spa
 | External CLI agent run | `backend: "codex"` or `"claude-cli"`, usually `mode: "detached"` |
 | Long-running or self-modifying repository work | `mode: "detached"` so the frozen runner survives session death and source edits |
 
-`cosmonauts-subagent` is not supported in detached mode. In the Pi tool path, external backends are for detached mode. Detached runs copy `bin/cosmonauts-drive-step` when present; otherwise they compile a frozen per-run binary from `lib/driver/run-step.ts`.
+`cosmonauts-subagent` is not supported in detached mode. In the Pi tool path, external backends are for detached mode. Detached runs copy `bin/cosmonauts-drive-step` when present; otherwise they compile a frozen per-run binary from the Cosmonauts package source.
 
 ## Agent Tool Workflow
 
@@ -70,7 +70,11 @@ cosmonauts drive list
 cosmonauts drive run --plan auth-system --resume run-abc
 ```
 
-The CLI uses the bundled coding envelope by default when `--envelope` is omitted. Resume refuses a dirty worktree unless `--resume-dirty` is passed.
+The CLI emits JSON natively; do not pass `--json`. Status values are `completed`, `blocked`, `aborted`, `running`, `dead`, or `orphaned`. A run directory contains `spec.json`, `task-queue.txt`, `events.jsonl`, and state files: `run.completion.json` for terminal outcomes, `run.pid` for detached activity, and `run.inline.json` for inline activity. Resume reuses the previous workdir and refuses a dirty worktree unless `--resume-dirty` is passed.
+
+Codex runs as `codex exec --full-auto` by default, which still keeps Codex's sandbox. For projects whose gates need sockets or network access, use an externally sandboxed shell and set `COSMONAUTS_DRIVER_CODEX_YOLO=1` before launching Drive; the adapter then runs `codex --yolo exec ...` without `--full-auto`. Advanced pass-through is also available with `COSMONAUTS_DRIVER_CODEX_ARGS` for top-level Codex args before `exec` and `COSMONAUTS_DRIVER_CODEX_EXEC_ARGS` for args after `exec`. Both env vars accept shell-style words or a JSON string array.
+
+Claude runs as `claude -p` by default. It does not bypass permissions unless requested. Set `COSMONAUTS_DRIVER_CLAUDE_SKIP_PERMISSIONS=1` to run `claude --dangerously-skip-permissions -p`, or use `COSMONAUTS_DRIVER_CLAUDE_ARGS` for pass-through before `-p`. The env var accepts shell-style words or a JSON string array.
 
 ## Common Problems
 
@@ -78,6 +82,8 @@ The CLI uses the bundled coding envelope by default when `--envelope` is omitted
 - **Preflight or postflight failed.** Stop, summarize the failing command and stderr, then fix or route remediation before resuming.
 - **Partial task result.** Treat it as blocked progress. Add a focused prompt override or split the remaining work before rerunning.
 - **Detached backend rejected.** Use `codex` or `claude-cli`; `cosmonauts-subagent` is inline-only.
+- **Codex sandbox blocks e2e/build gates.** `--full-auto` is still sandboxed. Pre-warm caches on the host, move incompatible e2e checks to post-run verification, or explicitly opt into YOLO mode with `COSMONAUTS_DRIVER_CODEX_YOLO=1` when the surrounding environment is already sandboxed.
+- **Status says `dead` or `orphaned`.** Inspect `events.jsonl` and resume with `--resume <runId>` after deciding whether the worktree is safe. Pass `--resume-dirty` only when the local changes are expected.
 
 ## Related Skills
 

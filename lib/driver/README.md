@@ -40,7 +40,7 @@ Optional fields:
 5. Set `canCommit` to `true` only if the backend may create commits itself.
 6. Set `isolatedFromHostSource` to `true` for external CLI agents.
 7. Implement `livenessCheck()` when the backend depends on a local binary.
-8. In `run()`, use `invocation.workdir` as the subprocess `cwd`.
+8. In `run()`, use `invocation.projectRoot` as the subprocess `cwd`; write backend artifacts under `invocation.workdir`.
 9. Feed the rendered prompt from `invocation.promptPath`.
 10. Pass `invocation.signal` to the subprocess if supported.
 11. Capture stdout; stderr can be captured for diagnostics if needed.
@@ -80,7 +80,7 @@ export function createExampleBackend(binary = "example-agent"): Backend {
 		async run(invocation) {
 			const start = Date.now();
 			const child = Bun.spawn([binary, "run", "-"], {
-				cwd: invocation.workdir,
+				cwd: invocation.projectRoot,
 				stdin: Bun.file(invocation.promptPath),
 				stdout: "pipe",
 				signal: invocation.signal,
@@ -101,8 +101,10 @@ export function createExampleBackend(binary = "example-agent"): Backend {
 
 Supported external backends:
 
-- `codex`: runs `codex exec --full-auto` against the rendered prompt.
-- `claude-cli`: runs `claude -p` against the rendered prompt.
+- `codex`: runs `codex exec --full-auto` against the rendered prompt by default. This keeps Codex's command sandbox enabled, which can block dev-server sockets (`listen EPERM`) and cold build-time network fetches (for example `next/font`). To opt into Codex YOLO mode for externally sandboxed runs, set `COSMONAUTS_DRIVER_CODEX_YOLO=1`; the adapter then runs `codex --yolo exec ...` without `--full-auto`. For lower-level pass-through, set `COSMONAUTS_DRIVER_CODEX_ARGS` for top-level Codex args before `exec` (for example `--yolo`) and `COSMONAUTS_DRIVER_CODEX_EXEC_ARGS` for exec args after `exec` (for example `["--sandbox","danger-full-access"]`).
+- `claude-cli`: runs `claude -p` against the rendered prompt by default. It does not bypass permissions unless requested. Set `COSMONAUTS_DRIVER_CLAUDE_SKIP_PERMISSIONS=1` to run `claude --dangerously-skip-permissions -p`, or use `COSMONAUTS_DRIVER_CLAUDE_ARGS` for lower-level pass-through before `-p` (for example `--permission-mode bypassPermissions`).
+
+Backend arg env vars accept either shell-style words (`--profile drive --flag`) or a JSON string array (`["--profile","drive"]`). JSON arrays are safer for arguments that include spaces or shell-sensitive characters.
 
 Excluded or future backends:
 
@@ -113,6 +115,24 @@ Excluded or future backends:
 
 `cosmonauts-subagent` is an internal inline backend used by the orchestration
 extension. It is not supported for detached driver runs.
+
+## Run State Files
+
+Every CLI inline run prepares the run workdir with `spec.json`,
+`task-queue.txt`, and `run.inline.json`. Detached runs prepare a frozen runner
+and write `run.pid`. Terminal results are recorded atomically in
+`run.completion.json`.
+
+`cosmonauts drive status` and `drive list` classify a run directory in this
+order:
+
+1. `run.completion.json`: terminal result (`completed`, `blocked`, or
+   `aborted`).
+2. `run.pid`: detached process state (`running`, `dead`, or `orphaned`).
+3. `run.inline.json`: inline process state (`running`, `dead`, or `orphaned`).
+
+Resumed inline runs reuse the previous workdir, so preparation removes any
+stale `run.completion.json` before writing a fresh `run.inline.json`.
 
 ## Detached Runner Binary
 

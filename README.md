@@ -152,7 +152,7 @@ Run approved plan-linked task batches through the driver loop:
 # Launch a detached external-agent run
 cosmonauts drive run --plan auth-system --backend codex --mode detached --branch feature/auth
 
-# Check a detached run and list known runs
+# Check a run and list known runs
 cosmonauts drive status run-abc --plan auth-system
 cosmonauts drive list
 
@@ -160,7 +160,9 @@ cosmonauts drive list
 cosmonauts drive run --plan auth-system --resume run-abc
 ```
 
-Agents use the same driver through `run_driver` and monitor with `watch_events`. Driver runs write artifacts under `missions/sessions/<plan>/runs/<runId>/`.
+Agents use the same driver through `run_driver` and monitor with `watch_events`. Driver runs write artifacts under `missions/sessions/<plan>/runs/<runId>/`, including `events.jsonl`, `spec.json`, `task-queue.txt`, and state files. `drive status` reports terminal completions from `run.completion.json`; active runs are tracked with `run.pid` for detached mode and `run.inline.json` for inline mode.
+
+External backends are `codex` and `claude-cli`; `cosmonauts-subagent` is inline-only for in-process Cosmonauts agent runs. See `domains/shared/skills/drive/SKILL.md` and `lib/driver/README.md` for backend environment controls.
 
 ### Task Management
 

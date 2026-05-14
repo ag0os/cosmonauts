@@ -132,7 +132,7 @@ cosmonauts task list --status todo --label "plan:auth-system" --json
 cosmonauts drive list | jq '[.runs[] | select(.planSlug == "auth-system")]'
 ```
 
-If a previous run died (`status: dead`), resume it:
+If a previous run died or was orphaned (`status: dead` or `orphaned`), resume it after checking the worktree:
 
 ```bash
 cosmonauts drive run --plan auth-system --resume <runId>
