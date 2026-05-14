@@ -105,6 +105,31 @@ describe("run-step binary", () => {
 		expect((await taskManager.getTask(fixture.taskId))?.status).toBe("Done");
 	});
 
+	test("does not parse stale Codex env for claude-cli specs", async () => {
+		const fixture = await setupFixture("run-claude-env", {
+			backendName: "claude-cli",
+		});
+		const fakeClaude = await writeFakeClaude(fixture.binDir);
+
+		const result = await execBinary(["--workdir", fixture.workdir], {
+			cwd: temp.path,
+			env: {
+				COSMONAUTS_DRIVER_CLAUDE_BINARY: fakeClaude,
+				COSMONAUTS_DRIVER_CODEX_EXEC_ARGS: "'unterminated",
+			},
+		});
+
+		expect(result).toMatchObject({ exitCode: 0 });
+		const events = await readEvents(fixture.spec.eventLogPath);
+		expect(events[0]).toMatchObject({
+			type: "run_started",
+			backend: "claude-cli",
+		});
+		expect(events.find(isSpawnCompleted)?.report).toMatchObject({
+			outcome: "success",
+		});
+	});
+
 	test("exits nonzero without entering the loop when the plan lock is active", async () => {
 		const fixture = await setupFixture("run-locked");
 		const fakeCodex = await writeFakeCodex(fixture.binDir);
@@ -145,7 +170,10 @@ interface Fixture {
 	spec: DriverRunSpec;
 }
 
-async function setupFixture(runId: string): Promise<Fixture> {
+async function setupFixture(
+	runId: string,
+	overrides: Partial<Pick<DriverRunSpec, "backendName">> = {},
+): Promise<Fixture> {
 	const projectRoot = join(temp.path, runId, "project");
 	const planSlug = "external-backends-and-cli";
 	const workdir = join(
@@ -175,7 +203,7 @@ async function setupFixture(runId: string): Promise<Fixture> {
 		projectRoot,
 		planSlug,
 		taskIds: [task.id],
-		backendName: "codex",
+		backendName: overrides.backendName ?? "codex",
 		promptTemplate: { envelopePath },
 		preflightCommands: [],
 		postflightCommands: [],
@@ -222,6 +250,20 @@ if [ -n "\${COSMONAUTS_TEST_LOCK_PATH:-}" ] && [ -n "\${COSMONAUTS_TEST_LOCK_OBS
   fi
 fi
 printf '\`\`\`json\\n{"outcome":"success","files":[],"verification":[]}\\n\`\`\`\\n' > "$summary_path"
+`,
+		"utf-8",
+	);
+	await chmod(path, 0o755);
+	return path;
+}
+
+async function writeFakeClaude(binDir: string): Promise<string> {
+	const path = join(binDir, "fake-claude");
+	await writeFile(
+		path,
+		`#!/usr/bin/env bash
+set -euo pipefail
+printf '\`\`\`json\\n{"outcome":"success","files":[],"verification":[]}\\n\`\`\`\\n'
 `,
 		"utf-8",
 	);

@@ -7,7 +7,11 @@ import {
 
 describe("backend registry", () => {
 	test("resolves codex backend with codexBinary forwarded", () => {
-		const backend = resolveBackend("codex", { codexBinary: "codex-dev" });
+		const backend = resolveBackend("codex", {
+			codexBinary: "codex-dev",
+			codexArgs: ["--yolo"],
+			codexExtraArgs: ["--sandbox", "danger-full-access"],
+		});
 
 		expect(backend.name).toBe("codex");
 		expect(backend.livenessCheck?.()).toEqual({
@@ -19,6 +23,7 @@ describe("backend registry", () => {
 	test("resolves claude-cli backend with claudeBinary forwarded", () => {
 		const backend = resolveBackend("claude-cli", {
 			claudeBinary: "claude-dev",
+			claudeArgs: ["--dangerously-skip-permissions"],
 		});
 
 		expect(backend.name).toBe("claude-cli");

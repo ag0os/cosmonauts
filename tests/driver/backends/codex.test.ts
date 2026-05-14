@@ -2,7 +2,12 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { createCodexBackend } from "../../../lib/driver/backends/codex.ts";
+import {
+	createCodexBackend,
+	parseCodexExecArgs,
+	readCodexArgsFromEnv,
+	readCodexExecArgsFromEnv,
+} from "../../../lib/driver/backends/codex.ts";
 import type { BackendInvocation } from "../../../lib/driver/backends/types.ts";
 import type { EventSink } from "../../../lib/driver/types.ts";
 
@@ -166,6 +171,49 @@ describe("codex backend", () => {
 		});
 		expect(result).toMatchObject({ exitCode: 0, stdout: "OUTCOME: success\n" });
 		expect(result.durationMs).toEqual(expect.any(Number));
+	});
+
+	test("run inserts global and exec extra args around the exec subcommand", async () => {
+		const workdir = await createTempDir();
+		const promptPath = await createPromptFile("Task prompt");
+		const child = createChild({ stdout: "OUTCOME: success\n" });
+		const bun = stubBun(child);
+		const backend = createCodexBackend({
+			binary: "codex-dev",
+			globalArgs: ["--yolo"],
+			extraArgs: ["--sandbox", "danger-full-access"],
+		});
+
+		await backend.run(createInvocation(promptPath, { workdir }));
+
+		const { argv } = firstSpawnCall(bun);
+		expect(argv).toEqual([
+			"codex-dev",
+			"--yolo",
+			"exec",
+			"--sandbox",
+			"danger-full-access",
+			"-o",
+			join(workdir, "TASK-267-summary.txt"),
+			"-",
+		]);
+	});
+
+	test("reads codex args from environment", () => {
+		expect(
+			readCodexArgsFromEnv({
+				COSMONAUTS_DRIVER_CODEX_YOLO: "1",
+				COSMONAUTS_DRIVER_CODEX_ARGS: "--profile drive",
+			}),
+		).toEqual(["--yolo", "--profile", "drive"]);
+		expect(
+			readCodexExecArgsFromEnv({
+				COSMONAUTS_DRIVER_CODEX_EXEC_ARGS: '["--sandbox","danger-full-access"]',
+			}),
+		).toEqual(["--sandbox", "danger-full-access"]);
+		expect(
+			parseCodexExecArgs("--config 'sandbox_permissions=[\"network\"]'"),
+		).toEqual(["--config", 'sandbox_permissions=["network"]']);
 	});
 
 	test("run returns the summary file output when codex writes one", async () => {

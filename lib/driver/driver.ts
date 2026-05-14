@@ -13,10 +13,10 @@ import {
 	rm,
 	writeFile,
 } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { fileURLToPath } from "node:url";
 import type { TaskManager } from "../tasks/task-manager.ts";
-import { writeFileAtomically } from "./atomic-file.ts";
 import type { Backend } from "./backends/types.ts";
 import { generateBashRunner } from "./driver-script.ts";
 import {
@@ -28,6 +28,11 @@ import {
 import { acquirePlanLock, isProcessAlive } from "./lock.ts";
 import { renderPromptForTask } from "./prompt-template.ts";
 import { runRunLoop } from "./run-run-loop.ts";
+import {
+	DETACHED_RUN_PID_FILENAME,
+	RUN_COMPLETION_FILENAME,
+	writeRunCompletion,
+} from "./run-state.ts";
 import type {
 	DriverHandle,
 	DriverResult,
@@ -145,9 +150,9 @@ export function startDetached(
 			workdirCreated = true;
 		},
 	}).finally(async () => {
-		await rm(join(spec.workdir, "run.pid"), { force: true }).catch(
-			() => undefined,
-		);
+		await rm(join(spec.workdir, DETACHED_RUN_PID_FILENAME), {
+			force: true,
+		}).catch(() => undefined);
 	});
 
 	return {
@@ -171,9 +176,9 @@ export function startDetached(
 			}
 			if (
 				workdirCreated &&
-				!existsSync(join(spec.workdir, "run.completion.json"))
+				!existsSync(join(spec.workdir, RUN_COMPLETION_FILENAME))
 			) {
-				await writeCompletion(spec.workdir, {
+				await writeRunCompletion(spec.workdir, {
 					runId: spec.runId,
 					outcome: "aborted",
 					tasksDone: 0,
@@ -260,7 +265,7 @@ async function startDetachedProcess({
 	child.unref();
 
 	await writeFile(
-		join(spec.workdir, "run.pid"),
+		join(spec.workdir, DETACHED_RUN_PID_FILENAME),
 		`${JSON.stringify(
 			{
 				pid: child.pid,
@@ -333,22 +338,29 @@ async function prepareRunStepBinary(
 	cosmonautsRoot: string,
 	outfile: string,
 ): Promise<void> {
-	const prebuiltPath = join(cosmonautsRoot, "bin", "cosmonauts-drive-step");
-	if (existsSync(prebuiltPath)) {
+	for (const prebuiltPath of prebuiltRunnerCandidates(cosmonautsRoot)) {
+		if (!existsSync(prebuiltPath)) {
+			continue;
+		}
 		await copyFile(prebuiltPath, outfile);
 		await chmod(outfile, 0o755);
 		return;
 	}
 
-	await compileRunStep(cosmonautsRoot, outfile);
+	await compileRunStep(outfile);
 	await chmod(outfile, 0o755);
 }
 
-async function compileRunStep(
-	cosmonautsRoot: string,
-	outfile: string,
-): Promise<void> {
-	const sourcePath = join(cosmonautsRoot, "lib", "driver", "run-step.ts");
+function prebuiltRunnerCandidates(cosmonautsRoot: string): string[] {
+	const candidates = [
+		join(cosmonautsRoot, "bin", "cosmonauts-drive-step"),
+		join(packageRoot(), "bin", "cosmonauts-drive-step"),
+	];
+	return [...new Set(candidates)];
+}
+
+async function compileRunStep(outfile: string): Promise<void> {
+	const sourcePath = join(driverSourceDir(), "run-step.ts");
 	const result = await execFileResult("bun", [
 		"build",
 		"--compile",
@@ -389,7 +401,7 @@ async function waitForDetachedResult(
 	child: ChildProcess,
 	signal: AbortSignal,
 ): Promise<DriverResult> {
-	const completionPath = join(workdir, "run.completion.json");
+	const completionPath = join(workdir, RUN_COMPLETION_FILENAME);
 	const completion = waitForCompletion(completionPath, signal);
 	const childExit = waitForUnexpectedExit(child, completionPath);
 
@@ -438,14 +450,12 @@ function waitForUnexpectedExit(
 	});
 }
 
-async function writeCompletion(
-	workdir: string,
-	result: DriverResult,
-): Promise<void> {
-	await writeFileAtomically(
-		join(workdir, "run.completion.json"),
-		`${JSON.stringify(result, null, 2)}\n`,
-	);
+function driverSourceDir(): string {
+	return dirname(fileURLToPath(import.meta.url));
+}
+
+function packageRoot(): string {
+	return resolve(driverSourceDir(), "..", "..");
 }
 
 function throwIfAborted(signal: AbortSignal): void {

@@ -1,4 +1,5 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createDriveProgram } from "../../../cli/drive/subcommand.ts";
@@ -180,8 +181,8 @@ describe("cosmonauts drive run", () => {
 			perTaskOverrideDir: overridesPath,
 		});
 		expect(backendMocks.resolveBackend).toHaveBeenCalledWith("claude-cli", {
-			codexBinary: undefined,
 			claudeBinary: undefined,
+			claudeArgs: undefined,
 		});
 	});
 
@@ -215,6 +216,39 @@ describe("cosmonauts drive run", () => {
 
 		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
 		expect(firstRunInlineSpec().taskIds).toHaveLength(4);
+	});
+
+	test("does not parse stale Codex env when running claude-cli", async () => {
+		const fixture = await setupFixture(1);
+		const original = process.env.COSMONAUTS_DRIVER_CODEX_EXEC_ARGS;
+		process.env.COSMONAUTS_DRIVER_CODEX_EXEC_ARGS = "'unterminated";
+		try {
+			await parseDrive([
+				"run",
+				"--plan",
+				PLAN,
+				"--task-ids",
+				fixture.tasks[0]?.id ?? "TASK-001",
+				"--backend",
+				"claude-cli",
+				"--mode",
+				"detached",
+				"--envelope",
+				fixture.envelopePath,
+			]);
+		} finally {
+			if (original === undefined) {
+				delete process.env.COSMONAUTS_DRIVER_CODEX_EXEC_ARGS;
+			} else {
+				process.env.COSMONAUTS_DRIVER_CODEX_EXEC_ARGS = original;
+			}
+		}
+
+		expect(driverMocks.startDetached).toHaveBeenCalledTimes(1);
+		expect(backendMocks.resolveBackend).toHaveBeenCalledWith("claude-cli", {
+			claudeBinary: undefined,
+			claudeArgs: undefined,
+		});
 	});
 
 	test("routes explicit inline and detached modes without invoking real backends", async () => {
@@ -261,6 +295,39 @@ describe("cosmonauts drive run", () => {
 		});
 	});
 
+	test("writes aborted completion when an inline run rejects", async () => {
+		const fixture = await setupFixture(1);
+		driverMocks.runInline.mockImplementationOnce(
+			(spec: DriverRunSpec): DriverHandle =>
+				createHandle(spec, Promise.reject(new Error("already-running"))),
+		);
+
+		await expect(
+			parseDrive([
+				"--plan",
+				PLAN,
+				"--task-ids",
+				fixture.tasks[0]?.id ?? "TASK-001",
+				"--mode",
+				"inline",
+				"--envelope",
+				fixture.envelopePath,
+			]),
+		).rejects.toThrow("already-running");
+
+		const spec = firstRunInlineSpec();
+		const completion = JSON.parse(
+			await readFile(join(spec.workdir, "run.completion.json"), "utf-8"),
+		) as DriverResult;
+		expect(completion).toMatchObject({
+			runId: spec.runId,
+			outcome: "aborted",
+			tasksDone: 0,
+			tasksBlocked: 0,
+			blockedReason: "already-running",
+		});
+	});
+
 	test("guards resume when the worktree is dirty", async () => {
 		const fixture = await setupFixture(3);
 		await writeResumeRun(fixture.tasks.map((task) => task.id));
@@ -278,6 +345,39 @@ describe("cosmonauts drive run", () => {
 			error: "dirty_worktree",
 			dirtyPaths: ["src/file.ts", "new-file.ts"],
 		});
+	});
+
+	test("clears stale completion before a resumed inline run starts", async () => {
+		const fixture = await setupFixture(2);
+		await writeResumeRun(fixture.tasks.map((task) => task.id));
+		const completionPath = join(resumeWorkdir(), "run.completion.json");
+		await writeFile(
+			completionPath,
+			`${JSON.stringify({
+				runId: "run-previous",
+				outcome: "blocked",
+				tasksDone: 1,
+				tasksBlocked: 1,
+				blockedReason: "old result",
+			})}\n`,
+			"utf-8",
+		);
+		driverMocks.runInline.mockImplementationOnce(
+			(spec: DriverRunSpec): DriverHandle => {
+				expect(existsSync(completionPath)).toBe(false);
+				return createHandle(spec, {
+					runId: spec.runId,
+					outcome: "completed",
+					tasksDone: spec.taskIds.length,
+					tasksBlocked: 0,
+				});
+			},
+		);
+
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
+		expect(firstRunInlineSpec().runId).toBe("run-previous");
 	});
 
 	test("slices resume task IDs after the highest done or blocked previous task", async () => {
@@ -339,14 +439,7 @@ async function writeResumeRun(
 	taskIds: string[],
 	events: Array<{ type: "task_done" | "task_blocked"; taskId: string }> = [],
 ): Promise<void> {
-	const workdir = join(
-		temp.path,
-		"missions",
-		"sessions",
-		PLAN,
-		"runs",
-		"run-previous",
-	);
+	const workdir = resumeWorkdir();
 	const spec: DriverRunSpec = {
 		runId: "run-previous",
 		parentSessionId: "previous-parent",
@@ -392,7 +485,14 @@ function firstStartDetachedSpec(): DriverRunSpec {
 	return driverMocks.startDetached.mock.calls[0]?.[0] as DriverRunSpec;
 }
 
-function createHandle(spec: DriverRunSpec, result: DriverResult): DriverHandle {
+function resumeWorkdir(): string {
+	return join(temp.path, "missions", "sessions", PLAN, "runs", "run-previous");
+}
+
+function createHandle(
+	spec: DriverRunSpec,
+	result: DriverResult | Promise<DriverResult>,
+): DriverHandle {
 	return {
 		runId: spec.runId,
 		planSlug: spec.planSlug,

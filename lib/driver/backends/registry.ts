@@ -4,7 +4,10 @@ import type { Backend } from "./types.ts";
 
 interface BackendRegistryDeps {
 	codexBinary?: string;
+	codexArgs?: readonly string[];
+	codexExtraArgs?: readonly string[];
 	claudeBinary?: string;
+	claudeArgs?: readonly string[];
 }
 
 export class DetachedBackendNotSupportedError extends Error {
@@ -33,9 +36,16 @@ export function resolveBackend(
 ): Backend {
 	switch (name) {
 		case "codex":
-			return createCodexBackend({ binary: deps.codexBinary });
+			return createCodexBackend({
+				binary: deps.codexBinary,
+				globalArgs: deps.codexArgs,
+				extraArgs: deps.codexExtraArgs,
+			});
 		case "claude-cli":
-			return createClaudeCliBackend({ binary: deps.claudeBinary });
+			return createClaudeCliBackend({
+				binary: deps.claudeBinary,
+				args: deps.claudeArgs,
+			});
 		case "cosmonauts-subagent":
 			throw new DetachedBackendNotSupportedError(name);
 		default:

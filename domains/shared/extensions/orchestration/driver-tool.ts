@@ -4,14 +4,26 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { createClaudeCliBackend } from "../../../../lib/driver/backends/claude-cli.ts";
-import { createCodexBackend } from "../../../../lib/driver/backends/codex.ts";
+import {
+	createClaudeCliBackend,
+	readClaudeArgsFromEnv,
+} from "../../../../lib/driver/backends/claude-cli.ts";
+import {
+	createCodexBackend,
+	readCodexArgsFromEnv,
+	readCodexExecArgsFromEnv,
+} from "../../../../lib/driver/backends/codex.ts";
 import { createCosmonautsSubagentBackend } from "../../../../lib/driver/backends/cosmonauts-subagent.ts";
 import type { Backend } from "../../../../lib/driver/backends/types.ts";
 import { runInline, startDetached } from "../../../../lib/driver/driver.ts";
+import {
+	writeInlineRunState,
+	writeRunCompletion,
+} from "../../../../lib/driver/run-state.ts";
 import type {
 	BackendName,
 	DriverHandle,
+	DriverResult,
 	DriverRunSpec,
 } from "../../../../lib/driver/types.ts";
 import { activityBus } from "../../../../lib/orchestration/activity-bus.ts";
@@ -172,6 +184,7 @@ export function registerDriverTool(
 			const runId = `run-${randomUUID()}`;
 			const activeAt = new Date().toISOString();
 			activeRuns.set(activeKey, { runId, activeAt });
+			let spec: DriverRunSpec | undefined;
 
 			try {
 				const runtime =
@@ -183,7 +196,7 @@ export function registerDriverTool(
 					planSlug,
 					params.taskIds,
 				);
-				const spec = await createRunSpec({
+				spec = await createRunSpec({
 					params,
 					ctx,
 					runId,
@@ -212,6 +225,12 @@ export function registerDriverTool(
 					eventLogPath: handle.eventLogPath,
 				});
 			} catch (error) {
+				if (mode === "inline" && spec) {
+					await writeRunCompletion(
+						spec.workdir,
+						abortedCompletionFromRunId(runId, error),
+					).catch(() => undefined);
+				}
 				clearActiveRun(activeKey, runId);
 				throw error;
 			}
@@ -306,6 +325,7 @@ async function createRunSpec({
 			`${JSON.stringify(spec, null, 2)}\n`,
 		);
 		await writeFile(join(workdir, "task-queue.txt"), `${taskIds.join("\n")}\n`);
+		await writeInlineRunState(workdir);
 	}
 
 	return spec;
@@ -379,14 +399,21 @@ function createBackend(
 					`Unsupported driver backend in inline mode: ${backendName}`,
 				);
 			}
-			return createCodexBackend();
+			return createCodexBackend({
+				binary: process.env.COSMONAUTS_DRIVER_CODEX_BINARY,
+				globalArgs: readCodexArgsFromEnv(),
+				extraArgs: readCodexExecArgsFromEnv(),
+			});
 		case "claude-cli":
 			if (mode === "inline") {
 				throw new Error(
 					`Unsupported driver backend in inline mode: ${backendName}`,
 				);
 			}
-			return createClaudeCliBackend();
+			return createClaudeCliBackend({
+				binary: process.env.COSMONAUTS_DRIVER_CLAUDE_BINARY,
+				args: readClaudeArgsFromEnv(),
+			});
 	}
 }
 
@@ -395,8 +422,40 @@ function clearActiveRunOnCompletion(
 	handle: DriverHandle,
 ): void {
 	void handle.result
+		.then(
+			(result) => writeRunCompletion(handle.workdir, result),
+			(error: unknown) =>
+				writeRunCompletion(handle.workdir, abortedCompletion(handle, error)),
+		)
 		.finally(() => clearActiveRun(activeKey, handle.runId))
 		.catch(() => undefined);
+}
+
+function abortedCompletion(handle: DriverHandle, error: unknown): DriverResult {
+	return abortedCompletionFromRunId(handle.runId, error);
+}
+
+function abortedCompletionFromRunId(
+	runId: string,
+	error: unknown,
+): DriverResult {
+	return {
+		runId,
+		outcome: "aborted",
+		tasksDone: 0,
+		tasksBlocked: 0,
+		blockedReason: formatError(error),
+	};
+}
+
+function formatError(error: unknown): string {
+	if (error instanceof Error) {
+		return error.message;
+	}
+	if (typeof error === "object" && error !== null) {
+		return JSON.stringify(error);
+	}
+	return String(error);
 }
 
 function clearActiveRun(activeKey: string, runId: string): void {

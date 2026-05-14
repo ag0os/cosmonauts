@@ -108,9 +108,33 @@ describe("cosmonauts drive status", () => {
 			runId: RUN_ID,
 			planSlug: PLAN,
 			status: "running",
+			mode: "detached",
 			workdir,
 			pid: 1234,
 			startedAt: localIso(2026, 0, 1, 0, 0, 0),
+		});
+	});
+
+	test("inline sentinel reports an active inline run with lastEventAt", async () => {
+		const workdir = await writeRunDir(PLAN, RUN_ID);
+		await writeInlineState(workdir, 1234, localIso(2026, 0, 1, 0, 1, 0));
+		await writeEvent(workdir, localIso(2026, 0, 1, 0, 2, 0));
+		childProcessMocks.result = {
+			stdout: "Thu Jan  1 00:00:00 2026\n",
+			stderr: "",
+		};
+
+		await parseDrive(["status", RUN_ID, "--plan", PLAN]);
+
+		expect(output.stdoutJson()).toMatchObject({
+			runId: RUN_ID,
+			planSlug: PLAN,
+			status: "running",
+			mode: "inline",
+			workdir,
+			pid: 1234,
+			startedAt: localIso(2026, 0, 1, 0, 1, 0),
+			lastEventAt: localIso(2026, 0, 1, 0, 2, 0),
 		});
 	});
 
@@ -195,6 +219,26 @@ async function writePid(
 	await writeFile(
 		join(workdir, "run.pid"),
 		`${JSON.stringify({ pid, startedAt }, null, 2)}\n`,
+		"utf-8",
+	);
+}
+
+async function writeInlineState(
+	workdir: string,
+	pid: number,
+	startedAt: string,
+): Promise<void> {
+	await writeFile(
+		join(workdir, "run.inline.json"),
+		`${JSON.stringify({ mode: "inline", pid, startedAt }, null, 2)}\n`,
+		"utf-8",
+	);
+}
+
+async function writeEvent(workdir: string, timestamp: string): Promise<void> {
+	await writeFile(
+		join(workdir, "events.jsonl"),
+		`${JSON.stringify({ type: "task_started", timestamp })}\n`,
 		"utf-8",
 	);
 }

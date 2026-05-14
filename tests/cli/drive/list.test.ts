@@ -86,6 +86,11 @@ describe("cosmonauts drive list", () => {
 		await writePid(orphanedWorkdir, 3333, localIso(2026, 0, 1, 0, 0, 0));
 		childProcessMocks.startsByPid["3333"] = "Thu Jan  1 00:20:00 2026\n";
 
+		const inlineWorkdir = await writeRunDir("plan-c", "run-inline");
+		await writeInlineState(inlineWorkdir, 4444, localIso(2026, 0, 1, 0, 1, 0));
+		await writeEvent(inlineWorkdir, localIso(2026, 0, 1, 0, 2, 0));
+		childProcessMocks.startsByPid["4444"] = "Thu Jan  1 00:00:00 2026\n";
+
 		const ignoredWorkdir = await writeRunDir("plan-c", "run-empty");
 		expect(ignoredWorkdir).toContain("run-empty");
 
@@ -121,6 +126,15 @@ describe("cosmonauts drive list", () => {
 					status: "orphaned",
 					workdir: orphanedWorkdir,
 					pid: 3333,
+				},
+				{
+					runId: "run-inline",
+					planSlug: "plan-c",
+					status: "running",
+					mode: "inline",
+					workdir: inlineWorkdir,
+					pid: 4444,
+					lastEventAt: localIso(2026, 0, 1, 0, 2, 0),
 				},
 			],
 		});
@@ -170,6 +184,26 @@ async function writePid(
 	await writeFile(
 		join(workdir, "run.pid"),
 		`${JSON.stringify({ pid, startedAt }, null, 2)}\n`,
+		"utf-8",
+	);
+}
+
+async function writeInlineState(
+	workdir: string,
+	pid: number,
+	startedAt: string,
+): Promise<void> {
+	await writeFile(
+		join(workdir, "run.inline.json"),
+		`${JSON.stringify({ mode: "inline", pid, startedAt }, null, 2)}\n`,
+		"utf-8",
+	);
+}
+
+async function writeEvent(workdir: string, timestamp: string): Promise<void> {
+	await writeFile(
+		join(workdir, "events.jsonl"),
+		`${JSON.stringify({ type: "task_started", timestamp })}\n`,
 		"utf-8",
 	);
 }

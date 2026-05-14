@@ -3,14 +3,17 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { MessageBus } from "../orchestration/message-bus.ts";
 import { TaskManager } from "../tasks/task-manager.ts";
-import { writeFileAtomically } from "./atomic-file.ts";
+import { readClaudeArgsFromEnv } from "./backends/claude-cli.ts";
+import {
+	readCodexArgsFromEnv,
+	readCodexExecArgsFromEnv,
+} from "./backends/codex.ts";
 import { resolveBackend } from "./backends/registry.ts";
 import { createEventSink } from "./event-stream.ts";
 import { acquirePlanLock } from "./lock.ts";
 import { runRunLoop } from "./run-run-loop.ts";
+import { writeRunCompletion } from "./run-state.ts";
 import type { DriverResult, DriverRunSpec, LockHandle } from "./types.ts";
-
-const COMPLETION_FILENAME = "run.completion.json";
 
 async function main(): Promise<number> {
 	const workdir = parseWorkdir();
@@ -57,10 +60,7 @@ async function runWithLock(
 	lock: LockHandle,
 ): Promise<DriverResult> {
 	try {
-		const backend = resolveBackend(spec.backendName, {
-			codexBinary: process.env.COSMONAUTS_DRIVER_CODEX_BINARY,
-			claudeBinary: process.env.COSMONAUTS_DRIVER_CLAUDE_BINARY,
-		});
+		const backend = resolveRunStepBackend(spec.backendName);
 		const taskManager = new TaskManager(spec.projectRoot);
 		await taskManager.init();
 
@@ -84,21 +84,28 @@ async function runWithLock(
 			mode: "detached",
 		});
 
-		await writeCompletion(spec.workdir, result);
+		await writeRunCompletion(spec.workdir, result);
 		return result;
 	} finally {
 		await lock.release();
 	}
 }
 
-async function writeCompletion(
-	workdir: string,
-	result: DriverResult,
-): Promise<void> {
-	await writeFileAtomically(
-		join(workdir, COMPLETION_FILENAME),
-		`${JSON.stringify(result, null, 2)}\n`,
-	);
+function resolveRunStepBackend(backendName: string) {
+	if (backendName === "codex") {
+		return resolveBackend(backendName, {
+			codexBinary: process.env.COSMONAUTS_DRIVER_CODEX_BINARY,
+			codexArgs: readCodexArgsFromEnv(),
+			codexExtraArgs: readCodexExecArgsFromEnv(),
+		});
+	}
+	if (backendName === "claude-cli") {
+		return resolveBackend(backendName, {
+			claudeBinary: process.env.COSMONAUTS_DRIVER_CLAUDE_BINARY,
+			claudeArgs: readClaudeArgsFromEnv(),
+		});
+	}
+	return resolveBackend(backendName);
 }
 
 try {

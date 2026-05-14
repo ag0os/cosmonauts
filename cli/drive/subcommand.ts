@@ -1,11 +1,16 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { Command } from "commander";
+import { readClaudeArgsFromEnv } from "../../lib/driver/backends/claude-cli.ts";
+import {
+	readCodexArgsFromEnv,
+	readCodexExecArgsFromEnv,
+} from "../../lib/driver/backends/codex.ts";
 import { createCosmonautsSubagentBackend } from "../../lib/driver/backends/cosmonauts-subagent.ts";
 import { resolveBackend } from "../../lib/driver/backends/registry.ts";
 import type { Backend } from "../../lib/driver/backends/types.ts";
@@ -15,6 +20,14 @@ import type {
 	DriverEventBusEvent,
 } from "../../lib/driver/event-stream.ts";
 import { isProcessAlive } from "../../lib/driver/lock.ts";
+import {
+	DETACHED_RUN_PID_FILENAME,
+	INLINE_RUN_STATE_FILENAME,
+	type InlineRunState,
+	RUN_COMPLETION_FILENAME,
+	writeInlineRunState,
+	writeRunCompletion,
+} from "../../lib/driver/run-state.ts";
 import type {
 	BackendName,
 	DriverEvent,
@@ -74,8 +87,10 @@ interface RunStatusRecord {
 	planSlug: string;
 	status: RunStatus;
 	workdir: string;
+	mode?: DriverMode;
 	pid?: number;
 	startedAt?: string;
+	lastEventAt?: string;
 	result?: DriverResult;
 }
 
@@ -114,7 +129,7 @@ export function createDriveProgram(): Command {
 
 	program
 		.command("status <runId>")
-		.description("Report a detached driver run status")
+		.description("Report a Drive run status")
 		.option("--plan <slug>", "Plan slug containing the run")
 		.action(async (runId: string, options: DriveStatusOptions) => {
 			await reportDriveStatus(runId, options);
@@ -136,7 +151,7 @@ function configureRunCommand(command: Command): void {
 		.option("--task-ids <id1,id2,...>", "Comma-separated task IDs to run")
 		.option(
 			"--backend <backend>",
-			"Driver backend: codex, claude-cli, or cosmonauts-subagent",
+			"Driver backend: codex, claude-cli, or cosmonauts-subagent (codex --full-auto sandboxes sockets/network by default)",
 			parseBackendName,
 		)
 		.option("--mode <mode>", "Driver mode: inline or detached", parseDriverMode)
@@ -245,7 +260,11 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 	const unsubscribe = subscribeToRunEvents(spec.runId);
 	try {
 		const handle = runInline(spec, deps);
-		const result = await handle.result;
+		const result = await handle.result.catch(async (error: unknown) => {
+			await writeRunCompletion(spec.workdir, abortedCompletion(spec, error));
+			throw error;
+		});
+		await writeRunCompletion(spec.workdir, result);
 		printJsonStdout(result);
 		process.exitCode = result.outcome === "completed" ? 0 : 1;
 	} finally {
@@ -278,7 +297,8 @@ async function reportDriveStatus(
 			runId,
 			planSlug: runDir.planSlug,
 			workdir: runDir.workdir,
-			message: "Run directory has neither run.completion.json nor run.pid.",
+			message:
+				"Run directory has none of run.completion.json, run.pid, or run.inline.json.",
 		});
 		process.exitCode = 1;
 		return;
@@ -376,8 +396,9 @@ async function findRunDirsWithState(projectRoot: string): Promise<RunDir[]> {
 
 async function hasRunState(workdir: string): Promise<boolean> {
 	return (
-		(await fileExists(join(workdir, "run.completion.json"))) ||
-		(await fileExists(join(workdir, "run.pid")))
+		(await fileExists(join(workdir, RUN_COMPLETION_FILENAME))) ||
+		(await fileExists(join(workdir, DETACHED_RUN_PID_FILENAME))) ||
+		(await fileExists(join(workdir, INLINE_RUN_STATE_FILENAME)))
 	);
 }
 
@@ -391,23 +412,41 @@ async function classifyRunDir(
 			planSlug: runDir.planSlug,
 			status: result.outcome,
 			workdir: runDir.workdir,
+			lastEventAt: await readLastEventAt(runDir.workdir),
 			result,
 		};
 	}
 
 	const pidFile = await readRunPid(runDir.workdir);
-	if (!pidFile) {
+	if (pidFile) {
+		const status = await classifyPidStatus(pidFile);
+		return {
+			runId: runDir.runId,
+			planSlug: runDir.planSlug,
+			status,
+			workdir: runDir.workdir,
+			mode: "detached",
+			pid: pidFile.pid,
+			startedAt: pidFile.startedAt,
+			lastEventAt: await readLastEventAt(runDir.workdir),
+		};
+	}
+
+	const inlineState = await readInlineRunState(runDir.workdir);
+	if (!inlineState) {
 		return undefined;
 	}
 
-	const status = await classifyPidStatus(pidFile);
+	const status = await classifyInlineStatus(inlineState);
 	return {
 		runId: runDir.runId,
 		planSlug: runDir.planSlug,
 		status,
 		workdir: runDir.workdir,
-		pid: pidFile.pid,
-		startedAt: pidFile.startedAt,
+		mode: "inline",
+		pid: inlineState.pid,
+		startedAt: inlineState.startedAt,
+		lastEventAt: await readLastEventAt(runDir.workdir),
 	};
 }
 
@@ -424,6 +463,24 @@ async function classifyPidStatus(pidFile: RunPidFile): Promise<RunStatus> {
 
 	return Math.abs(actualStartedAt.getTime() - pidStartedAt) <=
 		PROCESS_START_TOLERANCE_MS
+		? "running"
+		: "orphaned";
+}
+
+async function classifyInlineStatus(
+	inlineState: InlineRunState,
+): Promise<RunStatus> {
+	if (!isProcessAlive(inlineState.pid)) {
+		return "dead";
+	}
+
+	const actualStartedAt = await readProcessStartedAt(inlineState.pid);
+	const runStartedAt = Date.parse(inlineState.startedAt);
+	if (!Number.isFinite(runStartedAt)) {
+		return "orphaned";
+	}
+
+	return actualStartedAt.getTime() <= runStartedAt + PROCESS_START_TOLERANCE_MS
 		? "running"
 		: "orphaned";
 }
@@ -445,7 +502,7 @@ async function readCompletion(
 	workdir: string,
 ): Promise<DriverResult | undefined> {
 	try {
-		const raw = await readFile(join(workdir, "run.completion.json"), "utf-8");
+		const raw = await readFile(join(workdir, RUN_COMPLETION_FILENAME), "utf-8");
 		return JSON.parse(raw) as DriverResult;
 	} catch (error) {
 		if (isErrnoError(error) && error.code === "ENOENT") {
@@ -457,7 +514,10 @@ async function readCompletion(
 
 async function readRunPid(workdir: string): Promise<RunPidFile | undefined> {
 	try {
-		const raw = await readFile(join(workdir, "run.pid"), "utf-8");
+		const raw = await readFile(
+			join(workdir, DETACHED_RUN_PID_FILENAME),
+			"utf-8",
+		);
 		const parsed = JSON.parse(raw) as Partial<RunPidFile>;
 		if (
 			typeof parsed.pid !== "number" ||
@@ -476,6 +536,65 @@ async function readRunPid(workdir: string): Promise<RunPidFile | undefined> {
 			return undefined;
 		}
 		throw error;
+	}
+}
+
+async function readInlineRunState(
+	workdir: string,
+): Promise<InlineRunState | undefined> {
+	try {
+		const raw = await readFile(
+			join(workdir, INLINE_RUN_STATE_FILENAME),
+			"utf-8",
+		);
+		const parsed = JSON.parse(raw) as Partial<InlineRunState>;
+		if (
+			parsed.mode !== "inline" ||
+			typeof parsed.pid !== "number" ||
+			typeof parsed.startedAt !== "string"
+		) {
+			throw new Error(`Invalid run.inline.json in ${workdir}`);
+		}
+		return {
+			mode: "inline",
+			pid: parsed.pid,
+			startedAt: parsed.startedAt,
+		};
+	} catch (error) {
+		if (isErrnoError(error) && error.code === "ENOENT") {
+			return undefined;
+		}
+		throw error;
+	}
+}
+
+async function readLastEventAt(workdir: string): Promise<string | undefined> {
+	let raw: string;
+	try {
+		raw = await readFile(join(workdir, "events.jsonl"), "utf-8");
+	} catch (error) {
+		if (isErrnoError(error) && error.code === "ENOENT") {
+			return undefined;
+		}
+		throw error;
+	}
+
+	const lines = raw.split("\n").filter((line) => line.trim().length > 0);
+	for (let index = lines.length - 1; index >= 0; index--) {
+		const timestamp = readEventTimestamp(lines[index] ?? "");
+		if (timestamp) {
+			return timestamp;
+		}
+	}
+	return undefined;
+}
+
+function readEventTimestamp(line: string): string | undefined {
+	try {
+		const parsed = JSON.parse(line) as { timestamp?: unknown };
+		return typeof parsed.timestamp === "string" ? parsed.timestamp : undefined;
+	} catch {
+		return undefined;
 	}
 }
 
@@ -643,6 +762,31 @@ async function prepareInlineWorkdir(spec: DriverRunSpec): Promise<void> {
 		`${spec.taskIds.join("\n")}\n`,
 		"utf-8",
 	);
+	await rm(join(spec.workdir, RUN_COMPLETION_FILENAME), { force: true });
+	await writeInlineRunState(spec.workdir);
+}
+
+function abortedCompletion(
+	spec: Pick<DriverRunSpec, "runId">,
+	error: unknown,
+): DriverResult {
+	return {
+		runId: spec.runId,
+		outcome: "aborted",
+		tasksDone: 0,
+		tasksBlocked: 0,
+		blockedReason: formatError(error),
+	};
+}
+
+function formatError(error: unknown): string {
+	if (error instanceof Error) {
+		return error.message;
+	}
+	if (typeof error === "object" && error !== null) {
+		return JSON.stringify(error);
+	}
+	return String(error);
 }
 
 async function loadResumeDefaults(
@@ -723,10 +867,17 @@ async function createBackend(
 	mode: DriverMode,
 	projectRoot: string,
 ): Promise<Backend> {
-	if (backendName !== "cosmonauts-subagent") {
+	if (backendName === "codex") {
 		return resolveBackend(backendName, {
 			codexBinary: process.env.COSMONAUTS_DRIVER_CODEX_BINARY,
+			codexArgs: readCodexArgsFromEnv(),
+			codexExtraArgs: readCodexExecArgsFromEnv(),
+		});
+	}
+	if (backendName === "claude-cli") {
+		return resolveBackend(backendName, {
 			claudeBinary: process.env.COSMONAUTS_DRIVER_CLAUDE_BINARY,
+			claudeArgs: readClaudeArgsFromEnv(),
 		});
 	}
 	if (mode === "detached") {

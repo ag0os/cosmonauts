@@ -196,7 +196,7 @@ describe("run-one-task", () => {
 		expect(ignoredStatus).toContain("memory/");
 	});
 
-	test("driver derive outcome handles unknown postverify results and explicit outcomes", () => {
+	test("driver derive outcome requires explicit worker outcome", () => {
 		const unknown = {
 			outcome: "unknown",
 			raw: "no report",
@@ -204,8 +204,8 @@ describe("run-one-task", () => {
 		const pass = [{ command: "test", status: "pass" }] as const;
 		const fail = [{ command: "test", status: "fail", stderr: "bad" }] as const;
 
-		expect(deriveOutcome(unknown, [])).toBe("success");
-		expect(deriveOutcome(unknown, pass)).toBe("success");
+		expect(deriveOutcome(unknown, [])).toBe("failure");
+		expect(deriveOutcome(unknown, pass)).toBe("failure");
 		expect(deriveOutcome(unknown, fail)).toBe("failure");
 		expect(deriveOutcome(report("success"), fail)).toBe("success");
 		expect(deriveOutcome(report("failure"), pass)).toBe("failure");
@@ -336,7 +336,7 @@ describe("run-one-task", () => {
 		expect(events.map((event) => event.type)).toContain("commit_made");
 	});
 
-	test("run-one-task unknown report plus postverify failure blocks and does not commit", async () => {
+	test("run-one-task unknown report blocks and does not commit even when postverify passes", async () => {
 		const fixture = await setupFixture();
 		await initGit(fixture.projectRoot);
 		const events: DriverEvent[] = [];
@@ -346,15 +346,17 @@ describe("run-one-task", () => {
 				join(fixture.projectRoot, "src", "uncommitted.txt"),
 				"no commit\n",
 			);
-			return { exitCode: 0, stdout: "no structured report", durationMs: 1 };
+			return {
+				exitCode: 0,
+				stdout: "Implemented: changed src/uncommitted.txt but no gate passed",
+				durationMs: 1,
+			};
 		});
 
 		const outcome = await runOneTask(
 			createSpec(fixture, {
 				commitPolicy: "driver-commits",
-				postflightCommands: [
-					nodeCommand("process.stderr.write('verify failed'); process.exit(2)"),
-				],
+				postflightCommands: [nodeCommand("process.exit(0)")],
 			}),
 			createCtx(fixture, backend, events),
 			fixture.taskId,
@@ -363,7 +365,7 @@ describe("run-one-task", () => {
 		const task = await fixture.taskManager.getTask(fixture.taskId);
 		expect(outcome).toMatchObject({ status: "blocked" });
 		expect(task?.status).toBe("Blocked");
-		expect(task?.implementationNotes).toContain("post-verify failed");
+		expect(task?.implementationNotes).toContain("report outcome unknown");
 		expect(events.map((event) => event.type)).not.toContain("commit_made");
 		const staged = await git(fixture.projectRoot, [
 			"diff",

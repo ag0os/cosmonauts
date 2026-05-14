@@ -102,7 +102,10 @@ describe("startDetached", () => {
 		setEnv("COSMONAUTS_TEST_LOCK_PATH", lockPath);
 		setEnv("COSMONAUTS_TEST_LOCK_OBSERVED", observedLockPath);
 
-		const handle = startDetached(spec, deps);
+		const handle = startDetached(spec, {
+			...deps,
+			cosmonautsRoot: projectRoot,
+		});
 
 		await waitForFile(join(spec.workdir, "run.pid"));
 		const pidRecord = JSON.parse(

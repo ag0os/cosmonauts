@@ -2,7 +2,10 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { createClaudeCliBackend } from "../../../lib/driver/backends/claude-cli.ts";
+import {
+	createClaudeCliBackend,
+	readClaudeArgsFromEnv,
+} from "../../../lib/driver/backends/claude-cli.ts";
 import type { BackendInvocation } from "../../../lib/driver/backends/types.ts";
 import type { EventSink } from "../../../lib/driver/types.ts";
 
@@ -162,6 +165,39 @@ describe("claude-cli backend", () => {
 		});
 		expect(result).toMatchObject({ exitCode: 0, stdout: "OUTCOME: success\n" });
 		expect(result.durationMs).toEqual(expect.any(Number));
+	});
+
+	test("run includes configured args before print mode", async () => {
+		const workdir = await createTempDir();
+		const promptPath = await createPromptFile("Task prompt");
+		const child = createChild({ stdout: "OUTCOME: success\n" });
+		const bun = stubBun(child);
+		const backend = createClaudeCliBackend({
+			binary: "claude-dev",
+			args: ["--dangerously-skip-permissions"],
+		});
+
+		await backend.run(createInvocation(promptPath, { workdir }));
+
+		const { argv } = firstSpawnCall(bun);
+		expect(argv).toEqual([
+			"claude-dev",
+			"--dangerously-skip-permissions",
+			"-p",
+		]);
+	});
+
+	test("reads Claude permission args from environment", () => {
+		expect(
+			readClaudeArgsFromEnv({
+				COSMONAUTS_DRIVER_CLAUDE_SKIP_PERMISSIONS: "1",
+				COSMONAUTS_DRIVER_CLAUDE_ARGS: "--permission-mode bypassPermissions",
+			}),
+		).toEqual([
+			"--dangerously-skip-permissions",
+			"--permission-mode",
+			"bypassPermissions",
+		]);
 	});
 
 	test("run returns nonzero child exit codes without throwing", async () => {

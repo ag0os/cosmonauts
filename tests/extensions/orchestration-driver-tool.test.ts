@@ -19,7 +19,8 @@ import type {
 	DriverEventBusEvent,
 } from "../../lib/driver/event-stream.ts";
 import { tailEvents } from "../../lib/driver/event-stream.ts";
-import type { DriverEvent } from "../../lib/driver/types.ts";
+import { acquirePlanLock, type LockHandle } from "../../lib/driver/lock.ts";
+import type { DriverEvent, DriverResult } from "../../lib/driver/types.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
 import type { SpawnActivityEvent } from "../../lib/orchestration/message-bus.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
@@ -145,6 +146,31 @@ describe("driver e2e run_driver integration", () => {
 		expect(updateSpy).not.toHaveBeenCalled();
 		expect(task?.status).toBe("To Do");
 		expect(backendMocks.run).not.toHaveBeenCalled();
+	});
+
+	test("driver writes aborted completion when inline launch fails before the loop", async () => {
+		const fixture = await setupFixture({ taskCount: 1 });
+		const lock = await acquirePlanLock(
+			fixture.planSlug,
+			"already-running",
+			fixture.projectRoot,
+		);
+		if ("error" in lock) {
+			throw new Error("Fixture lock unexpectedly active");
+		}
+
+		try {
+			const result = await runDriver(fixture);
+			const completion = await waitForCompletion(result.workdir);
+
+			expect(completion).toMatchObject({
+				runId: result.runId,
+				outcome: "aborted",
+				blockedReason: expect.stringContaining("already-running"),
+			});
+		} finally {
+			await (lock as LockHandle).release();
+		}
 	});
 
 	test("driver branch mismatch emits structured preflight failure before transitions", async () => {
@@ -341,6 +367,27 @@ async function runDriver(
 	})) as { details: DriverResultDetails };
 
 	return response.details;
+}
+
+async function waitForCompletion(workdir: string): Promise<DriverResult> {
+	const completionPath = join(workdir, "run.completion.json");
+	const deadline = Date.now() + 5_000;
+	let lastError: unknown;
+
+	while (Date.now() < deadline) {
+		try {
+			return JSON.parse(
+				await readFile(completionPath, "utf-8"),
+			) as DriverResult;
+		} catch (error) {
+			lastError = error;
+		}
+		await delay(10);
+	}
+
+	throw new Error(
+		`Timed out waiting for run completion in ${completionPath}: ${formatError(lastError)}`,
+	);
 }
 
 async function waitForTerminalEvents(

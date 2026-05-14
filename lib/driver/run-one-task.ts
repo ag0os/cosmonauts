@@ -185,7 +185,7 @@ async function runTaskAttempt(
 	const failureReason = deriveFailureReason(parsedReport, postVerifyResults);
 	let commitSha: string | undefined;
 	try {
-		commitSha = await maybeCommit(spec, ctx, taskId, outcome);
+		commitSha = await maybeCommit(spec, ctx, taskId, outcome, parsedReport);
 	} catch (error) {
 		if (error instanceof CommitFailedError) {
 			return {
@@ -384,15 +384,13 @@ function buildContradictionNote(contradicted: ContradictedPath): string {
 
 export function deriveOutcome(
 	report: ParsedReport,
-	postVerifyResults: readonly PostVerifyResult[],
+	_postVerifyResults: readonly PostVerifyResult[],
 ): ReportOutcome {
-	if (report.outcome !== "unknown") {
-		return report.outcome;
+	if (report.outcome === "unknown") {
+		return "failure";
 	}
 
-	return postVerifyResults.some((result) => result.status === "fail")
-		? "failure"
-		: "success";
+	return report.outcome;
 }
 
 async function runPreflight(
@@ -570,6 +568,7 @@ async function maybeCommit(
 	ctx: RunOneTaskCtx,
 	taskId: string,
 	outcome: ReportOutcome,
+	report: ParsedReport,
 ): Promise<string | undefined> {
 	if (spec.commitPolicy !== "driver-commits" || outcome === "failure") {
 		return undefined;
@@ -579,7 +578,7 @@ async function maybeCommit(
 		return undefined;
 	}
 
-	const subject = `${taskId}: driver task update`;
+	const subject = commitSubject(taskId, report);
 	const lock = await acquireRepoCommitLock(ctx.cosmonautsRoot);
 	let committed = false;
 	let commitError: unknown;
@@ -613,6 +612,29 @@ async function maybeCommit(
 		subject,
 	});
 	return commitSha;
+}
+
+function commitSubject(taskId: string, report: ParsedReport): string {
+	const summary = reportSummary(report);
+	return summary ? `${taskId}: ${summary}` : `${taskId}: driver task update`;
+}
+
+function reportSummary(report: ParsedReport): string | undefined {
+	const text = report.outcome === "unknown" ? report.raw : report.notes;
+	if (!text) {
+		return undefined;
+	}
+
+	const line = text
+		.split(/\r?\n/)
+		.map((item) => item.trim())
+		.find((item) => item.length > 0);
+	if (!line) {
+		return undefined;
+	}
+
+	const withoutPrefix = line.replace(/^(implemented|status|summary):\s*/i, "");
+	return withoutPrefix.slice(0, 80).trim() || undefined;
 }
 
 async function hasCommittableChanges(
