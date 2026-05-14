@@ -61,7 +61,7 @@ interface PromptLayersWithWorkdir extends PromptLayers {
 	workdir: string;
 }
 
-const DEFAULT_TASK_TIMEOUT_MS = 10 * 60 * 1000;
+export const DEFAULT_TASK_TIMEOUT_MS = 30 * 60 * 1000;
 const EXCLUDED_COMMIT_PATHS = [
 	":(exclude)missions",
 	":(exclude)missions/**",

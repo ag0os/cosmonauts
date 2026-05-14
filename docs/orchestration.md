@@ -91,6 +91,8 @@ Run `cosmonauts --list-workflows` for the live list, including any project-level
 
 Run state lives under `missions/sessions/<plan>/runs/<runId>/`. Terminal results are recorded in `run.completion.json` (`completed`, `blocked`, or `aborted`), detached activity is tracked with `run.pid`, and inline activity is tracked with `run.inline.json`. `drive status` and `drive list` prefer terminal completion records, then classify active sentinels as `running`, `dead`, or `orphaned`.
 
+Each Drive task has a per-backend invocation timeout. The default is 1800000ms (30 minutes); use `--task-timeout` / `taskTimeoutMs` for unusually long cold-cache gates or slow external backends that need more headroom.
+
 > Drive and chains will eventually merge into one orchestration surface. For now they overlap: chains are the established, well-exercised path; Drive is newer and adds detached execution and external backends (`codex`, `claude-cli`). Agents that can do both follow what the user asks for and default to a chain when unspecified.
 
 ## CLI Surface

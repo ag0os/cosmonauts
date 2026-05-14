@@ -20,6 +20,7 @@ import type {
 	DriverEventBusEvent,
 } from "../../lib/driver/event-stream.ts";
 import { isProcessAlive } from "../../lib/driver/lock.ts";
+import { DEFAULT_TASK_TIMEOUT_MS } from "../../lib/driver/run-one-task.ts";
 import {
 	DETACHED_RUN_PID_FILENAME,
 	INLINE_RUN_STATE_FILENAME,
@@ -172,7 +173,7 @@ function configureRunCommand(command: Command): void {
 		.option("--max-tasks <n>", "Limit the resolved task list", parsePositiveInt)
 		.option(
 			"--task-timeout <ms>",
-			"Per-task timeout in milliseconds",
+			`Per-task timeout in milliseconds (default: ${DEFAULT_TASK_TIMEOUT_MS})`,
 			parsePositiveInt,
 		)
 		.option("--resume <runId>", "Resume a previous run ID")

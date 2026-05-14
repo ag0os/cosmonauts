@@ -51,6 +51,13 @@ default; it infers success only when postflight commands were configured and all
 passed. With `driver-commits`, the driver also requires committable source
 changes before making that inference.
 
+## Task Timeouts
+
+Each task backend invocation has a wall-clock timeout. The default is 1800000ms
+(30 minutes). Very long E2E suites or external CLI backends that need more time
+to iterate on failures should set `taskTimeoutMs` / `--task-timeout` explicitly,
+for example 3600000ms (60 minutes).
+
 ## Adapter Authoring Guide
 
 1. Add `lib/driver/backends/<name>.ts`.

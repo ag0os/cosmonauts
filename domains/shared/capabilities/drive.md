@@ -16,6 +16,7 @@ Drive runs an approved plan's task set through a mechanical loop: render each ta
 - Pass ordered `taskIds` when dependency order matters; the default is all non-Done tasks labeled `plan:<slug>`.
 - The driver — not you — owns task-status transitions, postflight verification, event logging, and commits. Treat backend success reports as evidence, not proof.
 - Drive appends a mandatory report contract after custom envelope/task content so every backend receives machine-readable `outcome:` marker instructions.
+- Default per-task timeout is 1800000ms (30 minutes); set `taskTimeoutMs` explicitly for unusually long E2E suites or slow external backends.
 - Status records are based on run state files: `run.completion.json` for terminal outcomes, `run.pid` for detached activity, and `run.inline.json` for inline activity. Status can be `completed`, `blocked`, `aborted`, `running`, `dead`, or `orphaned`.
 
 Before configuring a run — backend, inline vs. detached, commit policy, envelope path, postflight commands, resume — **load `/skill:drive`**.

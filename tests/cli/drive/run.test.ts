@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createDriveProgram } from "../../../cli/drive/subcommand.ts";
 import type { DriverDeps } from "../../../lib/driver/driver.ts";
+import { DEFAULT_TASK_TIMEOUT_MS } from "../../../lib/driver/run-one-task.ts";
 import type {
 	DriverHandle,
 	DriverResult,
@@ -130,6 +131,18 @@ describe("cosmonauts drive run", () => {
 
 		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
 		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+	});
+
+	test("documents the default per-task timeout in run help", () => {
+		expect(DEFAULT_TASK_TIMEOUT_MS).toBe(30 * 60 * 1000);
+		const program = createDriveProgram();
+		const runCommand = program.commands.find(
+			(command) => command.name() === "run",
+		);
+
+		expect(runCommand?.helpInformation()).toContain(
+			`--task-timeout <ms>       Per-task timeout in milliseconds (default: ${DEFAULT_TASK_TIMEOUT_MS})`,
+		);
 	});
 
 	test("parses run arguments into DriverRunSpec fields", async () => {

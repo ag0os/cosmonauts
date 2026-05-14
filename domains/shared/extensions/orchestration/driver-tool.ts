@@ -16,6 +16,7 @@ import {
 import { createCosmonautsSubagentBackend } from "../../../../lib/driver/backends/cosmonauts-subagent.ts";
 import type { Backend } from "../../../../lib/driver/backends/types.ts";
 import { runInline, startDetached } from "../../../../lib/driver/driver.ts";
+import { DEFAULT_TASK_TIMEOUT_MS } from "../../../../lib/driver/run-one-task.ts";
 import {
 	writeInlineRunState,
 	writeRunCompletion,
@@ -153,8 +154,7 @@ export function registerDriverTool(
 			),
 			taskTimeoutMs: Type.Optional(
 				Type.Number({
-					description:
-						"Per-task timeout in milliseconds, applied to each task's backend invocation.",
+					description: `Per-task timeout in milliseconds, applied to each task's backend invocation. Default: ${DEFAULT_TASK_TIMEOUT_MS}ms.`,
 				}),
 			),
 		}),

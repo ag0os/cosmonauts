@@ -16,6 +16,7 @@ Use Drive for approved plan-linked task batches where a mechanical loop should r
 - Backends execute prompts; the driver owns task status transitions, event logging, postflight verification, and commits according to `commitPolicy`.
 - Drive appends a mandatory report contract after the envelope/task content so custom envelopes cannot omit the machine-readable `outcome:` marker instructions.
 - Treat backend success reports as evidence, not proof. Prefer postflight checks such as tests, lint, and typecheck. If a backend emits only prose, Drive can infer success from passing postflight checks; without those objective checks it blocks as `report outcome unknown`.
+- Default per-task timeout is 1800000ms (30 minutes). For unusually long cold E2E suites, slow external backends, or tasks expected to iterate on multiple failures, set `taskTimeoutMs` / `--task-timeout` explicitly higher (for example 3600000ms / 60 minutes).
 - Use `driver-commits` unless there is a concrete reason for `backend-commits` or `no-commit`.
 
 ## Choose the Frontend
@@ -58,7 +59,8 @@ run_driver({
   commitPolicy: "driver-commits",
   // envelopePath omitted — uses the bundled coding envelope
   postflightCommands: ["bun run test", "bun run lint", "bun run typecheck"],
-  partialMode: "stop"
+  partialMode: "stop",
+  taskTimeoutMs: 3600000 // 60 minutes for unusually long E2E or slow external backends
 })
 ```
 
