@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, test, vi } from "vitest";
 import type {
@@ -74,21 +74,17 @@ describe("run-one-task", () => {
 			fixture.taskId,
 		);
 
-		expect(outcome).toMatchObject({ status: "blocked" });
-		expect(fixture.taskManager.updates).toEqual([]);
-		expect(backend.run).not.toHaveBeenCalled();
-		expect(events).toContainEqual(
-			expect.objectContaining({
-				type: "preflight",
-				status: "failed",
-				details: expect.objectContaining({ command: expect.any(String) }),
-			}),
-		);
+		expectPreflightBlocked({
+			outcome,
+			fixture,
+			backend,
+			events,
+			details: { command: expect.any(String) },
+		});
 	});
 
 	test("run-one-task branch mismatch aborts before any status transition", async () => {
-		const fixture = await setupRecordingFixture();
-		await initGit(fixture.projectRoot);
+		const fixture = await setupRecordingGitFixture();
 		const events: DriverEvent[] = [];
 		const backend = createBackend(async () => successfulResult());
 
@@ -98,16 +94,13 @@ describe("run-one-task", () => {
 			fixture.taskId,
 		);
 
-		expect(outcome).toMatchObject({ status: "blocked" });
-		expect(fixture.taskManager.updates).toEqual([]);
-		expect(backend.run).not.toHaveBeenCalled();
-		expect(events).toContainEqual(
-			expect.objectContaining({
-				type: "preflight",
-				status: "failed",
-				details: expect.objectContaining({ branch: "main" }),
-			}),
-		);
+		expectPreflightBlocked({
+			outcome,
+			fixture,
+			backend,
+			events,
+			details: { branch: "main" },
+		});
 	});
 
 	test("driver task fields literal uses Title Case and implementationNotes, never note", async () => {
@@ -132,28 +125,13 @@ describe("run-one-task", () => {
 	});
 
 	test("driver commit exclusion uses repo lock, excludes missions and memory, and emits sha", async () => {
-		const fixture = await setupFixture();
-		await initGit(fixture.projectRoot);
+		const fixture = await setupGitFixture();
 		await installCommitHook(fixture.projectRoot);
 		const events: DriverEvent[] = [];
 		const backend = createBackend(async () => {
-			await mkdir(join(fixture.projectRoot, "src"), { recursive: true });
-			await mkdir(join(fixture.projectRoot, "missions", "agent"), {
-				recursive: true,
-			});
-			await mkdir(join(fixture.projectRoot, "memory"), { recursive: true });
-			await writeFile(
-				join(fixture.projectRoot, "src", "changed.txt"),
-				"commit\n",
-			);
-			await writeFile(
-				join(fixture.projectRoot, "missions", "agent", "ignored.txt"),
-				"ignore\n",
-			);
-			await writeFile(
-				join(fixture.projectRoot, "memory", "ignored.txt"),
-				"ignore\n",
-			);
+			await writeProjectFile(fixture, "src/changed.txt", "commit\n");
+			await writeProjectFile(fixture, "missions/agent/ignored.txt", "ignore\n");
+			await writeProjectFile(fixture, "memory/ignored.txt", "ignore\n");
 			return successfulResult();
 		});
 		const eventSink: EventSink = async (event) => {
@@ -196,7 +174,7 @@ describe("run-one-task", () => {
 		expect(ignoredStatus).toContain("memory/");
 	});
 
-	test("driver derive outcome requires explicit worker outcome", () => {
+	test("driver derive outcome uses postverify as objective evidence", () => {
 		const unknown = {
 			outcome: "unknown",
 			raw: "no report",
@@ -206,10 +184,15 @@ describe("run-one-task", () => {
 
 		expect(deriveOutcome(unknown, [])).toBe("failure");
 		expect(deriveOutcome(unknown, pass)).toBe("failure");
-		expect(deriveOutcome(unknown, fail)).toBe("failure");
-		expect(deriveOutcome(report("success"), fail)).toBe("success");
+		expect(deriveOutcome(unknown, pass, { allowUnknownSuccess: true })).toBe(
+			"success",
+		);
+		expect(deriveOutcome(unknown, fail, { allowUnknownSuccess: true })).toBe(
+			"failure",
+		);
+		expect(deriveOutcome(report("success"), fail)).toBe("failure");
 		expect(deriveOutcome(report("failure"), pass)).toBe("failure");
-		expect(deriveOutcome(report("partial"), fail)).toBe("partial");
+		expect(deriveOutcome(report("partial"), fail)).toBe("failure");
 	});
 
 	test("driver task timeout aborts the spawn and blocks with implementationNotes", async () => {
@@ -244,16 +227,11 @@ describe("run-one-task", () => {
 	});
 
 	test("driver post-commit task update failure emits run_aborted without task_done", async () => {
-		const fixture = await setupRecordingFixture();
-		await initGit(fixture.projectRoot);
+		const fixture = await setupRecordingGitFixture();
 		fixture.taskManager.failFinalUpdate = true;
 		const events: DriverEvent[] = [];
 		const backend = createBackend(async () => {
-			await mkdir(join(fixture.projectRoot, "src"), { recursive: true });
-			await writeFile(
-				join(fixture.projectRoot, "src", "after-commit.txt"),
-				"commit\n",
-			);
+			await writeProjectFile(fixture, "src/after-commit.txt", "commit\n");
 			return successfulResult();
 		});
 
@@ -287,15 +265,9 @@ describe("run-one-task", () => {
 	});
 
 	test("driver partial outcome commits and leaves task In Progress with progress notes", async () => {
-		const fixture = await setupFixture();
-		await initGit(fixture.projectRoot);
-		const events: DriverEvent[] = [];
+		const fixture = await setupGitFixture();
 		const backend = createBackend(async () => {
-			await mkdir(join(fixture.projectRoot, "src"), { recursive: true });
-			await writeFile(
-				join(fixture.projectRoot, "src", "partial.txt"),
-				"partial\n",
-			);
+			await writeProjectFile(fixture, "src/partial.txt", "partial\n");
 			return {
 				exitCode: 0,
 				stdout: fencedReport({
@@ -309,16 +281,10 @@ describe("run-one-task", () => {
 			};
 		});
 
-		const outcome = await runOneTask(
-			createSpec(fixture, {
-				commitPolicy: "driver-commits",
-				postflightCommands: [nodeCommand("process.exit(0)")],
-			}),
-			createCtx(fixture, backend, events),
-			fixture.taskId,
+		const { events, outcome, task } = await runDriverCommitTask(
+			fixture,
+			backend,
 		);
-
-		const task = await fixture.taskManager.getTask(fixture.taskId);
 		expect(outcome).toMatchObject({
 			status: "partial",
 			commitSha: expect.stringMatching(/^[0-9a-f]{40}$/),
@@ -336,43 +302,55 @@ describe("run-one-task", () => {
 		expect(events.map((event) => event.type)).toContain("commit_made");
 	});
 
-	test("run-one-task unknown report blocks and does not commit even when postverify passes", async () => {
-		const fixture = await setupFixture();
-		await initGit(fixture.projectRoot);
-		const events: DriverEvent[] = [];
+	test("run-one-task infers success for unknown reports when postverify passes and changes exist", async () => {
+		const fixture = await setupGitFixture();
 		const backend = createBackend(async () => {
-			await mkdir(join(fixture.projectRoot, "src"), { recursive: true });
-			await writeFile(
-				join(fixture.projectRoot, "src", "uncommitted.txt"),
-				"no commit\n",
-			);
+			await writeProjectFile(fixture, "src/uncommitted.txt", "commit\n");
 			return {
 				exitCode: 0,
-				stdout: "Implemented: changed src/uncommitted.txt but no gate passed",
+				stdout:
+					"Implemented: changed src/uncommitted.txt and postflight passed",
 				durationMs: 1,
 			};
 		});
 
-		const outcome = await runOneTask(
-			createSpec(fixture, {
-				commitPolicy: "driver-commits",
-				postflightCommands: [nodeCommand("process.exit(0)")],
-			}),
-			createCtx(fixture, backend, events),
-			fixture.taskId,
+		const { events, outcome, task } = await runDriverCommitTask(
+			fixture,
+			backend,
 		);
-
-		const task = await fixture.taskManager.getTask(fixture.taskId);
-		expect(outcome).toMatchObject({ status: "blocked" });
-		expect(task?.status).toBe("Blocked");
-		expect(task?.implementationNotes).toContain("report outcome unknown");
-		expect(events.map((event) => event.type)).not.toContain("commit_made");
+		expect(outcome).toMatchObject({
+			status: "done",
+			commitSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+		});
+		expect(task?.status).toBe("Done");
+		expect(events.map((event) => event.type)).toContain("commit_made");
+		expect(
+			await git(fixture.projectRoot, ["show", "--format=%s", "--no-patch"]),
+		).toContain("changed src/uncommitted.txt");
 		const staged = await git(fixture.projectRoot, [
 			"diff",
 			"--cached",
 			"--name-only",
 		]);
 		expect(staged).toBe("");
+	});
+
+	test("run-one-task still blocks unknown reports when postverify passes without changes", async () => {
+		const fixture = await setupGitFixture();
+		const backend = createBackend(async () => ({
+			exitCode: 0,
+			stdout: "I inspected the task but did not change files.",
+			durationMs: 1,
+		}));
+
+		const { events, outcome, task } = await runDriverCommitTask(
+			fixture,
+			backend,
+		);
+		expect(outcome).toMatchObject({ status: "blocked" });
+		expect(task?.status).toBe("Blocked");
+		expect(task?.implementationNotes).toContain("report outcome unknown");
+		expect(events.map((event) => event.type)).not.toContain("commit_made");
 	});
 });
 
@@ -425,6 +403,74 @@ async function setupRecordingFixture(): Promise<RecordingFixture> {
 		taskId: task.id,
 		taskManager: new RecordingTaskManager(projectRoot, task),
 	};
+}
+
+async function setupGitFixture(): Promise<Fixture> {
+	const fixture = await setupFixture();
+	await initGit(fixture.projectRoot);
+	return fixture;
+}
+
+async function setupRecordingGitFixture(): Promise<RecordingFixture> {
+	const fixture = await setupRecordingFixture();
+	await initGit(fixture.projectRoot);
+	return fixture;
+}
+
+async function runDriverCommitTask(
+	fixture: Fixture | RecordingFixture,
+	backend: Backend,
+): Promise<{
+	events: DriverEvent[];
+	outcome: Awaited<ReturnType<typeof runOneTask>>;
+	task: Task | null;
+}> {
+	const events: DriverEvent[] = [];
+	const outcome = await runOneTask(
+		createSpec(fixture, {
+			commitPolicy: "driver-commits",
+			postflightCommands: [nodeCommand("process.exit(0)")],
+		}),
+		createCtx(fixture, backend, events),
+		fixture.taskId,
+	);
+	const task = await fixture.taskManager.getTask(fixture.taskId);
+	return { events, outcome, task };
+}
+
+async function writeProjectFile(
+	fixture: Fixture | RecordingFixture,
+	relativePath: string,
+	content: string,
+): Promise<void> {
+	const absolutePath = join(fixture.projectRoot, relativePath);
+	await mkdir(dirname(absolutePath), { recursive: true });
+	await writeFile(absolutePath, content, "utf-8");
+}
+
+function expectPreflightBlocked({
+	outcome,
+	fixture,
+	backend,
+	events,
+	details,
+}: {
+	outcome: Awaited<ReturnType<typeof runOneTask>>;
+	fixture: RecordingFixture;
+	backend: ReturnType<typeof createBackend>;
+	events: DriverEvent[];
+	details: Record<string, unknown>;
+}): void {
+	expect(outcome).toMatchObject({ status: "blocked" });
+	expect(fixture.taskManager.updates).toEqual([]);
+	expect(backend.run).not.toHaveBeenCalled();
+	expect(events).toContainEqual(
+		expect.objectContaining({
+			type: "preflight",
+			status: "failed",
+			details: expect.objectContaining(details),
+		}),
+	);
 }
 
 function createSpec(

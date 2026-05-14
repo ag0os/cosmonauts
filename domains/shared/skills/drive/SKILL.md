@@ -14,7 +14,7 @@ Use Drive for approved plan-linked task batches where a mechanical loop should r
 - Pass ordered `taskIds` when dependency order matters. The default task selection is all non-Done tasks labeled `plan:<slug>`.
 - Keep runs observable: record the `runId`, `planSlug`, `workdir`, and `eventLogPath`; monitor with `watch_events` or `cosmonauts drive status`.
 - Backends execute prompts; the driver owns task status transitions, event logging, postflight verification, and commits according to `commitPolicy`.
-- Treat backend success reports as evidence, not proof. Prefer postflight checks such as tests, lint, and typecheck.
+- Treat backend success reports as evidence, not proof. Prefer postflight checks such as tests, lint, and typecheck. If a backend emits only prose, Drive can infer success from passing postflight checks; without those objective checks it blocks as `report outcome unknown`.
 - Use `driver-commits` unless there is a concrete reason for `backend-commits` or `no-commit`.
 
 ## Choose the Frontend
@@ -80,6 +80,7 @@ Claude runs as `claude -p` by default. It does not bypass permissions unless req
 
 - **Active run already exists.** Monitor the existing `runId`; do not start a competing run for the same plan.
 - **Preflight or postflight failed.** Stop, summarize the failing command and stderr, then fix or route remediation before resuming.
+- **Report outcome unknown.** The backend did not emit the structured JSON/`OUTCOME:` marker. If postflight checks were configured and passed, Drive may infer success; otherwise inspect the worktree and rerun with a prompt override that asks for the final marker, or manually update the task when you have independent evidence.
 - **Partial task result.** Treat it as blocked progress. Add a focused prompt override or split the remaining work before rerunning.
 - **Detached backend rejected.** Use `codex` or `claude-cli`; `cosmonauts-subagent` is inline-only.
 - **Codex sandbox blocks e2e/build gates.** `--full-auto` is still sandboxed. Pre-warm caches on the host, move incompatible e2e checks to post-run verification, or explicitly opt into YOLO mode with `COSMONAUTS_DRIVER_CODEX_YOLO=1` when the surrounding environment is already sandboxed.

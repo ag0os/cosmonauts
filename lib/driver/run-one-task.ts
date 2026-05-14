@@ -181,11 +181,23 @@ async function runTaskAttempt(
 	});
 
 	const postVerifyResults = await runPostVerify(spec, ctx, taskId);
-	const outcome = deriveOutcome(parsedReport, postVerifyResults);
-	const failureReason = deriveFailureReason(parsedReport, postVerifyResults);
+	const allowUnknownSuccess = await canInferUnknownSuccess(
+		spec,
+		ctx,
+		parsedReport,
+		postVerifyResults,
+	);
+	const outcome = deriveOutcome(parsedReport, postVerifyResults, {
+		allowUnknownSuccess,
+	});
+	const effectiveReport =
+		parsedReport.outcome === "unknown" && outcome === "success"
+			? inferredSuccessReport(parsedReport, postVerifyResults)
+			: parsedReport;
+	const failureReason = deriveFailureReason(effectiveReport, postVerifyResults);
 	let commitSha: string | undefined;
 	try {
-		commitSha = await maybeCommit(spec, ctx, taskId, outcome, parsedReport);
+		commitSha = await maybeCommit(spec, ctx, taskId, outcome, effectiveReport);
 	} catch (error) {
 		if (error instanceof CommitFailedError) {
 			return {
@@ -204,7 +216,7 @@ async function runTaskAttempt(
 				ctx,
 				taskId,
 				outcome,
-				parsedReport,
+				parsedReport: effectiveReport,
 				failureReason,
 				commitSha,
 			}),
@@ -212,7 +224,7 @@ async function runTaskAttempt(
 	}
 
 	const reason =
-		outcome === "partial" ? partialReason(parsedReport) : failureReason;
+		outcome === "partial" ? partialReason(effectiveReport) : failureReason;
 	return {
 		kind: "block-candidate",
 		reason,
@@ -222,7 +234,7 @@ async function runTaskAttempt(
 				ctx,
 				taskId,
 				outcome,
-				parsedReport,
+				parsedReport: effectiveReport,
 				failureReason,
 				commitSha,
 				contradicted,
@@ -384,13 +396,66 @@ function buildContradictionNote(contradicted: ContradictedPath): string {
 
 export function deriveOutcome(
 	report: ParsedReport,
-	_postVerifyResults: readonly PostVerifyResult[],
+	postVerifyResults: readonly PostVerifyResult[],
+	options: { allowUnknownSuccess?: boolean } = {},
 ): ReportOutcome {
-	if (report.outcome === "unknown") {
+	if (postVerifyResults.some((result) => result.status === "fail")) {
 		return "failure";
 	}
 
+	if (report.outcome === "unknown") {
+		return options.allowUnknownSuccess && postVerifyPassed(postVerifyResults)
+			? "success"
+			: "failure";
+	}
+
 	return report.outcome;
+}
+
+async function canInferUnknownSuccess(
+	spec: DriverRunSpec,
+	ctx: RunOneTaskCtx,
+	report: ParsedReport,
+	postVerifyResults: readonly PostVerifyResult[],
+): Promise<boolean> {
+	if (report.outcome !== "unknown" || !postVerifyPassed(postVerifyResults)) {
+		return false;
+	}
+
+	if (spec.commitPolicy !== "driver-commits") {
+		return true;
+	}
+
+	try {
+		return await hasCommittableChanges(spec.projectRoot, ctx.abortSignal);
+	} catch {
+		return false;
+	}
+}
+
+function postVerifyPassed(
+	postVerifyResults: readonly PostVerifyResult[],
+): boolean {
+	return (
+		postVerifyResults.length > 0 &&
+		postVerifyResults.every((result) => result.status === "pass")
+	);
+}
+
+function inferredSuccessReport(
+	report: Extract<ParsedReport, { outcome: "unknown" }>,
+	postVerifyResults: readonly PostVerifyResult[],
+): Report {
+	const summary = reportSummary(report) ?? "unstructured worker report";
+	return {
+		outcome: "success",
+		files: [],
+		verification: postVerifyResults.map((result) => ({
+			command: result.command,
+			status: result.status,
+		})),
+		notes: `${summary}\n\nOutcome inferred from passing postflight because the worker emitted an unstructured report.`,
+	};
 }
 
 async function runPreflight(

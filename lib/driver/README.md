@@ -31,6 +31,17 @@ Optional fields:
 - `livenessCheck()`: returns a command the driver or caller can run before a
   detached job starts, usually `<binary> --version`.
 
+## Report Parsing
+
+The driver treats the backend process exit code as transport status, not task
+success. Task success comes from a fenced JSON report or an `OUTCOME:` line in
+backend stdout; a bare `outcome:` line is accepted as a tolerant fallback.
+`completed` is accepted as an alias for `success` in those structured markers.
+If the backend emits only prose, Drive keeps blocking by
+default; it infers success only when postflight commands were configured and all
+passed. With `driver-commits`, the driver also requires committable source
+changes before making that inference.
+
 ## Adapter Authoring Guide
 
 1. Add `lib/driver/backends/<name>.ts`.

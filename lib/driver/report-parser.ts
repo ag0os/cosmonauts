@@ -1,7 +1,8 @@
 import type { ParsedReport, Report, ReportOutcome } from "./types.ts";
 
 const JSON_FENCE_PATTERN = /```json\s*([\s\S]*?)```/gi;
-const OUTCOME_LINE_PATTERN = /^\s*OUTCOME:\s*(success|failure|partial)\s*$/im;
+const OUTCOME_LINE_PATTERN =
+	/^\s*outcome:\s*(success|failure|partial|completed)\s*$/im;
 
 export function parseReport(stdout: string): ParsedReport {
 	const fencedReport = parseFencedReport(stdout);
@@ -43,22 +44,28 @@ function parseJsonReport(json: string): Report | undefined {
 
 function parseOutcomeLine(stdout: string): ReportOutcome | undefined {
 	const value = stdout.match(OUTCOME_LINE_PATTERN)?.[1]?.toLowerCase();
-	return isReportOutcome(value) ? value : undefined;
+	return toReportOutcome(value);
 }
 
 function toReport(value: unknown): Report | undefined {
-	if (!isRecord(value) || !isReportOutcome(value.outcome)) {
+	if (!isRecord(value)) {
 		return undefined;
 	}
 
-	const files = toFiles(value.files);
-	const verification = toVerification(value.verification);
+	const outcome = toReportOutcome(value.outcome);
+	if (!outcome) {
+		return undefined;
+	}
+
+	const files = value.files === undefined ? [] : toFiles(value.files);
+	const verification =
+		value.verification === undefined ? [] : toVerification(value.verification);
 	if (!files || !verification) {
 		return undefined;
 	}
 
 	const report: Report = {
-		outcome: value.outcome,
+		outcome,
 		files,
 		verification,
 	};
@@ -147,8 +154,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isReportOutcome(value: unknown): value is ReportOutcome {
-	return value === "success" || value === "failure" || value === "partial";
+function toReportOutcome(value: unknown): ReportOutcome | undefined {
+	if (value === "completed") {
+		return "success";
+	}
+	return value === "success" || value === "failure" || value === "partial"
+		? value
+		: undefined;
 }
 
 function isFileChange(

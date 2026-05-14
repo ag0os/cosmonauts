@@ -31,7 +31,7 @@ Use this envelope for coding-domain driver tasks. Follow the task body and any p
 
 ## Final Report Format
 
-End with a fenced JSON report whenever possible:
+End with a fenced JSON report whenever possible, followed by an exact `OUTCOME:` line as the final line:
 
 ```json
 {
@@ -52,8 +52,8 @@ Required fields:
 - `files`: array of changed files with `path` and `change` (`created`, `modified`, or `deleted`).
 - `verification`: array of commands with `status` (`pass`, `fail`, or `not_run`).
 
-If JSON is not possible, use an OUTCOME-text fallback on its own line:
+Then end with the matching final line:
 
 `OUTCOME: success`
 
-Allowed fallback values are `success`, `failure`, and `partial`.
+Allowed values are `success`, `failure`, and `partial`. Use `success` only when the task is complete and verification either passed or the report explains why verification was not run.

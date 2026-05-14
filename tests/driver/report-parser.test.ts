@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { parseReport } from "../../lib/driver/report-parser.ts";
 
-const outcomeReports = ["success", "failure", "partial"] as const;
+const outcomeReports = ["success", "failure", "partial", "completed"] as const;
 
 describe("report-parser", () => {
 	test("parses fenced JSON reports", () => {
@@ -38,7 +38,29 @@ OUTCOME: ${outcome}
 Done.`;
 
 		expect(parseReport(stdout)).toEqual({
-			outcome,
+			outcome: outcome === "completed" ? "success" : outcome,
+			files: [],
+			verification: [],
+		});
+	});
+
+	test("normalizes minimal completed JSON reports to success", () => {
+		const stdout = `\`\`\`json
+{"outcome":"completed"}
+\`\`\``;
+
+		expect(parseReport(stdout)).toEqual({
+			outcome: "success",
+			files: [],
+			verification: [],
+		});
+	});
+
+	test("parses loose outcome lines", () => {
+		const stdout = "outcome: completed";
+
+		expect(parseReport(stdout)).toEqual({
+			outcome: "success",
 			files: [],
 			verification: [],
 		});
