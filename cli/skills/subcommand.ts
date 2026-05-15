@@ -1,14 +1,21 @@
 /**
  * CLI subcommand: `cosmonauts skills`
  *
- * Lists and exports skills across domains.
+ * Lists and exports skills across all runtime-visible domains, including
+ * bundled packages, globally and locally installed packages, plugin dirs,
+ * and user-configured `projectConfig.skillPaths`. Mirrors the discovery
+ * path used by interactive sessions so the CLI never under-reports.
  */
 
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
-import { loadDomains } from "../../lib/domains/loader.ts";
-import type { DiscoveredSkill } from "../../lib/skills/index.ts";
+import { discoverFrameworkBundledPackageDirs } from "../../lib/packages/dev-bundled.ts";
+import { CosmonautsRuntime } from "../../lib/runtime.ts";
+import type {
+	DiscoveredSkill,
+	ExtraSkillSource,
+} from "../../lib/skills/index.ts";
 import {
 	discoverSkills,
 	type ExportTarget,
@@ -19,15 +26,19 @@ import { getOutputMode, printJson, printLines } from "../shared/output.ts";
 
 const VALID_TARGETS: ReadonlySet<string> = new Set(["claude", "codex"]);
 
-function resolveDomainsDir(): string {
-	return resolve(fileURLToPath(import.meta.url), "..", "..", "..", "domains");
-}
+/** Label applied to skills discovered via `projectConfig.skillPaths`. */
+const PROJECT_SKILL_DOMAIN = "project";
 
 /** JSON shape for `cosmonauts skills list --json`. */
 export interface SkillListItem {
 	name: string;
 	domain: string;
 	description: string;
+}
+
+interface SkillsProgramOptions {
+	readonly domain?: string;
+	readonly pluginDir?: readonly string[];
 }
 
 export function renderSkillsList(
@@ -68,6 +79,39 @@ export function renderSkillsList(
 	};
 }
 
+/**
+ * Bootstrap a runtime mirroring `cosmonauts` interactive sessions and
+ * `cosmonauts export`, then discover every skill it can see — domain skill
+ * dirs plus user-configured `skillPaths`.
+ */
+async function discoverAllRuntimeSkills(
+	options: SkillsProgramOptions,
+): Promise<DiscoveredSkill[]> {
+	const frameworkRoot = resolve(
+		dirname(fileURLToPath(import.meta.url)),
+		"..",
+		"..",
+	);
+	const bundledDirs = await discoverFrameworkBundledPackageDirs(frameworkRoot);
+	const pluginDirs = options.pluginDir?.length
+		? [...options.pluginDir]
+		: undefined;
+
+	const runtime = await CosmonautsRuntime.create({
+		builtinDomainsDir: join(frameworkRoot, "domains"),
+		projectRoot: process.cwd(),
+		bundledDirs,
+		domainOverride: options.domain,
+		pluginDirs,
+	});
+
+	const projectExtras: ExtraSkillSource[] = (
+		runtime.projectConfig.skillPaths ?? []
+	).map((skillsDir) => ({ skillsDir, domain: PROJECT_SKILL_DOMAIN }));
+
+	return discoverSkills(runtime.domains, projectExtras);
+}
+
 export function createSkillsProgram(): Command {
 	const program = new Command();
 
@@ -75,7 +119,14 @@ export function createSkillsProgram(): Command {
 		.name("cosmonauts skills")
 		.description("Skill management and cross-harness export")
 		.option("--plain", "Output in plain text format (for agents)")
-		.option("--json", "Output in JSON format");
+		.option("--json", "Output in JSON format")
+		.option("-d, --domain <id>", "Set domain context for agent resolution")
+		.option(
+			"--plugin-dir <path>",
+			"Add a directory as a session-only domain source (repeatable)",
+			(value: string, previous: string[]) => [...previous, value],
+			[] as string[],
+		);
 
 	// ── list ──────────────────────────────────────────────────────────
 	program
@@ -83,10 +134,12 @@ export function createSkillsProgram(): Command {
 		.alias("ls")
 		.description("List all skills across domains")
 		.action(async () => {
-			const mode = getOutputMode(program.opts());
+			const programOpts = program.opts<
+				SkillsProgramOptions & { json?: boolean; plain?: boolean }
+			>();
+			const mode = getOutputMode(programOpts);
 			try {
-				const domains = await loadDomains(resolveDomainsDir());
-				const skills = await discoverSkills(domains);
+				const skills = await discoverAllRuntimeSkills(programOpts);
 				const rendered = renderSkillsList(skills, mode);
 				if (rendered.kind === "json") {
 					printJson(rendered.value);
@@ -119,8 +172,8 @@ export function createSkillsProgram(): Command {
 
 				const target = options.target as ExportTarget;
 				const projectRoot = process.cwd();
-				const domains = await loadDomains(resolveDomainsDir());
-				const allSkills = await discoverSkills(domains);
+				const programOpts = program.opts<SkillsProgramOptions>();
+				const allSkills = await discoverAllRuntimeSkills(programOpts);
 
 				if (allSkills.length === 0) {
 					console.log("No skills found to export.");

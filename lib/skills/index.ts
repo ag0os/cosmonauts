@@ -1,4 +1,8 @@
-export { type DiscoveredSkill, discoverSkills } from "./discovery.ts";
+export {
+	type DiscoveredSkill,
+	discoverSkills,
+	type ExtraSkillSource,
+} from "./discovery.ts";
 export {
 	type ExportOptions,
 	type ExportResult,

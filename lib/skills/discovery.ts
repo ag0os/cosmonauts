@@ -24,13 +24,29 @@ export interface DiscoveredSkill {
 }
 
 /**
- * Discover all skills across loaded domains.
+ * Extra skill source for callers that need to scan directories outside of any
+ * loaded domain — typically `projectConfig.skillPaths` configured by the user.
+ * Each source is scanned with the same rules as a domain's `skills/` dir.
+ */
+export interface ExtraSkillSource {
+	/** Absolute path to a directory whose immediate children are skills. */
+	readonly skillsDir: string;
+	/** Label used as the `domain` field on each discovered skill. */
+	readonly domain: string;
+}
+
+/**
+ * Discover all skills across loaded domains plus any extra skill paths.
  *
  * Scans each domain's skills directory recursively for SKILL.md files.
  * A skill directory is any directory containing a SKILL.md file.
+ * Extra sources are scanned with the same rules — they exist so callers
+ * can include user-configured `skillPaths` (or other ad-hoc dirs) without
+ * synthesising fake domains.
  */
 export async function discoverSkills(
 	domains: readonly LoadedDomain[],
+	extras: readonly ExtraSkillSource[] = [],
 ): Promise<DiscoveredSkill[]> {
 	const skills: DiscoveredSkill[] = [];
 
@@ -41,6 +57,11 @@ export async function discoverSkills(
 
 			await scanForSkills(skillsDir, domain.manifest.id, skills);
 		}
+	}
+
+	for (const extra of extras) {
+		if (!(await isDirectory(extra.skillsDir))) continue;
+		await scanForSkills(extra.skillsDir, extra.domain, skills);
 	}
 
 	return skills;

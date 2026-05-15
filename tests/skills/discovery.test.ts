@@ -183,6 +183,37 @@ describe("discoverSkills", () => {
 		expect(bare?.description).toBe("");
 	});
 
+	test("includes skills from extra skill paths labeled with the supplied domain", async () => {
+		const domainDir = join(tmp.path, "shared");
+		await writeSkill(join(domainDir, "skills"), "plan", "Plan skill");
+
+		const extraDir = join(tmp.path, "extras");
+		await writeSkill(extraDir, "custom", "User custom skill");
+
+		const skills = await discoverSkills(
+			[makeDomain("shared", domainDir)],
+			[{ skillsDir: extraDir, domain: "project" }],
+		);
+
+		expect(skills).toHaveLength(2);
+		const plan = skills.find((s) => s.name === "plan");
+		const custom = skills.find((s) => s.name === "custom");
+		expect(plan?.domain).toBe("shared");
+		expect(custom?.domain).toBe("project");
+	});
+
+	test("ignores extra skill paths that do not exist", async () => {
+		const domainDir = join(tmp.path, "shared");
+		await writeSkill(join(domainDir, "skills"), "plan", "Plan skill");
+
+		const skills = await discoverSkills(
+			[makeDomain("shared", domainDir)],
+			[{ skillsDir: join(tmp.path, "does-not-exist"), domain: "project" }],
+		);
+
+		expect(skills.map((s) => s.name)).toEqual(["plan"]);
+	});
+
 	test("packaged skill directory names match frontmatter names", async () => {
 		const skillRoots = [
 			join(process.cwd(), "bundled", "coding", "coding", "skills"),

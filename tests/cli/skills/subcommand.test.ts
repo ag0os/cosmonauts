@@ -1,10 +1,33 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	createSkillsProgram,
 	renderSkillsList,
 	type SkillListItem,
 } from "../../../cli/skills/subcommand.ts";
+import type { LoadedDomain } from "../../../lib/domains/types.ts";
 import type { DiscoveredSkill } from "../../../lib/skills/index.ts";
+import { captureCliOutput } from "../../helpers/cli.ts";
+
+const runtimeMocks = vi.hoisted(() => ({
+	create: vi.fn(),
+	discoverFrameworkBundledPackageDirs: vi.fn(),
+}));
+
+vi.mock("../../../lib/runtime.ts", () => ({
+	CosmonautsRuntime: { create: runtimeMocks.create },
+}));
+
+vi.mock("../../../lib/packages/dev-bundled.ts", async (importOriginal) => {
+	const actual =
+		await importOriginal<
+			typeof import("../../../lib/packages/dev-bundled.ts")
+		>();
+	return {
+		...actual,
+		discoverFrameworkBundledPackageDirs:
+			runtimeMocks.discoverFrameworkBundledPackageDirs,
+	};
+});
 
 function skill(overrides: Partial<DiscoveredSkill> = {}): DiscoveredSkill {
 	return {
@@ -13,6 +36,20 @@ function skill(overrides: Partial<DiscoveredSkill> = {}): DiscoveredSkill {
 		domain: "coding",
 		dirPath: "/abs/coding/skills/plan",
 		...overrides,
+	};
+}
+
+function makeDomain(id: string, rootDir: string): LoadedDomain {
+	return {
+		manifest: { id, description: `${id} domain` },
+		portable: false,
+		agents: new Map(),
+		capabilities: new Set(),
+		prompts: new Set(),
+		skills: new Set(),
+		extensions: new Set(),
+		workflows: [],
+		rootDirs: [rootDir],
 	};
 }
 
@@ -104,10 +141,115 @@ describe("createSkillsProgram", () => {
 		expect(commandNames).toContain("export");
 	});
 
-	it("exposes --json and --plain output options", () => {
+	it("exposes --json, --plain, --domain, and --plugin-dir output options", () => {
 		const program = createSkillsProgram();
 		const optionNames = program.options.map((o) => o.long);
 		expect(optionNames).toContain("--json");
 		expect(optionNames).toContain("--plain");
+		expect(optionNames).toContain("--domain");
+		expect(optionNames).toContain("--plugin-dir");
+	});
+});
+
+describe("createSkillsProgram list — runtime discovery", () => {
+	let output: ReturnType<typeof captureCliOutput>;
+
+	beforeEach(() => {
+		output = captureCliOutput();
+		process.exitCode = undefined;
+		runtimeMocks.discoverFrameworkBundledPackageDirs.mockResolvedValue([
+			"/framework/bundled/coding",
+		]);
+		runtimeMocks.create.mockResolvedValue({
+			domains: [
+				makeDomain("shared", "/framework/domains/shared"),
+				makeDomain("coding", "/framework/bundled/coding/coding"),
+			],
+			projectConfig: {},
+		});
+	});
+
+	afterEach(() => {
+		output.restore();
+		vi.clearAllMocks();
+		process.exitCode = undefined;
+	});
+
+	it("bootstraps a runtime that includes bundled package dirs", async () => {
+		await createSkillsProgram().parseAsync(["--json", "list"], {
+			from: "user",
+		});
+
+		expect(
+			runtimeMocks.discoverFrameworkBundledPackageDirs,
+		).toHaveBeenCalledWith(expect.stringMatching(/cosmonauts$/));
+		expect(runtimeMocks.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				bundledDirs: ["/framework/bundled/coding"],
+				pluginDirs: undefined,
+				domainOverride: undefined,
+			}),
+		);
+	});
+
+	it("forwards --domain and repeated --plugin-dir to runtime bootstrap", async () => {
+		await createSkillsProgram().parseAsync(
+			[
+				"--json",
+				"--domain",
+				"coding",
+				"--plugin-dir",
+				"/tmp/plugin-a",
+				"--plugin-dir",
+				"/tmp/plugin-b",
+				"list",
+			],
+			{ from: "user" },
+		);
+
+		expect(runtimeMocks.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				domainOverride: "coding",
+				pluginDirs: ["/tmp/plugin-a", "/tmp/plugin-b"],
+			}),
+		);
+	});
+
+	it("scans projectConfig.skillPaths in addition to domain skill dirs", async () => {
+		// Stand up a tmp tree: one domain dir + one project skill path.
+		const { mkdir, writeFile } = await import("node:fs/promises");
+		const { mkdtemp } = await import("node:fs/promises");
+		const { tmpdir } = await import("node:os");
+		const { join } = await import("node:path");
+
+		const root = await mkdtemp(join(tmpdir(), "skills-runtime-"));
+		const codingSkills = join(root, "coding", "skills");
+		await mkdir(join(codingSkills, "tdd"), { recursive: true });
+		await writeFile(
+			join(codingSkills, "tdd", "SKILL.md"),
+			"---\nname: tdd\ndescription: TDD\n---\n",
+		);
+
+		const extras = join(root, "extras");
+		await mkdir(join(extras, "custom"), { recursive: true });
+		await writeFile(
+			join(extras, "custom", "SKILL.md"),
+			"---\nname: custom\ndescription: A user-configured skill\n---\n",
+		);
+
+		runtimeMocks.create.mockResolvedValueOnce({
+			domains: [makeDomain("coding", join(root, "coding"))],
+			projectConfig: { skillPaths: [extras] },
+		});
+
+		await createSkillsProgram().parseAsync(["--json", "list"], {
+			from: "user",
+		});
+
+		const items = JSON.parse(output.stdout()) as SkillListItem[];
+		const names = items.map((i) => i.name).sort();
+		expect(names).toEqual(["custom", "tdd"]);
+		expect(items.find((i) => i.name === "custom")?.domain).toBe("project");
+		expect(items.find((i) => i.name === "tdd")?.domain).toBe("coding");
 	});
 });
