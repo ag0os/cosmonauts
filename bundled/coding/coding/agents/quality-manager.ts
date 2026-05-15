@@ -5,6 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"Runs quality gates and clean-context review, then orchestrates fixes until changes are merge-ready.",
 	capabilities: [
+		"healthy-codebase-harness",
 		"engineering-discipline",
 		"coding-readwrite",
 		"tasks",

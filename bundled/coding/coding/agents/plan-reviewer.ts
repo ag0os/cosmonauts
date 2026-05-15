@@ -5,6 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"Adversarial review of implementation plans. Verifies claims against the codebase and produces structured findings for the planner to address.",
 	capabilities: [
+		"healthy-codebase-harness",
 		"engineering-discipline",
 		"architectural-design",
 		"coding-readonly",

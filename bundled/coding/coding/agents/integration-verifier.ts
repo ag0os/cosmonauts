@@ -4,7 +4,7 @@ const definition: AgentDefinition = {
 	id: "integration-verifier",
 	description:
 		"Verifies completed work against the active plan's declared integration contracts and writes a structured integration report.",
-	capabilities: ["coding-readonly"],
+	capabilities: ["healthy-codebase-harness", "coding-readonly"],
 	model: "openai-codex/gpt-5.5",
 	tools: "coding",
 	extensions: ["tasks", "plans"],

@@ -4,7 +4,11 @@ const definition: AgentDefinition = {
 	id: "performance-reviewer",
 	description:
 		"Performance-lens review of code diffs — algorithmic hotspots, N+1 queries, missing indexes, unbounded memory, chatty I/O, scaling cliffs, missing instrumentation. Part of the quality-manager's review panel. Does not redesign or implement fixes.",
-	capabilities: ["engineering-discipline", "coding-readonly"],
+	capabilities: [
+		"healthy-codebase-harness",
+		"engineering-discipline",
+		"coding-readonly",
+	],
 	model: "openai-codex/gpt-5.5",
 	tools: "coding",
 	extensions: [],

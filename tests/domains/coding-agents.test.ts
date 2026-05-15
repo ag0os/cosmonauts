@@ -117,6 +117,12 @@ describe("coding domain agent invariants", () => {
 		}
 	});
 
+	it("shares the healthy codebase harness across all coding agents", () => {
+		for (const def of allDefinitions) {
+			expect(def.capabilities).toContain("healthy-codebase-harness");
+		}
+	});
+
 	it("has non-empty ID and description for all definitions", () => {
 		for (const def of allDefinitions) {
 			expect(def.id.length).toBeGreaterThan(0);

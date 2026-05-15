@@ -4,7 +4,7 @@ const definition: AgentDefinition = {
 	id: "coordinator",
 	description:
 		"Delegates tasks to workers, monitors progress, and verifies completion. Loops until all tasks are done.",
-	capabilities: ["tasks", "spawning"],
+	capabilities: ["healthy-codebase-harness", "tasks", "spawning"],
 	model: "openai-codex/gpt-5.5",
 	tools: "none",
 	extensions: ["tasks", "orchestration", "observability"],

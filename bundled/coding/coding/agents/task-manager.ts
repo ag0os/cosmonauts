@@ -4,7 +4,7 @@ const definition: AgentDefinition = {
 	id: "task-manager",
 	description:
 		"Breaks approved plans into atomic, implementable tasks with acceptance criteria.",
-	capabilities: ["coding-readonly", "tasks"],
+	capabilities: ["healthy-codebase-harness", "coding-readonly", "tasks"],
 	model: "openai-codex/gpt-5.5",
 	tools: "readonly",
 	extensions: ["tasks", "plans"],

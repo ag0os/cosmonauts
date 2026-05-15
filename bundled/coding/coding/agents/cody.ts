@@ -5,6 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"Coding-domain interactive partner. Pairs on code, brainstorms architecture, or conducts drive runs — and delegates to coding specialists when the work warrants it.",
 	capabilities: [
+		"healthy-codebase-harness",
 		"engineering-discipline",
 		"coding-readwrite",
 		"git-workflow",

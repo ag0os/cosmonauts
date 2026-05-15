@@ -34,11 +34,37 @@ updatedAt: 2026-02-25T00:00:00.000Z
 
 **Design** — The technical approach. Key data structures, flows, boundaries, and trade-offs. This is the core of most plans.
 
+**Behaviors** — Observable behavior specs written as context, action, and expected result. Include normal, edge, and failure cases. These are the tests workers implement against and the source for task acceptance criteria.
+
+**Files to Change** — Test/source pairs and ownership notes. Name real files or clearly marked new files. For parallel work, state shared contracts and file ownership explicitly enough that independent workers do not invent incompatible interfaces.
+
+**Quality Contract** — Plan-specific criteria the quality-manager can verify after implementation. Use 3-8 criteria tied to the risks and design decisions in this plan. At least a third should cover failure, edge, or integration cases. Prefer verifier-runnable commands where possible.
+
 **Implementation Order** — Numbered list of work stages with dependencies between them. Each stage becomes one or more tasks.
 
 **Risks** — What could go wrong. Scope creep, technical gotchas, dependencies on external factors.
 
-Not every plan needs all sections. A small plan may only need Overview and Design. A large plan benefits from all five.
+Not every plan needs all sections. A small plan may only need Overview, Design, Behaviors, and Implementation Order. Any plan handed to task-manager should make the behavior and test story explicit, even when the behavior is "unchanged; characterization and existing tests stay green."
+
+## Plan Readiness Check
+
+Before calling `plan_create` or `plan_edit`, run a short visible readiness check. This is conversational output only; do not persist it as a plan section.
+
+- **Specificity** — The plan names concrete modules, responsibilities, contracts, and files or clearly marked new files.
+- **Constraints** — Scope boundaries, dependency direction, existing-feature interactions, and non-goals are stated.
+- **Context** — Claims about existing code are backed by files you actually read; no guessed names, paths, signatures, or helpers.
+- **Success criteria** — The `## Behaviors` section is testable, the test boundary is stated, and the `## Quality Contract` follows the rule above.
+
+If a required item is unchecked in interactive mode, pause for correction or an explicit waiver before writing the plan. In autonomous runs, proceed narrowly and record the gap in Assumptions, Open Questions, Risks, or the Decision Log rather than silently defaulting.
+
+## Healthy Structure Requirements
+
+A plan is not ready if it only describes syntax changes. It must preserve both parts of the coding harness:
+
+- **Program structure** — module boundaries, dependency direction, state ownership, public contracts, and integration seams.
+- **Procedure structure** — behavior specs, test-first implementation order, review points, and verification criteria.
+
+For every important behavior, name where it will live in the architecture and how it will be tested. For every important boundary or shared contract, name which behavior it protects. If those two sides do not connect, revise the design before task creation.
 
 ## When to Use spec.md
 

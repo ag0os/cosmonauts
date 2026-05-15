@@ -4,7 +4,12 @@ const definition: AgentDefinition = {
 	id: "refactorer",
 	description:
 		"Dedicated refactoring agent: restructures existing code without changing observable behavior. All tests must stay green throughout.",
-	capabilities: ["engineering-discipline", "coding-readwrite", "tasks"],
+	capabilities: [
+		"healthy-codebase-harness",
+		"engineering-discipline",
+		"coding-readwrite",
+		"tasks",
+	],
 	model: "openai-codex/gpt-5.5",
 	tools: "coding",
 	extensions: ["tasks"],
