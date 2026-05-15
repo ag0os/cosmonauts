@@ -202,6 +202,34 @@ describe("discoverSkills", () => {
 		expect(custom?.domain).toBe("project");
 	});
 
+	test("keeps the first occurrence when merged rootDirs override a skill name", async () => {
+		// Simulate a merged domain with two rootDirs — highest-precedence first
+		// (per mergeDomains' [incoming, ...existing] ordering). Both ship a
+		// skill named "tdd"; only the higher-precedence one should be visible.
+		const overrideRoot = join(tmp.path, "override");
+		const baseRoot = join(tmp.path, "base");
+		await mkdir(join(overrideRoot, "skills", "tdd"), { recursive: true });
+		await writeFile(
+			join(overrideRoot, "skills", "tdd", "SKILL.md"),
+			"---\nname: tdd\ndescription: Override TDD\n---\n",
+		);
+		await mkdir(join(baseRoot, "skills", "tdd"), { recursive: true });
+		await writeFile(
+			join(baseRoot, "skills", "tdd", "SKILL.md"),
+			"---\nname: tdd\ndescription: Base TDD\n---\n",
+		);
+
+		const domain: LoadedDomain = {
+			...makeDomain("coding", overrideRoot),
+			rootDirs: [overrideRoot, baseRoot],
+		};
+
+		const skills = await discoverSkills([domain]);
+		expect(skills).toHaveLength(1);
+		expect(skills[0]?.description).toBe("Override TDD");
+		expect(skills[0]?.dirPath).toBe(join(overrideRoot, "skills", "tdd"));
+	});
+
 	test("ignores extra skill paths that do not exist", async () => {
 		const domainDir = join(tmp.path, "shared");
 		await writeSkill(join(domainDir, "skills"), "plan", "Plan skill");

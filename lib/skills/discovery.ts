@@ -43,6 +43,13 @@ export interface ExtraSkillSource {
  * Extra sources are scanned with the same rules — they exist so callers
  * can include user-configured `skillPaths` (or other ad-hoc dirs) without
  * synthesising fake domains.
+ *
+ * When the same skill name appears more than once — typical when a merged
+ * domain has higher- and lower-precedence rootDirs, or when multiple package
+ * sources expose the same skill — the first occurrence wins. That matches
+ * the in-domain precedence convention (`mergeDomains` puts higher-precedence
+ * rootDirs first) and the iteration order callers pass, so consumers see
+ * exactly the skill that Pi would resolve at runtime.
  */
 export async function discoverSkills(
 	domains: readonly LoadedDomain[],
@@ -64,7 +71,14 @@ export async function discoverSkills(
 		await scanForSkills(extra.skillsDir, extra.domain, skills);
 	}
 
-	return skills;
+	const seen = new Set<string>();
+	const unique: DiscoveredSkill[] = [];
+	for (const skill of skills) {
+		if (seen.has(skill.name)) continue;
+		seen.add(skill.name);
+		unique.push(skill);
+	}
+	return unique;
 }
 
 /**
