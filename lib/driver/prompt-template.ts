@@ -3,21 +3,33 @@ import { dirname, join } from "node:path";
 import type { TaskManager } from "../tasks/task-manager.ts";
 import { serializeTask } from "../tasks/task-serializer.ts";
 import type { Task } from "../tasks/task-types.ts";
-import type { PromptLayers } from "./types.ts";
+import type { BackendName, DriverRunSpec, PromptLayers } from "./types.ts";
 
 interface PromptLayersWithWorkdir extends PromptLayers {
 	workdir?: string;
 }
 
+export interface DriveRunExpectations {
+	backendName: BackendName;
+	commitPolicy: DriverRunSpec["commitPolicy"];
+	preflightCommands: readonly string[];
+	postflightCommands: readonly string[];
+	projectRoot: string;
+	workdir: string;
+	branch?: string;
+}
+
 interface RenderPromptOptions {
 	/** Extra text appended before the mandatory report contract (e.g. a driver retry note). */
 	appendedNote?: string;
+	/** Run-level instructions generated from the concrete DriverRunSpec. */
+	runExpectations?: DriveRunExpectations;
 }
 
 const DRIVE_REPORT_CONTRACT = [
 	"## Drive Report Contract",
 	"",
-	"Drive parses your final response to decide whether this task is complete. Make the result machine-readable.",
+	"Drive parses your final response to decide whether the current work item is complete. Make the result machine-readable.",
 	"",
 	"Preferred report:",
 	"",
@@ -25,7 +37,7 @@ const DRIVE_REPORT_CONTRACT = [
 	"{",
 	'  "outcome": "success",',
 	'  "files": [{ "path": "path/to/file.ts", "change": "modified" }],',
-	'  "verification": [{ "command": "bun run test", "status": "pass" }],',
+	'  "verification": [{ "command": "configured verification command", "status": "pass" }],',
 	'  "notes": "Optional concise context."',
 	"}",
 	"```",
@@ -36,8 +48,8 @@ const DRIVE_REPORT_CONTRACT = [
 	"",
 	"Hard rules:",
 	"- The very last non-empty line of your response MUST be exactly one of: `outcome: success`, `outcome: failure`, `outcome: partial`, or `outcome: completed`.",
-	"- Use `outcome: success` only when every acceptance criterion is met and required verification passed, or you explicitly explain why verification was not run.",
-	"- Use `outcome: failure` for unmet acceptance criteria, blockers, or required gates that failed and could not be fixed in this task.",
+	"- Use `outcome: success` only when every acceptance criterion or explicit requested outcome is met and required verification passed, or you explicitly explain why verification was not run.",
+	"- Use `outcome: failure` for unmet acceptance criteria, blockers, or required gates that failed and could not be fixed in this work item.",
 	"- Use `outcome: partial` only when the report clearly identifies completed work and remaining work.",
 	"- Do not invent other values such as `outcome: blocked`; Drive will not recognize them.",
 	"- Do not write anything after the final outcome line.",
@@ -54,6 +66,10 @@ export async function renderPromptForTask(
 
 	if (promptLayers.preconditionPath) {
 		sections.push(await readFile(promptLayers.preconditionPath, "utf-8"));
+	}
+
+	if (options.runExpectations) {
+		sections.push(renderRunExpectations(options.runExpectations));
 	}
 
 	const task = await taskManager.getTask(taskId);
@@ -90,6 +106,47 @@ export async function renderPromptForTask(
 
 function renderTaskSection(task: Task): string {
 	return `# Task\n\n${serializeTask(task)}`;
+}
+
+function renderRunExpectations(expectations: DriveRunExpectations): string {
+	return [
+		"## Drive Run Expectations",
+		"",
+		"These instructions are generated from this run's configuration. Treat them as authoritative over generic envelope defaults.",
+		"",
+		`- Backend: ${expectations.backendName}`,
+		`- Project root: ${expectations.projectRoot}`,
+		`- Run workdir: ${expectations.workdir}`,
+		`- Expected branch: ${expectations.branch ?? "not specified"}`,
+		`- Commit policy: ${expectations.commitPolicy}`,
+		`  - ${commitPolicyInstruction(expectations.commitPolicy)}`,
+		"- Required preflight commands:",
+		renderCommandList(expectations.preflightCommands),
+		"- Required postflight commands:",
+		renderCommandList(expectations.postflightCommands),
+		"- Use this repository's package manager, scripts, and conventions. Do not substitute another package manager when commands are provided here.",
+		"- Report success only for the requested work item: acceptance criteria or explicitly requested outcomes must be satisfied, and required verification must pass or be explicitly explained if it was not run.",
+		"- Optional extra checks are useful evidence. If an extra check fails for an environment limitation, report the command and output in notes; do not convert that alone into `outcome: failure` when required checks and requested outcomes are satisfied.",
+	].join("\n");
+}
+
+function commitPolicyInstruction(
+	policy: DriverRunSpec["commitPolicy"],
+): string {
+	if (policy === "driver-commits") {
+		return "Do not run git add or git commit; leave committable changes for Drive to stage and commit after verification.";
+	}
+	if (policy === "backend-commits") {
+		return "Create a git commit for your completed implementation changes before the final report.";
+	}
+	return "Do not create commits; leave completed changes in the worktree.";
+}
+
+function renderCommandList(commands: readonly string[]): string {
+	if (commands.length === 0) {
+		return "  - None configured.";
+	}
+	return commands.map((command) => `  - \`${command}\``).join("\n");
 }
 
 function joinPromptSections(sections: string[]): string {

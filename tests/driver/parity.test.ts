@@ -275,11 +275,14 @@ if [ "\${1:-}" = "--version" ]; then
   printf 'fake-codex 1.0.0\\n'
   exit 0
 fi
-if [ "\${1:-}" != "exec" ] || [ "\${2:-}" != "--full-auto" ]; then
+if [ "\${1:-}" = "--yolo" ] && [ "\${2:-}" = "exec" ]; then
+  shift 2
+elif [ "\${1:-}" = "exec" ] && [ "\${2:-}" = "--full-auto" ]; then
+  shift 2
+else
   echo "unsupported fake-codex invocation: $*" >&2
   exit 64
 fi
-shift 2
 summary_path=""
 while [ "$#" -gt 0 ]; do
   case "$1" in

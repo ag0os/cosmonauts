@@ -142,7 +142,18 @@ async function runTaskAttempt(
 		taskId,
 		promptLayers,
 		ctx.taskManager,
-		{ appendedNote },
+		{
+			appendedNote,
+			runExpectations: {
+				backendName: spec.backendName,
+				commitPolicy: spec.commitPolicy,
+				preflightCommands: spec.preflightCommands,
+				postflightCommands: spec.postflightCommands,
+				projectRoot: spec.projectRoot,
+				workdir: spec.workdir,
+				branch: spec.branch,
+			},
+		},
 	);
 
 	await emit(ctx, spec, {

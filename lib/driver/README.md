@@ -7,12 +7,15 @@ result.
 
 ## Prompt Rendering
 
-For each task, Drive writes `prompts/<task-id>.md` in the run workdir by
-concatenating the configured envelope, optional precondition, serialized task,
-optional per-task override, optional retry note, and a mandatory Drive report
-contract. The report contract is injected by code after custom envelope content
-so backends always receive the machine-readable outcome instructions Drive needs
-for parsing.
+For each queued work item (currently a task ID), Drive writes
+`prompts/<task-id>.md` in the run workdir by concatenating the configured
+envelope, optional precondition, generated run expectations, serialized
+work-item context, optional per-item override, optional retry note, and a
+mandatory Drive report contract. The generated expectations describe the
+backend, branch, commit policy, preflight commands, and postflight commands for
+the concrete run. The report contract is injected by code after custom envelope
+content so backends always receive the machine-readable outcome instructions
+Drive needs for parsing.
 
 ## Backend Contract
 
@@ -128,8 +131,8 @@ export function createExampleBackend(binary = "example-agent"): Backend {
 
 Supported external backends:
 
-- `codex`: runs `codex exec --full-auto` against the rendered prompt by default. This keeps Codex's command sandbox enabled, which can block dev-server sockets (`listen EPERM`) and cold build-time network fetches (for example `next/font`). To opt into Codex YOLO mode for externally sandboxed runs, set `COSMONAUTS_DRIVER_CODEX_YOLO=1`; the adapter then runs `codex --yolo exec ...` without `--full-auto`. For lower-level pass-through, set `COSMONAUTS_DRIVER_CODEX_ARGS` for top-level Codex args before `exec` (for example `--yolo`) and `COSMONAUTS_DRIVER_CODEX_EXEC_ARGS` for exec args after `exec` (for example `["--sandbox","danger-full-access"]`).
-- `claude-cli`: runs `claude -p` against the rendered prompt by default. It does not bypass permissions unless requested. Set `COSMONAUTS_DRIVER_CLAUDE_SKIP_PERMISSIONS=1` to run `claude --dangerously-skip-permissions -p`, or use `COSMONAUTS_DRIVER_CLAUDE_ARGS` for lower-level pass-through before `-p` (for example `--permission-mode bypassPermissions`).
+- `codex`: runs `codex --yolo exec ...` against the rendered prompt by default. This gives Drive's external backend the network, socket, and filesystem freedom implementation work usually needs. Set `COSMONAUTS_DRIVER_CODEX_YOLO=0` to opt back into sandboxed `codex exec --full-auto`. For lower-level pass-through, set `COSMONAUTS_DRIVER_CODEX_ARGS` for top-level Codex args before `exec` (for example `--profile drive`) and `COSMONAUTS_DRIVER_CODEX_EXEC_ARGS` for exec args after `exec` (for example `["--sandbox","danger-full-access"]`).
+- `claude-cli`: runs `claude --dangerously-skip-permissions -p` against the rendered prompt by default. Set `COSMONAUTS_DRIVER_CLAUDE_SKIP_PERMISSIONS=0` to opt out, or use `COSMONAUTS_DRIVER_CLAUDE_ARGS` for lower-level pass-through before `-p` (for example `--permission-mode bypassPermissions`).
 
 Backend arg env vars accept either shell-style words (`--profile drive --flag`) or a JSON string array (`["--profile","drive"]`). JSON arrays are safer for arguments that include spaces or shell-sensitive characters.
 

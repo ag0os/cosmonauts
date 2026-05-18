@@ -199,7 +199,7 @@ describe("cosmonauts drive run", () => {
 		});
 		expect(backendMocks.resolveBackend).toHaveBeenCalledWith("claude-cli", {
 			claudeBinary: undefined,
-			claudeArgs: undefined,
+			claudeArgs: ["--dangerously-skip-permissions"],
 		});
 	});
 
@@ -264,7 +264,7 @@ describe("cosmonauts drive run", () => {
 		expect(driverMocks.startDetached).toHaveBeenCalledTimes(1);
 		expect(backendMocks.resolveBackend).toHaveBeenCalledWith("claude-cli", {
 			claudeBinary: undefined,
-			claudeArgs: undefined,
+			claudeArgs: ["--dangerously-skip-permissions"],
 		});
 	});
 

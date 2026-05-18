@@ -156,8 +156,8 @@ describe("codex backend", () => {
 		expect(Array.isArray(argv)).toBe(true);
 		expect(argv).toEqual([
 			"codex-dev",
+			"--yolo",
 			"exec",
-			"--full-auto",
 			"-o",
 			join(workdir, "TASK-267-summary.txt"),
 			"-",
@@ -199,13 +199,19 @@ describe("codex backend", () => {
 		]);
 	});
 
-	test("reads codex args from environment", () => {
+	test("reads codex args from environment with YOLO enabled by default", () => {
+		expect(readCodexArgsFromEnv({})).toEqual(["--yolo"]);
 		expect(
 			readCodexArgsFromEnv({
-				COSMONAUTS_DRIVER_CODEX_YOLO: "1",
 				COSMONAUTS_DRIVER_CODEX_ARGS: "--profile drive",
 			}),
 		).toEqual(["--yolo", "--profile", "drive"]);
+		expect(
+			readCodexArgsFromEnv({
+				COSMONAUTS_DRIVER_CODEX_YOLO: "0",
+				COSMONAUTS_DRIVER_CODEX_ARGS: "--profile drive",
+			}),
+		).toEqual(["--profile", "drive"]);
 		expect(
 			readCodexExecArgsFromEnv({
 				COSMONAUTS_DRIVER_CODEX_EXEC_ARGS: '["--sandbox","danger-full-access"]',

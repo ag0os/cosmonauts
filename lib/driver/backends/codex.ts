@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { BunRuntime } from "./bun-runtime.ts";
-import { isEnabledEnv, parseBackendArgsEnv } from "./env-args.ts";
+import { isDisabledEnv, parseBackendArgsEnv } from "./env-args.ts";
 import type { Backend } from "./types.ts";
 
 interface CodexBackendDeps {
@@ -13,12 +13,14 @@ interface CodexBackendDeps {
 export const CODEX_ARGS_ENV = "COSMONAUTS_DRIVER_CODEX_ARGS";
 export const CODEX_EXEC_ARGS_ENV = "COSMONAUTS_DRIVER_CODEX_EXEC_ARGS";
 export const CODEX_YOLO_ENV = "COSMONAUTS_DRIVER_CODEX_YOLO";
+const CODEX_YOLO_ARG = "--yolo";
 
 declare const Bun: BunRuntime;
 
 export function createCodexBackend(deps: CodexBackendDeps = {}): Backend {
 	const binary = deps.binary ?? "codex";
-	const globalArgs = [...(deps.globalArgs ?? [])];
+	const globalArgs =
+		deps.globalArgs === undefined ? [CODEX_YOLO_ARG] : [...deps.globalArgs];
 	const extraArgs = [...(deps.extraArgs ?? [])];
 
 	return {
@@ -94,18 +96,23 @@ function fullAutoArgs(
 function hasYoloMode(args: readonly string[]): boolean {
 	return args.some(
 		(arg) =>
-			arg === "--yolo" || arg === "--dangerously-bypass-approvals-and-sandbox",
+			arg === CODEX_YOLO_ARG ||
+			arg === "--dangerously-bypass-approvals-and-sandbox",
 	);
+}
+
+function withDefaultYolo(args: readonly string[]): string[] {
+	return hasYoloMode(args) ? [...args] : [CODEX_YOLO_ARG, ...args];
 }
 
 export function readCodexArgsFromEnv(
 	env: NodeJS.ProcessEnv = process.env,
 ): string[] | undefined {
 	const args = parseBackendArgsEnv(env[CODEX_ARGS_ENV], CODEX_ARGS_ENV) ?? [];
-	if (isEnabledEnv(env[CODEX_YOLO_ENV])) {
-		args.unshift("--yolo");
+	if (isDisabledEnv(env[CODEX_YOLO_ENV])) {
+		return args;
 	}
-	return args.length > 0 ? args : undefined;
+	return withDefaultYolo(args);
 }
 
 export function readCodexExecArgsFromEnv(

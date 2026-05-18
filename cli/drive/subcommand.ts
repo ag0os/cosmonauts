@@ -152,7 +152,7 @@ function configureRunCommand(command: Command): void {
 		.option("--task-ids <id1,id2,...>", "Comma-separated task IDs to run")
 		.option(
 			"--backend <backend>",
-			"Driver backend: codex, claude-cli, or cosmonauts-subagent (codex --full-auto sandboxes sockets/network by default)",
+			"Driver backend: codex, claude-cli, or cosmonauts-subagent (codex/claude detached backends default to permission-bypassing modes)",
 			parseBackendName,
 		)
 		.option("--mode <mode>", "Driver mode: inline or detached", parseDriverMode)

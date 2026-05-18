@@ -1,7 +1,10 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { renderPromptForTask } from "../../lib/driver/prompt-template.ts";
+import {
+	type DriveRunExpectations,
+	renderPromptForTask,
+} from "../../lib/driver/prompt-template.ts";
 import type { PromptLayers } from "../../lib/driver/types.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { useTempDir } from "../helpers/fs.ts";
@@ -50,6 +53,43 @@ describe("prompt-template renderPromptForTask", () => {
 		expect(rendered.indexOf("Precondition context")).toBeLessThan(
 			rendered.indexOf("# Task"),
 		);
+	});
+
+	test("renders run expectations before the task body", async () => {
+		const { taskManager, taskId, envelopePath, preconditionPath, workdir } =
+			await setupPromptTest({
+				envelope: "Envelope instructions",
+				precondition: "Precondition context",
+			});
+
+		const layers = {
+			envelopePath,
+			preconditionPath,
+			workdir,
+		} satisfies TestPromptLayers;
+		const runExpectations = {
+			backendName: "codex",
+			commitPolicy: "driver-commits",
+			preflightCommands: ["pnpm install --frozen-lockfile"],
+			postflightCommands: ["pnpm test", "pnpm exec tsc --noEmit"],
+			projectRoot: join(tmp.path, "project"),
+			workdir,
+			branch: "feature/run",
+		} satisfies DriveRunExpectations;
+		const promptPath = await renderPromptForTask(taskId, layers, taskManager, {
+			runExpectations,
+		});
+
+		const rendered = await readFile(promptPath, "utf-8");
+		const expectationsIndex = rendered.indexOf("## Drive Run Expectations");
+		expect(expectationsIndex).toBeGreaterThan(
+			rendered.indexOf("Precondition context"),
+		);
+		expect(expectationsIndex).toBeLessThan(rendered.indexOf("# Task"));
+		expect(rendered).toContain("Commit policy: driver-commits");
+		expect(rendered).toContain("`pnpm test`");
+		expect(rendered).toContain("`pnpm exec tsc --noEmit`");
+		expect(rendered).toContain("Expected branch: feature/run");
 	});
 
 	test("appends a matching per-task override when it exists", async () => {

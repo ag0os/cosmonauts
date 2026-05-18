@@ -132,7 +132,7 @@ describe("claude-cli backend", () => {
 		});
 	});
 
-	test("run spawns claude -p with argv array, prompt file stdin, pipes, cwd, and signal", async () => {
+	test("run spawns claude with skip-permissions print mode, prompt file stdin, pipes, cwd, and signal", async () => {
 		const workdir = await createTempDir();
 		const promptPath = await createPromptFile("Task prompt");
 		const child = createChild({
@@ -155,7 +155,11 @@ describe("claude-cli backend", () => {
 		expect(bun.spawn).toHaveBeenCalledTimes(1);
 		const { argv, options } = firstSpawnCall(bun);
 		expect(Array.isArray(argv)).toBe(true);
-		expect(argv).toEqual(["claude-dev", "-p"]);
+		expect(argv).toEqual([
+			"claude-dev",
+			"--dangerously-skip-permissions",
+			"-p",
+		]);
 		expect(options).toEqual({
 			cwd: "/tmp/claude-cli-backend-project-root",
 			stdin: bun.file.mock.results[0]?.value,
@@ -187,10 +191,12 @@ describe("claude-cli backend", () => {
 		]);
 	});
 
-	test("reads Claude permission args from environment", () => {
+	test("reads Claude permission args from environment with skip-permissions enabled by default", () => {
+		expect(readClaudeArgsFromEnv({})).toEqual([
+			"--dangerously-skip-permissions",
+		]);
 		expect(
 			readClaudeArgsFromEnv({
-				COSMONAUTS_DRIVER_CLAUDE_SKIP_PERMISSIONS: "1",
 				COSMONAUTS_DRIVER_CLAUDE_ARGS: "--permission-mode bypassPermissions",
 			}),
 		).toEqual([
@@ -198,6 +204,12 @@ describe("claude-cli backend", () => {
 			"--permission-mode",
 			"bypassPermissions",
 		]);
+		expect(
+			readClaudeArgsFromEnv({
+				COSMONAUTS_DRIVER_CLAUDE_SKIP_PERMISSIONS: "false",
+				COSMONAUTS_DRIVER_CLAUDE_ARGS: "--permission-mode default",
+			}),
+		).toEqual(["--permission-mode", "default"]);
 	});
 
 	test("run returns nonzero child exit codes without throwing", async () => {
