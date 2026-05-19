@@ -7,7 +7,7 @@ description: Pi framework API reference — sessions, tools, extensions, events,
 
 Pi (`@earendil-works/pi-coding-agent`) is the agent runtime. This skill covers its programmatic API surface for building on top of Pi.
 
-> **Note:** The reference below tracks `@earendil-works/pi-coding-agent` v0.74.0 (the version this repo pins). Use it as a baseline and query current Pi docs with Context7 when in doubt.
+> **Note:** The reference below tracks `@earendil-works/pi-coding-agent` v0.75.3 (the version this repo pins). Use it as a baseline and query current Pi docs with Context7 when in doubt.
 
 ## Source Of Truth
 
