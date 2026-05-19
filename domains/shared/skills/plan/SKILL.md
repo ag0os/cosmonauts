@@ -51,11 +51,15 @@ Not every plan needs all sections. A small plan may only need Overview, Design, 
 Before calling `plan_create` or `plan_edit`, run a short visible readiness check. This is conversational output only; do not persist it as a plan section.
 
 - **Specificity** — The plan names concrete modules, responsibilities, contracts, and files or clearly marked new files.
-- **Constraints** — Scope boundaries, dependency direction, existing-feature interactions, and non-goals are stated.
+- **Constraints** — Scope boundaries, dependency direction, existing-feature interactions, and non-goals are stated. Invariants the implementation must preserve (public contracts, neighbouring features, in-flight migrations) are explicit, not assumed.
 - **Context** — Claims about existing code are backed by files you actually read; no guessed names, paths, signatures, or helpers.
 - **Success criteria** — The `## Behaviors` section is testable, the test boundary is stated, and the `## Quality Contract` follows the rule above.
+- **Iteration policy** — `## Implementation Order` describes how stages sequence *and* how to react if a stage surfaces unexpected complexity (split it, escalate, or revise the design). A plan that assumes a clean linear walk should say so as an assumption.
+- **Pivot / abort conditions** — `## Risks` names the conditions under which we'd revise scope or abandon the plan rather than press on. "External API doesn't ship" or "perf budget can't be hit on the chosen approach" become triggers, not vague worries.
 
 If a required item is unchecked in interactive mode, pause for correction or an explicit waiver before writing the plan. In autonomous runs, proceed narrowly and record the gap in Assumptions, Open Questions, Risks, or the Decision Log rather than silently defaulting.
+
+**One-sentence test:** if you collapse the plan into *"`<end state>` verified by `<evidence>` while preserving `<constraints>`; proceed via `<implementation order>`; if `<conditions>` hold, pivot or abort"*, the resulting sentence should read as a coherent contract. If a clause is hollow, that's the section to revisit.
 
 ## Healthy Structure Requirements
 

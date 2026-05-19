@@ -98,6 +98,15 @@ ACs describe **outcomes, not implementation steps**. They tell the worker what m
 - Each AC should be independently verifiable — you can check it without checking others.
 - ACs should be specific enough to test but general enough to allow implementation freedom.
 
+### Beyond outcomes: verification and constraints
+
+Outcome ACs (above) name what must be true when the work is done. A complete AC set also makes two more things explicit:
+
+- **Verification surface** — how the worker (or Drive's postflight commands) proves each AC is met. Often implicit ("tests cover X" → the tests *are* the surface). When the proof isn't obvious, name it: "the existing OAuth flow still completes end-to-end", "no source files outside the in-scope directories are modified", "the project's configured verification commands pass". Refer to project gates by intent ("the test step", "the static-analysis step the project uses") rather than by command, and only when you're confident the project actually has one — different languages and frameworks expose different verification surfaces.
+- **Constraints to preserve** — invariants the work must NOT break. Public contracts, neighbouring features, in-flight migrations. Phrase as positive ACs ("Existing `/api/users` responses keep the same shape") rather than negative warnings. If a constraint is only known to the human (not verifiable from the codebase), call it out in the Description, not as an AC.
+
+**One-sentence test:** if you can rephrase the task as *"`<desired end state>` verified by `<specific evidence>` while preserving `<constraints>`"* and the sentence reads as a contract a worker could deliver against, the AC set is well-shaped. If a clause feels hollow, that's the gap to fill before handing the task off.
+
 ## Labels
 
 Labels route tasks to the right specialist and indicate which domain skills are relevant.
@@ -200,7 +209,7 @@ verify it against the signing key, and attach the decoded payload to the request
 
 ## Common Problems
 
-- **Task is blocked with no resolution path.** Add a note explaining the blocker, then either: (a) create a new task to resolve the blocker, or (b) restructure the blocked task to work around it. Don't leave tasks in `Blocked` indefinitely.
+- **Task is blocked with no resolution path.** Add a note explaining the blocker as a triad — *what was tried, what's still unknown, what would unblock it* — then either: (a) create a new task to resolve the blocker, or (b) restructure the blocked task to work around it. Don't leave tasks in `Blocked` indefinitely without that triad, and don't replace it with vague "stuck" notes.
 - **Acceptance criteria turn out to be wrong mid-implementation.** Update the ACs via `task_edit` before continuing. ACs are a contract — changing them is fine, but working against outdated ACs wastes effort.
 - **Task is too large once implementation starts.** Split it. Create new tasks for the overflow, link them to the same plan, and update dependencies. Finish the original task with its reduced scope.
 - **Dependency chain is too deep.** If a task is blocked by 3+ levels of dependencies, look for opportunities to parallelize. Often tasks that seem sequential can be split into independent parts.
