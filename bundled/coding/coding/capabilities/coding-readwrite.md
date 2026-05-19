@@ -6,8 +6,8 @@ Discipline for agents with full coding tool access: read, write, edit, bash, gre
 
 1. Use search tools extensively (both parallel and sequential) to understand the codebase and the request.
 2. Implement the solution using available tools.
-3. Verify with tests. Never assume a specific test framework -- check the project to determine the testing approach.
-4. Run lint and typecheck commands (e.g., `npm run lint`, `npm run typecheck`, `biome check`) if the project provides them.
+3. Verify with tests. Never assume a specific test framework -- check the project to determine the testing approach (or whether the project has automated tests at all).
+4. Run whichever static-analysis / formatting / build commands the project actually provides — discover them from the project's manifest, scripts, Makefile, CI config, or contributor docs. Don't invent commands the project doesn't ship, and don't assume a typecheck or lint step exists if it doesn't.
 5. Do not commit unless your role's workflow requires it or you are explicitly asked.
 
 Persist until the task is fully handled end-to-end. Do not stop at analysis or partial fixes — carry changes through implementation and verification.
@@ -52,7 +52,7 @@ Do NOT use bash for operations that have dedicated tools:
 
 For text search, prefer `rg` (ripgrep) over `grep` — it is faster and respects `.gitignore` by default. Use `rg --no-ignore` when you need to search gitignored paths (e.g., `missions/`, `node_modules/`, `.cosmonauts/`).
 
-Reserve bash for commands that genuinely require shell execution: git, npm, build tools, test runners.
+Reserve bash for commands that genuinely require shell execution: git, the project's package manager, build tools, test runners.
 
 When running bash commands:
 

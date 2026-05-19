@@ -16,7 +16,7 @@ Use Drive for approved plan-linked task batches where a mechanical loop should r
 - Backends execute prompts; the driver owns task status transitions, event logging, configured postflight verification, and commits when `commitPolicy` is `driver-commits`.
 - Drive injects run expectations into each prompt: backend, branch, commit policy, preflight commands, and postflight commands. These expectations are the authority for what the backend should verify and whether it should commit.
 - Drive appends a mandatory report contract after the envelope/task content so custom envelopes cannot omit the machine-readable `outcome:` marker instructions.
-- Treat backend success reports as evidence, not proof. Prefer postflight checks such as tests, lint, and typecheck. If a backend emits only prose, Drive can infer success from passing postflight checks; without those objective checks it blocks as `report outcome unknown`.
+- Treat backend success reports as evidence, not proof. Prefer postflight checks — whatever verification commands the project actually has (tests, static checks, build, dead-code gates — only those that exist for this stack). If a backend emits only prose, Drive can infer success from passing postflight checks; without those objective checks it blocks as `report outcome unknown`.
 - Default per-task timeout is 1800000ms (30 minutes). For unusually long cold E2E suites, slow external backends, or tasks expected to iterate on multiple failures, set `taskTimeoutMs` / `--task-timeout` explicitly higher (for example 3600000ms / 60 minutes).
 - Use `driver-commits` unless there is a concrete reason for `backend-commits` or `no-commit`.
 
@@ -43,7 +43,7 @@ If the tools are unavailable, say so and fall back to `chain_run` or direct `spa
 ## Agent Tool Workflow
 
 1. Confirm `planSlug`, ready task IDs, target branch, backend, mode, and commit policy.
-2. Identify the repository's actual verification commands (package manager, lint, tests, typecheck, build/e2e split). Pass those exact commands as `postflightCommands`; do not rely on the default envelope to guess them.
+2. Identify the repository's actual verification commands — whichever the project uses (e.g. tests, static-analysis, build/e2e split, format/lint check). Pass those exact commands as `postflightCommands`; do not rely on the default envelope to guess them, and don't add commands for steps the project doesn't have.
 3. Omit `envelopePath` to use the bundled codebase-agnostic coding envelope shipped with Cosmonauts. Pass `envelopePath` (relative to the project root, or absolute) only when the project ships its own envelope — never pass the `bundled/...` path yourself; that directory lives inside the Cosmonauts package, not the project.
 4. Start the run with `run_driver`.
 5. Monitor with `watch_events({ planSlug, runId, since })`; preserve the returned cursor.
@@ -60,8 +60,8 @@ run_driver({
   branch: "feature/auth",
   commitPolicy: "driver-commits",
   // envelopePath omitted — uses the bundled codebase-agnostic envelope
-  // Replace these with the target repo's actual commands.
-  postflightCommands: ["bun run test", "bun run lint", "bun run typecheck"],
+  // Replace these placeholders with the target repo's actual verification commands.
+  postflightCommands: ["<test command>", "<static-analysis command>"],
   partialMode: "stop",
   taskTimeoutMs: 3600000 // 60 minutes for unusually long E2E or slow external backends
 })

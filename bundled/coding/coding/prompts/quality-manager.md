@@ -80,10 +80,10 @@ Spawn `verifier` with claims derived from the project's quality gates. The verif
 
 Construct verifier claims from project artifacts — discover quality commands from project instructions, CI configuration, native task runners, and project entrypoints. Do not assume a specific stack.
 
-Categories to cover as claims:
-- "Formatting/style checks pass" (e.g., `bun run lint`, `cargo fmt --check`, `ruff check`)
-- "Type/schema validation passes" (e.g., `bun run typecheck`, `cargo check`, `mypy`)
-- "Test suite passes" (e.g., `bun run test`, `cargo test`, `pytest`)
+Categories to cover as claims (include only the ones the project actually has — skip a category entirely if the project doesn't do it; for example, omit type validation for an untyped language, or formatting checks if the project doesn't enforce style):
+- "Formatting/style checks pass" (e.g., `bun run lint`, `cargo fmt --check`, `ruff check`, `gofmt -l`)
+- "Type/schema validation passes" (e.g., `bun run typecheck`, `cargo check`, `mypy`, `tsc --noEmit`)
+- "Test suite passes" (e.g., `bun run test`, `cargo test`, `pytest`, `go test ./...`)
 - "Codebase audit passes" — for each tool listed under **Detected Analysis Tools** in your system prompt, include one audit claim for **feature-branch reviews only** (skip for working-tree reviews on the base branch). Append `--base <merge-base-sha>` to the tool's listed audit command, substituting the actual SHA resolved in step 2 (not the shell variable name). The verifier runs in a separate session with no shell state, so the command must have the value baked in. The verifier should include the full audit output in the claim evidence so the caller can route remediations correctly.
 
 In addition, append one claim per entry in `verifier_criteria` (from step 2.5). For each, the claim label is the criterion text and the command to run is the criterion's `command` field. Pass the `id` (e.g., `QC-003`) alongside each claim so failures can be attributed back to the contract.

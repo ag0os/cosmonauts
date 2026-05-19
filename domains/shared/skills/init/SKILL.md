@@ -24,15 +24,15 @@ Proceed in this order.
 Inspect the repository before proposing changes.
 
 Read the strongest project signals first:
-- `package.json`, `tsconfig.json`, lockfiles, language manifests
-- build/test/lint config files
+- whichever language/dependency manifest the project uses (e.g. `package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `Gemfile`, `pom.xml`, `mix.exs`) plus lockfiles
+- config files for whatever verification/build tooling exists in this repo
 - existing AI guidance files such as `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, `.cursor/rules`, or similar
 - key top-level directories and representative entry points
 
 Identify:
 - language and framework
-- package manager and runtime
-- test, lint, and typecheck commands
+- package manager and runtime (if any)
+- the verification commands the project actually has — only those that exist (some projects don't lint, don't typecheck, or don't have a separate build)
 - major app/library boundaries
 - any existing agent instructions worth preserving
 
@@ -60,7 +60,7 @@ Content rules:
 
 Recommended structure:
 1. project overview
-2. key commands (build, test, lint, typecheck, run)
+2. key commands the project actually uses (only document the steps that exist — e.g. run, test, build, format/lint check, etc.)
 3. architecture or directory map
 4. coding conventions and workflow expectations
 5. any project-specific warnings or rules

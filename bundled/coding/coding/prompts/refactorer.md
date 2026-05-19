@@ -22,7 +22,7 @@ Call `task_edit` to set status to "In Progress" and assignee to "refactorer". Th
 
 Load the `refactoring` skill first — it has the techniques and discipline you work by. Then check the available skills index for skills that match this project and task:
 
-- **Identify the project stack.** Glance at `package.json`, config files, or file extensions. Note the language, framework, and test runner.
+- **Identify the project stack.** Glance at whichever dependency/build manifest the project uses (`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `Gemfile`, etc.), other config files, and file extensions. Note the language, framework, and test runner (or that there isn't one).
 - **Load matching skills.** If the project uses TypeScript, load the typescript skill — it has type patterns relevant to refactoring. If it uses React, load the react skill. Only load what matches.
 - **Load the `tdd` skill** if you will be adding characterization tests — it covers test-first discipline and what makes a good test.
 

@@ -11,7 +11,7 @@ The source of truth is an `AgentPackageDefinition` JSON file. A definition decla
 There are two export invocation forms:
 
 ```bash
-cosmonauts export --definition packages/cosmo-planner/package.json --out bin/cosmo-planner
+cosmonauts export --definition packages/cosmo-planner/agent-package.json --out bin/cosmo-planner
 cosmonauts export coding/explorer --target claude-cli --out bin/explorer-claude
 ```
 
@@ -106,7 +106,7 @@ cosmonauts --print "create tasks and go"     # Non-interactive (fire-and-forget)
 cosmonauts --workflow plan-and-build "auth"   # Named workflow
 cosmonauts --chain "planner -> coordinator"  # Raw chain DSL
 cosmonauts drive                              # Driver task runs
-cosmonauts export --definition package.json --out bin/agent
+cosmonauts export --definition agent-package.json --out bin/agent
 cosmonauts export coding/explorer --target claude-cli --out bin/explorer
 ```
 

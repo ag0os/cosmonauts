@@ -12,9 +12,9 @@ Read the parent prompt. Extract every distinct claim to validate. A claim is a t
 
 - "All tests pass"
 - "The FooBar interface exists in lib/types.ts and has methods X, Y, Z"
-- "The lint check passes with zero errors"
+- "The project's configured static-analysis step passes with zero errors"
 - "Module A does not import from module B"
-- "The typecheck passes"
+- "The project's type-checker (if any) passes with zero errors"
 - "Function X handles null input without throwing"
 
 ### 2. Load relevant skills

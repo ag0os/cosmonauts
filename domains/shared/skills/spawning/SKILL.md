@@ -90,7 +90,7 @@ spawn_agent(role: "worker", prompt: "Implement COSMO-007. [full task content inc
 
 spawn_agent(role: "explorer", prompt: "Explore the authentication module in lib/auth/. Map the module structure, key types, and how sessions are managed.")
 
-spawn_agent(role: "verifier", prompt: "Validate these claims:\n1. All tests pass (bun run test)\n2. Lint passes (bun run lint)\n3. Typecheck passes (bun run typecheck)")
+spawn_agent(role: "verifier", prompt: "Validate these claims using this repo's actual verification commands:\n1. The test suite passes\n2. The configured static-analysis step (if any) passes\n3. <any other gate the project uses>")
 
 spawn_agent(role: "quality-manager", prompt: "Run lint/format checks, review against main, and orchestrate fixes until merge-ready.")
 ```
