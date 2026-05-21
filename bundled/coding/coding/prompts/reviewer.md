@@ -42,6 +42,7 @@ Every finding description must:
 
 1. Read project instructions (`AGENTS.md`, `CLAUDE.md`, `README`, contributor docs). Project-specific guidelines override the general criteria above.
 2. Load relevant skills for the repository stack so your review reflects project-specific language/framework conventions.
+3. Artifact scope is conditional: when the spawn prompt includes plan context, `Quality Contract Criteria`, or explicit artifact-conformance claims, load `/skill:work-artifacts` and only the needed references for behavior marker, Architecture Context, and gate-ladder claims. Do not invent artifact-conformance requirements for ordinary code review scopes. Only report artifact findings for claims or plan contracts that the review prompt actually placed in scope.
 
 ### 2. Determine review scope
 
@@ -142,3 +143,4 @@ Return a concise summary stating:
 4. **Keep findings actionable.** Every finding must include enough detail for a fixer or worker to act.
 5. **Only flag bugs introduced in the diff.** Pre-existing issues are out of scope.
 6. **Require proof, not speculation.** If you cannot identify the concrete code path affected, it is not a finding.
+7. **Do not broaden artifact scope.** Plan artifacts, architecture context, behavior markers, and gate ladders matter only when the parent prompt explicitly asks you to review them or supplies a plan contract to check.

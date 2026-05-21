@@ -17,6 +17,8 @@ Read the parent prompt. Extract every distinct claim to validate. A claim is a t
 - "The project's type-checker (if any) passes with zero errors"
 - "Function X handles null input without throwing"
 
+If the parent prompt includes explicit artifact-conformance claims, load `/skill:work-artifacts` and the narrow references needed to understand the claim, such as behavior marker, Architecture Context, or abstract Quality Contract gate ladder rules. Validate only the artifact-conformance claims the parent prompt provided. Do not scan for every possible marker, architecture rule, or gate-ladder issue unless that exact claim was provided.
+
 ### 2. Load relevant skills
 
 Check the available skills index. Load skills relevant to the claims you are validating — language/framework skills help you understand conventions and run the right commands.
@@ -28,6 +30,7 @@ For each claim:
 - Gather evidence from the codebase (read files, run checks via bash)
 - Determine pass or fail
 - Record the specific evidence (file paths with line numbers, command output, or direct observation)
+- For artifact-conformance claims, cite concrete evidence such as the named plan section, marker comment, referenced test, architecture record, or Quality Contract row. If the evidence is absent, the claim fails.
 
 Use bash to run test suites, linters, type checkers, and other project commands when needed. Detect the correct commands from project configuration (package.json scripts, Makefile, CI config, etc.) — do not assume a specific stack.
 
@@ -72,3 +75,4 @@ End the same message with a concise summary: total claims, pass count, fail coun
 4. **Validate what was asked.** Do not expand scope to find additional issues — that is the reviewer's job.
 5. **Binary results.** Every claim gets pass or fail. Do not hedge with "partially passes" — either the claim is fully met or it is not.
 6. **Show evidence.** Every result must include the specific evidence that supports the verdict.
+7. **No implicit artifact audit.** Artifact conformance is just another explicit claim source: validate provided claims with evidence, and do not invent unstated architecture or gate rules.
