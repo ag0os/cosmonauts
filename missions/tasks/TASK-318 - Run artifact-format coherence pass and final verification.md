@@ -1,7 +1,7 @@
 ---
 id: TASK-318
 title: Run artifact-format coherence pass and final verification
-status: To Do
+status: Done
 priority: medium
 labels:
   - testing
@@ -17,7 +17,7 @@ dependencies:
   - TASK-316
   - TASK-317
 createdAt: '2026-05-21T21:31:58.277Z'
-updatedAt: '2026-05-21T21:31:58.277Z'
+updatedAt: '2026-05-21T22:22:09.034Z'
 ---
 
 ## Description

@@ -3,7 +3,7 @@ id: TASK-316
 title: >-
   Update reviewer, verifier, and integration-verifier artifact-consumption
   prompts
-status: To Do
+status: Done
 priority: medium
 labels:
   - testing
@@ -13,7 +13,7 @@ dependencies:
   - TASK-305
   - TASK-306
 createdAt: '2026-05-21T21:31:44.271Z'
-updatedAt: '2026-05-21T21:31:44.271Z'
+updatedAt: '2026-05-21T22:16:56.662Z'
 ---
 
 ## Description

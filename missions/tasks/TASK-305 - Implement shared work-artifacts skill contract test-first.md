@@ -1,7 +1,7 @@
 ---
 id: TASK-305
 title: Implement shared work-artifacts skill contract test-first
-status: To Do
+status: Done
 priority: high
 labels:
   - testing
@@ -9,7 +9,7 @@ labels:
   - 'plan:artifact-format-redesign'
 dependencies: []
 createdAt: '2026-05-21T21:30:37.531Z'
-updatedAt: '2026-05-21T21:30:37.531Z'
+updatedAt: '2026-05-21T21:52:24.625Z'
 ---
 
 ## Description
@@ -24,3 +24,7 @@ Create the canonical shared `work-artifacts` skill and its reference set using t
 - [ ] #5 Quality Contract guidance is an ordered abstract gate ladder with binding states, tiers, protocol placeholder, explicit degradation for unbound bindable gates, and no concrete tool names or command columns.
 - [ ] #6 Examples/templates exist for direct fix, tactical bugfix, planned feature/refactor, and architecture-linked multi-plan workflows, and approved visual primitives allow Mermaid/tables/lists/checklists while forbidding ASCII-art diagrams.
 <!-- AC:END -->
+
+## Implementation Notes
+
+Implemented by Drive run run-017e5ba0-745f-443e-836b-0e906421a5f7; backend reported success and postflight passed (`bun run test`, `bun run lint`, `bun run typecheck`). Driver commit failed on ignored `.cosmonauts/driver-commit.lock`; source/test changes were committed manually as bd5fb87, and the driver lock exclusion was fixed in d4418c9 before resuming remaining tasks.

@@ -1,7 +1,7 @@
 ---
 id: TASK-308
 title: Refactor plan skill as lifecycle dispatcher for behavior-first plans
-status: To Do
+status: Done
 priority: high
 labels:
   - testing
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-305
 createdAt: '2026-05-21T21:30:57.022Z'
-updatedAt: '2026-05-21T21:30:57.022Z'
+updatedAt: '2026-05-21T21:58:07.120Z'
 ---
 
 ## Description

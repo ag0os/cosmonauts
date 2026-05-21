@@ -1,7 +1,7 @@
 ---
 id: TASK-306
 title: Add architecture skill dispatcher and architecture contract tests
-status: To Do
+status: Done
 priority: high
 labels:
   - testing
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-305
 createdAt: '2026-05-21T21:30:44.486Z'
-updatedAt: '2026-05-21T21:30:44.486Z'
+updatedAt: '2026-05-21T21:55:43.737Z'
 ---
 
 ## Description

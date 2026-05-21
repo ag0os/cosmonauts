@@ -1,7 +1,7 @@
 ---
 id: TASK-315
 title: Update plan-reviewer prompt for canonical artifact contract review
-status: To Do
+status: Done
 priority: medium
 labels:
   - testing
@@ -12,7 +12,7 @@ dependencies:
   - TASK-307
   - TASK-308
 createdAt: '2026-05-21T21:31:37.559Z'
-updatedAt: '2026-05-21T21:31:37.559Z'
+updatedAt: '2026-05-21T22:14:51.425Z'
 ---
 
 ## Description

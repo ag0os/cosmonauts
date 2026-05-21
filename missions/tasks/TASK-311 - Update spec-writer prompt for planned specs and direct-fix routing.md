@@ -1,7 +1,7 @@
 ---
 id: TASK-311
 title: Update spec-writer prompt for planned specs and direct-fix routing
-status: To Do
+status: Done
 priority: medium
 labels:
   - testing
@@ -11,7 +11,7 @@ dependencies:
   - TASK-305
   - TASK-307
 createdAt: '2026-05-21T21:31:16.270Z'
-updatedAt: '2026-05-21T21:31:16.270Z'
+updatedAt: '2026-05-21T22:07:45.989Z'
 ---
 
 ## Description

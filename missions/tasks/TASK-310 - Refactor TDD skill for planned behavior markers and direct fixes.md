@@ -1,7 +1,7 @@
 ---
 id: TASK-310
 title: Refactor TDD skill for planned behavior markers and direct fixes
-status: To Do
+status: Done
 priority: high
 labels:
   - testing
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-305
 createdAt: '2026-05-21T21:31:10.908Z'
-updatedAt: '2026-05-21T21:31:10.908Z'
+updatedAt: '2026-05-21T22:03:56.539Z'
 ---
 
 ## Description

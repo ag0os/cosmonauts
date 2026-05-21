@@ -1,7 +1,7 @@
 ---
 id: TASK-317
 title: Update quality-manager prompt for abstract gate ladder reporting
-status: To Do
+status: Done
 priority: medium
 labels:
   - testing
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-305
 createdAt: '2026-05-21T21:31:51.133Z'
-updatedAt: '2026-05-21T21:31:51.133Z'
+updatedAt: '2026-05-21T22:18:42.328Z'
 ---
 
 ## Description

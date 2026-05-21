@@ -1,7 +1,7 @@
 ---
 id: TASK-309
 title: Refactor task skill to preserve planned behavior ownership
-status: To Do
+status: Done
 priority: high
 labels:
   - testing
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-305
 createdAt: '2026-05-21T21:31:03.749Z'
-updatedAt: '2026-05-21T21:31:03.749Z'
+updatedAt: '2026-05-21T22:01:18.842Z'
 ---
 
 ## Description

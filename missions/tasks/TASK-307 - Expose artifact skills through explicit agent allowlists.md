@@ -1,7 +1,7 @@
 ---
 id: TASK-307
 title: Expose artifact skills through explicit agent allowlists
-status: To Do
+status: Done
 priority: high
 labels:
   - testing
@@ -11,7 +11,7 @@ dependencies:
   - TASK-305
   - TASK-306
 createdAt: '2026-05-21T21:30:49.673Z'
-updatedAt: '2026-05-21T21:30:49.673Z'
+updatedAt: '2026-05-21T22:05:42.850Z'
 ---
 
 ## Description

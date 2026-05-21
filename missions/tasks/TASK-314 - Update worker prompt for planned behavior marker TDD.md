@@ -1,7 +1,7 @@
 ---
 id: TASK-314
 title: Update worker prompt for planned behavior marker TDD
-status: To Do
+status: Done
 priority: medium
 labels:
   - testing
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-310
 createdAt: '2026-05-21T21:31:31.715Z'
-updatedAt: '2026-05-21T21:31:31.715Z'
+updatedAt: '2026-05-21T22:12:49.012Z'
 ---
 
 ## Description
