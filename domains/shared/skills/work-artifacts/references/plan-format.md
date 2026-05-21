@@ -7,7 +7,7 @@
 Use this order for a full planned feature/refactor plan:
 
 - `## Overview`
-- `## Architecture Context` when the plan depends on a durable architecture record
+- `## Architecture Context` when the plan depends on a durable architecture record; name the relevant decisions and boundary rules
 - `## Behaviors`
 - `## Design`
 - `## Files to Change`
