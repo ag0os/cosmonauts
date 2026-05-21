@@ -42,10 +42,10 @@ An unbound bindable gate records an explicit degraded state. It is never a silen
 
 Use this abstract table shape:
 
-| Order | Gate kind | Tier | Binding state | Threshold | Degradation / notes |
-|---:|---|---|---|---|---|
-| 1 | `correctness` | universal | bound | project-native correctness evidence passes | hard fail |
-| 2 | `artifact-conformance` | universal | bound | planned behaviors name tests and markers | hard fail once enforcement exists |
-| 3 | `mutation` | bindable | unbound | project-specific | unbound, not enforced; reviewer judgment required |
+| Order | Gate kind | Tier | Binding state | Threshold | Protocol | Degradation / notes |
+|---:|---|---|---|---|---|---|
+| 1 | `correctness` | universal | bound | project-native correctness evidence passes | project-discovered | hard fail |
+| 2 | `artifact-conformance` | universal | bound | planned behaviors name tests and markers | artifact evidence | hard fail once enforcement exists |
+| 3 | `mutation` | bindable | unbound | project-specific | pending | unbound, not enforced; reviewer judgment required |
 
 Generic artifact references must not include columns for concrete tool names or runnable commands. Those bindings belong to project configuration and follow-up enforcement work.

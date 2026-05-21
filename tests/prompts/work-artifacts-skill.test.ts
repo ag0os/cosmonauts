@@ -101,6 +101,7 @@ describe("work-artifacts skill", () => {
 		expect(gateContracts).toContain("`universal`");
 		expect(gateContracts).toContain("`bindable`");
 		expect(gateContracts).toContain("protocol slot");
+		expect(gateContracts).toContain("| Protocol |");
 		expect(gateContracts).toContain("unbound bindable gate");
 		expect(gateContracts).toContain("explicit degraded state");
 		expect(gateContracts).toContain("never a silent pass");
@@ -126,6 +127,13 @@ describe("work-artifacts skill", () => {
 		expect(examples).toContain("## Tactical Bugfix Template");
 		expect(examples).toContain("## Planned Feature / Refactor Template");
 		expect(examples).toContain("## Architecture-Linked Multi-Plan Template");
+		expect(examples).toContain("## Users");
+		expect(examples).toContain("## Files to Change");
+		expect(examples).toContain(
+			"| Order | Gate kind | Tier | Binding state | Threshold | Protocol | Degradation / notes |",
+		);
+		expect(examples).toContain("## Current Architecture");
+		expect(examples).toContain("## Plan Links");
 	});
 
 	// @cosmo-behavior plan:artifact-format-redesign#B-020
