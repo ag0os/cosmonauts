@@ -126,6 +126,13 @@ describe("run-one-task", () => {
 
 	test("driver commit exclusion uses repo lock, excludes missions and memory, and emits sha", async () => {
 		const fixture = await setupGitFixture();
+		await writeFile(
+			join(fixture.projectRoot, ".gitignore"),
+			".cosmonauts/*.lock\n",
+			"utf-8",
+		);
+		await git(fixture.projectRoot, ["add", ".gitignore"]);
+		await git(fixture.projectRoot, ["commit", "-m", "ignore lock files"]);
 		await installCommitHook(fixture.projectRoot);
 		const events: DriverEvent[] = [];
 		const backend = createBackend(async () => {

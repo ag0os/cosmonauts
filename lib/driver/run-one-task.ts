@@ -67,7 +67,7 @@ const EXCLUDED_COMMIT_PATHS = [
 	":(exclude)missions/**",
 	":(exclude)memory",
 	":(exclude)memory/**",
-	":(exclude).cosmonauts/driver-commit.lock",
+	":(exclude).cosmonauts/*.lock",
 ];
 
 export async function runOneTask(
