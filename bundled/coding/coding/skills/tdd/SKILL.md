@@ -7,7 +7,17 @@ description: Test-Driven Development discipline. The Red-Green-Refactor loop one
 
 TDD is a development discipline you apply while implementing a task: write a failing test before writing production code, write the minimum code to pass, then refactor — and repeat for the next behavior. Every line of production code exists because a test demanded it.
 
-This is a thinking loop one agent runs, not a handoff between agents. If you're implementing a behavior-driven plan, the plan's behaviors are your test targets — work through them one at a time, running the full loop for each before moving on. Don't batch the tests at the end; the per-behavior cycle is what keeps the implementation honest.
+This is a thinking loop one agent runs, not a handoff between agents. This skill is a procedural dispatcher for implementation testing: it owns red/green/refactor and characterization-test discipline, and it routes artifact marker details to `/skill:work-artifacts` instead of restating the artifact format.
+
+## Planned Behaviors And Direct Fixes
+
+If you're implementing a planned behavior-first plan, the plan's `B-###` behaviors are your test targets. Work through them one at a time, running the full loop for each before moving on. Don't batch the tests at the end; the per-behavior cycle is what keeps the implementation honest.
+
+- When implementing a planned `B-###` behavior, load `/skill:work-artifacts` and `references/behavior-spine.md` for the canonical behavior-spine and marker rules. Do not duplicate the full behavior-spine format here.
+- The RED test for a planned behavior must carry the matching `@cosmo-behavior plan:<slug>#B-###` marker near the executable test as a plain comment.
+- A behavior's durable home is the test layer. The active plan is a working view; archiving a plan does not remove that regression protection because the marker stays coupled to the executable test.
+- Direct fixes still require a regression test first. The regression test is the behavior record; direct fixes do not require behavior IDs or markers unless the fix belongs to a plan.
+- If optional TDD references are introduced later, keep them directly linked from this dispatcher and avoid deep reference chains.
 
 ## The Red-Green-Refactor Loop
 
