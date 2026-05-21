@@ -7,6 +7,32 @@ const PROMPT_PATH = new URL(
 );
 
 describe("spec-writer prompt", () => {
+	// @cosmo-behavior plan:artifact-format-redesign#B-003
+	it("requires AC identifiers for planned specs without forcing specs for direct fixes", async () => {
+		const content = await readFile(PROMPT_PATH, "utf-8");
+
+		expect(content).toContain("load `/skill:work-artifacts`");
+		expect(content).toContain("`references/workflow-tiers.md`");
+		expect(content).toContain("`references/spec-format.md`");
+		expect(content).toContain(
+			"Load `/skill:plan` only for plan lifecycle/tooling concerns",
+		);
+		expect(content).toContain("Direct fixes route away from spec-writing");
+		expect(content).toContain("specs are optional for bugfix/patch work");
+		expect(content).toContain(
+			"planned feature/refactor work requires `Acceptance Criteria` entries with stable `AC-###` IDs",
+		);
+		expect(content).toContain("`Purpose`");
+		expect(content).toContain("`Users`");
+		expect(content).toContain("`User Experience`");
+		expect(content).toContain("`Acceptance Criteria`");
+		expect(content).toContain("`Scope`");
+		expect(content).toContain("`Assumptions`");
+		expect(content).toContain("`Open Questions`");
+		expect(content).not.toMatch(/\b(vitest|biome|fallow|tsc)\b/i);
+		expect(content).not.toMatch(/enforcement[- ]engine/i);
+	});
+
 	it("captures the WHAT/WHY and stays out of architecture", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
