@@ -26,7 +26,7 @@ Check the available skills index and load skills that match this project and tas
 
 - **Identify the project stack.** Glance at whichever dependency/build manifest the project uses (`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`, `Gemfile`, etc.), other config files, and file extensions. Note the language, framework, and test runner (or that there isn't one).
 - **Load matching skills.** If the project uses TypeScript, load the typescript skill. If it uses React, load the react skill. Only load what matches — do not load every available skill.
-- **Load task-specific skills.** If the task involves testing, load the tdd skill. If labels or the description reference specific skills, prioritize those.
+- **Load task-specific skills.** When a task owns planned `B-###` behaviors, load `/skill:tdd` before writing tests or implementation. If the task involves testing, load the tdd skill. If labels or the description reference specific skills, prioritize those.
 
 Skills contain framework conventions, API patterns, and domain knowledge that prevent mistakes. Load them before writing any code.
 
@@ -50,7 +50,9 @@ Write the code to satisfy the acceptance criteria:
 - **Do the minimum necessary.** Implement what the ACs require. Do not refactor unrelated code, add features not in the ACs, or "improve" things outside your scope.
 - **No over-engineering.** Do not add abstractions, generics, or flexibility that the ACs do not call for.
 
-**Work test-first when the plan has behaviors.** If the plan has a `## Behaviors` section (it usually will), those behaviors are your test targets — work through them one at a time. For each behavior: write the failing test first, run it to confirm it fails for the right reason (not a typo or missing import), write the minimal code to make it pass, then refactor before moving to the next behavior. Don't batch the tests at the end; the red-green-refactor loop per behavior is what keeps the implementation honest.
+**Work test-first when the plan has behaviors.** If the plan has a `## Behaviors` section (it usually will), those behaviors are your test targets — work through them one at a time. For each behavior: write the failing test first, run it to confirm it fails for the right reason (not a typo or missing import), write the minimal code to make it pass, then refactor before moving to the next behavior. Don't batch the tests at the end; the red-green-refactor loop per behavior is what keeps the implementation honest. Planned behavior RED tests must carry the matching `@cosmo-behavior plan:<slug>#B-###` marker near the executable test.
+
+**Direct fixes stay lighter.** Direct fixes still require a regression test first, but no marker ceremony unless the fix is tied to a plan.
 
 ### 6. Check ACs Incrementally
 
