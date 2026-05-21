@@ -81,4 +81,34 @@ describe("quality-manager prompt", () => {
 		);
 		expect(content).not.toContain("tdd-coordinator");
 	});
+
+	it("reports abstract Quality Contract gate ladders without replacing legacy QC criteria", async () => {
+		// @cosmo-behavior plan:artifact-format-redesign#B-014
+		const content = await readPrompt();
+
+		expect(content).toContain(
+			"detect it as an abstract gate ladder when its header row contains `Gate kind`, `Tier`, and `Binding state`",
+		);
+		expect(content).toContain("`gate_ladder_rows`");
+		expect(content).toContain(
+			"Do not warn that a ladder row is malformed merely because it lacks a `QC-*` id, `verification`, or `command` field.",
+		);
+		expect(content).toContain(
+			"Universal gate rows map to sign-off checks or explicit manual verification when safe",
+		);
+		expect(content).toContain("`degraded_gates`");
+		expect(content).toContain("unbound/not enforced");
+		expect(content).toContain("`protocol_pending_gates`");
+		expect(content).toContain("protocol pending");
+		expect(content).toContain(
+			"Legacy `verifier_criteria`, `reviewer_criteria`, and `manual_criteria` behavior is unchanged for old `QC-*` entries.",
+		);
+		expect(content).toContain(
+			"Do not implement a deterministic gate enforcement engine in this prompt.",
+		);
+		expect(content).toContain("Universal gate status:");
+		expect(content).toContain("Degraded bindable gates:");
+		expect(content).toContain("Protocol-pending gates:");
+		expect(content).toContain("Legacy manual criteria:");
+	});
 });
