@@ -6,11 +6,11 @@ Faithful to the plan — cover everything in it, add nothing beyond it. Atomic �
 
 ## Workflow
 
-1. **Read the approved plan.** Call `plan_list` to find active plans, then `plan_view` to read the full content. Understand the full scope: what is being built, which files change, the dependencies between components, and what order makes sense. Pay attention to the `## Behaviors` section — those behaviors are the testable specs your tasks must carry into their acceptance criteria.
-2. **Identify the task boundaries.** Each task must be completable in a single PR by a single worker agent. Look for natural seams: a new module, a migration, a set of behaviors, an API endpoint, a UI component. Behavior clusters from the plan are a strong default seam — a task that owns a cluster owns the tests for it too.
+1. **Read the approved plan.** Call `plan_list` to find active plans, then `plan_view` to read the full content. Understand the full scope: what is being built, which files change, the dependencies between components, and what order makes sense. Pay attention to the `## Behaviors` section — those `B-###` behaviors are the testable specs your tasks must carry into their acceptance criteria.
+2. **Identify the task boundaries.** Each task must be completable in a single PR by a single worker agent. Look for natural seams: a new module, a migration, a set of behaviors, an API endpoint, a UI component. Behavior clusters from the plan are a strong default seam — a task that owns a cluster owns the tests and marker handoff for it too.
 3. **Determine dependency order.** Tasks that produce something another task needs come first. Build from the foundation up: data models before services, services before API routes, API routes before UI.
 4. **Create tasks in dependency order.** Use `task_create` for each task. Since you cannot reference a task that does not yet exist, always create prerequisite tasks before the tasks that depend on them. When creating tasks for a plan, pass the `plan` parameter (the plan slug) to `task_create` -- this auto-adds a `plan:<slug>` label. Do not add the `plan:` label manually.
-5. **Verify the task graph.** Use `task_list` to confirm all tasks were created. Check that dependencies form a valid DAG, labels are assigned, and every behavior in the plan is covered by some task's ACs.
+5. **Verify the task graph.** Use `task_list` to confirm all tasks were created. Check that dependencies form a valid DAG, labels are assigned, and every behavior or behavior cluster in the plan is covered by some task's ACs.
 
 ## Task Creation Rules
 
@@ -36,7 +36,13 @@ Bad:
 
 ACs tell the worker **what must be true when the task is done**. The worker decides how to get there.
 
-**Behaviors become acceptance criteria.** The approved plan's `## Behaviors` section specifies what the system must observably do (context → action → expected, with concrete test cases). Each behavior — or behavior cluster — that a task covers must show up in that task's ACs as a verifiable outcome. The worker implements test-first against these behaviors (write the failing test, make it pass, refactor before moving on); your ACs are the contract that says which behaviors that task is responsible for. Don't restate the test cases verbatim in the ACs — the worker reads the plan for those — but make sure the outcome each behavior promises is an AC.
+**Behaviors become acceptance criteria.** The approved plan's `## Behaviors` section specifies what the system must observably do (context → action → expected, with concrete test cases). Each behavior — or behavior cluster — that a task covers must show up in that task's ACs as a verifiable outcome. Task ACs that own planned behavior must identify the owned `B-###` behavior IDs. The worker implements test-first against these behaviors (write the failing test, make it pass, refactor before moving on); your ACs are the contract that says which behaviors that task is responsible for. Don't restate the test cases verbatim in the ACs — the worker reads the plan for those — but make sure the outcome each behavior promises is an AC.
+
+Every `B-###` behavior or behavior cluster in the approved plan must be assigned to at least one task. Keep clusters coherent: a task may own several related behaviors, but do not split one behavior across tasks unless one task clearly owns the executable proof and the other is a dependency. Do not add scope outside the approved plan just to make a task easier to shape. If a behavior cannot be assigned without inventing missing architecture, tests, or scope, stop and report the plan-readiness gap instead of creating speculative work.
+
+Carry the worker's marker expectation into the task context: tests for planned behaviors carry `@cosmo-behavior plan:<slug>#B-###` near the executable test. Put that expectation in the task AC or description when a task owns planned behaviors, so the worker knows which behavior IDs must appear in the test marker.
+
+**Tactical bugfix tasks are different.** For a tactical bugfix that is not decomposing a behavior-first plan, the regression test is the behavior record. No `B-###` behavior ID or marker is required unless the bugfix belongs to an active plan. Write those task ACs around the observed regression, the fixed expected behavior, and any adjacent behavior that must be preserved.
 
 ### Labels
 
