@@ -2,13 +2,17 @@
  * Tests for shared skill filter helper.
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
 	ResourceDiagnostic,
 	Skill,
 } from "@earendil-works/pi-coding-agent";
 import { describe, expect, test } from "vitest";
+import planReviewerDefinition from "../../bundled/coding/coding/agents/plan-reviewer.ts";
+import plannerDefinition from "../../bundled/coding/coding/agents/planner.ts";
+import specWriterDefinition from "../../bundled/coding/coding/agents/spec-writer.ts";
+import taskManagerDefinition from "../../bundled/coding/coding/agents/task-manager.ts";
 import {
 	buildSkillsOverride,
 	resolveEffectiveProjectSkills,
@@ -146,5 +150,28 @@ describe("buildSkillsOverride", () => {
 		);
 		const result = fn(makeBase(["ts", "react"]));
 		expect(result.skills.map((s) => s.name)).toEqual(["ts"]);
+	});
+});
+
+describe("artifact skill allowlists", () => {
+	// @cosmo-behavior plan:artifact-format-redesign#B-013
+	test("artifact-producing and plan-review agents can load shared artifact guidance", async () => {
+		expect(plannerDefinition.skills).toEqual(
+			expect.arrayContaining(["work-artifacts", "architecture"]),
+		);
+		expect(specWriterDefinition.skills).toEqual(
+			expect.arrayContaining(["work-artifacts"]),
+		);
+		expect(taskManagerDefinition.skills).toEqual(
+			expect.arrayContaining(["task", "work-artifacts"]),
+		);
+		expect(planReviewerDefinition.skills).toEqual(
+			expect.arrayContaining(["work-artifacts", "architecture"]),
+		);
+
+		const agentFiles = await readdir(
+			join(process.cwd(), "bundled", "coding", "coding", "agents"),
+		);
+		expect(agentFiles).not.toContain("architect.ts");
 	});
 });

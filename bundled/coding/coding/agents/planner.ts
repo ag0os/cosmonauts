@@ -17,6 +17,8 @@ const definition: AgentDefinition = {
 	skills: [
 		"pi",
 		"plan",
+		"work-artifacts",
+		"architecture",
 		"engineering-principles",
 		"design-dialogue",
 		"tdd",

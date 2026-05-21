@@ -8,7 +8,7 @@ const definition: AgentDefinition = {
 	model: "anthropic/claude-opus-4-7",
 	tools: "readonly",
 	extensions: ["plans"],
-	skills: ["pi", "plan"],
+	skills: ["pi", "plan", "work-artifacts"],
 	subagents: [],
 	projectContext: true,
 	session: "ephemeral",
