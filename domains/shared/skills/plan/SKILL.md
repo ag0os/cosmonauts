@@ -1,196 +1,120 @@
 ---
 name: plan
-description: How to create well-structured implementation plans using the plan system. Use when designing a feature, scoping work into tasks, or creating a plan from a roadmap item. Do NOT load for task implementation or code changes — use the task skill instead.
+description: Manages Cosmonauts implementation-plan lifecycle, readiness, plan tools, and plan-to-task handoff. Use when designing a feature, scoping work into tasks, or creating a plan from a roadmap item. Do NOT load for task implementation or code changes; use the task skill instead.
 ---
 
 # Plans
 
-Plans are the bridge between a design idea and a set of implementable tasks. A plan scopes the work, describes the approach, and produces tasks that agents can pick up and implement.
+Plans are the lifecycle bridge between a scoped idea and implementable tasks. This skill owns when to create or update a plan, the readiness check before using plan tools, and the handoff from plan stages to tasks.
 
-## Plan File Format
+For artifact shape, behavior spine, and gate rules, load `/skill:work-artifacts` and the directly linked reference needed for the question. Do not duplicate those canonical rules here.
 
-A plan lives at `missions/plans/<slug>/plan.md`. It is a markdown file with YAML frontmatter.
+## Artifact Routing
 
-### Frontmatter
+`/skill:plan` coordinates exactly these three work artifacts:
 
-```yaml
----
-title: Human-readable plan title
-status: active          # active | completed
-createdAt: 2026-02-25T00:00:00.000Z
-updatedAt: 2026-02-25T00:00:00.000Z
----
-```
+| Artifact | Lifecycle role | Canonical format |
+|---|---|---|
+| `spec.md` | Product intent: what is being built, who benefits, why it matters, and acceptance criteria. | `/skill:work-artifacts` `references/spec-format.md` |
+| `plan.md` | Behavior-first implementation plan: behavior placement, derived design, file ownership, risks, quality gates, and implementation order. | `/skill:work-artifacts` `references/plan-format.md` and `references/behavior-spine.md` |
+| `architecture.md` | Active architecture record for durable boundaries, dependency rules, or multi-plan decisions. | `/skill:work-artifacts` `references/architecture-format.md` |
 
-- `title` — descriptive name for the plan.
-- `status` — `active` while work is in progress, `completed` when all tasks are done.
-- `createdAt` / `updatedAt` — ISO 8601 timestamps. Set `createdAt` once, update `updatedAt` on changes.
+Do not move architecture-of-record content into `plan.md`. If durable architecture context matters, create or link the active architecture record and keep only the relevant `Architecture Context` in the plan.
 
-### Body Sections
+## Lifecycle
 
-**Overview** — What this plan accomplishes and why. 2-3 sentences. Every plan needs this.
+1. Decide the workflow tier. If the work might be a direct fix, tactical bugfix, planned feature/refactor, or architecture-linked change, load `/skill:work-artifacts` `references/workflow-tiers.md`.
+2. Pick a slug: lowercase, hyphen-separated, short, and concept-based, for example `auth-system` or `agent-packaging`.
+3. Gather codebase context before drafting. Claims about existing files, helpers, commands, and boundaries must come from files actually read.
+4. Draft or revise the needed artifact content. For planned feature/refactor work, load `/skill:work-artifacts` `references/spec-format.md`, `references/plan-format.md`, `references/behavior-spine.md`, and `references/gate-contracts.md`.
+5. Run the readiness check below before `plan_create` or `plan_edit`.
+6. Create or update the plan with the plan tools.
+7. Hand the approved implementation order to `/skill:task` and create tasks with the plan slug.
 
-**Current State** — Where the codebase stands today relative to this work. What exists, what is missing. Useful for plans that build on existing infrastructure.
+## Behavior-First Plans
 
-**Design** — The technical approach. Key data structures, flows, boundaries, and trade-offs. This is the core of most plans.
+Full planned feature/refactor plans require a `## Behaviors` section before task creation. Each behavior entry must include:
 
-**Behaviors** — Observable behavior specs written as context, action, and expected result. Include normal, edge, and failure cases. These are the tests workers implement against and the source for task acceptance criteria.
+- Stable `B-###` ID
+- Source `AC-###`
+- Context
+- Action
+- Expected result
+- Seam
+- Named test
+- Marker using `@cosmo-behavior plan:<slug>#B-###`
 
-**Files to Change** — Test/source pairs and ownership notes. Name real files or clearly marked new files. For parallel work, state shared contracts and file ownership explicitly enough that independent workers do not invent incompatible interfaces.
-
-**Quality Contract** — Plan-specific criteria the quality-manager can verify after implementation. Use 3-8 criteria tied to the risks and design decisions in this plan. At least a third should cover failure, edge, or integration cases. Prefer verifier-runnable commands where possible.
-
-**Implementation Order** — Numbered list of work stages with dependencies between them. Each stage becomes one or more tasks.
-
-**Risks** — What could go wrong. Scope creep, technical gotchas, dependencies on external factors.
-
-Not every plan needs all sections. A small plan may only need Overview, Design, Behaviors, and Implementation Order. Any plan handed to task-manager should make the behavior and test story explicit, even when the behavior is "unchanged; characterization and existing tests stay green."
+Treat `## Design` as derived from behavior placement. The design should explain how the behavior seams, tests, and constraints fit together; do not author it as an independent section that could drift away from the behavior spine.
 
 ## Plan Readiness Check
 
 Before calling `plan_create` or `plan_edit`, run a short visible readiness check. This is conversational output only; do not persist it as a plan section.
 
-- **Specificity** — The plan names concrete modules, responsibilities, contracts, and files or clearly marked new files.
-- **Constraints** — Scope boundaries, dependency direction, existing-feature interactions, and non-goals are stated. Invariants the implementation must preserve (public contracts, neighbouring features, in-flight migrations) are explicit, not assumed.
-- **Context** — Claims about existing code are backed by files you actually read; no guessed names, paths, signatures, or helpers.
-- **Success criteria** — The `## Behaviors` section is testable, the test boundary is stated, and the `## Quality Contract` follows the rule above.
-- **Iteration policy** — `## Implementation Order` describes how stages sequence *and* how to react if a stage surfaces unexpected complexity (split it, escalate, or revise the design). A plan that assumes a clean linear walk should say so as an assumption.
-- **Pivot / abort conditions** — `## Risks` names the conditions under which we'd revise scope or abandon the plan rather than press on. "External API doesn't ship" or "perf budget can't be hit on the chosen approach" become triggers, not vague worries.
+- **Specificity** - The plan names concrete modules, responsibilities, contracts, and files or clearly marked new files.
+- **Constraints** - Scope boundaries, dependency direction, existing-feature interactions, non-goals, and invariants are explicit.
+- **Context** - Claims about existing code are backed by files you actually read; no guessed names, paths, signatures, or helpers.
+- **Behaviors** - Full planned feature/refactor plans have `## Behaviors` entries with context, action, expected result, source `AC-###`, seam, named test, and `@cosmo-behavior plan:<slug>#B-###` marker.
+- **Design derivation** - `## Design` follows from behavior placement. If it cannot trace to behavior seams, source criteria, and named tests, revise the behaviors or design before task creation.
+- **Quality gates** - The `## Quality Contract` follows `/skill:work-artifacts` gate rules and names abstract gate kinds rather than project-specific tool columns.
+- **Iteration policy** - `## Implementation Order` says how stages sequence and how to react if a stage surfaces unexpected complexity.
+- **Pivot / abort conditions** - `## Risks` names the conditions under which scope or approach should be revised rather than silently pressed through.
 
-If a required item is unchecked in interactive mode, pause for correction or an explicit waiver before writing the plan. In autonomous runs, proceed narrowly and record the gap in Assumptions, Open Questions, Risks, or the Decision Log rather than silently defaulting.
+Reject a full planned feature/refactor plan as not ready if any behavior lacks a named test or marker. In interactive mode, pause for correction or an explicit waiver before writing. In autonomous runs, proceed only as narrowly as the run allows and record the gap in Assumptions, Open Questions, Risks, or the Decision Log.
 
-**One-sentence test:** if you collapse the plan into *"`<end state>` verified by `<evidence>` while preserving `<constraints>`; proceed via `<implementation order>`; if `<conditions>` hold, pivot or abort"*, the resulting sentence should read as a coherent contract. If a clause is hollow, that's the section to revisit.
-
-## Healthy Structure Requirements
-
-A plan is not ready if it only describes syntax changes. It must preserve both parts of the coding harness:
-
-- **Program structure** — module boundaries, dependency direction, state ownership, public contracts, and integration seams.
-- **Procedure structure** — behavior specs, test-first implementation order, review points, and verification criteria.
-
-For every important behavior, name where it will live in the architecture and how it will be tested. For every important boundary or shared contract, name which behavior it protects. If those two sides do not connect, revise the design before task creation.
-
-## When to Use spec.md
-
-An optional companion file at `missions/plans/<slug>/spec.md`. Create one when:
-
-- The feature idea is complex enough that separating "what" from "how" helps clarity.
-- The spec might outlive the plan — the problem description stays relevant after the implementation plan is completed and archived.
-- Multiple plans might reference the same spec (e.g., a spec for a plugin system, with separate plans for core and for individual plugins).
-
-Most plans do not need a spec. The plan body handles both the problem and the approach. Reach for spec.md only when the separation genuinely helps.
-
-## Slug Naming
-
-The slug is the directory name under `missions/plans/` and the identifier used in labels and tool calls.
-
-- Lowercase, hyphen-separated: `auth-system`, `api-migration`, `forge-lifecycle`
-- Match the concept, not the ticket or sprint: `user-profiles` not `sprint-3-work`
-- Short but unambiguous. Prefer 2-3 words.
-
-## Scoping a Plan
-
-A well-scoped plan:
-
-- Has a clear boundary — you can state what is in scope and what is not.
-- Produces 3-12 tasks. Fewer means just do the work directly. More means split into separate plans.
-- Can be completed in one focused push (days, not weeks).
-- Changes one area of the system rather than bundling unrelated work.
-
-If you find yourself writing more than 12 tasks, the plan is too broad. Split it along natural seams — separate the infrastructure from the feature, or the core from the integrations.
-
-## Plan-to-Task Flow
-
-Plans produce tasks. Tasks link back to plans via labels.
-
-### Creating tasks from a plan
-
-After creating a plan with `plan_create`, generate tasks using `task_create` with the `plan` parameter:
-
-```
-task_create({ title: "Define plan types", plan: "forge-lifecycle" })
-```
-
-This auto-adds a `plan:forge-lifecycle` label to the task. The label is the linkage mechanism — tasks stay flat in `missions/tasks/`, not nested under the plan directory.
-
-### Querying tasks by plan
-
-Use `task_list` with label filtering to see all tasks for a plan:
-
-```
-task_list --label plan:forge-lifecycle
-```
-
-### Completing the cycle
-
-1. Create the plan with `plan_create`.
-2. Create tasks with `task_create`, passing the `plan` parameter for each.
-3. Implement tasks. Update status as work progresses.
-4. When all tasks are Done, mark the plan as completed.
-5. Archive with `plan_archive` — moves the plan and associated tasks to `missions/archive/`.
-6. Optionally distill learnings into `memory/<slug>.md` (see the `archive` skill).
+One-sentence test: if you collapse the plan into "`<end state>` verified by `<evidence>` while preserving `<constraints>`; proceed via `<implementation order>`; if `<conditions>` hold, pivot or abort", the sentence should read as a coherent contract. If a clause is hollow, revisit that section.
 
 ## Tool Reference
 
 | Tool | CLI Equivalent | Purpose |
-|------|---------------|---------|
-| `plan_create` | `cosmonauts plan create --slug <s> --title <t>` | Create a new plan directory with `plan.md` and optional `spec.md` |
-| `plan_list` | `cosmonauts plan list` | List plans with their status and associated task counts |
-| `plan_view` | `cosmonauts plan view <slug>` | View full plan content and a summary of associated tasks |
-| `plan_edit` | `cosmonauts plan edit <slug>` | Update plan fields (title, status, body, spec) |
-| `plan_archive` | `cosmonauts plan archive <slug>` | Archive a completed plan and its associated tasks to `missions/archive/` |
+|---|---|---|
+| `plan_create` | `cosmonauts plan create --slug <s> --title <t>` | Create a new plan directory with `plan.md` and optional `spec.md`. |
+| `plan_list` | `cosmonauts plan list` | List plans with status and associated task counts. |
+| `plan_view` | `cosmonauts plan view <slug>` | View full plan content and associated task summary. |
+| `plan_edit` | `cosmonauts plan edit <slug>` | Update plan fields, status, body, or spec content. |
+| `plan_archive` | `cosmonauts plan archive <slug>` | Archive a completed plan and associated tasks. |
 
-## Example
+Use `plan_create` for new plan directories and `plan_edit` for living-plan updates. Do not hand-edit persisted plan files when the plan tools are available in the session.
 
-A plan for adding a caching layer:
+## Plan-To-Task Handoff
 
-```
-missions/plans/response-cache/
-  plan.md
-```
+Plans produce tasks. Tasks link back to plans via the `plan:<slug>` label.
 
-```yaml
----
-title: HTTP Response Cache
-status: active
-createdAt: 2026-02-25T00:00:00.000Z
-updatedAt: 2026-02-25T00:00:00.000Z
----
+After `plan_create`, create tasks using `task_create` with the `plan` parameter:
+
+```text
+task_create({ title: "Define plan types", plan: "forge-lifecycle" })
 ```
 
-```markdown
-## Overview
+This auto-adds the `plan:<slug>` label. Tasks stay flat in `missions/tasks/`; they are not nested under the plan directory.
 
-Add an in-memory response cache to reduce redundant API calls. Cache by URL with TTL-based expiration.
+Before creating tasks:
 
-## Design
+- Confirm each task owns one coherent slice of the implementation order.
+- Preserve behavior ownership by carrying relevant `B-###` IDs, source acceptance criteria, named tests, seams, and markers into task acceptance criteria.
+- Keep task count in the normal 3-12 range for a plan. If the plan naturally produces more, split the plan along a real boundary.
+- Load `/skill:task` for task lifecycle, task acceptance criteria, and task tools.
 
-LRU cache keyed by normalized URL. Configurable max entries (default 1000) and TTL (default 5 minutes). Cache lives in the API client, transparent to callers.
+Completion loop:
 
-## Implementation Order
-
-1. Cache data structure with LRU eviction and TTL
-2. Integration into API client
-3. Cache invalidation on write operations
-4. Metrics and logging
-
-## Risks
-
-- Cache invalidation for write-then-read patterns needs careful ordering.
-- Memory pressure if max entries is set too high.
-```
-
-Tasks generated from this plan would each carry the `plan:response-cache` label.
+1. Create or update the plan.
+2. Create linked tasks with `task_create`.
+3. Implement tasks and update statuses as work progresses.
+4. When all tasks are done, mark the plan completed.
+5. Archive with `plan_archive`.
+6. Optionally distill completed learnings with `/skill:archive`.
 
 ## Common Problems
 
-- **Plan scope keeps growing.** If you're past 12 tasks, split the plan along natural seams (infrastructure vs feature, core vs integrations). Create a second plan for the overflow.
-- **Design doesn't survive contact with the codebase.** Update the plan body (especially the Design section) as you learn. Plans are living documents until archived — `plan_edit` exists for this reason.
-- **Tasks don't map cleanly to plan stages.** A plan stage can produce 1-3 tasks, not always exactly one. Split or combine as needed during task creation.
-- **Plan needs to be abandoned.** If the approach is fundamentally wrong, archive the plan as-is (status: `completed` is optional — you can archive active plans). Distill what was learned, then create a new plan with the revised approach.
+- **Artifact-rule duplication.** The plan skill copies format sections, examples, or gate tables. Route to `/skill:work-artifacts` instead.
+- **Independent design prose.** `## Design` reads like a standalone architecture essay. Rework it so it is derived from behavior placement.
+- **Missing proof.** Behaviors omit named tests or markers. The plan is not ready for task creation.
+- **Architecture stuffing.** Durable boundary decisions are embedded in `plan.md`. Move architecture-of-record content to `architecture.md` and link it from `Architecture Context`.
+- **Task drift.** Tasks lose behavior ownership. Carry the behavior IDs, seams, named tests, and markers into task acceptance criteria.
 
 ## Related Skills
 
-- `/skill:roadmap` — Where plan items originate
-- `/skill:task` — Creating and managing tasks from plans
-- `/skill:archive` — Archiving completed plans and distilling learnings
+- `/skill:work-artifacts` - canonical artifact format, behavior spine, Quality Contract, and gate rules.
+- `/skill:roadmap` - where plan items originate.
+- `/skill:task` - creating and managing tasks from plans.
+- `/skill:architecture` - architecture-record authoring dispatcher.
+- `/skill:archive` - archiving completed plans and distilling learnings.
