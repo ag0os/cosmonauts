@@ -7,6 +7,8 @@ description: How to create well-structured tasks with acceptance criteria, depen
 
 Tasks are atomic, persistent work items stored as markdown files in `missions/tasks/`. Each task represents a single-PR scope of work that one agent can complete independently.
 
+This skill is a dispatcher for task lifecycle, task file format, task tools, dependency rules, status flow, and acceptance-criteria writing. For artifact-format details, load `/skill:work-artifacts` and the directly linked reference needed for the question. Use `references/workflow-tiers.md` for direct/tactical/planned workflow tiering, `references/plan-format.md` for behavior-first plan shape, and `references/behavior-spine.md` for `B-###` behavior IDs, seams, named tests, and markers. Do not duplicate canonical artifact rules here.
+
 ## Task File Format
 
 A task lives at `missions/tasks/COSMO-NNN - Title.md`. It is a markdown file with YAML frontmatter.
@@ -106,6 +108,28 @@ Outcome ACs (above) name what must be true when the work is done. A complete AC 
 - **Constraints to preserve** — invariants the work must NOT break. Public contracts, neighbouring features, in-flight migrations. Phrase as positive ACs ("Existing `/api/users` responses keep the same shape") rather than negative warnings. If a constraint is only known to the human (not verifiable from the codebase), call it out in the Description, not as an AC.
 
 **One-sentence test:** if you can rephrase the task as *"`<desired end state>` verified by `<specific evidence>` while preserving `<constraints>`"* and the sentence reads as a contract a worker could deliver against, the AC set is well-shaped. If a clause feels hollow, that's the gap to fill before handing the task off.
+
+## Planned Behavior Ownership
+
+When creating tasks from a behavior-first plan, task acceptance criteria preserve planned behavior ownership.
+
+- Every `B-###` behavior or behavior cluster from the plan must be assigned to at least one task.
+- Task ACs that own planned behavior must name the owned `B-###` IDs.
+- Carry the worker's marker expectation into the task context: tests for planned behaviors carry `@cosmo-behavior plan:<slug>#B-###` near the executable test.
+- Keep behavior clusters coherent. A task may own several related behaviors, but do not split one behavior across tasks unless one task clearly owns the executable proof and the other is a dependency.
+- Do not ask workers to invent missing artifact architecture, behavior IDs, seams, tests, or markers. If the source plan lacks those details, route the plan back through readiness instead of burying discovery work in the implementation task.
+
+Behavior ownership belongs in the ACs as deliverable outcomes, not as loose notes. A good planned-work AC reads like: "`B-006` task ACs preserve behavior IDs and marker expectations for worker handoff." The worker can then read the plan for the full context/action/expected-result details and implement test-first against the named behavior.
+
+## Tactical Bugfix Tasks
+
+Tactical bugfix tasks need enough persistence for handoff, but they do not need the full planned-work artifact stack.
+
+- The regression test is the behavior record.
+- Do not require a full `spec.md`, `plan.md`, or `architecture.md` stack for a tactical bugfix.
+- No `B-###` behavior ID or marker is required unless the bugfix belongs to an active plan.
+- Write ACs around the observed regression, expected fixed behavior, and preservation of adjacent behavior.
+- If the bug reveals a durable boundary decision or multi-plan design issue, route to `/skill:work-artifacts` `references/workflow-tiers.md` before expanding scope.
 
 ## Labels
 
