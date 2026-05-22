@@ -46,6 +46,7 @@ export interface ArtifactConformanceIssue {
 	message: string;
 	behaviorId?: string;
 	field?: BehaviorFieldName;
+	line?: number;
 	path?: string;
 	marker?: string;
 	expected?: string;
@@ -95,6 +96,16 @@ const FIELD_LABELS: Record<string, BehaviorFieldName> = {
 	marker: "marker",
 } as const satisfies Record<string, BehaviorFieldName>;
 
+const FIELD_DISPLAY_NAMES: Record<BehaviorFieldName, string> = {
+	source: "Source",
+	context: "Context",
+	action: "Action",
+	expected: "Expected",
+	seam: "Seam",
+	test: "Test",
+	marker: "Marker",
+} as const satisfies Record<BehaviorFieldName, string>;
+
 export function parseBehaviorSection(markdown: string): ParsedBehaviorSection {
 	const section = extractBehaviorSection(markdown);
 	if (!section) {
@@ -140,13 +151,20 @@ export function checkBehaviorConformance(
 	options: CheckBehaviorConformanceOptions,
 ): ArtifactConformanceResult {
 	const section = parseBehaviorSection(options.planMarkdown);
+	const behaviorIssues = section.behaviors.flatMap((behavior) =>
+		validateBehavior({
+			behavior,
+			planSlug: options.planSlug,
+		}),
+	);
+	const issues = [...section.issues, ...behaviorIssues];
 
 	return {
-		ok: section.issues.length === 0,
+		ok: issues.length === 0,
 		planSlug: options.planSlug,
 		planPath: options.planPath,
 		behaviors: section.behaviors,
-		issues: section.issues,
+		issues,
 	};
 }
 
@@ -170,7 +188,7 @@ function extractBehaviorSection(markdown: string): MarkdownSection | undefined {
 
 	return {
 		lines: lines.slice(headingIndex + 1, endIndex),
-		startLine: headingIndex + 1,
+		startLine: headingIndex + 2,
 		endLine: endIndex,
 	};
 }
@@ -257,6 +275,97 @@ function parseBehaviorFieldLines({
 	}
 
 	return fields;
+}
+
+function validateBehavior({
+	behavior,
+	planSlug,
+}: {
+	behavior: ParsedBehavior;
+	planSlug: string;
+}): ArtifactConformanceIssue[] {
+	const issues = validateRequiredFields(behavior);
+	const markerIssue = validateMarker({
+		behavior,
+		planSlug,
+	});
+
+	if (markerIssue) {
+		issues.push(markerIssue);
+	}
+
+	return issues;
+}
+
+function validateRequiredFields(
+	behavior: ParsedBehavior,
+): ArtifactConformanceIssue[] {
+	return REQUIRED_BEHAVIOR_FIELD_NAMES.flatMap((field) => {
+		if (behavior.fields[field]) {
+			return [];
+		}
+
+		return [
+			{
+				kind: "missing-behavior-field",
+				message: `Behavior ${behavior.id} is missing required ${FIELD_DISPLAY_NAMES[field]} field.`,
+				behaviorId: behavior.id,
+				field,
+				line: behavior.lineNumber,
+			},
+		];
+	});
+}
+
+function validateMarker({
+	behavior,
+	planSlug,
+}: {
+	behavior: ParsedBehavior;
+	planSlug: string;
+}): ArtifactConformanceIssue | undefined {
+	const markerField = behavior.fields.marker;
+	if (!markerField) {
+		return undefined;
+	}
+
+	const expected = buildExpectedMarker({
+		planSlug,
+		behaviorId: behavior.id,
+	});
+	const actual = trimOptionalSurroundingBackticks(markerField.value);
+	if (actual === expected) {
+		return undefined;
+	}
+
+	return {
+		kind: "invalid-marker",
+		message: `Behavior ${behavior.id} marker must exactly match ${expected}.`,
+		behaviorId: behavior.id,
+		field: "marker",
+		line: markerField.lineNumber,
+		expected,
+		actual,
+	};
+}
+
+function buildExpectedMarker({
+	planSlug,
+	behaviorId,
+}: {
+	planSlug: string;
+	behaviorId: string;
+}): string {
+	return `@cosmo-behavior plan:${planSlug}#${behaviorId}`;
+}
+
+function trimOptionalSurroundingBackticks(value: string): string {
+	const trimmed = value.trim();
+	if (trimmed.startsWith("`") && trimmed.endsWith("`") && trimmed.length >= 2) {
+		return trimmed.slice(1, -1).trim();
+	}
+
+	return trimmed;
 }
 
 function normalizeFieldName(label: string): BehaviorFieldName | undefined {

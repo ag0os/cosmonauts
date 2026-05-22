@@ -131,4 +131,134 @@ Introductory text is ignored.
 			expect(result.issues[0]?.behaviorId, testCase.name).toBeUndefined();
 		}
 	});
+
+	// @cosmo-behavior plan:artifact-conformance-gate#B-003
+	test("reports the behavior id and field when a required field is missing", () => {
+		const requiredFieldLines = {
+			source: "- Source: AC-003",
+			context: "- Context: a behavior omits one required field",
+			action: "- Action: the checker validates parsed behavior fields",
+			expected: "- Expected: it returns missing field evidence",
+			seam: "- Seam: `lib/artifacts/behavior-conformance.ts`",
+			test: "- Test: `tests/artifacts/behavior-conformance.test.ts` > `reports the behavior id and field when a required field is missing`",
+			marker:
+				"- Marker: `@cosmo-behavior plan:artifact-conformance-gate#B-003`",
+		} as const;
+		const fieldDisplayNames = {
+			source: "Source",
+			context: "Context",
+			action: "Action",
+			expected: "Expected",
+			seam: "Seam",
+			test: "Test",
+			marker: "Marker",
+		} as const;
+
+		for (const field of Object.keys(requiredFieldLines) as Array<
+			keyof typeof requiredFieldLines
+		>) {
+			const behaviorFields = Object.entries(requiredFieldLines)
+				.filter(([name]) => name !== field)
+				.map(([, line]) => line)
+				.join("\n");
+			const result = checkBehaviorConformance({
+				planSlug: "artifact-conformance-gate",
+				planMarkdown: `# Artifact Conformance Gate
+
+## Behaviors
+
+### B-003 - Requires all behavior fields
+
+${behaviorFields}
+`,
+			});
+
+			expect(result.ok, field).toBe(false);
+			expect(result.issues, field).toEqual([
+				{
+					kind: "missing-behavior-field",
+					message: `Behavior B-003 is missing required ${fieldDisplayNames[field]} field.`,
+					behaviorId: "B-003",
+					field,
+					line: 5,
+				},
+			]);
+		}
+	});
+
+	// @cosmo-behavior plan:artifact-conformance-gate#B-004
+	test("rejects markers with the wrong slug behavior id or syntax", () => {
+		const cases = [
+			{
+				name: "wrong slug",
+				behaviorId: "B-004",
+				marker: "`@cosmo-behavior plan:other-plan#B-004`",
+			},
+			{
+				name: "wrong behavior id",
+				behaviorId: "B-004",
+				marker: "`@cosmo-behavior plan:artifact-conformance-gate#B-999`",
+			},
+			{
+				name: "malformed syntax",
+				behaviorId: "B-004",
+				marker: "`cosmo-behavior artifact-conformance-gate B-004`",
+			},
+		] as const;
+
+		for (const testCase of cases) {
+			const result = checkBehaviorConformance({
+				planSlug: "artifact-conformance-gate",
+				planMarkdown: `# Artifact Conformance Gate
+
+## Behaviors
+
+### ${testCase.behaviorId} - Validates marker syntax
+
+- Source: AC-004
+- Context: a behavior marker is invalid
+- Action: the checker validates the behavior marker field
+- Expected: it returns marker evidence
+- Seam: \`lib/artifacts/behavior-conformance.ts\`
+- Test: \`tests/artifacts/behavior-conformance.test.ts\` > \`rejects markers with the wrong slug behavior id or syntax\`
+- Marker: ${testCase.marker}
+`,
+			});
+
+			expect(result.ok, testCase.name).toBe(false);
+			expect(result.issues, testCase.name).toEqual([
+				{
+					kind: "invalid-marker",
+					message:
+						"Behavior B-004 marker must exactly match @cosmo-behavior plan:artifact-conformance-gate#B-004.",
+					behaviorId: "B-004",
+					field: "marker",
+					line: 13,
+					expected: "@cosmo-behavior plan:artifact-conformance-gate#B-004",
+					actual: testCase.marker.slice(1, -1),
+				},
+			]);
+		}
+
+		const valid = checkBehaviorConformance({
+			planSlug: "artifact-conformance-gate",
+			planMarkdown: `# Artifact Conformance Gate
+
+## Behaviors
+
+### B-004 - Validates marker syntax
+
+- Source: AC-004
+- Context: a behavior marker is wrapped in optional backticks
+- Action: the checker validates the behavior marker field
+- Expected: it accepts the exact marker text after trimming backticks
+- Seam: \`lib/artifacts/behavior-conformance.ts\`
+- Test: \`tests/artifacts/behavior-conformance.test.ts\` > \`rejects markers with the wrong slug behavior id or syntax\`
+- Marker: \`@cosmo-behavior plan:artifact-conformance-gate#B-004\`
+`,
+		});
+
+		expect(valid.ok).toBe(true);
+		expect(valid.issues).toEqual([]);
+	});
 });
