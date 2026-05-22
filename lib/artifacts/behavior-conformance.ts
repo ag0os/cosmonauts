@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve, win32 } from "node:path";
 
 export const REQUIRED_BEHAVIOR_FIELD_NAMES = [
@@ -20,7 +20,7 @@ export type ArtifactConformanceIssueKind =
 	| "invalid-marker"
 	| "invalid-test-reference"
 	| "missing-test-file"
-	| "missing-test-marker";
+	| "missing-marker";
 
 export interface ParsedBehaviorField {
 	name: BehaviorFieldName;
@@ -64,6 +64,13 @@ export interface ParsedBehaviorSection {
 	endLine?: number;
 }
 
+export interface BehaviorConformanceEvidence {
+	behaviorId: string;
+	marker?: string;
+	testFile?: string;
+	issues: ArtifactConformanceIssue[];
+}
+
 export interface CheckBehaviorConformanceOptions {
 	planMarkdown: string;
 	planSlug: string;
@@ -75,7 +82,7 @@ export interface ArtifactConformanceResult {
 	ok: boolean;
 	planSlug: string;
 	planPath?: string;
-	behaviors: ParsedBehavior[];
+	behaviors: BehaviorConformanceEvidence[];
 	issues: ArtifactConformanceIssue[];
 }
 
@@ -155,20 +162,21 @@ export function checkBehaviorConformance(
 	options: CheckBehaviorConformanceOptions,
 ): ArtifactConformanceResult {
 	const section = parseBehaviorSection(options.planMarkdown);
-	const behaviorIssues = section.behaviors.flatMap((behavior) =>
+	const behaviors = section.behaviors.map((behavior) =>
 		validateBehavior({
 			behavior,
 			planSlug: options.planSlug,
 			projectRoot: options.projectRoot ?? process.cwd(),
 		}),
 	);
+	const behaviorIssues = behaviors.flatMap((behavior) => behavior.issues);
 	const issues = [...section.issues, ...behaviorIssues];
 
 	return {
 		ok: issues.length === 0,
 		planSlug: options.planSlug,
 		planPath: options.planPath,
-		behaviors: section.behaviors,
+		behaviors,
 		issues,
 	};
 }
@@ -290,13 +298,20 @@ function validateBehavior({
 	behavior: ParsedBehavior;
 	planSlug: string;
 	projectRoot: string;
-}): ArtifactConformanceIssue[] {
+}): BehaviorConformanceEvidence {
 	const issues = validateRequiredFields(behavior);
+	const expectedMarker = buildExpectedMarker({
+		planSlug,
+		behaviorId: behavior.id,
+	});
+	const marker = behavior.fields.marker
+		? trimOptionalSurroundingBackticks(behavior.fields.marker.value)
+		: undefined;
 	const markerIssue = validateMarker({
 		behavior,
-		planSlug,
+		expectedMarker,
 	});
-	const testReferenceIssue = validateTestReference({
+	const testReference = validateTestReference({
 		behavior,
 		projectRoot,
 	});
@@ -304,11 +319,32 @@ function validateBehavior({
 	if (markerIssue) {
 		issues.push(markerIssue);
 	}
-	if (testReferenceIssue) {
-		issues.push(testReferenceIssue);
+	if (testReference.issue) {
+		issues.push(testReference.issue);
+	}
+	if (
+		!markerIssue &&
+		testReference.path &&
+		testReference.absolutePath &&
+		marker === expectedMarker
+	) {
+		const missingMarkerIssue = validateReferencedFileMarker({
+			behavior,
+			expectedMarker,
+			path: testReference.path,
+			absolutePath: testReference.absolutePath,
+		});
+		if (missingMarkerIssue) {
+			issues.push(missingMarkerIssue);
+		}
 	}
 
-	return issues;
+	return {
+		behaviorId: behavior.id,
+		marker,
+		testFile: testReference.path,
+		issues,
+	};
 }
 
 function validateRequiredFields(
@@ -333,32 +369,28 @@ function validateRequiredFields(
 
 function validateMarker({
 	behavior,
-	planSlug,
+	expectedMarker,
 }: {
 	behavior: ParsedBehavior;
-	planSlug: string;
+	expectedMarker: string;
 }): ArtifactConformanceIssue | undefined {
 	const markerField = behavior.fields.marker;
 	if (!markerField) {
 		return undefined;
 	}
 
-	const expected = buildExpectedMarker({
-		planSlug,
-		behaviorId: behavior.id,
-	});
 	const actual = trimOptionalSurroundingBackticks(markerField.value);
-	if (actual === expected) {
+	if (actual === expectedMarker) {
 		return undefined;
 	}
 
 	return {
 		kind: "invalid-marker",
-		message: `Behavior ${behavior.id} marker must exactly match ${expected}.`,
+		message: `Behavior ${behavior.id} marker must exactly match ${expectedMarker}.`,
 		behaviorId: behavior.id,
 		field: "marker",
 		line: markerField.lineNumber,
-		expected,
+		expected: expectedMarker,
 		actual,
 	};
 }
@@ -369,68 +401,98 @@ function validateTestReference({
 }: {
 	behavior: ParsedBehavior;
 	projectRoot: string;
-}): ArtifactConformanceIssue | undefined {
+}): {
+	path?: string;
+	absolutePath?: string;
+	issue?: ArtifactConformanceIssue;
+} {
 	const testField = behavior.fields.test;
 	if (!testField) {
-		return undefined;
+		return {};
 	}
 
 	const parsed = parseTestReferencePath(testField.value);
 	if (!parsed) {
-		return invalidTestReferenceIssue({
-			behavior,
-			testField,
-			message: `Behavior ${behavior.id} Test field must include a project-root-relative path.`,
-			actual: testField.value,
-		});
+		return {
+			issue: invalidTestReferenceIssue({
+				behavior,
+				testField,
+				message: `Behavior ${behavior.id} Test field must include a project-root-relative path.`,
+				actual: testField.value,
+			}),
+		};
 	}
 
 	if (parsed.includes("\0")) {
-		return invalidTestReferenceIssue({
-			behavior,
-			testField,
-			message: `Behavior ${behavior.id} Test field path must not contain NUL bytes.`,
+		return {
 			path: parsed,
-			actual: testField.value,
-		});
+			issue: invalidTestReferenceIssue({
+				behavior,
+				testField,
+				message: `Behavior ${behavior.id} Test field path must not contain NUL bytes.`,
+				path: parsed,
+				actual: testField.value,
+			}),
+		};
 	}
 
 	if (isAbsolute(parsed) || win32.isAbsolute(parsed)) {
-		return invalidTestReferenceIssue({
-			behavior,
-			testField,
-			message: `Behavior ${behavior.id} Test field path must be relative to the project root.`,
+		return {
 			path: parsed,
-			actual: testField.value,
-		});
+			issue: invalidTestReferenceIssue({
+				behavior,
+				testField,
+				message: `Behavior ${behavior.id} Test field path must be relative to the project root.`,
+				path: parsed,
+				actual: testField.value,
+			}),
+		};
 	}
 
 	const root = realpathSync(projectRoot);
 	const candidate = resolve(root, parsed);
 	if (!isPathInsideRoot({ path: candidate, root })) {
-		return invalidTestReferenceIssue({
-			behavior,
-			testField,
-			message: `Behavior ${behavior.id} Test field path must stay inside the project root.`,
+		return {
 			path: parsed,
-			actual: testField.value,
-		});
+			issue: invalidTestReferenceIssue({
+				behavior,
+				testField,
+				message: `Behavior ${behavior.id} Test field path must stay inside the project root.`,
+				path: parsed,
+				actual: testField.value,
+			}),
+		};
 	}
 
-	if (existsSync(candidate)) {
-		const realCandidate = realpathSync(candidate);
-		if (!isPathInsideRoot({ path: realCandidate, root })) {
-			return invalidTestReferenceIssue({
+	if (!existsSync(candidate) || !statSync(candidate).isFile()) {
+		return {
+			path: parsed,
+			issue: missingTestFileIssue({
+				behavior,
+				testField,
+				path: parsed,
+			}),
+		};
+	}
+
+	const realCandidate = realpathSync(candidate);
+	if (!isPathInsideRoot({ path: realCandidate, root })) {
+		return {
+			path: parsed,
+			issue: invalidTestReferenceIssue({
 				behavior,
 				testField,
 				message: `Behavior ${behavior.id} Test field path resolves outside the project root.`,
 				path: parsed,
 				actual: testField.value,
-			});
-		}
+			}),
+		};
 	}
 
-	return undefined;
+	return {
+		path: parsed,
+		absolutePath: realCandidate,
+	};
 }
 
 function parseTestReferencePath(value: string): string | undefined {
@@ -474,6 +536,52 @@ function invalidTestReferenceIssue({
 		line: testField.lineNumber,
 		path,
 		actual,
+	};
+}
+
+function missingTestFileIssue({
+	behavior,
+	testField,
+	path,
+}: {
+	behavior: ParsedBehavior;
+	testField: ParsedBehaviorField;
+	path: string;
+}): ArtifactConformanceIssue {
+	return {
+		kind: "missing-test-file",
+		message: `Behavior ${behavior.id} referenced Test file does not exist: ${path}.`,
+		behaviorId: behavior.id,
+		field: "test",
+		line: testField.lineNumber,
+		path,
+	};
+}
+
+function validateReferencedFileMarker({
+	behavior,
+	expectedMarker,
+	path,
+	absolutePath,
+}: {
+	behavior: ParsedBehavior;
+	expectedMarker: string;
+	path: string;
+	absolutePath: string;
+}): ArtifactConformanceIssue | undefined {
+	const content = readFileSync(absolutePath, "utf-8");
+	if (content.includes(expectedMarker)) {
+		return undefined;
+	}
+
+	return {
+		kind: "missing-marker",
+		message: `Behavior ${behavior.id} referenced Test file does not contain marker ${expectedMarker}.`,
+		behaviorId: behavior.id,
+		field: "marker",
+		line: behavior.fields.marker?.lineNumber,
+		path,
+		marker: expectedMarker,
 	};
 }
 

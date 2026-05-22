@@ -2,6 +2,7 @@ export type {
 	ArtifactConformanceIssue,
 	ArtifactConformanceIssueKind,
 	ArtifactConformanceResult,
+	BehaviorConformanceEvidence,
 	BehaviorFieldName,
 	CheckBehaviorConformanceOptions,
 	ParsedBehavior,

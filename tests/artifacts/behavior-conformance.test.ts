@@ -281,7 +281,7 @@ ${behaviorFields}
 		await mkdir(join(projectRoot, "tests", "artifacts"), { recursive: true });
 		await writeFile(
 			join(projectRoot, "tests", "artifacts", "behavior-conformance.test.ts"),
-			"// valid test file\n",
+			"// @cosmo-behavior plan:artifact-conformance-gate#B-005\n",
 			"utf-8",
 		);
 		await writeFile(
@@ -394,6 +394,205 @@ ${behaviorFields}
 		expect(textBeforeNamedTestReference.issues).toEqual([]);
 	});
 
+	// @cosmo-behavior plan:artifact-conformance-gate#B-006
+	test("reports missing test files using project root relative paths", async () => {
+		const projectRoot = await createTempDir("behavior-conformance-root-");
+		await mkdir(join(projectRoot, "tests", "artifacts"), { recursive: true });
+		await writeFile(
+			join(projectRoot, "tests", "artifacts", "existing.test.ts"),
+			"// @cosmo-behavior plan:artifact-conformance-gate#B-006\n",
+			"utf-8",
+		);
+
+		const existingFile = checkBehaviorConformance({
+			planSlug: "artifact-conformance-gate",
+			projectRoot,
+			planMarkdown: behaviorMarkdownFor({
+				behaviorId: "B-006",
+				source: "AC-006",
+				testReference:
+					"`tests/artifacts/existing.test.ts` > `reports missing test files using project root relative paths`",
+				marker: "@cosmo-behavior plan:artifact-conformance-gate#B-006",
+			}),
+		});
+		expect(existingFile.ok).toBe(true);
+		expect(existingFile.issues).toEqual([]);
+
+		const missingFile = checkBehaviorConformance({
+			planSlug: "artifact-conformance-gate",
+			projectRoot,
+			planMarkdown: behaviorMarkdownFor({
+				behaviorId: "B-006",
+				source: "AC-006",
+				testReference:
+					"`tests/artifacts/missing.test.ts` > `reports missing test files using project root relative paths`",
+				marker: "@cosmo-behavior plan:artifact-conformance-gate#B-006",
+			}),
+		});
+
+		expect(missingFile.ok).toBe(false);
+		expect(missingFile.issues).toEqual([
+			{
+				kind: "missing-test-file",
+				message:
+					"Behavior B-006 referenced Test file does not exist: tests/artifacts/missing.test.ts.",
+				behaviorId: "B-006",
+				field: "test",
+				line: 12,
+				path: "tests/artifacts/missing.test.ts",
+			},
+		]);
+	});
+
+	// @cosmo-behavior plan:artifact-conformance-gate#B-007
+	test("checks exact marker text in any referenced file type without parsing test ASTs", async () => {
+		const projectRoot = await createTempDir("behavior-conformance-root-");
+		await mkdir(join(projectRoot, "docs", "evidence"), { recursive: true });
+		await writeFile(
+			join(projectRoot, "docs", "evidence", "behavior.notes"),
+			[
+				"plain text evidence",
+				"@cosmo-behavior plan:artifact-conformance-gate#B-007",
+				"",
+			].join("\n"),
+			"utf-8",
+		);
+		await writeFile(
+			join(projectRoot, "docs", "evidence", "wrong-marker.anything"),
+			"@cosmo-behavior plan:artifact-conformance-gate#B-999\n",
+			"utf-8",
+		);
+
+		const arbitraryFileType = checkBehaviorConformance({
+			planSlug: "artifact-conformance-gate",
+			projectRoot,
+			planMarkdown: behaviorMarkdownFor({
+				behaviorId: "B-007",
+				source: "AC-007, AC-010",
+				testReference:
+					"`docs/evidence/behavior.notes` > `checks exact marker text in any referenced file type without parsing test ASTs`",
+				marker: "@cosmo-behavior plan:artifact-conformance-gate#B-007",
+			}),
+		});
+		expect(arbitraryFileType.ok).toBe(true);
+		expect(arbitraryFileType.issues).toEqual([]);
+
+		const missingMarker = checkBehaviorConformance({
+			planSlug: "artifact-conformance-gate",
+			projectRoot,
+			planMarkdown: behaviorMarkdownFor({
+				behaviorId: "B-007",
+				source: "AC-007",
+				testReference:
+					"`docs/evidence/wrong-marker.anything` > `checks exact marker text in any referenced file type without parsing test ASTs`",
+				marker: "@cosmo-behavior plan:artifact-conformance-gate#B-007",
+			}),
+		});
+
+		expect(missingMarker.ok).toBe(false);
+		expect(missingMarker.issues).toEqual([
+			{
+				kind: "missing-marker",
+				message:
+					"Behavior B-007 referenced Test file does not contain marker @cosmo-behavior plan:artifact-conformance-gate#B-007.",
+				behaviorId: "B-007",
+				field: "marker",
+				line: 13,
+				path: "docs/evidence/wrong-marker.anything",
+				marker: "@cosmo-behavior plan:artifact-conformance-gate#B-007",
+			},
+		]);
+	});
+
+	// @cosmo-behavior plan:artifact-conformance-gate#B-008
+	test("returns structured evidence for passing and failing behaviors", async () => {
+		const projectRoot = await createTempDir("behavior-conformance-root-");
+		await mkdir(join(projectRoot, "tests", "artifacts"), { recursive: true });
+		await writeFile(
+			join(projectRoot, "tests", "artifacts", "passing.txt"),
+			"@cosmo-behavior plan:artifact-conformance-gate#B-008\n",
+			"utf-8",
+		);
+		await writeFile(
+			join(projectRoot, "tests", "artifacts", "failing.txt"),
+			"missing the expected marker\n",
+			"utf-8",
+		);
+
+		const result = checkBehaviorConformance({
+			planSlug: "artifact-conformance-gate",
+			planPath: "missions/plans/artifact-conformance-gate/plan.md",
+			projectRoot,
+			planMarkdown: `# Artifact Conformance Gate
+
+## Behaviors
+
+### B-008 - Passing behavior evidence
+
+- Source: AC-008
+- Context: one behavior has complete evidence
+- Action: the checker validates the referenced file
+- Expected: it returns passing behavior evidence
+- Seam: \`lib/artifacts/behavior-conformance.ts\`
+- Test: \`tests/artifacts/passing.txt\` > \`returns structured evidence for passing and failing behaviors\`
+- Marker: \`@cosmo-behavior plan:artifact-conformance-gate#B-008\`
+
+### B-099 - Failing behavior evidence
+
+- Source: AC-008
+- Context: one behavior has incomplete evidence
+- Action: the checker validates the referenced file
+- Expected: it returns failing behavior evidence and top-level aggregation
+- Seam: \`lib/artifacts/behavior-conformance.ts\`
+- Test: \`tests/artifacts/failing.txt\` > \`returns structured evidence for passing and failing behaviors\`
+- Marker: \`@cosmo-behavior plan:artifact-conformance-gate#B-099\`
+`,
+		});
+
+		expect(result).toMatchObject({
+			ok: false,
+			planSlug: "artifact-conformance-gate",
+			planPath: "missions/plans/artifact-conformance-gate/plan.md",
+			behaviors: [
+				{
+					behaviorId: "B-008",
+					marker: "@cosmo-behavior plan:artifact-conformance-gate#B-008",
+					testFile: "tests/artifacts/passing.txt",
+					issues: [],
+				},
+				{
+					behaviorId: "B-099",
+					marker: "@cosmo-behavior plan:artifact-conformance-gate#B-099",
+					testFile: "tests/artifacts/failing.txt",
+					issues: [
+						{
+							kind: "missing-marker",
+							message:
+								"Behavior B-099 referenced Test file does not contain marker @cosmo-behavior plan:artifact-conformance-gate#B-099.",
+							behaviorId: "B-099",
+							field: "marker",
+							line: 23,
+							path: "tests/artifacts/failing.txt",
+							marker: "@cosmo-behavior plan:artifact-conformance-gate#B-099",
+						},
+					],
+				},
+			],
+			issues: [
+				{
+					kind: "missing-marker",
+					message:
+						"Behavior B-099 referenced Test file does not contain marker @cosmo-behavior plan:artifact-conformance-gate#B-099.",
+					behaviorId: "B-099",
+					field: "marker",
+					line: 23,
+					path: "tests/artifacts/failing.txt",
+					marker: "@cosmo-behavior plan:artifact-conformance-gate#B-099",
+				},
+			],
+		});
+	});
+
 	async function createTempDir(prefix: string): Promise<string> {
 		const path = await mkdtemp(join(tmpdir(), prefix));
 		tempDirs.push(path);
@@ -415,5 +614,32 @@ function behaviorMarkdown(testReference: string): string {
 - Seam: \`lib/artifacts/behavior-conformance.ts\`
 - Test: ${testReference}
 - Marker: \`@cosmo-behavior plan:artifact-conformance-gate#B-005\`
+`;
+}
+
+function behaviorMarkdownFor({
+	behaviorId,
+	source,
+	testReference,
+	marker,
+}: {
+	behaviorId: string;
+	source: string;
+	testReference: string;
+	marker: string;
+}): string {
+	return `# Artifact Conformance Gate
+
+## Behaviors
+
+### ${behaviorId} - Validates behavior test evidence
+
+- Source: ${source}
+- Context: a behavior references filesystem evidence
+- Action: the checker validates the Test file and marker text
+- Expected: it returns structured conformance evidence
+- Seam: \`lib/artifacts/behavior-conformance.ts\`
+- Test: ${testReference}
+- Marker: \`${marker}\`
 `;
 }
