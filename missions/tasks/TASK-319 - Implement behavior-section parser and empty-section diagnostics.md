@@ -1,7 +1,7 @@
 ---
 id: TASK-319
 title: Implement behavior-section parser and empty-section diagnostics
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -9,7 +9,7 @@ labels:
   - 'plan:artifact-conformance-gate'
 dependencies: []
 createdAt: '2026-05-22T15:55:28.848Z'
-updatedAt: '2026-05-22T15:55:28.848Z'
+updatedAt: '2026-05-22T16:16:06.774Z'
 ---
 
 ## Description

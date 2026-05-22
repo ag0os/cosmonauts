@@ -1,7 +1,7 @@
 ---
 id: TASK-324
 title: Update work-artifact guidance for mechanical conformance scope
-status: To Do
+status: Done
 priority: medium
 labels:
   - testing
@@ -9,7 +9,7 @@ labels:
 dependencies:
   - TASK-322
 createdAt: '2026-05-22T15:56:08.878Z'
-updatedAt: '2026-05-22T15:56:08.878Z'
+updatedAt: '2026-05-22T16:33:32.883Z'
 ---
 
 ## Description

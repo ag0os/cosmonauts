@@ -1,7 +1,7 @@
 ---
 id: TASK-325
 title: Perform artifact-conformance integration and no-scope-creep verification
-status: To Do
+status: Done
 priority: medium
 labels:
   - testing
@@ -11,7 +11,7 @@ dependencies:
   - TASK-323
   - TASK-324
 createdAt: '2026-05-22T15:56:19.689Z'
-updatedAt: '2026-05-22T15:56:19.689Z'
+updatedAt: '2026-05-22T16:35:08.421Z'
 ---
 
 ## Description

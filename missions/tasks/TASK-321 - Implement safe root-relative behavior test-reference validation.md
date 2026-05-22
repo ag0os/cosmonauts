@@ -1,7 +1,7 @@
 ---
 id: TASK-321
 title: Implement safe root-relative behavior test-reference validation
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-320
 createdAt: '2026-05-22T15:55:42.925Z'
-updatedAt: '2026-05-22T15:55:42.925Z'
+updatedAt: '2026-05-22T16:23:21.632Z'
 ---
 
 ## Description

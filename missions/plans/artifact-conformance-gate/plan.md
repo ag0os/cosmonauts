@@ -1,8 +1,8 @@
 ---
 title: Artifact Conformance Gate
-status: active
+status: completed
 createdAt: '2026-05-22T15:42:45.218Z'
-updatedAt: '2026-05-22T15:49:42.959Z'
+updatedAt: '2026-05-22T18:42:47.328Z'
 ---
 
 ## Overview

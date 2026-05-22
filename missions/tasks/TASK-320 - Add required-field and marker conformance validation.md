@@ -1,7 +1,7 @@
 ---
 id: TASK-320
 title: Add required-field and marker conformance validation
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-319
 createdAt: '2026-05-22T15:55:36.257Z'
-updatedAt: '2026-05-22T15:55:36.257Z'
+updatedAt: '2026-05-22T16:19:14.405Z'
 ---
 
 ## Description

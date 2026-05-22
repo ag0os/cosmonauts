@@ -1,7 +1,7 @@
 ---
 id: TASK-322
 title: 'Verify test files, exact markers, and structured conformance evidence'
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-321
 createdAt: '2026-05-22T15:55:51.777Z'
-updatedAt: '2026-05-22T15:55:51.777Z'
+updatedAt: '2026-05-22T16:27:30.184Z'
 ---
 
 ## Description

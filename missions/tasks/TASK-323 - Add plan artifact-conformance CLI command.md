@@ -1,7 +1,7 @@
 ---
 id: TASK-323
 title: Add plan artifact-conformance CLI command
-status: To Do
+status: Done
 priority: medium
 labels:
   - api
@@ -11,7 +11,7 @@ labels:
 dependencies:
   - TASK-322
 createdAt: '2026-05-22T15:56:01.319Z'
-updatedAt: '2026-05-22T15:56:01.319Z'
+updatedAt: '2026-05-22T16:31:36.249Z'
 ---
 
 ## Description
