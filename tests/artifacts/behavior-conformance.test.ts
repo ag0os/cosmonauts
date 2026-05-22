@@ -1,10 +1,22 @@
-import { describe, expect, test } from "vitest";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, test } from "vitest";
 import {
 	checkBehaviorConformance,
 	parseBehaviorSection,
 } from "../../lib/artifacts/index.ts";
 
 describe("behavior conformance", () => {
+	let tempDirs: string[] = [];
+
+	afterEach(async () => {
+		await Promise.all(
+			tempDirs.map((tempDir) => rm(tempDir, { recursive: true, force: true })),
+		);
+		tempDirs = [];
+	});
+
 	// @cosmo-behavior plan:artifact-conformance-gate#B-001
 	test("parses behavior entries from the Behaviors section", () => {
 		const markdown = `# Artifact Conformance Gate
@@ -261,4 +273,147 @@ ${behaviorFields}
 		expect(valid.ok).toBe(true);
 		expect(valid.issues).toEqual([]);
 	});
+
+	// @cosmo-behavior plan:artifact-conformance-gate#B-005
+	test("rejects empty absolute traversal and symlink-escape test references before reading files", async () => {
+		const projectRoot = await createTempDir("behavior-conformance-root-");
+		const outsideRoot = await createTempDir("behavior-conformance-outside-");
+		await mkdir(join(projectRoot, "tests", "artifacts"), { recursive: true });
+		await writeFile(
+			join(projectRoot, "tests", "artifacts", "behavior-conformance.test.ts"),
+			"// valid test file\n",
+			"utf-8",
+		);
+		await writeFile(
+			join(outsideRoot, "escaped.test.ts"),
+			"// outside\n",
+			"utf-8",
+		);
+		await symlink(
+			join(outsideRoot, "escaped.test.ts"),
+			join(projectRoot, "tests", "artifacts", "escaped.test.ts"),
+		);
+
+		const invalidCases = [
+			{
+				name: "empty",
+				value: "",
+				path: undefined,
+				message:
+					"Behavior B-005 Test field must include a project-root-relative path.",
+			},
+			{
+				name: "empty inline code",
+				value: "`   ` > `named test`",
+				path: undefined,
+				message:
+					"Behavior B-005 Test field must include a project-root-relative path.",
+			},
+			{
+				name: "malformed inline code",
+				value: "`tests/artifacts/behavior-conformance.test.ts > `named test`",
+				path: undefined,
+				message:
+					"Behavior B-005 Test field must include a project-root-relative path.",
+			},
+			{
+				name: "posix absolute",
+				value: "`/tmp/behavior-conformance.test.ts`",
+				path: "/tmp/behavior-conformance.test.ts",
+				message:
+					"Behavior B-005 Test field path must be relative to the project root.",
+			},
+			{
+				name: "windows absolute",
+				value: "`C:\\tmp\\behavior-conformance.test.ts`",
+				path: "C:\\tmp\\behavior-conformance.test.ts",
+				message:
+					"Behavior B-005 Test field path must be relative to the project root.",
+			},
+			{
+				name: "nul byte",
+				value: "`tests/artifacts/behavior-conformance.test.ts\u0000.md`",
+				path: "tests/artifacts/behavior-conformance.test.ts\u0000.md",
+				message: "Behavior B-005 Test field path must not contain NUL bytes.",
+			},
+			{
+				name: "traversal",
+				value: "`../outside.test.ts`",
+				path: "../outside.test.ts",
+				message:
+					"Behavior B-005 Test field path must stay inside the project root.",
+			},
+			{
+				name: "symlink escape",
+				value: "`tests/artifacts/escaped.test.ts` > `outside marker`",
+				path: "tests/artifacts/escaped.test.ts",
+				message:
+					"Behavior B-005 Test field path resolves outside the project root.",
+			},
+		] as const;
+
+		for (const testCase of invalidCases) {
+			const result = checkBehaviorConformance({
+				planSlug: "artifact-conformance-gate",
+				projectRoot,
+				planMarkdown: behaviorMarkdown(testCase.value),
+			});
+
+			expect(result.ok, testCase.name).toBe(false);
+			expect(result.issues, testCase.name).toEqual([
+				{
+					kind: "invalid-test-reference",
+					message: testCase.message,
+					behaviorId: "B-005",
+					field: "test",
+					line: 12,
+					path: testCase.path,
+					actual: testCase.value,
+				},
+			]);
+		}
+
+		const inlineCodeReference = checkBehaviorConformance({
+			planSlug: "artifact-conformance-gate",
+			projectRoot,
+			planMarkdown: behaviorMarkdown(
+				"`tests/artifacts/behavior-conformance.test.ts` > `named test evidence`",
+			),
+		});
+		expect(inlineCodeReference.ok).toBe(true);
+		expect(inlineCodeReference.issues).toEqual([]);
+
+		const textBeforeNamedTestReference = checkBehaviorConformance({
+			planSlug: "artifact-conformance-gate",
+			projectRoot,
+			planMarkdown: behaviorMarkdown(
+				"tests/artifacts/behavior-conformance.test.ts > `named test evidence`",
+			),
+		});
+		expect(textBeforeNamedTestReference.ok).toBe(true);
+		expect(textBeforeNamedTestReference.issues).toEqual([]);
+	});
+
+	async function createTempDir(prefix: string): Promise<string> {
+		const path = await mkdtemp(join(tmpdir(), prefix));
+		tempDirs.push(path);
+		return path;
+	}
 });
+
+function behaviorMarkdown(testReference: string): string {
+	return `# Artifact Conformance Gate
+
+## Behaviors
+
+### B-005 - Validates behavior test references
+
+- Source: AC-005
+- Context: a behavior test reference can point at unsafe paths
+- Action: the checker validates the behavior Test field path
+- Expected: it returns actionable invalid test-reference evidence before reading files
+- Seam: \`lib/artifacts/behavior-conformance.ts\`
+- Test: ${testReference}
+- Marker: \`@cosmo-behavior plan:artifact-conformance-gate#B-005\`
+`;
+}

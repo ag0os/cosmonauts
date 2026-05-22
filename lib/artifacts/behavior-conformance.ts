@@ -1,3 +1,6 @@
+import { existsSync, realpathSync } from "node:fs";
+import { isAbsolute, relative, resolve, win32 } from "node:path";
+
 export const REQUIRED_BEHAVIOR_FIELD_NAMES = [
 	"source",
 	"context",
@@ -65,6 +68,7 @@ export interface CheckBehaviorConformanceOptions {
 	planMarkdown: string;
 	planSlug: string;
 	planPath?: string;
+	projectRoot?: string;
 }
 
 export interface ArtifactConformanceResult {
@@ -155,6 +159,7 @@ export function checkBehaviorConformance(
 		validateBehavior({
 			behavior,
 			planSlug: options.planSlug,
+			projectRoot: options.projectRoot ?? process.cwd(),
 		}),
 	);
 	const issues = [...section.issues, ...behaviorIssues];
@@ -280,18 +285,27 @@ function parseBehaviorFieldLines({
 function validateBehavior({
 	behavior,
 	planSlug,
+	projectRoot,
 }: {
 	behavior: ParsedBehavior;
 	planSlug: string;
+	projectRoot: string;
 }): ArtifactConformanceIssue[] {
 	const issues = validateRequiredFields(behavior);
 	const markerIssue = validateMarker({
 		behavior,
 		planSlug,
 	});
+	const testReferenceIssue = validateTestReference({
+		behavior,
+		projectRoot,
+	});
 
 	if (markerIssue) {
 		issues.push(markerIssue);
+	}
+	if (testReferenceIssue) {
+		issues.push(testReferenceIssue);
 	}
 
 	return issues;
@@ -347,6 +361,133 @@ function validateMarker({
 		expected,
 		actual,
 	};
+}
+
+function validateTestReference({
+	behavior,
+	projectRoot,
+}: {
+	behavior: ParsedBehavior;
+	projectRoot: string;
+}): ArtifactConformanceIssue | undefined {
+	const testField = behavior.fields.test;
+	if (!testField) {
+		return undefined;
+	}
+
+	const parsed = parseTestReferencePath(testField.value);
+	if (!parsed) {
+		return invalidTestReferenceIssue({
+			behavior,
+			testField,
+			message: `Behavior ${behavior.id} Test field must include a project-root-relative path.`,
+			actual: testField.value,
+		});
+	}
+
+	if (parsed.includes("\0")) {
+		return invalidTestReferenceIssue({
+			behavior,
+			testField,
+			message: `Behavior ${behavior.id} Test field path must not contain NUL bytes.`,
+			path: parsed,
+			actual: testField.value,
+		});
+	}
+
+	if (isAbsolute(parsed) || win32.isAbsolute(parsed)) {
+		return invalidTestReferenceIssue({
+			behavior,
+			testField,
+			message: `Behavior ${behavior.id} Test field path must be relative to the project root.`,
+			path: parsed,
+			actual: testField.value,
+		});
+	}
+
+	const root = realpathSync(projectRoot);
+	const candidate = resolve(root, parsed);
+	if (!isPathInsideRoot({ path: candidate, root })) {
+		return invalidTestReferenceIssue({
+			behavior,
+			testField,
+			message: `Behavior ${behavior.id} Test field path must stay inside the project root.`,
+			path: parsed,
+			actual: testField.value,
+		});
+	}
+
+	if (existsSync(candidate)) {
+		const realCandidate = realpathSync(candidate);
+		if (!isPathInsideRoot({ path: realCandidate, root })) {
+			return invalidTestReferenceIssue({
+				behavior,
+				testField,
+				message: `Behavior ${behavior.id} Test field path resolves outside the project root.`,
+				path: parsed,
+				actual: testField.value,
+			});
+		}
+	}
+
+	return undefined;
+}
+
+function parseTestReferencePath(value: string): string | undefined {
+	const pathSegment = value.split(">", 1)[0]?.trim();
+	if (!pathSegment || hasMalformedBackticks(pathSegment)) {
+		return undefined;
+	}
+
+	const firstInlineCode = pathSegment.match(/`([^`]*)`/);
+	const candidate = firstInlineCode ? firstInlineCode[1] : pathSegment;
+	const path = candidate?.trim();
+
+	return path ? path : undefined;
+}
+
+function hasMalformedBackticks(value: string): boolean {
+	const backtickCount = [...value].filter(
+		(character) => character === "`",
+	).length;
+	return backtickCount % 2 !== 0;
+}
+
+function invalidTestReferenceIssue({
+	behavior,
+	testField,
+	message,
+	path,
+	actual,
+}: {
+	behavior: ParsedBehavior;
+	testField: ParsedBehaviorField;
+	message: string;
+	path?: string;
+	actual: string;
+}): ArtifactConformanceIssue {
+	return {
+		kind: "invalid-test-reference",
+		message,
+		behaviorId: behavior.id,
+		field: "test",
+		line: testField.lineNumber,
+		path,
+		actual,
+	};
+}
+
+function isPathInsideRoot({
+	path,
+	root,
+}: {
+	path: string;
+	root: string;
+}): boolean {
+	const distance = relative(root, path);
+	return (
+		distance === "" || (!distance.startsWith("..") && !isAbsolute(distance))
+	);
 }
 
 function buildExpectedMarker({
