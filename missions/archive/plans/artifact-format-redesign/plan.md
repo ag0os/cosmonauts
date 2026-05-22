@@ -2,9 +2,9 @@
 title: >-
   Work-document format redesign: spec, plan, architecture + behavior spine +
   gate contracts
-status: active
+status: completed
 createdAt: '2026-05-21T00:00:00.000Z'
-updatedAt: '2026-05-21T19:09:16.794Z'
+updatedAt: '2026-05-22T12:47:19.620Z'
 ---
 
 ## Overview
