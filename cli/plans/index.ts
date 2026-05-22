@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { registerArchiveCommand } from "./commands/archive.ts";
+import { registerCheckArtifactsCommand } from "./commands/check-artifacts.ts";
 import { registerCreateCommand } from "./commands/create.ts";
 import { registerDeleteCommand } from "./commands/delete.ts";
 import { registerEditCommand } from "./commands/edit.ts";
@@ -24,6 +25,7 @@ export function createPlanProgram(): Command {
 	registerEditCommand(program);
 	registerDeleteCommand(program);
 	registerArchiveCommand(program);
+	registerCheckArtifactsCommand(program);
 
 	return program;
 }

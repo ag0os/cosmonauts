@@ -24,5 +24,6 @@ describe("createPlanProgram", () => {
 		expect(commandNames).toContain("edit");
 		expect(commandNames).toContain("delete");
 		expect(commandNames).toContain("archive");
+		expect(commandNames).toContain("check-artifacts");
 	});
 });
