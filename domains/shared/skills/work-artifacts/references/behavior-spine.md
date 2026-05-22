@@ -44,6 +44,14 @@ Example:
 
 The corresponding test carries the marker near the executable `it()` or `test()` block as a plain comment. The marker is language-agnostic and grepable; it is not a framework API.
 
+## Mechanical Artifact Conformance
+
+Current mechanical artifact-conformance checks are intentionally narrow. They validate that the `## Behaviors` section has parseable `### B-###` entries, required behavior fields (`Source`, `Context`, `Action`, `Expected`, `Seam`, `Test`, and `Marker`), a project-root-relative `Test` file path that exists and resolves inside the project root, an exact `Marker` value for the plan slug and behavior ID, and exact marker text anywhere in the referenced test or evidence file.
+
+The v1 mechanical scope preserves these exclusions: checks do not parse test ASTs, do not check marker proximity to the named test, do not create concrete gate bindings, do not run a Quality Contract runner, do not enforce broad workflow-tier rules, and do not migrate legacy plans.
+
+Older plans missing current behavior-spine fields may fail until migrated separately.
+
 ## Durable Home
 
 A behavior's durable home is the test layer. The plan's `## Behaviors` section is a working view for active planning. Archiving a plan does not lose the behavior because the marker stays coupled to the test.

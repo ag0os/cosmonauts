@@ -38,6 +38,12 @@ Each row carries:
 
 An unbound bindable gate records an explicit degraded state. It is never a silent pass and never a hard failure in the generic artifact contract. The run should say the gate is unbound, not enforced, and subject to reviewer judgment until binding exists.
 
+## Artifact-Conformance Scope
+
+`artifact-conformance` is bound for the behavior-spine mechanical checks defined in `behavior-spine.md`: required behavior fields, root-relative test files, and exact marker presence in referenced files. This does not make generic artifact references a concrete command contract: they still must not name project tools, runnable commands, or project-specific bindings.
+
+The v1 scope also preserves explicit exclusions: generic gate contracts do not parse test ASTs, do not check marker proximity, do not create concrete gate bindings, do not run a Quality Contract runner, do not enforce broad workflow-tier rules, and do not migrate legacy plans.
+
 ## Ladder Shape
 
 Use this abstract table shape:
@@ -45,7 +51,7 @@ Use this abstract table shape:
 | Order | Gate kind | Tier | Binding state | Threshold | Protocol | Degradation / notes |
 |---:|---|---|---|---|---|---|
 | 1 | `correctness` | universal | bound | project-native correctness evidence passes | project-discovered | hard fail |
-| 2 | `artifact-conformance` | universal | bound | planned behaviors name tests and markers | artifact evidence | hard fail once enforcement exists |
+| 2 | `artifact-conformance` | universal | bound | behavior-spine mechanical checks pass | artifact evidence | hard fail |
 | 3 | `mutation` | bindable | unbound | project-specific | pending | unbound, not enforced; reviewer judgment required |
 
 Generic artifact references must not include columns for concrete tool names or runnable commands. Those bindings belong to project configuration and follow-up enforcement work.

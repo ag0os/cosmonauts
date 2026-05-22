@@ -108,6 +108,37 @@ describe("work-artifacts skill", () => {
 		expect(gateContracts).toContain("never a hard failure");
 	});
 
+	// @cosmo-behavior plan:artifact-conformance-gate#B-012
+	it("mentions mechanical behavior marker conformance without requiring AST parsing gate bindings or legacy migration", async () => {
+		const behaviorSpine = await readReference("behavior-spine.md");
+		const gateContracts = await readReference("gate-contracts.md");
+		const planFormat = await readReference("plan-format.md");
+		const guidance = `${behaviorSpine}\n${gateContracts}\n${planFormat}`;
+
+		expect(behaviorSpine).toContain("mechanical artifact-conformance checks");
+		expect(behaviorSpine).toContain("required behavior fields");
+		expect(behaviorSpine).toContain("project-root-relative `Test` file");
+		expect(behaviorSpine).toContain("exact marker text");
+		expect(behaviorSpine).toContain(
+			"Older plans missing current behavior-spine fields may fail until migrated separately.",
+		);
+		expect(guidance).toContain("do not parse test ASTs");
+		expect(guidance).toContain("do not check marker proximity");
+		expect(guidance).toContain("do not create concrete gate bindings");
+		expect(guidance).toContain("do not run a Quality Contract runner");
+		expect(guidance).toContain("do not enforce broad workflow-tier rules");
+		expect(guidance).toContain("do not migrate legacy plans");
+		expect(gateContracts).toContain(
+			"| 2 | `artifact-conformance` | universal | bound | behavior-spine mechanical checks pass | artifact evidence | hard fail |",
+		);
+		expect(planFormat).toContain(
+			"| 2 | `artifact-conformance` | universal | bound | behavior-spine mechanical checks pass | artifact evidence | hard fail |",
+		);
+		expect(guidance).not.toContain("hard fail once enforcement exists");
+		expect(guidance).not.toMatch(/\| (Tool|Command) \|/);
+		expect(guidance).not.toMatch(/\b(fallow|biome|vitest|reek)\b/i);
+	});
+
 	// @cosmo-behavior plan:artifact-format-redesign#B-011
 	it("allows approved visual primitives and forbids ascii art diagrams", async () => {
 		const visualPrimitives = await readReference("visual-primitives.md");

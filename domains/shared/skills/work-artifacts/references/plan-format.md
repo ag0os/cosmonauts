@@ -56,7 +56,9 @@ Use an ordered abstract gate ladder after risks and before implementation order:
 | Order | Gate kind | Tier | Binding state | Threshold | Protocol | Degradation / notes |
 |---:|---|---|---|---|---|---|
 | 1 | `correctness` | universal | bound | Project-native correctness checks pass | project-discovered | hard fail |
-| 2 | `artifact-conformance` | universal | bound | behaviors name existing tests and markers | artifact evidence | hard fail once enforcement exists |
+| 2 | `artifact-conformance` | universal | bound | behavior-spine mechanical checks pass | artifact evidence | hard fail |
 | 3 | `mutation` | bindable | bound/unbound | project-specific | pending or project-discovered | explicit degraded state when unbound |
+
+For `artifact-conformance`, "mechanical checks" means required behavior fields, root-relative test files, and exact marker presence as defined in `behavior-spine.md`.
 
 Generic plan formats must not add tool-name or command columns. Project-specific bindings and execution protocols are deferred outside this shared artifact contract.
