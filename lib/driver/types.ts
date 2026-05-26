@@ -5,6 +5,15 @@ export type BackendName = "cosmonauts-subagent" | "codex" | "claude-cli";
 export type FinalizationPhase = "commit" | "task_status" | "state_commit";
 export type StateCommitPolicy = "none" | "final-state-commit";
 
+export function resolveStateCommitPolicy(
+	spec: Pick<DriverRunSpec, "commitPolicy" | "stateCommitPolicy">,
+): StateCommitPolicy {
+	return (
+		spec.stateCommitPolicy ??
+		(spec.commitPolicy === "driver-commits" ? "final-state-commit" : "none")
+	);
+}
+
 export interface DriverRunSpec {
 	runId: string;
 	parentSessionId: string;

@@ -34,6 +34,7 @@ import type {
 	DriverEvent,
 	DriverResult,
 	DriverRunSpec,
+	StateCommitPolicy,
 } from "../../lib/driver/types.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
@@ -50,6 +51,7 @@ interface DriveRunOptions {
 	mode?: DriverMode;
 	branch?: string;
 	commitPolicy?: DriverRunSpec["commitPolicy"];
+	stateCommitPolicy?: StateCommitPolicy;
 	envelope?: string;
 	precondition?: string;
 	overrides?: string;
@@ -112,6 +114,10 @@ const COMMIT_POLICIES: readonly DriverRunSpec["commitPolicy"][] = [
 	"backend-commits",
 	"no-commit",
 ];
+const STATE_COMMIT_POLICIES: readonly StateCommitPolicy[] = [
+	"none",
+	"final-state-commit",
+];
 const PROCESS_START_TOLERANCE_MS = 5_000;
 const execFileAsync = promisify(execFile);
 
@@ -161,6 +167,11 @@ function configureRunCommand(command: Command): void {
 			"--commit-policy <policy>",
 			"Commit policy: driver-commits, backend-commits, or no-commit",
 			parseCommitPolicy,
+		)
+		.option(
+			"--state-commit-policy <policy>",
+			"State commit policy: final-state-commit or none",
+			parseStateCommitPolicy,
 		)
 		.option("--envelope <path>", "Prompt envelope path")
 		.option("--precondition <path>", "Prompt precondition path")
@@ -713,6 +724,8 @@ async function createRunSpec({
 		branch: options.branch ?? resume?.spec.branch,
 		commitPolicy:
 			options.commitPolicy ?? resume?.spec.commitPolicy ?? "driver-commits",
+		stateCommitPolicy:
+			options.stateCommitPolicy ?? resume?.spec.stateCommitPolicy,
 		partialMode: resume?.spec.partialMode,
 		workdir,
 		eventLogPath,
@@ -951,6 +964,15 @@ function parseCommitPolicy(value: string): DriverRunSpec["commitPolicy"] {
 	}
 	throw new Error(
 		`Invalid commit policy "${value}". Valid: ${COMMIT_POLICIES.join(", ")}`,
+	);
+}
+
+function parseStateCommitPolicy(value: string): StateCommitPolicy {
+	if (STATE_COMMIT_POLICIES.includes(value as StateCommitPolicy)) {
+		return value as StateCommitPolicy;
+	}
+	throw new Error(
+		`Invalid state commit policy "${value}". Valid: ${STATE_COMMIT_POLICIES.join(", ")}`,
 	);
 }
 

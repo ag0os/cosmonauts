@@ -26,6 +26,7 @@ import type {
 	DriverHandle,
 	DriverResult,
 	DriverRunSpec,
+	StateCommitPolicy,
 } from "../../../../lib/driver/types.ts";
 import { activityBus } from "../../../../lib/orchestration/activity-bus.ts";
 import { createPiSpawner } from "../../../../lib/orchestration/agent-spawner.ts";
@@ -119,6 +120,12 @@ export function registerDriverTool(
 							"Who creates per-task commits. `driver-commits` (default): the driver commits each completed task. `backend-commits`: the backend agent commits its own work. `no-commit`: changes are left uncommitted.",
 					},
 				),
+			),
+			stateCommitPolicy: Type.Optional(
+				Type.Union([Type.Literal("final-state-commit"), Type.Literal("none")], {
+					description:
+						"Optional final task-state commit policy. Omit to use Drive's shared default: final-state-commit with driver-commits, otherwise none.",
+				}),
 			),
 			promptOverridesDir: Type.Optional(
 				Type.String({
@@ -264,6 +271,7 @@ async function createRunSpec({
 		backend: BackendName;
 		branch?: string;
 		commitPolicy?: DriverRunSpec["commitPolicy"];
+		stateCommitPolicy?: StateCommitPolicy;
 		envelopePath?: string;
 		preconditionPath?: string;
 		promptOverridesDir?: string;
@@ -312,6 +320,7 @@ async function createRunSpec({
 		postflightCommands: params.postflightCommands ?? [],
 		branch: params.branch,
 		commitPolicy: params.commitPolicy ?? "driver-commits",
+		stateCommitPolicy: params.stateCommitPolicy,
 		partialMode: params.partialMode,
 		workdir,
 		eventLogPath,

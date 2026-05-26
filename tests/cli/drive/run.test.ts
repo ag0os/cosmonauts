@@ -5,10 +5,11 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createDriveProgram } from "../../../cli/drive/subcommand.ts";
 import type { DriverDeps } from "../../../lib/driver/driver.ts";
 import { DEFAULT_TASK_TIMEOUT_MS } from "../../../lib/driver/run-one-task.ts";
-import type {
-	DriverHandle,
-	DriverResult,
-	DriverRunSpec,
+import {
+	type DriverHandle,
+	type DriverResult,
+	type DriverRunSpec,
+	resolveStateCommitPolicy,
 } from "../../../lib/driver/types.ts";
 import { TaskManager } from "../../../lib/tasks/task-manager.ts";
 import type { Task } from "../../../lib/tasks/task-types.ts";
@@ -266,6 +267,56 @@ describe("cosmonauts drive run", () => {
 			claudeBinary: undefined,
 			claudeArgs: ["--dangerously-skip-permissions"],
 		});
+	});
+
+	// @cosmo-behavior plan:drive-resilience-state-model#B-013
+	test("defaults state commit policy from commit policy", async () => {
+		const fixture = await setupFixture(1);
+
+		await parseDrive([
+			"--plan",
+			PLAN,
+			"--task-ids",
+			fixture.tasks[0]?.id ?? "TASK-001",
+			"--commit-policy",
+			"driver-commits",
+			"--envelope",
+			fixture.envelopePath,
+		]);
+
+		let spec = firstRunInlineSpec();
+		expect(spec.stateCommitPolicy).toBeUndefined();
+		expect(resolveStateCommitPolicy(spec)).toBe("final-state-commit");
+		expect(
+			resolveStateCommitPolicy({
+				commitPolicy: "backend-commits",
+			}),
+		).toBe("none");
+		expect(resolveStateCommitPolicy({ commitPolicy: "no-commit" })).toBe(
+			"none",
+		);
+
+		driverMocks.runInline.mockClear();
+		output.restore();
+		output = attachJsonHelpers(captureCliOutput());
+
+		await parseDrive([
+			"--plan",
+			PLAN,
+			"--task-ids",
+			fixture.tasks[0]?.id ?? "TASK-001",
+			"--commit-policy",
+			"backend-commits",
+			"--state-commit-policy",
+			"final-state-commit",
+			"--envelope",
+			fixture.envelopePath,
+		]);
+
+		spec = firstRunInlineSpec();
+		expect(spec.commitPolicy).toBe("backend-commits");
+		expect(spec.stateCommitPolicy).toBe("final-state-commit");
+		expect(resolveStateCommitPolicy(spec)).toBe("final-state-commit");
 	});
 
 	test("routes explicit inline and detached modes without invoking real backends", async () => {

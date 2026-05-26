@@ -10,16 +10,17 @@ import {
 	pendingFinalizationPath,
 	writePendingFinalization,
 } from "./run-state.ts";
-import type {
-	ContradictedBlockAnnotation,
-	DriverEvent,
-	DriverRunSpec,
-	EventSink,
-	ParsedReport,
-	PromptLayers,
-	Report,
-	ReportOutcome,
-	TaskOutcome,
+import {
+	type ContradictedBlockAnnotation,
+	type DriverEvent,
+	type DriverRunSpec,
+	type EventSink,
+	type ParsedReport,
+	type PromptLayers,
+	type Report,
+	type ReportOutcome,
+	resolveStateCommitPolicy,
+	type TaskOutcome,
 } from "./types.ts";
 
 export interface RunOneTaskCtx {
@@ -151,6 +152,7 @@ async function runTaskAttempt(
 			runExpectations: {
 				backendName: spec.backendName,
 				commitPolicy: spec.commitPolicy,
+				stateCommitPolicy: resolveStateCommitPolicy(spec),
 				preflightCommands: spec.preflightCommands,
 				postflightCommands: spec.postflightCommands,
 				projectRoot: spec.projectRoot,
@@ -749,7 +751,7 @@ async function recordCommitFinalizationFailure({
 		planSlug: spec.planSlug,
 		createdAt: new Date().toISOString(),
 		commitPolicy: spec.commitPolicy,
-		stateCommitPolicy: resolvedStateCommitPolicy(spec),
+		stateCommitPolicy: resolveStateCommitPolicy(spec),
 		reason,
 		phase: "commit",
 		taskId,
@@ -1020,7 +1022,7 @@ async function recordTaskStatusFinalizationFailure({
 		planSlug: spec.planSlug,
 		createdAt: new Date().toISOString(),
 		commitPolicy: spec.commitPolicy,
-		stateCommitPolicy: resolvedStateCommitPolicy(spec),
+		stateCommitPolicy: resolveStateCommitPolicy(spec),
 		reason,
 		phase: "task_status",
 		taskId,
@@ -1049,15 +1051,6 @@ async function recordTaskStatusFinalizationFailure({
 		finalizationCommitSha: commitSha,
 		pendingFinalizationPath: pendingFinalizationPath(spec.workdir),
 	};
-}
-
-function resolvedStateCommitPolicy(
-	spec: DriverRunSpec,
-): "none" | "final-state-commit" {
-	return (
-		spec.stateCommitPolicy ??
-		(spec.commitPolicy === "driver-commits" ? "final-state-commit" : "none")
-	);
 }
 
 async function blockTask(

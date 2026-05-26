@@ -70,6 +70,7 @@ describe("prompt-template renderPromptForTask", () => {
 		const runExpectations = {
 			backendName: "codex",
 			commitPolicy: "driver-commits",
+			stateCommitPolicy: "final-state-commit",
 			preflightCommands: ["pnpm install --frozen-lockfile"],
 			postflightCommands: ["pnpm test", "pnpm exec tsc --noEmit"],
 			projectRoot: join(tmp.path, "project"),
@@ -87,9 +88,41 @@ describe("prompt-template renderPromptForTask", () => {
 		);
 		expect(expectationsIndex).toBeLessThan(rendered.indexOf("# Task"));
 		expect(rendered).toContain("Commit policy: driver-commits");
+		expect(rendered).toContain("State commit policy: final-state-commit");
 		expect(rendered).toContain("`pnpm test`");
 		expect(rendered).toContain("`pnpm exec tsc --noEmit`");
 		expect(rendered).toContain("Expected branch: feature/run");
+	});
+
+	// @cosmo-behavior plan:drive-resilience-state-model#B-013
+	test("renders state commit policy expectations without changing the report contract", async () => {
+		const { taskManager, taskId, envelopePath, workdir } =
+			await setupPromptTest({
+				envelope: "Envelope instructions",
+			});
+		const layers = { envelopePath, workdir } satisfies TestPromptLayers;
+
+		const promptPath = await renderPromptForTask(taskId, layers, taskManager, {
+			runExpectations: {
+				backendName: "codex",
+				commitPolicy: "backend-commits",
+				stateCommitPolicy: "none",
+				preflightCommands: [],
+				postflightCommands: [],
+				projectRoot: join(tmp.path, "project"),
+				workdir,
+			},
+		});
+
+		const rendered = await readFile(promptPath, "utf-8");
+		expect(rendered).toContain("State commit policy: none");
+		expect(rendered).toContain(
+			"Drive will not create a final task-state commit for this run.",
+		);
+		expect(rendered).toContain("## Drive Report Contract");
+		expect(rendered).toContain(
+			"The very last non-empty line of your response MUST be exactly one of",
+		);
 	});
 
 	test("appends a matching per-task override when it exists", async () => {

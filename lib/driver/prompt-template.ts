@@ -3,7 +3,12 @@ import { dirname, join } from "node:path";
 import type { TaskManager } from "../tasks/task-manager.ts";
 import { serializeTask } from "../tasks/task-serializer.ts";
 import type { Task } from "../tasks/task-types.ts";
-import type { BackendName, DriverRunSpec, PromptLayers } from "./types.ts";
+import type {
+	BackendName,
+	DriverRunSpec,
+	PromptLayers,
+	StateCommitPolicy,
+} from "./types.ts";
 
 interface PromptLayersWithWorkdir extends PromptLayers {
 	workdir?: string;
@@ -12,6 +17,7 @@ interface PromptLayersWithWorkdir extends PromptLayers {
 export interface DriveRunExpectations {
 	backendName: BackendName;
 	commitPolicy: DriverRunSpec["commitPolicy"];
+	stateCommitPolicy: StateCommitPolicy;
 	preflightCommands: readonly string[];
 	postflightCommands: readonly string[];
 	projectRoot: string;
@@ -120,6 +126,8 @@ function renderRunExpectations(expectations: DriveRunExpectations): string {
 		`- Expected branch: ${expectations.branch ?? "not specified"}`,
 		`- Commit policy: ${expectations.commitPolicy}`,
 		`  - ${commitPolicyInstruction(expectations.commitPolicy)}`,
+		`- State commit policy: ${expectations.stateCommitPolicy}`,
+		`  - ${stateCommitPolicyInstruction(expectations.stateCommitPolicy)}`,
 		"- Required preflight commands:",
 		renderCommandList(expectations.preflightCommands),
 		"- Required postflight commands:",
@@ -140,6 +148,13 @@ function commitPolicyInstruction(
 		return "Create a git commit for your completed implementation changes before the final report.";
 	}
 	return "Do not create commits; leave completed changes in the worktree.";
+}
+
+function stateCommitPolicyInstruction(policy: StateCommitPolicy): string {
+	if (policy === "final-state-commit") {
+		return "After all queued tasks finish successfully, Drive is expected to create one final commit for its task-state updates.";
+	}
+	return "Drive will not create a final task-state commit for this run.";
 }
 
 function renderCommandList(commands: readonly string[]): string {

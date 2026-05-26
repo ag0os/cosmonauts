@@ -24,7 +24,12 @@ import {
 	getRepoCommitLockPath,
 	type LockHandle,
 } from "../../lib/driver/lock.ts";
-import type { DriverEvent, DriverResult } from "../../lib/driver/types.ts";
+import {
+	type DriverEvent,
+	type DriverResult,
+	type DriverRunSpec,
+	resolveStateCommitPolicy,
+} from "../../lib/driver/types.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
 import type { SpawnActivityEvent } from "../../lib/orchestration/message-bus.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
@@ -243,6 +248,29 @@ describe("driver e2e run_driver integration", () => {
 		).toBe("project-lock-present\nframework-lock-absent\n");
 	});
 
+	// @cosmo-behavior plan:drive-resilience-state-model#B-013
+	test("run_driver propagates state commit policy defaults and overrides", async () => {
+		const fixture = await setupFixture({ taskCount: 1 });
+		backendMocks.run.mockResolvedValue(successResult());
+
+		const defaulted = await runDriver(fixture, {
+			commitPolicy: "driver-commits",
+		});
+		await waitForCompletion(defaulted.workdir);
+		const defaultedSpec = await readSpec(defaulted.workdir);
+		expect(defaultedSpec.stateCommitPolicy).toBeUndefined();
+		expect(resolveStateCommitPolicy(defaultedSpec)).toBe("final-state-commit");
+
+		const overridden = await runDriver(fixture, {
+			commitPolicy: "driver-commits",
+			stateCommitPolicy: "none",
+		});
+		await waitForCompletion(overridden.workdir);
+		const overriddenSpec = await readSpec(overridden.workdir);
+		expect(overriddenSpec.stateCommitPolicy).toBe("none");
+		expect(resolveStateCommitPolicy(overriddenSpec)).toBe("none");
+	});
+
 	test("driver postverify failure blocks task and does not commit", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		await initGit(fixture.projectRoot);
@@ -327,6 +355,7 @@ interface RunDriverOverrides {
 	preflightCommands?: string[];
 	postflightCommands?: string[];
 	frameworkRoot?: string;
+	stateCommitPolicy?: "final-state-commit" | "none";
 }
 
 function onlyTaskId(fixture: Fixture): string {
@@ -403,12 +432,19 @@ async function runDriver(
 		mode: "inline",
 		envelopePath: fixture.envelopePath,
 		commitPolicy: overrides.commitPolicy ?? "no-commit",
+		stateCommitPolicy: overrides.stateCommitPolicy,
 		preflightCommands: overrides.preflightCommands ?? [],
 		postflightCommands: overrides.postflightCommands ?? [],
 		branch: overrides.branch,
 	})) as { details: DriverResultDetails };
 
 	return response.details;
+}
+
+async function readSpec(workdir: string): Promise<DriverRunSpec> {
+	return JSON.parse(
+		await readFile(join(workdir, "spec.json"), "utf-8"),
+	) as DriverRunSpec;
 }
 
 async function waitForCompletion(workdir: string): Promise<DriverResult> {
