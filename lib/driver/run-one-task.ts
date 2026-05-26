@@ -6,6 +6,10 @@ import type { Backend, BackendRunResult } from "./backends/types.ts";
 import { acquireRepoCommitLock } from "./lock.ts";
 import { renderPromptForTask } from "./prompt-template.ts";
 import { parseReport } from "./report-parser.ts";
+import {
+	pendingFinalizationPath,
+	writePendingFinalization,
+} from "./run-state.ts";
 import type {
 	ContradictedBlockAnnotation,
 	DriverEvent,
@@ -213,7 +217,7 @@ async function runTaskAttempt(
 		if (error instanceof CommitFailedError) {
 			return {
 				kind: "outcome",
-				outcome: { status: "blocked", reason: error.message },
+				outcome: error.outcome,
 			};
 		}
 		throw error;
@@ -655,6 +659,17 @@ async function maybeCommit(
 	}
 
 	const subject = commitSubject(taskId, report);
+	const headBeforeFinalization = await gitRevParseHead(
+		spec.projectRoot,
+		ctx.abortSignal,
+	);
+	await emit(ctx, spec, {
+		type: "finalize",
+		taskId,
+		phase: "commit",
+		status: "started",
+		details: { subject },
+	});
 	const lock = await acquireRepoCommitLock(ctx.cosmonautsRoot);
 	let committed = false;
 	let commitError: unknown;
@@ -672,11 +687,30 @@ async function maybeCommit(
 
 	if (commitError) {
 		const reason = `commit failed: ${formatError(commitError)}`;
+		if (outcome === "success") {
+			throw new CommitFailedError(
+				await recordCommitFinalizationFailure({
+					spec,
+					ctx,
+					taskId,
+					reason,
+					subject,
+					headBeforeFinalization,
+				}),
+			);
+		}
 		await blockTask(ctx, spec, taskId, reason);
-		throw new CommitFailedError(reason);
+		throw new CommitFailedError({ status: "blocked", reason });
 	}
 
 	if (!committed) {
+		await emit(ctx, spec, {
+			type: "finalize",
+			taskId,
+			phase: "commit",
+			status: "skipped",
+			details: { reason: "no_changes" },
+		});
 		return undefined;
 	}
 
@@ -687,7 +721,69 @@ async function maybeCommit(
 		sha: commitSha,
 		subject,
 	});
+	await emit(ctx, spec, {
+		type: "finalize",
+		taskId,
+		phase: "commit",
+		status: "passed",
+		details: { sha: commitSha, subject },
+	});
 	return commitSha;
+}
+
+async function recordCommitFinalizationFailure({
+	spec,
+	ctx,
+	taskId,
+	reason,
+	subject,
+	headBeforeFinalization,
+}: {
+	spec: DriverRunSpec;
+	ctx: RunOneTaskCtx;
+	taskId: string;
+	reason: string;
+	subject: string;
+	headBeforeFinalization: string;
+}): Promise<TaskOutcome> {
+	await writePendingFinalization(spec.workdir, {
+		runId: spec.runId,
+		planSlug: spec.planSlug,
+		createdAt: new Date().toISOString(),
+		commitPolicy: spec.commitPolicy,
+		stateCommitPolicy: resolvedStateCommitPolicy(spec),
+		reason,
+		phase: "commit",
+		taskId,
+		headBeforeFinalization,
+		commitSubject: subject,
+		verifiedAt: new Date().toISOString(),
+	});
+	await ctx.taskManager.updateTask(taskId, {
+		status: "In Progress",
+		implementationNotes: `backend and postflight succeeded, but commit finalization failed: ${reason}`,
+	});
+	await emit(ctx, spec, {
+		type: "finalize",
+		taskId,
+		phase: "commit",
+		status: "failed",
+		details: { error: reason },
+	});
+	await emit(ctx, spec, {
+		type: "task_finalization_failed",
+		taskId,
+		phase: "commit",
+		reason,
+		retryable: true,
+	});
+	return {
+		status: "finalization_failed",
+		finalizationPhase: "commit",
+		finalizationReason: reason,
+		finalizationTaskId: taskId,
+		pendingFinalizationPath: pendingFinalizationPath(spec.workdir),
+	};
 }
 
 function commitSubject(taskId: string, report: ParsedReport): string {
@@ -823,7 +919,25 @@ async function transitionTaskStatus({
 }: TransitionOptions): Promise<TaskOutcome> {
 	try {
 		if (outcome === "success") {
+			if (spec.commitPolicy === "driver-commits") {
+				await emit(ctx, spec, {
+					type: "finalize",
+					taskId,
+					phase: "task_status",
+					status: "started",
+					...(commitSha ? { details: { sha: commitSha } } : {}),
+				});
+			}
 			await ctx.taskManager.updateTask(taskId, { status: "Done" });
+			if (spec.commitPolicy === "driver-commits") {
+				await emit(ctx, spec, {
+					type: "finalize",
+					taskId,
+					phase: "task_status",
+					status: "passed",
+					...(commitSha ? { details: { sha: commitSha } } : {}),
+				});
+			}
 			await emit(ctx, spec, { type: "task_done", taskId });
 			return { status: "done", commitSha };
 		}
@@ -861,16 +975,74 @@ async function transitionTaskStatus({
 		return { status: "blocked", reason: failureReason, commitSha };
 	} catch (error) {
 		if (commitSha) {
-			const reason = "status update failed after commit";
-			await emit(ctx, spec, { type: "run_aborted", reason });
-			return {
-				status: "blocked",
-				reason: `${reason}: ${formatError(error)}`,
+			return recordTaskStatusFinalizationFailure({
+				spec,
+				ctx,
+				taskId,
 				commitSha,
-			};
+				reason: `status update failed after commit: ${formatError(error)}`,
+			});
 		}
 		throw error;
 	}
+}
+
+async function recordTaskStatusFinalizationFailure({
+	spec,
+	ctx,
+	taskId,
+	commitSha,
+	reason,
+}: {
+	spec: DriverRunSpec;
+	ctx: RunOneTaskCtx;
+	taskId: string;
+	commitSha: string;
+	reason: string;
+}): Promise<TaskOutcome> {
+	await writePendingFinalization(spec.workdir, {
+		runId: spec.runId,
+		planSlug: spec.planSlug,
+		createdAt: new Date().toISOString(),
+		commitPolicy: spec.commitPolicy,
+		stateCommitPolicy: resolvedStateCommitPolicy(spec),
+		reason,
+		phase: "task_status",
+		taskId,
+		commitSha,
+	});
+	await emit(ctx, spec, {
+		type: "finalize",
+		taskId,
+		phase: "task_status",
+		status: "failed",
+		details: { sha: commitSha, error: reason },
+	});
+	await emit(ctx, spec, {
+		type: "task_finalization_failed",
+		taskId,
+		phase: "task_status",
+		reason,
+		commitSha,
+		retryable: true,
+	});
+	return {
+		status: "finalization_failed",
+		finalizationPhase: "task_status",
+		finalizationReason: reason,
+		finalizationTaskId: taskId,
+		finalizationCommitSha: commitSha,
+		pendingFinalizationPath: pendingFinalizationPath(spec.workdir),
+	};
+}
+
+function resolvedStateCommitPolicy(
+	spec: DriverRunSpec,
+): "none" | "final-state-commit" {
+	return (
+		spec.stateCommitPolicy ??
+		(spec.commitPolicy === "driver-commits" ? "final-state-commit" : "none")
+	);
 }
 
 async function blockTask(
@@ -999,8 +1171,12 @@ function formatError(error: unknown): string {
 }
 
 class CommitFailedError extends Error {
-	constructor(message: string) {
-		super(message);
+	constructor(readonly outcome: TaskOutcome) {
+		super(
+			outcome.status === "finalization_failed"
+				? outcome.finalizationReason
+				: (outcome.reason ?? "commit failed"),
+		);
 		this.name = "CommitFailedError";
 	}
 }

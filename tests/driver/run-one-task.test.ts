@@ -14,6 +14,7 @@ import {
 	type RunOneTaskCtx,
 	runOneTask,
 } from "../../lib/driver/run-one-task.ts";
+import { pendingFinalizationPath } from "../../lib/driver/run-state.ts";
 import type {
 	DriverEvent,
 	DriverRunSpec,
@@ -233,7 +234,70 @@ describe("run-one-task", () => {
 		);
 	});
 
-	test("driver post-commit task update failure emits run_aborted without task_done", async () => {
+	// @cosmo-behavior plan:drive-resilience-state-model#B-002
+	test("records finalization_failed instead of blocked when driver commit fails after passing postflight", async () => {
+		const fixture = await setupGitFixture();
+		await installFailingCommitHook(fixture.projectRoot);
+		const headBeforeFinalization = (
+			await git(fixture.projectRoot, ["rev-parse", "HEAD"])
+		).trim();
+		const events: DriverEvent[] = [];
+		const backend = createBackend(async () => {
+			await writeProjectFile(fixture, "src/commit-fails.txt", "commit\n");
+			return successfulResult();
+		});
+
+		const outcome = await runOneTask(
+			createSpec(fixture, {
+				commitPolicy: "driver-commits",
+				postflightCommands: [nodeCommand("process.exit(0)")],
+			}),
+			createCtx(fixture, backend, events),
+			fixture.taskId,
+		);
+
+		expect(outcome).toMatchObject({
+			status: "finalization_failed",
+			finalizationPhase: "commit",
+			pendingFinalizationPath: pendingFinalizationPath(fixture.workdir),
+		});
+		expect(events).toContainEqual(
+			expect.objectContaining({
+				type: "finalize",
+				phase: "commit",
+				status: "failed",
+			}),
+		);
+		expect(events).toContainEqual(
+			expect.objectContaining({
+				type: "task_finalization_failed",
+				taskId: fixture.taskId,
+				phase: "commit",
+				retryable: true,
+			}),
+		);
+		expect(events.map((event) => event.type)).not.toContain("task_blocked");
+		const pending = JSON.parse(
+			await readFile(pendingFinalizationPath(fixture.workdir), "utf-8"),
+		);
+		expect(pending).toMatchObject({
+			runId: "run-255",
+			planSlug: "driver-primitives",
+			phase: "commit",
+			taskId: fixture.taskId,
+			headBeforeFinalization,
+			commitPolicy: "driver-commits",
+		});
+		const task = await fixture.taskManager.getTask(fixture.taskId);
+		expect(task?.status).toBe("In Progress");
+		expect(task?.implementationNotes).toContain(
+			"backend and postflight succeeded",
+		);
+		expect(task?.implementationNotes).toContain("commit finalization failed");
+	});
+
+	// @cosmo-behavior plan:drive-resilience-state-model#B-003
+	test("records finalization_failed with commit sha when task status update fails after commit", async () => {
 		const fixture = await setupRecordingGitFixture();
 		fixture.taskManager.failFinalUpdate = true;
 		const events: DriverEvent[] = [];
@@ -249,18 +313,42 @@ describe("run-one-task", () => {
 		);
 
 		expect(outcome).toMatchObject({
-			status: "blocked",
-			commitSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+			status: "finalization_failed",
+			finalizationPhase: "task_status",
+			finalizationCommitSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+			pendingFinalizationPath: pendingFinalizationPath(fixture.workdir),
 		});
-		expect(outcome.reason).toContain("status update failed after commit");
+		if (outcome.status !== "finalization_failed") {
+			throw new Error("expected finalization_failed outcome");
+		}
+		const finalizationCommitSha = outcome.finalizationCommitSha;
 		expect(events.map((event) => event.type)).toContain("commit_made");
 		expect(events).toContainEqual(
 			expect.objectContaining({
-				type: "run_aborted",
-				reason: "status update failed after commit",
+				type: "finalize",
+				phase: "task_status",
+				status: "failed",
+			}),
+		);
+		expect(events).toContainEqual(
+			expect.objectContaining({
+				type: "task_finalization_failed",
+				taskId: fixture.taskId,
+				phase: "task_status",
+				commitSha: finalizationCommitSha,
+				retryable: true,
 			}),
 		);
 		expect(events.map((event) => event.type)).not.toContain("task_done");
+		const pending = JSON.parse(
+			await readFile(pendingFinalizationPath(fixture.workdir), "utf-8"),
+		);
+		expect(pending).toMatchObject({
+			runId: "run-255",
+			phase: "task_status",
+			taskId: fixture.taskId,
+			commitSha: finalizationCommitSha,
+		});
 		expect(
 			await git(fixture.projectRoot, [
 				"show",
@@ -269,6 +357,97 @@ describe("run-one-task", () => {
 				"HEAD",
 			]),
 		).toContain(`${fixture.taskId}: driver task update`);
+	});
+
+	// @cosmo-behavior plan:drive-resilience-state-model#B-020
+	test("does not write pending finalization for backend or postflight failures", async () => {
+		const fixture = await setupGitFixture();
+
+		const preflightEvents: DriverEvent[] = [];
+		const preflightOutcome = await runOneTask(
+			createSpec(fixture, {
+				commitPolicy: "driver-commits",
+				preflightCommands: [nodeCommand("process.exit(1)")],
+			}),
+			createCtx(
+				fixture,
+				createBackend(async () => successfulResult()),
+				preflightEvents,
+			),
+			fixture.taskId,
+		);
+
+		const backendFailureEvents: DriverEvent[] = [];
+		const backendFailureOutcome = await runOneTask(
+			createSpec(fixture, { commitPolicy: "driver-commits" }),
+			createCtx(
+				fixture,
+				createBackend(async () => {
+					throw new Error("backend failed");
+				}),
+				backendFailureEvents,
+			),
+			fixture.taskId,
+		);
+
+		const reportFailureEvents: DriverEvent[] = [];
+		const reportFailureOutcome = await runOneTask(
+			createSpec(fixture, { commitPolicy: "driver-commits" }),
+			createCtx(
+				fixture,
+				createBackend(async () => failureResult("implementation failed")),
+				reportFailureEvents,
+			),
+			fixture.taskId,
+		);
+
+		const postflightEvents: DriverEvent[] = [];
+		const postflightOutcome = await runOneTask(
+			createSpec(fixture, {
+				commitPolicy: "driver-commits",
+				postflightCommands: [
+					nodeCommand(
+						"process.stderr.write('postflight failed'); process.exit(1)",
+					),
+				],
+			}),
+			createCtx(
+				fixture,
+				createBackend(async () => {
+					await writeProjectFile(fixture, "src/dirty.txt", "dirty\n");
+					return successfulResult();
+				}),
+				postflightEvents,
+			),
+			fixture.taskId,
+		);
+
+		expect(preflightOutcome).toMatchObject({ status: "blocked" });
+		expect(backendFailureOutcome).toMatchObject({ status: "blocked" });
+		expect(reportFailureOutcome).toMatchObject({ status: "blocked" });
+		expect(postflightOutcome).toMatchObject({ status: "blocked" });
+		await expect(
+			readFile(pendingFinalizationPath(fixture.workdir), "utf-8"),
+		).rejects.toMatchObject({ code: "ENOENT" });
+		expect(preflightEvents.map((event) => event.type)).toContain("preflight");
+		expect(backendFailureEvents.map((event) => event.type)).toContain(
+			"task_blocked",
+		);
+		expect(reportFailureEvents.map((event) => event.type)).toContain(
+			"task_blocked",
+		);
+		expect(postflightEvents.map((event) => event.type)).toContain(
+			"task_blocked",
+		);
+		expect([
+			...preflightEvents.map((event) => event.type),
+			...backendFailureEvents.map((event) => event.type),
+			...reportFailureEvents.map((event) => event.type),
+			...postflightEvents.map((event) => event.type),
+		]).not.toContain("task_finalization_failed");
+		expect(postflightEvents.map((event) => event.type)).not.toContain(
+			"commit_made",
+		);
 	});
 
 	test("driver partial outcome commits and leaves task In Progress with progress notes", async () => {
@@ -638,6 +817,16 @@ if git diff --cached --name-only | grep -E '^(missions|memory)/'; then
 fi
 `;
 	await writeFile(hookPath, script, "utf-8");
+	await chmod(hookPath, 0o755);
+}
+
+async function installFailingCommitHook(projectRoot: string): Promise<void> {
+	const hookPath = join(projectRoot, ".git", "hooks", "pre-commit");
+	await writeFile(
+		hookPath,
+		"#!/bin/sh\nprintf 'commit rejected by test hook\\n' >&2\nexit 1\n",
+		"utf-8",
+	);
 	await chmod(hookPath, 0o755);
 }
 
