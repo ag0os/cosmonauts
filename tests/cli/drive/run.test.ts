@@ -448,6 +448,230 @@ describe("cosmonauts drive run", () => {
 		expect(firstRunInlineSpec().runId).toBe("run-previous");
 	});
 
+	// @cosmo-behavior plan:drive-resilience-state-model#B-005
+	test("resume finalizes pending commit failure before invoking backend work", async () => {
+		const fixture = await setupFixture(2);
+		const taskIds = fixture.tasks.map((task) => task.id);
+		await writeResumeRun(taskIds, [], {
+			commitPolicy: "driver-commits",
+			stateCommitPolicy: "none",
+		});
+		const completionPath = join(resumeWorkdir(), "run.completion.json");
+		await writeFile(
+			completionPath,
+			'{"outcome":"finalization_failed"}\n',
+			"utf-8",
+		);
+		await writePendingCommitFinalization(taskIds[0] ?? "TASK-001");
+		childProcessMocks.execFile.mockImplementation(
+			gitMock({
+				head: "source-sha",
+				status: [" M src/feature.ts\n", ""],
+				diffHasChanges: true,
+			}),
+		);
+		driverMocks.runInline.mockImplementationOnce(
+			(spec: DriverRunSpec): DriverHandle => {
+				expect(existsSync(completionPath)).toBe(false);
+				return createHandle(spec, {
+					runId: spec.runId,
+					outcome: "completed",
+					tasksDone: spec.taskIds.length,
+					tasksBlocked: 0,
+				});
+			},
+		);
+
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		expect(existsSync(join(resumeWorkdir(), "pending-finalization.json"))).toBe(
+			false,
+		);
+		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
+		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(firstRunInlineSpec().taskIds).toEqual([taskIds[1]]);
+		expect(
+			(await fixture.manager.getTask(taskIds[0] ?? "TASK-001"))?.status,
+		).toBe("Done");
+		expect(
+			await readFile(join(resumeWorkdir(), "events.jsonl"), "utf-8"),
+		).toContain('"type":"task_done"');
+
+		driverMocks.runInline.mockClear();
+		output.restore();
+		output = attachJsonHelpers(captureCliOutput());
+		const detachedFixture = await setupFixture(6);
+		const detachedTaskIds = detachedFixture.tasks.map((task) => task.id);
+		await writeResumeRun(detachedTaskIds, [], {
+			commitPolicy: "driver-commits",
+			stateCommitPolicy: "none",
+		});
+		const detachedCompletionPath = join(resumeWorkdir(), "run.completion.json");
+		await writeFile(
+			detachedCompletionPath,
+			'{"outcome":"finalization_failed"}\n',
+			"utf-8",
+		);
+		await writePendingCommitFinalization(detachedTaskIds[0] ?? "TASK-001");
+		childProcessMocks.execFile.mockImplementation(
+			gitMock({
+				head: "detached-source-sha",
+				status: [" M src/feature.ts\n", ""],
+				diffHasChanges: true,
+			}),
+		);
+		driverMocks.startDetached.mockImplementationOnce(
+			(spec: DriverRunSpec): DriverHandle => {
+				expect(existsSync(detachedCompletionPath)).toBe(false);
+				return createHandle(spec, {
+					runId: spec.runId,
+					outcome: "completed",
+					tasksDone: spec.taskIds.length,
+					tasksBlocked: 0,
+				});
+			},
+		);
+
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
+		expect(driverMocks.startDetached).toHaveBeenCalledTimes(1);
+		expect(firstStartDetachedSpec().taskIds).toEqual(detachedTaskIds.slice(1));
+	});
+
+	// @cosmo-behavior plan:drive-resilience-state-model#B-006
+	test("resume accepts changed HEAD as existing commit for pending finalization", async () => {
+		const fixture = await setupFixture(1);
+		const taskId = fixture.tasks[0]?.id ?? "TASK-001";
+		await writeResumeRun([taskId], [], {
+			commitPolicy: "driver-commits",
+			stateCommitPolicy: "none",
+		});
+		await writePendingCommitFinalization(taskId, {
+			headBeforeFinalization: "before-sha",
+		});
+		childProcessMocks.execFile.mockImplementation(
+			gitMock({
+				head: "external-sha",
+				status: "",
+				diffHasChanges: false,
+			}),
+		);
+
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
+		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(existsSync(join(resumeWorkdir(), "pending-finalization.json"))).toBe(
+			false,
+		);
+		expect((await fixture.manager.getTask(taskId))?.status).toBe("Done");
+		expect(output.stdoutJson()).toMatchObject({
+			runId: "run-previous",
+			outcome: "completed",
+			tasksDone: 1,
+		});
+		expect(
+			await readFile(join(resumeWorkdir(), "events.jsonl"), "utf-8"),
+		).toContain('"sha":"external-sha"');
+	});
+
+	// @cosmo-behavior plan:drive-resilience-state-model#B-007
+	test("resume refuses external commit acceptance without changed head evidence", async () => {
+		const fixture = await setupFixture(1);
+		const taskId = fixture.tasks[0]?.id ?? "TASK-001";
+		await writeResumeRun([taskId], [], {
+			commitPolicy: "driver-commits",
+			stateCommitPolicy: "none",
+		});
+		await writePendingCommitFinalization(taskId, {
+			headBeforeFinalization: "same-sha",
+		});
+		childProcessMocks.execFile.mockImplementation(
+			gitMock({
+				head: "same-sha",
+				status: "",
+				diffHasChanges: false,
+			}),
+		);
+
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		expect(process.exitCode).toBe(1);
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
+		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(existsSync(join(resumeWorkdir(), "pending-finalization.json"))).toBe(
+			true,
+		);
+		expect((await fixture.manager.getTask(taskId))?.status).not.toBe("Done");
+		expect(output.stdoutJson()).toMatchObject({
+			runId: "run-previous",
+			outcome: "finalization_failed",
+			finalizationPhase: "commit",
+		});
+
+		process.exitCode = undefined;
+		output.restore();
+		output = attachJsonHelpers(captureCliOutput());
+		const missingHeadFixture = await setupFixture(1);
+		const missingHeadTaskId = missingHeadFixture.tasks[0]?.id ?? "TASK-001";
+		await writeResumeRun([missingHeadTaskId], [], {
+			commitPolicy: "driver-commits",
+			stateCommitPolicy: "none",
+		});
+		await writePendingCommitFinalization(missingHeadTaskId, {
+			headBeforeFinalization: undefined,
+		});
+		childProcessMocks.execFile.mockImplementation(
+			gitMock({
+				head: "external-sha",
+				status: "",
+				diffHasChanges: false,
+			}),
+		);
+
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		expect(process.exitCode).toBe(1);
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
+		expect(existsSync(join(resumeWorkdir(), "pending-finalization.json"))).toBe(
+			true,
+		);
+		expect(
+			(await missingHeadFixture.manager.getTask(missingHeadTaskId))?.status,
+		).not.toBe("Done");
+
+		process.exitCode = undefined;
+		output.restore();
+		output = attachJsonHelpers(captureCliOutput());
+		const dirtyFixture = await setupFixture(1);
+		const dirtyTaskId = dirtyFixture.tasks[0]?.id ?? "TASK-001";
+		await writeResumeRun([dirtyTaskId], [], {
+			commitPolicy: "driver-commits",
+			stateCommitPolicy: "none",
+		});
+		await writePendingCommitFinalization(dirtyTaskId);
+		childProcessMocks.execFile.mockImplementation(
+			gitMock({
+				head: "before-sha",
+				status: " M src/feature.ts\n",
+				diffHasChanges: true,
+				commitError: "hook rejected",
+			}),
+		);
+
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		expect(process.exitCode).toBe(1);
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
+		expect(existsSync(join(resumeWorkdir(), "pending-finalization.json"))).toBe(
+			true,
+		);
+		expect((await dirtyFixture.manager.getTask(dirtyTaskId))?.status).not.toBe(
+			"Done",
+		);
+	});
+
 	// @cosmo-behavior plan:drive-resilience-state-model#B-015
 	test("resume retries pending state commit without invoking backend work", async () => {
 		const fixture = await setupFixture(2);
@@ -541,8 +765,13 @@ describe("cosmonauts drive run", () => {
 		await writeResumeRun(
 			fixture.tasks.map((task) => task.id),
 			[
-				{ type: "task_done", taskId: fixture.tasks[0]?.id ?? "TASK-001" },
-				{ type: "task_blocked", taskId: fixture.tasks[1]?.id ?? "TASK-002" },
+				{
+					type: "task_finalization_failed",
+					taskId: fixture.tasks[0]?.id ?? "TASK-001",
+					phase: "commit",
+					reason: "commit failed",
+				},
+				{ type: "task_done", taskId: fixture.tasks[1]?.id ?? "TASK-002" },
 			],
 		);
 
@@ -593,7 +822,12 @@ async function setupFixture(count: number): Promise<{
 
 async function writeResumeRun(
 	taskIds: string[],
-	events: Array<{ type: "task_done" | "task_blocked"; taskId: string }> = [],
+	events: Array<{
+		type: "task_done" | "task_blocked" | "task_finalization_failed";
+		taskId: string;
+		phase?: "commit" | "task_status";
+		reason?: string;
+	}> = [],
 	specOverrides: Partial<DriverRunSpec> = {},
 ): Promise<void> {
 	const workdir = resumeWorkdir();
@@ -633,6 +867,85 @@ async function writeResumeRun(
 			.join("\n"),
 		"utf-8",
 	);
+}
+
+async function writePendingCommitFinalization(
+	taskId: string,
+	overrides: Partial<{
+		headBeforeFinalization: string | undefined;
+	}> = {},
+): Promise<void> {
+	await writeFile(
+		join(resumeWorkdir(), "pending-finalization.json"),
+		`${JSON.stringify({
+			runId: "run-previous",
+			planSlug: PLAN,
+			createdAt: "2026-01-01T00:00:00.000Z",
+			commitPolicy: "driver-commits",
+			stateCommitPolicy: "none",
+			reason: "commit failed: hook rejected",
+			phase: "commit",
+			taskId,
+			headBeforeFinalization: "before-sha",
+			commitSubject: `${taskId}: Drive task 1`,
+			verifiedAt: "2026-01-01T00:00:00.000Z",
+			...overrides,
+		})}\n`,
+		"utf-8",
+	);
+}
+
+function gitMock({
+	head,
+	status,
+	diffHasChanges,
+	commitError,
+}: {
+	head: string;
+	status: string | string[];
+	diffHasChanges: boolean;
+	commitError?: string;
+}) {
+	const statusOutputs = Array.isArray(status) ? [...status] : undefined;
+	return (
+		_cmd: string,
+		args: readonly string[],
+		_options: unknown,
+		callback: (
+			error: Error | null,
+			result: { stdout: string; stderr: string },
+		) => void,
+	) => {
+		if (args[0] === "rev-parse") {
+			callback(null, { stdout: `${head}\n`, stderr: "" });
+			return {};
+		}
+		if (args[0] === "status") {
+			callback(null, {
+				stdout: statusOutputs?.shift() ?? (Array.isArray(status) ? "" : status),
+				stderr: "",
+			});
+			return {};
+		}
+		if (args[0] === "diff") {
+			if (diffHasChanges) {
+				const error = new Error("diff found changes") as Error & {
+					code: number;
+				};
+				error.code = 1;
+				callback(error, { stdout: "", stderr: "" });
+				return {};
+			}
+			callback(null, { stdout: "", stderr: "" });
+			return {};
+		}
+		if (args[0] === "commit" && commitError) {
+			callback(new Error(commitError), { stdout: "", stderr: commitError });
+			return {};
+		}
+		callback(null, { stdout: "", stderr: "" });
+		return {};
+	};
 }
 
 function firstRunInlineSpec(): DriverRunSpec {

@@ -26,7 +26,10 @@ import type {
 	DriverActivityBusEvent,
 	DriverEventBusEvent,
 } from "../../lib/driver/event-stream.ts";
-import { isProcessAlive } from "../../lib/driver/lock.ts";
+import {
+	acquireRepoCommitLock,
+	isProcessAlive,
+} from "../../lib/driver/lock.ts";
 import { DEFAULT_TASK_TIMEOUT_MS } from "../../lib/driver/run-one-task.ts";
 import {
 	clearPendingFinalization,
@@ -95,6 +98,11 @@ interface RunPidFile {
 }
 
 type RunStatus = DriverResult["outcome"] | "dead" | "running" | "orphaned";
+type DriverEventInput = DriverEvent extends infer Event
+	? Event extends DriverEvent
+		? Omit<Event, "runId" | "parentSessionId" | "timestamp">
+		: never
+	: never;
 
 interface RunStatusRecord {
 	runId: string;
@@ -130,6 +138,13 @@ const STATE_COMMIT_POLICIES: readonly StateCommitPolicy[] = [
 	"final-state-commit",
 ];
 const PROCESS_START_TOLERANCE_MS = 5_000;
+const SOURCE_COMMIT_EXCLUDED_PATHS = [
+	":(exclude)missions",
+	":(exclude)missions/**",
+	":(exclude)memory",
+	":(exclude)memory/**",
+	":(exclude).cosmonauts/*.lock",
+];
 const execFileAsync = promisify(execFile);
 
 export function createDriveProgram(): Command {
@@ -218,11 +233,12 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 		? await loadResumeDefaults(projectRoot, planSlug, options.resume)
 		: undefined;
 	if (resume?.pendingFinalization) {
-		const finalized = await retryPendingFinalization(resume);
+		const finalized = await retryPendingFinalization(resume, taskManager);
 		if (!finalized) {
 			process.exitCode = 1;
 			return;
 		}
+		await clearRunCompletion(resume.spec.workdir);
 		if (resume.taskIds.length === 0) {
 			return;
 		}
@@ -784,6 +800,10 @@ function resolveDefaultEnvelopePath(): string {
 	);
 }
 
+async function clearRunCompletion(workdir: string): Promise<void> {
+	await rm(join(workdir, RUN_COMPLETION_FILENAME), { force: true });
+}
+
 async function prepareInlineWorkdir(spec: DriverRunSpec): Promise<void> {
 	await mkdir(spec.workdir, { recursive: true });
 	await mkdir(dirname(spec.eventLogPath), { recursive: true });
@@ -797,7 +817,7 @@ async function prepareInlineWorkdir(spec: DriverRunSpec): Promise<void> {
 		`${spec.taskIds.join("\n")}\n`,
 		"utf-8",
 	);
-	await rm(join(spec.workdir, RUN_COMPLETION_FILENAME), { force: true });
+	await clearRunCompletion(spec.workdir);
 	await writeInlineRunState(spec.workdir);
 }
 
@@ -851,12 +871,10 @@ async function loadResumeDefaults(
 
 async function retryPendingFinalization(
 	resume: ResumeDefaults,
+	taskManager: TaskManager,
 ): Promise<boolean> {
 	const pending = resume.pendingFinalization;
 	if (!pending) {
-		return true;
-	}
-	if (pending.phase !== "state_commit") {
 		return true;
 	}
 
@@ -864,6 +882,68 @@ async function retryPendingFinalization(
 	const eventSink = async (event: DriverEvent) => {
 		await appendFile(spec.eventLogPath, `${JSON.stringify(event)}\n`, "utf-8");
 	};
+
+	if (pending.phase === "state_commit") {
+		return retryPendingStateCommit(resume, eventSink);
+	}
+
+	const result =
+		pending.phase === "commit"
+			? await retryPendingSourceCommit(spec, eventSink, pending)
+			: { status: "committed" as const, sha: pending.commitSha };
+
+	if (result.status === "failed") {
+		await writeSourceFinalizationFailure(
+			spec,
+			pending.taskId,
+			"commit",
+			result.reason,
+		);
+		return false;
+	}
+
+	const taskStatusResult = await finalizePendingTaskStatus({
+		spec,
+		taskManager,
+		eventSink,
+		taskId: pending.taskId,
+		commitSha: result.sha,
+	});
+	if (!taskStatusResult.ok) {
+		await writeSourceFinalizationFailure(
+			spec,
+			pending.taskId,
+			"task_status",
+			taskStatusResult.reason,
+			result.sha,
+		);
+		return false;
+	}
+
+	await clearPendingFinalization(spec.workdir);
+	resume.taskIds = taskIdsAfterFinalizedTask(spec.taskIds, pending.taskId);
+	if (resume.taskIds.length === 0) {
+		const completion: DriverResult = {
+			runId: spec.runId,
+			outcome: "completed",
+			tasksDone: spec.taskIds.length,
+			tasksBlocked: 0,
+		};
+		await writeRunCompletion(spec.workdir, completion);
+		printJsonStdout(completion);
+	}
+	return true;
+}
+
+async function retryPendingStateCommit(
+	resume: ResumeDefaults,
+	eventSink: (event: DriverEvent) => Promise<void>,
+): Promise<boolean> {
+	const pending = resume.pendingFinalization;
+	if (!pending || pending.phase !== "state_commit") {
+		return true;
+	}
+	const spec = resume.spec;
 	const result = await commitFinalState(
 		{ ...spec, taskIds: pending.taskIds },
 		{ eventSink, abortSignal: new AbortController().signal },
@@ -897,6 +977,237 @@ async function retryPendingFinalization(
 		printJsonStdout(completion);
 	}
 	return true;
+}
+
+async function retryPendingSourceCommit(
+	spec: DriverRunSpec,
+	eventSink: (event: DriverEvent) => Promise<void>,
+	pending: Extract<
+		NonNullable<ResumeDefaults["pendingFinalization"]>,
+		{ phase: "commit" }
+	>,
+): Promise<
+	{ status: "committed"; sha: string } | { status: "failed"; reason: string }
+> {
+	await emitResumeEvent(spec, eventSink, {
+		type: "finalize",
+		taskId: pending.taskId,
+		phase: "commit",
+		status: "started",
+		details: { subject: pending.commitSubject },
+	});
+
+	try {
+		const lock = await acquireRepoCommitLock(spec.projectRoot);
+		try {
+			if (await hasSourceCommittableChanges(spec.projectRoot)) {
+				await gitExec(spec.projectRoot, [
+					"add",
+					"--all",
+					"--",
+					".",
+					...SOURCE_COMMIT_EXCLUDED_PATHS,
+				]);
+				if (await hasSourceStagedChanges(spec.projectRoot)) {
+					await gitExec(spec.projectRoot, [
+						"commit",
+						"-m",
+						pending.commitSubject,
+					]);
+					const sha = await gitHead(spec.projectRoot);
+					await emitCommitAccepted(spec, eventSink, pending, sha);
+					return { status: "committed", sha };
+				}
+			}
+		} finally {
+			await lock.release();
+		}
+
+		const sha = await gitHead(spec.projectRoot);
+		if (!pending.headBeforeFinalization) {
+			return { status: "failed", reason: "missing headBeforeFinalization" };
+		}
+		if (sha === pending.headBeforeFinalization) {
+			return {
+				status: "failed",
+				reason: "HEAD unchanged since failed commit finalization",
+			};
+		}
+		await emitCommitAccepted(spec, eventSink, pending, sha);
+		return { status: "committed", sha };
+	} catch (error) {
+		return { status: "failed", reason: `commit failed: ${formatError(error)}` };
+	}
+}
+
+async function emitCommitAccepted(
+	spec: DriverRunSpec,
+	eventSink: (event: DriverEvent) => Promise<void>,
+	pending: Extract<
+		NonNullable<ResumeDefaults["pendingFinalization"]>,
+		{ phase: "commit" }
+	>,
+	sha: string,
+): Promise<void> {
+	await emitResumeEvent(spec, eventSink, {
+		type: "commit_made",
+		taskId: pending.taskId,
+		sha,
+		subject: pending.commitSubject,
+	});
+	await emitResumeEvent(spec, eventSink, {
+		type: "finalize",
+		taskId: pending.taskId,
+		phase: "commit",
+		status: "passed",
+		details: { sha, subject: pending.commitSubject },
+	});
+}
+
+async function finalizePendingTaskStatus({
+	spec,
+	taskManager,
+	eventSink,
+	taskId,
+	commitSha,
+}: {
+	spec: DriverRunSpec;
+	taskManager: TaskManager;
+	eventSink: (event: DriverEvent) => Promise<void>;
+	taskId: string;
+	commitSha: string;
+}): Promise<{ ok: true } | { ok: false; reason: string }> {
+	try {
+		await emitResumeEvent(spec, eventSink, {
+			type: "finalize",
+			taskId,
+			phase: "task_status",
+			status: "started",
+			details: { sha: commitSha },
+		});
+		await taskManager.updateTask(taskId, { status: "Done" });
+		await emitResumeEvent(spec, eventSink, {
+			type: "finalize",
+			taskId,
+			phase: "task_status",
+			status: "passed",
+			details: { sha: commitSha },
+		});
+		await emitResumeEvent(spec, eventSink, { type: "task_done", taskId });
+		return { ok: true };
+	} catch (error) {
+		return {
+			ok: false,
+			reason: `status update failed after commit: ${formatError(error)}`,
+		};
+	}
+}
+
+async function writeSourceFinalizationFailure(
+	spec: DriverRunSpec,
+	taskId: string,
+	phase: "commit" | "task_status",
+	reason: string,
+	commitSha?: string,
+): Promise<void> {
+	const completion: DriverResult = {
+		runId: spec.runId,
+		outcome: "finalization_failed",
+		tasksDone: 0,
+		tasksBlocked: 0,
+		finalizationPhase: phase,
+		finalizationReason: reason,
+		finalizationTaskId: taskId,
+		...(commitSha ? { finalizationCommitSha: commitSha } : {}),
+		pendingFinalizationPath: join(spec.workdir, "pending-finalization.json"),
+	};
+	await writeRunCompletion(spec.workdir, completion);
+	printJsonStdout(completion);
+}
+
+function taskIdsAfterFinalizedTask(
+	taskIds: readonly string[],
+	taskId: string,
+): string[] {
+	const index = taskIds.indexOf(taskId);
+	return index < 0 ? [...taskIds] : taskIds.slice(index + 1);
+}
+
+async function emitResumeEvent(
+	spec: DriverRunSpec,
+	eventSink: (event: DriverEvent) => Promise<void>,
+	event: DriverEventInput,
+): Promise<void> {
+	const fullEvent = {
+		...event,
+		runId: spec.runId,
+		parentSessionId: spec.parentSessionId,
+		timestamp: new Date().toISOString(),
+	} as DriverEvent;
+	await eventSink(fullEvent);
+	activityBus.publish({
+		type: "driver_event",
+		runId: spec.runId,
+		parentSessionId: spec.parentSessionId,
+		event: fullEvent,
+	});
+}
+
+async function hasSourceCommittableChanges(
+	projectRoot: string,
+): Promise<boolean> {
+	const { stdout } = await gitExec(projectRoot, [
+		"status",
+		"--porcelain",
+		"--untracked-files=all",
+		"--",
+		".",
+		...SOURCE_COMMIT_EXCLUDED_PATHS,
+	]);
+	return stdout.trim().length > 0;
+}
+
+async function hasSourceStagedChanges(projectRoot: string): Promise<boolean> {
+	try {
+		await gitExec(projectRoot, [
+			"diff",
+			"--cached",
+			"--quiet",
+			"--",
+			".",
+			...SOURCE_COMMIT_EXCLUDED_PATHS,
+		]);
+		return false;
+	} catch (error) {
+		if (isExecExitCode(error, 1)) {
+			return true;
+		}
+		throw error;
+	}
+}
+
+async function gitHead(projectRoot: string): Promise<string> {
+	const { stdout } = await gitExec(projectRoot, ["rev-parse", "HEAD"]);
+	return stdout.trim();
+}
+
+async function gitExec(
+	projectRoot: string,
+	args: readonly string[],
+): Promise<{ stdout: string; stderr: string }> {
+	return execFileAsync("git", [...args], {
+		cwd: projectRoot,
+		encoding: "utf-8",
+	}) as Promise<{ stdout: string; stderr: string }>;
+}
+
+function isExecExitCode(error: unknown, code: number): boolean {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"code" in error &&
+		error.code === code
+	);
 }
 
 async function readDriverEvents(path: string): Promise<DriverEvent[]> {
