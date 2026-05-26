@@ -1,7 +1,7 @@
 ---
 id: TASK-331
 title: Resume pending source commit finalization before backend work
-status: In Progress
+status: Done
 priority: high
 assignee: worker
 labels:
@@ -14,7 +14,7 @@ dependencies:
   - TASK-328
   - TASK-329
 createdAt: '2026-05-22T19:57:52.647Z'
-updatedAt: '2026-05-26T15:41:16.276Z'
+updatedAt: '2026-05-26T15:43:29.766Z'
 ---
 
 ## Description
@@ -32,4 +32,4 @@ Teach CLI resume to handle pending source commit/task-status finalization before
 
 ## Implementation Notes
 
-Coordinator note: Worker spawn bdf8cfca-14bc-48de-b9dd-b4ab070908d3 timed out after 300000ms and left task In Progress with ACs unchecked. Next worker should inspect existing working tree/commits for partial TASK-331 changes, verify or complete implementation/tests, and only mark Done when all ACs are satisfied.
+Implemented CLI resume recovery for pending source commit/task-status finalization before backend continuation. Added B-005/B-006/B-007 coverage in tests/cli/drive/run.test.ts, including stale completion clearing for inline/detached resumes, safe external HEAD acceptance, unsafe evidence refusal, and resume slicing that ignores task_finalization_failed until task_done. Verified with bun run test tests/cli/drive/run.test.ts, bun run typecheck, bun run lint, and bun run test. Artifact conformance for the full active plan still fails on out-of-scope/future behaviors B-008, B-009, B-010, B-011, B-018, B-019, and B-021 missing markers/test file; TASK-331-owned B-005/B-006/B-007 markers are present.
