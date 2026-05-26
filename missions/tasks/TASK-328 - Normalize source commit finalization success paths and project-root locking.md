@@ -1,7 +1,7 @@
 ---
 id: TASK-328
 title: Normalize source commit finalization success paths and project-root locking
-status: In Progress
+status: Done
 priority: high
 assignee: worker
 labels:
@@ -11,7 +11,7 @@ labels:
 dependencies:
   - TASK-326
 createdAt: '2026-05-22T19:57:27.454Z'
-updatedAt: '2026-05-26T15:15:20.860Z'
+updatedAt: '2026-05-26T15:17:59.199Z'
 ---
 
 ## Description
@@ -28,4 +28,4 @@ Make successful driver-owned source commit finalization explicit, safe, and cons
 
 ## Implementation Notes
 
-Implemented source commit finalization success events, project-root commit locking for CLI/run_driver paths, task-title subject fallback, and explicit no-change finalization evidence. Verified with targeted and full test suites plus lint/typecheck.
+Prior implementation verified/finalized. Confirmed commit 783a809 contains source commit finalization events, project-root repo locking, task-title subject fallback, and explicit no-change evidence with exact behavior markers for B-001, B-012, B-016, and B-017. Verification run: targeted Vitest tests for the named TASK-328 cases passed; full `bun run test`, `bun run lint`, and `bun run typecheck` passed.
