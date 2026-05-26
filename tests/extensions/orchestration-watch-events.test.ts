@@ -171,6 +171,30 @@ describe("watch_events tool", () => {
 		expect(text).toContain("task_blocked: TASK-3, reason: tests failed");
 	});
 
+	test("summarizes plan completion candidates with reason", async () => {
+		await writeEventLog([
+			makeEvent({
+				type: "plan_completion_candidate",
+				planSlug: PLAN_SLUG,
+				taskCount: 3,
+				reason: "all_plan_tasks_done",
+			}),
+		]);
+
+		const result = await callWatchEvents();
+		const text = result.content[0]?.text ?? "";
+
+		expect(text).toContain(
+			"plan_completion_candidate: watch-events-plan, all 3 plan tasks done, reason: all_plan_tasks_done",
+		);
+		expect(result.details.events[0]).toMatchObject({
+			type: "plan_completion_candidate",
+			planSlug: PLAN_SLUG,
+			taskCount: 3,
+			reason: "all_plan_tasks_done",
+		});
+	});
+
 	test("caps rendered events and notes the overflow", async () => {
 		const events: DriverEvent[] = [];
 		for (let i = 0; i < 35; i++) {

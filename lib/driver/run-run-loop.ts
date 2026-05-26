@@ -22,6 +22,11 @@ interface FinalizationFailureState {
 	pendingFinalizationPath: string;
 }
 
+interface PlanCompletionCandidate {
+	planSlug: string;
+	taskCount: number;
+}
+
 interface LoopState {
 	done: number;
 	blocked: number;
@@ -30,6 +35,7 @@ interface LoopState {
 	blockedReason?: string;
 	finalization?: FinalizationFailureState;
 	stateCommitSha?: string;
+	planCompletionCandidate?: PlanCompletionCandidate;
 }
 
 type DriverEventInput = DriverEvent extends infer Event
@@ -114,6 +120,10 @@ export async function runRunLoop(
 		}
 
 		if (state.outcome === "completed") {
+			await emitPlanCompletionCandidate(spec, ctx, state);
+		}
+
+		if (state.outcome === "completed") {
 			await emit(spec, ctx, {
 				type: "run_completed",
 				summary: {
@@ -195,6 +205,37 @@ async function finalizeRunState(
 	});
 }
 
+async function emitPlanCompletionCandidate(
+	spec: DriverRunSpec,
+	ctx: RunRunLoopCtx,
+	state: LoopState,
+): Promise<void> {
+	if (state.blocked > 0) {
+		return;
+	}
+
+	const planTasks = await ctx.taskManager.listTasks({
+		label: `plan:${spec.planSlug}`,
+	});
+	if (planTasks.length === 0) {
+		return;
+	}
+	if (!planTasks.every((task) => task.status === "Done")) {
+		return;
+	}
+
+	const candidate = {
+		planSlug: spec.planSlug,
+		taskCount: planTasks.length,
+	};
+	state.planCompletionCandidate = candidate;
+	await emit(spec, ctx, {
+		type: "plan_completion_candidate",
+		...candidate,
+		reason: "all_plan_tasks_done",
+	});
+}
+
 async function emitRunAborted(
 	spec: DriverRunSpec,
 	ctx: RunRunLoopCtx,
@@ -257,6 +298,9 @@ function toDriverResult(spec: DriverRunSpec, state: LoopState): DriverResult {
 			...(state.blockedTaskId ? { blockedTaskId: state.blockedTaskId } : {}),
 			...(state.blockedReason ? { blockedReason: state.blockedReason } : {}),
 			...(state.stateCommitSha ? { stateCommitSha: state.stateCommitSha } : {}),
+			...(state.planCompletionCandidate
+				? { planCompletionCandidate: state.planCompletionCandidate }
+				: {}),
 		};
 	}
 

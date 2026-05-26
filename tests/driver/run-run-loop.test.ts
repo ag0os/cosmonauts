@@ -16,6 +16,7 @@ import type {
 	EventSink,
 	TaskOutcome,
 } from "../../lib/driver/types.ts";
+import type { Task } from "../../lib/tasks/task-types.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 type RunOneTaskFn = (
@@ -148,13 +149,22 @@ describe("run-run-loop", () => {
 		});
 	});
 
-	test("run-run-loop partialMode continue proceeds without aborting", async () => {
+	// @cosmo-behavior plan:drive-resilience-state-model#B-019
+	test("skips final state commit and completion candidate for partial continue runs", async () => {
 		const events: DriverEvent[] = [];
 		const spec = createSpec({
+			planSlug: "partial-plan",
 			taskIds: ["TASK-1", "TASK-2"],
 			partialMode: "continue",
+			commitPolicy: "driver-commits",
+			stateCommitPolicy: "final-state-commit",
 		});
-		const ctx = createCtx(events);
+		const ctx = createCtx(events, {
+			taskManager: createTaskManager([
+				createTask({ id: "TASK-1", status: "In Progress" }),
+				createTask({ id: "TASK-2", status: "Done" }),
+			]),
+		});
 		mocks.runOneTask
 			.mockResolvedValueOnce({ status: "partial", reason: "half done" })
 			.mockResolvedValueOnce({ status: "done" });
@@ -178,12 +188,80 @@ describe("run-run-loop", () => {
 			type: "run_completed",
 			summary: { total: 2, done: 1, blocked: 1 },
 		});
+		expect(events).not.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ type: "plan_completion_candidate" }),
+			]),
+		);
 		expect(result).toMatchObject({
 			outcome: "completed",
 			tasksDone: 1,
 			tasksBlocked: 1,
 			blockedTaskId: "TASK-1",
 		});
+		expect(result).not.toHaveProperty("planCompletionCandidate");
+	});
+
+	// @cosmo-behavior plan:drive-resilience-state-model#B-018
+	test("emits plan completion candidate without editing the plan when all plan tasks are done", async () => {
+		const projectRoot = temp.path;
+		const planSlug = "completion-plan";
+		const planPath = join(
+			projectRoot,
+			"missions",
+			"plans",
+			planSlug,
+			"plan.md",
+		);
+		const planBody = "---\ntitle: Completion Plan\n---\n\n# Completion Plan\n";
+		await mkdir(join(projectRoot, "missions", "plans", planSlug), {
+			recursive: true,
+		});
+		await writeFile(planPath, planBody, "utf-8");
+		const events: DriverEvent[] = [];
+		const spec = createSpec({
+			projectRoot,
+			planSlug,
+			taskIds: ["TASK-1", "TASK-2"],
+		});
+		const ctx = createCtx(events, {
+			taskManager: createTaskManager([
+				createTask({
+					id: "TASK-1",
+					status: "Done",
+					labels: [`plan:${planSlug}`],
+				}),
+				createTask({
+					id: "TASK-2",
+					status: "Done",
+					labels: [`plan:${planSlug}`],
+				}),
+				createTask({ id: "TASK-3", status: "To Do", labels: ["plan:other"] }),
+			]),
+		});
+		mocks.runOneTask.mockResolvedValue({ status: "done" });
+
+		const result = await runRunLoop(spec, ctx);
+
+		expect(events.map((event) => event.type)).toEqual([
+			"run_started",
+			"finalize",
+			"plan_completion_candidate",
+			"run_completed",
+		]);
+		expect(events[2]).toMatchObject({
+			type: "plan_completion_candidate",
+			planSlug,
+			taskCount: 2,
+			reason: "all_plan_tasks_done",
+		});
+		expect(result).toMatchObject({
+			outcome: "completed",
+			tasksDone: 2,
+			tasksBlocked: 0,
+			planCompletionCandidate: { planSlug, taskCount: 2 },
+		});
+		expect(await readFile(planPath, "utf-8")).toBe(planBody);
 	});
 
 	// @cosmo-behavior plan:drive-resilience-state-model#B-004
@@ -500,6 +578,33 @@ function shellQuote(value: string): string {
 	return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
+function createTask(overrides: Partial<Task>): Task {
+	const now = new Date("2026-05-22T00:00:00.000Z");
+	const id = overrides.id ?? "TASK-1";
+	return {
+		id,
+		title: id,
+		status: "To Do",
+		createdAt: now,
+		updatedAt: now,
+		labels: ["plan:driver-primitives"],
+		dependencies: [],
+		acceptanceCriteria: [],
+		...overrides,
+	};
+}
+
+function createTaskManager(tasks: Task[]): RunRunLoopCtx["taskManager"] {
+	return {
+		listTasks: vi.fn(async (filter?: { label?: string }) => {
+			if (!filter?.label) {
+				return tasks;
+			}
+			return tasks.filter((task) => task.labels.includes(filter.label ?? ""));
+		}),
+	} as unknown as RunRunLoopCtx["taskManager"];
+}
+
 function createCtx(
 	events: DriverEvent[],
 	overrides: Partial<RunRunLoopCtx> = {},
@@ -509,7 +614,7 @@ function createCtx(
 	};
 
 	return {
-		taskManager: {} as RunRunLoopCtx["taskManager"],
+		taskManager: createTaskManager([]),
 		backend: {
 			name: "test-backend",
 			capabilities: { canCommit: false, isolatedFromHostSource: false },
