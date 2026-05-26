@@ -139,10 +139,10 @@ describe("cross-plan detached commit serialization", () => {
 			"spawn_failed",
 		);
 		expect(commitSubjects(firstEvents)).toEqual([
-			`${firstTask.id}: driver task update`,
+			`${firstTask.id}: Cross Plan Commit One`,
 		]);
 		expect(commitSubjects(secondEvents)).toEqual([
-			`${secondTask.id}: driver task update`,
+			`${secondTask.id}: Cross Plan Commit Two`,
 		]);
 		await expect(
 			stat(join(projectRoot, ".git", "index.lock")),
@@ -150,8 +150,8 @@ describe("cross-plan detached commit serialization", () => {
 
 		const hookEntries = await readHookEntries(hookLogPath);
 		const expectedSubjects = [
-			`${firstTask.id}: driver task update`,
-			`${secondTask.id}: driver task update`,
+			`${firstTask.id}: Cross Plan Commit One`,
+			`${secondTask.id}: Cross Plan Commit Two`,
 		];
 		expect(hookEntries.map((entry) => entry.stage)).toEqual([
 			"begin",

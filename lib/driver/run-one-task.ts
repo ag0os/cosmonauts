@@ -654,11 +654,7 @@ async function maybeCommit(
 		return undefined;
 	}
 
-	if (!(await hasCommittableChanges(spec.projectRoot, ctx.abortSignal))) {
-		return undefined;
-	}
-
-	const subject = commitSubject(taskId, report);
+	const subject = await commitSubject(taskId, report, ctx.taskManager);
 	const headBeforeFinalization = await gitRevParseHead(
 		spec.projectRoot,
 		ctx.abortSignal,
@@ -670,14 +666,16 @@ async function maybeCommit(
 		status: "started",
 		details: { subject },
 	});
-	const lock = await acquireRepoCommitLock(ctx.cosmonautsRoot);
+	const lock = await acquireRepoCommitLock(spec.projectRoot);
 	let committed = false;
 	let commitError: unknown;
 	try {
-		await gitAddCommittableFiles(spec.projectRoot, ctx.abortSignal);
-		if (await hasStagedChanges(spec.projectRoot, ctx.abortSignal)) {
-			await gitCommit(spec.projectRoot, subject, ctx.abortSignal);
-			committed = true;
+		if (await hasCommittableChanges(spec.projectRoot, ctx.abortSignal)) {
+			await gitAddCommittableFiles(spec.projectRoot, ctx.abortSignal);
+			if (await hasStagedChanges(spec.projectRoot, ctx.abortSignal)) {
+				await gitCommit(spec.projectRoot, subject, ctx.abortSignal);
+				committed = true;
+			}
 		}
 	} catch (error) {
 		commitError = error;
@@ -786,9 +784,26 @@ async function recordCommitFinalizationFailure({
 	};
 }
 
-function commitSubject(taskId: string, report: ParsedReport): string {
+async function commitSubject(
+	taskId: string,
+	report: ParsedReport,
+	taskManager: TaskManager,
+): Promise<string> {
 	const summary = reportSummary(report);
-	return summary ? `${taskId}: ${summary}` : `${taskId}: driver task update`;
+	if (summary && !isGenericCommitSummary(summary, taskId)) {
+		return `${taskId}: ${summary}`;
+	}
+
+	const task = await taskManager.getTask(taskId);
+	return `${taskId}: ${task?.title?.trim() || "driver task update"}`;
+}
+
+function isGenericCommitSummary(summary: string, taskId: string): boolean {
+	const normalized = summary.trim().toLowerCase();
+	return (
+		normalized === "driver task update" ||
+		normalized === `${taskId.toLowerCase()}: driver task update`
+	);
 }
 
 function reportSummary(report: ParsedReport): string | undefined {

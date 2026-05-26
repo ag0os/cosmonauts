@@ -125,7 +125,8 @@ describe("run-one-task", () => {
 		}
 	});
 
-	test("driver commit exclusion uses repo lock, excludes missions and memory, and emits sha", async () => {
+	// @cosmo-behavior plan:drive-resilience-state-model#B-012
+	test("driver commit exclusion uses repo lock excludes missions and memory and emits sha", async () => {
 		const fixture = await setupGitFixture();
 		await writeFile(
 			join(fixture.projectRoot, ".gitignore"),
@@ -134,6 +135,8 @@ describe("run-one-task", () => {
 		);
 		await git(fixture.projectRoot, ["add", ".gitignore"]);
 		await git(fixture.projectRoot, ["commit", "-m", "ignore lock files"]);
+		const frameworkRoot = join(temp.path, "framework-root");
+		await mkdir(frameworkRoot, { recursive: true });
 		await installCommitHook(fixture.projectRoot);
 		const events: DriverEvent[] = [];
 		const backend = createBackend(async () => {
@@ -153,7 +156,10 @@ describe("run-one-task", () => {
 
 		const outcome = await runOneTask(
 			createSpec(fixture, { commitPolicy: "driver-commits" }),
-			createCtx(fixture, backend, events, { eventSink }),
+			createCtx(fixture, backend, events, {
+				eventSink,
+				cosmonautsRoot: frameworkRoot,
+			}),
 			fixture.taskId,
 		);
 
@@ -180,6 +186,131 @@ describe("run-one-task", () => {
 		]);
 		expect(ignoredStatus).toContain("missions/");
 		expect(ignoredStatus).toContain("memory/");
+	});
+
+	// @cosmo-behavior plan:drive-resilience-state-model#B-001
+	test("emits commit and task-status finalization phase events on successful driver commit", async () => {
+		const fixture = await setupGitFixture();
+		const backend = createBackend(async () => {
+			await writeProjectFile(fixture, "src/finalized.txt", "commit\n");
+			return successfulResult();
+		});
+
+		const { events, outcome, task } = await runDriverCommitTask(
+			fixture,
+			backend,
+		);
+
+		expect(outcome).toMatchObject({
+			status: "done",
+			commitSha: expect.stringMatching(/^[0-9a-f]{40}$/),
+		});
+		expect(task?.status).toBe("Done");
+		expect(events.map((event) => event.type)).toEqual([
+			"task_started",
+			"preflight",
+			"preflight",
+			"spawn_started",
+			"spawn_completed",
+			"verify",
+			"verify",
+			"finalize",
+			"commit_made",
+			"finalize",
+			"finalize",
+			"finalize",
+			"task_done",
+		]);
+		expect(events).toContainEqual(
+			expect.objectContaining({
+				type: "finalize",
+				phase: "commit",
+				status: "started",
+			}),
+		);
+		expect(events).toContainEqual(
+			expect.objectContaining({
+				type: "finalize",
+				phase: "commit",
+				status: "passed",
+			}),
+		);
+		expect(events).toContainEqual(
+			expect.objectContaining({
+				type: "finalize",
+				phase: "task_status",
+				status: "started",
+			}),
+		);
+		expect(events).toContainEqual(
+			expect.objectContaining({
+				type: "finalize",
+				phase: "task_status",
+				status: "passed",
+			}),
+		);
+	});
+
+	// @cosmo-behavior plan:drive-resilience-state-model#B-016
+	test("uses task title as driver commit subject when report summary is generic", async () => {
+		const fixture = await setupGitFixture();
+		const backend = createBackend(async () => {
+			await writeProjectFile(fixture, "src/titled.txt", "commit\n");
+			return {
+				exitCode: 0,
+				stdout: fencedReport({
+					outcome: "success",
+					files: [],
+					verification: [],
+					notes: "driver task update",
+				}),
+				durationMs: 1,
+			};
+		});
+
+		const { events, outcome } = await runDriverCommitTask(fixture, backend);
+
+		expect(outcome.status).toBe("done");
+		const subject = (
+			events.find(isCommitMade) as
+				| Extract<DriverEvent, { type: "commit_made" }>
+				| undefined
+		)?.subject;
+		expect(subject).toBe(`${fixture.taskId}: Run One Task Fixture`);
+		expect(
+			await git(fixture.projectRoot, ["show", "--format=%s", "--no-patch"]),
+		).toContain(`${fixture.taskId}: Run One Task Fixture`);
+	});
+
+	// @cosmo-behavior plan:drive-resilience-state-model#B-017
+	test("emits explicit no-change commit finalization evidence for verification-only tasks", async () => {
+		const fixture = await setupGitFixture();
+		const backend = createBackend(async () => successfulResult());
+
+		const { events, outcome, task } = await runDriverCommitTask(
+			fixture,
+			backend,
+		);
+
+		expect(outcome).toEqual({ status: "done", commitSha: undefined });
+		expect(task?.status).toBe("Done");
+		expect(events.map((event) => event.type)).not.toContain("commit_made");
+		expect(events).toContainEqual(
+			expect.objectContaining({
+				type: "finalize",
+				phase: "commit",
+				status: "skipped",
+				details: { reason: "no_changes" },
+			}),
+		);
+		expect(events).toContainEqual(
+			expect.objectContaining({
+				type: "finalize",
+				phase: "task_status",
+				status: "passed",
+			}),
+		);
+		expect(events.map((event) => event.type)).toContain("task_done");
 	});
 
 	test("driver derive outcome uses postverify as objective evidence", () => {
@@ -356,7 +487,7 @@ describe("run-one-task", () => {
 				"--no-patch",
 				"HEAD",
 			]),
-		).toContain(`${fixture.taskId}: driver task update`);
+		).toContain(`${fixture.taskId}: Recording Fixture`);
 	});
 
 	// @cosmo-behavior plan:drive-resilience-state-model#B-020

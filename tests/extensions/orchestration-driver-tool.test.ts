@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
@@ -19,7 +19,11 @@ import type {
 	DriverEventBusEvent,
 } from "../../lib/driver/event-stream.ts";
 import { tailEvents } from "../../lib/driver/event-stream.ts";
-import { acquirePlanLock, type LockHandle } from "../../lib/driver/lock.ts";
+import {
+	acquirePlanLock,
+	getRepoCommitLockPath,
+	type LockHandle,
+} from "../../lib/driver/lock.ts";
 import type { DriverEvent, DriverResult } from "../../lib/driver/types.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
 import type { SpawnActivityEvent } from "../../lib/orchestration/message-bus.ts";
@@ -202,6 +206,43 @@ describe("driver e2e run_driver integration", () => {
 		expect(backendMocks.run).not.toHaveBeenCalled();
 	});
 
+	// @cosmo-behavior plan:drive-resilience-state-model#B-012
+	test("run_driver uses the project root for repository commit locking", async () => {
+		const fixture = await setupFixture({ taskCount: 1 });
+		const frameworkRoot = join(temp.path, "framework-root");
+		await mkdir(frameworkRoot, { recursive: true });
+		await initGit(fixture.projectRoot);
+		await installCommitLockProbeHook(fixture.projectRoot, frameworkRoot);
+		backendMocks.run.mockImplementation(async (invocation) => {
+			await mkdir(join(fixture.projectRoot, "src"), { recursive: true });
+			await writeFile(
+				join(fixture.projectRoot, "src", `${invocation.taskId}.txt`),
+				"committed by driver\n",
+				"utf-8",
+			);
+			return successResult();
+		});
+
+		const result = await runDriver(fixture, {
+			commitPolicy: "driver-commits",
+			postflightCommands: [nodeCommand("process.exit(0)")],
+			frameworkRoot,
+		});
+		const completion = await waitForCompletion(result.workdir);
+		const events = await tailEvents(result.eventLogPath);
+
+		expect(completion.outcome).toBe("completed");
+		expect(events.events).toContainEqual(
+			expect.objectContaining({
+				type: "commit_made",
+				sha: expect.stringMatching(/^[0-9a-f]{40}$/),
+			}),
+		);
+		expect(
+			await readFile(join(fixture.projectRoot, "hook-observed.txt"), "utf-8"),
+		).toBe("project-lock-present\nframework-lock-absent\n");
+	});
+
 	test("driver postverify failure blocks task and does not commit", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		await initGit(fixture.projectRoot);
@@ -285,6 +326,7 @@ interface RunDriverOverrides {
 	commitPolicy?: "driver-commits" | "backend-commits" | "no-commit";
 	preflightCommands?: string[];
 	postflightCommands?: string[];
+	frameworkRoot?: string;
 }
 
 function onlyTaskId(fixture: Fixture): string {
@@ -344,7 +386,7 @@ async function runDriver(
 				projectSkills: [],
 				skillPaths: [],
 			}) as never,
-		fixture.projectRoot,
+		overrides.frameworkRoot ?? fixture.projectRoot,
 	);
 	registerWatchEventsTool(pi as never);
 
@@ -551,6 +593,31 @@ async function initGit(projectRoot: string): Promise<void> {
 	await git(projectRoot, ["commit", "-m", "initial"]);
 }
 
+async function installCommitLockProbeHook(
+	projectRoot: string,
+	frameworkRoot: string,
+): Promise<void> {
+	const hookPath = join(projectRoot, ".git", "hooks", "pre-commit");
+	const projectLockPath = getRepoCommitLockPath(projectRoot);
+	const frameworkLockPath = getRepoCommitLockPath(frameworkRoot);
+	const observedPath = join(projectRoot, "hook-observed.txt");
+	const script = `#!/bin/sh
+if test -f ${shellQuote(projectLockPath)}; then
+  printf 'project-lock-present\n' > ${shellQuote(observedPath)}
+else
+  printf 'project-lock-missing\n' > ${shellQuote(observedPath)}
+  exit 1
+fi
+if test -f ${shellQuote(frameworkLockPath)}; then
+  printf 'framework-lock-present\n' >> ${shellQuote(observedPath)}
+  exit 1
+fi
+printf 'framework-lock-absent\n' >> ${shellQuote(observedPath)}
+`;
+	await writeFile(hookPath, script, "utf-8");
+	await chmod(hookPath, 0o755);
+}
+
 async function git(cwd: string, args: string[]): Promise<string> {
 	const { stdout } = await execFileAsync("git", args, { cwd });
 	return stdout.toString();
@@ -558,6 +625,10 @@ async function git(cwd: string, args: string[]): Promise<string> {
 
 function nodeCommand(script: string): string {
 	return `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`;
+}
+
+function shellQuote(value: string): string {
+	return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 function formatError(error: unknown): string {
