@@ -1,7 +1,7 @@
 ---
 id: TASK-327
 title: Record task-level commit and task-status finalization failures
-status: In Progress
+status: Done
 priority: high
 assignee: worker
 labels:
@@ -11,7 +11,7 @@ labels:
 dependencies:
   - TASK-326
 createdAt: '2026-05-22T19:57:15.947Z'
-updatedAt: '2026-05-26T15:07:53.862Z'
+updatedAt: '2026-05-26T15:08:52.925Z'
 ---
 
 ## Description
@@ -28,4 +28,4 @@ Implement verified-but-not-finalized task handling for source commit and task-st
 
 ## Implementation Notes
 
-Coordinator note: Worker spawn 946b0fb4-f5bb-46d7-8598-f14340e03515 timed out after 300000ms and left task In Progress. Task file appears to contain duplicate acceptance criteria blocks (one checked, one unchecked), so status/AC consistency is not trustworthy. Next worker should inspect existing working tree and task file changes, deduplicate/fix AC state if appropriate, verify behavior/tests, complete any missing work, and only mark Done when all canonical ACs are satisfied.
+Implemented task-level finalization failure handling for driver-owned source commit failures and post-commit task-status update failures. Added pending-finalization writes for commit and task_status phases, finalization events, non-Blocked task notes for verified commit failures, and behavior-marker coverage for B-002, B-003, and B-020. Verified with `bun run test`, `bun run typecheck`, and `bun run lint`.
