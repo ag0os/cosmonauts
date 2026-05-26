@@ -1,7 +1,14 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+	appendFile,
+	mkdir,
+	readdir,
+	readFile,
+	rm,
+	writeFile,
+} from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -22,13 +29,16 @@ import type {
 import { isProcessAlive } from "../../lib/driver/lock.ts";
 import { DEFAULT_TASK_TIMEOUT_MS } from "../../lib/driver/run-one-task.ts";
 import {
+	clearPendingFinalization,
 	DETACHED_RUN_PID_FILENAME,
 	INLINE_RUN_STATE_FILENAME,
 	type InlineRunState,
 	RUN_COMPLETION_FILENAME,
+	readPendingFinalization,
 	writeInlineRunState,
 	writeRunCompletion,
 } from "../../lib/driver/run-state.ts";
+import { commitFinalState } from "../../lib/driver/state-commit.ts";
 import type {
 	BackendName,
 	DriverEvent,
@@ -65,6 +75,7 @@ interface DriveRunOptions {
 interface ResumeDefaults {
 	spec: DriverRunSpec;
 	taskIds: string[];
+	pendingFinalization?: Awaited<ReturnType<typeof readPendingFinalization>>;
 }
 
 interface JsonError {
@@ -206,6 +217,16 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 	const resume = options.resume
 		? await loadResumeDefaults(projectRoot, planSlug, options.resume)
 		: undefined;
+	if (resume?.pendingFinalization) {
+		const finalized = await retryPendingFinalization(resume);
+		if (!finalized) {
+			process.exitCode = 1;
+			return;
+		}
+		if (resume.taskIds.length === 0) {
+			return;
+		}
+	}
 	if (resume && !options.resumeDirty) {
 		const dirtyPaths = await getDirtyPaths(projectRoot);
 		if (dirtyPaths.length > 0) {
@@ -824,7 +845,58 @@ async function loadResumeDefaults(
 	return {
 		spec,
 		taskIds: spec.taskIds.slice(completedIndex + 1),
+		pendingFinalization: await readPendingFinalization(workdir),
 	};
+}
+
+async function retryPendingFinalization(
+	resume: ResumeDefaults,
+): Promise<boolean> {
+	const pending = resume.pendingFinalization;
+	if (!pending) {
+		return true;
+	}
+	if (pending.phase !== "state_commit") {
+		return true;
+	}
+
+	const spec = resume.spec;
+	const eventSink = async (event: DriverEvent) => {
+		await appendFile(spec.eventLogPath, `${JSON.stringify(event)}\n`, "utf-8");
+	};
+	const result = await commitFinalState(
+		{ ...spec, taskIds: pending.taskIds },
+		{ eventSink, abortSignal: new AbortController().signal },
+		pending.taskIds,
+	);
+	if (result.status === "failed") {
+		const completion: DriverResult = {
+			runId: spec.runId,
+			outcome: "finalization_failed",
+			tasksDone: pending.taskIds.length,
+			tasksBlocked: 0,
+			finalizationPhase: "state_commit",
+			finalizationReason: result.reason,
+			pendingFinalizationPath: join(spec.workdir, "pending-finalization.json"),
+		};
+		await writeRunCompletion(spec.workdir, completion);
+		printJsonStdout(completion);
+		return false;
+	}
+
+	await clearPendingFinalization(spec.workdir);
+	if (resume.taskIds.length === 0) {
+		const completion: DriverResult = {
+			runId: spec.runId,
+			outcome: "completed",
+			tasksDone: pending.taskIds.length,
+			tasksBlocked: 0,
+			...(result.status === "committed" ? { stateCommitSha: result.sha } : {}),
+		};
+		await writeRunCompletion(spec.workdir, completion);
+		printJsonStdout(completion);
+	}
+	return true;
 }
 
 async function readDriverEvents(path: string): Promise<DriverEvent[]> {

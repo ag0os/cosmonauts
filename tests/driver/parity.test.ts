@@ -219,6 +219,7 @@ function createSpec(
 		preflightCommands: [],
 		postflightCommands: [],
 		commitPolicy: "driver-commits",
+		stateCommitPolicy: "none",
 		workdir,
 		eventLogPath: join(workdir, "events.jsonl"),
 	};

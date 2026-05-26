@@ -1,8 +1,14 @@
 import { appendFileSync } from "node:fs";
 import { EventLogWriteError } from "./event-stream.ts";
 import { type RunOneTaskCtx, runOneTask } from "./run-one-task.ts";
-import { writeRunCompletion } from "./run-state.ts";
+import {
+	pendingFinalizationPath,
+	writePendingFinalization,
+	writeRunCompletion,
+} from "./run-state.ts";
+import { commitFinalState, skipStateCommit } from "./state-commit.ts";
 import type { DriverEvent, DriverResult, DriverRunSpec } from "./types.ts";
+import { resolveStateCommitPolicy } from "./types.ts";
 
 export interface RunRunLoopCtx extends RunOneTaskCtx {
 	mode?: "inline" | "detached";
@@ -23,6 +29,7 @@ interface LoopState {
 	blockedTaskId?: string;
 	blockedReason?: string;
 	finalization?: FinalizationFailureState;
+	stateCommitSha?: string;
 }
 
 type DriverEventInput = DriverEvent extends infer Event
@@ -103,6 +110,10 @@ export async function runRunLoop(
 		}
 
 		if (state.outcome === "completed") {
+			await finalizeRunState(spec, ctx, state);
+		}
+
+		if (state.outcome === "completed") {
 			await emit(spec, ctx, {
 				type: "run_completed",
 				summary: {
@@ -133,6 +144,55 @@ export async function runRunLoop(
 		await emitRunAborted(spec, ctx, formatError(error));
 		throw error;
 	}
+}
+
+async function finalizeRunState(
+	spec: DriverRunSpec,
+	ctx: RunRunLoopCtx,
+	state: LoopState,
+): Promise<void> {
+	if (state.blocked > 0) {
+		await skipStateCommit(spec, ctx, "not_all_tasks_done");
+		return;
+	}
+
+	if (resolveStateCommitPolicy(spec) === "none") {
+		await skipStateCommit(spec, ctx, "policy_none");
+		return;
+	}
+
+	const result = await commitFinalState(spec, ctx, spec.taskIds);
+	if (result.status === "committed") {
+		state.stateCommitSha = result.sha;
+		return;
+	}
+
+	if (result.status !== "failed") {
+		return;
+	}
+
+	await writePendingFinalization(spec.workdir, {
+		runId: spec.runId,
+		planSlug: spec.planSlug,
+		createdAt: new Date().toISOString(),
+		commitPolicy: spec.commitPolicy,
+		stateCommitPolicy: resolveStateCommitPolicy(spec),
+		reason: result.reason,
+		phase: "state_commit",
+		taskIds: spec.taskIds,
+		headBeforeFinalization: result.headBeforeFinalization,
+	});
+	state.outcome = "finalization_failed";
+	state.finalization = {
+		finalizationPhase: "state_commit",
+		finalizationReason: result.reason,
+		pendingFinalizationPath: pendingFinalizationPath(spec.workdir),
+	};
+	await emit(spec, ctx, {
+		type: "run_finalization_failed",
+		phase: "state_commit",
+		reason: result.reason,
+	});
 }
 
 async function emitRunAborted(
@@ -196,6 +256,7 @@ function toDriverResult(spec: DriverRunSpec, state: LoopState): DriverResult {
 			outcome: "completed",
 			...(state.blockedTaskId ? { blockedTaskId: state.blockedTaskId } : {}),
 			...(state.blockedReason ? { blockedReason: state.blockedReason } : {}),
+			...(state.stateCommitSha ? { stateCommitSha: state.stateCommitSha } : {}),
 		};
 	}
 

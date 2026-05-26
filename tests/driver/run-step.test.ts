@@ -89,8 +89,15 @@ describe("run-step binary", () => {
 			"spawn_started",
 			"spawn_completed",
 			"task_done",
+			"finalize",
 			"run_completed",
 		]);
+		expect(events[7]).toMatchObject({
+			type: "finalize",
+			phase: "state_commit",
+			status: "skipped",
+			details: { reason: "policy_none" },
+		});
 		expect(events[0]).toMatchObject({
 			type: "run_started",
 			mode: "detached",

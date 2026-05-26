@@ -1,8 +1,11 @@
-import { readFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { BackendRunResult } from "../../lib/driver/backends/types.ts";
 import { EventLogWriteError } from "../../lib/driver/event-stream.ts";
+import { getRepoCommitLockPath } from "../../lib/driver/lock.ts";
 import {
 	type RunRunLoopCtx,
 	runRunLoop,
@@ -30,6 +33,7 @@ vi.mock("../../lib/driver/run-one-task.ts", () => ({
 }));
 
 const temp = useTempDir("run-run-loop-test-");
+const execFileAsync = promisify(execFile);
 
 describe("run-run-loop", () => {
 	beforeEach(() => {
@@ -61,8 +65,15 @@ describe("run-run-loop", () => {
 		expect(mocks.runOneTask).toHaveBeenNthCalledWith(2, spec, ctx, "TASK-2");
 		expect(events.map((event) => event.type)).toEqual([
 			"run_started",
+			"finalize",
 			"run_completed",
 		]);
+		expect(events[1]).toMatchObject({
+			type: "finalize",
+			phase: "state_commit",
+			status: "skipped",
+			details: { reason: "policy_none" },
+		});
 		expect(events.at(-1)).toMatchObject({
 			type: "run_completed",
 			summary: { total: 2, done: 2, blocked: 0 },
@@ -154,9 +165,16 @@ describe("run-run-loop", () => {
 		expect(mocks.runOneTask).toHaveBeenNthCalledWith(2, spec, ctx, "TASK-2");
 		expect(events.map((event) => event.type)).toEqual([
 			"run_started",
+			"finalize",
 			"run_completed",
 		]);
 		expect(events[1]).toMatchObject({
+			type: "finalize",
+			phase: "state_commit",
+			status: "skipped",
+			details: { reason: "not_all_tasks_done" },
+		});
+		expect(events[2]).toMatchObject({
 			type: "run_completed",
 			summary: { total: 2, done: 1, blocked: 1 },
 		});
@@ -220,6 +238,162 @@ describe("run-run-loop", () => {
 		).toEqual(result);
 	});
 
+	// @cosmo-behavior plan:drive-resilience-state-model#B-014
+	test("creates a final state commit only for run task status updates when state policy is final-state-commit", async () => {
+		const projectRoot = temp.path;
+		await initGit(projectRoot);
+		await mkdir(join(projectRoot, "missions", "tasks"), { recursive: true });
+		await mkdir(join(projectRoot, "missions", "sessions", "plan", "runs"), {
+			recursive: true,
+		});
+		await mkdir(join(projectRoot, "missions", "archive", "tasks"), {
+			recursive: true,
+		});
+		await mkdir(join(projectRoot, "missions", "reviews"), { recursive: true });
+		await mkdir(join(projectRoot, "memory"), { recursive: true });
+		await writeFile(
+			join(projectRoot, "missions", "tasks", "TASK-1 - One.md"),
+			"---\nstatus: Done\n---\n# One\n",
+			"utf-8",
+		);
+		await writeFile(
+			join(projectRoot, "missions", "tasks", "TASK-2 - Two.md"),
+			"---\nstatus: Done\n---\n# Two\n",
+			"utf-8",
+		);
+		await writeFile(join(projectRoot, "src.ts"), "source dirty\n", "utf-8");
+		await writeFile(
+			join(projectRoot, "missions", "sessions", "transcript.jsonl"),
+			"dirty\n",
+			"utf-8",
+		);
+		await writeFile(
+			join(projectRoot, "missions", "archive", "tasks", "TASK-OLD.md"),
+			"dirty\n",
+			"utf-8",
+		);
+		await writeFile(
+			join(projectRoot, "missions", "reviews", "review.md"),
+			"dirty\n",
+			"utf-8",
+		);
+		await writeFile(join(projectRoot, "memory", "note.md"), "dirty\n", "utf-8");
+		await installStateCommitLockHook(projectRoot);
+		const events: DriverEvent[] = [];
+		const spec = createSpec({
+			projectRoot,
+			workdir: join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"plan",
+				"runs",
+				"run-1",
+			),
+			eventLogPath: join(
+				projectRoot,
+				"missions",
+				"sessions",
+				"plan",
+				"runs",
+				"run-1",
+				"events.jsonl",
+			),
+			planSlug: "plan",
+			taskIds: ["TASK-1", "TASK-2"],
+			commitPolicy: "driver-commits",
+			stateCommitPolicy: "final-state-commit",
+		});
+		mocks.runOneTask.mockResolvedValue({ status: "done" });
+
+		const result = await runRunLoop(spec, createCtx(events));
+
+		expect(result).toMatchObject({
+			outcome: "completed",
+			tasksDone: 2,
+			tasksBlocked: 0,
+			stateCommitSha: expect.any(String),
+		});
+		expect(events).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					type: "finalize",
+					phase: "state_commit",
+					status: "started",
+				}),
+				expect.objectContaining({
+					type: "finalize",
+					phase: "state_commit",
+					status: "passed",
+				}),
+			]),
+		);
+		expect(
+			await git(projectRoot, ["show", "--name-only", "--format=", "HEAD"]),
+		).toEqual(
+			"missions/tasks/TASK-1 - One.md\nmissions/tasks/TASK-2 - Two.md\n",
+		);
+		expect(
+			await git(projectRoot, ["status", "--porcelain", "--", "missions/tasks"]),
+		).toBe("");
+		expect(
+			await git(projectRoot, [
+				"status",
+				"--porcelain",
+				"--",
+				"src.ts",
+				"missions/sessions",
+				"missions/archive",
+				"missions/reviews",
+				"memory",
+			]),
+		).toContain("src.ts");
+	});
+
+	// @cosmo-behavior plan:drive-resilience-state-model#B-015
+	test("records retryable state commit finalization failure", async () => {
+		const projectRoot = temp.path;
+		await initGit(projectRoot);
+		await mkdir(join(projectRoot, "missions", "tasks"), { recursive: true });
+		await writeFile(
+			join(projectRoot, "missions", "tasks", "TASK-1 - One.md"),
+			"---\nstatus: Done\n---\n# One\n",
+			"utf-8",
+		);
+		await installFailingCommitHook(projectRoot);
+		const events: DriverEvent[] = [];
+		const spec = createSpec({
+			projectRoot,
+			workdir: projectRoot,
+			taskIds: ["TASK-1"],
+			commitPolicy: "driver-commits",
+			stateCommitPolicy: "final-state-commit",
+		});
+		mocks.runOneTask.mockResolvedValue({ status: "done" });
+
+		const result = await runRunLoop(spec, createCtx(events));
+
+		expect(result).toMatchObject({
+			outcome: "finalization_failed",
+			finalizationPhase: "state_commit",
+			finalizationReason: expect.stringContaining("state commit failed"),
+			pendingFinalizationPath: join(projectRoot, "pending-finalization.json"),
+		});
+		expect(events.at(-1)).toMatchObject({
+			type: "run_finalization_failed",
+			phase: "state_commit",
+		});
+		const pending = JSON.parse(
+			await readFile(join(projectRoot, "pending-finalization.json"), "utf-8"),
+		);
+		expect(pending).toMatchObject({
+			phase: "state_commit",
+			taskIds: ["TASK-1"],
+			reason: expect.stringContaining("state commit failed"),
+			headBeforeFinalization: expect.any(String),
+		});
+	});
+
 	test("driver log write failure writes fallback run_aborted", async () => {
 		const events: DriverEvent[] = [];
 		const spec = createSpec();
@@ -276,6 +450,54 @@ function createSpec(overrides: Partial<DriverRunSpec> = {}): DriverRunSpec {
 		eventLogPath: join(temp.path, "events.jsonl"),
 		...overrides,
 	};
+}
+
+async function initGit(projectRoot: string): Promise<void> {
+	await git(projectRoot, ["init", "-b", "main"]);
+	await git(projectRoot, ["config", "user.email", "driver@example.com"]);
+	await git(projectRoot, ["config", "user.name", "Driver Test"]);
+	await writeFile(join(projectRoot, "README.md"), "initial\n", "utf-8");
+	await git(projectRoot, ["add", "README.md"]);
+	await git(projectRoot, ["commit", "-m", "initial"]);
+}
+
+async function installStateCommitLockHook(projectRoot: string): Promise<void> {
+	const hookPath = join(projectRoot, ".git", "hooks", "pre-commit");
+	const lockPath = getRepoCommitLockPath(projectRoot);
+	await writeFile(
+		hookPath,
+		`#!/bin/sh
+if ! test -f ${shellQuote(lockPath)}; then
+	printf 'missing project commit lock\n' >&2
+	exit 1
+fi
+if git diff --cached --name-only | grep -Ev '^missions/tasks/TASK-[12] - (One|Two)\\.md$'; then
+	printf 'unexpected staged path\n' >&2
+	exit 1
+fi
+`,
+		"utf-8",
+	);
+	await chmod(hookPath, 0o755);
+}
+
+async function installFailingCommitHook(projectRoot: string): Promise<void> {
+	const hookPath = join(projectRoot, ".git", "hooks", "pre-commit");
+	await writeFile(
+		hookPath,
+		"#!/bin/sh\nprintf 'state commit rejected by test hook\\n' >&2\nexit 1\n",
+		"utf-8",
+	);
+	await chmod(hookPath, 0o755);
+}
+
+async function git(cwd: string, args: string[]): Promise<string> {
+	const { stdout } = await execFileAsync("git", args, { cwd });
+	return stdout.toString();
+}
+
+function shellQuote(value: string): string {
+	return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 function createCtx(
