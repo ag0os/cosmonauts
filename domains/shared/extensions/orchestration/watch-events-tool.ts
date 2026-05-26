@@ -105,6 +105,15 @@ function describeDriverEvent(event: DriverEvent): string {
 			]);
 		case "commit_made":
 			return `${event.taskId} ${shortSha(event.sha)} ${event.subject}`;
+		case "finalize":
+			return describeFinalizeEvent(event);
+		case "task_finalization_failed":
+			return joinParts([
+				event.taskId,
+				`phase ${event.phase}`,
+				`reason: ${event.reason}`,
+				event.commitSha && `commit ${shortSha(event.commitSha)}`,
+			]);
 		case "task_done":
 			return event.taskId;
 		case "task_blocked":
@@ -124,6 +133,15 @@ function describeDriverEvent(event: DriverEvent): string {
 			return `total ${event.summary.total}, done ${event.summary.done}, blocked ${event.summary.blocked}`;
 		case "run_aborted":
 			return `reason: ${event.reason}`;
+		case "run_finalization_failed":
+			return joinParts([
+				`phase ${event.phase}`,
+				`reason: ${event.reason}`,
+				event.taskId && `task ${event.taskId}`,
+				event.commitSha && `commit ${shortSha(event.commitSha)}`,
+			]);
+		case "plan_completion_candidate":
+			return `${event.planSlug}, all ${event.taskCount} plan tasks done`;
 		default:
 			return JSON.stringify(event);
 	}
@@ -151,6 +169,18 @@ function describeActivity(activity: DriverActivity): string {
 	}
 }
 
+function describeFinalizeEvent(
+	event: Extract<DriverEvent, { type: "finalize" }>,
+): string {
+	return joinParts([
+		joinParts([event.taskId, event.phase, event.status], " "),
+		event.details?.reason && `reason: ${event.details.reason}`,
+		event.details?.error && `error: ${event.details.error}`,
+		event.details?.sha && `sha: ${shortSha(event.details.sha)}`,
+		event.details?.subject && `subject: ${event.details.subject}`,
+	]);
+}
+
 function describeReportOutcome(
 	report: Extract<DriverEvent, { type: "spawn_completed" }>["report"],
 ): string {
@@ -163,8 +193,11 @@ function describeReportOutcome(
 	return `${report.outcome}${phase}`;
 }
 
-function joinParts(parts: (string | false | undefined | null)[]): string {
-	return parts.filter((part): part is string => Boolean(part)).join(", ");
+function joinParts(
+	parts: (string | false | undefined | null)[],
+	separator = ", ",
+): string {
+	return parts.filter((part): part is string => Boolean(part)).join(separator);
 }
 
 function shortSha(sha: string): string {

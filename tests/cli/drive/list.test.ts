@@ -70,6 +70,38 @@ describe("cosmonauts drive list", () => {
 		vi.restoreAllMocks();
 	});
 
+	// @cosmo-behavior plan:drive-resilience-state-model#B-011
+	test("lists finalization_failed runs", async () => {
+		const workdir = await writeRunDir("plan-a", "run-finalization-failed");
+		await writeFinalizationFailedCompletion(workdir, "run-finalization-failed");
+
+		await parseDrive(["list"]);
+
+		expect(output.stdoutJson()).toEqual({
+			runs: [
+				{
+					runId: "run-finalization-failed",
+					planSlug: "plan-a",
+					status: "finalization_failed",
+					workdir,
+					result: {
+						runId: "run-finalization-failed",
+						outcome: "finalization_failed",
+						tasksDone: 1,
+						tasksBlocked: 0,
+						finalizationPhase: "commit",
+						finalizationReason: "git commit failed",
+						finalizationTaskId: "TASK-333",
+						finalizationCommitSha: "abc123def456",
+						pendingFinalizationPath: join(workdir, "pending-finalization.json"),
+					},
+				},
+			],
+		});
+		expect(output.stdout()).not.toContain("blockedTaskId");
+		expect(output.stdout()).not.toContain("blockedReason");
+	});
+
 	test("enumerates and classifies multiple runs across multiple plans", async () => {
 		const completedWorkdir = await writeRunDir("plan-a", "run-completed");
 		await writeCompletion(completedWorkdir, "run-completed", "completed");
@@ -169,6 +201,31 @@ async function writeCompletion(
 		join(workdir, "run.completion.json"),
 		`${JSON.stringify(
 			{ runId, outcome, tasksDone: 1, tasksBlocked: 0 },
+			null,
+			2,
+		)}\n`,
+		"utf-8",
+	);
+}
+
+async function writeFinalizationFailedCompletion(
+	workdir: string,
+	runId: string,
+): Promise<void> {
+	await writeFile(
+		join(workdir, "run.completion.json"),
+		`${JSON.stringify(
+			{
+				runId,
+				outcome: "finalization_failed",
+				tasksDone: 1,
+				tasksBlocked: 0,
+				finalizationPhase: "commit",
+				finalizationReason: "git commit failed",
+				finalizationTaskId: "TASK-333",
+				finalizationCommitSha: "abc123def456",
+				pendingFinalizationPath: join(workdir, "pending-finalization.json"),
+			},
 			null,
 			2,
 		)}\n`,

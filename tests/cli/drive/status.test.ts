@@ -87,6 +87,34 @@ describe("cosmonauts drive status", () => {
 		});
 	});
 
+	// @cosmo-behavior plan:drive-resilience-state-model#B-011
+	test("reports finalization_failed completion details", async () => {
+		const workdir = await writeRunDir(PLAN, RUN_ID);
+		await writeFinalizationFailedCompletion(workdir);
+
+		await parseDrive(["status", RUN_ID]);
+
+		expect(output.stdoutJson()).toEqual({
+			runId: RUN_ID,
+			planSlug: PLAN,
+			status: "finalization_failed",
+			workdir,
+			result: {
+				runId: RUN_ID,
+				outcome: "finalization_failed",
+				tasksDone: 2,
+				tasksBlocked: 0,
+				finalizationPhase: "state_commit",
+				finalizationReason: "state commit failed",
+				finalizationTaskId: "TASK-333",
+				finalizationCommitSha: "abc123def456",
+				pendingFinalizationPath: join(workdir, "pending-finalization.json"),
+			},
+		});
+		expect(output.stdout()).not.toContain("blockedTaskId");
+		expect(output.stdout()).not.toContain("blockedReason");
+	});
+
 	test("pid alive and matching process start time reports running", async () => {
 		const workdir = await writeRunDir(PLAN, RUN_ID);
 		await writePid(workdir, 1234, localIso(2026, 0, 1, 0, 0, 0));
@@ -204,6 +232,30 @@ async function writeCompletion(
 		join(workdir, "run.completion.json"),
 		`${JSON.stringify(
 			{ runId: RUN_ID, outcome, tasksDone: 2, tasksBlocked: 0 },
+			null,
+			2,
+		)}\n`,
+		"utf-8",
+	);
+}
+
+async function writeFinalizationFailedCompletion(
+	workdir: string,
+): Promise<void> {
+	await writeFile(
+		join(workdir, "run.completion.json"),
+		`${JSON.stringify(
+			{
+				runId: RUN_ID,
+				outcome: "finalization_failed",
+				tasksDone: 2,
+				tasksBlocked: 0,
+				finalizationPhase: "state_commit",
+				finalizationReason: "state commit failed",
+				finalizationTaskId: "TASK-333",
+				finalizationCommitSha: "abc123def456",
+				pendingFinalizationPath: join(workdir, "pending-finalization.json"),
+			},
 			null,
 			2,
 		)}\n`,

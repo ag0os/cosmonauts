@@ -118,6 +118,59 @@ describe("watch_events tool", () => {
 		expect(text).toContain("cursor 3");
 	});
 
+	// @cosmo-behavior plan:drive-resilience-state-model#B-009
+	test("summarizes finalization phase failures and no-change commits distinctly from task blocks", async () => {
+		await writeEventLog([
+			makeEvent({
+				type: "finalize",
+				taskId: "TASK-1",
+				phase: "commit",
+				status: "failed",
+				details: { error: "git commit failed" },
+			}),
+			makeEvent({
+				type: "finalize",
+				taskId: "TASK-2",
+				phase: "commit",
+				status: "skipped",
+				details: { reason: "no_changes" },
+			}),
+			makeEvent({
+				type: "finalize",
+				phase: "state_commit",
+				status: "failed",
+				details: { error: "state commit failed" },
+			}),
+			makeEvent({
+				type: "run_finalization_failed",
+				phase: "state_commit",
+				reason: "state commit failed",
+			}),
+			makeEvent({
+				type: "task_blocked",
+				taskId: "TASK-3",
+				reason: "tests failed",
+			}),
+		]);
+
+		const result = await callWatchEvents();
+		const text = result.content[0]?.text ?? "";
+
+		expect(text).toContain(
+			"finalize: TASK-1 commit failed, error: git commit failed",
+		);
+		expect(text).toContain(
+			"finalize: TASK-2 commit skipped, reason: no_changes",
+		);
+		expect(text).toContain(
+			"finalize: state_commit failed, error: state commit failed",
+		);
+		expect(text).toContain(
+			"run_finalization_failed: phase state_commit, reason: state commit failed",
+		);
+		expect(text).toContain("task_blocked: TASK-3, reason: tests failed");
+	});
+
 	test("caps rendered events and notes the overflow", async () => {
 		const events: DriverEvent[] = [];
 		for (let i = 0; i < 35; i++) {

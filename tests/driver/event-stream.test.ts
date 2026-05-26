@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
+	bridgeJsonlToActivityBus,
 	createEventSink,
 	type DriverBusEvent,
 	type DriverEventPublisher,
@@ -133,6 +134,51 @@ describe("event-stream", () => {
 		expect(shouldBridge(preflightEvent("started"))).toBe(false);
 		expect(shouldBridge(taskStartedEvent())).toBe(false);
 		expect(shouldBridge(spawnCompletedEvent())).toBe(false);
+	});
+
+	// @cosmo-behavior plan:drive-resilience-state-model#B-010
+	test("bridges run_finalization_failed and treats it as terminal", async () => {
+		const published: DriverBusEvent[] = [];
+		const finalizationFailed = runFinalizationFailedEvent();
+		await writeFile(
+			logPath(),
+			`${JSON.stringify(finalizationFailed)}\n${JSON.stringify(taskDoneEvent())}\n`,
+			"utf-8",
+		);
+
+		const bridge = bridgeJsonlToActivityBus(
+			logPath(),
+			"run-1",
+			"parent-session-1",
+			{ publish: (event) => published.push(event) },
+		);
+		try {
+			await waitFor(() => published.length > 0);
+		} finally {
+			bridge.stop();
+		}
+
+		expect(shouldBridge(finalizationFailed)).toBe(true);
+		expect(published).toEqual([
+			{
+				type: "driver_event",
+				runId: "run-1",
+				parentSessionId: "parent-session-1",
+				event: finalizationFailed,
+			},
+		]);
+	});
+
+	// @cosmo-behavior plan:drive-resilience-state-model#B-010
+	test("bridges task finalization and plan completion candidate events", () => {
+		expect(toBusEvent(taskFinalizationFailedEvent())).toMatchObject({
+			type: "driver_event",
+			event: taskFinalizationFailedEvent(),
+		});
+		expect(toBusEvent(planCompletionCandidateEvent())).toMatchObject({
+			type: "driver_event",
+			event: planCompletionCandidateEvent(),
+		});
 	});
 
 	test("publishes driver_activity and driver_event bus types, never spawn_activity", async () => {
@@ -322,6 +368,45 @@ function runAbortedEvent(
 	};
 }
 
+function runFinalizationFailedEvent(
+	overrides: Partial<EventOf<"run_finalization_failed">> = {},
+): EventOf<"run_finalization_failed"> {
+	return {
+		...baseEvent,
+		type: "run_finalization_failed",
+		phase: "state_commit",
+		reason: "state commit failed",
+		...overrides,
+	};
+}
+
+function taskFinalizationFailedEvent(
+	overrides: Partial<EventOf<"task_finalization_failed">> = {},
+): EventOf<"task_finalization_failed"> {
+	return {
+		...baseEvent,
+		type: "task_finalization_failed",
+		taskId: "TASK-252",
+		phase: "commit",
+		reason: "git commit failed",
+		retryable: true,
+		...overrides,
+	};
+}
+
+function planCompletionCandidateEvent(
+	overrides: Partial<EventOf<"plan_completion_candidate">> = {},
+): EventOf<"plan_completion_candidate"> {
+	return {
+		...baseEvent,
+		type: "plan_completion_candidate",
+		planSlug: "event-stream-plan",
+		taskCount: 2,
+		reason: "all_plan_tasks_done",
+		...overrides,
+	};
+}
+
 function spawnCompletedEvent(
 	overrides: Partial<EventOf<"spawn_completed">> = {},
 ): EventOf<"spawn_completed"> {
@@ -332,4 +417,14 @@ function spawnCompletedEvent(
 		report: { outcome: "unknown", raw: "no report" },
 		...overrides,
 	};
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+	const startedAt = Date.now();
+	while (!predicate()) {
+		if (Date.now() - startedAt > 1_000) {
+			throw new Error("Timed out waiting for event bridge");
+		}
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
 }

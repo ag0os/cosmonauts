@@ -381,9 +381,13 @@ const BRIDGED_EVENT_TYPES = new Set<DriverEvent["type"]>([
 	"task_done",
 	"task_blocked",
 	"commit_made",
+	"finalize",
+	"task_finalization_failed",
 	"lock_warning",
 	"run_completed",
 	"run_aborted",
+	"run_finalization_failed",
+	"plan_completion_candidate",
 ]);
 
 const JSONL_BRIDGE_POLL_INTERVAL_MS = 200;
@@ -422,5 +426,9 @@ function isNotFoundError(error: unknown): boolean {
 }
 
 function isTerminalEvent(event: DriverEvent): boolean {
-	return event.type === "run_completed" || event.type === "run_aborted";
+	return (
+		event.type === "run_completed" ||
+		event.type === "run_aborted" ||
+		event.type === "run_finalization_failed"
+	);
 }
