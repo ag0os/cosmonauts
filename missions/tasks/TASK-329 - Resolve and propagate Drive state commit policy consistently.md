@@ -1,7 +1,7 @@
 ---
 id: TASK-329
 title: Resolve and propagate Drive state commit policy consistently
-status: In Progress
+status: Done
 priority: high
 assignee: worker
 labels:
@@ -12,7 +12,7 @@ labels:
 dependencies:
   - TASK-326
 createdAt: '2026-05-22T19:57:34.994Z'
-updatedAt: '2026-05-26T15:25:48.983Z'
+updatedAt: '2026-05-26T15:27:04.133Z'
 ---
 
 ## Description
@@ -29,4 +29,4 @@ Add the shared state commit policy contract and propagate it through user-facing
 
 ## Implementation Notes
 
-AC #1-#5 implemented and verified. Added shared resolveStateCommitPolicy in driver core; CLI and run_driver accept optional state commit policy overrides while leaving defaults to the resolver; prompt rendering includes resolved state commit policy expectations without changing the report contract. Verification: targeted B-013 tests, full bun run test, bun run lint, bun run typecheck.
+Implemented in commit 4123ca2. Added shared resolveStateCommitPolicy in driver core; CLI and run_driver accept optional state commit policy overrides while leaving defaults to the resolver; prompt rendering includes resolved state commit policy expectations without changing the report contract. Verification: bun run test tests/cli/drive/run.test.ts tests/extensions/orchestration-driver-tool.test.ts tests/driver/prompt-template.test.ts; bun run test; bun run lint; bun run typecheck.

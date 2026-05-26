@@ -1,7 +1,7 @@
 ---
 id: TASK-335
 title: Document Drive finalization recovery and bounded non-goals
-status: In Progress
+status: Done
 priority: medium
 assignee: worker
 labels:
@@ -12,7 +12,7 @@ dependencies:
   - TASK-333
   - TASK-334
 createdAt: '2026-05-22T19:58:25.807Z'
-updatedAt: '2026-05-26T16:05:43.799Z'
+updatedAt: '2026-05-26T16:07:55.088Z'
 ---
 
 ## Description
@@ -26,3 +26,7 @@ Update operator and agent guidance so users understand finalization recovery, st
 - [x] #4 B-021: `/skill:drive` explicitly defers live-follow UI, generated final summary artifacts, artifact-conformance enforcement in Drive, and automatic plan completion as non-goals.
 - [x] #5 The Drive skill prompt test covers the documented guidance and carries the B-021 marker.
 <!-- AC:END -->
+
+## Implementation Notes
+
+Documented Drive finalization_failed recovery, pending-finalization resume evidence, default/override stateCommitPolicy behavior, verification-only no-source-change evidence, plan_completion_candidate routing, and deferred Drive UX/lifecycle non-goals. Added B-021 prompt test with exact behavior marker. Verification run: bun run test; bun run lint; bun run typecheck.

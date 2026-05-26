@@ -1,7 +1,7 @@
 ---
 id: TASK-330
 title: Implement final state commit persistence and retryable state-commit failure
-status: In Progress
+status: Done
 priority: high
 assignee: worker
 labels:
@@ -13,7 +13,7 @@ dependencies:
   - TASK-328
   - TASK-329
 createdAt: '2026-05-22T19:57:43.746Z'
-updatedAt: '2026-05-26T15:33:37.365Z'
+updatedAt: '2026-05-26T15:34:29.042Z'
 ---
 
 ## Description
@@ -30,4 +30,4 @@ Add run-level final state persistence for successful driver-owned commit runs an
 
 ## Implementation Notes
 
-Implemented final state commit helper and run-loop integration. Successful final-state-commit runs now emit state_commit finalize events, stage only this run's missions/tasks task markdown files under the project-root repo commit lock, and record stateCommitSha. State commit failures write pending-finalization.json with phase state_commit, task IDs, headBeforeFinalization, and reason, then return finalization_failed. CLI resume retries pending state_commit finalization before backend work and clears pending state on success. Verified with bun run test, bun run lint, bun run typecheck.
+Implemented final state commit helper and run-loop integration. Successful final-state-commit runs now emit state_commit finalize events, stage only this run's missions/tasks task markdown files under the project-root repo commit lock, and record stateCommitSha. State commit failures write pending-finalization.json with phase state_commit, task IDs, headBeforeFinalization, and reason, then return finalization_failed. CLI resume retries pending state_commit finalization before backend work and clears pending state on success. Verified with bun run test, bun run lint, bun run typecheck. Commit: 31ec437.

@@ -1,7 +1,7 @@
 ---
 id: TASK-326
 title: Define Drive finalization result and pending-state contracts
-status: In Progress
+status: Done
 priority: high
 assignee: worker
 labels:
@@ -10,7 +10,7 @@ labels:
   - 'plan:drive-resilience-state-model'
 dependencies: []
 createdAt: '2026-05-22T19:57:04.624Z'
-updatedAt: '2026-05-26T15:00:56.719Z'
+updatedAt: '2026-05-26T15:01:38.452Z'
 ---
 
 ## Description
@@ -26,7 +26,4 @@ Establish the shared Drive finalization vocabulary and persistence contract befo
 
 ## Implementation Notes
 
-AC #1 satisfied: DriverResult now includes finalization_failed with finalization details and pendingFinalizationPath, separate from blocked fields.
-AC #2 satisfied: PendingFinalizationState is a phase-discriminated persisted contract for commit, task_status, and state_commit evidence with read/write/clear helpers.
-AC #3 satisfied: runRunLoop emits run_finalization_failed, returns and writes finalization_failed completion for task finalization failures.
-AC #4 satisfied: existing completed/blocked/aborted result compatibility is preserved, including partial-continue blockedTaskId behavior.
+Implemented B-004 finalization contracts. Added DriverResult finalization_failed details and pending finalization state helpers; runRunLoop now emits run_finalization_failed and writes run.completion.json for finalization-failed task outcomes. Verified with full test suite plus lint/typecheck.
