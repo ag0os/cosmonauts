@@ -2,6 +2,9 @@
 
 export type BackendName = "cosmonauts-subagent" | "codex" | "claude-cli";
 
+export type FinalizationPhase = "commit" | "task_status" | "state_commit";
+export type StateCommitPolicy = "none" | "final-state-commit";
+
 export interface DriverRunSpec {
 	runId: string;
 	parentSessionId: string;
@@ -14,6 +17,7 @@ export interface DriverRunSpec {
 	postflightCommands: string[];
 	branch?: string;
 	commitPolicy: "driver-commits" | "backend-commits" | "no-commit";
+	stateCommitPolicy?: StateCommitPolicy;
 	partialMode?: "stop" | "continue";
 	workdir: string;
 	eventLogPath: string;
@@ -113,6 +117,26 @@ export type DriverEvent =
 			sha: string;
 			subject: string;
 	  })
+	| (DriverEventBase & {
+			type: "finalize";
+			taskId?: string;
+			phase: FinalizationPhase;
+			status: "started" | "passed" | "failed" | "skipped";
+			details?: {
+				sha?: string;
+				subject?: string;
+				error?: string;
+				reason?: "no_changes" | "policy_none" | "not_all_tasks_done";
+			};
+	  })
+	| (DriverEventBase & {
+			type: "task_finalization_failed";
+			taskId: string;
+			phase: "commit" | "task_status";
+			reason: string;
+			commitSha?: string;
+			retryable: true;
+	  })
 	| (DriverEventBase & { type: "task_done"; taskId: string })
 	| (DriverEventBase & {
 			type: "task_blocked";
@@ -130,7 +154,20 @@ export type DriverEvent =
 			type: "run_completed";
 			summary: { total: number; done: number; blocked: number };
 	  })
-	| (DriverEventBase & { type: "run_aborted"; reason: string });
+	| (DriverEventBase & { type: "run_aborted"; reason: string })
+	| (DriverEventBase & {
+			type: "run_finalization_failed";
+			phase: FinalizationPhase;
+			reason: string;
+			taskId?: string;
+			commitSha?: string;
+	  })
+	| (DriverEventBase & {
+			type: "plan_completion_candidate";
+			planSlug: string;
+			taskCount: number;
+			reason: "all_plan_tasks_done";
+	  });
 
 export type SpawnActivity =
 	| { kind: "tool_start"; toolName: string; summary: string }
@@ -150,20 +187,50 @@ export interface DriverHandle {
 	result: Promise<DriverResult>;
 }
 
-export interface DriverResult {
+interface DriverResultBase {
 	runId: string;
-	outcome: "completed" | "aborted" | "blocked";
 	tasksDone: number;
 	tasksBlocked: number;
-	blockedTaskId?: string;
-	blockedReason?: string;
 }
 
-export interface TaskOutcome {
-	status: "done" | "blocked" | "partial";
-	reason?: string;
-	commitSha?: string;
-}
+export type DriverResult =
+	| (DriverResultBase & {
+			outcome: "completed";
+			blockedTaskId?: string;
+			blockedReason?: string;
+			stateCommitSha?: string;
+			planCompletionCandidate?: { planSlug: string; taskCount: number };
+	  })
+	| (DriverResultBase & {
+			outcome: "aborted" | "blocked";
+			blockedTaskId?: string;
+			blockedReason?: string;
+	  })
+	| (DriverResultBase & {
+			outcome: "finalization_failed";
+			finalizationPhase: FinalizationPhase;
+			finalizationReason: string;
+			finalizationTaskId?: string;
+			finalizationCommitSha?: string;
+			pendingFinalizationPath: string;
+	  });
+
+export type TaskOutcome =
+	| {
+			status: "done" | "blocked" | "partial";
+			reason?: string;
+			commitSha?: string;
+	  }
+	| {
+			status: "finalization_failed";
+			reason?: undefined;
+			commitSha?: undefined;
+			finalizationPhase: FinalizationPhase;
+			finalizationReason: string;
+			finalizationTaskId?: string;
+			finalizationCommitSha?: string;
+			pendingFinalizationPath: string;
+	  };
 
 export interface LockHandle {
 	release(): Promise<void>;

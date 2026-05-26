@@ -1,10 +1,19 @@
 import { appendFileSync } from "node:fs";
 import { EventLogWriteError } from "./event-stream.ts";
 import { type RunOneTaskCtx, runOneTask } from "./run-one-task.ts";
+import { writeRunCompletion } from "./run-state.ts";
 import type { DriverEvent, DriverResult, DriverRunSpec } from "./types.ts";
 
 export interface RunRunLoopCtx extends RunOneTaskCtx {
 	mode?: "inline" | "detached";
+}
+
+interface FinalizationFailureState {
+	finalizationPhase: "commit" | "task_status" | "state_commit";
+	finalizationReason: string;
+	finalizationTaskId?: string;
+	finalizationCommitSha?: string;
+	pendingFinalizationPath: string;
 }
 
 interface LoopState {
@@ -13,6 +22,7 @@ interface LoopState {
 	outcome: DriverResult["outcome"];
 	blockedTaskId?: string;
 	blockedReason?: string;
+	finalization?: FinalizationFailureState;
 }
 
 type DriverEventInput = DriverEvent extends infer Event
@@ -47,6 +57,25 @@ export async function runRunLoop(
 			if (outcome.status === "done") {
 				state.done += 1;
 				continue;
+			}
+
+			if (outcome.status === "finalization_failed") {
+				state.outcome = "finalization_failed";
+				state.finalization = {
+					finalizationPhase: outcome.finalizationPhase,
+					finalizationReason: outcome.finalizationReason,
+					finalizationTaskId: outcome.finalizationTaskId ?? taskId,
+					finalizationCommitSha: outcome.finalizationCommitSha,
+					pendingFinalizationPath: outcome.pendingFinalizationPath,
+				};
+				await emit(spec, ctx, {
+					type: "run_finalization_failed",
+					phase: outcome.finalizationPhase,
+					reason: outcome.finalizationReason,
+					taskId: outcome.finalizationTaskId ?? taskId,
+					commitSha: outcome.finalizationCommitSha,
+				});
+				break;
 			}
 
 			state.blocked += 1;
@@ -84,7 +113,11 @@ export async function runRunLoop(
 			});
 		}
 
-		return toDriverResult(spec, state);
+		const result = toDriverResult(spec, state);
+		if (result.outcome === "finalization_failed") {
+			await writeRunCompletion(spec.workdir, result);
+		}
+		return result;
 	} catch (error) {
 		if (error instanceof EventLogWriteError) {
 			writeLogFailureAbort(error.logPath, spec);
@@ -151,19 +184,36 @@ function writeLogFailureAbort(logPath: string, spec: DriverRunSpec): void {
 }
 
 function toDriverResult(spec: DriverRunSpec, state: LoopState): DriverResult {
-	const result: DriverResult = {
+	const base = {
 		runId: spec.runId,
-		outcome: state.outcome,
 		tasksDone: state.done,
 		tasksBlocked: state.blocked,
 	};
 
-	if (state.blockedTaskId) {
-		result.blockedTaskId = state.blockedTaskId;
-	}
-	if (state.blockedReason) {
-		result.blockedReason = state.blockedReason;
+	if (state.outcome === "completed") {
+		return {
+			...base,
+			outcome: "completed",
+			...(state.blockedTaskId ? { blockedTaskId: state.blockedTaskId } : {}),
+			...(state.blockedReason ? { blockedReason: state.blockedReason } : {}),
+		};
 	}
 
-	return result;
+	if (state.outcome === "finalization_failed") {
+		if (!state.finalization) {
+			throw new Error("Missing finalization failure details");
+		}
+		return {
+			...base,
+			outcome: "finalization_failed",
+			...state.finalization,
+		};
+	}
+
+	return {
+		...base,
+		outcome: state.outcome,
+		...(state.blockedTaskId ? { blockedTaskId: state.blockedTaskId } : {}),
+		...(state.blockedReason ? { blockedReason: state.blockedReason } : {}),
+	};
 }

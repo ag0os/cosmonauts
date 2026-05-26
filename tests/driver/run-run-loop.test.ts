@@ -168,6 +168,58 @@ describe("run-run-loop", () => {
 		});
 	});
 
+	// @cosmo-behavior plan:drive-resilience-state-model#B-004
+	test("reports finalization_failed outcome with exact finalization details", async () => {
+		const events: DriverEvent[] = [];
+		const spec = createSpec({ taskIds: ["TASK-1", "TASK-2"] });
+		const ctx = createCtx(events);
+		const pendingFinalizationPath = join(
+			spec.workdir,
+			"pending-finalization.json",
+		);
+		mocks.runOneTask.mockResolvedValueOnce({
+			status: "finalization_failed",
+			finalizationPhase: "task_status",
+			finalizationReason: "status update failed after commit: disk full",
+			finalizationTaskId: "TASK-1",
+			finalizationCommitSha: "abc123",
+			pendingFinalizationPath,
+		});
+
+		const result = await runRunLoop(spec, ctx);
+
+		expect(mocks.runOneTask).toHaveBeenCalledTimes(1);
+		expect(events.map((event) => event.type)).toEqual([
+			"run_started",
+			"run_finalization_failed",
+		]);
+		expect(events[1]).toMatchObject({
+			type: "run_finalization_failed",
+			phase: "task_status",
+			reason: "status update failed after commit: disk full",
+			taskId: "TASK-1",
+			commitSha: "abc123",
+		});
+		expect(result).toEqual({
+			runId: spec.runId,
+			outcome: "finalization_failed",
+			tasksDone: 0,
+			tasksBlocked: 0,
+			finalizationPhase: "task_status",
+			finalizationReason: "status update failed after commit: disk full",
+			finalizationTaskId: "TASK-1",
+			finalizationCommitSha: "abc123",
+			pendingFinalizationPath,
+		});
+		expect(result).not.toHaveProperty("blockedTaskId");
+		expect(result).not.toHaveProperty("blockedReason");
+		expect(
+			JSON.parse(
+				await readFile(join(spec.workdir, "run.completion.json"), "utf-8"),
+			),
+		).toEqual(result);
+	});
+
 	test("driver log write failure writes fallback run_aborted", async () => {
 		const events: DriverEvent[] = [];
 		const spec = createSpec();
