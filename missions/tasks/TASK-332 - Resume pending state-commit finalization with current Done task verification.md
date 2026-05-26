@@ -1,7 +1,7 @@
 ---
 id: TASK-332
 title: Resume pending state-commit finalization with current Done task verification
-status: In Progress
+status: Done
 priority: high
 assignee: worker
 labels:
@@ -13,7 +13,7 @@ dependencies:
   - TASK-330
   - TASK-331
 createdAt: '2026-05-22T19:58:01.023Z'
-updatedAt: '2026-05-26T15:49:51.603Z'
+updatedAt: '2026-05-26T15:59:41.666Z'
 ---
 
 ## Description
@@ -30,4 +30,4 @@ Complete CLI resume recovery for run-level state commit finalization and enforce
 
 ## Implementation Notes
 
-Coordinator note: Worker spawn 113f69db-48ed-441a-8443-c8f63c186842 timed out after 300000ms. Task is To Do with ACs unchecked. Next worker should inspect existing working tree/commits for partial TASK-332 changes, verify or complete implementation/tests, and only mark Done when all ACs are satisfied.
+Verified TASK-332 implementation already present on branch drive-resilience-state-model. Behavior tests with markers for B-008 and B-015 are present in tests/cli/drive/run.test.ts and pass. Verification run in this session: bun run test tests/cli/drive/run.test.ts, bun run test, bun run lint, bun run typecheck.
