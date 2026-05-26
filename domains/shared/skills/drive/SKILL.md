@@ -76,7 +76,21 @@ cosmonauts drive list
 cosmonauts drive run --plan auth-system --resume run-abc
 ```
 
-The CLI emits JSON natively; do not pass `--json`. Status values are `completed`, `blocked`, `aborted`, `running`, `dead`, or `orphaned`. A run directory contains `spec.json`, `task-queue.txt`, `events.jsonl`, and state files: `run.completion.json` for terminal outcomes, `run.pid` for detached activity, and `run.inline.json` for inline activity. Resume reuses the previous workdir and refuses a dirty worktree unless `--resume-dirty` is passed.
+The CLI emits JSON natively; do not pass `--json`. Status values are `completed`, `blocked`, `finalization_failed`, `aborted`, `running`, `dead`, or `orphaned`. A run directory contains `spec.json`, `task-queue.txt`, `events.jsonl`, and state files: `run.completion.json` for terminal outcomes, `pending-finalization.json` for retryable finalization failures, `run.pid` for detached activity, and `run.inline.json` for inline activity. Resume reuses the previous workdir, checks `pending-finalization.json` before starting backend work, and refuses a dirty worktree unless `--resume-dirty` is passed.
+
+## Finalization and State Recovery
+
+`finalization_failed` means Drive verified the task work but could not finish commit, task-status, or final task-state persistence. Do not treat it as a behavioral blocked task: route `blocked` to implementation or verification remediation, but route `finalization_failed` to `cosmonauts drive run --resume <runId>` after checking `watch/status/list` output for the failed phase and reason.
+
+Resume retries the pending finalization step first. If the missing commit was safely completed outside Drive, resume may accept safe external evidence: source commit recovery needs the recorded pre-finalization HEAD and a changed current HEAD with no remaining committable source changes; state commit recovery also needs the current pending task files to exist and be `Done`. If the evidence is unsafe, leave `pending-finalization.json` in place and report the failure instead of rerunning backend work.
+
+With `commitPolicy: "driver-commits"`, Drive defaults `stateCommitPolicy` to `final-state-commit`; with `backend-commits` or `no-commit`, the default is `none`. You may pass `stateCommitPolicy: "final-state-commit"` or `"none"` explicitly when needed. A final state commit persists only Drive-owned task status updates for the run under `missions/tasks/`; it does not archive, write memory, push, open a PR, or automatically complete the plan.
+
+Verification-only tasks may produce no source changes. Treat explicit no-source-change finalization evidence as a successful source-commit skip for verification-only work, then route any later `task_status` or `state_commit` failure through resume recovery. When Drive emits `plan_completion_candidate`, it is only a signal that all `plan:<slug>` tasks are `Done`; an operator still decides whether to complete, archive, or distill the plan.
+
+## Bounded Non-Goals
+
+Drive does not provide live-follow UI beyond event/status/list summaries, generated final summary artifacts, artifact-conformance enforcement in Drive, or automatic plan completion. It also does not automate archive, memory, push, or PR lifecycle steps.
 
 Codex runs as `codex --yolo exec ...` by default so Drive backends can use the network, bind local ports, and modify the worktree. Set `COSMONAUTS_DRIVER_CODEX_YOLO=0` to opt back into Codex's sandboxed `codex exec --full-auto` mode. Advanced pass-through is also available with `COSMONAUTS_DRIVER_CODEX_ARGS` for top-level Codex args before `exec` and `COSMONAUTS_DRIVER_CODEX_EXEC_ARGS` for args after `exec`. Both env vars accept shell-style words or a JSON string array.
 

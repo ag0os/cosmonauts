@@ -153,16 +153,61 @@ Every CLI inline run prepares the run workdir with `spec.json`,
 and write `run.pid`. Terminal results are recorded atomically in
 `run.completion.json`.
 
+A run can also end as `finalization_failed` after the backend work and required
+verification passed but Drive could not finish a commit, task status update, or
+final task-state commit. Drive writes `pending-finalization.json` in the run
+workdir with the failed phase and recovery evidence, then reports the terminal
+failure through `watch_events`, `cosmonauts drive status`, and `drive list`.
+This is different from behavioral blocked tasks: `blocked` means implementation
+or verification needs remediation, while `finalization_failed` means verified
+work needs Drive finalization recovery.
+
+Resume is the recovery path. `cosmonauts drive run --resume <runId>` checks
+`pending-finalization.json` before starting backend work and retries the pending
+commit/status/state step first. If an operator already completed the missing
+commit outside Drive, resume may accept safe external evidence instead of
+rerunning the backend: source-commit recovery requires the recorded
+pre-finalization HEAD and a current changed HEAD with no remaining committable
+source changes; state-commit recovery also requires the current task files for
+all pending task IDs to exist and be `Done`. Without that evidence, Drive leaves
+pending finalization in place and reports `finalization_failed` again.
+
 `cosmonauts drive status` and `drive list` classify a run directory in this
 order:
 
-1. `run.completion.json`: terminal result (`completed`, `blocked`, or
-   `aborted`).
+1. `run.completion.json`: terminal result (`completed`, `blocked`,
+   `finalization_failed`, or `aborted`).
 2. `run.pid`: detached process state (`running`, `dead`, or `orphaned`).
 3. `run.inline.json`: inline process state (`running`, `dead`, or `orphaned`).
 
-Resumed inline runs reuse the previous workdir, so preparation removes any
+Operators should route `watch/status/list` output by status: fix code or
+verification for `blocked`; run resume for `finalization_failed`; inspect and
+resume `dead` or `orphaned` runs only after deciding whether the worktree is
+safe. Resumed inline runs reuse the previous workdir, so preparation removes any
 stale `run.completion.json` before writing a fresh `run.inline.json`.
+
+## Commit and Finalization Policies
+
+With `commitPolicy=driver-commits`, Drive owns source commits after verification
+and defaults `stateCommitPolicy` to `final-state-commit`. That final state
+commit stages only Drive-owned task status updates for this run under
+`missions/tasks/` after all queued tasks have successfully finalized. With
+`backend-commits` or `no-commit`, the default `stateCommitPolicy` is `none`.
+Callers may set `stateCommitPolicy` explicitly to `final-state-commit` or
+`none` when they need a different task-state persistence boundary.
+
+The final state commit is bounded task-state persistence. It is not archive,
+memory, push, PR, or automatic plan lifecycle automation, and Drive does not
+mark a plan completed. When all tasks for a `plan:<slug>` are `Done`, Drive may
+emit `plan_completion_candidate` so an operator can decide the plan lifecycle
+step manually.
+
+Verification-only work can complete without source changes. For a successful
+`driver-commits` task with no source changes to commit, Drive emits explicit
+no-source-change finalization evidence instead of inventing an empty commit;
+operators should treat that as expected for verification-only tasks and route
+any later failure to task status or state-commit recovery rather than source
+remediation.
 
 ## Detached Runner Binary
 
