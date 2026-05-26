@@ -672,6 +672,106 @@ describe("cosmonauts drive run", () => {
 		);
 	});
 
+	// @cosmo-behavior plan:drive-resilience-state-model#B-008
+	test("resume refuses state commit external acceptance when pending tasks are missing or not done", async () => {
+		const fixture = await setupFixture(2);
+		const taskIds = fixture.tasks.map((task) => task.id);
+		for (const task of fixture.tasks) {
+			await fixture.manager.updateTask(task.id, { status: "Done" });
+		}
+		await writeResumeRun(
+			taskIds,
+			taskIds.map((taskId) => ({ type: "task_done", taskId })),
+			{
+				commitPolicy: "driver-commits",
+				stateCommitPolicy: "final-state-commit",
+			},
+		);
+		await writePendingStateCommitFinalization(taskIds);
+		childProcessMocks.execFile.mockImplementation(
+			gitMock({
+				head: "external-state-sha",
+				status: "",
+				diffHasChanges: false,
+			}),
+		);
+
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
+		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(existsSync(join(resumeWorkdir(), "pending-finalization.json"))).toBe(
+			false,
+		);
+		expect(output.stdoutJson()).toMatchObject({
+			runId: "run-previous",
+			outcome: "completed",
+			stateCommitSha: "external-state-sha",
+		});
+
+		process.exitCode = undefined;
+		output.restore();
+		output = attachJsonHelpers(captureCliOutput());
+		const notDoneFixture = await setupFixture(1);
+		const notDoneTaskId = notDoneFixture.tasks[0]?.id ?? "TASK-001";
+		await writeResumeRun(
+			[notDoneTaskId],
+			[{ type: "task_done", taskId: notDoneTaskId }],
+			{
+				commitPolicy: "driver-commits",
+				stateCommitPolicy: "final-state-commit",
+			},
+		);
+		await writePendingStateCommitFinalization([notDoneTaskId]);
+		childProcessMocks.execFile.mockImplementation(
+			gitMock({
+				head: "external-state-sha",
+				status: "",
+				diffHasChanges: false,
+			}),
+		);
+
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		expect(process.exitCode).toBe(1);
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
+		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(existsSync(join(resumeWorkdir(), "pending-finalization.json"))).toBe(
+			true,
+		);
+		expect(output.stdoutJson()).toMatchObject({
+			runId: "run-previous",
+			outcome: "finalization_failed",
+			finalizationPhase: "state_commit",
+		});
+
+		process.exitCode = undefined;
+		output.restore();
+		output = attachJsonHelpers(captureCliOutput());
+		await setupFixture(1);
+		await writeResumeRun(["TASK-999"], [], {
+			commitPolicy: "driver-commits",
+			stateCommitPolicy: "final-state-commit",
+		});
+		await writePendingStateCommitFinalization(["TASK-999"]);
+		childProcessMocks.execFile.mockImplementation(
+			gitMock({
+				head: "external-state-sha",
+				status: "",
+				diffHasChanges: false,
+			}),
+		);
+
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		expect(process.exitCode).toBe(1);
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
+		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(existsSync(join(resumeWorkdir(), "pending-finalization.json"))).toBe(
+			true,
+		);
+	});
+
 	// @cosmo-behavior plan:drive-resilience-state-model#B-015
 	test("resume retries pending state commit without invoking backend work", async () => {
 		const fixture = await setupFixture(2);
@@ -890,6 +990,26 @@ async function writePendingCommitFinalization(
 			commitSubject: `${taskId}: Drive task 1`,
 			verifiedAt: "2026-01-01T00:00:00.000Z",
 			...overrides,
+		})}\n`,
+		"utf-8",
+	);
+}
+
+async function writePendingStateCommitFinalization(
+	taskIds: readonly string[],
+): Promise<void> {
+	await writeFile(
+		join(resumeWorkdir(), "pending-finalization.json"),
+		`${JSON.stringify({
+			runId: "run-previous",
+			planSlug: PLAN,
+			createdAt: "2026-01-01T00:00:00.000Z",
+			commitPolicy: "driver-commits",
+			stateCommitPolicy: "final-state-commit",
+			reason: "state commit failed: hook rejected",
+			phase: "state_commit",
+			taskIds,
+			headBeforeFinalization: "before-sha",
 		})}\n`,
 		"utf-8",
 	);

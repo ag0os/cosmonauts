@@ -884,7 +884,7 @@ async function retryPendingFinalization(
 	};
 
 	if (pending.phase === "state_commit") {
-		return retryPendingStateCommit(resume, eventSink);
+		return retryPendingStateCommit(resume, taskManager, eventSink);
 	}
 
 	const result =
@@ -937,6 +937,7 @@ async function retryPendingFinalization(
 
 async function retryPendingStateCommit(
 	resume: ResumeDefaults,
+	taskManager: TaskManager,
 	eventSink: (event: DriverEvent) => Promise<void>,
 ): Promise<boolean> {
 	const pending = resume.pendingFinalization;
@@ -950,18 +951,33 @@ async function retryPendingStateCommit(
 		pending.taskIds,
 	);
 	if (result.status === "failed") {
-		const completion: DriverResult = {
-			runId: spec.runId,
-			outcome: "finalization_failed",
-			tasksDone: pending.taskIds.length,
-			tasksBlocked: 0,
-			finalizationPhase: "state_commit",
-			finalizationReason: result.reason,
-			pendingFinalizationPath: join(spec.workdir, "pending-finalization.json"),
-		};
-		await writeRunCompletion(spec.workdir, completion);
-		printJsonStdout(completion);
+		await writeStateFinalizationFailure(
+			spec,
+			pending.taskIds.length,
+			result.reason,
+		);
 		return false;
+	}
+
+	let stateCommitSha: string | undefined;
+	if (result.status === "committed") {
+		stateCommitSha = result.sha;
+	} else if (result.reason === "no_changes") {
+		const acceptance = await acceptExternalStateCommit(
+			spec,
+			taskManager,
+			eventSink,
+			pending,
+		);
+		if (!acceptance.ok) {
+			await writeStateFinalizationFailure(
+				spec,
+				pending.taskIds.length,
+				acceptance.reason,
+			);
+			return false;
+		}
+		stateCommitSha = acceptance.sha;
 	}
 
 	await clearPendingFinalization(spec.workdir);
@@ -971,12 +987,107 @@ async function retryPendingStateCommit(
 			outcome: "completed",
 			tasksDone: pending.taskIds.length,
 			tasksBlocked: 0,
-			...(result.status === "committed" ? { stateCommitSha: result.sha } : {}),
+			...(stateCommitSha ? { stateCommitSha } : {}),
 		};
 		await writeRunCompletion(spec.workdir, completion);
 		printJsonStdout(completion);
 	}
 	return true;
+}
+
+async function acceptExternalStateCommit(
+	spec: DriverRunSpec,
+	taskManager: TaskManager,
+	eventSink: (event: DriverEvent) => Promise<void>,
+	pending: Extract<
+		NonNullable<ResumeDefaults["pendingFinalization"]>,
+		{ phase: "state_commit" }
+	>,
+): Promise<{ ok: true; sha: string } | { ok: false; reason: string }> {
+	const notDoneTaskId = await findFirstTaskNotDone(
+		taskManager,
+		pending.taskIds,
+	);
+	if (notDoneTaskId) {
+		return {
+			ok: false,
+			reason: `pending state task is not Done: ${notDoneTaskId}`,
+		};
+	}
+	const dirtyTaskPaths = await getDirtyStateTaskPaths(
+		spec.projectRoot,
+		pending.taskIds,
+	);
+	if (dirtyTaskPaths.length > 0) {
+		return {
+			ok: false,
+			reason: `pending state task files still have changes: ${dirtyTaskPaths.join(", ")}`,
+		};
+	}
+	const sha = await gitHead(spec.projectRoot);
+	if (sha === pending.headBeforeFinalization) {
+		return {
+			ok: false,
+			reason: "HEAD unchanged since failed state commit finalization",
+		};
+	}
+	await emitResumeEvent(spec, eventSink, {
+		type: "finalize",
+		phase: "state_commit",
+		status: "passed",
+		details: { sha },
+	});
+	return { ok: true, sha };
+}
+
+async function findFirstTaskNotDone(
+	taskManager: TaskManager,
+	taskIds: readonly string[],
+): Promise<string | undefined> {
+	for (const taskId of taskIds) {
+		const task = await taskManager.getTask(taskId);
+		if (task?.status !== "Done") {
+			return taskId;
+		}
+	}
+	return undefined;
+}
+
+async function getDirtyStateTaskPaths(
+	projectRoot: string,
+	taskIds: readonly string[],
+): Promise<string[]> {
+	const { stdout } = await gitExec(projectRoot, [
+		"status",
+		"--porcelain",
+		"--untracked-files=all",
+		"--",
+		"missions/tasks",
+	]);
+	const ids = new Set(taskIds);
+	return stdout
+		.split("\n")
+		.map((line) => line.slice(3).trim())
+		.filter((path) => path.length > 0)
+		.filter((path) => ids.has(path.split("/").pop()?.split(" ")[0] ?? ""));
+}
+
+async function writeStateFinalizationFailure(
+	spec: DriverRunSpec,
+	tasksDone: number,
+	reason: string,
+): Promise<void> {
+	const completion: DriverResult = {
+		runId: spec.runId,
+		outcome: "finalization_failed",
+		tasksDone,
+		tasksBlocked: 0,
+		finalizationPhase: "state_commit",
+		finalizationReason: reason,
+		pendingFinalizationPath: join(spec.workdir, "pending-finalization.json"),
+	};
+	await writeRunCompletion(spec.workdir, completion);
+	printJsonStdout(completion);
 }
 
 async function retryPendingSourceCommit(
