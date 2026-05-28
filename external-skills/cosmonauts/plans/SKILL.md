@@ -58,15 +58,16 @@ cosmonauts plan create \
 
 Required: `--slug` (kebab-case, used as the directory name) and `--title`. `--description` is a short summary; `--spec` is the body that goes into `spec.md`.
 
-### List / view
+### List / view / check artifacts
 
 ```bash
 cosmonauts plan list --json
 cosmonauts plan list --status active --json
 cosmonauts plan view auth-system --json
+cosmonauts plan check-artifacts auth-system --json
 ```
 
-`list --json` returns an array of `{slug, status, taskCount, title, ...}` rows. `view <slug>` returns the full plan including parsed task references.
+`list --json` returns an array of `{slug, status, taskCount, title, ...}` rows. `view <slug>` returns the full plan including parsed task references. `check-artifacts <slug>` validates behavior-first plans: required `B-###` fields, exact `@cosmo-behavior plan:<slug>#B-###` marker syntax, safe project-root-relative test paths, test file existence, and exact marker presence. It exits non-zero for conformance failures; older plans may fail until migrated to the current behavior-spine format.
 
 ### Edit
 
@@ -93,9 +94,10 @@ The intended lifecycle for a plan:
 
 1. **Create.** Either by hand (`plan create --slug X --title Y --spec "$(cat …)"`) or by a planner agent in a workflow (`cosmonauts --workflow plan-and-build "…"`).
 2. **Link tasks via the `plan:<slug>` label.** Cosmonauts associates tasks with a plan by labeling them `plan:<slug>` — `plan view`, `drive run --plan <slug>`, and `plan archive` all use that label as the query. The `task-manager` agent adds it automatically. From outside, set it explicitly: `cosmonauts task create "..." --label "plan:auth-system"`, or on an existing task `cosmonauts task edit <id> --add-label "plan:auth-system"`. (See `cosmonauts-tasks` → "Linking tasks to a plan" for the YAML batch form.) **Do not use `task edit --plan`** — that flag writes free-form implementation notes, it does not link to a plan slug.
-3. **Drive execution.** `cosmonauts drive run --plan <slug> --backend claude-cli|codex --mode detached` walks the plan's `plan:<slug>`-labeled tasks in dependency order, dispatching each to the chosen backend.
-4. **Verify & complete.** When all tasks are `Done` and acceptance criteria are checked, set status: `cosmonauts plan edit <slug> --status completed`.
-5. **Archive.** `cosmonauts plan archive <slug>` moves the plan and its tasks into `missions/archive/`.
+3. **Optionally check artifact conformance.** For behavior-first plans, run `cosmonauts plan check-artifacts <slug> --json` before or after implementation to catch missing fields, unsafe test paths, or missing behavior markers. This is a standalone plan check; Drive does not enforce it automatically yet.
+4. **Drive execution.** `cosmonauts drive run --plan <slug> --backend claude-cli|codex --mode detached` walks the plan's `plan:<slug>`-labeled tasks in dependency order, dispatching each to the chosen backend.
+5. **Verify & complete.** When all tasks are `Done` and acceptance criteria are checked, set status: `cosmonauts plan edit <slug> --status completed`. Drive may emit `plan_completion_candidate`, but it does not edit the plan status for you.
+6. **Archive.** `cosmonauts plan archive <slug>` moves the plan and its tasks into `missions/archive/`.
 
 ## Recipes
 
@@ -132,11 +134,13 @@ cosmonauts task list --status todo --label "plan:auth-system" --json
 cosmonauts drive list | jq '[.runs[] | select(.planSlug == "auth-system")]'
 ```
 
-If a previous run died or was orphaned (`status: dead` or `orphaned`), resume it after checking the worktree:
+If a previous run died, was orphaned, or hit retryable finalization recovery (`status: dead`, `orphaned`, or `finalization_failed`), resume it after checking the worktree and status/list evidence:
 
 ```bash
 cosmonauts drive run --plan auth-system --resume <runId>
 ```
+
+For `finalization_failed`, resume handles `pending-finalization.json` before backend work; do not route it like a behavioral `blocked` task.
 
 ### Archive a finished plan and capture learnings
 

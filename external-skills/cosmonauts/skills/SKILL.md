@@ -59,7 +59,7 @@ Each skill's `SKILL.md` is copied verbatim into a directory named after the skil
 For Claude Code, Codex, Gemini CLI, or another framework that can call shell commands, use the integration surfaces in this order:
 
 1. **External `cosmonauts` skill bundle.** Install `external-skills/cosmonauts/` first. It teaches the outside agent the public CLI contract, including discovery, plan/task commands, workflows, and drive usage. This bundle is installed by manual copy, not by `cosmonauts skills export`.
-2. **Drive-oriented internal skills.** Export `plan`, `task`, and `drive` when the outside agent should create structured work and then run it through `cosmonauts drive`.
+2. **Drive-oriented internal skills.** Export `plan`, `task`, and `drive` when the outside agent should create structured work and then run it through `cosmonauts drive`. Export `drive` specifically when the outside agent needs detailed `finalization_failed`, `pending-finalization.json`, state commit policy, or resume-recovery guidance; the external bundle only carries quick-start Drive guidance.
 
 ```bash
 cosmonauts skills export -t claude plan task drive

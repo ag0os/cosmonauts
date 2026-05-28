@@ -78,20 +78,27 @@ cosmonauts drive run \
 
 # Poll:
 cosmonauts drive status run-abc --plan auth-system
-# → {"status":"running"|"completed"|"aborted"|"blocked"|"dead"|"orphaned", ...}
+# → {"status":"running"|"completed"|"finalization_failed"|"aborted"|"blocked"|"dead"|"orphaned", ...}
 ```
 
-Backends: `codex` (calls `codex exec --full-auto` by default), `claude-cli` (calls `claude -p` by default), `cosmonauts-subagent` (internal inline-only). See `cosmonauts drive run --help` for the full flag set (commit policies, task timeout, resume, etc.).
+Backends: `codex` (runs `codex --yolo exec ...` by default), `claude-cli` (runs `claude --dangerously-skip-permissions -p` by default), `cosmonauts-subagent` (internal inline-only). See `cosmonauts drive run --help` for the full flag set: commit policy, `--state-commit-policy`, task timeout, resume, pre/postflight commands, and prompt overrides.
 
 Backend environment controls:
 
-- `COSMONAUTS_DRIVER_CODEX_YOLO=1`: run Codex as `codex --yolo exec ...` and omit `--full-auto`.
+- `COSMONAUTS_DRIVER_CODEX_YOLO=0`: opt Codex back into sandboxed `codex exec --full-auto` mode.
 - `COSMONAUTS_DRIVER_CODEX_ARGS`: top-level Codex args before `exec`.
 - `COSMONAUTS_DRIVER_CODEX_EXEC_ARGS`: Codex exec args after `exec`.
-- `COSMONAUTS_DRIVER_CLAUDE_SKIP_PERMISSIONS=1`: run Claude as `claude --dangerously-skip-permissions -p`.
+- `COSMONAUTS_DRIVER_CLAUDE_SKIP_PERMISSIONS=0`: opt Claude out of `--dangerously-skip-permissions`.
 - `COSMONAUTS_DRIVER_CLAUDE_ARGS`: Claude args before `-p`.
 
 The arg env vars accept shell-style words or JSON string arrays. Prefer JSON arrays for arguments that contain spaces.
+
+Finalization recovery quick guide:
+
+- `blocked` means implementation or verification needs remediation.
+- `finalization_failed` means backend work and verification passed, but Drive could not finish a source commit, task status update, or final task-state commit. Inspect `drive status`, `drive list`, or `events.jsonl` for the failed phase/reason, then run `cosmonauts drive run --plan <slug> --resume <runId>`; resume checks `pending-finalization.json` before starting any backend work.
+- With default `driver-commits`, Drive also creates one final state commit for its task status updates. It does **not** complete/archive the plan, write memory, push, or open a PR. `plan_completion_candidate` is only evidence that all `plan:<slug>` tasks are Done.
+- Verification-only tasks may legitimately have no source changes; treat explicit `no_changes` finalization evidence as a successful source-commit skip.
 
 ### Recipe 3 — Inspect what was done
 
@@ -131,7 +138,7 @@ See `cosmonauts-tasks` for the full YAML schema and field list.
 Load these for procedure-level detail when you need it:
 
 - **`cosmonauts-tasks`** — Task CRUD, batch creation from YAML, dependency awareness, filter recipes.
-- **`cosmonauts-plans`** — Plan CRUD, attaching a spec, archiving.
+- **`cosmonauts-plans`** — Plan CRUD, attaching a spec, behavior-artifact checks, archiving.
 - **`cosmonauts-workflows`** — Named workflows, chain DSL syntax, how to read workflow output (it lands in files and sessions, not stdout), profiling.
 - **`cosmonauts-skills`** — How to install ADDITIONAL cosmonauts skills (the internal-agent skills, distinct from this bundle) into your harness.
 
