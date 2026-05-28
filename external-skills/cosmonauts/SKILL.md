@@ -174,6 +174,12 @@ cp -r "$(npm root -g)/cosmonauts/external-skills/cosmonauts" ~/.claude/skills/co
 
 # Codex, project-level:
 cp -r "$(npm root)/cosmonauts/external-skills/cosmonauts" .codex/skills/cosmonauts
+
+# Gemini CLI, user-level:
+cp -r "$(npm root -g)/cosmonauts/external-skills/cosmonauts" ~/.gemini/skills/cosmonauts
+
+# Gemini CLI, project-level:
+cp -r "$(npm root)/cosmonauts/external-skills/cosmonauts" .gemini/skills/cosmonauts
 ```
 
 Replace `npm root` with whichever path manager you use; the bundle ships at `external-skills/cosmonauts/` inside the cosmonauts package.

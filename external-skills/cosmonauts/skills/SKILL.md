@@ -36,7 +36,7 @@ The exact set depends on installed domains; always re-check with `--json`.
 ## Install a few into your harness
 
 ```bash
-# Project-level (./.claude/skills/ or ./.codex/skills/)
+# Project-level (./.claude/skills/ or ./.agents/skills/)
 cosmonauts skills export -t claude task plan drive
 cosmonauts skills export -t codex task plan drive
 
@@ -50,7 +50,7 @@ cosmonauts skills export -t claude --all
 | Target | Project path | Personal path |
 | --- | --- | --- |
 | `claude` | `.claude/skills/<name>/` | `~/.claude/skills/<name>/` |
-| `codex` | `.codex/skills/<name>/` | `~/.codex/skills/<name>/` |
+| `codex` | `.agents/skills/<name>/` | `~/.codex/skills/<name>/` |
 
 Each skill's `SKILL.md` is copied verbatim into a directory named after the skill. The exported files follow the [Agent Skills](https://github.com/anthropics/skills) standard.
 
@@ -59,7 +59,7 @@ Each skill's `SKILL.md` is copied verbatim into a directory named after the skil
 For Claude Code, Codex, Gemini CLI, or another framework that can call shell commands, use the integration surfaces in this order:
 
 1. **External `cosmonauts` skill bundle.** Install `external-skills/cosmonauts/` first. It teaches the outside agent the public CLI contract, including discovery, plan/task commands, workflows, and drive usage. This bundle is installed by manual copy, not by `cosmonauts skills export`.
-2. **Drive-oriented internal skills.** Export `plan`, `task`, and `drive` when the outside agent should create structured work and then run it through `cosmonauts drive`. Export `drive` specifically when the outside agent needs detailed `finalization_failed`, `pending-finalization.json`, state commit policy, or resume-recovery guidance; the external bundle only carries quick-start Drive guidance.
+2. **Drive-oriented internal skills, only when explicitly needed.** `cosmonauts skills export` copies internal Cosmonauts-agent skills, not the external CLI bundle. Use it sparingly for Claude/Codex when an outside agent needs detailed internal procedures such as `finalization_failed`, `pending-finalization.json`, state commit policy, or resume recovery. For Gemini, install the external bundle manually unless a future Gemini internal-export target is added.
 
 ```bash
 cosmonauts skills export -t claude plan task drive
@@ -104,7 +104,7 @@ Re-export after a cosmonauts upgrade to pull updated skill text:
 cosmonauts skills export -t claude --all --personal
 ```
 
-Add `.claude/`, `.codex/` (or just `*/skills/cosmonauts*` patterns) to `.gitignore` — exported skills are local artifacts, not committed.
+Add `.claude/`, `.agents/` (or just `*/skills/cosmonauts*` patterns) to `.gitignore` — exported skills are local artifacts, not committed.
 
 ## What this command does NOT do
 
