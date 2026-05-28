@@ -44,7 +44,19 @@ Since Anthropic published the Agent Skills open standard in December 2025 (spec 
 
 Practical consequence: an operator who installs the Cosmonauts external bundle once into `.agents/skills/cosmonauts/` reaches Codex, Gemini CLI, and (almost certainly) Antigravity in one shot; a second install into `.claude/skills/cosmonauts/` covers Claude Code. The CLI surfaces this with a `standard` target (writes to the cross-harness path) alongside the per-harness ids (which exist for documentation, for forward-compatibility if any harness diverges, and for the friendlier "installed for Codex" message in human output).
 
-Two installs cover all four harnesses today, and any future convergence (e.g. Claude Code adopting `.agents/skills/`) collapses that to one without changing the user-facing command.
+#### Why a second install for Claude Code, instead of pointing Claude Code at `.agents/skills/`?
+
+Claude Code does not currently expose a configuration knob that adds extra skill search paths. Three things have been investigated and ruled out as a replacement for "write the bundle into `.claude/skills/`":
+
+- `settings.json → permissions.additionalDirectories` is a *file-access permission*, not a skill-discovery path. Anthropic's own docs state that "most `.claude/` configuration is not discovered from these directories," and community issue [anthropics/claude-code#43267](https://github.com/anthropics/claude-code/issues/43267) confirms that skills inside an additional directory's `.claude/skills/` are silently not picked up.
+- The CLI flag `claude --add-dir <path>` *does* cause skills inside `<path>/.claude/skills/` to be discovered, but it's per-launch only — it cannot be persisted in `settings.json` and gives the operator no benefit unless they remember to pass it every time.
+- The open feature request [anthropics/claude-code#22902](https://github.com/anthropics/claude-code/issues/22902) (`additionalSkillsPaths` / `CLAUDE_SKILLS_PATH` / native `.agents/skills/` support) is explicitly motivated by cross-harness convergence but has not landed. We do not depend on it.
+
+Plugins are a tangentially related surface (Claude Code plugins can carry skills from arbitrary paths via a marketplace), but packaging the Cosmonauts external bundle as a Claude Code plugin is a much bigger product question than this redesign should answer. Out of scope here; flagged for the roadmap if we ever want a single-install story for Claude Code.
+
+Symlinking `.claude/skills/cosmonauts → ../../.agents/skills/cosmonauts/` would also work on macOS/Linux as an advanced trick. We intentionally do not adopt it as default behavior because (a) symlinks behave inconsistently on Windows, (b) operators inspecting their `.claude/skills/` directory should see real files, not pointers into another harness's tree, and (c) two cheap copies are simpler than one clever pointer. Power users can do this themselves; the CLI does not.
+
+So: two installs cover all four harnesses today, and any future convergence (e.g. Claude Code adopting `.agents/skills/` per #22902) collapses that to one without changing the user-facing command. To make the two-install case feel like one, the CLI accepts `-t all` and a comma-separated `-t a,b` form (see **OQ-7**).
 
 ### Command model
 
@@ -104,6 +116,23 @@ cosmonauts skills list --audience all --target codex --json
 
 Returns both audiences in one array, each row tagged `audience: "external" | "internal"`, and — for internal skills — `externallyInstallable: true | false`, plus the resolved install path the entry would land at if `export-internal` were run.
 
+### Frontmatter and metadata contract
+
+Every external bundle and every adapted skill ships SKILL.md frontmatter that conforms to the Agent Skills open standard (agentskills.io/specification). The bundle is the unit of portability; the frontmatter is how each harness discovers it. The contract:
+
+- **Standard-only top-level fields.** Shipped SKILL.md files use only the spec-defined fields: `name`, `description`, and optionally `license`, `compatibility`, `metadata`, `allowed-tools`. Cosmonauts-specific marking (audience, adapted-in, externally-installable, anything else we invent) goes inside the `metadata` map under a `cosmonauts.*` key namespace. This survives validators on every supported harness and avoids leaking Cosmonauts-internal vocabulary into harness-level frontmatter.
+- **No harness-specific extensions in shipped bundles.** Claude Code extends the standard with `allowed-tools` (experimental), invocation control, subagent execution, and dynamic context injection. None of these appear in shipped bundle SKILL.md files. If a future bundle is *intended* for one harness only, it ships under a separate bundle id (out of scope here).
+- **`name` rules are enforced at install time.** `name` is 1–64 chars, lowercase `[a-z0-9-]`, no leading/trailing/consecutive hyphens, and **must equal the parent directory name** at the install destination. This is a spec requirement (agentskills.io) and a Claude Code requirement; we enforce it once at the source instead of debugging it per harness.
+- **`description` rules are enforced at install time.** `description` is 1–1024 chars, non-empty, no XML tags. The author is expected to phrase descriptions for the *audience* the bundle is for — external bundles are written from the outside-agent perspective, not the Cosmonauts-internal perspective. (This is also why adapted twins exist: an outside agent benefits from "Use when installing Cosmonauts skills into your harness," not "Use when running the driver loop with `run_driver`.")
+- **Cosmonauts-internal metadata schema.** Reserved keys under `metadata.cosmonauts.*` in this redesign:
+  - `metadata.cosmonauts.audience`: one of `internal`, `external`. Tells the CLI which track a SKILL.md belongs to. Internal skills default to `internal`; external bundles always declare `external`. Mismatch with command surface is a fail-fast error.
+  - `metadata.cosmonauts.externally-installable`: boolean, only valid on `audience: internal` skills. When `true`, `export-internal` accepts the skill; absent or `false`, it refuses (F-3).
+  - `metadata.cosmonauts.adapted-in`: bundle id. Only valid on `audience: internal` skills. When set, `export-internal` refuses and points the operator at the named bundle (AC-024).
+  - `metadata.cosmonauts.drift-contract`: free-text identifier or list of named contract surfaces. Used by the drift test (AC-025) to identify which sections of the internal skill must appear verbatim in the adapted twin.
+- **Validation runs on install.** The CLI validates every SKILL.md it is about to write against the standard before any filesystem mutation, even in `--dry-run`. Validation failures stop the install and surface the offending field, file, and rule (F-7).
+
+A current spec violation in the shipped `external-skills/cosmonauts/` bundle: the sub-bundles `skills/SKILL.md`, `plans/SKILL.md`, `tasks/SKILL.md`, `workflows/SKILL.md` each declare `name: cosmonauts-<x>` while their parent directories are `skills`, `plans`, `tasks`, `workflows`. This works today only because no in-scope harness walks the tree treating nested SKILL.md files as separately discoverable skills (they are consumed via the parent bundle's body). Gemini CLI's recursive workspace discovery is the nearest risk. The redesign brings these into compliance by restructuring the bundle so each declared name matches its parent directory; see **OQ-9** for the restructure choice.
+
 ### Failure cases and diagnostics
 
 The CLI is the primary teacher of the new vocabulary; its error messages must use it explicitly. The following must be distinguishable to a calling agent reading stderr:
@@ -114,6 +143,7 @@ The CLI is the primary teacher of the new vocabulary; its error messages must us
 - **F-4. Unknown harness target.** Exit 1; stderr names every supported target by id.
 - **F-5. Conflicting destination.** When the resolved destination already contains a directory not written by Cosmonauts (no install marker), the command refuses to overwrite unless `--force` is passed and prints the path it would have removed. (`--force` is not required when the existing content was written by a previous Cosmonauts install — that case overwrites silently and is the normal upgrade path.)
 - **F-6. No write permission.** Exit 1; stderr names the path and the operating system error verbatim.
+- **F-7. Frontmatter validation failure.** When a SKILL.md the command is about to write fails Agent Skills spec validation, exit 1, stderr names the file, the field, the rule it violates, and the harness target whose validator caught it. No partial writes — the install transaction is aborted before any filesystem mutation. Example: `external-skills/cosmonauts/skills/SKILL.md: frontmatter 'name' value 'cosmonauts-skills' must match parent directory name 'skills' (Agent Skills spec, name field)`.
 
 ### What's intentionally removed or replaced
 
@@ -185,7 +215,15 @@ Source-of-truth and drift prevention:
 
 - **AC-023.** Every external bundle is sourced from `external-skills/<bundle-id>/` inside the Cosmonauts package; the `install` command does not read internal skill sources for any bundle.
 - **AC-024.** An internal skill that has been marked as having an externally adapted twin (e.g. an adapted `drive` for outside agents) is *not* itself exportable by `export-internal`; the planner-chosen mechanism redirects the user to install the bundle that contains the adapted twin instead. The error message names the bundle.
-- **AC-025.** The test suite contains a check that fails when an internal skill marked as having an adapted external twin and its twin diverge on the parts that must remain consistent (the contract surface is named in the skill's frontmatter; the test verifies it appears verbatim in the twin). This catches the canonical drift case: internal `drive` documents Drive's run states; an adapted external `drive` claims the same run states; the two must stay aligned.
+- **AC-025.** The test suite contains a check that fails when an internal skill marked as having an adapted external twin and its twin diverge on the parts that must remain consistent. The contract surface is named via `metadata.cosmonauts.drift-contract` in the internal skill's frontmatter; the test verifies each named section appears verbatim in the twin. This catches the canonical drift case: internal `drive` documents Drive's run states; an adapted external `drive` claims the same run states; the two must stay aligned.
+
+Frontmatter and validation:
+
+- **AC-028.** Every SKILL.md the `install` command writes passes Agent Skills spec validation: `name` is 1–64 chars matching parent directory name and the allowed charset; `description` is 1–1024 chars with no XML tags. The validation runs before any filesystem mutation, and failures surface via F-7.
+- **AC-029.** The test suite contains a snapshot check that every shipped `external-skills/<bundle>/**/SKILL.md` and every internal skill marked `audience: external` (or `externally-installable: true`) passes the same validator. Adding a non-compliant SKILL.md to the repo fails CI.
+- **AC-030.** No shipped SKILL.md (bundle or internal) uses top-level Cosmonauts-specific frontmatter keys. All Cosmonauts metadata lives under `metadata.cosmonauts.*`. Verifiable by a static check over the repo.
+- **AC-031.** No shipped *external bundle* SKILL.md uses harness-specific extensions (`allowed-tools`, Claude-Code-only invocation control fields, etc.). External bundles are written to the standard only.
+- **AC-032.** The CLI reports the resolved `metadata.cosmonauts.audience` in `list --json` output, and `install` refuses to install a SKILL.md whose `audience` is `internal` (matching F-2's wrong-verb semantics at frontmatter granularity, not just bundle id).
 
 Documentation:
 
@@ -197,9 +235,11 @@ Documentation:
 Included:
 
 - The three CLI verbs (`list`, `install`, `export-internal`) with the flags and behaviors above.
-- The four harness targets, with project and user scopes, at the paths in the table above.
-- A mechanism for marking an internal skill as externally installable (and, optionally, as having an external adapted twin). The planner picks the mechanism; today's frontmatter is a natural place for it.
+- The four harness targets plus the `standard` cross-harness alias, with project and user scopes, at the paths in the table above.
+- A mechanism for marking an internal skill as externally installable (and, optionally, as having an external adapted twin) via standard `metadata.cosmonauts.*` frontmatter keys.
 - A mechanism for declaring which external bundles exist and what they contain. The planner picks the mechanism (filesystem discovery under `external-skills/`, an index file, or a registry call).
+- Agent Skills frontmatter validation at install time and in CI, covering every shipped SKILL.md (bundle and internal-marked-external).
+- A restructure of `external-skills/cosmonauts/` so sub-bundle `name` fields and parent directory names agree (OQ-9 decides exact form).
 - Updates to the human-facing docs that mention `cosmonauts skills export` so they teach the new model.
 - A drift test that compares an internal skill against its adapted external twin on a named contract surface.
 - Telemetry/logging is unchanged — no new emissions required.
@@ -223,6 +263,8 @@ Excluded:
 - A-6. Sub-skills inside the `cosmonauts` external bundle (`skills/SKILL.md`, `plans/SKILL.md`, `tasks/SKILL.md`, `workflows/SKILL.md`) are part of the bundle and travel together. `install` writes the whole tree; there is no per-sub-skill install.
 - A-7. `.claude/`, `.codex/`, `.gemini/`, and `.antigravity/` are already (or will be) in the project's `.gitignore` for an external-skill consumer; install will warn but not block when they aren't.
 - A-8. The planner is free to add a `cosmonauts.lock` or install marker file inside an installed bundle's directory so that idempotent re-install (AC-010) and the overwrite guardrail (AC-021) can distinguish a Cosmonauts-written tree from a user-managed one.
+- A-9. The Agent Skills open standard at agentskills.io is the canonical frontmatter contract. Cosmonauts does not invent its own SKILL.md dialect; we extend only through the spec-provided `metadata` map, under a `cosmonauts.*` namespace, and bundles ship clean of harness-specific extensions.
+- A-10. Validation lives at install time, not at runtime in the consuming harness. Every harness validates again on its own — but we want to catch authoring mistakes (mismatched `name`, oversized `description`, illegal chars) before the operator sees a confusing harness-level error.
 
 ## Open Questions
 
@@ -233,4 +275,6 @@ Excluded:
 - **OQ-5. `--force` semantics on bulk installs.** When `--force` is passed and the target contains user-managed content for some sub-paths but not others, do we remove the entire bundle directory, or only the sub-paths Cosmonauts would write? Default proposal: remove the entire bundle directory (predictable). Planner confirms.
 - **OQ-6. Initial set of externally installable internal skills.** The spec defaults every internal skill to non-installable. The planner reviews the current internal skill roster and proposes which (if any) ship with the externally-installable flag turned on in this change. Candidate set from the existing `cosmonauts-skills` documentation: `plan`, `task`, `drive`, `agent-packaging`. Each candidate must be evaluated for whether it is genuinely self-contained or whether it needs an adapted twin first.
 - **OQ-7. One-shot install across all targets.** Given Claude Code is the only target that is not on `.agents/skills/` today, an operator needs two `install` invocations to cover all four harnesses. Do we support `-t all` (or repeated `-t` flags) as a single-command wrapper? Default proposal: yes, accept a comma-separated list (`-t claude-code,standard`) and the literal `-t all` (expands to "every supported target"). Planner confirms the spelling and whether the report aggregates results into one JSON object or emits one per target.
-- **OQ-8. Future Claude Code adoption of `.agents/skills/`.** If anthropics/claude-code#31005 lands before this change ships, should `-t claude-code` write to `.claude/skills/` (current), `.agents/skills/` (post-adoption), or both? Default proposal: keep `-t claude-code` writing to `.claude/skills/` for now; revisit on the next upstream release. The user-facing impact is small (one extra command stays one extra command until adoption is universal).
+- **OQ-8. Future Claude Code adoption of `.agents/skills/`.** If anthropics/claude-code#31005 lands before this change ships, should `-t claude-code` write to `.claude/skills/` (current), `.agents/skills/` (post-adoption), or both? Default proposal: keep `-t claude-code` writing to `.claude/skills/` for now; revisit on the next upstream release. The user-facing impact is small (one extra command stays one extra command until adoption is universal). Related: feature request anthropics/claude-code#22902 (`additionalSkillsPaths` / `CLAUDE_SKILLS_PATH`) — if either lands, document the persistent-config workaround alongside the install command.
+- **OQ-9. Sub-bundle restructure to satisfy the parent-directory-name rule.** Today's `external-skills/cosmonauts/{skills,plans,tasks,workflows}/SKILL.md` declare names like `cosmonauts-skills` but live in directories named `skills`, `plans`, etc. — a spec violation that hasn't yet surfaced because no in-scope harness walks the tree recursively as discovery. Two restructure options for the planner: (a) rename the directories to match the names (`cosmonauts/cosmonauts-skills/SKILL.md`, …), preserving the top-level `cosmonauts/SKILL.md` as the bundle entry point; or (b) rename the `name` fields to match their directories (`name: skills`, `name: plans`, …) and rely on the parent bundle's body to provide context. Option (a) is the planner's recommended default — it preserves the descriptive sub-bundle names that the existing documentation already uses — but option (b) is simpler if the sub-SKILL.md files are only ever read as bundled references, never as independent skills. Decision needed before AC-028 / AC-029 can pass on the shipped bundle.
+- **OQ-10. Validator implementation.** The spec requires Agent Skills frontmatter validation at install time and in CI (AC-028, AC-029). The planner picks the validator source: vendoring `skills-ref` from agentskills/agentskills, writing a lightweight YAML-frontmatter validator from scratch against the spec text, or invoking `npx skills-ref validate` as a subprocess at CI time. Validator runtime is the constraint — install-time validation has to be fast enough not to interrupt the operator's flow.
