@@ -1,12 +1,18 @@
 # Cosmonauts
 
-An automated coding orchestration system built on [Pi](https://github.com/earendil-works/pi). Describe what you want, get a designed solution, and let agents implement it — from plan to pull request.
+An AI agent orchestration framework built on [Pi](https://github.com/earendil-works/pi). Declare your agents, compose their system prompts, expose skills, and wire up workflows — for any domain. You bring the domain; Cosmonauts gives you the tooling to build, coordinate, and run the agents.
+
+> ⚠️ **Alpha software.** Cosmonauts is in early development and the architecture is still evolving. Expect breaking changes — APIs, file formats, CLI surface, and domain conventions may all change without notice between versions.
 
 ## What It Does
 
-Cosmonauts automates the mechanical parts of software development. You handle the creative work (requirements, design decisions, architecture), and agents handle the execution (implementation, testing, commits, code review).
+Cosmonauts is domain-agnostic. A **domain** (`domains/{id}/` with a `domain.ts` manifest) packages its own agents, prompts, capabilities, skills, and workflows — and domains are pluggable, not shipped with the framework itself. The framework provides the substrate: declarative agent definitions, four-layer prompt composition, on-demand skills, multi-agent orchestration (chains, workflows, drive runs), and a persistent plan/task/memory spine so work compounds instead of drifting.
 
-The workflow:
+**Coding is the current reference domain** — it's what's built out today because it's the maintainer's daily work, and it doubles as the worked example of how to build a domain. (It's slated to be extracted out of this repo.) The rest of this README uses the coding domain to show the framework in action; the same machinery applies to any domain you define.
+
+### The coding domain, as an example
+
+Here, you handle the creative work (requirements, design decisions, architecture) and agents handle the execution (implementation, testing, commits, code review). The workflow:
 
 1. **You describe what you want** — in natural language, a spec file, or interactively.
 2. **A planner agent designs the solution** — explores the codebase, proposes an approach, writes a plan.
@@ -22,6 +28,8 @@ The key insight: **the design phase is where humans add the most value.** Once t
 ## Current Status
 
 **Phase 0 is complete.** The core loop works end-to-end: you can start Cosmonauts, chat with `main/cosmo` (Cosmo), trigger multi-agent pipelines, and have agents implement tasks on real projects.
+
+**Coding is the only built-out domain so far.** The framework is domain-agnostic by design, but the coding domain is the only fully-realized example today — and it's slated to be extracted out of this repo. Building additional domains is supported but not yet documented as a first-class workflow.
 
 What's built:
 - Task system with markdown files, YAML frontmatter, dependencies, and acceptance criteria

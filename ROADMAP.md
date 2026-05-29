@@ -145,6 +145,17 @@ Lifecycle hooks at chain, stage, and spawn levels for extensibility without modi
 - Key hooks: before_chain_start, after_stage_end, before_agent_spawn, after_tool_call
 - Enables plugins for logging, metrics, custom validation, and external integrations
 
+### `domain-plugins`: Installable Domain Plugin System
+
+Domains are pluggable by design but today the coding domain is still embedded in this repo. Make domains installable from external repos — public or private — the way Claude Code installs plugins. This is what lets the coding domain be extracted out and lets users (and the maintainer) keep private domains separate from the framework.
+
+- Install a domain (agents, prompts, capabilities, skills, workflows) from a git repo: `cosmonauts domain install <repo>`
+- Support public and private sources (private repos via existing git auth)
+- Resolve and load installed domains alongside built-in `domains/` and bundled `bundled/`
+- Versioning / update story for installed domains
+- Extract the embedded coding domain into its own repo as the first real consumer of this system
+- Relates to `hook-system` (extensibility) and `domain-aware-skills` (per-domain skill scoping)
+
 ### `context-budget`: Context Budget Management
 
 Smart pruning for coordinator loops that accumulate large tool outputs over many iterations. Address when coordinator or quality-manager runs start hitting compaction issues.
