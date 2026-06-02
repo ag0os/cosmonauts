@@ -107,6 +107,28 @@ Replace filesystem polling with push-based communication between agents. Address
 - Hard safety caps: round limits on dialogues, budget ceilings, escalate-to-human after N autonomous retries
 - Prototype sequence: daemon + steering channel first (single roadmap item → plan-and-build loop), then real-time dialogue (EA ↔ planner roadmap disambiguation), then supervision (mid-flight escalation)
 
+### `agent-memory`: General Agent-Memory System
+
+A durable memory substrate for **all** Cosmonauts agents (not just `cosmo`) — the operational/personal axis, distinct from the existing *code-knowledge* memory (`architecture-of-record`, `embedding-memory`, `memory/<slug>.knowledge.jsonl`). Self-authored, human-legible, user-scoped. Prerequisite for the useful half of `ambient-cosmo`. To be planned in its own session.
+
+- Three record types: **profile** (stable user/agent facts), **playbooks** (parameterized, replayable routines), **episodic log** (what an agent did — also the autonomy audit trail and the source data playbooks are learned from)
+- Self-authored but human-editable: markdown + frontmatter (reuse `gray-matter`); memory is *proposed truth the user can override/prune*, not silently-mutated state
+- **User-scoped storage** (e.g. `~/.cosmonauts/`), not repo `memory/` — a machine-level assistant's memory spans projects and is personal
+- Explicit-save before implicit-learning (v1: agent proposes "save that as a playbook?"; pattern-mining is v2)
+- Decide: one substrate shared with code-knowledge memory, or a sibling system
+- Pi-First audit: check whether Pi session-state / `pi.appendEntry()` / pi-skills cover any of this before building
+- Memory hygiene: consolidation/pruning, not unbounded append
+
+### `ambient-cosmo`: Cosmo as a herdr-Backed Ambient Terminal Assistant
+
+Turn `main/cosmo` into a machine-level assistant whose body is the [herdr](https://github.com/ogulcancelik/herdr) terminal multiplexer: ambient supervision of every agent session on the box (Cosmonauts/Pi, Claude Code, Codex, shells), autonomous action from day one, and attention routing — without changing how the user works inside any pane. Distinct from `executive-assistant` (which supervises *Cosmonauts* workflows/Drive); this supervises the *whole heterogeneous terminal* at the process layer. Full design: `docs/designs/cosmo-ambient-assistant.md`.
+
+- New `herdr` capability wrapping the Unix-socket API (observe: topology/`read`/`wait_status`; act: `pane_split`/`run`/`send`/`focus`); reuse `@ogulcancelik/pi-herdr` patterns; no-op when no herdr socket present
+- Autonomy trust model: tiered actions (auto / act-then-announce / reserved-irreversible) + episodic audit log; control loop uses herdr blocking waits, not polling
+- Phases 1–2 (observe, act) are unblocked; **phase 3 (profile + playbooks) is BLOCKED on `agent-memory`** — that's what makes it intelligent vs. a scriptable tmux
+- herdr is AGPL/commercial dual-licensed: treat as a user-installed external tool (shell out to its CLI/socket), not a bundled dependency
+- Single-host only (Unix socket, Linux/macOS); cross-machine is a non-goal
+
 ### `chain-timeouts`: Flexible Activity-Based Chain Timeouts
 
 Chain/workflow timeouts are currently too rigid for long autonomous implementation work and can break active work mid-flight. Make timeout behavior configurable and progress-aware across CLI workflows and interactive spawned agents.
