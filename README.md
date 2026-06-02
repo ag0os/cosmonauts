@@ -1,6 +1,12 @@
 # Cosmonauts
 
-An AI agent orchestration framework built on [Pi](https://github.com/earendil-works/pi). Declare your agents, compose their system prompts, expose skills, and wire up workflows — for any domain. You bring the domain; Cosmonauts gives you the tooling to build, coordinate, and run the agents.
+An **agent-first** AI orchestration framework built on [Pi](https://github.com/earendil-works/pi). Declare your agents, compose their system prompts, expose skills, and wire up workflows — for any domain. You bring the domain; Cosmonauts gives you the tooling to build, coordinate, and run the agents.
+
+What makes it different from using a single assistant directly:
+
+- **Agent-first** — you build your *own* agents and the workflows that run them automatically, instead of working inside someone else's fixed assistant.
+- **Backend-agnostic** — run whatever model is available: OpenAI, Anthropic, or open-source.
+- **Orchestrate internally *or* externally** — drive agents from the Cosmonauts CLI, or from another agent harness that calls Cosmonauts' skills and tools (chains, workflows, the drive system).
 
 > ⚠️ **Alpha software.** Cosmonauts is in early development and the architecture is still evolving. Expect breaking changes — APIs, file formats, CLI surface, and domain conventions may all change without notice between versions.
 
