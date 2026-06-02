@@ -27,7 +27,7 @@ The key insight: **the design phase is where humans add the most value.** Once t
 
 ## Current Status
 
-**Phase 0 is complete.** The core loop works end-to-end: you can start Cosmonauts, chat with `main/cosmo` (Cosmo), trigger multi-agent pipelines, and have agents implement tasks on real projects.
+**Phase 0 is complete.** The core loop works end-to-end: you can start Cosmonauts, chat with `main/cosmo` (Cosmo), trigger multi-agent pipelines, and have agents implement tasks on real projects. The maintainer has dogfooded it daily since late February 2026 — the typical loop is bouncing design and plan ideas with an agent, turning that into a technical plan, revising it, and automating the implementation.
 
 **Coding is the only built-out domain so far.** The framework is domain-agnostic by design, but the coding domain is the only fully-realized example today — and it's slated to be extracted out of this repo. Building additional domains is supported but not yet documented as a first-class workflow.
 
@@ -39,12 +39,18 @@ What's built:
 - Four-layer system prompt architecture with capability-aligned composition
 - Plan lifecycle: create plans, link tasks, archive completed work, distill learnings into memory
 - Drive runs for approved plan-linked task batches via `run_driver`, `watch_events`, and `cosmonauts drive`
-- Named workflows for common pipelines (`plan-and-build`, `tdd`, `spec-and-build`, `spec-and-tdd`, `implement`, `verify`, `adapt`) with adversarial plan review as the default
+- Named workflows for common pipelines (`plan-and-build`, `spec-and-build`, `implement`, `verify`, `adapt`) with adversarial plan review as the default
 - CLI with interactive and non-interactive modes
 - Todo tool for in-session task tracking
 - Vitest test suite passing
 
-What's next: more language/domain skills, web/deepwiki tools, memory system, parallel workers, browser automation. See [ROADMAP.md](./ROADMAP.md).
+Before it's ready for a wider audience (the maintainer's bar):
+- A **memory system** — built out, ideally automatic
+- **Extract the coding domain into its own plugin** so the framework ships domain-free (see the `domain-plugins` idea in the roadmap)
+- Make **Cosmo** (`main/cosmo`, the executive agent) genuinely useful — it has to carry more weight once there's no embedded domain
+- **Documentation** — with the honest expectation that writing it will surface rough edges
+
+See [ROADMAP.md](./ROADMAP.md) for the full backlog.
 
 ## Installation
 
