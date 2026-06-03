@@ -24,6 +24,9 @@ type AcquirePlanLockFn = (
 ) => Promise<LockHandle | ActivePlanLock>;
 
 type CreateEventSinkFn = (options: CreateEventSinkOptions) => EventSink;
+type DriveDurableEventSinkOptionsFn = (
+	spec: DriverRunSpec,
+) => NonNullable<CreateEventSinkOptions["durable"]>;
 type RunRunLoopFn = (
 	spec: DriverRunSpec,
 	ctx: RunRunLoopCtx,
@@ -34,6 +37,7 @@ const mocks = vi.hoisted(() => ({
 	acquirePlanLock: vi.fn<AcquirePlanLockFn>(),
 	bridgeJsonlToActivityBus: vi.fn<BridgeJsonlToActivityBusFn>(),
 	createEventSink: vi.fn<CreateEventSinkFn>(),
+	driveDurableEventSinkOptions: vi.fn<DriveDurableEventSinkOptionsFn>(),
 	eventSink: vi.fn<EventSink>(),
 	runRunLoop: vi.fn<RunRunLoopFn>(),
 }));
@@ -45,6 +49,7 @@ vi.mock("../../lib/driver/lock.ts", () => ({
 vi.mock("../../lib/driver/event-stream.ts", () => ({
 	bridgeJsonlToActivityBus: mocks.bridgeJsonlToActivityBus,
 	createEventSink: mocks.createEventSink,
+	driveDurableEventSinkOptions: mocks.driveDurableEventSinkOptions,
 }));
 
 vi.mock("../../lib/driver/run-run-loop.ts", () => ({
@@ -56,10 +61,16 @@ describe("driver", () => {
 		mocks.acquirePlanLock.mockReset();
 		mocks.bridgeJsonlToActivityBus.mockReset();
 		mocks.createEventSink.mockReset();
+		mocks.driveDurableEventSinkOptions.mockReset();
 		mocks.eventSink.mockReset();
 		mocks.runRunLoop.mockReset();
 		mocks.bridgeJsonlToActivityBus.mockReturnValue({ stop: vi.fn() });
 		mocks.createEventSink.mockReturnValue(mocks.eventSink);
+		mocks.driveDurableEventSinkOptions.mockReturnValue({
+			rootDir: "/project/missions/sessions",
+			scope: "driver-primitives",
+			runId: "run-257",
+		});
 	});
 
 	test("runInline acquires the plan lock, starts the loop, and releases on success", async () => {
@@ -107,6 +118,11 @@ describe("driver", () => {
 			runId: spec.runId,
 			parentSessionId: spec.parentSessionId,
 			activityBus: deps.activityBus,
+			durable: {
+				rootDir: "/project/missions/sessions",
+				scope: "driver-primitives",
+				runId: "run-257",
+			},
 		});
 		const ctx = requireRunCtx();
 		expect(mocks.runRunLoop).toHaveBeenCalledWith(spec, ctx);

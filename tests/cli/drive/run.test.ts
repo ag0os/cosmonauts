@@ -891,6 +891,72 @@ describe("cosmonauts drive run", () => {
 			taskIds: fixture.tasks.slice(2).map((task) => task.id),
 		});
 	});
+
+	// @cosmo-behavior plan:durable-run-store-events#B-010
+	test("resume uses legacy driver events while dual-writing normalized resume events", async () => {
+		const fixture = await setupFixture(3);
+		const taskIds = fixture.tasks.map((task) => task.id);
+		await writeResumeRun(
+			taskIds,
+			[{ type: "task_done", taskId: taskIds[0] ?? "TASK-001" }],
+			{
+				commitPolicy: "driver-commits",
+				stateCommitPolicy: "none",
+			},
+		);
+		await writePendingCommitFinalization(taskIds[1] ?? "TASK-002", {
+			headBeforeFinalization: "before-sha",
+		});
+		childProcessMocks.execFile.mockImplementation(
+			gitMock({
+				head: "external-sha",
+				status: "",
+				diffHasChanges: false,
+			}),
+		);
+
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
+		expect(firstRunInlineSpec()).toMatchObject({
+			runId: "run-previous",
+			taskIds: [taskIds[2]],
+		});
+		expect(
+			(await fixture.manager.getTask(taskIds[1] ?? "TASK-002"))?.status,
+		).toBe("Done");
+		const legacyEvents = await readJsonl(join(resumeWorkdir(), "events.jsonl"));
+		expect(legacyEvents.map((event) => event.type)).toEqual([
+			"task_done",
+			"finalize",
+			"commit_made",
+			"finalize",
+			"finalize",
+			"finalize",
+			"task_done",
+		]);
+		expect(legacyEvents[0]).toMatchObject({
+			type: "task_done",
+			taskId: taskIds[0],
+		});
+		const runRecord = JSON.parse(
+			await readFile(join(resumeWorkdir(), "run.json"), "utf-8"),
+		) as { eventsPath: string };
+		const normalizedEvents = await readJsonl(
+			join(resumeWorkdir(), "orchestration-events.jsonl"),
+		);
+		expect(runRecord.eventsPath).toBe(
+			join(resumeWorkdir(), "orchestration-events.jsonl"),
+		);
+		expect(normalizedEvents.map((event) => event.event?.type)).toEqual([
+			"step_tool_activity",
+			"artifact_written",
+			"step_tool_activity",
+			"step_tool_activity",
+			"step_tool_activity",
+			"step_completed",
+		]);
+	});
 });
 
 async function parseDrive(args: string[]): Promise<void> {
@@ -955,16 +1021,18 @@ async function writeResumeRun(
 	await writeFile(join(workdir, "spec.json"), JSON.stringify(spec), "utf-8");
 	await writeFile(
 		join(workdir, "events.jsonl"),
-		events
-			.map((event) =>
-				JSON.stringify({
-					...event,
-					runId: "run-previous",
-					parentSessionId: "previous-parent",
-					timestamp: "2026-01-01T00:00:00.000Z",
-				}),
-			)
-			.join("\n"),
+		events.length === 0
+			? ""
+			: `${events
+					.map((event) =>
+						JSON.stringify({
+							...event,
+							runId: "run-previous",
+							parentSessionId: "previous-parent",
+							timestamp: "2026-01-01T00:00:00.000Z",
+						}),
+					)
+					.join("\n")}\n`,
 		"utf-8",
 	);
 }
@@ -1078,6 +1146,19 @@ function firstStartDetachedSpec(): DriverRunSpec {
 
 function resumeWorkdir(): string {
 	return join(temp.path, "missions", "sessions", PLAN, "runs", "run-previous");
+}
+
+interface JsonlRecord {
+	type?: string;
+	taskId?: string;
+	event?: { type?: string };
+}
+
+async function readJsonl(path: string): Promise<JsonlRecord[]> {
+	return (await readFile(path, "utf-8"))
+		.split("\n")
+		.filter((line) => line.trim().length > 0)
+		.map((line) => JSON.parse(line) as JsonlRecord);
 }
 
 function createHandle(

@@ -1,8 +1,19 @@
 import { existsSync, type FSWatcher, watch } from "node:fs";
 import { appendFile, readFile } from "node:fs/promises";
-import { basename, dirname } from "node:path";
+import { basename, dirname, join } from "node:path";
+import {
+	FileRunStore,
+	type RunPolicy,
+	type RuntimeDiagnostic,
+} from "../durable-runtime/index.ts";
 import type { BusEvent } from "../orchestration/message-bus.ts";
-import type { DriverEvent, EventSink, SpawnActivity } from "./types.ts";
+import { normalizeDriverEvent } from "./durable-events.ts";
+import type {
+	DriverEvent,
+	DriverRunSpec,
+	EventSink,
+	SpawnActivity,
+} from "./types.ts";
 
 export type { EventSink } from "./types.ts";
 
@@ -32,6 +43,16 @@ export interface CreateEventSinkOptions {
 	runId: string;
 	parentSessionId: string;
 	activityBus: DriverEventPublisher;
+	durable?: DurableDriverEventSinkOptions;
+}
+
+export interface DurableDriverEventSinkOptions {
+	rootDir: string;
+	scope: string;
+	runId: string;
+	eventsPath?: string;
+	policy?: Partial<RunPolicy>;
+	metadata?: Record<string, unknown>;
 }
 
 interface TailEventsResult {
@@ -58,13 +79,97 @@ export class EventLogWriteError extends Error {
 export function createEventSink({
 	logPath,
 	activityBus,
+	durable,
 }: CreateEventSinkOptions): EventSink {
+	const durableSink = durable
+		? createDurableDriverEventSink(durable)
+		: undefined;
+
 	return async (event) => {
 		await writeJsonLine(logPath, event);
 
 		const busEvent = toBusEvent(event);
 		if (busEvent) {
 			activityBus.publish(busEvent);
+		}
+
+		await durableSink?.(event);
+	};
+}
+
+export function driveDurableEventSinkOptions(
+	spec: DriverRunSpec,
+): DurableDriverEventSinkOptions {
+	return {
+		rootDir: join(spec.projectRoot, "missions", "sessions"),
+		scope: spec.planSlug,
+		runId: spec.runId,
+		eventsPath: "orchestration-events.jsonl",
+		policy: {
+			defaultBackend: { name: spec.backendName },
+			timeoutMs: spec.taskTimeoutMs,
+		},
+		metadata: {
+			source: "drive",
+			legacyEventsPath: spec.eventLogPath,
+			parentSessionId: spec.parentSessionId,
+		},
+	};
+}
+
+function createDurableDriverEventSink(
+	options: DurableDriverEventSinkOptions,
+): EventSink {
+	const store = new FileRunStore({ rootDir: options.rootDir });
+	const ref = { scope: options.scope, runId: options.runId };
+	let ready = false;
+	let disabled = false;
+
+	return async (event) => {
+		if (disabled) {
+			return;
+		}
+
+		const normalized = normalizeDriverEvent(event);
+		if (normalized.events.length === 0) {
+			return;
+		}
+
+		if (!ready) {
+			try {
+				if (!(await store.loadRun(ref))) {
+					await store.createRun({
+						...ref,
+						status: "pending",
+						eventsPath: options.eventsPath,
+						policy: options.policy,
+						metadata: options.metadata,
+					});
+				}
+				ready = true;
+			} catch (error) {
+				disabled = true;
+				reportDurableDiagnostic({
+					code: "drive_durable_run_setup_failed",
+					message:
+						"Drive normalized run record setup failed; disabling normalized event writes for this sink.",
+					details: durableDiagnosticDetails(event, error),
+				});
+				return;
+			}
+		}
+
+		for (const normalizedEvent of normalized.events) {
+			try {
+				await store.appendEvent(ref, normalizedEvent);
+			} catch (error) {
+				reportDurableDiagnostic({
+					code: "drive_durable_event_append_failed",
+					message:
+						"Drive normalized event append failed; legacy driver event write remains authoritative.",
+					details: durableDiagnosticDetails(event, error),
+				});
+			}
 		}
 	};
 }
@@ -410,6 +515,26 @@ function splitJsonLines(content: string): string[] {
 		lines.pop();
 	}
 	return lines.map((line) => line.replace(/\r$/, ""));
+}
+
+function reportDurableDiagnostic(diagnostic: RuntimeDiagnostic): void {
+	console.error(
+		JSON.stringify({
+			type: "drive_durable_event_diagnostic",
+			...diagnostic,
+		}),
+	);
+}
+
+function durableDiagnosticDetails(
+	event: DriverEvent,
+	error: unknown,
+): Record<string, unknown> {
+	return {
+		legacyEventType: event.type,
+		runId: event.runId,
+		error: formatJsonError(error),
+	};
 }
 
 function formatJsonError(error: unknown): string {

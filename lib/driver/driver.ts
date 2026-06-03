@@ -23,6 +23,7 @@ import {
 	bridgeJsonlToActivityBus,
 	createEventSink,
 	type DriverEventPublisher,
+	driveDurableEventSinkOptions,
 	type JsonlActivityBusBridge,
 } from "./event-stream.ts";
 import { acquirePlanLock, isProcessAlive } from "./lock.ts";
@@ -96,6 +97,7 @@ export function runInline(spec: DriverRunSpec, deps: DriverDeps): DriverHandle {
 			runId: spec.runId,
 			parentSessionId: spec.parentSessionId,
 			activityBus: deps.activityBus,
+			durable: driveDurableEventSinkOptions(spec),
 		});
 
 		return runRunLoop(spec, {

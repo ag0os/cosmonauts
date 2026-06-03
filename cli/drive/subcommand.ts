@@ -1,14 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import {
-	appendFile,
-	mkdir,
-	readdir,
-	readFile,
-	rm,
-	writeFile,
-} from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -25,6 +18,10 @@ import { runInline, startDetached } from "../../lib/driver/driver.ts";
 import type {
 	DriverActivityBusEvent,
 	DriverEventBusEvent,
+} from "../../lib/driver/event-stream.ts";
+import {
+	createEventSink,
+	driveDurableEventSinkOptions,
 } from "../../lib/driver/event-stream.ts";
 import {
 	acquireRepoCommitLock,
@@ -882,9 +879,13 @@ async function retryPendingFinalization(
 	}
 
 	const spec = resume.spec;
-	const eventSink = async (event: DriverEvent) => {
-		await appendFile(spec.eventLogPath, `${JSON.stringify(event)}\n`, "utf-8");
-	};
+	const eventSink = createEventSink({
+		logPath: spec.eventLogPath,
+		runId: spec.runId,
+		parentSessionId: spec.parentSessionId,
+		activityBus: { publish: () => undefined },
+		durable: driveDurableEventSinkOptions(spec),
+	});
 
 	if (pending.phase === "state_commit") {
 		return retryPendingStateCommit(resume, taskManager, eventSink);

@@ -9,7 +9,10 @@ import {
 	readCodexExecArgsFromEnv,
 } from "./backends/codex.ts";
 import { resolveBackend } from "./backends/registry.ts";
-import { createEventSink } from "./event-stream.ts";
+import {
+	createEventSink,
+	driveDurableEventSinkOptions,
+} from "./event-stream.ts";
 import { acquirePlanLock } from "./lock.ts";
 import { runRunLoop } from "./run-run-loop.ts";
 import { writeRunCompletion } from "./run-state.ts";
@@ -70,6 +73,7 @@ async function runWithLock(
 			runId: spec.runId,
 			parentSessionId: spec.parentSessionId,
 			activityBus: localBus,
+			durable: driveDurableEventSinkOptions(spec),
 		});
 		const controller = new AbortController();
 
