@@ -203,6 +203,158 @@ describe("cosmonauts drive status", () => {
 			pid: 1234,
 		});
 	});
+
+	// @cosmo-behavior plan:durable-run-store-events#B-008
+	test("ignores normalized runtime files when classifying drive status", async () => {
+		const completedWorkdir = await writeRunDir(PLAN, "run-completed");
+		await writeCompletion(completedWorkdir, "completed", "run-completed");
+		await writePid(completedWorkdir, 1001, localIso(2026, 0, 1, 0, 0, 0));
+		await writeInlineState(
+			completedWorkdir,
+			1002,
+			localIso(2026, 0, 1, 0, 1, 0),
+		);
+		await writeNormalizedRuntimeFiles(completedWorkdir, "running");
+
+		await parseDrive(["status", "run-completed", "--plan", PLAN]);
+
+		expect(killMock).not.toHaveBeenCalled();
+		expect(childProcessMocks.execFile).not.toHaveBeenCalled();
+		expect(output.stdoutJson()).toMatchObject({
+			runId: "run-completed",
+			planSlug: PLAN,
+			status: "completed",
+			result: { outcome: "completed" },
+		});
+
+		output.restore();
+		output = attachJsonHelpers(captureCliOutput());
+		const blockedWorkdir = await writeRunDir(PLAN, "run-blocked");
+		await writeCompletion(blockedWorkdir, "blocked", "run-blocked");
+		await writeNormalizedRuntimeFiles(blockedWorkdir, "completed");
+
+		await parseDrive(["status", "run-blocked", "--plan", PLAN]);
+
+		expect(output.stdoutJson()).toMatchObject({
+			runId: "run-blocked",
+			status: "blocked",
+			result: { outcome: "blocked" },
+		});
+
+		output.restore();
+		output = attachJsonHelpers(captureCliOutput());
+		const abortedWorkdir = await writeRunDir(PLAN, "run-aborted");
+		await writeCompletion(abortedWorkdir, "aborted", "run-aborted");
+		await writeNormalizedRuntimeFiles(abortedWorkdir, "completed");
+
+		await parseDrive(["status", "run-aborted", "--plan", PLAN]);
+
+		expect(output.stdoutJson()).toMatchObject({
+			runId: "run-aborted",
+			status: "aborted",
+			result: { outcome: "aborted" },
+		});
+
+		output.restore();
+		output = attachJsonHelpers(captureCliOutput());
+		const finalizationFailedWorkdir = await writeRunDir(
+			PLAN,
+			"run-finalization-failed",
+		);
+		await writeFinalizationFailedCompletion(
+			finalizationFailedWorkdir,
+			"run-finalization-failed",
+		);
+		await writeNormalizedRuntimeFiles(finalizationFailedWorkdir, "completed");
+
+		await parseDrive(["status", "run-finalization-failed", "--plan", PLAN]);
+
+		expect(output.stdoutJson()).toMatchObject({
+			runId: "run-finalization-failed",
+			status: "finalization_failed",
+			result: { outcome: "finalization_failed" },
+		});
+
+		output.restore();
+		output = attachJsonHelpers(captureCliOutput());
+		const runningWorkdir = await writeRunDir(PLAN, "run-running");
+		await writePid(runningWorkdir, 2001, localIso(2026, 0, 1, 0, 0, 0));
+		await writeInlineState(runningWorkdir, 2002, localIso(2026, 0, 1, 0, 1, 0));
+		await writeNormalizedRuntimeFiles(runningWorkdir, "completed");
+		childProcessMocks.result = {
+			stdout: "Thu Jan  1 00:00:03 2026\n",
+			stderr: "",
+		};
+
+		await parseDrive(["status", "run-running", "--plan", PLAN]);
+
+		expect(output.stdoutJson()).toMatchObject({
+			runId: "run-running",
+			status: "running",
+			mode: "detached",
+			pid: 2001,
+		});
+
+		output.restore();
+		output = attachJsonHelpers(captureCliOutput());
+		const inlineRunningWorkdir = await writeRunDir(PLAN, "run-inline-running");
+		await writeInlineState(
+			inlineRunningWorkdir,
+			2501,
+			localIso(2026, 0, 1, 0, 1, 0),
+		);
+		await writeNormalizedRuntimeFiles(inlineRunningWorkdir, "completed");
+		childProcessMocks.result = {
+			stdout: "Thu Jan  1 00:00:00 2026\n",
+			stderr: "",
+		};
+
+		await parseDrive(["status", "run-inline-running", "--plan", PLAN]);
+
+		expect(output.stdoutJson()).toMatchObject({
+			runId: "run-inline-running",
+			status: "running",
+			mode: "inline",
+			pid: 2501,
+		});
+
+		output.restore();
+		output = attachJsonHelpers(captureCliOutput());
+		const deadWorkdir = await writeRunDir(PLAN, "run-dead");
+		await writePid(deadWorkdir, 3001, localIso(2026, 0, 1, 0, 0, 0));
+		await writeNormalizedRuntimeFiles(deadWorkdir, "running");
+		killMock.mockImplementationOnce(() => {
+			throw errno("ESRCH");
+		});
+
+		await parseDrive(["status", "run-dead", "--plan", PLAN]);
+
+		expect(output.stdoutJson()).toMatchObject({
+			runId: "run-dead",
+			status: "dead",
+			mode: "detached",
+			pid: 3001,
+		});
+
+		output.restore();
+		output = attachJsonHelpers(captureCliOutput());
+		const orphanedWorkdir = await writeRunDir(PLAN, "run-orphaned");
+		await writePid(orphanedWorkdir, 4001, localIso(2026, 0, 1, 0, 0, 0));
+		await writeNormalizedRuntimeFiles(orphanedWorkdir, "running");
+		childProcessMocks.result = {
+			stdout: "Thu Jan  1 00:10:00 2026\n",
+			stderr: "",
+		};
+
+		await parseDrive(["status", "run-orphaned", "--plan", PLAN]);
+
+		expect(output.stdoutJson()).toMatchObject({
+			runId: "run-orphaned",
+			status: "orphaned",
+			mode: "detached",
+			pid: 4001,
+		});
+	});
 });
 
 async function parseDrive(args: string[]): Promise<void> {
@@ -227,11 +379,12 @@ async function writeRunDir(planSlug: string, runId: string): Promise<string> {
 async function writeCompletion(
 	workdir: string,
 	outcome: "completed" | "aborted" | "blocked",
+	runId = RUN_ID,
 ): Promise<void> {
 	await writeFile(
 		join(workdir, "run.completion.json"),
 		`${JSON.stringify(
-			{ runId: RUN_ID, outcome, tasksDone: 2, tasksBlocked: 0 },
+			{ runId, outcome, tasksDone: 2, tasksBlocked: 0 },
 			null,
 			2,
 		)}\n`,
@@ -241,12 +394,13 @@ async function writeCompletion(
 
 async function writeFinalizationFailedCompletion(
 	workdir: string,
+	runId = RUN_ID,
 ): Promise<void> {
 	await writeFile(
 		join(workdir, "run.completion.json"),
 		`${JSON.stringify(
 			{
-				runId: RUN_ID,
+				runId,
 				outcome: "finalization_failed",
 				tasksDone: 2,
 				tasksBlocked: 0,
@@ -259,6 +413,36 @@ async function writeFinalizationFailedCompletion(
 			null,
 			2,
 		)}\n`,
+		"utf-8",
+	);
+}
+
+async function writeNormalizedRuntimeFiles(
+	workdir: string,
+	status: string,
+): Promise<void> {
+	await writeFile(
+		join(workdir, "run.json"),
+		`${JSON.stringify(
+			{
+				runId: "normalized-run",
+				kind: "drive",
+				status,
+				eventsPath: join(workdir, "orchestration-events.jsonl"),
+			},
+			null,
+			2,
+		)}\n`,
+		"utf-8",
+	);
+	await writeFile(
+		join(workdir, "orchestration-events.jsonl"),
+		`${JSON.stringify({
+			seq: 1,
+			runId: "normalized-run",
+			timestamp: "2026-01-01T00:00:00.000Z",
+			event: { type: status === "completed" ? "run_completed" : "run_started" },
+		})}\n`,
 		"utf-8",
 	);
 }

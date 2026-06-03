@@ -44,6 +44,24 @@ async function writeEventLog(events: DriverEvent[]): Promise<void> {
 	await writeFile(join(dir, "events.jsonl"), `${body}\n`, "utf-8");
 }
 
+async function writeNormalizedEventLog(events: unknown[]): Promise<void> {
+	const dir = join(
+		temp.path,
+		"missions",
+		"sessions",
+		PLAN_SLUG,
+		"runs",
+		RUN_ID,
+	);
+	await mkdir(dir, { recursive: true });
+	const body = events.map((event) => JSON.stringify(event)).join("\n");
+	await writeFile(
+		join(dir, "orchestration-events.jsonl"),
+		`${body}\n`,
+		"utf-8",
+	);
+}
+
 async function callWatchEvents(since?: number): Promise<ToolResult> {
 	const pi = createMockPi(temp.path, { sessionId: PARENT_SESSION_ID });
 	registerWatchEventsTool(pi as never);
@@ -213,5 +231,69 @@ describe("watch_events tool", () => {
 		expect(renderedLines).toHaveLength(30);
 		expect(result.details.events).toHaveLength(35);
 		expect(text).toContain("cursor 35");
+	});
+
+	// @cosmo-behavior plan:durable-run-store-events#B-011
+	test("reads legacy driver events when normalized events also exist", async () => {
+		await writeEventLog([
+			makeEvent({ type: "task_started", taskId: "TASK-1" }),
+			makeEvent({ type: "task_done", taskId: "TASK-1" }),
+		]);
+		await writeNormalizedEventLog([
+			{
+				seq: 1,
+				runId: RUN_ID,
+				timestamp: "2026-05-12T00:00:01.000Z",
+				event: {
+					type: "step_started",
+					stepId: "NORMALIZED-ONLY",
+				},
+			},
+			{
+				seq: 2,
+				runId: RUN_ID,
+				timestamp: "2026-05-12T00:00:02.000Z",
+				event: {
+					type: "run_completed",
+					result: { outcome: "success" },
+				},
+			},
+		]);
+
+		const first = await callWatchEvents();
+		const text = first.content[0]?.text ?? "";
+
+		expect(first.cursor).toBe(2);
+		expect(first.details.events).toHaveLength(2);
+		expect(first.details.events.map((event) => event.type)).toEqual([
+			"task_started",
+			"task_done",
+		]);
+		expect(text).toContain("TASK-1");
+		expect(text).toContain("cursor 2");
+		expect(text).not.toContain("NORMALIZED-ONLY");
+		expect(text).not.toContain("step_started");
+		expect(JSON.stringify(first.details.events)).not.toContain(
+			"NORMALIZED-ONLY",
+		);
+
+		await writeEventLog([
+			makeEvent({ type: "task_started", taskId: "TASK-1" }),
+			makeEvent({ type: "task_done", taskId: "TASK-1" }),
+			makeEvent({ type: "task_started", taskId: "TASK-2" }),
+		]);
+
+		const second = await callWatchEvents(first.cursor);
+
+		expect(second.cursor).toBe(3);
+		expect(second.details.events).toHaveLength(1);
+		expect(second.details.events[0]).toMatchObject({
+			type: "task_started",
+			taskId: "TASK-2",
+		});
+		expect(second.content[0]?.text ?? "").toContain("cursor 3");
+		expect(JSON.stringify(second.details.events)).not.toContain(
+			"NORMALIZED-ONLY",
+		);
 	});
 });

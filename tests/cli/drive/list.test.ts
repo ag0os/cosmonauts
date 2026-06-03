@@ -171,6 +171,57 @@ describe("cosmonauts drive list", () => {
 			],
 		});
 	});
+
+	// @cosmo-behavior plan:durable-run-store-events#B-009
+	test("ignores normalized-only runtime directories when listing drive runs", async () => {
+		const completedWorkdir = await writeRunDir("plan-a", "run-completed");
+		await writeCompletion(completedWorkdir, "run-completed", "completed");
+		await writeNormalizedRuntimeFiles(completedWorkdir, "completed");
+
+		const runningStartedAt = localIso(2026, 0, 1, 0, 0, 0);
+		const runningWorkdir = await writeRunDir("plan-b", "run-running");
+		await writePid(runningWorkdir, 1111, runningStartedAt);
+		await writeNormalizedRuntimeFiles(runningWorkdir, "completed");
+		childProcessMocks.startsByPid["1111"] = "Thu Jan  1 00:00:04 2026\n";
+
+		const runJsonOnlyWorkdir = await writeRunDir("plan-c", "run-json-only");
+		await writeNormalizedRunJson(runJsonOnlyWorkdir, "running");
+
+		const eventsOnlyWorkdir = await writeRunDir("plan-c", "run-events-only");
+		await writeNormalizedEvents(eventsOnlyWorkdir, "completed");
+
+		const bothNormalizedOnlyWorkdir = await writeRunDir(
+			"plan-c",
+			"run-normalized-only",
+		);
+		await writeNormalizedRuntimeFiles(bothNormalizedOnlyWorkdir, "completed");
+
+		await parseDrive(["list"]);
+
+		expect(output.stdoutJson()).toMatchObject({
+			runs: [
+				{
+					runId: "run-completed",
+					planSlug: "plan-a",
+					status: "completed",
+					workdir: completedWorkdir,
+					result: { runId: "run-completed", outcome: "completed" },
+				},
+				{
+					runId: "run-running",
+					planSlug: "plan-b",
+					status: "running",
+					workdir: runningWorkdir,
+					pid: 1111,
+					startedAt: runningStartedAt,
+				},
+			],
+		});
+		const listedRunIds = (
+			output.stdoutJson().runs as Array<{ runId: string }>
+		).map((run) => run.runId);
+		expect(listedRunIds).toEqual(["run-completed", "run-running"]);
+	});
 });
 
 async function parseDrive(args: string[]): Promise<void> {
@@ -261,6 +312,50 @@ async function writeEvent(workdir: string, timestamp: string): Promise<void> {
 	await writeFile(
 		join(workdir, "events.jsonl"),
 		`${JSON.stringify({ type: "task_started", timestamp })}\n`,
+		"utf-8",
+	);
+}
+
+async function writeNormalizedRuntimeFiles(
+	workdir: string,
+	status: string,
+): Promise<void> {
+	await writeNormalizedRunJson(workdir, status);
+	await writeNormalizedEvents(workdir, status);
+}
+
+async function writeNormalizedRunJson(
+	workdir: string,
+	status: string,
+): Promise<void> {
+	await writeFile(
+		join(workdir, "run.json"),
+		`${JSON.stringify(
+			{
+				runId: "normalized-run",
+				kind: "drive",
+				status,
+				eventsPath: join(workdir, "orchestration-events.jsonl"),
+			},
+			null,
+			2,
+		)}\n`,
+		"utf-8",
+	);
+}
+
+async function writeNormalizedEvents(
+	workdir: string,
+	status: string,
+): Promise<void> {
+	await writeFile(
+		join(workdir, "orchestration-events.jsonl"),
+		`${JSON.stringify({
+			seq: 1,
+			runId: "normalized-run",
+			timestamp: "2026-01-01T00:00:00.000Z",
+			event: { type: status === "completed" ? "run_completed" : "run_started" },
+		})}\n`,
 		"utf-8",
 	);
 }
