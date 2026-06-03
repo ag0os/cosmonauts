@@ -1,9 +1,21 @@
 ---
 title: 'Orchestration consolidation: unified backend, capsule abstraction, agent-led Drive'
-status: active
+status: superseded
 createdAt: '2026-05-19T00:00:00.000Z'
-updatedAt: '2026-05-19T01:00:00.000Z'
+updatedAt: '2026-06-03T00:00:00.000Z'
 ---
+
+> **Superseded by the durable orchestration runtime track.** This plan pursued
+> the same goal — one engine with chains and Drive as frontends — through a
+> per-invocation "capsule" primitive. The authoritative delivery shape is now
+> `missions/architecture/durable-orchestration-runtime.md` and its four child
+> plans (`durable-run-store-events`, `durable-backend-step-model`,
+> `durable-graph-scheduler`, `durable-frontend-migration`), which reach the same
+> outcome through a `RunRecord`/`StepRecord` graph, `OrchestrationBackend`
+> adapters, and a durable scheduler. The distinct flexibility ideas worth
+> keeping — single-adapter backend extensibility and per-step backend selection
+> — are folded into that record's Core Contracts. This document and its `spec.md`
+> are retained as historical exploration; do not start tasks from them.
 
 ## Summary
 
