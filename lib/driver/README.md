@@ -186,6 +186,43 @@ resume `dead` or `orphaned` runs only after deciding whether the worktree is
 safe. Resumed inline runs reuse the previous workdir, so preparation removes any
 stale `run.completion.json` before writing a fresh `run.inline.json`.
 
+## Durable Runtime Compatibility
+
+Drive remains the owner of legacy run behavior. The legacy `events.jsonl`
+stream is still the source for `watch_events` and resume compatibility, while
+`cosmonauts drive status` and `drive list` continue to classify runs from
+`run.completion.json`, `run.pid`, and `run.inline.json`. Normalized runtime
+files do not make a run listable or change status classification.
+
+Phase-1 durable runtime support dual-writes normalized orchestration events
+beside the legacy stream. Drive creates or adopts a normalized `run.json` in
+the run workdir and writes normalized envelopes to
+`orchestration-events.jsonl`; `RunRecord.eventsPath` points at that sidecar.
+The root `events.jsonl` filename is reserved for legacy `DriverEvent` records
+in Drive run directories for this compatibility phase.
+
+Normalized events use the canonical durable-runtime event contracts. Drive-only
+backend reports, commit evidence, preflight details, and finalization details
+are preserved as activity or artifact evidence around terminal events rather
+than extending terminal `step_blocked`, `step_failed`, or `run_failed` variants
+with Drive-specific fields. Advisory legacy events that have no canonical
+normalized run-level variant remain legacy-only instead of fabricating backend,
+step, or terminal data.
+
+The normalized sink is failure-isolated. Drive writes and publishes the legacy
+event first; normalized run-record setup is lazy, and setup or append failures
+are reported as diagnostics without throwing `EventLogWriteError`, blocking the
+task, aborting the run, or changing finalization recovery. Resume also keeps
+reading legacy events for completed/blocked task slicing and pending
+finalization recovery, while any new resume events are dual-written when the
+normalized sink is available.
+
+The durable observation helpers are read-only. `run_status` and `run_watch`
+read normalized runtime data through `RunRecord.eventsPath`; `run_watch` pages
+by normalized event sequence cursor and reports malformed normalized JSONL
+lines as diagnostics. They do not replace `watch_events`, and this phase adds
+no scheduler ownership, backend adapter migration, or mutating run controls.
+
 ## Commit and Finalization Policies
 
 With `commitPolicy=driver-commits`, Drive owns source commits after verification
