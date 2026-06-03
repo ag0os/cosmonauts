@@ -179,6 +179,19 @@ export interface RunWatchResult {
 	diagnostics: RuntimeDiagnostic[];
 }
 
+export interface RunWatchEventSummary {
+	seq: number;
+	text: string;
+	envelope: StoredOrchestrationEvent;
+}
+
+export interface RunWatchSummary {
+	runId: string;
+	cursor: number;
+	events: RunWatchEventSummary[];
+	diagnostics: RuntimeDiagnostic[];
+}
+
 export interface RunStatusSummary {
 	scope: string;
 	runId: string;

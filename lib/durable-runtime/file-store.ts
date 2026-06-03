@@ -17,6 +17,7 @@ import {
 	resolve,
 	sep,
 } from "node:path";
+import { summarizeRunStatus } from "./controller.ts";
 import type {
 	CreateRunInput,
 	ListRecentRunsOptions,
@@ -239,32 +240,7 @@ export class FileRunStore implements RunStore {
 		}
 
 		const { events, diagnostics } = await this.readEventFile(record.eventsPath);
-		const terminal = latestTerminalRunEvent(events);
-		if (terminal) {
-			const eventStatus = statusFromEvent(terminal.event);
-			if (eventStatus) {
-				return {
-					scope: record.scope,
-					runId: record.runId,
-					status: eventStatus,
-					statusSource: "event",
-					recordStatus: record.status,
-					eventStatus,
-					updatedAt: terminal.timestamp,
-					diagnostics,
-				};
-			}
-		}
-
-		return {
-			scope: record.scope,
-			runId: record.runId,
-			status: record.status,
-			statusSource: "record",
-			recordStatus: record.status,
-			updatedAt: record.updatedAt,
-			diagnostics,
-		};
+		return summarizeRunStatus(record, events, diagnostics);
 	}
 
 	private async requireRun(ref: RunRef): Promise<RunRecord> {
@@ -468,17 +444,6 @@ function statusFromEvent(event: OrchestrationEvent): RunStatus | undefined {
 		default:
 			return undefined;
 	}
-}
-
-function latestTerminalRunEvent(
-	events: StoredOrchestrationEvent[],
-): StoredOrchestrationEvent | undefined {
-	return events
-		.filter((event) => {
-			const status = statusFromEvent(event.event);
-			return status !== undefined && isTerminalStatus(status);
-		})
-		.at(-1);
 }
 
 function isTerminalStatus(status: RunStatus): boolean {
