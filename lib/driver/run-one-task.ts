@@ -211,10 +211,25 @@ async function runTaskAttempt(
 		parsedReport.outcome === "unknown" && outcome === "success"
 			? inferredSuccessReport(parsedReport, postVerifyResults)
 			: parsedReport;
-	const failureReason = deriveFailureReason(effectiveReport, postVerifyResults);
+	const uncheckedAcceptanceCriteriaReason =
+		outcome === "success"
+			? await findUncheckedAcceptanceCriteriaReason(ctx.taskManager, taskId)
+			: undefined;
+	const effectiveOutcome = uncheckedAcceptanceCriteriaReason
+		? "failure"
+		: outcome;
+	const failureReason =
+		uncheckedAcceptanceCriteriaReason ??
+		deriveFailureReason(effectiveReport, postVerifyResults);
 	let commitSha: string | undefined;
 	try {
-		commitSha = await maybeCommit(spec, ctx, taskId, outcome, effectiveReport);
+		commitSha = await maybeCommit(
+			spec,
+			ctx,
+			taskId,
+			effectiveOutcome,
+			effectiveReport,
+		);
 	} catch (error) {
 		if (error instanceof CommitFailedError) {
 			return {
@@ -225,14 +240,14 @@ async function runTaskAttempt(
 		throw error;
 	}
 
-	if (outcome === "success") {
+	if (effectiveOutcome === "success") {
 		return {
 			kind: "outcome",
 			outcome: await transitionTaskStatus({
 				spec,
 				ctx,
 				taskId,
-				outcome,
+				outcome: effectiveOutcome,
 				parsedReport: effectiveReport,
 				failureReason,
 				commitSha,
@@ -241,7 +256,9 @@ async function runTaskAttempt(
 	}
 
 	const reason =
-		outcome === "partial" ? partialReason(effectiveReport) : failureReason;
+		effectiveOutcome === "partial"
+			? partialReason(effectiveReport)
+			: failureReason;
 	return {
 		kind: "block-candidate",
 		reason,
@@ -250,7 +267,7 @@ async function runTaskAttempt(
 				spec,
 				ctx,
 				taskId,
-				outcome,
+				outcome: effectiveOutcome,
 				parsedReport: effectiveReport,
 				failureReason,
 				commitSha,
@@ -258,6 +275,26 @@ async function runTaskAttempt(
 				skipTaskUpdate: options?.skipTaskUpdate,
 			}),
 	};
+}
+
+async function findUncheckedAcceptanceCriteriaReason(
+	taskManager: TaskManager,
+	taskId: string,
+): Promise<string | undefined> {
+	const task = await taskManager.getTask(taskId);
+	if (!task) {
+		return `task not found during acceptance-criteria verification: ${taskId}`;
+	}
+
+	const unchecked = task.acceptanceCriteria.filter(
+		(criterion) => !criterion.checked,
+	);
+	if (unchecked.length === 0) {
+		return undefined;
+	}
+
+	const ids = unchecked.map((criterion) => `#${criterion.index}`).join(", ");
+	return `acceptance criteria still unchecked: ${ids}`;
 }
 
 function spawnFailureCandidate(

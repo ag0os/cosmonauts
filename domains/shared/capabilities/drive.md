@@ -18,7 +18,9 @@ Drive runs an approved plan's task set through a mechanical loop: render each ta
 - Choose and pass the real project verification commands. Drive injects the run's commit policy and verification expectations into each rendered prompt; do not rely on generic envelope defaults for package-manager commands.
 - Codex and Claude CLI detached backends default to permission-bypassing modes (`--yolo` / `--dangerously-skip-permissions`) so they can perform implementation work. Opt out only when the surrounding environment is not already sandboxed.
 - Drive appends generated run expectations plus a mandatory report contract after custom envelope/precondition content so every backend receives the concrete commit, verification, and machine-readable `outcome:` marker instructions.
+- When `mode` is omitted, `run_driver` defaults to `detached` for 4 or more tasks and `inline` for smaller task sets, matching the CLI. Pass `mode` explicitly when needed.
 - Default per-task timeout is 1800000ms (30 minutes); set `taskTimeoutMs` explicitly for unusually long E2E suites or slow external backends.
+- Chain fallback has separate timeouts: `chain_run.timeoutMs` defaults to 1800000ms total, and `chain_run.spawnTimeoutMs` defaults to 300000ms for waiting on child spawn completions.
 - Status records are based on run state files: `run.completion.json` for terminal outcomes, `run.pid` for detached activity, and `run.inline.json` for inline activity. Status can be `completed`, `blocked`, `aborted`, `running`, `dead`, or `orphaned`.
 
 Before configuring a run — backend, inline vs. detached, commit policy, envelope path, postflight commands, resume — **load `/skill:drive`**.

@@ -21,12 +21,13 @@ import {
 	writeInlineRunState,
 	writeRunCompletion,
 } from "../../../../lib/driver/run-state.ts";
-import type {
-	BackendName,
-	DriverHandle,
-	DriverResult,
-	DriverRunSpec,
-	StateCommitPolicy,
+import {
+	type BackendName,
+	DETACHED_DEFAULT_TASK_THRESHOLD,
+	type DriverHandle,
+	type DriverResult,
+	type DriverRunSpec,
+	type StateCommitPolicy,
 } from "../../../../lib/driver/types.ts";
 import { activityBus } from "../../../../lib/orchestration/activity-bus.ts";
 import { createPiSpawner } from "../../../../lib/orchestration/agent-spawner.ts";
@@ -99,7 +100,7 @@ export function registerDriverTool(
 			mode: Type.Optional(
 				Type.Union([Type.Literal("inline"), Type.Literal("detached")], {
 					description:
-						"Execution mode. `inline` (default) runs inside this session. `detached` writes a frozen run directory that survives session death and source edits — required for long or self-modifying work, not supported with the `cosmonauts-subagent` backend.",
+						"Execution mode. Omit it to use `inline` for fewer than 4 tasks and `detached` for 4+ tasks. `detached` writes a frozen run directory that survives session death and source edits — required for long or self-modifying work, not supported with the `cosmonauts-subagent` backend.",
 				}),
 			),
 			branch: Type.Optional(
@@ -167,7 +168,7 @@ export function registerDriverTool(
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const planSlug = params.planSlug;
-			const mode = params.mode ?? "inline";
+			let mode = params.mode;
 			if (mode === "detached" && params.backend === "cosmonauts-subagent") {
 				return runDriverResult({
 					error: "detached_backend_not_supported",
@@ -194,8 +195,6 @@ export function registerDriverTool(
 			let spec: DriverRunSpec | undefined;
 
 			try {
-				const runtime =
-					mode === "inline" ? await getRuntime(ctx.cwd) : undefined;
 				const taskManager = new TaskManager(ctx.cwd);
 				await taskManager.init();
 				const taskIds = await resolveTaskIds(
@@ -203,6 +202,20 @@ export function registerDriverTool(
 					planSlug,
 					params.taskIds,
 				);
+				mode = mode ?? resolveDefaultMode(taskIds);
+				if (mode === "detached" && params.backend === "cosmonauts-subagent") {
+					clearActiveRun(activeKey, runId);
+					return runDriverResult({
+						error: "detached_backend_not_supported",
+						backend: params.backend,
+						mode,
+						message:
+							"Backend cosmonauts-subagent is not supported for detached mode.",
+					});
+				}
+
+				const runtime =
+					mode === "inline" ? await getRuntime(ctx.cwd) : undefined;
 				spec = await createRunSpec({
 					params,
 					ctx,
@@ -256,6 +269,12 @@ async function resolveTaskIds(
 
 	const tasks = await taskManager.listTasks({ label: `plan:${planSlug}` });
 	return tasks.filter((task) => task.status !== "Done").map((task) => task.id);
+}
+
+function resolveDefaultMode(taskIds: readonly string[]): DriverMode {
+	return taskIds.length >= DETACHED_DEFAULT_TASK_THRESHOLD
+		? "detached"
+		: "inline";
 }
 
 async function createRunSpec({

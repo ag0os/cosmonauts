@@ -161,7 +161,11 @@ async function evaluateDefaultCompletionState(
 		};
 	}
 
-	if (tasks.every((task) => task.status === "Done")) {
+	if (
+		tasks.every(
+			(task) => task.status === "Done" && taskAcceptanceCriteriaComplete(task),
+		)
+	) {
 		return { status: "complete" };
 	}
 
@@ -175,6 +179,15 @@ async function evaluateDefaultCompletionState(
 	}
 
 	return { status: "pending" };
+}
+
+function taskAcceptanceCriteriaComplete(
+	task: Awaited<ReturnType<TaskManager["listTasks"]>>[number],
+): boolean {
+	return (
+		task.acceptanceCriteria.length === 0 ||
+		task.acceptanceCriteria.every((criterion) => criterion.checked)
+	);
 }
 
 // ============================================================================
@@ -450,6 +463,7 @@ export async function runChain(config: ChainConfig): Promise<ChainResult> {
 	const chainStart = state.chainStart;
 	const spawner = createPiSpawner(config.registry, resolveDomainsDir(config), {
 		resolver: config.resolver,
+		spawnTimeoutMs: config.spawnTimeoutMs,
 	});
 
 	emit(config, { type: "chain_start", steps: config.steps });

@@ -192,7 +192,7 @@ See the `plan` skill for the full plan-to-task lifecycle.
 | `task_create` | Create a new task with title, description, ACs, labels, dependencies |
 | `task_list` | List tasks, filter by status/priority/label/ready |
 | `task_view` | Read full task details |
-| `task_edit` | Update status, check ACs, append implementation notes |
+| `task_edit` | Update status, check/uncheck ACs by index, append implementation notes |
 | `task_search` | Search tasks by text |
 
 ## Example

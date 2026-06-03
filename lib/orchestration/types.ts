@@ -127,6 +127,8 @@ export interface ChainConfig {
 	maxTotalIterations?: number;
 	/** Global safety cap: timeout in milliseconds (default: 30 minutes) */
 	timeoutMs?: number;
+	/** Per-spawn child completion wait timeout in milliseconds (default: 5 minutes) */
+	spawnTimeoutMs?: number;
 	/** Project-level skill filter list (from .cosmonauts/config.json) */
 	projectSkills?: readonly string[];
 	/** Explicit skill directories (domain dirs + config skillPaths). */

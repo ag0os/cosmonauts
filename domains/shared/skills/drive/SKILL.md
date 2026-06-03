@@ -17,6 +17,7 @@ Use Drive for approved plan-linked task batches where a mechanical loop should r
 - Drive injects run expectations into each prompt: backend, branch, commit policy, preflight commands, and postflight commands. These expectations are the authority for what the backend should verify and whether it should commit.
 - Drive appends a mandatory report contract after the envelope/task content so custom envelopes cannot omit the machine-readable `outcome:` marker instructions.
 - Treat backend success reports as evidence, not proof. Prefer postflight checks — whatever verification commands the project actually has (tests, static checks, build, dead-code gates — only those that exist for this stack). If a backend emits only prose, Drive can infer success from passing postflight checks; without those objective checks it blocks as `report outcome unknown`.
+- When `mode` is omitted, `run_driver` and `cosmonauts drive` default to `detached` for 4 or more tasks and `inline` for smaller task sets. Pass `mode` explicitly when backend support or session locality matters.
 - Default per-task timeout is 1800000ms (30 minutes). For unusually long cold E2E suites, slow external backends, or tasks expected to iterate on multiple failures, set `taskTimeoutMs` / `--task-timeout` explicitly higher (for example 3600000ms / 60 minutes).
 - Use `driver-commits` unless there is a concrete reason for `backend-commits` or `no-commit`.
 
@@ -39,6 +40,8 @@ If the tools are unavailable, say so and fall back to `chain_run` or direct `spa
 | Long-running or self-modifying repository work | `mode: "detached"` so the frozen runner survives session death and source edits |
 
 `cosmonauts-subagent` is not supported in detached mode. In the Pi tool path, external backends are for detached mode. Detached runs copy `bin/cosmonauts-drive-step` when present; otherwise they compile a frozen per-run binary from the Cosmonauts package source.
+
+For chain-based implementation runs, `chain_run.timeoutMs` controls the total chain deadline (default 1800000ms / 30 minutes) and `chain_run.spawnTimeoutMs` controls each stage's child-spawn completion wait (default 300000ms / 5 minutes). Raise both when using chains for large implementation batches.
 
 ## Agent Tool Workflow
 

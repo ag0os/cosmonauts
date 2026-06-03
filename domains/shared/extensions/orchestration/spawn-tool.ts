@@ -6,6 +6,7 @@ import type {
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
+import type { AgentDefinition } from "../../../../lib/agents/types.ts";
 import {
 	activityBus,
 	runSessionCleanup,
@@ -380,6 +381,29 @@ function captureLineageStats(
 	};
 }
 
+function chainExpressionForTarget(
+	targetDef: AgentDefinition,
+	requestedRole: string,
+): string {
+	const normalizedRequestedRole = requestedRole.trim().toLowerCase();
+	if (normalizedRequestedRole.includes("/")) {
+		return normalizedRequestedRole;
+	}
+	return targetDef.id;
+}
+
+function formatUnauthorizedSpawnMessage(options: {
+	callerRole: string;
+	targetDef: AgentDefinition;
+	requestedRole: string;
+}): string {
+	const expression = chainExpressionForTarget(
+		options.targetDef,
+		options.requestedRole,
+	);
+	return `spawn_agent denied: ${options.callerRole} cannot spawn ${options.targetDef.id}. To run ${options.targetDef.id} as a top-level chain stage, use \`chain_run(expression: "${expression}")\`.`;
+}
+
 // ============================================================================
 // Tool Registration
 // ============================================================================
@@ -487,7 +511,11 @@ export function registerSpawnTool(
 					content: [
 						{
 							type: "text" as const,
-							text: `spawn_agent denied: ${callerDef.id} cannot spawn ${targetDef.id}`,
+							text: formatUnauthorizedSpawnMessage({
+								callerRole: callerDef.id,
+								targetDef,
+								requestedRole: params.role,
+							}),
 						},
 					],
 					details: {

@@ -2,6 +2,8 @@
 
 export type BackendName = "cosmonauts-subagent" | "codex" | "claude-cli";
 
+export const DETACHED_DEFAULT_TASK_THRESHOLD = 4;
+
 export type FinalizationPhase = "commit" | "task_status" | "state_commit";
 export type StateCommitPolicy = "none" | "final-state-commit";
 

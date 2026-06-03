@@ -42,12 +42,13 @@ import {
 	writeRunCompletion,
 } from "../../lib/driver/run-state.ts";
 import { commitFinalState } from "../../lib/driver/state-commit.ts";
-import type {
-	BackendName,
-	DriverEvent,
-	DriverResult,
-	DriverRunSpec,
-	StateCommitPolicy,
+import {
+	type BackendName,
+	DETACHED_DEFAULT_TASK_THRESHOLD,
+	type DriverEvent,
+	type DriverResult,
+	type DriverRunSpec,
+	type StateCommitPolicy,
 } from "../../lib/driver/types.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
@@ -263,7 +264,9 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 		await resolveTaskIds(taskManager, planSlug, options, resume),
 		options.maxTasks,
 	);
-	const mode = options.mode ?? (taskIds.length >= 5 ? "detached" : "inline");
+	const mode =
+		options.mode ??
+		(taskIds.length >= DETACHED_DEFAULT_TASK_THRESHOLD ? "detached" : "inline");
 	const backendName = options.backend ?? resume?.spec.backendName ?? "codex";
 
 	if (mode === "detached" && backendName === "cosmonauts-subagent") {

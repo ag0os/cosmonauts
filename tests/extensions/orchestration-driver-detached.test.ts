@@ -117,6 +117,82 @@ describe("run_driver detached mode", () => {
 		expect(existsSync(join(spec.workdir, "spec.json"))).toBe(false);
 	});
 
+	test("defaults omitted mode to detached for four or more tasks", async () => {
+		const fixture = await setupFixture("implicit-detached", { taskCount: 4 });
+		const pi = createMockPi(fixture.projectRoot, {
+			sessionId: PARENT_SESSION_ID,
+		});
+		const getRuntime = vi.fn();
+		registerDriverTool(pi as never, getRuntime as never, fixture.projectRoot);
+
+		const response = (await pi.callTool("run_driver", {
+			planSlug: fixture.planSlug,
+			taskIds: fixture.taskIds,
+			backend: "codex",
+			envelopePath: fixture.envelopePath,
+			commitPolicy: "no-commit",
+		})) as { details: DriverRunDetails };
+
+		expect(response.details.runId).toMatch(/^run-/);
+		expect(driverMocks.startDetached).toHaveBeenCalledTimes(1);
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
+		expect(getRuntime).not.toHaveBeenCalled();
+
+		const [spec] = driverMocks.startDetached.mock.calls[0] as [
+			DriverRunSpec,
+			DriverDeps,
+		];
+		expect(spec.taskIds).toEqual(fixture.taskIds);
+		expect(spec.backendName).toBe("codex");
+	});
+
+	test("preserves explicit inline mode for four or more tasks", async () => {
+		const fixture = await setupFixture("explicit-inline", { taskCount: 4 });
+		const pi = createMockPi(fixture.projectRoot, {
+			sessionId: PARENT_SESSION_ID,
+		});
+		const getRuntime = vi.fn(async () => ({
+			agentRegistry: {},
+			domainResolver: {},
+			domainsDir: fixture.projectRoot,
+			domainContext: "coding",
+			projectSkills: [],
+			skillPaths: [],
+		}));
+		driverMocks.runInline.mockImplementationOnce(
+			(spec: DriverRunSpec, _deps: DriverDeps): DriverHandle => {
+				const result: DriverResult = {
+					runId: spec.runId,
+					outcome: "completed",
+					tasksDone: spec.taskIds.length,
+					tasksBlocked: 0,
+				};
+				return {
+					runId: spec.runId,
+					planSlug: spec.planSlug,
+					workdir: spec.workdir,
+					eventLogPath: spec.eventLogPath,
+					abort: vi.fn<() => Promise<void>>(async () => undefined),
+					result: Promise.resolve(result),
+				};
+			},
+		);
+		registerDriverTool(pi as never, getRuntime as never, fixture.projectRoot);
+
+		await pi.callTool("run_driver", {
+			planSlug: fixture.planSlug,
+			taskIds: fixture.taskIds,
+			backend: "cosmonauts-subagent",
+			mode: "inline",
+			envelopePath: fixture.envelopePath,
+			commitPolicy: "no-commit",
+		});
+
+		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
+		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(getRuntime).toHaveBeenCalledTimes(1);
+	});
+
 	test("rejects cosmonauts-subagent detached runs before startDetached", async () => {
 		const fixture = await setupFixture("unsupported");
 		const pi = createMockPi(fixture.projectRoot);
@@ -153,6 +229,33 @@ describe("run_driver detached mode", () => {
 			),
 		).toBe(false);
 	});
+
+	test("rejects omitted-mode cosmonauts-subagent runs that default to detached", async () => {
+		const fixture = await setupFixture("implicit-detached-unsupported", {
+			taskCount: 4,
+		});
+		const pi = createMockPi(fixture.projectRoot);
+		const getRuntime = vi.fn();
+		registerDriverTool(pi as never, getRuntime as never, fixture.projectRoot);
+
+		const response = (await pi.callTool("run_driver", {
+			planSlug: fixture.planSlug,
+			taskIds: fixture.taskIds,
+			backend: "cosmonauts-subagent",
+			envelopePath: fixture.envelopePath,
+		})) as { details: UnsupportedDetachedBackendDetails };
+
+		expect(response.details).toEqual({
+			error: "detached_backend_not_supported",
+			backend: "cosmonauts-subagent",
+			mode: "detached",
+			message:
+				"Backend cosmonauts-subagent is not supported for detached mode.",
+		});
+		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
+		expect(getRuntime).not.toHaveBeenCalled();
+	});
 });
 
 interface Fixture {
@@ -176,15 +279,22 @@ interface UnsupportedDetachedBackendDetails {
 	message: string;
 }
 
-async function setupFixture(name: string): Promise<Fixture> {
+async function setupFixture(
+	name: string,
+	options?: { taskCount?: number },
+): Promise<Fixture> {
 	const projectRoot = join(temp.path, name, "project");
 	await mkdir(projectRoot, { recursive: true });
 	const taskManager = new TaskManager(projectRoot);
 	await taskManager.init();
-	const task = await taskManager.createTask({
-		title: `Detached Tool Fixture ${name}`,
-		labels: [`plan:${PLAN_SLUG}`],
-	});
+	const taskIds: string[] = [];
+	for (let index = 0; index < (options?.taskCount ?? 1); index++) {
+		const task = await taskManager.createTask({
+			title: `Detached Tool Fixture ${name} ${index + 1}`,
+			labels: [`plan:${PLAN_SLUG}`],
+		});
+		taskIds.push(task.id);
+	}
 	const envelopePath = join(projectRoot, "driver-envelope.md");
 	await writeFile(envelopePath, "Driver envelope instructions\n", "utf-8");
 
@@ -192,6 +302,6 @@ async function setupFixture(name: string): Promise<Fixture> {
 		projectRoot,
 		planSlug: PLAN_SLUG,
 		envelopePath,
-		taskIds: [task.id],
+		taskIds,
 	};
 }

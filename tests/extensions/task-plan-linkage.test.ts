@@ -213,3 +213,56 @@ describe("task_edit plan label validation (integration)", () => {
 		expect(result.content[0]?.text).toContain("Updated task");
 	});
 });
+
+describe("task_edit acceptance criteria toggles (integration)", () => {
+	const tmp = useTempDir("task-ac-edit-");
+	let pi: MockPi;
+
+	beforeEach(async () => {
+		await createInitializedTaskManager(tmp.path, "TASK");
+		pi = await setupExtension(tmp.path);
+	});
+
+	it("checks acceptance criteria by index", async () => {
+		const created = (await pi.callTool("task_create", {
+			title: "AC task",
+			labels: ["plan:alpha"],
+			acceptanceCriteria: ["First", "Second"],
+		})) as ToolResult;
+		const task = created.details as Task;
+
+		const result = (await pi.callTool("task_edit", {
+			taskId: task.id,
+			checkAc: [2],
+		})) as ToolResult;
+
+		expect(result.details?.acceptanceCriteria).toEqual([
+			{ index: 1, text: "First", checked: false },
+			{ index: 2, text: "Second", checked: true },
+		]);
+		expect(result.details?.labels).toEqual(["plan:alpha"]);
+		expect(result.details?.status).toBe("To Do");
+	});
+
+	it("unchecks acceptance criteria by index after checks", async () => {
+		const created = (await pi.callTool("task_create", {
+			title: "AC task",
+			acceptanceCriteria: ["First", "Second"],
+		})) as ToolResult;
+		const task = created.details as Task;
+
+		await pi.callTool("task_edit", {
+			taskId: task.id,
+			checkAc: [1, 2],
+		});
+		const result = (await pi.callTool("task_edit", {
+			taskId: task.id,
+			uncheckAc: [1],
+		})) as ToolResult;
+
+		expect(result.details?.acceptanceCriteria).toEqual([
+			{ index: 1, text: "First", checked: false },
+			{ index: 2, text: "Second", checked: true },
+		]);
+	});
+});

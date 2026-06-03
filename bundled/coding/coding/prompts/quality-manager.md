@@ -14,7 +14,7 @@ Setup first: establish the review context (branch, base, scenario), load the pla
 
 - **Assess** — run the project-native checks via `verifier`, triage which review-panel lenses apply, run the clean-context review.
 - **Remediate** — route findings (verifier-native failures and simple findings → `fixer`; complex findings on a planned run → a `coordinator`-driven `review-fix` task), then re-verify. Loop up to 3 rounds.
-- **Sign off** — confirm the checks pass, the reviewers found nothing, the integration report isn't `incorrect`, the contract criteria are met, the worktree is clean; remove the ephemeral review files; mark the plan completed if all its tasks are Done.
+- **Sign off** — confirm the checks pass, the reviewers found nothing, the integration report isn't `incorrect`, the contract criteria are met, the worktree is clean; write the durable planned-run QM report when a plan is active; remove the ephemeral review files; mark the plan completed if all its tasks are Done.
 
 ## Per-Invocation Workflow
 
@@ -200,6 +200,7 @@ Before exiting successfully:
   - `Degraded bindable gates:` one line per `degraded_gates` row, formatted as `<gate kind>: unbound/not enforced — <degradation notes or threshold>`.
   - `Protocol-pending gates:` one line per `protocol_pending_gates` row, formatted as `<gate kind>: protocol pending — bound but no protocol/executable claim was available`.
 - **Manual criteria**: for each entry in `manual_criteria`, include a line in the exit summary under `Legacy manual criteria:` as `QC-NNN [manual]: requires human verification — <criterion text>`. These do not block merge-readiness.
+- If `activePlanSlug` exists and this invocation is signing off successfully, write a durable final Quality Manager report to `missions/plans/<activePlanSlug>/qm.md`. This is the plan-scoped merge-readiness record and must survive cleanup. Include the final verdict, active plan slug, review scenario/base, checks run with pass evidence, reviewer panel result and final round, integration report status, Quality Contract sign-off state, abstract gate ladder reporting, manual criteria, remediation rounds/tasks handled, and final git status. Do this before removing files from `missions/reviews/`.
 - Remove all review report files from `missions/reviews/` that were created during this invocation. These are ephemeral artifacts and must not linger after successful validation.
 - Mark any associated plan as completed: if tasks share a `plan:<slug>` label and all tasks for that plan are Done, call `plan_edit` with `status: "completed"` on the plan.
 

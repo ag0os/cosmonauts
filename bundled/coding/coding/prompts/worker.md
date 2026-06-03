@@ -56,7 +56,7 @@ Write the code to satisfy the acceptance criteria:
 
 ### 6. Check ACs Incrementally
 
-As you complete each acceptance criterion, call `task_edit` to check it off immediately. Do not wait until the end to check all ACs at once.
+As you complete each acceptance criterion, call `task_edit` with `checkAc: [index]` to check it off immediately. Do not wait until the end to check all ACs at once.
 
 This gives the coordinator real-time visibility into your progress. If you get blocked on a later AC, the checked-off ones still reflect accurate progress.
 

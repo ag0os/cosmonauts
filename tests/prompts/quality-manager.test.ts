@@ -82,6 +82,23 @@ describe("quality-manager prompt", () => {
 		expect(content).not.toContain("tdd-coordinator");
 	});
 
+	it("writes a durable plan-scoped final QM report before cleaning ephemeral reviews", async () => {
+		const content = await readPrompt();
+
+		expect(content).toContain(
+			"write a durable final Quality Manager report to `missions/plans/<activePlanSlug>/qm.md`",
+		);
+		expect(content).toContain(
+			"the plan-scoped merge-readiness record and must survive cleanup",
+		);
+		expect(content).toContain(
+			"Do this before removing files from `missions/reviews/`.",
+		);
+		expect(content).toContain(
+			"Remove all review report files from `missions/reviews/`",
+		);
+	});
+
 	it("reports abstract Quality Contract gate ladders without replacing legacy QC criteria", async () => {
 		// @cosmo-behavior plan:artifact-format-redesign#B-014
 		const content = await readPrompt();

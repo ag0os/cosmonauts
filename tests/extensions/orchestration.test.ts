@@ -258,6 +258,25 @@ describe("orchestration extension", () => {
 		);
 	});
 
+	test("chain_run forwards timeout options to runChain", async () => {
+		const { pi } = createExtensionPi();
+
+		mockSuccessfulChain([{ name: "planner", loop: false }]);
+
+		await pi.callTool("chain_run", {
+			expression: "planner",
+			timeoutMs: 3_600_000,
+			spawnTimeoutMs: 900_000,
+		});
+
+		expect(runChainMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				timeoutMs: 3_600_000,
+				spawnTimeoutMs: 900_000,
+			}),
+		);
+	});
+
 	test("chain_run forwards abort signal to runChain", async () => {
 		const { cwd, pi } = createExtensionPi();
 
@@ -636,9 +655,43 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 			content: [
 				{
 					type: "text",
-					text: "spawn_agent denied: worker cannot spawn planner",
+					text: 'spawn_agent denied: worker cannot spawn planner. To run planner as a top-level chain stage, use `chain_run(expression: "planner")`.',
 				},
 			],
+			details: {
+				status: "denied",
+				error: "worker cannot spawn planner",
+			},
+		});
+	});
+
+	test("spawn_agent denial suggests qualified chain_run for cross-domain targets", async () => {
+		const { pi } = createExtensionPi("/tmp/project", {
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:coding/worker -->",
+		});
+
+		mockRuntime({ domainContext: "main" });
+		const spawn = vi.fn();
+		const dispose = vi.fn();
+		createPiSpawnerMock.mockReturnValue({ spawn, dispose });
+
+		const result = await pi.callTool("spawn_agent", {
+			role: "coding/quality-manager",
+			prompt: "verify this plan",
+		});
+
+		expect(spawn).not.toHaveBeenCalled();
+		expect(result).toMatchObject({
+			content: [
+				{
+					type: "text",
+					text: 'spawn_agent denied: worker cannot spawn quality-manager. To run quality-manager as a top-level chain stage, use `chain_run(expression: "coding/quality-manager")`.',
+				},
+			],
+			details: {
+				status: "denied",
+				error: "worker cannot spawn quality-manager",
+			},
 		});
 	});
 

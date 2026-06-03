@@ -47,7 +47,7 @@ cosmonauts --chain "coordinator -> reviewer[3]" "review with multiple reviewers"
 
 ### Safety caps
 
-`maxTotalIterations` (default 50) and `timeoutMs` (default 30 min) are global, not per-stage. For implementation batches of roughly four or more tasks, prefer Drive: long coordinator loops can spend the shared chain deadline waiting on worker dispatches, while Drive tracks each task as its own driver step.
+`maxTotalIterations` (default 50) and `timeoutMs` (default 30 min) are global, not per-stage. `chain_run` also accepts `spawnTimeoutMs` for each stage's child-spawn completion wait (default 300000ms / 5 min). For implementation batches of roughly four or more tasks, prefer Drive: long coordinator loops can spend the shared chain deadline waiting on worker dispatches, while Drive tracks each task as its own driver step.
 
 ### Events & stats
 
@@ -87,7 +87,7 @@ Run `cosmonauts --list-workflows` for the live list, including any project-level
 
 ## Drive
 
-`cosmonauts drive` is the CLI verb for driver runs: inline mode runs inside the host assistant session, while detached mode writes a frozen run directory and continues independently. The driver tools (`run_driver`, `watch_events`) are exposed via the `drive` capability, loaded by `main/cosmo` and `coding/cody`. The detailed run knowledge (backends, modes, commit policy, resume) lives in `/skill:drive`.
+`cosmonauts drive` is the CLI verb for driver runs: inline mode runs inside the host assistant session, while detached mode writes a frozen run directory and continues independently. When mode is omitted, both the CLI and `run_driver` default to detached for 4 or more tasks and inline for smaller task sets. The driver tools (`run_driver`, `watch_events`) are exposed via the `drive` capability, loaded by `main/cosmo` and `coding/cody`. The detailed run knowledge (backends, modes, commit policy, resume) lives in `/skill:drive`.
 
 Run state lives under `missions/sessions/<plan>/runs/<runId>/`. Terminal results are recorded in `run.completion.json` (`completed`, `blocked`, or `aborted`), detached activity is tracked with `run.pid`, and inline activity is tracked with `run.inline.json`. `drive status` and `drive list` prefer terminal completion records, then classify active sentinels as `running`, `dead`, or `orphaned`.
 

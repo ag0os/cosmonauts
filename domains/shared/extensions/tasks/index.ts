@@ -1,6 +1,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { TaskManager } from "../../../../lib/tasks/task-manager.ts";
+import type {
+	AcceptanceCriterion,
+	TaskUpdateInput,
+} from "../../../../lib/tasks/task-types.ts";
 
 const PriorityLiterals = [
 	Type.Literal("high"),
@@ -88,6 +92,36 @@ export function validatePlanLabels(labels: string[]): string | null {
 		return `Task can have at most one plan: label, found: ${planLabels.join(", ")}`;
 	}
 	return null;
+}
+
+function applyAcceptanceCriterionToggles(
+	existing: readonly AcceptanceCriterion[],
+	edits: {
+		checkAc?: readonly number[];
+		uncheckAc?: readonly number[];
+	},
+): AcceptanceCriterion[] {
+	let criteria = existing.map((criterion) => ({ ...criterion }));
+
+	for (const indexToCheck of edits.checkAc ?? []) {
+		criteria = setAcceptanceCriterionChecked(criteria, indexToCheck, true);
+	}
+
+	for (const indexToUncheck of edits.uncheckAc ?? []) {
+		criteria = setAcceptanceCriterionChecked(criteria, indexToUncheck, false);
+	}
+
+	return criteria;
+}
+
+function setAcceptanceCriterionChecked(
+	criteria: readonly AcceptanceCriterion[],
+	indexToUpdate: number,
+	checked: boolean,
+): AcceptanceCriterion[] {
+	return criteria.map((criterion) =>
+		criterion.index === indexToUpdate ? { ...criterion, checked } : criterion,
+	);
 }
 
 export default function tasksExtension(pi: ExtensionAPI) {
@@ -258,9 +292,20 @@ export default function tasksExtension(pi: ExtensionAPI) {
 			implementationNotes: Type.Optional(
 				Type.String({ description: "New implementation notes" }),
 			),
+			checkAc: Type.Optional(
+				Type.Array(Type.Integer(), {
+					description: "1-based acceptance criterion indexes to mark complete",
+				}),
+			),
+			uncheckAc: Type.Optional(
+				Type.Array(Type.Integer(), {
+					description:
+						"1-based acceptance criterion indexes to mark incomplete",
+				}),
+			),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
-			const { taskId, ...updateFields } = params;
+			const { taskId, checkAc, uncheckAc, ...updateFields } = params;
 
 			// Validate plan label uniqueness if labels are being updated
 			if (updateFields.labels) {
@@ -275,8 +320,18 @@ export default function tasksExtension(pi: ExtensionAPI) {
 
 			const update = Object.fromEntries(
 				Object.entries(updateFields).filter(([_, v]) => v !== undefined),
-			);
+			) as TaskUpdateInput;
 			const manager = new TaskManager(ctx.cwd);
+			if (checkAc !== undefined || uncheckAc !== undefined) {
+				const task = await manager.getTask(taskId);
+				if (!task) {
+					return taskNotFoundResult(taskId);
+				}
+				update.acceptanceCriteria = applyAcceptanceCriterionToggles(
+					task.acceptanceCriteria,
+					{ checkAc, uncheckAc },
+				);
+			}
 			const task = await manager.updateTask(taskId, update);
 			return {
 				content: [

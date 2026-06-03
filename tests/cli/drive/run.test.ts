@@ -229,11 +229,11 @@ describe("cosmonauts drive run", () => {
 			"--envelope",
 			fixture.envelopePath,
 			"--max-tasks",
-			"4",
+			"3",
 		]);
 
 		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
-		expect(firstRunInlineSpec().taskIds).toHaveLength(4);
+		expect(firstRunInlineSpec().taskIds).toHaveLength(3);
 	});
 
 	test("does not parse stale Codex env when running claude-cli", async () => {

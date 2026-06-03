@@ -706,6 +706,43 @@ describe("createDefaultCompletionCheck", () => {
 		expect(result).toBe(true);
 	});
 
+	test("returns false when Done tasks still have unchecked acceptance criteria", async () => {
+		const tm = new TaskManager(tmpDir);
+		await tm.init();
+		const task = await tm.createTask({
+			title: "Task with ACs",
+			acceptanceCriteria: ["Ship the behavior"],
+		});
+
+		await tm.updateTask(task.id, { status: "Done" });
+
+		const check = createDefaultCompletionCheck(tmpDir);
+		const result = await check();
+
+		expect(result).toBe(false);
+	});
+
+	test("returns true when Done tasks have all acceptance criteria checked", async () => {
+		const tm = new TaskManager(tmpDir);
+		await tm.init();
+		const task = await tm.createTask({
+			title: "Task with checked ACs",
+			acceptanceCriteria: ["Ship the behavior"],
+		});
+
+		await tm.updateTask(task.id, {
+			status: "Done",
+			acceptanceCriteria: [
+				{ index: 1, text: "Ship the behavior", checked: true },
+			],
+		});
+
+		const check = createDefaultCompletionCheck(tmpDir);
+		const result = await check();
+
+		expect(result).toBe(true);
+	});
+
 	test("returns false when only some Done", async () => {
 		const tm = new TaskManager(tmpDir);
 		await tm.init();

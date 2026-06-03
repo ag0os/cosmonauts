@@ -59,6 +59,45 @@ describe("run-one-task", () => {
 		});
 	});
 
+	test("run-one-task blocks success reports when acceptance criteria remain unchecked", async () => {
+		const fixture = await setupFixture();
+		const existing = await fixture.taskManager.getTask(fixture.taskId);
+		if (!existing) {
+			throw new Error("Fixture task not found");
+		}
+		await fixture.taskManager.updateTask(fixture.taskId, {
+			acceptanceCriteria: [
+				{ index: 1, text: "Ship the behavior", checked: false },
+			],
+		});
+		const events: DriverEvent[] = [];
+		const backend = createBackend(async () => successfulResult());
+
+		const outcome = await runOneTask(
+			createSpec(fixture),
+			createCtx(fixture, backend, events),
+			fixture.taskId,
+		);
+
+		const task = await fixture.taskManager.getTask(fixture.taskId);
+		expect(outcome).toMatchObject({
+			status: "blocked",
+			reason: expect.stringContaining("acceptance criteria still unchecked"),
+		});
+		expect(task?.status).toBe("Blocked");
+		expect(task?.implementationNotes).toContain(
+			"acceptance criteria still unchecked: #1",
+		);
+		expect(events.map((event) => event.type)).toEqual([
+			"task_started",
+			"preflight",
+			"preflight",
+			"spawn_started",
+			"spawn_completed",
+			"task_blocked",
+		]);
+	});
+
 	test("run-one-task preflight failure returns blocked without TaskManager updates", async () => {
 		const fixture = await setupRecordingFixture();
 		const events: DriverEvent[] = [];

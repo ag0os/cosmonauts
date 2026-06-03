@@ -90,6 +90,18 @@ export function registerChainTool(
 						"Optional task label scope for completion checks (e.g. plan:my-plan)",
 				}),
 			),
+			timeoutMs: Type.Optional(
+				Type.Number({
+					description:
+						"Optional global chain timeout in milliseconds. Default: 1800000ms (30 minutes).",
+				}),
+			),
+			spawnTimeoutMs: Type.Optional(
+				Type.Number({
+					description:
+						"Optional per-stage child spawn completion wait timeout in milliseconds. Default: 300000ms (5 minutes).",
+				}),
+			),
 			thinkingLevel: thinkingLevelSchema(
 				"Chain-wide default thinking/reasoning level (off, minimal, low, medium, high, xhigh). Applied to all stages unless overridden by agent definitions.",
 			),
@@ -116,6 +128,8 @@ export function registerChainTool(
 				skillPaths: [...runtime.skillPaths],
 				domainContext: runtime.domainContext,
 				completionLabel: params.completionLabel,
+				timeoutMs: params.timeoutMs,
+				spawnTimeoutMs: params.spawnTimeoutMs,
 				thinking,
 				registry: runtime.agentRegistry,
 				domainsDir: runtime.domainsDir,
