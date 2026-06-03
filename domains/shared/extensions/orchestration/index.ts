@@ -17,6 +17,7 @@ import { CosmonautsRuntime } from "../../../../lib/runtime.ts";
 import { registerChainTool } from "./chain-tool.ts";
 import { registerDriverTool } from "./driver-tool.ts";
 import { roleLabel } from "./rendering.ts";
+import { registerRunControlTools } from "./run-control-tools.ts";
 import { registerSpawnTool } from "./spawn-tool.ts";
 import { registerWatchEventsTool } from "./watch-events-tool.ts";
 
@@ -230,6 +231,7 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 	registerSpawnTool(pi, getRuntime);
 	registerDriverTool(pi, getRuntime, frameworkRoot);
 	registerWatchEventsTool(pi);
+	registerRunControlTools(pi);
 }
 
 function formatDriverActivityMessage(event: DriverActivityBusEvent): string {
