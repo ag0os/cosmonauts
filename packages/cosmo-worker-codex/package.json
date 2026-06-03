@@ -12,7 +12,12 @@
 		"notes": "Packaged worker uses Codex CLI's native code-editing and shell capabilities. Cosmonauts task tools are not available; task status updates are handled by the caller or by direct task-file edits only when explicitly requested."
 	},
 	"skills": {
-		"mode": "none"
+		"mode": "allowlist",
+		"names": [
+			"tdd",
+			"engineering-principles",
+			"find-docs"
+		]
 	},
 	"projectContext": "omit",
 	"targets": {
