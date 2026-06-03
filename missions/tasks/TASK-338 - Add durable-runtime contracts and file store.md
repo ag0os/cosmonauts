@@ -1,7 +1,7 @@
 ---
 id: TASK-338
 title: Add durable-runtime contracts and file store
-status: To Do
+status: Blocked
 priority: high
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-337
 createdAt: '2026-06-03T21:57:41.867Z'
-updatedAt: '2026-06-03T21:57:41.867Z'
+updatedAt: '2026-06-03T22:26:32.344Z'
 ---
 
 ## Description
@@ -22,3 +22,7 @@ Implementation Order step 2. Implement the generic durable-runtime contracts and
 - [ ] #2 B-002 is covered by `tests/durable-runtime/file-store.test.ts` > `continues event sequences after reopening the file store`: normalized event appends use monotonic per-run `seq` cursors with ISO timestamps and correct `runId`, preserve order across store recreation, and return the latest sequence number rather than JSONL line count.
 - [ ] #3 B-003 is covered by `tests/durable-runtime/file-store.test.ts` > `persists step records and rejects path traversal identifiers`: valid step records persist under the scoped run directory and unsafe scope/run/step identifiers are rejected before any file outside the run directory can be created.
 <!-- AC:END -->
+
+## Implementation Notes
+
+acceptance criteria still unchecked: #1, #2, #3
