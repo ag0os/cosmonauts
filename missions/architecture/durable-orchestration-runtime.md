@@ -533,6 +533,16 @@ today's `missions/sessions/<planSlug>/runs/...` layout and `watch_events`);
 chain and workflow runs use a stable chain/workflow scope; ad-hoc runs use
 `adhoc`.
 
+Plan-1 Drive compatibility note: the target layout above still reserves
+`events.jsonl` for the normalized `OrchestrationEvent` stream in generic runtime
+storage. During Plan 1 only, legacy Drive continues to own the run-root
+`events.jsonl` consumed by existing `watch_events` plus Drive resume/status
+compatibility, so Drive normalized events are written to
+`orchestration-events.jsonl` in the same run directory and `RunRecord.eventsPath`
+points there. This is an authorized wave-1 compatibility exception, not a
+target-architecture change; a later frontend migration may make legacy
+`watch_events` a compatibility view over normalized events.
+
 This lives under the already-gitignored `missions/sessions/` tree (high-volume,
 regenerable transcripts). The store interface must not bake in the file layout
 so a later SQLite or remote-coordinator store stays possible. Runtime storage
