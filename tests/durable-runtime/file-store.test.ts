@@ -1,4 +1,4 @@
-import { access, writeFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
@@ -77,6 +77,53 @@ describe("FileRunStore", () => {
 		});
 	});
 
+	test("rejects corrupted run-owned paths outside the requested run directory", async () => {
+		const store = new FileRunStore({ rootDir: temp.path });
+		const record = await store.createRun({
+			scope: "plan-a",
+			runId: "run-corrupt-events",
+		});
+		const outsideEventsPath = join(temp.path, "outside-events.jsonl");
+		await writeFile(
+			join(record.runDir, "run.json"),
+			`${JSON.stringify({ ...record, eventsPath: outsideEventsPath }, null, 2)}\n`,
+			"utf-8",
+		);
+
+		await expect(store.loadRun(ref(record))).rejects.toThrow(
+			/inside run directory/i,
+		);
+		await expect(
+			store.appendEvent(ref(record), runEvent("run_started", record)),
+		).rejects.toThrow(/inside run directory/i);
+		await expect(access(outsideEventsPath)).rejects.toThrow();
+
+		const stepsRecord = await store.createRun({
+			scope: "plan-a",
+			runId: "run-corrupt-steps",
+		});
+		const outsideStepsDir = join(temp.path, "outside-steps");
+		await writeFile(
+			join(stepsRecord.runDir, "run.json"),
+			`${JSON.stringify({ ...stepsRecord, stepsDir: outsideStepsDir }, null, 2)}\n`,
+			"utf-8",
+		);
+
+		await expect(
+			store.writeStepRecord(ref(stepsRecord), {
+				id: "TASK-1",
+				runId: stepsRecord.runId,
+				title: "Implement store",
+				kind: "task",
+				dependsOn: [],
+				status: "ready",
+				inputArtifacts: [],
+				outputArtifacts: [],
+			}),
+		).rejects.toThrow(/inside run directory/i);
+		await expect(access(outsideStepsDir)).rejects.toThrow();
+	});
+
 	// @cosmo-behavior plan:durable-run-store-events#B-002
 	test("continues event sequences after reopening the file store", async () => {
 		const firstStore = new FileRunStore({ rootDir: temp.path });
@@ -124,6 +171,35 @@ describe("FileRunStore", () => {
 		});
 		expect(afterFirst.cursor).toBe(3);
 		expect(afterFirst.events.map((event) => event.seq)).toEqual([2, 3]);
+	});
+
+	test("uses cached latest sequence for repeated appends on one store", async () => {
+		const store = new FileRunStore({ rootDir: temp.path });
+		const record = await store.createRun({
+			scope: "plan-a",
+			runId: "run-cache",
+		});
+		const first = await store.appendEvent(
+			ref(record),
+			runEvent("run_started", record),
+		);
+		const tampered = (await readFile(record.eventsPath, "utf-8")).replace(
+			`"seq":${first.seq}`,
+			'"seq":100',
+		);
+		await writeFile(record.eventsPath, tampered, "utf-8");
+
+		const second = await store.appendEvent(
+			ref(record),
+			stepEvent("step_ready", record, "TASK-1"),
+		);
+		const third = await store.appendEvent(
+			ref(record),
+			stepEvent("step_started", record, "TASK-1", { backend: "codex" }),
+		);
+
+		expect(second.seq).toBe(2);
+		expect(third.seq).toBe(3);
 	});
 
 	// @cosmo-behavior plan:durable-run-store-events#B-003

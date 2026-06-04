@@ -6,15 +6,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { Command } from "commander";
-import { readClaudeArgsFromEnv } from "../../lib/driver/backends/claude-cli.ts";
-import {
-	readCodexArgsFromEnv,
-	readCodexExecArgsFromEnv,
-} from "../../lib/driver/backends/codex.ts";
+import { resolveConfiguredExternalBackend } from "../../lib/driver/backend-resolution.ts";
 import { createCosmonautsSubagentBackend } from "../../lib/driver/backends/cosmonauts-subagent.ts";
-import { resolveBackend } from "../../lib/driver/backends/registry.ts";
 import type { Backend } from "../../lib/driver/backends/types.ts";
 import { runInline, startDetached } from "../../lib/driver/driver.ts";
+import { formatError } from "../../lib/driver/errors.ts";
 import type {
 	DriverActivityBusEvent,
 	DriverEventBusEvent,
@@ -39,6 +35,7 @@ import {
 	writeRunCompletion,
 } from "../../lib/driver/run-state.ts";
 import { commitFinalState } from "../../lib/driver/state-commit.ts";
+import { listPendingPlanTaskIds } from "../../lib/driver/task-selection.ts";
 import {
 	type BackendName,
 	DETACHED_DEFAULT_TASK_THRESHOLD,
@@ -87,6 +84,8 @@ interface JsonError {
 interface DriveStatusOptions {
 	plan?: string;
 }
+
+type DriverRunDeps = Parameters<typeof startDetached>[1];
 
 interface RunPidFile {
 	pid: number;
@@ -218,6 +217,7 @@ function configureRunCommand(command: Command): void {
 		});
 }
 
+// fallow-ignore-next-line complexity: CLI compatibility flow intentionally keeps legacy option ordering in one command handler.
 async function runDrive(options: DriveRunOptions): Promise<void> {
 	if (!options.plan) {
 		throw new Error("Missing required option '--plan <slug>'");
@@ -230,31 +230,11 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 	const resume = options.resume
 		? await loadResumeDefaults(projectRoot, planSlug, options.resume)
 		: undefined;
-	if (resume?.pendingFinalization) {
-		const finalized = await retryPendingFinalization(resume, taskManager);
-		if (!finalized) {
-			process.exitCode = 1;
-			return;
-		}
-		await clearRunCompletion(resume.spec.workdir);
-		if (resume.taskIds.length === 0) {
-			return;
-		}
+	if (!(await prepareResume(resume, taskManager))) {
+		return;
 	}
-	if (resume && !options.resumeDirty) {
-		const dirtyPaths = await getDirtyPaths(projectRoot);
-		if (dirtyPaths.length > 0) {
-			printJsonStderr({
-				error: "dirty_worktree",
-				runId: options.resume,
-				planSlug,
-				dirtyPaths,
-				message:
-					"Refusing to resume with a dirty worktree. Pass --resume-dirty to override.",
-			});
-			process.exitCode = 1;
-			return;
-		}
+	if (await refuseDirtyResume({ resume, options, projectRoot, planSlug })) {
+		return;
 	}
 
 	const taskIds = applyTaskLimit(
@@ -266,15 +246,7 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 		(taskIds.length >= DETACHED_DEFAULT_TASK_THRESHOLD ? "detached" : "inline");
 	const backendName = options.backend ?? resume?.spec.backendName ?? "codex";
 
-	if (mode === "detached" && backendName === "cosmonauts-subagent") {
-		printJsonStderr({
-			error: "detached_backend_not_supported",
-			backend: backendName,
-			mode,
-			message:
-				"Backend cosmonauts-subagent is not supported for detached mode.",
-		});
-		process.exitCode = 1;
+	if (refuseUnsupportedDetachedBackend(mode, backendName)) {
 		return;
 	}
 
@@ -295,16 +267,94 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 	};
 
 	if (mode === "detached") {
-		const handle = startDetached(spec, deps);
-		printJsonStdout({
-			runId: handle.runId,
-			planSlug: handle.planSlug,
-			workdir: handle.workdir,
-			eventLogPath: handle.eventLogPath,
-		});
+		runDetached(spec, deps);
 		return;
 	}
 
+	await runInlineMode(spec, deps);
+}
+
+async function prepareResume(
+	resume: ResumeDefaults | undefined,
+	taskManager: TaskManager,
+): Promise<boolean> {
+	if (!resume?.pendingFinalization) {
+		return true;
+	}
+
+	const finalized = await retryPendingFinalization(resume, taskManager);
+	if (!finalized) {
+		process.exitCode = 1;
+		return false;
+	}
+	await clearRunCompletion(resume.spec.workdir);
+	return resume.taskIds.length > 0;
+}
+
+async function refuseDirtyResume({
+	resume,
+	options,
+	projectRoot,
+	planSlug,
+}: {
+	resume: ResumeDefaults | undefined;
+	options: DriveRunOptions;
+	projectRoot: string;
+	planSlug: string;
+}): Promise<boolean> {
+	if (!resume || options.resumeDirty) {
+		return false;
+	}
+
+	const dirtyPaths = await getDirtyPaths(projectRoot);
+	if (dirtyPaths.length === 0) {
+		return false;
+	}
+
+	printJsonStderr({
+		error: "dirty_worktree",
+		runId: options.resume,
+		planSlug,
+		dirtyPaths,
+		message:
+			"Refusing to resume with a dirty worktree. Pass --resume-dirty to override.",
+	});
+	process.exitCode = 1;
+	return true;
+}
+
+function refuseUnsupportedDetachedBackend(
+	mode: DriverMode,
+	backendName: BackendName,
+): boolean {
+	if (mode !== "detached" || backendName !== "cosmonauts-subagent") {
+		return false;
+	}
+
+	printJsonStderr({
+		error: "detached_backend_not_supported",
+		backend: backendName,
+		mode,
+		message: "Backend cosmonauts-subagent is not supported for detached mode.",
+	});
+	process.exitCode = 1;
+	return true;
+}
+
+function runDetached(spec: DriverRunSpec, deps: DriverRunDeps): void {
+	const handle = startDetached(spec, deps);
+	printJsonStdout({
+		runId: handle.runId,
+		planSlug: handle.planSlug,
+		workdir: handle.workdir,
+		eventLogPath: handle.eventLogPath,
+	});
+}
+
+async function runInlineMode(
+	spec: DriverRunSpec,
+	deps: DriverRunDeps,
+): Promise<void> {
 	await prepareInlineWorkdir(spec);
 	const unsubscribe = subscribeToRunEvents(spec.runId);
 	try {
@@ -691,8 +741,7 @@ async function resolveTaskIds(
 		return splitTaskIds(options.taskIds);
 	}
 
-	const tasks = await taskManager.listTasks({ label: `plan:${planSlug}` });
-	return tasks.filter((task) => task.status !== "Done").map((task) => task.id);
+	return listPendingPlanTaskIds(taskManager, planSlug);
 }
 
 function splitTaskIds(raw: string): string[] {
@@ -832,16 +881,6 @@ function abortedCompletion(
 		tasksBlocked: 0,
 		blockedReason: formatError(error),
 	};
-}
-
-function formatError(error: unknown): string {
-	if (error instanceof Error) {
-		return error.message;
-	}
-	if (typeof error === "object" && error !== null) {
-		return JSON.stringify(error);
-	}
-	return String(error);
 }
 
 async function loadResumeDefaults(
@@ -1379,18 +1418,8 @@ async function createBackend(
 	mode: DriverMode,
 	projectRoot: string,
 ): Promise<Backend> {
-	if (backendName === "codex") {
-		return resolveBackend(backendName, {
-			codexBinary: process.env.COSMONAUTS_DRIVER_CODEX_BINARY,
-			codexArgs: readCodexArgsFromEnv(),
-			codexExtraArgs: readCodexExecArgsFromEnv(),
-		});
-	}
-	if (backendName === "claude-cli") {
-		return resolveBackend(backendName, {
-			claudeBinary: process.env.COSMONAUTS_DRIVER_CLAUDE_BINARY,
-			claudeArgs: readClaudeArgsFromEnv(),
-		});
+	if (backendName !== "cosmonauts-subagent") {
+		return resolveConfiguredExternalBackend(backendName);
 	}
 	if (mode === "detached") {
 		throw new Error("cosmonauts-subagent cannot run in detached mode");

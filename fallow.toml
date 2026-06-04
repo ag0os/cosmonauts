@@ -4,6 +4,7 @@ entry = [
   "lib/agents/index.ts",
   "lib/config/index.ts",
   "lib/domains/index.ts",
+  "lib/durable-runtime/index.ts",
   "lib/packages/index.ts",
   "lib/plans/index.ts",
   "lib/prompts/index.ts",
@@ -19,6 +20,10 @@ entry = [
   "lib/orchestration/types.ts",
   "lib/packages/scanner.ts",
 ]
+
+# Fallow duplication gates production code; test fixtures intentionally repeat setup
+# to keep behavior cases local and readable.
+production = { dupes = true }
 
 # Framework convention: domain packages and extension entry points are loaded by
 # Cosmonauts/Pi through runtime discovery and dynamic import, not static imports.

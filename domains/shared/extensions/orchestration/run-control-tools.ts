@@ -119,8 +119,15 @@ function renderStatusText(
 }
 
 function renderWatchText(summary: RunWatchSummary): string {
+	const diagnostics =
+		summary.diagnostics.length > 0
+			? `; diagnostics ${summary.diagnostics.length}`
+			: "";
+	if (!summary.found) {
+		return `${summary.scope}/${summary.runId}: not found; no normalized run events; cursor ${summary.cursor}${diagnostics}`;
+	}
 	if (summary.events.length === 0) {
-		return `No new normalized run events; cursor ${summary.cursor}`;
+		return `No new normalized run events; cursor ${summary.cursor}${diagnostics}`;
 	}
 
 	const lines = summary.events.map((event) => `- ${event.text}`);

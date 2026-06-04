@@ -9,7 +9,7 @@ export type DriverEventNormalizationDiagnostic = RuntimeDiagnostic & {
 	details: Record<string, unknown>;
 };
 
-export interface DriverEventNormalization {
+interface DriverEventNormalization {
 	events: OrchestrationEvent[];
 	diagnostics: DriverEventNormalizationDiagnostic[];
 }

@@ -14,6 +14,8 @@ import {
 	toBusEvent,
 } from "../../lib/driver/event-stream.ts";
 import type { DriverEvent } from "../../lib/driver/types.ts";
+import { FileRunStore } from "../../lib/durable-runtime/index.ts";
+import { captureDurableDiagnostics } from "../helpers/durable-diagnostics.ts";
 
 const fsMocks = vi.hoisted(() => ({
 	appendFile: vi.fn<(...args: unknown[]) => Promise<void>>(),
@@ -181,6 +183,67 @@ describe("event-stream", () => {
 		});
 	});
 
+	test("persists legacy-only normalization diagnostics without normalized events", async () => {
+		const diagnostics = captureDurableDiagnostics();
+		const sink = createTestDurableSink({ publish: vi.fn() });
+
+		try {
+			await sink(lockWarningEvent());
+			const store = new FileRunStore({ rootDir: durableRootDir() });
+			const result = await store.readEvents({
+				scope: "event-stream-plan",
+				runId: "run-1",
+			});
+			const legacyEvents = await tailEvents(logPath());
+
+			expect(result.events).toEqual([]);
+			expect(result.diagnostics).toEqual([
+				expect.objectContaining({
+					code: "legacy_only_driver_event",
+					details: { eventType: "lock_warning" },
+				}),
+			]);
+			expect(diagnostics.records()).toEqual([]);
+			expect(legacyEvents.events).toEqual([lockWarningEvent()]);
+		} finally {
+			diagnostics.restore();
+		}
+	});
+
+	test("persists run finalization diagnostics without adding terminal fields", async () => {
+		const diagnostics = captureDurableDiagnostics();
+		const sink = createTestDurableSink({ publish: vi.fn() });
+
+		try {
+			await sink(runFinalizationFailedEvent({ commitSha: "abc123" }));
+			const store = new FileRunStore({ rootDir: durableRootDir() });
+			const result = await store.readEvents({
+				scope: "event-stream-plan",
+				runId: "run-1",
+			});
+
+			expect(result.events.map((event) => event.event)).toEqual([
+				{
+					type: "run_failed",
+					runId: "run-1",
+					reason: "state commit failed",
+				},
+			]);
+			expect(result.diagnostics).toEqual([
+				expect.objectContaining({
+					code: "drive_finalization_evidence",
+					details: expect.objectContaining({
+						eventType: "run_finalization_failed",
+						commitSha: "abc123",
+					}),
+				}),
+			]);
+			expect(diagnostics.records()).toEqual([]);
+		} finally {
+			diagnostics.restore();
+		}
+	});
+
 	test("publishes driver_activity and driver_event bus types, never spawn_activity", async () => {
 		const published: DriverBusEvent[] = [];
 		const activityBus: DriverEventPublisher = {
@@ -262,6 +325,28 @@ function logPath(): string {
 		throw new Error("tempDir not initialized");
 	}
 	return join(tempDir, "events.jsonl");
+}
+
+function durableRootDir(): string {
+	if (!tempDir) {
+		throw new Error("tempDir not initialized");
+	}
+	return join(tempDir, "sessions");
+}
+
+function createTestDurableSink(activityBus: DriverEventPublisher): EventSink {
+	return createEventSink({
+		logPath: logPath(),
+		runId: "run-1",
+		parentSessionId: "parent-session-1",
+		activityBus,
+		durable: {
+			rootDir: durableRootDir(),
+			scope: "event-stream-plan",
+			runId: "run-1",
+			eventsPath: "orchestration-events.jsonl",
+		},
+	});
 }
 
 function taskDoneEvent(

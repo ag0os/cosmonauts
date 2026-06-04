@@ -1,9 +1,8 @@
+import { isTerminalStatus, statusFromEvent } from "./status.ts";
 import type {
-	OrchestrationEvent,
 	ReadEventsOptions,
 	RunRecord,
 	RunRef,
-	RunStatus,
 	RunStatusSummary,
 	RunStore,
 	RuntimeDiagnostic,
@@ -16,10 +15,29 @@ export async function runWatch(
 	ref: RunRef,
 	options: ReadEventsOptions = {},
 ): Promise<RunWatchSummary> {
+	const record = await store.loadRun(ref);
+	if (!record) {
+		return {
+			scope: ref.scope,
+			runId: ref.runId,
+			found: false,
+			cursor: options.sinceSeq ?? 0,
+			events: [],
+			diagnostics: [
+				{
+					code: "run_not_found",
+					message: `Run ${ref.scope}/${ref.runId} was not found.`,
+				},
+			],
+		};
+	}
+
 	const result = await store.readEvents(ref, options);
 
 	return {
+		scope: record.scope,
 		runId: result.runId,
+		found: true,
 		cursor: result.cursor,
 		events: result.events.map((envelope) => ({
 			seq: envelope.seq,
@@ -170,6 +188,7 @@ function looksLikeFinalizationEvidence(details: unknown): boolean {
 		hasOwn(record, "finalizationTaskId") ||
 		hasOwn(record, "finalizationCommitSha") ||
 		record.kind === "finalization" ||
+		record.kind === "run_finalization_failed" ||
 		record.type === "finalization"
 	);
 }
@@ -187,33 +206,4 @@ function latestTerminalRunEvent(
 			return status !== undefined && isTerminalStatus(status);
 		})
 		.at(-1);
-}
-
-function statusFromEvent(event: OrchestrationEvent): RunStatus | undefined {
-	switch (event.type) {
-		case "run_completed":
-			return "completed";
-		case "run_blocked":
-			return "blocked";
-		case "run_failed":
-			return "failed";
-		case "run_cancelled":
-			return "cancelled";
-		case "run_stale":
-			return "stale";
-		case "run_started":
-			return "running";
-		default:
-			return undefined;
-	}
-}
-
-function isTerminalStatus(status: RunStatus): boolean {
-	return (
-		status === "completed" ||
-		status === "blocked" ||
-		status === "failed" ||
-		status === "cancelled" ||
-		status === "stale"
-	);
 }

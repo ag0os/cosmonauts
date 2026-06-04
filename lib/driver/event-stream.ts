@@ -46,7 +46,7 @@ export interface CreateEventSinkOptions {
 	durable?: DurableDriverEventSinkOptions;
 }
 
-export interface DurableDriverEventSinkOptions {
+interface DurableDriverEventSinkOptions {
 	rootDir: string;
 	scope: string;
 	runId: string;
@@ -63,6 +63,13 @@ interface TailEventsResult {
 export interface JsonlActivityBusBridge {
 	stop(): void;
 }
+
+type BridgeErrorReporter = (
+	code: string,
+	message: string,
+	error?: unknown,
+	extra?: Record<string, unknown>,
+) => void;
 
 export class EventLogWriteError extends Error {
 	readonly logPath: string;
@@ -131,7 +138,7 @@ function createDurableDriverEventSink(
 		}
 
 		const normalized = normalizeDriverEvent(event);
-		if (normalized.events.length === 0) {
+		if (normalized.events.length === 0 && normalized.diagnostics.length === 0) {
 			return;
 		}
 
@@ -156,6 +163,19 @@ function createDurableDriverEventSink(
 					details: durableDiagnosticDetails(event, error),
 				});
 				return;
+			}
+		}
+
+		for (const diagnostic of normalized.diagnostics) {
+			try {
+				await store.appendDiagnostic(ref, diagnostic);
+			} catch (error) {
+				reportDurableDiagnostic({
+					code: "drive_durable_diagnostic_append_failed",
+					message:
+						"Drive normalized diagnostic append failed; legacy driver event write remains authoritative.",
+					details: durableDiagnosticDetails(event, error),
+				});
 			}
 		}
 
@@ -276,6 +296,43 @@ export function bridgeJsonlToActivityBus(
 		void poll();
 	};
 
+	const processContent = (content: string): void => {
+		if (cursor > content.length) {
+			cursor = 0;
+		}
+
+		const pending = content.slice(cursor);
+		if (pending.length === 0) {
+			return;
+		}
+
+		const parts = pending.split("\n");
+		parts.pop();
+
+		for (const rawLine of parts) {
+			const lineStart = cursor;
+			const event = parseDriverEventLine(rawLine, lineStart, reportError);
+			if (!event) {
+				return;
+			}
+
+			cursor += rawLine.length + 1;
+			if (event.runId !== runId || event.parentSessionId !== parentSessionId) {
+				continue;
+			}
+
+			const busEvent = toBusEvent(event);
+			if (busEvent) {
+				bus.publish(busEvent);
+			}
+
+			if (isTerminalEvent(event)) {
+				stop();
+				return;
+			}
+		}
+	};
+
 	const poll = async (): Promise<void> => {
 		if (stopped) {
 			return;
@@ -283,55 +340,7 @@ export function bridgeJsonlToActivityBus(
 
 		polling = true;
 		try {
-			const content = await readFile(filePath, "utf-8");
-			if (cursor > content.length) {
-				cursor = 0;
-			}
-
-			const pending = content.slice(cursor);
-			if (pending.length === 0) {
-				return;
-			}
-
-			const parts = pending.split("\n");
-			// Drop the trailing fragment; cursor remains before it until newline.
-			parts.pop();
-
-			for (const rawLine of parts) {
-				const lineStart = cursor;
-				const line = rawLine.replace(/\r$/, "");
-				let event: DriverEvent;
-
-				try {
-					event = JSON.parse(line) as DriverEvent;
-				} catch (error) {
-					reportError(
-						"parse_error",
-						"Failed to parse driver event JSONL line; retrying without advancing cursor",
-						error,
-						{ cursor: lineStart },
-					);
-					return;
-				}
-
-				cursor += rawLine.length + 1;
-				if (
-					event.runId !== runId ||
-					event.parentSessionId !== parentSessionId
-				) {
-					continue;
-				}
-
-				const busEvent = toBusEvent(event);
-				if (busEvent) {
-					bus.publish(busEvent);
-				}
-
-				if (isTerminalEvent(event)) {
-					stop();
-					return;
-				}
-			}
+			processContent(await readFile(filePath, "utf-8"));
 		} catch (error) {
 			if (!isNotFoundError(error)) {
 				reportError(
@@ -506,6 +515,24 @@ async function writeJsonLine(
 		await appendFile(logPath, `${JSON.stringify(event)}\n`, "utf-8");
 	} catch (error) {
 		throw new EventLogWriteError(logPath, event, error);
+	}
+}
+
+function parseDriverEventLine(
+	rawLine: string,
+	cursor: number,
+	reportError: BridgeErrorReporter,
+): DriverEvent | undefined {
+	try {
+		return JSON.parse(rawLine.replace(/\r$/, "")) as DriverEvent;
+	} catch (error) {
+		reportError(
+			"parse_error",
+			"Failed to parse driver event JSONL line; retrying without advancing cursor",
+			error,
+			{ cursor },
+		);
+		return undefined;
 	}
 }
 

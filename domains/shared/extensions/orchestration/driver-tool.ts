@@ -16,11 +16,13 @@ import {
 import { createCosmonautsSubagentBackend } from "../../../../lib/driver/backends/cosmonauts-subagent.ts";
 import type { Backend } from "../../../../lib/driver/backends/types.ts";
 import { runInline, startDetached } from "../../../../lib/driver/driver.ts";
+import { formatError } from "../../../../lib/driver/errors.ts";
 import { DEFAULT_TASK_TIMEOUT_MS } from "../../../../lib/driver/run-one-task.ts";
 import {
 	writeInlineRunState,
 	writeRunCompletion,
 } from "../../../../lib/driver/run-state.ts";
+import { listPendingPlanTaskIds } from "../../../../lib/driver/task-selection.ts";
 import {
 	type BackendName,
 	DETACHED_DEFAULT_TASK_THRESHOLD,
@@ -267,8 +269,7 @@ async function resolveTaskIds(
 		return [...taskIds];
 	}
 
-	const tasks = await taskManager.listTasks({ label: `plan:${planSlug}` });
-	return tasks.filter((task) => task.status !== "Done").map((task) => task.id);
+	return listPendingPlanTaskIds(taskManager, planSlug);
 }
 
 function resolveDefaultMode(taskIds: readonly string[]): DriverMode {
@@ -474,16 +475,6 @@ function abortedCompletionFromRunId(
 		tasksBlocked: 0,
 		blockedReason: formatError(error),
 	};
-}
-
-function formatError(error: unknown): string {
-	if (error instanceof Error) {
-		return error.message;
-	}
-	if (typeof error === "object" && error !== null) {
-		return JSON.stringify(error);
-	}
-	return String(error);
 }
 
 function clearActiveRun(activeKey: string, runId: string): void {

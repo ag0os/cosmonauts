@@ -1,23 +1,14 @@
-import { randomUUID } from "node:crypto";
 import {
 	appendFile,
 	mkdir,
 	readdir,
 	readFile,
-	rename,
-	unlink,
 	writeFile,
 } from "node:fs/promises";
-import {
-	basename,
-	dirname,
-	isAbsolute,
-	join,
-	relative,
-	resolve,
-	sep,
-} from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { writeFileAtomically } from "../fs/atomic-file.ts";
 import { summarizeRunStatus } from "./controller.ts";
+import { isTerminalStatus, statusFromEvent } from "./status.ts";
 import type {
 	CreateRunInput,
 	ListRecentRunsOptions,
@@ -26,7 +17,6 @@ import type {
 	RunPolicy,
 	RunRecord,
 	RunRef,
-	RunStatus,
 	RunStatusSummary,
 	RunStore,
 	RuntimeDiagnostic,
@@ -45,8 +35,15 @@ interface FileRunStoreOptions {
 	rootDir: string;
 }
 
+interface StoredRuntimeDiagnostic {
+	timestamp: string;
+	runId: string;
+	diagnostic: RuntimeDiagnostic;
+}
+
 export class FileRunStore implements RunStore {
 	readonly rootDir: string;
+	private readonly latestSeqByRun = new Map<string, number>();
 
 	constructor(options: FileRunStoreOptions) {
 		this.rootDir = resolve(options.rootDir);
@@ -80,13 +77,18 @@ export class FileRunStore implements RunStore {
 		await writeJsonAtomically(record.schedulerStatePath, {});
 		await writeFile(record.eventsPath, "", { flag: "a" });
 		await this.writeRunRecord(record);
+		this.latestSeqByRun.set(this.runKey(record), 0);
 		return record;
 	}
 
 	async loadRun(ref: RunRef): Promise<RunRecord | undefined> {
 		const path = this.runRecordPath(ref);
 		try {
-			return parseRunRecord(await readFile(path, "utf-8"), path);
+			return normalizeRunRecord(
+				parseRunRecord(await readFile(path, "utf-8"), path),
+				ref,
+				this.runDir(ref),
+			);
 		} catch (error) {
 			if (isNotFoundError(error)) {
 				return undefined;
@@ -107,16 +109,7 @@ export class FileRunStore implements RunStore {
 			);
 		}
 
-		const runDir = this.runDir(record);
-		const normalized: RunRecord = {
-			...record,
-			runDir,
-			graphPath: resolveRunPath(runDir, record.graphPath),
-			eventsPath: resolveRunPath(runDir, record.eventsPath),
-			artifactsDir: resolveRunPath(runDir, record.artifactsDir),
-			schedulerStatePath: resolveRunPath(runDir, record.schedulerStatePath),
-			stepsDir: resolveRunPath(runDir, record.stepsDir),
-		};
+		const normalized = normalizeRunPaths(record, this.runDir(record));
 		await this.writeRunRecord(normalized);
 		return normalized;
 	}
@@ -132,7 +125,8 @@ export class FileRunStore implements RunStore {
 		}
 
 		const record = await this.requireRun(ref);
-		const { latestSeq } = await this.readEventFile(record.eventsPath);
+		const runKey = this.runKey(ref);
+		const latestSeq = await this.latestSeq(record);
 		const stored: StoredOrchestrationEvent = {
 			seq: latestSeq + 1,
 			timestamp: new Date().toISOString(),
@@ -141,6 +135,7 @@ export class FileRunStore implements RunStore {
 		};
 
 		await appendFile(record.eventsPath, `${JSON.stringify(stored)}\n`, "utf-8");
+		this.latestSeqByRun.set(runKey, stored.seq);
 		const status = statusFromEvent(event);
 		if (
 			status &&
@@ -170,12 +165,28 @@ export class FileRunStore implements RunStore {
 		const limited =
 			options.limit === undefined ? filtered : filtered.slice(0, options.limit);
 
+		const truncated = limited.length < filtered.length;
+		const cursor = truncated ? (limited.at(-1)?.seq ?? sinceSeq) : latestSeq;
+
 		return {
 			runId: ref.runId,
-			cursor: latestSeq,
+			cursor,
 			events: limited,
 			diagnostics,
 		};
+	}
+
+	async appendDiagnostic(
+		ref: RunRef,
+		diagnostic: RuntimeDiagnostic,
+	): Promise<void> {
+		const record = await this.requireRun(ref);
+		const stored: StoredRuntimeDiagnostic = {
+			timestamp: new Date().toISOString(),
+			runId: ref.runId,
+			diagnostic,
+		};
+		await appendFile(record.eventsPath, `${JSON.stringify(stored)}\n`, "utf-8");
 	}
 
 	async writeStepRecord(ref: RunRef, step: StepRecord): Promise<StepRecord> {
@@ -266,6 +277,22 @@ export class FileRunStore implements RunStore {
 		return join(this.runDir(ref), "run.json");
 	}
 
+	private async latestSeq(record: RunRecord): Promise<number> {
+		const runKey = this.runKey(record);
+		const cached = this.latestSeqByRun.get(runKey);
+		if (cached !== undefined) {
+			return cached;
+		}
+
+		const { latestSeq } = await this.readEventFile(record.eventsPath);
+		this.latestSeqByRun.set(runKey, latestSeq);
+		return latestSeq;
+	}
+
+	private runKey(ref: RunRef): string {
+		return `${ref.scope}/${ref.runId}`;
+	}
+
 	private stepRecordPath(record: RunRecord, stepId: string): string {
 		validateIdentifier("stepId", stepId);
 		return resolveRunPath(
@@ -302,10 +329,12 @@ export class FileRunStore implements RunStore {
 				continue;
 			}
 			try {
-				const parsed = JSON.parse(line) as StoredOrchestrationEvent;
+				const parsed = JSON.parse(line) as unknown;
 				if (isStoredEvent(parsed)) {
 					events.push(parsed);
 					latestSeq = Math.max(latestSeq, parsed.seq);
+				} else if (isStoredDiagnostic(parsed)) {
+					diagnostics.push(parsed.diagnostic);
 				} else {
 					diagnostics.push({
 						code: "invalid_event_envelope",
@@ -389,19 +418,7 @@ async function writeJsonAtomically(
 	path: string,
 	value: unknown,
 ): Promise<void> {
-	const dir = dirname(path);
-	await mkdir(dir, { recursive: true });
-	const tempPath = join(
-		dir,
-		`.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,
-	);
-	try {
-		await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf-8");
-		await rename(tempPath, path);
-	} catch (error) {
-		await unlink(tempPath).catch(() => undefined);
-		throw error;
-	}
+	await writeFileAtomically(path, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 function parseRunRecord(content: string, path: string): RunRecord {
@@ -412,47 +429,69 @@ function parseRunRecord(content: string, path: string): RunRecord {
 	return parsed;
 }
 
-function isStoredEvent(value: StoredOrchestrationEvent): boolean {
+function normalizeRunRecord(
+	record: RunRecord,
+	ref: RunRef,
+	runDir: string,
+): RunRecord {
+	if (record.scope !== ref.scope || record.runId !== ref.runId) {
+		throw new Error(
+			`Run record does not match requested ref: ${ref.scope}/${ref.runId}`,
+		);
+	}
+
+	return normalizeRunPaths(record, runDir);
+}
+
+function normalizeRunPaths(record: RunRecord, runDir: string): RunRecord {
+	return {
+		...record,
+		runDir,
+		graphPath: resolveRunPath(runDir, record.graphPath),
+		eventsPath: resolveRunPath(runDir, record.eventsPath),
+		artifactsDir: resolveRunPath(runDir, record.artifactsDir),
+		schedulerStatePath: resolveRunPath(runDir, record.schedulerStatePath),
+		stepsDir: resolveRunPath(runDir, record.stepsDir),
+	};
+}
+
+function isStoredEvent(value: unknown): value is StoredOrchestrationEvent {
 	return (
 		typeof value === "object" &&
 		value !== null &&
+		"seq" in value &&
 		typeof value.seq === "number" &&
 		Number.isInteger(value.seq) &&
 		value.seq > 0 &&
+		"timestamp" in value &&
 		typeof value.timestamp === "string" &&
+		"runId" in value &&
 		typeof value.runId === "string" &&
+		"event" in value &&
 		typeof value.event === "object" &&
 		value.event !== null &&
+		"runId" in value.event &&
 		value.event.runId === value.runId
 	);
 }
 
-function statusFromEvent(event: OrchestrationEvent): RunStatus | undefined {
-	switch (event.type) {
-		case "run_completed":
-			return "completed";
-		case "run_blocked":
-			return "blocked";
-		case "run_failed":
-			return "failed";
-		case "run_cancelled":
-			return "cancelled";
-		case "run_stale":
-			return "stale";
-		case "run_started":
-			return "running";
-		default:
-			return undefined;
+function isStoredDiagnostic(value: unknown): value is StoredRuntimeDiagnostic {
+	if (typeof value !== "object" || value === null || !("diagnostic" in value)) {
+		return false;
 	}
-}
 
-function isTerminalStatus(status: RunStatus): boolean {
+	const diagnostic = value.diagnostic;
 	return (
-		status === "completed" ||
-		status === "blocked" ||
-		status === "failed" ||
-		status === "cancelled" ||
-		status === "stale"
+		"timestamp" in value &&
+		typeof value.timestamp === "string" &&
+		"runId" in value &&
+		typeof value.runId === "string" &&
+		typeof diagnostic === "object" &&
+		diagnostic !== null &&
+		"code" in diagnostic &&
+		typeof diagnostic.code === "string" &&
+		"message" in diagnostic &&
+		typeof diagnostic.message === "string"
 	);
 }
 

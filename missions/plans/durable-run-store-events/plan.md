@@ -165,7 +165,7 @@ Storage compatibility note:
 - Source: AC-005
 - Context: normalized events have been appended for a run, a caller has a previous sequence cursor, and the normalized JSONL may contain a malformed line from a partial or manual write
 - Action: `runWatch` is called directly with `sinceSeq` and an optional limit
-- Expected: only valid events with `seq > sinceSeq` are returned, text summaries are compact, structured details include full normalized envelopes, malformed lines are reported in result diagnostics without being converted into events, and the returned cursor is the latest valid sequence number
+- Expected: only valid events with `seq > sinceSeq` are returned, text summaries are compact, structured details include full normalized envelopes, malformed lines are reported in result diagnostics without being converted into events, and the returned cursor advances to the last returned event when a limit truncates the page; otherwise it is the latest valid sequence number
 - Seam: `lib/durable-runtime/controller.ts`, `lib/durable-runtime/file-store.ts`
 - Test: `tests/durable-runtime/controller.test.ts` > `pages normalized events by sequence cursor and reports malformed lines`
 - Marker: `@cosmo-behavior plan:durable-run-store-events#B-012`

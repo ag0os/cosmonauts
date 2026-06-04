@@ -3,12 +3,7 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { MessageBus } from "../orchestration/message-bus.ts";
 import { TaskManager } from "../tasks/task-manager.ts";
-import { readClaudeArgsFromEnv } from "./backends/claude-cli.ts";
-import {
-	readCodexArgsFromEnv,
-	readCodexExecArgsFromEnv,
-} from "./backends/codex.ts";
-import { resolveBackend } from "./backends/registry.ts";
+import { resolveConfiguredBackend } from "./backend-resolution.ts";
 import {
 	createEventSink,
 	driveDurableEventSinkOptions,
@@ -96,20 +91,7 @@ async function runWithLock(
 }
 
 function resolveRunStepBackend(backendName: string) {
-	if (backendName === "codex") {
-		return resolveBackend(backendName, {
-			codexBinary: process.env.COSMONAUTS_DRIVER_CODEX_BINARY,
-			codexArgs: readCodexArgsFromEnv(),
-			codexExtraArgs: readCodexExecArgsFromEnv(),
-		});
-	}
-	if (backendName === "claude-cli") {
-		return resolveBackend(backendName, {
-			claudeBinary: process.env.COSMONAUTS_DRIVER_CLAUDE_BINARY,
-			claudeArgs: readClaudeArgsFromEnv(),
-		});
-	}
-	return resolveBackend(backendName);
+	return resolveConfiguredBackend(backendName);
 }
 
 try {

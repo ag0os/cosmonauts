@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { registerRunControlTools } from "../../domains/shared/extensions/orchestration/run-control-tools.ts";
 import { registerWatchEventsTool } from "../../domains/shared/extensions/orchestration/watch-events-tool.ts";
 import type {
@@ -28,6 +28,7 @@ import {
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { createMockPi } from "../extensions/orchestration-helpers.ts";
+import { captureDurableDiagnostics } from "../helpers/durable-diagnostics.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const temp = useTempDir("driver-durable-dual-write-");
@@ -355,7 +356,20 @@ async function readStoredEvents(
 	return raw
 		.split("\n")
 		.filter((line) => line.trim().length > 0)
-		.map((line) => JSON.parse(line) as StoredOrchestrationEvent);
+		.map((line) => JSON.parse(line) as unknown)
+		.filter(isStoredOrchestrationEvent);
+}
+
+function isStoredOrchestrationEvent(
+	value: unknown,
+): value is StoredOrchestrationEvent {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"event" in value &&
+		typeof value.event === "object" &&
+		value.event !== null
+	);
 }
 
 async function replaceNormalizedLogWithDirectory(
@@ -364,40 +378,4 @@ async function replaceNormalizedLogWithDirectory(
 	const path = join(workdir, "orchestration-events.jsonl");
 	await rm(path, { force: true });
 	await mkdir(path, { recursive: true });
-}
-
-function captureDurableDiagnostics(): {
-	records(): Array<{
-		type?: string;
-		code?: string;
-		details?: { error?: string };
-	}>;
-	restore(): void;
-} {
-	const records: Array<{
-		type?: string;
-		code?: string;
-		details?: { error?: string };
-	}> = [];
-	const spy = vi.spyOn(console, "error").mockImplementation((value) => {
-		if (typeof value !== "string") {
-			return;
-		}
-		try {
-			const parsed = JSON.parse(value) as {
-				type?: string;
-				code?: string;
-				details?: { error?: string };
-			};
-			if (parsed.type === "drive_durable_event_diagnostic") {
-				records.push(parsed);
-			}
-		} catch {
-			return;
-		}
-	});
-	return {
-		records: () => records,
-		restore: () => spy.mockRestore(),
-	};
 }

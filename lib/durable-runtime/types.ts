@@ -12,6 +12,7 @@ export type RunStatus =
 	| "cancelled"
 	| "stale";
 
+// fallow-ignore-next-line unused-types: durable runtime public contract type for Plan 1.
 export type StepStatus =
 	| "pending"
 	| "ready"
@@ -22,11 +23,13 @@ export type StepStatus =
 	| "cancelled"
 	| "stale";
 
+// fallow-ignore-next-line unused-types: durable runtime public contract type for Plan 1.
 export interface WorktreeSpec {
 	mode: "shared" | "isolated";
 	path?: string;
 }
 
+// fallow-ignore-next-line unused-types: durable runtime public contract type for Plan 1.
 export interface BackendPolicy {
 	name: string;
 	[key: string]: unknown;
@@ -57,6 +60,7 @@ export interface RunRecord {
 	metadata?: Record<string, unknown>;
 }
 
+// fallow-ignore-next-line unused-types: durable runtime public contract type for Plan 1.
 export interface ArtifactRef {
 	id: string;
 	path: string;
@@ -64,23 +68,27 @@ export interface ArtifactRef {
 	metadata?: Record<string, unknown>;
 }
 
+// fallow-ignore-next-line unused-types: durable runtime public contract type for Plan 1.
 export interface FileChangeSummary {
 	path: string;
 	status: "added" | "modified" | "deleted" | "renamed";
 	previousPath?: string;
 }
 
+// fallow-ignore-next-line unused-types: durable runtime public contract type for Plan 1.
 export interface VerificationResult {
 	command: string;
 	status: "pass" | "fail" | "skipped";
 	output?: string;
 }
 
+// fallow-ignore-next-line unused-types: durable runtime public contract type for Plan 1.
 export interface CommitRef {
 	sha: string;
 	subject?: string;
 }
 
+// fallow-ignore-next-line unused-types: durable runtime public contract type for Plan 1.
 export interface StepResult {
 	outcome:
 		| "success"
@@ -97,6 +105,7 @@ export interface StepResult {
 	nextAction?: "continue" | "retry" | "wait_for_human" | "abort_run";
 }
 
+// fallow-ignore-next-line unused-types: durable runtime public contract type for Plan 1.
 export interface RunResult {
 	outcome: "completed" | "blocked" | "failed" | "cancelled" | "stale";
 	summary?: string;
@@ -186,7 +195,9 @@ export interface RunWatchEventSummary {
 }
 
 export interface RunWatchSummary {
+	scope: string;
 	runId: string;
+	found: boolean;
 	cursor: number;
 	events: RunWatchEventSummary[];
 	diagnostics: RuntimeDiagnostic[];

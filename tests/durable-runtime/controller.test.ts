@@ -41,7 +41,7 @@ describe("durable runtime controller", () => {
 			sinceSeq: 1,
 			limit: 1,
 		});
-		expect(limited.cursor).toBe(3);
+		expect(limited.cursor).toBe(2);
 		expect(limited.events).toHaveLength(1);
 		expect(limited.events[0]).toEqual({
 			seq: 2,
@@ -68,6 +68,30 @@ describe("durable runtime controller", () => {
 		]);
 	});
 
+	test("returns a not-found observation instead of throwing for missing runs", async () => {
+		const store = new FileRunStore({ rootDir: temp.path });
+
+		const summary = await runWatch(
+			store,
+			{ scope: "plan-a", runId: "missing-run" },
+			{ sinceSeq: 4 },
+		);
+
+		expect(summary).toEqual({
+			scope: "plan-a",
+			runId: "missing-run",
+			found: false,
+			cursor: 4,
+			events: [],
+			diagnostics: [
+				{
+					code: "run_not_found",
+					message: "Run plan-a/missing-run was not found.",
+				},
+			],
+		});
+	});
+
 	// @cosmo-behavior plan:durable-run-store-events#B-013
 	test("derives status from terminal events when run records disagree", async () => {
 		const store = new FileRunStore({ rootDir: temp.path });
@@ -77,11 +101,11 @@ describe("durable runtime controller", () => {
 			status: "completed",
 		});
 		const finalizationDetails = {
-			kind: "finalization",
-			finalizationPhase: "state_commit",
-			finalizationReason: "state commit failed",
-			finalizationTaskId: "TASK-1",
-			finalizationCommitSha: "abc123",
+			kind: "run_finalization_failed",
+			phase: "state_commit",
+			reason: "state commit failed",
+			taskId: "TASK-1",
+			commitSha: "abc123",
 		};
 		const finalizationActivity = envelope(record, 4, {
 			type: "step_tool_activity",
