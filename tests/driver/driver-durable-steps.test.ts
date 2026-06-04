@@ -1,12 +1,17 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import type {
 	Backend,
+	BackendInvocation,
 	BackendRunResult,
 } from "../../lib/driver/backends/types.ts";
 import { runInline } from "../../lib/driver/driver.ts";
-import { tailEvents } from "../../lib/driver/event-stream.ts";
+import {
+	type DriverEventBusEvent,
+	tailEvents,
+} from "../../lib/driver/event-stream.ts";
 import type {
 	DriverEvent,
 	DriverResult,
@@ -20,6 +25,7 @@ import {
 } from "../../lib/durable-runtime/index.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
+import { captureDurableDiagnostics } from "../helpers/durable-diagnostics.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const temp = useTempDir("driver-durable-steps-");
@@ -224,6 +230,125 @@ describe("driver durable step projection", () => {
 				: undefined,
 		).not.toBe("continue");
 	});
+
+	// @cosmo-behavior plan:durable-backend-step-model#B-010
+	test("continues Drive run when durable step persistence fails", async () => {
+		const clean = await setupFixture({ taskCount: 1 });
+		await runDrive(clean);
+		const cleanLegacyEvents = await readLegacyEvents(clean.spec.eventLogPath);
+		const cleanStoredEvents = await readStoredEvents(clean.runId);
+		const cleanCompletedResult = cleanStoredEvents.findLast(
+			(record) => record.event.type === "step_completed",
+		)?.event;
+
+		const broken = await setupFixture({ taskCount: 1 });
+		const diagnostics = captureDurableDiagnostics();
+		const published: DriverEvent[] = [];
+		const token = activityBus.subscribe<DriverEventBusEvent>(
+			"driver_event",
+			(event) => {
+				if (event.runId === broken.runId) {
+					published.push(event.event);
+				}
+			},
+		);
+
+		try {
+			const brokenResult = await runDrive(
+				broken,
+				successResult(),
+				async (invocation) => {
+					await breakDurableStepPersistence(
+						invocation.workdir,
+						broken.taskIds[0] ?? fail("missing task"),
+					);
+				},
+			);
+			const brokenTask = await broken.taskManager.getTask(
+				broken.taskIds[0] ?? fail("missing task"),
+			);
+			const brokenLegacyEvents = await readLegacyEvents(
+				broken.spec.eventLogPath,
+			);
+			const brokenStoredEvents = await readStoredEvents(broken.runId);
+			const brokenCompletedResult = brokenStoredEvents.findLast(
+				(record) => record.event.type === "step_completed",
+			)?.event;
+
+			expect(brokenResult).toMatchObject({
+				runId: broken.runId,
+				outcome: "completed",
+				tasksDone: 1,
+				tasksBlocked: 0,
+			});
+			expect(brokenTask?.status).toBe("Done");
+			expect(
+				existsSync(join(broken.spec.workdir, "pending-finalization.json")),
+			).toBe(false);
+			expect(brokenLegacyEvents.map((event) => event.type)).toEqual(
+				cleanLegacyEvents.map((event) => event.type),
+			);
+			expect(published.map((event) => event.type)).toEqual([
+				"task_done",
+				"finalize",
+				"plan_completion_candidate",
+				"run_completed",
+			]);
+			expect(brokenStoredEvents.map((record) => record.event.type)).toEqual(
+				cleanStoredEvents.map((record) => record.event.type),
+			);
+			expect(brokenCompletedResult).toMatchObject({
+				type: "step_completed",
+				runId: broken.runId,
+				stepId: broken.taskIds[0],
+				result: {
+					files:
+						cleanCompletedResult?.type === "step_completed"
+							? cleanCompletedResult.result.files
+							: undefined,
+					verification:
+						cleanCompletedResult?.type === "step_completed"
+							? cleanCompletedResult.result.verification
+							: undefined,
+				},
+			});
+			expect(
+				brokenCompletedResult?.type === "step_completed"
+					? brokenCompletedResult.result.artifacts
+					: undefined,
+			).toEqual([
+				{
+					id: "report",
+					path: `steps/${broken.taskIds[0]}/attempts/attempt-001/result.json`,
+					kind: "report",
+				},
+			]);
+			expect(
+				brokenCompletedResult?.type === "step_completed"
+					? brokenCompletedResult.result.summary
+					: undefined,
+			).toBe("finished durable step projection");
+			expect(
+				brokenCompletedResult?.type === "step_completed"
+					? brokenCompletedResult.result.nextAction
+					: undefined,
+			).toBe("continue");
+			expect(diagnostics.records()).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						type: "drive_durable_event_diagnostic",
+						code: "drive_durable_step_write_failed",
+					}),
+				]),
+			);
+			expect(diagnostics.records().map((record) => record.code)).not.toContain(
+				"drive_durable_event_append_failed",
+			);
+		} finally {
+			activityBus.unsubscribe(token);
+			diagnostics.restore();
+		}
+	});
 });
 
 interface Fixture {
@@ -285,11 +410,15 @@ async function setupFixture({
 async function runDrive(
 	fixture: Fixture,
 	backendResult: BackendRunResult = successResult(),
+	onBackendRun?: (invocation: BackendInvocation) => Promise<void>,
 ): Promise<DriverResult> {
 	const backend: Backend = {
 		name: "fake-backend",
 		capabilities: { canCommit: false, isolatedFromHostSource: true },
-		run: async () => backendResult,
+		run: async (invocation) => {
+			await onBackendRun?.(invocation);
+			return backendResult;
+		},
 	};
 	const handle = runInline(fixture.spec, {
 		taskManager: fixture.taskManager,
@@ -298,6 +427,25 @@ async function runDrive(
 		cosmonautsRoot: fixture.projectRoot,
 	});
 	return await handle.result;
+}
+
+async function breakDurableStepPersistence(
+	workdir: string,
+	taskId: string,
+): Promise<void> {
+	const stepPath = join(workdir, "steps", taskId, "step.json");
+	const attemptPath = join(
+		workdir,
+		"steps",
+		taskId,
+		"attempts",
+		"attempt-001",
+		"attempt.json",
+	);
+	await rm(stepPath, { recursive: true, force: true });
+	await mkdir(stepPath, { recursive: true });
+	await rm(attemptPath, { recursive: true, force: true });
+	await mkdir(attemptPath, { recursive: true });
 }
 
 function successResult(): BackendRunResult {

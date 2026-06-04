@@ -37,6 +37,14 @@ export interface DriveStepProjector {
 	latestTaskResult(taskId: string): StepResult | undefined;
 }
 
+export type DurableFinalizerRetryFailure = {
+	phase: "commit" | "task_status" | "state_commit";
+	taskId?: string;
+	reason: string;
+	commitSha?: string;
+	timestamp: string;
+};
+
 interface ActiveAttempt {
 	attemptId: string;
 	startedAt: string;
@@ -132,6 +140,13 @@ export function createDriveStepProjector(
 			return latestResults.get(taskId);
 		},
 	};
+}
+
+export async function recordDurableFinalizerRetryFailure(
+	options: DriveStepProjectorOptions,
+	failure: DurableFinalizerRetryFailure,
+): Promise<void> {
+	await recordRetryableFinalizerFailure(options, new Map(), failure);
 }
 
 async function recordSpawnStarted(
@@ -457,13 +472,7 @@ async function finishFinalizerAttempt(
 async function recordRetryableFinalizerFailure(
 	options: DriveStepProjectorOptions,
 	activeFinalizerAttempts: Map<string, ActiveAttempt>,
-	failure: {
-		phase: "commit" | "task_status" | "state_commit";
-		taskId?: string;
-		reason: string;
-		commitSha?: string;
-		timestamp: string;
-	},
+	failure: DurableFinalizerRetryFailure,
 ): Promise<void> {
 	const stepId = finalizerStepId(failure.phase, failure.taskId);
 	if (!stepId) {
@@ -481,11 +490,14 @@ async function recordRetryableFinalizerFailure(
 
 	const active =
 		activeFinalizerAttempts.get(stepId) ??
-		(await activeAttemptFromExistingFinalizer(
+		(await activeAttemptForRetryableFinalizerFailure(
 			options,
 			stepId,
 			failure.timestamp,
 		));
+	if (!active) {
+		return;
+	}
 	const result = retryableFinalizerFailureResult(failure);
 	await options.store.writeStepAttemptRecord(
 		{ ...options.ref, stepId },
@@ -506,6 +518,41 @@ async function recordRetryableFinalizerFailure(
 	activeFinalizerAttempts.delete(stepId);
 }
 
+async function activeAttemptForRetryableFinalizerFailure(
+	options: DriveStepProjectorOptions,
+	stepId: string,
+	timestamp: string,
+): Promise<ActiveAttempt | undefined> {
+	const existing = await options.store.readStepRecord({
+		...options.ref,
+		stepId,
+	});
+	if (existing?.latestAttemptId) {
+		const attempt = await options.store.readStepAttemptRecord({
+			...options.ref,
+			stepId,
+			attemptId: existing.latestAttemptId,
+		});
+		if (attempt && !attempt.endedAt && !attempt.result) {
+			return {
+				attemptId: attempt.attemptId,
+				startedAt: attempt.startedAt,
+			};
+		}
+		if (
+			attempt?.result?.outcome === "failed" &&
+			attempt.result.nextAction === "retry"
+		) {
+			return undefined;
+		}
+	}
+
+	return {
+		attemptId: await nextAttemptId(options, stepId),
+		startedAt: timestamp,
+	};
+}
+
 async function activeAttemptFromExistingFinalizer(
 	options: DriveStepProjectorOptions,
 	stepId: string,
@@ -521,7 +568,7 @@ async function activeAttemptFromExistingFinalizer(
 			stepId,
 			attemptId: existing.latestAttemptId,
 		});
-		if (attempt) {
+		if (attempt && !attempt.endedAt && !attempt.result) {
 			return {
 				attemptId: attempt.attemptId,
 				startedAt: attempt.startedAt,
