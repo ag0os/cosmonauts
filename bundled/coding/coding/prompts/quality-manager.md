@@ -27,9 +27,11 @@ Setup first: establish the review context (branch, base, scenario), load the pla
 
 1. Determine the current branch: `git rev-parse --abbrev-ref HEAD`.
 2. Resolve the base reference in this order:
-   - `origin/main` (if `git rev-parse --verify origin/main` succeeds)
    - `main` (if it exists and is not the current branch)
    - `master` (same check)
+   - `origin/main` (if `git rev-parse --verify origin/main` succeeds)
+
+   The local base branch (`main`, then `master`) is the feature's true fork point; `origin/main` can be behind it (work committed locally but not yet pushed), so using `origin/main` as the base would pull already-merged commits into the review range. Fall back to `origin/main` only when no local base branch exists.
 3. Determine the review scenario:
    - **Feature branch** (current branch ≠ base): compute `MERGE_BASE=$(git merge-base HEAD <base>)` and set the review range to `MERGE_BASE..HEAD`.
    - **On the base branch itself** (current branch = main/master): there is no branch diff. Check for working-tree changes with `git status --porcelain` — this surfaces modifications, staged changes, and untracked files. If it is empty, there is nothing to review — skip to final merge-readiness validation. Otherwise the review scope has two parts: tracked modifications + staged changes via `git diff HEAD`, AND untracked files via `git ls-files --others --exclude-standard` (treat each as a new-file addition and read full contents). Either part may be empty individually — review whatever is present.
@@ -220,7 +222,7 @@ If the worktree is dirty because a final commit is missing, spawn `fixer` to cre
 ## Critical Rules
 
 1. **Never edit code directly.** You orchestrate quality and remediation.
-2. **Always review against `main` (or `origin/main` when available).**
+2. **Always review against the local base branch (`main` or `master`) when it exists; fall back to `origin/main` only when no local base branch is available.** Local `main` is the true fork point even when `origin` is behind it.
 3. **Bound remediation loops to 3 rounds.** Escalate if not converging.
 4. **Do not silently ignore failed checks or unresolved findings.**
 5. **Do not spawn a specialist outside its lens.** Panel triage is mandatory — a specialist run against a diff where its lens has no surface produces `no findings in scope` reports that waste cost and add noise.

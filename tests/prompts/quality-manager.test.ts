@@ -17,6 +17,42 @@ describe("quality-manager prompt", () => {
 		expect(definition.subagents).not.toContain("tdd-coordinator");
 	});
 
+	it("resolves the review base local-first so origin-behind state does not widen the range", async () => {
+		const content = await readPrompt();
+
+		// Local base branch is resolved before origin/main, so a local main that
+		// is ahead of origin/main (committed-but-not-pushed) stays the true fork
+		// point and already-merged commits do not leak into the review range.
+		const localMainIdx = content.indexOf(
+			"- `main` (if it exists and is not the current branch)",
+		);
+		const masterIdx = content.indexOf("- `master` (same check)");
+		const originIdx = content.indexOf(
+			"- `origin/main` (if `git rev-parse --verify origin/main` succeeds)",
+		);
+
+		expect(localMainIdx).toBeGreaterThan(-1);
+		expect(masterIdx).toBeGreaterThan(-1);
+		expect(originIdx).toBeGreaterThan(-1);
+		expect(localMainIdx).toBeLessThan(masterIdx);
+		expect(masterIdx).toBeLessThan(originIdx);
+
+		expect(content).toContain(
+			"The local base branch (`main`, then `master`) is the feature's true fork point; `origin/main` can be behind it",
+		);
+		expect(content).toContain(
+			"Fall back to `origin/main` only when no local base branch exists.",
+		);
+
+		// Critical Rule 2 now prefers the local base branch.
+		expect(content).toContain(
+			"**Always review against the local base branch (`main` or `master`) when it exists; fall back to `origin/main` only when no local base branch is available.**",
+		);
+		expect(content).not.toContain(
+			"**Always review against `main` (or `origin/main` when available).**",
+		);
+	});
+
 	it("routes integration findings through the existing remediation flow", async () => {
 		const content = await readPrompt();
 

@@ -53,7 +53,7 @@ Your spawn prompt specifies the exact review scope. Two scenarios:
 **Working-tree-only review** (on main/master, no branch diff): The spawn prompt explicitly states that scope is uncommitted changes only. Scope has three parts, any of which may be empty: unstaged changes (`git diff`), staged changes (`git diff --cached`), and untracked files (`git ls-files --others --exclude-standard` — read each listed file in full; they are effectively new-file additions). All three are part of the review — do NOT skip untracked files, they are the most common shape of newly added code on the base branch.
 
 If the spawn prompt does not specify a review scope, fall back to computing it yourself:
-1. Resolve base: `origin/main` → `main` → `master`
+1. Resolve base: `main` → `master` → `origin/main`. The local base branch is the true fork point; `origin/main` is only a fallback when no local `main` or `master` exists.
 2. Compute: `MERGE_BASE=$(git merge-base HEAD <base>)`
 3. Review range: `MERGE_BASE..HEAD` plus staged/unstaged changes
 
