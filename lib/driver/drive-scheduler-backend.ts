@@ -158,7 +158,7 @@ export function createDriveSchedulerBackendMap(
 ): ReadonlyMap<KnownBackendName, RunGraphSchedulerBackend> {
 	return new Map<KnownBackendName, RunGraphSchedulerBackend>([
 		[context.spec.backendName, createDriveSchedulerBackend(context)],
-		["shell-command", createDriveShellCommandBackend()],
+		["shell-command", createDriveShellCommandBackend(context)],
 	]);
 }
 
