@@ -53,11 +53,15 @@ export interface CreateEventSinkOptions {
 	durable?: DurableDriverEventSinkOptions;
 }
 
-interface DurableDriverEventSinkOptions {
+export type DurableDriverEventSinkMode =
+	| "legacy-loop-projector"
+	| "graph-activity-only";
+
+export interface DurableDriverEventSinkOptions {
 	rootDir: string;
 	scope: string;
 	runId: string;
-	mode?: "legacy-loop-projector" | "graph-activity-only";
+	mode?: DurableDriverEventSinkMode;
 	projectRoot?: string;
 	workdir?: string;
 	configuredBackendName?: BackendName;
@@ -264,6 +268,9 @@ function createStepProjectorIfConfigured(
 	state: DurableDriverEventSinkState,
 ): DriveStepProjector | undefined {
 	const { options } = state;
+	if (options.mode === "graph-activity-only") {
+		return undefined;
+	}
 	if (
 		!options.projectRoot ||
 		!options.workdir ||
