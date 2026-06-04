@@ -14,7 +14,8 @@ const definition: AgentDefinition = {
 		"todo",
 		"drive",
 	],
-	model: "anthropic/claude-opus-4-7",
+	model: "openai-codex/gpt-5.5",
+	thinkingLevel: "xhigh",
 	tools: "coding",
 	extensions: [
 		"tasks",

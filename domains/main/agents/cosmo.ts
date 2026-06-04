@@ -5,7 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"Personal assistant — helps with the user's files, email, calendar, notes, and general work; aware of other Cosmonauts domains and can pull in specialists when the work warrants it.",
 	capabilities: ["tasks", "spawning", "todo", "drive"],
-	model: "anthropic/claude-opus-4-7",
+	model: "openai-codex/gpt-5.5",
 	tools: "none",
 	extensions: [
 		"tasks",
@@ -38,6 +38,7 @@ const definition: AgentDefinition = {
 	projectContext: true,
 	session: "persistent",
 	loop: false,
+	thinkingLevel: "xhigh",
 };
 
 export default definition;
