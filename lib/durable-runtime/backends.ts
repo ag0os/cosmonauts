@@ -2,7 +2,9 @@ import type {
 	BackendSpec,
 	KnownBackendName,
 	RunRecord,
+	SchedulerStepInput,
 	StepRecord,
+	StepResult,
 } from "./types.ts";
 
 export interface BackendCapabilities {
@@ -52,3 +54,8 @@ export interface OrchestrationBackend<Input = unknown, Result = unknown> {
 	): Promise<BackendHandle<Result>>;
 	cancel?(handle: BackendHandle<Result>): Promise<void>;
 }
+
+export type RunGraphSchedulerBackend = OrchestrationBackend<
+	SchedulerStepInput,
+	StepResult
+>;
