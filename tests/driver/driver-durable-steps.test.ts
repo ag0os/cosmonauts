@@ -150,6 +150,80 @@ describe("driver durable step projection", () => {
 			]),
 		);
 	});
+
+	// @cosmo-behavior plan:durable-backend-step-model#B-006
+	test("records malformed reports as completed unknown in step records and normalized events", async () => {
+		const fixture = await setupFixture({ taskCount: 1 });
+		const taskId = fixture.taskIds[0] ?? fail("missing task");
+		fixture.spec.postflightCommands = [nodeCommand("process.exit(0)")];
+		const store = new FileRunStore({
+			rootDir: join(fixture.projectRoot, "missions", "sessions"),
+		});
+
+		const result = await runDrive(fixture, malformedResult());
+		const task = await fixture.taskManager.getTask(taskId);
+		const legacyEvents = await readLegacyEvents(fixture.spec.eventLogPath);
+		const storedEvents = await readStoredEvents(fixture.runId);
+		const step = await requireStep(store, fixture.runId, taskId);
+		const attempts = await store.listStepAttemptRecords({
+			scope: PLAN_SLUG,
+			runId: fixture.runId,
+			stepId: taskId,
+		});
+		const completedEvent = storedEvents.findLast(
+			(record) => record.event.type === "step_completed",
+		)?.event;
+		const verifyEvents = storedEvents
+			.map((record) => record.event)
+			.filter(isVerifyActivityEvent);
+
+		expect(result.outcome).toBe("completed");
+		expect(task?.status).toBe("Done");
+		expect(legacyEvents.map((event) => event.type)).toContain("task_done");
+		expect(verifyEvents.map((event) => event.details)).toEqual([
+			{
+				kind: "verify",
+				phase: "post",
+				status: "started",
+				command: fixture.spec.postflightCommands[0],
+			},
+			{
+				kind: "verify",
+				phase: "post",
+				status: "passed",
+				command: fixture.spec.postflightCommands[0],
+			},
+		]);
+		expect(attempts).toEqual([
+			expect.objectContaining({
+				attemptId: "attempt-001",
+				result: expect.objectContaining({
+					outcome: "unknown",
+					summary: "Drive backend report was not machine-readable.",
+					nextAction: "wait_for_human",
+				}),
+			}),
+		]);
+		expect(attempts[0]?.result?.files).toBeUndefined();
+		expect(attempts[0]?.result?.verification).toBeUndefined();
+		expect(step.status).toBe("completed");
+		expect(step.result).toEqual(attempts[0]?.result);
+		expect(step.result).toMatchObject({
+			outcome: "unknown",
+			nextAction: "wait_for_human",
+		});
+		expect(completedEvent).toEqual({
+			type: "step_completed",
+			runId: fixture.runId,
+			stepId: taskId,
+			result: attempts[0]?.result,
+		});
+		expect(
+			completedEvent?.type === "step_completed"
+				? completedEvent.result.nextAction
+				: undefined,
+		).not.toBe("continue");
+	});
 });
 
 interface Fixture {
@@ -208,11 +282,14 @@ async function setupFixture({
 	return { projectRoot, taskManager, taskIds, runId, spec };
 }
 
-async function runDrive(fixture: Fixture): Promise<DriverResult> {
+async function runDrive(
+	fixture: Fixture,
+	backendResult: BackendRunResult = successResult(),
+): Promise<DriverResult> {
 	const backend: Backend = {
 		name: "fake-backend",
 		capabilities: { canCommit: false, isolatedFromHostSource: true },
-		run: async () => successResult(),
+		run: async () => backendResult,
 	};
 	const handle = runInline(fixture.spec, {
 		taskManager: fixture.taskManager,
@@ -242,6 +319,14 @@ function successResult(): BackendRunResult {
 			"```",
 			"outcome: success",
 		].join("\n"),
+		durationMs: 1,
+	};
+}
+
+function malformedResult(): BackendRunResult {
+	return {
+		exitCode: 0,
+		stdout: "The worker says this is finished, but emitted no JSON report.",
 		durationMs: 1,
 	};
 }
@@ -314,6 +399,27 @@ function isStoredDiagnostic(
 	value: unknown,
 ): value is { diagnostic: RuntimeDiagnostic } {
 	return typeof value === "object" && value !== null && "diagnostic" in value;
+}
+
+function isVerifyActivityEvent(
+	event: StoredOrchestrationEvent["event"],
+): event is Extract<
+	StoredOrchestrationEvent["event"],
+	{ type: "step_tool_activity" }
+> & { details: Record<string, unknown> } {
+	return (
+		event.type === "step_tool_activity" &&
+		isRecord(event.details) &&
+		event.details.kind === "verify"
+	);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
+function nodeCommand(script: string): string {
+	return `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`;
 }
 
 function fail(message: string): never {

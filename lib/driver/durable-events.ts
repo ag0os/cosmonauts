@@ -14,6 +14,10 @@ interface DriverEventNormalization {
 	diagnostics: DriverEventNormalizationDiagnostic[];
 }
 
+interface DriverEventNormalizationContext {
+	latestTaskResult?(taskId: string): StepResult | undefined;
+}
+
 interface ActivitySource {
 	runId: string;
 	taskId: string;
@@ -21,6 +25,7 @@ interface ActivitySource {
 
 export function normalizeDriverEvent(
 	event: DriverEvent,
+	context: DriverEventNormalizationContext = {},
 ): DriverEventNormalization {
 	switch (event.type) {
 		case "run_started":
@@ -83,7 +88,8 @@ export function normalizeDriverEvent(
 				type: "step_completed",
 				runId: event.runId,
 				stepId: event.taskId,
-				result: completedTaskResult(),
+				result:
+					context.latestTaskResult?.(event.taskId) ?? completedTaskResult(),
 			});
 		case "task_blocked":
 			return events(activityEvent(event, taskBlockedDetails(event)), {

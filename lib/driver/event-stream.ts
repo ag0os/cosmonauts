@@ -153,7 +153,7 @@ function createDurableDriverEventSink(
 			return;
 		}
 
-		const normalized = normalizeDriverEvent(event);
+		let normalized = normalizeDriverEvent(event);
 		if (normalized.events.length === 0 && normalized.diagnostics.length === 0) {
 			return;
 		}
@@ -197,6 +197,28 @@ function createDurableDriverEventSink(
 			}
 		}
 
+		let projected = false;
+		const projectStep = async () => {
+			try {
+				await stepProjector?.project(event);
+			} catch (error) {
+				reportDurableDiagnostic({
+					code: "drive_durable_step_write_failed",
+					message:
+						"Drive durable step projection failed; legacy driver event write and normalized event writes remain authoritative.",
+					details: durableDiagnosticDetails(event, error),
+				});
+			}
+			projected = true;
+		};
+
+		if (event.type === "task_done") {
+			await projectStep();
+			normalized = normalizeDriverEvent(event, {
+				latestTaskResult: (taskId) => stepProjector?.latestTaskResult(taskId),
+			});
+		}
+
 		for (const diagnostic of normalized.diagnostics) {
 			try {
 				await store.appendDiagnostic(ref, diagnostic);
@@ -223,15 +245,8 @@ function createDurableDriverEventSink(
 			}
 		}
 
-		try {
-			await stepProjector?.project(event);
-		} catch (error) {
-			reportDurableDiagnostic({
-				code: "drive_durable_step_write_failed",
-				message:
-					"Drive durable step projection failed; legacy driver event write and normalized event writes remain authoritative.",
-				details: durableDiagnosticDetails(event, error),
-			});
+		if (!projected) {
+			await projectStep();
 		}
 	};
 }
