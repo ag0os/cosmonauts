@@ -250,14 +250,18 @@ export async function runDurableGraphScheduler({
 		);
 	}
 
+	let cancellationObserved = false;
 	for (const execution of executions) {
-		await finishStepExecution({
+		const finished = await finishStepExecution({
 			store,
 			ref,
 			run,
 			execution,
 			now: now ?? (() => new Date().toISOString()),
+			signal,
 		});
+		diagnostics.push(...finished.diagnostics);
+		cancellationObserved ||= finished.cancellationObserved;
 	}
 
 	const finalized = await finalizeRun({
@@ -270,8 +274,11 @@ export async function runDurableGraphScheduler({
 		ref,
 		run: finalized ?? run,
 		diagnostics,
-		exitReason:
-			finalized && isTerminalStatus(finalized.status) ? "terminal" : "drained",
+		exitReason: cancellationObserved
+			? "cancelled"
+			: finalized && isTerminalStatus(finalized.status)
+				? "terminal"
+				: "drained",
 	});
 }
 
@@ -915,6 +922,7 @@ interface StartedStepExecution {
 	runningStep: StepRecord;
 	attemptNumber: number;
 	openAttempt: StepAttemptRecord;
+	backend: RunGraphSchedulerBackend;
 	handle?: BackendHandle<StepResult>;
 	startError?: unknown;
 	heartbeatState: HeartbeatWriteState;
@@ -1022,11 +1030,17 @@ async function startStepExecution({
 		runningStep,
 		attemptNumber,
 		openAttempt,
+		backend,
 		handle,
 		startError,
 		heartbeatState,
 		heartbeatTimer,
 	};
+}
+
+interface FinishedStepExecution {
+	diagnostics: RuntimeDiagnostic[];
+	cancellationObserved: boolean;
 }
 
 async function finishStepExecution({
@@ -1035,14 +1049,19 @@ async function finishStepExecution({
 	run,
 	execution,
 	now,
+	signal,
 }: {
 	store: RunStore;
 	ref: RunRef;
 	run: RunRecord;
 	execution: StartedStepExecution;
 	now: () => string;
-}): Promise<void> {
+	signal?: AbortSignal;
+}): Promise<FinishedStepExecution> {
 	let result: StepResult;
+	const diagnostics: RuntimeDiagnostic[] = [];
+	let preserveRunningEvidence = false;
+	let cancellationObserved = false;
 	try {
 		if (execution.startError) {
 			throw execution.startError;
@@ -1050,7 +1069,19 @@ async function finishStepExecution({
 		if (!execution.handle) {
 			throw new Error("Backend did not return a scheduler handle.");
 		}
-		result = normalizeStepResult(await execution.handle.result);
+		const activeOutcome = await activeStepOutcome({
+			backend: execution.backend,
+			handle: execution.handle,
+			signal,
+		});
+		cancellationObserved = activeOutcome.cancellationObserved;
+		diagnostics.push(...activeOutcome.diagnostics);
+		if (activeOutcome.preserveRunningEvidence) {
+			preserveRunningEvidence = true;
+			result = cancellationStepResult();
+		} else {
+			result = activeOutcome.result;
+		}
 	} catch (error) {
 		result = {
 			outcome: "failed",
@@ -1063,6 +1094,10 @@ async function finishStepExecution({
 			clearInterval(execution.heartbeatTimer);
 		}
 		await execution.heartbeatState.write;
+	}
+
+	if (preserveRunningEvidence) {
+		return { diagnostics, cancellationObserved };
 	}
 
 	const endedAt = now();
@@ -1122,6 +1157,144 @@ async function finishStepExecution({
 			transition.stepResult,
 		);
 	}
+	return { diagnostics, cancellationObserved };
+}
+
+interface ActiveStepOutcome {
+	result: StepResult;
+	diagnostics: RuntimeDiagnostic[];
+	cancellationObserved: boolean;
+	preserveRunningEvidence: boolean;
+}
+
+async function activeStepOutcome({
+	backend,
+	handle,
+	signal,
+}: {
+	backend: RunGraphSchedulerBackend;
+	handle: BackendHandle<StepResult>;
+	signal?: AbortSignal;
+}): Promise<ActiveStepOutcome> {
+	if (!signal) {
+		return activeResultOutcome(await handle.result);
+	}
+	if (signal.aborted) {
+		return cancelActiveStep({ backend, handle });
+	}
+
+	const abort = abortPromise(signal);
+	try {
+		return await Promise.race([
+			handle.result.then(activeResultOutcome),
+			abort.promise.then(() => cancelActiveStep({ backend, handle })),
+		]);
+	} finally {
+		abort.cleanup();
+	}
+}
+
+function activeResultOutcome(result: StepResult): ActiveStepOutcome {
+	return {
+		result: normalizeStepResult(result),
+		diagnostics: [],
+		cancellationObserved: false,
+		preserveRunningEvidence: false,
+	};
+}
+
+async function cancelActiveStep({
+	backend,
+	handle,
+}: {
+	backend: RunGraphSchedulerBackend;
+	handle: BackendHandle<StepResult>;
+}): Promise<ActiveStepOutcome> {
+	if (!backend.capabilities.canCancel || !backend.cancel) {
+		return preserveRunningCancellationOutcome({
+			code: "cancellation_not_supported",
+			message:
+				"Backend does not support confirmed cancellation; preserving running attempt evidence.",
+			handle,
+			backend,
+		});
+	}
+
+	try {
+		await backend.cancel(handle);
+		handle.result.catch(() => undefined);
+		return {
+			result: cancellationStepResult(),
+			diagnostics: [],
+			cancellationObserved: true,
+			preserveRunningEvidence: false,
+		};
+	} catch (error) {
+		return preserveRunningCancellationOutcome({
+			code: "cancellation_not_confirmed",
+			message:
+				"Backend cancellation could not be confirmed; preserving running attempt evidence.",
+			handle,
+			backend,
+			error,
+		});
+	}
+}
+
+function preserveRunningCancellationOutcome({
+	code,
+	message,
+	handle,
+	backend,
+	error,
+}: {
+	code: string;
+	message: string;
+	handle: BackendHandle<StepResult>;
+	backend: RunGraphSchedulerBackend;
+	error?: unknown;
+}): ActiveStepOutcome {
+	return {
+		result: cancellationStepResult(),
+		diagnostics: [
+			{
+				code,
+				message,
+				details: {
+					stepId: handle.stepId,
+					attemptId: handle.attemptId,
+					backend: backend.name,
+					error: error instanceof Error ? error.message : undefined,
+				},
+			},
+		],
+		cancellationObserved: true,
+		preserveRunningEvidence: true,
+	};
+}
+
+function cancellationStepResult(): StepResult {
+	return {
+		outcome: "cancelled",
+		summary: "Scheduler signal cancelled the active backend invocation.",
+		artifacts: [],
+		nextAction: "abort_run",
+	};
+}
+
+function abortPromise(signal: AbortSignal): {
+	promise: Promise<void>;
+	cleanup(): void;
+} {
+	let cleanup: () => void = () => undefined;
+	const promise = new Promise<void>((resolve) => {
+		const listener = () => resolve();
+		cleanup = () => {
+			signal.removeEventListener("abort", listener);
+		};
+		signal.addEventListener("abort", listener, { once: true });
+	});
+	return { promise, cleanup };
 }
 
 function defaultInputForStep(
