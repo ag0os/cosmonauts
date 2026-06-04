@@ -293,8 +293,18 @@ async function recordTaskDone(
 	latestResults: Map<string, StepResult>,
 	event: Extract<DriverEvent, { type: "task_done" }>,
 ): Promise<void> {
+	// On resume, task_done can arrive in a fresh projector process with an empty
+	// `latestResults` map (no preceding spawn_completed). Reuse the persisted step
+	// result before fabricating a success so a malformed-report `unknown` result is
+	// never silently overwritten with success (D-006).
+	const existingStep = await options.store.readStepRecord({
+		...options.ref,
+		stepId: event.taskId,
+	});
 	const result =
-		latestResults.get(event.taskId) ?? completedResult(event.taskId, undefined);
+		latestResults.get(event.taskId) ??
+		existingStep?.result ??
+		completedResult(event.taskId, undefined);
 	latestResults.set(event.taskId, result);
 	await upsertTaskStep(options, event.taskId, {
 		status: "completed",

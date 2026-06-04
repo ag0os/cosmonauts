@@ -111,6 +111,49 @@ describe("Drive durable step projector", () => {
 			{ path: "lib/driver/durable-steps.ts", status: "modified" },
 		]);
 	});
+
+	// @cosmo-behavior plan:durable-backend-step-model#B-006
+	test("resume task_done preserves a persisted unknown result instead of fabricating success", async () => {
+		const store = new FileRunStore({ rootDir: temp.path });
+		const record = await store.createRun({
+			scope: PLAN_SLUG,
+			runId: RUN_ID,
+			metadata: {
+				driveTaskIds: [TASK_ID],
+				configuredBackendName: "codex",
+			},
+		});
+
+		// First process: a malformed backend report persists an `unknown` result.
+		const projector = createProjector(store, record);
+		await projector.project(event("task_started", { taskId: TASK_ID }));
+		await projector.project(
+			event("spawn_started", { taskId: TASK_ID, backend: "codex" }),
+		);
+		await projector.project(
+			event("spawn_completed", {
+				taskId: TASK_ID,
+				report: {
+					outcome: "unknown",
+					raw: "prose with no fenced report and no OUTCOME marker",
+				},
+			}),
+		);
+
+		const beforeResume = await requireStep(store, record);
+		expect(beforeResume.result?.outcome).toBe("unknown");
+
+		// Resume: a fresh projector (empty in-memory latest-result map) sees only the
+		// task_done emitted by pending task-status finalization recovery.
+		const resumeProjector = createProjector(store, record);
+		await resumeProjector.project(event("task_done", { taskId: TASK_ID }));
+
+		const step = await requireStep(store, record);
+		expect(step.status).toBe("completed");
+		expect(step.result?.outcome).toBe("unknown");
+		expect(step.result?.nextAction).not.toBe("continue");
+		expect(resumeProjector.latestTaskResult(TASK_ID)?.outcome).toBe("unknown");
+	});
 });
 
 function createProjector(
