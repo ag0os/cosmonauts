@@ -481,7 +481,12 @@ async function executeStep({
 	heartbeatIntervalMs,
 }: ExecuteStepOptions): Promise<void> {
 	const startedAt = now();
-	const attemptId = await nextAttemptId(store, ref, step.id);
+	const priorAttempts = await store.listStepAttemptRecords({
+		...ref,
+		stepId: step.id,
+	});
+	const attemptNumber = priorAttempts.length + 1;
+	const attemptId = attemptIdForNumber(attemptNumber);
 	const lease = stepLease(holderId, startedAt);
 	const heartbeat: StepHeartbeat = { at: startedAt };
 	const openAttempt: StepAttemptRecord = { attemptId, startedAt };
@@ -572,12 +577,16 @@ async function executeStep({
 		terminalAttempt,
 	);
 
-	const terminalStatus = stepStatusFromResult(result);
+	const transition = stepTransitionFromResult({
+		result,
+		attemptNumber,
+		maxAttempts: effectiveMaxAttempts(step, run),
+	});
 	const terminalStep: StepRecord = {
 		...runningStep,
-		status: terminalStatus,
-		result,
-		outputArtifacts: result.artifacts,
+		status: transition.status,
+		result: transition.stepResult,
+		outputArtifacts: transition.stepResult.artifacts,
 		lease: undefined,
 		heartbeat: latestHeartbeat,
 	};
@@ -587,14 +596,33 @@ async function executeStep({
 		latestState.leasesByStepId;
 	await writeSchedulerState(store, ref, {
 		...latestState,
+		readyStepIds: transition.retry
+			? [
+					...latestState.readyStepIds.filter((stepId) => stepId !== step.id),
+					step.id,
+				]
+			: latestState.readyStepIds.filter((stepId) => stepId !== step.id),
 		leasesByStepId,
 		heartbeatsByStepId: {
 			...latestState.heartbeatsByStepId,
-			[step.id]: heartbeat,
+			[step.id]: latestHeartbeat,
 		},
 		updatedAt: endedAt,
 	});
-	await appendTerminalStepEvent(store, ref, terminalStep, result);
+	if (transition.retry) {
+		await store.appendEvent(ref, {
+			type: "step_ready",
+			runId: ref.runId,
+			stepId: step.id,
+		});
+	} else {
+		await appendTerminalStepEvent(
+			store,
+			ref,
+			terminalStep,
+			transition.stepResult,
+		);
+	}
 }
 
 function defaultInputForStep(
@@ -626,13 +654,8 @@ function offsetIso(value: string, offsetMs: number): string | undefined {
 	return new Date(time + offsetMs).toISOString();
 }
 
-async function nextAttemptId(
-	store: RunStore,
-	ref: RunRef,
-	stepId: string,
-): Promise<string> {
-	const attempts = await store.listStepAttemptRecords({ ...ref, stepId });
-	return `attempt-${String(attempts.length + 1).padStart(3, "0")}`;
+function attemptIdForNumber(attemptNumber: number): string {
+	return `attempt-${String(attemptNumber).padStart(3, "0")}`;
 }
 
 async function writeSchedulerState(
@@ -670,6 +693,93 @@ function isStepResult(value: unknown): value is StepResult {
 		typeof candidate.summary === "string" &&
 		Array.isArray(candidate.artifacts)
 	);
+}
+
+interface StepTransition {
+	status: StepStatus;
+	stepResult: StepResult;
+	retry: boolean;
+}
+
+function stepTransitionFromResult({
+	result,
+	attemptNumber,
+	maxAttempts,
+}: {
+	result: StepResult;
+	attemptNumber: number;
+	maxAttempts: number;
+}): StepTransition {
+	if (result.nextAction === "retry") {
+		if (attemptNumber < maxAttempts) {
+			return { status: "ready", stepResult: result, retry: true };
+		}
+		return {
+			status: "blocked",
+			stepResult: blockedStepResult(
+				result,
+				`Retry attempts exhausted after ${formatAttemptCount(attemptNumber)}.`,
+			),
+			retry: false,
+		};
+	}
+
+	if (
+		result.outcome === "unknown" ||
+		result.outcome === "partial" ||
+		result.nextAction === "wait_for_human"
+	) {
+		return {
+			status: "blocked",
+			stepResult: blockedStepResult(result, result.summary),
+			retry: false,
+		};
+	}
+
+	return {
+		status: stepStatusFromResult(result),
+		stepResult: result,
+		retry: false,
+	};
+}
+
+function blockedStepResult(result: StepResult, summary: string): StepResult {
+	return {
+		...result,
+		outcome: "blocked",
+		summary,
+		nextAction: "wait_for_human",
+	};
+}
+
+function formatAttemptCount(attemptNumber: number): string {
+	return attemptNumber === 1 ? "1 attempt" : `${attemptNumber} attempts`;
+}
+
+function effectiveMaxAttempts(step: StepRecord, run: RunRecord): number {
+	const stepMaxAttempts = positiveInteger(step.retryPolicy?.maxAttempts);
+	if (stepMaxAttempts !== undefined) {
+		return stepMaxAttempts;
+	}
+	const retryLimit = nonNegativeInteger(run.policy.retryLimit);
+	if (retryLimit !== undefined) {
+		return retryLimit + 1;
+	}
+	return 1;
+}
+
+function positiveInteger(value: number | undefined): number | undefined {
+	if (value === undefined || !Number.isFinite(value) || value < 1) {
+		return undefined;
+	}
+	return Math.floor(value);
+}
+
+function nonNegativeInteger(value: number | undefined): number | undefined {
+	if (value === undefined || !Number.isFinite(value) || value < 0) {
+		return undefined;
+	}
+	return Math.floor(value);
 }
 
 function stepStatusFromResult(result: StepResult): StepStatus {
@@ -748,7 +858,8 @@ async function finalizeRun({
 	const steps = await store.listStepRecords(ref);
 	if (
 		steps.length === 0 ||
-		!steps.every((step) => isTerminalStepStatus(step.status))
+		(!steps.every((step) => isTerminalStepStatus(step.status)) &&
+			!hasBlockedOutcomeWithNoRunnableWork(steps))
 	) {
 		return run;
 	}
@@ -792,6 +903,15 @@ async function finalizeRun({
 		return store.loadRun(ref);
 	}
 	return run;
+}
+
+function hasBlockedOutcomeWithNoRunnableWork(
+	steps: readonly StepRecord[],
+): boolean {
+	return (
+		steps.some((step) => step.status === "blocked") &&
+		steps.every((step) => step.status !== "ready" && step.status !== "running")
+	);
 }
 
 function formatError(error: unknown): string {
