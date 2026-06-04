@@ -74,7 +74,7 @@ function compileSteps(spec: DriverRunSpec): {
 	const taskStatusFinalizerIds: string[] = [];
 
 	for (const [index, taskId] of spec.taskIds.entries()) {
-		const taskStep = taskGraphStep(spec, taskId, index);
+		const taskStep = taskGraphStep(spec, taskId, index, taskStatusFinalizerIds);
 		taskSteps.push(taskStep);
 
 		const taskStatusDependency = sourceCommitEnabled(spec)
@@ -105,6 +105,7 @@ function taskGraphStep(
 	spec: DriverRunSpec,
 	taskId: string,
 	index: number,
+	taskStatusFinalizerIds: readonly string[],
 ): RunGraphStep {
 	return {
 		id: taskId,
@@ -112,7 +113,10 @@ function taskGraphStep(
 		title: `Drive task ${taskId}`,
 		kind: "drive",
 		backend: { name: spec.backendName },
-		dependsOn: index > 0 ? [spec.taskIds[index - 1] as string] : [],
+		dependsOn:
+			index > 0
+				? [taskStatusFinalizerIds[taskStatusFinalizerIds.length - 1] as string]
+				: [],
 		inputArtifacts: taskInputArtifacts(taskId),
 	};
 }

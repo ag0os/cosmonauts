@@ -36,8 +36,8 @@ describe("Drive graph compiler", () => {
 		]);
 		expect(driveSteps.map((step) => step.dependsOn)).toEqual([
 			[],
-			["TASK-30"],
-			["TASK-10"],
+			["finalizer-task-status-TASK-30"],
+			["finalizer-task-status-TASK-10"],
 		]);
 		expect(
 			driveSteps.map((step) => ({
@@ -63,8 +63,8 @@ describe("Drive graph compiler", () => {
 			},
 		]);
 		expect(compiled.graph.edges).toEqual([
-			{ from: "TASK-30", to: "TASK-10" },
-			{ from: "TASK-10", to: "TASK-20" },
+			{ from: "finalizer-task-status-TASK-30", to: "TASK-10" },
+			{ from: "finalizer-task-status-TASK-10", to: "TASK-20" },
 			{ from: "TASK-30", to: "finalizer-task-status-TASK-30" },
 			{ from: "TASK-10", to: "finalizer-task-status-TASK-10" },
 			{ from: "TASK-20", to: "finalizer-task-status-TASK-20" },

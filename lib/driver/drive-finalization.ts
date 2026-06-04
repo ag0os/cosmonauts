@@ -718,6 +718,7 @@ function isGenericCommitSummary(summary: string, taskId: string): boolean {
 	const normalized = summary.trim().toLowerCase();
 	return (
 		normalized === "driver task update" ||
+		normalized === "drive task completed." ||
 		normalized === `${taskId.toLowerCase()}: driver task update`
 	);
 }
