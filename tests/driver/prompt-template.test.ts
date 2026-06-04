@@ -94,6 +94,62 @@ describe("prompt-template renderPromptForTask", () => {
 		expect(rendered).toContain("Expected branch: feature/run");
 	});
 
+	test("instructs external CLI backends to check acceptance criteria via the cosmonauts CLI", async () => {
+		const { taskManager, taskId, envelopePath, workdir } =
+			await setupPromptTest({
+				envelope: "Envelope instructions",
+				acceptanceCriteria: ["First criterion", "Second criterion"],
+			});
+		const layers = { envelopePath, workdir } satisfies TestPromptLayers;
+
+		const promptPath = await renderPromptForTask(taskId, layers, taskManager, {
+			runExpectations: {
+				backendName: "codex",
+				commitPolicy: "driver-commits",
+				stateCommitPolicy: "final-state-commit",
+				preflightCommands: [],
+				postflightCommands: [],
+				projectRoot: join(tmp.path, "project"),
+				workdir,
+			},
+		});
+
+		const rendered = await readFile(promptPath, "utf-8");
+		expect(rendered).toContain("## Task Completion Protocol");
+		expect(rendered).toContain(`cosmonauts task edit ${taskId} --check-ac`);
+		// The completion protocol must precede the report contract.
+		expect(rendered.indexOf("## Task Completion Protocol")).toBeLessThan(
+			rendered.indexOf("## Drive Report Contract"),
+		);
+		// Clarifies the CLI edit is not a commit (so a cautious agent does not skip it).
+		expect(rendered).toContain("is NOT a source commit");
+	});
+
+	test("omits the CLI completion protocol for internal subagent workers", async () => {
+		const { taskManager, taskId, envelopePath, workdir } =
+			await setupPromptTest({
+				envelope: "Envelope instructions",
+				acceptanceCriteria: ["First criterion"],
+			});
+		const layers = { envelopePath, workdir } satisfies TestPromptLayers;
+
+		const promptPath = await renderPromptForTask(taskId, layers, taskManager, {
+			runExpectations: {
+				backendName: "cosmonauts-subagent",
+				commitPolicy: "driver-commits",
+				stateCommitPolicy: "final-state-commit",
+				preflightCommands: [],
+				postflightCommands: [],
+				projectRoot: join(tmp.path, "project"),
+				workdir,
+			},
+		});
+
+		const rendered = await readFile(promptPath, "utf-8");
+		expect(rendered).not.toContain("## Task Completion Protocol");
+		expect(rendered).not.toContain("--check-ac");
+	});
+
 	// @cosmo-behavior plan:drive-resilience-state-model#B-013
 	test("renders state commit policy expectations without changing the report contract", async () => {
 		const { taskManager, taskId, envelopePath, workdir } =
@@ -210,6 +266,7 @@ interface PromptTestOptions {
 	envelope: string;
 	precondition?: string;
 	override?: string;
+	acceptanceCriteria?: string[];
 }
 
 async function setupPromptTest(options: PromptTestOptions): Promise<{
@@ -232,6 +289,7 @@ async function setupPromptTest(options: PromptTestOptions): Promise<{
 	const task = await taskManager.createTask({
 		title: "Prompt Template Fixture",
 		description: "Render this task into the prompt.",
+		acceptanceCriteria: options.acceptanceCriteria,
 	});
 
 	const envelopePath = join(templateDir, "envelope.md");

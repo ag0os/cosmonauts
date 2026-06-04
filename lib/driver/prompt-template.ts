@@ -97,6 +97,17 @@ export async function renderPromptForTask(
 	if (options.appendedNote) {
 		sections.push(options.appendedNote);
 	}
+	const backendName = options.runExpectations?.backendName;
+	if (backendName) {
+		const completionProtocol = renderTaskCompletionProtocol(
+			taskId,
+			task,
+			backendName,
+		);
+		if (completionProtocol) {
+			sections.push(completionProtocol);
+		}
+	}
 	sections.push(DRIVE_REPORT_CONTRACT);
 
 	const promptPath = join(
@@ -112,6 +123,37 @@ export async function renderPromptForTask(
 
 function renderTaskSection(task: Task): string {
 	return `# Task\n\n${serializeTask(task)}`;
+}
+
+function renderTaskCompletionProtocol(
+	taskId: string,
+	task: Task,
+	backendName: BackendName,
+): string | undefined {
+	// Internal subagent workers mark acceptance criteria through their native task
+	// tool, so they need no CLI instruction. Only external CLI backends (codex,
+	// claude-cli) must be told to check criteria via the cosmonauts CLI — without
+	// this, their acceptance criteria stay unchecked and Drive blocks every task.
+	if (backendName === "cosmonauts-subagent") {
+		return undefined;
+	}
+	if (task.acceptanceCriteria.length === 0) {
+		return undefined;
+	}
+	return [
+		"## Task Completion Protocol",
+		"",
+		"When the work is done, mark each acceptance criterion you have verified as satisfied BEFORE writing your final report. The `cosmonauts` CLI is available on PATH in this workdir:",
+		"",
+		"```bash",
+		`cosmonauts task edit ${taskId} --check-ac <index>   # repeat --check-ac per satisfied criterion, e.g. --check-ac 1 --check-ac 2`,
+		"```",
+		"",
+		"- The acceptance criteria and their 1-based indexes are listed in the Task section above (the `#N` markers).",
+		"- Only check a criterion after you have actually verified it (for example, the named test exists and passes). Leave any criterion you could not satisfy unchecked and report `outcome: failure` or `outcome: partial` with the reason.",
+		"- Checking acceptance criteria updates task state through the CLI; it is NOT a source commit and does not violate the commit policy above.",
+		"- Drive treats unchecked acceptance criteria as incomplete: if you report `outcome: success` while a criterion you were asked to satisfy is still unchecked, Drive will block the task.",
+	].join("\n");
 }
 
 function renderRunExpectations(expectations: DriveRunExpectations): string {
