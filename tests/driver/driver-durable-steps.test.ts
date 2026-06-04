@@ -2,6 +2,9 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import { createDriveProgram } from "../../cli/drive/subcommand.ts";
+import { registerRunControlTools } from "../../domains/shared/extensions/orchestration/run-control-tools.ts";
+import { registerWatchEventsTool } from "../../domains/shared/extensions/orchestration/watch-events-tool.ts";
 import type {
 	Backend,
 	BackendInvocation,
@@ -12,6 +15,7 @@ import {
 	type DriverEventBusEvent,
 	tailEvents,
 } from "../../lib/driver/event-stream.ts";
+import { writeRunCompletion } from "../../lib/driver/run-state.ts";
 import type {
 	DriverEvent,
 	DriverResult,
@@ -20,11 +24,15 @@ import type {
 import {
 	FileRunStore,
 	type RuntimeDiagnostic,
+	runStatus,
+	runWatch,
 	type StepRecord,
 	type StoredOrchestrationEvent,
 } from "../../lib/durable-runtime/index.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
+import { createMockPi } from "../extensions/orchestration-helpers.ts";
+import { captureCliOutput } from "../helpers/cli.ts";
 import { captureDurableDiagnostics } from "../helpers/durable-diagnostics.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
@@ -229,6 +237,188 @@ describe("driver durable step projection", () => {
 				? completedEvent.result.nextAction
 				: undefined,
 		).not.toBe("continue");
+	});
+
+	// @cosmo-behavior plan:durable-backend-step-model#B-011
+	test("keeps legacy observation outputs unchanged when step records exist", async () => {
+		const fixture = await setupFixture({ taskCount: 1 });
+		const taskId = fixture.taskIds[0] ?? fail("missing task");
+		fixture.spec.postflightCommands = [nodeCommand("process.exit(0)")];
+		const store = new FileRunStore({
+			rootDir: join(fixture.projectRoot, "missions", "sessions"),
+		});
+
+		const result = await runDrive(fixture, malformedResult());
+		await writeRunCompletion(fixture.spec.workdir, result);
+		const legacyEvents = await readLegacyEvents(fixture.spec.eventLogPath);
+		const step = await requireStep(store, fixture.runId, taskId);
+		await poisonStepRecord(store, fixture.runId, step);
+
+		const poisonedStep = await requireStep(store, fixture.runId, taskId);
+		const record = await store.loadRun({
+			scope: PLAN_SLUG,
+			runId: fixture.runId,
+		});
+		const directWatch = await runWatch(store, {
+			scope: PLAN_SLUG,
+			runId: fixture.runId,
+		});
+		const directStatus = await runStatus(store, {
+			scope: PLAN_SLUG,
+			runId: fixture.runId,
+		});
+
+		expect(result).toMatchObject({
+			runId: fixture.runId,
+			outcome: "completed",
+			tasksDone: 1,
+			tasksBlocked: 0,
+		});
+		expect(poisonedStep).toMatchObject({
+			id: taskId,
+			status: "blocked",
+			backend: { name: "unknown" },
+			result: {
+				outcome: "blocked",
+				summary: "poisoned step-only observation sentinel",
+				nextAction: "wait_for_human",
+			},
+		});
+		expect(record?.eventsPath).toBe(
+			join(fixture.spec.workdir, "orchestration-events.jsonl"),
+		);
+		expect(directWatch.events.map((event) => event.text)).toEqual([
+			"1 run_started",
+			`2 step_ready ${taskId}`,
+			`3 step_tool_activity ${taskId}`,
+			`4 step_tool_activity ${taskId}`,
+			`5 step_started ${taskId}: fake-backend`,
+			`6 step_tool_activity ${taskId}`,
+			`7 step_tool_activity ${taskId}`,
+			`8 step_tool_activity ${taskId}`,
+			`9 step_completed ${taskId}: unknown`,
+			"10 run_completed: completed",
+		]);
+		expect(
+			directWatch.events.map((event) => event.envelope.event.type),
+		).toEqual([
+			"run_started",
+			"step_ready",
+			"step_tool_activity",
+			"step_tool_activity",
+			"step_started",
+			"step_tool_activity",
+			"step_tool_activity",
+			"step_tool_activity",
+			"step_completed",
+			"run_completed",
+		]);
+		expect(directStatus).toMatchObject({
+			status: "completed",
+			statusSource: "event",
+			eventStatus: "completed",
+		});
+
+		const pi = createMockPi(fixture.projectRoot, {
+			sessionId: PARENT_SESSION_ID,
+		});
+		registerWatchEventsTool(pi as never);
+		registerRunControlTools(pi as never);
+		const watched = (await pi.callTool("watch_events", {
+			planSlug: PLAN_SLUG,
+			runId: fixture.runId,
+		})) as {
+			cursor: number;
+			details: { events: DriverEvent[]; cursor: number };
+			content: { text: string }[];
+		};
+		const toolWatch = (await pi.callTool("run_watch", {
+			scope: PLAN_SLUG,
+			runId: fixture.runId,
+		})) as { content: { text: string }[]; details: typeof directWatch };
+		const toolStatus = (await pi.callTool("run_status", {
+			scope: PLAN_SLUG,
+			runId: fixture.runId,
+		})) as { content: { text: string }[]; details: typeof directStatus };
+		const statusOutput = await captureDriveJson(fixture.projectRoot, [
+			"status",
+			fixture.runId,
+			"--plan",
+			PLAN_SLUG,
+		]);
+		const listOutput = await captureDriveJson(fixture.projectRoot, ["list"]);
+
+		expect(watched.cursor).toBe(legacyEvents.length);
+		expect(watched.details.events).toEqual(legacyEvents);
+		expect(watched.content[0]?.text).toContain("spawn_completed");
+		expect(watched.content[0]?.text).toContain("report: unknown");
+		expect(watched.content[0]?.text).toContain("run_completed");
+		expect(watched.content[0]?.text).not.toContain("step_");
+		expect(watched.content[0]?.text).not.toContain("poisoned");
+		expect(JSON.stringify(watched.details)).not.toContain("stepId");
+		expect(JSON.stringify(watched.details)).not.toContain("latestAttemptId");
+		expect(JSON.stringify(watched.details)).not.toContain("outputArtifacts");
+
+		expect(toolWatch.details).toEqual(directWatch);
+		expect(toolWatch.content[0]?.text).toContain(
+			`9 step_completed ${taskId}: unknown`,
+		);
+		expect(toolWatch.content[0]?.text).toContain("10 run_completed: completed");
+		expect(toolWatch.content[0]?.text).not.toContain("poisoned");
+		expect(toolStatus.details).toEqual(directStatus);
+		expect(toolStatus.content[0]?.text).toContain(
+			`${PLAN_SLUG}/${fixture.runId}: completed (event)`,
+		);
+		expect(toolStatus.content[0]?.text).not.toContain("poisoned");
+
+		expect(statusOutput).toMatchObject({
+			runId: fixture.runId,
+			planSlug: PLAN_SLUG,
+			status: "completed",
+			workdir: expect.stringContaining(
+				join("missions", "sessions", PLAN_SLUG, "runs", fixture.runId),
+			),
+			result: {
+				runId: fixture.runId,
+				outcome: "completed",
+				tasksDone: 1,
+				tasksBlocked: 0,
+			},
+		});
+		expect(listOutput).toMatchObject({
+			runs: [
+				{
+					runId: fixture.runId,
+					planSlug: PLAN_SLUG,
+					status: "completed",
+					workdir: expect.stringContaining(
+						join("missions", "sessions", PLAN_SLUG, "runs", fixture.runId),
+					),
+					result: {
+						runId: fixture.runId,
+						outcome: "completed",
+						tasksDone: 1,
+						tasksBlocked: 0,
+					},
+				},
+			],
+		});
+		for (const legacySurface of [
+			statusOutput,
+			listOutput,
+			watched.details,
+			watched.content,
+		]) {
+			const serialized = JSON.stringify(legacySurface);
+			expect(serialized).not.toContain(
+				"poisoned step-only observation sentinel",
+			);
+			expect(serialized).not.toContain("latestAttemptId");
+			expect(serialized).not.toContain("inputArtifacts");
+			expect(serialized).not.toContain("outputArtifacts");
+			expect(serialized).not.toContain("attempt-001");
+			expect(serialized).not.toContain("stepId");
+		}
 	});
 
 	// @cosmo-behavior plan:durable-backend-step-model#B-010
@@ -530,6 +720,48 @@ async function requireStep(
 		throw new Error(`Missing step record: ${stepId}`);
 	}
 	return step;
+}
+
+async function poisonStepRecord(
+	store: FileRunStore,
+	runId: string,
+	step: StepRecord,
+): Promise<void> {
+	await store.writeStepRecord(
+		{ scope: PLAN_SLUG, runId },
+		{
+			...step,
+			status: "blocked",
+			backend: { name: "unknown" },
+			result: {
+				outcome: "blocked",
+				summary: "poisoned step-only observation sentinel",
+				artifacts: [],
+				nextAction: "wait_for_human",
+			},
+		},
+	);
+}
+
+async function captureDriveJson(
+	projectRoot: string,
+	args: string[],
+): Promise<Record<string, unknown>> {
+	const originalCwd = process.cwd();
+	const originalExitCode = process.exitCode;
+	const output = captureCliOutput();
+	try {
+		process.exitCode = undefined;
+		process.chdir(projectRoot);
+		const program = createDriveProgram();
+		program.exitOverride();
+		await program.parseAsync(args, { from: "user" });
+		return JSON.parse(output.stdout()) as Record<string, unknown>;
+	} finally {
+		output.restore();
+		process.chdir(originalCwd);
+		process.exitCode = originalExitCode;
+	}
 }
 
 function isStoredOrchestrationEvent(
