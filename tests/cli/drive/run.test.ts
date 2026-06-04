@@ -494,7 +494,8 @@ describe("cosmonauts drive run", () => {
 		);
 		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
 		expect(driverMocks.startDetached).not.toHaveBeenCalled();
-		expect(firstRunInlineSpec().taskIds).toEqual([taskIds[1]]);
+		expect(firstRunInlineSpec().taskIds).toEqual(taskIds);
+		expect(firstRunInlineSpec().remainingTaskIds).toEqual([taskIds[1]]);
 		expect(
 			(await fixture.manager.getTask(taskIds[0] ?? "TASK-001"))?.status,
 		).toBe("Done");
@@ -505,6 +506,7 @@ describe("cosmonauts drive run", () => {
 		driverMocks.runInline.mockClear();
 		output.restore();
 		output = attachJsonHelpers(captureCliOutput());
+		await rm(resumeWorkdir(), { recursive: true, force: true });
 		const detachedFixture = await setupFixture(6);
 		const detachedTaskIds = detachedFixture.tasks.map((task) => task.id);
 		await writeResumeRun(detachedTaskIds, [], {
@@ -541,7 +543,10 @@ describe("cosmonauts drive run", () => {
 
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
 		expect(driverMocks.startDetached).toHaveBeenCalledTimes(1);
-		expect(firstStartDetachedSpec().taskIds).toEqual(detachedTaskIds.slice(1));
+		expect(firstStartDetachedSpec().taskIds).toEqual(detachedTaskIds);
+		expect(firstStartDetachedSpec().remainingTaskIds).toEqual(
+			detachedTaskIds.slice(1),
+		);
 	});
 
 	// @cosmo-behavior plan:drive-resilience-state-model#B-006
@@ -1239,7 +1244,8 @@ describe("cosmonauts drive run", () => {
 			runId: "run-previous",
 			backendName: "claude-cli",
 			commitPolicy: "no-commit",
-			taskIds: fixture.tasks.slice(2).map((task) => task.id),
+			taskIds: fixture.tasks.map((task) => task.id),
+			remainingTaskIds: fixture.tasks.slice(2).map((task) => task.id),
 		});
 	});
 
@@ -1271,7 +1277,8 @@ describe("cosmonauts drive run", () => {
 		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
 		expect(firstRunInlineSpec()).toMatchObject({
 			runId: "run-previous",
-			taskIds: [taskIds[2]],
+			taskIds,
+			remainingTaskIds: [taskIds[2]],
 		});
 		expect(
 			(await fixture.manager.getTask(taskIds[1] ?? "TASK-002"))?.status,

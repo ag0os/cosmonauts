@@ -234,7 +234,7 @@ async function startDetachedProcess({
 
 	await writeFile(
 		join(spec.workdir, "task-queue.txt"),
-		`${spec.taskIds.join("\n")}\n`,
+		`${(spec.remainingTaskIds ?? spec.taskIds).join("\n")}\n`,
 		"utf-8",
 	);
 	await writeFile(

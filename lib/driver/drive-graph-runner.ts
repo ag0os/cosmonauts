@@ -51,18 +51,20 @@ export async function runDriveOnGraph(
 	try {
 		await prepareCompatibilityWorkdir(spec, mode);
 		const graphRun = await loadOrCreateGraphRun({ spec, store, ref });
+		const runSpec = withAuthoritativeTaskIds(spec, graphRun.run);
 		if (graphRun.isNewRun) {
 			await store.appendEvent(ref, { type: "run_started", runId: spec.runId });
 		}
-		await emit(spec, ctx, {
+		await prepareCompatibilityWorkdir(runSpec, mode);
+		await emit(runSpec, ctx, {
 			type: "run_started",
-			planSlug: spec.planSlug,
-			backend: spec.backendName,
+			planSlug: runSpec.planSlug,
+			backend: runSpec.backendName,
 			mode,
 		});
 
 		const backends = createDriveSchedulerBackendMap({
-			spec,
+			spec: runSpec,
 			taskManager: ctx.taskManager,
 			backend: ctx.backend,
 			eventSink: ctx.eventSink,
@@ -77,9 +79,9 @@ export async function runDriveOnGraph(
 				workdir: spec.workdir,
 			});
 			if (finalizerFailure) {
-				const result = finalizationFailureResult(spec, finalizerFailure);
-				await emitRunFinalizationFailed(spec, ctx, result);
-				await writeRunCompletion(spec.workdir, result);
+				const result = finalizationFailureResult(runSpec, finalizerFailure);
+				await emitRunFinalizationFailed(runSpec, ctx, result);
+				await writeRunCompletion(runSpec.workdir, result);
 				return result;
 			}
 
@@ -98,9 +100,9 @@ export async function runDriveOnGraph(
 				workdir: spec.workdir,
 			});
 			if (failureAfterDrain) {
-				const result = finalizationFailureResult(spec, failureAfterDrain);
-				await emitRunFinalizationFailed(spec, ctx, result);
-				await writeRunCompletion(spec.workdir, result);
+				const result = finalizationFailureResult(runSpec, failureAfterDrain);
+				await emitRunFinalizationFailed(runSpec, ctx, result);
+				await writeRunCompletion(runSpec.workdir, result);
 				return result;
 			}
 
@@ -119,9 +121,15 @@ export async function runDriveOnGraph(
 			throw new Error("Drive graph scheduler did not produce a result.");
 		}
 
-		const result = await toDriverResult(spec, ctx, store, ref, schedulerResult);
-		await emitTerminalLegacyEvent(spec, ctx, result);
-		await writeRunCompletion(spec.workdir, result);
+		const result = await toDriverResult(
+			runSpec,
+			ctx,
+			store,
+			ref,
+			schedulerResult,
+		);
+		await emitTerminalLegacyEvent(runSpec, ctx, result);
+		await writeRunCompletion(runSpec.workdir, result);
 		return result;
 	} catch (error) {
 		if (error instanceof EventLogWriteError) {
@@ -153,7 +161,7 @@ async function prepareCompatibilityWorkdir(
 	);
 	await writeFile(
 		join(spec.workdir, "task-queue.txt"),
-		`${spec.taskIds.join("\n")}\n`,
+		`${compatibilityQueueTaskIds(spec).join("\n")}\n`,
 		"utf-8",
 	);
 	if (mode === "inline") {
@@ -179,12 +187,31 @@ async function loadOrCreateGraphRun({
 	const graph = await store.readRunGraph(ref);
 	const steps = await store.listStepRecords(ref);
 	if (graph.graph.steps.length === 0 && steps.length === 0) {
-		const compiled = await compileDriveRunToGraph({ spec, store });
+		validateDriveTaskIds(existing.metadata, spec);
+		const compiled = await compileDriveRunToGraph({
+			spec: withAuthoritativeTaskIds(spec, existing),
+			store,
+		});
 		return { store, ref, run: compiled.run, isNewRun: true };
 	}
 
 	validateDriveTaskIds(existing.metadata, spec);
 	return { store, ref, run: existing, isNewRun: false };
+}
+
+function withAuthoritativeTaskIds(
+	spec: DriverRunSpec,
+	run: RunRecord,
+): DriverRunSpec {
+	const value = run.metadata?.driveTaskIds;
+	if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
+		return { ...spec, taskIds: [...value] };
+	}
+	return spec;
+}
+
+function compatibilityQueueTaskIds(spec: DriverRunSpec): readonly string[] {
+	return spec.remainingTaskIds ?? spec.taskIds;
 }
 
 function validateDriveTaskIds(
