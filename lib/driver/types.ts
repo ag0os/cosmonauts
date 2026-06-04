@@ -1,6 +1,11 @@
 /** Core driver type contracts. */
 
-export type BackendName = "cosmonauts-subagent" | "codex" | "claude-cli";
+import type { KnownBackendName } from "../durable-runtime/index.ts";
+
+export type BackendName = Extract<
+	KnownBackendName,
+	"cosmonauts-subagent" | "codex" | "claude-cli"
+>;
 
 export const DETACHED_DEFAULT_TASK_THRESHOLD = 4;
 

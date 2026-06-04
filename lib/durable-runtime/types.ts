@@ -12,6 +12,22 @@ export type RunStatus =
 	| "cancelled"
 	| "stale";
 
+export const KNOWN_BACKEND_NAMES = [
+	"codex",
+	"claude-cli",
+	"cosmonauts-subagent",
+	"shell-command",
+] as const;
+
+export type KnownBackendName = (typeof KNOWN_BACKEND_NAMES)[number];
+
+export type BackendName = KnownBackendName | "unknown";
+
+export interface BackendSpec {
+	name: BackendName;
+	options?: Record<string, unknown>;
+}
+
 // fallow-ignore-next-line unused-types: durable runtime public contract type for Plan 1.
 export type StepStatus =
 	| "pending"
@@ -23,6 +39,14 @@ export type StepStatus =
 	| "cancelled"
 	| "stale";
 
+export type StepKind =
+	| "agent"
+	| "drive"
+	| "chain"
+	| "command"
+	| "approval"
+	| "finalizer";
+
 // fallow-ignore-next-line unused-types: durable runtime public contract type for Plan 1.
 export interface WorktreeSpec {
 	mode: "shared" | "isolated";
@@ -30,8 +54,7 @@ export interface WorktreeSpec {
 }
 
 // fallow-ignore-next-line unused-types: durable runtime public contract type for Plan 1.
-export interface BackendPolicy {
-	name: string;
+export interface BackendPolicy extends BackendSpec {
 	[key: string]: unknown;
 }
 
@@ -118,11 +141,20 @@ export interface StepRecord {
 	id: string;
 	runId: string;
 	title: string;
-	kind: string;
+	kind: StepKind;
+	backend: BackendSpec;
 	dependsOn: string[];
 	status: StepStatus;
 	inputArtifacts: ArtifactRef[];
 	outputArtifacts: ArtifactRef[];
+	result?: StepResult;
+	latestAttemptId?: string;
+}
+
+export interface StepAttemptRecord {
+	attemptId: string;
+	startedAt: string;
+	endedAt?: string;
 	result?: StepResult;
 }
 
@@ -247,6 +279,17 @@ export interface RunStore {
 	readStepRecord(
 		ref: RunRef & { stepId: string },
 	): Promise<StepRecord | undefined>;
+	writeStepAttemptRecord(
+		ref: RunRef & { stepId: string },
+		attempt: StepAttemptRecord,
+		options?: { outputText?: string },
+	): Promise<StepAttemptRecord>;
+	readStepAttemptRecord(
+		ref: RunRef & { stepId: string; attemptId: string },
+	): Promise<StepAttemptRecord | undefined>;
+	listStepAttemptRecords(
+		ref: RunRef & { stepId: string },
+	): Promise<StepAttemptRecord[]>;
 	listRecentRuns(options?: ListRecentRunsOptions): Promise<RunRecord[]>;
 	readStatus(ref: RunRef): Promise<RunStatusSummary | undefined>;
 }
