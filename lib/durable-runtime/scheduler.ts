@@ -57,8 +57,34 @@ export async function runDurableGraphScheduler({
 		};
 	}
 
-	const reconciliation = await reconcileSchedulerState({ store, ref, now });
+	let reconciliation = await reconcileSchedulerState({ store, ref, now });
 	const diagnostics = [...reconciliation.diagnostics];
+	const terminalAttemptPromotion = await promotePersistedTerminalAttempts({
+		store,
+		ref,
+		run,
+		now: now ?? (() => new Date().toISOString()),
+		state: reconciliation.state,
+		steps: reconciliation.steps,
+	});
+	if (terminalAttemptPromotion.changed) {
+		reconciliation = await reconcileSchedulerState({ store, ref, now });
+		diagnostics.push(...reconciliation.diagnostics);
+		const finalized = await finalizeRun({
+			store,
+			ref,
+			diagnostics,
+		});
+		if (finalized && isTerminalStatus(finalized.status)) {
+			return schedulerResult({
+				store,
+				ref,
+				run: finalized,
+				diagnostics,
+				exitReason: "terminal",
+			});
+		}
+	}
 	const staleTransition = await markPersistedStaleRunningSteps({
 		store,
 		ref,
@@ -182,6 +208,137 @@ async function schedulerResult({
 		diagnostics,
 		exitReason,
 	};
+}
+
+interface PromotePersistedTerminalAttemptsOptions {
+	store: RunStore;
+	ref: RunRef;
+	run: RunRecord;
+	now: () => string;
+	state: SchedulerState;
+	steps: StepRecord[];
+}
+
+interface TerminalAttemptPromotionResult {
+	changed: boolean;
+}
+
+async function promotePersistedTerminalAttempts({
+	store,
+	ref,
+	run,
+	now,
+	state,
+	steps,
+}: PromotePersistedTerminalAttemptsOptions): Promise<TerminalAttemptPromotionResult> {
+	let nextState = state;
+	let changed = false;
+	for (const step of steps) {
+		if (isTerminalStepStatus(step.status)) {
+			continue;
+		}
+
+		const attempts = await store.listStepAttemptRecords({
+			...ref,
+			stepId: step.id,
+		});
+		const terminalAttempt = terminalAttemptForStep(step, attempts);
+		if (!terminalAttempt) {
+			continue;
+		}
+
+		const attemptNumber = attemptNumberForAttempt(
+			attempts,
+			terminalAttempt.attemptId,
+		);
+		const transition = stepTransitionFromResult({
+			result: terminalAttempt.result,
+			attemptNumber,
+			maxAttempts: effectiveMaxAttempts(step, run),
+		});
+		const heartbeat = await persistedHeartbeatForStep(
+			store,
+			ref,
+			step,
+			nextState,
+		);
+		const recoveredStep: StepRecord = {
+			...step,
+			status: transition.status,
+			result: transition.stepResult,
+			outputArtifacts: transition.stepResult.artifacts,
+			latestAttemptId: terminalAttempt.attemptId,
+			lease: undefined,
+			heartbeat,
+		};
+		await store.writeStepRecord(ref, recoveredStep);
+		const { [step.id]: _releasedLease, ...leasesByStepId } =
+			nextState.leasesByStepId;
+		nextState = {
+			...nextState,
+			readyStepIds: transition.retry
+				? [
+						...nextState.readyStepIds.filter((stepId) => stepId !== step.id),
+						step.id,
+					]
+				: nextState.readyStepIds.filter((stepId) => stepId !== step.id),
+			leasesByStepId,
+			heartbeatsByStepId: heartbeat
+				? { ...nextState.heartbeatsByStepId, [step.id]: heartbeat }
+				: nextState.heartbeatsByStepId,
+			updatedAt: terminalAttempt.endedAt ?? now(),
+		};
+		await writeSchedulerState(store, ref, nextState);
+		if (transition.retry) {
+			await store.appendEvent(ref, {
+				type: "step_ready",
+				runId: ref.runId,
+				stepId: step.id,
+			});
+		} else {
+			await appendTerminalStepEvent(
+				store,
+				ref,
+				recoveredStep,
+				transition.stepResult,
+			);
+		}
+		changed = true;
+	}
+
+	return { changed };
+}
+
+function terminalAttemptForStep(
+	step: StepRecord,
+	attempts: StepAttemptRecord[],
+): (StepAttemptRecord & { endedAt: string; result: StepResult }) | undefined {
+	const candidates = attempts.filter(hasTerminalAttemptResult);
+	if (candidates.length === 0) {
+		return undefined;
+	}
+	if (step.latestAttemptId) {
+		return candidates.find(
+			(attempt) => attempt.attemptId === step.latestAttemptId,
+		);
+	}
+	return candidates.at(-1);
+}
+
+function hasTerminalAttemptResult(
+	attempt: StepAttemptRecord,
+): attempt is StepAttemptRecord & { endedAt: string; result: StepResult } {
+	return attempt.endedAt !== undefined && attempt.result !== undefined;
+}
+
+function attemptNumberForAttempt(
+	attempts: StepAttemptRecord[],
+	attemptId: string,
+): number {
+	const index = attempts.findIndex(
+		(attempt) => attempt.attemptId === attemptId,
+	);
+	return index >= 0 ? index + 1 : attempts.length;
 }
 
 interface RenewOwnedRunningStepOptions {
