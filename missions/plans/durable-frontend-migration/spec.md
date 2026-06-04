@@ -30,6 +30,17 @@ through the scheduler, and add the first simple durable chain compiler.
 5. Coordinator loops, full nested-run lifecycle policy, per-step worktrees, and
    merge finalization remain outside this first migration wave.
 
+## Acceptance Criteria
+
+- [ ] AC-001 - Drive run specs compile into durable graphs with one task step per originally selected task, exact selected order, and policy-gated finalizer steps for source commits, task status, and final state commit.
+- [ ] AC-002 - Existing Drive CLI/tool compatibility is preserved: `cosmonauts drive`, `run_driver`, `watch_events`, completion files, finalization-failed reporting, status, and list keep their current user-visible shapes while graph runs also expose read-only durable status/watch.
+- [ ] AC-003 - Loop-free chain expressions compile and execute durably for the three supported shapes: sequential stages, bracket-parallel groups, and fan-out, with prompt/model/thinking inputs preserved.
+- [ ] AC-004 - Unsupported chain semantics, including loop stages, completion checks, and completion labels, stay on the legacy inline runner with no durable graph written.
+- [ ] AC-005 - Detached Drive preserves the frozen run-level `cosmonauts-drive-step` runner: the host prepares and observes the run, while the scheduler executes inside the frozen child so self-modifying runs do not load mutable host orchestration code mid-flight.
+- [ ] AC-006 - Graph-backed Drive resumes from persisted graph, step, attempt, heartbeat, original task-selection, and pending-finalization evidence after host/session death without duplicating completed work or losing finalizer/all-task accounting.
+- [ ] AC-007 - The migration introduces no regression to existing Drive or chain user-visible outcomes, CLI flags, tool parameters, event rendering, status/list classification, or detached unsupported-backend behavior.
+- [ ] AC-008 - Durable step result handling preserves the D-006 unknown-vs-success distinction and maps retryable Drive finalizer failures to today’s `finalization_failed` contract instead of task success, task failure, or silent retry exhaustion.
+
 ## Non-Goals For This Plan
 
 - No full durable coordinator loop migration.
