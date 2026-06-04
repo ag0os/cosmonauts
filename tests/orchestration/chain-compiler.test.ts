@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
+import { injectUserPrompt } from "../../lib/orchestration/chain-steps.ts";
 import { compileChainToGraph } from "../../lib/orchestration/durable-chain-compiler.ts";
 
 const registry = new AgentRegistry([
@@ -19,6 +20,8 @@ describe("compileChainToGraph", () => {
 		const compiled = compileChainToGraph({
 			runId: "run-chain-compiler-sequential",
 			steps: parsed,
+			projectRoot: "/tmp/cosmonauts/project",
+			registry,
 		});
 
 		expect(compiled.graph.steps.map((step) => step.id)).toEqual([
@@ -49,6 +52,8 @@ describe("compileChainToGraph", () => {
 		const compiled = compileChainToGraph({
 			runId: "run-chain-compiler-bracket",
 			steps: parsed,
+			projectRoot: "/tmp/cosmonauts/project",
+			registry,
 		});
 
 		expect(compiled.graph.steps.map((step) => step.id)).toEqual([
@@ -87,6 +92,8 @@ describe("compileChainToGraph", () => {
 		const compiled = compileChainToGraph({
 			runId: "run-chain-compiler-fanout",
 			steps: parsed,
+			projectRoot: "/tmp/cosmonauts/project",
+			registry,
 		});
 
 		expect(compiled.graph.steps.map((step) => step.id)).toEqual([
@@ -113,6 +120,95 @@ describe("compileChainToGraph", () => {
 			"reviewer",
 			"quality-manager",
 		]);
+	});
+
+	// @cosmo-behavior plan:durable-frontend-migration#B-004
+	test("persists chain stage options for prompt injection model and thinking", () => {
+		const parsed = parseChain(
+			"[planner, reviewer] -> quality-manager",
+			registry,
+			"coding",
+		);
+		const userPrompt = "Preserve chain options for durable scheduling.";
+		const projectSkills = ["tasks", "testing"];
+		const skillPaths = ["/tmp/cosmonauts/skills"];
+		injectUserPrompt(parsed, userPrompt);
+
+		const compiled = compileChainToGraph({
+			runId: "run-chain-compiler-options",
+			steps: parsed,
+			domainContext: "coding",
+			projectRoot: "/tmp/cosmonauts/project",
+			projectSkills,
+			skillPaths,
+			completionLabel: "plan:durable-frontend-migration",
+			models: { planner: "test/planner-override" },
+			thinking: { default: "high", reviewer: "low" },
+			compaction: { enabled: true, keepRecentTokens: 2000 },
+			registry,
+		});
+
+		const [planner, reviewer, qualityManager] = compiled.graph.steps;
+
+		expect(planner?.backend.options).toEqual(
+			expect.objectContaining({
+				source: "chain",
+				stage: expect.objectContaining({
+					name: "planner",
+					loop: false,
+					prompt: `User request: ${userPrompt}`,
+				}),
+				spawn: expect.objectContaining({
+					role: "planner",
+					domainContext: "coding",
+					cwd: "/tmp/cosmonauts/project",
+					model: "test/planner-override",
+					thinkingLevel: "high",
+					prompt: expect.stringContaining(`User request: ${userPrompt}`),
+					projectSkills,
+					skillPaths,
+					compaction: { enabled: true, keepRecentTokens: 2000 },
+					planSlug: "durable-frontend-migration",
+				}),
+			}),
+		);
+		expect(reviewer?.backend.options).toEqual(
+			expect.objectContaining({
+				stage: expect.objectContaining({
+					name: "reviewer",
+					prompt: `User request: ${userPrompt}`,
+				}),
+				spawn: expect.objectContaining({
+					role: "reviewer",
+					domainContext: "coding",
+					cwd: "/tmp/cosmonauts/project",
+					model: "test/model",
+					thinkingLevel: "low",
+					prompt: expect.stringContaining(`User request: ${userPrompt}`),
+					projectSkills,
+					skillPaths,
+					planSlug: "durable-frontend-migration",
+				}),
+			}),
+		);
+		expect(qualityManager?.backend.options).toEqual(
+			expect.objectContaining({
+				stage: expect.objectContaining({
+					name: "quality-manager",
+					loop: false,
+				}),
+				spawn: expect.objectContaining({
+					role: "quality-manager",
+					domainContext: "coding",
+					cwd: "/tmp/cosmonauts/project",
+					model: "test/model",
+					thinkingLevel: "high",
+				}),
+			}),
+		);
+		expect(spawnOptionsPrompt(qualityManager?.backend.options)).not.toContain(
+			userPrompt,
+		);
 	});
 });
 
@@ -156,6 +252,13 @@ function roleFromStepOptions(options: unknown): string | undefined {
 	const stage = options.stage;
 	if (!isRecord(stage)) return undefined;
 	return typeof stage.name === "string" ? stage.name : undefined;
+}
+
+function spawnOptionsPrompt(options: unknown): string | undefined {
+	if (!isRecord(options)) return undefined;
+	const spawn = options.spawn;
+	if (!isRecord(spawn)) return undefined;
+	return typeof spawn.prompt === "string" ? spawn.prompt : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

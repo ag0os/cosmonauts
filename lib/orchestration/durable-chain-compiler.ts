@@ -1,15 +1,34 @@
+import type { AgentRegistry } from "../agents/resolver.ts";
 import type {
 	BackendSpec,
 	RunGraph,
 	RunGraphStep,
 } from "../durable-runtime/index.ts";
 import { isParallelGroupStep } from "./chain-steps.ts";
-import type { ChainStage, ChainStep, ParallelGroupStep } from "./types.ts";
+import { getModelForRole, getThinkingForRole } from "./model-resolution.ts";
+import { buildStagePrompt, resolvePlanSlug } from "./stage-prompts.ts";
+import type {
+	ChainStage,
+	ChainStep,
+	CompactionConfig,
+	ModelConfig,
+	ParallelGroupStep,
+	ThinkingConfig,
+} from "./types.ts";
 
 export interface CompileChainToGraphOptions {
 	runId: string;
 	steps: readonly ChainStep[];
+	projectRoot: string;
+	registry: AgentRegistry;
 	domainContext?: string;
+	models?: ModelConfig;
+	thinking?: ThinkingConfig;
+	projectSkills?: readonly string[];
+	skillPaths?: readonly string[];
+	completionLabel?: string;
+	planSlug?: string;
+	compaction?: CompactionConfig;
 }
 
 export interface ChainCompilerStepMetadata {
@@ -36,12 +55,34 @@ export interface DurableChainStageOptions {
 	prompt?: string;
 }
 
+export interface DurableChainStageSpawnOptions {
+	role: string;
+	domainContext?: string;
+	cwd: string;
+	model: string;
+	prompt: string;
+	projectSkills?: string[];
+	skillPaths?: string[];
+	thinkingLevel?: ReturnType<typeof getThinkingForRole>;
+	compaction?: CompactionConfig;
+	planSlug?: string;
+}
+
 interface CompileStageOptions {
 	runId: string;
 	stage: ChainStage;
 	stepIndex: number;
 	frontier: readonly string[];
 	domainContext?: string;
+	models?: ModelConfig;
+	thinking?: ThinkingConfig;
+	projectRoot: string;
+	projectSkills?: readonly string[];
+	skillPaths?: readonly string[];
+	completionLabel?: string;
+	planSlug?: string;
+	compaction?: CompactionConfig;
+	registry: AgentRegistry;
 	memberIndex?: number;
 	syntax?: ParallelGroupStep["syntax"];
 }
@@ -52,6 +93,10 @@ export function compileChainToGraph(
 	const graphSteps: RunGraphStep[] = [];
 	const metadata: ChainCompilerStepMetadata[] = [];
 	let frontier: string[] = [];
+	const planSlug = resolvePlanSlug({
+		completionLabel: options.completionLabel,
+		planSlug: options.planSlug,
+	});
 
 	options.steps.forEach((step, index) => {
 		const stepIndex = index + 1;
@@ -66,6 +111,15 @@ export function compileChainToGraph(
 					syntax: step.syntax,
 					frontier,
 					domainContext: options.domainContext,
+					models: options.models,
+					thinking: options.thinking,
+					projectRoot: options.projectRoot,
+					projectSkills: options.projectSkills,
+					skillPaths: options.skillPaths,
+					completionLabel: options.completionLabel,
+					planSlug,
+					compaction: options.compaction,
+					registry: options.registry,
 				}),
 			);
 
@@ -81,6 +135,15 @@ export function compileChainToGraph(
 			stepIndex,
 			frontier,
 			domainContext: options.domainContext,
+			models: options.models,
+			thinking: options.thinking,
+			projectRoot: options.projectRoot,
+			projectSkills: options.projectSkills,
+			skillPaths: options.skillPaths,
+			completionLabel: options.completionLabel,
+			planSlug,
+			compaction: options.compaction,
+			registry: options.registry,
 		});
 		graphSteps.push(compiled.graphStep);
 		metadata.push(compiled.metadata);
@@ -130,6 +193,7 @@ function compileStage(options: CompileStageOptions): {
 
 	const backend = chainAgentBackend({
 		stage,
+		spawn: durableStageSpawnOptions(options.stage, options),
 		stepIndex: options.stepIndex,
 		memberIndex: options.memberIndex,
 		syntax: options.syntax,
@@ -160,6 +224,7 @@ function compileStage(options: CompileStageOptions): {
 
 function chainAgentBackend(options: {
 	stage: DurableChainStageOptions;
+	spawn: DurableChainStageSpawnOptions;
 	stepIndex: number;
 	memberIndex?: number;
 	syntax?: ParallelGroupStep["syntax"];
@@ -170,6 +235,7 @@ function chainAgentBackend(options: {
 		options: {
 			source: "chain",
 			stage: options.stage,
+			spawn: options.spawn,
 			stepIndex: options.stepIndex,
 			...(options.memberIndex !== undefined && {
 				memberIndex: options.memberIndex,
@@ -182,12 +248,60 @@ function chainAgentBackend(options: {
 	};
 }
 
+function durableStageSpawnOptions(
+	stage: ChainStage,
+	options: CompileStageOptions,
+): DurableChainStageSpawnOptions {
+	return {
+		role: stage.name,
+		...(options.domainContext !== undefined && {
+			domainContext: options.domainContext,
+		}),
+		cwd: options.projectRoot,
+		model: getModelForRole(
+			stage.name,
+			options.models,
+			options.registry,
+			options.domainContext,
+		),
+		prompt: buildStagePrompt(stage, {
+			completionLabel: options.completionLabel,
+		}),
+		...(options.projectSkills !== undefined && {
+			projectSkills: [...options.projectSkills],
+		}),
+		...(options.skillPaths !== undefined && {
+			skillPaths: [...options.skillPaths],
+		}),
+		...withDefined(
+			"thinkingLevel",
+			getThinkingForRole(
+				stage.name,
+				options.thinking,
+				options.registry,
+				options.domainContext,
+			),
+		),
+		...(options.compaction !== undefined && {
+			compaction: { ...options.compaction },
+		}),
+		...(options.planSlug !== undefined && { planSlug: options.planSlug }),
+	};
+}
+
 function durableStageOptions(stage: ChainStage): DurableChainStageOptions {
 	return {
 		name: stage.name,
 		loop: stage.loop,
 		...(stage.prompt !== undefined && { prompt: stage.prompt }),
 	};
+}
+
+function withDefined<Key extends string, Value>(
+	key: Key,
+	value: Value | undefined,
+): { [K in Key]: Value } | Record<string, never> {
+	return value === undefined ? {} : ({ [key]: value } as { [K in Key]: Value });
 }
 
 function stageRequiresInline(stage: ChainStage): boolean {
