@@ -614,8 +614,35 @@ describe("durable scheduler recovery", () => {
 				}),
 			]),
 		);
+		expect(result.run.status).toBe("blocked");
 		expect(backend.prepare).not.toHaveBeenCalled();
 		expect(backend.start).not.toHaveBeenCalled();
+		await expect(restartedStore.loadRun(ref(run))).resolves.toEqual(
+			expect.objectContaining({ status: "blocked" }),
+		);
+		const events = await restartedStore.readEvents(ref(run));
+		expect(events.events).toEqual([
+			expect.objectContaining({
+				event: expect.objectContaining({
+					type: "run_blocked",
+					reason:
+						"Persisted graph step records are missing or corrupt; manual recovery is required before execution.",
+				}),
+			}),
+		]);
+		expect(events.diagnostics).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					code: "missing_step_record",
+					details: { stepId: "missing-record" },
+				}),
+				expect.objectContaining({
+					code: "corrupt_step_record",
+					path: corruptStepPath,
+					details: expect.objectContaining({ stepId: "corrupt-record" }),
+				}),
+			]),
+		);
 		await expect(
 			restartedStore.listStepAttemptRecords({
 				...ref(run),

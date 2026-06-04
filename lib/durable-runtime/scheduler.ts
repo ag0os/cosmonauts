@@ -86,8 +86,13 @@ export async function runDurableGraphScheduler({
 		}
 	}
 	if (hasBlockingPersistedStateDiagnostics(reconciliation.diagnostics)) {
+		const blockedRun = await blockRunForPersistedStateDiagnostics({
+			store,
+			ref,
+			diagnostics: reconciliation.diagnostics,
+		});
 		return {
-			run,
+			run: blockedRun,
 			steps: reconciliation.steps,
 			diagnostics,
 			exitReason: "blocked",
@@ -413,6 +418,33 @@ function hasBlockingPersistedStateDiagnostics(
 			diagnostic.code === "corrupt_step_record" ||
 			diagnostic.code === "invalid_step_record",
 	);
+}
+
+interface BlockRunForPersistedStateDiagnosticsOptions {
+	store: RunStore;
+	ref: RunRef;
+	diagnostics: readonly RuntimeDiagnostic[];
+}
+
+async function blockRunForPersistedStateDiagnostics({
+	store,
+	ref,
+	diagnostics,
+}: BlockRunForPersistedStateDiagnosticsOptions): Promise<RunRecord> {
+	for (const diagnostic of diagnostics) {
+		await store.appendDiagnostic(ref, diagnostic);
+	}
+	await store.appendEvent(ref, {
+		type: "run_blocked",
+		runId: ref.runId,
+		reason:
+			"Persisted graph step records are missing or corrupt; manual recovery is required before execution.",
+	});
+	const blockedRun = await store.loadRun(ref);
+	if (!blockedRun) {
+		throw new Error(`Run ${ref.scope}/${ref.runId} does not exist.`);
+	}
+	return blockedRun;
 }
 
 function terminalAttemptForStep(
