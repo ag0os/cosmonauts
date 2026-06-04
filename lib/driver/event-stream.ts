@@ -8,7 +8,12 @@ import {
 } from "../durable-runtime/index.ts";
 import type { BusEvent } from "../orchestration/message-bus.ts";
 import { normalizeDriverEvent } from "./durable-events.ts";
+import {
+	createDriveStepProjector,
+	type DriveStepProjector,
+} from "./durable-steps.ts";
 import type {
+	BackendName,
 	DriverEvent,
 	DriverRunSpec,
 	EventSink,
@@ -50,6 +55,10 @@ interface DurableDriverEventSinkOptions {
 	rootDir: string;
 	scope: string;
 	runId: string;
+	projectRoot?: string;
+	workdir?: string;
+	configuredBackendName?: BackendName;
+	taskIds?: readonly string[];
 	eventsPath?: string;
 	policy?: Partial<RunPolicy>;
 	metadata?: Record<string, unknown>;
@@ -111,6 +120,10 @@ export function driveDurableEventSinkOptions(
 		rootDir: join(spec.projectRoot, "missions", "sessions"),
 		scope: spec.planSlug,
 		runId: spec.runId,
+		projectRoot: spec.projectRoot,
+		workdir: spec.workdir,
+		configuredBackendName: spec.backendName,
+		taskIds: spec.taskIds,
 		eventsPath: "orchestration-events.jsonl",
 		policy: {
 			defaultBackend: { name: spec.backendName },
@@ -120,6 +133,8 @@ export function driveDurableEventSinkOptions(
 			source: "drive",
 			legacyEventsPath: spec.eventLogPath,
 			parentSessionId: spec.parentSessionId,
+			driveTaskIds: spec.taskIds,
+			configuredBackendName: spec.backendName,
 		},
 	};
 }
@@ -131,6 +146,7 @@ function createDurableDriverEventSink(
 	const ref = { scope: options.scope, runId: options.runId };
 	let ready = false;
 	let disabled = false;
+	let stepProjector: DriveStepProjector | undefined;
 
 	return async (event) => {
 		if (disabled) {
@@ -151,6 +167,21 @@ function createDurableDriverEventSink(
 						eventsPath: options.eventsPath,
 						policy: options.policy,
 						metadata: options.metadata,
+					});
+				}
+				if (
+					options.projectRoot &&
+					options.workdir &&
+					options.configuredBackendName &&
+					options.taskIds
+				) {
+					stepProjector = createDriveStepProjector({
+						store,
+						ref,
+						projectRoot: options.projectRoot,
+						workdir: options.workdir,
+						configuredBackendName: options.configuredBackendName,
+						taskIds: options.taskIds,
 					});
 				}
 				ready = true;
@@ -190,6 +221,17 @@ function createDurableDriverEventSink(
 					details: durableDiagnosticDetails(event, error),
 				});
 			}
+		}
+
+		try {
+			await stepProjector?.project(event);
+		} catch (error) {
+			reportDurableDiagnostic({
+				code: "drive_durable_step_write_failed",
+				message:
+					"Drive durable step projection failed; legacy driver event write and normalized event writes remain authoritative.",
+				details: durableDiagnosticDetails(event, error),
+			});
 		}
 	};
 }
