@@ -1,4 +1,4 @@
-import type { RunGraphSchedulerBackend } from "./backends.ts";
+import type { BackendHandle, RunGraphSchedulerBackend } from "./backends.ts";
 import { reconcileSchedulerState } from "./scheduler-state.ts";
 import { isTerminalStatus, isTerminalStepStatus } from "./status.ts";
 import type {
@@ -208,24 +208,62 @@ export async function runDurableGraphScheduler({
 		};
 	}
 
-	await executeStep({
-		store,
-		ref,
+	const runnablePlan = planRunnableSteps({
 		run,
-		step: runnable,
-		backend,
+		steps: reconciliation.steps,
+		backends,
 		holderId,
-		inputForStep,
-		now: now ?? (() => new Date().toISOString()),
-		signal,
-		state: reconciliation.state,
-		heartbeatIntervalMs,
 	});
+	diagnostics.push(...runnablePlan.diagnostics);
+	const runningCount = reconciliation.steps.filter(
+		(step) => step.status === "running",
+	).length;
+	const availableSlots = Math.max(
+		0,
+		runnablePlan.effectiveLimit - runningCount,
+	);
+	if (availableSlots === 0) {
+		return schedulerResult({
+			store,
+			ref,
+			run,
+			diagnostics,
+			exitReason: "waiting_for_fresh_external_work",
+		});
+	}
+
+	const executions: StartedStepExecution[] = [];
+	for (const runnableStep of runnablePlan.steps.slice(0, availableSlots)) {
+		executions.push(
+			await startStepExecution({
+				store,
+				ref,
+				run,
+				step: runnableStep.step,
+				backend: runnableStep.backend,
+				holderId,
+				inputForStep,
+				now: now ?? (() => new Date().toISOString()),
+				signal,
+				heartbeatIntervalMs,
+			}),
+		);
+	}
+
+	for (const execution of executions) {
+		await finishStepExecution({
+			store,
+			ref,
+			run,
+			execution,
+			now: now ?? (() => new Date().toISOString()),
+		});
+	}
 
 	const finalized = await finalizeRun({
 		store,
 		ref,
-		diagnostics: reconciliation.diagnostics,
+		diagnostics,
 	});
 	return schedulerResult({
 		store,
@@ -753,6 +791,85 @@ function firstRunnableStep({
 	});
 }
 
+interface PlannedRunnableStep {
+	step: StepRecord;
+	backend: RunGraphSchedulerBackend;
+}
+
+interface RunnableStepPlan {
+	steps: PlannedRunnableStep[];
+	effectiveLimit: number;
+	diagnostics: RuntimeDiagnostic[];
+}
+
+function planRunnableSteps({
+	run,
+	steps,
+	backends,
+	holderId,
+}: {
+	run: RunRecord;
+	steps: StepRecord[];
+	backends: ReadonlyMap<KnownBackendName, RunGraphSchedulerBackend>;
+	holderId: string;
+}): RunnableStepPlan {
+	const runnableSteps = steps.filter((step) => isRunnableStep(step, holderId));
+	const plannedSteps = runnableSteps.flatMap((step) => {
+		const backend = backendForStep(step, backends);
+		return backend ? [{ step, backend }] : [];
+	});
+	const requestedLimit = effectiveMaxParallelSteps(run);
+	const diagnostics: RuntimeDiagnostic[] = [];
+	let effectiveLimit = requestedLimit;
+	const unsafeSharedStep = plannedSteps.find(
+		({ backend }) =>
+			requestedLimit > 1 &&
+			run.policy.worktree.mode === "shared" &&
+			!isSafeForSharedWorktreeConcurrency(backend),
+	);
+	if (unsafeSharedStep) {
+		effectiveLimit = 1;
+		diagnostics.push({
+			code: "shared_worktree_mutable_concurrency_capped",
+			message:
+				"Shared-worktree backend concurrency was capped to one because at least one runnable backend may mutate host source.",
+			details: {
+				requestedMaxParallelSteps: requestedLimit,
+				effectiveMaxParallelSteps: effectiveLimit,
+				worktreeMode: run.policy.worktree.mode,
+				stepId: unsafeSharedStep.step.id,
+				backend: unsafeSharedStep.backend.name,
+				capabilities: unsafeSharedStep.backend.capabilities,
+			},
+		});
+	}
+
+	return { steps: plannedSteps, effectiveLimit, diagnostics };
+}
+
+function isRunnableStep(step: StepRecord, holderId: string): boolean {
+	if (step.status !== "ready") {
+		return false;
+	}
+	if (!step.lease) {
+		return true;
+	}
+	return step.lease.holderId === holderId && step.lease.renewable;
+}
+
+function effectiveMaxParallelSteps(run: RunRecord): number {
+	return positiveInteger(run.policy.maxParallelSteps) ?? 1;
+}
+
+function isSafeForSharedWorktreeConcurrency(
+	backend: RunGraphSchedulerBackend,
+): boolean {
+	return (
+		backend.capabilities.isolatedFromHostSource &&
+		!backend.capabilities.canCommit
+	);
+}
+
 function hasRunningExternalWork(
 	steps: StepRecord[],
 	holderId: string,
@@ -786,11 +903,25 @@ interface ExecuteStepOptions {
 	inputForStep?: RunGraphSchedulerOptions["inputForStep"];
 	now: () => string;
 	signal?: AbortSignal;
-	state: SchedulerState;
 	heartbeatIntervalMs?: number;
 }
 
-async function executeStep({
+interface HeartbeatWriteState {
+	latestHeartbeat: StepHeartbeat;
+	write: Promise<void>;
+}
+
+interface StartedStepExecution {
+	runningStep: StepRecord;
+	attemptNumber: number;
+	openAttempt: StepAttemptRecord;
+	handle?: BackendHandle<StepResult>;
+	startError?: unknown;
+	heartbeatState: HeartbeatWriteState;
+	heartbeatTimer?: ReturnType<typeof setInterval>;
+}
+
+async function startStepExecution({
 	store,
 	ref,
 	run,
@@ -800,9 +931,8 @@ async function executeStep({
 	inputForStep,
 	now,
 	signal,
-	state,
 	heartbeatIntervalMs,
-}: ExecuteStepOptions): Promise<void> {
+}: ExecuteStepOptions): Promise<StartedStepExecution> {
 	const startedAt = now();
 	const priorAttempts = await store.listStepAttemptRecords({
 		...ref,
@@ -824,12 +954,15 @@ async function executeStep({
 	await store.writeStepAttemptRecord({ ...ref, stepId: step.id }, openAttempt);
 	await store.writeStepHeartbeat({ ...ref, stepId: step.id }, heartbeat);
 	await store.writeStepRecord(ref, runningStep);
+	const latestState = await store.readSchedulerState(ref);
 	await writeSchedulerState(store, ref, {
-		...state,
-		readyStepIds: state.readyStepIds.filter((stepId) => stepId !== step.id),
-		leasesByStepId: { ...state.leasesByStepId, [step.id]: lease },
+		...latestState,
+		readyStepIds: latestState.readyStepIds.filter(
+			(stepId) => stepId !== step.id,
+		),
+		leasesByStepId: { ...latestState.leasesByStepId, [step.id]: lease },
 		heartbeatsByStepId: {
-			...state.heartbeatsByStepId,
+			...latestState.heartbeatsByStepId,
 			[step.id]: heartbeat,
 		},
 		updatedAt: startedAt,
@@ -846,13 +979,15 @@ async function executeStep({
 		stepId: step.id,
 	});
 
-	let latestHeartbeat = heartbeat;
-	let heartbeatWrite = Promise.resolve();
+	const heartbeatState: HeartbeatWriteState = {
+		latestHeartbeat: heartbeat,
+		write: Promise.resolve(),
+	};
 	const heartbeatTimer =
 		heartbeatIntervalMs === undefined || heartbeatIntervalMs <= 0
 			? undefined
 			: setInterval(() => {
-					heartbeatWrite = heartbeatWrite.then(async () => {
+					heartbeatState.write = heartbeatState.write.then(async () => {
 						const renewed = await renewPersistedRunningStep({
 							store,
 							ref,
@@ -861,11 +996,12 @@ async function executeStep({
 							now,
 						});
 						if (renewed) {
-							latestHeartbeat = renewed.heartbeat;
+							heartbeatState.latestHeartbeat = renewed.heartbeat;
 						}
 					});
 				}, heartbeatIntervalMs);
-	let result: StepResult;
+	let handle: BackendHandle<StepResult> | undefined;
+	let startError: unknown;
 	try {
 		const input =
 			(await inputForStep?.(step, run)) ?? defaultInputForStep(step, run);
@@ -877,8 +1013,44 @@ async function executeStep({
 			signal,
 			now,
 		});
-		const handle = await backend.start(prepared);
-		result = normalizeStepResult(await handle.result);
+		handle = await backend.start(prepared);
+	} catch (error) {
+		startError = error;
+	}
+
+	return {
+		runningStep,
+		attemptNumber,
+		openAttempt,
+		handle,
+		startError,
+		heartbeatState,
+		heartbeatTimer,
+	};
+}
+
+async function finishStepExecution({
+	store,
+	ref,
+	run,
+	execution,
+	now,
+}: {
+	store: RunStore;
+	ref: RunRef;
+	run: RunRecord;
+	execution: StartedStepExecution;
+	now: () => string;
+}): Promise<void> {
+	let result: StepResult;
+	try {
+		if (execution.startError) {
+			throw execution.startError;
+		}
+		if (!execution.handle) {
+			throw new Error("Backend did not return a scheduler handle.");
+		}
+		result = normalizeStepResult(await execution.handle.result);
 	} catch (error) {
 		result = {
 			outcome: "failed",
@@ -887,48 +1059,52 @@ async function executeStep({
 			nextAction: "abort_run",
 		};
 	} finally {
-		if (heartbeatTimer !== undefined) {
-			clearInterval(heartbeatTimer);
+		if (execution.heartbeatTimer !== undefined) {
+			clearInterval(execution.heartbeatTimer);
 		}
-		await heartbeatWrite;
+		await execution.heartbeatState.write;
 	}
 
 	const endedAt = now();
-	const terminalAttempt = { ...openAttempt, endedAt, result };
+	const terminalAttempt = { ...execution.openAttempt, endedAt, result };
 	await store.writeStepAttemptRecord(
-		{ ...ref, stepId: step.id },
+		{ ...ref, stepId: execution.runningStep.id },
 		terminalAttempt,
 	);
 
 	const transition = stepTransitionFromResult({
 		result,
-		attemptNumber,
-		maxAttempts: effectiveMaxAttempts(step, run),
+		attemptNumber: execution.attemptNumber,
+		maxAttempts: effectiveMaxAttempts(execution.runningStep, run),
 	});
 	const terminalStep: StepRecord = {
-		...runningStep,
+		...execution.runningStep,
 		status: transition.status,
 		result: transition.stepResult,
 		outputArtifacts: transition.stepResult.artifacts,
 		lease: undefined,
-		heartbeat: latestHeartbeat,
+		heartbeat: execution.heartbeatState.latestHeartbeat,
 	};
 	await store.writeStepRecord(ref, terminalStep);
 	const latestState = await store.readSchedulerState(ref);
-	const { [step.id]: _releasedLease, ...leasesByStepId } =
+	const { [execution.runningStep.id]: _releasedLease, ...leasesByStepId } =
 		latestState.leasesByStepId;
 	await writeSchedulerState(store, ref, {
 		...latestState,
 		readyStepIds: transition.retry
 			? [
-					...latestState.readyStepIds.filter((stepId) => stepId !== step.id),
-					step.id,
+					...latestState.readyStepIds.filter(
+						(stepId) => stepId !== execution.runningStep.id,
+					),
+					execution.runningStep.id,
 				]
-			: latestState.readyStepIds.filter((stepId) => stepId !== step.id),
+			: latestState.readyStepIds.filter(
+					(stepId) => stepId !== execution.runningStep.id,
+				),
 		leasesByStepId,
 		heartbeatsByStepId: {
 			...latestState.heartbeatsByStepId,
-			[step.id]: latestHeartbeat,
+			[execution.runningStep.id]: execution.heartbeatState.latestHeartbeat,
 		},
 		updatedAt: endedAt,
 	});
@@ -936,7 +1112,7 @@ async function executeStep({
 		await store.appendEvent(ref, {
 			type: "step_ready",
 			runId: ref.runId,
-			stepId: step.id,
+			stepId: execution.runningStep.id,
 		});
 	} else {
 		await appendTerminalStepEvent(
