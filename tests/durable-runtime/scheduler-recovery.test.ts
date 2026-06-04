@@ -756,6 +756,58 @@ describe("durable scheduler recovery", () => {
 			{ type: "run_stale", runId: run.runId },
 		]);
 	});
+
+	// REVIEW-FIX F-003: invalid persisted graph topology must block recovery
+	// before any backend start instead of silently dropping the graph node, so
+	// a corrupt graph.json cannot lose planned work.
+	test("blocks the run when graph topology is invalid instead of dropping graph nodes", async () => {
+		const store = new FileRunStore({ rootDir: temp.path });
+		const run = await store.createRun({
+			scope: "plan-a",
+			runId: "run-invalid-graph-topology-blocks",
+			status: "running",
+		});
+		// A malformed graph step (missing required fields) makes readRunGraph emit
+		// `invalid_run_graph_step` and drop the node; recovery must block, not run.
+		await writeFile(
+			run.graphPath,
+			`${JSON.stringify(
+				{
+					steps: [{ id: "build", runId: run.runId }],
+					edges: [],
+				},
+				null,
+				2,
+			)}\n`,
+			"utf-8",
+		);
+		const backend = schedulerBackend("shell-command");
+
+		const result = await runDurableGraphScheduler({
+			store,
+			ref: ref(run),
+			backends: new Map([["shell-command", backend]]),
+			holderId: "scheduler-a",
+			now: () => "2026-06-04T00:00:01.000Z",
+		});
+
+		expect(backend.prepare).not.toHaveBeenCalled();
+		expect(backend.start).not.toHaveBeenCalled();
+		expect(result.exitReason).toBe("blocked");
+		expect(result.run.status).toBe("blocked");
+		await expect(store.loadRun(ref(run))).resolves.toEqual(
+			expect.objectContaining({ status: "blocked" }),
+		);
+		const events = await store.readEvents(ref(run));
+		expect(events.events.map((stored) => stored.event.type)).toContain(
+			"run_blocked",
+		);
+		expect(events.diagnostics).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ code: "invalid_run_graph_step" }),
+			]),
+		);
+	});
 });
 
 function ref(record: RunRecord): { scope: string; runId: string } {

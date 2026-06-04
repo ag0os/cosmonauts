@@ -451,6 +451,62 @@ describe("durable graph scheduler", () => {
 			expect.objectContaining({ events: [] }),
 		);
 	});
+
+	// REVIEW-FIX F-002: a ready step whose backend name is `unknown` (the
+	// BackendName sentinel / policy default) can never run and must block durably
+	// (blocked StepResult + step_blocked + run_blocked), not drain with no
+	// persisted evidence, per the plan's backend-lookup rule.
+	test("blocks a ready step durably when its backend is the unknown sentinel", async () => {
+		const store = new FileRunStore({ rootDir: temp.path });
+		const run = await store.createRun({
+			scope: "plan-a",
+			runId: "run-unknown-backend-blocks",
+			status: "running",
+		});
+		await store.writeRunGraph(ref(run), {
+			steps: [{ ...graphStep(run, "build", []), backend: { name: "unknown" } }],
+			edges: [],
+		});
+		await store.writeStepRecord(ref(run), {
+			...stepRecord(run, "build", []),
+			backend: { name: "unknown" },
+			status: "ready",
+		});
+		await store.writeSchedulerState(ref(run), {
+			readyStepIds: ["build"],
+			leasesByStepId: {},
+			heartbeatsByStepId: {},
+			updatedAt: "2026-06-04T00:00:00.000Z",
+		});
+
+		const result = await runDurableGraphScheduler({
+			store,
+			ref: ref(run),
+			backends: emptyBackends(),
+			holderId: "scheduler-a",
+			now: () => "2026-06-04T00:00:01.000Z",
+		});
+
+		expect(result.exitReason).toBe("terminal");
+		await expect(
+			store.readStepRecord({ ...ref(run), stepId: "build" }),
+		).resolves.toEqual(
+			expect.objectContaining({
+				status: "blocked",
+				result: expect.objectContaining({
+					outcome: "blocked",
+					nextAction: "wait_for_human",
+				}),
+			}),
+		);
+		await expect(store.loadRun(ref(run))).resolves.toEqual(
+			expect.objectContaining({ status: "blocked" }),
+		);
+		const events = await store.readEvents(ref(run));
+		const eventTypes = events.events.map((stored) => stored.event.type);
+		expect(eventTypes).toContain("step_blocked");
+		expect(eventTypes).toContain("run_blocked");
+	});
 });
 
 function ref(record: RunRecord): { scope: string; runId: string } {

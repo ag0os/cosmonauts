@@ -151,6 +151,26 @@ export async function runDurableGraphScheduler({
 		});
 	}
 
+	const backendBlock = await blockUnknownBackendSteps({
+		store,
+		ref,
+		steps: reconciliation.steps,
+	});
+	if (backendBlock.changed) {
+		diagnostics.push(...backendBlock.diagnostics);
+		const finalized = await finalizeRun({ store, ref, diagnostics });
+		return schedulerResult({
+			store,
+			ref,
+			run: finalized ?? run,
+			diagnostics,
+			exitReason:
+				finalized && isTerminalStatus(finalized.status)
+					? "terminal"
+					: "drained",
+		});
+	}
+
 	const alreadyFinalized = await finalizeRun({
 		store,
 		ref,
@@ -195,21 +215,6 @@ export async function runDurableGraphScheduler({
 			exitReason: hasRunningExternalWork(reconciliation.steps, holderId)
 				? "waiting_for_fresh_external_work"
 				: "drained",
-		};
-	}
-
-	const backend = backendForStep(runnable, backends);
-	if (!backend) {
-		diagnostics.push({
-			code: "scheduler_backend_unavailable",
-			message: `No scheduler backend is registered for ${runnable.backend.name}.`,
-			details: { stepId: runnable.id, backend: runnable.backend.name },
-		});
-		return {
-			run,
-			steps: reconciliation.steps,
-			diagnostics,
-			exitReason: "drained",
 		};
 	}
 
@@ -416,7 +421,11 @@ function hasBlockingPersistedStateDiagnostics(
 		(diagnostic) =>
 			diagnostic.code === "missing_step_record" ||
 			diagnostic.code === "corrupt_step_record" ||
-			diagnostic.code === "invalid_step_record",
+			diagnostic.code === "invalid_step_record" ||
+			diagnostic.code === "invalid_run_graph" ||
+			diagnostic.code === "invalid_run_graph_step" ||
+			diagnostic.code === "graph_step_run_mismatch" ||
+			diagnostic.code === "invalid_run_graph_edge",
 	);
 }
 
@@ -445,6 +454,57 @@ async function blockRunForPersistedStateDiagnostics({
 		throw new Error(`Run ${ref.scope}/${ref.runId} does not exist.`);
 	}
 	return blockedRun;
+}
+
+interface BlockUnknownBackendStepsOptions {
+	store: RunStore;
+	ref: RunRef;
+	steps: StepRecord[];
+}
+
+// A ready step whose backend name is `unknown` (the BackendName sentinel and the
+// policy default) can never run, so it must block durably with a persisted
+// StepResult + step_blocked instead of silently draining with no evidence (plan
+// backend-lookup rule / D-006). A known backend name that simply has no adapter in
+// this invocation stays ready and drains, since a later invocation may register it
+// (preserving the B-003 readiness contract). The blocked step then lets finalizeRun
+// block the run when no other runnable work remains.
+async function blockUnknownBackendSteps({
+	store,
+	ref,
+	steps,
+}: BlockUnknownBackendStepsOptions): Promise<{
+	changed: boolean;
+	diagnostics: RuntimeDiagnostic[];
+}> {
+	const diagnostics: RuntimeDiagnostic[] = [];
+	let changed = false;
+	for (const step of steps) {
+		if (step.status !== "ready" || isKnownBackendName(step.backend.name)) {
+			continue;
+		}
+		const summary = `Step backend "${step.backend.name}" has no runnable adapter and must be configured before execution.`;
+		const result: StepResult = {
+			outcome: "blocked",
+			summary,
+			artifacts: [],
+			nextAction: "wait_for_human",
+		};
+		await store.writeStepRecord(ref, { ...step, status: "blocked", result });
+		await store.appendEvent(ref, {
+			type: "step_blocked",
+			runId: ref.runId,
+			stepId: step.id,
+			reason: summary,
+		});
+		diagnostics.push({
+			code: "scheduler_backend_unavailable",
+			message: summary,
+			details: { stepId: step.id, backend: step.backend.name },
+		});
+		changed = true;
+	}
+	return { changed, diagnostics };
 }
 
 function terminalAttemptForStep(
