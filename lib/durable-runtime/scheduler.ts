@@ -42,6 +42,7 @@ export async function runDurableGraphScheduler({
 	inputForStep,
 	now,
 	signal,
+	heartbeatIntervalMs,
 }: RunGraphSchedulerOptions): Promise<RunGraphSchedulerResult> {
 	const run = await store.loadRun(ref);
 	if (!run) {
@@ -58,12 +59,37 @@ export async function runDurableGraphScheduler({
 
 	const reconciliation = await reconcileSchedulerState({ store, ref, now });
 	const diagnostics = [...reconciliation.diagnostics];
+	const staleTransition = await markPersistedStaleRunningSteps({
+		store,
+		ref,
+		run,
+		now: now ?? (() => new Date().toISOString()),
+		state: reconciliation.state,
+		steps: reconciliation.steps,
+	});
+	if (staleTransition.changed) {
+		const finalized = await finalizeRun({
+			store,
+			ref,
+			diagnostics,
+		});
+		return schedulerResult({
+			store,
+			ref,
+			run: finalized ?? run,
+			diagnostics,
+			exitReason:
+				finalized && isTerminalStatus(finalized.status)
+					? "terminal"
+					: "drained",
+		});
+	}
+
 	const renewed = await renewOwnedRunningStep({
 		store,
 		ref,
 		holderId,
 		now: now ?? (() => new Date().toISOString()),
-		state: reconciliation.state,
 		steps: reconciliation.steps,
 	});
 	if (renewed) {
@@ -117,6 +143,7 @@ export async function runDurableGraphScheduler({
 		now: now ?? (() => new Date().toISOString()),
 		signal,
 		state: reconciliation.state,
+		heartbeatIntervalMs,
 	});
 
 	const finalized = await finalizeRun({
@@ -162,7 +189,6 @@ interface RenewOwnedRunningStepOptions {
 	ref: RunRef;
 	holderId: string;
 	now: () => string;
-	state: SchedulerState;
 	steps: StepRecord[];
 }
 
@@ -171,7 +197,6 @@ async function renewOwnedRunningStep({
 	ref,
 	holderId,
 	now,
-	state,
 	steps,
 }: RenewOwnedRunningStepOptions): Promise<boolean> {
 	const step = steps.find(
@@ -184,30 +209,207 @@ async function renewOwnedRunningStep({
 		return false;
 	}
 
+	const renewed = await renewPersistedRunningStep({
+		store,
+		ref,
+		stepId: step.id,
+		holderId,
+		now,
+	});
+	return renewed !== undefined;
+}
+
+interface PersistedHeartbeatRenewalOptions {
+	store: RunStore;
+	ref: RunRef;
+	stepId: string;
+	holderId: string;
+	now: () => string;
+}
+
+interface PersistedHeartbeatRenewal {
+	lease: StepLease;
+	heartbeat: StepHeartbeat;
+}
+
+async function renewPersistedRunningStep({
+	store,
+	ref,
+	stepId,
+	holderId,
+	now,
+}: PersistedHeartbeatRenewalOptions): Promise<
+	PersistedHeartbeatRenewal | undefined
+> {
+	const step = await store.readStepRecord({ ...ref, stepId });
+	if (
+		!step ||
+		step.status !== "running" ||
+		step.lease?.holderId !== holderId ||
+		!step.lease.renewable
+	) {
+		return undefined;
+	}
+
 	const renewedAt = now();
 	const lease = stepLease(holderId, renewedAt);
 	const heartbeat: StepHeartbeat = { at: renewedAt, note: "renewed" };
-	await store.writeStepHeartbeat({ ...ref, stepId: step.id }, heartbeat);
+	await store.writeStepHeartbeat({ ...ref, stepId }, heartbeat);
 	await store.writeStepRecord(ref, {
 		...step,
 		lease,
 		heartbeat,
 	});
+	const latestState = await store.readSchedulerState(ref);
 	await writeSchedulerState(store, ref, {
-		...state,
-		leasesByStepId: { ...state.leasesByStepId, [step.id]: lease },
+		...latestState,
+		leasesByStepId: { ...latestState.leasesByStepId, [stepId]: lease },
 		heartbeatsByStepId: {
-			...state.heartbeatsByStepId,
-			[step.id]: heartbeat,
+			...latestState.heartbeatsByStepId,
+			[stepId]: heartbeat,
 		},
 		updatedAt: renewedAt,
 	});
 	await store.appendEvent(ref, {
 		type: "step_heartbeat",
 		runId: ref.runId,
-		stepId: step.id,
+		stepId,
 	});
-	return true;
+	return { lease, heartbeat };
+}
+
+interface MarkPersistedStaleRunningStepsOptions {
+	store: RunStore;
+	ref: RunRef;
+	run: RunRecord;
+	now: () => string;
+	state: SchedulerState;
+	steps: StepRecord[];
+}
+
+interface StaleTransitionResult {
+	changed: boolean;
+}
+
+async function markPersistedStaleRunningSteps({
+	store,
+	ref,
+	run,
+	now,
+	state,
+	steps,
+}: MarkPersistedStaleRunningStepsOptions): Promise<StaleTransitionResult> {
+	const staleHeartbeatMs = explicitStaleHeartbeatMs(run);
+	if (staleHeartbeatMs === undefined) {
+		return { changed: false };
+	}
+
+	const checkedAt = now();
+	let nextState = state;
+	let changed = false;
+	for (const step of steps) {
+		if (step.status !== "running") {
+			continue;
+		}
+		const lease = step.lease ?? state.leasesByStepId[step.id];
+		if (!lease) {
+			continue;
+		}
+		const heartbeat = await persistedHeartbeatForStep(store, ref, step, state);
+		if (
+			!heartbeat ||
+			!isHeartbeatStale(heartbeat, checkedAt, staleHeartbeatMs)
+		) {
+			continue;
+		}
+
+		const staleStep: StepRecord = {
+			...step,
+			status: "stale",
+			lease: undefined,
+			heartbeat,
+		};
+		await store.writeStepRecord(ref, staleStep);
+		const { [step.id]: _releasedLease, ...leasesByStepId } =
+			nextState.leasesByStepId;
+		nextState = {
+			...nextState,
+			readyStepIds: nextState.readyStepIds.filter(
+				(stepId) => stepId !== step.id,
+			),
+			leasesByStepId,
+			heartbeatsByStepId: {
+				...nextState.heartbeatsByStepId,
+				[step.id]: heartbeat,
+			},
+			updatedAt: checkedAt,
+		};
+		await writeSchedulerState(store, ref, nextState);
+		await store.appendEvent(ref, {
+			type: "step_stale",
+			runId: ref.runId,
+			stepId: step.id,
+		});
+		changed = true;
+	}
+
+	return { changed };
+}
+
+async function persistedHeartbeatForStep(
+	store: RunStore,
+	ref: RunRef,
+	step: StepRecord,
+	state: SchedulerState,
+): Promise<StepHeartbeat | undefined> {
+	return newestHeartbeat([
+		await store.readStepHeartbeat({ ...ref, stepId: step.id }),
+		step.heartbeat,
+		state.heartbeatsByStepId[step.id],
+	]);
+}
+
+function newestHeartbeat(
+	heartbeats: readonly (StepHeartbeat | undefined)[],
+): StepHeartbeat | undefined {
+	const present = heartbeats.filter(
+		(heartbeat): heartbeat is StepHeartbeat => heartbeat !== undefined,
+	);
+	if (present.length === 0) {
+		return undefined;
+	}
+
+	const dated = present
+		.map((heartbeat) => ({ heartbeat, time: Date.parse(heartbeat.at) }))
+		.filter(({ time }) => Number.isFinite(time));
+	if (dated.length === 0) {
+		return present[0];
+	}
+
+	return dated.reduce((latest, candidate) =>
+		candidate.time > latest.time ? candidate : latest,
+	).heartbeat;
+}
+
+function explicitStaleHeartbeatMs(run: RunRecord): number | undefined {
+	const value = run.policy.staleHeartbeatMs;
+	if (value === undefined || !Number.isFinite(value) || value < 0) {
+		return undefined;
+	}
+	return value;
+}
+
+function isHeartbeatStale(
+	heartbeat: StepHeartbeat,
+	now: string,
+	staleHeartbeatMs: number,
+): boolean {
+	const heartbeatTime = Date.parse(heartbeat.at);
+	const nowTime = Date.parse(now);
+	if (!Number.isFinite(heartbeatTime) || !Number.isFinite(nowTime)) {
+		return false;
+	}
+	return nowTime - heartbeatTime > staleHeartbeatMs;
 }
 
 function firstRunnableStep({
@@ -262,6 +464,7 @@ interface ExecuteStepOptions {
 	now: () => string;
 	signal?: AbortSignal;
 	state: SchedulerState;
+	heartbeatIntervalMs?: number;
 }
 
 async function executeStep({
@@ -275,6 +478,7 @@ async function executeStep({
 	now,
 	signal,
 	state,
+	heartbeatIntervalMs,
 }: ExecuteStepOptions): Promise<void> {
 	const startedAt = now();
 	const attemptId = await nextAttemptId(store, ref, step.id);
@@ -314,10 +518,29 @@ async function executeStep({
 		stepId: step.id,
 	});
 
-	const input =
-		(await inputForStep?.(step, run)) ?? defaultInputForStep(step, run);
+	let latestHeartbeat = heartbeat;
+	let heartbeatWrite = Promise.resolve();
+	const heartbeatTimer =
+		heartbeatIntervalMs === undefined || heartbeatIntervalMs <= 0
+			? undefined
+			: setInterval(() => {
+					heartbeatWrite = heartbeatWrite.then(async () => {
+						const renewed = await renewPersistedRunningStep({
+							store,
+							ref,
+							stepId: step.id,
+							holderId,
+							now,
+						});
+						if (renewed) {
+							latestHeartbeat = renewed.heartbeat;
+						}
+					});
+				}, heartbeatIntervalMs);
 	let result: StepResult;
 	try {
+		const input =
+			(await inputForStep?.(step, run)) ?? defaultInputForStep(step, run);
 		const prepared = await backend.prepare(runningStep, {
 			run,
 			step: runningStep,
@@ -335,6 +558,11 @@ async function executeStep({
 			artifacts: [],
 			nextAction: "abort_run",
 		};
+	} finally {
+		if (heartbeatTimer !== undefined) {
+			clearInterval(heartbeatTimer);
+		}
+		await heartbeatWrite;
 	}
 
 	const endedAt = now();
@@ -351,7 +579,7 @@ async function executeStep({
 		result,
 		outputArtifacts: result.artifacts,
 		lease: undefined,
-		heartbeat,
+		heartbeat: latestHeartbeat,
 	};
 	await store.writeStepRecord(ref, terminalStep);
 	const latestState = await store.readSchedulerState(ref);
