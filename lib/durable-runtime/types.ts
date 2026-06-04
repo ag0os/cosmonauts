@@ -53,6 +53,23 @@ export interface WorktreeSpec {
 	path?: string;
 }
 
+export interface StepLease {
+	holderId: string;
+	acquiredAt: string;
+	expiresAt?: string;
+	renewable: boolean;
+}
+
+export interface StepHeartbeat {
+	at: string;
+	note?: string;
+}
+
+export interface RetryPolicy {
+	maxAttempts: number;
+	backoffMs?: number;
+}
+
 // fallow-ignore-next-line unused-types: durable runtime public contract type for Plan 1.
 export interface BackendPolicy extends BackendSpec {
 	[key: string]: unknown;
@@ -65,6 +82,12 @@ export interface RunPolicy {
 	maxCostUsd?: number;
 	maxTokens?: number;
 	timeoutMs?: number;
+	maxParallelSteps?: number;
+	staleHeartbeatMs?: number;
+	retryLimit?: number;
+	idleTimeoutMs?: number;
+	hardTimeoutMs?: number;
+	retryPotentiallyCommittedSteps?: boolean;
 }
 
 export interface RunRecord {
@@ -89,6 +112,46 @@ export interface ArtifactRef {
 	path: string;
 	kind?: string;
 	metadata?: Record<string, unknown>;
+}
+
+export interface SchedulerState {
+	readyStepIds: string[];
+	leasesByStepId: Record<string, StepLease>;
+	heartbeatsByStepId: Record<string, StepHeartbeat>;
+	cursor?: number;
+	updatedAt: string;
+}
+
+export interface RunGraphStep {
+	id: string;
+	runId: string;
+	title: string;
+	kind: StepKind;
+	backend: BackendSpec;
+	dependsOn: string[];
+	inputArtifacts: ArtifactRef[];
+}
+
+export interface RunGraphEdge {
+	from: string;
+	to: string;
+}
+
+export interface RunGraph {
+	steps: RunGraphStep[];
+	edges: RunGraphEdge[];
+}
+
+export interface ReadRunGraphResult {
+	graph: RunGraph;
+	diagnostics: RuntimeDiagnostic[];
+}
+
+export interface SchedulerStepInput {
+	runId: string;
+	stepId: string;
+	inputArtifacts: ArtifactRef[];
+	backendOptions?: Record<string, unknown>;
 }
 
 // fallow-ignore-next-line unused-types: durable runtime public contract type for Plan 1.
@@ -147,8 +210,25 @@ export interface StepRecord {
 	status: StepStatus;
 	inputArtifacts: ArtifactRef[];
 	outputArtifacts: ArtifactRef[];
+	lease?: StepLease;
+	heartbeat?: StepHeartbeat;
+	retryPolicy?: RetryPolicy;
 	result?: StepResult;
 	latestAttemptId?: string;
+}
+
+export type RunGraphSchedulerExitReason =
+	| "terminal"
+	| "drained"
+	| "blocked"
+	| "cancelled"
+	| "waiting_for_fresh_external_work";
+
+export interface RunGraphSchedulerResult {
+	run: RunRecord;
+	steps: StepRecord[];
+	diagnostics: RuntimeDiagnostic[];
+	exitReason: RunGraphSchedulerExitReason;
 }
 
 export interface StepAttemptRecord {
@@ -270,15 +350,31 @@ export interface RunStore {
 	createRun(input: CreateRunInput): Promise<RunRecord>;
 	loadRun(ref: RunRef): Promise<RunRecord | undefined>;
 	updateRun(record: RunRecord): Promise<RunRecord>;
+	readRunGraph(ref: RunRef): Promise<ReadRunGraphResult>;
+	writeRunGraph(ref: RunRef, graph: RunGraph): Promise<RunGraph>;
+	readSchedulerState(ref: RunRef): Promise<SchedulerState>;
+	writeSchedulerState(
+		ref: RunRef,
+		state: SchedulerState,
+	): Promise<SchedulerState>;
 	appendEvent(
 		ref: RunRef,
 		event: OrchestrationEvent,
 	): Promise<StoredOrchestrationEvent>;
 	readEvents(ref: RunRef, options?: ReadEventsOptions): Promise<RunWatchResult>;
+	appendDiagnostic(ref: RunRef, diagnostic: RuntimeDiagnostic): Promise<void>;
 	writeStepRecord(ref: RunRef, step: StepRecord): Promise<StepRecord>;
 	readStepRecord(
 		ref: RunRef & { stepId: string },
 	): Promise<StepRecord | undefined>;
+	listStepRecords(ref: RunRef): Promise<StepRecord[]>;
+	writeStepHeartbeat(
+		ref: RunRef & { stepId: string },
+		heartbeat: StepHeartbeat,
+	): Promise<StepHeartbeat>;
+	readStepHeartbeat(
+		ref: RunRef & { stepId: string },
+	): Promise<StepHeartbeat | undefined>;
 	writeStepAttemptRecord(
 		ref: RunRef & { stepId: string },
 		attempt: StepAttemptRecord,

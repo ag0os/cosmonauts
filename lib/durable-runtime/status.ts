@@ -1,4 +1,4 @@
-import type { OrchestrationEvent, RunStatus } from "./types.ts";
+import type { OrchestrationEvent, RunStatus, StepStatus } from "./types.ts";
 
 export function statusFromEvent(
 	event: OrchestrationEvent,
@@ -22,6 +22,16 @@ export function statusFromEvent(
 }
 
 export function isTerminalStatus(status: RunStatus): boolean {
+	return (
+		status === "completed" ||
+		status === "blocked" ||
+		status === "failed" ||
+		status === "cancelled" ||
+		status === "stale"
+	);
+}
+
+export function isTerminalStepStatus(status: StepStatus): boolean {
 	return (
 		status === "completed" ||
 		status === "blocked" ||

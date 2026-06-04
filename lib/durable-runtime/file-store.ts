@@ -14,6 +14,9 @@ import type {
 	ListRecentRunsOptions,
 	OrchestrationEvent,
 	ReadEventsOptions,
+	ReadRunGraphResult,
+	RunGraph,
+	RunGraphStep,
 	RunPolicy,
 	RunRecord,
 	RunRef,
@@ -21,7 +24,9 @@ import type {
 	RunStore,
 	RuntimeDiagnostic,
 	RunWatchResult,
+	SchedulerState,
 	StepAttemptRecord,
+	StepHeartbeat,
 	StepRecord,
 	StoredOrchestrationEvent,
 } from "./types.ts";
@@ -41,6 +46,16 @@ interface StoredRuntimeDiagnostic {
 	runId: string;
 	diagnostic: RuntimeDiagnostic;
 }
+
+const GRAPH_MUTABLE_FIELDS = [
+	"status",
+	"result",
+	"latestAttemptId",
+	"lease",
+	"heartbeat",
+	"retryPolicy",
+	"outputArtifacts",
+] as const;
 
 export class FileRunStore implements RunStore {
 	readonly rootDir: string;
@@ -113,6 +128,158 @@ export class FileRunStore implements RunStore {
 		const normalized = normalizeRunPaths(record, this.runDir(record));
 		await this.writeRunRecord(normalized);
 		return normalized;
+	}
+
+	async readRunGraph(ref: RunRef): Promise<ReadRunGraphResult> {
+		const record = await this.requireRun(ref);
+		const diagnostics: RuntimeDiagnostic[] = [];
+		let parsed: unknown;
+
+		try {
+			parsed = JSON.parse(await readFile(record.graphPath, "utf-8")) as unknown;
+		} catch (error) {
+			if (isNotFoundError(error)) {
+				return {
+					graph: { steps: [], edges: [] },
+					diagnostics: [
+						{
+							code: "missing_run_graph",
+							message: "Run graph file does not exist.",
+							path: record.graphPath,
+						},
+					],
+				};
+			}
+			throw error;
+		}
+
+		if (!isGraphLike(parsed)) {
+			return {
+				graph: { steps: [], edges: [] },
+				diagnostics: [
+					{
+						code: "invalid_run_graph",
+						message: "Run graph file is not a graph object.",
+						path: record.graphPath,
+					},
+				],
+			};
+		}
+
+		const steps: RunGraphStep[] = [];
+		for (const [index, step] of parsed.steps.entries()) {
+			if (!isRunGraphStepLike(step)) {
+				diagnostics.push({
+					code: "invalid_run_graph_step",
+					message: `Run graph step at index ${index} is invalid.`,
+					path: record.graphPath,
+					details: { index },
+				});
+				continue;
+			}
+			validateIdentifier("stepId", step.id);
+			if (step.runId !== ref.runId) {
+				diagnostics.push({
+					code: "graph_step_run_mismatch",
+					message: `Graph step ${step.id} runId does not match run ${ref.runId}.`,
+					path: record.graphPath,
+					details: { stepId: step.id, runId: step.runId },
+				});
+				continue;
+			}
+
+			const mutableFields = GRAPH_MUTABLE_FIELDS.filter((field) =>
+				hasOwn(step, field),
+			);
+			if (mutableFields.length > 0) {
+				diagnostics.push({
+					code: "ignored_graph_mutable_state",
+					message: `Graph step ${step.id} contains mutable state fields ignored by scheduler recovery.`,
+					path: record.graphPath,
+					details: { stepId: step.id, fields: mutableFields },
+				});
+			}
+
+			steps.push({
+				id: step.id,
+				runId: step.runId,
+				title: step.title,
+				kind: step.kind,
+				backend: step.backend,
+				dependsOn: step.dependsOn,
+				inputArtifacts: step.inputArtifacts,
+			});
+		}
+
+		const edges = parsed.edges.filter(
+			(edge): edge is RunGraph["edges"][number] => {
+				if (!isRunGraphEdgeLike(edge)) {
+					diagnostics.push({
+						code: "invalid_run_graph_edge",
+						message: "Run graph edge is invalid.",
+						path: record.graphPath,
+						details: { edge },
+					});
+					return false;
+				}
+				validateIdentifier("stepId", edge.from);
+				validateIdentifier("stepId", edge.to);
+				return true;
+			},
+		);
+
+		return { graph: { steps, edges }, diagnostics };
+	}
+
+	async writeRunGraph(ref: RunRef, graph: RunGraph): Promise<RunGraph> {
+		const record = await this.requireRun(ref);
+		for (const step of graph.steps) {
+			validateIdentifier("stepId", step.id);
+			if (step.runId !== ref.runId) {
+				throw new Error(
+					`Graph step runId ${step.runId} does not match run ref ${ref.runId}.`,
+				);
+			}
+		}
+		for (const edge of graph.edges) {
+			validateIdentifier("stepId", edge.from);
+			validateIdentifier("stepId", edge.to);
+		}
+
+		await writeJsonAtomically(record.graphPath, graph);
+		return graph;
+	}
+
+	async readSchedulerState(ref: RunRef): Promise<SchedulerState> {
+		const record = await this.requireRun(ref);
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(
+				await readFile(record.schedulerStatePath, "utf-8"),
+			) as unknown;
+		} catch (error) {
+			if (isNotFoundError(error)) {
+				return emptySchedulerState(record.updatedAt);
+			}
+			throw error;
+		}
+
+		if (!isSchedulerStateLike(parsed)) {
+			return emptySchedulerState(record.updatedAt);
+		}
+
+		validateSchedulerState(parsed);
+		return parsed;
+	}
+
+	async writeSchedulerState(
+		ref: RunRef,
+		state: SchedulerState,
+	): Promise<SchedulerState> {
+		const record = await this.requireRun(ref);
+		validateSchedulerState(state);
+		await writeJsonAtomically(record.schedulerStatePath, state);
+		return state;
 	}
 
 	async appendEvent(
@@ -210,6 +377,54 @@ export class FileRunStore implements RunStore {
 		const stepPath = this.stepRecordPath(record, ref.stepId);
 		try {
 			return JSON.parse(await readFile(stepPath, "utf-8")) as StepRecord;
+		} catch (error) {
+			if (isNotFoundError(error)) {
+				return undefined;
+			}
+			throw error;
+		}
+	}
+
+	async listStepRecords(ref: RunRef): Promise<StepRecord[]> {
+		const record = await this.requireRun(ref);
+		const stepIds = await this.listDirectoryNames(record.stepsDir);
+		const steps: StepRecord[] = [];
+
+		for (const stepId of stepIds.sort((left, right) =>
+			left.localeCompare(right),
+		)) {
+			const step = await this.readStepRecord({ ...ref, stepId });
+			if (step) {
+				steps.push(step);
+			}
+		}
+
+		return steps;
+	}
+
+	async writeStepHeartbeat(
+		ref: RunRef & { stepId: string },
+		heartbeat: StepHeartbeat,
+	): Promise<StepHeartbeat> {
+		const record = await this.requireRun(ref);
+		const heartbeatPath = this.stepHeartbeatPath(record, ref.stepId);
+		await writeJsonAtomically(heartbeatPath, heartbeat);
+		const step = await this.readStepRecord(ref);
+		if (step) {
+			await this.writeStepRecord(ref, { ...step, heartbeat });
+		}
+		return heartbeat;
+	}
+
+	async readStepHeartbeat(
+		ref: RunRef & { stepId: string },
+	): Promise<StepHeartbeat | undefined> {
+		const record = await this.requireRun(ref);
+		const heartbeatPath = this.stepHeartbeatPath(record, ref.stepId);
+		try {
+			return JSON.parse(
+				await readFile(heartbeatPath, "utf-8"),
+			) as StepHeartbeat;
 		} catch (error) {
 			if (isNotFoundError(error)) {
 				return undefined;
@@ -381,6 +596,14 @@ export class FileRunStore implements RunStore {
 		);
 	}
 
+	private stepHeartbeatPath(record: RunRecord, stepId: string): string {
+		validateIdentifier("stepId", stepId);
+		return resolveRunPath(
+			record.runDir,
+			join(record.stepsDir, stepId, "heartbeat.json"),
+		);
+	}
+
 	private stepAttemptDir(
 		record: RunRecord,
 		stepId: string,
@@ -514,6 +737,27 @@ function validateIdentifier(label: string, value: string): void {
 	}
 }
 
+function emptySchedulerState(updatedAt: string): SchedulerState {
+	return {
+		readyStepIds: [],
+		leasesByStepId: {},
+		heartbeatsByStepId: {},
+		updatedAt,
+	};
+}
+
+function validateSchedulerState(state: SchedulerState): void {
+	for (const stepId of state.readyStepIds) {
+		validateIdentifier("stepId", stepId);
+	}
+	for (const stepId of Object.keys(state.leasesByStepId)) {
+		validateIdentifier("stepId", stepId);
+	}
+	for (const stepId of Object.keys(state.heartbeatsByStepId)) {
+		validateIdentifier("stepId", stepId);
+	}
+}
+
 async function writeJsonAtomically(
 	path: string,
 	value: unknown,
@@ -593,6 +837,81 @@ function isStoredDiagnostic(value: unknown): value is StoredRuntimeDiagnostic {
 		"message" in diagnostic &&
 		typeof diagnostic.message === "string"
 	);
+}
+
+function isGraphLike(value: unknown): value is {
+	steps: unknown[];
+	edges: unknown[];
+} {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"steps" in value &&
+		Array.isArray(value.steps) &&
+		"edges" in value &&
+		Array.isArray(value.edges)
+	);
+}
+
+function isRunGraphStepLike(value: unknown): value is RunGraphStep {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"id" in value &&
+		typeof value.id === "string" &&
+		"runId" in value &&
+		typeof value.runId === "string" &&
+		"title" in value &&
+		typeof value.title === "string" &&
+		"kind" in value &&
+		typeof value.kind === "string" &&
+		"backend" in value &&
+		typeof value.backend === "object" &&
+		value.backend !== null &&
+		"dependsOn" in value &&
+		Array.isArray(value.dependsOn) &&
+		value.dependsOn.every((dependency) => typeof dependency === "string") &&
+		"inputArtifacts" in value &&
+		Array.isArray(value.inputArtifacts)
+	);
+}
+
+function isRunGraphEdgeLike(
+	value: unknown,
+): value is RunGraph["edges"][number] {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"from" in value &&
+		typeof value.from === "string" &&
+		"to" in value &&
+		typeof value.to === "string"
+	);
+}
+
+function isSchedulerStateLike(value: unknown): value is SchedulerState {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		"readyStepIds" in value &&
+		Array.isArray(value.readyStepIds) &&
+		value.readyStepIds.every((stepId) => typeof stepId === "string") &&
+		"leasesByStepId" in value &&
+		typeof value.leasesByStepId === "object" &&
+		value.leasesByStepId !== null &&
+		"heartbeatsByStepId" in value &&
+		typeof value.heartbeatsByStepId === "object" &&
+		value.heartbeatsByStepId !== null &&
+		"updatedAt" in value &&
+		typeof value.updatedAt === "string"
+	);
+}
+
+function hasOwn<T extends string>(
+	record: object,
+	key: T,
+): record is Record<T, unknown> {
+	return Object.hasOwn(record, key);
 }
 
 function isNotFoundError(error: unknown): boolean {
