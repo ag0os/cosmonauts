@@ -10,7 +10,11 @@ import {
 	type SchedulerStepInput,
 	type StepRecord,
 } from "../durable-runtime/index.ts";
-import { readRetryableDriveFinalizerFailure } from "./drive-finalization.ts";
+import {
+	isDoneTaskStatusStep,
+	isPartialTaskStatusStep,
+	readRetryableDriveFinalizerFailure,
+} from "./drive-finalization.ts";
 import { compileDriveRunToGraph } from "./drive-graph-compiler.ts";
 import { createDriveSchedulerBackendMap } from "./drive-scheduler-backend.ts";
 import { EventLogWriteError } from "./event-stream.ts";
@@ -79,7 +83,11 @@ export async function runDriveOnGraph(
 				workdir: spec.workdir,
 			});
 			if (finalizerFailure) {
-				const result = finalizationFailureResult(runSpec, finalizerFailure);
+				const result = finalizationFailureResult(
+					runSpec,
+					finalizerFailure,
+					await store.listStepRecords(ref),
+				);
 				await emitRunFinalizationFailed(runSpec, ctx, result);
 				await writeRunCompletion(runSpec.workdir, result);
 				return result;
@@ -100,7 +108,11 @@ export async function runDriveOnGraph(
 				workdir: spec.workdir,
 			});
 			if (failureAfterDrain) {
-				const result = finalizationFailureResult(runSpec, failureAfterDrain);
+				const result = finalizationFailureResult(
+					runSpec,
+					failureAfterDrain,
+					schedulerResult.steps,
+				);
 				await emitRunFinalizationFailed(runSpec, ctx, result);
 				await writeRunCompletion(runSpec.workdir, result);
 				return result;
@@ -253,9 +265,8 @@ async function toDriverResult(
 		step.id.startsWith("finalizer-task-status-"),
 	);
 	const taskSteps = steps.filter((step) => step.kind === "drive");
-	const tasksDone = taskStatusSteps.filter(
-		(step) => step.status === "completed",
-	).length;
+	const tasksDone = taskStatusSteps.filter(isDoneTaskStatusStep).length;
+	const partialStatusSteps = taskStatusSteps.filter(isPartialTaskStatusStep);
 	const blockedStatusStep = taskStatusSteps.find(
 		(step) => step.status === "blocked",
 	);
@@ -270,11 +281,15 @@ async function toDriverResult(
 		latestRun.status === "completed" ||
 		steps.every((step) => step.status === "completed")
 	) {
+		const partialTaskStep = partialStatusSteps[0];
 		return {
 			runId: spec.runId,
 			outcome: "completed",
 			tasksDone,
-			tasksBlocked: 0,
+			tasksBlocked: partialStatusSteps.length,
+			...(partialTaskStep
+				? { blockedTaskId: taskIdFromStep(partialTaskStep) }
+				: {}),
 			...(await planCompletionCandidate(spec, ctx)),
 			...stateCommitSha(steps),
 		};
@@ -308,6 +323,7 @@ async function toDriverResult(
 function finalizationFailureResult(
 	spec: DriverRunSpec,
 	failure: Awaited<ReturnType<typeof readRetryableDriveFinalizerFailure>>,
+	steps: readonly StepRecord[],
 ): Extract<DriverResult, { outcome: "finalization_failed" }> {
 	if (!failure) {
 		throw new Error("Missing finalization failure evidence.");
@@ -315,7 +331,7 @@ function finalizationFailureResult(
 	return {
 		runId: spec.runId,
 		outcome: "finalization_failed",
-		tasksDone: 0,
+		tasksDone: steps.filter(isDoneTaskStatusStep).length,
 		tasksBlocked: 0,
 		finalizationPhase: failure.finalizationPhase,
 		finalizationReason: failure.finalizationReason,

@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { DRIVE_BACKEND_ORCHESTRATION_CAPABILITIES } from "../../lib/driver/backends/orchestration-adapter.ts";
 import type {
 	Backend,
@@ -231,6 +231,12 @@ describe("Drive scheduler backend", () => {
 			outcome: "success",
 			nextAction: "continue",
 			summary: expect.stringContaining("partial"),
+			artifacts: expect.arrayContaining([
+				expect.objectContaining({
+					kind: "drive-partial-continue",
+					metadata: { taskId: "TASK-1" },
+				}),
+			]),
 		});
 		expect((await partial.taskManager.getTask("TASK-1"))?.status).toBe(
 			"In Progress",
@@ -326,6 +332,108 @@ describe("Drive scheduler backend", () => {
 				emitsMachineReport: true,
 			});
 		}
+	});
+
+	test("retries a graph task once when a failed report contradicts an existing relative path", async () => {
+		const fixture = await setupFixture("graph-contradicted-retry");
+		await fixture.taskManager.createTask({
+			title: "Retry contradicted block",
+			description: "Use design/README.md.",
+		});
+		await mkdir(join(fixture.projectRoot, "design"), { recursive: true });
+		await writeFile(
+			join(fixture.projectRoot, "design", "README.md"),
+			"line one\nline two\n",
+			"utf-8",
+		);
+		const events: DriverEvent[] = [];
+		const backendRun = vi
+			.fn()
+			.mockResolvedValueOnce(
+				blockedBackendResult(
+					"design/README.md does not exist; confirmed via git ls-files.",
+				),
+			)
+			.mockResolvedValueOnce(successfulBackendResult());
+		const prepared = await prepareTaskStep({
+			spec: createSpec(fixture, { runId: "run-graph-contradicted-retry" }),
+			fixture,
+			backendRun,
+			events,
+		});
+
+		const handle = await prepared.backend.start(prepared.step);
+		const result = await handle.result;
+
+		expect(backendRun).toHaveBeenCalledTimes(2);
+		expect(result).toMatchObject({
+			outcome: "success",
+			nextAction: "continue",
+		});
+		expect(
+			events.filter((event) => event.type === "task_blocked"),
+		).toHaveLength(1);
+		expect(events).toContainEqual(
+			expect.objectContaining({
+				type: "task_blocked",
+				contradicted: { path: "design/README.md", existsOnDisk: true },
+			}),
+		);
+		const retryPrompt = await readFile(
+			join(fixture.workdir, "prompts", "TASK-1.md"),
+			"utf-8",
+		);
+		expect(retryPrompt).toContain("Note from the driver");
+		expect(retryPrompt).toContain(
+			join(fixture.projectRoot, "design", "README.md"),
+		);
+		expect((await fixture.taskManager.getTask("TASK-1"))?.status).toBe(
+			"In Progress",
+		);
+	});
+
+	test("does not retry a contradicted graph task when retryOnContradictedBlock is false", async () => {
+		const fixture = await setupFixture("graph-contradicted-retry-disabled");
+		await fixture.taskManager.createTask({
+			title: "Retry disabled",
+			description: "Use design/README.md.",
+		});
+		await mkdir(join(fixture.projectRoot, "design"), { recursive: true });
+		await writeFile(
+			join(fixture.projectRoot, "design", "README.md"),
+			"exists\n",
+			"utf-8",
+		);
+		const events: DriverEvent[] = [];
+		const backendRun = vi
+			.fn()
+			.mockResolvedValue(
+				blockedBackendResult("design/README.md does not exist"),
+			);
+		const prepared = await prepareTaskStep({
+			spec: createSpec(fixture, {
+				runId: "run-graph-contradicted-retry-disabled",
+				retryOnContradictedBlock: false,
+			}),
+			fixture,
+			backendRun,
+			events,
+		});
+
+		const handle = await prepared.backend.start(prepared.step);
+
+		await expect(handle.result).resolves.toMatchObject({
+			outcome: "blocked",
+			nextAction: "wait_for_human",
+			summary: expect.stringContaining("design/README.md"),
+		});
+		expect(backendRun).toHaveBeenCalledTimes(1);
+		expect(
+			events.filter((event) => event.type === "task_blocked"),
+		).toHaveLength(1);
+		expect((await fixture.taskManager.getTask("TASK-1"))?.status).toBe(
+			"Blocked",
+		);
 	});
 });
 
@@ -446,6 +554,24 @@ function partialBackendResult(): BackendRunResult {
 			}),
 			"```",
 			"outcome: partial",
+		].join("\n"),
+		durationMs: 1,
+	};
+}
+
+function blockedBackendResult(notes: string): BackendRunResult {
+	return {
+		exitCode: 0,
+		stdout: [
+			"```json",
+			JSON.stringify({
+				outcome: "failure",
+				files: [],
+				verification: [],
+				notes,
+			}),
+			"```",
+			"outcome: failure",
 		].join("\n"),
 		durationMs: 1,
 	};

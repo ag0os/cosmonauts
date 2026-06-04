@@ -36,6 +36,9 @@ export const PENDING_FINALIZATION_ARTIFACT: ArtifactRef = {
 	path: "pending-finalization.json",
 	kind: "pending-finalization",
 };
+export const DRIVE_PARTIAL_CONTINUE_ARTIFACT_KIND = "drive-partial-continue";
+export const DRIVE_TASK_STATUS_PARTIAL_ARTIFACT_KIND =
+	"drive-task-status-partial";
 
 export interface DriveFinalizationCtx {
 	taskManager: TaskManager;
@@ -642,13 +645,55 @@ export function parsedReportFromStepResult(result: StepResult): ParsedReport {
 }
 
 export function reportOutcomeFromStepResult(result: StepResult): ReportOutcome {
-	if (result.outcome === "partial") {
+	if (result.outcome === "partial" || isPartialContinueStepResult(result)) {
 		return "partial";
 	}
 	if (result.outcome === "success") {
 		return "success";
 	}
 	return "failure";
+}
+
+export function isDoneTaskStatusStep(step: StepRecord): boolean {
+	return (
+		step.id.startsWith("finalizer-task-status-") &&
+		step.status === "completed" &&
+		step.result?.outcome === "success" &&
+		!isPartialTaskStatusResult(step.result)
+	);
+}
+
+export function isPartialTaskStatusStep(step: StepRecord): boolean {
+	return (
+		step.id.startsWith("finalizer-task-status-") &&
+		step.status === "completed" &&
+		isPartialTaskStatusResult(step.result)
+	);
+}
+
+export function partialTaskStatusArtifact(taskId: string): ArtifactRef {
+	return {
+		id: `drive-task-status-partial:${taskId}`,
+		path: `steps/${taskId}/step.json`,
+		kind: DRIVE_TASK_STATUS_PARTIAL_ARTIFACT_KIND,
+		metadata: { taskId, status: "partial" },
+	};
+}
+
+function isPartialContinueStepResult(result: StepResult): boolean {
+	return result.artifacts.some(
+		(artifact) => artifact.kind === DRIVE_PARTIAL_CONTINUE_ARTIFACT_KIND,
+	);
+}
+
+function isPartialTaskStatusResult(
+	result: StepResult | undefined,
+): result is StepResult {
+	return (
+		result?.artifacts.some(
+			(artifact) => artifact.kind === DRIVE_TASK_STATUS_PARTIAL_ARTIFACT_KIND,
+		) ?? false
+	);
 }
 
 export function partialReason(report: ParsedReport): string {

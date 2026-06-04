@@ -322,11 +322,11 @@ function spawnFailureCandidate(
 	};
 }
 
-function retryOnContradictedBlockEnabled(spec: DriverRunSpec): boolean {
+export function retryOnContradictedBlockEnabled(spec: DriverRunSpec): boolean {
 	return spec.retryOnContradictedBlock ?? true;
 }
 
-interface ContradictedPath {
+export interface ContradictedPath {
 	token: string;
 	absolutePath: string;
 	isDirectory: boolean;
@@ -334,7 +334,7 @@ interface ContradictedPath {
 	annotation: ContradictedBlockAnnotation;
 }
 
-function findContradictedPath(
+export function findContradictedPath(
 	reason: string,
 	projectRoot: string,
 ): ContradictedPath | undefined {
@@ -435,7 +435,7 @@ function countLines(absolutePath: string): number | undefined {
 	}
 }
 
-function buildContradictionNote(contradicted: ContradictedPath): string {
+export function buildContradictionNote(contradicted: ContradictedPath): string {
 	const kind = contradicted.isDirectory
 		? "a directory"
 		: contradicted.lineCount === undefined

@@ -16,15 +16,18 @@ import {
 	commitArtifact,
 	commitDriveFinalState,
 	finalizeDriveSourceCommit,
+	isDoneTaskStatusStep,
 	PENDING_FINALIZATION_ARTIFACT,
 	parsedReportFromStepResult,
+	partialTaskStatusArtifact,
 	reportOutcomeFromStepResult,
+	skipDriveStateCommit,
 	stepResultWithCommit,
 	transitionDriveTaskStatus,
 	uniqueArtifacts,
 } from "./drive-finalization.ts";
 import { writePendingFinalization } from "./run-state.ts";
-import type { DriverEvent, DriverRunSpec, EventSink } from "./types.ts";
+import type { DriverRunSpec, EventSink } from "./types.ts";
 import { resolveStateCommitPolicy } from "./types.ts";
 
 export const DRIVE_SHELL_COMMAND_CAPABILITIES: BackendCapabilities = {
@@ -49,12 +52,6 @@ interface DriveShellPreparedStep extends PreparedStep<SchedulerStepInput> {
 }
 
 type DriveFinalizerPhase = "commit" | "task_status" | "state_commit";
-
-type DriverEventInput = DriverEvent extends infer Event
-	? Event extends DriverEvent
-		? Omit<Event, "runId" | "parentSessionId" | "timestamp">
-		: never
-	: never;
 
 export function createDriveShellCommandBackend(
 	context: DriveShellCommandBackendContext,
@@ -187,15 +184,25 @@ async function runTaskStatusFinalizer(
 			commit,
 		);
 	}
-	const result: StepResult = {
-		outcome: taskOutcome.status === "done" ? "success" : taskOutcome.status,
-		summary:
-			taskOutcome.status === "done"
-				? "Drive task status finalization passed."
-				: (taskOutcome.reason ?? taskResult.summary),
-		artifacts: commit ? [commitArtifact(commit.sha, commit.subject)] : [],
-		nextAction: taskOutcome.status === "done" ? "continue" : "wait_for_human",
-	};
+	const result: StepResult =
+		taskOutcome.status === "partial" && context.spec.partialMode === "continue"
+			? {
+					outcome: "success",
+					summary: taskOutcome.reason ?? taskResult.summary,
+					artifacts: [partialTaskStatusArtifact(taskId)],
+					nextAction: "continue",
+				}
+			: {
+					outcome:
+						taskOutcome.status === "done" ? "success" : taskOutcome.status,
+					summary:
+						taskOutcome.status === "done"
+							? "Drive task status finalization passed."
+							: (taskOutcome.reason ?? taskResult.summary),
+					artifacts: commit ? [commitArtifact(commit.sha, commit.subject)] : [],
+					nextAction:
+						taskOutcome.status === "done" ? "continue" : "wait_for_human",
+				};
 	return stepResultWithOptionalCommit(result, commit);
 }
 
@@ -203,13 +210,33 @@ async function runStateCommitFinalizer(
 	context: DriveShellCommandBackendContext,
 	prepared: DriveShellPreparedStep,
 ): Promise<StepResult> {
+	const taskIds = authoritativeDriveTaskIds(
+		prepared.run.metadata,
+		context.spec,
+	);
+	if (!(await allTaskStatusFinalizersDone(prepared.run.stepsDir, taskIds))) {
+		await skipDriveStateCommit(
+			context.spec,
+			{
+				eventSink: context.eventSink,
+				abortSignal: prepared.abortSignal,
+			},
+			"not_all_tasks_done",
+		);
+		return {
+			outcome: "success",
+			summary: "Drive state commit finalization skipped: not_all_tasks_done.",
+			artifacts: [],
+			nextAction: "continue",
+		};
+	}
 	const result = await commitDriveFinalState(
 		context.spec,
 		{
 			eventSink: context.eventSink,
 			abortSignal: prepared.abortSignal,
 		},
-		authoritativeDriveTaskIds(prepared.run.metadata, context.spec),
+		taskIds,
 	);
 	if (result.status === "committed") {
 		return stepResultWithCommit(
@@ -243,11 +270,6 @@ async function runStateCommitFinalizer(
 			...authoritativeDriveTaskIds(prepared.run.metadata, context.spec),
 		],
 		headBeforeFinalization: result.headBeforeFinalization,
-	});
-	await emit(context, {
-		type: "run_finalization_failed",
-		phase: "state_commit",
-		reason: result.reason,
 	});
 	return retryableFailureResult(result.reason);
 }
@@ -307,6 +329,22 @@ async function readStepRecord(
 ): Promise<StepRecord> {
 	const raw = await readFile(join(stepsDir, stepId, "step.json"), "utf-8");
 	return JSON.parse(raw) as StepRecord;
+}
+
+async function allTaskStatusFinalizersDone(
+	stepsDir: string,
+	taskIds: readonly string[],
+): Promise<boolean> {
+	for (const taskId of taskIds) {
+		const step = await readStepRecord(
+			stepsDir,
+			`finalizer-task-status-${taskId}`,
+		);
+		if (!isDoneTaskStatusStep(step)) {
+			return false;
+		}
+	}
+	return true;
 }
 
 function requireStepResult(step: StepRecord, stepId: string): StepResult {
@@ -370,16 +408,4 @@ function authoritativeDriveTaskIds(
 		return value;
 	}
 	return spec.taskIds;
-}
-
-async function emit(
-	context: DriveShellCommandBackendContext,
-	event: DriverEventInput,
-): Promise<void> {
-	await context.eventSink({
-		...event,
-		runId: context.spec.runId,
-		parentSessionId: context.spec.parentSessionId,
-		timestamp: new Date().toISOString(),
-	} as DriverEvent);
 }

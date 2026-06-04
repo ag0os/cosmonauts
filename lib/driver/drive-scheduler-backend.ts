@@ -19,19 +19,24 @@ import type {
 	BackendInvocation,
 	BackendRunResult,
 } from "./backends/types.ts";
+import { DRIVE_PARTIAL_CONTINUE_ARTIFACT_KIND } from "./drive-finalization.ts";
 import { renderPromptForTask } from "./prompt-template.ts";
 import { parseReport } from "./report-parser.ts";
 import {
+	buildContradictionNote,
 	canInferUnknownSuccess,
 	DEFAULT_TASK_TIMEOUT_MS,
 	deriveFailureReason,
 	deriveOutcome,
+	findContradictedPath,
 	type PostVerifyResult,
 	partialReason,
 	type RunOneTaskCtx,
+	retryOnContradictedBlockEnabled,
 } from "./run-one-task.ts";
 import { createDriveShellCommandBackend } from "./shell-command-finalizer.ts";
 import {
+	type ContradictedBlockAnnotation,
 	type DriverEvent,
 	type DriverRunSpec,
 	type EventSink,
@@ -76,6 +81,22 @@ interface SpawnFailure {
 	error: string;
 	exitCode?: number;
 }
+
+interface DriveTaskStepOutcome {
+	kind: "step-result";
+	result: StepResult;
+}
+
+interface DriveTaskBlockCandidate {
+	kind: "block-candidate";
+	reason: string;
+	finalize(
+		contradicted: ContradictedBlockAnnotation | undefined,
+		options?: { skipTaskUpdate?: boolean },
+	): Promise<StepResult>;
+}
+
+type DriveTaskAttemptResult = DriveTaskStepOutcome | DriveTaskBlockCandidate;
 
 const DRIVE_TASK_OUTPUT_ARTIFACT_KIND = "drive-task-output";
 
@@ -182,32 +203,67 @@ async function runDriveTaskStep(
 		backend: context.backend.name,
 	});
 
+	let appendedNote: string | undefined;
+	let retried = false;
+	while (true) {
+		const attempt = await runDriveTaskAttempt(context, prepared, appendedNote);
+		if (attempt.kind === "step-result") {
+			return attempt.result;
+		}
+
+		const contradicted =
+			!retried && retryOnContradictedBlockEnabled(spec)
+				? findContradictedPath(attempt.reason, spec.projectRoot)
+				: undefined;
+		if (!contradicted) {
+			return attempt.finalize(undefined);
+		}
+
+		retried = true;
+		await attempt.finalize(contradicted.annotation, { skipTaskUpdate: true });
+		appendedNote = buildContradictionNote(contradicted);
+		await emit(context, {
+			type: "spawn_started",
+			taskId,
+			backend: context.backend.name,
+		});
+	}
+}
+
+async function runDriveTaskAttempt(
+	context: DriveSchedulerBackendContext,
+	prepared: DrivePreparedStep,
+	appendedNote: string | undefined,
+): Promise<DriveTaskAttemptResult> {
+	const { spec, taskManager } = context;
+	const taskId = prepared.taskId;
+	const invocation = await invocationForAttempt(
+		context,
+		prepared,
+		appendedNote,
+	);
 	const spawnResult = await runBackendWithTimeout(
 		context.backend,
-		prepared.invocation,
+		invocation,
 		spec.taskTimeoutMs ?? DEFAULT_TASK_TIMEOUT_MS,
 		prepared.abortSignal,
 	);
 	if (spawnResult.status === "failure") {
-		await emit(context, {
-			type: "spawn_failed",
+		return spawnFailureCandidate(
+			context,
 			taskId,
-			error: spawnResult.error,
-			exitCode: spawnResult.exitCode,
-		});
-		await blockTask(context, taskId, spawnResult.error);
-		return blockedStepResult(spawnResult.error);
+			spawnResult.error,
+			spawnResult.exitCode,
+		);
 	}
 	if (spawnResult.result.exitCode !== 0) {
 		const reason = `spawn failed with exit code ${spawnResult.result.exitCode}`;
-		await emit(context, {
-			type: "spawn_failed",
+		return spawnFailureCandidate(
+			context,
 			taskId,
-			error: reason,
-			exitCode: spawnResult.result.exitCode,
-		});
-		await blockTask(context, taskId, reason);
-		return blockedStepResult(reason);
+			reason,
+			spawnResult.result.exitCode,
+		);
 	}
 
 	const parsedReport = parseReport(spawnResult.result.stdout);
@@ -247,31 +303,118 @@ async function runDriveTaskStep(
 		deriveFailureReason(effectiveReport, postVerifyResults);
 
 	if (effectiveOutcome === "success") {
-		return successStepResult(taskId, prepared.attemptId, effectiveReport);
+		return {
+			kind: "step-result",
+			result: successStepResult(taskId, prepared.attemptId, effectiveReport),
+		};
 	}
 
 	if (effectiveOutcome === "partial") {
 		const reason = partialReason(effectiveReport);
-		await taskManager.updateTask(taskId, {
-			status: "In Progress",
-			implementationNotes: reason,
-		});
-		await emit(context, {
-			type: "task_blocked",
-			taskId,
+		return {
+			kind: "block-candidate",
 			reason,
-			progress: reportProgress(effectiveReport),
-		});
-		return spec.partialMode === "continue"
-			? partialContinueStepResult(taskId, prepared.attemptId, reason)
-			: partialBlockedStepResult(taskId, prepared.attemptId, reason);
+			finalize: async (contradicted, options) => {
+				if (!options?.skipTaskUpdate) {
+					await taskManager.updateTask(taskId, {
+						status: "In Progress",
+						implementationNotes: reason,
+					});
+				}
+				await emit(context, {
+					type: "task_blocked",
+					taskId,
+					reason,
+					progress: reportProgress(effectiveReport),
+					...(contradicted ? { contradicted } : {}),
+				});
+				return spec.partialMode === "continue"
+					? partialContinueStepResult(taskId, prepared.attemptId, reason)
+					: partialBlockedStepResult(taskId, prepared.attemptId, reason);
+			},
+		};
 	}
 
-	await blockTask(context, taskId, failureReason);
-	return blockedStepResult(
-		failureReason,
-		outputArtifacts(taskId, prepared.attemptId),
+	return {
+		kind: "block-candidate",
+		reason: failureReason,
+		finalize: async (contradicted, options) => {
+			if (!options?.skipTaskUpdate) {
+				await taskManager.updateTask(taskId, {
+					status: "Blocked",
+					implementationNotes: failureReason,
+				});
+			}
+			await emit(context, {
+				type: "task_blocked",
+				taskId,
+				reason: failureReason,
+				...(contradicted ? { contradicted } : {}),
+			});
+			return blockedStepResult(
+				failureReason,
+				outputArtifacts(taskId, prepared.attemptId),
+			);
+		},
+	};
+}
+
+async function invocationForAttempt(
+	context: DriveSchedulerBackendContext,
+	prepared: DrivePreparedStep,
+	appendedNote: string | undefined,
+): Promise<BackendInvocation> {
+	if (!appendedNote) {
+		return prepared.invocation;
+	}
+	const promptLayers: PromptLayersWithWorkdir = {
+		...context.spec.promptTemplate,
+		workdir: context.spec.workdir,
+	};
+	const promptPath = await renderPromptForTask(
+		prepared.taskId,
+		promptLayers,
+		context.taskManager,
+		{
+			appendedNote,
+			runExpectations: {
+				backendName: context.spec.backendName,
+				commitPolicy: context.spec.commitPolicy,
+				stateCommitPolicy: resolveStateCommitPolicy(context.spec),
+				preflightCommands: context.spec.preflightCommands,
+				postflightCommands: context.spec.postflightCommands,
+				projectRoot: context.spec.projectRoot,
+				workdir: context.spec.workdir,
+				branch: context.spec.branch,
+			},
+		},
 	);
+	return { ...prepared.invocation, promptPath };
+}
+
+function spawnFailureCandidate(
+	context: DriveSchedulerBackendContext,
+	taskId: string,
+	error: string,
+	exitCode: number | undefined,
+): DriveTaskBlockCandidate {
+	return {
+		kind: "block-candidate",
+		reason: error,
+		finalize: async (contradicted, options) => {
+			await emit(context, {
+				type: "spawn_failed",
+				taskId,
+				error,
+				exitCode,
+				...(contradicted ? { contradicted } : {}),
+			});
+			if (!options?.skipTaskUpdate) {
+				await blockTask(context, taskId, error);
+			}
+			return blockedStepResult(error);
+		},
+	};
 }
 
 function validateDriveTaskStep(
@@ -539,7 +682,15 @@ function partialContinueStepResult(
 	return {
 		outcome: "success",
 		summary: reason,
-		artifacts: outputArtifacts(taskId, attemptId),
+		artifacts: [
+			...outputArtifacts(taskId, attemptId),
+			{
+				id: `drive-partial-continue:${taskId}:${attemptId}`,
+				path: `steps/${taskId}/attempts/${attemptId}.json`,
+				kind: DRIVE_PARTIAL_CONTINUE_ARTIFACT_KIND,
+				metadata: { taskId },
+			},
+		],
 		nextAction: "continue",
 	};
 }
