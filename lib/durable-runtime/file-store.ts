@@ -381,7 +381,11 @@ export class FileRunStore implements RunStore {
 			if (isNotFoundError(error)) {
 				return undefined;
 			}
-			throw error;
+			const corruptError = new Error(
+				`Step record ${ref.stepId} is not valid JSON: ${stepPath}`,
+			);
+			Object.assign(corruptError, { path: stepPath });
+			throw corruptError;
 		}
 	}
 

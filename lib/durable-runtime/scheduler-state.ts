@@ -27,12 +27,16 @@ export async function reconcileSchedulerState({
 	ref,
 	now = () => new Date().toISOString(),
 }: ReconcileSchedulerStateOptions): Promise<SchedulerStateReconciliation> {
-	const [{ graph, diagnostics }, previousState, persistedSteps] =
-		await Promise.all([
-			store.readRunGraph(ref),
-			store.readSchedulerState(ref),
-			store.listStepRecords(ref),
-		]);
+	const [{ graph, diagnostics }, previousState] = await Promise.all([
+		store.readRunGraph(ref),
+		store.readSchedulerState(ref),
+	]);
+	const persistedSteps = await readPersistedGraphStepRecords({
+		store,
+		ref,
+		graphStepIds: graph.steps.map((step) => step.id),
+		diagnostics,
+	});
 	const stepsById = new Map(persistedSteps.map((step) => [step.id, step]));
 	const readyTransitionStepIds: string[] = [];
 	const completedStepIds = new Set(
@@ -137,6 +141,93 @@ export async function reconcileSchedulerState({
 		readyTransitionStepIds,
 		changed,
 	};
+}
+
+async function readPersistedGraphStepRecords({
+	store,
+	ref,
+	graphStepIds,
+	diagnostics,
+}: {
+	store: RunStore;
+	ref: RunRef;
+	graphStepIds: string[];
+	diagnostics: RuntimeDiagnostic[];
+}): Promise<StepRecord[]> {
+	const records: StepRecord[] = [];
+	for (const stepId of graphStepIds) {
+		let step: StepRecord | undefined;
+		try {
+			step = await store.readStepRecord({ ...ref, stepId });
+		} catch (error) {
+			diagnostics.push({
+				code: "corrupt_step_record",
+				message: `Step record ${stepId} could not be read.`,
+				path: pathFromError(error),
+				details: {
+					stepId,
+					error: error instanceof Error ? error.message : String(error),
+				},
+			});
+			continue;
+		}
+		if (!step) {
+			continue;
+		}
+		if (!isStepRecordLike(step, ref.runId, stepId)) {
+			diagnostics.push({
+				code: "invalid_step_record",
+				message: `Step record ${stepId} is not a valid persisted step record.`,
+				details: { stepId },
+			});
+			continue;
+		}
+		records.push(step);
+	}
+	return records;
+}
+
+function pathFromError(error: unknown): string | undefined {
+	if (
+		typeof error === "object" &&
+		error !== null &&
+		"path" in error &&
+		typeof error.path === "string"
+	) {
+		return error.path;
+	}
+	return undefined;
+}
+
+function isStepRecordLike(
+	value: unknown,
+	runId: string,
+	stepId: string,
+): value is StepRecord {
+	if (typeof value !== "object" || value === null) {
+		return false;
+	}
+	const step = value as Partial<StepRecord>;
+	return (
+		step.id === stepId &&
+		step.runId === runId &&
+		typeof step.title === "string" &&
+		typeof step.kind === "string" &&
+		typeof step.backend === "object" &&
+		step.backend !== null &&
+		Array.isArray(step.dependsOn) &&
+		step.dependsOn.every((dependency) => typeof dependency === "string") &&
+		Array.isArray(step.inputArtifacts) &&
+		Array.isArray(step.outputArtifacts) &&
+		(step.status === "pending" ||
+			step.status === "ready" ||
+			step.status === "running" ||
+			step.status === "completed" ||
+			step.status === "blocked" ||
+			step.status === "failed" ||
+			step.status === "cancelled" ||
+			step.status === "stale")
+	);
 }
 
 function dependenciesCompleted(

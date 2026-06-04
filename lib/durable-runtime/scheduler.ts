@@ -85,6 +85,41 @@ export async function runDurableGraphScheduler({
 			});
 		}
 	}
+	if (hasBlockingPersistedStateDiagnostics(reconciliation.diagnostics)) {
+		return {
+			run,
+			steps: reconciliation.steps,
+			diagnostics,
+			exitReason: "blocked",
+		};
+	}
+	const committedWorkBlock = await blockPotentiallyCommittedRunningSteps({
+		store,
+		ref,
+		run,
+		backends,
+		now: now ?? (() => new Date().toISOString()),
+		state: reconciliation.state,
+		steps: reconciliation.steps,
+	});
+	if (committedWorkBlock.changed) {
+		diagnostics.push(...committedWorkBlock.diagnostics);
+		const finalized = await finalizeRun({
+			store,
+			ref,
+			diagnostics,
+		});
+		return schedulerResult({
+			store,
+			ref,
+			run: finalized ?? run,
+			diagnostics,
+			exitReason:
+				finalized && isTerminalStatus(finalized.status)
+					? "terminal"
+					: "blocked",
+		});
+	}
 	const staleTransition = await markPersistedStaleRunningSteps({
 		store,
 		ref,
@@ -108,6 +143,21 @@ export async function runDurableGraphScheduler({
 				finalized && isTerminalStatus(finalized.status)
 					? "terminal"
 					: "drained",
+		});
+	}
+
+	const alreadyFinalized = await finalizeRun({
+		store,
+		ref,
+		diagnostics,
+	});
+	if (alreadyFinalized && isTerminalStatus(alreadyFinalized.status)) {
+		return schedulerResult({
+			store,
+			ref,
+			run: alreadyFinalized,
+			diagnostics,
+			exitReason: "terminal",
 		});
 	}
 
@@ -309,6 +359,17 @@ async function promotePersistedTerminalAttempts({
 	return { changed };
 }
 
+function hasBlockingPersistedStateDiagnostics(
+	diagnostics: readonly RuntimeDiagnostic[],
+): boolean {
+	return diagnostics.some(
+		(diagnostic) =>
+			diagnostic.code === "missing_step_record" ||
+			diagnostic.code === "corrupt_step_record" ||
+			diagnostic.code === "invalid_step_record",
+	);
+}
+
 function terminalAttemptForStep(
 	step: StepRecord,
 	attempts: StepAttemptRecord[],
@@ -339,6 +400,111 @@ function attemptNumberForAttempt(
 		(attempt) => attempt.attemptId === attemptId,
 	);
 	return index >= 0 ? index + 1 : attempts.length;
+}
+
+interface BlockPotentiallyCommittedRunningStepsOptions {
+	store: RunStore;
+	ref: RunRef;
+	run: RunRecord;
+	backends: ReadonlyMap<KnownBackendName, RunGraphSchedulerBackend>;
+	now: () => string;
+	state: SchedulerState;
+	steps: StepRecord[];
+}
+
+interface CommittedWorkBlockResult {
+	changed: boolean;
+	diagnostics: RuntimeDiagnostic[];
+}
+
+async function blockPotentiallyCommittedRunningSteps({
+	store,
+	ref,
+	run,
+	backends,
+	now,
+	state,
+	steps,
+}: BlockPotentiallyCommittedRunningStepsOptions): Promise<CommittedWorkBlockResult> {
+	if (run.policy.retryPotentiallyCommittedSteps === true) {
+		return { changed: false, diagnostics: [] };
+	}
+
+	const diagnostics: RuntimeDiagnostic[] = [];
+	const staleHeartbeatMs = explicitStaleHeartbeatMs(run);
+	const checkedAt = now();
+	let nextState = state;
+	let changed = false;
+	for (const step of steps) {
+		if (step.status !== "running") {
+			continue;
+		}
+		const backend = backendForStep(step, backends);
+		if (!backend?.capabilities.canCommit) {
+			continue;
+		}
+		const attempts = await store.listStepAttemptRecords({
+			...ref,
+			stepId: step.id,
+		});
+		if (terminalAttemptForStep(step, attempts)) {
+			continue;
+		}
+
+		const heartbeat = await persistedHeartbeatForStep(store, ref, step, state);
+		if (
+			heartbeat &&
+			(staleHeartbeatMs === undefined ||
+				!isHeartbeatStale(heartbeat, checkedAt, staleHeartbeatMs))
+		) {
+			continue;
+		}
+
+		const result: StepResult = {
+			outcome: "blocked",
+			summary:
+				"Running work may have committed changes before scheduler restart; manual recovery is required before retrying.",
+			artifacts: [],
+			nextAction: "wait_for_human",
+		};
+		const blockedStep: StepRecord = {
+			...step,
+			status: "blocked",
+			result,
+			outputArtifacts: result.artifacts,
+			lease: undefined,
+			heartbeat,
+		};
+		await store.writeStepRecord(ref, blockedStep);
+		const { [step.id]: _releasedLease, ...leasesByStepId } =
+			nextState.leasesByStepId;
+		nextState = {
+			...nextState,
+			readyStepIds: nextState.readyStepIds.filter(
+				(stepId) => stepId !== step.id,
+			),
+			leasesByStepId,
+			heartbeatsByStepId: heartbeat
+				? { ...nextState.heartbeatsByStepId, [step.id]: heartbeat }
+				: nextState.heartbeatsByStepId,
+			updatedAt: checkedAt,
+		};
+		await writeSchedulerState(store, ref, nextState);
+		await appendTerminalStepEvent(store, ref, blockedStep, result);
+		diagnostics.push({
+			code: "potentially_committed_step_blocked",
+			message:
+				"Commit-capable running step has no terminal attempt evidence after restart.",
+			details: {
+				stepId: step.id,
+				backend: backend.name,
+				latestAttemptId: step.latestAttemptId,
+			},
+		});
+		changed = true;
+	}
+
+	return { changed, diagnostics };
 }
 
 interface RenewOwnedRunningStepOptions {

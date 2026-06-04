@@ -1,3 +1,5 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import {
 	FileRunStore,
@@ -292,6 +294,337 @@ describe("durable scheduler recovery", () => {
 				},
 			},
 		]);
+	});
+
+	// @cosmo-behavior plan:durable-graph-scheduler#B-014
+	test("blocks potentially committed running work without terminal attempt evidence after restart", async () => {
+		const store = new FileRunStore({ rootDir: temp.path });
+		const run = await store.createRun({
+			scope: "plan-a",
+			runId: "run-blocks-potentially-committed-work",
+			status: "running",
+			policy: {
+				staleHeartbeatMs: 30_000,
+			},
+		});
+		await store.writeRunGraph(ref(run), {
+			steps: [graphStep(run, "commit-capable-build", [])],
+			edges: [],
+		});
+		const lease: StepLease = {
+			holderId: "scheduler-a",
+			acquiredAt: "2026-06-04T00:00:00.000Z",
+			expiresAt: "2026-06-04T00:05:00.000Z",
+			renewable: true,
+		};
+		const heartbeat: StepHeartbeat = {
+			at: "2026-06-04T00:00:00.000Z",
+			note: "possibly committed before crash",
+		};
+		await store.writeStepRecord(ref(run), {
+			...stepRecord(run, "commit-capable-build", []),
+			status: "running",
+			lease,
+			heartbeat,
+			latestAttemptId: "attempt-001",
+		});
+		await store.writeStepHeartbeat(
+			{ ...ref(run), stepId: "commit-capable-build" },
+			heartbeat,
+		);
+		await store.writeStepAttemptRecord(
+			{ ...ref(run), stepId: "commit-capable-build" },
+			{
+				attemptId: "attempt-001",
+				startedAt: "2026-06-04T00:00:00.000Z",
+			},
+		);
+		await store.writeSchedulerState(ref(run), {
+			readyStepIds: [],
+			leasesByStepId: { "commit-capable-build": lease },
+			heartbeatsByStepId: { "commit-capable-build": heartbeat },
+			updatedAt: "2026-06-04T00:00:00.000Z",
+		});
+
+		const restartedStore = new FileRunStore({ rootDir: temp.path });
+		const backend = schedulerBackend("shell-command");
+		backend.capabilities.canCommit = true;
+		const result = await runDurableGraphScheduler({
+			store: restartedStore,
+			ref: ref(run),
+			backends: new Map([["shell-command", backend]]),
+			holderId: "scheduler-b",
+			now: () => "2026-06-04T00:00:31.000Z",
+		});
+
+		expect(result.exitReason).toBe("terminal");
+		expect(backend.prepare).not.toHaveBeenCalled();
+		expect(backend.start).not.toHaveBeenCalled();
+		await expect(
+			restartedStore.readStepRecord({
+				...ref(run),
+				stepId: "commit-capable-build",
+			}),
+		).resolves.toEqual(
+			expect.objectContaining({
+				status: "blocked",
+				heartbeat,
+				latestAttemptId: "attempt-001",
+				result: expect.objectContaining({
+					outcome: "blocked",
+					nextAction: "wait_for_human",
+				}),
+			}),
+		);
+		const blockedStep = await restartedStore.readStepRecord({
+			...ref(run),
+			stepId: "commit-capable-build",
+		});
+		expect(blockedStep).not.toHaveProperty("lease");
+		await expect(
+			restartedStore.listStepAttemptRecords({
+				...ref(run),
+				stepId: "commit-capable-build",
+			}),
+		).resolves.toEqual([
+			{
+				attemptId: "attempt-001",
+				startedAt: "2026-06-04T00:00:00.000Z",
+			},
+		]);
+		await expect(restartedStore.loadRun(ref(run))).resolves.toEqual(
+			expect.objectContaining({ status: "blocked" }),
+		);
+	});
+
+	// @cosmo-behavior plan:durable-graph-scheduler#B-015
+	test("leaves fresh nonresumable running work externally owned without starting a duplicate after restart", async () => {
+		const store = new FileRunStore({ rootDir: temp.path });
+		const run = await store.createRun({
+			scope: "plan-a",
+			runId: "run-fresh-external-nonresumable",
+			status: "running",
+			policy: {
+				staleHeartbeatMs: 30_000,
+			},
+		});
+		await store.writeRunGraph(ref(run), {
+			steps: [graphStep(run, "active-build", [])],
+			edges: [],
+		});
+		const lease: StepLease = {
+			holderId: "scheduler-a",
+			acquiredAt: "2026-06-04T00:00:00.000Z",
+			expiresAt: "2026-06-04T00:05:00.000Z",
+			renewable: true,
+		};
+		const heartbeat: StepHeartbeat = {
+			at: "2026-06-04T00:00:30.000Z",
+			note: "fresh external owner",
+		};
+		await store.writeStepRecord(ref(run), {
+			...stepRecord(run, "active-build", []),
+			status: "running",
+			lease,
+			heartbeat,
+			latestAttemptId: "attempt-001",
+		});
+		await store.writeStepHeartbeat(
+			{ ...ref(run), stepId: "active-build" },
+			heartbeat,
+		);
+		await store.writeStepAttemptRecord(
+			{ ...ref(run), stepId: "active-build" },
+			{
+				attemptId: "attempt-001",
+				startedAt: "2026-06-04T00:00:00.000Z",
+			},
+		);
+		await store.writeSchedulerState(ref(run), {
+			readyStepIds: ["active-build"],
+			leasesByStepId: {},
+			heartbeatsByStepId: {},
+			updatedAt: "2026-06-04T00:00:30.000Z",
+		});
+
+		const restartedStore = new FileRunStore({ rootDir: temp.path });
+		const backend = schedulerBackend("shell-command");
+		backend.capabilities.canResume = false;
+		const result = await runDurableGraphScheduler({
+			store: restartedStore,
+			ref: ref(run),
+			backends: new Map([["shell-command", backend]]),
+			holderId: "scheduler-b",
+			now: () => "2026-06-04T00:00:45.000Z",
+		});
+
+		expect(result.exitReason).toBe("waiting_for_fresh_external_work");
+		expect(backend.prepare).not.toHaveBeenCalled();
+		expect(backend.start).not.toHaveBeenCalled();
+		await expect(
+			restartedStore.readStepRecord({ ...ref(run), stepId: "active-build" }),
+		).resolves.toEqual(
+			expect.objectContaining({
+				status: "running",
+				lease,
+				heartbeat,
+				latestAttemptId: "attempt-001",
+			}),
+		);
+		await expect(
+			restartedStore.listStepAttemptRecords({
+				...ref(run),
+				stepId: "active-build",
+			}),
+		).resolves.toEqual([
+			{
+				attemptId: "attempt-001",
+				startedAt: "2026-06-04T00:00:00.000Z",
+			},
+		]);
+	});
+
+	// @cosmo-behavior plan:durable-graph-scheduler#B-017
+	test("uses step records as mutable authority when graph step fields conflict", async () => {
+		const store = new FileRunStore({ rootDir: temp.path });
+		const run = await store.createRun({
+			scope: "plan-a",
+			runId: "run-step-records-are-authority",
+			status: "running",
+		});
+		await writeFile(
+			run.graphPath,
+			`${JSON.stringify(
+				{
+					steps: [
+						{
+							...graphStep(run, "build", []),
+							status: "ready",
+							latestAttemptId: "attempt-from-graph",
+							result: {
+								outcome: "failed",
+								summary: "graph mutable state must be ignored",
+								artifacts: [],
+							},
+							outputArtifacts: [
+								{ id: "graph-output", path: "graph/output.md" },
+							],
+						},
+					],
+					edges: [],
+				},
+				null,
+				2,
+			)}\n`,
+			"utf-8",
+		);
+		const stepResult: StepResult = {
+			outcome: "success",
+			summary: "step record completed",
+			artifacts: [{ id: "step-output", path: "steps/build/result.json" }],
+		};
+		await store.writeStepRecord(ref(run), {
+			...stepRecord(run, "build", []),
+			status: "completed",
+			latestAttemptId: "attempt-001",
+			result: stepResult,
+			outputArtifacts: stepResult.artifacts,
+		});
+
+		const restartedStore = new FileRunStore({ rootDir: temp.path });
+		const backend = schedulerBackend("shell-command");
+		const result = await runDurableGraphScheduler({
+			store: restartedStore,
+			ref: ref(run),
+			backends: new Map([["shell-command", backend]]),
+			holderId: "scheduler-b",
+			now: () => "2026-06-04T00:02:00.000Z",
+		});
+
+		expect(result.exitReason).toBe("terminal");
+		expect(result.diagnostics).toEqual([
+			expect.objectContaining({
+				code: "ignored_graph_mutable_state",
+				details: expect.objectContaining({
+					stepId: "build",
+					fields: expect.arrayContaining([
+						"status",
+						"result",
+						"latestAttemptId",
+						"outputArtifacts",
+					]),
+				}),
+			}),
+		]);
+		expect(backend.prepare).not.toHaveBeenCalled();
+		expect(backend.start).not.toHaveBeenCalled();
+		await expect(
+			restartedStore.readStepRecord({ ...ref(run), stepId: "build" }),
+		).resolves.toEqual(
+			expect.objectContaining({
+				status: "completed",
+				result: stepResult,
+				outputArtifacts: stepResult.artifacts,
+				latestAttemptId: "attempt-001",
+			}),
+		);
+	});
+
+	// @cosmo-behavior plan:durable-graph-scheduler#B-018
+	test("blocks graph steps with missing or corrupt step records before execution", async () => {
+		const store = new FileRunStore({ rootDir: temp.path });
+		const run = await store.createRun({
+			scope: "plan-a",
+			runId: "run-blocks-invalid-step-records",
+			status: "running",
+		});
+		await store.writeRunGraph(ref(run), {
+			steps: [
+				graphStep(run, "missing-record", []),
+				graphStep(run, "corrupt-record", []),
+			],
+			edges: [],
+		});
+		const corruptStepPath = join(run.stepsDir, "corrupt-record", "step.json");
+		await mkdir(join(run.stepsDir, "corrupt-record"), { recursive: true });
+		await writeFile(corruptStepPath, "{ not valid json\n", "utf-8");
+
+		const restartedStore = new FileRunStore({ rootDir: temp.path });
+		const backend = schedulerBackend("shell-command");
+		const result = await runDurableGraphScheduler({
+			store: restartedStore,
+			ref: ref(run),
+			backends: new Map([["shell-command", backend]]),
+			holderId: "scheduler-b",
+			now: () => "2026-06-04T00:02:00.000Z",
+		});
+
+		expect(result.exitReason).toBe("blocked");
+		expect(result.steps).toEqual([]);
+		expect(result.diagnostics).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					code: "missing_step_record",
+					details: { stepId: "missing-record" },
+				}),
+				expect.objectContaining({
+					code: "corrupt_step_record",
+					path: corruptStepPath,
+					details: expect.objectContaining({ stepId: "corrupt-record" }),
+				}),
+			]),
+		);
+		expect(backend.prepare).not.toHaveBeenCalled();
+		expect(backend.start).not.toHaveBeenCalled();
+		await expect(
+			restartedStore.listStepAttemptRecords({
+				...ref(run),
+				stepId: "missing-record",
+			}),
+		).resolves.toEqual([]);
+		await expect(readFile(corruptStepPath, "utf-8")).resolves.toBe(
+			"{ not valid json\n",
+		);
 	});
 
 	// @cosmo-behavior plan:durable-graph-scheduler#B-006
