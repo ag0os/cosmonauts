@@ -1,4 +1,4 @@
-import { access, readFile, writeFile } from "node:fs/promises";
+import { access, readdir, readFile, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
@@ -110,16 +110,10 @@ describe("FileRunStore", () => {
 		);
 
 		await expect(
-			store.writeStepRecord(ref(stepsRecord), {
-				id: "TASK-1",
-				runId: stepsRecord.runId,
-				title: "Implement store",
-				kind: "task",
-				dependsOn: [],
-				status: "ready",
-				inputArtifacts: [],
-				outputArtifacts: [],
-			}),
+			store.writeStepRecord(
+				ref(stepsRecord),
+				stepRecord(stepsRecord, { id: "TASK-1" }),
+			),
 		).rejects.toThrow(/inside run directory/i);
 		await expect(access(outsideStepsDir)).rejects.toThrow();
 	});
@@ -209,16 +203,7 @@ describe("FileRunStore", () => {
 			scope: "plan-a",
 			runId: "run-steps",
 		});
-		const step: StepRecord = {
-			id: "TASK-1",
-			runId: record.runId,
-			title: "Implement store",
-			kind: "task",
-			dependsOn: [],
-			status: "ready",
-			inputArtifacts: [],
-			outputArtifacts: [],
-		};
+		const step = stepRecord(record, { id: "TASK-1" });
 
 		await expect(store.writeStepRecord(ref(record), step)).resolves.toEqual(
 			step,
@@ -241,6 +226,135 @@ describe("FileRunStore", () => {
 		await expect(
 			store.readStepRecord({ ...ref(record), stepId: "../escape" }),
 		).rejects.toThrow(/unsafe stepId/i);
+		await expect(access(join(temp.path, "escape"))).rejects.toThrow();
+	});
+
+	// @cosmo-behavior plan:durable-backend-step-model#B-003
+	test("persists step attempts and results without erasing previous attempts", async () => {
+		const store = new FileRunStore({ rootDir: temp.path });
+		const record = await store.createRun({
+			scope: "plan-a",
+			runId: "run-attempts",
+		});
+		const step = stepRecord(record, {
+			id: "TASK-1",
+			status: "running",
+			latestAttemptId: "attempt-001",
+		});
+		await store.writeStepRecord(ref(record), step);
+
+		const firstResult = {
+			outcome: "unknown",
+			summary: "The backend report was not machine-readable.",
+			artifacts: [
+				{
+					id: "raw-report",
+					path: "steps/TASK-1/attempts/attempt-001/output.md",
+				},
+			],
+			nextAction: "wait_for_human",
+		} satisfies StepRecord["result"];
+		const firstAttempt = await store.writeStepAttemptRecord(
+			{ ...ref(record), stepId: step.id },
+			{
+				attemptId: "attempt-001",
+				startedAt: "2026-06-04T00:00:00.000Z",
+				endedAt: "2026-06-04T00:01:00.000Z",
+				result: firstResult,
+			},
+			{ outputText: "not-json backend report" },
+		);
+		await store.writeStepRecord(ref(record), {
+			...step,
+			status: "running",
+			latestAttemptId: firstAttempt.attemptId,
+			result: firstResult,
+		});
+
+		const secondResult = {
+			outcome: "success",
+			summary: "The retry completed successfully.",
+			artifacts: [
+				{ id: "report", path: "steps/TASK-1/attempts/attempt-002/result.json" },
+			],
+			nextAction: "continue",
+		} satisfies StepRecord["result"];
+		const secondAttempt = await store.writeStepAttemptRecord(
+			{ ...ref(record), stepId: step.id },
+			{
+				attemptId: "attempt-002",
+				startedAt: "2026-06-04T00:02:00.000Z",
+				endedAt: "2026-06-04T00:03:00.000Z",
+				result: secondResult,
+			},
+		);
+		const updatedStep = await store.writeStepRecord(ref(record), {
+			...step,
+			status: "completed",
+			latestAttemptId: secondAttempt.attemptId,
+			result: secondResult,
+		});
+
+		const attemptsDir = join(record.stepsDir, step.id, "attempts");
+		expect(await readdir(attemptsDir)).toEqual(["attempt-001", "attempt-002"]);
+		await expect(
+			access(join(attemptsDir, "attempt-001", "attempt.json")),
+		).resolves.toBeUndefined();
+		await expect(
+			access(join(attemptsDir, "attempt-001", "output.md")),
+		).resolves.toBeUndefined();
+		await expect(
+			access(join(attemptsDir, "attempt-001", "result.json")),
+		).resolves.toBeUndefined();
+		await expect(
+			access(join(attemptsDir, "attempt-002", "attempt.json")),
+		).resolves.toBeUndefined();
+		await expect(
+			access(join(attemptsDir, "attempt-002", "output.md")),
+		).rejects.toThrow();
+		await expect(
+			access(join(attemptsDir, "attempt-002", "result.json")),
+		).resolves.toBeUndefined();
+
+		await expect(
+			readFile(join(attemptsDir, "attempt-001", "output.md"), "utf-8"),
+		).resolves.toBe("not-json backend report");
+		await expect(
+			readJson(join(attemptsDir, "attempt-001", "result.json")),
+		).resolves.toEqual(firstResult);
+		await expect(
+			readJson(join(attemptsDir, "attempt-002", "result.json")),
+		).resolves.toEqual(secondResult);
+		await expect(
+			store.readStepAttemptRecord({
+				...ref(record),
+				stepId: step.id,
+				attemptId: "attempt-001",
+			}),
+		).resolves.toEqual(firstAttempt);
+		await expect(
+			store.listStepAttemptRecords({ ...ref(record), stepId: step.id }),
+		).resolves.toEqual([firstAttempt, secondAttempt]);
+		await expect(
+			store.readStepRecord({ ...ref(record), stepId: step.id }),
+		).resolves.toEqual(updatedStep);
+
+		await expect(
+			store.writeStepAttemptRecord(
+				{ ...ref(record), stepId: step.id },
+				{
+					attemptId: "../escape",
+					startedAt: "2026-06-04T00:04:00.000Z",
+				},
+			),
+		).rejects.toThrow(/unsafe attemptId/i);
+		await expect(
+			store.readStepAttemptRecord({
+				...ref(record),
+				stepId: step.id,
+				attemptId: "../escape",
+			}),
+		).rejects.toThrow(/unsafe attemptId/i);
 		await expect(access(join(temp.path, "escape"))).rejects.toThrow();
 	});
 });
@@ -266,4 +380,26 @@ function stepEvent<T extends "step_ready" | "step_started">(
 		OrchestrationEvent,
 		{ type: T }
 	>;
+}
+
+function stepRecord(
+	record: RunRecord,
+	overrides: Partial<StepRecord> = {},
+): StepRecord {
+	return {
+		id: "TASK-1",
+		runId: record.runId,
+		title: "Implement store",
+		kind: "drive",
+		backend: { name: "codex" },
+		dependsOn: [],
+		status: "ready",
+		inputArtifacts: [],
+		outputArtifacts: [],
+		...overrides,
+	};
+}
+
+async function readJson(path: string): Promise<unknown> {
+	return JSON.parse(await readFile(path, "utf-8")) as unknown;
 }

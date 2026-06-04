@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createDriveProgram } from "../../../cli/drive/subcommand.ts";
@@ -11,6 +11,11 @@ import {
 	type DriverRunSpec,
 	resolveStateCommitPolicy,
 } from "../../../lib/driver/types.ts";
+import {
+	FileRunStore,
+	type StepAttemptRecord,
+	type StepRecord,
+} from "../../../lib/durable-runtime/index.ts";
 import { TaskManager } from "../../../lib/tasks/task-manager.ts";
 import type { Task } from "../../../lib/tasks/task-types.ts";
 import { captureCliOutput } from "../../helpers/cli.ts";
@@ -860,6 +865,352 @@ describe("cosmonauts drive run", () => {
 		);
 	});
 
+	// @cosmo-behavior plan:durable-backend-step-model#B-009
+	test("resume records source task-status and state-commit finalizer retry failures as attempts", async () => {
+		const resetResumeCase = async () => {
+			process.exitCode = undefined;
+			driverMocks.runInline.mockClear();
+			driverMocks.startDetached.mockClear();
+			childProcessMocks.execFile.mockClear();
+			output.restore();
+			output = attachJsonHelpers(captureCliOutput());
+			await rm(resumeWorkdir(), { recursive: true, force: true });
+		};
+
+		const sourceSuccess = await setupFixture(1);
+		const sourceSuccessTaskId = sourceSuccess.tasks[0]?.id ?? "TASK-001";
+		await writeResumeRun([sourceSuccessTaskId], [], {
+			commitPolicy: "driver-commits",
+			stateCommitPolicy: "none",
+		});
+		await writePendingCommitFinalization(sourceSuccessTaskId, {
+			headBeforeFinalization: "before-sha",
+		});
+		await seedFailedFinalizerAttempt(
+			`finalizer-source-commit-${sourceSuccessTaskId}`,
+			"commit",
+			sourceSuccessTaskId,
+		);
+		childProcessMocks.execFile.mockImplementation(
+			gitMock({
+				head: "external-sha",
+				status: "",
+				diffHasChanges: false,
+			}),
+		);
+
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
+		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(existsSync(join(resumeWorkdir(), "pending-finalization.json"))).toBe(
+			false,
+		);
+		expect(
+			await readDurableFinalizerAttempts(
+				`finalizer-source-commit-${sourceSuccessTaskId}`,
+			),
+		).toEqual([
+			expect.objectContaining({
+				attemptId: "attempt-001",
+				result: expect.objectContaining({
+					outcome: "failed",
+					nextAction: "retry",
+				}),
+			}),
+			expect.objectContaining({
+				attemptId: "attempt-002",
+				result: expect.objectContaining({
+					outcome: "success",
+					nextAction: "continue",
+					commits: [
+						{
+							sha: "external-sha",
+							subject: `${sourceSuccessTaskId}: Drive task 1`,
+						},
+					],
+				}),
+			}),
+		]);
+
+		await resetResumeCase();
+		const sourceFailure = await setupFixture(1);
+		const sourceFailureTaskId = sourceFailure.tasks[0]?.id ?? "TASK-001";
+		await writeResumeRun([sourceFailureTaskId], [], {
+			commitPolicy: "driver-commits",
+			stateCommitPolicy: "none",
+		});
+		await writePendingCommitFinalization(sourceFailureTaskId, {
+			headBeforeFinalization: "same-sha",
+		});
+		await seedFailedFinalizerAttempt(
+			`finalizer-source-commit-${sourceFailureTaskId}`,
+			"commit",
+			sourceFailureTaskId,
+		);
+		childProcessMocks.execFile.mockImplementation(
+			gitMock({
+				head: "same-sha",
+				status: "",
+				diffHasChanges: false,
+			}),
+		);
+
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		expect(process.exitCode).toBe(1);
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
+		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(existsSync(join(resumeWorkdir(), "pending-finalization.json"))).toBe(
+			true,
+		);
+		expect(output.stdoutJson()).toMatchObject({
+			runId: "run-previous",
+			outcome: "finalization_failed",
+			finalizationPhase: "commit",
+			finalizationReason: "HEAD unchanged since failed commit finalization",
+		});
+		expect(
+			await readDurableFinalizerAttempts(
+				`finalizer-source-commit-${sourceFailureTaskId}`,
+			),
+		).toEqual([
+			expect.objectContaining({
+				attemptId: "attempt-001",
+				result: expect.objectContaining({ outcome: "failed" }),
+			}),
+			expect.objectContaining({
+				attemptId: "attempt-002",
+				result: expect.objectContaining({
+					outcome: "failed",
+					summary: "HEAD unchanged since failed commit finalization",
+					nextAction: "retry",
+				}),
+			}),
+		]);
+
+		await resetResumeCase();
+		await setupFixture(1);
+		const missingTaskId = "TASK-999";
+		await writeResumeRun([missingTaskId], [], {
+			commitPolicy: "driver-commits",
+			stateCommitPolicy: "none",
+		});
+		await writePendingTaskStatusFinalization(missingTaskId, "committed-sha");
+		await seedFailedFinalizerAttempt(
+			`finalizer-task-status-${missingTaskId}`,
+			"task_status",
+			missingTaskId,
+			"committed-sha",
+		);
+
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		expect(process.exitCode).toBe(1);
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
+		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(output.stdoutJson()).toMatchObject({
+			runId: "run-previous",
+			outcome: "finalization_failed",
+			finalizationPhase: "task_status",
+			finalizationReason:
+				"status update failed after commit: Task not found: TASK-999",
+		});
+		expect(
+			await readDurableFinalizerAttempts(
+				`finalizer-task-status-${missingTaskId}`,
+			),
+		).toEqual([
+			expect.objectContaining({
+				attemptId: "attempt-001",
+				result: expect.objectContaining({ outcome: "failed" }),
+			}),
+			expect.objectContaining({
+				attemptId: "attempt-002",
+				result: expect.objectContaining({
+					outcome: "failed",
+					summary:
+						"status update failed after commit: Task not found: TASK-999",
+					nextAction: "retry",
+					commits: [{ sha: "committed-sha" }],
+				}),
+			}),
+		]);
+
+		await resetResumeCase();
+		const notDoneState = await setupFixture(1);
+		const notDoneTaskId = notDoneState.tasks[0]?.id ?? "TASK-001";
+		await writeResumeRun(
+			[notDoneTaskId],
+			[{ type: "task_done", taskId: notDoneTaskId }],
+			{
+				commitPolicy: "driver-commits",
+				stateCommitPolicy: "final-state-commit",
+			},
+		);
+		await writePendingStateCommitFinalization([notDoneTaskId]);
+		await seedFailedFinalizerAttempt("finalizer-state-commit", "state_commit");
+		childProcessMocks.execFile.mockImplementation(
+			gitMock({
+				head: "external-state-sha",
+				status: "",
+				diffHasChanges: false,
+			}),
+		);
+
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		expect(process.exitCode).toBe(1);
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
+		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(output.stdoutJson()).toMatchObject({
+			runId: "run-previous",
+			outcome: "finalization_failed",
+			finalizationPhase: "state_commit",
+			finalizationReason: `pending state task is not Done: ${notDoneTaskId}`,
+		});
+		expect(
+			await readDurableFinalizerAttempts("finalizer-state-commit"),
+		).toEqual([
+			expect.objectContaining({
+				attemptId: "attempt-001",
+				result: expect.objectContaining({ outcome: "failed" }),
+			}),
+			expect.objectContaining({
+				attemptId: "attempt-002",
+				result: expect.objectContaining({
+					outcome: "success",
+					nextAction: "continue",
+				}),
+			}),
+			expect.objectContaining({
+				attemptId: "attempt-003",
+				result: expect.objectContaining({
+					outcome: "failed",
+					summary: `pending state task is not Done: ${notDoneTaskId}`,
+					nextAction: "retry",
+				}),
+			}),
+		]);
+
+		await resetResumeCase();
+		const dirtyState = await setupFixture(1);
+		const dirtyTaskId = dirtyState.tasks[0]?.id ?? "TASK-001";
+		await dirtyState.manager.updateTask(dirtyTaskId, { status: "Done" });
+		await writeResumeRun(
+			[dirtyTaskId],
+			[{ type: "task_done", taskId: dirtyTaskId }],
+			{
+				commitPolicy: "driver-commits",
+				stateCommitPolicy: "final-state-commit",
+			},
+		);
+		await writePendingStateCommitFinalization([dirtyTaskId]);
+		await seedFailedFinalizerAttempt("finalizer-state-commit", "state_commit");
+		childProcessMocks.execFile.mockImplementation(
+			gitMock({
+				head: "external-state-sha",
+				status: ["", ` M missions/tasks/${dirtyTaskId} - Drive task 1.md\n`],
+				diffHasChanges: false,
+			}),
+		);
+
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		expect(process.exitCode).toBe(1);
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
+		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(output.stdoutJson()).toMatchObject({
+			runId: "run-previous",
+			outcome: "finalization_failed",
+			finalizationPhase: "state_commit",
+			finalizationReason: `pending state task files still have changes: missions/tasks/${dirtyTaskId} - Drive task 1.md`,
+		});
+		expect(
+			await readDurableFinalizerAttempts("finalizer-state-commit"),
+		).toEqual([
+			expect.objectContaining({
+				attemptId: "attempt-001",
+				result: expect.objectContaining({ outcome: "failed" }),
+			}),
+			expect.objectContaining({
+				attemptId: "attempt-002",
+				result: expect.objectContaining({
+					outcome: "success",
+					nextAction: "continue",
+				}),
+			}),
+			expect.objectContaining({
+				attemptId: "attempt-003",
+				result: expect.objectContaining({
+					outcome: "failed",
+					summary: `pending state task files still have changes: missions/tasks/${dirtyTaskId} - Drive task 1.md`,
+					nextAction: "retry",
+				}),
+			}),
+		]);
+
+		await resetResumeCase();
+		const unchangedState = await setupFixture(1);
+		const unchangedTaskId = unchangedState.tasks[0]?.id ?? "TASK-001";
+		await unchangedState.manager.updateTask(unchangedTaskId, {
+			status: "Done",
+		});
+		await writeResumeRun(
+			[unchangedTaskId],
+			[{ type: "task_done", taskId: unchangedTaskId }],
+			{
+				commitPolicy: "driver-commits",
+				stateCommitPolicy: "final-state-commit",
+			},
+		);
+		await writePendingStateCommitFinalization([unchangedTaskId]);
+		await seedFailedFinalizerAttempt("finalizer-state-commit", "state_commit");
+		childProcessMocks.execFile.mockImplementation(
+			gitMock({
+				head: "before-sha",
+				status: "",
+				diffHasChanges: false,
+			}),
+		);
+
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		expect(process.exitCode).toBe(1);
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
+		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(output.stdoutJson()).toMatchObject({
+			runId: "run-previous",
+			outcome: "finalization_failed",
+			finalizationPhase: "state_commit",
+			finalizationReason:
+				"HEAD unchanged since failed state commit finalization",
+		});
+		expect(
+			await readDurableFinalizerAttempts("finalizer-state-commit"),
+		).toEqual([
+			expect.objectContaining({
+				attemptId: "attempt-001",
+				result: expect.objectContaining({ outcome: "failed" }),
+			}),
+			expect.objectContaining({
+				attemptId: "attempt-002",
+				result: expect.objectContaining({
+					outcome: "success",
+					nextAction: "continue",
+				}),
+			}),
+			expect.objectContaining({
+				attemptId: "attempt-003",
+				result: expect.objectContaining({
+					outcome: "failed",
+					summary: "HEAD unchanged since failed state commit finalization",
+					nextAction: "retry",
+				}),
+			}),
+		]);
+	});
+
 	test("slices resume task IDs after the highest done or blocked previous task", async () => {
 		const fixture = await setupFixture(4);
 		await writeResumeRun(
@@ -1063,6 +1414,27 @@ async function writePendingCommitFinalization(
 	);
 }
 
+async function writePendingTaskStatusFinalization(
+	taskId: string,
+	commitSha: string,
+): Promise<void> {
+	await writeFile(
+		join(resumeWorkdir(), "pending-finalization.json"),
+		`${JSON.stringify({
+			runId: "run-previous",
+			planSlug: PLAN,
+			createdAt: "2026-01-01T00:00:00.000Z",
+			commitPolicy: "driver-commits",
+			stateCommitPolicy: "none",
+			reason: "status update failed after commit: task manager unavailable",
+			phase: "task_status",
+			taskId,
+			commitSha,
+		})}\n`,
+		"utf-8",
+	);
+}
+
 async function writePendingStateCommitFinalization(
 	taskIds: readonly string[],
 ): Promise<void> {
@@ -1081,6 +1453,80 @@ async function writePendingStateCommitFinalization(
 		})}\n`,
 		"utf-8",
 	);
+}
+
+async function seedFailedFinalizerAttempt(
+	stepId: string,
+	phase: "commit" | "task_status" | "state_commit",
+	taskId?: string,
+	commitSha?: string,
+): Promise<void> {
+	const store = durableRunStore();
+	await store.createRun({
+		scope: PLAN,
+		runId: "run-previous",
+		eventsPath: "orchestration-events.jsonl",
+		metadata: {
+			source: "drive",
+			legacyEventsPath: join(resumeWorkdir(), "events.jsonl"),
+			parentSessionId: "previous-parent",
+			driveTaskIds: taskId ? [taskId] : [],
+			configuredBackendName: "claude-cli",
+		},
+	});
+	const result = {
+		outcome: "failed" as const,
+		summary: "previous finalizer attempt failed",
+		artifacts: [
+			{
+				id: "pending-finalization",
+				path: "pending-finalization.json",
+				kind: "pending-finalization",
+			},
+		],
+		nextAction: "retry" as const,
+		...(commitSha ? { commits: [{ sha: commitSha }] } : {}),
+	};
+	const step: StepRecord = {
+		id: stepId,
+		runId: "run-previous",
+		title: `Seeded finalizer ${stepId}`,
+		kind: "finalizer",
+		backend: { name: "shell-command", options: { drivePhase: phase } },
+		dependsOn: taskId ? [taskId] : [],
+		status: "failed",
+		inputArtifacts: [],
+		outputArtifacts: result.artifacts,
+		result,
+		latestAttemptId: "attempt-001",
+	};
+	await store.writeStepRecord({ scope: PLAN, runId: "run-previous" }, step);
+	await store.writeStepAttemptRecord(
+		{ scope: PLAN, runId: "run-previous", stepId },
+		{
+			attemptId: "attempt-001",
+			startedAt: "2026-01-01T00:00:00.000Z",
+			endedAt: "2026-01-01T00:00:01.000Z",
+			result,
+		},
+		{ outputText: "previous finalizer attempt failed\n" },
+	);
+}
+
+async function readDurableFinalizerAttempts(
+	stepId: string,
+): Promise<StepAttemptRecord[]> {
+	return durableRunStore().listStepAttemptRecords({
+		scope: PLAN,
+		runId: "run-previous",
+		stepId,
+	});
+}
+
+function durableRunStore(): FileRunStore {
+	return new FileRunStore({
+		rootDir: join(temp.path, "missions", "sessions"),
+	});
 }
 
 function gitMock({

@@ -3,12 +3,19 @@ import { appendFile, readFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import {
 	FileRunStore,
+	type OrchestrationEvent,
 	type RunPolicy,
+	type RunRef,
 	type RuntimeDiagnostic,
 } from "../durable-runtime/index.ts";
 import type { BusEvent } from "../orchestration/message-bus.ts";
 import { normalizeDriverEvent } from "./durable-events.ts";
+import {
+	createDriveStepProjector,
+	type DriveStepProjector,
+} from "./durable-steps.ts";
 import type {
+	BackendName,
 	DriverEvent,
 	DriverRunSpec,
 	EventSink,
@@ -50,9 +57,22 @@ interface DurableDriverEventSinkOptions {
 	rootDir: string;
 	scope: string;
 	runId: string;
+	projectRoot?: string;
+	workdir?: string;
+	configuredBackendName?: BackendName;
+	taskIds?: readonly string[];
 	eventsPath?: string;
 	policy?: Partial<RunPolicy>;
 	metadata?: Record<string, unknown>;
+}
+
+interface DurableDriverEventSinkState {
+	options: DurableDriverEventSinkOptions;
+	store: FileRunStore;
+	ref: RunRef;
+	ready: boolean;
+	disabled: boolean;
+	stepProjector?: DriveStepProjector;
 }
 
 interface TailEventsResult {
@@ -111,6 +131,10 @@ export function driveDurableEventSinkOptions(
 		rootDir: join(spec.projectRoot, "missions", "sessions"),
 		scope: spec.planSlug,
 		runId: spec.runId,
+		projectRoot: spec.projectRoot,
+		workdir: spec.workdir,
+		configuredBackendName: spec.backendName,
+		taskIds: spec.taskIds,
 		eventsPath: "orchestration-events.jsonl",
 		policy: {
 			defaultBackend: { name: spec.backendName },
@@ -120,6 +144,8 @@ export function driveDurableEventSinkOptions(
 			source: "drive",
 			legacyEventsPath: spec.eventLogPath,
 			parentSessionId: spec.parentSessionId,
+			driveTaskIds: spec.taskIds,
+			configuredBackendName: spec.backendName,
 		},
 	};
 }
@@ -127,71 +153,180 @@ export function driveDurableEventSinkOptions(
 function createDurableDriverEventSink(
 	options: DurableDriverEventSinkOptions,
 ): EventSink {
-	const store = new FileRunStore({ rootDir: options.rootDir });
-	const ref = { scope: options.scope, runId: options.runId };
-	let ready = false;
-	let disabled = false;
+	const state: DurableDriverEventSinkState = {
+		options,
+		store: new FileRunStore({ rootDir: options.rootDir }),
+		ref: { scope: options.scope, runId: options.runId },
+		ready: false,
+		disabled: false,
+	};
 
 	return async (event) => {
-		if (disabled) {
-			return;
-		}
-
-		const normalized = normalizeDriverEvent(event);
-		if (normalized.events.length === 0 && normalized.diagnostics.length === 0) {
-			return;
-		}
-
-		if (!ready) {
-			try {
-				if (!(await store.loadRun(ref))) {
-					await store.createRun({
-						...ref,
-						status: "pending",
-						eventsPath: options.eventsPath,
-						policy: options.policy,
-						metadata: options.metadata,
-					});
-				}
-				ready = true;
-			} catch (error) {
-				disabled = true;
-				reportDurableDiagnostic({
-					code: "drive_durable_run_setup_failed",
-					message:
-						"Drive normalized run record setup failed; disabling normalized event writes for this sink.",
-					details: durableDiagnosticDetails(event, error),
-				});
-				return;
-			}
-		}
-
-		for (const diagnostic of normalized.diagnostics) {
-			try {
-				await store.appendDiagnostic(ref, diagnostic);
-			} catch (error) {
-				reportDurableDiagnostic({
-					code: "drive_durable_diagnostic_append_failed",
-					message:
-						"Drive normalized diagnostic append failed; legacy driver event write remains authoritative.",
-					details: durableDiagnosticDetails(event, error),
-				});
-			}
-		}
-
-		for (const normalizedEvent of normalized.events) {
-			try {
-				await store.appendEvent(ref, normalizedEvent);
-			} catch (error) {
-				reportDurableDiagnostic({
-					code: "drive_durable_event_append_failed",
-					message:
-						"Drive normalized event append failed; legacy driver event write remains authoritative.",
-					details: durableDiagnosticDetails(event, error),
-				});
-			}
-		}
+		await processDurableDriverEvent(state, event);
 	};
+}
+
+async function processDurableDriverEvent(
+	state: DurableDriverEventSinkState,
+	event: DriverEvent,
+): Promise<void> {
+	if (state.disabled) {
+		return;
+	}
+
+	let normalized = normalizeDriverEvent(event);
+	if (normalized.events.length === 0 && normalized.diagnostics.length === 0) {
+		return;
+	}
+
+	if (!(await ensureDurableSinkReady(state, event))) {
+		return;
+	}
+
+	const projected = await projectTaskDoneBeforeNormalization(state, event);
+	if (event.type === "task_done") {
+		normalized = normalizeDriverEvent(event, {
+			latestTaskResult: (taskId) =>
+				state.stepProjector?.latestTaskResult(taskId),
+		});
+	}
+
+	await appendDurableDiagnostics(state, event, normalized.diagnostics);
+	await appendDurableEvents(state, event, normalized.events);
+
+	if (!projected) {
+		await projectDurableStep(state, event);
+	}
+}
+
+async function ensureDurableSinkReady(
+	state: DurableDriverEventSinkState,
+	event: DriverEvent,
+): Promise<boolean> {
+	if (state.ready) {
+		return true;
+	}
+
+	try {
+		await createDurableRunIfMissing(state);
+		state.stepProjector = createStepProjectorIfConfigured(state);
+		state.ready = true;
+		return true;
+	} catch (error) {
+		state.disabled = true;
+		reportDurableDiagnostic({
+			code: "drive_durable_run_setup_failed",
+			message:
+				"Drive normalized run record setup failed; disabling normalized event writes for this sink.",
+			details: durableDiagnosticDetails(event, error),
+		});
+		return false;
+	}
+}
+
+async function createDurableRunIfMissing(
+	state: DurableDriverEventSinkState,
+): Promise<void> {
+	if (await state.store.loadRun(state.ref)) {
+		return;
+	}
+
+	await state.store.createRun({
+		...state.ref,
+		status: "pending",
+		eventsPath: state.options.eventsPath,
+		policy: state.options.policy,
+		metadata: state.options.metadata,
+	});
+}
+
+function createStepProjectorIfConfigured(
+	state: DurableDriverEventSinkState,
+): DriveStepProjector | undefined {
+	const { options } = state;
+	if (
+		!options.projectRoot ||
+		!options.workdir ||
+		!options.configuredBackendName ||
+		!options.taskIds
+	) {
+		return undefined;
+	}
+
+	return createDriveStepProjector({
+		store: state.store,
+		ref: state.ref,
+		projectRoot: options.projectRoot,
+		workdir: options.workdir,
+		configuredBackendName: options.configuredBackendName,
+		taskIds: options.taskIds,
+	});
+}
+
+async function projectTaskDoneBeforeNormalization(
+	state: DurableDriverEventSinkState,
+	event: DriverEvent,
+): Promise<boolean> {
+	if (event.type !== "task_done") {
+		return false;
+	}
+
+	await projectDurableStep(state, event);
+	return true;
+}
+
+async function projectDurableStep(
+	state: DurableDriverEventSinkState,
+	event: DriverEvent,
+): Promise<void> {
+	try {
+		await state.stepProjector?.project(event);
+	} catch (error) {
+		reportDurableDiagnostic({
+			code: "drive_durable_step_write_failed",
+			message:
+				"Drive durable step projection failed; legacy driver event write and normalized event writes remain authoritative.",
+			details: durableDiagnosticDetails(event, error),
+		});
+	}
+}
+
+async function appendDurableDiagnostics(
+	state: DurableDriverEventSinkState,
+	event: DriverEvent,
+	diagnostics: readonly RuntimeDiagnostic[],
+): Promise<void> {
+	for (const diagnostic of diagnostics) {
+		try {
+			await state.store.appendDiagnostic(state.ref, diagnostic);
+		} catch (error) {
+			reportDurableDiagnostic({
+				code: "drive_durable_diagnostic_append_failed",
+				message:
+					"Drive normalized diagnostic append failed; legacy driver event write remains authoritative.",
+				details: durableDiagnosticDetails(event, error),
+			});
+		}
+	}
+}
+
+async function appendDurableEvents(
+	state: DurableDriverEventSinkState,
+	event: DriverEvent,
+	events: readonly OrchestrationEvent[],
+): Promise<void> {
+	for (const normalizedEvent of events) {
+		try {
+			await state.store.appendEvent(state.ref, normalizedEvent);
+		} catch (error) {
+			reportDurableDiagnostic({
+				code: "drive_durable_event_append_failed",
+				message:
+					"Drive normalized event append failed; legacy driver event write remains authoritative.",
+				details: durableDiagnosticDetails(event, error),
+			});
+		}
+	}
 }
 
 export function shouldBridge(event: DriverEvent): boolean {

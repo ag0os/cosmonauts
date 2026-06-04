@@ -223,6 +223,61 @@ by normalized event sequence cursor and reports malformed normalized JSONL
 lines as diagnostics. They do not replace `watch_events`, and this phase adds
 no scheduler ownership, backend adapter migration, or mutating run controls.
 
+Plan-2 durable step support is a backend wrapper around Drive's existing run
+loop, not a replacement scheduler. Drive still selects tasks, renders prompts,
+invokes the configured backend adapter, parses reports, verifies, commits, and
+writes the legacy event stream first. The durable sink then projects those
+legacy `DriverEvent` records into a normalized run sidecar and into step records
+under the same run workdir. Step projection failures are diagnostics only:
+legacy event writes and normalized event writes remain authoritative for the
+run.
+
+The authoritative backend identity for durable Drive task steps is the
+configured `DriverRunSpec.backendName`, also stored in `RunRecord.policy` and
+metadata as `configuredBackendName`. Backend telemetry events may report the
+adapter that actually emitted the event; if that observed name differs from the
+configured name, Drive appends a `drive_backend_identity_mismatch` diagnostic
+but keeps the step record backend set to the configured backend.
+
+Drive task steps use the task ID as the durable step ID and are written below
+`steps/<task-id>/step.json`. Attempts are append-like records under
+`steps/<task-id>/attempts/attempt-NNN/`, with `attempt.json`, optional
+`output.md`, and `result.json` when a result exists. Task step input artifacts
+point at `missions/tasks/<task-id>.md` and `prompts/<task-id>.md`; report
+artifacts point at `steps/<task-id>/attempts/<attempt-id>/result.json`.
+Dependencies preserve the original queued task order from
+`RunRecord.metadata.driveTaskIds`, falling back to the active task slice with a
+diagnostic when that metadata is unavailable.
+
+D-006 malformed backend reports are represented as completed durable attempts
+with result outcome `unknown`, summary `Drive backend report was not
+machine-readable.`, and `nextAction: "wait_for_human"`. This is the one
+intentional correction normalized task completion receives from step
+projection: when the legacy task still reaches `task_done`, the normalized
+`step_completed` event carries the projected `unknown` result instead of
+inventing success. `run_watch` and `run_status` summarize from the normalized
+events at `RunRecord.eventsPath`; `watch_events`, `cosmonauts drive status`, and
+`drive list` continue to read only legacy `events.jsonl` and legacy run-state
+sentinels, so step records do not add fields or change those surfaces.
+
+Drive finalization phases are modeled as generic durable finalizer steps. Source
+commit finalizers use `finalizer-source-commit-<task-id>`, task status
+finalizers use `finalizer-task-status-<task-id>`, and the final task-state
+commit uses `finalizer-state-commit`. Finalizer steps use backend
+`shell-command` with `options.drivePhase`, depend on the task step for per-task
+finalizers and all queued task steps for the final state commit, and write the
+same attempt layout as task steps. A failed finalizer records a failed result
+with `nextAction: "retry"` and a `pending-finalization.json` artifact; resume
+retries the pending finalization before backend work and appends a new attempt
+unless the latest failed attempt is already the retry evidence for that failure.
+
+Finalization has one normalized-event compatibility exception: because existing
+normalized observers already route terminal finalization failures through run
+and step terminal events, Drive still normalizes `task_finalization_failed` to
+`step_failed` plus finalization activity, and `run_finalization_failed` to
+`run_failed` plus finalization activity when task context exists. Missing task
+context is preserved as a diagnostic rather than fabricating a step ID.
+
 ## Commit and Finalization Policies
 
 With `commitPolicy=driver-commits`, Drive owns source commits after verification

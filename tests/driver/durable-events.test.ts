@@ -4,7 +4,10 @@ import {
 	normalizeDriverEvent,
 } from "../../lib/driver/durable-events.ts";
 import type { DriverEvent, ParsedReport } from "../../lib/driver/types.ts";
-import type { OrchestrationEvent } from "../../lib/durable-runtime/index.ts";
+import type {
+	OrchestrationEvent,
+	StepResult,
+} from "../../lib/durable-runtime/index.ts";
 
 type EventOf<T extends DriverEvent["type"]> = Extract<DriverEvent, { type: T }>;
 
@@ -302,6 +305,37 @@ describe("durable driver events", () => {
 		}
 	});
 
+	// @cosmo-behavior plan:durable-backend-step-model#B-011
+	test("uses enriched task completion results only for unknown report corrections", () => {
+		const reportResult: StepResult = {
+			outcome: "success",
+			summary: "finished durable step projection",
+			artifacts: [
+				{
+					id: "report",
+					path: "steps/TASK-1/attempts/attempt-001/result.json",
+					kind: "report",
+				},
+			],
+			files: [{ path: "lib/driver/durable-steps.ts", status: "modified" }],
+			verification: [{ command: "bun run test", status: "pass" }],
+			nextAction: "continue",
+		};
+		const unknownResult: StepResult = {
+			outcome: "unknown",
+			summary: "Drive backend report was not machine-readable.",
+			artifacts: reportResult.artifacts,
+			nextAction: "wait_for_human",
+		};
+
+		expect(normalizedTaskDoneResult(reportResult)).toEqual({
+			outcome: "success",
+			summary: "Drive task completed.",
+			artifacts: [],
+		});
+		expect(normalizedTaskDoneResult(unknownResult)).toEqual(unknownResult);
+	});
+
 	// @cosmo-behavior plan:durable-run-store-events#B-015
 	test("maps failed preflight to activity detail followed by canonical step blocked", () => {
 		const started = normalize(preflight("started"));
@@ -380,6 +414,13 @@ function normalize(event: DriverEvent): {
 	diagnostics: DriverEventNormalizationDiagnostic[];
 } {
 	return normalizeDriverEvent(event);
+}
+
+function normalizedTaskDoneResult(result: StepResult): StepResult | undefined {
+	const event = normalizeDriverEvent(taskDone(), {
+		latestTaskResult: () => result,
+	}).events[0];
+	return event?.type === "step_completed" ? event.result : undefined;
 }
 
 function expectTerminalShape(event: OrchestrationEvent | undefined): void {

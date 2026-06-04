@@ -21,6 +21,7 @@ import type {
 	RunStore,
 	RuntimeDiagnostic,
 	RunWatchResult,
+	StepAttemptRecord,
 	StepRecord,
 	StoredOrchestrationEvent,
 } from "./types.ts";
@@ -217,6 +218,77 @@ export class FileRunStore implements RunStore {
 		}
 	}
 
+	async writeStepAttemptRecord(
+		ref: RunRef & { stepId: string },
+		attempt: StepAttemptRecord,
+		options: { outputText?: string } = {},
+	): Promise<StepAttemptRecord> {
+		const record = await this.requireRun(ref);
+		const attemptDir = this.stepAttemptDir(
+			record,
+			ref.stepId,
+			attempt.attemptId,
+		);
+		await writeJsonAtomically(join(attemptDir, "attempt.json"), attempt);
+		if (options.outputText !== undefined) {
+			await writeFileAtomically(
+				join(attemptDir, "output.md"),
+				options.outputText,
+			);
+		}
+		if (attempt.result) {
+			await writeJsonAtomically(
+				join(attemptDir, "result.json"),
+				attempt.result,
+			);
+		}
+		return attempt;
+	}
+
+	async readStepAttemptRecord(
+		ref: RunRef & { stepId: string; attemptId: string },
+	): Promise<StepAttemptRecord | undefined> {
+		const record = await this.requireRun(ref);
+		const attemptPath = this.stepAttemptRecordPath(
+			record,
+			ref.stepId,
+			ref.attemptId,
+		);
+		try {
+			return JSON.parse(
+				await readFile(attemptPath, "utf-8"),
+			) as StepAttemptRecord;
+		} catch (error) {
+			if (isNotFoundError(error)) {
+				return undefined;
+			}
+			throw error;
+		}
+	}
+
+	async listStepAttemptRecords(
+		ref: RunRef & { stepId: string },
+	): Promise<StepAttemptRecord[]> {
+		const record = await this.requireRun(ref);
+		const attemptsDir = this.stepAttemptsDir(record, ref.stepId);
+		const attemptIds = await this.listDirectoryNames(attemptsDir);
+		const attempts: StepAttemptRecord[] = [];
+
+		for (const attemptId of attemptIds.sort((left, right) =>
+			left.localeCompare(right),
+		)) {
+			const attempt = await this.readStepAttemptRecord({
+				...ref,
+				attemptId,
+			});
+			if (attempt) {
+				attempts.push(attempt);
+			}
+		}
+
+		return attempts;
+	}
+
 	async listRecentRuns(
 		options: ListRecentRunsOptions = {},
 	): Promise<RunRecord[]> {
@@ -299,6 +371,34 @@ export class FileRunStore implements RunStore {
 			record.runDir,
 			join(record.stepsDir, stepId, "step.json"),
 		);
+	}
+
+	private stepAttemptsDir(record: RunRecord, stepId: string): string {
+		validateIdentifier("stepId", stepId);
+		return resolveRunPath(
+			record.runDir,
+			join(record.stepsDir, stepId, "attempts"),
+		);
+	}
+
+	private stepAttemptDir(
+		record: RunRecord,
+		stepId: string,
+		attemptId: string,
+	): string {
+		validateIdentifier("attemptId", attemptId);
+		return resolveRunPath(
+			record.runDir,
+			join(this.stepAttemptsDir(record, stepId), attemptId),
+		);
+	}
+
+	private stepAttemptRecordPath(
+		record: RunRecord,
+		stepId: string,
+		attemptId: string,
+	): string {
+		return join(this.stepAttemptDir(record, stepId, attemptId), "attempt.json");
 	}
 
 	private async writeRunRecord(record: RunRecord): Promise<void> {

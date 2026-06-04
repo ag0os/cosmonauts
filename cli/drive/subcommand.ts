@@ -10,6 +10,7 @@ import { resolveConfiguredExternalBackend } from "../../lib/driver/backend-resol
 import { createCosmonautsSubagentBackend } from "../../lib/driver/backends/cosmonauts-subagent.ts";
 import type { Backend } from "../../lib/driver/backends/types.ts";
 import { runInline, startDetached } from "../../lib/driver/driver.ts";
+import { recordDurableFinalizerRetryFailure } from "../../lib/driver/durable-steps.ts";
 import { formatError } from "../../lib/driver/errors.ts";
 import type {
 	DriverActivityBusEvent,
@@ -44,6 +45,7 @@ import {
 	type DriverRunSpec,
 	type StateCommitPolicy,
 } from "../../lib/driver/types.ts";
+import { FileRunStore } from "../../lib/durable-runtime/index.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
 import { discoverFrameworkBundledPackageDirs } from "../../lib/packages/dev-bundled.ts";
@@ -1120,6 +1122,10 @@ async function writeStateFinalizationFailure(
 	tasksDone: number,
 	reason: string,
 ): Promise<void> {
+	await writeDurableOnlyFinalizationFailure(spec, {
+		phase: "state_commit",
+		reason,
+	});
 	const completion: DriverResult = {
 		runId: spec.runId,
 		outcome: "finalization_failed",
@@ -1264,6 +1270,12 @@ async function writeSourceFinalizationFailure(
 	reason: string,
 	commitSha?: string,
 ): Promise<void> {
+	await writeDurableOnlyFinalizationFailure(spec, {
+		phase,
+		taskId,
+		reason,
+		commitSha,
+	});
 	const completion: DriverResult = {
 		runId: spec.runId,
 		outcome: "finalization_failed",
@@ -1277,6 +1289,58 @@ async function writeSourceFinalizationFailure(
 	};
 	await writeRunCompletion(spec.workdir, completion);
 	printJsonStdout(completion);
+}
+
+async function writeDurableOnlyFinalizationFailure(
+	spec: DriverRunSpec,
+	failure: {
+		phase: "commit" | "task_status" | "state_commit";
+		taskId?: string;
+		reason: string;
+		commitSha?: string;
+	},
+): Promise<void> {
+	try {
+		const durable = driveDurableEventSinkOptions(spec);
+		const store = new FileRunStore({ rootDir: durable.rootDir });
+		const ref = { scope: spec.planSlug, runId: spec.runId };
+		if (!(await store.loadRun(ref))) {
+			await store.createRun({
+				...ref,
+				status: "pending",
+				eventsPath: durable.eventsPath,
+				policy: durable.policy,
+				metadata: durable.metadata,
+			});
+		}
+		await recordDurableFinalizerRetryFailure(
+			{
+				store,
+				ref,
+				projectRoot: spec.projectRoot,
+				workdir: spec.workdir,
+				configuredBackendName: spec.backendName,
+				taskIds: spec.taskIds,
+			},
+			{ ...failure, timestamp: new Date().toISOString() },
+		);
+	} catch (error) {
+		console.error(
+			JSON.stringify({
+				type: "drive_durable_event_diagnostic",
+				code: "drive_durable_finalizer_failure_record_failed",
+				runId: spec.runId,
+				planSlug: spec.planSlug,
+				message:
+					"Drive durable finalizer failure recording failed; pending finalization state remains authoritative.",
+				details: {
+					phase: failure.phase,
+					taskId: failure.taskId,
+					error: formatError(error),
+				},
+			}),
+		);
+	}
 }
 
 function taskIdsAfterFinalizedTask(
