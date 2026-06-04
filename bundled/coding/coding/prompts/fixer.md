@@ -49,8 +49,19 @@ Keep it under 72 characters and describe the fix outcome.
 
 ### 6. Return a concise summary
 
-Include:
-- Fixed finding IDs / failed commands addressed
+Account for **every** assigned finding id explicitly. For each id you were routed (`F-###`, `I-###`, `UR-###`, `QC-###`, or a named failed check), state one of:
+- `resolved` — with the exact change that addresses it (`path/to/file.ext:line`).
+- `not-resolved` — with the reason. A finding that needs more than a narrow change is `not-resolved` with that reason, flagged for the quality-manager — never silently dropped or assumed fixed.
+
+The quality-manager keeps a findings ledger keyed by id and reconciles your report against it; a finding closes as `verified-resolved` only when you report it resolved BY ID and the change is visible in the diff.
+
+```
+Findings addressed:
+- F-001: resolved — <change> (path/to/file.ext:120-128)
+- UR-003: not-resolved — fix requires a design change beyond narrow scope; flagged for the quality-manager
+```
+
+Also include:
 - Files changed
 - Commands run and pass/fail result
 - Commit hash
@@ -58,6 +69,7 @@ Include:
 ## Critical Rules
 
 1. **Stay scoped to the assigned findings.**
-2. **Never leave uncommitted remediation changes.**
-3. **Do not create or edit tasks unless explicitly instructed by parent prompt.**
-4. **If blocked, explain exactly why and stop.**
+2. **Account for every assigned finding id explicitly** — `resolved` (with the change) or `not-resolved` (with the reason). Never return success while leaving an assigned finding silently unaddressed.
+3. **Never leave uncommitted remediation changes.**
+4. **Do not create or edit tasks unless explicitly instructed by parent prompt.**
+5. **If blocked, explain exactly why and stop.**

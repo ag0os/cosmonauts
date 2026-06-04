@@ -51,8 +51,9 @@ For every piece of new state the plan introduces (a new field, a new global, a n
 - Search for existing mechanisms that already carry the same information
 - If the same information exists in two places, can the two sources disagree? Under what conditions?
 - If they can disagree, this is a finding
+- For every piece of correctness-critical in-memory state the plan introduces (a cache, an in-memory map, an accumulator, a "latest X" tracker), verify the plan specifies cross-process rehydration — resume, detached/forked runner, retry, crash recovery. If correctness relies on in-memory state that is NOT reconstructed from persisted records when the process restarts, and a fresh process would fabricate a default instead of reading the persisted value, this is a finding.
 
-**Common failures:** adding a "current agent" global when the agent ID is already embedded in the system prompt, adding a "pending switch" flag that is never cleared on cancellation, caching a value that can become stale.
+**Common failures:** adding a "current agent" global when the agent ID is already embedded in the system prompt, adding a "pending switch" flag that is never cleared on cancellation, caching a value that can become stale, an in-memory result/accumulator map that is empty after resume so a fresh process writes a fabricated default instead of reading the persisted record — silently violating a safety property.
 
 ### 4. Risk blast radius
 

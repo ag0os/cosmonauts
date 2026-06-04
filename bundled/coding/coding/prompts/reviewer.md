@@ -57,6 +57,15 @@ If the spawn prompt does not specify a review scope, fall back to computing it y
 2. Compute: `MERGE_BASE=$(git merge-base HEAD <base>)`
 3. Review range: `MERGE_BASE..HEAD` plus staged/unstaged changes
 
+### 2b. Prior findings (re-review rounds)
+
+On rounds after the first, the spawn prompt supplies a **Prior Findings** list — each prior still-open finding's `id` (`F-###`), title, and `suggestedFix`. When this list is present, you must, IN ADDITION to hunting for new issues across the whole diff, account for every prior finding against the current diff. For each, read the actual change that was supposed to address it and judge it:
+
+- `resolved` — the specific fix is now present in the diff. Cite the change (`file:line`).
+- `unresolved` — still present or not adequately addressed. Re-state it as a finding, carrying its id forward.
+
+Do not assume resolution from the absence of the original symptom. A symptom can disappear for unrelated reasons; read the actual change and confirm the intended fix landed.
+
 ### 3. Review quality dimensions
 
 Examine every changed file in the diff. Check for:
@@ -102,6 +111,12 @@ overall: <correct|incorrect>
 
 <1-3 sentence explanation justifying the overall verdict. "correct" means existing code and tests will not break and the patch is free of bugs and blocking issues. Ignore non-blocking issues such as style, formatting, typos, and documentation for this verdict.>
 
+## Prior Findings
+
+- id: F-001
+  status: <resolved|unresolved>
+  evidence: <the change that resolves it (file:line), or why it is still present>
+
 ## Findings
 
 - id: F-001
@@ -127,6 +142,8 @@ If there are no findings, still write the full report with:
 - The overall assessment explaining why the patch is clean
 - `## Findings` followed by `- none`
 
+Emit the `## Prior Findings` section ONLY when the spawn prompt supplied a Prior Findings list (re-review rounds); omit it entirely on the first round. List one entry per prior id. Any prior finding marked `unresolved` must ALSO appear in `## Findings` as a normal finding — reuse the same id (e.g. `F-001`) so the quality-manager re-routes it.
+
 ### 5. Exit summary
 
 Return a concise summary stating:
@@ -144,3 +161,4 @@ Return a concise summary stating:
 5. **Only flag bugs introduced in the diff.** Pre-existing issues are out of scope.
 6. **Require proof, not speculation.** If you cannot identify the concrete code path affected, it is not a finding.
 7. **Do not broaden artifact scope.** Plan artifacts, architecture context, behavior markers, and gate ladders matter only when the parent prompt explicitly asks you to review them or supplies a plan contract to check.
+8. **Account for every prior finding by id.** On re-review rounds, mark each prior finding `resolved` (cite the fix) or `unresolved` (carry it forward as a finding with the same id). Never let a prior finding lapse just because this round's fresh scan didn't re-surface it.
