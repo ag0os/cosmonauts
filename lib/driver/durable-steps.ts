@@ -18,7 +18,7 @@ import type {
 	ReportOutcome,
 } from "./types.ts";
 
-export interface DriveStepProjectorOptions {
+interface DriveStepProjectorOptions {
 	store: RunStore & {
 		appendDiagnostic?(
 			ref: RunRef,
@@ -37,7 +37,7 @@ export interface DriveStepProjector {
 	latestTaskResult(taskId: string): StepResult | undefined;
 }
 
-export type DurableFinalizerRetryFailure = {
+type DurableFinalizerRetryFailure = {
 	phase: "commit" | "task_status" | "state_commit";
 	taskId?: string;
 	reason: string;
@@ -523,28 +523,16 @@ async function activeAttemptForRetryableFinalizerFailure(
 	stepId: string,
 	timestamp: string,
 ): Promise<ActiveAttempt | undefined> {
-	const existing = await options.store.readStepRecord({
-		...options.ref,
-		stepId,
-	});
-	if (existing?.latestAttemptId) {
-		const attempt = await options.store.readStepAttemptRecord({
-			...options.ref,
-			stepId,
-			attemptId: existing.latestAttemptId,
-		});
-		if (attempt && !attempt.endedAt && !attempt.result) {
-			return {
-				attemptId: attempt.attemptId,
-				startedAt: attempt.startedAt,
-			};
-		}
-		if (
-			attempt?.result?.outcome === "failed" &&
-			attempt.result.nextAction === "retry"
-		) {
-			return undefined;
-		}
+	const attempt = await readLatestFinalizerAttempt(options, stepId);
+	const active = activeAttemptFromOpenRecord(attempt);
+	if (active) {
+		return active;
+	}
+	if (
+		attempt?.result?.outcome === "failed" &&
+		attempt.result.nextAction === "retry"
+	) {
+		return undefined;
 	}
 
 	return {
@@ -558,27 +546,48 @@ async function activeAttemptFromExistingFinalizer(
 	stepId: string,
 	timestamp: string,
 ): Promise<ActiveAttempt> {
-	const existing = await options.store.readStepRecord({
-		...options.ref,
-		stepId,
-	});
-	if (existing?.latestAttemptId) {
-		const attempt = await options.store.readStepAttemptRecord({
-			...options.ref,
-			stepId,
-			attemptId: existing.latestAttemptId,
-		});
-		if (attempt && !attempt.endedAt && !attempt.result) {
-			return {
-				attemptId: attempt.attemptId,
-				startedAt: attempt.startedAt,
-			};
-		}
+	const active = activeAttemptFromOpenRecord(
+		await readLatestFinalizerAttempt(options, stepId),
+	);
+	if (active) {
+		return active;
 	}
 
 	return {
 		attemptId: await nextAttemptId(options, stepId),
 		startedAt: timestamp,
+	};
+}
+
+async function readLatestFinalizerAttempt(
+	options: DriveStepProjectorOptions,
+	stepId: string,
+): Promise<StepAttemptRecord | undefined> {
+	const existing = await options.store.readStepRecord({
+		...options.ref,
+		stepId,
+	});
+	if (!existing?.latestAttemptId) {
+		return undefined;
+	}
+
+	return await options.store.readStepAttemptRecord({
+		...options.ref,
+		stepId,
+		attemptId: existing.latestAttemptId,
+	});
+}
+
+function activeAttemptFromOpenRecord(
+	attempt: StepAttemptRecord | undefined,
+): ActiveAttempt | undefined {
+	if (!attempt || attempt.endedAt || attempt.result) {
+		return undefined;
+	}
+
+	return {
+		attemptId: attempt.attemptId,
+		startedAt: attempt.startedAt,
 	};
 }
 

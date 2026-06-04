@@ -9,7 +9,7 @@ export type BackendName = Extract<
 
 export const DETACHED_DEFAULT_TASK_THRESHOLD = 4;
 
-export type FinalizationPhase = "commit" | "task_status" | "state_commit";
+type FinalizationPhase = "commit" | "task_status" | "state_commit";
 export type StateCommitPolicy = "none" | "final-state-commit";
 
 export function resolveStateCommitPolicy(

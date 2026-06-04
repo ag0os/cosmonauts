@@ -61,7 +61,7 @@ interface DriveBackendOrchestrationAdapterOptions {
 	backend: Backend;
 }
 
-export interface DriveBackendOrchestrationAdapter
+interface DriveBackendOrchestrationAdapter
 	extends OrchestrationBackend<BackendInvocation, BackendRunResult> {
 	name: DriveOrchestrationBackendName;
 	capabilities: BackendCapabilities;

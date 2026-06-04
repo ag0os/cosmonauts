@@ -23,104 +23,141 @@ interface ActivitySource {
 	taskId: string;
 }
 
+type DriverEventOf<Type extends DriverEvent["type"]> = Extract<
+	DriverEvent,
+	{ type: Type }
+>;
+
+type DriverEventNormalizer = (
+	event: DriverEvent,
+	context: DriverEventNormalizationContext,
+) => DriverEventNormalization;
+
+function driverEventNormalizer<Type extends DriverEvent["type"]>(
+	normalize: (
+		event: DriverEventOf<Type>,
+		context: DriverEventNormalizationContext,
+	) => DriverEventNormalization,
+): DriverEventNormalizer {
+	return (event, context) => normalize(event as DriverEventOf<Type>, context);
+}
+
 export function normalizeDriverEvent(
 	event: DriverEvent,
 	context: DriverEventNormalizationContext = {},
 ): DriverEventNormalization {
-	switch (event.type) {
-		case "run_started":
-			return events({ type: "run_started", runId: event.runId });
-		case "task_started":
-			return events(stepEvent(event, "step_ready"));
-		case "preflight":
-			return normalizePreflight(event);
-		case "spawn_started":
-			return events({
-				type: "step_started",
-				runId: event.runId,
-				stepId: event.taskId,
-				backend: event.backend,
-			});
-		case "driver_activity":
-			return events(
-				activityEvent(event, {
-					kind: "driver_activity",
-					activity: event.activity,
-				}),
-			);
-		case "spawn_completed":
-			return events(
-				activityEvent(event, {
-					kind: "spawn_completed",
-					report: event.report,
-				}),
-			);
-		case "spawn_failed":
-			return events(activityEvent(event, spawnFailedDetails(event)));
-		case "verify":
-			return events(activityEvent(event, verifyDetails(event)));
-		case "commit_made":
-			return events({
-				type: "artifact_written",
-				runId: event.runId,
-				stepId: event.taskId,
-				artifact: {
-					id: `commit:${event.taskId}:${event.sha}`,
-					path: event.sha,
-					kind: "commit",
-					metadata: { sha: event.sha, subject: event.subject },
-				},
-			});
-		case "finalize":
-			return normalizeFinalize(event);
-		case "task_finalization_failed":
-			return events(
-				activityEvent(event, taskFinalizationFailedDetails(event)),
-				{
-					type: "step_failed",
-					runId: event.runId,
-					stepId: event.taskId,
-					reason: event.reason,
-				},
-			);
-		case "task_done":
-			return events({
-				type: "step_completed",
-				runId: event.runId,
-				stepId: event.taskId,
-				result:
-					context.latestTaskResult?.(event.taskId) ?? completedTaskResult(),
-			});
-		case "task_blocked":
-			return events(activityEvent(event, taskBlockedDetails(event)), {
-				type: "step_blocked",
-				runId: event.runId,
-				stepId: event.taskId,
-				reason: event.reason,
-			});
-		case "lock_warning":
-		case "plan_completion_candidate":
-			return diagnostic(legacyOnlyDiagnostic(event));
-		case "run_completed":
-			return events({
-				type: "run_completed",
-				runId: event.runId,
-				result: {
-					outcome: "completed",
-					tasksDone: event.summary.done,
-					tasksBlocked: event.summary.blocked,
-				},
-			});
-		case "run_aborted":
-			return events({
-				type: "run_failed",
-				runId: event.runId,
-				reason: event.reason,
-			});
-		case "run_finalization_failed":
-			return normalizeRunFinalizationFailed(event);
-	}
+	return DRIVER_EVENT_NORMALIZERS[event.type](event, context);
 }
+
+const DRIVER_EVENT_NORMALIZERS = {
+	run_started: driverEventNormalizer<"run_started">((event) =>
+		events({ type: "run_started", runId: event.runId }),
+	),
+	task_started: driverEventNormalizer<"task_started">((event) =>
+		events(stepEvent(event, "step_ready")),
+	),
+	preflight: driverEventNormalizer<"preflight">((event) =>
+		normalizePreflight(event),
+	),
+	spawn_started: driverEventNormalizer<"spawn_started">((event) =>
+		events({
+			type: "step_started",
+			runId: event.runId,
+			stepId: event.taskId,
+			backend: event.backend,
+		}),
+	),
+	driver_activity: driverEventNormalizer<"driver_activity">((event) =>
+		events(
+			activityEvent(event, {
+				kind: "driver_activity",
+				activity: event.activity,
+			}),
+		),
+	),
+	spawn_completed: driverEventNormalizer<"spawn_completed">((event) =>
+		events(
+			activityEvent(event, {
+				kind: "spawn_completed",
+				report: event.report,
+			}),
+		),
+	),
+	spawn_failed: driverEventNormalizer<"spawn_failed">((event) =>
+		events(activityEvent(event, spawnFailedDetails(event))),
+	),
+	verify: driverEventNormalizer<"verify">((event) =>
+		events(activityEvent(event, verifyDetails(event))),
+	),
+	commit_made: driverEventNormalizer<"commit_made">((event) =>
+		events({
+			type: "artifact_written",
+			runId: event.runId,
+			stepId: event.taskId,
+			artifact: {
+				id: `commit:${event.taskId}:${event.sha}`,
+				path: event.sha,
+				kind: "commit",
+				metadata: { sha: event.sha, subject: event.subject },
+			},
+		}),
+	),
+	finalize: driverEventNormalizer<"finalize">((event) =>
+		normalizeFinalize(event),
+	),
+	task_finalization_failed: driverEventNormalizer<"task_finalization_failed">(
+		(event) =>
+			events(activityEvent(event, taskFinalizationFailedDetails(event)), {
+				type: "step_failed",
+				runId: event.runId,
+				stepId: event.taskId,
+				reason: event.reason,
+			}),
+	),
+	task_done: driverEventNormalizer<"task_done">((event, context) =>
+		events({
+			type: "step_completed",
+			runId: event.runId,
+			stepId: event.taskId,
+			result: context.latestTaskResult?.(event.taskId) ?? completedTaskResult(),
+		}),
+	),
+	task_blocked: driverEventNormalizer<"task_blocked">((event) =>
+		events(activityEvent(event, taskBlockedDetails(event)), {
+			type: "step_blocked",
+			runId: event.runId,
+			stepId: event.taskId,
+			reason: event.reason,
+		}),
+	),
+	lock_warning: driverEventNormalizer<"lock_warning">((event) =>
+		diagnostic(legacyOnlyDiagnostic(event)),
+	),
+	plan_completion_candidate: driverEventNormalizer<"plan_completion_candidate">(
+		(event) => diagnostic(legacyOnlyDiagnostic(event)),
+	),
+	run_completed: driverEventNormalizer<"run_completed">((event) =>
+		events({
+			type: "run_completed",
+			runId: event.runId,
+			result: {
+				outcome: "completed",
+				tasksDone: event.summary.done,
+				tasksBlocked: event.summary.blocked,
+			},
+		}),
+	),
+	run_aborted: driverEventNormalizer<"run_aborted">((event) =>
+		events({
+			type: "run_failed",
+			runId: event.runId,
+			reason: event.reason,
+		}),
+	),
+	run_finalization_failed: driverEventNormalizer<"run_finalization_failed">(
+		(event) => normalizeRunFinalizationFailed(event),
+	),
+} satisfies Record<DriverEvent["type"], DriverEventNormalizer>;
 
 function normalizePreflight(
 	event: Extract<DriverEvent, { type: "preflight" }>,
