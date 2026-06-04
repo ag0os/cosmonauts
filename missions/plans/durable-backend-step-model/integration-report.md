@@ -5,7 +5,7 @@ overall: correct
 
 ## Overall Assessment
 
-The remediated implementation satisfies the declared Plan-2 contracts for durable backend/attempt contracts, Drive backend adapter compatibility, task and finalizer step projection, D-006 malformed-report handling, retryable finalizer attempts, failure isolation, and legacy observation compatibility. In particular, ordinary successful Drive `task_done` normalized events retain the legacy completed result shape, while malformed/unknown reports propagate `outcome: "unknown"` with non-continue scheduler intent where the plan requires it.
+The implementation honors the auditable Plan-2 contracts in `missions/architecture/durable-orchestration-runtime.md` and `missions/plans/durable-backend-step-model/plan.md`. D-006 unknown-result handling is preserved through attempt records, task step records, normalized task completion events, and resumed `task_done` projection; Drive task/finalizer execution is represented as generic step records; Drive CLI/invocation compatibility gates pass; and `lib/durable-runtime/*` remains free of Drive/CLI/domain/task/prompt imports.
 
 ## Findings
 
