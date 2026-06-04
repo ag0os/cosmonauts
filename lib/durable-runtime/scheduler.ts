@@ -1,4 +1,5 @@
 import type { RunGraphSchedulerBackend } from "./backends.ts";
+import { reconcileSchedulerState } from "./scheduler-state.ts";
 import { isTerminalStatus } from "./status.ts";
 import type {
 	KnownBackendName,
@@ -27,16 +28,27 @@ export interface RunGraphSchedulerOptions {
 export async function runDurableGraphScheduler({
 	store,
 	ref,
+	now,
 }: RunGraphSchedulerOptions): Promise<RunGraphSchedulerResult> {
 	const run = await store.loadRun(ref);
 	if (!run) {
 		throw new Error(`Run ${ref.scope}/${ref.runId} does not exist.`);
 	}
+	if (isTerminalStatus(run.status)) {
+		return {
+			run,
+			steps: await store.listStepRecords(ref),
+			diagnostics: [],
+			exitReason: "terminal",
+		};
+	}
+
+	const reconciliation = await reconcileSchedulerState({ store, ref, now });
 
 	return {
 		run,
-		steps: await store.listStepRecords(ref),
-		diagnostics: [],
-		exitReason: isTerminalStatus(run.status) ? "terminal" : "drained",
+		steps: reconciliation.steps,
+		diagnostics: reconciliation.diagnostics,
+		exitReason: "drained",
 	};
 }
