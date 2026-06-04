@@ -46,6 +46,8 @@ import {
 	runChain,
 } from "../lib/orchestration/chain-runner.ts";
 import { isChainDslExpression } from "../lib/orchestration/chain-steps.ts";
+import { shouldRunChainInline } from "../lib/orchestration/durable-chain-compiler.ts";
+import { runDurableChain } from "../lib/orchestration/durable-chain-runner.ts";
 import {
 	discoverBundledPackageDirs,
 	discoverFrameworkBundledPackageDirs,
@@ -632,7 +634,7 @@ async function handleInitMode(
 	await interactive.run();
 }
 
-async function handleWorkflowMode(
+export async function handleWorkflowMode(
 	runtime: CosmonautsRuntime,
 	options: CliOptions,
 	cwd: string,
@@ -672,7 +674,7 @@ async function handleWorkflowMode(
 
 	let result: Awaited<ReturnType<typeof runChain>>;
 	try {
-		result = await runChain({
+		const chainConfig = {
 			steps,
 			projectRoot: cwd,
 			domainContext,
@@ -684,7 +686,12 @@ async function handleWorkflowMode(
 			domainsDir: runtime.domainsDir,
 			resolver: runtime.domainResolver,
 			...(options.thinking && { thinking: { default: options.thinking } }),
-		});
+		};
+		result = shouldRunChainInline(steps, {
+			completionLabel: options.completionLabel,
+		})
+			? await runChain(chainConfig)
+			: await runDurableChain(chainConfig);
 	} finally {
 		if (profiler) {
 			try {
