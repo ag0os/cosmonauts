@@ -169,14 +169,17 @@ export function shouldRunChainInline(
 	steps: readonly ChainStep[],
 	options: ShouldRunChainInlineOptions = {},
 ): boolean {
-	if (options.completionLabel) return true;
+	if (options.completionLabel !== undefined) return true;
+
+	const hasLoop = steps.some((s) => !isParallelGroupStep(s) && s.loop);
+	if (hasLoop) return true;
 
 	return steps.some((step) => {
 		if (isParallelGroupStep(step)) {
-			return step.stages.some(stageRequiresInline);
+			return step.stages.some(stageHasCompletionCheck);
 		}
 
-		return stageRequiresInline(step);
+		return stageHasCompletionCheck(step);
 	});
 }
 
@@ -304,8 +307,8 @@ function withDefined<Key extends string, Value>(
 	return value === undefined ? {} : ({ [key]: value } as { [K in Key]: Value });
 }
 
-function stageRequiresInline(stage: ChainStage): boolean {
-	return stage.loop || stage.completionCheck !== undefined;
+function stageHasCompletionCheck(stage: ChainStage): boolean {
+	return stage.completionCheck !== undefined;
 }
 
 function chainStepId(options: {
