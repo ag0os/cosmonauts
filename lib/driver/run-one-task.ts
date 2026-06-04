@@ -33,7 +33,7 @@ export interface RunOneTaskCtx {
 	cosmonautsRoot: string;
 }
 
-interface PostVerifyResult {
+export interface PostVerifyResult {
 	command: string;
 	status: "pass" | "fail";
 	stderr?: string;
@@ -466,7 +466,7 @@ export function deriveOutcome(
 	return report.outcome;
 }
 
-async function canInferUnknownSuccess(
+export async function canInferUnknownSuccess(
 	spec: DriverRunSpec,
 	ctx: RunOneTaskCtx,
 	report: ParsedReport,
@@ -1104,7 +1104,7 @@ async function blockTask(
 	return { status: "blocked", reason };
 }
 
-function deriveFailureReason(
+export function deriveFailureReason(
 	report: ParsedReport,
 	postVerifyResults: readonly PostVerifyResult[],
 ): string {
@@ -1126,7 +1126,7 @@ function deriveFailureReason(
 		: "task failed";
 }
 
-function partialReason(report: ParsedReport): string {
+export function partialReason(report: ParsedReport): string {
 	if (report.outcome === "partial") {
 		const progress = progressText(report);
 		const notes = report.notes ? `: ${report.notes}` : "";
