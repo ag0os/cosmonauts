@@ -69,6 +69,9 @@ describe("driver durable step projection", () => {
 		const result = await runDrive(fixture);
 		const legacyEvents = await readLegacyEvents(fixture.spec.eventLogPath);
 		const storedEvents = await readStoredEvents(fixture.runId);
+		const completedEvent = storedEvents.findLast(
+			(record) => record.event.type === "step_completed",
+		)?.event;
 		const step = await requireStep(store, fixture.runId, resumedTaskId);
 		const attempts = await store.listStepAttemptRecords({
 			scope: PLAN_SLUG,
@@ -102,6 +105,16 @@ describe("driver durable step projection", () => {
 		expect(
 			storedEvents.find((event) => event.event.type === "step_started")?.event,
 		).toMatchObject({ backend: "fake-backend" });
+		expect(completedEvent).toEqual({
+			type: "step_completed",
+			runId: fixture.runId,
+			stepId: resumedTaskId,
+			result: {
+				outcome: "success",
+				summary: "Drive task completed.",
+				artifacts: [],
+			},
+		});
 
 		expect(step).toMatchObject({
 			id: resumedTaskId,
@@ -487,42 +500,24 @@ describe("driver durable step projection", () => {
 			expect(brokenStoredEvents.map((record) => record.event.type)).toEqual(
 				cleanStoredEvents.map((record) => record.event.type),
 			);
-			expect(brokenCompletedResult).toMatchObject({
+			expect(cleanCompletedResult).toMatchObject({
+				type: "step_completed",
+				result: {
+					outcome: "success",
+					summary: "Drive task completed.",
+					artifacts: [],
+				},
+			});
+			expect(brokenCompletedResult).toEqual({
 				type: "step_completed",
 				runId: broken.runId,
 				stepId: broken.taskIds[0],
 				result: {
-					files:
-						cleanCompletedResult?.type === "step_completed"
-							? cleanCompletedResult.result.files
-							: undefined,
-					verification:
-						cleanCompletedResult?.type === "step_completed"
-							? cleanCompletedResult.result.verification
-							: undefined,
+					outcome: "success",
+					summary: "Drive task completed.",
+					artifacts: [],
 				},
 			});
-			expect(
-				brokenCompletedResult?.type === "step_completed"
-					? brokenCompletedResult.result.artifacts
-					: undefined,
-			).toEqual([
-				{
-					id: "report",
-					path: `steps/${broken.taskIds[0]}/attempts/attempt-001/result.json`,
-					kind: "report",
-				},
-			]);
-			expect(
-				brokenCompletedResult?.type === "step_completed"
-					? brokenCompletedResult.result.summary
-					: undefined,
-			).toBe("finished durable step projection");
-			expect(
-				brokenCompletedResult?.type === "step_completed"
-					? brokenCompletedResult.result.nextAction
-					: undefined,
-			).toBe("continue");
 			expect(diagnostics.records()).toEqual(
 				expect.arrayContaining([
 					expect.objectContaining({

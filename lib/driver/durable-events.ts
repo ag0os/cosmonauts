@@ -119,7 +119,7 @@ const DRIVER_EVENT_NORMALIZERS = {
 			type: "step_completed",
 			runId: event.runId,
 			stepId: event.taskId,
-			result: context.latestTaskResult?.(event.taskId) ?? completedTaskResult(),
+			result: taskDoneResult(event.taskId, context),
 		}),
 	),
 	task_blocked: driverEventNormalizer<"task_blocked">((event) =>
@@ -371,6 +371,20 @@ function legacyOnlyDiagnostic(
 		message: `Drive ${event.type} event has no canonical normalized variant.`,
 		details: { eventType: event.type },
 	};
+}
+
+function taskDoneResult(
+	taskId: string,
+	context: DriverEventNormalizationContext,
+): StepResult {
+	const latest = context.latestTaskResult?.(taskId);
+	return isUnknownReportCorrection(latest) ? latest : completedTaskResult();
+}
+
+function isUnknownReportCorrection(
+	result: StepResult | undefined,
+): result is StepResult {
+	return result?.outcome === "unknown" && result.nextAction !== "continue";
 }
 
 function completedTaskResult(): StepResult {
