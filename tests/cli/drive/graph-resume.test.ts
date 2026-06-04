@@ -44,6 +44,7 @@ type DriverEventInput = DriverEvent extends infer Event
 
 interface JsonOutput {
 	stdoutJson(): Record<string, unknown>;
+	stdoutJsonLines(): Record<string, unknown>[];
 }
 
 describe("cosmonauts drive graph resume", () => {
@@ -79,7 +80,11 @@ describe("cosmonauts drive graph resume", () => {
 			"--resume-dirty",
 		]);
 
+		const emittedResults = output.stdoutJsonLines();
 		const result = output.stdoutJson();
+		const completion = await readJson(
+			join(fixture.spec.workdir, "run.completion.json"),
+		);
 		const persistedSpec = (await readJson(
 			join(fixture.spec.workdir, "spec.json"),
 		)) as DriverRunSpec;
@@ -118,6 +123,8 @@ describe("cosmonauts drive graph resume", () => {
 			tasksBlocked: 0,
 			stateCommitSha: expect.stringMatching(/^[0-9a-f]{40}$/),
 		});
+		expect(emittedResults).toHaveLength(1);
+		expect(completion).toEqual(emittedResults[0]);
 		expect(backendMocks.backendRun).not.toHaveBeenCalled();
 		expect(persistedSpec.taskIds).toEqual([fixture.taskId]);
 		expect(persistedSpec.remainingTaskIds).toEqual([]);
@@ -142,6 +149,70 @@ describe("cosmonauts drive graph resume", () => {
 				})
 			)?.status,
 		).toBe("completed");
+	});
+
+	test("resumes pending task-status finalization with one terminal result", async () => {
+		const fixture = await setupCompletedTaskWithPendingTaskStatus();
+
+		await parseDrive([
+			"--plan",
+			PLAN_SLUG,
+			"--resume",
+			RUN_ID,
+			"--resume-dirty",
+		]);
+
+		const emittedResults = output.stdoutJsonLines();
+		const completion = await readJson(
+			join(fixture.spec.workdir, "run.completion.json"),
+		);
+
+		expect(emittedResults).toHaveLength(1);
+		expect(emittedResults[0]).toMatchObject({
+			runId: RUN_ID,
+			outcome: "completed",
+			tasksDone: 1,
+			tasksBlocked: 0,
+		});
+		expect(completion).toEqual(emittedResults[0]);
+		expect(backendMocks.backendRun).not.toHaveBeenCalled();
+		expect(
+			(
+				await fixture.store.readStepRecord({
+					scope: PLAN_SLUG,
+					runId: RUN_ID,
+					stepId: `finalizer-task-status-${fixture.taskId}`,
+				})
+			)?.status,
+		).toBe("completed");
+	});
+
+	test("resumes already completed graph runs with one terminal result", async () => {
+		const fixture = await setupFullyCompletedGraphRun();
+
+		await parseDrive([
+			"--plan",
+			PLAN_SLUG,
+			"--resume",
+			RUN_ID,
+			"--resume-dirty",
+		]);
+
+		const emittedResults = output.stdoutJsonLines();
+		const completion = await readJson(
+			join(fixture.spec.workdir, "run.completion.json"),
+		);
+
+		expect(emittedResults).toHaveLength(1);
+		expect(emittedResults[0]).toMatchObject({
+			runId: RUN_ID,
+			outcome: "completed",
+			tasksDone: 1,
+			tasksBlocked: 0,
+			stateCommitSha: "b".repeat(40),
+		});
+		expect(completion).toEqual(emittedResults[0]);
+		expect(backendMocks.backendRun).not.toHaveBeenCalled();
 	});
 });
 
@@ -230,6 +301,168 @@ async function setupCompletedTaskWithPendingStateCommit(): Promise<{
 	return { taskId: task.id, spec, store };
 }
 
+async function setupCompletedTaskWithPendingTaskStatus(): Promise<{
+	taskId: string;
+	spec: DriverRunSpec;
+	store: FileRunStore;
+}> {
+	const projectRoot = process.cwd();
+	await mkdir(projectRoot, { recursive: true });
+	await initGit(projectRoot);
+	await writeFile(join(projectRoot, "envelope.md"), "# Envelope\n", "utf-8");
+	const taskManager = new TaskManager(projectRoot);
+	await taskManager.init({ zeroPadding: 0 });
+	const task = await taskManager.createTask({
+		title: "Graph resume task",
+		labels: [`plan:${PLAN_SLUG}`],
+	});
+	await git(["add", "envelope.md", "missions/tasks"]);
+	await git(["commit", "-m", "add drive task"]);
+
+	const workdir = join(
+		projectRoot,
+		"missions",
+		"sessions",
+		PLAN_SLUG,
+		"runs",
+		RUN_ID,
+	);
+	const spec: DriverRunSpec = {
+		runId: RUN_ID,
+		parentSessionId: "previous-parent",
+		projectRoot,
+		planSlug: PLAN_SLUG,
+		taskIds: [task.id],
+		backendName: "codex",
+		promptTemplate: { envelopePath: join(projectRoot, "envelope.md") },
+		preflightCommands: [],
+		postflightCommands: [],
+		commitPolicy: "driver-commits",
+		stateCommitPolicy: "none",
+		workdir,
+		eventLogPath: join(workdir, "events.jsonl"),
+	};
+	await mkdir(workdir, { recursive: true });
+	const store = new FileRunStore({
+		rootDir: join(projectRoot, "missions", "sessions"),
+	});
+	await compileDriveRunToGraph({ spec, store });
+	await completeStep(store, task.id, successfulResult(task.id, "attempt-001"));
+	await completeStep(store, `finalizer-source-commit-${task.id}`, {
+		...successfulResult(`finalizer-source-commit-${task.id}`, "attempt-001"),
+		commits: [{ sha: "a".repeat(40), subject: `${task.id}: source` }],
+	});
+	await seedRetryableTaskStatusFailure(store, task.id, "a".repeat(40));
+	await writeFile(
+		join(workdir, "spec.json"),
+		`${JSON.stringify({ ...spec, taskIds: [], remainingTaskIds: [] }, null, 2)}\n`,
+		"utf-8",
+	);
+	await writeFile(join(workdir, "events.jsonl"), "", "utf-8");
+	await writeFile(
+		join(workdir, "pending-finalization.json"),
+		`${JSON.stringify(
+			{
+				runId: RUN_ID,
+				planSlug: PLAN_SLUG,
+				createdAt: "2026-06-04T00:00:00.000Z",
+				commitPolicy: "driver-commits",
+				stateCommitPolicy: "none",
+				reason: "status update failed after commit: previous task write error",
+				phase: "task_status",
+				taskId: task.id,
+				commitSha: "a".repeat(40),
+			},
+			null,
+		)}\n`,
+		"utf-8",
+	);
+	return { taskId: task.id, spec, store };
+}
+
+async function setupFullyCompletedGraphRun(): Promise<{
+	taskId: string;
+	spec: DriverRunSpec;
+	store: FileRunStore;
+}> {
+	const fixture = await setupGraphRunWithCompletedTaskStatus();
+	await completeStep(fixture.store, "finalizer-state-commit", {
+		...successfulResult("finalizer-state-commit", "attempt-001"),
+		commits: [{ sha: "b".repeat(40) }],
+	});
+	await writeFile(
+		join(fixture.spec.workdir, "spec.json"),
+		`${JSON.stringify(
+			{ ...fixture.spec, taskIds: [], remainingTaskIds: [] },
+			null,
+			2,
+		)}\n`,
+		"utf-8",
+	);
+	await writeFile(
+		join(fixture.spec.workdir, "events.jsonl"),
+		`${JSON.stringify(event({ type: "task_done", taskId: fixture.taskId }))}\n`,
+		"utf-8",
+	);
+	return fixture;
+}
+
+async function setupGraphRunWithCompletedTaskStatus(): Promise<{
+	taskId: string;
+	spec: DriverRunSpec;
+	store: FileRunStore;
+}> {
+	const projectRoot = process.cwd();
+	await mkdir(projectRoot, { recursive: true });
+	await initGit(projectRoot);
+	await writeFile(join(projectRoot, "envelope.md"), "# Envelope\n", "utf-8");
+	const taskManager = new TaskManager(projectRoot);
+	await taskManager.init({ zeroPadding: 0 });
+	const task = await taskManager.createTask({
+		title: "Graph resume task",
+		labels: [`plan:${PLAN_SLUG}`],
+	});
+	await git(["add", "envelope.md", "missions/tasks"]);
+	await git(["commit", "-m", "add drive task"]);
+	await taskManager.updateTask(task.id, { status: "Done" });
+
+	const workdir = join(
+		projectRoot,
+		"missions",
+		"sessions",
+		PLAN_SLUG,
+		"runs",
+		RUN_ID,
+	);
+	const spec: DriverRunSpec = {
+		runId: RUN_ID,
+		parentSessionId: "previous-parent",
+		projectRoot,
+		planSlug: PLAN_SLUG,
+		taskIds: [task.id],
+		backendName: "codex",
+		promptTemplate: { envelopePath: join(projectRoot, "envelope.md") },
+		preflightCommands: [],
+		postflightCommands: [],
+		commitPolicy: "no-commit",
+		stateCommitPolicy: "final-state-commit",
+		workdir,
+		eventLogPath: join(workdir, "events.jsonl"),
+	};
+	await mkdir(workdir, { recursive: true });
+	const store = new FileRunStore({
+		rootDir: join(projectRoot, "missions", "sessions"),
+	});
+	await compileDriveRunToGraph({ spec, store });
+	await completeStep(store, task.id, successfulResult(task.id, "attempt-001"));
+	await completeStep(
+		store,
+		`finalizer-task-status-${task.id}`,
+		successfulResult(`finalizer-task-status-${task.id}`, "attempt-001"),
+	);
+	return { taskId: task.id, spec, store };
+}
+
 async function completeStep(
 	store: FileRunStore,
 	stepId: string,
@@ -271,6 +504,46 @@ async function seedRetryableStateCommitFailure(
 				kind: "pending-finalization",
 			},
 		],
+		nextAction: "retry",
+	};
+	await store.writeStepAttemptRecord(
+		{ scope: PLAN_SLUG, runId: RUN_ID, stepId: step.id },
+		{
+			attemptId: "attempt-001",
+			startedAt: "2026-06-04T00:00:00.000Z",
+			endedAt: "2026-06-04T00:00:01.000Z",
+			result,
+		},
+	);
+	await store.writeStepRecord(
+		{ scope: PLAN_SLUG, runId: RUN_ID },
+		{
+			...step,
+			status: "failed",
+			latestAttemptId: "attempt-001",
+			result,
+			outputArtifacts: result.artifacts,
+		},
+	);
+}
+
+async function seedRetryableTaskStatusFailure(
+	store: FileRunStore,
+	taskId: string,
+	commitSha: string,
+): Promise<void> {
+	const step = await requireStep(store, `finalizer-task-status-${taskId}`);
+	const result: StepResult = {
+		outcome: "failed",
+		summary: "status update failed after commit: previous task write error",
+		artifacts: [
+			{
+				id: "pending-finalization",
+				path: "pending-finalization.json",
+				kind: "pending-finalization",
+			},
+		],
+		commits: [{ sha: commitSha, subject: `${taskId}: source` }],
 		nextAction: "retry",
 	};
 	await store.writeStepAttemptRecord(
@@ -362,13 +635,16 @@ function attachJsonHelpers(
 	capture: ReturnType<typeof captureCliOutput>,
 ): ReturnType<typeof captureCliOutput> & JsonOutput {
 	return Object.assign(capture, {
-		stdoutJson() {
-			const lines = capture
+		stdoutJsonLines() {
+			return capture
 				.stdout()
 				.trim()
 				.split("\n")
-				.filter((line) => line.trim().length > 0);
-			return JSON.parse(lines.at(-1) ?? "{}") as Record<string, unknown>;
+				.filter((line) => line.trim().length > 0)
+				.map((line) => JSON.parse(line) as Record<string, unknown>);
+		},
+		stdoutJson() {
+			return this.stdoutJsonLines().at(-1) ?? {};
 		},
 	});
 }

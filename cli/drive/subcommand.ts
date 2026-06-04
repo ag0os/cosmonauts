@@ -285,19 +285,29 @@ async function prepareResume(
 		return true;
 	}
 
+	let retriedPendingFinalization = false;
+	const pendingFinalization = resume.pendingFinalization;
 	if (resume.pendingFinalization) {
 		const finalized = await retryPendingFinalization(resume, taskManager);
 		if (!finalized) {
 			process.exitCode = 1;
 			return false;
 		}
+		retriedPendingFinalization = true;
 	}
 
 	const shouldContinue =
-		resume.remainingTaskIds.length > 0 ||
-		(await hasIncompleteGraphResumeState(resume));
+		resume.remainingTaskIds.length > 0 || (await hasGraphResumeState(resume));
 	if (shouldContinue) {
 		await clearRunCompletion(resume.spec.workdir);
+	}
+	if (!shouldContinue && retriedPendingFinalization && pendingFinalization) {
+		const completion = await legacyPendingFinalizationCompletion(
+			resume,
+			pendingFinalization,
+		);
+		await writeRunCompletion(resume.spec.workdir, completion);
+		printJsonStdout(completion);
 	}
 	return shouldContinue;
 }
@@ -374,7 +384,9 @@ async function runInlineMode(
 			await writeRunCompletion(spec.workdir, abortedCompletion(spec, error));
 			throw error;
 		});
-		await writeRunCompletion(spec.workdir, result);
+		if (!existsSync(join(spec.workdir, RUN_COMPLETION_FILENAME))) {
+			await writeRunCompletion(spec.workdir, result);
+		}
 		printJsonStdout(result);
 		process.exitCode = result.outcome === "completed" ? 0 : 1;
 	} finally {
@@ -960,9 +972,7 @@ async function loadOriginalDriveTaskIds({
 	return [...spec.taskIds];
 }
 
-async function hasIncompleteGraphResumeState(
-	resume: ResumeDefaults,
-): Promise<boolean> {
+async function hasGraphResumeState(resume: ResumeDefaults): Promise<boolean> {
 	const store = new FileRunStore({
 		rootDir: join(resume.spec.projectRoot, "missions", "sessions"),
 	});
@@ -977,12 +987,28 @@ async function hasIncompleteGraphResumeState(
 		return false;
 	}
 
-	const steps = await store.listStepRecords(ref);
-	return (
-		run.status !== "completed" ||
-		steps.length < graph.steps.length ||
-		steps.some((step) => step.status !== "completed")
-	);
+	return true;
+}
+
+async function legacyPendingFinalizationCompletion(
+	resume: ResumeDefaults,
+	pending: NonNullable<ResumeDefaults["pendingFinalization"]>,
+): Promise<DriverResult> {
+	if (pending.phase === "state_commit") {
+		return {
+			runId: resume.spec.runId,
+			outcome: "completed",
+			tasksDone: pending.taskIds.length,
+			tasksBlocked: 0,
+			stateCommitSha: await gitHead(resume.spec.projectRoot),
+		};
+	}
+	return {
+		runId: resume.spec.runId,
+		outcome: "completed",
+		tasksDone: resume.spec.taskIds.length,
+		tasksBlocked: 0,
+	};
 }
 
 async function retryPendingFinalization(
@@ -1046,16 +1072,6 @@ async function retryPendingFinalization(
 		pending.taskId,
 	);
 	resume.spec = { ...resume.spec, remainingTaskIds: resume.remainingTaskIds };
-	if (resume.remainingTaskIds.length === 0) {
-		const completion: DriverResult = {
-			runId: spec.runId,
-			outcome: "completed",
-			tasksDone: spec.taskIds.length,
-			tasksBlocked: 0,
-		};
-		await writeRunCompletion(spec.workdir, completion);
-		printJsonStdout(completion);
-	}
 	return true;
 }
 
@@ -1083,10 +1099,7 @@ async function retryPendingStateCommit(
 		return false;
 	}
 
-	let stateCommitSha: string | undefined;
-	if (result.status === "committed") {
-		stateCommitSha = result.sha;
-	} else if (result.reason === "no_changes") {
+	if (result.status === "skipped" && result.reason === "no_changes") {
 		const acceptance = await acceptExternalStateCommit(
 			spec,
 			taskManager,
@@ -1101,21 +1114,9 @@ async function retryPendingStateCommit(
 			);
 			return false;
 		}
-		stateCommitSha = acceptance.sha;
 	}
 
 	await clearPendingFinalization(spec.workdir);
-	if (resume.remainingTaskIds.length === 0) {
-		const completion: DriverResult = {
-			runId: spec.runId,
-			outcome: "completed",
-			tasksDone: pending.taskIds.length,
-			tasksBlocked: 0,
-			...(stateCommitSha ? { stateCommitSha } : {}),
-		};
-		await writeRunCompletion(spec.workdir, completion);
-		printJsonStdout(completion);
-	}
 	return true;
 }
 
