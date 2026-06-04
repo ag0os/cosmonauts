@@ -3,7 +3,7 @@ id: TASK-361
 title: >-
   Reviewer/quality-manager resolve diff base to origin/main, pulling
   already-merged commits into the review range
-status: To Do
+status: Done
 priority: medium
 labels:
   - bug
@@ -11,7 +11,7 @@ labels:
   - prompts
 dependencies: []
 createdAt: '2026-06-04T18:42:19.187Z'
-updatedAt: '2026-06-04T18:42:19.187Z'
+updatedAt: '2026-06-04T19:09:07.441Z'
 ---
 
 ## Description
@@ -28,9 +28,9 @@ Observed 2026-06-04 during the durable-graph-scheduler (Plan 3) run: local main 
 Fix direction: prefer the LOCAL base branch the feature was forked from (main -> master) for merge-base computation; only fall back to origin/<base> when no local base branch exists. Apply consistently across reviewer.md, quality-manager.md, and the lens-reviewer base handoff.
 
 <!-- AC:BEGIN -->
-- [ ] #1 Reviewer and quality-manager base-resolution prefers the local base branch (main, then master) for merge-base; origin/<base> is only a fallback when no local base branch exists
-- [ ] #2 With local main ahead of origin/main and a feature branch forked from local main, the computed review range equals merge-base(HEAD, local main)..HEAD and excludes already-merged commits
-- [ ] #3 In that scenario the reviewer's changed-file set matches 'git diff --name-only $(git merge-base HEAD main)..HEAD' and the quality-manager raises NO out-of-scope blocker for files outside the branch's own changes
-- [ ] #4 The base-resolution fix is applied consistently across bundled/coding/coding/prompts/reviewer.md, quality-manager.md, and the lens reviewers (security/ux/performance) that receive base/merge-base from the spawn prompt
-- [ ] #5 The project's test, lint, and typecheck gates pass; any prompt-snapshot tests are updated
+- [x] #1 Reviewer and quality-manager base-resolution prefers the local base branch (main, then master) for merge-base; origin/<base> is only a fallback when no local base branch exists
+- [x] #2 With local main ahead of origin/main and a feature branch forked from local main, the computed review range equals merge-base(HEAD, local main)..HEAD and excludes already-merged commits
+- [x] #3 In that scenario the reviewer's changed-file set matches 'git diff --name-only $(git merge-base HEAD main)..HEAD' and the quality-manager raises NO out-of-scope blocker for files outside the branch's own changes
+- [x] #4 The base-resolution fix is applied consistently across bundled/coding/coding/prompts/reviewer.md, quality-manager.md, and the lens reviewers (security/ux/performance) that receive base/merge-base from the spawn prompt
+- [x] #5 The project's test, lint, and typecheck gates pass; any prompt-snapshot tests are updated
 <!-- AC:END -->
