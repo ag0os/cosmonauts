@@ -5,6 +5,7 @@ import type {
 	Backend,
 	BackendRunResult,
 } from "../../lib/driver/backends/types.ts";
+import { compileDriveRunToGraph } from "../../lib/driver/drive-graph-compiler.ts";
 import {
 	type RunDriveOnGraphCtx,
 	runDriveOnGraph,
@@ -88,18 +89,90 @@ describe("runStart Drive graph characterization", () => {
 		expect(runStepSource).toContain("runDriveOnGraph");
 		expect(runStepSource).not.toContain("runRunLoop(spec");
 	});
+
+	// @cosmo-behavior plan:orchestration-surface-consolidation#B-004
+	test("uses driveTaskIds instead of remainingTaskIds across resume and partial-init repair", async () => {
+		const resume = await setupFixture("resume-authoritative", 3);
+		const resumeStore = new FileRunStore({ rootDir: resume.sessionsRoot });
+		await compileDriveRunToGraph({ spec: resume.spec, store: resumeStore });
+
+		await runDriveOnGraph(
+			{
+				...resume.spec,
+				remainingTaskIds: resume.taskIds.slice(2),
+			},
+			createRunContext(resume),
+		);
+
+		const resumeGraph = await resumeStore.readRunGraph({
+			scope: PLAN_SLUG,
+			runId: resume.spec.runId,
+		});
+		expect(
+			resumeGraph.graph.steps
+				.filter((step) => step.kind === "drive")
+				.map((step) => step.id),
+		).toEqual(resume.taskIds);
+		expect(
+			await readJson(join(resume.spec.workdir, "spec.json")),
+		).toMatchObject({
+			taskIds: resume.taskIds,
+			remainingTaskIds: resume.taskIds.slice(2),
+		});
+
+		const repair = await setupFixture("partial-init-authoritative", 3);
+		const repairStore = new FileRunStore({ rootDir: repair.sessionsRoot });
+		await repairStore.createRun({
+			scope: PLAN_SLUG,
+			runId: repair.spec.runId,
+			eventsPath: "orchestration-events.jsonl",
+			policy: {
+				defaultBackend: { name: repair.spec.backendName },
+				worktree: { mode: "shared", path: repair.spec.workdir },
+			},
+			metadata: {
+				driveTaskIds: repair.taskIds,
+				configuredBackendName: repair.spec.backendName,
+			},
+		});
+
+		await runDriveOnGraph(
+			{
+				...repair.spec,
+				taskIds: repair.taskIds.slice(2),
+				remainingTaskIds: repair.taskIds.slice(2),
+			},
+			createRunContext(repair),
+		);
+
+		const repairGraph = await repairStore.readRunGraph({
+			scope: PLAN_SLUG,
+			runId: repair.spec.runId,
+		});
+		const repairRun = await repairStore.loadRun({
+			scope: PLAN_SLUG,
+			runId: repair.spec.runId,
+		});
+		expect(
+			repairGraph.graph.steps
+				.filter((step) => step.kind === "drive")
+				.map((step) => step.id),
+		).toEqual(repair.taskIds);
+		expect(repairRun?.metadata?.driveTaskIds).toEqual(repair.taskIds);
+	});
 });
 
 interface Fixture {
 	projectRoot: string;
 	sessionsRoot: string;
 	taskId: string;
+	taskIds: string[];
 	spec: DriverRunSpec;
 	taskManager: TaskManager;
 	events: DriverEvent[];
 }
 
-async function setupFixture(name: string): Promise<Fixture> {
+async function setupFixture(name: string, taskCount = 1): Promise<Fixture> {
 	const projectRoot = join(temp.path, name, "project");
 	const sessionsRoot = join(projectRoot, "missions", "sessions");
 	const runId = `run-${name}`;
@@ -107,17 +180,26 @@ async function setupFixture(name: string): Promise<Fixture> {
 	await mkdir(workdir, { recursive: true });
 	const taskManager = new TaskManager(projectRoot);
 	await taskManager.init({ zeroPadding: 0 });
-	const task = await taskManager.createTask({
-		title: `${name} Drive characterization fixture`,
-		description: "Exercise Drive graph state.",
-		labels: [`plan:${PLAN_SLUG}`],
-	});
+	const taskIds: string[] = [];
+	for (let index = 0; index < taskCount; index++) {
+		const task = await taskManager.createTask({
+			title: `${name} Drive characterization fixture ${index + 1}`,
+			description: "Exercise Drive graph state.",
+			labels: [`plan:${PLAN_SLUG}`],
+		});
+		taskIds.push(task.id);
+	}
+	const [taskId] = taskIds;
+	if (!taskId) {
+		throw new Error("Fixture must create at least one task.");
+	}
 	const envelopePath = join(projectRoot, "envelope.md");
 	await writeFile(envelopePath, "Use the fake backend report.", "utf-8");
 	return {
 		projectRoot,
 		sessionsRoot,
-		taskId: task.id,
+		taskId,
+		taskIds,
 		taskManager,
 		events: [],
 		spec: {
@@ -125,7 +207,7 @@ async function setupFixture(name: string): Promise<Fixture> {
 			parentSessionId: `parent-${name}`,
 			projectRoot,
 			planSlug: PLAN_SLUG,
-			taskIds: [task.id],
+			taskIds,
 			backendName: "codex",
 			promptTemplate: { envelopePath },
 			preflightCommands: [],

@@ -11,10 +11,7 @@ import type {
 	StepRecord,
 	StepResult,
 } from "../durable-runtime/index.ts";
-import {
-	FileRunStore,
-	runDurableGraphScheduler,
-} from "../durable-runtime/index.ts";
+import { FileRunStore, runStart } from "../durable-runtime/index.ts";
 import { createPiSpawner } from "./agent-spawner.ts";
 import {
 	extractAssistantText,
@@ -87,24 +84,6 @@ export async function runDurableChain(
 		compaction: config.compaction,
 	});
 
-	await store.createRun({
-		...ref,
-		status: "pending",
-		policy: {
-			defaultBackend: { name: "cosmonauts-subagent" },
-			worktree: { mode: "shared" },
-			maxParallelSteps: 1,
-			timeoutMs: config.timeoutMs,
-		},
-		metadata: {
-			source: "chain_run",
-			stageCount: compiled.graph.steps.length,
-		},
-	});
-	await store.writeRunGraph(ref, compiled.graph);
-	await initializeStepRecords(store, ref, compiled.graph);
-	await store.appendEvent(ref, { type: "run_started", runId });
-
 	const spawner = createPiSpawner(
 		config.registry,
 		config.domainsDir ?? FALLBACK_DOMAINS_DIR,
@@ -121,16 +100,46 @@ export async function runDurableChain(
 			spawner,
 			signal: config.signal,
 		});
-		await runSchedulerToTerminal({
+		const scheduler = await runStart({
 			store,
 			ref,
-			backend,
+			graph: compiled.graph,
+			createRun: {
+				status: "pending",
+				policy: {
+					defaultBackend: { name: "cosmonauts-subagent" },
+					worktree: { mode: "shared" },
+					maxParallelSteps: 1,
+					timeoutMs: config.timeoutMs,
+				},
+				metadata: {
+					source: "chain_run",
+					stageCount: compiled.graph.steps.length,
+				},
+			},
+			backends: new Map([[backend.name, backend]]),
+			holderId: DEFAULT_HOLDER_ID,
 			signal: config.signal,
 			maxPasses: Math.max(
 				compiled.graph.steps.length + 5,
 				DEFAULT_MAX_SCHEDULER_PASSES,
 			),
 		});
+		if (
+			scheduler.type === "scheduler" &&
+			(scheduler.exitReason === "terminal" || config.signal?.aborted)
+		) {
+			// Terminal and caller-aborted chain results are reconstructed from
+			// durable state below.
+		} else if (scheduler.type === "interrupted") {
+			throw new Error(
+				`Durable chain run interrupted: ${scheduler.interruption.reason}`,
+			);
+		} else {
+			throw new Error(
+				`Durable chain scheduler did not reach a terminal state for ${ref.runId}.`,
+			);
+		}
 	} finally {
 		spawner.dispose();
 	}
@@ -291,56 +300,6 @@ function chainAgentEventType(
 		case "tool_execution_start":
 		case "tool_execution_end":
 			return "agent_tool_use";
-	}
-}
-
-async function runSchedulerToTerminal({
-	store,
-	ref,
-	backend,
-	signal,
-	maxPasses,
-}: {
-	store: RunStore;
-	ref: RunRef;
-	backend: RunGraphSchedulerBackend;
-	signal?: AbortSignal;
-	maxPasses: number;
-}): Promise<void> {
-	const backends = new Map([[backend.name, backend]]);
-
-	for (let pass = 0; pass < maxPasses; pass++) {
-		const result = await runDurableGraphScheduler({
-			store,
-			ref,
-			backends,
-			holderId: DEFAULT_HOLDER_ID,
-			signal,
-		});
-		if (result.exitReason === "terminal") {
-			return;
-		}
-		if (signal?.aborted) {
-			return;
-		}
-	}
-
-	throw new Error(
-		`Durable chain scheduler did not reach a terminal state for ${ref.runId}.`,
-	);
-}
-
-async function initializeStepRecords(
-	store: RunStore,
-	ref: RunRef,
-	graph: RunGraph,
-): Promise<void> {
-	for (const step of graph.steps) {
-		await store.writeStepRecord(ref, {
-			...step,
-			status: "pending",
-			outputArtifacts: [],
-		});
 	}
 }
 

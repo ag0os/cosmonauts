@@ -121,7 +121,6 @@ export class FileRunStore implements RunStore {
 		await writeJsonAtomically(record.schedulerStatePath, {});
 		await writeFile(record.eventsPath, "", { flag: "a" });
 		await this.writeRunRecord(record);
-		this.latestSeqByRun.set(this.runKey(record), 0);
 		return record;
 	}
 

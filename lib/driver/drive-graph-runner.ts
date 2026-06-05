@@ -6,7 +6,7 @@ import {
 	type RunRecord,
 	type RunRef,
 	type RunStore,
-	runDurableGraphScheduler,
+	runStart,
 	type SchedulerStepInput,
 	type StepRecord,
 } from "../durable-runtime/index.ts";
@@ -15,7 +15,7 @@ import {
 	isPartialTaskStatusStep,
 	readRetryableDriveFinalizerFailure,
 } from "./drive-finalization.ts";
-import { compileDriveRunToGraph } from "./drive-graph-compiler.ts";
+import { compileDriveRunStart } from "./drive-graph-compiler.ts";
 import { createDriveSchedulerBackendMap } from "./drive-scheduler-backend.ts";
 import { EventLogWriteError } from "./event-stream.ts";
 import type { RunRunLoopCtx } from "./run-run-loop.ts";
@@ -34,10 +34,7 @@ type DriverEventInput = DriverEvent extends infer Event
 	: never;
 
 interface GraphRunState {
-	store: FileRunStore;
-	ref: RunRef;
-	run: RunRecord;
-	isNewRun: boolean;
+	run?: RunRecord;
 }
 
 const SCHEDULER_DRAIN_LIMIT = 10_000;
@@ -54,11 +51,10 @@ export async function runDriveOnGraph(
 
 	try {
 		await prepareCompatibilityWorkdir(spec, mode);
-		const graphRun = await loadOrCreateGraphRun({ spec, store, ref });
-		const runSpec = withAuthoritativeTaskIds(spec, graphRun.run);
-		if (graphRun.isNewRun) {
-			await store.appendEvent(ref, { type: "run_started", runId: spec.runId });
-		}
+		const graphRun = await loadGraphRun({ spec, store, ref });
+		const runSpec = graphRun.run
+			? withAuthoritativeTaskIds(spec, graphRun.run)
+			: spec;
 		await prepareCompatibilityWorkdir(runSpec, mode);
 		await emit(runSpec, ctx, {
 			type: "run_started",
@@ -66,6 +62,7 @@ export async function runDriveOnGraph(
 			backend: runSpec.backendName,
 			mode,
 		});
+		const compiled = compileDriveRunStart(runSpec);
 
 		const backends = createDriveSchedulerBackendMap({
 			spec: runSpec,
@@ -74,59 +71,76 @@ export async function runDriveOnGraph(
 			eventSink: ctx.eventSink,
 		});
 		const schedulerStore = withSafeSchedulerEventWrites(store);
+		let finalizerFailure: Awaited<
+			ReturnType<typeof readRetryableDriveFinalizerFailure>
+		>;
 
-		let schedulerResult: RunGraphSchedulerResult | undefined;
-		for (let drains = 0; drains < SCHEDULER_DRAIN_LIMIT; drains++) {
-			const finalizerFailure = await readRetryableDriveFinalizerFailure({
-				store,
-				ref,
-				workdir: spec.workdir,
-			});
-			if (finalizerFailure) {
-				const result = finalizationFailureResult(
-					runSpec,
-					finalizerFailure,
-					await store.listStepRecords(ref),
-				);
-				await emitRunFinalizationFailed(runSpec, ctx, result);
-				await writeRunCompletion(runSpec.workdir, result);
-				return result;
-			}
+		const schedulerResult = await runStart({
+			store,
+			schedulerStore,
+			ref,
+			graph: compiled.graph,
+			initialSteps: compiled.initialSteps,
+			createRun: compiled.createRun,
+			backends,
+			holderId: `${spec.runId}:${process.pid}`,
+			inputForStep,
+			signal: ctx.abortSignal,
+			maxPasses: SCHEDULER_DRAIN_LIMIT,
+			stopPolicy: {
+				async beforePass(state) {
+					finalizerFailure = await readRetryableDriveFinalizerFailure({
+						store,
+						ref,
+						workdir: runSpec.workdir,
+					});
+					if (!finalizerFailure) {
+						return undefined;
+					}
+					return {
+						reason: "drive_finalization_failed",
+						exitReason: "interrupted",
+						run: state.run,
+						steps: state.steps,
+					};
+				},
+				async afterPass(state) {
+					finalizerFailure = await readRetryableDriveFinalizerFailure({
+						store,
+						ref,
+						workdir: runSpec.workdir,
+					});
+					if (!finalizerFailure) {
+						return undefined;
+					}
+					return {
+						reason: "drive_finalization_failed",
+						exitReason: "interrupted",
+						run: state.run,
+						steps: state.steps,
+					};
+				},
+				shouldStop(pass) {
+					return allStepsTerminal(pass.steps);
+				},
+			},
+		});
 
-			schedulerResult = await runDurableGraphScheduler({
-				store: schedulerStore,
-				ref,
-				backends,
-				holderId: `${spec.runId}:${process.pid}`,
-				inputForStep,
-				signal: ctx.abortSignal,
-			});
+		if (finalizerFailure) {
+			const result = finalizationFailureResult(
+				runSpec,
+				finalizerFailure,
+				schedulerResult.steps,
+			);
+			await emitRunFinalizationFailed(runSpec, ctx, result);
+			await writeRunCompletion(runSpec.workdir, result);
+			return result;
+		}
 
-			const failureAfterDrain = await readRetryableDriveFinalizerFailure({
-				store,
-				ref,
-				workdir: spec.workdir,
-			});
-			if (failureAfterDrain) {
-				const result = finalizationFailureResult(
-					runSpec,
-					failureAfterDrain,
-					schedulerResult.steps,
-				);
-				await emitRunFinalizationFailed(runSpec, ctx, result);
-				await writeRunCompletion(runSpec.workdir, result);
-				return result;
-			}
-
-			if (
-				schedulerResult.exitReason === "terminal" ||
-				schedulerResult.exitReason === "blocked" ||
-				schedulerResult.exitReason === "cancelled" ||
-				schedulerResult.exitReason === "waiting_for_fresh_external_work" ||
-				allStepsTerminal(schedulerResult.steps)
-			) {
-				break;
-			}
+		if (schedulerResult.type === "interrupted") {
+			throw new Error(
+				`Drive graph run interrupted: ${schedulerResult.interruption.reason}`,
+			);
 		}
 
 		if (!schedulerResult) {
@@ -181,7 +195,7 @@ async function prepareCompatibilityWorkdir(
 	}
 }
 
-async function loadOrCreateGraphRun({
+async function loadGraphRun({
 	spec,
 	store,
 	ref,
@@ -190,25 +204,12 @@ async function loadOrCreateGraphRun({
 	store: FileRunStore;
 	ref: RunRef;
 }): Promise<GraphRunState> {
-	const existing = await store.loadRun(ref);
-	if (!existing) {
-		const compiled = await compileDriveRunToGraph({ spec, store });
-		return { store, ref, run: compiled.run, isNewRun: true };
+	const run = await store.loadRun(ref);
+	if (run) {
+		validateDriveTaskIds(run.metadata, spec);
+		return { run };
 	}
-
-	const graph = await store.readRunGraph(ref);
-	const steps = await store.listStepRecords(ref);
-	if (graph.graph.steps.length === 0 && steps.length === 0) {
-		validateDriveTaskIds(existing.metadata, spec);
-		const compiled = await compileDriveRunToGraph({
-			spec: withAuthoritativeTaskIds(spec, existing),
-			store,
-		});
-		return { store, ref, run: compiled.run, isNewRun: true };
-	}
-
-	validateDriveTaskIds(existing.metadata, spec);
-	return { store, ref, run: existing, isNewRun: false };
+	return {};
 }
 
 function withAuthoritativeTaskIds(
@@ -319,7 +320,6 @@ async function toDriverResult(
 				: `run ${latestRun.status}`,
 	};
 }
-
 function finalizationFailureResult(
 	spec: DriverRunSpec,
 	failure: Awaited<ReturnType<typeof readRetryableDriveFinalizerFailure>>,
