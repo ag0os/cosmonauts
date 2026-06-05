@@ -4,7 +4,20 @@ Work backlog in two sections. **Prioritized** items at the top are ordered — p
 
 ## Prioritized
 
-Three items, in order. They stack: `reuse-scan` produces evidence, `distiller` condenses it into per-plan knowledge, `architecture-of-record` maintains the living synthesis, `embedding-memory` retrieves it at design time. Together they are the thing that actually prevents architectural drift and code duplication as the system grows.
+Four items, in order. The top item closes out the durable orchestration track by unifying its public surface. The remaining three stack: `reuse-scan` produces evidence, `distiller` condenses it into per-plan knowledge, `architecture-of-record` maintains the living synthesis, `embedding-memory` retrieves it at design time. Together they are the thing that actually prevents architectural drift and code duplication as the system grows.
+
+### `orchestration-surface-consolidation`: Unify the Agent-Running Surface
+
+**Complexity: medium.** After the durable orchestration wave (Plans 1–4, all merged), chains/workflows, Drive, and sub-agent spawns all compile onto one durable graph runtime — but the public/agent-facing surface still presents them as separate systems (`cosmonauts drive`, `-w/--workflow`, `chain_run`, `run_driver`, `spawn_agent`, plus `watch_events` vs `run_watch`). Consolidate the agent-running abstractions under one umbrella while **keeping** the distinct concepts of chain/workflows, drive, and spawn-agent/sub-agent as named compilers/frontends feeding the runtime. Realizes the architecture record's deferred "prompt/capability evolution so agents prefer `run_start`/`run_watch`/`run_status` over legacy `chain_run`/`spawn_agent`/Drive paths."
+
+- Spike-first, then a new architecture decision (`D-011 — Consolidated orchestration surface`) in `missions/architecture/durable-orchestration-runtime.md`, then a plan — must not break the wave-1 compatibility the migration deliberately preserved
+- **Unify control + observation:** one `run_start`/`run_status`/`run_watch`; collapse `watch_events` into a compatibility view over `run_watch`
+- **Keep authoring differentiated as compilers:** `spawn_agent` = a 1-node graph (the minimal compiler), chain/workflow = topology graphs, drive = plan-task graphs; **mode (inline vs durable) is the axis, not the surface**
+- `spawn_agent` defaults to inline (the hot/interactive/synchronous path); its durable escalation is a nested run — already scaffolded (`RunRecord.parentRunId/parentStepId`, the `nested-run` backend future name, the `child_run_started` event), full nested-run lifecycle stays post-production
+- Run-explosion discipline: spawns inside a run are steps; ad-hoc top-level spawns are lightweight inline 1-node runs; durability is opt-in per spawn
+- Inventory every entry point (CLI flags + agent tools + internal `run_start`) → keep / merge / deprecate-with-compat-wrapper; decide the CLI question (one `cosmonauts run` vs keeping `drive`/`-w`)
+- Folds in the deferred orchestration doc refresh (`docs/orchestration.md` is stale, `lib/driver/README.md` partial, `domains/shared/capabilities/drive.md`, the drive skill) once the surface is decided
+- Non-goals: durable coordinator loops, full nested-run lifecycle policy, breaking existing CLI/tool callers
 
 ### `architecture-of-record`: Cross-Plan Architectural Memory
 
