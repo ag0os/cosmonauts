@@ -27,6 +27,7 @@ const registry = new AgentRegistry([
 
 describe("runStart durable chain characterization", () => {
 	// @cosmo-behavior plan:orchestration-surface-consolidation#B-002
+	// @cosmo-behavior plan:orchestration-surface-consolidation#B-005
 	test("preserves durable chain run files and ChainResult through runStart", async () => {
 		spawnerMocks.spawn.mockImplementation(async (config: SpawnConfig) => {
 			config.onEvent?.({
@@ -62,6 +63,10 @@ describe("runStart durable chain characterization", () => {
 		});
 
 		expect(result).toMatchObject({
+			run: {
+				runId: expect.stringMatching(/^chain-/),
+				scope: "chain",
+			},
 			success: true,
 			errors: [],
 			stageResults: [
@@ -89,6 +94,7 @@ describe("runStart durable chain characterization", () => {
 		if (!run) {
 			throw new Error("Expected a persisted chain run.");
 		}
+		expect(result.run).toEqual({ runId: run.runId, scope: "chain" });
 		expect(run.metadata).toEqual({ source: "chain_run", stageCount: 3 });
 		const graph = await store.readRunGraph(run);
 		const steps = await store.listStepRecords(run);

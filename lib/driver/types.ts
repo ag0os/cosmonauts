@@ -8,6 +8,15 @@ export type BackendName = Extract<
 >;
 
 export const DETACHED_DEFAULT_TASK_THRESHOLD = 4;
+export const RESERVED_DRIVER_PLAN_SLUGS = new Set(["chain"]);
+
+export function validateDriverPlanSlug(planSlug: string): void {
+	if (RESERVED_DRIVER_PLAN_SLUGS.has(planSlug)) {
+		throw new Error(
+			`Plan slug "${planSlug}" is reserved for graph-backed chain runs and cannot be used for Drive.`,
+		);
+	}
+}
 
 type FinalizationPhase = "commit" | "task_status" | "state_commit";
 export type StateCommitPolicy = "none" | "final-state-commit";

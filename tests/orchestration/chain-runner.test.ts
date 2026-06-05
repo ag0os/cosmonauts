@@ -1089,6 +1089,13 @@ describe("runChain", () => {
 		expect(result.errors).toHaveLength(0);
 	});
 
+	// @cosmo-behavior plan:orchestration-surface-consolidation#B-005
+	test("keeps inline chain results explicitly non-durable", async () => {
+		const result = await runChain(makeConfig([makeStage("planner", false)]));
+
+		expect(result.run).toBeUndefined();
+	});
+
 	test("user prompt injection preserves default first-stage role prompt", async () => {
 		const steps = parseChain("planner -> task-manager", defaultRegistry);
 		injectUserPrompt(steps, "build auth");

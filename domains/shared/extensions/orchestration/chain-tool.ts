@@ -27,6 +27,8 @@ import { thinkingLevelSchema } from "./schema.ts";
 interface ChainProgressDetails {
 	/** Accumulated progress lines */
 	lines: string[];
+	/** Durable run identity for graph-backed chains; undefined for inline chains. */
+	run?: ChainResult["run"];
 	/** Final chain result (only present when done) */
 	result?: ChainResult;
 }
@@ -174,6 +176,7 @@ export function registerChainTool(
 				],
 				details: {
 					lines: progressLines,
+					run: result.run,
 					result,
 				} as ChainProgressDetails,
 			};

@@ -222,6 +222,11 @@ export interface StageResult {
 
 /** Result of executing a full chain */
 export interface ChainResult {
+	/** Durable run identity for graph-backed chains; undefined for inline legacy chains. */
+	run?: {
+		runId: string;
+		scope: "chain";
+	};
 	/** Whether all stages completed successfully */
 	success: boolean;
 	/** Results for each stage executed */

@@ -148,7 +148,10 @@ export async function runDurableChain(
 	for (const event of reconstructed.events) {
 		emit(config, event);
 	}
-	return reconstructed.result;
+	return {
+		...reconstructed.result,
+		run: { runId, scope: CHAIN_RUN_SCOPE },
+	};
 }
 
 interface ChainSchedulerBackendOptions {
