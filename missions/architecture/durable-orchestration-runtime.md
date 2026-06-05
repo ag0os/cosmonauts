@@ -128,6 +128,86 @@ Follow-ups`.
     daemon move stays open.
   - Decided-by: implementation delivery recommendation.
 
+- `D-011 - Consolidated orchestration surface (Wave 2 umbrella)`
+  - Decision: Unify run **creation, control, and observation** under one spine
+    while keeping the authoring concepts distinct. Concretely: (a) introduce a
+    single internal run-creation entry — the `runStart` seam — that owns the
+    create-run-graph, seed-events, and drive-to-terminal envelope both graph
+    runners duplicate today; (b) make a durable **`runId` the universal currency**
+    for every frontend, including `chain_run`/workflows (which create a
+    `RunRecord` but never surface its id); (c) make `run_status`/`run_watch` the
+    **single normalized observation surface** for all scopes (chain, drive,
+    adhoc), with `watch_events` demoted to a compatibility view (see `D-014`).
+    Control and observation unify; authoring stays differentiated (`D-012`).
+  - Alternatives: keep each frontend's bespoke create/observe path (status quo);
+    or collapse authoring too into a single generic `run(graph)` surface.
+  - Why: post-Plan-4 the runtime is one system at the *scheduler* but not at
+    *run-creation* — `runStart` does not exist as code; `durable-chain-runner`
+    and `drive-graph-runner` each rebuild the same envelope, and three authoring
+    tools expose three different control/observation models. The fragmentation is
+    in the surface, not the engine. Collapsing authoring would discard the DSL,
+    the plan-task derivation, and one-line spawn ergonomics — the concepts are the
+    value. This realizes the post-production "prompt/capability evolution so
+    agents prefer `run_start`/`run_watch`/`run_status`" item.
+  - Decided-by: orchestration-surface-consolidation spike + human review
+    (`missions/architecture/spikes/orchestration-surface-consolidation.md`).
+
+- `D-012 - Frontends are named compilers; execution-mode is the axis`
+  - Decision: `chain`/`workflow`, `drive`, and `spawn` remain distinct authoring
+    frontends, each a named compiler that emits a `RunGraph` and feeds `runStart`
+    (`D-011`). The execution axis is **`mode: inline | durable`**, where `inline`
+    means the non-durable, session-coupled path (chain loops only, `D-008`) and
+    `durable` means graph-backed. Drive's existing in-host-vs-detached choice is a
+    **durable-location** sub-axis, *not* the mode axis, and must be documented as
+    such (no flag rename required this wave).
+  - Alternatives: treat inline/detached and inline/durable as one axis (status
+    quo, where "inline" is overloaded across two unrelated meanings).
+  - Why: the input models genuinely differ, so authoring stays differentiated;
+    but "inline" today means "non-durable" for chains and "in-host but still
+    durable" for Drive, which misleads any unified surface. Naming the two axes
+    apart removes that ambiguity without churn.
+  - Decided-by: spike + human review.
+
+- `D-013 - 'cosmonauts run' is the unified CLI front door; 'drive'/'-w' become compat aliases`
+  - Decision: introduce `cosmonauts run` as the canonical CLI surface for
+    orchestration — subcommands per compiler (`run chain|workflow|drive|spawn`)
+    plus a unified read surface (`run status|watch|list`) backed by
+    `run_status`/`run_watch`. `cosmonauts drive ...` and `-w/--workflow` are
+    **kept as compatibility aliases** that delegate to `cosmonauts run` with
+    identical behavior and a deprecation note. No existing invocation is removed
+    or broken.
+  - Alternatives: add nothing to the CLI (status quo, two systems, no observation
+    verb for chains/workflows); or add only an additive `run status|watch` while
+    leaving `drive`/`-w` as the primary front doors.
+  - Why: a single front door gives the external story one verb and finally gives
+    chains/workflows a CLI observation surface, while aliasing preserves the
+    wave-1 compatibility promise and the `cosmonauts` skill / external docs keep
+    working during the transition.
+  - Decided-by: spike + human review.
+
+- `D-014 - 'spawn' is the inline-default 1-node compiler; nested-run deferred; run-explosion policy`
+  - Decision: model `spawn_agent` as the **minimal compiler** —
+    `compileSpawnToGraph` produces a 1-node `agent`-step graph on the
+    `cosmonauts-subagent` backend — and default it to **inline** execution. The
+    **durable escalation (a top-level spawn becoming a child `RunRecord` with
+    parent linkage and a `nested-run` backend) is deferred** to post-production:
+    the shipped `RunRecord` carries no `parentRunId`/`parentStepId`, `nested-run`
+    is not a known backend, and the `child_run_started` event is defined but
+    unused, so the escalation is net-new, not "scaffolding to switch on." Run
+    explosion is governed by policy: spawns **inside** a run are steps (cheap);
+    ad-hoc **top-level** spawns are lightweight inline 1-node runs; durability is
+    opt-in. Also collapse the legacy `watch_events` tool into a compatibility view
+    over the normalized `run_watch` stream (preserving its shape and line cursor,
+    marked deprecated), gated on a normalized-vs-legacy parity check.
+  - Alternatives: leave `spawn_agent` entirely outside the runtime (document only);
+    or route every spawn through the durable machinery now (full 1-node graph on
+    the hottest interactive path).
+  - Why: modeling spawn as the degenerate 1-node case completes the
+    "every frontend is a compiler" thesis without putting durable run machinery on
+    the latency-sensitive coordinator fan-out path. Deferring nested-run keeps the
+    boundary honest (`D-007`/post-production worktree + lifecycle work gates it).
+  - Decided-by: spike + human review.
+
 ## Boundary Model
 
 The first delivery wave should preserve these zones and dependency directions.
@@ -822,10 +902,118 @@ Excluded from the first wave unless a child plan hits a blocking dependency:
 - Backend report hardening — stricter machine-readable contracts, better
   malformed-report diagnostics, optional objective-check inference.
 - Prompt/capability evolution so agents prefer `run_start`/`run_watch`/
-  `run_status` over legacy `chain_run`/`spawn_agent`/Drive paths.
+  `run_status` over legacy `chain_run`/`spawn_agent`/Drive paths. — **Promoted into
+  Wave 2 (`D-011`..`D-014`); the doc/prompt/capability refresh is Group E of the
+  Wave-2 plan below.**
 - Scheduler form evaluation — in-process vs child process vs daemon.
 - SQLite or remote-coordinator store, only after file-backed semantics
   stabilize under real use.
+
+## Wave 2 — Orchestration Surface Consolidation (candidate plan)
+
+Wave 1 (Plans 1–4) unified the **runtime**. Wave 2 unifies the **surface**,
+realizing `D-011`..`D-014`. It is a deliberate, spike-first boundary change
+(`missions/architecture/spikes/orchestration-surface-consolidation.md`), not an
+ad-hoc refactor, and it must not break any wave-1 compatibility the prior wave
+preserved. Candidate plan slug: `orchestration-surface-consolidation`.
+
+Sequenced as five groups; A is the load-bearing refactor every later group leans
+on, E is documentation and lands last (after the surface is stable). Group order
+is a dependency order, not a hard PR count — the plan/`task` stage refines it.
+
+### Group A — The `runStart` seam (`D-011`, runtime spine)
+
+- **Scope:** extract a single internal `runStart({ store, ref, graph, policy,
+  backends, mode, metadata })` owning the create-run + write-graph + init-steps +
+  seed-`run_started` + drive-scheduler-to-terminal envelope that
+  `lib/orchestration/durable-chain-runner.ts` and
+  `lib/driver/drive-graph-runner.ts` duplicate today. Route both runners through
+  it; each keeps only its compiler and its result reconstruction. Drive's
+  drain-loop, finalizer-failure polling, and `withSafeSchedulerEventWrites` layer
+  **above** the shared core (R1).
+- **Behaviors seed:** `runStart` advances a compiled graph to terminal and
+  returns `{ runId, scope, run, steps }`; chain and Drive produce byte-identical
+  on-disk run state and results to today (characterization tests as the guard);
+  the detached frozen-runner path (Architecture X, scenario 5) is unchanged.
+- **Stays compat-wrapped:** nothing caller-visible changes in this group.
+
+### Group B — One observation surface (`D-011`, `D-014`)
+
+- **Scope:** promote `run_status`/`run_watch` to the canonical read surface across
+  all scopes; surface `{ runId, scope }` from `chain_run` and the workflow CLI so
+  chain/workflow runs are observable like Drive runs; re-implement `watch_events`
+  as a **compatibility view** over the normalized stream (same legacy shape + line
+  cursor, marked deprecated).
+- **Behaviors seed:** a chain/workflow run is observable via `run_watch` by its
+  returned `runId`; `watch_events` returns data sourced from the normalized stream
+  with the legacy fields agents depend on intact (parity check); `run_status`
+  reports correct terminal state for chain, drive, and adhoc runs.
+- **Stays compat-wrapped:** `watch_events` keeps working unchanged for callers;
+  `chain_run` keeps its blocking return of the full `ChainResult` (now *plus*
+  `{ runId, scope }`).
+
+### Group C — `cosmonauts run` CLI front door (`D-013`)
+
+- **Scope:** add `cosmonauts run` with `run chain|workflow|drive|spawn` and a
+  unified `run status|watch|list` backed by the normalized controller; wire
+  `cosmonauts drive run|status|list` and `-w/--workflow` as **compat aliases**
+  delegating to it (deprecation note, identical behavior, identical JSON output).
+- **Behaviors seed:** every existing `drive`/`-w` invocation produces identical
+  output through the alias; `cosmonauts run status|watch <runId>` works for a
+  chain/workflow run and a Drive run uniformly; `--list-*` introspection
+  untouched.
+- **Stays compat-wrapped:** `drive` and `-w` remain fully functional aliases; the
+  external `cosmonauts` skill keeps working (its refresh is Group E).
+
+### Group D — Spawn as the inline-default 1-node compiler (`D-014`)
+
+- **Scope:** introduce `compileSpawnToGraph` (one `agent` step,
+  `cosmonauts-subagent` backend) as the modeled shape for `spawn_agent`; keep
+  `spawn_agent` defaulting to **inline**; document the degenerate-1-node mapping
+  and the run-explosion policy (steps-inside-runs vs ad-hoc top-level spawns).
+- **Behaviors seed:** `spawn_agent`'s interactive behavior is unchanged; the
+  1-node compiler exists and is exercised by a test; docs state the inline default
+  and the deferred durable escalation explicitly.
+- **Stays compat-wrapped:** `spawn_agent` semantics unchanged; whether inline
+  spawn physically threads `runStart` or keeps its lightweight session path with a
+  documented mapping is a plan-stage decision, not a behavior change.
+
+### Group E — Doc / prompt / capability refresh (`D-011`, deferred item)
+
+- **Scope:** the doc refresh wave 1 deliberately deferred. Rewrite
+  `docs/orchestration.md` (0 durable mentions today) around one-runtime /
+  compilers / `runId` / `run_status`/`run_watch`; teach the normalized surface in
+  `domains/shared/skills/drive/SKILL.md` (0 durable mentions) and
+  `capabilities/drive.md`; position spawn as the inline 1-node primitive in
+  `skills/spawning/SKILL.md` + `capabilities/spawning.md`; elevate the
+  `lib/driver/README.md` durable section; nudge coordinator/planner/quality-manager
+  prompts toward `runId`-aware observation. Update the external `cosmonauts` skill
+  for `cosmonauts run`.
+- **Behaviors seed:** the orchestration docs describe the consolidated surface;
+  no prompt/capability instructs agents to prefer a deprecated tool without noting
+  the canonical one. Shipped skills/docs stay stack-agnostic (no baked-in
+  `bun run`/`npm test`).
+
+### Non-goals (explicit)
+
+- Do **not** migrate chain loops or the coordinator off the legacy inline path
+  (`D-008`).
+- Do **not** build the durable nested-run lifecycle — no `parentRunId`/
+  `parentStepId` on `RunRecord`, no `nested-run` backend, no parent/child
+  cancellation (`D-014`, post-production).
+- Do **not** remove or break any existing CLI flag or agent tool — `drive`, `-w`,
+  `chain_run`, `run_driver`, `spawn_agent`, `watch_events` all keep working.
+- Do **not** add per-step worktrees, merge finalizers, parallel mutable execution,
+  or approval gates (still post-production).
+
+### Acceptance bar
+
+Existing chain/workflow/drive/spawn behavior is preserved (characterization tests);
+a chain/workflow run and a Drive run are both observable through one
+`runId`-keyed `run_status`/`run_watch` surface; `watch_events` is a passing compat
+view; every `drive`/`-w` invocation works unchanged via the alias; the spawn
+1-node compiler is modeled and tested; the test suite and `lint`/`typecheck`/
+`check-artifacts` gates stay green.
 
 ## Related Work
 
