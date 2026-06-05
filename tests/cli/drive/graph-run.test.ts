@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createDriveProgram } from "../../../cli/drive/subcommand.ts";
+import { createDriveCompatProgram } from "../../../cli/drive/subcommand.ts";
 import type { DriverDeps } from "../../../lib/driver/driver.ts";
 import type {
 	DriverHandle,
@@ -75,7 +75,7 @@ const temp = useTempDir("drive-graph-run-");
 const PLAN = "durable-frontend-migration";
 let output: ReturnType<typeof captureCliOutput> & JsonOutput;
 
-describe("cosmonauts drive graph runs", () => {
+describe("cosmonauts run drive compat graph runs", () => {
 	let originalCwd: string;
 
 	beforeEach(async () => {
@@ -247,7 +247,7 @@ async function setupFixture(): Promise<{
 }
 
 async function parseDrive(args: string[]): Promise<void> {
-	const program = createDriveProgram();
+	const program = createDriveCompatProgram();
 	program.exitOverride();
 	await program.parseAsync(args, { from: "user" });
 }

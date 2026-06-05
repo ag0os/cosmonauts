@@ -12,6 +12,7 @@ import {
 } from "../../lib/durable-runtime/index.ts";
 import type { CosmonautsRuntime } from "../../lib/runtime.ts";
 import { executeChainExpression } from "../chain-execution.ts";
+import { createDriveRunCommand } from "../drive/subcommand.ts";
 import {
 	type CliRuntimeContext,
 	type CliRuntimeOptions,
@@ -121,6 +122,8 @@ export function createRunProgram({
 				});
 			},
 		);
+
+	program.addCommand(createDriveRunCommand());
 
 	return program;
 }

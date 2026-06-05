@@ -5,17 +5,14 @@
  *   cosmonauts                                    → interactive REPL
  *   cosmonauts "prompt"                           → interactive with initial prompt
  *   cosmonauts --print "prompt"                   → non-interactive (run, output, exit)
- *   cosmonauts -w name "prompt"                   → named workflow (non-interactive)
- *   cosmonauts -w "a -> b" "prompt"               → raw chain DSL (non-interactive)
- *   cosmonauts -w "reviewer[2]" "prompt"           → fan-out DSL (non-interactive)
- *   cosmonauts -w "[planner, reviewer]" "prompt"   → bracket-group DSL (non-interactive)
+ *   cosmonauts run chain name "prompt"             → named chain or chain DSL
+ *   cosmonauts run drive --plan slug               → driver run management
  *   cosmonauts -c                                 → continue most recent session
  *   cosmonauts --dump-prompt [-a agent]           → dump composed system prompt to stdout
  *   cosmonauts --dump-prompt --file path          → dump composed system prompt to file
  *   cosmonauts init                               → agent-driven AGENTS.md bootstrap
  *   cosmonauts task <command>                     → task management subcommands
  *   cosmonauts plan <command>                     → plan management subcommands
- *   cosmonauts drive <command>                    → driver run management subcommands
  *   cosmonauts export ...                         → export packaged agents as binaries
  *
  * Pi flags (session, provider, tools, mode, etc.) pass through automatically.
@@ -33,21 +30,16 @@ import {
 	qualifyAgentId,
 } from "../lib/agents/runtime-identity.ts";
 import type { AgentDefinition } from "../lib/agents/types.ts";
-import { listNamedChains, resolveNamedChain } from "../lib/chains/loader.ts";
-import type { NamedChain } from "../lib/chains/types.ts";
 import { createDefaultProjectConfig } from "../lib/config/defaults.ts";
 import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
 import { buildInitBootstrapPrompt } from "../lib/init/prompt.ts";
 import { setSharedRegistry } from "../lib/interactive/agent-switch.ts";
-import { isChainDslExpression } from "../lib/orchestration/chain-steps.ts";
 import {
 	discoverBundledPackageDirs,
 	isCosmonautsFrameworkRepo,
 } from "../lib/packages/dev-bundled.ts";
 import type { CosmonautsRuntime } from "../lib/runtime.ts";
-import { executeChainExpression } from "./chain-execution.ts";
 import { createCreateProgram } from "./create/subcommand.ts";
-import { createDriveProgram } from "./drive/subcommand.ts";
 import { createEjectProgram } from "./eject/subcommand.ts";
 import { createExportProgram } from "./export/subcommand.ts";
 import {
@@ -128,10 +120,6 @@ function buildCliParser(): Command {
 			"Agent to use (e.g. planner, worker, coordinator)",
 		)
 		.option(
-			"-w, --workflow <expression>",
-			"Run a named workflow or chain DSL. Named: 'plan-and-build'. Arrow: 'planner -> coordinator'. Fan-out: 'reviewer[2]'. Bracket: '[planner, reviewer]'.",
-		)
-		.option(
 			"--completion-label <label>",
 			'Task label scope for loop completion checks (e.g. "plan:auth-system")',
 		)
@@ -142,7 +130,6 @@ function buildCliParser(): Command {
 		)
 		.option("-d, --domain <id>", "Set domain context for agent resolution")
 		.option("--list-domains", "List all discovered domains and exit")
-		.option("--list-workflows", "List available workflows and exit")
 		.option("--list-agents", "List available agent IDs and exit")
 		.option(
 			"--dump-prompt",
@@ -164,11 +151,11 @@ function buildCliParser(): Command {
 		)
 		.option(
 			"--json",
-			"Emit machine-readable JSON output (for --list-domains, --list-agents, --list-workflows)",
+			"Emit machine-readable JSON output (for --list-domains, --list-agents)",
 		)
 		.option(
 			"--plain",
-			"Emit minimal plain-text output for agents (for --list-domains, --list-agents, --list-workflows)",
+			"Emit minimal plain-text output for agents (for --list-domains, --list-agents)",
 		)
 		.argument("[prompt...]", "Prompt text");
 
@@ -195,13 +182,11 @@ function parseThinkingOption(value: unknown): ThinkingLevel | undefined {
 interface ParsedCliOptionValues {
 	print?: boolean;
 	agent?: string;
-	workflow?: string;
 	completionLabel?: string;
 	model?: string;
 	thinking?: unknown;
 	domain?: string;
 	listDomains?: boolean;
-	listWorkflows?: boolean;
 	listAgents?: boolean;
 	dumpPrompt?: boolean;
 	file?: string;
@@ -228,12 +213,10 @@ function normalizeCliOptions(
 		prompt,
 		print: opts.print ?? false,
 		agent: opts.agent,
-		workflow: opts.workflow,
 		completionLabel: opts.completionLabel,
 		model: opts.model,
 		thinking,
 		init: isInit,
-		listWorkflows: opts.listWorkflows ?? false,
 		listAgents: opts.listAgents ?? false,
 		domain: opts.domain,
 		listDomains: opts.listDomains ?? false,
@@ -245,43 +228,6 @@ function normalizeCliOptions(
 		plain: opts.plain ?? false,
 		piFlags: piResult.flags,
 	};
-}
-
-// ============================================================================
-// Workflow routing
-// ============================================================================
-
-export function shouldParseWorkflowAsRawChainExpression(
-	expression: string,
-): boolean {
-	return isChainDslExpression(expression);
-}
-
-export async function resolveWorkflowExpression(
-	expression: string,
-	projectRoot: string,
-	domainChains?: readonly NamedChain[],
-): Promise<string> {
-	if (shouldParseWorkflowAsRawChainExpression(expression)) {
-		return expression;
-	}
-
-	try {
-		const chain = await resolveNamedChain(
-			expression,
-			projectRoot,
-			domainChains,
-		);
-		return chain.chain;
-	} catch (error) {
-		if (
-			error instanceof Error &&
-			error.message.startsWith(`Unknown named chain "${expression}"`)
-		) {
-			return expression;
-		}
-		throw error;
-	}
 }
 
 export function buildInitSessionConfig(cwd: string) {
@@ -301,11 +247,9 @@ export function buildInitSessionConfig(cwd: string) {
 type CliRunMode =
 	| "no-domain-guard"
 	| "list-domains"
-	| "list-workflows"
 	| "list-agents"
 	| "dump-prompt"
 	| "init"
-	| "workflow"
 	| "print"
 	| "interactive";
 
@@ -316,7 +260,6 @@ export function selectRunMode(
 	const isBypassCommand =
 		options.init ||
 		options.listDomains ||
-		options.listWorkflows ||
 		options.listAgents ||
 		options.dumpPrompt;
 	if (!hasNonSharedDomain && !isBypassCommand) {
@@ -324,11 +267,9 @@ export function selectRunMode(
 	}
 
 	if (options.listDomains) return "list-domains";
-	if (options.listWorkflows) return "list-workflows";
 	if (options.listAgents) return "list-agents";
 	if (options.dumpPrompt) return "dump-prompt";
 	if (options.init) return "init";
-	if (options.workflow) return "workflow";
 	if (options.print) return "print";
 	return "interactive";
 }
@@ -340,11 +281,9 @@ async function run(options: CliOptions): Promise<void> {
 	const handlers: Record<CliRunMode, () => Promise<void>> = {
 		"no-domain-guard": async () => handleNoDomainGuard(),
 		"list-domains": () => handleListDomains(runtime, options),
-		"list-workflows": () => handleListWorkflows(cwd, runtime.chains, options),
 		"list-agents": () => handleListAgents(runtime, options),
 		"dump-prompt": () => handleDumpPrompt(runtime, options),
 		init: () => handleInitMode(runtime, options, cwd),
-		workflow: () => handleWorkflowMode(runtime, options, cwd),
 		print: () => handlePrintMode(runtime, options, cwd),
 		interactive: () => handleInteractiveMode(runtime, options, cwd),
 	};
@@ -378,13 +317,6 @@ export interface DomainListItem {
 	portable: boolean;
 }
 
-/** Workflow entry shape used by `--list-workflows --json`. */
-export interface WorkflowListItem {
-	name: string;
-	description: string;
-	chain: string;
-}
-
 /** Agent entry shape used by `--list-agents --json`. */
 export interface AgentListItem {
 	id: string;
@@ -416,32 +348,6 @@ export function renderDomainsList(
 			domains.length === 0
 				? ["No domains found."]
 				: domains.map((item) => `  ${item.id}  ${item.description}`),
-	};
-}
-
-export function renderWorkflowsList(
-	workflows: readonly WorkflowListItem[],
-	mode: CliOutputMode,
-): { kind: "json"; value: unknown } | { kind: "lines"; lines: string[] } {
-	if (mode === "json") {
-		return { kind: "json", value: workflows };
-	}
-
-	if (mode === "plain") {
-		return {
-			kind: "lines",
-			lines: workflows.map(
-				(item) => `${item.name}\t${item.description}\t${item.chain}`,
-			),
-		};
-	}
-
-	return {
-		kind: "lines",
-		lines:
-			workflows.length === 0
-				? ["No workflows available."]
-				: workflows.map((item) => `  ${item.name}  ${item.description}`),
 	};
 }
 
@@ -488,20 +394,6 @@ async function handleListDomains(
 		portable: domain.portable,
 	}));
 	emit(renderDomainsList(items, resolveCliOutputMode(options)));
-}
-
-async function handleListWorkflows(
-	cwd: string,
-	domainChains: readonly NamedChain[],
-	options: CliOptions,
-): Promise<void> {
-	const chains = await listNamedChains(cwd, domainChains);
-	const items: WorkflowListItem[] = chains.map((chain) => ({
-		name: chain.name,
-		description: chain.description,
-		chain: chain.chain,
-	}));
-	emit(renderWorkflowsList(items, resolveCliOutputMode(options)));
 }
 
 async function handleListAgents(
@@ -589,28 +481,6 @@ async function handleInitMode(
 	});
 	await interactive.init();
 	await interactive.run();
-}
-
-export async function handleWorkflowMode(
-	runtime: CosmonautsRuntime,
-	options: CliOptions,
-	cwd: string,
-): Promise<void> {
-	const chainExpr = await resolveWorkflowExpression(
-		options.workflow ?? "",
-		cwd,
-		runtime.chains,
-	);
-	const result = await executeChainExpression({
-		runtime,
-		options,
-		cwd,
-		chainExpr,
-	});
-
-	if (!result.success) {
-		process.exitCode = 1;
-	}
 }
 
 async function handlePrintMode(
@@ -720,7 +590,6 @@ if (runInvocation) {
 	subcommand === "packages" ||
 	subcommand === "update" ||
 	subcommand === "eject" ||
-	subcommand === "drive" ||
 	subcommand === "export" ||
 	subcommand === "session"
 ) {
@@ -735,7 +604,6 @@ if (runInvocation) {
 		packages: createPackagesProgram,
 		update: createUpdateProgram,
 		eject: createEjectProgram,
-		drive: createDriveProgram,
 		export: createExportProgram,
 		session: createSessionsProgram,
 	};

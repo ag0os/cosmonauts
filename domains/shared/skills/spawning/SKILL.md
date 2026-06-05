@@ -5,7 +5,7 @@ description: Delegating work to other agents — spawn_agent mechanics, the para
 
 # Spawning and Chains
 
-Two tools, `spawn_agent` (one agent, fire-and-forget) and `chain_run` (a pipeline of roles in one call). Named workflows wrap the common chains — prefer `cosmonauts --workflow <name>` or `chain_run` with a workflow's expression over hand-writing topology.
+Two tools, `spawn_agent` (one agent, fire-and-forget) and `chain_run` (a pipeline of roles in one call). Named chains wrap the common pipelines — prefer `cosmonauts run chain <name>` or `chain_run` with the named chain's expression over hand-writing topology.
 
 ## How spawn_agent works
 
@@ -65,7 +65,7 @@ Optional `prompt` injects a user objective into the first stage; `completionLabe
 
 Safety caps are global, not per-stage: `maxTotalIterations` (default 50), `timeoutMs` (default 30 min), and `spawnTimeoutMs` for each stage's child-spawn completion wait (default 5 min). For implementation batches of roughly four or more tasks, prefer `/skill:drive`; long coordinator loops can exhaust the shared chain deadline while waiting on worker dispatches.
 
-### Named workflows
+### Named chains
 
 | Name | Chain | When |
 |------|-------|------|
@@ -75,7 +75,7 @@ Safety caps are global, not per-stage: `maxTotalIterations` (default 50), `timeo
 | `spec-and-build` | `spec-writer → planner → plan-reviewer → planner → task-manager → coordinator → integration-verifier → quality-manager` | Interactive spec capture then reviewed build |
 | `adapt` | `planner → task-manager → coordinator → integration-verifier → quality-manager` | Planner studies a reference codebase path and adapts patterns |
 
-`cosmonauts --list-workflows` shows the live list including project-level overrides.
+`cosmonauts run chain list` shows the live list including project-level overrides.
 
 ## Per-role prompt patterns
 

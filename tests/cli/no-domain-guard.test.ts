@@ -7,7 +7,6 @@ function cliOptions(overrides: Partial<CliOptions> = {}): CliOptions {
 	return {
 		print: false,
 		init: false,
-		listWorkflows: false,
 		listAgents: false,
 		listDomains: false,
 		dumpPrompt: false,

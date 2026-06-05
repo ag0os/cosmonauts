@@ -33,7 +33,9 @@ describe("drive skill", () => {
 		expect(content).toContain("final-state-commit");
 		expect(content).toContain("verification-only");
 		expect(content).toContain("no-source-change");
-		expect(content).toContain("watch/status/list");
+		expect(content).toContain("run watch");
+		expect(content).toContain("run status");
+		expect(content).toContain("run list");
 		expect(content).toContain("plan_completion_candidate");
 		expect(content).toContain("live-follow UI");
 		expect(content).toContain("generated final summary artifacts");

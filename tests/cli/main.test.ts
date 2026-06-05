@@ -15,11 +15,7 @@ import {
 	parseCliArgs,
 	renderAgentsList,
 	renderDomainsList,
-	renderWorkflowsList,
-	resolveWorkflowExpression,
 	selectRunMode,
-	shouldParseWorkflowAsRawChainExpression,
-	type WorkflowListItem,
 } from "../../cli/main.ts";
 import type { CliOptions } from "../../cli/types.ts";
 
@@ -27,7 +23,6 @@ function cliOptions(overrides: Partial<CliOptions> = {}): CliOptions {
 	return {
 		print: false,
 		init: false,
-		listWorkflows: false,
 		listAgents: false,
 		listDomains: false,
 		dumpPrompt: false,
@@ -63,12 +58,10 @@ describe("parseCliArgs", () => {
 		expect(opts.print).toBe(false);
 		expect(opts.prompt).toBeUndefined();
 		expect(opts.agent).toBeUndefined();
-		expect(opts.workflow).toBeUndefined();
 		expect(opts.completionLabel).toBeUndefined();
 		expect(opts.model).toBeUndefined();
 		expect(opts.thinking).toBeUndefined();
 		expect(opts.init).toBe(false);
-		expect(opts.listWorkflows).toBe(false);
 		expect(opts.listAgents).toBe(false);
 		expect(opts.domain).toBeUndefined();
 		expect(opts.listDomains).toBe(false);
@@ -101,50 +94,12 @@ describe("parseCliArgs", () => {
 		expect(opts.prompt).toBe("do something");
 	});
 
-	test("--workflow sets workflow name", () => {
-		const opts = parseCliArgs(["--workflow", "plan-and-build", "my prompt"]);
-
-		expect(opts.workflow).toBe("plan-and-build");
-		expect(opts.prompt).toBe("my prompt");
-	});
-
-	test("-w shorthand sets workflow name", () => {
-		const opts = parseCliArgs(["-w", "plan-and-build"]);
-
-		expect(opts.workflow).toBe("plan-and-build");
-	});
-
-	test("--workflow with fanout DSL sets workflow to raw expression", () => {
-		const opts = parseCliArgs(["--workflow", "reviewer[2]", "run it"]);
-
-		expect(opts.workflow).toBe("reviewer[2]");
-		expect(opts.prompt).toBe("run it");
-	});
-
-	test("--workflow with bracket-group DSL sets workflow to raw expression", () => {
-		const opts = parseCliArgs(["--workflow", "[planner, reviewer]", "run it"]);
-
-		expect(opts.workflow).toBe("[planner, reviewer]");
-		expect(opts.prompt).toBe("run it");
-	});
-
-	test("--workflow with chain DSL sets workflow to raw expression", () => {
-		const opts = parseCliArgs([
-			"--workflow",
-			"planner -> coordinator",
-			"build it",
-		]);
-
-		expect(opts.workflow).toBe("planner -> coordinator");
-		expect(opts.prompt).toBe("build it");
-	});
-
 	test("--completion-label sets completion label", () => {
 		const opts = parseCliArgs([
 			"--completion-label",
 			"plan:auth-system",
-			"-w",
-			"planner -> coordinator",
+			"--print",
+			"run this",
 		]);
 
 		expect(opts.completionLabel).toBe("plan:auth-system");
@@ -222,12 +177,6 @@ describe("parseCliArgs", () => {
 		expect(opts.thinking).toBe("medium");
 	});
 
-	test("--list-workflows flag", () => {
-		const opts = parseCliArgs(["--list-workflows"]);
-
-		expect(opts.listWorkflows).toBe(true);
-	});
-
 	test("combined flags: --print with --model and prompt", () => {
 		const opts = parseCliArgs([
 			"--print",
@@ -239,20 +188,6 @@ describe("parseCliArgs", () => {
 		expect(opts.print).toBe(true);
 		expect(opts.model).toBe("anthropic/claude-opus-4-0");
 		expect(opts.prompt).toBe("explain this");
-	});
-
-	test("combined flags: --workflow with --thinking", () => {
-		const opts = parseCliArgs([
-			"--workflow",
-			"plan-and-build",
-			"--thinking",
-			"high",
-			"build feature",
-		]);
-
-		expect(opts.workflow).toBe("plan-and-build");
-		expect(opts.thinking).toBe("high");
-		expect(opts.prompt).toBe("build feature");
 	});
 
 	// Pi flag passthrough tests
@@ -469,10 +404,27 @@ describe("parseCliArgs", () => {
 		expect(opts.dumpPrompt).toBe(false);
 		expect(opts.dumpPromptFile).toBeUndefined();
 	});
+
+	// @cosmo-behavior plan:orchestration-surface-consolidation#B-014
+	test("rejects removed workflow flags while preserving print mode", () => {
+		expect(() => parseCliArgs(["--workflow", "plan-and-build"])).toThrow(
+			"unknown option '--workflow'",
+		);
+		expect(() => parseCliArgs(["-w", "plan-and-build"])).toThrow(
+			"unknown option '-w'",
+		);
+		expect(() => parseCliArgs(["--list-workflows"])).toThrow(
+			"unknown option '--list-workflows'",
+		);
+
+		const opts = parseCliArgs(["-p", "do something"]);
+		expect(opts.print).toBe(true);
+		expect(opts.prompt).toBe("do something");
+	});
 });
 
 // ============================================================================
-// List output renderers (--list-domains / --list-agents / --list-workflows)
+// List output renderers (--list-domains / --list-agents)
 // ============================================================================
 
 describe("renderDomainsList", () => {
@@ -516,44 +468,6 @@ describe("renderDomainsList", () => {
 	});
 });
 
-describe("renderWorkflowsList", () => {
-	const sample: WorkflowListItem[] = [
-		{
-			name: "plan-and-build",
-			description: "Design → tasks → implement → verify",
-			chain: "planner -> task-manager -> coordinator",
-		},
-	];
-
-	test("JSON mode includes the chain DSL for each workflow", () => {
-		const result = renderWorkflowsList(sample, "json");
-		expect(result).toEqual({ kind: "json", value: sample });
-	});
-
-	test("plain mode emits name, description, and chain as tab-separated", () => {
-		expect(renderWorkflowsList(sample, "plain")).toEqual({
-			kind: "lines",
-			lines: [
-				"plan-and-build\tDesign → tasks → implement → verify\tplanner -> task-manager -> coordinator",
-			],
-		});
-	});
-
-	test("human mode shows only name and description (chain omitted)", () => {
-		expect(renderWorkflowsList(sample, "human")).toEqual({
-			kind: "lines",
-			lines: ["  plan-and-build  Design → tasks → implement → verify"],
-		});
-	});
-
-	test("human mode emits 'No workflows available.' for empty input", () => {
-		expect(renderWorkflowsList([], "human")).toEqual({
-			kind: "lines",
-			lines: ["No workflows available."],
-		});
-	});
-});
-
 describe("renderAgentsList", () => {
 	const sample: AgentListItem[] = [
 		{
@@ -586,10 +500,6 @@ describe("renderAgentsList", () => {
 	});
 });
 
-// ============================================================================
-// --workflow DSL dispatch routing
-// ============================================================================
-
 describe("buildInitSessionConfig", () => {
 	test("uses the bootstrap prompt and bypasses project skill filtering", () => {
 		const config = buildInitSessionConfig("/tmp/project");
@@ -599,7 +509,7 @@ describe("buildInitSessionConfig", () => {
 			"You are running Cosmonauts init for /tmp/project.",
 		);
 		expect(config.initialMessage).toContain("Load /skill:init");
-		// The injected config template is intentionally minimal — no workflows table.
+		// The injected config template is intentionally minimal, with no chain overrides.
 		expect(config.initialMessage).not.toContain('"workflows"');
 	});
 });
@@ -623,12 +533,6 @@ describe("selectRunMode", () => {
 				hasNonSharedDomain: false,
 				expected: "no-domain-guard",
 			},
-			{
-				name: "workflow",
-				options: { workflow: "plan-and-build" },
-				hasNonSharedDomain: false,
-				expected: "no-domain-guard",
-			},
 		]);
 	});
 
@@ -639,12 +543,6 @@ describe("selectRunMode", () => {
 				options: { listDomains: true },
 				hasNonSharedDomain: false,
 				expected: "list-domains",
-			},
-			{
-				name: "list workflows",
-				options: { listWorkflows: true },
-				hasNonSharedDomain: false,
-				expected: "list-workflows",
 			},
 			{
 				name: "list agents",
@@ -670,40 +568,22 @@ describe("selectRunMode", () => {
 	test("preserves existing dispatch precedence for overlapping flags", () => {
 		expectRunModes([
 			{
-				name: "domains before workflows",
-				options: { listDomains: true, listWorkflows: true },
-				hasNonSharedDomain: true,
-				expected: "list-domains",
-			},
-			{
 				name: "dump before init",
 				options: { dumpPrompt: true, init: true },
 				hasNonSharedDomain: true,
 				expected: "dump-prompt",
 			},
 			{
-				name: "init before workflow",
-				options: { init: true, workflow: "plan-and-build" },
+				name: "init before print",
+				options: { init: true, print: true, prompt: "go" },
 				hasNonSharedDomain: true,
 				expected: "init",
-			},
-			{
-				name: "workflow before print",
-				options: { print: true, workflow: "plan-and-build", prompt: "go" },
-				hasNonSharedDomain: true,
-				expected: "workflow",
 			},
 		]);
 	});
 
 	test("routes normal domain-backed execution modes", () => {
 		expectRunModes([
-			{
-				name: "workflow",
-				options: { workflow: "plan-and-build" },
-				hasNonSharedDomain: true,
-				expected: "workflow",
-			},
 			{
 				name: "print",
 				options: { print: true },
@@ -717,62 +597,6 @@ describe("selectRunMode", () => {
 				expected: "interactive",
 			},
 		]);
-	});
-});
-
-// ============================================================================
-// --workflow DSL dispatch routing
-// ============================================================================
-
-describe("--workflow DSL dispatch routing", () => {
-	test("routes fan-out syntax to raw chain parsing", () => {
-		expect(shouldParseWorkflowAsRawChainExpression("reviewer[2]")).toBe(true);
-	});
-
-	test("routes bracket-group syntax to raw chain parsing", () => {
-		expect(shouldParseWorkflowAsRawChainExpression("[planner, reviewer]")).toBe(
-			true,
-		);
-	});
-
-	test("routes mixed chain syntax to raw chain parsing", () => {
-		expect(
-			shouldParseWorkflowAsRawChainExpression(
-				"planner -> [task-manager, reviewer]",
-			),
-		).toBe(true);
-	});
-
-	test("routes single-stage DSL expressions as raw chains", () => {
-		expect(shouldParseWorkflowAsRawChainExpression("planner")).toBe(true);
-		expect(shouldParseWorkflowAsRawChainExpression("coding/planner")).toBe(
-			true,
-		);
-	});
-
-	test("routes named workflow identifiers through workflow resolution", () => {
-		expect(shouldParseWorkflowAsRawChainExpression("verify")).toBe(true);
-		expect(shouldParseWorkflowAsRawChainExpression("plan-and-build")).toBe(
-			false,
-		);
-	});
-
-	test("resolves named compound workflows to their configured chain", async () => {
-		await expect(
-			resolveWorkflowExpression("ship-and-check", process.cwd(), [
-				{
-					name: "ship-and-check",
-					description: "Plan then execute",
-					chain: "planner -> coordinator",
-				},
-			]),
-		).resolves.toBe("planner -> coordinator");
-	});
-
-	test("falls back to raw single-stage chain when workflow name is unknown", async () => {
-		await expect(
-			resolveWorkflowExpression("planner", process.cwd(), []),
-		).resolves.toBe("planner");
 	});
 });
 

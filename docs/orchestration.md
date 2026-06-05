@@ -1,6 +1,6 @@
 # Orchestration
 
-Cosmonauts coordinates agents across a spectrum: from a single agent answering directly, to fully automated chain runs, to always-on agents pairing with humans. Drive and chains will merge into a unified surface; for now they're complementary.
+Cosmonauts coordinates agents across a spectrum: from a single agent answering directly, to fully automated chain runs, to Drive-backed task batches, to always-on agents pairing with humans.
 
 ## Packaged agents and export
 
@@ -24,7 +24,7 @@ Phase 1 export is intentionally separate from orchestration execution. Existing 
 Runs agent pipelines using Pi sessions. The DSL is pure topology — it declares which roles run in what order. Loop behavior is intrinsic to each role (coordinator loops until all tasks are Done; others run once).
 
 ```
-cosmonauts --chain "planner -> task-manager -> coordinator -> integration-verifier -> quality-manager" "design and implement auth"
+cosmonauts run chain "planner -> task-manager -> coordinator -> integration-verifier -> quality-manager" "design and implement auth"
 ```
 
 ### Bracket groups (parallel at the same stage)
@@ -32,7 +32,7 @@ cosmonauts --chain "planner -> task-manager -> coordinator -> integration-verifi
 Two or more roles run concurrently:
 
 ```
-cosmonauts --chain "planner -> [task-manager, reviewer] -> coordinator" "design with parallel review"
+cosmonauts run chain "planner -> [task-manager, reviewer] -> coordinator" "design with parallel review"
 ```
 
 ### Fan-out (N copies of a role)
@@ -40,7 +40,7 @@ cosmonauts --chain "planner -> [task-manager, reviewer] -> coordinator" "design 
 Spawns N instances of the same role in parallel:
 
 ```
-cosmonauts --chain "coordinator -> reviewer[3]" "review with multiple reviewers"
+cosmonauts run chain "coordinator -> reviewer[3]" "review with multiple reviewers"
 ```
 
 > **Fan-out note:** `reviewer[3]` sends the **same prompt** to all three instances — it does not shard tasks or assign different work to each instance.
@@ -67,9 +67,9 @@ interface StageStats { stageName: string; iterations: number; stats: SpawnStats 
 interface ChainStats { stages: StageStats[]; totalCost: number; totalTokens: number; totalDurationMs: number }
 ```
 
-## Named Workflows
+## Named Chains
 
-The primary user interface for multi-agent pipelines. Built-in defaults live in `bundled/coding/coding/workflows.ts` and are inherited automatically — a fresh project needs no `workflows` config to use them. Add a `workflows` block to `.cosmonauts/config.json` only to override a chain by name or define a new one; project entries take precedence over the domain's on name collision.
+The primary CLI interface for multi-agent pipelines is `cosmonauts run chain`. Built-in defaults live in `bundled/coding/coding/chains.ts` and are inherited automatically. Add a `chains` block to `.cosmonauts/config.json` only to override a chain by name or define a new one; project entries take precedence over domain entries on name collision.
 
 | Name | Chain | Purpose |
 |------|-------|---------|
@@ -83,17 +83,15 @@ Test-first is the `planner`'s baseline: every plan it produces is behavior-drive
 
 Every design-driven default includes `plan-reviewer` as a mandatory adversarial step before task creation. For code-time review, `quality-manager` internally triages which specialist lenses (security, performance, UX) apply to the diff and spawns the applicable ones in parallel alongside the generalist `reviewer`.
 
-Run `cosmonauts --list-workflows` for the live list, including any project-level overrides.
+Run `cosmonauts run chain list` for the live list, including any project-level overrides.
 
 ## Drive
 
-`cosmonauts drive` is the CLI verb for driver runs: inline mode runs inside the host assistant session, while detached mode writes a frozen run directory and continues independently. When mode is omitted, both the CLI and `run_driver` default to detached for 4 or more tasks and inline for smaller task sets. The driver tools (`run_driver`, `watch_events`) are exposed via the `drive` capability, loaded by `main/cosmo` and `coding/cody`. The detailed run knowledge (backends, modes, commit policy, resume) lives in `/skill:drive`.
+`cosmonauts run drive` is the CLI verb for driver runs: inline mode runs inside the host assistant session, while detached mode writes a frozen run directory and continues independently. When mode is omitted, both the CLI and `run_driver` default to detached for 4 or more tasks and inline for smaller task sets. The driver tools (`run_driver`, `watch_events`) are exposed via the `drive` capability, loaded by `main/cosmo` and `coding/cody`. The detailed run knowledge (backends, modes, commit policy, resume) lives in `/skill:drive`.
 
-Run state lives under `missions/sessions/<plan>/runs/<runId>/`. Terminal results are recorded in `run.completion.json` (`completed`, `blocked`, or `aborted`), detached activity is tracked with `run.pid`, and inline activity is tracked with `run.inline.json`. `drive status` and `drive list` prefer terminal completion records, then classify active sentinels as `running`, `dead`, or `orphaned`.
+Run state lives under `missions/sessions/<scope>/runs/<runId>/`. For Drive, the scope is the plan slug; for graph-backed chains, the scope is `chain`. Use `cosmonauts run status`, `cosmonauts run watch`, and `cosmonauts run list` for normalized observation.
 
 Each Drive task has a per-backend invocation timeout. The default is 1800000ms (30 minutes); use `--task-timeout` / `taskTimeoutMs` for unusually long cold-cache gates or slow external backends that need more headroom.
-
-> Drive and chains will eventually merge into one orchestration surface. For now they overlap: chains are the established, well-exercised path; Drive is newer and adds detached execution and external backends (`codex`, `claude-cli`). Agents that can do both follow what the user asks for and default to a chain when unspecified.
 
 ## CLI Surface
 
@@ -103,9 +101,10 @@ cosmonauts -d coding                          # Interactive REPL with coding/cod
 cosmonauts "design an auth system"           # Initial prompt to main/cosmo
 cosmonauts -d coding "implement this task"    # Initial prompt to coding/cody
 cosmonauts --print "create tasks and go"     # Non-interactive (fire-and-forget)
-cosmonauts --workflow plan-and-build "auth"   # Named workflow
-cosmonauts --chain "planner -> coordinator"  # Raw chain DSL
-cosmonauts drive                              # Driver task runs
+cosmonauts run chain plan-and-build "auth"    # Named chain
+cosmonauts run chain "planner -> coordinator" # Raw chain DSL
+cosmonauts run drive --plan auth-system       # Driver task runs
+cosmonauts run status run-abc --scope chain   # Normalized run status
 cosmonauts export --definition agent-package.json --out bin/agent
 cosmonauts export coding/explorer --target claude-cli --out bin/explorer
 ```
@@ -114,12 +113,10 @@ Key flags:
 
 - `-a, --agent <id>` — choose agent (use `--list-agents` to see available)
 - `-d, --domain <id>` — set domain context for unqualified IDs
-- `--workflow <name|expression>` — named workflow or raw chain
-- `--chain <expression>` — raw chain DSL
 - `--print` — non-interactive mode
 - `--model <provider/model-id>` — override default model
 - `--thinking [level]` — set thinking level
-- `--list-domains`, `--list-workflows`, `--list-agents`
+- `--list-domains`, `--list-agents`
 - `--dump-prompt -a <id>` — print the composed system prompt for an agent
 
 Run `cosmonauts --help` for the full list.

@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createDriveProgram } from "../../../cli/drive/subcommand.ts";
+import { createDriveCompatProgram } from "../../../cli/drive/subcommand.ts";
 import { captureCliOutput } from "../../helpers/cli.ts";
 import { useTempDir } from "../../helpers/fs.ts";
 
@@ -43,7 +43,7 @@ vi.mock("node:child_process", () => ({
 
 const temp = useTempDir("drive-list-test-");
 
-describe("cosmonauts drive list", () => {
+describe("cosmonauts run drive compat list", () => {
 	let output: ReturnType<typeof captureCliOutput> & JsonOutput;
 	let originalCwd: string;
 
@@ -225,7 +225,7 @@ describe("cosmonauts drive list", () => {
 });
 
 async function parseDrive(args: string[]): Promise<void> {
-	const program = createDriveProgram();
+	const program = createDriveCompatProgram();
 	program.exitOverride();
 	await program.parseAsync(args, { from: "user" });
 }

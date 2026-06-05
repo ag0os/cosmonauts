@@ -14,7 +14,7 @@ Roles: `planner`, `spec-writer`, `plan-reviewer`, `task-manager`, `coordinator`,
 ## When to delegate
 
 - Designing across multiple files → `planner`. Approved plan → tasks → `task-manager`. Implementing a task set → `coordinator` or a chain. Merge-readiness gates → `quality-manager`. Fresh-context review → `reviewer` (+ `security-reviewer` / `performance-reviewer` / `ux-reviewer` for targeted lenses). Remediation from findings → `fixer`. Codebase mapping → `explorer`. Validating specific claims → `verifier` / `integration-verifier`. Structural changes → `refactorer`. Knowledge extraction → `distiller`.
-- Named workflows wrap the common pipelines (`plan-and-build`, `implement`, `verify`, `spec-and-build`, `adapt`) — prefer them over hand-writing a chain expression. `cosmonauts --list-workflows` for the live list including project overrides.
+- Named chains wrap the common pipelines (`plan-and-build`, `implement`, `verify`, `spec-and-build`, `adapt`) — prefer them over hand-writing a chain expression. `cosmonauts run chain list` shows the live list including project overrides.
 
 ## After a chain or spawn
 

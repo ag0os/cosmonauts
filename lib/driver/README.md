@@ -157,12 +157,12 @@ A run can also end as `finalization_failed` after the backend work and required
 verification passed but Drive could not finish a commit, task status update, or
 final task-state commit. Drive writes `pending-finalization.json` in the run
 workdir with the failed phase and recovery evidence, then reports the terminal
-failure through `watch_events`, `cosmonauts drive status`, and `drive list`.
+failure through `watch_events`, `cosmonauts run status`, and `cosmonauts run list`.
 This is different from behavioral blocked tasks: `blocked` means implementation
 or verification needs remediation, while `finalization_failed` means verified
 work needs Drive finalization recovery.
 
-Resume is the recovery path. `cosmonauts drive run --resume <runId>` checks
+Resume is the recovery path. `cosmonauts run drive --plan <slug> --resume <runId>` checks
 `pending-finalization.json` before starting backend work and retries the pending
 commit/status/state step first. If an operator already completed the missing
 commit outside Drive, resume may accept safe external evidence instead of
@@ -172,7 +172,7 @@ source changes; state-commit recovery also requires the current task files for
 all pending task IDs to exist and be `Done`. Without that evidence, Drive leaves
 pending finalization in place and reports `finalization_failed` again.
 
-`cosmonauts drive status` and `drive list` classify a run directory in this
+`cosmonauts run status` and `cosmonauts run list` classify a run directory in this
 order:
 
 1. `run.completion.json`: terminal result (`completed`, `blocked`,
@@ -180,7 +180,7 @@ order:
 2. `run.pid`: detached process state (`running`, `dead`, or `orphaned`).
 3. `run.inline.json`: inline process state (`running`, `dead`, or `orphaned`).
 
-Operators should route `watch/status/list` output by status: fix code or
+Operators should route `run watch` / `run status` / `run list` output by status: fix code or
 verification for `blocked`; run resume for `finalization_failed`; inspect and
 resume `dead` or `orphaned` runs only after deciding whether the worktree is
 safe. Resumed inline runs reuse the previous workdir, so preparation removes any
@@ -190,7 +190,7 @@ stale `run.completion.json` before writing a fresh `run.inline.json`.
 
 Drive remains the owner of legacy run behavior. The legacy `events.jsonl`
 stream is still the source for `watch_events` and resume compatibility, while
-`cosmonauts drive status` and `drive list` continue to classify runs from
+`cosmonauts run status` and `cosmonauts run list` continue to classify runs from
 `run.completion.json`, `run.pid`, and `run.inline.json`. Normalized runtime
 files do not make a run listable or change status classification.
 
@@ -256,8 +256,8 @@ intentional correction normalized task completion receives from step
 projection: when the legacy task still reaches `task_done`, the normalized
 `step_completed` event carries the projected `unknown` result instead of
 inventing success. `run_watch` and `run_status` summarize from the normalized
-events at `RunRecord.eventsPath`; `watch_events`, `cosmonauts drive status`, and
-`drive list` continue to read only legacy `events.jsonl` and legacy run-state
+events at `RunRecord.eventsPath`; `watch_events`, `cosmonauts run status`, and
+`cosmonauts run list` continue to read only legacy `events.jsonl` and legacy run-state
 sentinels, so step records do not add fields or change those surfaces.
 
 Drive finalization phases are modeled as generic durable finalizer steps. Source

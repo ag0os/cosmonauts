@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { createDriveProgram } from "../../cli/drive/subcommand.ts";
+import { createDriveCompatProgram } from "../../cli/drive/subcommand.ts";
 import { registerRunControlTools } from "../../domains/shared/extensions/orchestration/run-control-tools.ts";
 import { registerWatchEventsTool } from "../../domains/shared/extensions/orchestration/watch-events-tool.ts";
 import type {
@@ -735,7 +735,7 @@ async function captureDriveJson(
 	try {
 		process.exitCode = undefined;
 		process.chdir(projectRoot);
-		const program = createDriveProgram();
+		const program = createDriveCompatProgram();
 		program.exitOverride();
 		await program.parseAsync(args, { from: "user" });
 		return JSON.parse(output.stdout()) as Record<string, unknown>;

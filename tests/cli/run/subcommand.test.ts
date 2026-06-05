@@ -4,7 +4,10 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createRunProgram } from "../../../cli/run/subcommand.ts";
 import type { CliRuntimeOptions } from "../../../cli/runtime-bootstrap.ts";
 import { parseCliRuntimeOptions } from "../../../cli/runtime-bootstrap.ts";
+import type { DriverHandle, DriverRunSpec } from "../../../lib/driver/types.ts";
 import { FileRunStore } from "../../../lib/durable-runtime/index.ts";
+import { TaskManager } from "../../../lib/tasks/task-manager.ts";
+import type { Task } from "../../../lib/tasks/task-types.ts";
 import { captureCliOutput } from "../../helpers/cli.ts";
 import { useTempDir } from "../../helpers/fs.ts";
 
@@ -12,11 +15,63 @@ const chainMocks = vi.hoisted(() => ({
 	executeChainExpression: vi.fn(),
 }));
 
+const driverMocks = vi.hoisted(() => ({
+	runInline: vi.fn(
+		(spec: DriverRunSpec): DriverHandle => ({
+			runId: spec.runId,
+			planSlug: spec.planSlug,
+			workdir: spec.workdir,
+			eventLogPath: spec.eventLogPath,
+			result: Promise.resolve({
+				runId: spec.runId,
+				outcome: "completed" as const,
+				tasksDone: spec.taskIds.length,
+				tasksBlocked: 0,
+			}),
+			abort: vi.fn(),
+		}),
+	),
+	startDetached: vi.fn(
+		(spec: DriverRunSpec): DriverHandle => ({
+			runId: spec.runId,
+			planSlug: spec.planSlug,
+			workdir: spec.workdir,
+			eventLogPath: spec.eventLogPath,
+			result: Promise.resolve({
+				runId: spec.runId,
+				outcome: "completed" as const,
+				tasksDone: spec.taskIds.length,
+				tasksBlocked: 0,
+			}),
+			abort: vi.fn(),
+		}),
+	),
+}));
+
+const backendMocks = vi.hoisted(() => ({
+	resolveConfiguredExternalBackend: vi.fn((name: string) => ({
+		name,
+		capabilities: { canCommit: false, isolatedFromHostSource: true },
+		run: vi.fn(),
+	})),
+}));
+
 vi.mock("../../../cli/chain-execution.ts", () => ({
 	executeChainExpression: chainMocks.executeChainExpression,
 }));
 
+vi.mock("../../../lib/driver/driver.ts", () => ({
+	runInline: driverMocks.runInline,
+	startDetached: driverMocks.startDetached,
+}));
+
+vi.mock("../../../lib/driver/backend-resolution.ts", () => ({
+	resolveConfiguredExternalBackend:
+		backendMocks.resolveConfiguredExternalBackend,
+}));
+
 const temp = useTempDir("run-subcommand-");
+const DRIVE_PLAN = "drive-plan";
 
 describe("cosmonauts run", () => {
 	let output: ReturnType<typeof captureCliOutput>;
@@ -28,6 +83,9 @@ describe("cosmonauts run", () => {
 		output = captureCliOutput();
 		process.exitCode = undefined;
 		chainMocks.executeChainExpression.mockReset();
+		driverMocks.runInline.mockClear();
+		driverMocks.startDetached.mockClear();
+		backendMocks.resolveConfiguredExternalBackend.mockClear();
 		chainMocks.executeChainExpression.mockResolvedValue({
 			success: true,
 			stageResults: [],
@@ -107,6 +165,99 @@ describe("cosmonauts run", () => {
 			result: { success: true },
 		});
 		expect(output.stderr()).toBe("");
+	});
+
+	// @cosmo-behavior plan:orchestration-surface-consolidation#B-012
+	test("starts Drive through run drive and rejects the reserved chain plan slug", async () => {
+		const fixture = await setupDriveFixture(2);
+
+		await parseRun([
+			"drive",
+			"--plan",
+			DRIVE_PLAN,
+			"--task-ids",
+			fixture.tasks.map((task) => task.id).join(","),
+			"--backend",
+			"codex",
+			"--mode",
+			"inline",
+			"--envelope",
+			fixture.envelopePath,
+		]);
+
+		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
+		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(driverMocks.runInline.mock.calls[0]?.[0]).toMatchObject({
+			projectRoot: process.cwd(),
+			planSlug: DRIVE_PLAN,
+			taskIds: fixture.tasks.map((task) => task.id),
+			backendName: "codex",
+			commitPolicy: "driver-commits",
+		});
+		expect(JSON.parse(output.stdout())).toMatchObject({
+			runId: expect.stringMatching(/^run-/),
+			scope: DRIVE_PLAN,
+			outcome: "completed",
+			tasksDone: 2,
+			tasksBlocked: 0,
+		});
+
+		resetOutput();
+		driverMocks.runInline.mockClear();
+		await parseRun([
+			"drive",
+			"--plan",
+			DRIVE_PLAN,
+			"--task-ids",
+			fixture.tasks[0]?.id ?? "TASK-001",
+			"--backend",
+			"codex",
+			"--mode",
+			"detached",
+			"--envelope",
+			fixture.envelopePath,
+		]);
+
+		expect(driverMocks.startDetached).toHaveBeenCalledTimes(1);
+		expect(JSON.parse(output.stdout())).toMatchObject({
+			runId: expect.stringMatching(/^run-/),
+			scope: DRIVE_PLAN,
+			planSlug: DRIVE_PLAN,
+			workdir: expect.stringContaining(
+				`missions/sessions/${DRIVE_PLAN}/runs/run-`,
+			),
+			eventLogPath: expect.stringContaining("events.jsonl"),
+		});
+
+		resetOutput();
+		driverMocks.startDetached.mockClear();
+		await expect(
+			parseRun([
+				"drive",
+				"--plan",
+				"chain",
+				"--task-ids",
+				fixture.tasks[0]?.id ?? "TASK-001",
+				"--backend",
+				"codex",
+				"--mode",
+				"inline",
+				"--envelope",
+				fixture.envelopePath,
+			]),
+		).rejects.toThrow(
+			'Plan slug "chain" is reserved for graph-backed chain runs and cannot be used for Drive.',
+		);
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
+		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+	});
+
+	// @cosmo-behavior plan:orchestration-surface-consolidation#B-014
+	test("rejects run spawn", async () => {
+		await expect(parseRun(["spawn", "coding/worker", "do it"])).rejects.toThrow(
+			"unknown command 'spawn'",
+		);
+		expect(output.stdout()).toBe("");
 	});
 
 	// @cosmo-behavior plan:orchestration-surface-consolidation#B-011
@@ -260,6 +411,26 @@ describe("cosmonauts run", () => {
 		output = captureCliOutput();
 	}
 });
+
+async function setupDriveFixture(count: number): Promise<{
+	tasks: Task[];
+	envelopePath: string;
+}> {
+	const manager = new TaskManager(temp.path);
+	await manager.init();
+	const tasks: Task[] = [];
+	for (let index = 0; index < count; index++) {
+		tasks.push(
+			await manager.createTask({
+				title: `Drive task ${index + 1}`,
+				labels: [`plan:${DRIVE_PLAN}`],
+			}),
+		);
+	}
+	const envelopePath = join(temp.path, "envelope.md");
+	await writeFile(envelopePath, "Envelope\n", "utf-8");
+	return { tasks, envelopePath };
+}
 
 function runtimeFixture(chains: unknown[]) {
 	return {
