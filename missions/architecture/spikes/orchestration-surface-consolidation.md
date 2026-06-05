@@ -460,3 +460,26 @@ The open decisions in §9 were resolved as:
 
 These feed ADR **D-011..D-014** and the Wave-2 plan outline in
 `missions/architecture/durable-orchestration-runtime.md`.
+
+### Refinements (human review, 2026-06-05, after the planner handoff)
+
+Four follow-on decisions tightened the shape; see `D-015`, `D-016`, and the
+revised `D-012`/`D-013` in the architecture record:
+
+- **`workflow` collapses into `chain` (`D-015`).** A cosmonauts "workflow" is
+  literally a named chain (`WorkflowDefinition = { id, description?, chain }`).
+  Drop the second name; there is one concept (chain), some chains are named/saved.
+  Rename the registry/flag/`RunRecord.kind` and update prompts/skills in lockstep.
+- **CLI is `cosmonauts run chain | drive` only (`D-013` revised).** No `run spawn`
+  — `spawn_agent` is an agent-only tool; the single-agent CLI path is `-p`. Every
+  `run` subcommand is JSON-native on stdout, progress on stderr.
+- **Back-compat is no longer a constraint.** Single-user dogfood: migrate `-w`/
+  `drive` onto `cosmonauts run` and update all callers in lockstep, rather than
+  preserving permanent aliases. Agent tools may be renamed toward the canonical
+  surface as long as internal callers move together. (Revises the original
+  "do not break existing CLI/tool callers" non-goal.)
+- **Parallelism is a sequenced capability, not wave-2 scope (`D-016`).** Read-only
+  fan-out (spawn N analyzers) is safe and nearly free today (cap 5, tunable —
+  optional Group-D item); parallel mutable execution needs worktree isolation +
+  a parallel-wave compiler + merge finalizer and is wave 3. The durable substrate
+  for parallelism already exists; the safety/isolation layer does not.
