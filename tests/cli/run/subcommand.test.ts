@@ -253,6 +253,7 @@ describe("cosmonauts run", () => {
 	});
 
 	// @cosmo-behavior plan:orchestration-surface-consolidation#B-014
+	// @cosmo-behavior plan:orchestration-surface-consolidation#B-019
 	test("rejects run spawn", async () => {
 		await expect(parseRun(["spawn", "coding/worker", "do it"])).rejects.toThrow(
 			"unknown command 'spawn'",
