@@ -347,6 +347,10 @@ export interface ListRecentRunsOptions {
 }
 
 export interface RunStore {
+	withRunInitializationLock<T>(
+		ref: RunRef,
+		action: () => Promise<T>,
+	): Promise<T>;
 	createRun(input: CreateRunInput): Promise<RunRecord>;
 	loadRun(ref: RunRef): Promise<RunRecord | undefined>;
 	updateRun(record: RunRecord): Promise<RunRecord>;

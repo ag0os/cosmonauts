@@ -1,6 +1,7 @@
 export * from "./backends.ts";
 export * from "./controller.ts";
 export * from "./file-store.ts";
+export * from "./run-start.ts";
 export * from "./scheduler.ts";
 export * from "./scheduler-state.ts";
 export * from "./status.ts";

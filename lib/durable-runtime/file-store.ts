@@ -3,6 +3,7 @@ import {
 	mkdir,
 	readdir,
 	readFile,
+	rm,
 	writeFile,
 } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -63,6 +64,33 @@ export class FileRunStore implements RunStore {
 
 	constructor(options: FileRunStoreOptions) {
 		this.rootDir = resolve(options.rootDir);
+	}
+
+	async withRunInitializationLock<T>(
+		ref: RunRef,
+		action: () => Promise<T>,
+	): Promise<T> {
+		const runDir = this.runDir(ref);
+		const lockDir = join(runDir, ".init.lock");
+		await mkdir(runDir, { recursive: true });
+
+		while (true) {
+			try {
+				await mkdir(lockDir);
+				break;
+			} catch (error) {
+				if (!isAlreadyExistsError(error)) {
+					throw error;
+				}
+				await sleep(10);
+			}
+		}
+
+		try {
+			return await action();
+		} finally {
+			await rm(lockDir, { recursive: true, force: true });
+		}
 	}
 
 	async createRun(input: CreateRunInput): Promise<RunRecord> {
@@ -925,4 +953,17 @@ function isNotFoundError(error: unknown): boolean {
 		"code" in error &&
 		error.code === "ENOENT"
 	);
+}
+
+function isAlreadyExistsError(error: unknown): boolean {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"code" in error &&
+		error.code === "EEXIST"
+	);
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
 }
