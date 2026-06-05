@@ -4,9 +4,9 @@
  * Projects declare their configuration in `.cosmonauts/config.json`.
  */
 
-/** Workflow entry in project config. */
-export interface ProjectWorkflowConfig {
-	readonly description: string;
+/** Named-chain entry in project config. */
+export interface ProjectChainConfig {
+	readonly description?: string;
 	readonly chain: string;
 }
 
@@ -18,6 +18,6 @@ export interface ProjectConfig {
 	readonly skills?: readonly string[];
 	/** Additional skill directories (e.g. "~/.claude/skills", ".codex/skills"). */
 	readonly skillPaths?: readonly string[];
-	/** Custom workflow definitions (name → config). */
-	readonly workflows?: Readonly<Record<string, ProjectWorkflowConfig>>;
+	/** Custom named-chain definitions (name → config). */
+	readonly chains?: Readonly<Record<string, ProjectChainConfig>>;
 }

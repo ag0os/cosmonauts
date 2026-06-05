@@ -174,7 +174,7 @@ function workflowRuntime(cwd: string): CosmonautsRuntime {
 	return {
 		agentRegistry: registry,
 		domainContext: "coding",
-		workflows: [
+		chains: [
 			{
 				name: "ship-and-check",
 				description: "Loop-free named workflow",

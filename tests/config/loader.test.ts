@@ -20,7 +20,7 @@ describe("loadProjectConfig", () => {
 	test("returns empty config when .cosmonauts dir does not exist", async () => {
 		const config = await loadProjectConfig(tmp.path);
 		expect(config.skills).toBeUndefined();
-		expect(config.workflows).toBeUndefined();
+		expect(config.chains).toBeUndefined();
 	});
 
 	test("throws on read errors other than missing file", async () => {
@@ -74,14 +74,14 @@ describe("loadProjectConfig", () => {
 		expect(config.skills).toEqual(["typescript", "react"]);
 	});
 
-	test("parses workflows object", async () => {
+	test("parses chains object", async () => {
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
 			JSON.stringify({
-				workflows: {
+				chains: {
 					deploy: {
-						description: "Deploy workflow",
+						description: "Deploy chain",
 						chain: "worker",
 					},
 				},
@@ -89,18 +89,18 @@ describe("loadProjectConfig", () => {
 		);
 
 		const config = await loadProjectConfig(tmp.path);
-		expect(config.workflows).toEqual({
-			deploy: { description: "Deploy workflow", chain: "worker" },
+		expect(config.chains).toEqual({
+			deploy: { description: "Deploy chain", chain: "worker" },
 		});
 	});
 
-	test("parses config with both skills and workflows", async () => {
+	test("parses config with both skills and chains", async () => {
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
 			JSON.stringify({
 				skills: ["typescript"],
-				workflows: {
+				chains: {
 					plan: { description: "Plan", chain: "planner" },
 				},
 			}),
@@ -108,7 +108,7 @@ describe("loadProjectConfig", () => {
 
 		const config = await loadProjectConfig(tmp.path);
 		expect(config.skills).toEqual(["typescript"]);
-		expect(config.workflows).toBeDefined();
+		expect(config.chains).toBeDefined();
 	});
 
 	test("throws on invalid JSON", async () => {
@@ -140,7 +140,7 @@ describe("loadProjectConfig", () => {
 
 		const config = await loadProjectConfig(tmp.path);
 		expect(config.skills).toBeUndefined();
-		expect(config.workflows).toBeUndefined();
+		expect(config.chains).toBeUndefined();
 	});
 
 	test("filters non-string values from skills array", async () => {

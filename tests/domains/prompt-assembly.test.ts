@@ -48,7 +48,7 @@ function makeDomain(
 		prompts: new Set(resources.prompts ?? []),
 		skills: new Set(),
 		extensions: new Set(resources.extensions ?? []),
-		workflows: [],
+		chains: [],
 		rootDirs: [join(baseDir, id)],
 	};
 }

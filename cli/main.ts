@@ -34,6 +34,8 @@ import {
 	qualifyAgentId,
 } from "../lib/agents/runtime-identity.ts";
 import type { AgentDefinition } from "../lib/agents/types.ts";
+import { listNamedChains, resolveNamedChain } from "../lib/chains/loader.ts";
+import type { NamedChain } from "../lib/chains/types.ts";
 import { createDefaultProjectConfig } from "../lib/config/defaults.ts";
 import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
 import { buildInitBootstrapPrompt } from "../lib/init/prompt.ts";
@@ -55,8 +57,6 @@ import {
 } from "../lib/packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../lib/runtime.ts";
 import { sessionsDirForPlan } from "../lib/sessions/session-store.ts";
-import { listWorkflows, resolveWorkflow } from "../lib/workflows/loader.ts";
-import type { WorkflowDefinition } from "../lib/workflows/types.ts";
 import { createChainEventLogger } from "./chain-event-logger.ts";
 import { createCreateProgram } from "./create/subcommand.ts";
 import { createDriveProgram } from "./drive/subcommand.ts";
@@ -287,23 +287,23 @@ export function shouldParseWorkflowAsRawChainExpression(
 export async function resolveWorkflowExpression(
 	expression: string,
 	projectRoot: string,
-	domainWorkflows?: readonly WorkflowDefinition[],
+	domainChains?: readonly NamedChain[],
 ): Promise<string> {
 	if (shouldParseWorkflowAsRawChainExpression(expression)) {
 		return expression;
 	}
 
 	try {
-		const workflow = await resolveWorkflow(
+		const chain = await resolveNamedChain(
 			expression,
 			projectRoot,
-			domainWorkflows,
+			domainChains,
 		);
-		return workflow.chain;
+		return chain.chain;
 	} catch (error) {
 		if (
 			error instanceof Error &&
-			error.message.startsWith(`Unknown workflow "${expression}"`)
+			error.message.startsWith(`Unknown named chain "${expression}"`)
 		) {
 			return expression;
 		}
@@ -382,8 +382,7 @@ async function run(options: CliOptions): Promise<void> {
 	const handlers: Record<CliRunMode, () => Promise<void>> = {
 		"no-domain-guard": async () => handleNoDomainGuard(),
 		"list-domains": () => handleListDomains(runtime, options),
-		"list-workflows": () =>
-			handleListWorkflows(cwd, runtime.workflows, options),
+		"list-workflows": () => handleListWorkflows(cwd, runtime.chains, options),
 		"list-agents": () => handleListAgents(runtime, options),
 		"dump-prompt": () => handleDumpPrompt(runtime, options),
 		init: () => handleInitMode(runtime, options, cwd),
@@ -535,14 +534,14 @@ async function handleListDomains(
 
 async function handleListWorkflows(
 	cwd: string,
-	domainWorkflows: readonly WorkflowDefinition[],
+	domainChains: readonly NamedChain[],
 	options: CliOptions,
 ): Promise<void> {
-	const workflows = await listWorkflows(cwd, domainWorkflows);
-	const items: WorkflowListItem[] = workflows.map((workflow) => ({
-		name: workflow.name,
-		description: workflow.description,
-		chain: workflow.chain,
+	const chains = await listNamedChains(cwd, domainChains);
+	const items: WorkflowListItem[] = chains.map((chain) => ({
+		name: chain.name,
+		description: chain.description,
+		chain: chain.chain,
 	}));
 	emit(renderWorkflowsList(items, resolveCliOutputMode(options)));
 }
@@ -642,7 +641,7 @@ export async function handleWorkflowMode(
 	const {
 		agentRegistry: registry,
 		domainContext,
-		workflows: domainWorkflows,
+		chains: domainChains,
 		projectSkills,
 		skillPaths,
 	} = runtime;
@@ -650,7 +649,7 @@ export async function handleWorkflowMode(
 	const chainExpr = await resolveWorkflowExpression(
 		options.workflow ?? "",
 		cwd,
-		domainWorkflows,
+		domainChains,
 	);
 	const steps = parseChain(chainExpr, registry, domainContext);
 	injectUserPrompt(steps, options.prompt);

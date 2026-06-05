@@ -21,7 +21,7 @@ function makeDomain(id: string, rootDir: string): LoadedDomain {
 		prompts: new Set(),
 		skills: new Set(),
 		extensions: new Set(),
-		workflows: [],
+		chains: [],
 		rootDirs: [rootDir],
 	};
 }

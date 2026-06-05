@@ -5,10 +5,10 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import workflows from "../../bundled/coding/coding/workflows.ts";
+import chains from "../../bundled/coding/coding/chains.ts";
+import { resolveNamedChain } from "../../lib/chains/loader.ts";
 import { createDefaultProjectConfig } from "../../lib/config/defaults.ts";
 import { scaffoldProjectConfig } from "../../lib/config/loader.ts";
-import { resolveWorkflow } from "../../lib/workflows/loader.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("config-scaffold-test-");
@@ -32,13 +32,13 @@ describe("scaffoldProjectConfig", () => {
 		expect(config).toEqual(createDefaultProjectConfig());
 	});
 
-	test("scaffolded config does not declare workflows", async () => {
+	test("scaffolded config does not declare chains", async () => {
 		await scaffoldProjectConfig(tmp.path);
 
 		const configPath = join(tmp.path, ".cosmonauts", "config.json");
 		const config = JSON.parse(await readFile(configPath, "utf-8"));
 
-		expect(config.workflows).toBeUndefined();
+		expect(config.chains).toBeUndefined();
 	});
 
 	test("createDefaultProjectConfig returns a fresh object each call", () => {
@@ -81,42 +81,42 @@ describe("scaffoldProjectConfig", () => {
 	});
 });
 
-describe("workflow resolution after scaffold", () => {
-	test("domain workflows resolve whether or not a config was scaffolded", async () => {
-		const before = await resolveWorkflow("plan-and-build", tmp.path, workflows);
+describe("chain resolution after scaffold", () => {
+	test("domain chains resolve whether or not a config was scaffolded", async () => {
+		const before = await resolveNamedChain("plan-and-build", tmp.path, chains);
 		expect(before.name).toBe("plan-and-build");
 		expect(before.chain).toBeTruthy();
 
 		await scaffoldProjectConfig(tmp.path);
 
 		// The scaffolded (empty) config adds nothing — resolution is unchanged.
-		const after = await resolveWorkflow("plan-and-build", tmp.path, workflows);
+		const after = await resolveNamedChain("plan-and-build", tmp.path, chains);
 		expect(after.chain).toBe(before.chain);
 	});
 
-	test("standard domain workflows resolve after scaffold", async () => {
+	test("standard domain chains resolve after scaffold", async () => {
 		await scaffoldProjectConfig(tmp.path);
 
 		for (const name of ["plan-and-build", "implement", "verify"]) {
-			const wf = await resolveWorkflow(name, tmp.path, workflows);
+			const wf = await resolveNamedChain(name, tmp.path, chains);
 			expect(wf.name).toBe(name);
 			expect(wf.chain).toBeTruthy();
 		}
 	});
 
-	test("resolveWorkflow throws for an unknown workflow", async () => {
+	test("resolveNamedChain throws for an unknown chain", async () => {
 		await scaffoldProjectConfig(tmp.path);
 
 		await expect(
-			resolveWorkflow("does-not-exist", tmp.path, workflows),
-		).rejects.toThrow('Unknown workflow "does-not-exist"');
+			resolveNamedChain("does-not-exist", tmp.path, chains),
+		).rejects.toThrow('Unknown named chain "does-not-exist"');
 	});
 
-	test("resolveWorkflow throws when no domain workflows are available", async () => {
+	test("resolveNamedChain throws when no domain chains are available", async () => {
 		await scaffoldProjectConfig(tmp.path);
 
-		await expect(resolveWorkflow("plan-and-build", tmp.path)).rejects.toThrow(
-			'Unknown workflow "plan-and-build"',
+		await expect(resolveNamedChain("plan-and-build", tmp.path)).rejects.toThrow(
+			'Unknown named chain "plan-and-build"',
 		);
 	});
 });

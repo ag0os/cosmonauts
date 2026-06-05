@@ -33,7 +33,7 @@ function makeDomain(overrides: Partial<LoadedDomain> = {}): LoadedDomain {
 		prompts: new Set(),
 		skills: new Set(),
 		extensions: new Set(),
-		workflows: [],
+		chains: [],
 		rootDirs: ["/tmp/test"],
 		...overrides,
 	};
@@ -516,7 +516,7 @@ describe("validateDomains", () => {
 				prompts: new Set(),
 				skills: new Set(),
 				extensions: new Set(),
-				workflows: [],
+				chains: [],
 				rootDirs: ["/tmp/shared"],
 			};
 			const pkg = makeDomain({
@@ -587,14 +587,14 @@ describe("validateDomains", () => {
 		});
 	});
 
-	describe("Rule 6: Workflow agents resolve", () => {
-		it("reports warning for unresolvable workflow stage", () => {
+	describe("Rule 6: Chain agents resolve", () => {
+		it("reports warning for unresolvable chain stage", () => {
 			const shared = makeShared();
 			const coding = makeDomain({
 				manifest: { id: "coding", description: "Coding" },
 				agents: new Map([["planner", makeAgent({ id: "planner" })]]),
 				prompts: new Set(["planner"]),
-				workflows: [
+				chains: [
 					{
 						name: "full-pipeline",
 						description: "Full",
@@ -604,9 +604,7 @@ describe("validateDomains", () => {
 			});
 
 			const diagnostics = validateDomains([shared, coding]);
-			const warnings = diagnostics.filter(
-				(d) => d.workflow === "full-pipeline",
-			);
+			const warnings = diagnostics.filter((d) => d.chain === "full-pipeline");
 			// "unknown-agent" and "worker" are both unresolvable
 			expect(warnings.length).toBe(2);
 			expect(warnings.every((d) => d.severity === "warning")).toBe(true);
@@ -616,7 +614,7 @@ describe("validateDomains", () => {
 			expect(warnings.some((d) => d.message.includes('"worker"'))).toBe(true);
 		});
 
-		it("passes when all workflow stages are known agents", () => {
+		it("passes when all chain stages are known agents", () => {
 			const shared = makeShared({
 				agents: new Map([["planner", makeAgent({ id: "planner" })]]),
 			});
@@ -624,7 +622,7 @@ describe("validateDomains", () => {
 				manifest: { id: "coding", description: "Coding" },
 				agents: new Map([["worker", makeAgent({ id: "worker" })]]),
 				prompts: new Set(["worker"]),
-				workflows: [
+				chains: [
 					{
 						name: "build",
 						description: "Build",
@@ -635,12 +633,12 @@ describe("validateDomains", () => {
 
 			const diagnostics = validateDomains([shared, coding]);
 			const match = diagnostics.find((d) =>
-				d.message.includes("Workflow stage"),
+				d.message.includes("Named chain stage"),
 			);
 			expect(match).toBeUndefined();
 		});
 
-		it("passes when workflow stages are domain-qualified", () => {
+		it("passes when chain stages are domain-qualified", () => {
 			const shared = makeShared();
 			const coding = makeDomain({
 				manifest: { id: "coding", description: "Coding" },
@@ -649,7 +647,7 @@ describe("validateDomains", () => {
 					["worker", makeAgent({ id: "worker" })],
 				]),
 				prompts: new Set(["planner", "worker"]),
-				workflows: [
+				chains: [
 					{
 						name: "build",
 						description: "Build",
@@ -660,7 +658,7 @@ describe("validateDomains", () => {
 
 			const diagnostics = validateDomains([shared, coding]);
 			const match = diagnostics.find(
-				(d) => d.workflow === "build" && d.message.includes('"coding/worker"'),
+				(d) => d.chain === "build" && d.message.includes('"coding/worker"'),
 			);
 			expect(match).toBeUndefined();
 		});
@@ -714,17 +712,17 @@ describe("DomainValidationError", () => {
 		expect(error.message).not.toContain("1 errors");
 	});
 
-	it("includes workflow in formatted message", () => {
+	it("includes chain in formatted message", () => {
 		const diagnostics = [
 			{
 				domain: "coding",
-				workflow: "build",
+				chain: "build",
 				message: 'Stage "x" not found',
 				severity: "error" as const,
 			},
 		];
 
 		const error = new DomainValidationError(diagnostics);
-		expect(error.message).toContain("workflow:build");
+		expect(error.message).toContain("chain:build");
 	});
 });

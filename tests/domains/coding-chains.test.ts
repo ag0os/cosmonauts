@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
-import workflows from "../../bundled/coding/coding/workflows.ts";
+import chains from "../../bundled/coding/coding/chains.ts";
 
 function getWorkflowChain(name: string): string {
-	const workflow = workflows.find((candidate) => candidate.name === name);
-	expect(workflow).toBeDefined();
-	return workflow?.chain ?? "";
+	const chain = chains.find((candidate) => candidate.name === name);
+	expect(chain).toBeDefined();
+	return chain?.chain ?? "";
 }
 
-describe("coding domain workflows", () => {
-	it("places integration-verifier immediately before quality-manager in every plan-driven build workflow", () => {
+describe("coding domain chains", () => {
+	it("places integration-verifier immediately before quality-manager in every plan-driven build chain", () => {
 		for (const name of [
 			"plan-and-build",
 			"implement",
@@ -26,19 +26,19 @@ describe("coding domain workflows", () => {
 		}
 	});
 
-	it("keeps verify as the only workflow without integration-verifier", () => {
+	it("keeps verify as the only chain without integration-verifier", () => {
 		for (const name of ["verify"]) {
 			expect(getWorkflowChain(name)).not.toContain("integration-verifier");
 		}
 	});
 
 	it("documents the planless remediation fallback on verify", () => {
-		const verify = workflows.find((candidate) => candidate.name === "verify");
+		const verify = chains.find((candidate) => candidate.name === "verify");
 		expect(verify?.description).toContain("fixer-only remediation");
 		expect(verify?.chain).toBe("quality-manager");
 	});
 
-	it("keeps the adversarial plan-review loop before task creation in design workflows", () => {
+	it("keeps the adversarial plan-review loop before task creation in design chains", () => {
 		for (const name of ["plan-and-build", "spec-and-build"]) {
 			const stages = getWorkflowChain(name).split(" -> ");
 			const reviewerIndex = stages.indexOf("plan-reviewer");
@@ -56,7 +56,7 @@ describe("coding domain workflows", () => {
 		}
 	});
 
-	it("uses a single planner adaptation pass for the adapt workflow", () => {
+	it("uses a single planner adaptation pass for the adapt chain", () => {
 		const stages = getWorkflowChain("adapt").split(" -> ");
 
 		expect(stages).toEqual([
@@ -68,8 +68,8 @@ describe("coding domain workflows", () => {
 		]);
 	});
 
-	it("no longer exposes tdd or spec-and-tdd workflows", () => {
-		const names = workflows.map((workflow) => workflow.name);
+	it("no longer exposes tdd or spec-and-tdd chains", () => {
+		const names = chains.map((chain) => chain.name);
 		expect(names).not.toContain("tdd");
 		expect(names).not.toContain("spec-and-tdd");
 	});

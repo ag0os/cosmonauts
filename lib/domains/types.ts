@@ -7,7 +7,7 @@
  */
 
 import type { AgentDefinition } from "../agents/types.ts";
-import type { WorkflowDefinition } from "../workflows/types.ts";
+import type { NamedChain } from "../chains/types.ts";
 
 /** Declarative configuration for a domain, exported from each domain's domain.ts. */
 export interface DomainManifest {
@@ -39,8 +39,8 @@ export interface LoadedDomain {
 	readonly skills: Set<string>;
 	/** Available extension names (from extensions/). */
 	readonly extensions: Set<string>;
-	/** Workflow definitions from this domain. */
-	readonly workflows: WorkflowDefinition[];
+	/** Named-chain definitions from this domain. */
+	readonly chains: NamedChain[];
 	/**
 	 * Absolute paths to the domain's root directories, ordered by descending precedence.
 	 * Single-source domains have one entry. Merged domains have multiple entries,

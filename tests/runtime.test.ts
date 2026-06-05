@@ -86,17 +86,17 @@ async function setupCodingDomain(
 	domainsDir: string,
 	agents: Array<{ id: string; capabilities?: string[]; extensions?: string[] }>,
 	opts: {
-		workflows?: Array<{ name: string; description: string; chain: string }>;
+		chains?: Array<{ name: string; description: string; chain: string }>;
 	} = {},
 ): Promise<void> {
 	const codingDir = join(domainsDir, "coding");
 	await mkdir(codingDir, { recursive: true });
 
-	const workflowsContent = opts.workflows
-		? `export default ${JSON.stringify(opts.workflows)};`
+	const workflowsContent = opts.chains
+		? `export default ${JSON.stringify(opts.chains)};`
 		: "";
 	if (workflowsContent) {
-		await writeFile(join(codingDir, "workflows.ts"), workflowsContent);
+		await writeFile(join(codingDir, "chains.ts"), workflowsContent);
 	}
 
 	await writeDomainManifest(codingDir, "coding");
@@ -279,15 +279,13 @@ describe("CosmonautsRuntime", () => {
 		});
 	});
 
-	describe("workflow selection", () => {
-		it("includes workflows from matching domain context", async () => {
+	describe("chain selection", () => {
+		it("includes chains from matching domain context", async () => {
 			const domainsDir = join(tmp.path, "domains");
 			await mkdir(domainsDir, { recursive: true });
 			await setupSharedDomain(domainsDir);
 			await setupCodingDomain(domainsDir, [], {
-				workflows: [
-					{ name: "build", description: "Build all", chain: "worker" },
-				],
+				chains: [{ name: "build", description: "Build all", chain: "worker" }],
 			});
 
 			const runtime = await CosmonautsRuntime.create({
@@ -296,18 +294,16 @@ describe("CosmonautsRuntime", () => {
 				domainOverride: "coding",
 			});
 
-			expect(runtime.workflows).toHaveLength(1);
-			expect(runtime.workflows[0]?.name).toBe("build");
+			expect(runtime.chains).toHaveLength(1);
+			expect(runtime.chains[0]?.name).toBe("build");
 		});
 
-		it("includes all domain workflows when no domain context", async () => {
+		it("includes all domain chains when no domain context", async () => {
 			const domainsDir = join(tmp.path, "domains");
 			await mkdir(domainsDir, { recursive: true });
 			await setupSharedDomain(domainsDir);
 			await setupCodingDomain(domainsDir, [], {
-				workflows: [
-					{ name: "build", description: "Build all", chain: "worker" },
-				],
+				chains: [{ name: "build", description: "Build all", chain: "worker" }],
 			});
 
 			const runtime = await CosmonautsRuntime.create({
@@ -315,27 +311,25 @@ describe("CosmonautsRuntime", () => {
 				projectRoot: tmp.path,
 			});
 
-			// Without domain context, all workflows are included
-			expect(runtime.workflows).toHaveLength(1);
-			expect(runtime.workflows[0]?.name).toBe("build");
+			// Without domain context, all chains are included
+			expect(runtime.chains).toHaveLength(1);
+			expect(runtime.chains[0]?.name).toBe("build");
 		});
 
-		it("filters out non-matching domain workflows", async () => {
+		it("filters out non-matching domain chains", async () => {
 			const domainsDir = join(tmp.path, "domains");
 			await mkdir(domainsDir, { recursive: true });
 			await setupSharedDomain(domainsDir);
 			await setupCodingDomain(domainsDir, [], {
-				workflows: [
-					{ name: "build", description: "Build all", chain: "worker" },
-				],
+				chains: [{ name: "build", description: "Build all", chain: "worker" }],
 			});
 
-			// Create another domain with different workflows
+			// Create another domain with different chains
 			const otherDir = join(domainsDir, "other");
 			await mkdir(otherDir, { recursive: true });
 			await writeDomainManifest(otherDir, "other");
 			await writeFile(
-				join(otherDir, "workflows.ts"),
+				join(otherDir, "chains.ts"),
 				`export default [{ name: "other-flow", description: "Other", chain: "x" }];`,
 			);
 
@@ -345,8 +339,8 @@ describe("CosmonautsRuntime", () => {
 				domainOverride: "coding",
 			});
 
-			// Only shared + coding workflows, not "other"
-			const names = runtime.workflows.map((w) => w.name);
+			// Only shared + coding chains, not "other"
+			const names = runtime.chains.map((w) => w.name);
 			expect(names).toContain("build");
 			expect(names).not.toContain("other-flow");
 		});
@@ -418,12 +412,12 @@ describe("CosmonautsRuntime", () => {
 			await mkdir(domainsDir, { recursive: true });
 			await setupSharedDomain(domainsDir, { capabilities: ["core"] });
 
-			// Create domain with a workflow referencing unknown agents (warning-level)
+			// Create domain with a chain referencing unknown agents (warning-level)
 			await setupCodingDomain(
 				domainsDir,
 				[{ id: "planner", capabilities: ["core"] }],
 				{
-					workflows: [
+					chains: [
 						{
 							name: "test-wf",
 							description: "Test",
@@ -532,7 +526,7 @@ describe("CosmonautsRuntime", () => {
 			expect(runtime.agentRegistry.listAll()).toHaveLength(0);
 		});
 
-		it("produces empty workflows", async () => {
+		it("produces empty chains", async () => {
 			const domainsDir = join(tmp.path, "domains");
 			await mkdir(domainsDir, { recursive: true });
 			await setupSharedDomain(domainsDir);
@@ -542,7 +536,7 @@ describe("CosmonautsRuntime", () => {
 				projectRoot: tmp.path,
 			});
 
-			expect(runtime.workflows).toHaveLength(0);
+			expect(runtime.chains).toHaveLength(0);
 		});
 
 		it("validator does not produce error diagnostics for shared-only config", async () => {
@@ -576,7 +570,7 @@ describe("CosmonautsRuntime", () => {
 				domainsDir,
 				[{ id: "worker", capabilities: ["core"] }],
 				{
-					workflows: [{ name: "build", description: "Build", chain: "worker" }],
+					chains: [{ name: "build", description: "Build", chain: "worker" }],
 				},
 			);
 			await writeProjectConfig(tmp.path, {
@@ -596,8 +590,8 @@ describe("CosmonautsRuntime", () => {
 			expect(runtime.domainRegistry.has("shared")).toBe(true);
 			expect(runtime.domainRegistry.has("coding")).toBe(true);
 			expect(runtime.agentRegistry.has("worker")).toBe(true);
-			expect(runtime.workflows).toHaveLength(1);
-			expect(runtime.workflows[0]?.name).toBe("build");
+			expect(runtime.chains).toHaveLength(1);
+			expect(runtime.chains[0]?.name).toBe("build");
 			expect(runtime.domainsDir).toBe(domainsDir);
 			expect(Object.isFrozen(runtime)).toBe(true);
 		});

@@ -164,20 +164,20 @@ describe("loadDomains", () => {
 		expect(domain.prompts.size).toBe(0);
 		expect(domain.skills.size).toBe(0);
 		expect(domain.extensions.size).toBe(0);
-		expect(domain.workflows).toEqual([]);
+		expect(domain.chains).toEqual([]);
 	});
 
-	it("loads workflows from workflows.ts if present", async () => {
+	it("loads chains from chains.ts if present", async () => {
 		const domainDir = join(tmp.path, "wf");
 		await mkdir(domainDir, { recursive: true });
 		await writeDomainManifest(domainDir, "wf");
 		await writeFile(
-			join(domainDir, "workflows.ts"),
-			`export const workflows = [{ name: "test-flow", description: "Test", chain: "a -> b" }];\n`,
+			join(domainDir, "chains.ts"),
+			`export const chains = [{ name: "test-flow", description: "Test", chain: "a -> b" }];\n`,
 		);
 
 		const domains = await loadDomains(tmp.path);
-		expect(domains[0]?.workflows).toEqual([
+		expect(domains[0]?.chains).toEqual([
 			{ name: "test-flow", description: "Test", chain: "a -> b" },
 		]);
 	});

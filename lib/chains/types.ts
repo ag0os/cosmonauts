@@ -1,9 +1,9 @@
 /**
- * Type definitions for the workflow system.
+ * Type definitions for named chains.
  */
 
-export interface WorkflowDefinition {
-	/** Workflow name (used as --workflow argument) */
+export interface NamedChain {
+	/** Chain name used by CLI and project config. */
 	name: string;
 	/** Human-readable description */
 	description: string;
