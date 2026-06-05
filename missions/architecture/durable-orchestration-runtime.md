@@ -176,7 +176,8 @@ Follow-ups`.
     **no `run spawn`** (spawn is agent-only, `D-016`); the single-agent CLI path
     stays `-p`/`--print`. Every `run` subcommand is **JSON-native on stdout** (the
     result/summary, carrying `runId` + `scope` so it composes with `run watch`);
-    human progress goes to **stderr**. Because cosmonauts is single-user dogfood
+    human progress goes to **stderr** (full spec: "CLI output contract" under
+    `## Wave 2`). Because cosmonauts is single-user dogfood
     today, **back-compat is not a constraint** (revises the original non-goal): the
     legacy `-w/--workflow` flag and bare `cosmonauts drive` subcommand are
     **migrated** onto `cosmonauts run` and their agent/skill/prompt/doc callers
@@ -218,11 +219,12 @@ Follow-ups`.
     `WorkflowDefinition` is `{ id, description?, chain: string }`, the chain field
     being a chain-DSL expression run through the same `compileChainToGraph`. There
     is no richer construct. Drop "workflow" as a separate concept name: there is
-    one concept, **chain**, where some chains are **named/saved** and others are
-    ad-hoc expressions. Rename the surface accordingly — `lib/workflows/` →
-    chain-registry, `WorkflowDefinition.chain`, `domains/*/workflows.ts`,
-    `--list-workflows` → `chain list`, and `RunRecord.kind: "workflow"` folds into
-    `"chain"`. Agent skills/prompts/docs that say "workflow" are updated in lockstep
+    one concept, **chain**, where the saved/registered ones are called **named
+    chains** and the rest are ad-hoc expressions. Rename the surface accordingly —
+    `lib/workflows/` → named-chain registry (e.g. `lib/chains/`),
+    `WorkflowDefinition` → `NamedChain` (`.chain` expression field kept),
+    `domains/*/workflows.ts` → `chains.ts`, `--list-workflows` → `chain list`, and
+    `RunRecord.kind: "workflow"` folds into `"chain"`. Agent skills/prompts/docs that say "workflow" are updated in lockstep
     (Group E). If a genuinely richer construct (branching/conditional pipelines) is
     ever built, it earns a new name then — we do not reserve "workflow" for a
     hypothetical.
@@ -238,7 +240,11 @@ Follow-ups`.
     distinct problems with very different cost/risk: **(a) read-only fan-out** —
     an agent spawning N analyzers that don't mutate source — is safe and already
     works via `spawn_agent` (capped at `DEFAULT_MAX_CONCURRENT_SPAWNS = 5`, depth
-    2); the only gap is tuning/exposing the cap (a small near-term win). **(b)
+    2); the only gap is tuning/exposing the cap. This ships as a **standalone
+    near-term item**, independent of both wave 2 and wave 3 — it is *not* folded
+    into the surface-consolidation plan (it is a behavior change that would muddy
+    that plan's preserve-semantics discipline, and being independent means it is
+    not gated by the surface work). **(b)
     parallel mutation** — independent implementation tasks running at once — is
     gated behind worktree isolation and stays post-production (wave 3): it needs a
     parallel-wave compiler (Drive currently linearizes tasks for commit ordering),
@@ -962,14 +968,46 @@ Excluded from the first wave unless a child plan hits a blocking dependency:
 ## Wave 2 — Orchestration Surface Consolidation (candidate plan)
 
 Wave 1 (Plans 1–4) unified the **runtime**. Wave 2 unifies the **surface**,
-realizing `D-011`..`D-014`. It is a deliberate, spike-first boundary change
+realizing `D-011`..`D-016`. It is a deliberate, spike-first boundary change
 (`missions/architecture/spikes/orchestration-surface-consolidation.md`), not an
-ad-hoc refactor, and it must not break any wave-1 compatibility the prior wave
-preserved. Candidate plan slug: `orchestration-surface-consolidation`.
+ad-hoc refactor. It preserves run-state and execution *semantics* (characterization
+tests guard the `runStart` refactor), but it does **not** preserve the old
+CLI/tool *names* — back-compat is not a constraint (`D-013`); callers move in
+lockstep. Candidate plan slug: `orchestration-surface-consolidation`.
 
 Sequenced as five groups; A is the load-bearing refactor every later group leans
 on, E is documentation and lands last (after the surface is stable). Group order
 is a dependency order, not a hard PR count — the plan/`task` stage refines it.
+
+### CLI output contract (`D-013`)
+
+Every `cosmonauts run` subcommand follows one contract:
+
+- **stdout = machine-readable result only.** Exactly one JSON value, the final
+  result/summary. There is **no** `--json`/`--plain` flag on `run` — JSON is
+  always-on (matching today's `cosmonauts drive`, which is JSON-native and rejects
+  `--json`). The unrelated introspection flags (`--list-agents`, `--list-domains`,
+  `chain list`) keep their existing `--json`/`--plain` switches.
+  - `run chain` / `run drive`, **inline** (runs to completion): a run summary
+    `{ runId, scope, kind, status, ... }` — `run chain` includes per-stage
+    outcomes; `run drive` carries the `DriverResult` fields. Final terminal status.
+  - `run chain` / `run drive`, **detached** (returns immediately): a start summary
+    `{ runId, scope, status: "running", ... }` so the caller can hand `runId` to
+    `run watch`.
+  - `run status <runId>`: a `RunStatusSummary` object.
+  - `run watch <runId>`: an events page `{ events, cursor }` (normalized
+    `OrchestrationEvent`s); a future `--follow` may stream one JSON object per line
+    (JSONL) instead.
+  - `run list`: a JSON array of run summaries.
+- **stderr = human progress/logs only.** Live stage/step progress, diagnostics,
+  warnings. Never parsed; safe to silence.
+- **exit code:** `0` only on terminal success (`completed`); non-zero on
+  `failed`/`blocked`/`aborted`/`cancelled` (matches today's `drive` inline exit
+  behavior). Detached starts exit `0` once the run is launched.
+
+The agent-facing tools (`run_status`/`run_watch`) already return structured data;
+this contract makes the CLI consistent with them and with `runId`-as-universal
+-currency (`D-011`).
 
 ### Group A — The `runStart` seam (`D-011`, runtime spine)
 
@@ -1027,14 +1065,13 @@ is a dependency order, not a hard PR count — the plan/`task` stage refines it.
   `cosmonauts-subagent` backend) as the modeled shape for `spawn_agent`; keep
   `spawn_agent` defaulting to **inline** and **agent-only** (no CLI verb); document
   the degenerate-1-node mapping and the run-explosion policy (steps-inside-runs vs
-  ad-hoc top-level spawns). Optionally (small, low-risk): make the read-only
-  fan-out concurrency cap (`DEFAULT_MAX_CONCURRENT_SPAWNS`) tunable/per-call — the
-  (a) half of `D-016`; defer if it grows the wave.
+  ad-hoc top-level spawns).
 - **Behaviors seed:** `spawn_agent`'s interactive behavior is unchanged; the
   1-node compiler exists and is exercised by a test; docs state the inline default,
   agent-only scope, and the deferred durable nested-run escalation explicitly.
-- **Out of scope here:** durable parallel mutation and worktree isolation — the (b)
-  half of `D-016`, which is wave 3.
+- **Out of scope here:** both halves of `D-016` — read-only fan-out cap tuning
+  (a standalone item, shippable independently) and durable parallel mutation +
+  worktree isolation (wave 3).
 
 ### Group E — Doc / prompt / capability refresh + rename propagation (`D-011`, `D-015`)
 
@@ -1062,8 +1099,8 @@ is a dependency order, not a hard PR count — the plan/`task` stage refines it.
   cancellation (`D-014`, post-production).
 - Do **not** add per-step worktrees, merge finalizers, **parallel mutable
   execution**, or approval gates — the (b) half of `D-016` is wave 3, gated behind
-  worktree isolation. (Read-only fan-out tuning, the (a) half, is the only
-  parallelism this wave may touch, and only as the optional Group-D item.)
+  worktree isolation. Read-only fan-out cap tuning (the (a) half) is **also out of
+  this plan** — it ships as a standalone item, not inside the consolidation.
 - Back-compat is **no longer** a non-goal: callers are migrated in lockstep rather
   than preserved (`D-013`); the agent tools (`chain_run`, `run_driver`,
   `spawn_agent`, `watch_events`) may be renamed toward the canonical surface as
