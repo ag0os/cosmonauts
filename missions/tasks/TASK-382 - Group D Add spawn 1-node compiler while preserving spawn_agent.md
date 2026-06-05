@@ -1,7 +1,7 @@
 ---
 id: TASK-382
 title: 'Group D: Add spawn 1-node compiler while preserving spawn_agent'
-status: To Do
+status: Done
 priority: medium
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-376
 createdAt: '2026-06-05T21:57:55.548Z'
-updatedAt: '2026-06-05T21:57:55.548Z'
+updatedAt: '2026-06-05T23:05:40.508Z'
 ---
 
 ## Description
@@ -24,8 +24,8 @@ Marker expectations: tests for owned planned behaviors carry @cosmo-behavior pla
 Group D starts only after Group A is green.
 
 <!-- AC:BEGIN -->
-- [ ] #1 Add `compileSpawnToGraph` returning one `agent` step on `cosmonauts-subagent` with spawn inputs in backend options.
-- [ ] #2 Tests prove no `nested-run` backend, no parent run fields, and no durable run record creation in current `spawn_agent` path.
-- [ ] #3 `spawn_agent` remains `spawnId` + follow-up message.
-- [ ] #4 No CLI `run spawn` exists.
+- [x] #1 Add `compileSpawnToGraph` returning one `agent` step on `cosmonauts-subagent` with spawn inputs in backend options.
+- [x] #2 Tests prove no `nested-run` backend, no parent run fields, and no durable run record creation in current `spawn_agent` path.
+- [x] #3 `spawn_agent` remains `spawnId` + follow-up message.
+- [x] #4 No CLI `run spawn` exists.
 <!-- AC:END -->

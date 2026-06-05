@@ -1,7 +1,7 @@
 ---
 id: TASK-384
 title: Final integration and boundary cleanup
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -19,7 +19,7 @@ dependencies:
   - TASK-382
   - TASK-383
 createdAt: '2026-06-05T21:58:09.141Z'
-updatedAt: '2026-06-05T21:58:09.141Z'
+updatedAt: '2026-06-05T23:15:55.579Z'
 ---
 
 ## Description
@@ -33,10 +33,10 @@ Marker expectations: final integration verifies behavior-marker coverage for @co
 This is the final integration gate after Group E.
 
 <!-- AC:BEGIN -->
-- [ ] #1 Full project correctness and boundary gates pass.
-- [ ] #2 Artifact conformance for this plan passes.
-- [ ] #3 No generic runtime import violates dependency direction.
-- [ ] #4 No `nested-run` backend, parent run fields, `RunRecord.kind`, `run spawn`, reserved Drive `chain` scope creation, new mutable-parallel execution path, new worktree isolation execution path, merge finalizer, approval-gate execution path, or fan-out cap tuning landed.
-- [ ] #5 Existing shipped vocabulary (`StepKind` `"approval"`, `WorktreeSpec`, `RunPolicy.maxParallelSteps`) is allowed to remain and is not treated as failure by absence tests.
-- [ ] #6 Remove any temporary aliases left from intermediate tasks.
+- [x] #1 Full project correctness and boundary gates pass.
+- [x] #2 Artifact conformance for this plan passes.
+- [x] #3 No generic runtime import violates dependency direction.
+- [x] #4 No `nested-run` backend, parent run fields, `RunRecord.kind`, `run spawn`, reserved Drive `chain` scope creation, new mutable-parallel execution path, new worktree isolation execution path, merge finalizer, approval-gate execution path, or fan-out cap tuning landed.
+- [x] #5 Existing shipped vocabulary (`StepKind` `"approval"`, `WorktreeSpec`, `RunPolicy.maxParallelSteps`) is allowed to remain and is not treated as failure by absence tests.
+- [x] #6 Remove any temporary aliases left from intermediate tasks.
 <!-- AC:END -->

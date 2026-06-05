@@ -1,7 +1,7 @@
 ---
 id: TASK-383
 title: 'Group E: Refresh docs, prompts, capabilities, and external skills'
-status: To Do
+status: Done
 priority: medium
 labels:
   - testing
@@ -14,7 +14,7 @@ dependencies:
   - TASK-381
   - TASK-382
 createdAt: '2026-06-05T21:58:01.842Z'
-updatedAt: '2026-06-05T21:58:01.842Z'
+updatedAt: '2026-06-05T23:11:42.332Z'
 ---
 
 ## Description
@@ -28,9 +28,9 @@ Marker expectations: tests for owned planned behaviors carry @cosmo-behavior pla
 Group E lands last after Groups B/C/D are complete.
 
 <!-- AC:BEGIN -->
-- [ ] #1 Update docs/README/driver README around `cosmonauts run`, named chains, run IDs, normalized observation, and compatibility.
-- [ ] #2 Update Drive and spawning skills/capabilities.
-- [ ] #3 Update external cosmonauts skill bundle; rename or rewrite workflow guidance to named chains.
-- [ ] #4 Prompt/doc terminology tests pass; removed flags and old primary CLI names are absent from active guidance.
-- [ ] #5 Absence checks target new deferred execution surfaces, not existing durable-runtime type vocabulary.
+- [x] #1 Update docs/README/driver README around `cosmonauts run`, named chains, run IDs, normalized observation, and compatibility.
+- [x] #2 Update Drive and spawning skills/capabilities.
+- [x] #3 Update external cosmonauts skill bundle; rename or rewrite workflow guidance to named chains.
+- [x] #4 Prompt/doc terminology tests pass; removed flags and old primary CLI names are absent from active guidance.
+- [x] #5 Absence checks target new deferred execution surfaces, not existing durable-runtime type vocabulary.
 <!-- AC:END -->
