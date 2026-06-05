@@ -118,6 +118,8 @@ themselves**. `lib/orchestration/durable-chain-runner.ts:57-143` and
 2. build a `RunRef` (`scope: "chain"` vs `scope: planSlug`)
 3. compile a graph (`compileChainToGraph` / `compileDriveRunToGraph`)
 4. `store.createRun(...)` + `writeRunGraph` + init step records + append `run_started`
+   — note the chain runner does this inline, while Drive delegates run
+   creation/graph write into `compileDriveRunToGraph` (`lib/driver/drive-graph-compiler.ts`)
 5. build a `Map<name, RunGraphSchedulerBackend>`
 6. loop `runDurableGraphScheduler({ store, ref, backends, holderId, ... })` to terminal
 7. reconstruct a frontend-specific result (`ChainResult` / `DriverResult`)
@@ -195,8 +197,10 @@ name)." **Validated against the code — it is not scaffolded:**
 - `KNOWN_BACKEND_NAMES` = `codex`, `claude-cli`, `cosmonauts-subagent`,
   `shell-command`. **`nested-run` is absent** — it is a documented-future name only.
 - The one piece that *is* present: the `child_run_started` event exists in the
-  `OrchestrationEvent` union (`types.ts:269-274`) but is **never emitted and never
-  consumed** (the chain adapter explicitly `break`s on it).
+  `OrchestrationEvent` union (`types.ts:269-274`) but is **never emitted** by any
+  current runtime/tool path — ignored by the chain adapter (which explicitly
+  `break`s on it) and only *renderable* by the normalized controller's event
+  summarizer (`controller.ts:134`). No producer.
 
 **Correction to a stated assumption.** Practical consequence: the nested-run path
 genuinely belongs in post-production, and when built it will require a small
@@ -219,6 +223,13 @@ home for that evolution, and the deferred doc-refresh folds in here (see §8).
 ---
 
 ## 5. Design options & trade-offs
+
+> **Superseded where they differ by §10 + ADR `D-011`..`D-016`.** §§5–8 below capture
+> the spike's *initial* analysis, whose recommendations leaned to additive/keep-compat
+> shapes (C3) and named "workflow" as a frontend. The resolved decisions (§10) chose
+> the unified `cosmonauts run` surface with **no permanent `-w`/`drive` aliases**,
+> collapsed **"workflow" into "chain"**, and dropped `run spawn`. Read §§5–8 as
+> options-and-rationale, not as the final keep/deprecate map.
 
 The umbrella decomposes into six decisions. Each lists options and a recommendation.
 
@@ -244,9 +255,11 @@ The umbrella decomposes into six decisions. Each lists options and a recommendat
 
 - **Recommended.** Make **runId the universal currency** and `run_status`/`run_watch`
   the **one read surface** for every frontend:
-  - `chain_run`/workflow runs already create a durable `RunRecord` with
-    `scope: "chain"` — surface that `runId` (and `scope`) in the tool result so a
-    chain run is observable the same way a Drive run is.
+  - **Loop-free** `chain_run` runs already create a durable `RunRecord` with
+    `scope: "chain"` (via `runDurableChain`) — surface that `runId` (and `scope`)
+    in the tool result so a chain run is observable the same way a Drive run is.
+    Inline loop chains (`completionLabel`/loop/`completionCheck`) stay on the legacy
+    path and have no `RunRecord` unless wave 2 wraps them.
   - Keep `chain_run`'s blocking convenience (it still returns the final result),
     but additionally expose `{ runId, scope }` so mid-run observation and
     post-hoc inspection use the same `run_status`/`run_watch` as Drive.
@@ -467,7 +480,7 @@ Four follow-on decisions tightened the shape; see `D-015`, `D-016`, and the
 revised `D-012`/`D-013` in the architecture record:
 
 - **`workflow` collapses into `chain` (`D-015`).** A cosmonauts "workflow" is
-  literally a named chain (`WorkflowDefinition = { id, description?, chain }`).
+  literally a named chain (`WorkflowDefinition = { name, description, chain }`).
   Drop the second name; there is one concept (chain), some chains are named/saved.
   Rename the registry/flag/`RunRecord.kind` and update prompts/skills in lockstep.
 - **CLI is `cosmonauts run chain | drive` only (`D-013` revised).** No `run spawn`

@@ -134,17 +134,22 @@ Follow-ups`.
     single internal run-creation entry — the `runStart` seam — that owns the
     create-run-graph, seed-events, and drive-to-terminal envelope both graph
     runners duplicate today; (b) make a durable **`runId` the universal currency**
-    for every frontend, including `chain_run`/workflows (which create a
-    `RunRecord` but never surface its id); (c) make `run_status`/`run_watch` the
-    **single normalized observation surface** for all scopes (chain, drive,
-    adhoc), with `watch_events` demoted to a compatibility view (see `D-014`).
+    for every frontend — loop-free chain runs already create a `RunRecord` (via
+    `runDurableChain`) but never surface its id, and wave 2 surfaces it; inline
+    loop chains stay on the legacy path (`D-008`) and are outside the `runId`
+    guarantee unless wave 2 wraps them; (c) make `run_status`/`run_watch` the
+    **single normalized observation surface** for all run scopes (`RunRef.scope`:
+    `"chain"` for chains, the `planSlug` for Drive, `"adhoc"` for ad-hoc top-level
+    runs such as a top-level spawn), with `watch_events` demoted to a compatibility
+    view (see `D-014`).
     Control and observation unify; authoring stays differentiated (`D-012`).
   - Alternatives: keep each frontend's bespoke create/observe path (status quo);
     or collapse authoring too into a single generic `run(graph)` surface.
   - Why: post-Plan-4 the runtime is one system at the *scheduler* but not at
     *run-creation* — `runStart` does not exist as code; `durable-chain-runner`
-    and `drive-graph-runner` each rebuild the same envelope, and three authoring
-    tools expose three different control/observation models. The fragmentation is
+    and `drive-graph-runner` (the latter via `compileDriveRunToGraph`) each rebuild
+    the same envelope, and three authoring tools expose three different
+    control/observation models. The fragmentation is
     in the surface, not the engine. Collapsing authoring would discard the DSL,
     the plan-task derivation, and one-line spawn ergonomics — the concepts are the
     value. This realizes the post-production "prompt/capability evolution so
@@ -155,8 +160,12 @@ Follow-ups`.
 - `D-012 - Frontends are named compilers; execution-mode is the axis`
   - Decision: `chain` (ad-hoc or named — see `D-015`), `drive`, and `spawn` remain
     distinct authoring frontends, each a named compiler that emits a `RunGraph` and
-    feeds `runStart` (`D-011`). `spawn` is an **agent-only** tool, not a CLI verb
-    (`D-016`). The execution axis is **`mode: inline | durable`**, where `inline`
+    feeds `runStart` (`D-011`). For `chain` and `drive` this is real today (both
+    compile to a `RunGraph`); for `spawn` it is **modeled** — `compileSpawnToGraph`
+    defines the 1-node shape, but whether inline spawn physically threads `runStart`
+    or keeps its current lightweight session path is a plan-stage decision (`D-014`),
+    and `spawn_agent`'s runtime behavior is unchanged this wave. `spawn` is an
+    **agent-only** tool, not a CLI verb (`D-016`). The execution axis is **`mode: inline | durable`**, where `inline`
     means the non-durable, session-coupled path (chain loops only, `D-008`) and
     `durable` means graph-backed. Drive's existing in-host-vs-detached choice is a
     **durable-location** sub-axis, *not* the mode axis, and must be documented as
@@ -216,15 +225,19 @@ Follow-ups`.
 
 - `D-015 - "workflow" is not a distinct concept; collapse it into "chain"`
   - Decision: a cosmonauts "workflow" is exactly a **named chain** —
-    `WorkflowDefinition` is `{ id, description?, chain: string }`, the chain field
-    being a chain-DSL expression run through the same `compileChainToGraph`. There
-    is no richer construct. Drop "workflow" as a separate concept name: there is
-    one concept, **chain**, where the saved/registered ones are called **named
-    chains** and the rest are ad-hoc expressions. Rename the surface accordingly —
-    `lib/workflows/` → named-chain registry (e.g. `lib/chains/`),
-    `WorkflowDefinition` → `NamedChain` (`.chain` expression field kept),
-    `domains/*/workflows.ts` → `chains.ts`, `--list-workflows` → `chain list`, and
-    `RunRecord.kind: "workflow"` folds into `"chain"`. Agent skills/prompts/docs that say "workflow" are updated in lockstep
+    `WorkflowDefinition` is `{ name: string; description: string; chain: string }`
+    (`lib/workflows/types.ts`), the `chain` field being a chain-DSL expression run
+    through the same `compileChainToGraph`. There is no richer construct. Drop
+    "workflow" as a separate concept name: there is one concept, **chain**, where
+    the saved/registered ones are called **named chains** and the rest are ad-hoc
+    expressions. Rename the surface accordingly — `lib/workflows/` → named-chain
+    registry (e.g. `lib/chains/`), `WorkflowDefinition` → `NamedChain` (keep its
+    `name`/`description`/`chain` fields), `domains/*/workflows.ts` → `chains.ts`,
+    `--list-workflows` → `chain list`. (The architecture record's *target*
+    `RunRecord` carries a `kind` discriminator whose members include `"workflow"`;
+    the **shipped** `RunRecord` in `lib/durable-runtime/types.ts` has no `kind`
+    field, so this is a target-side fold of the `"workflow"` member into `"chain"`,
+    not a rename of an existing field.) Agent skills/prompts/docs that say "workflow" are updated in lockstep
     (Group E). If a genuinely richer construct (branching/conditional pipelines) is
     ever built, it earns a new name then — we do not reserve "workflow" for a
     hypothetical.
@@ -989,8 +1002,10 @@ Every `cosmonauts run` subcommand follows one contract:
   `--json`). The unrelated introspection flags (`--list-agents`, `--list-domains`,
   `chain list`) keep their existing `--json`/`--plain` switches.
   - `run chain` / `run drive`, **inline** (runs to completion): a run summary
-    `{ runId, scope, kind, status, ... }` — `run chain` includes per-stage
-    outcomes; `run drive` carries the `DriverResult` fields. Final terminal status.
+    `{ runId, scope, status, ... }` carrying the frontend-native terminal outcome —
+    `run chain` the normalized `RunStatus` (`completed`/`blocked`/`failed`/…) plus
+    per-stage outcomes; `run drive` the `DriverResult` fields, whose `outcome` adds
+    `aborted`/`finalization_failed` beyond the durable `RunStatus`.
   - `run chain` / `run drive`, **detached** (returns immediately): a start summary
     `{ runId, scope, status: "running", ... }` so the caller can hand `runId` to
     `run watch`.
@@ -1014,9 +1029,11 @@ this contract makes the CLI consistent with them and with `runId`-as-universal
 - **Scope:** extract a single internal `runStart({ store, ref, graph, policy,
   backends, mode, metadata })` owning the create-run + write-graph + init-steps +
   seed-`run_started` + drive-scheduler-to-terminal envelope that
-  `lib/orchestration/durable-chain-runner.ts` and
-  `lib/driver/drive-graph-runner.ts` duplicate today. Route both runners through
-  it; each keeps only its compiler and its result reconstruction. Drive's
+  `lib/orchestration/durable-chain-runner.ts` and `lib/driver/drive-graph-runner.ts`
+  rebuild today (the chain runner inline; Drive via `compileDriveRunToGraph` in
+  `lib/driver/drive-graph-compiler.ts` plus the scheduler loop in its runner). Route
+  both runners through it; each keeps only its compiler and its result
+  reconstruction. Drive's
   drain-loop, finalizer-failure polling, and `withSafeSchedulerEventWrites` layer
   **above** the shared core (R1).
 - **Behaviors seed:** `runStart` advances a compiled graph to terminal and
@@ -1050,8 +1067,9 @@ this contract makes the CLI consistent with them and with `runId`-as-universal
   `cosmonauts drive ...` onto `run` (thin temporary aliases allowed during the
   transition; not a permanent compat commitment — back-compat is not a constraint).
   Fold in the **`workflow`→`chain` rename** (`D-015`): `lib/workflows/` →
-  chain-registry, `WorkflowDefinition.chain`, `domains/*/workflows.ts`,
-  `--list-workflows` → `chain list`, `RunRecord.kind: "workflow"` → `"chain"`.
+  named-chain registry, `WorkflowDefinition` → `NamedChain`, `domains/*/workflows.ts`
+  → `chains.ts`, `--list-workflows` → `chain list` (and the target `RunRecord.kind`
+  `"workflow"`→`"chain"` fold — a target field, not a shipped one; see `D-015`).
 - **Behaviors seed:** `cosmonauts run chain "<expr>"` and `cosmonauts run chain
   <name>` both run and emit a `runId`-keyed JSON summary; `cosmonauts run drive
   --plan <slug>` matches today's `drive run` output; `run status|watch <runId>`
@@ -1101,10 +1119,10 @@ this contract makes the CLI consistent with them and with `runId`-as-universal
   execution**, or approval gates — the (b) half of `D-016` is wave 3, gated behind
   worktree isolation. Read-only fan-out cap tuning (the (a) half) is **also out of
   this plan** — it ships as a standalone item, not inside the consolidation.
-- Back-compat is **no longer** a non-goal: callers are migrated in lockstep rather
-  than preserved (`D-013`); the agent tools (`chain_run`, `run_driver`,
-  `spawn_agent`, `watch_events`) may be renamed toward the canonical surface as
-  long as every internal caller is updated together.
+- **Preserving old names is no longer required** (back-compat is not a constraint,
+  `D-013`): callers are migrated in lockstep rather than preserved; the agent tools
+  (`chain_run`, `run_driver`, `spawn_agent`, `watch_events`) may be renamed toward
+  the canonical surface as long as every internal caller is updated together.
 
 ### Acceptance bar
 
