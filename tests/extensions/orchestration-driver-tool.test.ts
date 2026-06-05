@@ -251,6 +251,7 @@ describe("driver e2e run_driver integration", () => {
 	// @cosmo-behavior plan:drive-resilience-state-model#B-013
 	test("run_driver propagates state commit policy defaults and overrides", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
+		await initGit(fixture.projectRoot);
 		backendMocks.run.mockResolvedValue(successResult());
 
 		const defaulted = await runDriver(fixture, {

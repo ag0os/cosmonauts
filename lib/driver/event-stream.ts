@@ -53,10 +53,15 @@ export interface CreateEventSinkOptions {
 	durable?: DurableDriverEventSinkOptions;
 }
 
-interface DurableDriverEventSinkOptions {
+export type DurableDriverEventSinkMode =
+	| "legacy-loop-projector"
+	| "graph-activity-only";
+
+export interface DurableDriverEventSinkOptions {
 	rootDir: string;
 	scope: string;
 	runId: string;
+	mode?: DurableDriverEventSinkMode;
 	projectRoot?: string;
 	workdir?: string;
 	configuredBackendName?: BackendName;
@@ -150,6 +155,15 @@ export function driveDurableEventSinkOptions(
 	};
 }
 
+export function driveGraphActivityEventSinkOptions(
+	spec: DriverRunSpec,
+): DurableDriverEventSinkOptions {
+	return {
+		...driveDurableEventSinkOptions(spec),
+		mode: "graph-activity-only",
+	};
+}
+
 function createDurableDriverEventSink(
 	options: DurableDriverEventSinkOptions,
 ): EventSink {
@@ -180,6 +194,16 @@ async function processDurableDriverEvent(
 	}
 
 	if (!(await ensureDurableSinkReady(state, event))) {
+		return;
+	}
+
+	if (state.options.mode === "graph-activity-only") {
+		await appendDurableDiagnostics(state, event, normalized.diagnostics);
+		await appendDurableEvents(
+			state,
+			event,
+			normalized.events.filter(isGraphActivityEvent),
+		);
 		return;
 	}
 
@@ -244,6 +268,9 @@ function createStepProjectorIfConfigured(
 	state: DurableDriverEventSinkState,
 ): DriveStepProjector | undefined {
 	const { options } = state;
+	if (options.mode === "graph-activity-only") {
+		return undefined;
+	}
 	if (
 		!options.projectRoot ||
 		!options.workdir ||
@@ -261,6 +288,14 @@ function createStepProjectorIfConfigured(
 		configuredBackendName: options.configuredBackendName,
 		taskIds: options.taskIds,
 	});
+}
+
+function isGraphActivityEvent(event: OrchestrationEvent): boolean {
+	return (
+		event.type === "step_tool_activity" ||
+		event.type === "step_output" ||
+		event.type === "artifact_written"
+	);
 }
 
 async function projectTaskDoneBeforeNormalization(

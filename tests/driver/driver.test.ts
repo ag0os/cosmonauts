@@ -1,9 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { BackendRunResult } from "../../lib/driver/backends/types.ts";
+import type { RunDriveOnGraphCtx } from "../../lib/driver/drive-graph-runner.ts";
 import { type DriverDeps, runInline } from "../../lib/driver/driver.ts";
 import type { CreateEventSinkOptions } from "../../lib/driver/event-stream.ts";
-import type { RunRunLoopCtx } from "../../lib/driver/run-run-loop.ts";
 import type {
 	DriverResult,
 	DriverRunSpec,
@@ -24,12 +24,12 @@ type AcquirePlanLockFn = (
 ) => Promise<LockHandle | ActivePlanLock>;
 
 type CreateEventSinkFn = (options: CreateEventSinkOptions) => EventSink;
-type DriveDurableEventSinkOptionsFn = (
+type DriveGraphActivityEventSinkOptionsFn = (
 	spec: DriverRunSpec,
 ) => NonNullable<CreateEventSinkOptions["durable"]>;
-type RunRunLoopFn = (
+type RunDriveOnGraphFn = (
 	spec: DriverRunSpec,
-	ctx: RunRunLoopCtx,
+	ctx: RunDriveOnGraphCtx,
 ) => Promise<DriverResult>;
 type BridgeJsonlToActivityBusFn = () => { stop(): void };
 
@@ -37,9 +37,10 @@ const mocks = vi.hoisted(() => ({
 	acquirePlanLock: vi.fn<AcquirePlanLockFn>(),
 	bridgeJsonlToActivityBus: vi.fn<BridgeJsonlToActivityBusFn>(),
 	createEventSink: vi.fn<CreateEventSinkFn>(),
-	driveDurableEventSinkOptions: vi.fn<DriveDurableEventSinkOptionsFn>(),
+	driveGraphActivityEventSinkOptions:
+		vi.fn<DriveGraphActivityEventSinkOptionsFn>(),
 	eventSink: vi.fn<EventSink>(),
-	runRunLoop: vi.fn<RunRunLoopFn>(),
+	runDriveOnGraph: vi.fn<RunDriveOnGraphFn>(),
 }));
 
 vi.mock("../../lib/driver/lock.ts", () => ({
@@ -49,11 +50,11 @@ vi.mock("../../lib/driver/lock.ts", () => ({
 vi.mock("../../lib/driver/event-stream.ts", () => ({
 	bridgeJsonlToActivityBus: mocks.bridgeJsonlToActivityBus,
 	createEventSink: mocks.createEventSink,
-	driveDurableEventSinkOptions: mocks.driveDurableEventSinkOptions,
+	driveGraphActivityEventSinkOptions: mocks.driveGraphActivityEventSinkOptions,
 }));
 
-vi.mock("../../lib/driver/run-run-loop.ts", () => ({
-	runRunLoop: mocks.runRunLoop,
+vi.mock("../../lib/driver/drive-graph-runner.ts", () => ({
+	runDriveOnGraph: mocks.runDriveOnGraph,
 }));
 
 describe("driver", () => {
@@ -61,19 +62,19 @@ describe("driver", () => {
 		mocks.acquirePlanLock.mockReset();
 		mocks.bridgeJsonlToActivityBus.mockReset();
 		mocks.createEventSink.mockReset();
-		mocks.driveDurableEventSinkOptions.mockReset();
+		mocks.driveGraphActivityEventSinkOptions.mockReset();
 		mocks.eventSink.mockReset();
-		mocks.runRunLoop.mockReset();
+		mocks.runDriveOnGraph.mockReset();
 		mocks.bridgeJsonlToActivityBus.mockReturnValue({ stop: vi.fn() });
 		mocks.createEventSink.mockReturnValue(mocks.eventSink);
-		mocks.driveDurableEventSinkOptions.mockReturnValue({
+		mocks.driveGraphActivityEventSinkOptions.mockReturnValue({
 			rootDir: "/project/missions/sessions",
 			scope: "driver-primitives",
 			runId: "run-257",
 		});
 	});
 
-	test("runInline acquires the plan lock, starts the loop, and releases on success", async () => {
+	test("runInline acquires the plan lock, starts the graph runner, and releases on success", async () => {
 		const spec = createSpec();
 		const deps = createDeps();
 		const loop = deferred<DriverResult>();
@@ -90,7 +91,7 @@ describe("driver", () => {
 			order.push("lock");
 			return lock;
 		});
-		mocks.runRunLoop.mockImplementation(() => {
+		mocks.runDriveOnGraph.mockImplementation(() => {
 			order.push("loop");
 			return loop.promise;
 		});
@@ -103,7 +104,7 @@ describe("driver", () => {
 		expect(handle.eventLogPath).toBe(spec.eventLogPath);
 		expect(handle.abort).toEqual(expect.any(Function));
 		expect(handle.result).toEqual(expect.any(Promise));
-		expect(mocks.runRunLoop).not.toHaveBeenCalled();
+		expect(mocks.runDriveOnGraph).not.toHaveBeenCalled();
 
 		await flushMicrotasks();
 
@@ -125,7 +126,7 @@ describe("driver", () => {
 			},
 		});
 		const ctx = requireRunCtx();
-		expect(mocks.runRunLoop).toHaveBeenCalledWith(spec, ctx);
+		expect(mocks.runDriveOnGraph).toHaveBeenCalledWith(spec, ctx);
 		expect(ctx).toMatchObject({
 			taskManager: deps.taskManager,
 			backend: deps.backend,
@@ -150,7 +151,7 @@ describe("driver", () => {
 		const error = new Error("loop failed");
 		const lock = createLock();
 		mocks.acquirePlanLock.mockResolvedValue(lock);
-		mocks.runRunLoop.mockRejectedValue(error);
+		mocks.runDriveOnGraph.mockRejectedValue(error);
 
 		const handle = runInline(createSpec(), createDeps());
 
@@ -179,14 +180,14 @@ describe("driver", () => {
 		firstLock.release.mockImplementation(async () => {
 			held = false;
 		});
-		mocks.runRunLoop.mockReturnValue(firstLoop.promise);
+		mocks.runDriveOnGraph.mockReturnValue(firstLoop.promise);
 
 		const first = runInline(createSpec({ runId: "run-1" }), deps);
 		await flushMicrotasks();
 		const second = runInline(createSpec({ runId: "run-2" }), deps);
 
 		await expect(second.result).rejects.toEqual(active);
-		expect(mocks.runRunLoop).toHaveBeenCalledTimes(1);
+		expect(mocks.runDriveOnGraph).toHaveBeenCalledTimes(1);
 
 		const result: DriverResult = {
 			runId: "run-1",
@@ -243,10 +244,10 @@ function createLock(): LockHandle & { release: ReturnType<typeof vi.fn> } {
 	return { release: vi.fn<() => Promise<void>>().mockResolvedValue(undefined) };
 }
 
-function requireRunCtx(): RunRunLoopCtx {
-	const ctx = mocks.runRunLoop.mock.calls[0]?.[1];
+function requireRunCtx(): RunDriveOnGraphCtx {
+	const ctx = mocks.runDriveOnGraph.mock.calls[0]?.[1];
 	if (!ctx) {
-		throw new Error("runRunLoop was not called");
+		throw new Error("runDriveOnGraph was not called");
 	}
 	return ctx;
 }

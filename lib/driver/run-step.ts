@@ -4,12 +4,12 @@ import { parseArgs } from "node:util";
 import { MessageBus } from "../orchestration/message-bus.ts";
 import { TaskManager } from "../tasks/task-manager.ts";
 import { resolveConfiguredBackend } from "./backend-resolution.ts";
+import { runDriveOnGraph } from "./drive-graph-runner.ts";
 import {
 	createEventSink,
-	driveDurableEventSinkOptions,
+	driveGraphActivityEventSinkOptions,
 } from "./event-stream.ts";
 import { acquirePlanLock } from "./lock.ts";
-import { runRunLoop } from "./run-run-loop.ts";
 import { writeRunCompletion } from "./run-state.ts";
 import type { DriverResult, DriverRunSpec, LockHandle } from "./types.ts";
 
@@ -68,11 +68,11 @@ async function runWithLock(
 			runId: spec.runId,
 			parentSessionId: spec.parentSessionId,
 			activityBus: localBus,
-			durable: driveDurableEventSinkOptions(spec),
+			durable: driveGraphActivityEventSinkOptions(spec),
 		});
 		const controller = new AbortController();
 
-		const result = await runRunLoop(spec, {
+		const result = await runDriveOnGraph(spec, {
 			taskManager,
 			backend,
 			eventSink,

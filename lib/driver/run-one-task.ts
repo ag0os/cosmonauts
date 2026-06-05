@@ -3,13 +3,12 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import type { TaskManager } from "../tasks/task-manager.ts";
 import type { Backend, BackendRunResult } from "./backends/types.ts";
-import { acquireRepoCommitLock } from "./lock.ts";
+import {
+	finalizeDriveSourceCommit,
+	transitionDriveTaskStatus,
+} from "./drive-finalization.ts";
 import { renderPromptForTask } from "./prompt-template.ts";
 import { parseReport } from "./report-parser.ts";
-import {
-	pendingFinalizationPath,
-	writePendingFinalization,
-} from "./run-state.ts";
 import {
 	type ContradictedBlockAnnotation,
 	type DriverEvent,
@@ -33,7 +32,7 @@ export interface RunOneTaskCtx {
 	cosmonautsRoot: string;
 }
 
-interface PostVerifyResult {
+export interface PostVerifyResult {
 	command: string;
 	status: "pass" | "fail";
 	stderr?: string;
@@ -323,11 +322,11 @@ function spawnFailureCandidate(
 	};
 }
 
-function retryOnContradictedBlockEnabled(spec: DriverRunSpec): boolean {
+export function retryOnContradictedBlockEnabled(spec: DriverRunSpec): boolean {
 	return spec.retryOnContradictedBlock ?? true;
 }
 
-interface ContradictedPath {
+export interface ContradictedPath {
 	token: string;
 	absolutePath: string;
 	isDirectory: boolean;
@@ -335,7 +334,7 @@ interface ContradictedPath {
 	annotation: ContradictedBlockAnnotation;
 }
 
-function findContradictedPath(
+export function findContradictedPath(
 	reason: string,
 	projectRoot: string,
 ): ContradictedPath | undefined {
@@ -436,7 +435,7 @@ function countLines(absolutePath: string): number | undefined {
 	}
 }
 
-function buildContradictionNote(contradicted: ContradictedPath): string {
+export function buildContradictionNote(contradicted: ContradictedPath): string {
 	const kind = contradicted.isDirectory
 		? "a directory"
 		: contradicted.lineCount === undefined
@@ -466,7 +465,7 @@ export function deriveOutcome(
 	return report.outcome;
 }
 
-async function canInferUnknownSuccess(
+export async function canInferUnknownSuccess(
 	spec: DriverRunSpec,
 	ctx: RunOneTaskCtx,
 	report: ParsedReport,
@@ -689,160 +688,26 @@ async function maybeCommit(
 	outcome: ReportOutcome,
 	report: ParsedReport,
 ): Promise<string | undefined> {
-	if (spec.commitPolicy !== "driver-commits" || outcome === "failure") {
-		return undefined;
-	}
-
-	const subject = await commitSubject(taskId, report, ctx.taskManager);
-	const headBeforeFinalization = await gitRevParseHead(
-		spec.projectRoot,
-		ctx.abortSignal,
-	);
-	await emit(ctx, spec, {
-		type: "finalize",
+	const result = await finalizeDriveSourceCommit({
+		spec,
+		ctx,
 		taskId,
-		phase: "commit",
-		status: "started",
-		details: { subject },
+		outcome,
+		report,
 	});
-	const lock = await acquireRepoCommitLock(spec.projectRoot);
-	let committed = false;
-	let commitError: unknown;
-	try {
-		if (await hasCommittableChanges(spec.projectRoot, ctx.abortSignal)) {
-			await gitAddCommittableFiles(spec.projectRoot, ctx.abortSignal);
-			if (await hasStagedChanges(spec.projectRoot, ctx.abortSignal)) {
-				await gitCommit(spec.projectRoot, subject, ctx.abortSignal);
-				committed = true;
-			}
-		}
-	} catch (error) {
-		commitError = error;
-	} finally {
-		await lock.release();
+	if (result.status === "committed") {
+		return result.sha;
 	}
-
-	if (commitError) {
-		const reason = `commit failed: ${formatError(commitError)}`;
-		if (outcome === "success") {
-			throw new CommitFailedError(
-				await recordCommitFinalizationFailure({
-					spec,
-					ctx,
-					taskId,
-					reason,
-					subject,
-					headBeforeFinalization,
-				}),
-			);
-		}
-		await blockTask(ctx, spec, taskId, reason);
-		throw new CommitFailedError({ status: "blocked", reason });
+	if (result.status === "finalization_failed") {
+		throw new CommitFailedError(result.outcome);
 	}
-
-	if (!committed) {
-		await emit(ctx, spec, {
-			type: "finalize",
-			taskId,
-			phase: "commit",
-			status: "skipped",
-			details: { reason: "no_changes" },
+	if (result.status === "blocked") {
+		throw new CommitFailedError({
+			status: "blocked",
+			reason: result.reason,
 		});
-		return undefined;
 	}
-
-	const commitSha = await gitRevParseHead(spec.projectRoot, ctx.abortSignal);
-	await emit(ctx, spec, {
-		type: "commit_made",
-		taskId,
-		sha: commitSha,
-		subject,
-	});
-	await emit(ctx, spec, {
-		type: "finalize",
-		taskId,
-		phase: "commit",
-		status: "passed",
-		details: { sha: commitSha, subject },
-	});
-	return commitSha;
-}
-
-async function recordCommitFinalizationFailure({
-	spec,
-	ctx,
-	taskId,
-	reason,
-	subject,
-	headBeforeFinalization,
-}: {
-	spec: DriverRunSpec;
-	ctx: RunOneTaskCtx;
-	taskId: string;
-	reason: string;
-	subject: string;
-	headBeforeFinalization: string;
-}): Promise<TaskOutcome> {
-	await writePendingFinalization(spec.workdir, {
-		runId: spec.runId,
-		planSlug: spec.planSlug,
-		createdAt: new Date().toISOString(),
-		commitPolicy: spec.commitPolicy,
-		stateCommitPolicy: resolveStateCommitPolicy(spec),
-		reason,
-		phase: "commit",
-		taskId,
-		headBeforeFinalization,
-		commitSubject: subject,
-		verifiedAt: new Date().toISOString(),
-	});
-	await ctx.taskManager.updateTask(taskId, {
-		status: "In Progress",
-		implementationNotes: `backend and postflight succeeded, but commit finalization failed: ${reason}`,
-	});
-	await emit(ctx, spec, {
-		type: "finalize",
-		taskId,
-		phase: "commit",
-		status: "failed",
-		details: { error: reason },
-	});
-	await emit(ctx, spec, {
-		type: "task_finalization_failed",
-		taskId,
-		phase: "commit",
-		reason,
-		retryable: true,
-	});
-	return {
-		status: "finalization_failed",
-		finalizationPhase: "commit",
-		finalizationReason: reason,
-		finalizationTaskId: taskId,
-		pendingFinalizationPath: pendingFinalizationPath(spec.workdir),
-	};
-}
-
-async function commitSubject(
-	taskId: string,
-	report: ParsedReport,
-	taskManager: TaskManager,
-): Promise<string> {
-	const summary = reportSummary(report);
-	if (summary && !isGenericCommitSummary(summary, taskId)) {
-		return `${taskId}: ${summary}`;
-	}
-
-	const task = await taskManager.getTask(taskId);
-	return `${taskId}: ${task?.title?.trim() || "driver task update"}`;
-}
-
-function isGenericCommitSummary(summary: string, taskId: string): boolean {
-	const normalized = summary.trim().toLowerCase();
-	return (
-		normalized === "driver task update" ||
-		normalized === `${taskId.toLowerCase()}: driver task update`
-	);
+	return undefined;
 }
 
 function reportSummary(report: ParsedReport): string | undefined {
@@ -886,67 +751,6 @@ async function hasCommittableChanges(
 	return result.stdout.trim().length > 0;
 }
 
-async function gitAddCommittableFiles(
-	cwd: string,
-	signal: AbortSignal,
-): Promise<void> {
-	const result = await runCommand(
-		"git",
-		["add", "--all", "--", ".", ...EXCLUDED_COMMIT_PATHS],
-		cwd,
-		signal,
-	);
-	if (result.exitCode !== 0) {
-		throw new Error(result.stderr || "git add failed");
-	}
-}
-
-async function hasStagedChanges(
-	cwd: string,
-	signal: AbortSignal,
-): Promise<boolean> {
-	const result = await runCommand(
-		"git",
-		["diff", "--cached", "--quiet", "--", ".", ...EXCLUDED_COMMIT_PATHS],
-		cwd,
-		signal,
-	);
-	if (result.exitCode === 0) {
-		return false;
-	}
-	if (result.exitCode === 1) {
-		return true;
-	}
-	throw new Error(result.stderr || "git diff --cached failed");
-}
-
-async function gitCommit(
-	cwd: string,
-	subject: string,
-	signal: AbortSignal,
-): Promise<void> {
-	const result = await runCommand(
-		"git",
-		["commit", "-m", subject],
-		cwd,
-		signal,
-	);
-	if (result.exitCode !== 0) {
-		throw new Error(result.stderr || "git commit failed");
-	}
-}
-
-async function gitRevParseHead(
-	cwd: string,
-	signal: AbortSignal,
-): Promise<string> {
-	const result = await runCommand("git", ["rev-parse", "HEAD"], cwd, signal);
-	if (result.exitCode !== 0) {
-		throw new Error(result.stderr || "git rev-parse HEAD failed");
-	}
-	return result.stdout.trim();
-}
-
 interface TransitionOptions {
 	spec: DriverRunSpec;
 	ctx: RunOneTaskCtx;
@@ -971,123 +775,17 @@ async function transitionTaskStatus({
 	contradicted,
 	skipTaskUpdate,
 }: TransitionOptions): Promise<TaskOutcome> {
-	try {
-		if (outcome === "success") {
-			if (spec.commitPolicy === "driver-commits") {
-				await emit(ctx, spec, {
-					type: "finalize",
-					taskId,
-					phase: "task_status",
-					status: "started",
-					...(commitSha ? { details: { sha: commitSha } } : {}),
-				});
-			}
-			await ctx.taskManager.updateTask(taskId, { status: "Done" });
-			if (spec.commitPolicy === "driver-commits") {
-				await emit(ctx, spec, {
-					type: "finalize",
-					taskId,
-					phase: "task_status",
-					status: "passed",
-					...(commitSha ? { details: { sha: commitSha } } : {}),
-				});
-			}
-			await emit(ctx, spec, { type: "task_done", taskId });
-			return { status: "done", commitSha };
-		}
-
-		if (outcome === "partial") {
-			const reason = partialReason(parsedReport);
-			if (!skipTaskUpdate) {
-				await ctx.taskManager.updateTask(taskId, {
-					status: "In Progress",
-					implementationNotes: reason,
-				});
-			}
-			await emit(ctx, spec, {
-				type: "task_blocked",
-				taskId,
-				reason,
-				progress: reportProgress(parsedReport),
-				...(contradicted ? { contradicted } : {}),
-			});
-			return { status: "partial", reason, commitSha };
-		}
-
-		if (!skipTaskUpdate) {
-			await ctx.taskManager.updateTask(taskId, {
-				status: "Blocked",
-				implementationNotes: failureReason,
-			});
-		}
-		await emit(ctx, spec, {
-			type: "task_blocked",
-			taskId,
-			reason: failureReason,
-			...(contradicted ? { contradicted } : {}),
-		});
-		return { status: "blocked", reason: failureReason, commitSha };
-	} catch (error) {
-		if (commitSha) {
-			return recordTaskStatusFinalizationFailure({
-				spec,
-				ctx,
-				taskId,
-				commitSha,
-				reason: `status update failed after commit: ${formatError(error)}`,
-			});
-		}
-		throw error;
-	}
-}
-
-async function recordTaskStatusFinalizationFailure({
-	spec,
-	ctx,
-	taskId,
-	commitSha,
-	reason,
-}: {
-	spec: DriverRunSpec;
-	ctx: RunOneTaskCtx;
-	taskId: string;
-	commitSha: string;
-	reason: string;
-}): Promise<TaskOutcome> {
-	await writePendingFinalization(spec.workdir, {
-		runId: spec.runId,
-		planSlug: spec.planSlug,
-		createdAt: new Date().toISOString(),
-		commitPolicy: spec.commitPolicy,
-		stateCommitPolicy: resolveStateCommitPolicy(spec),
-		reason,
-		phase: "task_status",
+	return transitionDriveTaskStatus({
+		spec,
+		ctx,
 		taskId,
+		outcome,
+		parsedReport,
+		failureReason,
 		commitSha,
+		contradicted,
+		skipTaskUpdate,
 	});
-	await emit(ctx, spec, {
-		type: "finalize",
-		taskId,
-		phase: "task_status",
-		status: "failed",
-		details: { sha: commitSha, error: reason },
-	});
-	await emit(ctx, spec, {
-		type: "task_finalization_failed",
-		taskId,
-		phase: "task_status",
-		reason,
-		commitSha,
-		retryable: true,
-	});
-	return {
-		status: "finalization_failed",
-		finalizationPhase: "task_status",
-		finalizationReason: reason,
-		finalizationTaskId: taskId,
-		finalizationCommitSha: commitSha,
-		pendingFinalizationPath: pendingFinalizationPath(spec.workdir),
-	};
 }
 
 async function blockTask(
@@ -1104,7 +802,7 @@ async function blockTask(
 	return { status: "blocked", reason };
 }
 
-function deriveFailureReason(
+export function deriveFailureReason(
 	report: ParsedReport,
 	postVerifyResults: readonly PostVerifyResult[],
 ): string {
@@ -1126,7 +824,7 @@ function deriveFailureReason(
 		: "task failed";
 }
 
-function partialReason(report: ParsedReport): string {
+export function partialReason(report: ParsedReport): string {
 	if (report.outcome === "partial") {
 		const progress = progressText(report);
 		const notes = report.notes ? `: ${report.notes}` : "";
@@ -1144,10 +842,6 @@ function progressText(report: Report): string {
 		? `; remaining: ${report.progress.remaining}`
 		: "";
 	return `: phase ${report.progress.phase}/${report.progress.of}${remaining}`;
-}
-
-function reportProgress(report: ParsedReport): Report["progress"] | undefined {
-	return report.outcome === "partial" ? report.progress : undefined;
 }
 
 async function runShellCommand(

@@ -74,7 +74,8 @@ interface DriveRunOptions {
 
 interface ResumeDefaults {
 	spec: DriverRunSpec;
-	taskIds: string[];
+	originalTaskIds: string[];
+	remainingTaskIds: string[];
 	pendingFinalization?: Awaited<ReturnType<typeof readPendingFinalization>>;
 }
 
@@ -239,13 +240,13 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 		return;
 	}
 
-	const taskIds = applyTaskLimit(
-		await resolveTaskIds(taskManager, planSlug, options, resume),
-		options.maxTasks,
-	);
+	const taskIds = await resolveTaskIds(taskManager, planSlug, options, resume);
 	const mode =
 		options.mode ??
-		(taskIds.length >= DETACHED_DEFAULT_TASK_THRESHOLD ? "detached" : "inline");
+		(resumeModeTaskIds(resume, taskIds).length >=
+		DETACHED_DEFAULT_TASK_THRESHOLD
+			? "detached"
+			: "inline");
 	const backendName = options.backend ?? resume?.spec.backendName ?? "codex";
 
 	if (refuseUnsupportedDetachedBackend(mode, backendName)) {
@@ -280,17 +281,35 @@ async function prepareResume(
 	resume: ResumeDefaults | undefined,
 	taskManager: TaskManager,
 ): Promise<boolean> {
-	if (!resume?.pendingFinalization) {
+	if (!resume) {
 		return true;
 	}
 
-	const finalized = await retryPendingFinalization(resume, taskManager);
-	if (!finalized) {
-		process.exitCode = 1;
-		return false;
+	let retriedPendingFinalization = false;
+	const pendingFinalization = resume.pendingFinalization;
+	if (resume.pendingFinalization) {
+		const finalized = await retryPendingFinalization(resume, taskManager);
+		if (!finalized) {
+			process.exitCode = 1;
+			return false;
+		}
+		retriedPendingFinalization = true;
 	}
-	await clearRunCompletion(resume.spec.workdir);
-	return resume.taskIds.length > 0;
+
+	const shouldContinue =
+		resume.remainingTaskIds.length > 0 || (await hasGraphResumeState(resume));
+	if (shouldContinue) {
+		await clearRunCompletion(resume.spec.workdir);
+	}
+	if (!shouldContinue && retriedPendingFinalization && pendingFinalization) {
+		const completion = await legacyPendingFinalizationCompletion(
+			resume,
+			pendingFinalization,
+		);
+		await writeRunCompletion(resume.spec.workdir, completion);
+		printJsonStdout(completion);
+	}
+	return shouldContinue;
 }
 
 async function refuseDirtyResume({
@@ -365,7 +384,9 @@ async function runInlineMode(
 			await writeRunCompletion(spec.workdir, abortedCompletion(spec, error));
 			throw error;
 		});
-		await writeRunCompletion(spec.workdir, result);
+		if (!existsSync(join(spec.workdir, RUN_COMPLETION_FILENAME))) {
+			await writeRunCompletion(spec.workdir, result);
+		}
 		printJsonStdout(result);
 		process.exitCode = result.outcome === "completed" ? 0 : 1;
 	} finally {
@@ -737,13 +758,23 @@ async function resolveTaskIds(
 	resume: ResumeDefaults | undefined,
 ): Promise<string[]> {
 	if (resume) {
-		return resume.taskIds;
+		return resume.originalTaskIds;
 	}
 	if (options.taskIds) {
-		return splitTaskIds(options.taskIds);
+		return applyTaskLimit(splitTaskIds(options.taskIds), options.maxTasks);
 	}
 
-	return listPendingPlanTaskIds(taskManager, planSlug);
+	return applyTaskLimit(
+		await listPendingPlanTaskIds(taskManager, planSlug),
+		options.maxTasks,
+	);
+}
+
+function resumeModeTaskIds(
+	resume: ResumeDefaults | undefined,
+	taskIds: readonly string[],
+): readonly string[] {
+	return resume?.remainingTaskIds ?? taskIds;
 }
 
 function splitTaskIds(raw: string): string[] {
@@ -818,6 +849,7 @@ async function createRunSpec({
 		workdir,
 		eventLogPath,
 		taskTimeoutMs: options.taskTimeout ?? resume?.spec.taskTimeoutMs,
+		remainingTaskIds: resume?.remainingTaskIds,
 	};
 }
 
@@ -865,7 +897,7 @@ async function prepareInlineWorkdir(spec: DriverRunSpec): Promise<void> {
 	);
 	await writeFile(
 		join(spec.workdir, "task-queue.txt"),
-		`${spec.taskIds.join("\n")}\n`,
+		`${(spec.remainingTaskIds ?? spec.taskIds).join("\n")}\n`,
 		"utf-8",
 	);
 	await clearRunCompletion(spec.workdir);
@@ -901,12 +933,81 @@ async function loadResumeDefaults(
 	const spec = JSON.parse(
 		await readFile(join(workdir, "spec.json"), "utf-8"),
 	) as DriverRunSpec;
-	const events = await readDriverEvents(join(workdir, "events.jsonl"));
-	const completedIndex = findHighestCompletedTaskIndex(spec.taskIds, events);
-	return {
+	const originalTaskIds = await loadOriginalDriveTaskIds({
+		planSlug,
+		runId,
 		spec,
-		taskIds: spec.taskIds.slice(completedIndex + 1),
+	});
+	const events = await readDriverEvents(join(workdir, "events.jsonl"));
+	const completedIndex = findHighestCompletedTaskIndex(originalTaskIds, events);
+	const remainingTaskIds = originalTaskIds.slice(completedIndex + 1);
+	return {
+		spec: { ...spec, taskIds: originalTaskIds, remainingTaskIds },
+		originalTaskIds,
+		remainingTaskIds,
 		pendingFinalization: await readPendingFinalization(workdir),
+	};
+}
+
+async function loadOriginalDriveTaskIds({
+	planSlug,
+	runId,
+	spec,
+}: {
+	planSlug: string;
+	runId: string;
+	spec: DriverRunSpec;
+}): Promise<string[]> {
+	const store = new FileRunStore({
+		rootDir: join(spec.projectRoot, "missions", "sessions"),
+	});
+	const run = await store.loadRun({ scope: planSlug, runId });
+	const metadataTaskIds = run?.metadata?.driveTaskIds;
+	if (
+		Array.isArray(metadataTaskIds) &&
+		metadataTaskIds.every((item) => typeof item === "string")
+	) {
+		return [...metadataTaskIds];
+	}
+	return [...spec.taskIds];
+}
+
+async function hasGraphResumeState(resume: ResumeDefaults): Promise<boolean> {
+	const store = new FileRunStore({
+		rootDir: join(resume.spec.projectRoot, "missions", "sessions"),
+	});
+	const ref = { scope: resume.spec.planSlug, runId: resume.spec.runId };
+	const run = await store.loadRun(ref);
+	if (!run) {
+		return false;
+	}
+
+	const { graph } = await store.readRunGraph(ref);
+	if (graph.steps.length === 0) {
+		return false;
+	}
+
+	return true;
+}
+
+async function legacyPendingFinalizationCompletion(
+	resume: ResumeDefaults,
+	pending: NonNullable<ResumeDefaults["pendingFinalization"]>,
+): Promise<DriverResult> {
+	if (pending.phase === "state_commit") {
+		return {
+			runId: resume.spec.runId,
+			outcome: "completed",
+			tasksDone: pending.taskIds.length,
+			tasksBlocked: 0,
+			stateCommitSha: await gitHead(resume.spec.projectRoot),
+		};
+	}
+	return {
+		runId: resume.spec.runId,
+		outcome: "completed",
+		tasksDone: resume.spec.taskIds.length,
+		tasksBlocked: 0,
 	};
 }
 
@@ -966,17 +1067,11 @@ async function retryPendingFinalization(
 	}
 
 	await clearPendingFinalization(spec.workdir);
-	resume.taskIds = taskIdsAfterFinalizedTask(spec.taskIds, pending.taskId);
-	if (resume.taskIds.length === 0) {
-		const completion: DriverResult = {
-			runId: spec.runId,
-			outcome: "completed",
-			tasksDone: spec.taskIds.length,
-			tasksBlocked: 0,
-		};
-		await writeRunCompletion(spec.workdir, completion);
-		printJsonStdout(completion);
-	}
+	resume.remainingTaskIds = taskIdsAfterFinalizedTask(
+		resume.remainingTaskIds,
+		pending.taskId,
+	);
+	resume.spec = { ...resume.spec, remainingTaskIds: resume.remainingTaskIds };
 	return true;
 }
 
@@ -1004,10 +1099,7 @@ async function retryPendingStateCommit(
 		return false;
 	}
 
-	let stateCommitSha: string | undefined;
-	if (result.status === "committed") {
-		stateCommitSha = result.sha;
-	} else if (result.reason === "no_changes") {
+	if (result.status === "skipped" && result.reason === "no_changes") {
 		const acceptance = await acceptExternalStateCommit(
 			spec,
 			taskManager,
@@ -1022,21 +1114,9 @@ async function retryPendingStateCommit(
 			);
 			return false;
 		}
-		stateCommitSha = acceptance.sha;
 	}
 
 	await clearPendingFinalization(spec.workdir);
-	if (resume.taskIds.length === 0) {
-		const completion: DriverResult = {
-			runId: spec.runId,
-			outcome: "completed",
-			tasksDone: pending.taskIds.length,
-			tasksBlocked: 0,
-			...(stateCommitSha ? { stateCommitSha } : {}),
-		};
-		await writeRunCompletion(spec.workdir, completion);
-		printJsonStdout(completion);
-	}
 	return true;
 }
 

@@ -27,6 +27,12 @@ export interface DriverRunSpec {
 	projectRoot: string;
 	planSlug: string;
 	taskIds: string[];
+	/**
+	 * Compatibility queue view used by resume surfaces that historically exposed
+	 * only the not-yet-started task slice. Graph-backed Drive must keep
+	 * `taskIds` as the original selected task set.
+	 */
+	remainingTaskIds?: string[];
 	backendName: BackendName;
 	promptTemplate: PromptLayers;
 	preflightCommands: string[];

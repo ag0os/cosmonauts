@@ -62,10 +62,15 @@ describe("driver durable dual-write", () => {
 		expect(storedEvents.map((event) => event.event.type)).toEqual([
 			"run_started",
 			"step_ready",
-			"step_tool_activity",
-			"step_tool_activity",
 			"step_started",
+			"step_heartbeat",
 			"step_tool_activity",
+			"step_tool_activity",
+			"step_tool_activity",
+			"step_completed",
+			"step_ready",
+			"step_started",
+			"step_heartbeat",
 			"step_completed",
 			"run_completed",
 		]);
@@ -221,15 +226,12 @@ describe("driver durable dual-write", () => {
 		await mkdir(join(fixture.spec.workdir, "run.json"), { recursive: true });
 		const diagnostics = captureDurableDiagnostics();
 		try {
-			const result = await runDrive(fixture);
+			await expect(runDrive(fixture)).rejects.toThrow(/illegal operation/);
 			const legacyEvents = await readLegacyEvents(fixture.spec.eventLogPath);
 
-			expect(result.outcome).toBe("completed");
 			expect(legacyEvents).toEqual(
 				expect.arrayContaining([
-					expect.objectContaining({ type: "run_started" }),
-					expect.objectContaining({ type: "task_done" }),
-					expect.objectContaining({ type: "run_completed" }),
+					expect.objectContaining({ type: "run_aborted" }),
 				]),
 			);
 			expect(diagnostics.records()).toEqual([
@@ -237,7 +239,7 @@ describe("driver durable dual-write", () => {
 					type: "drive_durable_event_diagnostic",
 					code: "drive_durable_run_setup_failed",
 					details: expect.objectContaining({
-						legacyEventType: "run_started",
+						legacyEventType: "run_aborted",
 					}),
 				}),
 			]);

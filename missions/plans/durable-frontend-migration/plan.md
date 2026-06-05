@@ -164,7 +164,7 @@ Missing Plan-4 pieces:
 - Source: AC-001
 - Context: a `DriverRunSpec` contains selected `taskIds`, including an explicit `--task-ids` order when provided.
 - Action: the Drive graph compiler emits task graph steps.
-- Expected: the graph contains one `kind: drive` task step per originally selected task ID, uses the task ID as the step ID, preserves the exact selected order, and sets each task step after the first to depend on the previous selected task.
+- Expected: the graph contains one `kind: drive` task step per originally selected task ID, uses the task ID as the step ID, preserves the exact selected order, and — to keep the legacy per-task backend → source-commit → task-status → next ordering — sets each task step after the first to depend on the previous selected task's task-status finalizer (`finalizer-task-status-<prevTaskId>`) rather than on the previous task step directly. (A direct task→task dependency would let task N+1's backend start before task N's source-commit/task-status finalizers run, interleaving commits.)
 - Seam: `lib/driver/drive-graph-compiler.ts` > `compileDriveRunToGraph`
 - Test: `tests/driver/drive-graph-compiler.test.ts` > `compiles selected task ids into sequential drive task steps`
 - Marker: @cosmo-behavior plan:durable-frontend-migration#B-009
@@ -360,7 +360,13 @@ Rules:
 - Drive run scope is `spec.planSlug`; run ID is `spec.runId`.
 - The compiler must preserve the authoritative original selected task IDs exactly. There is no new topological sort in this plan.
 - Task step IDs are the task IDs themselves, matching `durable-steps.ts` and existing step records.
-- Task steps are sequential: `spec.taskIds[i]` depends on `spec.taskIds[i - 1]` when `i > 0`.
+- Task steps are sequential: `spec.taskIds[i]` depends on the previous task's
+  task-status finalizer (`finalizer-task-status-<taskIds[i-1]>`) when `i > 0`, so
+  the prior task's source-commit and task-status finalizers run before the next
+  task starts (preserving the legacy per-task backend → commit → status → next
+  ordering). A direct task→task dependency is insufficient because the scheduler
+  would start the next task as soon as the prior backend finished, before its
+  finalizers ran.
 - Finalizer step IDs reuse the existing projector convention:
   - `finalizer-source-commit-<taskId>`
   - `finalizer-task-status-<taskId>`

@@ -239,7 +239,7 @@ describe("Drive durable finalizer projection", () => {
 			reason: expect.stringContaining("commit failed"),
 			headBeforeFinalization: expect.any(String),
 		});
-		expect(taskStep.status).toBe("running");
+		expect(taskStep.status).toBe("completed");
 		expect(taskStep.result).toMatchObject({
 			outcome: "success",
 			summary: "implemented durable finalizer failure",
@@ -251,7 +251,7 @@ describe("Drive durable finalizer projection", () => {
 			kind: "finalizer",
 			backend: { name: "shell-command", options: { drivePhase: "commit" } },
 			dependsOn: [fixture.taskId],
-			status: "failed",
+			status: "ready",
 			result: {
 				outcome: "failed",
 				summary: expect.stringContaining("commit failed"),
@@ -286,21 +286,28 @@ describe("Drive durable finalizer projection", () => {
 		);
 		expect(storedEvents).toContainEqual(
 			expect.objectContaining({
-				event: {
-					type: "step_failed",
+				event: expect.objectContaining({
+					type: "step_tool_activity",
 					runId: fixture.runId,
 					stepId: fixture.taskId,
-					reason: expect.stringContaining("commit failed"),
-				},
+					details: expect.objectContaining({
+						kind: "task_finalization_failed",
+						reason: expect.stringContaining("commit failed"),
+					}),
+				}),
 			}),
 		);
 		expect(storedEvents).toContainEqual(
 			expect.objectContaining({
-				event: {
-					type: "run_failed",
+				event: expect.objectContaining({
+					type: "step_tool_activity",
 					runId: fixture.runId,
-					reason: expect.stringContaining("commit failed"),
-				},
+					stepId: fixture.taskId,
+					details: expect.objectContaining({
+						kind: "run_finalization_failed",
+						reason: expect.stringContaining("commit failed"),
+					}),
+				}),
 			}),
 		);
 	});

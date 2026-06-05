@@ -18,17 +18,17 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import type { TaskManager } from "../tasks/task-manager.ts";
 import type { Backend } from "./backends/types.ts";
+import { runDriveOnGraph } from "./drive-graph-runner.ts";
 import { generateBashRunner } from "./driver-script.ts";
 import {
 	bridgeJsonlToActivityBus,
 	createEventSink,
 	type DriverEventPublisher,
-	driveDurableEventSinkOptions,
+	driveGraphActivityEventSinkOptions,
 	type JsonlActivityBusBridge,
 } from "./event-stream.ts";
 import { acquirePlanLock, isProcessAlive } from "./lock.ts";
 import { renderPromptForTask } from "./prompt-template.ts";
-import { runRunLoop } from "./run-run-loop.ts";
 import {
 	DETACHED_RUN_PID_FILENAME,
 	RUN_COMPLETION_FILENAME,
@@ -97,10 +97,10 @@ export function runInline(spec: DriverRunSpec, deps: DriverDeps): DriverHandle {
 			runId: spec.runId,
 			parentSessionId: spec.parentSessionId,
 			activityBus: deps.activityBus,
-			durable: driveDurableEventSinkOptions(spec),
+			durable: driveGraphActivityEventSinkOptions(spec),
 		});
 
-		return runRunLoop(spec, {
+		return runDriveOnGraph(spec, {
 			taskManager: deps.taskManager,
 			backend: deps.backend,
 			eventSink,
@@ -234,7 +234,7 @@ async function startDetachedProcess({
 
 	await writeFile(
 		join(spec.workdir, "task-queue.txt"),
-		`${spec.taskIds.join("\n")}\n`,
+		`${(spec.remainingTaskIds ?? spec.taskIds).join("\n")}\n`,
 		"utf-8",
 	);
 	await writeFile(
