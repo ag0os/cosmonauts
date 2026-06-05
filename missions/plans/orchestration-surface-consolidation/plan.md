@@ -119,7 +119,7 @@ Non-goals that are blockers if introduced:
 - Action: the tool returns its structured result, or the caller uses a plan slug that collides with the reserved chain scope.
 - Expected: the response keeps `runId`, `planSlug`, `workdir`, and `eventLogPath`, and additionally includes `scope: planSlug` so callers can pass `{ scope, runId }` directly to `run_status`/`run_watch`. If `planSlug === "chain"`, `run_driver` rejects before lock acquisition or durable run creation with a clear reserved-scope diagnostic; Drive does not create records under the chain scope.
 - Seam: `domains/shared/extensions/orchestration/driver-tool.ts` > `registerDriverTool`; `lib/driver/types.ts` > plan slug validation
-- Test: `tests/extensions/orchestration-driver-tool-observation.test.ts` > `returns scope alongside runId and rejects the reserved chain plan slug`
+- Test: `tests/extensions/orchestration-driver-detached.test.ts` > `returns scope alongside runId and rejects the reserved chain plan slug`
 - Marker: `@cosmo-behavior plan:orchestration-surface-consolidation#B-006`
 
 ### B-007 - Returned chain and Drive runs are observable through `run_status` and `run_watch`
@@ -159,7 +159,7 @@ Non-goals that are blockers if introduced:
 - Action: `cosmonauts run chain "planner -> reviewer" "prompt"` runs the same durable-or-inline routing used by the agent tool.
 - Expected: stdout contains exactly one JSON value with `{ runId, scope: "chain", status, success, stageResults, ... }` for graph-backed chains; human progress goes to stderr; exit code is zero only on success. Inline loop chains remain legacy and report non-durable mode explicitly.
 - Seam: `cli/run/subcommand.ts` (new) > `run chain`; `cli/main.ts` > shared run/workflow bootstrap seam (Pi-flags + `--domain`/`--plugin-dir`/`--model`/`--thinking`/`--completion-label`/`--profile` + `CosmonautsRuntime.create`); `cli/chain-event-logger.ts`; `lib/orchestration/durable-chain-runner.ts`
-- Test: `tests/cli/run/chain.test.ts` > `runs an ad-hoc chain with JSON stdout progress stderr and returned run id`; `tests/cli/run/chain-bootstrap.test.ts` > `honors domain plugin-dir model thinking completion-label and profile like workflow mode`
+- Test: `tests/cli/run/subcommand.test.ts` > `parses runtime flags before run and passes them to run chain execution`
 - Marker: `@cosmo-behavior plan:orchestration-surface-consolidation#B-010`
 
 ### B-011 - Named chains replace named workflows at the CLI
@@ -169,7 +169,7 @@ Non-goals that are blockers if introduced:
 - Action: a user invokes `cosmonauts run chain verify "prompt"`, `cosmonauts run chain list`, or `cosmonauts run chain --name list "prompt"`.
 - Expected: `run chain <expression-or-name>` resolves an exact named-chain match **before** treating the token as raw DSL; therefore shipped single-token named chains like `verify` run their saved chain instead of being parsed as raw agent stages. Bare `run chain list` remains the JSON-native listing command. A named chain called `list` is allowed in the registry, appears in the listing, and is executable through the explicit named-chain form (`--name list`); `--name` performs name lookup only and does not fall back to raw DSL.
 - Seam: `cli/run/subcommand.ts` > `run chain`; `lib/chains/loader.ts` (new); `lib/chains/types.ts` (new)
-- Test: `tests/cli/run/named-chain.test.ts` > `resolves shipped single-token named chains before raw DSL and disambiguates list`
+- Test: `tests/cli/run/subcommand.test.ts` > `chain list is reserved while --name list executes a project chain`
 - Marker: `@cosmo-behavior plan:orchestration-surface-consolidation#B-011`
 
 ### B-012 - `cosmonauts run drive` preserves Drive semantics under the unified CLI
@@ -179,7 +179,7 @@ Non-goals that are blockers if introduced:
 - Action: `cosmonauts run drive --plan <slug> --backend codex --mode inline|detached ...` builds the same `DriverRunSpec` and starts the same `runInline`/`startDetached` paths.
 - Expected: stdout JSON is native and contains current Drive result/start fields plus `scope: <planSlug>` and `runId`; progress/diagnostics go to stderr; detached starts return immediately; inline exit behavior matches current Drive. `--plan chain` is rejected before run creation because `chain` is reserved for chain-run scope.
 - Seam: `cli/run/subcommand.ts` > `run drive`; `cli/drive/subcommand.ts` extraction/removal path; `lib/driver/driver.ts`; `lib/driver/types.ts` > plan slug validation
-- Test: `tests/cli/run/drive.test.ts` > `starts Drive through cosmonauts run drive and rejects the reserved chain plan slug`
+- Test: `tests/cli/run/subcommand.test.ts` > `starts Drive through run drive and rejects the reserved chain plan slug`
 - Marker: `@cosmo-behavior plan:orchestration-surface-consolidation#B-012`
 
 ### B-013 - `cosmonauts run status|watch|list` observes all normalized run scopes
@@ -189,7 +189,7 @@ Non-goals that are blockers if introduced:
 - Action: a user invokes `cosmonauts run status <runId>`, `cosmonauts run watch <runId>`, or `cosmonauts run list`, optionally passing a scope when ambiguous.
 - Expected: status/watch resolve a unique run across scopes or fail with JSON ambiguity/not-found errors; list returns JSON summaries from `FileRunStore.listRecentRuns`; no `--json`/`--plain` flag is accepted for `run` subcommands. Drive cannot create records in reserved scope `chain`, so a Drive plan slug collision cannot masquerade as a chain run.
 - Seam: `cli/run/subcommand.ts` > `run status` / `run watch` / `run list`; `lib/durable-runtime/controller.ts`; `lib/durable-runtime/file-store.ts` > `listRecentRuns`
-- Test: `tests/cli/run/observation.test.ts` > `reports status watch and list for chain and Drive runs with JSON-only output`
+- Test: `tests/cli/run/subcommand.test.ts` > `status watch and list use normalized store observations with inferred scope`
 - Marker: `@cosmo-behavior plan:orchestration-surface-consolidation#B-013`
 
 ### B-014 - Removed CLI names and `run spawn` are not exposed in the final surface
@@ -199,7 +199,7 @@ Non-goals that are blockers if introduced:
 - Action: tests parse removed or explicitly rejected invocations.
 - Expected: `cosmonauts run spawn` is rejected; `-p/--print` remains the single-agent CLI path; final public parser/tests/docs do not rely on `-w/--workflow`, `--list-workflows`, or bare `cosmonauts drive`.
 - Seam: `cli/main.ts` > subcommand dispatch and option parser; `cli/run/subcommand.ts`
-- Test: `tests/cli/run/surface-contract.test.ts` > `rejects run spawn and removed workflow or drive entry points while preserving print mode`
+- Test: `tests/cli/run/subcommand.test.ts` > `rejects run spawn`
 - Marker: `@cosmo-behavior plan:orchestration-surface-consolidation#B-014`
 
 ### B-015 - The named-chain registry replaces `lib/workflows` and preserves config precedence
