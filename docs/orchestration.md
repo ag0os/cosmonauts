@@ -1,6 +1,6 @@
 # Orchestration
 
-Cosmonauts coordinates agents across a spectrum: from a single agent answering directly, to fully automated chain runs, to Drive-backed task batches, to always-on agents pairing with humans.
+Cosmonauts coordinates agents across a spectrum: from a single agent answering directly, to fully automated chain runs, to Drive-backed task batches, to always-on agents pairing with humans. The public surface now centers on `cosmonauts run`: named chains, Drive task runs, and normalized `status` / `watch` / `list` observation all produce a `runId` when they create durable run state.
 
 ## Packaged agents and export
 
@@ -87,9 +87,9 @@ Run `cosmonauts run chain list` for the live list, including any project-level o
 
 ## Drive
 
-`cosmonauts run drive` is the CLI verb for driver runs: inline mode runs inside the host assistant session, while detached mode writes a frozen run directory and continues independently. When mode is omitted, both the CLI and `run_driver` default to detached for 4 or more tasks and inline for smaller task sets. The driver tools (`run_driver`, `watch_events`) are exposed via the `drive` capability, loaded by `main/cosmo` and `coding/cody`. The detailed run knowledge (backends, modes, commit policy, resume) lives in `/skill:drive`.
+`cosmonauts run drive` is the CLI verb for driver runs: inline mode runs inside the host assistant session, while detached mode writes a frozen run directory and continues independently. When mode is omitted, both the CLI and `run_driver` default to detached for 4 or more tasks and inline for smaller task sets. The driver tools (`run_driver`, `run_status`, `run_watch`, and deprecated `watch_events` compatibility) are exposed via the `drive` capability, loaded by `main/cosmo` and `coding/cody`. The detailed run knowledge (backends, modes, commit policy, resume) lives in `/skill:drive`.
 
-Run state lives under `missions/sessions/<scope>/runs/<runId>/`. For Drive, the scope is the plan slug; for graph-backed chains, the scope is `chain`. Use `cosmonauts run status`, `cosmonauts run watch`, and `cosmonauts run list` for normalized observation.
+Run state lives under `missions/sessions/<scope>/runs/<runId>/`. For Drive, the scope is the plan slug; for graph-backed chains, the scope is `chain`. Use `cosmonauts run status`, `cosmonauts run watch`, and `cosmonauts run list` for normalized observation; use `watch_events` only when a caller needs legacy Drive cursor compatibility.
 
 Each Drive task has a per-backend invocation timeout. The default is 1800000ms (30 minutes); use `--task-timeout` / `taskTimeoutMs` for unusually long cold-cache gates or slow external backends that need more headroom.
 
@@ -125,7 +125,7 @@ Run `cosmonauts --help` for the full list.
 
 Two key orchestration tools live in the `spawning` capability (`domains/shared/capabilities/spawning.md`), available to any agent that lists it:
 
-- **`spawn_agent`** — non-blocking; returns a spawn ID immediately, child runs detached, completion arrives as a follow-up turn.
+- **`spawn_agent`** — agent-only, non-blocking delegation; returns a spawn ID immediately, child runs inline to the parent session's orchestration context, completion arrives as a follow-up turn. It is not a public `cosmonauts run` subcommand and does not expose a nested run ID.
 - **`chain_run`** — runs a chain expression as a single tool call.
 
 See `domains/shared/capabilities/spawning.md` for usage patterns and the parallel-spawning protocol.

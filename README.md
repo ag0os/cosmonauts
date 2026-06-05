@@ -44,7 +44,7 @@ What's built:
 - `main/cosmo` cross-domain orchestration, `coding/cody` coding-domain coordination, and specialist roles such as planner, task-manager, worker, reviewer, and fixer
 - Four-layer system prompt architecture with capability-aligned composition
 - Plan lifecycle: create plans, link tasks, archive completed work, distill learnings into memory
-- Drive runs for approved plan-linked task batches via `run_driver`, `watch_events`, and `cosmonauts run drive`
+- Drive runs for approved plan-linked task batches via `run_driver`, normalized `run_status`/`run_watch` observation, deprecated `watch_events` compatibility, and `cosmonauts run drive`
 - Named chains for common pipelines (`plan-and-build`, `spec-and-build`, `implement`, `verify`, `adapt`) with adversarial plan review as the default
 - CLI with interactive and non-interactive modes
 - Todo tool for in-session task tracking
@@ -180,7 +180,7 @@ cosmonauts run list --scope auth-system
 cosmonauts run drive --plan auth-system --resume run-abc
 ```
 
-Agents use the same driver through `run_driver` and monitor with `watch_events`. Driver runs write artifacts under `missions/sessions/<plan>/runs/<runId>/`, including `events.jsonl`, `spec.json`, `task-queue.txt`, and state files. `cosmonauts run status --scope <plan>` reports normalized status; active Drive runs are tracked with `run.pid` for detached mode and `run.inline.json` for inline mode.
+Agents use the same driver through `run_driver` and monitor new runs with `run_status` / `run_watch`; `watch_events` remains a legacy compatibility view over Drive events. Driver runs write artifacts under `missions/sessions/<scope>/runs/<runId>/`, including `events.jsonl`, `spec.json`, `task-queue.txt`, and state files. `cosmonauts run status <runId> --scope <plan>` reports normalized status; active Drive runs are tracked with `run.pid` for detached mode and `run.inline.json` for inline mode.
 
 External backends are `codex` and `claude-cli`; `cosmonauts-subagent` is inline-only for in-process Cosmonauts agent runs. See `domains/shared/skills/drive/SKILL.md` and `lib/driver/README.md` for backend environment controls.
 

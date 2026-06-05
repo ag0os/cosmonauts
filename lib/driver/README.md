@@ -1,6 +1,8 @@
 # Driver
 
-`lib/driver/` runs mission tasks through a backend adapter. The driver owns task
+`lib/driver/` runs mission tasks through a backend adapter. The public CLI
+frontend is `cosmonauts run drive`; successful starts return a `runId` and write
+run state under `missions/sessions/<scope>/runs/<runId>/`. The driver owns task
 selection, prompt rendering, verification, event logging, locking, and commit
 policy. Backends only execute the rendered prompt and report the subprocess
 result.
@@ -157,7 +159,8 @@ A run can also end as `finalization_failed` after the backend work and required
 verification passed but Drive could not finish a commit, task status update, or
 final task-state commit. Drive writes `pending-finalization.json` in the run
 workdir with the failed phase and recovery evidence, then reports the terminal
-failure through `watch_events`, `cosmonauts run status`, and `cosmonauts run list`.
+failure through deprecated `watch_events` compatibility plus
+`cosmonauts run watch`, `cosmonauts run status`, and `cosmonauts run list`.
 This is different from behavioral blocked tasks: `blocked` means implementation
 or verification needs remediation, while `finalization_failed` means verified
 work needs Drive finalization recovery.
@@ -180,7 +183,7 @@ order:
 2. `run.pid`: detached process state (`running`, `dead`, or `orphaned`).
 3. `run.inline.json`: inline process state (`running`, `dead`, or `orphaned`).
 
-Operators should route `run watch` / `run status` / `run list` output by status: fix code or
+Operators should route `cosmonauts run watch` / `cosmonauts run status` / `cosmonauts run list` output by status: fix code or
 verification for `blocked`; run resume for `finalization_failed`; inspect and
 resume `dead` or `orphaned` runs only after deciding whether the worktree is
 safe. Resumed inline runs reuse the previous workdir, so preparation removes any
@@ -189,8 +192,8 @@ stale `run.completion.json` before writing a fresh `run.inline.json`.
 ## Durable Runtime Compatibility
 
 Drive remains the owner of legacy run behavior. The legacy `events.jsonl`
-stream is still the source for `watch_events` and resume compatibility, while
-`cosmonauts run status` and `cosmonauts run list` continue to classify runs from
+stream is still the source for deprecated `watch_events` compatibility and
+resume compatibility, while `cosmonauts run status` and `cosmonauts run list` continue to classify runs from
 `run.completion.json`, `run.pid`, and `run.inline.json`. Normalized runtime
 files do not make a run listable or change status classification.
 
@@ -220,8 +223,10 @@ normalized sink is available.
 The durable observation helpers are read-only. `run_status` and `run_watch`
 read normalized runtime data through `RunRecord.eventsPath`; `run_watch` pages
 by normalized event sequence cursor and reports malformed normalized JSONL
-lines as diagnostics. They do not replace `watch_events`, and this phase adds
-no scheduler ownership, backend adapter migration, or mutating run controls.
+lines as diagnostics. Prefer them for new observation paths. They do not
+silently replace existing `watch_events` cursors because `watch_events` keeps
+legacy Drive event shape and line-count cursor semantics. This phase adds no
+scheduler ownership, backend adapter migration, or mutating run controls.
 
 Plan-2 durable step support is a backend wrapper around Drive's existing run
 loop, not a replacement scheduler. Drive still selects tasks, renders prompts,

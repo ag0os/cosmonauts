@@ -201,7 +201,7 @@ cosmonauts task create "Wire OAuth provider" \
 cosmonauts task edit TASK-007 --add-label "plan:auth-system" --json
 ```
 
-After linking, `cosmonauts drive run --plan auth-system` enumerates every task carrying `plan:auth-system` automatically. `cosmonauts plan view auth-system --json` reports the task count via the same label query.
+After linking, `cosmonauts run drive --plan auth-system` enumerates every task carrying `plan:auth-system` automatically. `cosmonauts plan view auth-system --json` reports the task count via the same label query.
 
 **Don't use `--plan`:** `cosmonauts task edit <id> --plan "<text>"` writes to the task's `implementationPlan` field (a free-form notes section visible in `task view`), not a plan link. Setting it does not associate the task with a plan slug.
 
@@ -214,5 +214,5 @@ After linking, `cosmonauts drive run --plan auth-system` enumerates every task c
 ## See also
 
 - `cosmonauts-plans` — link tasks to plan slugs, archive completed plan workloads.
-- `cosmonauts-workflows` — let the planner+task-manager pair generate tasks for you instead of writing them yourself.
+- `cosmonauts-chains` — let the planner+task-manager pair generate tasks for you instead of writing them yourself.
 - `cosmonauts task <command> --help` — exhaustive flag reference for any subcommand.

@@ -6,7 +6,7 @@ Delegate when a fresh context or a multi-role pipeline does better than handling
 
 | Tool | Purpose |
 |------|---------|
-| `spawn_agent` | Spawn one agent (role + prompt). **Non-blocking** — returns a `spawnId`; the child runs detached; its result arrives as a `[spawn_completion] spawnId=… role=… outcome=… summary=…` follow-up turn. Stay active until every spawn has reported back. |
+| `spawn_agent` | Agent-only delegation for one role + prompt. **Non-blocking** — returns a `spawnId`, not a `runId`; its result arrives as a `[spawn_completion] spawnId=… role=… outcome=… summary=…` follow-up turn. Stay active until every spawn has reported back. |
 | `chain_run` | Run a pipeline of roles via the chain DSL — sequential (`a -> b -> c`), bracket groups (`a -> [b, c] -> d`), fan-out (`a -> b[3]`, same prompt to every instance). Returns per-stage outcomes, not the work product. |
 
 Roles: `planner`, `spec-writer`, `plan-reviewer`, `task-manager`, `coordinator`, `worker`, `reviewer`, `security-reviewer`, `performance-reviewer`, `ux-reviewer`, `fixer`, `quality-manager`, `explorer`, `verifier`, `integration-verifier`, `refactorer`, `distiller`.
@@ -15,6 +15,7 @@ Roles: `planner`, `spec-writer`, `plan-reviewer`, `task-manager`, `coordinator`,
 
 - Designing across multiple files → `planner`. Approved plan → tasks → `task-manager`. Implementing a task set → `coordinator` or a chain. Merge-readiness gates → `quality-manager`. Fresh-context review → `reviewer` (+ `security-reviewer` / `performance-reviewer` / `ux-reviewer` for targeted lenses). Remediation from findings → `fixer`. Codebase mapping → `explorer`. Validating specific claims → `verifier` / `integration-verifier`. Structural changes → `refactorer`. Knowledge extraction → `distiller`.
 - Named chains wrap the common pipelines (`plan-and-build`, `implement`, `verify`, `spec-and-build`, `adapt`) — prefer them over hand-writing a chain expression. `cosmonauts run chain list` shows the live list including project overrides.
+- `spawn_agent` is not a public `cosmonauts run` command and does not expose a nested run. Use `cosmonauts run chain <name-or-expression>` for shell-launched multi-agent pipelines.
 
 ## After a chain or spawn
 

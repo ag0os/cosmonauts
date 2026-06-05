@@ -5,11 +5,11 @@ description: Delegating work to other agents — spawn_agent mechanics, the para
 
 # Spawning and Chains
 
-Two tools, `spawn_agent` (one agent, fire-and-forget) and `chain_run` (a pipeline of roles in one call). Named chains wrap the common pipelines — prefer `cosmonauts run chain <name>` or `chain_run` with the named chain's expression over hand-writing topology.
+Two tools, `spawn_agent` (agent-only one-role delegation, fire-and-forget) and `chain_run` (a pipeline of roles in one call). Named chains wrap the common pipelines — prefer `cosmonauts run chain <name>` or `chain_run` with the named chain's expression over hand-writing topology.
 
 ## How spawn_agent works
 
-`spawn_agent` is **non-blocking**. It returns immediately with `{ "status": "accepted", "spawnId": "<uuid>" }` — an acknowledgement, not the agent's result. The child runs in the background as a detached process.
+`spawn_agent` is **non-blocking**. It returns immediately with `{ "status": "accepted", "spawnId": "<uuid>" }` — an acknowledgement, not the agent's result, and not a `runId`. The child runs in the background inside the parent session's agent-spawning context.
 
 When the child finishes, the result is delivered to you as a follow-up user message in the next turn:
 
@@ -23,6 +23,8 @@ When the child finishes, the result is delivered to you as a follow-up user mess
 - `summary` — what the agent did, or why it failed
 
 Each completion triggers a new turn. Stay active — do not exit — until every spawn has reported back.
+
+`spawn_agent` is not a shell-facing `cosmonauts run` subcommand and does not expose a nested run. For shell-launched multi-agent pipelines, use `cosmonauts run chain <name-or-expression>`; for plan-task execution with a durable `runId`, use `/skill:drive`.
 
 ## When to work directly vs. delegate
 
