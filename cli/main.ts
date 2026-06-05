@@ -23,8 +23,7 @@
  */
 
 import { writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { InteractiveMode, runPrintMode } from "@earendil-works/pi-coding-agent";
 import { Command, CommanderError } from "commander";
@@ -40,24 +39,13 @@ import { createDefaultProjectConfig } from "../lib/config/defaults.ts";
 import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
 import { buildInitBootstrapPrompt } from "../lib/init/prompt.ts";
 import { setSharedRegistry } from "../lib/interactive/agent-switch.ts";
-import { parseChain } from "../lib/orchestration/chain-parser.ts";
-import { ChainProfiler } from "../lib/orchestration/chain-profiler.ts";
-import {
-	derivePlanSlug,
-	injectUserPrompt,
-	runChain,
-} from "../lib/orchestration/chain-runner.ts";
 import { isChainDslExpression } from "../lib/orchestration/chain-steps.ts";
-import { shouldRunChainInline } from "../lib/orchestration/durable-chain-compiler.ts";
-import { runDurableChain } from "../lib/orchestration/durable-chain-runner.ts";
 import {
 	discoverBundledPackageDirs,
-	discoverFrameworkBundledPackageDirs,
 	isCosmonautsFrameworkRepo,
 } from "../lib/packages/dev-bundled.ts";
-import { CosmonautsRuntime } from "../lib/runtime.ts";
-import { sessionsDirForPlan } from "../lib/sessions/session-store.ts";
-import { createChainEventLogger } from "./chain-event-logger.ts";
+import type { CosmonautsRuntime } from "../lib/runtime.ts";
+import { executeChainExpression } from "./chain-execution.ts";
 import { createCreateProgram } from "./create/subcommand.ts";
 import { createDriveProgram } from "./drive/subcommand.ts";
 import { createEjectProgram } from "./eject/subcommand.ts";
@@ -69,6 +57,13 @@ import {
 } from "./packages/subcommand.ts";
 import { type PiFlagParseResult, parsePiFlags } from "./pi-flags.ts";
 import { createPlanProgram } from "./plans/index.ts";
+import { createRunProgram } from "./run/subcommand.ts";
+import {
+	type CliRuntimeOptions,
+	createCliRuntimeContext,
+	parseCliRuntimeOptions,
+	parseThinkingLevel,
+} from "./runtime-bootstrap.ts";
 import { createScaffoldProgram } from "./scaffold/subcommand.ts";
 import { createSession, GracefulExitError } from "./session.ts";
 import { createSessionsProgram } from "./sessions/subcommand.ts";
@@ -85,28 +80,6 @@ import type { CliOptions } from "./types.ts";
 import { createUpdateProgram } from "./update/subcommand.ts";
 
 export { discoverBundledPackageDirs, isCosmonautsFrameworkRepo };
-
-// ============================================================================
-// Thinking Level Validation
-// ============================================================================
-
-const VALID_THINKING_LEVELS: ReadonlySet<string> = new Set([
-	"off",
-	"minimal",
-	"low",
-	"medium",
-	"high",
-	"xhigh",
-]);
-
-function parseThinkingLevel(value: string): ThinkingLevel {
-	if (!VALID_THINKING_LEVELS.has(value)) {
-		throw new Error(
-			`Invalid thinking level "${value}". Valid: ${[...VALID_THINKING_LEVELS].join(", ")}`,
-		);
-	}
-	return value as ThinkingLevel;
-}
 
 // ============================================================================
 // Argument Parsing
@@ -361,22 +334,7 @@ export function selectRunMode(
 }
 
 async function run(options: CliOptions): Promise<void> {
-	const cwd = process.cwd();
-	const frameworkRoot = resolve(fileURLToPath(import.meta.url), "..", "..");
-	const domainsDir = join(frameworkRoot, "domains");
-
-	// Dev-mode auto-detection: auto-include bundled/ packages when running
-	// from inside the framework repo (name='cosmonauts', bundled/ exists).
-	const bundledDirs = await discoverFrameworkBundledPackageDirs(frameworkRoot);
-
-	// Bootstrap: load config, discover domains, build registries
-	const runtime = await CosmonautsRuntime.create({
-		builtinDomainsDir: domainsDir,
-		projectRoot: cwd,
-		domainOverride: options.domain,
-		bundledDirs,
-		pluginDirs: options.pluginDirs,
-	});
+	const { cwd, runtime } = await createCliRuntimeContext(options);
 
 	const mode = selectRunMode(options, hasInstalledDomain(runtime));
 	const handlers: Record<CliRunMode, () => Promise<void>> = {
@@ -638,70 +596,17 @@ export async function handleWorkflowMode(
 	options: CliOptions,
 	cwd: string,
 ): Promise<void> {
-	const {
-		agentRegistry: registry,
-		domainContext,
-		chains: domainChains,
-		projectSkills,
-		skillPaths,
-	} = runtime;
-
 	const chainExpr = await resolveWorkflowExpression(
 		options.workflow ?? "",
 		cwd,
-		domainChains,
+		runtime.chains,
 	);
-	const steps = parseChain(chainExpr, registry, domainContext);
-	injectUserPrompt(steps, options.prompt);
-
-	let profiler: ChainProfiler | undefined;
-	let onEvent = createChainEventLogger();
-
-	if (options.profile) {
-		const planSlug = derivePlanSlug(options.completionLabel);
-		const outputDir = planSlug
-			? sessionsDirForPlan(cwd, planSlug)
-			: join(cwd, "missions", "sessions", "_profiles");
-		const activeProfiler = new ChainProfiler({ outputDir });
-		profiler = activeProfiler;
-		const logger = onEvent;
-		onEvent = (event) => {
-			logger(event);
-			activeProfiler.handleEvent(event);
-		};
-	}
-
-	let result: Awaited<ReturnType<typeof runChain>>;
-	try {
-		const chainConfig = {
-			steps,
-			projectRoot: cwd,
-			domainContext,
-			onEvent,
-			projectSkills,
-			skillPaths,
-			completionLabel: options.completionLabel,
-			registry,
-			domainsDir: runtime.domainsDir,
-			resolver: runtime.domainResolver,
-			...(options.thinking && { thinking: { default: options.thinking } }),
-		};
-		result = shouldRunChainInline(steps, {
-			completionLabel: options.completionLabel,
-		})
-			? await runChain(chainConfig)
-			: await runDurableChain(chainConfig);
-	} finally {
-		if (profiler) {
-			try {
-				const { tracePath, summaryPath } = await profiler.writeOutput();
-				process.stderr.write(`Profile trace:   ${tracePath}\n`);
-				process.stderr.write(`Profile summary: ${summaryPath}\n`);
-			} catch (err) {
-				process.stderr.write(`Failed to write profile output: ${err}\n`);
-			}
-		}
-	}
+	const result = await executeChainExpression({
+		runtime,
+		options,
+		cwd,
+		chainExpr,
+	});
 
 	if (!result.success) {
 		process.exitCode = 1;
@@ -792,7 +697,19 @@ function resolveCliAgent(
 // ============================================================================
 
 const subcommand = process.argv[2];
-if (
+const runInvocation = parseRunInvocation(process.argv.slice(2));
+if (runInvocation) {
+	const program = createRunProgram({
+		runtimeOptions: runInvocation.runtimeOptions,
+	});
+	program
+		.parseAsync(runInvocation.argv, { from: "user" })
+		.catch((err: unknown) => {
+			const message = err instanceof Error ? err.message : String(err);
+			printCliError(message, {}, { prefix: "cosmonauts run" });
+			process.exitCode = 1;
+		});
+} else if (
 	subcommand === "task" ||
 	subcommand === "plan" ||
 	subcommand === "scaffold" ||
@@ -857,3 +774,20 @@ if (
 		}
 	}
 } // end else (non-subcommand path)
+
+function parseRunInvocation(
+	argv: readonly string[],
+): { runtimeOptions: CliRuntimeOptions; argv: string[] } | undefined {
+	const parsed = parseCliRuntimeOptions(argv);
+	const runIndex = parsed.remaining.indexOf("run");
+	if (runIndex === -1 || runIndex > 0) {
+		return undefined;
+	}
+	for (const warning of parsed.warnings) {
+		console.warn(`[cosmonauts] ${warning}`);
+	}
+	return {
+		runtimeOptions: parsed.options,
+		argv: parsed.remaining.slice(runIndex + 1),
+	};
+}
