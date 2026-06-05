@@ -1,8 +1,8 @@
 ---
 title: 'Durable Runtime Phase 4: Frontend Migration'
-status: active
+status: completed
 createdAt: '2026-06-03T00:00:00.000Z'
-updatedAt: '2026-06-04T20:38:07.016Z'
+updatedAt: '2026-06-05T01:01:49.834Z'
 ---
 
 ## Overview
