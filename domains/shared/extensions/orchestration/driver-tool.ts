@@ -474,11 +474,18 @@ function clearActiveRunOnCompletion(
 ): void {
 	void handle.result
 		.then(
-			(result) => writeRunCompletion(handle.workdir, result),
-			(error: unknown) =>
-				writeRunCompletion(handle.workdir, abortedCompletion(handle, error)),
+			(result) => {
+				clearActiveRun(activeKey, handle.runId);
+				return writeRunCompletion(handle.workdir, result);
+			},
+			(error: unknown) => {
+				clearActiveRun(activeKey, handle.runId);
+				return writeRunCompletion(
+					handle.workdir,
+					abortedCompletion(handle, error),
+				);
+			},
 		)
-		.finally(() => clearActiveRun(activeKey, handle.runId))
 		.catch(() => undefined);
 }
 

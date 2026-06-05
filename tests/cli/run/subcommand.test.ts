@@ -261,7 +261,7 @@ describe("cosmonauts run", () => {
 		expect(output.stdout()).toBe("");
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-011
+	// @cosmo-behavior plan:orchestration-surface-consolidation#B-013
 	test("status watch and list use normalized store observations with inferred scope", async () => {
 		const store = new FileRunStore({
 			rootDir: join(temp.path, "missions", "sessions"),
@@ -322,7 +322,7 @@ describe("cosmonauts run", () => {
 		expect(output.stderr()).toBe("");
 	});
 
-	// @cosmo-behavior plan:orchestration-surface-consolidation#B-013
+	// @cosmo-behavior plan:orchestration-surface-consolidation#B-011
 	test("chain list is reserved while --name list executes a project chain", async () => {
 		await mkdir(join(temp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
