@@ -46,7 +46,11 @@ export function normalizeDriverEvent(
 	event: DriverEvent,
 	context: DriverEventNormalizationContext = {},
 ): DriverEventNormalization {
-	return DRIVER_EVENT_NORMALIZERS[event.type](event, context);
+	const normalized = DRIVER_EVENT_NORMALIZERS[event.type](event, context);
+	return {
+		events: [...normalized.events, legacyDriverEventActivity(event)],
+		diagnostics: normalized.diagnostics,
+	};
 }
 
 const DRIVER_EVENT_NORMALIZERS = {
@@ -263,6 +267,19 @@ function activityEvent(
 		runId: event.runId,
 		stepId: event.taskId,
 		details,
+	};
+}
+
+function legacyDriverEventActivity(
+	event: DriverEvent,
+): Extract<OrchestrationEvent, { type: "run_activity" }> {
+	return {
+		type: "run_activity",
+		runId: event.runId,
+		details: {
+			kind: "legacy_driver_event",
+			event,
+		},
 	};
 }
 

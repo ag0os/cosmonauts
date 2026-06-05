@@ -59,7 +59,7 @@ describe("driver durable dual-write", () => {
 			"plan_completion_candidate",
 			"run_completed",
 		]);
-		expect(storedEvents.map((event) => event.event.type)).toEqual([
+		expect(eventTypesWithoutRunActivity(storedEvents)).toEqual([
 			"run_started",
 			"step_ready",
 			"step_started",
@@ -74,6 +74,19 @@ describe("driver durable dual-write", () => {
 			"step_completed",
 			"run_completed",
 		]);
+		expect(runActivityEvents(storedEvents)).toHaveLength(legacyEvents.length);
+		expect(
+			runActivityEvents(storedEvents).map((event) => event.details),
+		).toEqual(
+			expect.arrayContaining([
+				{
+					kind: "legacy_driver_event",
+					event: expect.objectContaining({
+						type: "plan_completion_candidate",
+					}),
+				},
+			]),
+		);
 		expect(runRecord.eventsPath).toBe(
 			join(fixture.spec.workdir, "orchestration-events.jsonl"),
 		);
@@ -372,6 +385,29 @@ function isStoredOrchestrationEvent(
 		typeof value.event === "object" &&
 		value.event !== null
 	);
+}
+
+function eventTypesWithoutRunActivity(
+	events: readonly StoredOrchestrationEvent[],
+): string[] {
+	return events
+		.map((event) => event.event.type)
+		.filter((type) => type !== "run_activity");
+}
+
+function runActivityEvents(
+	events: readonly StoredOrchestrationEvent[],
+): Extract<StoredOrchestrationEvent["event"], { type: "run_activity" }>[] {
+	return events
+		.map((event) => event.event)
+		.filter(
+			(
+				event,
+			): event is Extract<
+				StoredOrchestrationEvent["event"],
+				{ type: "run_activity" }
+			> => event.type === "run_activity",
+		);
 }
 
 async function replaceNormalizedLogWithDirectory(

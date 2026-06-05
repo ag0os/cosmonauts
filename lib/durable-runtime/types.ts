@@ -242,6 +242,7 @@ export type OrchestrationEvent =
 	| { type: "run_started"; runId: string }
 	| { type: "run_completed"; runId: string; result: RunResult }
 	| { type: "run_blocked"; runId: string; reason: string }
+	| { type: "run_activity"; runId: string; details: unknown }
 	| { type: "step_ready"; runId: string; stepId: string }
 	| { type: "step_started"; runId: string; stepId: string; backend: string }
 	| { type: "step_heartbeat"; runId: string; stepId: string }

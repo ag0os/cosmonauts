@@ -107,6 +107,8 @@ function summarizeEvent(envelope: StoredOrchestrationEvent): string {
 			return `${envelope.seq} run_completed: ${event.result.outcome}`;
 		case "run_blocked":
 			return `${envelope.seq} run_blocked: ${event.reason}`;
+		case "run_activity":
+			return `${envelope.seq} run_activity${describeRunActivity(event.details)}`;
 		case "run_failed":
 			return `${envelope.seq} run_failed: ${event.reason}`;
 		case "run_cancelled":
@@ -143,6 +145,27 @@ function summarizeEvent(envelope: StoredOrchestrationEvent): string {
 function compactText(value: string): string {
 	const compact = value.replace(/\s+/g, " ").trim();
 	return compact.length <= 80 ? compact : `${compact.slice(0, 77)}...`;
+}
+
+function describeRunActivity(details: unknown): string {
+	if (typeof details !== "object" || details === null) {
+		return "";
+	}
+
+	const record = details as Record<string, unknown>;
+	if (record.kind !== "legacy_driver_event") {
+		return "";
+	}
+
+	const event = record.event;
+	if (typeof event !== "object" || event === null) {
+		return ": legacy_driver_event";
+	}
+
+	const eventType = (event as Record<string, unknown>).type;
+	return typeof eventType === "string"
+		? ` legacy_driver_event: ${eventType}`
+		: ": legacy_driver_event";
 }
 
 function adjacentTerminalDiagnostics(

@@ -1306,7 +1306,11 @@ describe("cosmonauts drive run", () => {
 		expect(runRecord.eventsPath).toBe(
 			join(resumeWorkdir(), "orchestration-events.jsonl"),
 		);
-		expect(normalizedEvents.map((event) => event.event?.type)).toEqual([
+		expect(
+			normalizedEvents
+				.map((event) => event.event?.type)
+				.filter((type) => type !== "run_activity"),
+		).toEqual([
 			"step_tool_activity",
 			"artifact_written",
 			"step_tool_activity",
@@ -1314,6 +1318,9 @@ describe("cosmonauts drive run", () => {
 			"step_tool_activity",
 			"step_completed",
 		]);
+		expect(
+			normalizedEvents.filter((event) => event.event?.type === "run_activity"),
+		).toHaveLength(6);
 	});
 });
 

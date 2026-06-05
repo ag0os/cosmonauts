@@ -183,7 +183,7 @@ describe("event-stream", () => {
 		});
 	});
 
-	test("persists legacy-only normalization diagnostics without normalized events", async () => {
+	test("persists legacy-only normalization diagnostics with compatibility activity", async () => {
 		const diagnostics = captureDurableDiagnostics();
 		const sink = createTestDurableSink({ publish: vi.fn() });
 
@@ -196,7 +196,16 @@ describe("event-stream", () => {
 			});
 			const legacyEvents = await tailEvents(logPath());
 
-			expect(result.events).toEqual([]);
+			expect(result.events.map((event) => event.event)).toEqual([
+				{
+					type: "run_activity",
+					runId: "run-1",
+					details: {
+						kind: "legacy_driver_event",
+						event: lockWarningEvent(),
+					},
+				},
+			]);
 			expect(result.diagnostics).toEqual([
 				expect.objectContaining({
 					code: "legacy_only_driver_event",
@@ -227,6 +236,14 @@ describe("event-stream", () => {
 					type: "run_failed",
 					runId: "run-1",
 					reason: "state commit failed",
+				},
+				{
+					type: "run_activity",
+					runId: "run-1",
+					details: {
+						kind: "legacy_driver_event",
+						event: runFinalizationFailedEvent({ commitSha: "abc123" }),
+					},
 				},
 			]);
 			expect(result.diagnostics).toEqual([

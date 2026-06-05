@@ -1,8 +1,8 @@
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { tailEvents } from "../../../../lib/driver/event-stream.ts";
 import type { DriverEvent } from "../../../../lib/driver/types.ts";
+import { watchDriverEventsCompat } from "../../../../lib/driver/watch-events-compat.ts";
 
 const MAX_RENDERED_EVENTS = 30;
 const MAX_LINE_LENGTH = 160;
@@ -12,7 +12,7 @@ export function registerWatchEventsTool(pi: ExtensionAPI): void {
 		name: "watch_events",
 		label: "Watch Driver Events",
 		description:
-			"Read driver events from a run JSONL log with cursor support. Returns recent events as compact one-line summaries (type plus key fields) in the text output, plus the full structured event list and the next cursor.",
+			"Deprecated compatibility view for Drive events. Reconstructs legacy driver events from normalized run activity with legacy cursor semantics; use run_watch and run_status for new normalized observation. Returns recent events as compact one-line summaries (type plus key fields) in the text output, plus the full structured event list and the next cursor.",
 		parameters: Type.Object({
 			planSlug: Type.String({ description: "Plan slug for the driver run" }),
 			runId: Type.String({ description: "Driver run ID" }),
@@ -23,16 +23,12 @@ export function registerWatchEventsTool(pi: ExtensionAPI): void {
 			),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
-			const eventLogPath = join(
-				ctx.cwd,
-				"missions",
-				"sessions",
-				params.planSlug,
-				"runs",
-				params.runId,
-				"events.jsonl",
-			);
-			const result = await tailEvents(eventLogPath, params.since ?? 0);
+			const result = await watchDriverEventsCompat({
+				rootDir: join(ctx.cwd, "missions", "sessions"),
+				scope: params.planSlug,
+				runId: params.runId,
+				since: params.since ?? 0,
+			});
 
 			return {
 				...result,
