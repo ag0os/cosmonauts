@@ -4,6 +4,8 @@ import { Type } from "typebox";
 import { parseChain } from "../../../../lib/orchestration/chain-parser.ts";
 import { runChain } from "../../../../lib/orchestration/chain-runner.ts";
 import { injectUserPrompt } from "../../../../lib/orchestration/chain-steps.ts";
+import { shouldRunChainInline } from "../../../../lib/orchestration/durable-chain-compiler.ts";
+import { runDurableChain } from "../../../../lib/orchestration/durable-chain-runner.ts";
 import type {
 	ChainEvent,
 	ChainResult,
@@ -120,7 +122,7 @@ export function registerChainTool(
 
 			const progressLines: string[] = [];
 
-			const result = await runChain({
+			const chainConfig = {
 				signal,
 				steps,
 				projectRoot: ctx.cwd,
@@ -149,7 +151,13 @@ export function registerChainTool(
 						});
 					}
 				},
-			});
+			};
+
+			const result = shouldRunChainInline(steps, {
+				completionLabel: params.completionLabel,
+			})
+				? await runChain(chainConfig)
+				: await runDurableChain(chainConfig);
 
 			// Add final summary line
 			const finalLine = result.success

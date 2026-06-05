@@ -170,9 +170,9 @@ describe("orchestration extension", () => {
 			projectSkills: ["typescript", "backend"],
 			skillPaths: ["/skills/shared", "/skills/project"],
 		});
-		mockSuccessfulChain([{ name: "planner", loop: false }]);
+		mockSuccessfulChain([{ name: "coordinator", loop: true }]);
 
-		await pi.callTool("chain_run", { expression: "planner" });
+		await pi.callTool("chain_run", { expression: "coordinator" });
 
 		expect(runChainMock).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -185,7 +185,7 @@ describe("orchestration extension", () => {
 			}),
 		);
 		expect(parseChainMock).toHaveBeenCalledWith(
-			"planner",
+			"coordinator",
 			expect.objectContaining({
 				has: expect.any(Function),
 			}),
@@ -196,9 +196,9 @@ describe("orchestration extension", () => {
 	test("orchestration runtime includes bundled coding package in framework dev mode", async () => {
 		const { cwd, pi } = createExtensionPi();
 
-		mockSuccessfulChain([{ name: "planner", loop: false }]);
+		mockSuccessfulChain([{ name: "coordinator", loop: true }]);
 
-		await pi.callTool("chain_run", { expression: "planner" });
+		await pi.callTool("chain_run", { expression: "coordinator" });
 
 		expect(runtimeCreateMock).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -261,10 +261,10 @@ describe("orchestration extension", () => {
 	test("chain_run forwards timeout options to runChain", async () => {
 		const { pi } = createExtensionPi();
 
-		mockSuccessfulChain([{ name: "planner", loop: false }]);
+		mockSuccessfulChain([{ name: "coordinator", loop: true }]);
 
 		await pi.callTool("chain_run", {
-			expression: "planner",
+			expression: "coordinator",
 			timeoutMs: 3_600_000,
 			spawnTimeoutMs: 900_000,
 		});
@@ -281,7 +281,7 @@ describe("orchestration extension", () => {
 		const { cwd, pi } = createExtensionPi();
 
 		mockRuntime({ projectSkills: [] });
-		mockSuccessfulChain([{ name: "planner", loop: false }]);
+		mockSuccessfulChain([{ name: "coordinator", loop: true }]);
 
 		const controller = new AbortController();
 		const tool = pi.getTool("chain_run");
@@ -291,7 +291,7 @@ describe("orchestration extension", () => {
 		}
 		await tool.execute(
 			"call-id",
-			{ expression: "planner" },
+			{ expression: "coordinator" },
 			controller.signal,
 			undefined,
 			{
@@ -783,10 +783,10 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 		const { pi } = createExtensionPi();
 
 		mockRuntime({ projectSkills: ["typescript"] });
-		mockSuccessfulChain([{ name: "planner", loop: false }]);
+		mockSuccessfulChain([{ name: "coordinator", loop: true }]);
 
-		await pi.callTool("chain_run", { expression: "planner" });
-		await pi.callTool("chain_run", { expression: "planner" });
+		await pi.callTool("chain_run", { expression: "coordinator" });
+		await pi.callTool("chain_run", { expression: "coordinator" });
 
 		// CosmonautsRuntime.create should only be called once for the same cwd
 		expect(runtimeCreateMock).toHaveBeenCalledTimes(1);
@@ -804,14 +804,14 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 				skillPaths: [],
 				domainRegistry: realDomainRegistry,
 			});
-		mockSuccessfulChain([{ name: "planner", loop: false }]);
+		mockSuccessfulChain([{ name: "coordinator", loop: true }]);
 
 		await expect(
-			pi.callTool("chain_run", { expression: "planner" }),
+			pi.callTool("chain_run", { expression: "coordinator" }),
 		).rejects.toThrow("invalid config");
 
 		await expect(
-			pi.callTool("chain_run", { expression: "planner" }),
+			pi.callTool("chain_run", { expression: "coordinator" }),
 		).resolves.toBeDefined();
 
 		expect(runtimeCreateMock).toHaveBeenCalledTimes(2);
