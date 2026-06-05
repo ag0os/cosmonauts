@@ -87,7 +87,7 @@ Non-goals that are blockers if introduced:
 - Source: AC-001, AC-002, AC-008, D-011
 - Context: a graph-backed Drive run starts inline or detached with deterministic task fixtures and fake backends.
 - Action: `runDriveOnGraph` uses `runStart` for shared create/write/seed/scheduler work while Drive keeps finalizer-failure polling, legacy events, completion-file writing, and safe scheduler event writes at the Drive edge.
-- Expected: Drive `DriverResult`, compatibility files, graph/step records, and detached frozen-runner behavior match current graph-backed Drive characterization; detached scheduler execution still happens inside `lib/driver/run-step.ts` / `bin/cosmonauts-drive-step`.
+- Expected: Drive `DriverResult`, compatibility files, graph/step records, and detached frozen-runner behavior match current graph-backed Drive characterization; detached scheduler execution still happens inside `lib/driver/run-step.ts` / `bin/cosmonauts-drive-step`. Resume still compiles/repairs the graph from the persisted authoritative `metadata.driveTaskIds` (via `withAuthoritativeTaskIds`), not a `remainingTaskIds` slice, so a resumed run is not misread as a graph mismatch.
 - Seam: `lib/driver/drive-graph-runner.ts` > `runDriveOnGraph`; `lib/driver/run-step.ts` > `runWithLock`; `lib/durable-runtime/run-start.ts` > `runStart`
 - Test: `tests/driver/drive-run-start-characterization.test.ts` > `preserves graph-backed Drive files results and detached frozen runner through runStart`
 - Marker: `@cosmo-behavior plan:orchestration-surface-consolidation#B-003`
@@ -107,8 +107,8 @@ Non-goals that are blockers if introduced:
 - Source: AC-002, D-011
 - Context: an agent calls `chain_run` with a loop-free supported expression.
 - Action: the tool blocks until completion, as it does today.
-- Expected: the tool still returns the final `ChainResult` and progress lines, and structured details additionally include `{ runId, scope: "chain" }`. Loop/completion chains still route to `runChain` inline and are explicitly non-durable/no-run-record.
-- Seam: `domains/shared/extensions/orchestration/chain-tool.ts` > `registerChainTool`; `lib/orchestration/types.ts` > `ChainResult`
+- Expected: the tool still returns the final `ChainResult` and progress lines, and structured details additionally include `{ runId, scope: "chain" }` read from the new optional `ChainResult.run` field. Loop/completion chains still route to `runChain` inline and are explicitly non-durable/no-run-record (`ChainResult.run === undefined`).
+- Seam: `domains/shared/extensions/orchestration/chain-tool.ts` > `registerChainTool`; `lib/orchestration/types.ts` > `ChainResult.run?: { runId; scope: "chain" }`; `lib/orchestration/durable-chain-runner.ts` > `runDurableChain` (populate `run`)
 - Test: `tests/extensions/orchestration-chain-tool-observation.test.ts` > `returns runId and scope for durable chain_run without changing blocking result semantics`
 - Marker: `@cosmo-behavior plan:orchestration-surface-consolidation#B-005`
 
@@ -137,7 +137,7 @@ Non-goals that are blockers if introduced:
 - Source: AC-003, D-014
 - Context: a graph-backed Drive run has normalized events, including Drive compatibility activity for each legacy `DriverEvent` needed by `watch_events`; Drive’s durable sink is in `graph-activity-only` mode on real graph runs.
 - Action: an agent calls `watch_events({ planSlug, runId, since })` with `since` omitted, zero, or a non-zero legacy cursor returned by a previous call.
-- Expected: in the healthy path, the tool reconstructs legacy `DriverEvent[]` from normalized `run_activity` events, not by tailing legacy `events.jsonl`; `graph-activity-only` filtering preserves `run_activity` compatibility events while still dropping duplicate canonical lifecycle events. The tool filters in **legacy event index space** (`since` is the number of legacy events already consumed) and returns `cursor = total reconstructed legacy events`, matching `tailEvents` line-cursor behavior even when one legacy event maps to zero, one, or multiple canonical normalized events. If durable setup/append fails after the legacy JSONL write, `watch_events` falls back to the legacy file for this compatibility tool only and marks the response details with a fallback diagnostic/source so callers are not silently given an empty normalized projection.
+- Expected: in the healthy path, the tool reconstructs legacy `DriverEvent[]` from normalized `run_activity` events, not by tailing legacy `events.jsonl`; `graph-activity-only` filtering preserves `run_activity` compatibility events while still dropping duplicate canonical lifecycle events. The tool filters in **legacy event index space** (`since` is the number of legacy events already consumed) and returns `cursor = total reconstructed legacy events`, matching `tailEvents` line-cursor behavior even when one legacy event maps to zero, one, or multiple canonical normalized events. If the normalized reconstruction is incomplete — detected by a count cross-check against the dual-written legacy JSONL (reconstructed legacy-event count below the legacy file count) or a persisted `compat-degraded` marker — `watch_events` falls back to the legacy file for this compatibility tool only and marks the response details with a fallback diagnostic/source, so a partial mid-run normalized-append failure is never served as a silently-truncated projection.
 - Seam: `domains/shared/extensions/orchestration/watch-events-tool.ts`; `lib/driver/watch-events-compat.ts` (new); `lib/durable-runtime/types.ts` > `run_activity`; `lib/driver/durable-events.ts` > `normalizeDriverEvent`; `lib/driver/event-stream.ts` > `graph-activity-only` filter
 - Test: `tests/extensions/orchestration-watch-events-normalized-compat.test.ts` > `preserves legacy watch_events cursor semantics over graph normalized events with fallback diagnostics`
 - Marker: `@cosmo-behavior plan:orchestration-surface-consolidation#B-008`
@@ -158,8 +158,8 @@ Non-goals that are blockers if introduced:
 - Context: a user invokes a loop-free ad-hoc chain through the new `run` CLI.
 - Action: `cosmonauts run chain "planner -> reviewer" "prompt"` runs the same durable-or-inline routing used by the agent tool.
 - Expected: stdout contains exactly one JSON value with `{ runId, scope: "chain", status, success, stageResults, ... }` for graph-backed chains; human progress goes to stderr; exit code is zero only on success. Inline loop chains remain legacy and report non-durable mode explicitly.
-- Seam: `cli/run/subcommand.ts` (new) > `run chain`; `cli/chain-event-logger.ts`; `lib/orchestration/durable-chain-runner.ts`
-- Test: `tests/cli/run/chain.test.ts` > `runs an ad-hoc chain with JSON stdout progress stderr and returned run id`
+- Seam: `cli/run/subcommand.ts` (new) > `run chain`; `cli/main.ts` > shared run/workflow bootstrap seam (Pi-flags + `--domain`/`--plugin-dir`/`--model`/`--thinking`/`--completion-label`/`--profile` + `CosmonautsRuntime.create`); `cli/chain-event-logger.ts`; `lib/orchestration/durable-chain-runner.ts`
+- Test: `tests/cli/run/chain.test.ts` > `runs an ad-hoc chain with JSON stdout progress stderr and returned run id`; `tests/cli/run/chain-bootstrap.test.ts` > `honors domain plugin-dir model thinking completion-label and profile like workflow mode`
 - Marker: `@cosmo-behavior plan:orchestration-surface-consolidation#B-010`
 
 ### B-011 - Named chains replace named workflows at the CLI
@@ -380,6 +380,7 @@ Frontend routing:
 
 - Chain keeps compilation, backend creation, event adaptation, and result reconstruction at `lib/orchestration/*`; `runStart` owns setup/scheduler passes.
 - Drive splits graph/step construction from run creation; `runDriveOnGraph` supplies Drive metadata/policy/initial steps to `runStart` and keeps finalizer polling, legacy events, completion-file writing, result mapping, resume metadata validation, and detached runner boundaries in `lib/driver/*`.
+- Drive resume invariant (must survive the split): on resume or partial-init repair, the Drive graph is (re)compiled from the **persisted authoritative original task set** — `run.metadata.driveTaskIds` applied via `withAuthoritativeTaskIds()` — never from a `remainingTaskIds` slice or a fresh current-task selection. The CLI may still compute `remainingTaskIds` from legacy events for queue display, but the graph topology and finalizer dependencies derive from `driveTaskIds`. If `runStart`'s persisted-vs-compiled graph comparison were fed a remaining-slice or re-selected graph, a recoverable resumed run would trip `run_start_graph_mismatch` and lose sequential finalizer ordering. A named test pins `driveTaskIds` vs `remainingTaskIds` behavior across a resumed/partially-initialized Drive run.
 
 ### Group B — normalized observation + `watch_events` compatibility
 
@@ -416,19 +417,26 @@ Drive normalization rules:
 - Filters `run_activity.details.kind === "legacy_driver_event"` in normalized event order and extracts the legacy `DriverEvent` payloads.
 - Treats `since` as a **legacy event count**, not a normalized seq. Implementation can read the full normalized stream for this compatibility tool, build `legacyEvents`, return `legacyEvents.slice(since)`, and set `cursor = legacyEvents.length`.
 - Keeps response shape `{ events, cursor }`, existing compact summaries, and structured `details`.
-- If the normalized run record/events are absent or contain no compatibility `run_activity` events while the legacy Drive JSONL exists at `missions/sessions/<planSlug>/runs/<runId>/events.jsonl`, fall back to `tailEvents` for `watch_events` only, returning the same legacy shape plus a diagnostic/source marker such as `source: "legacy-events-jsonl-fallback"`. This protects callers when `createEventSink()` successfully wrote legacy JSONL but durable setup/append failed. `run_status`/`run_watch` do not use this fallback.
-- Parity tests must include `since > 0`, events that produce multiple canonical normalized events, legacy advisory events that previously produced diagnostics-only normalized data, graph-backed Drive’s `graph-activity-only` filter, and durable-append/setup failure fallback.
+- Fallback must catch **partial** normalized loss, not just total absence. Today each normalized append failure is caught per event and only reported to stderr (`drive_durable_event_append_failed` in `withSafeSchedulerEventWrites`); the failure is not persisted and later appends may still succeed, leaving a *partial-but-healthy-looking* normalized stream that is missing legacy events present in the dual-written JSONL. So before trusting normalized reconstruction `watch_events` must verify **completeness**, via two complementary signals:
+  - **Completeness cross-check (primary).** While Drive still dual-writes legacy `missions/sessions/<planSlug>/runs/<runId>/events.jsonl` this wave, compare the count of reconstructed legacy events (from `run_activity` `legacy_driver_event` payloads) against the legacy JSONL event count. If the normalized reconstruction has fewer events than the legacy file (or the normalized record/events are absent or carry no `run_activity`), the normalized stream is incomplete: fall back to `tailEvents` over the legacy JSONL (authoritative this wave) and mark `source: "legacy-events-jsonl-fallback"` plus a divergence diagnostic.
+  - **Persisted degraded marker (belt-and-suspenders).** When a normalized event append fails at the Drive edge, also write a best-effort degraded sentinel **directly to the run directory** (e.g. `compat-degraded.json`), *not* through the failing durable event store; if that marker exists for the run, `watch_events` takes the legacy fallback regardless of counts.
+  - `run_status`/`run_watch` never use this fallback (normalized-only). The fallback is a `watch_events`-only compatibility affordance.
+- Parity tests must include `since > 0`, events that produce multiple canonical normalized events, legacy advisory events that previously produced diagnostics-only normalized data, graph-backed Drive’s `graph-activity-only` filter, total durable-setup/append failure fallback, **and a partial mid-run append-failure case where some `run_activity` events are present but the reconstruction count is below the legacy JSONL count** (asserting divergence detection + legacy fallback, not a silently-truncated normalized projection).
 
 Chain/Drive observation:
 
-- Graph-backed durable chains include `{ runId, scope: "chain" }` in tool/CLI details.
+- Define the shared chain return contract in `lib/orchestration/types.ts` before T3, so tool and CLI do not invent divergent metadata. Today `runDurableChain` returns `Promise<ChainResult>` and `ChainResult` (`{ success, stageResults, totalDurationMs, errors, stats? }`) has no run identity. Add an optional `run?: { runId: string; scope: "chain" }` to `ChainResult`: `runDurableChain` populates it (it already generates `runId` locally and builds the `{ scope: "chain", runId }` ref); `runChain` (inline/legacy) leaves it `undefined`. The `chain_run ? runChain : runDurableChain` ternary keeps returning `ChainResult`, so callers are unchanged except for reading `result.run`.
+- `chain_run` structured details and `cosmonauts run chain` JSON both read `result.run`; the inline result shape is explicitly `run: undefined` (non-durable / no run record). No frontend adds its own metadata field name.
+- Graph-backed durable chains therefore expose `{ runId, scope: "chain" }` via `result.run` in tool/CLI details.
 - `run_driver` includes `scope: planSlug` in addition to existing `planSlug`.
-- Inline loop/completion chains remain legacy and explicitly non-durable/no-run-record.
+- Inline loop/completion chains remain legacy and explicitly non-durable/no-run-record (`result.run === undefined`).
 - Scope policy: `"chain"` is the reserved normalized scope for graph-backed chains. Because Drive scope is `planSlug` by D-011, Drive frontends must reject `planSlug === "chain"` before lock acquisition or durable run creation. Do not silently prefix Drive scopes in this wave; the architecture record’s scope contract remains `scope: planSlug` for valid Drive plan slugs.
 
 ### Group C — `cosmonauts run` CLI and named-chain rename
 
 Add `cli/run/subcommand.ts` and register `run` in `cli/main.ts` subcommand dispatch.
+
+Bootstrapping seam (load-bearing): the subcommand dispatch in `cli/main.ts:795` (`process.argv[2]` → `createXProgram()` → `parseAsync(process.argv.slice(3))`) **bypasses** `parseCliArgs`/`parsePiFlags`/`buildCliParser`/`run()`. A `run` subcommand added there therefore does NOT inherit Pi-flag parsing, bundled/plugin-dir domain discovery, or the workflow runtime bootstrap that `handleWorkflowMode` relies on. Extract a shared bootstrap helper — Pi-flag parse + `--domain`/`--plugin-dir`/`--model`/`--thinking`/`--completion-label`/`--profile` resolution + `CosmonautsRuntime.create` — used by **both** the legacy workflow-mode path and `cli/run/subcommand.ts`. `cosmonauts run chain` declares those options on its own subcommand parser and calls the shared bootstrap; it must not depend on the top-level parser. A test exercises `run chain` with `--domain`, `--plugin-dir`, `--model`, `--thinking`, `--completion-label`, and `--profile` to prove parity with workflow mode.
 
 Run CLI contract:
 
@@ -442,7 +450,7 @@ Subcommands:
 - `cosmonauts run chain <expression-or-name> [prompt...]`
   - Resolves exact named-chain matches before raw DSL. This reverses the shipped `resolveWorkflowExpression()` order intentionally because `isChainDslExpression()` returns true for single-token names like `verify` and `adapt`.
   - Resolution order: load named chains for the selected domain/project; if the token exactly matches a named chain, use that chain’s `.chain`; otherwise, if `isChainDslExpression(token)` is true, treat the token as raw DSL; otherwise return a JSON error for unknown named chain / invalid chain expression.
-  - Bootstraps `CosmonautsRuntime` similarly to current `handleWorkflowMode`; preserve domain, plugin-dir, model, thinking, completion-label, and profile behavior where applicable.
+  - Bootstraps `CosmonautsRuntime` through the shared bootstrap seam above (not the top-level parser), preserving domain, plugin-dir, model, thinking, completion-label, and profile behavior.
   - Uses existing durable-or-inline predicate; no loop migration.
 - `cosmonauts run chain --name <name> [prompt...]`
   - Explicit named-chain mode for command-name collisions and scripts that want no DSL fallback.
@@ -617,7 +625,7 @@ After code and CLI behavior are stable:
 - **Weak characterization tests.** Group A tests must assert meaningful run files/events/results, not call counts.
 - **`watch_events` cursor parity regresses.** Since is legacy event count, not normalized seq; parity tests must include non-zero cursors and divergent normalized-event counts.
 - **`run_activity` compatibility is filtered from graph-backed Drive.** Graph `graph-activity-only` mode must explicitly preserve `run_activity` while keeping canonical scheduler lifecycle authoritative.
-- **Normalized append/setup failure hides legacy events.** `watch_events` needs an explicit compatibility fallback to legacy JSONL with diagnostics; `run_status`/`run_watch` stay normalized only.
+- **Normalized append/setup failure hides legacy events — including partial mid-run loss.** Per-event append failures are only logged to stderr today, so a partial normalized stream can look healthy; `watch_events` must detect divergence (legacy-count cross-check + persisted degraded marker), not just total absence, before falling back to legacy JSONL with diagnostics. `run_status`/`run_watch` stay normalized only.
 - **`run_activity` compatibility pollutes canonical status.** `run_status` must ignore `run_activity` for terminal status; canonical lifecycle events remain authoritative.
 - **Named-chain lookup regresses shipped single-token names.** `run chain verify`/`adapt` must resolve named chains before raw DSL.
 - **CLI command-name collisions make a valid named chain unreachable.** The `list` registry key remains valid and executable through explicit named-chain mode while bare `run chain list` lists.
@@ -672,6 +680,7 @@ Dependency shape: **A → B/C/D → E**. Group A is the first merge gate. Groups
   - `runDurableChain` delegates create/write/seed/scheduler loop to `runStart` and keeps chain behavior at the chain edge.
   - `compileDriveRunToGraph` is split so `runDriveOnGraph` calls `runStart` with Drive graph/initial steps/create-run metadata.
   - Drive finalizer polling and safe event writes remain Drive-edge layers.
+  - Drive resume/repair compiles the graph from persisted `metadata.driveTaskIds` via `withAuthoritativeTaskIds`, never a `remainingTaskIds` slice; a named test pins `driveTaskIds` vs `remainingTaskIds` across resume and partial-init repair.
   - Durable chain and Drive graph tests remain green, including detached frozen-runner safety and partial-init repair.
 
 ### T3 — Group B: Surface run metadata and normalized observation for graph-backed agent tools
@@ -679,7 +688,8 @@ Dependency shape: **A → B/C/D → E**. Group A is the first merge gate. Groups
 - Dependencies: T2.
 - Behaviors: B-005, B-006, B-007.
 - Acceptance criteria:
-  - `chain_run` details include `{ runId, scope: "chain" }` for graph-backed chains.
+  - Add `ChainResult.run?: { runId; scope: "chain" }`; `runDurableChain` populates it, `runChain` leaves it undefined; a test pins both the durable and inline result shapes.
+  - `chain_run` details include `{ runId, scope: "chain" }` (from `result.run`) for graph-backed chains.
   - `run_driver` response includes `scope: planSlug` while keeping `planSlug`.
   - `run_driver` rejects reserved `planSlug === "chain"` before lock acquisition or durable run creation.
   - Inline loop/completion chains remain legacy and explicitly non-durable.
@@ -694,8 +704,8 @@ Dependency shape: **A → B/C/D → E**. Group A is the first merge gate. Groups
   - Drive emits one `run_activity` compatibility event carrying the original `DriverEvent` for every legacy Drive event, including diagnostics-only/advisory legacy events.
   - `graph-activity-only` mode preserves `run_activity` through `processDurableDriverEvent()` while continuing to filter duplicate canonical lifecycle events.
   - `watch_events` reads normalized events on the healthy path, filters `legacy_driver_event` activity, applies legacy event-count cursor semantics, and keeps response shape/summaries.
-  - If durable setup/append fails after the legacy JSONL write, `watch_events` falls back to legacy `events.jsonl` with an explicit fallback source/diagnostic; `run_status`/`run_watch` do not use the fallback.
-  - Parity tests include cursor 0, non-zero `since`, one-to-many canonical normalization, advisory events, graph-backed Drive mode, and durable-append/setup failure fallback.
+  - `watch_events` verifies normalized completeness before trusting reconstruction: a count cross-check against the dual-written legacy JSONL plus a best-effort persisted `compat-degraded` marker (written to the run dir, not via the failing event store) trigger a legacy `events.jsonl` fallback with an explicit source/diagnostic; `run_status`/`run_watch` do not use the fallback.
+  - Parity tests include cursor 0, non-zero `since`, one-to-many canonical normalization, advisory events, graph-backed Drive mode, total durable-append/setup failure fallback, and a **partial mid-run append-failure** case (some `run_activity` present, reconstruction count below legacy JSONL → divergence detected → legacy fallback).
 
 ### T5 — Group C: Rename workflow registry to named chains
 
@@ -714,7 +724,7 @@ Dependency shape: **A → B/C/D → E**. Group A is the first merge gate. Groups
 - Dependencies: T3, T5.
 - Behaviors: B-010, B-011, B-013.
 - Acceptance criteria:
-  - Register `cosmonauts run`.
+  - Register `cosmonauts run`, and extract the shared bootstrap seam (Pi-flags + domain/plugin-dir/model/thinking/completion-label/profile + `CosmonautsRuntime.create`) used by both workflow mode and `cli/run/*`, since the subcommand dispatch at `cli/main.ts:795` otherwise bypasses top-level flag parsing. A test proves `run chain` honors those options.
   - Implement `run status|watch|list` over normalized controller/store with scope resolution and JSON-only stdout.
   - Implement `run chain <expression-or-name>` using named-chain exact lookup before raw DSL fallback; tests include shipped single-token named chain `verify` or `adapt`.
   - Implement `run chain --name <name>` as explicit named-only mode; tests include a project chain named `list` and verify bare `run chain list` still lists.
@@ -782,3 +792,10 @@ Dependency shape: **A → B/C/D → E**. Group A is the first merge gate. Groups
 - **Missing coverage — `run chain list` and a project chain named `list`.** Resolved by keeping bare `run chain list` as the listing command, allowing `list` as a registry key, and adding explicit named-only execution via `run chain --name list` with B-011/T5/T6 coverage.
 - **Missing coverage — normalized-event failure fallback.** Resolved by keeping normalized reconstruction as the healthy path while adding an explicit `watch_events`-only legacy JSONL fallback with source/diagnostic when durable setup/append fails after the legacy event file was written; `run_status`/`run_watch` remain normalized-only.
 - **Missing coverage — Drive plan slug collides with reserved chain scope.** Resolved by reserving `scope: "chain"` for graph-backed chains and requiring `run_driver`/`run drive` to reject `planSlug === "chain"` before durable run creation, preserving D-011’s `scope: planSlug` rule for valid Drive plans.
+
+### Round 2 (review IDs renumbered PR-001..PR-004)
+
+- **R2-PR-001 (high) — `watch_events` cannot detect partial normalized-event loss.** Resolved in Group B / B-008 / T4: completeness is verified before trusting normalized reconstruction via a count cross-check against the dual-written legacy JSONL plus a best-effort persisted `compat-degraded` marker (written to the run dir, not the failing event store); either signal triggers the `watch_events`-only legacy fallback with a divergence diagnostic. Parity tests now include a partial mid-run append-failure case, not only total absence.
+- **R2-PR-002 (medium) — no contract carries durable chain `runId` to tools/CLI.** Resolved in Group B / B-005 / T3: add `ChainResult.run?: { runId; scope: "chain" }`, populated by `runDurableChain` and left `undefined` by inline `runChain`; `chain_run` details and `cosmonauts run chain` JSON both read `result.run`, and a test pins both the durable and inline result shapes. (Covers the missing inline-result-shape item.)
+- **R2-PR-003 (medium) — `cosmonauts run` bootstrap bypasses Pi-flag/runtime parsing.** Resolved in Group C / B-010 / T6: the `cli/main.ts:795` subcommand dispatch bypasses the top-level parser, so a shared bootstrap seam (Pi-flags + `--domain`/`--plugin-dir`/`--model`/`--thinking`/`--completion-label`/`--profile` + `CosmonautsRuntime.create`) is extracted and used by both workflow mode and `cli/run/*`; a test proves `run chain` parity on those options. (Covers the missing run-chain-options coverage item.)
+- **R2-PR-004 (medium) — Drive resume `driveTaskIds` invariant not pinned.** Resolved in Group A / B-003 / T2: the `runStart` refactor must (re)compile/repair Drive graphs from the persisted authoritative `metadata.driveTaskIds` (via `withAuthoritativeTaskIds`), never a `remainingTaskIds` slice or current selection, so a recoverable resumed/partially-initialized run is not misread as `run_start_graph_mismatch`; a named `driveTaskIds`-vs-`remainingTaskIds` resume test pins it.
