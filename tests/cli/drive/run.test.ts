@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createDriveProgram } from "../../../cli/drive/subcommand.ts";
+import { createDriveCompatProgram } from "../../../cli/drive/subcommand.ts";
 import type { DriverDeps } from "../../../lib/driver/driver.ts";
 import { DEFAULT_TASK_TIMEOUT_MS } from "../../../lib/driver/run-one-task.ts";
 import {
@@ -95,7 +95,7 @@ vi.mock("node:child_process", () => ({
 const temp = useTempDir("drive-cli-test-");
 const PLAN = "drive-plan";
 
-describe("cosmonauts drive run", () => {
+describe("cosmonauts run drive compat run", () => {
 	let output: ReturnType<typeof captureCliOutput> & JsonOutput;
 	let originalCwd: string;
 
@@ -121,9 +121,9 @@ describe("cosmonauts drive run", () => {
 
 	test("creates a zero-argument factory with run and default run commands", async () => {
 		const fixture = await setupFixture(1);
-		const program = createDriveProgram();
+		const program = createDriveCompatProgram();
 
-		expect(program.name()).toBe("cosmonauts drive");
+		expect(program.name()).toBe("cosmonauts run drive compat");
 		expect(program.commands.map((command) => command.name())).toContain("run");
 
 		await parseDrive([
@@ -141,7 +141,7 @@ describe("cosmonauts drive run", () => {
 
 	test("documents the default per-task timeout in run help", () => {
 		expect(DEFAULT_TASK_TIMEOUT_MS).toBe(30 * 60 * 1000);
-		const program = createDriveProgram();
+		const program = createDriveCompatProgram();
 		const runCommand = program.commands.find(
 			(command) => command.name() === "run",
 		);
@@ -1306,7 +1306,11 @@ describe("cosmonauts drive run", () => {
 		expect(runRecord.eventsPath).toBe(
 			join(resumeWorkdir(), "orchestration-events.jsonl"),
 		);
-		expect(normalizedEvents.map((event) => event.event?.type)).toEqual([
+		expect(
+			normalizedEvents
+				.map((event) => event.event?.type)
+				.filter((type) => type !== "run_activity"),
+		).toEqual([
 			"step_tool_activity",
 			"artifact_written",
 			"step_tool_activity",
@@ -1314,11 +1318,14 @@ describe("cosmonauts drive run", () => {
 			"step_tool_activity",
 			"step_completed",
 		]);
+		expect(
+			normalizedEvents.filter((event) => event.event?.type === "run_activity"),
+		).toHaveLength(6);
 	});
 });
 
 async function parseDrive(args: string[]): Promise<void> {
-	const program = createDriveProgram();
+	const program = createDriveCompatProgram();
 	program.exitOverride();
 	await program.parseAsync(args, { from: "user" });
 }

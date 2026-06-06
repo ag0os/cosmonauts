@@ -5,17 +5,14 @@
  *   cosmonauts                                    → interactive REPL
  *   cosmonauts "prompt"                           → interactive with initial prompt
  *   cosmonauts --print "prompt"                   → non-interactive (run, output, exit)
- *   cosmonauts -w name "prompt"                   → named workflow (non-interactive)
- *   cosmonauts -w "a -> b" "prompt"               → raw chain DSL (non-interactive)
- *   cosmonauts -w "reviewer[2]" "prompt"           → fan-out DSL (non-interactive)
- *   cosmonauts -w "[planner, reviewer]" "prompt"   → bracket-group DSL (non-interactive)
+ *   cosmonauts run chain name "prompt"             → named chain or chain DSL
+ *   cosmonauts run drive --plan slug               → driver run management
  *   cosmonauts -c                                 → continue most recent session
  *   cosmonauts --dump-prompt [-a agent]           → dump composed system prompt to stdout
  *   cosmonauts --dump-prompt --file path          → dump composed system prompt to file
  *   cosmonauts init                               → agent-driven AGENTS.md bootstrap
  *   cosmonauts task <command>                     → task management subcommands
  *   cosmonauts plan <command>                     → plan management subcommands
- *   cosmonauts drive <command>                    → driver run management subcommands
  *   cosmonauts export ...                         → export packaged agents as binaries
  *
  * Pi flags (session, provider, tools, mode, etc.) pass through automatically.
@@ -23,8 +20,7 @@
  */
 
 import { writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { InteractiveMode, runPrintMode } from "@earendil-works/pi-coding-agent";
 import { Command, CommanderError } from "commander";
@@ -38,28 +34,12 @@ import { createDefaultProjectConfig } from "../lib/config/defaults.ts";
 import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
 import { buildInitBootstrapPrompt } from "../lib/init/prompt.ts";
 import { setSharedRegistry } from "../lib/interactive/agent-switch.ts";
-import { parseChain } from "../lib/orchestration/chain-parser.ts";
-import { ChainProfiler } from "../lib/orchestration/chain-profiler.ts";
-import {
-	derivePlanSlug,
-	injectUserPrompt,
-	runChain,
-} from "../lib/orchestration/chain-runner.ts";
-import { isChainDslExpression } from "../lib/orchestration/chain-steps.ts";
-import { shouldRunChainInline } from "../lib/orchestration/durable-chain-compiler.ts";
-import { runDurableChain } from "../lib/orchestration/durable-chain-runner.ts";
 import {
 	discoverBundledPackageDirs,
-	discoverFrameworkBundledPackageDirs,
 	isCosmonautsFrameworkRepo,
 } from "../lib/packages/dev-bundled.ts";
-import { CosmonautsRuntime } from "../lib/runtime.ts";
-import { sessionsDirForPlan } from "../lib/sessions/session-store.ts";
-import { listWorkflows, resolveWorkflow } from "../lib/workflows/loader.ts";
-import type { WorkflowDefinition } from "../lib/workflows/types.ts";
-import { createChainEventLogger } from "./chain-event-logger.ts";
+import type { CosmonautsRuntime } from "../lib/runtime.ts";
 import { createCreateProgram } from "./create/subcommand.ts";
-import { createDriveProgram } from "./drive/subcommand.ts";
 import { createEjectProgram } from "./eject/subcommand.ts";
 import { createExportProgram } from "./export/subcommand.ts";
 import {
@@ -69,6 +49,13 @@ import {
 } from "./packages/subcommand.ts";
 import { type PiFlagParseResult, parsePiFlags } from "./pi-flags.ts";
 import { createPlanProgram } from "./plans/index.ts";
+import { createRunProgram } from "./run/subcommand.ts";
+import {
+	type CliRuntimeOptions,
+	createCliRuntimeContext,
+	parseCliRuntimeOptions,
+	parseThinkingLevel,
+} from "./runtime-bootstrap.ts";
 import { createScaffoldProgram } from "./scaffold/subcommand.ts";
 import { createSession, GracefulExitError } from "./session.ts";
 import { createSessionsProgram } from "./sessions/subcommand.ts";
@@ -85,28 +72,6 @@ import type { CliOptions } from "./types.ts";
 import { createUpdateProgram } from "./update/subcommand.ts";
 
 export { discoverBundledPackageDirs, isCosmonautsFrameworkRepo };
-
-// ============================================================================
-// Thinking Level Validation
-// ============================================================================
-
-const VALID_THINKING_LEVELS: ReadonlySet<string> = new Set([
-	"off",
-	"minimal",
-	"low",
-	"medium",
-	"high",
-	"xhigh",
-]);
-
-function parseThinkingLevel(value: string): ThinkingLevel {
-	if (!VALID_THINKING_LEVELS.has(value)) {
-		throw new Error(
-			`Invalid thinking level "${value}". Valid: ${[...VALID_THINKING_LEVELS].join(", ")}`,
-		);
-	}
-	return value as ThinkingLevel;
-}
 
 // ============================================================================
 // Argument Parsing
@@ -155,10 +120,6 @@ function buildCliParser(): Command {
 			"Agent to use (e.g. planner, worker, coordinator)",
 		)
 		.option(
-			"-w, --workflow <expression>",
-			"Run a named workflow or chain DSL. Named: 'plan-and-build'. Arrow: 'planner -> coordinator'. Fan-out: 'reviewer[2]'. Bracket: '[planner, reviewer]'.",
-		)
-		.option(
 			"--completion-label <label>",
 			'Task label scope for loop completion checks (e.g. "plan:auth-system")',
 		)
@@ -169,7 +130,6 @@ function buildCliParser(): Command {
 		)
 		.option("-d, --domain <id>", "Set domain context for agent resolution")
 		.option("--list-domains", "List all discovered domains and exit")
-		.option("--list-workflows", "List available workflows and exit")
 		.option("--list-agents", "List available agent IDs and exit")
 		.option(
 			"--dump-prompt",
@@ -191,11 +151,11 @@ function buildCliParser(): Command {
 		)
 		.option(
 			"--json",
-			"Emit machine-readable JSON output (for --list-domains, --list-agents, --list-workflows)",
+			"Emit machine-readable JSON output (for --list-domains, --list-agents)",
 		)
 		.option(
 			"--plain",
-			"Emit minimal plain-text output for agents (for --list-domains, --list-agents, --list-workflows)",
+			"Emit minimal plain-text output for agents (for --list-domains, --list-agents)",
 		)
 		.argument("[prompt...]", "Prompt text");
 
@@ -222,13 +182,11 @@ function parseThinkingOption(value: unknown): ThinkingLevel | undefined {
 interface ParsedCliOptionValues {
 	print?: boolean;
 	agent?: string;
-	workflow?: string;
 	completionLabel?: string;
 	model?: string;
 	thinking?: unknown;
 	domain?: string;
 	listDomains?: boolean;
-	listWorkflows?: boolean;
 	listAgents?: boolean;
 	dumpPrompt?: boolean;
 	file?: string;
@@ -255,12 +213,10 @@ function normalizeCliOptions(
 		prompt,
 		print: opts.print ?? false,
 		agent: opts.agent,
-		workflow: opts.workflow,
 		completionLabel: opts.completionLabel,
 		model: opts.model,
 		thinking,
 		init: isInit,
-		listWorkflows: opts.listWorkflows ?? false,
 		listAgents: opts.listAgents ?? false,
 		domain: opts.domain,
 		listDomains: opts.listDomains ?? false,
@@ -272,43 +228,6 @@ function normalizeCliOptions(
 		plain: opts.plain ?? false,
 		piFlags: piResult.flags,
 	};
-}
-
-// ============================================================================
-// Workflow routing
-// ============================================================================
-
-export function shouldParseWorkflowAsRawChainExpression(
-	expression: string,
-): boolean {
-	return isChainDslExpression(expression);
-}
-
-export async function resolveWorkflowExpression(
-	expression: string,
-	projectRoot: string,
-	domainWorkflows?: readonly WorkflowDefinition[],
-): Promise<string> {
-	if (shouldParseWorkflowAsRawChainExpression(expression)) {
-		return expression;
-	}
-
-	try {
-		const workflow = await resolveWorkflow(
-			expression,
-			projectRoot,
-			domainWorkflows,
-		);
-		return workflow.chain;
-	} catch (error) {
-		if (
-			error instanceof Error &&
-			error.message.startsWith(`Unknown workflow "${expression}"`)
-		) {
-			return expression;
-		}
-		throw error;
-	}
 }
 
 export function buildInitSessionConfig(cwd: string) {
@@ -328,11 +247,9 @@ export function buildInitSessionConfig(cwd: string) {
 type CliRunMode =
 	| "no-domain-guard"
 	| "list-domains"
-	| "list-workflows"
 	| "list-agents"
 	| "dump-prompt"
 	| "init"
-	| "workflow"
 	| "print"
 	| "interactive";
 
@@ -343,7 +260,6 @@ export function selectRunMode(
 	const isBypassCommand =
 		options.init ||
 		options.listDomains ||
-		options.listWorkflows ||
 		options.listAgents ||
 		options.dumpPrompt;
 	if (!hasNonSharedDomain && !isBypassCommand) {
@@ -351,43 +267,23 @@ export function selectRunMode(
 	}
 
 	if (options.listDomains) return "list-domains";
-	if (options.listWorkflows) return "list-workflows";
 	if (options.listAgents) return "list-agents";
 	if (options.dumpPrompt) return "dump-prompt";
 	if (options.init) return "init";
-	if (options.workflow) return "workflow";
 	if (options.print) return "print";
 	return "interactive";
 }
 
 async function run(options: CliOptions): Promise<void> {
-	const cwd = process.cwd();
-	const frameworkRoot = resolve(fileURLToPath(import.meta.url), "..", "..");
-	const domainsDir = join(frameworkRoot, "domains");
-
-	// Dev-mode auto-detection: auto-include bundled/ packages when running
-	// from inside the framework repo (name='cosmonauts', bundled/ exists).
-	const bundledDirs = await discoverFrameworkBundledPackageDirs(frameworkRoot);
-
-	// Bootstrap: load config, discover domains, build registries
-	const runtime = await CosmonautsRuntime.create({
-		builtinDomainsDir: domainsDir,
-		projectRoot: cwd,
-		domainOverride: options.domain,
-		bundledDirs,
-		pluginDirs: options.pluginDirs,
-	});
+	const { cwd, runtime } = await createCliRuntimeContext(options);
 
 	const mode = selectRunMode(options, hasInstalledDomain(runtime));
 	const handlers: Record<CliRunMode, () => Promise<void>> = {
 		"no-domain-guard": async () => handleNoDomainGuard(),
 		"list-domains": () => handleListDomains(runtime, options),
-		"list-workflows": () =>
-			handleListWorkflows(cwd, runtime.workflows, options),
 		"list-agents": () => handleListAgents(runtime, options),
 		"dump-prompt": () => handleDumpPrompt(runtime, options),
 		init: () => handleInitMode(runtime, options, cwd),
-		workflow: () => handleWorkflowMode(runtime, options, cwd),
 		print: () => handlePrintMode(runtime, options, cwd),
 		interactive: () => handleInteractiveMode(runtime, options, cwd),
 	};
@@ -421,13 +317,6 @@ export interface DomainListItem {
 	portable: boolean;
 }
 
-/** Workflow entry shape used by `--list-workflows --json`. */
-export interface WorkflowListItem {
-	name: string;
-	description: string;
-	chain: string;
-}
-
 /** Agent entry shape used by `--list-agents --json`. */
 export interface AgentListItem {
 	id: string;
@@ -459,32 +348,6 @@ export function renderDomainsList(
 			domains.length === 0
 				? ["No domains found."]
 				: domains.map((item) => `  ${item.id}  ${item.description}`),
-	};
-}
-
-export function renderWorkflowsList(
-	workflows: readonly WorkflowListItem[],
-	mode: CliOutputMode,
-): { kind: "json"; value: unknown } | { kind: "lines"; lines: string[] } {
-	if (mode === "json") {
-		return { kind: "json", value: workflows };
-	}
-
-	if (mode === "plain") {
-		return {
-			kind: "lines",
-			lines: workflows.map(
-				(item) => `${item.name}\t${item.description}\t${item.chain}`,
-			),
-		};
-	}
-
-	return {
-		kind: "lines",
-		lines:
-			workflows.length === 0
-				? ["No workflows available."]
-				: workflows.map((item) => `  ${item.name}  ${item.description}`),
 	};
 }
 
@@ -531,20 +394,6 @@ async function handleListDomains(
 		portable: domain.portable,
 	}));
 	emit(renderDomainsList(items, resolveCliOutputMode(options)));
-}
-
-async function handleListWorkflows(
-	cwd: string,
-	domainWorkflows: readonly WorkflowDefinition[],
-	options: CliOptions,
-): Promise<void> {
-	const workflows = await listWorkflows(cwd, domainWorkflows);
-	const items: WorkflowListItem[] = workflows.map((workflow) => ({
-		name: workflow.name,
-		description: workflow.description,
-		chain: workflow.chain,
-	}));
-	emit(renderWorkflowsList(items, resolveCliOutputMode(options)));
 }
 
 async function handleListAgents(
@@ -634,81 +483,6 @@ async function handleInitMode(
 	await interactive.run();
 }
 
-export async function handleWorkflowMode(
-	runtime: CosmonautsRuntime,
-	options: CliOptions,
-	cwd: string,
-): Promise<void> {
-	const {
-		agentRegistry: registry,
-		domainContext,
-		workflows: domainWorkflows,
-		projectSkills,
-		skillPaths,
-	} = runtime;
-
-	const chainExpr = await resolveWorkflowExpression(
-		options.workflow ?? "",
-		cwd,
-		domainWorkflows,
-	);
-	const steps = parseChain(chainExpr, registry, domainContext);
-	injectUserPrompt(steps, options.prompt);
-
-	let profiler: ChainProfiler | undefined;
-	let onEvent = createChainEventLogger();
-
-	if (options.profile) {
-		const planSlug = derivePlanSlug(options.completionLabel);
-		const outputDir = planSlug
-			? sessionsDirForPlan(cwd, planSlug)
-			: join(cwd, "missions", "sessions", "_profiles");
-		const activeProfiler = new ChainProfiler({ outputDir });
-		profiler = activeProfiler;
-		const logger = onEvent;
-		onEvent = (event) => {
-			logger(event);
-			activeProfiler.handleEvent(event);
-		};
-	}
-
-	let result: Awaited<ReturnType<typeof runChain>>;
-	try {
-		const chainConfig = {
-			steps,
-			projectRoot: cwd,
-			domainContext,
-			onEvent,
-			projectSkills,
-			skillPaths,
-			completionLabel: options.completionLabel,
-			registry,
-			domainsDir: runtime.domainsDir,
-			resolver: runtime.domainResolver,
-			...(options.thinking && { thinking: { default: options.thinking } }),
-		};
-		result = shouldRunChainInline(steps, {
-			completionLabel: options.completionLabel,
-		})
-			? await runChain(chainConfig)
-			: await runDurableChain(chainConfig);
-	} finally {
-		if (profiler) {
-			try {
-				const { tracePath, summaryPath } = await profiler.writeOutput();
-				process.stderr.write(`Profile trace:   ${tracePath}\n`);
-				process.stderr.write(`Profile summary: ${summaryPath}\n`);
-			} catch (err) {
-				process.stderr.write(`Failed to write profile output: ${err}\n`);
-			}
-		}
-	}
-
-	if (!result.success) {
-		process.exitCode = 1;
-	}
-}
-
 async function handlePrintMode(
 	runtime: CosmonautsRuntime,
 	options: CliOptions,
@@ -793,7 +567,19 @@ function resolveCliAgent(
 // ============================================================================
 
 const subcommand = process.argv[2];
-if (
+const runInvocation = parseRunInvocation(process.argv.slice(2));
+if (runInvocation) {
+	const program = createRunProgram({
+		runtimeOptions: runInvocation.runtimeOptions,
+	});
+	program
+		.parseAsync(runInvocation.argv, { from: "user" })
+		.catch((err: unknown) => {
+			const message = err instanceof Error ? err.message : String(err);
+			printCliError(message, {}, { prefix: "cosmonauts run" });
+			process.exitCode = 1;
+		});
+} else if (
 	subcommand === "task" ||
 	subcommand === "plan" ||
 	subcommand === "scaffold" ||
@@ -804,7 +590,6 @@ if (
 	subcommand === "packages" ||
 	subcommand === "update" ||
 	subcommand === "eject" ||
-	subcommand === "drive" ||
 	subcommand === "export" ||
 	subcommand === "session"
 ) {
@@ -819,7 +604,6 @@ if (
 		packages: createPackagesProgram,
 		update: createUpdateProgram,
 		eject: createEjectProgram,
-		drive: createDriveProgram,
 		export: createExportProgram,
 		session: createSessionsProgram,
 	};
@@ -858,3 +642,20 @@ if (
 		}
 	}
 } // end else (non-subcommand path)
+
+function parseRunInvocation(
+	argv: readonly string[],
+): { runtimeOptions: CliRuntimeOptions; argv: string[] } | undefined {
+	const parsed = parseCliRuntimeOptions(argv);
+	const runIndex = parsed.remaining.indexOf("run");
+	if (runIndex === -1 || runIndex > 0) {
+		return undefined;
+	}
+	for (const warning of parsed.warnings) {
+		console.warn(`[cosmonauts] ${warning}`);
+	}
+	return {
+		runtimeOptions: parsed.options,
+		argv: parsed.remaining.slice(runIndex + 1),
+	};
+}

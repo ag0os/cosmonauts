@@ -364,7 +364,7 @@ describe("createRegistryFromDomains", () => {
 				prompts: new Set(["worker", "planner"]),
 				skills: new Set([]),
 				extensions: new Set(["tasks"]),
-				workflows: [],
+				chains: [],
 				rootDirs: ["/tmp/domains/coding"],
 			},
 		];
@@ -415,7 +415,7 @@ describe("createRegistryFromDomains", () => {
 				prompts: new Set(),
 				skills: new Set(),
 				extensions: new Set(),
-				workflows: [],
+				chains: [],
 				rootDirs: ["/tmp/domains/coding"],
 			},
 			{
@@ -426,7 +426,7 @@ describe("createRegistryFromDomains", () => {
 				prompts: new Set(),
 				skills: new Set(),
 				extensions: new Set(),
-				workflows: [],
+				chains: [],
 				rootDirs: ["/tmp/domains/docs"],
 			},
 		];

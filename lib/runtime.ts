@@ -8,6 +8,8 @@
 
 import type { AgentRegistry } from "./agents/index.ts";
 import { createRegistryFromDomains } from "./agents/index.ts";
+import { selectDomainChains } from "./chains/loader.ts";
+import type { NamedChain } from "./chains/types.ts";
 import type { ProjectConfig } from "./config/index.ts";
 import { loadProjectConfig } from "./config/index.ts";
 import type { LoadedDomain } from "./domains/index.ts";
@@ -15,8 +17,6 @@ import { DomainRegistry, loadDomainsFromSources } from "./domains/index.ts";
 import { DomainResolver } from "./domains/resolver.ts";
 import { DomainValidationError, validateDomains } from "./domains/validator.ts";
 import { scanDomainSources } from "./packages/scanner.ts";
-import { selectDomainWorkflows } from "./workflows/loader.ts";
-import type { WorkflowDefinition } from "./workflows/types.ts";
 
 /** Options for creating a CosmonautsRuntime instance. */
 export interface CosmonautsRuntimeOptions {
@@ -53,7 +53,7 @@ export class CosmonautsRuntime {
 	 * Replaces the raw domainsDir — use this for all downstream domain lookups.
 	 */
 	readonly domainResolver: DomainResolver;
-	readonly workflows: readonly WorkflowDefinition[];
+	readonly chains: readonly NamedChain[];
 	readonly projectSkills: readonly string[] | undefined;
 	/**
 	 * Complete list of skill directories Cosmonauts should discover from.
@@ -76,7 +76,7 @@ export class CosmonautsRuntime {
 		agentRegistry: AgentRegistry;
 		domainContext: string | undefined;
 		domainResolver: DomainResolver;
-		workflows: readonly WorkflowDefinition[];
+		chains: readonly NamedChain[];
 		projectSkills: readonly string[] | undefined;
 		skillPaths: readonly string[];
 		domainsDir: string;
@@ -87,7 +87,7 @@ export class CosmonautsRuntime {
 		this.agentRegistry = fields.agentRegistry;
 		this.domainContext = fields.domainContext;
 		this.domainResolver = fields.domainResolver;
-		this.workflows = fields.workflows;
+		this.chains = fields.chains;
 		this.projectSkills = fields.projectSkills;
 		this.skillPaths = fields.skillPaths;
 		this.domainsDir = fields.domainsDir;
@@ -95,7 +95,7 @@ export class CosmonautsRuntime {
 
 	/**
 	 * Bootstrap the runtime: load config, scan all domain sources, load and
-	 * merge domains, validate, build registries, compute domain context and workflows.
+	 * merge domains, validate, build registries, compute domain context and chains.
 	 *
 	 * Domain sources are scanned in precedence order:
 	 *   0 — built-in domains directory
@@ -130,8 +130,8 @@ export class CosmonautsRuntime {
 		const warnings = diagnostics.filter((d) => d.severity === "warning");
 		for (const w of warnings) {
 			const loc = w.agent ? `${w.domain}/${w.agent}` : w.domain;
-			const wfTag = w.workflow ? ` workflow:${w.workflow}` : "";
-			console.error(`[warning] [${loc}${wfTag}] ${w.message}`);
+			const chainTag = w.chain ? ` chain:${w.chain}` : "";
+			console.error(`[warning] [${loc}${chainTag}] ${w.message}`);
 		}
 
 		// Throw on errors
@@ -150,8 +150,8 @@ export class CosmonautsRuntime {
 		// 7. Compute effective domain context
 		const domainContext = options.domainOverride ?? projectConfig.domain;
 
-		// 8. Compute effective workflows
-		const workflows = selectDomainWorkflows(domains, domainContext);
+		// 8. Compute effective chains
+		const chains = selectDomainChains(domains, domainContext);
 
 		// 9. Compose skill paths from all domain sources + user config
 		const domainSkillDirs = domainResolver.allSkillDirs();
@@ -168,7 +168,7 @@ export class CosmonautsRuntime {
 			agentRegistry,
 			domainContext,
 			domainResolver,
-			workflows,
+			chains,
 			projectSkills: projectConfig.skills,
 			skillPaths,
 			domainsDir: options.builtinDomainsDir,

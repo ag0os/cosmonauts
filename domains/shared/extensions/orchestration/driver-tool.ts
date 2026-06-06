@@ -30,6 +30,7 @@ import {
 	type DriverResult,
 	type DriverRunSpec,
 	type StateCommitPolicy,
+	validateDriverPlanSlug,
 } from "../../../../lib/driver/types.ts";
 import { activityBus } from "../../../../lib/orchestration/activity-bus.ts";
 import { createPiSpawner } from "../../../../lib/orchestration/agent-spawner.ts";
@@ -43,9 +44,17 @@ interface ActiveDriverRun {
 
 interface RunDriverStarted {
 	runId: string;
+	scope: string;
 	planSlug: string;
 	workdir: string;
 	eventLogPath: string;
+}
+
+interface RunDriverReservedScope {
+	error: "reserved_scope";
+	planSlug: string;
+	scope: "chain";
+	message: string;
 }
 
 interface RunDriverActive {
@@ -64,6 +73,7 @@ interface RunDriverUnsupportedDetachedBackend {
 type RunDriverResponse =
 	| RunDriverStarted
 	| RunDriverActive
+	| RunDriverReservedScope
 	| RunDriverUnsupportedDetachedBackend;
 
 type DriverMode = "inline" | "detached";
@@ -170,6 +180,17 @@ export function registerDriverTool(
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			const planSlug = params.planSlug;
+			try {
+				validateDriverPlanSlug(planSlug);
+			} catch (error) {
+				return runDriverResult({
+					error: "reserved_scope",
+					planSlug,
+					scope: "chain",
+					message: formatError(error),
+				});
+			}
+
 			let mode = params.mode;
 			if (mode === "detached" && params.backend === "cosmonauts-subagent") {
 				return runDriverResult({
@@ -242,6 +263,7 @@ export function registerDriverTool(
 				clearActiveRunOnCompletion(activeKey, handle);
 				return runDriverResult({
 					runId: handle.runId,
+					scope: handle.planSlug,
 					planSlug: handle.planSlug,
 					workdir: handle.workdir,
 					eventLogPath: handle.eventLogPath,
@@ -452,11 +474,18 @@ function clearActiveRunOnCompletion(
 ): void {
 	void handle.result
 		.then(
-			(result) => writeRunCompletion(handle.workdir, result),
-			(error: unknown) =>
-				writeRunCompletion(handle.workdir, abortedCompletion(handle, error)),
+			(result) => {
+				clearActiveRun(activeKey, handle.runId);
+				return writeRunCompletion(handle.workdir, result);
+			},
+			(error: unknown) => {
+				clearActiveRun(activeKey, handle.runId);
+				return writeRunCompletion(
+					handle.workdir,
+					abortedCompletion(handle, error),
+				);
+			},
 		)
-		.finally(() => clearActiveRun(activeKey, handle.runId))
 		.catch(() => undefined);
 }
 

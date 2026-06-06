@@ -199,6 +199,6 @@ function renderInitializedHumanResult(
 
 function renderProjectConfigLine(created: boolean): string {
 	return created
-		? "- Created .cosmonauts/config.json with default workflows"
+		? "- Created .cosmonauts/config.json with default named chains"
 		: "- .cosmonauts/config.json already exists (unchanged)";
 }

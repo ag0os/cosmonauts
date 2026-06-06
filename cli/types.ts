@@ -13,8 +13,6 @@ export interface CliOptions {
 	print: boolean;
 	/** Agent ID to use instead of cosmo (e.g. "planner", "worker") */
 	agent?: string;
-	/** Named workflow or raw chain DSL expression (detects by presence of "->") */
-	workflow?: string;
 	/** Optional task label scope for loop completion checks */
 	completionLabel?: string;
 	/** Model override in "provider/model-id" format */
@@ -23,8 +21,6 @@ export interface CliOptions {
 	thinking?: ThinkingLevel;
 	/** Run the init subcommand */
 	init: boolean;
-	/** List available workflows and exit */
-	listWorkflows: boolean;
 	/** List available agent IDs and exit */
 	listAgents: boolean;
 	/** Domain context for this invocation */

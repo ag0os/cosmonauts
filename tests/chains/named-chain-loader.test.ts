@@ -1,7 +1,7 @@
 /**
- * Tests for workflow loader.
+ * Tests for chain loader.
  *
- * Workflows come from two sources: domain-provided defaults and
+ * Chains come from two sources: domain-provided defaults and
  * project config (`.cosmonauts/config.json`). Project config takes
  * precedence on name collision.
  */
@@ -10,27 +10,27 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
-	listWorkflows,
-	loadWorkflows,
-	resolveWorkflow,
-} from "../../lib/workflows/loader.ts";
+	listNamedChains,
+	loadNamedChains,
+	resolveNamedChain,
+} from "../../lib/chains/loader.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
-const tmp = useTempDir("workflow-test-");
+const tmp = useTempDir("chain-test-");
 
-describe("loadWorkflows", () => {
+describe("loadNamedChains", () => {
 	test("returns empty array when no config file exists", async () => {
-		const workflows = await loadWorkflows(tmp.path);
+		const chains = await loadNamedChains(tmp.path);
 
-		expect(workflows).toEqual([]);
+		expect(chains).toEqual([]);
 	});
 
-	test("loads workflows from project config", async () => {
+	test("loads chains from project config", async () => {
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
 			JSON.stringify({
-				workflows: {
+				chains: {
 					"plan-and-build": {
 						description: "Full pipeline",
 						chain: "planner -> task-manager -> coordinator -> quality-manager",
@@ -47,58 +47,59 @@ describe("loadWorkflows", () => {
 			}),
 		);
 
-		const workflows = await loadWorkflows(tmp.path);
+		const chains = await loadNamedChains(tmp.path);
 
-		expect(workflows.length).toBe(3);
-		expect(workflows.map((w) => w.name)).toContain("plan-and-build");
-		expect(workflows.map((w) => w.name)).toContain("implement");
-		expect(workflows.map((w) => w.name)).toContain("verify");
+		expect(chains.length).toBe(3);
+		expect(chains.map((w) => w.name)).toContain("plan-and-build");
+		expect(chains.map((w) => w.name)).toContain("implement");
+		expect(chains.map((w) => w.name)).toContain("verify");
 	});
 
-	test("loads single workflow from config", async () => {
+	test("loads single chain from config", async () => {
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
 			JSON.stringify({
-				workflows: {
+				chains: {
 					refactor: {
-						description: "Refactoring workflow",
+						description: "Refactoring chain",
 						chain: "planner -> task-manager -> coordinator",
 					},
 				},
 			}),
 		);
 
-		const workflows = await loadWorkflows(tmp.path);
+		const chains = await loadNamedChains(tmp.path);
 
-		expect(workflows.length).toBe(1);
-		expect(workflows[0]?.name).toBe("refactor");
-		expect(workflows[0]?.chain).toBe("planner -> task-manager -> coordinator");
+		expect(chains.length).toBe(1);
+		expect(chains[0]?.name).toBe("refactor");
+		expect(chains[0]?.chain).toBe("planner -> task-manager -> coordinator");
 	});
 
-	test("loads multiple workflows from config", async () => {
+	test("loads a project chain named list as registry data", async () => {
+		// @cosmo-behavior plan:orchestration-surface-consolidation#B-011
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
 			JSON.stringify({
-				workflows: {
-					build: {
-						description: "Build workflow",
-						chain: "planner -> coordinator",
-					},
-					deploy: {
-						description: "Deploy workflow",
-						chain: "worker",
+				chains: {
+					list: {
+						description: "Project list chain",
+						chain: "planner -> reviewer",
 					},
 				},
 			}),
 		);
 
-		const workflows = await loadWorkflows(tmp.path);
+		const chains = await loadNamedChains(tmp.path);
 
-		expect(workflows.length).toBe(2);
-		expect(workflows.map((w) => w.name)).toContain("build");
-		expect(workflows.map((w) => w.name)).toContain("deploy");
+		expect(chains).toEqual([
+			{
+				name: "list",
+				description: "Project list chain",
+				chain: "planner -> reviewer",
+			},
+		]);
 	});
 
 	test("invalid JSON throws descriptive error", async () => {
@@ -108,7 +109,7 @@ describe("loadWorkflows", () => {
 			"not valid json {{{",
 		);
 
-		await expect(loadWorkflows(tmp.path)).rejects.toThrow("Invalid JSON");
+		await expect(loadNamedChains(tmp.path)).rejects.toThrow("Invalid JSON");
 	});
 
 	test("empty config returns empty array", async () => {
@@ -118,108 +119,108 @@ describe("loadWorkflows", () => {
 			JSON.stringify({}),
 		);
 
-		const workflows = await loadWorkflows(tmp.path);
-		expect(workflows).toEqual([]);
+		const chains = await loadNamedChains(tmp.path);
+		expect(chains).toEqual([]);
 	});
 
-	test("config with only skills and no workflows returns empty array", async () => {
+	test("config with only skills and no chains returns empty array", async () => {
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
 			JSON.stringify({ skills: ["typescript"] }),
 		);
 
-		const workflows = await loadWorkflows(tmp.path);
-		expect(workflows).toEqual([]);
+		const chains = await loadNamedChains(tmp.path);
+		expect(chains).toEqual([]);
 	});
 });
 
-describe("resolveWorkflow", () => {
-	test("throws for any workflow name when no config exists", async () => {
-		await expect(resolveWorkflow("plan-and-build", tmp.path)).rejects.toThrow(
-			'Unknown workflow "plan-and-build"',
+describe("resolveNamedChain", () => {
+	test("throws for any chain name when no config exists", async () => {
+		await expect(resolveNamedChain("plan-and-build", tmp.path)).rejects.toThrow(
+			'Unknown named chain "plan-and-build"',
 		);
 	});
 
-	test("resolves project-defined workflow", async () => {
+	test("resolves project-defined chain", async () => {
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
 			JSON.stringify({
-				workflows: {
+				chains: {
 					deploy: {
-						description: "Deploy workflow",
+						description: "Deploy chain",
 						chain: "worker",
 					},
 				},
 			}),
 		);
 
-		const wf = await resolveWorkflow("deploy", tmp.path);
+		const wf = await resolveNamedChain("deploy", tmp.path);
 		expect(wf.name).toBe("deploy");
 		expect(wf.chain).toBe("worker");
 	});
 
-	test("throws for unknown workflow name with config", async () => {
+	test("throws for unknown chain name with config", async () => {
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
 			JSON.stringify({
-				workflows: {
+				chains: {
 					deploy: {
-						description: "Deploy workflow",
+						description: "Deploy chain",
 						chain: "worker",
 					},
 				},
 			}),
 		);
 
-		await expect(resolveWorkflow("nonexistent", tmp.path)).rejects.toThrow(
-			'Unknown workflow "nonexistent"',
+		await expect(resolveNamedChain("nonexistent", tmp.path)).rejects.toThrow(
+			'Unknown named chain "nonexistent"',
 		);
 	});
 });
 
-describe("listWorkflows", () => {
+describe("listNamedChains", () => {
 	test("returns empty array when no config exists", async () => {
-		const listed = await listWorkflows(tmp.path);
+		const listed = await listNamedChains(tmp.path);
 		expect(listed).toEqual([]);
 	});
 
-	test("returns same result as loadWorkflows", async () => {
+	test("returns same result as loadNamedChains", async () => {
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
 			JSON.stringify({
-				workflows: {
+				chains: {
 					build: {
-						description: "Build workflow",
+						description: "Build chain",
 						chain: "planner -> coordinator",
 					},
 				},
 			}),
 		);
 
-		const loaded = await loadWorkflows(tmp.path);
-		const listed = await listWorkflows(tmp.path);
+		const loaded = await loadNamedChains(tmp.path);
+		const listed = await listNamedChains(tmp.path);
 
 		expect(listed).toEqual(loaded);
 	});
 });
 
-describe("domain workflow merging", () => {
-	test("merges domain workflows with project config", async () => {
+describe("domain chain merging", () => {
+	test("merges domain chains with project config", async () => {
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
 			JSON.stringify({
-				workflows: {
+				chains: {
 					deploy: { description: "Deploy", chain: "worker" },
 				},
 			}),
 		);
 
-		const domainWorkflows = [
+		const domainChains = [
 			{
 				name: "plan-and-build",
 				description: "Full pipeline",
@@ -228,19 +229,20 @@ describe("domain workflow merging", () => {
 			{ name: "verify", description: "Review", chain: "quality-manager" },
 		];
 
-		const workflows = await loadWorkflows(tmp.path, domainWorkflows);
-		expect(workflows).toHaveLength(3);
-		expect(workflows.map((w) => w.name)).toContain("plan-and-build");
-		expect(workflows.map((w) => w.name)).toContain("verify");
-		expect(workflows.map((w) => w.name)).toContain("deploy");
+		const chains = await loadNamedChains(tmp.path, domainChains);
+		expect(chains).toHaveLength(3);
+		expect(chains.map((w) => w.name)).toContain("plan-and-build");
+		expect(chains.map((w) => w.name)).toContain("verify");
+		expect(chains.map((w) => w.name)).toContain("deploy");
 	});
 
-	test("project config overrides domain workflow on name collision", async () => {
+	test("project config overrides domain chain on name collision", async () => {
+		// @cosmo-behavior plan:orchestration-surface-consolidation#B-015
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
 			JSON.stringify({
-				workflows: {
+				chains: {
 					"plan-and-build": {
 						description: "Custom pipeline",
 						chain: "worker",
@@ -249,7 +251,7 @@ describe("domain workflow merging", () => {
 			}),
 		);
 
-		const domainWorkflows = [
+		const domainChains = [
 			{
 				name: "plan-and-build",
 				description: "Default pipeline",
@@ -257,15 +259,15 @@ describe("domain workflow merging", () => {
 			},
 		];
 
-		const workflows = await loadWorkflows(tmp.path, domainWorkflows);
-		expect(workflows).toHaveLength(1);
-		const pab = workflows.find((w) => w.name === "plan-and-build");
+		const chains = await loadNamedChains(tmp.path, domainChains);
+		expect(chains).toHaveLength(1);
+		const pab = chains.find((w) => w.name === "plan-and-build");
 		expect(pab?.chain).toBe("worker"); // project config wins
 		expect(pab?.description).toBe("Custom pipeline");
 	});
 
-	test("domain workflows returned when no project config exists", async () => {
-		const domainWorkflows = [
+	test("domain chains returned when no project config exists", async () => {
+		const domainChains = [
 			{
 				name: "plan-and-build",
 				description: "Full pipeline",
@@ -273,13 +275,13 @@ describe("domain workflow merging", () => {
 			},
 		];
 
-		const workflows = await loadWorkflows(tmp.path, domainWorkflows);
-		expect(workflows).toHaveLength(1);
-		expect(workflows[0]?.name).toBe("plan-and-build");
+		const chains = await loadNamedChains(tmp.path, domainChains);
+		expect(chains).toHaveLength(1);
+		expect(chains[0]?.name).toBe("plan-and-build");
 	});
 
-	test("resolveWorkflow finds domain-provided workflow", async () => {
-		const domainWorkflows = [
+	test("resolveNamedChain finds domain-provided chain", async () => {
+		const domainChains = [
 			{
 				name: "plan-and-build",
 				description: "Full pipeline",
@@ -287,21 +289,21 @@ describe("domain workflow merging", () => {
 			},
 		];
 
-		const wf = await resolveWorkflow(
+		const wf = await resolveNamedChain(
 			"plan-and-build",
 			tmp.path,
-			domainWorkflows,
+			domainChains,
 		);
 		expect(wf.name).toBe("plan-and-build");
 		expect(wf.chain).toBe("planner -> coordinator");
 	});
 
-	test("listWorkflows includes domain workflows", async () => {
-		const domainWorkflows = [
+	test("listNamedChains includes domain chains", async () => {
+		const domainChains = [
 			{ name: "verify", description: "Review", chain: "quality-manager" },
 		];
 
-		const listed = await listWorkflows(tmp.path, domainWorkflows);
+		const listed = await listNamedChains(tmp.path, domainChains);
 		expect(listed).toHaveLength(1);
 		expect(listed[0]?.name).toBe("verify");
 	});

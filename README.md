@@ -6,13 +6,13 @@ What makes it different from using a single assistant directly:
 
 - **Agent-first** — you build your *own* agents and the workflows that run them automatically, instead of working inside someone else's fixed assistant.
 - **Backend-agnostic** — run whatever model is available: OpenAI, Anthropic, or open-source.
-- **Orchestrate internally *or* externally** — drive agents from the Cosmonauts CLI, or from another agent harness that calls Cosmonauts' skills and tools (chains, workflows, the drive system).
+- **Orchestrate internally *or* externally** — drive agents from the Cosmonauts CLI, or from another agent harness that calls Cosmonauts' skills and tools (chains and the drive system).
 
 > ⚠️ **Alpha software.** Cosmonauts is in early development and the architecture is still evolving. Expect breaking changes — APIs, file formats, CLI surface, and domain conventions may all change without notice between versions.
 
 ## What It Does
 
-Cosmonauts is domain-agnostic. A **domain** (`domains/{id}/` with a `domain.ts` manifest) packages its own agents, prompts, capabilities, skills, and workflows — and domains are pluggable, not shipped with the framework itself. The framework provides the substrate: declarative agent definitions, four-layer prompt composition, on-demand skills, multi-agent orchestration (chains, workflows, drive runs), and a persistent plan/task/memory spine so work compounds instead of drifting.
+Cosmonauts is domain-agnostic. A **domain** (`domains/{id}/` with a `domain.ts` manifest) packages its own agents, prompts, capabilities, skills, and named chains — and domains are pluggable, not shipped with the framework itself. The framework provides the substrate: declarative agent definitions, four-layer prompt composition, on-demand skills, multi-agent orchestration (chains and Drive runs), and a persistent plan/task/memory spine so work compounds instead of drifting.
 
 **Coding is the current reference domain** — it's what's built out today because it's the maintainer's daily work, and it doubles as the worked example of how to build a domain. (It's slated to be extracted out of this repo.) The rest of this README uses the coding domain to show the framework in action; the same machinery applies to any domain you define.
 
@@ -44,8 +44,8 @@ What's built:
 - `main/cosmo` cross-domain orchestration, `coding/cody` coding-domain coordination, and specialist roles such as planner, task-manager, worker, reviewer, and fixer
 - Four-layer system prompt architecture with capability-aligned composition
 - Plan lifecycle: create plans, link tasks, archive completed work, distill learnings into memory
-- Drive runs for approved plan-linked task batches via `run_driver`, `watch_events`, and `cosmonauts drive`
-- Named workflows for common pipelines (`plan-and-build`, `spec-and-build`, `implement`, `verify`, `adapt`) with adversarial plan review as the default
+- Drive runs for approved plan-linked task batches via `run_driver`, normalized `run_status`/`run_watch` observation, deprecated `watch_events` compatibility, and `cosmonauts run drive`
+- Named chains for common pipelines (`plan-and-build`, `spec-and-build`, `implement`, `verify`, `adapt`) with adversarial plan review as the default
 - CLI with interactive and non-interactive modes
 - Todo tool for in-session task tracking
 - Vitest test suite passing
@@ -83,13 +83,13 @@ cosmonauts scaffold missions
 # 2. Install the coding domain if your project has not installed one yet
 cosmonauts install coding
 
-# 3. (Optional) Customize .cosmonauts/config.json — adjust skills and workflows
+# 3. (Optional) Customize .cosmonauts/config.json — adjust skills and named chains
 
-# 4. Run your first workflow
-cosmonauts --workflow plan-and-build "describe what you want to build"
+# 4. Run your first named chain
+cosmonauts run chain plan-and-build "describe what you want to build"
 ```
 
-The `scaffold missions` command creates `missions/` and `memory/` directories for tasks, plans, and archived work, plus `.cosmonauts/config.json` with default workflows and skills. All are local and gitignored. You can customize the config to match your project, or use the defaults as-is.
+The `scaffold missions` command creates `missions/` and `memory/` directories for tasks, plans, and archived work, plus `.cosmonauts/config.json` with default named chains and skills. You can customize the config to match your project, or use the defaults as-is.
 
 ## Usage
 
@@ -127,39 +127,39 @@ cosmonauts --print "create tasks from the plan and implement them"
 
 ### Multi-Agent Pipelines
 
-Run named workflows defined in your `.cosmonauts/config.json`:
+Run named chains defined by installed domains or `.cosmonauts/config.json`:
 
 ```bash
 # Full pipeline: design → tasks → implement → verify
-cosmonauts --workflow plan-and-build "design an auth system for this project"
+cosmonauts run chain plan-and-build "design an auth system for this project"
 
 # Implement an existing plan
-cosmonauts --workflow implement "implement the plan in missions/plans/auth-system/"
+cosmonauts run chain implement "implement the plan in missions/plans/auth-system/"
 
 # Run quality checks and remediation on current changes
-cosmonauts --workflow verify "review against main and fix findings"
+cosmonauts run chain verify "review against main and fix findings"
 
-# List available workflows
-cosmonauts --list-workflows
+# List available named chains
+cosmonauts run chain list
 
 # List agents with qualified IDs such as main/cosmo and coding/cody
 cosmonauts --list-agents
 ```
 
-Or pass a raw chain DSL expression to `--workflow` for custom pipelines:
+Or pass a raw chain DSL expression for custom pipelines:
 
 ```bash
-cosmonauts --workflow "planner -> task-manager -> coordinator -> integration-verifier -> quality-manager" "custom pipeline"
+cosmonauts run chain "planner -> task-manager -> coordinator -> integration-verifier -> quality-manager" "custom pipeline"
 ```
 
 The chain DSL supports **bracket groups** for parallel steps and **fan-out** for multiple instances of the same role:
 
 ```bash
 # Parallel steps: run task-manager and reviewer concurrently, then coordinator
-cosmonauts --workflow "planner -> [task-manager, reviewer] -> coordinator" "design with review"
+cosmonauts run chain "planner -> [task-manager, reviewer] -> coordinator" "design with review"
 
 # Fan-out: run 3 reviewer instances in parallel
-cosmonauts --workflow "coordinator -> reviewer[3]" "multi-pass review"
+cosmonauts run chain "coordinator -> reviewer[3]" "multi-pass review"
 ```
 
 > **Fan-out note:** `reviewer[3]` spawns three instances that each receive the **same prompt** — it does not partition work or assign different tasks to each instance. Use fan-out for independent parallel passes, not for task distribution.
@@ -170,17 +170,17 @@ Run approved plan-linked task batches through the driver loop:
 
 ```bash
 # Launch a detached external-agent run
-cosmonauts drive run --plan auth-system --backend codex --mode detached --branch feature/auth
+cosmonauts run drive --plan auth-system --backend codex --mode detached --branch feature/auth
 
-# Check a run and list known runs
-cosmonauts drive status run-abc --plan auth-system
-cosmonauts drive list
+# Check a run and list known runs through normalized observation
+cosmonauts run status run-abc --scope auth-system
+cosmonauts run list --scope auth-system
 
 # Resume a previous run
-cosmonauts drive run --plan auth-system --resume run-abc
+cosmonauts run drive --plan auth-system --resume run-abc
 ```
 
-Agents use the same driver through `run_driver` and monitor with `watch_events`. Driver runs write artifacts under `missions/sessions/<plan>/runs/<runId>/`, including `events.jsonl`, `spec.json`, `task-queue.txt`, and state files. `drive status` reports terminal completions from `run.completion.json`; active runs are tracked with `run.pid` for detached mode and `run.inline.json` for inline mode.
+Agents use the same driver through `run_driver` and monitor new runs with `run_status` / `run_watch`; `watch_events` remains a legacy compatibility view over Drive events. Driver runs write artifacts under `missions/sessions/<scope>/runs/<runId>/`, including `events.jsonl`, `spec.json`, `task-queue.txt`, and state files. `cosmonauts run status <runId> --scope <plan>` reports normalized status; active Drive runs are tracked with `run.pid` for detached mode and `run.inline.json` for inline mode.
 
 External backends are `codex` and `claude-cli`; `cosmonauts-subagent` is inline-only for in-process Cosmonauts agent runs. See `domains/shared/skills/drive/SKILL.md` and `lib/driver/README.md` for backend environment controls.
 
@@ -306,7 +306,7 @@ Cosmonauts is built as a [Pi package](https://github.com/earendil-works/pi) — 
 
 ```
 cosmonauts/
-├── lib/              Core libraries (tasks, orchestration, plans, workflows, agents)
+├── lib/              Core libraries (tasks, orchestration, plans, chains, agents)
 ├── domains/          Built-in domains: shared/ and main/
 ├── bundled/coding/   Installable coding domain (coding/cody and specialists)
 ├── cli/              CLI implementation
@@ -371,7 +371,7 @@ Agents coordinate through task state — no message bus, no shared memory. The c
 
 - **[ROADMAP.md](./ROADMAP.md)** — Prioritized backlog of upcoming work.
 - **[AGENTS.md](./AGENTS.md)** — Project conventions and instructions for agents working on this codebase.
-- **[docs/orchestration.md](./docs/orchestration.md)** — Chains, workflows, drive, CLI surface.
+- **[docs/orchestration.md](./docs/orchestration.md)** — Chains, Drive, normalized run observation, CLI surface.
 - **[docs/prompts.md](./docs/prompts.md)** — Four-layer prompt composition.
 - **[docs/testing.md](./docs/testing.md)** — Testing standards and patterns.
 - Pi framework API reference: the **`pi` skill** (`domains/shared/skills/pi/SKILL.md`), loaded on demand. It tracks the pinned `@earendil-works/pi-*` packages and points agents to the current Pi repo and docs.

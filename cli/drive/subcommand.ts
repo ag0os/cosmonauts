@@ -44,6 +44,7 @@ import {
 	type DriverResult,
 	type DriverRunSpec,
 	type StateCommitPolicy,
+	validateDriverPlanSlug,
 } from "../../lib/driver/types.ts";
 import { FileRunStore } from "../../lib/durable-runtime/index.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
@@ -147,12 +148,12 @@ const SOURCE_COMMIT_EXCLUDED_PATHS = [
 ];
 const execFileAsync = promisify(execFile);
 
-export function createDriveProgram(): Command {
+export function createDriveCompatProgram(): Command {
 	const program = new Command();
 
 	program
-		.name("cosmonauts drive")
-		.description("Run plan-linked tasks with Cosmonauts Drive")
+		.name("cosmonauts run drive compat")
+		.description("Internal Drive compatibility command")
 		.version("1.0.0");
 
 	const run = program
@@ -176,6 +177,13 @@ export function createDriveProgram(): Command {
 		});
 
 	return program;
+}
+
+export function createDriveRunCommand(): Command {
+	const command = new Command("drive");
+	command.description("Start a Drive run");
+	configureRunCommand(command);
+	return command;
 }
 
 function configureRunCommand(command: Command): void {
@@ -225,6 +233,8 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 	if (!options.plan) {
 		throw new Error("Missing required option '--plan <slug>'");
 	}
+	validateDriverPlanSlug(options.plan);
+
 	const projectRoot = process.cwd();
 	const planSlug = options.plan;
 	const taskManager = new TaskManager(projectRoot);
@@ -307,7 +317,7 @@ async function prepareResume(
 			pendingFinalization,
 		);
 		await writeRunCompletion(resume.spec.workdir, completion);
-		printJsonStdout(completion);
+		printJsonStdout(withDriveScope(completion, resume.spec.planSlug));
 	}
 	return shouldContinue;
 }
@@ -366,6 +376,7 @@ function runDetached(spec: DriverRunSpec, deps: DriverRunDeps): void {
 	const handle = startDetached(spec, deps);
 	printJsonStdout({
 		runId: handle.runId,
+		scope: handle.planSlug,
 		planSlug: handle.planSlug,
 		workdir: handle.workdir,
 		eventLogPath: handle.eventLogPath,
@@ -387,11 +398,18 @@ async function runInlineMode(
 		if (!existsSync(join(spec.workdir, RUN_COMPLETION_FILENAME))) {
 			await writeRunCompletion(spec.workdir, result);
 		}
-		printJsonStdout(result);
+		printJsonStdout(withDriveScope(result, spec.planSlug));
 		process.exitCode = result.outcome === "completed" ? 0 : 1;
 	} finally {
 		unsubscribe();
 	}
+}
+
+function withDriveScope<T extends object>(
+	value: T,
+	planSlug: string,
+): T & { scope: string } {
+	return { ...value, scope: planSlug };
 }
 
 async function reportDriveStatus(

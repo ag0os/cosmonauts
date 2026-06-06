@@ -1,9 +1,11 @@
 import type {
 	ArtifactRef,
 	BackendSpec,
+	CreateRunInput,
 	RunGraph,
 	RunGraphStep,
 	RunRecord,
+	RunRef,
 	RunStore,
 	StepRecord,
 } from "../durable-runtime/index.ts";
@@ -26,15 +28,24 @@ export interface CompiledDriveGraph {
 	finalizerSteps: RunGraphStep[];
 }
 
-export async function compileDriveRunToGraph(
-	options: CompileDriveRunToGraphOptions,
-): Promise<CompiledDriveGraph> {
-	const { spec, store } = options;
+export interface CompiledDriveRunStart {
+	ref: RunRef;
+	createRun: Omit<CreateRunInput, "scope" | "runId">;
+	graph: RunGraph;
+	initialSteps: StepRecord[];
+	taskSteps: RunGraphStep[];
+	finalizerSteps: RunGraphStep[];
+}
+
+export function compileDriveRunStart(
+	spec: DriverRunSpec,
+): CompiledDriveRunStart {
 	const ref = { scope: spec.planSlug, runId: spec.runId };
-	const run =
-		(await store.loadRun(ref)) ??
-		(await store.createRun({
-			...ref,
+	const { taskSteps, finalizerSteps } = compileSteps(spec);
+	const graph = toRunGraph([...taskSteps, ...finalizerSteps]);
+	return {
+		ref,
+		createRun: {
 			eventsPath: "orchestration-events.jsonl",
 			policy: {
 				defaultBackend: { name: spec.backendName },
@@ -45,23 +56,38 @@ export async function compileDriveRunToGraph(
 				driveTaskIds: [...spec.taskIds],
 				configuredBackendName: spec.backendName,
 			},
+		},
+		graph,
+		initialSteps: graph.steps.map(toPendingStepRecord),
+		taskSteps,
+		finalizerSteps,
+	};
+}
+
+export async function compileDriveRunToGraph(
+	options: CompileDriveRunToGraphOptions,
+): Promise<CompiledDriveGraph> {
+	const { spec, store } = options;
+	const compiled = compileDriveRunStart(spec);
+	const run =
+		(await store.loadRun(compiled.ref)) ??
+		(await store.createRun({
+			...compiled.ref,
+			...compiled.createRun,
 		}));
-	const { taskSteps, finalizerSteps } = compileSteps(spec);
-	const graph = toRunGraph([...taskSteps, ...finalizerSteps]);
-	await store.writeRunGraph(ref, graph);
+	await store.writeRunGraph(compiled.ref, compiled.graph);
 
 	const records: StepRecord[] = [];
-	for (const step of graph.steps) {
-		const record = toPendingStepRecord(step);
-		records.push(await store.writeStepRecord(ref, record));
+	for (const step of compiled.initialSteps) {
+		records.push(await store.writeStepRecord(compiled.ref, step));
 	}
 
 	return {
 		run,
-		graph,
+		graph: compiled.graph,
 		steps: records,
-		taskSteps,
-		finalizerSteps,
+		taskSteps: compiled.taskSteps,
+		finalizerSteps: compiled.finalizerSteps,
 	};
 }
 

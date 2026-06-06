@@ -58,7 +58,7 @@ Each skill's `SKILL.md` is copied verbatim into a directory named after the skil
 
 For Claude Code, Codex, Gemini CLI, or another framework that can call shell commands, use the integration surfaces in this order:
 
-1. **External `cosmonauts` skill bundle.** Install `external-skills/cosmonauts/` first. It teaches the outside agent the public CLI contract, including discovery, plan/task commands, workflows, and drive usage. This bundle is installed by manual copy, not by `cosmonauts skills export`.
+1. **External `cosmonauts` skill bundle.** Install `external-skills/cosmonauts/` first. It teaches the outside agent the public CLI contract, including discovery, plan/task commands, named chains, and Drive usage. This bundle is installed by manual copy, not by `cosmonauts skills export`.
 2. **Drive-oriented internal skills, only when explicitly needed.** `cosmonauts skills export` copies internal Cosmonauts-agent skills, not the external CLI bundle. Use it sparingly for Claude/Codex when an outside agent needs detailed internal procedures such as `finalization_failed`, `pending-finalization.json`, state commit policy, or resume recovery. For Gemini, install the external bundle manually unless a future Gemini internal-export target is added.
 
 ```bash
@@ -69,9 +69,9 @@ cosmonauts skills export -t codex plan task drive
 The actual execution surface is still the CLI:
 
 ```bash
-cosmonauts drive run --plan <slug> --backend codex --mode detached
-cosmonauts drive status <runId> --plan <slug>
-cosmonauts drive list
+cosmonauts run drive --plan <slug> --backend codex --mode detached
+cosmonauts run status <runId> --scope <slug>
+cosmonauts run list --scope <slug>
 ```
 
 3. **Agent packaging skill.** Export `agent-packaging` only when the external framework wants to build portable specialist agents from Cosmonauts agent definitions. This teaches the package-design workflow; the actual binary export is done with `cosmonauts export`.
@@ -87,7 +87,7 @@ Most cosmonauts internal skills are written for cosmonauts' own agents (cosmo, c
 
 - **`plan`** — explains the plan file format, the planning protocol, what makes a good plan. Useful when authoring plans to push into cosmonauts via `cosmonauts plan create --spec "..."`.
 - **`task`** — explains the task file format, AC checklists, dependency rules. Useful when authoring tasks for `cosmonauts task create --from-file`.
-- **`drive`** — explains the driver loop, commit policies, run state/status values, and Codex/Claude backend environment controls. Useful when invoking `cosmonauts drive run` and interpreting the run output.
+- **`drive`** — explains the driver loop, commit policies, run state/status values, and Codex/Claude backend environment controls. Useful when invoking `cosmonauts run drive` and interpreting the run output.
 - **`agent-packaging`** — useful when designing an external-safe packaged agent for `cosmonauts export`; skip it for ordinary plan/task/drive automation.
 - **`pi`** — Pi framework API reference. Only useful if you're modifying cosmonauts itself.
 

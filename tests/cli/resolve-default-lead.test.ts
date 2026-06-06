@@ -43,7 +43,7 @@ function makeDomain(
 		prompts: new Set(agentIds),
 		skills: new Set(),
 		extensions: new Set(),
-		workflows: [],
+		chains: [],
 		rootDirs: [],
 	};
 }

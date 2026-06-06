@@ -1,7 +1,7 @@
-import type { WorkflowDefinition } from "../../../lib/workflows/types.ts";
+import type { NamedChain } from "../../../lib/chains/types.ts";
 
-/** Default workflows for the coding domain. */
-export const workflows: WorkflowDefinition[] = [
+/** Default named chains for the coding domain. */
+export const chains: NamedChain[] = [
 	{
 		name: "plan-and-build",
 		description:
@@ -38,4 +38,4 @@ export const workflows: WorkflowDefinition[] = [
 	},
 ];
 
-export default workflows;
+export default chains;

@@ -3,13 +3,13 @@
  *
  * Scans a domains directory for subdirectories containing domain.ts manifests,
  * imports their agent definitions, and indexes their resources (capabilities,
- * prompts, skills, extensions, workflows).
+ * prompts, skills, extensions, named chains).
  */
 
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentDefinition } from "../agents/types.ts";
-import type { WorkflowDefinition } from "../workflows/types.ts";
+import type { NamedChain } from "../chains/types.ts";
 import type {
 	DomainManifest,
 	DomainMergeConflict,
@@ -80,12 +80,12 @@ async function loadSingleDomain(domainDir: string): Promise<LoadedDomain> {
 	const skills = await indexSubdirectories(join(domainDir, "skills"));
 	const extensions = await indexSubdirectories(join(domainDir, "extensions"));
 
-	// Load workflows if present
-	let workflows: WorkflowDefinition[] = [];
-	const workflowsPath = join(domainDir, "workflows.ts");
-	if (await fileExists(workflowsPath)) {
-		const mod = await import(workflowsPath);
-		workflows = mod.default ?? mod.workflows ?? [];
+	// Load named chains if present
+	let chains: NamedChain[] = [];
+	const chainsPath = join(domainDir, "chains.ts");
+	if (await fileExists(chainsPath)) {
+		const mod = await import(chainsPath);
+		chains = mod.default ?? mod.chains ?? [];
 	}
 
 	return {
@@ -96,7 +96,7 @@ async function loadSingleDomain(domainDir: string): Promise<LoadedDomain> {
 		prompts,
 		skills,
 		extensions,
-		workflows,
+		chains,
 		rootDirs: [domainDir],
 	};
 }
@@ -230,7 +230,7 @@ function mergeDomains(
 		extensions: new Set([...existing.extensions, ...incoming.extensions]),
 		// Existing (lower-precedence) first so that incoming (higher-precedence)
 		// overwrites by name when consumers fold into a Map.
-		workflows: [...existing.workflows, ...incoming.workflows],
+		chains: [...existing.chains, ...incoming.chains],
 		// Incoming dirs first — higher precedence for file resolution.
 		rootDirs: [...incoming.rootDirs, ...existing.rootDirs],
 	};

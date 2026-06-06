@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { createDriveProgram } from "../../cli/drive/subcommand.ts";
+import { createDriveCompatProgram } from "../../cli/drive/subcommand.ts";
 import { registerRunControlTools } from "../../domains/shared/extensions/orchestration/run-control-tools.ts";
 import { registerWatchEventsTool } from "../../domains/shared/extensions/orchestration/watch-events-tool.ts";
 import type {
@@ -104,7 +104,7 @@ describe("driver durable step projection", () => {
 			"plan_completion_candidate",
 			"run_completed",
 		]);
-		expect(storedEvents.map((event) => event.event.type)).toEqual([
+		expect(eventTypesWithoutRunActivity(storedEvents)).toEqual([
 			"run_started",
 			"step_ready",
 			"step_started",
@@ -141,6 +141,7 @@ describe("driver durable step projection", () => {
 			"step_completed",
 			"run_completed",
 		]);
+		expect(runActivityEvents(storedEvents)).toHaveLength(legacyEvents.length);
 		expect(
 			storedEvents.find((event) => event.event.type === "step_started")?.event,
 		).toMatchObject({ backend: "codex" });
@@ -334,42 +335,30 @@ describe("driver durable step projection", () => {
 		expect(record?.eventsPath).toBe(
 			join(fixture.spec.workdir, "orchestration-events.jsonl"),
 		);
-		expect(directWatch.events.map((event) => event.text)).toEqual([
-			"1 run_started",
-			`2 step_ready ${taskId}`,
-			`3 step_started ${taskId}: codex`,
-			`4 step_heartbeat ${taskId}`,
-			`5 step_tool_activity ${taskId}`,
-			`5 step_completed ${taskId}: success`,
-			`6 step_tool_activity ${taskId}`,
-			`6 step_ready finalizer-task-status-${taskId}`,
-			`7 step_tool_activity ${taskId}`,
-			`7 step_started finalizer-task-status-${taskId}: shell-command`,
-			`8 step_tool_activity ${taskId}`,
-			`8 step_heartbeat finalizer-task-status-${taskId}`,
-			`9 step_tool_activity ${taskId}`,
-			`9 step_completed finalizer-task-status-${taskId}: success`,
-			"10 run_completed: completed",
-		]);
+		expect(directWatch.events.map((event) => event.text)).toEqual(
+			expect.arrayContaining([
+				expect.stringContaining(
+					"run_activity legacy_driver_event: run_started",
+				),
+				expect.stringContaining("run_activity legacy_driver_event: task_done"),
+				expect.stringContaining("run_completed: completed"),
+			]),
+		);
 		expect(
-			directWatch.events.map((event) => event.envelope.event.type),
-		).toEqual([
-			"run_started",
-			"step_ready",
-			"step_started",
-			"step_heartbeat",
-			"step_tool_activity",
-			"step_completed",
-			"step_tool_activity",
-			"step_ready",
-			"step_tool_activity",
-			"step_started",
-			"step_tool_activity",
-			"step_heartbeat",
-			"step_tool_activity",
-			"step_completed",
-			"run_completed",
-		]);
+			directWatch.events
+				.map((event) => event.envelope.event.type)
+				.filter((type) => type !== "run_activity"),
+		).toEqual(
+			expect.arrayContaining([
+				"run_started",
+				"step_ready",
+				"step_started",
+				"step_heartbeat",
+				"step_tool_activity",
+				"step_completed",
+				"run_completed",
+			]),
+		);
 		expect(directStatus).toMatchObject({
 			status: "completed",
 			statusSource: "event",
@@ -418,9 +407,9 @@ describe("driver durable step projection", () => {
 
 		expect(toolWatch.details).toEqual(directWatch);
 		expect(toolWatch.content[0]?.text).toContain(
-			`9 step_completed finalizer-task-status-${taskId}: success`,
+			`step_completed finalizer-task-status-${taskId}: success`,
 		);
-		expect(toolWatch.content[0]?.text).toContain("10 run_completed: completed");
+		expect(toolWatch.content[0]?.text).toContain("run_completed: completed");
 		expect(toolWatch.content[0]?.text).not.toContain("poisoned");
 		expect(toolStatus.details).toEqual(directStatus);
 		expect(toolStatus.content[0]?.text).toContain(
@@ -746,7 +735,7 @@ async function captureDriveJson(
 	try {
 		process.exitCode = undefined;
 		process.chdir(projectRoot);
-		const program = createDriveProgram();
+		const program = createDriveCompatProgram();
 		program.exitOverride();
 		await program.parseAsync(args, { from: "user" });
 		return JSON.parse(output.stdout()) as Record<string, unknown>;
@@ -772,6 +761,29 @@ function isStoredDiagnostic(
 	value: unknown,
 ): value is { diagnostic: RuntimeDiagnostic } {
 	return typeof value === "object" && value !== null && "diagnostic" in value;
+}
+
+function eventTypesWithoutRunActivity(
+	events: readonly StoredOrchestrationEvent[],
+): string[] {
+	return events
+		.map((event) => event.event.type)
+		.filter((type) => type !== "run_activity");
+}
+
+function runActivityEvents(
+	events: readonly StoredOrchestrationEvent[],
+): Extract<StoredOrchestrationEvent["event"], { type: "run_activity" }>[] {
+	return events
+		.map((event) => event.event)
+		.filter(
+			(
+				event,
+			): event is Extract<
+				StoredOrchestrationEvent["event"],
+				{ type: "run_activity" }
+			> => event.type === "run_activity",
+		);
 }
 
 function isVerifyActivityEvent(

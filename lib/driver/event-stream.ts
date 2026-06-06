@@ -1,5 +1,5 @@
 import { existsSync, type FSWatcher, watch } from "node:fs";
-import { appendFile, readFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import {
 	FileRunStore,
@@ -244,6 +244,10 @@ async function ensureDurableSinkReady(
 				"Drive normalized run record setup failed; disabling normalized event writes for this sink.",
 			details: durableDiagnosticDetails(event, error),
 		});
+		await writeCompatDegradedMarker(state, event, {
+			code: "drive_durable_run_setup_failed",
+			error,
+		});
 		return false;
 	}
 }
@@ -292,6 +296,7 @@ function createStepProjectorIfConfigured(
 
 function isGraphActivityEvent(event: OrchestrationEvent): boolean {
 	return (
+		event.type === "run_activity" ||
 		event.type === "step_tool_activity" ||
 		event.type === "step_output" ||
 		event.type === "artifact_written"
@@ -360,8 +365,51 @@ async function appendDurableEvents(
 					"Drive normalized event append failed; legacy driver event write remains authoritative.",
 				details: durableDiagnosticDetails(event, error),
 			});
+			await writeCompatDegradedMarker(state, event, {
+				code: "drive_durable_event_append_failed",
+				error,
+			});
 		}
 	}
+}
+
+async function writeCompatDegradedMarker(
+	state: DurableDriverEventSinkState,
+	event: DriverEvent,
+	options: { code: string; error: unknown },
+): Promise<void> {
+	const path = compatDegradedMarkerPath(state.options);
+	const marker = {
+		code: options.code,
+		message:
+			"Drive normalized compatibility events may be incomplete; watch_events should use the legacy events.jsonl fallback.",
+		runId: event.runId,
+		legacyEventType: event.type,
+		timestamp: new Date().toISOString(),
+		error: formatJsonError(options.error),
+	};
+
+	try {
+		await mkdir(dirname(path), { recursive: true });
+		await writeFile(path, `${JSON.stringify(marker, null, 2)}\n`, "utf-8");
+	} catch (error) {
+		reportDurableDiagnostic({
+			code: "drive_compat_degraded_marker_write_failed",
+			message:
+				"Drive compatibility degradation marker write failed; legacy driver event write remains authoritative.",
+			details: durableDiagnosticDetails(event, error),
+		});
+	}
+}
+
+function compatDegradedMarkerPath(
+	options: DurableDriverEventSinkOptions,
+): string {
+	return join(
+		options.workdir ??
+			join(options.rootDir, options.scope, "runs", options.runId),
+		"compat-degraded.json",
+	);
 }
 
 export function shouldBridge(event: DriverEvent): boolean {

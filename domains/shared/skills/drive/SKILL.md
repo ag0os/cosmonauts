@@ -1,6 +1,6 @@
 ---
 name: drive
-description: Dispatch and monitor Cosmonauts driver runs. Use when running approved plan-linked task batches with run_driver, watch_events, or cosmonauts drive; choosing inline vs detached, backend, commit policy, resume, status, or list. Do NOT load for ordinary chain/spawn delegation, plan writing, or one-off coding tasks.
+description: Dispatch and monitor Cosmonauts driver runs. Use when running approved plan-linked task batches with run_driver, run_status, run_watch, watch_events compatibility, or cosmonauts run drive; choosing inline vs detached, backend, commit policy, resume, status, or list. Do NOT load for ordinary chain/spawn delegation, plan writing, or one-off coding tasks.
 ---
 
 # Drive
@@ -10,14 +10,14 @@ Use Drive for approved plan-linked task batches where a mechanical loop should r
 ## Rules
 
 - Do not start Drive until the plan is approved and the task set is clear.
-- Do not claim Drive execution happened unless `run_driver` or `cosmonauts drive` returns a `runId`.
+- Do not claim Drive execution happened unless `run_driver` or `cosmonauts run drive` returns a `runId`.
 - Pass ordered `taskIds` when dependency order matters. The default task selection is all non-Done tasks labeled `plan:<slug>`.
-- Keep runs observable: record the `runId`, `planSlug`, `workdir`, and `eventLogPath`; monitor with `watch_events` or `cosmonauts drive status`.
+- Keep runs observable: record the `runId`, `scope`, `planSlug`, `workdir`, and `eventLogPath`; monitor new runs with `run_status` / `run_watch` or `cosmonauts run status` / `cosmonauts run watch`. Use `watch_events` only when an existing Drive caller needs legacy event shape or cursor compatibility.
 - Backends execute prompts; the driver owns task status transitions, event logging, configured postflight verification, and commits when `commitPolicy` is `driver-commits`.
 - Drive injects run expectations into each prompt: backend, branch, commit policy, preflight commands, and postflight commands. These expectations are the authority for what the backend should verify and whether it should commit.
 - Drive appends a mandatory report contract after the envelope/task content so custom envelopes cannot omit the machine-readable `outcome:` marker instructions.
 - Treat backend success reports as evidence, not proof. Prefer postflight checks — whatever verification commands the project actually has (tests, static checks, build, dead-code gates — only those that exist for this stack). If a backend emits only prose, Drive can infer success from passing postflight checks; without those objective checks it blocks as `report outcome unknown`.
-- When `mode` is omitted, `run_driver` and `cosmonauts drive` default to `detached` for 4 or more tasks and `inline` for smaller task sets. Pass `mode` explicitly when backend support or session locality matters.
+- When `mode` is omitted, `run_driver` and `cosmonauts run drive` default to `detached` for 4 or more tasks and `inline` for smaller task sets. Pass `mode` explicitly when backend support or session locality matters.
 - Default per-task timeout is 1800000ms (30 minutes). For unusually long cold E2E suites, slow external backends, or tasks expected to iterate on multiple failures, set `taskTimeoutMs` / `--task-timeout` explicitly higher (for example 3600000ms / 60 minutes).
 - Use `driver-commits` unless there is a concrete reason for `backend-commits` or `no-commit`.
 
@@ -26,8 +26,9 @@ Use Drive for approved plan-linked task batches where a mechanical loop should r
 | Frontend | Use When |
 |----------|----------|
 | `run_driver` | You are inside an agent session with the orchestration tool available. |
-| `watch_events` | You need to inspect or resume monitoring an existing run from its JSONL event log. |
-| `cosmonauts drive` | A human or external agent is launching or managing runs from the shell. |
+| `run_status` / `run_watch` | You need normalized observation of run state and events by sequence cursor. |
+| `watch_events` | You need the deprecated Drive compatibility view with legacy cursor semantics. |
+| `cosmonauts run drive` | A human or external agent is launching or managing runs from the shell. |
 
 If the tools are unavailable, say so and fall back to `chain_run` or direct `spawn_agent` delegation.
 
@@ -49,7 +50,7 @@ For chain-based implementation runs, `chain_run.timeoutMs` controls the total ch
 2. Identify the repository's actual verification commands — whichever the project uses (e.g. tests, static-analysis, build/e2e split, format/lint check). Pass those exact commands as `postflightCommands`; do not rely on the default envelope to guess them, and don't add commands for steps the project doesn't have.
 3. Omit `envelopePath` to use the bundled codebase-agnostic coding envelope shipped with Cosmonauts. Pass `envelopePath` (relative to the project root, or absolute) only when the project ships its own envelope — never pass the `bundled/...` path yourself; that directory lives inside the Cosmonauts package, not the project.
 4. Start the run with `run_driver`.
-5. Monitor with `watch_events({ planSlug, runId, since })`; preserve the returned cursor.
+5. Monitor with `run_status({ scope: planSlug, runId })` and `run_watch({ scope: planSlug, runId, sinceSeq })`; preserve the returned sequence cursor. Use `watch_events({ planSlug, runId, since })` only for legacy Drive compatibility.
 6. If the run blocks or aborts, summarize the observed event and route the next action to the right specialist.
 
 Example:
@@ -73,17 +74,17 @@ run_driver({
 ## CLI Workflow
 
 ```bash
-cosmonauts drive run --plan auth-system --backend codex --mode detached --branch feature/auth
-cosmonauts drive status run-abc --plan auth-system
-cosmonauts drive list
-cosmonauts drive run --plan auth-system --resume run-abc
+cosmonauts run drive --plan auth-system --backend codex --mode detached --branch feature/auth
+cosmonauts run status run-abc --scope auth-system
+cosmonauts run list --scope auth-system
+cosmonauts run drive --plan auth-system --resume run-abc
 ```
 
 The CLI emits JSON natively; do not pass `--json`. Status values are `completed`, `blocked`, `finalization_failed`, `aborted`, `running`, `dead`, or `orphaned`. A run directory contains `spec.json`, `task-queue.txt`, `events.jsonl`, and state files: `run.completion.json` for terminal outcomes, `pending-finalization.json` for retryable finalization failures, `run.pid` for detached activity, and `run.inline.json` for inline activity. Resume reuses the previous workdir, checks `pending-finalization.json` before starting backend work, and refuses a dirty worktree unless `--resume-dirty` is passed.
 
 ## Finalization and State Recovery
 
-`finalization_failed` means Drive verified the task work but could not finish commit, task-status, or final task-state persistence. Do not treat it as a behavioral blocked task: route `blocked` to implementation or verification remediation, but route `finalization_failed` to `cosmonauts drive run --resume <runId>` after checking `watch/status/list` output for the failed phase and reason.
+`finalization_failed` means Drive verified the task work but could not finish commit, task-status, or final task-state persistence. Do not treat it as a behavioral blocked task: route `blocked` to implementation or verification remediation, but route `finalization_failed` to `cosmonauts run drive --plan <slug> --resume <runId>` after checking `run status` / `run watch` output for the failed phase and reason.
 
 Resume retries the pending finalization step first. If the missing commit was safely completed outside Drive, resume may accept safe external evidence: source commit recovery needs the recorded pre-finalization HEAD and a changed current HEAD with no remaining committable source changes; state commit recovery also needs the current pending task files to exist and be `Done`. If the evidence is unsafe, leave `pending-finalization.json` in place and report the failure instead of rerunning backend work.
 

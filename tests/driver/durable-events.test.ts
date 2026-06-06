@@ -35,7 +35,7 @@ describe("durable driver events", () => {
 			normalize(runFinalizationFailed()),
 		].flatMap((result) => result.events);
 
-		expect(events).toEqual([
+		expect(withoutRunActivity(events)).toEqual([
 			{ type: "run_started", runId: "run-1" },
 			{ type: "step_ready", runId: "run-1", stepId: "TASK-1" },
 			{
@@ -147,13 +147,40 @@ describe("durable driver events", () => {
 				reason: "state commit failed",
 			},
 		]);
+		expect(runActivityEvents(events)).toHaveLength(12);
+		expect(runActivityEvents(events)).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					details: {
+						kind: "legacy_driver_event",
+						event: expect.objectContaining({ type: "run_started" }),
+					},
+				}),
+				expect.objectContaining({
+					details: {
+						kind: "legacy_driver_event",
+						event: expect.objectContaining({
+							type: "run_finalization_failed",
+						}),
+					},
+				}),
+			]),
+		);
 
 		for (const event of events) {
 			expectTerminalShape(event);
 		}
 
 		const normalizedLockWarning = normalize(lockWarning());
-		expect(normalizedLockWarning.events).toEqual([]);
+		expect(normalizedLockWarning.events).toEqual([
+			expect.objectContaining({
+				type: "run_activity",
+				details: {
+					kind: "legacy_driver_event",
+					event: expect.objectContaining({ type: "lock_warning" }),
+				},
+			}),
+		]);
 		expect(normalizedLockWarning.diagnostics).toEqual([
 			expect.objectContaining({
 				code: "legacy_only_driver_event",
@@ -163,7 +190,17 @@ describe("durable driver events", () => {
 		]);
 
 		const candidate = normalize(planCompletionCandidate());
-		expect(candidate.events).toEqual([]);
+		expect(candidate.events).toEqual([
+			expect.objectContaining({
+				type: "run_activity",
+				details: {
+					kind: "legacy_driver_event",
+					event: expect.objectContaining({
+						type: "plan_completion_candidate",
+					}),
+				},
+			}),
+		]);
 		expect(candidate.diagnostics).toEqual([
 			expect.objectContaining({
 				code: "legacy_only_driver_event",
@@ -357,7 +394,7 @@ describe("durable driver events", () => {
 			}),
 		);
 
-		expect(started.events).toEqual([
+		expect(withoutRunActivity(started.events)).toEqual([
 			{
 				type: "step_tool_activity",
 				runId: "run-1",
@@ -365,7 +402,7 @@ describe("durable driver events", () => {
 				details: { kind: "preflight", status: "started" },
 			},
 		]);
-		expect(passed.events).toEqual([
+		expect(withoutRunActivity(passed.events)).toEqual([
 			{
 				type: "step_tool_activity",
 				runId: "run-1",
@@ -373,13 +410,15 @@ describe("durable driver events", () => {
 				details: { kind: "preflight", status: "passed" },
 			},
 		]);
+		expect(runActivityEvents(started.events)).toHaveLength(1);
+		expect(runActivityEvents(passed.events)).toHaveLength(1);
 		expect(started.events).not.toContainEqual(
 			expect.objectContaining({ type: "step_blocked" }),
 		);
 		expect(passed.events).not.toContainEqual(
 			expect.objectContaining({ type: "step_blocked" }),
 		);
-		expect(failed.events).toEqual([
+		expect(withoutRunActivity(failed.events)).toEqual([
 			{
 				type: "step_tool_activity",
 				runId: "run-1",
@@ -398,14 +437,26 @@ describe("durable driver events", () => {
 				reason: "preflight failed: bun run test",
 			},
 		]);
-		expect(branchMismatch.events.at(-1)).toEqual({
+		expect(runActivityEvents(failed.events)).toHaveLength(1);
+		expect(runActivityEvents(branchMismatch.events)).toEqual([
+			expect.objectContaining({
+				details: {
+					kind: "legacy_driver_event",
+					event: expect.objectContaining({
+						type: "preflight",
+						status: "failed",
+					}),
+				},
+			}),
+		]);
+		expect(withoutRunActivity(branchMismatch.events).at(-1)).toEqual({
 			type: "step_blocked",
 			runId: "run-1",
 			stepId: "TASK-1",
 			reason: "branch mismatch: expected feature, got main",
 		});
-		expectTerminalShape(failed.events[1]);
-		expectTerminalShape(branchMismatch.events[1]);
+		expectTerminalShape(withoutRunActivity(failed.events)[1]);
+		expectTerminalShape(withoutRunActivity(branchMismatch.events)[1]);
 	});
 });
 
@@ -439,6 +490,21 @@ function expectTerminalShape(event: OrchestrationEvent | undefined): void {
 	if (event.type === "run_failed") {
 		expect(Object.keys(event).sort()).toEqual(["reason", "runId", "type"]);
 	}
+}
+
+function withoutRunActivity(
+	events: readonly OrchestrationEvent[],
+): OrchestrationEvent[] {
+	return events.filter((event) => event.type !== "run_activity");
+}
+
+function runActivityEvents(
+	events: readonly OrchestrationEvent[],
+): Extract<OrchestrationEvent, { type: "run_activity" }>[] {
+	return events.filter(
+		(event): event is Extract<OrchestrationEvent, { type: "run_activity" }> =>
+			event.type === "run_activity",
+	);
 }
 
 function runStarted(): EventOf<"run_started"> {

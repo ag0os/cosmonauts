@@ -50,7 +50,7 @@ function buildSyntheticSharedDomain(domainsDir: string): LoadedDomain {
 		prompts: new Set(),
 		skills: new Set(),
 		extensions: new Set(),
-		workflows: [],
+		chains: [],
 		rootDirs: [join(domainsDir, "shared")],
 	};
 }

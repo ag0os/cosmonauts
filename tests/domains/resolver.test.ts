@@ -20,7 +20,7 @@ function makeDomain(
 		prompts: new Set<string>(),
 		skills: new Set<string>(),
 		extensions: new Set<string>(),
-		workflows: [],
+		chains: [],
 		rootDirs: [`/domains/${id}`],
 		...overrides,
 	} as LoadedDomain;
@@ -305,7 +305,7 @@ describe("shared domain resolution order", () => {
 			prompts: new Set(),
 			skills: new Set(),
 			extensions: new Set(),
-			workflows: [],
+			chains: [],
 			rootDirs: ["/domains/shared"],
 		};
 		const resolver = new DomainResolver(

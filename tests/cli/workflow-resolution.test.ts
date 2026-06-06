@@ -1,42 +1,42 @@
 /**
- * Tests for CLI workflow resolution — verifying that domain-provided workflows
- * are correctly aggregated and passed through to workflow listing/resolution.
+ * Tests for CLI chain resolution — verifying that domain-provided chains
+ * are correctly aggregated and passed through to chain listing/resolution.
  *
  * These tests validate the integration pattern used in cli/main.ts:
- * selectDomainWorkflows(domains, domainContext) → passed to
- * listWorkflows/resolveWorkflow.
+ * selectDomainChains(domains, domainContext) → passed to
+ * listNamedChains/resolveNamedChain.
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import type { LoadedDomain } from "../../lib/domains/types.ts";
 import {
-	listWorkflows,
-	resolveWorkflow,
-	selectDomainWorkflows,
-} from "../../lib/workflows/loader.ts";
-import type { WorkflowDefinition } from "../../lib/workflows/types.ts";
+	listNamedChains,
+	resolveNamedChain,
+	selectDomainChains,
+} from "../../lib/chains/loader.ts";
+import type { NamedChain } from "../../lib/chains/types.ts";
+import type { LoadedDomain } from "../../lib/domains/types.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
-const tmp = useTempDir("cli-workflow-resolution-");
+const tmp = useTempDir("cli-chain-resolution-");
 
 /**
- * Helper: build domain workflows the same way cli/main.ts does.
+ * Helper: build domain chains the same way cli/main.ts does.
  */
-function aggregateDomainWorkflows(
-	domains: Pick<LoadedDomain, "manifest" | "workflows">[],
+function aggregateDomainChains(
+	domains: Pick<LoadedDomain, "manifest" | "chains">[],
 	domainContext?: string,
-): WorkflowDefinition[] {
-	return selectDomainWorkflows(domains as LoadedDomain[], domainContext);
+): NamedChain[] {
+	return selectDomainChains(domains as LoadedDomain[], domainContext);
 }
 
-describe("CLI workflow resolution — domain workflows without project config", () => {
-	test("listWorkflows returns domain defaults when no config exists", async () => {
+describe("CLI chain resolution — domain chains without project config", () => {
+	test("listNamedChains returns domain defaults when no config exists", async () => {
 		const domains = [
 			{
 				manifest: { id: "coding", description: "Coding" },
-				workflows: [
+				chains: [
 					{
 						name: "plan-and-build",
 						description: "Full pipeline",
@@ -56,12 +56,12 @@ describe("CLI workflow resolution — domain workflows without project config", 
 			},
 			{
 				manifest: { id: "shared", description: "Shared" },
-				workflows: [],
+				chains: [],
 			},
 		];
 
-		const domainWorkflows = aggregateDomainWorkflows(domains);
-		const listed = await listWorkflows(tmp.path, domainWorkflows);
+		const domainChains = aggregateDomainChains(domains);
+		const listed = await listNamedChains(tmp.path, domainChains);
 
 		expect(listed).toHaveLength(3);
 		expect(listed.map((w) => w.name)).toEqual(
@@ -69,11 +69,11 @@ describe("CLI workflow resolution — domain workflows without project config", 
 		);
 	});
 
-	test("resolveWorkflow finds domain workflow without project config", async () => {
-		const domainWorkflows = aggregateDomainWorkflows([
+	test("resolveNamedChain finds domain chain without project config", async () => {
+		const domainChains = aggregateDomainChains([
 			{
 				manifest: { id: "coding", description: "Coding" },
-				workflows: [
+				chains: [
 					{
 						name: "plan-and-build",
 						description: "Full pipeline",
@@ -83,10 +83,10 @@ describe("CLI workflow resolution — domain workflows without project config", 
 			},
 		]);
 
-		const wf = await resolveWorkflow(
+		const wf = await resolveNamedChain(
 			"plan-and-build",
 			tmp.path,
-			domainWorkflows,
+			domainChains,
 		);
 
 		expect(wf.name).toBe("plan-and-build");
@@ -95,11 +95,11 @@ describe("CLI workflow resolution — domain workflows without project config", 
 		);
 	});
 
-	test("resolveWorkflow throws for unknown name with domain workflows", async () => {
-		const domainWorkflows = aggregateDomainWorkflows([
+	test("resolveNamedChain throws for unknown name with domain chains", async () => {
+		const domainChains = aggregateDomainChains([
 			{
 				manifest: { id: "coding", description: "Coding" },
-				workflows: [
+				chains: [
 					{
 						name: "plan-and-build",
 						description: "Full pipeline",
@@ -110,18 +110,18 @@ describe("CLI workflow resolution — domain workflows without project config", 
 		]);
 
 		await expect(
-			resolveWorkflow("nonexistent", tmp.path, domainWorkflows),
-		).rejects.toThrow('Unknown workflow "nonexistent"');
+			resolveNamedChain("nonexistent", tmp.path, domainChains),
+		).rejects.toThrow('Unknown named chain "nonexistent"');
 	});
 });
 
-describe("CLI workflow resolution — project config overrides domain workflows", () => {
-	test("project config workflow overrides domain workflow on name collision", async () => {
+describe("CLI chain resolution — project config overrides domain chains", () => {
+	test("project config chain overrides domain chain on name collision", async () => {
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
 			JSON.stringify({
-				workflows: {
+				chains: {
 					"plan-and-build": {
 						description: "Custom pipeline",
 						chain: "worker",
@@ -130,10 +130,10 @@ describe("CLI workflow resolution — project config overrides domain workflows"
 			}),
 		);
 
-		const domainWorkflows = aggregateDomainWorkflows([
+		const domainChains = aggregateDomainChains([
 			{
 				manifest: { id: "coding", description: "Coding" },
-				workflows: [
+				chains: [
 					{
 						name: "plan-and-build",
 						description: "Default pipeline",
@@ -148,25 +148,25 @@ describe("CLI workflow resolution — project config overrides domain workflows"
 			},
 		]);
 
-		const workflows = await listWorkflows(tmp.path, domainWorkflows);
+		const chains = await listNamedChains(tmp.path, domainChains);
 
 		// Should have 2: overridden plan-and-build + domain verify
-		expect(workflows).toHaveLength(2);
+		expect(chains).toHaveLength(2);
 
-		const pab = workflows.find((w) => w.name === "plan-and-build");
+		const pab = chains.find((w) => w.name === "plan-and-build");
 		expect(pab?.chain).toBe("worker"); // project config wins
 		expect(pab?.description).toBe("Custom pipeline");
 
-		const verify = workflows.find((w) => w.name === "verify");
+		const verify = chains.find((w) => w.name === "verify");
 		expect(verify?.chain).toBe("quality-manager"); // domain default preserved
 	});
 
-	test("resolveWorkflow returns project override instead of domain default", async () => {
+	test("resolveNamedChain returns project override instead of domain default", async () => {
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
 			JSON.stringify({
-				workflows: {
+				chains: {
 					implement: {
 						description: "Custom implement",
 						chain: "coordinator",
@@ -175,10 +175,10 @@ describe("CLI workflow resolution — project config overrides domain workflows"
 			}),
 		);
 
-		const domainWorkflows = aggregateDomainWorkflows([
+		const domainChains = aggregateDomainChains([
 			{
 				manifest: { id: "coding", description: "Coding" },
-				workflows: [
+				chains: [
 					{
 						name: "implement",
 						description: "Domain implement",
@@ -188,30 +188,30 @@ describe("CLI workflow resolution — project config overrides domain workflows"
 			},
 		]);
 
-		const wf = await resolveWorkflow("implement", tmp.path, domainWorkflows);
+		const wf = await resolveNamedChain("implement", tmp.path, domainChains);
 
 		expect(wf.chain).toBe("coordinator"); // project config wins
 		expect(wf.description).toBe("Custom implement");
 	});
 
-	test("project config adds new workflows alongside domain defaults", async () => {
+	test("project config adds new chains alongside domain defaults", async () => {
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
 			JSON.stringify({
-				workflows: {
+				chains: {
 					deploy: {
-						description: "Deploy workflow",
+						description: "Deploy chain",
 						chain: "worker",
 					},
 				},
 			}),
 		);
 
-		const domainWorkflows = aggregateDomainWorkflows([
+		const domainChains = aggregateDomainChains([
 			{
 				manifest: { id: "coding", description: "Coding" },
-				workflows: [
+				chains: [
 					{
 						name: "plan-and-build",
 						description: "Full pipeline",
@@ -221,25 +221,25 @@ describe("CLI workflow resolution — project config overrides domain workflows"
 			},
 		]);
 
-		const workflows = await listWorkflows(tmp.path, domainWorkflows);
+		const chains = await listNamedChains(tmp.path, domainChains);
 
-		expect(workflows).toHaveLength(2);
-		expect(workflows.map((w) => w.name)).toEqual(
+		expect(chains).toHaveLength(2);
+		expect(chains.map((w) => w.name)).toEqual(
 			expect.arrayContaining(["plan-and-build", "deploy"]),
 		);
 	});
 });
 
-describe("CLI workflow resolution — multiple domains", () => {
-	test("aggregates workflows from multiple domains", async () => {
-		const domainWorkflows = aggregateDomainWorkflows([
+describe("CLI chain resolution — multiple domains", () => {
+	test("aggregates chains from multiple domains", async () => {
+		const domainChains = aggregateDomainChains([
 			{
 				manifest: { id: "shared", description: "Shared" },
-				workflows: [],
+				chains: [],
 			},
 			{
 				manifest: { id: "coding", description: "Coding" },
-				workflows: [
+				chains: [
 					{
 						name: "plan-and-build",
 						description: "Coding pipeline",
@@ -254,19 +254,19 @@ describe("CLI workflow resolution — multiple domains", () => {
 			},
 		]);
 
-		const listed = await listWorkflows(tmp.path, domainWorkflows);
+		const listed = await listNamedChains(tmp.path, domainChains);
 
 		expect(listed).toHaveLength(2);
 		expect(listed.map((w) => w.name)).toContain("plan-and-build");
 		expect(listed.map((w) => w.name)).toContain("verify");
 	});
 
-	test("later domain workflows override earlier ones on name collision", async () => {
+	test("later domain chains override earlier ones on name collision", async () => {
 		// Simulates two domains both defining 'build'
-		const domainWorkflows = aggregateDomainWorkflows([
+		const domainChains = aggregateDomainChains([
 			{
 				manifest: { id: "shared", description: "Shared" },
-				workflows: [
+				chains: [
 					{
 						name: "build",
 						description: "Generic build",
@@ -276,7 +276,7 @@ describe("CLI workflow resolution — multiple domains", () => {
 			},
 			{
 				manifest: { id: "coding", description: "Coding" },
-				workflows: [
+				chains: [
 					{
 						name: "build",
 						description: "Coding build",
@@ -286,7 +286,7 @@ describe("CLI workflow resolution — multiple domains", () => {
 			},
 		]);
 
-		const listed = await listWorkflows(tmp.path, domainWorkflows);
+		const listed = await listNamedChains(tmp.path, domainChains);
 
 		// The loader iterates in order, so later domain overwrites earlier
 		expect(listed).toHaveLength(1);
@@ -295,22 +295,22 @@ describe("CLI workflow resolution — multiple domains", () => {
 		expect(build?.chain).toBe("planner -> coordinator");
 	});
 
-	test("filters workflows to the selected domain while keeping shared ones", async () => {
-		const domainWorkflows = aggregateDomainWorkflows(
+	test("filters chains to the selected domain while keeping shared ones", async () => {
+		const domainChains = aggregateDomainChains(
 			[
 				{
 					manifest: { id: "shared", description: "Shared" },
-					workflows: [
+					chains: [
 						{
 							name: "shared-check",
-							description: "Shared workflow",
+							description: "Shared chain",
 							chain: "reviewer",
 						},
 					],
 				},
 				{
 					manifest: { id: "coding", description: "Coding" },
-					workflows: [
+					chains: [
 						{
 							name: "plan-and-build",
 							description: "Coding pipeline",
@@ -320,7 +320,7 @@ describe("CLI workflow resolution — multiple domains", () => {
 				},
 				{
 					manifest: { id: "docs", description: "Docs" },
-					workflows: [
+					chains: [
 						{
 							name: "publish",
 							description: "Docs pipeline",
@@ -332,7 +332,7 @@ describe("CLI workflow resolution — multiple domains", () => {
 			"docs",
 		);
 
-		expect(domainWorkflows.map((w) => w.name)).toEqual([
+		expect(domainChains.map((w) => w.name)).toEqual([
 			"shared-check",
 			"publish",
 		]);

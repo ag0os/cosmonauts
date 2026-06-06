@@ -89,6 +89,7 @@ describe("run_driver detached mode", () => {
 
 		expect(response.details).toMatchObject({
 			runId: expect.stringMatching(/^run-/),
+			scope: fixture.planSlug,
 			planSlug: fixture.planSlug,
 			eventLogPath: expect.stringContaining("events.jsonl"),
 		});
@@ -115,6 +116,39 @@ describe("run_driver detached mode", () => {
 		expect(deps.backend.name).toBe("codex");
 		expect(existsSync(spec.workdir)).toBe(false);
 		expect(existsSync(join(spec.workdir, "spec.json"))).toBe(false);
+	});
+
+	// @cosmo-behavior plan:orchestration-surface-consolidation#B-006
+	test("returns scope alongside runId and rejects the reserved chain plan slug", async () => {
+		const fixture = await setupFixture("reserved-scope");
+		const pi = createMockPi(fixture.projectRoot, {
+			sessionId: PARENT_SESSION_ID,
+		});
+		const getRuntime = vi.fn();
+		registerDriverTool(pi as never, getRuntime as never, fixture.projectRoot);
+
+		const response = (await pi.callTool("run_driver", {
+			planSlug: "chain",
+			taskIds: fixture.taskIds,
+			backend: "codex",
+			mode: "detached",
+			envelopePath: fixture.envelopePath,
+			commitPolicy: "no-commit",
+		})) as { details: ReservedScopeDetails };
+
+		expect(response.details).toEqual({
+			error: "reserved_scope",
+			planSlug: "chain",
+			scope: "chain",
+			message:
+				'Plan slug "chain" is reserved for graph-backed chain runs and cannot be used for Drive.',
+		});
+		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(driverMocks.runInline).not.toHaveBeenCalled();
+		expect(getRuntime).not.toHaveBeenCalled();
+		expect(
+			existsSync(join(fixture.projectRoot, "missions", "sessions", "chain")),
+		).toBe(false);
 	});
 
 	test("defaults omitted mode to detached for four or more tasks", async () => {
@@ -267,9 +301,17 @@ interface Fixture {
 
 interface DriverRunDetails {
 	runId: string;
+	scope: string;
 	planSlug: string;
 	workdir: string;
 	eventLogPath: string;
+}
+
+interface ReservedScopeDetails {
+	error: "reserved_scope";
+	planSlug: "chain";
+	scope: "chain";
+	message: string;
 }
 
 interface UnsupportedDetachedBackendDetails {

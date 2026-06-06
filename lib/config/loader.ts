@@ -67,7 +67,7 @@ export async function loadProjectConfig(
 		domain?: string;
 		skills?: readonly string[];
 		skillPaths?: readonly string[];
-		workflows?: ProjectConfig["workflows"];
+		chains?: ProjectConfig["chains"];
 	} = {};
 
 	if (typeof obj.domain === "string") {
@@ -87,11 +87,11 @@ export async function loadProjectConfig(
 	}
 
 	if (
-		obj.workflows &&
-		typeof obj.workflows === "object" &&
-		!Array.isArray(obj.workflows)
+		obj.chains &&
+		typeof obj.chains === "object" &&
+		!Array.isArray(obj.chains)
 	) {
-		config.workflows = obj.workflows as ProjectConfig["workflows"];
+		config.chains = obj.chains as ProjectConfig["chains"];
 	}
 
 	return config;
@@ -99,7 +99,7 @@ export async function loadProjectConfig(
 
 /**
  * Scaffold `.cosmonauts/config.json` if it does not already exist.
- * Creates the directory and writes a default config with standard workflows.
+ * Creates the directory and writes a default config.
  *
  * Idempotent — safe to call multiple times. Never overwrites an existing file.
  *

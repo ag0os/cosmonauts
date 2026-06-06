@@ -1,0 +1,294 @@
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { describe, expect, test } from "vitest";
+import type {
+	Backend,
+	BackendRunResult,
+} from "../../lib/driver/backends/types.ts";
+import { compileDriveRunToGraph } from "../../lib/driver/drive-graph-compiler.ts";
+import {
+	type RunDriveOnGraphCtx,
+	runDriveOnGraph,
+} from "../../lib/driver/drive-graph-runner.ts";
+import type { DriverEvent, DriverRunSpec } from "../../lib/driver/types.ts";
+import { FileRunStore } from "../../lib/durable-runtime/index.ts";
+import { TaskManager } from "../../lib/tasks/task-manager.ts";
+import { useTempDir } from "../helpers/fs.ts";
+
+const temp = useTempDir("drive-run-start-characterization-");
+const PLAN_SLUG = "orchestration-surface-consolidation";
+
+describe("runStart Drive graph characterization", () => {
+	// @cosmo-behavior plan:orchestration-surface-consolidation#B-003
+	test("preserves graph-backed Drive files results and detached frozen runner through runStart", async () => {
+		const fixture = await setupFixture("inline");
+
+		const result = await runDriveOnGraph(
+			fixture.spec,
+			createRunContext(fixture),
+		);
+
+		expect(result).toEqual({
+			runId: fixture.spec.runId,
+			outcome: "completed",
+			tasksDone: 1,
+			tasksBlocked: 0,
+			planCompletionCandidate: {
+				planSlug: PLAN_SLUG,
+				taskCount: 1,
+			},
+		});
+		await expectArtifact(fixture.spec.workdir, "spec.json");
+		await expectArtifact(fixture.spec.workdir, "task-queue.txt");
+		await expectArtifact(fixture.spec.workdir, "events.jsonl");
+		await expectArtifact(fixture.spec.workdir, "orchestration-events.jsonl");
+		await expectArtifact(fixture.spec.workdir, "graph.json");
+		await expectArtifact(
+			fixture.spec.workdir,
+			join("steps", fixture.taskId, "step.json"),
+		);
+		await expectArtifact(fixture.spec.workdir, "run.completion.json");
+		expect(
+			await readJson(join(fixture.spec.workdir, "run.completion.json")),
+		).toEqual(result);
+
+		const store = new FileRunStore({ rootDir: fixture.sessionsRoot });
+		const ref = { scope: PLAN_SLUG, runId: fixture.spec.runId };
+		const run = await store.loadRun(ref);
+		const graph = await store.readRunGraph(ref);
+		const steps = await store.listStepRecords(ref);
+		const normalizedEvents = await store.readEvents(ref);
+		const legacyEvents = await readLegacyEvents(fixture.spec.eventLogPath);
+		const runStepSource = await readFile("lib/driver/run-step.ts", "utf-8");
+
+		expect(run?.metadata).toEqual({
+			driveTaskIds: [fixture.taskId],
+			configuredBackendName: "codex",
+		});
+		expect(graph.graph.steps.map((step) => [step.id, step.kind])).toEqual([
+			[fixture.taskId, "drive"],
+			[`finalizer-task-status-${fixture.taskId}`, "finalizer"],
+		]);
+		expect(steps.map((step) => [step.id, step.status])).toEqual([
+			[`finalizer-task-status-${fixture.taskId}`, "completed"],
+			[fixture.taskId, "completed"],
+		]);
+		expect(normalizedEvents.events.at(0)?.event).toEqual({
+			type: "run_started",
+			runId: fixture.spec.runId,
+		});
+		expect(legacyEvents.map((event) => event.type)).toEqual(
+			expect.arrayContaining([
+				"run_started",
+				"task_started",
+				"spawn_completed",
+				"task_done",
+				"run_completed",
+			]),
+		);
+		expect(runStepSource).toContain("runDriveOnGraph");
+		expect(runStepSource).not.toContain("runRunLoop(spec");
+	});
+
+	// @cosmo-behavior plan:orchestration-surface-consolidation#B-004
+	test("uses driveTaskIds instead of remainingTaskIds across resume and partial-init repair", async () => {
+		const resume = await setupFixture("resume-authoritative", 3);
+		const resumeStore = new FileRunStore({ rootDir: resume.sessionsRoot });
+		await compileDriveRunToGraph({ spec: resume.spec, store: resumeStore });
+
+		await runDriveOnGraph(
+			{
+				...resume.spec,
+				remainingTaskIds: resume.taskIds.slice(2),
+			},
+			createRunContext(resume),
+		);
+
+		const resumeGraph = await resumeStore.readRunGraph({
+			scope: PLAN_SLUG,
+			runId: resume.spec.runId,
+		});
+		expect(
+			resumeGraph.graph.steps
+				.filter((step) => step.kind === "drive")
+				.map((step) => step.id),
+		).toEqual(resume.taskIds);
+		expect(
+			await readJson(join(resume.spec.workdir, "spec.json")),
+		).toMatchObject({
+			taskIds: resume.taskIds,
+			remainingTaskIds: resume.taskIds.slice(2),
+		});
+
+		const repair = await setupFixture("partial-init-authoritative", 3);
+		const repairStore = new FileRunStore({ rootDir: repair.sessionsRoot });
+		await repairStore.createRun({
+			scope: PLAN_SLUG,
+			runId: repair.spec.runId,
+			eventsPath: "orchestration-events.jsonl",
+			policy: {
+				defaultBackend: { name: repair.spec.backendName },
+				worktree: { mode: "shared", path: repair.spec.workdir },
+			},
+			metadata: {
+				driveTaskIds: repair.taskIds,
+				configuredBackendName: repair.spec.backendName,
+			},
+		});
+
+		await runDriveOnGraph(
+			{
+				...repair.spec,
+				taskIds: repair.taskIds.slice(2),
+				remainingTaskIds: repair.taskIds.slice(2),
+			},
+			createRunContext(repair),
+		);
+
+		const repairGraph = await repairStore.readRunGraph({
+			scope: PLAN_SLUG,
+			runId: repair.spec.runId,
+		});
+		const repairRun = await repairStore.loadRun({
+			scope: PLAN_SLUG,
+			runId: repair.spec.runId,
+		});
+		expect(
+			repairGraph.graph.steps
+				.filter((step) => step.kind === "drive")
+				.map((step) => step.id),
+		).toEqual(repair.taskIds);
+		expect(repairRun?.metadata?.driveTaskIds).toEqual(repair.taskIds);
+	});
+});
+
+interface Fixture {
+	projectRoot: string;
+	sessionsRoot: string;
+	taskId: string;
+	taskIds: string[];
+	spec: DriverRunSpec;
+	taskManager: TaskManager;
+	events: DriverEvent[];
+}
+
+async function setupFixture(name: string, taskCount = 1): Promise<Fixture> {
+	const projectRoot = join(temp.path, name, "project");
+	const sessionsRoot = join(projectRoot, "missions", "sessions");
+	const runId = `run-${name}`;
+	const workdir = join(sessionsRoot, PLAN_SLUG, "runs", runId);
+	await mkdir(workdir, { recursive: true });
+	const taskManager = new TaskManager(projectRoot);
+	await taskManager.init({ zeroPadding: 0 });
+	const taskIds: string[] = [];
+	for (let index = 0; index < taskCount; index++) {
+		const task = await taskManager.createTask({
+			title: `${name} Drive characterization fixture ${index + 1}`,
+			description: "Exercise Drive graph state.",
+			labels: [`plan:${PLAN_SLUG}`],
+		});
+		taskIds.push(task.id);
+	}
+	const [taskId] = taskIds;
+	if (!taskId) {
+		throw new Error("Fixture must create at least one task.");
+	}
+	const envelopePath = join(projectRoot, "envelope.md");
+	await writeFile(envelopePath, "Use the fake backend report.", "utf-8");
+	return {
+		projectRoot,
+		sessionsRoot,
+		taskId,
+		taskIds,
+		taskManager,
+		events: [],
+		spec: {
+			runId,
+			parentSessionId: `parent-${name}`,
+			projectRoot,
+			planSlug: PLAN_SLUG,
+			taskIds,
+			backendName: "codex",
+			promptTemplate: { envelopePath },
+			preflightCommands: [],
+			postflightCommands: [],
+			commitPolicy: "no-commit",
+			stateCommitPolicy: "none",
+			workdir,
+			eventLogPath: join(workdir, "events.jsonl"),
+		},
+	};
+}
+
+function createRunContext(fixture: Fixture): RunDriveOnGraphCtx {
+	return {
+		taskManager: fixture.taskManager,
+		backend: createBackend(),
+		eventSink: async (event) => {
+			fixture.events.push(event);
+			await mkdir(dirname(fixture.spec.eventLogPath), { recursive: true });
+			await writeFile(
+				fixture.spec.eventLogPath,
+				`${fixture.events.map((item) => JSON.stringify(item)).join("\n")}\n`,
+				"utf-8",
+			);
+		},
+		parentSessionId: fixture.spec.parentSessionId,
+		runId: fixture.spec.runId,
+		abortSignal: new AbortController().signal,
+		cosmonautsRoot: resolve("."),
+		mode: "inline",
+	};
+}
+
+function createBackend(): Backend {
+	return {
+		name: "codex",
+		capabilities: { canCommit: false, isolatedFromHostSource: true },
+		livenessCheck() {
+			return {
+				argv: [process.execPath, "-e", "process.exit(0)"],
+				expectExitZero: true,
+			};
+		},
+		run: async () => successfulBackendResult(),
+	};
+}
+
+function successfulBackendResult(): BackendRunResult {
+	return {
+		exitCode: 0,
+		stdout: [
+			"```json",
+			JSON.stringify({
+				outcome: "success",
+				files: [],
+				verification: [],
+				notes: "drive characterization success",
+			}),
+			"```",
+		].join("\n"),
+		durationMs: 1,
+	};
+}
+
+async function expectArtifact(
+	workdir: string,
+	relativePath: string,
+): Promise<void> {
+	await expect(stat(join(workdir, relativePath))).resolves.toBeTruthy();
+}
+
+async function readJson(path: string): Promise<unknown> {
+	return JSON.parse(await readFile(path, "utf-8"));
+}
+
+async function readLegacyEvents(
+	path: string,
+): Promise<Array<{ type: string }>> {
+	return (await readFile(path, "utf-8"))
+		.trim()
+		.split("\n")
+		.filter(Boolean)
+		.map((line) => JSON.parse(line) as { type: string });
+}

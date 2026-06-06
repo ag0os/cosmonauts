@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createDriveProgram } from "../../../cli/drive/subcommand.ts";
+import { createDriveCompatProgram } from "../../../cli/drive/subcommand.ts";
 import type { Backend } from "../../../lib/driver/backends/types.ts";
 import { compileDriveRunToGraph } from "../../../lib/driver/drive-graph-compiler.ts";
 import type { DriverEvent, DriverRunSpec } from "../../../lib/driver/types.ts";
@@ -47,7 +47,7 @@ interface JsonOutput {
 	stdoutJsonLines(): Record<string, unknown>[];
 }
 
-describe("cosmonauts drive graph resume", () => {
+describe("cosmonauts run drive compat graph resume", () => {
 	let originalCwd: string;
 	let output: ReturnType<typeof captureCliOutput> & JsonOutput;
 
@@ -118,13 +118,14 @@ describe("cosmonauts drive graph resume", () => {
 
 		expect(result).toMatchObject({
 			runId: RUN_ID,
+			scope: PLAN_SLUG,
 			outcome: "completed",
 			tasksDone: 1,
 			tasksBlocked: 0,
 			stateCommitSha: expect.stringMatching(/^[0-9a-f]{40}$/),
 		});
 		expect(emittedResults).toHaveLength(1);
-		expect(completion).toEqual(emittedResults[0]);
+		expect(completion).toEqual(withoutScope(onlyJsonRecord(emittedResults)));
 		expect(backendMocks.backendRun).not.toHaveBeenCalled();
 		expect(persistedSpec.taskIds).toEqual([fixture.taskId]);
 		expect(persistedSpec.remainingTaskIds).toEqual([]);
@@ -170,11 +171,12 @@ describe("cosmonauts drive graph resume", () => {
 		expect(emittedResults).toHaveLength(1);
 		expect(emittedResults[0]).toMatchObject({
 			runId: RUN_ID,
+			scope: PLAN_SLUG,
 			outcome: "completed",
 			tasksDone: 1,
 			tasksBlocked: 0,
 		});
-		expect(completion).toEqual(emittedResults[0]);
+		expect(completion).toEqual(withoutScope(onlyJsonRecord(emittedResults)));
 		expect(backendMocks.backendRun).not.toHaveBeenCalled();
 		expect(
 			(
@@ -206,15 +208,33 @@ describe("cosmonauts drive graph resume", () => {
 		expect(emittedResults).toHaveLength(1);
 		expect(emittedResults[0]).toMatchObject({
 			runId: RUN_ID,
+			scope: PLAN_SLUG,
 			outcome: "completed",
 			tasksDone: 1,
 			tasksBlocked: 0,
 			stateCommitSha: "b".repeat(40),
 		});
-		expect(completion).toEqual(emittedResults[0]);
+		expect(completion).toEqual(withoutScope(onlyJsonRecord(emittedResults)));
 		expect(backendMocks.backendRun).not.toHaveBeenCalled();
 	});
 });
+
+function onlyJsonRecord(
+	records: readonly Record<string, unknown>[],
+): Record<string, unknown> {
+	const record = records[0];
+	if (!record) {
+		throw new Error("Expected one JSON record");
+	}
+	return record;
+}
+
+function withoutScope(
+	record: Record<string, unknown>,
+): Record<string, unknown> {
+	const { scope: _scope, ...rest } = record;
+	return rest;
+}
 
 async function setupCompletedTaskWithPendingStateCommit(): Promise<{
 	taskId: string;
@@ -604,7 +624,7 @@ function event(input: DriverEventInput): DriverEvent {
 }
 
 async function parseDrive(args: string[]): Promise<void> {
-	const program = createDriveProgram();
+	const program = createDriveCompatProgram();
 	program.exitOverride();
 	await program.parseAsync(args, { from: "user" });
 }

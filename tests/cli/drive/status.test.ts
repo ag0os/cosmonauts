@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createDriveProgram } from "../../../cli/drive/subcommand.ts";
+import { createDriveCompatProgram } from "../../../cli/drive/subcommand.ts";
 import { captureCliOutput } from "../../helpers/cli.ts";
 import { useTempDir } from "../../helpers/fs.ts";
 
@@ -41,7 +41,7 @@ const temp = useTempDir("drive-status-test-");
 const PLAN = "plan-a";
 const RUN_ID = "run-123";
 
-describe("cosmonauts drive status", () => {
+describe("cosmonauts run drive compat status", () => {
 	let output: ReturnType<typeof captureCliOutput> & JsonOutput;
 	let originalCwd: string;
 	let killMock: ReturnType<typeof mockAlivePid>;
@@ -358,7 +358,7 @@ describe("cosmonauts drive status", () => {
 });
 
 async function parseDrive(args: string[]): Promise<void> {
-	const program = createDriveProgram();
+	const program = createDriveCompatProgram();
 	program.exitOverride();
 	await program.parseAsync(args, { from: "user" });
 }

@@ -3,7 +3,7 @@
  *
  * Runs against an array of LoadedDomain objects and produces diagnostics
  * for issues like missing persona prompts, unresolvable capabilities,
- * extensions, subagents, leads, and workflow agents.
+ * extensions, subagents, leads, and named-chain agents.
  */
 
 import type { LoadedDomain } from "./types.ts";
@@ -17,7 +17,7 @@ type LoadedAgent =
 export interface DomainValidationDiagnostic {
 	readonly domain: string;
 	readonly agent?: string;
-	readonly workflow?: string;
+	readonly chain?: string;
 	readonly message: string;
 	readonly severity: DiagnosticSeverity;
 }
@@ -30,7 +30,7 @@ export class DomainValidationError extends Error {
 		const errors = diagnostics.filter((d) => d.severity === "error");
 		const lines = errors.map(
 			(d) =>
-				`  [${d.domain}${d.agent ? `/${d.agent}` : ""}${d.workflow ? ` workflow:${d.workflow}` : ""}] ${d.message}`,
+				`  [${d.domain}${d.agent ? `/${d.agent}` : ""}${d.chain ? ` chain:${d.chain}` : ""}] ${d.message}`,
 		);
 		super(
 			`Domain validation failed with ${errors.length} error${errors.length === 1 ? "" : "s"}:\n${lines.join("\n")}`,
@@ -57,7 +57,7 @@ export function validateDomains(
 		...validatePortableCapabilityOverlap(portableDomains),
 		...domains.flatMap((domain) => [
 			...validateDomainLead(domain),
-			...validateWorkflowAgents(domain, allAgentIds),
+			...validateNamedChainAgents(domain, allAgentIds),
 			...validateDomainAgents(domain, shared, portableDomains, allAgentIds),
 		]),
 	];
@@ -133,19 +133,19 @@ function validateDomainLead(
 	];
 }
 
-function validateWorkflowAgents(
+function validateNamedChainAgents(
 	domain: LoadedDomain,
 	allAgentIds: ReadonlySet<string>,
 ): DomainValidationDiagnostic[] {
 	const diagnostics: DomainValidationDiagnostic[] = [];
 
-	for (const workflow of domain.workflows) {
-		for (const stage of parseWorkflowStages(workflow.chain)) {
+	for (const chain of domain.chains) {
+		for (const stage of parseChainStages(chain.chain)) {
 			if (!allAgentIds.has(stage)) {
 				diagnostics.push({
 					domain: domain.manifest.id,
-					workflow: workflow.name,
-					message: `Workflow stage "${stage}" does not resolve to any known agent`,
+					chain: chain.name,
+					message: `Named chain stage "${stage}" does not resolve to any known agent`,
 					severity: "warning",
 				});
 			}
@@ -155,7 +155,7 @@ function validateWorkflowAgents(
 	return diagnostics;
 }
 
-function parseWorkflowStages(chain: string): string[] {
+function parseChainStages(chain: string): string[] {
 	return chain
 		.split("->")
 		.map((stage) => stage.trim())

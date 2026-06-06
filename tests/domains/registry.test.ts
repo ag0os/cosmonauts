@@ -15,7 +15,7 @@ function makeDomain(
 		prompts: new Set<string>(),
 		skills: new Set<string>(),
 		extensions: new Set<string>(),
-		workflows: [],
+		chains: [],
 		rootDirs: [`/tmp/${id}`],
 		...overrides,
 	};
