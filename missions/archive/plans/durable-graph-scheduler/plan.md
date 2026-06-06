@@ -1,8 +1,8 @@
 ---
 title: 'Durable Runtime Phase 3: Graph Scheduler'
-status: active
+status: completed
 createdAt: '2026-06-03T00:00:00.000Z'
-updatedAt: '2026-06-04T14:10:14.786Z'
+updatedAt: '2026-06-06T14:31:22.323Z'
 ---
 
 ## Overview

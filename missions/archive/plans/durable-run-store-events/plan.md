@@ -1,8 +1,8 @@
 ---
 title: 'Durable Runtime Phase 1: Run Store and Normalized Events'
-status: active
+status: completed
 createdAt: '2026-06-03T00:00:00.000Z'
-updatedAt: '2026-06-03T21:54:38.252Z'
+updatedAt: '2026-06-06T14:31:21.823Z'
 ---
 
 ## Overview

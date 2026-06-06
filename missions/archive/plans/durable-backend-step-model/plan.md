@@ -1,8 +1,8 @@
 ---
 title: 'Durable Runtime Phase 2: Backend and Step Model'
-status: active
+status: completed
 createdAt: '2026-06-03T00:00:00.000Z'
-updatedAt: '2026-06-04T02:48:07.386Z'
+updatedAt: '2026-06-06T14:31:22.060Z'
 ---
 
 ## Overview

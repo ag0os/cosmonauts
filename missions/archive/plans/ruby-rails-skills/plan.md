@@ -1,8 +1,8 @@
 ---
 title: Adapt rails-codex-plugin Ruby/Rails skills into cosmonauts
-status: active
+status: completed
 createdAt: '2026-04-23T19:15:38.873Z'
-updatedAt: '2026-04-23T19:15:38.873Z'
+updatedAt: '2026-06-06T14:31:22.565Z'
 ---
 
 ## Summary

@@ -1,7 +1,8 @@
 ---
-slug: dialogic-planner
 title: Dialogic planner + TDD chain fixes + reviewer panel
-status: in-progress
+status: completed
+createdAt: '2026-06-06T14:31:23.038Z'
+updatedAt: '2026-06-06T14:31:23.038Z'
 ---
 
 # Dialogic Planner

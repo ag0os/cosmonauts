@@ -1,8 +1,8 @@
 ---
 title: Orchestration Surface Consolidation (Durable Orchestration Wave 2)
-status: active
+status: completed
 createdAt: '2026-06-05T20:24:55.570Z'
-updatedAt: '2026-06-05T21:00:55.474Z'
+updatedAt: '2026-06-06T14:31:22.801Z'
 ---
 
 ## Overview
