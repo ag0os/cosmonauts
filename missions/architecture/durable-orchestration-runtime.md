@@ -954,6 +954,11 @@ Still open (to resolve within the relevant plan or post-production):
 
 ## Out of Scope / Post-Production Follow-ups
 
+> **Forward work consolidated (2026-06-09).** These post-production follow-ups are
+> now carried forward in `missions/architecture/orchestration-future.md` (the
+> orchestration source of truth), tracked by the `agent-swarms` roadmap entry.
+> This section remains as the Wave-1/2 historical record.
+
 Excluded from the first wave unless a child plan hits a blocking dependency:
 
 - Durable coordinator loops — replace long-lived waiting sessions with explicit

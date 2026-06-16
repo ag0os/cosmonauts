@@ -3,6 +3,12 @@
 **Status:** Design / proposal. No code changes yet. **Blocked on a general agent-memory system (planned separately).**
 **Branch:** `claude/herdr-repo-overview-9ruL6`
 
+> **Consumer of the autonomy base (2026-06-12).** This is the herdr-backed
+> *consumer* (W5) of the autonomy/always-on substrate — see
+> `missions/architecture/autonomy.md` for the base (scheduling/lifecycle host,
+> trust tiers, episodic log) it builds on. This doc remains the detailed herdr
+> design; the generalized autonomy layer lives in the autonomy source of truth.
+
 ## Problem
 
 `cosmo` (`domains/main/agents/cosmo.ts`) is today the cross-domain executive

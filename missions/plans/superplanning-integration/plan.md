@@ -5,6 +5,14 @@ createdAt: '2026-03-30T18:35:47.508Z'
 updatedAt: '2026-03-30T18:35:47.508Z'
 ---
 
+> **Split (2026-06): product domain pulled out.** This plan's **coding-agent
+> hardening** stream (anti-sycophancy, shadow-path tracing, premise-challenge,
+> Boil-the-Lake, plan-review skill, reviewer scope modes) remains the **active
+> scope**. The **new `product` domain** stream is now tracked as the roadmap Idea
+> `product-domain` — to be built as a specialized *external* domain (see
+> `missions/architecture/domains.md`), gated on `agent-tools` web research. The
+> product-domain sections below are retained as that Idea's design source.
+
 ## Summary
 
 Integrate the best techniques from the superplanning repo (`/Users/cosmos/Resources/superplanning`) into Cosmonauts across two streams: (1) enhance existing coding domain agents with battle-tested planning disciplines — anti-sycophancy, shadow path tracing, premise challenge, handoff completeness, complexity thresholds, and Boil the Lake; (2) create a new `product` domain with agents for idea validation, product planning, and product review — workflows that don't exist in Cosmonauts today.

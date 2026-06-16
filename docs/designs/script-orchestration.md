@@ -1,5 +1,10 @@
 # Planner Prompt: Script-Orchestrated, Main-Agent-Coordinated Execution Pattern
 
+> **Superseded (2026-06-09).** This direction is folded into
+> `missions/architecture/orchestration-future.md` as **Wave E** (script-coordinated
+> mode). Kept as the original working artifact; the forward direction now lives in
+> the orchestration source of truth.
+
 This is a prompt to feed to the cosmonauts `planner` agent (interactively, via
 `cosmonauts -a planner "$(cat docs/designs/script-orchestration.md)"`) to design
 a first-class capability for the script-driven, real-time-coordinated

@@ -1,5 +1,10 @@
 # Child-Process Sub-Agent Spawning
 
+> **Superseded (2026-06-09).** This investigation is folded into
+> `missions/architecture/orchestration-future.md` as **Wave D** (real parallelism
+> & isolation). Kept as detailed implementation reference for when that slice is
+> picked up; the forward direction now lives in the orchestration source of truth.
+
 **Status:** Investigation / proposal. No code changes yet.
 **Branch:** `claude/investigate-parallel-agents-EUBM5`
 

@@ -4,56 +4,114 @@ Work backlog in two sections. **Prioritized** items at the top are ordered — p
 
 ## Prioritized
 
-Three items, in order — the architectural-memory track. They stack into the system that prevents architectural drift and code duplication as the codebase grows: `reuse-scan` produces reuse evidence per plan, `architecture-of-record` maintains the living cross-plan synthesis (`distiller` feeds it), and `embedding-memory` retrieves it semantically at design time. (The durable-orchestration track's surface-consolidation wave shipped and merged — see `memory/project_orchestration_surface_consolidation.md`; remaining orchestration work is unprioritized, in the architecture record's post-production follow-ups.)
+Ordered — pick from the top. Curated 2026-06 from a full-backlog reprioritization: ~15 scattered items were consolidated into a handful of capability **tracks**, each with a source-of-truth doc under `missions/architecture/` (linked per entry). The sequence front-loads the live bug, then high-leverage / compounding work, then the foundational multi-domain pieces. General **agent memory**, **autonomy / always-on**, and the rest are unordered Ideas below.
 
-### `architecture-of-record`: Cross-Plan Architectural Memory
+### `task-id-system`: Improve Task Naming / Numbering
 
-**Complexity: medium.** Today `memory/<slug>.knowledge.jsonl` is per-plan. Decisions in plan N drift from plans 1..N-1 because no agent reads across plans. Introduce a living architecture document that `distiller` maintains and planners consult. Compounding value over time.
+The current scheme persists a `lastIdNumber` counter in `missions/tasks/config.json` and allocates `max(counter, highest ID on disk) + 1` at create time. Problems: the config file is rewritten (with 2-space JSON) on every create — churn and merge-conflict bait — and client-side sequential allocation can't prevent cross-branch ID collisions (two branches both mint `TASK-N`, merge produces duplicates). It actively breaks `plan archive` today. For now `missions/` is excluded from Biome to stop the lint churn; this item replaces the band-aid.
 
-- New artifact: `memory/architecture.md` — module map, dependency rules, public contracts, key ADRs, conventions
-- `distiller` extended: after writing each per-plan knowledge bundle, merge durable decisions into the architecture-of-record (filter by `type: decision | convention | trade-off`)
-- Planners, `adaptation-planner`, and `tdd-planner` load `memory/architecture.md` at session start as context alongside capability packs
-- `plan-reviewer` gains a review dimension: "proposed design is consistent with architecture-of-record, or the deviation is explicit and justified"
-- Format: section per concern (modules, data, APIs, conventions, ADRs); each entry dated and linked to its source plan slug
-- Rebuild command `cosmonauts memory rebuild` reconstructs the document from all archived plan knowledge bundles
+- Decide direction: derive next number from `missions/tasks/` ∪ `missions/archive/tasks/` and drop the config counter; or keep a counter but move it to an un-linted state file; or switch to collision-resistant non-sequential IDs (nanoid/ULID/short hash) — losing sequential readability but eliminating conflicts entirely
+- Whichever path: `task create`/`task edit` must stop reformatting tracked config on every write (or stop touching it at all)
+- If staying sequential: document the cross-branch collision caveat, or add a lightweight reconciliation step (e.g. `cosmonauts task renumber` after a merge)
+- Update `lib/tasks/id-generator.ts`, `lib/tasks/task-manager.ts`, `lib/tasks/file-system.ts` and the task CLI accordingly; keep `generateNextId` behavior covered by tests
+- Revisit the Biome `missions/` exclusion afterward — narrow or remove it if the config churn is gone
 
-### `reuse-scan`: Mandatory Reuse Scan Skill for Planners
+### `architectural-memory`: Codebase Architectural Memory
 
-**Complexity: low.** `coding-readonly.md` tells planners to "check for reusable code" but no role is accountable and no structured check exists. Add a skill that makes the check mandatory and evidenced in the plan.
+Durable, retrievable knowledge **about the codebase** — structure, decisions, work history — so agents and humans don't lose the thread as agents write the code. One repo-scoped substrate across facets: **code structure** (derived/actual + curated/intended), **decisions**, **work history**. First slice: the **derived code-structure map**. Later waves (architecture-of-record, reuse-scan, embedding retrieval) live in the source-of-truth doc.
 
-- New skill `reuse-scan/SKILL.md` loaded by `planner`, `adaptation-planner`, and `tdd-planner`
-- Procedure: for each proposed new module or major function, grep for existing implementations; document findings in the plan under a new **Reuse Analysis** section
-- Plan template gains **Reuse Analysis**: what was searched, what was found, why existing code is or isn't sufficient
-- `plan-reviewer` adds a review dimension: "reuse analysis present, searches credible, conclusions sound"
-- Prevents codebase drift: each plan leaves evidence of what was considered for reuse, visible to future planners via the architecture-of-record
+- Derived map: dependency tree + public interfaces, always-fresh via cache-on-hash; "what each module does" narrative regenerated lazily only when a module's skeleton changes
+- Sharded markdown agents load on demand — `architecture/index.md` + per-module shards — so agents stop re-scanning the whole codebase
+- Build on existing TS tooling (dependency-cruiser / ts-morph / typedoc); LLM only for narrative + diagrams; targets the user's project
+- Consumers: planner, plan-reviewer, coordinator, worker, quality-manager (human HTML/diagram + health-metrics view deferred)
+- Source of truth, facets, waves, open decisions: `missions/architecture/architectural-memory.md`
 
-### `embedding-memory`: Embedding-Based Memory
+### `agent-tools`: Native Agent Tools (Web Research + Browser)
 
-**Complexity: medium.** Semantic search over past work for automatic context injection during prompt assembly. The data capture layer is built — session-lineage writes structured KnowledgeRecord JSONL files during plan execution. Remaining work is the query and injection pipeline. Pairs with `architecture-of-record`: embedding-memory is the retrieval layer; architecture-of-record is the curated single-source-of-truth layer.
+Make borrowed/bolted-on capabilities feel **native** — registered tools (the established `pi.registerTool` + TypeBox pattern) with explicit capability docs, so agents reach for them instead of leaving for Claude Code/Codex. Today web research is **absent**; browser exists only as an under-surfaced shell-out skill. First slice: **web research**. Full assessment + theme in the source-of-truth doc.
 
-- SQLite storage with vector columns for embeddings
-- Multiple embedding backends (local via Ollama, or API-based)
-- Semantic query interface over KnowledgeRecord entries
-- Automatic injection at prompt assembly time (Layer 0.5 or hook)
-- Temporal decay (older memories weighted lower)
+- Web research (build native): `web_search` + `web_fetch` primitives behind a pluggable backend (Brave / Tavily / Exa / SearXNG) → a thin `researcher` skill/agent that composes them
+- Browser (keep Playwright): first sharpen the `playwright-cli` skill — self-contained (inline reference, stack-agnostic), explicit use-cases, surfaced to `cosmo` + coding agents; upgrade to a thin native `browser` tool wrapping Playwright if usage stays low
+- Pi-First: evaluate `pi-skills` brave-search / browser-tools before building; lean native for control + the clean pattern
+- Cross-link: document the tool-authoring contract (currently code-only) with `domains`, for when installable domains add tools
+- Source of truth: `missions/architecture/tool-ecosystem.md`
+
+### `agent-swarms`: Multi-Agent Swarms with a Coordinator
+
+N agents work as a team toward one objective, communicating through a coordinator. First slice: **read/opinion swarms** (codebase understanding, spike investigation, multi-lens review) — they mutate nothing and need no isolation. The full forward arc (mutable swarms, durable nesting, real parallelism/isolation, script-coordinated mode) lives in the orchestration source of truth.
+
+- Shard work across N read-only agents — a different slice per agent, not today's same-prompt fan-out
+- Coordinator collects and synthesizes per-agent opinions into one result
+- Coordinator modes: spawned in-process, or the interactive main session as coordinator
+- Builds on existing fan-out + `spawn_agent` + the `quality-manager` parallel-specialist pattern; no worktree isolation for this slice
+- Source of truth & later waves: `missions/architecture/orchestration-future.md`
+
+### `domains`: Domain System — Extraction, Boundary & Routing
+
+Domains are composable agentic bundles (agents, prompts, capabilities, skills, tools, chains — the full stack) that extend Cosmonauts; the plugin substrate is **~80% built** (git/local/symlink/catalog install, manifest, multi-source precedence+merge, `eject`, `update`). This track finishes and documents it, ships a minimal core, and adds domain routing. Full model in the source-of-truth doc.
+
+- Core bundle = framework + `shared` (stdlib) + `main` (default assistant); no merge; audit the `shared`/`main` split. `coding` + future/experimental domains = external repos
+- Extract `coding` to its own repo (mechanism exists; `--link` symlink for the both-repos dev loop)
+- Customization model: override-layer (precedence merge, asset-granular — customize without forking, upgrades preserved) + `eject` for full forks
+- New mechanics: **domain routing** (`cosmo` picks the right domain — beyond skill-routing) + domain-aware skill discovery (folds in `domain-aware-skills`, `skill-routing`)
+- Boundary/definition contract documented; declarative-format decision (manifest/agents/chains → data; tools stay code); domain composition/inheritance deferred
+- Source of truth: `missions/architecture/domains.md`
 
 ## Ideas
 
-### `architecture-viz`: Architecture Visualization & Health Analysis
+Unordered candidates — pick only when directed. Several are full capability tracks with their own source-of-truth doc under `missions/architecture/`; the entry links to it.
 
-As agents write more of the code, the human loses visibility of how the target codebase is actually organized. A module that scans the active project, renders its architecture visually, and lets an LLM co-analyze with the human — catching drift, dead modules, cyclic deps, and unhealthy growth patterns that would otherwise hide until refactor pain. Findings feed back into prompt engineering for the coding agents.
+### `agent-memory`: General Agent Memory
 
-- Target is the **user's project** (any codebase cosmonauts is invoked in), not cosmonauts itself
-- **Mechanical layer**: AST/import scan produces a structured dependency graph as JSON (modules, files, imports, sizes, fan-in/fan-out, cycles). Start with TypeScript/JavaScript; extend via tree-sitter for polyglot
-- **Narrative layer**: LLM analyst agent consumes the JSON and produces Mermaid diagrams + markdown reports (C4-style context, component maps, layering violations, refactor candidates)
-- **Local web server**: `cosmonauts arch serve` renders the JSON with an interactive graph lib (cytoscape.js or d3-force) for zoom/pan/filter; embedded Mermaid for the narrative diagrams — no build step, single static bundle
-- **Text fallback** (`--text`): ASCII tree + Mermaid source for agent consumption and terminal-only environments
-- **Storage**: `.cosmonauts/architecture/graph.json` (latest scan), `snapshots/<date>/` (history, diffable), `analyses/<topic>.md` (saved LLM reports with embedded Mermaid)
-- **Dual consumer**: the same artifacts are read by humans (browser) and by agents (`plan-reviewer`, `quality-manager`) as context for architectural review
-- **Health metrics**: cyclic deps, god-modules, orphan files, churn hotspots, layering violations vs the architecture-of-record
-- **Feedback loop**: if drift is detected, flag for prompt-engineering review of the coding agents that produced it
-- Likely a new domain (`domains/architecture/`) with an `architect-analyst` agent, or a cross-domain capability — decide during planning
-- Pairs naturally with `architecture-of-record`: this feature surfaces the *actual* architecture; architecture-of-record holds the *intended* one; divergence between them is the signal
+Operational/personal memory so agents (and Cosmo as an assistant) remember the user, project, and session without re-loading context every turn — distinct from architectural (code) memory but sharing its save/retrieve mechanism. Plain-text first behind a pluggable retrieval interface; embeddings optional. First slice: the **memory interface + plain-text substrate + scope-filtered retrieval**. Full model in the source-of-truth doc.
+
+- Taxonomy: scope (session/project/user) × type (semantic/procedural/episodic); short-term ≈ the live Pi session (Pi-First audit), long-term = consolidated records
+- Retrieval without context pollution: compact index always-loaded + detail on demand; scope + recency + `recall()` tool first, embeddings last
+- Pluggable interface (`write` / `retrieve(scope, query)` / `consolidate`) shared with architectural memory; backends plug in (plain-text → SQLite → embeddings)
+- Records: profile + playbooks (explicit-save v1), episodic log (= autonomy audit trail); user-scoped `~/.cosmonauts/`, human-legible and prunable
+- Background consolidation ("dreaming") = a scheduled process → intersects the autonomy track; substrate for `ambient-cosmo` / `executive-assistant`
+- Source of truth: `missions/architecture/agent-memory.md`
+
+### `autonomy`: Autonomy / Always-On Substrate
+
+The base that lets a domain or agent run on a schedule, wake periodically, react to events, or stay always-on — plus the governance that makes autonomous action safe. The same substrate powers memory "dreaming," periodic result-checks, the executive assistant, and the ambient terminal assistant. First slice: the **scheduling/lifecycle substrate** (triggers + host + durable wake-state). Full model in the source-of-truth doc.
+
+- Layer A (base): triggers (interval / one-shot / event-wait / always-on) · lifecycle host (in-process → child → daemon) · durable wake-state (= the episodic log) · cost-efficient wake handler (skip empty, dedup, silent-ack)
+- Agents/domains *declare* their triggers; the host fires them (pluggable, opt-in)
+- Layer B (acting agents): trust tiers (auto / act-then-announce / reserved) + audit log + caps + escalate-to-human + a steering channel (where Telegram/WhatsApp transports plug in)
+- Shares ONE long-lived host + durable store with the orchestration durable runtime — this delivers orchestration's deferred scheduler-form/daemon + durable-coordinator-loops
+- Consumers (folded in): executive assistant (Cosmonauts-work supervisor), `ambient-cosmo` (herdr terminal supervisor), external `channels`; cross-links `agent-messaging`
+- Source of truth: `missions/architecture/autonomy.md`
+
+### `analysis-tools`: Static-Analysis Tooling for Agent Code Quality (Spike)
+
+A spike/improvement track: review how Cosmonauts leverages static analysis to help agents produce great code, and where to take it. Today it's only Biome (lint/format) + `tsc` for this repo's TypeScript — nothing surfaced to agents as a dedicated capability, and nothing for non-TS codebases. Targets the user's project (any codebase), not just cosmonauts.
+
+- Audit the current code-quality arc: how lint/typecheck are used in the quality gates and the agent loop today — are agents leveraging them, or just running the gate ad hoc?
+- Use what we have better: richer rule sets, type-aware checks, complexity/dead-code/security signals fed back to `worker`/`quality-manager` as structured findings, not just pass/fail
+- Other languages/codebases: per-language analyzers (ESLint, ruff/mypy, clippy, …) and how a domain/skill surfaces the right one per project
+- Universal layer: a language-agnostic option (tree-sitter, `semgrep`) and a common findings contract (e.g. SARIF) so the framework speaks one analysis-results format across languages
+- Pairs with `architectural-memory` (shared static-analysis substrate — dependency-cruiser/ts-morph/tree-sitter): that track *understands* the code; this one *catches problems* as agents write it
+
+### `agent-messaging`: Agent-to-Agent Messaging
+
+Replace filesystem polling with push-based communication between agents. Address when coordinator-loop cost or latency becomes symptomatic; not urgent at current scale. Shared substrate: feeds orchestration's durable-coordinator-loops and the autonomy executive-assistant.
+
+- Event bus or completion callback system for spawned agents
+- Coordinator receives results directly instead of re-reading task files each iteration
+- In-memory pub/sub that the orchestration extension hooks into
+- Idempotency keys to prevent duplicate processing
+- Depth-aware dispatch (only direct requester receives completion events)
+
+### `hook-system`: Plugin & Hook System
+
+Lifecycle hooks at chain, stage, and spawn levels for extensibility without modifying core code. Defer unless a plugin ecosystem becomes an explicit goal (the `domains` track may make it one).
+
+- Hook categories: chain lifecycle, stage lifecycle, agent spawn, tool execution
+- Fire-and-forget hooks (parallel, void) and modifying hooks (sequential, merged results)
+- Hook registration via config or extension API
+- Key hooks: before_chain_start, after_stage_end, before_agent_spawn, after_tool_call
+- Enables plugins for logging, metrics, custom validation, and external integrations
 
 ### `prd-ingestion`: PRD Ingestion Skill + Non-Interactive Spec-Writer Mode
 
@@ -85,202 +143,6 @@ Structured triage that produces either a minimal plan (complex bug) or a direct 
 - Triage artifact `missions/triage/<slug>.md` links to either a plan slug (complex → full plan) or a task ID (simple → direct fix)
 - Standard severity labels feed into quality-manager priority handling (P0 bug skips the design-review gate entirely)
 
-### `agent-messaging`: Agent-to-Agent Messaging
-
-Replace filesystem polling with push-based communication between agents. Address when coordinator-loop cost or latency becomes symptomatic; not urgent at current scale.
-
-- Event bus or completion callback system for spawned agents
-- Coordinator receives results directly instead of re-reading task files each iteration
-- In-memory pub/sub that the orchestration extension hooks into
-- Idempotency keys to prevent duplicate processing
-- Depth-aware dispatch (only direct requester receives completion events)
-
-### `executive-assistant`: Autonomous Executive-Assistant Follow-Up
-
-`main/cosmo` and Drive are implemented. This item tracks the remaining always-on supervision layer: watches `ROADMAP.md`, picks prioritized items, runs workflows or Drive, handles failures, and reports back. Real-time agent-to-agent communication is the substrate — without it, this is just a cron scheduler.
-
-- Extend `domains/main/` with monitor/supervisor/escalator/reporter agents only if the daemon needs specialized roles
-- `cosmonauts daemon` mode: long-running process with heartbeat, durable state, survives restarts
-- Real-time comms primitives: peer registry, `send_to_peer` / `wait_for_peer_message` tools built on the existing `MessageBus` and `pi.sendUserMessage` injection
-- Human steering channel — always-open injection point for mid-flight redirection
-- Cross-plan arbitration: EA serializes or merges plans that touch the same files
-- Hard safety caps: round limits on dialogues, budget ceilings, escalate-to-human after N autonomous retries
-- Prototype sequence: daemon + steering channel first (single roadmap item → plan-and-build loop), then real-time dialogue (EA ↔ planner roadmap disambiguation), then supervision (mid-flight escalation)
-
-### `agent-memory`: General Agent-Memory System
-
-A durable memory substrate for **all** Cosmonauts agents (not just `cosmo`) — the operational/personal axis, distinct from the existing *code-knowledge* memory (`architecture-of-record`, `embedding-memory`, `memory/<slug>.knowledge.jsonl`). Self-authored, human-legible, user-scoped. Prerequisite for the useful half of `ambient-cosmo`. To be planned in its own session.
-
-- Three record types: **profile** (stable user/agent facts), **playbooks** (parameterized, replayable routines), **episodic log** (what an agent did — also the autonomy audit trail and the source data playbooks are learned from)
-- Self-authored but human-editable: markdown + frontmatter (reuse `gray-matter`); memory is *proposed truth the user can override/prune*, not silently-mutated state
-- **User-scoped storage** (e.g. `~/.cosmonauts/`), not repo `memory/` — a machine-level assistant's memory spans projects and is personal
-- Explicit-save before implicit-learning (v1: agent proposes "save that as a playbook?"; pattern-mining is v2)
-- Decide: one substrate shared with code-knowledge memory, or a sibling system
-- Pi-First audit: check whether Pi session-state / `pi.appendEntry()` / pi-skills cover any of this before building
-- Memory hygiene: consolidation/pruning, not unbounded append
-
-### `ambient-cosmo`: Cosmo as a herdr-Backed Ambient Terminal Assistant
-
-Turn `main/cosmo` into a machine-level assistant whose body is the [herdr](https://github.com/ogulcancelik/herdr) terminal multiplexer: ambient supervision of every agent session on the box (Cosmonauts/Pi, Claude Code, Codex, shells), autonomous action from day one, and attention routing — without changing how the user works inside any pane. Distinct from `executive-assistant` (which supervises *Cosmonauts* workflows/Drive); this supervises the *whole heterogeneous terminal* at the process layer. Full design: `docs/designs/cosmo-ambient-assistant.md`.
-
-- New `herdr` capability wrapping the Unix-socket API (observe: topology/`read`/`wait_status`; act: `pane_split`/`run`/`send`/`focus`); reuse `@ogulcancelik/pi-herdr` patterns; no-op when no herdr socket present
-- Autonomy trust model: tiered actions (auto / act-then-announce / reserved-irreversible) + episodic audit log; control loop uses herdr blocking waits, not polling
-- Phases 1–2 (observe, act) are unblocked; **phase 3 (profile + playbooks) is BLOCKED on `agent-memory`** — that's what makes it intelligent vs. a scriptable tmux
-- herdr is AGPL/commercial dual-licensed: treat as a user-installed external tool (shell out to its CLI/socket), not a bundled dependency
-- Single-host only (Unix socket, Linux/macOS); cross-machine is a non-goal
-
-### `chain-timeouts`: Flexible Activity-Based Chain Timeouts
-
-Chain/workflow timeouts are currently too rigid for long autonomous implementation work and can break active work mid-flight. Make timeout behavior configurable and progress-aware across CLI workflows and interactive spawned agents.
-
-- Expose chain timeout and child-spawn completion timeout in `cosmonauts --workflow` and `chain_run`
-- Prefer activity-based timeout: fail only after no turn/tool/progress activity for a configurable idle window, not just elapsed wall time
-- Apply consistently to coordinator-spawned workers in both CLI workflow mode and interactive `spawn_agent` nesting
-- On timeout, leave tasks and session lineage in a recoverable state with a clear reason and resume guidance
-
-### `chain-checkpointing`: Chain Checkpointing & Resumption
-
-Serialize chain state after each stage so workflows survive crashes and can be resumed mid-execution. Address when long-running autonomous durations justify the complexity.
-
-- Persist chain progress (completed stages, pending stages, accumulated stats) to disk
-- Resume from last completed stage on restart
-- CLI flag: `--resume <chain-id>` to continue a previously interrupted workflow
-- Stage results cached for replay during debugging
-
-### `model-failover`: Model Failover & Retry
-
-Wrap the spawner with retry logic that classifies errors and falls back to alternate models/providers. Reactive work — address when provider flakiness becomes symptomatic.
-
-- Error classification: auth, billing, rate-limit, context overflow, transient
-- Configurable backup models per role (e.g., fall back from opus to sonnet)
-- Backoff strategy with jitter to avoid thundering herd
-- Multi-key rotation with cooldown tracking per provider
-- Usage stats preserved per attempt for cost tracking accuracy
-
-### `hook-system`: Plugin & Hook System
-
-Lifecycle hooks at chain, stage, and spawn levels for extensibility without modifying core code. Defer unless a plugin ecosystem becomes an explicit goal.
-
-- Hook categories: chain lifecycle, stage lifecycle, agent spawn, tool execution
-- Fire-and-forget hooks (parallel, void) and modifying hooks (sequential, merged results)
-- Hook registration via config or extension API
-- Key hooks: before_chain_start, after_stage_end, before_agent_spawn, after_tool_call
-- Enables plugins for logging, metrics, custom validation, and external integrations
-
-### `domain-plugins`: Installable Domain Plugin System
-
-Domains are pluggable by design but today the coding domain is still embedded in this repo. Make domains installable from external repos — public or private — the way Claude Code installs plugins. This is what lets the coding domain be extracted out and lets users (and the maintainer) keep private domains separate from the framework.
-
-- Install a domain (agents, prompts, capabilities, skills, workflows) from a git repo: `cosmonauts domain install <repo>`
-- Support public and private sources (private repos via existing git auth)
-- Resolve and load installed domains alongside built-in `domains/` and bundled `bundled/`
-- Versioning / update story for installed domains
-- Extract the embedded coding domain into its own repo as the first real consumer of this system
-- Relates to `hook-system` (extensibility) and `domain-aware-skills` (per-domain skill scoping)
-
-### `context-budget`: Context Budget Management
-
-Smart pruning for coordinator loops that accumulate large tool outputs over many iterations. Address when coordinator or quality-manager runs start hitting compaction issues.
-
-- Cache-TTL based token counting for context budget awareness
-- Automatic compaction safeguards to prevent over-compaction
-- Configurable token budget per agent role
-- Preserve recent tool results within budget, summarize older ones
-
-### `domain-aware-skills`: Domain-Aware Skill Discovery
-
-Skill filtering should be domain-aware. When `projectConfig.skills` is unset, default to showing all skills from the active domain context rather than all skills globally. Prevents cross-domain noise as new domains are added.
-
-- `buildSkillsOverride` gains a `domainContext` parameter
-- Filter discovered skills by domain when no explicit skill list is given
-- Projects can still override with an explicit `skills` list to restrict further
-
-### `web-search-tool`: Web Search
-
-Add web_search tool for searching the web from agent sessions.
-
-- Evaluate brave-search from pi-skills before building custom
-- Choose search API: Brave Search (free tier), Tavily, or SearXNG
-- Return structured results with titles, URLs, and snippets
-
-### `browser-tool`: Browser Automation
-
-Add browser tool via Playwright for UI testing and web interaction.
-
-- Port patterns from OpenClaw
-- Evaluate browser-tools from pi-skills before building custom
-- Decide between Playwright (full, headless) vs CDP direct (lighter, existing Chrome)
-
-### `heartbeat`: Autonomous Background Scheduling
-
-Port heartbeat system from OpenClaw for autonomous background work.
-
-- Periodic timer with HEARTBEAT.md conventions
-- Cost-efficient: skip empty cycles, silent acknowledgment, deduplication
-- Agent can be triggered on schedule without human intervention
-
-### `web-fetch-tool`: Web Page Fetching
-
-Add web_fetch tool that fetches a URL, strips HTML, and returns readable text content.
-
-- Agents can read documentation, blog posts, and reference material from the web
-- Check if brave-search skill's content extraction already covers this
-- Handle common edge cases: redirects, paywalls, very large pages
-
-### `language-skills`: Language Skill Pack
-
-Write language skills for Rust, Python, Swift, and Go.
-
-- Follow the established pattern in domains/coding/skills/languages/typescript/SKILL.md
-- Each skill covers idioms, best practices, toolchain conventions, and testing patterns
-- Workers load the appropriate skill based on project language
-
-### `domain-skills`: Domain Skill Pack
-
-Write domain skills for testing, code-review, frontend, devops, api-design, and database.
-
-- Follow existing conventions in domains/coding/skills/
-- Testing skill covers strategy, coverage, mocking, and test organization
-- Code-review skill covers what to look for, how to structure findings
-- Frontend, devops, api-design, database skills cover domain-specific patterns and best practices
-
-### `skill-routing`: Coordinator Skill Routing
-
-Implement automatic skill-routing in the coordinator so workers get the right skills for each task.
-
-- Match task labels to language/domain skills automatically
-- Auto-detect project language from manifests (package.json, Cargo.toml, etc.)
-- Coordinator instructs workers which skills to load based on task labels and project context
-
-### `channels`: External Communication Transports
-
-Connect Cosmonauts to external messaging platforms.
-
-- Telegram and/or WhatsApp transports via Pi RPC mode or SDK
-- Notification delivery when autonomous work completes
-- Bidirectional: receive prompts and send results through messaging apps
-
-### `headless-init`: Headless Project Bootstrap (`init --print` / `--emit-files`)
-
-`cosmonauts init` is REPL-only today: it launches the domain lead to chat about `AGENTS.md` and skill choices, then writes files after the user confirms. External orchestrators (Claude Code, Codex driving cosmonauts from outside) can't bootstrap a fresh project without a human at the terminal. Surface a non-interactive mode that produces the same artifacts as a single-shot proposal.
-
-- `cosmonauts init --print` runs the bootstrap agent in print mode and emits the proposed `AGENTS.md` content to stdout; no files written
-- `cosmonauts init --emit-files <dir>` writes proposed `AGENTS.md` and any skill-suggestion files into `<dir>` without prompting; reports a summary on stderr; exits non-zero if the bootstrap agent declines
-- Bootstrap prompt reworked so the agent produces a structured, single-shot proposal (no clarifying questions in this mode); structured envelope documented in the bootstrap persona
-- Existing interactive `cosmonauts init` REPL remains the default — unchanged
-- Tests cover both new modes against a fixture project; assert produced `AGENTS.md` is non-empty and carries the expected section headings
-
-### `streaming-events`: NDJSON Event Stream for `--print` and `--workflow`
-
-External orchestrators currently can't watch intermediate progress — `cosmonauts --print` and `cosmonauts --workflow` only surface the final response, leaving long runs (multi-agent chains, drives) opaque for minutes. Expose a stable NDJSON event stream so callers can render progress and react to state changes mid-run. Pairs naturally with the existing `cosmonauts drive` event log; this generalizes the surface to print and workflow modes.
-
-- `--output-format stream-json` (exact flag chosen during planning) emits one JSON event per line to stdout; coexists with or replaces the final response per a mode flag
-- Stable event vocabulary: `turn_started`, `turn_ended`, `tool_call`, `tool_result`, `agent_switch`, `stage_started`, `stage_ended`, `chain_completed`, `error` — each with `timestamp`, `sessionId`, `agentId`, plus event-specific fields
-- Hooks into Pi's existing event bus via `pi.on()` rather than instrumenting from scratch; no new event source for things Pi already emits
-- Works for both `--print` (single agent) and `--workflow` / chain DSL (multi-stage); chains emit `stage_*` events around each stage's `turn_*` stream
-- Schema documented in `docs/orchestration.md` and versioned via a `schemaVersion` field on every event; breaking changes bump it
-- Tests cover per-event-type shape, ordering invariants (`turn_started` before `turn_ended`, `stage_started` before its turns), and chain stage boundaries
-
 ### `dialogic-planner-followups`: Review-Derived Followups from `dialogic-planner`
 
 Items deferred from the `dialogic-planner` branch. Polish items pruned; load-bearing ones kept.
@@ -298,12 +160,38 @@ Items scoped out of the `tdd-orchestration-hardening` plan. Captured here so the
 - **Commit cadence inside TDD tasks.** Each task currently produces three commits (RED + GREEN + REFACTOR), which ships failing tests at every RED commit (red CI on every push) and ~3× history noise. Switch to single-commit-per-task: only `refactorer` commits; `test-writer` and `implementer` stage only; on phase failure the coordinator uses `git reset --mixed` to preserve unstaged files as a recovery point. Touches `test-writer.md`, `implementer.md`, `refactorer.md`, and `tdd-coordinator.md` failure paths. Revisit when red-CI cost or history noise becomes measured.
 - **Merge `implementer` + `refactorer` into one agent.** The GREEN/REFACTOR phase boundary is currently enforced across two separate agents for a relatively weak discipline win, at the cost of an extra spawn per task (~33% of per-task orchestration overhead). The load-bearing boundary is RED/GREEN between `test-writer` and the implementer; REFACTOR can be a second step inside the same session. Touches both agent definitions, both prompts, and the `GREEN complete:` → `REFACTOR complete:` handoff contract in `tdd-coordinator.md`. Revisit if per-task orchestration cost becomes measured.
 
-### `task-id-system`: Improve Task Naming / Numbering
+### `language-skills`: Language Skill Pack
 
-The current scheme persists a `lastIdNumber` counter in `missions/tasks/config.json` and allocates `max(counter, highest ID on disk) + 1` at create time. Problems: the config file is rewritten (with 2-space JSON) on every create — churn and merge-conflict bait — and client-side sequential allocation can't prevent cross-branch ID collisions (two branches both mint `TASK-N`, merge produces duplicates). For now `missions/` is excluded from Biome to stop the lint churn; this item replaces the band-aid.
+Write language skills for Rust, Python, Swift, and Go. Skill *content* that ships inside (extracted) domains — downstream of the `domains` track.
 
-- Decide direction: derive next number from `missions/tasks/` ∪ `missions/archive/tasks/` and drop the config counter; or keep a counter but move it to an un-linted state file; or switch to collision-resistant non-sequential IDs (nanoid/ULID/short hash) — losing sequential readability but eliminating conflicts entirely
-- Whichever path: `task create`/`task edit` must stop reformatting tracked config on every write (or stop touching it at all)
-- If staying sequential: document the cross-branch collision caveat, or add a lightweight reconciliation step (e.g. `cosmonauts task renumber` after a merge)
-- Update `lib/tasks/id-generator.ts`, `lib/tasks/task-manager.ts`, `lib/tasks/file-system.ts` and the task CLI accordingly; keep `generateNextId` behavior covered by tests
-- Revisit the Biome `missions/` exclusion afterward — narrow or remove it if the config churn is gone
+- Follow the established pattern in `domains/coding/skills/languages/typescript/SKILL.md`
+- Each skill covers idioms, best practices, toolchain conventions, and testing patterns
+- Workers load the appropriate skill based on project language
+
+### `domain-skills`: Domain Skill Pack
+
+Write domain skills for testing, code-review, frontend, devops, api-design, and database. Skill *content* that ships inside domains — downstream of the `domains` track.
+
+- Follow existing conventions in `domains/coding/skills/`
+- Testing skill covers strategy, coverage, mocking, and test organization
+- Code-review skill covers what to look for, how to structure findings
+- Frontend, devops, api-design, database skills cover domain-specific patterns and best practices
+
+### `headless-init`: Headless Project Bootstrap (`init --print` / `--emit-files`)
+
+`cosmonauts init` is REPL-only today: it launches the domain lead to chat about `AGENTS.md` and skill choices, then writes files after the user confirms. External orchestrators (Claude Code, Codex driving cosmonauts from outside) can't bootstrap a fresh project without a human at the terminal. Surface a non-interactive mode that produces the same artifacts as a single-shot proposal.
+
+- `cosmonauts init --print` runs the bootstrap agent in print mode and emits the proposed `AGENTS.md` content to stdout; no files written
+- `cosmonauts init --emit-files <dir>` writes proposed `AGENTS.md` and any skill-suggestion files into `<dir>` without prompting; reports a summary on stderr; exits non-zero if the bootstrap agent declines
+- Bootstrap prompt reworked so the agent produces a structured, single-shot proposal (no clarifying questions in this mode); structured envelope documented in the bootstrap persona
+- Existing interactive `cosmonauts init` REPL remains the default — unchanged
+- Tests cover both new modes against a fixture project; assert produced `AGENTS.md` is non-empty and carries the expected section headings
+
+### `product-domain`: Product Strategy Domain (split from `superplanning-integration`)
+
+A specialized domain for product work — idea validation, product planning, and product review (`product-planner`, `product-reviewer`, `product-researcher` agents + `forcing-questions` / `review-personas` / `product-docs` skills + brainstorm / plan-product / product-to-code chains). Split out of the `superplanning-integration` plan (whose coding-agent-hardening half remains that plan's active scope). A concrete first consumer of the `domains` extraction vision.
+
+- Build as a specialized **external domain** per the `domains` track conventions, not embedded in the framework
+- `product-researcher` is gated on `agent-tools` web research; until then it documents methodology for manual research
+- Detailed design already exists: `missions/plans/superplanning-integration/{plan.md,spec.md}` (the product-domain sections)
+- Cross-links: `domains` (how it ships/installs) · `agent-tools` (web-research dependency)
