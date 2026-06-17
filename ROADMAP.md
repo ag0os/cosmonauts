@@ -93,6 +93,16 @@ A spike/improvement track: review how Cosmonauts leverages static analysis to he
 - Universal layer: a language-agnostic option (tree-sitter, `semgrep`) and a common findings contract (e.g. SARIF) so the framework speaks one analysis-results format across languages
 - Pairs with `architectural-memory` (shared static-analysis substrate — dependency-cruiser/ts-morph/tree-sitter): that track *understands* the code; this one *catches problems* as agents write it
 
+### `artifact-viewer`: Human-Friendly HTML Views (Plans + Architecture)
+
+Markdown stays the source of truth for agents; humans get a rendered **HTML companion** so they keep visibility as agents do the work. Render cosmonauts' key artifacts as readable HTML — starting with **plans** and the **architecture map**. A cross-cutting presentation layer; the `architectural-memory` track's deferred HTML/diagram view folds in here.
+
+- Plans: render `missions/plans/<slug>/{plan,spec,review}.md` + task list/status as a navigable HTML view
+- Architecture: render the derived map (`architectural-memory` W1) — module graph + per-module pages + Mermaid diagrams
+- One surface — `cosmonauts serve` (generalizes the deferred `cosmonauts arch serve`); no build step, single static bundle; markdown is rendered *to* HTML, never replaced
+- Humans-only — agents keep reading the markdown source; this is purely additive
+- Extensible later to tasks / reviews / run-status
+
 ### `agent-messaging`: Agent-to-Agent Messaging
 
 Replace filesystem polling with push-based communication between agents. Address when coordinator-loop cost or latency becomes symptomatic; not urgent at current scale. Shared substrate: feeds orchestration's durable-coordinator-loops and the autonomy executive-assistant.

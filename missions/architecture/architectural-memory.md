@@ -75,13 +75,15 @@ Sequenced; the roadmap carries the next slice.
 **Deferred presentation layer** (on top of W1's graph, off the critical path):
 human HTML / interactive graph (`cosmonauts arch serve`) + Mermaid diagrams;
 **health metrics** (cyclic deps, god-modules, orphan files, churn hotspots,
-layering violations vs. the record).
+layering violations vs. the record). The HTML/diagram half is delivered by the
+cross-cutting **`artifact-viewer`** roadmap Idea (human HTML views for plans +
+architecture); the health-analysis stays here.
 
 ## Open decisions
 
 - Retrieval default: curated-record-first vs. embedding-first vs. both.
-- Whether the HTML/diagram + health-analysis presentation layer is part of this
-  track or a later standalone "presentation" track.
+- Health-analysis presentation depth here vs. the shared `artifact-viewer` Idea,
+  which owns the human HTML/diagram rendering for plans + architecture.
 - W1 sharding/granularity: module vs. file vs. class resolution.
 - Storage plumbing shared with the general agent-memory track or separate — the
   shared **memory interface** (`write`/`retrieve`/`consolidate`) is defined in
