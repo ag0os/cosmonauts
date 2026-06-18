@@ -4,7 +4,7 @@ Work backlog in two sections. **Prioritized** items at the top are ordered — p
 
 ## Prioritized
 
-Ordered — pick from the top. Curated 2026-06 from a full-backlog reprioritization: ~15 scattered items were consolidated into a handful of capability **tracks**, each with a source-of-truth doc under `missions/architecture/` (linked per entry). The sequence front-loads the live bug, then high-leverage / compounding work, then the foundational multi-domain pieces. General **agent memory**, **autonomy / always-on**, and the rest are unordered Ideas below.
+Ordered — pick from the top. Curated 2026-06 from a full-backlog reprioritization (~15 scattered items consolidated into capability **tracks**, each with a source-of-truth doc under `missions/architecture/`, linked per entry); **cross-track sequence agreed 2026-06-18** in an implementation-ordering session. The committed spine front-loads the live bug and cheap high-felt-need wins, then the compounding code-memory substrate, then the assistant-memory win, then multi-agent leverage, then the multi-domain platform. **Two scope notes from that session:** (1) `architectural-memory` *bundles* two cheap riders from Ideas — `analysis-tools` (audit) and `artifact-viewer` (render its map + plans); (2) `agent-memory` is committed **only through W1–W2** (the assistant-remembers-you win), then a **reassess gate** decides whether to climb into **`autonomy` / always-on** (Ideas — in-process host first, co-delivers orchestration's deferred scheduler/coordinator-loops; `agent-swarms` Waves B/C and `agent-memory` W3–W4 are gated on that host). The remaining items stay unordered Ideas below.
 
 ### `task-id-system`: Improve Task Naming / Numbering
 
@@ -16,16 +16,6 @@ The current scheme persists a `lastIdNumber` counter in `missions/tasks/config.j
 - Update `lib/tasks/id-generator.ts`, `lib/tasks/task-manager.ts`, `lib/tasks/file-system.ts` and the task CLI accordingly; keep `generateNextId` behavior covered by tests
 - Revisit the Biome `missions/` exclusion afterward — narrow or remove it if the config churn is gone
 
-### `architectural-memory`: Codebase Architectural Memory
-
-Durable, retrievable knowledge **about the codebase** — structure, decisions, work history — so agents and humans don't lose the thread as agents write the code. One repo-scoped substrate across facets: **code structure** (derived/actual + curated/intended), **decisions**, **work history**. First slice: the **derived code-structure map**. Later waves (architecture-of-record, reuse-scan, embedding retrieval) live in the source-of-truth doc.
-
-- Derived map: dependency tree + public interfaces, always-fresh via cache-on-hash; "what each module does" narrative regenerated lazily only when a module's skeleton changes
-- Sharded markdown agents load on demand — `architecture/index.md` + per-module shards — so agents stop re-scanning the whole codebase
-- Build on existing TS tooling (dependency-cruiser / ts-morph / typedoc); LLM only for narrative + diagrams; targets the user's project
-- Consumers: planner, plan-reviewer, coordinator, worker, quality-manager (human HTML/diagram + health-metrics view deferred)
-- Source of truth, facets, waves, open decisions: `missions/architecture/architectural-memory.md`
-
 ### `agent-tools`: Native Agent Tools (Web Research + Browser)
 
 Make borrowed/bolted-on capabilities feel **native** — registered tools (the established `pi.registerTool` + TypeBox pattern) with explicit capability docs, so agents reach for them instead of leaving for Claude Code/Codex. Today web research is **absent**; browser exists only as an under-surfaced shell-out skill. First slice: **web research**. Full assessment + theme in the source-of-truth doc.
@@ -35,6 +25,27 @@ Make borrowed/bolted-on capabilities feel **native** — registered tools (the e
 - Pi-First: evaluate `pi-skills` brave-search / browser-tools before building; lean native for control + the clean pattern
 - Cross-link: document the tool-authoring contract (currently code-only) with `domains`, for when installable domains add tools
 - Source of truth: `missions/architecture/tool-ecosystem.md`
+
+### `architectural-memory`: Codebase Architectural Memory
+
+Durable, retrievable knowledge **about the codebase** — structure, decisions, work history — so agents and humans don't lose the thread as agents write the code. One repo-scoped substrate across facets: **code structure** (derived/actual + curated/intended), **decisions**, **work history**. First slice: the **derived code-structure map**. Later waves (architecture-of-record, reuse-scan, embedding retrieval) live in the source-of-truth doc.
+
+- Derived map: dependency tree + public interfaces, always-fresh via cache-on-hash; "what each module does" narrative regenerated lazily only when a module's skeleton changes
+- Sharded markdown agents load on demand — `architecture/index.md` + per-module shards — so agents stop re-scanning the whole codebase
+- Build on existing TS tooling (dependency-cruiser / ts-morph / typedoc); LLM only for narrative + diagrams; targets the user's project
+- Consumers: planner, plan-reviewer, coordinator, worker, quality-manager (human HTML/diagram + health-metrics view deferred)
+- **Phase-1 riders (bundled, agreed 2026-06-18):** `analysis-tools` audit (shared static-analysis substrate — dependency-cruiser/ts-morph/tree-sitter) + `artifact-viewer` (render the derived map + plans for human visibility) — both tracked in Ideas, pulled in with this slice
+- Source of truth, facets, waves, open decisions: `missions/architecture/architectural-memory.md`
+
+### `agent-memory`: General Agent Memory
+
+Operational/personal memory so agents (and Cosmo as an assistant) remember the user, project, and session without re-loading context every turn — distinct from architectural (code) memory but sharing its save/retrieve mechanism. Plain-text first behind a pluggable retrieval interface; embeddings optional. **Committed scope (agreed 2026-06-18): W1–W2 only**, then a **reassess gate** — do not climb into episodic/dreaming/autonomy without re-deciding priority.
+
+- **W1 — memory interface + plain-text substrate + scope-filtered retrieval.** First act: retrofit `architectural-memory`'s retrieval onto this shared `write`/`retrieve(scope, query)`/`consolidate` interface (the two implementations land one phase apart — extract here, not before)
+- **W2 — records: profile + explicit playbooks** (explicit-save v1); user-scoped `~/.cosmonauts/`, human-legible and prunable. This is the standalone "assistant remembers you" win
+- Retrieval without context pollution: compact index always-loaded + detail on demand; scope + recency + `recall()` tool first, embeddings last
+- **◆ Reassess gate after W2** — W3 (episodic log) + W4 (dreaming) are gated on the `autonomy` host (Ideas); pick them up only if the reassess decides to climb the ladder
+- Source of truth, taxonomy, full waves: `missions/architecture/agent-memory.md`
 
 ### `agent-swarms`: Multi-Agent Swarms with a Coordinator
 
@@ -61,20 +72,9 @@ Domains are composable agentic bundles (agents, prompts, capabilities, skills, t
 
 Unordered candidates — pick only when directed. Several are full capability tracks with their own source-of-truth doc under `missions/architecture/`; the entry links to it.
 
-### `agent-memory`: General Agent Memory
-
-Operational/personal memory so agents (and Cosmo as an assistant) remember the user, project, and session without re-loading context every turn — distinct from architectural (code) memory but sharing its save/retrieve mechanism. Plain-text first behind a pluggable retrieval interface; embeddings optional. First slice: the **memory interface + plain-text substrate + scope-filtered retrieval**. Full model in the source-of-truth doc.
-
-- Taxonomy: scope (session/project/user) × type (semantic/procedural/episodic); short-term ≈ the live Pi session (Pi-First audit), long-term = consolidated records
-- Retrieval without context pollution: compact index always-loaded + detail on demand; scope + recency + `recall()` tool first, embeddings last
-- Pluggable interface (`write` / `retrieve(scope, query)` / `consolidate`) shared with architectural memory; backends plug in (plain-text → SQLite → embeddings)
-- Records: profile + playbooks (explicit-save v1), episodic log (= autonomy audit trail); user-scoped `~/.cosmonauts/`, human-legible and prunable
-- Background consolidation ("dreaming") = a scheduled process → intersects the autonomy track; substrate for `ambient-cosmo` / `executive-assistant`
-- Source of truth: `missions/architecture/agent-memory.md`
-
 ### `autonomy`: Autonomy / Always-On Substrate
 
-The base that lets a domain or agent run on a schedule, wake periodically, react to events, or stay always-on — plus the governance that makes autonomous action safe. The same substrate powers memory "dreaming," periodic result-checks, the executive assistant, and the ambient terminal assistant. First slice: the **scheduling/lifecycle substrate** (triggers + host + durable wake-state). Full model in the source-of-truth doc.
+The base that lets a domain or agent run on a schedule, wake periodically, react to events, or stay always-on — plus the governance that makes autonomous action safe. The same substrate powers memory "dreaming," periodic result-checks, the executive assistant, and the ambient terminal assistant. First slice: the **scheduling/lifecycle substrate** (triggers + host + durable wake-state). **Gated behind the `agent-memory` reassess gate (agreed 2026-06-18):** needs the episodic log (`agent-memory` W3) as durable wake-state; **in-process host first** when built; co-delivers orchestration's deferred scheduler-form + durable-coordinator-loops, which in turn unblock `agent-swarms` Waves B/C. Full model in the source-of-truth doc.
 
 - Layer A (base): triggers (interval / one-shot / event-wait / always-on) · lifecycle host (in-process → child → daemon) · durable wake-state (= the episodic log) · cost-efficient wake handler (skip empty, dedup, silent-ack)
 - Agents/domains *declare* their triggers; the host fires them (pluggable, opt-in)
