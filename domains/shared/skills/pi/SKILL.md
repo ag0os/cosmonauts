@@ -40,16 +40,23 @@ All packages use lockstep versioning under the `@earendil-works/` scope.
 import {
   createAgentSession,
   DefaultResourceLoader,
+  getAgentDir,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { getModel } from "@earendil-works/pi-ai";
 
 // Minimal — uses all defaults
-const { session } = await createAgentSession();
+const { session: defaultSession } = await createAgentSession();
+
+const cwd = "/path/to/project";
+const agentDir = getAgentDir();
+const loader = new DefaultResourceLoader({ cwd, agentDir });
+await loader.reload();
 
 // Explicit configuration
 const { session } = await createAgentSession({
-  cwd: "/path/to/project",
+  cwd,
+  agentDir,
   model: getModel("anthropic", "claude-sonnet-4-5"),
   thinkingLevel: "high",
   tools: ["read", "bash", "edit", "write"],
@@ -407,10 +414,11 @@ Programmatic control goes through the resource loader (not `createAgentSession` 
 ```typescript
 const loader = new DefaultResourceLoader({
   cwd,
+  agentDir,
   systemPrompt: "Replace entire base prompt",
   appendSystemPrompt: ["Appended after everything"],
 });
-const { session } = await createAgentSession({ resourceLoader: loader });
+const { session } = await createAgentSession({ cwd, agentDir, resourceLoader: loader });
 ```
 
 For per-turn dynamic injection, an extension can return a `systemPrompt` from the `before_agent_start` event (see below).
@@ -421,9 +429,9 @@ Controls what resources (skills, extensions, prompts, themes, context files) a s
 
 ```typescript
 const loader = new DefaultResourceLoader({
-  cwd: "/project",
-  agentDir: "~/.pi/agent",
-  settingsManager: SettingsManager.create("/project", "~/.pi/agent"),
+  cwd,
+  agentDir,
+  settingsManager: SettingsManager.create(cwd, agentDir),
 
   // Add paths on top of discovered ones
   additionalSkillPaths: ["/path/to/skills"],
@@ -480,10 +488,20 @@ Discovery rules: direct `.md` children in the root directory, recursive `SKILL.m
 ### Loading and Formatting
 
 ```typescript
-import { loadSkills, loadSkillsFromDir, formatSkillsForPrompt } from "@earendil-works/pi-coding-agent";
+import {
+  formatSkillsForPrompt,
+  getAgentDir,
+  loadSkills,
+  loadSkillsFromDir,
+} from "@earendil-works/pi-coding-agent";
 
 // Load from all configured locations
-const { skills, diagnostics } = loadSkills({ cwd: "/project" });
+const { skills, diagnostics } = loadSkills({
+  cwd: "/project",
+  agentDir: getAgentDir(),
+  skillPaths: [],
+  includeDefaults: true,
+});
 
 // Load from a specific directory
 const { skills } = loadSkillsFromDir({ dir: "/path/to/skills", source: "my-package" });
@@ -498,6 +516,8 @@ Use `DefaultResourceLoader.skillsOverride` to control which skills an agent sees
 
 ```typescript
 const loader = new DefaultResourceLoader({
+  cwd,
+  agentDir,
   skillsOverride: (base) => ({
     skills: base.skills.filter(s => ["task", "plan"].includes(s.name)),
     diagnostics: base.diagnostics,
