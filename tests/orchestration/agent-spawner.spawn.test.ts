@@ -18,6 +18,9 @@ vi.mock("@earendil-works/pi-ai", () => ({
 }));
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
+	AuthStorage: {
+		create: () => ({ kind: "auth-storage" }),
+	},
 	createAgentSession: mocks.createAgentSession,
 	DefaultResourceLoader: class {
 		async reload() {}
@@ -26,6 +29,9 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 		}
 	},
 	getAgentDir: () => "/tmp/test-agent-dir",
+	ModelRegistry: {
+		create: () => ({ find: vi.fn(() => undefined) }),
+	},
 	SessionManager: {
 		inMemory: () => ({ kind: "in-memory" }),
 	},
@@ -633,6 +639,19 @@ describe("resolveModel", () => {
 			"anthropic",
 			"claude-sonnet-4-20250514",
 		);
+	});
+
+	test("returns custom model from model registry before built-in lookup", () => {
+		const mockModel = { id: "custom-model", provider: "ollama" };
+		const modelRegistry = {
+			find: vi.fn(() => mockModel),
+		};
+
+		const result = resolveModel("ollama/custom-model", modelRegistry as never);
+
+		expect(result).toBe(mockModel);
+		expect(modelRegistry.find).toHaveBeenCalledWith("ollama", "custom-model");
+		expect(mocks.getModel).not.toHaveBeenCalled();
 	});
 
 	test("throws when getModel returns undefined", () => {

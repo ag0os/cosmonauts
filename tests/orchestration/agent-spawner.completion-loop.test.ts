@@ -23,6 +23,9 @@ vi.mock("@earendil-works/pi-ai", () => ({
 }));
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
+	AuthStorage: {
+		create: () => ({ kind: "auth-storage" }),
+	},
 	createAgentSession: mocks.createAgentSession,
 	DefaultResourceLoader: class {
 		async reload() {}
@@ -31,6 +34,9 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 		}
 	},
 	getAgentDir: () => "/tmp/test-agent-dir",
+	ModelRegistry: {
+		create: () => ({ find: vi.fn(() => undefined) }),
+	},
 	SessionManager: {
 		inMemory: () => ({ kind: "in-memory" }),
 	},

@@ -8,10 +8,12 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	type AgentSession,
+	AuthStorage,
 	type CreateAgentSessionOptions,
 	createAgentSession,
 	DefaultResourceLoader,
 	getAgentDir,
+	ModelRegistry,
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
@@ -47,6 +49,8 @@ export async function createAgentSessionFromDefinition(
 	domainsDir: string,
 	resolver?: DomainResolver,
 ): Promise<SessionCreateResult> {
+	const authStorage = AuthStorage.create();
+	const modelRegistry = ModelRegistry.create(authStorage);
 	const params = await buildSessionParams({
 		def,
 		cwd: config.cwd,
@@ -64,6 +68,7 @@ export async function createAgentSessionFromDefinition(
 		projectSkills: config.projectSkills,
 		skillPaths: config.skillPaths,
 		modelOverride: config.model,
+		modelRegistry,
 		thinkingLevelOverride: config.thinkingLevel,
 	});
 
@@ -107,6 +112,8 @@ export async function createAgentSessionFromDefinition(
 	const sessionOptions: CreateAgentSessionOptions = {
 		cwd: config.cwd,
 		model: params.model,
+		authStorage,
+		modelRegistry,
 		tools: toolAllowlist,
 		sessionManager,
 		resourceLoader: loader,

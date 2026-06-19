@@ -42,6 +42,7 @@ import {
 	createAgentSessionRuntime,
 	createAgentSessionServices,
 	getAgentDir,
+	ModelRegistry,
 	SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import type { AgentRegistry } from "../lib/agents/resolver.ts";
@@ -516,6 +517,12 @@ export async function createSession(
 		extraExtensionPaths,
 	} = options;
 
+	// Share a single AuthStorage and ModelRegistry across session switches
+	// (handoff, /agent, /new) so custom models from models.json resolve
+	// through the same registry Pi uses for request auth.
+	const sharedAuthStorage = AuthStorage.create();
+	const sharedModelRegistry = ModelRegistry.create(sharedAuthStorage);
+
 	const params = await buildSessionParams({
 		def,
 		cwd,
@@ -525,6 +532,7 @@ export async function createSession(
 		skillPaths,
 		ignoreProjectSkills,
 		modelOverride,
+		modelRegistry: sharedModelRegistry,
 		thinkingLevelOverride,
 		extraExtensionPaths,
 	});
@@ -547,10 +555,6 @@ export async function createSession(
 		sessionDir,
 	});
 
-	// Share a single AuthStorage across session switches (handoff, /agent, /new)
-	// to avoid file lock contention with in-flight OAuth token refreshes.
-	const sharedAuthStorage = AuthStorage.create();
-
 	const createRuntime: CreateAgentSessionRuntimeFactory = async ({
 		cwd: effectiveCwd,
 		sessionManager: sm,
@@ -571,6 +575,7 @@ export async function createSession(
 						skillPaths,
 						ignoreProjectSkills,
 						modelOverride,
+						modelRegistry: sharedModelRegistry,
 						thinkingLevelOverride,
 						extraExtensionPaths,
 					});
@@ -586,6 +591,7 @@ export async function createSession(
 					const services = await createAgentSessionServices({
 						cwd: effectiveCwd,
 						authStorage: sharedAuthStorage,
+						modelRegistry: sharedModelRegistry,
 						resourceLoaderOptions: newResourceLoaderOptions,
 					});
 					const result = await createAgentSessionFromServices({
@@ -615,6 +621,7 @@ export async function createSession(
 		const services = await createAgentSessionServices({
 			cwd: effectiveCwd,
 			authStorage: sharedAuthStorage,
+			modelRegistry: sharedModelRegistry,
 			resourceLoaderOptions,
 		});
 		const result = await createAgentSessionFromServices({

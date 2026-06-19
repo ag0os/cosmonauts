@@ -7,6 +7,7 @@
 
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
+import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { RuntimeContext } from "../domains/prompt-assembly.ts";
 import { assemblePrompts } from "../domains/prompt-assembly.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
@@ -52,6 +53,8 @@ export interface BuildSessionParamsOptions {
 	ignoreProjectSkills?: boolean;
 	/** Model ID string override (e.g. "anthropic/claude-sonnet-4-5"). Falls back to def.model. */
 	modelOverride?: string;
+	/** Pi model registry, including custom models from models.json. */
+	modelRegistry?: ModelRegistry;
 	/** Thinking level override. Falls back to def.thinkingLevel. */
 	thinkingLevelOverride?: ThinkingLevel;
 	/** Additional extension paths to append after resolved def.extensions paths. */
@@ -101,6 +104,7 @@ export async function buildSessionParams(
 		skillPaths,
 		ignoreProjectSkills,
 		modelOverride,
+		modelRegistry,
 		thinkingLevelOverride,
 		extraExtensionPaths,
 	} = options;
@@ -150,7 +154,7 @@ export async function buildSessionParams(
 
 	// Model resolution: override → definition → fallback
 	const modelId = modelOverride ?? def.model ?? FALLBACK_MODEL;
-	const model = resolveModel(modelId);
+	const model = resolveModel(modelId, modelRegistry);
 
 	// Thinking level resolution: override → definition → undefined (Pi default)
 	const thinkingLevel = thinkingLevelOverride ?? def.thinkingLevel;

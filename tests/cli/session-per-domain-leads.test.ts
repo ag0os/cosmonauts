@@ -27,6 +27,9 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 	createAgentSessionRuntime: mocks.createAgentSessionRuntime,
 	createAgentSessionServices: mocks.createAgentSessionServices,
 	getAgentDir: () => "/tmp/pi-agent",
+	ModelRegistry: {
+		create: () => ({ find: vi.fn(() => undefined) }),
+	},
 	SessionManager: {
 		continueRecent: mocks.continueRecent,
 		inMemory: mocks.inMemory,

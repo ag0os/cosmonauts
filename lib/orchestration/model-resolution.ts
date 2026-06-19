@@ -6,6 +6,7 @@
 
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { getModel } from "@earendil-works/pi-ai";
+import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { AgentRegistry } from "../agents/index.ts";
 import { roleToConfigKey } from "../agents/qualified-role.ts";
 import type { ModelConfig, ThinkingConfig } from "./types.ts";
@@ -96,7 +97,7 @@ export function getThinkingForRole(
  * Resolve a "provider/model-id" string into a Pi Model object.
  * Throws if the model is not found in the registry.
  */
-export function resolveModel(modelId: string) {
+export function resolveModel(modelId: string, modelRegistry?: ModelRegistry) {
 	const slashIndex = modelId.indexOf("/");
 	if (slashIndex === -1) {
 		throw new Error(
@@ -107,10 +108,9 @@ export function resolveModel(modelId: string) {
 	const provider = modelId.slice(0, slashIndex);
 	const id = modelId.slice(slashIndex + 1);
 
-	const model = getModel(
-		provider as Parameters<typeof getModel>[0],
-		id as never,
-	);
+	const model =
+		modelRegistry?.find(provider, id) ??
+		getModel(provider as Parameters<typeof getModel>[0], id as never);
 	if (!model) {
 		throw new Error(`Model not found: provider="${provider}", id="${id}"`);
 	}
