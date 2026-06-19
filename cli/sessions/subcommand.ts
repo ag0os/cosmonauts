@@ -5,9 +5,12 @@
  *
  *   <piSessionDir(cwd)>/<agent-or-domain>/<file>.jsonl
  *
- * Pi's `SessionManager.list(cwd, sessionDir)` reads one such leaf directory.
- * `SessionManager.listAll()` scans all cwds globally. This command wraps both
- * with --json / --plain output for external orchestrators.
+ * Pi's `SessionManager.listAll(sessionDir)` reads one such leaf directory
+ * without filtering by the session header's cwd — we scope by the directory
+ * layout above, not by cwd. (`SessionManager.list(cwd, sessionDir)` filters an
+ * explicit sessionDir to a single cwd, which is wrong for a cross-cwd
+ * enumerator.) This command wraps the walk with --json / --plain output for
+ * external orchestrators.
  */
 
 import { readdir, stat } from "node:fs/promises";
@@ -229,7 +232,7 @@ export async function collectProjectSessions(
 	opts: CollectOptions,
 ): Promise<SessionListItem[]> {
 	const base = opts.explicitSessionDir ?? piSessionDir(opts.cwd);
-	return collectSessionsFromBase(base, opts.cwd, opts.agentFilter);
+	return collectSessionsFromBase(base, opts.agentFilter);
 }
 
 /**
@@ -242,7 +245,6 @@ export async function collectProjectSessions(
  */
 async function collectSessionsFromBase(
 	base: string,
-	cwd: string,
 	agentFilter: string | undefined,
 ): Promise<SessionListItem[]> {
 	const subdirs = await listAgentSubdirs(base);
@@ -254,14 +256,14 @@ async function collectSessionsFromBase(
 
 	if (!agentFilter) {
 		// Pi-flat / legacy: .jsonl files written directly into `base`.
-		const flatInfos = await listSessionsInDir(base, cwd);
+		const flatInfos = await listSessionsInDir(base);
 		for (const info of flatInfos) {
 			rows.push(sessionInfoToListItem(info, null));
 		}
 	}
 
 	for (const subdir of filteredSubdirs) {
-		const infos = await listSessionsInDir(subdir.path, cwd);
+		const infos = await listSessionsInDir(subdir.path);
 		for (const info of infos) {
 			rows.push(sessionInfoToListItem(info, subdir.name));
 		}
@@ -270,12 +272,11 @@ async function collectSessionsFromBase(
 	return rows;
 }
 
-async function listSessionsInDir(
-	dir: string,
-	cwd: string,
-): Promise<SessionInfo[]> {
+async function listSessionsInDir(dir: string): Promise<SessionInfo[]> {
 	try {
-		return await SessionManager.list(cwd, dir);
+		// listAll(dir) scans one dir without filtering by header cwd; list(cwd,
+		// dir) would drop every session whose recorded cwd differs from `cwd`.
+		return await SessionManager.listAll(dir);
 	} catch (err: unknown) {
 		if (isNoEntError(err)) return [];
 		throw err;
@@ -324,10 +325,10 @@ async function collectAllSessions(): Promise<SessionListItem[]> {
 
 	const rows: SessionListItem[] = [];
 	for (const cwdDir of cwdDirs) {
-		// The session-file's header carries the real cwd; the `cwd` arg to
-		// SessionManager.list only matters when sessionDir is undefined.
-		// Pass empty string here — we always pass an explicit sessionDir below.
-		rows.push(...(await collectSessionsFromBase(cwdDir.path, "", undefined)));
+		// We scope by directory layout, not header cwd: listAll(dir) (used
+		// downstream) returns every session in the dir regardless of its
+		// recorded cwd.
+		rows.push(...(await collectSessionsFromBase(cwdDir.path, undefined)));
 	}
 	return rows;
 }
@@ -462,7 +463,7 @@ async function loadFullSessionInfo(row: SessionListItem): Promise<SessionInfo> {
 	// strip allMessagesText to keep payloads small, but a single info lookup
 	// can afford the full read via a fresh list call against the parent dir.
 	const parentDir = row.path.replace(/\/[^/]+$/, "");
-	const infos = await SessionManager.list(row.cwd, parentDir);
+	const infos = await SessionManager.listAll(parentDir);
 	const found = infos.find((info) => info.path === row.path);
 	if (!found) {
 		// Shouldn't happen — the row came from the same scan — but degrade
