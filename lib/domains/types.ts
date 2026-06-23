@@ -58,8 +58,14 @@ export interface LoadedDomain {
  * Used with loadDomainsFromSources() to combine domains from multiple locations.
  */
 export interface DomainSource {
-	/** Absolute path to a directory containing domain subdirectories. */
+	/**
+	 * Absolute path to the source directory.
+	 * For `domains-dir` sources, this contains domain subdirectories.
+	 * For `domain-root` sources, this is the domain root itself.
+	 */
 	domainsDir: string;
+	/** Source shape. Defaults to `domains-dir` for existing callers. */
+	sourceType?: "domains-dir" | "domain-root";
 	/** Human-readable label identifying this source (e.g., "built-in", "user-package"). */
 	origin: string;
 	/** Precedence level. Higher numbers win on resource conflicts during merging. */

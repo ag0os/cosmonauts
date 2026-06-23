@@ -136,6 +136,9 @@ export async function installPackage(
 		// Validate manifest — fails fast with a clear error
 		const manifest = await readAndValidateManifest(sourceDir);
 
+		// Validate package-root domain semantics before any store writes
+		await assertRootDomainPackageSemantics(sourceDir, manifest);
+
 		// Validate every declared domain directory exists
 		await assertDomainDirectoriesExist(sourceDir, manifest);
 
@@ -239,6 +242,32 @@ async function readAndValidateManifest(
 	}
 
 	return result.manifest;
+}
+
+async function assertRootDomainPackageSemantics(
+	sourceDir: string,
+	manifest: PackageManifest,
+): Promise<void> {
+	const rootDomain = manifest.domains.find((domain) => domain.path === ".");
+	if (!rootDomain) return;
+
+	if (manifest.domains.length > 1) {
+		throw new Error(
+			`Domain "${rootDomain.name}" declares path "."; root-domain packages cannot declare additional domains`,
+		);
+	}
+
+	const domainManifestPath = join(sourceDir, "domain.ts");
+	try {
+		const s = await stat(domainManifestPath);
+		if (s.isFile()) return;
+	} catch {
+		// handled below
+	}
+
+	throw new Error(
+		`Domain "${rootDomain.name}" declares path "." but root domain.ts is missing`,
+	);
 }
 
 async function assertDomainDirectoriesExist(

@@ -37,8 +37,14 @@ export interface PackageDomain {
  * Produced by the package scanner and consumed by the domain loader.
  */
 export interface DomainSource {
-	/** Absolute path to the directory containing domain subdirectories. */
+	/**
+	 * Absolute path to the source directory.
+	 * For `domains-dir` sources, this contains domain subdirectories.
+	 * For `domain-root` sources, this is the domain root itself.
+	 */
 	domainsDir: string;
+	/** Source shape. Defaults to `domains-dir` for existing callers. */
+	sourceType?: "domains-dir" | "domain-root";
 	/** Human-readable origin label for diagnostics (e.g. "builtin", "global:@org/pkg"). */
 	origin: string;
 	/** Precedence tier — lower number = lower precedence. Built-in=0, global=1, local=2, plugin=3. */

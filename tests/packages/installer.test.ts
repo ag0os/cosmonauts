@@ -252,6 +252,61 @@ describe("installPackage — invalid source", () => {
 			installPackage({ source: pkgDir, scope: "project", projectRoot }),
 		).rejects.toThrow(/Invalid cosmonauts\.json/);
 	});
+
+	test("rejects a root-domain package missing root domain.ts before writing to the store", async () => {
+		// @cosmo-behavior plan:domain-authoring#B-021
+		const pkgDir = join(tmpRoot, "root-missing-domain");
+		await mkdir(pkgDir, { recursive: true });
+		await writeFile(
+			join(pkgDir, "cosmonauts.json"),
+			JSON.stringify({
+				name: "root-missing-domain",
+				version: "1.0.0",
+				description: "Root package without domain manifest",
+				domains: [{ name: "root-missing-domain", path: "." }],
+			}),
+			"utf-8",
+		);
+
+		await expect(
+			installPackage({ source: pkgDir, scope: "project", projectRoot }),
+		).rejects.toThrow(/domain\.ts/);
+		await expect(
+			stat(join(projectRoot, ".cosmonauts/packages/root-missing-domain")),
+		).rejects.toThrow();
+	});
+
+	test("rejects path dot when another domain is declared before creating the package store", async () => {
+		// @cosmo-behavior plan:domain-authoring#B-022
+		const pkgDir = join(tmpRoot, "mixed-root");
+		await mkdir(join(pkgDir, "domains", "extra"), { recursive: true });
+		await writeFile(
+			join(pkgDir, "domain.ts"),
+			[
+				"import type { DomainManifest } from \"cosmonauts\";",
+				"export default { id: \"mixed-root\", description: \"Root\" } satisfies DomainManifest;",
+			].join("\n"),
+			"utf-8",
+		);
+		await writeFile(
+			join(pkgDir, "cosmonauts.json"),
+			JSON.stringify({
+				name: "mixed-root",
+				version: "1.0.0",
+				description: "Invalid mixed root package",
+				domains: [
+					{ name: "mixed-root", path: "." },
+					{ name: "extra", path: "domains/extra" },
+				],
+			}),
+			"utf-8",
+		);
+
+		await expect(
+			installPackage({ source: pkgDir, scope: "project", projectRoot }),
+		).rejects.toThrow(/path "\."/);
+		await expect(stat(join(projectRoot, ".cosmonauts/packages"))).rejects.toThrow();
+	});
 });
 
 // ============================================================================

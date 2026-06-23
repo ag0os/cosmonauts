@@ -153,7 +153,10 @@ export async function loadDomainsFromSources(
 	const accumulated = new Map<string, LoadedDomain>();
 
 	for (const source of sorted) {
-		const domains = await loadDomains(source.domainsDir);
+		const domains =
+			source.sourceType === "domain-root"
+				? await loadDomainRoot(source.domainsDir)
+				: await loadDomains(source.domainsDir);
 		for (const domain of domains) {
 			const id = domain.manifest.id;
 			const existing = accumulated.get(id);
@@ -203,6 +206,11 @@ export async function loadDomainsFromSources(
 		if (bId === "shared") return 1;
 		return aId.localeCompare(bId);
 	});
+}
+
+async function loadDomainRoot(domainDir: string): Promise<LoadedDomain[]> {
+	if (!(await fileExists(join(domainDir, "domain.ts")))) return [];
+	return [await loadSingleDomain(domainDir)];
 }
 
 /**

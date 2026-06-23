@@ -126,9 +126,11 @@ export async function scanDomainSources(
 /**
  * Add domain sources for each domain declared in each package.
  *
- * Uses `PackageDomain.path` to resolve the actual domain directory within
- * the package root, then exposes the *parent* of that directory as the
- * `domainsDir` (since `loadDomains()` scans immediate children).
+ * Uses `PackageDomain.path` to resolve the actual domain directory within the
+ * package root. Subdirectory domains expose the parent directory as a normal
+ * `domains-dir` source. Package-root domains (`path: "."`) expose the package
+ * root as an exact `domain-root` source so the loader does not scan sibling
+ * packages in the store.
  *
  * For the common case where `path` equals `name` (e.g. `{ name: "coding",
  * path: "coding" }`), the parent is `pkg.installPath` itself.
@@ -144,9 +146,23 @@ function addPackageSources(
 
 		// Deduplicate parent dirs when multiple domains share the same parent
 		const parentDirs = new Set<string>();
+		let hasRootDomain = false;
 		for (const domain of pkg.manifest.domains) {
+			if (domain.path === ".") {
+				hasRootDomain = true;
+				continue;
+			}
 			const domainAbsPath = join(pkg.installPath, domain.path);
 			parentDirs.add(dirname(domainAbsPath));
+		}
+
+		if (hasRootDomain) {
+			sources.push({
+				domainsDir: pkg.installPath,
+				sourceType: "domain-root",
+				origin: `${scopeLabel}:${pkg.manifest.name}`,
+				precedence,
+			});
 		}
 
 		for (const parentDir of parentDirs) {

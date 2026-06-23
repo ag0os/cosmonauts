@@ -90,6 +90,25 @@ function makePackage(
 	};
 }
 
+function makePackageWithDomains(
+	name: string,
+	installPath: string,
+	scope: "user" | "project",
+	domains: InstalledPackage["manifest"]["domains"],
+): InstalledPackage {
+	return {
+		manifest: {
+			name,
+			version: "1.0.0",
+			description: `Package ${name}`,
+			domains,
+		},
+		installPath,
+		scope,
+		installedAt: new Date(),
+	};
+}
+
 const BUILTIN_DIR = "/framework/domains";
 const PROJECT_ROOT = "/project";
 
@@ -209,6 +228,37 @@ describe("local packages only", () => {
 			origin: "local:local-pkg",
 			precedence: 2,
 		});
+	});
+
+	test("loads a package-root domain as an exact domain-root source", async () => {
+		// @cosmo-behavior plan:domain-authoring#B-002
+		const installPath = "/project/.cosmonauts/packages/root-domain";
+		mockListInstalledPackages.mockImplementation(async (scope) => {
+			if (scope === "project") {
+				return [
+					makePackageWithDomains("root-domain", installPath, "project", [
+						{ name: "root-domain", path: "." },
+					]),
+				];
+			}
+			return [];
+		});
+
+		const sources = await scanDomainSources({
+			builtinDomainsDir: BUILTIN_DIR,
+			projectRoot: PROJECT_ROOT,
+		});
+
+		expect(sources).toHaveLength(2);
+		expect(sources[1]).toMatchObject({
+			domainsDir: installPath,
+			origin: "local:root-domain",
+			precedence: 2,
+			sourceType: "domain-root",
+		});
+		expect(sources[1]?.domainsDir).not.toBe(
+			"/project/.cosmonauts/packages",
+		);
 	});
 });
 
