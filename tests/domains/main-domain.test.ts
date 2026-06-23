@@ -39,6 +39,7 @@ beforeAll(async () => {
 		{ domainsDir: DOMAINS_DIR, origin: "builtin", precedence: 0 },
 		{
 			domainsDir: BUNDLED_CODING_DIR,
+			sourceType: "domain-root",
 			origin: "bundled:coding",
 			precedence: 0.5,
 		},

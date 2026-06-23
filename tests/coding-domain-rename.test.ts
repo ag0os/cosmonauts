@@ -10,7 +10,7 @@ import {
 const REPO_ROOT = resolve(fileURLToPath(import.meta.url), "..", "..");
 const DOMAINS_DIR = resolve(REPO_ROOT, "domains");
 const BUNDLED_CODING_DIR = resolve(REPO_ROOT, "bundled", "coding");
-const CODING_DOMAIN_DIR = resolve(BUNDLED_CODING_DIR, "coding");
+const CODING_DOMAIN_DIR = BUNDLED_CODING_DIR;
 const CODY_AGENT_PATH = resolve(CODING_DOMAIN_DIR, "agents", "cody.ts");
 const COSMO_AGENT_PATH = resolve(CODING_DOMAIN_DIR, "agents", "cosmo.ts");
 const OLD_CODING_AGENT_ID = "cosmo.ts".slice(0, -3);
@@ -29,7 +29,12 @@ async function fileExists(path: string): Promise<boolean> {
 async function loadCodingDomain() {
 	const domains = await loadDomainsFromSources([
 		{ domainsDir: DOMAINS_DIR, origin: "framework", precedence: 1 },
-		{ domainsDir: BUNDLED_CODING_DIR, origin: "bundled", precedence: 2 },
+		{
+			domainsDir: BUNDLED_CODING_DIR,
+			sourceType: "domain-root",
+			origin: "bundled",
+			precedence: 2,
+		},
 	]);
 	const codingDomain = domains.find(
 		(domain) => domain.manifest.id === "coding",

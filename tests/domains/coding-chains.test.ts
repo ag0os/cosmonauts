@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import chains from "../../bundled/coding/coding/chains.ts";
+import chains from "../../bundled/coding/chains.ts";
 
 function getWorkflowChain(name: string): string {
 	const chain = chains.find((candidate) => candidate.name === name);

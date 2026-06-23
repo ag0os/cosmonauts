@@ -9,7 +9,7 @@ A skill is a routing shell over a focused knowledge base. Keep the loaded file s
 
 ## First Rules
 
-- Put the skill in the right source tree before writing content. Coding-domain skills live under `bundled/coding/coding/skills/`.
+- Put the skill in the right source tree before writing content. Coding-domain skills live under `bundled/coding/skills/`.
 - Use `SKILL.md` for directory skills. The frontmatter `name` must match the directory name.
 - Frontmatter must include `name` and `description`; keep the description specific, third-person, and under 1024 characters.
 - Prefer a directory skill when the workflow has branches, profiles, scripts, or references.

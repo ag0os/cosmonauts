@@ -31,7 +31,12 @@ interface OrchestrationDomainFixtures {
 export async function loadOrchestrationDomainFixtures(): Promise<OrchestrationDomainFixtures> {
 	const domains = await loadDomainsFromSources([
 		{ domainsDir: testDomainsDir, origin: "framework", precedence: 1 },
-		{ domainsDir: testBundledCodingDir, origin: "bundled", precedence: 2 },
+		{
+			domainsDir: testBundledCodingDir,
+			sourceType: "domain-root",
+			origin: "bundled",
+			precedence: 2,
+		},
 	]);
 
 	return {

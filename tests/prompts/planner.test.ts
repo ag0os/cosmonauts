@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 const PROMPT_PATH = new URL(
-	"../../bundled/coding/coding/prompts/planner.md",
+	"../../bundled/coding/prompts/planner.md",
 	import.meta.url,
 );
 

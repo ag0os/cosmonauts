@@ -163,7 +163,7 @@ describe("createSkillsProgram list — runtime discovery", () => {
 		runtimeMocks.create.mockResolvedValue({
 			domains: [
 				makeDomain("shared", "/framework/domains/shared"),
-				makeDomain("coding", "/framework/bundled/coding/coding"),
+				makeDomain("coding", "/framework/bundled/coding"),
 			],
 			projectConfig: {},
 		});

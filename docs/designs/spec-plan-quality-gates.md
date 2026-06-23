@@ -41,13 +41,13 @@ Concretely, the gaps are:
 
 **Already in place:**
 
-- `spec-writer` agent with sections for Purpose, Users, Experience, ACs, Scope, Assumptions, Open Questions (`bundled/coding/coding/prompts/spec-writer.md`).
-- `planner` agent with Decision Log, Architecture, Integration Seams, Quality Contract (`bundled/coding/coding/prompts/planner.md`).
-- `plan-reviewer` agent performing adversarial plan review on six dimensions, writing findings to `missions/plans/<slug>/review.md` (`bundled/coding/coding/prompts/plan-reviewer.md`).
+- `spec-writer` agent with sections for Purpose, Users, Experience, ACs, Scope, Assumptions, Open Questions (`bundled/coding/prompts/spec-writer.md`).
+- `planner` agent with Decision Log, Architecture, Integration Seams, Quality Contract (`bundled/coding/prompts/planner.md`).
+- `plan-reviewer` agent performing adversarial plan review on six dimensions, writing findings to `missions/plans/<slug>/review.md` (`bundled/coding/prompts/plan-reviewer.md`).
 - `design-dialogue` skill defining Frame → Shape → Detail cadence for interactive planning (advisory, not enforced).
 - `plan_create` / `plan_edit` / `plan_view` tools (`lib/plans/`).
 - Four-layer prompt composition: base → capabilities → persona → runtime.
-- Workflows mapped in `bundled/coding/coding/workflows.ts`.
+- Workflows mapped in `bundled/coding/workflows.ts`.
 
 **Missing:**
 
@@ -168,8 +168,8 @@ Writes findings to `missions/plans/<slug>/spec-review.md`. The spec-writer reads
 
 Low-risk, high-leverage. No framework changes, no new agents, no workflow rewiring.
 
-- **M1** Cody router: three-path decision tree (`spec-writer` | Cody-facilitated dialogue | autonomous planner) in `bundled/coding/coding/prompts/cody.md`.
-- **M2** Readiness rubric: visible four-factor block in `bundled/coding/coding/prompts/spec-writer.md` and `bundled/coding/coding/prompts/planner.md` before `plan_create`, with shared headings and role-tailored items.
+- **M1** Cody router: three-path decision tree (`spec-writer` | Cody-facilitated dialogue | autonomous planner) in `bundled/coding/prompts/cody.md`.
+- **M2** Readiness rubric: visible four-factor block in `bundled/coding/prompts/spec-writer.md` and `bundled/coding/prompts/planner.md` before `plan_create`, with shared headings and role-tailored items.
 - **M3** Phase transitions: mandatory Frame → Shape → Detail handoffs encoded in `spec-writer.md` (skill `design-dialogue` unchanged).
 - **M4** Assumption budget: `critical >= 3` escalation in `spec-writer.md` with explicit `proceed with assumptions` waiver and autonomous-mode conversion to Open Questions.
 
@@ -182,7 +182,7 @@ Shipping record:
 ### Plan B — Structural changes (deferred, pending evidence from Plan A)
 
 - **M5** Typed spec schema in `lib/plans/` with validation at `plan_create`.
-- **M6** `spec-reviewer` agent definition, prompt, and workflow wiring in `bundled/coding/coding/` plus updates to `spec-and-build` and `spec-and-tdd` workflows.
+- **M6** `spec-reviewer` agent definition, prompt, and workflow wiring in `bundled/coding/` plus updates to `spec-and-build` and `spec-and-tdd` workflows.
 
 Trigger conditions for proceeding to Plan B:
 - Plan A specs still regularly omit error paths or edge cases.

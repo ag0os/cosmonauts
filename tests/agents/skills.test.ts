@@ -9,10 +9,10 @@ import type {
 	Skill,
 } from "@earendil-works/pi-coding-agent";
 import { describe, expect, test } from "vitest";
-import planReviewerDefinition from "../../bundled/coding/coding/agents/plan-reviewer.ts";
-import plannerDefinition from "../../bundled/coding/coding/agents/planner.ts";
-import specWriterDefinition from "../../bundled/coding/coding/agents/spec-writer.ts";
-import taskManagerDefinition from "../../bundled/coding/coding/agents/task-manager.ts";
+import planReviewerDefinition from "../../bundled/coding/agents/plan-reviewer.ts";
+import plannerDefinition from "../../bundled/coding/agents/planner.ts";
+import specWriterDefinition from "../../bundled/coding/agents/spec-writer.ts";
+import taskManagerDefinition from "../../bundled/coding/agents/task-manager.ts";
 import {
 	buildSkillsOverride,
 	resolveEffectiveProjectSkills,
@@ -170,7 +170,7 @@ describe("artifact skill allowlists", () => {
 		);
 
 		const agentFiles = await readdir(
-			join(process.cwd(), "bundled", "coding", "coding", "agents"),
+			join(process.cwd(), "bundled", "coding", "agents"),
 		);
 		expect(agentFiles).not.toContain("architect.ts");
 	});

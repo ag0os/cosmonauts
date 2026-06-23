@@ -69,7 +69,7 @@ interface ChainStats { stages: StageStats[]; totalCost: number; totalTokens: num
 
 ## Named Chains
 
-The primary CLI interface for multi-agent pipelines is `cosmonauts run chain`. Built-in defaults live in `bundled/coding/coding/chains.ts` and are inherited automatically. Add a `chains` block to `.cosmonauts/config.json` only to override a chain by name or define a new one; project entries take precedence over domain entries on name collision.
+The primary CLI interface for multi-agent pipelines is `cosmonauts run chain`. Built-in defaults live in `bundled/coding/chains.ts` and are inherited automatically. Add a `chains` block to `.cosmonauts/config.json` only to override a chain by name or define a new one; project entries take precedence over domain entries on name collision.
 
 | Name | Chain | Purpose |
 |------|-------|---------|

@@ -34,7 +34,12 @@ let allDefinitions: AgentDefinition[] = [];
 beforeAll(async () => {
 	const domains = await loadDomainsFromSources([
 		{ domainsDir: DOMAINS_DIR, origin: "framework", precedence: 1 },
-		{ domainsDir: BUNDLED_CODING_DIR, origin: "bundled", precedence: 2 },
+		{
+			domainsDir: BUNDLED_CODING_DIR,
+			sourceType: "domain-root",
+			origin: "bundled",
+			precedence: 2,
+		},
 	]);
 	const codingDomain = domains.find(
 		(domain) => domain.manifest.id === "coding",

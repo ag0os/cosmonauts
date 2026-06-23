@@ -1,9 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import definition from "../../bundled/coding/coding/agents/quality-manager.ts";
+import definition from "../../bundled/coding/agents/quality-manager.ts";
 
 const PROMPT_PATH = new URL(
-	"../../bundled/coding/coding/prompts/quality-manager.md",
+	"../../bundled/coding/prompts/quality-manager.md",
 	import.meta.url,
 );
 

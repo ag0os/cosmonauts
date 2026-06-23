@@ -5,7 +5,7 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import chains from "../../bundled/coding/coding/chains.ts";
+import chains from "../../bundled/coding/chains.ts";
 import { resolveNamedChain } from "../../lib/chains/loader.ts";
 import { createDefaultProjectConfig } from "../../lib/config/defaults.ts";
 import { scaffoldProjectConfig } from "../../lib/config/loader.ts";

@@ -42,18 +42,18 @@ Final stack:
 
 ### `coding/cody` — coding-domain lead
 
-Definition: `bundled/coding/coding/agents/cody.ts`
+Definition: `bundled/coding/agents/cody.ts`
 Capabilities: `[core, engineering-discipline, coding-readwrite, tasks, spawning, todo]`
 
 Final stack:
 - L0 `domains/shared/prompts/base.md`
 - L1 `domains/shared/capabilities/core.md`
-- L1 `bundled/coding/coding/capabilities/engineering-discipline.md`
-- L1 `bundled/coding/coding/capabilities/coding-readwrite.md`
+- L1 `bundled/coding/capabilities/engineering-discipline.md`
+- L1 `bundled/coding/capabilities/coding-readwrite.md`
 - L1 `domains/shared/capabilities/tasks.md`
 - L1 `domains/shared/capabilities/spawning.md`
 - L1 `domains/shared/capabilities/todo.md`
-- L2 `bundled/coding/coding/prompts/cody.md`
+- L2 `bundled/coding/prompts/cody.md`
 
 ## Inspecting a composed prompt
 

@@ -6,7 +6,8 @@
 
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
+import { loadManifest, validateManifest } from "./manifest.ts";
 import { listInstalledPackages } from "./store.ts";
 import type { DomainSource, InstalledPackage } from "./types.ts";
 
@@ -58,13 +59,8 @@ export async function scanDomainSources(
 
 	// Bundled packages: framework dev-mode auto-include (lower than global)
 	if (bundledDirs) {
-		for (const dir of bundledDirs) {
-			sources.push({
-				domainsDir: dir,
-				origin: `bundled:${basename(dir)}`,
-				precedence: 0.5,
-			});
-		}
+		const bundledPackages = await loadBundledPackages(bundledDirs);
+		addPackageSources(sources, bundledPackages, "bundled", 0.5);
 	}
 
 	// Global packages (user scope)
@@ -122,6 +118,30 @@ export async function scanDomainSources(
 // ============================================================================
 // Helpers
 // ============================================================================
+
+async function loadBundledPackages(
+	bundledDirs: string[],
+): Promise<InstalledPackage[]> {
+	const packages: InstalledPackage[] = [];
+
+	for (const dir of bundledDirs) {
+		try {
+			const result = validateManifest(await loadManifest(dir));
+			if (!result.valid) continue;
+
+			packages.push({
+				manifest: result.manifest,
+				installPath: dir,
+				scope: "project",
+				installedAt: new Date(0),
+			});
+		} catch {
+			// Not a readable bundled package manifest — skip silently.
+		}
+	}
+
+	return packages;
+}
 
 /**
  * Add domain sources for each domain declared in each package.

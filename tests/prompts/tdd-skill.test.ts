@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 const SKILL_PATH = new URL(
-	"../../bundled/coding/coding/skills/tdd/SKILL.md",
+	"../../bundled/coding/skills/tdd/SKILL.md",
 	import.meta.url,
 );
 

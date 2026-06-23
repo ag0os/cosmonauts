@@ -1,13 +1,13 @@
-import type { AgentDefinition } from "../../../../lib/agents/types.ts";
+import type { AgentDefinition } from "../../../lib/agents/types.ts";
 
 const definition: AgentDefinition = {
-	id: "integration-verifier",
+	id: "verifier",
 	description:
-		"Verifies completed work against the active plan's declared integration contracts and writes a structured integration report.",
+		"Validates explicit claims against the codebase with structured pass/fail evidence. Runs checks but never writes code.",
 	capabilities: ["healthy-codebase-harness", "coding-readonly"],
 	model: "openai-codex/gpt-5.5",
-	tools: "coding",
-	extensions: ["tasks", "plans"],
+	tools: "verification",
+	extensions: [],
 	skills: ["*"],
 	subagents: [],
 	projectContext: true,

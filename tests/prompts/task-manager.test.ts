@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 const PROMPT_PATH = new URL(
-	"../../bundled/coding/coding/prompts/task-manager.md",
+	"../../bundled/coding/prompts/task-manager.md",
 	import.meta.url,
 );
 

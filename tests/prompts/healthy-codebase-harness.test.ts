@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 const CAPABILITY_PATH = new URL(
-	"../../bundled/coding/coding/capabilities/healthy-codebase-harness.md",
+	"../../bundled/coding/capabilities/healthy-codebase-harness.md",
 	import.meta.url,
 );
 

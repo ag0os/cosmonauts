@@ -1,4 +1,4 @@
-import type { NamedChain } from "../../../lib/chains/types.ts";
+import type { NamedChain } from "../../lib/chains/types.ts";
 
 /** Default named chains for the coding domain. */
 export const chains: NamedChain[] = [

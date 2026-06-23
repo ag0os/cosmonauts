@@ -244,7 +244,7 @@ describe("discoverSkills", () => {
 
 	test("packaged skill directory names match frontmatter names", async () => {
 		const skillRoots = [
-			join(process.cwd(), "bundled", "coding", "coding", "skills"),
+			join(process.cwd(), "bundled", "coding", "skills"),
 			join(process.cwd(), "domains", "main", "skills"),
 			join(process.cwd(), "domains", "shared", "skills"),
 		];

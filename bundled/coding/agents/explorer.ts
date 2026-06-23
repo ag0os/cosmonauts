@@ -1,19 +1,19 @@
-import type { AgentDefinition } from "../../../../lib/agents/types.ts";
+import type { AgentDefinition } from "../../../lib/agents/types.ts";
 
 const definition: AgentDefinition = {
-	id: "distiller",
+	id: "explorer",
 	description:
-		"Reads plan artifacts and session transcripts, then produces structured KnowledgeBundle JSONL files for future SQLite + vector embedding ingestion.",
+		"Performs readonly codebase exploration and fact-finding. Reports discoveries without writing code or creating tasks.",
 	capabilities: ["healthy-codebase-harness", "coding-readonly"],
 	model: "openai-codex/gpt-5.5",
-	tools: "coding",
+	tools: "readonly",
 	extensions: [],
 	skills: ["*"],
 	subagents: [],
 	projectContext: true,
 	session: "ephemeral",
 	loop: false,
-	thinkingLevel: "medium",
+	thinkingLevel: "low",
 };
 
 export default definition;

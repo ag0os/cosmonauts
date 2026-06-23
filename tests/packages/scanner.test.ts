@@ -3,6 +3,7 @@
  * Covers scanDomainSources() with all source combinations.
  */
 
+import { basename, dirname, join } from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { scanDomainSources } from "../../lib/packages/scanner.ts";
 import type { InstalledPackage } from "../../lib/packages/types.ts";
@@ -23,7 +24,9 @@ const mockListInstalledPackages = vi.mocked(listInstalledPackages);
 // Mock node:fs/promises and node:os
 // ============================================================================
 
-vi.mock("node:fs/promises", () => ({
+vi.mock("node:fs/promises", async (importOriginal) => ({
+	...(await importOriginal<typeof import("node:fs/promises")>()),
+	readFile: vi.fn(),
 	stat: vi.fn(),
 }));
 
@@ -31,9 +34,10 @@ vi.mock("node:os", () => ({
 	homedir: vi.fn(() => "/home/user"),
 }));
 
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 
 const mockStat = vi.mocked(stat);
+const mockReadFile = vi.mocked(readFile);
 
 // By default stat rejects (directories do not exist)
 function statRejects(): void {
@@ -60,6 +64,23 @@ function statAsFileFor(...filePaths: string[]): void {
 				isDirectory: () => false,
 			} as Awaited<ReturnType<typeof stat>>;
 		}
+		throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+	});
+}
+
+function mockBundledManifestReads(): void {
+	mockReadFile.mockImplementation(async (path) => {
+		const filePath = path as string;
+		if (filePath.endsWith("/cosmonauts.json")) {
+			const packageName = basename(dirname(filePath));
+			return JSON.stringify({
+				name: packageName,
+				version: "1.0.0",
+				description: `Bundled ${packageName}`,
+				domains: [{ name: packageName, path: packageName }],
+			});
+		}
+
 		throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
 	});
 }
@@ -119,7 +140,9 @@ const PROJECT_ROOT = "/project";
 beforeEach(() => {
 	mockListInstalledPackages.mockReset();
 	mockStat.mockReset();
+	mockReadFile.mockReset();
 	statRejects(); // default: no directory-based tiers present
+	mockBundledManifestReads();
 });
 
 // ============================================================================
@@ -518,6 +541,45 @@ describe("bundled dirs", () => {
 		});
 
 		expect(sources.every((s) => s.precedence !== 0.5)).toBe(true);
+	});
+
+	test("routes bundled coding root domains through manifest-aware domain-root sources", async () => {
+		// @cosmo-behavior plan:domain-authoring#B-016
+		mockListInstalledPackages.mockResolvedValue([]);
+		const actualFs =
+			await vi.importActual<typeof import("node:fs/promises")>(
+				"node:fs/promises",
+			);
+		mockReadFile.mockImplementation(
+			((...args: Parameters<typeof readFile>) =>
+				actualFs.readFile(...args)) as typeof readFile,
+		);
+		mockStat.mockImplementation(
+			((...args: Parameters<typeof stat>) =>
+				actualFs.stat(...args)) as typeof stat,
+		);
+
+		const bundledCodingDir = join(process.cwd(), "bundled", "coding");
+
+		const sources = await scanDomainSources({
+			builtinDomainsDir: join(process.cwd(), "domains"),
+			projectRoot: PROJECT_ROOT,
+			bundledDirs: [bundledCodingDir],
+		});
+
+		expect(sources).toContainEqual({
+			domainsDir: bundledCodingDir,
+			sourceType: "domain-root",
+			origin: "bundled:coding",
+			precedence: 0.5,
+		});
+
+		const { loadDomainsFromSources } = await import(
+			"../../lib/domains/loader.ts"
+		);
+		const domains = await loadDomainsFromSources(sources);
+		const coding = domains.find((domain) => domain.manifest.id === "coding");
+		expect(coding?.agents.has("cody")).toBe(true);
 	});
 });
 
