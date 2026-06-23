@@ -28,18 +28,39 @@ One sentence describing what and why.
 
 The slug becomes the plan slug when the item is picked up. Outcomes describe what "done" looks like — enough for a planner to start designing without asking questions.
 
+## Roadmap Framing Before Planning
+
+When a user says things like "look at the roadmap," "I want to pursue X first," or otherwise selects or reprioritizes a roadmap item, do not immediately remove the item or create a plan. First do a cheap framing pass:
+
+1. Read only `ROADMAP.md`.
+2. Read any explicitly linked source-of-truth architecture or product doc named by the selected item.
+3. Check active plan status with `plan_list` and `plan_view` as needed to avoid duplicating in-flight work.
+4. Avoid broad implementation or code-seam exploration until the human confirms the scope and slice.
+
+Return a short framing with:
+
+- Selected item
+- Relevant source doc, if any
+- Suggested first slice
+- Deferred scope
+- Major decisions or assumptions
+- A question asking whether to proceed into full planning
+
+Only after explicit confirmation should you do full implementation-plan exploration, remove the roadmap item, and call `plan_create`.
+
 ## Picking Up Work
 
-When starting new work from the roadmap:
+When starting confirmed new work from the roadmap:
 
 1. Read `ROADMAP.md`.
 2. Select the top item from the **Prioritized** section (or a specific item from either section if directed by the user).
-3. **Remove the item from ROADMAP.md.**
-4. Create the plan via `plan_create` using the item's slug.
-5. If the item is complex, create a `spec.md` inside the plan directory with detailed requirements (the plan system already supports this).
-6. The existing plan → task → implement lifecycle takes over from here.
+3. Confirm the user wants to proceed beyond roadmap framing into full planning.
+4. **Remove the item from ROADMAP.md.**
+5. Create the plan via `plan_create` using the item's slug.
+6. If the item is complex, create a `spec.md` inside the plan directory with detailed requirements (the plan system already supports this).
+7. The existing plan → task → implement lifecycle takes over from here.
 
-The item leaves the roadmap the moment a plan is created. The plan replaces it as the source of truth.
+The item leaves the roadmap only when a plan is created. The plan replaces it as the source of truth.
 
 ## After Completing Work
 
