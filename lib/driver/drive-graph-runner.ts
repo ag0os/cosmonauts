@@ -5,6 +5,7 @@ import {
 	type RunRecord,
 	type RunRef,
 	type RunStore,
+	type RuntimeDiagnostic,
 	runStart,
 	type SchedulerStepInput,
 	type StepRecord,
@@ -19,7 +20,12 @@ import { createDriveSchedulerBackendMap } from "./drive-scheduler-backend.ts";
 import { EventLogWriteError } from "./event-stream.ts";
 import type { RunRunLoopCtx } from "./run-run-loop.ts";
 import { writeInlineRunState, writeRunCompletion } from "./run-state.ts";
-import type { DriverEvent, DriverResult, DriverRunSpec } from "./types.ts";
+import type {
+	DriverEvent,
+	DriverResult,
+	DriverRunAbortDetails,
+	DriverRunSpec,
+} from "./types.ts";
 import { resolveStateCommitPolicy } from "./types.ts";
 import { writeDriverWorkdirInputs } from "./workdir-inputs.ts";
 
@@ -121,7 +127,11 @@ export async function runDriveOnGraph(
 					};
 				},
 				shouldStop(pass) {
-					return allStepsTerminal(pass.steps);
+					return (
+						(pass.exitReason === "drained" &&
+							!hasPendingStepReadyOnNextPass(pass.steps)) ||
+						allStepsTerminal(pass.steps)
+					);
 				},
 			},
 		});
@@ -169,7 +179,26 @@ export async function runDriveOnGraph(
 			await writeRunCompletion(spec.workdir, result);
 			return result;
 		}
-		await emitRunAborted(spec, ctx, formatError(error));
+		const details = await exceptionAbortDetails({
+			spec,
+			store,
+			ref,
+			error,
+			phase: "scheduler",
+		});
+		await emitDriverDiagnostic(spec, ctx, {
+			level: "error",
+			code: "drive_scheduler_exception",
+			message: formatError(error),
+			phase:
+				details.cause.type === "exception" ? details.cause.phase : undefined,
+			taskId:
+				details.cause.type === "exception" ? details.cause.taskId : undefined,
+			details: {
+				pendingTasks: details.pendingTasks,
+			},
+		});
+		await emitRunAborted(spec, ctx, formatError(error), details);
 		throw error;
 	}
 }
@@ -295,6 +324,12 @@ async function toDriverResult(
 			...(blockedStep?.result?.summary
 				? { blockedReason: blockedStep.result.summary }
 				: {}),
+			abortDetails: schedulerAbortDetails({
+				spec,
+				steps,
+				diagnostics: schedulerResult.diagnostics,
+				exitReason: schedulerResult.exitReason,
+			}),
 		};
 	}
 
@@ -307,6 +342,12 @@ async function toDriverResult(
 			latestRun.status === "running" || latestRun.status === "pending"
 				? `scheduler ${schedulerResult.exitReason}`
 				: `run ${latestRun.status}`,
+		abortDetails: schedulerAbortDetails({
+			spec,
+			steps,
+			diagnostics: schedulerResult.diagnostics,
+			exitReason: schedulerResult.exitReason,
+		}),
 	};
 }
 function finalizationFailureResult(
@@ -369,6 +410,7 @@ async function emitTerminalLegacyEvent(
 		await emit(spec, ctx, {
 			type: "run_aborted",
 			reason: result.blockedReason ?? result.outcome,
+			details: result.abortDetails,
 		});
 	}
 }
@@ -391,9 +433,25 @@ async function emitRunAborted(
 	spec: DriverRunSpec,
 	ctx: RunDriveOnGraphCtx,
 	reason: string,
+	details?: DriverRunAbortDetails,
 ): Promise<void> {
 	try {
-		await emit(spec, ctx, { type: "run_aborted", reason });
+		await emit(spec, ctx, { type: "run_aborted", reason, details });
+	} catch {
+		return;
+	}
+}
+
+async function emitDriverDiagnostic(
+	spec: DriverRunSpec,
+	ctx: RunDriveOnGraphCtx,
+	event: Omit<
+		Extract<DriverEvent, { type: "driver_diagnostic" }>,
+		"runId" | "parentSessionId" | "timestamp" | "type"
+	>,
+): Promise<void> {
+	try {
+		await emit(spec, ctx, { type: "driver_diagnostic", ...event });
 	} catch {
 		return;
 	}
@@ -445,6 +503,198 @@ function taskIdFromStep(step: StepRecord): string {
 		: step.id;
 }
 
+async function exceptionAbortDetails({
+	spec,
+	store,
+	ref,
+	error,
+	phase,
+}: {
+	spec: DriverRunSpec;
+	store: RunStore;
+	ref: RunRef;
+	error: unknown;
+	phase: string;
+}): Promise<DriverRunAbortDetails> {
+	let steps: StepRecord[] = [];
+	try {
+		steps = await store.listStepRecords(ref);
+	} catch {
+		steps = [];
+	}
+	return {
+		...pendingTaskSummary(spec, steps),
+		cause: {
+			type: "exception",
+			message: formatError(error),
+			phase,
+			taskId: offendingTaskId(steps),
+		},
+	};
+}
+
+function schedulerAbortDetails({
+	spec,
+	steps,
+	diagnostics,
+	exitReason,
+}: {
+	spec: DriverRunSpec;
+	steps: readonly StepRecord[];
+	diagnostics: readonly RuntimeDiagnostic[];
+	exitReason: RunGraphSchedulerResult["exitReason"];
+}): DriverRunAbortDetails {
+	const setupDiagnostic = backendSetupDiagnostic(diagnostics);
+	if (setupDiagnostic) {
+		return {
+			...pendingTaskSummary(spec, steps),
+			cause: {
+				type: "backend-setup-failure",
+				message: setupDiagnostic.message,
+				...diagnosticTask(setupDiagnostic),
+			},
+		};
+	}
+
+	const blockingTaskIds = blockingTaskIdsForPendingTasks(spec, steps);
+	if (blockingTaskIds.length > 0) {
+		return {
+			...pendingTaskSummary(spec, steps),
+			cause: {
+				type: "unmet-dependencies",
+				blockingTaskIds,
+			},
+		};
+	}
+
+	return {
+		...pendingTaskSummary(spec, steps),
+		cause: {
+			type: "backend-setup-failure",
+			message: `Scheduler ${exitReason} with pending Drive tasks and no runnable work.`,
+		},
+	};
+}
+
+function pendingTaskSummary(
+	spec: DriverRunSpec,
+	steps: readonly StepRecord[],
+): Pick<DriverRunAbortDetails, "pendingTasks"> {
+	const completedTaskIds = new Set(
+		steps
+			.filter((step) => step.kind === "drive" && step.status === "completed")
+			.map((step) => step.id),
+	);
+	const taskIds = spec.taskIds.filter(
+		(taskId) => !completedTaskIds.has(taskId),
+	);
+	return {
+		pendingTasks: {
+			count: taskIds.length,
+			taskIds,
+		},
+	};
+}
+
+function backendSetupDiagnostic(
+	diagnostics: readonly RuntimeDiagnostic[],
+): RuntimeDiagnostic | undefined {
+	return diagnostics.find((diagnostic) =>
+		[
+			"scheduler_backend_unavailable",
+			"missing_step_record",
+			"corrupt_step_record",
+			"invalid_step_record",
+			"invalid_run_graph",
+			"invalid_run_graph_step",
+			"graph_step_run_mismatch",
+			"invalid_run_graph_edge",
+			"run_start_graph_mismatch",
+		].includes(diagnostic.code),
+	);
+}
+
+function diagnosticTask(
+	diagnostic: RuntimeDiagnostic,
+): Pick<
+	Extract<DriverRunAbortDetails["cause"], { type: "backend-setup-failure" }>,
+	"phase" | "taskId"
+> {
+	const details =
+		typeof diagnostic.details === "object" && diagnostic.details !== null
+			? (diagnostic.details as Record<string, unknown>)
+			: {};
+	const taskId =
+		typeof details.taskId === "string"
+			? details.taskId
+			: typeof details.stepId === "string"
+				? taskIdFromStepId(details.stepId)
+				: undefined;
+	return {
+		phase: diagnostic.code,
+		taskId,
+	};
+}
+
+function blockingTaskIdsForPendingTasks(
+	spec: DriverRunSpec,
+	steps: readonly StepRecord[],
+): string[] {
+	const completedStepIds = new Set(
+		steps.filter((step) => step.status === "completed").map((step) => step.id),
+	);
+	const stepById = new Map(steps.map((step) => [step.id, step]));
+	const taskIds = new Set(spec.taskIds);
+	const blocking = new Set<string>();
+
+	for (const step of steps) {
+		if (step.kind !== "drive" || step.status === "completed") {
+			continue;
+		}
+		for (const dependencyId of step.dependsOn) {
+			if (completedStepIds.has(dependencyId)) {
+				continue;
+			}
+			const dependency = stepById.get(dependencyId);
+			const taskId = taskIdFromStepId(dependencyId);
+			if (
+				taskIds.has(taskId) ||
+				dependency?.status === "blocked" ||
+				dependency?.status === "failed" ||
+				dependency?.status === "cancelled" ||
+				dependency?.status === "stale"
+			) {
+				blocking.add(taskId);
+			}
+		}
+	}
+
+	return [...blocking].sort();
+}
+
+function offendingTaskId(steps: readonly StepRecord[]): string | undefined {
+	const running = steps.find(
+		(step) => step.kind === "drive" && step.status === "running",
+	);
+	if (running) {
+		return running.id;
+	}
+	const ready = steps.find(
+		(step) => step.kind === "drive" && step.status === "ready",
+	);
+	return ready?.id;
+}
+
+function taskIdFromStepId(stepId: string): string {
+	if (stepId.startsWith("finalizer-task-status-")) {
+		return stepId.slice("finalizer-task-status-".length);
+	}
+	if (stepId.startsWith("finalizer-source-commit-")) {
+		return stepId.slice("finalizer-source-commit-".length);
+	}
+	return stepId;
+}
+
 function allStepsTerminal(steps: readonly StepRecord[]): boolean {
 	return (
 		steps.length > 0 &&
@@ -456,6 +706,19 @@ function allStepsTerminal(steps: readonly StepRecord[]): boolean {
 				step.status === "cancelled" ||
 				step.status === "stale",
 		)
+	);
+}
+
+function hasPendingStepReadyOnNextPass(steps: readonly StepRecord[]): boolean {
+	const completedStepIds = new Set(
+		steps.filter((step) => step.status === "completed").map((step) => step.id),
+	);
+	return steps.some(
+		(step) =>
+			step.status === "pending" &&
+			step.dependsOn.every((dependencyId) =>
+				completedStepIds.has(dependencyId),
+			),
 	);
 }
 

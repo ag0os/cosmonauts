@@ -94,6 +94,30 @@ interface DriverEventBase {
 	timestamp: string;
 }
 
+export interface DriverRunAbortDetails {
+	pendingTasks: {
+		count: number;
+		taskIds: string[];
+	};
+	cause:
+		| {
+				type: "unmet-dependencies";
+				blockingTaskIds: string[];
+		  }
+		| {
+				type: "backend-setup-failure";
+				message: string;
+				phase?: string;
+				taskId?: string;
+		  }
+		| {
+				type: "exception";
+				message: string;
+				phase: string;
+				taskId?: string;
+		  };
+}
+
 export type DriverEvent =
 	| (DriverEventBase & {
 			type: "run_started";
@@ -182,10 +206,23 @@ export type DriverEvent =
 			details?: { previousRunId?: string; previousPid?: number };
 	  })
 	| (DriverEventBase & {
+			type: "driver_diagnostic";
+			level: "error" | "warning" | "info";
+			code: string;
+			message: string;
+			phase?: string;
+			taskId?: string;
+			details?: Record<string, unknown>;
+	  })
+	| (DriverEventBase & {
 			type: "run_completed";
 			summary: { total: number; done: number; blocked: number };
 	  })
-	| (DriverEventBase & { type: "run_aborted"; reason: string })
+	| (DriverEventBase & {
+			type: "run_aborted";
+			reason: string;
+			details?: DriverRunAbortDetails;
+	  })
 	| (DriverEventBase & {
 			type: "run_finalization_failed";
 			phase: FinalizationPhase;
@@ -236,6 +273,7 @@ export type DriverResult =
 			outcome: "aborted" | "blocked";
 			blockedTaskId?: string;
 			blockedReason?: string;
+			abortDetails?: DriverRunAbortDetails;
 	  })
 	| (DriverResultBase & {
 			outcome: "finalization_failed";

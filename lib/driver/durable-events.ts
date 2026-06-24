@@ -137,6 +137,9 @@ const DRIVER_EVENT_NORMALIZERS = {
 	lock_warning: driverEventNormalizer<"lock_warning">((event) =>
 		diagnostic(legacyOnlyDiagnostic(event)),
 	),
+	driver_diagnostic: driverEventNormalizer<"driver_diagnostic">((event) =>
+		diagnostic(driverDiagnostic(event)),
+	),
 	plan_completion_candidate: driverEventNormalizer<"plan_completion_candidate">(
 		(event) => diagnostic(legacyOnlyDiagnostic(event)),
 	),
@@ -387,6 +390,22 @@ function legacyOnlyDiagnostic(
 		code: "legacy_only_driver_event",
 		message: `Drive ${event.type} event has no canonical normalized variant.`,
 		details: { eventType: event.type },
+	};
+}
+
+function driverDiagnostic(
+	event: Extract<DriverEvent, { type: "driver_diagnostic" }>,
+): DriverEventNormalizationDiagnostic {
+	return {
+		code: event.code,
+		message: event.message,
+		details: compactRecord({
+			eventType: event.type,
+			level: event.level,
+			phase: event.phase,
+			taskId: event.taskId,
+			...event.details,
+		}),
 	};
 }
 
