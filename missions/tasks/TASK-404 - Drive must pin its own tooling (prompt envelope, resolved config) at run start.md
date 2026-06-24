@@ -7,9 +7,10 @@ labels:
   - orchestration
   - drive
   - robustness
+  - 'plan:orchestration-hardening'
 dependencies: []
 createdAt: '2026-06-24T17:30:31.316Z'
-updatedAt: '2026-06-24T17:30:31.316Z'
+updatedAt: '2026-06-24T17:31:44.720Z'
 ---
 
 ## Description
@@ -39,7 +40,6 @@ snapshot.
 
 CONSTRAINTS: keep backwards compatibility with an explicit `--envelope` path;
 additive to the run spec. Never leave the build broken between commits.
-
 
 <!-- AC:BEGIN -->
 - [ ] #1 The prompt envelope is resolved once at run launch and its content persisted into the run spec/state; per-task prompt assembly uses the snapshot, not a live filesystem lookup.

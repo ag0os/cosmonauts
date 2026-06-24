@@ -8,9 +8,10 @@ priority: medium
 labels:
   - prompts
   - verification
+  - 'plan:orchestration-hardening'
 dependencies: []
 createdAt: '2026-06-24T17:30:31.330Z'
-updatedAt: '2026-06-24T17:30:31.330Z'
+updatedAt: '2026-06-24T17:31:46.410Z'
 ---
 
 ## Description
@@ -36,7 +37,6 @@ duplicate that lens, reference/reinforce it).
 
 CONSTRAINTS: edits are ADDITIVE — preserve existing content, including sibling-task
 additions to quality-manager.md.
-
 
 <!-- AC:BEGIN -->
 - [ ] #1 quality-manager.md instructs determining the local integration base (local merge-base) before scoping a diff, and not flagging already-merged commits as out-of-scope.

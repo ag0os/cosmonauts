@@ -7,9 +7,10 @@ status: To Do
 priority: medium
 labels:
   - prompts
+  - 'plan:orchestration-hardening'
 dependencies: []
 createdAt: '2026-06-24T17:30:31.328Z'
-updatedAt: '2026-06-24T17:30:31.328Z'
+updatedAt: '2026-06-24T17:31:46.127Z'
 ---
 
 ## Description
@@ -31,7 +32,6 @@ design intent and note the discrepancy in the task notes.
 
 CONSTRAINTS: edits are ADDITIVE — preserve existing content, including sibling-task
 additions to worker.md.
-
 
 <!-- AC:BEGIN -->
 - [ ] #1 worker.md instructs implementing a named rule once (shared helper) and wiring all design-named seams, following design intent when broader than a single-site AC.

@@ -9,9 +9,10 @@ labels:
   - verification
   - prompts
   - migration
+  - 'plan:orchestration-hardening'
 dependencies: []
 createdAt: '2026-06-24T17:30:31.320Z'
-updatedAt: '2026-06-24T17:30:31.320Z'
+updatedAt: '2026-06-24T17:31:45.283Z'
 ---
 
 ## Description
@@ -41,7 +42,6 @@ running it immediately after a migration task, not only at the end.
 
 CONSTRAINTS: edits are ADDITIVE — preserve all existing persona content,
 including any additions made by sibling tasks touching the same file.
-
 
 <!-- AC:BEGIN -->
 - [ ] #1 `worker.md` instructs that file/dir/symbol/path moves require a repo-wide reference sweep across all source dirs (not just tests/docs) before completion, runtime source prioritized.

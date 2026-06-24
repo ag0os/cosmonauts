@@ -8,9 +8,10 @@ priority: high
 labels:
   - verification
   - prompts
+  - 'plan:orchestration-hardening'
 dependencies: []
 createdAt: '2026-06-24T17:30:31.323Z'
-updatedAt: '2026-06-24T17:30:31.323Z'
+updatedAt: '2026-06-24T17:31:45.566Z'
 ---
 
 ## Description
@@ -39,7 +40,6 @@ explicit, named lens, not buried prose.
 
 CONSTRAINTS: edits are ADDITIVE — preserve existing content, including sibling-task
 additions to the same files.
-
 
 <!-- AC:BEGIN -->
 - [ ] #1 integration-verifier.md, reviewer.md, and quality-manager.md each gain an explicit named 'blast-radius' lens: identify call sites of new/changed shared primitives in existing code and verify their throw/return/empty/warning semantics did not regress.

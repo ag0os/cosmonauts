@@ -8,9 +8,10 @@ labels:
   - drive
   - cli
   - ux
+  - 'plan:orchestration-hardening'
 dependencies: []
 createdAt: '2026-06-24T17:30:31.318Z'
-updatedAt: '2026-06-24T17:30:31.318Z'
+updatedAt: '2026-06-24T17:31:45.000Z'
 ---
 
 ## Description
@@ -37,7 +38,6 @@ is NOT the run completing.
 
 CONSTRAINTS: do not change inline-mode output. Additive. Never leave the build
 broken between commits.
-
 
 <!-- AC:BEGIN -->
 - [ ] #1 `cosmonauts run drive --mode detached ...` no longer emits the false `--mode is not supported` warning.

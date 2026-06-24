@@ -7,9 +7,10 @@ labels:
   - orchestration
   - drive
   - diagnostics
+  - 'plan:orchestration-hardening'
 dependencies: []
 createdAt: '2026-06-24T17:30:31.314Z'
-updatedAt: '2026-06-24T17:30:31.314Z'
+updatedAt: '2026-06-24T17:31:44.427Z'
 ---
 
 ## Description
@@ -39,7 +40,6 @@ status surfaced by `run status`.
 
 CONSTRAINTS: additive to existing event types; do not regress normal completion.
 Never leave the build broken between commits.
-
 
 <!-- AC:BEGIN -->
 - [ ] #1 When the scheduler stops with pending non-done tasks, the terminal event carries a structured reason: pending count plus cause (unmet-dependencies with blocking IDs, backend/setup error, or exception message).

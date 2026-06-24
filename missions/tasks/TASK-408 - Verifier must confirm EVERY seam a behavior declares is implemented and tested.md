@@ -6,9 +6,10 @@ priority: medium
 labels:
   - verification
   - prompts
+  - 'plan:orchestration-hardening'
 dependencies: []
 createdAt: '2026-06-24T17:30:31.326Z'
-updatedAt: '2026-06-24T17:30:31.326Z'
+updatedAt: '2026-06-24T17:31:45.848Z'
 ---
 
 ## Description
@@ -34,7 +35,6 @@ enumerate all seams so partial implementation is detectable.
 
 CONSTRAINTS: edits are ADDITIVE — preserve existing content, including sibling-task
 additions to the same files.
-
 
 <!-- AC:BEGIN -->
 - [ ] #1 integration-verifier.md instructs verifying that every declared seam of a behavior is implemented and test-covered, and flagging partial-seam implementations.

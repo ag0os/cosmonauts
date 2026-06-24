@@ -1,0 +1,1 @@
+Scope container only (no design plan). Holds the self-contained hardening tasks TASK-402..411 derived from concrete failures observed dogfooding the domain-authoring plan through cosmonauts. Each task carries its own context and acceptance criteria.

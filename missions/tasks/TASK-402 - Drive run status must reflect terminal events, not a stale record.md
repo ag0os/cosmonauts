@@ -7,9 +7,10 @@ labels:
   - orchestration
   - drive
   - bug
+  - 'plan:orchestration-hardening'
 dependencies: []
 createdAt: '2026-06-24T17:30:31.311Z'
-updatedAt: '2026-06-24T17:30:31.311Z'
+updatedAt: '2026-06-24T17:31:44.114Z'
 ---
 
 ## Description
@@ -43,7 +44,6 @@ that is not alive and whose last event is terminal must never report `running`.
 CONSTRAINTS: keep the change minimal and additive to the existing status
 machinery; do not break inline/detached/resume status semantics. This file may
 be loaded by a running driver, so never leave the build broken between commits.
-
 
 <!-- AC:BEGIN -->
 - [ ] #1 `cosmonauts run status <runId>` returns the terminal status (completed/aborted/failed) once the run event log contains the matching terminal event, even if the run record was never updated.

@@ -8,9 +8,10 @@ priority: low
 labels:
   - prompts
   - orchestration
+  - 'plan:orchestration-hardening'
 dependencies: []
 createdAt: '2026-06-24T17:30:31.332Z'
-updatedAt: '2026-06-24T17:30:31.332Z'
+updatedAt: '2026-06-24T17:31:46.690Z'
 ---
 
 ## Description
@@ -33,7 +34,6 @@ real dependency; otherwise independent.
 
 CONSTRAINTS: edits are ADDITIVE — preserve existing content, including sibling-task
 additions to task-manager.md.
-
 
 <!-- AC:BEGIN -->
 - [ ] #1 task-manager.md instructs encoding only true dependencies and leaving independent tasks unblocked to enable parallel execution, with a brief heuristic for what counts as a real dependency.
