@@ -322,6 +322,68 @@ describe("cosmonauts run", () => {
 		expect(output.stderr()).toBe("");
 	});
 
+	test("status and list reconcile a running record from a terminal event", async () => {
+		const store = new FileRunStore({
+			rootDir: join(temp.path, "missions", "sessions"),
+		});
+		const record = await store.createRun({
+			scope: "plan-a",
+			runId: "run-stale-running",
+			status: "running",
+			metadata: { source: "drive" },
+		});
+		await writeFile(
+			record.eventsPath,
+			[
+				JSON.stringify({
+					seq: 1,
+					timestamp: "2026-06-24T17:00:00.000Z",
+					runId: record.runId,
+					event: { type: "run_started", runId: record.runId },
+				}),
+				JSON.stringify({
+					seq: 2,
+					timestamp: "2026-06-24T17:01:00.000Z",
+					runId: record.runId,
+					event: {
+						type: "run_failed",
+						runId: record.runId,
+						reason: "operator stopped run",
+					},
+				}),
+			].join("\n"),
+			"utf-8",
+		);
+
+		await parseRun(["status", "run-stale-running"]);
+		expect(JSON.parse(output.stdout())).toMatchObject({
+			found: true,
+			scope: "plan-a",
+			runId: "run-stale-running",
+			status: "failed",
+			statusSource: "event",
+			recordStatus: "running",
+			eventStatus: "failed",
+			updatedAt: "2026-06-24T17:01:00.000Z",
+		});
+		expect(output.stderr()).toBe("");
+
+		resetOutput();
+		await parseRun(["list", "--scope", "plan-a"]);
+		expect(JSON.parse(output.stdout())).toEqual([
+			expect.objectContaining({
+				scope: "plan-a",
+				runId: "run-stale-running",
+				status: "failed",
+				statusSource: "event",
+				recordStatus: "running",
+				updatedAt: "2026-06-24T17:01:00.000Z",
+				metadata: { source: "drive" },
+			}),
+		]);
+		expect(output.stderr()).toBe("");
+	});
+
 	test("resolves named chains from a bound default domain", async () => {
 		const runtime = runtimeFixture(
 			[],

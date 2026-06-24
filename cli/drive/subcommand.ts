@@ -99,7 +99,12 @@ interface RunPidFile {
 	cosmonautsPath?: string;
 }
 
-type RunStatus = DriverResult["outcome"] | "dead" | "running" | "orphaned";
+type RunStatus =
+	| DriverResult["outcome"]
+	| "failed"
+	| "dead"
+	| "running"
+	| "orphaned";
 type DriverEventInput = DriverEvent extends infer Event
 	? Event extends DriverEvent
 		? Omit<Event, "runId" | "parentSessionId" | "timestamp">
@@ -560,7 +565,9 @@ async function classifyRunDir(
 
 	const pidFile = await readRunPid(runDir.workdir);
 	if (pidFile) {
-		const status = await classifyPidStatus(pidFile);
+		const status =
+			(await readLastTerminalEventStatus(runDir.workdir)) ??
+			(await classifyPidStatus(pidFile));
 		return {
 			runId: runDir.runId,
 			planSlug: runDir.planSlug,
@@ -578,7 +585,9 @@ async function classifyRunDir(
 		return undefined;
 	}
 
-	const status = await classifyInlineStatus(inlineState);
+	const status =
+		(await readLastTerminalEventStatus(runDir.workdir)) ??
+		(await classifyInlineStatus(inlineState));
 	return {
 		runId: runDir.runId,
 		planSlug: runDir.planSlug,
@@ -706,6 +715,64 @@ async function readInlineRunState(
 			return undefined;
 		}
 		throw error;
+	}
+}
+
+async function readLastTerminalEventStatus(
+	workdir: string,
+): Promise<RunStatus | undefined> {
+	let raw: string;
+	try {
+		raw = await readFile(join(workdir, "events.jsonl"), "utf-8");
+	} catch (error) {
+		if (isErrnoError(error) && error.code === "ENOENT") {
+			return undefined;
+		}
+		throw error;
+	}
+
+	const lines = raw.split("\n").filter((line) => line.trim().length > 0);
+	for (let index = lines.length - 1; index >= 0; index--) {
+		const status = readTerminalEventStatus(lines[index] ?? "");
+		if (status || readEventType(lines[index] ?? "")) {
+			return status;
+		}
+	}
+	return undefined;
+}
+
+function readTerminalEventStatus(line: string): RunStatus | undefined {
+	switch (readEventType(line)) {
+		case "run_completed":
+			return "completed";
+		case "run_aborted":
+			return "aborted";
+		case "run_failed":
+			return "failed";
+		case "run_finalization_failed":
+			return "finalization_failed";
+		default:
+			return undefined;
+	}
+}
+
+function readEventType(line: string): string | undefined {
+	try {
+		const parsed = JSON.parse(line) as { type?: unknown; event?: unknown };
+		if (typeof parsed.type === "string") {
+			return parsed.type;
+		}
+		if (
+			typeof parsed.event === "object" &&
+			parsed.event !== null &&
+			"type" in parsed.event &&
+			typeof parsed.event.type === "string"
+		) {
+			return parsed.event.type;
+		}
+		return undefined;
+	} catch {
+		return undefined;
 	}
 }
 
