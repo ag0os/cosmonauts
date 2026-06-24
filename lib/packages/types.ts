@@ -108,6 +108,11 @@ export type ManifestValidationError =
 			reason: "invalid-path";
 			domain?: string;
 			path?: string;
+	  }
+	| {
+			field: "domains";
+			reason: "root-not-exclusive";
+			domain?: string;
 	  };
 
 /**

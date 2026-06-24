@@ -152,6 +152,28 @@ function validateDomainsField(
 			path: invalidPathDomain.path,
 		};
 	}
+
+	if (hasNonExclusiveRootDomain(value)) {
+		const rootDomain = value.find((domain) => domain.path === ".");
+		return {
+			field: "domains",
+			reason: "root-not-exclusive",
+			domain: rootDomain?.name,
+		};
+	}
+}
+
+/**
+ * True when a manifest declares a root domain (`path: "."`) alongside other
+ * domains. A root-domain package exposes its package root as a domain directly,
+ * so it cannot also declare sibling domains without the loader scanning the
+ * package store parent. Shared by manifest validation, installer validation, and
+ * scanner source construction so the rule is enforced on every load path.
+ */
+export function hasNonExclusiveRootDomain(
+	domains: readonly PackageDomain[],
+): boolean {
+	return domains.length > 1 && domains.some((domain) => domain.path === ".");
 }
 
 export function normalizePackageDomainPath(path: string): string | undefined {

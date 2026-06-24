@@ -8,6 +8,7 @@ import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import {
+	hasNonExclusiveRootDomain,
 	loadManifest,
 	normalizePackageDomainPath,
 	validateManifest,
@@ -167,6 +168,19 @@ function addPackageSources(
 ): void {
 	for (const pkg of packages) {
 		if (pkg.manifest.domains.length === 0) continue;
+
+		// A package that declares a root domain (`path: "."`) alongside other
+		// domains is invalid: emitting a `domain-root` source for it plus
+		// `domains-dir` sources for the siblings would expose the package store
+		// parent to scanning. Refuse to emit any sources for such a package —
+		// already-present or bundled records bypass installer validation, so the
+		// scanner enforces the same rule defensively. (B-022)
+		if (hasNonExclusiveRootDomain(pkg.manifest.domains)) {
+			console.warn(
+				`[cosmonauts] Skipping package "${pkg.manifest.name}": a domain with path "." must be the only domain entry; ignoring its domains.`,
+			);
+			continue;
+		}
 
 		// Deduplicate parent dirs when multiple domains share the same parent
 		const parentDirs = new Set<string>();

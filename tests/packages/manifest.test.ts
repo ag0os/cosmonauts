@@ -333,4 +333,38 @@ describe("validateManifest — empty domains array", () => {
 			],
 		});
 	});
+
+	test("rejects a root domain (path '.') declared alongside other domains", () => {
+		// @cosmo-behavior plan:domain-authoring#B-022
+		const raw = {
+			name: "mixed-root",
+			version: "1.0.0",
+			description: "A package",
+			domains: [
+				{ name: "mixed-root", path: "." },
+				{ name: "beta", path: "beta" },
+			],
+		};
+
+		const result = validateManifest(raw);
+
+		expectManifestError(result, "domains", "root-not-exclusive");
+		if (!result.valid) {
+			expect(result.errors).toContainEqual(
+				expect.objectContaining({ domain: "mixed-root" }),
+			);
+		}
+	});
+
+	test("accepts a root domain (path '.') as the sole domain entry", () => {
+		// @cosmo-behavior plan:domain-authoring#B-022
+		const raw = {
+			name: "root-domain",
+			version: "1.0.0",
+			description: "A package",
+			domains: [{ name: "root-domain", path: "." }],
+		};
+
+		expect(validateManifest(raw).valid).toBe(true);
+	});
 });

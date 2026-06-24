@@ -251,6 +251,11 @@ async function readAndValidateManifest(
 }
 
 function formatManifestError(error: ManifestValidationError): string {
+	if (error.field === "domains" && error.reason === "root-not-exclusive") {
+		const offender = error.domain ? ` (domain "${error.domain}")` : "";
+		return `${error.field}: ${error.reason}${offender}; a domain with path "." exposes the package root as the domain. Move each domain into its own subdirectory or keep path "." as the only domain entry.`;
+	}
+
 	if (error.field !== "domains" || error.reason !== "invalid-path") {
 		return `${error.field}: ${error.reason}`;
 	}

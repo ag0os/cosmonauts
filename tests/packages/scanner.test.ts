@@ -284,6 +284,40 @@ describe("local packages only", () => {
 		);
 	});
 
+	test("refuses to emit any sources for a mixed root-domain package", async () => {
+		// @cosmo-behavior plan:domain-authoring#B-022
+		const installPath = "/project/.cosmonauts/packages/mixed-root";
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		mockListInstalledPackages.mockImplementation(async (scope) => {
+			if (scope === "project") {
+				return [
+					makePackageWithDomains("mixed-root", installPath, "project", [
+						{ name: "mixed-root", path: "." },
+						{ name: "beta", path: "beta" },
+					]),
+				];
+			}
+			return [];
+		});
+
+		const sources = await scanDomainSources({
+			builtinDomainsDir: BUILTIN_DIR,
+			projectRoot: PROJECT_ROOT,
+		});
+
+		// Only the builtin source remains: no domain-root source for the package
+		// root and no parent-dir source that would scan the package store.
+		expect(sources).toHaveLength(1);
+		expect(sources.some((s) => s.domainsDir === installPath)).toBe(false);
+		expect(
+			sources.some(
+				(s) => s.domainsDir === "/project/.cosmonauts/packages",
+			),
+		).toBe(false);
+		expect(warn).toHaveBeenCalled();
+		warn.mockRestore();
+	});
+
 	test.each([
 		["absolute", "/tmp/outside"],
 		["traversal", "../sibling/domain"],
