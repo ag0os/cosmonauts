@@ -12,7 +12,7 @@ What makes it different from using a single assistant directly:
 
 ## What It Does
 
-Cosmonauts is domain-agnostic. A **domain** (`domains/{id}/` with a `domain.ts` manifest) packages its own agents, prompts, capabilities, skills, and named chains — and domains are pluggable, not shipped with the framework itself. The framework provides the substrate: declarative agent definitions, four-layer prompt composition, on-demand skills, multi-agent orchestration (chains and Drive runs), and a persistent plan/task/memory spine so work compounds instead of drifting.
+Cosmonauts is domain-agnostic. A **domain** (`domain.ts` at a domain root) packages its own agents, persona prompts, capabilities, skills, extensions, and named chains — and domains are pluggable, not shipped with the framework itself. The framework provides the substrate: declarative agent definitions, four-layer prompt composition, on-demand skills, multi-agent orchestration (chains and Drive runs), and a persistent plan/task/memory spine so work compounds instead of drifting.
 
 **Coding is the current reference domain** — it's what's built out today because it's the maintainer's daily work, and it doubles as the worked example of how to build a domain. (It's slated to be extracted out of this repo.) The rest of this README uses the coding domain to show the framework in action; the same machinery applies to any domain you define.
 
@@ -35,7 +35,7 @@ The key insight: **the design phase is where humans add the most value.** Once t
 
 **Phase 0 is complete.** The core loop works end-to-end: you can start Cosmonauts, chat with `main/cosmo` (Cosmo), trigger multi-agent pipelines, and have agents implement tasks on real projects. The maintainer has dogfooded it daily since late February 2026 — the typical loop is bouncing design and plan ideas with an agent, turning that into a technical plan, revising it, and automating the implementation.
 
-**Coding is the only built-out domain so far.** The framework is domain-agnostic by design, but the coding domain is the only fully-realized example today — and it's slated to be extracted out of this repo. Building additional domains is supported but not yet documented as a first-class workflow.
+**Coding is the only built-out domain so far.** The framework is domain-agnostic by design, but the coding domain is the only fully-realized example today — and it's slated to be extracted out of this repo. Building additional domains is supported through the contract in [docs/domains.md](./docs/domains.md).
 
 What's built:
 - Task system with markdown files, YAML frontmatter, dependencies, and acceptance criteria
@@ -308,7 +308,7 @@ Cosmonauts is built as a [Pi package](https://github.com/earendil-works/pi) — 
 cosmonauts/
 ├── lib/              Core libraries (tasks, orchestration, plans, chains, agents)
 ├── domains/          Built-in domains: shared/ and main/
-├── bundled/coding/   Installable coding domain (coding/cody and specialists)
+├── bundled/coding/   Installable root-domain package (coding/cody and specialists)
 ├── cli/              CLI implementation
 ├── bin/              CLI entry points (cosmonauts)
 ├── tests/            Test suites (Vitest)
@@ -371,6 +371,7 @@ Agents coordinate through task state — no message bus, no shared memory. The c
 
 - **[ROADMAP.md](./ROADMAP.md)** — Prioritized backlog of upcoming work.
 - **[AGENTS.md](./AGENTS.md)** — Project conventions and instructions for agents working on this codebase.
+- **[docs/domains.md](./docs/domains.md)** — Domain package layout, authoring contract, visibility, active domains, and bindings.
 - **[docs/orchestration.md](./docs/orchestration.md)** — Chains, Drive, normalized run observation, CLI surface.
 - **[docs/prompts.md](./docs/prompts.md)** — Four-layer prompt composition.
 - **[docs/testing.md](./docs/testing.md)** — Testing standards and patterns.

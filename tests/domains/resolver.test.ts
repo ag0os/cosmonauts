@@ -190,15 +190,16 @@ describe("resolvePersonaPath", () => {
 		);
 	});
 
-	it("falls back to shared persona prompts (tier 3)", () => {
+	it("falls back to portable persona prompts (tier 2)", () => {
 		const resolver = new DomainResolver(
 			new DomainRegistry([
 				makeDomain("shared", { prompts: new Set(["helper"]) }),
 				makeDomain("coding"),
+				makePortableDomain("personas", { prompts: new Set(["helper"]) }),
 			]),
 		);
 		expect(resolver.resolvePersonaPath("helper", "coding")).toBe(
-			"/domains/shared/prompts/helper.md",
+			"/domains/personas/prompts/helper.md",
 		);
 	});
 

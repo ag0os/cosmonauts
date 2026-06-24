@@ -5,15 +5,15 @@ Agents in Cosmonauts get their system prompt assembled at session creation by `l
 ## The four layers
 
 ```
-Layer 0  domains/shared/prompts/base.md                 (always; identity + mission)
-Layer 1  {domain}/capabilities/{cap}.md                 (in declared order; falls back to shared/)
+Layer 0  lib/prompts/framework/base.md                  (always; identity + mission)
+Layer 1  {domain}/capabilities/{cap}.md                 (in declared order; falls back to portable/shared)
 Layer 2  {domain}/prompts/{agent-id}.md                 (the persona file)
-Layer 3  domains/shared/prompts/runtime/sub-agent.md    (only when spawned, not for top-level)
+Layer 3  lib/prompts/framework/runtime/sub-agent.md     (only when spawned, not for top-level)
 ```
 
 - **Layer 0** — Universal base. Identity and mission for every agent.
 - **Layer 1** — Capability packs declared in the agent's `capabilities` array, loaded in order. Each name resolves to `{domain}/capabilities/{name}.md` first, falling back to `shared/capabilities/{name}.md`. Examples: `core`, `tasks`, `spawning`, `engineering-discipline`, `coding-readwrite`, `coding-readonly`, `architectural-design`, `todo`, `drive`.
-- **Layer 2** — Persona. One file per agent at `{domain}/prompts/{agent-id}.md`. The persona defines role, workflow, decision rules — and gets the strongest recency weight, since it loads last for top-level sessions.
+- **Layer 2** — Persona. One file per agent at `{domain}/prompts/{agent-id}.md`. Domain `prompts/` directories contain personas only; framework base prompts and runtime overlays live under `lib/prompts/framework/`. The persona defines role, workflow, decision rules — and gets the strongest recency weight, since it loads last for top-level sessions.
 - **Layer 3** — Runtime overlay for sub-agents. Adds parent role, objective, task ID. Top-level sessions skip it.
 
 YAML frontmatter is stripped on load, so prompt files can carry metadata without leaking into the model's context.
@@ -32,7 +32,7 @@ Definition: `domains/main/agents/cosmo.ts`
 Capabilities: `[core, tasks, spawning, todo, drive]`
 
 Final stack:
-- L0 `domains/shared/prompts/base.md`
+- L0 `lib/prompts/framework/base.md`
 - L1 `domains/shared/capabilities/core.md`
 - L1 `domains/shared/capabilities/tasks.md`
 - L1 `domains/shared/capabilities/spawning.md`
@@ -46,7 +46,7 @@ Definition: `bundled/coding/agents/cody.ts`
 Capabilities: `[core, engineering-discipline, coding-readwrite, tasks, spawning, todo]`
 
 Final stack:
-- L0 `domains/shared/prompts/base.md`
+- L0 `lib/prompts/framework/base.md`
 - L1 `domains/shared/capabilities/core.md`
 - L1 `bundled/coding/capabilities/engineering-discipline.md`
 - L1 `bundled/coding/capabilities/coding-readwrite.md`
