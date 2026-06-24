@@ -486,12 +486,43 @@ export function registerSpawnTool(
 				};
 			}
 
-			const targetResolution = runtime.agentRegistry.resolveReference(
-				params.role,
-				runtime.domainContext,
-			);
+			const targetResolutionResult =
+				runtime.agentRegistry.resolveReferenceResult(
+					params.role,
+					runtime.domainContext,
+					callerDef.domain,
+				);
+			if (targetResolutionResult.kind === "internal") {
+				const error = `Agent "${params.role}" is internal to domain "${targetResolutionResult.domain}" and is not visible from domain "${callerDef.domain}".`;
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `spawn_agent denied: ${error}`,
+						},
+					],
+					details: {
+						role: params.role,
+						status: "denied",
+						error,
+					} as SpawnProgressDetails,
+				};
+			}
+			const targetResolution =
+				targetResolutionResult.kind === "found"
+					? {
+							definition: targetResolutionResult.definition,
+							reference:
+								targetResolutionResult.reference ??
+								runtime.agentRegistry.resolveReference(
+									params.role,
+									runtime.domainContext,
+									callerDef.domain,
+								)?.reference,
+						}
+					: undefined;
 			const targetDef = targetResolution?.definition;
-			if (!targetDef) {
+			if (!targetDef || !targetResolution?.reference) {
 				return {
 					content: [
 						{

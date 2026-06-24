@@ -20,7 +20,7 @@ interface AgentRegistryOptions {
 	readonly bindingResolver?: DomainBindingResolver;
 }
 
-type AgentResolutionResult =
+export type AgentResolutionResult =
 	| {
 			readonly kind: "found";
 			readonly definition: AgentDefinition;
@@ -124,13 +124,18 @@ export class AgentRegistry {
 	resolveReference(
 		id: string,
 		domainContext?: string,
+		requesterDomain = domainContext,
 	):
 		| {
 				readonly definition: AgentDefinition;
 				readonly reference: ResolvedAgentReference;
 		  }
 		| undefined {
-		const result = this.resolveResult(id, domainContext);
+		const result = this.resolveReferenceResult(
+			id,
+			domainContext,
+			requesterDomain,
+		);
 		if (result.kind !== "found") return undefined;
 		const reference =
 			result.reference ?? this.defaultReferenceFor(result.definition, id);
@@ -139,6 +144,14 @@ export class AgentRegistry {
 			definition: result.definition,
 			reference,
 		};
+	}
+
+	resolveReferenceResult(
+		id: string,
+		domainContext?: string,
+		requesterDomain = domainContext,
+	): AgentResolutionResult {
+		return this.resolveResult(id, domainContext, requesterDomain);
 	}
 
 	/** Returns all definitions from a specific domain. */
@@ -185,6 +198,7 @@ export class AgentRegistry {
 	private resolveResult(
 		id: string,
 		domainContext?: string,
+		requesterDomain = domainContext,
 	): AgentResolutionResult {
 		const boundReference = this.boundReferenceFor(id, domainContext);
 		if (boundReference) {
@@ -193,7 +207,7 @@ export class AgentRegistry {
 			);
 			if (resolved) {
 				return this.withReference(
-					this.visibleResult(resolved, domainContext),
+					this.visibleResult(resolved, requesterDomain),
 					boundReference,
 				);
 			}
@@ -202,7 +216,7 @@ export class AgentRegistry {
 
 		// 1. Direct lookup (qualified or unqualified)
 		const direct = this.definitions.get(id);
-		if (direct) return this.visibleResult(direct, domainContext);
+		if (direct) return this.visibleResult(direct, requesterDomain);
 
 		// 2. If id contains /, it was qualified — no further fallback
 		if (id.includes("/")) {
@@ -210,7 +224,7 @@ export class AgentRegistry {
 			if (
 				domain &&
 				this.internalAgentsByDomain.get(domain)?.has(agent) &&
-				domainContext !== domain
+				requesterDomain !== domain
 			) {
 				return { kind: "internal", domain, agent };
 			}
@@ -220,7 +234,7 @@ export class AgentRegistry {
 		// 3. Try with domain context
 		if (domainContext) {
 			const qualified = this.definitions.get(`${domainContext}/${id}`);
-			if (qualified) return this.visibleResult(qualified, domainContext);
+			if (qualified) return this.visibleResult(qualified, requesterDomain);
 		}
 
 		// 4. Scan all domains for unqualified match
@@ -229,7 +243,7 @@ export class AgentRegistry {
 		for (const [key, def] of this.definitions) {
 			const { id: unqualified } = splitRole(key);
 			if (unqualified !== id) continue;
-			if (this.isVisible(def, domainContext)) {
+			if (this.isVisible(def, requesterDomain)) {
 				matches.push(def);
 			} else {
 				internalMatches.push(def);

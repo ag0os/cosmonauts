@@ -13,6 +13,7 @@
  */
 
 import type { AgentRegistry } from "../agents/index.ts";
+import { InternalAgentAccessError } from "../agents/resolver.ts";
 import type { ChainStage, ChainStep, ParallelGroupStep } from "./types.ts";
 
 // ============================================================================
@@ -61,19 +62,37 @@ function resolveStage(
 	name: string,
 	registry: AgentRegistry,
 	domainContext: string | undefined,
+	requesterDomain: string | undefined,
 ): ChainStage {
-	const resolution = registry.resolveReference(name, domainContext);
+	const result = registry.resolveReferenceResult(
+		name,
+		domainContext,
+		requesterDomain,
+	);
+	if (result.kind === "internal") {
+		throw new InternalAgentAccessError({
+			requestedId: name,
+			domain: result.domain,
+			agent: result.agent,
+			requesterDomain,
+		});
+	}
+	const reference =
+		result.kind === "found"
+			? (result.reference ??
+				registry.resolveReference(name, domainContext, requesterDomain)
+					?.reference)
+			: undefined;
 	const agentReference =
-		resolution &&
-		(resolution.reference.binding.source !== "default" ||
-			resolution.reference.requested.qualifiedId !==
-				resolution.reference.resolved.qualifiedId)
-			? resolution.reference
+		reference &&
+		(reference.binding.source !== "default" ||
+			reference.requested.qualifiedId !== reference.resolved.qualifiedId)
+			? reference
 			: undefined;
 	return {
 		name,
 		...(agentReference !== undefined && { agentReference }),
-		loop: resolution?.definition.loop ?? false,
+		loop: result.kind === "found" ? result.definition.loop : false,
 	};
 }
 
@@ -82,6 +101,7 @@ function parseSequentialToken(
 	raw: string,
 	registry: AgentRegistry,
 	domainContext: string | undefined,
+	requesterDomain: string | undefined,
 ): ChainStage {
 	const name = raw.trim().toLowerCase();
 
@@ -95,7 +115,7 @@ function parseSequentialToken(
 		);
 	}
 
-	return resolveStage(name, registry, domainContext);
+	return resolveStage(name, registry, domainContext, requesterDomain);
 }
 
 /** Parse a bracket-group token `[a, b, c]` into a ParallelGroupStep. */
@@ -103,6 +123,7 @@ function parseBracketGroup(
 	token: string,
 	registry: AgentRegistry,
 	domainContext: string | undefined,
+	requesterDomain: string | undefined,
 ): ParallelGroupStep {
 	const inner = token.slice(1, -1).trim();
 
@@ -137,7 +158,7 @@ function parseBracketGroup(
 			);
 		}
 
-		const stage = resolveStage(name, registry, domainContext);
+		const stage = resolveStage(name, registry, domainContext, requesterDomain);
 
 		if (stage.loop) {
 			throw new Error(
@@ -166,6 +187,7 @@ function parseFanOut(
 	match: RegExpMatchArray,
 	registry: AgentRegistry,
 	domainContext: string | undefined,
+	requesterDomain: string | undefined,
 ): ParallelGroupStep {
 	const [, rawRole = "", rawCount = "0"] = match;
 	const role = rawRole.toLowerCase();
@@ -177,7 +199,7 @@ function parseFanOut(
 		);
 	}
 
-	const stage = resolveStage(role, registry, domainContext);
+	const stage = resolveStage(role, registry, domainContext, requesterDomain);
 
 	if (stage.loop) {
 		throw new Error(
@@ -238,6 +260,7 @@ export function parseChain(
 	expression: string,
 	registry: AgentRegistry,
 	domainContext?: string,
+	requesterDomain = domainContext,
 ): ChainStep[] {
 	const trimmed = expression.trim();
 
@@ -256,17 +279,23 @@ export function parseChain(
 		}
 
 		if (token.startsWith("[")) {
-			steps.push(parseBracketGroup(token, registry, domainContext));
+			steps.push(
+				parseBracketGroup(token, registry, domainContext, requesterDomain),
+			);
 			continue;
 		}
 
 		const fanOutMatch = token.match(FAN_OUT_RE);
 		if (fanOutMatch) {
-			steps.push(parseFanOut(fanOutMatch, registry, domainContext));
+			steps.push(
+				parseFanOut(fanOutMatch, registry, domainContext, requesterDomain),
+			);
 			continue;
 		}
 
-		steps.push(parseSequentialToken(token, registry, domainContext));
+		steps.push(
+			parseSequentialToken(token, registry, domainContext, requesterDomain),
+		);
 	}
 
 	return steps;

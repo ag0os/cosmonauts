@@ -319,6 +319,26 @@ describe("parseChain", () => {
 
 			expect(stages).toEqual([{ name: "unknown-agent", loop: false }]);
 		});
+
+		test("uses requester domain separately from default context for internal visibility", () => {
+			const registry = new AgentRegistry([makeDef("secret", false, "target")], {
+				internalAgentsByDomain: new Map([["target", new Set(["secret"])]]),
+			});
+
+			expect(() => parseChain("secret", registry, "target", "main")).toThrow(
+				'Agent "secret" is internal to domain "target" and is not visible from domain "main".',
+			);
+		});
+
+		test("allows same-domain requester to use internal stages through default context", () => {
+			const registry = new AgentRegistry([makeDef("secret", true, "target")], {
+				internalAgentsByDomain: new Map([["target", new Set(["secret"])]]),
+			});
+
+			const stages = parseChain("secret", registry, "target", "target");
+
+			expect(stages).toEqual([{ name: "secret", loop: true }]);
+		});
 	});
 
 	describe("completionCheck", () => {

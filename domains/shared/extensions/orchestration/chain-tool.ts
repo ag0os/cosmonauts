@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
 import { parseChain } from "../../../../lib/orchestration/chain-parser.ts";
 import { runChain } from "../../../../lib/orchestration/chain-runner.ts";
 import { injectUserPrompt } from "../../../../lib/orchestration/chain-steps.ts";
@@ -112,10 +113,15 @@ export function registerChainTool(
 		}),
 		execute: async (_toolCallId, params, signal, onUpdate, ctx) => {
 			const runtime = await getRuntime(ctx.cwd);
+			const callerRole = extractAgentIdFromSystemPrompt(ctx.getSystemPrompt());
+			const callerDef = callerRole
+				? runtime.agentRegistry.get(callerRole, runtime.domainContext)
+				: undefined;
 			const steps = parseChain(
 				params.expression,
 				runtime.agentRegistry,
 				runtime.domainContext,
+				callerDef?.domain,
 			);
 			injectUserPrompt(steps, params.prompt);
 			const thinking = params.thinkingLevel

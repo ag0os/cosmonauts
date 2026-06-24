@@ -7,7 +7,8 @@ import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import "./orchestration-mocks.ts";
 
 import orchestrationExtension from "../../domains/shared/extensions/orchestration/index.ts";
-import type { AgentRegistry } from "../../lib/agents/index.ts";
+import type { AgentDefinition } from "../../lib/agents/index.ts";
+import { AgentRegistry } from "../../lib/agents/index.ts";
 import type { DomainRegistry } from "../../lib/domains/registry.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
@@ -47,10 +48,11 @@ describe("orchestration extension", () => {
 		domainContext?: string;
 		projectSkills?: readonly string[];
 		skillPaths?: readonly string[];
+		agentRegistry?: AgentRegistry;
 	}) {
 		const resolver = new DomainResolver(realDomainRegistry);
 		runtimeCreateMock.mockResolvedValue({
-			agentRegistry: realRegistry,
+			agentRegistry: overrides?.agentRegistry ?? realRegistry,
 			domainContext: overrides?.domainContext,
 			projectSkills: overrides?.projectSkills ?? [],
 			skillPaths: overrides?.skillPaths ?? [],
@@ -82,6 +84,27 @@ describe("orchestration extension", () => {
 			totalDurationMs: 1,
 			errors: [],
 		} as ChainResult);
+	}
+
+	function makeAgent(
+		id: string,
+		domain: string,
+		overrides: Partial<AgentDefinition> = {},
+	): AgentDefinition {
+		return {
+			id,
+			domain,
+			description: `${domain}/${id}`,
+			capabilities: [],
+			model: "test/model",
+			tools: "none",
+			extensions: [],
+			skills: [],
+			projectContext: false,
+			session: "ephemeral",
+			loop: false,
+			...overrides,
+		};
 	}
 
 	function mockChildSession(session: Record<string, unknown>) {
@@ -190,6 +213,7 @@ describe("orchestration extension", () => {
 				has: expect.any(Function),
 			}),
 			"coding",
+			undefined,
 		);
 	});
 
@@ -633,6 +657,98 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 		expect(mockSession.prompt).toHaveBeenCalledTimes(2);
 		expect(mockSession.dispose).toHaveBeenCalledTimes(1);
 		expectFollowUpContaining(pi, finalReport);
+	});
+
+	test("chain_run passes the caller domain as requester while preserving default resolution context", async () => {
+		const { pi } = createExtensionPi("/tmp/project", {
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:main/cosmo -->",
+		});
+		const registry = new AgentRegistry(
+			[makeAgent("cosmo", "main"), makeAgent("secret", "target")],
+			{
+				internalAgentsByDomain: new Map([["target", new Set(["secret"])]]),
+			},
+		);
+
+		mockRuntime({ domainContext: "target", agentRegistry: registry });
+		mockSuccessfulChain([{ name: "secret", loop: true }]);
+
+		await pi.callTool("chain_run", { expression: "secret" });
+
+		expect(parseChainMock).toHaveBeenCalledWith(
+			"secret",
+			registry,
+			"target",
+			"main",
+		);
+	});
+
+	test("chain_run surfaces internal-agent denial for a non-owner caller in target default context", async () => {
+		const { pi } = createExtensionPi("/tmp/project", {
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:main/cosmo -->",
+		});
+		const registry = new AgentRegistry(
+			[makeAgent("cosmo", "main"), makeAgent("secret", "target")],
+			{
+				internalAgentsByDomain: new Map([["target", new Set(["secret"])]]),
+			},
+		);
+		parseChainMock.mockImplementationOnce(
+			(_expression, _registry, _domainContext, requesterDomain) => {
+				throw new Error(
+					`Agent "secret" is internal to domain "target" and is not visible from domain "${requesterDomain}".`,
+				);
+			},
+		);
+
+		mockRuntime({ domainContext: "target", agentRegistry: registry });
+
+		await expect(
+			pi.callTool("chain_run", { expression: "secret" }),
+		).rejects.toThrow(
+			'Agent "secret" is internal to domain "target" and is not visible from domain "main".',
+		);
+		expect(runChainMock).not.toHaveBeenCalled();
+	});
+
+	test("spawn_agent denies an internal target for a non-owner caller in target default context", async () => {
+		const { pi } = createExtensionPi("/tmp/project", {
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:main/cosmo -->",
+		});
+		const registry = new AgentRegistry(
+			[
+				makeAgent("cosmo", "main", { subagents: ["target/secret"] }),
+				makeAgent("secret", "target"),
+			],
+			{
+				internalAgentsByDomain: new Map([["target", new Set(["secret"])]]),
+			},
+		);
+		const spawn = vi.fn();
+		const dispose = vi.fn();
+		createPiSpawnerMock.mockReturnValue({ spawn, dispose });
+
+		mockRuntime({ domainContext: "target", agentRegistry: registry });
+
+		const result = await pi.callTool("spawn_agent", {
+			role: "secret",
+			prompt: "run internal work",
+		});
+
+		expect(spawn).not.toHaveBeenCalled();
+		expect(result).toMatchObject({
+			content: [
+				{
+					type: "text",
+					text: 'spawn_agent denied: Agent "secret" is internal to domain "target" and is not visible from domain "main".',
+				},
+			],
+			details: {
+				status: "denied",
+				error:
+					'Agent "secret" is internal to domain "target" and is not visible from domain "main".',
+			},
+		});
 	});
 
 	test("spawn_agent denies unauthorized target role", async () => {
