@@ -10,7 +10,7 @@ import type {
 	ResourceDiagnostic,
 	Skill,
 } from "@earendil-works/pi-coding-agent";
-import { selectPublicSkillNames } from "../domains/public-surface.ts";
+import { canAccessSurfaceName } from "../domains/public-surface.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import type { LoadedDomain } from "../domains/types.ts";
 import { discoverSkills } from "../skills/discovery.ts";
@@ -35,11 +35,18 @@ interface ResolveEffectiveProjectSkillsOptions {
 	readonly resolver?: DomainResolver;
 }
 
-interface ResolveVisibleSkillNamesOptions {
+interface ResolveSkillVisibilityOptions {
 	/** Domain requesting visibility. Defaults to the coding domain for legacy agents. */
 	readonly requesterDomain?: string;
 	/** Domain resolver for loaded-domain visibility rules. */
 	readonly resolver?: DomainResolver;
+}
+
+interface SkillVisibilityFilter {
+	/** Optional allow-list retained for callers that need positive filtering. */
+	readonly visibleSkillNames?: readonly string[];
+	/** Skill names denied by provider-domain internal visibility rules. */
+	readonly hiddenSkillNames?: readonly string[];
 }
 
 function isWildcard(skills: readonly string[]): boolean {
@@ -96,17 +103,25 @@ export async function resolveEffectiveProjectSkills(
 	];
 }
 
-export function resolveVisibleSkillNames(
-	options: ResolveVisibleSkillNamesOptions,
+export function resolveHiddenSkillNames(
+	options: ResolveSkillVisibilityOptions,
 ): readonly string[] | undefined {
 	if (!options.resolver) return undefined;
 
 	const requesterDomain = options.requesterDomain ?? "coding";
 	return [
 		...new Set(
-			options.resolver.registry
-				.listAll()
-				.flatMap((domain) => selectPublicSkillNames(domain, requesterDomain)),
+			options.resolver.registry.listAll().flatMap((domain) =>
+				(domain.manifest.internal?.skills ?? []).filter(
+					(name) =>
+						!canAccessSurfaceName({
+							domain,
+							assetType: "skills",
+							name,
+							requesterDomain,
+						}),
+				),
+			),
 		),
 	];
 }
@@ -124,10 +139,19 @@ export function resolveVisibleSkillNames(
 export function buildSkillsOverride(
 	agentSkills: readonly string[],
 	projectSkills: readonly string[] | undefined,
-	visibleSkillNames?: readonly string[],
+	visibility?: SkillVisibilityFilter,
 ): SkillsOverrideFn | undefined {
 	const visibleSkills =
-		visibleSkillNames === undefined ? undefined : new Set(visibleSkillNames);
+		visibility?.visibleSkillNames === undefined
+			? undefined
+			: new Set(visibility.visibleSkillNames);
+	const hiddenSkills =
+		visibility?.hiddenSkillNames === undefined
+			? undefined
+			: new Set(visibility.hiddenSkillNames);
+	const isVisible = (skill: Skill): boolean =>
+		(visibleSkills === undefined || visibleSkills.has(skill.name)) &&
+		(hiddenSkills === undefined || !hiddenSkills.has(skill.name));
 
 	if (agentSkills.length === 0) {
 		return (base) => ({
@@ -138,25 +162,26 @@ export function buildSkillsOverride(
 
 	const agentAll = isWildcard(agentSkills);
 
-	if (agentAll && projectSkills === undefined && visibleSkills === undefined) {
+	if (
+		agentAll &&
+		projectSkills === undefined &&
+		visibleSkills === undefined &&
+		hiddenSkills === undefined
+	) {
 		return undefined;
 	}
 
 	if (agentAll && projectSkills !== undefined) {
 		const allowlist = new Set(projectSkills);
 		return (base) => ({
-			skills: base.skills.filter(
-				(s) =>
-					allowlist.has(s.name) &&
-					(visibleSkills === undefined || visibleSkills.has(s.name)),
-			),
+			skills: base.skills.filter((s) => allowlist.has(s.name) && isVisible(s)),
 			diagnostics: base.diagnostics,
 		});
 	}
 
-	if (agentAll && visibleSkills !== undefined) {
+	if (agentAll && (visibleSkills !== undefined || hiddenSkills !== undefined)) {
 		return (base) => ({
-			skills: base.skills.filter((s) => visibleSkills.has(s.name)),
+			skills: base.skills.filter((s) => isVisible(s)),
 			diagnostics: base.diagnostics,
 		});
 	}
@@ -167,11 +192,7 @@ export function buildSkillsOverride(
 			: new Set(agentSkills);
 
 	return (base) => ({
-		skills: base.skills.filter(
-			(s) =>
-				allowlist.has(s.name) &&
-				(visibleSkills === undefined || visibleSkills.has(s.name)),
-		),
+		skills: base.skills.filter((s) => allowlist.has(s.name) && isVisible(s)),
 		diagnostics: base.diagnostics,
 	});
 }
