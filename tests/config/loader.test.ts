@@ -5,7 +5,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { loadProjectConfig } from "../../lib/config/loader.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
@@ -210,5 +210,55 @@ describe("loadProjectConfig", () => {
 
 		const config = await loadProjectConfig(tmp.path);
 		expect(config.skillPaths).toBeUndefined();
+	});
+
+	test("parses activeDomains and domainBindings without changing optional field semantics", async () => {
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				activeDomains: ["coding", 42, "writing"],
+				domainBindings: { "ruby-coding": "ruby-experimental" },
+			}),
+		);
+
+		const config = await loadProjectConfig(tmp.path);
+		expect(config.activeDomains).toEqual(["coding", "writing"]);
+		expect(config.domainBindings).toEqual({
+			"ruby-coding": "ruby-experimental",
+		});
+		expect(config.domain).toBeUndefined();
+		expect(config.skills).toBeUndefined();
+		expect(config.skillPaths).toBeUndefined();
+		expect(config.chains).toBeUndefined();
+	});
+
+	test("warns on a malformed domainBindings entry instead of dropping it silently", async () => {
+		// @cosmo-behavior plan:domain-authoring#B-024
+		const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				domainBindings: {
+					"ruby-coding": "ruby-experimental",
+					badNumber: 42,
+					emptyTarget: "",
+				},
+			}),
+		);
+
+		const config = await loadProjectConfig(tmp.path);
+
+		expect(config.domainBindings).toEqual({
+			"ruby-coding": "ruby-experimental",
+		});
+		expect(warn).toHaveBeenCalledTimes(2);
+		expect(warn.mock.calls[0]?.[0]).toContain("badNumber");
+		expect(warn.mock.calls[0]?.[0]).toContain("42");
+		expect(warn.mock.calls[0]?.[0]).toContain("Skipping malformed");
+		expect(warn.mock.calls[1]?.[0]).toContain("emptyTarget");
+		expect(warn.mock.calls[1]?.[0]).toContain('""');
+		warn.mockRestore();
 	});
 });

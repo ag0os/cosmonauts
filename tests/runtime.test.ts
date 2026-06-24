@@ -398,6 +398,7 @@ describe("CosmonautsRuntime", () => {
 				domainBindings: { alpha: "beta" },
 			});
 
+			// @cosmo-behavior plan:domain-authoring#B-009
 			await expect(
 				CosmonautsRuntime.create({
 					builtinDomainsDir: domainsDir,

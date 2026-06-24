@@ -12,25 +12,18 @@ import { selectDomainChains } from "./chains/loader.ts";
 import type { NamedChain } from "./chains/types.ts";
 import type { ProjectConfig } from "./config/index.ts";
 import { loadProjectConfig } from "./config/index.ts";
+import {
+	DomainBindingResolver,
+	DomainBindingTargetError,
+	getLiveDomainBindingStore,
+} from "./domains/bindings.ts";
 import type { LoadedDomain } from "./domains/index.ts";
 import { DomainRegistry, loadDomainsFromSources } from "./domains/index.ts";
 import { DomainResolver } from "./domains/resolver.ts";
 import { DomainValidationError, validateDomains } from "./domains/validator.ts";
 import { scanDomainSources } from "./packages/scanner.ts";
 
-export class DomainBindingTargetError extends Error {
-	readonly role: string;
-	readonly targetDomain: string;
-
-	constructor(role: string, targetDomain: string) {
-		super(
-			`Domain binding target "${targetDomain}" for role "${role}" is not active or installed.`,
-		);
-		this.name = "DomainBindingTargetError";
-		this.role = role;
-		this.targetDomain = targetDomain;
-	}
-}
+export { DomainBindingTargetError };
 
 /** Options for creating a CosmonautsRuntime instance. */
 export interface CosmonautsRuntimeOptions {
@@ -67,6 +60,7 @@ export class CosmonautsRuntime {
 	 * Replaces the raw domainsDir — use this for all downstream domain lookups.
 	 */
 	readonly domainResolver: DomainResolver;
+	readonly bindingResolver: DomainBindingResolver;
 	readonly chains: readonly NamedChain[];
 	readonly projectSkills: readonly string[] | undefined;
 	/**
@@ -90,6 +84,7 @@ export class CosmonautsRuntime {
 		agentRegistry: AgentRegistry;
 		domainContext: string | undefined;
 		domainResolver: DomainResolver;
+		bindingResolver: DomainBindingResolver;
 		chains: readonly NamedChain[];
 		projectSkills: readonly string[] | undefined;
 		skillPaths: readonly string[];
@@ -101,6 +96,7 @@ export class CosmonautsRuntime {
 		this.agentRegistry = fields.agentRegistry;
 		this.domainContext = fields.domainContext;
 		this.domainResolver = fields.domainResolver;
+		this.bindingResolver = fields.bindingResolver;
 		this.chains = fields.chains;
 		this.projectSkills = fields.projectSkills;
 		this.skillPaths = fields.skillPaths;
@@ -140,8 +136,14 @@ export class CosmonautsRuntime {
 			activeDomainIds,
 		});
 
-		// 4. Validate active binding targets and domains
-		validateDomainBindingTargets(projectConfig.domainBindings, domains);
+		// 4. Build the domain registry and validate active binding targets/domains
+		const domainRegistry = new DomainRegistry(domains as LoadedDomain[]);
+		const bindingResolver = new DomainBindingResolver({
+			registry: domainRegistry,
+			projectBindings: projectConfig.domainBindings,
+			liveBindings: getLiveDomainBindingStore(options.projectRoot),
+		});
+		bindingResolver.validateProjectBindings();
 		const diagnostics = validateDomains(domains);
 
 		// Emit warnings to stderr
@@ -159,7 +161,6 @@ export class CosmonautsRuntime {
 		}
 
 		// 5. Build registries
-		const domainRegistry = new DomainRegistry(domains as LoadedDomain[]);
 		const agentRegistry = createRegistryFromDomains(domains);
 
 		// 6. Build domain resolver from registry
@@ -186,6 +187,7 @@ export class CosmonautsRuntime {
 			agentRegistry,
 			domainContext,
 			domainResolver,
+			bindingResolver,
 			chains,
 			projectSkills: projectConfig.skills,
 			skillPaths,
@@ -201,18 +203,4 @@ function activeDomainIdSet(
 ): ReadonlySet<string> | undefined {
 	if (activeDomains === undefined) return undefined;
 	return new Set(["shared", ...activeDomains]);
-}
-
-function validateDomainBindingTargets(
-	domainBindings: ProjectConfig["domainBindings"],
-	domains: readonly LoadedDomain[],
-): void {
-	if (!domainBindings) return;
-
-	const activeDomainIds = new Set(domains.map((domain) => domain.manifest.id));
-	for (const [role, targetDomain] of Object.entries(domainBindings)) {
-		if (!activeDomainIds.has(targetDomain)) {
-			throw new DomainBindingTargetError(role, targetDomain);
-		}
-	}
 }

@@ -89,11 +89,11 @@ export async function loadProjectConfig(
 	) {
 		const domainBindings: Record<string, string> = {};
 		for (const [role, target] of Object.entries(obj.domainBindings)) {
-			if (typeof target === "string" && target.length > 0) {
+			if (role.length > 0 && typeof target === "string" && target.length > 0) {
 				domainBindings[role] = target;
 			} else {
 				console.error(
-					`[warning] Skipping malformed domainBindings entry for "${role}": expected a non-empty string target domain.`,
+					`[warning] Skipping malformed domainBindings entry ${JSON.stringify(role)}: expected a non-empty role and non-empty string target domain, got ${formatConfigValue(target)}.`,
 				);
 			}
 		}
@@ -121,6 +121,11 @@ export async function loadProjectConfig(
 	}
 
 	return config;
+}
+
+function formatConfigValue(value: unknown): string {
+	if (value === undefined) return "undefined";
+	return JSON.stringify(value);
 }
 
 /**

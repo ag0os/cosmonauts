@@ -1,3 +1,16 @@
+export type {
+	DomainBindingErrorCode,
+	DomainBindingErrorDetail,
+	DomainBindingResolution,
+	LiveDomainBindingStore,
+	QualifiedAgentReference,
+	ResolvedAgentReference,
+} from "./bindings.ts";
+export {
+	DomainBindingResolver,
+	DomainBindingTargetError,
+	getLiveDomainBindingStore,
+} from "./bindings.ts";
 export { loadDomains, loadDomainsFromSources } from "./loader.ts";
 export type {
 	AssemblePromptsOptions,
