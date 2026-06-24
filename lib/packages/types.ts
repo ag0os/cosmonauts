@@ -101,7 +101,13 @@ export type ManifestValidationError =
 	| { field: "description"; reason: "missing" }
 	| {
 			field: "domains";
-			reason: "missing" | "empty" | "invalid-entry" | "invalid-path";
+			reason: "missing" | "empty" | "invalid-entry";
+	  }
+	| {
+			field: "domains";
+			reason: "invalid-path";
+			domain?: string;
+			path?: string;
 	  };
 
 /**

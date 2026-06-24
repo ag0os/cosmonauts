@@ -40,7 +40,7 @@ function expectManifestError(
 ): void {
 	expect(result.valid).toBe(false);
 	if (!result.valid) {
-		expect(result.errors).toContainEqual({ field, reason });
+		expect(result.errors).toContainEqual(expect.objectContaining({ field, reason }));
 	}
 }
 
@@ -310,6 +310,7 @@ describe("validateManifest — empty domains array", () => {
 		["parent traversal", "../outside"],
 		["escaping traversal", "domains/../../outside"],
 	])("returns invalid-path error for %s", (_label, path) => {
+		// @cosmo-behavior plan:domain-authoring#B-020
 		const raw = {
 			name: "my-pkg",
 			version: "1.0.0",
@@ -317,6 +318,19 @@ describe("validateManifest — empty domains array", () => {
 			domains: [{ name: "coding", path }],
 		};
 
-		expectManifestError(validateManifest(raw), "domains", "invalid-path");
+		const result = validateManifest(raw);
+
+		expectManifestError(result, "domains", "invalid-path");
+		expect(result).toEqual({
+			valid: false,
+			errors: [
+				{
+					field: "domains",
+					reason: "invalid-path",
+					domain: "coding",
+					path,
+				},
+			],
+		});
 	});
 });

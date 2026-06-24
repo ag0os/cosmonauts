@@ -21,7 +21,11 @@ import {
 	validateManifest,
 } from "./manifest.ts";
 import { listInstalledPackages, resolveStorePath } from "./store.ts";
-import type { PackageManifest, PackageScope } from "./types.ts";
+import type {
+	ManifestValidationError,
+	PackageManifest,
+	PackageScope,
+} from "./types.ts";
 
 // ============================================================================
 // Types
@@ -239,13 +243,23 @@ async function readAndValidateManifest(
 
 	const result = validateManifest(raw);
 	if (!result.valid) {
-		const summary = result.errors
-			.map((e) => `${e.field}: ${e.reason}`)
-			.join(", ");
+		const summary = result.errors.map(formatManifestError).join(", ");
 		throw new Error(`Invalid cosmonauts.json in "${dirPath}": ${summary}`);
 	}
 
 	return result.manifest;
+}
+
+function formatManifestError(error: ManifestValidationError): string {
+	if (error.field !== "domains" || error.reason !== "invalid-path") {
+		return `${error.field}: ${error.reason}`;
+	}
+
+	const offender =
+		error.domain && error.path !== undefined
+			? ` (domain "${error.domain}" declares path "${error.path}")`
+			: "";
+	return `${error.field}: ${error.reason}${offender}; domain paths must be "." or a relative path inside the package such as "domains/coding"; absolute paths and "../" traversal are not allowed`;
 }
 
 async function assertRootDomainPackageSemantics(

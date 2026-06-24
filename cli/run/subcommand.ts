@@ -267,8 +267,18 @@ function runtimeChainSource(
 	}
 	return {
 		domains: runtime.domains,
-		domainContext: runtime.domainContext,
+		domainContext: effectiveDomainContext(runtime),
 	};
+}
+
+function effectiveDomainContext(
+	runtime: CosmonautsRuntime,
+): string | undefined {
+	if (!runtime.domainContext) return undefined;
+	return (
+		runtime.bindingResolver.resolveKnownRole(runtime.domainContext)?.domainId ??
+		runtime.domainContext
+	);
 }
 
 async function listRunChains(

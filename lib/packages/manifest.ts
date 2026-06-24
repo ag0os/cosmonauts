@@ -141,8 +141,16 @@ function validateDomainsField(
 		return { field: "domains", reason: "invalid-entry" };
 	}
 
-	if (!value.every((domain) => normalizePackageDomainPath(domain.path))) {
-		return { field: "domains", reason: "invalid-path" };
+	const invalidPathDomain = value.find(
+		(domain) => !normalizePackageDomainPath(domain.path),
+	);
+	if (invalidPathDomain) {
+		return {
+			field: "domains",
+			reason: "invalid-path",
+			domain: invalidPathDomain.name,
+			path: invalidPathDomain.path,
+		};
 	}
 }
 

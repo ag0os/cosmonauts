@@ -83,22 +83,32 @@ export async function loadProjectConfig(
 		);
 	}
 
-	if (
-		obj.domainBindings &&
-		typeof obj.domainBindings === "object" &&
-		!Array.isArray(obj.domainBindings)
-	) {
-		const domainBindings: Record<string, string> = {};
-		for (const [role, target] of Object.entries(obj.domainBindings)) {
-			if (role.length > 0 && typeof target === "string" && target.length > 0) {
-				domainBindings[role] = target;
-			} else {
-				console.error(
-					`[warning] Skipping malformed domainBindings entry ${JSON.stringify(role)}: expected a non-empty role and non-empty string target domain, got ${formatConfigValue(target)}.`,
-				);
+	if ("domainBindings" in obj) {
+		if (
+			typeof obj.domainBindings === "object" &&
+			obj.domainBindings !== null &&
+			!Array.isArray(obj.domainBindings)
+		) {
+			const domainBindings: Record<string, string> = {};
+			for (const [role, target] of Object.entries(obj.domainBindings)) {
+				if (
+					role.length > 0 &&
+					typeof target === "string" &&
+					target.length > 0
+				) {
+					domainBindings[role] = target;
+				} else {
+					console.error(
+						`[warning] Skipping malformed domainBindings entry ${JSON.stringify(role)}: expected a non-empty role and non-empty string target domain, got ${formatConfigValue(target)}.`,
+					);
+				}
 			}
+			config.domainBindings = domainBindings;
+		} else {
+			console.error(
+				`[warning] Skipping malformed domainBindings: expected an object map like { "coding": "ruby-coding" }, got ${formatConfigValue(obj.domainBindings)}.`,
+			);
 		}
-		config.domainBindings = domainBindings;
 	}
 
 	if (Array.isArray(obj.skills)) {

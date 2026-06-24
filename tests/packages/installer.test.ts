@@ -257,6 +257,7 @@ describe("installPackage — invalid source", () => {
 		["absolute", "/tmp/outside"],
 		["traversal", "../outside"],
 	])("rejects %s domain paths before writing to the store", async (_label, path) => {
+		// @cosmo-behavior plan:domain-authoring#B-020
 		const pkgDir = join(tmpRoot, `bad-path-${_label}`);
 		await mkdir(pkgDir, { recursive: true });
 		await writeFile(
@@ -272,7 +273,11 @@ describe("installPackage — invalid source", () => {
 
 		await expect(
 			installPackage({ source: pkgDir, scope: "project", projectRoot }),
-		).rejects.toThrow(/domains: invalid-path/);
+		).rejects.toThrow(
+			new RegExp(
+				`domains: invalid-path \\(domain "coding" declares path "${escapeRegExp(path)}"\\); domain paths must be "\\." or a relative path inside the package such as "domains/coding"; absolute paths and "\.\./" traversal are not allowed`,
+			),
+		);
 		await expect(
 			stat(join(projectRoot, ".cosmonauts/packages", `bad-path-${_label}`)),
 		).rejects.toThrow();
@@ -381,6 +386,10 @@ function isIso8601(value: unknown): boolean {
 	if (typeof value !== "string") return false;
 	const date = new Date(value);
 	return !Number.isNaN(date.getTime()) && value === date.toISOString();
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 describe("install metadata — local copy", () => {

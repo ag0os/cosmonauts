@@ -188,6 +188,7 @@ Use the error text as an authoring checklist:
 - Capability or extension not found: add the file/directory to the agent's domain, a portable domain, or `shared`, or remove the name from the agent definition.
 - Same-precedence active providers share one manifest id: rename one domain, deactivate one provider, or install one at a different precedence so merge/replace rules can apply.
 - Binding target is missing or inactive: install the target domain or add it to `activeDomains`; the error names both the role and target domain.
+- Malformed `domainBindings` shape: use an object map such as `{ "coding": "ruby-coding" }`, not an array or string. A malformed top-level value warns and is skipped.
 - Malformed `domainBindings` entry: use a non-empty string key and non-empty string target. Malformed entries warn and are skipped so valid entries can still apply.
 - Live `/domain-bind` target is unavailable: install or activate the target and rerun the command. The previous effective binding is left unchanged.
 - Internal asset refused: call a public agent/skill/chain, run from the owning domain, or remove the asset name from the provider's `internal` deny-list.

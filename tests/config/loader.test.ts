@@ -233,6 +233,30 @@ describe("loadProjectConfig", () => {
 		expect(config.chains).toBeUndefined();
 	});
 
+	test("warns on malformed domainBindings shape instead of dropping it silently", async () => {
+		const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				domainBindings: ["ruby-coding", "ruby-experimental"],
+			}),
+		);
+
+		const config = await loadProjectConfig(tmp.path);
+
+		expect(config.domainBindings).toBeUndefined();
+		expect(warn).toHaveBeenCalledOnce();
+		expect(warn.mock.calls[0]?.[0]).toContain(
+			"Skipping malformed domainBindings",
+		);
+		expect(warn.mock.calls[0]?.[0]).toContain('{ "coding": "ruby-coding" }');
+		expect(warn.mock.calls[0]?.[0]).toContain(
+			'["ruby-coding","ruby-experimental"]',
+		);
+		warn.mockRestore();
+	});
+
 	test("warns on a malformed domainBindings entry instead of dropping it silently", async () => {
 		// @cosmo-behavior plan:domain-authoring#B-024
 		const warn = vi.spyOn(console, "error").mockImplementation(() => {});

@@ -322,6 +322,63 @@ describe("cosmonauts run", () => {
 		expect(output.stderr()).toBe("");
 	});
 
+	test("resolves named chains from a bound default domain", async () => {
+		const runtime = runtimeFixture(
+			[],
+			[
+				{
+					manifest: { id: "coding", description: "Coding" },
+					chains: [
+						{
+							name: "coding-chain",
+							description: "Coding chain",
+							chain: "coordinator",
+						},
+					],
+				},
+				{
+					manifest: { id: "ruby-coding", description: "Ruby coding" },
+					chains: [
+						{
+							name: "ruby-chain",
+							description: "Ruby chain",
+							chain: "ruby-planner",
+						},
+					],
+				},
+			],
+			{
+				domainContext: "coding",
+				bindingResolver: {
+					resolveKnownRole: vi.fn((role: string) =>
+						role === "coding" ? { role, domainId: "ruby-coding" } : undefined,
+					),
+				},
+			},
+		);
+
+		await parseRun(["chain", "ruby-chain", "check ruby"], { runtime });
+
+		expect(chainMocks.executeChainExpression).toHaveBeenCalledWith({
+			runtime,
+			cwd: temp.path,
+			chainExpr: "ruby-planner",
+			options: {
+				piFlags: {},
+				prompt: "check ruby",
+			},
+		});
+		expect(JSON.parse(output.stdout())).toMatchObject({
+			chain: {
+				source: "named",
+				input: "ruby-chain",
+				name: "ruby-chain",
+				expression: "ruby-planner",
+			},
+			result: { success: true },
+		});
+	});
+
 	// @cosmo-behavior plan:orchestration-surface-consolidation#B-011
 	test("reports internal named chain access instead of falling back to DSL", async () => {
 		const runtime = runtimeFixture(
@@ -462,12 +519,17 @@ async function setupDriveFixture(count: number): Promise<{
 	return { tasks, envelopePath };
 }
 
-function runtimeFixture(chains: unknown[], domains: unknown[] = []) {
+function runtimeFixture(
+	chains: unknown[],
+	domains: unknown[] = [],
+	options: { domainContext?: string; bindingResolver?: unknown } = {},
+) {
 	return {
 		chains,
 		domains,
 		domainsDir: "/tmp/domains",
-		domainContext: undefined,
+		domainContext: options.domainContext,
+		bindingResolver: options.bindingResolver,
 		agentRegistry: {},
 		projectSkills: [],
 		skillPaths: [],
