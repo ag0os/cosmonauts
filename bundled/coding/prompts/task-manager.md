@@ -64,6 +64,9 @@ A task can have multiple labels (e.g., `["backend", "database"]` for a migration
 - A task can only depend on tasks that **already exist**. No forward references.
 - Dependencies must form a **DAG** (directed acyclic graph). No circular dependencies.
 - Ask: "Can a worker start this task without the other task being done?" If yes, no dependency needed.
+- Encode only **true dependencies**. Task B depends on task A only when B genuinely needs A's output, file state, or runtime contract before work can begin.
+- Leave independent tasks dependency-free so the orchestrator can run them in parallel. Do not chain tasks linearly by default just because they appear in a sequence.
+- Heuristic: shared file, shared contract, or shared runtime state means a likely real dependency; otherwise treat the tasks as independent unless the plan proves otherwise.
 - Common dependency patterns:
   - Data model tasks before service/logic tasks
   - Service tasks before API endpoint tasks
