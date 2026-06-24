@@ -1,4 +1,5 @@
 import type { AgentRegistry } from "../agents/resolver.ts";
+import type { ResolvedAgentReference } from "../domains/bindings.ts";
 import type {
 	BackendSpec,
 	RunGraph,
@@ -51,12 +52,14 @@ export interface ShouldRunChainInlineOptions {
 
 export interface DurableChainStageOptions {
 	name: string;
+	agentReference?: ResolvedAgentReference;
 	loop: boolean;
 	prompt?: string;
 }
 
 export interface DurableChainStageSpawnOptions {
 	role: string;
+	agentReference?: ResolvedAgentReference;
 	domainContext?: string;
 	cwd: string;
 	model: string;
@@ -255,8 +258,13 @@ function durableStageSpawnOptions(
 	stage: ChainStage,
 	options: CompileStageOptions,
 ): DurableChainStageSpawnOptions {
+	const agentReference =
+		stage.agentReference ??
+		options.registry.resolveReference(stage.name, options.domainContext)
+			?.reference;
 	return {
 		role: stage.name,
+		...(agentReference !== undefined && { agentReference }),
 		...(options.domainContext !== undefined && {
 			domainContext: options.domainContext,
 		}),
@@ -295,6 +303,9 @@ function durableStageSpawnOptions(
 function durableStageOptions(stage: ChainStage): DurableChainStageOptions {
 	return {
 		name: stage.name,
+		...(stage.agentReference !== undefined && {
+			agentReference: stage.agentReference,
+		}),
 		loop: stage.loop,
 		...(stage.prompt !== undefined && { prompt: stage.prompt }),
 	};

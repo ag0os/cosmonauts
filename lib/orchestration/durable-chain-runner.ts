@@ -406,6 +406,10 @@ function readSpawnOptions(options: unknown): DurableChainStageSpawnOptions {
 	}
 	return {
 		role: spawn.role,
+		...withDefined(
+			"agentReference",
+			agentReferenceOption(spawn.agentReference),
+		),
 		cwd: spawn.cwd,
 		model: spawn.model,
 		prompt: spawn.prompt,
@@ -433,6 +437,10 @@ function readStageOptions(options: unknown): DurableChainStageOptions {
 	}
 	return {
 		name: stage.name,
+		...withDefined(
+			"agentReference",
+			agentReferenceOption(stage.agentReference),
+		),
 		loop: stage.loop,
 		...withDefined("prompt", stringOption(stage.prompt)),
 	};
@@ -458,9 +466,46 @@ function readSyntax(value: unknown): ChainCompilerStepMetadata["syntax"] {
 function chainStage(stage: DurableChainStageOptions): ChainStage {
 	return {
 		name: stage.name,
+		...withDefined("agentReference", stage.agentReference),
 		loop: stage.loop,
 		...withDefined("prompt", stage.prompt),
 	};
+}
+
+function agentReferenceOption(
+	value: unknown,
+): DurableChainStageOptions["agentReference"] | undefined {
+	if (!isRecord(value)) return undefined;
+	const requested = qualifiedAgentReferenceOption(value.requested);
+	const resolved = qualifiedAgentReferenceOption(value.resolved);
+	const binding = domainBindingResolutionOption(value.binding);
+	if (!requested || !resolved || !binding) return undefined;
+	return { requested, resolved, binding };
+}
+
+function qualifiedAgentReferenceOption(value: unknown) {
+	if (!isRecord(value)) return undefined;
+	const role = stringOption(value.role);
+	const agentId = stringOption(value.agentId);
+	const qualifiedId = stringOption(value.qualifiedId);
+	if (!role || !agentId || !qualifiedId) return undefined;
+	return { role, agentId, qualifiedId };
+}
+
+function domainBindingResolutionOption(value: unknown) {
+	if (!isRecord(value)) return undefined;
+	const role = stringOption(value.role);
+	const domainId = stringOption(value.domainId);
+	if (!role || !domainId || !isDomainBindingSource(value.source)) {
+		return undefined;
+	}
+	return { role, domainId, source: value.source };
+}
+
+function isDomainBindingSource(
+	value: unknown,
+): value is "default" | "project" | "live" {
+	return value === "default" || value === "project" || value === "live";
 }
 
 function inferStepIndex(stepId: string): number {

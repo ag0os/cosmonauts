@@ -1,3 +1,4 @@
+import type { DomainBindingResolver } from "../domains/bindings.ts";
 import type { LoadedDomain } from "../domains/types.ts";
 import type { AgentDefinition } from "./types.ts";
 
@@ -7,6 +8,7 @@ interface DefaultLeadRuntime {
 	readonly domainRegistry: {
 		get(id: string): LoadedDomain | undefined;
 	};
+	readonly bindingResolver?: DomainBindingResolver;
 	readonly agentRegistry: {
 		resolve(id: string, domainContext?: string): AgentDefinition;
 	};
@@ -22,17 +24,19 @@ export function resolveDefaultLead(
 	options: ResolveDefaultLeadOptions,
 ): AgentDefinition {
 	const domainContext = options.domain ?? runtime.domainContext;
+	const resolvedDomainContext = resolveDomainContext(runtime, domainContext);
 
 	if (options.agent) {
 		return runtime.agentRegistry.resolve(options.agent, domainContext);
 	}
 
 	if (domainContext) {
-		const domainLead = runtime.domainRegistry.get(domainContext)?.manifest.lead;
+		const leadDomain = resolvedDomainContext ?? domainContext;
+		const domainLead = runtime.domainRegistry.get(leadDomain)?.manifest.lead;
 		if (domainLead) {
 			return runtime.agentRegistry.resolve(domainLead, domainContext);
 		}
-		throw new Error(`Domain "${domainContext}" has no lead agent`);
+		throw new Error(`Domain "${leadDomain}" has no lead agent`);
 	}
 
 	const mainLead = runtime.domainRegistry.get("main")?.manifest.lead;
@@ -52,4 +56,15 @@ export function resolveDefaultLead(
 	}
 
 	throw new Error("No domain with a lead agent installed");
+}
+
+function resolveDomainContext(
+	runtime: DefaultLeadRuntime,
+	domainContext: string | undefined,
+): string | undefined {
+	if (!domainContext) return undefined;
+	return (
+		runtime.bindingResolver?.resolveKnownRole(domainContext)?.domainId ??
+		domainContext
+	);
 }

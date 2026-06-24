@@ -172,7 +172,9 @@ async function prepareSpawnSession(
 	resolver: DomainResolver | undefined,
 	bus: MessageBus,
 ): Promise<PreparedSpawnSession> {
-	const def = registry.get(config.role, config.domainContext);
+	const executionRole =
+		config.agentReference?.resolved.qualifiedId ?? config.role;
+	const def = registry.get(executionRole, config.domainContext);
 	if (!def) {
 		throw new Error(
 			`Unknown agent role "${config.role}". Available agents: ${registry.listIds().join(", ")}`,

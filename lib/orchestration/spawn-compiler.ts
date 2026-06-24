@@ -1,3 +1,4 @@
+import type { ResolvedAgentReference } from "../domains/bindings.ts";
 import type {
 	BackendSpec,
 	RunGraph,
@@ -18,6 +19,7 @@ export interface CompileSpawnToGraphOptions {
 	stepId?: string;
 	title?: string;
 	role: string;
+	agentReference?: ResolvedAgentReference;
 	domainContext?: string;
 	cwd: string;
 	model?: string;
@@ -34,6 +36,7 @@ export interface CompileSpawnToGraphOptions {
 
 export interface DurableSpawnOptions {
 	role: string;
+	agentReference?: ResolvedAgentReference;
 	domainContext?: string;
 	cwd: string;
 	model?: string;
@@ -90,6 +93,9 @@ function durableSpawnOptions(
 ): DurableSpawnOptions {
 	return {
 		role: options.role,
+		...(options.agentReference !== undefined && {
+			agentReference: options.agentReference,
+		}),
 		...(options.domainContext !== undefined && {
 			domainContext: options.domainContext,
 		}),

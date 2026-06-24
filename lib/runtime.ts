@@ -144,7 +144,7 @@ export class CosmonautsRuntime {
 			liveBindings: getLiveDomainBindingStore(options.projectRoot),
 		});
 		bindingResolver.validateProjectBindings();
-		const diagnostics = validateDomains(domains);
+		const diagnostics = validateDomains(domains, { bindingResolver });
 
 		// Emit warnings to stderr
 		const warnings = diagnostics.filter((d) => d.severity === "warning");
@@ -170,9 +170,13 @@ export class CosmonautsRuntime {
 
 		// 7. Compute effective domain context
 		const domainContext = options.domainOverride ?? projectConfig.domain;
+		const resolvedDomainContext = domainContext
+			? (bindingResolver.resolveKnownRole(domainContext)?.domainId ??
+				domainContext)
+			: undefined;
 
 		// 8. Compute effective chains
-		const chains = selectDomainChains(domains, domainContext);
+		const chains = selectDomainChains(domains, resolvedDomainContext);
 
 		// 9. Compose skill paths from all domain sources + user config
 		const domainSkillDirs = domainResolver.allSkillDirs();

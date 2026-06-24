@@ -62,7 +62,19 @@ function resolveStage(
 	registry: AgentRegistry,
 	domainContext: string | undefined,
 ): ChainStage {
-	return { name, loop: registry.get(name, domainContext)?.loop ?? false };
+	const resolution = registry.resolveReference(name, domainContext);
+	const agentReference =
+		resolution &&
+		(resolution.reference.binding.source !== "default" ||
+			resolution.reference.requested.qualifiedId !==
+				resolution.reference.resolved.qualifiedId)
+			? resolution.reference
+			: undefined;
+	return {
+		name,
+		...(agentReference !== undefined && { agentReference }),
+		loop: resolution?.definition.loop ?? false,
+	};
 }
 
 /** Validate and parse a single sequential token into a ChainStage. */

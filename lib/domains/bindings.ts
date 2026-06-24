@@ -108,6 +108,18 @@ export class DomainBindingResolver {
 		});
 	}
 
+	resolveKnownRole(role: string): DomainBindingResolution | undefined {
+		if (
+			this.liveBindings?.get(role) === undefined &&
+			this.projectBindings[role] === undefined &&
+			!this.registry.has(role)
+		) {
+			return undefined;
+		}
+
+		return this.resolveRole(role);
+	}
+
 	resolveAgentReference(qualifiedId: string): ResolvedAgentReference {
 		const requested = parseQualifiedAgentReference(qualifiedId);
 		const binding = this.resolveRole(requested.role);

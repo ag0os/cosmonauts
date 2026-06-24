@@ -6,6 +6,7 @@
  * extensions, subagents, leads, and named-chain agents.
  */
 
+import type { DomainBindingResolver } from "./bindings.ts";
 import { canAccessSurfaceName } from "./public-surface.ts";
 import type { LoadedDomain } from "./types.ts";
 
@@ -24,6 +25,9 @@ type AgentVisibility =
 interface AgentIndex {
 	readonly ids: ReadonlySet<string>;
 	readonly domains: readonly LoadedDomain[];
+}
+export interface DomainValidationOptions {
+	readonly bindingResolver?: DomainBindingResolver;
 }
 
 /** A single validation issue found during domain validation. */
@@ -61,6 +65,7 @@ export class DomainValidationError extends Error {
  */
 export function validateDomains(
 	domains: readonly LoadedDomain[],
+	options: DomainValidationOptions = {},
 ): DomainValidationDiagnostic[] {
 	const shared = findSharedDomain(domains);
 	const portableDomains = findPortableDomains(domains);
@@ -70,8 +75,14 @@ export function validateDomains(
 		...validatePortableCapabilityOverlap(portableDomains),
 		...domains.flatMap((domain) => [
 			...validateDomainLead(domain),
-			...validateNamedChainAgents(domain, agentIndex),
-			...validateDomainAgents(domain, shared, portableDomains, agentIndex),
+			...validateNamedChainAgents(domain, agentIndex, options),
+			...validateDomainAgents(
+				domain,
+				shared,
+				portableDomains,
+				agentIndex,
+				options,
+			),
 		]),
 	];
 }
@@ -149,6 +160,7 @@ function validateDomainLead(
 function validateNamedChainAgents(
 	domain: LoadedDomain,
 	agentIndex: AgentIndex,
+	options: DomainValidationOptions,
 ): DomainValidationDiagnostic[] {
 	const diagnostics: DomainValidationDiagnostic[] = [];
 
@@ -158,6 +170,7 @@ function validateNamedChainAgents(
 				stage,
 				domain.manifest.id,
 				agentIndex.domains,
+				options.bindingResolver,
 			);
 			if (visibility.kind === "visible") {
 				continue;
@@ -217,6 +230,7 @@ function validateDomainAgents(
 	shared: LoadedDomain | undefined,
 	portableDomains: readonly LoadedDomain[],
 	agentIndex: AgentIndex,
+	options: DomainValidationOptions,
 ): DomainValidationDiagnostic[] {
 	return [...domain.agents].flatMap(([agentId, agent]) => [
 		...validateAgentPrompts(agentId, domain),
@@ -228,7 +242,7 @@ function validateDomainAgents(
 			portableDomains,
 		),
 		...validateAgentExtensions(agentId, agent, domain, shared, portableDomains),
-		...validateAgentSubagents(agentId, agent, domain, agentIndex),
+		...validateAgentSubagents(agentId, agent, domain, agentIndex, options),
 	]);
 }
 
@@ -313,6 +327,7 @@ function validateAgentSubagents(
 	agent: LoadedAgent,
 	domain: LoadedDomain,
 	agentIndex: AgentIndex,
+	options: DomainValidationOptions,
 ): DomainValidationDiagnostic[] {
 	const diagnostics: DomainValidationDiagnostic[] = [];
 
@@ -321,6 +336,7 @@ function validateAgentSubagents(
 			subagent,
 			domain.manifest.id,
 			agentIndex.domains,
+			options.bindingResolver,
 		);
 		if (visibility.kind === "visible") {
 			continue;
@@ -349,23 +365,28 @@ function resolveAgentVisibility(
 	reference: string,
 	requesterDomain: string,
 	domains: readonly LoadedDomain[],
+	bindingResolver?: DomainBindingResolver,
 ): AgentVisibility {
+	const boundVisibility = resolveBoundAgentVisibility(
+		reference,
+		requesterDomain,
+		domains,
+		bindingResolver,
+	);
+	if (boundVisibility) {
+		return boundVisibility;
+	}
+
 	const slashIndex = reference.indexOf("/");
 	if (slashIndex >= 0) {
 		const domainId = reference.slice(0, slashIndex);
 		const agentId = reference.slice(slashIndex + 1);
-		const domain = domains.find(
-			(candidate) => candidate.manifest.id === domainId,
-		);
-		if (!domain?.agents.has(agentId)) return { kind: "not-found" };
-		return canAccessSurfaceName({
-			domain,
-			assetType: "agents",
-			name: agentId,
+		return resolveQualifiedAgentVisibility(
+			domainId,
+			agentId,
 			requesterDomain,
-		})
-			? { kind: "visible" }
-			: { kind: "internal", domain: domainId, agent: agentId };
+			domains,
+		);
 	}
 
 	let visible = false;
@@ -388,4 +409,51 @@ function resolveAgentVisibility(
 
 	if (visible) return { kind: "visible" };
 	return internal ? { kind: "internal", ...internal } : { kind: "not-found" };
+}
+
+function resolveBoundAgentVisibility(
+	reference: string,
+	requesterDomain: string,
+	domains: readonly LoadedDomain[],
+	bindingResolver: DomainBindingResolver | undefined,
+): AgentVisibility | undefined {
+	if (!bindingResolver) return undefined;
+	const qualifiedReference = reference.includes("/")
+		? reference
+		: `${requesterDomain}/${reference}`;
+	const resolved = bindingResolver.resolveAgentReference(qualifiedReference);
+	const visibility = resolveQualifiedAgentVisibility(
+		resolved.resolved.role,
+		resolved.resolved.agentId,
+		requesterDomain,
+		domains,
+	);
+	if (
+		visibility.kind !== "not-found" ||
+		resolved.binding.source !== "default" ||
+		reference.includes("/")
+	) {
+		return visibility;
+	}
+	return undefined;
+}
+
+function resolveQualifiedAgentVisibility(
+	domainId: string,
+	agentId: string,
+	requesterDomain: string,
+	domains: readonly LoadedDomain[],
+): AgentVisibility {
+	const domain = domains.find(
+		(candidate) => candidate.manifest.id === domainId,
+	);
+	if (!domain?.agents.has(agentId)) return { kind: "not-found" };
+	return canAccessSurfaceName({
+		domain,
+		assetType: "agents",
+		name: agentId,
+		requesterDomain,
+	})
+		? { kind: "visible" }
+		: { kind: "internal", domain: domainId, agent: agentId };
 }

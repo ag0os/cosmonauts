@@ -4,6 +4,7 @@
 
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { AgentRegistry } from "../agents/resolver.ts";
+import type { ResolvedAgentReference } from "../domains/bindings.ts";
 
 // ============================================================================
 // Agent Roles
@@ -28,6 +29,8 @@ export type AgentRole =
 export interface ChainStage {
 	/** Agent role name (matches AgentRole or custom skill name) */
 	name: string;
+	/** Binding-aware requested/resolved reference for execution, when different from the visible stage name. */
+	agentReference?: ResolvedAgentReference;
 	/** Whether this stage loops until its completion check passes */
 	loop: boolean;
 	/** Optional completion check — loop exits when it returns true */
@@ -341,6 +344,8 @@ export interface SpawnHandle {
 export interface SpawnConfig {
 	/** Agent role to spawn */
 	role: string;
+	/** Binding-aware requested/resolved reference. Execution uses `resolved`; user-facing records keep `role`. */
+	agentReference?: ResolvedAgentReference;
 	/** Default domain context for resolving unqualified role names. */
 	domainContext?: string;
 	/** Working directory */

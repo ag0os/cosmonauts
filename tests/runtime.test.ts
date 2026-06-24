@@ -2,7 +2,10 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { isSubagentAllowed } from "../domains/shared/extensions/orchestration/authorization.ts";
+import { resolveDefaultLead } from "../lib/agents/resolve-default-lead.ts";
 import { DomainValidationError } from "../lib/domains/validator.ts";
+import { parseChain } from "../lib/orchestration/chain-parser.ts";
+import { compileChainToGraph } from "../lib/orchestration/durable-chain-compiler.ts";
 import { CosmonautsRuntime, DomainBindingTargetError } from "../lib/runtime.ts";
 import { useTempDir } from "./helpers/fs.ts";
 
@@ -122,10 +125,24 @@ async function setupNamedDomain(
 	domainsDir: string,
 	id: string,
 	agents: Array<{ id: string; overrides?: Record<string, unknown> }>,
+	opts: {
+		lead?: string;
+		chains?: Array<{ name: string; description: string; chain: string }>;
+	} = {},
 ): Promise<void> {
 	const domainDir = join(domainsDir, id);
 	await mkdir(domainDir, { recursive: true });
-	await writeDomainManifest(domainDir, id);
+	await writeDomainManifest(
+		domainDir,
+		id,
+		opts.lead ? `, lead: "${opts.lead}"` : "",
+	);
+	if (opts.chains) {
+		await writeFile(
+			join(domainDir, "chains.ts"),
+			`export default ${JSON.stringify(opts.chains)};`,
+		);
+	}
 
 	const agentsDir = join(domainDir, "agents");
 	const promptsDir = join(domainDir, "prompts");
@@ -662,6 +679,162 @@ describe("CosmonautsRuntime", () => {
 				"ruby-experimental/worker",
 			);
 			expect(unbound?.reference.binding.source).toBe("default");
+		});
+
+		it("treats default domain config as a bindable role across leads, chains, orchestration, and per-role settings", async () => {
+			// @cosmo-behavior plan:domain-authoring#B-023
+			const domainsDir = join(tmp.path, "domains");
+			await mkdir(domainsDir, { recursive: true });
+			await setupSharedDomain(domainsDir, { capabilities: ["core"] });
+			await setupNamedDomain(
+				domainsDir,
+				"coding",
+				[
+					{
+						id: "placeholder",
+						overrides: {
+							capabilities: ["core"],
+						},
+					},
+				],
+				{ lead: "placeholder" },
+			);
+			await setupNamedDomain(
+				domainsDir,
+				"ruby-coding",
+				[
+					{
+						id: "cody",
+						overrides: {
+							capabilities: ["core"],
+							model: "test/ruby-cody",
+						},
+					},
+					{
+						id: "worker",
+						overrides: {
+							capabilities: ["core"],
+							model: "test/ruby-worker",
+							thinkingLevel: "high",
+						},
+					},
+				],
+				{
+					lead: "cody",
+					chains: [
+						{
+							name: "ruby-build",
+							description: "Ruby build",
+							chain: "worker",
+						},
+					],
+				},
+			);
+			await setupNamedDomain(domainsDir, "consumer", [
+				{
+					id: "leader",
+					overrides: {
+						capabilities: ["core"],
+						subagents: ["coding/worker"],
+					},
+				},
+			]);
+			await setupNamedDomain(domainsDir, "other", [], {
+				chains: [
+					{ name: "other-build", description: "Other", chain: "worker" },
+				],
+			});
+			await writeProjectConfig(tmp.path, {
+				activeDomains: ["coding", "ruby-coding", "consumer", "other"],
+				domain: "coding",
+				domainBindings: { coding: "ruby-coding" },
+			});
+
+			const runtime = await CosmonautsRuntime.create({
+				builtinDomainsDir: domainsDir,
+				projectRoot: tmp.path,
+			});
+
+			expect(runtime.domainContext).toBe("coding");
+			expect(runtime.chains.map((chain) => chain.name)).toEqual(["ruby-build"]);
+			expect(resolveDefaultLead(runtime, {}).domain).toBe("ruby-coding");
+			expect(resolveDefaultLead(runtime, {}).id).toBe("cody");
+
+			const steps = parseChain(
+				"worker",
+				runtime.agentRegistry,
+				runtime.domainContext,
+			);
+			expect(steps).toHaveLength(1);
+			const stage = steps[0];
+			if (!stage || "kind" in stage) {
+				expect.unreachable("Expected one chain stage");
+			}
+			expect(stage.name).toBe("worker");
+			expect(stage.agentReference).toEqual({
+				requested: {
+					role: "coding",
+					agentId: "worker",
+					qualifiedId: "coding/worker",
+				},
+				resolved: {
+					role: "ruby-coding",
+					agentId: "worker",
+					qualifiedId: "ruby-coding/worker",
+				},
+				binding: {
+					role: "coding",
+					domainId: "ruby-coding",
+					source: "project",
+				},
+			});
+
+			const compiled = compileChainToGraph({
+				runId: "chain-binding-test",
+				steps,
+				projectRoot: tmp.path,
+				registry: runtime.agentRegistry,
+				domainContext: runtime.domainContext,
+			});
+			const backendOptions = compiled.graph.steps[0]?.backend.options as
+				| {
+						stage: {
+							name: string;
+							agentReference?: typeof stage.agentReference;
+						};
+						spawn: {
+							role: string;
+							agentReference?: typeof stage.agentReference;
+							domainContext?: string;
+							model: string;
+							thinkingLevel?: string;
+						};
+				  }
+				| undefined;
+
+			expect(backendOptions?.stage.name).toBe("worker");
+			expect(backendOptions?.stage.agentReference).toEqual(
+				stage.agentReference,
+			);
+			expect(backendOptions?.spawn.role).toBe("worker");
+			expect(backendOptions?.spawn.agentReference).toEqual(
+				stage.agentReference,
+			);
+			expect(backendOptions?.spawn.domainContext).toBe("coding");
+			expect(backendOptions?.spawn.model).toBe("test/ruby-worker");
+			expect(backendOptions?.spawn.thinkingLevel).toBe("high");
+
+			const consumer = runtime.agentRegistry.resolve("consumer/leader");
+			const target = runtime.agentRegistry.resolveReference(
+				"worker",
+				runtime.domainContext,
+			);
+			if (!target) {
+				expect.unreachable("Expected worker to resolve through binding");
+			}
+			expect(
+				isSubagentAllowed(consumer, target.definition, target.reference),
+			).toBe(true);
 		});
 	});
 

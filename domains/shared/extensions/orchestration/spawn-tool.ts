@@ -602,6 +602,7 @@ export function registerSpawnTool(
 
 			const spawnConfig = {
 				role: params.role,
+				agentReference: targetResolution.reference,
 				domainContext: runtime.domainContext,
 				cwd: ctx.cwd,
 				prompt: params.prompt,

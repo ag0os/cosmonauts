@@ -581,8 +581,13 @@ function prepareStageExecution(
 	config: ChainConfig,
 ): PreparedStageExecutionContext | StageResult {
 	const stageStart = Date.now();
+	const stageReference =
+		stage.agentReference ??
+		config.registry.resolveReference(stage.name, config.domainContext)
+			?.reference;
+	const executionRole = stageReference?.resolved.qualifiedId ?? stage.name;
 
-	if (!config.registry.has(stage.name, config.domainContext)) {
+	if (!config.registry.has(executionRole, config.domainContext)) {
 		let message = `Unknown agent role "${stage.name}"`;
 		const legacyCosmoStageName = "main/cosmo".slice("main/".length);
 		if (stage.name === legacyCosmoStageName) {
@@ -599,8 +604,13 @@ function prepareStageExecution(
 		};
 	}
 
+	const resolvedStage =
+		stageReference && stage.agentReference === undefined
+			? { ...stage, agentReference: stageReference }
+			: stage;
+
 	return {
-		stage,
+		stage: resolvedStage,
 		config,
 		stageStart,
 		model: getModelForRole(
@@ -638,6 +648,9 @@ function createStageSpawnConfig(
 
 	return {
 		role: stage.name,
+		...(stage.agentReference !== undefined && {
+			agentReference: stage.agentReference,
+		}),
 		domainContext: config.domainContext,
 		cwd: config.projectRoot,
 		model: context.model,
