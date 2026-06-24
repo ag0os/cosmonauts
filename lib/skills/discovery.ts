@@ -36,7 +36,7 @@ export interface ExtraSkillSource {
 	readonly domain: string;
 }
 
-export interface DiscoverSkillsOptions {
+interface DiscoverSkillsOptions {
 	/** Domain requesting visibility. Undefined means outside every domain. */
 	readonly domainContext?: string;
 }
@@ -104,6 +104,7 @@ export async function discoverSkills(
  * The `isRoot` flag distinguishes the top-level skills dir (where flat
  * .md files are valid) from nested dirs (where only SKILL.md matters).
  */
+// fallow-ignore-next-line complexity
 async function scanForSkills(
 	dirPath: string,
 	domain: string,

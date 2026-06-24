@@ -7,7 +7,11 @@
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { loadManifest, validateManifest } from "./manifest.ts";
+import {
+	loadManifest,
+	normalizePackageDomainPath,
+	validateManifest,
+} from "./manifest.ts";
 import { listInstalledPackages } from "./store.ts";
 import type { DomainSource, InstalledPackage } from "./types.ts";
 
@@ -168,11 +172,13 @@ function addPackageSources(
 		const parentDirs = new Set<string>();
 		let hasRootDomain = false;
 		for (const domain of pkg.manifest.domains) {
-			if (domain.path === ".") {
+			const normalizedPath = normalizePackageDomainPath(domain.path);
+			if (!normalizedPath) continue;
+			if (normalizedPath === ".") {
 				hasRootDomain = true;
 				continue;
 			}
-			const domainAbsPath = join(pkg.installPath, domain.path);
+			const domainAbsPath = join(pkg.installPath, normalizedPath);
 			parentDirs.add(dirname(domainAbsPath));
 		}
 

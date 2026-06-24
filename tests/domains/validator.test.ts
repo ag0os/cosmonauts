@@ -74,6 +74,67 @@ describe("validateDomains", () => {
 		expect(diagnostics).toEqual([]);
 	});
 
+	describe("Internal deny-list entries", () => {
+		it("passes when internal agents skills and chains exist", () => {
+			const coding = makeDomain({
+				manifest: {
+					id: "coding",
+					description: "Coding",
+					internal: {
+						agents: ["worker"],
+						skills: ["private-rubric"],
+						chains: ["review"],
+					},
+				},
+				agents: new Map([["worker", makeAgent({ id: "worker" })]]),
+				skills: new Set(["private-rubric"]),
+				chains: [{ name: "review", description: "Review", chain: "worker" }],
+			});
+
+			const diagnostics = validateDomains([makeShared(), coding]);
+
+			expect(diagnostics.filter((d) => d.message.includes("Internal"))).toEqual(
+				[],
+			);
+		});
+
+		it("reports absent internal agents skills and chains", () => {
+			const coding = makeDomain({
+				manifest: {
+					id: "coding",
+					description: "Coding",
+					internal: {
+						agents: ["typo-agent"],
+						skills: ["typo-skill"],
+						chains: ["typo-chain"],
+					},
+				},
+			});
+
+			const diagnostics = validateDomains([makeShared(), coding]);
+
+			expect(diagnostics).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						domain: "coding",
+						message: expect.stringContaining('"typo-agent"'),
+						severity: "error",
+					}),
+					expect.objectContaining({
+						domain: "coding",
+						message: expect.stringContaining('"typo-skill"'),
+						severity: "error",
+					}),
+					expect.objectContaining({
+						domain: "coding",
+						message: expect.stringContaining('"typo-chain"'),
+						severity: "error",
+					}),
+				]),
+			);
+		});
+	});
+
 	describe("Rule 1: Persona prompt exists", () => {
 		it("reports error when non-shared agent lacks persona prompt", () => {
 			// @cosmo-behavior plan:domain-authoring#B-014

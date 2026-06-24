@@ -1,5 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import {
 	FileRunStore,
 	type RunGraphSchedulerResult,
@@ -22,6 +21,7 @@ import type { RunRunLoopCtx } from "./run-run-loop.ts";
 import { writeInlineRunState, writeRunCompletion } from "./run-state.ts";
 import type { DriverEvent, DriverResult, DriverRunSpec } from "./types.ts";
 import { resolveStateCommitPolicy } from "./types.ts";
+import { writeDriverWorkdirInputs } from "./workdir-inputs.ts";
 
 export interface RunDriveOnGraphCtx extends RunRunLoopCtx {
 	mode?: "inline" | "detached";
@@ -178,18 +178,7 @@ async function prepareCompatibilityWorkdir(
 	spec: DriverRunSpec,
 	mode: "inline" | "detached",
 ): Promise<void> {
-	await mkdir(spec.workdir, { recursive: true });
-	await mkdir(dirname(spec.eventLogPath), { recursive: true });
-	await writeFile(
-		join(spec.workdir, "spec.json"),
-		`${JSON.stringify(spec, null, 2)}\n`,
-		"utf-8",
-	);
-	await writeFile(
-		join(spec.workdir, "task-queue.txt"),
-		`${compatibilityQueueTaskIds(spec).join("\n")}\n`,
-		"utf-8",
-	);
+	await writeDriverWorkdirInputs(spec, compatibilityQueueTaskIds(spec));
 	if (mode === "inline") {
 		await writeInlineRunState(spec.workdir);
 	}

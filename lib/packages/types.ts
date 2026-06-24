@@ -99,7 +99,10 @@ export type ManifestValidationError =
 	| { field: "name"; reason: "missing" | "invalid-format" }
 	| { field: "version"; reason: "missing" }
 	| { field: "description"; reason: "missing" }
-	| { field: "domains"; reason: "missing" | "empty" | "invalid-entry" };
+	| {
+			field: "domains";
+			reason: "missing" | "empty" | "invalid-entry" | "invalid-path";
+	  };
 
 /**
  * Result of validating a raw manifest object.

@@ -304,4 +304,19 @@ describe("validateManifest — empty domains array", () => {
 
 		expectManifestError(validateManifest(raw), "domains", "invalid-entry");
 	});
+
+	test.each([
+		["absolute path", "/tmp/outside"],
+		["parent traversal", "../outside"],
+		["escaping traversal", "domains/../../outside"],
+	])("returns invalid-path error for %s", (_label, path) => {
+		const raw = {
+			name: "my-pkg",
+			version: "1.0.0",
+			description: "A package",
+			domains: [{ name: "coding", path }],
+		};
+
+		expectManifestError(validateManifest(raw), "domains", "invalid-path");
+	});
 });

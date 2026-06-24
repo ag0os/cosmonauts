@@ -15,7 +15,7 @@ import type { LoadedDomain } from "../domains/types.ts";
 import { splitRole } from "./qualified-role.ts";
 import type { AgentDefinition } from "./types.ts";
 
-export interface AgentRegistryOptions {
+interface AgentRegistryOptions {
 	readonly internalAgentsByDomain?: ReadonlyMap<string, ReadonlySet<string>>;
 	readonly bindingResolver?: DomainBindingResolver;
 }
@@ -181,6 +181,7 @@ export class AgentRegistry {
 		return result.kind === "found" ? result.definition : undefined;
 	}
 
+	// fallow-ignore-next-line complexity
 	private resolveResult(
 		id: string,
 		domainContext?: string,

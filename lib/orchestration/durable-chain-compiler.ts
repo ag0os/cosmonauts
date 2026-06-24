@@ -17,7 +17,7 @@ import type {
 	ThinkingConfig,
 } from "./types.ts";
 
-export interface CompileChainToGraphOptions {
+interface CompileChainToGraphOptions {
 	runId: string;
 	steps: readonly ChainStep[];
 	projectRoot: string;
@@ -40,13 +40,13 @@ export interface ChainCompilerStepMetadata {
 	syntax?: ParallelGroupStep["syntax"];
 }
 
-export interface CompiledChainGraph {
+interface CompiledChainGraph {
 	graph: RunGraph;
 	steps: ChainCompilerStepMetadata[];
 	frontier: string[];
 }
 
-export interface ShouldRunChainInlineOptions {
+interface ShouldRunChainInlineOptions {
 	completionLabel?: string;
 }
 

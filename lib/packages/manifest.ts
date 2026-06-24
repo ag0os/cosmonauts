@@ -4,7 +4,7 @@
  */
 
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join, normalize, sep } from "node:path";
 import type {
 	ManifestValidationError,
 	ManifestValidationResult,
@@ -140,6 +140,26 @@ function validateDomainsField(
 	if (!value.every(isPackageDomain)) {
 		return { field: "domains", reason: "invalid-entry" };
 	}
+
+	if (!value.every((domain) => normalizePackageDomainPath(domain.path))) {
+		return { field: "domains", reason: "invalid-path" };
+	}
+}
+
+export function normalizePackageDomainPath(path: string): string | undefined {
+	if (path === ".") return path;
+	if (path === "" || isAbsolute(path)) return undefined;
+
+	const normalized = normalize(path);
+	if (
+		normalized === "." ||
+		normalized === ".." ||
+		normalized.startsWith(`..${sep}`)
+	) {
+		return undefined;
+	}
+
+	return normalized;
 }
 
 function isPackageDomain(value: unknown): value is PackageDomain {

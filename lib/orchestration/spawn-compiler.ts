@@ -13,7 +13,7 @@ import type {
 const DEFAULT_SPAWN_SCOPE = "spawn";
 const DEFAULT_SPAWN_STEP_ID = "spawn-agent";
 
-export interface CompileSpawnToGraphOptions {
+interface CompileSpawnToGraphOptions {
 	runId: string;
 	scope?: string;
 	stepId?: string;
@@ -34,7 +34,7 @@ export interface CompileSpawnToGraphOptions {
 	planSlug?: string;
 }
 
-export interface DurableSpawnOptions {
+interface DurableSpawnOptions {
 	role: string;
 	agentReference?: ResolvedAgentReference;
 	domainContext?: string;
@@ -51,7 +51,7 @@ export interface DurableSpawnOptions {
 	planSlug?: string;
 }
 
-export interface CompiledSpawnGraph {
+interface CompiledSpawnGraph {
 	scope: string;
 	graph: RunGraph;
 	step: RunGraphStep;

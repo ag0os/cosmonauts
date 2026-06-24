@@ -253,6 +253,31 @@ describe("installPackage — invalid source", () => {
 		).rejects.toThrow(/Invalid cosmonauts\.json/);
 	});
 
+	test.each([
+		["absolute", "/tmp/outside"],
+		["traversal", "../outside"],
+	])("rejects %s domain paths before writing to the store", async (_label, path) => {
+		const pkgDir = join(tmpRoot, `bad-path-${_label}`);
+		await mkdir(pkgDir, { recursive: true });
+		await writeFile(
+			join(pkgDir, "cosmonauts.json"),
+			JSON.stringify({
+				name: `bad-path-${_label}`,
+				version: "1.0.0",
+				description: "Bad path",
+				domains: [{ name: "coding", path }],
+			}),
+			"utf-8",
+		);
+
+		await expect(
+			installPackage({ source: pkgDir, scope: "project", projectRoot }),
+		).rejects.toThrow(/domains: invalid-path/);
+		await expect(
+			stat(join(projectRoot, ".cosmonauts/packages", `bad-path-${_label}`)),
+		).rejects.toThrow();
+	});
+
 	test("rejects a root-domain package missing root domain.ts before writing to the store", async () => {
 		// @cosmo-behavior plan:domain-authoring#B-021
 		const pkgDir = join(tmpRoot, "root-missing-domain");
@@ -270,7 +295,9 @@ describe("installPackage — invalid source", () => {
 
 		await expect(
 			installPackage({ source: pkgDir, scope: "project", projectRoot }),
-		).rejects.toThrow(/domain\.ts/);
+		).rejects.toThrow(
+			/add domain\.ts at the package root or change cosmonauts\.json to point at the domain directory/i,
+		);
 		await expect(
 			stat(join(projectRoot, ".cosmonauts/packages/root-missing-domain")),
 		).rejects.toThrow();
@@ -304,7 +331,9 @@ describe("installPackage — invalid source", () => {
 
 		await expect(
 			installPackage({ source: pkgDir, scope: "project", projectRoot }),
-		).rejects.toThrow(/path "\."/);
+		).rejects.toThrow(
+			/move each domain into its own subdirectory or keep path "\." as the only domain entry/i,
+		);
 		await expect(stat(join(projectRoot, ".cosmonauts/packages"))).rejects.toThrow();
 	});
 });

@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -46,6 +46,7 @@ import {
 	type StateCommitPolicy,
 	validateDriverPlanSlug,
 } from "../../lib/driver/types.ts";
+import { writeDriverWorkdirInputs } from "../../lib/driver/workdir-inputs.ts";
 import { FileRunStore } from "../../lib/durable-runtime/index.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
@@ -905,18 +906,7 @@ async function clearRunCompletion(workdir: string): Promise<void> {
 }
 
 async function prepareInlineWorkdir(spec: DriverRunSpec): Promise<void> {
-	await mkdir(spec.workdir, { recursive: true });
-	await mkdir(dirname(spec.eventLogPath), { recursive: true });
-	await writeFile(
-		join(spec.workdir, "spec.json"),
-		`${JSON.stringify(spec, null, 2)}\n`,
-		"utf-8",
-	);
-	await writeFile(
-		join(spec.workdir, "task-queue.txt"),
-		`${(spec.remainingTaskIds ?? spec.taskIds).join("\n")}\n`,
-		"utf-8",
-	);
+	await writeDriverWorkdirInputs(spec, spec.remainingTaskIds ?? spec.taskIds);
 	await clearRunCompletion(spec.workdir);
 	await writeInlineRunState(spec.workdir);
 }

@@ -20,7 +20,7 @@ import type {
 	MergeStrategy,
 } from "./types.ts";
 
-export interface LoadDomainsFromSourcesOptions {
+interface LoadDomainsFromSourcesOptions {
 	/**
 	 * Domain ids allowed to participate in active runtime loading. When omitted,
 	 * every loaded provider participates. Include "shared" in this set when shared
@@ -189,6 +189,7 @@ const defaultMergeStrategy: MergeStrategy = () => "merge";
  * The returned list preserves the "shared first, then alphabetical" ordering
  * convention established by loadDomains().
  */
+// fallow-ignore-next-line complexity
 export async function loadDomainsFromSources(
 	sources: DomainSource[],
 	mergeStrategy?: MergeStrategy,

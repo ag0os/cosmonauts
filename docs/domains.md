@@ -75,7 +75,7 @@ alpha/
 `domain.ts` declares the domain id and optional public-surface settings:
 
 ```ts
-import type { DomainManifest } from "../../lib/domains/types.ts";
+import type { DomainManifest } from "cosmonauts/lib/domains/types.ts";
 
 export const manifest: DomainManifest = {
   id: "alpha",
@@ -102,7 +102,7 @@ Every non-shared agent needs two files:
 The loader fills `definition.domain` from the manifest id. The prompt assembler uses the agent id to load the matching persona, so `agents/coach.ts` pairs with `prompts/coach.md`.
 
 ```ts
-import type { AgentDefinition } from "../../lib/agents/types.ts";
+import type { AgentDefinition } from "cosmonauts/lib/agents/types.ts";
 
 const definition: AgentDefinition = {
   id: "coach",

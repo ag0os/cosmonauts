@@ -323,6 +323,35 @@ describe("cosmonauts run", () => {
 	});
 
 	// @cosmo-behavior plan:orchestration-surface-consolidation#B-011
+	test("reports internal named chain access instead of falling back to DSL", async () => {
+		const runtime = runtimeFixture(
+			[],
+			[
+				{
+					manifest: {
+						id: "coding",
+						description: "Coding",
+						internal: { chains: ["private-review"] },
+					},
+					chains: [
+						{
+							name: "private-review",
+							description: "Private review",
+							chain: "maintainer",
+						},
+					],
+				},
+			],
+		);
+
+		await expect(
+			parseRun(["chain", "private-review"], { runtime }),
+		).rejects.toThrow(
+			'Named chain "private-review" is internal to domain "coding"',
+		);
+		expect(chainMocks.executeChainExpression).not.toHaveBeenCalled();
+	});
+
 	test("chain list is reserved while --name list executes a project chain", async () => {
 		await mkdir(join(temp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
@@ -433,11 +462,12 @@ async function setupDriveFixture(count: number): Promise<{
 	return { tasks, envelopePath };
 }
 
-function runtimeFixture(chains: unknown[]) {
+function runtimeFixture(chains: unknown[], domains: unknown[] = []) {
 	return {
 		chains,
+		domains,
 		domainsDir: "/tmp/domains",
-		domainContext: "coding",
+		domainContext: undefined,
 		agentRegistry: {},
 		projectSkills: [],
 		skillPaths: [],

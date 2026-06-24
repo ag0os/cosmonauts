@@ -15,7 +15,11 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { loadManifest, validateManifest } from "./manifest.ts";
+import {
+	loadManifest,
+	normalizePackageDomainPath,
+	validateManifest,
+} from "./manifest.ts";
 import { listInstalledPackages, resolveStorePath } from "./store.ts";
 import type { PackageManifest, PackageScope } from "./types.ts";
 
@@ -253,7 +257,7 @@ async function assertRootDomainPackageSemantics(
 
 	if (manifest.domains.length > 1) {
 		throw new Error(
-			`Domain "${rootDomain.name}" declares path "."; root-domain packages cannot declare additional domains`,
+			`Domain "${rootDomain.name}" declares path "."; root-domain packages cannot declare additional domains. Move each domain into its own subdirectory or keep path "." as the only domain entry.`,
 		);
 	}
 
@@ -266,7 +270,7 @@ async function assertRootDomainPackageSemantics(
 	}
 
 	throw new Error(
-		`Domain "${rootDomain.name}" declares path "." but root domain.ts is missing`,
+		`Domain "${rootDomain.name}" declares path "." but root domain.ts is missing. Add domain.ts at the package root or change cosmonauts.json to point at the domain directory.`,
 	);
 }
 
@@ -275,7 +279,13 @@ async function assertDomainDirectoriesExist(
 	manifest: PackageManifest,
 ): Promise<void> {
 	for (const domain of manifest.domains) {
-		const domainPath = join(sourceDir, domain.path);
+		const normalizedPath = normalizePackageDomainPath(domain.path);
+		if (!normalizedPath) {
+			throw new Error(
+				`Domain "${domain.name}" declares path "${domain.path}" which must be a relative path inside the package`,
+			);
+		}
+		const domainPath = join(sourceDir, normalizedPath);
 		let s: Awaited<ReturnType<typeof stat>>;
 		try {
 			s = await stat(domainPath);

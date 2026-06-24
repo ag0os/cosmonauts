@@ -26,7 +26,7 @@ interface AgentIndex {
 	readonly ids: ReadonlySet<string>;
 	readonly domains: readonly LoadedDomain[];
 }
-export interface DomainValidationOptions {
+interface DomainValidationOptions {
 	readonly bindingResolver?: DomainBindingResolver;
 }
 
@@ -74,6 +74,7 @@ export function validateDomains(
 	return [
 		...validatePortableCapabilityOverlap(portableDomains),
 		...domains.flatMap((domain) => [
+			...validateInternalDenyList(domain),
 			...validateDomainLead(domain),
 			...validateNamedChainAgents(domain, agentIndex, options),
 			...validateDomainAgents(
@@ -85,6 +86,41 @@ export function validateDomains(
 			),
 		]),
 	];
+}
+
+function validateInternalDenyList(
+	domain: LoadedDomain,
+): DomainValidationDiagnostic[] {
+	const internal = domain.manifest.internal;
+	if (!internal) return [];
+
+	return [
+		...validateInternalNames(domain, "agents", internal.agents, domain.agents),
+		...validateInternalNames(domain, "skills", internal.skills, domain.skills),
+		...validateInternalNames(
+			domain,
+			"chains",
+			internal.chains,
+			new Set(domain.chains.map((chain) => chain.name)),
+		),
+	];
+}
+
+function validateInternalNames(
+	domain: LoadedDomain,
+	assetType: "agents" | "skills" | "chains",
+	names: readonly string[] | undefined,
+	knownNames: ReadonlyMap<string, unknown> | ReadonlySet<string>,
+): DomainValidationDiagnostic[] {
+	if (!names) return [];
+
+	return names
+		.filter((name) => !knownNames.has(name))
+		.map((name) => ({
+			domain: domain.manifest.id,
+			message: `Internal ${assetType} entry "${name}" does not match a loaded ${assetType.slice(0, -1)}. Add the ${assetType.slice(0, -1)} to domain "${domain.manifest.id}" or remove it from manifest.internal.${assetType}.`,
+			severity: "error" as const,
+		}));
 }
 
 function findSharedDomain(

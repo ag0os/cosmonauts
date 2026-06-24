@@ -4,7 +4,7 @@ import type { LoadedDomain } from "./types.ts";
 
 export type PublicSurfaceAssetType = "agents" | "skills" | "chains";
 
-export interface PublicSurfaceAccess {
+interface PublicSurfaceAccess {
 	readonly domain: LoadedDomain;
 	readonly assetType: PublicSurfaceAssetType;
 	readonly name: string;

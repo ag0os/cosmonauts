@@ -26,6 +26,7 @@ import type {
 	ParallelGroupStep,
 	SpawnConfig,
 	SpawnEvent,
+	SpawnResult,
 	SpawnStats,
 	StageResult,
 	StageStats,
@@ -675,15 +676,7 @@ async function runOneShotStage(
 		createStageSpawnConfig(context, onEvent),
 	);
 
-	if (spawnResult.success) {
-		emitSpawned(spawnResult.sessionId);
-		recordStageSummary(context, spawnResult.messages);
-		emit(context.config, {
-			type: "agent_completed",
-			role: context.stage.name,
-			sessionId: spawnResult.sessionId,
-		});
-	}
+	recordSuccessfulSpawn(context, spawnResult, emitSpawned);
 
 	return {
 		stage: context.stage,
@@ -845,17 +838,25 @@ async function spawnLoopIteration(
 		context.hasStats = true;
 	}
 
-	if (spawnResult.success) {
-		emitSpawned(spawnResult.sessionId);
-		recordStageSummary(context, spawnResult.messages);
-		emit(context.config, {
-			type: "agent_completed",
-			role: context.stage.name,
-			sessionId: spawnResult.sessionId,
-		});
-	}
+	recordSuccessfulSpawn(context, spawnResult, emitSpawned);
 
 	return spawnResult;
+}
+
+function recordSuccessfulSpawn(
+	context: StageExecutionContext,
+	spawnResult: SpawnResult,
+	emitSpawned: (sessionId: string) => void,
+): void {
+	if (!spawnResult.success) return;
+
+	emitSpawned(spawnResult.sessionId);
+	recordStageSummary(context, spawnResult.messages);
+	emit(context.config, {
+		type: "agent_completed",
+		role: context.stage.name,
+		sessionId: spawnResult.sessionId,
+	});
 }
 
 function createSpawnLifecycle(context: StageExecutionContext): {

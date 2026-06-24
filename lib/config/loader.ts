@@ -28,6 +28,7 @@ const CONFIG_FILE = "config.json";
  * Returns an empty config if the file does not exist.
  * Throws if the file exists but contains invalid JSON.
  */
+// fallow-ignore-next-line complexity
 export async function loadProjectConfig(
 	projectRoot: string,
 ): Promise<ProjectConfig> {

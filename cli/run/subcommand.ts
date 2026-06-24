@@ -1,6 +1,10 @@
 import { join } from "node:path";
 import { Command } from "commander";
-import { listNamedChains, resolveNamedChain } from "../../lib/chains/loader.ts";
+import {
+	listNamedChains,
+	type NamedChainDomainSource,
+	resolveNamedChain,
+} from "../../lib/chains/loader.ts";
 import type { NamedChain } from "../../lib/chains/types.ts";
 import {
 	FileRunStore,
@@ -128,7 +132,7 @@ export function createRunProgram({
 	return program;
 }
 
-export async function resolveRunChainExpression({
+async function resolveRunChainExpression({
 	input,
 	projectRoot,
 	domainChains,
@@ -136,7 +140,7 @@ export async function resolveRunChainExpression({
 }: {
 	input: string;
 	projectRoot: string;
-	domainChains?: readonly NamedChain[];
+	domainChains?: readonly NamedChain[] | NamedChainDomainSource;
 	namedOnly?: boolean;
 }): Promise<ResolvedRunChain> {
 	try {
@@ -233,7 +237,7 @@ async function runChainCommand({
 	const resolved = await resolveRunChainExpression({
 		input,
 		projectRoot: context.cwd,
-		domainChains: context.runtime.chains,
+		domainChains: runtimeChainSource(context.runtime),
 		namedOnly: options.name !== undefined,
 	});
 	const promptParts =
@@ -253,6 +257,18 @@ async function runChainCommand({
 		process.exitCode = 1;
 	}
 	printJson({ chain: resolved, result });
+}
+
+function runtimeChainSource(
+	runtime: CosmonautsRuntime,
+): readonly NamedChain[] | NamedChainDomainSource {
+	if (runtime.domains.length === 0) {
+		return runtime.chains;
+	}
+	return {
+		domains: runtime.domains,
+		domainContext: runtime.domainContext,
+	};
 }
 
 async function listRunChains(

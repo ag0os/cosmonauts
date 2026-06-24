@@ -283,6 +283,34 @@ describe("local packages only", () => {
 			"/project/.cosmonauts/packages",
 		);
 	});
+
+	test.each([
+		["absolute", "/tmp/outside"],
+		["traversal", "../sibling/domain"],
+	])("does not add local package sources for %s domain paths", async (_label, path) => {
+		mockListInstalledPackages.mockImplementation(async (scope) => {
+			if (scope === "project") {
+				return [
+					makePackageWithDomains(
+						"bad-package",
+						"/project/.cosmonauts/packages/bad-package",
+						"project",
+						[{ name: "bad", path }],
+					),
+				];
+			}
+			return [];
+		});
+
+		const sources = await scanDomainSources({
+			builtinDomainsDir: BUILTIN_DIR,
+			projectRoot: PROJECT_ROOT,
+		});
+
+		expect(sources).toEqual([
+			{ domainsDir: BUILTIN_DIR, origin: "builtin", precedence: 0 },
+		]);
+	});
 });
 
 // ============================================================================

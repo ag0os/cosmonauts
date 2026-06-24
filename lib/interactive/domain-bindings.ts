@@ -8,7 +8,7 @@ const DOMAIN_BINDING_KEY = Symbol.for("cosmonauts:domain-bindings");
 
 const globals = globalThis as Record<symbol, unknown>;
 
-export interface SharedDomainBindingsSlot {
+interface SharedDomainBindingsSlot {
 	readonly domainRegistry: DomainRegistry;
 	readonly bindingResolver: DomainBindingResolver;
 	readonly liveBindings: LiveDomainBindingStore;

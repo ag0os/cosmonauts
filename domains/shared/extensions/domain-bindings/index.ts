@@ -62,6 +62,7 @@ function isDomainBindEntry(data: unknown): data is DomainBindEntry {
 }
 
 export default function domainBindingsExtension(pi: ExtensionAPI): void {
+	// fallow-ignore-next-line complexity
 	pi.on("session_start", async (_event, ctx) => {
 		const shared = getSharedDomainBindings();
 		if (!shared) return;

@@ -44,7 +44,7 @@ export interface LiveDomainBindingStore {
 	snapshot(): Readonly<Record<string, string>>;
 }
 
-export interface DomainBindingResolverOptions {
+interface DomainBindingResolverOptions {
 	readonly registry: DomainRegistry;
 	readonly projectBindings?: Readonly<Record<string, string>>;
 	readonly liveBindings?: LiveDomainBindingStore;
@@ -131,6 +131,7 @@ export class DomainBindingResolver {
 		return { requested, resolved, binding };
 	}
 
+	// fallow-ignore-next-line unused-class-members
 	bindLiveRole(role: string, targetDomain: string): DomainBindingResolution {
 		if (!this.liveBindings) {
 			throw new Error("Live domain bindings are not available.");
