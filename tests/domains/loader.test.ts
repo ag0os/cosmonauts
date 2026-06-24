@@ -48,11 +48,12 @@ export default definition;
 describe("loadDomains", () => {
 	it("loads conventional domains without registration and assembles persona by agent id", async () => {
 		// @cosmo-behavior plan:domain-authoring#B-001
+		const frameworkPromptsDir = join(tmp.path, "framework");
+		await mkdir(frameworkPromptsDir, { recursive: true });
 		const sharedDir = join(tmp.path, "shared");
-		const sharedPromptsDir = join(sharedDir, "prompts");
-		await mkdir(sharedPromptsDir, { recursive: true });
+		await mkdir(sharedDir, { recursive: true });
 		await writeDomainManifest(sharedDir, "shared");
-		await writeFile(join(sharedPromptsDir, "base.md"), "Base prompt.");
+		await writeFile(join(frameworkPromptsDir, "base.md"), "Base prompt.");
 
 		const domainDir = join(tmp.path, "planning");
 		const agentsDir = join(domainDir, "agents");
@@ -72,6 +73,7 @@ describe("loadDomains", () => {
 			agentId: "planner",
 			domain: "planning",
 			capabilities: [],
+			frameworkPromptsDir,
 			resolver: DomainResolver.fromSingleDir(tmp.path, domains),
 		});
 

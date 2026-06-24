@@ -4,19 +4,19 @@
  * Assembles a full system prompt from domain directories using a strict
  * four-layer order:
  *
- *   Layer 0: domains/shared/prompts/base.md              (always)
+ *   Layer 0: lib/prompts/framework/base.md               (always)
  *   Layer 1: domains/{domain}/capabilities/{cap}.md       (per capability)
  *            → three-tier resolution via resolver (domain → portable → shared)
  *              OR two-tier directory fallback when no resolver is provided
  *   Layer 2: domains/{domain}/prompts/{agent-id}.md       (auto-loaded persona)
- *   Layer 3: domains/shared/prompts/runtime/sub-agent.md  (if sub-agent mode)
+ *   Layer 3: lib/prompts/framework/runtime/sub-agent.md   (if sub-agent mode)
  */
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import matter from "gray-matter";
 import type { RuntimeTemplateContext } from "../prompts/loader.ts";
-import { renderRuntimeTemplate } from "../prompts/loader.ts";
+import { PROMPTS_DIR, renderRuntimeTemplate } from "../prompts/loader.ts";
 import type { DomainResolver } from "./resolver.ts";
 
 // ============================================================================
@@ -39,6 +39,8 @@ export interface AssemblePromptsOptions {
 	capabilities: readonly string[];
 	/** Absolute path to the domains/ directory. Required when no resolver is provided. */
 	domainsDir?: string;
+	/** Absolute path to framework prompt templates. Defaults to lib/prompts/framework. */
+	frameworkPromptsDir?: string;
 	/** Optional runtime context for sub-agent mode. */
 	runtimeContext?: RuntimeContext;
 	/**
@@ -67,6 +69,7 @@ export async function assemblePrompts(
 		domain,
 		capabilities,
 		domainsDir,
+		frameworkPromptsDir = PROMPTS_DIR,
 		runtimeContext,
 		resolver,
 	} = options;
@@ -79,9 +82,8 @@ export async function assemblePrompts(
 	}
 	const dir = domainsDir as string;
 
-	// Layer 0: Base prompt (always from shared)
-	const basePath =
-		resolver?.resolveBasePath() ?? join(dir, "shared", "prompts", "base.md");
+	// Layer 0: Base prompt (always from framework)
+	const basePath = join(frameworkPromptsDir, "base.md");
 	parts.push(await loadPromptFile(basePath));
 
 	// Layer 1: Capabilities
@@ -113,9 +115,7 @@ export async function assemblePrompts(
 
 	// Layer 3: Runtime context (sub-agent mode only)
 	if (runtimeContext?.mode === "sub-agent") {
-		const templatePath =
-			resolver?.resolveRuntimeTemplatePath() ??
-			join(dir, "shared", "prompts", "runtime", "sub-agent.md");
+		const templatePath = join(frameworkPromptsDir, "runtime", "sub-agent.md");
 		const template = await loadPromptFile(templatePath);
 		const ctx: RuntimeTemplateContext = {
 			parentRole: runtimeContext.parentRole,

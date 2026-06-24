@@ -46,7 +46,7 @@ async function writeDomainPromptFiles(
 	domain: string,
 	persona: string,
 ): Promise<void> {
-	await mkdir(join(tmp.path, "domains", "shared", "prompts"), {
+	await mkdir(join(tmp.path, "framework-prompts"), {
 		recursive: true,
 	});
 	await mkdir(join(tmp.path, "domains", domain, "capabilities"), {
@@ -56,7 +56,7 @@ async function writeDomainPromptFiles(
 		recursive: true,
 	});
 	await writeFile(
-		join(tmp.path, "domains", "shared", "prompts", "base.md"),
+		join(tmp.path, "framework-prompts", "base.md"),
 		"---\ntitle: Base\n---\n\nShared base prompt.",
 	);
 	await writeFile(
@@ -153,6 +153,7 @@ describe("buildAgentPackage", () => {
 			agentRegistry: new AgentRegistry([alphaAgent, betaAgent]),
 			domainContext: "beta",
 			domainsDir: join(tmp.path, "domains"),
+			frameworkPromptsDir: join(tmp.path, "framework-prompts"),
 			skillPaths: [],
 			target: "claude-cli",
 		});

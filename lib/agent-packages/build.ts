@@ -19,6 +19,7 @@ export interface BuildAgentPackageOptions {
 	readonly agentRegistry: AgentRegistry;
 	readonly domainContext?: string;
 	readonly domainsDir?: string;
+	readonly frameworkPromptsDir?: string;
 	readonly resolver?: DomainResolver;
 	readonly projectSkills?: readonly string[];
 	readonly skillPaths: readonly string[];
@@ -125,6 +126,7 @@ async function resolveSystemPrompt(
 		domain: sourceAgent.domain ?? options.domainContext ?? "coding",
 		capabilities: sourceAgent.capabilities,
 		domainsDir: options.domainsDir,
+		frameworkPromptsDir: options.frameworkPromptsDir,
 		resolver: options.resolver,
 	});
 }

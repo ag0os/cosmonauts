@@ -128,8 +128,8 @@ describe("loadPrompts", () => {
 // ============================================================================
 
 describe("PROMPTS_DIR", () => {
-	it("points to domains/shared/prompts directory", () => {
-		expect(PROMPTS_DIR).toMatch(/domains\/shared\/prompts$/);
+	it("points to lib/prompts/framework directory", () => {
+		expect(PROMPTS_DIR).toMatch(/lib\/prompts\/framework$/);
 	});
 });
 
@@ -194,20 +194,26 @@ describe("renderRuntimeTemplate", () => {
 // Domain-based prompt file paths (integration tests against real directories)
 // ============================================================================
 
-/** Resolve domain directories relative to PROMPTS_DIR (domains/shared/prompts). */
-const SHARED_CAPABILITIES_DIR = resolve(PROMPTS_DIR, "..", "capabilities");
-const CODING_DIR = resolve(PROMPTS_DIR, "..", "..", "..", "bundled", "coding");
+/** Resolve domain directories relative to the framework prompts directory. */
+const PROJECT_ROOT = resolve(PROMPTS_DIR, "..", "..", "..");
+const SHARED_CAPABILITIES_DIR = join(
+	PROJECT_ROOT,
+	"domains",
+	"shared",
+	"capabilities",
+);
+const CODING_DIR = join(PROJECT_ROOT, "bundled", "coding");
 const CODING_CAPABILITIES_DIR = join(CODING_DIR, "capabilities");
 const CODING_PROMPTS_DIR = join(CODING_DIR, "prompts");
 
 describe("domain-based prompt file paths", () => {
-	it("loads base prompt from domains/shared/prompts", async () => {
+	it("loads base prompt from lib/prompts/framework", async () => {
 		const content = await loadPrompt("base");
 		expect(content.length).toBeGreaterThan(0);
 		expect(content).toContain("# Cosmonauts");
 	});
 
-	it("loads runtime sub-agent template from domains/shared/prompts", async () => {
+	it("loads runtime sub-agent template from lib/prompts/framework", async () => {
 		const content = await loadPrompt("runtime/sub-agent");
 		expect(content.length).toBeGreaterThan(0);
 		expect(content).toContain("{{parentRole}}");

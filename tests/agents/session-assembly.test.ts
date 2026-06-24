@@ -59,7 +59,7 @@ async function setupMinimalDomains(
 	const domain = opts.domain ?? "coding";
 	const agentId = opts.agentId ?? "test-agent";
 	const files: Record<string, string> = {
-		"shared/prompts/base.md": "# Base Prompt\nYou are a helpful agent.",
+		"framework/base.md": "# Base Prompt\nYou are a helpful agent.",
 		[`${domain}/prompts/${agentId}.md`]: `# ${agentId}\nYou are ${agentId}.`,
 	};
 	for (const cap of opts.capabilities ?? []) {
@@ -91,6 +91,7 @@ function makeOptions(
 		def: makeDef(),
 		cwd: tmp.path,
 		domainsDir: tmp.path,
+		frameworkPromptsDir: join(tmp.path, "framework"),
 		...overrides,
 	};
 }

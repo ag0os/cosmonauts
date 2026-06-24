@@ -41,6 +41,8 @@ export interface BuildSessionParamsOptions {
 	cwd: string;
 	/** Absolute path to the root domains directory (required when no resolver). */
 	domainsDir?: string;
+	/** Absolute path to framework prompt templates. Defaults to lib/prompts/framework. */
+	frameworkPromptsDir?: string;
 	/** Domain resolver for multi-source path resolution. Takes precedence over domainsDir. */
 	resolver?: DomainResolver;
 	/** Runtime context for sub-agent prompt layer injection. */
@@ -98,6 +100,7 @@ export async function buildSessionParams(
 		def,
 		cwd,
 		domainsDir,
+		frameworkPromptsDir,
 		resolver,
 		runtimeContext,
 		projectSkills,
@@ -118,6 +121,7 @@ export async function buildSessionParams(
 		domain: def.domain ?? "coding",
 		capabilities: def.capabilities,
 		domainsDir,
+		frameworkPromptsDir,
 		resolver,
 		runtimeContext,
 	});

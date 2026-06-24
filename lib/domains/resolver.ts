@@ -40,31 +40,6 @@ export class DomainResolver {
 	}
 
 	/**
-	 * Absolute path to the shared base prompt.
-	 * Always resolves from the shared domain.
-	 */
-	resolveBasePath(): string | undefined {
-		const shared = this._registry.get("shared");
-		if (!shared) return undefined;
-		return findInRootDirs(shared.rootDirs, "prompts", "base.md");
-	}
-
-	/**
-	 * Absolute path to the runtime sub-agent template.
-	 * Always resolves from the shared domain.
-	 */
-	resolveRuntimeTemplatePath(): string | undefined {
-		const shared = this._registry.get("shared");
-		if (!shared) return undefined;
-		return findInRootDirs(
-			shared.rootDirs,
-			"prompts",
-			"runtime",
-			"sub-agent.md",
-		);
-	}
-
-	/**
 	 * Resolve a capability file path using three-tier order.
 	 * Returns the path from the first domain that declares the capability,
 	 * or undefined if no domain provides it.

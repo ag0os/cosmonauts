@@ -1,8 +1,8 @@
 import type { DomainManifest } from "../../lib/domains/types.ts";
 
-/** Shared domain — cross-cutting capabilities, prompts, and skills available to all domains. */
+/** Shared domain — cross-cutting capabilities, extensions, and skills available to all domains. */
 export const manifest: DomainManifest = {
 	id: "shared",
 	description:
-		"Shared capabilities, prompts, and skills available to all domains. Provides base system prompts, common capability packs, and runtime overlays.",
+		"Shared capabilities, extensions, and skills available to all domains. Provides common capability packs and runtime integrations.",
 };

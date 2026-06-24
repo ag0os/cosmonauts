@@ -61,45 +61,11 @@ describe("DomainResolver", () => {
 	});
 
 	it("fromSingleDir ignores the dir argument (domains carry their own rootDirs)", () => {
-		const domains = [makeDomain("shared")];
+		const domains = [makeDomain("shared", { capabilities: new Set(["core"]) })];
 		const resolver = DomainResolver.fromSingleDir("/ignored", domains);
-		expect(resolver.resolveBasePath()).toBe("/domains/shared/prompts/base.md");
-	});
-});
-
-// ============================================================================
-// resolveBasePath / resolveRuntimeTemplatePath — always from shared
-// ============================================================================
-
-describe("resolveBasePath", () => {
-	it("returns the shared base.md path", () => {
-		const resolver = new DomainResolver(
-			new DomainRegistry([makeDomain("shared"), makeDomain("coding")]),
+		expect(resolver.resolveCapabilityPath("core", "coding")).toBe(
+			"/domains/shared/capabilities/core.md",
 		);
-		expect(resolver.resolveBasePath()).toBe("/domains/shared/prompts/base.md");
-	});
-
-	it("returns undefined when shared domain is not registered", () => {
-		const resolver = new DomainResolver(
-			new DomainRegistry([makeDomain("coding")]),
-		);
-		expect(resolver.resolveBasePath()).toBeUndefined();
-	});
-});
-
-describe("resolveRuntimeTemplatePath", () => {
-	it("returns the shared sub-agent template path", () => {
-		const resolver = new DomainResolver(
-			new DomainRegistry([makeDomain("shared")]),
-		);
-		expect(resolver.resolveRuntimeTemplatePath()).toBe(
-			"/domains/shared/prompts/runtime/sub-agent.md",
-		);
-	});
-
-	it("returns undefined when shared domain is not registered", () => {
-		const resolver = new DomainResolver(new DomainRegistry([]));
-		expect(resolver.resolveRuntimeTemplatePath()).toBeUndefined();
 	});
 });
 
@@ -224,15 +190,15 @@ describe("resolvePersonaPath", () => {
 		);
 	});
 
-	it("falls back to shared (tier 3)", () => {
+	it("falls back to shared persona prompts (tier 3)", () => {
 		const resolver = new DomainResolver(
 			new DomainRegistry([
-				makeDomain("shared", { prompts: new Set(["base"]) }),
+				makeDomain("shared", { prompts: new Set(["helper"]) }),
 				makeDomain("coding"),
 			]),
 		);
-		expect(resolver.resolvePersonaPath("base", "coding")).toBe(
-			"/domains/shared/prompts/base.md",
+		expect(resolver.resolvePersonaPath("helper", "coding")).toBe(
+			"/domains/shared/prompts/helper.md",
 		);
 	});
 
@@ -422,22 +388,19 @@ describe("DomainResolver.fromSingleDir", () => {
 	it("handles empty domain list", () => {
 		const resolver = DomainResolver.fromSingleDir("/dir", []);
 		expect(resolver.registry.listIds()).toEqual([]);
-		expect(resolver.resolveBasePath()).toBeUndefined();
+		expect(resolver.resolveCapabilityPath("core", "coding")).toBeUndefined();
 	});
 
 	it("works identically to constructor with equivalent registry", () => {
 		const domains = [
-			makeDomain("shared", { prompts: new Set(["base"]) }),
+			makeDomain("shared", { prompts: new Set(["helper"]) }),
 			makeDomain("coding"),
 		];
 		const fromFactory = DomainResolver.fromSingleDir("/dir", domains);
 		const fromConstructor = new DomainResolver(new DomainRegistry(domains));
 
-		expect(fromFactory.resolveBasePath()).toBe(
-			fromConstructor.resolveBasePath(),
-		);
-		expect(fromFactory.resolvePersonaPath("base", "coding")).toBe(
-			fromConstructor.resolvePersonaPath("base", "coding"),
+		expect(fromFactory.resolvePersonaPath("helper", "coding")).toBe(
+			fromConstructor.resolvePersonaPath("helper", "coding"),
 		);
 	});
 });

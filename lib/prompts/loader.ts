@@ -15,15 +15,11 @@ import matter from "gray-matter";
 // Constants
 // ============================================================================
 
-/** Default prompts directory, resolved relative to the package root. */
+/** Default framework prompts directory, resolved relative to this package. */
 export const PROMPTS_DIR: string = resolve(
 	fileURLToPath(import.meta.url),
 	"..",
-	"..",
-	"..",
-	"domains",
-	"shared",
-	"prompts",
+	"framework",
 );
 
 // ============================================================================

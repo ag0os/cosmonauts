@@ -5,7 +5,10 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import type { RuntimeContext } from "../../lib/domains/prompt-assembly.ts";
+import type {
+	AssemblePromptsOptions,
+	RuntimeContext,
+} from "../../lib/domains/prompt-assembly.ts";
 import { assemblePrompts } from "../../lib/domains/prompt-assembly.ts";
 import { DomainRegistry } from "../../lib/domains/registry.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
@@ -62,16 +65,27 @@ function makeResolver(domains: LoadedDomain[]): DomainResolver {
 	return new DomainResolver(new DomainRegistry(domains));
 }
 
+function frameworkPromptsDir(): string {
+	return join(tmp.path, "framework");
+}
+
+function assembleTestPrompts(options: AssemblePromptsOptions): Promise<string> {
+	return assemblePrompts({
+		frameworkPromptsDir: frameworkPromptsDir(),
+		...options,
+	});
+}
+
 describe("assemblePrompts", () => {
 	describe("Layer 0: Base prompt", () => {
-		it("always loads domains/shared/prompts/base.md", async () => {
+		it("loads framework base/runtime by default and persona from the domain", async () => {
+			// @cosmo-behavior plan:domain-authoring#B-004
 			await setupFiles(tmp.path, {
-				"shared/prompts/base.md": "You are a helpful agent.",
-				"coding/prompts/worker.md": "You are a worker agent.",
+				"coding/prompts/worker.md": "Default framework base persona.",
 			});
 
 			const resolver = makeResolver([
-				makeDomain(tmp.path, "shared", { prompts: ["base"] }),
+				makeDomain(tmp.path, "shared"),
 				makeDomain(tmp.path, "coding", { prompts: ["worker"] }),
 			]);
 
@@ -80,24 +94,57 @@ describe("assemblePrompts", () => {
 				domain: "coding",
 				capabilities: [],
 				resolver,
+				runtimeContext: {
+					mode: "sub-agent",
+					parentRole: "coordinator",
+					objective: "Verify default framework prompts",
+				},
 			});
 
-			expect(result).toContain("You are a helpful agent.");
+			expect(result).toContain("# Cosmonauts");
+			expect(result).toContain("Default framework base persona.");
+			expect(result).toContain(
+				"You are operating as a sub-agent spawned by coordinator.",
+			);
+			expect(result).toContain(
+				"**Objective**: Verify default framework prompts",
+			);
+		});
+
+		it("can override framework base prompt directory for fixtures", async () => {
+			await setupFiles(tmp.path, {
+				"framework/base.md": "Fixture framework base.",
+				"coding/prompts/worker.md": "You are a worker agent.",
+			});
+
+			const resolver = makeResolver([
+				makeDomain(tmp.path, "shared"),
+				makeDomain(tmp.path, "coding", { prompts: ["worker"] }),
+			]);
+
+			const result = await assembleTestPrompts({
+				agentId: "worker",
+				domain: "coding",
+				capabilities: [],
+				resolver,
+			});
+
+			expect(result).toContain("Fixture framework base.");
 		});
 
 		it("strips YAML frontmatter from base prompt", async () => {
 			await setupFiles(tmp.path, {
-				"shared/prompts/base.md":
+				"framework/base.md":
 					"---\ntitle: Base\n---\nBase content after frontmatter.",
 				"coding/prompts/worker.md": "Worker.",
 			});
 
 			const resolver = makeResolver([
-				makeDomain(tmp.path, "shared", { prompts: ["base"] }),
+				makeDomain(tmp.path, "shared"),
 				makeDomain(tmp.path, "coding", { prompts: ["worker"] }),
 			]);
 
-			const result = await assemblePrompts({
+			const result = await assembleTestPrompts({
 				agentId: "worker",
 				domain: "coding",
 				capabilities: [],
@@ -112,7 +159,7 @@ describe("assemblePrompts", () => {
 	describe("Layer 1: Capabilities", () => {
 		it("resolves capabilities from the domain first (tier 1)", async () => {
 			await setupFiles(tmp.path, {
-				"shared/prompts/base.md": "Base.",
+				"framework/base.md": "Base.",
 				"coding/capabilities/coding-readwrite.md": "Domain coding-rw content.",
 				"shared/capabilities/coding-readwrite.md": "Shared coding-rw content.",
 				"coding/prompts/worker.md": "Worker.",
@@ -121,7 +168,6 @@ describe("assemblePrompts", () => {
 			const resolver = makeResolver([
 				makeDomain(tmp.path, "shared", {
 					capabilities: ["coding-readwrite"],
-					prompts: ["base"],
 				}),
 				makeDomain(tmp.path, "coding", {
 					capabilities: ["coding-readwrite"],
@@ -129,7 +175,7 @@ describe("assemblePrompts", () => {
 				}),
 			]);
 
-			const result = await assemblePrompts({
+			const result = await assembleTestPrompts({
 				agentId: "worker",
 				domain: "coding",
 				capabilities: ["coding-readwrite"],
@@ -142,7 +188,7 @@ describe("assemblePrompts", () => {
 
 		it("falls back to shared when capability not in domain (tier 3)", async () => {
 			await setupFiles(tmp.path, {
-				"shared/prompts/base.md": "Base.",
+				"framework/base.md": "Base.",
 				"shared/capabilities/core.md": "Shared core content.",
 				"coding/prompts/worker.md": "Worker.",
 			});
@@ -150,12 +196,11 @@ describe("assemblePrompts", () => {
 			const resolver = makeResolver([
 				makeDomain(tmp.path, "shared", {
 					capabilities: ["core"],
-					prompts: ["base"],
 				}),
 				makeDomain(tmp.path, "coding", { prompts: ["worker"] }),
 			]);
 
-			const result = await assemblePrompts({
+			const result = await assembleTestPrompts({
 				agentId: "worker",
 				domain: "coding",
 				capabilities: ["core"],
@@ -167,17 +212,17 @@ describe("assemblePrompts", () => {
 
 		it("throws when capability not found in any tier", async () => {
 			await setupFiles(tmp.path, {
-				"shared/prompts/base.md": "Base.",
+				"framework/base.md": "Base.",
 				"coding/prompts/worker.md": "Worker.",
 			});
 
 			const resolver = makeResolver([
-				makeDomain(tmp.path, "shared", { prompts: ["base"] }),
+				makeDomain(tmp.path, "shared"),
 				makeDomain(tmp.path, "coding", { prompts: ["worker"] }),
 			]);
 
 			await expect(
-				assemblePrompts({
+				assembleTestPrompts({
 					agentId: "worker",
 					domain: "coding",
 					capabilities: ["nonexistent"],
@@ -190,7 +235,7 @@ describe("assemblePrompts", () => {
 
 		it("loads multiple capabilities in order", async () => {
 			await setupFiles(tmp.path, {
-				"shared/prompts/base.md": "Base.",
+				"framework/base.md": "Base.",
 				"shared/capabilities/core.md": "CORE_CAP",
 				"shared/capabilities/tasks.md": "TASKS_CAP",
 				"coding/capabilities/coding-readwrite.md": "CODING_RW_CAP",
@@ -200,7 +245,6 @@ describe("assemblePrompts", () => {
 			const resolver = makeResolver([
 				makeDomain(tmp.path, "shared", {
 					capabilities: ["core", "tasks"],
-					prompts: ["base"],
 				}),
 				makeDomain(tmp.path, "coding", {
 					capabilities: ["coding-readwrite"],
@@ -208,7 +252,7 @@ describe("assemblePrompts", () => {
 				}),
 			]);
 
-			const result = await assemblePrompts({
+			const result = await assembleTestPrompts({
 				agentId: "worker",
 				domain: "coding",
 				capabilities: ["core", "tasks", "coding-readwrite"],
@@ -225,13 +269,13 @@ describe("assemblePrompts", () => {
 
 		it("resolves capability from portable domain (tier 2) when not in agent domain", async () => {
 			await setupFiles(tmp.path, {
-				"shared/prompts/base.md": "Base.",
+				"framework/base.md": "Base.",
 				"portable-pkg/capabilities/portable-cap.md": "Portable cap content.",
 				"coding/prompts/worker.md": "Worker.",
 			});
 
 			const resolver = makeResolver([
-				makeDomain(tmp.path, "shared", { prompts: ["base"] }),
+				makeDomain(tmp.path, "shared"),
 				makeDomain(tmp.path, "portable-pkg", {
 					capabilities: ["portable-cap"],
 					portable: true,
@@ -239,7 +283,7 @@ describe("assemblePrompts", () => {
 				makeDomain(tmp.path, "coding", { prompts: ["worker"] }),
 			]);
 
-			const result = await assemblePrompts({
+			const result = await assembleTestPrompts({
 				agentId: "worker",
 				domain: "coding",
 				capabilities: ["portable-cap"],
@@ -251,14 +295,14 @@ describe("assemblePrompts", () => {
 
 		it("agent domain (tier 1) wins over portable domain (tier 2)", async () => {
 			await setupFiles(tmp.path, {
-				"shared/prompts/base.md": "Base.",
+				"framework/base.md": "Base.",
 				"portable-pkg/capabilities/cap.md": "Portable cap.",
 				"coding/capabilities/cap.md": "Domain cap.",
 				"coding/prompts/worker.md": "Worker.",
 			});
 
 			const resolver = makeResolver([
-				makeDomain(tmp.path, "shared", { prompts: ["base"] }),
+				makeDomain(tmp.path, "shared"),
 				makeDomain(tmp.path, "portable-pkg", {
 					capabilities: ["cap"],
 					portable: true,
@@ -269,7 +313,7 @@ describe("assemblePrompts", () => {
 				}),
 			]);
 
-			const result = await assemblePrompts({
+			const result = await assembleTestPrompts({
 				agentId: "worker",
 				domain: "coding",
 				capabilities: ["cap"],
@@ -282,7 +326,7 @@ describe("assemblePrompts", () => {
 
 		it("portable domain (tier 2) wins over shared (tier 3)", async () => {
 			await setupFiles(tmp.path, {
-				"shared/prompts/base.md": "Base.",
+				"framework/base.md": "Base.",
 				"shared/capabilities/cap.md": "Shared cap.",
 				"portable-pkg/capabilities/cap.md": "Portable cap.",
 				"coding/prompts/worker.md": "Worker.",
@@ -291,7 +335,6 @@ describe("assemblePrompts", () => {
 			const resolver = makeResolver([
 				makeDomain(tmp.path, "shared", {
 					capabilities: ["cap"],
-					prompts: ["base"],
 				}),
 				makeDomain(tmp.path, "portable-pkg", {
 					capabilities: ["cap"],
@@ -300,7 +343,7 @@ describe("assemblePrompts", () => {
 				makeDomain(tmp.path, "coding", { prompts: ["worker"] }),
 			]);
 
-			const result = await assemblePrompts({
+			const result = await assembleTestPrompts({
 				agentId: "worker",
 				domain: "coding",
 				capabilities: ["cap"],
@@ -315,16 +358,16 @@ describe("assemblePrompts", () => {
 	describe("Layer 2: Agent persona", () => {
 		it("loads persona prompt from the agent's domain", async () => {
 			await setupFiles(tmp.path, {
-				"shared/prompts/base.md": "You are a helpful agent.",
+				"framework/base.md": "You are a helpful agent.",
 				"coding/prompts/worker.md": "You are a worker agent.",
 			});
 
 			const resolver = makeResolver([
-				makeDomain(tmp.path, "shared", { prompts: ["base"] }),
+				makeDomain(tmp.path, "shared"),
 				makeDomain(tmp.path, "coding", { prompts: ["worker"] }),
 			]);
 
-			const result = await assemblePrompts({
+			const result = await assembleTestPrompts({
 				agentId: "worker",
 				domain: "coding",
 				capabilities: [],
@@ -336,16 +379,16 @@ describe("assemblePrompts", () => {
 
 		it("throws when persona prompt does not exist", async () => {
 			await setupFiles(tmp.path, {
-				"shared/prompts/base.md": "Base.",
+				"framework/base.md": "Base.",
 			});
 
 			const resolver = makeResolver([
-				makeDomain(tmp.path, "shared", { prompts: ["base"] }),
+				makeDomain(tmp.path, "shared"),
 				makeDomain(tmp.path, "coding"),
 			]);
 
 			await expect(
-				assemblePrompts({
+				assembleTestPrompts({
 					agentId: "nonexistent-agent",
 					domain: "coding",
 					capabilities: [],
@@ -358,14 +401,14 @@ describe("assemblePrompts", () => {
 	describe("Layer 3: Runtime context", () => {
 		it("renders sub-agent runtime template when mode is sub-agent", async () => {
 			await setupFiles(tmp.path, {
-				"shared/prompts/base.md": "You are a helpful agent.",
-				"shared/prompts/runtime/sub-agent.md":
+				"framework/base.md": "You are a helpful agent.",
+				"framework/runtime/sub-agent.md":
 					"Parent: {{parentRole}}\nObjective: {{objective}}\n{{#taskId}}Task: {{taskId}}{{/taskId}}",
 				"coding/prompts/worker.md": "You are a worker agent.",
 			});
 
 			const resolver = makeResolver([
-				makeDomain(tmp.path, "shared", { prompts: ["base"] }),
+				makeDomain(tmp.path, "shared"),
 				makeDomain(tmp.path, "coding", { prompts: ["worker"] }),
 			]);
 
@@ -376,7 +419,7 @@ describe("assemblePrompts", () => {
 				taskId: "TASK-042",
 			};
 
-			const result = await assemblePrompts({
+			const result = await assembleTestPrompts({
 				agentId: "worker",
 				domain: "coding",
 				capabilities: [],
@@ -391,12 +434,12 @@ describe("assemblePrompts", () => {
 
 		it("omits runtime layer for top-level mode", async () => {
 			await setupFiles(tmp.path, {
-				"shared/prompts/base.md": "You are a helpful agent.",
+				"framework/base.md": "You are a helpful agent.",
 				"coding/prompts/worker.md": "You are a worker agent.",
 			});
 
 			const resolver = makeResolver([
-				makeDomain(tmp.path, "shared", { prompts: ["base"] }),
+				makeDomain(tmp.path, "shared"),
 				makeDomain(tmp.path, "coding", { prompts: ["worker"] }),
 			]);
 
@@ -405,7 +448,7 @@ describe("assemblePrompts", () => {
 				parentRole: "coordinator",
 			};
 
-			const result = await assemblePrompts({
+			const result = await assembleTestPrompts({
 				agentId: "worker",
 				domain: "coding",
 				capabilities: [],
@@ -418,16 +461,16 @@ describe("assemblePrompts", () => {
 
 		it("omits runtime layer when no runtimeContext provided", async () => {
 			await setupFiles(tmp.path, {
-				"shared/prompts/base.md": "You are a helpful agent.",
+				"framework/base.md": "You are a helpful agent.",
 				"coding/prompts/worker.md": "You are a worker agent.",
 			});
 
 			const resolver = makeResolver([
-				makeDomain(tmp.path, "shared", { prompts: ["base"] }),
+				makeDomain(tmp.path, "shared"),
 				makeDomain(tmp.path, "coding", { prompts: ["worker"] }),
 			]);
 
-			const result = await assemblePrompts({
+			const result = await assembleTestPrompts({
 				agentId: "worker",
 				domain: "coding",
 				capabilities: [],
@@ -442,10 +485,10 @@ describe("assemblePrompts", () => {
 	describe("Full four-layer assembly", () => {
 		it("assembles all four layers in correct order", async () => {
 			await setupFiles(tmp.path, {
-				"shared/prompts/base.md": "You are a helpful agent.",
+				"framework/base.md": "You are a helpful agent.",
 				"shared/capabilities/core.md": "Core capability content.",
 				"shared/capabilities/tasks.md": "Tasks capability content.",
-				"shared/prompts/runtime/sub-agent.md":
+				"framework/runtime/sub-agent.md":
 					"Parent: {{parentRole}}\nObjective: {{objective}}\n{{#taskId}}Task: {{taskId}}{{/taskId}}",
 				"coding/capabilities/coding-readwrite.md":
 					"Coding readwrite capability.",
@@ -455,7 +498,6 @@ describe("assemblePrompts", () => {
 			const resolver = makeResolver([
 				makeDomain(tmp.path, "shared", {
 					capabilities: ["core", "tasks"],
-					prompts: ["base"],
 				}),
 				makeDomain(tmp.path, "coding", {
 					capabilities: ["coding-readwrite"],
@@ -463,7 +505,7 @@ describe("assemblePrompts", () => {
 				}),
 			]);
 
-			const result = await assemblePrompts({
+			const result = await assembleTestPrompts({
 				agentId: "worker",
 				domain: "coding",
 				capabilities: ["core", "tasks", "coding-readwrite"],
@@ -493,7 +535,7 @@ describe("assemblePrompts", () => {
 
 		it("separates layers with double newlines", async () => {
 			await setupFiles(tmp.path, {
-				"shared/prompts/base.md": "BASE",
+				"framework/base.md": "BASE",
 				"shared/capabilities/core.md": "CORE",
 				"coding/prompts/worker.md": "WORKER",
 			});
@@ -501,12 +543,11 @@ describe("assemblePrompts", () => {
 			const resolver = makeResolver([
 				makeDomain(tmp.path, "shared", {
 					capabilities: ["core"],
-					prompts: ["base"],
 				}),
 				makeDomain(tmp.path, "coding", { prompts: ["worker"] }),
 			]);
 
-			const result = await assemblePrompts({
+			const result = await assembleTestPrompts({
 				agentId: "worker",
 				domain: "coding",
 				capabilities: ["core"],
