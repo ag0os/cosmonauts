@@ -6,7 +6,10 @@
  * extensions, subagents, leads, and named-chain agents.
  */
 
-import type { DomainBindingResolver } from "./bindings.ts";
+import {
+	type DomainBindingResolver,
+	DomainBindingTargetError,
+} from "./bindings.ts";
 import { canAccessSurfaceName } from "./public-surface.ts";
 import type { LoadedDomain } from "./types.ts";
 
@@ -457,7 +460,26 @@ function resolveBoundAgentVisibility(
 	const qualifiedReference = reference.includes("/")
 		? reference
 		: `${requesterDomain}/${reference}`;
-	const resolved = bindingResolver.resolveAgentReference(qualifiedReference);
+	const resolved = (() => {
+		try {
+			return bindingResolver.resolveAgentReference(qualifiedReference);
+		} catch (error) {
+			// A qualified reference whose domain role is simply not installed/active
+			// (e.g. a stale or optional "legacy/worker") must stay a warning-level
+			// non-resolution, not a fatal runtime-creation error. Fall back to normal
+			// qualified visibility handling. An explicit binding pointing at a missing
+			// target ("target-domain-missing") is a genuine misconfiguration and is
+			// left to surface (B-009), so it is re-thrown.
+			if (
+				error instanceof DomainBindingTargetError &&
+				error.code === "role-domain-missing"
+			) {
+				return undefined;
+			}
+			throw error;
+		}
+	})();
+	if (!resolved) return undefined;
 	const visibility = resolveQualifiedAgentVisibility(
 		resolved.resolved.role,
 		resolved.resolved.agentId,

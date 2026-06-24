@@ -760,6 +760,19 @@ describe("CosmonautsRuntime", () => {
 			expect(resolveDefaultLead(runtime, {}).domain).toBe("ruby-coding");
 			expect(resolveDefaultLead(runtime, {}).id).toBe("cody");
 
+			// --list-agents must resolve the bound default-domain role to its target
+			// so inspection shows the agents lead/spawning/chains actually use, not
+			// the unbound "coding" placeholder. Mirrors cli handleListAgents (P3).
+			const listedDomain =
+				runtime.bindingResolver.resolveKnownRole(runtime.domainContext ?? "")
+					?.domainId ?? runtime.domainContext;
+			expect(listedDomain).toBe("ruby-coding");
+			const listedIds = runtime.agentRegistry
+				.resolveInDomain(listedDomain as string)
+				.map((agent) => agent.id);
+			expect(listedIds).toEqual(expect.arrayContaining(["cody", "worker"]));
+			expect(listedIds).not.toContain("placeholder");
+
 			const steps = parseChain(
 				"worker",
 				runtime.agentRegistry,

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
+import { DomainBindingResolver } from "../../lib/domains/bindings.ts";
+import { DomainRegistry } from "../../lib/domains/registry.ts";
 import type { LoadedDomain } from "../../lib/domains/types.ts";
 import {
 	DomainValidationError,
@@ -518,6 +520,42 @@ describe("validateDomains", () => {
 			const diagnostics = validateDomains([shared, coding]);
 			const match = diagnostics.find((d) => d.message.includes("Subagent"));
 			expect(match).toBeUndefined();
+		});
+
+		it("warns (does not throw) for a qualified subagent whose domain role is not active, even with a binding resolver", () => {
+			// @cosmo-behavior plan:domain-authoring#B-006
+			// Regression: a stale/optional qualified reference (legacy/worker) whose
+			// role is not an installed domain must stay a warning, not abort runtime
+			// creation via DomainBindingTargetError.
+			const shared = makeShared();
+			const coding = makeDomain({
+				manifest: { id: "coding", description: "Coding" },
+				agents: new Map([
+					[
+						"coordinator",
+						makeAgent({
+							id: "coordinator",
+							subagents: ["legacy/worker"],
+						}),
+					],
+				]),
+				prompts: new Set(["coordinator"]),
+			});
+			const bindingResolver = new DomainBindingResolver({
+				registry: new DomainRegistry([shared, coding]),
+			});
+
+			let diagnostics: ReturnType<typeof validateDomains> = [];
+			expect(() => {
+				diagnostics = validateDomains([shared, coding], { bindingResolver });
+			}).not.toThrow();
+
+			const match = diagnostics.find(
+				(d) =>
+					d.agent === "coordinator" && d.message.includes('"legacy/worker"'),
+			);
+			expect(match).toBeDefined();
+			expect(match?.severity).toBe("warning");
 		});
 	});
 

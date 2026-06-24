@@ -410,12 +410,19 @@ async function handleListAgents(
 	runtime: CosmonautsRuntime,
 	options: CliOptions,
 ): Promise<void> {
-	const agents = runtime.domainContext
-		? runtime.agentRegistry.resolveInDomain(runtime.domainContext)
-		: runtime.agentRegistry.listAll(runtime.domainContext);
+	// Resolve a bindable default-domain role to its bound target so inspection
+	// matches what default lead, spawning, and chains actually resolve against
+	// (e.g. domain "coding" bound to "ruby-coding" must list ruby-coding agents).
+	const resolvedContext = runtime.domainContext
+		? (runtime.bindingResolver.resolveKnownRole(runtime.domainContext)
+				?.domainId ?? runtime.domainContext)
+		: undefined;
+	const agents = resolvedContext
+		? runtime.agentRegistry.resolveInDomain(resolvedContext)
+		: runtime.agentRegistry.listAll(resolvedContext);
 	const items: AgentListItem[] = agents.map((agent) => ({
-		id: qualifyAgentId(agent.id, agent.domain ?? runtime.domainContext),
-		domain: agent.domain ?? runtime.domainContext ?? null,
+		id: qualifyAgentId(agent.id, agent.domain ?? resolvedContext),
+		domain: agent.domain ?? resolvedContext ?? null,
 		description: agent.description,
 		model: agent.model,
 		tools: agent.tools,
