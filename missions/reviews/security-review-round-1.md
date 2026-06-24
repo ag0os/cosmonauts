@@ -6,17 +6,17 @@ incorrect
 
 ## Assessment
 
-The API-key filtering, subprocess spawning, temp prompt materialization, and generated-entry string escaping are implemented without obvious key leakage or shell injection. One path confinement check for package prompt files is bypassable via symlinks, which can cause unintended local file contents to be embedded in exported binaries.
+The domain authoring diff adds the intended `path: "."` special case, but non-root package domain paths are still accepted as arbitrary relative strings. A malicious or malformed package can use `..` path components to make the scanner expose directories outside the package root, including the package-store parent.
 
 ## Findings
 
-- id: S-001
-  dimension: security
-  severity: low
-  priority: P3
-  confidence: 0.82
+- id: SR-001
+  priority: P1
+  severity: high
+  confidence: 0.91
   complexity: simple
-  file: lib/agent-packages/definition.ts:110-112,237-263
+  dimensions: security|correctness
+  location: lib/packages/manifest.ts:145-152, lib/packages/installer.ts:277-291, lib/packages/scanner.ts:170-193
   summary: |
-    `loadAgentPackageDefinition()` rejects absolute `prompt.path` values and `..` traversal by resolving the string path under the package definition directory, but it never canonicalizes the resolved path or rejects symlinks before `readPackagePrompt()` reads it. A package directory can contain `prompts/system.md` as a symlink to a file outside the package (for example a private key); `prompt.path: "prompts/system.md"` passes the current check and the target file is read and embedded into the exported binary.
-  suggestedFix: Canonicalize the definition directory and prompt file with `realpath` before reading, then require the real prompt path to remain under the real definition directory (or reject symlinked prompt files).
+    `cosmonauts.json` domain entries only require `path` to be a string, and install validation checks `stat(join(sourceDir, domain.path))` without rejecting absolute paths or `..` traversal. Later, `addPackageSources` computes `join(pkg.installPath, domain.path)` and exposes `dirname(...)` as a `domains-dir` source. A package declaring a non-root path such as `../other-package/domain` or `../some-store-entry` can therefore make runtime domain loading scan outside the installed package root; in the store this can become the store parent, exposing sibling packages/domains that were not declared by the package being scanned.
+  suggestedFix: Validate every non-`.` domain path at manifest/install time as a normalized relative path confined under the package root, and reject absolute paths or any path that escapes the package directory before adding scanner sources.

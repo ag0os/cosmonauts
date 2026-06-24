@@ -3,7 +3,7 @@ id: TASK-399
 title: >-
   Restore recursive and extra skill visibility under internal deny-list
   filtering
-status: In Progress
+status: Done
 priority: medium
 assignee: worker
 labels:
@@ -15,7 +15,7 @@ labels:
   - 'plan:domain-authoring'
 dependencies: []
 createdAt: '2026-06-24T14:28:16.909Z'
-updatedAt: '2026-06-24T14:32:32.354Z'
+updatedAt: '2026-06-24T14:32:56.311Z'
 ---
 
 ## Description
@@ -31,4 +31,4 @@ Review round 1 remediation for F-001 from missions/reviews/review-round-1.md. Wi
 
 ## Implementation Notes
 
-Implemented deny-list-based skill visibility so wildcard skill catalogs filter only names explicitly hidden by manifest.internal.skills for cross-domain consumers. Added regression coverage for recursive public skills and extra/project skill-path skills remaining visible while internal skills remain hidden cross-domain and available same-domain. Verification passed: bun run test, bun run lint, bun run typecheck.
+Implemented deny-list-based skill visibility so wildcard skill catalogs filter only names explicitly hidden by manifest.internal.skills for cross-domain consumers. Added regression coverage for recursive public skills and extra/project skill-path skills remaining visible while internal skills remain hidden cross-domain and available same-domain. Verification passed: bun run test, bun run lint, bun run typecheck. Commit: 8371109.

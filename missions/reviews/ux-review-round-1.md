@@ -1,33 +1,31 @@
 # UX Review: round 1
 
-## Overall
-
-incorrect
+Overall: incorrect
 
 ## Assessment
 
-The new `cosmonauts export --help` surface exposes the intended flags and modes, and the authoring skill is clear. However, the documented export flow currently fails before producing success JSON, and the docs include copy-paste examples that do not have the required package files behind them.
+The user-facing domain authoring surfaces are mostly present, but two changed areas still leave domain authors without actionable guidance: the new install-time validation errors state what is invalid without saying how to fix it, and the new authoring guide uses repo-relative imports that do not match the generated external package scaffold.
 
 ## Findings
 
-- id: U-001
-  dimension: user-experience
-  severity: high
-  priority: P1
-  confidence: 0.95
-  complexity: simple
-  file:lineRange: lib/agent-packages/export.ts:43-55
-  summary: |
-    The happy-path export flow never reaches the promised success JSON. Running either documented mode, for example `cosmonauts export coding/explorer --out /tmp/explorer` or `cosmonauts export --definition <valid-json> --out /tmp/agent`, fails during compilation with a raw Bun error: `Could not resolve: "file:///.../lib/agent-packages/claude-binary-runner.ts"`, including a code frame from the temporary entry file. From the user's seat, the command that should create the binary instead stops with an internal bundler diagnostic and no actionable Cosmonauts-level recovery guidance.
-  suggestedFix: Render the temporary compile entry with an import form Bun can compile, and wrap compile failures with a concise export-specific error while preserving details only as needed.
-
-- id: U-002
-  dimension: user-experience
-  severity: medium
+- id: UX-001
   priority: P2
+  severity: medium
   confidence: 0.9
   complexity: simple
-  file:lineRange: README.md:194-219, docs/orchestration.md:13-15, docs/orchestration.md:105-106
+  dimensions: ux|documentation
+  location: lib/packages/installer.ts:254-270
   summary: |
-    The docs present explicit-definition export commands as runnable examples, but the referenced files are not present or prepared. `README.md` tells users to run `cosmonauts export --definition packages/cosmo-planner/package.json --out bin/cosmo-planner`, then shows a JSON definition whose `prompt.path` requires `planner-claude-system.md`; neither path exists in the repo. `docs/orchestration.md` also shows `--definition package.json`, which from the project root points at the npm manifest rather than an `AgentPackageDefinition`. Users copying the first export example hit file-not-found or invalid-definition errors before they learn the feature.
-  suggestedFix: Either make the examples clearly placeholder-based, or include a minimal runnable definition/prompt setup before the export command.
+    When a user installs a root-domain package with `path: "."`, the new validation errors only say either that root-domain packages cannot declare additional domains or that root `domain.ts` is missing. They do not name the corrective action at the failure point, even though this is the install-time message the package author sees before any docs context. This makes the root-layout migration harder to recover from than the docs promise.
+  suggestedFix: Add the fix to each thrown message, e.g. add `domain.ts` at the package root or change `cosmonauts.json` to point at the domain directory; for mixed root packages, move each domain into its own subdirectory or keep `path: "."` as the only domain entry.
+
+- id: UX-002
+  priority: P2
+  severity: medium
+  confidence: 0.85
+  complexity: simple
+  dimensions: documentation|correctness
+  location: docs/domains.md:77-105
+  summary: |
+    The new domain authoring guide shows `domain.ts` and agent examples importing types from `../../lib/...`. A user creating the documented root-domain package layout (`alpha/domain.ts`, `alpha/agents/coach.ts`) will not have the Cosmonauts repo's `lib/` directory two levels up, and the generated scaffold uses the package import form instead. The guide therefore gives external domain authors examples that are inconsistent with the scaffold and likely fail when copied into a package.
+  suggestedFix: Use import paths that work for authored packages and align with the scaffold, or explicitly label repo-internal examples separately from external package examples.
