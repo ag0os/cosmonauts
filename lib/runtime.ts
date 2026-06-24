@@ -16,6 +16,7 @@ import {
 	DomainBindingResolver,
 	DomainBindingTargetError,
 	getLiveDomainBindingStore,
+	type LiveDomainBindingStore,
 } from "./domains/bindings.ts";
 import type { LoadedDomain } from "./domains/index.ts";
 import { DomainRegistry, loadDomainsFromSources } from "./domains/index.ts";
@@ -61,6 +62,7 @@ export class CosmonautsRuntime {
 	 */
 	readonly domainResolver: DomainResolver;
 	readonly bindingResolver: DomainBindingResolver;
+	readonly liveDomainBindings: LiveDomainBindingStore;
 	readonly chains: readonly NamedChain[];
 	readonly projectSkills: readonly string[] | undefined;
 	/**
@@ -85,6 +87,7 @@ export class CosmonautsRuntime {
 		domainContext: string | undefined;
 		domainResolver: DomainResolver;
 		bindingResolver: DomainBindingResolver;
+		liveDomainBindings: LiveDomainBindingStore;
 		chains: readonly NamedChain[];
 		projectSkills: readonly string[] | undefined;
 		skillPaths: readonly string[];
@@ -97,6 +100,7 @@ export class CosmonautsRuntime {
 		this.domainContext = fields.domainContext;
 		this.domainResolver = fields.domainResolver;
 		this.bindingResolver = fields.bindingResolver;
+		this.liveDomainBindings = fields.liveDomainBindings;
 		this.chains = fields.chains;
 		this.projectSkills = fields.projectSkills;
 		this.skillPaths = fields.skillPaths;
@@ -138,10 +142,11 @@ export class CosmonautsRuntime {
 
 		// 4. Build the domain registry and validate active binding targets/domains
 		const domainRegistry = new DomainRegistry(domains as LoadedDomain[]);
+		const liveDomainBindings = getLiveDomainBindingStore(options.projectRoot);
 		const bindingResolver = new DomainBindingResolver({
 			registry: domainRegistry,
 			projectBindings: projectConfig.domainBindings,
-			liveBindings: getLiveDomainBindingStore(options.projectRoot),
+			liveBindings: liveDomainBindings,
 		});
 		bindingResolver.validateProjectBindings();
 		const diagnostics = validateDomains(domains, { bindingResolver });
@@ -194,6 +199,7 @@ export class CosmonautsRuntime {
 			domainContext,
 			domainResolver,
 			bindingResolver,
+			liveDomainBindings,
 			chains,
 			projectSkills: projectConfig.skills,
 			skillPaths,

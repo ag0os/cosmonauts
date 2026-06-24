@@ -131,6 +131,19 @@ export class DomainBindingResolver {
 		return { requested, resolved, binding };
 	}
 
+	bindLiveRole(role: string, targetDomain: string): DomainBindingResolution {
+		if (!this.liveBindings) {
+			throw new Error("Live domain bindings are not available.");
+		}
+		const resolution = this.validateResolution({
+			role,
+			domainId: targetDomain,
+			source: "live",
+		});
+		this.liveBindings.set(role, targetDomain);
+		return resolution;
+	}
+
 	validateProjectBindings(): void {
 		for (const role of Object.keys(this.projectBindings)) {
 			this.resolveRole(role);

@@ -15,6 +15,7 @@ import {
 	parseCliArgs,
 	renderAgentsList,
 	renderDomainsList,
+	resolveInteractiveExtensionPaths,
 	selectRunMode,
 } from "../../cli/main.ts";
 import type { CliOptions } from "../../cli/types.ts";
@@ -511,6 +512,17 @@ describe("buildInitSessionConfig", () => {
 		expect(config.initialMessage).toContain("Load /skill:init");
 		// The injected config template is intentionally minimal, with no chain overrides.
 		expect(config.initialMessage).not.toContain('"workflows"');
+	});
+});
+
+describe("resolveInteractiveExtensionPaths", () => {
+	test("registers normal live-session commands including domain-bind", () => {
+		expect(
+			resolveInteractiveExtensionPaths({ domainsDir: "/framework/domains" }),
+		).toEqual([
+			"/framework/domains/shared/extensions/agent-switch",
+			"/framework/domains/shared/extensions/domain-bindings",
+		]);
 	});
 });
 

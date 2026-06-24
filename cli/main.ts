@@ -34,6 +34,7 @@ import { createDefaultProjectConfig } from "../lib/config/defaults.ts";
 import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
 import { buildInitBootstrapPrompt } from "../lib/init/prompt.ts";
 import { setSharedRegistry } from "../lib/interactive/agent-switch.ts";
+import { setSharedDomainBindings } from "../lib/interactive/domain-bindings.ts";
 import {
 	discoverBundledPackageDirs,
 	isCosmonautsFrameworkRepo,
@@ -297,6 +298,15 @@ export function hasInstalledDomain(runtime: CosmonautsRuntime): boolean {
 	);
 }
 
+export function resolveInteractiveExtensionPaths(
+	runtime: Pick<CosmonautsRuntime, "domainsDir">,
+): string[] {
+	return [
+		join(runtime.domainsDir, "shared", "extensions", "agent-switch"),
+		join(runtime.domainsDir, "shared", "extensions", "domain-bindings"),
+	];
+}
+
 function handleNoDomainGuard(): void {
 	printCliError(
 		"No domains installed. Install the coding domain to get started:",
@@ -523,13 +533,12 @@ async function handleInteractiveMode(
 	// This ensures the /agent command validates against the same registry
 	// the session factory uses, including --domain and --plugin-dir overrides.
 	setSharedRegistry(runtime.agentRegistry, runtime.domainContext);
+	setSharedDomainBindings({
+		domainRegistry: runtime.domainRegistry,
+		bindingResolver: runtime.bindingResolver,
+		liveBindings: runtime.liveDomainBindings,
+	});
 
-	const agentSwitchExtPath = join(
-		runtime.domainsDir,
-		"shared",
-		"extensions",
-		"agent-switch",
-	);
 	const interactiveRuntime = await createSession({
 		definition,
 		cwd,
@@ -543,7 +552,7 @@ async function handleInteractiveMode(
 		skillPaths: runtime.skillPaths,
 		agentRegistry: runtime.agentRegistry,
 		domainContext: runtime.domainContext,
-		extraExtensionPaths: [agentSwitchExtPath],
+		extraExtensionPaths: resolveInteractiveExtensionPaths(runtime),
 	});
 
 	const interactive = new InteractiveMode(interactiveRuntime, {
