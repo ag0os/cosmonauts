@@ -5,7 +5,7 @@ overall: correct
 
 ## Overall Assessment
 
-Re-verification found the B-022 remediation in place: the mixed `path: "."` package rule is centralized in manifest validation and defensively enforced by scanner source construction, so mixed root-domain packages no longer reach package-store parent scanning. The broader B-001 through B-024 implementation aligns with the plan-declared behavior seams and bound Quality Contract gates based on the inspected source, tests, docs, and prior green gate evidence.
+The active `domain-authoring` plan has auditable behavior, boundary, and quality contracts, and the implementation remains aligned with B-001 through B-024. The two re-verification fixes are sound: validator-time `role-domain-missing` references now degrade to warning-level non-resolution while explicit missing binding targets still surface for B-009, and `--list-agents` resolves a bindable default-domain role to its effective target before listing.
 
 ## Findings
 
