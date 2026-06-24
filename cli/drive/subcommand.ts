@@ -888,7 +888,6 @@ function resolveDefaultEnvelopePath(): string {
 		frameworkRoot,
 		"bundled",
 		"coding",
-		"coding",
 		"drivers",
 		"templates",
 		"envelope.md",
