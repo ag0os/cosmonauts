@@ -365,6 +365,14 @@ describe("createRegistryFromDomains", () => {
 				skills: new Set([]),
 				extensions: new Set(["tasks"]),
 				chains: [],
+				provenance: [
+					{
+						origin: "test",
+						precedence: 0,
+						kind: "domains-dir",
+						rootDir: "/tmp/domains/coding",
+					},
+				],
 				rootDirs: ["/tmp/domains/coding"],
 			},
 		];
@@ -416,6 +424,14 @@ describe("createRegistryFromDomains", () => {
 				skills: new Set(),
 				extensions: new Set(),
 				chains: [],
+				provenance: [
+					{
+						origin: "test",
+						precedence: 0,
+						kind: "domains-dir",
+						rootDir: "/tmp/domains/coding",
+					},
+				],
 				rootDirs: ["/tmp/domains/coding"],
 			},
 			{
@@ -427,6 +443,14 @@ describe("createRegistryFromDomains", () => {
 				skills: new Set(),
 				extensions: new Set(),
 				chains: [],
+				provenance: [
+					{
+						origin: "test",
+						precedence: 0,
+						kind: "domains-dir",
+						rootDir: "/tmp/domains/docs",
+					},
+				],
 				rootDirs: ["/tmp/domains/docs"],
 			},
 		];

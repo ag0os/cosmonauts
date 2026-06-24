@@ -39,6 +39,7 @@ function isWildcard(skills: readonly string[]): boolean {
 }
 
 function buildSyntheticSharedDomain(domainsDir: string): LoadedDomain {
+	const rootDir = join(domainsDir, "shared");
 	return {
 		manifest: {
 			id: "shared",
@@ -51,7 +52,10 @@ function buildSyntheticSharedDomain(domainsDir: string): LoadedDomain {
 		skills: new Set(),
 		extensions: new Set(),
 		chains: [],
-		rootDirs: [join(domainsDir, "shared")],
+		provenance: [
+			{ origin: domainsDir, precedence: 0, kind: "domains-dir", rootDir },
+		],
+		rootDirs: [rootDir],
 	};
 }
 

@@ -12,6 +12,7 @@ function makeDomain(
 	id: string,
 	overrides: Partial<LoadedDomain> = {},
 ): LoadedDomain {
+	const rootDir = `/domains/${id}`;
 	return {
 		manifest: { id, description: `Domain ${id}` },
 		portable: false,
@@ -21,7 +22,10 @@ function makeDomain(
 		skills: new Set<string>(),
 		extensions: new Set<string>(),
 		chains: [],
-		rootDirs: [`/domains/${id}`],
+		provenance: [
+			{ origin: "test", precedence: 0, kind: "domains-dir", rootDir },
+		],
+		rootDirs: [rootDir],
 		...overrides,
 	} as LoadedDomain;
 }
@@ -306,6 +310,14 @@ describe("shared domain resolution order", () => {
 			skills: new Set(),
 			extensions: new Set(),
 			chains: [],
+			provenance: [
+				{
+					origin: "test",
+					precedence: 0,
+					kind: "domains-dir",
+					rootDir: "/domains/shared",
+				},
+			],
 			rootDirs: ["/domains/shared"],
 		};
 		const resolver = new DomainResolver(

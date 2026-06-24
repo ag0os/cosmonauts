@@ -14,6 +14,10 @@ export interface ProjectChainConfig {
 export interface ProjectConfig {
 	/** Default domain for this project (e.g. "coding"). */
 	readonly domain?: string;
+	/** Active non-shared domain IDs for this project. Shared is always active. */
+	readonly activeDomains?: readonly string[];
+	/** Domain role → target domain overrides. */
+	readonly domainBindings?: Readonly<Record<string, string>>;
 	/** Skills relevant to this project. Filters agent skill indices to this set. */
 	readonly skills?: readonly string[];
 	/** Additional skill directories (e.g. "~/.claude/skills", ".codex/skills"). */

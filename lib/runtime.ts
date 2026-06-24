@@ -18,6 +18,20 @@ import { DomainResolver } from "./domains/resolver.ts";
 import { DomainValidationError, validateDomains } from "./domains/validator.ts";
 import { scanDomainSources } from "./packages/scanner.ts";
 
+export class DomainBindingTargetError extends Error {
+	readonly role: string;
+	readonly targetDomain: string;
+
+	constructor(role: string, targetDomain: string) {
+		super(
+			`Domain binding target "${targetDomain}" for role "${role}" is not active or installed.`,
+		);
+		this.name = "DomainBindingTargetError";
+		this.role = role;
+		this.targetDomain = targetDomain;
+	}
+}
+
 /** Options for creating a CosmonautsRuntime instance. */
 export interface CosmonautsRuntimeOptions {
 	/** Absolute path to the framework's built-in domains directory. */
@@ -121,9 +135,13 @@ export class CosmonautsRuntime {
 		});
 
 		// 3. Load and merge domains from all sources
-		const domains = await loadDomainsFromSources(sources);
+		const activeDomainIds = activeDomainIdSet(projectConfig.activeDomains);
+		const domains = await loadDomainsFromSources(sources, undefined, {
+			activeDomainIds,
+		});
 
-		// 4. Validate domains
+		// 4. Validate active binding targets and domains
+		validateDomainBindingTargets(projectConfig.domainBindings, domains);
 		const diagnostics = validateDomains(domains);
 
 		// Emit warnings to stderr
@@ -175,5 +193,26 @@ export class CosmonautsRuntime {
 		});
 
 		return Object.freeze(runtime);
+	}
+}
+
+function activeDomainIdSet(
+	activeDomains: ProjectConfig["activeDomains"],
+): ReadonlySet<string> | undefined {
+	if (activeDomains === undefined) return undefined;
+	return new Set(["shared", ...activeDomains]);
+}
+
+function validateDomainBindingTargets(
+	domainBindings: ProjectConfig["domainBindings"],
+	domains: readonly LoadedDomain[],
+): void {
+	if (!domainBindings) return;
+
+	const activeDomainIds = new Set(domains.map((domain) => domain.manifest.id));
+	for (const [role, targetDomain] of Object.entries(domainBindings)) {
+		if (!activeDomainIds.has(targetDomain)) {
+			throw new DomainBindingTargetError(role, targetDomain);
+		}
 	}
 }

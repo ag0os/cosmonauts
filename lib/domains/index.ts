@@ -9,7 +9,9 @@ export { DomainResolver } from "./resolver.ts";
 export type {
 	DomainManifest,
 	DomainMergeConflict,
+	DomainProvenance,
 	DomainSource,
+	DomainSourceKind,
 	LoadedDomain,
 	MergeStrategy,
 } from "./types.ts";

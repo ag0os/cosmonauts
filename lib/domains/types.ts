@@ -23,6 +23,20 @@ export interface DomainManifest {
 	readonly portable?: boolean;
 }
 
+export type DomainSourceKind = "domains-dir" | "domain-root";
+
+/** Source metadata for a loaded domain provider. */
+export interface DomainProvenance {
+	/** Human-readable label identifying the source provider. */
+	readonly origin: string;
+	/** Source precedence. Higher numbers win across different-precedence providers. */
+	readonly precedence: number;
+	/** Source shape used when loading this provider. */
+	readonly kind: DomainSourceKind;
+	/** Absolute path to the concrete domain root directory. */
+	readonly rootDir: string;
+}
+
 /** A fully discovered and indexed domain, produced by the domain loader. */
 export interface LoadedDomain {
 	/** The domain's manifest. */
@@ -41,6 +55,8 @@ export interface LoadedDomain {
 	readonly extensions: Set<string>;
 	/** Named-chain definitions from this domain. */
 	readonly chains: NamedChain[];
+	/** Provenance for all providers contributing to this loaded domain. */
+	readonly provenance: readonly DomainProvenance[];
 	/**
 	 * Absolute paths to the domain's root directories, ordered by descending precedence.
 	 * Single-source domains have one entry. Merged domains have multiple entries,
@@ -65,7 +81,9 @@ export interface DomainSource {
 	 */
 	domainsDir: string;
 	/** Source shape. Defaults to `domains-dir` for existing callers. */
-	sourceType?: "domains-dir" | "domain-root";
+	sourceType?: DomainSourceKind;
+	/** Source shape. Preferred spelling; omitted means `domains-dir`. */
+	kind?: DomainSourceKind;
 	/** Human-readable label identifying this source (e.g., "built-in", "user-package"). */
 	origin: string;
 	/** Precedence level. Higher numbers win on resource conflicts during merging. */

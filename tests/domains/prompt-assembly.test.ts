@@ -40,6 +40,7 @@ function makeDomain(
 		portable?: boolean;
 	} = {},
 ): LoadedDomain {
+	const rootDir = join(baseDir, id);
 	return {
 		manifest: { id, description: `Test ${id}`, portable: resources.portable },
 		portable: resources.portable ?? false,
@@ -49,7 +50,10 @@ function makeDomain(
 		skills: new Set(),
 		extensions: new Set(resources.extensions ?? []),
 		chains: [],
-		rootDirs: [join(baseDir, id)],
+		provenance: [
+			{ origin: "test", precedence: 0, kind: "domains-dir", rootDir },
+		],
+		rootDirs: [rootDir],
 	};
 }
 

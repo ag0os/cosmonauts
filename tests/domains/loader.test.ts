@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+	DomainIdConflictError,
 	loadDomains,
 	loadDomainsFromSources,
 } from "../../lib/domains/loader.ts";
@@ -284,6 +285,48 @@ describe("loadDomainsFromSources", () => {
 
 		expect(result).toHaveLength(2);
 		expect(result.map((d) => d.manifest.id).sort()).toEqual(["alpha", "beta"]);
+	});
+
+	it("reports same-precedence domain id conflicts instead of silently merging", async () => {
+		// @cosmo-behavior plan:domain-authoring#B-013
+		const alphaA = join(tmpA.path, "alpha-a");
+		await mkdir(alphaA, { recursive: true });
+		await writeDomainManifest(alphaA, "alpha");
+
+		const alphaB = join(tmpB.path, "alpha-b");
+		await mkdir(alphaB, { recursive: true });
+		await writeDomainManifest(alphaB, "alpha");
+
+		await expect(
+			loadDomainsFromSources([
+				{ domainsDir: tmpA.path, origin: "built-in", precedence: 10 },
+				{ domainsDir: tmpB.path, origin: "user-package", precedence: 10 },
+			]),
+		).rejects.toMatchObject({
+			name: "DomainIdConflictError",
+			domainId: "alpha",
+			existing: expect.objectContaining({ origin: "built-in" }),
+			incoming: expect.objectContaining({ origin: "user-package" }),
+		});
+
+		await expect(
+			loadDomainsFromSources([
+				{ domainsDir: tmpA.path, origin: "built-in", precedence: 10 },
+				{ domainsDir: tmpB.path, origin: "user-package", precedence: 10 },
+			]),
+		).rejects.toThrow(/alpha.*built-in.*user-package/);
+
+		const lowerPrecedence = await loadDomainsFromSources([
+			{ domainsDir: tmpA.path, origin: "built-in", precedence: 0 },
+			{ domainsDir: tmpB.path, origin: "user-package", precedence: 10 },
+		]);
+		expect(lowerPrecedence).toHaveLength(1);
+		expect(lowerPrecedence[0]?.manifest.id).toBe("alpha");
+		expect(lowerPrecedence[0]?.provenance.map((p) => p.origin)).toEqual([
+			"user-package",
+			"built-in",
+		]);
+		expect(DomainIdConflictError).toBeDefined();
 	});
 
 	it("applies default merge strategy: unions resources, higher precedence wins on agent conflicts", async () => {

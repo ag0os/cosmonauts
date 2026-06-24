@@ -25,6 +25,7 @@ function makeAgent(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
 
 /** Create a minimal LoadedDomain with overrides. */
 function makeDomain(overrides: Partial<LoadedDomain> = {}): LoadedDomain {
+	const rootDir = "/tmp/test";
 	return {
 		manifest: { id: "test", description: "Test domain" },
 		portable: false,
@@ -34,8 +35,11 @@ function makeDomain(overrides: Partial<LoadedDomain> = {}): LoadedDomain {
 		skills: new Set(),
 		extensions: new Set(),
 		chains: [],
-		rootDirs: ["/tmp/test"],
 		...overrides,
+		provenance: overrides.provenance ?? [
+			{ origin: "test", precedence: 0, kind: "domains-dir", rootDir },
+		],
+		rootDirs: overrides.rootDirs ?? [rootDir],
 	};
 }
 
@@ -517,6 +521,14 @@ describe("validateDomains", () => {
 				skills: new Set(),
 				extensions: new Set(),
 				chains: [],
+				provenance: [
+					{
+						origin: "test",
+						precedence: 0,
+						kind: "domains-dir",
+						rootDir: "/tmp/shared",
+					},
+				],
 				rootDirs: ["/tmp/shared"],
 			};
 			const pkg = makeDomain({

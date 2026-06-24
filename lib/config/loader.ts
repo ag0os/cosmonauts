@@ -65,6 +65,8 @@ export async function loadProjectConfig(
 	const obj = parsed as Record<string, unknown>;
 	const config: {
 		domain?: string;
+		activeDomains?: readonly string[];
+		domainBindings?: Readonly<Record<string, string>>;
 		skills?: readonly string[];
 		skillPaths?: readonly string[];
 		chains?: ProjectConfig["chains"];
@@ -72,6 +74,30 @@ export async function loadProjectConfig(
 
 	if (typeof obj.domain === "string") {
 		config.domain = obj.domain;
+	}
+
+	if (Array.isArray(obj.activeDomains)) {
+		config.activeDomains = obj.activeDomains.filter(
+			(s: unknown): s is string => typeof s === "string",
+		);
+	}
+
+	if (
+		obj.domainBindings &&
+		typeof obj.domainBindings === "object" &&
+		!Array.isArray(obj.domainBindings)
+	) {
+		const domainBindings: Record<string, string> = {};
+		for (const [role, target] of Object.entries(obj.domainBindings)) {
+			if (typeof target === "string" && target.length > 0) {
+				domainBindings[role] = target;
+			} else {
+				console.error(
+					`[warning] Skipping malformed domainBindings entry for "${role}": expected a non-empty string target domain.`,
+				);
+			}
+		}
+		config.domainBindings = domainBindings;
 	}
 
 	if (Array.isArray(obj.skills)) {

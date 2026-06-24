@@ -22,6 +22,9 @@ function makeDomain(id: string, rootDir: string): LoadedDomain {
 		skills: new Set(),
 		extensions: new Set(),
 		chains: [],
+		provenance: [
+			{ origin: "test", precedence: 0, kind: "domains-dir", rootDir },
+		],
 		rootDirs: [rootDir],
 	};
 }

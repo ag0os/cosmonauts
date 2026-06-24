@@ -13,10 +13,41 @@ import type { NamedChain } from "../chains/types.ts";
 import type {
 	DomainManifest,
 	DomainMergeConflict,
+	DomainProvenance,
 	DomainSource,
+	DomainSourceKind,
 	LoadedDomain,
 	MergeStrategy,
 } from "./types.ts";
+
+export interface LoadDomainsFromSourcesOptions {
+	/**
+	 * Domain ids allowed to participate in active runtime loading. When omitted,
+	 * every loaded provider participates. Include "shared" in this set when shared
+	 * should remain active.
+	 */
+	readonly activeDomainIds?: ReadonlySet<string> | readonly string[];
+}
+
+export class DomainIdConflictError extends Error {
+	readonly domainId: string;
+	readonly existing: DomainProvenance;
+	readonly incoming: DomainProvenance;
+
+	constructor(options: {
+		domainId: string;
+		existing: DomainProvenance;
+		incoming: DomainProvenance;
+	}) {
+		super(
+			`Domain id conflict for "${options.domainId}" at precedence ${options.incoming.precedence}: ${options.existing.origin} and ${options.incoming.origin} both provide an active domain with that id.`,
+		);
+		this.name = "DomainIdConflictError";
+		this.domainId = options.domainId;
+		this.existing = options.existing;
+		this.incoming = options.incoming;
+	}
+}
 
 /**
  * Load all domains from a domains directory.
@@ -27,6 +58,17 @@ import type {
  * in alphabetical order.
  */
 export async function loadDomains(domainsDir: string): Promise<LoadedDomain[]> {
+	return loadDomainsInDir(domainsDir, {
+		origin: domainsDir,
+		precedence: 0,
+		kind: "domains-dir",
+	});
+}
+
+async function loadDomainsInDir(
+	domainsDir: string,
+	source: Omit<DomainProvenance, "rootDir">,
+): Promise<LoadedDomain[]> {
 	const entries = await readdir(domainsDir, { withFileTypes: true });
 	const domainDirs = entries
 		.filter((e) => e.isDirectory())
@@ -42,7 +84,10 @@ export async function loadDomains(domainsDir: string): Promise<LoadedDomain[]> {
 		const domainDir = join(domainsDir, dirName);
 		if (!(await fileExists(join(domainDir, "domain.ts")))) continue;
 
-		const domain = await loadSingleDomain(domainDir);
+		const domain = await loadSingleDomain(domainDir, {
+			...source,
+			rootDir: domainDir,
+		});
 		domains.push(domain);
 	}
 	return domains;
@@ -51,7 +96,10 @@ export async function loadDomains(domainsDir: string): Promise<LoadedDomain[]> {
 /**
  * Load a single domain from its root directory.
  */
-async function loadSingleDomain(domainDir: string): Promise<LoadedDomain> {
+async function loadSingleDomain(
+	domainDir: string,
+	provenance: DomainProvenance,
+): Promise<LoadedDomain> {
 	// Import manifest (supports both default and named `manifest` export)
 	const manifestModule = await import(join(domainDir, "domain.ts"));
 	const manifest: DomainManifest =
@@ -97,6 +145,7 @@ async function loadSingleDomain(domainDir: string): Promise<LoadedDomain> {
 		skills,
 		extensions,
 		chains,
+		provenance: [provenance],
 		rootDirs: [domainDir],
 	};
 }
@@ -143,8 +192,10 @@ const defaultMergeStrategy: MergeStrategy = () => "merge";
 export async function loadDomainsFromSources(
 	sources: DomainSource[],
 	mergeStrategy?: MergeStrategy,
+	options: LoadDomainsFromSourcesOptions = {},
 ): Promise<LoadedDomain[]> {
 	const strategy = mergeStrategy ?? defaultMergeStrategy;
+	const activeDomainIds = normalizeActiveDomainIds(options.activeDomainIds);
 
 	// Process lowest-precedence sources first so higher-precedence sources
 	// arrive as "incoming" and win on conflicts.
@@ -153,17 +204,39 @@ export async function loadDomainsFromSources(
 	const accumulated = new Map<string, LoadedDomain>();
 
 	for (const source of sorted) {
+		const kind = sourceKind(source);
+		const sourceProvenance = {
+			origin: source.origin,
+			precedence: source.precedence,
+			kind,
+		};
 		const domains =
-			source.sourceType === "domain-root"
-				? await loadDomainRoot(source.domainsDir)
-				: await loadDomains(source.domainsDir);
+			kind === "domain-root"
+				? await loadDomainRoot(source.domainsDir, sourceProvenance)
+				: await loadDomainsInDir(source.domainsDir, sourceProvenance);
 		for (const domain of domains) {
 			const id = domain.manifest.id;
+			if (activeDomainIds && !activeDomainIds.has(id)) {
+				continue;
+			}
+
 			const existing = accumulated.get(id);
 
 			if (!existing) {
 				accumulated.set(id, domain);
 				continue;
+			}
+
+			const incomingProvenance = firstProvenance(domain);
+			const samePrecedenceProvider = existing.provenance.find(
+				(provenance) => provenance.precedence === incomingProvenance.precedence,
+			);
+			if (samePrecedenceProvider) {
+				throw new DomainIdConflictError({
+					domainId: id,
+					existing: samePrecedenceProvider,
+					incoming: incomingProvenance,
+				});
 			}
 
 			const conflict: DomainMergeConflict = {
@@ -208,9 +281,43 @@ export async function loadDomainsFromSources(
 	});
 }
 
-async function loadDomainRoot(domainDir: string): Promise<LoadedDomain[]> {
+function normalizeActiveDomainIds(
+	activeDomainIds: LoadDomainsFromSourcesOptions["activeDomainIds"],
+): ReadonlySet<string> | undefined {
+	if (activeDomainIds === undefined) return undefined;
+	return activeDomainIds instanceof Set
+		? activeDomainIds
+		: new Set(activeDomainIds);
+}
+
+function sourceKind(source: DomainSource): DomainSourceKind {
+	return source.kind ?? source.sourceType ?? "domains-dir";
+}
+
+async function loadDomainRoot(
+	domainDir: string,
+	source: Omit<DomainProvenance, "rootDir">,
+): Promise<LoadedDomain[]> {
 	if (!(await fileExists(join(domainDir, "domain.ts")))) return [];
-	return [await loadSingleDomain(domainDir)];
+	return [
+		await loadSingleDomain(domainDir, {
+			...source,
+			rootDir: domainDir,
+		}),
+	];
+}
+
+function firstProvenance(domain: LoadedDomain): DomainProvenance {
+	const provenance = domain.provenance[0];
+	if (!provenance) {
+		return {
+			origin: domain.rootDirs[0] ?? domain.manifest.id,
+			precedence: 0,
+			kind: "domains-dir",
+			rootDir: domain.rootDirs[0] ?? "",
+		};
+	}
+	return provenance;
 }
 
 /**
@@ -239,6 +346,7 @@ function mergeDomains(
 		// Existing (lower-precedence) first so that incoming (higher-precedence)
 		// overwrites by name when consumers fold into a Map.
 		chains: [...existing.chains, ...incoming.chains],
+		provenance: [...incoming.provenance, ...existing.provenance],
 		// Incoming dirs first — higher precedence for file resolution.
 		rootDirs: [...incoming.rootDirs, ...existing.rootDirs],
 	};

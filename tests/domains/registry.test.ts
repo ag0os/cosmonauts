@@ -7,6 +7,7 @@ function makeDomain(
 	id: string,
 	overrides: Partial<LoadedDomain> = {},
 ): LoadedDomain {
+	const rootDir = `/tmp/${id}`;
 	return {
 		manifest: { id, description: `Domain ${id}` },
 		portable: false,
@@ -16,8 +17,11 @@ function makeDomain(
 		skills: new Set<string>(),
 		extensions: new Set<string>(),
 		chains: [],
-		rootDirs: [`/tmp/${id}`],
 		...overrides,
+		provenance: overrides.provenance ?? [
+			{ origin: "test", precedence: 0, kind: "domains-dir", rootDir },
+		],
+		rootDirs: overrides.rootDirs ?? [rootDir],
 	};
 }
 

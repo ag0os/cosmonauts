@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { DomainValidationError } from "../lib/domains/validator.ts";
-import { CosmonautsRuntime } from "../lib/runtime.ts";
+import { CosmonautsRuntime, DomainBindingTargetError } from "../lib/runtime.ts";
 import { useTempDir } from "./helpers/fs.ts";
 
 const tmp = useTempDir("runtime-test-");
@@ -347,6 +347,78 @@ describe("CosmonautsRuntime", () => {
 	});
 
 	describe("validation", () => {
+		it("filters inactive domains before validation and same-precedence conflict checks", async () => {
+			// @cosmo-behavior plan:domain-authoring#B-017
+			const projectRoot = join(tmp.path, "project");
+			const domainsDir = join(tmp.path, "domains");
+			await mkdir(projectRoot, { recursive: true });
+			await mkdir(domainsDir, { recursive: true });
+			await setupSharedDomain(domainsDir, { capabilities: ["core"] });
+
+			const alphaDir = join(domainsDir, "alpha");
+			await mkdir(alphaDir, { recursive: true });
+			await writeDomainManifest(alphaDir, "alpha");
+
+			const betaDir = join(domainsDir, "beta");
+			const betaAgentsDir = join(betaDir, "agents");
+			await mkdir(betaAgentsDir, { recursive: true });
+			await writeDomainManifest(betaDir, "beta");
+			await writeAgentDef(betaAgentsDir, "broken", {
+				capabilities: ["missing-capability"],
+			});
+
+			const pluginA = join(tmp.path, "plugin-a");
+			const pluginB = join(tmp.path, "plugin-b");
+			const gammaA = join(pluginA, "gamma-a");
+			const gammaB = join(pluginB, "gamma-b");
+			await mkdir(gammaA, { recursive: true });
+			await mkdir(gammaB, { recursive: true });
+			await writeDomainManifest(gammaA, "gamma");
+			await writeDomainManifest(gammaB, "gamma");
+
+			await writeProjectConfig(projectRoot, { activeDomains: ["alpha"] });
+
+			const runtime = await CosmonautsRuntime.create({
+				builtinDomainsDir: domainsDir,
+				projectRoot,
+				pluginDirs: [pluginA, pluginB],
+			});
+
+			expect(runtime.domains.map((domain) => domain.manifest.id)).toEqual([
+				"shared",
+				"alpha",
+			]);
+			expect(
+				runtime.domains.find((domain) => domain.manifest.id === "alpha")
+					?.provenance[0]?.origin,
+			).toBe("builtin");
+
+			await writeProjectConfig(projectRoot, {
+				activeDomains: ["alpha"],
+				domainBindings: { alpha: "beta" },
+			});
+
+			await expect(
+				CosmonautsRuntime.create({
+					builtinDomainsDir: domainsDir,
+					projectRoot,
+					pluginDirs: [pluginA, pluginB],
+				}),
+			).rejects.toMatchObject({
+				name: "DomainBindingTargetError",
+				role: "alpha",
+				targetDomain: "beta",
+			});
+			await expect(
+				CosmonautsRuntime.create({
+					builtinDomainsDir: domainsDir,
+					projectRoot,
+					pluginDirs: [pluginA, pluginB],
+				}),
+			).rejects.toThrow(/alpha.*beta|beta.*alpha/);
+			expect(DomainBindingTargetError).toBeDefined();
+		});
+
 		it("throws DomainValidationError on error-severity diagnostics", async () => {
 			const domainsDir = join(tmp.path, "domains");
 			await mkdir(domainsDir, { recursive: true });
