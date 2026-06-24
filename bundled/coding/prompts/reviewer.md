@@ -77,6 +77,10 @@ Examine every changed file in the diff. Check for:
 - Test quality and coverage gaps
 - Project convention mismatches
 
+#### Blast-radius lens for shared primitives
+
+When the diff introduces or modifies a shared primitive or utility (resolver, validator, error path, common helper, or similar cross-cutting function), do not review only the primitive in isolation. Enumerate the pre-existing call sites that now invoke the new or changed primitive, and verify that each call site's established throw, return, empty-result, and warning semantics did not regress. Require a regression test at each affected existing call site; if an affected call site lacks test coverage proving its previous semantics still hold, treat that as a test-quality or contract-regression finding when it meets the bug qualification criteria.
+
 Ignore trivial style issues unless they obscure meaning or violate documented project standards. Do not stop at the first qualifying finding — continue until every qualifying issue is listed.
 
 ### 4. Write a structured findings report

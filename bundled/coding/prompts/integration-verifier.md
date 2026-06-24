@@ -31,6 +31,10 @@ Do not invent unstated architecture rules. If the plan does not declare auditabl
 
 Check the relevant code, tests, and configuration against the plan's stated interfaces, module boundaries, data shapes, workflow placement, and file ownership constraints.
 
+#### Blast-radius lens for shared primitives
+
+Whenever the implementation introduces or modifies a shared primitive or utility (resolver, validator, error path, common helper, or similar cross-cutting function), enumerate the pre-existing call sites that now invoke that primitive. For each affected existing call site, verify that the change did not regress its established throw, return, empty-result, or warning semantics. Require regression test evidence at each affected existing call site; if the plan's implementation relies on the primitive but lacks call-site regression coverage, report that as an integration finding.
+
 When declared, treat these as auditable contracts:
 
 - `## Architecture Context`, including named decisions and boundary rules.

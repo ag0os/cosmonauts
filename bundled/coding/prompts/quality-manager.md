@@ -128,6 +128,10 @@ Record the applicable lenses in working state as `active_specialists`. If none a
 
 This triage is your judgment — err toward inclusion when a lens plausibly applies, but do NOT spawn a specialist when its lens has no surface in the diff. A specialist that returns `Overall: no findings in scope` is wasted cost. The generalist `reviewer` is the safety net for borderline cases.
 
+### 3.6. Blast-radius lens for shared primitives
+
+During review setup, scan the changed files for newly introduced or modified shared primitives or utilities (resolver, validator, error path, common helper, or similar cross-cutting function). When one is present, make the blast-radius lens explicit in the `reviewer` spawn prompt: require the reviewer to enumerate the pre-existing call sites that now invoke the primitive, verify that each call site's throw, return, empty-result, and warning semantics did not regress, and require regression test evidence at each affected existing call site. Missing call-site regression coverage is review evidence, not an optional note.
+
 ### 4. Run clean-context review
 
 Spawn the generalist `reviewer` plus every specialist in `active_specialists` (from step 3.5) as a parallel bracket group. Each reviewer gets its own report path:
