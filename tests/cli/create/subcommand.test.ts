@@ -41,6 +41,7 @@ describe("scaffoldDomain", () => {
 	});
 
 	it("generates cosmonauts.json with correct name, version, and domains", async () => {
+		// @cosmo-behavior plan:domain-authoring#B-003
 		await scaffoldDomain("mypkg", tempDir);
 		const raw = await readFile(
 			join(tempDir, "mypkg", "cosmonauts.json"),
@@ -50,15 +51,12 @@ describe("scaffoldDomain", () => {
 
 		expect(manifest.name).toBe("mypkg");
 		expect(manifest.version).toBe("0.1.0");
-		expect(manifest.domains).toEqual([{ name: "mypkg", path: "mypkg" }]);
+		expect(manifest.domains).toEqual([{ name: "mypkg", path: "." }]);
 	});
 
 	it("generates domain.ts that exports a DomainManifest with correct id and portable = false", async () => {
 		await scaffoldDomain("mypkg", tempDir);
-		const source = await readFile(
-			join(tempDir, "mypkg", "mypkg", "domain.ts"),
-			"utf-8",
-		);
+		const source = await readFile(join(tempDir, "mypkg", "domain.ts"), "utf-8");
 
 		expect(source).toContain("export const manifest");
 		expect(source).toContain('id: "mypkg"');
@@ -68,7 +66,7 @@ describe("scaffoldDomain", () => {
 	it("creates all required subdirectories", async () => {
 		await scaffoldDomain("mypkg", tempDir);
 		const { stat } = await import("node:fs/promises");
-		const domainDir = join(tempDir, "mypkg", "mypkg");
+		const domainDir = join(tempDir, "mypkg");
 
 		for (const sub of [
 			"agents",
@@ -97,10 +95,10 @@ describe("scaffoldDomain", () => {
 		);
 		const manifest = JSON.parse(raw) as Record<string, unknown>;
 		expect(manifest.name).toBe("devops");
-		expect(manifest.domains).toEqual([{ name: "devops", path: "devops" }]);
+		expect(manifest.domains).toEqual([{ name: "devops", path: "." }]);
 
 		const source = await readFile(
-			join(tempDir, "devops", "devops", "domain.ts"),
+			join(tempDir, "devops", "domain.ts"),
 			"utf-8",
 		);
 		expect(source).toContain('id: "devops"');

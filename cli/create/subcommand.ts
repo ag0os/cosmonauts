@@ -24,7 +24,7 @@ function generateManifest(name: string): string {
 			name,
 			version: "0.1.0",
 			description: `${name} domain package`,
-			domains: [{ name, path: name }],
+			domains: [{ name, path: "." }],
 		},
 		null,
 		2,
@@ -59,7 +59,7 @@ export async function scaffoldDomain(
 	cwd: string = process.cwd(),
 ): Promise<void> {
 	const packageDir = join(cwd, name);
-	const domainDir = join(packageDir, name);
+	const domainDir = packageDir;
 
 	// Fail fast if target already exists
 	const targetExists = await stat(packageDir).then(
@@ -107,12 +107,12 @@ export function createCreateProgram(): Command {
 				await scaffoldDomain(name);
 				console.log(`Created domain package "${name}":`);
 				console.log(`  ${name}/cosmonauts.json`);
-				console.log(`  ${name}/${name}/domain.ts`);
-				console.log(`  ${name}/${name}/agents/`);
-				console.log(`  ${name}/${name}/prompts/`);
-				console.log(`  ${name}/${name}/capabilities/`);
-				console.log(`  ${name}/${name}/skills/`);
-				console.log(`  ${name}/${name}/extensions/`);
+				console.log(`  ${name}/domain.ts`);
+				console.log(`  ${name}/agents/`);
+				console.log(`  ${name}/prompts/`);
+				console.log(`  ${name}/capabilities/`);
+				console.log(`  ${name}/skills/`);
+				console.log(`  ${name}/extensions/`);
 			} catch (err: unknown) {
 				const message = err instanceof Error ? err.message : String(err);
 				process.stderr.write(`cosmonauts create domain: ${message}\n`);

@@ -5,6 +5,8 @@ import {
 	loadDomains,
 	loadDomainsFromSources,
 } from "../../lib/domains/loader.ts";
+import { assemblePrompts } from "../../lib/domains/prompt-assembly.ts";
+import { DomainResolver } from "../../lib/domains/resolver.ts";
 import type { DomainMergeConflict } from "../../lib/domains/types.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
@@ -43,6 +45,39 @@ export default definition;
 }
 
 describe("loadDomains", () => {
+	it("loads conventional domains without registration and assembles persona by agent id", async () => {
+		// @cosmo-behavior plan:domain-authoring#B-001
+		const sharedDir = join(tmp.path, "shared");
+		const sharedPromptsDir = join(sharedDir, "prompts");
+		await mkdir(sharedPromptsDir, { recursive: true });
+		await writeDomainManifest(sharedDir, "shared");
+		await writeFile(join(sharedPromptsDir, "base.md"), "Base prompt.");
+
+		const domainDir = join(tmp.path, "planning");
+		const agentsDir = join(domainDir, "agents");
+		const promptsDir = join(domainDir, "prompts");
+		await mkdir(agentsDir, { recursive: true });
+		await mkdir(promptsDir, { recursive: true });
+		await writeDomainManifest(domainDir, "planning");
+		await writeAgentDef(agentsDir, "planner");
+		await writeFile(join(promptsDir, "planner.md"), "Planner persona.");
+
+		const domains = await loadDomains(tmp.path);
+		const planning = domains.find((d) => d.manifest.id === "planning");
+		expect(planning?.agents.has("planner")).toBe(true);
+		expect(planning?.prompts.has("planner")).toBe(true);
+
+		const prompt = await assemblePrompts({
+			agentId: "planner",
+			domain: "planning",
+			capabilities: [],
+			resolver: DomainResolver.fromSingleDir(tmp.path, domains),
+		});
+
+		expect(prompt).toContain("Base prompt.");
+		expect(prompt).toContain("Planner persona.");
+	});
+
 	it("discovers domains from a directory", async () => {
 		const alphaDir = join(tmp.path, "alpha");
 		await mkdir(alphaDir, { recursive: true });
@@ -391,6 +426,38 @@ describe("loadDomainsFromSources", () => {
 			"shared",
 			"alpha",
 			"zeta",
+		]);
+	});
+
+	it("loads conventional multi-domain folders alongside root-domain package sources", async () => {
+		const sharedDir = join(tmpA.path, "shared");
+		const alphaDir = join(tmpA.path, "alpha");
+		await mkdir(sharedDir, { recursive: true });
+		await mkdir(alphaDir, { recursive: true });
+		await writeDomainManifest(sharedDir, "shared");
+		await writeDomainManifest(alphaDir, "alpha");
+
+		const packageDir = join(tmpB.path, "rootpkg");
+		await mkdir(packageDir, { recursive: true });
+		await writeDomainManifest(packageDir, "rootpkg");
+
+		const result = await loadDomainsFromSources([
+			{ domainsDir: tmpA.path, origin: "built-in", precedence: 0 },
+			{
+				domainsDir: packageDir,
+				sourceType: "domain-root",
+				origin: "root-package",
+				precedence: 10,
+			},
+		]);
+
+		expect(result.map((d) => d.manifest.id)).toEqual([
+			"shared",
+			"alpha",
+			"rootpkg",
+		]);
+		expect(result.find((d) => d.manifest.id === "rootpkg")?.rootDirs).toEqual([
+			packageDir,
 		]);
 	});
 });
