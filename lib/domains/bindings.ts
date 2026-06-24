@@ -131,7 +131,7 @@ export class DomainBindingResolver {
 		return { requested, resolved, binding };
 	}
 
-	// fallow-ignore-next-line unused-class-members
+	// fallow-ignore-next-line unused-class-member
 	bindLiveRole(role: string, targetDomain: string): DomainBindingResolution {
 		if (!this.liveBindings) {
 			throw new Error("Live domain bindings are not available.");
