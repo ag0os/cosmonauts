@@ -1,7 +1,7 @@
 ---
 id: TASK-405
 title: Clean up detached Drive launcher output and the spurious --mode flag warning
-status: To Do
+status: Done
 priority: medium
 labels:
   - orchestration
@@ -11,7 +11,7 @@ labels:
   - 'plan:orchestration-hardening'
 dependencies: []
 createdAt: '2026-06-24T17:30:31.318Z'
-updatedAt: '2026-06-24T17:31:45.000Z'
+updatedAt: '2026-06-24T17:54:07.204Z'
 ---
 
 ## Description
@@ -40,8 +40,8 @@ CONSTRAINTS: do not change inline-mode output. Additive. Never leave the build
 broken between commits.
 
 <!-- AC:BEGIN -->
-- [ ] #1 `cosmonauts run drive --mode detached ...` no longer emits the false `--mode is not supported` warning.
-- [ ] #2 A detached launch prints the runId and the poll command on one clear stdout line.
-- [ ] #3 Help/docs state that the launcher returning is not the run completing.
-- [ ] #4 typecheck, lint, and the full test suite pass.
+- [x] #1 `cosmonauts run drive --mode detached ...` no longer emits the false `--mode is not supported` warning.
+- [x] #2 A detached launch prints the runId and the poll command on one clear stdout line.
+- [x] #3 Help/docs state that the launcher returning is not the run completing.
+- [x] #4 typecheck, lint, and the full test suite pass.
 <!-- AC:END -->

@@ -1,7 +1,7 @@
 ---
 id: TASK-403
 title: Emit a structured diagnostic reason when the Drive scheduler drains or aborts
-status: To Do
+status: Done
 priority: high
 labels:
   - orchestration
@@ -10,7 +10,7 @@ labels:
   - 'plan:orchestration-hardening'
 dependencies: []
 createdAt: '2026-06-24T17:30:31.314Z'
-updatedAt: '2026-06-24T17:31:44.427Z'
+updatedAt: '2026-06-24T17:42:28.658Z'
 ---
 
 ## Description
@@ -42,9 +42,9 @@ CONSTRAINTS: additive to existing event types; do not regress normal completion.
 Never leave the build broken between commits.
 
 <!-- AC:BEGIN -->
-- [ ] #1 When the scheduler stops with pending non-done tasks, the terminal event carries a structured reason: pending count plus cause (unmet-dependencies with blocking IDs, backend/setup error, or exception message).
-- [ ] #2 A scheduler-ending exception emits a diagnostic/error event with the message before the run is marked aborted.
-- [ ] #3 A clean all-tasks-done completion is distinguishable from an abort in the event stream and in `run status`.
-- [ ] #4 Regression tests cover the pending-with-unmet-dependencies case and the exception-drain case.
-- [ ] #5 typecheck, lint, and the full test suite pass.
+- [x] #1 When the scheduler stops with pending non-done tasks, the terminal event carries a structured reason: pending count plus cause (unmet-dependencies with blocking IDs, backend/setup error, or exception message).
+- [x] #2 A scheduler-ending exception emits a diagnostic/error event with the message before the run is marked aborted.
+- [x] #3 A clean all-tasks-done completion is distinguishable from an abort in the event stream and in `run status`.
+- [x] #4 Regression tests cover the pending-with-unmet-dependencies case and the exception-drain case.
+- [x] #5 typecheck, lint, and the full test suite pass.
 <!-- AC:END -->

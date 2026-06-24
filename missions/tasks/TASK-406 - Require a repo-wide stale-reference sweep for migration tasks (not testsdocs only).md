@@ -3,7 +3,7 @@ id: TASK-406
 title: >-
   Require a repo-wide stale-reference sweep for migration tasks (not tests/docs
   only)
-status: To Do
+status: Done
 priority: high
 labels:
   - verification
@@ -12,7 +12,7 @@ labels:
   - 'plan:orchestration-hardening'
 dependencies: []
 createdAt: '2026-06-24T17:30:31.320Z'
-updatedAt: '2026-06-24T17:31:45.283Z'
+updatedAt: '2026-06-24T17:55:28.891Z'
 ---
 
 ## Description
@@ -44,8 +44,8 @@ CONSTRAINTS: edits are ADDITIVE — preserve all existing persona content,
 including any additions made by sibling tasks touching the same file.
 
 <!-- AC:BEGIN -->
-- [ ] #1 `worker.md` instructs that file/dir/symbol/path moves require a repo-wide reference sweep across all source dirs (not just tests/docs) before completion, runtime source prioritized.
-- [ ] #2 `quality-manager.md` stale-reference/dead-code guidance explicitly covers all source directories and recommends a post-migration sweep.
-- [ ] #3 All edits are additive and preserve existing persona content.
-- [ ] #4 lint/format pass and the full test suite still passes.
+- [x] #1 `worker.md` instructs that file/dir/symbol/path moves require a repo-wide reference sweep across all source dirs (not just tests/docs) before completion, runtime source prioritized.
+- [x] #2 `quality-manager.md` stale-reference/dead-code guidance explicitly covers all source directories and recommends a post-migration sweep.
+- [x] #3 All edits are additive and preserve existing persona content.
+- [x] #4 lint/format pass and the full test suite still passes.
 <!-- AC:END -->

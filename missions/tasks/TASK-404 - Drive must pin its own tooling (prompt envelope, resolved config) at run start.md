@@ -1,7 +1,7 @@
 ---
 id: TASK-404
 title: 'Drive must pin its own tooling (prompt envelope, resolved config) at run start'
-status: To Do
+status: Done
 priority: high
 labels:
   - orchestration
@@ -10,7 +10,7 @@ labels:
   - 'plan:orchestration-hardening'
 dependencies: []
 createdAt: '2026-06-24T17:30:31.316Z'
-updatedAt: '2026-06-24T17:31:44.720Z'
+updatedAt: '2026-06-24T17:49:16.541Z'
 ---
 
 ## Description
@@ -42,8 +42,8 @@ CONSTRAINTS: keep backwards compatibility with an explicit `--envelope` path;
 additive to the run spec. Never leave the build broken between commits.
 
 <!-- AC:BEGIN -->
-- [ ] #1 The prompt envelope is resolved once at run launch and its content persisted into the run spec/state; per-task prompt assembly uses the snapshot, not a live filesystem lookup.
-- [ ] #2 A regression test moves/edits the envelope file mid-run and the in-flight run still completes using the snapshot.
-- [ ] #3 Resume reuses the persisted envelope snapshot rather than re-resolving.
-- [ ] #4 typecheck, lint, and the full test suite pass.
+- [x] #1 The prompt envelope is resolved once at run launch and its content persisted into the run spec/state; per-task prompt assembly uses the snapshot, not a live filesystem lookup.
+- [x] #2 A regression test moves/edits the envelope file mid-run and the in-flight run still completes using the snapshot.
+- [x] #3 Resume reuses the persisted envelope snapshot rather than re-resolving.
+- [x] #4 typecheck, lint, and the full test suite pass.
 <!-- AC:END -->

@@ -1,7 +1,7 @@
 ---
 id: TASK-402
 title: 'Drive run status must reflect terminal events, not a stale record'
-status: To Do
+status: Done
 priority: high
 labels:
   - orchestration
@@ -10,7 +10,7 @@ labels:
   - 'plan:orchestration-hardening'
 dependencies: []
 createdAt: '2026-06-24T17:30:31.311Z'
-updatedAt: '2026-06-24T17:31:44.114Z'
+updatedAt: '2026-06-24T17:36:55.354Z'
 ---
 
 ## Description
@@ -46,9 +46,9 @@ machinery; do not break inline/detached/resume status semantics. This file may
 be loaded by a running driver, so never leave the build broken between commits.
 
 <!-- AC:BEGIN -->
-- [ ] #1 `cosmonauts run status <runId>` returns the terminal status (completed/aborted/failed) once the run event log contains the matching terminal event, even if the run record was never updated.
-- [ ] #2 A run whose driving process is not alive and whose last event is `run_aborted` never reports `running` from `run status` or `run list`.
-- [ ] #3 `run list` and `run status` report the same reconciled status for the same run.
-- [ ] #4 A regression test reproduces a record stuck at `running` with a terminal event in the log and asserts the reconciled terminal status.
-- [ ] #5 typecheck, lint, and the full test suite pass.
+- [x] #1 `cosmonauts run status <runId>` returns the terminal status (completed/aborted/failed) once the run event log contains the matching terminal event, even if the run record was never updated.
+- [x] #2 A run whose driving process is not alive and whose last event is `run_aborted` never reports `running` from `run status` or `run list`.
+- [x] #3 `run list` and `run status` report the same reconciled status for the same run.
+- [x] #4 A regression test reproduces a record stuck at `running` with a terminal event in the log and asserts the reconciled terminal status.
+- [x] #5 typecheck, lint, and the full test suite pass.
 <!-- AC:END -->

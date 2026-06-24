@@ -3,7 +3,7 @@ id: TASK-410
 title: >-
   Quality-manager: diff against the local integration base and add a
   regression-semantics lens
-status: To Do
+status: Done
 priority: medium
 labels:
   - prompts
@@ -11,7 +11,7 @@ labels:
   - 'plan:orchestration-hardening'
 dependencies: []
 createdAt: '2026-06-24T17:30:31.330Z'
-updatedAt: '2026-06-24T17:31:46.410Z'
+updatedAt: '2026-06-24T17:59:49.089Z'
 ---
 
 ## Description
@@ -39,7 +39,7 @@ CONSTRAINTS: edits are ADDITIVE — preserve existing content, including sibling
 additions to quality-manager.md.
 
 <!-- AC:BEGIN -->
-- [ ] #1 quality-manager.md instructs determining the local integration base (local merge-base) before scoping a diff, and not flagging already-merged commits as out-of-scope.
-- [ ] #2 quality-manager.md gains a regression-semantics check for changed shared code (throw/return/empty/warning) for existing callers.
-- [ ] #3 All edits are additive and preserve existing persona content.
+- [x] #1 quality-manager.md instructs determining the local integration base (local merge-base) before scoping a diff, and not flagging already-merged commits as out-of-scope.
+- [x] #2 quality-manager.md gains a regression-semantics check for changed shared code (throw/return/empty/warning) for existing callers.
+- [x] #3 All edits are additive and preserve existing persona content.
 <!-- AC:END -->

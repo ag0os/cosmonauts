@@ -1,7 +1,7 @@
 ---
 id: TASK-408
 title: Verifier must confirm EVERY seam a behavior declares is implemented and tested
-status: To Do
+status: Done
 priority: medium
 labels:
   - verification
@@ -9,7 +9,7 @@ labels:
   - 'plan:orchestration-hardening'
 dependencies: []
 createdAt: '2026-06-24T17:30:31.326Z'
-updatedAt: '2026-06-24T17:31:45.848Z'
+updatedAt: '2026-06-24T17:57:29.950Z'
 ---
 
 ## Description
@@ -37,7 +37,7 @@ CONSTRAINTS: edits are ADDITIVE — preserve existing content, including sibling
 additions to the same files.
 
 <!-- AC:BEGIN -->
-- [ ] #1 integration-verifier.md instructs verifying that every declared seam of a behavior is implemented and test-covered, and flagging partial-seam implementations.
-- [ ] #2 task-manager.md and/or planner.md guidance encourages one-assertion-per-seam or acceptance criteria that enumerate all seams.
-- [ ] #3 All edits are additive and preserve existing persona content.
+- [x] #1 integration-verifier.md instructs verifying that every declared seam of a behavior is implemented and test-covered, and flagging partial-seam implementations.
+- [x] #2 task-manager.md and/or planner.md guidance encourages one-assertion-per-seam or acceptance criteria that enumerate all seams.
+- [x] #3 All edits are additive and preserve existing persona content.
 <!-- AC:END -->

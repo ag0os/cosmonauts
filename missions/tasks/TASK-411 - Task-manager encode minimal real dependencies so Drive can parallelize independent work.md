@@ -3,7 +3,7 @@ id: TASK-411
 title: >-
   Task-manager: encode minimal real dependencies so Drive can parallelize
   independent work
-status: To Do
+status: Done
 priority: low
 labels:
   - prompts
@@ -11,7 +11,7 @@ labels:
   - 'plan:orchestration-hardening'
 dependencies: []
 createdAt: '2026-06-24T17:30:31.332Z'
-updatedAt: '2026-06-24T17:31:46.690Z'
+updatedAt: '2026-06-24T18:00:45.813Z'
 ---
 
 ## Description
@@ -36,6 +36,6 @@ CONSTRAINTS: edits are ADDITIVE — preserve existing content, including sibling
 additions to task-manager.md.
 
 <!-- AC:BEGIN -->
-- [ ] #1 task-manager.md instructs encoding only true dependencies and leaving independent tasks unblocked to enable parallel execution, with a brief heuristic for what counts as a real dependency.
-- [ ] #2 All edits are additive and preserve existing persona content.
+- [x] #1 task-manager.md instructs encoding only true dependencies and leaving independent tasks unblocked to enable parallel execution, with a brief heuristic for what counts as a real dependency.
+- [x] #2 All edits are additive and preserve existing persona content.
 <!-- AC:END -->

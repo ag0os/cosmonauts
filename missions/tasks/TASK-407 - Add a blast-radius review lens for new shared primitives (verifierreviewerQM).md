@@ -3,7 +3,7 @@ id: TASK-407
 title: >-
   Add a blast-radius review lens for new shared primitives
   (verifier/reviewer/QM)
-status: To Do
+status: Done
 priority: high
 labels:
   - verification
@@ -11,7 +11,7 @@ labels:
   - 'plan:orchestration-hardening'
 dependencies: []
 createdAt: '2026-06-24T17:30:31.323Z'
-updatedAt: '2026-06-24T17:31:45.566Z'
+updatedAt: '2026-06-24T17:56:25.128Z'
 ---
 
 ## Description
@@ -42,7 +42,7 @@ CONSTRAINTS: edits are ADDITIVE — preserve existing content, including sibling
 additions to the same files.
 
 <!-- AC:BEGIN -->
-- [ ] #1 integration-verifier.md, reviewer.md, and quality-manager.md each gain an explicit named 'blast-radius' lens: identify call sites of new/changed shared primitives in existing code and verify their throw/return/empty/warning semantics did not regress.
-- [ ] #2 The guidance requires a regression test at each affected existing call site.
-- [ ] #3 All edits are additive and preserve existing persona content.
+- [x] #1 integration-verifier.md, reviewer.md, and quality-manager.md each gain an explicit named 'blast-radius' lens: identify call sites of new/changed shared primitives in existing code and verify their throw/return/empty/warning semantics did not regress.
+- [x] #2 The guidance requires a regression test at each affected existing call site.
+- [x] #3 All edits are additive and preserve existing persona content.
 <!-- AC:END -->
