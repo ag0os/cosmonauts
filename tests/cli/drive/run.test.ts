@@ -153,6 +153,12 @@ describe("cosmonauts run drive compat run", () => {
 		expect(normalizedHelp).toContain(
 			`--task-timeout <ms> Per-task timeout in milliseconds (default: ${DEFAULT_TASK_TIMEOUT_MS}ms / 30 minutes)`,
 		);
+		expect(normalizedHelp).toContain(
+			"Detached mode starts background Drive work and returns after launching.",
+		);
+		expect(normalizedHelp).toContain(
+			"The launcher returning is not the run completing; poll with: cosmonauts run status <runId>",
+		);
 	});
 
 	test("parses run arguments into DriverRunSpec fields", async () => {
@@ -220,6 +226,9 @@ describe("cosmonauts run drive compat run", () => {
 
 		expect(driverMocks.startDetached).toHaveBeenCalledTimes(1);
 		expect(firstStartDetachedSpec().taskIds).toHaveLength(5);
+		expect(output.stdout()).toContain(
+			`Drive run started: ${firstStartDetachedSpec().runId} - poll with: cosmonauts run status ${firstStartDetachedSpec().runId}`,
+		);
 		expect(output.stdoutJson()).toMatchObject({
 			planSlug: PLAN,
 			eventLogPath: expect.stringContaining("events.jsonl"),
@@ -1711,7 +1720,19 @@ function attachJsonHelpers(
 	capture: ReturnType<typeof captureCliOutput>,
 ): ReturnType<typeof captureCliOutput> & JsonOutput {
 	return Object.assign(capture, {
-		stdoutJson: () => JSON.parse(capture.stdout()) as Record<string, unknown>,
+		stdoutJson: () => JSON.parse(lastJsonLine(capture.stdout())),
 		stderrJson: () => JSON.parse(capture.stderr()) as Record<string, unknown>,
 	});
+}
+
+function lastJsonLine(output: string): string {
+	const line = output
+		.trim()
+		.split("\n")
+		.reverse()
+		.find((candidate) => candidate.startsWith("{"));
+	if (!line) {
+		throw new Error(`No JSON object line found in output: ${output}`);
+	}
+	return line;
 }

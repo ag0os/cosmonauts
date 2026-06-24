@@ -167,6 +167,32 @@ describe("cosmonauts run", () => {
 		expect(output.stderr()).toBe("");
 	});
 
+	test("preserves drive --mode as a command option without Pi disabled-flag warnings", () => {
+		const parsed = parseCliRuntimeOptions([
+			"--theme",
+			"solarized",
+			"run",
+			"drive",
+			"--plan",
+			DRIVE_PLAN,
+			"--mode",
+			"detached",
+		]);
+
+		expect(parsed.options).toEqual({
+			piFlags: { themes: ["solarized"] },
+		});
+		expect(parsed.remaining).toEqual([
+			"run",
+			"drive",
+			"--plan",
+			DRIVE_PLAN,
+			"--mode",
+			"detached",
+		]);
+		expect(parsed.warnings).toEqual([]);
+	});
+
 	// @cosmo-behavior plan:orchestration-surface-consolidation#B-012
 	test("starts Drive through run drive and rejects the reserved chain plan slug", async () => {
 		const fixture = await setupDriveFixture(2);
@@ -219,7 +245,12 @@ describe("cosmonauts run", () => {
 		]);
 
 		expect(driverMocks.startDetached).toHaveBeenCalledTimes(1);
-		expect(JSON.parse(output.stdout())).toMatchObject({
+		const detachedStdout = output.stdout().trim().split("\n");
+		const detachedRunId = driverMocks.startDetached.mock.calls[0]?.[0].runId;
+		expect(detachedStdout[0]).toBe(
+			`Drive run started: ${detachedRunId} - poll with: cosmonauts run status ${detachedRunId}`,
+		);
+		expect(JSON.parse(detachedStdout.at(-1) ?? "")).toMatchObject({
 			runId: expect.stringMatching(/^run-/),
 			scope: DRIVE_PLAN,
 			planSlug: DRIVE_PLAN,

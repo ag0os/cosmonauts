@@ -54,7 +54,13 @@ export function parseThinkingLevel(value: string): ThinkingLevel {
 export function parseCliRuntimeOptions(
 	argv: readonly string[],
 ): CliRuntimeOptionParseResult {
-	const piResult = parsePiFlags([...argv]);
+	const piResult = parsePiFlags([...argv], {
+		preserveDisabledFlag: ({ arg, key, remaining }) =>
+			key === "mode" &&
+			arg === "--mode" &&
+			remaining[0] === "run" &&
+			remaining[1] === "drive",
+	});
 	const options: CliRuntimeOptions = { piFlags: piResult.flags };
 	const remaining: string[] = [];
 

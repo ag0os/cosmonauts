@@ -2,7 +2,9 @@
 
 `lib/driver/` runs mission tasks through a backend adapter. The public CLI
 frontend is `cosmonauts run drive`; successful starts return a `runId` and write
-run state under `missions/sessions/<scope>/runs/<runId>/`. The driver owns task
+run state under `missions/sessions/<scope>/runs/<runId>/`. In detached mode, the
+launcher returning only means background Drive work was started; it is not run
+completion. Poll with `cosmonauts run status <runId>`. The driver owns task
 selection, prompt rendering, verification, event logging, locking, and commit
 policy. Backends only execute the rendered prompt and report the subprocess
 result.

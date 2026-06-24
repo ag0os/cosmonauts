@@ -171,6 +171,8 @@ Run approved plan-linked task batches through the driver loop:
 ```bash
 # Launch a detached external-agent run
 cosmonauts run drive --plan auth-system --backend codex --mode detached --branch feature/auth
+# Detached launch returns after starting the launcher, not when the run completes.
+# Use the printed runId to poll: cosmonauts run status <runId>
 
 # Check a run and list known runs through normalized observation
 cosmonauts run status run-abc --scope auth-system

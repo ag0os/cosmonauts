@@ -195,6 +195,9 @@ export function createDriveRunCommand(): Command {
 
 function configureRunCommand(command: Command): void {
 	command
+		.description(
+			"Start a Drive run. Detached mode starts background Drive work and returns after launching. The launcher returning is not the run completing; poll with: cosmonauts run status <runId>",
+		)
 		.requiredOption("--plan <slug>", "Plan slug to run")
 		.option("--task-ids <id1,id2,...>", "Comma-separated task IDs to run")
 		.option(
@@ -381,6 +384,7 @@ function refuseUnsupportedDetachedBackend(
 
 function runDetached(spec: DriverRunSpec, deps: DriverRunDeps): void {
 	const handle = startDetached(spec, deps);
+	process.stdout.write(`${formatDetachedStartLine(handle.runId)}\n`);
 	printJsonStdout({
 		runId: handle.runId,
 		scope: handle.planSlug,
@@ -388,6 +392,10 @@ function runDetached(spec: DriverRunSpec, deps: DriverRunDeps): void {
 		workdir: handle.workdir,
 		eventLogPath: handle.eventLogPath,
 	});
+}
+
+function formatDetachedStartLine(runId: string): string {
+	return `Drive run started: ${runId} - poll with: cosmonauts run status ${runId}`;
 }
 
 async function runInlineMode(
