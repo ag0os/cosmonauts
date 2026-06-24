@@ -2,8 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
 	AgentRegistry,
 	createRegistryFromDomains,
+	InternalAgentAccessError,
 } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
+import {
+	selectPublicChains,
+	selectPublicSkillNames,
+} from "../../lib/domains/public-surface.ts";
 import type { LoadedDomain } from "../../lib/domains/types.ts";
 
 // ============================================================================
@@ -466,5 +471,71 @@ describe("createRegistryFromDomains", () => {
 	it("returns empty registry for empty domains", () => {
 		const registry = createRegistryFromDomains([]);
 		expect(registry.listIds()).toEqual([]);
+	});
+
+	it("hides only named internal agents outside their owning domain", () => {
+		// @cosmo-behavior plan:domain-authoring#B-006
+		const publicAgent: AgentDefinition = {
+			...DOMAIN_ALPHA,
+			id: "public-agent",
+			domain: "coding",
+		};
+		const internalAgent: AgentDefinition = {
+			...DOMAIN_BETA,
+			id: "secret-agent",
+			domain: "coding",
+		};
+		const coding: LoadedDomain = {
+			manifest: {
+				id: "coding",
+				description: "Coding domain",
+				internal: { agents: ["secret-agent"] },
+			},
+			portable: false,
+			agents: new Map([
+				["public-agent", publicAgent],
+				["secret-agent", internalAgent],
+			]),
+			capabilities: new Set(),
+			prompts: new Set(["public-agent", "secret-agent"]),
+			skills: new Set(["tdd"]),
+			extensions: new Set(),
+			chains: [
+				{
+					name: "build",
+					description: "Build",
+					chain: "public-agent",
+				},
+			],
+			provenance: [
+				{
+					origin: "test",
+					precedence: 0,
+					kind: "domains-dir",
+					rootDir: "/tmp/domains/coding",
+				},
+			],
+			rootDirs: ["/tmp/domains/coding"],
+		};
+
+		const registry = createRegistryFromDomains([coding]);
+
+		expect(registry.resolve("coding/public-agent", "docs")).toBe(publicAgent);
+		expect(registry.has("coding/secret-agent", "docs")).toBe(false);
+		expect(registry.resolve("coding/secret-agent", "coding")).toBe(
+			internalAgent,
+		);
+		expect(registry.resolve("secret-agent", "coding")).toBe(internalAgent);
+		expect(selectPublicSkillNames(coding, "docs")).toEqual(["tdd"]);
+		expect(
+			selectPublicChains(coding, "docs").map((chain) => chain.name),
+		).toEqual(["build"]);
+
+		expect(() => registry.resolve("coding/secret-agent", "docs")).toThrow(
+			InternalAgentAccessError,
+		);
+		expect(() => registry.resolve("coding/missing-agent", "docs")).toThrow(
+			/Unknown agent ID "coding\/missing-agent"/,
+		);
 	});
 });

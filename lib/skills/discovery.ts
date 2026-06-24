@@ -9,6 +9,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import matter from "gray-matter";
+import { canAccessSurfaceName } from "../domains/public-surface.ts";
 import type { LoadedDomain } from "../domains/types.ts";
 
 /** Metadata for a discovered skill. */
@@ -35,6 +36,11 @@ export interface ExtraSkillSource {
 	readonly domain: string;
 }
 
+export interface DiscoverSkillsOptions {
+	/** Domain requesting visibility. Undefined means outside every domain. */
+	readonly domainContext?: string;
+}
+
 /**
  * Discover all skills across loaded domains plus any extra skill paths.
  *
@@ -54,6 +60,7 @@ export interface ExtraSkillSource {
 export async function discoverSkills(
 	domains: readonly LoadedDomain[],
 	extras: readonly ExtraSkillSource[] = [],
+	options: DiscoverSkillsOptions = {},
 ): Promise<DiscoveredSkill[]> {
 	const skills: DiscoveredSkill[] = [];
 
@@ -62,7 +69,15 @@ export async function discoverSkills(
 			const skillsDir = join(rootDir, "skills");
 			if (!(await isDirectory(skillsDir))) continue;
 
-			await scanForSkills(skillsDir, domain.manifest.id, skills);
+			await scanForSkills(skillsDir, domain.manifest.id, skills, {
+				allowedSkill: (name) =>
+					canAccessSurfaceName({
+						domain,
+						assetType: "skills",
+						name,
+						requesterDomain: options.domainContext,
+					}),
+			});
 		}
 	}
 
@@ -93,6 +108,7 @@ async function scanForSkills(
 	dirPath: string,
 	domain: string,
 	results: DiscoveredSkill[],
+	options: { readonly allowedSkill?: (name: string) => boolean } = {},
 	isRoot = true,
 ): Promise<void> {
 	const entries = await readdir(dirPath, { withFileTypes: true });
@@ -100,12 +116,16 @@ async function scanForSkills(
 	for (const entry of entries) {
 		// Flat .md files at the root level (e.g. skills/foo.md)
 		if (isRoot && entry.isFile() && entry.name.endsWith(".md")) {
+			const baseName = entry.name.slice(0, -3);
+			if (!options.allowedSkill?.(baseName) && options.allowedSkill) continue;
 			const skill = await loadFlatSkillMeta(
 				join(dirPath, entry.name),
-				entry.name.slice(0, -3),
+				baseName,
 				domain,
 			);
-			if (skill) results.push(skill);
+			if (skill && (options.allowedSkill?.(skill.name) ?? true)) {
+				results.push(skill);
+			}
 			continue;
 		}
 
@@ -114,10 +134,12 @@ async function scanForSkills(
 		const childDir = join(dirPath, entry.name);
 		const skill = await loadSkillMeta(childDir, entry.name, domain);
 		if (skill) {
-			results.push(skill);
+			if (options.allowedSkill?.(skill.name) ?? true) {
+				results.push(skill);
+			}
 		} else {
 			// No SKILL.md here — recurse deeper
-			await scanForSkills(childDir, domain, results, false);
+			await scanForSkills(childDir, domain, results, options, false);
 		}
 	}
 }

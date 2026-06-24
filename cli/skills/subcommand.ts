@@ -109,7 +109,9 @@ async function discoverAllRuntimeSkills(
 		runtime.projectConfig.skillPaths ?? []
 	).map((skillsDir) => ({ skillsDir, domain: PROJECT_SKILL_DOMAIN }));
 
-	return discoverSkills(runtime.domains, projectExtras);
+	return discoverSkills(runtime.domains, projectExtras, {
+		domainContext: runtime.domainContext,
+	});
 }
 
 export function createSkillsProgram(): Command {

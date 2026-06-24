@@ -6,12 +6,25 @@
  * extensions, subagents, leads, and named-chain agents.
  */
 
+import { canAccessSurfaceName } from "./public-surface.ts";
 import type { LoadedDomain } from "./types.ts";
 
 /** Severity level for a validation diagnostic. */
 type DiagnosticSeverity = "error" | "warning";
 type LoadedAgent =
 	LoadedDomain["agents"] extends Map<string, infer Agent> ? Agent : never;
+type AgentVisibility =
+	| { readonly kind: "visible" }
+	| { readonly kind: "not-found" }
+	| {
+			readonly kind: "internal";
+			readonly domain: string;
+			readonly agent: string;
+	  };
+interface AgentIndex {
+	readonly ids: ReadonlySet<string>;
+	readonly domains: readonly LoadedDomain[];
+}
 
 /** A single validation issue found during domain validation. */
 export interface DomainValidationDiagnostic {
@@ -51,14 +64,14 @@ export function validateDomains(
 ): DomainValidationDiagnostic[] {
 	const shared = findSharedDomain(domains);
 	const portableDomains = findPortableDomains(domains);
-	const allAgentIds = collectKnownAgentIds(domains);
+	const agentIndex = collectKnownAgentIndex(domains);
 
 	return [
 		...validatePortableCapabilityOverlap(portableDomains),
 		...domains.flatMap((domain) => [
 			...validateDomainLead(domain),
-			...validateNamedChainAgents(domain, allAgentIds),
-			...validateDomainAgents(domain, shared, portableDomains, allAgentIds),
+			...validateNamedChainAgents(domain, agentIndex),
+			...validateDomainAgents(domain, shared, portableDomains, agentIndex),
 		]),
 	];
 }
@@ -102,7 +115,7 @@ function validatePortableCapabilityOverlap(
 	return diagnostics;
 }
 
-function collectKnownAgentIds(domains: readonly LoadedDomain[]): Set<string> {
+function collectKnownAgentIndex(domains: readonly LoadedDomain[]): AgentIndex {
 	const allAgentIds = new Set<string>();
 
 	for (const domain of domains) {
@@ -112,7 +125,7 @@ function collectKnownAgentIds(domains: readonly LoadedDomain[]): Set<string> {
 		}
 	}
 
-	return allAgentIds;
+	return { ids: allAgentIds, domains };
 }
 
 function validateDomainLead(
@@ -135,13 +148,28 @@ function validateDomainLead(
 
 function validateNamedChainAgents(
 	domain: LoadedDomain,
-	allAgentIds: ReadonlySet<string>,
+	agentIndex: AgentIndex,
 ): DomainValidationDiagnostic[] {
 	const diagnostics: DomainValidationDiagnostic[] = [];
 
 	for (const chain of domain.chains) {
 		for (const stage of parseChainStages(chain.chain)) {
-			if (!allAgentIds.has(stage)) {
+			const visibility = resolveAgentVisibility(
+				stage,
+				domain.manifest.id,
+				agentIndex.domains,
+			);
+			if (visibility.kind === "visible") {
+				continue;
+			}
+			if (visibility.kind === "internal") {
+				diagnostics.push({
+					domain: domain.manifest.id,
+					chain: chain.name,
+					message: `Named chain stage "${stage}" resolves to internal agent "${visibility.domain}/${visibility.agent}"`,
+					severity: "warning",
+				});
+			} else {
 				diagnostics.push({
 					domain: domain.manifest.id,
 					chain: chain.name,
@@ -178,7 +206,7 @@ function validateAgentPrompts(
 		{
 			domain: domain.manifest.id,
 			agent: agentId,
-			message: `Missing persona prompt "${agentId}" in domain prompts`,
+			message: `Missing persona prompt for domain "${domain.manifest.id}" agent "${agentId}"; expected prompts/${agentId}.md`,
 			severity: "error",
 		},
 	];
@@ -188,7 +216,7 @@ function validateDomainAgents(
 	domain: LoadedDomain,
 	shared: LoadedDomain | undefined,
 	portableDomains: readonly LoadedDomain[],
-	allAgentIds: ReadonlySet<string>,
+	agentIndex: AgentIndex,
 ): DomainValidationDiagnostic[] {
 	return [...domain.agents].flatMap(([agentId, agent]) => [
 		...validateAgentPrompts(agentId, domain),
@@ -200,7 +228,7 @@ function validateDomainAgents(
 			portableDomains,
 		),
 		...validateAgentExtensions(agentId, agent, domain, shared, portableDomains),
-		...validateAgentSubagents(agentId, agent, domain, allAgentIds),
+		...validateAgentSubagents(agentId, agent, domain, agentIndex),
 	]);
 }
 
@@ -284,12 +312,27 @@ function validateAgentSubagents(
 	agentId: string,
 	agent: LoadedAgent,
 	domain: LoadedDomain,
-	allAgentIds: ReadonlySet<string>,
+	agentIndex: AgentIndex,
 ): DomainValidationDiagnostic[] {
 	const diagnostics: DomainValidationDiagnostic[] = [];
 
 	for (const subagent of agent.subagents ?? []) {
-		if (!allAgentIds.has(subagent)) {
+		const visibility = resolveAgentVisibility(
+			subagent,
+			domain.manifest.id,
+			agentIndex.domains,
+		);
+		if (visibility.kind === "visible") {
+			continue;
+		}
+		if (visibility.kind === "internal") {
+			diagnostics.push({
+				domain: domain.manifest.id,
+				agent: agentId,
+				message: `Subagent "${subagent}" resolves to internal agent "${visibility.domain}/${visibility.agent}"`,
+				severity: "warning",
+			});
+		} else {
 			diagnostics.push({
 				domain: domain.manifest.id,
 				agent: agentId,
@@ -300,4 +343,49 @@ function validateAgentSubagents(
 	}
 
 	return diagnostics;
+}
+
+function resolveAgentVisibility(
+	reference: string,
+	requesterDomain: string,
+	domains: readonly LoadedDomain[],
+): AgentVisibility {
+	const slashIndex = reference.indexOf("/");
+	if (slashIndex >= 0) {
+		const domainId = reference.slice(0, slashIndex);
+		const agentId = reference.slice(slashIndex + 1);
+		const domain = domains.find(
+			(candidate) => candidate.manifest.id === domainId,
+		);
+		if (!domain?.agents.has(agentId)) return { kind: "not-found" };
+		return canAccessSurfaceName({
+			domain,
+			assetType: "agents",
+			name: agentId,
+			requesterDomain,
+		})
+			? { kind: "visible" }
+			: { kind: "internal", domain: domainId, agent: agentId };
+	}
+
+	let visible = false;
+	let internal: { domain: string; agent: string } | undefined;
+	for (const domain of domains) {
+		if (!domain.agents.has(reference)) continue;
+		if (
+			canAccessSurfaceName({
+				domain,
+				assetType: "agents",
+				name: reference,
+				requesterDomain,
+			})
+		) {
+			visible = true;
+		} else {
+			internal = { domain: domain.manifest.id, agent: reference };
+		}
+	}
+
+	if (visible) return { kind: "visible" };
+	return internal ? { kind: "internal", ...internal } : { kind: "not-found" };
 }

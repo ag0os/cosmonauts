@@ -76,6 +76,7 @@ describe("validateDomains", () => {
 
 	describe("Rule 1: Persona prompt exists", () => {
 		it("reports error when non-shared agent lacks persona prompt", () => {
+			// @cosmo-behavior plan:domain-authoring#B-014
 			const shared = makeShared();
 			const coding = makeDomain({
 				manifest: { id: "coding", description: "Coding" },
@@ -90,6 +91,10 @@ describe("validateDomains", () => {
 			expect(match).toBeDefined();
 			expect(match?.severity).toBe("error");
 			expect(match?.domain).toBe("coding");
+			expect(match?.agent).toBe("worker");
+			expect(match?.message).toContain('domain "coding"');
+			expect(match?.message).toContain('agent "worker"');
+			expect(match?.message).toContain("prompts/worker.md");
 		});
 
 		it("passes when persona prompt exists", () => {

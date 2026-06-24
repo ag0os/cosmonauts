@@ -21,6 +21,18 @@ export interface DomainManifest {
 	readonly defaultModel?: string;
 	/** Whether this domain is portable (can be installed as a package). Defaults to false. */
 	readonly portable?: boolean;
+	/** Asset names hidden from callers outside this domain. Omitted lists default to public. */
+	readonly internal?: DomainInternalDenyList;
+}
+
+/** Domain public-surface deny-list. Omitted asset lists expose all discovered assets of that type. */
+export interface DomainInternalDenyList {
+	/** Agent IDs hidden from callers outside the owning domain. */
+	readonly agents?: readonly string[];
+	/** Skill names hidden from callers outside the owning domain. */
+	readonly skills?: readonly string[];
+	/** Named-chain names hidden from callers outside the owning domain. */
+	readonly chains?: readonly string[];
 }
 
 export type DomainSourceKind = "domains-dir" | "domain-root";

@@ -402,7 +402,7 @@ async function handleListAgents(
 ): Promise<void> {
 	const agents = runtime.domainContext
 		? runtime.agentRegistry.resolveInDomain(runtime.domainContext)
-		: runtime.agentRegistry.listAll();
+		: runtime.agentRegistry.listAll(runtime.domainContext);
 	const items: AgentListItem[] = agents.map((agent) => ({
 		id: qualifyAgentId(agent.id, agent.domain ?? runtime.domainContext),
 		domain: agent.domain ?? runtime.domainContext ?? null,

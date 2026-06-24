@@ -7,6 +7,7 @@
  */
 
 import { loadProjectConfig } from "../config/index.ts";
+import { selectPublicChains } from "../domains/public-surface.ts";
 import type { LoadedDomain } from "../domains/types.ts";
 import type { NamedChain } from "./types.ts";
 
@@ -21,7 +22,7 @@ export function selectDomainChains(
 				domain.manifest.id === "shared" ||
 				domain.manifest.id === domainContext,
 		)
-		.flatMap((domain) => domain.chains);
+		.flatMap((domain) => selectPublicChains(domain, domainContext));
 }
 
 /**
