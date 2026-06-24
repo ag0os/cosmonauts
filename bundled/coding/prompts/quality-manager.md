@@ -103,6 +103,8 @@ Also append executable universal gate claims from `universal_gate_status` only w
 
 In addition, append one claim per entry in `verifier_criteria` (from step 2.5). For each, the claim label is the criterion text and the command to run is the criterion's `command` field. Pass the `id` (e.g., `QC-003`) alongside each claim so failures can be attributed back to the contract.
 
+For any migration-shaped task or diff that moves or renames files, directories, exported symbols, commands, config keys, or hard-coded paths, require a stale-reference/dead-code sweep as soon as that migration task completes, not only during the final quality stage. The sweep must cover the full repository source surface: runtime source directories (`lib/`, `cli/`, `bin/`, `domains/`, `bundled/`, `scripts/`) plus `tests/`, `docs/`, and any other tracked references. Prioritize runtime source findings over tests/docs cleanup, and route stale runtime references as correctness blockers. When a detected analysis tool supplies a dead-code or stale-reference audit, run it with source-directory coverage broad enough to include all of those directories; otherwise add explicit verifier claims that grep/search for the old identifiers or paths named by the migration.
+
 Include the specific commands the verifier should run for each claim. The verifier will report pass/fail with evidence for each in its final completion message.
 
 After verifier completion, parse the full verification report from the completion message. Record any failed checks for remediation routing, noting which failures correspond to `QC-*` contract criteria.
