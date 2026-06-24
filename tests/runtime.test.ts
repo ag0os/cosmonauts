@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { isSubagentAllowed } from "../domains/shared/extensions/orchestration/authorization.ts";
 import { DomainValidationError } from "../lib/domains/validator.ts";
 import { CosmonautsRuntime, DomainBindingTargetError } from "../lib/runtime.ts";
 import { useTempDir } from "./helpers/fs.ts";
@@ -112,6 +113,27 @@ async function setupCodingDomain(
 			capabilities: agent.capabilities ?? [],
 			extensions: agent.extensions ?? [],
 		});
+		await writeFile(join(promptsDir, `${agent.id}.md`), `# ${agent.id}`);
+	}
+}
+
+/** Create a named test domain with matching agent persona prompts. */
+async function setupNamedDomain(
+	domainsDir: string,
+	id: string,
+	agents: Array<{ id: string; overrides?: Record<string, unknown> }>,
+): Promise<void> {
+	const domainDir = join(domainsDir, id);
+	await mkdir(domainDir, { recursive: true });
+	await writeDomainManifest(domainDir, id);
+
+	const agentsDir = join(domainDir, "agents");
+	const promptsDir = join(domainDir, "prompts");
+	await mkdir(agentsDir, { recursive: true });
+	await mkdir(promptsDir, { recursive: true });
+
+	for (const agent of agents) {
+		await writeAgentDef(agentsDir, agent.id, agent.overrides);
 		await writeFile(join(promptsDir, `${agent.id}.md`), `# ${agent.id}`);
 	}
 }
@@ -553,6 +575,93 @@ describe("CosmonautsRuntime", () => {
 			} finally {
 				stderrSpy.mockRestore();
 			}
+		});
+	});
+
+	describe("domain bindings", () => {
+		it("applies project domain bindings when resolving qualified agent references", async () => {
+			// @cosmo-behavior plan:domain-authoring#B-008
+			const domainsDir = join(tmp.path, "domains");
+			await mkdir(domainsDir, { recursive: true });
+			await setupSharedDomain(domainsDir, { capabilities: ["core"] });
+			await setupNamedDomain(domainsDir, "ruby-coding", [
+				{
+					id: "worker",
+					overrides: {
+						description: "Original worker",
+						capabilities: ["core"],
+					},
+				},
+			]);
+			await setupNamedDomain(domainsDir, "ruby-experimental", [
+				{
+					id: "worker",
+					overrides: {
+						description: "Experimental worker",
+						capabilities: ["core"],
+					},
+				},
+			]);
+			await setupNamedDomain(domainsDir, "consumer", [
+				{
+					id: "leader",
+					overrides: {
+						capabilities: ["core"],
+						subagents: ["ruby-coding/worker"],
+					},
+				},
+			]);
+			await writeProjectConfig(tmp.path, {
+				activeDomains: ["ruby-coding", "ruby-experimental", "consumer"],
+				domainBindings: { "ruby-coding": "ruby-experimental" },
+			});
+
+			const runtime = await CosmonautsRuntime.create({
+				builtinDomainsDir: domainsDir,
+				projectRoot: tmp.path,
+			});
+
+			const target =
+				runtime.agentRegistry.resolveReference("ruby-coding/worker");
+			expect(target?.definition.domain).toBe("ruby-experimental");
+			expect(target?.definition.description).toBe("Experimental worker");
+			expect(target?.reference).toEqual({
+				requested: {
+					role: "ruby-coding",
+					agentId: "worker",
+					qualifiedId: "ruby-coding/worker",
+				},
+				resolved: {
+					role: "ruby-experimental",
+					agentId: "worker",
+					qualifiedId: "ruby-experimental/worker",
+				},
+				binding: {
+					role: "ruby-coding",
+					domainId: "ruby-experimental",
+					source: "project",
+				},
+			});
+
+			const consumer = runtime.agentRegistry.resolve("consumer/leader");
+			if (!target) {
+				expect.unreachable("Expected ruby-coding/worker to resolve");
+			}
+			expect(
+				isSubagentAllowed(consumer, target.definition, target.reference),
+			).toBe(true);
+
+			const unbound = runtime.agentRegistry.resolveReference(
+				"ruby-experimental/worker",
+			);
+			expect(unbound?.definition.domain).toBe("ruby-experimental");
+			expect(unbound?.reference.requested.qualifiedId).toBe(
+				"ruby-experimental/worker",
+			);
+			expect(unbound?.reference.resolved.qualifiedId).toBe(
+				"ruby-experimental/worker",
+			);
+			expect(unbound?.reference.binding.source).toBe("default");
 		});
 	});
 

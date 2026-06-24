@@ -161,7 +161,9 @@ export class CosmonautsRuntime {
 		}
 
 		// 5. Build registries
-		const agentRegistry = createRegistryFromDomains(domains);
+		const agentRegistry = createRegistryFromDomains(domains, {
+			bindingResolver,
+		});
 
 		// 6. Build domain resolver from registry
 		const domainResolver = new DomainResolver(domainRegistry);

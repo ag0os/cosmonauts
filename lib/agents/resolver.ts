@@ -6,6 +6,10 @@
  * resolution, and runtime registration for user-defined agents.
  */
 
+import type {
+	DomainBindingResolver,
+	ResolvedAgentReference,
+} from "../domains/bindings.ts";
 import { collectInternalAgentsByDomain } from "../domains/public-surface.ts";
 import type { LoadedDomain } from "../domains/types.ts";
 import { splitRole } from "./qualified-role.ts";
@@ -13,15 +17,21 @@ import type { AgentDefinition } from "./types.ts";
 
 export interface AgentRegistryOptions {
 	readonly internalAgentsByDomain?: ReadonlyMap<string, ReadonlySet<string>>;
+	readonly bindingResolver?: DomainBindingResolver;
 }
 
 type AgentResolutionResult =
-	| { readonly kind: "found"; readonly definition: AgentDefinition }
-	| { readonly kind: "not-found" }
+	| {
+			readonly kind: "found";
+			readonly definition: AgentDefinition;
+			readonly reference?: ResolvedAgentReference;
+	  }
+	| { readonly kind: "not-found"; readonly reference?: ResolvedAgentReference }
 	| {
 			readonly kind: "internal";
 			readonly domain: string;
 			readonly agent: string;
+			readonly reference?: ResolvedAgentReference;
 	  };
 
 export class InternalAgentAccessError extends Error {
@@ -56,6 +66,7 @@ export class AgentRegistry {
 		string,
 		ReadonlySet<string>
 	>;
+	private readonly bindingResolver: DomainBindingResolver | undefined;
 
 	constructor(
 		builtins: readonly AgentDefinition[],
@@ -64,6 +75,7 @@ export class AgentRegistry {
 		this.definitions = new Map();
 		this.internalAgentsByDomain =
 			options.internalAgentsByDomain ?? new Map<string, ReadonlySet<string>>();
+		this.bindingResolver = options.bindingResolver;
 		for (const def of builtins) {
 			const key = def.domain ? `${def.domain}/${def.id}` : def.id;
 			this.definitions.set(key, def);
@@ -99,6 +111,34 @@ export class AgentRegistry {
 	/** Returns true if an agent with the given ID exists. */
 	has(id: string, domainContext?: string): boolean {
 		return this.resolveId(id, domainContext) !== undefined;
+	}
+
+	/**
+	 * Resolve an agent reference while preserving the caller's requested role.
+	 *
+	 * Qualified references are interpreted through the domain binding resolver
+	 * when one is configured, so `ruby-coding/worker` can execute against a
+	 * bound target such as `ruby-experimental/worker` without rewriting the
+	 * consumer-facing reference.
+	 */
+	resolveReference(
+		id: string,
+		domainContext?: string,
+	):
+		| {
+				readonly definition: AgentDefinition;
+				readonly reference: ResolvedAgentReference;
+		  }
+		| undefined {
+		const result = this.resolveResult(id, domainContext);
+		if (result.kind !== "found") return undefined;
+		const reference =
+			result.reference ?? this.defaultReferenceFor(result.definition, id);
+		if (!reference) return undefined;
+		return {
+			definition: result.definition,
+			reference,
+		};
 	}
 
 	/** Returns all definitions from a specific domain. */
@@ -145,6 +185,20 @@ export class AgentRegistry {
 		id: string,
 		domainContext?: string,
 	): AgentResolutionResult {
+		const boundReference = this.boundReferenceFor(id, domainContext);
+		if (boundReference) {
+			const resolved = this.definitions.get(
+				boundReference.resolved.qualifiedId,
+			);
+			if (resolved) {
+				return this.withReference(
+					this.visibleResult(resolved, domainContext),
+					boundReference,
+				);
+			}
+			return { kind: "not-found", reference: boundReference };
+		}
+
 		// 1. Direct lookup (qualified or unqualified)
 		const direct = this.definitions.get(id);
 		if (direct) return this.visibleResult(direct, domainContext);
@@ -208,6 +262,68 @@ export class AgentRegistry {
 			: { kind: "not-found" };
 	}
 
+	private boundReferenceFor(
+		id: string,
+		domainContext?: string,
+	): ResolvedAgentReference | undefined {
+		if (!this.bindingResolver) return undefined;
+		if (id.includes("/")) {
+			return this.bindingResolver.resolveAgentReference(id);
+		}
+		if (domainContext) {
+			return this.bindingResolver.resolveAgentReference(
+				`${domainContext}/${id}`,
+			);
+		}
+		return undefined;
+	}
+
+	private withReference(
+		result: AgentResolutionResult,
+		reference: ResolvedAgentReference,
+	): AgentResolutionResult {
+		if (result.kind === "found") {
+			return {
+				kind: "found",
+				definition: result.definition,
+				reference,
+			};
+		}
+		if (result.kind === "internal") {
+			return { ...result, reference };
+		}
+		return { kind: "not-found", reference };
+	}
+
+	private defaultReferenceFor(
+		definition: AgentDefinition,
+		id: string,
+	): ResolvedAgentReference | undefined {
+		const role = id.includes("/")
+			? splitRole(id).domain
+			: (definition.domain ?? undefined);
+		if (!role || !definition.domain) return undefined;
+		const requested = {
+			role,
+			agentId: definition.id,
+			qualifiedId: `${role}/${definition.id}`,
+		};
+		const resolved = {
+			role: definition.domain,
+			agentId: definition.id,
+			qualifiedId: `${definition.domain}/${definition.id}`,
+		};
+		return {
+			requested,
+			resolved,
+			binding: {
+				role,
+				domainId: definition.domain,
+				source: "default",
+			},
+		};
+	}
+
 	private isVisible(
 		definition: AgentDefinition,
 		requesterDomain?: string,
@@ -223,6 +339,7 @@ export class AgentRegistry {
 /** Create a registry from loaded domains. */
 export function createRegistryFromDomains(
 	domains: readonly LoadedDomain[],
+	options: AgentRegistryOptions = {},
 ): AgentRegistry {
 	const allDefs: AgentDefinition[] = [];
 	for (const domain of domains) {
@@ -232,5 +349,6 @@ export function createRegistryFromDomains(
 	}
 	return new AgentRegistry(allDefs, {
 		internalAgentsByDomain: collectInternalAgentsByDomain(domains),
+		bindingResolver: options.bindingResolver,
 	});
 }

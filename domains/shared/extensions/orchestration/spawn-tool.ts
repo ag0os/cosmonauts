@@ -486,10 +486,11 @@ export function registerSpawnTool(
 				};
 			}
 
-			const targetDef = runtime.agentRegistry.get(
+			const targetResolution = runtime.agentRegistry.resolveReference(
 				params.role,
 				runtime.domainContext,
 			);
+			const targetDef = targetResolution?.definition;
 			if (!targetDef) {
 				return {
 					content: [
@@ -506,7 +507,9 @@ export function registerSpawnTool(
 				};
 			}
 
-			if (!isSubagentAllowed(callerDef, targetDef)) {
+			if (
+				!isSubagentAllowed(callerDef, targetDef, targetResolution.reference)
+			) {
 				return {
 					content: [
 						{
