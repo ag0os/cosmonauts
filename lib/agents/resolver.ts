@@ -20,7 +20,7 @@ interface AgentRegistryOptions {
 	readonly bindingResolver?: DomainBindingResolver;
 }
 
-export type AgentResolutionResult =
+type AgentResolutionResult =
 	| {
 			readonly kind: "found";
 			readonly definition: AgentDefinition;
