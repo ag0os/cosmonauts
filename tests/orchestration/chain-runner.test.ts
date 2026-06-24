@@ -110,6 +110,29 @@ const defaultRegistry = new AgentRegistry([
 	makeCodingDef("fixer", false),
 ]);
 
+function bindingResolver(bindings: Record<string, string>) {
+	return {
+		resolveAgentReference(qualifiedId: string) {
+			const [role, agentId] = qualifiedId.split("/");
+			if (!role || !agentId) throw new Error("Expected qualified reference");
+			const domainId = bindings[role] ?? role;
+			return {
+				requested: { role, agentId, qualifiedId },
+				resolved: {
+					role: domainId,
+					agentId,
+					qualifiedId: `${domainId}/${agentId}`,
+				},
+				binding: {
+					role,
+					domainId,
+					source: bindings[role] ? "project" : "default",
+				},
+			};
+		},
+	};
+}
+
 function makeConfig(
 	steps: ChainStep[],
 	overrides?: Partial<ChainConfig>,
@@ -169,6 +192,33 @@ describe("runStage", () => {
 			expect(result.success).toBe(false);
 			expect(result.error).toContain('Unknown agent role "unknown-role"');
 			expect(spawner.spawn).not.toHaveBeenCalled();
+		});
+
+		test("runs a resolved chain stage without rebinding the final target", async () => {
+			const registry = new AgentRegistry([makeCodingDef("worker", false)], {
+				bindingResolver: bindingResolver({ a: "coding", coding: "c" }) as never,
+			});
+			const [stage] = parseChain("a/worker", registry);
+			if (!stage || "kind" in stage) {
+				expect.unreachable("Expected one resolved chain stage");
+			}
+			expect(stage.agentReference?.resolved.qualifiedId).toBe("coding/worker");
+			const spawner = createMockSpawner();
+			const config = makeConfig([stage], { registry });
+
+			const result = await runStage(stage, config, spawner);
+
+			expect(result.success).toBe(true);
+			expect(spawner.spawn).toHaveBeenCalledWith(
+				expect.objectContaining({
+					role: "a/worker",
+					agentReference: expect.objectContaining({
+						resolved: expect.objectContaining({
+							qualifiedId: "coding/worker",
+						}),
+					}),
+				}),
+			);
 		});
 
 		test("rejects invalid derived planSlug before spawn", async () => {

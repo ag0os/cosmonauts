@@ -122,6 +122,24 @@ describe("compileChainToGraph", () => {
 		]);
 	});
 
+	test("persists a resolved stage reference as the durable spawn target without rebinding it", () => {
+		const boundRegistry = new AgentRegistry([agent("worker")], {
+			bindingResolver: bindingResolver({ a: "coding", coding: "c" }) as never,
+		});
+		const parsed = parseChain("a/worker", boundRegistry);
+
+		const compiled = compileChainToGraph({
+			runId: "run-chain-compiler-resolved-target",
+			steps: parsed,
+			projectRoot: "/tmp/cosmonauts/project",
+			registry: boundRegistry,
+		});
+
+		const options = compiled.graph.steps[0]?.backend.options;
+		expect(resolvedQualifiedId(options, "stage")).toBe("coding/worker");
+		expect(resolvedQualifiedId(options, "spawn")).toBe("coding/worker");
+	});
+
 	// @cosmo-behavior plan:durable-frontend-migration#B-004
 	test("persists chain stage options for prompt injection model and thinking", () => {
 		const parsed = parseChain(
@@ -212,6 +230,29 @@ describe("compileChainToGraph", () => {
 	});
 });
 
+function bindingResolver(bindings: Record<string, string>) {
+	return {
+		resolveAgentReference(qualifiedId: string) {
+			const [role, agentId] = qualifiedId.split("/");
+			if (!role || !agentId) throw new Error("Expected qualified reference");
+			const domainId = bindings[role] ?? role;
+			return {
+				requested: { role, agentId, qualifiedId },
+				resolved: {
+					role: domainId,
+					agentId,
+					qualifiedId: `${domainId}/${agentId}`,
+				},
+				binding: {
+					role,
+					domainId,
+					source: bindings[role] ? "project" : "default",
+				},
+			};
+		},
+	};
+}
+
 function agent(id: string): AgentDefinition {
 	return {
 		id,
@@ -252,6 +293,22 @@ function roleFromStepOptions(options: unknown): string | undefined {
 	const stage = options.stage;
 	if (!isRecord(stage)) return undefined;
 	return typeof stage.name === "string" ? stage.name : undefined;
+}
+
+function resolvedQualifiedId(
+	options: unknown,
+	field: "spawn" | "stage",
+): string | undefined {
+	if (!isRecord(options)) return undefined;
+	const value = options[field];
+	if (!isRecord(value)) return undefined;
+	const agentReference = value.agentReference;
+	if (!isRecord(agentReference)) return undefined;
+	const resolved = agentReference.resolved;
+	if (!isRecord(resolved)) return undefined;
+	return typeof resolved.qualifiedId === "string"
+		? resolved.qualifiedId
+		: undefined;
 }
 
 function spawnOptionsPrompt(options: unknown): string | undefined {

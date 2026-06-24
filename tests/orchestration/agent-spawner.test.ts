@@ -6,10 +6,11 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import {
+	createPiSpawner,
 	getModelForRole,
 	getThinkingForRole,
 	resolveExtensionPaths,
@@ -27,6 +28,15 @@ const DOMAINS_DIR = resolve(
 );
 
 const SHARED_EXTENSIONS_DIR = join(DOMAINS_DIR, "shared", "extensions");
+
+const sessionFactoryMocks = vi.hoisted(() => ({
+	createAgentSessionFromDefinition: vi.fn(),
+}));
+
+vi.mock("../../lib/orchestration/session-factory.ts", () => ({
+	createAgentSessionFromDefinition:
+		sessionFactoryMocks.createAgentSessionFromDefinition,
+}));
 
 // ============================================================================
 // Fixtures — synthetic definitions for getModelForRole tests
@@ -60,6 +70,108 @@ const FIXTURE_WORKER: AgentDefinition = {
 };
 
 const FIXTURE_REGISTRY = new AgentRegistry([FIXTURE_PLANNER, FIXTURE_WORKER]);
+
+function makeDomainDef(
+	domain: string,
+	id: string,
+	model: string,
+): AgentDefinition {
+	return {
+		id,
+		domain,
+		description: `${domain}/${id}`,
+		capabilities: [],
+		model,
+		tools: "none",
+		extensions: [],
+		skills: [],
+		projectContext: false,
+		session: "ephemeral",
+		loop: false,
+	};
+}
+
+function bindingResolver(bindings: Record<string, string>) {
+	return {
+		resolveAgentReference(qualifiedId: string) {
+			const [role, agentId] = qualifiedId.split("/");
+			if (!role || !agentId) throw new Error("Expected qualified reference");
+			const domainId = bindings[role] ?? role;
+			return {
+				requested: { role, agentId, qualifiedId },
+				resolved: {
+					role: domainId,
+					agentId,
+					qualifiedId: `${domainId}/${agentId}`,
+				},
+				binding: {
+					role,
+					domainId,
+					source: bindings[role] ? "project" : "default",
+				},
+			};
+		},
+	};
+}
+
+describe("createPiSpawner", () => {
+	beforeEach(() => {
+		sessionFactoryMocks.createAgentSessionFromDefinition.mockReset();
+	});
+
+	test("uses a resolved agent reference as the final spawn target without rebinding it", async () => {
+		const bWorker = makeDomainDef("b", "worker", "test/b-worker");
+		const cWorker = makeDomainDef("c", "worker", "test/c-worker");
+		const registry = new AgentRegistry([bWorker, cWorker], {
+			bindingResolver: bindingResolver({ a: "b", b: "c" }) as never,
+		});
+		const reference = registry.resolveReference("a/worker")?.reference;
+		if (!reference)
+			expect.unreachable("Expected a/worker to resolve to b/worker");
+		expect(reference.resolved.qualifiedId).toBe("b/worker");
+
+		sessionFactoryMocks.createAgentSessionFromDefinition.mockResolvedValue({
+			session: {
+				sessionId: "spawn-session",
+				messages: [],
+				prompt: vi.fn(),
+				dispose: vi.fn(),
+				getSessionStats: () => ({
+					tokens: {
+						input: 0,
+						output: 0,
+						cacheRead: 0,
+						cacheWrite: 0,
+						total: 0,
+					},
+					cost: 0,
+					userMessages: 0,
+					toolCalls: 0,
+				}),
+				subscribe: vi.fn(),
+			},
+		});
+
+		const spawner = createPiSpawner(registry, DOMAINS_DIR);
+		const result = await spawner.spawn({
+			role: "a/worker",
+			agentReference: reference,
+			cwd: "/tmp/project",
+			model: "test/model",
+			prompt: "run",
+		});
+
+		expect(result.success).toBe(true);
+		expect(
+			sessionFactoryMocks.createAgentSessionFromDefinition,
+		).toHaveBeenCalledWith(
+			bWorker,
+			expect.objectContaining({ agentReference: reference }),
+			DOMAINS_DIR,
+			undefined,
+		);
+	});
+});
 
 describe("resolveTools", () => {
 	const cwd = "/tmp/test-project";

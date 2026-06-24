@@ -588,7 +588,11 @@ function prepareStageExecution(
 			?.reference;
 	const executionRole = stageReference?.resolved.qualifiedId ?? stage.name;
 
-	if (!config.registry.has(executionRole, config.domainContext)) {
+	const hasExecutionTarget = stageReference
+		? config.registry.hasResolvedTarget(executionRole, config.domainContext)
+		: config.registry.has(executionRole, config.domainContext);
+
+	if (!hasExecutionTarget) {
 		let message = `Unknown agent role "${stage.name}"`;
 		const legacyCosmoStageName = "main/cosmo".slice("main/".length);
 		if (stage.name === legacyCosmoStageName) {
