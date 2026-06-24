@@ -230,6 +230,26 @@ describe("runStart Drive graph characterization", () => {
 		});
 	});
 
+	test("does not attach backend-setup-failure details to a normal task block", async () => {
+		// Regression: a task the backend blocks (e.g. unchecked acceptance criteria,
+		// needs human input) has no scheduler/setup cause and no unmet dependencies,
+		// so it must NOT carry abortDetails claiming a backend setup failure.
+		const fixture = await setupFixture("normal-task-block", 1, {
+			acceptanceCriteria: ["Behavior is verified"],
+		});
+
+		const result = await runDriveOnGraph(
+			fixture.spec,
+			createRunContext(fixture),
+		);
+
+		expect(result).toMatchObject({
+			runId: fixture.spec.runId,
+			outcome: "blocked",
+		});
+		expect((result as { abortDetails?: unknown }).abortDetails).toBeUndefined();
+	});
+
 	test("emits a diagnostic before aborting on scheduler-ending exceptions", async () => {
 		const fixture = await setupFixture("scheduler-ending-exception");
 		const ctx = createRunContext(fixture);
@@ -291,7 +311,11 @@ interface Fixture {
 	events: DriverEvent[];
 }
 
-async function setupFixture(name: string, taskCount = 1): Promise<Fixture> {
+async function setupFixture(
+	name: string,
+	taskCount = 1,
+	options: { acceptanceCriteria?: string[] } = {},
+): Promise<Fixture> {
 	const projectRoot = join(temp.path, name, "project");
 	const sessionsRoot = join(projectRoot, "missions", "sessions");
 	const runId = `run-${name}`;
@@ -305,6 +329,9 @@ async function setupFixture(name: string, taskCount = 1): Promise<Fixture> {
 			title: `${name} Drive characterization fixture ${index + 1}`,
 			description: "Exercise Drive graph state.",
 			labels: [`plan:${PLAN_SLUG}`],
+			...(options.acceptanceCriteria
+				? { acceptanceCriteria: options.acceptanceCriteria }
+				: {}),
 		});
 		taskIds.push(task.id);
 	}

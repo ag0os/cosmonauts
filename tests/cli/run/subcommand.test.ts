@@ -193,6 +193,36 @@ describe("cosmonauts run", () => {
 		expect(parsed.warnings).toEqual([]);
 	});
 
+	test("preserves drive --mode when a cosmonauts runtime option precedes the command", () => {
+		// Regression: a cosmonauts option (e.g. --domain) lands in `remaining`, so a
+		// fixed-position remaining[0]==="run" check failed and --mode was dropped
+		// (warned + the run silently fell back to inline).
+		const parsed = parseCliRuntimeOptions([
+			"--domain",
+			"coding",
+			"run",
+			"drive",
+			"--plan",
+			DRIVE_PLAN,
+			"--mode",
+			"detached",
+		]);
+
+		expect(parsed.options).toEqual({
+			piFlags: {},
+			domain: "coding",
+		});
+		expect(parsed.remaining).toEqual([
+			"run",
+			"drive",
+			"--plan",
+			DRIVE_PLAN,
+			"--mode",
+			"detached",
+		]);
+		expect(parsed.warnings).toEqual([]);
+	});
+
 	// @cosmo-behavior plan:orchestration-surface-consolidation#B-012
 	test("starts Drive through run drive and rejects the reserved chain plan slug", async () => {
 		const fixture = await setupDriveFixture(2);

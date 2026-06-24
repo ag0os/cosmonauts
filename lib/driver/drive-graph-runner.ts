@@ -315,6 +315,15 @@ async function toDriverResult(
 	}
 
 	if (latestRun.status === "blocked" || blockedStep) {
+		// Only attach abort details when the block was actually caused by
+		// scheduler/setup state (setup diagnostic or unmet dependencies). A normal
+		// task block — backend returned blocked, e.g. needs human input — has no
+		// such cause and must not be labeled a backend setup failure.
+		const blockAbortDetails = schedulerCausedAbortDetails({
+			spec,
+			steps,
+			diagnostics: schedulerResult.diagnostics,
+		});
 		return {
 			runId: spec.runId,
 			outcome: "blocked",
@@ -324,12 +333,7 @@ async function toDriverResult(
 			...(blockedStep?.result?.summary
 				? { blockedReason: blockedStep.result.summary }
 				: {}),
-			abortDetails: schedulerAbortDetails({
-				spec,
-				steps,
-				diagnostics: schedulerResult.diagnostics,
-				exitReason: schedulerResult.exitReason,
-			}),
+			...(blockAbortDetails ? { abortDetails: blockAbortDetails } : {}),
 		};
 	}
 
@@ -533,17 +537,22 @@ async function exceptionAbortDetails({
 	};
 }
 
-function schedulerAbortDetails({
+/**
+ * Abort details for a genuine scheduler/setup-level cause: a backend setup
+ * diagnostic, or pending tasks blocked on unmet dependencies. Returns undefined
+ * when there is no scheduler/setup-level cause — e.g. a task the backend simply
+ * reported as blocked (needs human input), which must NOT be reported as a setup
+ * failure.
+ */
+function schedulerCausedAbortDetails({
 	spec,
 	steps,
 	diagnostics,
-	exitReason,
 }: {
 	spec: DriverRunSpec;
 	steps: readonly StepRecord[];
 	diagnostics: readonly RuntimeDiagnostic[];
-	exitReason: RunGraphSchedulerResult["exitReason"];
-}): DriverRunAbortDetails {
+}): DriverRunAbortDetails | undefined {
 	const setupDiagnostic = backendSetupDiagnostic(diagnostics);
 	if (setupDiagnostic) {
 		return {
@@ -567,13 +576,29 @@ function schedulerAbortDetails({
 		};
 	}
 
-	return {
-		...pendingTaskSummary(spec, steps),
-		cause: {
-			type: "backend-setup-failure",
-			message: `Scheduler ${exitReason} with pending Drive tasks and no runnable work.`,
-		},
-	};
+	return undefined;
+}
+
+function schedulerAbortDetails({
+	spec,
+	steps,
+	diagnostics,
+	exitReason,
+}: {
+	spec: DriverRunSpec;
+	steps: readonly StepRecord[];
+	diagnostics: readonly RuntimeDiagnostic[];
+	exitReason: RunGraphSchedulerResult["exitReason"];
+}): DriverRunAbortDetails {
+	return (
+		schedulerCausedAbortDetails({ spec, steps, diagnostics }) ?? {
+			...pendingTaskSummary(spec, steps),
+			cause: {
+				type: "backend-setup-failure",
+				message: `Scheduler ${exitReason} with pending Drive tasks and no runnable work.`,
+			},
+		}
+	);
 }
 
 function pendingTaskSummary(
