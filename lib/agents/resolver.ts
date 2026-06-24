@@ -98,11 +98,6 @@ export class AgentRegistry {
 			: undefined;
 	}
 
-	/** Returns true when a previously resolved qualified execution target exists. */
-	hasResolvedTarget(qualifiedId: string, requesterDomain?: string): boolean {
-		return this.getResolvedTarget(qualifiedId, requesterDomain) !== undefined;
-	}
-
 	/** Returns the definition for the given ID, or throws with available IDs. */
 	resolve(id: string, domainContext?: string): AgentDefinition {
 		const result = this.resolveResult(id, domainContext);

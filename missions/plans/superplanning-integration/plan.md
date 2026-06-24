@@ -50,7 +50,7 @@ Two areas of change: enhancements to existing modules and a new domain directory
 
 | File | Single Responsibility | Change |
 |------|----------------------|--------|
-| `domains/shared/prompts/base.md` | Universal operating norms for all agents | Add Boil the Lake principle |
+| `lib/prompts/framework/base.md` | Universal operating norms for all agents | Add Boil the Lake principle |
 | `domains/shared/capabilities/anti-sycophancy.md` | **NEW** — Interaction discipline: take positions, ban hedging phrases, two-push rule | New capability file |
 | `domains/coding/capabilities/architectural-design.md` | Design discipline for plan-producing agents | Add shadow path tracing + complexity smell threshold |
 | `domains/shared/skills/plan/SKILL.md` | How to create well-structured plans | Add handoff completeness test + implementation unit enrichment |
@@ -222,7 +222,7 @@ Each enhancement is a targeted addition to an existing file, following the conve
 - Add as a new section "Plan Completeness Test" after "Scoping a Plan": "Before finalizing any plan, ask: 'What would the task manager or worker still have to invent if this plan were handed off now?' If the answer includes product behavior, scope boundaries, success criteria, or interface contracts — the plan is not done."
 - Also enrich the plan body sections guidance with the implementation unit fields from superplanning's Phase 4 (ref: `/Users/cosmos/Resources/superplanning/skills/superplanning/SKILL.md`, "Implementation Unit Template" section): requirements trace, planning-time unknowns classification (blocker vs deferred)
 
-**Boil the Lake** (add to `domains/shared/prompts/base.md`):
+**Boil the Lake** (add to `lib/prompts/framework/base.md`):
 - Adapted from superplanning's anti-sycophancy-rules.md (ref: `/Users/cosmos/Resources/superplanning/skills/superplanning/references/anti-sycophancy-rules.md`, "Boil the Lake Principle" section)
 - Also sourced from design-rationale.md concept #10 (ref: `/Users/cosmos/Resources/superplanning/design-rationale.md`, "Boil the Lake Reframing" section)
 - Add to Operating Norms: "AI makes completeness cheap. When choosing between a shortcut and the complete version, prefer completeness — the delta is minutes, not days. Only accept shortcuts when the complete version is genuinely out of scope."
@@ -331,7 +331,7 @@ export const workflows: WorkflowDefinition[] = [
 
 ### Existing files (modifications)
 
-- `domains/shared/prompts/base.md` — add Boil the Lake principle to Operating Norms
+- `lib/prompts/framework/base.md` — add Boil the Lake principle to Operating Norms
 - `domains/shared/capabilities/anti-sycophancy.md` — **NEW FILE** — anti-sycophancy capability
 - `domains/coding/capabilities/architectural-design.md` — add shadow path tracing section + complexity smell threshold to checklist
 - `domains/shared/skills/plan/SKILL.md` — add handoff completeness test section + enrich plan body guidance with implementation unit fields

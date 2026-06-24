@@ -19,6 +19,6 @@ Implementation Order step 9. Write the author-facing domain authoring documentat
 <!-- AC:BEGIN -->
 - [x] #1 B-015 domain authoring documentation covers manifest, agent, persona, capability, skill, extension, chain, `internal` visibility, active domains, and bindings with path/format/declaration/config split guidance, proven in `tests/docs/domain-authoring.test.ts` with exact marker `@cosmo-behavior plan:domain-authoring#B-015`.
 - [x] #2 `docs/prompts.md` describes the four prompt layers using the new framework prompt paths and states that domain `prompts/` contains personas only.
-- [x] #3 `README.md` and docs/tests no longer present active examples that depend on `bundled/coding/coding/**` or `domains/shared/prompts/*` as runtime paths.
+- [x] #3 `README.md` and docs/tests no longer present active examples that depend on the former nested bundled coding layout or pre-relocation shared prompt paths as runtime paths.
 - [x] #4 Documentation explains package layouts, live `/domain-bind` behavior, in-flight behavior, session replay, and actionable fixes for the plan's listed failure flows.
 <!-- AC:END -->

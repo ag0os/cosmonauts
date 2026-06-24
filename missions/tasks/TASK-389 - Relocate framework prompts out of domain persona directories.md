@@ -19,6 +19,6 @@ Implementation Order step 3. Move framework-owned base and sub-agent runtime pro
 
 <!-- AC:BEGIN -->
 - [x] #1 B-004 prompt assembly loads layer 0 from `lib/prompts/framework/base.md`, layer 3 from `lib/prompts/framework/runtime/sub-agent.md`, and layer 2 personas from `<domain>/prompts/<agent-id>.md`, proven in `tests/domains/prompt-assembly.test.ts` with exact marker `@cosmo-behavior plan:domain-authoring#B-004`.
-- [x] #2 No active runtime code path depends on `domains/shared/prompts/base.md` or `domains/shared/prompts/runtime/sub-agent.md` after the relocation.
+- [x] #2 No active runtime code path depends on `lib/prompts/framework/base.md` or `lib/prompts/framework/runtime/sub-agent.md` being supplied by a domain persona directory after the relocation.
 - [x] #3 Existing top-level and sub-agent prompt assembly behavior remains covered with test fixtures that can override the framework prompt directory.
 <!-- AC:END -->

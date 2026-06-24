@@ -9,7 +9,7 @@
   plan_refs: plan.md:54-62, plan.md:341-365, plan.md:383-392, plan.md:508
   code_refs: lib/packages/scanner.ts:59-67, lib/packages/scanner.ts:145-157, lib/packages/dev-bundled.ts:37-52, bundled/coding/cosmonauts.json:1-6
   description: |
-    The plan makes `path: "."` a `domain-root` source and then collapses `bundled/coding/coding/**` into `bundled/coding/**`. That contract is described for package manifests generally, but the actual dev-mode bundled path does not go through `addPackageSources()` or manifest-aware installed-package handling: `scanDomainSources()` directly pushes each `bundledDir` as a `domainsDir` with no manifest read and no source kind.
+    The plan makes `path: "."` a `domain-root` source and then collapses the former nested bundled coding layout into `bundled/coding/**`. That contract is described for package manifests generally, but the actual dev-mode bundled path does not go through `addPackageSources()` or manifest-aware installed-package handling: `scanDomainSources()` directly pushes each `bundledDir` as a `domainsDir` with no manifest read and no source kind.
 
     After `bundled/coding/cosmonauts.json` changes to `domains: [{ "name": "coding", "path": "." }]`, `discoverBundledPackageDirs()` will still return the package root, and scanner lines 59-67 will expose that root as a directory containing child domains. With the domain moved to the package root, `loadDomains()` will scan child directories and miss `domain.ts` at the root. The dogfooded coding domain can disappear in framework dev mode unless the plan explicitly routes bundled package dirs through the same manifest-to-`domain-root` logic as installed packages.
 

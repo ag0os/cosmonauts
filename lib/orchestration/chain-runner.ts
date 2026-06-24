@@ -589,7 +589,8 @@ function prepareStageExecution(
 	const executionRole = stageReference?.resolved.qualifiedId ?? stage.name;
 
 	const hasExecutionTarget = stageReference
-		? config.registry.hasResolvedTarget(executionRole, config.domainContext)
+		? config.registry.getResolvedTarget(executionRole, config.domainContext) !==
+			undefined
 		: config.registry.has(executionRole, config.domainContext);
 
 	if (!hasExecutionTarget) {

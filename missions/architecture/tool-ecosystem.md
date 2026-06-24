@@ -46,7 +46,7 @@ have **zero native research** — the felt pain that sends you to Claude Code/Co
 
 ## Gap 2 — Browser (under-surfaced, not unwanted)
 
-A `playwright-cli` skill exists (`bundled/coding/coding/skills/playwright-cli/`) but
+A `playwright-cli` skill exists (`bundled/coding/skills/playwright-cli/`) but
 is under-used because it doesn't feel native — and that low usage is a *surfacing*
 problem, not a need problem (browser automation is used heavily in Claude
 Code/Codex):

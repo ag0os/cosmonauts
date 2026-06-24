@@ -78,7 +78,7 @@ Acceptance criteria IDs used below are assigned from the spec in order:
 - Source: AC-004
 - Context: framework base and sub-agent runtime templates live under `lib/prompts/framework/`, while a domain `prompts/` directory contains only agent persona files.
 - Action: prompt assembly builds a top-level and sub-agent prompt.
-- Expected: layer 0 uses `lib/prompts/framework/base.md`, layer 3 uses `lib/prompts/framework/runtime/sub-agent.md`, layer 2 still uses `<domain>/prompts/<agent-id>.md`, and no runtime path requires `domains/shared/prompts/base.md` or `domains/shared/prompts/runtime/sub-agent.md`.
+- Expected: layer 0 uses `lib/prompts/framework/base.md`, layer 3 uses `lib/prompts/framework/runtime/sub-agent.md`, layer 2 still uses `<domain>/prompts/<agent-id>.md`, and no runtime path requires framework prompts from a domain persona directory.
 - Seam: `lib/prompts/loader.ts`, `lib/domains/prompt-assembly.ts`, `lib/agents/session-assembly.ts`
 - Test: `tests/domains/prompt-assembly.test.ts` > `loads framework base and runtime prompts outside domain persona directories`
 - Marker: `@cosmo-behavior plan:domain-authoring#B-004`
@@ -545,8 +545,8 @@ Implementation details:
 
 Move these files:
 
-- `domains/shared/prompts/base.md` → `lib/prompts/framework/base.md`
-- `domains/shared/prompts/runtime/sub-agent.md` → `lib/prompts/framework/runtime/sub-agent.md`
+- Former shared base prompt path → `lib/prompts/framework/base.md`
+- Former shared runtime sub-agent prompt path → `lib/prompts/framework/runtime/sub-agent.md`
 
 Update `assemblePrompts()`:
 
@@ -561,19 +561,19 @@ Remove runtime reliance on `DomainResolver.resolveBasePath()` and `resolveRuntim
 
 Collapse the bundled coding package:
 
-- Move `bundled/coding/coding/agents/` → `bundled/coding/agents/`.
-- Move `bundled/coding/coding/prompts/` → `bundled/coding/prompts/`.
-- Move `bundled/coding/coding/capabilities/`, `skills/`, `drivers/`, `chains.ts`, and `domain.ts` similarly.
+- Move bundled coding agents to `bundled/coding/agents/`.
+- Move bundled coding prompts to `bundled/coding/prompts/`.
+- Move bundled coding capabilities, skills, drivers, `chains.ts`, and `domain.ts` similarly.
 - Change `bundled/coding/cosmonauts.json` to `domains: [{ "name": "coding", "path": "." }]`.
 - Update moved TypeScript relative imports, for example agent files from `../../../../lib/...` to `../../../lib/...` and root domain files from `../../../lib/...` to `../../lib/...`.
-- Update references in tests/docs from `bundled/coding/coding/...` to `bundled/coding/...`.
+- Update references in tests/docs to the `bundled/coding/...` layout.
 - Verify B-016 before deleting the nested directory; otherwise dev-mode Cosmonauts can lose the coding domain.
 
 Update built-in domains:
 
-- Remove framework base/runtime prompts from `domains/shared/prompts/`.
+- Remove framework base/runtime prompts from the shared domain prompt directory.
 - Keep `domains/main/prompts/cosmo.md` and `bundled/coding/prompts/*.md` as persona directories.
-- If `domains/shared/prompts/` becomes empty, delete it rather than keeping an empty persona namespace.
+- If the shared domain prompt directory becomes empty, delete it rather than keeping an empty persona namespace.
 
 ### Documentation
 
@@ -637,7 +637,7 @@ Update `README.md` only where it references the old nested coding path or old pr
 - `lib/packages/manifest.ts` — keep manifest shape but ensure `path: "."` remains valid; enforce that `path: "."` is the only domain in the manifest when present.
 - `cli/create/subcommand.ts` — scaffold root-domain package layout and update output.
 - `bundled/coding/cosmonauts.json` — change domain path to `"."`.
-- `bundled/coding/**` — move files up from `bundled/coding/coding/**` and fix relative imports.
+- `bundled/coding/**` — keep files in the root-domain layout and fix relative imports.
 - `domains/shared/domain.ts` — update description after framework prompts move.
 - `docs/domains.md` — new authoring contract documentation.
 - `docs/prompts.md` — update prompt layer paths and persona-only domain prompt rule.
@@ -658,7 +658,7 @@ Update `README.md` only where it references the old nested coding path or old pr
 - `tests/chains/named-chain-loader.test.ts` — chain visibility (deny-list) filtering tests with marker.
 - `tests/agents/skills.test.ts` — skill visibility (deny-list) filtering tests with marker.
 - `tests/docs/domain-authoring.test.ts` — documentation coverage test with marker.
-- Any tests/docs currently importing or referencing `bundled/coding/coding/*` or `domains/shared/prompts/*`.
+- Any tests/docs currently importing or referencing former bundled coding or pre-relocation shared prompt paths.
 
 ## Risks
 
@@ -680,7 +680,7 @@ Plan-specific assertions:
 1. A package manifest with `path: "."` never causes the scanner to expose the package store parent as a domain directory.
 2. Bundled package dirs discovered in framework dev mode are manifest-routed, so `bundled/coding` with root `domain.ts` remains active.
 3. Inactive domains do not participate in validation or same-precedence conflict checks.
-4. After prompt relocation, no runtime code path reads `domains/shared/prompts/base.md` or `domains/shared/prompts/runtime/sub-agent.md`.
+4. After prompt relocation, no runtime code path reads framework prompts from domain persona directories.
 5. Visibility is a deny-list: an asset is hidden cross-domain only if it is named in `manifest.internal` for its type. Assets not named, and asset types whose list is omitted, remain public. Forgetting to name an asset must never hide it.
 6. Bound role resolution preserves the requested role string for authorization and error messages while resolving the actual target domain for execution.
 7. Live binding rejection is non-mutating: failed target validation leaves the previous effective binding intact.
@@ -699,11 +699,11 @@ The `artifact-conformance` gate is evaluated after implementation tasks create t
 
 ## Implementation Order
 
-1. **Lock package root semantics with failing tests.** Add tests for `DomainSource.kind`, installed package `path: "."`, bundled package `path: "."`, installer `domain.ts` validation, and scaffold root layout. Implement `domain-root` loading and manifest-aware package-source routing for both installed and bundled packages. Only then migrate `bundled/coding/coding/**` to `bundled/coding/**` and fix imports. Run the package/domain/scaffold test subset and typecheck before deleting old nested references.
+1. **Lock package root semantics with failing tests.** Add tests for `DomainSource.kind`, installed package `path: "."`, bundled package `path: "."`, installer `domain.ts` validation, and scaffold root layout. Implement `domain-root` loading and manifest-aware package-source routing for both installed and bundled packages. Only then migrate bundled coding to `bundled/coding/**` and fix imports. Run the package/domain/scaffold test subset and typecheck before deleting old nested references.
 
 2. **Add loader provenance and active filtering before validation.** Add `DomainProvenance`, provider collection, active-set filtering before merge/conflict/validation, and same-precedence `DomainIdConflictError`. Add B-013 and B-017 tests before wiring config to runtime.
 
-3. **Move framework prompts test-first.** Add prompt-assembly tests that pass a temp `frameworkPromptsDir` and assert domain `prompts/` only supplies personas. Move base/runtime prompt markdown to `lib/prompts/framework/`, update `lib/prompts/loader.ts` and `lib/domains/prompt-assembly.ts`, then remove `domains/shared/prompts/` runtime reliance. Grep for active `domains/shared/prompts/base.md` and `domains/shared/prompts/runtime/sub-agent.md` references and update docs/tests.
+3. **Move framework prompts test-first.** Add prompt-assembly tests that pass a temp `frameworkPromptsDir` and assert domain `prompts/` only supplies personas. Move base/runtime prompt markdown to `lib/prompts/framework/`, update `lib/prompts/loader.ts` and `lib/domains/prompt-assembly.ts`, then remove runtime reliance on shared domain prompt files. Grep for active pre-relocation shared prompt references and update docs/tests.
 
 4. **Add visibility/public-surface core.** Add `DomainInternal` types and `lib/domains/public-surface.ts` with default-public behavior and the `internal` deny-list (hide only named assets; unnamed assets and omitted type lists stay public). Add validator checks that names listed in `internal` exist in the domain, plus missing-persona expected-path diagnostics. Keep this pure and unit-tested before integrating it into agent/chain/skill resolution.
 
