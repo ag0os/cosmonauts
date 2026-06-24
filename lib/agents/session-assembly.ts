@@ -26,6 +26,7 @@ import {
 import {
 	buildSkillsOverride,
 	resolveEffectiveProjectSkills,
+	resolveVisibleSkillNames,
 	type SkillsOverrideFn,
 } from "./skills.ts";
 import type { AgentDefinition } from "./types.ts";
@@ -150,9 +151,14 @@ export async function buildSessionParams(
 				domainsDir,
 				resolver,
 			});
+	const visibleSkillNames = resolveVisibleSkillNames({
+		requesterDomain: def.domain ?? "coding",
+		resolver,
+	});
 	const skillsOverride = buildSkillsOverride(
 		def.skills,
 		effectiveProjectSkills,
+		visibleSkillNames,
 	);
 	const additionalSkillPaths = skillPaths?.length ? [...skillPaths] : undefined;
 

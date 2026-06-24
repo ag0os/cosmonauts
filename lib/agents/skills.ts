@@ -10,6 +10,7 @@ import type {
 	ResourceDiagnostic,
 	Skill,
 } from "@earendil-works/pi-coding-agent";
+import { selectPublicSkillNames } from "../domains/public-surface.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import type { LoadedDomain } from "../domains/types.ts";
 import { discoverSkills } from "../skills/discovery.ts";
@@ -31,6 +32,13 @@ interface ResolveEffectiveProjectSkillsOptions {
 	/** Absolute path to the root domains directory (required when no resolver). */
 	readonly domainsDir?: string;
 	/** Domain resolver for multi-source path resolution. Takes precedence over domainsDir. */
+	readonly resolver?: DomainResolver;
+}
+
+interface ResolveVisibleSkillNamesOptions {
+	/** Domain requesting visibility. Defaults to the coding domain for legacy agents. */
+	readonly requesterDomain?: string;
+	/** Domain resolver for loaded-domain visibility rules. */
 	readonly resolver?: DomainResolver;
 }
 
@@ -88,6 +96,21 @@ export async function resolveEffectiveProjectSkills(
 	];
 }
 
+export function resolveVisibleSkillNames(
+	options: ResolveVisibleSkillNamesOptions,
+): readonly string[] | undefined {
+	if (!options.resolver) return undefined;
+
+	const requesterDomain = options.requesterDomain ?? "coding";
+	return [
+		...new Set(
+			options.resolver.registry
+				.listAll()
+				.flatMap((domain) => selectPublicSkillNames(domain, requesterDomain)),
+		),
+	];
+}
+
 /**
  * Build a skillsOverride callback from agent-level and project-level skill lists.
  *
@@ -101,7 +124,11 @@ export async function resolveEffectiveProjectSkills(
 export function buildSkillsOverride(
 	agentSkills: readonly string[],
 	projectSkills: readonly string[] | undefined,
+	visibleSkillNames?: readonly string[],
 ): SkillsOverrideFn | undefined {
+	const visibleSkills =
+		visibleSkillNames === undefined ? undefined : new Set(visibleSkillNames);
+
 	if (agentSkills.length === 0) {
 		return (base) => ({
 			skills: [],
@@ -111,14 +138,25 @@ export function buildSkillsOverride(
 
 	const agentAll = isWildcard(agentSkills);
 
-	if (agentAll && projectSkills === undefined) {
+	if (agentAll && projectSkills === undefined && visibleSkills === undefined) {
 		return undefined;
 	}
 
 	if (agentAll && projectSkills !== undefined) {
 		const allowlist = new Set(projectSkills);
 		return (base) => ({
-			skills: base.skills.filter((s) => allowlist.has(s.name)),
+			skills: base.skills.filter(
+				(s) =>
+					allowlist.has(s.name) &&
+					(visibleSkills === undefined || visibleSkills.has(s.name)),
+			),
+			diagnostics: base.diagnostics,
+		});
+	}
+
+	if (agentAll && visibleSkills !== undefined) {
+		return (base) => ({
+			skills: base.skills.filter((s) => visibleSkills.has(s.name)),
 			diagnostics: base.diagnostics,
 		});
 	}
@@ -129,7 +167,11 @@ export function buildSkillsOverride(
 			: new Set(agentSkills);
 
 	return (base) => ({
-		skills: base.skills.filter((s) => allowlist.has(s.name)),
+		skills: base.skills.filter(
+			(s) =>
+				allowlist.has(s.name) &&
+				(visibleSkills === undefined || visibleSkills.has(s.name)),
+		),
 		diagnostics: base.diagnostics,
 	});
 }

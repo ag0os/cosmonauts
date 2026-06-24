@@ -10,13 +10,49 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
+	InternalNamedChainAccessError,
 	listNamedChains,
 	loadNamedChains,
 	resolveNamedChain,
 } from "../../lib/chains/loader.ts";
+import type { LoadedDomain } from "../../lib/domains/types.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("chain-test-");
+
+function makeDomain(overrides: Partial<LoadedDomain> = {}): LoadedDomain {
+	return {
+		manifest: { id: "ruby-coding", description: "Ruby coding" },
+		portable: false,
+		agents: new Map(),
+		capabilities: new Set(),
+		prompts: new Set(),
+		skills: new Set(),
+		extensions: new Set(),
+		chains: [
+			{
+				name: "public-chain",
+				description: "Public chain",
+				chain: "planner -> worker",
+			},
+			{
+				name: "internal-chain",
+				description: "Internal chain",
+				chain: "maintainer",
+			},
+		],
+		provenance: [
+			{
+				origin: "test",
+				precedence: 0,
+				kind: "domains-dir",
+				rootDir: "/domains/ruby-coding",
+			},
+		],
+		rootDirs: ["/domains/ruby-coding"],
+		...overrides,
+	};
+}
 
 describe("loadNamedChains", () => {
 	test("returns empty array when no config file exists", async () => {
@@ -306,5 +342,56 @@ describe("domain chain merging", () => {
 		const listed = await listNamedChains(tmp.path, domainChains);
 		expect(listed).toHaveLength(1);
 		expect(listed[0]?.name).toBe("verify");
+	});
+
+	test("hides chains named in the internal deny-list from outside the owning domain", async () => {
+		// @cosmo-behavior plan:domain-authoring#B-018
+		const domain = makeDomain({
+			manifest: {
+				id: "ruby-coding",
+				description: "Ruby coding",
+				internal: { chains: ["internal-chain"] },
+			},
+		});
+
+		const outsideSource = { domains: [domain] };
+		const outsideList = await listNamedChains(tmp.path, outsideSource);
+		expect(outsideList.map((chain) => chain.name)).toEqual(["public-chain"]);
+
+		const publicChain = await resolveNamedChain(
+			"public-chain",
+			tmp.path,
+			outsideSource,
+		);
+		expect(publicChain.chain).toBe("planner -> worker");
+
+		await expect(
+			resolveNamedChain("internal-chain", tmp.path, outsideSource),
+		).rejects.toThrow(InternalNamedChainAccessError);
+		await expect(
+			resolveNamedChain("internal-chain", tmp.path, outsideSource),
+		).rejects.toThrow(
+			'Named chain "internal-chain" is internal to domain "ruby-coding"',
+		);
+
+		await expect(
+			resolveNamedChain("unknown-chain", tmp.path, outsideSource),
+		).rejects.toThrow('Unknown named chain "unknown-chain"');
+
+		const sameDomainSource = {
+			domains: [domain],
+			domainContext: "ruby-coding",
+		};
+		const sameDomainList = await listNamedChains(tmp.path, sameDomainSource);
+		expect(sameDomainList.map((chain) => chain.name)).toEqual([
+			"public-chain",
+			"internal-chain",
+		]);
+		const internalChain = await resolveNamedChain(
+			"internal-chain",
+			tmp.path,
+			sameDomainSource,
+		);
+		expect(internalChain.chain).toBe("maintainer");
 	});
 });

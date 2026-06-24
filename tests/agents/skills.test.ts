@@ -16,8 +16,12 @@ import taskManagerDefinition from "../../bundled/coding/agents/task-manager.ts";
 import {
 	buildSkillsOverride,
 	resolveEffectiveProjectSkills,
+	resolveVisibleSkillNames,
 	type SkillsOverrideFn,
 } from "../../lib/agents/skills.ts";
+import { DomainRegistry } from "../../lib/domains/registry.ts";
+import { DomainResolver } from "../../lib/domains/resolver.ts";
+import type { LoadedDomain } from "../../lib/domains/types.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("agent-skills-");
@@ -46,6 +50,28 @@ async function writeSharedSkill(name: string): Promise<void> {
 		join(skillDir, "SKILL.md"),
 		`---\nname: ${name}\ndescription: ${name}\n---\n`,
 	);
+}
+
+function makeDomain(
+	id: string,
+	overrides: Partial<LoadedDomain> = {},
+): LoadedDomain {
+	const rootDir = `/domains/${id}`;
+	return {
+		manifest: { id, description: `Domain ${id}` },
+		portable: false,
+		agents: new Map(),
+		capabilities: new Set(),
+		prompts: new Set(),
+		skills: new Set(),
+		extensions: new Set(),
+		chains: [],
+		provenance: [
+			{ origin: "test", precedence: 0, kind: "domains-dir", rootDir },
+		],
+		rootDirs: [rootDir],
+		...overrides,
+	};
 }
 
 describe("resolveEffectiveProjectSkills", () => {
@@ -150,6 +176,64 @@ describe("buildSkillsOverride", () => {
 		);
 		const result = fn(makeBase(["ts", "react"]));
 		expect(result.skills.map((s) => s.name)).toEqual(["ts"]);
+	});
+
+	test("filters internal skills from cross-domain effective catalogs", () => {
+		// @cosmo-behavior plan:domain-authoring#B-019
+		const resolver = new DomainResolver(
+			new DomainRegistry([
+				makeDomain("coding", {
+					skills: new Set(["consumer-skill"]),
+				}),
+				makeDomain("ruby-coding", {
+					manifest: {
+						id: "ruby-coding",
+						description: "Ruby coding",
+						internal: { skills: ["internal-skill"] },
+					},
+					skills: new Set(["public-skill", "internal-skill"]),
+				}),
+			]),
+		);
+		const base = makeBase(["consumer-skill", "public-skill", "internal-skill"]);
+
+		const crossDomainVisibleSkills = resolveVisibleSkillNames({
+			resolver,
+			requesterDomain: "coding",
+		});
+		const explicitCrossDomain = assertDefined(
+			buildSkillsOverride(
+				["public-skill", "internal-skill"],
+				undefined,
+				crossDomainVisibleSkills,
+			),
+		);
+		expect(explicitCrossDomain(base).skills.map((skill) => skill.name)).toEqual(
+			["public-skill"],
+		);
+
+		const wildcardCrossDomain = assertDefined(
+			buildSkillsOverride(["*"], undefined, crossDomainVisibleSkills),
+		);
+		expect(wildcardCrossDomain(base).skills.map((skill) => skill.name)).toEqual(
+			["consumer-skill", "public-skill"],
+		);
+
+		const sameDomainVisibleSkills = resolveVisibleSkillNames({
+			resolver,
+			requesterDomain: "ruby-coding",
+		});
+		const sameDomain = assertDefined(
+			buildSkillsOverride(
+				["public-skill", "internal-skill"],
+				undefined,
+				sameDomainVisibleSkills,
+			),
+		);
+		expect(sameDomain(base).skills.map((skill) => skill.name)).toEqual([
+			"public-skill",
+			"internal-skill",
+		]);
 	});
 });
 
