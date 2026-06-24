@@ -200,6 +200,7 @@ describe("cosmonauts run drive compat run", () => {
 		});
 		expect(spec.promptTemplate).toEqual({
 			envelopePath: fixture.envelopePath,
+			envelopeContent: "Envelope\n",
 			preconditionPath,
 			perTaskOverrideDir: overridesPath,
 		});
@@ -322,6 +323,39 @@ describe("cosmonauts run drive compat run", () => {
 		expect(spec.commitPolicy).toBe("backend-commits");
 		expect(spec.stateCommitPolicy).toBe("final-state-commit");
 		expect(resolveStateCommitPolicy(spec)).toBe("final-state-commit");
+	});
+
+	test("persists the explicit envelope content snapshot into the run spec", async () => {
+		const fixture = await setupFixture(1);
+		await writeFile(
+			fixture.envelopePath,
+			"Launch envelope snapshot\n",
+			"utf-8",
+		);
+
+		await parseDrive([
+			"--plan",
+			PLAN,
+			"--task-ids",
+			fixture.tasks[0]?.id ?? "TASK-001",
+			"--mode",
+			"inline",
+			"--envelope",
+			fixture.envelopePath,
+		]);
+
+		const spec = firstRunInlineSpec();
+		const persisted = JSON.parse(
+			await readFile(join(spec.workdir, "spec.json"), "utf-8"),
+		) as DriverRunSpec;
+		expect(spec.promptTemplate).toMatchObject({
+			envelopePath: fixture.envelopePath,
+			envelopeContent: "Launch envelope snapshot\n",
+		});
+		expect(persisted.promptTemplate).toMatchObject({
+			envelopePath: fixture.envelopePath,
+			envelopeContent: "Launch envelope snapshot\n",
+		});
 	});
 
 	test("routes explicit inline and detached modes without invoking real backends", async () => {
@@ -451,6 +485,39 @@ describe("cosmonauts run drive compat run", () => {
 
 		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
 		expect(firstRunInlineSpec().runId).toBe("run-previous");
+	});
+
+	test("resume reuses the persisted envelope snapshot instead of resolving a live path", async () => {
+		const fixture = await setupFixture(2);
+		const overrideEnvelopePath = join(temp.path, "override-envelope.md");
+		await writeFile(overrideEnvelopePath, "Override envelope\n", "utf-8");
+		const persistedEnvelopePath = join(temp.path, "previous-envelope.md");
+		await writeResumeRun(
+			fixture.tasks.map((task) => task.id),
+			[],
+			{
+				promptTemplate: {
+					envelopePath: persistedEnvelopePath,
+					envelopeContent: "Persisted envelope snapshot\n",
+				},
+			},
+		);
+		await rm(persistedEnvelopePath, { force: true });
+
+		await parseDrive([
+			"--plan",
+			PLAN,
+			"--resume",
+			"run-previous",
+			"--envelope",
+			overrideEnvelopePath,
+		]);
+
+		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
+		expect(firstRunInlineSpec().promptTemplate).toMatchObject({
+			envelopePath: persistedEnvelopePath,
+			envelopeContent: "Persisted envelope snapshot\n",
+		});
 	});
 
 	// @cosmo-behavior plan:drive-resilience-state-model#B-005

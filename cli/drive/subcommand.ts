@@ -43,6 +43,7 @@ import {
 	type DriverEvent,
 	type DriverResult,
 	type DriverRunSpec,
+	type PromptLayers,
 	type StateCommitPolicy,
 	validateDriverPlanSlug,
 } from "../../lib/driver/types.ts";
@@ -901,29 +902,21 @@ async function createRunSpec({
 		join(projectRoot, "missions", "sessions", planSlug, "runs", runId);
 	const eventLogPath =
 		resume?.spec.eventLogPath ?? join(workdir, "events.jsonl");
-	const envelopePath =
-		options.envelope ??
-		resume?.spec.promptTemplate.envelopePath ??
-		resolveDefaultEnvelopePath();
+	const effectiveProjectRoot = resume?.spec.projectRoot ?? projectRoot;
+	const promptTemplate = await resolvePromptTemplate({
+		projectRoot: effectiveProjectRoot,
+		options,
+		resumePromptTemplate: resume?.spec.promptTemplate,
+	});
 
 	return {
 		runId,
 		parentSessionId: resume?.spec.parentSessionId ?? "cli",
-		projectRoot: resume?.spec.projectRoot ?? projectRoot,
+		projectRoot: effectiveProjectRoot,
 		planSlug,
 		taskIds,
 		backendName,
-		promptTemplate: {
-			envelopePath: resolve(projectRoot, envelopePath),
-			preconditionPath: resolveOptionalPath(
-				projectRoot,
-				options.precondition ?? resume?.spec.promptTemplate.preconditionPath,
-			),
-			perTaskOverrideDir: resolveOptionalPath(
-				projectRoot,
-				options.overrides ?? resume?.spec.promptTemplate.perTaskOverrideDir,
-			),
-		},
+		promptTemplate,
 		preflightCommands: resume?.spec.preflightCommands ?? [],
 		postflightCommands: resume?.spec.postflightCommands ?? [],
 		branch: options.branch ?? resume?.spec.branch,
@@ -936,6 +929,61 @@ async function createRunSpec({
 		eventLogPath,
 		taskTimeoutMs: options.taskTimeout ?? resume?.spec.taskTimeoutMs,
 		remainingTaskIds: resume?.remainingTaskIds,
+	};
+}
+
+async function resolvePromptTemplate({
+	projectRoot,
+	options,
+	resumePromptTemplate,
+}: {
+	projectRoot: string;
+	options: DriveRunOptions;
+	resumePromptTemplate: PromptLayers | undefined;
+}): Promise<PromptLayers> {
+	const envelope = await resolveEnvelopeSnapshot({
+		projectRoot,
+		options,
+		resumePromptTemplate,
+	});
+	return {
+		...envelope,
+		preconditionPath: resolveOptionalPath(
+			projectRoot,
+			options.precondition ?? resumePromptTemplate?.preconditionPath,
+		),
+		perTaskOverrideDir: resolveOptionalPath(
+			projectRoot,
+			options.overrides ?? resumePromptTemplate?.perTaskOverrideDir,
+		),
+	};
+}
+
+async function resolveEnvelopeSnapshot({
+	projectRoot,
+	options,
+	resumePromptTemplate,
+}: {
+	projectRoot: string;
+	options: DriveRunOptions;
+	resumePromptTemplate: PromptLayers | undefined;
+}): Promise<Pick<PromptLayers, "envelopePath" | "envelopeContent">> {
+	if (resumePromptTemplate?.envelopeContent !== undefined) {
+		return {
+			envelopePath: resolve(projectRoot, resumePromptTemplate.envelopePath),
+			envelopeContent: resumePromptTemplate.envelopeContent,
+		};
+	}
+
+	const envelopePath = resolve(
+		projectRoot,
+		options.envelope ??
+			resumePromptTemplate?.envelopePath ??
+			resolveDefaultEnvelopePath(),
+	);
+	return {
+		envelopePath,
+		envelopeContent: await readFile(envelopePath, "utf-8"),
 	};
 }
 

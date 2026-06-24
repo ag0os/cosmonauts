@@ -72,6 +72,7 @@ export interface ContradictedBlockAnnotation {
 
 export interface PromptLayers {
 	envelopePath: string;
+	envelopeContent?: string;
 	preconditionPath?: string;
 	perTaskOverrideDir?: string;
 }
