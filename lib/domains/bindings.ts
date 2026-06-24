@@ -171,10 +171,11 @@ export function getLiveDomainBindingStore(
 	projectRoot: string,
 ): LiveDomainBindingStore {
 	const key = resolve(projectRoot);
-	let store = liveStoresByProjectRoot.get(key);
+	const stores = getLiveStoresByProjectRoot();
+	let store = stores.get(key);
 	if (!store) {
 		store = new MemoryLiveDomainBindingStore();
-		liveStoresByProjectRoot.set(key, store);
+		stores.set(key, store);
 	}
 	return store;
 }
@@ -238,4 +239,16 @@ class MemoryLiveDomainBindingStore implements LiveDomainBindingStore {
 	}
 }
 
-const liveStoresByProjectRoot = new Map<string, LiveDomainBindingStore>();
+const LIVE_STORES_KEY = Symbol.for("cosmonauts:live-domain-binding-stores");
+const globals = globalThis as Record<symbol, unknown>;
+
+function getLiveStoresByProjectRoot(): Map<string, LiveDomainBindingStore> {
+	const existing = globals[LIVE_STORES_KEY];
+	if (existing instanceof Map) {
+		return existing as Map<string, LiveDomainBindingStore>;
+	}
+
+	const stores = new Map<string, LiveDomainBindingStore>();
+	globals[LIVE_STORES_KEY] = stores;
+	return stores;
+}

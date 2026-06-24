@@ -22,15 +22,24 @@ interface RegisteredCommand {
 	) => { value: string; label: string }[] | null;
 }
 
+type EventHandler = (
+	event: unknown,
+	ctx: CommandContext,
+) => Promise<void> | void;
+
 interface CommandContext {
 	cwd: string;
 	ui: {
 		notify: (message: string, level: string) => void;
 	};
+	sessionManager: {
+		getEntries: () => unknown[];
+	};
 }
 
 function createMockPi() {
 	const commands = new Map<string, RegisteredCommand>();
+	const events = new Map<string, EventHandler[]>();
 	const entries: { customType: string; data: unknown }[] = [];
 
 	return {
@@ -38,20 +47,33 @@ function createMockPi() {
 		registerCommand(name: string, command: RegisteredCommand) {
 			commands.set(name, command);
 		},
+		on(name: string, handler: EventHandler) {
+			const handlers = events.get(name) ?? [];
+			handlers.push(handler);
+			events.set(name, handlers);
+		},
 		appendEntry(customType: string, data: unknown) {
 			entries.push({ customType, data });
 		},
 		getCommand(name: string) {
 			return commands.get(name);
 		},
+		async fireEvent(name: string, event: unknown, ctx: CommandContext) {
+			for (const handler of events.get(name) ?? []) {
+				await handler(event, ctx);
+			}
+		},
 	};
 }
 
-function createCommandContext(): CommandContext {
+function createCommandContext(entries: unknown[] = []): CommandContext {
 	return {
 		cwd: tmp.path,
 		ui: {
 			notify: vi.fn(),
+		},
+		sessionManager: {
+			getEntries: () => entries,
 		},
 	};
 }
@@ -253,7 +275,7 @@ describe("domain-bindings extension", () => {
 
 		expect(pi.entries).toHaveLength(1);
 		expect(pi.entries[0]).toMatchObject({
-			customType: "domain-binding",
+			customType: "cosmonauts.domain-binding",
 			data: {
 				role: "ruby-coding",
 				targetDomain: "ruby-experimental",
@@ -384,5 +406,116 @@ describe("domain-bindings extension", () => {
 		expect(afterRejectedSwitch?.definition.description).toBe(
 			"Experimental worker",
 		);
+	});
+
+	test("session_start rehydrates latest valid live bindings and warns on stale invalid entries", async () => {
+		// @cosmo-behavior plan:domain-authoring#B-012
+		const runtime = await setupRuntime();
+		const pi = createMockPi();
+		domainBindingsExtension(pi as never);
+		const ctx = createCommandContext([
+			{
+				type: "custom",
+				customType: "cosmonauts.domain-binding",
+				data: {
+					role: "ruby-coding",
+					targetDomain: "ruby-coding",
+					timestamp: 1,
+				},
+			},
+			{
+				type: "custom",
+				customType: "cosmonauts.domain-binding",
+				data: {
+					role: "ruby-coding",
+					targetDomain: "ghost-domain",
+					timestamp: 2,
+				},
+			},
+			{
+				type: "custom",
+				customType: "cosmonauts.domain-binding",
+				data: {
+					role: "ruby-coding",
+					targetDomain: "ruby-experimental",
+					timestamp: 3,
+				},
+			},
+			{
+				type: "custom",
+				customType: "cosmonauts.domain-binding",
+				data: {
+					role: "consumer",
+					targetDomain: "consumer",
+					timestamp: 4,
+				},
+			},
+		]);
+
+		await pi.fireEvent("session_start", {}, ctx);
+
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			expect.stringContaining(
+				"Skipping invalid stale domain binding entry for `ruby-coding`",
+			),
+			"warning",
+		);
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			expect.stringContaining("ghost-domain"),
+			"warning",
+		);
+		expect(runtime.liveDomainBindings.snapshot()).toEqual({
+			"ruby-coding": "ruby-experimental",
+			consumer: "consumer",
+		});
+
+		const futureAgent =
+			runtime.agentRegistry.resolveReference("ruby-coding/worker");
+		expect(futureAgent?.reference.binding).toEqual({
+			role: "ruby-coding",
+			domainId: "ruby-experimental",
+			source: "live",
+		});
+		expect(futureAgent?.definition.description).toBe("Experimental worker");
+	});
+
+	test("cached orchestration runtimes observe later domain-bind changes through the shared live store", async () => {
+		// @cosmo-behavior plan:domain-authoring#B-020
+		const interactiveRuntime = await setupRuntime();
+		const cachedOrchestrationRuntime = await CosmonautsRuntime.create({
+			builtinDomainsDir: join(tmp.path, "domains"),
+			projectRoot: tmp.path,
+		});
+		const pi = createMockPi();
+		domainBindingsExtension(pi as never);
+		const ctx = createCommandContext();
+
+		const beforeSwitch =
+			cachedOrchestrationRuntime.agentRegistry.resolveReference(
+				"ruby-coding/worker",
+			);
+		expect(beforeSwitch?.definition.description).toBe("Original worker");
+
+		await getCommand(pi, "domain-bind").handler(
+			"ruby-coding ruby-experimental",
+			ctx,
+		);
+
+		expect(interactiveRuntime.liveDomainBindings.snapshot()).toEqual({
+			"ruby-coding": "ruby-experimental",
+		});
+		expect(cachedOrchestrationRuntime.liveDomainBindings.snapshot()).toEqual({
+			"ruby-coding": "ruby-experimental",
+		});
+		const afterSwitch =
+			cachedOrchestrationRuntime.agentRegistry.resolveReference(
+				"ruby-coding/worker",
+			);
+		expect(afterSwitch?.definition.description).toBe("Experimental worker");
+		expect(afterSwitch?.reference.binding).toEqual({
+			role: "ruby-coding",
+			domainId: "ruby-experimental",
+			source: "live",
+		});
 	});
 });
