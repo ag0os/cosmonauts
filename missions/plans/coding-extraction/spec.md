@@ -3,16 +3,22 @@
 The `domains` vision is many independently-developed, installable agentic domains.
 The archived `domain-authoring` plan made `coding` *structurally* portable (a clean
 single-domain package root, framework prompts separated, a documented
-framework/domain boundary) but deliberately left it bundled in-tree. This plan
-performs the **physical extraction**: `coding` moves to its own repo and becomes
+framework/domain boundary) but deliberately left it bundled in-tree. This plan is
+**Wave 2 — the physical cutover**: `coding` moves to its own repo and becomes
 **install-on-demand**, proving the extraction path end-to-end and shrinking the
 framework to its core (framework + `shared` + `main`).
 
-The work is more than a file move. Two couplings must be broken for the framework
-to stand without `coding`: the framework still **hardcodes `"coding"` as a default
-domain fallback** in several places, and **~86 test files lean on the bundled
-`coding` domain** as a fixture. Both must be decoupled or the framework cannot ship
-or test without `coding` present.
+**Prerequisite — Wave 1 (`coding-agnostic-framework`) must be merged first.** That
+wave already removed the framework's hardcoded `"coding"` defaults (→ `main`) and
+decoupled the test suite's *framework-internal* dependence on the bundled `coding`
+domain (test Buckets C and B), all while `coding` stayed bundled. So by the time
+this plan runs, the framework no longer assumes `coding` exists; what remains here
+is the **irreversible move itself** — physically relocating `coding`, rewriting its
+imports, moving the coding-content tests (Bucket A) with it, flipping the catalog,
+removing `bundled/`, and wiring this repo's dogfood/CI loop. This is the cutover
+that's gated on the external repo existing and that changes how this repo drives its
+own development; keeping it separate from the reversible Wave-1 prep avoids a
+half-migrated state.
 
 ## Users
 
@@ -92,15 +98,11 @@ explicitly required), so a project with only `shared` + `main` is fully coherent
   — identical behavior to the previously-bundled domain (load parity).
 - `cosmonauts install --link <path>` makes a sibling `coding` checkout active with
   live edits, with no publish/reinstall step.
-- The framework has **no hardcoded `"coding"` default**: default-domain
-  resolution, skill requester-domain, and agent-package domain defaults resolve to
-  `main` (or are explicitly provided), verified by a project that runs with only
-  `shared` + `main` active.
-- The framework's own test suite passes with `coding` **decoupled**, with each of
-  the three test buckets handled per **Test Decoupling**: the ~64 synthetic-fixture
-  tests use a neutral fixture id, the ~9 framework tests that load real coding use a
-  synthetic package or linked coding, and the ~13 coding-content tests have moved to
-  the coding repo. No framework test depends on `coding` living in `bundled/`.
+- The framework's own test suite passes with `coding` **removed from `bundled/`**:
+  the ~13 Bucket A coding-content tests have moved to the coding repo, and no
+  framework test references or depends on `coding` living in `bundled/`. (Buckets C
+  and B were already neutralized in Wave 1, so the framework suite is already
+  coding-agnostic going in.)
 - This repo's CI/dev setup links or installs `coding` so `bun run test` and drive
   runs work end-to-end as before.
 - The extracted coding repo typechecks standalone: its imports use the
@@ -129,12 +131,9 @@ Included:
 - Wire and document the `--link` dev loop for both-repos development.
 - Set up this repo's dogfood path: link/install `coding` in dev and CI so existing
   tests and drives keep working.
-- Decouple the framework's remaining hardcoded `"coding"` defaults (→ `main` or
-  explicit), finishing the S1 "decouple hardcoded IDs" item.
-- Decouple the framework test suite from the bundled `coding` domain, per the three
-  dispositions in **Test Decoupling** below (rename synthetic fixtures, adjust
-  framework tests that load real coding, and move coding-content tests to the coding
-  repo).
+- Move the **Bucket A** coding-content tests (~13) to the coding repo alongside the
+  personas/chains/skills they cover. (Buckets C and B were already handled in Wave 1;
+  see **Test Decoupling**.)
 - Load-parity verification (bundled vs. installed/linked).
 
 Excluded:
@@ -149,10 +148,13 @@ Excluded:
 ## Test Decoupling
 
 86 test files reference `coding` today. Auditing them shows the raw count is
-misleading: only a small cluster actually tests the coding domain. The split, and
-each bucket's disposition:
+misleading: only a small cluster actually tests the coding domain. The split is
+also **divided across the two waves** — Buckets C and B are framework-internal and
+handled in **Wave 1 (`coding-agnostic-framework`)**; only **Bucket A** (the
+coding-content tests) is this plan's concern, because it moves with the domain. All
+three are documented here for the full picture:
 
-**Bucket A — Coding-content tests → MOVE to the coding repo (~13 files).** These
+**Bucket A — Coding-content tests → MOVE to the coding repo (~13 files). [THIS PLAN / Wave 2]** These
 test coding's own personas, skills, and chains; they belong with the content they
 cover. All load the real coding domain and assert on coding-specific content:
 `tests/prompts/{cody,worker,planner,reviewer,quality-manager,spec-writer,verifier,
@@ -160,7 +162,7 @@ task-manager,plan-reviewer,integration-verifier,tdd-skill,healthy-codebase-harne
 and `tests/domains/coding-chains.test.ts`.
 
 **Bucket B — Framework tests that load real coding as a fixture → ADJUST (~9
-files).** They test framework behavior (package catalog/scanner, CLI
+files). [Wave 1]** They test framework behavior (package catalog/scanner, CLI
 export/packages/skills/update, scaffold, skill resolution, prompt loader) but
 currently use the bundled coding domain as a convenient real package. Re-point them
 at a synthetic installable package fixture, or run them against linked/installed
@@ -169,7 +171,7 @@ coding: `tests/packages/{catalog,scanner}.test.ts`,
 `tests/config/scaffold.test.ts`, `tests/agents/skills.test.ts`,
 `tests/prompts/loader.test.ts`.
 
-**Bucket C — Synthetic-fixture tests → RENAME IN PLACE (~64 files).** The majority.
+**Bucket C — Synthetic-fixture tests → RENAME IN PLACE (~64 files). [Wave 1]** The majority.
 They never load the real domain; they just name a synthetic `makeDomain(...)`
 fixture (or a config/binding example) `"coding"`. They stay in the framework; the
 fixture id changes to something domain-neutral (e.g. `alpha`/`test`). Low-risk,
@@ -178,10 +180,12 @@ main-domain}.test.ts`, `tests/agents/{resolver,qualified-role,session-assembly,
 runtime-identity}.test.ts`, `tests/agent-packages/*.test.ts`,
 `tests/cli/dump-prompt.test.ts`.
 
-Implication: the "86 tests" figure overstates the risk. The dominant bucket (C) is
-a near-mechanical rename, Bucket A moves wholesale alongside its personas, and only
-Bucket B (~9) needs real design (synthetic package vs. linked coding). Exact
-per-file bucketing is confirmed at plan time, but the shape and magnitude are known.
+Implication: the "86 tests" figure overstates the risk, and the split across waves
+shrinks it further. Buckets C (~64 mechanical renames) and B (~9 fixture
+re-pointings) land in Wave 1 while `coding` is still bundled, so by the time this
+plan runs only Bucket A (~13) remains — and it moves wholesale alongside the
+personas/chains it covers. Exact per-file bucketing is confirmed at plan time, but
+the shape and magnitude are known.
 
 ## Prior Art & Reuse
 
@@ -243,11 +247,10 @@ Trust current code over archived plan text.
   or is install always explicit?
 - Version compatibility policy between `coding` and the framework — strict lockstep
   (like the Pi packages), a compatible range, or unpinned?
-- RESOLVED into the three buckets in **Test Decoupling** (A=~13 move, B=~9 adjust,
-  C=~64 rename). Residual unknowns: the exact disposition of Bucket B (synthetic
-  installable-package fixture vs. running against linked coding), and whether the
-  moved Bucket A tests need a coding-side test harness/fixtures the framework
-  currently provides (so the coding repo can run its own suite standalone).
+- Tests are bucketed in **Test Decoupling** (A=~13 move [this plan], B=~9 + C=~64
+  [Wave 1]). Residual unknown for this plan: whether the moved Bucket A tests need a
+  coding-side test harness/fixtures the framework currently provides, so the coding
+  repo can run its own suite standalone. (Bucket B/C dispositions are Wave 1's.)
 - Does `bundled/` disappear entirely, or remain as an (empty) extension point for
   future first-party-but-separate domains?
 - Should there be a deprecation/transition period where `coding` is still resolvable

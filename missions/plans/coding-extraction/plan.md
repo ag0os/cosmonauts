@@ -2,7 +2,7 @@
 title: Extract the coding domain to its own installable repo (domains S2)
 status: active
 createdAt: '2026-06-25T00:00:00.000Z'
-updatedAt: '2026-06-26T13:59:25.000Z'
+updatedAt: '2026-06-26T14:10:24.000Z'
 ---
 
 ## Summary
