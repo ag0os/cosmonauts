@@ -1,8 +1,10 @@
 ## Purpose
 
-Today the framework *assumes `coding` exists*: several `lib/` code paths fall back
-to `"coding"` as the default domain (`def.domain ?? "coding"`), and ~73 test files
-lean on the bundled `coding` domain as a fixture. That assumption is the main thing
+Today the framework *assumes `coding` exists*: several `lib/`/`cli/` code paths fall
+back to `"coding"` as the default domain (`def.domain ?? "coding"`) — and the drive
+even reaches into `bundled/coding` for its default prompt envelope — while the bulk
+of the ~92 coding-referencing test files (the ~65 synthetic-name + the handful that
+load the real domain as a fixture) depend on `coding`. That assumption is the main thing
 blocking a clean extraction — and it's also just wrong once `coding` is one
 installable domain among many. This plan removes the assumption **in place, while
 `coding` stays bundled**: the framework's default becomes `main`, and the test
@@ -56,39 +58,68 @@ instead of the bundled `coding`. The suite would pass even if `coding` were abse
 
 ## Acceptance Criteria
 
-- The framework has **no hardcoded `"coding"` default domain**: the known fallback
-  sites (`lib/agents/session-assembly.ts`, `lib/agents/skills.ts`,
-  `lib/agent-packages/build.ts`, and any dump-prompt/default-lead fallback) resolve
-  to `main` or an explicitly-provided domain — verified by a project that runs with
-  only `shared` + `main` active. (The `"coding"` *tool-preset* name in
-  `AgentToolSet` and the catalog entry are not domain defaults and are out of scope.)
-- Test **Bucket C** (~64 files that use `"coding"` only as a synthetic
-  `makeDomain(...)` fixture id or config example) is renamed to a domain-neutral id;
-  these tests no longer mention `coding`.
-- Test **Bucket B** (~9 framework tests that load the real bundled `coding` as a
-  package/scaffold/skill fixture) runs against a **synthetic installable-package
-  fixture**, not the bundled `coding` domain.
+- The framework has **no hardcoded `"coding"` default domain** — enforced by a
+  completeness gate, not an enumerated list: `grep -rn '?? "coding"' lib/ cli/`
+  returns **zero** domain-default matches (the `"coding"` *tool-preset* name in
+  `AgentToolSet`/`agent-packages/definition.ts` and the catalog entry are explicitly
+  carved out — they are not domain defaults). Known sites to fix: `session-assembly.ts`
+  (lines 122/138/155), `agent-packages/build.ts:126`, **`lib/agents/skills.ts:111`**
+  (`requesterDomain ?? "coding"`), and **`cli/main.ts:439`** — both of the latter
+  were missing from earlier drafts. (`lib/agents/resolve-default-lead.ts:42` already
+  uses `main` and needs no change; note `loader.ts:164` sets `domain` on every
+  *loaded* agent, so these fallbacks only fire for synthetic/hand-built defs.)
+- **Each fixed site is actually exercised by a test** — not merely covered by a
+  "shared+main-only project" smoke check, since CLI-inspection (`list-agents`,
+  `dump-prompt`) and skill-resolution paths may not run in that gate. Construct a
+  domain-less agent def (or run the relevant CLI path with only `shared`+`main`) to
+  fire each fallback and assert it resolves to `main`.
+- **The drive default-envelope no longer reaches into `coding`.** Today
+  `cli/drive/subcommand.ts` `resolveDefaultEnvelopePath()` hardcodes
+  `bundled/coding/drivers/templates/envelope.md` and throws if absent — framework
+  code depending on coding content, and the dogfood path. Move the default envelope
+  to a framework/shared-owned location (it is orchestration content, not coding
+  content) and resolve it there. AC: a default-envelope drive (no `--envelope`) works
+  with `coding` present, and the no-envelope failure produces a clear message.
+- Test **Bucket C** (the synthetic-fixture tests that use `"coding"` only as a
+  `makeDomain(...)` id or config example) is renamed to a domain-neutral id; these
+  tests no longer mention `coding`.
+- Test **Bucket B** (framework tests that load the real bundled `coding` as a
+  package/scaffold/skill fixture — including `tests/domains/main-domain.test.ts` and
+  `tests/cli/dump-prompt.test.ts`, which load the real domain despite looking
+  synthetic) runs against a **synthetic installable-package fixture**, not the
+  bundled `coding` domain.
 - The full test suite (`bun run test`), `typecheck`, and `lint` pass with `coding`
   **still bundled**.
 - Existing coding behavior is unchanged: `coding/*` agents, chains, and a drive run
-  resolve and behave exactly as before (no coding content or runtime change).
-- A `shared`/`main` leakage scan is run and its findings reported (cosmo-specific
-  content in `shared` that an extracted domain would inherit); fixing it is optional
-  in this wave but the report exists.
+  resolve and behave exactly as before. **In particular, this repo's own dogfood
+  drives still resolve to the intended `coding/*` agents after the default flips
+  from `coding` to `main`** — verified by an actual drive run; no drive/chain/config
+  in this repo silently relied on `coding` being the default domain.
+- The `shared`/`main` leakage scan produces a **named, gating deliverable**: a
+  written findings list (in this plan's review artifact or `domains.md` S1) of
+  cosmo-/main-specific strings or agent refs found under `domains/shared`, each with
+  a disposition (escalate / fix-in-Wave-2 / fix-now). The pass bar is "the list
+  exists with a disposition per item" — zero findings is a valid list. (Fixing is
+  out of scope this wave; the dispositions feed Wave 2's precondition gate.)
 - Each failure flow above produces a clear, actionable message.
 
 ## Scope
 
-Included:
 - Decouple the framework's hardcoded `"coding"` default-domain fallbacks (→ `main`
-  or explicit). Known sites: `lib/agents/session-assembly.ts` (3),
-  `lib/agents/skills.ts`, `lib/agent-packages/build.ts`, plus any
-  default-lead/dump-prompt fallback the planner finds.
-- Test **Bucket C** — rename the ~64 synthetic-fixture tests to a neutral id.
-- Test **Bucket B** — re-point the ~9 framework tests that load real `coding` at a
-  synthetic installable-package fixture (a small reusable test helper may be worth
-  building here).
-- A `shared`/`main` leakage scan (report cosmo-specific content in `shared`).
+  or explicit), driven to zero via the `grep -rn '?? "coding"' lib/ cli/` gate.
+  Sites: `lib/agents/session-assembly.ts` (122/138/155), `lib/agent-packages/build.ts:126`,
+  `lib/agents/skills.ts:111`, `cli/main.ts:439`, plus any the gate surfaces.
+- Relocate the **drive default-envelope** out of `coding`: move
+  `bundled/coding/drivers/templates/envelope.md` to a framework/shared-owned location
+  and update `resolveDefaultEnvelopePath()` to resolve it there (orchestration
+  content, not coding content; and the dogfood path).
+- Test **Bucket C** — rename the synthetic-fixture tests to a neutral id.
+- Test **Bucket B** — re-point the framework tests that load real `coding` (incl.
+  `main-domain.test.ts`, `cli/dump-prompt.test.ts`) at a synthetic
+  installable-package fixture. Build one small reusable fixture helper (it also
+  serves Wave 2's parity tests).
+- A `shared`/`main` leakage scan producing a gating findings list with a disposition
+  per item (scan-only this wave; dispositions feed Wave 2).
 - Keep `coding` bundled and behaviorally unchanged throughout.
 
 Excluded:
@@ -120,6 +151,11 @@ Excluded:
   some sites *require* an explicit domain (no fallback) and error otherwise?
 - Should Bucket B share one synthetic-installable-package test helper, or get
   per-test ad-hoc fixtures? (A shared helper also serves Wave 2's parity tests.)
-- Is the `shared`/`main` leakage scan purely a report this wave, or should obvious
-  cosmo-isms in `shared` be fixed here to avoid them bleeding into the extracted
-  `coding` later?
+- **Leaning resolved:** the `shared`/`main` leakage scan is **scan-only this wave** —
+  it produces a gating findings list with a disposition per item; fixes (if any) land
+  in Wave 2 or are explicitly accepted. Confirm.
+- Where should the relocated drive default-envelope live — under
+  `lib/prompts/framework/` (alongside base/runtime), a `shared`-domain drivers
+  location, or resolved from the active drive domain via the resolver? (It is
+  orchestration content; pick the home that keeps the framework drive-capable with
+  no domain installed.)

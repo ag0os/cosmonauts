@@ -81,37 +81,56 @@ explicitly required), so a project with only `shared` + `main` is fully coherent
   installed; run `cosmonauts install coding`" message, not a generic not-found.
 - **Link target missing** — `--link` to a path that does not exist or is not a
   valid domain package fails with a message naming the path and what was expected.
-- **Version skew** — an installed `coding` built against an incompatible framework
-  version surfaces a clear compatibility warning rather than a deep runtime error.
-- **CI without coding** — if the dogfood link/install step is skipped, the
-  coding-dependent tests fail with an actionable "coding domain not linked" signal,
-  not obscure resolution errors.
+- **Version skew** — `coding` declares a compatible framework-version range in its
+  manifest, and the install/setup documents the policy. A *runtime* compatibility
+  comparator is **out of scope this wave** unless explicitly budgeted (there is no
+  framework-version comparator in the substrate today); see Open Questions.
+- **Missing dogfood setup** — if the link/install step is skipped, a test-runner
+  guard fails with an actionable "coding domain not linked" signal, not obscure
+  resolution errors.
 
 ## Acceptance Criteria
 
 - The framework npm tarball (the `files` allowlist) does **not** include `coding`;
   `bundled/coding/` no longer ships with the framework package.
-- The catalog entry for `coding` resolves to the external git repo (not
-  `./bundled/coding`), and `cosmonauts install coding` installs a working domain.
+- The catalog resolves a **git-URL source verbatim**: a catalog entry whose source
+  is a `github:`/`https://`/`file://` URL passes through `resolveCatalogSource`
+  unmodified (only relative `./` sources are joined onto the framework root), proven
+  by a unit test. With `coding`'s entry pointed at the git URL, `cosmonauts install
+  coding` installs a working domain.
 - After installing (or linking) `coding`, `cosmonauts --list-domains` and
   `--list-agents` show `coding` and its agents, and a coding chain resolves and runs
   — identical behavior to the previously-bundled domain (load parity).
 - `cosmonauts install --link <path>` makes a sibling `coding` checkout active with
   live edits, with no publish/reinstall step.
 - The framework's own test suite passes with `coding` **removed from `bundled/`**:
-  the ~13 Bucket A coding-content tests have moved to the coding repo, and no
-  framework test references or depends on `coding` living in `bundled/`. (Buckets C
-  and B were already neutralized in Wave 1, so the framework suite is already
-  coding-agnostic going in.)
-- This repo's CI/dev setup links or installs `coding` so `bun run test` and drive
-  runs work end-to-end as before.
-- The extracted coding repo typechecks standalone: its imports use the
-  `cosmonauts/lib/...` package form and resolve against `cosmonauts` declared as a
-  (dev)dependency — no remaining framework-relative (`../../../lib/...`) imports.
-- A linked or installed `coding` takes precedence over any leftover bundled copy, so
-  the dogfood cutover is seamless (precedence: project/global package > bundled).
+  the Bucket A coding-content tests have moved to the coding repo, and
+  `grep -rl 'bundled/coding' tests/` in the framework repo returns **nothing**.
+  (Buckets C and B were already neutralized in Wave 1, so the framework suite is
+  already coding-agnostic going in.)
+- **Dev-mode resolution works with `coding` linked and no `bundled/` present** — the
+  framework-repo detection (`isCosmonautsFrameworkRepo`) no longer depends on
+  `bundled/` existing, and a linked `coding` is discovered in dev.
+- This repo's documented dogfood setup (link/install `coding`) makes `bun run test`
+  and drive runs work end-to-end as before; a test-runner guard emits "coding domain
+  not linked" when the setup step is skipped.
+- The extracted coding repo typechecks standalone: imports use the
+  `cosmonauts/lib/...` package form with no remaining framework-relative
+  (`../../../lib/...`) imports, **and a runtime (not just type-only) import from
+  `cosmonauts/lib/...` resolves** in the extracted repo under Bun/Node — proving the
+  subpath actually works, not just that type-only imports get erased.
+- **Cutover ordering / rollback:** `bundled/` is deleted **only after** both
+  `--link` and a pinned-git install have each demonstrated load parity *and* a green
+  dogfood drive while `bundled/` still exists. The catalog-resolution change and the
+  `bundled/` deletion land in **separate, independently-revertable commits**.
+  (The "linked > leftover bundled" precedence is a *pre-deletion transition gate*,
+  not a final-state criterion.)
+- **Wave-1 leakage precondition:** the `shared`/`main` leakage findings from Wave 1
+  are resolved, or each is explicitly accepted with sign-off, before the move
+  begins — `shared` is the stdlib the extracted `coding` inherits and can't fix
+  itself post-extraction.
 - Each failure flow above produces a specific, actionable message (coding not
-  installed, link target missing, version skew, CI without coding).
+  installed, link target missing, missing/skipped dogfood setup).
 - Documentation describes the install-on-demand model, the `--link` dev loop, and
   this repo's dogfood setup.
 
@@ -121,16 +140,36 @@ Included:
 - Move `bundled/coding/**` to its own repo as a standalone installable package
   (it is already a clean single-domain package with `path: "."`).
 - **Rewrite coding's framework-relative imports** (`../../../lib/...`) to the
-  package form (`cosmonauts/lib/...`) — coding's files currently reach the framework
-  by relative path, which breaks once it lives in a separate repo. Reuse the
-  established eject rewrite pattern (see **Prior Art & Reuse**). The extracted repo
-  declares `cosmonauts` as a (dev)dependency so those imports typecheck/resolve.
-- Flip the catalog `source` for `coding` from `./bundled/coding` to the external
-  git URL; remove `bundled/` from the framework's npm `files` allowlist (and the
-  now-empty `bundled/` tree).
+  package form (`cosmonauts/lib/...`). Factor the eject rewrite **regex** into a
+  standalone helper (don't call full `ejectDomain()`, which also copies/validates).
+  The extracted repo declares `cosmonauts` as a (dev)dependency. **First prove the
+  subpath resolves:** `package.json` has no `exports`/`imports` map and ships `lib/`
+  as raw `.ts`, so confirm `cosmonauts/lib/...` resolves from a sibling repo under
+  both tsconfig and the Bun/Node runtime (coding's framework imports are all
+  type-only today, so typecheck can pass while runtime is never exercised — a latent
+  trap). If it doesn't resolve, add an `exports`/`imports` subpath map to the
+  framework `package.json` as a task here.
+- **Make the catalog resolve a git-URL source — this is a framework-code change, not
+  a data flip.** `resolveCatalogSource` (`lib/packages/catalog.ts:60-67`)
+  unconditionally `join()`s `frameworkRoot` onto every source, so setting `coding`'s
+  source to `github:org/...` yields a bogus local path that never reaches the
+  installer's git transport. Make `resolveCatalogSource` (and its callers in
+  `cli/packages/subcommand.ts` and `cli/update/subcommand.ts`) detect `https://`,
+  `github:`, `file://` schemes and pass them through verbatim, only `join()`-ing
+  relative `./` sources. Then point `coding`'s catalog entry at the git URL.
+- Remove `bundled/` from the framework's npm `files` allowlist and delete the
+  now-empty `bundled/` tree — **and audit the dev-mode coupling**:
+  `isCosmonautsFrameworkRepo()` (`lib/packages/dev-bundled.ts:22-27`) currently gates
+  dev-bundling on `bundled/` *existing*, so removing it silently disables dev-mode
+  bundled discovery. Redefine the framework-repo heuristic (name + `.git`, drop the
+  `bundled/` requirement) and update all callers of
+  `isCosmonautsFrameworkRepo`/`discoverFrameworkBundledPackageDirs`.
 - Wire and document the `--link` dev loop for both-repos development.
-- Set up this repo's dogfood path: link/install `coding` in dev and CI so existing
-  tests and drives keep working.
+- Set up this repo's dogfood path: a documented local setup step that links/installs
+  `coding` so `bun run test` and drives keep working, plus a test-runner guard that
+  emits "coding domain not linked" when it is missing. (This repo has **no CI
+  workflow today**; creating CI is separate ops work, not assumed here — see
+  Excluded.)
 - Move the **Bucket A** coding-content tests (~13) to the coding repo alongside the
   personas/chains/skills they cover. (Buckets C and B were already handled in Wave 1;
   see **Test Decoupling**.)
@@ -142,17 +181,32 @@ Excluded:
 - Authoring new `coding` content or new domains (e.g. `product`).
 - A remote catalog/marketplace beyond git-URL resolution.
 - Standing up the external repo's hosting/CI infrastructure itself (an ops step the
-  plan depends on but does not design).
-- Re-auditing the `shared`/`main` split beyond what extraction strictly requires.
+  plan depends on but does not design). This repo also has no CI workflow today;
+  creating one is separate work — this plan delivers a documented local dogfood setup
+  + a test-runner guard, not a CI pipeline.
+- Re-auditing the `shared`/`main` split beyond what extraction strictly requires
+  (Wave 1 produces the leakage scan; this plan only gates on its findings being
+  resolved-or-accepted, per the precondition AC below).
 
 ## Test Decoupling
 
-86 test files reference `coding` today. Auditing them shows the raw count is
-misleading: only a small cluster actually tests the coding domain. The split is
-also **divided across the two waves** — Buckets C and B are framework-internal and
-handled in **Wave 1 (`coding-agnostic-framework`)**; only **Bucket A** (the
-coding-content tests) is this plan's concern, because it moves with the domain. All
-three are documented here for the full picture:
+**~92 test files reference `coding`; ~27 load the *real* bundled domain; ~65 use
+`"coding"` only as a synthetic name.** (A code review measured 92/27/65; earlier
+drafts said 86/73 — the relative shape holds, the absolute is reconciled here.) The
+raw count is misleading: only a small cluster actually tests the coding domain.
+
+**Bucketing rule (the discriminator is "loads the real bundled `coding`", NOT
+whether a fixture is named "coding").** At plan time, derive buckets from a fresh
+`grep -rl coding tests/` and reconcile to **zero remainder** — every match assigned
+A, B, C, or keep. The illustrative lists below are a starting point, not frozen
+truth, and the lists are known to be non-exhaustive (e.g. `coding-domain-rename`,
+`extensions/orchestration`, `docs/domain-authoring`, `skills/discovery` were
+unbucketed in earlier drafts).
+
+The split is **divided across the two waves** — Buckets C and B are
+framework-internal and handled in **Wave 1 (`coding-agnostic-framework`)**; only
+**Bucket A** (the coding-content tests) is this plan's concern, because it moves
+with the domain. All three are documented here for the full picture:
 
 **Bucket A — Coding-content tests → MOVE to the coding repo (~13 files). [THIS PLAN / Wave 2]** These
 test coding's own personas, skills, and chains; they belong with the content they
@@ -161,26 +215,29 @@ cover. All load the real coding domain and assert on coding-specific content:
 task-manager,plan-reviewer,integration-verifier,tdd-skill,healthy-codebase-harness}.test.ts`
 and `tests/domains/coding-chains.test.ts`.
 
-**Bucket B — Framework tests that load real coding as a fixture → ADJUST (~9
-files). [Wave 1]** They test framework behavior (package catalog/scanner, CLI
+**Bucket B — Framework tests that load real coding as a fixture → ADJUST. [Wave 1]**
+They test framework behavior (package catalog/scanner, CLI
 export/packages/skills/update, scaffold, skill resolution, prompt loader) but
 currently use the bundled coding domain as a convenient real package. Re-point them
 at a synthetic installable package fixture, or run them against linked/installed
 coding: `tests/packages/{catalog,scanner}.test.ts`,
 `tests/cli/{export,packages,skills,update}/subcommand.test.ts`,
 `tests/config/scaffold.test.ts`, `tests/agents/skills.test.ts`,
-`tests/prompts/loader.test.ts`.
+`tests/prompts/loader.test.ts`. **Also reclassify here (they load the real domain
+despite looking synthetic):** `tests/domains/main-domain.test.ts`
+(`loadDomainsFromSources` on the bundled coding dir) and `tests/cli/dump-prompt.test.ts`
+(`dumpPrompt(['-d','coding'])`) — a fixture rename will NOT decouple them.
 
 **Bucket C — Synthetic-fixture tests → RENAME IN PLACE (~64 files). [Wave 1]** The majority.
 They never load the real domain; they just name a synthetic `makeDomain(...)`
 fixture (or a config/binding example) `"coding"`. They stay in the framework; the
 fixture id changes to something domain-neutral (e.g. `alpha`/`test`). Low-risk,
-mechanical. Examples: `tests/{runtime,...}`, `tests/domains/{bindings,validator,
-main-domain}.test.ts`, `tests/agents/{resolver,qualified-role,session-assembly,
+mechanical. Examples: `tests/{runtime,...}`, `tests/domains/{bindings,validator}.test.ts`,
+`tests/agents/{resolver,qualified-role,session-assembly,
 runtime-identity}.test.ts`, `tests/agent-packages/*.test.ts`,
 `tests/cli/dump-prompt.test.ts`.
 
-Implication: the "86 tests" figure overstates the risk, and the split across waves
+Implication: the raw ~92-tests figure overstates the risk, and the split across waves
 shrinks it further. Buckets C (~64 mechanical renames) and B (~9 fixture
 re-pointings) land in Wave 1 while `coding` is still bundled, so by the time this
 plan runs only Bucket A (~13) remains — and it moves wholesale alongside the
@@ -208,8 +265,10 @@ build on them, not re-derive:
 Built substrate to use as-is (do not rebuild): `lib/packages/` (installer with
 git/local/symlink-`--link`/catalog transports, `eject`, `update`, scopes, manifest
 validation), `lib/domains/` (multi-source loader + 7-tier precedence merge + the
-`domain-root` source kind), and the static catalog where `coding` is registered
-(flip its `source` from `./bundled/coding` to the git URL).
+`domain-root` source kind), and the static catalog where `coding` is registered.
+Note the catalog source change is **code, not data**: `resolveCatalogSource` joins
+every source onto the framework root today, so git-URL passthrough must be added
+(see Scope).
 
 **Caution:** the archived plans predate the `domain-authoring` migration, so some of
 their structural details are stale (they describe the old nested `bundled/coding/coding/`).
@@ -241,18 +300,22 @@ Trust current code over archived plan text.
 ## Open Questions
 
 - What is the external repo's name/org/URL, and who hosts its CI?
-- How does this repo's CI obtain `coding` — link a checked-out sibling, or install
-  a pinned git ref? (Pinned ref is reproducible; link is simpler for co-development.)
+- How does this repo obtain `coding` for dogfooding — link a checked-out sibling, or
+  install a pinned git ref? (Pinned ref is reproducible; link is simpler for
+  co-development. No CI exists yet, so this is a local-setup decision for now.)
 - Should `cosmonauts init` auto-offer/auto-pull `coding` for new coding projects,
   or is install always explicit?
-- Version compatibility policy between `coding` and the framework — strict lockstep
-  (like the Pi packages), a compatible range, or unpinned?
+- **Leaning resolved — version policy:** recommend a **compatible-range pin** in
+  `coding`'s manifest (given the Pi lockstep precedent), with **no runtime
+  comparator this wave**. Confirm, and decide whether to budget a `frameworkVersion`
+  comparator + manifest-validation check as a separate task or defer entirely.
+- **Leaning resolved — `bundled/` fate:** remove it entirely (no empty extension
+  point); the framework-repo detection is updated to not require it. Confirm before
+  cutover, since `isCosmonautsFrameworkRepo` and dev-bundling depend on it.
 - Tests are bucketed in **Test Decoupling** (A=~13 move [this plan], B=~9 + C=~64
   [Wave 1]). Residual unknown for this plan: whether the moved Bucket A tests need a
   coding-side test harness/fixtures the framework currently provides, so the coding
   repo can run its own suite standalone. (Bucket B/C dispositions are Wave 1's.)
-- Does `bundled/` disappear entirely, or remain as an (empty) extension point for
-  future first-party-but-separate domains?
 - Should there be a deprecation/transition period where `coding` is still resolvable
   from the old bundled path, or is it a hard cut (consistent with the
   `domain-authoring` migration's hard-cut precedent)?
