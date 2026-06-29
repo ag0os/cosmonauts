@@ -12,7 +12,7 @@ const tmp = useTempDir("agent-package-build-");
 function makeAgent(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
 	return {
 		id: "explorer",
-		domain: "coding",
+		domain: "alpha",
 		description: "Explore a codebase.",
 		capabilities: ["core"],
 		model: "anthropic/claude-sonnet-4-5",
@@ -238,7 +238,7 @@ describe("buildAgentPackage", () => {
 
 		const agentPackage = await buildAgentPackage({
 			definition: makeDefinition({
-				sourceAgent: "coding/explorer",
+				sourceAgent: "alpha/explorer",
 				skills: { mode: "source-agent" },
 			}),
 			agentRegistry: new AgentRegistry([sourceAgent]),
@@ -266,7 +266,7 @@ describe("buildAgentPackage", () => {
 		await expect(
 			buildAgentPackage({
 				definition: makeDefinition({
-					sourceAgent: "coding/missing",
+					sourceAgent: "alpha/missing",
 					prompt: { kind: "source-agent" },
 				}),
 				agentRegistry: new AgentRegistry([]),
@@ -274,7 +274,7 @@ describe("buildAgentPackage", () => {
 				target: "claude-cli",
 			}),
 		).rejects.toThrow(
-			/source agent.*coding\/missing.*prompt\.kind "source-agent"/i,
+			/source agent.*alpha\/missing.*prompt\.kind "source-agent"/i,
 		);
 	});
 
@@ -282,7 +282,7 @@ describe("buildAgentPackage", () => {
 		await expect(
 			buildAgentPackage({
 				definition: makeDefinition({
-					sourceAgent: "coding/missing",
+					sourceAgent: "alpha/missing",
 					skills: { mode: "source-agent" },
 				}),
 				agentRegistry: new AgentRegistry([]),
@@ -290,7 +290,7 @@ describe("buildAgentPackage", () => {
 				target: "claude-cli",
 			}),
 		).rejects.toThrow(
-			/source agent.*coding\/missing.*skills\.mode "source-agent"/i,
+			/source agent.*alpha\/missing.*skills\.mode "source-agent"/i,
 		);
 	});
 
@@ -304,7 +304,7 @@ describe("buildAgentPackage", () => {
 		await expect(
 			buildAgentPackage({
 				definition: makeDefinition({
-					sourceAgent: "coding/explorer",
+					sourceAgent: "alpha/explorer",
 					prompt: { kind: "source-agent" },
 				}),
 				agentRegistry: new AgentRegistry([sourceAgent]),

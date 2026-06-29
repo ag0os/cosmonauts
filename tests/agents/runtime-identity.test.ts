@@ -8,7 +8,7 @@ import {
 
 describe("runtime identity markers", () => {
 	test("qualifyAgentId prefixes the domain when present", () => {
-		expect(qualifyAgentId("worker", "coding")).toBe("coding/worker");
+		expect(qualifyAgentId("worker", "alpha")).toBe("alpha/worker");
 	});
 
 	test("qualifyAgentId leaves IDs unchanged without a domain", () => {
@@ -54,23 +54,23 @@ describe("runtime identity markers", () => {
 	});
 
 	test("buildAgentIdentityMarker supports qualified IDs", () => {
-		expect(buildAgentIdentityMarker("coding/worker")).toBe(
-			"<!-- COSMONAUTS_AGENT_ID:coding/worker -->",
+		expect(buildAgentIdentityMarker("alpha/worker")).toBe(
+			"<!-- COSMONAUTS_AGENT_ID:alpha/worker -->",
 		);
 	});
 
 	test("extractAgentIdFromSystemPrompt extracts qualified ID", () => {
 		const systemPrompt =
-			"header\n<!-- COSMONAUTS_AGENT_ID:coding/worker -->\nfooter";
-		expect(extractAgentIdFromSystemPrompt(systemPrompt)).toBe("coding/worker");
+			"header\n<!-- COSMONAUTS_AGENT_ID:alpha/worker -->\nfooter";
+		expect(extractAgentIdFromSystemPrompt(systemPrompt)).toBe("alpha/worker");
 	});
 
 	test("extractAgentIdFromSystemPrompt uses last marker with qualified IDs", () => {
 		const systemPrompt = [
 			"<!-- COSMONAUTS_AGENT_ID:shared/diagnostics -->",
 			"body",
-			"<!-- COSMONAUTS_AGENT_ID:coding/cody -->",
+			"<!-- COSMONAUTS_AGENT_ID:alpha/cody -->",
 		].join("\n");
-		expect(extractAgentIdFromSystemPrompt(systemPrompt)).toBe("coding/cody");
+		expect(extractAgentIdFromSystemPrompt(systemPrompt)).toBe("alpha/cody");
 	});
 });

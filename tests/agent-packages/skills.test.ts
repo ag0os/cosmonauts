@@ -84,7 +84,7 @@ describe("discoverPackageSkills", () => {
 
 		const skills = await discoverPackageSkills([skillsDir]);
 
-		expect(skills).toEqual([
+		expect(skills.toSorted((a, b) => a.name.localeCompare(b.name))).toEqual([
 			{
 				name: "flat",
 				description: "Flat skill",
@@ -229,9 +229,9 @@ describe("resolvePackageSkills", () => {
 
 	it("source-agent mode preserves shared skills under project-level filters", async () => {
 		const domainsDir = join(tmp.path, "domains");
-		const codingSkills = join(domainsDir, "coding", "skills");
+		const alphaSkills = join(domainsDir, "alpha", "skills");
 		const sharedSkills = join(domainsDir, "shared", "skills");
-		await writeFlatSkill(codingSkills, "typescript.md", {
+		await writeFlatSkill(alphaSkills, "typescript.md", {
 			name: "typescript",
 			description: "TypeScript skill",
 			body: "# TypeScript",
@@ -247,7 +247,7 @@ describe("resolvePackageSkills", () => {
 			sourceAgent: sourceAgent(["typescript", "plan"]),
 			projectSkills: ["typescript"],
 			domainsDir,
-			skillPaths: [codingSkills, sharedSkills],
+			skillPaths: [alphaSkills, sharedSkills],
 		});
 
 		expect(skills.map((skill) => skill.name)).toEqual(["typescript", "plan"]);

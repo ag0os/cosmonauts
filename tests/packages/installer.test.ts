@@ -45,7 +45,7 @@ interface PackageFixture {
 async function createPackageFixture(
 	root: string,
 	name: string,
-	domainName = "coding",
+	domainName = "alpha",
 ): Promise<PackageFixture> {
 	const dir = join(root, name);
 	const domainDir = join(dir, "domains", domainName);
@@ -143,12 +143,12 @@ describe("installPackage — local copy", () => {
 		const { dir: dirA } = await createPackageFixture(
 			tmpRoot,
 			"pkg-a",
-			"coding",
+			"alpha",
 		);
 		const { dir: dirB } = await createPackageFixture(
 			tmpRoot,
 			"pkg-b",
-			"coding",
+			"alpha",
 		);
 
 		// Install first package
@@ -163,7 +163,7 @@ describe("installPackage — local copy", () => {
 
 		expect(result.domainMergeResults).toHaveLength(1);
 		expect(result.domainMergeResults[0]).toEqual({
-			domainId: "coding",
+			domainId: "alpha",
 			existingPackage: "pkg-a",
 		});
 	});
@@ -222,21 +222,21 @@ describe("installPackage — invalid source", () => {
 	test("throws when a declared domain directory is absent", async () => {
 		const pkgDir = join(tmpRoot, "bad-pkg");
 		await mkdir(pkgDir, { recursive: true });
-		// Manifest declares domains/coding but directory is not created
+		// Manifest declares domains/alpha but directory is not created
 		await writeFile(
 			join(pkgDir, "cosmonauts.json"),
 			JSON.stringify({
 				name: "bad-pkg",
 				version: "1.0.0",
 				description: "Bad",
-				domains: [{ name: "coding", path: "domains/coding" }],
+				domains: [{ name: "alpha", path: "domains/alpha" }],
 			}),
 			"utf-8",
 		);
 
 		await expect(
 			installPackage({ source: pkgDir, scope: "project", projectRoot }),
-		).rejects.toThrow(/domains\/coding/);
+		).rejects.toThrow(/domains\/alpha/);
 	});
 
 	test("throws with clear message when manifest is structurally invalid", async () => {
@@ -266,7 +266,7 @@ describe("installPackage — invalid source", () => {
 				name: `bad-path-${_label}`,
 				version: "1.0.0",
 				description: "Bad path",
-				domains: [{ name: "coding", path }],
+				domains: [{ name: "alpha", path }],
 			}),
 			"utf-8",
 		);
@@ -275,7 +275,7 @@ describe("installPackage — invalid source", () => {
 			installPackage({ source: pkgDir, scope: "project", projectRoot }),
 		).rejects.toThrow(
 			new RegExp(
-				`domains: invalid-path \\(domain "coding" declares path "${escapeRegExp(path)}"\\); domain paths must be "\\." or a relative path inside the package such as "domains/coding"; absolute paths and "\.\./" traversal are not allowed`,
+				`domains: invalid-path \\(domain "alpha" declares path "${escapeRegExp(path)}"\\); domain paths must be "\\." or a relative path inside the package such as "domains/coding"; absolute paths and "\.\./" traversal are not allowed`,
 			),
 		);
 		await expect(
@@ -429,12 +429,12 @@ describe("install metadata — catalog", () => {
 			source: dir,
 			scope: "project",
 			projectRoot,
-			catalogName: "coding",
+			catalogName: "alpha",
 		});
 
 		const meta = await readMeta(result.installedTo);
 		expect(meta.source).toBe("catalog");
-		expect(meta.catalogName).toBe("coding");
+		expect(meta.catalogName).toBe("alpha");
 	});
 
 	test("installedAt is a valid ISO 8601 timestamp", async () => {
@@ -444,7 +444,7 @@ describe("install metadata — catalog", () => {
 			source: dir,
 			scope: "project",
 			projectRoot,
-			catalogName: "coding",
+			catalogName: "alpha",
 		});
 
 		const meta = await readMeta(result.installedTo);
@@ -493,7 +493,7 @@ describe("install metadata — git", () => {
 		name: string,
 	): Promise<string> {
 		const repoDir = join(root, `${name}-repo`);
-		const domainDir = join(repoDir, "domains", "coding");
+		const domainDir = join(repoDir, "domains", "alpha");
 		await mkdir(domainDir, { recursive: true });
 		// Git does not track empty directories; add a placeholder
 		await writeFile(join(domainDir, ".gitkeep"), "", "utf-8");
@@ -503,7 +503,7 @@ describe("install metadata — git", () => {
 				name,
 				version: "1.0.0",
 				description: `Package ${name}`,
-				domains: [{ name: "coding", path: "domains/coding" }],
+				domains: [{ name: "alpha", path: "domains/alpha" }],
 			}),
 			"utf-8",
 		);

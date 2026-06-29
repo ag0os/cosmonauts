@@ -102,7 +102,7 @@ describe("validateManifest — valid manifests", () => {
 			name: "my-package",
 			version: "1.0.0",
 			description: "A test package",
-			domains: [{ name: "coding", path: "domains/coding" }],
+			domains: [{ name: "alpha", path: "domains/alpha" }],
 		};
 
 		const result = validateManifest(raw);
@@ -135,7 +135,7 @@ describe("validateManifest — valid manifests", () => {
 			version: "0.1.0",
 			description: "Package with multiple domains",
 			domains: [
-				{ name: "coding", path: "domains/coding" },
+				{ name: "alpha", path: "domains/alpha" },
 				{ name: "devops", path: "domains/devops" },
 			],
 		};
@@ -288,7 +288,7 @@ describe("validateManifest — empty domains array", () => {
 			name: "my-pkg",
 			version: "1.0.0",
 			description: "A package",
-			domains: "coding",
+			domains: "alpha",
 		};
 
 		expectManifestError(validateManifest(raw), "domains", "invalid-entry");
@@ -299,7 +299,7 @@ describe("validateManifest — empty domains array", () => {
 			name: "my-pkg",
 			version: "1.0.0",
 			description: "A package",
-			domains: [{ name: "coding" }], // missing path
+			domains: [{ name: "alpha" }], // missing path
 		};
 
 		expectManifestError(validateManifest(raw), "domains", "invalid-entry");
@@ -315,7 +315,7 @@ describe("validateManifest — empty domains array", () => {
 			name: "my-pkg",
 			version: "1.0.0",
 			description: "A package",
-			domains: [{ name: "coding", path }],
+			domains: [{ name: "alpha", path }],
 		};
 
 		const result = validateManifest(raw);
@@ -327,7 +327,7 @@ describe("validateManifest — empty domains array", () => {
 				{
 					field: "domains",
 					reason: "invalid-path",
-					domain: "coding",
+					domain: "alpha",
 					path,
 				},
 			],

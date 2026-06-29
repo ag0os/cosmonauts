@@ -48,43 +48,43 @@ afterEach(() => {
 describe("ejectAction — success", () => {
 	it("prints ejected path including domain id", async () => {
 		mockEjectDomain.mockResolvedValue({
-			ejectedTo: "/project/.cosmonauts/domains/coding",
-			sourcePackage: "coding",
+			ejectedTo: "/project/.cosmonauts/domains/alpha",
+			sourcePackage: "alpha",
 			sourceScope: "user",
-			sourcePath: "/home/user/.cosmonauts/packages/coding/domains/coding",
+			sourcePath: "/home/user/.cosmonauts/packages/alpha/domains/alpha",
 		});
 
-		await ejectAction("coding", { projectRoot: "/project" });
+		await ejectAction("alpha", { projectRoot: "/project" });
 
-		expect(output.stdout()).toContain(".cosmonauts/domains/coding/");
+		expect(output.stdout()).toContain(".cosmonauts/domains/alpha/");
 		expect(process.exitCode).toBeUndefined();
 	});
 
 	it("prints source package name and source path", async () => {
 		mockEjectDomain.mockResolvedValue({
-			ejectedTo: "/project/.cosmonauts/domains/coding",
-			sourcePackage: "coding",
+			ejectedTo: "/project/.cosmonauts/domains/alpha",
+			sourcePackage: "alpha",
 			sourceScope: "user",
-			sourcePath: "/home/user/.cosmonauts/packages/coding/domains/coding",
+			sourcePath: "/home/user/.cosmonauts/packages/alpha/domains/alpha",
 		});
 
-		await ejectAction("coding", { projectRoot: "/project" });
+		await ejectAction("alpha", { projectRoot: "/project" });
 
-		expect(output.stdout()).toContain("coding");
+		expect(output.stdout()).toContain("alpha");
 		expect(output.stdout()).toContain(
-			"/home/user/.cosmonauts/packages/coding/domains/coding",
+			"/home/user/.cosmonauts/packages/alpha/domains/alpha",
 		);
 	});
 
 	it("prints global uninstall guidance without --local for user scope", async () => {
 		mockEjectDomain.mockResolvedValue({
-			ejectedTo: "/project/.cosmonauts/domains/coding",
+			ejectedTo: "/project/.cosmonauts/domains/alpha",
 			sourcePackage: "team-pack",
 			sourceScope: "user",
-			sourcePath: "/store/team-pack/domains/coding",
+			sourcePath: "/store/team-pack/domains/alpha",
 		});
 
-		await ejectAction("coding", { projectRoot: "/project" });
+		await ejectAction("alpha", { projectRoot: "/project" });
 
 		expect(output.stdout()).toContain("cosmonauts uninstall team-pack");
 		expect(output.stdout()).not.toContain("team-pack --local");
@@ -93,26 +93,26 @@ describe("ejectAction — success", () => {
 
 	it("prints local uninstall guidance with --local for project scope", async () => {
 		mockEjectDomain.mockResolvedValue({
-			ejectedTo: "/project/.cosmonauts/domains/coding",
+			ejectedTo: "/project/.cosmonauts/domains/alpha",
 			sourcePackage: "team-pack",
 			sourceScope: "project",
-			sourcePath: "/project/.cosmonauts/packages/team-pack/domains/coding",
+			sourcePath: "/project/.cosmonauts/packages/team-pack/domains/alpha",
 		});
 
-		await ejectAction("coding", { projectRoot: "/project" });
+		await ejectAction("alpha", { projectRoot: "/project" });
 
 		expect(output.stdout()).toContain("cosmonauts uninstall team-pack --local");
 	});
 
 	it("prints IDE tip", async () => {
 		mockEjectDomain.mockResolvedValue({
-			ejectedTo: "/project/.cosmonauts/domains/coding",
-			sourcePackage: "coding",
+			ejectedTo: "/project/.cosmonauts/domains/alpha",
+			sourcePackage: "alpha",
 			sourceScope: "user",
-			sourcePath: "/store/coding/domains/coding",
+			sourcePath: "/store/alpha/domains/alpha",
 		});
 
-		await ejectAction("coding", { projectRoot: "/project" });
+		await ejectAction("alpha", { projectRoot: "/project" });
 
 		expect(output.stdout()).toContain("dev dependency");
 		expect(output.stdout()).toContain("cosmonauts");
@@ -126,21 +126,21 @@ describe("ejectAction — success", () => {
 describe("ejectAction — errors", () => {
 	it("writes to stderr with 'cosmonauts eject:' prefix on error", async () => {
 		mockEjectDomain.mockRejectedValue(
-			new Error('Domain "coding" not found in any installed package'),
+			new Error('Domain "alpha" not found in any installed package'),
 		);
 
-		await ejectAction("coding", { projectRoot: "/project" });
+		await ejectAction("alpha", { projectRoot: "/project" });
 
 		expect(output.stderr()).toContain("cosmonauts eject:");
 		expect(output.stderr()).toContain(
-			'Domain "coding" not found in any installed package',
+			'Domain "alpha" not found in any installed package',
 		);
 	});
 
 	it("sets exitCode = 1 on error", async () => {
 		mockEjectDomain.mockRejectedValue(new Error("something went wrong"));
 
-		await ejectAction("coding", { projectRoot: "/project" });
+		await ejectAction("alpha", { projectRoot: "/project" });
 
 		expect(process.exitCode).toBe(1);
 	});
@@ -148,7 +148,7 @@ describe("ejectAction — errors", () => {
 	it("handles non-Error thrown values", async () => {
 		mockEjectDomain.mockRejectedValue("plain string error");
 
-		await ejectAction("coding", { projectRoot: "/project" });
+		await ejectAction("alpha", { projectRoot: "/project" });
 
 		expect(output.stderr()).toContain("cosmonauts eject:");
 		expect(output.stderr()).toContain("plain string error");
@@ -163,13 +163,13 @@ describe("ejectAction — errors", () => {
 describe("ejectAction — --force flag", () => {
 	it("passes force: true to ejectDomain when --force is set", async () => {
 		mockEjectDomain.mockResolvedValue({
-			ejectedTo: "/project/.cosmonauts/domains/coding",
-			sourcePackage: "coding",
+			ejectedTo: "/project/.cosmonauts/domains/alpha",
+			sourcePackage: "alpha",
 			sourceScope: "user",
-			sourcePath: "/store/coding/domains/coding",
+			sourcePath: "/store/alpha/domains/alpha",
 		});
 
-		await ejectAction("coding", { force: true, projectRoot: "/project" });
+		await ejectAction("alpha", { force: true, projectRoot: "/project" });
 
 		expect(mockEjectDomain).toHaveBeenCalledWith(
 			expect.objectContaining({ force: true }),
@@ -178,13 +178,13 @@ describe("ejectAction — --force flag", () => {
 
 	it("does not pass force when flag is absent", async () => {
 		mockEjectDomain.mockResolvedValue({
-			ejectedTo: "/project/.cosmonauts/domains/coding",
-			sourcePackage: "coding",
+			ejectedTo: "/project/.cosmonauts/domains/alpha",
+			sourcePackage: "alpha",
 			sourceScope: "user",
-			sourcePath: "/store/coding/domains/coding",
+			sourcePath: "/store/alpha/domains/alpha",
 		});
 
-		await ejectAction("coding", { projectRoot: "/project" });
+		await ejectAction("alpha", { projectRoot: "/project" });
 
 		expect(mockEjectDomain).toHaveBeenCalledWith(
 			expect.objectContaining({ force: undefined }),

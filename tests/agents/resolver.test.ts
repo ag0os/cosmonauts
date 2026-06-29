@@ -340,7 +340,7 @@ describe("createRegistryFromDomains", () => {
 			projectContext: true,
 			session: "ephemeral",
 			loop: false,
-			domain: "coding",
+			domain: "alpha",
 		};
 
 		const plannerDef: AgentDefinition = {
@@ -354,12 +354,12 @@ describe("createRegistryFromDomains", () => {
 			projectContext: false,
 			session: "ephemeral",
 			loop: false,
-			domain: "coding",
+			domain: "alpha",
 		};
 
 		const domains: LoadedDomain[] = [
 			{
-				manifest: { id: "coding", description: "Coding domain" },
+				manifest: { id: "alpha", description: "Alpha domain" },
 				portable: false,
 				agents: new Map([
 					["worker", workerDef],
@@ -375,34 +375,34 @@ describe("createRegistryFromDomains", () => {
 						origin: "test",
 						precedence: 0,
 						kind: "domains-dir",
-						rootDir: "/tmp/domains/coding",
+						rootDir: "/tmp/domains/alpha",
 					},
 				],
-				rootDirs: ["/tmp/domains/coding"],
+				rootDirs: ["/tmp/domains/alpha"],
 			},
 		];
 
 		const registry = createRegistryFromDomains(domains);
 		expect(registry.listIds()).toHaveLength(2);
-		expect(registry.has("coding/worker")).toBe(true);
-		expect(registry.has("coding/planner")).toBe(true);
+		expect(registry.has("alpha/worker")).toBe(true);
+		expect(registry.has("alpha/planner")).toBe(true);
 		// Unqualified scan should also work
 		expect(registry.has("worker")).toBe(true);
 	});
 
 	it("handles multiple domains", () => {
-		const codingWorker: AgentDefinition = {
+		const alphaWorker: AgentDefinition = {
 			id: "worker",
-			description: "Coding worker",
+			description: "Alpha worker",
 			capabilities: ["core"],
-			model: "test-provider/coding-worker",
+			model: "test-provider/alpha-worker",
 			tools: "coding",
 			extensions: [],
 			skills: ["*"],
 			projectContext: true,
 			session: "ephemeral",
 			loop: false,
-			domain: "coding",
+			domain: "alpha",
 		};
 
 		const docsWorker: AgentDefinition = {
@@ -421,9 +421,9 @@ describe("createRegistryFromDomains", () => {
 
 		const domains: LoadedDomain[] = [
 			{
-				manifest: { id: "coding", description: "Coding domain" },
+				manifest: { id: "alpha", description: "Alpha domain" },
 				portable: false,
-				agents: new Map([["worker", codingWorker]]),
+				agents: new Map([["worker", alphaWorker]]),
 				capabilities: new Set(),
 				prompts: new Set(),
 				skills: new Set(),
@@ -434,10 +434,10 @@ describe("createRegistryFromDomains", () => {
 						origin: "test",
 						precedence: 0,
 						kind: "domains-dir",
-						rootDir: "/tmp/domains/coding",
+						rootDir: "/tmp/domains/alpha",
 					},
 				],
-				rootDirs: ["/tmp/domains/coding"],
+				rootDirs: ["/tmp/domains/alpha"],
 			},
 			{
 				manifest: { id: "docs", description: "Docs domain" },
@@ -462,9 +462,9 @@ describe("createRegistryFromDomains", () => {
 
 		const registry = createRegistryFromDomains(domains);
 		expect(registry.listIds()).toHaveLength(2);
-		expect(registry.has("coding/worker")).toBe(true);
+		expect(registry.has("alpha/worker")).toBe(true);
 		expect(registry.has("docs/writer")).toBe(true);
-		expect(registry.resolveInDomain("coding")).toHaveLength(1);
+		expect(registry.resolveInDomain("alpha")).toHaveLength(1);
 		expect(registry.resolveInDomain("docs")).toHaveLength(1);
 	});
 
@@ -478,17 +478,17 @@ describe("createRegistryFromDomains", () => {
 		const publicAgent: AgentDefinition = {
 			...DOMAIN_ALPHA,
 			id: "public-agent",
-			domain: "coding",
+			domain: "alpha",
 		};
 		const internalAgent: AgentDefinition = {
 			...DOMAIN_BETA,
 			id: "secret-agent",
-			domain: "coding",
+			domain: "alpha",
 		};
-		const coding: LoadedDomain = {
+		const alpha: LoadedDomain = {
 			manifest: {
-				id: "coding",
-				description: "Coding domain",
+				id: "alpha",
+				description: "Alpha domain",
 				internal: { agents: ["secret-agent"] },
 			},
 			portable: false,
@@ -512,30 +512,28 @@ describe("createRegistryFromDomains", () => {
 					origin: "test",
 					precedence: 0,
 					kind: "domains-dir",
-					rootDir: "/tmp/domains/coding",
+					rootDir: "/tmp/domains/alpha",
 				},
 			],
-			rootDirs: ["/tmp/domains/coding"],
+			rootDirs: ["/tmp/domains/alpha"],
 		};
 
-		const registry = createRegistryFromDomains([coding]);
+		const registry = createRegistryFromDomains([alpha]);
 
-		expect(registry.resolve("coding/public-agent", "docs")).toBe(publicAgent);
-		expect(registry.has("coding/secret-agent", "docs")).toBe(false);
-		expect(registry.resolve("coding/secret-agent", "coding")).toBe(
-			internalAgent,
-		);
-		expect(registry.resolve("secret-agent", "coding")).toBe(internalAgent);
-		expect(selectPublicSkillNames(coding, "docs")).toEqual(["tdd"]);
+		expect(registry.resolve("alpha/public-agent", "docs")).toBe(publicAgent);
+		expect(registry.has("alpha/secret-agent", "docs")).toBe(false);
+		expect(registry.resolve("alpha/secret-agent", "alpha")).toBe(internalAgent);
+		expect(registry.resolve("secret-agent", "alpha")).toBe(internalAgent);
+		expect(selectPublicSkillNames(alpha, "docs")).toEqual(["tdd"]);
 		expect(
-			selectPublicChains(coding, "docs").map((chain) => chain.name),
+			selectPublicChains(alpha, "docs").map((chain) => chain.name),
 		).toEqual(["build"]);
 
-		expect(() => registry.resolve("coding/secret-agent", "docs")).toThrow(
+		expect(() => registry.resolve("alpha/secret-agent", "docs")).toThrow(
 			InternalAgentAccessError,
 		);
-		expect(() => registry.resolve("coding/missing-agent", "docs")).toThrow(
-			/Unknown agent ID "coding\/missing-agent"/,
+		expect(() => registry.resolve("alpha/missing-agent", "docs")).toThrow(
+			/Unknown agent ID "alpha\/missing-agent"/,
 		);
 	});
 });

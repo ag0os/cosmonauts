@@ -7,7 +7,7 @@ const baseDefinition = {
 	schemaVersion: 1,
 	id: "planner-claude",
 	description: "Planner packaged for Claude.",
-	sourceAgent: "coding/planner",
+	sourceAgent: "alpha/planner",
 	prompt: { kind: "source-agent" },
 	tools: { preset: "readonly" },
 	skills: { mode: "source-agent" },
@@ -18,7 +18,7 @@ const baseDefinition = {
 function makeAgent(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
 	return {
 		id: "planner",
-		domain: "coding",
+		domain: "alpha",
 		description: "Plans implementation work.",
 		capabilities: ["core"],
 		model: "anthropic/claude-sonnet-4-5",

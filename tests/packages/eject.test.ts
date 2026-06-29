@@ -39,7 +39,7 @@ async function createPkgFixture(
 ): Promise<string> {
 	const {
 		name,
-		domainName = "coding",
+		domainName = "alpha",
 		domainPath = `domains/${domainName}`,
 		extraFiles = {},
 	} = opts;
@@ -51,7 +51,7 @@ async function createPkgFixture(
 	// domain.ts sentinel file
 	await writeFile(
 		join(domainDir, "domain.ts"),
-		'export const id = "coding";\n',
+		'export const id = "alpha";\n',
 		"utf-8",
 	);
 
@@ -115,13 +115,13 @@ describe("ejectDomain — basic copy", () => {
 	test("copies domain directory to .cosmonauts/domains/<domainId>/ and domain.ts is present", async () => {
 		await createPkgFixture(localStore, { name: "my-pkg" });
 
-		const result = await ejectDomain({ domainId: "coding", projectRoot });
+		const result = await ejectDomain({ domainId: "alpha", projectRoot });
 
 		const expectedTarget = join(
 			projectRoot,
 			".cosmonauts",
 			"domains",
-			"coding",
+			"alpha",
 		);
 		expect(result.ejectedTo).toBe(expectedTarget);
 
@@ -135,12 +135,12 @@ describe("ejectDomain — basic copy", () => {
 	test("result includes correct source package metadata", async () => {
 		await createPkgFixture(localStore, { name: "my-pkg" });
 
-		const result = await ejectDomain({ domainId: "coding", projectRoot });
+		const result = await ejectDomain({ domainId: "alpha", projectRoot });
 
 		expect(result.sourcePackage).toBe("my-pkg");
 		expect(result.sourceScope).toBe("project");
 		expect(result.sourcePath).toBe(
-			join(localStore, "my-pkg", "domains", "coding"),
+			join(localStore, "my-pkg", "domains", "alpha"),
 		);
 	});
 });
@@ -153,7 +153,7 @@ describe("ejectDomain — source scope metadata", () => {
 	test("reports user scope when domain comes from global store", async () => {
 		await createPkgFixture(globalStore, { name: "global-pkg" });
 
-		const result = await ejectDomain({ domainId: "coding", projectRoot });
+		const result = await ejectDomain({ domainId: "alpha", projectRoot });
 
 		expect(result.sourcePackage).toBe("global-pkg");
 		expect(result.sourceScope).toBe("user");
@@ -168,7 +168,7 @@ describe("ejectDomain — source scope metadata", () => {
 describe("ejectDomain — local takes precedence over global", () => {
 	test("uses local package when same domain exists in both scopes", async () => {
 		await createPkgFixture(localStore, { name: "local-pkg" });
-		const result = await ejectDomain({ domainId: "coding", projectRoot });
+		const result = await ejectDomain({ domainId: "alpha", projectRoot });
 		expect(result.sourcePackage).toBe("local-pkg");
 		expect(result.sourcePath).toContain(localStore);
 	});
@@ -191,16 +191,16 @@ describe("ejectDomain — same-scope conflicts", () => {
 
 		const localPackages = await listInstalledPackages("project", projectRoot);
 		const localMatches = localPackages.filter((pkg) =>
-			pkg.manifest.domains.some((domain) => domain.name === "coding"),
+			pkg.manifest.domains.some((domain) => domain.name === "alpha"),
 		);
 		const expectedWinner = localMatches.at(-1);
 		expect(expectedWinner).toBeDefined();
 
-		const result = await ejectDomain({ domainId: "coding", projectRoot });
+		const result = await ejectDomain({ domainId: "alpha", projectRoot });
 		expect(result.sourcePackage).toBe(expectedWinner?.manifest.name);
 
 		const marker = await readFile(
-			join(projectRoot, ".cosmonauts", "domains", "coding", "marker.ts"),
+			join(projectRoot, ".cosmonauts", "domains", "alpha", "marker.ts"),
 			"utf-8",
 		);
 		expect(marker).toContain(expectedWinner?.manifest.name ?? "");
@@ -226,7 +226,7 @@ describe("ejectDomain — domain not found", () => {
 	test("throws when packages exist but none provides the requested domain", async () => {
 		await createPkgFixture(localStore, {
 			name: "my-pkg",
-			domainName: "coding",
+			domainName: "alpha",
 		});
 
 		await expect(
@@ -244,11 +244,11 @@ describe("ejectDomain — target already exists", () => {
 		await createPkgFixture(localStore, { name: "my-pkg" });
 
 		// First eject
-		await ejectDomain({ domainId: "coding", projectRoot });
+		await ejectDomain({ domainId: "alpha", projectRoot });
 
 		// Second eject without force
 		await expect(
-			ejectDomain({ domainId: "coding", projectRoot }),
+			ejectDomain({ domainId: "alpha", projectRoot }),
 		).rejects.toThrow(/already ejected/);
 	});
 
@@ -256,14 +256,14 @@ describe("ejectDomain — target already exists", () => {
 		await createPkgFixture(localStore, { name: "my-pkg" });
 
 		// First eject
-		await ejectDomain({ domainId: "coding", projectRoot });
+		await ejectDomain({ domainId: "alpha", projectRoot });
 
 		// Add a stale file to the ejected directory
-		const ejectedDir = join(projectRoot, ".cosmonauts", "domains", "coding");
+		const ejectedDir = join(projectRoot, ".cosmonauts", "domains", "alpha");
 		await writeFile(join(ejectedDir, "stale.ts"), "// stale", "utf-8");
 
 		// Re-eject with force
-		await ejectDomain({ domainId: "coding", projectRoot, force: true });
+		await ejectDomain({ domainId: "alpha", projectRoot, force: true });
 
 		// Stale file must be gone
 		await expect(stat(join(ejectedDir, "stale.ts"))).rejects.toThrow();
@@ -285,10 +285,10 @@ describe("ejectDomain — import rewriting", () => {
 			},
 		});
 
-		await ejectDomain({ domainId: "coding", projectRoot });
+		await ejectDomain({ domainId: "alpha", projectRoot });
 
 		const content = await readFile(
-			join(projectRoot, ".cosmonauts", "domains", "coding", "domain.ts"),
+			join(projectRoot, ".cosmonauts", "domains", "alpha", "domain.ts"),
 			"utf-8",
 		);
 		expect(content).toContain('from "cosmonauts/lib/something.ts"');
@@ -304,14 +304,14 @@ describe("ejectDomain — import rewriting", () => {
 			},
 		});
 
-		await ejectDomain({ domainId: "coding", projectRoot });
+		await ejectDomain({ domainId: "alpha", projectRoot });
 
 		const content = await readFile(
 			join(
 				projectRoot,
 				".cosmonauts",
 				"domains",
-				"coding",
+				"alpha",
 				"agents",
 				"single-quote.ts",
 			),
@@ -329,14 +329,14 @@ describe("ejectDomain — import rewriting", () => {
 			},
 		});
 
-		await ejectDomain({ domainId: "coding", projectRoot });
+		await ejectDomain({ domainId: "alpha", projectRoot });
 
 		const content = await readFile(
 			join(
 				projectRoot,
 				".cosmonauts",
 				"domains",
-				"coding",
+				"alpha",
 				"agents",
 				"worker.ts",
 			),
@@ -355,26 +355,26 @@ describe("ejectDomain — import rewriting", () => {
 			},
 		});
 
-		await ejectDomain({ domainId: "coding", projectRoot });
+		await ejectDomain({ domainId: "alpha", projectRoot });
 
 		const content = await readFile(
-			join(projectRoot, ".cosmonauts", "domains", "coding", "workflows.ts"),
+			join(projectRoot, ".cosmonauts", "domains", "alpha", "workflows.ts"),
 			"utf-8",
 		);
 		expect(content).toContain('from "cosmonauts/lib/workflows.ts"');
 	});
 
 	test("does not modify files that have no matching imports", async () => {
-		const originalContent = 'export const id = "coding";\n';
+		const originalContent = 'export const id = "alpha";\n';
 		await createPkgFixture(localStore, {
 			name: "my-pkg",
 			extraFiles: { "domain.ts": originalContent },
 		});
 
-		await ejectDomain({ domainId: "coding", projectRoot });
+		await ejectDomain({ domainId: "alpha", projectRoot });
 
 		const content = await readFile(
-			join(projectRoot, ".cosmonauts", "domains", "coding", "domain.ts"),
+			join(projectRoot, ".cosmonauts", "domains", "alpha", "domain.ts"),
 			"utf-8",
 		);
 		expect(content).toBe(originalContent);
@@ -389,11 +389,11 @@ describe("ejectDomain — link-installed package", () => {
 	test("produces a real copy even when source package is a symlink", async () => {
 		// Create a real package elsewhere
 		const realPkgDir = join(tmpRoot, "real-pkg");
-		const domainDir = join(realPkgDir, "domains", "coding");
+		const domainDir = join(realPkgDir, "domains", "alpha");
 		await mkdir(domainDir, { recursive: true });
 		await writeFile(
 			join(domainDir, "domain.ts"),
-			'export const id = "coding";\n',
+			'export const id = "alpha";\n',
 			"utf-8",
 		);
 		await writeFile(
@@ -402,7 +402,7 @@ describe("ejectDomain — link-installed package", () => {
 				name: "link-pkg",
 				version: "1.0.0",
 				description: "Link pkg",
-				domains: [{ name: "coding", path: "domains/coding" }],
+				domains: [{ name: "alpha", path: "domains/alpha" }],
 			}),
 			"utf-8",
 		);
@@ -412,9 +412,9 @@ describe("ejectDomain — link-installed package", () => {
 		const linkPath = join(localStore, "link-pkg");
 		await symlink(realPkgDir, linkPath);
 
-		await ejectDomain({ domainId: "coding", projectRoot });
+		await ejectDomain({ domainId: "alpha", projectRoot });
 
-		const ejectedDir = join(projectRoot, ".cosmonauts", "domains", "coding");
+		const ejectedDir = join(projectRoot, ".cosmonauts", "domains", "alpha");
 
 		// Must be a real directory, not a symlink
 		const s = await stat(ejectedDir); // stat follows symlinks
@@ -431,21 +431,21 @@ describe("ejectDomain — link-installed package", () => {
 
 describe("ejectDomain — domain.name differs from domain.path last segment", () => {
 	test("target directory uses domain.name (the ID), not the last path segment", async () => {
-		// domain.name = "coding", domain.path = "domains/coding-v2"
+		// domain.name = "alpha", domain.path = "domains/alpha-v2"
 		await createPkgFixture(localStore, {
 			name: "my-pkg",
-			domainName: "coding",
-			domainPath: "domains/coding-v2",
+			domainName: "alpha",
+			domainPath: "domains/alpha-v2",
 		});
 
-		const result = await ejectDomain({ domainId: "coding", projectRoot });
+		const result = await ejectDomain({ domainId: "alpha", projectRoot });
 
-		// Target must be named by domain.name ("coding"), not "coding-v2"
+		// Target must be named by domain.name ("alpha"), not "alpha-v2"
 		const expectedTarget = join(
 			projectRoot,
 			".cosmonauts",
 			"domains",
-			"coding",
+			"alpha",
 		);
 		expect(result.ejectedTo).toBe(expectedTarget);
 
