@@ -237,6 +237,8 @@ export default function orchestrationExtension(pi: ExtensionAPI) {
 function formatDriverActivityMessage(event: DriverActivityBusEvent): string {
 	const prefix = `Driver ${event.runId} ${event.taskId}`;
 	switch (event.activity.kind) {
+		case "agent_resolved":
+			return `${prefix}: ${event.activity.requestedRole} resolved to ${event.activity.resolvedAgentId}`;
 		case "tool_start":
 			return `${prefix}: ${event.activity.summary}`;
 		case "tool_end":

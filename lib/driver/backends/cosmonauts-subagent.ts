@@ -94,6 +94,12 @@ function mapSpawnEventToDriverActivity({
 
 function mapSpawnActivity(event: SpawnEvent): SpawnActivity | undefined {
 	switch (event.type) {
+		case "agent_resolved":
+			return {
+				kind: "agent_resolved",
+				requestedRole: event.requestedRole,
+				resolvedAgentId: event.resolvedAgentId,
+			};
 		case "tool_execution_start":
 			return {
 				kind: "tool_start",

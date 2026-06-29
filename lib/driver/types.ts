@@ -239,6 +239,11 @@ export type DriverEvent =
 	  });
 
 export type SpawnActivity =
+	| {
+			kind: "agent_resolved";
+			requestedRole: string;
+			resolvedAgentId: string;
+	  }
 	| { kind: "tool_start"; toolName: string; summary: string }
 	| { kind: "tool_end"; toolName: string; isError: boolean }
 	| { kind: "turn_start" }

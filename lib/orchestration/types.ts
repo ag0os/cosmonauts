@@ -254,6 +254,11 @@ interface SpawnEventBase {
 export type CompactionReason = "manual" | "threshold" | "overflow";
 
 export type SpawnEvent =
+	| (SpawnEventBase & {
+			type: "agent_resolved";
+			requestedRole: string;
+			resolvedAgentId: string;
+	  })
 	| (SpawnEventBase & { type: "turn_start" })
 	| (SpawnEventBase & { type: "turn_end" })
 	| (SpawnEventBase & {

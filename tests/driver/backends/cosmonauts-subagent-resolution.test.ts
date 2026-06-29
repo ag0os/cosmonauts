@@ -112,7 +112,6 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:coding-agnostic-framework#B-021
 	test("runs inline Drive with cosmonauts-subagent, omitted envelope input, and no domain override", async () => {
 		const domains = await loadDomainsFromSources([
 			{ domainsDir: DOMAINS_DIR, origin: "framework", precedence: 1 },
@@ -189,6 +188,9 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 		const events = await readFile(eventLogPath, "utf-8");
 		expect(events).toContain('"backend":"cosmonauts-subagent"');
 		expect(events).toContain(`"taskId":"${task.id}"`);
+		expect(events).toContain('"kind":"agent_resolved"');
+		expect(events).toContain('"requestedRole":"worker"');
+		expect(events).toContain('"resolvedAgentId":"coding/worker"');
 	});
 });
 

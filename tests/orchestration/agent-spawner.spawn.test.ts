@@ -387,6 +387,30 @@ describe("createPiSpawner", () => {
 			);
 		});
 
+		test("emits resolved agent identity through onEvent before prompting", async () => {
+			const mockSession = createMockSession();
+			mocks.createAgentSession.mockResolvedValue({ session: mockSession });
+
+			const receivedEvents: unknown[] = [];
+			const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR, {
+				resolver: realResolver,
+			});
+			await spawner.spawn({
+				role: "planner",
+				cwd: "/tmp/test-project",
+				prompt: "Plan the work.",
+				onEvent: (event) => receivedEvents.push(event),
+			});
+
+			expect(receivedEvents[0]).toEqual({
+				type: "agent_resolved",
+				sessionId: "session-1",
+				requestedRole: "planner",
+				resolvedAgentId: "alpha/planner",
+			});
+			expect(mockSession.prompt).toHaveBeenCalledTimes(1);
+		});
+
 		test("forwards turn_start/end events through onEvent", async () => {
 			let subscribeListener: ((event: unknown) => void) | undefined;
 			const mockSession = createMockSession({
@@ -417,7 +441,7 @@ describe("createPiSpawner", () => {
 				onEvent: (event) => receivedEvents.push(event),
 			});
 
-			expect(receivedEvents).toEqual([
+			expect(receivedEvents.slice(1)).toEqual([
 				{ type: "turn_start", sessionId: "session-1" },
 				{ type: "turn_end", sessionId: "session-1" },
 			]);
@@ -459,7 +483,7 @@ describe("createPiSpawner", () => {
 				onEvent: (event) => receivedEvents.push(event),
 			});
 
-			expect(receivedEvents).toEqual([
+			expect(receivedEvents.slice(1)).toEqual([
 				{
 					type: "tool_execution_start",
 					toolName: "read",
@@ -511,7 +535,7 @@ describe("createPiSpawner", () => {
 				onEvent: (event) => receivedEvents.push(event),
 			});
 
-			expect(receivedEvents).toEqual([
+			expect(receivedEvents.slice(1)).toEqual([
 				{
 					type: "compaction_start",
 					reason: "manual",
@@ -555,7 +579,14 @@ describe("createPiSpawner", () => {
 				onEvent: (event) => receivedEvents.push(event),
 			});
 
-			expect(receivedEvents).toHaveLength(0);
+			expect(receivedEvents).toEqual([
+				{
+					type: "agent_resolved",
+					sessionId: "session-1",
+					requestedRole: "planner",
+					resolvedAgentId: "alpha/planner",
+				},
+			]);
 		});
 
 		test("onEvent listener errors are swallowed", async () => {
