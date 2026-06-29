@@ -1,8 +1,12 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createDriveCompatProgram } from "../../../cli/drive/subcommand.ts";
+import {
+	DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH,
+	resolveDefaultDriveEnvelopePath,
+} from "../../../lib/driver/default-envelope.ts";
 import type { DriverDeps } from "../../../lib/driver/driver.ts";
 import { DEFAULT_TASK_TIMEOUT_MS } from "../../../lib/driver/run-one-task.ts";
 import {
@@ -365,6 +369,30 @@ describe("cosmonauts run drive compat run", () => {
 			envelopePath: fixture.envelopePath,
 			envelopeContent: "Launch envelope snapshot\n",
 		});
+	});
+
+	// @cosmo-behavior plan:coding-agnostic-framework#B-010
+	test("uses the framework default envelope when --envelope is omitted", async () => {
+		const fixture = await setupFixture(1);
+		const expectedEnvelopePath = resolveDefaultDriveEnvelopePath();
+		const expectedContent = await readFile(expectedEnvelopePath, "utf-8");
+
+		await parseDrive([
+			"--plan",
+			PLAN,
+			"--task-ids",
+			fixture.tasks[0]?.id ?? "TASK-001",
+			"--mode",
+			"inline",
+		]);
+
+		const spec = firstRunInlineSpec();
+		expect(spec.promptTemplate.envelopePath).toBe(expectedEnvelopePath);
+		expect(relative(originalCwd, spec.promptTemplate.envelopePath)).toBe(
+			DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH,
+		);
+		expect(spec.promptTemplate.envelopePath).not.toContain("bundled/coding");
+		expect(spec.promptTemplate.envelopeContent).toBe(expectedContent);
 	});
 
 	test("routes explicit inline and detached modes without invoking real backends", async () => {

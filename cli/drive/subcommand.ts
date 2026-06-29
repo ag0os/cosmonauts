@@ -9,6 +9,7 @@ import { Command } from "commander";
 import { resolveConfiguredExternalBackend } from "../../lib/driver/backend-resolution.ts";
 import { createCosmonautsSubagentBackend } from "../../lib/driver/backends/cosmonauts-subagent.ts";
 import type { Backend } from "../../lib/driver/backends/types.ts";
+import { resolveDefaultDriveEnvelopePath } from "../../lib/driver/default-envelope.ts";
 import { runInline, startDetached } from "../../lib/driver/driver.ts";
 import { recordDurableFinalizerRetryFailure } from "../../lib/driver/durable-steps.ts";
 import { formatError } from "../../lib/driver/errors.ts";
@@ -987,7 +988,7 @@ async function resolveEnvelopeSnapshot({
 		projectRoot,
 		options.envelope ??
 			resumePromptTemplate?.envelopePath ??
-			resolveDefaultEnvelopePath(),
+			resolveDefaultDriveEnvelopePath(),
 	);
 	return {
 		envelopePath,
@@ -1000,28 +1001,6 @@ function resolveOptionalPath(
 	path: string | undefined,
 ): string | undefined {
 	return path ? resolve(projectRoot, path) : undefined;
-}
-
-function resolveDefaultEnvelopePath(): string {
-	const frameworkRoot = resolve(
-		dirname(fileURLToPath(import.meta.url)),
-		"..",
-		"..",
-	);
-	const envelopePath = join(
-		frameworkRoot,
-		"bundled",
-		"coding",
-		"drivers",
-		"templates",
-		"envelope.md",
-	);
-	if (existsSync(envelopePath)) {
-		return envelopePath;
-	}
-	throw new Error(
-		"Missing --envelope and no bundled coding driver envelope was found.",
-	);
 }
 
 async function clearRunCompletion(workdir: string): Promise<void> {
