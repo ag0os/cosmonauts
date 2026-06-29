@@ -87,3 +87,22 @@ Prior non-satisfying evidence: the earlier
 compatibility envelope path under `bundled/coding/drivers/templates/envelope.md`,
 and the TASK-426 `run-b021-cosmonauts-subagent-smoke` evidence used test-local
 `TASK-001`. Neither is counted as B-021 evidence.
+
+## Scope Exception Sign-off (B-021 `agent_resolved` runtime event)
+
+The plan (plan.md:368 and plan.md:440) reserves human sign-off for adding a new
+framework runtime event, because it introduces runtime behavior beyond Wave 1's
+"defaults and fixtures, not runtime" scope. To satisfy B-021's requirement for
+durable, real-run proof that an unqualified Drive `worker` resolves to
+`coding/worker`, an `agent_resolved` event was added to
+`lib/orchestration/{types,agent-spawner}.ts` and
+`lib/driver/{types,backends/cosmonauts-subagent}.ts`.
+
+Assessment: the change is minimal and side-effect-contained — listener errors
+are swallowed, chain progress/durable-chain mappers ignore the event, and Drive
+maps it only to informational `driver_activity`. Resolution logic is unchanged;
+the event is purely observability. An independent `codex exec` review confirmed
+B-020's mocked-seam test alone would not satisfy B-021's durable real-run bar.
+
+Disposition: **ACCEPTED**. Human sign-off granted 2026-06-29. The exception is
+in scope for this wave as the chosen B-021 evidence mechanism.
