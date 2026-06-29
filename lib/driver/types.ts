@@ -8,7 +8,7 @@ export type BackendName = Extract<
 >;
 
 export const DETACHED_DEFAULT_TASK_THRESHOLD = 4;
-export const RESERVED_DRIVER_PLAN_SLUGS = new Set(["chain"]);
+const RESERVED_DRIVER_PLAN_SLUGS = new Set(["chain"]);
 
 export function validateDriverPlanSlug(planSlug: string): void {
 	if (RESERVED_DRIVER_PLAN_SLUGS.has(planSlug)) {

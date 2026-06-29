@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { extractAssistantText } from "../../orchestration/assistant-text.ts";
+import { summarizeToolCall } from "../../orchestration/tool-call-summary.ts";
 import type {
 	AgentSpawner,
 	SpawnConfig,
@@ -121,63 +122,4 @@ function mapSpawnActivity(event: SpawnEvent): SpawnActivity | undefined {
 		case "compaction_end":
 			return undefined;
 	}
-}
-
-function summarizeToolCall(toolName: string, args: unknown): string {
-	switch (toolName) {
-		case "read":
-		case "write":
-		case "edit":
-			return summarizePathToolCall(toolName, args);
-		case "bash":
-			return summarizeBashToolCall(args);
-		case "grep":
-			return summarizePatternToolCall(args);
-		case "spawn_agent":
-			return summarizeSpawnAgentToolCall(args);
-		default:
-			return toolName;
-	}
-}
-
-function summarizePathToolCall(toolName: string, args: unknown): string {
-	const filePath =
-		getStringProperty(args, "file_path") ?? getStringProperty(args, "path");
-	if (!filePath) {
-		return toolName;
-	}
-
-	const base = filePath.split("/").pop() ?? filePath;
-	return `${toolName} ${base}`;
-}
-
-function summarizeBashToolCall(args: unknown): string {
-	const command = getStringProperty(args, "command") ?? "";
-	return command.length > 60
-		? `bash ${command.slice(0, 57)}...`
-		: `bash ${command}`;
-}
-
-function summarizePatternToolCall(args: unknown): string {
-	const pattern = getStringProperty(args, "pattern") ?? "";
-	return pattern.length > 50
-		? `grep ${pattern.slice(0, 47)}...`
-		: `grep ${pattern}`;
-}
-
-function summarizeSpawnAgentToolCall(args: unknown): string {
-	const role = getStringProperty(args, "role") ?? "";
-	return role ? `spawn ${role}` : "spawn_agent";
-}
-
-function getStringProperty(
-	value: unknown,
-	property: string,
-): string | undefined {
-	if (typeof value !== "object" || value === null) {
-		return undefined;
-	}
-
-	const candidate = (value as Record<string, unknown>)[property];
-	return typeof candidate === "string" ? candidate : undefined;
 }

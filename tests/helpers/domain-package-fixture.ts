@@ -3,11 +3,11 @@ import {
 	writeSyntheticInstallableDomainPackage,
 } from "./packages.ts";
 
-export type SyntheticDomainPackageOptions = Parameters<
+type SyntheticDomainPackageOptions = Parameters<
 	typeof writeSyntheticInstallableDomainPackage
 >[1];
 
-export type SyntheticDomainPackageFixture = Awaited<
+type SyntheticDomainPackageFixture = Awaited<
 	ReturnType<typeof writeSyntheticInstallableDomainPackage>
 >;
 
