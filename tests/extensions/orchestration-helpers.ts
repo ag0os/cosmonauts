@@ -7,7 +7,7 @@ import type { AgentRegistry } from "../../lib/agents/index.ts";
 import { createRegistryFromDomains } from "../../lib/agents/index.ts";
 import { loadDomainsFromSources } from "../../lib/domains/index.ts";
 import { DomainRegistry } from "../../lib/domains/registry.ts";
-import { writeSyntheticInstallableDomainPackage } from "../helpers/packages.ts";
+import { writeSyntheticDomainPackage } from "../helpers/domain-package-fixture.ts";
 
 export const testDomainsDir = resolve(
 	fileURLToPath(import.meta.url),
@@ -35,7 +35,7 @@ export async function loadOrchestrationDomainFixtures(
 	const packageRoot = await mkdtemp(
 		join(tmpdir(), `orchestration-${domainId}-`),
 	);
-	await writeSyntheticInstallableDomainPackage(packageRoot, {
+	await writeSyntheticDomainPackage(packageRoot, {
 		packageName: `${domainId}-pkg`,
 		domainId,
 		lead: "coordinator",

@@ -17,7 +17,7 @@ import {
 } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
-import { writeSyntheticInstallableDomainPackage } from "../helpers/packages.ts";
+import { writeSyntheticDomainPackage } from "../helpers/domain-package-fixture.ts";
 
 const mocks = vi.hoisted(() => ({
 	createAgentSession: vi.fn(),
@@ -76,7 +76,7 @@ beforeAll(async () => {
 	syntheticPackageRoot = await mkdtemp(
 		join(tmpdir(), "spawner-alpha-package-"),
 	);
-	await writeSyntheticInstallableDomainPackage(syntheticPackageRoot, {
+	await writeSyntheticDomainPackage(syntheticPackageRoot, {
 		packageName: "alpha-pkg",
 		domainId: "alpha",
 		lead: "planner",

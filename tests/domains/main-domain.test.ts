@@ -18,8 +18,8 @@ import {
 	resolveTools,
 } from "../../lib/orchestration/definition-resolution.ts";
 import { scanDomainSources } from "../../lib/packages/scanner.ts";
+import { writeProjectInstalledDomainPackage } from "../helpers/domain-package-fixture.ts";
 import { useTempDir } from "../helpers/fs.ts";
-import { writeProjectInstalledSyntheticDomainPackage } from "../helpers/packages.ts";
 
 const REPO_ROOT = resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const DOMAINS_DIR = join(REPO_ROOT, "domains");
@@ -38,7 +38,7 @@ let resolver: DomainResolver;
 
 beforeAll(async () => {
 	packageProjectRoot = await mkdtemp(join(tmpdir(), "main-domain-package-"));
-	await writeProjectInstalledSyntheticDomainPackage(packageProjectRoot, {
+	await writeProjectInstalledDomainPackage(packageProjectRoot, {
 		packageName: "synthetic-coding",
 		domainId: "coding",
 		lead: "cody",

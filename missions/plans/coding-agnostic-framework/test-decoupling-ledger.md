@@ -81,6 +81,7 @@ Allowed buckets:
 | `tests/extensions/orchestration-lineage.test.ts` | Keep | keep-explicit-coding-flow | Lineage tests intentionally include coding domain context fixtures. |
 | `tests/extensions/orchestration-run-control-surface.test.ts` | Keep | keep-explicit-coding-flow | Run control surface tests intentionally include coding domain context fixtures. |
 | `tests/extensions/orchestration-spawn-inline-compiler.test.ts` | Keep | keep-explicit-coding-flow | Spawn compiler tests intentionally include explicit `coding/worker` roles. |
+| `tests/helpers/domain-package-fixture.test.ts` | B | bucket-b-synthetic-coding-behavior | Declared synthetic domain package fixture seam intentionally proves ruby-coding and synthetic-coding package behavior. |
 | `tests/helpers/packages.test.ts` | B | bucket-b-synthetic-coding-behavior | Synthetic package helper test intentionally proves ruby-coding and synthetic-coding package behavior. |
 | `tests/orchestration/agent-spawner.completion-loop.test.ts` | B | bucket-b-synthetic-coding-behavior | Bucket B spawner fixture uses synthetic package/domain behavior instead of real bundled coding. |
 | `tests/orchestration/agent-spawner.lineage.test.ts` | Keep | keep-explicit-coding-flow | Lineage fixtures intentionally include coding domain context examples. |

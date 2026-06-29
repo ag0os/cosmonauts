@@ -22,7 +22,7 @@ import { loadDomainsFromSources } from "../../lib/domains/index.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
 import { MessageBus } from "../../lib/orchestration/message-bus.ts";
 import { getOrCreateTracker } from "../../lib/orchestration/spawn-tracker.ts";
-import { writeSyntheticInstallableDomainPackage } from "../helpers/packages.ts";
+import { writeSyntheticDomainPackage } from "../helpers/domain-package-fixture.ts";
 
 const mocks = vi.hoisted(() => ({
 	createAgentSession: vi.fn(),
@@ -74,7 +74,7 @@ let syntheticPackageRoot: string;
 
 beforeAll(async () => {
 	syntheticPackageRoot = await mkdtemp(join(tmpdir(), "spawner-loop-alpha-"));
-	await writeSyntheticInstallableDomainPackage(syntheticPackageRoot, {
+	await writeSyntheticDomainPackage(syntheticPackageRoot, {
 		packageName: "alpha-pkg",
 		domainId: "alpha",
 		lead: "planner",

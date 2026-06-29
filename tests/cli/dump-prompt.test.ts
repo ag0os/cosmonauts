@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { writeProjectInstalledSyntheticDomainPackage } from "../helpers/packages.ts";
+import { writeProjectInstalledDomainPackage } from "../helpers/domain-package-fixture.ts";
 
 const execFileAsync = promisify(execFile);
 const REPO_ROOT = resolve(fileURLToPath(import.meta.url), "..", "..", "..");
@@ -18,7 +18,7 @@ beforeEach(async () => {
 	tempRoot = await mkdtemp(join(tmpdir(), "cosmo-dump-prompt-"));
 	projectRoot = join(tempRoot, "project");
 	await mkdir(projectRoot, { recursive: true });
-	await writeProjectInstalledSyntheticDomainPackage(projectRoot, {
+	await writeProjectInstalledDomainPackage(projectRoot, {
 		packageName: "synthetic-coding",
 		domainId: "coding",
 		lead: "cody",
