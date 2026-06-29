@@ -31,7 +31,10 @@ import {
 } from "../lib/agents/runtime-identity.ts";
 import type { AgentDefinition } from "../lib/agents/types.ts";
 import { createDefaultProjectConfig } from "../lib/config/defaults.ts";
-import { resolveDefaultDomain } from "../lib/domains/default-domain.ts";
+import {
+	FRAMEWORK_DEFAULT_DOMAIN,
+	resolveDefaultDomain,
+} from "../lib/domains/default-domain.ts";
 import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
 import type { DomainResolver } from "../lib/domains/resolver.ts";
 import { buildInitBootstrapPrompt } from "../lib/init/prompt.ts";
@@ -258,14 +261,14 @@ type CliRunMode =
 
 export function selectRunMode(
 	options: CliOptions,
-	hasNonSharedDomain: boolean,
+	hasRunnableDefault: boolean,
 ): CliRunMode {
 	const isBypassCommand =
 		options.init ||
 		options.listDomains ||
 		options.listAgents ||
 		options.dumpPrompt;
-	if (!hasNonSharedDomain && !isBypassCommand) {
+	if (!hasRunnableDefault && !isBypassCommand) {
 		return "no-domain-guard";
 	}
 
@@ -279,8 +282,9 @@ export function selectRunMode(
 
 async function run(options: CliOptions): Promise<void> {
 	const { cwd, runtime } = await createCliRuntimeContext(options);
+	const runtimeHasRunnableDefault = hasRunnableDefaultDomain(runtime);
 
-	const mode = selectRunMode(options, hasInstalledDomain(runtime));
+	const mode = selectRunMode(options, runtimeHasRunnableDefault);
 	const handlers: Record<CliRunMode, () => Promise<void>> = {
 		"no-domain-guard": async () => handleNoDomainGuard(),
 		"list-domains": () => handleListDomains(runtime, options),
@@ -294,10 +298,8 @@ async function run(options: CliOptions): Promise<void> {
 	await handlers[mode]();
 }
 
-export function hasInstalledDomain(runtime: CosmonautsRuntime): boolean {
-	return runtime.domains.some(
-		(domain) => !["shared", "main"].includes(domain.manifest.id),
-	);
+export function hasRunnableDefaultDomain(runtime: CosmonautsRuntime): boolean {
+	return runtime.domains.some((domain) => domain.manifest.id !== "shared");
 }
 
 export function resolveInteractiveExtensionPaths(
@@ -327,12 +329,20 @@ export function resolveDumpPromptDomain(
 }
 
 function handleNoDomainGuard(): void {
-	printCliError(
-		"No domains installed. Install the coding domain to get started:",
-		{},
-	);
-	printLines(["  cosmonauts install coding"], "stderr");
+	printCliError(buildNoRunnableDefaultDomainMessage(), {});
 	process.exitCode = 1;
+}
+
+export function buildNoRunnableDefaultDomainMessage(): string {
+	return `No runnable default domain installed. Install or activate a domain with a lead agent, or restore the built-in "${FRAMEWORK_DEFAULT_DOMAIN}" domain.`;
+}
+
+export function buildInitNoRunnableDefaultDomainLines(): string[] {
+	return [
+		buildNoRunnableDefaultDomainMessage(),
+		"",
+		"After a runnable domain is available, run `cosmonauts init` again to set up your project.",
+	];
 }
 
 function resolveCliOutputMode(options: CliOptions): CliOutputMode {
@@ -487,13 +497,8 @@ async function handleInitMode(
 	options: CliOptions,
 	cwd: string,
 ): Promise<void> {
-	if (!hasInstalledDomain(runtime)) {
-		printLines([
-			"No domains installed. Install a domain to use cosmonauts init:",
-			"  cosmonauts install coding",
-			"",
-			"After installing a domain, run `cosmonauts init` again to set up your project.",
-		]);
+	if (!hasRunnableDefaultDomain(runtime)) {
+		printLines(buildInitNoRunnableDefaultDomainLines());
 		process.exitCode = 1;
 		return;
 	}

@@ -109,6 +109,18 @@ describe("resolveDefaultLead", () => {
 		expectAgent(definition, "main", MAIN_LEAD_ID);
 	});
 
+	test("default routing shared and main only returns main/cosmo", () => {
+		// @cosmo-behavior plan:coding-agnostic-framework#B-023
+		const runtime = makeRuntime([
+			makeDomain("shared", undefined),
+			makeDomain("main", MAIN_LEAD_ID, [MAIN_LEAD_ID]),
+		]);
+
+		const definition = resolveDefaultLead(runtime, {});
+
+		expectAgent(definition, "main", MAIN_LEAD_ID);
+	});
+
 	test("returns the first non-shared non-main domain lead when main is absent", () => {
 		const runtime = makeRuntime([
 			makeDomain("shared", undefined),
