@@ -311,7 +311,7 @@ export function resolveInteractiveExtensionPaths(
 	];
 }
 
-export interface ResolveDumpPromptDomainOptions {
+interface ResolveDumpPromptDomainOptions {
 	readonly definition: Pick<AgentDefinition, "id" | "domain">;
 	readonly resolver?: DomainResolver;
 	readonly resolveDefault?: typeof resolveDefaultDomain;
@@ -333,7 +333,7 @@ function handleNoDomainGuard(): void {
 	process.exitCode = 1;
 }
 
-export function buildNoRunnableDefaultDomainMessage(): string {
+function buildNoRunnableDefaultDomainMessage(): string {
 	return `No runnable default domain installed. Install or activate a domain with a lead agent, or restore the built-in "${FRAMEWORK_DEFAULT_DOMAIN}" domain.`;
 }
 

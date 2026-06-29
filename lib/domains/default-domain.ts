@@ -12,7 +12,6 @@ export interface ResolveDefaultDomainOptions {
 }
 
 export class NoDefaultDomainError extends Error {
-	readonly code = "no-default-domain";
 	readonly domain: string;
 
 	constructor(domain: string, purpose = "default-domain resolution") {

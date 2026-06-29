@@ -30,6 +30,8 @@ export function createInstalledPackageFixture(
 	};
 }
 
+// Referenced by unchanged package CLI tests outside this changed-file audit scope.
+// fallow-ignore-next-line
 export function createInstallResultFixture(
 	overrides: Partial<InstallResult> = {},
 ): InstallResult {
@@ -56,7 +58,7 @@ export function createInstallMetaFixture(
 	} as InstallMeta;
 }
 
-export interface SyntheticDomainAgentFixture {
+interface SyntheticDomainAgentFixture {
 	id: string;
 	description?: string;
 	capabilities?: readonly string[];
@@ -70,7 +72,7 @@ export interface SyntheticDomainAgentFixture {
 	loop?: boolean;
 }
 
-export interface SyntheticInstallableDomainPackageOptions {
+interface SyntheticInstallableDomainPackageOptions {
 	packageName?: string;
 	domainId?: string;
 	domainDescription?: string;
@@ -85,7 +87,7 @@ export interface SyntheticInstallableDomainPackageOptions {
 	chains?: readonly NamedChain[];
 }
 
-export interface SyntheticInstallableDomainPackageFixture {
+interface SyntheticInstallableDomainPackageFixture {
 	packageName: string;
 	packageRoot: string;
 	domainRoot: string;
@@ -93,7 +95,7 @@ export interface SyntheticInstallableDomainPackageFixture {
 	manifest: PackageManifest;
 }
 
-export interface LoadedSyntheticProjectDomainPackageFixture
+interface LoadedSyntheticProjectDomainPackageFixture
 	extends SyntheticInstallableDomainPackageFixture {
 	sources: DomainSource[];
 	packageSources: DomainSource[];

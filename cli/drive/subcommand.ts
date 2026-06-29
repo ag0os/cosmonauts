@@ -734,17 +734,7 @@ async function readInlineRunState(
 async function readLastTerminalEventStatus(
 	workdir: string,
 ): Promise<RunStatus | undefined> {
-	let raw: string;
-	try {
-		raw = await readFile(join(workdir, "events.jsonl"), "utf-8");
-	} catch (error) {
-		if (isErrnoError(error) && error.code === "ENOENT") {
-			return undefined;
-		}
-		throw error;
-	}
-
-	const lines = raw.split("\n").filter((line) => line.trim().length > 0);
+	const lines = await readEventLogLines(workdir);
 	for (let index = lines.length - 1; index >= 0; index--) {
 		const status = readTerminalEventStatus(lines[index] ?? "");
 		if (status || readEventType(lines[index] ?? "")) {
@@ -790,17 +780,7 @@ function readEventType(line: string): string | undefined {
 }
 
 async function readLastEventAt(workdir: string): Promise<string | undefined> {
-	let raw: string;
-	try {
-		raw = await readFile(join(workdir, "events.jsonl"), "utf-8");
-	} catch (error) {
-		if (isErrnoError(error) && error.code === "ENOENT") {
-			return undefined;
-		}
-		throw error;
-	}
-
-	const lines = raw.split("\n").filter((line) => line.trim().length > 0);
+	const lines = await readEventLogLines(workdir);
 	for (let index = lines.length - 1; index >= 0; index--) {
 		const timestamp = readEventTimestamp(lines[index] ?? "");
 		if (timestamp) {
@@ -808,6 +788,18 @@ async function readLastEventAt(workdir: string): Promise<string | undefined> {
 		}
 	}
 	return undefined;
+}
+
+async function readEventLogLines(workdir: string): Promise<string[]> {
+	try {
+		const raw = await readFile(join(workdir, "events.jsonl"), "utf-8");
+		return raw.split("\n").filter((line) => line.trim().length > 0);
+	} catch (error) {
+		if (isErrnoError(error) && error.code === "ENOENT") {
+			return [];
+		}
+		throw error;
+	}
 }
 
 function readEventTimestamp(line: string): string | undefined {
