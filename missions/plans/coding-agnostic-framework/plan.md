@@ -35,7 +35,7 @@ Planner resolutions for the spec open questions:
 - **Per-site fallback**: use `main` for all fixed `?? "coding"` sites. Requiring explicit domains would be stricter than current behavior and would break synthetic/domainless definitions used by tests and package-building; loaded runtime agents already receive an explicit `domain` from `lib/domains/loader.ts`.
 - **No-default behavior**: enforce the clear no-default-domain error only on resolver-backed paths where the loaded domain registry can prove `main` is absent. No-resolver, `domainsDir`-only callers return `main` and must have tests/fixtures updated to provide `main` resources; if those files are missing, the existing path-specific prompt/extension error is the correct diagnostic.
 - **CLI no-domain guard**: `shared` + `main` is now a runnable installation because `main/cosmo` is the default assistant. The guard should fire only when no runnable default domain/lead is available, not merely because no third-party or coding domain is installed. Guard copy must not tell users to install `coding` as the required path forward.
-- **Envelope home**: copy the default Drive envelope to `lib/prompts/framework/drive/envelope.md` and update defaults to resolve there. Leave the old `bundled/coding/drivers/templates/envelope.md` file as a compatibility copy in Wave 1 so coding remains bundled/unchanged for external callers or stale run specs.
+- **Envelope home**: create the framework-owned default Drive envelope at `lib/prompts/framework/drive/envelope.md` and update defaults to resolve there. Its wording may be domain-agnostic after relocation. Leave the old `bundled/coding/drivers/templates/envelope.md` file byte-identical as the Wave 1 compatibility copy so coding remains bundled/unchanged for external callers or stale run specs.
 - **Bucket B fixture**: create one reusable synthetic installable-domain package helper under `tests/helpers/`, then use it for all framework tests that need a package/domain fixture.
 - **Shared/main leakage**: scan-only in this wave. The deliverable is `missions/plans/coding-agnostic-framework/leakage-findings.md`; fixes are out of scope unless a finding blocks this wave's own behavior.
 
@@ -339,11 +339,13 @@ This is a CLI edge seam; do not route domain loading or registry logic through C
 
 ### Drive default envelope contract
 
-Copy the existing envelope content from `bundled/coding/drivers/templates/envelope.md` to:
+Create the framework-owned default envelope at:
 
 ```text
 lib/prompts/framework/drive/envelope.md
 ```
+
+It may use domain-agnostic Drive wording after relocation and does not need to remain byte-identical to the legacy bundled copy. The Wave 1 byte-identical compatibility requirement applies only to the old file at `bundled/coding/drivers/templates/envelope.md`, which must remain unchanged for explicit callers of that path.
 
 Add `lib/driver/default-envelope.ts` with:
 
@@ -358,7 +360,7 @@ Rules:
 3. CLI `--envelope` and tool `envelopePath` still override the default exactly as before.
 4. The Pi `run_driver` tool and `/skill:drive` wording must say "framework default Drive envelope", not the bundled-coding wording. (The current wording lives in two `domains/shared/skills/drive/SKILL.md` spots — lines ~51 "bundled codebase-agnostic coding envelope" and ~66 — plus the `driver-tool.ts` tool-param description; `capabilities/drive.md` needs no change.)
 5. **Remove the doubled `BUNDLED_CODING_ENVELOPE` constant in `driver-tool.ts:385-392`** — it points at a nonexistent `bundled/coding/coding/...` path (pre-existing bug) and must not be preserved as a compatibility default.
-6. Leave the real `bundled/coding/drivers/templates/envelope.md` in place in Wave 1 as a compatibility copy for explicit callers of that (correct, single-`coding`) path. The framework must not reference it by default.
+6. Leave the real `bundled/coding/drivers/templates/envelope.md` in place and byte-identical in Wave 1 as the compatibility copy for explicit callers of that (correct, single-`coding`) path. The framework must not reference it by default.
 
 ### Dogfood Drive resolution evidence contract
 
@@ -436,7 +438,7 @@ The scan is limited to `domains/shared/**` for cosmo/main/coding-specific string
 - `cli/drive/subcommand.ts`
 - `domains/shared/extensions/orchestration/driver-tool.ts`
 - `domains/shared/skills/drive/SKILL.md`
-- `lib/prompts/framework/drive/envelope.md` (new compatibility copy of the current envelope content)
+- `lib/prompts/framework/drive/envelope.md` (new framework-owned default envelope; domain-agnostic wording is allowed and it need not be byte-identical to the legacy bundled compatibility copy)
 - **Scope exception (human sign-off required), only if no existing artifact can prove Drive resolution:** `lib/orchestration/types.ts`, `lib/orchestration/agent-spawner.ts`, `lib/driver/types.ts`, `lib/driver/backends/cosmonauts-subagent.ts` — these add runtime behavior beyond this wave's "defaults and fixtures, not runtime" scope; prefer the existing `COSMONAUTS_AGENT_ID` session marker first.
 - `tests/domains/default-domain.test.ts` (new)
 - `tests/agents/session-assembly.test.ts`
