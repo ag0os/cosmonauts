@@ -99,12 +99,12 @@ beforeEach(() => {
 	// Default: install/uninstall succeed
 	mockInstallPackage.mockResolvedValue({
 		manifest: {
-			name: "coding",
+			name: "alpha",
 			version: "1.0.0",
 			description: "test",
-			domains: [{ name: "coding", path: "domains/coding" }],
+			domains: [{ name: "alpha", path: "domains/alpha" }],
 		},
-		installedTo: "/store/coding",
+		installedTo: "/store/alpha",
 		domainMergeResults: [],
 	});
 	mockUninstallPackage.mockResolvedValue(true);
@@ -122,6 +122,7 @@ afterEach(() => {
 
 describe("catalog source", () => {
 	it("uninstalls and re-installs from the catalog source path", async () => {
+		// @cosmo-behavior plan:coding-agnostic-framework#B-024
 		mockLoadInstallMeta.mockResolvedValue(
 			createInstallMetaFixture("catalog", { catalogName: "alpha" }),
 		);

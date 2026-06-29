@@ -98,7 +98,7 @@ function mockSingleConflictInstall(answer: string): void {
 	answerConflictPrompts(answer);
 	mockInstallPackage.mockResolvedValue(
 		createInstallResultFixture({
-			domainMergeResults: [{ domainId: "coding", existingPackage: "old-pkg" }],
+			domainMergeResults: [{ domainId: "alpha", existingPackage: "old-pkg" }],
 		}),
 	);
 	mockUninstallPackage.mockResolvedValue(true);
@@ -145,6 +145,7 @@ describe("resolveSource", () => {
 	});
 
 	it("resolves catalog short names to an absolute path", () => {
+		// @cosmo-behavior plan:coding-agnostic-framework#B-024
 		mockResolveCatalogEntry.mockReturnValue({
 			name: "alpha",
 			description: "Alpha domain",
@@ -210,7 +211,7 @@ describe("renderInstallSuccess", () => {
 					version: "1.2.3",
 					description: "Test",
 					domains: [
-						{ name: "coding", path: "domains/coding" },
+						{ name: "alpha", path: "domains/alpha" },
 						{ name: "review", path: "domains/review" },
 					],
 				},
@@ -221,7 +222,7 @@ describe("renderInstallSuccess", () => {
 
 		expect(lines).toEqual([
 			'Installed "my-pkg" v1.2.3 [global]',
-			"  Domains: coding, review",
+			"  Domains: alpha, review",
 			"  Path:    /store/my-pkg",
 		]);
 	});
@@ -233,7 +234,7 @@ describe("renderInstallSuccess", () => {
 					name: "my-pkg",
 					version: "1.2.3",
 					description: "Test",
-					domains: [{ name: "coding", path: "domains/coding" }],
+					domains: [{ name: "alpha", path: "domains/alpha" }],
 				},
 				installedTo: "/project/.cosmonauts/packages/my-pkg",
 			}),
@@ -255,7 +256,7 @@ describe("installAction — success", () => {
 				name: "my-pkg",
 				version: "1.2.3",
 				description: "Test",
-				domains: [{ name: "coding", path: "domains/coding" }],
+				domains: [{ name: "alpha", path: "domains/alpha" }],
 			},
 			installedTo: "/home/user/.cosmonauts/packages/my-pkg",
 			domainMergeResults: [],
@@ -277,7 +278,7 @@ describe("installAction — success", () => {
 				name: "my-pkg",
 				version: "1.0.0",
 				description: "Test",
-				domains: [{ name: "coding", path: "domains/coding" }],
+				domains: [{ name: "alpha", path: "domains/alpha" }],
 			},
 			installedTo: "/project/.cosmonauts/packages/my-pkg",
 			domainMergeResults: [],
@@ -300,7 +301,7 @@ describe("installAction — success", () => {
 				name: "my-pkg",
 				version: "1.0.0",
 				description: "Test",
-				domains: [{ name: "coding", path: "domains/coding" }],
+				domains: [{ name: "alpha", path: "domains/alpha" }],
 			},
 			installedTo: "/store/my-pkg",
 			domainMergeResults: [],
@@ -322,7 +323,7 @@ describe("installAction — success", () => {
 				name: "my-pkg",
 				version: "1.0.0",
 				description: "Test",
-				domains: [{ name: "coding", path: "domains/coding" }],
+				domains: [{ name: "alpha", path: "domains/alpha" }],
 			},
 			installedTo: "/store/my-pkg",
 			domainMergeResults: [],
@@ -364,7 +365,7 @@ describe("installAction — success", () => {
 				name: "my-pkg",
 				version: "1.0.0",
 				description: "Test",
-				domains: [{ name: "coding", path: "coding" }],
+				domains: [{ name: "alpha", path: "alpha" }],
 			},
 			installedTo: "/store/my-pkg",
 			domainMergeResults: [],
@@ -390,10 +391,10 @@ describe("installAction — --yes flag", () => {
 				name: "new-pkg",
 				version: "1.0.0",
 				description: "Test",
-				domains: [{ name: "coding", path: "domains/coding" }],
+				domains: [{ name: "alpha", path: "domains/alpha" }],
 			},
 			installedTo: "/store/new-pkg",
-			domainMergeResults: [{ domainId: "coding", existingPackage: "old-pkg" }],
+			domainMergeResults: [{ domainId: "alpha", existingPackage: "old-pkg" }],
 		});
 
 		await installAction("./new-pkg", {
@@ -455,8 +456,8 @@ describe("installAction — conflict prompt", () => {
 		mockInstallPackage.mockResolvedValue(
 			createInstallResultFixture({
 				domainMergeResults: [
-					{ domainId: "coding", existingPackage: "old-pkg" },
-					{ domainId: "coding-tools", existingPackage: "old-pkg" },
+					{ domainId: "alpha", existingPackage: "old-pkg" },
+					{ domainId: "alpha-tools", existingPackage: "old-pkg" },
 					{ domainId: "review", existingPackage: "review-pkg" },
 				],
 			}),
@@ -493,7 +494,7 @@ describe("installAction — conflict prompt", () => {
 		mockInstallPackage.mockResolvedValue(
 			createInstallResultFixture({
 				domainMergeResults: [
-					{ domainId: "coding", existingPackage: "old-pkg" },
+					{ domainId: "alpha", existingPackage: "old-pkg" },
 				],
 			}),
 		);
@@ -513,7 +514,7 @@ describe("installAction — conflict prompt", () => {
 		mockInstallPackage.mockResolvedValue(
 			createInstallResultFixture({
 				domainMergeResults: [
-					{ domainId: "coding", existingPackage: "old-pkg" },
+					{ domainId: "alpha", existingPackage: "old-pkg" },
 				],
 			}),
 		);
@@ -630,7 +631,7 @@ describe("packagesListAction — with packages", () => {
 		expect(output.stdout()).toContain("my-pkg");
 		expect(output.stdout()).toContain("1.0.0");
 		expect(output.stdout()).toContain("global");
-		expect(output.stdout()).toContain("coding");
+		expect(output.stdout()).toContain("alpha");
 	});
 
 	it("lists both global and local packages", async () => {
@@ -671,11 +672,11 @@ describe("packagesListAction — with packages", () => {
 describe("renderPackagesList", () => {
 	const sample: PackageListRow[] = [
 		{
-			name: "coding",
+			name: "alpha",
 			version: "1.0.0",
 			scope: "global",
 			portable: true,
-			domains: [{ name: "coding", portable: true }],
+			domains: [{ name: "alpha", portable: true }],
 		},
 		{
 			name: "devops",
@@ -700,7 +701,7 @@ describe("renderPackagesList", () => {
 		expect(renderPackagesList(sample, "plain")).toEqual({
 			kind: "lines",
 			lines: [
-				"coding\t1.0.0\tglobal\tyes\tcoding(portable)",
+				"alpha\t1.0.0\tglobal\tyes\talpha(portable)",
 				"devops\t0.2.1\tlocal\tno\tdevops(local),infra(local)",
 			],
 		});

@@ -64,7 +64,7 @@ const tmp = useTempDir("export-subcommand-");
 
 const explorerAgent = makeAgent({
 	id: "explorer",
-	domain: "coding",
+	domain: "alpha",
 	description: "Explore repositories.",
 	capabilities: ["core"],
 	tools: "readonly",
@@ -72,7 +72,7 @@ const explorerAgent = makeAgent({
 });
 const plannerAgent = makeAgent({
 	id: "planner",
-	domain: "coding",
+	domain: "alpha",
 	description: "Plan implementation work.",
 	capabilities: ["core", "spawning", "tasks"],
 	extensions: ["orchestration"],
@@ -119,7 +119,7 @@ function setupRuntime(
 	]);
 	runtimeMocks.create.mockResolvedValue({
 		agentRegistry: new AgentRegistry(agents),
-		domainContext: "coding",
+		domainContext: "alpha",
 		domainsDir: "/framework/domains",
 		domainResolver: undefined,
 		projectSkills: undefined,
@@ -206,13 +206,14 @@ describe("createExportProgram", () => {
 	});
 
 	it("exports an agent-id shorthand through a generated package definition", async () => {
+		// @cosmo-behavior plan:coding-agnostic-framework#B-024
 		const outPath = join(tmp.path, "explorer");
 		packageMocks.buildAgentPackage.mockResolvedValue(
-			makePackage({ packageId: "coding-explorer-claude-cli" }),
+			makePackage({ packageId: "alpha-explorer-claude-cli" }),
 		);
 
 		await parseExport([
-			"coding/explorer",
+			"alpha/explorer",
 			"--target",
 			"claude-cli",
 			"--out",
@@ -232,8 +233,8 @@ describe("createExportProgram", () => {
 		const buildOptions = packageMocks.buildAgentPackage.mock
 			.calls[0]?.[0] as BuildAgentPackageOptions;
 		expect(buildOptions.definition).toMatchObject({
-			id: "coding-explorer-claude-cli",
-			sourceAgent: "coding/explorer",
+			id: "alpha-explorer-claude-cli",
+			sourceAgent: "alpha/explorer",
 			prompt: { kind: "source-agent" },
 			tools: { preset: "readonly" },
 			skills: { mode: "source-agent" },
@@ -283,7 +284,7 @@ describe("createExportProgram", () => {
 			schemaVersion: 1,
 			id: "cosmo-worker-codex",
 			description: "Worker packaged for Codex.",
-			sourceAgent: "coding/worker",
+			sourceAgent: "alpha/worker",
 			prompt: { kind: "inline", content: "Work safely." },
 			tools: { preset: "coding" },
 			skills: { mode: "none" },
@@ -356,8 +357,8 @@ describe("createExportProgram", () => {
 		setupRuntime([]);
 
 		await expect(
-			parseExport(["coding/missing", "--out", join(tmp.path, "missing")]),
-		).rejects.toThrow(/unknown agent.*coding\/missing/i);
+			parseExport(["alpha/missing", "--out", join(tmp.path, "missing")]),
+		).rejects.toThrow(/unknown agent.*alpha\/missing/i);
 		expect(packageMocks.buildAgentPackage).not.toHaveBeenCalled();
 		expect(packageMocks.compileAgentPackageBinary).not.toHaveBeenCalled();
 	});
@@ -397,12 +398,12 @@ describe("createExportProgram", () => {
 		setupRuntime([plannerAgent]);
 		packageMocks.buildAgentPackage.mockRejectedValue(
 			new Error(
-				'Raw source-agent prompt export is not supported for "coding/planner" because it uses extensions (orchestration), subagents (worker), extension-backed capabilities (spawning, tasks). Create a package definition with prompt.kind "file" or "inline" and an external-safe prompt.',
+				'Raw source-agent prompt export is not supported for "alpha/planner" because it uses extensions (orchestration), subagents (worker), extension-backed capabilities (spawning, tasks). Create a package definition with prompt.kind "file" or "inline" and an external-safe prompt.',
 			),
 		);
 
 		await expect(
-			parseExport(["coding/planner", "--out", join(tmp.path, "planner")]),
+			parseExport(["alpha/planner", "--out", join(tmp.path, "planner")]),
 		).rejects.toThrow(
 			/extensions \(orchestration\).*subagents \(worker\).*extension-backed capabilities \(spawning, tasks\).*--definition <path>/i,
 		);
@@ -413,7 +414,7 @@ describe("createExportProgram", () => {
 		await parseExport([
 			"explorer",
 			"--domain",
-			"coding",
+			"alpha",
 			"--plugin-dir",
 			"/tmp/plugin-a",
 			"--plugin-dir",
@@ -424,7 +425,7 @@ describe("createExportProgram", () => {
 
 		expect(runtimeMocks.create).toHaveBeenCalledWith(
 			expect.objectContaining({
-				domainOverride: "coding",
+				domainOverride: "alpha",
 				pluginDirs: ["/tmp/plugin-a", "/tmp/plugin-b"],
 			}),
 		);
