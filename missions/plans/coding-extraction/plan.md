@@ -19,7 +19,9 @@ This plan is **spec-ready and awaits planner design.** It is **Wave 2** of the
 `S2 — Extract coding` slice of `missions/architecture/domains.md`.
 
 **Depends on: `coding-agnostic-framework` (Wave 1) — must be merged and green
-first.** Wave 1 removes the framework's hardcoded `coding` defaults and decouples
+first. ✅ SATISFIED 2026-06-29** (Wave 1 archived; merged to local `main` at
+`fcb801c`, not yet pushed; suite green, QM + independent codex review clean).
+Wave 1 removes the framework's hardcoded `coding` defaults and decouples
 the test suite's framework-internal dependence on bundled `coding` (test Buckets C
 and B), while `coding` stays bundled. This plan does the irreversible move on top
 of that.

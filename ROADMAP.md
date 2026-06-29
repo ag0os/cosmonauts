@@ -61,8 +61,8 @@ N agents work as a team toward one objective, communicating through a coordinato
 
 Domains are composable agentic bundles (agents, prompts, capabilities, skills, tools, chains — the full stack) that extend Cosmonauts; the plugin substrate is **~80% built** (git/local/symlink/catalog install, manifest, multi-source precedence+merge, `eject`, `update`). This track finishes and documents it, ships a minimal core, and adds domain routing. Full model in the source-of-truth doc.
 
-- Core bundle = framework + `shared` (stdlib) + `main` (default assistant); no merge; audit the `shared`/`main` split. `coding` + future/experimental domains = external repos
-- Extract `coding` to its own repo (mechanism exists; `--link` symlink for the both-repos dev loop)
+- Core bundle = framework + `shared` (stdlib) + `main` (default assistant); no merge; audit the `shared`/`main` split. `coding` + future/experimental domains = external repos. **Partly done:** S2 Wave 1 made `shared`+`main` a runnable coding-less install and produced a `shared`/`main` leakage scan (`missions/archive/plans/coding-agnostic-framework/leakage-findings.md`) whose Wave-2 dispositions feed the move
+- Extract `coding` to its own repo (mechanism exists; `--link` symlink for the both-repos dev loop). **Wave 1 DONE (2026-06-29)** — framework made coding-agnostic in place (plan `coding-agnostic-framework`, archived; merged to local `main`, not pushed). **Wave 2** = the physical move, tracked by the active `coding-extraction` plan
 - Customization model: override-layer (precedence merge, asset-granular — customize without forking, upgrades preserved) + `eject` for full forks
 - New mechanics: **domain routing** (`cosmo` picks the right domain — beyond skill-routing) + domain-aware skill discovery (folds in `domain-aware-skills`, `skill-routing`)
 - Boundary/definition contract documented; declarative-format decision (manifest/agents/chains → data; tools stay code); domain composition/inheritance deferred

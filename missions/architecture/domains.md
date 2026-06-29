@@ -119,14 +119,33 @@ Framework hardcodes a few IDs: `"shared"` (stays special by design), `"main"`/
 `"cosmo"` (default lead), `"coding"` (dump-prompt fallback only). Hoist to
 constants/config so external domains aren't second-class. Minor.
 
+**Done (S2 Wave 1, 2026-06-29).** The hardcoded `"coding"` default-domain
+fallbacks are gone: framework default is now `main` via the
+`FRAMEWORK_DEFAULT_DOMAIN` constant + `resolveDefaultDomain()` helper
+(`lib/domains/default-domain.ts`), the Drive default envelope is framework-owned
+(`lib/prompts/framework/drive/envelope.md`, no longer reaching into
+`bundled/coding`), and the CLI treats `shared`+`main` as a runnable install
+(`hasRunnableDefaultDomain`). `shared`/`main` stay special by design.
+
 ## Forward slices
 
 - **S1 — Core bundle + boundary doc.** Ship framework + `shared` + `main`; audit +
   document the `shared`/`main` split and the framework/domain contract; decouple the
   stray hardcoded IDs.
-- **S2 — Extract `coding`.** Move `bundled/coding/` → its own repo; register in the
-  catalog; `--link` dev loop; decide ships-by-default vs. install-on-demand. The
-  first real consumer.
+- **S2 — Extract `coding`.** Split into two waves.
+  - **Wave 1 — make the framework coding-agnostic in place. DONE (2026-06-29,**
+    plan `coding-agnostic-framework`, archived; merged to local `main` at
+    `fcb801c`, not yet pushed**).** Decoupled the hardcoded `"coding"` defaults →
+    `main`, relocated the Drive default envelope out of `bundled/coding`, made
+    `shared`+`main` a runnable CLI install, and decoupled the framework test
+    suite from the real bundled `coding` domain (synthetic package fixtures +
+    test-decoupling ledger). `coding` stays bundled and behaviorally unchanged;
+    fully reversible, no external dependency. This de-risks the move.
+  - **Wave 2 — the physical move (`coding-extraction` plan, active).** Move
+    `bundled/coding/` → its own repo; register in the catalog; `--link` dev loop;
+    decide ships-by-default vs. install-on-demand; rewrite imports; remove
+    `bundled/` from `files`; load parity; move the Bucket A coding-content tests.
+    The first real consumer. Gated on Wave 1 (now satisfied).
 - **S3 — Customization model formalized.** Asset-granular override-layer + `eject`;
   document the user-definition surfaces.
 - **S4 — Domain routing + domain-aware skills** (`domain-aware-skills` +

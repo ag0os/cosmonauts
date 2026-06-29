@@ -1,8 +1,8 @@
 ---
 title: Make the framework coding-agnostic (coding-extraction Wave 1)
-status: active
+status: completed
 createdAt: '2026-06-26T00:00:00.000Z'
-updatedAt: '2026-06-26T15:34:42.000Z'
+updatedAt: '2026-06-29T20:14:59.444Z'
 ---
 
 ## Overview
