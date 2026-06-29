@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { writeProjectInstalledSyntheticDomainPackage } from "../helpers/packages.ts";
 
 const execFileAsync = promisify(execFile);
 const REPO_ROOT = resolve(fileURLToPath(import.meta.url), "..", "..", "..");
@@ -17,6 +18,15 @@ beforeEach(async () => {
 	tempRoot = await mkdtemp(join(tmpdir(), "cosmo-dump-prompt-"));
 	projectRoot = join(tempRoot, "project");
 	await mkdir(projectRoot, { recursive: true });
+	await writeProjectInstalledSyntheticDomainPackage(projectRoot, {
+		packageName: "synthetic-coding",
+		domainId: "coding",
+		lead: "cody",
+		agents: [{ id: "cody" }],
+		prompts: {
+			cody: "You're Cody from a synthetic coding package.",
+		},
+	});
 });
 
 afterEach(async () => {
@@ -45,17 +55,19 @@ describe("--dump-prompt", () => {
 	});
 
 	test("default routing coding domain uses coding/cody when no agent is provided", async () => {
+		// @cosmo-behavior plan:coding-agnostic-framework#B-016
 		const prompt = await dumpPrompt(["-d", "coding"]);
 
-		expect(prompt).toContain("You're Cody");
+		expect(prompt).toContain("You're Cody from a synthetic coding package.");
 		expect(prompt).not.toContain("You're Cosmo");
 		expect(prompt).toContain("<!-- COSMONAUTS_AGENT_ID:coding/cody -->");
 	});
 
 	test("uses the explicit cody agent when provided", async () => {
+		// @cosmo-behavior plan:coding-agnostic-framework#B-016
 		const prompt = await dumpPrompt(["-a", "cody"]);
 
-		expect(prompt).toContain("You're Cody");
+		expect(prompt).toContain("You're Cody from a synthetic coding package.");
 		expect(prompt).not.toContain("You're Cosmo");
 		expect(prompt).toContain("<!-- COSMONAUTS_AGENT_ID:coding/cody -->");
 	});
