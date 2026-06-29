@@ -12,8 +12,7 @@ const LEDGER_PATH = join(
 	"test-decoupling-ledger.md",
 );
 
-const CODING_REFERENCE_PATTERN =
-	/\bcoding\b|bundled\/coding|@cosmonauts\/coding/;
+const CODING_REFERENCE_PATTERN = /coding/;
 const REAL_BUNDLED_CODING_PATTERN =
 	/bundled\/coding|["'`]bundled["'`]\s*,\s*["'`]coding["'`]/;
 
@@ -30,6 +29,7 @@ const ALLOWED_DISPOSITIONS = new Set([
 	"keep-package-catalog-helper",
 	"keep-plan-marker",
 	"keep-source-scan",
+	"keep-grep-false-positive",
 	"keep-synthetic-coding-package",
 ]);
 

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,7 +8,10 @@ import type { AgentDefinition } from "../../../lib/agents/types.ts";
 import { loadDomainsFromSources } from "../../../lib/domains/index.ts";
 import { createCosmonautsSubagentBackend } from "../../../lib/driver/backends/cosmonauts-subagent.ts";
 import type { BackendInvocation } from "../../../lib/driver/backends/types.ts";
+import { resolveDefaultDriveEnvelopePath } from "../../../lib/driver/default-envelope.ts";
+import { runInline } from "../../../lib/driver/driver.ts";
 import { createPiSpawner } from "../../../lib/orchestration/agent-spawner.ts";
+import { TaskManager } from "../../../lib/tasks/task-manager.ts";
 
 const REPO_ROOT = resolve(
 	fileURLToPath(import.meta.url),
@@ -39,7 +42,7 @@ beforeEach(() => {
 			messages: [
 				{
 					role: "assistant",
-					content: [{ type: "text", text: "resolved" }],
+					content: [{ type: "text", text: "outcome: success" }],
 				},
 			],
 			prompt: vi.fn(),
@@ -108,10 +111,89 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 			domainContext: undefined,
 		});
 	});
+
+	// @cosmo-behavior plan:coding-agnostic-framework#B-021
+	test("runs inline Drive with cosmonauts-subagent, omitted envelope input, and no domain override", async () => {
+		const domains = await loadDomainsFromSources([
+			{ domainsDir: DOMAINS_DIR, origin: "framework", precedence: 1 },
+			{
+				domainsDir: BUNDLED_CODING_DIR,
+				sourceType: "domain-root",
+				origin: "bundled",
+				precedence: 2,
+			},
+		]);
+		const registry = createRegistryFromDomains(domains);
+		const spawner = createPiSpawner(registry, DOMAINS_DIR);
+		const backend = createCosmonautsSubagentBackend({
+			spawner,
+			cwd: REPO_ROOT,
+		});
+		const projectRoot = await createTempProject();
+		const taskManager = new TaskManager(projectRoot);
+		await taskManager.init();
+		const task = await taskManager.createTask({
+			title: "B-021 dogfood Drive smoke",
+			labels: ["review-round:1", "plan:coding-agnostic-framework"],
+		});
+		const envelopePath = resolveDefaultDriveEnvelopePath({
+			frameworkRoot: REPO_ROOT,
+		});
+		const runId = "run-b021-cosmonauts-subagent-smoke";
+		const workdir = join(projectRoot, "runs", runId);
+		const eventLogPath = join(workdir, "events.jsonl");
+
+		const handle = runInline(
+			{
+				runId,
+				parentSessionId: "parent-session-b021-smoke",
+				projectRoot,
+				planSlug: "coding-agnostic-framework",
+				taskIds: [task.id],
+				backendName: "cosmonauts-subagent",
+				promptTemplate: {
+					envelopePath,
+					envelopeContent: await readFile(envelopePath, "utf-8"),
+				},
+				preflightCommands: [],
+				postflightCommands: [],
+				commitPolicy: "no-commit",
+				stateCommitPolicy: "none",
+				workdir,
+				eventLogPath,
+			},
+			{
+				taskManager,
+				backend,
+				activityBus: { publish: vi.fn() },
+				cosmonautsRoot: REPO_ROOT,
+			},
+		);
+
+		await expect(handle.result).resolves.toMatchObject({
+			runId,
+			outcome: "completed",
+			tasksDone: 1,
+		});
+		const [resolvedDefinition, spawnConfig] =
+			sessionFactoryMocks.createAgentSessionFromDefinition.mock.calls[0] ?? [];
+		const agent = resolvedDefinition as AgentDefinition;
+		expect(`${agent.domain}/${agent.id}`).toBe("coding/worker");
+		expect(spawnConfig).toMatchObject({
+			role: "worker",
+			domainContext: undefined,
+		});
+		expect(envelopePath).toBe(
+			join(REPO_ROOT, "lib", "prompts", "framework", "drive", "envelope.md"),
+		);
+		const events = await readFile(eventLogPath, "utf-8");
+		expect(events).toContain('"backend":"cosmonauts-subagent"');
+		expect(events).toContain(`"taskId":"${task.id}"`);
+	});
 });
 
 async function createInvocation(): Promise<BackendInvocation> {
-	tempDir = await mkdtemp(join(tmpdir(), "cosmonauts-subagent-resolution-"));
+	tempDir = await createTempProject();
 	const promptPath = join(tempDir, "prompt.md");
 	await writeFile(promptPath, "Resolve the dogfood Drive worker.", "utf-8");
 
@@ -126,4 +208,9 @@ async function createInvocation(): Promise<BackendInvocation> {
 		eventSink: async () => {},
 		signal: new AbortController().signal,
 	};
+}
+
+async function createTempProject(): Promise<string> {
+	tempDir = await mkdtemp(join(tmpdir(), "cosmonauts-subagent-resolution-"));
+	return tempDir;
 }
