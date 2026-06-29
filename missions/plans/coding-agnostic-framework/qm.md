@@ -72,4 +72,4 @@ No findings are deferred.
 
 ## Final Git Status
 
-Final cleanup/commit is pending at report-write time for QM artifacts and ephemeral review-file removal. After cleanup, `git status --porcelain` must be empty before merge.
+Final cleanup was committed in `a6a1777` (`QM: finalize coding-agnostic-framework review artifacts`). Ephemeral review reports from this invocation were removed, and final `git status --porcelain` was clean.
