@@ -161,12 +161,12 @@ describe("createSkillsProgram list — runtime discovery", () => {
 		output = captureCliOutput();
 		process.exitCode = undefined;
 		runtimeMocks.discoverFrameworkBundledPackageDirs.mockResolvedValue([
-			"/framework/bundled/coding",
+			"/framework/bundled/alpha",
 		]);
 		runtimeMocks.create.mockResolvedValue({
 			domains: [
 				makeDomain("shared", "/framework/domains/shared"),
-				makeDomain("coding", "/framework/bundled/coding"),
+				makeDomain("alpha", "/framework/bundled/alpha"),
 			],
 			projectConfig: {},
 		});
@@ -188,7 +188,7 @@ describe("createSkillsProgram list — runtime discovery", () => {
 		).toHaveBeenCalledWith(expect.stringMatching(/cosmonauts$/));
 		expect(runtimeMocks.create).toHaveBeenCalledWith(
 			expect.objectContaining({
-				bundledDirs: ["/framework/bundled/coding"],
+				bundledDirs: ["/framework/bundled/alpha"],
 				pluginDirs: undefined,
 				domainOverride: undefined,
 			}),

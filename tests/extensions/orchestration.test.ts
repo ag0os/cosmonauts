@@ -6,6 +6,12 @@
 import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import "./orchestration-mocks.ts";
 
+vi.mock("../../lib/packages/dev-bundled.ts", () => ({
+	discoverFrameworkBundledPackageDirs: vi.fn(async () => [
+		"/framework/bundled/alpha",
+	]),
+}));
+
 import orchestrationExtension from "../../domains/shared/extensions/orchestration/index.ts";
 import type { AgentDefinition } from "../../lib/agents/index.ts";
 import { AgentRegistry } from "../../lib/agents/index.ts";
@@ -22,7 +28,7 @@ import {
 	createMockPi,
 	flushAsync,
 	loadOrchestrationDomainFixtures,
-	testBundledCodingDir,
+	testBundledAlphaDir,
 	testDomainsDir,
 } from "./orchestration-helpers.ts";
 import { getOrchestrationMocks } from "./orchestration-mocks.ts";
@@ -39,7 +45,9 @@ describe("orchestration extension", () => {
 	let realDomainRegistry: DomainRegistry;
 
 	beforeAll(async () => {
-		const fixtures = await loadOrchestrationDomainFixtures();
+		const fixtures = await loadOrchestrationDomainFixtures({
+			domainId: "alpha",
+		});
 		realRegistry = fixtures.agentRegistry;
 		realDomainRegistry = fixtures.domainRegistry;
 	});
@@ -189,7 +197,7 @@ describe("orchestration extension", () => {
 		const { cwd, pi } = createExtensionPi();
 
 		mockRuntime({
-			domainContext: "coding",
+			domainContext: "alpha",
 			projectSkills: ["typescript", "backend"],
 			skillPaths: ["/skills/shared", "/skills/project"],
 		});
@@ -200,7 +208,7 @@ describe("orchestration extension", () => {
 		expect(runChainMock).toHaveBeenCalledWith(
 			expect.objectContaining({
 				projectRoot: cwd,
-				domainContext: "coding",
+				domainContext: "alpha",
 				projectSkills: ["typescript", "backend"],
 				skillPaths: ["/skills/shared", "/skills/project"],
 				domainsDir: testDomainsDir,
@@ -212,12 +220,12 @@ describe("orchestration extension", () => {
 			expect.objectContaining({
 				has: expect.any(Function),
 			}),
-			"coding",
+			"alpha",
 			undefined,
 		);
 	});
 
-	test("orchestration runtime includes bundled coding package in framework dev mode", async () => {
+	test("orchestration runtime includes a synthetic bundled package in framework dev mode", async () => {
 		const { cwd, pi } = createExtensionPi();
 
 		mockSuccessfulChain([{ name: "coordinator", loop: true }]);
@@ -228,7 +236,7 @@ describe("orchestration extension", () => {
 			expect.objectContaining({
 				builtinDomainsDir: testDomainsDir,
 				projectRoot: cwd,
-				bundledDirs: expect.arrayContaining([testBundledCodingDir]),
+				bundledDirs: expect.arrayContaining([testBundledAlphaDir]),
 			}),
 		);
 	});
@@ -368,11 +376,11 @@ describe("orchestration extension", () => {
 
 	test("spawn_agent forwards project skills from config", async () => {
 		const { cwd, pi } = createExtensionPi("/tmp/project", {
-			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cody -->",
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:alpha/cody -->",
 		});
 
 		mockRuntime({
-			domainContext: "coding",
+			domainContext: "alpha",
 			projectSkills: ["typescript"],
 			skillPaths: ["/skills/shared", "/skills/project"],
 		});
@@ -390,7 +398,7 @@ describe("orchestration extension", () => {
 			expect.any(Object), // targetDef
 			expect.objectContaining({
 				cwd,
-				domainContext: "coding",
+				domainContext: "alpha",
 				role: "worker",
 				projectSkills: ["typescript"],
 				skillPaths: ["/skills/shared", "/skills/project"],
@@ -406,7 +414,7 @@ describe("orchestration extension", () => {
 			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:quality-manager -->",
 		});
 
-		mockRuntime({ domainContext: "coding" });
+		mockRuntime({ domainContext: "alpha" });
 		const verifierReport = `# Verification Report
 
 ## Summary
@@ -444,10 +452,10 @@ describe("orchestration extension", () => {
 
 	test("spawn_agent includes full final report for non-verifier roles (e.g. explorer)", async () => {
 		const { pi } = createExtensionPi("/tmp/project", {
-			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cody -->",
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:alpha/cody -->",
 		});
 
-		mockRuntime({ domainContext: "coding" });
+		mockRuntime({ domainContext: "alpha" });
 		const explorerReport = `# Codebase Exploration
 
 ## Entry points
@@ -494,11 +502,11 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 
 	test("spawn_agent publishes child session activity events", async () => {
 		const { pi } = createExtensionPi("/tmp/project", {
-			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cody -->",
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:alpha/cody -->",
 			sessionId: "parent-session-activity",
 		});
 
-		mockRuntime({ domainContext: "coding" });
+		mockRuntime({ domainContext: "alpha" });
 
 		const activityEvents: SpawnActivityEvent[] = [];
 		const activityToken = activityBus.subscribe<SpawnActivityEvent>(
@@ -572,10 +580,10 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 
 	test("spawn_agent cleans up child session subscriptions when prompt throws", async () => {
 		const { pi } = createExtensionPi("/tmp/project", {
-			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cody -->",
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:alpha/cody -->",
 		});
 
-		mockRuntime({ domainContext: "coding" });
+		mockRuntime({ domainContext: "alpha" });
 		const unsubscribeActivity = vi.fn();
 		const mockSession = {
 			sessionId: "child-session-throws",
@@ -601,10 +609,10 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 
 	test("spawn_agent waits for nested child completions before completing the spawned session", async () => {
 		const { pi } = createExtensionPi("/tmp/project", {
-			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cody -->",
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:alpha/cody -->",
 		});
 
-		mockRuntime({ domainContext: "coding" });
+		mockRuntime({ domainContext: "alpha" });
 
 		const childSessionId = "child-session-quality-manager";
 		const nestedReport = "# Nested verifier report\n\nAll checks passed.";
@@ -783,7 +791,7 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 
 	test("spawn_agent denial suggests qualified chain_run for cross-domain targets", async () => {
 		const { pi } = createExtensionPi("/tmp/project", {
-			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:coding/worker -->",
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:alpha/worker -->",
 		});
 
 		mockRuntime({ domainContext: "main" });
@@ -792,7 +800,7 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 		createPiSpawnerMock.mockReturnValue({ spawn, dispose });
 
 		const result = await pi.callTool("spawn_agent", {
-			role: "coding/quality-manager",
+			role: "alpha/quality-manager",
 			prompt: "verify this plan",
 		});
 
@@ -801,7 +809,7 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 			content: [
 				{
 					type: "text",
-					text: 'spawn_agent denied: worker cannot spawn quality-manager. To run quality-manager as a top-level chain stage, use `chain_run(expression: "coding/quality-manager")`.',
+					text: 'spawn_agent denied: worker cannot spawn quality-manager. To run quality-manager as a top-level chain stage, use `chain_run(expression: "alpha/quality-manager")`.',
 				},
 			],
 			details: {
@@ -813,7 +821,7 @@ Spawns are detached Promises that deliver completions via sendUserMessage.`;
 
 	test("spawn_agent allows authorized target with unqualified caller resolving via scan-all", async () => {
 		const { pi } = createExtensionPi("/tmp/project", {
-			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:cody -->",
+			systemPrompt: "<!-- COSMONAUTS_AGENT_ID:alpha/cody -->",
 		});
 
 		mockRuntime();

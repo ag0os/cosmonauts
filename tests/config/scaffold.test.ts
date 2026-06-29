@@ -5,13 +5,30 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import chains from "../../bundled/coding/chains.ts";
 import { resolveNamedChain } from "../../lib/chains/loader.ts";
+import type { NamedChain } from "../../lib/chains/types.ts";
 import { createDefaultProjectConfig } from "../../lib/config/defaults.ts";
 import { scaffoldProjectConfig } from "../../lib/config/loader.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("config-scaffold-test-");
+const chains = [
+	{
+		name: "plan-and-build",
+		description: "Synthetic planning chain",
+		chain: "planner -> worker",
+	},
+	{
+		name: "implement",
+		description: "Synthetic implementation chain",
+		chain: "worker",
+	},
+	{
+		name: "verify",
+		description: "Synthetic verification chain",
+		chain: "verifier",
+	},
+] satisfies NamedChain[];
 
 describe("scaffoldProjectConfig", () => {
 	test("creates .cosmonauts/config.json in empty directory", async () => {
@@ -83,6 +100,7 @@ describe("scaffoldProjectConfig", () => {
 
 describe("chain resolution after scaffold", () => {
 	test("domain chains resolve whether or not a config was scaffolded", async () => {
+		// @cosmo-behavior plan:coding-agnostic-framework#B-017
 		const before = await resolveNamedChain("plan-and-build", tmp.path, chains);
 		expect(before.name).toBe("plan-and-build");
 		expect(before.chain).toBeTruthy();

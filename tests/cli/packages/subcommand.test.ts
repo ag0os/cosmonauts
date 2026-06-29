@@ -78,18 +78,18 @@ function answerConflictPrompts(...answers: string[]): void {
 
 function mockCatalogInstall(): void {
 	mockResolveCatalogEntry.mockReturnValue({
-		name: "coding",
-		description: "Coding domain",
-		source: "./bundled/coding",
+		name: "alpha",
+		description: "Alpha domain",
+		source: "./bundled/alpha",
 	});
 	mockInstallPackage.mockResolvedValue({
 		manifest: {
-			name: "coding",
+			name: "alpha",
 			version: "1.0.0",
 			description: "Test",
-			domains: [{ name: "coding", path: "coding" }],
+			domains: [{ name: "alpha", path: "alpha" }],
 		},
-		installedTo: "/store/coding",
+		installedTo: "/store/alpha",
 		domainMergeResults: [],
 	});
 }
@@ -146,13 +146,13 @@ describe("resolveSource", () => {
 
 	it("resolves catalog short names to an absolute path", () => {
 		mockResolveCatalogEntry.mockReturnValue({
-			name: "coding",
-			description: "Coding domain",
-			source: "./bundled/coding",
+			name: "alpha",
+			description: "Alpha domain",
+			source: "./bundled/alpha",
 		});
-		const result = resolveSource("coding");
-		// Should be an absolute path containing "bundled/coding"
-		expect(result).toMatch(/bundled[\\/]coding$/);
+		const result = resolveSource("alpha");
+		// Should be an absolute path containing "bundled/alpha"
+		expect(result).toMatch(/bundled[\\/]alpha$/);
 	});
 
 	it("calls resolveCatalogEntry with the provided argument", () => {
@@ -169,19 +169,19 @@ describe("resolveSource", () => {
 describe("resolveInstallRequest", () => {
 	it("resolves catalog short names with catalog metadata", () => {
 		mockResolveCatalogEntry.mockReturnValue({
-			name: "coding",
-			description: "Coding domain",
-			source: "./bundled/coding",
+			name: "alpha",
+			description: "Alpha domain",
+			source: "./bundled/alpha",
 		});
 
-		const request = resolveInstallRequest("coding", {
+		const request = resolveInstallRequest("alpha", {
 			projectRoot: "/project",
 		});
 
 		expect(request.scope).toBe("user");
 		expect(request.cwd).toBe("/project");
-		expect(request.catalogName).toBe("coding");
-		expect(request.source).toMatch(/bundled[\\/]coding$/);
+		expect(request.catalogName).toBe("alpha");
+		expect(request.source).toMatch(/bundled[\\/]alpha$/);
 	});
 
 	it("resolves project scope and passes through non-catalog sources", () => {
@@ -341,19 +341,19 @@ describe("installAction — success", () => {
 	it("resolves catalog short name before calling installPackage", async () => {
 		mockCatalogInstall();
 
-		await installAction("coding", { projectRoot: "/project" });
+		await installAction("alpha", { projectRoot: "/project" });
 
 		const call = mockInstallPackage.mock.calls[0]?.[0];
-		expect(call?.source).toMatch(/bundled[\\/]coding$/);
+		expect(call?.source).toMatch(/bundled[\\/]alpha$/);
 	});
 
 	it("passes catalogName to installPackage for catalog entries", async () => {
 		mockCatalogInstall();
 
-		await installAction("coding", { projectRoot: "/project" });
+		await installAction("alpha", { projectRoot: "/project" });
 
 		expect(mockInstallPackage).toHaveBeenCalledWith(
-			expect.objectContaining({ catalogName: "coding" }),
+			expect.objectContaining({ catalogName: "alpha" }),
 		);
 	});
 

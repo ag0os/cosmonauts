@@ -536,14 +536,14 @@ describe("bundled dirs", () => {
 		const sources = await scanDomainSources({
 			builtinDomainsDir: BUILTIN_DIR,
 			projectRoot: PROJECT_ROOT,
-			bundledDirs: ["/bundled/coding"],
+			bundledDirs: ["/bundled/alpha"],
 		});
 
 		expect(sources).toHaveLength(2);
 		expect(sources[0]).toMatchObject({ origin: "builtin", precedence: 0 });
 		expect(sources[1]).toMatchObject({
-			domainsDir: "/bundled/coding",
-			origin: "bundled:coding",
+			domainsDir: "/bundled/alpha",
+			origin: "bundled:alpha",
 			precedence: 0.5,
 		});
 	});
@@ -559,14 +559,14 @@ describe("bundled dirs", () => {
 		const sources = await scanDomainSources({
 			builtinDomainsDir: BUILTIN_DIR,
 			projectRoot: PROJECT_ROOT,
-			bundledDirs: ["/bundled/coding"],
+			bundledDirs: ["/bundled/alpha"],
 			pluginDirs: ["/plugin/dev"],
 		});
 
 		expect(sources).toHaveLength(5);
 		expect(sources.map((s) => s.origin)).toEqual([
 			"builtin",
-			"bundled:coding",
+			"bundled:alpha",
 			"global:g",
 			"local:l",
 			"/plugin/dev",
@@ -580,12 +580,12 @@ describe("bundled dirs", () => {
 		const sources = await scanDomainSources({
 			builtinDomainsDir: BUILTIN_DIR,
 			projectRoot: PROJECT_ROOT,
-			bundledDirs: ["/bundled/coding", "/bundled/review"],
+			bundledDirs: ["/bundled/alpha", "/bundled/review"],
 		});
 
 		expect(sources).toHaveLength(3);
 		expect(sources[1]).toMatchObject({
-			origin: "bundled:coding",
+			origin: "bundled:alpha",
 			precedence: 0.5,
 		});
 		expect(sources[2]).toMatchObject({
@@ -605,13 +605,36 @@ describe("bundled dirs", () => {
 		expect(sources.every((s) => s.precedence !== 0.5)).toBe(true);
 	});
 
-	test("routes bundled coding root domains through manifest-aware domain-root sources", async () => {
+	test("routes bundled root domains through manifest-aware domain-root sources", async () => {
 		// @cosmo-behavior plan:domain-authoring#B-016
+		// @cosmo-behavior plan:coding-agnostic-framework#B-017
 		mockListInstalledPackages.mockResolvedValue([]);
 		const actualFs =
 			await vi.importActual<typeof import("node:fs/promises")>(
 				"node:fs/promises",
 			);
+		const bundledAlphaDir = await actualFs.mkdtemp("/tmp/scanner-alpha-");
+		await actualFs.writeFile(
+			join(bundledAlphaDir, "cosmonauts.json"),
+			JSON.stringify({
+				name: "alpha",
+				version: "1.0.0",
+				description: "Synthetic alpha package",
+				domains: [{ name: "alpha", path: "." }],
+			}),
+			"utf-8",
+		);
+		await actualFs.writeFile(
+			join(bundledAlphaDir, "domain.ts"),
+			'export const manifest = { id: "alpha", description: "Alpha", lead: "captain" } as const;\nexport default manifest;\n',
+			"utf-8",
+		);
+		await actualFs.mkdir(join(bundledAlphaDir, "agents"), { recursive: true });
+		await actualFs.writeFile(
+			join(bundledAlphaDir, "agents", "captain.ts"),
+			'export default { id: "captain", description: "Captain", capabilities: [], tools: "none", extensions: [], skills: [], projectContext: false, session: "ephemeral", loop: false } as const;\n',
+			"utf-8",
+		);
 		mockReadFile.mockImplementation(
 			((...args: Parameters<typeof readFile>) =>
 				actualFs.readFile(...args)) as typeof readFile,
@@ -621,27 +644,29 @@ describe("bundled dirs", () => {
 				actualFs.stat(...args)) as typeof stat,
 		);
 
-		const bundledCodingDir = join(process.cwd(), "bundled", "coding");
+		try {
+			const sources = await scanDomainSources({
+				builtinDomainsDir: join(process.cwd(), "domains"),
+				projectRoot: PROJECT_ROOT,
+				bundledDirs: [bundledAlphaDir],
+			});
 
-		const sources = await scanDomainSources({
-			builtinDomainsDir: join(process.cwd(), "domains"),
-			projectRoot: PROJECT_ROOT,
-			bundledDirs: [bundledCodingDir],
-		});
+			expect(sources).toContainEqual({
+				domainsDir: bundledAlphaDir,
+				sourceType: "domain-root",
+				origin: "bundled:alpha",
+				precedence: 0.5,
+			});
 
-		expect(sources).toContainEqual({
-			domainsDir: bundledCodingDir,
-			sourceType: "domain-root",
-			origin: "bundled:coding",
-			precedence: 0.5,
-		});
-
-		const { loadDomainsFromSources } = await import(
-			"../../lib/domains/loader.ts"
-		);
-		const domains = await loadDomainsFromSources(sources);
-		const coding = domains.find((domain) => domain.manifest.id === "coding");
-		expect(coding?.agents.has("cody")).toBe(true);
+			const { loadDomainsFromSources } = await import(
+				"../../lib/domains/loader.ts"
+			);
+			const domains = await loadDomainsFromSources(sources);
+			const alpha = domains.find((domain) => domain.manifest.id === "alpha");
+			expect(alpha?.agents.has("captain")).toBe(true);
+		} finally {
+			await actualFs.rm(bundledAlphaDir, { recursive: true, force: true });
+		}
 	});
 });
 
@@ -815,14 +840,14 @@ describe("full 7-tier ordering", () => {
 		const sources = await scanDomainSources({
 			builtinDomainsDir: BUILTIN_DIR,
 			projectRoot: PROJECT_ROOT,
-			bundledDirs: ["/bundled/coding"],
+			bundledDirs: ["/bundled/alpha"],
 			pluginDirs: ["/plugin/dev"],
 		});
 
 		expect(sources).toHaveLength(7);
 		expect(sources.map((s) => s.origin)).toEqual([
 			"builtin",
-			"bundled:coding",
+			"bundled:alpha",
 			"global:g",
 			"user-domains",
 			"local:l",
@@ -844,14 +869,14 @@ describe("full 7-tier ordering", () => {
 		const sources = await scanDomainSources({
 			builtinDomainsDir: BUILTIN_DIR,
 			projectRoot: PROJECT_ROOT,
-			bundledDirs: ["/bundled/coding"],
+			bundledDirs: ["/bundled/alpha"],
 			pluginDirs: ["/plugin/dev"],
 		});
 
 		expect(sources).toHaveLength(5);
 		expect(sources.map((s) => s.origin)).toEqual([
 			"builtin",
-			"bundled:coding",
+			"bundled:alpha",
 			"global:g",
 			"local:l",
 			"/plugin/dev",

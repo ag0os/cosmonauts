@@ -1,10 +1,13 @@
-import { resolve } from "node:path";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { vi } from "vitest";
 import type { AgentRegistry } from "../../lib/agents/index.ts";
 import { createRegistryFromDomains } from "../../lib/agents/index.ts";
 import { loadDomainsFromSources } from "../../lib/domains/index.ts";
 import { DomainRegistry } from "../../lib/domains/registry.ts";
+import { writeSyntheticInstallableDomainPackage } from "../helpers/packages.ts";
 
 export const testDomainsDir = resolve(
 	fileURLToPath(import.meta.url),
@@ -14,27 +17,57 @@ export const testDomainsDir = resolve(
 	"domains",
 );
 
-export const testBundledCodingDir = resolve(
-	fileURLToPath(import.meta.url),
-	"..",
-	"..",
-	"..",
-	"bundled",
-	"coding",
-);
+export const testBundledAlphaDir = "/framework/bundled/alpha";
 
 interface OrchestrationDomainFixtures {
 	agentRegistry: AgentRegistry;
 	domainRegistry: DomainRegistry;
 }
 
-export async function loadOrchestrationDomainFixtures(): Promise<OrchestrationDomainFixtures> {
+interface LoadOrchestrationDomainFixtureOptions {
+	domainId?: string;
+}
+
+export async function loadOrchestrationDomainFixtures(
+	options: LoadOrchestrationDomainFixtureOptions = {},
+): Promise<OrchestrationDomainFixtures> {
+	const domainId = options.domainId ?? "coding";
+	const packageRoot = await mkdtemp(
+		join(tmpdir(), `orchestration-${domainId}-`),
+	);
+	await writeSyntheticInstallableDomainPackage(packageRoot, {
+		packageName: `${domainId}-pkg`,
+		domainId,
+		lead: "coordinator",
+		agents: [
+			{
+				id: "cody",
+				subagents: ["worker", "explorer", "quality-manager", "verifier"],
+			},
+			{ id: "coordinator", loop: true },
+			{ id: "explorer" },
+			{ id: "planner" },
+			{ id: "verifier" },
+			{ id: "worker" },
+			{ id: "quality-manager", subagents: ["verifier"] },
+		],
+		prompts: {
+			cody: `Synthetic ${domainId} cody persona.`,
+			coordinator: `Synthetic ${domainId} coordinator persona.`,
+			explorer: `Synthetic ${domainId} explorer persona.`,
+			planner: `Synthetic ${domainId} planner persona.`,
+			verifier: `Synthetic ${domainId} verifier persona.`,
+			worker: `Synthetic ${domainId} worker persona.`,
+			"quality-manager": `Synthetic ${domainId} quality manager persona.`,
+		},
+	});
 	const domains = await loadDomainsFromSources([
 		{ domainsDir: testDomainsDir, origin: "framework", precedence: 1 },
 		{
-			domainsDir: testBundledCodingDir,
+			// @cosmo-behavior plan:coding-agnostic-framework#B-017
+			domainsDir: packageRoot,
 			sourceType: "domain-root",
-			origin: "bundled",
+			origin: "synthetic",
 			precedence: 2,
 		},
 	]);

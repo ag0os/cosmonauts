@@ -115,7 +115,7 @@ function setupRuntime(
 	agents: readonly AgentDefinition[] = [explorerAgent],
 ): void {
 	runtimeMocks.discoverFrameworkBundledPackageDirs.mockResolvedValue([
-		"/framework/bundled/coding",
+		"/framework/bundled/alpha",
 	]);
 	runtimeMocks.create.mockResolvedValue({
 		agentRegistry: new AgentRegistry(agents),
@@ -224,7 +224,7 @@ describe("createExportProgram", () => {
 		).toHaveBeenCalledWith(expect.stringMatching(/cosmonauts$/));
 		expect(runtimeMocks.create).toHaveBeenCalledWith(
 			expect.objectContaining({
-				bundledDirs: ["/framework/bundled/coding"],
+				bundledDirs: ["/framework/bundled/alpha"],
 				pluginDirs: undefined,
 				domainOverride: undefined,
 			}),

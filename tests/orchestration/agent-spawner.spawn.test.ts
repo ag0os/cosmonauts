@@ -2,11 +2,22 @@
  * Regression tests for createPiSpawner() spawn behavior.
  */
 
-import { resolve } from "node:path";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+	afterAll,
+	beforeAll,
+	beforeEach,
+	describe,
+	expect,
+	test,
+	vi,
+} from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
+import { writeSyntheticInstallableDomainPackage } from "../helpers/packages.ts";
 
 const mocks = vi.hoisted(() => ({
 	createAgentSession: vi.fn(),
@@ -58,33 +69,43 @@ const DOMAINS_DIR = resolve(
 	"domains",
 );
 
-const BUNDLED_CODING_DIR = resolve(
-	fileURLToPath(import.meta.url),
-	"..",
-	"..",
-	"..",
-	"bundled",
-	"coding",
-);
-
 let realResolver: DomainResolver;
+let syntheticPackageRoot: string;
 
 beforeAll(async () => {
+	syntheticPackageRoot = await mkdtemp(
+		join(tmpdir(), "spawner-alpha-package-"),
+	);
+	await writeSyntheticInstallableDomainPackage(syntheticPackageRoot, {
+		packageName: "alpha-pkg",
+		domainId: "alpha",
+		lead: "planner",
+		agents: [{ id: "planner" }, { id: "worker" }],
+		prompts: {
+			planner: "Synthetic alpha planner persona.",
+			worker: "Synthetic alpha worker persona.",
+		},
+	});
 	const domains = await loadDomainsFromSources([
 		{ domainsDir: DOMAINS_DIR, origin: "framework", precedence: 1 },
 		{
-			domainsDir: BUNDLED_CODING_DIR,
+			// @cosmo-behavior plan:coding-agnostic-framework#B-017
+			domainsDir: syntheticPackageRoot,
 			sourceType: "domain-root",
-			origin: "bundled",
+			origin: "synthetic",
 			precedence: 2,
 		},
 	]);
 	realResolver = DomainResolver.fromSingleDir(DOMAINS_DIR, domains);
 });
 
+afterAll(async () => {
+	await rm(syntheticPackageRoot, { recursive: true, force: true });
+});
+
 const FIXTURE_PLANNER: AgentDefinition = {
 	id: "planner",
-	domain: "coding",
+	domain: "alpha",
 	description: "Fixture planner",
 	capabilities: ["tasks"],
 	model: "fixture-provider/fixture-planner-model",

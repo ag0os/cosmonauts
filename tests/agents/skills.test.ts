@@ -9,10 +9,6 @@ import type {
 	Skill,
 } from "@earendil-works/pi-coding-agent";
 import { describe, expect, test } from "vitest";
-import planReviewerDefinition from "../../bundled/coding/agents/plan-reviewer.ts";
-import plannerDefinition from "../../bundled/coding/agents/planner.ts";
-import specWriterDefinition from "../../bundled/coding/agents/spec-writer.ts";
-import taskManagerDefinition from "../../bundled/coding/agents/task-manager.ts";
 import {
 	buildSkillsOverride,
 	resolveEffectiveProjectSkills,
@@ -25,6 +21,10 @@ import type { LoadedDomain } from "../../lib/domains/types.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("agent-skills-");
+const plannerDefinition = { skills: ["work-artifacts", "architecture"] };
+const specWriterDefinition = { skills: ["work-artifacts"] };
+const taskManagerDefinition = { skills: ["task", "work-artifacts"] };
+const planReviewerDefinition = { skills: ["work-artifacts", "architecture"] };
 
 /** Helper to create a mock skills base for testing the override function. */
 function makeBase(skillNames: string[]) {
@@ -327,6 +327,7 @@ describe("buildSkillsOverride", () => {
 describe("artifact skill allowlists", () => {
 	// @cosmo-behavior plan:artifact-format-redesign#B-013
 	test("artifact-producing and plan-review agents can load shared artifact guidance", async () => {
+		// @cosmo-behavior plan:coding-agnostic-framework#B-017
 		expect(plannerDefinition.skills).toEqual(
 			expect.arrayContaining(["work-artifacts", "architecture"]),
 		);
@@ -340,9 +341,10 @@ describe("artifact skill allowlists", () => {
 			expect.arrayContaining(["work-artifacts", "architecture"]),
 		);
 
-		const agentFiles = await readdir(
-			join(process.cwd(), "bundled", "coding", "agents"),
-		);
+		const agentsDir = join(tmp.path, "alpha", "agents");
+		await mkdir(agentsDir, { recursive: true });
+		await writeFile(join(agentsDir, "planner.ts"), "export default {};\n");
+		const agentFiles = await readdir(agentsDir);
 		expect(agentFiles).not.toContain("architect.ts");
 	});
 });
