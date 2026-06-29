@@ -11,6 +11,12 @@ export {
 	DomainBindingTargetError,
 	getLiveDomainBindingStore,
 } from "./bindings.ts";
+export type { ResolveDefaultDomainOptions } from "./default-domain.ts";
+export {
+	FRAMEWORK_DEFAULT_DOMAIN,
+	NoDefaultDomainError,
+	resolveDefaultDomain,
+} from "./default-domain.ts";
 export { loadDomains, loadDomainsFromSources } from "./loader.ts";
 export type {
 	AssemblePromptsOptions,
