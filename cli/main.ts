@@ -334,7 +334,7 @@ function handleNoDomainGuard(): void {
 }
 
 function buildNoRunnableDefaultDomainMessage(): string {
-	return `No runnable default domain installed. Install or activate a domain with a lead agent, or restore the built-in "${FRAMEWORK_DEFAULT_DOMAIN}" domain.`;
+	return `No runnable default domain installed. Install or activate a domain with a lead agent, or restore the built-in "${FRAMEWORK_DEFAULT_DOMAIN}" domain. Run \`cosmonauts --list-domains\` to inspect active domains.`;
 }
 
 export function buildInitNoRunnableDefaultDomainLines(): string[] {

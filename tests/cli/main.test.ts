@@ -553,6 +553,7 @@ describe("buildInitSessionConfig", () => {
 		const message = buildInitNoRunnableDefaultDomainLines().join("\n");
 
 		expect(message).toContain("main");
+		expect(message).toContain("cosmonauts --list-domains");
 		expect(message).not.toContain("install coding");
 		expect(message).not.toContain("cosmonauts install coding");
 	});

@@ -27,7 +27,7 @@ export function resolveDefaultDriveEnvelopePath(
 	}
 
 	throw new Error(
-		`Missing default Drive envelope at ${envelopePath}. Pass --envelope <path> to provide an explicit envelope.`,
+		`Missing default Drive envelope at ${envelopePath}. Pass --envelope <path> (CLI) or envelopePath (run_driver) to provide an explicit envelope.`,
 	);
 }
 

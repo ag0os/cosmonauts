@@ -1,6 +1,6 @@
-# Coding Driver Envelope
+# Default Drive Envelope
 
-Use this envelope for coding-domain driver work. Follow the rendered work item, run-level expectations, and any plan preconditions exactly; do not expand scope.
+Use this envelope for Drive work. Follow the rendered work item, run-level expectations, and any plan preconditions exactly; do not expand scope.
 
 ## Repo Conventions
 
