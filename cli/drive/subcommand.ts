@@ -218,7 +218,10 @@ function configureRunCommand(command: Command): void {
 			"State commit policy: final-state-commit or none",
 			parseStateCommitPolicy,
 		)
-		.option("--envelope <path>", "Prompt envelope path")
+		.option(
+			"--envelope <path>",
+			"Prompt envelope path (omit for the framework default Drive envelope)",
+		)
 		.option("--precondition <path>", "Prompt precondition path")
 		.option("--overrides <dir>", "Per-task prompt override directory")
 		.option(

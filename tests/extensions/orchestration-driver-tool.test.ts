@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { beforeEach, describe, expect, test, vi } from "vitest";
@@ -13,6 +13,10 @@ import type {
 	BackendInvocation,
 	BackendRunResult,
 } from "../../lib/driver/backends/types.ts";
+import {
+	DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH,
+	resolveDefaultDriveEnvelopePath,
+} from "../../lib/driver/default-envelope.ts";
 import type {
 	DriverActivityBusEvent,
 	DriverBusEvent,
@@ -211,6 +215,67 @@ describe("driver e2e run_driver integration", () => {
 		expect(backendMocks.run).not.toHaveBeenCalled();
 	});
 
+	// @cosmo-behavior plan:coding-agnostic-framework#B-012
+	test("run_driver uses the framework default envelope when envelopePath is omitted", async () => {
+		const fixture = await setupFixture({ taskCount: 1 });
+		const frameworkRoot = process.cwd();
+		const expectedEnvelopePath = resolveDefaultDriveEnvelopePath({
+			frameworkRoot,
+		});
+		backendMocks.run.mockResolvedValue(successResult());
+
+		const result = await runDriver(fixture, {
+			frameworkRoot,
+			omitEnvelopePath: true,
+		});
+		await waitForCompletion(result.workdir);
+		const spec = await readSpec(result.workdir);
+
+		expect(spec.promptTemplate.envelopePath).toBe(expectedEnvelopePath);
+		expect(relative(frameworkRoot, spec.promptTemplate.envelopePath)).toBe(
+			DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH,
+		);
+		expect(spec.promptTemplate.envelopePath).not.toContain(
+			"bundled/coding/coding",
+		);
+		await expect(
+			readFile(spec.promptTemplate.envelopePath, "utf-8"),
+		).resolves.toBe(await readFile(expectedEnvelopePath, "utf-8"));
+	});
+
+	// @cosmo-behavior plan:coding-agnostic-framework#B-025
+	test("run_driver honors an explicit legacy bundled envelopePath", async () => {
+		const fixture = await setupFixture({ taskCount: 1 });
+		const frameworkRoot = process.cwd();
+		const legacyEnvelopePath = join(
+			frameworkRoot,
+			"bundled",
+			"coding",
+			"drivers",
+			"templates",
+			"envelope.md",
+		);
+		backendMocks.run.mockResolvedValue(successResult());
+
+		const result = await runDriver(fixture, {
+			envelopePath: legacyEnvelopePath,
+			frameworkRoot,
+		});
+		await waitForCompletion(result.workdir);
+		const spec = await readSpec(result.workdir);
+
+		expect(spec.promptTemplate.envelopePath).toBe(legacyEnvelopePath);
+		expect(spec.promptTemplate.envelopePath).toContain(
+			"bundled/coding/drivers/templates/envelope.md",
+		);
+		expect(spec.promptTemplate.envelopePath).not.toContain(
+			"bundled/coding/coding",
+		);
+		await expect(
+			readFile(spec.promptTemplate.envelopePath, "utf-8"),
+		).resolves.toBe(await readFile(legacyEnvelopePath, "utf-8"));
+	});
+
 	// @cosmo-behavior plan:drive-resilience-state-model#B-012
 	test("run_driver uses the project root for repository commit locking", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
@@ -357,6 +422,8 @@ interface RunDriverOverrides {
 	postflightCommands?: string[];
 	frameworkRoot?: string;
 	stateCommitPolicy?: "final-state-commit" | "none";
+	envelopePath?: string;
+	omitEnvelopePath?: boolean;
 }
 
 function onlyTaskId(fixture: Fixture): string {
@@ -426,18 +493,35 @@ async function runDriver(
 	expect(tool?.execute).toBeTypeOf("function");
 	expect(tool?.parameters).toBeDefined();
 
-	const response = (await pi.callTool("run_driver", {
+	const params: {
+		planSlug: string;
+		taskIds: string[];
+		backend: "cosmonauts-subagent";
+		mode: "inline";
+		envelopePath?: string;
+		commitPolicy: "driver-commits" | "backend-commits" | "no-commit";
+		stateCommitPolicy?: "final-state-commit" | "none";
+		preflightCommands: string[];
+		postflightCommands: string[];
+		branch?: string;
+	} = {
 		planSlug: fixture.planSlug,
 		taskIds: fixture.taskIds,
 		backend: "cosmonauts-subagent",
 		mode: "inline",
-		envelopePath: fixture.envelopePath,
 		commitPolicy: overrides.commitPolicy ?? "no-commit",
 		stateCommitPolicy: overrides.stateCommitPolicy,
 		preflightCommands: overrides.preflightCommands ?? [],
 		postflightCommands: overrides.postflightCommands ?? [],
 		branch: overrides.branch,
-	})) as { details: DriverResultDetails };
+	};
+	if (!overrides.omitEnvelopePath) {
+		params.envelopePath = overrides.envelopePath ?? fixture.envelopePath;
+	}
+
+	const response = (await pi.callTool("run_driver", params)) as {
+		details: DriverResultDetails;
+	};
 
 	return response.details;
 }

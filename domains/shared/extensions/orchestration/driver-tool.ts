@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -15,6 +14,7 @@ import {
 } from "../../../../lib/driver/backends/codex.ts";
 import { createCosmonautsSubagentBackend } from "../../../../lib/driver/backends/cosmonauts-subagent.ts";
 import type { Backend } from "../../../../lib/driver/backends/types.ts";
+import { resolveDefaultDriveEnvelopePath } from "../../../../lib/driver/default-envelope.ts";
 import { runInline, startDetached } from "../../../../lib/driver/driver.ts";
 import { formatError } from "../../../../lib/driver/errors.ts";
 import { DEFAULT_TASK_TIMEOUT_MS } from "../../../../lib/driver/run-one-task.ts";
@@ -160,7 +160,7 @@ export function registerDriverTool(
 			envelopePath: Type.Optional(
 				Type.String({
 					description:
-						"Base prompt envelope path, relative to the project root (absolute paths are honored as-is). Omit it to use the bundled coding envelope shipped with Cosmonauts; pass a path only when the project ships its own envelope.",
+						"Base prompt envelope path, relative to the project root (absolute paths are honored as-is). Omit it to use the framework default Drive envelope shipped with Cosmonauts; pass a path only when the project ships its own envelope.",
 				}),
 			),
 			preconditionPath: Type.Optional(
@@ -382,15 +382,6 @@ async function createRunSpec({
 	return spec;
 }
 
-const BUNDLED_CODING_ENVELOPE = join(
-	"bundled",
-	"coding",
-	"coding",
-	"drivers",
-	"templates",
-	"envelope.md",
-);
-
 function resolveEnvelopePath(
 	envelopePath: string | undefined,
 	projectRoot: string,
@@ -402,13 +393,7 @@ function resolveEnvelopePath(
 			: resolve(projectRoot, envelopePath);
 	}
 
-	const bundled = join(frameworkRoot, BUNDLED_CODING_ENVELOPE);
-	if (!existsSync(bundled)) {
-		throw new Error(
-			`No envelopePath provided and the bundled coding envelope was not found at ${bundled}. Pass envelopePath explicitly.`,
-		);
-	}
-	return bundled;
+	return resolveDefaultDriveEnvelopePath({ frameworkRoot });
 }
 
 function createBackend(

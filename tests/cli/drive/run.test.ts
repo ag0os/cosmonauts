@@ -371,7 +371,7 @@ describe("cosmonauts run drive compat run", () => {
 		});
 	});
 
-	// @cosmo-behavior plan:coding-agnostic-framework#B-010
+	// @cosmo-behavior plan:coding-agnostic-framework#B-011
 	test("uses the framework default envelope when --envelope is omitted", async () => {
 		const fixture = await setupFixture(1);
 		const expectedEnvelopePath = resolveDefaultDriveEnvelopePath();
@@ -393,6 +393,41 @@ describe("cosmonauts run drive compat run", () => {
 		);
 		expect(spec.promptTemplate.envelopePath).not.toContain("bundled/coding");
 		expect(spec.promptTemplate.envelopeContent).toBe(expectedContent);
+	});
+
+	// @cosmo-behavior plan:coding-agnostic-framework#B-025
+	test("honors an explicit legacy bundled envelope path", async () => {
+		const fixture = await setupFixture(1);
+		const legacyEnvelopePath = join(
+			originalCwd,
+			"bundled",
+			"coding",
+			"drivers",
+			"templates",
+			"envelope.md",
+		);
+		const legacyContent = await readFile(legacyEnvelopePath, "utf-8");
+
+		await parseDrive([
+			"--plan",
+			PLAN,
+			"--task-ids",
+			fixture.tasks[0]?.id ?? "TASK-001",
+			"--mode",
+			"inline",
+			"--envelope",
+			legacyEnvelopePath,
+		]);
+
+		const spec = firstRunInlineSpec();
+		expect(spec.promptTemplate.envelopePath).toBe(legacyEnvelopePath);
+		expect(spec.promptTemplate.envelopePath).toContain(
+			"bundled/coding/drivers/templates/envelope.md",
+		);
+		expect(spec.promptTemplate.envelopePath).not.toContain(
+			"bundled/coding/coding",
+		);
+		expect(spec.promptTemplate.envelopeContent).toBe(legacyContent);
 	});
 
 	test("routes explicit inline and detached modes without invoking real backends", async () => {

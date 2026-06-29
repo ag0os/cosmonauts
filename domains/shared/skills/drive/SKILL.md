@@ -48,7 +48,7 @@ For chain-based implementation runs, `chain_run.timeoutMs` controls the total ch
 
 1. Confirm `planSlug`, ready task IDs, target branch, backend, mode, and commit policy.
 2. Identify the repository's actual verification commands — whichever the project uses (e.g. tests, static-analysis, build/e2e split, format/lint check). Pass those exact commands as `postflightCommands`; do not rely on the default envelope to guess them, and don't add commands for steps the project doesn't have.
-3. Omit `envelopePath` to use the bundled codebase-agnostic coding envelope shipped with Cosmonauts. Pass `envelopePath` (relative to the project root, or absolute) only when the project ships its own envelope — never pass the `bundled/...` path yourself; that directory lives inside the Cosmonauts package, not the project.
+3. Omit `envelopePath` to use the framework default Drive envelope shipped with Cosmonauts. Pass `envelopePath` (relative to the project root, or absolute) only when the project ships its own envelope.
 4. Start the run with `run_driver`.
 5. Monitor with `run_status({ scope: planSlug, runId })` and `run_watch({ scope: planSlug, runId, sinceSeq })`; preserve the returned sequence cursor. Use `watch_events({ planSlug, runId, since })` only for legacy Drive compatibility.
 6. If the run blocks or aborts, summarize the observed event and route the next action to the right specialist.
@@ -63,7 +63,7 @@ run_driver({
   mode: "detached",
   branch: "feature/auth",
   commitPolicy: "driver-commits",
-  // envelopePath omitted — uses the bundled codebase-agnostic envelope
+  // envelopePath omitted — uses the framework default Drive envelope
   // Replace these placeholders with the target repo's actual verification commands.
   postflightCommands: ["<test command>", "<static-analysis command>"],
   partialMode: "stop",
