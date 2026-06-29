@@ -169,6 +169,37 @@ describe("buildAgentPackage", () => {
 		);
 	});
 
+	it("uses main as the final source-agent prompt fallback while preserving source identity", async () => {
+		// @cosmo-behavior plan:coding-agnostic-framework#B-007
+		await writeDomainPromptFiles("main", "Main explorer persona.");
+		const sourceAgent = makeAgent({
+			domain: undefined,
+			model: "anthropic/domainless",
+		});
+
+		const agentPackage = await buildAgentPackage({
+			definition: makeDefinition({
+				sourceAgent: "explorer",
+				prompt: { kind: "source-agent" },
+			}),
+			agentRegistry: new AgentRegistry([sourceAgent]),
+			domainsDir: join(tmp.path, "domains"),
+			frameworkPromptsDir: join(tmp.path, "framework-prompts"),
+			skillPaths: [],
+			target: "claude-cli",
+		});
+
+		expect(agentPackage.sourceAgentId).toBe("explorer");
+		expect(agentPackage.model).toBe("anthropic/domainless");
+		expect(agentPackage.systemPrompt).toContain("main core capability.");
+		expect(agentPackage.systemPrompt).toContain("Main explorer persona.");
+		expect(agentPackage.systemPrompt).toContain(
+			"Package ID: sample-agent-claude",
+		);
+		expect(agentPackage.systemPrompt).toContain("Source Agent ID: explorer");
+		expect(agentPackage.systemPrompt).not.toContain("coding core capability.");
+	});
+
 	it("embeds allowlisted full skill markdown under a packaged skills heading", async () => {
 		await writeFlatSkill("flat", "# Flat Skill\n\nFull flat body.");
 		await writeDirectorySkill(

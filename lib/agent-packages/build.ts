@@ -1,6 +1,7 @@
 import { qualifyRole } from "../agents/qualified-role.ts";
 import type { AgentRegistry } from "../agents/resolver.ts";
 import type { AgentDefinition } from "../agents/types.ts";
+import { resolveDefaultDomain } from "../domains/default-domain.ts";
 import { assemblePrompts } from "../domains/prompt-assembly.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import { assertRawSourcePromptExportable } from "./compatibility.ts";
@@ -121,9 +122,14 @@ async function resolveSystemPrompt(
 	}
 
 	assertRawSourcePromptExportable({ definition, sourceAgent });
+	const promptDomain = resolveDefaultDomain({
+		explicitDomain: sourceAgent.domain ?? options.domainContext,
+		resolver: options.resolver,
+		purpose: `source-agent package prompt assembly for "${sourceAgent.id}"`,
+	});
 	return assemblePrompts({
 		agentId: sourceAgent.id,
-		domain: sourceAgent.domain ?? options.domainContext ?? "coding",
+		domain: promptDomain,
 		capabilities: sourceAgent.capabilities,
 		domainsDir: options.domainsDir,
 		frameworkPromptsDir: options.frameworkPromptsDir,

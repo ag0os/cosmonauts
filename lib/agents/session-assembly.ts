@@ -8,6 +8,7 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { resolveDefaultDomain } from "../domains/default-domain.ts";
 import type { RuntimeContext } from "../domains/prompt-assembly.ts";
 import { assemblePrompts } from "../domains/prompt-assembly.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
@@ -115,11 +116,16 @@ export async function buildSessionParams(
 
 	// Tool resolution
 	const tools = resolveTools(def.tools, cwd);
+	const resourceDomain = resolveDefaultDomain({
+		explicitDomain: def.domain,
+		resolver,
+		purpose: `session parameters for agent "${qualifyAgentId(def.id, def.domain)}"`,
+	});
 
 	// Four-layer prompt assembly
 	let promptContent: string | undefined = await assemblePrompts({
 		agentId: def.id,
-		domain: def.domain ?? "coding",
+		domain: resourceDomain,
 		capabilities: def.capabilities,
 		domainsDir,
 		frameworkPromptsDir,
@@ -135,7 +141,7 @@ export async function buildSessionParams(
 
 	// Extension path resolution, with optional extra paths appended
 	const resolvedExtensionPaths = resolveExtensionPaths(def.extensions, {
-		domain: def.domain ?? "coding",
+		domain: resourceDomain,
 		domainsDir,
 		resolver,
 	});
@@ -152,7 +158,7 @@ export async function buildSessionParams(
 				resolver,
 			});
 	const hiddenSkillNames = resolveHiddenSkillNames({
-		requesterDomain: def.domain ?? "coding",
+		requesterDomain: resourceDomain,
 		resolver,
 	});
 	const skillsOverride = buildSkillsOverride(

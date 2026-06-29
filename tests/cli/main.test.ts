@@ -15,10 +15,15 @@ import {
 	parseCliArgs,
 	renderAgentsList,
 	renderDomainsList,
+	resolveDumpPromptDomain,
 	resolveInteractiveExtensionPaths,
 	selectRunMode,
 } from "../../cli/main.ts";
 import type { CliOptions } from "../../cli/types.ts";
+import { NoDefaultDomainError } from "../../lib/domains/default-domain.ts";
+import { DomainRegistry } from "../../lib/domains/registry.ts";
+import { DomainResolver } from "../../lib/domains/resolver.ts";
+import type { LoadedDomain } from "../../lib/domains/types.ts";
 
 function cliOptions(overrides: Partial<CliOptions> = {}): CliOptions {
 	return {
@@ -35,6 +40,34 @@ function cliOptions(overrides: Partial<CliOptions> = {}): CliOptions {
 }
 
 type ExpectedRunMode = ReturnType<typeof selectRunMode>;
+
+function makeDomain(id: string): LoadedDomain {
+	return {
+		manifest: { id, description: `Domain ${id}` },
+		portable: false,
+		agents: new Map(),
+		capabilities: new Set(),
+		prompts: new Set(),
+		skills: new Set(),
+		extensions: new Set(),
+		chains: [],
+		provenance: [
+			{
+				origin: "test",
+				precedence: 0,
+				kind: "domains-dir",
+				rootDir: `/test/${id}`,
+			},
+		],
+		rootDirs: [`/test/${id}`],
+	};
+}
+
+function makeResolver(domainIds: readonly string[]): DomainResolver {
+	return new DomainResolver(
+		new DomainRegistry(domainIds.map((id) => makeDomain(id))),
+	);
+}
 
 interface RunModeScenario {
 	name: string;
@@ -523,6 +556,32 @@ describe("resolveInteractiveExtensionPaths", () => {
 			"/framework/domains/shared/extensions/agent-switch",
 			"/framework/domains/shared/extensions/domain-bindings",
 		]);
+	});
+});
+
+describe("resolveDumpPromptDomain", () => {
+	test("uses injectable default-domain semantics for domainless prompt dumps", () => {
+		// @cosmo-behavior plan:coding-agnostic-framework#B-008
+		expect(
+			resolveDumpPromptDomain({
+				definition: { id: "cosmo" },
+				resolver: makeResolver(["shared", "main"]),
+			}),
+		).toBe("main");
+
+		expect(
+			resolveDumpPromptDomain({
+				definition: { id: "worker", domain: "ruby-coding" },
+				resolver: makeResolver(["shared"]),
+			}),
+		).toBe("ruby-coding");
+
+		expect(() =>
+			resolveDumpPromptDomain({
+				definition: { id: "cosmo" },
+				resolver: makeResolver(["shared"]),
+			}),
+		).toThrow(NoDefaultDomainError);
 	});
 });
 

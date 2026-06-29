@@ -10,6 +10,7 @@ import type {
 	ResourceDiagnostic,
 	Skill,
 } from "@earendil-works/pi-coding-agent";
+import { resolveDefaultDomain } from "../domains/default-domain.ts";
 import { canAccessSurfaceName } from "../domains/public-surface.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import type { LoadedDomain } from "../domains/types.ts";
@@ -36,7 +37,7 @@ interface ResolveEffectiveProjectSkillsOptions {
 }
 
 interface ResolveSkillVisibilityOptions {
-	/** Domain requesting visibility. Defaults to the coding domain for legacy agents. */
+	/** Domain requesting visibility. Defaults to the framework default domain. */
 	readonly requesterDomain?: string;
 	/** Domain resolver for loaded-domain visibility rules. */
 	readonly resolver?: DomainResolver;
@@ -108,7 +109,11 @@ export function resolveHiddenSkillNames(
 ): readonly string[] | undefined {
 	if (!options.resolver) return undefined;
 
-	const requesterDomain = options.requesterDomain ?? "coding";
+	const requesterDomain = resolveDefaultDomain({
+		explicitDomain: options.requesterDomain,
+		resolver: options.resolver,
+		purpose: "skill visibility resolution",
+	});
 	return [
 		...new Set(
 			options.resolver.registry.listAll().flatMap((domain) =>

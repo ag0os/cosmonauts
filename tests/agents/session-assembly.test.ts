@@ -14,6 +14,9 @@ import {
 	buildSessionParams,
 } from "../../lib/agents/session-assembly.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
+import { DomainRegistry } from "../../lib/domains/registry.ts";
+import { DomainResolver } from "../../lib/domains/resolver.ts";
+import type { LoadedDomain } from "../../lib/domains/types.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("session-assembly-");
@@ -56,7 +59,7 @@ async function setupMinimalDomains(
 	baseDir: string,
 	opts: { domain?: string; agentId?: string; capabilities?: string[] } = {},
 ): Promise<void> {
-	const domain = opts.domain ?? "coding";
+	const domain = opts.domain ?? "main";
 	const agentId = opts.agentId ?? "test-agent";
 	const files: Record<string, string> = {
 		"framework/base.md": "# Base Prompt\nYou are a helpful agent.",
@@ -66,6 +69,28 @@ async function setupMinimalDomains(
 		files[`shared/capabilities/${cap}.md`] = `# ${cap}\n${cap} capability.`;
 	}
 	await setupFiles(baseDir, files);
+}
+
+function makeDomain(
+	id: string,
+	overrides: Partial<LoadedDomain> = {},
+): LoadedDomain {
+	const rootDir = join(tmp.path, id);
+	return {
+		manifest: { id, description: `Domain ${id}` },
+		portable: false,
+		agents: new Map(),
+		capabilities: new Set(),
+		prompts: new Set(),
+		skills: new Set(),
+		extensions: new Set(),
+		chains: [],
+		provenance: [
+			{ origin: tmp.path, precedence: 0, kind: "domains-dir", rootDir },
+		],
+		rootDirs: [rootDir],
+		...overrides,
+	};
 }
 
 async function setupSharedSkills(
@@ -102,6 +127,15 @@ function makeOptions(
 
 describe("buildSessionParams", () => {
 	describe("prompt assembly and identity marker", () => {
+		it("loads main prompt resources for domainless definitions without a coding directory", async () => {
+			// @cosmo-behavior plan:coding-agnostic-framework#B-003
+			await setupMinimalDomains(tmp.path);
+			const params = await buildSessionParams(makeOptions());
+
+			expect(params.promptContent).toContain("You are a helpful agent.");
+			expect(params.promptContent).toContain("You are test-agent.");
+		});
+
 		it("assembles base + persona and appends identity marker", async () => {
 			await setupMinimalDomains(tmp.path);
 			const params = await buildSessionParams(makeOptions());
@@ -178,6 +212,23 @@ describe("buildSessionParams", () => {
 
 			expect(params.extensionPaths).toHaveLength(1);
 			expect(params.extensionPaths[0]).toContain("test-ext");
+		});
+
+		it("prefers main extension paths for domainless definitions", async () => {
+			// @cosmo-behavior plan:coding-agnostic-framework#B-004
+			await setupMinimalDomains(tmp.path);
+			await mkdir(join(tmp.path, "main", "extensions", "test-ext"), {
+				recursive: true,
+			});
+			await mkdir(join(tmp.path, "shared", "extensions", "test-ext"), {
+				recursive: true,
+			});
+			const def = makeDef({ extensions: ["test-ext"] });
+			const params = await buildSessionParams(makeOptions({ def }));
+
+			expect(params.extensionPaths).toEqual([
+				join(tmp.path, "main", "extensions", "test-ext"),
+			]);
 		});
 
 		it("appends extraExtensionPaths after resolved extensions", async () => {
@@ -274,6 +325,44 @@ describe("buildSessionParams", () => {
 				diagnostics: [],
 			});
 			expect(result?.skills).toEqual([]);
+		});
+
+		it("uses main as the requester domain for domainless skill visibility", async () => {
+			// @cosmo-behavior plan:coding-agnostic-framework#B-005
+			await setupMinimalDomains(tmp.path);
+			const resolver = new DomainResolver(
+				new DomainRegistry([
+					makeDomain("main", {
+						prompts: new Set(["test-agent"]),
+					}),
+					makeDomain("ruby-coding", {
+						manifest: {
+							id: "ruby-coding",
+							description: "Ruby coding",
+							internal: { skills: ["internal-skill"] },
+						},
+						skills: new Set(["public-skill", "internal-skill"]),
+					}),
+				]),
+			);
+			const params = await buildSessionParams(
+				makeOptions({ resolver, domainsDir: undefined }),
+			);
+
+			expect(params.skillsOverride).toBeTypeOf("function");
+			const result = params.skillsOverride?.({
+				skills: [
+					{ name: "main-skill" },
+					{ name: "public-skill" },
+					{ name: "internal-skill" },
+				] as never,
+				diagnostics: [],
+			});
+
+			expect(result?.skills.map((skill) => skill.name)).toEqual([
+				"main-skill",
+				"public-skill",
+			]);
 		});
 	});
 

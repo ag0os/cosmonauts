@@ -234,6 +234,35 @@ describe("buildSkillsOverride", () => {
 		]);
 	});
 
+	test("defaults omitted requester domain to main for direct visibility resolution", () => {
+		// @cosmo-behavior plan:coding-agnostic-framework#B-006
+		const resolver = new DomainResolver(
+			new DomainRegistry([
+				makeDomain("main", {
+					manifest: {
+						id: "main",
+						description: "Main",
+						internal: { skills: ["main-internal"] },
+					},
+					skills: new Set(["main-internal"]),
+				}),
+				makeDomain("coding", {
+					manifest: {
+						id: "coding",
+						description: "Coding",
+						internal: { skills: ["coding-internal"] },
+					},
+					skills: new Set(["coding-internal"]),
+				}),
+			]),
+		);
+
+		const hiddenSkillNames = resolveHiddenSkillNames({ resolver });
+
+		expect(hiddenSkillNames).toContain("coding-internal");
+		expect(hiddenSkillNames).not.toContain("main-internal");
+	});
+
 	test("wildcard cross-domain agents keep recursive public skills", () => {
 		// @cosmo-behavior plan:domain-authoring#B-019
 		const resolver = new DomainResolver(

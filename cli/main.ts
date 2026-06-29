@@ -31,7 +31,9 @@ import {
 } from "../lib/agents/runtime-identity.ts";
 import type { AgentDefinition } from "../lib/agents/types.ts";
 import { createDefaultProjectConfig } from "../lib/config/defaults.ts";
+import { resolveDefaultDomain } from "../lib/domains/default-domain.ts";
 import { assemblePrompts } from "../lib/domains/prompt-assembly.ts";
+import type { DomainResolver } from "../lib/domains/resolver.ts";
 import { buildInitBootstrapPrompt } from "../lib/init/prompt.ts";
 import { setSharedRegistry } from "../lib/interactive/agent-switch.ts";
 import { setSharedDomainBindings } from "../lib/interactive/domain-bindings.ts";
@@ -307,6 +309,23 @@ export function resolveInteractiveExtensionPaths(
 	];
 }
 
+export interface ResolveDumpPromptDomainOptions {
+	readonly definition: Pick<AgentDefinition, "id" | "domain">;
+	readonly resolver?: DomainResolver;
+	readonly resolveDefault?: typeof resolveDefaultDomain;
+}
+
+export function resolveDumpPromptDomain(
+	options: ResolveDumpPromptDomainOptions,
+): string {
+	const resolveDefault = options.resolveDefault ?? resolveDefaultDomain;
+	return resolveDefault({
+		explicitDomain: options.definition.domain,
+		resolver: options.resolver,
+		purpose: `dump-prompt for agent "${options.definition.id}"`,
+	});
+}
+
 function handleNoDomainGuard(): void {
 	printCliError(
 		"No domains installed. Install the coding domain to get started:",
@@ -436,7 +455,10 @@ async function handleDumpPrompt(
 	options: CliOptions,
 ): Promise<void> {
 	const definition = resolveDefaultLead(runtime, options);
-	const domain = definition.domain ?? "coding";
+	const domain = resolveDumpPromptDomain({
+		definition,
+		resolver: runtime.domainResolver,
+	});
 
 	let prompt = await assemblePrompts({
 		agentId: definition.id,
