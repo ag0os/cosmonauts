@@ -5,9 +5,17 @@ const SKILL_PATH = new URL(
 	"../../domains/shared/skills/task/SKILL.md",
 	import.meta.url,
 );
+const CAPABILITY_PATH = new URL(
+	"../../domains/shared/capabilities/tasks.md",
+	import.meta.url,
+);
 
 async function readSkill() {
 	return readFile(SKILL_PATH, "utf-8");
+}
+
+async function readCapabilities() {
+	return readFile(CAPABILITY_PATH, "utf-8");
 }
 
 describe("task skill", () => {
@@ -74,5 +82,23 @@ describe("task skill", () => {
 		expect(content).toContain(
 			"No `B-###` behavior ID or marker is required unless the bugfix belongs to an active plan.",
 		);
+	});
+
+	// @cosmo-behavior plan:task-id-system#B-011
+	it("documents readable sequential task ID caveats across task docs", async () => {
+		const docs = [await readSkill(), await readCapabilities()];
+
+		for (const content of docs) {
+			expect(content).toContain("sequential and human-readable");
+			expect(content).toContain("configured prefix");
+			expect(content).toContain("active task frontmatter");
+			expect(content).toContain("archived task filenames");
+			expect(content).toContain("not branch-global");
+			expect(content).toContain("Cross-branch duplicate IDs");
+			expect(content).toContain("accepted caveat");
+			expect(content).toContain("`cosmonauts task renumber`");
+			expect(content).toContain("FUTURE-only");
+			expect(content).toContain("not implemented");
+		}
 	});
 });

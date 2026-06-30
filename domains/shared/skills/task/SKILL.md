@@ -11,7 +11,11 @@ This skill is a dispatcher for task lifecycle, task file format, task tools, dep
 
 ## Task File Format
 
-A task lives at `missions/tasks/COSMO-NNN - Title.md`. It is a markdown file with YAML frontmatter.
+A task lives at `missions/tasks/<ID> - Title.md`. It is a markdown file with YAML frontmatter. The ID shape comes from task configuration: a configured prefix plus a numeric suffix, with optional zero padding (for example, `TASK-1`, `TASK-001`, or `COSMO-001`).
+
+Task IDs are sequential and human-readable, but they are not branch-global. New IDs are allocated from the highest matching configured-prefix number found in active task frontmatter under `missions/tasks/` and archived task filenames under `missions/archive/tasks/`. Archived task filenames reserve their numbers even after the active task file has moved out of `missions/tasks/`.
+
+Cross-branch duplicate IDs are an accepted caveat: two branches created from the same base can independently allocate the same next readable ID before they merge. Treat that as a manual reconciliation concern. A future `cosmonauts task renumber` command may provide a reconciliation option, but it is FUTURE-only and is not implemented; do not instruct workers to run it.
 
 ### Frontmatter
 
@@ -29,7 +33,7 @@ createdAt: 2026-02-09T10:00:00.000Z
 ---
 ```
 
-- `id` — Auto-assigned sequential ID in `COSMO-NNN` format.
+- `id` — Auto-assigned sequential, readable ID using the configured prefix and numeric suffix.
 - `title` — Short, descriptive name for the work.
 - `status` — Current state: `To Do`, `In Progress`, `Done`, `Blocked`.
 - `priority` — Importance level: `high`, `medium`, `low`.
