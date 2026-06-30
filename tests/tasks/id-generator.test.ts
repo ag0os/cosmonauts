@@ -227,14 +227,14 @@ describe("generateNextId", () => {
 		});
 
 		test("ignores lastIdNumber even when it is higher than supplied IDs", () => {
-			const config: ForgeTasksConfig = { prefix: "TASK", lastIdNumber: 50 };
+			const config = { prefix: "TASK", lastIdNumber: 50 };
 			const result = generateNextId(config, ["TASK-2"]);
 
 			expect(result).toBe("TASK-3");
 		});
 
 		test("ignores lastIdNumber for an empty ID set", () => {
-			const config: ForgeTasksConfig = {
+			const config = {
 				prefix: "TASK",
 				zeroPadding: 3,
 				lastIdNumber: 50,

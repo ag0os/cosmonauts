@@ -80,7 +80,7 @@ export async function loadConfig(
 		}
 
 		const content = await readFile(configPath, "utf-8");
-		return JSON.parse(content) as ForgeTasksConfig;
+		return stripLegacyConfigFields(JSON.parse(content) as ForgeTasksConfig);
 	} catch (error) {
 		// Return null for any errors (file doesn't exist, parse errors, etc.)
 		if (process.env.DEBUG) {
@@ -102,8 +102,14 @@ export async function saveConfig(
 	// Ensure directories exist before saving config
 	await ensureForgeDirectory(projectRoot);
 	const configPath = join(projectRoot, MISSIONS_DIR, TASKS_DIR, CONFIG_FILE);
-	const content = JSON.stringify(config, null, 2);
+	const content = JSON.stringify(stripLegacyConfigFields(config), null, 2);
 	await writeFile(configPath, `${content}\n`, "utf-8");
+}
+
+function stripLegacyConfigFields(config: ForgeTasksConfig): ForgeTasksConfig {
+	const { lastIdNumber: _lastIdNumber, ...currentConfig } =
+		config as ForgeTasksConfig & { lastIdNumber?: unknown };
+	return currentConfig;
 }
 
 /**

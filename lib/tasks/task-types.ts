@@ -165,8 +165,6 @@ export interface ForgeTasksConfig {
 	defaultPriority?: TaskPriority;
 	/** Default labels to apply to new tasks */
 	defaultLabels?: string[];
-	/** Last used ID number (persisted to survive archiving tasks) */
-	lastIdNumber?: number;
 }
 
 // ============================================================================

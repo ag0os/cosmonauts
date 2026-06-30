@@ -134,7 +134,8 @@ describe("TaskManager", () => {
 		});
 
 		it("should ignore lastIdNumber when allocating IDs", async () => {
-			await manager.init({ lastIdNumber: 50 });
+			const legacyConfig = { prefix: "TASK", lastIdNumber: 50 };
+			await manager.init(legacyConfig);
 
 			const task = await manager.createTask({ title: "Task" });
 

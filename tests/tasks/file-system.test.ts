@@ -162,6 +162,34 @@ describe("loadConfig / saveConfig", () => {
 		expect(loaded?.prefix).toBe("FEAT");
 		expect(loaded?.zeroPadding).toBe(5);
 	});
+
+	test("strips legacy lastIdNumber on load and save @cosmo-behavior plan:task-id-system#B-008", async () => {
+		await ensureForgeDirectory(testDir);
+		const configPath = join(testDir, "missions", "tasks", "config.json");
+		await writeFile(
+			configPath,
+			JSON.stringify({ prefix: "TASK", zeroPadding: 3, lastIdNumber: 42 }),
+			"utf-8",
+		);
+
+		const loaded = await loadConfig(testDir);
+
+		expect(loaded).toEqual({ prefix: "TASK", zeroPadding: 3 });
+		expect(loaded).not.toHaveProperty("lastIdNumber");
+
+		const legacyConfig = {
+			prefix: "BUG",
+			lastIdNumber: 99,
+		};
+		await saveConfig(testDir, legacyConfig);
+		const saved = JSON.parse(await readFile(configPath, "utf-8")) as Record<
+			string,
+			unknown
+		>;
+
+		expect(saved).toEqual({ prefix: "BUG" });
+		expect(saved).not.toHaveProperty("lastIdNumber");
+	});
 });
 
 describe("listTaskFiles", () => {
@@ -236,7 +264,7 @@ describe("listArchivedTaskFiles", () => {
 		await cleanupTestDir(testDir);
 	});
 
-	test("returns only archived .md task files sorted alphabetically", async () => {
+	test("returns only archived .md task files sorted alphabetically @cosmo-behavior plan:task-id-system#B-008", async () => {
 		const archiveTasksDir = join(testDir, "missions", "archive", "tasks");
 		await writeFile(
 			join(archiveTasksDir, "TASK-003 - Third.md"),
