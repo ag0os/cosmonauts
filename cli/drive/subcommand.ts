@@ -9,6 +9,7 @@ import { Command } from "commander";
 import { resolveConfiguredExternalBackend } from "../../lib/driver/backend-resolution.ts";
 import { createCosmonautsSubagentBackend } from "../../lib/driver/backends/cosmonauts-subagent.ts";
 import type { Backend } from "../../lib/driver/backends/types.ts";
+import { resolveDefaultDriveEnvelopePath } from "../../lib/driver/default-envelope.ts";
 import { runInline, startDetached } from "../../lib/driver/driver.ts";
 import { recordDurableFinalizerRetryFailure } from "../../lib/driver/durable-steps.ts";
 import { formatError } from "../../lib/driver/errors.ts";
@@ -43,6 +44,7 @@ import {
 	type DriverEvent,
 	type DriverResult,
 	type DriverRunSpec,
+	type PromptLayers,
 	type StateCommitPolicy,
 	validateDriverPlanSlug,
 } from "../../lib/driver/types.ts";
@@ -99,7 +101,12 @@ interface RunPidFile {
 	cosmonautsPath?: string;
 }
 
-type RunStatus = DriverResult["outcome"] | "dead" | "running" | "orphaned";
+type RunStatus =
+	| DriverResult["outcome"]
+	| "failed"
+	| "dead"
+	| "running"
+	| "orphaned";
 type DriverEventInput = DriverEvent extends infer Event
 	? Event extends DriverEvent
 		? Omit<Event, "runId" | "parentSessionId" | "timestamp">
@@ -189,6 +196,9 @@ export function createDriveRunCommand(): Command {
 
 function configureRunCommand(command: Command): void {
 	command
+		.description(
+			"Start a Drive run. Detached mode starts background Drive work and returns after launching. The launcher returning is not the run completing; poll with: cosmonauts run status <runId>",
+		)
 		.requiredOption("--plan <slug>", "Plan slug to run")
 		.option("--task-ids <id1,id2,...>", "Comma-separated task IDs to run")
 		.option(
@@ -208,7 +218,10 @@ function configureRunCommand(command: Command): void {
 			"State commit policy: final-state-commit or none",
 			parseStateCommitPolicy,
 		)
-		.option("--envelope <path>", "Prompt envelope path")
+		.option(
+			"--envelope <path>",
+			"Prompt envelope path (omit for the framework default Drive envelope)",
+		)
 		.option("--precondition <path>", "Prompt precondition path")
 		.option("--overrides <dir>", "Per-task prompt override directory")
 		.option(
@@ -375,6 +388,7 @@ function refuseUnsupportedDetachedBackend(
 
 function runDetached(spec: DriverRunSpec, deps: DriverRunDeps): void {
 	const handle = startDetached(spec, deps);
+	process.stdout.write(`${formatDetachedStartLine(handle.runId)}\n`);
 	printJsonStdout({
 		runId: handle.runId,
 		scope: handle.planSlug,
@@ -382,6 +396,10 @@ function runDetached(spec: DriverRunSpec, deps: DriverRunDeps): void {
 		workdir: handle.workdir,
 		eventLogPath: handle.eventLogPath,
 	});
+}
+
+function formatDetachedStartLine(runId: string): string {
+	return `Drive run started: ${runId} - poll with: cosmonauts run status ${runId}`;
 }
 
 async function runInlineMode(
@@ -560,7 +578,9 @@ async function classifyRunDir(
 
 	const pidFile = await readRunPid(runDir.workdir);
 	if (pidFile) {
-		const status = await classifyPidStatus(pidFile);
+		const status =
+			(await readLastTerminalEventStatus(runDir.workdir)) ??
+			(await classifyPidStatus(pidFile));
 		return {
 			runId: runDir.runId,
 			planSlug: runDir.planSlug,
@@ -578,7 +598,9 @@ async function classifyRunDir(
 		return undefined;
 	}
 
-	const status = await classifyInlineStatus(inlineState);
+	const status =
+		(await readLastTerminalEventStatus(runDir.workdir)) ??
+		(await classifyInlineStatus(inlineState));
 	return {
 		runId: runDir.runId,
 		planSlug: runDir.planSlug,
@@ -709,18 +731,56 @@ async function readInlineRunState(
 	}
 }
 
-async function readLastEventAt(workdir: string): Promise<string | undefined> {
-	let raw: string;
-	try {
-		raw = await readFile(join(workdir, "events.jsonl"), "utf-8");
-	} catch (error) {
-		if (isErrnoError(error) && error.code === "ENOENT") {
-			return undefined;
+async function readLastTerminalEventStatus(
+	workdir: string,
+): Promise<RunStatus | undefined> {
+	const lines = await readEventLogLines(workdir);
+	for (let index = lines.length - 1; index >= 0; index--) {
+		const status = readTerminalEventStatus(lines[index] ?? "");
+		if (status || readEventType(lines[index] ?? "")) {
+			return status;
 		}
-		throw error;
 	}
+	return undefined;
+}
 
-	const lines = raw.split("\n").filter((line) => line.trim().length > 0);
+function readTerminalEventStatus(line: string): RunStatus | undefined {
+	switch (readEventType(line)) {
+		case "run_completed":
+			return "completed";
+		case "run_aborted":
+			return "aborted";
+		case "run_failed":
+			return "failed";
+		case "run_finalization_failed":
+			return "finalization_failed";
+		default:
+			return undefined;
+	}
+}
+
+function readEventType(line: string): string | undefined {
+	try {
+		const parsed = JSON.parse(line) as { type?: unknown; event?: unknown };
+		if (typeof parsed.type === "string") {
+			return parsed.type;
+		}
+		if (
+			typeof parsed.event === "object" &&
+			parsed.event !== null &&
+			"type" in parsed.event &&
+			typeof parsed.event.type === "string"
+		) {
+			return parsed.event.type;
+		}
+		return undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+async function readLastEventAt(workdir: string): Promise<string | undefined> {
+	const lines = await readEventLogLines(workdir);
 	for (let index = lines.length - 1; index >= 0; index--) {
 		const timestamp = readEventTimestamp(lines[index] ?? "");
 		if (timestamp) {
@@ -728,6 +788,18 @@ async function readLastEventAt(workdir: string): Promise<string | undefined> {
 		}
 	}
 	return undefined;
+}
+
+async function readEventLogLines(workdir: string): Promise<string[]> {
+	try {
+		const raw = await readFile(join(workdir, "events.jsonl"), "utf-8");
+		return raw.split("\n").filter((line) => line.trim().length > 0);
+	} catch (error) {
+		if (isErrnoError(error) && error.code === "ENOENT") {
+			return [];
+		}
+		throw error;
+	}
 }
 
 function readEventTimestamp(line: string): string | undefined {
@@ -834,29 +906,21 @@ async function createRunSpec({
 		join(projectRoot, "missions", "sessions", planSlug, "runs", runId);
 	const eventLogPath =
 		resume?.spec.eventLogPath ?? join(workdir, "events.jsonl");
-	const envelopePath =
-		options.envelope ??
-		resume?.spec.promptTemplate.envelopePath ??
-		resolveDefaultEnvelopePath();
+	const effectiveProjectRoot = resume?.spec.projectRoot ?? projectRoot;
+	const promptTemplate = await resolvePromptTemplate({
+		projectRoot: effectiveProjectRoot,
+		options,
+		resumePromptTemplate: resume?.spec.promptTemplate,
+	});
 
 	return {
 		runId,
 		parentSessionId: resume?.spec.parentSessionId ?? "cli",
-		projectRoot: resume?.spec.projectRoot ?? projectRoot,
+		projectRoot: effectiveProjectRoot,
 		planSlug,
 		taskIds,
 		backendName,
-		promptTemplate: {
-			envelopePath: resolve(projectRoot, envelopePath),
-			preconditionPath: resolveOptionalPath(
-				projectRoot,
-				options.precondition ?? resume?.spec.promptTemplate.preconditionPath,
-			),
-			perTaskOverrideDir: resolveOptionalPath(
-				projectRoot,
-				options.overrides ?? resume?.spec.promptTemplate.perTaskOverrideDir,
-			),
-		},
+		promptTemplate,
 		preflightCommands: resume?.spec.preflightCommands ?? [],
 		postflightCommands: resume?.spec.postflightCommands ?? [],
 		branch: options.branch ?? resume?.spec.branch,
@@ -872,33 +936,66 @@ async function createRunSpec({
 	};
 }
 
+async function resolvePromptTemplate({
+	projectRoot,
+	options,
+	resumePromptTemplate,
+}: {
+	projectRoot: string;
+	options: DriveRunOptions;
+	resumePromptTemplate: PromptLayers | undefined;
+}): Promise<PromptLayers> {
+	const envelope = await resolveEnvelopeSnapshot({
+		projectRoot,
+		options,
+		resumePromptTemplate,
+	});
+	return {
+		...envelope,
+		preconditionPath: resolveOptionalPath(
+			projectRoot,
+			options.precondition ?? resumePromptTemplate?.preconditionPath,
+		),
+		perTaskOverrideDir: resolveOptionalPath(
+			projectRoot,
+			options.overrides ?? resumePromptTemplate?.perTaskOverrideDir,
+		),
+	};
+}
+
+async function resolveEnvelopeSnapshot({
+	projectRoot,
+	options,
+	resumePromptTemplate,
+}: {
+	projectRoot: string;
+	options: DriveRunOptions;
+	resumePromptTemplate: PromptLayers | undefined;
+}): Promise<Pick<PromptLayers, "envelopePath" | "envelopeContent">> {
+	if (resumePromptTemplate?.envelopeContent !== undefined) {
+		return {
+			envelopePath: resolve(projectRoot, resumePromptTemplate.envelopePath),
+			envelopeContent: resumePromptTemplate.envelopeContent,
+		};
+	}
+
+	const envelopePath = resolve(
+		projectRoot,
+		options.envelope ??
+			resumePromptTemplate?.envelopePath ??
+			resolveDefaultDriveEnvelopePath(),
+	);
+	return {
+		envelopePath,
+		envelopeContent: await readFile(envelopePath, "utf-8"),
+	};
+}
+
 function resolveOptionalPath(
 	projectRoot: string,
 	path: string | undefined,
 ): string | undefined {
 	return path ? resolve(projectRoot, path) : undefined;
-}
-
-function resolveDefaultEnvelopePath(): string {
-	const frameworkRoot = resolve(
-		dirname(fileURLToPath(import.meta.url)),
-		"..",
-		"..",
-	);
-	const envelopePath = join(
-		frameworkRoot,
-		"bundled",
-		"coding",
-		"drivers",
-		"templates",
-		"envelope.md",
-	);
-	if (existsSync(envelopePath)) {
-		return envelopePath;
-	}
-	throw new Error(
-		"Missing --envelope and no bundled coding driver envelope was found.",
-	);
 }
 
 async function clearRunCompletion(workdir: string): Promise<void> {

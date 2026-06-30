@@ -244,15 +244,21 @@ describe("driver durable dual-write", () => {
 
 			expect(legacyEvents).toEqual(
 				expect.arrayContaining([
+					expect.objectContaining({ type: "driver_diagnostic" }),
 					expect.objectContaining({ type: "run_aborted" }),
 				]),
+			);
+			expect(
+				legacyEvents.findIndex((event) => event.type === "run_aborted"),
+			).toBeGreaterThan(
+				legacyEvents.findIndex((event) => event.type === "driver_diagnostic"),
 			);
 			expect(diagnostics.records()).toEqual([
 				expect.objectContaining({
 					type: "drive_durable_event_diagnostic",
 					code: "drive_durable_run_setup_failed",
 					details: expect.objectContaining({
-						legacyEventType: "run_aborted",
+						legacyEventType: "driver_diagnostic",
 					}),
 				}),
 			]);

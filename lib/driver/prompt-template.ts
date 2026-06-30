@@ -68,7 +68,10 @@ export async function renderPromptForTask(
 	options: RenderPromptOptions = {},
 ): Promise<string> {
 	const promptLayers = layers as PromptLayersWithWorkdir;
-	const sections = [await readFile(promptLayers.envelopePath, "utf-8")];
+	const sections = [
+		promptLayers.envelopeContent ??
+			(await readFile(promptLayers.envelopePath, "utf-8")),
+	];
 
 	if (promptLayers.preconditionPath) {
 		sections.push(await readFile(promptLayers.preconditionPath, "utf-8"));

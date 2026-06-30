@@ -190,6 +190,12 @@ async function prepareSpawnSession(
 		domainsDir,
 		resolver,
 	);
+	emitSpawnEvent(config, {
+		type: "agent_resolved",
+		sessionId: session.sessionId,
+		requestedRole: config.role,
+		resolvedAgentId: qualifyResolvedAgentId(def),
+	});
 
 	// Create the tracker before prompt so spawn_agent tool calls can register
 	// children as soon as the first turn starts.
@@ -324,6 +330,18 @@ function toSpawnFailure(err: unknown): SpawnResult {
 	};
 }
 
+function emitSpawnEvent(config: SpawnConfig, event: SpawnEvent): void {
+	try {
+		config.onEvent?.(event);
+	} catch {
+		// Listeners must not break the spawner.
+	}
+}
+
+function qualifyResolvedAgentId(def: { id: string; domain?: string }): string {
+	return def.domain ? `${def.domain}/${def.id}` : def.id;
+}
+
 function subscribeToSpawnEvents(
 	session: AgentSession,
 	config: SpawnConfig,
@@ -338,11 +356,7 @@ function subscribeToSpawnEvents(
 			return;
 		}
 
-		try {
-			config.onEvent?.(attachSessionId(mapped, session.sessionId));
-		} catch {
-			// Listeners must not break the spawner.
-		}
+		emitSpawnEvent(config, attachSessionId(mapped, session.sessionId));
 	});
 }
 

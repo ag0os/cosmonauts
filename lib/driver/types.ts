@@ -8,7 +8,7 @@ export type BackendName = Extract<
 >;
 
 export const DETACHED_DEFAULT_TASK_THRESHOLD = 4;
-export const RESERVED_DRIVER_PLAN_SLUGS = new Set(["chain"]);
+const RESERVED_DRIVER_PLAN_SLUGS = new Set(["chain"]);
 
 export function validateDriverPlanSlug(planSlug: string): void {
 	if (RESERVED_DRIVER_PLAN_SLUGS.has(planSlug)) {
@@ -72,6 +72,7 @@ export interface ContradictedBlockAnnotation {
 
 export interface PromptLayers {
 	envelopePath: string;
+	envelopeContent?: string;
 	preconditionPath?: string;
 	perTaskOverrideDir?: string;
 }
@@ -92,6 +93,30 @@ interface DriverEventBase {
 	runId: string;
 	parentSessionId: string;
 	timestamp: string;
+}
+
+export interface DriverRunAbortDetails {
+	pendingTasks: {
+		count: number;
+		taskIds: string[];
+	};
+	cause:
+		| {
+				type: "unmet-dependencies";
+				blockingTaskIds: string[];
+		  }
+		| {
+				type: "backend-setup-failure";
+				message: string;
+				phase?: string;
+				taskId?: string;
+		  }
+		| {
+				type: "exception";
+				message: string;
+				phase: string;
+				taskId?: string;
+		  };
 }
 
 export type DriverEvent =
@@ -182,10 +207,23 @@ export type DriverEvent =
 			details?: { previousRunId?: string; previousPid?: number };
 	  })
 	| (DriverEventBase & {
+			type: "driver_diagnostic";
+			level: "error" | "warning" | "info";
+			code: string;
+			message: string;
+			phase?: string;
+			taskId?: string;
+			details?: Record<string, unknown>;
+	  })
+	| (DriverEventBase & {
 			type: "run_completed";
 			summary: { total: number; done: number; blocked: number };
 	  })
-	| (DriverEventBase & { type: "run_aborted"; reason: string })
+	| (DriverEventBase & {
+			type: "run_aborted";
+			reason: string;
+			details?: DriverRunAbortDetails;
+	  })
 	| (DriverEventBase & {
 			type: "run_finalization_failed";
 			phase: FinalizationPhase;
@@ -201,6 +239,11 @@ export type DriverEvent =
 	  });
 
 export type SpawnActivity =
+	| {
+			kind: "agent_resolved";
+			requestedRole: string;
+			resolvedAgentId: string;
+	  }
 	| { kind: "tool_start"; toolName: string; summary: string }
 	| { kind: "tool_end"; toolName: string; isError: boolean }
 	| { kind: "turn_start" }
@@ -236,6 +279,7 @@ export type DriverResult =
 			outcome: "aborted" | "blocked";
 			blockedTaskId?: string;
 			blockedReason?: string;
+			abortDetails?: DriverRunAbortDetails;
 	  })
 	| (DriverResultBase & {
 			outcome: "finalization_failed";

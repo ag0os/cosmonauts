@@ -30,6 +30,20 @@ describe("parsePiFlags", () => {
 		expect(result.warnings).toEqual([]);
 	});
 
+	test("can preserve a disabled flag for a command-local option", () => {
+		const result = parsePiFlags(["run", "drive", "--mode", "detached"], {
+			preserveDisabledFlag: ({ arg, key, remaining }) =>
+				arg === "--mode" &&
+				key === "mode" &&
+				remaining[0] === "run" &&
+				remaining[1] === "drive",
+		});
+
+		expect(result.flags).toEqual({});
+		expect(result.remaining).toEqual(["run", "drive", "--mode", "detached"]);
+		expect(result.warnings).toEqual([]);
+	});
+
 	test("accumulates repeated theme flags", () => {
 		const result = parsePiFlags(["--theme", "dark", "--theme", "light"]);
 

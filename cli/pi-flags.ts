@@ -148,13 +148,26 @@ export interface PiFlagParseResult {
 	warnings: string[];
 }
 
+interface DisabledPiFlagContext {
+	arg: string;
+	key: FlagKey;
+	remaining: readonly string[];
+}
+
+export interface PiFlagParseOptions {
+	preserveDisabledFlag?: (context: DisabledPiFlagContext) => boolean;
+}
+
 /**
  * Parse argv, extracting enabled Pi flags and returning the rest.
  *
  * Disabled flags produce a warning and are dropped.
  * Unknown flags are left in `remaining` for the caller.
  */
-export function parsePiFlags(argv: string[]): PiFlagParseResult {
+export function parsePiFlags(
+	argv: string[],
+	options: PiFlagParseOptions = {},
+): PiFlagParseResult {
 	const flags: Record<string, unknown> = {};
 	const remaining: string[] = [];
 	const warnings: string[] = [];
@@ -167,6 +180,14 @@ export function parsePiFlags(argv: string[]): PiFlagParseResult {
 		}
 
 		if (DISABLED_CLI_LOOKUP.has(arg)) {
+			const key = DISABLED_CLI_LOOKUP.get(arg);
+			if (
+				key &&
+				options.preserveDisabledFlag?.({ arg, key, remaining: [...remaining] })
+			) {
+				remaining.push(arg);
+				continue;
+			}
 			i = consumeDisabledFlag(argv, i, warnings);
 			continue;
 		}

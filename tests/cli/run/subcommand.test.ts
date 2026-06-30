@@ -167,6 +167,62 @@ describe("cosmonauts run", () => {
 		expect(output.stderr()).toBe("");
 	});
 
+	test("preserves drive --mode as a command option without Pi disabled-flag warnings", () => {
+		const parsed = parseCliRuntimeOptions([
+			"--theme",
+			"solarized",
+			"run",
+			"drive",
+			"--plan",
+			DRIVE_PLAN,
+			"--mode",
+			"detached",
+		]);
+
+		expect(parsed.options).toEqual({
+			piFlags: { themes: ["solarized"] },
+		});
+		expect(parsed.remaining).toEqual([
+			"run",
+			"drive",
+			"--plan",
+			DRIVE_PLAN,
+			"--mode",
+			"detached",
+		]);
+		expect(parsed.warnings).toEqual([]);
+	});
+
+	test("preserves drive --mode when a cosmonauts runtime option precedes the command", () => {
+		// Regression: a cosmonauts option (e.g. --domain) lands in `remaining`, so a
+		// fixed-position remaining[0]==="run" check failed and --mode was dropped
+		// (warned + the run silently fell back to inline).
+		const parsed = parseCliRuntimeOptions([
+			"--domain",
+			"coding",
+			"run",
+			"drive",
+			"--plan",
+			DRIVE_PLAN,
+			"--mode",
+			"detached",
+		]);
+
+		expect(parsed.options).toEqual({
+			piFlags: {},
+			domain: "coding",
+		});
+		expect(parsed.remaining).toEqual([
+			"run",
+			"drive",
+			"--plan",
+			DRIVE_PLAN,
+			"--mode",
+			"detached",
+		]);
+		expect(parsed.warnings).toEqual([]);
+	});
+
 	// @cosmo-behavior plan:orchestration-surface-consolidation#B-012
 	test("starts Drive through run drive and rejects the reserved chain plan slug", async () => {
 		const fixture = await setupDriveFixture(2);
@@ -219,7 +275,12 @@ describe("cosmonauts run", () => {
 		]);
 
 		expect(driverMocks.startDetached).toHaveBeenCalledTimes(1);
-		expect(JSON.parse(output.stdout())).toMatchObject({
+		const detachedStdout = output.stdout().trim().split("\n");
+		const detachedRunId = driverMocks.startDetached.mock.calls[0]?.[0].runId;
+		expect(detachedStdout[0]).toBe(
+			`Drive run started: ${detachedRunId} - poll with: cosmonauts run status ${detachedRunId}`,
+		);
+		expect(JSON.parse(detachedStdout.at(-1) ?? "")).toMatchObject({
 			runId: expect.stringMatching(/^run-/),
 			scope: DRIVE_PLAN,
 			planSlug: DRIVE_PLAN,
@@ -317,6 +378,68 @@ describe("cosmonauts run", () => {
 				status: "completed",
 				statusSource: "event",
 				metadata: { source: "test" },
+			}),
+		]);
+		expect(output.stderr()).toBe("");
+	});
+
+	test("status and list reconcile a running record from a terminal event", async () => {
+		const store = new FileRunStore({
+			rootDir: join(temp.path, "missions", "sessions"),
+		});
+		const record = await store.createRun({
+			scope: "plan-a",
+			runId: "run-stale-running",
+			status: "running",
+			metadata: { source: "drive" },
+		});
+		await writeFile(
+			record.eventsPath,
+			[
+				JSON.stringify({
+					seq: 1,
+					timestamp: "2026-06-24T17:00:00.000Z",
+					runId: record.runId,
+					event: { type: "run_started", runId: record.runId },
+				}),
+				JSON.stringify({
+					seq: 2,
+					timestamp: "2026-06-24T17:01:00.000Z",
+					runId: record.runId,
+					event: {
+						type: "run_failed",
+						runId: record.runId,
+						reason: "operator stopped run",
+					},
+				}),
+			].join("\n"),
+			"utf-8",
+		);
+
+		await parseRun(["status", "run-stale-running"]);
+		expect(JSON.parse(output.stdout())).toMatchObject({
+			found: true,
+			scope: "plan-a",
+			runId: "run-stale-running",
+			status: "failed",
+			statusSource: "event",
+			recordStatus: "running",
+			eventStatus: "failed",
+			updatedAt: "2026-06-24T17:01:00.000Z",
+		});
+		expect(output.stderr()).toBe("");
+
+		resetOutput();
+		await parseRun(["list", "--scope", "plan-a"]);
+		expect(JSON.parse(output.stdout())).toEqual([
+			expect.objectContaining({
+				scope: "plan-a",
+				runId: "run-stale-running",
+				status: "failed",
+				statusSource: "event",
+				recordStatus: "running",
+				updatedAt: "2026-06-24T17:01:00.000Z",
+				metadata: { source: "drive" },
 			}),
 		]);
 		expect(output.stderr()).toBe("");

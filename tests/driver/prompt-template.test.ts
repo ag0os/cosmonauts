@@ -32,6 +32,26 @@ describe("prompt-template renderPromptForTask", () => {
 		expect(rendered).toContain("Prompt Template Fixture");
 	});
 
+	test("renders the snapshotted envelope content instead of rereading the live file", async () => {
+		const { taskManager, taskId, envelopePath, workdir } =
+			await setupPromptTest({
+				envelope: "Live envelope instructions",
+			});
+		const layers = {
+			envelopePath,
+			envelopeContent: "Snapshotted envelope instructions",
+			workdir,
+		} satisfies TestPromptLayers;
+		await writeFile(envelopePath, "Mutated envelope instructions", "utf-8");
+
+		const promptPath = await renderPromptForTask(taskId, layers, taskManager);
+
+		const rendered = await readFile(promptPath, "utf-8");
+		expect(rendered).toContain("Snapshotted envelope instructions");
+		expect(rendered).not.toContain("Live envelope instructions");
+		expect(rendered).not.toContain("Mutated envelope instructions");
+	});
+
 	test("renders envelope plus precondition before the task body", async () => {
 		const { taskManager, taskId, envelopePath, preconditionPath, workdir } =
 			await setupPromptTest({

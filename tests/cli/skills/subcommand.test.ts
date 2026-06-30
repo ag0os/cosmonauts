@@ -33,8 +33,8 @@ function skill(overrides: Partial<DiscoveredSkill> = {}): DiscoveredSkill {
 	return {
 		name: "plan",
 		description: "How to structure plans",
-		domain: "coding",
-		dirPath: "/abs/coding/skills/plan",
+		domain: "alpha",
+		dirPath: "/abs/alpha/skills/plan",
 		...overrides,
 	};
 }
@@ -62,8 +62,8 @@ describe("renderSkillsList", () => {
 		skill({
 			name: "tdd",
 			description: "Test-first development",
-			domain: "coding",
-			dirPath: "/abs/coding/skills/tdd",
+			domain: "alpha",
+			dirPath: "/abs/alpha/skills/tdd",
 		}),
 		skill({
 			name: "pi",
@@ -82,7 +82,7 @@ describe("renderSkillsList", () => {
 			expect(items[0]).toEqual({
 				name: "plan",
 				description: "How to structure plans",
-				domain: "coding",
+				domain: "alpha",
 			});
 			// dirPath is an absolute filesystem detail; agents shouldn't see it.
 			expect(
@@ -95,8 +95,8 @@ describe("renderSkillsList", () => {
 		expect(renderSkillsList(skills, "plain")).toEqual({
 			kind: "lines",
 			lines: [
-				"plan\tcoding\tHow to structure plans",
-				"tdd\tcoding\tTest-first development",
+				"plan\talpha\tHow to structure plans",
+				"tdd\talpha\tTest-first development",
 				"pi\tshared\tPi framework reference",
 			],
 		});
@@ -108,10 +108,10 @@ describe("renderSkillsList", () => {
 		if (rendered.kind === "lines") {
 			// All rows should share leading-padding alignment with two-space gutter.
 			expect(rendered.lines[0]).toMatch(
-				/^ {2}plan {2}\s*coding\s* {2}How to structure plans$/,
+				/^ {2}plan {2}\s*alpha\s* {2}How to structure plans$/,
 			);
 			expect(rendered.lines[1]).toMatch(
-				/^ {2}tdd\s+ {2}\s*coding\s* {2}Test-first development$/,
+				/^ {2}tdd\s+ {2}\s*alpha\s* {2}Test-first development$/,
 			);
 			expect(rendered.lines[2]).toMatch(
 				/^ {2}pi\s+ {2}\s*shared\s* {2}Pi framework reference$/,
@@ -161,12 +161,12 @@ describe("createSkillsProgram list — runtime discovery", () => {
 		output = captureCliOutput();
 		process.exitCode = undefined;
 		runtimeMocks.discoverFrameworkBundledPackageDirs.mockResolvedValue([
-			"/framework/bundled/coding",
+			"/framework/bundled/alpha",
 		]);
 		runtimeMocks.create.mockResolvedValue({
 			domains: [
 				makeDomain("shared", "/framework/domains/shared"),
-				makeDomain("coding", "/framework/bundled/coding"),
+				makeDomain("alpha", "/framework/bundled/alpha"),
 			],
 			projectConfig: {},
 		});
@@ -179,6 +179,7 @@ describe("createSkillsProgram list — runtime discovery", () => {
 	});
 
 	it("bootstraps a runtime that includes bundled package dirs", async () => {
+		// @cosmo-behavior plan:coding-agnostic-framework#B-024
 		await createSkillsProgram().parseAsync(["--json", "list"], {
 			from: "user",
 		});
@@ -188,7 +189,7 @@ describe("createSkillsProgram list — runtime discovery", () => {
 		).toHaveBeenCalledWith(expect.stringMatching(/cosmonauts$/));
 		expect(runtimeMocks.create).toHaveBeenCalledWith(
 			expect.objectContaining({
-				bundledDirs: ["/framework/bundled/coding"],
+				bundledDirs: ["/framework/bundled/alpha"],
 				pluginDirs: undefined,
 				domainOverride: undefined,
 			}),
@@ -200,7 +201,7 @@ describe("createSkillsProgram list — runtime discovery", () => {
 			[
 				"--json",
 				"--domain",
-				"coding",
+				"alpha",
 				"--plugin-dir",
 				"/tmp/plugin-a",
 				"--plugin-dir",
@@ -212,7 +213,7 @@ describe("createSkillsProgram list — runtime discovery", () => {
 
 		expect(runtimeMocks.create).toHaveBeenCalledWith(
 			expect.objectContaining({
-				domainOverride: "coding",
+				domainOverride: "alpha",
 				pluginDirs: ["/tmp/plugin-a", "/tmp/plugin-b"],
 			}),
 		);
@@ -226,10 +227,10 @@ describe("createSkillsProgram list — runtime discovery", () => {
 		const { join } = await import("node:path");
 
 		const root = await mkdtemp(join(tmpdir(), "skills-runtime-"));
-		const codingSkills = join(root, "coding", "skills");
-		await mkdir(join(codingSkills, "tdd"), { recursive: true });
+		const alphaSkills = join(root, "alpha", "skills");
+		await mkdir(join(alphaSkills, "tdd"), { recursive: true });
 		await writeFile(
-			join(codingSkills, "tdd", "SKILL.md"),
+			join(alphaSkills, "tdd", "SKILL.md"),
 			"---\nname: tdd\ndescription: TDD\n---\n",
 		);
 
@@ -241,7 +242,7 @@ describe("createSkillsProgram list — runtime discovery", () => {
 		);
 
 		runtimeMocks.create.mockResolvedValueOnce({
-			domains: [makeDomain("coding", join(root, "coding"))],
+			domains: [makeDomain("alpha", join(root, "alpha"))],
 			projectConfig: { skillPaths: [extras] },
 		});
 
@@ -253,6 +254,6 @@ describe("createSkillsProgram list — runtime discovery", () => {
 		const names = items.map((i) => i.name).sort();
 		expect(names).toEqual(["custom", "tdd"]);
 		expect(items.find((i) => i.name === "custom")?.domain).toBe("project");
-		expect(items.find((i) => i.name === "tdd")?.domain).toBe("coding");
+		expect(items.find((i) => i.name === "tdd")?.domain).toBe("alpha");
 	});
 });

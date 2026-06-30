@@ -25,6 +25,7 @@ When making changes, first understand the file's code conventions:
 
 - One structural change per commit. Never change behavior and structure in the same commit.
 - When the same type or status check is scattered across multiple places, centralize it with polymorphic dispatch or pattern matching rather than adding another copy.
+- For migration-shaped edits that move or rename a file, directory, exported symbol, command, config key, or path, grep the whole repository source tree for the old name/path before calling the work complete. Cover runtime source first (`lib/`, `cli/`, `bin/`, `domains/`, `bundled/`, `scripts/`), then tests and docs (`tests/`, `docs/`, and any other tracked references), and update every stale reference.
 
 ## Conditional Logic
 

@@ -1,7 +1,8 @@
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createRegistryFromDomains } from "../../lib/agents/index.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import {
@@ -17,17 +18,18 @@ import {
 	resolveTools,
 } from "../../lib/orchestration/definition-resolution.ts";
 import { scanDomainSources } from "../../lib/packages/scanner.ts";
+import { writeProjectInstalledDomainPackage } from "../helpers/domain-package-fixture.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const REPO_ROOT = resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const DOMAINS_DIR = join(REPO_ROOT, "domains");
-const BUNDLED_CODING_DIR = join(REPO_ROOT, "bundled", "coding");
 const MAIN_DOMAIN_DIR = join(DOMAINS_DIR, "main");
 const SHARED_DOMAIN_DIR = join(DOMAINS_DIR, "shared");
 const MAIN_AGENT_REF = "main/cosmo";
 const MAIN_AGENT_ID = MAIN_AGENT_REF.slice("main/".length);
 
 const tmp = useTempDir("main-domain-");
+let packageProjectRoot: string;
 
 let domains: LoadedDomain[] = [];
 let mainDomain: LoadedDomain;
@@ -35,15 +37,21 @@ let cosmo: AgentDefinition;
 let resolver: DomainResolver;
 
 beforeAll(async () => {
-	domains = await loadDomainsFromSources([
-		{ domainsDir: DOMAINS_DIR, origin: "builtin", precedence: 0 },
-		{
-			domainsDir: BUNDLED_CODING_DIR,
-			sourceType: "domain-root",
-			origin: "bundled:coding",
-			precedence: 0.5,
+	packageProjectRoot = await mkdtemp(join(tmpdir(), "main-domain-package-"));
+	await writeProjectInstalledDomainPackage(packageProjectRoot, {
+		packageName: "synthetic-coding",
+		domainId: "coding",
+		lead: "cody",
+		agents: [{ id: "cody" }],
+		prompts: {
+			cody: "You're Cody from a synthetic coding package.",
 		},
-	]);
+	});
+	const sources = await scanDomainSources({
+		builtinDomainsDir: DOMAINS_DIR,
+		projectRoot: packageProjectRoot,
+	});
+	domains = await loadDomainsFromSources(sources);
 
 	const loadedMain = domains.find((domain) => domain.manifest.id === "main");
 	if (!loadedMain) throw new Error("Main domain not loaded");
@@ -56,12 +64,15 @@ beforeAll(async () => {
 	resolver = new DomainResolver(new DomainRegistry(domains));
 });
 
+afterAll(async () => {
+	await rm(packageProjectRoot, { recursive: true, force: true });
+});
+
 describe("main domain built-in discovery", () => {
 	it("loads as a runtime built-in domain source", async () => {
 		const sources = await scanDomainSources({
 			builtinDomainsDir: DOMAINS_DIR,
 			projectRoot: tmp.path,
-			bundledDirs: [BUNDLED_CODING_DIR],
 		});
 
 		expect(sources[0]).toMatchObject({
@@ -91,6 +102,7 @@ describe("main domain built-in discovery", () => {
 	});
 
 	it("validates main/cosmo and resolves the drive capability", () => {
+		// @cosmo-behavior plan:coding-agnostic-framework#B-015
 		const diagnostics = validateDomains(domains).filter(
 			(diagnostic) =>
 				diagnostic.domain === "main" &&

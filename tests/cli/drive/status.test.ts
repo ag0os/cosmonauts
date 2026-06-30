@@ -185,6 +185,32 @@ describe("cosmonauts run drive compat status", () => {
 		});
 	});
 
+	test("dead pid with terminal run_aborted event reports aborted", async () => {
+		const workdir = await writeRunDir(PLAN, RUN_ID);
+		await writePid(workdir, 4321, localIso(2026, 0, 1, 0, 0, 0));
+		await writeDriverEvent(workdir, {
+			type: "run_aborted",
+			reason: "operator stopped run",
+			timestamp: localIso(2026, 0, 1, 0, 3, 0),
+		});
+		killMock.mockImplementation(() => {
+			throw errno("ESRCH");
+		});
+
+		await parseDrive(["status", RUN_ID, "--plan", PLAN]);
+
+		expect(childProcessMocks.execFile).not.toHaveBeenCalled();
+		expect(output.stdoutJson()).toMatchObject({
+			runId: RUN_ID,
+			planSlug: PLAN,
+			status: "aborted",
+			workdir,
+			mode: "detached",
+			pid: 4321,
+			lastEventAt: localIso(2026, 0, 1, 0, 3, 0),
+		});
+	});
+
 	test("pid alive and start-time mismatch reports orphaned", async () => {
 		const workdir = await writeRunDir(PLAN, RUN_ID);
 		await writePid(workdir, 1234, localIso(2026, 0, 1, 0, 0, 0));
@@ -475,6 +501,17 @@ async function writeEvent(workdir: string, timestamp: string): Promise<void> {
 	await writeFile(
 		join(workdir, "events.jsonl"),
 		`${JSON.stringify({ type: "task_started", timestamp })}\n`,
+		"utf-8",
+	);
+}
+
+async function writeDriverEvent(
+	workdir: string,
+	event: Record<string, unknown>,
+): Promise<void> {
+	await writeFile(
+		join(workdir, "events.jsonl"),
+		`${JSON.stringify(event)}\n`,
 		"utf-8",
 	);
 }

@@ -12,7 +12,7 @@ const tmp = useTempDir("agent-package-build-");
 function makeAgent(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
 	return {
 		id: "explorer",
-		domain: "coding",
+		domain: "alpha",
 		description: "Explore a codebase.",
 		capabilities: ["core"],
 		model: "anthropic/claude-sonnet-4-5",
@@ -169,6 +169,37 @@ describe("buildAgentPackage", () => {
 		);
 	});
 
+	it("uses main as the final source-agent prompt fallback while preserving source identity", async () => {
+		// @cosmo-behavior plan:coding-agnostic-framework#B-007
+		await writeDomainPromptFiles("main", "Main explorer persona.");
+		const sourceAgent = makeAgent({
+			domain: undefined,
+			model: "anthropic/domainless",
+		});
+
+		const agentPackage = await buildAgentPackage({
+			definition: makeDefinition({
+				sourceAgent: "explorer",
+				prompt: { kind: "source-agent" },
+			}),
+			agentRegistry: new AgentRegistry([sourceAgent]),
+			domainsDir: join(tmp.path, "domains"),
+			frameworkPromptsDir: join(tmp.path, "framework-prompts"),
+			skillPaths: [],
+			target: "claude-cli",
+		});
+
+		expect(agentPackage.sourceAgentId).toBe("explorer");
+		expect(agentPackage.model).toBe("anthropic/domainless");
+		expect(agentPackage.systemPrompt).toContain("main core capability.");
+		expect(agentPackage.systemPrompt).toContain("Main explorer persona.");
+		expect(agentPackage.systemPrompt).toContain(
+			"Package ID: sample-agent-claude",
+		);
+		expect(agentPackage.systemPrompt).toContain("Source Agent ID: explorer");
+		expect(agentPackage.systemPrompt).not.toContain("coding core capability.");
+	});
+
 	it("embeds allowlisted full skill markdown under a packaged skills heading", async () => {
 		await writeFlatSkill("flat", "# Flat Skill\n\nFull flat body.");
 		await writeDirectorySkill(
@@ -207,7 +238,7 @@ describe("buildAgentPackage", () => {
 
 		const agentPackage = await buildAgentPackage({
 			definition: makeDefinition({
-				sourceAgent: "coding/explorer",
+				sourceAgent: "alpha/explorer",
 				skills: { mode: "source-agent" },
 			}),
 			agentRegistry: new AgentRegistry([sourceAgent]),
@@ -235,7 +266,7 @@ describe("buildAgentPackage", () => {
 		await expect(
 			buildAgentPackage({
 				definition: makeDefinition({
-					sourceAgent: "coding/missing",
+					sourceAgent: "alpha/missing",
 					prompt: { kind: "source-agent" },
 				}),
 				agentRegistry: new AgentRegistry([]),
@@ -243,7 +274,7 @@ describe("buildAgentPackage", () => {
 				target: "claude-cli",
 			}),
 		).rejects.toThrow(
-			/source agent.*coding\/missing.*prompt\.kind "source-agent"/i,
+			/source agent.*alpha\/missing.*prompt\.kind "source-agent"/i,
 		);
 	});
 
@@ -251,7 +282,7 @@ describe("buildAgentPackage", () => {
 		await expect(
 			buildAgentPackage({
 				definition: makeDefinition({
-					sourceAgent: "coding/missing",
+					sourceAgent: "alpha/missing",
 					skills: { mode: "source-agent" },
 				}),
 				agentRegistry: new AgentRegistry([]),
@@ -259,7 +290,7 @@ describe("buildAgentPackage", () => {
 				target: "claude-cli",
 			}),
 		).rejects.toThrow(
-			/source agent.*coding\/missing.*skills\.mode "source-agent"/i,
+			/source agent.*alpha\/missing.*skills\.mode "source-agent"/i,
 		);
 	});
 
@@ -273,7 +304,7 @@ describe("buildAgentPackage", () => {
 		await expect(
 			buildAgentPackage({
 				definition: makeDefinition({
-					sourceAgent: "coding/explorer",
+					sourceAgent: "alpha/explorer",
 					prompt: { kind: "source-agent" },
 				}),
 				agentRegistry: new AgentRegistry([sourceAgent]),

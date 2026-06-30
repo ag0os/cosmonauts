@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { hasInstalledDomain, selectRunMode } from "../../cli/main.ts";
+import { hasRunnableDefaultDomain, selectRunMode } from "../../cli/main.ts";
 import type { CliOptions } from "../../cli/types.ts";
 import type { CosmonautsRuntime } from "../../lib/runtime.ts";
 
@@ -26,21 +26,33 @@ function runtimeWithDomains(...ids: string[]): CosmonautsRuntime {
 function runModeForDomains(...ids: string[]): ReturnType<typeof selectRunMode> {
 	return selectRunMode(
 		cliOptions(),
-		hasInstalledDomain(runtimeWithDomains(...ids)),
+		hasRunnableDefaultDomain(runtimeWithDomains(...ids)),
 	);
 }
 
 describe("no-domain guard", () => {
-	test("no-domain guard fires after main built-in", () => {
-		expect(hasInstalledDomain(runtimeWithDomains("shared", "main"))).toBe(
-			false,
+	test("shared and main built-ins are runnable without an additional domain", () => {
+		// @cosmo-behavior plan:coding-agnostic-framework#B-022
+		expect(hasRunnableDefaultDomain(runtimeWithDomains("shared", "main"))).toBe(
+			true,
 		);
-		expect(runModeForDomains("shared", "main")).toBe("no-domain-guard");
+		expect(runModeForDomains("shared", "main")).toBe("interactive");
+		expect(
+			selectRunMode(
+				cliOptions({ print: true, prompt: "go" }),
+				hasRunnableDefaultDomain(runtimeWithDomains("shared", "main")),
+			),
+		).toBe("print");
+	});
+
+	test("no-domain guard still fires when main is absent", () => {
+		expect(hasRunnableDefaultDomain(runtimeWithDomains("shared"))).toBe(false);
+		expect(runModeForDomains("shared")).toBe("no-domain-guard");
 	});
 
 	test("no-domain guard does not fire with coding domain present", () => {
 		expect(
-			hasInstalledDomain(runtimeWithDomains("shared", "main", "coding")),
+			hasRunnableDefaultDomain(runtimeWithDomains("shared", "main", "coding")),
 		).toBe(true);
 		expect(runModeForDomains("shared", "main", "coding")).toBe("interactive");
 	});

@@ -26,12 +26,14 @@ Setup first: establish the review context (branch, base, scenario), load the pla
 ### 2. Establish review context
 
 1. Determine the current branch: `git rev-parse --abbrev-ref HEAD`.
+2. Establish the local integration base before running any scoped diff, audit, or review-panel triage. Prefer the local base branch and its merge-base with `HEAD`; this `LOCAL_INTEGRATION_BASE` is the boundary for the work under review.
 2. Resolve the base reference in this order:
    - `main` (if it exists and is not the current branch)
    - `master` (same check)
    - `origin/main` (if `git rev-parse --verify origin/main` succeeds)
 
    The local base branch (`main`, then `master`) is the feature's true fork point; `origin/main` can be behind it (work committed locally but not yet pushed), so using `origin/main` as the base would pull already-merged commits into the review range. Fall back to `origin/main` only when no local base branch exists.
+   If a local base branch exists, compute the merge-base against that local branch and scope all changed-file lists, diffs, and detected-analysis-tool audit commands from that merge-base. Commits, files, or findings that are reachable only from the local base side, or that landed before this merge-base, are already merged integration history; treat them as outside the review scope and do not flag them as out-of-scope violations for the feature branch.
 3. Determine the review scenario:
    - **Feature branch** (current branch ≠ base): compute `MERGE_BASE=$(git merge-base HEAD <base>)` and set the review range to `MERGE_BASE..HEAD`.
    - **On the base branch itself** (current branch = main/master): there is no branch diff. Check for working-tree changes with `git status --porcelain` — this surfaces modifications, staged changes, and untracked files. If it is empty, there is nothing to review — skip to final merge-readiness validation. Otherwise the review scope has two parts: tracked modifications + staged changes via `git diff HEAD`, AND untracked files via `git ls-files --others --exclude-standard` (treat each as a new-file addition and read full contents). Either part may be empty individually — review whatever is present.
@@ -103,6 +105,8 @@ Also append executable universal gate claims from `universal_gate_status` only w
 
 In addition, append one claim per entry in `verifier_criteria` (from step 2.5). For each, the claim label is the criterion text and the command to run is the criterion's `command` field. Pass the `id` (e.g., `QC-003`) alongside each claim so failures can be attributed back to the contract.
 
+For any migration-shaped task or diff that moves or renames files, directories, exported symbols, commands, config keys, or hard-coded paths, require a stale-reference/dead-code sweep as soon as that migration task completes, not only during the final quality stage. The sweep must cover the full repository source surface: runtime source directories (`lib/`, `cli/`, `bin/`, `domains/`, `bundled/`, `scripts/`) plus `tests/`, `docs/`, and any other tracked references. Prioritize runtime source findings over tests/docs cleanup, and route stale runtime references as correctness blockers. When a detected analysis tool supplies a dead-code or stale-reference audit, run it with source-directory coverage broad enough to include all of those directories; otherwise add explicit verifier claims that grep/search for the old identifiers or paths named by the migration.
+
 Include the specific commands the verifier should run for each claim. The verifier will report pass/fail with evidence for each in its final completion message.
 
 After verifier completion, parse the full verification report from the completion message. Record any failed checks for remediation routing, noting which failures correspond to `QC-*` contract criteria.
@@ -125,6 +129,16 @@ Evaluate each lens:
 Record the applicable lenses in working state as `active_specialists`. If none apply, the review step spawns only `reviewer`.
 
 This triage is your judgment — err toward inclusion when a lens plausibly applies, but do NOT spawn a specialist when its lens has no surface in the diff. A specialist that returns `Overall: no findings in scope` is wasted cost. The generalist `reviewer` is the safety net for borderline cases.
+
+### 3.6. Blast-radius lens for shared primitives
+
+During review setup, scan the changed files for newly introduced or modified shared primitives or utilities (resolver, validator, error path, common helper, or similar cross-cutting function). When one is present, make the blast-radius lens explicit in the `reviewer` spawn prompt: require the reviewer to enumerate the pre-existing call sites that now invoke the primitive, verify that each call site's throw, return, empty-result, and warning semantics did not regress, and require regression test evidence at each affected existing call site. Missing call-site regression coverage is review evidence, not an optional note.
+
+### 3.7. Regression-semantics lens for changed shared code
+
+In addition to the blast-radius lens, apply a regression-semantics check whenever the diff changes shared code that existing callers already use: common modules, helpers, validators, resolvers, adapters, parsers, CLI utilities, error paths, or other cross-cutting behavior. This applies even when the change does not introduce a new shared primitive.
+
+Make this lens explicit in the `reviewer` spawn prompt. Require the reviewer to compare old-vs-new behavior for existing callers and answer whether the change altered any externally observable semantics: error vs warning, throw vs return, non-empty result vs empty result, default/fallback value, diagnostic text, or silent success/failure behavior. If semantics changed intentionally, require matching caller-facing tests or contract updates. If semantics changed accidentally, treat it as a regression finding. Missing regression evidence for existing callers is review evidence, not an optional note.
 
 ### 4. Run clean-context review
 
@@ -229,3 +243,5 @@ If the worktree is dirty because a final commit is missing, spawn `fixer` to cre
 6. **Produce concrete status at exit**: pass/fail, checks run, findings count, and unresolved blockers.
 7. **A finding is resolved only when its specific fix is verified present** — never because a later fresh review failed to re-surface it. Carry every finding forward by id across rounds until explicitly closed; a high/P1 finding left open blocks sign-off.
 8. **Auxiliary analysis-tool findings (complexity, duplication, audit) get the narrowest fix that clears the specific flag** — never a broad refactor of already-passing code inside a remediation pass.
+9. **Scope starts at the local integration merge-base.** Do not review against stale `origin/main` when a local `main` or `master` exists, and do not report already-merged local-base history as a feature-branch scope violation.
+10. **Shared-code behavior changes need regression-semantics evidence.** For existing callers, explicitly verify throw/return/empty-result/warning behavior and require tests or contract updates for intentional changes.

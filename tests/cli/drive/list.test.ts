@@ -172,6 +172,32 @@ describe("cosmonauts run drive compat list", () => {
 		});
 	});
 
+	test("lists terminal run_aborted event status for dead pids", async () => {
+		const workdir = await writeRunDir("plan-a", "run-aborted");
+		await writePid(workdir, 2222, localIso(2026, 0, 1, 0, 0, 0));
+		await writeDriverEvent(workdir, {
+			type: "run_aborted",
+			reason: "operator stopped run",
+			timestamp: localIso(2026, 0, 1, 0, 3, 0),
+		});
+
+		await parseDrive(["list"]);
+
+		expect(output.stdoutJson()).toEqual({
+			runs: [
+				expect.objectContaining({
+					runId: "run-aborted",
+					planSlug: "plan-a",
+					status: "aborted",
+					workdir,
+					mode: "detached",
+					pid: 2222,
+					lastEventAt: localIso(2026, 0, 1, 0, 3, 0),
+				}),
+			],
+		});
+	});
+
 	// @cosmo-behavior plan:durable-run-store-events#B-009
 	test("ignores normalized-only runtime directories when listing drive runs", async () => {
 		const completedWorkdir = await writeRunDir("plan-a", "run-completed");
@@ -312,6 +338,17 @@ async function writeEvent(workdir: string, timestamp: string): Promise<void> {
 	await writeFile(
 		join(workdir, "events.jsonl"),
 		`${JSON.stringify({ type: "task_started", timestamp })}\n`,
+		"utf-8",
+	);
+}
+
+async function writeDriverEvent(
+	workdir: string,
+	event: Record<string, unknown>,
+): Promise<void> {
+	await writeFile(
+		join(workdir, "events.jsonl"),
+		`${JSON.stringify(event)}\n`,
 		"utf-8",
 	);
 }

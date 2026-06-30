@@ -18,6 +18,36 @@ const tmp = useTempDir("prompts-test-");
 beforeEach(async () => {
 	await mkdir(join(tmp.path, "capabilities"), { recursive: true });
 	await mkdir(join(tmp.path, "agents", "coding"), { recursive: true });
+	await mkdir(join(tmp.path, "alpha", "capabilities"), { recursive: true });
+	await mkdir(join(tmp.path, "alpha", "prompts"), { recursive: true });
+	await writeFile(
+		join(tmp.path, "alpha", "capabilities", "alpha-readwrite.md"),
+		"Alpha readwrite capability.",
+	);
+	await writeFile(
+		join(tmp.path, "alpha", "capabilities", "alpha-readonly.md"),
+		"Alpha readonly capability.",
+	);
+	for (const persona of [
+		"cody",
+		"planner",
+		"task-manager",
+		"coordinator",
+		"worker",
+		"quality-manager",
+		"integration-verifier",
+		"reviewer",
+		"fixer",
+	]) {
+		const title = persona
+			.split("-")
+			.map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
+			.join(" ");
+		await writeFile(
+			join(tmp.path, "alpha", "prompts", `${persona}.md`),
+			`# ${title}\n\nSynthetic ${persona} persona.`,
+		);
+	}
 });
 
 // ============================================================================
@@ -191,7 +221,7 @@ describe("renderRuntimeTemplate", () => {
 });
 
 // ============================================================================
-// Domain-based prompt file paths (integration tests against real directories)
+// Domain-based prompt file paths
 // ============================================================================
 
 /** Resolve domain directories relative to the framework prompts directory. */
@@ -202,9 +232,8 @@ const SHARED_CAPABILITIES_DIR = join(
 	"shared",
 	"capabilities",
 );
-const CODING_DIR = join(PROJECT_ROOT, "bundled", "coding");
-const CODING_CAPABILITIES_DIR = join(CODING_DIR, "capabilities");
-const CODING_PROMPTS_DIR = join(CODING_DIR, "prompts");
+const alphaCapabilitiesDir = () => join(tmp.path, "alpha", "capabilities");
+const alphaPromptsDir = () => join(tmp.path, "alpha", "prompts");
 
 describe("domain-based prompt file paths", () => {
 	it("loads base prompt from lib/prompts/framework", async () => {
@@ -227,15 +256,16 @@ describe("domain-based prompt file paths", () => {
 		}
 	});
 
-	it("loads coding capability files from bundled/coding/capabilities", async () => {
-		const capabilities = ["coding-readwrite", "coding-readonly"];
+	it("loads synthetic domain capability files from a domain capabilities directory", async () => {
+		// @cosmo-behavior plan:coding-agnostic-framework#B-017
+		const capabilities = ["alpha-readwrite", "alpha-readonly"];
 		for (const ref of capabilities) {
-			const content = await loadPrompt(ref, CODING_CAPABILITIES_DIR);
+			const content = await loadPrompt(ref, alphaCapabilitiesDir());
 			expect(content.length).toBeGreaterThan(0);
 		}
 	});
 
-	it("loads all coding persona files from bundled/coding/prompts", async () => {
+	it("loads all synthetic persona files from a domain prompts directory", async () => {
 		const personas = [
 			"cody",
 			"planner",
@@ -248,16 +278,13 @@ describe("domain-based prompt file paths", () => {
 			"fixer",
 		];
 		for (const ref of personas) {
-			const content = await loadPrompt(ref, CODING_PROMPTS_DIR);
+			const content = await loadPrompt(ref, alphaPromptsDir());
 			expect(content.length).toBeGreaterThan(0);
 		}
 	});
 
 	it("loads the integration-verifier persona prompt", async () => {
-		const content = await loadPrompt(
-			"integration-verifier",
-			CODING_PROMPTS_DIR,
-		);
+		const content = await loadPrompt("integration-verifier", alphaPromptsDir());
 		expect(content.length).toBeGreaterThan(0);
 		expect(content).toContain("# Integration Verifier");
 	});
@@ -268,13 +295,13 @@ describe("domain-based prompt file paths", () => {
 			["tasks", "spawning", "todo"],
 			SHARED_CAPABILITIES_DIR,
 		);
-		const codingCaps = await loadPrompts(
-			["coding-readwrite"],
-			CODING_CAPABILITIES_DIR,
+		const alphaCaps = await loadPrompts(
+			["alpha-readwrite"],
+			alphaCapabilitiesDir(),
 		);
-		const persona = await loadPrompt("cody", CODING_PROMPTS_DIR);
+		const persona = await loadPrompt("cody", alphaPromptsDir());
 
-		const content = [base, sharedCaps, codingCaps, persona].join("\n\n");
+		const content = [base, sharedCaps, alphaCaps, persona].join("\n\n");
 		expect(content.length).toBeGreaterThan(0);
 		// Verify ordering: base content appears before persona
 		const baseIdx = content.indexOf("# Cosmonauts");

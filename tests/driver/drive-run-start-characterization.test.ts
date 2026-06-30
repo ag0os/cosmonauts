@@ -160,6 +160,145 @@ describe("runStart Drive graph characterization", () => {
 		).toEqual(repair.taskIds);
 		expect(repairRun?.metadata?.driveTaskIds).toEqual(repair.taskIds);
 	});
+
+	test("emits structured unmet-dependencies details when pending tasks drain", async () => {
+		const fixture = await setupFixture("pending-unmet-dependencies", 2);
+		const store = new FileRunStore({ rootDir: fixture.sessionsRoot });
+		const compiled = await compileDriveRunToGraph({
+			spec: fixture.spec,
+			store,
+		});
+		const ref = { scope: PLAN_SLUG, runId: fixture.spec.runId };
+		const [firstTaskId, secondTaskId] = fixture.taskIds;
+		const firstTaskStep = compiled.steps.find(
+			(step) => step.id === firstTaskId,
+		);
+		const firstStatusStep = compiled.steps.find(
+			(step) => step.id === `finalizer-task-status-${firstTaskId}`,
+		);
+		if (!firstTaskId || !firstTaskStep || !firstStatusStep || !secondTaskId) {
+			throw new Error("Fixture did not create expected graph steps.");
+		}
+
+		await store.writeStepRecord(ref, {
+			...firstTaskStep,
+			status: "completed",
+			result: {
+				outcome: "success",
+				summary: "First task completed before scheduler drain.",
+				artifacts: [],
+				nextAction: "continue",
+			},
+		});
+		await store.writeStepRecord(ref, {
+			...firstStatusStep,
+			status: "failed",
+			result: {
+				outcome: "failed",
+				summary: "Task status finalizer failed before scheduler drain.",
+				artifacts: [],
+				nextAction: "abort_run",
+			},
+		});
+
+		const result = await runDriveOnGraph(
+			fixture.spec,
+			createRunContext(fixture),
+		);
+
+		expect(result).toMatchObject({
+			runId: fixture.spec.runId,
+			outcome: "aborted",
+			abortDetails: {
+				pendingTasks: { count: 1, taskIds: [secondTaskId] },
+				cause: {
+					type: "unmet-dependencies",
+					blockingTaskIds: [firstTaskId],
+				},
+			},
+		});
+		expect(fixture.events.at(-1)).toMatchObject({
+			type: "run_aborted",
+			reason: "scheduler drained",
+			details: {
+				pendingTasks: { count: 1, taskIds: [secondTaskId] },
+				cause: {
+					type: "unmet-dependencies",
+					blockingTaskIds: [firstTaskId],
+				},
+			},
+		});
+	});
+
+	test("does not attach backend-setup-failure details to a normal task block", async () => {
+		// Regression: a task the backend blocks (e.g. unchecked acceptance criteria,
+		// needs human input) has no scheduler/setup cause and no unmet dependencies,
+		// so it must NOT carry abortDetails claiming a backend setup failure.
+		const fixture = await setupFixture("normal-task-block", 1, {
+			acceptanceCriteria: ["Behavior is verified"],
+		});
+
+		const result = await runDriveOnGraph(
+			fixture.spec,
+			createRunContext(fixture),
+		);
+
+		expect(result).toMatchObject({
+			runId: fixture.spec.runId,
+			outcome: "blocked",
+		});
+		expect((result as { abortDetails?: unknown }).abortDetails).toBeUndefined();
+	});
+
+	test("emits a diagnostic before aborting on scheduler-ending exceptions", async () => {
+		const fixture = await setupFixture("scheduler-ending-exception");
+		const ctx = createRunContext(fixture);
+		ctx.taskManager = new Proxy(fixture.taskManager, {
+			get(target, property, receiver) {
+				if (property === "listTasks") {
+					return async () => {
+						throw new Error("task listing exploded");
+					};
+				}
+				return Reflect.get(target, property, receiver);
+			},
+		}) as TaskManager;
+
+		await expect(runDriveOnGraph(fixture.spec, ctx)).rejects.toThrow(
+			"task listing exploded",
+		);
+
+		const diagnosticIndex = fixture.events.findIndex(
+			(event) => event.type === "driver_diagnostic",
+		);
+		const abortedIndex = fixture.events.findIndex(
+			(event) => event.type === "run_aborted",
+		);
+		expect(diagnosticIndex).toBeGreaterThanOrEqual(0);
+		expect(abortedIndex).toBeGreaterThan(diagnosticIndex);
+		expect(fixture.events[diagnosticIndex]).toMatchObject({
+			type: "driver_diagnostic",
+			level: "error",
+			code: "drive_scheduler_exception",
+			message: "task listing exploded",
+			phase: "scheduler",
+			details: {
+				pendingTasks: { count: 0, taskIds: [] },
+			},
+		});
+		expect(fixture.events[abortedIndex]).toMatchObject({
+			type: "run_aborted",
+			reason: "task listing exploded",
+			details: {
+				pendingTasks: { count: 0, taskIds: [] },
+				cause: {
+					type: "exception",
+					message: "task listing exploded",
+					phase: "scheduler",
+				},
+			},
+		});
+	});
 });
 
 interface Fixture {
@@ -172,7 +311,11 @@ interface Fixture {
 	events: DriverEvent[];
 }
 
-async function setupFixture(name: string, taskCount = 1): Promise<Fixture> {
+async function setupFixture(
+	name: string,
+	taskCount = 1,
+	options: { acceptanceCriteria?: string[] } = {},
+): Promise<Fixture> {
 	const projectRoot = join(temp.path, name, "project");
 	const sessionsRoot = join(projectRoot, "missions", "sessions");
 	const runId = `run-${name}`;
@@ -186,6 +329,9 @@ async function setupFixture(name: string, taskCount = 1): Promise<Fixture> {
 			title: `${name} Drive characterization fixture ${index + 1}`,
 			description: "Exercise Drive graph state.",
 			labels: [`plan:${PLAN_SLUG}`],
+			...(options.acceptanceCriteria
+				? { acceptanceCriteria: options.acceptanceCriteria }
+				: {}),
 		});
 		taskIds.push(task.id);
 	}

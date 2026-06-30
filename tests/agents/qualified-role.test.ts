@@ -12,7 +12,7 @@ import {
 
 describe("qualifyRole", () => {
 	it("qualifies an id with a domain", () => {
-		expect(qualifyRole("worker", "coding")).toBe("coding/worker");
+		expect(qualifyRole("worker", "alpha")).toBe("alpha/worker");
 	});
 
 	it("returns the id as-is when domain is omitted", () => {
@@ -24,7 +24,7 @@ describe("qualifyRole", () => {
 	});
 
 	it("handles hyphenated ids", () => {
-		expect(qualifyRole("task-manager", "coding")).toBe("coding/task-manager");
+		expect(qualifyRole("task-manager", "alpha")).toBe("alpha/task-manager");
 	});
 });
 
@@ -34,7 +34,7 @@ describe("qualifyRole", () => {
 
 describe("unqualifyRole", () => {
 	it("strips the domain prefix from a qualified role", () => {
-		expect(unqualifyRole("coding/worker")).toBe("worker");
+		expect(unqualifyRole("alpha/worker")).toBe("worker");
 	});
 
 	it("returns an unqualified role unchanged", () => {
@@ -46,7 +46,7 @@ describe("unqualifyRole", () => {
 	});
 
 	it("handles hyphenated roles", () => {
-		expect(unqualifyRole("coding/quality-manager")).toBe("quality-manager");
+		expect(unqualifyRole("alpha/quality-manager")).toBe("quality-manager");
 	});
 });
 
@@ -56,8 +56,8 @@ describe("unqualifyRole", () => {
 
 describe("splitRole", () => {
 	it("splits a qualified role into domain and id", () => {
-		expect(splitRole("coding/worker")).toEqual({
-			domain: "coding",
+		expect(splitRole("alpha/worker")).toEqual({
+			domain: "alpha",
 			id: "worker",
 		});
 	});
@@ -70,15 +70,15 @@ describe("splitRole", () => {
 	});
 
 	it("splits on the first slash only", () => {
-		expect(splitRole("coding/sub/worker")).toEqual({
-			domain: "coding",
+		expect(splitRole("alpha/sub/worker")).toEqual({
+			domain: "alpha",
 			id: "sub/worker",
 		});
 	});
 
 	it("handles hyphenated ids", () => {
-		expect(splitRole("coding/task-manager")).toEqual({
-			domain: "coding",
+		expect(splitRole("alpha/task-manager")).toEqual({
+			domain: "alpha",
 			id: "task-manager",
 		});
 	});
@@ -103,9 +103,9 @@ describe("roleToConfigKey", () => {
 	});
 
 	it("maps a qualified role by stripping the domain first", () => {
-		expect(roleToConfigKey("coding/task-manager")).toBe("taskManager");
-		expect(roleToConfigKey("coding/worker")).toBe("worker");
-		expect(roleToConfigKey("coding/integration-verifier")).toBe(
+		expect(roleToConfigKey("alpha/task-manager")).toBe("taskManager");
+		expect(roleToConfigKey("alpha/worker")).toBe("worker");
+		expect(roleToConfigKey("alpha/integration-verifier")).toBe(
 			"integrationVerifier",
 		);
 	});
@@ -115,6 +115,6 @@ describe("roleToConfigKey", () => {
 	});
 
 	it("returns undefined for unknown qualified roles", () => {
-		expect(roleToConfigKey("coding/unknown-agent")).toBeUndefined();
+		expect(roleToConfigKey("alpha/unknown-agent")).toBeUndefined();
 	});
 });

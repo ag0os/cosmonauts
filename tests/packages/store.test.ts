@@ -30,7 +30,7 @@ const VALID_MANIFEST = {
 	name: "my-pkg",
 	version: "1.0.0",
 	description: "A test package",
-	domains: [{ name: "coding", path: "domains/coding" }],
+	domains: [{ name: "alpha", path: "domains/alpha" }],
 };
 
 let testDir: string;

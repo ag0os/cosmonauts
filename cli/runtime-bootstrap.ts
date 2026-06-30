@@ -54,7 +54,17 @@ export function parseThinkingLevel(value: string): ThinkingLevel {
 export function parseCliRuntimeOptions(
 	argv: readonly string[],
 ): CliRuntimeOptionParseResult {
-	const piResult = parsePiFlags([...argv]);
+	const piResult = parsePiFlags([...argv], {
+		// Preserve `--mode` for `cosmonauts run drive` (where it is a real Drive
+		// option) instead of warning/dropping it as a disabled Pi flag. Detect the
+		// `run drive` command anywhere in the already-collected args, so a global
+		// runtime option preceding the command (e.g. `--domain coding run drive
+		// --mode detached`) does not shift it out of a fixed positional slot.
+		preserveDisabledFlag: ({ arg, key, remaining }) =>
+			key === "mode" &&
+			arg === "--mode" &&
+			remaining.some((a, idx) => a === "run" && remaining[idx + 1] === "drive"),
+	});
 	const options: CliRuntimeOptions = { piFlags: piResult.flags };
 	const remaining: string[] = [];
 

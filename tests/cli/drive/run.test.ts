@@ -1,8 +1,12 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createDriveCompatProgram } from "../../../cli/drive/subcommand.ts";
+import {
+	DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH,
+	resolveDefaultDriveEnvelopePath,
+} from "../../../lib/driver/default-envelope.ts";
 import type { DriverDeps } from "../../../lib/driver/driver.ts";
 import { DEFAULT_TASK_TIMEOUT_MS } from "../../../lib/driver/run-one-task.ts";
 import {
@@ -153,6 +157,12 @@ describe("cosmonauts run drive compat run", () => {
 		expect(normalizedHelp).toContain(
 			`--task-timeout <ms> Per-task timeout in milliseconds (default: ${DEFAULT_TASK_TIMEOUT_MS}ms / 30 minutes)`,
 		);
+		expect(normalizedHelp).toContain(
+			"Detached mode starts background Drive work and returns after launching.",
+		);
+		expect(normalizedHelp).toContain(
+			"The launcher returning is not the run completing; poll with: cosmonauts run status <runId>",
+		);
 	});
 
 	test("parses run arguments into DriverRunSpec fields", async () => {
@@ -200,6 +210,7 @@ describe("cosmonauts run drive compat run", () => {
 		});
 		expect(spec.promptTemplate).toEqual({
 			envelopePath: fixture.envelopePath,
+			envelopeContent: "Envelope\n",
 			preconditionPath,
 			perTaskOverrideDir: overridesPath,
 		});
@@ -219,6 +230,9 @@ describe("cosmonauts run drive compat run", () => {
 
 		expect(driverMocks.startDetached).toHaveBeenCalledTimes(1);
 		expect(firstStartDetachedSpec().taskIds).toHaveLength(5);
+		expect(output.stdout()).toContain(
+			`Drive run started: ${firstStartDetachedSpec().runId} - poll with: cosmonauts run status ${firstStartDetachedSpec().runId}`,
+		);
 		expect(output.stdoutJson()).toMatchObject({
 			planSlug: PLAN,
 			eventLogPath: expect.stringContaining("events.jsonl"),
@@ -322,6 +336,98 @@ describe("cosmonauts run drive compat run", () => {
 		expect(spec.commitPolicy).toBe("backend-commits");
 		expect(spec.stateCommitPolicy).toBe("final-state-commit");
 		expect(resolveStateCommitPolicy(spec)).toBe("final-state-commit");
+	});
+
+	test("persists the explicit envelope content snapshot into the run spec", async () => {
+		const fixture = await setupFixture(1);
+		await writeFile(
+			fixture.envelopePath,
+			"Launch envelope snapshot\n",
+			"utf-8",
+		);
+
+		await parseDrive([
+			"--plan",
+			PLAN,
+			"--task-ids",
+			fixture.tasks[0]?.id ?? "TASK-001",
+			"--mode",
+			"inline",
+			"--envelope",
+			fixture.envelopePath,
+		]);
+
+		const spec = firstRunInlineSpec();
+		const persisted = JSON.parse(
+			await readFile(join(spec.workdir, "spec.json"), "utf-8"),
+		) as DriverRunSpec;
+		expect(spec.promptTemplate).toMatchObject({
+			envelopePath: fixture.envelopePath,
+			envelopeContent: "Launch envelope snapshot\n",
+		});
+		expect(persisted.promptTemplate).toMatchObject({
+			envelopePath: fixture.envelopePath,
+			envelopeContent: "Launch envelope snapshot\n",
+		});
+	});
+
+	// @cosmo-behavior plan:coding-agnostic-framework#B-011
+	test("uses the framework default envelope when --envelope is omitted", async () => {
+		const fixture = await setupFixture(1);
+		const expectedEnvelopePath = resolveDefaultDriveEnvelopePath();
+		const expectedContent = await readFile(expectedEnvelopePath, "utf-8");
+
+		await parseDrive([
+			"--plan",
+			PLAN,
+			"--task-ids",
+			fixture.tasks[0]?.id ?? "TASK-001",
+			"--mode",
+			"inline",
+		]);
+
+		const spec = firstRunInlineSpec();
+		expect(spec.promptTemplate.envelopePath).toBe(expectedEnvelopePath);
+		expect(relative(originalCwd, spec.promptTemplate.envelopePath)).toBe(
+			DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH,
+		);
+		expect(spec.promptTemplate.envelopePath).not.toContain("bundled/coding");
+		expect(spec.promptTemplate.envelopeContent).toBe(expectedContent);
+	});
+
+	// @cosmo-behavior plan:coding-agnostic-framework#B-025
+	test("honors an explicit legacy bundled envelope path", async () => {
+		const fixture = await setupFixture(1);
+		const legacyEnvelopePath = join(
+			originalCwd,
+			"bundled",
+			"coding",
+			"drivers",
+			"templates",
+			"envelope.md",
+		);
+		const legacyContent = await readFile(legacyEnvelopePath, "utf-8");
+
+		await parseDrive([
+			"--plan",
+			PLAN,
+			"--task-ids",
+			fixture.tasks[0]?.id ?? "TASK-001",
+			"--mode",
+			"inline",
+			"--envelope",
+			legacyEnvelopePath,
+		]);
+
+		const spec = firstRunInlineSpec();
+		expect(spec.promptTemplate.envelopePath).toBe(legacyEnvelopePath);
+		expect(spec.promptTemplate.envelopePath).toContain(
+			"bundled/coding/drivers/templates/envelope.md",
+		);
+		expect(spec.promptTemplate.envelopePath).not.toContain(
+			"bundled/coding/coding",
+		);
+		expect(spec.promptTemplate.envelopeContent).toBe(legacyContent);
 	});
 
 	test("routes explicit inline and detached modes without invoking real backends", async () => {
@@ -451,6 +557,39 @@ describe("cosmonauts run drive compat run", () => {
 
 		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
 		expect(firstRunInlineSpec().runId).toBe("run-previous");
+	});
+
+	test("resume reuses the persisted envelope snapshot instead of resolving a live path", async () => {
+		const fixture = await setupFixture(2);
+		const overrideEnvelopePath = join(temp.path, "override-envelope.md");
+		await writeFile(overrideEnvelopePath, "Override envelope\n", "utf-8");
+		const persistedEnvelopePath = join(temp.path, "previous-envelope.md");
+		await writeResumeRun(
+			fixture.tasks.map((task) => task.id),
+			[],
+			{
+				promptTemplate: {
+					envelopePath: persistedEnvelopePath,
+					envelopeContent: "Persisted envelope snapshot\n",
+				},
+			},
+		);
+		await rm(persistedEnvelopePath, { force: true });
+
+		await parseDrive([
+			"--plan",
+			PLAN,
+			"--resume",
+			"run-previous",
+			"--envelope",
+			overrideEnvelopePath,
+		]);
+
+		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
+		expect(firstRunInlineSpec().promptTemplate).toMatchObject({
+			envelopePath: persistedEnvelopePath,
+			envelopeContent: "Persisted envelope snapshot\n",
+		});
 	});
 
 	// @cosmo-behavior plan:drive-resilience-state-model#B-005
@@ -1644,7 +1783,19 @@ function attachJsonHelpers(
 	capture: ReturnType<typeof captureCliOutput>,
 ): ReturnType<typeof captureCliOutput> & JsonOutput {
 	return Object.assign(capture, {
-		stdoutJson: () => JSON.parse(capture.stdout()) as Record<string, unknown>,
+		stdoutJson: () => JSON.parse(lastJsonLine(capture.stdout())),
 		stderrJson: () => JSON.parse(capture.stderr()) as Record<string, unknown>,
 	});
+}
+
+function lastJsonLine(output: string): string {
+	const line = output
+		.trim()
+		.split("\n")
+		.reverse()
+		.find((candidate) => candidate.startsWith("{"));
+	if (!line) {
+		throw new Error(`No JSON object line found in output: ${output}`);
+	}
+	return line;
 }

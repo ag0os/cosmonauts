@@ -246,8 +246,11 @@ describe("discoverSkills", () => {
 	});
 
 	test("packaged skill directory names match frontmatter names", async () => {
+		// @cosmo-behavior plan:coding-agnostic-framework#B-017
+		const alphaSkills = join(tmp.path, "alpha", "skills");
+		await writeSkill(alphaSkills, "synthetic-alpha", "Synthetic alpha skill");
 		const skillRoots = [
-			join(process.cwd(), "bundled", "coding", "skills"),
+			alphaSkills,
 			join(process.cwd(), "domains", "main", "skills"),
 			join(process.cwd(), "domains", "shared", "skills"),
 		];

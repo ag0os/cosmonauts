@@ -51,7 +51,7 @@ async function writeDefinition(
 
 const sourceAgent = {
 	id: "explorer",
-	domain: "coding",
+	domain: "alpha",
 	description: "Explore a codebase.",
 	capabilities: ["core", "coding-readonly"],
 	model: "anthropic/claude-sonnet-4-5",
@@ -286,9 +286,9 @@ describe("definitionFromAgent", () => {
 
 		expect(definition).toEqual({
 			schemaVersion: 1,
-			id: "coding-explorer-claude-cli",
+			id: "alpha-explorer-claude-cli",
 			description: sourceAgent.description,
-			sourceAgent: "coding/explorer",
+			sourceAgent: "alpha/explorer",
 			prompt: { kind: "source-agent" },
 			tools: { preset: "readonly" },
 			skills: { mode: "source-agent" },
@@ -301,8 +301,8 @@ describe("definitionFromAgent", () => {
 		const definition = definitionFromAgent(sourceAgent, "codex");
 
 		expect(definition).toMatchObject({
-			id: "coding-explorer-codex",
-			sourceAgent: "coding/explorer",
+			id: "alpha-explorer-codex",
+			sourceAgent: "alpha/explorer",
 			targets: { codex: {} },
 		});
 	});

@@ -1,4 +1,11 @@
-import { appendFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import {
+	appendFile,
+	mkdir,
+	readFile,
+	rename,
+	stat,
+	writeFile,
+} from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 import type {
@@ -129,6 +136,118 @@ describe("Drive-on-graph acceptance", () => {
 			),
 		).toEqual(result);
 	});
+
+	test("continues an in-flight run from the envelope snapshot after the live file moves", async () => {
+		const fixture = await setupFixture("envelope-snapshot", 2);
+		const envelopePath = fixture.spec.promptTemplate.envelopePath;
+		fixture.spec.promptTemplate = {
+			...fixture.spec.promptTemplate,
+			envelopeContent: "# Snapshotted Envelope\n",
+		};
+		const observedPrompts: string[] = [];
+		const backend = createBackend({
+			onRun: async (invocation, runNumber) => {
+				const rendered = await readFile(invocation.promptPath, "utf-8");
+				observedPrompts.push(rendered);
+				expect(rendered).toContain("# Snapshotted Envelope");
+				expect(rendered).not.toContain("# Live Envelope");
+				expect(rendered).not.toContain("# Mutated Envelope");
+				if (runNumber === 1) {
+					await writeFile(envelopePath, "# Mutated Envelope\n", "utf-8");
+					await rename(envelopePath, `${envelopePath}.moved`);
+				}
+				return successfulBackendResult(`completed ${invocation.taskId}`);
+			},
+		});
+
+		const result = await runDriveOnGraph(
+			fixture.spec,
+			createRunContext(fixture, backend, new AbortController().signal),
+		);
+		const persistedSpec = JSON.parse(
+			await readFile(join(fixture.spec.workdir, "spec.json"), "utf-8"),
+		) as DriverRunSpec;
+
+		expect(result).toEqual({
+			runId: fixture.spec.runId,
+			outcome: "completed",
+			tasksDone: fixture.taskIds.length,
+			tasksBlocked: 0,
+		});
+		expect(observedPrompts).toHaveLength(2);
+		expect(persistedSpec.promptTemplate).toMatchObject({
+			envelopePath,
+			envelopeContent: "# Snapshotted Envelope\n",
+		});
+	});
+
+	test("resumes from the persisted envelope snapshot after the live file moves", async () => {
+		const fixture = await setupFixture("envelope-snapshot-resume", 3);
+		const envelopePath = fixture.spec.promptTemplate.envelopePath;
+		fixture.spec.promptTemplate = {
+			...fixture.spec.promptTemplate,
+			envelopeContent: "# Persisted Resume Envelope\n",
+		};
+		const firstController = new AbortController();
+		const firstBackend = createBackend({
+			onRun: async (invocation, runNumber) => {
+				const rendered = await readFile(invocation.promptPath, "utf-8");
+				expect(rendered).toContain("# Persisted Resume Envelope");
+				if (runNumber === 2) {
+					await Promise.resolve();
+					firstController.abort(new Error("simulated resume interruption"));
+					return new Promise((_, reject) => {
+						setTimeout(() => reject(new Error("host process terminated")), 0);
+					});
+				}
+				return successfulBackendResult(`completed ${invocation.taskId}`);
+			},
+		});
+
+		const interrupted = await runDriveOnGraph(
+			fixture.spec,
+			createRunContext(fixture, firstBackend, firstController.signal),
+		);
+		const store = new FileRunStore({ rootDir: fixture.sessionsRoot });
+		const runningAtDeath = await oneRunningDriveStep(store, fixture.spec.runId);
+		await persistTerminalAttemptEvidence(store, runningAtDeath);
+		const persistedSpec = JSON.parse(
+			await readFile(join(fixture.spec.workdir, "spec.json"), "utf-8"),
+		) as DriverRunSpec;
+		await writeFile(envelopePath, "# Mutated Resume Envelope\n", "utf-8");
+		await rename(envelopePath, `${envelopePath}.moved`);
+
+		const resumedPrompts: string[] = [];
+		const resumedBackend = createBackend({
+			onRun: async (invocation) => {
+				const rendered = await readFile(invocation.promptPath, "utf-8");
+				resumedPrompts.push(rendered);
+				return successfulBackendResult(`completed ${invocation.taskId}`);
+			},
+		});
+		const result = await runDriveOnGraph(
+			{
+				...persistedSpec,
+				remainingTaskIds: fixture.taskIds.slice(2),
+			},
+			createRunContext(fixture, resumedBackend, new AbortController().signal),
+		);
+
+		expect(interrupted).toMatchObject({
+			runId: fixture.spec.runId,
+			outcome: "aborted",
+		});
+		expect(result).toEqual({
+			runId: fixture.spec.runId,
+			outcome: "completed",
+			tasksDone: fixture.taskIds.length,
+			tasksBlocked: 0,
+		});
+		expect(resumedBackend.startedTaskIds).toEqual(fixture.taskIds.slice(2));
+		expect(resumedPrompts).toHaveLength(1);
+		expect(resumedPrompts[0]).toContain("# Persisted Resume Envelope");
+		expect(resumedPrompts[0]).not.toContain("# Mutated Resume Envelope");
+	});
 });
 
 interface Fixture {
@@ -146,7 +265,11 @@ async function setupFixture(name: string, taskCount: number): Promise<Fixture> {
 	const runId = `run-${name}`;
 	const workdir = join(sessionsRoot, PLAN_SLUG, "runs", runId);
 	await mkdir(workdir, { recursive: true });
-	await writeFile(join(projectRoot, "envelope.md"), "# Envelope\n", "utf-8");
+	await writeFile(
+		join(projectRoot, "envelope.md"),
+		"# Live Envelope\n",
+		"utf-8",
+	);
 	const taskManager = new TaskManager(projectRoot);
 	await taskManager.init({ zeroPadding: 0 });
 	const taskIds: string[] = [];

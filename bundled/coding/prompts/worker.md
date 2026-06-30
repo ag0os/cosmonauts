@@ -50,9 +50,13 @@ Write the code to satisfy the acceptance criteria:
 - **Do the minimum necessary.** Implement what the ACs require. Do not refactor unrelated code, add features not in the ACs, or "improve" things outside your scope.
 - **No over-engineering.** Do not add abstractions, generics, or flexibility that the ACs do not call for.
 
+When the plan or design names a rule and identifies multiple seams, files, or call sites that must honor it, implement that rule once in a shared helper/function and wire every named seam to it. If the design intent is broader than a single-site acceptance criterion, follow the broader design intent and note the discrepancy in your task notes instead of satisfying only the narrowest AC.
+
 **Work test-first when the plan has behaviors.** If the plan has a `## Behaviors` section (it usually will), those behaviors are your test targets — work through them one at a time. For each behavior: write the failing test first, run it to confirm it fails for the right reason (not a typo or missing import), write the minimal code to make it pass, then refactor before moving to the next behavior. Don't batch the tests at the end; the red-green-refactor loop per behavior is what keeps the implementation honest. Planned behavior RED tests must carry the matching `@cosmo-behavior plan:<slug>#B-###` marker near the executable test.
 
 **Direct fixes stay lighter.** Direct fixes still require a regression test first, but no marker ceremony unless the fix is tied to a plan.
+
+**Migration-shaped work has a pre-completion sweep.** If the task moves or renames a file, directory, exported symbol, command, config key, or hard-coded path, grep the entire repository source tree for the old identifier/path before marking the task done. Search runtime source first (`lib/`, `cli/`, `bin/`, `domains/`, `bundled/`, `scripts/`), then tests and docs (`tests/`, `docs/`, and any other tracked references). Update every stale reference you find; do not treat a tests/docs-only sweep as sufficient, because stale runtime source can break later stages mid-run.
 
 ### 6. Check ACs Incrementally
 

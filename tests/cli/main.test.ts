@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
 	type AgentListItem,
+	buildInitNoRunnableDefaultDomainLines,
 	buildInitSessionConfig,
 	type DomainListItem,
 	discoverBundledPackageDirs,
@@ -15,10 +16,15 @@ import {
 	parseCliArgs,
 	renderAgentsList,
 	renderDomainsList,
+	resolveDumpPromptDomain,
 	resolveInteractiveExtensionPaths,
 	selectRunMode,
 } from "../../cli/main.ts";
 import type { CliOptions } from "../../cli/types.ts";
+import { NoDefaultDomainError } from "../../lib/domains/default-domain.ts";
+import { DomainRegistry } from "../../lib/domains/registry.ts";
+import { DomainResolver } from "../../lib/domains/resolver.ts";
+import type { LoadedDomain } from "../../lib/domains/types.ts";
 
 function cliOptions(overrides: Partial<CliOptions> = {}): CliOptions {
 	return {
@@ -36,17 +42,45 @@ function cliOptions(overrides: Partial<CliOptions> = {}): CliOptions {
 
 type ExpectedRunMode = ReturnType<typeof selectRunMode>;
 
+function makeDomain(id: string): LoadedDomain {
+	return {
+		manifest: { id, description: `Domain ${id}` },
+		portable: false,
+		agents: new Map(),
+		capabilities: new Set(),
+		prompts: new Set(),
+		skills: new Set(),
+		extensions: new Set(),
+		chains: [],
+		provenance: [
+			{
+				origin: "test",
+				precedence: 0,
+				kind: "domains-dir",
+				rootDir: `/test/${id}`,
+			},
+		],
+		rootDirs: [`/test/${id}`],
+	};
+}
+
+function makeResolver(domainIds: readonly string[]): DomainResolver {
+	return new DomainResolver(
+		new DomainRegistry(domainIds.map((id) => makeDomain(id))),
+	);
+}
+
 interface RunModeScenario {
 	name: string;
 	options: Partial<CliOptions>;
-	hasNonSharedDomain: boolean;
+	hasRunnableDefault: boolean;
 	expected: ExpectedRunMode;
 }
 
 function expectRunModes(scenarios: readonly RunModeScenario[]): void {
 	for (const scenario of scenarios) {
 		expect(
-			selectRunMode(cliOptions(scenario.options), scenario.hasNonSharedDomain),
+			selectRunMode(cliOptions(scenario.options), scenario.hasRunnableDefault),
 			scenario.name,
 		).toBe(scenario.expected);
 	}
@@ -513,6 +547,16 @@ describe("buildInitSessionConfig", () => {
 		// The injected config template is intentionally minimal, with no chain overrides.
 		expect(config.initialMessage).not.toContain('"workflows"');
 	});
+
+	test("init guard copy is domain-neutral", () => {
+		// @cosmo-behavior plan:coding-agnostic-framework#B-023
+		const message = buildInitNoRunnableDefaultDomainLines().join("\n");
+
+		expect(message).toContain("main");
+		expect(message).toContain("cosmonauts --list-domains");
+		expect(message).not.toContain("install coding");
+		expect(message).not.toContain("cosmonauts install coding");
+	});
 });
 
 describe("resolveInteractiveExtensionPaths", () => {
@@ -526,6 +570,32 @@ describe("resolveInteractiveExtensionPaths", () => {
 	});
 });
 
+describe("resolveDumpPromptDomain", () => {
+	test("uses injectable default-domain semantics for domainless prompt dumps", () => {
+		// @cosmo-behavior plan:coding-agnostic-framework#B-008
+		expect(
+			resolveDumpPromptDomain({
+				definition: { id: "cosmo" },
+				resolver: makeResolver(["shared", "main"]),
+			}),
+		).toBe("main");
+
+		expect(
+			resolveDumpPromptDomain({
+				definition: { id: "worker", domain: "ruby-coding" },
+				resolver: makeResolver(["shared"]),
+			}),
+		).toBe("ruby-coding");
+
+		expect(() =>
+			resolveDumpPromptDomain({
+				definition: { id: "cosmo" },
+				resolver: makeResolver(["shared"]),
+			}),
+		).toThrow(NoDefaultDomainError);
+	});
+});
+
 // ============================================================================
 // Mode dispatch
 // ============================================================================
@@ -536,13 +606,13 @@ describe("selectRunMode", () => {
 			{
 				name: "interactive",
 				options: {},
-				hasNonSharedDomain: false,
+				hasRunnableDefault: false,
 				expected: "no-domain-guard",
 			},
 			{
 				name: "print",
 				options: { print: true, prompt: "run it" },
-				hasNonSharedDomain: false,
+				hasRunnableDefault: false,
 				expected: "no-domain-guard",
 			},
 		]);
@@ -553,25 +623,25 @@ describe("selectRunMode", () => {
 			{
 				name: "list domains",
 				options: { listDomains: true },
-				hasNonSharedDomain: false,
+				hasRunnableDefault: false,
 				expected: "list-domains",
 			},
 			{
 				name: "list agents",
 				options: { listAgents: true },
-				hasNonSharedDomain: false,
+				hasRunnableDefault: false,
 				expected: "list-agents",
 			},
 			{
 				name: "dump prompt",
 				options: { dumpPrompt: true },
-				hasNonSharedDomain: false,
+				hasRunnableDefault: false,
 				expected: "dump-prompt",
 			},
 			{
 				name: "init",
 				options: { init: true },
-				hasNonSharedDomain: false,
+				hasRunnableDefault: false,
 				expected: "init",
 			},
 		]);
@@ -582,13 +652,13 @@ describe("selectRunMode", () => {
 			{
 				name: "dump before init",
 				options: { dumpPrompt: true, init: true },
-				hasNonSharedDomain: true,
+				hasRunnableDefault: true,
 				expected: "dump-prompt",
 			},
 			{
 				name: "init before print",
 				options: { init: true, print: true, prompt: "go" },
-				hasNonSharedDomain: true,
+				hasRunnableDefault: true,
 				expected: "init",
 			},
 		]);
@@ -599,13 +669,13 @@ describe("selectRunMode", () => {
 			{
 				name: "print",
 				options: { print: true },
-				hasNonSharedDomain: true,
+				hasRunnableDefault: true,
 				expected: "print",
 			},
 			{
 				name: "interactive",
 				options: { prompt: "hello" },
-				hasNonSharedDomain: true,
+				hasRunnableDefault: true,
 				expected: "interactive",
 			},
 		]);
