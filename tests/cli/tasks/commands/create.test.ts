@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -178,6 +178,49 @@ describe("task create command", () => {
 		});
 		expect(task?.dueDate).toEqual(new Date("2026-02-01"));
 		expect(output.stdout()).toBe("Created task TASK-001: Full Task\n");
+		expect(output.stderr()).toBe("");
+		expect(exit.calls()).toEqual([]);
+	});
+
+	it("leaves an existing task config byte-unchanged when creating a single task", async () => {
+		// @cosmo-behavior plan:task-id-system#B-010
+		const configPath = await writeTaskConfig(
+			tempDir,
+			'{\n  "prefix": "BUG",\n  "zeroPadding": 2,\n  "defaultLabels": ["from-config"]\n}\n',
+		);
+		const before = await readFile(configPath, "utf-8");
+
+		await createProgram().parseAsync([
+			"node",
+			"test",
+			"create",
+			"Existing Config Task",
+		]);
+
+		expect(await readFile(configPath, "utf-8")).toBe(before);
+		expect(await listTaskDirectoryEntries(tempDir)).toEqual([
+			"BUG-01 - Existing Config Task.md",
+			"config.json",
+		]);
+		expect(output.stdout()).toBe("Created task BUG-01: Existing Config Task\n");
+		expect(output.stderr()).toBe("");
+		expect(exit.calls()).toEqual([]);
+	});
+
+	it("creates only a task file and no task config when creating a single task without config", async () => {
+		// @cosmo-behavior plan:task-id-system#B-010
+		await createProgram().parseAsync([
+			"node",
+			"test",
+			"create",
+			"No Config Task",
+		]);
+
+		expect(await pathExists(taskConfigPath(tempDir))).toBe(false);
+		expect(await listTaskDirectoryEntries(tempDir)).toEqual([
+			"TASK-001 - No Config Task.md",
+		]);
+		expect(output.stdout()).toBe("Created task TASK-001: No Config Task\n");
 		expect(output.stderr()).toBe("");
 		expect(exit.calls()).toEqual([]);
 	});
@@ -462,6 +505,66 @@ describe("task create --from-file", () => {
 		expect(exit.calls()).toEqual([]);
 	});
 
+	it("leaves an existing task config byte-unchanged when batch creating tasks", async () => {
+		// @cosmo-behavior plan:task-id-system#B-010
+		const configPath = await writeTaskConfig(
+			tempDir,
+			'{\n  "prefix": "BATCH",\n  "zeroPadding": 2,\n  "defaultPriority": "low"\n}\n',
+		);
+		const before = await readFile(configPath, "utf-8");
+		const path = await writeBatch(
+			"tasks.yaml",
+			"- title: First batch task\n- title: Second batch task\n",
+		);
+
+		await createProgram().parseAsync([
+			"node",
+			"test",
+			"create",
+			"--from-file",
+			path,
+		]);
+
+		expect(await readFile(configPath, "utf-8")).toBe(before);
+		expect(await listTaskDirectoryEntries(tempDir)).toEqual([
+			"BATCH-01 - First batch task.md",
+			"BATCH-02 - Second batch task.md",
+			"config.json",
+		]);
+		expect(output.stdout()).toBe(
+			"Created task BATCH-01: First batch task\nCreated task BATCH-02: Second batch task\n",
+		);
+		expect(output.stderr()).toBe("");
+		expect(exit.calls()).toEqual([]);
+	});
+
+	it("creates only task files and no task config when batch creating without config", async () => {
+		// @cosmo-behavior plan:task-id-system#B-010
+		const path = await writeBatch(
+			"tasks.yaml",
+			"- title: First no config\n- title: Second no config\n",
+		);
+
+		await createProgram().parseAsync([
+			"node",
+			"test",
+			"create",
+			"--from-file",
+			path,
+		]);
+
+		expect(await pathExists(taskConfigPath(tempDir))).toBe(false);
+		expect(await listTaskDirectoryEntries(tempDir)).toEqual([
+			"TASK-001 - First no config.md",
+			"TASK-002 - Second no config.md",
+		]);
+		expect(output.stdout()).toBe(
+			"Created task TASK-001: First no config\nCreated task TASK-002: Second no config\n",
+		);
+		expect(output.stderr()).toBe("");
+		expect(exit.calls()).toEqual([]);
+	});
+
 	it("accepts unquoted YAML dates in `due` and stores the parsed dueDate", async () => {
 		const path = await writeBatch(
 			"with-date.yaml",
@@ -637,6 +740,23 @@ describe("task create (no batch)", () => {
 	});
 });
 
+describe("task create adapter internals", () => {
+	it("delegates ID allocation to TaskManager without allocation helpers", async () => {
+		// @cosmo-behavior plan:task-id-system#B-010
+		const source = await readFile(
+			new URL("../../../../cli/tasks/commands/create.ts", import.meta.url),
+			"utf-8",
+		);
+
+		expect(source).toContain("TaskManager");
+		expect(source).toContain(".createTask(");
+		expect(source).not.toMatch(/\bgenerateNextId\b/);
+		expect(source).not.toContain("id-generator");
+		expect(source).not.toMatch(/\bloadConfig\b/);
+		expect(source).not.toMatch(/\bsaveConfig\b/);
+	});
+});
+
 function createProgram() {
 	return createCommandProgram(registerCreateCommand);
 }
@@ -654,4 +774,30 @@ async function expectInvalidPriorityError(
 ): Promise<void> {
 	await expectCreateToExit(args);
 	expectInvalidPriorityDiagnostics(output, exit);
+}
+
+function taskConfigPath(projectRoot: string): string {
+	return join(projectRoot, "missions", "tasks", "config.json");
+}
+
+async function writeTaskConfig(
+	projectRoot: string,
+	contents: string,
+): Promise<string> {
+	const configPath = taskConfigPath(projectRoot);
+	await mkdir(join(projectRoot, "missions", "tasks"), { recursive: true });
+	await writeFile(configPath, contents, "utf-8");
+	return configPath;
+}
+
+async function listTaskDirectoryEntries(
+	projectRoot: string,
+): Promise<string[]> {
+	return (await readdir(join(projectRoot, "missions", "tasks"))).sort();
+}
+
+async function pathExists(path: string): Promise<boolean> {
+	return await access(path)
+		.then(() => true)
+		.catch(() => false);
 }
