@@ -3,7 +3,14 @@
  */
 
 import { existsSync } from "node:fs";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+	access,
+	mkdir,
+	mkdtemp,
+	readFile,
+	rm,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -131,6 +138,100 @@ describe("TaskManager", () => {
 			const task = await manager.createTask({ title: "New Task" });
 
 			expect(task.id).toBe("TASK-011");
+		});
+
+		it("allocates above archived filename IDs without parsing archived content @cosmo-behavior plan:task-id-system#B-003", async () => {
+			await mkdir(join(tempDir, "missions", "archive", "tasks"), {
+				recursive: true,
+			});
+			await writeFile(
+				join(
+					tempDir,
+					"missions",
+					"archive",
+					"tasks",
+					"TASK-010 - Broken Archive.md",
+				),
+				"not a valid task body",
+				"utf-8",
+			);
+
+			const task = await manager.createTask({ title: "New Task" });
+
+			expect(task.id).toBe("TASK-011");
+		});
+
+		it("treats a missing archive directory as empty @cosmo-behavior plan:task-id-system#B-004", async () => {
+			const config: ForgeTasksConfig = {
+				prefix: "BUG",
+				zeroPadding: 4,
+			};
+			await mkdir(join(tempDir, "missions", "tasks"), { recursive: true });
+			await writeFile(
+				join(tempDir, "missions", "tasks", "config.json"),
+				JSON.stringify(config),
+				"utf-8",
+			);
+
+			const task = await manager.createTask({ title: "First Bug" });
+
+			expect(task.id).toBe("BUG-0001");
+		});
+
+		it("does not rewrite config and ignores legacy lastIdNumber @cosmo-behavior plan:task-id-system#B-005", async () => {
+			await mkdir(join(tempDir, "missions", "tasks"), { recursive: true });
+			const configPath = join(tempDir, "missions", "tasks", "config.json");
+			const originalConfig =
+				'{"prefix":"TASK","zeroPadding":3,"lastIdNumber":50}';
+			await writeFile(configPath, originalConfig, "utf-8");
+
+			const task = await manager.createTask({ title: "Task" });
+			const afterCreateConfig = await readFile(configPath, "utf-8");
+
+			expect(task.id).toBe("TASK-001");
+			expect(afterCreateConfig).toBe(originalConfig);
+		});
+
+		it("does not create config when creating with defaults @cosmo-behavior plan:task-id-system#B-006", async () => {
+			const task = await manager.createTask({ title: "Default Task" });
+			const configExists = await access(
+				join(tempDir, "missions", "tasks", "config.json"),
+			)
+				.then(() => true)
+				.catch(() => false);
+
+			expect(task.id).toBe("TASK-001");
+			expect(configExists).toBe(false);
+		});
+
+		it("uses archived tasks for allocation only @cosmo-behavior plan:task-id-system#B-007", async () => {
+			await mkdir(join(tempDir, "missions", "archive", "tasks"), {
+				recursive: true,
+			});
+			await writeFile(
+				join(
+					tempDir,
+					"missions",
+					"archive",
+					"tasks",
+					"TASK-001 - Archived Only.md",
+				),
+				"not a valid task body",
+				"utf-8",
+			);
+
+			await expect(manager.getTask("TASK-001")).resolves.toBeNull();
+			await expect(manager.listTasks()).resolves.toEqual([]);
+			await expect(manager.search("Archived")).resolves.toEqual([]);
+			await expect(
+				manager.updateTask("TASK-001", { title: "Updated" }),
+			).rejects.toThrow("Task not found: TASK-001");
+			await expect(manager.deleteTask("TASK-001")).rejects.toThrow(
+				"Task not found: TASK-001",
+			);
+
+			const task = await manager.createTask({ title: "New Active Task" });
+			expect(task.id).toBe("TASK-002");
 		});
 
 		it("should ignore lastIdNumber when allocating IDs", async () => {
@@ -592,7 +693,12 @@ describe("TaskManager", () => {
 
 			expect(task.id).toBe("TASK-001");
 
-			await expectTaskConfigExists(tempDir);
+			const configExists = await access(
+				join(tempDir, "missions", "tasks", "config.json"),
+			)
+				.then(() => true)
+				.catch(() => false);
+			expect(configExists).toBe(false);
 		});
 
 		it("should load existing config on first operation", async () => {
@@ -614,6 +720,18 @@ describe("TaskManager", () => {
 			const task = await manager.createTask({ title: "Task" });
 
 			expect(task.id).toBe("BUG-0001");
+		});
+	});
+
+	describe("config sanitization", () => {
+		it("returns and caches init config without lastIdNumber @cosmo-behavior plan:task-id-system#B-009", async () => {
+			const legacyConfig = { prefix: "TASK", lastIdNumber: 50 };
+			const config = await manager.init(legacyConfig);
+
+			expect(config).not.toHaveProperty("lastIdNumber");
+
+			const task = await manager.createTask({ title: "Task" });
+			expect(task.id).toBe("TASK-001");
 		});
 	});
 

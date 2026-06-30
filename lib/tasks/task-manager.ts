@@ -76,10 +76,10 @@ export class TaskManager {
 		const baseConfig = existingConfig ?? { ...DEFAULT_CONFIG };
 
 		// Merge provided config with base config
-		const finalConfig: ForgeTasksConfig = {
+		const finalConfig = sanitizeConfig({
 			...baseConfig,
 			...config,
-		};
+		});
 
 		// Save the config
 		await saveConfig(this.projectRoot, finalConfig);
@@ -96,8 +96,6 @@ export class TaskManager {
 	 * @returns The created task
 	 */
 	async createTask(input: TaskCreateInput): Promise<Task> {
-		const config = await this.ensureInitialized();
-
 		if (input.dueDate) {
 			this.assertValidDate(input.dueDate, "dueDate");
 		}
@@ -105,17 +103,16 @@ export class TaskManager {
 		// Serialize ID allocation + file write behind a process+filesystem lock
 		// so concurrent creates don't collide on IDs.
 		return await withTaskCreateLock(this.projectRoot, () =>
-			this.createTaskLocked(input, config),
+			this.createTaskLocked(input),
 		);
 	}
 
-	private async createTaskLocked(
-		input: TaskCreateInput,
-		config: ForgeTasksConfig,
-	): Promise<Task> {
+	private async createTaskLocked(input: TaskCreateInput): Promise<Task> {
+		const config = await this.ensureCreateConfig();
+
 		// Re-read allocated IDs inside the lock so allocation accounts for any
 		// task a concurrent writer just created or archived.
-		const existingIds = await this.loadAllocatedTaskIds();
+		const existingIds = await this.loadCreateAllocatedTaskIds();
 
 		// Generate new ID
 		const id = generateNextId(config, existingIds);
@@ -320,12 +317,22 @@ export class TaskManager {
 		// Try to load existing config
 		const existingConfig = await loadConfig(this.projectRoot);
 		if (existingConfig) {
-			this.config = existingConfig;
+			this.config = sanitizeConfig(existingConfig);
 			return this.config;
 		}
 
 		// Initialize with defaults if no config exists
 		return await this.init();
+	}
+
+	private async ensureCreateConfig(): Promise<ForgeTasksConfig> {
+		if (this.config) {
+			return this.config;
+		}
+
+		const existingConfig = await loadConfig(this.projectRoot);
+		this.config = sanitizeConfig(existingConfig ?? DEFAULT_CONFIG);
+		return this.config;
 	}
 
 	/**
@@ -354,14 +361,16 @@ export class TaskManager {
 		return tasks;
 	}
 
-	private async loadAllocatedTaskIds(): Promise<string[]> {
+	private async loadCreateAllocatedTaskIds(): Promise<string[]> {
 		const activeTasks = await this.loadAllTasks();
 		const archivedFiles = await listArchivedTaskFiles(this.projectRoot);
 		const archivedIds = archivedFiles
 			.map((file) => parseTaskIdFromFilename(file))
 			.filter((id): id is string => id !== null);
 
-		return [...activeTasks.map((task) => task.id), ...archivedIds];
+		return [
+			...new Set([...activeTasks.map((task) => task.id), ...archivedIds]),
+		];
 	}
 
 	/**
@@ -420,4 +429,10 @@ function matchesDependencyFilter(task: Task, filter: TaskListFilter): boolean {
 	}
 
 	return task.dependencies.length === 0;
+}
+
+function sanitizeConfig(config: ForgeTasksConfig): ForgeTasksConfig {
+	const { lastIdNumber: _lastIdNumber, ...currentConfig } =
+		config as ForgeTasksConfig & { lastIdNumber?: unknown };
+	return { ...currentConfig };
 }
