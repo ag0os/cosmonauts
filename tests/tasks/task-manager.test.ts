@@ -3,7 +3,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -111,6 +111,47 @@ describe("TaskManager", () => {
 			expect(task1.id).toBe("TASK-001");
 			expect(task2.id).toBe("TASK-002");
 			expect(task3.id).toBe("TASK-003");
+		});
+
+		it("should allocate after active and archived task IDs", async () => {
+			await manager.init();
+			await manager.createTask({ title: "Active Task" });
+			await writeFile(
+				join(
+					tempDir,
+					"missions",
+					"archive",
+					"tasks",
+					"TASK-010 - Archived Task.md",
+				),
+				"archived content",
+				"utf-8",
+			);
+
+			const task = await manager.createTask({ title: "New Task" });
+
+			expect(task.id).toBe("TASK-011");
+		});
+
+		it("should ignore lastIdNumber when allocating IDs", async () => {
+			await manager.init({ lastIdNumber: 50 });
+
+			const task = await manager.createTask({ title: "Task" });
+
+			expect(task.id).toBe("TASK-001");
+		});
+
+		it("should not write lastIdNumber after creating a task", async () => {
+			await manager.init();
+
+			await manager.createTask({ title: "Task" });
+
+			const configContent = await readFile(
+				join(tempDir, "missions", "tasks", "config.json"),
+				"utf-8",
+			);
+			const config = JSON.parse(configContent) as ForgeTasksConfig;
+			expect(config).not.toHaveProperty("lastIdNumber");
 		});
 
 		it("should use custom prefix from config", async () => {

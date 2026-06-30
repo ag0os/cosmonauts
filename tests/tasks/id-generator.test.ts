@@ -11,7 +11,7 @@ import {
 	isValidId,
 	parseIdNumber,
 } from "../../lib/tasks/id-generator.js";
-import type { ForgeTasksConfig, Task } from "../../lib/tasks/task-types.js";
+import type { ForgeTasksConfig } from "../../lib/tasks/task-types.js";
 
 describe("parseIdNumber", () => {
 	test("parses numeric part from standard ID", () => {
@@ -94,19 +94,8 @@ describe("formatId", () => {
 });
 
 describe("generateNextId", () => {
-	const createTask = (id: string): Task => ({
-		id,
-		title: "Test",
-		status: "To Do",
-		createdAt: new Date(),
-		updatedAt: new Date(),
-		labels: [],
-		dependencies: [],
-		acceptanceCriteria: [],
-	});
-
 	describe("sequential ID generation", () => {
-		test("generates TASK-1 for empty task list", () => {
+		test("generates TASK-1 for an empty ID set @cosmo-behavior plan:task-id-system#B-001", () => {
 			const config: ForgeTasksConfig = { prefix: "TASK" };
 			const result = generateNextId(config, []);
 			expect(result).toBe("TASK-1");
@@ -114,22 +103,17 @@ describe("generateNextId", () => {
 
 		test("generates next sequential ID", () => {
 			const config: ForgeTasksConfig = { prefix: "TASK" };
-			const tasks = [createTask("TASK-1"), createTask("TASK-2")];
+			const ids = ["TASK-1", "TASK-2"];
 
-			const result = generateNextId(config, tasks);
+			const result = generateNextId(config, ids);
 			expect(result).toBe("TASK-3");
 		});
 
 		test("finds highest ID regardless of order", () => {
 			const config: ForgeTasksConfig = { prefix: "TASK" };
-			const tasks = [
-				createTask("TASK-5"),
-				createTask("TASK-2"),
-				createTask("TASK-10"),
-				createTask("TASK-3"),
-			];
+			const ids = ["TASK-5", "TASK-2", "TASK-10", "TASK-3"];
 
-			const result = generateNextId(config, tasks);
+			const result = generateNextId(config, ids);
 			expect(result).toBe("TASK-11");
 		});
 	});
@@ -137,17 +121,17 @@ describe("generateNextId", () => {
 	describe("handling gaps in existing IDs", () => {
 		test("uses highest ID + 1, not filling gaps", () => {
 			const config: ForgeTasksConfig = { prefix: "TASK" };
-			const tasks = [createTask("TASK-1"), createTask("TASK-5")];
+			const ids = ["TASK-1", "TASK-5"];
 
-			const result = generateNextId(config, tasks);
+			const result = generateNextId(config, ids);
 			expect(result).toBe("TASK-6");
 		});
 
 		test("handles large gaps", () => {
 			const config: ForgeTasksConfig = { prefix: "TASK" };
-			const tasks = [createTask("TASK-1"), createTask("TASK-100")];
+			const ids = ["TASK-1", "TASK-100"];
 
-			const result = generateNextId(config, tasks);
+			const result = generateNextId(config, ids);
 			expect(result).toBe("TASK-101");
 		});
 	});
@@ -161,13 +145,9 @@ describe("generateNextId", () => {
 
 		test("ignores tasks with different prefixes", () => {
 			const config: ForgeTasksConfig = { prefix: "FEAT" };
-			const tasks = [
-				createTask("TASK-10"),
-				createTask("FEAT-1"),
-				createTask("BUG-5"),
-			];
+			const ids = ["TASK-10", "FEAT-1", "BUG-5"];
 
-			const result = generateNextId(config, tasks);
+			const result = generateNextId(config, ids);
 			expect(result).toBe("FEAT-2");
 		});
 
@@ -188,21 +168,17 @@ describe("generateNextId", () => {
 
 		test("applies zero-padding to sequential IDs", () => {
 			const config: ForgeTasksConfig = { prefix: "TASK", zeroPadding: 4 };
-			const tasks = [createTask("TASK-0001"), createTask("TASK-0002")];
+			const ids = ["TASK-0001", "TASK-0002"];
 
-			const result = generateNextId(config, tasks);
+			const result = generateNextId(config, ids);
 			expect(result).toBe("TASK-0003");
 		});
 
 		test("handles mixed padded and non-padded existing IDs", () => {
 			const config: ForgeTasksConfig = { prefix: "TASK", zeroPadding: 3 };
-			const tasks = [
-				createTask("TASK-1"),
-				createTask("TASK-002"),
-				createTask("TASK-10"),
-			];
+			const ids = ["TASK-1", "TASK-002", "TASK-10"];
 
-			const result = generateNextId(config, tasks);
+			const result = generateNextId(config, ids);
 			expect(result).toBe("TASK-011");
 		});
 	});
@@ -211,9 +187,8 @@ describe("generateNextId", () => {
 		test("never generates an existing ID", () => {
 			const config: ForgeTasksConfig = { prefix: "TASK" };
 			const existingIds = ["TASK-1", "TASK-2", "TASK-3", "TASK-4", "TASK-5"];
-			const tasks = existingIds.map(createTask);
 
-			const result = generateNextId(config, tasks);
+			const result = generateNextId(config, existingIds);
 
 			expect(existingIds).not.toContain(result);
 			expect(result).toBe("TASK-6");
@@ -221,100 +196,78 @@ describe("generateNextId", () => {
 
 		test("handles case-insensitive collision detection", () => {
 			const config: ForgeTasksConfig = { prefix: "TASK" };
-			const tasks = [createTask("task-1"), createTask("TASK-2")];
+			const ids = ["task-1", "TASK-2"];
 
-			const result = generateNextId(config, tasks);
+			const result = generateNextId(config, ids);
 			expect(result).toBe("TASK-3");
 		});
 	});
 
-	describe("lastIdNumber persistence (archiving support)", () => {
-		test("uses lastIdNumber when tasks list is empty", () => {
-			const config: ForgeTasksConfig = { prefix: "TASK", lastIdNumber: 50 };
+	describe("supplied ID set allocation", () => {
+		test("returns first configured padded ID for an empty ID set @cosmo-behavior plan:task-id-system#B-001", () => {
+			const config: ForgeTasksConfig = { prefix: "TASK", zeroPadding: 3 };
 			const result = generateNextId(config, []);
-			expect(result).toBe("TASK-51");
+			expect(result).toBe("TASK-001");
 		});
 
-		test("uses lastIdNumber when higher than existing task IDs", () => {
-			const config: ForgeTasksConfig = { prefix: "TASK", lastIdNumber: 100 };
-			const tasks = [createTask("TASK-1"), createTask("TASK-5")];
+		test("allocates highest+1 across supplied IDs @cosmo-behavior plan:task-id-system#B-002", () => {
+			const config: ForgeTasksConfig = { prefix: "TASK" };
+			const ids = ["TASK-5", "task-10", "FEAT-99", "TASK-7"];
 
-			const result = generateNextId(config, tasks);
-			expect(result).toBe("TASK-101");
+			const result = generateNextId(config, ids);
+			expect(result).toBe("TASK-11");
 		});
 
-		test("uses highest task ID when higher than lastIdNumber", () => {
-			const config: ForgeTasksConfig = { prefix: "TASK", lastIdNumber: 10 };
-			const tasks = [createTask("TASK-50"), createTask("TASK-25")];
+		test("does not fill gaps across supplied IDs @cosmo-behavior plan:task-id-system#B-002", () => {
+			const config: ForgeTasksConfig = { prefix: "TASK" };
+			const ids = ["TASK-1", "TASK-4"];
 
-			const result = generateNextId(config, tasks);
-			expect(result).toBe("TASK-51");
+			const result = generateNextId(config, ids);
+			expect(result).toBe("TASK-5");
 		});
 
-		test("applies zero-padding with lastIdNumber", () => {
+		test("ignores lastIdNumber even when it is higher than supplied IDs", () => {
+			const config: ForgeTasksConfig = { prefix: "TASK", lastIdNumber: 50 };
+			const result = generateNextId(config, ["TASK-2"]);
+
+			expect(result).toBe("TASK-3");
+		});
+
+		test("ignores lastIdNumber for an empty ID set", () => {
 			const config: ForgeTasksConfig = {
 				prefix: "TASK",
 				zeroPadding: 3,
 				lastIdNumber: 50,
 			};
 			const result = generateNextId(config, []);
-			expect(result).toBe("TASK-051");
-		});
-
-		test("handles undefined lastIdNumber as 0", () => {
-			const config: ForgeTasksConfig = {
-				prefix: "TASK",
-				lastIdNumber: undefined,
-			};
-			const result = generateNextId(config, []);
-			expect(result).toBe("TASK-1");
+			expect(result).toBe("TASK-001");
 		});
 	});
 });
 
 describe("extractIdNumbers", () => {
-	const createTask = (id: string): Task => ({
-		id,
-		title: "Test",
-		status: "To Do",
-		createdAt: new Date(),
-		updatedAt: new Date(),
-		labels: [],
-		dependencies: [],
-		acceptanceCriteria: [],
-	});
+	test("extracts numbers from matching IDs @cosmo-behavior plan:task-id-system#B-002", () => {
+		const ids = ["TASK-1", "TASK-5", "TASK-10"];
 
-	test("extracts numbers from matching tasks", () => {
-		const tasks = [
-			createTask("TASK-1"),
-			createTask("TASK-5"),
-			createTask("TASK-10"),
-		];
-
-		const numbers = extractIdNumbers(tasks, "TASK");
+		const numbers = extractIdNumbers(ids, "TASK");
 		expect(numbers).toEqual([1, 5, 10]);
 	});
 
-	test("ignores tasks with different prefixes", () => {
-		const tasks = [
-			createTask("TASK-1"),
-			createTask("FEAT-2"),
-			createTask("TASK-3"),
-			createTask("BUG-4"),
-		];
+	test("ignores IDs with different prefixes @cosmo-behavior plan:task-id-system#B-002", () => {
+		const ids = ["TASK-1", "FEAT-2", "TASK-3", "BUG-4"];
 
-		const numbers = extractIdNumbers(tasks, "TASK");
+		const numbers = extractIdNumbers(ids, "TASK");
 		expect(numbers).toEqual([1, 3]);
 	});
 
 	test("returns empty array for no matches", () => {
-		const tasks = [createTask("FEAT-1"), createTask("BUG-2")];
+		const ids = ["FEAT-1", "BUG-2"];
 
-		const numbers = extractIdNumbers(tasks, "TASK");
+		const numbers = extractIdNumbers(ids, "TASK");
 		expect(numbers).toEqual([]);
 	});
 
-	test("returns empty array for empty input", () => {
+	test("returns empty array for empty input @cosmo-behavior plan:task-id-system#B-001", () => {
 		const numbers = extractIdNumbers([], "TASK");
 		expect(numbers).toEqual([]);
 	});

@@ -114,8 +114,30 @@ export async function saveConfig(
 export async function listTaskFiles(projectRoot: string): Promise<string[]> {
 	const tasksDir = join(projectRoot, MISSIONS_DIR, TASKS_DIR);
 
+	return await listMarkdownFiles(tasksDir);
+}
+
+/**
+ * List all .md files in missions/archive/tasks/
+ * @param projectRoot - The project root directory
+ * @returns Array of filenames (not full paths)
+ */
+export async function listArchivedTaskFiles(
+	projectRoot: string,
+): Promise<string[]> {
+	const archivedTasksDir = join(
+		projectRoot,
+		MISSIONS_DIR,
+		ARCHIVE_DIR,
+		TASKS_DIR,
+	);
+
+	return await listMarkdownFiles(archivedTasksDir);
+}
+
+async function listMarkdownFiles(directory: string): Promise<string[]> {
 	try {
-		const entries = await readdir(tasksDir);
+		const entries = await readdir(directory);
 		return entries.filter((file) => file.endsWith(".md")).sort();
 	} catch (error) {
 		// Return empty array if directory doesn't exist

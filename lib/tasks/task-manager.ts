@@ -7,6 +7,7 @@ import {
 	deleteTaskFile,
 	ensureForgeDirectory,
 	getTaskFilename,
+	listArchivedTaskFiles,
 	listTaskFiles,
 	loadConfig,
 	parseTaskIdFromFilename,
@@ -14,7 +15,7 @@ import {
 	saveConfig,
 	saveTaskFile,
 } from "./file-system.ts";
-import { generateNextId, parseIdNumber } from "./id-generator.ts";
+import { generateNextId } from "./id-generator.ts";
 import { withTaskCreateLock } from "./lock.ts";
 import { parseTask } from "./task-parser.ts";
 import { serializeTask } from "./task-serializer.ts";
@@ -101,8 +102,8 @@ export class TaskManager {
 			this.assertValidDate(input.dueDate, "dueDate");
 		}
 
-		// Serialize ID allocation + file write + config bump behind a
-		// process+filesystem lock so concurrent creates don't collide on IDs.
+		// Serialize ID allocation + file write behind a process+filesystem lock
+		// so concurrent creates don't collide on IDs.
 		return await withTaskCreateLock(this.projectRoot, () =>
 			this.createTaskLocked(input, config),
 		);
@@ -112,12 +113,12 @@ export class TaskManager {
 		input: TaskCreateInput,
 		config: ForgeTasksConfig,
 	): Promise<Task> {
-		// Re-read existing tasks inside the lock so allocation accounts for any
-		// task a concurrent writer just created.
-		const existingTasks = await this.loadAllTasks();
+		// Re-read allocated IDs inside the lock so allocation accounts for any
+		// task a concurrent writer just created or archived.
+		const existingIds = await this.loadAllocatedTaskIds();
 
 		// Generate new ID
-		const id = generateNextId(config, existingTasks);
+		const id = generateNextId(config, existingIds);
 
 		// Create timestamp
 		const now = new Date();
@@ -151,14 +152,6 @@ export class TaskManager {
 		const content = serializeTask(task);
 		const filename = getTaskFilename(task);
 		await saveTaskFile(this.projectRoot, filename, content);
-
-		// Update lastIdNumber in config to survive archiving
-		const idNumber = parseIdNumber(id, config.prefix);
-		if (idNumber !== null && (config.lastIdNumber ?? 0) < idNumber) {
-			config.lastIdNumber = idNumber;
-			this.config = config;
-			await saveConfig(this.projectRoot, config);
-		}
 
 		return task;
 	}
@@ -359,6 +352,16 @@ export class TaskManager {
 		}
 
 		return tasks;
+	}
+
+	private async loadAllocatedTaskIds(): Promise<string[]> {
+		const activeTasks = await this.loadAllTasks();
+		const archivedFiles = await listArchivedTaskFiles(this.projectRoot);
+		const archivedIds = archivedFiles
+			.map((file) => parseTaskIdFromFilename(file))
+			.filter((id): id is string => id !== null);
+
+		return [...activeTasks.map((task) => task.id), ...archivedIds];
 	}
 
 	/**

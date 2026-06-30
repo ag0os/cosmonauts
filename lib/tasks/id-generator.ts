@@ -3,7 +3,7 @@
  * Generates sequential task IDs with configurable prefix and zero-padding
  */
 
-import type { ForgeTasksConfig, Task } from "./task-types.ts";
+import type { ForgeTasksConfig } from "./task-types.ts";
 
 /**
  * Default prefix used when none is specified in config
@@ -69,69 +69,57 @@ export function formatId(
 }
 
 /**
- * Generate the next sequential task ID based on existing tasks and config
+ * Generate the next sequential task ID based on existing IDs and config
  *
- * The ID number is determined by the highest of:
- * 1. config.lastIdNumber (persisted counter, survives archiving)
- * 2. Highest ID number found in existing tasks
+ * The ID number is determined by the highest matching ID number in the supplied
+ * list. IDs are matched case-insensitively and other prefixes are ignored.
  *
- * @param config - ForgeTasksConfig containing prefix, zeroPadding, and lastIdNumber settings
- * @param existingTasks - Array of existing tasks to check for ID collisions
+ * @param config - ForgeTasksConfig containing prefix and zeroPadding settings
+ * @param existingIds - Existing active and archived IDs to check for collisions
  * @returns Next sequential ID string
  *
  * @example
- * // No existing tasks, no lastIdNumber
+ * // No existing IDs
  * generateNextId({ prefix: "TASK" }, []) // => "TASK-1"
  *
- * // With existing tasks
- * generateNextId({ prefix: "TASK" }, [{ id: "TASK-1" }, { id: "TASK-2" }]) // => "TASK-3"
- *
- * // With lastIdNumber higher than existing tasks (archived tasks scenario)
- * generateNextId({ prefix: "TASK", lastIdNumber: 50 }, [{ id: "TASK-1" }]) // => "TASK-51"
+ * // With existing active + archived IDs
+ * generateNextId({ prefix: "TASK" }, ["TASK-1", "TASK-2"]) // => "TASK-3"
  *
  * // With zero-padding
- * generateNextId({ prefix: "TASK", zeroPadding: 3, lastIdNumber: 10 }, []) // => "TASK-011"
+ * generateNextId({ prefix: "TASK", zeroPadding: 3 }, ["TASK-010"]) // => "TASK-011"
  */
 export function generateNextId(
 	config: ForgeTasksConfig,
-	existingTasks: Task[],
+	existingIds: readonly string[],
 ): string {
 	const prefix = config.prefix || DEFAULT_PREFIX;
 	const zeroPadding = config.zeroPadding;
 
-	// Start with lastIdNumber from config (survives archiving)
-	let highestNumber = config.lastIdNumber ?? 0;
-
-	// Also check existing tasks in case they have higher IDs
-	for (const task of existingTasks) {
-		const num = parseIdNumber(task.id, prefix);
-		if (num !== null && num > highestNumber) {
-			highestNumber = num;
-		}
-	}
-
-	// Next ID is highest + 1
+	const highestNumber = Math.max(0, ...extractIdNumbers(existingIds, prefix));
 	const nextNumber = highestNumber + 1;
 
 	return formatId(prefix, nextNumber, zeroPadding);
 }
 
 /**
- * Find all numeric IDs from a list of tasks that match the given prefix
+ * Find all numeric IDs from a list of ID strings that match the given prefix
  *
- * @param tasks - Array of tasks to search
+ * @param ids - Array of ID strings to search
  * @param prefix - The ID prefix to match
  * @returns Array of numeric parts from matching task IDs
  *
  * @example
- * const tasks = [{ id: "TASK-1" }, { id: "TASK-5" }, { id: "FEAT-3" }];
- * extractIdNumbers(tasks, "TASK") // => [1, 5]
+ * const ids = ["TASK-1", "TASK-5", "FEAT-3"];
+ * extractIdNumbers(ids, "TASK") // => [1, 5]
  */
-export function extractIdNumbers(tasks: Task[], prefix: string): number[] {
+export function extractIdNumbers(
+	ids: readonly string[],
+	prefix: string,
+): number[] {
 	const numbers: number[] = [];
 
-	for (const task of tasks) {
-		const num = parseIdNumber(task.id, prefix);
+	for (const id of ids) {
+		const num = parseIdNumber(id, prefix);
 		if (num !== null) {
 			numbers.push(num);
 		}

@@ -11,6 +11,7 @@ import {
 	deleteTaskFile,
 	ensureForgeDirectory,
 	getTaskFilename,
+	listArchivedTaskFiles,
 	listTaskFiles,
 	loadConfig,
 	parseTaskIdFromFilename,
@@ -216,6 +217,48 @@ describe("listTaskFiles", () => {
 		const freshDir = await createTestDir();
 		try {
 			const files = await listTaskFiles(freshDir);
+			expect(files).toEqual([]);
+		} finally {
+			await cleanupTestDir(freshDir);
+		}
+	});
+});
+
+describe("listArchivedTaskFiles", () => {
+	let testDir: string;
+
+	beforeEach(async () => {
+		testDir = await createTestDir();
+		await ensureForgeDirectory(testDir);
+	});
+
+	afterEach(async () => {
+		await cleanupTestDir(testDir);
+	});
+
+	test("returns only archived .md task files sorted alphabetically", async () => {
+		const archiveTasksDir = join(testDir, "missions", "archive", "tasks");
+		await writeFile(
+			join(archiveTasksDir, "TASK-003 - Third.md"),
+			"content",
+			"utf-8",
+		);
+		await writeFile(
+			join(archiveTasksDir, "TASK-001 - First.md"),
+			"content",
+			"utf-8",
+		);
+		await writeFile(join(archiveTasksDir, "notes.txt"), "content", "utf-8");
+
+		const files = await listArchivedTaskFiles(testDir);
+
+		expect(files).toEqual(["TASK-001 - First.md", "TASK-003 - Third.md"]);
+	});
+
+	test("returns empty array when archive tasks directory does not exist", async () => {
+		const freshDir = await createTestDir();
+		try {
+			const files = await listArchivedTaskFiles(freshDir);
 			expect(files).toEqual([]);
 		} finally {
 			await cleanupTestDir(freshDir);
