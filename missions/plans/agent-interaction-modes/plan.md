@@ -138,6 +138,20 @@ additive layer plus a declarative field.
 - Test: `tests/cli/session-mode.test.ts` > `--mode flag overrides the agent default interaction mode`
 - Marker: `@cosmo-behavior plan:agent-interaction-modes#B-008`
 
+### B-009 - Interactive mode gives role collaboration skills a deterministic trigger
+
+- Source: AC-007
+- Context: a planner runs in `interactive` mode (overlay present); the
+  `design-dialogue` skill currently self-detects whether to engage via runtime
+  heuristics ("main agent in a REPL with no chain-stage parent")
+- Action: the interactive overlay names the role's collaboration skill as the
+  authoritative engage signal, and `design-dialogue` keys off the explicit mode
+- Expected: in interactive mode the dialogue skill engages; in auto mode it does
+  not; the decision no longer depends on inferring parent/REPL shape
+- Seam: `lib/prompts/framework/modes/interactive.md` + `bundled/coding/skills/design-dialogue/SKILL.md` ("When to load")
+- Test: `tests/prompts/interactive-overlay.test.ts` > `interactive overlay points at the role collaboration skill`
+- Marker: `@cosmo-behavior plan:agent-interaction-modes#B-009`
+
 ## Design
 
 The design is derived from the behaviors above; each piece exists to satisfy a
@@ -151,12 +165,17 @@ Two new files under `lib/prompts/framework/modes/`:
   surface only ambiguous or irreversible decisions; report decisions, not menus.
 - `interactive.md` — directive: collaborate; present 2-3 options with trade-offs
   and a recommendation at each meaningful fork; let the user steer before
-  committing; bias toward surfacing reversible-but-consequential choices;
-  especially applies to plans and architecture.
+  committing; build the result in passes rather than dropping a finished
+  artifact for terminal approval. **It triggers, but does not duplicate, a
+  role's collaboration skill** — "if your role has a collaboration skill
+  (planners: `/skill:design-dialogue`), load it and follow its cadence." The
+  cadence content stays in the skill; the overlay is the switch.
 
 They live under `lib/prompts/framework/` (framework overlays), not under a
 domain `prompts/` directory (personas only) — consistent with the Layer 0 /
-Layer 3 placement rule in `docs/prompts.md`.
+Layer 3 placement rule in `docs/prompts.md`. The overlays are short and
+agent-agnostic: personas are **not** rewritten per mode (see §8) — the same few
+lines apply to every agent, and role-specific cadence is carried by skills.
 
 ### 2. `assemblePrompts` mode layer (B-001, B-002, B-003)
 
@@ -210,6 +229,37 @@ A completions handler offers `auto` / `interactive`.
 Add a `--mode` option to the CLI entry that creates sessions, threaded into the
 `buildSessionParams({ interactionModeOverride })` call in `cli/session.ts`.
 
+### 8. Persona / skill reconciliation (B-009) — personas are not rewritten per mode
+
+The planner persona (`bundled/coding/prompts/planner.md`) **already** speaks both
+stances — "In interactive mode, make sure the human has the complete picture…
+In autonomous mode, apply the same discipline… document the trade-off in the
+Decision Log" (persona line 22), and "interactive: ask and record the choice;
+autonomous: record a planner-proposed decision… flag it in Assumptions" (line
+73). Today nothing *sets* that stance: the agent infers it. The `design-dialogue`
+skill detects interactivity heuristically — "you are the main agent in a REPL
+with no chain-stage parent… if you cannot confirm at least one of these signals,
+stay autonomous."
+
+The overlay turns that inference into a fact. So this plan **does not** add
+per-mode persona variants. Instead:
+
+- **`design-dialogue` keys off the explicit mode.** Replace its heuristic
+  "When to load" signals with: load when `interactionMode` is `interactive`
+  (the overlay names the skill); otherwise stay autonomous. Keep one heuristic
+  fallback for older callers that pass no mode (defaults to `auto`), preserving
+  current behavior.
+- **Reconcile the "mode" word in the persona.** The planner's `## Modes` section
+  uses "mode" for *routing* (workflow-tier / adaptation / dialogic). "Dialogic"
+  is the same concept as `interactionMode: interactive`. Fold the dialogic
+  routing note into a reference to the interaction overlay so one persona does
+  not carry two unrelated meanings of "mode". The scattered "in interactive /
+  in autonomous mode" conditionals stay — they now resolve deterministically.
+
+Net persona change is *subtractive* (trim heuristics, disambiguate one word),
+not a rewrite. This is the whole point of an overlay: behavior shifts via a
+shared layer, not by forking every persona.
+
 ## Files to Change
 
 ### New files
@@ -218,6 +268,7 @@ Add a `--mode` option to the CLI entry that creates sessions, threaded into the
 - `lib/prompts/framework/modes/interactive.md` — interactive-mode behavioral overlay
 - `tests/cli/session-mode.test.ts` — CLI `--mode` flag plumbing (B-008)
 - `tests/orchestration/session-factory.test.ts` — force-auto behavior (B-006) *(extend if file already exists)*
+- `tests/prompts/interactive-overlay.test.ts` — overlay names the role collaboration skill (B-009)
 
 ### Modifications
 
@@ -230,6 +281,8 @@ Add a `--mode` option to the CLI entry that creates sessions, threaded into the
 - `domains/main/agents/cosmo.ts` — `defaultMode: "interactive"`
 - `bundled/coding/agents/cody.ts` — `defaultMode: "interactive"`
 - `bundled/coding/agents/planner.ts`, `tdd-planner.ts`, `adaptation-planner.ts` — `defaultMode: "interactive"` *(confirm exact paths during impl)*
+- `bundled/coding/skills/design-dialogue/SKILL.md` — key "When to load" off explicit `interactionMode`; keep an `auto` fallback for mode-less callers (B-009)
+- `bundled/coding/prompts/planner.md` — reconcile the `## Modes` "dialogic" routing note with the interaction overlay; trim now-redundant heuristic detection (§8)
 - `docs/prompts.md` — document the Layer 2.5 interaction overlay
 - `tests/domains/prompt-assembly.test.ts` — B-001/B-002/B-003
 - `tests/agents/session-assembly.test.ts` — B-004
@@ -246,7 +299,13 @@ Add a `--mode` option to the CLI entry that creates sessions, threaded into the
    if any non-top-level path can reach `interactive`, stop and fix before merge.
 2. **Naming collision with Pi's `mode` and the existing `RuntimeContext.mode`.**
    Mitigation: distinct field name `interactionMode`; documented in the Overview.
-   Do not overload `RuntimeContext.mode`.
+   Do not overload `RuntimeContext.mode`. Also reconcile the planner persona's
+   `## Modes` section so "mode" does not mean both routing and stance (§8).
+6. **Overlay/skill duplication or contradiction.** If the interactive overlay
+   restates dialogue cadence that `design-dialogue` also owns, the two can drift.
+   Mitigation: the overlay only *triggers* the skill (B-009); cadence content
+   lives in exactly one place — the skill. **Pivot:** if a role has no
+   collaboration skill, the overlay's generic 2-3-options directive stands alone.
 3. **Behavioral, not mechanical.** Mode is prompt text; effect depends on model
    interpretation. Mitigation: tests assert overlay *presence/position*, not model
    behavior; keep overlay copy concrete and imperative; iterate copy after dogfooding.
@@ -279,7 +338,12 @@ Add a `--mode` option to the CLI entry that creates sessions, threaded into the
 5. **Force-auto (B-006).** Pin auto for sub-agent/detached in session-factory.
    Land this before exposing any interactive entry point (risk #1).
 6. **Entry points (B-007, B-008).** `/mode` command and `--mode` flag.
-7. **Docs.** Update `docs/prompts.md` with the Layer 2.5 overlay and the
+7. **Persona/skill reconciliation (B-009, §8).** Point `design-dialogue`'s
+   "When to load" at the explicit `interactionMode` (auto fallback retained);
+   trim the planner persona's heuristic detection and disambiguate its `## Modes`
+   wording. Subtractive change — do after the overlay exists so the skill has a
+   real signal to key off.
+8. **Docs.** Update `docs/prompts.md` with the Layer 2.5 overlay and the
    `interactionMode` axis; cross-link from the agent-definition reference.
 
 If a stage surfaces unexpected complexity (e.g. live toggle can't reuse the
