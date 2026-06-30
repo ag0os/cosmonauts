@@ -15,8 +15,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskManager } from "../../lib/tasks/task-manager.js";
+import { serializeTask } from "../../lib/tasks/task-serializer.js";
 import type { ForgeTasksConfig } from "../../lib/tasks/task-types.js";
-import { createTaskFixture } from "../helpers/tasks.ts";
+import {
+	createTaskFixture,
+	createTaskRecordFixture,
+} from "../helpers/tasks.ts";
 
 describe("TaskManager", () => {
 	let tempDir: string;
@@ -161,6 +165,29 @@ describe("TaskManager", () => {
 			expect(task.id).toBe("TASK-011");
 		});
 
+		it("allocates active IDs from task frontmatter, not non-standard filenames @cosmo-behavior plan:task-id-system#B-003", async () => {
+			await manager.init();
+			await writeFile(
+				join(
+					tempDir,
+					"missions",
+					"tasks",
+					"TASK-001 - Nonstandard Active Filename.md",
+				),
+				serializeTask(
+					createTaskRecordFixture({
+						id: "TASK-010",
+						title: "Frontmatter ID Wins",
+					}),
+				),
+				"utf-8",
+			);
+
+			const task = await manager.createTask({ title: "New Task" });
+
+			expect(task.id).toBe("TASK-011");
+		});
+
 		it("treats a missing archive directory as empty @cosmo-behavior plan:task-id-system#B-004", async () => {
 			const config: ForgeTasksConfig = {
 				prefix: "BUG",
@@ -214,24 +241,42 @@ describe("TaskManager", () => {
 					"missions",
 					"archive",
 					"tasks",
-					"TASK-001 - Archived Only.md",
+					"TASK-010 - Archived Only.md",
 				),
-				"not a valid task body",
+				serializeTask(
+					createTaskRecordFixture({
+						id: "TASK-001",
+						title: "Archived Search Sentinel",
+						description: "archived-only-search-token",
+					}),
+				),
 				"utf-8",
 			);
 
 			await expect(manager.getTask("TASK-001")).resolves.toBeNull();
+			await expect(manager.getTask("TASK-010")).resolves.toBeNull();
 			await expect(manager.listTasks()).resolves.toEqual([]);
-			await expect(manager.search("Archived")).resolves.toEqual([]);
+			await expect(manager.search("Archived Search Sentinel")).resolves.toEqual(
+				[],
+			);
+			await expect(
+				manager.search("archived-only-search-token"),
+			).resolves.toEqual([]);
 			await expect(
 				manager.updateTask("TASK-001", { title: "Updated" }),
 			).rejects.toThrow("Task not found: TASK-001");
+			await expect(
+				manager.updateTask("TASK-010", { title: "Updated" }),
+			).rejects.toThrow("Task not found: TASK-010");
 			await expect(manager.deleteTask("TASK-001")).rejects.toThrow(
 				"Task not found: TASK-001",
 			);
+			await expect(manager.deleteTask("TASK-010")).rejects.toThrow(
+				"Task not found: TASK-010",
+			);
 
 			const task = await manager.createTask({ title: "New Active Task" });
-			expect(task.id).toBe("TASK-002");
+			expect(task.id).toBe("TASK-011");
 		});
 
 		it("should ignore lastIdNumber when allocating IDs", async () => {
