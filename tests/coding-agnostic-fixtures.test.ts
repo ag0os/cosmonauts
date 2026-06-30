@@ -1,16 +1,11 @@
-import { readdir, readFile } from "node:fs/promises";
+import { access, readdir, readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
 const REPO_ROOT = resolve(fileURLToPath(import.meta.url), "..", "..");
-const LEDGER_PATH = join(
-	REPO_ROOT,
-	"missions",
-	"plans",
-	"coding-agnostic-framework",
-	"test-decoupling-ledger.md",
-);
+const PLAN_SLUG = "coding-agnostic-framework";
+const LEDGER_FILENAME = "test-decoupling-ledger.md";
 
 const CODING_REFERENCE_PATTERN = /coding/;
 const REAL_BUNDLED_CODING_PATTERN =
@@ -102,7 +97,20 @@ function missingLedgerEntries(
 }
 
 async function readLedger(): Promise<Map<string, LedgerRow>> {
-	return parseLedger(await readFile(LEDGER_PATH, "utf-8"));
+	const ledgerPath = await resolvePlanArtifactPath(LEDGER_FILENAME);
+	return parseLedger(await readFile(ledgerPath, "utf-8"));
+}
+
+async function resolvePlanArtifactPath(filename: string): Promise<string> {
+	const activePath = join(REPO_ROOT, "missions", "plans", PLAN_SLUG, filename);
+	if (await pathExists(activePath)) return activePath;
+	return join(REPO_ROOT, "missions", "archive", "plans", PLAN_SLUG, filename);
+}
+
+async function pathExists(path: string): Promise<boolean> {
+	return access(path)
+		.then(() => true)
+		.catch(() => false);
 }
 
 describe("coding-agnostic test fixture ledger", () => {

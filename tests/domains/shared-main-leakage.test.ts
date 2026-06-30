@@ -1,16 +1,11 @@
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 
 const REPO_ROOT = resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-const LEAKAGE_FINDINGS_PATH = join(
-	REPO_ROOT,
-	"missions",
-	"plans",
-	"coding-agnostic-framework",
-	"leakage-findings.md",
-);
+const PLAN_SLUG = "coding-agnostic-framework";
+const LEAKAGE_FINDINGS_FILENAME = "leakage-findings.md";
 
 const FINDINGS_HEADER =
 	"| Path | Line/pattern | Why it may leak | Disposition | Owner wave |";
@@ -77,7 +72,10 @@ function validateFindings(rows: readonly FindingRow[]): string[] {
 describe("shared/main leakage scan artifact", () => {
 	test("records a disposition for every shared-main leakage finding", async () => {
 		// @cosmo-behavior plan:coding-agnostic-framework#B-019
-		const content = await readFile(LEAKAGE_FINDINGS_PATH, "utf-8");
+		const findingsPath = await resolvePlanArtifactPath(
+			LEAKAGE_FINDINGS_FILENAME,
+		);
+		const content = await readFile(findingsPath, "utf-8");
 		const findings = parseFindings(content);
 
 		expect(content).toContain("domains/shared/**");
@@ -106,3 +104,15 @@ describe("shared/main leakage scan artifact", () => {
 		]);
 	});
 });
+
+async function resolvePlanArtifactPath(filename: string): Promise<string> {
+	const activePath = join(REPO_ROOT, "missions", "plans", PLAN_SLUG, filename);
+	if (await pathExists(activePath)) return activePath;
+	return join(REPO_ROOT, "missions", "archive", "plans", PLAN_SLUG, filename);
+}
+
+async function pathExists(path: string): Promise<boolean> {
+	return access(path)
+		.then(() => true)
+		.catch(() => false);
+}
