@@ -1,5 +1,4 @@
 {
-  "prefix": "TASK",
-  "zeroPadding": 3,
-  "lastIdNumber": 438
+	"prefix": "TASK",
+	"zeroPadding": 3
 }
