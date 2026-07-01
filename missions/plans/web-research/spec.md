@@ -114,8 +114,12 @@ Excluded:
 
 ## Assumptions
 
-- Brave Search API with a free-tier key is an acceptable default; the key is
-  supplied via environment/config (e.g. `BRAVE_API_KEY`), not committed.
+- The search backend requires a paid/metered API key — **Brave's free tier ended
+  Feb 2026** (card required), invalidating the original "free-tier key is an acceptable
+  default" assumption. Recommended default on revival is **Tavily** (free 1,000
+  credits/mo, no card), with Brave demoted to a premium opt-in and **SearXNG** offered
+  as the OSS self-host backend. Keys are supplied via environment/config, not committed.
+  (See `plan.md` → Research findings.)
 - `web_fetch` is a **separate** tool from `web_search` (composable), not folded into
   search-result content extraction.
 - Built **native** on `pi.registerTool` rather than depending on `pi-skills`
@@ -137,9 +141,11 @@ Excluded:
   readability/markdown), size/time caps, redirect handling, and — importantly —
   SSRF protection: should `web_fetch` refuse internal/loopback/private-network URLs?
   This is a security surface the planner + security-reviewer must spec.
-- **Second backend as proof?** Ship Brave-only with a pluggable interface, or
-  include a second backend (e.g. Tavily) to prove the seam is real? Default
-  assumption is Brave-only with the interface designed for extension.
+- **Which backend is the default, and how many ship?** Given Brave's free tier is
+  gone, the recommended default is **Tavily** (free, no card), with **Exa** as a
+  second proving the seam, **Brave** as a premium opt-in, and **SearXNG** as the
+  OSS/self-host backend. Open: how many of these ship in the first native slice vs.
+  land the interface + one backend and extend later.
 - **Session caching.** Should identical searches/fetches be cached within a session
   to cut cost and latency, or is that deferred past S1?
 - **Researcher depth/budget.** Should the `researcher` skill bound how many
