@@ -6,17 +6,11 @@ Work backlog in two sections. **Prioritized** items at the top are ordered — p
 
 Ordered — pick from the top. Curated 2026-06 from a full-backlog reprioritization (~15 scattered items consolidated into capability **tracks**, each with a source-of-truth doc under `missions/architecture/`, linked per entry); **cross-track sequence agreed 2026-06-18** in an implementation-ordering session. The committed spine front-loads the live bug and cheap high-felt-need wins, then the compounding code-memory substrate, then the assistant-memory win, then multi-agent leverage, then the multi-domain platform. **Two scope notes from that session:** (1) `architectural-memory` *bundles* two cheap riders from Ideas — `analysis-tools` (audit) and `artifact-viewer` (render its map + plans); (2) `agent-memory` is committed **only through W1–W2** (the assistant-remembers-you win), then a **reassess gate** decides whether to climb into **`autonomy` / always-on** (Ideas — in-process host first, co-delivers orchestration's deferred scheduler/coordinator-loops; `agent-swarms` Waves B/C and `agent-memory` W3–W4 are gated on that host). The remaining items stay unordered Ideas below.
 
-### `task-id-system`: Improve Task Naming / Numbering
+> `task-id-system` — ✅ **DONE (2026-06-30)**, merged + archived; distilled to `memory/task-id-system.md`. Removed from the queue.
 
-The current scheme persists a `lastIdNumber` counter in `missions/tasks/config.json` and allocates `max(counter, highest ID on disk) + 1` at create time. Problems: the config file is rewritten (with 2-space JSON) on every create — churn and merge-conflict bait — and client-side sequential allocation can't prevent cross-branch ID collisions (two branches both mint `TASK-N`, merge produces duplicates). It actively breaks `plan archive` today. For now `missions/` is excluded from Biome to stop the lint churn; this item replaces the band-aid.
+### `agent-tools`: Native Agent Tools (Web Research + Browser) — ⏸ PARKED
 
-- Decide direction: derive next number from `missions/tasks/` ∪ `missions/archive/tasks/` and drop the config counter; or keep a counter but move it to an un-linted state file; or switch to collision-resistant non-sequential IDs (nanoid/ULID/short hash) — losing sequential readability but eliminating conflicts entirely
-- Whichever path: `task create`/`task edit` must stop reformatting tracked config on every write (or stop touching it at all)
-- If staying sequential: document the cross-branch collision caveat, or add a lightweight reconciliation step (e.g. `cosmonauts task renumber` after a merge)
-- Update `lib/tasks/id-generator.ts`, `lib/tasks/task-manager.ts`, `lib/tasks/file-system.ts` and the task CLI accordingly; keep `generateNextId` behavior covered by tests
-- Revisit the Biome `missions/` exclusion afterward — narrow or remove it if the config churn is gone
-
-### `agent-tools`: Native Agent Tools (Web Research + Browser)
+**⏸ PARKED (2026-07-01).** On hold; **the active track is `architectural-memory` below.** S1 (native web research) is deferred — the warm spec lives at `missions/plans/web-research/` (status `deferred`), parked in favor of a cheaper *research-delegation* direction (delegate research to codex/claude-cli via the driver seam) that is noted but not yet scoped into a plan. Browser (S2) is not started. Revive the native web-research slice when fully-autonomous chain runs need grounded/cited, machine-consumable facts.
 
 Make borrowed/bolted-on capabilities feel **native** — registered tools (the established `pi.registerTool` + TypeBox pattern) with explicit capability docs, so agents reach for them instead of leaving for Claude Code/Codex. Today web research is **absent**; browser exists only as an under-surfaced shell-out skill. First slice: **web research**. Full assessment + theme in the source-of-truth doc.
 
@@ -26,7 +20,9 @@ Make borrowed/bolted-on capabilities feel **native** — registered tools (the e
 - Cross-link: document the tool-authoring contract (currently code-only) with `domains`, for when installable domains add tools
 - Source of truth: `missions/architecture/tool-ecosystem.md`
 
-### `architectural-memory`: Codebase Architectural Memory
+### `architectural-memory`: Codebase Architectural Memory — ▶ NEXT
+
+**▶ ACTIVE / NEXT (as of 2026-07-02)** — top of the queue now that `task-id-system` shipped and `agent-tools` is parked. First slice to plan: **W1 — the derived code-structure map** (+ the bundled `analysis-tools` / `artifact-viewer` riders).
 
 Durable, retrievable knowledge **about the codebase** — structure, decisions, work history — so agents and humans don't lose the thread as agents write the code. One repo-scoped substrate across facets: **code structure** (derived/actual + curated/intended), **decisions**, **work history**. First slice: the **derived code-structure map**. Later waves (architecture-of-record, reuse-scan, embedding retrieval) live in the source-of-truth doc.
 
