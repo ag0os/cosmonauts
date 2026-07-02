@@ -7,7 +7,7 @@ memory** — repo-scoped knowledge about the codebase. Companion to the
 `architecture-viz` (its derived-map half). **Distinct from general/operational
 agent memory** (profile, playbooks, episodic log) — that is a *sibling track*
 with its own doc; it shares the "memory" philosophy but differs in scope (user vs.
-repo) and lifecycle (self-authored vs. derived/curated). Last updated 2026-06-09.
+repo) and lifecycle (self-authored vs. derived/curated). Last updated 2026-07-02.
 
 ## The basic idea
 
@@ -40,6 +40,20 @@ and lifecycle. Targets *any* project cosmonauts runs in.
 - **Injection** — into prompt assembly for planner, plan-reviewer, coordinator,
   worker, quality-manager.
 
+## Record format — OKF (decided 2026-07-02)
+
+Memory records and derived-map shards conform to **OKF v0.1** (Open Knowledge
+Format, github.com/GoogleCloudPlatform/knowledge-catalog): markdown + YAML
+frontmatter (`type` required; `title`, `description`, `resource`, `tags`,
+`timestamp` recommended), reserved `index.md` (progressive disclosure — the
+same index-then-detail pattern the sharded map uses) and `log.md`, relative
+links as untyped relationship edges. Cosmonauts defines its own `type`
+vocabulary and custom frontmatter keys (e.g. the source hash driving
+cache-on-hash) on top — OKF explicitly tolerates both. **Convention only:**
+OKF standardizes what the files look like; retrieval, freshness, hygiene, and
+injection remain this track's machinery. One record format shared with general
+agent memory (`agent-memory.md`).
+
 ## The axes that stay distinct (structure, not separate systems)
 
 - **Lifecycle:** derived (regenerated from code, never authored) vs. curated
@@ -51,12 +65,15 @@ and lifecycle. Targets *any* project cosmonauts runs in.
 
 Sequenced; the roadmap carries the next slice.
 
-- **W1 — Derived code-structure map** *(active slice → `architectural-memory`)*.
-  Mechanical spine (dependency tree + public interfaces) always-fresh via
-  cache-on-hash; narrative "what each module does" blurbs regenerated lazily **only
-  when a module's skeleton changes**. Sharded markdown: `architecture/index.md`
-  (always loaded) + per-module shards (on demand) — agents stop re-scanning the
-  repo. Build on existing TS tooling (dependency-cruiser / ts-morph / typedoc);
+- **W1 — Derived code-structure map** *(planned 2026-07-02 →
+  `missions/plans/code-structure-map/`, bundling the `analysis-tools` audit +
+  `artifact-viewer` riders)*. Mechanical spine (dependency tree + public
+  interfaces) always-fresh via cache-on-hash; narrative "what each module does"
+  blurbs regenerated lazily **only when a module's skeleton changes**. Sharded
+  markdown, OKF-conformant: `memory/architecture/index.md` (tracked; always
+  loaded) + per-module shards (on demand) — agents stop re-scanning the repo.
+  Build on existing TS tooling (dependency-cruiser / ts-morph / typedoc) — the
+  bundled audit's substrate recommendation gates the tooling choice;
   tree-sitter for polyglot later.
 - **W2 — Architecture-of-record (curated/intended).** Distiller merges durable
   decisions (`type: decision | convention | trade-off`) into a living
@@ -84,7 +101,11 @@ architecture); the health-analysis stays here.
 - Retrieval default: curated-record-first vs. embedding-first vs. both.
 - Health-analysis presentation depth here vs. the shared `artifact-viewer` Idea,
   which owns the human HTML/diagram rendering for plans + architecture.
-- W1 sharding/granularity: module vs. file vs. class resolution.
+- ~~W1 sharding/granularity~~ — **decided 2026-07-02** (W1 spec): module-level,
+  directory-based module roots with a config escape hatch; barrel (`index.ts`)
+  exports define the public interface where present. Map is **tracked**, under
+  `memory/architecture/` (beside distilled knowledge; W2's record lands adjacent,
+  keeping the drift-signal pair together).
 - Storage plumbing shared with the general agent-memory track or separate — the
   shared **memory interface** (`write`/`retrieve`/`consolidate`) is defined in
   `agent-memory.md`; this track is a consumer of it (same mechanism, different

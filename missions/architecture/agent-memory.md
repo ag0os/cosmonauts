@@ -6,7 +6,7 @@ without re-loading context every turn. Companion to the `agent-memory` roadmap
 entry. **Sibling** to architectural (code-knowledge) memory
 (`architectural-memory.md`): different records and lifecycle, but a **shared
 save/retrieve mechanism** — the *pluggable memory interface*, defined here as the
-common ancestor both tracks use. Last updated 2026-06-09.
+common ancestor both tracks use. Last updated 2026-07-02.
 
 ## The basic idea
 
@@ -51,6 +51,14 @@ mechanism is the **common ancestor** the two tracks share.
 tagged by scope × type; human-legible and prunable — *proposed truth the user can
 override*, not silently-mutated state. Embeddings / SQLite are **optional
 backends**, added only if scope+keyword retrieval proves insufficient.
+
+**Decision (2026-07-02): records conform to OKF v0.1** (Open Knowledge Format,
+github.com/GoogleCloudPlatform/knowledge-catalog): its frontmatter vocabulary
+(`type`, `title`, `description`, `resource`, `tags`, `timestamp`), reserved
+`index.md`/`log.md`, and link conventions — with a project-defined `type`
+vocabulary and custom keys on top. One record format shared with architectural
+memory. OKF is serialization only; retrieval and consolidation stay behind the
+memory interface.
 
 The mechanism is a **pluggable memory interface** — `write(record)` /
 `retrieve(scope, query)` / `consolidate()` — with backends behind it and **domains
