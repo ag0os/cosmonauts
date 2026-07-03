@@ -302,7 +302,7 @@ function renderArchitectureMapBundle(options: {
 				type: OKF_RECORD_TYPES.module,
 				title: record.resource,
 				description: `Generated TypeScript code structure shard for ${record.resource}.`,
-				resource: record.shardPath,
+				resource: record.resource,
 				tags: ["architecture-map", "generated", "typescript", "module"],
 				generatorVersion: ARCHITECTURE_MAP_GENERATOR_VERSION,
 				sourceHash: record.sourceHash,

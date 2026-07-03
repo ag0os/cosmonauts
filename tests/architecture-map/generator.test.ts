@@ -69,7 +69,7 @@ describe("generateArchitectureMap", () => {
 		expect(parsedDomain.data).toMatchObject({
 			type: "code-structure-module",
 			title: "src/domain",
-			resource: "modules/src/domain.md",
+			resource: "src/domain",
 			generatorVersion: "code-structure-map-w1",
 			sourceHash: expect.stringMatching(/^[a-f0-9]{64}$/u),
 			skeletonHash: expect.stringMatching(/^[a-f0-9]{64}$/u),

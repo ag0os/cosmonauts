@@ -1,6 +1,8 @@
-import { access, readFile } from "node:fs/promises";
+import type { Dirent } from "node:fs";
+import { access, readdir, readFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import matter from "gray-matter";
 import { Type } from "typebox";
 import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
 import {
@@ -67,10 +69,16 @@ export function createArchitectureMemoryExtension(
 				promptSnippet:
 					"Read `memory/architecture/index.md` or module shards from the generated architecture map.",
 				parameters: Type.Object({
+					module: Type.Optional(
+						Type.String({
+							description:
+								"Module resource from the architecture-map module shard frontmatter, for example `lib/agents`. Omit to read the full index.",
+						}),
+					),
 					resource: Type.Optional(
 						Type.String({
 							description:
-								"Module resource from the architecture-map index, for example `lib/agents`. Omit to read the full index.",
+								"Deprecated alias for `module`. Module resource from the architecture-map module shard frontmatter, for example `lib/agents`.",
 						}),
 					),
 				}),
@@ -84,7 +92,7 @@ export function createArchitectureMemoryExtension(
 					});
 					return readArchitectureMap({
 						projectRoot: cwd,
-						resource: normalizeRequestedResource(params.resource),
+						resource: normalizeRequestedModule(params),
 						freshness,
 					});
 				},
@@ -178,8 +186,7 @@ async function readArchitectureMap(options: {
 		);
 	}
 
-	const index = await readMapFile(indexPath);
-	const availableModules = parseAvailableModules(index ?? "");
+	const availableModules = await readAvailableModules(options.projectRoot);
 	if (!availableModules.includes(options.resource)) {
 		return textResult(
 			[
@@ -241,7 +248,7 @@ function buildContextMessage(options: {
 	const header = [
 		"Architecture map index context",
 		formatFreshnessBanner(options.freshness),
-		"Call `architecture_map_read` with no `resource` for the full index, or with a module `resource` for a shard.",
+		"Call `architecture_map_read` with no `module` for the full index, or with a module resource for a shard.",
 		"",
 	].join("\n");
 	const complete = `${header}${options.index}`;
@@ -277,13 +284,40 @@ function formatFreshnessBanner(freshness: ArchitectureMapFreshness): string {
 	}
 }
 
-function parseAvailableModules(index: string): string[] {
+async function readAvailableModules(projectRoot: string): Promise<string[]> {
+	const modulesRoot = safeArchitecturePath(projectRoot, "modules");
+	if (!modulesRoot) return [];
 	const modules = new Set<string>();
-	for (const line of index.split(/\r?\n/u)) {
-		const match = line.match(/^\s*-\s+`([^`]+)`\s+-/u);
-		if (match?.[1]) modules.add(match[1]);
-	}
+	await collectModuleResources(modulesRoot, modules);
 	return [...modules].sort();
+}
+
+async function collectModuleResources(
+	directory: string,
+	modules: Set<string>,
+): Promise<void> {
+	let entries: Dirent[];
+	try {
+		entries = await readdir(directory, { withFileTypes: true });
+	} catch (error: unknown) {
+		if (isMissingFile(error)) return;
+		throw error;
+	}
+
+	for (const entry of entries) {
+		const path = join(directory, entry.name);
+		if (entry.isDirectory()) {
+			await collectModuleResources(path, modules);
+			continue;
+		}
+		if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+		const file = await readMapFile(path);
+		if (!file) continue;
+		const resource = matter(file).data.resource;
+		if (typeof resource === "string" && validateResource(resource).ok) {
+			modules.add(resource);
+		}
+	}
 }
 
 function resourceToShardPath(resource: string): string {
@@ -339,16 +373,18 @@ async function readMapFile(path: string): Promise<string | undefined> {
 	try {
 		return await readFile(path, "utf-8");
 	} catch (error: unknown) {
-		if (
-			error &&
-			typeof error === "object" &&
-			"code" in error &&
-			(error as NodeJS.ErrnoException).code === "ENOENT"
-		) {
-			return undefined;
-		}
+		if (isMissingFile(error)) return undefined;
 		throw error;
 	}
+}
+
+function isMissingFile(error: unknown): boolean {
+	return (
+		error !== null &&
+		typeof error === "object" &&
+		"code" in error &&
+		(error as NodeJS.ErrnoException).code === "ENOENT"
+	);
 }
 
 function isConsumingAgent(systemPrompt: string): boolean {
@@ -372,6 +408,13 @@ function getMessages(event: unknown): unknown[] {
 		if (Array.isArray(messages)) return messages;
 	}
 	return [];
+}
+
+function normalizeRequestedModule(params: unknown): string | undefined {
+	return (
+		normalizeRequestedResource(valueFromObject(params, "module")) ??
+		normalizeRequestedResource(valueFromObject(params, "resource"))
+	);
 }
 
 function normalizeRequestedResource(value: unknown): string | undefined {

@@ -64,7 +64,7 @@ describe("architecture-memory extension", () => {
 		}
 	});
 
-	test("architecture_map_read returns the full index by default and reads module shards by resource @cosmo-behavior plan:code-structure-map#B-013", async () => {
+	test("architecture_map_read returns the full index by default and reads module shards by module @cosmo-behavior plan:code-structure-map#B-013", async () => {
 		await writeArchitectureMap(tmp.path);
 		const pi = await enabledPi(tmp.path);
 
@@ -79,7 +79,7 @@ describe("architecture-memory extension", () => {
 		});
 
 		const shard = (await pi.callTool("architecture_map_read", {
-			resource: "lib/agents",
+			module: "lib/agents",
 		})) as ToolResult;
 		expect(resultText(shard)).toContain("# lib/agents");
 		expect(shard.details).toMatchObject({
@@ -88,12 +88,15 @@ describe("architecture-memory extension", () => {
 		});
 	});
 
-	test("architecture_map_read lists available modules for unknown resources and rejects traversal @cosmo-behavior plan:code-structure-map#B-013", async () => {
-		await writeArchitectureMap(tmp.path);
+	test("architecture_map_read lists modules from shard frontmatter and rejects module traversal @cosmo-behavior plan:code-structure-map#B-013", async () => {
+		await writeArchitectureMap(
+			tmp.path,
+			"- `lib/from-index-only` - stale row.",
+		);
 		const pi = await enabledPi(tmp.path);
 
 		const unknown = (await pi.callTool("architecture_map_read", {
-			resource: "lib/missing",
+			module: "lib/missing",
 		})) as ToolResult;
 		expect(resultText(unknown)).toContain(
 			"Unknown architecture map module: lib/missing",
@@ -101,9 +104,10 @@ describe("architecture-memory extension", () => {
 		expect(resultText(unknown)).toContain(
 			"Available modules: lib/agents, lib/tasks",
 		);
+		expect(resultText(unknown)).not.toContain("lib/from-index-only");
 
 		const traversal = (await pi.callTool("architecture_map_read", {
-			resource: "../outside",
+			module: "../outside",
 		})) as ToolResult;
 		expect(resultText(traversal)).toContain(
 			"Rejected unsafe architecture map resource",
@@ -263,7 +267,12 @@ async function writeArchitectureMap(
 	);
 	await writeFile(
 		join(projectRoot, "memory", "architecture", "modules", "lib", "agents.md"),
-		"---\ntype: code-structure-module\nresource: modules/lib/agents.md\n---\n\n# lib/agents\n",
+		"---\ntype: code-structure-module\nresource: lib/agents\n---\n\n# lib/agents\n",
+		"utf-8",
+	);
+	await writeFile(
+		join(projectRoot, "memory", "architecture", "modules", "lib", "tasks.md"),
+		"---\ntype: code-structure-module\nresource: lib/tasks\n---\n\n# lib/tasks\n",
 		"utf-8",
 	);
 }
