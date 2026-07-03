@@ -449,12 +449,13 @@ async function collectTsconfigInputs(
 
 	const absolute = resolve(projectRoot, normalized);
 	const raw = await readFile(absolute, "utf-8");
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch {
-		return;
-	}
+	// Parse with TypeScript's JSONC-aware reader (not JSON.parse) so a tsconfig
+	// with comments or trailing commas — which the analyzer itself honors via
+	// ts.readConfigFile — still yields its `extends` chain. Otherwise a base
+	// tsconfig would be dropped from freshness inputs and a change to it could
+	// leave the map falsely reported as current (B-007).
+	const { config: parsed, error } = ts.parseConfigFileTextToJson(absolute, raw);
+	if (error || !parsed) return;
 	const extensions = tsconfigExtends(parsed);
 	for (const extension of extensions) {
 		const extendedPath = resolveTsconfigExtends(

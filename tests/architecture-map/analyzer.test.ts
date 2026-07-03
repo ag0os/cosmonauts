@@ -75,6 +75,46 @@ describe("typescriptSourceAnalyzer", () => {
 			"unresolved-side-effect",
 		]);
 	});
+
+	test("includes the extends chain of a commented tsconfig in freshness config inputs @cosmo-behavior plan:code-structure-map#B-007", async () => {
+		const projectRoot = join(tmp.path, "jsonc-extends");
+		await mkdir(join(projectRoot, "src"), { recursive: true });
+		await writeFile(
+			join(projectRoot, "src", "a.ts"),
+			"export const a = 1;\n",
+			"utf-8",
+		);
+		await writeFile(
+			join(projectRoot, "tsconfig.base.json"),
+			JSON.stringify({ compilerOptions: { strict: true } }),
+			"utf-8",
+		);
+		// Comment + trailing comma: valid TypeScript JSONC, but breaks JSON.parse.
+		await writeFile(
+			join(projectRoot, "tsconfig.json"),
+			[
+				"{",
+				"  // extend the shared base config",
+				'  "extends": "./tsconfig.base.json",',
+				'  "compilerOptions": { "module": "NodeNext", },',
+				"}",
+				"",
+			].join("\n"),
+			"utf-8",
+		);
+		const config = await resolveArchitectureMapConfig({
+			projectRoot,
+			projectConfig: { architectureMap: { sourceRoots: ["src"] } },
+		});
+
+		const inputs = await typescriptSourceAnalyzer.getConfigInputs(
+			projectRoot,
+			config,
+		);
+
+		expect(inputs).toContain("tsconfig.json");
+		expect(inputs).toContain("tsconfig.base.json");
+	});
 });
 
 async function writeAnalyzerFixture(projectRoot: string): Promise<void> {

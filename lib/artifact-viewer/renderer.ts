@@ -180,9 +180,41 @@ function isUnsupportedMarkdownLine(line: string): boolean {
 function renderInline(value: string): string {
 	const parts = value.split("`");
 	return parts
-		.map((part, index) => {
-			const escaped = escapeHtml(part);
-			return index % 2 === 1 ? `<code>${escaped}</code>` : escaped;
-		})
+		.map((part, index) =>
+			// Odd segments are code spans (verbatim, escaped); even segments are
+			// normal text where inline links are rendered.
+			index % 2 === 1
+				? `<code>${escapeHtml(part)}</code>`
+				: renderInlineLinks(part),
+		)
 		.join("");
+}
+
+const INLINE_LINK_PATTERN = /\[([^\]]+)\]\(([^)\s]+)\)/g;
+
+function renderInlineLinks(text: string): string {
+	let html = "";
+	let lastIndex = 0;
+	for (const match of text.matchAll(INLINE_LINK_PATTERN)) {
+		const [whole, label, href] = match;
+		const start = match.index ?? 0;
+		html += escapeHtml(text.slice(lastIndex, start));
+		const safeHref = safeLinkHref(href ?? "");
+		html += safeHref
+			? `<a href="${escapeHtml(safeHref)}">${escapeHtml(label ?? "")}</a>`
+			: escapeHtml(whole);
+		lastIndex = start + whole.length;
+	}
+	html += escapeHtml(text.slice(lastIndex));
+	return html;
+}
+
+function safeLinkHref(href: string): string | undefined {
+	const trimmed = href.trim();
+	// Allow relative, root-relative, and anchor links plus http(s)/mailto.
+	// Reject anything with a scheme that is not explicitly safe (e.g.
+	// javascript:, data:) so a source markdown link cannot inject active URLs.
+	if (/^(?:https?:\/\/|mailto:|[./#?])/iu.test(trimmed)) return trimmed;
+	if (/^[a-z][a-z0-9+.-]*:/iu.test(trimmed)) return undefined;
+	return trimmed;
 }
