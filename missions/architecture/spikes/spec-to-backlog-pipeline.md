@@ -8,6 +8,15 @@ named workflow that automates this pipeline starting right after a spec is ready
 Companion artifacts: `missions/plans/code-structure-map/{spec,plan,review}.md`,
 tasks TASK-439..450, commits `9d6691e` → `18b548b`.
 
+> **Consumers delivered 2026-07-03.** Consumer 1 shipped as prompt hardening:
+> planner sanity-check four systematic-failure checks; plan-reviewer dimensions
+> 9 (lifecycle-and-invariant attack) + 10 (constraint ownership); task-manager
+> workflow step 6 (constraint sweep). Consumer 2 shipped as the Claude Code
+> command **`/spec-to-backlog`** (external coordinator — Claude Code drives
+> cosmonauts chains + its own adversarial review workflows; `~/.claude/commands/`).
+> The self-contained cosmonauts version remains gated on `agent-swarms` Wave A —
+> see the `spec-to-backlog` ROADMAP entry.
+
 ## What actually ran (timeline)
 
 1. **Spec** — interactive spec-writer session (human + agent). Ratified decisions

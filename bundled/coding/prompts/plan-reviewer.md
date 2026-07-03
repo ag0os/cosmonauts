@@ -105,6 +105,23 @@ When the plan declares or depends on durable architecture:
 - Check that universal gates are bound and that unbound bindable gates record an explicit degraded state instead of a silent pass or hard failure.
 - Review the ladder without concrete tool-name or command columns. Project-specific tool bindings belong to project configuration or follow-up enforcement work, not the generic artifact contract.
 
+### 9. Lifecycle and invariant attack
+
+Assume the design is wrong and try to prove it. This dimension exists because a single structural review demonstrably misses these (they were found only by a separate adversarial pass — see `missions/architecture/spikes/spec-to-backlog-pipeline.md`):
+
+- **States without exits.** For every state, status, or flag value the plan writes (a `pending` marker, a cache entry, a backup file): find the transition that clears, completes, or removes it. A state with a defined entry and no defined exit is a finding — implemented literally, it is permanent.
+- **Invariants traced against writes.** For every invariant the plan claims ("no-change refresh changes nothing", "idempotent", "never regenerated"): enumerate every field the design writes — volatile metadata and timestamps included — and check the invariant is satisfiable as written. A contradiction between two sections is a finding even when each section reads fine alone.
+- **Recurring-operation cost.** For every operation the design runs per turn, per request, or per file: estimate its cost at realistic scale. If the spec raised a cost question, verify the plan answers it explicitly; a silently-chosen expensive default is a finding.
+- **Packaging and auto-load interactions.** Check manifests and auto-discovery mechanisms (package extension directories, glob-loaded assets) against the plan's stated scope. Auto-loading that widens the feature beyond its named agents or paths is a finding.
+- **Real-project variance.** When the plan targets arbitrary user projects, test its discovery/resolution rules against layouts unlike this repo (path aliases, monorepos, missing configs). A rule that silently misclassifies on a common layout is a finding.
+
+### 10. Constraint ownership
+
+Constraints that live only in Design or Decision Log prose evaporate downstream — task decomposition reliably carries the behavior spine and reliably drops everything else. For every load-bearing constraint in Design and the Decision Log, and for every entry in Files to Change:
+
+- Trace it to a behavior (preferred — the spine is the only artifact that survives decomposition) or to an explicit owner the task-manager can see.
+- A constraint whose only enforcement is a checkpoint or final-verification stage is a finding: the gap surfaces only after the implementing tasks are closed, forcing rework across them.
+
 ## Workflow
 
 ### 1. Read the plan
@@ -119,7 +136,7 @@ This is the most important step. Most plan flaws are invisible in the abstract a
 
 ### 3. Check each review dimension
 
-Work through all seven dimensions systematically. For each, read the relevant code and compare it against the plan's claims. Take notes on anything that does not match.
+Work through every dimension systematically. For each, read the relevant code and compare it against the plan's claims. Take notes on anything that does not match.
 
 ### 4. Write the findings report
 
@@ -137,7 +154,7 @@ Structure your output as follows:
 ## Findings
 
 - id: PR-001
-  dimension: <interface-fidelity|duplication|state-sync|risk-blast-radius|user-experience|behavior-spec|architecture-record|quality-contract>
+  dimension: <interface-fidelity|duplication|state-sync|risk-blast-radius|user-experience|behavior-spec|architecture-record|quality-contract|lifecycle-invariant|constraint-ownership>
   severity: <high|medium|low>
   title: "<short title>"
   plan_refs: <comma-separated plan.md line references or section names>
