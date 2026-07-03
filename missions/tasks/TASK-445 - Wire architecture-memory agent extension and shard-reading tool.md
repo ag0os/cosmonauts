@@ -1,7 +1,7 @@
 ---
 id: TASK-445
 title: Wire architecture-memory agent extension and shard-reading tool
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-444
 createdAt: '2026-07-03T14:13:28.751Z'
-updatedAt: '2026-07-03T14:13:28.751Z'
+updatedAt: '2026-07-03T16:05:25.979Z'
 ---
 
 ## Description

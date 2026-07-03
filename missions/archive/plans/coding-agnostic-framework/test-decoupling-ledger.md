@@ -71,6 +71,7 @@ Allowed buckets:
 | `tests/driver/driver-script.test.ts` | Keep | keep-grep-false-positive | Matched only because generated-script assertions mention UTF-8 `encoding`; no coding domain or bundled coding reference is present. |
 | `tests/driver/run-step.test.ts` | Keep | keep-grep-false-positive | Matched only because file-read test fixtures mention `encoding`; no coding domain or bundled coding reference is present. |
 | `tests/extensions/agent-switch.test.ts` | Keep | keep-explicit-coding-flow | Agent switch tests intentionally cover explicit `coding/*` switching behavior. |
+| `tests/extensions/architecture-memory.test.ts` | A | bucket-a-wave2-real-bundled-coding | Verifies architecture-memory is attached to exactly the real bundled coding consuming agents until Wave 2. |
 | `tests/extensions/domain-bindings.test.ts` | Keep | keep-domain-binding-variant | Extension binding tests use coding-like domain names as binding variants. |
 | `tests/extensions/orchestration-chain-tool-durable.test.ts` | Keep | keep-explicit-coding-flow | Durable chain tool tests intentionally include coding domain context fixtures. |
 | `tests/extensions/orchestration-chain-tool-observation.test.ts` | Keep | keep-explicit-coding-flow | Observation tests intentionally include coding domain context fixtures. |
