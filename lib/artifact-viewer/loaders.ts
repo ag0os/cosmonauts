@@ -1,6 +1,8 @@
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { isAbsolute, posix, relative, resolve } from "node:path";
+import matter from "gray-matter";
 import { ARCHITECTURE_MAP_OUTPUT_DIR } from "../architecture-map/types.ts";
+import type { Plan } from "../plans/index.ts";
 import { PlanManager, validateSlug } from "../plans/index.ts";
 import { TaskManager } from "../tasks/task-manager.ts";
 import type { Task, TaskListFilter, TaskStatus } from "../tasks/task-types.ts";
@@ -26,6 +28,15 @@ export interface PlanTaskStatus {
 	readonly counts: Readonly<Record<TaskStatus, number>>;
 }
 
+export interface PlanViewerData {
+	readonly plan: Plan;
+	readonly planDocument: ArtifactDocument;
+	readonly specDocument?: ArtifactDocument;
+	readonly reviewDocument?: ArtifactDocument;
+	readonly taskStatus: PlanTaskStatus;
+	readonly taskConfigExists: boolean;
+}
+
 export async function loadPlanArtifact(options: {
 	readonly projectRoot: string;
 	readonly slug: string;
@@ -43,6 +54,65 @@ export async function loadPlanArtifact(options: {
 		kind: "plan",
 		sourcePath: `missions/plans/${options.slug}/plan.md`,
 		title: plan.title,
+		markdown,
+	});
+}
+
+export async function loadPlanPageData(options: {
+	readonly projectRoot: string;
+	readonly slug: string;
+}): Promise<PlanViewerData | null> {
+	validateSlug(options.slug);
+
+	const manager = new PlanManager(options.projectRoot);
+	const plan = await manager.getPlan(options.slug);
+	if (!plan) return null;
+
+	const reviewDocument = await loadPlanReviewArtifact(options);
+	const taskStatus = await loadPlanTaskStatus(options);
+	const taskConfigExists = await projectFileExists(
+		options.projectRoot,
+		"missions/tasks/config.json",
+	);
+
+	return {
+		plan,
+		planDocument: artifactDocument({
+			kind: "plan",
+			sourcePath: `missions/plans/${options.slug}/plan.md`,
+			title: plan.title,
+			markdown: plan.body,
+		}),
+		...(plan.spec
+			? {
+					specDocument: artifactDocument({
+						kind: "plan",
+						sourcePath: `missions/plans/${options.slug}/spec.md`,
+						title: "Spec",
+						markdown: plan.spec,
+					}),
+				}
+			: {}),
+		...(reviewDocument ? { reviewDocument } : {}),
+		taskStatus,
+		taskConfigExists,
+	};
+}
+
+export async function loadPlanReviewArtifact(options: {
+	readonly projectRoot: string;
+	readonly slug: string;
+}): Promise<ArtifactDocument | null> {
+	validateSlug(options.slug);
+
+	const sourcePath = `missions/plans/${options.slug}/review.md`;
+	const markdown = await readProjectFile(options.projectRoot, sourcePath);
+	if (markdown === null) return null;
+
+	return artifactDocument({
+		kind: "review",
+		sourcePath,
+		title: "Review",
 		markdown,
 	});
 }
@@ -150,10 +220,16 @@ function artifactDocument(input: {
 	readonly title: string;
 	readonly markdown: string;
 }): ArtifactDocument {
+	const markdown = stripFrontmatter(input.markdown);
 	return {
 		...input,
-		html: renderArtifactMarkdown(input.markdown),
+		markdown,
+		html: renderArtifactMarkdown(markdown),
 	};
+}
+
+function stripFrontmatter(markdown: string): string {
+	return matter(markdown).content.trim();
 }
 
 async function readProjectFile(
@@ -184,6 +260,22 @@ function validateMarkdownFilename(filename: string, fieldName: string): void {
 	) {
 		throw new Error(`Invalid ${fieldName}: ${filename}`);
 	}
+}
+
+async function projectFileExists(
+	projectRoot: string,
+	projectPath: string,
+): Promise<boolean> {
+	const root = resolve(projectRoot);
+	const absolute = resolve(root, ...projectPath.split("/"));
+	const rel = relative(root, absolute);
+	if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) {
+		throw new Error(`Unsafe artifact path: ${projectPath}`);
+	}
+
+	return await access(absolute)
+		.then(() => true)
+		.catch(() => false);
 }
 
 function countTasksByStatus(
