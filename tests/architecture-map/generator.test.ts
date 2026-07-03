@@ -11,6 +11,7 @@ import type {
 	AnalysisInput,
 	AnalysisResult,
 	ModuleSkeleton,
+	NarrativeProvider,
 } from "../../lib/architecture-map/types.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
@@ -133,6 +134,285 @@ describe("generateArchitectureMap", () => {
 		await expect(stat(shardPath)).resolves.toMatchObject({
 			mtimeMs: beforeShardStat.mtimeMs,
 		});
+	});
+
+	test("reuses narrative for body-only edits without provider calls @cosmo-behavior plan:code-structure-map#B-005", async () => {
+		await writeTypeScriptFixture(tmp.path);
+		const provider = fakeNarrativeProvider();
+		const options = {
+			projectRoot: tmp.path,
+			analyzer: typescriptSourceAnalyzer,
+			narrativeProvider: provider,
+			configOverrides: {
+				sourceRoots: ["src"],
+				moduleRoots: ["src/domain", "src/shared"],
+				narrative: { enabled: true, maxModulesPerRun: 20 },
+			},
+		};
+
+		await expect(generateArchitectureMap(options)).resolves.toMatchObject({
+			kind: "written",
+			pendingModules: [],
+		});
+		const beforeDomain = matter(
+			await readMapFile(tmp.path, "modules/src/domain.md"),
+		);
+		provider.calls.length = 0;
+
+		await writeFile(
+			join(tmp.path, "src", "domain", "index.ts"),
+			[
+				'import type { SharedThing } from "../shared/model";',
+				"export interface DomainApi {",
+				"\tshared: SharedThing;",
+				"}",
+				"export function runDomain(): string {",
+				'\treturn "domain body changed";',
+				"}",
+				"",
+			].join("\n"),
+			"utf-8",
+		);
+
+		const result = await generateArchitectureMap(options);
+		expect(result).toMatchObject({
+			kind: "written",
+			pendingModules: [],
+		});
+		if (result.kind === "written") {
+			expect(result.changedFiles).toEqual([
+				"memory/architecture/index.md",
+				"memory/architecture/modules/src/domain.md",
+			]);
+		}
+		expect(provider.calls).toEqual([]);
+
+		const afterDomain = matter(
+			await readMapFile(tmp.path, "modules/src/domain.md"),
+		);
+		expect(afterDomain.data.sourceHash).not.toBe(beforeDomain.data.sourceHash);
+		expect(afterDomain.data.skeletonHash).toBe(beforeDomain.data.skeletonHash);
+		expect(afterDomain.data.narrativeStatus).toBe("reused");
+		expect(afterDomain.content).toContain(
+			"Generated narrative for src/domain.",
+		);
+		expect(afterDomain.content).toContain("Detailed narrative for src/domain.");
+	});
+
+	test("regenerates only the affected public-interface module narrative @cosmo-behavior plan:code-structure-map#B-006", async () => {
+		await writeTypeScriptFixture(tmp.path);
+		const provider = fakeNarrativeProvider();
+		const options = {
+			projectRoot: tmp.path,
+			analyzer: typescriptSourceAnalyzer,
+			narrativeProvider: provider,
+			configOverrides: {
+				sourceRoots: ["src"],
+				moduleRoots: ["src/domain", "src/shared"],
+				narrative: { enabled: true, maxModulesPerRun: 20 },
+			},
+		};
+
+		await expect(generateArchitectureMap(options)).resolves.toMatchObject({
+			kind: "written",
+			pendingModules: [],
+		});
+		const beforeDomain = matter(
+			await readMapFile(tmp.path, "modules/src/domain.md"),
+		);
+		const sharedPath = join(
+			tmp.path,
+			"memory",
+			"architecture",
+			"modules",
+			"src",
+			"shared.md",
+		);
+		const beforeShared = matter(await readFile(sharedPath, "utf-8"));
+		const beforeSharedStat = await stat(sharedPath);
+		provider.calls.length = 0;
+
+		await writeFile(
+			join(tmp.path, "src", "domain", "index.ts"),
+			[
+				'import type { SharedThing } from "../shared/model";',
+				"export interface DomainApi {",
+				"\tshared: SharedThing;",
+				"\tversion: number;",
+				"}",
+				"export function runDomain(): string {",
+				'\treturn "domain";',
+				"}",
+				"",
+			].join("\n"),
+			"utf-8",
+		);
+
+		const result = await generateArchitectureMap(options);
+		expect(result).toMatchObject({
+			kind: "written",
+			pendingModules: [],
+		});
+		if (result.kind === "written") {
+			expect(result.changedFiles).toEqual([
+				"memory/architecture/index.md",
+				"memory/architecture/modules/src/domain.md",
+			]);
+		}
+		expect(provider.calls).toEqual(["src/domain"]);
+
+		const afterDomain = matter(
+			await readMapFile(tmp.path, "modules/src/domain.md"),
+		);
+		const afterShared = matter(await readFile(sharedPath, "utf-8"));
+		expect(afterDomain.data.skeletonHash).not.toBe(
+			beforeDomain.data.skeletonHash,
+		);
+		expect(afterDomain.data.narrativeStatus).toBe("generated");
+		expect(afterShared.data.skeletonHash).toBe(beforeShared.data.skeletonHash);
+		expect(afterShared.content).toContain(
+			"Generated narrative for src/shared.",
+		);
+		expect(
+			Math.abs((await stat(sharedPath)).mtimeMs - beforeSharedStat.mtimeMs),
+		).toBeLessThan(2);
+	});
+
+	test("writes pending narratives for disabled budget-exhausted and failed generation @cosmo-behavior plan:code-structure-map#B-010", async () => {
+		const disabledRoot = join(tmp.path, "disabled");
+		await writeTypeScriptFixture(disabledRoot);
+		const disabledProvider = fakeNarrativeProvider();
+		await expect(
+			generateArchitectureMap({
+				projectRoot: disabledRoot,
+				analyzer: typescriptSourceAnalyzer,
+				narrativeProvider: disabledProvider,
+				configOverrides: {
+					sourceRoots: ["src"],
+					moduleRoots: ["src/domain", "src/shared"],
+					narrative: { enabled: false, maxModulesPerRun: 20 },
+				},
+			}),
+		).resolves.toMatchObject({
+			kind: "written",
+			pendingModules: ["src/domain", "src/shared"],
+		});
+		expect(disabledProvider.calls).toEqual([]);
+		expect(await readMapFile(disabledRoot, "index.md")).toContain(
+			"- `src/domain` - Narrative pending for `src/domain`.",
+		);
+		expect(await readMapFile(disabledRoot, "modules/src/domain.md")).toContain(
+			"Narrative generation is disabled for this run.",
+		);
+
+		const budgetRoot = join(tmp.path, "budget");
+		await writeTypeScriptFixture(budgetRoot);
+		const budgetProvider = fakeNarrativeProvider();
+		await expect(
+			generateArchitectureMap({
+				projectRoot: budgetRoot,
+				analyzer: typescriptSourceAnalyzer,
+				narrativeProvider: budgetProvider,
+				configOverrides: {
+					sourceRoots: ["src"],
+					moduleRoots: ["src/domain", "src/shared"],
+					narrative: { enabled: true, maxModulesPerRun: 1 },
+				},
+			}),
+		).resolves.toMatchObject({
+			kind: "written",
+			pendingModules: ["src/shared"],
+		});
+		expect(budgetProvider.calls).toEqual(["src/domain"]);
+		expect(await readMapFile(budgetRoot, "modules/src/shared.md")).toContain(
+			"Narrative generation budget was exhausted for this run.",
+		);
+
+		const failedRoot = join(tmp.path, "failed");
+		await writeTypeScriptFixture(failedRoot);
+		await expect(
+			generateArchitectureMap({
+				projectRoot: failedRoot,
+				analyzer: typescriptSourceAnalyzer,
+				narrativeProvider: fakeNarrativeProvider({
+					failFor: new Set(["src/domain", "src/shared"]),
+				}),
+				configOverrides: {
+					sourceRoots: ["src"],
+					moduleRoots: ["src/domain", "src/shared"],
+					narrative: { enabled: true, maxModulesPerRun: 20 },
+				},
+			}),
+		).resolves.toMatchObject({
+			kind: "written",
+			pendingModules: ["src/domain", "src/shared"],
+		});
+		expect(await readMapFile(failedRoot, "modules/src/domain.md")).toContain(
+			"Narrative generation failed: failed src/domain",
+		);
+	});
+
+	test("completes pending narratives later without touching unaffected module files @cosmo-behavior plan:code-structure-map#B-021", async () => {
+		await writeTypeScriptFixture(tmp.path);
+		const disabledOptions = {
+			projectRoot: tmp.path,
+			analyzer: typescriptSourceAnalyzer,
+			configOverrides: {
+				sourceRoots: ["src"],
+				moduleRoots: ["src/domain", "src/shared"],
+				narrative: { enabled: false, maxModulesPerRun: 20 },
+			},
+		};
+
+		await expect(
+			generateArchitectureMap(disabledOptions),
+		).resolves.toMatchObject({
+			kind: "written",
+			pendingModules: ["src/domain", "src/shared"],
+		});
+		const sharedPath = join(
+			tmp.path,
+			"memory",
+			"architecture",
+			"modules",
+			"src",
+			"shared.md",
+		);
+		const beforeShared = await readFile(sharedPath, "utf-8");
+		const beforeSharedStat = await stat(sharedPath);
+		const provider = fakeNarrativeProvider();
+
+		const result = await generateArchitectureMap({
+			projectRoot: tmp.path,
+			analyzer: typescriptSourceAnalyzer,
+			narrativeProvider: provider,
+			configOverrides: {
+				sourceRoots: ["src"],
+				moduleRoots: ["src/domain", "src/shared"],
+				narrative: { enabled: true, maxModulesPerRun: 1 },
+			},
+		});
+
+		expect(result).toMatchObject({
+			kind: "written",
+			pendingModules: ["src/shared"],
+		});
+		if (result.kind === "written") {
+			expect(result.changedFiles).toEqual([
+				"memory/architecture/index.md",
+				"memory/architecture/modules/src/domain.md",
+			]);
+		}
+		expect(provider.calls).toEqual(["src/domain"]);
+		expect(
+			matter(await readMapFile(tmp.path, "modules/src/domain.md")).data,
+		).toMatchObject({
+			narrativeStatus: "generated",
+		});
+		expect(await readFile(sharedPath, "utf-8")).toBe(beforeShared);
+		expect(
+			Math.abs((await stat(sharedPath)).mtimeMs - beforeSharedStat.mtimeMs),
+		).toBeLessThan(2);
 	});
 
 	test("preserves previous content and leaves no partial map on analysis or render failure @cosmo-behavior plan:code-structure-map#B-008", async () => {
@@ -350,6 +630,25 @@ function fakeAnalyzer(options: {
 	return {
 		getConfigInputs: async () => ["tsconfig.json"],
 		analyze: options.analyze,
+	};
+}
+
+function fakeNarrativeProvider(options?: {
+	readonly failFor?: ReadonlySet<string>;
+}): NarrativeProvider & { readonly calls: string[] } {
+	const calls: string[] = [];
+	return {
+		calls,
+		generate: async (input) => {
+			calls.push(input.skeleton.resource);
+			if (options?.failFor?.has(input.skeleton.resource)) {
+				throw new Error(`failed ${input.skeleton.resource}`);
+			}
+			return {
+				oneLiner: `Generated narrative for ${input.skeleton.resource}.`,
+				text: `Detailed narrative for ${input.skeleton.resource}.`,
+			};
+		},
 	};
 }
 

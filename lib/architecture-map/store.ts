@@ -1,10 +1,12 @@
 import {
+	copyFile,
 	mkdir,
 	readdir,
 	readFile,
 	rename,
 	rm,
 	stat,
+	utimes,
 	writeFile,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, posix, relative, resolve } from "node:path";
@@ -19,6 +21,12 @@ export interface ArchitectureMapBundleFile {
 export type StoreArchitectureMapBundleResult =
 	| { readonly kind: "written"; readonly changedFiles: readonly string[] }
 	| { readonly kind: "unchanged" };
+
+interface ExistingGeneratedFile {
+	readonly content: string;
+	readonly atime: Date;
+	readonly mtime: Date;
+}
 
 export async function hasArchitectureMap(
 	projectRoot: string,
@@ -65,7 +73,12 @@ export async function storeArchitectureMapBundle(options: {
 		return { kind: "unchanged" };
 	}
 
-	await writeReplacementTempBundle(paths.tempDir, files);
+	await writeReplacementTempBundle({
+		tempDir: paths.tempDir,
+		targetDir: paths.targetDir,
+		files,
+		existingFiles,
+	});
 	try {
 		await validateTempBundle(paths.tempDir, files);
 		await rm(paths.backupDir, { recursive: true, force: true });
@@ -152,9 +165,9 @@ function validateBundlePath(targetDir: string, path: string): void {
 
 async function readExistingGeneratedFiles(
 	targetDir: string,
-): Promise<ReadonlyMap<string, string>> {
+): Promise<ReadonlyMap<string, ExistingGeneratedFile>> {
 	if (!(await pathExists(targetDir))) return new Map();
-	const files = new Map<string, string>();
+	const files = new Map<string, ExistingGeneratedFile>();
 	await collectExistingFiles(targetDir, targetDir, files);
 	return files;
 }
@@ -162,7 +175,7 @@ async function readExistingGeneratedFiles(
 async function collectExistingFiles(
 	rootDir: string,
 	dir: string,
-	files: Map<string, string>,
+	files: Map<string, ExistingGeneratedFile>,
 ): Promise<void> {
 	const entries = await readdir(dir, { withFileTypes: true });
 	for (const entry of entries) {
@@ -175,18 +188,26 @@ async function collectExistingFiles(
 		const rel = relative(rootDir, absolute)
 			.split(/[\\/]+/u)
 			.join("/");
-		files.set(rel, await readFile(absolute, "utf-8"));
+		const [fileStat, content] = await Promise.all([
+			stat(absolute),
+			readFile(absolute, "utf-8"),
+		]);
+		files.set(rel, {
+			content,
+			atime: fileStat.atime,
+			mtime: fileStat.mtime,
+		});
 	}
 }
 
 function changedGeneratedFiles(
 	files: readonly ArchitectureMapBundleFile[],
-	existingFiles: ReadonlyMap<string, string>,
+	existingFiles: ReadonlyMap<string, ExistingGeneratedFile>,
 ): readonly string[] {
 	const changed = new Set<string>();
 	const expectedPaths = new Set(files.map((file) => file.path));
 	for (const file of files) {
-		if (existingFiles.get(file.path) !== file.content) {
+		if (existingFiles.get(file.path)?.content !== file.content) {
 			changed.add(toProjectMapPath(file.path));
 		}
 	}
@@ -198,15 +219,26 @@ function changedGeneratedFiles(
 	return [...changed].sort();
 }
 
-async function writeReplacementTempBundle(
-	tempDir: string,
-	files: readonly ArchitectureMapBundleFile[],
-): Promise<void> {
-	await rm(tempDir, { recursive: true, force: true });
-	await mkdir(tempDir, { recursive: true });
-	for (const file of files) {
-		const absolute = join(tempDir, ...file.path.split("/"));
+async function writeReplacementTempBundle(options: {
+	readonly tempDir: string;
+	readonly targetDir: string;
+	readonly files: readonly ArchitectureMapBundleFile[];
+	readonly existingFiles: ReadonlyMap<string, ExistingGeneratedFile>;
+}): Promise<void> {
+	await rm(options.tempDir, { recursive: true, force: true });
+	await mkdir(options.tempDir, { recursive: true });
+	for (const file of options.files) {
+		const absolute = join(options.tempDir, ...file.path.split("/"));
 		await mkdir(dirname(absolute), { recursive: true });
+		const existing = options.existingFiles.get(file.path);
+		if (existing?.content === file.content) {
+			await copyFile(
+				join(options.targetDir, ...file.path.split("/")),
+				absolute,
+			);
+			await utimes(absolute, existing.atime, existing.mtime);
+			continue;
+		}
 		await writeFile(absolute, file.content, "utf-8");
 	}
 }

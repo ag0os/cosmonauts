@@ -21,6 +21,7 @@ import {
 	type ModuleNarrative,
 	type ModuleRecord,
 	type ModuleSkeleton,
+	type NarrativeProvider,
 	type NarrativeStatus,
 	OKF_RECORD_TYPES,
 	type PublicExport,
@@ -30,6 +31,9 @@ interface PriorRecord {
 	readonly raw: string;
 	readonly timestamp?: string;
 	readonly generatedAt?: string;
+	readonly sourceHash?: string;
+	readonly skeletonHash?: string;
+	readonly narrative?: ModuleNarrative;
 }
 
 interface RecordRenderInput {
@@ -76,8 +80,14 @@ export async function generateArchitectureMap(
 				snapshot,
 			}),
 		]);
-		const records = buildModuleRecords(analysis.modules);
 		const priorRecords = await readPriorRecords(options.projectRoot);
+		const records = await buildModuleRecords({
+			skeletons: analysis.modules,
+			priorRecords,
+			narrativeEnabled: config.narrative.enabled,
+			maxNarratives: config.narrative.maxModulesPerRun,
+			narrativeProvider: options.narrativeProvider,
+		});
 		const bundle = renderArchitectureMapBundle({
 			projectHash: snapshot.hash,
 			statFingerprint: statFingerprint.hash,
@@ -108,20 +118,122 @@ export async function generateArchitectureMap(
 	}
 }
 
-function buildModuleRecords(
-	skeletons: readonly ModuleSkeleton[],
-): readonly ModuleRecord[] {
+async function buildModuleRecords(options: {
+	readonly skeletons: readonly ModuleSkeleton[];
+	readonly priorRecords: ReadonlyMap<string, PriorRecord>;
+	readonly narrativeEnabled: boolean;
+	readonly maxNarratives: number;
+	readonly narrativeProvider?: NarrativeProvider;
+}): Promise<readonly ModuleRecord[]> {
+	const { skeletons } = options;
 	const sorted = [...skeletons].sort((left, right) =>
 		left.resource.localeCompare(right.resource),
 	);
 	const dependents = deriveDependents(sorted);
+	let narrativeAttempts = 0;
 
-	return sorted.map((skeleton) => ({
-		...skeleton,
-		dependents: dependents.get(skeleton.resource) ?? [],
-		narrative: pendingNarrative(skeleton.resource),
-		shardPath: shardPathForResource(skeleton.resource),
-	}));
+	const records: ModuleRecord[] = [];
+	for (const skeleton of sorted) {
+		const shardPath = shardPathForResource(skeleton.resource);
+		const prior = options.priorRecords.get(shardPath);
+		const narrative = await resolveModuleNarrative({
+			skeleton,
+			prior,
+			narrativeEnabled: options.narrativeEnabled,
+			narrativeProvider: options.narrativeProvider,
+			canAttemptNarrative: narrativeAttempts < options.maxNarratives,
+			onNarrativeAttempt: () => {
+				narrativeAttempts += 1;
+			},
+		});
+
+		records.push({
+			...skeleton,
+			dependents: dependents.get(skeleton.resource) ?? [],
+			narrative,
+			shardPath,
+		});
+	}
+
+	return records;
+}
+
+async function resolveModuleNarrative(options: {
+	readonly skeleton: ModuleSkeleton;
+	readonly prior?: PriorRecord;
+	readonly narrativeEnabled: boolean;
+	readonly narrativeProvider?: NarrativeProvider;
+	readonly canAttemptNarrative: boolean;
+	readonly onNarrativeAttempt: () => void;
+}): Promise<ModuleNarrative> {
+	const priorNarrative = options.prior?.narrative;
+	if (
+		options.prior?.skeletonHash === options.skeleton.skeletonHash &&
+		priorNarrative
+	) {
+		if (priorNarrative.status !== "pending") {
+			if (options.prior.sourceHash === options.skeleton.sourceHash) {
+				return priorNarrative;
+			}
+			return {
+				...priorNarrative,
+				status: "reused",
+			};
+		}
+
+		if (!shouldAttemptNarrative(options)) {
+			return priorNarrative;
+		}
+	}
+
+	if (!options.narrativeEnabled) {
+		return pendingNarrative(
+			options.skeleton.resource,
+			"Narrative generation is disabled for this run.",
+		);
+	}
+	if (!options.narrativeProvider) {
+		return pendingNarrative(
+			options.skeleton.resource,
+			"Narrative generation has no provider for this run.",
+		);
+	}
+	if (!options.canAttemptNarrative) {
+		return pendingNarrative(
+			options.skeleton.resource,
+			"Narrative generation budget was exhausted for this run.",
+		);
+	}
+
+	options.onNarrativeAttempt();
+	try {
+		const generated = await options.narrativeProvider.generate({
+			skeleton: options.skeleton,
+			priorNarrative,
+		});
+		return {
+			status: "generated",
+			oneLiner: generated.oneLiner,
+			text: generated.text,
+		};
+	} catch (error: unknown) {
+		return pendingNarrative(
+			options.skeleton.resource,
+			`Narrative generation failed: ${errorMessage(error)}`,
+		);
+	}
+}
+
+function shouldAttemptNarrative(options: {
+	readonly narrativeEnabled: boolean;
+	readonly narrativeProvider?: NarrativeProvider;
+	readonly canAttemptNarrative: boolean;
+}): boolean {
+	return (
+		options.narrativeEnabled &&
+		!!options.narrativeProvider &&
+		options.canAttemptNarrative
+	);
 }
 
 function deriveDependents(
@@ -150,11 +262,11 @@ function deriveDependents(
 	);
 }
 
-function pendingNarrative(resource: string): ModuleNarrative {
+function pendingNarrative(resource: string, reason: string): ModuleNarrative {
 	return {
 		status: "pending",
 		oneLiner: `Narrative pending for \`${resource}\`.`,
-		pendingReason: "Narrative generation is deferred for this run.",
+		pendingReason: reason,
 	};
 }
 
@@ -420,8 +532,77 @@ async function readPriorRecordsFromDir(
 				typeof parsed.data.generatedAt === "string"
 					? parsed.data.generatedAt
 					: undefined,
+			sourceHash:
+				typeof parsed.data.sourceHash === "string"
+					? parsed.data.sourceHash
+					: undefined,
+			skeletonHash:
+				typeof parsed.data.skeletonHash === "string"
+					? parsed.data.skeletonHash
+					: undefined,
+			narrative: parsePriorNarrative(parsed.data, parsed.content),
 		});
 	}
+}
+
+function parsePriorNarrative(
+	frontmatter: Record<string, unknown>,
+	content: string,
+): ModuleNarrative | undefined {
+	const status = parseNarrativeStatus(frontmatter.narrativeStatus);
+	if (!status) return undefined;
+
+	const oneLiner = extractOneLineNarrative(content);
+	const narrativeBody = extractSection(content, "## Narrative", "## Files");
+	if (status === "pending") {
+		return {
+			status,
+			...(oneLiner ? { oneLiner } : {}),
+			...(narrativeBody ? { pendingReason: narrativeBody } : {}),
+		};
+	}
+
+	return {
+		status,
+		...(oneLiner ? { oneLiner } : {}),
+		...(narrativeBody ? { text: narrativeBody } : {}),
+	};
+}
+
+function parseNarrativeStatus(value: unknown): NarrativeStatus | undefined {
+	if (value === "generated" || value === "reused" || value === "pending") {
+		return value;
+	}
+	return undefined;
+}
+
+function extractOneLineNarrative(content: string): string | undefined {
+	const lines = content.split(/\r?\n/u);
+	const narrativeHeading = lines.indexOf("## Narrative");
+	const searchEnd = narrativeHeading === -1 ? lines.length : narrativeHeading;
+	for (let index = 1; index < searchEnd; index += 1) {
+		const line = lines[index]?.trim();
+		if (line) return line;
+	}
+	return undefined;
+}
+
+function extractSection(
+	content: string,
+	startHeading: string,
+	endHeading: string,
+): string | undefined {
+	const lines = content.split(/\r?\n/u);
+	const start = lines.indexOf(startHeading);
+	if (start === -1) return undefined;
+	const end = lines.findIndex(
+		(line, index) => index > start && line === endHeading,
+	);
+	const body = lines
+		.slice(start + 1, end === -1 ? lines.length : end)
+		.join("\n")
+		.trim();
+	return body.length > 0 ? body : undefined;
 }
 
 function stableComparable(raw: string): string {
