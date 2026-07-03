@@ -1,4 +1,8 @@
 export {
+	createTypeScriptSourceAnalyzer,
+	typescriptSourceAnalyzer,
+} from "./analyzer.ts";
+export {
 	canonicalizeArchitectureMapConfig,
 	loadArchitectureMapConfig,
 	resolveArchitectureMapConfig,

@@ -41,15 +41,15 @@
 		"@earendil-works/pi-ai": "0.79.8",
 		"@earendil-works/pi-coding-agent": "0.79.8",
 		"@earendil-works/pi-tui": "0.79.8",
-		"typebox": "1.1.33",
 		"commander": "^14.0.2",
-		"gray-matter": "^4.0.3"
+		"gray-matter": "^4.0.3",
+		"typebox": "1.1.33",
+		"typescript": "^5.6.2"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.3.14",
 		"@types/node": "^22.0.0",
 		"@vitest/coverage-v8": "^3.0.0",
-		"typescript": "^5.6.2",
 		"vitest": "^3.0.0"
 	}
 }
