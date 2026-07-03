@@ -153,6 +153,10 @@ export async function computeArchitectureMapStatFingerprint(
 	files.sort((a, b) => a.path.localeCompare(b.path));
 
 	const hash = createHash("sha256");
+	hash.update("architectureMapConfig\0");
+	hash.update(canonicalizeArchitectureMapConfig(options.config));
+	hash.update("\0");
+
 	for (const file of files) {
 		hash.update(file.path);
 		hash.update("\0");

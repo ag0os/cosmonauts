@@ -40,6 +40,7 @@ interface ExecuteArchitectureGenerateOptions
 	readonly projectRoot: string;
 	readonly noNarrative: boolean;
 	readonly outputMode: CliOutputMode;
+	readonly progress?: (message: string) => void;
 }
 
 interface ArchitectureGenerateCommandResult {
@@ -89,7 +90,14 @@ export function createArchitectureProgram(
 async function runArchitectureGenerateCommand(
 	options: ExecuteArchitectureGenerateOptions,
 ): Promise<void> {
-	const commandResult = await executeArchitectureGenerate(options);
+	const progress =
+		options.outputMode === "json"
+			? undefined
+			: (message: string) => printLines([message], "stderr");
+	const commandResult = await executeArchitectureGenerate({
+		...options,
+		...(progress ? { progress } : {}),
+	});
 	emitArchitectureGenerateResult(commandResult.rendered);
 	if (commandResult.exitCode !== 0) {
 		process.exitCode = commandResult.exitCode;
@@ -106,16 +114,40 @@ export async function executeArchitectureGenerate(
 	const narrativeProvider = options.noNarrative
 		? undefined
 		: createNarrativeProvider({ projectRoot: options.projectRoot });
+	const progressNarrativeProvider = narrativeProvider
+		? withNarrativeProgress(narrativeProvider, options.progress)
+		: undefined;
 
+	options.progress?.("Generating architecture map...");
 	const result = await generateArchitectureMap({
 		projectRoot: options.projectRoot,
 		analyzer: typescriptSourceAnalyzer,
-		...(narrativeProvider ? { narrativeProvider } : {}),
+		...(progressNarrativeProvider
+			? { narrativeProvider: progressNarrativeProvider }
+			: {}),
 	});
 
 	return {
 		result,
 		...renderArchitectureGenerateResult(result, options.outputMode),
+	};
+}
+
+function withNarrativeProgress(
+	provider: NarrativeProvider,
+	progress: ((message: string) => void) | undefined,
+): NarrativeProvider {
+	if (!progress) return provider;
+
+	let reported = false;
+	return {
+		async generate(input, signal) {
+			if (!reported) {
+				reported = true;
+				progress("Generating architecture narratives...");
+			}
+			return provider.generate(input, signal);
+		},
 	};
 }
 

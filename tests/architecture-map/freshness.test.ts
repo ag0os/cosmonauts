@@ -135,7 +135,7 @@ describe("architecture map freshness", () => {
 		expect(stale).toMatchObject({ oldHash: snapshot.hash });
 	});
 
-	test("computes the turn-time stat fingerprint from included source and analyzer config files", async () => {
+	test("computes the turn-time stat fingerprint from included source analyzer config files and architecture-map config", async () => {
 		await writeFixtureProject(tmp.path);
 		const config = await resolveArchitectureMapConfig({
 			projectRoot: tmp.path,
@@ -163,6 +163,20 @@ describe("architecture map freshness", () => {
 				analyzer,
 			}),
 		).resolves.toEqual({ kind: "current", hash: fingerprint.hash });
+
+		const moduleRootConfig = await resolveArchitectureMapConfig({
+			projectRoot: tmp.path,
+			projectConfig: {
+				architectureMap: { sourceRoots: ["lib"], moduleRoots: ["lib"] },
+			},
+		});
+		const configStale = await checkArchitectureMapStatFreshness({
+			projectRoot: tmp.path,
+			config: moduleRootConfig,
+			analyzer,
+		});
+		expect(configStale.kind).toBe("stale");
+		expect(configStale).toMatchObject({ oldHash: fingerprint.hash });
 
 		await writeFile(
 			join(tmp.path, "lib", "alpha.ts"),

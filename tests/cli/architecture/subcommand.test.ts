@@ -108,9 +108,22 @@ describe("architecture generate CLI rendering", () => {
 
 describe("architecture generate command", () => {
 	test("dispatches generate with --no-narrative, --json, and --plain surfaces", async () => {
-		const generate = vi.fn<GenerateArchitectureMapFn>(async () => ({
-			kind: "unchanged",
-		}));
+		const generate = vi.fn<GenerateArchitectureMapFn>(async (options) => {
+			await options.narrativeProvider?.generate({
+				skeleton: {
+					resource: "lib",
+					rootDir: "lib",
+					files: [],
+					hasBarrel: false,
+					publicInterface: [],
+					dependencies: [],
+					externalDependencies: [],
+					sourceHash: "source",
+					skeletonHash: "skeleton",
+				},
+			});
+			return { kind: "unchanged" };
+		});
 		const createNarrativeProvider = vi.fn(fakeProvider);
 		const program = createArchitectureProgram({
 			generateArchitectureMap: generate,
@@ -131,6 +144,33 @@ describe("architecture generate command", () => {
 		expect(generate.mock.calls[0]?.[0]).not.toHaveProperty("narrativeProvider");
 		expect(generate.mock.calls[1]?.[0]).toHaveProperty("narrativeProvider");
 		expect(createNarrativeProvider).toHaveBeenCalledTimes(1);
+		expect(output.stderr()).toBe(
+			[
+				"Generating architecture map...",
+				"Generating architecture narratives...",
+				"",
+			].join("\n"),
+		);
+	});
+
+	test("keeps JSON stdout clean and does not emit progress", async () => {
+		const generate = vi.fn<GenerateArchitectureMapFn>(async () => ({
+			kind: "unchanged",
+		}));
+		const program = createArchitectureProgram({
+			generateArchitectureMap: generate,
+			createNarrativeProvider: vi.fn(fakeProvider),
+		});
+		const output = captureCliOutput();
+
+		try {
+			await program.parseAsync(["generate", "--json"], { from: "user" });
+		} finally {
+			output.restore();
+		}
+
+		expect(output.stderr()).toBe("");
+		expect(JSON.parse(output.stdout())).toEqual({ kind: "unchanged" });
 	});
 
 	test("honors --no-narrative by omitting the provider from generator options", async () => {
