@@ -12,7 +12,7 @@ const definition: AgentDefinition = {
 	],
 	model: "openai-codex/gpt-5.5",
 	tools: "coding",
-	extensions: ["plans"],
+	extensions: ["plans", "architecture-memory"],
 	skills: [
 		"pi",
 		"plan",

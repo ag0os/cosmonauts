@@ -135,18 +135,12 @@ export async function createProjectSnapshot(
 export async function computeArchitectureMapStatFingerprint(
 	options: ProjectSnapshotOptions,
 ): Promise<StatFingerprint> {
-	const sourceFiles = await collectSourceFileSnapshots(
+	const sourceFiles = await collectSourceFileStats(
 		options.projectRoot,
 		options.config,
 	);
 	const analyzerConfigFiles = await collectAnalyzerConfigFiles(options);
-	const files: StatFingerprintFile[] = sourceFiles.map(
-		({ path, size, mtimeMs }) => ({
-			path,
-			size,
-			mtimeMs,
-		}),
-	);
+	const files: StatFingerprintFile[] = [...sourceFiles];
 
 	for (const configPath of analyzerConfigFiles) {
 		const configStat = await stat(join(options.projectRoot, configPath));
@@ -176,19 +170,9 @@ async function collectSourceFileSnapshots(
 	projectRoot: string,
 	config: ArchitectureMapConfig,
 ): Promise<readonly SourceFileSnapshot[]> {
-	const paths = new Set<string>();
-	for (const sourceRoot of config.sourceRoots) {
-		const absoluteRoot = resolve(projectRoot, sourceRoot);
-		await collectSourceFiles({
-			projectRoot,
-			root: absoluteRoot,
-			exclude: config.exclude,
-			paths,
-		});
-	}
-
+	const paths = await collectSourceFilePaths(projectRoot, config);
 	const files: SourceFileSnapshot[] = [];
-	for (const path of [...paths].sort()) {
+	for (const path of paths) {
 		const absolute = join(projectRoot, path);
 		const [fileStat, contents] = await Promise.all([
 			stat(absolute),
@@ -202,6 +186,41 @@ async function collectSourceFileSnapshots(
 		});
 	}
 	return files;
+}
+
+async function collectSourceFileStats(
+	projectRoot: string,
+	config: ArchitectureMapConfig,
+): Promise<readonly StatFingerprintFile[]> {
+	const paths = await collectSourceFilePaths(projectRoot, config);
+	const files: StatFingerprintFile[] = [];
+	for (const path of paths) {
+		const absolute = join(projectRoot, path);
+		const fileStat = await stat(absolute);
+		files.push({
+			path,
+			size: fileStat.size,
+			mtimeMs: fileStat.mtimeMs,
+		});
+	}
+	return files;
+}
+
+async function collectSourceFilePaths(
+	projectRoot: string,
+	config: ArchitectureMapConfig,
+): Promise<readonly string[]> {
+	const paths = new Set<string>();
+	for (const sourceRoot of config.sourceRoots) {
+		const absoluteRoot = resolve(projectRoot, sourceRoot);
+		await collectSourceFiles({
+			projectRoot,
+			root: absoluteRoot,
+			exclude: config.exclude,
+			paths,
+		});
+	}
+	return [...paths].sort();
 }
 
 async function collectSourceFiles(options: {

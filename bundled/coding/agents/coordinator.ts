@@ -7,7 +7,12 @@ const definition: AgentDefinition = {
 	capabilities: ["healthy-codebase-harness", "tasks", "spawning"],
 	model: "openai-codex/gpt-5.5",
 	tools: "none",
-	extensions: ["tasks", "orchestration", "observability"],
+	extensions: [
+		"tasks",
+		"orchestration",
+		"observability",
+		"architecture-memory",
+	],
 	skills: [],
 	subagents: ["worker"],
 	projectContext: false,
