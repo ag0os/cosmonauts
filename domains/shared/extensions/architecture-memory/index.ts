@@ -178,63 +178,42 @@ async function readArchitectureMap(options: {
 		);
 	}
 
-	const safety = validateResource(options.resource);
+	const resource = options.resource;
+	const safety = validateResource(resource);
 	if (!safety.ok) {
 		return textResult(
-			`Rejected unsafe architecture map resource: ${options.resource}. Module resources must be relative names inside \`memory/architecture/modules/\`.`,
-			{ freshness: options.freshness, resource: options.resource },
+			`Rejected unsafe architecture map resource: ${resource}. Module resources must be relative names inside \`memory/architecture/modules/\`.`,
+			{ freshness: options.freshness, resource },
 		);
 	}
 
-	const availableModules = await readAvailableModules(options.projectRoot);
-	if (!availableModules.includes(options.resource)) {
-		return textResult(
-			[
-				`Unknown architecture map module: ${options.resource}`,
-				availableModules.length > 0
-					? `Available modules: ${availableModules.join(", ")}`
-					: "Available modules: none",
-			].join("\n"),
-			{
-				freshness: options.freshness,
-				resource: options.resource,
-				availableModules,
-			},
-		);
-	}
-
-	const shardPath = resourceToShardPath(options.resource);
+	const shardPath = resourceToShardPath(resource);
 	const absoluteShardPath = safeArchitecturePath(
 		options.projectRoot,
 		shardPath,
 	);
 	if (!absoluteShardPath) {
 		return textResult(
-			`Rejected unsafe architecture map resource: ${options.resource}.`,
-			{ freshness: options.freshness, resource: options.resource },
+			`Rejected unsafe architecture map resource: ${resource}.`,
+			{ freshness: options.freshness, resource },
 		);
 	}
 
 	const shard = await readMapFile(absoluteShardPath);
 	if (shard === undefined) {
-		return textResult(
-			[
-				`Architecture map module shard is missing: ${options.resource}`,
-				`Expected: memory/architecture/${shardPath}`,
-			].join("\n"),
-			{
-				freshness: options.freshness,
-				resource: options.resource,
-				path: `${ARCHITECTURE_DIR}/${shardPath}`,
-			},
-		);
+		return unknownModuleResult({ ...options, resource });
+	}
+
+	const shardResource = matter(shard).data.resource;
+	if (shardResource !== resource) {
+		return unknownModuleResult({ ...options, resource });
 	}
 
 	return textResult(
 		[formatFreshnessBanner(options.freshness), shard].join("\n\n"),
 		{
 			freshness: options.freshness,
-			resource: options.resource,
+			resource,
 			path: `${ARCHITECTURE_DIR}/${shardPath}`,
 		},
 	);
@@ -282,6 +261,27 @@ function formatFreshnessBanner(freshness: ArchitectureMapFreshness): string {
 		case "missing":
 			return "Architecture map freshness: missing";
 	}
+}
+
+async function unknownModuleResult(options: {
+	readonly projectRoot: string;
+	readonly resource: string;
+	readonly freshness: ArchitectureMapFreshness;
+}): Promise<ReturnType<typeof textResult>> {
+	const availableModules = await readAvailableModules(options.projectRoot);
+	return textResult(
+		[
+			`Unknown architecture map module: ${options.resource}`,
+			availableModules.length > 0
+				? `Available modules: ${availableModules.join(", ")}`
+				: "Available modules: none",
+		].join("\n"),
+		{
+			freshness: options.freshness,
+			resource: options.resource,
+			availableModules,
+		},
+	);
 }
 
 async function readAvailableModules(projectRoot: string): Promise<string[]> {

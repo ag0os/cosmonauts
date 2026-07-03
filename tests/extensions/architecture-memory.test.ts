@@ -64,8 +64,13 @@ describe("architecture-memory extension", () => {
 		}
 	});
 
-	test("architecture_map_read returns the full index by default and reads module shards by module @cosmo-behavior plan:code-structure-map#B-013", async () => {
+	test("architecture_map_read returns the full index by default and reads module shards by module without parsing unrelated shards @cosmo-behavior plan:code-structure-map#B-013", async () => {
 		await writeArchitectureMap(tmp.path);
+		await writeFile(
+			join(tmp.path, "memory", "architecture", "modules", "lib", "broken.md"),
+			"---\nresource: [lib/broken\n---\n\n# broken\n",
+			"utf-8",
+		);
 		const pi = await enabledPi(tmp.path);
 
 		const index = (await pi.callTool(
