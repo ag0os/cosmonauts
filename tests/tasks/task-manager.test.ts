@@ -643,6 +643,36 @@ describe("TaskManager", () => {
 			expect(tasks.length).toBe(1);
 			expect(tasks[0]?.id).toBe("TASK-001");
 		});
+
+		it("listTasksReadOnly mirrors list filters without initializing scaffolding @cosmo-behavior plan:code-structure-map#B-016", async () => {
+			await expect(manager.listTasksReadOnly()).resolves.toEqual([]);
+			await expect(
+				access(join(tempDir, "missions", "tasks")),
+			).rejects.toThrow();
+
+			await manager.init();
+			await manager.createTask({
+				title: "Plan Task",
+				priority: "high",
+				labels: ["plan:viewer"],
+			});
+			await manager.createTask({
+				title: "Other Task",
+				priority: "low",
+				labels: ["plan:other"],
+			});
+
+			const readOnlyTasks = await manager.listTasksReadOnly({
+				label: "plan:viewer",
+				priority: "high",
+			});
+			const normalTasks = await manager.listTasks({
+				label: "plan:viewer",
+				priority: "high",
+			});
+
+			expect(readOnlyTasks).toEqual(normalTasks);
+		});
 	});
 
 	describe("search", () => {

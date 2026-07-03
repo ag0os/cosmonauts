@@ -270,6 +270,24 @@ export class TaskManager {
 	}
 
 	/**
+	 * List task files without initializing task scaffolding or writing config.
+	 * Intended for read-only presentation surfaces that must tolerate projects
+	 * without an initialized missions/tasks directory.
+	 *
+	 * @param filter - Optional filter criteria
+	 * @returns Array of tasks matching the filter
+	 */
+	async listTasksReadOnly(filter?: TaskListFilter): Promise<Task[]> {
+		const tasks = await this.loadAllTasks();
+
+		if (!filter) {
+			return tasks;
+		}
+
+		return tasks.filter((task) => this.matchesFilter(task, filter));
+	}
+
+	/**
 	 * Search tasks by query string
 	 * Searches title, description, implementationPlan, and implementationNotes
 	 * @param query - Search query
