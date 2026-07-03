@@ -11,6 +11,27 @@ W1 supports TypeScript projects only. A project is supported when it has a
 mechanical map is generated from source and analyzer/configuration inputs; model
 calls are only for optional narrative text in later generator work.
 
+Generate or refresh the map from the project root:
+
+```bash
+cosmonauts architecture generate
+```
+
+Use `cosmonauts arch generate` as the short alias. Pass `--no-narrative` to
+write the mechanical map with pending narrative text instead of calling the
+CLI-owned narrative provider. `--json` and `--plain` are available for scripted
+output.
+
+Open the local read-only artifact viewer from the project root:
+
+```bash
+cosmonauts serve
+```
+
+The server renders the architecture map and plans from their markdown source.
+It is a live local server only in W1; there is no static export and no file
+watching.
+
 ## Generated layout
 
 Generated bundles use this layout:
@@ -40,6 +61,13 @@ Cosmonauts defines this W1 type vocabulary:
 Generated records may also carry project-specific keys such as
 `generatorVersion`, `projectHash`, `statFingerprint`, `sourceHash`,
 `skeletonHash`, `narrativeStatus`, and `moduleCount`.
+
+Narrative states are explicit. `generated` means the module has current
+narrative text, `reused` means the previous narrative was kept because the
+module skeleton did not change, and `pending` means the mechanical spine was
+written but narrative text is unavailable for this run. Pending narratives can
+be completed by a later refresh when narrative generation is enabled and budget
+is available.
 
 ## Config escape hatch
 
@@ -83,3 +111,19 @@ Freshness has two tiers:
 
 Both tiers are reconstructed from persisted map frontmatter and current disk
 state. Correctness does not depend on process-local cache.
+
+## Viewer limitations
+
+`cosmonauts serve` is a dependency-free, read-only viewer for local markdown
+artifacts. It renders a bounded markdown subset: headings, paragraphs, lists,
+links, inline and fenced code, and best-effort tables. Source content is escaped
+before rendering; unsupported markdown stays readable instead of becoming active
+HTML. The viewer reads task status through read-only APIs and does not scaffold
+task files or make plans, reviews, or map shards editable.
+
+## W1 exclusions
+
+W1 does not include curated architecture-of-record, drift signals, reuse-scan,
+embeddings or vector storage, general agent memory, health metrics, viewer
+editing, static viewer export, file watching, polyglot analyzers, or generated
+map OKF `log.md` files.
