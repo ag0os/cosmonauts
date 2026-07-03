@@ -112,6 +112,16 @@ Lifecycle hooks at chain, stage, and spawn levels for extensibility without modi
 - Key hooks: before_chain_start, after_stage_end, before_agent_spawn, after_tool_call
 - Enables plugins for logging, metrics, custom validation, and external integrations
 
+### `spec-to-backlog`: Automated Spec→Plan→Tasks Pipeline + Planning-Agent Hardening
+
+Two follow-ups distilled from the first fully-instrumented spec→plan→tasks run (plan `code-structure-map`, 2026-07-02/03) — observations, findings, and the forward design live in `missions/architecture/spikes/spec-to-backlog-pipeline.md`.
+
+- **Agent/process hardening (cheap, do first):** planner self-checks (state exit-transitions, invariant-vs-written-fields tracing, answer spec cost questions, target-project variance); `plan-reviewer` gains design-attack + constraint-ownership dimensions (its contract review found a defect set fully disjoint from the adversarial design review — both channels needed); `task-manager` gains a Design/Decision-Log/Files-to-Change constraint sweep so constraints not encoded as behaviors stop evaporating from task ACs
+- **Named workflow:** `planner → plan-review → plan-revise → task-manager → task-review → task-fix` with deterministic mechanical gates (coverage matrix, marker checks) between stages and human approval boundaries at plan-revise→tasks and tasks→drive; the novel agents are the revisors (planner re-invoked with verified findings + "change nothing else")
+- Multi-lens sharded review (different prompt per reviewer + adversarial verify) is not expressible in the chain DSL — interim: single-agent review dimensions; proper: first concrete consumer of `agent-swarms` Wave A
+- Spec creation stays human-interactive; `prd-ingestion` (below) is the principled path to a non-interactive spec entry point
+- Cross-links: `agent-swarms` (sharded fan-out) · `prd-ingestion` (spec entry) · `dialogic-planner-followups` (panel-value validation — this run is a supporting data point)
+
 ### `prd-ingestion`: PRD Ingestion Skill + Non-Interactive Spec-Writer Mode
 
 Accept a written PRD as input and either proceed (if complete) or refuse with a structured gap list (if ambiguous). Unlocks PRD → merge-ready PR automation without making the system hallucinate product judgment. Needed only when a real PRD input stream exists.
