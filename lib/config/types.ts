@@ -11,7 +11,7 @@ export interface ProjectChainConfig {
 }
 
 /** Optional architecture-map configuration from `.cosmonauts/config.json`. */
-export interface ProjectArchitectureMapConfig {
+interface ProjectArchitectureMapConfig {
 	readonly sourceRoots?: readonly string[];
 	readonly moduleRoots?: readonly string[];
 	readonly exclude?: readonly string[];

@@ -18,7 +18,7 @@ export interface ArchitectureMapBundleFile {
 	readonly content: string;
 }
 
-export type StoreArchitectureMapBundleResult =
+type StoreArchitectureMapBundleResult =
 	| { readonly kind: "written"; readonly changedFiles: readonly string[] }
 	| { readonly kind: "unchanged" };
 

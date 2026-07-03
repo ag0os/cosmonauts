@@ -14,18 +14,17 @@ import type {
 	StatFingerprintFile,
 } from "./types.ts";
 
-export interface ProjectSnapshotOptions {
+interface ProjectSnapshotOptions {
 	readonly projectRoot: string;
 	readonly config: ArchitectureMapConfig;
 	readonly analyzer: Pick<SourceAnalyzer, "getConfigInputs">;
 }
 
-export interface ArchitectureMapFreshnessOptions
-	extends ProjectSnapshotOptions {
+interface ArchitectureMapFreshnessOptions extends ProjectSnapshotOptions {
 	readonly indexPath?: string;
 }
 
-export interface ArchitectureMapIndexFrontmatter {
+interface ArchitectureMapIndexFrontmatter {
 	readonly projectHash?: string;
 	readonly statFingerprint?: string;
 }

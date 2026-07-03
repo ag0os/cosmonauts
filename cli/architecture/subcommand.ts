@@ -42,7 +42,7 @@ interface ExecuteArchitectureGenerateOptions
 	readonly outputMode: CliOutputMode;
 }
 
-export interface ArchitectureGenerateCommandResult {
+interface ArchitectureGenerateCommandResult {
 	readonly result: GenerateArchitectureMapResult;
 	readonly rendered:
 		| { readonly kind: "json"; readonly value: GenerateArchitectureMapResult }
@@ -86,7 +86,7 @@ export function createArchitectureProgram(
 	return program;
 }
 
-export async function runArchitectureGenerateCommand(
+async function runArchitectureGenerateCommand(
 	options: ExecuteArchitectureGenerateOptions,
 ): Promise<void> {
 	const commandResult = await executeArchitectureGenerate(options);

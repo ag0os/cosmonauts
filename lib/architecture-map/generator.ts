@@ -512,37 +512,37 @@ async function readPriorRecordsFromDir(
 	const entries = await readdir(dir, { withFileTypes: true });
 	for (const entry of entries) {
 		const absolute = join(dir, entry.name);
-		if (entry.isDirectory()) {
-			await readPriorRecordsFromDir(root, absolute, records);
+		if (!entry.isDirectory()) {
+			if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+			records.set(
+				relative(root, absolute).replaceAll("\\", "/"),
+				await readPriorRecord(absolute),
+			);
 			continue;
 		}
-		if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
-		const raw = await readFile(absolute, "utf-8");
-		const parsed = matter(raw);
-		const path = relative(root, absolute)
-			.split(/[\\/]+/u)
-			.join("/");
-		records.set(path, {
-			raw,
-			timestamp:
-				typeof parsed.data.timestamp === "string"
-					? parsed.data.timestamp
-					: undefined,
-			generatedAt:
-				typeof parsed.data.generatedAt === "string"
-					? parsed.data.generatedAt
-					: undefined,
-			sourceHash:
-				typeof parsed.data.sourceHash === "string"
-					? parsed.data.sourceHash
-					: undefined,
-			skeletonHash:
-				typeof parsed.data.skeletonHash === "string"
-					? parsed.data.skeletonHash
-					: undefined,
-			narrative: parsePriorNarrative(parsed.data, parsed.content),
-		});
+		await readPriorRecordsFromDir(root, absolute, records);
 	}
+}
+
+async function readPriorRecord(absolute: string): Promise<PriorRecord> {
+	const raw = await readFile(absolute, "utf-8");
+	const parsed = matter(raw);
+	return {
+		raw,
+		timestamp: frontmatterString(parsed.data, "timestamp"),
+		generatedAt: frontmatterString(parsed.data, "generatedAt"),
+		sourceHash: frontmatterString(parsed.data, "sourceHash"),
+		skeletonHash: frontmatterString(parsed.data, "skeletonHash"),
+		narrative: parsePriorNarrative(parsed.data, parsed.content),
+	};
+}
+
+function frontmatterString(
+	data: Record<string, unknown>,
+	key: string,
+): string | undefined {
+	const value = data[key];
+	return typeof value === "string" ? value : undefined;
 }
 
 function parsePriorNarrative(

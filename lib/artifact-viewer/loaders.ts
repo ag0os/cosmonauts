@@ -236,12 +236,7 @@ async function readProjectFile(
 	projectRoot: string,
 	projectPath: string,
 ): Promise<string | null> {
-	const root = resolve(projectRoot);
-	const absolute = resolve(root, ...projectPath.split("/"));
-	const rel = relative(root, absolute);
-	if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) {
-		throw new Error(`Unsafe artifact path: ${projectPath}`);
-	}
+	const absolute = safeProjectFilePath(projectRoot, projectPath);
 
 	try {
 		return await readFile(absolute, "utf-8");
@@ -266,16 +261,21 @@ async function projectFileExists(
 	projectRoot: string,
 	projectPath: string,
 ): Promise<boolean> {
+	const absolute = safeProjectFilePath(projectRoot, projectPath);
+
+	return await access(absolute)
+		.then(() => true)
+		.catch(() => false);
+}
+
+function safeProjectFilePath(projectRoot: string, projectPath: string): string {
 	const root = resolve(projectRoot);
 	const absolute = resolve(root, ...projectPath.split("/"));
 	const rel = relative(root, absolute);
 	if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) {
 		throw new Error(`Unsafe artifact path: ${projectPath}`);
 	}
-
-	return await access(absolute)
-		.then(() => true)
-		.catch(() => false);
+	return absolute;
 }
 
 function countTasksByStatus(

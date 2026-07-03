@@ -179,35 +179,56 @@ function parseArchitectureMapConfig(
 	const exclude = parseStringArrayField("architectureMap.exclude", obj.exclude);
 	if (exclude) architectureMap.exclude = exclude;
 
-	if ("injectionMaxBytes" in obj) {
-		if (
-			typeof obj.injectionMaxBytes === "number" &&
-			Number.isFinite(obj.injectionMaxBytes)
-		) {
-			architectureMap.injectionMaxBytes = obj.injectionMaxBytes;
-		} else {
-			console.error(
-				`[warning] Skipping malformed architectureMap.injectionMaxBytes: expected a finite number, got ${formatConfigValue(obj.injectionMaxBytes)}.`,
-			);
-		}
+	const injectionMaxBytes = parseOptionalFiniteNumberField(
+		"architectureMap.injectionMaxBytes",
+		obj,
+		"injectionMaxBytes",
+	);
+	if (injectionMaxBytes !== undefined) {
+		architectureMap.injectionMaxBytes = injectionMaxBytes;
 	}
 
-	if ("narrative" in obj) {
-		if (
-			typeof obj.narrative === "object" &&
-			obj.narrative !== null &&
-			!Array.isArray(obj.narrative)
-		) {
-			const narrative = parseArchitectureMapNarrative(obj.narrative);
-			if (narrative) architectureMap.narrative = narrative;
-		} else {
-			console.error(
-				`[warning] Skipping malformed architectureMap.narrative: expected an object, got ${formatConfigValue(obj.narrative)}.`,
-			);
-		}
+	const narrative = parseOptionalObjectField(
+		"architectureMap.narrative",
+		obj,
+		"narrative",
+	);
+	if (narrative) {
+		const parsedNarrative = parseArchitectureMapNarrative(narrative);
+		if (parsedNarrative) architectureMap.narrative = parsedNarrative;
 	}
 
 	return architectureMap;
+}
+
+function parseOptionalFiniteNumberField(
+	fieldName: string,
+	obj: Record<string, unknown>,
+	key: string,
+): number | undefined {
+	if (!(key in obj)) return undefined;
+	const value = obj[key];
+	if (typeof value === "number" && Number.isFinite(value)) return value;
+	console.error(
+		`[warning] Skipping malformed ${fieldName}: expected a finite number, got ${formatConfigValue(value)}.`,
+	);
+	return undefined;
+}
+
+function parseOptionalObjectField(
+	fieldName: string,
+	obj: Record<string, unknown>,
+	key: string,
+): object | undefined {
+	if (!(key in obj)) return undefined;
+	const value = obj[key];
+	if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+		return value;
+	}
+	console.error(
+		`[warning] Skipping malformed ${fieldName}: expected an object, got ${formatConfigValue(value)}.`,
+	);
+	return undefined;
 }
 
 function parseArchitectureMapNarrative(

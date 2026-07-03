@@ -17,7 +17,7 @@ interface Logger {
 	error(message?: unknown, ...optionalParams: unknown[]): void;
 }
 
-export interface ResolveArchitectureMapConfigOptions {
+interface ResolveArchitectureMapConfigOptions {
 	readonly projectRoot: string;
 	readonly projectConfig?: ProjectConfig;
 	readonly overrides?: Partial<ArchitectureMapConfig>;
@@ -68,69 +68,39 @@ export async function resolveArchitectureMapConfig(
 	const defaultSourceRoots = await existingDefaultSourceRoots(
 		options.projectRoot,
 	);
-	const configuredSourceRoots =
-		overrideConfig?.sourceRoots ?? projectConfig?.sourceRoots;
-	const configuredModuleRoots =
-		overrideConfig?.moduleRoots ?? projectConfig?.moduleRoots;
-	const configuredExclude = [
-		...DEFAULT_EXCLUDE,
-		...(projectConfig?.exclude ?? []),
-		...(overrideConfig?.exclude ?? []),
-	];
-
-	const sourceRoots = configuredSourceRoots
-		? await validateSafeRelativePaths({
-				projectRoot: options.projectRoot,
-				values: configuredSourceRoots,
-				fieldName: "architectureMap.sourceRoots",
-				logger,
-			})
-		: defaultSourceRoots;
-
-	const moduleRoots = configuredModuleRoots
-		? await validateSafeRelativePaths({
-				projectRoot: options.projectRoot,
-				values: configuredModuleRoots,
-				fieldName: "architectureMap.moduleRoots",
-				logger,
-			})
-		: undefined;
-
-	const exclude = await validateSafeRelativePaths({
+	const sourceRoots = await resolveConfiguredPaths({
 		projectRoot: options.projectRoot,
-		values: configuredExclude,
+		values: overrideConfig?.sourceRoots ?? projectConfig?.sourceRoots,
+		fallback: defaultSourceRoots,
+		fieldName: "architectureMap.sourceRoots",
+		logger,
+	});
+	const moduleRoots = await resolveConfiguredPaths({
+		projectRoot: options.projectRoot,
+		values: overrideConfig?.moduleRoots ?? projectConfig?.moduleRoots,
+		fieldName: "architectureMap.moduleRoots",
+		logger,
+	});
+	const exclude = await resolveConfiguredPaths({
+		projectRoot: options.projectRoot,
+		values: [
+			...DEFAULT_EXCLUDE,
+			...(projectConfig?.exclude ?? []),
+			...(overrideConfig?.exclude ?? []),
+		],
 		fieldName: "architectureMap.exclude",
 		logger,
 		allowMissing: true,
 	});
 
-	const config: MutableArchitectureMapConfig = {
-		outputDir: ARCHITECTURE_MAP_OUTPUT_DIR,
-		sourceRoots: sourceRoots.length > 0 ? sourceRoots : defaultSourceRoots,
+	const config = buildArchitectureMapConfig({
+		projectConfig,
+		overrideConfig,
+		defaultSourceRoots,
+		sourceRoots,
 		exclude,
-		injectionMaxBytes: coercePositiveInteger(
-			overrideConfig?.injectionMaxBytes ??
-				projectConfig?.injectionMaxBytes ??
-				DEFAULT_INJECTION_MAX_BYTES,
-			DEFAULT_INJECTION_MAX_BYTES,
-			"architectureMap.injectionMaxBytes",
-			logger,
-		),
-		narrative: {
-			enabled:
-				overrideConfig?.narrative?.enabled ??
-				projectConfig?.narrative?.enabled ??
-				true,
-			maxModulesPerRun: coercePositiveInteger(
-				overrideConfig?.narrative?.maxModulesPerRun ??
-					projectConfig?.narrative?.maxModulesPerRun ??
-					DEFAULT_MAX_MODULES_PER_RUN,
-				DEFAULT_MAX_MODULES_PER_RUN,
-				"architectureMap.narrative.maxModulesPerRun",
-				logger,
-			),
-		},
-	};
+		logger,
+	});
 
 	if (moduleRoots && moduleRoots.length > 0) {
 		config.moduleRoots = moduleRoots;
@@ -156,6 +126,77 @@ export function canonicalizeArchitectureMapConfig(
 		},
 	};
 	return JSON.stringify(canonical);
+}
+
+function buildArchitectureMapConfig(options: {
+	readonly projectConfig?: ProjectConfig["architectureMap"];
+	readonly overrideConfig?: Partial<ArchitectureMapConfig>;
+	readonly defaultSourceRoots: readonly string[];
+	readonly sourceRoots?: readonly string[];
+	readonly exclude?: readonly string[];
+	readonly logger: Logger;
+}): MutableArchitectureMapConfig {
+	return {
+		outputDir: ARCHITECTURE_MAP_OUTPUT_DIR,
+		sourceRoots:
+			(options.sourceRoots?.length ?? 0) > 0
+				? (options.sourceRoots ?? [])
+				: options.defaultSourceRoots,
+		exclude: options.exclude ?? [],
+		injectionMaxBytes: resolvePositiveIntegerConfig(
+			options.overrideConfig?.injectionMaxBytes,
+			options.projectConfig?.injectionMaxBytes,
+			DEFAULT_INJECTION_MAX_BYTES,
+			"architectureMap.injectionMaxBytes",
+			options.logger,
+		),
+		narrative: {
+			enabled:
+				options.overrideConfig?.narrative?.enabled ??
+				options.projectConfig?.narrative?.enabled ??
+				true,
+			maxModulesPerRun: resolvePositiveIntegerConfig(
+				options.overrideConfig?.narrative?.maxModulesPerRun,
+				options.projectConfig?.narrative?.maxModulesPerRun,
+				DEFAULT_MAX_MODULES_PER_RUN,
+				"architectureMap.narrative.maxModulesPerRun",
+				options.logger,
+			),
+		},
+	};
+}
+
+async function resolveConfiguredPaths(options: {
+	readonly projectRoot: string;
+	readonly values?: readonly string[];
+	readonly fallback?: readonly string[];
+	readonly fieldName: string;
+	readonly logger: Logger;
+	readonly allowMissing?: boolean;
+}): Promise<readonly string[] | undefined> {
+	if (!options.values) return options.fallback;
+	return validateSafeRelativePaths({
+		projectRoot: options.projectRoot,
+		values: options.values,
+		fieldName: options.fieldName,
+		logger: options.logger,
+		allowMissing: options.allowMissing,
+	});
+}
+
+function resolvePositiveIntegerConfig(
+	overrideValue: number | undefined,
+	projectValue: number | undefined,
+	fallback: number,
+	fieldName: string,
+	logger: Logger,
+): number {
+	return coercePositiveInteger(
+		overrideValue ?? projectValue ?? fallback,
+		fallback,
+		fieldName,
+		logger,
+	);
 }
 
 async function existingDefaultSourceRoots(

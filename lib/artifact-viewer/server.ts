@@ -470,13 +470,8 @@ function parseModuleGraph(markdown: string): readonly GraphModule[] {
 
 	if (dependencyLines) {
 		for (const line of dependencyLines.split("\n")) {
-			const match = line.match(/^- `([^`]+)` -> (.+)$/u);
-			if (!match?.[1] || !match[2]) continue;
-			const dependencies =
-				match[2] === "none"
-					? []
-					: [...match[2].matchAll(/`([^`]+)`/gu)].map((m) => m[1] ?? "");
-			modules.set(match[1], dependencies.filter(Boolean).sort());
+			const parsed = parseDependencyLine(line);
+			if (parsed) modules.set(parsed.resource, parsed.dependencies);
 		}
 	}
 
@@ -489,6 +484,21 @@ function parseModuleGraph(markdown: string): readonly GraphModule[] {
 	return [...modules.entries()]
 		.map(([resource, dependencies]) => ({ resource, dependencies }))
 		.sort((left, right) => left.resource.localeCompare(right.resource));
+}
+
+function parseDependencyLine(
+	line: string,
+): { readonly resource: string; readonly dependencies: string[] } | undefined {
+	const match = line.match(/^- `([^`]+)` -> (.+)$/u);
+	if (!match?.[1] || !match[2]) return undefined;
+	const dependencies =
+		match[2] === "none"
+			? []
+			: [...match[2].matchAll(/`([^`]+)`/gu)].map((m) => m[1] ?? "");
+	return {
+		resource: match[1],
+		dependencies: dependencies.filter(Boolean).sort(),
+	};
 }
 
 function markdownSection(

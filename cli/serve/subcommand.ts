@@ -5,7 +5,7 @@ import { Command, InvalidArgumentError } from "commander";
 import { createArtifactViewerServer } from "../../lib/artifact-viewer/index.ts";
 import { printLines } from "../shared/output.ts";
 
-export interface ServeCommandOptions {
+interface ServeCommandOptions {
 	readonly projectRoot?: string;
 	readonly host?: string;
 	readonly port?: number;

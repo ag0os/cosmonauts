@@ -33,16 +33,11 @@ interface ArchitectureMemoryDeps {
 	}) => Promise<ArchitectureMapFreshness>;
 }
 
-interface ToolTextContent {
-	type: "text";
-	text: string;
-}
-
 function textResult(
 	text: string,
 	details: unknown,
 ): {
-	content: ToolTextContent[];
+	content: { type: "text"; text: string }[];
 	details: unknown;
 } {
 	return {

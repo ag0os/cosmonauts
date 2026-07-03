@@ -344,31 +344,14 @@ function collectDependencies(options: {
 		if (!sourceFile) continue;
 
 		for (const specifier of collectModuleSpecifiers(sourceFile)) {
-			const resolved = ts.resolveModuleName(
+			recordDependencySpecifier({
+				...options,
+				file,
+				sourceFile,
 				specifier,
-				sourceFile.fileName,
-				options.compilerOptions,
-				options.compilerHost,
-			).resolvedModule;
-			const resolvedRepoPath = resolved
-				? options.sourceLookup.get(
-						normalizeAbsolutePath(resolved.resolvedFileName),
-					)
-				: undefined;
-			const targetModule = resolvedRepoPath
-				? options.fileToModule.get(resolvedRepoPath)
-				: undefined;
-
-			if (targetModule && targetModule !== options.sourceModule) {
-				const importedBy = internal.get(targetModule) ?? new Set<string>();
-				importedBy.add(file);
-				internal.set(targetModule, importedBy);
-				continue;
-			}
-
-			if (!isRelativeModuleSpecifier(specifier)) {
-				external.add(externalDependencyName(specifier));
-			}
+				internal,
+				external,
+			});
 		}
 	}
 
@@ -381,6 +364,43 @@ function collectDependencies(options: {
 			.sort(compareModuleDependencies),
 		externalDependencies: [...external].sort(),
 	};
+}
+
+function recordDependencySpecifier(options: {
+	readonly compilerHost: ts.CompilerHost;
+	readonly compilerOptions: ts.CompilerOptions;
+	readonly external: Set<string>;
+	readonly file: string;
+	readonly fileToModule: Map<string, string>;
+	readonly internal: Map<string, Set<string>>;
+	readonly sourceFile: ts.SourceFile;
+	readonly sourceLookup: Map<string, string>;
+	readonly sourceModule: string;
+	readonly specifier: string;
+}): void {
+	const resolved = ts.resolveModuleName(
+		options.specifier,
+		options.sourceFile.fileName,
+		options.compilerOptions,
+		options.compilerHost,
+	).resolvedModule;
+	const resolvedRepoPath = resolved
+		? options.sourceLookup.get(normalizeAbsolutePath(resolved.resolvedFileName))
+		: undefined;
+	const targetModule = resolvedRepoPath
+		? options.fileToModule.get(resolvedRepoPath)
+		: undefined;
+
+	if (targetModule && targetModule !== options.sourceModule) {
+		const importedBy = options.internal.get(targetModule) ?? new Set<string>();
+		importedBy.add(options.file);
+		options.internal.set(targetModule, importedBy);
+		return;
+	}
+
+	if (!isRelativeModuleSpecifier(options.specifier)) {
+		options.external.add(externalDependencyName(options.specifier));
+	}
 }
 
 function collectModuleSpecifiers(sourceFile: ts.SourceFile): readonly string[] {
