@@ -673,6 +673,54 @@ describe("TaskManager", () => {
 
 			expect(readOnlyTasks).toEqual(normalTasks);
 		});
+
+		it("listTasksReadOnly skips parsing files outside the label filter @cosmo-behavior plan:code-structure-map#B-016", async () => {
+			await mkdir(join(tempDir, "missions", "tasks"), { recursive: true });
+			await writeFile(
+				join(tempDir, "missions", "tasks", "TASK-001 - Plan Task.md"),
+				serializeTask(
+					createTaskRecordFixture({
+						id: "TASK-001",
+						title: "Plan Task",
+						labels: ["plan:viewer"],
+						status: "In Progress",
+					}),
+				),
+				"utf-8",
+			);
+			await writeFile(
+				join(tempDir, "missions", "tasks", "TASK-002 - Other Task.md"),
+				serializeTask(
+					createTaskRecordFixture({
+						id: "TASK-002",
+						title: "Other Task",
+						labels: ["plan:other"],
+					}),
+				),
+				"utf-8",
+			);
+
+			await vi.resetModules();
+			const actualParser = await vi.importActual<
+				typeof import("../../lib/tasks/task-parser.ts")
+			>("../../lib/tasks/task-parser.ts");
+			const parseTask = vi.fn(actualParser.parseTask);
+			vi.doMock("../../lib/tasks/task-parser.ts", () => ({
+				...actualParser,
+				parseTask,
+			}));
+			const { TaskManager: MockedTaskManager } = await import(
+				"../../lib/tasks/task-manager.ts"
+			);
+
+			const tasks = await new MockedTaskManager(tempDir).listTasksReadOnly({
+				label: "plan:viewer",
+			});
+
+			expect(tasks.map((task) => task.id)).toEqual(["TASK-001"]);
+			expect(parseTask).toHaveBeenCalledTimes(1);
+			vi.doUnmock("../../lib/tasks/task-parser.ts");
+		});
 	});
 
 	describe("search", () => {

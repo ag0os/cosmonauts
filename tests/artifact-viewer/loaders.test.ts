@@ -1,6 +1,6 @@
 import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
 	loadArchitectureIndexArtifact,
 	loadArchitectureModuleArtifact,
@@ -157,6 +157,57 @@ describe("artifact-viewer foundation", () => {
 		await expect(
 			access(join(tmp.path, "missions", "tasks", "config.json")),
 		).rejects.toThrow();
+	});
+
+	test("plan task status does not parse unrelated task files @cosmo-behavior plan:code-structure-map#B-016", async () => {
+		await mkdir(join(tmp.path, "missions", "tasks"), { recursive: true });
+		await writeFile(
+			join(tmp.path, "missions", "tasks", "TASK-001 - Planned.md"),
+			serializeTask(
+				createTaskRecordFixture({
+					id: "TASK-001",
+					title: "Planned",
+					labels: ["plan:status-plan"],
+					status: "Blocked",
+				}),
+			),
+			"utf-8",
+		);
+		await writeFile(
+			join(tmp.path, "missions", "tasks", "TASK-002 - Other.md"),
+			serializeTask(
+				createTaskRecordFixture({
+					id: "TASK-002",
+					title: "Other",
+					labels: ["plan:other"],
+					status: "Done",
+				}),
+			),
+			"utf-8",
+		);
+
+		await vi.resetModules();
+		const actualParser = await vi.importActual<
+			typeof import("../../lib/tasks/task-parser.ts")
+		>("../../lib/tasks/task-parser.ts");
+		const parseTask = vi.fn(actualParser.parseTask);
+		vi.doMock("../../lib/tasks/task-parser.ts", () => ({
+			...actualParser,
+			parseTask,
+		}));
+		const { loadPlanTaskStatus: loadPlanTaskStatusWithMock } = await import(
+			"../../lib/artifact-viewer/loaders.ts"
+		);
+
+		const status = await loadPlanTaskStatusWithMock({
+			projectRoot: tmp.path,
+			slug: "status-plan",
+		});
+
+		expect(status.tasks.map((task) => task.id)).toEqual(["TASK-001"]);
+		expect(status.counts.Blocked).toBe(1);
+		expect(parseTask).toHaveBeenCalledTimes(1);
+		vi.doUnmock("../../lib/tasks/task-parser.ts");
 	});
 
 	test("keeps artifact-viewer imports out of lower-level modules", async () => {

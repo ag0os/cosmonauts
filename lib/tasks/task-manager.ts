@@ -278,7 +278,9 @@ export class TaskManager {
 	 * @returns Array of tasks matching the filter
 	 */
 	async listTasksReadOnly(filter?: TaskListFilter): Promise<Task[]> {
-		const tasks = await this.loadAllTasks();
+		const tasks = filter?.label
+			? await this.loadTasksMatchingLabelReadOnly(filter.label)
+			: await this.loadAllTasks();
 
 		if (!filter) {
 			return tasks;
@@ -359,24 +361,46 @@ export class TaskManager {
 	 */
 	private async loadAllTasks(): Promise<Task[]> {
 		const files = await listTaskFiles(this.projectRoot);
+		return await this.loadTaskFiles(files);
+	}
+
+	private async loadTasksMatchingLabelReadOnly(label: string): Promise<Task[]> {
+		const files = await listTaskFiles(this.projectRoot);
+		const tasks: Task[] = [];
+
+		for (const file of files) {
+			const content = await readTaskFile(this.projectRoot, file);
+			if (content && taskFileMayContainLabel(content, label)) {
+				this.tryParseTaskFile(file, content, tasks);
+			}
+		}
+
+		return tasks;
+	}
+
+	private async loadTaskFiles(files: readonly string[]): Promise<Task[]> {
 		const tasks: Task[] = [];
 
 		for (const file of files) {
 			const content = await readTaskFile(this.projectRoot, file);
 			if (content) {
-				try {
-					const task = parseTask(content);
-					tasks.push(task);
-				} catch (error) {
-					// Skip files that fail to parse
-					if (process.env.DEBUG) {
-						console.error(`Failed to parse task file ${file}:`, error);
-					}
-				}
+				this.tryParseTaskFile(file, content, tasks);
 			}
 		}
 
 		return tasks;
+	}
+
+	private tryParseTaskFile(file: string, content: string, tasks: Task[]): void {
+		try {
+			const task = parseTask(content);
+			tasks.push(task);
+		} catch (error) {
+			// Skip files that fail to parse
+			if (process.env.DEBUG) {
+				console.error(`Failed to parse task file ${file}:`, error);
+			}
+		}
 	}
 
 	private async loadCreateAllocatedTaskIds(): Promise<string[]> {
@@ -400,6 +424,10 @@ export class TaskManager {
 	private matchesFilter(task: Task, filter: TaskListFilter): boolean {
 		return TASK_FILTER_PREDICATES.every((predicate) => predicate(task, filter));
 	}
+}
+
+function taskFileMayContainLabel(content: string, label: string): boolean {
+	return content.toLowerCase().includes(label.toLowerCase());
 }
 
 function matchesStatusFilter(task: Task, filter: TaskListFilter): boolean {
