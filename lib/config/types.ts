@@ -10,6 +10,18 @@ export interface ProjectChainConfig {
 	readonly chain: string;
 }
 
+/** Optional architecture-map configuration from `.cosmonauts/config.json`. */
+export interface ProjectArchitectureMapConfig {
+	readonly sourceRoots?: readonly string[];
+	readonly moduleRoots?: readonly string[];
+	readonly exclude?: readonly string[];
+	readonly injectionMaxBytes?: number;
+	readonly narrative?: {
+		readonly enabled?: boolean;
+		readonly maxModulesPerRun?: number;
+	};
+}
+
 /** Project-level configuration loaded from `.cosmonauts/config.json`. */
 export interface ProjectConfig {
 	/** Default domain for this project (e.g. "coding"). */
@@ -24,4 +36,6 @@ export interface ProjectConfig {
 	readonly skillPaths?: readonly string[];
 	/** Custom named-chain definitions (name → config). */
 	readonly chains?: Readonly<Record<string, ProjectChainConfig>>;
+	/** Optional generated architecture-map settings. */
+	readonly architectureMap?: ProjectArchitectureMapConfig;
 }

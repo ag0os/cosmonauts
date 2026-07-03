@@ -285,4 +285,68 @@ describe("loadProjectConfig", () => {
 		expect(warn.mock.calls[1]?.[0]).toContain('""');
 		warn.mockRestore();
 	});
+
+	test("parses only planned architectureMap primitive config fields", async () => {
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				architectureMap: {
+					sourceRoots: ["lib", "src"],
+					moduleRoots: ["lib/agents"],
+					exclude: ["fixtures"],
+					injectionMaxBytes: 12000,
+					narrative: { enabled: false, maxModulesPerRun: 4 },
+					unknown: { ignored: true },
+				},
+			}),
+		);
+
+		const config = await loadProjectConfig(tmp.path);
+
+		expect(config.architectureMap).toEqual({
+			sourceRoots: ["lib", "src"],
+			moduleRoots: ["lib/agents"],
+			exclude: ["fixtures"],
+			injectionMaxBytes: 12000,
+			narrative: { enabled: false, maxModulesPerRun: 4 },
+		});
+	});
+
+	test("warns and ignores malformed architectureMap entries while preserving unrelated config", async () => {
+		const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({
+				domain: "coding",
+				architectureMap: {
+					sourceRoots: ["lib", 42],
+					moduleRoots: "lib/agents",
+					exclude: [null, "fixtures"],
+					injectionMaxBytes: "large",
+					narrative: { enabled: "yes", maxModulesPerRun: 3 },
+				},
+			}),
+		);
+
+		const config = await loadProjectConfig(tmp.path);
+
+		expect(config.domain).toBe("coding");
+		expect(config.architectureMap).toEqual({
+			sourceRoots: ["lib"],
+			exclude: ["fixtures"],
+			narrative: { maxModulesPerRun: 3 },
+		});
+		expect(warn.mock.calls.map((call) => call[0]).join("\n")).toContain(
+			"architectureMap.sourceRoots entry",
+		);
+		expect(warn.mock.calls.map((call) => call[0]).join("\n")).toContain(
+			"architectureMap.moduleRoots",
+		);
+		expect(warn.mock.calls.map((call) => call[0]).join("\n")).toContain(
+			"architectureMap.injectionMaxBytes",
+		);
+		warn.mockRestore();
+	});
 });

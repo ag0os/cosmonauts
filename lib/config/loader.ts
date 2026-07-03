@@ -11,6 +11,17 @@ import { join, resolve } from "node:path";
 import { createDefaultProjectConfig } from "./defaults.ts";
 import type { ProjectConfig } from "./types.ts";
 
+type MutableArchitectureMapConfig = {
+	sourceRoots?: string[];
+	moduleRoots?: string[];
+	exclude?: string[];
+	injectionMaxBytes?: number;
+	narrative?: {
+		enabled?: boolean;
+		maxModulesPerRun?: number;
+	};
+};
+
 /** Expand leading `~` or `~/` to the user's home directory. */
 function expandTilde(p: string): string {
 	if (p === "~") return homedir();
@@ -71,6 +82,7 @@ export async function loadProjectConfig(
 		skills?: readonly string[];
 		skillPaths?: readonly string[];
 		chains?: ProjectConfig["chains"];
+		architectureMap?: ProjectConfig["architectureMap"];
 	} = {};
 
 	if (typeof obj.domain === "string") {
@@ -131,7 +143,132 @@ export async function loadProjectConfig(
 		config.chains = obj.chains as ProjectConfig["chains"];
 	}
 
+	if ("architectureMap" in obj) {
+		config.architectureMap = parseArchitectureMapConfig(obj.architectureMap);
+	}
+
 	return config;
+}
+
+function parseArchitectureMapConfig(
+	value: unknown,
+): ProjectConfig["architectureMap"] | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		console.error(
+			`[warning] Skipping malformed architectureMap: expected an object, got ${formatConfigValue(value)}.`,
+		);
+		return undefined;
+	}
+
+	const obj = value as Record<string, unknown>;
+	const architectureMap: MutableArchitectureMapConfig = {};
+
+	const sourceRoots = parseStringArrayField(
+		"architectureMap.sourceRoots",
+		obj.sourceRoots,
+	);
+	if (sourceRoots) architectureMap.sourceRoots = sourceRoots;
+
+	const moduleRoots = parseStringArrayField(
+		"architectureMap.moduleRoots",
+		obj.moduleRoots,
+	);
+	if (moduleRoots) architectureMap.moduleRoots = moduleRoots;
+
+	const exclude = parseStringArrayField("architectureMap.exclude", obj.exclude);
+	if (exclude) architectureMap.exclude = exclude;
+
+	if ("injectionMaxBytes" in obj) {
+		if (
+			typeof obj.injectionMaxBytes === "number" &&
+			Number.isFinite(obj.injectionMaxBytes)
+		) {
+			architectureMap.injectionMaxBytes = obj.injectionMaxBytes;
+		} else {
+			console.error(
+				`[warning] Skipping malformed architectureMap.injectionMaxBytes: expected a finite number, got ${formatConfigValue(obj.injectionMaxBytes)}.`,
+			);
+		}
+	}
+
+	if ("narrative" in obj) {
+		if (
+			typeof obj.narrative === "object" &&
+			obj.narrative !== null &&
+			!Array.isArray(obj.narrative)
+		) {
+			const narrative = parseArchitectureMapNarrative(obj.narrative);
+			if (narrative) architectureMap.narrative = narrative;
+		} else {
+			console.error(
+				`[warning] Skipping malformed architectureMap.narrative: expected an object, got ${formatConfigValue(obj.narrative)}.`,
+			);
+		}
+	}
+
+	return architectureMap;
+}
+
+function parseArchitectureMapNarrative(
+	value: object,
+): MutableArchitectureMapConfig["narrative"] | undefined {
+	const obj = value as Record<string, unknown>;
+	const narrative: NonNullable<MutableArchitectureMapConfig["narrative"]> = {};
+
+	if ("enabled" in obj) {
+		if (typeof obj.enabled === "boolean") {
+			narrative.enabled = obj.enabled;
+		} else {
+			console.error(
+				`[warning] Skipping malformed architectureMap.narrative.enabled: expected a boolean, got ${formatConfigValue(obj.enabled)}.`,
+			);
+		}
+	}
+
+	if ("maxModulesPerRun" in obj) {
+		if (
+			typeof obj.maxModulesPerRun === "number" &&
+			Number.isFinite(obj.maxModulesPerRun)
+		) {
+			narrative.maxModulesPerRun = obj.maxModulesPerRun;
+		} else {
+			console.error(
+				`[warning] Skipping malformed architectureMap.narrative.maxModulesPerRun: expected a finite number, got ${formatConfigValue(obj.maxModulesPerRun)}.`,
+			);
+		}
+	}
+
+	if (!("enabled" in narrative) && !("maxModulesPerRun" in narrative)) {
+		return undefined;
+	}
+
+	return narrative;
+}
+
+function parseStringArrayField(
+	fieldName: string,
+	value: unknown,
+): string[] | undefined {
+	if (value === undefined) return undefined;
+	if (!Array.isArray(value)) {
+		console.error(
+			`[warning] Skipping malformed ${fieldName}: expected an array of strings, got ${formatConfigValue(value)}.`,
+		);
+		return undefined;
+	}
+
+	const strings: string[] = [];
+	for (const entry of value) {
+		if (typeof entry === "string") {
+			strings.push(entry);
+		} else {
+			console.error(
+				`[warning] Skipping malformed ${fieldName} entry: expected a string, got ${formatConfigValue(entry)}.`,
+			);
+		}
+	}
+	return strings;
 }
 
 function formatConfigValue(value: unknown): string {

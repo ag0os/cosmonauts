@@ -2,6 +2,7 @@
 # these stable module entry points. Treat their exports as public API.
 entry = [
   "lib/agents/index.ts",
+  "lib/architecture-map/index.ts",
   "lib/config/index.ts",
   "lib/domains/index.ts",
   "lib/durable-runtime/index.ts",
