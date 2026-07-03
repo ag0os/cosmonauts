@@ -62,7 +62,13 @@ export async function resolveArchitectureMapConfig(
 	options: ResolveArchitectureMapConfigOptions,
 ): Promise<ArchitectureMapConfig> {
 	const logger = options.logger ?? console;
-	const projectConfig = options.projectConfig?.architectureMap;
+	// Load the project config from disk when a caller does not supply one, so
+	// generation honors `.cosmonauts/config.json` architectureMap settings the
+	// same way the viewer/extension freshness paths (via loadArchitectureMapConfig)
+	// already do. Without this, generateArchitectureMap silently used defaults.
+	const resolvedProjectConfig =
+		options.projectConfig ?? (await loadProjectConfig(options.projectRoot));
+	const projectConfig = resolvedProjectConfig?.architectureMap;
 	const overrideConfig = options.overrides;
 
 	const defaultSourceRoots = await existingDefaultSourceRoots(

@@ -1,4 +1,4 @@
-import { mkdir, symlink } from "node:fs/promises";
+import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { resolveArchitectureMapConfig } from "../../lib/architecture-map/index.ts";
@@ -40,5 +40,24 @@ describe("resolveArchitectureMapConfig", () => {
 		expect(warnings).toContain("absolute paths and traversal");
 		expect(warnings).toContain("resolved path is outside the project root");
 		warn.mockRestore();
+	});
+
+	test("loads architectureMap settings from .cosmonauts/config.json when no projectConfig is supplied (generate path)", async () => {
+		const projectRoot = join(tmp.path, "project-generate-config");
+		await mkdir(join(projectRoot, "src", "keep"), { recursive: true });
+		await mkdir(join(projectRoot, "src", "skip"), { recursive: true });
+		await mkdir(join(projectRoot, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({ architectureMap: { sourceRoots: ["src/keep"] } }),
+		);
+
+		// The generator resolves config without pre-loading projectConfig; the
+		// resolver must read .cosmonauts/config.json from disk itself, otherwise
+		// generation silently falls back to default source roots while the
+		// viewer/extension freshness paths honor the configured roots.
+		const config = await resolveArchitectureMapConfig({ projectRoot });
+
+		expect(config.sourceRoots).toEqual(["src/keep"]);
 	});
 });
