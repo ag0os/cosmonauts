@@ -84,6 +84,7 @@ describe("generateArchitectureMap", () => {
 		expect(parsedIndex.content).toContain(
 			"- `src/shared` - Narrative pending for `src/shared`.",
 		);
+		// @cosmo-behavior plan:code-structure-map#B-003
 		expect(parsedIndex.content).toContain("- `src/domain` -> `src/shared`");
 		expect(parsedIndex.content).toContain("- `src/shared` -> none");
 		expect(domainShard).toContain("- `src/shared`");
