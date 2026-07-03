@@ -13,6 +13,7 @@
  *   cosmonauts init                               → agent-driven AGENTS.md bootstrap
  *   cosmonauts task <command>                     → task management subcommands
  *   cosmonauts plan <command>                     → plan management subcommands
+ *   cosmonauts serve                             → local read-only artifact viewer
  *   cosmonauts export ...                         → export packaged agents as binaries
  *
  * Pi flags (session, provider, tools, mode, etc.) pass through automatically.
@@ -64,6 +65,7 @@ import {
 	parseThinkingLevel,
 } from "./runtime-bootstrap.ts";
 import { createScaffoldProgram } from "./scaffold/subcommand.ts";
+import { createServeProgram } from "./serve/subcommand.ts";
 import { createSession, GracefulExitError } from "./session.ts";
 import { createSessionsProgram } from "./sessions/subcommand.ts";
 import { printCliError } from "./shared/errors.ts";
@@ -635,6 +637,7 @@ if (runInvocation) {
 	subcommand === "update" ||
 	subcommand === "eject" ||
 	subcommand === "export" ||
+	subcommand === "serve" ||
 	subcommand === "session" ||
 	subcommand === "architecture" ||
 	subcommand === "arch"
@@ -653,6 +656,7 @@ if (runInvocation) {
 		update: createUpdateProgram,
 		eject: createEjectProgram,
 		export: createExportProgram,
+		serve: createServeProgram,
 		session: createSessionsProgram,
 	};
 	// subcommand is guaranteed to be in the map by the if-check above
