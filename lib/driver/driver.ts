@@ -48,6 +48,14 @@ export interface DriverDeps {
 	cosmonautsRoot: string;
 }
 
+export interface DetachedLaunchHandle {
+	runId: string;
+	planSlug: string;
+	workdir: string;
+	eventLogPath: string;
+	pid: number;
+}
+
 export class DetachedNotSupportedError extends Error {
 	// fallow-ignore-next-line unused-class-member
 	readonly code = "DETACHED_NOT_SUPPORTED";
@@ -195,12 +203,36 @@ export function startDetached(
 	};
 }
 
+export async function launchDetached(
+	spec: DriverRunSpec,
+	deps: DriverDeps,
+): Promise<DetachedLaunchHandle> {
+	if (spec.backendName === "cosmonauts-subagent") {
+		throw new DetachedNotSupportedError(spec.backendName);
+	}
+	runBackendLivenessCheck(deps.backend);
+
+	const launch = await launchDetachedProcess({
+		spec,
+		deps,
+		signal: new AbortController().signal,
+		markWorkdirCreated: () => undefined,
+	});
+	return {
+		runId: spec.runId,
+		planSlug: spec.planSlug,
+		workdir: spec.workdir,
+		eventLogPath: spec.eventLogPath,
+		pid: launch.pid,
+	};
+}
+
 interface StartDetachedProcessOptions {
 	spec: DriverRunSpec;
 	deps: DriverDeps;
 	signal: AbortSignal;
-	setChild(child: ChildProcess): void;
-	setBridge(bridge: JsonlActivityBusBridge): void;
+	setChild?(child: ChildProcess): void;
+	setBridge?(bridge: JsonlActivityBusBridge): void;
 	markWorkdirCreated(): void;
 }
 
@@ -216,6 +248,35 @@ async function startDetachedProcess({
 	setBridge,
 	markWorkdirCreated,
 }: StartDetachedProcessOptions): Promise<DriverResult> {
+	const launch = await launchDetachedProcess({
+		spec,
+		deps,
+		signal,
+		setChild,
+		setBridge,
+		markWorkdirCreated,
+		bridgeEvents: true,
+	});
+
+	return await waitForDetachedResult(spec.workdir, launch.child, signal);
+}
+
+interface DetachedProcessLaunch {
+	child: ChildProcess;
+	pid: number;
+}
+
+async function launchDetachedProcess({
+	spec,
+	deps,
+	signal,
+	setChild,
+	setBridge,
+	markWorkdirCreated,
+	bridgeEvents = false,
+}: StartDetachedProcessOptions & {
+	bridgeEvents?: boolean;
+}): Promise<DetachedProcessLaunch> {
 	throwIfAborted(signal);
 
 	await mkdir(spec.workdir, { recursive: true });
@@ -260,7 +321,7 @@ async function startDetachedProcess({
 		stdio: "ignore",
 		env: process.env,
 	});
-	setChild(child);
+	setChild?.(child);
 	if (!child.pid) {
 		throw new Error("Detached driver process did not expose a PID");
 	}
@@ -281,16 +342,18 @@ async function startDetachedProcess({
 		"utf-8",
 	);
 
-	setBridge(
-		bridgeJsonlToActivityBus(
-			spec.eventLogPath,
-			spec.runId,
-			spec.parentSessionId,
-			deps.activityBus,
-		),
-	);
+	if (bridgeEvents) {
+		setBridge?.(
+			bridgeJsonlToActivityBus(
+				spec.eventLogPath,
+				spec.runId,
+				spec.parentSessionId,
+				deps.activityBus,
+			),
+		);
+	}
 
-	return await waitForDetachedResult(spec.workdir, child, signal);
+	return { child, pid: child.pid };
 }
 
 function runBackendLivenessCheck(backend: Backend): void {

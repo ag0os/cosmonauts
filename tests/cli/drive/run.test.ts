@@ -46,15 +46,13 @@ const driverMocks = vi.hoisted(() => ({
 			tasksBlocked: 0,
 		});
 	}),
-	startDetached: vi.fn(
-		(spec: DriverRunSpec): DriverHandle =>
-			createHandle(spec, {
-				runId: spec.runId,
-				outcome: "completed",
-				tasksDone: spec.taskIds.length,
-				tasksBlocked: 0,
-			}),
-	),
+	launchDetached: vi.fn(async (spec: DriverRunSpec) => ({
+		runId: spec.runId,
+		planSlug: spec.planSlug,
+		workdir: spec.workdir,
+		eventLogPath: spec.eventLogPath,
+		pid: 1234,
+	})),
 }));
 
 const backendMocks = vi.hoisted(() => ({
@@ -84,8 +82,8 @@ const childProcessMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../../lib/driver/driver.ts", () => ({
+	launchDetached: driverMocks.launchDetached,
 	runInline: driverMocks.runInline,
-	startDetached: driverMocks.startDetached,
 }));
 
 vi.mock("../../../lib/driver/backends/registry.ts", () => ({
@@ -110,7 +108,7 @@ describe("cosmonauts run drive compat run", () => {
 		output = attachJsonHelpers(captureCliOutput());
 		process.exitCode = undefined;
 		driverMocks.runInline.mockClear();
-		driverMocks.startDetached.mockClear();
+		driverMocks.launchDetached.mockClear();
 		backendMocks.resolveBackend.mockClear();
 		childProcessMocks.execFile.mockClear();
 		childProcessMocks.execFileResult = { stdout: "", stderr: "" };
@@ -140,7 +138,7 @@ describe("cosmonauts run drive compat run", () => {
 		]);
 
 		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
-		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(driverMocks.launchDetached).not.toHaveBeenCalled();
 	});
 
 	test("documents the default per-task timeout in run help", () => {
@@ -228,17 +226,17 @@ describe("cosmonauts run drive compat run", () => {
 
 		await parseDrive(["--plan", PLAN, "--envelope", fixture.envelopePath]);
 
-		expect(driverMocks.startDetached).toHaveBeenCalledTimes(1);
-		expect(firstStartDetachedSpec().taskIds).toHaveLength(5);
+		expect(driverMocks.launchDetached).toHaveBeenCalledTimes(1);
+		expect(firstLaunchDetachedSpec().taskIds).toHaveLength(5);
 		expect(output.stdout()).toContain(
-			`Drive run started: ${firstStartDetachedSpec().runId} - poll with: cosmonauts run status ${firstStartDetachedSpec().runId}`,
+			`Drive run started: ${firstLaunchDetachedSpec().runId} - poll with: cosmonauts run status ${firstLaunchDetachedSpec().runId}`,
 		);
 		expect(output.stdoutJson()).toMatchObject({
 			planSlug: PLAN,
 			eventLogPath: expect.stringContaining("events.jsonl"),
 		});
 
-		driverMocks.startDetached.mockClear();
+		driverMocks.launchDetached.mockClear();
 		output.restore();
 		output = attachJsonHelpers(captureCliOutput());
 
@@ -281,7 +279,7 @@ describe("cosmonauts run drive compat run", () => {
 			}
 		}
 
-		expect(driverMocks.startDetached).toHaveBeenCalledTimes(1);
+		expect(driverMocks.launchDetached).toHaveBeenCalledTimes(1);
 		expect(backendMocks.resolveBackend).toHaveBeenCalledWith("claude-cli", {
 			claudeBinary: undefined,
 			claudeArgs: ["--dangerously-skip-permissions"],
@@ -466,10 +464,10 @@ describe("cosmonauts run drive compat run", () => {
 			fixture.envelopePath,
 		]);
 
-		expect(driverMocks.startDetached).toHaveBeenCalledTimes(1);
+		expect(driverMocks.launchDetached).toHaveBeenCalledTimes(1);
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
 		expect(output.stdoutJson()).toMatchObject({
-			runId: firstStartDetachedSpec().runId,
+			runId: firstLaunchDetachedSpec().runId,
 			planSlug: PLAN,
 		});
 	});
@@ -518,7 +516,7 @@ describe("cosmonauts run drive compat run", () => {
 		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
 
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
-		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(driverMocks.launchDetached).not.toHaveBeenCalled();
 		expect(process.exitCode).toBe(1);
 		expect(output.stderrJson()).toMatchObject({
 			error: "dirty_worktree",
@@ -632,7 +630,7 @@ describe("cosmonauts run drive compat run", () => {
 			false,
 		);
 		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
-		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(driverMocks.launchDetached).not.toHaveBeenCalled();
 		expect(firstRunInlineSpec().taskIds).toEqual(taskIds);
 		expect(firstRunInlineSpec().remainingTaskIds).toEqual([taskIds[1]]);
 		expect(
@@ -666,24 +664,25 @@ describe("cosmonauts run drive compat run", () => {
 				diffHasChanges: true,
 			}),
 		);
-		driverMocks.startDetached.mockImplementationOnce(
-			(spec: DriverRunSpec): DriverHandle => {
+		driverMocks.launchDetached.mockImplementationOnce(
+			async (spec: DriverRunSpec) => {
 				expect(existsSync(detachedCompletionPath)).toBe(false);
-				return createHandle(spec, {
+				return {
 					runId: spec.runId,
-					outcome: "completed",
-					tasksDone: spec.taskIds.length,
-					tasksBlocked: 0,
-				});
+					planSlug: spec.planSlug,
+					workdir: spec.workdir,
+					eventLogPath: spec.eventLogPath,
+					pid: 1234,
+				};
 			},
 		);
 
 		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
 
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
-		expect(driverMocks.startDetached).toHaveBeenCalledTimes(1);
-		expect(firstStartDetachedSpec().taskIds).toEqual(detachedTaskIds);
-		expect(firstStartDetachedSpec().remainingTaskIds).toEqual(
+		expect(driverMocks.launchDetached).toHaveBeenCalledTimes(1);
+		expect(firstLaunchDetachedSpec().taskIds).toEqual(detachedTaskIds);
+		expect(firstLaunchDetachedSpec().remainingTaskIds).toEqual(
 			detachedTaskIds.slice(1),
 		);
 	});
@@ -710,7 +709,7 @@ describe("cosmonauts run drive compat run", () => {
 		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
 
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
-		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(driverMocks.launchDetached).not.toHaveBeenCalled();
 		expect(existsSync(join(resumeWorkdir(), "pending-finalization.json"))).toBe(
 			false,
 		);
@@ -748,7 +747,7 @@ describe("cosmonauts run drive compat run", () => {
 
 		expect(process.exitCode).toBe(1);
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
-		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(driverMocks.launchDetached).not.toHaveBeenCalled();
 		expect(existsSync(join(resumeWorkdir(), "pending-finalization.json"))).toBe(
 			true,
 		);
@@ -848,7 +847,7 @@ describe("cosmonauts run drive compat run", () => {
 		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
 
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
-		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(driverMocks.launchDetached).not.toHaveBeenCalled();
 		expect(existsSync(join(resumeWorkdir(), "pending-finalization.json"))).toBe(
 			false,
 		);
@@ -884,7 +883,7 @@ describe("cosmonauts run drive compat run", () => {
 
 		expect(process.exitCode).toBe(1);
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
-		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(driverMocks.launchDetached).not.toHaveBeenCalled();
 		expect(existsSync(join(resumeWorkdir(), "pending-finalization.json"))).toBe(
 			true,
 		);
@@ -915,7 +914,7 @@ describe("cosmonauts run drive compat run", () => {
 
 		expect(process.exitCode).toBe(1);
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
-		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(driverMocks.launchDetached).not.toHaveBeenCalled();
 		expect(existsSync(join(resumeWorkdir(), "pending-finalization.json"))).toBe(
 			true,
 		);
@@ -988,7 +987,7 @@ describe("cosmonauts run drive compat run", () => {
 		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
 
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
-		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(driverMocks.launchDetached).not.toHaveBeenCalled();
 		expect(existsSync(join(resumeWorkdir(), "pending-finalization.json"))).toBe(
 			false,
 		);
@@ -1014,7 +1013,7 @@ describe("cosmonauts run drive compat run", () => {
 		const resetResumeCase = async () => {
 			process.exitCode = undefined;
 			driverMocks.runInline.mockClear();
-			driverMocks.startDetached.mockClear();
+			driverMocks.launchDetached.mockClear();
 			childProcessMocks.execFile.mockClear();
 			output.restore();
 			output = attachJsonHelpers(captureCliOutput());
@@ -1046,7 +1045,7 @@ describe("cosmonauts run drive compat run", () => {
 		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
 
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
-		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(driverMocks.launchDetached).not.toHaveBeenCalled();
 		expect(existsSync(join(resumeWorkdir(), "pending-finalization.json"))).toBe(
 			false,
 		);
@@ -1104,7 +1103,7 @@ describe("cosmonauts run drive compat run", () => {
 
 		expect(process.exitCode).toBe(1);
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
-		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(driverMocks.launchDetached).not.toHaveBeenCalled();
 		expect(existsSync(join(resumeWorkdir(), "pending-finalization.json"))).toBe(
 			true,
 		);
@@ -1152,7 +1151,7 @@ describe("cosmonauts run drive compat run", () => {
 
 		expect(process.exitCode).toBe(1);
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
-		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(driverMocks.launchDetached).not.toHaveBeenCalled();
 		expect(output.stdoutJson()).toMatchObject({
 			runId: "run-previous",
 			outcome: "finalization_failed",
@@ -1206,7 +1205,7 @@ describe("cosmonauts run drive compat run", () => {
 
 		expect(process.exitCode).toBe(1);
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
-		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(driverMocks.launchDetached).not.toHaveBeenCalled();
 		expect(output.stdoutJson()).toMatchObject({
 			runId: "run-previous",
 			outcome: "finalization_failed",
@@ -1263,7 +1262,7 @@ describe("cosmonauts run drive compat run", () => {
 
 		expect(process.exitCode).toBe(1);
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
-		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(driverMocks.launchDetached).not.toHaveBeenCalled();
 		expect(output.stdoutJson()).toMatchObject({
 			runId: "run-previous",
 			outcome: "finalization_failed",
@@ -1322,7 +1321,7 @@ describe("cosmonauts run drive compat run", () => {
 
 		expect(process.exitCode).toBe(1);
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
-		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(driverMocks.launchDetached).not.toHaveBeenCalled();
 		expect(output.stdoutJson()).toMatchObject({
 			runId: "run-previous",
 			outcome: "finalization_failed",
@@ -1739,8 +1738,8 @@ function firstRunInlineSpec(): DriverRunSpec {
 	return driverMocks.runInline.mock.calls[0]?.[0] as DriverRunSpec;
 }
 
-function firstStartDetachedSpec(): DriverRunSpec {
-	return driverMocks.startDetached.mock.calls[0]?.[0] as DriverRunSpec;
+function firstLaunchDetachedSpec(): DriverRunSpec {
+	return driverMocks.launchDetached.mock.calls[0]?.[0] as DriverRunSpec;
 }
 
 function resumeWorkdir(): string {

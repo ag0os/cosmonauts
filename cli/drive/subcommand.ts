@@ -10,7 +10,8 @@ import { resolveConfiguredExternalBackend } from "../../lib/driver/backend-resol
 import { createCosmonautsSubagentBackend } from "../../lib/driver/backends/cosmonauts-subagent.ts";
 import type { Backend } from "../../lib/driver/backends/types.ts";
 import { resolveDefaultDriveEnvelopePath } from "../../lib/driver/default-envelope.ts";
-import { runInline, startDetached } from "../../lib/driver/driver.ts";
+import type { startDetached } from "../../lib/driver/driver.ts";
+import { launchDetached, runInline } from "../../lib/driver/driver.ts";
 import { recordDurableFinalizerRetryFailure } from "../../lib/driver/durable-steps.ts";
 import { formatError } from "../../lib/driver/errors.ts";
 import type {
@@ -294,7 +295,7 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 	};
 
 	if (mode === "detached") {
-		runDetached(spec, deps);
+		await runDetached(spec, deps);
 		return;
 	}
 
@@ -386,8 +387,11 @@ function refuseUnsupportedDetachedBackend(
 	return true;
 }
 
-function runDetached(spec: DriverRunSpec, deps: DriverRunDeps): void {
-	const handle = startDetached(spec, deps);
+async function runDetached(
+	spec: DriverRunSpec,
+	deps: DriverRunDeps,
+): Promise<void> {
+	const handle = await launchDetached(spec, deps);
 	process.stdout.write(`${formatDetachedStartLine(handle.runId)}\n`);
 	printJsonStdout({
 		runId: handle.runId,

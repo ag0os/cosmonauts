@@ -31,21 +31,13 @@ const driverMocks = vi.hoisted(() => ({
 			abort: vi.fn(),
 		}),
 	),
-	startDetached: vi.fn(
-		(spec: DriverRunSpec): DriverHandle => ({
-			runId: spec.runId,
-			planSlug: spec.planSlug,
-			workdir: spec.workdir,
-			eventLogPath: spec.eventLogPath,
-			result: Promise.resolve({
-				runId: spec.runId,
-				outcome: "completed" as const,
-				tasksDone: spec.taskIds.length,
-				tasksBlocked: 0,
-			}),
-			abort: vi.fn(),
-		}),
-	),
+	launchDetached: vi.fn(async (spec: DriverRunSpec) => ({
+		runId: spec.runId,
+		planSlug: spec.planSlug,
+		workdir: spec.workdir,
+		eventLogPath: spec.eventLogPath,
+		pid: 1234,
+	})),
 }));
 
 const backendMocks = vi.hoisted(() => ({
@@ -61,8 +53,8 @@ vi.mock("../../../cli/chain-execution.ts", () => ({
 }));
 
 vi.mock("../../../lib/driver/driver.ts", () => ({
+	launchDetached: driverMocks.launchDetached,
 	runInline: driverMocks.runInline,
-	startDetached: driverMocks.startDetached,
 }));
 
 vi.mock("../../../lib/driver/backend-resolution.ts", () => ({
@@ -84,7 +76,7 @@ describe("cosmonauts run", () => {
 		process.exitCode = undefined;
 		chainMocks.executeChainExpression.mockReset();
 		driverMocks.runInline.mockClear();
-		driverMocks.startDetached.mockClear();
+		driverMocks.launchDetached.mockClear();
 		backendMocks.resolveConfiguredExternalBackend.mockClear();
 		chainMocks.executeChainExpression.mockResolvedValue({
 			success: true,
@@ -242,7 +234,7 @@ describe("cosmonauts run", () => {
 		]);
 
 		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
-		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(driverMocks.launchDetached).not.toHaveBeenCalled();
 		expect(driverMocks.runInline.mock.calls[0]?.[0]).toMatchObject({
 			projectRoot: process.cwd(),
 			planSlug: DRIVE_PLAN,
@@ -274,9 +266,9 @@ describe("cosmonauts run", () => {
 			fixture.envelopePath,
 		]);
 
-		expect(driverMocks.startDetached).toHaveBeenCalledTimes(1);
+		expect(driverMocks.launchDetached).toHaveBeenCalledTimes(1);
 		const detachedStdout = output.stdout().trim().split("\n");
-		const detachedRunId = driverMocks.startDetached.mock.calls[0]?.[0].runId;
+		const detachedRunId = driverMocks.launchDetached.mock.calls[0]?.[0].runId;
 		expect(detachedStdout[0]).toBe(
 			`Drive run started: ${detachedRunId} - poll with: cosmonauts run status ${detachedRunId}`,
 		);
@@ -291,7 +283,7 @@ describe("cosmonauts run", () => {
 		});
 
 		resetOutput();
-		driverMocks.startDetached.mockClear();
+		driverMocks.launchDetached.mockClear();
 		await expect(
 			parseRun([
 				"drive",
@@ -310,7 +302,7 @@ describe("cosmonauts run", () => {
 			'Plan slug "chain" is reserved for graph-backed chain runs and cannot be used for Drive.',
 		);
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
-		expect(driverMocks.startDetached).not.toHaveBeenCalled();
+		expect(driverMocks.launchDetached).not.toHaveBeenCalled();
 	});
 
 	// @cosmo-behavior plan:orchestration-surface-consolidation#B-014
