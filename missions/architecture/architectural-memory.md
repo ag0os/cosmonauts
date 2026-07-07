@@ -7,7 +7,7 @@ memory** — repo-scoped knowledge about the codebase. Companion to the
 `architecture-viz` (its derived-map half). **Distinct from general/operational
 agent memory** (profile, playbooks, episodic log) — that is a *sibling track*
 with its own doc; it shares the "memory" philosophy but differs in scope (user vs.
-repo) and lifecycle (self-authored vs. derived/curated). Last updated 2026-07-02.
+repo) and lifecycle (self-authored vs. derived/curated). Last updated 2026-07-06 (W1 shipped).
 
 ## The basic idea
 
@@ -65,9 +65,11 @@ agent memory (`agent-memory.md`).
 
 Sequenced; the roadmap carries the next slice.
 
-- **W1 — Derived code-structure map** *(planned 2026-07-02 →
-  `missions/plans/code-structure-map/`, bundling the `analysis-tools` audit +
-  `artifact-viewer` riders)*. Mechanical spine (dependency tree + public
+- **W1 — Derived code-structure map** — ✅ **SHIPPED 2026-07-03** *(→
+  archived `missions/archive/plans/code-structure-map/`; distilled to
+  `memory/code-structure-map.md`; bundled the `analysis-tools` audit — which
+  selected the **TypeScript compiler API** substrate — and the `artifact-viewer`
+  rider)*. Mechanical spine (dependency tree + public
   interfaces) always-fresh via cache-on-hash; narrative "what each module does"
   blurbs regenerated lazily **only when a module's skeleton changes**. Sharded
   markdown, OKF-conformant: `memory/architecture/index.md` (tracked; always

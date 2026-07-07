@@ -10,7 +10,7 @@ Ordered — pick from the top. Curated 2026-06 from a full-backlog reprioritizat
 
 ### `agent-tools`: Native Agent Tools (Web Research + Browser) — ⏸ PARKED
 
-**⏸ PARKED (2026-07-01).** On hold; **the active track is `architectural-memory` (W1 planned 2026-07-02 → `missions/plans/code-structure-map/`).** S1 (native web research) is deferred — the warm spec lives at `missions/plans/web-research/` (status `deferred`), parked in favor of a cheaper *research-delegation* direction (delegate research to codex/claude-cli via the driver seam) that is noted but not yet scoped into a plan. Browser (S2) is not started. Revive the native web-research slice when fully-autonomous chain runs need grounded/cited, machine-consumable facts.
+**⏸ PARKED (2026-07-01).** On hold; `architectural-memory` W1 has since **shipped (2026-07-03 → `memory/code-structure-map.md`)**, so **the next prioritized track is `agent-memory` (below).** S1 (native web research) is deferred — the warm spec lives at `missions/plans/web-research/` (status `deferred`), parked in favor of a cheaper *research-delegation* direction (delegate research to codex/claude-cli via the driver seam) that is noted but not yet scoped into a plan. Browser (S2) is not started. Revive the native web-research slice when fully-autonomous chain runs need grounded/cited, machine-consumable facts.
 
 Make borrowed/bolted-on capabilities feel **native** — registered tools (the established `pi.registerTool` + TypeBox pattern) with explicit capability docs, so agents reach for them instead of leaving for Claude Code/Codex. Today web research is **absent**; browser exists only as an under-surfaced shell-out skill. First slice: **web research**. Full assessment + theme in the source-of-truth doc.
 
@@ -20,7 +20,7 @@ Make borrowed/bolted-on capabilities feel **native** — registered tools (the e
 - Cross-link: document the tool-authoring contract (currently code-only) with `domains`, for when installable domains add tools
 - Source of truth: `missions/architecture/tool-ecosystem.md`
 
-> `architectural-memory` W1 — 📋 **PLANNED (2026-07-02)**, picked up from the top of the queue: spec + active plan shell at `missions/plans/code-structure-map/` — the derived code-structure map plus the bundled `analysis-tools` audit and `artifact-viewer` riders (first slices only; the remainder of each Idea stays below). **OKF v0.1 adopted as the memory record format** (ratified 2026-07-02; recorded in `missions/architecture/architectural-memory.md` + `agent-memory.md`). W2–W4 waves stay in the source-of-truth doc; next prioritized item: `agent-memory` below.
+> `architectural-memory` W1 — ✅ **DONE (2026-07-03)**, merged + archived; distilled to `memory/code-structure-map.md`. Shipped the derived code-structure map (`cosmonauts architecture generate`) plus the bundled `analysis-tools` audit and `artifact-viewer` (`cosmonauts serve`) first slices — TS compiler-API analyzer, two-tier freshness, OKF index+shards under `memory/architecture/`, agent index-injection for the five consuming agents, dependency-free HTML viewer. **OKF v0.1** is the memory record format (ratified 2026-07-02; recorded in `missions/architecture/architectural-memory.md` + `agent-memory.md`). W2–W4 waves + the remainder of each rider Idea stay in the source-of-truth doc / below. **Next prioritized item: `agent-memory` below** — its W1 retrofits this map's retrieval onto the shared `write`/`retrieve`/`consolidate` interface.
 
 ### `agent-memory`: General Agent Memory
 
@@ -70,7 +70,7 @@ The base that lets a domain or agent run on a schedule, wake periodically, react
 
 ### `analysis-tools`: Static-Analysis Tooling for Agent Code Quality (Spike)
 
-**First slice riding with `code-structure-map` (2026-07-02):** the audit ships bundled with architectural-memory W1, sequenced early so its substrate recommendation gates the map generator's tooling choice. The rest of this entry stays here.
+**First slice ✅ shipped with `code-structure-map` W1 (2026-07-03):** the audit shipped bundled with architectural-memory W1 (→ `missions/archive/plans/code-structure-map/analysis-tools-audit.md`) and selected the **TypeScript compiler API** as the map substrate; it kept Fallow as the agent-loop audit substrate. Acting on its recommendations is follow-up — the rest of this entry stays here.
 
 A spike/improvement track: review how Cosmonauts leverages static analysis to help agents produce great code, and where to take it. Today it's only Biome (lint/format) + `tsc` for this repo's TypeScript — nothing surfaced to agents as a dedicated capability, and nothing for non-TS codebases. Targets the user's project (any codebase), not just cosmonauts.
 
@@ -82,7 +82,7 @@ A spike/improvement track: review how Cosmonauts leverages static analysis to he
 
 ### `artifact-viewer`: Human-Friendly HTML Views (Plans + Architecture)
 
-**First slice riding with `code-structure-map` (2026-07-02):** the plans + architecture-map HTML view (`cosmonauts serve`) ships bundled with architectural-memory W1. Later surfaces (tasks / reviews / run-status) stay here.
+**First slice ✅ shipped with `code-structure-map` W1 (2026-07-03):** the plans + architecture-map HTML view (`cosmonauts serve`) shipped bundled with architectural-memory W1 — dependency-free, escaped-markdown, deterministic SVG module graph, read-only. Later surfaces (tasks / reviews / run-status) stay here.
 
 Markdown stays the source of truth for agents; humans get a rendered **HTML companion** so they keep visibility as agents do the work. Render cosmonauts' key artifacts as readable HTML — starting with **plans** and the **architecture map**. A cross-cutting presentation layer; the `architectural-memory` track's deferred HTML/diagram view folds in here.
 
