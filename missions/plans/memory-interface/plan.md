@@ -2,7 +2,7 @@
 title: Shared memory interface + plain-text substrate (agent-memory W1)
 status: active
 createdAt: '2026-07-07T00:48:01.000Z'
-updatedAt: '2026-07-07T22:25:48.419Z'
+updatedAt: '2026-07-08T01:30:00.000Z'
 ---
 
 ## Overview
@@ -139,15 +139,19 @@ Existing boundaries to preserve:
   mapped project whose architecture directory exists
 - Action: `domains/shared/extensions/architecture-memory` prepares architecture
   context using the architecture memory adapter
-- Expected: if `memory/architecture/` is absent, behavior remains inert: no tool
-  registration and no injected map context. If the directory exists, the hidden
-  context still contains the compact architecture index, current/stale/missing
-  freshness banner, non-accumulating custom message behavior, and the instruction
-  to use `architecture_map_read`; tests also prove the extension no longer reads
-  the index through a parallel retrieval path
+- Expected: if `memory/architecture/` is absent, no map context is injected and
+  `architecture_map_read` answers with the honest missing-map result. If the
+  directory exists, the hidden context still contains the compact architecture
+  index, current/stale/missing freshness banner, non-accumulating custom message
+  behavior, and the instruction to use `architecture_map_read`. Tests prove the
+  extension no longer reads the index through a parallel retrieval path by
+  injecting a spy `MemoryStore` through the extension deps and asserting every
+  read flows through it. *(Revised 2026-07-08 after review: tool registration
+  moves to factory time — see B-015 — so absent-directory inertness now means
+  no injection plus honest tool results, not absent registration.)*
 - Seam: `domains/shared/extensions/architecture-memory/index.ts`
 - Test: `tests/extensions/architecture-memory.test.ts` >
-  `injects architecture index through memory interface while absent architecture directories stay inert`
+  `injects architecture index through a spy memory store while absent directories stay injection-inert`
 - Marker: `@cosmo-behavior plan:memory-interface#B-003`
 
 ### B-004 - Architecture-map shard reads are preserved through the interface
@@ -325,6 +329,28 @@ Existing boundaries to preserve:
   `builds compact indexes most recent first`
 - Marker: `@cosmo-behavior plan:memory-interface#B-014`
 
+### B-015 - `architecture_map_read` is present in real session allowlists
+
+*(Added 2026-07-08 after review.)*
+
+- Source: AC-001
+- Context: real Cosmonauts sessions freeze the tool allowlist via
+  `buildToolAllowlist()` at session creation, before `before_agent_start`, and
+  Pi 0.79.8's `_refreshToolRegistry` filters runtime-registered tools against
+  that frozen list. The shipped extension registers `architecture_map_read`
+  only inside `before_agent_start`, so the tool is filtered out of every real
+  session today — a latent shipped defect the retrofit must fix, not preserve
+- Action: the architecture-memory extension registers `architecture_map_read`
+  at extension factory load; execution behavior is otherwise unchanged
+- Expected: `buildToolAllowlist` output for agent definitions that load the
+  architecture-memory extension includes `architecture_map_read`; mapped-project
+  behavior is unchanged; in unmapped projects the tool returns the honest
+  missing-map result instead of being unregistered
+- Seam: `domains/shared/extensions/architecture-memory/index.ts`
+- Test: `tests/domains/coding-agents.test.ts` >
+  `architecture_map_read is allowlisted for consuming agents`
+- Marker: `@cosmo-behavior plan:memory-interface#B-015`
+
 ## Design
 
 ### Boundary model
@@ -434,11 +460,10 @@ export interface MemoryRetrieveResult {
 
 export type MemoryWriteResult =
   | { readonly kind: "written"; readonly path: string; readonly record: RetrievedMemoryRecord }
-  | { readonly kind: "unsupported"; readonly reason: string };
+  | { readonly kind: "unsupported"; readonly reason: string }
+  | { readonly kind: "failed"; readonly reason: string; readonly path?: string };
 
-export type MemoryConsolidateResult =
-  | { readonly kind: "noop"; readonly reason: string }
-  | { readonly kind: "consolidated"; readonly changedPaths: readonly string[] };
+export type MemoryConsolidateResult = { readonly kind: "noop"; readonly reason: string };
 
 export interface MemoryStore {
   write(record: MemoryRecordDraft): Promise<MemoryWriteResult>;
@@ -463,6 +488,18 @@ Notes on the contract:
 - `write()` unsupported on the architecture adapter is an honest derived-store
   contract, not a placeholder. Generated architecture map writes stay owned by
   `generateArchitectureMap`.
+- *(Added 2026-07-08 after review.)* An absent or empty `MemoryQuery.text`
+  means **match all eligible records** (list mode) — the path compact-index
+  building (B-006, B-014) relies on. The `recall` tool itself requires
+  non-empty query text at the tool layer; only internal callers use list mode.
+- *(Added 2026-07-08 after review.)* `MemoryWriteResult`'s `failed` arm is
+  reachable (unwritable store, permission error) and must be honest: `remember`
+  reports the failure with path and reason, leaves no partial record file, and
+  the session continues. It is not a placeholder.
+- *(Added 2026-07-08 after review.)* `MemoryConsolidateResult` is deliberately
+  the `noop` shape alone in W1 — a `consolidated` variant would be unreachable
+  scaffolding for W4 and violates this plan's own dead-code gate. W4 widens the
+  union when real consolidation behavior exists.
 
 ### Store factories and root binding
 
@@ -554,6 +591,13 @@ without relying on process state. The general store's `index.md` is not an
 authored memory record, is never returned by `retrieve()`, and does not introduce
 a second authored record type; W1 authored records are exactly `type: note`.
 
+`index.md` determinism *(Added 2026-07-08 after review)*: because the project
+store is git-tracked, `index.md` content must be a pure function of the current
+record set — no generation timestamps or volatile keys. Regenerating it with an
+unchanged record set is byte-identical, and a no-op write rewrites nothing.
+This is the same tracked-derived-churn rule the architecture map needed
+(timestamp inheritance); tests cover idempotent regeneration.
+
 Authored note frontmatter contract:
 
 ```md
@@ -599,12 +643,28 @@ The markdown store applies filters in this order:
 4. OKF validation, including physical-store/frontmatter scope match; malformed
    files become warnings, not thrown errors.
 5. Query matching over lowercase title, description, tags, resource, and body.
+   Absent/empty `text` matches all eligible records (list mode).
 6. Recency ordering by `timestamp` descending, with `path` as deterministic tie
    breaker.
 7. Optional `limit` truncation.
 
 This is deliberately cheap. No embeddings, SQLite, decay, pruning, or relevance
 push gate is introduced in W1.
+
+Result bounds *(Added 2026-07-08 after review)*: the `recall` tool defaults
+`limit` to 5 and caps a caller-supplied `limit` at 20, because it returns full
+record bodies — an unbounded broad-query result would dwarf the budgeted index
+injection and pollute context, the exact failure the track exists to prevent.
+The honest-empty and searched-scopes reporting is unaffected. Internal
+list-mode callers (index building) pass their own explicit limit.
+
+Cost stance *(Added 2026-07-08 after review)*: retrieval and index building
+re-scan and re-parse every note file in eligible stores on each call — per
+agent turn for injection. This is accepted for W1 scale and documented in
+`docs/memory.md`; there is no cache to invalidate, which is what makes human
+edits/deletions trustworthy (B-009). W1 never deletes records, so the cost
+curve only rises: the W2/reassess gate must revisit scan cost (consolidation,
+caching, or store caps) before memory stores grow into the hundreds of records.
 
 ### Architecture-map retrieval retrofit
 
@@ -630,11 +690,33 @@ interface:
 - return typed `ArchitectureMapRetrieveDetails` so the extension can render the
   same missing/stale/unknown/unsafe messages and details shape it exposes today.
 
-For absent projects, preserve the shipped extension behavior: if
-`memory/architecture/` itself does not exist, `before_agent_start` returns before
-registering `architecture_map_read` or injecting context. A present directory with
-missing index/fingerprint still goes through the adapter and can render the
-existing `missing` freshness/banner behavior.
+Allowlist decision *(Added 2026-07-08 after review)*: real Cosmonauts sessions
+freeze the tool allowlist via `buildToolAllowlist()` at session creation —
+verified against Pi 0.79.8 (`agent-session.js` `_refreshToolRegistry` filters
+runtime-registered tools against the frozen `allowedToolNames`) and against
+`lib/orchestration/definition-resolution.ts:45` (only factory-time extension
+tool names are unioned in). The shipped lazy `ensureToolRegistered` therefore
+leaves `architecture_map_read` out of every real session allowlist today — a
+latent shipped defect. This retrofit **fixes** it rather than preserving it:
+`architecture_map_read` is registered at factory load, the same treatment as
+`remember`/`recall` (B-015). The spec's retrofit invariant is read against the
+spec's intended behavior ("five consuming agents can pull shards on demand"),
+which the shipped code does not actually deliver in real sessions.
+
+Absent-project behavior accordingly becomes: if `memory/architecture/` does not
+exist, `before_agent_start` injects nothing, and the (factory-registered) tool
+answers with the honest missing-map result. The one pre-existing test asserting
+absent-directory *non-registration* is updated to assert this new contract —
+the single documented exception to the no-substantive-test-rewrite rule. A
+present directory with missing index/fingerprint still goes through the adapter
+and renders the existing `missing` freshness/banner behavior.
+
+Delegation proof seam *(Added 2026-07-08 after review)*: the extension deps
+gain an injectable adapter factory (`createStore?: (deps) => MemoryStore`,
+defaulting to `createArchitectureMapMemoryStore`), so B-003's "no parallel
+retrieval path" claim is proven by injecting a spy `MemoryStore` and asserting
+all index/shard reads flow through it — an executable test, not a review-only
+promise.
 
 Do not touch `generateArchitectureMap`, `storeArchitectureMapBundle`, CLI
 subcommands, or the artifact viewer in this slice.
@@ -665,6 +747,15 @@ Authorization/gating rules:
   available only to `main/cosmo`; they do not create stores, scan stores, or write
   files.
 
+Extension construction seam *(Added 2026-07-08 after review)*: export
+`createAgentMemoryExtension(deps?)` mirroring the shipped
+`createArchitectureMemoryExtension(deps)` pattern, with injectable
+`userCosmonautsRoot`, `storeFactory` (defaults to `createMarkdownMemoryStore`),
+and `now`. The default export wires production defaults
+(`homedir()/.cosmonauts`). Extension tests inject a temp `userCosmonautsRoot`
+through this seam so they can never write into the maintainer's real home
+store; production and tests thereby agree on how the user root is resolved.
+
 Tools:
 
 - `remember` writes an authored `note` through a `createMarkdownMemoryStore({
@@ -673,8 +764,27 @@ Tools:
   chosen by Cosmo/tool guidance as project for project-specific facts), optional
   `kind` (`semantic | procedural | episodic`, default `semantic`), optional
   `tags`.
+- Omitted-field defaults *(Added 2026-07-08 after review)* — a minimal
+  `remember({ content })` call is supported and deterministic: `title` defaults
+  to the first line of `content` trimmed to 60 characters; `description`
+  defaults to the derived title; `tags` defaults to `[]`; `scope` defaults to
+  `project`; `kind` defaults to `semantic`; `timestamp` comes from the injected
+  `now()`. No omitted field may produce an OKF-invalid record; B-005's test
+  covers the minimal-call path. Write failures (unwritable store, permission
+  error) return the `failed` result honestly, leave no partial file, and are
+  covered beside B-010's failure cases.
 - `recall` pulls details through the same factory-bound store with `recordTypes:
-  ["note"]` and current eligible scopes (`project`, `user` in W1).
+  ["note"]` and current eligible scopes (`project`, `user` in W1). It requires
+  non-empty query text, defaults `limit` to 5, and caps it at 20 (see General-
+  memory retrieval result bounds).
+- Prompt-surface minimization *(Added 2026-07-08 after review)*: factory-time
+  registration means external Pi hosts that auto-load
+  `domains/shared/extensions` expose these tools to every agent. Execution
+  stays guarded (B-012), and the exposure is kept minimal: short descriptions,
+  no `promptSnippet`. Cosmo does not need a snippet — the injected memory index
+  already points at `recall`, and the Cosmo prompt covers `remember`. This is
+  an accepted, documented trade-off: allowlist correctness requires factory
+  registration; two guarded, quiet tools in foreign hosts is the cost.
 
 Injection:
 
@@ -684,7 +794,10 @@ Injection:
 - On `context`, remove older `agent-memory-context` messages so repeated turns do
   not accumulate stale indexes.
 - The index message lists recent records with title, scope, kind, timestamp,
-  description, and path; it never includes all record bodies.
+  description, and path; it never includes all record bodies. The index build
+  uses list-mode retrieval (no query text) with an explicit limit of the 50
+  most recent records before byte-budget truncation, so entry count and byte
+  budget are both bounded. *(Limit added 2026-07-08 after review.)*
 - Empty or absent stores inject nothing and create no files.
 
 Update `domains/main/prompts/cosmo.md` minimally so Cosmo knows saving is
@@ -769,10 +882,15 @@ inheriting the independent defaults.
   generator/store APIs.
 - `domains/shared/extensions/architecture-memory/index.ts` — replace local map
   file-reading logic with the architecture adapter while preserving tool names,
-  `module`/`resource` parameters, messages, and freshness behavior.
-- `domains/shared/extensions/agent-memory/index.ts` (new) — factory-registered
-  but guarded Cosmo memory tools, index injection, identity gating, authorization
-  reset, context de-duplication, and UTF-8-safe truncation.
+  `module`/`resource` parameters, messages, and freshness behavior; move
+  `architecture_map_read` registration to factory load (B-015) and add the
+  injectable `createStore` adapter-factory dep for the delegation spy test.
+- `domains/shared/extensions/agent-memory/index.ts` (new) — exported
+  `createAgentMemoryExtension(deps)` seam (`userCosmonautsRoot`, `storeFactory`,
+  `now`) plus default export; factory-registered but guarded Cosmo memory
+  tools with deterministic `remember` defaults and bounded `recall`, index
+  injection, identity gating, authorization reset, context de-duplication, and
+  UTF-8-safe truncation.
 - `domains/main/agents/cosmo.ts` — add the `agent-memory` extension.
 - `domains/main/prompts/cosmo.md` — add concise guidance for explicit visible
   save and pull recall.
@@ -785,12 +903,17 @@ inheriting the independent defaults.
   consolidation and architecture scope-ineligible behavior.
 - `tests/memory/markdown-store.test.ts` (new) — OKF writes, retrieval, scope
   filtering, scope/frontmatter mismatch, recency, human override,
-  empty/no-match/malformed behavior, skipped session scope, and no-op
-  consolidation side-effect checks.
+  empty/no-match/malformed behavior, skipped session scope, no-op
+  consolidation side-effect checks, list-mode (no-query) retrieval, write
+  `failed` honesty, and byte-idempotent `index.md` regeneration.
 - `tests/extensions/architecture-memory.test.ts` — update/add tests proving
-  architecture retrieval goes through the shared interface while preserving
-  absent-directory inertness, `module`/`resource` aliasing, root resource `.`, and
-  existing failure behavior.
+  architecture retrieval goes through the shared interface via an injected spy
+  store, factory-time tool registration with honest missing-map results in
+  unmapped projects (the documented absent-directory contract change),
+  `module`/`resource` aliasing, root resource `.`, and existing failure
+  behavior.
+- `tests/domains/coding-agents.test.ts` — assert `buildToolAllowlist` for the
+  five consuming agents includes `architecture_map_read` (B-015).
 - `tests/extensions/agent-memory.test.ts` (new) — Cosmo gating, factory-time tool
   registration with execution authorization, post-Cosmo non-Cosmo blocking,
   `remember`, `recall`, compact index injection, non-accumulation,
@@ -811,16 +934,23 @@ Files intentionally not changed: `lib/architecture-map/generator.ts`,
 - **Memory tools unavailable in real Cosmo sessions:** Pi builds tool allowlists
   before `before_agent_start`. Mitigation: factory-register `remember`/`recall`,
   add a real buildToolAllowlist test, and guard execution by session/turn
-  authorization instead of lazy registration.
+  authorization instead of lazy registration. The same constraint silently
+  broke the shipped `architecture_map_read` in real sessions; B-015 applies the
+  same factory-registration fix there. *(Updated 2026-07-08 after review.)*
 - **Architecture retrofit drift:** moving retrieval out of the extension could
   accidentally change user-visible messages. Mitigation: keep the existing
-  architecture-memory tests, add interface-spy coverage, preserve absent-dir
-  inertness, resource aliasing, and root-resource `.` mapping, and do not change
-  generation/store/viewer files.
+  architecture-memory tests, add interface-spy coverage, preserve resource
+  aliasing and root-resource `.` mapping, and do not change
+  generation/store/viewer files. The absent-directory registration expectation
+  changes deliberately (B-015) and is the only sanctioned behavioral delta.
 - **Auto-loaded extension leakage:** shared package extension dirs can be loaded
-  outside intended agents. Mitigation: factory-registered tools are guarded on
-  execution and authorization is reset on session lifecycle and every
-  `before_agent_start`; tests cover non-Cosmo after Cosmo in the same instance.
+  outside intended agents, and factory registration makes the tools *visible*
+  (not just latent) in external Pi hosts. Mitigation: execution is guarded and
+  authorization resets on session lifecycle and every `before_agent_start`;
+  tests cover non-Cosmo after Cosmo in the same instance; prompt surface is
+  minimized (short descriptions, no `promptSnippet`). Residual exposure — two
+  quiet, refusing tools in foreign hosts — is an accepted, documented trade-off
+  for allowlist correctness. *(Updated 2026-07-08 after review.)*
 - **Scope leaks:** user/project stores live in different physical roots.
   Mitigation: path resolution happens before record scanning; physical store
   scope must match frontmatter scope; cross-project tests use two temp projects
@@ -848,10 +978,10 @@ Files intentionally not changed: `lib/architecture-map/generator.ts`,
 
 | Order | Gate kind | Tier | Binding state | Threshold | Protocol | Degradation / notes |
 |---:|---|---|---|---|---|---|
-| 1 | `correctness` | universal | bound | Project-native test, lint, and typecheck evidence passes; existing architecture-map generation/store/viewer behavior remains covered without substantive test rewrites; no test makes model calls | project-discovered | hard fail |
-| 2 | `artifact-conformance` | universal | bound | All B-001..B-014 entries have required fields and exact markers in their referenced tests/evidence files, including the plan-local Pi audit artifact | artifact evidence | hard fail |
-| 3 | `boundary-conformance` | bindable | bound | `lib/memory/*` has no Pi/CLI/domain imports; architecture generation/store/viewer files are unchanged; architecture retrieval path crosses the shared interface; `remember`/`recall` are factory-registered for allowlisting but execution-gated | project-discovered | hard fail |
-| 4 | `mutation` | bindable | bound | Targeted negative tests fail on realistic faults: Cosmo tools lazily registered and missing from real allowlist, non-Cosmo call after Cosmo writes a note, cross-project project-note leak, user-store `scope: project` leak, malformed record throwing the session, architecture traversal or root `.` mishandled, stale disk edit cached, or multibyte index truncation exceeding budget | project-discovered | hard fail |
+| 1 | `correctness` | universal | bound | Project-native test, lint, and typecheck evidence passes; existing architecture-map generation/store/viewer behavior AND the pre-existing architecture-memory extension suite remain covered without substantive test rewrites (sole sanctioned delta: the absent-directory registration expectation, B-015); a fresh `cosmonauts architecture generate --no-narrative` followed by index + shard retrieval through the retrofitted path succeeds end-to-end; no test makes model calls | project-discovered | hard fail |
+| 2 | `artifact-conformance` | universal | bound | All B-001..B-015 entries have required fields and exact markers in their referenced tests/evidence files, including the plan-local Pi audit artifact | artifact evidence | hard fail |
+| 3 | `boundary-conformance` | bindable | bound | `lib/memory/*` has no Pi/CLI/domain imports; architecture generation/store/viewer files are unchanged; architecture retrieval path crosses the shared interface; `remember`/`recall` and `architecture_map_read` are factory-registered for allowlisting but execution-gated | project-discovered | hard fail |
+| 4 | `mutation` | bindable | bound | Targeted negative tests fail on realistic faults: Cosmo tools or `architecture_map_read` lazily registered and missing from real allowlist, non-Cosmo call after Cosmo writes a note, cross-project project-note leak, user-store `scope: project` leak, malformed record throwing the session, architecture traversal or root `.` mishandled, stale disk edit cached, multibyte index truncation exceeding budget, or non-idempotent `index.md` regeneration churning tracked files | project-discovered | hard fail |
 | 5 | `complexity` | bindable | unbound | New memory core stays small and does not introduce a registry/plugin framework beyond the two W1 stores | reviewer judgment | unbound, not enforced mechanically; reviewer must inspect |
 | 6 | `dead-code` | bindable | unbound | No unused memory backend, config surface, or session-store scaffold ships for future waves | reviewer judgment | unbound, not enforced mechanically; reviewer must inspect |
 
@@ -863,33 +993,47 @@ Files intentionally not changed: `lib/architecture-map/generator.ts`,
    Because Drive can omit `missions/**`, the task owning this artifact must check
    git status and ensure the audit file is committed or explicitly handed off.
 
-2. **Add shared contracts and factories test-first (B-002, B-011).** Create the
-   `lib/memory` type/result contracts, `skippedScopes`, markdown store factory,
-   architecture adapter factory/deps contract, and minimal no-op consolidation
-   behavior. Add contract tests that instantiate both W1 stores through the
-   interface. Keep implementation skeletal until failing tests demand behavior.
+2. **Add shared contracts and factories test-first (B-002 starts; B-011).**
+   Create the `lib/memory` type/result contracts, `skippedScopes`, markdown
+   store factory, architecture adapter factory/deps contract, and minimal no-op
+   consolidation behavior. Add contract tests that instantiate both W1 stores
+   through the interface. Keep implementation skeletal until failing tests
+   demand behavior. B-002 is only *started* here: its Expected requires real
+   note writes/retrieval (built in step 3) and real map retrieval (built in
+   step 4), so B-002 completes at the end of step 4 and its contract test runs
+   green only then. *(Attribution clarified 2026-07-08 after review.)*
 
-3. **Build the markdown note store with red/green/refactor loops (B-005,
-   B-007, B-008, B-009, B-010, B-011, B-014).** Start with OKF write/read
-   roundtrip, then add factory-bound roots, scope filtering, scope/frontmatter
-   mismatch warnings, recency ordering, human override, malformed-file warnings,
-   empty/no-match behavior, skipped session scope, and no-op consolidation one
-   behavior at a time. Do not add embeddings, pruning, decay, or session storage.
+3. **Build the markdown note store with red/green/refactor loops (B-008,
+   B-009, B-010, B-011, B-014; store-level mechanics for B-005/B-007).** Start
+   with OKF write/read roundtrip, then add factory-bound roots, deterministic
+   omitted-field defaults, write-failure honesty, scope filtering,
+   scope/frontmatter mismatch warnings, recency ordering, list-mode (no-query)
+   retrieval, byte-idempotent `index.md` regeneration, human override,
+   malformed-file warnings, empty/no-match behavior, skipped session scope, and
+   no-op consolidation one behavior at a time — evidence in
+   `tests/memory/markdown-store.test.ts`. B-005 and B-007 themselves complete
+   in step 5, where their named extension-level tests exist. Do not add
+   embeddings, pruning, decay, or session storage.
 
-4. **Retrofit architecture retrieval through the interface (B-003, B-004).** Move
-   extension-local retrieval logic into `lib/architecture-map/retrieval.ts`, wire
-   the extension to the adapter, and keep the existing architecture-memory tests
-   substantively intact. Preserve absent-directory inertness, freshness details,
-   deprecated `resource` alias, root-resource `.` mapping, unsafe rejection, and
-   unknown-module listing. Verify no changes are made to generation/store/viewer
-   files.
+4. **Retrofit architecture retrieval through the interface (B-003, B-004,
+   B-015; B-002 completes).** Move extension-local retrieval logic into
+   `lib/architecture-map/retrieval.ts`, wire the extension to the adapter via
+   the injectable `createStore` dep, move `architecture_map_read` registration
+   to factory load, and keep the existing architecture-memory tests
+   substantively intact apart from the documented absent-directory
+   registration delta. Preserve freshness details, deprecated `resource` alias,
+   root-resource `.` mapping, unsafe rejection, and unknown-module listing.
+   Verify no changes are made to generation/store/viewer files.
 
 5. **Add Cosmo's agent-memory extension (B-005, B-006, B-007, B-012, B-013).**
    Implement factory-time `remember`/`recall` registration first so real
    buildToolAllowlist evidence passes, then add session/turn authorization reset,
-   non-Cosmo blocking, `remember`, `recall`, non-accumulating compact index
-   injection, and UTF-8-safe byte-budget truncation. Update Cosmo's definition
-   and prompt only after extension tests prove the edge behavior.
+   non-Cosmo blocking, `remember` (including the minimal `{ content }` call and
+   failure honesty), bounded `recall`, non-accumulating compact index
+   injection, and UTF-8-safe byte-budget truncation — all through the exported
+   `createAgentMemoryExtension(deps)` seam with a temp `userCosmonautsRoot`.
+   Update Cosmo's definition and prompt only after extension tests prove the
+   edge behavior.
 
 6. **Document W1 and public surface.** Add `docs/memory.md`, export
    `lib/memory/index.ts`, update `fallow.toml`, and update main-domain tests for
@@ -897,8 +1041,46 @@ Files intentionally not changed: `lib/architecture-map/generator.ts`,
 
 7. **Run the Quality Contract and artifact status check.** Verify project-native
    gates, behavior marker evidence, boundary imports, and targeted negative tests.
+   Run a fresh `cosmonauts architecture generate --no-narrative` on this repo and
+   exercise index + shard retrieval through the retrofitted path end-to-end (the
+   spec's fresh-generate verification — `memory/architecture/` is not currently
+   generated in this working copy, so there are no tracked map files to diff).
    Check `git status` explicitly for required `missions/**` and `memory/**`
    artifacts that Drive may have excluded from per-task source commits. If
    failures show the interface is too broad, inline or narrow it before tasks are
    marked done; do not carry speculative registry/session/embedding hooks as
    future-proofing.
+
+## Review Synthesis (2026-07-08)
+
+Two independent review channels ran against the committed plan draft
+(`058ab96`) and found disjoint defect sets:
+
+- **Chain plan-reviewer** (`review.md`, PR-001..PR-004 + missing-coverage
+  list): extension construction/test-injection seam for the user root,
+  deterministic `remember` defaults, no-query retrieval semantics, and an
+  executable adapter-spy seam for the delegation proof. All four applied.
+- **Independent adversarial workflow** (4 lenses → refute-first verifiers; 12
+  verified findings across two runs, 0 refuted): headline — the plan's own
+  (correct) Pi allowlist premise proves the shipped lazy
+  `architecture_map_read` registration is dead in real sessions; fixed via
+  B-015 factory registration for both extensions instead of preserving the
+  defect. Also applied: external-host prompt-surface minimization (accepted
+  trade-off, documented), `recall` result bounds, per-turn scan-cost stance
+  with a W2/reassess trigger, B-002/B-005/B-007 implementation-order
+  attribution, gate-1 coverage of the extension suite + fresh-generate check,
+  and the removal of the unreachable `consolidated` result variant.
+- Two findings lost their verifier agents to a session usage limit and were
+  verified by the orchestrator directly against the repo before applying:
+  `MemoryWriteResult`'s missing failure arm (independently converged with the
+  chain's missing-coverage list) and tracked `index.md` regeneration
+  determinism. The codebase-feasibility finder lens failed twice (API error,
+  then usage limit); its territory was substantially covered by the verifier
+  passes (which traced Pi dist internals and cosmonauts session wiring) and by
+  the chain reviewer's code_refs, but a dedicated feasibility sweep did not
+  run — recorded here honestly.
+
+Dispositions: no finding rejected. Two accepted-with-documentation rather than
+redesigned: external-host tool visibility (inherent to allowlist-correct
+factory registration; minimized and risk-logged) and per-turn store scan cost
+(W1-scale acceptable; revisit gated at W2/reassess).
