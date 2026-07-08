@@ -1,9 +1,29 @@
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import type { Dirent } from "node:fs";
+import {
+	mkdir,
+	readdir,
+	readFile,
+	rename,
+	unlink,
+	writeFile,
+} from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, relative } from "node:path";
-import matter from "gray-matter";
+import { dirname, join, resolve } from "node:path";
+import {
+	type AuthoredNoteInput,
+	parseAuthoredNote,
+	renderAuthoredNote,
+} from "./okf.ts";
+import {
+	AGENT_MEMORY_INDEX_RESOURCE,
+	assertBoundProjectRoot,
+	noteResource,
+	resolveAgentMemoryStorePaths,
+} from "./paths.ts";
 import type {
 	MemoryQuery,
+	MemoryRecordDraft,
 	MemoryRetrieveResult,
 	MemoryScopeContext,
 	MemoryScopeName,
@@ -12,7 +32,10 @@ import type {
 	RetrievedMemoryRecord,
 } from "./types.ts";
 
-const RECORDS_DIR = "records";
+const NOOP_REASON =
+	"W1 performs no background memory consolidation, pruning, decay, or dreaming.";
+const SESSION_SKIPPED_REASON =
+	"Session-scoped markdown memory is not built in W1; Pi session state and compaction cover short-term memory.";
 
 export interface MarkdownMemoryStoreOptions {
 	readonly projectRoot: string;
@@ -23,74 +46,76 @@ export interface MarkdownMemoryStoreOptions {
 export function createMarkdownMemoryStore(
 	options: MarkdownMemoryStoreOptions,
 ): MemoryStore {
-	const projectRoot = options.projectRoot;
-	const userCosmonautsRoot =
-		options.userCosmonautsRoot ?? join(homedir(), ".cosmonauts");
+	const projectRoot = resolve(options.projectRoot);
+	const userCosmonautsRoot = resolve(
+		options.userCosmonautsRoot ?? join(homedir(), ".cosmonauts"),
+	);
 	const now = options.now ?? (() => new Date());
 
 	return {
 		async write(record) {
-			const timestamp = record.timestamp ?? now().toISOString();
-			const path = recordPath({
-				projectRoot,
-				userCosmonautsRoot,
-				scope: record.scope,
-				title: record.title,
-				timestamp,
-			});
-			if (!path) {
+			if (record.type !== "note") {
 				return {
 					kind: "unsupported",
-					reason:
-						"Session-scoped markdown memory is skipped in W1; Pi session state owns short-term continuity.",
+					reason: 'Markdown memory authored records must use type "note".',
+				};
+			}
+			if (record.scope === "session") {
+				return {
+					kind: "unsupported",
+					reason: SESSION_SKIPPED_REASON,
 				};
 			}
 
+			const timestamp = record.timestamp ?? now().toISOString();
+			const fileName = noteFileName({ record, timestamp });
+			const resource = noteResource(fileName);
+			const paths = resolveAgentMemoryStorePaths({
+				projectRoot,
+				userCosmonautsRoot,
+				scope: record.scope,
+			});
+			const path = join(paths.root, resource);
+			const note: AuthoredNoteInput = {
+				title: record.title,
+				description: record.description,
+				resource,
+				tags: record.tags,
+				timestamp,
+				scope: record.scope,
+				kind: record.kind,
+				source: record.source,
+				content: record.content,
+			};
+			const rendered = renderAuthoredNote(note);
+
 			try {
-				await mkdir(join(path.storeRoot, RECORDS_DIR), { recursive: true });
-				const resource = relative(path.storeRoot, path.absolutePath);
-				const frontmatter = {
-					type: record.type,
-					title: record.title,
-					description: record.description,
-					resource,
-					tags: [...record.tags],
-					timestamp,
+				await mkdir(paths.notesDir, { recursive: true });
+				await writeFileIfChanged(path, rendered);
+				await regenerateIndex({
+					projectRoot,
+					userCosmonautsRoot,
 					scope: record.scope,
-					kind: record.kind,
-					...(record.source ? { source: record.source } : {}),
-				};
-				await writeFile(
-					path.absolutePath,
-					matter.stringify(record.content, frontmatter),
-					"utf-8",
-				);
+				});
 				return {
 					kind: "written",
-					path: path.absolutePath,
-					record: {
-						type: record.type,
-						scope: record.scope,
-						kind: record.kind,
-						title: record.title,
-						description: record.description,
-						resource,
-						tags: record.tags,
-						timestamp,
-						content: record.content,
-						path: path.absolutePath,
-					},
+					path,
+					record: toRetrievedRecord({ note, path }),
 				};
 			} catch (error: unknown) {
 				return {
 					kind: "failed",
-					path: path.absolutePath,
+					path,
 					reason: error instanceof Error ? error.message : String(error),
 				};
 			}
 		},
 
 		async retrieve(scope, query) {
+			assertBoundProjectRoot({
+				boundProjectRoot: projectRoot,
+				requestedProjectRoot: scope.projectRoot,
+			});
 			return retrieveMarkdownRecords({
 				projectRoot,
 				userCosmonautsRoot,
@@ -102,8 +127,7 @@ export function createMarkdownMemoryStore(
 		async consolidate() {
 			return {
 				kind: "noop",
-				reason:
-					"W1 performs no background memory consolidation, pruning, decay, or dreaming.",
+				reason: NOOP_REASON,
 			};
 		},
 	};
@@ -124,35 +148,27 @@ async function retrieveMarkdownRecords(options: {
 		if (scope === "session") {
 			skippedScopes.push({
 				scope,
-				reason:
-					"Session-scoped markdown memory is skipped in W1; Pi session state owns short-term continuity.",
+				reason: SESSION_SKIPPED_REASON,
 			});
 			continue;
 		}
 
 		searchedScopes.push(scope);
-		const storeRoot = memoryRoot({
+		const storePaths = resolveAgentMemoryStorePaths({
 			projectRoot: options.projectRoot,
 			userCosmonautsRoot: options.userCosmonautsRoot,
 			scope,
 		});
-		const files = await listMarkdownFiles(join(storeRoot, RECORDS_DIR));
-		for (const file of files) {
-			const record = await parseMarkdownRecord({
-				path: file,
-				storeRoot,
-				expectedScope: scope,
-				warnings,
-			});
-			if (!record || !matchesQuery(record, options.query)) continue;
-			records.push(record);
+		const scopeRecords = await readStoreRecords({
+			storePaths,
+			warnings,
+		});
+		for (const record of scopeRecords) {
+			if (matchesQuery(record, options.query)) records.push(record);
 		}
 	}
 
-	records.sort(
-		(a, b) =>
-			b.timestamp.localeCompare(a.timestamp) || a.path.localeCompare(b.path),
-	);
+	sortRecords(records);
 
 	return {
 		records:
@@ -165,55 +181,41 @@ async function retrieveMarkdownRecords(options: {
 	};
 }
 
+async function readStoreRecords(options: {
+	readonly storePaths: ReturnType<typeof resolveAgentMemoryStorePaths>;
+	readonly warnings: MemoryWarning[];
+}): Promise<RetrievedMemoryRecord[]> {
+	const files = await listMarkdownFiles(options.storePaths.notesDir);
+	const records: RetrievedMemoryRecord[] = [];
+	for (const file of files) {
+		const record = await parseMarkdownRecord({
+			path: file,
+			expectedScope: options.storePaths.scope,
+			warnings: options.warnings,
+		});
+		if (record) records.push(record);
+	}
+	return records;
+}
+
 async function parseMarkdownRecord(options: {
 	readonly path: string;
-	readonly storeRoot: string;
-	readonly expectedScope: MemoryScopeName;
+	readonly expectedScope: Exclude<MemoryScopeName, "session">;
 	readonly warnings: MemoryWarning[];
 }): Promise<RetrievedMemoryRecord | undefined> {
 	try {
-		const parsed = matter(await readFile(options.path, "utf-8"));
-		const data = parsed.data;
-		const scope = data.scope;
-		if (scope !== options.expectedScope) {
+		const parsed = parseAuthoredNote({
+			raw: await readFile(options.path, "utf-8"),
+			expectedScope: options.expectedScope,
+		});
+		if (!parsed.ok) {
 			options.warnings.push({
 				path: options.path,
-				message: `Memory record scope ${String(scope)} does not match ${options.expectedScope} store.`,
+				message: parsed.message,
 			});
 			return undefined;
 		}
-		if (
-			typeof data.type !== "string" ||
-			typeof data.title !== "string" ||
-			typeof data.description !== "string" ||
-			typeof data.resource !== "string" ||
-			typeof data.timestamp !== "string"
-		) {
-			options.warnings.push({
-				path: options.path,
-				message: "Memory record is missing required OKF frontmatter.",
-			});
-			return undefined;
-		}
-		return {
-			type: data.type,
-			scope,
-			kind:
-				data.kind === "semantic" ||
-				data.kind === "procedural" ||
-				data.kind === "episodic"
-					? data.kind
-					: undefined,
-			title: data.title,
-			description: data.description,
-			resource: data.resource,
-			tags: Array.isArray(data.tags)
-				? data.tags.filter((tag): tag is string => typeof tag === "string")
-				: [],
-			timestamp: data.timestamp,
-			content: parsed.content.trim(),
-			path: options.path,
-		};
+		return toRetrievedRecord({ note: parsed.record, path: options.path });
 	} catch (error: unknown) {
 		options.warnings.push({
 			path: options.path,
@@ -223,23 +225,73 @@ async function parseMarkdownRecord(options: {
 	}
 }
 
-async function listMarkdownFiles(directory: string): Promise<string[]> {
-	try {
-		const entries = await readdir(directory, { withFileTypes: true });
-		const files: string[] = [];
-		for (const entry of entries) {
-			const path = join(directory, entry.name);
-			if (entry.isDirectory()) {
-				files.push(...(await listMarkdownFiles(path)));
-			} else if (entry.isFile() && entry.name.endsWith(".md")) {
-				files.push(path);
-			}
+async function regenerateIndex(options: {
+	readonly projectRoot: string;
+	readonly userCosmonautsRoot: string;
+	readonly scope: Exclude<MemoryScopeName, "session">;
+}): Promise<void> {
+	const storePaths = resolveAgentMemoryStorePaths(options);
+	const records = await readStoreRecords({
+		storePaths,
+		warnings: [],
+	});
+	sortRecords(records);
+	await writeFileIfChanged(storePaths.indexPath, renderIndex({ records }));
+}
+
+function renderIndex(options: {
+	readonly records: readonly RetrievedMemoryRecord[];
+}): string {
+	const lines = [
+		"---",
+		"type: note-index",
+		`resource: ${AGENT_MEMORY_INDEX_RESOURCE}`,
+		"---",
+		"",
+		"# Agent Memory Index",
+		"",
+	];
+
+	if (options.records.length === 0) {
+		lines.push("No valid authored notes.");
+	} else {
+		for (const record of options.records) {
+			const tags =
+				record.tags.length > 0 ? ` tags: ${record.tags.join(", ")}` : "";
+			lines.push(
+				`- ${record.timestamp} [${record.scope}/${record.kind ?? "unknown"}] ${record.title} (${record.resource})${tags}`,
+			);
+			if (record.description) lines.push(`  ${record.description}`);
 		}
-		return files.sort();
+	}
+
+	lines.push("");
+	return lines.join("\n");
+}
+
+async function listMarkdownFiles(directory: string): Promise<string[]> {
+	let entries: Dirent[];
+	try {
+		entries = await readdir(directory, { withFileTypes: true });
 	} catch (error: unknown) {
 		if (isMissingFile(error)) return [];
 		throw error;
 	}
+
+	const files: string[] = [];
+	for (const entry of entries) {
+		const path = join(directory, entry.name);
+		if (entry.isDirectory()) {
+			files.push(...(await listMarkdownFiles(path)));
+		} else if (
+			entry.isFile() &&
+			entry.name.endsWith(".md") &&
+			entry.name !== "index.md"
+		) {
+			files.push(path);
+		}
+	}
+	return files.sort();
 }
 
 function matchesQuery(
@@ -268,31 +320,85 @@ function matchesQuery(
 		.includes(text);
 }
 
-function recordPath(options: {
-	readonly projectRoot: string;
-	readonly userCosmonautsRoot: string;
-	readonly scope: MemoryScopeName;
-	readonly title: string;
-	readonly timestamp: string;
-}): { readonly storeRoot: string; readonly absolutePath: string } | undefined {
-	const scope = options.scope;
-	if (scope === "session") return undefined;
-	const storeRoot = memoryRoot({ ...options, scope });
-	const slug = slugify(`${options.timestamp}-${options.title}`);
+function sortRecords(records: RetrievedMemoryRecord[]): void {
+	records.sort(
+		(a, b) =>
+			b.timestamp.localeCompare(a.timestamp) || a.path.localeCompare(b.path),
+	);
+}
+
+async function writeFileIfChanged(
+	path: string,
+	content: string,
+): Promise<void> {
+	const existing = await readFileIfExists(path);
+	if (existing === content) return;
+	await mkdir(dirname(path), { recursive: true });
+	const tempPath = `${path}.${process.pid}.${Date.now()}.tmp`;
+	try {
+		await writeFile(tempPath, content, "utf-8");
+		await rename(tempPath, path);
+	} catch (error) {
+		await unlink(tempPath).catch(() => undefined);
+		throw error;
+	}
+}
+
+async function readFileIfExists(path: string): Promise<string | undefined> {
+	try {
+		return await readFile(path, "utf-8");
+	} catch (error: unknown) {
+		if (isMissingFile(error)) return undefined;
+		throw error;
+	}
+}
+
+function toRetrievedRecord(options: {
+	readonly note: AuthoredNoteInput;
+	readonly path: string;
+}): RetrievedMemoryRecord {
 	return {
-		storeRoot,
-		absolutePath: join(storeRoot, RECORDS_DIR, `${slug}.md`),
+		type: "note",
+		scope: options.note.scope,
+		kind: options.note.kind,
+		title: options.note.title,
+		description: options.note.description,
+		resource: options.note.resource,
+		tags: options.note.tags,
+		timestamp: options.note.timestamp,
+		content: options.note.content,
+		path: options.path,
 	};
 }
 
-function memoryRoot(options: {
-	readonly projectRoot: string;
-	readonly userCosmonautsRoot: string;
-	readonly scope: Exclude<MemoryScopeName, "session">;
+function noteFileName(options: {
+	readonly record: MemoryRecordDraft;
+	readonly timestamp: string;
 }): string {
-	return options.scope === "project"
-		? join(options.projectRoot, "memory")
-		: join(options.userCosmonautsRoot, "memory");
+	const slug = slugify(options.record.title);
+	const hash = createHash("sha256")
+		.update(
+			JSON.stringify({
+				type: "note",
+				title: options.record.title,
+				description: options.record.description,
+				content: options.record.content,
+				tags: options.record.tags,
+				timestamp: options.timestamp,
+				scope: options.record.scope,
+				kind: options.record.kind,
+				source: options.record.source,
+			}),
+		)
+		.digest("hex")
+		.slice(0, 8);
+	return `${timestampForFile(options.timestamp)}-${slug}-${hash}.md`;
+}
+
+function timestampForFile(timestamp: string): string {
+	const parsed = new Date(timestamp);
+	if (Number.isNaN(parsed.valueOf())) return slugify(timestamp);
+	return parsed.toISOString().replace(/[-:.]/g, "").replace("Z", "Z");
 }
 
 function slugify(value: string): string {
