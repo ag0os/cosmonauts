@@ -121,6 +121,9 @@ describe("main domain built-in discovery", () => {
 			domain: "main",
 			resolver,
 		});
+		expect(extensionPaths).toContain(
+			join(SHARED_DOMAIN_DIR, "extensions", "agent-memory"),
+		);
 		const extensionToolGroups =
 			await collectExtensionToolGroups(extensionPaths);
 		const registeredToolNames = [...new Set(extensionToolGroups.flat())].sort();

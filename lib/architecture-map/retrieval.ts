@@ -11,7 +11,7 @@ import type {
 	MemoryWriteResult,
 	RetrievedMemoryRecord,
 } from "../memory/index.ts";
-import { assertBoundProjectRoot } from "../memory/index.ts";
+import { assertBoundProjectRoot } from "../memory/paths.ts";
 import { typescriptSourceAnalyzer } from "./analyzer.ts";
 import { loadArchitectureMapConfig } from "./config.ts";
 import { checkArchitectureMapStatFreshness } from "./freshness.ts";

@@ -127,6 +127,29 @@ describe("memory interface", () => {
 		expect(typesSource).not.toContain("registry");
 	});
 
+	test("keeps the memory public surface to W1 contracts and factories", async () => {
+		const indexSource = await readFile(
+			join(process.cwd(), "lib", "memory", "index.ts"),
+			"utf-8",
+		);
+		const fallowConfig = await readFile(
+			join(process.cwd(), "fallow.toml"),
+			"utf-8",
+		);
+
+		expect(fallowConfig).toContain('"lib/memory/index.ts"');
+		expect(indexSource).toContain("createMarkdownMemoryStore");
+		expect(indexSource).toContain("MarkdownMemoryStoreOptions");
+		expect(indexSource).toContain("MemoryStore");
+		expect(indexSource).toContain("MemoryConsolidateResult");
+		expect(indexSource).not.toContain("./okf.ts");
+		expect(indexSource).not.toContain("./paths.ts");
+		expect(indexSource).not.toContain("backend");
+		expect(indexSource).not.toContain("config");
+		expect(indexSource).not.toContain("session-store");
+		expect(indexSource).not.toContain("consolidated");
+	});
+
 	test("retrieves markdown notes and architecture maps through the shared MemoryStore interface @cosmo-behavior plan:memory-interface#B-002", async () => {
 		const userRoot = join(tmp.path, "user-cosmonauts");
 		const markdown: MemoryStore = createMarkdownMemoryStore({
