@@ -16,6 +16,11 @@ export {
 	readArchitectureMapIndexFrontmatter,
 } from "./freshness.ts";
 export { generateArchitectureMap } from "./generator.ts";
+export type { ArchitectureMapMemoryStoreOptions } from "./retrieval.ts";
+export {
+	createArchitectureMapMemoryStore,
+	listArchitectureMapModules,
+} from "./retrieval.ts";
 export type {
 	AnalysisInput,
 	AnalysisResult,

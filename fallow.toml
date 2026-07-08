@@ -7,6 +7,7 @@ entry = [
   "lib/config/index.ts",
   "lib/domains/index.ts",
   "lib/durable-runtime/index.ts",
+  "lib/memory/index.ts",
   "lib/packages/index.ts",
   "lib/plans/index.ts",
   "lib/prompts/index.ts",
