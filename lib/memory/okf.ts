@@ -19,11 +19,11 @@ export interface AuthoredNoteInput {
 	readonly content: string;
 }
 
-export interface ParsedAuthoredNote extends AuthoredNoteInput {
+interface ParsedAuthoredNote extends AuthoredNoteInput {
 	readonly type: "note";
 }
 
-export type ParseAuthoredNoteResult =
+type ParseAuthoredNoteResult =
 	| { readonly ok: true; readonly record: ParsedAuthoredNote }
 	| { readonly ok: false; readonly message: string };
 

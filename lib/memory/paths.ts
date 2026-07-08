@@ -1,11 +1,11 @@
 import { join, resolve } from "node:path";
 import type { MemoryScopeName } from "./types.ts";
 
-export const AGENT_MEMORY_RESOURCE_DIR = "memory/agent";
-export const NOTE_RESOURCE_DIR = `${AGENT_MEMORY_RESOURCE_DIR}/notes`;
+const AGENT_MEMORY_RESOURCE_DIR = "memory/agent";
+const NOTE_RESOURCE_DIR = `${AGENT_MEMORY_RESOURCE_DIR}/notes`;
 export const AGENT_MEMORY_INDEX_RESOURCE = `${AGENT_MEMORY_RESOURCE_DIR}/index.md`;
 
-export interface AgentMemoryStorePaths {
+interface AgentMemoryStorePaths {
 	readonly root: string;
 	readonly agentDir: string;
 	readonly notesDir: string;
