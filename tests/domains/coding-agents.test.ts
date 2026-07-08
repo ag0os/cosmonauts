@@ -12,6 +12,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import architectureMemoryExtension from "../../domains/shared/extensions/architecture-memory/index.ts";
+import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import {
 	DomainRegistry,
@@ -183,6 +184,11 @@ describe("coding domain agent invariants", () => {
 		const unmappedPi = createMockPi({ cwd: tmp.path });
 		architectureMemoryExtension(unmappedPi as never);
 		expect(unmappedPi.tools.has("architecture_map_read")).toBe(true);
+		await unmappedPi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: buildAgentIdentityMarker("coding/planner") },
+			{ cwd: tmp.path },
+		);
 		const missing = (await unmappedPi.callTool(
 			"architecture_map_read",
 			{},
