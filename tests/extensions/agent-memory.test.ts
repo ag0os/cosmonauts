@@ -1,0 +1,363 @@
+import { mkdir, readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import matter from "gray-matter";
+import { describe, expect, test, vi } from "vitest";
+import {
+	default as agentMemoryExtension,
+	createAgentMemoryExtension,
+} from "../../domains/shared/extensions/agent-memory/index.ts";
+import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
+import type { MemoryStore, MemoryWriteResult } from "../../lib/memory/index.ts";
+import { useTempDir } from "../helpers/fs.ts";
+import { createMockPi } from "../helpers/mocks/index.ts";
+
+const tmp = useTempDir("agent-memory-");
+
+describe("agent-memory extension", () => {
+	test("registers remember and recall at factory load with short host-safe descriptions @cosmo-behavior plan:memory-interface#B-012", () => {
+		const pi = createMockPi({ cwd: tmp.path });
+		agentMemoryExtension(pi as never);
+
+		expect(pi.tools.has("remember")).toBe(true);
+		expect(pi.tools.has("recall")).toBe(true);
+		expect(pi.tools.get("remember")).toMatchObject({
+			description: "Save an explicit note to agent memory.",
+		});
+		expect(pi.tools.get("recall")).toMatchObject({
+			description: "Search authored agent-memory notes.",
+		});
+		expect(pi.tools.get("remember")).not.toHaveProperty("promptSnippet");
+		expect(pi.tools.get("recall")).not.toHaveProperty("promptSnippet");
+	});
+
+	test("guards tool execution by current main/cosmo turn and resets on lifecycle events @cosmo-behavior plan:memory-interface#B-012", async () => {
+		const storeFactory = vi.fn(() => memoryStore({}));
+		const pi = createMockPi({ cwd: tmp.path });
+		createAgentMemoryExtension({
+			userCosmonautsRoot: join(tmp.path, "user-cosmonauts"),
+			storeFactory,
+			now: () => new Date("2026-07-08T14:00:00.000Z"),
+		})(pi as never);
+
+		await pi.fireEvent("before_agent_start", {
+			systemPrompt: buildAgentIdentityMarker("main/cosmo"),
+		});
+		await pi.callTool("remember", { content: "Cosmo-owned note" });
+		expect(storeFactory).toHaveBeenCalledTimes(1);
+
+		await pi.fireEvent("before_agent_start", {
+			systemPrompt: buildAgentIdentityMarker("main/not-cosmo"),
+		});
+		const nonCosmo = (await pi.callTool("recall", {
+			query: "Cosmo-owned",
+		})) as ToolResult;
+		expect(resultText(nonCosmo)).toContain("not authorized");
+		expect(nonCosmo.details).toMatchObject({ status: "unauthorized" });
+		expect(storeFactory).toHaveBeenCalledTimes(1);
+		await expect(readdir(join(tmp.path, "memory"))).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+
+		await pi.fireEvent("before_agent_start", {
+			systemPrompt: buildAgentIdentityMarker("main/cosmo"),
+		});
+		await pi.fireEvent("session_start");
+		const afterSessionStart = (await pi.callTool("remember", {
+			content: "Should be unauthorized",
+		})) as ToolResult;
+		expect(afterSessionStart.details).toMatchObject({
+			status: "unauthorized",
+		});
+		expect(storeFactory).toHaveBeenCalledTimes(1);
+
+		await pi.fireEvent("before_agent_start", {
+			systemPrompt: buildAgentIdentityMarker("main/cosmo"),
+		});
+		await pi.fireEvent("session_shutdown");
+		const afterShutdown = (await pi.callTool("recall", {
+			query: "anything",
+		})) as ToolResult;
+		expect(afterShutdown.details).toMatchObject({ status: "unauthorized" });
+		expect(storeFactory).toHaveBeenCalledTimes(1);
+	});
+
+	test("remember writes explicit OKF notes to project and user stores @cosmo-behavior plan:memory-interface#B-005", async () => {
+		const projectRoot = join(tmp.path, "project");
+		const userRoot = join(tmp.path, "user-cosmonauts");
+		const pi = await cosmoPi({ projectRoot, userRoot });
+
+		const projectSave = (await pi.callTool("remember", {
+			content: "Release deploys use the release branch.",
+			title: "Release deploys",
+			description: "Staging deploy branch.",
+			tags: ["deploys", "release"],
+			scope: "project",
+			kind: "semantic",
+		})) as ToolResult;
+		const userSave = (await pi.callTool("remember", {
+			content: "Prefer concise review notes.",
+			title: "Review preference",
+			scope: "user",
+			kind: "procedural",
+		})) as ToolResult;
+
+		expect(resultText(projectSave)).toContain('Saved "Release deploys"');
+		expect(resultText(projectSave)).toContain("project");
+		expect(resultText(userSave)).toContain('Saved "Review preference"');
+		expect(resultText(userSave)).toContain("user");
+		expect(projectSave.details).toMatchObject({
+			status: "saved",
+			title: "Release deploys",
+			scope: "project",
+			kind: "semantic",
+		});
+		expect(userSave.details).toMatchObject({
+			status: "saved",
+			title: "Review preference",
+			scope: "user",
+			kind: "procedural",
+		});
+
+		const projectPath = stringDetail(projectSave.details, "path");
+		const userPath = stringDetail(userSave.details, "path");
+		const parsedProject = matter(await readFile(projectPath, "utf-8"));
+		const parsedUser = matter(await readFile(userPath, "utf-8"));
+		expect(parsedProject.data).toMatchObject({
+			type: "note",
+			title: "Release deploys",
+			description: "Staging deploy branch.",
+			tags: ["deploys", "release"],
+			timestamp: "2026-07-08T14:00:00.000Z",
+			scope: "project",
+			kind: "semantic",
+			source: "main/cosmo",
+		});
+		expect(parsedProject.content.trim()).toBe(
+			"Release deploys use the release branch.",
+		);
+		expect(parsedUser.data).toMatchObject({
+			type: "note",
+			title: "Review preference",
+			description: "Review preference",
+			tags: [],
+			timestamp: "2026-07-08T14:00:00.000Z",
+			scope: "user",
+			kind: "procedural",
+			source: "main/cosmo",
+		});
+	});
+
+	test("remember supports deterministic minimal content saves @cosmo-behavior plan:memory-interface#B-005", async () => {
+		const projectRoot = join(tmp.path, "minimal-project");
+		const pi = await cosmoPi({
+			projectRoot,
+			userRoot: join(tmp.path, "minimal-user"),
+		});
+		const longFirstLine = `${"x".repeat(70)}\nsecond line`;
+
+		const save = (await pi.callTool("remember", {
+			content: longFirstLine,
+		})) as ToolResult;
+
+		expect(save.details).toMatchObject({
+			status: "saved",
+			title: "x".repeat(60),
+			scope: "project",
+			kind: "semantic",
+			tags: [],
+			timestamp: "2026-07-08T14:00:00.000Z",
+		});
+		const parsed = matter(
+			await readFile(stringDetail(save.details, "path"), "utf-8"),
+		);
+		expect(parsed.data).toMatchObject({
+			title: "x".repeat(60),
+			description: "x".repeat(60),
+			scope: "project",
+			kind: "semantic",
+			tags: [],
+			timestamp: "2026-07-08T14:00:00.000Z",
+		});
+		expect(parsed.content.trim()).toBe(longFirstLine);
+	});
+
+	test("failed remember reports path and reason without leaving a partial note @cosmo-behavior plan:memory-interface#B-005", async () => {
+		const projectRoot = join(tmp.path, "failed-write-project");
+		const pi = await cosmoPi({
+			projectRoot,
+			userRoot: join(tmp.path, "failed-write-user"),
+		});
+		await mkdir(join(projectRoot, "memory", "agent", "index.md"), {
+			recursive: true,
+		});
+
+		const failed = (await pi.callTool("remember", {
+			content:
+				"This write cannot finish because the index path is a directory.",
+			title: "Blocked index",
+		})) as ToolResult;
+
+		expect(failed.details).toMatchObject({
+			status: "failed",
+			title: "Blocked index",
+			scope: "project",
+		});
+		expect(stringDetail(failed.details, "path")).toContain(
+			join("memory", "agent", "notes"),
+		);
+		expect(stringDetail(failed.details, "reason")).toMatch(/EISDIR|directory/i);
+		await expect(
+			readdir(join(projectRoot, "memory", "agent", "notes")),
+		).resolves.toEqual([]);
+	});
+
+	test("recall searches notes over project and user scopes with default and capped limits @cosmo-behavior plan:memory-interface#B-007", async () => {
+		const projectRoot = join(tmp.path, "recall-project");
+		const userRoot = join(tmp.path, "recall-user");
+		const pi = await cosmoPi({ projectRoot, userRoot });
+
+		for (let index = 0; index < 25; index += 1) {
+			await pi.callTool("remember", {
+				content: `Searchable recall fact ${index}`,
+				title: `Recall fact ${index.toString().padStart(2, "0")}`,
+				scope: index % 2 === 0 ? "project" : "user",
+			});
+		}
+
+		const defaultRecall = (await pi.callTool("recall", {
+			query: "Searchable recall fact",
+		})) as ToolResult;
+		expect(defaultRecall.details).toMatchObject({
+			status: "matched",
+			query: "Searchable recall fact",
+			limit: 5,
+			searchedScopes: ["project", "user"],
+		});
+		expect(records(defaultRecall.details)).toHaveLength(5);
+		expect(resultText(defaultRecall)).toContain("Recall fact 00");
+		expect(resultText(defaultRecall)).toContain("scope: project");
+		expect(resultText(defaultRecall)).toContain("kind: semantic");
+		expect(resultText(defaultRecall)).toContain("timestamp:");
+		expect(resultText(defaultRecall)).toContain("path:");
+
+		const capped = (await pi.callTool("recall", {
+			query: "Searchable recall fact",
+			limit: 200,
+		})) as ToolResult;
+		expect(capped.details).toMatchObject({ status: "matched", limit: 20 });
+		expect(records(capped.details)).toHaveLength(20);
+	});
+
+	test("recall rejects empty query and returns honest no-match scopes @cosmo-behavior plan:memory-interface#B-007", async () => {
+		const pi = await cosmoPi({
+			projectRoot: join(tmp.path, "no-match-project"),
+			userRoot: join(tmp.path, "no-match-user"),
+		});
+		await pi.callTool("remember", {
+			content: "Deploys use release branches.",
+			title: "Deploy branch",
+		});
+
+		const empty = (await pi.callTool("recall", {
+			query: "  ",
+		})) as ToolResult;
+		expect(empty.details).toMatchObject({ status: "invalid_request" });
+		expect(resultText(empty)).toContain("requires non-empty query text");
+
+		const noMatch = (await pi.callTool("recall", {
+			query: "missing phrase",
+			limit: 10,
+		})) as ToolResult;
+		expect(noMatch.details).toMatchObject({
+			status: "no_match",
+			query: "missing phrase",
+			limit: 10,
+			searchedScopes: ["project", "user"],
+		});
+		expect(resultText(noMatch)).toContain("No authored memory notes matched");
+		expect(resultText(noMatch)).toContain("project, user");
+	});
+});
+
+interface ToolResult {
+	content: { type: "text"; text: string }[];
+	details: unknown;
+}
+
+function resultText(result: ToolResult): string {
+	return result.content.map((entry) => entry.text).join("\n");
+}
+
+async function cosmoPi(options: {
+	readonly projectRoot: string;
+	readonly userRoot: string;
+}) {
+	const pi = createMockPi({ cwd: options.projectRoot });
+	createAgentMemoryExtension({
+		userCosmonautsRoot: options.userRoot,
+		now: () => new Date("2026-07-08T14:00:00.000Z"),
+	})(pi as never);
+	await pi.fireEvent("before_agent_start", {
+		systemPrompt: buildAgentIdentityMarker("main/cosmo"),
+	});
+	return pi;
+}
+
+function memoryStore(options: {
+	readonly write?: MemoryStore["write"];
+	readonly retrieve?: MemoryStore["retrieve"];
+}): MemoryStore {
+	return {
+		write:
+			options.write ??
+			(async (record): Promise<MemoryWriteResult> => ({
+				kind: "written",
+				path: join(tmp.path, "memory", "agent", "notes", "spy.md"),
+				record: {
+					type: record.type,
+					scope: record.scope,
+					kind: record.kind,
+					title: record.title,
+					description: record.description,
+					resource: "memory/agent/notes/spy.md",
+					tags: record.tags,
+					timestamp: record.timestamp ?? "2026-07-08T14:00:00.000Z",
+					content: record.content,
+					path: join(tmp.path, "memory", "agent", "notes", "spy.md"),
+				},
+			})),
+		retrieve:
+			options.retrieve ??
+			(async () => ({
+				records: [],
+				searchedScopes: ["project", "user"],
+				skippedScopes: [],
+				warnings: [],
+			})),
+		consolidate: async () => ({
+			kind: "noop",
+			reason:
+				"W1 performs no background memory consolidation, pruning, decay, or dreaming.",
+		}),
+	};
+}
+
+function stringDetail(details: unknown, key: string): string {
+	if (!details || typeof details !== "object") {
+		throw new Error("Expected object details");
+	}
+	const value = (details as Record<string, unknown>)[key];
+	if (typeof value !== "string") {
+		throw new Error(`Expected string detail ${key}`);
+	}
+	return value;
+}
+
+function records(details: unknown): unknown[] {
+	if (!details || typeof details !== "object") {
+		throw new Error("Expected object details");
+	}
+	const value = (details as Record<string, unknown>).records;
+	if (!Array.isArray(value)) throw new Error("Expected records array");
+	return value;
+}

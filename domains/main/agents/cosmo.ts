@@ -14,6 +14,7 @@ const definition: AgentDefinition = {
 		"todo",
 		"init",
 		"observability",
+		"agent-memory",
 	],
 	skills: ["*"],
 	subagents: [

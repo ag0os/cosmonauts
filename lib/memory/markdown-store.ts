@@ -88,10 +88,12 @@ export function createMarkdownMemoryStore(
 				content: record.content,
 			};
 			const rendered = renderAuthoredNote(note);
+			let existing: string | undefined;
 
 			try {
+				existing = await readFileIfExists(path);
 				await mkdir(paths.notesDir, { recursive: true });
-				await writeFileIfChanged(path, rendered);
+				await writeFileIfChanged(path, rendered, existing);
 				await regenerateIndex({
 					projectRoot,
 					userCosmonautsRoot,
@@ -103,6 +105,7 @@ export function createMarkdownMemoryStore(
 					record: toRetrievedRecord({ note, path }),
 				};
 			} catch (error: unknown) {
+				if (existing === undefined) await unlink(path).catch(() => undefined);
 				return {
 					kind: "failed",
 					path,
@@ -330,9 +333,10 @@ function sortRecords(records: RetrievedMemoryRecord[]): void {
 async function writeFileIfChanged(
 	path: string,
 	content: string,
+	existing?: string,
 ): Promise<void> {
-	const existing = await readFileIfExists(path);
-	if (existing === content) return;
+	const previous = existing ?? (await readFileIfExists(path));
+	if (previous === content) return;
 	await mkdir(dirname(path), { recursive: true });
 	const tempPath = `${path}.${process.pid}.${Date.now()}.tmp`;
 	try {

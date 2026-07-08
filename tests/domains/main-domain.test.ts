@@ -134,6 +134,8 @@ describe("main domain built-in discovery", () => {
 		expect(registeredToolNames).toEqual(
 			expect.arrayContaining([
 				"chain_run",
+				"recall",
+				"remember",
 				"plan_create",
 				"run_driver",
 				"spawn_agent",
