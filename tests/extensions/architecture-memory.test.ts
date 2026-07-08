@@ -368,9 +368,12 @@ describe("architecture-memory extension", () => {
 
 	test("auto-loaded extension stays inert for non-consuming agents @cosmo-behavior plan:code-structure-map#B-012", async () => {
 		await writeArchitectureMap(tmp.path);
+		const retrieve = vi.fn();
+		const createStore = vi.fn(() => memoryStore({ retrieve }));
 		const pi = createMockPi({ cwd: tmp.path });
-		architectureMemoryExtension(pi as never);
+		createArchitectureMemoryExtension(deps({ createStore }))(pi as never);
 
+		await pi.fireEvent("session_start");
 		const result = await pi.fireEvent(
 			"before_agent_start",
 			{ systemPrompt: buildAgentIdentityMarker("coding/reviewer") },
@@ -379,6 +382,21 @@ describe("architecture-memory extension", () => {
 
 		expect(result).toBeUndefined();
 		expect(pi.tools.has("architecture_map_read")).toBe(true);
+
+		const unauthorized = (await pi.callTool(
+			"architecture_map_read",
+			{},
+		)) as ToolResult;
+		expect(resultText(unauthorized)).toContain(
+			"architecture_map_read is not available for this agent.",
+		);
+		expect(unauthorized.details).toMatchObject({
+			kind: "architecture-map",
+			status: "scope-ineligible",
+			reason: "architecture_map_read is not available for this agent.",
+		});
+		expect(createStore).not.toHaveBeenCalled();
+		expect(retrieve).not.toHaveBeenCalled();
 	});
 
 	test("turn-time injection does not invoke content-hash freshness @cosmo-behavior plan:code-structure-map#B-012", async () => {

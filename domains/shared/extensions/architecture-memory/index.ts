@@ -66,6 +66,8 @@ export function createArchitectureMemoryExtension(
 	};
 
 	return function architectureMemoryExtension(pi: ExtensionAPI): void {
+		let authorized = false;
+
 		pi.registerTool({
 			name: "architecture_map_read",
 			label: "Read Architecture Map",
@@ -86,6 +88,8 @@ export function createArchitectureMemoryExtension(
 				),
 			}),
 			execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+				if (!authorized) return unauthorizedResult();
+
 				const cwd = getCwd(ctx);
 				const result = await retrieveArchitectureMap({
 					projectRoot: cwd,
@@ -96,9 +100,18 @@ export function createArchitectureMemoryExtension(
 			},
 		});
 
+		pi.on("session_start", async () => {
+			authorized = false;
+		});
+
+		pi.on("session_shutdown", async () => {
+			authorized = false;
+		});
+
 		pi.on("before_agent_start", async (event, ctx) => {
 			const systemPrompt = getSystemPrompt(event);
-			if (!isConsumingAgent(systemPrompt)) return;
+			authorized = isConsumingAgent(systemPrompt);
+			if (!authorized) return;
 
 			const cwd = getCwd(ctx);
 			if (!(await architectureDirExists(cwd))) return;
@@ -167,6 +180,15 @@ async function retrieveArchitectureMap(options: {
 				limit: 1,
 			},
 		);
+}
+
+function unauthorizedResult(): ReturnType<typeof textResult> {
+	return textResult("architecture_map_read is not available for this agent.", {
+		kind: "architecture-map",
+		status: "scope-ineligible",
+		freshness: { kind: "missing" },
+		reason: "architecture_map_read is not available for this agent.",
+	});
 }
 
 function renderArchitectureMapResult(
