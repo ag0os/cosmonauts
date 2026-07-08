@@ -16,8 +16,8 @@ const mocks = vi.hoisted(() => ({
 	appendSession: vi.fn(),
 }));
 
-vi.mock("@earendil-works/pi-ai", () => ({
-	getModel: mocks.getModel,
+vi.mock("@earendil-works/pi-ai/providers/all", () => ({
+	builtinModels: () => ({ getModel: mocks.getModel }),
 }));
 
 // Pi SDK mock — only SessionManager.inMemory is used when planSlug is absent;

@@ -5,11 +5,13 @@
  */
 
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { getModel } from "@earendil-works/pi-ai";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { AgentRegistry } from "../agents/index.ts";
 import { roleToConfigKey } from "../agents/qualified-role.ts";
 import type { ModelConfig, ThinkingConfig } from "./types.ts";
+
+const builtinModelCatalog = builtinModels();
 
 // ============================================================================
 // Model Resolution
@@ -110,7 +112,7 @@ export function resolveModel(modelId: string, modelRegistry?: ModelRegistry) {
 
 	const model =
 		modelRegistry?.find(provider, id) ??
-		getModel(provider as Parameters<typeof getModel>[0], id as never);
+		builtinModelCatalog.getModel(provider, id);
 	if (!model) {
 		throw new Error(`Model not found: provider="${provider}", id="${id}"`);
 	}

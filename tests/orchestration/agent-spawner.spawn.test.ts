@@ -24,8 +24,8 @@ const mocks = vi.hoisted(() => ({
 	getModel: vi.fn(),
 }));
 
-vi.mock("@earendil-works/pi-ai", () => ({
-	getModel: mocks.getModel,
+vi.mock("@earendil-works/pi-ai/providers/all", () => ({
+	builtinModels: () => ({ getModel: mocks.getModel }),
 }));
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({

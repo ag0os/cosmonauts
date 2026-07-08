@@ -7,7 +7,7 @@ description: Pi framework API reference — sessions, tools, extensions, events,
 
 Pi (`@earendil-works/pi-coding-agent`) is the agent runtime. This skill covers its programmatic API surface for building on top of Pi.
 
-> **Note:** The reference below tracks `@earendil-works/pi-coding-agent` v0.79.8 (the version this repo pins). Use it as a baseline and query current Pi docs with Context7 when in doubt.
+> **Note:** The reference below tracks `@earendil-works/pi-coding-agent` v0.80.3 (the version this repo pins). Use it as a baseline and query current Pi docs with Context7 when in doubt.
 
 ## Source Of Truth
 
@@ -43,7 +43,7 @@ import {
   getAgentDir,
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
-import { getModel } from "@earendil-works/pi-ai";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 
 // Minimal — uses all defaults
 const { session: defaultSession } = await createAgentSession();
@@ -51,13 +51,16 @@ const { session: defaultSession } = await createAgentSession();
 const cwd = "/path/to/project";
 const agentDir = getAgentDir();
 const loader = new DefaultResourceLoader({ cwd, agentDir });
+const models = builtinModels();
+const model = models.getModel("anthropic", "claude-sonnet-4-5");
+if (!model) throw new Error("Model not found");
 await loader.reload();
 
 // Explicit configuration
 const { session } = await createAgentSession({
   cwd,
   agentDir,
-  model: getModel("anthropic", "claude-sonnet-4-5"),
+  model,
   thinkingLevel: "high",
   tools: ["read", "bash", "edit", "write"],
   sessionManager: SessionManager.inMemory(),
@@ -162,7 +165,8 @@ unsubscribe();
 ### Model Control
 
 ```typescript
-await session.setModel(getModel("anthropic", "claude-opus-4-5"));
+const nextModel = models.getModel("anthropic", "claude-opus-4-5");
+if (nextModel) await session.setModel(nextModel);
 await session.cycleModel("forward");    // Returns ModelCycleResult | undefined
 session.setThinkingLevel("high");
 session.cycleThinkingLevel();           // Returns ThinkingLevel | undefined
@@ -742,24 +746,31 @@ import { ModelRegistry } from "@earendil-works/pi-coding-agent";
 const registry = ModelRegistry.create(authStorage, "/path/to/models.json");
 ```
 
-Models are identified by `"provider/model-id"` strings. Use `getModel()` from `pi-ai` to resolve:
+Models are identified by `"provider/model-id"` strings. Use the new `Models` API for built-in catalog lookup:
 
 ```typescript
-import { getModel } from "@earendil-works/pi-ai";
-const model = getModel("anthropic", "claude-sonnet-4-5");
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+
+const models = builtinModels();
+const model = models.getModel("anthropic", "claude-sonnet-4-5");
+if (!model) throw new Error("Model not found");
 ```
 
 ## Lightweight LLM Calls (`pi-ai`)
 
-For one-off classification/routing without spinning up a full `AgentSession`, call the `pi-ai` stream helpers directly. They take a `Context` object (`{ systemPrompt?, messages, tools? }`) plus options:
+For one-off classification/routing without spinning up a full `AgentSession`, use a `Models` collection. The stream helpers take a `Context` object (`{ systemPrompt?, messages, tools? }`) plus options:
 
 ```typescript
-import { completeSimple, streamSimple } from "@earendil-works/pi-ai";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
+
+const models = builtinModels();
+const model = models.getModel("anthropic", "claude-sonnet-4-5");
+if (!model) throw new Error("Model not found");
 
 const context = { systemPrompt: "Classify the request.", messages: [{ role: "user", content: "..." }] };
 
-const msg = await completeSimple(model, context, { reasoning: "low" });  // resolves to the final AssistantMessage
-const events = streamSimple(model, context);                              // AssistantMessageEventStream
+const msg = await models.completeSimple(model, context, { reasoning: "low" });  // resolves to the final AssistantMessage
+const events = models.streamSimple(model, context);                              // AssistantMessageEventStream
 
 // Lower-level (full ProviderStreamOptions): complete(model, context, options?) / stream(model, context, options?)
 ```
