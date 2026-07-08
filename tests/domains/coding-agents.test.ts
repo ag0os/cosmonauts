@@ -7,11 +7,24 @@
  * configuration, not behavior, and should not be snapshot-tested.
  */
 
-import { resolve } from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
+import architectureMemoryExtension from "../../domains/shared/extensions/architecture-memory/index.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
-import { loadDomainsFromSources } from "../../lib/domains/index.ts";
+import {
+	DomainRegistry,
+	DomainResolver,
+	loadDomainsFromSources,
+} from "../../lib/domains/index.ts";
+import {
+	buildToolAllowlist,
+	resolveExtensionPaths,
+	resolveTools,
+} from "../../lib/orchestration/definition-resolution.ts";
+import { useTempDir } from "../helpers/fs.ts";
+import { createMockPi } from "../helpers/mocks/index.ts";
 
 const DOMAINS_DIR = resolve(
 	fileURLToPath(import.meta.url),
@@ -29,7 +42,9 @@ const BUNDLED_CODING_DIR = resolve(
 	"coding",
 );
 
+const tmp = useTempDir("coding-agents-");
 let allDefinitions: AgentDefinition[] = [];
+let resolver: DomainResolver;
 
 beforeAll(async () => {
 	const domains = await loadDomainsFromSources([
@@ -49,6 +64,7 @@ beforeAll(async () => {
 	}
 
 	allDefinitions = [...codingDomain.agents.values()];
+	resolver = new DomainResolver(new DomainRegistry(domains));
 });
 
 describe("coding domain agent invariants", () => {
@@ -134,4 +150,127 @@ describe("coding domain agent invariants", () => {
 			expect(def.description.length).toBeGreaterThan(0);
 		}
 	});
+
+	it("registers architecture_map_read at extension factory load for architecture-consuming agents @cosmo-behavior plan:memory-interface#B-015", async () => {
+		const consumers = allDefinitions
+			.filter((definition) =>
+				definition.extensions.includes("architecture-memory"),
+			)
+			.sort((a, b) => a.id.localeCompare(b.id));
+		expect(consumers.map((definition) => definition.id)).toEqual([
+			"coordinator",
+			"plan-reviewer",
+			"planner",
+			"quality-manager",
+			"worker",
+		]);
+
+		for (const definition of consumers) {
+			const extensionPaths = resolveExtensionPaths(definition.extensions, {
+				domain: definition.domain ?? "coding",
+				resolver,
+			});
+			const extensionToolGroups =
+				await collectExtensionToolGroups(extensionPaths);
+			const allowlist = buildToolAllowlist(
+				resolveTools(definition.tools, tmp.path),
+				fakeLoader(extensionToolGroups),
+			);
+
+			expect(allowlist, definition.id).toContain("architecture_map_read");
+		}
+
+		const unmappedPi = createMockPi({ cwd: tmp.path });
+		architectureMemoryExtension(unmappedPi as never);
+		expect(unmappedPi.tools.has("architecture_map_read")).toBe(true);
+		const missing = (await unmappedPi.callTool(
+			"architecture_map_read",
+			{},
+		)) as {
+			content: { type: "text"; text: string }[];
+			details: unknown;
+		};
+		expect(resultText(missing)).toContain(
+			"`memory/architecture/index.md` is missing.",
+		);
+		expect(missing.details).toMatchObject({
+			status: "missing-map",
+			resource: "memory/architecture/index.md",
+		});
+
+		await mkdir(join(tmp.path, "memory", "architecture"), { recursive: true });
+		await writeFile(
+			join(tmp.path, "memory", "architecture", "index.md"),
+			"---\ntype: code-structure-index\nresource: memory/architecture/index.md\n---\n\n# Architecture Map\n",
+			"utf-8",
+		);
+		const mapped = (await unmappedPi.callTool("architecture_map_read", {})) as {
+			content: { type: "text"; text: string }[];
+			details: unknown;
+		};
+		expect(resultText(mapped)).toContain("# Architecture Map");
+		expect(mapped.details).toMatchObject({
+			status: "found",
+			resource: "memory/architecture/index.md",
+		});
+	});
 });
+
+type ExtensionFactory = (api: unknown) => void;
+
+async function collectExtensionToolGroups(
+	extensionPaths: readonly string[],
+): Promise<string[][]> {
+	const groups: string[][] = [];
+
+	for (const extensionPath of extensionPaths) {
+		const names: string[] = [];
+		const extension = await loadExtension(extensionPath);
+		extension(createToolCollector(names));
+		groups.push(names);
+	}
+
+	return groups;
+}
+
+async function loadExtension(extensionPath: string): Promise<ExtensionFactory> {
+	const mod = (await import(join(extensionPath, "index.ts"))) as {
+		default?: unknown;
+	};
+	if (typeof mod.default !== "function") {
+		throw new Error(`Extension has no default export: ${extensionPath}`);
+	}
+	return mod.default as ExtensionFactory;
+}
+
+function createToolCollector(names: string[]): unknown {
+	return {
+		registerTool(tool: { name: string }): void {
+			names.push(tool.name);
+		},
+		registerCommand(): void {},
+		registerMessageRenderer(): void {},
+		on(): void {},
+		appendEntry(): void {},
+		sendMessage(): void {},
+		sendUserMessage(): void {},
+	};
+}
+
+function fakeLoader(
+	extensionToolGroups: readonly (readonly string[])[],
+): Parameters<typeof buildToolAllowlist>[1] {
+	const extensions = extensionToolGroups.map((names) => ({
+		tools: new Map(names.map((name) => [name, { name }])),
+	}));
+
+	return {
+		getExtensions: () => ({ extensions, errors: [], runtime: {} }),
+	} as unknown as Parameters<typeof buildToolAllowlist>[1];
+}
+
+function resultText(result: {
+	content: { type: "text"; text: string }[];
+}): string {
+	return result.content.map((entry) => entry.text).join("\n");
+}

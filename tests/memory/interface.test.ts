@@ -1,6 +1,7 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import type { ArchitectureMapRetrievalDetails } from "../../lib/architecture-map/index.ts";
 import { createArchitectureMapMemoryStore } from "../../lib/architecture-map/index.ts";
 import {
 	createMarkdownMemoryStore,
@@ -38,7 +39,7 @@ describe("memory interface", () => {
 
 		const architecture = createArchitectureMapMemoryStore({
 			projectRoot: tmp.path,
-			freshness: { kind: "current", hash: "stat-current" },
+			checkFreshness: async () => ({ kind: "current", hash: "stat-current" }),
 		});
 
 		const before = await readTrackedFiles([
@@ -73,7 +74,7 @@ describe("memory interface", () => {
 
 		const architecture = createArchitectureMapMemoryStore({
 			projectRoot: tmp.path,
-			freshness: { kind: "missing" },
+			checkFreshness: async () => ({ kind: "missing" }),
 		});
 		await expect(
 			architecture.write({
@@ -124,6 +125,94 @@ describe("memory interface", () => {
 		expect(typesSource).toContain('readonly kind: "noop"');
 		expect(typesSource).not.toContain('"consolidated"');
 		expect(typesSource).not.toContain("registry");
+	});
+
+	test("retrieves markdown notes and architecture maps through the shared MemoryStore interface @cosmo-behavior plan:memory-interface#B-002", async () => {
+		const userRoot = join(tmp.path, "user-cosmonauts");
+		const markdown: MemoryStore = createMarkdownMemoryStore({
+			projectRoot: tmp.path,
+			userCosmonautsRoot: userRoot,
+			now: () => new Date("2026-07-08T14:00:00.000Z"),
+		});
+		const architecture: MemoryStore = createArchitectureMapMemoryStore({
+			projectRoot: tmp.path,
+			checkFreshness: async () => ({ kind: "current", hash: "stat-current" }),
+		});
+
+		const written = await markdown.write({
+			type: "note",
+			scope: "project",
+			kind: "semantic",
+			title: "Release branch",
+			description: "Staging deploy branch.",
+			content: "Staging deploys happen from release.",
+			tags: ["deploys"],
+		});
+		expect(written.kind).toBe("written");
+
+		const markdownRetrieved = await markdown.retrieve(
+			{ projectRoot: tmp.path, scopes: ["project"] },
+			{ text: "staging deploys" },
+		);
+		expect(markdownRetrieved.records).toHaveLength(1);
+		expect(markdownRetrieved.records[0]).toMatchObject({
+			type: "note",
+			scope: "project",
+			title: "Release branch",
+			content: "Staging deploys happen from release.",
+		});
+
+		await writeArchitectureMap(tmp.path);
+		const architectureRetrieved = await architecture.retrieve(
+			{ projectRoot: tmp.path, scopes: ["project"] },
+			{ recordTypes: ["code-structure-index"], limit: 1 },
+		);
+		expect(architectureRetrieved.records).toHaveLength(1);
+		expect(architectureRetrieved.records[0]).toMatchObject({
+			type: "code-structure-index",
+			scope: "project",
+			resource: "memory/architecture/index.md",
+		});
+		expect(architectureRetrieved.records[0]?.content).toContain(
+			"Architecture map freshness: current (stat-current)",
+		);
+
+		const ineligible = await architecture.retrieve(
+			{ projectRoot: tmp.path, scopes: ["session", "user"] },
+			{},
+		);
+		expect(ineligible.records).toEqual([]);
+		expect(ineligible.searchedScopes).toEqual([]);
+		expect(ineligible.skippedScopes).toEqual([
+			{
+				scope: "session",
+				reason: "Architecture-map memory is project-scoped generated state.",
+			},
+			{
+				scope: "user",
+				reason: "Architecture-map memory is project-scoped generated state.",
+			},
+		]);
+		expect(ineligible.details).toMatchObject({
+			status: "scope-ineligible",
+			freshness: { kind: "current", hash: "stat-current" },
+		} satisfies Partial<ArchitectureMapRetrievalDetails>);
+
+		await expect(
+			architecture.write({
+				type: "note",
+				scope: "project",
+				kind: "semantic",
+				title: "No direct map writes",
+				description: "Architecture writes stay generated.",
+				content: "Generated architecture-map writes stay out of this store.",
+				tags: [],
+			}),
+		).resolves.toEqual({
+			kind: "unsupported",
+			reason:
+				"Architecture-map memory is generated derived state; writes remain owned by generateArchitectureMap.",
+		});
 	});
 
 	test("keeps lib memory core domain-neutral", async () => {

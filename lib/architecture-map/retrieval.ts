@@ -11,21 +11,62 @@ import type {
 	MemoryWriteResult,
 	RetrievedMemoryRecord,
 } from "../memory/index.ts";
-import type { ArchitectureMapFreshness } from "./types.ts";
+import { assertBoundProjectRoot } from "../memory/index.ts";
+import { typescriptSourceAnalyzer } from "./analyzer.ts";
+import { loadArchitectureMapConfig } from "./config.ts";
+import { checkArchitectureMapStatFreshness } from "./freshness.ts";
+import type { ArchitectureMapFreshness, SourceAnalyzer } from "./types.ts";
 
 const ARCHITECTURE_DIR = "memory/architecture";
 const INDEX_PATH = "index.md";
 const NOOP_REASON =
 	"W1 performs no background memory consolidation, pruning, decay, or dreaming.";
+const PROJECT_SCOPE_REASON =
+	"Architecture-map memory is project-scoped generated state.";
 
 export interface ArchitectureMapMemoryStoreOptions {
 	readonly projectRoot: string;
+	readonly loadConfig?: ArchitectureMapMemoryDeps["loadConfig"];
+	readonly analyzer?: ArchitectureMapMemoryDeps["analyzer"];
+	readonly checkFreshness?: ArchitectureMapMemoryDeps["checkFreshness"];
+}
+
+export interface ArchitectureMapMemoryDeps {
+	readonly loadConfig: typeof loadArchitectureMapConfig;
+	readonly analyzer: Pick<SourceAnalyzer, "getConfigInputs">;
+	readonly checkFreshness: (options: {
+		readonly projectRoot: string;
+		readonly config: Awaited<ReturnType<typeof loadArchitectureMapConfig>>;
+		readonly analyzer: Pick<SourceAnalyzer, "getConfigInputs">;
+	}) => Promise<ArchitectureMapFreshness>;
+}
+
+export type ArchitectureMapRetrievalStatus =
+	| "found"
+	| "missing-map"
+	| "unknown-module"
+	| "unsafe-resource"
+	| "scope-ineligible";
+
+export interface ArchitectureMapRetrievalDetails {
+	readonly status: ArchitectureMapRetrievalStatus;
 	readonly freshness: ArchitectureMapFreshness;
+	readonly resource?: string;
+	readonly path?: string;
+	readonly availableModules?: readonly string[];
+	readonly reason?: string;
 }
 
 export function createArchitectureMapMemoryStore(
 	options: ArchitectureMapMemoryStoreOptions,
 ): MemoryStore {
+	const deps: ArchitectureMapMemoryDeps = {
+		loadConfig: options.loadConfig ?? loadArchitectureMapConfig,
+		analyzer: options.analyzer ?? typescriptSourceAnalyzer,
+		checkFreshness: options.checkFreshness ?? checkArchitectureMapStatFreshness,
+	};
+	const projectRoot = resolve(options.projectRoot);
+
 	return {
 		async write(_record: MemoryRecordDraft): Promise<MemoryWriteResult> {
 			return {
@@ -39,9 +80,19 @@ export function createArchitectureMapMemoryStore(
 			scope: MemoryScopeContext,
 			query: MemoryQuery,
 		): Promise<MemoryRetrieveResult> {
+			assertBoundProjectRoot({
+				boundProjectRoot: projectRoot,
+				requestedProjectRoot: scope.projectRoot,
+			});
+			const config = await deps.loadConfig(projectRoot);
+			const freshness = await deps.checkFreshness({
+				projectRoot,
+				config,
+				analyzer: deps.analyzer,
+			});
 			return retrieveArchitectureMap({
-				projectRoot: options.projectRoot,
-				freshness: options.freshness,
+				projectRoot,
+				freshness,
 				scope,
 				query,
 			});
@@ -67,7 +118,7 @@ async function retrieveArchitectureMap(options: {
 		.filter((scope) => scope !== "project")
 		.map((scope) => ({
 			scope,
-			reason: "Architecture-map memory is project-scoped generated state.",
+			reason: PROJECT_SCOPE_REASON,
 		}));
 	if (!projectRequested) {
 		return {
@@ -75,31 +126,103 @@ async function retrieveArchitectureMap(options: {
 			searchedScopes: [],
 			skippedScopes,
 			warnings: [],
-			details: { freshness: options.freshness },
+			details: {
+				status: "scope-ineligible",
+				freshness: options.freshness,
+				reason: PROJECT_SCOPE_REASON,
+			} satisfies ArchitectureMapRetrievalDetails,
 		};
 	}
 
 	const resource = normalizeResource(options.query.resource);
-	const record = resource
-		? await readShardRecord({
-				projectRoot: options.projectRoot,
-				resource,
-				freshness: options.freshness,
-			})
-		: await readIndexRecord({
-				projectRoot: options.projectRoot,
-				freshness: options.freshness,
-			});
+	if (resource) {
+		const safety = validateResource(resource);
+		if (!safety.ok) {
+			return {
+				records: [],
+				searchedScopes: ["project"],
+				skippedScopes,
+				warnings: [],
+				details: {
+					status: "unsafe-resource",
+					freshness: options.freshness,
+					resource,
+					reason:
+						"Module resources must be relative names inside `memory/architecture/modules/`.",
+				} satisfies ArchitectureMapRetrievalDetails,
+			};
+		}
 
-	return {
-		records:
-			record && matchesQuery(record, options.query)
+		const record = await readShardRecord({
+			projectRoot: options.projectRoot,
+			resource,
+			freshness: options.freshness,
+		});
+		if (!record) {
+			return {
+				records: [],
+				searchedScopes: ["project"],
+				skippedScopes,
+				warnings: [],
+				details: {
+					status: "unknown-module",
+					freshness: options.freshness,
+					resource,
+					availableModules: await listArchitectureMapModules(
+						options.projectRoot,
+					),
+				} satisfies ArchitectureMapRetrievalDetails,
+			};
+		}
+
+		return {
+			records: matchesQuery(record, options.query)
 				? [record].slice(0, options.query.limit ?? 1)
 				: [],
+			searchedScopes: ["project"],
+			skippedScopes,
+			warnings: [],
+			details: {
+				status: "found",
+				freshness: options.freshness,
+				resource,
+				path: record.path,
+			} satisfies ArchitectureMapRetrievalDetails,
+		};
+	}
+
+	const record = await readIndexRecord({
+		projectRoot: options.projectRoot,
+		freshness: options.freshness,
+	});
+	if (!record) {
+		return {
+			records: [],
+			searchedScopes: ["project"],
+			skippedScopes,
+			warnings: [],
+			details: {
+				status: "missing-map",
+				freshness: options.freshness,
+				resource: "memory/architecture/index.md",
+				path: architecturePath(options.projectRoot, INDEX_PATH),
+			} satisfies ArchitectureMapRetrievalDetails,
+		};
+	}
+
+	return {
+		records: matchesQuery(record, options.query)
+			? [record].slice(0, options.query.limit ?? 1)
+			: [],
 		searchedScopes: ["project"],
 		skippedScopes,
 		warnings: [],
-		details: { freshness: options.freshness, resource },
+		details: {
+			status: "found",
+			freshness: options.freshness,
+			resource: "memory/architecture/index.md",
+			path: record.path,
+		} satisfies ArchitectureMapRetrievalDetails,
 	};
 }
 
@@ -134,7 +257,6 @@ async function readShardRecord(options: {
 	readonly resource: string;
 	readonly freshness: ArchitectureMapFreshness;
 }): Promise<RetrievedMemoryRecord | undefined> {
-	if (!validateResource(options.resource).ok) return undefined;
 	const shardPath = resourceToShardPath(options.resource);
 	const absoluteShardPath = safeArchitecturePath(
 		options.projectRoot,
@@ -159,7 +281,7 @@ async function readShardRecord(options: {
 		tags: [],
 		timestamp,
 		content: [formatFreshnessBanner(options.freshness), raw].join("\n\n"),
-		path: join(options.projectRoot, ARCHITECTURE_DIR, shardPath),
+		path: absoluteShardPath,
 	};
 }
 
@@ -194,10 +316,19 @@ async function collectModuleResources(
 		if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
 		const file = await readMapFile(path);
 		if (!file) continue;
-		const resource = matter(file).data.resource;
+		const resource = readShardResource(file);
 		if (typeof resource === "string" && validateResource(resource).ok) {
 			modules.add(resource);
 		}
+	}
+}
+
+function readShardResource(raw: string): string | undefined {
+	try {
+		const resource = matter(raw).data.resource;
+		return typeof resource === "string" ? resource : undefined;
+	} catch {
+		return undefined;
 	}
 }
 

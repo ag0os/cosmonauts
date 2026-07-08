@@ -13,7 +13,12 @@ import {
 	ARCHITECTURE_MAP_OUTPUT_DIR,
 	type ArchitectureMapConfig,
 	type ArchitectureMapFreshness,
+	type ArchitectureMapMemoryStoreOptions,
 } from "../../lib/architecture-map/index.ts";
+import type {
+	MemoryRetrieveResult,
+	MemoryStore,
+} from "../../lib/memory/index.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import { createMockPi } from "../helpers/mocks/index.ts";
 
@@ -31,7 +36,133 @@ const BASE_CONFIG: ArchitectureMapConfig = {
 };
 
 describe("architecture-memory extension", () => {
-	test("injects one non-accumulating architecture index context with current stale and missing freshness banners @cosmo-behavior plan:code-structure-map#B-012", async () => {
+	test("delegates mapped index injection and tool reads through an injectable MemoryStore @cosmo-behavior plan:memory-interface#B-003", async () => {
+		await mkdir(join(tmp.path, "memory", "architecture"), { recursive: true });
+		const retrieve = vi.fn(
+			async (
+				_scope: Parameters<MemoryStore["retrieve"]>[0],
+				query: Parameters<MemoryStore["retrieve"]>[1],
+			): Promise<MemoryRetrieveResult> => ({
+				records: [
+					{
+						type: query.resource
+							? "code-structure-module"
+							: "code-structure-index",
+						scope: "project",
+						kind: "semantic",
+						title: query.resource ?? "Architecture Map",
+						description: "Spy-backed architecture map.",
+						resource: query.resource ?? "memory/architecture/index.md",
+						tags: [],
+						timestamp: "2026-07-08T14:00:00.000Z",
+						content: query.resource
+							? "Architecture map freshness: current (spy-stat)\n\n# lib/agents"
+							: "Architecture map freshness: current (spy-stat)\n\n# Spy Architecture Map",
+						path: query.resource
+							? join(
+									tmp.path,
+									"memory",
+									"architecture",
+									"modules",
+									"lib",
+									"agents.md",
+								)
+							: join(tmp.path, "memory", "architecture", "index.md"),
+					},
+				],
+				searchedScopes: ["project"],
+				skippedScopes: [],
+				warnings: [],
+				details: {
+					status: "found",
+					freshness: { kind: "current", hash: "spy-stat" },
+					resource: query.resource ?? "memory/architecture/index.md",
+				},
+			}),
+		);
+		const createStore = vi.fn(() => memoryStore({ retrieve }));
+		const pi = createMockPi({ cwd: tmp.path });
+		createArchitectureMemoryExtension(deps({ createStore }))(pi as never);
+
+		const injected = (await pi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: buildAgentIdentityMarker("coding/planner") },
+			{ cwd: tmp.path },
+		)) as { message: { content: string } };
+
+		expect(injected.message.content).toContain("# Spy Architecture Map");
+		expect(injected.message.content).toContain("architecture_map_read");
+		expect(retrieve).toHaveBeenCalledWith(
+			{ projectRoot: tmp.path, scopes: ["project"] },
+			{
+				resource: undefined,
+				recordTypes: ["code-structure-index", "code-structure-module"],
+				limit: 1,
+			},
+		);
+
+		const shard = (await pi.callTool("architecture_map_read", {
+			module: "lib/agents",
+		})) as ToolResult;
+		expect(resultText(shard)).toContain("# lib/agents");
+		expect(retrieve).toHaveBeenLastCalledWith(
+			{ projectRoot: tmp.path, scopes: ["project"] },
+			{
+				resource: "lib/agents",
+				recordTypes: ["code-structure-index", "code-structure-module"],
+				limit: 1,
+			},
+		);
+		expect(createStore).toHaveBeenCalledTimes(2);
+	});
+
+	test("skips absent-directory injection while registered tool returns honest missing-map details @cosmo-behavior plan:memory-interface#B-003", async () => {
+		const retrieve = vi.fn(
+			async (): Promise<MemoryRetrieveResult> => ({
+				records: [],
+				searchedScopes: ["project"],
+				skippedScopes: [],
+				warnings: [],
+				details: {
+					status: "missing-map",
+					freshness: { kind: "missing" },
+					resource: "memory/architecture/index.md",
+					path: join(tmp.path, "memory", "architecture", "index.md"),
+				},
+			}),
+		);
+		const createStore = vi.fn(() => memoryStore({ retrieve }));
+		const pi = createMockPi({ cwd: tmp.path });
+		createArchitectureMemoryExtension(deps({ createStore }))(pi as never);
+
+		expect(pi.tools.has("architecture_map_read")).toBe(true);
+		await expect(
+			pi.fireEvent(
+				"before_agent_start",
+				{ systemPrompt: buildAgentIdentityMarker("coding/worker") },
+				{ cwd: tmp.path },
+			),
+		).resolves.toBeUndefined();
+		expect(retrieve).not.toHaveBeenCalled();
+
+		const missing = (await pi.callTool(
+			"architecture_map_read",
+			{},
+		)) as ToolResult;
+		expect(resultText(missing)).toContain(
+			"Architecture map freshness: missing",
+		);
+		expect(resultText(missing)).toContain(
+			"`memory/architecture/index.md` is missing.",
+		);
+		expect(missing.details).toMatchObject({
+			status: "missing-map",
+			resource: "memory/architecture/index.md",
+		});
+		expect(retrieve).toHaveBeenCalledTimes(1);
+	});
+
+	test("injects one non-accumulating architecture index context with current stale and missing freshness banners @cosmo-behavior plan:code-structure-map#B-012 @cosmo-behavior plan:memory-interface#B-003", async () => {
 		await writeArchitectureMap(tmp.path);
 
 		for (const freshness of [
@@ -64,7 +195,7 @@ describe("architecture-memory extension", () => {
 		}
 	});
 
-	test("architecture_map_read returns the full index by default and reads module shards by module without parsing unrelated shards @cosmo-behavior plan:code-structure-map#B-013", async () => {
+	test("architecture_map_read returns the full index by default and reads module shards by module without parsing unrelated shards @cosmo-behavior plan:memory-interface#B-004", async () => {
 		await writeArchitectureMap(tmp.path);
 		await writeFile(
 			join(tmp.path, "memory", "architecture", "modules", "lib", "broken.md"),
@@ -91,12 +222,40 @@ describe("architecture-memory extension", () => {
 			resource: "lib/agents",
 			path: "memory/architecture/modules/lib/agents.md",
 		});
+
+		const alias = (await pi.callTool("architecture_map_read", {
+			resource: "lib/tasks",
+		})) as ToolResult;
+		expect(resultText(alias)).toContain("# lib/tasks");
+		expect(alias.details).toMatchObject({
+			resource: "lib/tasks",
+			path: "memory/architecture/modules/lib/tasks.md",
+		});
+
+		await writeFile(
+			join(tmp.path, "memory", "architecture", "modules", "root.md"),
+			"---\ntype: code-structure-module\nresource: .\n---\n\n# root module\n",
+			"utf-8",
+		);
+		const root = (await pi.callTool("architecture_map_read", {
+			module: ".",
+		})) as ToolResult;
+		expect(resultText(root)).toContain("# root module");
+		expect(root.details).toMatchObject({
+			resource: ".",
+			path: "memory/architecture/modules/root.md",
+		});
 	});
 
-	test("architecture_map_read lists modules from shard frontmatter and rejects module traversal @cosmo-behavior plan:code-structure-map#B-013", async () => {
+	test("architecture_map_read lists modules from shard frontmatter and rejects unsafe modules @cosmo-behavior plan:memory-interface#B-004", async () => {
 		await writeArchitectureMap(
 			tmp.path,
 			"- `lib/from-index-only` - stale row.",
+		);
+		await writeFile(
+			join(tmp.path, "memory", "architecture", "modules", "lib", "broken.md"),
+			"---\nresource: [lib/broken\n---\n\n# broken\n",
+			"utf-8",
 		);
 		const pi = await enabledPi(tmp.path);
 
@@ -117,9 +276,16 @@ describe("architecture-memory extension", () => {
 		expect(resultText(traversal)).toContain(
 			"Rejected unsafe architecture map resource",
 		);
+
+		const absolute = (await pi.callTool("architecture_map_read", {
+			module: "/tmp/outside",
+		})) as ToolResult;
+		expect(resultText(absolute)).toContain(
+			"Rejected unsafe architecture map resource",
+		);
 	});
 
-	test("oversized index injection respects injectionMaxBytes and tells agents to use architecture_map_read @cosmo-behavior plan:code-structure-map#B-019", async () => {
+	test("oversized index injection respects injectionMaxBytes and tells agents to use architecture_map_read @cosmo-behavior plan:code-structure-map#B-019 @cosmo-behavior plan:memory-interface#B-003", async () => {
 		await writeArchitectureMap(
 			tmp.path,
 			Array.from(
@@ -183,7 +349,7 @@ describe("architecture-memory extension", () => {
 		);
 
 		expect(result).toBeUndefined();
-		expect(pi.tools.has("architecture_map_read")).toBe(false);
+		expect(pi.tools.has("architecture_map_read")).toBe(true);
 	});
 
 	test("turn-time injection does not invoke content-hash freshness @cosmo-behavior plan:code-structure-map#B-012", async () => {
@@ -223,12 +389,31 @@ function resultText(result: ToolResult): string {
 function deps(options: {
 	config?: ArchitectureMapConfig;
 	freshness?: ArchitectureMapFreshness;
+	createStore?: (_options: ArchitectureMapMemoryStoreOptions) => MemoryStore;
 }): Parameters<typeof createArchitectureMemoryExtension>[0] {
 	return {
 		loadConfig: async () => options.config ?? BASE_CONFIG,
 		analyzer: { getConfigInputs: async () => [] },
 		checkFreshness: async () =>
 			options.freshness ?? { kind: "current", hash: "stat-current" },
+		...(options.createStore && { createStore: options.createStore }),
+	};
+}
+
+function memoryStore(options: {
+	retrieve: MemoryStore["retrieve"];
+}): MemoryStore {
+	return {
+		write: async () => ({
+			kind: "unsupported",
+			reason: "test store",
+		}),
+		retrieve: options.retrieve,
+		consolidate: async () => ({
+			kind: "noop",
+			reason:
+				"W1 performs no background memory consolidation, pruning, decay, or dreaming.",
+		}),
 	};
 }
 

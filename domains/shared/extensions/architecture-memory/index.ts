@@ -1,22 +1,26 @@
-import type { Dirent } from "node:fs";
-import { access, readdir, readFile } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { access } from "node:fs/promises";
+import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import matter from "gray-matter";
 import { Type } from "typebox";
 import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
 import {
 	type ArchitectureMapConfig,
 	type ArchitectureMapFreshness,
+	type ArchitectureMapMemoryStoreOptions,
+	type ArchitectureMapRetrievalDetails,
 	checkArchitectureMapStatFreshness,
+	createArchitectureMapMemoryStore,
 	loadArchitectureMapConfig,
 	type SourceAnalyzer,
 	typescriptSourceAnalyzer,
 } from "../../../../lib/architecture-map/index.ts";
+import type {
+	MemoryRetrieveResult,
+	MemoryStore,
+} from "../../../../lib/memory/index.ts";
 
 const ARCHITECTURE_CONTEXT_TYPE = "architecture-map-context";
 const ARCHITECTURE_DIR = "memory/architecture";
-const INDEX_PATH = "index.md";
 const CONSUMING_AGENT_IDS = new Set([
 	"coding/planner",
 	"coding/plan-reviewer",
@@ -33,6 +37,9 @@ interface ArchitectureMemoryDeps {
 		readonly config: ArchitectureMapConfig;
 		readonly analyzer: Pick<SourceAnalyzer, "getConfigInputs">;
 	}) => Promise<ArchitectureMapFreshness>;
+	readonly createStore: (
+		options: ArchitectureMapMemoryStoreOptions,
+	) => MemoryStore;
 }
 
 function textResult(
@@ -49,55 +56,47 @@ function textResult(
 }
 
 export function createArchitectureMemoryExtension(
-	deps: ArchitectureMemoryDeps = {
-		loadConfig: loadArchitectureMapConfig,
-		analyzer: typescriptSourceAnalyzer,
-		checkFreshness: checkArchitectureMapStatFreshness,
-	},
+	deps: Partial<ArchitectureMemoryDeps> = {},
 ): (pi: ExtensionAPI) => void {
-	return function architectureMemoryExtension(pi: ExtensionAPI): void {
-		let toolRegistered = false;
+	const resolvedDeps: ArchitectureMemoryDeps = {
+		loadConfig: deps.loadConfig ?? loadArchitectureMapConfig,
+		analyzer: deps.analyzer ?? typescriptSourceAnalyzer,
+		checkFreshness: deps.checkFreshness ?? checkArchitectureMapStatFreshness,
+		createStore: deps.createStore ?? createArchitectureMapMemoryStore,
+	};
 
-		function ensureToolRegistered(): void {
-			if (toolRegistered) return;
-			toolRegistered = true;
-			pi.registerTool({
-				name: "architecture_map_read",
-				label: "Read Architecture Map",
-				description:
-					"Read the generated architecture-map index or a module shard by module resource.",
-				promptSnippet:
-					"Read `memory/architecture/index.md` or module shards from the generated architecture map.",
-				parameters: Type.Object({
-					module: Type.Optional(
-						Type.String({
-							description:
-								"Module resource from the architecture-map module shard frontmatter, for example `lib/agents`. Omit to read the full index.",
-						}),
-					),
-					resource: Type.Optional(
-						Type.String({
-							description:
-								"Deprecated alias for `module`. Module resource from the architecture-map module shard frontmatter, for example `lib/agents`.",
-						}),
-					),
-				}),
-				execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
-					const cwd = getCwd(ctx);
-					const config = await deps.loadConfig(cwd);
-					const freshness = await deps.checkFreshness({
-						projectRoot: cwd,
-						config,
-						analyzer: deps.analyzer,
-					});
-					return readArchitectureMap({
-						projectRoot: cwd,
-						resource: normalizeRequestedModule(params),
-						freshness,
-					});
-				},
-			});
-		}
+	return function architectureMemoryExtension(pi: ExtensionAPI): void {
+		pi.registerTool({
+			name: "architecture_map_read",
+			label: "Read Architecture Map",
+			description:
+				"Read the generated architecture-map index or a module shard by module resource.",
+			promptSnippet:
+				"Read `memory/architecture/index.md` or module shards from the generated architecture map.",
+			parameters: Type.Object({
+				module: Type.Optional(
+					Type.String({
+						description:
+							"Module resource from the architecture-map module shard frontmatter, for example `lib/agents`. Omit to read the full index.",
+					}),
+				),
+				resource: Type.Optional(
+					Type.String({
+						description:
+							"Deprecated alias for `module`. Module resource from the architecture-map module shard frontmatter, for example `lib/agents`.",
+					}),
+				),
+			}),
+			execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+				const cwd = getCwd(ctx);
+				const result = await retrieveArchitectureMap({
+					projectRoot: cwd,
+					resource: normalizeRequestedModule(params),
+					deps: resolvedDeps,
+				});
+				return renderArchitectureMapResult(result);
+			},
+		});
 
 		pi.on("before_agent_start", async (event, ctx) => {
 			const systemPrompt = getSystemPrompt(event);
@@ -106,21 +105,16 @@ export function createArchitectureMemoryExtension(
 			const cwd = getCwd(ctx);
 			if (!(await architectureDirExists(cwd))) return;
 
-			ensureToolRegistered();
-			const config = await deps.loadConfig(cwd);
-			const freshness = await deps.checkFreshness({
-				projectRoot: cwd,
-				config,
-				analyzer: deps.analyzer,
-			});
-			const indexRead = await readArchitectureMap({
+			const config = await resolvedDeps.loadConfig(cwd);
+			const indexRead = await retrieveArchitectureMap({
 				projectRoot: cwd,
 				resource: undefined,
-				freshness,
+				deps: resolvedDeps,
 			});
+			const details = architectureDetails(indexRead.details);
 			const text = buildContextMessage({
-				index: contentText(indexRead),
-				freshness,
+				index: contentText(renderArchitectureMapResult(indexRead)),
+				freshness: details?.freshness ?? { kind: "missing" },
 				injectionMaxBytes: config.injectionMaxBytes,
 			});
 
@@ -152,71 +146,102 @@ export default function architectureMemoryExtension(pi: ExtensionAPI): void {
 	createArchitectureMemoryExtension()(pi);
 }
 
-async function readArchitectureMap(options: {
+async function retrieveArchitectureMap(options: {
 	readonly projectRoot: string;
 	readonly resource: string | undefined;
-	readonly freshness: ArchitectureMapFreshness;
-}): Promise<ReturnType<typeof textResult>> {
-	const indexPath = architecturePath(options.projectRoot, INDEX_PATH);
-	if (!options.resource) {
-		const index = await readMapFile(indexPath);
-		if (index === undefined) {
-			return textResult(
-				[
-					formatFreshnessBanner(options.freshness),
-					"`memory/architecture/index.md` is missing.",
-				].join("\n"),
-				{ freshness: options.freshness, resource: undefined },
-			);
-		}
-		return textResult(
-			[formatFreshnessBanner(options.freshness), index].join("\n\n"),
+	readonly deps: ArchitectureMemoryDeps;
+}): Promise<MemoryRetrieveResult> {
+	return options.deps
+		.createStore({
+			projectRoot: options.projectRoot,
+			loadConfig: options.deps.loadConfig,
+			analyzer: options.deps.analyzer,
+			checkFreshness: options.deps.checkFreshness,
+		})
+		.retrieve(
 			{
-				freshness: options.freshness,
-				resource: "memory/architecture/index.md",
+				projectRoot: options.projectRoot,
+				scopes: ["project"],
+			},
+			{
+				resource: options.resource,
+				recordTypes: ["code-structure-index", "code-structure-module"],
+				limit: 1,
 			},
 		);
+}
+
+function renderArchitectureMapResult(
+	result: MemoryRetrieveResult,
+): ReturnType<typeof textResult> {
+	const details = architectureDetails(result.details);
+	const record = result.records[0];
+	if (record) {
+		return textResult(record.content, normalizeRenderedDetails(details));
 	}
 
-	const resource = options.resource;
-	const safety = validateResource(resource);
-	if (!safety.ok) {
-		return textResult(
-			`Rejected unsafe architecture map resource: ${resource}. Module resources must be relative names inside \`memory/architecture/modules/\`.`,
-			{ freshness: options.freshness, resource },
-		);
+	if (!details) {
+		return textResult("Architecture map retrieval returned no records.", {});
 	}
 
-	const shardPath = resourceToShardPath(resource);
-	const absoluteShardPath = safeArchitecturePath(
-		options.projectRoot,
-		shardPath,
-	);
-	if (!absoluteShardPath) {
-		return textResult(
-			`Rejected unsafe architecture map resource: ${resource}.`,
-			{ freshness: options.freshness, resource },
-		);
+	switch (details.status) {
+		case "missing-map":
+			return textResult(
+				[
+					formatFreshnessBanner(details.freshness),
+					"`memory/architecture/index.md` is missing.",
+				].join("\n"),
+				normalizeRenderedDetails(details),
+			);
+		case "unknown-module": {
+			const availableModules = details.availableModules ?? [];
+			return textResult(
+				[
+					`Unknown architecture map module: ${details.resource ?? ""}`,
+					availableModules.length > 0
+						? `Available modules: ${availableModules.join(", ")}`
+						: "Available modules: none",
+				].join("\n"),
+				normalizeRenderedDetails(details),
+			);
+		}
+		case "unsafe-resource":
+			return textResult(
+				`Rejected unsafe architecture map resource: ${
+					details.resource ?? ""
+				}. ${details.reason ?? ""}`.trim(),
+				normalizeRenderedDetails(details),
+			);
+		case "scope-ineligible":
+			return textResult(
+				details.reason ?? "Architecture-map memory is not available.",
+				normalizeRenderedDetails(details),
+			);
+		case "found":
+			return textResult("Architecture map retrieval returned no records.", {
+				...normalizeRenderedDetailsObject(details),
+				emptyMatchedRecords: true,
+			});
 	}
+}
 
-	const shard = await readMapFile(absoluteShardPath);
-	if (shard === undefined) {
-		return unknownModuleResult({ ...options, resource });
-	}
+function normalizeRenderedDetails(
+	details: ArchitectureMapRetrievalDetails | undefined,
+): unknown {
+	return normalizeRenderedDetailsObject(details);
+}
 
-	const shardResource = matter(shard).data.resource;
-	if (shardResource !== resource) {
-		return unknownModuleResult({ ...options, resource });
-	}
-
-	return textResult(
-		[formatFreshnessBanner(options.freshness), shard].join("\n\n"),
-		{
-			freshness: options.freshness,
-			resource,
-			path: `${ARCHITECTURE_DIR}/${shardPath}`,
-		},
-	);
+function normalizeRenderedDetailsObject(
+	details: ArchitectureMapRetrievalDetails | undefined,
+): Record<string, unknown> {
+	if (!details) return {};
+	const path = details.path?.includes(`${ARCHITECTURE_DIR}/`)
+		? details.path.slice(details.path.indexOf(`${ARCHITECTURE_DIR}/`))
+		: details.path;
+	return {
+		...details,
+		path,
+	};
 }
 
 function buildContextMessage(options: {
@@ -263,103 +288,6 @@ function formatFreshnessBanner(freshness: ArchitectureMapFreshness): string {
 	}
 }
 
-async function unknownModuleResult(options: {
-	readonly projectRoot: string;
-	readonly resource: string;
-	readonly freshness: ArchitectureMapFreshness;
-}): Promise<ReturnType<typeof textResult>> {
-	const availableModules = await readAvailableModules(options.projectRoot);
-	return textResult(
-		[
-			`Unknown architecture map module: ${options.resource}`,
-			availableModules.length > 0
-				? `Available modules: ${availableModules.join(", ")}`
-				: "Available modules: none",
-		].join("\n"),
-		{
-			freshness: options.freshness,
-			resource: options.resource,
-			availableModules,
-		},
-	);
-}
-
-async function readAvailableModules(projectRoot: string): Promise<string[]> {
-	const modulesRoot = safeArchitecturePath(projectRoot, "modules");
-	if (!modulesRoot) return [];
-	const modules = new Set<string>();
-	await collectModuleResources(modulesRoot, modules);
-	return [...modules].sort();
-}
-
-async function collectModuleResources(
-	directory: string,
-	modules: Set<string>,
-): Promise<void> {
-	let entries: Dirent[];
-	try {
-		entries = await readdir(directory, { withFileTypes: true });
-	} catch (error: unknown) {
-		if (isMissingFile(error)) return;
-		throw error;
-	}
-
-	for (const entry of entries) {
-		const path = join(directory, entry.name);
-		if (entry.isDirectory()) {
-			await collectModuleResources(path, modules);
-			continue;
-		}
-		if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
-		const file = await readMapFile(path);
-		if (!file) continue;
-		const resource = matter(file).data.resource;
-		if (typeof resource === "string" && validateResource(resource).ok) {
-			modules.add(resource);
-		}
-	}
-}
-
-function resourceToShardPath(resource: string): string {
-	const normalizedResource = resource === "." ? "root" : resource;
-	return `modules/${normalizedResource}.md`;
-}
-
-function validateResource(
-	resource: string,
-): { readonly ok: true } | { readonly ok: false } {
-	if (
-		resource.length === 0 ||
-		resource.includes("\\") ||
-		isAbsolute(resource)
-	) {
-		return { ok: false };
-	}
-	const segments = resource.split("/");
-	if (segments.some((segment) => segment === "" || segment === "..")) {
-		return { ok: false };
-	}
-	return { ok: true };
-}
-
-function safeArchitecturePath(
-	projectRoot: string,
-	pathInArchitectureDir: string,
-): string | undefined {
-	const root = resolve(projectRoot, ARCHITECTURE_DIR);
-	const absolute = resolve(root, pathInArchitectureDir);
-	const rel = relative(root, absolute);
-	if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return undefined;
-	return absolute;
-}
-
-function architecturePath(
-	projectRoot: string,
-	pathInArchitectureDir: string,
-): string {
-	return join(projectRoot, ARCHITECTURE_DIR, pathInArchitectureDir);
-}
-
 async function architectureDirExists(projectRoot: string): Promise<boolean> {
 	try {
 		await access(join(projectRoot, ARCHITECTURE_DIR));
@@ -367,24 +295,6 @@ async function architectureDirExists(projectRoot: string): Promise<boolean> {
 	} catch {
 		return false;
 	}
-}
-
-async function readMapFile(path: string): Promise<string | undefined> {
-	try {
-		return await readFile(path, "utf-8");
-	} catch (error: unknown) {
-		if (isMissingFile(error)) return undefined;
-		throw error;
-	}
-}
-
-function isMissingFile(error: unknown): boolean {
-	return (
-		error !== null &&
-		typeof error === "object" &&
-		"code" in error &&
-		(error as NodeJS.ErrnoException).code === "ENOENT"
-	);
 }
 
 function isConsumingAgent(systemPrompt: string): boolean {
@@ -423,10 +333,23 @@ function normalizeRequestedResource(value: unknown): string | undefined {
 		: undefined;
 }
 
-function contentText(
-	result: Awaited<ReturnType<typeof readArchitectureMap>>,
-): string {
+function contentText(result: ReturnType<typeof textResult>): string {
 	return result.content.map((entry) => entry.text).join("\n");
+}
+
+function architectureDetails(
+	details: unknown,
+): ArchitectureMapRetrievalDetails | undefined {
+	if (!details || typeof details !== "object") return undefined;
+	const candidate = details as Partial<ArchitectureMapRetrievalDetails>;
+	if (typeof candidate.status !== "string") return undefined;
+	if (
+		candidate.freshness === undefined ||
+		typeof candidate.freshness !== "object"
+	) {
+		return undefined;
+	}
+	return candidate as ArchitectureMapRetrievalDetails;
 }
 
 function valueFromObject(value: unknown, key: string): string | undefined {
