@@ -14,9 +14,12 @@ import {
 } from "../../../../lib/memory/index.ts";
 
 const COSMO_AGENT_ID = "main/cosmo";
+const AGENT_MEMORY_CONTEXT_TYPE = "agent-memory-context";
 const SOURCE = COSMO_AGENT_ID;
 const DEFAULT_RECALL_LIMIT = 5;
 const MAX_RECALL_LIMIT = 20;
+const INDEX_RETRIEVAL_LIMIT = 50;
+const INDEX_INJECTION_MAX_BYTES = 12_000;
 
 const ScopeLiterals = [Type.Literal("project"), Type.Literal("user")];
 const KindLiterals = [
@@ -163,10 +166,49 @@ export function createAgentMemoryExtension(
 			auth.authorized = false;
 		});
 
-		pi.on("before_agent_start", async (event) => {
+		pi.on("before_agent_start", async (event, ctx) => {
 			auth.authorized =
 				extractAgentIdFromSystemPrompt(getSystemPrompt(event)) ===
 				COSMO_AGENT_ID;
+			if (!auth.authorized) return;
+
+			const projectRoot = getOptionalCwd(ctx);
+			if (!projectRoot) return;
+			const result = await retrieveMemoryIndex({
+				store: createStore({
+					ctx: { cwd: projectRoot },
+					userCosmonautsRoot,
+					now,
+					storeFactory,
+				}),
+				projectRoot,
+			});
+			if (result.records.length === 0) return;
+
+			return {
+				message: {
+					customType: AGENT_MEMORY_CONTEXT_TYPE,
+					content: buildIndexContext({
+						records: result.records,
+						projectRoot,
+						userCosmonautsRoot,
+					}),
+					display: false,
+				},
+			};
+		});
+
+		const onContext = pi.on as unknown as (
+			event: "context",
+			handler: (event: unknown) => Promise<unknown>,
+		) => void;
+		onContext("context", async (event) => {
+			return {
+				messages: getMessages(event).filter((message) => {
+					const msg = message as { customType?: string };
+					return msg.customType !== AGENT_MEMORY_CONTEXT_TYPE;
+				}),
+			};
 		});
 	};
 }
@@ -242,6 +284,73 @@ async function recall(options: {
 		projectRoot: options.projectRoot,
 		userCosmonautsRoot: options.userCosmonautsRoot,
 	});
+}
+
+async function retrieveMemoryIndex(options: {
+	readonly store: MemoryStore;
+	readonly projectRoot: string;
+}): Promise<MemoryRetrieveResult> {
+	return options.store.retrieve(
+		{ projectRoot: options.projectRoot, scopes: ["project", "user"] },
+		{
+			text: "",
+			recordTypes: ["note"],
+			limit: INDEX_RETRIEVAL_LIMIT,
+		},
+	);
+}
+
+function buildIndexContext(options: {
+	readonly records: MemoryRetrieveResult["records"];
+	readonly projectRoot: string;
+	readonly userCosmonautsRoot: string;
+}): string {
+	const header = [
+		"Agent memory index context",
+		`Current disk index of up to ${INDEX_RETRIEVAL_LIMIT} most recent authored project/user memory notes.`,
+		"This context lists compact metadata only, not full note bodies.",
+		"Use recall(query) for full note details before relying on a memory.",
+		"",
+	].join("\n");
+	const body = options.records.map((record) =>
+		formatIndexRecord({
+			record,
+			projectRoot: options.projectRoot,
+			userCosmonautsRoot: options.userCosmonautsRoot,
+		}),
+	);
+	const index = `${body.join("\n")}\n`;
+	const complete = `${header}${index}`;
+	if (byteLength(complete) <= INDEX_INJECTION_MAX_BYTES) return complete;
+
+	return truncateWithFooter({
+		header,
+		content: index,
+		maxBytes: INDEX_INJECTION_MAX_BYTES,
+		footerForBytes: (includedBytes) =>
+			`\n\n[Truncated memory index from ${byteLength(
+				index,
+			)} UTF-8 bytes to ${includedBytes} bytes. Use recall(query) for full note details.]`,
+	});
+}
+
+function formatIndexRecord(options: {
+	readonly record: MemoryRetrieveResult["records"][number];
+	readonly projectRoot: string;
+	readonly userCosmonautsRoot: string;
+}): string {
+	return [
+		`- title: ${options.record.title}`,
+		`  scope: ${options.record.scope}`,
+		`  kind: ${options.record.kind ?? "unknown"}`,
+		`  timestamp: ${options.record.timestamp}`,
+		`  description: ${options.record.description}`,
+		`  path: ${humanReadablePath({
+			path: options.record.path,
+			projectRoot: options.projectRoot,
+			userCosmonautsRoot: options.userCosmonautsRoot,
+		})}`,
+	].join("\n");
 }
 
 function renderRememberResult(options: {
@@ -446,10 +555,73 @@ function getCwd(ctx: unknown): string {
 	return cwd;
 }
 
+function getOptionalCwd(ctx: unknown): string | undefined {
+	return valueFromObject(ctx, "cwd");
+}
+
+function getMessages(event: unknown): unknown[] {
+	if (event && typeof event === "object" && "messages" in event) {
+		const messages = (event as { messages?: unknown }).messages;
+		if (Array.isArray(messages)) return messages;
+	}
+	return [];
+}
+
 function valueFromObject(value: unknown, key: string): string | undefined {
 	if (value && typeof value === "object" && key in value) {
 		const field = (value as Record<string, unknown>)[key];
 		return typeof field === "string" ? field : undefined;
 	}
 	return undefined;
+}
+
+function byteLength(value: string): number {
+	return Buffer.byteLength(value, "utf-8");
+}
+
+function truncateWithFooter(options: {
+	readonly header: string;
+	readonly content: string;
+	readonly maxBytes: number;
+	readonly footerForBytes: (includedBytes: number) => string;
+}): string {
+	let footer = options.footerForBytes(0);
+	let excerpt = "";
+	for (let attempt = 0; attempt < 10; attempt += 1) {
+		const excerptBudget = Math.max(
+			0,
+			options.maxBytes - byteLength(options.header) - byteLength(footer),
+		);
+		excerpt = truncateUtf8(options.content, excerptBudget);
+		const nextFooter = options.footerForBytes(byteLength(excerpt));
+		if (nextFooter === footer) break;
+		footer = nextFooter;
+	}
+
+	while (
+		byteLength(`${options.header}${excerpt}${footer}`) > options.maxBytes &&
+		excerpt.length > 0
+	) {
+		excerpt = truncateUtf8(options.content, byteLength(excerpt) - 1);
+		footer = options.footerForBytes(byteLength(excerpt));
+	}
+
+	const rendered = `${options.header}${excerpt}${footer}`;
+	if (byteLength(rendered) <= options.maxBytes) return rendered;
+	return truncateUtf8(rendered, options.maxBytes);
+}
+
+function truncateUtf8(value: string, maxBytes: number): string {
+	if (maxBytes <= 0) return "";
+	if (byteLength(value) <= maxBytes) return value;
+
+	let used = 0;
+	let result = "";
+	for (const char of value) {
+		const charBytes = byteLength(char);
+		if (used + charBytes > maxBytes) break;
+		result += char;
+		used += charBytes;
+	}
+	return result;
 }

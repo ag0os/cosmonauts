@@ -7,7 +7,14 @@ import {
 	createAgentMemoryExtension,
 } from "../../domains/shared/extensions/agent-memory/index.ts";
 import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
-import type { MemoryStore, MemoryWriteResult } from "../../lib/memory/index.ts";
+import {
+	createMarkdownMemoryStore,
+	type MemoryKind,
+	type MemoryScopeName,
+	type MemoryStore,
+	type MemoryWriteResult,
+	type RetrievedMemoryRecord,
+} from "../../lib/memory/index.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import { createMockPi } from "../helpers/mocks/index.ts";
 
@@ -277,6 +284,240 @@ describe("agent-memory extension", () => {
 		expect(resultText(noMatch)).toContain("No authored memory notes matched");
 		expect(resultText(noMatch)).toContain("project, user");
 	});
+
+	test("injects one hidden current disk note index for main/cosmo and filters stale context @cosmo-behavior plan:memory-interface#B-006", async () => {
+		const projectRoot = join(tmp.path, "index-project");
+		const userRoot = join(tmp.path, "index-user");
+		const store = createMarkdownMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+		});
+		await writeMemoryNote(store, {
+			scope: "project",
+			kind: "semantic",
+			title: "Project deploy preference",
+			description: "Deployment branch note.",
+			content: "PROJECT_BODY_SHOULD_NOT_BE_IN_INDEX",
+			timestamp: "2026-07-08T14:00:00.000Z",
+		});
+		await writeMemoryNote(store, {
+			scope: "user",
+			kind: "procedural",
+			title: "User review style",
+			description: "Review tone preference.",
+			content: "USER_BODY_SHOULD_NOT_BE_IN_INDEX",
+			timestamp: "2026-07-08T15:00:00.000Z",
+		});
+		const pi = createMockPi({ cwd: projectRoot });
+		createAgentMemoryExtension({
+			userCosmonautsRoot: userRoot,
+			now: () => new Date("2026-07-08T16:00:00.000Z"),
+		})(pi as never);
+
+		const result = (await pi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: buildAgentIdentityMarker("main/cosmo") },
+			{ cwd: projectRoot },
+		)) as {
+			message: { customType: string; content: string; display: boolean };
+		};
+
+		expect(result.message).toMatchObject({
+			customType: "agent-memory-context",
+			display: false,
+		});
+		expect(result.message.content).toContain("Agent memory index context");
+		expect(result.message.content).toContain("Use recall(query)");
+		expect(result.message.content).toContain("title: User review style");
+		expect(result.message.content).toContain("scope: user");
+		expect(result.message.content).toContain("kind: procedural");
+		expect(result.message.content).toContain(
+			"timestamp: 2026-07-08T15:00:00.000Z",
+		);
+		expect(result.message.content).toContain(
+			"description: Review tone preference.",
+		);
+		expect(result.message.content).toContain(
+			"path: .cosmonauts/memory/agent/notes/",
+		);
+		expect(result.message.content).toContain(
+			"title: Project deploy preference",
+		);
+		expect(result.message.content).toContain("scope: project");
+		expect(result.message.content).toContain("kind: semantic");
+		expect(result.message.content).toContain(
+			"description: Deployment branch note.",
+		);
+		expect(result.message.content).toContain("path: memory/agent/notes/");
+		expect(result.message.content).not.toContain(
+			"PROJECT_BODY_SHOULD_NOT_BE_IN_INDEX",
+		);
+		expect(result.message.content).not.toContain(
+			"USER_BODY_SHOULD_NOT_BE_IN_INDEX",
+		);
+
+		const filtered = (await pi.fireEvent("context", {
+			messages: [
+				{ customType: "agent-memory-context", content: "old memory" },
+				{ role: "user", content: "keep this" },
+			],
+		})) as { messages: unknown[] };
+		expect(filtered.messages).toEqual([{ role: "user", content: "keep this" }]);
+	});
+
+	test("empty stores inject nothing and create no files @cosmo-behavior plan:memory-interface#B-006", async () => {
+		const projectRoot = join(tmp.path, "empty-index-project");
+		const userRoot = join(tmp.path, "empty-index-user");
+		const pi = createMockPi({ cwd: projectRoot });
+		createAgentMemoryExtension({
+			userCosmonautsRoot: userRoot,
+			now: () => new Date("2026-07-08T16:00:00.000Z"),
+		})(pi as never);
+
+		const result = await pi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: buildAgentIdentityMarker("main/cosmo") },
+			{ cwd: projectRoot },
+		);
+
+		expect(result).toBeUndefined();
+		await expect(readdir(join(projectRoot, "memory"))).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+		await expect(readdir(join(userRoot, "memory"))).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+	});
+
+	test("memory index injection uses list mode capped to the 50 most recent records before truncation @cosmo-behavior plan:memory-interface#B-006", async () => {
+		const projectRoot = join(tmp.path, "index-cap-project");
+		const userRoot = join(tmp.path, "index-cap-user");
+		const store = createMarkdownMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+		});
+		for (let index = 0; index < 55; index += 1) {
+			await writeMemoryNote(store, {
+				scope: index % 2 === 0 ? "project" : "user",
+				kind: "semantic",
+				title: `Cap note ${index.toString().padStart(2, "0")}`,
+				description: `Cap note ${index} metadata.`,
+				content: `Full note body ${index} should stay out of injected index.`,
+				timestamp: new Date(Date.UTC(2026, 6, 8, 14, 0, index)).toISOString(),
+			});
+		}
+		const pi = createMockPi({ cwd: projectRoot });
+		createAgentMemoryExtension({
+			userCosmonautsRoot: userRoot,
+			now: () => new Date("2026-07-08T16:00:00.000Z"),
+		})(pi as never);
+
+		const result = (await pi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: buildAgentIdentityMarker("main/cosmo") },
+			{ cwd: projectRoot },
+		)) as { message: { content: string } };
+
+		expect(result.message.content.match(/^- title:/gm)).toHaveLength(50);
+		expect(result.message.content).toContain("title: Cap note 54");
+		expect(result.message.content).toContain("title: Cap note 05");
+		expect(result.message.content).not.toContain("title: Cap note 04");
+		expect(result.message.content).not.toContain("Full note body");
+	});
+
+	test("memory index truncation is UTF-8 safe and stays under the independent 12000 byte budget @cosmo-behavior plan:memory-interface#B-013", async () => {
+		const projectRoot = join(tmp.path, "utf8-budget-project");
+		const userRoot = join(tmp.path, "utf8-budget-user");
+		const pi = createMockPi({ cwd: projectRoot });
+		createAgentMemoryExtension({
+			userCosmonautsRoot: userRoot,
+			storeFactory: () =>
+				memoryStore({
+					retrieve: async () => ({
+						records: [
+							record({
+								title: "UTF-8 truncation target",
+								description: `Fresh metadata ${"😀".repeat(4_000)}`,
+								content: "FULL_BODY_SHOULD_NOT_BE_IN_CONTEXT",
+								path: join(projectRoot, "memory", "agent", "notes", "utf8.md"),
+							}),
+						],
+						searchedScopes: ["project", "user"],
+						skippedScopes: [],
+						warnings: [],
+					}),
+				}),
+			now: () => new Date("2026-07-08T16:00:00.000Z"),
+		})(pi as never);
+
+		const result = (await pi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: buildAgentIdentityMarker("main/cosmo") },
+			{ cwd: projectRoot },
+		)) as { message: { content: string } };
+
+		expect(
+			Buffer.byteLength(result.message.content, "utf-8"),
+		).toBeLessThanOrEqual(12_000);
+		expect(result.message.content).toContain("Truncated memory index");
+		expect(result.message.content).toContain("Use recall(query)");
+		expect(result.message.content).toContain("scope: project");
+		expect(result.message.content).toContain(
+			"timestamp: 2026-07-08T14:00:00.000Z",
+		);
+		expect(result.message.content).not.toContain("�");
+		expect(result.message.content).not.toContain(
+			"FULL_BODY_SHOULD_NOT_BE_IN_CONTEXT",
+		);
+	});
+
+	test("truncation footer mutation target never pushes memory index over 12000 bytes @cosmo-behavior plan:memory-interface#B-013", async () => {
+		const projectRoot = join(tmp.path, "footer-budget-project");
+		const userRoot = join(tmp.path, "footer-budget-user");
+		const pi = createMockPi({ cwd: projectRoot });
+		createAgentMemoryExtension({
+			userCosmonautsRoot: userRoot,
+			storeFactory: () =>
+				memoryStore({
+					retrieve: async () => ({
+						records: Array.from({ length: 50 }, (_, index) =>
+							record({
+								title: `Footer budget note ${index.toString().padStart(2, "0")}`,
+								description: `Footer-sensitive metadata ${index} ${"中".repeat(120)}`,
+								content: `Hidden body ${index}`,
+								path: join(
+									projectRoot,
+									"memory",
+									"agent",
+									"notes",
+									`footer-${index}.md`,
+								),
+								timestamp: new Date(
+									Date.UTC(2026, 6, 8, 14, 0, index),
+								).toISOString(),
+							}),
+						),
+						searchedScopes: ["project", "user"],
+						skippedScopes: [],
+						warnings: [],
+					}),
+				}),
+			now: () => new Date("2026-07-08T16:00:00.000Z"),
+		})(pi as never);
+
+		const result = (await pi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: buildAgentIdentityMarker("main/cosmo") },
+			{ cwd: projectRoot },
+		)) as { message: { content: string } };
+
+		expect(
+			Buffer.byteLength(result.message.content, "utf-8"),
+		).toBeLessThanOrEqual(12_000);
+		expect(result.message.content).toContain("Truncated memory index");
+		expect(result.message.content).toContain("Use recall(query)");
+		expect(result.message.content).not.toContain("�");
+	});
 });
 
 interface ToolResult {
@@ -360,4 +601,47 @@ function records(details: unknown): unknown[] {
 	const value = (details as Record<string, unknown>).records;
 	if (!Array.isArray(value)) throw new Error("Expected records array");
 	return value;
+}
+
+async function writeMemoryNote(
+	store: MemoryStore,
+	options: {
+		readonly scope: Exclude<MemoryScopeName, "session">;
+		readonly kind: MemoryKind;
+		readonly title: string;
+		readonly description: string;
+		readonly content: string;
+		readonly timestamp: string;
+	},
+): Promise<void> {
+	const result = await store.write({
+		type: "note",
+		scope: options.scope,
+		kind: options.kind,
+		title: options.title,
+		description: options.description,
+		content: options.content,
+		tags: [],
+		timestamp: options.timestamp,
+		source: "test",
+	});
+	expect(result.kind).toBe("written");
+}
+
+function record(
+	overrides: Partial<RetrievedMemoryRecord>,
+): RetrievedMemoryRecord {
+	return {
+		type: "note",
+		scope: "project",
+		kind: "semantic",
+		title: "Memory note",
+		description: "Memory metadata.",
+		resource: "memory/agent/notes/note.md",
+		tags: [],
+		timestamp: "2026-07-08T14:00:00.000Z",
+		content: "Full memory body.",
+		path: join(tmp.path, "memory", "agent", "notes", "note.md"),
+		...overrides,
+	};
 }

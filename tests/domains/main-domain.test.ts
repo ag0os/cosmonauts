@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -161,6 +161,25 @@ describe("main domain built-in discovery", () => {
 		expect(prompt).toContain("You're not a coding agent");
 		expect(prompt).toContain("**Pull in specialists when needed.**");
 	});
+
+	it("wires agent memory only to main/cosmo and gives concise visible save guidance @cosmo-behavior plan:memory-interface#B-013", async () => {
+		const agentDefinitions = await loadBuiltinAgentDefinitions();
+		const consumers = agentDefinitions
+			.filter((definition) => definition.extensions.includes("agent-memory"))
+			.map((definition) => definition.ref)
+			.sort();
+
+		expect(consumers).toEqual(["main/cosmo"]);
+
+		const prompt = await readFile(
+			join(MAIN_DOMAIN_DIR, "prompts", "cosmo.md"),
+			"utf-8",
+		);
+		expect(prompt).toContain("explicitly asks you to remember");
+		expect(prompt).toContain("Use project memory");
+		expect(prompt).toContain("user memory");
+		expect(prompt).toContain("say what you saved and where");
+	});
 });
 
 type ExtensionFactory = (api: unknown) => void;
@@ -214,4 +233,31 @@ function fakeLoader(
 	return {
 		getExtensions: () => ({ extensions, errors: [], runtime: {} }),
 	} as unknown as Parameters<typeof buildToolAllowlist>[1];
+}
+
+async function loadBuiltinAgentDefinitions(): Promise<
+	{ ref: string; extensions: readonly string[] }[]
+> {
+	const definitions: { ref: string; extensions: readonly string[] }[] = [];
+	const roots = [
+		{ domain: "main", dir: join(DOMAINS_DIR, "main", "agents") },
+		{ domain: "coding", dir: join(REPO_ROOT, "bundled", "coding", "agents") },
+	];
+
+	for (const root of roots) {
+		const entries = await readdir(root.dir, { withFileTypes: true });
+		for (const entry of entries) {
+			if (!entry.isFile() || !entry.name.endsWith(".ts")) continue;
+			const mod = (await import(join(root.dir, entry.name))) as {
+				default?: AgentDefinition;
+			};
+			if (!mod.default) continue;
+			definitions.push({
+				ref: `${root.domain}/${mod.default.id}`,
+				extensions: mod.default.extensions,
+			});
+		}
+	}
+
+	return definitions;
 }
