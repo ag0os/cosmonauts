@@ -194,7 +194,8 @@ describe("coding domain agent invariants", () => {
 			"`memory/architecture/index.md` is missing.",
 		);
 		expect(missing.details).toMatchObject({
-			status: "missing-map",
+			kind: "architecture-map",
+			status: "missing-index",
 			resource: "memory/architecture/index.md",
 		});
 
@@ -210,7 +211,8 @@ describe("coding domain agent invariants", () => {
 		};
 		expect(resultText(mapped)).toContain("# Architecture Map");
 		expect(mapped.details).toMatchObject({
-			status: "found",
+			kind: "architecture-map",
+			status: "index",
 			resource: "memory/architecture/index.md",
 		});
 	});

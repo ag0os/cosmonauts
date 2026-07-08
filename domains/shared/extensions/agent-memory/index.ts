@@ -428,11 +428,18 @@ function renderRecallResult(options: {
 		records,
 	};
 
+	const warningText = formatRecallWarnings(options.result.warnings.length);
+
 	if (records.length === 0) {
 		return textResult(
-			`No authored memory notes matched "${options.query}". Searched scopes: ${
-				options.result.searchedScopes.join(", ") || "none"
-			}.`,
+			[
+				`No authored memory notes matched "${options.query}". Searched scopes: ${
+					options.result.searchedScopes.join(", ") || "none"
+				}.`,
+				warningText,
+			]
+				.filter(Boolean)
+				.join("\n"),
 			{ status: "no_match", ...baseDetails },
 		);
 	}
@@ -442,11 +449,21 @@ function renderRecallResult(options: {
 			`Found ${records.length} authored memory note${
 				records.length === 1 ? "" : "s"
 			} for "${options.query}".`,
+			warningText,
 			"",
 			...records.map(formatRecallRecord),
-		].join("\n"),
+		]
+			.filter(Boolean)
+			.join("\n"),
 		{ status: "matched", ...baseDetails },
 	);
+}
+
+function formatRecallWarnings(count: number): string | undefined {
+	if (count === 0) return undefined;
+	return `Warning: ${count} memory note${
+		count === 1 ? " was" : "s were"
+	} skipped because it could not be read; see details.warnings.`;
 }
 
 function formatRecallRecord(record: RenderedRecallRecord): string {

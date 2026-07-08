@@ -42,13 +42,15 @@ export interface ArchitectureMapMemoryDeps {
 }
 
 export type ArchitectureMapRetrievalStatus =
-	| "found"
-	| "missing-map"
+	| "index"
+	| "module"
+	| "missing-index"
 	| "unknown-module"
 	| "unsafe-resource"
 	| "scope-ineligible";
 
 export interface ArchitectureMapRetrievalDetails {
+	readonly kind: "architecture-map";
 	readonly status: ArchitectureMapRetrievalStatus;
 	readonly freshness: ArchitectureMapFreshness;
 	readonly resource?: string;
@@ -127,6 +129,7 @@ async function retrieveArchitectureMap(options: {
 			skippedScopes,
 			warnings: [],
 			details: {
+				kind: "architecture-map",
 				status: "scope-ineligible",
 				freshness: options.freshness,
 				reason: PROJECT_SCOPE_REASON,
@@ -144,6 +147,7 @@ async function retrieveArchitectureMap(options: {
 				skippedScopes,
 				warnings: [],
 				details: {
+					kind: "architecture-map",
 					status: "unsafe-resource",
 					freshness: options.freshness,
 					resource,
@@ -165,6 +169,7 @@ async function retrieveArchitectureMap(options: {
 				skippedScopes,
 				warnings: [],
 				details: {
+					kind: "architecture-map",
 					status: "unknown-module",
 					freshness: options.freshness,
 					resource,
@@ -183,7 +188,8 @@ async function retrieveArchitectureMap(options: {
 			skippedScopes,
 			warnings: [],
 			details: {
-				status: "found",
+				kind: "architecture-map",
+				status: "module",
 				freshness: options.freshness,
 				resource,
 				path: record.path,
@@ -202,7 +208,8 @@ async function retrieveArchitectureMap(options: {
 			skippedScopes,
 			warnings: [],
 			details: {
-				status: "missing-map",
+				kind: "architecture-map",
+				status: "missing-index",
 				freshness: options.freshness,
 				resource: "memory/architecture/index.md",
 				path: architecturePath(options.projectRoot, INDEX_PATH),
@@ -218,7 +225,8 @@ async function retrieveArchitectureMap(options: {
 		skippedScopes,
 		warnings: [],
 		details: {
-			status: "found",
+			kind: "architecture-map",
+			status: "index",
 			freshness: options.freshness,
 			resource: "memory/architecture/index.md",
 			path: record.path,

@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import matter from "gray-matter";
 import { describe, expect, test, vi } from "vitest";
@@ -283,6 +283,40 @@ describe("agent-memory extension", () => {
 		});
 		expect(resultText(noMatch)).toContain("No authored memory notes matched");
 		expect(resultText(noMatch)).toContain("project, user");
+	});
+
+	test("recall text reports skipped malformed notes for matched and no-match results @cosmo-behavior plan:memory-interface#B-007", async () => {
+		const projectRoot = join(tmp.path, "warning-recall-project");
+		const userRoot = join(tmp.path, "warning-recall-user");
+		const pi = await cosmoPi({ projectRoot, userRoot });
+		await pi.callTool("remember", {
+			content: "Visible warning recall fact.",
+			title: "Warning recall fact",
+		});
+		await writeMalformedProjectNote(projectRoot, "bad-note.md");
+
+		const matched = (await pi.callTool("recall", {
+			query: "Visible warning",
+		})) as ToolResult;
+		expect(matched.details).toMatchObject({ status: "matched" });
+		expect(resultText(matched)).toContain(
+			"Warning: 1 memory note was skipped because it could not be read; see details.warnings.",
+		);
+		expect(warnings(matched.details)).toEqual([
+			expect.objectContaining({
+				path: expect.stringContaining("bad-note.md"),
+				message: expect.any(String),
+			}),
+		]);
+
+		const noMatch = (await pi.callTool("recall", {
+			query: "missing warning fact",
+		})) as ToolResult;
+		expect(noMatch.details).toMatchObject({ status: "no_match" });
+		expect(resultText(noMatch)).toContain(
+			"Warning: 1 memory note was skipped because it could not be read; see details.warnings.",
+		);
+		expect(warnings(noMatch.details)).toEqual(warnings(matched.details));
 	});
 
 	test("injects one hidden current disk note index for main/cosmo and filters stale context @cosmo-behavior plan:memory-interface#B-006", async () => {
@@ -601,6 +635,24 @@ function records(details: unknown): unknown[] {
 	const value = (details as Record<string, unknown>).records;
 	if (!Array.isArray(value)) throw new Error("Expected records array");
 	return value;
+}
+
+function warnings(details: unknown): unknown[] {
+	if (!details || typeof details !== "object") {
+		throw new Error("Expected object details");
+	}
+	const value = (details as Record<string, unknown>).warnings;
+	if (!Array.isArray(value)) throw new Error("Expected warnings array");
+	return value;
+}
+
+async function writeMalformedProjectNote(
+	projectRoot: string,
+	fileName: string,
+): Promise<void> {
+	const notesDir = join(projectRoot, "memory", "agent", "notes");
+	await mkdir(notesDir, { recursive: true });
+	await writeFile(join(notesDir, fileName), "not an OKF note\n");
 }
 
 async function writeMemoryNote(

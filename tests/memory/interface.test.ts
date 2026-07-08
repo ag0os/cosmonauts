@@ -33,8 +33,7 @@ describe("memory interface", () => {
 		expect(written.kind).toBe("written");
 		if (written.kind !== "written") throw new Error("expected written record");
 
-		const markdownIndexPath = join(tmp.path, "memory", "index.md");
-		await writeFile(markdownIndexPath, "# Memory Index\n", "utf-8");
+		const markdownIndexPath = join(tmp.path, "memory", "agent", "index.md");
 		await writeArchitectureMap(tmp.path);
 
 		const architecture = createArchitectureMapMemoryStore({
@@ -217,6 +216,7 @@ describe("memory interface", () => {
 			},
 		]);
 		expect(ineligible.details).toMatchObject({
+			kind: "architecture-map",
 			status: "scope-ineligible",
 			freshness: { kind: "current", hash: "stat-current" },
 		} satisfies Partial<ArchitectureMapRetrievalDetails>);

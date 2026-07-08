@@ -71,8 +71,6 @@ export function createArchitectureMemoryExtension(
 			label: "Read Architecture Map",
 			description:
 				"Read the generated architecture-map index or a module shard by module resource.",
-			promptSnippet:
-				"Read `memory/architecture/index.md` or module shards from the generated architecture map.",
 			parameters: Type.Object({
 				module: Type.Optional(
 					Type.String({
@@ -185,7 +183,7 @@ function renderArchitectureMapResult(
 	}
 
 	switch (details.status) {
-		case "missing-map":
+		case "missing-index":
 			return textResult(
 				[
 					formatFreshnessBanner(details.freshness),
@@ -217,7 +215,8 @@ function renderArchitectureMapResult(
 				details.reason ?? "Architecture-map memory is not available.",
 				normalizeRenderedDetails(details),
 			);
-		case "found":
+		case "index":
+		case "module":
 			return textResult("Architecture map retrieval returned no records.", {
 				...normalizeRenderedDetailsObject(details),
 				emptyMatchedRecords: true,
@@ -342,6 +341,7 @@ function architectureDetails(
 ): ArchitectureMapRetrievalDetails | undefined {
 	if (!details || typeof details !== "object") return undefined;
 	const candidate = details as Partial<ArchitectureMapRetrievalDetails>;
+	if (candidate.kind !== "architecture-map") return undefined;
 	if (typeof candidate.status !== "string") return undefined;
 	if (
 		candidate.freshness === undefined ||

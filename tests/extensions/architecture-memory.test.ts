@@ -74,7 +74,8 @@ describe("architecture-memory extension", () => {
 				skippedScopes: [],
 				warnings: [],
 				details: {
-					status: "found",
+					kind: "architecture-map",
+					status: query.resource ? "module" : "index",
 					freshness: { kind: "current", hash: "spy-stat" },
 					resource: query.resource ?? "memory/architecture/index.md",
 				},
@@ -124,7 +125,8 @@ describe("architecture-memory extension", () => {
 				skippedScopes: [],
 				warnings: [],
 				details: {
-					status: "missing-map",
+					kind: "architecture-map",
+					status: "missing-index",
 					freshness: { kind: "missing" },
 					resource: "memory/architecture/index.md",
 					path: join(tmp.path, "memory", "architecture", "index.md"),
@@ -136,6 +138,9 @@ describe("architecture-memory extension", () => {
 		createArchitectureMemoryExtension(deps({ createStore }))(pi as never);
 
 		expect(pi.tools.has("architecture_map_read")).toBe(true);
+		expect(pi.tools.get("architecture_map_read")).not.toHaveProperty(
+			"promptSnippet",
+		);
 		await expect(
 			pi.fireEvent(
 				"before_agent_start",
@@ -156,7 +161,8 @@ describe("architecture-memory extension", () => {
 			"`memory/architecture/index.md` is missing.",
 		);
 		expect(missing.details).toMatchObject({
-			status: "missing-map",
+			kind: "architecture-map",
+			status: "missing-index",
 			resource: "memory/architecture/index.md",
 		});
 		expect(retrieve).toHaveBeenCalledTimes(1);
@@ -211,6 +217,8 @@ describe("architecture-memory extension", () => {
 		expect(resultText(index)).toContain("Architecture map freshness: current");
 		expect(resultText(index)).toContain("# Architecture Map");
 		expect(index.details).toMatchObject({
+			kind: "architecture-map",
+			status: "index",
 			resource: "memory/architecture/index.md",
 		});
 
@@ -219,6 +227,8 @@ describe("architecture-memory extension", () => {
 		})) as ToolResult;
 		expect(resultText(shard)).toContain("# lib/agents");
 		expect(shard.details).toMatchObject({
+			kind: "architecture-map",
+			status: "module",
 			resource: "lib/agents",
 			path: "memory/architecture/modules/lib/agents.md",
 		});
@@ -228,6 +238,8 @@ describe("architecture-memory extension", () => {
 		})) as ToolResult;
 		expect(resultText(alias)).toContain("# lib/tasks");
 		expect(alias.details).toMatchObject({
+			kind: "architecture-map",
+			status: "module",
 			resource: "lib/tasks",
 			path: "memory/architecture/modules/lib/tasks.md",
 		});
@@ -242,6 +254,8 @@ describe("architecture-memory extension", () => {
 		})) as ToolResult;
 		expect(resultText(root)).toContain("# root module");
 		expect(root.details).toMatchObject({
+			kind: "architecture-map",
+			status: "module",
 			resource: ".",
 			path: "memory/architecture/modules/root.md",
 		});
@@ -269,6 +283,11 @@ describe("architecture-memory extension", () => {
 			"Available modules: lib/agents, lib/tasks",
 		);
 		expect(resultText(unknown)).not.toContain("lib/from-index-only");
+		expect(unknown.details).toMatchObject({
+			kind: "architecture-map",
+			status: "unknown-module",
+			resource: "lib/missing",
+		});
 
 		const traversal = (await pi.callTool("architecture_map_read", {
 			module: "../outside",
@@ -276,6 +295,11 @@ describe("architecture-memory extension", () => {
 		expect(resultText(traversal)).toContain(
 			"Rejected unsafe architecture map resource",
 		);
+		expect(traversal.details).toMatchObject({
+			kind: "architecture-map",
+			status: "unsafe-resource",
+			resource: "../outside",
+		});
 
 		const absolute = (await pi.callTool("architecture_map_read", {
 			module: "/tmp/outside",
@@ -283,6 +307,11 @@ describe("architecture-memory extension", () => {
 		expect(resultText(absolute)).toContain(
 			"Rejected unsafe architecture map resource",
 		);
+		expect(absolute.details).toMatchObject({
+			kind: "architecture-map",
+			status: "unsafe-resource",
+			resource: "/tmp/outside",
+		});
 	});
 
 	test("oversized index injection respects injectionMaxBytes and tells agents to use architecture_map_read @cosmo-behavior plan:code-structure-map#B-019 @cosmo-behavior plan:memory-interface#B-003", async () => {
