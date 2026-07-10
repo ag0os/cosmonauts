@@ -5,7 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"Captures the WHAT and WHY of a feature through brainstorming conversation with the human — what it does, who uses it, how they benefit. Produces a spec document the planner designs against. Never designs architecture or writes code.",
 	capabilities: ["healthy-codebase-harness", "coding-readonly"],
-	model: "openai-codex/gpt-5.5",
+	model: "openai-codex/gpt-5.6-sol",
 	tools: "readonly",
 	extensions: ["plans"],
 	skills: ["pi", "plan", "work-artifacts"],

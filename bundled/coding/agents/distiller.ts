@@ -5,7 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"Reads plan artifacts and session transcripts, then produces structured KnowledgeBundle JSONL files for future SQLite + vector embedding ingestion.",
 	capabilities: ["healthy-codebase-harness", "coding-readonly"],
-	model: "openai-codex/gpt-5.5",
+	model: "openai-codex/gpt-5.6-sol",
 	tools: "coding",
 	extensions: [],
 	skills: ["*"],

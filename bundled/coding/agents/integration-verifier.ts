@@ -5,7 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"Verifies completed work against the active plan's declared integration contracts and writes a structured integration report.",
 	capabilities: ["healthy-codebase-harness", "coding-readonly"],
-	model: "openai-codex/gpt-5.5",
+	model: "openai-codex/gpt-5.6-sol",
 	tools: "coding",
 	extensions: ["tasks", "plans"],
 	skills: ["*"],
