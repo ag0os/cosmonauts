@@ -43,7 +43,7 @@ function makeDef(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
 		id: "test-agent",
 		description: "Test agent",
 		capabilities: [],
-		model: "anthropic/claude-sonnet-4-20250514",
+		model: "anthropic/claude-sonnet-4-5-20250929",
 		tools: "none",
 		extensions: [],
 		skills: ["*"],
@@ -384,22 +384,22 @@ describe("buildSessionParams", () => {
 	describe("model resolution", () => {
 		it("resolves model from agent definition", async () => {
 			await setupMinimalDomains(tmp.path);
-			const def = makeDef({ model: "anthropic/claude-sonnet-4-20250514" });
+			const def = makeDef({ model: "anthropic/claude-sonnet-4-5-20250929" });
 			const params = await buildSessionParams(makeOptions({ def }));
 			expect(params.model).toBeDefined();
-			expect(params.model.id).toBe("claude-sonnet-4-20250514");
+			expect(params.model.id).toBe("claude-sonnet-4-5-20250929");
 		});
 
 		it("uses modelOverride over definition model", async () => {
 			await setupMinimalDomains(tmp.path);
-			const def = makeDef({ model: "anthropic/claude-sonnet-4-20250514" });
+			const def = makeDef({ model: "anthropic/claude-sonnet-4-5-20250929" });
 			const params = await buildSessionParams(
 				makeOptions({
 					def,
-					modelOverride: "anthropic/claude-opus-4-20250514",
+					modelOverride: "anthropic/claude-opus-4-5-20251101",
 				}),
 			);
-			expect(params.model.id).toBe("claude-opus-4-20250514");
+			expect(params.model.id).toBe("claude-opus-4-5-20251101");
 		});
 
 		it("falls back to FALLBACK_MODEL when no model specified", async () => {
