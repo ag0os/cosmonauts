@@ -7,7 +7,7 @@ description: Pi framework API reference — sessions, tools, extensions, events,
 
 Pi (`@earendil-works/pi-coding-agent`) is the agent runtime. This skill covers its programmatic API surface for building on top of Pi.
 
-> **Note:** The reference below tracks `@earendil-works/pi-coding-agent` v0.80.3 (the version this repo pins). Use it as a baseline and query current Pi docs with Context7 when in doubt.
+> **Note:** The reference below tracks `@earendil-works/pi-coding-agent` v0.80.6 (the version this repo pins). Use it as a baseline and query current Pi docs with Context7 when in doubt.
 
 ## Source Of Truth
 
@@ -755,6 +755,11 @@ const models = builtinModels();
 const model = models.getModel("anthropic", "claude-sonnet-4-5");
 if (!model) throw new Error("Model not found");
 ```
+
+For Pi v0.80.6, GPT-5.6 Codex models are provider-specific entries:
+`openai-codex/gpt-5.6-sol`, `openai-codex/gpt-5.6-terra`, and
+`openai-codex/gpt-5.6-luna`. There is no bare `openai-codex/gpt-5.6`
+alias; use one of the named variants.
 
 ## Lightweight LLM Calls (`pi-ai`)
 

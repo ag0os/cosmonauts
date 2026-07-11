@@ -108,7 +108,7 @@ const definition: AgentDefinition = {
   id: "coach",
   description: "Interactive planning coach.",
   capabilities: ["coaching", "tasks"],
-  model: "openai/gpt-5.6-sol",
+  model: "openai-codex/gpt-5.6-sol",
   tools: "readonly",
   extensions: ["tasks"],
   skills: ["playbook"],
