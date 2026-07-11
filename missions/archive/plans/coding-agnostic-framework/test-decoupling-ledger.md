@@ -54,6 +54,7 @@ Allowed buckets:
 | `tests/config/loader.test.ts` | Keep | keep-domain-binding-variant | Config loader tests include coding examples for binding diagnostics and existing domain-authoring behavior. |
 | `tests/config/scaffold.test.ts` | B | bucket-b-synthetic-coding-behavior | Scaffold tests keep B-017 coverage for synthetic package/domain fixture behavior. |
 | `tests/docs/domain-authoring.test.ts` | Keep | keep-explicit-coding-flow | Documentation tests intentionally preserve explicit coding examples for domain authoring docs. |
+| `tests/domains/agent-models.test.ts` | A | bucket-a-wave2-real-bundled-coding | Validates real bundled coding and main agent model IDs resolve against Pi's built-in catalog until Wave 2 extraction. |
 | `tests/domains/bindings.test.ts` | Keep | keep-domain-binding-variant | Domain binding tests use coding references as requested-vs-resolved binding examples. |
 | `tests/domains/coding-agents.test.ts` | A | bucket-a-wave2-real-bundled-coding | Validates invariants of the real bundled coding agent definitions for Wave 1. |
 | `tests/domains/coding-chains.test.ts` | A | bucket-a-wave2-real-bundled-coding | Imports the real bundled coding chains that remain bundled until Wave 2. |

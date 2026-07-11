@@ -5,7 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"Performs readonly codebase exploration and fact-finding. Reports discoveries without writing code or creating tasks.",
 	capabilities: ["healthy-codebase-harness", "coding-readonly"],
-	model: "openai-codex/gpt-5.5",
+	model: "openai-codex/gpt-5.6-sol",
 	tools: "readonly",
 	extensions: [],
 	skills: ["*"],

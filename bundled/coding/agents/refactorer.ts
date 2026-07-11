@@ -10,7 +10,7 @@ const definition: AgentDefinition = {
 		"coding-readwrite",
 		"tasks",
 	],
-	model: "openai-codex/gpt-5.5",
+	model: "openai-codex/gpt-5.6-sol",
 	tools: "coding",
 	extensions: ["tasks"],
 	skills: ["tdd", "refactoring", "engineering-principles"],

@@ -9,7 +9,7 @@ const definition: AgentDefinition = {
 		"engineering-discipline",
 		"coding-readwrite",
 	],
-	model: "openai-codex/gpt-5.5",
+	model: "openai-codex/gpt-5.6-sol",
 	tools: "coding",
 	extensions: [],
 	skills: ["*"],

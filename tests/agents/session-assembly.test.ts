@@ -7,7 +7,7 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { extractAgentIdFromSystemPrompt } from "../../lib/agents/runtime-identity.ts";
 import {
 	type BuildSessionParamsOptions,
@@ -18,6 +18,16 @@ import { DomainRegistry } from "../../lib/domains/registry.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
 import type { LoadedDomain } from "../../lib/domains/types.ts";
 import { useTempDir } from "../helpers/fs.ts";
+
+// Model resolution falls through to Pi's real built-in model catalog, whose
+// contents change across Pi version bumps. Stub it so these tests assert on
+// resolution logic (definition/override/fallback) without depending on any
+// specific model ID surviving upstream catalog changes.
+vi.mock("@earendil-works/pi-ai/providers/all", () => ({
+	builtinModels: () => ({
+		getModel: (provider: string, id: string) => ({ provider, id }),
+	}),
+}));
 
 const tmp = useTempDir("session-assembly-");
 
@@ -43,7 +53,7 @@ function makeDef(overrides: Partial<AgentDefinition> = {}): AgentDefinition {
 		id: "test-agent",
 		description: "Test agent",
 		capabilities: [],
-		model: "anthropic/claude-sonnet-4-20250514",
+		model: "anthropic/test-sonnet",
 		tools: "none",
 		extensions: [],
 		skills: ["*"],
@@ -384,22 +394,22 @@ describe("buildSessionParams", () => {
 	describe("model resolution", () => {
 		it("resolves model from agent definition", async () => {
 			await setupMinimalDomains(tmp.path);
-			const def = makeDef({ model: "anthropic/claude-sonnet-4-20250514" });
+			const def = makeDef({ model: "anthropic/test-sonnet" });
 			const params = await buildSessionParams(makeOptions({ def }));
 			expect(params.model).toBeDefined();
-			expect(params.model.id).toBe("claude-sonnet-4-20250514");
+			expect(params.model.id).toBe("test-sonnet");
 		});
 
 		it("uses modelOverride over definition model", async () => {
 			await setupMinimalDomains(tmp.path);
-			const def = makeDef({ model: "anthropic/claude-sonnet-4-20250514" });
+			const def = makeDef({ model: "anthropic/test-sonnet" });
 			const params = await buildSessionParams(
 				makeOptions({
 					def,
-					modelOverride: "anthropic/claude-opus-4-20250514",
+					modelOverride: "anthropic/test-opus",
 				}),
 			);
-			expect(params.model.id).toBe("claude-opus-4-20250514");
+			expect(params.model.id).toBe("test-opus");
 		});
 
 		it("falls back to FALLBACK_MODEL when no model specified", async () => {

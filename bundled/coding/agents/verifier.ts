@@ -5,7 +5,7 @@ const definition: AgentDefinition = {
 	description:
 		"Validates explicit claims against the codebase with structured pass/fail evidence. Runs checks but never writes code.",
 	capabilities: ["healthy-codebase-harness", "coding-readonly"],
-	model: "openai-codex/gpt-5.5",
+	model: "openai-codex/gpt-5.6-sol",
 	tools: "verification",
 	extensions: [],
 	skills: ["*"],
