@@ -2,7 +2,7 @@
 title: Profile + explicit playbooks (agent-memory W2)
 status: active
 createdAt: '2026-07-13T13:15:32.000Z'
-updatedAt: '2026-07-13T13:30:10.911Z'
+updatedAt: '2026-07-13T14:30:00.000Z'
 ---
 
 ## Overview
@@ -38,6 +38,20 @@ for this plan:
 
 No tasks are created by this plan. Task decomposition and implementation happen
 only after review and approval.
+
+**Review revision 2026-07-13:** this plan incorporates two independent review
+channels — the chain plan-reviewer (`review.md`, PR-001..PR-012 plus a
+missing-coverage list) and an independent adversarial multi-lens workflow (4
+lenses → refute-first verifiers; 10 verified findings, 0 refuted). Headline
+fixes: the shipped W1 `context` filter strips the same-turn memory injection,
+so the model never received the injected index — B-020 fixes it rather than
+preserving it; the extended `remember` schema must keep an object root because
+Pi 0.80.6's provider adapters cannot serialize a top-level union (D-001
+revised); `remember` becomes sequential-execution so parallel tool batches
+cannot bypass collision confirmation (B-021); and profile replacement gains
+malformed-occupant and oversized-human-edit safety arms (B-004, B-022). The
+behavior spine grew to B-001..B-024 with evidence homes split so every named
+test can observe its expected result.
 
 ### Authoritative spec assumptions (verbatim; not reopened)
 
@@ -127,7 +141,13 @@ Relevant durable decisions and boundaries:
   `before_agent_start`, `context`, session/compaction, and custom-message hooks,
   but retain Cosmonauts' W1 human-prunable long-term store because Pi 0.80.6 has
   no equivalent mutable profile/playbook store or collision-save primitive.
-  `pi.appendEntry()` is not used for proposals. If evidence contradicts this,
+  `pi.appendEntry()` is not used for proposals. The audit must also explicitly
+  evaluate Pi's confirmation and execution-order primitives — `ctx.ui.confirm`
+  (with `hasUI`/mode variance and the non-UI `false` fallback) and per-tool
+  `executionMode` — recording why conversational confirmation remains
+  authoritative across TUI/RPC/print/json surfaces and recording the
+  `executionMode: "sequential"` decision B-021 depends on. *(Expanded
+  2026-07-13 after review.)* If evidence contradicts this,
   stop and revise the plan before production changes.
 - Seam: `missions/plans/profile-playbooks/pi-first-profile-playbooks-audit.md`
 - Test: `missions/plans/profile-playbooks/pi-first-profile-playbooks-audit.md` >
@@ -176,7 +196,11 @@ Relevant durable decisions and boundaries:
 - Expected: the same `memory/agent/profile.md` path is atomically replaced, its
   timestamp advances, no second profile file exists, and the visible result says
   the profile was updated and includes `changeSummary`; an unchanged path, not
-  byte identity, is the invariant
+  byte identity, is the invariant. If the existing `profile.md` fails OKF
+  validation (for example a human edit broke its frontmatter), the write is
+  refused safely — naming the path and reason, changing nothing — rather than
+  silently replacing human-owned content the injection never showed; the user
+  fixes or deletes the file first. *(Added 2026-07-13 after review.)*
 - Seam: `lib/memory/markdown-store.ts`
 - Test: `tests/extensions/agent-memory.test.ts` >
   `updates the same profile file and reports the change summary`
@@ -204,10 +228,14 @@ Relevant durable decisions and boundaries:
 - Context: Cosmo notices a durable preference or repeatable multi-step procedure
   that the user did not directly ask to save
 - Action: Cosmo follows its prompt guidance
-- Expected: Cosmo proposes the profile/playbook save, names the intended scope,
-  and calls `remember` only after explicit assent; after a confirmed playbook
-  call, the same visible created result from B-005 is produced. No event handler
-  parses conversation or implements an approval state machine.
+- Expected: the prompt contract in `domains/main/prompts/cosmo.md` explicitly
+  instructs Cosmo to propose the save, name the intended scope, call `remember`
+  only after explicit assent, and not repeat a declined proposal; after a
+  confirmed playbook call, the same visible created result from B-005 is
+  produced. This behavior claims prompt-contract evidence only — model
+  compliance is not provable in a no-model suite. No event handler parses
+  conversation or implements an approval state machine. *(Revised 2026-07-13
+  after review: evidence honesty.)*
 - Seam: `domains/main/prompts/cosmo.md`
 - Test: `tests/domains/main-domain.test.ts` >
   `guides Cosmo to propose profile and playbook saves and call remember only after confirmation`
@@ -219,10 +247,15 @@ Relevant durable decisions and boundaries:
 - Context: Cosmo proposed a profile/playbook save and the user declines or moves
   on without confirming
 - Action: no save tool call occurs and later session lifecycle events run
-- Expected: no record or store directory is created, no `pi.appendEntry()` call
-  persists a proposal, no closure field retains pending-save data, and Cosmo does
-  not repeat the proposal automatically. A later explicit request starts from
-  current conversation/disk state rather than reconstructed approval state.
+- Expected: the enforceable boundary is what the test proves: running session
+  lifecycle events without a save tool call leaves the filesystem, the
+  store-factory call log, and `MockPi.entries` unchanged — no record or store
+  directory is created and no `pi.appendEntry()` call persists a proposal;
+  B-009's collision refusal likewise persists no entry. "Cosmo does not repeat
+  the proposal" is prompt guidance owned by B-006, not an executable claim
+  here. A later explicit request starts from current conversation/disk state
+  rather than reconstructed approval state. *(Revised 2026-07-13 after review:
+  evidence honesty.)*
 - Seam: `domains/shared/extensions/agent-memory/index.ts`
 - Test: `tests/extensions/agent-memory.test.ts` >
   `declined or unanswered proposals write nothing and persist no pending state`
@@ -287,10 +320,13 @@ Relevant durable decisions and boundaries:
 - Source: AC-007
 - Context: project A has a project playbook, the shared user root has a user
   playbook and profile, and project B uses the same user root
-- Action: stores for both projects retrieve/inject current authored memory
-- Expected: project A sees all three eligible records; project B sees the user
-  playbook and profile but never project A's playbook; no project profile can be
-  retrieved; `session` remains skipped exactly as W1 defines
+- Action: markdown stores bound to each project run list-mode retrieval
+- Expected: project A's store returns all three eligible records; project B's
+  store returns the user playbook and profile but never project A's playbook;
+  no project profile can be retrieved; `session` remains skipped exactly as W1
+  defines. Injection-level cross-project visibility is owned by B-003
+  (profile) and B-010/B-023 (playbooks), not this store-level behavior.
+  *(Scoped 2026-07-13 after review.)*
 - Seam: `lib/memory/markdown-store.ts`
 - Test: `tests/memory/markdown-store.test.ts` >
   `keeps profile and playbook scopes isolated across projects`
@@ -299,15 +335,21 @@ Relevant durable decisions and boundaries:
 ### B-012 - Malformed new records warn without hiding healthy records
 
 - Source: AC-007
-- Context: stores contain healthy records beside bad frontmatter, a profile in a
-  project store, a user profile with non-user scope/non-semantic kind, a
-  playbook with wrong scope/non-procedural kind, or a wrong type in a reserved
-  profile/playbook path
+- Context: stores contain healthy records beside files violating the fixed
+  location/type matrix: bad frontmatter anywhere; a profile in a project store;
+  a user profile with non-user scope/non-semantic kind; a playbook with wrong
+  scope/non-procedural kind; a `profile` or `playbook` file under `notes/`; a
+  `note` under `playbooks/`; or a wrong type at the reserved profile path
 - Action: retrieval scans the fixed W2 locations
-- Expected: each invalid file is skipped with a warning naming its physical
-  path and reason; healthy notes/playbooks/profile still return; store location
-  decides eligibility and frontmatter cannot upgrade scope; the session remains
-  usable and reads do not scaffold files
+- Expected: the location/type matrix is enforced exactly — `notes/` keeps W1's
+  recursive discovery but accepts only `type: note`; the reserved user
+  `profile.md` path accepts only `type: profile`; `playbooks/` accepts only
+  direct-child `type: playbook` files (no recursive expansion). Every
+  violating file is skipped with a warning naming its physical path and
+  reason; healthy notes/playbooks/profile still return; store location decides
+  eligibility and frontmatter cannot upgrade scope; the session remains usable
+  and reads do not scaffold files. *(Matrix made explicit 2026-07-13 after
+  review.)*
 - Seam: `lib/memory/okf.ts`
 - Test: `tests/memory/markdown-store.test.ts` >
   `skips malformed profile and playbook records with file warnings`
@@ -336,10 +378,17 @@ Relevant durable decisions and boundaries:
 - Action: the next current-disk index/retrieval/recall runs
 - Expected: the edited title/body are indexed and recalled under the new
   canonical name while the existing resource path remains stable; a later
-  confirmed save under that edited name updates the same path; after deletion
-  the playbook is absent from the injected index and recall. The persisted
-  human-browsing `index.md` remains W1's write-regenerated derived artifact;
-  “next index” here means the authoritative current-disk injected index.
+  confirmed save under that edited name updates the same path; the old
+  canonical key is **freed** — a new playbook may be created under it, landing
+  at a deterministic alternate filename when the default path is still occupied
+  by the renamed record (see Store layout); the old name is not a supported
+  recall alias (an old-resource text match is incidental, not a contract). If
+  two human-edited files claim one canonical title, retrieval returns both with
+  a warning naming both paths, and writes to that name refuse. After deletion
+  the playbook is absent from store retrieval. The persisted human-browsing
+  `index.md` remains W1's write-regenerated derived artifact; injected-context
+  and recall visibility of these edits is owned by B-023. *(Rename semantics
+  resolved 2026-07-13 after review.)*
 - Seam: `lib/memory/markdown-store.ts`
 - Test: `tests/memory/markdown-store.test.ts` >
   `reflects playbook rename edits and deletion without a stale cache`
@@ -381,22 +430,21 @@ Relevant durable decisions and boundaries:
   `injects profile before the recency ordered note and playbook index within one 12000 byte budget`
 - Marker: `@cosmo-behavior plan:profile-playbooks#B-016`
 
-### B-017 - The profile bound is enforced on writes and honest for human edits
+### B-017 - The profile write bound is enforced at the store
+
+*(Split 2026-07-13 after review: store bound here, extension honesty in B-022.)*
 
 - Source: AC-010
-- Context: tool/store writes can keep authored profiles small, but a human may
-  edit the file beyond the supported bound
-- Action: a profile write exceeds 4,000 UTF-8 body bytes, then a separately
-  human-edited valid profile exceeds that size before injection
-- Expected: the save is rejected before changing an existing profile; reads
-  still accept the human-owned oversized file; injection includes a UTF-8-safe
-  profile excerpt capped to 4,000 body bytes, an explicit profile-truncation
-  notice with original/included sizes, and a direction to `recall` for the full
-  profile. Recall returns the untruncated body and the combined message still
-  remains within 12,000 bytes.
+- Context: tool/store writes must keep authored profiles small enough for
+  injection, but human edits are not size-policed
+- Action: a store profile write's body exceeds 4,000 UTF-8 bytes
+- Expected: the write is rejected before changing any existing profile file,
+  with a reason naming the bound and the measured size; reads still accept and
+  return a human-owned oversized profile unchanged. Injection, recall, and
+  safe-replacement behavior for oversized human profiles is owned by B-022.
 - Seam: `lib/memory/markdown-store.ts`
-- Test: `tests/extensions/agent-memory.test.ts` >
-  `rejects oversized profile writes and truncates oversized human edits honestly`
+- Test: `tests/memory/markdown-store.test.ts` >
+  `rejects profile writes over the 4000 byte body bound`
 - Marker: `@cosmo-behavior plan:profile-playbooks#B-017`
 
 ### B-018 - New-type write failures are visible and leave no partial files
@@ -406,11 +454,13 @@ Relevant durable decisions and boundaries:
   unwritable/blocked temporary store path
 - Action: the store attempts its W1 atomic temp-write + rename path for each new
   type
-- Expected: the tool returns `failed` with record type, intended scope/path, and
-  filesystem reason; no temp or byte-partial new record remains; an existing
-  record is either the previous complete file or the new complete file, never a
-  truncated file; the session continues. The test exercises both `profile` and
-  `playbook` rather than assuming note coverage generalizes.
+- Expected: the store returns `failed` with record type, intended scope/path,
+  and filesystem reason; no temp or byte-partial new record remains; an
+  existing record is either the previous complete file or the new complete
+  file, never a truncated file. The test exercises both `profile` and
+  `playbook` rather than assuming note coverage generalizes. The visible tool
+  result and session continuation are owned by B-024. *(Scoped 2026-07-13
+  after review.)*
 - Seam: `lib/memory/markdown-store.ts`
 - Test: `tests/memory/markdown-store.test.ts` >
   `reports profile and playbook write failures without partial files`
@@ -432,14 +482,126 @@ Relevant durable decisions and boundaries:
   `keeps W2 memory Cosmo only without broadening the tool allowlist`
 - Marker: `@cosmo-behavior plan:profile-playbooks#B-019`
 
+### B-020 - The current-turn memory context survives the context transform
+
+*(Added 2026-07-13 after review — fixes a shipped W1 latent defect rather than
+preserving it, the same stance W1's B-015 took toward the frozen allowlist.)*
+
+- Source: AC-001
+- Context: Pi 0.80.6 merges the `before_agent_start` custom message into the
+  turn's context and applies `transformContext` before every LLM call
+  (`pi-agent-core/dist/agent-loop.js`, `pi-coding-agent/dist/core/sdk.js`);
+  the shipped W1 `context` handler filters every `agent-memory-context`
+  message — including the one injected earlier in the same turn — so the model
+  never actually receives the injected index today
+- Action: an authorized turn injects the memory context, then the `context`
+  hook runs over an old context message, the freshly injected message, and a
+  user message in one composed pipeline
+- Expected: exactly the newest `agent-memory-context` message survives the
+  transform and is provider-visible; all older copies are removed; non-memory
+  messages pass through untouched. The composed
+  before_agent_start-then-context test replaces the W1 test shape that
+  asserted the two hooks in isolation and let the defect ship.
+- Seam: `domains/shared/extensions/agent-memory/index.ts`
+- Test: `tests/extensions/agent-memory.test.ts` >
+  `keeps the newest injected memory context provider visible through the context transform`
+- Marker: `@cosmo-behavior plan:profile-playbooks#B-020`
+
+### B-021 - Sequential execution protects collision confirmation
+
+*(Added 2026-07-13 after review.)*
+
+- Source: AC-005
+- Context: Pi 0.80.6 executes a same-message tool batch in parallel unless a
+  tool declares `executionMode: "sequential"`; two `remember` playbook calls
+  naming one canonical playbook could both preflight an absent name and both
+  write, bypassing `confirmation_required`
+- Action: `remember` is registered with `executionMode: "sequential"` and a
+  same-batch pair of same-canonical-name playbook saves executes
+- Expected: the captured registration carries `executionMode: "sequential"`;
+  executed sequentially, the second call observes the first call's write and
+  returns `confirmation_required` instead of silently replacing it; the B-001
+  audit records this Pi primitive decision. `recall` is read-only and keeps
+  the default execution mode.
+- Seam: `domains/shared/extensions/agent-memory/index.ts`
+- Test: `tests/extensions/agent-memory.test.ts` >
+  `registers remember as sequential so same batch saves cannot bypass collision confirmation`
+- Marker: `@cosmo-behavior plan:profile-playbooks#B-021`
+
+### B-022 - Oversized human profiles inject, recall, and update honestly
+
+*(Added 2026-07-13 after review; the extension half of the former B-017 plus
+the safe-replacement flow.)*
+
+- Source: AC-010
+- Context: a human edited the valid profile beyond the 4,000-byte body bound
+- Action: injection builds the context, Cosmo recalls the profile, and a later
+  confirmed profile update is attempted
+- Expected: injection includes a UTF-8-safe 4,000-byte body excerpt plus a
+  profile-truncation notice carrying original/included byte counts, the
+  profile's `memory/agent/profile.md` path, and a `recall` direction; a
+  profile-matching `recall` returns the untruncated body pinned first outside
+  the 5/20 limit window, so newer matching records can never shadow it and
+  the truncation notice's promised exit stays real; the prompt contract
+  forbids treating the injected excerpt as an update source (recall the full
+  body first); an attempted complete replacement that still exceeds the bound
+  writes nothing, leaves the existing file unchanged, and visibly asks the
+  user to shorten the profile or intentionally replace it. The combined
+  message stays within 12,000 bytes.
+- Seam: `domains/shared/extensions/agent-memory/index.ts`
+- Test: `tests/extensions/agent-memory.test.ts` >
+  `injects recalls and protects oversized human profiles honestly`
+- Marker: `@cosmo-behavior plan:profile-playbooks#B-022`
+
+### B-023 - Human playbook edits reach the injected context and recall
+
+*(Added 2026-07-13 after review; the extension-level observation for B-014.)*
+
+- Source: AC-008
+- Context: after a playbook save, the human retitles, edits, or deletes the
+  file outside Cosmonauts and a later authorized turn runs
+- Action: injection and `recall` run against current disk
+- Expected: the injected index lists the playbook under its edited title;
+  recall returns the edited body; a deleted playbook is absent from both; no
+  process-local state resurrects the old content
+- Seam: `domains/shared/extensions/agent-memory/index.ts`
+- Test: `tests/extensions/agent-memory.test.ts` >
+  `reflects playbook renames edits and deletion in injected context and recall`
+- Marker: `@cosmo-behavior plan:profile-playbooks#B-023`
+
+### B-024 - Write failures render visible tool results and the session continues
+
+*(Added 2026-07-13 after review; the extension-level observation for B-018.)*
+
+- Source: AC-003
+- Context: a profile or playbook `remember` call hits an unwritable store
+- Action: the tool executes and the store returns `failed`
+- Expected: the visible tool result states the record type, intended scope,
+  human-readable path, and reason; the session continues and later tool calls
+  still work; no partial file exists (the store guarantee under B-018)
+- Seam: `domains/shared/extensions/agent-memory/index.ts`
+- Test: `tests/extensions/agent-memory.test.ts` >
+  `renders profile and playbook write failures visibly while the session continues`
+- Marker: `@cosmo-behavior plan:profile-playbooks#B-024`
+
 ## Design
 
 ### Decision log
 
-- **D-001 — Extend `remember`; do not add two save tools.** Chosen: a TypeBox
-  discriminated union adds `type: "profile" | "playbook"` branches while the
-  omitted branch preserves W1 note calls. Alternatives: dedicated
-  `update_profile`/`save_playbook` tools (clearer names but two more
+- **D-001 — Extend `remember`; do not add two save tools.** Chosen: one
+  `remember` tool whose *registered* parameters schema stays a single flat
+  `Type.Object` — an optional `type` literal union (`note | profile |
+  playbook`, omitted means `note`) plus the superset of branch fields as
+  optional properties — with per-branch required-field and invariant
+  validation in the tool handler; the discriminated union exists only as the
+  handler's internal parsed type. *(Revised 2026-07-13 after review:)* Pi
+  0.80.6's Anthropic adapter builds `input_schema` from `schema.properties ??
+  {}` (`pi-ai/dist/api/anthropic-messages.js`), so a top-level `Type.Union`
+  (root `anyOf`, no `properties`) would reach Anthropic models as a
+  zero-parameter tool while Pi still validates calls against the union, and
+  the OpenAI paths pass the root `anyOf` verbatim as an invalid
+  function-parameters object — a top-level union is unshippable. Alternatives:
+  dedicated `update_profile`/`save_playbook` tools (clearer names but two more
   factory-visible tools and duplicated result/path handling), or an approval
   tool/workflow (contradicts the ratified conversational-confirmation rule).
 - **D-002 — Keep one fixed-layout markdown store.** Chosen: add the user
@@ -450,7 +612,16 @@ Relevant durable decisions and boundaries:
 - **D-003 — Canonical playbook key is the scoped stable identity.** Chosen:
   Unicode-readable deterministic slugs and a current-disk title scan preserve
   human rename-by-editing. Alternative exact-case names create accidental
-  duplicates; timestamp/hash names defeat update-in-place.
+  duplicates; timestamp/hash names defeat update-in-place. *(Resolved
+  2026-07-13 after review:)* identity is the **current frontmatter title
+  only** — a human retitle frees the old canonical key; filenames are a
+  storage detail, so a create whose default path is occupied by a valid,
+  differently-named record lands at a deterministic alternate filename
+  (`<canonical-key>-2.md`, first free numeric suffix). The safe-fail refusal
+  is reserved for genuine ambiguity: multiple valid files claiming one
+  canonical name, or an invalid occupant at the target path. Old names are
+  not recall aliases; duplicate human-edited titles retrieve with a warning
+  naming both paths and refuse writes.
 - **D-004 — Profile write bound is 4,000 UTF-8 body bytes.** This leaves roughly
   two-thirds of the 12,000-byte combined message for framing and the index while
   keeping the profile useful. It is a record-size rule, not a reserved
@@ -468,6 +639,33 @@ Relevant durable decisions and boundaries:
   If implementation proves this cannot be done without breaking
   `lib/memory/types.ts`, stop and report rather than revising the interface in
   scope.
+- **D-007 — `remember` executes sequentially.** *(Added 2026-07-13 after
+  review.)* Pi 0.80.6 runs same-message tool batches in parallel by default;
+  two parallel `remember` calls could both preflight an absent canonical name
+  and both write, bypassing collision confirmation. The mutating `remember`
+  registers `executionMode: "sequential"`; read-only `recall` keeps the
+  default. Recorded in the B-001 audit (with the note that W1's temp-file
+  naming uses only PID + `Date.now()` and relies on sequential execution to
+  avoid same-path contention).
+- **D-008 — The current-turn context message must survive.** *(Added
+  2026-07-13 after review.)* The shipped W1 `context` handler strips every
+  `agent-memory-context` message, including the same-turn injection, so the
+  model never received the index — a latent shipped defect both review
+  channels independently confirmed. W2 fixes it (keep the newest, remove
+  older copies; B-020) rather than preserving it, reading the retrofit
+  invariant against the spec's intended behavior exactly as W1's B-015 did.
+- **D-009 — Write outcomes map onto the existing result union.** *(Added
+  2026-07-13 after review.)* Every W2 rejection uses an existing arm — see
+  the outcome table under "Extended `remember`". Any case not representable
+  without editing `lib/memory/types.ts` triggers D-006's stop-and-report.
+- **D-010 — The persisted browsing index becomes the authored-records index.**
+  *(Added 2026-07-13 after review.)* `index.md` frontmatter changes from
+  `type: note-index` to `type: memory-index` and the empty state becomes "No
+  valid authored records." — it now lists notes and playbooks (profile
+  excluded; it has its own injection section). One-time tracked-file churn in
+  project stores is accepted; the file stays deterministic for an unchanged
+  record set. The optional playbook `description` defaults to its title,
+  mirroring the W1 note default.
 
 ### Module boundaries and dependency direction
 
@@ -568,55 +766,73 @@ The playbook filename is chosen from the canonical title on creation. Before a
 write, the store scans valid playbooks in the physical scope and compares their
 current frontmatter titles by the same canonicalizer. If one matches, it updates
 that existing path, preserving a human rename-by-editing even when the old
-filename no longer matches the edited title. If multiple valid files manually
-claim one canonical name, or the default target path is occupied by an invalid
-or differently named record, the write fails safely with the conflicting paths
-instead of guessing or overwriting. Normal W2 saves never create duplicates.
+filename no longer matches the edited title. *(Resolved 2026-07-13 after
+review, D-003:)* because identity is the current-title scan and not the
+filename, a human retitle frees the old canonical key — a create targeting a
+default path occupied by a valid record whose canonical name differs lands at
+a deterministic alternate filename (`<canonical-key>-2.md`, first free numeric
+suffix) instead of failing, so freed names never become permanently
+uncreatable. The safe-fail with conflicting paths is reserved for genuine
+ambiguity: multiple valid files claiming one canonical name, or an invalid
+occupant at the target path. Duplicate human-edited canonical titles retrieve
+with a warning naming both paths and refuse writes to that name. Normal W2
+saves never create duplicates.
 
 The persisted per-scope `index.md` stays a write-regenerated, deterministic human
 browsing artifact. It indexes valid notes and playbooks in recency order and
 excludes the profile because the profile body has its own injection section.
-Existing note entries remain present; no migration reads or rewrites a W1 store
-on startup. Retrieval/injection never trusts this file, so human edits/deletions
+Its frontmatter becomes `type: memory-index` with the empty state "No valid
+authored records." (D-010) — a one-time tracked churn accepted in project
+stores. Existing note entries remain present; no migration reads or rewrites a
+W1 store on startup. Retrieval/injection never trusts this file, so human edits/deletions
 are current on the next turn even if the browsing index waits for the next write
 to regenerate.
 
 ### Extended `remember` and unchanged `recall` surface
 
-Keep exactly two factory-registered tools. Model `remember` as a TypeBox
-discriminated union:
+Keep exactly two factory-registered tools. The *registered* `remember` schema
+is one flat `Type.Object` — the only root shape Pi 0.80.6's provider adapters
+serialize faithfully (D-001) — registered with `executionMode: "sequential"`
+(D-007):
 
 ```ts
-type RememberInput =
-  | {
-      type?: "note";
-      content: string;
-      title?: string;
-      description?: string;
-      tags?: string[];
-      scope?: "project" | "user";
-      kind?: "semantic" | "procedural" | "episodic";
-    }
-  | {
-      type: "profile";
-      content: string;          // complete desired profile body
-      changeSummary: string;    // visible, not persisted
-    }
-  | {
-      type: "playbook";
-      title: string;            // stable user-facing name
-      content: string;
-      description?: string;
-      tags?: string[];
-      scope: "project" | "user";
-      confirmUpdate?: boolean;
-    };
+// Registered tool schema: ONE flat object root; no top-level union.
+const RememberParams = Type.Object({
+  type: Type.Optional(union("note", "profile", "playbook")), // omitted = note
+  content: Type.String(),        // note/playbook body; complete profile body
+  title: Type.Optional(Type.String()),   // playbook: required (handler-enforced)
+  description: Type.Optional(Type.String()),
+  tags: Type.Optional(Type.Array(Type.String())),
+  scope: Type.Optional(union("project", "user")), // playbook: required
+  kind: Type.Optional(union("semantic", "procedural", "episodic")), // note only
+  changeSummary: Type.Optional(Type.String()),   // profile: required, visible
+  confirmUpdate: Type.Optional(Type.Boolean()),  // playbook only
+});
 ```
 
-The note branch preserves every W1 default. Profile/playbook branches reject
-empty required strings; callers cannot choose invalid scope/kind combinations.
-The store repeats invariants at the public boundary because non-extension callers
-can construct `MemoryRecordDraft` directly.
+The handler narrows these parameters into an internal discriminated union and
+enforces per-branch invariants before any store call: the note branch
+preserves every W1 default and rejects `changeSummary`/`confirmUpdate`; the
+profile branch requires non-empty `content` and `changeSummary`, fixes
+`scope: user`/`kind: semantic`, and rejects contrary values; the playbook
+branch requires non-empty `title`, `content`, and explicit `scope`, fixes
+`kind: procedural`, and rejects `changeSummary`. Violations return an
+`invalid_request` tool result without touching a store. The store repeats
+invariants at the public boundary because non-extension callers can construct
+`MemoryRecordDraft` directly.
+
+Write-outcome mapping (D-009) — every case uses an existing arm:
+
+| Case | Layer | Outcome |
+|---|---|---|
+| Missing/invalid branch field (empty content; playbook without title/scope; profile scope ≠ user, kind ≠ semantic, or missing changeSummary) | extension | `invalid_request` tool result; store untouched |
+| Existing canonical playbook name without `confirmUpdate` | extension preflight | `confirmation_required` tool result; no write |
+| Draft with unknown `type`, session scope, wrong scope/kind for its type, empty canonical key, or oversized profile body | store | `unsupported` with reason |
+| Existing profile file invalid (occupied-by-invalid, B-004); default playbook path occupied by an invalid occupant; multiple valid files claiming one canonical name | store | `failed` with reason naming the conflicting path(s); nothing written |
+| Filesystem error during atomic write | store | `failed` with path + reason; no partial file (B-018) |
+
+Any outcome not representable with the existing union triggers D-006's
+stop-and-report path.
 
 For playbooks, the extension calls existing list-mode retrieval with
 `recordTypes: ["playbook"]`, compares canonical names, and returns a structured
@@ -628,9 +844,13 @@ every `before_agent_start`.
 
 `recall` keeps `{ query, limit? }`, but retrieves
 `recordTypes: ["note", "profile", "playbook"]`. Text matching and 5/20 result
-bounds remain unchanged. Rendering becomes type-neutral (“authored memory
-record”) while retaining type, title/name, scope, kind, timestamp, path, and full
-body. No automatic playbook relevance gate is added.
+bounds remain unchanged, with one addition *(2026-07-13 after review)*: a
+query-matching profile is returned pinned first, outside the limit window, so
+an old-timestamped profile can never be shadowed by newer matching records —
+the truncation notice's "use recall for the full profile" exit must always
+work. Rendering becomes type-neutral (“authored memory record”) while
+retaining type, title/name, scope, kind, timestamp, path, and full body. No
+automatic playbook relevance gate is added.
 
 ### Retrieval, injection, and budget accounting
 
@@ -654,17 +874,38 @@ no profile it can use all 12,000 bytes. If index metadata is cut, its footer say
 the index was truncated and points to `recall`. No truncation claim says records
 were deleted or fully loaded.
 
-The `context` hook continues removing older `agent-memory-context` messages, so
-manual edits are reflected next turn without accumulated stale profile/index
-messages.
+The `context` hook is **fixed, not inherited as-is** *(2026-07-13 after
+review, D-008)*: the shipped W1 handler removes every `agent-memory-context`
+message — including the one injected earlier in the same turn — and Pi applies
+`transformContext` before every LLM call, so the model never actually received
+the injected index. The W2 handler keeps exactly the newest
+`agent-memory-context` message and removes only older copies (B-020), proven
+by a composed before_agent_start-then-context test asserting the current
+profile/index is provider-visible. Manual edits remain reflected next turn
+without accumulated stale messages.
+
+Footer reservation *(2026-07-13 after review)*: all applicable notices — the
+oversized-profile notice with original/included byte counts and profile path,
+and the index-truncation footer, each with its `recall` direction — are
+computed and their bytes reserved **before** any excerpt is cut, so a final
+combined cut can never drop a required notice: excerpts shrink, notices never
+do. B-016/B-022's evidence includes a composed case with a multibyte oversized
+human profile plus an oversized index, asserting profile-first order, both
+notices with accurate counts, no replacement character, and a final size of at
+most 12,000 bytes.
 
 ### Cost, state, and failure ownership
 
 - Per-turn cost is one full scan/parse of eligible `notes/`, `playbooks/`, and
-  the reserved profile paths. A playbook save performs an additional collision
-  preflight scan before its write. This is accepted for authored stores in the
-  dozens; stores approaching hundreds of records remain the explicit ◆reassess
-  trigger. No cache is introduced.
+  the reserved profile paths. A playbook save is worst-case **three** store
+  scans, not one *(stated 2026-07-13 after review)*: the extension collision
+  preflight, the store's own current-title/conflict scan (repeated because
+  non-extension callers hit the public store directly), and the
+  notes+playbooks `index.md` regeneration rescan. Implementations may reuse
+  one scan where correctness permits, but reassess evidence must count the
+  worst case. This is accepted for authored stores in the dozens; stores
+  approaching hundreds of records remain the explicit ◆reassess trigger. No
+  cache is introduced.
 - Correctness state is only markdown on disk. Short-lived scan arrays and the
   authorization boolean do not outlive the turn or decide later correctness.
 - Every transient confirmation outcome has an exit: confirm and re-call with
@@ -706,9 +947,15 @@ messages.
   profile/playbook visible flows, collision confirmation/no pending state,
   cross-project profile injection, all-type recall, human override, byte budget,
   and temp-root/Cosmo guard evidence while retaining W1 tests.
-- `domains/shared/extensions/agent-memory/index.ts` — type-aware `remember`,
-  all-type `recall`, collision preflight, generic result rendering, and one
-  profile-first combined-budget context.
+- `domains/shared/extensions/agent-memory/index.ts` — type-aware `remember`
+  (flat registered schema, internal union validation, sequential
+  `executionMode`), all-type `recall` with profile pinning, collision
+  preflight, generic result rendering, one profile-first combined-budget
+  context with reserved footers, and the fixed keep-newest
+  `agent-memory-context` filter (B-020).
+- `tests/helpers/mocks/extension-api.ts` — only if capturing the registered
+  `executionMode` requires widening the mock; otherwise inspect the captured
+  registration as-is and leave this file unchanged.
 - `tests/domains/main-domain.test.ts` — Cosmo-only wiring/tool allowlist
   invariants and explicit-save prompt guidance.
 - `domains/main/prompts/cosmo.md` — profile/playbook scope and content guidance,
@@ -756,6 +1003,16 @@ definition/prompt.
   correctness-sensitive. Mitigation: retain temp-write + rename, clean temp/new
   files on failure, and test blocked create/update paths for both new types. A
   file is always old-complete or new-complete, never byte-partial.
+- **Same-turn context stripping regresses:** the keep-newest filter (B-020,
+  D-008) is the only thing standing between injection and an invisible index —
+  the exact defect W1 shipped. Mitigation: the composed
+  before_agent_start-then-context pipeline test and a mutation-gate entry for
+  the filter-everything fault.
+- **Parallel same-batch saves bypass confirmation:** Pi executes tool batches
+  in parallel by default. Mitigation: `remember` registers
+  `executionMode: "sequential"` (B-021, D-007) with a same-batch regression
+  test; W1's PID+`Date.now()` temp-file naming contention is recorded in the
+  B-001 audit as depending on sequential execution.
 - **Factory registration broadens access or authorization leaks between turns:**
   shared extensions auto-load. Mitigation: add no new tools, preserve W1
   factory-registration and per-turn/session reset guard, and assert non-Cosmo
@@ -778,10 +1035,10 @@ definition/prompt.
 
 | Order | Gate kind | Tier | Binding state | Threshold | Protocol | Degradation / notes |
 |---:|---|---|---|---|---|---|
-| 1 | `correctness` | universal | bound | Project-native test, lint, and typecheck evidence passes; all pre-existing W1 memory and agent-memory tests remain present and green; W2 tests make no model calls or real-home writes | project-discovered | hard fail |
-| 2 | `artifact-conformance` | universal | bound | B-001..B-019 have all required fields, root-relative evidence paths, and exact markers in the named test/audit files | artifact evidence | hard fail |
-| 3 | `boundary-conformance` | bindable | bound | `lib/memory/types.ts` is unchanged; `lib/memory/*` has no Pi/CLI/domain/architecture imports; only `main/cosmo` consumes agent-memory; architecture-map code is unchanged; no registry/backend/approval machinery appears | project-discovered | hard fail |
-| 4 | `mutation` | bindable | bound | Targeted negatives fail on: profile project scope/non-semantic kind, playbook non-procedural kind, cross-project playbook leak, same canonical name written without confirmation, collision response writing/persisting state, stale human edit cache, deleted records retained in injected context, oversized/Unicode profile exceeding budget, and failed writes leaving partial files | project-discovered | hard fail |
+| 1 | `correctness` | universal | bound | Project-native test, lint, and typecheck evidence passes; all pre-existing W1 memory and agent-memory tests remain present and green (sole sanctioned behavioral delta: the keep-newest context-filter contract, B-020); W2 tests make no model calls or real-home writes | project-discovered | hard fail |
+| 2 | `artifact-conformance` | universal | bound | B-001..B-024 have all required fields, root-relative evidence paths, and exact markers in the named test/audit files | artifact evidence | hard fail |
+| 3 | `mutation` | bindable | bound | Targeted negatives fail on: the context filter removing the current-turn injected message; parallel same-batch same-canonical-name saves both writing; profile project scope/non-semantic kind; playbook non-procedural kind; a profile/playbook under `notes/` or a note under `playbooks/` admitted; cross-project playbook leak; same canonical name written without confirmation; collision response writing/persisting state; old-name reuse blocked after a human rename; duplicate human-edited canonical titles retrieved without warning; stale human edit cache; deleted records retained in injected context; oversized/Unicode profile exceeding budget or dropping a required notice; and failed writes leaving partial files | project-discovered | hard fail |
+| 4 | `boundary-conformance` | bindable | bound | `lib/memory/types.ts` is unchanged; `lib/memory/*` has no Pi/CLI/domain/architecture imports; only `main/cosmo` consumes agent-memory; architecture-map code is unchanged; no registry/backend/approval machinery appears | project-discovered | hard fail |
 | 5 | `complexity` | bindable | unbound | W2 remains one store, two tools, fixed layout, finite discriminated variants, and no speculative configuration/dispatch layer | reviewer judgment | unbound, not enforced mechanically; reviewer must inspect |
 | 6 | `dead-code` | bindable | unbound | No W3 episodic capture, W4 consolidation/mining, pending proposal persistence, relevance gate, cache, embeddings, backend registry, extra agent wiring, or unused result variant ships | reviewer judgment | unbound, not enforced mechanically; reviewer must inspect |
 
@@ -802,7 +1059,10 @@ definition/prompt.
    report the spec's interface assumption failure.
 
 3. **Add authored policies and store behavior one red/green/refactor loop at a
-   time (B-004, B-008, B-011, B-012, B-014, B-017, B-018).** Start with profile
+   time (B-008, B-011, B-012, B-014, B-017, B-018; the store half of B-004 —
+   in-place singleton replacement and the occupied-by-invalid refusal — with a
+   `tests/memory/markdown-store.test.ts` test; B-004 itself completes in step
+   4 where its visible `changeSummary` result exists).** Start with profile
    create/update at the fixed user path, then playbook canonical creation and
    stable updates, then multi-scope retrieval, OKF validation/warnings, human
    rename/edit/delete behavior, profile write bound, atomic failure cases, and
@@ -810,24 +1070,38 @@ definition/prompt.
    assertions. Refactor only after each named test passes; use an explicit switch,
    not a registry.
 
-4. **Extend the save edge without adding tools or pending state (B-003, B-005,
-   B-007, B-009, B-019).** First add the discriminated `remember` schema while
-   keeping omitted `type` as W1 note. Add profile visible create/update results
-   and complete-body/change-summary validation. Then add playbook collision
-   preflight, no-write `confirmation_required`, confirmed update, and non-Cosmo
-   guard/temp-root evidence. Test decline/unanswered behavior by proving no tool
-   call, file, store directory, `appendEntry`, or closure state exists.
+4. **Extend the save edge without adding tools or pending state (B-005, B-007,
+   B-009, B-019, B-021, B-024; B-004 completes here with the visible
+   `changeSummary` result; B-003's save/result path lands here and B-003
+   completes in step 5 with its cross-project injection assertion).** First add
+   the flat `remember` schema (object root, internal union validation, D-001)
+   registered with `executionMode: "sequential"` (B-021) while keeping omitted
+   `type` as W1 note. Add profile visible create/update results and
+   complete-body/change-summary validation, and visible write-failure results
+   (B-024). Then add playbook collision preflight, no-write
+   `confirmation_required`, confirmed update, the same-batch sequential
+   regression test, and non-Cosmo guard/temp-root evidence. Test
+   decline/unanswered behavior by proving no tool call, file, store directory,
+   `appendEntry`, or store-factory call occurs.
 
-5. **Generalize recall and build the single profile-first context (B-010, B-013,
-   B-016, B-017).** Use one all-type list retrieval, partition profile from the
-   50-entry note/playbook index, render current disk content, and apply UTF-8-safe
-   12,000-byte accounting including both profile/index footers. Add later-session,
-   cross-project, human edit/delete, Unicode, oversize-human-profile, and full
-   recall evidence before changing documentation.
+5. **Fix the context pipeline, generalize recall, and build the single
+   profile-first context (B-010, B-013, B-016, B-020, B-022, B-023; B-003
+   completes here).** Fix the `context` handler to keep the newest
+   `agent-memory-context` message (B-020) with the composed
+   before_agent_start-then-context test first — nothing else in this step is
+   observable until the injection actually survives. Then use one all-type list
+   retrieval, partition profile from the 50-entry note/playbook index, render
+   current disk content, and apply UTF-8-safe 12,000-byte accounting with
+   reserved profile/index footers. Add recall profile pinning, later-session,
+   cross-project (B-003), human edit/delete (B-023), Unicode,
+   oversize-human-profile (B-022), and full recall evidence before changing
+   documentation.
 
 6. **Encode conversational UX and document W2 (B-006, B-019).** Update Cosmo's
    prompt with direct/proposed save timing, explicit scope, complete profile body,
-   collision confirmation, visible outcome, no nagging, and pull recall. Update
+   the rule that an injected truncated profile excerpt is never an update source
+   (recall the full body first, per B-022), collision confirmation, visible
+   outcome, no nagging, and pull recall. Update
    main-domain tests without adding tools or consumers. Expand `docs/memory.md`
    with exact layout/OKF examples, profile bound, canonical playbook identity,
    budget/cost stance, human operations, and exclusions.
@@ -839,3 +1113,41 @@ definition/prompt.
    reveal approval-state, cache, registry, backend, extra-consumer, W3/W4, or
    shared-interface pressure, remove it or revise/abort the plan rather than
    silently expanding scope.
+
+## Review Synthesis (2026-07-13)
+
+Two independent review channels ran against the committed plan draft
+(`b2405e6`) and produced strongly complementary defect sets:
+
+- **Chain plan-reviewer** (`review.md`, PR-001..PR-012 + missing-coverage
+  list): headline PR-001 — the shipped W1 `context` filter strips the
+  same-turn injection (independently found by the other channel). Unique
+  finds: Pi's default parallel tool batches bypassing collision confirmation
+  (PR-002 → B-021/D-007), the oversized-human-profile safe-replacement flow
+  (PR-003 → B-022), rename/alias/duplicate-title semantics (PR-004 → D-003
+  resolution), evidence honesty for conversational behaviors (PR-005 →
+  B-006/B-007 revisions), the location/type validation matrix (PR-006 →
+  B-012), dual-footer budget reservation (PR-007), the write-outcome mapping
+  table (PR-008/D-009), test-home observability splits (PR-009 → B-022,
+  B-023, B-024, B-017 narrowed), audit coverage of `ctx.ui.confirm` and
+  `executionMode` (PR-010 → B-001), canonical gate order + missing mutations
+  (PR-011), playbook-save scan cost (PR-012), and the index-format/description
+  defaults (missing coverage → D-010).
+- **Independent adversarial workflow** (4 lenses → refute-first verifiers; 10
+  verified findings across 14 agents, 0 refuted): headline — three lenses
+  independently converged on the top-level TypeBox union being unserializable
+  by Pi 0.80.6's provider adapters (D-001 revised to a flat object root); the
+  feasibility lens independently confirmed the same-turn context-stripping
+  defect (→ B-020/D-008); design-attack added the occupied-by-invalid profile
+  overwrite (→ B-004), freed-canonical-name uncreatability (→ D-003 alternate
+  filename), and recall-shadowed oversized profiles (→ B-022 profile
+  pinning); scope-sequencing confirmed the B-003/B-004/B-017
+  implementation-order attribution defects (→ co-listings and the B-017/B-022
+  split).
+
+Dispositions: no verified finding rejected. All highs and majors are applied
+as behavior/design changes above; minors are applied where they closed a real
+gap (alternate filename, recall pinning, scan-cost statement, evidence
+splits). The behavior spine grew B-001..B-019 → B-001..B-024; the quality
+contract was reordered to the canonical ladder and its mutation threshold now
+carries the review-discovered faults.
