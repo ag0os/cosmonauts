@@ -1,4 +1,5 @@
 import {
+	chmod,
 	mkdir,
 	readdir,
 	readFile,
@@ -6,7 +7,7 @@ import {
 	stat,
 	writeFile,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import matter from "gray-matter";
 import { describe, expect, test } from "vitest";
 import {
@@ -1043,6 +1044,61 @@ describe("markdown memory store", () => {
 		);
 	});
 
+	test("creates a freed canonical playbook name across a dense suffix range", async () => {
+		// D-003: a freed canonical name must never become uncreatable. The first free
+		// suffix is found however dense the occupied range is, without a serial stat
+		// per candidate and without a cap that could refuse a creatable name.
+		const projectRoot = join(tmp.path, "dense-suffix-project");
+		const userRoot = join(tmp.path, "dense-suffix-user");
+		const store = createMarkdownMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+		});
+		const created = await store.write({
+			type: "playbook",
+			scope: "project",
+			kind: "procedural",
+			title: "Ship it",
+			description: "Original.",
+			content: "Original steps.",
+			tags: [],
+			timestamp: "2026-07-13T10:00:00.000Z",
+		});
+		if (created.kind !== "written") throw new Error("expected playbook write");
+		const playbooksDir = join(projectRoot, "memory", "agent", "playbooks");
+		expect(created.path).toBe(join(playbooksDir, "ship-it.md"));
+
+		// Human retitles the record in place: "ship-it" is freed, but its default
+		// path stays occupied by a valid, differently-named playbook.
+		const retitled = (await readFile(created.path, "utf-8")).replace(
+			"title: Ship it",
+			"title: Ship it later",
+		);
+		await writeFile(created.path, retitled, "utf-8");
+		for (let suffix = 2; suffix <= 120; suffix += 1) {
+			await writeFile(
+				join(playbooksDir, `ship-it-${suffix}.md`),
+				"occupied by an unrelated file\n",
+				"utf-8",
+			);
+		}
+
+		const recreated = await store.write({
+			type: "playbook",
+			scope: "project",
+			kind: "procedural",
+			title: "Ship it",
+			description: "A new playbook reusing the freed name.",
+			content: "Distinct new steps.",
+			tags: [],
+			timestamp: "2026-07-13T11:00:00.000Z",
+		});
+		expect(recreated).toMatchObject({
+			kind: "written",
+			path: join(playbooksDir, "ship-it-121.md"),
+		});
+	});
+
 	test("rejects profile writes over the 4000 byte body bound @cosmo-behavior plan:profile-playbooks#B-017", async () => {
 		const projectRoot = join(tmp.path, "profile-bound-project");
 		const userRoot = join(tmp.path, "profile-bound-user");
@@ -1206,6 +1262,69 @@ describe("markdown memory store", () => {
 				parsed.content.trim(),
 			);
 			expect(parsed.data).toMatchObject({ type, scope });
+		}
+
+		// Fault-inject the record write itself. Making the record's directory
+		// read-only blocks creating the temp file while leaving the existing record
+		// file writable, so an existing record must survive byte-identical. A
+		// non-atomic direct writeFile(path) would instead succeed and mutate it.
+		const isRoot = process.getuid?.() === 0;
+		for (const type of isRoot ? [] : (["profile", "playbook"] as const)) {
+			const projectRoot = join(tmp.path, `${type}-atomic-project`);
+			const userRoot = join(tmp.path, `${type}-atomic-user`);
+			const store = createMarkdownMemoryStore({
+				projectRoot,
+				userCosmonautsRoot: userRoot,
+			});
+			const scope = type === "profile" ? "user" : "project";
+			const first = await store.write({
+				type,
+				scope,
+				kind: type === "profile" ? "semantic" : "procedural",
+				title: type === "profile" ? "User profile" : "Atomic record",
+				description: "Old complete record.",
+				content: "Old complete body.",
+				tags: [],
+				timestamp: "2026-07-13T10:00:00.000Z",
+			});
+			if (first.kind !== "written") throw new Error(`expected ${type} write`);
+			const before = await readFile(first.path, "utf-8");
+			const recordDir = dirname(first.path);
+
+			await chmod(recordDir, 0o500);
+			let failedWrite: Awaited<ReturnType<typeof store.write>>;
+			try {
+				failedWrite = await store.write({
+					type,
+					scope,
+					kind: type === "profile" ? "semantic" : "procedural",
+					title: type === "profile" ? "User profile" : "Atomic record",
+					description: "New complete record.",
+					content: "New complete body.",
+					tags: [],
+					timestamp: "2026-07-13T11:00:00.000Z",
+				});
+			} finally {
+				await chmod(recordDir, 0o700);
+			}
+
+			expect(failedWrite).toMatchObject({ kind: "failed", path: first.path });
+			if (failedWrite.kind !== "failed") {
+				throw new Error(`expected failed ${type} record write`);
+			}
+			expect(failedWrite.reason).toContain(type);
+			expect(failedWrite.reason).toContain(first.path);
+			// Old-complete, never truncated and never replaced.
+			expect(await readFile(first.path, "utf-8")).toBe(before);
+			expect(await readFile(first.path, "utf-8")).toContain(
+				"Old complete body.",
+			);
+			expect(await readFile(first.path, "utf-8")).not.toContain(
+				"New complete body.",
+			);
+			expect(
+				(await readdir(recordDir)).filter((entry) => entry.endsWith(".tmp")),
+			).toEqual([]);
 		}
 
 		expect(

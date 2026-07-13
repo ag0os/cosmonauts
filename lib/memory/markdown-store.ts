@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
 import {
-	lstat,
 	mkdir,
 	readdir,
 	readFile,
@@ -49,9 +48,6 @@ const NOOP_REASON =
 	"W1 performs no background memory consolidation, pruning, decay, or dreaming.";
 const SESSION_SKIPPED_REASON =
 	"Session-scoped markdown memory is not built in W1; Pi session state and compaction cover short-term memory.";
-// A freed canonical name falls back to a numeric suffix. Bound the probe so a dense
-// suffix range fails honestly instead of scanning the filesystem indefinitely.
-const MAX_ALTERNATE_PLAYBOOK_PATHS = 100;
 
 export interface MarkdownMemoryStoreOptions {
 	readonly projectRoot: string;
@@ -661,24 +657,21 @@ async function firstAvailablePlaybookPath(options: {
 	readonly playbooksDir: string;
 	readonly canonicalKey: string;
 }): Promise<string> {
-	for (let suffix = 2; suffix < 2 + MAX_ALTERNATE_PLAYBOOK_PATHS; suffix += 1) {
-		const path = join(
-			options.playbooksDir,
-			`${options.canonicalKey}-${suffix}.md`,
-		);
-		if (!(await pathExists(path))) return path;
+	// One listing, then an in-memory scan: the first free suffix is always found
+	// (D-003 — a freed canonical name must never become uncreatable) without a
+	// serial stat per occupied candidate.
+	const taken = new Set(await readdirIfExists(options.playbooksDir));
+	for (let suffix = 2; ; suffix += 1) {
+		const fileName = `${options.canonicalKey}-${suffix}.md`;
+		if (!taken.has(fileName)) return join(options.playbooksDir, fileName);
 	}
-	throw new Error(
-		`No free playbook filename for "${options.canonicalKey}" after ${MAX_ALTERNATE_PLAYBOOK_PATHS} attempts; remove unused playbook files in ${options.playbooksDir}.`,
-	);
 }
 
-async function pathExists(path: string): Promise<boolean> {
+async function readdirIfExists(directory: string): Promise<string[]> {
 	try {
-		await lstat(path);
-		return true;
+		return await readdir(directory);
 	} catch (error: unknown) {
-		if (isMissingFile(error)) return false;
+		if (isMissingFile(error)) return [];
 		throw error;
 	}
 }
