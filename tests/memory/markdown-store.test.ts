@@ -9,7 +9,11 @@ import {
 import { join } from "node:path";
 import matter from "gray-matter";
 import { describe, expect, test } from "vitest";
-import { createMarkdownMemoryStore } from "../../lib/memory/index.ts";
+import {
+	canonicalizePlaybookName,
+	createMarkdownMemoryStore,
+	PROFILE_WRITE_MAX_BYTES,
+} from "../../lib/memory/index.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("markdown-memory-store-");
@@ -393,6 +397,10 @@ describe("markdown memory store", () => {
 		const indexPath = join(projectRoot, "memory", "agent", "index.md");
 		const firstIndex = await readFile(indexPath, "utf-8");
 		const firstIndexStat = await stat(indexPath);
+		expect(firstIndex).toContain("type: memory-index");
+		expect(firstIndex).toContain(
+			"- 2026-07-08T14:00:00.000Z [project/semantic] Stable index",
+		);
 
 		const second = await store.write(draft);
 		expect(second).toMatchObject({ kind: "written", path: first.path });
@@ -424,6 +432,862 @@ describe("markdown memory store", () => {
 		await expect(readdir(blockedRoot)).rejects.toMatchObject({
 			code: "ENOTDIR",
 		});
+	});
+
+	test("canonicalizes playbook names into stable scoped resources @cosmo-behavior plan:profile-playbooks#B-008", async () => {
+		const projectRoot = join(tmp.path, "canonical-project");
+		const userRoot = join(tmp.path, "canonical-user");
+		const store = createMarkdownMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+		});
+
+		expect(canonicalizePlaybookName("  Ｒélease — Déploy!! ")).toBe(
+			"rélease-déploy",
+		);
+		expect(canonicalizePlaybookName("界".repeat(100))).toBe("界".repeat(80));
+		expect([...canonicalizePlaybookName("界".repeat(100))]).toHaveLength(80);
+		expect(canonicalizePlaybookName(" --- ")).toBe("");
+
+		const projectWrite = await store.write({
+			type: "playbook",
+			scope: "project",
+			kind: "procedural",
+			title: "  Ｒélease — Déploy!! ",
+			description: "",
+			content: "Verify, tag, then deploy.",
+			tags: ["release"],
+			timestamp: "2026-07-13T12:00:00.000Z",
+		});
+		expect(projectWrite).toMatchObject({
+			kind: "written",
+			path: join(
+				projectRoot,
+				"memory",
+				"agent",
+				"playbooks",
+				"rélease-déploy.md",
+			),
+			record: {
+				type: "playbook",
+				scope: "project",
+				description: "Ｒélease — Déploy!!",
+				resource: "memory/agent/playbooks/rélease-déploy.md",
+			},
+		});
+		if (projectWrite.kind !== "written") {
+			throw new Error("expected project playbook write");
+		}
+		expect(
+			await readFile(join(projectRoot, "memory", "agent", "index.md"), "utf-8"),
+		).toContain("  Ｒélease — Déploy!!");
+
+		const sameProjectIdentity = await store.write({
+			type: "playbook",
+			scope: "project",
+			kind: "procedural",
+			title: "RÉLEASE — DÉPLOY",
+			description: "Updated in place.",
+			content: "Updated steps.",
+			tags: [],
+			timestamp: "2026-07-13T13:00:00.000Z",
+		});
+		expect(sameProjectIdentity).toMatchObject({
+			kind: "written",
+			path: projectWrite.path,
+		});
+
+		const userWrite = await store.write({
+			type: "playbook",
+			scope: "user",
+			kind: "procedural",
+			title: "RÉLEASE — DÉPLOY",
+			description: "Same key in the user scope.",
+			content: "User-wide steps.",
+			tags: [],
+			timestamp: "2026-07-13T14:00:00.000Z",
+		});
+		expect(userWrite).toMatchObject({
+			kind: "written",
+			path: join(userRoot, "memory", "agent", "playbooks", "rélease-déploy.md"),
+		});
+		expect(userWrite).not.toMatchObject({ path: projectWrite.path });
+
+		const emptyKey = await store.write({
+			type: "playbook",
+			scope: "project",
+			kind: "procedural",
+			title: " --- ",
+			description: "Invalid title.",
+			content: "No write.",
+			tags: [],
+		});
+		expect(emptyKey).toMatchObject({
+			kind: "unsupported",
+			reason: expect.stringMatching(/canonical.*empty/i),
+		});
+		expect(
+			await readdir(join(projectRoot, "memory", "agent", "playbooks")),
+		).toEqual(["rélease-déploy.md"]);
+
+		const invalidOccupantPath = join(
+			projectRoot,
+			"memory",
+			"agent",
+			"playbooks",
+			"occupied.md",
+		);
+		const invalidOccupant =
+			"---\ntype: playbook\n---\nHuman-owned invalid occupant.\n";
+		await writeFile(invalidOccupantPath, invalidOccupant, "utf-8");
+		const occupied = await store.write({
+			type: "playbook",
+			scope: "project",
+			kind: "procedural",
+			title: "Occupied",
+			description: "Must not overwrite.",
+			content: "No write.",
+			tags: [],
+		});
+		expect(occupied).toMatchObject({
+			kind: "failed",
+			path: invalidOccupantPath,
+			reason: expect.stringMatching(/invalid occupant/i),
+		});
+		expect(await readFile(invalidOccupantPath, "utf-8")).toBe(invalidOccupant);
+		await expect(
+			store.write({
+				type: "playbook",
+				scope: "project",
+				kind: "semantic",
+				title: "Wrong kind",
+				description: "Unsupported.",
+				content: "No write.",
+				tags: [],
+			}),
+		).resolves.toMatchObject({ kind: "unsupported" });
+	});
+
+	test("keeps profile and playbook scopes isolated across projects @cosmo-behavior plan:profile-playbooks#B-011", async () => {
+		const projectA = join(tmp.path, "scope-project-a");
+		const projectB = join(tmp.path, "scope-project-b");
+		const userRoot = join(tmp.path, "scope-user");
+		const firstStore = createMarkdownMemoryStore({
+			projectRoot: projectA,
+			userCosmonautsRoot: userRoot,
+		});
+		const secondStore = createMarkdownMemoryStore({
+			projectRoot: projectB,
+			userCosmonautsRoot: userRoot,
+		});
+
+		await firstStore.write({
+			type: "playbook",
+			scope: "project",
+			kind: "procedural",
+			title: "Project A release",
+			description: "Only project A uses this.",
+			content: "Project A steps.",
+			tags: [],
+			timestamp: "2026-07-13T13:00:00.000Z",
+		});
+		await firstStore.write({
+			type: "playbook",
+			scope: "user",
+			kind: "procedural",
+			title: "Shared review",
+			description: "Shared across projects.",
+			content: "Shared review steps.",
+			tags: [],
+			timestamp: "2026-07-13T14:00:00.000Z",
+		});
+		await firstStore.write({
+			type: "profile",
+			scope: "user",
+			kind: "semantic",
+			title: "User profile",
+			description: "Durable user profile and preferences.",
+			content: "Prefer concise explanations.",
+			tags: [],
+			timestamp: "2026-07-13T15:00:00.000Z",
+		});
+
+		await expect(
+			firstStore.write({
+				type: "profile",
+				scope: "project",
+				kind: "semantic",
+				title: "Project profile",
+				description: "Not supported.",
+				content: "Must not be eligible.",
+				tags: [],
+			}),
+		).resolves.toMatchObject({ kind: "unsupported" });
+		await expect(
+			firstStore.write({
+				type: "playbook",
+				scope: "session",
+				kind: "procedural",
+				title: "Session playbook",
+				description: "Not supported.",
+				content: "Must stay skipped.",
+				tags: [],
+			}),
+		).resolves.toMatchObject({ kind: "unsupported" });
+
+		const firstResult = await firstStore.retrieve(
+			{ projectRoot: projectA, scopes: ["session", "project", "user"] },
+			{ recordTypes: ["profile", "playbook"] },
+		);
+		expect(firstResult.records.map((record) => record.title)).toEqual([
+			"User profile",
+			"Shared review",
+			"Project A release",
+		]);
+		expect(firstResult.skippedScopes).toHaveLength(1);
+		expect(firstResult.skippedScopes[0]?.scope).toBe("session");
+
+		const secondResult = await secondStore.retrieve(
+			{ projectRoot: projectB, scopes: ["session", "project", "user"] },
+			{ recordTypes: ["profile", "playbook"] },
+		);
+		expect(secondResult.records.map((record) => record.title)).toEqual([
+			"User profile",
+			"Shared review",
+		]);
+		expect(secondResult.records).not.toContainEqual(
+			expect.objectContaining({ title: "Project A release" }),
+		);
+		await expect(
+			stat(join(projectA, "memory", "agent", "profile.md")),
+		).rejects.toMatchObject({ code: "ENOENT" });
+	});
+
+	test("skips malformed profile and playbook records with file warnings @cosmo-behavior plan:profile-playbooks#B-012", async () => {
+		const emptyProject = join(tmp.path, "malformed-empty-project");
+		const emptyUser = join(tmp.path, "malformed-empty-user");
+		const emptyStore = createMarkdownMemoryStore({
+			projectRoot: emptyProject,
+			userCosmonautsRoot: emptyUser,
+		});
+		await expect(
+			emptyStore.retrieve(
+				{ projectRoot: emptyProject, scopes: ["project", "user"] },
+				{},
+			),
+		).resolves.toMatchObject({ records: [], warnings: [] });
+		await expect(stat(join(emptyProject, "memory"))).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+		await expect(stat(join(emptyUser, "memory"))).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+
+		const projectRoot = join(tmp.path, "malformed-project");
+		const userRoot = join(tmp.path, "malformed-user");
+		const store = createMarkdownMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+		});
+		const userProfilePath = join(userRoot, "memory", "agent", "profile.md");
+		await mkdir(join(userRoot, "memory", "agent"), { recursive: true });
+
+		const invalidProfiles = [
+			renderRecord({
+				type: "note",
+				scope: "user",
+				kind: "semantic",
+				resource: "memory/agent/profile.md",
+				title: "Wrong reserved type",
+			}),
+			renderRecord({
+				type: "profile",
+				scope: "project",
+				kind: "semantic",
+				resource: "memory/agent/profile.md",
+				title: "Wrong profile scope",
+			}),
+			renderRecord({
+				type: "profile",
+				scope: "user",
+				kind: "procedural",
+				resource: "memory/agent/profile.md",
+				title: "Wrong profile kind",
+			}),
+			"---\ntype: profile\ninvalid: [\n---\nMalformed profile\n",
+		];
+		for (const raw of invalidProfiles) {
+			await writeFile(userProfilePath, raw, "utf-8");
+			const invalidResult = await store.retrieve(
+				{ projectRoot, scopes: ["user"] },
+				{},
+			);
+			expect(invalidResult.records).toEqual([]);
+			expect(invalidResult.warnings).toEqual([
+				{
+					path: userProfilePath,
+					message: expect.any(String),
+				},
+			]);
+		}
+
+		const healthyNote = await writeRecordFile({
+			root: projectRoot,
+			relativePath: "memory/agent/notes/nested/healthy.md",
+			type: "note",
+			scope: "project",
+			kind: "semantic",
+			title: "Healthy recursive note",
+			timestamp: "2026-07-13T10:00:00.000Z",
+		});
+		const healthyPlaybook = await writeRecordFile({
+			root: projectRoot,
+			relativePath: "memory/agent/playbooks/healthy.md",
+			type: "playbook",
+			scope: "project",
+			kind: "procedural",
+			title: "Healthy playbook",
+			timestamp: "2026-07-13T11:00:00.000Z",
+		});
+		await writeFile(
+			userProfilePath,
+			renderRecord({
+				type: "profile",
+				scope: "user",
+				kind: "semantic",
+				resource: "memory/agent/profile.md",
+				title: "Healthy profile",
+				timestamp: "2026-07-13T12:00:00.000Z",
+			}),
+			"utf-8",
+		);
+
+		const malformedNote = join(
+			projectRoot,
+			"memory",
+			"agent",
+			"notes",
+			"malformed.md",
+		);
+		await writeFile(
+			malformedNote,
+			"---\ntype: note\n---\nMissing fields\n",
+			"utf-8",
+		);
+		const profileUnderNotes = await writeRecordFile({
+			root: projectRoot,
+			relativePath: "memory/agent/notes/profile.md",
+			type: "profile",
+			scope: "project",
+			kind: "semantic",
+			title: "Profile under notes",
+		});
+		const playbookUnderNotes = await writeRecordFile({
+			root: projectRoot,
+			relativePath: "memory/agent/notes/playbook.md",
+			type: "playbook",
+			scope: "project",
+			kind: "procedural",
+			title: "Playbook under notes",
+		});
+		const noteUnderPlaybooks = await writeRecordFile({
+			root: projectRoot,
+			relativePath: "memory/agent/playbooks/note.md",
+			type: "note",
+			scope: "project",
+			kind: "semantic",
+			title: "Note under playbooks",
+		});
+		const nestedPlaybook = await writeRecordFile({
+			root: projectRoot,
+			relativePath: "memory/agent/playbooks/nested/playbook.md",
+			type: "playbook",
+			scope: "project",
+			kind: "procedural",
+			title: "Nested playbook",
+		});
+		const wrongScopePlaybook = await writeRecordFile({
+			root: projectRoot,
+			relativePath: "memory/agent/playbooks/wrong-scope.md",
+			type: "playbook",
+			scope: "user",
+			kind: "procedural",
+			title: "Wrong scope playbook",
+		});
+		const wrongKindPlaybook = await writeRecordFile({
+			root: projectRoot,
+			relativePath: "memory/agent/playbooks/wrong-kind.md",
+			type: "playbook",
+			scope: "project",
+			kind: "semantic",
+			title: "Wrong kind playbook",
+		});
+		const malformedPlaybook = join(
+			projectRoot,
+			"memory",
+			"agent",
+			"playbooks",
+			"malformed.md",
+		);
+		await writeFile(
+			malformedPlaybook,
+			"---\ntype: playbook\n---\nMissing fields\n",
+			"utf-8",
+		);
+		const projectProfile = await writeRecordFile({
+			root: projectRoot,
+			relativePath: "memory/agent/profile.md",
+			type: "profile",
+			scope: "project",
+			kind: "semantic",
+			title: "Project profile",
+		});
+
+		const result = await store.retrieve(
+			{ projectRoot, scopes: ["session", "project", "user"] },
+			{},
+		);
+		expect(result.records.map((record) => record.path)).toEqual([
+			userProfilePath,
+			healthyPlaybook,
+			healthyNote,
+		]);
+		expect(result.skippedScopes).toHaveLength(1);
+		const warningPaths = result.warnings
+			.map((warning) => warning.path)
+			.filter((path): path is string => path !== undefined);
+		for (const invalidPath of [
+			malformedNote,
+			profileUnderNotes,
+			playbookUnderNotes,
+			noteUnderPlaybooks,
+			nestedPlaybook,
+			wrongScopePlaybook,
+			wrongKindPlaybook,
+			malformedPlaybook,
+			projectProfile,
+		]) {
+			expect(warningPaths).toContain(invalidPath);
+		}
+		expect(
+			result.warnings.find((warning) => warning.path === nestedPlaybook)
+				?.message,
+		).toMatch(/direct child/i);
+		expect(
+			result.warnings.find((warning) => warning.path === wrongScopePlaybook)
+				?.message,
+		).toMatch(/scope/i);
+		expect(
+			result.warnings.find((warning) => warning.path === wrongKindPlaybook)
+				?.message,
+		).toMatch(/procedural/i);
+		expect(
+			result.warnings.find((warning) => warning.path === noteUnderPlaybooks)
+				?.message,
+		).toMatch(/type|playbook/i);
+
+		const usable = await store.retrieve(
+			{ projectRoot, scopes: ["project", "user"] },
+			{ text: "Healthy" },
+		);
+		expect(usable.records).toHaveLength(3);
+	});
+
+	test("reflects playbook rename edits and deletion without a stale cache @cosmo-behavior plan:profile-playbooks#B-014", async () => {
+		const projectRoot = join(tmp.path, "rename-project");
+		const userRoot = join(tmp.path, "rename-user");
+		const store = createMarkdownMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+		});
+		const created = await store.write({
+			type: "playbook",
+			scope: "project",
+			kind: "procedural",
+			title: "Deploy now",
+			description: "Original deployment.",
+			content: "Original steps.",
+			tags: [],
+			timestamp: "2026-07-13T10:00:00.000Z",
+		});
+		if (created.kind !== "written") throw new Error("expected playbook write");
+		const originalPath = created.path;
+		const originalResource = created.record.resource;
+		const indexPath = join(projectRoot, "memory", "agent", "index.md");
+		expect(await readFile(indexPath, "utf-8")).toContain("Deploy now");
+
+		await writeFile(
+			originalPath,
+			renderRecord({
+				type: "playbook",
+				scope: "project",
+				kind: "procedural",
+				title: "Release now",
+				description: "Human-retitled release.",
+				resource: originalResource,
+				content: "Human-edited steps.",
+				timestamp: "2026-07-13T11:00:00.000Z",
+			}),
+			"utf-8",
+		);
+		const edited = await store.retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ recordTypes: ["playbook"] },
+		);
+		expect(edited.records).toMatchObject([
+			{
+				title: "Release now",
+				content: "Human-edited steps.",
+				path: originalPath,
+			},
+		]);
+		const oldNameLookup = await store.retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ text: "Deploy now", recordTypes: ["playbook"] },
+		);
+		expect(oldNameLookup.records).toEqual([]);
+		expect(await readFile(indexPath, "utf-8")).toContain("Deploy now");
+
+		const sameNameUpdate = await store.write({
+			type: "playbook",
+			scope: "project",
+			kind: "procedural",
+			title: "release NOW!",
+			description: "Confirmed current title update.",
+			content: "Confirmed updated steps.",
+			tags: [],
+			timestamp: "2026-07-13T12:00:00.000Z",
+		});
+		expect(sameNameUpdate).toMatchObject({
+			kind: "written",
+			path: originalPath,
+		});
+
+		const reusedOldName = await store.write({
+			type: "playbook",
+			scope: "project",
+			kind: "procedural",
+			title: "Deploy now",
+			description: "The freed old name.",
+			content: "A distinct new procedure.",
+			tags: [],
+			timestamp: "2026-07-13T13:00:00.000Z",
+		});
+		expect(reusedOldName).toMatchObject({
+			kind: "written",
+			path: join(
+				projectRoot,
+				"memory",
+				"agent",
+				"playbooks",
+				"deploy-now-2.md",
+			),
+		});
+		if (reusedOldName.kind !== "written") {
+			throw new Error("expected freed-name playbook write");
+		}
+		const regeneratedIndex = await readFile(indexPath, "utf-8");
+		expect(regeneratedIndex).toContain("release NOW!");
+		expect(regeneratedIndex).toContain("Deploy now");
+
+		const duplicatePath = await writeRecordFile({
+			root: projectRoot,
+			relativePath: "memory/agent/playbooks/manual-duplicate.md",
+			type: "playbook",
+			scope: "project",
+			kind: "procedural",
+			title: "DEPLOY NOW!!",
+			content: "Human duplicate.",
+			timestamp: "2026-07-13T14:00:00.000Z",
+		});
+		const ambiguous = await store.retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ recordTypes: ["playbook"] },
+		);
+		expect(
+			ambiguous.records.filter(
+				(record) => canonicalizePlaybookName(record.title) === "deploy-now",
+			),
+		).toHaveLength(2);
+		const duplicateWarning = ambiguous.warnings.find(
+			(warning) =>
+				warning.message.includes(reusedOldName.path) &&
+				warning.message.includes(duplicatePath),
+		);
+		expect(duplicateWarning).toBeDefined();
+
+		const refused = await store.write({
+			type: "playbook",
+			scope: "project",
+			kind: "procedural",
+			title: "deploy now",
+			description: "Must not guess.",
+			content: "No write.",
+			tags: [],
+		});
+		expect(refused).toMatchObject({
+			kind: "failed",
+			reason: expect.stringContaining(reusedOldName.path),
+		});
+		if (refused.kind !== "failed")
+			throw new Error("expected ambiguous failure");
+		expect(refused.reason).toContain(duplicatePath);
+
+		await rm(originalPath);
+		const afterDeletion = await store.retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ recordTypes: ["playbook"] },
+		);
+		expect(afterDeletion.records.map((record) => record.title)).not.toContain(
+			"release NOW!",
+		);
+	});
+
+	test("rejects profile writes over the 4000 byte body bound @cosmo-behavior plan:profile-playbooks#B-017", async () => {
+		const projectRoot = join(tmp.path, "profile-bound-project");
+		const userRoot = join(tmp.path, "profile-bound-user");
+		const store = createMarkdownMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+		});
+		expect(PROFILE_WRITE_MAX_BYTES).toBe(4000);
+		const original = await store.write({
+			type: "profile",
+			scope: "user",
+			kind: "semantic",
+			title: "User profile",
+			description: "Durable user profile and preferences.",
+			content: "Original complete profile.",
+			tags: [],
+			timestamp: "2026-07-13T10:00:00.000Z",
+		});
+		if (original.kind !== "written") throw new Error("expected profile write");
+		const originalRaw = await readFile(original.path, "utf-8");
+		const oversized = "é".repeat(2001);
+		expect(Buffer.byteLength(oversized, "utf-8")).toBe(4002);
+
+		const rejected = await store.write({
+			type: "profile",
+			scope: "user",
+			kind: "semantic",
+			title: "User profile",
+			description: "Durable user profile and preferences.",
+			content: oversized,
+			tags: [],
+			timestamp: "2026-07-13T11:00:00.000Z",
+		});
+		expect(rejected).toMatchObject({
+			kind: "unsupported",
+			reason: expect.stringMatching(/4000.*4002|4002.*4000/),
+		});
+		expect(await readFile(original.path, "utf-8")).toBe(originalRaw);
+
+		const humanRaw = renderRecord({
+			type: "profile",
+			scope: "user",
+			kind: "semantic",
+			title: "User profile",
+			description: "Oversized human profile.",
+			resource: "memory/agent/profile.md",
+			content: oversized,
+			timestamp: "2026-07-13T12:00:00.000Z",
+		});
+		await writeFile(original.path, humanRaw, "utf-8");
+		const retrieved = await store.retrieve(
+			{ projectRoot, scopes: ["user"] },
+			{ recordTypes: ["profile"] },
+		);
+		expect(retrieved.records).toMatchObject([
+			{ type: "profile", content: oversized, path: original.path },
+		]);
+		expect(await readFile(original.path, "utf-8")).toBe(humanRaw);
+	});
+
+	test("reports profile and playbook write failures without partial files @cosmo-behavior plan:profile-playbooks#B-018", async () => {
+		const blockedProfileRoot = join(tmp.path, "blocked-profile-root");
+		await writeFile(blockedProfileRoot, "not a directory\n", "utf-8");
+		const blockedProfileStore = createMarkdownMemoryStore({
+			projectRoot: join(tmp.path, "blocked-profile-project"),
+			userCosmonautsRoot: blockedProfileRoot,
+		});
+		const profileCreate = await blockedProfileStore.write({
+			type: "profile",
+			scope: "user",
+			kind: "semantic",
+			title: "User profile",
+			description: "Blocked profile.",
+			content: "Complete profile.",
+			tags: [],
+		});
+		expect(profileCreate).toMatchObject({
+			kind: "failed",
+			path: join(blockedProfileRoot, "memory", "agent", "profile.md"),
+			reason: expect.stringMatching(
+				/profile.*user.*not a directory|profile.*user.*ENOTDIR/i,
+			),
+		});
+
+		const blockedPlaybookRoot = join(tmp.path, "blocked-playbook-root");
+		await writeFile(blockedPlaybookRoot, "not a directory\n", "utf-8");
+		const blockedPlaybookStore = createMarkdownMemoryStore({
+			projectRoot: blockedPlaybookRoot,
+			userCosmonautsRoot: join(tmp.path, "blocked-playbook-user"),
+		});
+		const playbookCreate = await blockedPlaybookStore.write({
+			type: "playbook",
+			scope: "project",
+			kind: "procedural",
+			title: "Blocked playbook",
+			description: "Blocked playbook.",
+			content: "Complete steps.",
+			tags: [],
+		});
+		expect(playbookCreate).toMatchObject({
+			kind: "failed",
+			path: join(
+				blockedPlaybookRoot,
+				"memory",
+				"agent",
+				"playbooks",
+				"blocked-playbook.md",
+			),
+			reason: expect.stringMatching(
+				/playbook.*project.*not a directory|playbook.*project.*ENOTDIR/i,
+			),
+		});
+
+		for (const type of ["profile", "playbook"] as const) {
+			const projectRoot = join(tmp.path, `${type}-update-project`);
+			const userRoot = join(tmp.path, `${type}-update-user`);
+			const store = createMarkdownMemoryStore({
+				projectRoot,
+				userCosmonautsRoot: userRoot,
+			});
+			const scope = type === "profile" ? "user" : "project";
+			const first = await store.write({
+				type,
+				scope,
+				kind: type === "profile" ? "semantic" : "procedural",
+				title: type === "profile" ? "User profile" : "Atomic update",
+				description: "Old complete record.",
+				content: "Old complete body.",
+				tags: [],
+				timestamp: "2026-07-13T10:00:00.000Z",
+			});
+			if (first.kind !== "written") throw new Error(`expected ${type} write`);
+			const indexRoot = scope === "user" ? userRoot : projectRoot;
+			const indexPath = join(indexRoot, "memory", "agent", "index.md");
+			await rm(indexPath);
+			await mkdir(indexPath);
+
+			const failedUpdate = await store.write({
+				type,
+				scope,
+				kind: type === "profile" ? "semantic" : "procedural",
+				title: type === "profile" ? "User profile" : "Atomic update",
+				description: "New complete record.",
+				content: "New complete body.",
+				tags: [],
+				timestamp: "2026-07-13T11:00:00.000Z",
+			});
+			expect(failedUpdate).toMatchObject({
+				kind: "failed",
+				path: first.path,
+				reason: expect.stringContaining(type),
+			});
+			if (failedUpdate.kind !== "failed") {
+				throw new Error(`expected failed ${type} update`);
+			}
+			expect(failedUpdate.reason).toContain(scope);
+			expect(failedUpdate.reason).toContain(first.path);
+			expect(failedUpdate.reason).toMatch(/directory|EISDIR/i);
+			const parsed = matter(await readFile(first.path, "utf-8"));
+			expect(["Old complete body.", "New complete body."]).toContain(
+				parsed.content.trim(),
+			);
+			expect(parsed.data).toMatchObject({ type, scope });
+		}
+
+		expect(
+			(await listTree(tmp.path)).filter((path) => path.endsWith(".tmp")),
+		).toEqual([]);
+	});
+
+	test("replaces the profile singleton in place and refuses an invalid occupant", async () => {
+		const projectRoot = join(tmp.path, "singleton-project");
+		const userRoot = join(tmp.path, "singleton-user");
+		let currentTime = "2026-07-13T10:00:00.000Z";
+		const store = createMarkdownMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+			now: () => new Date(currentTime),
+		});
+		const draft = {
+			type: "profile",
+			scope: "user",
+			kind: "semantic",
+			title: "User profile",
+			description: "Durable user profile and preferences.",
+			content: "First complete profile.",
+			tags: [],
+		} as const;
+		const first = await store.write(draft);
+		expect(first).toMatchObject({
+			kind: "written",
+			path: join(userRoot, "memory", "agent", "profile.md"),
+			record: { timestamp: "2026-07-13T10:00:00.000Z" },
+		});
+		if (first.kind !== "written") throw new Error("expected profile write");
+
+		currentTime = "2026-07-13T11:00:00.000Z";
+		const second = await store.write({
+			...draft,
+			content: "Second complete profile.",
+		});
+		expect(second).toMatchObject({
+			kind: "written",
+			path: first.path,
+			record: {
+				timestamp: "2026-07-13T11:00:00.000Z",
+				content: "Second complete profile.",
+			},
+		});
+		expect(
+			(await readdir(join(userRoot, "memory", "agent"))).filter((name) =>
+				name.includes("profile"),
+			),
+		).toEqual(["profile.md"]);
+		expect(
+			await readFile(join(userRoot, "memory", "agent", "index.md"), "utf-8"),
+		).toBe(
+			"---\ntype: memory-index\nresource: memory/agent/index.md\n---\n\n# Agent Memory Index\n\nNo valid authored records.\n",
+		);
+
+		const malformed =
+			"---\ntype: profile\n---\nHuman-owned malformed profile.\n";
+		await writeFile(first.path, malformed, "utf-8");
+		const refused = await store.write({
+			...draft,
+			content: "Must not replace malformed human content.",
+		});
+		expect(refused).toMatchObject({
+			kind: "failed",
+			path: first.path,
+			reason: expect.stringContaining(first.path),
+		});
+		if (refused.kind !== "failed") throw new Error("expected occupant refusal");
+		expect(refused.reason).toMatch(/invalid|frontmatter|missing/i);
+		expect(await readFile(first.path, "utf-8")).toBe(malformed);
+
+		await expect(
+			store.write({ ...draft, kind: "procedural" }),
+		).resolves.toMatchObject({ kind: "unsupported" });
+		await expect(
+			store.write({
+				...draft,
+				type: "unknown",
+			}),
+		).resolves.toMatchObject({ kind: "unsupported" });
 	});
 });
 
@@ -488,6 +1352,67 @@ function renderNote(options: {
 		scope: options.scope,
 		kind: "semantic",
 	});
+}
+
+function renderRecord(options: {
+	readonly type: "note" | "profile" | "playbook";
+	readonly scope: "project" | "user";
+	readonly kind: "semantic" | "procedural" | "episodic";
+	readonly title: string;
+	readonly resource: string;
+	readonly content?: string;
+	readonly description?: string;
+	readonly timestamp?: string;
+}): string {
+	return matter.stringify(options.content ?? `${options.title} body.`, {
+		type: options.type,
+		title: options.title,
+		description: options.description ?? `${options.title} description.`,
+		resource: options.resource,
+		tags: [],
+		timestamp: options.timestamp ?? "2026-07-13T09:00:00.000Z",
+		scope: options.scope,
+		kind: options.kind,
+	});
+}
+
+async function writeRecordFile(options: {
+	readonly root: string;
+	readonly relativePath: string;
+	readonly type: "note" | "profile" | "playbook";
+	readonly scope: "project" | "user";
+	readonly kind: "semantic" | "procedural" | "episodic";
+	readonly title: string;
+	readonly content?: string;
+	readonly timestamp?: string;
+}): Promise<string> {
+	const path = join(options.root, ...options.relativePath.split("/"));
+	await mkdir(join(path, ".."), { recursive: true });
+	await writeFile(
+		path,
+		renderRecord({
+			type: options.type,
+			scope: options.scope,
+			kind: options.kind,
+			title: options.title,
+			resource: options.relativePath,
+			content: options.content,
+			timestamp: options.timestamp,
+		}),
+		"utf-8",
+	);
+	return path;
+}
+
+async function listTree(root: string): Promise<string[]> {
+	const entries = await readdir(root, { withFileTypes: true });
+	const paths: string[] = [];
+	for (const entry of entries) {
+		const path = join(root, entry.name);
+		paths.push(path);
+		if (entry.isDirectory()) paths.push(...(await listTree(path)));
+	}
+	return paths;
 }
 
 function resourceFor(path: string, root: string): string {

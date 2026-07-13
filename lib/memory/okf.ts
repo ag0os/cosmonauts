@@ -1,13 +1,15 @@
 import matter from "gray-matter";
 import {
+	type AuthoredRecordType,
+	canonicalizePlaybookName,
+} from "./authored-records.ts";
+import {
 	MEMORY_KINDS,
 	type MemoryKind,
 	type MemoryScopeName,
 } from "./types.ts";
 
-const NOTE_TYPE = "note";
-
-export interface AuthoredNoteInput {
+interface AuthoredRecordFields {
 	readonly title: string;
 	readonly description: string;
 	readonly resource: string;
@@ -19,17 +21,33 @@ export interface AuthoredNoteInput {
 	readonly content: string;
 }
 
-interface ParsedAuthoredNote extends AuthoredNoteInput {
+export interface AuthoredNoteInput extends AuthoredRecordFields {
 	readonly type: "note";
 }
 
-type ParseAuthoredNoteResult =
-	| { readonly ok: true; readonly record: ParsedAuthoredNote }
+export interface AuthoredProfileInput extends AuthoredRecordFields {
+	readonly type: "profile";
+	readonly scope: "user";
+	readonly kind: "semantic";
+}
+
+export interface AuthoredPlaybookInput extends AuthoredRecordFields {
+	readonly type: "playbook";
+	readonly kind: "procedural";
+}
+
+export type AuthoredRecordInput =
+	| AuthoredNoteInput
+	| AuthoredProfileInput
+	| AuthoredPlaybookInput;
+
+export type ParseAuthoredRecordResult =
+	| { readonly ok: true; readonly record: AuthoredRecordInput }
 	| { readonly ok: false; readonly message: string };
 
-export function renderAuthoredNote(record: AuthoredNoteInput): string {
+export function renderAuthoredRecord(record: AuthoredRecordInput): string {
 	return matter.stringify(record.content, {
-		type: NOTE_TYPE,
+		type: record.type,
 		title: record.title,
 		description: record.description,
 		resource: record.resource,
@@ -41,14 +59,15 @@ export function renderAuthoredNote(record: AuthoredNoteInput): string {
 	});
 }
 
-export function parseAuthoredNote(options: {
+export function parseAuthoredRecord(options: {
 	readonly raw: string;
 	readonly expectedScope: Exclude<MemoryScopeName, "session">;
-}): ParseAuthoredNoteResult {
+	readonly expectedType: AuthoredRecordType;
+}): ParseAuthoredRecordResult {
 	const parsed = matter(options.raw);
 	const data = parsed.data;
 	if (
-		data.type !== NOTE_TYPE ||
+		typeof data.type !== "string" ||
 		typeof data.title !== "string" ||
 		typeof data.description !== "string" ||
 		typeof data.resource !== "string" ||
@@ -59,6 +78,13 @@ export function parseAuthoredNote(options: {
 		return {
 			ok: false,
 			message: "Memory record is missing required OKF frontmatter.",
+		};
+	}
+
+	if (data.type !== options.expectedType) {
+		return {
+			ok: false,
+			message: `Memory record type ${data.type} is not valid in the ${options.expectedType} location.`,
 		};
 	}
 
@@ -83,21 +109,63 @@ export function parseAuthoredNote(options: {
 		};
 	}
 
-	return {
-		ok: true,
-		record: {
-			type: NOTE_TYPE,
-			title: data.title,
-			description: data.description,
-			resource: data.resource,
-			tags: data.tags,
-			timestamp: data.timestamp,
-			scope: data.scope,
-			kind: data.kind,
-			source: data.source,
-			content: parsed.content.trim(),
-		},
+	const common = {
+		title: data.title,
+		description: data.description,
+		resource: data.resource,
+		tags: data.tags,
+		timestamp: data.timestamp,
+		scope: data.scope,
+		source: data.source,
+		content: parsed.content.trim(),
 	};
+
+	switch (options.expectedType) {
+		case "note":
+			return {
+				ok: true,
+				record: { ...common, type: "note", kind: data.kind },
+			};
+		case "profile":
+			if (options.expectedScope !== "user") {
+				return {
+					ok: false,
+					message: "Profile records are only supported in the user store.",
+				};
+			}
+			if (data.kind !== "semantic") {
+				return {
+					ok: false,
+					message: "Profile records must use semantic memory kind.",
+				};
+			}
+			return {
+				ok: true,
+				record: {
+					...common,
+					type: "profile",
+					scope: "user",
+					kind: "semantic",
+				},
+			};
+		case "playbook":
+			if (data.kind !== "procedural") {
+				return {
+					ok: false,
+					message: "Playbook records must use procedural memory kind.",
+				};
+			}
+			if (!canonicalizePlaybookName(data.title)) {
+				return {
+					ok: false,
+					message: "Playbook title has an empty canonical key.",
+				};
+			}
+			return {
+				ok: true,
+				record: { ...common, type: "playbook", kind: "procedural" },
+			};
+	}
 }
 
 function isMemoryKind(value: unknown): value is MemoryKind {

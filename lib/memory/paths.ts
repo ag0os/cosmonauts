@@ -3,12 +3,16 @@ import type { MemoryScopeName } from "./types.ts";
 
 const AGENT_MEMORY_RESOURCE_DIR = "memory/agent";
 const NOTE_RESOURCE_DIR = `${AGENT_MEMORY_RESOURCE_DIR}/notes`;
+const PLAYBOOK_RESOURCE_DIR = `${AGENT_MEMORY_RESOURCE_DIR}/playbooks`;
 export const AGENT_MEMORY_INDEX_RESOURCE = `${AGENT_MEMORY_RESOURCE_DIR}/index.md`;
+export const AGENT_MEMORY_PROFILE_RESOURCE = `${AGENT_MEMORY_RESOURCE_DIR}/profile.md`;
 
 interface AgentMemoryStorePaths {
 	readonly root: string;
 	readonly agentDir: string;
 	readonly notesDir: string;
+	readonly playbooksDir: string;
+	readonly profilePath: string;
 	readonly indexPath: string;
 	readonly scope: Exclude<MemoryScopeName, "session">;
 }
@@ -27,6 +31,8 @@ export function resolveAgentMemoryStorePaths(options: {
 		root,
 		agentDir,
 		notesDir: join(root, NOTE_RESOURCE_DIR),
+		playbooksDir: join(root, PLAYBOOK_RESOURCE_DIR),
+		profilePath: join(root, AGENT_MEMORY_PROFILE_RESOURCE),
 		indexPath: join(root, AGENT_MEMORY_INDEX_RESOURCE),
 		scope: options.scope,
 	};
@@ -34,6 +40,10 @@ export function resolveAgentMemoryStorePaths(options: {
 
 export function noteResource(fileName: string): string {
 	return `${NOTE_RESOURCE_DIR}/${fileName}`;
+}
+
+export function playbookResource(fileName: string): string {
+	return `${PLAYBOOK_RESOURCE_DIR}/${fileName}`;
 }
 
 export function assertBoundProjectRoot(options: {

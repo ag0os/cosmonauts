@@ -1,3 +1,11 @@
+export {
+	AUTHORED_RECORD_TYPES,
+	type AuthoredRecordType,
+	canonicalizePlaybookName,
+	PROFILE_DESCRIPTION,
+	PROFILE_TITLE,
+	PROFILE_WRITE_MAX_BYTES,
+} from "./authored-records.ts";
 export type { MarkdownMemoryStoreOptions } from "./markdown-store.ts";
 export { createMarkdownMemoryStore } from "./markdown-store.ts";
 export {
