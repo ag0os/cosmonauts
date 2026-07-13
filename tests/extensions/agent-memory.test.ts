@@ -196,6 +196,492 @@ describe("agent-memory extension", () => {
 		).resolves.toEqual([]);
 	});
 
+	test("updates the same profile file and reports the change summary @cosmo-behavior plan:profile-playbooks#B-004", async () => {
+		const projectRoot = join(tmp.path, "profile-update-project");
+		const userRoot = join(tmp.path, "profile-update-user");
+		let currentTime = "2026-07-13T10:00:00.000Z";
+		const pi = await cosmoPi({
+			projectRoot,
+			userRoot,
+			now: () => new Date(currentTime),
+		});
+
+		const created = (await pi.callTool("remember", {
+			type: "profile",
+			content: "I prefer concise status updates.",
+			changeSummary: "Added the concise status-update preference.",
+		})) as ToolResult;
+		expect(created.details).toMatchObject({
+			status: "created",
+			type: "profile",
+			scope: "user",
+			changeSummary: "Added the concise status-update preference.",
+			timestamp: "2026-07-13T10:00:00.000Z",
+			humanPath: ".cosmonauts/memory/agent/profile.md",
+		});
+		const profilePath = stringDetail(created.details, "path");
+		expect(profilePath).toBe(join(userRoot, "memory", "agent", "profile.md"));
+
+		currentTime = "2026-07-13T11:00:00.000Z";
+		const updated = (await pi.callTool("remember", {
+			type: "profile",
+			content:
+				"I prefer concise status updates.\n\nDo not schedule meetings before 10:00.",
+			changeSummary: "Added the morning scheduling constraint.",
+		})) as ToolResult;
+		expect(updated.details).toMatchObject({
+			status: "updated",
+			type: "profile",
+			scope: "user",
+			changeSummary: "Added the morning scheduling constraint.",
+			timestamp: "2026-07-13T11:00:00.000Z",
+			path: profilePath,
+			humanPath: ".cosmonauts/memory/agent/profile.md",
+		});
+		expect(resultText(updated)).toMatch(/updated.*profile/i);
+		expect(resultText(updated)).toContain(
+			"Added the morning scheduling constraint.",
+		);
+		const parsed = matter(await readFile(profilePath, "utf-8"));
+		expect(parsed.data).toMatchObject({
+			type: "profile",
+			scope: "user",
+			kind: "semantic",
+			timestamp: "2026-07-13T11:00:00.000Z",
+			source: "main/cosmo",
+		});
+		expect(parsed.content.trim()).toContain(
+			"Do not schedule meetings before 10:00.",
+		);
+		expect(
+			(await readdir(join(userRoot, "memory", "agent"))).filter((name) =>
+				name.includes("profile"),
+			),
+		).toEqual(["profile.md"]);
+
+		const malformed =
+			"---\ntype: profile\n---\nHuman-owned malformed profile.\n";
+		await writeFile(profilePath, malformed, "utf-8");
+		const refused = (await pi.callTool("remember", {
+			type: "profile",
+			content: "Must not replace malformed human content.",
+			changeSummary: "This change must be refused.",
+		})) as ToolResult;
+		expect(refused.details).toMatchObject({
+			status: "failed",
+			type: "profile",
+			scope: "user",
+			path: profilePath,
+			humanPath: ".cosmonauts/memory/agent/profile.md",
+			reason: expect.stringMatching(/invalid|frontmatter|missing/i),
+		});
+		expect(resultText(refused)).toContain(
+			".cosmonauts/memory/agent/profile.md",
+		);
+		expect(await readFile(profilePath, "utf-8")).toBe(malformed);
+
+		const validationFactory = vi.fn(() => memoryStore({}));
+		const validationPi = createMockPi({ cwd: projectRoot });
+		createAgentMemoryExtension({
+			userCosmonautsRoot: join(tmp.path, "profile-validation-user"),
+			storeFactory: validationFactory,
+		})(validationPi as never);
+		await validationPi.fireEvent("before_agent_start", {
+			systemPrompt: buildAgentIdentityMarker("main/cosmo"),
+		});
+		for (const params of [
+			{ type: "profile", content: "Missing summary." },
+			{
+				type: "profile",
+				content: "Wrong scope.",
+				changeSummary: "Invalid scope.",
+				scope: "project",
+			},
+			{
+				type: "profile",
+				content: "Wrong kind.",
+				changeSummary: "Invalid kind.",
+				kind: "procedural",
+			},
+		]) {
+			const invalid = (await validationPi.callTool(
+				"remember",
+				params,
+			)) as ToolResult;
+			expect(invalid.details).toMatchObject({ status: "invalid_request" });
+		}
+		expect(validationFactory).not.toHaveBeenCalled();
+	});
+
+	test("saves named playbooks directly in project and user scopes @cosmo-behavior plan:profile-playbooks#B-005", async () => {
+		const projectRoot = join(tmp.path, "playbook-save-project");
+		const userRoot = join(tmp.path, "playbook-save-user");
+		const pi = await cosmoPi({ projectRoot, userRoot });
+
+		const projectSave = (await pi.callTool("remember", {
+			type: "playbook",
+			title: "Release Deploy",
+			scope: "project",
+			description: "Use when publishing a production release.",
+			content: "When to use: after release approval.\n\n1. Tag.\n2. Deploy.",
+			tags: ["release", "deploy"],
+		})) as ToolResult;
+		const userSave = (await pi.callTool("remember", {
+			type: "playbook",
+			title: "Inbox Triage",
+			scope: "user",
+			description: "Use at the start of the workday.",
+			content: "Review urgent threads first, then archive informational mail.",
+		})) as ToolResult;
+
+		for (const [result, title, scope] of [
+			[projectSave, "Release Deploy", "project"],
+			[userSave, "Inbox Triage", "user"],
+		] as const) {
+			expect(result.details).toMatchObject({
+				status: "created",
+				type: "playbook",
+				title,
+				scope,
+				kind: "procedural",
+				humanPath: expect.stringContaining("memory/agent/playbooks/"),
+			});
+			expect(resultText(result)).toMatch(/created.*playbook/i);
+			expect(resultText(result)).toContain(title);
+			expect(resultText(result)).toContain(scope);
+			expect(resultText(result)).toContain(
+				stringDetail(result.details, "humanPath"),
+			);
+		}
+
+		const projectPath = stringDetail(projectSave.details, "path");
+		const userPath = stringDetail(userSave.details, "path");
+		expect(projectPath).toBe(
+			join(projectRoot, "memory", "agent", "playbooks", "release-deploy.md"),
+		);
+		expect(userPath).toBe(
+			join(userRoot, "memory", "agent", "playbooks", "inbox-triage.md"),
+		);
+		const projectRecord = matter(await readFile(projectPath, "utf-8"));
+		const userRecord = matter(await readFile(userPath, "utf-8"));
+		expect(projectRecord.data).toMatchObject({
+			type: "playbook",
+			title: "Release Deploy",
+			description: "Use when publishing a production release.",
+			scope: "project",
+			kind: "procedural",
+			source: "main/cosmo",
+		});
+		expect(userRecord.data).toMatchObject({
+			type: "playbook",
+			title: "Inbox Triage",
+			description: "Use at the start of the workday.",
+			scope: "user",
+			kind: "procedural",
+			source: "main/cosmo",
+		});
+		expect(projectRecord.content.trim()).toContain("1. Tag.");
+		expect(userRecord.content.trim()).toBe(
+			"Review urgent threads first, then archive informational mail.",
+		);
+
+		const validationFactory = vi.fn(() => memoryStore({}));
+		const validationPi = createMockPi({ cwd: projectRoot });
+		createAgentMemoryExtension({
+			userCosmonautsRoot: join(tmp.path, "playbook-validation-user"),
+			storeFactory: validationFactory,
+		})(validationPi as never);
+		await validationPi.fireEvent("before_agent_start", {
+			systemPrompt: buildAgentIdentityMarker("main/cosmo"),
+		});
+		for (const params of [
+			{ type: "playbook", content: "Missing title.", scope: "project" },
+			{ type: "playbook", content: "Missing scope.", title: "No scope" },
+			{
+				type: "playbook",
+				content: "Wrong kind.",
+				title: "Wrong kind",
+				scope: "project",
+				kind: "semantic",
+			},
+			{
+				type: "playbook",
+				content: "Wrong branch field.",
+				title: "Wrong field",
+				scope: "project",
+				changeSummary: "Profiles only.",
+			},
+		]) {
+			const invalid = (await validationPi.callTool(
+				"remember",
+				params,
+			)) as ToolResult;
+			expect(invalid.details).toMatchObject({ status: "invalid_request" });
+		}
+		expect(validationFactory).not.toHaveBeenCalled();
+	});
+
+	test("declined or unanswered proposals write nothing and persist no pending state @cosmo-behavior plan:profile-playbooks#B-007", async () => {
+		const projectRoot = join(tmp.path, "proposal-state-project");
+		const userRoot = join(tmp.path, "proposal-state-user");
+		const storeFactory = vi.fn((options) => createMarkdownMemoryStore(options));
+		const pi = createMockPi({ cwd: projectRoot });
+		createAgentMemoryExtension({ userCosmonautsRoot: userRoot, storeFactory })(
+			pi as never,
+		);
+
+		await pi.fireEvent("session_start");
+		await pi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: buildAgentIdentityMarker("main/not-cosmo") },
+			{ cwd: projectRoot },
+		);
+		await pi.fireEvent("session_shutdown");
+		expect(storeFactory).not.toHaveBeenCalled();
+		expect(pi.entries).toEqual([]);
+		await expect(readdir(join(projectRoot, "memory"))).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+		await expect(readdir(join(userRoot, "memory"))).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+
+		await pi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: buildAgentIdentityMarker("main/cosmo") },
+			{ cwd: projectRoot },
+		);
+		expect(storeFactory).toHaveBeenCalledTimes(1);
+		const laterExplicitSave = (await pi.callTool("remember", {
+			type: "playbook",
+			title: "Current Request Only",
+			scope: "project",
+			description: "Created only by the later explicit request.",
+			content:
+				"Perform the current request without reconstructed proposal state.",
+		})) as ToolResult;
+		expect(laterExplicitSave.details).toMatchObject({ status: "created" });
+		expect(storeFactory).toHaveBeenCalledTimes(2);
+		expect(pi.entries).toEqual([]);
+		expect(
+			await readdir(join(projectRoot, "memory", "agent", "playbooks")),
+		).toEqual(["current-request-only.md"]);
+	});
+
+	test("requires confirmation before updating a canonical playbook name @cosmo-behavior plan:profile-playbooks#B-009", async () => {
+		const projectRoot = join(tmp.path, "playbook-confirm-project");
+		const userRoot = join(tmp.path, "playbook-confirm-user");
+		let currentTime = "2026-07-13T12:00:00.000Z";
+		const pi = await cosmoPi({
+			projectRoot,
+			userRoot,
+			now: () => new Date(currentTime),
+		});
+		const initial = (await pi.callTool("remember", {
+			type: "playbook",
+			title: "Release Deploy",
+			scope: "project",
+			description: "Original release procedure.",
+			content: "Original release steps.",
+		})) as ToolResult;
+		const initialPath = stringDetail(initial.details, "path");
+		const parsedInitial = matter(await readFile(initialPath, "utf-8"));
+		const retitled = matter.stringify(parsedInitial.content.trim(), {
+			...parsedInitial.data,
+			title: "Production Ship",
+			description: "Human-retitled release procedure.",
+		});
+		await writeFile(initialPath, retitled, "utf-8");
+
+		currentTime = "2026-07-13T13:00:00.000Z";
+		const collision = (await pi.callTool("remember", {
+			type: "playbook",
+			title: "production---ship",
+			scope: "project",
+			description: "Replacement release procedure.",
+			content: "Replacement release steps.",
+		})) as ToolResult;
+		expect(collision.details).toMatchObject({
+			status: "confirmation_required",
+			type: "playbook",
+			title: "Production Ship",
+			requestedTitle: "production---ship",
+			scope: "project",
+			path: initialPath,
+			humanPath: "memory/agent/playbooks/release-deploy.md",
+		});
+		expect(resultText(collision)).toMatch(/confirm.*update/i);
+		expect(await readFile(initialPath, "utf-8")).toBe(retitled);
+		expect(pi.entries).toEqual([]);
+
+		const confirmed = (await pi.callTool("remember", {
+			type: "playbook",
+			title: "production---ship",
+			scope: "project",
+			description: "Replacement release procedure.",
+			content: "Replacement release steps.",
+			confirmUpdate: true,
+		})) as ToolResult;
+		expect(confirmed.details).toMatchObject({
+			status: "updated",
+			type: "playbook",
+			title: "production---ship",
+			scope: "project",
+			path: initialPath,
+			timestamp: "2026-07-13T13:00:00.000Z",
+		});
+		expect(resultText(confirmed)).toMatch(/updated.*playbook/i);
+		expect(
+			await readdir(join(projectRoot, "memory", "agent", "playbooks")),
+		).toEqual(["release-deploy.md"]);
+		const updatedRecord = matter(await readFile(initialPath, "utf-8"));
+		expect(updatedRecord.data.title).toBe("production---ship");
+		expect(updatedRecord.content.trim()).toBe("Replacement release steps.");
+
+		const renamed = (await pi.callTool("remember", {
+			type: "playbook",
+			title: "Release Rollback",
+			scope: "project",
+			description: "A separate recovery procedure.",
+			content: "Rollback the release safely.",
+		})) as ToolResult;
+		expect(renamed.details).toMatchObject({
+			status: "created",
+			title: "Release Rollback",
+		});
+		expect(
+			(await readdir(join(projectRoot, "memory", "agent", "playbooks"))).sort(),
+		).toEqual(["release-deploy.md", "release-rollback.md"]);
+		expect(pi.entries).toEqual([]);
+	});
+
+	test("registers remember as sequential so same batch saves cannot bypass collision confirmation @cosmo-behavior plan:profile-playbooks#B-021", async () => {
+		const projectRoot = join(tmp.path, "sequential-save-project");
+		const userRoot = join(tmp.path, "sequential-save-user");
+		const pi = await cosmoPi({ projectRoot, userRoot });
+		const rememberTool = registeredTool(pi, "remember");
+		const recallTool = registeredTool(pi, "recall");
+
+		expect(rememberTool.executionMode).toBe("sequential");
+		expect(recallTool).not.toHaveProperty("executionMode");
+		expect(rememberTool.parameters).toMatchObject({
+			type: "object",
+			required: ["content"],
+			properties: {
+				type: expect.any(Object),
+				content: expect.any(Object),
+				title: expect.any(Object),
+				description: expect.any(Object),
+				tags: expect.any(Object),
+				scope: expect.any(Object),
+				kind: expect.any(Object),
+				changeSummary: expect.any(Object),
+				confirmUpdate: expect.any(Object),
+			},
+		});
+		expect(rememberTool.parameters).not.toHaveProperty("anyOf");
+		expect(rememberTool.parameters).not.toHaveProperty("oneOf");
+
+		const sameBatch = [
+			{
+				type: "playbook",
+				title: "Batch Deploy",
+				scope: "project",
+				description: "First same-batch save.",
+				content: "First same-batch body.",
+			},
+			{
+				type: "playbook",
+				title: "batch---deploy",
+				scope: "project",
+				description: "Second same-batch save.",
+				content: "Second same-batch body.",
+			},
+		];
+		const results: ToolResult[] = [];
+		if (rememberTool.executionMode === "sequential") {
+			for (const params of sameBatch) {
+				results.push((await pi.callTool("remember", params)) as ToolResult);
+			}
+		} else {
+			results.push(
+				...((await Promise.all(
+					sameBatch.map((params) => pi.callTool("remember", params)),
+				)) as ToolResult[]),
+			);
+		}
+		expect(results[0]?.details).toMatchObject({ status: "created" });
+		expect(results[1]?.details).toMatchObject({
+			status: "confirmation_required",
+		});
+		expect(
+			await readdir(join(projectRoot, "memory", "agent", "playbooks")),
+		).toEqual(["batch-deploy.md"]);
+	});
+
+	test("renders profile and playbook write failures visibly while the session continues @cosmo-behavior plan:profile-playbooks#B-024", async () => {
+		const projectRoot = join(tmp.path, "visible-failure-project");
+		const userRoot = join(tmp.path, "visible-failure-user");
+		await mkdir(join(projectRoot, "memory", "agent", "index.md"), {
+			recursive: true,
+		});
+		await mkdir(join(userRoot, "memory", "agent", "index.md"), {
+			recursive: true,
+		});
+		const pi = await cosmoPi({ projectRoot, userRoot });
+
+		const profileFailure = (await pi.callTool("remember", {
+			type: "profile",
+			content: "This profile write must fail atomically.",
+			changeSummary: "Attempted a blocked profile create.",
+		})) as ToolResult;
+		const playbookFailure = (await pi.callTool("remember", {
+			type: "playbook",
+			title: "Blocked Playbook",
+			scope: "project",
+			description: "This playbook write must fail atomically.",
+			content: "Blocked procedural body.",
+		})) as ToolResult;
+
+		for (const [result, type, scope, humanPath] of [
+			[
+				profileFailure,
+				"profile",
+				"user",
+				".cosmonauts/memory/agent/profile.md",
+			],
+			[
+				playbookFailure,
+				"playbook",
+				"project",
+				"memory/agent/playbooks/blocked-playbook.md",
+			],
+		] as const) {
+			expect(result.details).toMatchObject({
+				status: "failed",
+				type,
+				scope,
+				humanPath,
+				reason: expect.stringMatching(/EISDIR|directory/i),
+			});
+			expect(resultText(result)).toContain(type);
+			expect(resultText(result)).toContain(scope);
+			expect(resultText(result)).toContain(humanPath);
+			expect(resultText(result)).toMatch(/EISDIR|directory/i);
+		}
+		await expect(
+			readFile(join(userRoot, "memory", "agent", "profile.md"), "utf-8"),
+		).rejects.toMatchObject({ code: "ENOENT" });
+		await expect(
+			readdir(join(projectRoot, "memory", "agent", "playbooks")),
+		).resolves.toEqual([]);
+
+		const laterRecall = (await pi.callTool("recall", {
+			query: "anything",
+		})) as ToolResult;
+		expect(laterRecall.details).toMatchObject({ status: "no_match" });
+	});
+
 	test("registers remember and recall at factory load with short host-safe descriptions @cosmo-behavior plan:memory-interface#B-012", () => {
 		const pi = createMockPi({ cwd: tmp.path });
 		agentMemoryExtension(pi as never);
@@ -741,16 +1227,32 @@ function resultText(result: ToolResult): string {
 async function cosmoPi(options: {
 	readonly projectRoot: string;
 	readonly userRoot: string;
+	readonly now?: () => Date;
 }) {
 	const pi = createMockPi({ cwd: options.projectRoot });
 	createAgentMemoryExtension({
 		userCosmonautsRoot: options.userRoot,
-		now: () => new Date("2026-07-08T14:00:00.000Z"),
+		now: options.now ?? (() => new Date("2026-07-08T14:00:00.000Z")),
 	})(pi as never);
 	await pi.fireEvent("before_agent_start", {
 		systemPrompt: buildAgentIdentityMarker("main/cosmo"),
 	});
 	return pi;
+}
+
+function registeredTool(
+	pi: ReturnType<typeof createMockPi>,
+	name: string,
+): {
+	readonly executionMode?: "sequential" | "parallel";
+	readonly parameters: unknown;
+} {
+	const tool = pi.tools.get(name);
+	if (!tool) throw new Error(`Expected registered tool ${name}`);
+	return tool as unknown as {
+		readonly executionMode?: "sequential" | "parallel";
+		readonly parameters: unknown;
+	};
 }
 
 function memoryStore(options: {

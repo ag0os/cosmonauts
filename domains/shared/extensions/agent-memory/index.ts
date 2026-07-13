@@ -4,6 +4,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
 import {
+	canonicalizePlaybookName,
 	createMarkdownMemoryStore,
 	type MemoryKind,
 	type MemoryRecordDraft,
@@ -11,6 +12,8 @@ import {
 	type MemoryScopeName,
 	type MemoryStore,
 	type MemoryWriteResult,
+	PROFILE_DESCRIPTION,
+	PROFILE_TITLE,
 } from "../../../../lib/memory/index.ts";
 
 const COSMO_AGENT_ID = "main/cosmo";
@@ -21,6 +24,11 @@ const MAX_RECALL_LIMIT = 20;
 const INDEX_RETRIEVAL_LIMIT = 50;
 const INDEX_INJECTION_MAX_BYTES = 12_000;
 
+const AuthoredTypeLiterals = [
+	Type.Literal("note"),
+	Type.Literal("profile"),
+	Type.Literal("playbook"),
+];
 const ScopeLiterals = [Type.Literal("project"), Type.Literal("user")];
 const KindLiterals = [
 	Type.Literal("semantic"),
@@ -47,13 +55,49 @@ interface AuthorizationState {
 }
 
 interface RememberParams {
+	readonly type?: unknown;
 	readonly content?: unknown;
 	readonly title?: unknown;
 	readonly description?: unknown;
 	readonly tags?: unknown;
 	readonly scope?: unknown;
 	readonly kind?: unknown;
+	readonly changeSummary?: unknown;
+	readonly confirmUpdate?: unknown;
 }
+
+type RememberRequest =
+	| {
+			readonly type: "note";
+			readonly content: string;
+			readonly title: string;
+			readonly description: string;
+			readonly tags: readonly string[];
+			readonly scope: Exclude<MemoryScopeName, "session">;
+			readonly kind: MemoryKind;
+	  }
+	| {
+			readonly type: "profile";
+			readonly content: string;
+			readonly tags: readonly string[];
+			readonly scope: "user";
+			readonly kind: "semantic";
+			readonly changeSummary: string;
+	  }
+	| {
+			readonly type: "playbook";
+			readonly content: string;
+			readonly title: string;
+			readonly description: string;
+			readonly tags: readonly string[];
+			readonly scope: Exclude<MemoryScopeName, "session">;
+			readonly kind: "procedural";
+			readonly confirmUpdate: boolean;
+	  };
+
+type ParseRememberResult =
+	| { readonly ok: true; readonly request: RememberRequest }
+	| { readonly ok: false; readonly reason: string };
 
 interface RecallParams {
 	readonly query?: unknown;
@@ -105,10 +149,20 @@ export function createAgentMemoryExtension(
 			label: "Remember",
 			description: "Save an explicit note to agent memory.",
 			parameters: Type.Object({
-				content: Type.String({ description: "Note body to save." }),
-				title: Type.Optional(Type.String({ description: "Note title." })),
+				type: Type.Optional(
+					Type.Union(AuthoredTypeLiterals, {
+						description: "note, profile, or playbook; omitted means note.",
+					}),
+				),
+				content: Type.String({
+					description:
+						"Body to save; profiles require the complete desired profile body.",
+				}),
+				title: Type.Optional(
+					Type.String({ description: "Note title or required playbook name." }),
+				),
 				description: Type.Optional(
-					Type.String({ description: "Short note description." }),
+					Type.String({ description: "Short note or playbook description." }),
 				),
 				tags: Type.Optional(
 					Type.Array(Type.String(), { description: "Note tags." }),
@@ -121,14 +175,29 @@ export function createAgentMemoryExtension(
 						description: "semantic, procedural, or episodic.",
 					}),
 				),
+				changeSummary: Type.Optional(
+					Type.String({
+						description: "Required visible summary of a profile change.",
+					}),
+				),
+				confirmUpdate: Type.Optional(
+					Type.Boolean({
+						description:
+							"Set true only after confirming an existing playbook update.",
+					}),
+				),
 			}),
+			executionMode: "sequential",
 			execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 				if (!auth.authorized) return unauthorizedResult();
+				const parsed = parseRememberParams(params as RememberParams);
+				if (!parsed.ok) return invalidRememberResult(parsed.reason);
+				const projectRoot = getCwd(ctx);
 				return remember({
-					params: params as RememberParams,
+					request: parsed.request,
 					store: createStore({ ctx, userCosmonautsRoot, now, storeFactory }),
 					now,
-					projectRoot: getCwd(ctx),
+					projectRoot,
 					userCosmonautsRoot,
 				});
 			},
@@ -218,44 +287,112 @@ export default function agentMemoryExtension(pi: ExtensionAPI): void {
 }
 
 async function remember(options: {
-	readonly params: RememberParams;
+	readonly request: RememberRequest;
 	readonly store: MemoryStore;
 	readonly now: () => Date;
 	readonly projectRoot: string;
 	readonly userCosmonautsRoot: string;
 }): Promise<ReturnType<typeof textResult>> {
-	const content = normalizeString(options.params.content);
-	if (!content) {
-		return textResult("Remember requires non-empty content.", {
-			status: "invalid_request",
-			reason: "content must be a non-empty string",
-		});
-	}
-
-	const title =
-		normalizeString(options.params.title) ?? defaultTitleFromContent(content);
-	const scope = normalizeScope(options.params.scope);
-	const kind = normalizeKind(options.params.kind);
 	const timestamp = options.now().toISOString();
-	const draft: MemoryRecordDraft = {
-		type: "note",
-		scope,
-		kind,
-		title,
-		description: normalizeString(options.params.description) ?? title,
-		content,
-		tags: normalizeTags(options.params.tags),
-		timestamp,
-		source: SOURCE,
-	};
+	switch (options.request.type) {
+		case "note": {
+			const draft = rememberDraft({ request: options.request, timestamp });
+			return renderRememberResult({
+				result: await options.store.write(draft),
+				draft,
+				operation: "saved",
+				projectRoot: options.projectRoot,
+				userCosmonautsRoot: options.userCosmonautsRoot,
+			});
+		}
+		case "profile": {
+			const existing = await options.store.retrieve(
+				{ projectRoot: options.projectRoot, scopes: ["user"] },
+				{ text: "", recordTypes: ["profile"] },
+			);
+			const draft = rememberDraft({ request: options.request, timestamp });
+			return renderRememberResult({
+				result: await options.store.write(draft),
+				draft,
+				operation: existing.records.length > 0 ? "updated" : "created",
+				changeSummary: options.request.changeSummary,
+				projectRoot: options.projectRoot,
+				userCosmonautsRoot: options.userCosmonautsRoot,
+			});
+		}
+		case "playbook": {
+			const existing = await options.store.retrieve(
+				{ projectRoot: options.projectRoot, scopes: [options.request.scope] },
+				{ text: "", recordTypes: ["playbook"] },
+			);
+			const canonicalTitle = canonicalizePlaybookName(options.request.title);
+			const matches = existing.records.filter(
+				(record) => canonicalizePlaybookName(record.title) === canonicalTitle,
+			);
+			const collision = matches.length === 1 ? matches[0] : undefined;
+			if (collision && !options.request.confirmUpdate) {
+				return playbookConfirmationRequired({
+					existing: collision,
+					requestedTitle: options.request.title,
+					projectRoot: options.projectRoot,
+					userCosmonautsRoot: options.userCosmonautsRoot,
+				});
+			}
 
-	const result = await options.store.write(draft);
-	return renderRememberResult({
-		result,
-		draft,
-		projectRoot: options.projectRoot,
-		userCosmonautsRoot: options.userCosmonautsRoot,
-	});
+			const draft = rememberDraft({ request: options.request, timestamp });
+			return renderRememberResult({
+				result: await options.store.write(draft),
+				draft,
+				operation: collision ? "updated" : "created",
+				projectRoot: options.projectRoot,
+				userCosmonautsRoot: options.userCosmonautsRoot,
+			});
+		}
+	}
+}
+
+function rememberDraft(options: {
+	readonly request: RememberRequest;
+	readonly timestamp: string;
+}): MemoryRecordDraft {
+	switch (options.request.type) {
+		case "note":
+			return {
+				type: "note",
+				scope: options.request.scope,
+				kind: options.request.kind,
+				title: options.request.title,
+				description: options.request.description,
+				content: options.request.content,
+				tags: options.request.tags,
+				timestamp: options.timestamp,
+				source: SOURCE,
+			};
+		case "profile":
+			return {
+				type: "profile",
+				scope: "user",
+				kind: "semantic",
+				title: PROFILE_TITLE,
+				description: PROFILE_DESCRIPTION,
+				content: options.request.content,
+				tags: options.request.tags,
+				timestamp: options.timestamp,
+				source: SOURCE,
+			};
+		case "playbook":
+			return {
+				type: "playbook",
+				scope: options.request.scope,
+				kind: "procedural",
+				title: options.request.title,
+				description: options.request.description,
+				content: options.request.content,
+				tags: options.request.tags,
+				timestamp: options.timestamp,
+				source: SOURCE,
+			};
+	}
 }
 
 async function recall(options: {
@@ -356,6 +493,8 @@ function formatIndexRecord(options: {
 function renderRememberResult(options: {
 	readonly result: MemoryWriteResult;
 	readonly draft: MemoryRecordDraft;
+	readonly operation: "saved" | "created" | "updated";
+	readonly changeSummary?: string;
 	readonly projectRoot: string;
 	readonly userCosmonautsRoot: string;
 }): ReturnType<typeof textResult> {
@@ -365,32 +504,84 @@ function renderRememberResult(options: {
 			projectRoot: options.projectRoot,
 			userCosmonautsRoot: options.userCosmonautsRoot,
 		});
+		const details = {
+			status: options.operation,
+			type: options.result.record.type,
+			title: options.result.record.title,
+			scope: options.result.record.scope,
+			kind: options.result.record.kind,
+			tags: options.result.record.tags,
+			timestamp: options.result.record.timestamp,
+			path: options.result.path,
+			humanPath,
+			...(options.changeSummary
+				? { changeSummary: options.changeSummary }
+				: {}),
+		};
+		if (options.operation === "saved") {
+			return textResult(
+				`Saved "${options.result.record.title}" to ${options.result.record.scope} memory: ${humanPath}`,
+				details,
+			);
+		}
+
+		const action = options.operation === "updated" ? "Updated" : "Created";
+		const changeSummary = options.changeSummary
+			? `\nChange summary: ${options.changeSummary}`
+			: "";
 		return textResult(
-			`Saved "${options.result.record.title}" to ${options.result.record.scope} memory: ${humanPath}`,
-			{
-				status: "saved",
-				title: options.result.record.title,
-				scope: options.result.record.scope,
-				kind: options.result.record.kind,
-				tags: options.result.record.tags,
-				timestamp: options.result.record.timestamp,
-				path: options.result.path,
-				humanPath,
-			},
+			`${action} ${options.result.record.type} "${options.result.record.title}" in ${options.result.record.scope} memory: ${humanPath}${changeSummary}`,
+			details,
 		);
 	}
 
+	const humanPath =
+		options.result.kind === "failed" && options.result.path
+			? humanReadablePath({
+					path: options.result.path,
+					projectRoot: options.projectRoot,
+					userCosmonautsRoot: options.userCosmonautsRoot,
+				})
+			: undefined;
 	const details = {
 		status: options.result.kind === "failed" ? "failed" : "unsupported",
+		type: options.draft.type,
 		title: options.draft.title,
 		scope: options.draft.scope,
 		kind: options.draft.kind,
 		path: options.result.kind === "failed" ? options.result.path : undefined,
+		humanPath,
 		reason: options.result.reason,
 	};
+	const pathText = humanPath ? ` at ${humanPath}` : "";
 	return textResult(
-		`Could not save "${options.draft.title}" to ${options.draft.scope} memory: ${options.result.reason}`,
+		`Could not save ${options.draft.type} "${options.draft.title}" to ${options.draft.scope} memory${pathText}: ${options.result.reason}`,
 		details,
+	);
+}
+
+function playbookConfirmationRequired(options: {
+	readonly existing: MemoryRetrieveResult["records"][number];
+	readonly requestedTitle: string;
+	readonly projectRoot: string;
+	readonly userCosmonautsRoot: string;
+}): ReturnType<typeof textResult> {
+	const humanPath = humanReadablePath({
+		path: options.existing.path,
+		projectRoot: options.projectRoot,
+		userCosmonautsRoot: options.userCosmonautsRoot,
+	});
+	return textResult(
+		`Playbook "${options.existing.title}" already exists in ${options.existing.scope} memory at ${humanPath}. Confirm the update and call remember again with confirmUpdate: true, choose another name, or decline.`,
+		{
+			status: "confirmation_required",
+			type: "playbook",
+			title: options.existing.title,
+			requestedTitle: options.requestedTitle,
+			scope: options.existing.scope,
+			path: options.existing.path,
+			humanPath,
+		},
 	);
 }
 
@@ -498,6 +689,121 @@ function unauthorizedResult(): ReturnType<typeof textResult> {
 		"Agent memory is not authorized for the current agent turn.",
 		{ status: "unauthorized", authorizedAgent: COSMO_AGENT_ID },
 	);
+}
+
+function invalidRememberResult(reason: string): ReturnType<typeof textResult> {
+	const text =
+		reason === "content must be a non-empty string"
+			? "Remember requires non-empty content."
+			: `Remember request is invalid: ${reason}`;
+	return textResult(text, {
+		status: "invalid_request",
+		reason,
+	});
+}
+
+function parseRememberParams(params: RememberParams): ParseRememberResult {
+	const type = params.type ?? "note";
+	if (type !== "note" && type !== "profile" && type !== "playbook") {
+		return invalidRemember(`unsupported type ${JSON.stringify(type)}`);
+	}
+	const content = normalizeString(params.content);
+	if (!content) {
+		return invalidRemember("content must be a non-empty string");
+	}
+
+	switch (type) {
+		case "note": {
+			if (params.changeSummary !== undefined) {
+				return invalidRemember("changeSummary is only supported for profiles");
+			}
+			if (params.confirmUpdate !== undefined) {
+				return invalidRemember("confirmUpdate is only supported for playbooks");
+			}
+			const title =
+				normalizeString(params.title) ?? defaultTitleFromContent(content);
+			return {
+				ok: true,
+				request: {
+					type: "note",
+					content,
+					title,
+					description: normalizeString(params.description) ?? title,
+					tags: normalizeTags(params.tags),
+					scope: normalizeScope(params.scope),
+					kind: normalizeKind(params.kind),
+				},
+			};
+		}
+		case "profile": {
+			const changeSummary = normalizeString(params.changeSummary);
+			if (!changeSummary) {
+				return invalidRemember(
+					"profile changeSummary must be a non-empty string",
+				);
+			}
+			if (params.scope !== undefined && params.scope !== "user") {
+				return invalidRemember("profiles require user scope");
+			}
+			if (params.kind !== undefined && params.kind !== "semantic") {
+				return invalidRemember("profiles require semantic memory kind");
+			}
+			if (params.confirmUpdate !== undefined) {
+				return invalidRemember("confirmUpdate is only supported for playbooks");
+			}
+			return {
+				ok: true,
+				request: {
+					type: "profile",
+					content,
+					tags: normalizeTags(params.tags),
+					scope: "user",
+					kind: "semantic",
+					changeSummary,
+				},
+			};
+		}
+		case "playbook": {
+			const title = normalizeString(params.title);
+			if (!title) {
+				return invalidRemember("playbook title must be a non-empty string");
+			}
+			if (params.scope !== "project" && params.scope !== "user") {
+				return invalidRemember(
+					"playbooks require an explicit project or user scope",
+				);
+			}
+			if (params.kind !== undefined && params.kind !== "procedural") {
+				return invalidRemember("playbooks require procedural memory kind");
+			}
+			if (params.changeSummary !== undefined) {
+				return invalidRemember("changeSummary is only supported for profiles");
+			}
+			if (
+				params.confirmUpdate !== undefined &&
+				typeof params.confirmUpdate !== "boolean"
+			) {
+				return invalidRemember("confirmUpdate must be a boolean");
+			}
+			return {
+				ok: true,
+				request: {
+					type: "playbook",
+					content,
+					title,
+					description: normalizeString(params.description) ?? title,
+					tags: normalizeTags(params.tags),
+					scope: params.scope,
+					kind: "procedural",
+					confirmUpdate: params.confirmUpdate === true,
+				},
+			};
+		}
+	}
+}
+
+function invalidRemember(reason: string): ParseRememberResult {
+	return { ok: false, reason };
 }
 
 function normalizeString(value: unknown): string | undefined {
