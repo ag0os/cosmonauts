@@ -1,0 +1,28 @@
+---
+id: TASK-463
+title: 'Step 5: Fix context visibility and add profile-first recall and injection'
+status: To Do
+priority: high
+labels:
+  - backend
+  - testing
+  - 'plan:profile-playbooks'
+dependencies:
+  - TASK-462
+createdAt: '2026-07-13T14:12:29.767Z'
+updatedAt: '2026-07-13T14:12:29.767Z'
+---
+
+## Description
+
+Implementation Order step 5. In `domains/shared/extensions/agent-memory/index.ts` and `tests/extensions/agent-memory.test.ts`, first repair the composed `before_agent_start` → `context` pipeline, then generalize current-disk recall and the single hidden context message. This task owns B-003, B-010, B-013, B-016, B-020, B-022, and B-023. Use one all-type list retrieval, profile plus a maximum-50 recency/path-ordered note/playbook index, one UTF-8-safe 12,000-byte budget, and reserved notices. `recall` remains `{ query, limit? }` with no type filter, no relevance push, and existing 5/20 bounds except the matching-profile pin. Disk is the only truth: no cache/latest map, registry/backend, approval state, W3/W4 machinery, new tool, or non-Cosmo consumer. `lib/memory/types.ts` stays UNCHANGED; pressure to edit it is stop-and-report. Tests use temporary roots and make no model calls.
+
+<!-- AC:BEGIN -->
+- [ ] #1 B-020 is proven first by `tests/extensions/agent-memory.test.ts` test `keeps the newest injected memory context provider visible through the context transform`, carrying `@cosmo-behavior plan:profile-playbooks#B-020`: in one composed authorized pipeline exactly the newest `agent-memory-context` survives provider-visible, older copies are removed, and every non-memory message passes unchanged.
+- [ ] #2 B-003 is fully proven by `tests/extensions/agent-memory.test.ts` test `creates a user profile and injects it in a different project session`, carrying `@cosmo-behavior plan:profile-playbooks#B-003`: `remember` creates exactly one valid user/semantic profile at the injected root and visibly reports created status, `changeSummary`, and human-readable path; a fresh extension instance in project B sharing that user root injects its complete body without a recall request.
+- [ ] #3 B-010 is proven by `tests/extensions/agent-memory.test.ts` test `indexes playbooks and recalls their full steps in a later session`, carrying `@cosmo-behavior plan:profile-playbooks#B-010`: current-disk injection includes playbook type/name/scope/timestamp/description/path but not body, while unchanged text/name recall searches note/profile/playbook and returns full steps with the existing default-5/maximum-20 bounds and no user-facing type filter.
+- [ ] #4 B-013 and B-023 are jointly completed without shared state: `tests/extensions/agent-memory.test.ts` tests `reflects profile edits and deletion on the next injected context and recall` and `reflects playbook renames edits and deletion in injected context and recall` carry their exact B-013/B-023 markers; edited profile content is injected/recalled and deletion yields no section/result/error/scaffold, while a retitled/edited playbook is indexed under the new title and recalled with edited body, deletion removes it from both, and no process-local value resurrects either record.
+- [ ] #5 B-016 is proven by `tests/extensions/agent-memory.test.ts` test `injects profile before the recency ordered note and playbook index within one 12000 byte budget`, carrying `@cosmo-behavior plan:profile-playbooks#B-016`: profile body precedes metadata regardless of timestamp, notes/playbooks are timestamp-descending with path tie-break and capped at 50, framing/content/metadata/all footers stay within 12,000 UTF-8 bytes, empty/absent-profile cases create no empty section or scaffold, and an index-only message may use the full budget.
+- [ ] #6 B-022 is fully proven by `tests/extensions/agent-memory.test.ts` test `injects recalls and protects oversized human profiles honestly`, carrying `@cosmo-behavior plan:profile-playbooks#B-022`: a valid oversized human profile injects a UTF-8-safe 4,000-byte excerpt plus an always-preserved notice with accurate original/included counts, profile path, and recall direction; matching recall returns the untruncated profile pinned first outside the 5/20 window; model-facing guidance forbids updating from an excerpt without recalling the full body; an over-bound replacement writes nothing, preserves the existing file, and visibly asks for shortening or intentional replacement; the combined message remains within 12,000 bytes.
+- [ ] #7 Applicable Quality Contract gates 1–6 pass for this context/recall slice: all seven exact markers sit by the named executable tests; composed multibyte profile-plus-oversized-index evidence reserves both accurate recall notices before cutting, emits no replacement character, and stays in budget; mutation negatives catch filter-all, cross-project leakage, stale edits/deletions, profile shadowing, and dropped notices. W1 tests remain green under the sole sanctioned B-020 delta, all tests are temp-root/no-model, and the implementation adds no shared-interface change, outward core import, cache/registry/backend/approval, extra tool/consumer, W3, or W4 code.
+<!-- AC:END -->
