@@ -14,6 +14,7 @@ import {
 	type MemoryWriteResult,
 	PROFILE_DESCRIPTION,
 	PROFILE_TITLE,
+	PROFILE_WRITE_MAX_BYTES,
 } from "../../../../lib/memory/index.ts";
 
 const COSMO_AGENT_ID = "main/cosmo";
@@ -23,6 +24,7 @@ const DEFAULT_RECALL_LIMIT = 5;
 const MAX_RECALL_LIMIT = 20;
 const INDEX_RETRIEVAL_LIMIT = 50;
 const INDEX_INJECTION_MAX_BYTES = 12_000;
+const AUTHORED_RECORD_TYPES = ["note", "profile", "playbook"] as const;
 
 const AuthoredTypeLiterals = [
 	Type.Literal("note"),
@@ -243,7 +245,7 @@ export function createAgentMemoryExtension(
 
 			const projectRoot = getOptionalCwd(ctx);
 			if (!projectRoot) return;
-			const result = await retrieveMemoryIndex({
+			const result = await retrieveMemoryContext({
 				store: createStore({
 					ctx: { cwd: projectRoot },
 					userCosmonautsRoot,
@@ -253,15 +255,17 @@ export function createAgentMemoryExtension(
 				projectRoot,
 			});
 			if (result.records.length === 0) return;
+			const content = buildMemoryContext({
+				records: result.records,
+				projectRoot,
+				userCosmonautsRoot,
+			});
+			if (!content) return;
 
 			return {
 				message: {
 					customType: AGENT_MEMORY_CONTEXT_TYPE,
-					content: buildIndexContext({
-						records: result.records,
-						projectRoot,
-						userCosmonautsRoot,
-					}),
+					content,
 					display: false,
 				},
 			};
@@ -272,10 +276,26 @@ export function createAgentMemoryExtension(
 			handler: (event: unknown) => Promise<unknown>,
 		) => void;
 		onContext("context", async (event) => {
+			const messages = getMessages(event);
+			if (!auth.authorized) {
+				return {
+					messages: messages.filter((message) => {
+						const msg = message as { customType?: string };
+						return msg.customType !== AGENT_MEMORY_CONTEXT_TYPE;
+					}),
+				};
+			}
+			const newestMemoryIndex = messages.findLastIndex((message) => {
+				const msg = message as { customType?: string };
+				return msg.customType === AGENT_MEMORY_CONTEXT_TYPE;
+			});
 			return {
-				messages: getMessages(event).filter((message) => {
+				messages: messages.filter((message, index) => {
 					const msg = message as { customType?: string };
-					return msg.customType !== AGENT_MEMORY_CONTEXT_TYPE;
+					return (
+						msg.customType !== AGENT_MEMORY_CONTEXT_TYPE ||
+						index === newestMemoryIndex
+					);
 				}),
 			};
 		});
@@ -412,10 +432,16 @@ async function recall(options: {
 	const limit = normalizeLimit(options.params.limit);
 	const result = await options.store.retrieve(
 		{ projectRoot: options.projectRoot, scopes: ["project", "user"] },
-		{ text: query, recordTypes: ["note"], limit },
+		{ text: query, recordTypes: AUTHORED_RECORD_TYPES },
 	);
+	const pinnedProfiles = result.records.filter(
+		(record) => record.type === "profile",
+	);
+	const boundedRecords = result.records
+		.filter((record) => record.type !== "profile")
+		.slice(0, limit);
 	return renderRecallResult({
-		result,
+		result: { ...result, records: [...pinnedProfiles, ...boundedRecords] },
 		query,
 		limit,
 		projectRoot: options.projectRoot,
@@ -423,7 +449,7 @@ async function recall(options: {
 	});
 }
 
-async function retrieveMemoryIndex(options: {
+async function retrieveMemoryContext(options: {
 	readonly store: MemoryStore;
 	readonly projectRoot: string;
 }): Promise<MemoryRetrieveResult> {
@@ -431,44 +457,115 @@ async function retrieveMemoryIndex(options: {
 		{ projectRoot: options.projectRoot, scopes: ["project", "user"] },
 		{
 			text: "",
-			recordTypes: ["note"],
-			limit: INDEX_RETRIEVAL_LIMIT,
+			recordTypes: AUTHORED_RECORD_TYPES,
 		},
 	);
 }
 
-function buildIndexContext(options: {
+function buildMemoryContext(options: {
 	readonly records: MemoryRetrieveResult["records"];
 	readonly projectRoot: string;
 	readonly userCosmonautsRoot: string;
-}): string {
-	const header = [
+}): string | undefined {
+	const profiles = options.records
+		.filter((record) => record.type === "profile")
+		.toSorted(compareContextRecords);
+	const profile = profiles[0];
+	const indexRecords = options.records
+		.filter((record) => record.type === "note" || record.type === "playbook")
+		.toSorted(compareContextRecords)
+		.slice(0, INDEX_RETRIEVAL_LIMIT);
+	if (!profile && indexRecords.length === 0) return undefined;
+
+	const contextHeader = [
 		"Agent memory index context",
-		`Current disk index of up to ${INDEX_RETRIEVAL_LIMIT} most recent authored project/user memory notes.`,
-		"This context lists compact metadata only, not full note bodies.",
-		"Use recall(query) for full note details before relying on a memory.",
+		"Current disk authored memory for this Cosmo turn.",
 		"",
 	].join("\n");
-	const body = options.records.map((record) =>
-		formatIndexRecord({
-			record,
-			projectRoot: options.projectRoot,
-			userCosmonautsRoot: options.userCosmonautsRoot,
-		}),
-	);
-	const index = `${body.join("\n")}\n`;
-	const complete = `${header}${index}`;
+	const profileSection = profile
+		? formatProfileContext({
+				record: profile,
+				projectRoot: options.projectRoot,
+				userCosmonautsRoot: options.userCosmonautsRoot,
+			})
+		: "";
+	if (indexRecords.length === 0) return `${contextHeader}${profileSection}`;
+
+	const indexHeader = [
+		"## Authored memory index",
+		`Up to ${INDEX_RETRIEVAL_LIMIT} most recent project/user notes and playbooks, ordered by timestamp then path.`,
+		"This section contains compact metadata only, not record bodies.",
+		"Use recall(query) for full authored memory record details before relying on an entry.",
+		"",
+	].join("\n");
+	const indexBody = `${indexRecords
+		.map((record) =>
+			formatIndexRecord({
+				record,
+				projectRoot: options.projectRoot,
+				userCosmonautsRoot: options.userCosmonautsRoot,
+			}),
+		)
+		.join("\n")}\n`;
+	const header = `${contextHeader}${profileSection}${indexHeader}`;
+	const complete = `${header}${indexBody}`;
 	if (byteLength(complete) <= INDEX_INJECTION_MAX_BYTES) return complete;
 
 	return truncateWithFooter({
 		header,
-		content: index,
+		content: indexBody,
 		maxBytes: INDEX_INJECTION_MAX_BYTES,
 		footerForBytes: (includedBytes) =>
-			`\n\n[Truncated memory index from ${byteLength(
-				index,
-			)} UTF-8 bytes to ${includedBytes} bytes. Use recall(query) for full note details.]`,
+			`\n[Memory index truncated. Truncated memory index from ${byteLength(
+				indexBody,
+			)} UTF-8 bytes to ${includedBytes} bytes. Use recall(query) for full authored memory record details.]`,
 	});
+}
+
+function formatProfileContext(options: {
+	readonly record: MemoryRetrieveResult["records"][number];
+	readonly projectRoot: string;
+	readonly userCosmonautsRoot: string;
+}): string {
+	const originalBytes = byteLength(options.record.content);
+	const excerpt = truncateUtf8(options.record.content, PROFILE_WRITE_MAX_BYTES);
+	const includedBytes = byteLength(excerpt);
+	const humanPath = humanReadablePath({
+		path: options.record.path,
+		projectRoot: options.projectRoot,
+		userCosmonautsRoot: options.userCosmonautsRoot,
+	});
+	const truncationNotice =
+		originalBytes > PROFILE_WRITE_MAX_BYTES
+			? [
+					`[Profile truncated: original body ${originalBytes} UTF-8 bytes; included ${includedBytes} bytes.`,
+					`path: ${humanPath}`,
+					"Use recall(query) with profile-matching text to retrieve the complete profile.",
+					"Do not update the profile from this excerpt; first call recall(query) for the full body.]",
+				].join("\n")
+			: "";
+	return [
+		"## User profile",
+		excerpt,
+		"",
+		"Profile metadata:",
+		`type: ${options.record.type}`,
+		`scope: ${options.record.scope}`,
+		`kind: ${options.record.kind ?? "unknown"}`,
+		`timestamp: ${options.record.timestamp}`,
+		`path: ${humanPath}`,
+		truncationNotice,
+		"",
+	]
+		.filter((line, index, lines) => line !== "" || lines[index - 1] !== "")
+		.join("\n");
+}
+
+function compareContextRecords(
+	a: MemoryRetrieveResult["records"][number],
+	b: MemoryRetrieveResult["records"][number],
+): number {
+	return b.timestamp.localeCompare(a.timestamp) || a.path.localeCompare(b.path);
 }
 
 function formatIndexRecord(options: {
@@ -477,7 +574,8 @@ function formatIndexRecord(options: {
 	readonly userCosmonautsRoot: string;
 }): string {
 	return [
-		`- title: ${options.record.title}`,
+		`- type: ${options.record.type}`,
+		`  ${options.record.type === "playbook" ? "name" : "title"}: ${options.record.title}`,
 		`  scope: ${options.record.scope}`,
 		`  kind: ${options.record.kind ?? "unknown"}`,
 		`  timestamp: ${options.record.timestamp}`,
@@ -554,6 +652,16 @@ function renderRememberResult(options: {
 		reason: options.result.reason,
 	};
 	const pathText = humanPath ? ` at ${humanPath}` : "";
+	if (
+		options.result.kind === "unsupported" &&
+		options.draft.type === "profile" &&
+		byteLength(options.draft.content) > PROFILE_WRITE_MAX_BYTES
+	) {
+		return textResult(
+			`Could not replace the user profile${pathText}: ${options.result.reason} Shorten the complete profile to ${PROFILE_WRITE_MAX_BYTES} UTF-8 bytes or fewer, or provide a shorter intentional complete replacement. The existing profile was preserved.`,
+			details,
+		);
+	}
 	return textResult(
 		`Could not save ${options.draft.type} "${options.draft.title}" to ${options.draft.scope} memory${pathText}: ${options.result.reason}`,
 		details,
@@ -624,7 +732,7 @@ function renderRecallResult(options: {
 	if (records.length === 0) {
 		return textResult(
 			[
-				`No authored memory notes matched "${options.query}". Searched scopes: ${
+				`No authored memory records matched "${options.query}". Searched scopes: ${
 					options.result.searchedScopes.join(", ") || "none"
 				}.`,
 				warningText,
@@ -637,7 +745,7 @@ function renderRecallResult(options: {
 
 	return textResult(
 		[
-			`Found ${records.length} authored memory note${
+			`Found ${records.length} authored memory record${
 				records.length === 1 ? "" : "s"
 			} for "${options.query}".`,
 			warningText,
@@ -652,17 +760,20 @@ function renderRecallResult(options: {
 
 function formatRecallWarnings(count: number): string | undefined {
 	if (count === 0) return undefined;
-	return `Warning: ${count} memory note${
+	return `Warning: ${count} authored memory record${
 		count === 1 ? " was" : "s were"
 	} skipped because it could not be read; see details.warnings.`;
 }
 
 function formatRecallRecord(record: RenderedRecallRecord): string {
 	return [
-		`## ${record.title}`,
+		`## Authored memory record: ${record.title}`,
+		`type: ${record.type}`,
+		`${record.type === "playbook" ? "name" : "title"}: ${record.title}`,
 		`scope: ${record.scope}`,
 		`kind: ${record.kind ?? "unknown"}`,
 		`timestamp: ${record.timestamp}`,
+		`description: ${record.description}`,
 		`path: ${record.humanPath}`,
 		"",
 		record.content,
@@ -930,8 +1041,12 @@ function truncateWithFooter(options: {
 	}
 
 	const rendered = `${options.header}${excerpt}${footer}`;
-	if (byteLength(rendered) <= options.maxBytes) return rendered;
-	return truncateUtf8(rendered, options.maxBytes);
+	if (byteLength(rendered) > options.maxBytes) {
+		throw new Error(
+			"Agent memory framing and reserved truncation notices exceed the context byte budget.",
+		);
+	}
+	return rendered;
 }
 
 function truncateUtf8(value: string, maxBytes: number): string {
