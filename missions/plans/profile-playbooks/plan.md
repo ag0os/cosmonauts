@@ -1051,7 +1051,9 @@ definition/prompt.
    revise rather than building parallel machinery. Preserve the plan-local audit
    in final version control state.
 
-2. **Pin W1 and the unchanged contract before refactoring (B-002, B-015).** Run
+2. **Pin W1 and the unchanged contract before refactoring (B-002 starts here —
+   its profile/playbook contract assertions are authored red and turn green in
+   step 3, where B-002 completes; B-015).** Run
    existing memory/extension suites as characterization coverage, add failing
    contract tests for the two new `type` values through the existing interfaces,
    and add an explicit source/boundary assertion that `lib/memory/types.ts` did
