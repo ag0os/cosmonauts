@@ -1,39 +1,51 @@
 # Memory
 
-Cosmonauts W1 memory is a small, plain-text substrate for explicit authored
-agent notes plus generated architecture-map retrieval. It is intentionally
-minimal: files stay human-owned, retrieval scans disk on demand, and Pi session
-state remains responsible for short-term conversational continuity.
+Cosmonauts W2 memory is a small, plain-text substrate for explicit authored
+notes, one user profile, and named playbooks. Files remain human-owned, current
+disk is the source of truth, and Pi session state remains responsible for
+short-term conversational continuity.
 
-## Store Layout
+Only main/cosmo consumes authored agent memory. The extension still exposes
+exactly two tools: remember for explicit saves and recall for pull retrieval.
 
-Authored agent notes live in two sibling markdown stores:
+## Fixed Store Layout
 
-```text
+Project and user memory use sibling stores with fixed locations:
+
+~~~text
 <projectRoot>/memory/agent/
   index.md
   notes/*.md
+  playbooks/<canonical-name>.md
 
 ~/.cosmonauts/memory/agent/
   index.md
+  profile.md
   notes/*.md
-```
+  playbooks/<canonical-name>.md
+~~~
 
-The project store is for facts tied to the current repository or workspace. The
-user store is for durable preferences and facts that should follow the user
-across projects. Both stores use the same on-disk shape. `index.md` is a compact
-derived list rebuilt from valid notes after writes; it is not itself an authored
-record.
+The production user root is ~/.cosmonauts; tests inject a temporary
+userCosmonautsRoot. Project memory is for facts and procedures tied to the
+current repository or workspace. User memory follows the user across projects.
+The profile exists only in the user store.
 
-Generated architecture maps remain separate under `memory/architecture/`. They
-are not part of the authored note store.
+index.md is a deterministic, write-regenerated browsing artifact with
+type: memory-index. It lists valid notes and playbooks, not the profile.
+Retrieval never trusts the index, so it may temporarily lag a human edit until
+the next write without making recall stale. Generated architecture maps remain
+separate under memory/architecture/.
 
-## OKF Note Shape
+## Authored OKF Records
 
-W1 authored records are plain markdown files using OKF v0.1-style YAML
-frontmatter with `type: note`:
+Authored records are markdown with OKF v0.1-style YAML frontmatter. Required
+fields are type, title, description, resource, tags, timestamp, scope, and kind;
+source is optional. The markdown body is the complete content returned by
+recall.
 
-```markdown
+A note keeps the W1 append-style identity and may use any supported memory kind:
+
+~~~markdown
 ---
 type: note
 title: Release branch
@@ -46,81 +58,192 @@ scope: project
 kind: semantic
 source: main/cosmo
 ---
-Staging deploys happen from the `release` branch.
-```
+Staging deploys happen from the release branch.
+~~~
 
-Required frontmatter fields are `type`, `title`, `description`, `resource`,
-`tags`, `timestamp`, `scope`, and `kind`. `source` is optional. The markdown body
-is the full note content returned by recall.
+The profile is a singleton user-scoped semantic record at the stable
+memory/agent/profile.md resource:
 
-W1 scope taxonomy:
+~~~markdown
+---
+type: profile
+title: User profile
+description: Durable user profile and preferences.
+resource: memory/agent/profile.md
+tags:
+  - communication
+timestamp: 2026-07-13T14:00:00.000Z
+scope: user
+kind: semantic
+source: main/cosmo
+---
+I prefer concise status updates with explicit risk callouts.
+~~~
 
-- `session`: recognized by the contract but not backed by a markdown store.
-- `project`: stored under `<projectRoot>/memory/agent/`.
-- `user`: stored under `~/.cosmonauts/memory/agent/`.
+A playbook is a named procedural record in either durable scope:
 
-W1 kind taxonomy:
+~~~markdown
+---
+type: playbook
+title: Release Deploy
+description: Use after a production release is approved.
+resource: memory/agent/playbooks/release-deploy.md
+tags:
+  - release
+timestamp: 2026-07-13T15:00:00.000Z
+scope: project
+kind: procedural
+source: main/cosmo
+---
+When to use: after release approval.
 
-- `semantic`: facts and durable knowledge.
-- `procedural`: preferences, workflows, and instructions.
-- `episodic`: event-like memories tied to something that happened.
+1. Verify the release commit.
+2. Create the tag.
+3. Deploy and validate.
+~~~
 
-## Session Scope
+The playbook body convention is “when to use” followed by steps; it is prompt
+guidance rather than a schema requirement. An omitted description defaults to
+the title.
 
-The Pi-First audit for W1 keeps session memory out of the markdown substrate.
-Session-scoped writes return `unsupported`. Retrieval requests that include
-`session` report it in `skippedScopes` with an explanation instead of creating a
-session store. Pi session state and compaction cover short-term memory.
+The supported combinations are fixed:
 
-## Recall Model
+| Type | Scope | Kind | Write identity |
+|---|---|---|---|
+| note | project or user | semantic, procedural, or episodic | W1 timestamp/slug/hash file |
+| profile | user only | semantic | one complete document replaced at profile.md |
+| playbook | project or user | procedural | current title's canonical key within the scope |
 
-Cosmo uses an index-inject plus pull recall model.
+session remains a recognized contract scope but has no markdown store. Writes
+to it return unsupported, and retrieval reports it in skippedScopes. Pi session
+state and compaction cover short-term memory.
 
-At `before_agent_start`, the `agent-memory` extension loads current project and
-user notes from disk and injects one hidden `agent-memory-context` message for
-`main/cosmo` only. The injected index lists compact metadata only: title, scope,
-kind, timestamp, description, and path. It does not include full note bodies.
+## Profile And Playbook Identity
 
-The injected index is capped to the 50 most recent records before truncation and
-has its own independent 12,000-byte UTF-8 budget. When Cosmo needs details, it
-uses `recall(query)`, which searches current project and user notes and returns
-full note bodies. Recall defaults to 5 results and caps caller-supplied limits
-at 20.
+The profile is always one document. Every profile update supplies the complete
+desired body, not an append fragment or patch, and atomically replaces the same
+path. The visible result distinguishes created from updated and includes the
+caller's changeSummary. A malformed existing profile.md is not silently
+overwritten; the user must fix or delete that human-owned file first.
 
-Retrieval is intentionally simple in W1: each turn reads the store from disk,
-filters plain text, and sorts most recent first. Human edits and deletes are
-visible on the next retrieval. There is no process-local content cache deciding
-truth.
+A playbook's identity is its current frontmatter title canonicalized as follows:
 
-`consolidate()` is part of the shared contract, but both W1 stores return an
-explicit no-op result. W1 performs no background consolidation, pruning, decay,
-or dreaming.
+1. normalize with Unicode NFKC;
+2. trim and lowercase;
+3. replace runs outside Unicode letters and numbers with a hyphen;
+4. remove edge separators; and
+5. keep at most 80 Unicode code points.
 
-## W1 Exclusions
+An empty result is invalid. Equal canonical keys in one scope identify the same
+playbook; the same key in project and user scope identifies two different
+playbooks.
 
-W1 deliberately does not include:
+The current title, not the filename, determines identity. If a human changes
+Release Deploy to Shipping in frontmatter, the existing path can remain
+release-deploy.md, the shipping key now targets that file, and the old
+release-deploy key is free. The old title is not retained as an alias. If a new
+Release Deploy then needs the still-occupied default filename, it uses the
+first deterministic free suffix, such as release-deploy-2.md. Multiple valid
+files claiming one current canonical title are returned with a warning naming
+the conflicting paths, and writes to that ambiguous identity are refused.
 
-- Relevance-gated push recall.
-- Embeddings or vector search.
-- SQLite or another database backend.
-- Decay, pruning, consolidation, dreaming, or background capture.
-- A session-scope markdown store.
-- A registry or plugin framework for memory backends.
-- Future record types beyond authored `note` records and generated
-  architecture-map records.
+## Explicit Save And Failure Flows
 
-Per-turn full-store scans are accepted at W1 scale. Reassess for W2 before
-authored stores grow into the hundreds of records.
+Memory writes are always visible tool calls:
 
-## Ownership And Operations
+- A direct user request to remember something saves immediately, subject to the
+  playbook collision rule.
+- If Cosmo notices a durable preference or repeatable procedure without a save
+  request, it proposes a profile or playbook save, names the intended scope, and
+  calls remember only after explicit assent.
+- A declined or unanswered proposal writes nothing, creates no pending state,
+  and is not repeated as a nag.
+- Profile content holds durable facts and preferences about the user. Project
+  facts remain notes. Every profile update supplies the complete revised body
+  and a visible changeSummary.
+- Every playbook save supplies a name and an explicit project or user scope. A
+  new playbook result states the created name, scope, and human-readable path.
+- If one valid playbook already has the canonical name in that scope, an
+  unconfirmed call returns confirmation_required with the existing name, scope,
+  and path and writes nothing. After the user confirms, Cosmo re-calls remember
+  with confirmUpdate: true. Declining or choosing another name leaves no
+  confirmation state behind.
+- Malformed or misplaced records are skipped with file-specific warnings while
+  healthy records remain available. Invalid type/scope/kind combinations and
+  oversized profile writes are rejected without changing disk.
+- Filesystem failures report the record type, intended scope/path, and reason.
+  Atomic temp-write and rename behavior leaves no partial file, and the session
+  can continue.
 
-Memory files are human-owned markdown. Project memory lives under `memory/` and
-is git-tracked; W1 adds no ignore rule for it. User memory lives under
-`~/.cosmonauts/memory/agent/` and is outside the project repository by default.
+## Recall And Injection
 
-The architecture map remains under `memory/architecture/` and is generated
-state, not authored agent memory.
+Cosmo uses an index-inject plus pull-recall model. On each authorized
+before_agent_start, the extension performs one current-disk list retrieval
+across all three authored types and renders one hidden agent-memory-context
+message:
 
-Drive runs may exclude `missions/**` and `memory/**` artifacts when preparing
-commits or diffs. Always check `git status` when memory files are expected to be
+1. the current user profile body, if present;
+2. compact metadata for at most the 50 most recent notes and playbooks, ordered
+   by timestamp with a path tie-break; and
+3. honest truncation notices directing Cosmo to recall.
+
+The profile and compact index share one UTF-8 budget of 12,000 bytes, including
+headers and notices. The profile comes first. This is not a per-type split: with
+no profile, the index may use the whole budget.
+
+Tool-written profile bodies are limited to 4,000 UTF-8 bytes. A valid profile
+that a human edits beyond that bound remains readable and recallable. Injection
+includes only a UTF-8-safe 4,000-byte excerpt plus the original/included byte
+counts, path, and recall direction. That truncated excerpt is never a safe
+update source: Cosmo must recall the full body first. If the complete desired
+replacement still exceeds 4,000 bytes, the write is rejected, the existing file
+is preserved, and the user is asked to shorten it or provide an intentionally
+shorter complete replacement.
+
+The compact note/playbook index never includes record bodies. recall(query)
+searches the current project and user stores and returns full bodies across
+notes, profile, and playbooks. It defaults to 5 non-profile results and caps a
+requested limit at 20; a matching profile is pinned first outside that window
+so full-profile recovery cannot be shadowed by newer records. W2 adds no type
+parameter and no automatic relevance/push-recall gate.
+
+## Human Ownership And Cost
+
+Markdown on disk is the only correctness state. A human may edit, retitle, or
+delete a profile or playbook; the next scan and recall reflect that change.
+Reads do not scaffold missing files, and deletion is represented by absence.
+Project memory is normally git-tracked; user memory lives outside the
+repository.
+
+W2 intentionally uses no content cache. Each authorized turn performs one full
+logical scan and parse of eligible notes/, playbooks/, and reserved profile
+paths across the project and user stores. A playbook save is worst-case three
+store scans:
+
+1. the extension collision preflight;
+2. the store's own current-title/conflict scan for callers that use the public
+   store directly; and
+3. the notes-plus-playbooks index.md regeneration scan.
+
+That cost is accepted while authored stores remain in the dozens of records.
+Stores approaching hundreds of records are the explicit post-W2 reassess
+trigger; W2 does not add a cache, registry, or alternative backend in advance.
+
+## Boundaries
+
+W2 preserves these limits:
+
+- Only main/cosmo declares the agent-memory extension. Factory registration
+  keeps remember and recall host-visible, but both reject non-Cosmo execution
+  before store access.
+- The shared MemoryStore contract remains unchanged. Its write, retrieve, and
+  consolidate signatures already accept the finite authored vocabulary.
+- consolidate() remains an explicit no-op. There is no pruning, decay,
+  background capture, playbook mining, or dreaming.
+- There is no persisted proposal/approval workflow, record/backend registry,
+  cache, relevance gate, embeddings/vector search, SQLite backend, W3 episodic
+  log, W4 machinery, or additional agent wiring.
+
+Drive runs may exclude missions/** and memory/** artifacts when preparing
+commits or diffs. Always check git status when memory files are expected to be
 part of a change.
