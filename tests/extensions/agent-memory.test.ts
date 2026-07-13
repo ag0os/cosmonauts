@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import matter from "gray-matter";
 import { describe, expect, test, vi } from "vitest";
+import cosmo from "../../domains/main/agents/cosmo.ts";
 import {
 	default as agentMemoryExtension,
 	createAgentMemoryExtension,
@@ -21,6 +22,180 @@ import { createMockPi } from "../helpers/mocks/index.ts";
 const tmp = useTempDir("agent-memory-");
 
 describe("agent-memory extension", () => {
+	test("preserves W1 note save recall allowlisting and Cosmo authorization @cosmo-behavior plan:profile-playbooks#B-015", async () => {
+		const projectRoot = join(tmp.path, "w1-contract-project");
+		const userRoot = join(tmp.path, "w1-contract-user");
+		const store = createMarkdownMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+			now: () => new Date("2026-07-08T14:00:00.000Z"),
+		});
+		const storeFactory = vi.fn(() => store);
+		const pi = createMockPi({ cwd: projectRoot });
+		createAgentMemoryExtension({
+			userCosmonautsRoot: userRoot,
+			storeFactory,
+			now: () => new Date("2026-07-08T14:00:00.000Z"),
+		})(pi as never);
+
+		expect(cosmo).toMatchObject({
+			tools: "none",
+			extensions: expect.arrayContaining(["agent-memory"]),
+		});
+		expect([...pi.tools.keys()]).toEqual(["remember", "recall"]);
+		expect(storeFactory).not.toHaveBeenCalled();
+
+		const initiallyUnauthorized = (await pi.callTool("remember", {
+			content: "Must not be written before a Cosmo turn.",
+		})) as ToolResult;
+		expect(initiallyUnauthorized.details).toMatchObject({
+			status: "unauthorized",
+			authorizedAgent: "main/cosmo",
+		});
+		expect(storeFactory).not.toHaveBeenCalled();
+
+		await pi.fireEvent("before_agent_start", {
+			systemPrompt: buildAgentIdentityMarker("main/not-cosmo"),
+		});
+		const nonCosmo = (await pi.callTool("recall", {
+			query: "anything",
+		})) as ToolResult;
+		expect(nonCosmo.details).toMatchObject({ status: "unauthorized" });
+		expect(storeFactory).not.toHaveBeenCalled();
+
+		const emptyInjection = await pi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: buildAgentIdentityMarker("main/cosmo") },
+			{ cwd: projectRoot },
+		);
+		expect(emptyInjection).toBeUndefined();
+		await expect(readdir(join(projectRoot, "memory"))).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+		await expect(readdir(join(userRoot, "memory"))).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+
+		const saved = (await pi.callTool("remember", {
+			content: "W1 note defaults remain stable.",
+		})) as ToolResult;
+		expect(saved.details).toMatchObject({
+			status: "saved",
+			title: "W1 note defaults remain stable.",
+			scope: "project",
+			kind: "semantic",
+			tags: [],
+			timestamp: "2026-07-08T14:00:00.000Z",
+			humanPath: expect.stringMatching(/^memory\/agent\/notes\//),
+		});
+		const savedPath = stringDetail(saved.details, "path");
+		expect(savedPath).toMatch(
+			/memory\/agent\/notes\/20260708T140000000Z-w1-note-defaults-remain-stable-[a-f0-9]{8}\.md$/,
+		);
+		const parsed = matter(await readFile(savedPath, "utf-8"));
+		expect(parsed.data).toMatchObject({
+			type: "note",
+			title: "W1 note defaults remain stable.",
+			description: "W1 note defaults remain stable.",
+			resource: expect.stringMatching(/^memory\/agent\/notes\//),
+			tags: [],
+			timestamp: "2026-07-08T14:00:00.000Z",
+			scope: "project",
+			kind: "semantic",
+			source: "main/cosmo",
+		});
+		expect(parsed.content.trim()).toBe("W1 note defaults remain stable.");
+
+		await store.write({
+			type: "note",
+			scope: "user",
+			kind: "procedural",
+			title: "Older user procedure",
+			description: "An older user-scoped note.",
+			content: "Follow the older procedure.",
+			tags: [],
+			timestamp: "2026-07-08T13:00:00.000Z",
+		});
+		const listed = await store.retrieve(
+			{ projectRoot, scopes: ["session", "project", "user"] },
+			{ text: "", recordTypes: ["note"], limit: 20 },
+		);
+		expect(listed.records.map((record) => record.title)).toEqual([
+			"W1 note defaults remain stable.",
+			"Older user procedure",
+		]);
+		expect(listed.searchedScopes).toEqual(["project", "user"]);
+		expect(listed.skippedScopes).toEqual([
+			{
+				scope: "session",
+				reason:
+					"Session-scoped markdown memory is not built in W1; Pi session state and compaction cover short-term memory.",
+			},
+		]);
+
+		const defaultRecall = (await pi.callTool("recall", {
+			query: "procedure",
+		})) as ToolResult;
+		expect(defaultRecall.details).toMatchObject({
+			status: "matched",
+			limit: 5,
+			searchedScopes: ["project", "user"],
+		});
+		const cappedRecall = (await pi.callTool("recall", {
+			query: "note",
+			limit: 200,
+		})) as ToolResult;
+		expect(cappedRecall.details).toMatchObject({
+			status: "matched",
+			limit: 20,
+		});
+
+		await expect(store.consolidate()).resolves.toEqual({
+			kind: "noop",
+			reason:
+				"W1 performs no background memory consolidation, pruning, decay, or dreaming.",
+		});
+
+		await pi.fireEvent("session_start");
+		const afterSessionStart = (await pi.callTool("remember", {
+			content: "Session reset must refuse this note.",
+		})) as ToolResult;
+		expect(afterSessionStart.details).toMatchObject({ status: "unauthorized" });
+		await pi.fireEvent("before_agent_start", {
+			systemPrompt: buildAgentIdentityMarker("main/cosmo"),
+		});
+		await pi.fireEvent("session_shutdown");
+		const afterSessionShutdown = (await pi.callTool("recall", {
+			query: "note",
+		})) as ToolResult;
+		expect(afterSessionShutdown.details).toMatchObject({
+			status: "unauthorized",
+		});
+
+		const failedProjectRoot = join(tmp.path, "w1-failed-project");
+		const failedPi = await cosmoPi({
+			projectRoot: failedProjectRoot,
+			userRoot: join(tmp.path, "w1-failed-user"),
+		});
+		await mkdir(join(failedProjectRoot, "memory", "agent", "index.md"), {
+			recursive: true,
+		});
+		const failed = (await failedPi.callTool("remember", {
+			content: "The blocked index must leave no partial note.",
+			title: "Blocked W1 write",
+		})) as ToolResult;
+		expect(failed.details).toMatchObject({
+			status: "failed",
+			title: "Blocked W1 write",
+			scope: "project",
+			path: expect.stringContaining(join("memory", "agent", "notes")),
+			reason: expect.stringMatching(/EISDIR|directory/i),
+		});
+		await expect(
+			readdir(join(failedProjectRoot, "memory", "agent", "notes")),
+		).resolves.toEqual([]);
+	});
+
 	test("registers remember and recall at factory load with short host-safe descriptions @cosmo-behavior plan:memory-interface#B-012", () => {
 		const pi = createMockPi({ cwd: tmp.path });
 		agentMemoryExtension(pi as never);

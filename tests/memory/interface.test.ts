@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -14,6 +15,105 @@ import { useTempDir } from "../helpers/fs.ts";
 const tmp = useTempDir("memory-interface-");
 
 describe("memory interface", () => {
+	test("supports note profile and playbook through the unchanged MemoryStore contract @cosmo-behavior plan:profile-playbooks#B-002", async () => {
+		const projectRoot = join(tmp.path, "authored-types-project");
+		const userRoot = join(tmp.path, "authored-types-user");
+		const store: MemoryStore = createMarkdownMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+			now: () => new Date("2026-07-13T14:00:00.000Z"),
+		});
+		const [typesSource, indexSource, storeSource, architectureAdapterSource] =
+			await Promise.all([
+				readFile(join(process.cwd(), "lib", "memory", "types.ts"), "utf-8"),
+				readFile(join(process.cwd(), "lib", "memory", "index.ts"), "utf-8"),
+				readFile(
+					join(process.cwd(), "lib", "memory", "markdown-store.ts"),
+					"utf-8",
+				),
+				readFile(
+					join(process.cwd(), "lib", "architecture-map", "retrieval.ts"),
+					"utf-8",
+				),
+			]);
+
+		expect(createHash("sha256").update(typesSource).digest("hex")).toBe(
+			"f4a05e638d22fe07ae0122908bd6d12333191a115f1b1aa2ae5d7e8fb7027f64",
+		);
+		expect(
+			createHash("sha256").update(architectureAdapterSource).digest("hex"),
+		).toBe("12831c7ee41a852da7b667a0dfa7a2baa0d58799490eb5c782589d7a5f573ba8");
+		expect(typesSource).toContain("readonly type: string;");
+		expect(typesSource).toContain("readonly recordTypes?: readonly string[];");
+		expect(typesSource).toContain('readonly kind: "written";');
+		expect(typesSource).toContain('readonly kind: "unsupported";');
+		expect(typesSource).toContain('readonly kind: "failed";');
+		expect(
+			[typesSource, indexSource, storeSource, architectureAdapterSource].join(
+				"\n",
+			),
+		).not.toMatch(/\b(?:registry|backend|plugin|dispatch)\b/i);
+
+		const writes = [
+			await store.write({
+				type: "note",
+				scope: "project",
+				kind: "semantic",
+				title: "Release branch",
+				description: "Project deployment fact.",
+				content: "Deploy releases from the release branch.",
+				tags: ["deploys"],
+				timestamp: "2026-07-13T13:00:00.000Z",
+			}),
+			await store.write({
+				type: "profile",
+				scope: "user",
+				kind: "semantic",
+				title: "User profile",
+				description: "Durable user preferences.",
+				content: "Prefer concise technical explanations.",
+				tags: ["preferences"],
+				timestamp: "2026-07-13T15:00:00.000Z",
+			}),
+			await store.write({
+				type: "playbook",
+				scope: "project",
+				kind: "procedural",
+				title: "Ship a release",
+				description: "Release procedure.",
+				content: "When releasing, verify, tag, then deploy.",
+				tags: ["releases"],
+				timestamp: "2026-07-13T14:00:00.000Z",
+			}),
+		];
+		const retrieved = await store.retrieve(
+			{ projectRoot, scopes: ["project", "user"] },
+			{ recordTypes: ["note", "profile", "playbook"] },
+		);
+		const consolidated = await store.consolidate();
+
+		expect(consolidated).toEqual({
+			kind: "noop",
+			reason:
+				"W1 performs no background memory consolidation, pruning, decay, or dreaming.",
+		});
+		expect.soft(writes[0]).toMatchObject({
+			kind: "written",
+			record: { type: "note" },
+		});
+		expect.soft(writes[1]).toMatchObject({
+			kind: "written",
+			record: { type: "profile" },
+		});
+		expect.soft(writes[2]).toMatchObject({
+			kind: "written",
+			record: { type: "playbook" },
+		});
+		expect
+			.soft(retrieved.records.map((record) => record.type))
+			.toEqual(["profile", "playbook", "note"]);
+	});
+
 	test("consolidate reports an honest W1 no-op for markdown and architecture stores @cosmo-behavior plan:memory-interface#B-011", async () => {
 		const userRoot = join(tmp.path, "user-cosmonauts");
 		const markdown = createMarkdownMemoryStore({
