@@ -506,6 +506,68 @@ describe("agent-memory extension", () => {
 		});
 	});
 
+	test("keeps the injected context within the byte budget when human profile framing is pathological", async () => {
+		const projectRoot = join(tmp.path, "pathological-framing-project");
+		const userRoot = join(tmp.path, "pathological-framing-user");
+		// Bodies are bounded on write, but a human can edit frontmatter freely: an
+		// unbounded metadata value must not escape the budget or throw the turn.
+		const profileRecord = record({
+			type: "profile",
+			scope: "user",
+			kind: "semantic",
+			title: "User profile",
+			description: "Durable user profile and preferences.",
+			resource: "memory/agent/profile.md",
+			path: join(userRoot, "memory", "agent", "profile.md"),
+			timestamp: `2026-07-13T14:00:00.000Z${"時".repeat(5_000)}`,
+			content: "Terse answers. Mornings blocked for deep work.",
+		});
+
+		const profileOnlyPi = createMockPi({ cwd: projectRoot });
+		createAgentMemoryExtension({
+			userCosmonautsRoot: userRoot,
+			storeFactory: () =>
+				memoryStore({
+					retrieve: async () => ({
+						records: [profileRecord],
+						searchedScopes: ["project", "user"],
+						skippedScopes: [],
+						warnings: [],
+					}),
+				}),
+		})(profileOnlyPi as never);
+		const profileOnly = await injectionFor(profileOnlyPi, projectRoot);
+		expect(Buffer.byteLength(profileOnly, "utf-8")).toBeLessThanOrEqual(12_000);
+		expect(profileOnly).toContain("## User profile");
+		expect(profileOnly).toContain("Terse answers.");
+		expect(profileOnly).not.toContain("�");
+
+		const withIndexPi = createMockPi({ cwd: projectRoot });
+		createAgentMemoryExtension({
+			userCosmonautsRoot: userRoot,
+			storeFactory: () =>
+				memoryStore({
+					retrieve: async () => ({
+						records: [
+							profileRecord,
+							record({
+								title: "Companion note",
+								description: "Compact metadata.",
+								path: join(projectRoot, "memory", "agent", "notes", "n.md"),
+							}),
+						],
+						searchedScopes: ["project", "user"],
+						skippedScopes: [],
+						warnings: [],
+					}),
+				}),
+		})(withIndexPi as never);
+		const withIndex = await injectionFor(withIndexPi, projectRoot);
+		expect(Buffer.byteLength(withIndex, "utf-8")).toBeLessThanOrEqual(12_000);
+		expect(withIndex).toContain("## User profile");
+		expect(withIndex).not.toContain("�");
+	});
+
 	test("injects recalls and protects oversized human profiles honestly @cosmo-behavior plan:profile-playbooks#B-022", async () => {
 		const projectRoot = join(tmp.path, "oversized-profile-project");
 		const userRoot = join(tmp.path, "oversized-profile-user");

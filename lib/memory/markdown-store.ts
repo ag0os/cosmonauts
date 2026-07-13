@@ -49,6 +49,9 @@ const NOOP_REASON =
 	"W1 performs no background memory consolidation, pruning, decay, or dreaming.";
 const SESSION_SKIPPED_REASON =
 	"Session-scoped markdown memory is not built in W1; Pi session state and compaction cover short-term memory.";
+// A freed canonical name falls back to a numeric suffix. Bound the probe so a dense
+// suffix range fails honestly instead of scanning the filesystem indefinitely.
+const MAX_ALTERNATE_PLAYBOOK_PATHS = 100;
 
 export interface MarkdownMemoryStoreOptions {
 	readonly projectRoot: string;
@@ -658,15 +661,16 @@ async function firstAvailablePlaybookPath(options: {
 	readonly playbooksDir: string;
 	readonly canonicalKey: string;
 }): Promise<string> {
-	let suffix = 2;
-	while (true) {
+	for (let suffix = 2; suffix < 2 + MAX_ALTERNATE_PLAYBOOK_PATHS; suffix += 1) {
 		const path = join(
 			options.playbooksDir,
 			`${options.canonicalKey}-${suffix}.md`,
 		);
 		if (!(await pathExists(path))) return path;
-		suffix += 1;
 	}
+	throw new Error(
+		`No free playbook filename for "${options.canonicalKey}" after ${MAX_ALTERNATE_PLAYBOOK_PATHS} attempts; remove unused playbook files in ${options.playbooksDir}.`,
+	);
 }
 
 async function pathExists(path: string): Promise<boolean> {

@@ -24,6 +24,9 @@ const DEFAULT_RECALL_LIMIT = 5;
 const MAX_RECALL_LIMIT = 20;
 const INDEX_RETRIEVAL_LIMIT = 50;
 const INDEX_INJECTION_MAX_BYTES = 12_000;
+// Record bodies are bounded on write, but human-edited frontmatter values are not.
+// Clamp each rendered metadata value so profile framing can never consume the budget.
+const PROFILE_METADATA_VALUE_MAX_BYTES = 512;
 const AUTHORED_RECORD_TYPES = ["note", "profile", "playbook"] as const;
 
 const AuthoredTypeLiterals = [
@@ -489,7 +492,20 @@ function buildMemoryContext(options: {
 				userCosmonautsRoot: options.userCosmonautsRoot,
 			})
 		: "";
-	if (indexRecords.length === 0) return `${contextHeader}${profileSection}`;
+	if (indexRecords.length === 0) {
+		const profileOnly = `${contextHeader}${profileSection}`;
+		if (byteLength(profileOnly) <= INDEX_INJECTION_MAX_BYTES)
+			return profileOnly;
+		return truncateWithFooter({
+			header: contextHeader,
+			content: profileSection,
+			maxBytes: INDEX_INJECTION_MAX_BYTES,
+			footerForBytes: (includedBytes) =>
+				`\n[Memory context truncated. Truncated profile section from ${byteLength(
+					profileSection,
+				)} UTF-8 bytes to ${includedBytes} bytes. Use recall(query) for full authored memory record details.]`,
+		});
+	}
 
 	const indexHeader = [
 		"## Authored memory index",
@@ -539,7 +555,7 @@ function formatProfileContext(options: {
 		originalBytes > PROFILE_WRITE_MAX_BYTES
 			? [
 					`[Profile truncated: original body ${originalBytes} UTF-8 bytes; included ${includedBytes} bytes.`,
-					`path: ${humanPath}`,
+					`path: ${clampMetadataValue(humanPath)}`,
 					"Use recall(query) with profile-matching text to retrieve the complete profile.",
 					"Do not update the profile from this excerpt; first call recall(query) for the full body.]",
 				].join("\n")
@@ -549,11 +565,11 @@ function formatProfileContext(options: {
 		excerpt,
 		"",
 		"Profile metadata:",
-		`type: ${options.record.type}`,
-		`scope: ${options.record.scope}`,
-		`kind: ${options.record.kind ?? "unknown"}`,
-		`timestamp: ${options.record.timestamp}`,
-		`path: ${humanPath}`,
+		`type: ${clampMetadataValue(options.record.type)}`,
+		`scope: ${clampMetadataValue(options.record.scope)}`,
+		`kind: ${clampMetadataValue(options.record.kind ?? "unknown")}`,
+		`timestamp: ${clampMetadataValue(options.record.timestamp)}`,
+		`path: ${clampMetadataValue(humanPath)}`,
 		truncationNotice,
 		"",
 	]
@@ -1041,12 +1057,20 @@ function truncateWithFooter(options: {
 	}
 
 	const rendered = `${options.header}${excerpt}${footer}`;
-	if (byteLength(rendered) > options.maxBytes) {
-		throw new Error(
-			"Agent memory framing and reserved truncation notices exceed the context byte budget.",
-		);
-	}
-	return rendered;
+	if (byteLength(rendered) <= options.maxBytes) return rendered;
+
+	// Framing plus reserved notices alone exceed the budget. Clamp the framing rather
+	// than throwing: a turn must still receive an honest, budget-conforming message.
+	const headerBudget = Math.max(0, options.maxBytes - byteLength(footer));
+	const clamped = `${truncateUtf8(options.header, headerBudget)}${footer}`;
+	return byteLength(clamped) <= options.maxBytes
+		? clamped
+		: truncateUtf8(clamped, options.maxBytes);
+}
+
+function clampMetadataValue(value: string): string {
+	if (byteLength(value) <= PROFILE_METADATA_VALUE_MAX_BYTES) return value;
+	return `${truncateUtf8(value, PROFILE_METADATA_VALUE_MAX_BYTES)} [value truncated]`;
 }
 
 function truncateUtf8(value: string, maxBytes: number): string {
