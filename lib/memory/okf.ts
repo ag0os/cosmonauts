@@ -41,7 +41,7 @@ export type AuthoredRecordInput =
 	| AuthoredProfileInput
 	| AuthoredPlaybookInput;
 
-export type ParseAuthoredRecordResult =
+type ParseAuthoredRecordResult =
 	| { readonly ok: true; readonly record: AuthoredRecordInput }
 	| { readonly ok: false; readonly message: string };
 
