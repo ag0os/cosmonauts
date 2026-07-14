@@ -1646,8 +1646,9 @@ describe("agent-memory extension", () => {
 		})) as ToolResult;
 		expect(matched.details).toMatchObject({ status: "matched" });
 		expect(resultText(matched)).toContain(
-			"Warning: 1 authored memory record was skipped because it could not be read; see details.warnings.",
+			"Warning: 1 authored memory record was skipped because it could not be read:",
 		);
+		expect(resultText(matched)).toContain("- memory/agent/notes/bad-note.md:");
 		expect(warnings(matched.details)).toEqual([
 			expect.objectContaining({
 				path: expect.stringContaining("bad-note.md"),
@@ -1660,9 +1661,62 @@ describe("agent-memory extension", () => {
 		})) as ToolResult;
 		expect(noMatch.details).toMatchObject({ status: "no_match" });
 		expect(resultText(noMatch)).toContain(
-			"Warning: 1 authored memory record was skipped because it could not be read; see details.warnings.",
+			"Warning: 1 authored memory record was skipped because it could not be read:",
 		);
+		expect(resultText(noMatch)).toContain("- memory/agent/notes/bad-note.md:");
 		expect(warnings(noMatch.details)).toEqual(warnings(matched.details));
+	});
+
+	test("injected context names skipped records instead of silently dropping them", async () => {
+		const projectRoot = join(tmp.path, "warning-inject-project");
+		const userRoot = join(tmp.path, "warning-inject-user");
+		const store = createMarkdownMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+		});
+		await writeMemoryNote(store, {
+			scope: "project",
+			kind: "semantic",
+			title: "Healthy note",
+			description: "Still readable.",
+			content: "Healthy body.",
+			timestamp: "2026-07-14T10:00:00.000Z",
+		});
+		await writeMalformedProjectNote(projectRoot, "bad-note.md");
+		const pi = createMockPi({ cwd: projectRoot });
+		createAgentMemoryExtension({
+			userCosmonautsRoot: userRoot,
+			now: () => new Date("2026-07-14T11:00:00.000Z"),
+		})(pi as never);
+
+		const content = await injectionFor(pi, projectRoot);
+		expect(content).toContain("## Memory warnings");
+		expect(content).toContain(
+			"1 authored memory record on disk could not be read and is missing from this context:",
+		);
+		expect(content).toContain("- memory/agent/notes/bad-note.md:");
+		expect(content).toContain("title: Healthy note");
+	});
+
+	test("a store with only unreadable records still injects a notice naming them", async () => {
+		const projectRoot = join(tmp.path, "warning-only-project");
+		const userRoot = join(tmp.path, "warning-only-user");
+		await mkdir(join(userRoot, "memory", "agent"), { recursive: true });
+		await writeFile(
+			join(userRoot, "memory", "agent", "profile.md"),
+			"---\ntype: profile\n---\nMangled human-edited profile.\n",
+			"utf-8",
+		);
+		const pi = createMockPi({ cwd: projectRoot });
+		createAgentMemoryExtension({
+			userCosmonautsRoot: userRoot,
+			now: () => new Date("2026-07-14T11:00:00.000Z"),
+		})(pi as never);
+
+		const content = await injectionFor(pi, projectRoot);
+		expect(content).toContain("## Memory warnings");
+		expect(content).toContain("- .cosmonauts/memory/agent/profile.md:");
+		expect(content).toContain("Use recall(query)");
 	});
 
 	test("injects one hidden current disk note index for main/cosmo and filters stale context @cosmo-behavior plan:memory-interface#B-006", async () => {

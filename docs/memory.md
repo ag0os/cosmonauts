@@ -191,8 +191,13 @@ message:
 
 1. the current user profile body, if present;
 2. compact metadata for at most the 50 most recent notes and playbooks, ordered
-   by timestamp with a path tie-break; and
-3. honest truncation notices directing Cosmo to recall.
+   by timestamp with a path tie-break;
+3. honest truncation notices directing Cosmo to recall; and
+4. a memory-warnings section naming records that could not be read (at most 5
+   entries, each clamped, with an overflow count). Warnings also appear in
+   recall's visible text. A store whose only content is unreadable still
+   injects the warnings notice, so a mangled profile is named instead of
+   silently forgotten.
 
 The profile and compact index share one UTF-8 budget of 12,000 bytes, including
 headers and notices. The profile comes first. This is not a per-type split: with

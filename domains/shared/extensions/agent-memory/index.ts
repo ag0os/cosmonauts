@@ -27,6 +27,11 @@ const INDEX_INJECTION_MAX_BYTES = 12_000;
 // Record bodies are bounded on write, but human-edited frontmatter values are not.
 // Clamp each rendered metadata value so profile framing can never consume the budget.
 const PROFILE_METADATA_VALUE_MAX_BYTES = 512;
+// Warnings name the offending file and reason. They are the only signal a user
+// gets that a record silently vanished, so they must reach visible text — the
+// model never sees tool-result details, and injected context has no details at
+// all. Bound them so an adversarial store cannot flood a budgeted message.
+const MAX_VISIBLE_WARNINGS = 5;
 const AUTHORED_RECORD_TYPES = ["note", "profile", "playbook"] as const;
 
 const AuthoredTypeLiterals = [
@@ -257,9 +262,10 @@ export function createAgentMemoryExtension(
 				}),
 				projectRoot,
 			});
-			if (result.records.length === 0) return;
+			if (result.records.length === 0 && result.warnings.length === 0) return;
 			const content = buildMemoryContext({
 				records: result.records,
+				warnings: result.warnings,
 				projectRoot,
 				userCosmonautsRoot,
 			});
@@ -467,6 +473,7 @@ async function retrieveMemoryContext(options: {
 
 function buildMemoryContext(options: {
 	readonly records: MemoryRetrieveResult["records"];
+	readonly warnings: MemoryRetrieveResult["warnings"];
 	readonly projectRoot: string;
 	readonly userCosmonautsRoot: string;
 }): string | undefined {
@@ -478,13 +485,26 @@ function buildMemoryContext(options: {
 		.filter((record) => record.type === "note" || record.type === "playbook")
 		.toSorted(compareContextRecords)
 		.slice(0, INDEX_RETRIEVAL_LIMIT);
-	if (!profile && indexRecords.length === 0) return undefined;
+	const warningsSection = formatContextWarnings({
+		warnings: options.warnings,
+		projectRoot: options.projectRoot,
+		userCosmonautsRoot: options.userCosmonautsRoot,
+	});
+	if (!profile && indexRecords.length === 0 && !warningsSection) {
+		return undefined;
+	}
 
-	const contextHeader = [
+	const contextHeader = `${[
 		"Agent memory index context",
 		"Current disk authored memory for this Cosmo turn.",
 		"",
-	].join("\n");
+	].join("\n")}${warningsSection}`;
+	if (!profile && indexRecords.length === 0) {
+		const warningsOnly = `${contextHeader}Use recall(query) for full authored memory record details.\n`;
+		return byteLength(warningsOnly) <= INDEX_INJECTION_MAX_BYTES
+			? warningsOnly
+			: truncateUtf8(warningsOnly, INDEX_INJECTION_MAX_BYTES);
+	}
 	const profileSection = profile
 		? formatProfileContext({
 				record: profile,
@@ -743,7 +763,11 @@ function renderRecallResult(options: {
 		records,
 	};
 
-	const warningText = formatRecallWarnings(options.result.warnings.length);
+	const warningText = formatRecallWarnings({
+		warnings: options.result.warnings,
+		projectRoot: options.projectRoot,
+		userCosmonautsRoot: options.userCosmonautsRoot,
+	});
 
 	if (records.length === 0) {
 		return textResult(
@@ -774,11 +798,53 @@ function renderRecallResult(options: {
 	);
 }
 
-function formatRecallWarnings(count: number): string | undefined {
+interface WarningFormatOptions {
+	readonly warnings: MemoryRetrieveResult["warnings"];
+	readonly projectRoot: string;
+	readonly userCosmonautsRoot: string;
+}
+
+function formatWarningLines(options: WarningFormatOptions): string[] {
+	const visible = options.warnings.slice(0, MAX_VISIBLE_WARNINGS);
+	const lines = visible.map((warning) => {
+		const location = warning.path
+			? `${humanReadablePath({
+					path: warning.path,
+					projectRoot: options.projectRoot,
+					userCosmonautsRoot: options.userCosmonautsRoot,
+				})}: `
+			: "";
+		return clampMetadataValue(`- ${location}${warning.message}`);
+	});
+	const hidden = options.warnings.length - visible.length;
+	if (hidden > 0) lines.push(`(+${hidden} more)`);
+	return lines;
+}
+
+function formatRecallWarnings(
+	options: WarningFormatOptions,
+): string | undefined {
+	const count = options.warnings.length;
 	if (count === 0) return undefined;
-	return `Warning: ${count} authored memory record${
-		count === 1 ? " was" : "s were"
-	} skipped because it could not be read; see details.warnings.`;
+	return [
+		`Warning: ${count} authored memory record${
+			count === 1 ? " was" : "s were"
+		} skipped because ${count === 1 ? "it" : "they"} could not be read:`,
+		...formatWarningLines(options),
+	].join("\n");
+}
+
+function formatContextWarnings(options: WarningFormatOptions): string {
+	const count = options.warnings.length;
+	if (count === 0) return "";
+	return `${[
+		"## Memory warnings",
+		`${count} authored memory record${count === 1 ? "" : "s"} on disk could not be read and ${
+			count === 1 ? "is" : "are"
+		} missing from this context:`,
+		...formatWarningLines(options),
+		"",
+	].join("\n")}\n`;
 }
 
 function formatRecallRecord(record: RenderedRecallRecord): string {
