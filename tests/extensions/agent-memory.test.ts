@@ -942,7 +942,7 @@ describe("agent-memory extension", () => {
 			(await readdir(join(userRoot, "memory", "agent"))).filter((name) =>
 				name.includes("profile"),
 			),
-		).toEqual(["profile.md"]);
+		).toEqual(["profile.md", "profile.md.prev"]);
 
 		const malformed =
 			"---\ntype: profile\n---\nHuman-owned malformed profile.\n";

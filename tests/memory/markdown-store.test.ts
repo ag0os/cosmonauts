@@ -1375,7 +1375,7 @@ describe("markdown memory store", () => {
 			(await readdir(join(userRoot, "memory", "agent"))).filter((name) =>
 				name.includes("profile"),
 			),
-		).toEqual(["profile.md"]);
+		).toEqual(["profile.md", "profile.md.prev"]);
 		expect(
 			await readFile(join(userRoot, "memory", "agent", "index.md"), "utf-8"),
 		).toBe(
@@ -1407,6 +1407,58 @@ describe("markdown memory store", () => {
 				type: "unknown",
 			}),
 		).resolves.toMatchObject({ kind: "unsupported" });
+	});
+
+	test("keeps one previous profile version in a sidecar the store never lists", async () => {
+		const projectRoot = join(tmp.path, "sidecar-project");
+		const userRoot = join(tmp.path, "sidecar-user");
+		let currentTime = "2026-07-14T10:00:00.000Z";
+		const store = createMarkdownMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+			now: () => new Date(currentTime),
+		});
+		const draft = {
+			type: "profile",
+			scope: "user",
+			kind: "semantic",
+			title: "User profile",
+			description: "Durable user profile and preferences.",
+			content: "First complete profile.",
+			tags: [],
+		} as const;
+		const sidecarPath = join(userRoot, "memory", "agent", "profile.md.prev");
+
+		const first = await store.write(draft);
+		if (first.kind !== "written") throw new Error("expected profile write");
+		await expect(stat(sidecarPath)).rejects.toMatchObject({ code: "ENOENT" });
+
+		const firstOnDisk = await readFile(first.path, "utf-8");
+		currentTime = "2026-07-14T11:00:00.000Z";
+		const second = await store.write({
+			...draft,
+			content: "Second complete profile.",
+		});
+		expect(second).toMatchObject({ kind: "written" });
+		expect(await readFile(sidecarPath, "utf-8")).toBe(firstOnDisk);
+
+		const secondOnDisk = await readFile(first.path, "utf-8");
+		currentTime = "2026-07-14T12:00:00.000Z";
+		const third = await store.write({
+			...draft,
+			content: "Third complete profile.",
+		});
+		expect(third).toMatchObject({ kind: "written" });
+		expect(await readFile(sidecarPath, "utf-8")).toBe(secondOnDisk);
+
+		const retrieved = await store.retrieve(
+			{ projectRoot, scopes: ["user"] },
+			{ text: "" },
+		);
+		expect(retrieved.warnings).toEqual([]);
+		expect(
+			retrieved.records.map((record) => [record.type, record.content]),
+		).toEqual([["profile", "Third complete profile."]]);
 	});
 });
 

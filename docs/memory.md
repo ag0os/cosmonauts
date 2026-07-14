@@ -126,6 +126,13 @@ path. The visible result distinguishes created from updated and includes the
 caller's changeSummary. A malformed existing profile.md is not silently
 overwritten; the user must fix or delete that human-owned file first.
 
+Before an existing profile is replaced, its prior content is copied to
+profile.md.prev next to it — exactly one previous version, overwritten on each
+replacement. The sidecar is never listed, retrieved, or indexed. To recover
+from a bad overwrite, copy profile.md.prev back over profile.md by hand. If
+the sidecar cannot be written, the replacement fails and the current profile
+is left untouched.
+
 A playbook's identity is its current frontmatter title canonicalized as follows:
 
 1. normalize with Unicode NFKC;

@@ -213,11 +213,22 @@ async function writeProfile(options: {
 		source: options.record.source,
 		content: options.record.content,
 	};
+	const rendered = renderAuthoredRecord(profile);
+	// The profile is a singleton replaced whole; keep exactly one prior version
+	// so any overwrite — model-authored or a racing session — stays recoverable.
+	// Refuse to replace what cannot be backed up.
+	if (existing !== undefined && existing !== rendered) {
+		try {
+			await writeFileAtomic(paths.profilePreviousPath, existing);
+		} catch (error: unknown) {
+			return failedWrite({ record: options.record, path, error });
+		}
+	}
 	return persistAuthoredRecord({
 		context: options.context,
 		record: profile,
 		path,
-		rendered: renderAuthoredRecord(profile),
+		rendered,
 		existing,
 	});
 }
@@ -683,6 +694,10 @@ async function writeFileIfChanged(
 ): Promise<void> {
 	const previous = existing ?? (await readFileIfExists(path));
 	if (previous === content) return;
+	await writeFileAtomic(path, content);
+}
+
+async function writeFileAtomic(path: string, content: string): Promise<void> {
 	await mkdir(dirname(path), { recursive: true });
 	const tempPath = `${path}.${process.pid}.${Date.now()}.tmp`;
 	try {

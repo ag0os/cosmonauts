@@ -6,6 +6,7 @@ const NOTE_RESOURCE_DIR = `${AGENT_MEMORY_RESOURCE_DIR}/notes`;
 const PLAYBOOK_RESOURCE_DIR = `${AGENT_MEMORY_RESOURCE_DIR}/playbooks`;
 export const AGENT_MEMORY_INDEX_RESOURCE = `${AGENT_MEMORY_RESOURCE_DIR}/index.md`;
 export const AGENT_MEMORY_PROFILE_RESOURCE = `${AGENT_MEMORY_RESOURCE_DIR}/profile.md`;
+export const AGENT_MEMORY_PROFILE_PREVIOUS_RESOURCE = `${AGENT_MEMORY_PROFILE_RESOURCE}.prev`;
 
 interface AgentMemoryStorePaths {
 	readonly root: string;
@@ -13,6 +14,7 @@ interface AgentMemoryStorePaths {
 	readonly notesDir: string;
 	readonly playbooksDir: string;
 	readonly profilePath: string;
+	readonly profilePreviousPath: string;
 	readonly indexPath: string;
 	readonly scope: Exclude<MemoryScopeName, "session">;
 }
@@ -33,6 +35,7 @@ export function resolveAgentMemoryStorePaths(options: {
 		notesDir: join(root, NOTE_RESOURCE_DIR),
 		playbooksDir: join(root, PLAYBOOK_RESOURCE_DIR),
 		profilePath: join(root, AGENT_MEMORY_PROFILE_RESOURCE),
+		profilePreviousPath: join(root, AGENT_MEMORY_PROFILE_PREVIOUS_RESOURCE),
 		indexPath: join(root, AGENT_MEMORY_INDEX_RESOURCE),
 		scope: options.scope,
 	};
