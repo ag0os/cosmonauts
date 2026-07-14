@@ -1,13 +1,13 @@
 ---
 id: TASK-469
 title: Fix stale remember tool description
-status: To Do
+status: Done
 priority: low
 labels:
   - 'plan:memory-hardening'
 dependencies: []
 createdAt: '2026-07-14T14:40:45.080Z'
-updatedAt: '2026-07-14T14:40:45.080Z'
+updatedAt: '2026-07-14T14:54:36.966Z'
 ---
 
 <!-- AC:BEGIN -->

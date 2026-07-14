@@ -1,13 +1,13 @@
 ---
 id: TASK-466
 title: 'Pin Pi contract: schema serialization and sequential dispatch'
-status: To Do
+status: Done
 priority: high
 labels:
   - 'plan:memory-hardening'
 dependencies: []
 createdAt: '2026-07-14T14:40:43.802Z'
-updatedAt: '2026-07-14T14:40:43.802Z'
+updatedAt: '2026-07-14T14:45:58.238Z'
 ---
 
 <!-- AC:BEGIN -->

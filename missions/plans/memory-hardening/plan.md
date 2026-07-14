@@ -1,8 +1,8 @@
 ---
 title: Agent-memory post-merge hardening
-status: active
+status: completed
 createdAt: '2026-07-14T14:39:34.779Z'
-updatedAt: '2026-07-14T14:39:34.779Z'
+updatedAt: '2026-07-14T15:01:50.330Z'
 ---
 
 ## Overview

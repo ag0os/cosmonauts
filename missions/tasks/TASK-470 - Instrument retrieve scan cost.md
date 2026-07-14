@@ -1,13 +1,13 @@
 ---
 id: TASK-470
 title: Instrument retrieve scan cost
-status: To Do
+status: Done
 priority: medium
 labels:
   - 'plan:memory-hardening'
 dependencies: []
 createdAt: '2026-07-14T14:40:45.504Z'
-updatedAt: '2026-07-14T14:40:45.504Z'
+updatedAt: '2026-07-14T15:00:23.723Z'
 ---
 
 <!-- AC:BEGIN -->

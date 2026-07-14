@@ -1,13 +1,13 @@
 ---
 id: TASK-468
 title: Surface memory warnings to model and injected context
-status: To Do
+status: Done
 priority: medium
 labels:
   - 'plan:memory-hardening'
 dependencies: []
 createdAt: '2026-07-14T14:40:44.647Z'
-updatedAt: '2026-07-14T14:40:44.647Z'
+updatedAt: '2026-07-14T14:53:20.571Z'
 ---
 
 <!-- AC:BEGIN -->
