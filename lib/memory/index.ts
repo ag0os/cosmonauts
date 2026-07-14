@@ -16,6 +16,7 @@ export {
 	type MemoryQuery,
 	type MemoryRecordDraft,
 	type MemoryRetrieveResult,
+	type MemoryRetrieveStats,
 	type MemoryScopeContext,
 	type MemoryScopeName,
 	type MemorySkippedScope,

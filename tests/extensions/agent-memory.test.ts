@@ -1669,6 +1669,28 @@ describe("agent-memory extension", () => {
 		expect(warnings(noMatch.details)).toEqual(warnings(matched.details));
 	});
 
+	test("recall details expose scan-cost stats from the store", async () => {
+		const pi = await cosmoPi({
+			projectRoot: join(tmp.path, "stats-recall-project"),
+			userRoot: join(tmp.path, "stats-recall-user"),
+		});
+		await pi.callTool("remember", {
+			content: "Scan stats fact.",
+			title: "Scan stats",
+		});
+		const result = (await pi.callTool("recall", {
+			query: "Scan stats",
+		})) as ToolResult;
+		expect(result.details).toMatchObject({
+			status: "matched",
+			stats: {
+				filesScanned: 1,
+				bytesRead: expect.any(Number),
+				durationMs: expect.any(Number),
+			},
+		});
+	});
+
 	test("injected context names skipped records instead of silently dropping them", async () => {
 		const projectRoot = join(tmp.path, "warning-inject-project");
 		const userRoot = join(tmp.path, "warning-inject-user");

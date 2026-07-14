@@ -264,6 +264,7 @@ async function writePlaybook(options: {
 		const current = await readPlaybookRecords({
 			storePaths: paths,
 			warnings: [],
+			tally: newScanTally(),
 		});
 		const matches = current.filter(
 			(record) => canonicalizePlaybookName(record.title) === canonicalKey,
@@ -386,10 +387,12 @@ async function retrieveMarkdownRecords(
 		readonly query: MemoryQuery;
 	},
 ): Promise<MemoryRetrieveResult> {
+	const startedAt = performance.now();
 	const searchedScopes: MemoryScopeName[] = [];
 	const skippedScopes = [];
 	const warnings: MemoryWarning[] = [];
 	const records: RetrievedMemoryRecord[] = [];
+	const tally = newScanTally();
 
 	for (const scope of options.scope.scopes) {
 		if (scope === "session") {
@@ -405,6 +408,7 @@ async function retrieveMarkdownRecords(
 		const scopeRecords = await readStoreRecords({
 			storePaths: paths,
 			warnings,
+			tally,
 		});
 		for (const record of scopeRecords) {
 			if (matchesQuery(record, options.query)) records.push(record);
@@ -420,12 +424,33 @@ async function retrieveMarkdownRecords(
 		searchedScopes,
 		skippedScopes,
 		warnings,
+		stats: {
+			filesScanned: tally.filesScanned,
+			bytesRead: tally.bytesRead,
+			durationMs: performance.now() - startedAt,
+		},
 	};
+}
+
+/** Mutable scan-cost accumulator threaded through one store scan. */
+interface ScanTally {
+	filesScanned: number;
+	bytesRead: number;
+}
+
+function newScanTally(): ScanTally {
+	return { filesScanned: 0, bytesRead: 0 };
+}
+
+function tallyRead(tally: ScanTally, raw: string): void {
+	tally.filesScanned += 1;
+	tally.bytesRead += Buffer.byteLength(raw, "utf-8");
 }
 
 async function readStoreRecords(options: {
 	readonly storePaths: ReturnType<typeof resolveAgentMemoryStorePaths>;
 	readonly warnings: MemoryWarning[];
+	readonly tally: ScanTally;
 }): Promise<RetrievedMemoryRecord[]> {
 	const records: RetrievedMemoryRecord[] = [];
 	const noteFiles = await listMarkdownFiles(options.storePaths.notesDir);
@@ -435,6 +460,7 @@ async function readStoreRecords(options: {
 			expectedScope: options.storePaths.scope,
 			expectedType: "note",
 			warnings: options.warnings,
+			tally: options.tally,
 		});
 		if (record) records.push(record);
 	}
@@ -444,6 +470,7 @@ async function readStoreRecords(options: {
 		expectedScope: options.storePaths.scope,
 		expectedType: "profile",
 		warnings: options.warnings,
+		tally: options.tally,
 	});
 	if (profile) records.push(profile);
 
@@ -456,6 +483,7 @@ async function readStoreRecords(options: {
 async function readPlaybookRecords(options: {
 	readonly storePaths: ReturnType<typeof resolveAgentMemoryStorePaths>;
 	readonly warnings: MemoryWarning[];
+	readonly tally: ScanTally;
 }): Promise<RetrievedMemoryRecord[]> {
 	const files = await listMarkdownFiles(options.storePaths.playbooksDir);
 	const records: RetrievedMemoryRecord[] = [];
@@ -473,6 +501,7 @@ async function readPlaybookRecords(options: {
 			expectedScope: options.storePaths.scope,
 			expectedType: "playbook",
 			warnings: options.warnings,
+			tally: options.tally,
 		});
 		if (record) records.push(record);
 	}
@@ -484,6 +513,7 @@ async function parseMarkdownRecordIfExists(options: {
 	readonly expectedScope: DurableScope;
 	readonly expectedType: "note" | "profile" | "playbook";
 	readonly warnings: MemoryWarning[];
+	readonly tally: ScanTally;
 }): Promise<RetrievedMemoryRecord | undefined> {
 	let raw: string | undefined;
 	try {
@@ -496,6 +526,7 @@ async function parseMarkdownRecordIfExists(options: {
 		return undefined;
 	}
 	if (raw === undefined) return undefined;
+	tallyRead(options.tally, raw);
 	return parseRawRecord({ ...options, raw });
 }
 
@@ -504,12 +535,12 @@ async function parseMarkdownRecord(options: {
 	readonly expectedScope: DurableScope;
 	readonly expectedType: "note" | "profile" | "playbook";
 	readonly warnings: MemoryWarning[];
+	readonly tally: ScanTally;
 }): Promise<RetrievedMemoryRecord | undefined> {
 	try {
-		return parseRawRecord({
-			...options,
-			raw: await readFile(options.path, "utf-8"),
-		});
+		const raw = await readFile(options.path, "utf-8");
+		tallyRead(options.tally, raw);
+		return parseRawRecord({ ...options, raw });
 	} catch (error: unknown) {
 		options.warnings.push({
 			path: options.path,
@@ -570,7 +601,11 @@ async function regenerateIndex(options: {
 }): Promise<void> {
 	const paths = resolveAgentMemoryStorePaths(options);
 	const records = (
-		await readStoreRecords({ storePaths: paths, warnings: [] })
+		await readStoreRecords({
+			storePaths: paths,
+			warnings: [],
+			tally: newScanTally(),
+		})
 	).filter((record) => record.type !== "profile");
 	sortRecords(records);
 	await writeFileIfChanged(paths.indexPath, renderIndex({ records }));

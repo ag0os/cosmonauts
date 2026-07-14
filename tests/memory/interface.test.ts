@@ -37,8 +37,11 @@ describe("memory interface", () => {
 				),
 			]);
 
+		// W2 shipped with types.ts byte-identical to W1 (its proof point). The
+		// memory-hardening plan then added the optional MemoryRetrieveStats
+		// seam; this hash pins the file against further accidental drift.
 		expect(createHash("sha256").update(typesSource).digest("hex")).toBe(
-			"f4a05e638d22fe07ae0122908bd6d12333191a115f1b1aa2ae5d7e8fb7027f64",
+			"7b604e30df2cf99cd52052703ffb7b327b1d00d98ccc4f55dbbad79ea17d764b",
 		);
 		expect(
 			createHash("sha256").update(architectureAdapterSource).digest("hex"),

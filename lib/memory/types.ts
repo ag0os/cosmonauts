@@ -53,11 +53,26 @@ export interface MemorySkippedScope {
 	readonly reason: string;
 }
 
+/**
+ * Scan-cost observations for one retrieve call. The per-turn full-rescan
+ * stance is ratified without a cache; the reassess gate revisits it on
+ * measured numbers, which these provide.
+ */
+export interface MemoryRetrieveStats {
+	/** Record files whose content was read from disk, including unparsable ones. */
+	readonly filesScanned: number;
+	/** Total UTF-8 bytes of the scanned files. */
+	readonly bytesRead: number;
+	/** Wall-clock duration of the retrieve call in milliseconds. */
+	readonly durationMs: number;
+}
+
 export interface MemoryRetrieveResult {
 	readonly records: readonly RetrievedMemoryRecord[];
 	readonly searchedScopes: readonly MemoryScopeName[];
 	readonly skippedScopes: readonly MemorySkippedScope[];
 	readonly warnings: readonly MemoryWarning[];
+	readonly stats?: MemoryRetrieveStats;
 	readonly details?: unknown;
 }
 

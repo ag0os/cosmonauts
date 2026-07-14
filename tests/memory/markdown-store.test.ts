@@ -248,6 +248,11 @@ describe("markdown memory store", () => {
 			searchedScopes: ["project", "user"],
 			skippedScopes: [],
 			warnings: [],
+			stats: {
+				filesScanned: 0,
+				bytesRead: 0,
+				durationMs: expect.any(Number),
+			},
 		});
 		await expect(readdir(join(projectRoot, "memory"))).rejects.toMatchObject({
 			code: "ENOENT",
@@ -1407,6 +1412,45 @@ describe("markdown memory store", () => {
 				type: "unknown",
 			}),
 		).resolves.toMatchObject({ kind: "unsupported" });
+	});
+
+	test("retrieve reports scan-cost stats covering every file read, including unparsable ones", async () => {
+		const projectRoot = join(tmp.path, "stats-project");
+		const userRoot = join(tmp.path, "stats-user");
+		const store = createMarkdownMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+			now: () => new Date("2026-07-14T10:00:00.000Z"),
+		});
+		const written = await store.write({
+			type: "note",
+			scope: "project",
+			kind: "semantic",
+			title: "Stats note",
+			description: "Counted by the scan tally.",
+			content: "Body counted in bytesRead.",
+			tags: [],
+			source: "main/cosmo",
+		});
+		if (written.kind !== "written") throw new Error("expected note write");
+		const noteBytes = Buffer.byteLength(
+			await readFile(written.path, "utf-8"),
+			"utf-8",
+		);
+		const malformed = "not an OKF record\n";
+		const notesDir = dirname(written.path);
+		await writeFile(join(notesDir, "broken.md"), malformed, "utf-8");
+
+		const result = await store.retrieve(
+			{ projectRoot, scopes: ["project", "user"] },
+			{ text: "" },
+		);
+		expect(result.warnings).toHaveLength(1);
+		expect(result.stats).toMatchObject({
+			filesScanned: 2,
+			bytesRead: noteBytes + Buffer.byteLength(malformed, "utf-8"),
+		});
+		expect(result.stats?.durationMs).toBeGreaterThanOrEqual(0);
 	});
 
 	test("keeps one previous profile version in a sidecar the store never lists", async () => {

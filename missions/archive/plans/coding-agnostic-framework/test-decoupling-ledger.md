@@ -101,6 +101,7 @@ Allowed buckets:
 | `tests/packages/catalog.test.ts` | Keep | keep-package-catalog-wave2 | Production catalog assertions keep the real `coding` entry and `./bundled/coding` source until Wave 2. |
 | `tests/packages/installer.test.ts` | Keep | keep-package-catalog-helper | Package installer fixtures were neutralized to `alpha`; remaining coding text is a production diagnostic example. |
 | `tests/packages/scanner.test.ts` | B | bucket-b-synthetic-coding-behavior | Scanner Bucket B behavior uses synthetic bundled root fixtures and retains the B-017 marker. |
+| `tests/pi-contract/pi-behavior-contract.test.ts` | Keep | keep-grep-false-positive | Matched only because comments name the `pi-coding-agent` package; no coding domain or bundled coding reference is present. |
 | `tests/prompts/cody.test.ts` | A | bucket-a-wave2-real-bundled-coding | Reads the real bundled coding Cody prompt until prompt extraction in Wave 2. |
 | `tests/prompts/healthy-codebase-harness.test.ts` | A | bucket-a-wave2-real-bundled-coding | Reads the real bundled coding capability/skill prompt surface until Wave 2. |
 | `tests/prompts/integration-verifier.test.ts` | A | bucket-a-wave2-real-bundled-coding | Reads the real bundled coding prompt until Wave 2. |

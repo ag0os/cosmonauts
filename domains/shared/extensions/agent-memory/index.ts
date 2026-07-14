@@ -762,6 +762,8 @@ function renderRecallResult(options: {
 		searchedScopes: options.result.searchedScopes,
 		skippedScopes: options.result.skippedScopes,
 		warnings: options.result.warnings,
+		// Scan-cost input for the reassess gate; session records keep the numbers.
+		...(options.result.stats ? { stats: options.result.stats } : {}),
 		records,
 	};
 
