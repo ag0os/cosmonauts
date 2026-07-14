@@ -1374,10 +1374,12 @@ describe("agent-memory extension", () => {
 		expect(pi.tools.has("remember")).toBe(true);
 		expect(pi.tools.has("recall")).toBe(true);
 		expect(pi.tools.get("remember")).toMatchObject({
-			description: "Save an explicit note to agent memory.",
+			description:
+				"Save an explicit note, user profile, or playbook to agent memory.",
 		});
 		expect(pi.tools.get("recall")).toMatchObject({
-			description: "Search authored agent-memory notes.",
+			description:
+				"Search authored agent-memory records: notes, the user profile, and playbooks.",
 		});
 		expect(pi.tools.get("remember")).not.toHaveProperty("promptSnippet");
 		expect(pi.tools.get("recall")).not.toHaveProperty("promptSnippet");

@@ -157,7 +157,8 @@ export function createAgentMemoryExtension(
 		pi.registerTool({
 			name: "remember",
 			label: "Remember",
-			description: "Save an explicit note to agent memory.",
+			description:
+				"Save an explicit note, user profile, or playbook to agent memory.",
 			parameters: Type.Object({
 				type: Type.Optional(
 					Type.Union(AuthoredTypeLiterals, {
@@ -216,7 +217,8 @@ export function createAgentMemoryExtension(
 		pi.registerTool({
 			name: "recall",
 			label: "Recall",
-			description: "Search authored agent-memory notes.",
+			description:
+				"Search authored agent-memory records: notes, the user profile, and playbooks.",
 			parameters: Type.Object({
 				query: Type.String({ description: "Text to search for." }),
 				limit: Type.Optional(
