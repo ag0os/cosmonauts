@@ -67,6 +67,12 @@ the always-on angle. Two daemons would be the duplication to avoid.
 
 ## Forward waves
 
+> **W1 picked up 2026-07-17** as the active spec-ready plan
+> `missions/plans/autonomy-host/` (with `episodic-log` as the wake-state
+> dependency and `memory-consolidation` as the first payload), per the
+> agent-memory ◆reassess decision: in-process host, config-gated off by
+> default. W2+ remain unprioritized.
+
 - **W1 — Scheduling/lifecycle substrate (Layer A)** *(active slice → `autonomy`)*.
   Trigger types + in-process host + durable wake-state (episodic) + cost-efficient
   wake handler + agent/domain trigger declaration. **Pi-First audit** on

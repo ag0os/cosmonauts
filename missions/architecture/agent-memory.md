@@ -89,6 +89,14 @@ processes).
 
 ## Forward waves
 
+> **◆ Reassess gate answered 2026-07-17:** build-infrastructure-first. W1–W2
+> shipped (see `memory/{memory-interface,profile-playbooks,memory-hardening}.md`);
+> W3, W4, and the autonomy Layer-A host are active spec-ready plans
+> (`missions/plans/{episodic-log,memory-consolidation,autonomy-host}/`), all
+> config-gated off by default. The *adoption* decision (turning it on, W4
+> scheduling, expansion beyond Cosmo, cache-vs-rescan) is deferred until the
+> pieces exist.
+
 - **W1 — Memory interface + plain-text substrate + scope-filtered retrieval**
   *(active slice → `agent-memory`)*. The shared ancestor: `write`/`retrieve`/
   `consolidate`, markdown records tagged scope×type, retrieval =
