@@ -116,3 +116,107 @@ Excluded:
   sessions, and under which actor identity?
 - Retention: is v1 "append forever until consolidation exists," or is there a
   cheap size guard (e.g. warn past N episodes) before W4 lands?
+
+## Design-session resolutions (2026-07-17)
+
+Added by the W3 design session after a code-grounded read of the shipped
+memory store (`lib/memory/*`), the Cosmo agent-memory extension, the config
+loader, and the Pi 0.80.6 lifecycle surface. These resolve the Open Questions
+and correct three overstatements. They are ratified inputs for the planner;
+the human will review them in the plan gate.
+
+**Pi-First audit verdict (opening step, re-confirmed).** Pi 0.80.6 exposes
+`session_start` / `session_shutdown` / `before_agent_start` / `turn_start` /
+`turn_end` / `tool_call` / `tool_execution_end` / `context` plus
+`pi.appendEntry()` (session JSONL). These are *capture hooks*, not a durable
+cross-session/project store. The W1 finding stands: Pi session state +
+compaction cover **session-scope** episodic, so v1 builds no session-scoped
+store — v1 episodic is the **project/user-scope run & decision log** on the
+existing markdown store. No new Pi capability is required. A written audit
+artifact is a backlog task (and Drive strands `missions/**` — commit it by
+hand).
+
+**OQ1 — v1 event vocabulary and noise budget (RESOLVED).** v1 captures
+*consequential project/user-scope events*, not per-session chatter:
+run lifecycle (chain/Drive run start + end-with-outcome), plan lifecycle
+(created, status transition), task lifecycle (created, status transition),
+and authored-memory saves (note/profile/playbook written). The autonomy
+host's **wake event** is a run/decision-class record of this same shape; the
+`episodic-log` plan owns the record type + capture helper, the host plan owns
+calling it. Noise budget target: `O(runs + lifecycle transitions)` per active
+period, **not** `O(sessions × turns)`. The `stats` seam measures it.
+
+**OQ2 — chain/Drive actor identity (RESOLVED).** Capture is a **framework-level
+helper** (e.g. `recordEpisode()` in `lib/memory/`), not extension-only, because
+chain/Drive/host events fire from framework code with no Cosmo turn. One helper,
+one record shape; the actor varies via the existing `source` field —
+`main/cosmo` for interactive saves, the run's qualified agent id (e.g.
+`coding/worker`) for chain/Drive runs, the trigger/host id for wakes. A stable
+subject id (run id / plan slug / task id) rides in tags for consumer filtering.
+
+**OQ3 — retention before W4 (RESOLVED).** v1 is **append-forever** (pruning is
+W4's job) **plus a cheap size guard**: when a scope's episode count exceeds a
+documented, config-overridable threshold, retrieval surfaces a warning through
+the existing warnings channel ("episode log large — N records; run
+consolidation"). No pruning, no decay — just measurable back-pressure so the
+operator sees growth before W4 lands.
+
+### Corrections to the spec above
+
+1. **Drop raw session start/end from the v1 vocabulary.** The User Experience
+   section lists "session start/end" among logged actions; that contradicts the
+   ratified "Pi session state covers session-scope" and would spam one pair of
+   episodes per one-shot `-p` invocation. v1 logs run/decision-class events, not
+   raw session lifecycle. (If a single end-of-session summary proves wanted, it
+   is a run-scope event, decided later — not two raw lifecycle episodes.)
+
+2. **The v1 gate is a project-level `.cosmonauts/config.json` flag.** "project or
+   user cosmonauts config" overstates today's surface: only a project config
+   loader exists (`loadProjectConfig`); there is no user-level cosmonauts config
+   loader. v1 gates capture with a project flag (additive `ProjectConfig` field,
+   parsed like `architectureMap`). A user-level gate is new infrastructure —
+   defer. User-scope *episodes* still write to the user store when captured from
+   an enabled project.
+
+3. **Malformed-episode warnings surface on episode-touching recalls, not on
+   every session.** Acceptance says malformed files are named "via the existing
+   warnings surfacing," which today runs during injection retrieval. But
+   injection must **not** scan episodes (that is what keeps enabling the log from
+   changing injected context / flooding Cosmo). So a malformed *episode* file is
+   named when a recall (or CLI listing) that requests episodes runs — not at
+   session start, unlike a malformed note or profile. This is the deliberate,
+   correct trade of "injection excludes episodes" against "warnings parity"; the
+   acceptance criterion should read accordingly.
+
+### Key mechanism directives for the planner (design, not product)
+
+- **Episodes flow through the unchanged `MemoryStore` contract** as
+  `type: "episode"`, `kind: "episodic"` (`episodic` already exists in
+  `MEMORY_KINDS`). This is the third test of the W1/W2 "seams absorb a new type
+  with `lib/memory/types.ts` untouched" bet. Prefer no `types.ts` change; an
+  additive change is allowed only if genuinely required (hardening's `stats`
+  precedent). The real store surface to add: a `writeEpisode` branch, an episode
+  parse/`expectedType` path, an `episodes/` store dir in `paths.ts`, and
+  **conditional** episode scanning in retrieval.
+- **File-per-episode under `memory/agent/episodes/*.md`** (timestamp+slug+hash
+  naming, mirroring notes), not a single `log.md`. Justification: consolidation
+  prunes by unlinking one file; concurrent writers never contend; it reuses the
+  existing atomic temp+rename + `listMarkdownFiles` machinery. `log.md` would be
+  a whole-file rewrite hazard and un-prunable at record granularity.
+- **Injection-exclusion and recall-inclusion are one seam:** retrieval scans the
+  `episodes/` dir **only when the query's `recordTypes` includes `"episode"`**.
+  Injection requests `["note","profile","playbook"]`, so it never walks the
+  episodes dir → zero added per-turn scan cost and a byte-identical injected
+  index. Recall (and any episode CLI/consumer) adds `"episode"` to `recordTypes`
+  and pays the scan then. This satisfies "recall yes, injection no" with no
+  types.ts change and keeps the per-turn full-rescan stance intact.
+- **Also exclude episodes from `index.md` regeneration** (today it filters only
+  `profile`). The on-disk browsing index must not bloat with episodes.
+- **Fail-soft capture:** the helper wraps `store.write` in try/catch, never
+  throws into the triggering action; a write failure logs a non-fatal warning
+  (session context via the memory-warnings channel; off-session via stderr/log).
+- **Scan-cost tension is real, surfaced not papered over:** episodes accumulate
+  faster than notes and are re-scanned per episode-touching recall. v1 keeps the
+  ratified no-cache full-rescan stance and bounds the problem with the OQ3 size
+  guard + `stats`; if volume ever threatens the stance, that is the adoption /
+  reassess input, not a v1 cache.

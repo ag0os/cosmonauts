@@ -2,7 +2,7 @@
 title: 'Agent-memory W3: episodic log'
 status: active
 createdAt: '2026-07-17T13:42:05.969Z'
-updatedAt: '2026-07-17T13:42:05.969Z'
+updatedAt: '2026-07-17T18:00:00.000Z'
 ---
 
 ## Summary
