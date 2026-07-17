@@ -57,22 +57,25 @@ reason in recall text and injected context).
 
 ## Acceptance Criteria
 
-- With the flag off (default), no episodic file is ever created and a
+Stable IDs (`AC-###`) added 2026-07-17 so behavior `Source` fields link to
+durable criteria rather than reorderable positions.
+
+- **AC-001:** With the flag off (default), no episodic file is ever created and a
   session's injected context and tool behavior are identical to today.
-- With the flag on, a session that performs logged actions leaves
+- **AC-002:** With the flag on, a session that performs logged actions leaves
   human-readable episode records in the correct scope store, each naming
   timestamp, actor, action, and outcome.
-- Enabling the log does not change the injected memory index of a session
-  (episodes are excluded from injection by default).
-- An explicit recall query can return episodes.
-- Hand-deleting episode files, or a store containing only malformed episodes,
-  never breaks a session; malformed files are named via the existing warnings
-  surfacing.
-- A failed episode write leaves the triggering action successful and the
-  session running, with a visible warning.
-- The scan-cost `stats` seam reports episodic scanning like any other record
-  type, so log growth is measurable before the use-it decision.
-- The flag and the event vocabulary are documented in `docs/memory.md`.
+- **AC-003:** Enabling the log does not change the injected memory index of a
+  session (episodes are excluded from injection by default).
+- **AC-004:** An explicit recall query can return episodes.
+- **AC-005:** Hand-deleting episode files, or a store containing only malformed
+  episodes, never breaks a session; malformed files are named via the existing
+  warnings surfacing.
+- **AC-006:** A failed episode write leaves the triggering action successful and
+  the session running, with a visible warning.
+- **AC-007:** The scan-cost `stats` seam reports episodic scanning like any other
+  record type, so log growth is measurable before the use-it decision.
+- **AC-008:** The flag and the event vocabulary are documented in `docs/memory.md`.
 
 ## Scope
 
