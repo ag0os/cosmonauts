@@ -446,7 +446,7 @@ Boundary rules:
 - Action: both runners execute
 - Expected: results, errors, callbacks/event ordering, durable graphs/steps/events, and created files match frozen pre-W3 baselines; neither project nor user episode/index path is created
 - Seam: `lib/orchestration/chain-runner.ts` and `durable-chain-runner.ts`
-- Test: `tests/orchestration/chain-runner.test.ts` > `keeps disabled inline and durable chain outputs events and files unchanged`
+- Test: `tests/orchestration/run-start-chain-characterization.test.ts` > `keeps disabled inline and durable chain outputs events and files unchanged` (co-located with the durable-chain characterization harness this behavior exercises; `chain-runner.test.ts` remains a plan-authorized chains test file)
 - Marker: `@cosmo-behavior plan:episodic-log#B-027`
 
 ### B-028 - Disabled Drive specs and execution preserve all baselines
