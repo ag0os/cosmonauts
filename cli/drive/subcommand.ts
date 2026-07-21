@@ -311,11 +311,24 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 				? resolveDriveEpisodeWorker(runtime)
 				: undefined
 		: undefined;
-	const episodeSource = episodeCaptureEnabled
-		? (resume?.spec.episodeSource ?? episodeWorker?.qualifiedId)
-		: undefined;
 	const reconcilePriorAttempt =
 		resume !== undefined && resume.remainingTaskIds.length === 0;
+	// A resumed run that will EXECUTE (not merely reconcile a prior terminal) but
+	// whose frozen worker no longer resolves would run the fallback default worker
+	// while the stale frozen source misattributes the episode. Omit episode
+	// identity for that attempt (resolveFrozenDriveEpisodeWorker already warned)
+	// rather than record a recalled worker that did not execute.
+	const frozenWorkerLostForExecution =
+		episodeCaptureEnabled &&
+		needsExecutionRuntime &&
+		!reconcilePriorAttempt &&
+		runtime !== undefined &&
+		resume?.spec.episodeSource !== undefined &&
+		episodeWorker === undefined;
+	const episodeSource =
+		episodeCaptureEnabled && !frozenWorkerLostForExecution
+			? (resume?.spec.episodeSource ?? episodeWorker?.qualifiedId)
+			: undefined;
 	const episodeIdentity = episodeSource
 		? reconcilePriorAttempt && resume?.spec.episodeAttemptId
 			? {

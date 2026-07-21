@@ -11,6 +11,7 @@ import type { BackendInvocation } from "../../../lib/driver/backends/types.ts";
 import { resolveDefaultDriveEnvelopePath } from "../../../lib/driver/default-envelope.ts";
 import { runInline } from "../../../lib/driver/driver.ts";
 import { createPiSpawner } from "../../../lib/orchestration/agent-spawner.ts";
+import { resolveSpawnAgent } from "../../../lib/orchestration/spawn-resolution.ts";
 import { TaskManager } from "../../../lib/tasks/task-manager.ts";
 
 const REPO_ROOT = resolve(
@@ -110,6 +111,46 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 			role: "worker",
 			domainContext: undefined,
 		});
+	});
+
+	// Regression guard (codex P1): a frozen qualified worker resolution must not
+	// become the spawner `role`, which session-factory bakes into the session
+	// file path (`${role}-<uuid>.jsonl`). Worker SELECTION rides `agentReference`.
+	test("keeps the session role a plain worker when a qualified worker resolution is frozen", async () => {
+		const domains = await loadDomainsFromSources([
+			{ domainsDir: DOMAINS_DIR, origin: "framework", precedence: 1 },
+			{
+				domainsDir: BUNDLED_CODING_DIR,
+				sourceType: "domain-root",
+				origin: "bundled",
+				precedence: 2,
+			},
+		]);
+		const registry = createRegistryFromDomains(domains);
+		const spawner = createPiSpawner(registry, DOMAINS_DIR);
+		const frozen = resolveSpawnAgent(registry, {
+			role: "coding/worker",
+			domainContext: undefined,
+			agentReference: undefined,
+		});
+		if (!frozen) throw new Error("expected coding/worker to resolve");
+		expect(frozen.reference?.requested.qualifiedId).toBe("coding/worker");
+
+		const backend = createCosmonautsSubagentBackend({
+			spawner,
+			cwd: REPO_ROOT,
+			workerResolution: frozen,
+		});
+		await backend.run(await createInvocation());
+
+		const [, spawnConfig] =
+			sessionFactoryMocks.createAgentSessionFromDefinition.mock.calls[0] ?? [];
+		// role stays the plain worker (never "coding/worker") so session/manifest
+		// paths are unchanged, while the frozen reference still selects the agent.
+		expect((spawnConfig as { role: string }).role).toBe("worker");
+		expect(
+			(spawnConfig as { agentReference?: unknown }).agentReference,
+		).toEqual(frozen.reference);
 	});
 
 	test("runs inline Drive with cosmonauts-subagent, omitted envelope input, and no domain override", async () => {

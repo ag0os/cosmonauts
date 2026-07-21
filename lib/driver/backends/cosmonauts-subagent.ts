@@ -34,10 +34,12 @@ export function createCosmonautsSubagentBackend(
 		name: "cosmonauts-subagent",
 		capabilities: { canCommit: true, isolatedFromHostSource: false },
 		async run(invocation) {
-			const role =
-				deps.workerResolution?.reference?.requested.qualifiedId ??
-				deps.defaultRole ??
-				"worker";
+			// `role` is a session-path/label component (session-factory builds
+			// `${role}-<uuid>.jsonl`), so it must stay the plain worker role — a
+			// qualified id like "coding/worker" would fork the session/manifest
+			// layout. Frozen worker SELECTION flows through `agentReference` below,
+			// which resolveSpawnAgent prioritizes over `role`.
+			const role = deps.defaultRole ?? "worker";
 			const prompt = await readFile(invocation.promptPath, "utf-8");
 			const start = Date.now();
 			const result = await deps.spawner.spawn({

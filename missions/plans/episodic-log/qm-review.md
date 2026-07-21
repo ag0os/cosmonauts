@@ -99,6 +99,35 @@ together, not patched piecemeal.
   hand-edited `spec.json` could name a different first-party agent; a stale
   fallback can make recorded ≠ executed. Threat model negligible (local,
   gitignored, project-owned artifact; codex/claude-cli ignore it for execution).
-  Worth a small "require agentId==='worker' else fresh-resolve for execution,
-  keep episodeSource for provenance" hardening, but it touches the resume
-  execution path — deferred to the same follow-up.
+  The recorded-≠-executed leg was independently re-raised by codex as **CDX-002**
+  with a non-adversarial repro and is now **fixed** (see below); the
+  arbitrary-agent-selection leg is subsumed by the **CDX-001** fix.
+
+## Independent codex post-review (Phase 3) — verdict was DO-NOT-SHIP; both fixed
+
+Codex reconciled against local `main` (`e4f9be0..HEAD`, excluding the rename
+commit), confirmed **all seven hard constraints pass** and no dead code, and
+raised two enabled-path findings — both now fixed and gate-green:
+
+- **CDX-001 (P1, fixed)** — Qualified worker id corrupted inline Drive session
+  paths. TASK-478 made the `cosmonauts-subagent` backend use the frozen
+  `workerResolution.reference.requested.qualifiedId` ("coding/worker") as the
+  spawner `role`, which `session-factory` bakes into `${role}-<uuid>.jsonl`, so
+  **enabling the log** forked session/manifest layout
+  (`<plan>/coding/worker-*.jsonl`, `<plan>/<plan>/manifest.json`) and changed
+  fallback output text. Fix: `role = deps.defaultRole ?? "worker"` (restoring
+  main's behavior); worker selection still rides `agentReference`, which
+  `resolveSpawnAgent` prioritizes. Regression test added in
+  `cosmonauts-subagent-resolution.test.ts` (role stays `worker` under a frozen
+  qualified resolution). This is the ship-blocker; it is an enabled-path
+  behavior change, not an OFF-state one (AC-001 still holds).
+- **CDX-002 (P2, fixed)** — Recorded ≠ executed on resume (SR-001's stale leg),
+  reachable *without* tampering: remove/rename/disable the prior worker's domain
+  between attempts, and a resume that must EXECUTE keeps the stale frozen
+  `episodeSource` while the fallback default worker actually runs. Fix in
+  `cli/drive/subcommand.ts`: when a resumed run will execute (not reconcile-only)
+  and the frozen worker no longer resolves, omit episode identity for that
+  attempt (already warned) instead of misattributing. Reconcile-only resumes
+  keep the frozen source (they correctly attribute the prior attempt).
+  Validated by the full existing frozen-resume suite staying green; a dedicated
+  unavailable-frozen-worker resume test is a recommended add.
