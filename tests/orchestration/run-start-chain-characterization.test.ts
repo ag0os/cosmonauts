@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
@@ -61,6 +62,13 @@ describe("runStart durable chain characterization", () => {
 			projectRoot,
 			registry,
 		});
+		expect(Object.keys(result).sort()).toEqual([
+			"errors",
+			"run",
+			"stageResults",
+			"success",
+			"totalDurationMs",
+		]);
 
 		expect(result).toMatchObject({
 			run: {
@@ -123,6 +131,9 @@ describe("runStart durable chain characterization", () => {
 			]),
 		);
 		expect(spawnerMocks.dispose).toHaveBeenCalledTimes(1);
+		await expect(stat(join(projectRoot, "memory"))).rejects.toMatchObject({
+			code: "ENOENT",
+		});
 	});
 });
 

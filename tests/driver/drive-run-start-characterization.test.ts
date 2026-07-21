@@ -27,6 +27,13 @@ describe("runStart Drive graph characterization", () => {
 			fixture.spec,
 			createRunContext(fixture),
 		);
+		expect(Object.keys(result).sort()).toEqual([
+			"outcome",
+			"planCompletionCandidate",
+			"runId",
+			"tasksBlocked",
+			"tasksDone",
+		]);
 
 		expect(result).toEqual({
 			runId: fixture.spec.runId,
@@ -60,6 +67,32 @@ describe("runStart Drive graph characterization", () => {
 		const normalizedEvents = await store.readEvents(ref);
 		const legacyEvents = await readLegacyEvents(fixture.spec.eventLogPath);
 		const runStepSource = await readFile("lib/driver/run-step.ts", "utf-8");
+		const persistedSpec = await readJson(
+			join(fixture.spec.workdir, "spec.json"),
+		);
+		if (
+			!persistedSpec ||
+			typeof persistedSpec !== "object" ||
+			Array.isArray(persistedSpec)
+		) {
+			throw new Error("Expected persisted Drive spec object.");
+		}
+		expect(Object.keys(persistedSpec).sort()).toEqual([
+			"backendName",
+			"commitPolicy",
+			"eventLogPath",
+			"parentSessionId",
+			"planSlug",
+			"postflightCommands",
+			"preflightCommands",
+			"projectRoot",
+			"promptTemplate",
+			"runId",
+			"stateCommitPolicy",
+			"taskIds",
+			"workdir",
+		]);
+		expect(persistedSpec).toEqual(fixture.spec);
 
 		expect(run?.metadata).toEqual({
 			driveTaskIds: [fixture.taskId],
@@ -88,6 +121,9 @@ describe("runStart Drive graph characterization", () => {
 		);
 		expect(runStepSource).toContain("runDriveOnGraph");
 		expect(runStepSource).not.toContain("runRunLoop(spec");
+		await expect(
+			stat(join(fixture.projectRoot, "memory", "agent")),
+		).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
 	// @cosmo-behavior plan:orchestration-surface-consolidation#B-004

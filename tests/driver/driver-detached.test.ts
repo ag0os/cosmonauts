@@ -165,6 +165,9 @@ describe("startDetached", () => {
 		expect(publishedEventTypes(deps.published)).toContain("task_done");
 		expect(publishedEventTypes(deps.published)).toContain("run_completed");
 		await expect(stat(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+		await expect(
+			stat(join(projectRoot, "memory", "agent")),
+		).rejects.toMatchObject({ code: "ENOENT" });
 	}, 30_000);
 });
 

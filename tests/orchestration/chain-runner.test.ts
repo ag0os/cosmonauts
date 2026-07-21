@@ -4,7 +4,7 @@
  * createDefaultCompletionCheck (with real task system), and event emission.
  */
 
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -1137,6 +1137,76 @@ describe("runChain", () => {
 		expect(result.stageResults[1]?.success).toBe(true);
 		expect(result.totalDurationMs).toBeGreaterThanOrEqual(0);
 		expect(result.errors).toHaveLength(0);
+	});
+
+	test("freezes the absent-config inline chain result, events, and empty file set", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "chain-pre-w3-baseline-"));
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-07-21T12:00:00.000Z"));
+		const events: ChainEvent[] = [];
+		const stage = makeStage("planner", false);
+
+		try {
+			const result = await runChain(
+				makeConfig([stage], {
+					projectRoot,
+					onEvent: (event) => events.push(event),
+				}),
+			);
+
+			expect(result).toEqual({
+				success: true,
+				stageResults: [
+					{
+						stage: {
+							...stage,
+							agentReference: {
+								requested: {
+									role: "coding",
+									agentId: "planner",
+									qualifiedId: "coding/planner",
+								},
+								resolved: {
+									role: "coding",
+									agentId: "planner",
+									qualifiedId: "coding/planner",
+								},
+								binding: {
+									role: "coding",
+									domainId: "coding",
+									source: "default",
+								},
+							},
+						},
+						success: true,
+						iterations: 1,
+						durationMs: 0,
+						error: undefined,
+						stats: undefined,
+						summary: "planner completed",
+					},
+				],
+				totalDurationMs: 0,
+				errors: [],
+				stats: {
+					stages: [],
+					totalCost: 0,
+					totalTokens: 0,
+					totalDurationMs: 0,
+				},
+			});
+			expect(events.map((event) => event.type)).toEqual([
+				"chain_start",
+				"stage_start",
+				"agent_spawned",
+				"agent_completed",
+				"stage_end",
+				"chain_end",
+			]);
+			expect(await readdir(projectRoot)).toEqual([]);
+		} finally {
+			await rm(projectRoot, { recursive: true, force: true });
+		}
 	});
 
 	// @cosmo-behavior plan:orchestration-surface-consolidation#B-005
