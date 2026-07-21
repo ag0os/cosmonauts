@@ -16,6 +16,13 @@ import { createCosmonautsSubagentBackend } from "../../../../lib/driver/backends
 import type { Backend } from "../../../../lib/driver/backends/types.ts";
 import { resolveDefaultDriveEnvelopePath } from "../../../../lib/driver/default-envelope.ts";
 import { runInline, startDetached } from "../../../../lib/driver/driver.ts";
+import {
+	type DriveEpisodeIdentity,
+	isDriveEpisodeCaptureEnabled,
+	mintDriveEpisodeIdentity,
+	reportDriveEpisodeLaunchWarning,
+	resolveDriveEpisodeWorker,
+} from "../../../../lib/driver/episode-identity.ts";
 import { formatError } from "../../../../lib/driver/errors.ts";
 import { DEFAULT_TASK_TIMEOUT_MS } from "../../../../lib/driver/run-one-task.ts";
 import {
@@ -34,6 +41,7 @@ import {
 } from "../../../../lib/driver/types.ts";
 import { activityBus } from "../../../../lib/orchestration/activity-bus.ts";
 import { createPiSpawner } from "../../../../lib/orchestration/agent-spawner.ts";
+import type { SpawnAgentResolution } from "../../../../lib/orchestration/spawn-resolution.ts";
 import type { CosmonautsRuntime } from "../../../../lib/runtime.ts";
 import { TaskManager } from "../../../../lib/tasks/task-manager.ts";
 
@@ -237,8 +245,24 @@ export function registerDriverTool(
 					});
 				}
 
-				const runtime =
-					mode === "inline" ? await getRuntime(ctx.cwd) : undefined;
+				const episodeCaptureEnabled = await isDriveEpisodeCaptureEnabled(
+					ctx.cwd,
+				);
+				let runtime = mode === "inline" ? await getRuntime(ctx.cwd) : undefined;
+				if (episodeCaptureEnabled && !runtime) {
+					try {
+						runtime = await getRuntime(ctx.cwd);
+					} catch (error) {
+						reportDriveEpisodeLaunchWarning(error);
+					}
+				}
+				const episodeWorker =
+					episodeCaptureEnabled && runtime
+						? resolveDriveEpisodeWorker(runtime)
+						: undefined;
+				const episodeIdentity = episodeWorker
+					? mintDriveEpisodeIdentity(episodeWorker.qualifiedId)
+					: undefined;
 				spec = await createRunSpec({
 					params,
 					ctx,
@@ -247,8 +271,15 @@ export function registerDriverTool(
 					taskIds,
 					frameworkRoot,
 					prepareWorkdir: mode === "inline",
+					episodeIdentity,
 				});
-				const backend = createBackend(params.backend, mode, runtime, ctx.cwd);
+				const backend = createBackend(
+					params.backend,
+					mode,
+					runtime,
+					ctx.cwd,
+					episodeWorker,
+				);
 				const deps = {
 					taskManager,
 					backend,
@@ -308,6 +339,7 @@ async function createRunSpec({
 	taskIds,
 	frameworkRoot,
 	prepareWorkdir,
+	episodeIdentity,
 }: {
 	params: {
 		backend: BackendName;
@@ -328,6 +360,7 @@ async function createRunSpec({
 	taskIds: string[];
 	frameworkRoot: string;
 	prepareWorkdir: boolean;
+	episodeIdentity?: DriveEpisodeIdentity;
 }): Promise<DriverRunSpec> {
 	const workdir = join(
 		ctx.cwd,
@@ -367,6 +400,7 @@ async function createRunSpec({
 		workdir,
 		eventLogPath,
 		taskTimeoutMs: params.taskTimeoutMs,
+		...episodeIdentity,
 	};
 
 	if (prepareWorkdir) {
@@ -401,6 +435,7 @@ function createBackend(
 	mode: DriverMode,
 	runtime: CosmonautsRuntime | undefined,
 	cwd: string,
+	workerResolution?: SpawnAgentResolution,
 ): Backend {
 	switch (backendName) {
 		case "cosmonauts-subagent": {
@@ -427,6 +462,7 @@ function createBackend(
 				domainContext: runtime.domainContext,
 				projectSkills: runtime.projectSkills,
 				skillPaths: runtime.skillPaths,
+				workerResolution,
 			});
 		}
 		case "codex":

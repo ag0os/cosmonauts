@@ -32,6 +32,7 @@ describe("Drive-on-graph routing", () => {
 			outcome: "completed",
 			tasksDone: 1,
 			tasksBlocked: 0,
+			completedAt: expect.any(String),
 		});
 		await expectArtifact(fixture.spec.workdir, "spec.json");
 		await expectArtifact(fixture.spec.workdir, "task-queue.txt");
@@ -106,6 +107,7 @@ describe("Drive-on-graph routing", () => {
 				outcome: "completed",
 				tasksDone: 1,
 				tasksBlocked: 0,
+				completedAt: expect.any(String),
 			});
 			await expectArtifact(fixture.spec.workdir, "run.sh");
 			expect(pidRecord.pid).toEqual(expect.any(Number));

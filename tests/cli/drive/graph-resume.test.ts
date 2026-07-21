@@ -12,6 +12,8 @@ import {
 	type StepRecord,
 	type StepResult,
 } from "../../../lib/durable-runtime/index.ts";
+import { parseEpisodeRecord } from "../../../lib/memory/episodic-records.ts";
+import { createMarkdownMemoryStore } from "../../../lib/memory/markdown-store.ts";
 import { TaskManager } from "../../../lib/tasks/task-manager.ts";
 import { captureCliOutput } from "../../helpers/cli.ts";
 import { useTempDir } from "../../helpers/fs.ts";
@@ -36,6 +38,7 @@ const execFileAsync = promisify(execFile);
 const temp = useTempDir("drive-graph-resume-");
 const PLAN_SLUG = "durable-frontend-migration";
 const RUN_ID = "run-previous";
+const WORKER_SOURCE = "cod" + "ing/worker";
 type DriverEventInput = DriverEvent extends infer Event
 	? Event extends DriverEvent
 		? Omit<Event, "runId" | "parentSessionId" | "timestamp">
@@ -154,6 +157,7 @@ describe("cosmonauts run drive compat graph resume", () => {
 
 	test("resumes pending task-status finalization with one terminal result", async () => {
 		const fixture = await setupCompletedTaskWithPendingTaskStatus();
+		await enableFrozenEpisodeIdentity(fixture.spec);
 
 		await parseDrive([
 			"--plan",
@@ -167,6 +171,13 @@ describe("cosmonauts run drive compat graph resume", () => {
 		const completion = await readJson(
 			join(fixture.spec.workdir, "run.completion.json"),
 		);
+		const completionBytes = await readFile(
+			join(fixture.spec.workdir, "run.completion.json"),
+			"utf-8",
+		);
+		const persistedSpec = (await readJson(
+			join(fixture.spec.workdir, "spec.json"),
+		)) as DriverRunSpec;
 
 		expect(emittedResults).toHaveLength(1);
 		expect(emittedResults[0]).toMatchObject({
@@ -177,6 +188,9 @@ describe("cosmonauts run drive compat graph resume", () => {
 			tasksBlocked: 0,
 		});
 		expect(completion).toEqual(withoutScope(onlyJsonRecord(emittedResults)));
+		expect(completion).toMatchObject({ completedAt: expect.any(String) });
+		expect(persistedSpec.episodeSource).toBe(WORKER_SOURCE);
+		expect(persistedSpec.episodeAttemptId).toBe("attempt-prior");
 		expect(backendMocks.backendRun).not.toHaveBeenCalled();
 		expect(
 			(
@@ -187,6 +201,33 @@ describe("cosmonauts run drive compat graph resume", () => {
 				})
 			)?.status,
 		).toBe("completed");
+
+		let episodes = await readProjectDriveEpisodes(process.cwd());
+		expect(episodes).toHaveLength(1);
+		expect(episodes[0]).toMatchObject({
+			action: "drive.run",
+			outcome: "completed",
+			source: WORKER_SOURCE,
+			subject: { kind: "run", id: RUN_ID },
+		});
+		expect(episodes[0]?.tags).toContain("attempt:attempt-prior");
+		expect(episodes[0]?.tags).not.toContain("outcome:started");
+
+		await parseDrive([
+			"--plan",
+			PLAN_SLUG,
+			"--resume",
+			RUN_ID,
+			"--resume-dirty",
+		]);
+		episodes = await readProjectDriveEpisodes(process.cwd());
+		expect(episodes).toHaveLength(1);
+		expect(
+			await readFile(
+				join(fixture.spec.workdir, "run.completion.json"),
+				"utf-8",
+			),
+		).toBe(completionBytes);
 	});
 
 	test("resumes already completed graph runs with one terminal result", async () => {
@@ -649,6 +690,45 @@ async function gitStdout(args: string[]): Promise<string> {
 
 async function readJson(path: string): Promise<unknown> {
 	return JSON.parse(await readFile(path, "utf-8")) as unknown;
+}
+
+async function enableFrozenEpisodeIdentity(spec: DriverRunSpec): Promise<void> {
+	const configDir = join(spec.projectRoot, ".cosmonauts");
+	await mkdir(configDir, { recursive: true });
+	await writeFile(
+		join(configDir, "config.json"),
+		JSON.stringify({ episodicLog: { enabled: true } }),
+		"utf-8",
+	);
+	const specPath = join(spec.workdir, "spec.json");
+	const persisted = (await readJson(specPath)) as DriverRunSpec;
+	await writeFile(
+		specPath,
+		`${JSON.stringify(
+			{
+				...persisted,
+				episodeSource: WORKER_SOURCE,
+				episodeAttemptId: "attempt-prior",
+			},
+			null,
+			2,
+		)}\n`,
+		"utf-8",
+	);
+}
+
+async function readProjectDriveEpisodes(projectRoot: string) {
+	const records = (
+		await createMarkdownMemoryStore({ projectRoot }).retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ text: "", recordTypes: ["episode"] },
+		)
+	).records;
+	return records.map((record) => {
+		const metadata = parseEpisodeRecord(record);
+		if (!metadata) throw new Error(`Invalid episode record: ${record.path}`);
+		return { ...metadata, source: record.source, tags: record.tags };
+	});
 }
 
 function attachJsonHelpers(

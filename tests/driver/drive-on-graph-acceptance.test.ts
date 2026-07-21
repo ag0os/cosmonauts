@@ -1,34 +1,226 @@
+import { execFile } from "node:child_process";
 import {
 	appendFile,
+	chmod,
 	mkdir,
 	readFile,
 	rename,
 	stat,
+	utimes,
 	writeFile,
 } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, test } from "vitest";
 import type {
 	Backend,
 	BackendInvocation,
 	BackendRunResult,
 } from "../../lib/driver/backends/types.ts";
-import { runDriveOnGraph } from "../../lib/driver/drive-graph-runner.ts";
-import type { DriverEvent, DriverRunSpec } from "../../lib/driver/types.ts";
+import {
+	recordDriveTerminalEpisode,
+	runDriveOnGraph,
+} from "../../lib/driver/drive-graph-runner.ts";
+import type {
+	DriverEvent,
+	DriverResult,
+	DriverRunSpec,
+} from "../../lib/driver/types.ts";
 import {
 	FileRunStore,
 	type StepAttemptRecord,
 	type StepRecord,
 	type StepResult,
 } from "../../lib/durable-runtime/index.ts";
+import { parseEpisodeRecord } from "../../lib/memory/episodic-records.ts";
+import { createMarkdownMemoryStore } from "../../lib/memory/markdown-store.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const temp = useTempDir("drive-on-graph-acceptance-");
+const execFileAsync = promisify(execFile);
 const PLAN_SLUG = "durable-frontend-migration";
 const PARENT_SESSION_ID = "drive-on-graph-acceptance-parent";
+const WORKER_SOURCE = "cod" + "ing/worker";
 
 describe("Drive-on-graph acceptance", () => {
+	test("records one terminal episode for every Drive result outcome after completion persistence @cosmo-behavior plan:episodic-log#B-017", async () => {
+		const outcomes: DriverResult["outcome"][] = [];
+		const cases = [
+			{
+				name: "completed",
+				backend: () => createBackend(),
+			},
+			{
+				name: "blocked",
+				backend: () =>
+					createBackend({
+						onRun: async () => blockedBackendResult("worker needs input"),
+					}),
+			},
+			{
+				name: "aborted",
+				backend: (controller: AbortController) =>
+					createBackend({
+						onRun: async () => {
+							controller.abort(new Error("operator aborted"));
+							return successfulBackendResult("aborted after worker return");
+						},
+					}),
+			},
+			{
+				name: "finalization-failed",
+				backend: () => createBackend(),
+				failFinalization: true,
+			},
+		] as const;
+
+		for (const testCase of cases) {
+			const fixture = await setupFixture(`episode-${testCase.name}`, 2);
+			await writeEpisodicConfig(fixture.projectRoot, true);
+			fixture.spec = {
+				...fixture.spec,
+				episodeSource: WORKER_SOURCE,
+				episodeAttemptId: `attempt-${testCase.name}`,
+			};
+			const controller = new AbortController();
+			let backend = testCase.backend(controller);
+			if ("failFinalization" in testCase && testCase.failFinalization) {
+				await initGit(fixture.projectRoot);
+				await installFailingCommitHook(fixture.projectRoot);
+				fixture.spec = {
+					...fixture.spec,
+					commitPolicy: "driver-commits",
+				};
+				backend = createBackend({
+					onRun: async (invocation) => {
+						await writeFile(
+							join(invocation.projectRoot, "finalization-change.ts"),
+							"export const changed = true;\n",
+							"utf-8",
+						);
+						return successfulBackendResult("commit must fail");
+					},
+				});
+			}
+
+			const result = await runDriveOnGraph(
+				fixture.spec,
+				createRunContext(fixture, backend, controller.signal),
+			);
+			outcomes.push(result.outcome);
+
+			const completionPath = join(fixture.spec.workdir, "run.completion.json");
+			const completionBytes = await readFile(completionPath, "utf-8");
+			expect(JSON.parse(completionBytes)).toEqual(result);
+			expect(result.completedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/u);
+
+			let episodes = await readProjectDriveEpisodes(fixture.projectRoot);
+			expect(episodes).toHaveLength(2);
+			expect(episodes.map((episode) => episode.outcome).sort()).toEqual(
+				["started", result.outcome].sort(),
+			);
+			expect(new Set(episodes.map((episode) => episode.subject.id))).toEqual(
+				new Set([fixture.spec.runId]),
+			);
+			expect(episodes.map((episode) => episode.source)).toEqual([
+				WORKER_SOURCE,
+				WORKER_SOURCE,
+			]);
+			expect(
+				episodes.every((episode) =>
+					episode.tags.includes(`attempt:${fixture.spec.episodeAttemptId}`),
+				),
+			).toBe(true);
+			expect(
+				episodes.filter((episode) =>
+					episode.tags.includes("action:task.status-changed"),
+				),
+			).toEqual([]);
+			expect(
+				episodes.filter((episode) =>
+					episode.tags.includes("action:plan.status-changed"),
+				),
+			).toEqual([]);
+
+			await utimes(
+				completionPath,
+				new Date("2030-01-01T00:00:00.000Z"),
+				new Date("2030-01-01T00:00:00.000Z"),
+			);
+			await recordDriveTerminalEpisode(fixture.spec, result);
+			episodes = await readProjectDriveEpisodes(fixture.projectRoot);
+			expect(episodes).toHaveLength(2);
+			const terminal = episodes.find(
+				(episode) => episode.outcome === result.outcome,
+			);
+			expect(terminal?.timestamp).toBe(result.completedAt);
+			expect(await readFile(completionPath, "utf-8")).toBe(completionBytes);
+		}
+
+		expect(outcomes.sort()).toEqual([
+			"aborted",
+			"blocked",
+			"completed",
+			"finalization_failed",
+		]);
+
+		const thrown = await setupFixture("episode-thrown", 1);
+		await writeEpisodicConfig(thrown.projectRoot, true);
+		thrown.spec = {
+			...thrown.spec,
+			episodeSource: WORKER_SOURCE,
+			episodeAttemptId: "attempt-thrown",
+		};
+		const originalError = new Error("primary event sink failed");
+		const thrownContext = createRunContext(
+			thrown,
+			createBackend(),
+			new AbortController().signal,
+		);
+		thrownContext.eventSink = async (event: DriverEvent) => {
+			if (event.type === "run_started") throw originalError;
+		};
+		await expect(runDriveOnGraph(thrown.spec, thrownContext)).rejects.toBe(
+			originalError,
+		);
+		const thrownEpisodes = await readProjectDriveEpisodes(thrown.projectRoot);
+		expect(thrownEpisodes.map((episode) => episode.outcome).sort()).toEqual([
+			"failed",
+			"started",
+		]);
+
+		const captureFailure = await setupFixture("episode-capture-failure", 1);
+		await writeEpisodicConfig(captureFailure.projectRoot, true);
+		await writeFile(
+			join(captureFailure.projectRoot, "memory", "agent"),
+			"collision",
+		);
+		captureFailure.spec = {
+			...captureFailure.spec,
+			episodeSource: WORKER_SOURCE,
+			episodeAttemptId: "attempt-capture-failure",
+		};
+		const captureFailureResult = await runDriveOnGraph(
+			captureFailure.spec,
+			createRunContext(
+				captureFailure,
+				createBackend(),
+				new AbortController().signal,
+			),
+		);
+		expect(captureFailureResult.outcome).toBe("completed");
+		expect(
+			JSON.parse(
+				await readFile(
+					join(captureFailure.spec.workdir, "run.completion.json"),
+					"utf-8",
+				),
+			),
+		).toEqual(captureFailureResult);
+		expect(captureFailure.events.at(-1)?.type).toBe("run_completed");
+	});
+
 	// @cosmo-behavior plan:durable-frontend-migration#B-021
 	test("survives scheduler host death and resumes a large sequential drive graph", async () => {
 		const fixture = await setupFixture("large-resume", 12);
@@ -82,6 +274,7 @@ describe("Drive-on-graph acceptance", () => {
 			outcome: "completed",
 			tasksDone: fixture.taskIds.length,
 			tasksBlocked: 0,
+			completedAt: expect.any(String),
 		});
 		expect(reloadedRun?.metadata?.driveTaskIds).toEqual(fixture.taskIds);
 		expect(graph.graph.steps).toHaveLength(fixture.taskIds.length * 2);
@@ -173,6 +366,7 @@ describe("Drive-on-graph acceptance", () => {
 			outcome: "completed",
 			tasksDone: fixture.taskIds.length,
 			tasksBlocked: 0,
+			completedAt: expect.any(String),
 		});
 		expect(observedPrompts).toHaveLength(2);
 		expect(persistedSpec.promptTemplate).toMatchObject({
@@ -242,6 +436,7 @@ describe("Drive-on-graph acceptance", () => {
 			outcome: "completed",
 			tasksDone: fixture.taskIds.length,
 			tasksBlocked: 0,
+			completedAt: expect.any(String),
 		});
 		expect(resumedBackend.startedTaskIds).toEqual(fixture.taskIds.slice(2));
 		expect(resumedPrompts).toHaveLength(1);
@@ -369,6 +564,74 @@ function successfulBackendResult(notes: string): BackendRunResult {
 		].join("\n"),
 		durationMs: 1,
 	};
+}
+
+function blockedBackendResult(notes: string): BackendRunResult {
+	return {
+		exitCode: 1,
+		stdout: [
+			"```json",
+			JSON.stringify({
+				outcome: "failure",
+				files: [],
+				verification: [],
+				notes,
+			}),
+			"```",
+		].join("\n"),
+		durationMs: 1,
+	};
+}
+
+async function writeEpisodicConfig(
+	projectRoot: string,
+	enabled: boolean,
+): Promise<void> {
+	const configDir = join(projectRoot, ".cosmonauts");
+	await mkdir(configDir, { recursive: true });
+	await writeFile(
+		join(configDir, "config.json"),
+		JSON.stringify({ episodicLog: { enabled } }),
+		"utf-8",
+	);
+}
+
+async function readProjectDriveEpisodes(projectRoot: string) {
+	const records = (
+		await createMarkdownMemoryStore({ projectRoot }).retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ text: "", recordTypes: ["episode"] },
+		)
+	).records;
+
+	return records.map((record) => {
+		const metadata = parseEpisodeRecord(record);
+		if (!metadata) throw new Error(`Invalid episode record: ${record.path}`);
+		return {
+			...metadata,
+			source: record.source,
+			tags: record.tags,
+			timestamp: record.timestamp,
+		};
+	});
+}
+
+async function initGit(projectRoot: string): Promise<void> {
+	await git(projectRoot, ["init", "-b", "main"]);
+	await git(projectRoot, ["config", "user.email", "drive@example.com"]);
+	await git(projectRoot, ["config", "user.name", "Drive Test"]);
+	await git(projectRoot, ["add", "."]);
+	await git(projectRoot, ["commit", "-m", "initial"]);
+}
+
+async function installFailingCommitHook(projectRoot: string): Promise<void> {
+	const hookPath = join(projectRoot, ".git", "hooks", "pre-commit");
+	await writeFile(hookPath, "#!/bin/sh\nexit 1\n", "utf-8");
+	await chmod(hookPath, 0o755);
+}
+
+async function git(projectRoot: string, args: string[]): Promise<void> {
+	await execFileAsync("git", args, { cwd: projectRoot });
 }
 
 async function oneRunningDriveStep(

@@ -10,9 +10,18 @@ import { resolveConfiguredExternalBackend } from "../../lib/driver/backend-resol
 import { createCosmonautsSubagentBackend } from "../../lib/driver/backends/cosmonauts-subagent.ts";
 import type { Backend } from "../../lib/driver/backends/types.ts";
 import { resolveDefaultDriveEnvelopePath } from "../../lib/driver/default-envelope.ts";
+import { recordDriveTerminalEpisode } from "../../lib/driver/drive-graph-runner.ts";
 import type { startDetached } from "../../lib/driver/driver.ts";
 import { launchDetached, runInline } from "../../lib/driver/driver.ts";
 import { recordDurableFinalizerRetryFailure } from "../../lib/driver/durable-steps.ts";
+import {
+	type DriveEpisodeIdentity,
+	isDriveEpisodeCaptureEnabled,
+	mintDriveEpisodeIdentity,
+	reportDriveEpisodeLaunchWarning,
+	resolveDriveEpisodeWorker,
+	resolveFrozenDriveEpisodeWorker,
+} from "../../lib/driver/episode-identity.ts";
 import { formatError } from "../../lib/driver/errors.ts";
 import type {
 	DriverActivityBusEvent,
@@ -47,12 +56,14 @@ import {
 	type DriverRunSpec,
 	type PromptLayers,
 	type StateCommitPolicy,
+	stampDriverResult,
 	validateDriverPlanSlug,
 } from "../../lib/driver/types.ts";
 import { writeDriverWorkdirInputs } from "../../lib/driver/workdir-inputs.ts";
 import { FileRunStore } from "../../lib/durable-runtime/index.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
 import { createPiSpawner } from "../../lib/orchestration/agent-spawner.ts";
+import type { SpawnAgentResolution } from "../../lib/orchestration/spawn-resolution.ts";
 import { discoverFrameworkBundledPackageDirs } from "../../lib/packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../../lib/runtime.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
@@ -252,6 +263,7 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 
 	const projectRoot = process.cwd();
 	const planSlug = options.plan;
+	const episodeCaptureEnabled = await isDriveEpisodeCaptureEnabled(projectRoot);
 	const taskManager = new TaskManager(projectRoot);
 	await taskManager.init();
 
@@ -277,6 +289,41 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 	if (refuseUnsupportedDetachedBackend(mode, backendName)) {
 		return;
 	}
+	const needsExecutionRuntime =
+		mode === "inline" && backendName === "cosmonauts-subagent";
+	const needsEpisodeRuntime =
+		episodeCaptureEnabled && !resume?.spec.episodeSource;
+	let runtime: CosmonautsRuntime | undefined;
+	if (needsExecutionRuntime || needsEpisodeRuntime) {
+		try {
+			runtime = await createDriveRuntime(projectRoot);
+		} catch (error) {
+			if (needsExecutionRuntime) throw error;
+			reportDriveEpisodeLaunchWarning(error);
+		}
+	}
+	const episodeWorker = episodeCaptureEnabled
+		? runtime && resume?.spec.episodeSource
+			? resolveFrozenDriveEpisodeWorker(runtime, resume.spec.episodeSource)
+			: runtime
+				? resolveDriveEpisodeWorker(runtime)
+				: undefined
+		: undefined;
+	const episodeSource = episodeCaptureEnabled
+		? (resume?.spec.episodeSource ?? episodeWorker?.qualifiedId)
+		: undefined;
+	const reconcilePriorAttempt =
+		resume !== undefined && resume.remainingTaskIds.length === 0;
+	const episodeIdentity = episodeSource
+		? reconcilePriorAttempt && resume?.spec.episodeAttemptId
+			? {
+					episodeSource,
+					episodeAttemptId: resume.spec.episodeAttemptId,
+				}
+			: reconcilePriorAttempt
+				? undefined
+				: mintDriveEpisodeIdentity(episodeSource)
+		: undefined;
 
 	const spec = await createRunSpec({
 		projectRoot,
@@ -285,8 +332,15 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 		options,
 		resume,
 		backendName,
+		episodeIdentity,
 	});
-	const backend = await createBackend(backendName, mode, projectRoot);
+	const backend = await createBackend(
+		backendName,
+		mode,
+		projectRoot,
+		runtime,
+		episodeWorker,
+	);
 	const deps = {
 		taskManager,
 		backend,
@@ -320,6 +374,31 @@ async function prepareResume(
 		}
 		retriedPendingFinalization = true;
 	}
+	if (
+		retriedPendingFinalization &&
+		pendingFinalization &&
+		resume.remainingTaskIds.length === 0
+	) {
+		await writeDriverWorkdirInputs(resume.spec, resume.remainingTaskIds);
+		const completion = await persistResumeTerminal(
+			resume.spec,
+			await legacyPendingFinalizationCompletion(resume, pendingFinalization),
+		);
+		printJsonStdout(withDriveScope(completion, resume.spec.planSlug));
+		return false;
+	}
+	if (!pendingFinalization && resume.remainingTaskIds.length === 0) {
+		const existingCompletion = await readRunCompletion(resume.spec.workdir);
+		if (existingCompletion) {
+			await writeDriverWorkdirInputs(resume.spec, resume.remainingTaskIds);
+			const completion = await persistResumeTerminal(
+				resume.spec,
+				existingCompletion,
+			);
+			printJsonStdout(withDriveScope(completion, resume.spec.planSlug));
+			return false;
+		}
+	}
 
 	const shouldContinue =
 		resume.remainingTaskIds.length > 0 || (await hasGraphResumeState(resume));
@@ -327,11 +406,10 @@ async function prepareResume(
 		await clearRunCompletion(resume.spec.workdir);
 	}
 	if (!shouldContinue && retriedPendingFinalization && pendingFinalization) {
-		const completion = await legacyPendingFinalizationCompletion(
-			resume,
-			pendingFinalization,
+		const completion = await persistResumeTerminal(
+			resume.spec,
+			await legacyPendingFinalizationCompletion(resume, pendingFinalization),
 		);
-		await writeRunCompletion(resume.spec.workdir, completion);
 		printJsonStdout(withDriveScope(completion, resume.spec.planSlug));
 	}
 	return shouldContinue;
@@ -896,6 +974,7 @@ async function createRunSpec({
 	options,
 	resume,
 	backendName,
+	episodeIdentity,
 }: {
 	projectRoot: string;
 	planSlug: string;
@@ -903,6 +982,7 @@ async function createRunSpec({
 	options: DriveRunOptions;
 	resume: ResumeDefaults | undefined;
 	backendName: BackendName;
+	episodeIdentity?: DriveEpisodeIdentity;
 }): Promise<DriverRunSpec> {
 	const runId = resume?.spec.runId ?? `run-${randomUUID()}`;
 	const workdir =
@@ -937,6 +1017,7 @@ async function createRunSpec({
 		eventLogPath,
 		taskTimeoutMs: options.taskTimeout ?? resume?.spec.taskTimeoutMs,
 		remainingTaskIds: resume?.remainingTaskIds,
+		...episodeIdentity,
 	};
 }
 
@@ -1004,6 +1085,19 @@ function resolveOptionalPath(
 
 async function clearRunCompletion(workdir: string): Promise<void> {
 	await rm(join(workdir, RUN_COMPLETION_FILENAME), { force: true });
+}
+
+async function readRunCompletion(
+	workdir: string,
+): Promise<DriverResult | undefined> {
+	try {
+		return JSON.parse(
+			await readFile(join(workdir, RUN_COMPLETION_FILENAME), "utf-8"),
+		) as DriverResult;
+	} catch (error) {
+		if (isErrnoError(error) && error.code === "ENOENT") return undefined;
+		throw error;
+	}
 }
 
 async function prepareInlineWorkdir(spec: DriverRunSpec): Promise<void> {
@@ -1314,16 +1408,15 @@ async function writeStateFinalizationFailure(
 		phase: "state_commit",
 		reason,
 	});
-	const completion: DriverResult = {
+	const completion = await persistResumeTerminal(spec, {
 		runId: spec.runId,
-		outcome: "finalization_failed",
+		outcome: "finalization_failed" as const,
 		tasksDone,
 		tasksBlocked: 0,
 		finalizationPhase: "state_commit",
 		finalizationReason: reason,
 		pendingFinalizationPath: join(spec.workdir, "pending-finalization.json"),
-	};
-	await writeRunCompletion(spec.workdir, completion);
+	});
 	printJsonStdout(completion);
 }
 
@@ -1464,9 +1557,9 @@ async function writeSourceFinalizationFailure(
 		reason,
 		commitSha,
 	});
-	const completion: DriverResult = {
+	const completion = await persistResumeTerminal(spec, {
 		runId: spec.runId,
-		outcome: "finalization_failed",
+		outcome: "finalization_failed" as const,
 		tasksDone: 0,
 		tasksBlocked: 0,
 		finalizationPhase: phase,
@@ -1474,9 +1567,18 @@ async function writeSourceFinalizationFailure(
 		finalizationTaskId: taskId,
 		...(commitSha ? { finalizationCommitSha: commitSha } : {}),
 		pendingFinalizationPath: join(spec.workdir, "pending-finalization.json"),
-	};
-	await writeRunCompletion(spec.workdir, completion);
+	});
 	printJsonStdout(completion);
+}
+
+async function persistResumeTerminal(
+	spec: DriverRunSpec,
+	result: DriverResult,
+): Promise<DriverResult & { completedAt: string }> {
+	const completion = stampDriverResult(result);
+	await writeRunCompletion(spec.workdir, completion);
+	await recordDriveTerminalEpisode(spec, completion);
+	return completion;
 }
 
 async function writeDurableOnlyFinalizationFailure(
@@ -1669,6 +1771,8 @@ async function createBackend(
 	backendName: BackendName,
 	mode: DriverMode,
 	projectRoot: string,
+	runtime?: CosmonautsRuntime,
+	workerResolution?: SpawnAgentResolution,
 ): Promise<Backend> {
 	if (backendName !== "cosmonauts-subagent") {
 		return resolveConfiguredExternalBackend(backendName);
@@ -1677,25 +1781,36 @@ async function createBackend(
 		throw new Error("cosmonauts-subagent cannot run in detached mode");
 	}
 
+	const executionRuntime = runtime ?? (await createDriveRuntime(projectRoot));
+	const spawner = createPiSpawner(
+		executionRuntime.agentRegistry,
+		executionRuntime.domainsDir,
+		{
+			resolver: executionRuntime.domainResolver,
+		},
+	);
+	return createCosmonautsSubagentBackend({
+		spawner,
+		cwd: projectRoot,
+		domainContext: executionRuntime.domainContext,
+		projectSkills: executionRuntime.projectSkills,
+		skillPaths: executionRuntime.skillPaths,
+		workerResolution,
+	});
+}
+
+async function createDriveRuntime(
+	projectRoot: string,
+): Promise<CosmonautsRuntime> {
 	const frameworkRoot = resolve(
 		dirname(fileURLToPath(import.meta.url)),
 		"..",
 		"..",
 	);
-	const runtime = await CosmonautsRuntime.create({
+	return CosmonautsRuntime.create({
 		builtinDomainsDir: join(frameworkRoot, "domains"),
 		projectRoot,
 		bundledDirs: await discoverFrameworkBundledPackageDirs(frameworkRoot),
-	});
-	const spawner = createPiSpawner(runtime.agentRegistry, runtime.domainsDir, {
-		resolver: runtime.domainResolver,
-	});
-	return createCosmonautsSubagentBackend({
-		spawner,
-		cwd: projectRoot,
-		domainContext: runtime.domainContext,
-		projectSkills: runtime.projectSkills,
-		skillPaths: runtime.skillPaths,
 	});
 }
 

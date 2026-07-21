@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { extractAssistantText } from "../../orchestration/assistant-text.ts";
+import type { SpawnAgentResolution } from "../../orchestration/spawn-resolution.ts";
 import { summarizeToolCall } from "../../orchestration/tool-call-summary.ts";
 import type {
 	AgentSpawner,
@@ -16,6 +17,7 @@ interface CosmonautsSubagentBackendDeps {
 	domainContext?: string;
 	projectSkills?: readonly string[];
 	skillPaths?: readonly string[];
+	workerResolution?: SpawnAgentResolution;
 }
 
 interface DriverActivityFields {
@@ -32,11 +34,15 @@ export function createCosmonautsSubagentBackend(
 		name: "cosmonauts-subagent",
 		capabilities: { canCommit: true, isolatedFromHostSource: false },
 		async run(invocation) {
-			const role = deps.defaultRole ?? "worker";
+			const role =
+				deps.workerResolution?.reference?.requested.qualifiedId ??
+				deps.defaultRole ??
+				"worker";
 			const prompt = await readFile(invocation.promptPath, "utf-8");
 			const start = Date.now();
 			const result = await deps.spawner.spawn({
 				role,
+				agentReference: deps.workerResolution?.reference,
 				prompt,
 				cwd: deps.cwd,
 				signal: invocation.signal,

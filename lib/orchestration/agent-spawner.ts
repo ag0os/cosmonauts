@@ -37,6 +37,7 @@ import {
 	awaitNextCompletionMessages,
 	DEFAULT_SPAWN_TIMEOUT_MS,
 } from "./spawn-completion-loop.ts";
+import { resolveSpawnAgent } from "./spawn-resolution.ts";
 import {
 	getOrCreateTracker,
 	removeTracker,
@@ -172,17 +173,13 @@ async function prepareSpawnSession(
 	resolver: DomainResolver | undefined,
 	bus: MessageBus,
 ): Promise<PreparedSpawnSession> {
-	const def = config.agentReference
-		? registry.getResolvedTarget(
-				config.agentReference.resolved.qualifiedId,
-				config.domainContext,
-			)
-		: registry.get(config.role, config.domainContext);
-	if (!def) {
+	const resolution = resolveSpawnAgent(registry, config);
+	if (!resolution) {
 		throw new Error(
 			`Unknown agent role "${config.role}". Available agents: ${registry.listIds().join(", ")}`,
 		);
 	}
+	const def = resolution.definition;
 
 	const { session, sessionFilePath } = await createAgentSessionFromDefinition(
 		def,
@@ -194,7 +191,7 @@ async function prepareSpawnSession(
 		type: "agent_resolved",
 		sessionId: session.sessionId,
 		requestedRole: config.role,
-		resolvedAgentId: qualifyResolvedAgentId(def),
+		resolvedAgentId: resolution.qualifiedId,
 	});
 
 	// Create the tracker before prompt so spawn_agent tool calls can register
@@ -336,10 +333,6 @@ function emitSpawnEvent(config: SpawnConfig, event: SpawnEvent): void {
 	} catch {
 		// Listeners must not break the spawner.
 	}
-}
-
-function qualifyResolvedAgentId(def: { id: string; domain?: string }): string {
-	return def.domain ? `${def.domain}/${def.id}` : def.id;
 }
 
 function subscribeToSpawnEvents(

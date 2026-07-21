@@ -10,6 +10,8 @@ import {
 	type SchedulerStepInput,
 	type StepRecord,
 } from "../durable-runtime/index.ts";
+import { recordEpisode } from "../memory/episode.ts";
+import type { EpisodeEvent } from "../memory/episodic-records.ts";
 import {
 	isDoneTaskStatusStep,
 	isPartialTaskStatusStep,
@@ -26,7 +28,7 @@ import type {
 	DriverRunAbortDetails,
 	DriverRunSpec,
 } from "./types.ts";
-import { resolveStateCommitPolicy } from "./types.ts";
+import { resolveStateCommitPolicy, stampDriverResult } from "./types.ts";
 import { writeDriverWorkdirInputs } from "./workdir-inputs.ts";
 
 export interface RunDriveOnGraphCtx extends RunRunLoopCtx {
@@ -54,6 +56,10 @@ export async function runDriveOnGraph(
 	});
 	const ref = { scope: spec.planSlug, runId: spec.runId };
 	const mode = ctx.mode ?? "inline";
+
+	if (shouldRecordDriveStart(spec)) {
+		await recordDriveStartEpisode(spec);
+	}
 
 	try {
 		await prepareCompatibilityWorkdir(spec, mode);
@@ -137,13 +143,16 @@ export async function runDriveOnGraph(
 		});
 
 		if (finalizerFailure) {
-			const result = finalizationFailureResult(
-				runSpec,
-				finalizerFailure,
-				schedulerResult.steps,
+			const result = stampDriverResult(
+				finalizationFailureResult(
+					runSpec,
+					finalizerFailure,
+					schedulerResult.steps,
+				),
 			);
 			await emitRunFinalizationFailed(runSpec, ctx, result);
 			await writeRunCompletion(runSpec.workdir, result);
+			await recordDriveTerminalEpisode(runSpec, result);
 			return result;
 		}
 
@@ -157,26 +166,24 @@ export async function runDriveOnGraph(
 			throw new Error("Drive graph scheduler did not produce a result.");
 		}
 
-		const result = await toDriverResult(
-			runSpec,
-			ctx,
-			store,
-			ref,
-			schedulerResult,
+		const result = stampDriverResult(
+			await toDriverResult(runSpec, ctx, store, ref, schedulerResult),
 		);
 		await emitTerminalLegacyEvent(runSpec, ctx, result);
 		await writeRunCompletion(runSpec.workdir, result);
+		await recordDriveTerminalEpisode(runSpec, result);
 		return result;
 	} catch (error) {
 		if (error instanceof EventLogWriteError) {
-			const result: DriverResult = {
+			const result = stampDriverResult({
 				runId: spec.runId,
-				outcome: "aborted",
+				outcome: "aborted" as const,
 				tasksDone: 0,
 				tasksBlocked: 0,
 				blockedReason: "log write failed",
-			};
+			});
 			await writeRunCompletion(spec.workdir, result);
+			await recordDriveTerminalEpisode(spec, result);
 			return result;
 		}
 		const details = await exceptionAbortDetails({
@@ -199,8 +206,98 @@ export async function runDriveOnGraph(
 			},
 		});
 		await emitRunAborted(spec, ctx, formatError(error), details);
+		await recordDriveThrownTerminalEpisode(spec, error);
 		throw error;
 	}
+}
+
+export function buildDriveTerminalEpisode(
+	spec: DriverRunSpec,
+	result: DriverResult,
+): EpisodeEvent | undefined {
+	const identity = driveEpisodeIdentity(spec);
+	if (!identity || !result.completedAt) return undefined;
+
+	return {
+		scope: "project",
+		source: identity.source,
+		action: "drive.run",
+		outcome: result.outcome,
+		subject: { kind: "run", id: spec.runId },
+		tags: [`attempt:${identity.attemptId}`],
+		timestamp: result.completedAt,
+		summary: `Drive run "${spec.runId}" ${result.outcome}.`,
+		details: `Attempt ${identity.attemptId} completed with ${result.tasksDone} done and ${result.tasksBlocked} blocked tasks.`,
+	};
+}
+
+export async function recordDriveTerminalEpisode(
+	spec: DriverRunSpec,
+	result: DriverResult,
+): Promise<void> {
+	const event = buildDriveTerminalEpisode(spec, result);
+	if (!event) return;
+	await captureDriveEpisode(spec, event);
+}
+
+async function recordDriveStartEpisode(spec: DriverRunSpec): Promise<void> {
+	const identity = driveEpisodeIdentity(spec);
+	if (!identity) return;
+	await captureDriveEpisode(spec, {
+		scope: "project",
+		source: identity.source,
+		action: "drive.run",
+		outcome: "started",
+		subject: { kind: "run", id: spec.runId },
+		tags: [`attempt:${identity.attemptId}`],
+		summary: `Started Drive run "${spec.runId}".`,
+		details: `Attempt ${identity.attemptId} started with ${spec.taskIds.length} selected tasks.`,
+	});
+}
+
+async function recordDriveThrownTerminalEpisode(
+	spec: DriverRunSpec,
+	error: unknown,
+): Promise<void> {
+	const identity = driveEpisodeIdentity(spec);
+	if (!identity) return;
+	await captureDriveEpisode(spec, {
+		scope: "project",
+		source: identity.source,
+		action: "drive.run",
+		outcome: "failed",
+		subject: { kind: "run", id: spec.runId },
+		tags: [`attempt:${identity.attemptId}`],
+		summary: `Drive run "${spec.runId}" failed.`,
+		details: formatError(error),
+	});
+}
+
+async function captureDriveEpisode(
+	spec: DriverRunSpec,
+	event: EpisodeEvent,
+): Promise<void> {
+	try {
+		await recordEpisode({ projectRoot: spec.projectRoot, event });
+	} catch {
+		// Episode capture is never allowed to replace Drive's primary behavior.
+	}
+}
+
+function driveEpisodeIdentity(
+	spec: DriverRunSpec,
+): { source: string; attemptId: string } | undefined {
+	if (!spec.episodeSource || !spec.episodeAttemptId) return undefined;
+	return {
+		source: spec.episodeSource,
+		attemptId: spec.episodeAttemptId,
+	};
+}
+
+function shouldRecordDriveStart(spec: DriverRunSpec): boolean {
+	return (
+		spec.remainingTaskIds === undefined || spec.remainingTaskIds.length > 0
+	);
 }
 
 async function prepareCompatibilityWorkdir(

@@ -8,6 +8,8 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import "./orchestration-mocks.ts";
 import { registerDriverTool } from "../../domains/shared/extensions/orchestration/driver-tool.ts";
 import { registerWatchEventsTool } from "../../domains/shared/extensions/orchestration/watch-events-tool.ts";
+import { AgentRegistry } from "../../lib/agents/index.ts";
+import type { AgentDefinition } from "../../lib/agents/types.ts";
 import type {
 	Backend,
 	BackendInvocation,
@@ -17,6 +19,7 @@ import {
 	DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH,
 	resolveDefaultDriveEnvelopePath,
 } from "../../lib/driver/default-envelope.ts";
+import { resolveDriveEpisodeWorker } from "../../lib/driver/episode-identity.ts";
 import type {
 	DriverActivityBusEvent,
 	DriverBusEvent,
@@ -36,6 +39,7 @@ import {
 } from "../../lib/driver/types.ts";
 import { activityBus } from "../../lib/orchestration/activity-bus.ts";
 import type { SpawnActivityEvent } from "../../lib/orchestration/message-bus.ts";
+import type { CosmonautsRuntime } from "../../lib/runtime.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import type { TaskUpdateInput } from "../../lib/tasks/task-types.ts";
 import { useTempDir } from "../helpers/fs.ts";
@@ -243,6 +247,85 @@ describe("driver e2e run_driver integration", () => {
 		).resolves.toBe(await readFile(expectedEnvelopePath, "utf-8"));
 	});
 
+	test("freezes the execution-resolved worker for enabled default main project-bound and live-bound launches", async () => {
+		const fixture = await setupFixture({ taskCount: 1 });
+		await writeEpisodicConfig(fixture.projectRoot, true);
+		backendMocks.run.mockResolvedValue(successResult());
+		const cases = [
+			{
+				name: "default",
+				domainContext: undefined,
+				targetDomain: "coding",
+			},
+			{
+				name: "main",
+				domainContext: "main",
+				targetDomain: "coding",
+			},
+			{
+				name: "project-bound",
+				domainContext: "coding",
+				targetDomain: "project-coding",
+			},
+			{
+				name: "live-bound",
+				domainContext: "coding",
+				targetDomain: "live-coding",
+			},
+		] as const;
+
+		for (const testCase of cases) {
+			const runtime = workerRuntime(
+				testCase.domainContext,
+				testCase.targetDomain,
+			);
+			const result = await runDriver(fixture, { runtime });
+			await waitForCompletion(result.workdir);
+			await delay(0);
+			const spec = await readSpec(result.workdir);
+			const executed = resolveDriveEpisodeWorker(runtime);
+
+			expect(spec.episodeSource, testCase.name).toBe(executed?.qualifiedId);
+			expect(spec.episodeSource, testCase.name).toBe(
+				`${testCase.targetDomain}/worker`,
+			);
+			expect(spec.episodeAttemptId, testCase.name).toMatch(/^attempt-/u);
+			expect(
+				backendMocks.createCosmonautsSubagentBackend,
+			).toHaveBeenLastCalledWith(
+				expect.objectContaining({
+					workerResolution: expect.objectContaining({
+						qualifiedId: spec.episodeSource,
+					}),
+				}),
+			);
+		}
+	});
+
+	test("warns and omits episode identity when the enabled worker does not resolve", async () => {
+		const fixture = await setupFixture({ taskCount: 1 });
+		await writeEpisodicConfig(fixture.projectRoot, true);
+		backendMocks.run.mockResolvedValue(successResult());
+		const stderr = vi
+			.spyOn(process.stderr, "write")
+			.mockImplementation(() => true);
+		const runtime = {
+			...workerRuntime("main", "coding"),
+			agentRegistry: new AgentRegistry([]),
+		};
+
+		const result = await runDriver(fixture, { runtime });
+		await waitForCompletion(result.workdir);
+		const spec = await readSpec(result.workdir);
+
+		expect(spec).not.toHaveProperty("episodeSource");
+		expect(spec).not.toHaveProperty("episodeAttemptId");
+		expect(stderr).toHaveBeenCalledWith(
+			expect.stringContaining("Drive episode capture skipped"),
+		);
+		expect(backendMocks.run).toHaveBeenCalledTimes(1);
+	});
+
 	// @cosmo-behavior plan:coding-agnostic-framework#B-025
 	test("run_driver honors an explicit legacy bundled envelopePath", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
@@ -424,6 +507,15 @@ interface RunDriverOverrides {
 	stateCommitPolicy?: "final-state-commit" | "none";
 	envelopePath?: string;
 	omitEnvelopePath?: boolean;
+	runtime?: Pick<
+		CosmonautsRuntime,
+		| "agentRegistry"
+		| "domainContext"
+		| "domainResolver"
+		| "domainsDir"
+		| "projectSkills"
+		| "skillPaths"
+	>;
 }
 
 function onlyTaskId(fixture: Fixture): string {
@@ -475,14 +567,15 @@ async function runDriver(
 	registerDriverTool(
 		pi as never,
 		async () =>
-			({
-				agentRegistry: {},
-				domainResolver: {},
-				domainsDir: fixture.projectRoot,
-				domainContext: "coding",
-				projectSkills: [],
-				skillPaths: [],
-			}) as never,
+			(overrides.runtime ??
+				({
+					agentRegistry: {},
+					domainResolver: {},
+					domainsDir: fixture.projectRoot,
+					domainContext: "coding",
+					projectSkills: [],
+					skillPaths: [],
+				} as never)) as CosmonautsRuntime,
 		overrides.frameworkRoot ?? fixture.projectRoot,
 	);
 	registerWatchEventsTool(pi as never);
@@ -524,6 +617,82 @@ async function runDriver(
 	};
 
 	return response.details;
+}
+
+function workerRuntime(
+	domainContext: string | undefined,
+	targetDomain: string | undefined,
+): Pick<
+	CosmonautsRuntime,
+	| "agentRegistry"
+	| "domainContext"
+	| "domainResolver"
+	| "domainsDir"
+	| "projectSkills"
+	| "skillPaths"
+> {
+	const domains = new Set(
+		["coding", targetDomain].filter((value): value is string => Boolean(value)),
+	);
+	const definitions = [...domains].map(workerDefinition);
+	const bindingResolver = {
+		resolveAgentReference(qualifiedId: string) {
+			const [role, agentId] = qualifiedId.split("/");
+			if (!role || !agentId) throw new Error("Expected qualified worker");
+			const resolvedDomain =
+				role === "coding" && targetDomain ? targetDomain : role;
+			return {
+				requested: { role, agentId, qualifiedId },
+				resolved: {
+					role: resolvedDomain,
+					agentId,
+					qualifiedId: `${resolvedDomain}/${agentId}`,
+				},
+				binding: {
+					role,
+					domainId: resolvedDomain,
+					source: resolvedDomain === role ? "default" : "project",
+				},
+			};
+		},
+	} as never;
+	return {
+		agentRegistry: new AgentRegistry(definitions, { bindingResolver }),
+		domainContext,
+		domainResolver: {} as never,
+		domainsDir: temp.path,
+		projectSkills: [],
+		skillPaths: [],
+	};
+}
+
+function workerDefinition(domain: string): AgentDefinition {
+	return {
+		id: "worker",
+		domain,
+		description: `${domain} worker`,
+		capabilities: [],
+		model: "test/model",
+		tools: "none",
+		extensions: [],
+		skills: [],
+		projectContext: false,
+		session: "ephemeral",
+		loop: false,
+	};
+}
+
+async function writeEpisodicConfig(
+	projectRoot: string,
+	enabled: boolean,
+): Promise<void> {
+	const configDir = join(projectRoot, ".cosmonauts");
+	await mkdir(configDir, { recursive: true });
+	await writeFile(
+		join(configDir, "config.json"),
+		JSON.stringify({ episodicLog: { enabled } }),
+		"utf-8",
+	);
 }
 
 async function readSpec(workdir: string): Promise<DriverRunSpec> {

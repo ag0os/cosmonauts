@@ -3,6 +3,8 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createDriveCompatProgram } from "../../../cli/drive/subcommand.ts";
+import { AgentRegistry } from "../../../lib/agents/index.ts";
+import type { AgentDefinition } from "../../../lib/agents/types.ts";
 import {
 	DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH,
 	resolveDefaultDriveEnvelopePath,
@@ -20,6 +22,7 @@ import {
 	type StepAttemptRecord,
 	type StepRecord,
 } from "../../../lib/durable-runtime/index.ts";
+import { CosmonautsRuntime } from "../../../lib/runtime.ts";
 import { TaskManager } from "../../../lib/tasks/task-manager.ts";
 import type { Task } from "../../../lib/tasks/task-types.ts";
 import { captureCliOutput } from "../../helpers/cli.ts";
@@ -369,6 +372,64 @@ describe("cosmonauts run drive compat run", () => {
 		});
 	});
 
+	test("freezes the CLI worker from the live-bound execution resolution", async () => {
+		const fixture = await setupFixture(1);
+		await writeEpisodicConfig(process.cwd(), true);
+		const runtime = workerRuntime("coding", "live-coding");
+		vi.spyOn(CosmonautsRuntime, "create").mockResolvedValue(
+			runtime as CosmonautsRuntime,
+		);
+
+		await parseDrive([
+			"--plan",
+			PLAN,
+			"--task-ids",
+			fixture.tasks[0]?.id ?? "TASK-001",
+			"--backend",
+			"codex",
+			"--mode",
+			"inline",
+			"--envelope",
+			fixture.envelopePath,
+		]);
+
+		const spec = firstRunInlineSpec();
+		expect(spec.episodeSource).toBe("live-coding/worker");
+		expect(spec.episodeAttemptId).toMatch(/^attempt-/u);
+		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
+	});
+
+	test("warns and continues CLI launch without a fabricated worker actor", async () => {
+		const fixture = await setupFixture(1);
+		await writeEpisodicConfig(process.cwd(), true);
+		const runtime = {
+			...workerRuntime("main", "coding"),
+			agentRegistry: new AgentRegistry([]),
+		};
+		vi.spyOn(CosmonautsRuntime, "create").mockResolvedValue(
+			runtime as CosmonautsRuntime,
+		);
+
+		await parseDrive([
+			"--plan",
+			PLAN,
+			"--task-ids",
+			fixture.tasks[0]?.id ?? "TASK-001",
+			"--backend",
+			"codex",
+			"--mode",
+			"inline",
+			"--envelope",
+			fixture.envelopePath,
+		]);
+
+		const spec = firstRunInlineSpec();
+		expect(spec).not.toHaveProperty("episodeSource");
+		expect(spec).not.toHaveProperty("episodeAttemptId");
+		expect(output.stderr()).toContain("Drive episode capture skipped");
+		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
+	});
+
 	// @cosmo-behavior plan:coding-agnostic-framework#B-011
 	test("uses the framework default envelope when --envelope is omitted", async () => {
 		const fixture = await setupFixture(1);
@@ -555,6 +616,51 @@ describe("cosmonauts run drive compat run", () => {
 
 		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
 		expect(firstRunInlineSpec().runId).toBe("run-previous");
+	});
+
+	test("enabled resume preserves the frozen source and mints only when worker execution remains", async () => {
+		const fixture = await setupFixture(2);
+		const taskIds = fixture.tasks.map((task) => task.id);
+		await writeEpisodicConfig(process.cwd(), true);
+		await writeResumeRun(
+			taskIds,
+			[{ type: "task_done", taskId: taskIds[0] ?? "TASK-001" }],
+			{
+				episodeSource: "project-coding/worker",
+				episodeAttemptId: "attempt-original",
+			},
+		);
+		const runtimeCreate = vi.spyOn(CosmonautsRuntime, "create");
+
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		const spec = firstRunInlineSpec();
+		expect(spec.episodeSource).toBe("project-coding/worker");
+		expect(spec.episodeAttemptId).toMatch(/^attempt-/u);
+		expect(spec.episodeAttemptId).not.toBe("attempt-original");
+		expect(spec.remainingTaskIds).toEqual(taskIds.slice(1));
+		expect(runtimeCreate).not.toHaveBeenCalled();
+	});
+
+	test("enabled legacy resume resolves a missing frozen source once at the mint seam", async () => {
+		const fixture = await setupFixture(2);
+		const taskIds = fixture.tasks.map((task) => task.id);
+		await writeEpisodicConfig(process.cwd(), true);
+		await writeResumeRun(taskIds, [
+			{ type: "task_done", taskId: taskIds[0] ?? "TASK-001" },
+		]);
+		const runtime = workerRuntime("coding", "project-coding");
+		const runtimeCreate = vi
+			.spyOn(CosmonautsRuntime, "create")
+			.mockResolvedValue(runtime as CosmonautsRuntime);
+
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		const spec = firstRunInlineSpec();
+		expect(spec.episodeSource).toBe("project-coding/worker");
+		expect(spec.episodeAttemptId).toMatch(/^attempt-/u);
+		expect(spec.remainingTaskIds).toEqual(taskIds.slice(1));
+		expect(runtimeCreate).toHaveBeenCalledTimes(1);
 	});
 
 	test("resume reuses the persisted envelope snapshot instead of resolving a live path", async () => {
@@ -1487,6 +1593,80 @@ async function setupFixture(count: number): Promise<{
 	const envelopePath = join(temp.path, "envelope.md");
 	await writeFile(envelopePath, "Envelope\n", "utf-8");
 	return { manager, tasks, envelopePath };
+}
+
+async function writeEpisodicConfig(
+	projectRoot: string,
+	enabled: boolean,
+): Promise<void> {
+	const configDir = join(projectRoot, ".cosmonauts");
+	await mkdir(configDir, { recursive: true });
+	await writeFile(
+		join(configDir, "config.json"),
+		JSON.stringify({ episodicLog: { enabled } }),
+		"utf-8",
+	);
+}
+
+function workerRuntime(
+	domainContext: string | undefined,
+	targetDomain: string,
+): Pick<
+	CosmonautsRuntime,
+	| "agentRegistry"
+	| "domainContext"
+	| "domainResolver"
+	| "domainsDir"
+	| "projectSkills"
+	| "skillPaths"
+> {
+	const definitions = [...new Set(["coding", targetDomain])].map(
+		workerDefinition,
+	);
+	const bindingResolver = {
+		resolveAgentReference(qualifiedId: string) {
+			const [role, agentId] = qualifiedId.split("/");
+			if (!role || !agentId) throw new Error("Expected qualified worker");
+			const resolvedDomain = role === "coding" ? targetDomain : role;
+			return {
+				requested: { role, agentId, qualifiedId },
+				resolved: {
+					role: resolvedDomain,
+					agentId,
+					qualifiedId: `${resolvedDomain}/${agentId}`,
+				},
+				binding: {
+					role,
+					domainId: resolvedDomain,
+					source: "live",
+				},
+			};
+		},
+	} as never;
+	return {
+		agentRegistry: new AgentRegistry(definitions, { bindingResolver }),
+		domainContext,
+		domainResolver: {} as never,
+		domainsDir: temp.path,
+		projectSkills: [],
+		skillPaths: [],
+	};
+}
+
+function workerDefinition(domain: string): AgentDefinition {
+	return {
+		id: "worker",
+		domain,
+		description: `${domain} worker`,
+		capabilities: [],
+		model: "test/model",
+		tools: "none",
+		extensions: [],
+		skills: [],
+		projectContext: false,
+		session: "ephemeral",
+		loop: false,
+	};
 }
 
 async function writeResumeRun(

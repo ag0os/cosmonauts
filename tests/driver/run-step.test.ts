@@ -78,6 +78,7 @@ describe("run-step binary", () => {
 			outcome: "completed",
 			tasksDone: 1,
 			tasksBlocked: 0,
+			completedAt: expect.any(String),
 		});
 
 		const events = await readEvents(fixture.spec.eventLogPath);

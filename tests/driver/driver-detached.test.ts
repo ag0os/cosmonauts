@@ -130,6 +130,7 @@ describe("startDetached", () => {
 			outcome: "completed",
 			tasksDone: 1,
 			tasksBlocked: 0,
+			completedAt: expect.any(String),
 		});
 
 		await waitFor(() =>

@@ -28,6 +28,7 @@ describe("runStart Drive graph characterization", () => {
 			createRunContext(fixture),
 		);
 		expect(Object.keys(result).sort()).toEqual([
+			"completedAt",
 			"outcome",
 			"planCompletionCandidate",
 			"runId",
@@ -40,6 +41,7 @@ describe("runStart Drive graph characterization", () => {
 			outcome: "completed",
 			tasksDone: 1,
 			tasksBlocked: 0,
+			completedAt: expect.any(String),
 			planCompletionCandidate: {
 				planSlug: PLAN_SLUG,
 				taskCount: 1,

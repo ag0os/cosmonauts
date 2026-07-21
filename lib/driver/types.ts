@@ -59,6 +59,10 @@ export interface DriverRunSpec {
 	 * to `true` (an `undefined` value is treated as enabled).
 	 */
 	retryOnContradictedBlock?: boolean;
+	/** Qualified worker identity frozen by an episodic-enabled launch surface. */
+	episodeSource?: string;
+	/** Stable identity for one episodic-enabled execution attempt. */
+	episodeAttemptId?: string;
 }
 
 /**
@@ -265,6 +269,11 @@ interface DriverResultBase {
 	runId: string;
 	tasksDone: number;
 	tasksBlocked: number;
+	/**
+	 * Primary completion timestamp persisted in run.completion.json. Optional on
+	 * the type so legacy completion files remain readable during resume.
+	 */
+	completedAt?: string;
 }
 
 export type DriverResult =
@@ -289,6 +298,17 @@ export type DriverResult =
 			finalizationCommitSha?: string;
 			pendingFinalizationPath: string;
 	  });
+
+export type TimestampedDriverResult = DriverResult & { completedAt: string };
+
+/** Stamp completion content once while preserving legacy timestamps on replay. */
+export function stampDriverResult<Result extends DriverResult>(
+	result: Result,
+	completedAt: string = new Date().toISOString(),
+): Result & { completedAt: string } {
+	if (result.completedAt) return result as Result & { completedAt: string };
+	return { ...result, completedAt };
+}
 
 export type TaskOutcome =
 	| {
