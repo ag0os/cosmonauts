@@ -176,7 +176,22 @@ async function writeEpisode(options: {
 				};
 			}
 			if (existing !== undefined) continue;
-			if (!(await writeFileAtomicExclusive(path, rendered))) continue;
+			if (!(await writeFileAtomicExclusive(path, rendered))) {
+				// Lost the exclusive-create race. If the winner wrote identical
+				// bytes (the common case for redundant terminal completion writers),
+				// dedupe to their file instead of advancing to a duplicate suffix —
+				// this keeps the exactly-one-terminal invariant atomic across
+				// concurrent identical writers, not just sequential ones.
+				const raced = await readFileIfExists(path);
+				if (raced === rendered) {
+					return {
+						kind: "written",
+						path,
+						record: toRetrievedRecord({ record: episode, path }),
+					};
+				}
+				continue;
+			}
 			return {
 				kind: "written",
 				path,

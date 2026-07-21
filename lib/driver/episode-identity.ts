@@ -89,8 +89,15 @@ export function mintDriveEpisodeIdentity(
 	};
 }
 
+/** Match recordEpisode's bounded-stderr posture so a large/leaky detail can't flood logs (SR-004). */
+const MAX_LAUNCH_WARNING_DETAIL = 500;
+
 export function reportDriveEpisodeLaunchWarning(reason: unknown): void {
-	const detail = reason instanceof Error ? reason.message : String(reason);
+	const raw = reason instanceof Error ? reason.message : String(reason);
+	const detail =
+		raw.length > MAX_LAUNCH_WARNING_DETAIL
+			? `${raw.slice(0, MAX_LAUNCH_WARNING_DETAIL)}…`
+			: raw;
 	try {
 		process.stderr.write(
 			`[warning] Drive episode capture skipped: ${detail || "worker resolution failed"}.\n`,

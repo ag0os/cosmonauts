@@ -1608,6 +1608,42 @@ describe("markdown memory store", () => {
 		).resolves.toEqual(episodeFilesBeforeAuthoredSave);
 	});
 
+	// Regression guard (QM PRF-001) for the D-009 exactly-one-terminal invariant
+	// under concurrent identical writers (redundant Drive completion writers all
+	// replace byte-identical content). Defends B-006's idempotent append.
+	test("dedupes concurrent identical episode writes to exactly one file", async () => {
+		const projectRoot = join(tmp.path, "concurrent-identical-episode-project");
+		const store = createMarkdownMemoryStore({ projectRoot });
+		const episode = createEpisodeRecord(
+			{
+				scope: "project",
+				source: "example/worker",
+				action: "drive.run",
+				outcome: "completed",
+				subject: { kind: "run", id: "run-concurrent" },
+				summary: "Terminal completion written by redundant writers.",
+			},
+			"2026-07-21T18:00:00.000Z",
+		);
+		const results = await Promise.all(
+			Array.from({ length: 8 }, () => store.write(episode)),
+		);
+		for (const result of results) {
+			expect(result).toMatchObject({ kind: "written" });
+		}
+		const writtenPaths = new Set(
+			results.map((result) =>
+				result.kind === "written" ? result.path : "unwritten",
+			),
+		);
+		expect(writtenPaths.size).toBe(1);
+		const episodesDir = join(projectRoot, "memory", "agent", "episodes");
+		const episodeFiles = (await readdir(episodesDir)).filter((name) =>
+			name.endsWith(".md"),
+		);
+		expect(episodeFiles).toHaveLength(1);
+	});
+
 	// @cosmo-behavior plan:episodic-log#B-007
 	test("scans episodes only when recordTypes explicitly includes episode", async () => {
 		const projectRoot = join(tmp.path, "conditional-episode-scan-project");

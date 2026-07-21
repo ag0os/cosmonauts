@@ -939,22 +939,46 @@ function formatWarningLines(options: WarningFormatOptions): string[] {
 	return lines;
 }
 
+/**
+ * The scan-cost "episode log large" advisory is informational — nothing was
+ * skipped or unreadable — so it must render separately from unreadable-record
+ * warnings, which claim records "could not be read" (UR-003).
+ */
+function isEpisodeAdvisoryWarning(warning: {
+	readonly message: string;
+}): boolean {
+	return warning.message.startsWith("episode log large");
+}
+
 function formatRecallWarnings(
 	options: WarningFormatOptions,
 ): string | undefined {
-	const count = options.warnings.length;
-	if (count === 0) return undefined;
-	const recordLabel = options.warnings.some((warning) =>
-		warning.path?.split(sep).includes("episodes"),
-	)
-		? "memory record"
-		: "authored memory record";
-	return [
-		`Warning: ${count} ${recordLabel}${
-			count === 1 ? " was" : "s were"
-		} skipped because ${count === 1 ? "it" : "they"} could not be read:`,
-		...formatWarningLines(options),
-	].join("\n");
+	if (options.warnings.length === 0) return undefined;
+	const advisories = options.warnings.filter(isEpisodeAdvisoryWarning);
+	const unreadable = options.warnings.filter(
+		(warning) => !isEpisodeAdvisoryWarning(warning),
+	);
+	const sections: string[] = [];
+	if (unreadable.length > 0) {
+		const count = unreadable.length;
+		const recordLabel = unreadable.some((warning) =>
+			warning.path?.split(sep).includes("episodes"),
+		)
+			? "memory record"
+			: "authored memory record";
+		sections.push(
+			[
+				`Warning: ${count} ${recordLabel}${
+					count === 1 ? " was" : "s were"
+				} skipped because ${count === 1 ? "it" : "they"} could not be read:`,
+				...formatWarningLines({ ...options, warnings: unreadable }),
+			].join("\n"),
+		);
+	}
+	for (const advisory of advisories) {
+		sections.push(`Note: ${clampMetadataValue(advisory.message)}`);
+	}
+	return sections.length > 0 ? sections.join("\n") : undefined;
 }
 
 function formatContextWarnings(options: WarningFormatOptions): string {

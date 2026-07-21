@@ -346,6 +346,13 @@ async function appendDurableDiagnostics(
 		try {
 			await state.store.appendDiagnostic(state.ref, diagnostic);
 		} catch (error) {
+			if (isEpisodeCaptureDiagnosticEvent(event)) {
+				// D-008/B-026: the episode-capture warning reporter must SURFACE a
+				// durable-diagnostic append failure so recordEpisode falls back to
+				// bounded stderr instead of reporting false success. Every other
+				// event keeps the legacy-authoritative durable fail-soft below.
+				throw error;
+			}
 			reportDurableDiagnostic({
 				code: "drive_durable_diagnostic_append_failed",
 				message:
@@ -354,6 +361,14 @@ async function appendDurableDiagnostics(
 			});
 		}
 	}
+}
+
+/** The reporter-owned diagnostic whose durable append failure must surface (F-004/D-008). */
+function isEpisodeCaptureDiagnosticEvent(event: DriverEvent): boolean {
+	return (
+		event.type === "driver_diagnostic" &&
+		event.code === "episode_capture_failed"
+	);
 }
 
 async function appendDurableEvents(
