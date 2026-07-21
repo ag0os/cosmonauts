@@ -22,6 +22,12 @@ interface ProjectArchitectureMapConfig {
 	};
 }
 
+/** Optional episodic-log capture settings from `.cosmonauts/config.json`. */
+export interface ProjectEpisodicLogConfig {
+	readonly enabled?: boolean;
+	readonly warningThreshold?: number;
+}
+
 /** Project-level configuration loaded from `.cosmonauts/config.json`. */
 export interface ProjectConfig {
 	/** Default domain for this project (e.g. "coding"). */
@@ -38,4 +44,6 @@ export interface ProjectConfig {
 	readonly chains?: Readonly<Record<string, ProjectChainConfig>>;
 	/** Optional generated architecture-map settings. */
 	readonly architectureMap?: ProjectArchitectureMapConfig;
+	/** Project-only, off-by-default episodic-log capture settings. */
+	readonly episodicLog?: ProjectEpisodicLogConfig;
 }

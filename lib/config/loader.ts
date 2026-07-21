@@ -9,7 +9,14 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { createDefaultProjectConfig } from "./defaults.ts";
-import type { ProjectConfig } from "./types.ts";
+import type { ProjectConfig, ProjectEpisodicLogConfig } from "./types.ts";
+
+export const EPISODE_WARNING_THRESHOLD_DEFAULT = 500;
+
+export interface ResolvedEpisodicLogConfig {
+	readonly enabled: boolean;
+	readonly warningThreshold: number;
+}
 
 type MutableArchitectureMapConfig = {
 	sourceRoots?: string[];
@@ -83,6 +90,7 @@ export async function loadProjectConfig(
 		skillPaths?: readonly string[];
 		chains?: ProjectConfig["chains"];
 		architectureMap?: ProjectConfig["architectureMap"];
+		episodicLog?: ProjectConfig["episodicLog"];
 	} = {};
 
 	if (typeof obj.domain === "string") {
@@ -147,7 +155,64 @@ export async function loadProjectConfig(
 		config.architectureMap = parseArchitectureMapConfig(obj.architectureMap);
 	}
 
+	if ("episodicLog" in obj) {
+		config.episodicLog = parseEpisodicLogConfig(obj.episodicLog);
+	}
+
 	return config;
+}
+
+export function resolveEpisodicLogConfig(
+	config: Pick<ProjectConfig, "episodicLog">,
+): ResolvedEpisodicLogConfig {
+	return {
+		enabled: config.episodicLog?.enabled === true,
+		warningThreshold:
+			config.episodicLog?.warningThreshold ?? EPISODE_WARNING_THRESHOLD_DEFAULT,
+	};
+}
+
+function parseEpisodicLogConfig(
+	value: unknown,
+): ProjectEpisodicLogConfig | undefined {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		console.error(
+			`[warning] Skipping malformed episodicLog: expected an object, got ${formatConfigValue(value)}.`,
+		);
+		return undefined;
+	}
+
+	const obj = value as Record<string, unknown>;
+	const episodicLog: {
+		enabled?: boolean;
+		warningThreshold?: number;
+	} = {};
+
+	if ("enabled" in obj) {
+		if (typeof obj.enabled === "boolean") {
+			episodicLog.enabled = obj.enabled;
+		} else {
+			console.error(
+				`[warning] Skipping malformed episodicLog.enabled: expected a boolean, got ${formatConfigValue(obj.enabled)}.`,
+			);
+		}
+	}
+
+	if ("warningThreshold" in obj) {
+		if (
+			typeof obj.warningThreshold === "number" &&
+			Number.isSafeInteger(obj.warningThreshold) &&
+			obj.warningThreshold > 0
+		) {
+			episodicLog.warningThreshold = obj.warningThreshold;
+		} else {
+			console.error(
+				`[warning] Skipping malformed episodicLog.warningThreshold: expected a positive integer, got ${formatConfigValue(obj.warningThreshold)}.`,
+			);
+		}
+	}
+
+	return episodicLog;
 }
 
 function parseArchitectureMapConfig(

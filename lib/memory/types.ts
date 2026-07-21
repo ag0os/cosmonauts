@@ -39,6 +39,7 @@ export interface RetrievedMemoryRecord {
 	readonly resource: string;
 	readonly tags: readonly string[];
 	readonly timestamp: string;
+	readonly source?: string;
 	readonly content: string;
 	readonly path: string;
 }

@@ -2,11 +2,15 @@
  * Tests for project config loader.
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, test, vi } from "vitest";
-import { loadProjectConfig } from "../../lib/config/loader.ts";
+import {
+	EPISODE_WARNING_THRESHOLD_DEFAULT,
+	loadProjectConfig,
+	resolveEpisodicLogConfig,
+} from "../../lib/config/loader.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("config-test-");
@@ -346,6 +350,100 @@ describe("loadProjectConfig", () => {
 		);
 		expect(warn.mock.calls.map((call) => call[0]).join("\n")).toContain(
 			"architectureMap.injectionMaxBytes",
+		);
+		warn.mockRestore();
+	});
+
+	test("parses episodicLog as an off-by-default project gate with a positive threshold @cosmo-behavior plan:episodic-log#B-001", async () => {
+		await expect(loadProjectConfig(tmp.path)).resolves.toEqual({});
+		expect(resolveEpisodicLogConfig({})).toEqual({
+			enabled: false,
+			warningThreshold: EPISODE_WARNING_THRESHOLD_DEFAULT,
+		});
+
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		const configPath = join(tmp.path, ".cosmonauts", "config.json");
+		for (const [episodicLog, expected] of [
+			[
+				{ enabled: true, warningThreshold: 73 },
+				{ enabled: true, warningThreshold: 73 },
+			],
+			[
+				{ enabled: false, warningThreshold: 1 },
+				{ enabled: false, warningThreshold: 1 },
+			],
+		] as const) {
+			await writeFile(configPath, JSON.stringify({ episodicLog }));
+			const loaded = await loadProjectConfig(tmp.path);
+			expect(resolveEpisodicLogConfig(loaded)).toEqual(expected);
+		}
+
+		const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+		for (const episodicLog of [
+			true,
+			[],
+			{ enabled: "true" },
+			{ enabled: 1 },
+			{ warningThreshold: 0 },
+			{ warningThreshold: -1 },
+			{ warningThreshold: 1.5 },
+			{ warningThreshold: "73" },
+		]) {
+			await writeFile(configPath, JSON.stringify({ episodicLog }));
+			const loaded = await loadProjectConfig(tmp.path);
+			expect(resolveEpisodicLogConfig(loaded).enabled).toBe(false);
+			expect(resolveEpisodicLogConfig(loaded).warningThreshold).toBe(
+				EPISODE_WARNING_THRESHOLD_DEFAULT,
+			);
+		}
+		expect(
+			warn.mock.calls.every(([message]) =>
+				String(message).startsWith("[warning] Skipping malformed episodicLog"),
+			),
+		).toBe(true);
+		warn.mockRestore();
+	});
+
+	test("isolates malformed episodicLog settings from every unrelated project config key", async () => {
+		const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		const unrelated = {
+			domain: "coding",
+			activeDomains: ["coding", "writing"],
+			domainBindings: { coding: "ruby-coding" },
+			skills: ["typescript", "testing"],
+			chains: {
+				verify: { description: "Verify", chain: "worker -> reviewer" },
+			},
+			architectureMap: {
+				sourceRoots: ["lib", "domains"],
+				moduleRoots: ["lib/memory"],
+				exclude: ["fixtures"],
+				injectionMaxBytes: 12000,
+				narrative: { enabled: true, maxModulesPerRun: 4 },
+			},
+		} as const;
+		await writeFile(
+			join(tmp.path, ".cosmonauts", "config.json"),
+			JSON.stringify({ ...unrelated, episodicLog: { enabled: "yes" } }),
+		);
+
+		const loaded = await loadProjectConfig(tmp.path);
+		const { episodicLog: _episodicLog, ...loadedUnrelated } = loaded;
+
+		expect(JSON.stringify(loadedUnrelated)).toBe(JSON.stringify(unrelated));
+		expect(resolveEpisodicLogConfig(loaded)).toEqual({
+			enabled: false,
+			warningThreshold: EPISODE_WARNING_THRESHOLD_DEFAULT,
+		});
+		expect(warn).toHaveBeenCalledOnce();
+		expect(warn.mock.calls[0]?.[0]).toContain(
+			"[warning] Skipping malformed episodicLog.enabled",
+		);
+		await expect(
+			readFile(join(process.cwd(), "lib", "config", "types.ts"), "utf-8"),
+		).resolves.toContain(
+			"Projects declare their configuration in `.cosmonauts/config.json`.",
 		);
 		warn.mockRestore();
 	});

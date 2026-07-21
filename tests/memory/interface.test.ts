@@ -1,20 +1,349 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import type { ArchitectureMapRetrievalDetails } from "../../lib/architecture-map/index.ts";
 import { createArchitectureMapMemoryStore } from "../../lib/architecture-map/index.ts";
+import { recordEpisode } from "../../lib/memory/episode.ts";
+import {
+	createEpisodeRecord,
+	EPISODE_ACTIONS,
+	isEpisodeAction,
+	parseEpisodeRecord,
+} from "../../lib/memory/episodic-records.ts";
 import {
 	createMarkdownMemoryStore,
 	MEMORY_KINDS,
 	MEMORY_SCOPES,
 	type MemoryStore,
+	type RetrievedMemoryRecord,
 } from "../../lib/memory/index.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("memory-interface-");
 
 describe("memory interface", () => {
+	test("recordEpisode creates and warns nothing when episodicLog is disabled @cosmo-behavior plan:episodic-log#B-002", async () => {
+		const projectRoot = join(tmp.path, "disabled-project");
+		const userCosmonautsRoot = join(tmp.path, "disabled-user");
+		const loadConfig = vi.fn(async () => ({}));
+		const createStore = vi.fn();
+		const reportWarning = vi.fn();
+		const writeStderr = vi.fn();
+
+		await expect(
+			recordEpisode({
+				projectRoot,
+				userCosmonautsRoot,
+				event: episodeEvent(),
+				reportWarning,
+				dependencies: { loadConfig, createStore, writeStderr },
+			}),
+		).resolves.toEqual({ kind: "disabled" });
+
+		expect(loadConfig).toHaveBeenCalledOnce();
+		expect(createStore).not.toHaveBeenCalled();
+		expect(reportWarning).not.toHaveBeenCalled();
+		expect(writeStderr).not.toHaveBeenCalled();
+		for (const path of [
+			join(projectRoot, "memory"),
+			join(userCosmonautsRoot, "memory"),
+			join(projectRoot, "memory", "agent", "index.md"),
+			join(userCosmonautsRoot, "memory", "agent", "index.md"),
+			join(projectRoot, "memory", "agent", "episodes"),
+			join(userCosmonautsRoot, "memory", "agent", "episodes"),
+		]) {
+			await expect(access(path)).rejects.toMatchObject({ code: "ENOENT" });
+		}
+	});
+
+	test("stamps and parses the writer:cosmonauts provenance tag and leaves human episodes untagged @cosmo-behavior plan:episodic-log#B-004", async () => {
+		const machineDraft = createEpisodeRecord(
+			{
+				...episodeEvent(),
+				tags: [
+					"release",
+					"action:raw.turn",
+					"outcome:forged",
+					"subject:forged:id",
+					"payload:forged:id",
+					"writer:someone-else",
+				],
+			},
+			"2026-07-21T12:00:00.000Z",
+		);
+		const machineRecord = retrievedEpisode(machineDraft.tags);
+		const humanRecord = retrievedEpisode(
+			machineDraft.tags.filter((tag) => tag !== "writer:cosmonauts"),
+		);
+
+		expect(machineDraft.tags).toContain("writer:cosmonauts");
+		expect(
+			machineDraft.tags.filter((tag) => tag.startsWith("writer:")),
+		).toEqual(["writer:cosmonauts"]);
+		expect(machineDraft.tags).not.toContain("action:raw.turn");
+		expect(machineDraft.tags).not.toContain("outcome:forged");
+		expect(machineDraft.tags).not.toContain("subject:forged:id");
+		expect(machineDraft.tags).not.toContain("payload:forged:id");
+		expect(parseEpisodeRecord(machineRecord)).toMatchObject({
+			action: "chain.run",
+			writer: "cosmonauts",
+		});
+		const parsedHuman = parseEpisodeRecord(humanRecord);
+		expect(parsedHuman).toMatchObject({ action: "chain.run" });
+		expect(parsedHuman).not.toHaveProperty("writer");
+
+		const [recordSource, publicSource] = await Promise.all([
+			readFile(
+				join(process.cwd(), "lib", "memory", "episodic-records.ts"),
+				"utf-8",
+			),
+			readFile(join(process.cwd(), "lib", "memory", "index.ts"), "utf-8"),
+		]);
+		expect(recordSource).not.toMatch(
+			/(?:sha-?256|integrity|edit.?detect|safe.?prune)/iu,
+		);
+		expect(publicSource).not.toMatch(
+			/(?:verifyEpisode|safePrune|uneditedEpisode)/u,
+		);
+		expect(
+			recordSource.split("\n").filter((line) => line.startsWith("import ")),
+		).toEqual([
+			'import type { MemoryRecordDraft, RetrievedMemoryRecord } from "./types.ts";',
+		]);
+	});
+
+	test("records through the sole serializer with the resolved store threshold", async () => {
+		const path = join(tmp.path, "memory", "agent", "episodes", "recorded.md");
+		const write = vi.fn<MemoryStore["write"]>(async (draft) => ({
+			kind: "written",
+			path,
+			record: {
+				...retrievedEpisode(draft.tags),
+				scope: draft.scope,
+				source: draft.source,
+			},
+		}));
+		const createStore = vi.fn(() => episodeStore(write));
+
+		await expect(
+			recordEpisode({
+				projectRoot: tmp.path,
+				event: episodeEvent(),
+				dependencies: {
+					loadConfig: enabledEpisodeConfig,
+					createStore,
+					now: () => new Date("2026-07-21T12:00:00.000Z"),
+				},
+			}),
+		).resolves.toEqual({ kind: "recorded", path });
+		expect(createStore).toHaveBeenCalledWith({
+			projectRoot: tmp.path,
+			userCosmonautsRoot: undefined,
+			episodeWarningThreshold: 17,
+		});
+		expect(write).toHaveBeenCalledOnce();
+		expect(write.mock.calls[0]?.[0]).toMatchObject({
+			type: "episode",
+			kind: "episodic",
+			source: "example/worker",
+			timestamp: "2026-07-21T12:00:00.000Z",
+			tags: expect.arrayContaining([
+				"action:chain.run",
+				"outcome:started",
+				"writer:cosmonauts",
+			]),
+		});
+
+		const memorySources = await Promise.all(
+			(await readdir(join(process.cwd(), "lib", "memory")))
+				.filter((file) => file.endsWith(".ts"))
+				.map((file) =>
+					readFile(join(process.cwd(), "lib", "memory", file), "utf-8"),
+				),
+		);
+		expect(
+			memorySources.join("\n").match(/export async function recordEpisode/gu),
+		).toHaveLength(1);
+		expect(
+			memorySources.join("\n").match(/export function createEpisodeRecord/gu),
+		).toHaveLength(1);
+	});
+
+	test("converts setup write and awaitable warning-reporter failures into one non-fatal result @cosmo-behavior plan:episodic-log#B-011", async () => {
+		const cases = [
+			{
+				name: "config load",
+				loadConfig: vi.fn(async () => {
+					throw new Error("config exploded");
+				}),
+				createStore: vi.fn(),
+			},
+			{
+				name: "store construction",
+				loadConfig: enabledEpisodeConfig,
+				createStore: vi.fn(() => {
+					throw new Error("construction exploded");
+				}),
+			},
+			{
+				name: "failed write result",
+				loadConfig: enabledEpisodeConfig,
+				createStore: vi.fn(() =>
+					episodeStore(async () => ({
+						kind: "failed",
+						path: "/episodes/partial.md",
+						reason: "write failed",
+					})),
+				),
+			},
+			{
+				name: "unsupported write result",
+				loadConfig: enabledEpisodeConfig,
+				createStore: vi.fn(() =>
+					episodeStore(async () => ({
+						kind: "unsupported",
+						reason: "episode unsupported",
+					})),
+				),
+			},
+			{
+				name: "thrown write",
+				loadConfig: enabledEpisodeConfig,
+				createStore: vi.fn(() =>
+					episodeStore(async () => {
+						throw new Error("write exploded ".repeat(100));
+					}),
+				),
+			},
+		] as const;
+
+		for (const testCase of cases) {
+			const reportWarning = vi.fn(async () => {});
+			const writeStderr = vi.fn();
+			const result = await recordEpisode({
+				projectRoot: tmp.path,
+				event: episodeEvent(),
+				reportWarning,
+				dependencies: {
+					loadConfig: testCase.loadConfig,
+					createStore: testCase.createStore,
+					writeStderr,
+				},
+			});
+
+			expect(result.kind, testCase.name).toBe("warning");
+			if (result.kind !== "warning") throw new Error("expected warning");
+			expect(result.warning.message.length, testCase.name).toBeLessThanOrEqual(
+				500,
+			);
+			expect(reportWarning, testCase.name).toHaveBeenCalledOnce();
+			expect(writeStderr, testCase.name).not.toHaveBeenCalled();
+		}
+
+		const reportWarning = vi.fn(async () => {
+			throw new Error("reporter rejected");
+		});
+		const writeStderr = vi.fn();
+		await expect(
+			recordEpisode({
+				projectRoot: tmp.path,
+				event: episodeEvent(),
+				reportWarning,
+				dependencies: {
+					loadConfig: enabledEpisodeConfig,
+					createStore: () =>
+						episodeStore(async () => ({
+							kind: "failed",
+							reason: "write failed",
+						})),
+					writeStderr,
+				},
+			}),
+		).resolves.toMatchObject({ kind: "warning" });
+		expect(reportWarning).toHaveBeenCalledOnce();
+		expect(writeStderr).toHaveBeenCalledOnce();
+		expect(writeStderr.mock.calls[0]?.[0]).toMatch(
+			/^\[warning\] Episode capture skipped:/u,
+		);
+
+		const unavailableReporterStderr = vi.fn();
+		await expect(
+			recordEpisode({
+				projectRoot: tmp.path,
+				event: episodeEvent(),
+				dependencies: {
+					loadConfig: enabledEpisodeConfig,
+					createStore: () =>
+						episodeStore(async () => ({
+							kind: "unsupported",
+							reason: "episode unsupported",
+						})),
+					writeStderr: unavailableReporterStderr,
+				},
+			}),
+		).resolves.toMatchObject({ kind: "warning" });
+		expect(unavailableReporterStderr).toHaveBeenCalledOnce();
+		await expect(
+			access(join(tmp.path, "memory", "agent", "episodes")),
+		).rejects.toMatchObject({ code: "ENOENT" });
+	});
+
+	test("accepts only the ratified consequential event vocabulary and rejects chatter @cosmo-behavior plan:episodic-log#B-020", () => {
+		expect(EPISODE_ACTIONS).toEqual([
+			"chain.run",
+			"drive.run",
+			"plan.created",
+			"plan.status-changed",
+			"task.created",
+			"task.status-changed",
+			"memory.saved",
+			"autonomy.wake",
+		]);
+		for (const action of EPISODE_ACTIONS)
+			expect(isEpisodeAction(action)).toBe(true);
+		for (const chatter of [
+			"session.started",
+			"session.ended",
+			"turn.started",
+			"tool.called",
+			"chain.stage",
+			"drive.task-chatter",
+			"task.edited",
+			"plan.edited",
+			"memory.rejected",
+			"file.edited",
+			"arbitrary",
+		]) {
+			expect(isEpisodeAction(chatter), chatter).toBe(false);
+			expect(() =>
+				createEpisodeRecord(
+					{ ...episodeEvent(), action: chatter } as never,
+					"2026-07-21T12:00:00.000Z",
+				),
+			).toThrow("Unsupported episode action");
+		}
+
+		expect(() =>
+			createEpisodeRecord(
+				{ ...episodeEvent(), action: "autonomy.wake", payload: undefined },
+				"2026-07-21T12:00:00.000Z",
+			),
+		).toThrow("autonomy.wake requires a stable payload");
+		const wake = createEpisodeRecord(
+			{
+				...episodeEvent(),
+				action: "autonomy.wake",
+				payload: { kind: "trigger", id: "github:issue/42" },
+			},
+			"2026-07-21T12:00:00.000Z",
+		);
+		expect(parseEpisodeRecord(retrievedEpisode(wake.tags))?.payload).toEqual({
+			kind: "trigger",
+			id: "github:issue/42",
+		});
+	});
+
 	test("supports note profile and playbook through the unchanged MemoryStore contract @cosmo-behavior plan:profile-playbooks#B-002", async () => {
 		const projectRoot = join(tmp.path, "authored-types-project");
 		const userRoot = join(tmp.path, "authored-types-user");
@@ -38,10 +367,10 @@ describe("memory interface", () => {
 			]);
 
 		// W2 shipped with types.ts byte-identical to W1 (its proof point). The
-		// memory-hardening plan then added the optional MemoryRetrieveStats
-		// seam; this hash pins the file against further accidental drift.
+		// memory-hardening added optional MemoryRetrieveStats; episodic-log then
+		// added only optional RetrievedMemoryRecord.source. Re-pin that narrow seam.
 		expect(createHash("sha256").update(typesSource).digest("hex")).toBe(
-			"7b604e30df2cf99cd52052703ffb7b327b1d00d98ccc4f55dbbad79ea17d764b",
+			"46d5548e22af81209095f9cda25b6fb6a0d7d8ffb20b4f978415cab046e4d607",
 		);
 		expect(
 			createHash("sha256").update(architectureAdapterSource).digest("hex"),
@@ -301,6 +630,7 @@ describe("memory interface", () => {
 		expect(architectureRetrieved.records[0]?.content).toContain(
 			"Architecture map freshness: current (stat-current)",
 		);
+		expect(architectureRetrieved.records[0]?.source).toBeUndefined();
 
 		const ineligible = await architecture.retrieve(
 			{ projectRoot: tmp.path, scopes: ["session", "user"] },
@@ -372,6 +702,51 @@ describe("memory interface", () => {
 		}
 	});
 });
+
+function episodeEvent() {
+	return {
+		scope: "project" as const,
+		source: "example/worker",
+		action: "chain.run" as const,
+		outcome: "started",
+		subject: { kind: "run", id: "run-42" },
+		summary: "Started verification chain.",
+		details: "The chain has one worker stage.",
+	};
+}
+
+async function enabledEpisodeConfig() {
+	return { episodicLog: { enabled: true, warningThreshold: 17 } } as const;
+}
+
+function episodeStore(write: MemoryStore["write"]): MemoryStore {
+	return {
+		write,
+		retrieve: async () => ({
+			records: [],
+			searchedScopes: [],
+			skippedScopes: [],
+			warnings: [],
+		}),
+		consolidate: async () => ({ kind: "noop", reason: "test store" }),
+	};
+}
+
+function retrievedEpisode(tags: readonly string[]): RetrievedMemoryRecord {
+	return {
+		type: "episode",
+		scope: "project",
+		kind: "episodic",
+		title: "Started verification chain.",
+		description: "chain.run started for run:run-42",
+		resource: "memory/agent/episodes/example.md",
+		tags,
+		timestamp: "2026-07-21T12:00:00.000Z",
+		source: "example/worker",
+		content: "Started verification chain.",
+		path: "/project/memory/agent/episodes/example.md",
+	};
+}
 
 async function readTrackedFiles(
 	paths: readonly string[],
