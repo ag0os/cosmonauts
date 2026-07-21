@@ -10,8 +10,12 @@ import {
 	type SchedulerStepInput,
 	type StepRecord,
 } from "../durable-runtime/index.ts";
-import { recordEpisode } from "../memory/episode.ts";
+import {
+	type EpisodeWarningReporter,
+	recordEpisode,
+} from "../memory/episode.ts";
 import type { EpisodeEvent } from "../memory/episodic-records.ts";
+import type { MemoryWarning } from "../memory/types.ts";
 import {
 	isDoneTaskStatusStep,
 	isPartialTaskStatusStep,
@@ -56,9 +60,10 @@ export async function runDriveOnGraph(
 	});
 	const ref = { scope: spec.planSlug, runId: spec.runId };
 	const mode = ctx.mode ?? "inline";
+	const reportEpisodeWarning = driveEpisodeWarningReporter(spec, ctx);
 
 	if (shouldRecordDriveStart(spec)) {
-		await recordDriveStartEpisode(spec);
+		await recordDriveStartEpisode(spec, reportEpisodeWarning);
 	}
 
 	try {
@@ -153,7 +158,7 @@ export async function runDriveOnGraph(
 			);
 			await emitRunFinalizationFailed(runSpec, ctx, result);
 			await writeRunCompletion(runSpec.workdir, result);
-			await recordDriveTerminalEpisode(runSpec, result);
+			await recordDriveTerminalEpisode(runSpec, result, reportEpisodeWarning);
 			return result;
 		}
 
@@ -173,7 +178,7 @@ export async function runDriveOnGraph(
 		);
 		await emitTerminalLegacyEvent(runSpec, ctx, result);
 		await writeRunCompletion(runSpec.workdir, result);
-		await recordDriveTerminalEpisode(runSpec, result);
+		await recordDriveTerminalEpisode(runSpec, result, reportEpisodeWarning);
 		return result;
 	} catch (error) {
 		if (error instanceof EventLogWriteError) {
@@ -185,7 +190,7 @@ export async function runDriveOnGraph(
 				blockedReason: "log write failed",
 			});
 			await writeRunCompletion(spec.workdir, result);
-			await recordDriveTerminalEpisode(spec, result);
+			await recordDriveTerminalEpisode(spec, result, reportEpisodeWarning);
 			return result;
 		}
 		const details = await exceptionAbortDetails({
@@ -208,7 +213,7 @@ export async function runDriveOnGraph(
 			},
 		});
 		await emitRunAborted(spec, ctx, formatError(error), details);
-		await recordDriveThrownTerminalEpisode(spec, error);
+		await recordDriveThrownTerminalEpisode(spec, error, reportEpisodeWarning);
 		throw error;
 	}
 }
@@ -244,54 +249,95 @@ export function buildDriveTerminalEpisode(
 export async function recordDriveTerminalEpisode(
 	spec: DriverRunSpec,
 	result: DriverResult,
+	reportWarning?: EpisodeWarningReporter,
 ): Promise<void> {
 	const event = buildDriveTerminalEpisode(spec, result);
 	if (!event) return;
-	await captureDriveEpisode(spec, event);
+	await captureDriveEpisode(spec, event, reportWarning);
 }
 
-async function recordDriveStartEpisode(spec: DriverRunSpec): Promise<void> {
+async function recordDriveStartEpisode(
+	spec: DriverRunSpec,
+	reportWarning: EpisodeWarningReporter,
+): Promise<void> {
 	const identity = driveEpisodeIdentity(spec);
 	if (!identity) return;
-	await captureDriveEpisode(spec, {
-		scope: "project",
-		source: identity.source,
-		action: "drive.run",
-		outcome: "started",
-		subject: { kind: "run", id: spec.runId },
-		tags: [`attempt:${identity.attemptId}`],
-		summary: `Started Drive run "${spec.runId}".`,
-		details: `Attempt ${identity.attemptId} started with ${spec.taskIds.length} selected tasks.`,
-	});
+	await captureDriveEpisode(
+		spec,
+		{
+			scope: "project",
+			source: identity.source,
+			action: "drive.run",
+			outcome: "started",
+			subject: { kind: "run", id: spec.runId },
+			tags: [`attempt:${identity.attemptId}`],
+			summary: `Started Drive run "${spec.runId}".`,
+			details: `Attempt ${identity.attemptId} started with ${spec.taskIds.length} selected tasks.`,
+		},
+		reportWarning,
+	);
 }
 
 async function recordDriveThrownTerminalEpisode(
 	spec: DriverRunSpec,
 	error: unknown,
+	reportWarning: EpisodeWarningReporter,
 ): Promise<void> {
 	const identity = driveEpisodeIdentity(spec);
 	if (!identity) return;
-	await captureDriveEpisode(spec, {
-		scope: "project",
-		source: identity.source,
-		action: "drive.run",
-		outcome: "failed",
-		subject: { kind: "run", id: spec.runId },
-		tags: [`attempt:${identity.attemptId}`],
-		summary: `Drive run "${spec.runId}" failed.`,
-		details: formatError(error),
-	});
+	await captureDriveEpisode(
+		spec,
+		{
+			scope: "project",
+			source: identity.source,
+			action: "drive.run",
+			outcome: "failed",
+			subject: { kind: "run", id: spec.runId },
+			tags: [`attempt:${identity.attemptId}`],
+			summary: `Drive run "${spec.runId}" failed.`,
+			details: formatError(error),
+		},
+		reportWarning,
+	);
 }
 
 async function captureDriveEpisode(
 	spec: DriverRunSpec,
 	event: EpisodeEvent,
+	reportWarning?: EpisodeWarningReporter,
 ): Promise<void> {
-	try {
-		await recordEpisode({ projectRoot: spec.projectRoot, event });
-	} catch {
-		// Episode capture is never allowed to replace Drive's primary behavior.
-	}
+	await recordEpisode({
+		projectRoot: spec.projectRoot,
+		event,
+		reportWarning,
+	});
+}
+
+function driveEpisodeWarningReporter(
+	spec: DriverRunSpec,
+	ctx: RunDriveOnGraphCtx,
+): EpisodeWarningReporter {
+	return (warning) =>
+		emit(spec, ctx, {
+			type: "driver_diagnostic",
+			level: "warning",
+			code: "episode_capture_failed",
+			message: warning.path
+				? `${warning.path}: ${warning.message}`
+				: warning.message,
+			phase: "episode_capture",
+			details: {
+				...(warning.path ? { path: warning.path } : {}),
+				reason: episodeWarningReason(warning),
+			},
+		});
+}
+
+function episodeWarningReason(warning: MemoryWarning): string {
+	const prefix = "Episode capture skipped: ";
+	return warning.message.startsWith(prefix)
+		? warning.message.slice(prefix.length)
+		: warning.message;
 }
 
 function driveEpisodeIdentity(

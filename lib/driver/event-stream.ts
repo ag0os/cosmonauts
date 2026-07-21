@@ -435,8 +435,11 @@ export function shouldBridge(
 	if (event.type === "preflight") {
 		return event.status === "failed";
 	}
-	if (event.type === "driver_diagnostic") {
-		return options.bridgeDriverDiagnostics === true;
+	if (
+		event.type === "driver_diagnostic" &&
+		options.bridgeDriverDiagnostics !== true
+	) {
+		return false;
 	}
 
 	return BRIDGED_EVENT_TYPES.has(event.type);

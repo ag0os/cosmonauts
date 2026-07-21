@@ -218,7 +218,15 @@ describe("Drive-on-graph acceptance", () => {
 				),
 			),
 		).toEqual(captureFailureResult);
-		expect(captureFailure.events.at(-1)?.type).toBe("run_completed");
+		expect(captureFailure.events).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ type: "run_completed" }),
+				expect.objectContaining({
+					type: "driver_diagnostic",
+					code: "episode_capture_failed",
+				}),
+			]),
+		);
 	});
 
 	// @cosmo-behavior plan:durable-frontend-migration#B-021
