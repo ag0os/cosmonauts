@@ -37,7 +37,9 @@ export function registerEditCommand(program: Command): void {
 			const globalOptions = program.opts();
 			const mode = getOutputMode(globalOptions);
 
-			const manager = new PlanManager(projectRoot);
+			const manager = new PlanManager(projectRoot, {
+				episodeSource: "cosmonauts/cli",
+			});
 
 			const update = buildPlanUpdate(options);
 			if (!update.ok) {

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,6 +7,10 @@ import {
 	registerEditCommand,
 	renderPlanEditSuccess,
 } from "../../../../cli/plans/commands/edit.ts";
+import {
+	createMarkdownMemoryStore,
+	parseEpisodeRecord,
+} from "../../../../lib/memory/index.ts";
 import { PlanManager } from "../../../../lib/plans/plan-manager.ts";
 import type { Plan } from "../../../../lib/plans/plan-types.ts";
 import {
@@ -289,6 +293,66 @@ describe("plan edit CLI", () => {
 		expect(exit.calls()).toEqual([]);
 	});
 
+	it("records enabled edit provenance as cosmonauts/cli", async () => {
+		await writeEpisodicConfig(tempDir);
+		await createPlanFixture(manager, {
+			slug: "captured-edit",
+			title: "Captured Edit",
+		});
+
+		await parsePlanEdit([
+			"node",
+			"test",
+			"edit",
+			"captured-edit",
+			"--status",
+			"completed",
+		]);
+
+		expect(output.stdout()).toBe(
+			"Updated plan captured-edit: Captured Edit\nChanged: status\n",
+		);
+		expect(output.stderr()).toBe("");
+		expect(exit.calls()).toEqual([]);
+		const records = await readProjectEpisodes(tempDir);
+		expect(records).toHaveLength(1);
+		expect(records[0]?.source).toBe("cosmonauts/cli");
+		expect(records[0] && parseEpisodeRecord(records[0])).toMatchObject({
+			action: "plan.status-changed",
+			outcome: "completed",
+			subject: { kind: "plan", id: "captured-edit" },
+		});
+	});
+
+	it("keeps edit successful and warns once when capture fails", async () => {
+		await writeEpisodicConfig(tempDir);
+		await createPlanFixture(manager, {
+			slug: "warning-edit",
+			title: "Warning Edit",
+		});
+		await writeFile(join(tempDir, "memory"), "path collision", "utf-8");
+
+		await parsePlanEdit([
+			"node",
+			"test",
+			"edit",
+			"warning-edit",
+			"--status",
+			"completed",
+		]);
+
+		expect(output.stdout()).toBe(
+			"Updated plan warning-edit: Warning Edit\nChanged: status\n",
+		);
+		expect(output.stderr()).toContain("Episode capture skipped");
+		expect(output.stderr().match(/Episode capture skipped/gu)).toHaveLength(1);
+		expect(exit.calls()).toEqual([]);
+		expect(await manager.getPlan("warning-edit")).toMatchObject({
+			slug: "warning-edit",
+			status: "completed",
+		});
+	});
+
 	it("prints not-found errors in human mode", async () => {
 		await expectPlanEditExit(["edit", "missing-plan", "--title", "Missing"]);
 
@@ -330,4 +394,23 @@ async function expectPlanEditExit(args: string[]): Promise<void> {
 	const execution = createCommandProgram(registerEditCommand).parseAsync(argv);
 
 	await expect(execution).rejects.toThrow(ProcessExitError);
+}
+
+async function writeEpisodicConfig(projectRoot: string): Promise<void> {
+	const configDir = join(projectRoot, ".cosmonauts");
+	await mkdir(configDir, { recursive: true });
+	await writeFile(
+		join(configDir, "config.json"),
+		JSON.stringify({ episodicLog: { enabled: true } }),
+		"utf-8",
+	);
+}
+
+async function readProjectEpisodes(projectRoot: string) {
+	return (
+		await createMarkdownMemoryStore({ projectRoot }).retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ text: "", recordTypes: ["episode"] },
+		)
+	).records;
 }

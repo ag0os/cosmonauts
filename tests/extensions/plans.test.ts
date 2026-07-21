@@ -4,10 +4,16 @@
  * against a real temp directory with PlanManager and TaskManager.
  */
 
-import { mkdtemp, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
+import {
+	createMarkdownMemoryStore,
+	parseEpisodeRecord,
+} from "../../lib/memory/index.ts";
+import { PlanManager } from "../../lib/plans/plan-manager.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 
 // Minimal mock of Pi's ExtensionAPI — captures registrations
@@ -32,11 +38,17 @@ function createMockPi() {
 		on(_event: string, _handler: unknown) {},
 		appendEntry(_customType: string, _data: unknown) {},
 
-		async callTool(name: string, params: unknown, cwd: string) {
+		async callTool(
+			name: string,
+			params: unknown,
+			cwd: string,
+			systemPrompt = buildAgentIdentityMarker("custom/planner"),
+		) {
 			const tool = tools.get(name);
 			if (!tool) throw new Error(`Tool not found: ${name}`);
 			return tool.execute("call-id", params, undefined, undefined, {
 				cwd,
+				getSystemPrompt: () => systemPrompt,
 			});
 		},
 	};
@@ -75,6 +87,164 @@ describe("plans extension", () => {
 		expect(pi.tools.has("plan_view")).toBe(true);
 		expect(pi.tools.has("plan_edit")).toBe(true);
 		expect(pi.tools.has("plan_archive")).toBe(true);
+	});
+
+	test("preserves plan tool results while supplying episode actor and visible failure warning @cosmo-behavior plan:episodic-log#B-023", async () => {
+		const enabledRoot = join(tempDir, "enabled");
+		await writeEpisodicConfig(enabledRoot);
+		const actorPrompt = buildAgentIdentityMarker("custom/plan-specialist");
+		const created = (await pi.callTool(
+			"plan_create",
+			{
+				slug: "captured-tool-plan",
+				title: "Captured Tool Plan",
+				description: "Original tool text stays stable.",
+			},
+			enabledRoot,
+			actorPrompt,
+		)) as ToolResult;
+		expect(created.content).toEqual([
+			{
+				type: "text",
+				text: [
+					"Created plan: captured-tool-plan",
+					"Title: Captured Tool Plan",
+					"Status: active",
+					"Description: Original tool text stays stable.",
+				].join("\n"),
+			},
+		]);
+		expect(created.details).toMatchObject({
+			slug: "captured-tool-plan",
+			status: "active",
+		});
+
+		await pi.callTool(
+			"plan_edit",
+			{ slug: "captured-tool-plan", body: "Non-status lifecycle noise." },
+			enabledRoot,
+			actorPrompt,
+		);
+		await pi.callTool(
+			"plan_edit",
+			{ slug: "captured-tool-plan", status: "active" },
+			enabledRoot,
+			actorPrompt,
+		);
+		const edited = (await pi.callTool(
+			"plan_edit",
+			{ slug: "captured-tool-plan", status: "completed" },
+			enabledRoot,
+			actorPrompt,
+		)) as ToolResult;
+		expect(edited.content).toEqual([
+			{
+				type: "text",
+				text: [
+					'Updated plan "captured-tool-plan" (status)',
+					"Title: Captured Tool Plan",
+					"Status: completed",
+				].join("\n"),
+			},
+		]);
+		expect(edited.details).toMatchObject({
+			slug: "captured-tool-plan",
+			status: "completed",
+		});
+		const captured = await readProjectEpisodes(enabledRoot);
+		expect(captured).toHaveLength(2);
+		expect(
+			captured.map((record) => ({
+				source: record.source,
+				metadata: parseEpisodeRecord(record),
+			})),
+		).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					source: "custom/plan-specialist",
+					metadata: expect.objectContaining({ action: "plan.created" }),
+				}),
+				expect.objectContaining({
+					source: "custom/plan-specialist",
+					metadata: expect.objectContaining({
+						action: "plan.status-changed",
+						outcome: "completed",
+					}),
+				}),
+			]),
+		);
+
+		const missingActorRoot = join(tempDir, "missing-actor");
+		await writeEpisodicConfig(missingActorRoot);
+		await pi.callTool(
+			"plan_create",
+			{ slug: "honest-plan", title: "No Fabricated Actor" },
+			missingActorRoot,
+			"System prompt without a runtime identity marker.",
+		);
+		await expect(
+			access(join(missingActorRoot, "memory")),
+		).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+
+		const failureRoot = join(tempDir, "failure");
+		await writeEpisodicConfig(failureRoot);
+		await writeFile(join(failureRoot, "memory"), "path collision", "utf-8");
+		const stderr = vi
+			.spyOn(process.stderr, "write")
+			.mockImplementation(() => true);
+		const failedCapture = (await pi.callTool(
+			"plan_create",
+			{ slug: "warning-plan", title: "Warning Plan" },
+			failureRoot,
+			actorPrompt,
+		)) as ToolResult;
+		const warningText = failedCapture.content[0]?.text ?? "";
+		expect(warningText).toContain("Created plan: warning-plan");
+		expect(warningText).toContain("Warning:");
+		expect(warningText).toContain("Episode capture skipped");
+		expect(warningText.match(/Warning:/gu)).toHaveLength(1);
+		expect(failedCapture.details).toMatchObject({
+			slug: "warning-plan",
+			status: "active",
+		});
+		expect(stderr).not.toHaveBeenCalled();
+		expect(
+			await new PlanManager(failureRoot).getPlan("warning-plan"),
+		).toMatchObject({ slug: "warning-plan", status: "active" });
+		const failedEditCapture = (await pi.callTool(
+			"plan_edit",
+			{ slug: "warning-plan", status: "completed" },
+			failureRoot,
+			actorPrompt,
+		)) as ToolResult;
+		const editWarningText = failedEditCapture.content[0]?.text ?? "";
+		expect(editWarningText).toContain('Updated plan "warning-plan" (status)');
+		expect(editWarningText).toContain("Episode capture skipped");
+		expect(editWarningText.match(/Warning:/gu)).toHaveLength(1);
+		expect(failedEditCapture.details).toMatchObject({
+			slug: "warning-plan",
+			status: "completed",
+		});
+		expect(stderr).not.toHaveBeenCalled();
+
+		const disabledRoot = join(tempDir, "disabled");
+		const disabled = (await pi.callTool(
+			"plan_create",
+			{ slug: "disabled-plan", title: "Disabled Plan" },
+			disabledRoot,
+			actorPrompt,
+		)) as ToolResult;
+		expect(disabled.content).toEqual([
+			{
+				type: "text",
+				text: "Created plan: disabled-plan\nTitle: Disabled Plan\nStatus: active",
+			},
+		]);
+		await expect(access(join(disabledRoot, "memory"))).rejects.toMatchObject({
+			code: "ENOENT",
+		});
 	});
 
 	describe("plan_create", () => {
@@ -632,3 +802,22 @@ describe("plans extension", () => {
 		});
 	});
 });
+
+async function writeEpisodicConfig(projectRoot: string): Promise<void> {
+	const configDir = join(projectRoot, ".cosmonauts");
+	await mkdir(configDir, { recursive: true });
+	await writeFile(
+		join(configDir, "config.json"),
+		JSON.stringify({ episodicLog: { enabled: true } }),
+		"utf-8",
+	);
+}
+
+async function readProjectEpisodes(projectRoot: string) {
+	return (
+		await createMarkdownMemoryStore({ projectRoot }).retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ text: "", recordTypes: ["episode"] },
+		)
+	).records;
+}

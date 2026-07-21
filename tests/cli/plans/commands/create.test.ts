@@ -1,8 +1,20 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { registerCreateCommand } from "../../../../cli/plans/commands/create.ts";
+import {
+	createMarkdownMemoryStore,
+	parseEpisodeRecord,
+} from "../../../../lib/memory/index.ts";
 import { PlanManager } from "../../../../lib/plans/plan-manager.ts";
+import {
+	type CommandTestContext,
+	type captureCommandOutput,
+	createCommandProgram,
+	createCommandTestContext,
+	type mockProcessExitThrow,
+} from "../../../helpers/cli.ts";
 
 describe("plan create command", () => {
 	let tempDir: string;
@@ -62,3 +74,116 @@ describe("plan create command", () => {
 		).rejects.toThrow(/Invalid plan slug/);
 	});
 });
+
+describe("plan create CLI episodic capture", () => {
+	let context: CommandTestContext;
+	let output: ReturnType<typeof captureCommandOutput>;
+	let exit: ReturnType<typeof mockProcessExitThrow>;
+
+	beforeEach(async () => {
+		context = await createCommandTestContext("plan-create-episode-test-");
+		output = context.output;
+		exit = context.exit;
+	});
+
+	afterEach(async () => {
+		await context.restore();
+	});
+
+	it("preserves disabled output and creates no episodic files", async () => {
+		await parsePlanCreate([
+			"node",
+			"test",
+			"create",
+			"--slug",
+			"disabled-cli-plan",
+			"--title",
+			"Disabled CLI Plan",
+		]);
+
+		expect(output.stdout()).toBe(
+			"Created plan disabled-cli-plan: Disabled CLI Plan\n",
+		);
+		expect(output.stderr()).toBe("");
+		expect(exit.calls()).toEqual([]);
+		await expect(access(join(context.tempDir, "memory"))).rejects.toMatchObject(
+			{
+				code: "ENOENT",
+			},
+		);
+	});
+
+	it("records enabled create provenance as cosmonauts/cli", async () => {
+		await writeEpisodicConfig(context.tempDir);
+		await parsePlanCreate([
+			"node",
+			"test",
+			"create",
+			"--slug",
+			"enabled-cli-plan",
+			"--title",
+			"Enabled CLI Plan",
+		]);
+
+		expect(output.stdout()).toBe(
+			"Created plan enabled-cli-plan: Enabled CLI Plan\n",
+		);
+		expect(output.stderr()).toBe("");
+		expect(exit.calls()).toEqual([]);
+		const records = await readProjectEpisodes(context.tempDir);
+		expect(records).toHaveLength(1);
+		expect(records[0]?.source).toBe("cosmonauts/cli");
+		expect(records[0] && parseEpisodeRecord(records[0])).toMatchObject({
+			action: "plan.created",
+			outcome: "active",
+			subject: { kind: "plan", id: "enabled-cli-plan" },
+		});
+	});
+
+	it("keeps create successful and warns once when capture fails", async () => {
+		await writeEpisodicConfig(context.tempDir);
+		await writeFile(join(context.tempDir, "memory"), "path collision", "utf-8");
+		await parsePlanCreate([
+			"node",
+			"test",
+			"create",
+			"--slug",
+			"warning-cli-plan",
+			"--title",
+			"Warning CLI Plan",
+		]);
+
+		expect(output.stdout()).toBe(
+			"Created plan warning-cli-plan: Warning CLI Plan\n",
+		);
+		expect(output.stderr()).toContain("Episode capture skipped");
+		expect(output.stderr().match(/Episode capture skipped/gu)).toHaveLength(1);
+		expect(exit.calls()).toEqual([]);
+		expect(
+			await new PlanManager(context.tempDir).getPlan("warning-cli-plan"),
+		).toMatchObject({ slug: "warning-cli-plan", status: "active" });
+	});
+});
+
+async function parsePlanCreate(argv: string[]): Promise<void> {
+	await createCommandProgram(registerCreateCommand).parseAsync(argv);
+}
+
+async function writeEpisodicConfig(projectRoot: string): Promise<void> {
+	const configDir = join(projectRoot, ".cosmonauts");
+	await mkdir(configDir, { recursive: true });
+	await writeFile(
+		join(configDir, "config.json"),
+		JSON.stringify({ episodicLog: { enabled: true } }),
+		"utf-8",
+	);
+}
+
+async function readProjectEpisodes(projectRoot: string) {
+	return (
+		await createMarkdownMemoryStore({ projectRoot }).retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ text: "", recordTypes: ["episode"] },
+		)
+	).records;
+}

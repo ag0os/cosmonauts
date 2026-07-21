@@ -14,7 +14,9 @@ export function registerCreateCommand(program: Command): void {
 			const projectRoot = process.cwd();
 			const globalOptions = program.opts();
 
-			const manager = new PlanManager(projectRoot);
+			const manager = new PlanManager(projectRoot, {
+				episodeSource: "cosmonauts/cli",
+			});
 
 			const input: PlanCreateInput = {
 				slug: options.slug,

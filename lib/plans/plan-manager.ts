@@ -3,6 +3,10 @@
  * Orchestrates all core modules for plan CRUD operations
  */
 
+import {
+	type EpisodeWarningReporter,
+	recordEpisode,
+} from "../memory/episode.ts";
 import type { TaskManager } from "../tasks/task-manager.ts";
 import {
 	createPlanDirectory,
@@ -24,6 +28,11 @@ import type {
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+export interface PlanManagerEpisodeContext {
+	readonly episodeSource: string;
+	readonly reportEpisodeWarning?: EpisodeWarningReporter;
+}
+
 export function validateSlug(slug: string): void {
 	if (!slug) {
 		throw new Error("Plan slug cannot be empty");
@@ -43,13 +52,15 @@ export function validateSlug(slug: string): void {
  */
 export class PlanManager {
 	private projectRoot: string;
+	private episodeContext?: PlanManagerEpisodeContext;
 
 	/**
 	 * Create a new PlanManager instance
 	 * @param projectRoot - The root directory of the project
 	 */
-	constructor(projectRoot: string) {
+	constructor(projectRoot: string, episodeContext?: PlanManagerEpisodeContext) {
 		this.projectRoot = projectRoot;
+		this.episodeContext = episodeContext;
 	}
 
 	/**
@@ -89,10 +100,12 @@ export class PlanManager {
 			await writeSpecFile(this.projectRoot, input.slug, input.spec);
 		}
 
-		return {
+		const createdPlan: Plan = {
 			...plan,
 			spec: input.spec,
 		};
+		await this.capturePlanCreated(createdPlan);
+		return createdPlan;
 	}
 
 	/**
@@ -172,10 +185,57 @@ export class PlanManager {
 		const spec =
 			input.spec ?? (await readSpecFile(this.projectRoot, slug)) ?? undefined;
 
-		return {
+		const updatedPlan: Plan = {
 			...updated,
 			spec,
 		};
+		if (existing.status !== updatedPlan.status) {
+			await this.capturePlanStatusChanged(existing.status, updatedPlan);
+		}
+		return updatedPlan;
+	}
+
+	private async capturePlanCreated(plan: Plan): Promise<void> {
+		const source = this.episodeContext?.episodeSource;
+		if (!source) return;
+
+		await recordEpisode({
+			projectRoot: this.projectRoot,
+			event: {
+				scope: "project",
+				source,
+				action: "plan.created",
+				outcome: plan.status,
+				subject: { kind: "plan", id: plan.slug },
+				summary: `Created plan "${plan.slug}" with status ${plan.status}.`,
+				details: `Plan title: ${plan.title}`,
+				timestamp: plan.createdAt.toISOString(),
+			},
+			reportWarning: this.episodeContext?.reportEpisodeWarning,
+		});
+	}
+
+	private async capturePlanStatusChanged(
+		previousStatus: PlanStatus,
+		plan: Plan,
+	): Promise<void> {
+		const source = this.episodeContext?.episodeSource;
+		if (!source) return;
+
+		await recordEpisode({
+			projectRoot: this.projectRoot,
+			event: {
+				scope: "project",
+				source,
+				action: "plan.status-changed",
+				outcome: plan.status,
+				subject: { kind: "plan", id: plan.slug },
+				summary: `Plan "${plan.slug}" status changed from ${previousStatus} to ${plan.status}.`,
+				details: `Previous status: ${previousStatus}\nCurrent status: ${plan.status}`,
+				timestamp: plan.updatedAt.toISOString(),
+			},
+			reportWarning: this.episodeContext?.reportEpisodeWarning,
+		});
 	}
 
 	/**

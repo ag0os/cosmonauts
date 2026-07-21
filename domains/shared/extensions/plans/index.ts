@@ -1,10 +1,44 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
+import type { MemoryWarning } from "../../../../lib/memory/types.ts";
 import { archivePlan } from "../../../../lib/plans/archive.ts";
 import { PlanManager } from "../../../../lib/plans/plan-manager.ts";
 import { TaskManager } from "../../../../lib/tasks/task-manager.ts";
 
 const PlanStatusLiterals = [Type.Literal("active"), Type.Literal("completed")];
+
+function createPlanCaptureEdge(
+	cwd: string,
+	systemPrompt: string,
+): {
+	readonly manager: PlanManager;
+	readonly warnings: MemoryWarning[];
+} {
+	const warnings: MemoryWarning[] = [];
+	const episodeSource = extractAgentIdFromSystemPrompt(systemPrompt);
+	if (!episodeSource) return { manager: new PlanManager(cwd), warnings };
+
+	return {
+		manager: new PlanManager(cwd, {
+			episodeSource,
+			reportEpisodeWarning: async (warning) => {
+				if (warnings.length === 0) warnings.push(warning);
+			},
+		}),
+		warnings,
+	};
+}
+
+function appendEpisodeWarning(
+	text: string,
+	warnings: readonly MemoryWarning[],
+): string {
+	const warning = warnings[0];
+	if (!warning) return text;
+	const location = warning.path ? `${warning.path}: ` : "";
+	return `${text}\nWarning: ${location}${warning.message}`;
+}
 
 function createPlanManagers(cwd: string): {
 	manager: PlanManager;
@@ -39,7 +73,10 @@ export default function plansExtension(pi: ExtensionAPI) {
 			),
 		}),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
-			const manager = new PlanManager(ctx.cwd);
+			const { manager, warnings } = createPlanCaptureEdge(
+				ctx.cwd,
+				ctx.getSystemPrompt(),
+			);
 			const plan = await manager.createPlan({
 				slug: params.slug,
 				title: params.title,
@@ -54,7 +91,12 @@ export default function plansExtension(pi: ExtensionAPI) {
 			if (plan.body) lines.push(`Description: ${plan.body}`);
 			if (plan.spec) lines.push("Spec: included");
 			return {
-				content: [{ type: "text" as const, text: lines.join("\n") }],
+				content: [
+					{
+						type: "text" as const,
+						text: appendEpisodeWarning(lines.join("\n"), warnings),
+					},
+				],
 				details: plan,
 			};
 		},
@@ -192,7 +234,10 @@ export default function plansExtension(pi: ExtensionAPI) {
 					details: null,
 				};
 			}
-			const manager = new PlanManager(ctx.cwd);
+			const { manager, warnings } = createPlanCaptureEdge(
+				ctx.cwd,
+				ctx.getSystemPrompt(),
+			);
 			const plan = await manager.updatePlan(slug, updates);
 			const changed = [
 				updates.title !== undefined ? "title" : null,
@@ -209,7 +254,10 @@ export default function plansExtension(pi: ExtensionAPI) {
 				content: [
 					{
 						type: "text" as const,
-						text: `Updated plan "${plan.slug}" (${changed})\nTitle: ${plan.title}\nStatus: ${plan.status}`,
+						text: appendEpisodeWarning(
+							`Updated plan "${plan.slug}" (${changed})\nTitle: ${plan.title}\nStatus: ${plan.status}`,
+							warnings,
+						),
 					},
 				],
 				details: plan,

@@ -2,10 +2,21 @@
  * Tests for PlanManager class
  */
 
-import { mkdtemp, rm } from "node:fs/promises";
+import {
+	access,
+	mkdir,
+	mkdtemp,
+	readFile,
+	rm,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	createMarkdownMemoryStore,
+	parseEpisodeRecord,
+} from "../../lib/memory/index.ts";
 import { PlanManager } from "../../lib/plans/plan-manager.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 
@@ -19,7 +30,188 @@ describe("PlanManager", () => {
 	});
 
 	afterEach(async () => {
+		vi.useRealTimers();
 		await rm(tempDir, { recursive: true, force: true });
+	});
+
+	it("adds gated fail-soft episodes only for plan creation and real status transitions @cosmo-behavior plan:episodic-log#B-013", async () => {
+		vi.useFakeTimers();
+		const baselineRoot = join(tempDir, "disabled-baseline");
+		const contextualRoot = join(tempDir, "disabled-contextual");
+		const disabledWarnings: unknown[] = [];
+		const baselineManager = new PlanManager(baselineRoot);
+		const contextualManager = new PlanManager(contextualRoot, {
+			episodeSource: "custom/plan-owner",
+			reportEpisodeWarning: async (warning) => {
+				disabledWarnings.push(warning);
+			},
+		});
+
+		const runDisabledLifecycle = async (target: PlanManager) => {
+			vi.setSystemTime(new Date("2026-07-21T12:00:00.000Z"));
+			const created = await target.createPlan({
+				slug: "disabled-plan",
+				title: "Disabled Plan",
+				description: "Pinned disabled body.",
+				spec: "Pinned disabled spec.",
+			});
+			vi.setSystemTime(new Date("2026-07-21T12:01:00.000Z"));
+			await target.updatePlan("disabled-plan", { title: "Renamed Plan" });
+			vi.setSystemTime(new Date("2026-07-21T12:02:00.000Z"));
+			const updated = await target.updatePlan("disabled-plan", {
+				status: "completed",
+			});
+			return { created, updated };
+		};
+
+		const baseline = await runDisabledLifecycle(baselineManager);
+		const contextual = await runDisabledLifecycle(contextualManager);
+		expect(contextual).toEqual(baseline);
+		expect(
+			await readFile(
+				join(contextualRoot, "missions/plans/disabled-plan/plan.md"),
+				"utf-8",
+			),
+		).toBe(
+			await readFile(
+				join(baselineRoot, "missions/plans/disabled-plan/plan.md"),
+				"utf-8",
+			),
+		);
+		expect(
+			await readFile(
+				join(contextualRoot, "missions/plans/disabled-plan/spec.md"),
+				"utf-8",
+			),
+		).toBe(
+			await readFile(
+				join(baselineRoot, "missions/plans/disabled-plan/spec.md"),
+				"utf-8",
+			),
+		);
+		expect(disabledWarnings).toEqual([]);
+		await expect(access(join(contextualRoot, "memory"))).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+
+		const enabledRoot = join(tempDir, "enabled");
+		await writeEpisodicConfig(enabledRoot);
+		const enabledManager = new PlanManager(enabledRoot, {
+			episodeSource: "custom/plan-owner",
+		});
+		vi.setSystemTime(new Date("2026-07-21T13:00:00.000Z"));
+		const created = await enabledManager.createPlan({
+			slug: "captured-plan",
+			title: "Captured Plan",
+		});
+		const originalCreatedAt = created.createdAt.toISOString();
+		vi.setSystemTime(new Date("2026-07-21T13:01:00.000Z"));
+		await enabledManager.updatePlan("captured-plan", {
+			title: "Renamed Captured Plan",
+		});
+		vi.setSystemTime(new Date("2026-07-21T13:02:00.000Z"));
+		await enabledManager.updatePlan("captured-plan", {
+			body: "A body-only edit.",
+		});
+		vi.setSystemTime(new Date("2026-07-21T13:03:00.000Z"));
+		await enabledManager.updatePlan("captured-plan", { status: "active" });
+		vi.setSystemTime(new Date("2026-07-21T13:04:00.000Z"));
+		const completed = await enabledManager.updatePlan("captured-plan", {
+			status: "completed",
+		});
+		vi.setSystemTime(new Date("2026-07-21T13:05:00.000Z"));
+		await enabledManager.updatePlan("captured-plan", { status: "completed" });
+		vi.setSystemTime(new Date("2026-07-21T13:06:00.000Z"));
+		await enabledManager.updatePlan("captured-plan", { status: "active" });
+
+		const captured = await readProjectEpisodes(enabledRoot);
+		expect(captured).toHaveLength(3);
+		expect(
+			captured.map((record) => ({
+				source: record.source,
+				metadata: parseEpisodeRecord(record),
+				content: record.content,
+			})),
+		).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					source: "custom/plan-owner",
+					metadata: expect.objectContaining({
+						action: "plan.created",
+						outcome: "active",
+						subject: { kind: "plan", id: "captured-plan" },
+					}),
+				}),
+				expect.objectContaining({
+					source: "custom/plan-owner",
+					metadata: expect.objectContaining({
+						action: "plan.status-changed",
+						outcome: "completed",
+						subject: { kind: "plan", id: "captured-plan" },
+					}),
+					content: expect.stringContaining("active to completed"),
+				}),
+				expect.objectContaining({
+					source: "custom/plan-owner",
+					metadata: expect.objectContaining({
+						action: "plan.status-changed",
+						outcome: "active",
+						subject: { kind: "plan", id: "captured-plan" },
+					}),
+					content: expect.stringContaining("completed to active"),
+				}),
+			]),
+		);
+		expect(completed.createdAt.toISOString()).toBe(originalCreatedAt);
+
+		const failureRoot = join(tempDir, "capture-failure");
+		await writeEpisodicConfig(failureRoot);
+		await writeFile(join(failureRoot, "memory"), "path collision", "utf-8");
+		const persistedStates: Array<{
+			readonly status: string | undefined;
+			readonly spec: string | undefined;
+		}> = [];
+		const warnings: unknown[] = [];
+		const failingManager = new PlanManager(failureRoot, {
+			episodeSource: "custom/plan-owner",
+			reportEpisodeWarning: async (warning) => {
+				const persisted = await new PlanManager(failureRoot).getPlan(
+					"faulty-plan",
+				);
+				persistedStates.push({
+					status: persisted?.status,
+					spec: persisted?.spec,
+				});
+				warnings.push(warning);
+			},
+		});
+		vi.setSystemTime(new Date("2026-07-21T14:00:00.000Z"));
+		const failureCreated = await failingManager.createPlan({
+			slug: "faulty-plan",
+			title: "Faulty Capture",
+			spec: "Persisted before create capture.",
+		});
+		vi.setSystemTime(new Date("2026-07-21T14:01:00.000Z"));
+		const failureUpdated = await failingManager.updatePlan("faulty-plan", {
+			status: "completed",
+			spec: "Persisted before status capture.",
+		});
+
+		expect(failureUpdated.status).toBe("completed");
+		expect(failureUpdated.createdAt).toEqual(failureCreated.createdAt);
+		expect(persistedStates).toEqual([
+			{ status: "active", spec: "Persisted before create capture." },
+			{ status: "completed", spec: "Persisted before status capture." },
+		]);
+		expect(warnings).toHaveLength(2);
+		expect(warnings).toEqual([
+			expect.objectContaining({
+				message: expect.stringContaining("Episode capture skipped"),
+			}),
+			expect.objectContaining({
+				message: expect.stringContaining("Episode capture skipped"),
+			}),
+		]);
 	});
 
 	describe("createPlan", () => {
@@ -601,3 +793,22 @@ describe("PlanManager", () => {
 		});
 	});
 });
+
+async function writeEpisodicConfig(projectRoot: string): Promise<void> {
+	const configDir = join(projectRoot, ".cosmonauts");
+	await mkdir(configDir, { recursive: true });
+	await writeFile(
+		join(configDir, "config.json"),
+		JSON.stringify({ episodicLog: { enabled: true } }),
+		"utf-8",
+	);
+}
+
+async function readProjectEpisodes(projectRoot: string) {
+	return (
+		await createMarkdownMemoryStore({ projectRoot }).retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ text: "", recordTypes: ["episode"] },
+		)
+	).records;
+}

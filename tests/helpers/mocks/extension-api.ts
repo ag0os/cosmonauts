@@ -17,6 +17,8 @@ type EventHandler = (event: unknown, ctx: unknown) => Promise<unknown>;
 interface MockPiOptions {
 	/** Working directory passed to tool execute contexts. Defaults to "/tmp". */
 	cwd?: string;
+	/** Effective system prompt exposed by tool contexts. Defaults to empty. */
+	systemPrompt?: string;
 }
 
 export interface MockPi {
@@ -68,7 +70,10 @@ export function createMockPi(options?: MockPiOptions): MockPi {
 		async callTool(name: string, params: unknown) {
 			const tool = tools.get(name);
 			if (!tool) throw new Error(`Tool not found: ${name}`);
-			return tool.execute("call-id", params, undefined, undefined, { cwd });
+			return tool.execute("call-id", params, undefined, undefined, {
+				cwd,
+				getSystemPrompt: () => options?.systemPrompt ?? "",
+			});
 		},
 
 		async fireEvent(name: string, event: unknown = {}, ctx: unknown = {}) {
