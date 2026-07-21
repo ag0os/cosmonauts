@@ -9,6 +9,10 @@ import {
 	registerCreateCommand,
 	renderTaskCreateSuccess,
 } from "../../../../cli/tasks/commands/create.ts";
+import {
+	createMarkdownMemoryStore,
+	parseEpisodeRecord,
+} from "../../../../lib/memory/index.ts";
 import { TaskManager } from "../../../../lib/tasks/task-manager.ts";
 import type { Task } from "../../../../lib/tasks/task-types.ts";
 import {
@@ -180,6 +184,66 @@ describe("task create command", () => {
 		expect(output.stdout()).toBe("Created task TASK-001: Full Task\n");
 		expect(output.stderr()).toBe("");
 		expect(exit.calls()).toEqual([]);
+	});
+
+	it("keeps disabled task create output and files episode-free", async () => {
+		await createProgram().parseAsync([
+			"node",
+			"test",
+			"create",
+			"Disabled CLI Task",
+		]);
+
+		expect(output.stdout()).toBe("Created task TASK-001: Disabled CLI Task\n");
+		expect(output.stderr()).toBe("");
+		expect(exit.calls()).toEqual([]);
+		expect(await readProjectEpisodes(tempDir)).toEqual([]);
+		expect(await pathExists(join(tempDir, "memory/agent/index.md"))).toBe(
+			false,
+		);
+	});
+
+	it("records enabled task create provenance as cosmonauts/cli", async () => {
+		await writeEpisodicConfig(tempDir);
+		await createProgram().parseAsync([
+			"node",
+			"test",
+			"create",
+			"Enabled CLI Task",
+		]);
+
+		expect(output.stdout()).toBe("Created task TASK-001: Enabled CLI Task\n");
+		expect(output.stderr()).toBe("");
+		expect(exit.calls()).toEqual([]);
+		const records = await readProjectEpisodes(tempDir);
+		expect(records).toHaveLength(1);
+		expect(records[0]?.source).toBe("cosmonauts/cli");
+		expect(records[0] && parseEpisodeRecord(records[0])).toMatchObject({
+			action: "task.created",
+			outcome: "to-do",
+			subject: { kind: "task", id: "TASK-001" },
+		});
+	});
+
+	it("keeps task create successful and warns once when capture fails", async () => {
+		await writeEpisodicConfig(tempDir);
+		await mkdir(join(tempDir, "memory"), { recursive: true });
+		await writeFile(join(tempDir, "memory/agent"), "path collision", "utf-8");
+		await createProgram().parseAsync([
+			"node",
+			"test",
+			"create",
+			"Warning CLI Task",
+		]);
+
+		expect(output.stdout()).toBe("Created task TASK-001: Warning CLI Task\n");
+		expect(output.stderr()).toContain("Episode capture skipped");
+		expect(output.stderr().match(/Episode capture skipped/gu)).toHaveLength(1);
+		expect(exit.calls()).toEqual([]);
+		expect(await new TaskManager(tempDir).getTask("TASK-001")).toMatchObject({
+			id: "TASK-001",
+			title: "Warning CLI Task",
+		});
 	});
 
 	it("leaves an existing task config byte-unchanged when creating a single task", async () => {
@@ -505,6 +569,34 @@ describe("task create --from-file", () => {
 		expect(exit.calls()).toEqual([]);
 	});
 
+	it("preserves batch allocation and output when enabled capture fails", async () => {
+		await writeEpisodicConfig(tempDir);
+		await mkdir(join(tempDir, "memory"), { recursive: true });
+		await writeFile(join(tempDir, "memory/agent"), "path collision", "utf-8");
+		const path = await writeBatch(
+			"warning-tasks.yaml",
+			"- title: First warning task\n- title: Second warning task\n",
+		);
+
+		await createProgram().parseAsync([
+			"node",
+			"test",
+			"create",
+			"--from-file",
+			path,
+		]);
+
+		expect(await listTaskDirectoryEntries(tempDir)).toEqual([
+			"TASK-001 - First warning task.md",
+			"TASK-002 - Second warning task.md",
+		]);
+		expect(output.stdout()).toBe(
+			"Created task TASK-001: First warning task\nCreated task TASK-002: Second warning task\n",
+		);
+		expect(output.stderr().match(/Episode capture skipped/gu)).toHaveLength(2);
+		expect(exit.calls()).toEqual([]);
+	});
+
 	it("leaves an existing task config byte-unchanged when batch creating tasks", async () => {
 		// @cosmo-behavior plan:task-id-system#B-010
 		const configPath = await writeTaskConfig(
@@ -800,4 +892,23 @@ async function pathExists(path: string): Promise<boolean> {
 	return await access(path)
 		.then(() => true)
 		.catch(() => false);
+}
+
+async function writeEpisodicConfig(projectRoot: string): Promise<void> {
+	const configDir = join(projectRoot, ".cosmonauts");
+	await mkdir(configDir, { recursive: true });
+	await writeFile(
+		join(configDir, "config.json"),
+		JSON.stringify({ episodicLog: { enabled: true } }),
+		"utf-8",
+	);
+}
+
+async function readProjectEpisodes(projectRoot: string) {
+	return (
+		await createMarkdownMemoryStore({ projectRoot }).retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ text: "", recordTypes: ["episode"] },
+		)
+	).records;
 }

@@ -1,5 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
+import type { MemoryWarning } from "../../../../lib/memory/types.ts";
 import { TaskManager } from "../../../../lib/tasks/task-manager.ts";
 import type {
 	AcceptanceCriterion,
@@ -35,6 +37,38 @@ function textResult(
 		content: [{ type: "text", text }],
 		details,
 	};
+}
+
+function createTaskCaptureEdge(
+	cwd: string,
+	systemPrompt: string,
+): {
+	readonly manager: TaskManager;
+	readonly warnings: MemoryWarning[];
+} {
+	const warnings: MemoryWarning[] = [];
+	const episodeSource = extractAgentIdFromSystemPrompt(systemPrompt);
+	if (!episodeSource) return { manager: new TaskManager(cwd), warnings };
+
+	return {
+		manager: new TaskManager(cwd, {
+			episodeSource,
+			reportEpisodeWarning: async (warning) => {
+				if (warnings.length === 0) warnings.push(warning);
+			},
+		}),
+		warnings,
+	};
+}
+
+function appendEpisodeWarning(
+	text: string,
+	warnings: readonly MemoryWarning[],
+): string {
+	const warning = warnings[0];
+	if (!warning) return text;
+	const location = warning.path ? `${warning.path}: ` : "";
+	return `${text}\nWarning: ${location}${warning.message}`;
 }
 
 function definedFilter<T extends Record<string, unknown>>(
@@ -176,13 +210,19 @@ export default function tasksExtension(pi: ExtensionAPI) {
 				}
 			}
 
-			const manager = new TaskManager(ctx.cwd);
+			const { manager, warnings } = createTaskCaptureEdge(
+				ctx.cwd,
+				ctx.getSystemPrompt(),
+			);
 			const task = await manager.createTask(createParams);
 			return {
 				content: [
 					{
 						type: "text" as const,
-						text: `Created task ${task.id}: ${task.title}`,
+						text: appendEpisodeWarning(
+							`Created task ${task.id}: ${task.title}`,
+							warnings,
+						),
 					},
 				],
 				details: task,
@@ -321,7 +361,10 @@ export default function tasksExtension(pi: ExtensionAPI) {
 			const update = Object.fromEntries(
 				Object.entries(updateFields).filter(([_, v]) => v !== undefined),
 			) as TaskUpdateInput;
-			const manager = new TaskManager(ctx.cwd);
+			const { manager, warnings } = createTaskCaptureEdge(
+				ctx.cwd,
+				ctx.getSystemPrompt(),
+			);
 			if (checkAc !== undefined || uncheckAc !== undefined) {
 				const task = await manager.getTask(taskId);
 				if (!task) {
@@ -337,7 +380,10 @@ export default function tasksExtension(pi: ExtensionAPI) {
 				content: [
 					{
 						type: "text" as const,
-						text: `Updated task ${task.id}: ${task.title}`,
+						text: appendEpisodeWarning(
+							`Updated task ${task.id}: ${task.title}`,
+							warnings,
+						),
 					},
 				],
 				details: task,

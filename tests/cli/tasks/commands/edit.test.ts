@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
 	AcceptanceCriterionEditOptions,
@@ -14,6 +16,10 @@ import {
 	registerEditCommand,
 	renderTaskEditSuccess,
 } from "../../../../cli/tasks/commands/edit.ts";
+import {
+	createMarkdownMemoryStore,
+	parseEpisodeRecord,
+} from "../../../../lib/memory/index.ts";
 import { TaskManager } from "../../../../lib/tasks/task-manager.ts";
 import type { Task } from "../../../../lib/tasks/task-types.ts";
 import {
@@ -256,6 +262,84 @@ describe("task edit command", () => {
 		expect(exit.calls()).toEqual([]);
 	});
 
+	it("keeps disabled task edit output and files episode-free", async () => {
+		await createExistingTask(tempDir);
+
+		await createProgram().parseAsync([
+			"node",
+			"test",
+			"edit",
+			"TASK-001",
+			"--status",
+			"done",
+		]);
+
+		expect(output.stdout()).toBe(
+			"Updated task TASK-001: Existing Task\nChanged: status (To Do → Done)\n",
+		);
+		expect(output.stderr()).toBe("");
+		expect(exit.calls()).toEqual([]);
+		expect(await readProjectEpisodes(tempDir)).toEqual([]);
+	});
+
+	it("records enabled task edit provenance as cosmonauts/cli", async () => {
+		await writeEpisodicConfig(tempDir);
+		const seed = await new TaskManager(tempDir).createTask({
+			title: "Enabled Edit Task",
+		});
+
+		await createProgram().parseAsync([
+			"node",
+			"test",
+			"edit",
+			seed.id,
+			"--status",
+			"in-progress",
+		]);
+
+		expect(output.stdout()).toBe(
+			"Updated task TASK-001: Enabled Edit Task\nChanged: status (To Do → In Progress)\n",
+		);
+		expect(output.stderr()).toBe("");
+		expect(exit.calls()).toEqual([]);
+		const records = await readProjectEpisodes(tempDir);
+		expect(records).toHaveLength(1);
+		expect(records[0]?.source).toBe("cosmonauts/cli");
+		expect(records[0] && parseEpisodeRecord(records[0])).toMatchObject({
+			action: "task.status-changed",
+			outcome: "in-progress",
+			subject: { kind: "task", id: "TASK-001" },
+		});
+	});
+
+	it("keeps task edit successful and warns once when capture fails", async () => {
+		await writeEpisodicConfig(tempDir);
+		const seed = await new TaskManager(tempDir).createTask({
+			title: "Warning Edit Task",
+		});
+		await writeFile(join(tempDir, "memory/agent"), "path collision", "utf-8");
+
+		await createProgram().parseAsync([
+			"node",
+			"test",
+			"edit",
+			seed.id,
+			"--status",
+			"blocked",
+		]);
+
+		expect(output.stdout()).toBe(
+			"Updated task TASK-001: Warning Edit Task\nChanged: status (To Do → Blocked)\n",
+		);
+		expect(output.stderr()).toContain("Episode capture skipped");
+		expect(output.stderr().match(/Episode capture skipped/gu)).toHaveLength(1);
+		expect(exit.calls()).toEqual([]);
+		expect(await new TaskManager(tempDir).getTask(seed.id)).toMatchObject({
+			id: "TASK-001",
+			status: "Blocked",
+		});
+	});
+
 	it("appends plan and notes with blank-line separators", async () => {
 		const manager = await createExistingTask(tempDir);
 		await manager.updateTask("TASK-001", {
@@ -459,4 +543,23 @@ async function createExistingTask(
 		...overrides,
 	});
 	return manager;
+}
+
+async function writeEpisodicConfig(projectRoot: string): Promise<void> {
+	const configDir = join(projectRoot, ".cosmonauts");
+	await mkdir(configDir, { recursive: true });
+	await writeFile(
+		join(configDir, "config.json"),
+		JSON.stringify({ episodicLog: { enabled: true } }),
+		"utf-8",
+	);
+}
+
+async function readProjectEpisodes(projectRoot: string) {
+	return (
+		await createMarkdownMemoryStore({ projectRoot }).retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ text: "", recordTypes: ["episode"] },
+		)
+	).records;
 }

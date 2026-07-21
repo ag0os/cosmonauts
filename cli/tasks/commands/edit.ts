@@ -173,7 +173,9 @@ export function registerEditCommand(program: Command): void {
 			const globalOptions = program.opts();
 			const mode = getOutputMode(globalOptions);
 
-			const manager = new TaskManager(projectRoot);
+			const manager = new TaskManager(projectRoot, {
+				episodeSource: "cosmonauts/cli",
+			});
 
 			try {
 				const existingTask = await manager.getTask(taskId);

@@ -4,6 +4,10 @@
  */
 
 import {
+	type EpisodeWarningReporter,
+	recordEpisode,
+} from "../memory/episode.ts";
+import {
 	deleteTaskFile,
 	ensureForgeDirectory,
 	getTaskFilename,
@@ -40,12 +44,25 @@ const TASK_FILTER_PREDICATES: readonly TaskFilterPredicate[] = [
 	matchesDependencyFilter,
 ];
 
+const TASK_STATUS_OUTCOMES = {
+	"To Do": "to-do",
+	"In Progress": "in-progress",
+	Done: "done",
+	Blocked: "blocked",
+} as const satisfies Record<TaskStatus, string>;
+
+export interface TaskManagerEpisodeContext {
+	readonly episodeSource: string;
+	readonly reportEpisodeWarning?: EpisodeWarningReporter;
+}
+
 /**
  * TaskManager orchestrates all core modules for task management
  */
 export class TaskManager {
 	private projectRoot: string;
 	private config: ForgeTasksConfig | null = null;
+	private episodeContext?: TaskManagerEpisodeContext;
 
 	private assertValidDate(value: Date, fieldName: string): void {
 		if (Number.isNaN(value.getTime())) {
@@ -57,8 +74,9 @@ export class TaskManager {
 	 * Create a new TaskManager instance
 	 * @param projectRoot - The root directory of the project
 	 */
-	constructor(projectRoot: string) {
+	constructor(projectRoot: string, episodeContext?: TaskManagerEpisodeContext) {
 		this.projectRoot = projectRoot;
+		this.episodeContext = episodeContext;
 	}
 
 	/**
@@ -102,9 +120,11 @@ export class TaskManager {
 
 		// Serialize ID allocation + file write behind a process+filesystem lock
 		// so concurrent creates don't collide on IDs.
-		return await withTaskCreateLock(this.projectRoot, () =>
+		const task = await withTaskCreateLock(this.projectRoot, () =>
 			this.createTaskLocked(input),
 		);
+		await this.captureTaskCreated(task);
+		return task;
 	}
 
 	private async createTaskLocked(input: TaskCreateInput): Promise<Task> {
@@ -203,7 +223,53 @@ export class TaskManager {
 			await saveTaskFile(this.projectRoot, newFilename, content);
 		}
 
+		if (existingTask.status !== updatedTask.status) {
+			await this.captureTaskStatusChanged(existingTask.status, updatedTask);
+		}
 		return updatedTask;
+	}
+
+	private async captureTaskCreated(task: Task): Promise<void> {
+		const source = this.episodeContext?.episodeSource;
+		if (!source) return;
+
+		await recordEpisode({
+			projectRoot: this.projectRoot,
+			event: {
+				scope: "project",
+				source,
+				action: "task.created",
+				outcome: TASK_STATUS_OUTCOMES[task.status],
+				subject: { kind: "task", id: task.id },
+				summary: `Created task "${task.id}" with status ${task.status}.`,
+				details: `Task title: ${task.title}`,
+				timestamp: task.createdAt.toISOString(),
+			},
+			reportWarning: this.episodeContext?.reportEpisodeWarning,
+		});
+	}
+
+	private async captureTaskStatusChanged(
+		previousStatus: TaskStatus,
+		task: Task,
+	): Promise<void> {
+		const source = this.episodeContext?.episodeSource;
+		if (!source) return;
+
+		await recordEpisode({
+			projectRoot: this.projectRoot,
+			event: {
+				scope: "project",
+				source,
+				action: "task.status-changed",
+				outcome: TASK_STATUS_OUTCOMES[task.status],
+				subject: { kind: "task", id: task.id },
+				summary: `Task "${task.id}" status changed from ${previousStatus} to ${task.status}.`,
+				details: `Previous status: ${previousStatus}\nCurrent status: ${task.status}`,
+				timestamp: task.updatedAt.toISOString(),
+			},
+			reportWarning: this.episodeContext?.reportEpisodeWarning,
+		});
 	}
 
 	/**

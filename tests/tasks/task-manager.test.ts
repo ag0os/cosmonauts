@@ -14,6 +14,11 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	createMarkdownMemoryStore,
+	parseEpisodeRecord,
+} from "../../lib/memory/index.ts";
+import { getTaskCreateLockPath } from "../../lib/tasks/lock.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.js";
 import { serializeTask } from "../../lib/tasks/task-serializer.js";
 import type { ForgeTasksConfig } from "../../lib/tasks/task-types.js";
@@ -32,7 +37,223 @@ describe("TaskManager", () => {
 	});
 
 	afterEach(async () => {
+		vi.useRealTimers();
 		await rm(tempDir, { recursive: true, force: true });
+	});
+
+	it("adds gated fail-soft episodes only for task creation and real status transitions @cosmo-behavior plan:episodic-log#B-014", async () => {
+		vi.useFakeTimers();
+		const baselineRoot = join(tempDir, "disabled-baseline");
+		const contextualRoot = join(tempDir, "disabled-contextual");
+		const disabledWarnings: unknown[] = [];
+		const baselineManager = new TaskManager(baselineRoot);
+		const contextualManager = new TaskManager(contextualRoot, {
+			episodeSource: "custom/task-owner",
+			reportEpisodeWarning: async (warning) => {
+				disabledWarnings.push(warning);
+			},
+		});
+
+		const runDisabledLifecycle = async (target: TaskManager) => {
+			vi.setSystemTime(new Date("2026-07-21T12:00:00.000Z"));
+			const created = await target.createTask({
+				title: "Disabled Task",
+				description: "Pinned disabled body.",
+			});
+			vi.setSystemTime(new Date("2026-07-21T12:01:00.000Z"));
+			await target.updateTask(created.id, { title: "Renamed Disabled Task" });
+			vi.setSystemTime(new Date("2026-07-21T12:02:00.000Z"));
+			const updated = await target.updateTask(created.id, {
+				status: "In Progress",
+			});
+			return { created, updated };
+		};
+
+		const baseline = await runDisabledLifecycle(baselineManager);
+		const contextual = await runDisabledLifecycle(contextualManager);
+		expect(contextual).toEqual(baseline);
+		expect(
+			await readFile(
+				join(
+					contextualRoot,
+					"missions/tasks/TASK-001 - Renamed Disabled Task.md",
+				),
+				"utf-8",
+			),
+		).toBe(
+			await readFile(
+				join(
+					baselineRoot,
+					"missions/tasks/TASK-001 - Renamed Disabled Task.md",
+				),
+				"utf-8",
+			),
+		);
+		expect(disabledWarnings).toEqual([]);
+		expect(await readProjectEpisodes(contextualRoot)).toEqual([]);
+		await expect(
+			access(join(contextualRoot, "memory/agent/index.md")),
+		).rejects.toMatchObject({ code: "ENOENT" });
+
+		const driveRoot = join(tempDir, "drive-context-free");
+		await writeEpisodicConfig(driveRoot);
+		const driveStyleManager = new TaskManager(driveRoot);
+		const driveTask = await driveStyleManager.createTask({
+			title: "Drive-owned Task",
+		});
+		await driveStyleManager.updateTask(driveTask.id, { status: "Done" });
+		expect(await readProjectEpisodes(driveRoot)).toEqual([]);
+
+		const enabledRoot = join(tempDir, "enabled");
+		await writeEpisodicConfig(enabledRoot);
+		const enabledManager = new TaskManager(enabledRoot, {
+			episodeSource: "custom/task-owner",
+		});
+		vi.setSystemTime(new Date("2026-07-21T13:00:00.000Z"));
+		const created = await enabledManager.createTask({
+			title: "Captured Task",
+			priority: "high",
+		});
+		const originalCreatedAt = created.createdAt.toISOString();
+		vi.setSystemTime(new Date("2026-07-21T13:01:00.000Z"));
+		await enabledManager.updateTask(created.id, {
+			title: "Renamed Captured Task",
+		});
+		vi.setSystemTime(new Date("2026-07-21T13:02:00.000Z"));
+		await enabledManager.updateTask(created.id, {
+			description: "Non-status lifecycle noise.",
+		});
+		vi.setSystemTime(new Date("2026-07-21T13:03:00.000Z"));
+		await enabledManager.updateTask(created.id, { status: "To Do" });
+		vi.setSystemTime(new Date("2026-07-21T13:04:00.000Z"));
+		const inProgress = await enabledManager.updateTask(created.id, {
+			status: "In Progress",
+		});
+		vi.setSystemTime(new Date("2026-07-21T13:05:00.000Z"));
+		await enabledManager.updateTask(created.id, { status: "In Progress" });
+		vi.setSystemTime(new Date("2026-07-21T13:06:00.000Z"));
+		const completed = await enabledManager.updateTask(created.id, {
+			status: "Done",
+		});
+
+		const captured = await readProjectEpisodes(enabledRoot);
+		expect(captured).toHaveLength(3);
+		expect(
+			captured.map((record) => ({
+				source: record.source,
+				metadata: parseEpisodeRecord(record),
+				content: record.content,
+			})),
+		).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					source: "custom/task-owner",
+					metadata: expect.objectContaining({
+						action: "task.created",
+						outcome: "to-do",
+						subject: { kind: "task", id: "TASK-001" },
+					}),
+				}),
+				expect.objectContaining({
+					source: "custom/task-owner",
+					metadata: expect.objectContaining({
+						action: "task.status-changed",
+						outcome: "in-progress",
+						subject: { kind: "task", id: "TASK-001" },
+					}),
+					content: expect.stringContaining("To Do to In Progress"),
+				}),
+				expect.objectContaining({
+					source: "custom/task-owner",
+					metadata: expect.objectContaining({
+						action: "task.status-changed",
+						outcome: "done",
+						subject: { kind: "task", id: "TASK-001" },
+					}),
+					content: expect.stringContaining("In Progress to Done"),
+				}),
+			]),
+		);
+		expect(inProgress.createdAt.toISOString()).toBe(originalCreatedAt);
+		expect(completed.createdAt.toISOString()).toBe(originalCreatedAt);
+		expect(
+			await access(
+				join(enabledRoot, "missions/tasks/TASK-001 - Renamed Captured Task.md"),
+			),
+		).toBeUndefined();
+
+		const failureRoot = join(tempDir, "capture-failure");
+		await writeEpisodicConfig(failureRoot);
+		await mkdir(join(failureRoot, "memory"), { recursive: true });
+		await writeFile(
+			join(failureRoot, "memory/agent"),
+			"path collision",
+			"utf-8",
+		);
+		const persistedStates: Array<{
+			readonly lockReleased: boolean;
+			readonly status: string | undefined;
+		}> = [];
+		const warnings: unknown[] = [];
+		const failingManager = new TaskManager(failureRoot, {
+			episodeSource: "custom/task-owner",
+			reportEpisodeWarning: async (warning) => {
+				const lockReleased = await access(getTaskCreateLockPath(failureRoot))
+					.then(() => false)
+					.catch((error: NodeJS.ErrnoException) => error.code === "ENOENT");
+				const persisted = await new TaskManager(failureRoot).getTask(
+					"TASK-001",
+				);
+				persistedStates.push({
+					lockReleased,
+					status: persisted?.status,
+				});
+				warnings.push(warning);
+			},
+		});
+		vi.setSystemTime(new Date("2026-07-21T14:00:00.000Z"));
+		const failureCreated = await failingManager.createTask({
+			title: "Faulty Capture",
+		});
+		vi.setSystemTime(new Date("2026-07-21T14:01:00.000Z"));
+		const failureUpdated = await failingManager.updateTask(failureCreated.id, {
+			status: "Blocked",
+		});
+
+		expect(failureCreated.id).toBe("TASK-001");
+		expect(failureUpdated.status).toBe("Blocked");
+		expect(failureUpdated.createdAt).toEqual(failureCreated.createdAt);
+		expect(persistedStates).toEqual([
+			{ lockReleased: true, status: "To Do" },
+			{ lockReleased: true, status: "Blocked" },
+		]);
+		expect(warnings).toHaveLength(2);
+		expect(warnings).toEqual([
+			expect.objectContaining({
+				message: expect.stringContaining("Episode capture skipped"),
+			}),
+			expect.objectContaining({
+				message: expect.stringContaining("Episode capture skipped"),
+			}),
+		]);
+	});
+
+	it("keeps Drive task-manager construction context-free", async () => {
+		const cliDriveSource = await readFile(
+			new URL("../../cli/drive/subcommand.ts", import.meta.url),
+			"utf-8",
+		);
+		const detachedDriveSource = await readFile(
+			new URL("../../lib/driver/run-step.ts", import.meta.url),
+			"utf-8",
+		);
+
+		expect(cliDriveSource).toContain(
+			"const taskManager = new TaskManager(projectRoot);",
+		);
+		expect(detachedDriveSource).toContain(
+			"const taskManager = new TaskManager(spec.projectRoot);",
+		);
 	});
 
 	describe("init", () => {
@@ -964,4 +1185,23 @@ async function createTasksWithInProgressFirst(
 	await manager.createTask({ title: "Task 1" });
 	await manager.updateTask("TASK-001", { status: "In Progress" });
 	await manager.createTask({ title: "Task 2" });
+}
+
+async function writeEpisodicConfig(projectRoot: string): Promise<void> {
+	const configDir = join(projectRoot, ".cosmonauts");
+	await mkdir(configDir, { recursive: true });
+	await writeFile(
+		join(configDir, "config.json"),
+		JSON.stringify({ episodicLog: { enabled: true } }),
+		"utf-8",
+	);
+}
+
+async function readProjectEpisodes(projectRoot: string) {
+	return (
+		await createMarkdownMemoryStore({ projectRoot }).retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ text: "", recordTypes: ["episode"] },
+		)
+	).records;
 }

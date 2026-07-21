@@ -99,7 +99,9 @@ export function registerCreateCommand(program: Command): void {
 					process.exit(1);
 				}
 
-				const manager = new TaskManager(projectRoot);
+				const manager = new TaskManager(projectRoot, {
+					episodeSource: "cosmonauts/cli",
+				});
 				const input = parseTaskCreateInput(title, options);
 				if (!input.ok) {
 					printTaskCreateParseError(input.error, globalOptions);
@@ -173,7 +175,9 @@ async function runBatchCreate(ctx: BatchCreateContext): Promise<void> {
 		process.exit(1);
 	}
 
-	const manager = new TaskManager(ctx.projectRoot);
+	const manager = new TaskManager(ctx.projectRoot, {
+		episodeSource: "cosmonauts/cli",
+	});
 	const created: Task[] = [];
 	try {
 		for (const input of inputs.value) {
