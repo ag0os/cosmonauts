@@ -26,12 +26,6 @@ export async function isDriveEpisodeCaptureEnabled(
 	}
 }
 
-export function resolveDriveEpisodeSource(
-	runtime: Pick<CosmonautsRuntime, "agentRegistry" | "domainContext">,
-): string | undefined {
-	return resolveDriveEpisodeWorker(runtime)?.qualifiedId;
-}
-
 export function resolveDriveEpisodeWorker(
 	runtime: Pick<CosmonautsRuntime, "agentRegistry" | "domainContext">,
 ): SpawnAgentResolution | undefined {

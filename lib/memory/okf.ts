@@ -3,6 +3,7 @@ import {
 	type AuthoredRecordType,
 	canonicalizePlaybookName,
 } from "./authored-records.ts";
+import { parseEpisodeTagEnvelope } from "./episodic-records.ts";
 import {
 	MEMORY_KINDS,
 	type MemoryKind,
@@ -94,6 +95,13 @@ export function parseEpisodeOkfRecord(options: {
 		return {
 			ok: false,
 			message: "Episode records require a non-empty source.",
+		};
+	}
+	if (!parseEpisodeTagEnvelope(parsed.record.tags)) {
+		return {
+			ok: false,
+			message:
+				"Episode records require valid action, outcome, and subject tags (and a payload for wake records).",
 		};
 	}
 	return {

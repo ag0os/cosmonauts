@@ -522,14 +522,25 @@ async function readEpisodeRecords(options: {
 	readonly warningThreshold: number;
 }): Promise<RetrievedMemoryRecord[]> {
 	const files = await listMarkdownFiles(options.storePaths.episodesDir);
-	if (files.length > options.warningThreshold) {
+	const directChildren = files.filter(
+		(path) => dirname(path) === options.storePaths.episodesDir,
+	);
+	if (directChildren.length > options.warningThreshold) {
 		options.warnings.push({
 			path: options.storePaths.episodesDir,
-			message: `episode log large — ${files.length} records; run consolidation`,
+			message: `episode log large — ${directChildren.length} records; run consolidation`,
 		});
 	}
 	const records: RetrievedMemoryRecord[] = [];
 	for (const path of files) {
+		if (dirname(path) !== options.storePaths.episodesDir) {
+			options.warnings.push({
+				path,
+				message:
+					"Episode records must be direct children of the episodes directory.",
+			});
+			continue;
+		}
 		const record = await parseMarkdownRecord({
 			path,
 			expectedScope: options.storePaths.scope,

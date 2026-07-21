@@ -1692,6 +1692,72 @@ describe("markdown memory store", () => {
 		]);
 	});
 
+	// Regression guard (QM F-001/F-002) defending B-006 direct-child layout and
+	// B-007/B-010 malformed-episode warnings. No new behavior marker: the owning
+	// behaviors are asserted elsewhere; this pins the store-level parse contract.
+	test("skips and warns for envelope-malformed and nested episode files while recalling valid ones", async () => {
+		const projectRoot = join(tmp.path, "episode-envelope-and-nesting-project");
+		const store = createMarkdownMemoryStore({ projectRoot });
+		const episodeWrite = await store.write(
+			createEpisodeRecord(
+				{
+					scope: "project",
+					source: "example/worker",
+					action: "chain.run",
+					outcome: "succeeded",
+					subject: { kind: "run", id: "run-valid" },
+					summary: "Valid episode retained.",
+				},
+				"2026-07-21T11:00:00.000Z",
+			),
+		);
+		if (episodeWrite.kind !== "written") {
+			throw new Error("expected episode write");
+		}
+		const episodesDir = dirname(episodeWrite.path);
+
+		// F-001: valid OKF frontmatter but a malformed tag envelope (no action tag)
+		// must be skipped with a warning, not recalled as a healthy episode.
+		const validRaw = await readFile(episodeWrite.path, "utf-8");
+		const envelopeMalformedRaw = validRaw.replace(
+			/[ \t]*- 'action:[^']*'\n/u,
+			"",
+		);
+		expect(envelopeMalformedRaw).not.toEqual(validRaw);
+		const envelopeMalformedPath = join(episodesDir, "envelope-malformed.md");
+		await writeFile(envelopeMalformedPath, envelopeMalformedRaw, "utf-8");
+
+		// F-002: a fully valid episode nested below episodes/ must be skipped with
+		// a direct-child warning, matching the documented file-per-episode layout.
+		const nestedDir = join(episodesDir, "archive");
+		await mkdir(nestedDir, { recursive: true });
+		const nestedPath = join(nestedDir, "nested.md");
+		await writeFile(
+			nestedPath,
+			validRaw.replace("run-valid", "run-nested"),
+			"utf-8",
+		);
+
+		const result = await store.retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ recordTypes: ["episode"] },
+		);
+		expect(result.records).toHaveLength(1);
+		expect(result.records[0]).toMatchObject({
+			type: "episode",
+			path: episodeWrite.path,
+		});
+		const warningsByPath = new Map(
+			result.warnings.map((warning) => [warning.path, warning.message]),
+		);
+		expect(warningsByPath.get(envelopeMalformedPath)).toBe(
+			"Episode records require valid action, outcome, and subject tags (and a payload for wake records).",
+		);
+		expect(warningsByPath.get(nestedPath)).toBe(
+			"Episode records must be direct children of the episodes directory.",
+		);
+	});
+
 	// @cosmo-behavior plan:episodic-log#B-008
 	test("binds default and overridden episode thresholds into fresh-store stats and warnings", async () => {
 		const defaultRoot = join(tmp.path, "default-episode-threshold-project");

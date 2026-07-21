@@ -299,8 +299,6 @@ export type DriverResult =
 			pendingFinalizationPath: string;
 	  });
 
-export type TimestampedDriverResult = DriverResult & { completedAt: string };
-
 /** Stamp completion content once while preserving legacy timestamps on replay. */
 export function stampDriverResult<Result extends DriverResult>(
 	result: Result,

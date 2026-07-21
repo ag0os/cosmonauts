@@ -23,6 +23,7 @@ export {
 	type EpisodeReference,
 	isEpisodeAction,
 	parseEpisodeRecord,
+	parseEpisodeTagEnvelope,
 } from "./episodic-records.ts";
 export type { MarkdownMemoryStoreOptions } from "./markdown-store.ts";
 export { createMarkdownMemoryStore } from "./markdown-store.ts";

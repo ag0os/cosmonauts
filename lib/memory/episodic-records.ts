@@ -109,11 +109,23 @@ export function parseEpisodeRecord(
 	) {
 		return undefined;
 	}
+	return parseEpisodeTagEnvelope(record.tags);
+}
 
-	const actionTag = singleTagValue(record.tags, "action:");
-	const outcome = singleTagValue(record.tags, "outcome:");
-	const subjectTag = singleTagValue(record.tags, "subject:");
-	const payloadTag = optionalSingleTagValue(record.tags, "payload:");
+/**
+ * Validate and parse the reserved action/outcome/subject (and optional payload)
+ * tag envelope shared by every episode. Returns `undefined` when the envelope is
+ * malformed. Used by both `parseEpisodeRecord` (retrieval metadata) and the OKF
+ * store parse arm, so a store-level read rejects and warns on the same envelope
+ * the public metadata parser rejects.
+ */
+export function parseEpisodeTagEnvelope(
+	tags: readonly string[],
+): EpisodeRecordMetadata | undefined {
+	const actionTag = singleTagValue(tags, "action:");
+	const outcome = singleTagValue(tags, "outcome:");
+	const subjectTag = singleTagValue(tags, "subject:");
+	const payloadTag = optionalSingleTagValue(tags, "payload:");
 	if (
 		actionTag === undefined ||
 		outcome === undefined ||
@@ -136,7 +148,7 @@ export function parseEpisodeRecord(
 		outcome,
 		subject,
 		...(payload ? { payload } : {}),
-		...(record.tags.includes(MACHINE_WRITER_TAG)
+		...(tags.includes(MACHINE_WRITER_TAG)
 			? { writer: "cosmonauts" as const }
 			: {}),
 	};
