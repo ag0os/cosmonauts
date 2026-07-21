@@ -1,3 +1,4 @@
+import type { Dirent } from "node:fs";
 import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import matter from "gray-matter";
@@ -9,12 +10,15 @@ import {
 } from "../../domains/shared/extensions/agent-memory/index.ts";
 import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
 import {
+	createEpisodeRecord,
 	createMarkdownMemoryStore,
 	type MemoryKind,
+	type MemoryQuery,
 	type MemoryScopeName,
 	type MemoryStore,
 	type MemoryWriteResult,
 	PROFILE_WRITE_MAX_BYTES,
+	parseEpisodeRecord,
 	type RetrievedMemoryRecord,
 } from "../../lib/memory/index.ts";
 import { useTempDir } from "../helpers/fs.ts";
@@ -1691,6 +1695,516 @@ describe("agent-memory extension", () => {
 		});
 	});
 
+	test("recalls enabled episodes through the existing bounded recall tool @cosmo-behavior plan:episodic-log#B-009", async () => {
+		const projectRoot = join(tmp.path, "episodic-recall-project");
+		const userRoot = join(tmp.path, "episodic-recall-user");
+		await writeEpisodicConfig(projectRoot, {
+			enabled: true,
+			warningThreshold: 7,
+		});
+		const seedStore = createMarkdownMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+		});
+		const profile = await seedStore.write({
+			type: "profile",
+			scope: "user",
+			kind: "semantic",
+			title: "User profile",
+			description: "User profile",
+			content: "The recall envelope belongs in every matched result.",
+			tags: [],
+			timestamp: "2026-07-21T10:00:00.000Z",
+			source: "main/cosmo",
+		});
+		expect(profile.kind).toBe("written");
+		for (let index = 0; index < 22; index += 1) {
+			await writeMemoryNote(seedStore, {
+				scope: index % 2 === 0 ? "project" : "user",
+				kind: "semantic",
+				title: `Recall envelope note ${index.toString().padStart(2, "0")}`,
+				description: "Exercises the non-profile recall bound.",
+				content: `Recall envelope authored body ${index}.`,
+				timestamp: new Date(Date.UTC(2026, 6, 21, 11, 0, index)).toISOString(),
+			});
+		}
+		const episode = await seedStore.write(
+			createEpisodeRecord(
+				{
+					scope: "project",
+					source: "main/cosmo",
+					action: "autonomy.wake",
+					outcome: "succeeded",
+					subject: { kind: "run", id: "recall-envelope" },
+					payload: { kind: "wake", id: "wake-42" },
+					summary: "Recall envelope episode",
+					details: "FULL_EPISODE_BODY survives explicit recall.",
+				},
+				"2026-07-21T12:00:00.000Z",
+			),
+		);
+		expect(episode.kind).toBe("written");
+
+		const factoryOptions: unknown[] = [];
+		const queries: MemoryQuery[] = [];
+		const storeFactory = vi.fn((options) => {
+			factoryOptions.push(options);
+			const store = createMarkdownMemoryStore(options);
+			return {
+				...store,
+				retrieve: async (...args: Parameters<MemoryStore["retrieve"]>) => {
+					queries.push(args[1]);
+					return store.retrieve(...args);
+				},
+			};
+		});
+		const pi = createMockPi({ cwd: projectRoot });
+		createAgentMemoryExtension({ userCosmonautsRoot: userRoot, storeFactory })(
+			pi as never,
+		);
+		await pi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: buildAgentIdentityMarker("main/cosmo") },
+			{ cwd: projectRoot },
+		);
+
+		const defaultRecall = (await pi.callTool("recall", {
+			query: "recall envelope",
+		})) as ToolResult;
+		const defaultRecords = records(defaultRecall.details) as Record<
+			string,
+			unknown
+		>[];
+		expect(defaultRecall.details).toMatchObject({
+			status: "matched",
+			limit: 5,
+			stats: {
+				filesScanned: 24,
+				bytesRead: expect.any(Number),
+				durationMs: expect.any(Number),
+			},
+		});
+		expect(defaultRecords).toHaveLength(6);
+		expect(
+			defaultRecords.filter((record) => record.type === "profile"),
+		).toHaveLength(1);
+		const recalledEpisode = defaultRecords.find(
+			(record) => record.type === "episode",
+		);
+		expect(recalledEpisode).toMatchObject({
+			type: "episode",
+			source: "main/cosmo",
+			payload: { kind: "wake", id: "wake-42" },
+			content: expect.stringContaining("FULL_EPISODE_BODY"),
+		});
+		expect(resultText(defaultRecall)).toContain("source: main/cosmo");
+		expect(resultText(defaultRecall)).toContain("payload: wake:wake-42");
+		expect(resultText(defaultRecall)).toContain("FULL_EPISODE_BODY");
+
+		const cappedRecall = (await pi.callTool("recall", {
+			query: "recall envelope",
+			limit: 200,
+		})) as ToolResult;
+		expect(cappedRecall.details).toMatchObject({
+			status: "matched",
+			limit: 20,
+			stats: { filesScanned: 24 },
+		});
+		expect(records(cappedRecall.details)).toHaveLength(21);
+		expect(
+			(records(cappedRecall.details) as Record<string, unknown>[]).filter(
+				(record) => record.type === "profile",
+			),
+		).toHaveLength(1);
+		expect(queries).toEqual([
+			{ text: "", recordTypes: ["note", "profile", "playbook"] },
+			{
+				text: "recall envelope",
+				recordTypes: ["note", "profile", "playbook", "episode"],
+			},
+			{
+				text: "recall envelope",
+				recordTypes: ["note", "profile", "playbook", "episode"],
+			},
+		]);
+		expect(factoryOptions).toHaveLength(3);
+		expect(factoryOptions[0]).not.toHaveProperty("episodeWarningThreshold");
+		expect(factoryOptions[1]).toMatchObject({ episodeWarningThreshold: 7 });
+		expect(factoryOptions[2]).toMatchObject({ episodeWarningThreshold: 7 });
+
+		const rememberTypeSchema = toolPropertySchema(pi, "remember", "type");
+		expect(JSON.stringify(rememberTypeSchema)).not.toContain('"episode"');
+	});
+
+	test("surfaces malformed episode warnings only on episode-touching recall and tolerates deletion @cosmo-behavior plan:episodic-log#B-010", async () => {
+		const projectRoot = join(tmp.path, "malformed-episode-project");
+		const userRoot = join(tmp.path, "malformed-episode-user");
+		await writeEpisodicConfig(projectRoot, { enabled: true });
+		const store = createMarkdownMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+		});
+		const deleted = await store.write(
+			createEpisodeRecord(
+				{
+					scope: "project",
+					source: "main/cosmo",
+					action: "memory.saved",
+					outcome: "succeeded",
+					subject: { kind: "memory", id: "deleted-note" },
+					summary: "Deleted episode must stay absent",
+				},
+				"2026-07-21T12:00:00.000Z",
+			),
+		);
+		if (deleted.kind !== "written") throw new Error("Expected written episode");
+		await unlink(deleted.path);
+		const episodesDir = join(projectRoot, "memory", "agent", "episodes");
+		for (let index = 0; index < 7; index += 1) {
+			await writeFile(
+				join(episodesDir, `malformed-${index}.md`),
+				`not an OKF episode ${index}\n`,
+				"utf-8",
+			);
+		}
+		const filesBefore = await fileSnapshot(projectRoot, "memory");
+		const pi = createMockPi({ cwd: projectRoot });
+		createAgentMemoryExtension({ userCosmonautsRoot: userRoot })(pi as never);
+		const injected = await pi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: buildAgentIdentityMarker("main/cosmo") },
+			{ cwd: projectRoot },
+		);
+		expect(injected).toBeUndefined();
+		expect(await fileSnapshot(projectRoot, "memory")).toEqual(filesBefore);
+
+		const recalled = (await pi.callTool("recall", {
+			query: "deleted episode",
+		})) as ToolResult;
+		expect(recalled.details).toMatchObject({ status: "no_match", records: [] });
+		expect(warnings(recalled.details)).toHaveLength(7);
+		for (const warning of warnings(recalled.details) as Record<
+			string,
+			unknown
+		>[]) {
+			expect(warning).toMatchObject({
+				path: expect.stringMatching(/malformed-\d+\.md$/u),
+				message: expect.stringMatching(/invalid|frontmatter|episode|OKF/i),
+			});
+		}
+		const visible = resultText(recalled);
+		expect(visible.match(/malformed-\d+\.md/g)).toHaveLength(5);
+		expect(visible).toContain("(+2 more)");
+		expect(visible).not.toContain(deleted.path);
+		await expect(readFile(deleted.path, "utf-8")).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+		expect(await fileSnapshot(projectRoot, "memory")).toEqual(filesBefore);
+	});
+
+	test("records only successful authored saves and keeps remember successful on episode failure @cosmo-behavior plan:episodic-log#B-012", async () => {
+		const noSaveProject = join(tmp.path, "declined-unanswered-project");
+		const noSaveUser = join(tmp.path, "declined-unanswered-user");
+		await writeEpisodicConfig(noSaveProject, { enabled: true });
+		const noSavePi = createMockPi({ cwd: noSaveProject });
+		createAgentMemoryExtension({ userCosmonautsRoot: noSaveUser })(
+			noSavePi as never,
+		);
+		await noSavePi.fireEvent("session_start");
+		await noSavePi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: buildAgentIdentityMarker("main/not-cosmo") },
+			{ cwd: noSaveProject },
+		);
+		await noSavePi.fireEvent("session_shutdown");
+		expect(await fileSnapshot(noSaveProject, "memory")).toEqual([]);
+		expect(await fileSnapshot(noSaveUser, "memory")).toEqual([]);
+
+		const projectRoot = join(tmp.path, "authored-capture-project");
+		const userRoot = join(tmp.path, "authored-capture-user");
+		await writeEpisodicConfig(projectRoot, { enabled: true });
+		const pi = await cosmoPi({ projectRoot, userRoot });
+		const note = (await pi.callTool("remember", {
+			content: "Capture this project note.",
+			title: "Captured note",
+			scope: "project",
+		})) as ToolResult;
+		const profile = (await pi.callTool("remember", {
+			type: "profile",
+			content: "Capture this user profile.",
+			changeSummary: "Created the captured profile.",
+		})) as ToolResult;
+		const playbook = (await pi.callTool("remember", {
+			type: "playbook",
+			title: "Captured Procedure",
+			scope: "project",
+			content: "Capture this project playbook.",
+		})) as ToolResult;
+		for (const result of [note, profile, playbook]) {
+			expect(result.details).toMatchObject({
+				status: expect.stringMatching(/saved|created/),
+			});
+			expect(resultText(result)).not.toContain("Episode capture skipped");
+		}
+
+		const captureStore = createMarkdownMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+		});
+		const captured = await captureStore.retrieve(
+			{ projectRoot, scopes: ["project", "user"] },
+			{ text: "", recordTypes: ["episode"] },
+		);
+		expect(captured.records).toHaveLength(3);
+		const expectedSubjects = [
+			relative(projectRoot, stringDetail(note.details, "path")),
+			relative(userRoot, stringDetail(profile.details, "path")),
+			relative(projectRoot, stringDetail(playbook.details, "path")),
+		].map((path) => path.split(sep).join("/"));
+		expect(
+			captured.records.map((record) => ({
+				scope: record.scope,
+				source: record.source,
+				metadata: parseEpisodeRecord(record),
+			})),
+		).toEqual(
+			expect.arrayContaining(
+				expectedSubjects.map((id, index) => ({
+					scope: index === 1 ? "user" : "project",
+					source: "main/cosmo",
+					metadata: expect.objectContaining({
+						action: "memory.saved",
+						outcome: "succeeded",
+						subject: { kind: "memory", id },
+						writer: "cosmonauts",
+					}),
+				})),
+			),
+		);
+
+		const confirmationRequired = (await pi.callTool("remember", {
+			type: "playbook",
+			title: "captured---procedure",
+			scope: "project",
+			content: "Do not save without confirmation.",
+		})) as ToolResult;
+		const rejected = (await pi.callTool("remember", {
+			type: "episode",
+			content: "The public tool has no episode arm.",
+		})) as ToolResult;
+		const unsupported = (await pi.callTool("remember", {
+			type: "profile",
+			content: "x".repeat(PROFILE_WRITE_MAX_BYTES + 1),
+			changeSummary: "Must remain unsupported.",
+		})) as ToolResult;
+		expect(confirmationRequired.details).toMatchObject({
+			status: "confirmation_required",
+		});
+		expect(rejected.details).toMatchObject({ status: "invalid_request" });
+		expect(unsupported.details).toMatchObject({ status: "unsupported" });
+		const afterNonWrites = await captureStore.retrieve(
+			{ projectRoot, scopes: ["project", "user"] },
+			{ text: "", recordTypes: ["episode"] },
+		);
+		expect(afterNonWrites.records).toHaveLength(3);
+		expect(pi.entries).toEqual([]);
+
+		const failedProject = join(tmp.path, "failed-authored-capture-project");
+		const failedUser = join(tmp.path, "failed-authored-capture-user");
+		await writeEpisodicConfig(failedProject, { enabled: true });
+		await mkdir(join(failedProject, "memory", "agent", "index.md"), {
+			recursive: true,
+		});
+		const failedPi = await cosmoPi({
+			projectRoot: failedProject,
+			userRoot: failedUser,
+		});
+		const failed = (await failedPi.callTool("remember", {
+			content: "Primary authored persistence fails.",
+			title: "Failed primary write",
+		})) as ToolResult;
+		expect(failed.details).toMatchObject({ status: "failed" });
+		expect(
+			(await readdir(join(failedProject, "memory", "agent"))).sort(),
+		).toEqual(["index.md", "notes"]);
+		expect(
+			await readdir(join(failedProject, "memory", "agent", "notes")),
+		).toEqual([]);
+		await expect(
+			readdir(join(failedProject, "memory", "agent", "episodes")),
+		).rejects.toMatchObject({ code: "ENOENT" });
+
+		const captureFailureProject = join(
+			tmp.path,
+			"episode-capture-failure-project",
+		);
+		const captureFailureUser = join(tmp.path, "episode-capture-failure-user");
+		await writeEpisodicConfig(captureFailureProject, { enabled: true });
+		await mkdir(join(captureFailureProject, "memory", "agent"), {
+			recursive: true,
+		});
+		await writeFile(
+			join(captureFailureProject, "memory", "agent", "episodes"),
+			"blocks the episode directory\n",
+			"utf-8",
+		);
+		const captureFailurePi = await cosmoPi({
+			projectRoot: captureFailureProject,
+			userRoot: captureFailureUser,
+		});
+		const primarySuccess = (await captureFailurePi.callTool("remember", {
+			content: "The authored bytes must survive capture failure.",
+			title: "Capture failure remains successful",
+		})) as ToolResult;
+		expect(primarySuccess.details).toMatchObject({ status: "saved" });
+		expect(resultText(primarySuccess)).toContain(
+			'Saved "Capture failure remains successful"',
+		);
+		expect(
+			resultText(primarySuccess).match(/Episode capture skipped/g),
+		).toHaveLength(1);
+		expect(
+			await readFile(stringDetail(primarySuccess.details, "path"), "utf-8"),
+		).toContain("The authored bytes must survive capture failure.");
+		expect(
+			(await fileSnapshot(captureFailureProject, "memory")).map(
+				(file) => file.path,
+			),
+		).toEqual(
+			expect.arrayContaining([
+				"agent/episodes",
+				"agent/index.md",
+				expect.stringMatching(/^agent\/notes\/.*\.md$/u),
+			]),
+		);
+	});
+
+	test("keeps disabled remember recall injection and files byte-identical to W2 @cosmo-behavior plan:episodic-log#B-021", async () => {
+		const absent = await disabledMemoryScenario({
+			projectRoot: join(tmp.path, "disabled-absent-project"),
+			userRoot: join(tmp.path, "disabled-absent-user"),
+		});
+		const explicitlyFalse = await disabledMemoryScenario({
+			projectRoot: join(tmp.path, "disabled-false-project"),
+			userRoot: join(tmp.path, "disabled-false-user"),
+			episodicLog: { enabled: false, warningThreshold: 1 },
+		});
+
+		expect(absent.normalized).toEqual(explicitlyFalse.normalized);
+		expect(absent.toolContracts).toEqual({
+			remember: expect.objectContaining({
+				name: "remember",
+				label: "Remember",
+				description:
+					"Save an explicit note, user profile, or playbook to agent memory.",
+				executionMode: "sequential",
+			}),
+			recall: expect.objectContaining({
+				name: "recall",
+				label: "Recall",
+				description:
+					"Search authored agent-memory records: notes, the user profile, and playbooks.",
+			}),
+		});
+		expect(
+			JSON.stringify(absent.toolContracts.remember.parameters),
+		).not.toContain('"episode"');
+		expect(absent.normalized.collision).toMatchObject({
+			details: { status: "confirmation_required" },
+		});
+		expect(absent.projectFiles.map((file) => file.path)).toEqual([
+			"agent/index.md",
+			"agent/playbooks/baseline-procedure.md",
+		]);
+		expect(absent.userFiles).toEqual([]);
+		expect(absent.projectFiles).toEqual(explicitlyFalse.projectFiles);
+		expect(absent.userFiles).toEqual(explicitlyFalse.userFiles);
+		expect(
+			absent.projectFiles.some((file) => file.path.includes("episodes")),
+		).toBe(false);
+		expect(absent.projectFiles[0]?.bytes).not.toContain("episode");
+	});
+
+	test("keeps enabled injected context byte-identical when episodes exist @cosmo-behavior plan:episodic-log#B-022", async () => {
+		const baselineRoot = join(tmp.path, "injection-baseline-project");
+		const episodicRoot = join(tmp.path, "injection-episodic-project");
+		const baselineUser = join(tmp.path, "injection-baseline-user");
+		const episodicUser = join(tmp.path, "injection-episodic-user");
+		for (const projectRoot of [baselineRoot, episodicRoot]) {
+			await writeEpisodicConfig(projectRoot, {
+				enabled: true,
+				warningThreshold: 1,
+			});
+		}
+		for (const [projectRoot, userRoot] of [
+			[baselineRoot, baselineUser],
+			[episodicRoot, episodicUser],
+		] as const) {
+			const store = createMarkdownMemoryStore({
+				projectRoot,
+				userCosmonautsRoot: userRoot,
+			});
+			await writeMemoryNote(store, {
+				scope: "project",
+				kind: "semantic",
+				title: "Stable injection note",
+				description: "Identical authored bytes in both stores.",
+				content: "Authored body stays out of the injected index.",
+				timestamp: "2026-07-21T12:00:00.000Z",
+			});
+		}
+		const episodicStore = createMarkdownMemoryStore({
+			projectRoot: episodicRoot,
+			userCosmonautsRoot: episodicUser,
+		});
+		const valid = await episodicStore.write(
+			createEpisodeRecord(
+				{
+					scope: "project",
+					source: "main/cosmo",
+					action: "memory.saved",
+					outcome: "succeeded",
+					subject: { kind: "memory", id: "injection-secret" },
+					summary: "EPISODE_TITLE_MUST_NOT_INJECT",
+					details: "EPISODE_BODY_MUST_NOT_INJECT",
+				},
+				"2026-07-21T13:00:00.000Z",
+			),
+		);
+		expect(valid.kind).toBe("written");
+		const malformedPath = join(
+			episodicRoot,
+			"memory",
+			"agent",
+			"episodes",
+			"malformed-injection.md",
+		);
+		await writeFile(malformedPath, "malformed episode\n", "utf-8");
+
+		const baseline = await observedInjection({
+			projectRoot: baselineRoot,
+			userRoot: baselineUser,
+		});
+		const withEpisodes = await observedInjection({
+			projectRoot: episodicRoot,
+			userRoot: episodicUser,
+		});
+		expect(withEpisodes.content).toBe(baseline.content);
+		expect(withEpisodes.query).toEqual({
+			text: "",
+			recordTypes: ["note", "profile", "playbook"],
+		});
+		expect(withEpisodes.stats).toEqual(baseline.stats);
+		expect(withEpisodes.warnings).toEqual([]);
+		expect(withEpisodes.factoryOptions).not.toHaveProperty(
+			"episodeWarningThreshold",
+		);
+		expect(withEpisodes.content).not.toContain("EPISODE_TITLE_MUST_NOT_INJECT");
+		expect(withEpisodes.content).not.toContain("EPISODE_BODY_MUST_NOT_INJECT");
+		expect(withEpisodes.content).not.toContain("malformed-injection.md");
+		expect(withEpisodes.content).not.toContain("episode log large");
+	});
+
 	test("injected context names skipped records instead of silently dropping them", async () => {
 		const projectRoot = join(tmp.path, "warning-inject-project");
 		const userRoot = join(tmp.path, "warning-inject-user");
@@ -2167,5 +2681,231 @@ function record(
 		content: "Full memory body.",
 		path: join(tmp.path, "memory", "agent", "notes", "note.md"),
 		...overrides,
+	};
+}
+
+async function writeEpisodicConfig(
+	projectRoot: string,
+	episodicLog: {
+		readonly enabled: boolean;
+		readonly warningThreshold?: number;
+	},
+): Promise<void> {
+	const configDir = join(projectRoot, ".cosmonauts");
+	await mkdir(configDir, { recursive: true });
+	await writeFile(
+		join(configDir, "config.json"),
+		JSON.stringify({ episodicLog }),
+		"utf-8",
+	);
+}
+
+interface FileSnapshotEntry {
+	readonly path: string;
+	readonly bytes: string;
+}
+
+async function fileSnapshot(
+	root: string,
+	subtree: string,
+): Promise<FileSnapshotEntry[]> {
+	const start = join(root, subtree);
+	const entries: FileSnapshotEntry[] = [];
+
+	async function walk(directory: string): Promise<void> {
+		let children: Dirent[];
+		try {
+			children = await readdir(directory, { withFileTypes: true });
+		} catch (error: unknown) {
+			if (
+				error &&
+				typeof error === "object" &&
+				"code" in error &&
+				(error as NodeJS.ErrnoException).code === "ENOENT"
+			) {
+				return;
+			}
+			throw error;
+		}
+		for (const child of children) {
+			const path = join(directory, child.name);
+			if (child.isDirectory()) {
+				await walk(path);
+				continue;
+			}
+			entries.push({
+				path: relative(start, path).split(sep).join("/"),
+				bytes: await readFile(path, "utf-8"),
+			});
+		}
+	}
+
+	await walk(start);
+	return entries.toSorted((a, b) => a.path.localeCompare(b.path));
+}
+
+function fullToolContract(pi: ReturnType<typeof createMockPi>, name: string) {
+	const tool = pi.tools.get(name);
+	if (!tool) throw new Error(`Expected registered tool ${name}`);
+	const definition = tool as unknown as {
+		readonly name: string;
+		readonly label: string;
+		readonly description: string;
+		readonly executionMode?: "sequential" | "parallel";
+		readonly parameters: unknown;
+	};
+	return {
+		name: definition.name,
+		label: definition.label,
+		description: definition.description,
+		executionMode: definition.executionMode,
+		parameters: definition.parameters,
+	};
+}
+
+function toolPropertySchema(
+	pi: ReturnType<typeof createMockPi>,
+	toolName: string,
+	propertyName: string,
+): unknown {
+	const contract = fullToolContract(pi, toolName);
+	if (!contract.parameters || typeof contract.parameters !== "object") {
+		throw new Error(`Expected object parameters for ${toolName}`);
+	}
+	const properties = (contract.parameters as { properties?: unknown })
+		.properties;
+	if (!properties || typeof properties !== "object") {
+		throw new Error(`Expected parameter properties for ${toolName}`);
+	}
+	return (properties as Record<string, unknown>)[propertyName];
+}
+
+async function disabledMemoryScenario(options: {
+	readonly projectRoot: string;
+	readonly userRoot: string;
+	readonly episodicLog?: {
+		readonly enabled: boolean;
+		readonly warningThreshold?: number;
+	};
+}) {
+	if (options.episodicLog) {
+		await writeEpisodicConfig(options.projectRoot, options.episodicLog);
+	}
+	const pi = createMockPi({ cwd: options.projectRoot });
+	createAgentMemoryExtension({
+		userCosmonautsRoot: options.userRoot,
+		now: () => new Date("2026-07-21T14:00:00.000Z"),
+	})(pi as never);
+	await pi.fireEvent(
+		"before_agent_start",
+		{ systemPrompt: buildAgentIdentityMarker("main/cosmo") },
+		{ cwd: options.projectRoot },
+	);
+	const saved = (await pi.callTool("remember", {
+		type: "playbook",
+		title: "Baseline Procedure",
+		description: "Pinned W2 consent and collision behavior.",
+		scope: "project",
+		content: "Preserve the explicit authored-save contract.",
+	})) as ToolResult;
+	const collision = (await pi.callTool("remember", {
+		type: "playbook",
+		title: "baseline---procedure",
+		description: "Must require confirmation.",
+		scope: "project",
+		content: "Must not replace the baseline without confirmation.",
+	})) as ToolResult;
+	const recalled = (await pi.callTool("recall", {
+		query: "explicit authored-save",
+	})) as ToolResult;
+	const injection = await pi.fireEvent(
+		"before_agent_start",
+		{ systemPrompt: buildAgentIdentityMarker("main/cosmo") },
+		{ cwd: options.projectRoot },
+	);
+	const toolContracts = {
+		remember: fullToolContract(pi, "remember"),
+		recall: fullToolContract(pi, "recall"),
+	};
+	const normalized = normalizeScenarioValue(
+		{ saved, collision, recalled, injection },
+		options,
+	) as {
+		saved: ToolResult;
+		collision: ToolResult;
+		recalled: ToolResult;
+		injection: unknown;
+	};
+	return {
+		normalized,
+		toolContracts,
+		projectFiles: await fileSnapshot(options.projectRoot, "memory"),
+		userFiles: await fileSnapshot(options.userRoot, "memory"),
+	};
+}
+
+function normalizeScenarioValue(
+	value: unknown,
+	options: { readonly projectRoot: string; readonly userRoot: string },
+): unknown {
+	return JSON.parse(
+		JSON.stringify(value, (key, entry: unknown) => {
+			if (key === "durationMs") return 0;
+			if (typeof entry !== "string") return entry;
+			return entry
+				.split(options.projectRoot)
+				.join("<project>")
+				.split(options.userRoot)
+				.join("<user>");
+		}),
+	);
+}
+
+async function observedInjection(options: {
+	readonly projectRoot: string;
+	readonly userRoot: string;
+}) {
+	let query: MemoryQuery | undefined;
+	let retrieveResult: Awaited<ReturnType<MemoryStore["retrieve"]>> | undefined;
+	let factoryOptions: unknown;
+	const pi = createMockPi({ cwd: options.projectRoot });
+	createAgentMemoryExtension({
+		userCosmonautsRoot: options.userRoot,
+		storeFactory: (options) => {
+			factoryOptions = options;
+			const store = createMarkdownMemoryStore(options);
+			return {
+				...store,
+				retrieve: async (...args: Parameters<MemoryStore["retrieve"]>) => {
+					query = args[1];
+					retrieveResult = await store.retrieve(...args);
+					return retrieveResult;
+				},
+			};
+		},
+	})(pi as never);
+	const result = (await pi.fireEvent(
+		"before_agent_start",
+		{ systemPrompt: buildAgentIdentityMarker("main/cosmo") },
+		{ cwd: options.projectRoot },
+	)) as { message?: { content?: unknown } } | undefined;
+	if (!query || !retrieveResult || !factoryOptions) {
+		throw new Error("Expected one observed injection retrieval.");
+	}
+	const content = result?.message?.content;
+	if (typeof content !== "string") {
+		throw new Error("Expected injected memory context text.");
+	}
+	return {
+		content,
+		query,
+		stats: retrieveResult.stats
+			? {
+					filesScanned: retrieveResult.stats.filesScanned,
+					bytesRead: retrieveResult.stats.bytesRead,
+				}
+			: undefined,
+		warnings: retrieveResult.warnings,
+		factoryOptions,
 	};
 }

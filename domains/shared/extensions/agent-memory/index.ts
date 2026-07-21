@@ -4,17 +4,25 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
 import {
+	loadProjectConfig,
+	resolveEpisodicLogConfig,
+} from "../../../../lib/config/index.ts";
+import {
 	canonicalizePlaybookName,
 	createMarkdownMemoryStore,
+	type EpisodeReference,
 	type MemoryKind,
 	type MemoryRecordDraft,
 	type MemoryRetrieveResult,
 	type MemoryScopeName,
 	type MemoryStore,
+	type MemoryWarning,
 	type MemoryWriteResult,
 	PROFILE_DESCRIPTION,
 	PROFILE_TITLE,
 	PROFILE_WRITE_MAX_BYTES,
+	parseEpisodeRecord,
+	recordEpisode,
 } from "../../../../lib/memory/index.ts";
 
 const COSMO_AGENT_ID = "main/cosmo";
@@ -32,7 +40,14 @@ const PROFILE_METADATA_VALUE_MAX_BYTES = 512;
 // model never sees tool-result details, and injected context has no details at
 // all. Bound them so an adversarial store cannot flood a budgeted message.
 const MAX_VISIBLE_WARNINGS = 5;
-const AUTHORED_RECORD_TYPES = ["note", "profile", "playbook"] as const;
+const INJECTION_RECORD_TYPES = ["note", "profile", "playbook"] as const;
+const DISABLED_RECALL_RECORD_TYPES = ["note", "profile", "playbook"] as const;
+const ENABLED_RECALL_RECORD_TYPES = [
+	"note",
+	"profile",
+	"playbook",
+	"episode",
+] as const;
 
 const AuthoredTypeLiterals = [
 	Type.Literal("note"),
@@ -50,6 +65,7 @@ export interface AgentMemoryStoreFactoryOptions {
 	readonly projectRoot: string;
 	readonly userCosmonautsRoot: string;
 	readonly now: () => Date;
+	readonly episodeWarningThreshold?: number;
 }
 
 export interface AgentMemoryExtensionDeps {
@@ -58,6 +74,8 @@ export interface AgentMemoryExtensionDeps {
 		options: AgentMemoryStoreFactoryOptions,
 	) => MemoryStore;
 	readonly now?: () => Date;
+	readonly loadConfig?: typeof loadProjectConfig;
+	readonly captureEpisode?: typeof recordEpisode;
 }
 
 interface AuthorizationState {
@@ -125,6 +143,8 @@ interface RenderedRecallRecord {
 	readonly path: string;
 	readonly humanPath: string;
 	readonly content: string;
+	readonly source?: string;
+	readonly payload?: EpisodeReference;
 }
 
 function textResult(
@@ -146,6 +166,8 @@ export function createAgentMemoryExtension(
 	const userCosmonautsRoot =
 		deps.userCosmonautsRoot ?? join(homedir(), ".cosmonauts");
 	const now = deps.now ?? (() => new Date());
+	const loadConfig = deps.loadConfig ?? loadProjectConfig;
+	const captureEpisode = deps.captureEpisode ?? recordEpisode;
 	const storeFactory =
 		deps.storeFactory ??
 		((options: AgentMemoryStoreFactoryOptions) =>
@@ -210,6 +232,7 @@ export function createAgentMemoryExtension(
 					now,
 					projectRoot,
 					userCosmonautsRoot,
+					captureEpisode,
 				});
 			},
 		});
@@ -230,11 +253,26 @@ export function createAgentMemoryExtension(
 			}),
 			execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 				if (!auth.authorized) return unauthorizedResult();
+				const projectRoot = getCwd(ctx);
+				const settings = resolveEpisodicLogConfig(
+					await loadConfig(projectRoot),
+				);
 				return recall({
 					params: params as RecallParams,
-					store: createStore({ ctx, userCosmonautsRoot, now, storeFactory }),
-					projectRoot: getCwd(ctx),
+					store: createStore({
+						ctx,
+						userCosmonautsRoot,
+						now,
+						storeFactory,
+						...(settings.enabled
+							? { episodeWarningThreshold: settings.warningThreshold }
+							: {}),
+					}),
+					projectRoot,
 					userCosmonautsRoot,
+					recordTypes: settings.enabled
+						? ENABLED_RECALL_RECORD_TYPES
+						: DISABLED_RECALL_RECORD_TYPES,
 				});
 			},
 		});
@@ -323,17 +361,19 @@ async function remember(options: {
 	readonly now: () => Date;
 	readonly projectRoot: string;
 	readonly userCosmonautsRoot: string;
+	readonly captureEpisode: typeof recordEpisode;
 }): Promise<ReturnType<typeof textResult>> {
 	const timestamp = options.now().toISOString();
 	switch (options.request.type) {
 		case "note": {
 			const draft = rememberDraft({ request: options.request, timestamp });
-			return renderRememberResult({
+			return renderRememberWithCapture({
 				result: await options.store.write(draft),
 				draft,
 				operation: "saved",
 				projectRoot: options.projectRoot,
 				userCosmonautsRoot: options.userCosmonautsRoot,
+				captureEpisode: options.captureEpisode,
 			});
 		}
 		case "profile": {
@@ -342,13 +382,14 @@ async function remember(options: {
 				{ text: "", recordTypes: ["profile"] },
 			);
 			const draft = rememberDraft({ request: options.request, timestamp });
-			return renderRememberResult({
+			return renderRememberWithCapture({
 				result: await options.store.write(draft),
 				draft,
 				operation: existing.records.length > 0 ? "updated" : "created",
 				changeSummary: options.request.changeSummary,
 				projectRoot: options.projectRoot,
 				userCosmonautsRoot: options.userCosmonautsRoot,
+				captureEpisode: options.captureEpisode,
 			});
 		}
 		case "playbook": {
@@ -371,12 +412,13 @@ async function remember(options: {
 			}
 
 			const draft = rememberDraft({ request: options.request, timestamp });
-			return renderRememberResult({
+			return renderRememberWithCapture({
 				result: await options.store.write(draft),
 				draft,
 				operation: collision ? "updated" : "created",
 				projectRoot: options.projectRoot,
 				userCosmonautsRoot: options.userCosmonautsRoot,
+				captureEpisode: options.captureEpisode,
 			});
 		}
 	}
@@ -431,6 +473,7 @@ async function recall(options: {
 	readonly store: MemoryStore;
 	readonly projectRoot: string;
 	readonly userCosmonautsRoot: string;
+	readonly recordTypes: readonly string[];
 }): Promise<ReturnType<typeof textResult>> {
 	const query = normalizeString(options.params.query);
 	if (!query) {
@@ -443,7 +486,7 @@ async function recall(options: {
 	const limit = normalizeLimit(options.params.limit);
 	const result = await options.store.retrieve(
 		{ projectRoot: options.projectRoot, scopes: ["project", "user"] },
-		{ text: query, recordTypes: AUTHORED_RECORD_TYPES },
+		{ text: query, recordTypes: options.recordTypes },
 	);
 	const pinnedProfiles = result.records.filter(
 		(record) => record.type === "profile",
@@ -468,7 +511,7 @@ async function retrieveMemoryContext(options: {
 		{ projectRoot: options.projectRoot, scopes: ["project", "user"] },
 		{
 			text: "",
-			recordTypes: AUTHORED_RECORD_TYPES,
+			recordTypes: INJECTION_RECORD_TYPES,
 		},
 	);
 }
@@ -626,6 +669,64 @@ function formatIndexRecord(options: {
 	].join("\n");
 }
 
+async function renderRememberWithCapture(options: {
+	readonly result: MemoryWriteResult;
+	readonly draft: MemoryRecordDraft;
+	readonly operation: "saved" | "created" | "updated";
+	readonly changeSummary?: string;
+	readonly projectRoot: string;
+	readonly userCosmonautsRoot: string;
+	readonly captureEpisode: typeof recordEpisode;
+}): Promise<ReturnType<typeof textResult>> {
+	const primaryResult = renderRememberResult(options);
+	if (
+		options.result.kind !== "written" ||
+		options.result.record.scope === "session" ||
+		(options.result.record.type !== "note" &&
+			options.result.record.type !== "profile" &&
+			options.result.record.type !== "playbook")
+	) {
+		return primaryResult;
+	}
+
+	const warnings: MemoryWarning[] = [];
+	const captureResult = await options.captureEpisode({
+		projectRoot: options.projectRoot,
+		userCosmonautsRoot: options.userCosmonautsRoot,
+		event: {
+			scope: options.result.record.scope,
+			source: SOURCE,
+			action: "memory.saved",
+			outcome: "succeeded",
+			subject: {
+				kind: "memory",
+				id: options.result.record.resource,
+			},
+			summary: `Saved ${options.result.record.type} "${options.result.record.title}".`,
+			details: `Authored memory resource: ${options.result.record.resource}`,
+			timestamp: options.result.record.timestamp,
+		},
+		reportWarning: async (warning) => {
+			warnings.push(warning);
+		},
+	});
+	if (captureResult.kind === "warning" && warnings.length === 0) {
+		warnings.push(captureResult.warning);
+	}
+	if (warnings.length === 0) return primaryResult;
+
+	const warningLine = formatWarningLines({
+		warnings: warnings.slice(0, 1),
+		projectRoot: options.projectRoot,
+		userCosmonautsRoot: options.userCosmonautsRoot,
+	})[0];
+	if (!warningLine) return primaryResult;
+	return textResult(
+		`${primaryResult.content[0]?.text ?? ""}\nWarning: ${warningLine.slice(2)}`,
+		primaryResult.details,
+	);
+}
+
 function renderRememberResult(options: {
 	readonly result: MemoryWriteResult;
 	readonly draft: MemoryRecordDraft;
@@ -739,22 +840,32 @@ function renderRecallResult(options: {
 	readonly userCosmonautsRoot: string;
 }): ReturnType<typeof textResult> {
 	const records: RenderedRecallRecord[] = options.result.records.map(
-		(record) => ({
-			type: record.type,
-			title: record.title,
-			description: record.description,
-			scope: record.scope,
-			kind: record.kind,
-			tags: record.tags,
-			timestamp: record.timestamp,
-			path: record.path,
-			humanPath: humanReadablePath({
+		(record) => {
+			const episodeMetadata =
+				record.type === "episode" ? parseEpisodeRecord(record) : undefined;
+			return {
+				type: record.type,
+				title: record.title,
+				description: record.description,
+				scope: record.scope,
+				kind: record.kind,
+				tags: record.tags,
+				timestamp: record.timestamp,
 				path: record.path,
-				projectRoot: options.projectRoot,
-				userCosmonautsRoot: options.userCosmonautsRoot,
-			}),
-			content: record.content,
-		}),
+				humanPath: humanReadablePath({
+					path: record.path,
+					projectRoot: options.projectRoot,
+					userCosmonautsRoot: options.userCosmonautsRoot,
+				}),
+				content: record.content,
+				...(record.type === "episode" && record.source
+					? { source: record.source }
+					: {}),
+				...(episodeMetadata?.payload
+					? { payload: episodeMetadata.payload }
+					: {}),
+			};
+		},
 	);
 	const baseDetails = {
 		query: options.query,
@@ -786,10 +897,13 @@ function renderRecallResult(options: {
 			{ status: "no_match", ...baseDetails },
 		);
 	}
+	const recordLabel = records.some((record) => record.type === "episode")
+		? "memory record"
+		: "authored memory record";
 
 	return textResult(
 		[
-			`Found ${records.length} authored memory record${
+			`Found ${records.length} ${recordLabel}${
 				records.length === 1 ? "" : "s"
 			} for "${options.query}".`,
 			warningText,
@@ -830,8 +944,13 @@ function formatRecallWarnings(
 ): string | undefined {
 	const count = options.warnings.length;
 	if (count === 0) return undefined;
+	const recordLabel = options.warnings.some((warning) =>
+		warning.path?.split(sep).includes("episodes"),
+	)
+		? "memory record"
+		: "authored memory record";
 	return [
-		`Warning: ${count} authored memory record${
+		`Warning: ${count} ${recordLabel}${
 			count === 1 ? " was" : "s were"
 		} skipped because ${count === 1 ? "it" : "they"} could not be read:`,
 		...formatWarningLines(options),
@@ -852,13 +971,18 @@ function formatContextWarnings(options: WarningFormatOptions): string {
 }
 
 function formatRecallRecord(record: RenderedRecallRecord): string {
+	const label = record.type === "episode" ? "Episode" : "Authored";
 	return [
-		`## Authored memory record: ${record.title}`,
+		`## ${label} memory record: ${record.title}`,
 		`type: ${record.type}`,
 		`${record.type === "playbook" ? "name" : "title"}: ${record.title}`,
 		`scope: ${record.scope}`,
 		`kind: ${record.kind ?? "unknown"}`,
 		`timestamp: ${record.timestamp}`,
+		...(record.source ? [`source: ${record.source}`] : []),
+		...(record.payload
+			? [`payload: ${record.payload.kind}:${record.payload.id}`]
+			: []),
 		`description: ${record.description}`,
 		`path: ${record.humanPath}`,
 		"",
@@ -873,11 +997,15 @@ function createStore(options: {
 	readonly storeFactory: (
 		options: AgentMemoryStoreFactoryOptions,
 	) => MemoryStore;
+	readonly episodeWarningThreshold?: number;
 }): MemoryStore {
 	return options.storeFactory({
 		projectRoot: getCwd(options.ctx),
 		userCosmonautsRoot: options.userCosmonautsRoot,
 		now: options.now,
+		...(options.episodeWarningThreshold === undefined
+			? {}
+			: { episodeWarningThreshold: options.episodeWarningThreshold }),
 	});
 }
 
