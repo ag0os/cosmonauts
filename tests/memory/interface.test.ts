@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import matter from "gray-matter";
 import { describe, expect, test, vi } from "vitest";
 import type { ArchitectureMapRetrievalDetails } from "../../lib/architecture-map/index.ts";
 import { createArchitectureMapMemoryStore } from "../../lib/architecture-map/index.ts";
@@ -57,6 +58,105 @@ describe("memory interface", () => {
 		}
 	});
 
+	// @cosmo-behavior plan:episodic-log#B-003
+	test("retrieves episode actor and envelope through the narrowly extended MemoryStore result", async () => {
+		const projectRoot = join(tmp.path, "episode-envelope-project");
+		const userCosmonautsRoot = join(tmp.path, "episode-envelope-user");
+		await mkdir(join(projectRoot, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({ episodicLog: { enabled: true } }),
+			"utf-8",
+		);
+		const reportWarning = vi.fn();
+
+		await expect(
+			recordEpisode({
+				projectRoot,
+				userCosmonautsRoot,
+				event: {
+					...episodeEvent(),
+					timestamp: "2026-07-21T12:00:00.000Z",
+				},
+				reportWarning,
+			}),
+		).resolves.toMatchObject({ kind: "recorded" });
+		await expect(
+			recordEpisode({
+				projectRoot,
+				userCosmonautsRoot,
+				event: {
+					scope: "user",
+					source: "main/cosmo",
+					action: "memory.saved",
+					outcome: "succeeded",
+					subject: { kind: "memory", id: "preference-42" },
+					summary: "Saved the user's review preference.",
+					details: "The preference remains human-readable after restart.",
+					tags: ["preferences"],
+					timestamp: "2026-07-21T13:00:00.000Z",
+				},
+				reportWarning,
+			}),
+		).resolves.toMatchObject({ kind: "recorded" });
+		expect(reportWarning).not.toHaveBeenCalled();
+
+		const freshStore: MemoryStore = createMarkdownMemoryStore({
+			projectRoot,
+			userCosmonautsRoot,
+		});
+		const retrieved = await freshStore.retrieve(
+			{ projectRoot, scopes: ["project", "user"] },
+			{ recordTypes: ["episode"] },
+		);
+
+		expect(retrieved.warnings).toEqual([]);
+		expect(retrieved.records).toHaveLength(2);
+		expect(retrieved.records[0]).toMatchObject({
+			type: "episode",
+			scope: "user",
+			kind: "episodic",
+			title: "Saved the user's review preference.",
+			description: "memory.saved succeeded for memory:preference-42.",
+			resource: expect.stringMatching(
+				/^memory\/agent\/episodes\/20260721T130000000Z-memory-saved-[a-f0-9]{8}\.md$/u,
+			),
+			tags: expect.arrayContaining([
+				"preferences",
+				"action:memory.saved",
+				"outcome:succeeded",
+				"subject:memory:preference-42",
+				"writer:cosmonauts",
+			]),
+			timestamp: "2026-07-21T13:00:00.000Z",
+			source: "main/cosmo",
+			content: expect.stringContaining(
+				"The preference remains human-readable after restart.",
+			),
+			path: expect.stringMatching(/episode-envelope-user.+episodes.+\.md$/u),
+		});
+		expect(retrieved.records[1]).toMatchObject({
+			type: "episode",
+			scope: "project",
+			kind: "episodic",
+			source: "example/worker",
+			timestamp: "2026-07-21T12:00:00.000Z",
+			content: expect.stringContaining("Started verification chain."),
+			path: expect.stringMatching(/episode-envelope-project.+episodes.+\.md$/u),
+		});
+
+		await writeArchitectureMap(projectRoot);
+		const architecture = createArchitectureMapMemoryStore({
+			projectRoot,
+			checkFreshness: async () => ({ kind: "current", hash: "episode-proof" }),
+		});
+		const architectureResult = await architecture.retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ recordTypes: ["code-structure-index"] },
+		);
+		expect(architectureResult.records[0]?.source).toBeUndefined();
+	});
+
 	test("stamps and parses the writer:cosmonauts provenance tag and leaves human episodes untagged @cosmo-behavior plan:episodic-log#B-004", async () => {
 		const machineDraft = createEpisodeRecord(
 			{
@@ -93,6 +193,59 @@ describe("memory interface", () => {
 		expect(parsedHuman).toMatchObject({ action: "chain.run" });
 		expect(parsedHuman).not.toHaveProperty("writer");
 
+		const projectRoot = join(tmp.path, "episode-provenance-project");
+		const writer = createMarkdownMemoryStore({ projectRoot });
+		const machineWrite = await writer.write(machineDraft);
+		expect(machineWrite).toMatchObject({ kind: "written" });
+		if (machineWrite.kind !== "written") {
+			throw new Error("expected machine episode write");
+		}
+		const humanPath = join(
+			projectRoot,
+			"memory",
+			"agent",
+			"episodes",
+			"20260721T130000000Z-chain-run-human.md",
+		);
+		await mkdir(join(humanPath, ".."), { recursive: true });
+		await writeFile(
+			humanPath,
+			matter.stringify("A human-authored episode remains recallable.", {
+				type: "episode",
+				title: "Human observation",
+				description: "chain.run observed for run:run-human.",
+				resource:
+					"memory/agent/episodes/20260721T130000000Z-chain-run-human.md",
+				tags: ["action:chain.run", "outcome:observed", "subject:run:run-human"],
+				timestamp: "2026-07-21T13:00:00.000Z",
+				scope: "project",
+				kind: "episodic",
+				source: "human/operator",
+			}),
+			"utf-8",
+		);
+
+		const freshStore = createMarkdownMemoryStore({ projectRoot });
+		const roundTrip = await freshStore.retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ recordTypes: ["episode"] },
+		);
+		const machineRoundTrip = roundTrip.records.find(
+			(record) => record.path === machineWrite.path,
+		);
+		const humanRoundTrip = roundTrip.records.find(
+			(record) => record.path === humanPath,
+		);
+		if (!machineRoundTrip || !humanRoundTrip) {
+			throw new Error("expected machine and human episode round trips");
+		}
+		expect(machineRoundTrip.tags).toContain("writer:cosmonauts");
+		expect(parseEpisodeRecord(machineRoundTrip)).toMatchObject({
+			writer: "cosmonauts",
+		});
+		expect(humanRoundTrip.tags).not.toContain("writer:cosmonauts");
+		expect(parseEpisodeRecord(humanRoundTrip)).not.toHaveProperty("writer");
+
 		const [recordSource, publicSource] = await Promise.all([
 			readFile(
 				join(process.cwd(), "lib", "memory", "episodic-records.ts"),
@@ -110,6 +263,104 @@ describe("memory interface", () => {
 			recordSource.split("\n").filter((line) => line.startsWith("import ")),
 		).toEqual([
 			'import type { MemoryRecordDraft, RetrievedMemoryRecord } from "./types.ts";',
+		]);
+	});
+
+	// @cosmo-behavior plan:episodic-log#B-005
+	test("reconstructs latest wake state from stable trigger payload outcome and timestamp fields", async () => {
+		const projectRoot = join(tmp.path, "wake-restart-project");
+		const writer = createMarkdownMemoryStore({ projectRoot });
+		const events = [
+			{
+				outcome: "failed",
+				subject: { kind: "trigger", id: "github:issue/42" },
+				payload: { kind: "job", id: "triage/github:issue/42" },
+				summary: "Wake attempt failed.",
+				details: "Attempt 1 failed before the job completed.",
+				timestamp: "2026-07-21T10:00:00.000Z",
+			},
+			{
+				outcome: "succeeded",
+				subject: { kind: "trigger", id: "schedule:daily" },
+				payload: { kind: "job", id: "maintenance/daily" },
+				summary: "Daily maintenance wake completed.",
+				details: "Attempt 1 completed for the other trigger.",
+				timestamp: "2026-07-21T12:00:00.000Z",
+			},
+			{
+				outcome: "succeeded",
+				subject: { kind: "trigger", id: "github:issue/42" },
+				payload: { kind: "job", id: "triage/github:issue/42" },
+				summary: "Wake retry completed.",
+				details: "Attempt 2 completed after restart-safe retry.",
+				timestamp: "2026-07-21T12:00:00.000Z",
+			},
+		] as const;
+
+		for (const event of events) {
+			await expect(
+				writer.write(
+					createEpisodeRecord(
+						{
+							scope: "project",
+							source: "autonomy/host",
+							action: "autonomy.wake",
+							...event,
+						},
+						event.timestamp,
+					),
+				),
+			).resolves.toMatchObject({ kind: "written" });
+		}
+
+		const freshStore = createMarkdownMemoryStore({ projectRoot });
+		const retrieved = await freshStore.retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ recordTypes: ["episode"] },
+		);
+		expect(retrieved.records.map((record) => record.timestamp)).toEqual([
+			"2026-07-21T12:00:00.000Z",
+			"2026-07-21T12:00:00.000Z",
+			"2026-07-21T10:00:00.000Z",
+		]);
+		const tiedPaths = retrieved.records
+			.slice(0, 2)
+			.map((record) => record.path);
+		expect(tiedPaths).toEqual(
+			[...tiedPaths].sort((a, b) => a.localeCompare(b)),
+		);
+
+		const matchingWakes = retrieved.records.filter((record) => {
+			const metadata = parseEpisodeRecord(record);
+			return (
+				record.source === "autonomy/host" &&
+				metadata?.action === "autonomy.wake" &&
+				metadata.outcome !== undefined &&
+				metadata.subject.kind === "trigger" &&
+				metadata.subject.id === "github:issue/42" &&
+				metadata.payload?.kind === "job" &&
+				metadata.payload.id === "triage/github:issue/42"
+			);
+		});
+		expect(matchingWakes).toHaveLength(2);
+		const latestWake = matchingWakes[0];
+		if (!latestWake) throw new Error("expected latest matching wake");
+		expect(latestWake).toMatchObject({
+			timestamp: "2026-07-21T12:00:00.000Z",
+			source: "autonomy/host",
+			content: expect.stringContaining(
+				"Attempt 2 completed after restart-safe retry.",
+			),
+		});
+		expect(parseEpisodeRecord(latestWake)).toEqual({
+			action: "autonomy.wake",
+			outcome: "succeeded",
+			subject: { kind: "trigger", id: "github:issue/42" },
+			payload: { kind: "job", id: "triage/github:issue/42" },
+			writer: "cosmonauts",
+		});
+		expect(await readdir(join(projectRoot, "memory", "agent"))).toEqual([
+			"episodes",
 		]);
 	});
 
@@ -700,6 +951,60 @@ describe("memory interface", () => {
 				expect(source, `${file} imports ${pattern}`).not.toContain(pattern);
 			}
 		}
+	});
+
+	test("keeps episodic storage config-free and disk-authoritative without prune or integrity APIs", async () => {
+		const memoryDir = join(process.cwd(), "lib", "memory");
+		const storageFiles = [
+			"authored-records.ts",
+			"episodic-records.ts",
+			"markdown-store.ts",
+			"okf.ts",
+			"paths.ts",
+			"types.ts",
+		] as const;
+		const sources = new Map(
+			await Promise.all(
+				storageFiles.map(
+					async (file) =>
+						[file, await readFile(join(memoryDir, file), "utf-8")] as const,
+				),
+			),
+		);
+		const forbiddenImports = [
+			"../config",
+			"@earendil-works/pi",
+			"../domains",
+			"../orchestration",
+			"../driver",
+			"../plans",
+			"../tasks",
+		];
+		for (const [file, source] of sources) {
+			for (const forbiddenImport of forbiddenImports) {
+				expect(source, `${file} imports ${forbiddenImport}`).not.toContain(
+					forbiddenImport,
+				);
+			}
+		}
+
+		const storeSource = sources.get("markdown-store.ts");
+		const episodicRecordSource = sources.get("episodic-records.ts");
+		if (!storeSource || !episodicRecordSource) {
+			throw new Error("expected episodic storage source fixtures");
+		}
+		expect(storeSource).not.toMatch(
+			/episode(?:Cache|Registry|CountMap)|latestWake|deleteEpisode|pruneEpisode|verifyEpisodeIntegrity/u,
+		);
+		expect(episodicRecordSource).not.toMatch(
+			/(?:sha-?256|integrity|safe.?prune|edit.?detect)/iu,
+		);
+		expect(storeSource).toContain('createHash("sha256")');
+		expect(storeSource).toContain("function episodeFileName");
+		const publicSource = await readFile(join(memoryDir, "index.ts"), "utf-8");
+		expect(publicSource).not.toMatch(
+			/deleteEpisode|pruneEpisode|verifyEpisode|safePrune/u,
+		);
 	});
 });
 

@@ -5,6 +5,7 @@ import {
 	readFile,
 	rm,
 	stat,
+	utimes,
 	writeFile,
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -12,6 +13,7 @@ import matter from "gray-matter";
 import { describe, expect, test } from "vitest";
 import {
 	canonicalizePlaybookName,
+	createEpisodeRecord,
 	createMarkdownMemoryStore,
 	PROFILE_WRITE_MAX_BYTES,
 } from "../../lib/memory/index.ts";
@@ -1451,6 +1453,394 @@ describe("markdown memory store", () => {
 			bytesRead: noteBytes + Buffer.byteLength(malformed, "utf-8"),
 		});
 		expect(result.stats?.durationMs).toBeGreaterThanOrEqual(0);
+	});
+
+	// @cosmo-behavior plan:episodic-log#B-006
+	test("writes append-only episode files without creating rewriting or entering index.md", async () => {
+		const projectRoot = join(tmp.path, "append-only-episode-project");
+		const userRoot = join(tmp.path, "append-only-episode-user");
+		const store = createMarkdownMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+		});
+		const initialNote = await store.write({
+			type: "note",
+			scope: "project",
+			kind: "semantic",
+			title: "Initial authored note",
+			description: "Creates the authored index before episode writes.",
+			content: "The authored index must stay byte-identical.",
+			tags: [],
+			timestamp: "2026-07-21T09:00:00.000Z",
+		});
+		expect(initialNote).toMatchObject({ kind: "written" });
+		const indexPath = join(projectRoot, "memory", "agent", "index.md");
+		const indexBeforeEpisodes = await readFile(indexPath, "utf-8");
+		const episode = createEpisodeRecord(
+			{
+				scope: "project",
+				source: "example/worker",
+				action: "task.status-changed",
+				outcome: "done",
+				subject: { kind: "task", id: "TASK-473" },
+				summary: "Completed episodic storage.",
+				details: "The episode is one atomic direct-child markdown file.",
+			},
+			"2026-07-21T14:00:00.000Z",
+		);
+
+		const first = await store.write(episode);
+		expect(first).toMatchObject({
+			kind: "written",
+			path: expect.stringMatching(
+				/episodes\/20260721T140000000Z-task-status-changed-[a-f0-9]{8}\.md$/u,
+			),
+		});
+		if (first.kind !== "written") throw new Error("expected episode write");
+		expect(dirname(first.path)).toBe(
+			join(projectRoot, "memory", "agent", "episodes"),
+		);
+		expect(await readFile(indexPath, "utf-8")).toBe(indexBeforeEpisodes);
+		expect(await readFile(first.path, "utf-8")).toContain(
+			"The episode is one atomic direct-child markdown file.",
+		);
+		expect(
+			(await readdir(dirname(first.path))).filter((name) =>
+				name.endsWith(".tmp"),
+			),
+		).toEqual([]);
+
+		const pinnedMtime = new Date("2001-01-01T00:00:00.000Z");
+		await utimes(first.path, pinnedMtime, pinnedMtime);
+		const identical = await store.write(episode);
+		expect(identical).toMatchObject({ kind: "written", path: first.path });
+		expect((await stat(first.path)).mtimeMs).toBe(pinnedMtime.valueOf());
+		expect(
+			(await readdir(dirname(first.path))).filter((name) =>
+				name.endsWith(".md"),
+			),
+		).toHaveLength(1);
+
+		const collidingEpisode = createEpisodeRecord(
+			{
+				scope: "project",
+				source: "example/worker",
+				action: "task.status-changed",
+				outcome: "started",
+				subject: { kind: "task", id: "TASK-474" },
+				summary: "Started the next task.",
+			},
+			"2026-07-21T15:00:00.000Z",
+		);
+		const collisionBase = await store.write(collidingEpisode);
+		if (collisionBase.kind !== "written") {
+			throw new Error("expected collision fixture write");
+		}
+		const nonIdenticalOccupant =
+			"Human-owned non-identical occupant must never be replaced.\n";
+		await writeFile(collisionBase.path, nonIdenticalOccupant, "utf-8");
+		const collisionSafeWrite = await store.write(collidingEpisode);
+		expect(collisionSafeWrite).toMatchObject({ kind: "written" });
+		if (collisionSafeWrite.kind !== "written") {
+			throw new Error("expected collision-safe episode write");
+		}
+		expect(collisionSafeWrite.path).not.toBe(collisionBase.path);
+		expect(await readFile(collisionBase.path, "utf-8")).toBe(
+			nonIdenticalOccupant,
+		);
+		expect(dirname(collisionSafeWrite.path)).toBe(dirname(collisionBase.path));
+		expect(await readFile(indexPath, "utf-8")).toBe(indexBeforeEpisodes);
+
+		const userEpisode = createEpisodeRecord(
+			{
+				scope: "user",
+				source: "main/cosmo",
+				action: "memory.saved",
+				outcome: "succeeded",
+				subject: { kind: "memory", id: "preference-7" },
+				summary: "Saved a user preference.",
+			},
+			"2026-07-21T16:00:00.000Z",
+		);
+		await expect(store.write(userEpisode)).resolves.toMatchObject({
+			kind: "written",
+		});
+		await expect(
+			stat(join(userRoot, "memory", "agent", "index.md")),
+		).rejects.toMatchObject({ code: "ENOENT" });
+
+		const episodeFilesBeforeAuthoredSave = await Promise.all(
+			(await readdir(dirname(first.path)))
+				.filter((name) => name.endsWith(".md"))
+				.map(
+					async (name) =>
+						[
+							name,
+							await readFile(join(dirname(first.path), name), "utf-8"),
+						] as const,
+				),
+		);
+		await expect(
+			store.write({
+				type: "note",
+				scope: "project",
+				kind: "semantic",
+				title: "Later authored note",
+				description: "Regenerates only the authored index.",
+				content: "Episodes stay outside the authored index.",
+				tags: [],
+				timestamp: "2026-07-21T17:00:00.000Z",
+			}),
+		).resolves.toMatchObject({ kind: "written" });
+		const regeneratedIndex = await readFile(indexPath, "utf-8");
+		expect(regeneratedIndex).not.toContain("episodes/");
+		expect(regeneratedIndex).not.toContain("Completed episodic storage");
+		await expect(
+			Promise.all(
+				episodeFilesBeforeAuthoredSave.map(
+					async ([name]) =>
+						[
+							name,
+							await readFile(join(dirname(first.path), name), "utf-8"),
+						] as const,
+				),
+			),
+		).resolves.toEqual(episodeFilesBeforeAuthoredSave);
+	});
+
+	// @cosmo-behavior plan:episodic-log#B-007
+	test("scans episodes only when recordTypes explicitly includes episode", async () => {
+		const projectRoot = join(tmp.path, "conditional-episode-scan-project");
+		const store = createMarkdownMemoryStore({ projectRoot });
+		const noteWrite = await store.write({
+			type: "note",
+			scope: "project",
+			kind: "semantic",
+			title: "Authored scan sentinel",
+			description: "The authored-only query reads only this record.",
+			content: "Episode files must add no authored-only scan cost.",
+			tags: [],
+			timestamp: "2026-07-21T10:00:00.000Z",
+		});
+		if (noteWrite.kind !== "written") throw new Error("expected note write");
+		const episodeWrite = await store.write(
+			createEpisodeRecord(
+				{
+					scope: "project",
+					source: "example/worker",
+					action: "chain.run",
+					outcome: "succeeded",
+					subject: { kind: "run", id: "run-conditional-scan" },
+					summary: "Conditional scan completed.",
+				},
+				"2026-07-21T11:00:00.000Z",
+			),
+		);
+		if (episodeWrite.kind !== "written") {
+			throw new Error("expected episode write");
+		}
+		const malformedPath = join(dirname(episodeWrite.path), "malformed.md");
+		const malformed = "not an OKF episode\n";
+		await writeFile(malformedPath, malformed, "utf-8");
+		const noteBytes = Buffer.byteLength(
+			await readFile(noteWrite.path, "utf-8"),
+			"utf-8",
+		);
+
+		const authoredOnly = await store.retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ recordTypes: ["note"] },
+		);
+		expect(authoredOnly.records.map((record) => record.type)).toEqual(["note"]);
+		expect(authoredOnly.warnings).toEqual([]);
+		expect(authoredOnly.stats).toMatchObject({
+			filesScanned: 1,
+			bytesRead: noteBytes,
+		});
+
+		const withEpisodes = await store.retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ recordTypes: ["episode"] },
+		);
+		expect(withEpisodes.records).toHaveLength(1);
+		expect(withEpisodes.records[0]).toMatchObject({
+			type: "episode",
+			path: episodeWrite.path,
+		});
+		expect(withEpisodes.warnings).toEqual([
+			{
+				path: malformedPath,
+				message: "Memory record is missing required OKF frontmatter.",
+			},
+		]);
+		expect(withEpisodes.stats).toMatchObject({
+			filesScanned: 3,
+			bytesRead:
+				noteBytes +
+				Buffer.byteLength(await readFile(episodeWrite.path, "utf-8"), "utf-8") +
+				Buffer.byteLength(malformed, "utf-8"),
+		});
+
+		await rm(episodeWrite.path);
+		const afterDeletion = await store.retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ recordTypes: ["episode"] },
+		);
+		expect(afterDeletion.records).toEqual([]);
+		expect(afterDeletion.warnings.map((warning) => warning.path)).toEqual([
+			malformedPath,
+		]);
+	});
+
+	// @cosmo-behavior plan:episodic-log#B-008
+	test("binds default and overridden episode thresholds into fresh-store stats and warnings", async () => {
+		const defaultRoot = join(tmp.path, "default-episode-threshold-project");
+		const defaultEpisodesDir = join(defaultRoot, "memory", "agent", "episodes");
+		await mkdir(defaultEpisodesDir, { recursive: true });
+		const defaultContents = Array.from(
+			{ length: 500 },
+			(_, index) => `malformed episode ${index}\n`,
+		);
+		await Promise.all(
+			defaultContents.map((content, index) =>
+				writeFile(
+					join(
+						defaultEpisodesDir,
+						`malformed-${String(index).padStart(3, "0")}.md`,
+					),
+					content,
+					"utf-8",
+				),
+			),
+		);
+
+		const atDefaultThreshold = await createMarkdownMemoryStore({
+			projectRoot: defaultRoot,
+		}).retrieve(
+			{ projectRoot: defaultRoot, scopes: ["project"] },
+			{ recordTypes: ["episode"] },
+		);
+		expect(
+			atDefaultThreshold.warnings.filter((warning) =>
+				warning.message.startsWith("episode log large"),
+			),
+		).toEqual([]);
+		expect(atDefaultThreshold.stats).toMatchObject({
+			filesScanned: 500,
+			bytesRead: defaultContents.reduce(
+				(total, content) => total + Buffer.byteLength(content, "utf-8"),
+				0,
+			),
+		});
+
+		const aboveDefaultContent = "malformed episode 500\n";
+		await writeFile(
+			join(defaultEpisodesDir, "malformed-500.md"),
+			aboveDefaultContent,
+			"utf-8",
+		);
+		const aboveDefaultThreshold = await createMarkdownMemoryStore({
+			projectRoot: defaultRoot,
+		}).retrieve(
+			{ projectRoot: defaultRoot, scopes: ["project"] },
+			{ recordTypes: ["episode"] },
+		);
+		expect(
+			aboveDefaultThreshold.warnings.filter((warning) =>
+				warning.message.startsWith("episode log large"),
+			),
+		).toEqual([
+			{
+				path: defaultEpisodesDir,
+				message: "episode log large — 501 records; run consolidation",
+			},
+		]);
+		expect(aboveDefaultThreshold.stats).toMatchObject({
+			filesScanned: 501,
+			bytesRead:
+				defaultContents.reduce(
+					(total, content) => total + Buffer.byteLength(content, "utf-8"),
+					0,
+				) + Buffer.byteLength(aboveDefaultContent, "utf-8"),
+		});
+
+		const overriddenRoot = join(tmp.path, "overridden-threshold-project");
+		const overriddenUserRoot = join(tmp.path, "overridden-threshold-user");
+		const writer = createMarkdownMemoryStore({
+			projectRoot: overriddenRoot,
+			userCosmonautsRoot: overriddenUserRoot,
+			episodeWarningThreshold: 1,
+		});
+		const valid = await writer.write(
+			createEpisodeRecord(
+				{
+					scope: "project",
+					source: "example/worker",
+					action: "chain.run",
+					outcome: "succeeded",
+					subject: { kind: "run", id: "run-threshold" },
+					summary: "Threshold fixture completed.",
+				},
+				"2026-07-21T18:00:00.000Z",
+			),
+		);
+		if (valid.kind !== "written") throw new Error("expected episode write");
+		const projectMalformed = "project malformed episode\n";
+		await writeFile(
+			join(dirname(valid.path), "malformed.md"),
+			projectMalformed,
+			"utf-8",
+		);
+		const userEpisodesDir = join(
+			overriddenUserRoot,
+			"memory",
+			"agent",
+			"episodes",
+		);
+		await mkdir(userEpisodesDir, { recursive: true });
+		const userMalformed = "user malformed episode\n";
+		await writeFile(
+			join(userEpisodesDir, "malformed.md"),
+			userMalformed,
+			"utf-8",
+		);
+
+		const restartedOverrideStore = createMarkdownMemoryStore({
+			projectRoot: overriddenRoot,
+			userCosmonautsRoot: overriddenUserRoot,
+			episodeWarningThreshold: 1,
+		});
+		const overridden = await restartedOverrideStore.retrieve(
+			{ projectRoot: overriddenRoot, scopes: ["project", "user"] },
+			{ recordTypes: ["episode"] },
+		);
+		expect(
+			overridden.warnings.filter((warning) =>
+				warning.message.startsWith("episode log large"),
+			),
+		).toEqual([
+			{
+				path: dirname(valid.path),
+				message: "episode log large — 2 records; run consolidation",
+			},
+		]);
+		expect(overridden.stats).toMatchObject({
+			filesScanned: 3,
+			bytesRead:
+				Buffer.byteLength(await readFile(valid.path, "utf-8"), "utf-8") +
+				Buffer.byteLength(projectMalformed, "utf-8") +
+				Buffer.byteLength(userMalformed, "utf-8"),
+		});
+
+		const authoredOnly = await restartedOverrideStore.retrieve(
+			{ projectRoot: overriddenRoot, scopes: ["project", "user"] },
+			{ recordTypes: ["note", "profile", "playbook"] },
+		);
+		expect(authoredOnly.warnings).toEqual([]);
+		expect(authoredOnly.stats).toMatchObject({
+			filesScanned: 0,
+			bytesRead: 0,
+		});
 	});
 
 	test("keeps one previous profile version in a sidecar the store never lists", async () => {
