@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { executeChainExpression } from "../../cli/chain-execution.ts";
 import { registerChainTool } from "../../domains/shared/extensions/orchestration/chain-tool.ts";
+import { recordEpisode } from "../../lib/memory/episode.ts";
 import type {
 	ChainConfig,
 	ChainResult,
@@ -19,6 +21,8 @@ vi.mock("../../lib/orchestration/chain-parser.ts", () => ({
 
 vi.mock("../../lib/orchestration/chain-runner.ts", () => ({
 	runChain: chainMocks.runChain,
+	derivePlanSlug: vi.fn(),
+	injectUserPrompt: vi.fn(),
 }));
 
 vi.mock("../../lib/orchestration/durable-chain-runner.ts", () => ({
@@ -93,6 +97,97 @@ describe("chain_run observation surface", () => {
 		expect(response.details.result.run).toBeUndefined();
 		expect(chainMocks.runChain).toHaveBeenCalledTimes(1);
 		expect(chainMocks.runDurableChain).not.toHaveBeenCalled();
+	});
+
+	test("includes fail-soft episode warnings in final chain tool content @cosmo-behavior plan:episodic-log#B-025", async () => {
+		const durableSteps: ChainStep[] = [{ name: "planner", loop: false }];
+		const durableResult = chainResult({
+			runId: "chain-warning-run",
+			scope: "chain",
+		});
+		const warning = {
+			path: "/tmp/orchestration-chain-tool-observation/memory",
+			message: "Episode capture skipped: disk unavailable.",
+		};
+		chainMocks.parseChain.mockReturnValue(durableSteps);
+		chainMocks.runDurableChain.mockImplementation(
+			async (config: ChainConfig) => {
+				expect(config.reportEpisodeWarning).toEqual(expect.any(Function));
+				await config.reportEpisodeWarning?.(warning);
+				await config.reportEpisodeWarning?.(warning);
+				return durableResult;
+			},
+		);
+		const pi = createMockPi(PROJECT_ROOT);
+		registerChainTool(pi as never, runtimeFor());
+
+		const response = (await pi.callTool("chain_run", {
+			expression: "planner",
+		})) as {
+			content: { type: "text"; text: string }[];
+			details: ChainRunToolDetails;
+		};
+
+		expect(response.details.result).toEqual(durableResult);
+		expect(response.content[0]?.text).toContain("Chain completed");
+		expect(response.content[0]?.text).toContain(
+			"Non-fatal episode warning: /tmp/orchestration-chain-tool-observation/memory: Episode capture skipped: disk unavailable.",
+		);
+		expect(
+			response.content[0]?.text.match(/Non-fatal episode warning:/gu),
+		).toHaveLength(1);
+		expect(
+			response.content[0]?.text.match(/Episode capture skipped/gu),
+		).toHaveLength(1);
+		expect(JSON.stringify(response.details)).not.toContain(
+			"Episode capture skipped",
+		);
+
+		const stderr: string[] = [];
+		chainMocks.runDurableChain.mockImplementation(
+			async (config: ChainConfig) => {
+				expect(config.reportEpisodeWarning).toBeUndefined();
+				await recordEpisode({
+					projectRoot: PROJECT_ROOT,
+					event: {
+						scope: "project",
+						source: "coding/planner",
+						action: "chain.run",
+						outcome: "started",
+						subject: { kind: "chain", id: "chain-cli-warning" },
+						summary: "Started CLI warning fallback chain.",
+						timestamp: "2026-07-21T12:00:00.000Z",
+					},
+					reportWarning: config.reportEpisodeWarning,
+					dependencies: {
+						loadConfig: async () => ({
+							episodicLog: { enabled: true },
+						}),
+						createStore: () =>
+							({
+								write: async () => ({
+									kind: "failed",
+									reason: "disk unavailable ".repeat(100),
+								}),
+							}) as never,
+						writeStderr: (message) => stderr.push(message),
+					},
+				});
+				return durableResult;
+			},
+		);
+		const runtime = await runtimeFor()();
+		await expect(
+			executeChainExpression({
+				runtime,
+				options: { piFlags: {} },
+				cwd: PROJECT_ROOT,
+				chainExpr: "planner",
+			}),
+		).resolves.toEqual(durableResult);
+		expect(stderr).toHaveLength(1);
+		expect(stderr[0]).toMatch(/^\[warning\] Episode capture skipped:/u);
+		expect(stderr[0]?.length).toBeLessThanOrEqual(512);
 	});
 });
 

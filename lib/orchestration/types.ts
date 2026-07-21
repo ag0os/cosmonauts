@@ -5,6 +5,7 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { AgentRegistry } from "../agents/resolver.ts";
 import type { ResolvedAgentReference } from "../domains/bindings.ts";
+import type { EpisodeWarningReporter } from "../memory/episode.ts";
 
 // ============================================================================
 // Agent Roles
@@ -126,6 +127,8 @@ export interface ChainConfig {
 	signal?: AbortSignal;
 	/** Callback for progress events */
 	onEvent?: (event: ChainEvent) => void;
+	/** Optional awaitable transport for non-fatal episode capture warnings. */
+	reportEpisodeWarning?: EpisodeWarningReporter;
 	/** Global safety cap: max total iterations across all loop stages (default: 50) */
 	maxTotalIterations?: number;
 	/** Global safety cap: timeout in milliseconds (default: 30 minutes) */

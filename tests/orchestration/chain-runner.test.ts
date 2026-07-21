@@ -4,12 +4,14 @@
  * createDefaultCompletionCheck (with real task system), and event emission.
  */
 
-import { mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
+import { parseEpisodeRecord } from "../../lib/memory/episodic-records.ts";
+import { createMarkdownMemoryStore } from "../../lib/memory/markdown-store.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import {
 	createDefaultCompletionCheck,
@@ -143,6 +145,34 @@ function makeConfig(
 		registry: defaultRegistry,
 		...overrides,
 	};
+}
+
+async function writeEpisodicConfig(
+	projectRoot: string,
+	enabled: boolean,
+): Promise<void> {
+	const configDir = join(projectRoot, ".cosmonauts");
+	await mkdir(configDir, { recursive: true });
+	await writeFile(
+		join(configDir, "config.json"),
+		JSON.stringify({ episodicLog: { enabled } }),
+		"utf-8",
+	);
+}
+
+async function readProjectChainEpisodes(projectRoot: string) {
+	const records = (
+		await createMarkdownMemoryStore({ projectRoot }).retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ text: "", recordTypes: ["episode"] },
+		)
+	).records;
+
+	return records.map((record) => {
+		const metadata = parseEpisodeRecord(record);
+		if (!metadata) throw new Error(`Invalid episode record: ${record.path}`);
+		return { ...metadata, source: record.source };
+	});
 }
 
 describe("getDefaultStagePrompt", () => {
@@ -1122,6 +1152,10 @@ describe("runChain", () => {
 		spawnerRef.current = createMockSpawner();
 	});
 
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
 	test("sequential one-shot stages succeed", async () => {
 		const stages = [
 			makeStage("planner", false),
@@ -1206,6 +1240,228 @@ describe("runChain", () => {
 			expect(await readdir(projectRoot)).toEqual([]);
 		} finally {
 			await rm(projectRoot, { recursive: true, force: true });
+		}
+	});
+
+	test("records exactly one fail-soft inline chain start and terminal episode across exit paths @cosmo-behavior plan:episodic-log#B-015", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-07-21T12:00:00.000Z"));
+		const subjects = new Set<string>();
+		const cases = [
+			{
+				name: "success",
+				expectedOutcome: "succeeded",
+				spawner: (_controller: AbortController) => createMockSpawner(),
+			},
+			{
+				name: "failure",
+				expectedOutcome: "failed",
+				spawner: (_controller: AbortController) =>
+					createMockSpawner([
+						{
+							success: false,
+							sessionId: "failed-session",
+							messages: [],
+							error: "stage failed",
+						},
+					]),
+			},
+			{
+				name: "abort",
+				expectedOutcome: "aborted",
+				spawner: (controller: AbortController) => ({
+					spawn: vi.fn(async () => {
+						controller.abort();
+						return {
+							success: true,
+							sessionId: "aborted-session",
+							messages: [],
+						};
+					}),
+					dispose: vi.fn(),
+				}),
+			},
+			{
+				name: "throw",
+				expectedOutcome: "failed",
+				spawner: (_controller: AbortController) => ({
+					...createMockSpawner(),
+					dispose: vi.fn(() => {
+						throw new Error("dispose exploded");
+					}),
+				}),
+			},
+		] as const;
+
+		for (const testCase of cases) {
+			const projectRoot = await mkdtemp(
+				join(tmpdir(), `chain-episode-${testCase.name}-`),
+			);
+			const controller = new AbortController();
+			await writeEpisodicConfig(projectRoot, true);
+			spawnerRef.current = testCase.spawner(controller);
+
+			try {
+				const execution = runChain(
+					makeConfig([makeStage("planner", false)], {
+						projectRoot,
+						signal: controller.signal,
+					}),
+				);
+				if (testCase.name === "throw") {
+					await expect(execution).rejects.toThrow("dispose exploded");
+				} else {
+					const result = await execution;
+					expect(result.success).toBe(testCase.name === "success");
+				}
+
+				const episodes = await readProjectChainEpisodes(projectRoot);
+				expect(episodes).toHaveLength(2);
+				expect(episodes.map((episode) => episode.outcome).sort()).toEqual(
+					["started", testCase.expectedOutcome].sort(),
+				);
+				expect(episodes.map((episode) => episode.action)).toEqual([
+					"chain.run",
+					"chain.run",
+				]);
+				expect(new Set(episodes.map((episode) => episode.subject.id))).toEqual(
+					new Set([episodes[0]?.subject.id]),
+				);
+				expect(episodes[0]?.subject).toMatchObject({
+					kind: "chain",
+					id: expect.stringMatching(/^chain-/u),
+				});
+				expect(episodes.map((episode) => episode.source)).toEqual([
+					"coding/planner",
+					"coding/planner",
+				]);
+				if (episodes[0]) subjects.add(episodes[0].subject.id);
+			} finally {
+				await rm(projectRoot, { recursive: true, force: true });
+			}
+		}
+		expect(subjects.size).toBe(cases.length);
+
+		const groupRoot = await mkdtemp(join(tmpdir(), "chain-episode-group-"));
+		const fallbackRoot = await mkdtemp(
+			join(tmpdir(), "chain-episode-group-fallback-"),
+		);
+		try {
+			await writeEpisodicConfig(groupRoot, true);
+			spawnerRef.current = {
+				spawn: vi.fn(async (config) => {
+					const sessionId = `session-${config.role}`;
+					config.onEvent?.({ type: "turn_start", sessionId });
+					config.onEvent?.({
+						type: "tool_execution_start",
+						sessionId,
+						toolName: "read",
+						toolCallId: `tool-${config.role}`,
+					});
+					config.onEvent?.({
+						type: "tool_execution_end",
+						sessionId,
+						toolName: "read",
+						toolCallId: `tool-${config.role}`,
+						isError: false,
+					});
+					config.onEvent?.({ type: "turn_end", sessionId });
+					return { success: true, sessionId, messages: [] };
+				}),
+				dispose: vi.fn(),
+			};
+			await runChain(
+				makeConfig(
+					parseChain("[planner, reviewer] -> task-manager", defaultRegistry),
+					{ projectRoot: groupRoot, onEvent: () => {} },
+				),
+			);
+			const groupEpisodes = await readProjectChainEpisodes(groupRoot);
+			expect(groupEpisodes).toHaveLength(2);
+			expect(groupEpisodes.map((episode) => episode.source)).toEqual([
+				"coding/planner",
+				"coding/planner",
+			]);
+
+			await writeEpisodicConfig(fallbackRoot, true);
+			spawnerRef.current = createMockSpawner();
+			await runChain(
+				makeConfig(
+					[
+						{
+							kind: "parallel",
+							stages: [
+								makeStage("unresolved-first", false),
+								makeStage("reviewer", false),
+							],
+							syntax: { kind: "group" },
+						},
+					],
+					{ projectRoot: fallbackRoot },
+				),
+			);
+			const fallbackEpisodes = await readProjectChainEpisodes(fallbackRoot);
+			expect(fallbackEpisodes).toHaveLength(2);
+			expect(fallbackEpisodes.map((episode) => episode.source)).toEqual([
+				"unresolved-first",
+				"unresolved-first",
+			]);
+		} finally {
+			await Promise.all([
+				rm(groupRoot, { recursive: true, force: true }),
+				rm(fallbackRoot, { recursive: true, force: true }),
+			]);
+		}
+
+		const baselineRoot = await mkdtemp(
+			join(tmpdir(), "chain-episode-capture-baseline-"),
+		);
+		const captureFailureRoot = await mkdtemp(
+			join(tmpdir(), "chain-episode-capture-failure-"),
+		);
+		try {
+			spawnerRef.current = createMockSpawner();
+			const baselineEvents: ChainEvent[] = [];
+			const baseline = await runChain(
+				makeConfig([makeStage("planner", false)], {
+					projectRoot: baselineRoot,
+					onEvent: (event) => baselineEvents.push(event),
+				}),
+			);
+
+			await writeEpisodicConfig(captureFailureRoot, true);
+			await writeFile(join(captureFailureRoot, "memory"), "path collision");
+			const warnings: unknown[] = [];
+			const failureEvents: ChainEvent[] = [];
+			spawnerRef.current = createMockSpawner();
+			const withCaptureFailure = await runChain(
+				makeConfig([makeStage("planner", false)], {
+					projectRoot: captureFailureRoot,
+					onEvent: (event) => failureEvents.push(event),
+					reportEpisodeWarning: async (warning) => {
+						await Promise.resolve();
+						warnings.push(warning);
+					},
+				}),
+			);
+
+			expect(withCaptureFailure).toEqual(baseline);
+			expect(failureEvents).toEqual(baselineEvents);
+			expect(warnings).toHaveLength(2);
+			expect(warnings).toEqual([
+				expect.objectContaining({
+					message: expect.stringContaining("Episode capture skipped"),
+				}),
+				expect.objectContaining({
+					message: expect.stringContaining("Episode capture skipped"),
+				}),
+			]);
+		} finally {
+			await Promise.all([
+				rm(baselineRoot, { recursive: true, force: true }),
+				rm(captureFailureRoot, { recursive: true, force: true }),
+			]);
+			vi.useRealTimers();
 		}
 	});
 

@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { extractAgentIdFromSystemPrompt } from "../../../../lib/agents/runtime-identity.ts";
+import type { MemoryWarning } from "../../../../lib/memory/types.ts";
 import { parseChain } from "../../../../lib/orchestration/chain-parser.ts";
 import { runChain } from "../../../../lib/orchestration/chain-runner.ts";
 import { injectUserPrompt } from "../../../../lib/orchestration/chain-steps.ts";
@@ -43,7 +44,10 @@ interface ChainProgressDetails {
  * one line per stage carrying its outcome and a condensed summary of the stage
  * agent's final message. This is what ran, not the work product itself.
  */
-function buildChainResultText(result: ChainResult): string {
+function buildChainResultText(
+	result: ChainResult,
+	episodeWarnings: readonly string[],
+): string {
 	const header = `Chain ${result.success ? "completed" : "failed"} (${formatDuration(result.totalDurationMs)}) · ${result.stageResults.length} stage${result.stageResults.length === 1 ? "" : "s"}`;
 
 	const stageLines = result.stageResults.map((s) => {
@@ -62,7 +66,13 @@ function buildChainResultText(result: ChainResult): string {
 		...stageLines,
 		"",
 		"Stage lines are the agents' final messages, not the changes — check task_list and git log for the actual state.",
+		...(episodeWarnings.length > 0 ? ["", ...episodeWarnings] : []),
 	].join("\n");
+}
+
+function formatEpisodeWarning(warning: MemoryWarning): string {
+	const location = warning.path ? `${warning.path}: ` : "";
+	return `Non-fatal episode warning: ${location}${warning.message}`;
 }
 
 // ============================================================================
@@ -129,6 +139,7 @@ export function registerChainTool(
 				: undefined;
 
 			const progressLines: string[] = [];
+			const episodeWarnings = new Set<string>();
 
 			const chainConfig = {
 				signal,
@@ -144,6 +155,9 @@ export function registerChainTool(
 				registry: runtime.agentRegistry,
 				domainsDir: runtime.domainsDir,
 				resolver: runtime.domainResolver,
+				reportEpisodeWarning: async (warning: MemoryWarning) => {
+					episodeWarnings.add(formatEpisodeWarning(warning));
+				},
 				onEvent: (event: ChainEvent) => {
 					const line = chainEventToProgressLine(event);
 					if (line) {
@@ -177,7 +191,7 @@ export function registerChainTool(
 				content: [
 					{
 						type: "text" as const,
-						text: buildChainResultText(result),
+						text: buildChainResultText(result, [...episodeWarnings]),
 					},
 				],
 				details: {

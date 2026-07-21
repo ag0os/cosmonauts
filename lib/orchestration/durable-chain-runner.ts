@@ -18,6 +18,11 @@ import {
 	summarizeAssistantText,
 } from "./assistant-text.ts";
 import {
+	chainTerminalOutcome,
+	createDurableChainEpisodeLifecycle,
+	recordChainEpisode,
+} from "./chain-episodes.ts";
+import {
 	adaptDurableChainEvents,
 	type ChainAgentEvidenceDetails,
 } from "./chain-event-adapter.ts";
@@ -65,6 +70,27 @@ export async function runDurableChain(
 	}
 
 	const runId = `chain-${randomUUID()}`;
+	const lifecycle = createDurableChainEpisodeLifecycle(config, runId);
+	await recordChainEpisode(lifecycle, "started");
+
+	try {
+		const result = await executeDurableChain(config, runId);
+		await recordChainEpisode(
+			lifecycle,
+			chainTerminalOutcome(result.success, config.signal?.aborted === true),
+			result.errors.length > 0 ? result.errors.join("\n") : undefined,
+		);
+		return result;
+	} catch (error: unknown) {
+		await recordChainEpisode(lifecycle, "failed", errorReason(error));
+		throw error;
+	}
+}
+
+async function executeDurableChain(
+	config: ChainConfig,
+	runId: string,
+): Promise<ChainResult> {
 	const ref: RunRef = { scope: CHAIN_RUN_SCOPE, runId };
 	const store = new FileRunStore({
 		rootDir: join(config.projectRoot, "missions", "sessions"),
@@ -152,6 +178,10 @@ export async function runDurableChain(
 		...reconstructed.result,
 		run: { runId, scope: CHAIN_RUN_SCOPE },
 	};
+}
+
+function errorReason(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }
 
 interface ChainSchedulerBackendOptions {

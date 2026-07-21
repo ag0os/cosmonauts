@@ -12,6 +12,11 @@ import {
 	extractAssistantText,
 	summarizeAssistantText,
 } from "./assistant-text.ts";
+import {
+	chainTerminalOutcome,
+	createInlineChainEpisodeLifecycle,
+	recordChainEpisode,
+} from "./chain-episodes.ts";
 import { isParallelGroupStep } from "./chain-steps.ts";
 import { getModelForRole, getThinkingForRole } from "./model-resolution.ts";
 import { buildStagePrompt, resolvePlanSlug } from "./stage-prompts.ts";
@@ -399,6 +404,24 @@ function finalizeChainResult(
  * caps (maxTotalIterations, timeoutMs).
  */
 export async function runChain(config: ChainConfig): Promise<ChainResult> {
+	const lifecycle = createInlineChainEpisodeLifecycle(config);
+	await recordChainEpisode(lifecycle, "started");
+
+	try {
+		const result = await executeChain(config);
+		await recordChainEpisode(
+			lifecycle,
+			chainTerminalOutcome(result.success, config.signal?.aborted === true),
+			result.errors.length > 0 ? result.errors.join("\n") : undefined,
+		);
+		return result;
+	} catch (error: unknown) {
+		await recordChainEpisode(lifecycle, "failed", errorReason(error));
+		throw error;
+	}
+}
+
+async function executeChain(config: ChainConfig): Promise<ChainResult> {
 	const state = createChainExecutionState(config);
 	const chainStart = state.chainStart;
 	const spawner = createPiSpawner(config.registry, resolveDomainsDir(config), {
@@ -425,6 +448,10 @@ export async function runChain(config: ChainConfig): Promise<ChainResult> {
 	emit(config, { type: "chain_end", result: chainResult });
 
 	return chainResult;
+}
+
+function errorReason(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }
 
 // ============================================================================
