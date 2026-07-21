@@ -4,12 +4,16 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import "./orchestration-mocks.ts";
 import { registerDriverTool } from "../../domains/shared/extensions/orchestration/driver-tool.ts";
+import { AgentRegistry } from "../../lib/agents/index.ts";
+import type { AgentDefinition } from "../../lib/agents/types.ts";
 import type { DriverDeps } from "../../lib/driver/driver.ts";
+import { resolveDriveEpisodeWorker } from "../../lib/driver/episode-identity.ts";
 import type {
 	DriverHandle,
 	DriverResult,
 	DriverRunSpec,
 } from "../../lib/driver/types.ts";
+import type { CosmonautsRuntime } from "../../lib/runtime.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import { createMockPi } from "./orchestration-helpers.ts";
@@ -113,9 +117,104 @@ describe("run_driver detached mode", () => {
 			backendName: "codex",
 			commitPolicy: "no-commit",
 		});
+		expect(spec).not.toHaveProperty("episodeSource");
+		expect(spec).not.toHaveProperty("episodeAttemptId");
 		expect(deps.backend.name).toBe("codex");
 		expect(existsSync(spec.workdir)).toBe(false);
 		expect(existsSync(join(spec.workdir, "spec.json"))).toBe(false);
+	});
+
+	test("keeps false-config detached specs free of episode metadata and runtime resolution", async () => {
+		const fixture = await setupFixture("disabled-false");
+		await writeEpisodicConfig(fixture.projectRoot, false);
+		const pi = createMockPi(fixture.projectRoot, {
+			sessionId: PARENT_SESSION_ID,
+		});
+		const getRuntime = vi.fn();
+		registerDriverTool(pi as never, getRuntime as never, fixture.projectRoot);
+
+		await pi.callTool("run_driver", {
+			planSlug: fixture.planSlug,
+			taskIds: fixture.taskIds,
+			backend: "claude-cli",
+			mode: "detached",
+			envelopePath: fixture.envelopePath,
+			commitPolicy: "no-commit",
+		});
+
+		const [spec] = driverMocks.startDetached.mock.calls[0] as [
+			DriverRunSpec,
+			DriverDeps,
+		];
+		expect(spec).not.toHaveProperty("episodeSource");
+		expect(spec).not.toHaveProperty("episodeAttemptId");
+		expect(getRuntime).not.toHaveBeenCalled();
+		expect(existsSync(join(fixture.projectRoot, "memory", "agent"))).toBe(
+			false,
+		);
+	});
+
+	test("freezes enabled detached Codex and Claude specs from bound Pi runtimes", async () => {
+		const cases = [
+			{
+				name: "default",
+				domainContext: undefined,
+				targetDomain: "coding",
+				backend: "codex",
+			},
+			{
+				name: "main",
+				domainContext: "main",
+				targetDomain: "coding",
+				backend: "claude-cli",
+			},
+			{
+				name: "project-bound",
+				domainContext: "coding",
+				targetDomain: "project-coding",
+				backend: "codex",
+			},
+			{
+				name: "live-bound",
+				domainContext: "coding",
+				targetDomain: "live-coding",
+				backend: "claude-cli",
+			},
+		] as const;
+
+		for (const testCase of cases) {
+			const fixture = await setupFixture(`enabled-${testCase.name}`);
+			await writeEpisodicConfig(fixture.projectRoot, true);
+			const runtime = workerRuntime(
+				testCase.domainContext,
+				testCase.targetDomain,
+			);
+			const getRuntime = vi.fn(async () => runtime as CosmonautsRuntime);
+			const pi = createMockPi(fixture.projectRoot, {
+				sessionId: PARENT_SESSION_ID,
+			});
+			registerDriverTool(pi as never, getRuntime as never, fixture.projectRoot);
+
+			await pi.callTool("run_driver", {
+				planSlug: fixture.planSlug,
+				taskIds: fixture.taskIds,
+				backend: testCase.backend,
+				mode: "detached",
+				envelopePath: fixture.envelopePath,
+				commitPolicy: "no-commit",
+			});
+
+			const call = driverMocks.startDetached.mock.calls.at(-1);
+			const spec = call?.[0];
+			const executed = resolveDriveEpisodeWorker(runtime);
+			expect(spec?.backendName, testCase.name).toBe(testCase.backend);
+			expect(spec?.episodeSource, testCase.name).toBe(executed?.qualifiedId);
+			expect(spec?.episodeSource, testCase.name).toBe(
+				`${testCase.targetDomain}/worker`,
+			);
+			expect(spec?.episodeAttemptId, testCase.name).toMatch(/^attempt-/u);
+			expect(getRuntime, testCase.name).toHaveBeenCalledTimes(1);
+		}
 	});
 
 	// @cosmo-behavior plan:orchestration-surface-consolidation#B-006
@@ -345,5 +444,72 @@ async function setupFixture(
 		planSlug: PLAN_SLUG,
 		envelopePath,
 		taskIds,
+	};
+}
+
+async function writeEpisodicConfig(
+	projectRoot: string,
+	enabled: boolean,
+): Promise<void> {
+	const configDir = join(projectRoot, ".cosmonauts");
+	await mkdir(configDir, { recursive: true });
+	await writeFile(
+		join(configDir, "config.json"),
+		JSON.stringify({ episodicLog: { enabled } }),
+		"utf-8",
+	);
+}
+
+function workerRuntime(
+	domainContext: string | undefined,
+	targetDomain: string,
+): Pick<CosmonautsRuntime, "agentRegistry" | "domainContext"> {
+	const definitions = [...new Set(["coding", targetDomain])].map(
+		workerDefinition,
+	);
+	const bindingResolver = {
+		resolveAgentReference(qualifiedId: string) {
+			const [role, agentId] = qualifiedId.split("/");
+			if (!role || !agentId) throw new Error("Expected qualified worker");
+			const resolvedDomain = role === "coding" ? targetDomain : role;
+			return {
+				requested: { role, agentId, qualifiedId },
+				resolved: {
+					role: resolvedDomain,
+					agentId,
+					qualifiedId: `${resolvedDomain}/${agentId}`,
+				},
+				binding: {
+					role,
+					domainId: resolvedDomain,
+					source:
+						resolvedDomain === role
+							? "default"
+							: targetDomain === "live-coding"
+								? "live"
+								: "project",
+				},
+			};
+		},
+	} as never;
+	return {
+		agentRegistry: new AgentRegistry(definitions, { bindingResolver }),
+		domainContext,
+	};
+}
+
+function workerDefinition(domain: string): AgentDefinition {
+	return {
+		id: "worker",
+		domain,
+		description: `${domain} worker`,
+		capabilities: [],
+		model: "test/model",
+		tools: "none",
+		extensions: [],
+		skills: [],
+		projectContext: false,
+		session: "ephemeral",
+		loop: false,
 	};
 }

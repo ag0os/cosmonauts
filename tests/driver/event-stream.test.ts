@@ -138,6 +138,30 @@ describe("event-stream", () => {
 		expect(shouldBridge(spawnCompletedEvent())).toBe(false);
 	});
 
+	test("bridges driver diagnostics only for episode-enabled Drive specs", () => {
+		const diagnostic: Extract<DriverEvent, { type: "driver_diagnostic" }> = {
+			type: "driver_diagnostic",
+			runId: "run-1",
+			parentSessionId: "parent-session-1",
+			timestamp: "2026-07-21T00:00:00.000Z",
+			level: "warning",
+			code: "episode_capture_failed",
+			message: "Episode capture skipped: disk full",
+		};
+
+		expect(shouldBridge(diagnostic)).toBe(false);
+		expect(shouldBridge(diagnostic, { bridgeDriverDiagnostics: true })).toBe(
+			true,
+		);
+		expect(toBusEvent(diagnostic)).toBeUndefined();
+		expect(
+			toBusEvent(diagnostic, { bridgeDriverDiagnostics: true }),
+		).toMatchObject({
+			type: "driver_event",
+			event: diagnostic,
+		});
+	});
+
 	// @cosmo-behavior plan:drive-resilience-state-model#B-010
 	test("bridges run_finalization_failed and treats it as terminal", async () => {
 		const published: DriverBusEvent[] = [];

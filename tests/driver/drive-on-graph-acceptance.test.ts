@@ -274,7 +274,6 @@ describe("Drive-on-graph acceptance", () => {
 			outcome: "completed",
 			tasksDone: fixture.taskIds.length,
 			tasksBlocked: 0,
-			completedAt: expect.any(String),
 		});
 		expect(reloadedRun?.metadata?.driveTaskIds).toEqual(fixture.taskIds);
 		expect(graph.graph.steps).toHaveLength(fixture.taskIds.length * 2);
@@ -366,7 +365,6 @@ describe("Drive-on-graph acceptance", () => {
 			outcome: "completed",
 			tasksDone: fixture.taskIds.length,
 			tasksBlocked: 0,
-			completedAt: expect.any(String),
 		});
 		expect(observedPrompts).toHaveLength(2);
 		expect(persistedSpec.promptTemplate).toMatchObject({
@@ -436,7 +434,6 @@ describe("Drive-on-graph acceptance", () => {
 			outcome: "completed",
 			tasksDone: fixture.taskIds.length,
 			tasksBlocked: 0,
-			completedAt: expect.any(String),
 		});
 		expect(resumedBackend.startedTaskIds).toEqual(fixture.taskIds.slice(2));
 		expect(resumedPrompts).toHaveLength(1);

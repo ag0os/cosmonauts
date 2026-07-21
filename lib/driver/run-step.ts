@@ -7,6 +7,7 @@ import { resolveConfiguredBackend } from "./backend-resolution.ts";
 import { runDriveOnGraph } from "./drive-graph-runner.ts";
 import {
 	createEventSink,
+	driveEventBridgeOptions,
 	driveGraphActivityEventSinkOptions,
 } from "./event-stream.ts";
 import { acquirePlanLock } from "./lock.ts";
@@ -68,6 +69,7 @@ async function runWithLock(
 			runId: spec.runId,
 			parentSessionId: spec.parentSessionId,
 			activityBus: localBus,
+			...driveEventBridgeOptions(spec),
 			durable: driveGraphActivityEventSinkOptions(spec),
 		});
 		const controller = new AbortController();

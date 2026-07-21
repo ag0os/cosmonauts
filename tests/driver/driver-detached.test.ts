@@ -130,7 +130,6 @@ describe("startDetached", () => {
 			outcome: "completed",
 			tasksDone: 1,
 			tasksBlocked: 0,
-			completedAt: expect.any(String),
 		});
 
 		await waitFor(() =>
@@ -153,6 +152,8 @@ describe("startDetached", () => {
 			await readFile(join(spec.workdir, "spec.json"), "utf-8"),
 		);
 		expect(writtenSpec).toEqual(spec);
+		expect(writtenSpec).not.toHaveProperty("episodeSource");
+		expect(writtenSpec).not.toHaveProperty("episodeAttemptId");
 		expect(await readFile(join(spec.workdir, "task-queue.txt"), "utf-8")).toBe(
 			`${taskId}\n`,
 		);

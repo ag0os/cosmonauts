@@ -10,6 +10,7 @@ import {
 	resolveDefaultDriveEnvelopePath,
 } from "../../../lib/driver/default-envelope.ts";
 import type { DriverDeps } from "../../../lib/driver/driver.ts";
+import { resolveDriveEpisodeWorker } from "../../../lib/driver/episode-identity.ts";
 import { DEFAULT_TASK_TIMEOUT_MS } from "../../../lib/driver/run-one-task.ts";
 import {
 	type DriverHandle,
@@ -399,6 +400,71 @@ describe("cosmonauts run drive compat run", () => {
 		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
 	});
 
+	test("freezes enabled detached Codex and Claude specs from the execution resolution", async () => {
+		const fixture = await setupFixture(1);
+		await writeEpisodicConfig(process.cwd(), true);
+		const runtimeCreate = vi.spyOn(CosmonautsRuntime, "create");
+		const cases = [
+			{
+				name: "default",
+				domainContext: undefined,
+				targetDomain: "coding",
+				backend: "codex",
+			},
+			{
+				name: "main",
+				domainContext: "main",
+				targetDomain: "coding",
+				backend: "claude-cli",
+			},
+			{
+				name: "project-bound",
+				domainContext: "coding",
+				targetDomain: "project-coding",
+				backend: "codex",
+			},
+			{
+				name: "live-bound",
+				domainContext: "coding",
+				targetDomain: "live-coding",
+				backend: "claude-cli",
+			},
+		] as const;
+
+		for (const testCase of cases) {
+			const runtime = workerRuntime(
+				testCase.domainContext,
+				testCase.targetDomain,
+			);
+			runtimeCreate.mockResolvedValueOnce(runtime as CosmonautsRuntime);
+
+			await parseDrive([
+				"--plan",
+				PLAN,
+				"--task-ids",
+				fixture.tasks[0]?.id ?? "TASK-001",
+				"--backend",
+				testCase.backend,
+				"--mode",
+				"detached",
+				"--envelope",
+				fixture.envelopePath,
+			]);
+
+			const call = driverMocks.launchDetached.mock.calls.at(-1);
+			const spec = call?.[0];
+			const executed = resolveDriveEpisodeWorker(runtime);
+			expect(spec?.backendName, testCase.name).toBe(testCase.backend);
+			expect(spec?.episodeSource, testCase.name).toBe(executed?.qualifiedId);
+			expect(spec?.episodeSource, testCase.name).toBe(
+				`${testCase.targetDomain}/worker`,
+			);
+			expect(spec?.episodeAttemptId, testCase.name).toMatch(/^attempt-/u);
+		}
+
+		expect(runtimeCreate).toHaveBeenCalledTimes(cases.length);
+	});
+
 	test("warns and continues CLI launch without a fabricated worker actor", async () => {
 		const fixture = await setupFixture(1);
 		await writeEpisodicConfig(process.cwd(), true);
@@ -491,6 +557,7 @@ describe("cosmonauts run drive compat run", () => {
 
 	test("routes explicit inline and detached modes without invoking real backends", async () => {
 		const fixture = await setupFixture(1);
+		const runtimeCreate = vi.spyOn(CosmonautsRuntime, "create");
 
 		await parseDrive([
 			"--plan",
@@ -509,10 +576,14 @@ describe("cosmonauts run drive compat run", () => {
 			type: "task_done",
 			runId: firstRunInlineSpec().runId,
 		});
+		expect(firstRunInlineSpec()).not.toHaveProperty("episodeSource");
+		expect(firstRunInlineSpec()).not.toHaveProperty("episodeAttemptId");
+		expect(runtimeCreate).not.toHaveBeenCalled();
 
 		driverMocks.runInline.mockClear();
 		output.restore();
 		output = attachJsonHelpers(captureCliOutput());
+		await writeEpisodicConfig(process.cwd(), false);
 
 		await parseDrive([
 			"--plan",
@@ -531,6 +602,10 @@ describe("cosmonauts run drive compat run", () => {
 			runId: firstLaunchDetachedSpec().runId,
 			planSlug: PLAN,
 		});
+		expect(firstLaunchDetachedSpec()).not.toHaveProperty("episodeSource");
+		expect(firstLaunchDetachedSpec()).not.toHaveProperty("episodeAttemptId");
+		expect(runtimeCreate).not.toHaveBeenCalled();
+		expect(existsSync(join(process.cwd(), "memory", "agent"))).toBe(false);
 	});
 
 	test("writes aborted completion when an inline run rejects", async () => {

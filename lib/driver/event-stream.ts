@@ -50,7 +50,12 @@ export interface CreateEventSinkOptions {
 	runId: string;
 	parentSessionId: string;
 	activityBus: DriverEventPublisher;
+	bridgeDriverDiagnostics?: boolean;
 	durable?: DurableDriverEventSinkOptions;
+}
+
+export interface DriverEventBridgeOptions {
+	bridgeDriverDiagnostics?: boolean;
 }
 
 export type DurableDriverEventSinkMode =
@@ -111,6 +116,7 @@ export class EventLogWriteError extends Error {
 export function createEventSink({
 	logPath,
 	activityBus,
+	bridgeDriverDiagnostics,
 	durable,
 }: CreateEventSinkOptions): EventSink {
 	const durableSink = durable
@@ -120,7 +126,7 @@ export function createEventSink({
 	return async (event) => {
 		await writeJsonLine(logPath, event);
 
-		const busEvent = toBusEvent(event);
+		const busEvent = toBusEvent(event, { bridgeDriverDiagnostics });
 		if (busEvent) {
 			activityBus.publish(busEvent);
 		}
@@ -412,16 +418,35 @@ function compatDegradedMarkerPath(
 	);
 }
 
-export function shouldBridge(event: DriverEvent): boolean {
+export function driveEventBridgeOptions(
+	spec: Pick<DriverRunSpec, "episodeAttemptId" | "episodeSource">,
+): DriverEventBridgeOptions {
+	return {
+		bridgeDriverDiagnostics: Boolean(
+			spec.episodeSource && spec.episodeAttemptId,
+		),
+	};
+}
+
+export function shouldBridge(
+	event: DriverEvent,
+	options: DriverEventBridgeOptions = {},
+): boolean {
 	if (event.type === "preflight") {
 		return event.status === "failed";
+	}
+	if (event.type === "driver_diagnostic") {
+		return options.bridgeDriverDiagnostics === true;
 	}
 
 	return BRIDGED_EVENT_TYPES.has(event.type);
 }
 
-export function toBusEvent(event: DriverEvent): DriverBusEvent | undefined {
-	if (!shouldBridge(event)) {
+export function toBusEvent(
+	event: DriverEvent,
+	options: DriverEventBridgeOptions = {},
+): DriverBusEvent | undefined {
+	if (!shouldBridge(event, options)) {
 		return undefined;
 	}
 
@@ -448,6 +473,7 @@ export function bridgeJsonlToActivityBus(
 	runId: string,
 	parentSessionId: string,
 	bus: DriverEventPublisher,
+	options: DriverEventBridgeOptions = {},
 ): JsonlActivityBusBridge {
 	const filePath = path;
 	const targetName = basename(filePath);
@@ -539,7 +565,7 @@ export function bridgeJsonlToActivityBus(
 				continue;
 			}
 
-			const busEvent = toBusEvent(event);
+			const busEvent = toBusEvent(event, options);
 			if (busEvent) {
 				bus.publish(busEvent);
 			}
@@ -710,6 +736,7 @@ export async function tailEvents(
 
 const BRIDGED_EVENT_TYPES = new Set<DriverEvent["type"]>([
 	"driver_activity",
+	"driver_diagnostic",
 	"task_done",
 	"task_blocked",
 	"commit_made",

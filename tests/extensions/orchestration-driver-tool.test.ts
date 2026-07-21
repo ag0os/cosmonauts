@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -324,6 +324,33 @@ describe("driver e2e run_driver integration", () => {
 			expect.stringContaining("Drive episode capture skipped"),
 		);
 		expect(backendMocks.run).toHaveBeenCalledTimes(1);
+	});
+
+	test("keeps absent and false-config inline specs and completions episode-free", async () => {
+		const absent = await setupFixture({ taskCount: 1 });
+		backendMocks.run.mockResolvedValue(successResult());
+
+		const absentResult = await runDriver(absent);
+		const absentCompletion = await waitForCompletion(absentResult.workdir);
+		const absentSpec = await readSpec(absentResult.workdir);
+
+		expect(absentSpec).not.toHaveProperty("episodeSource");
+		expect(absentSpec).not.toHaveProperty("episodeAttemptId");
+		expect(absentCompletion).not.toHaveProperty("completedAt");
+		expect(existsSync(join(absent.projectRoot, "memory", "agent"))).toBe(false);
+
+		const disabled = await setupFixture({ taskCount: 1 });
+		await writeEpisodicConfig(disabled.projectRoot, false);
+		const disabledResult = await runDriver(disabled);
+		const disabledCompletion = await waitForCompletion(disabledResult.workdir);
+		const disabledSpec = await readSpec(disabledResult.workdir);
+
+		expect(disabledSpec).not.toHaveProperty("episodeSource");
+		expect(disabledSpec).not.toHaveProperty("episodeAttemptId");
+		expect(disabledCompletion).not.toHaveProperty("completedAt");
+		expect(existsSync(join(disabled.projectRoot, "memory", "agent"))).toBe(
+			false,
+		);
 	});
 
 	// @cosmo-behavior plan:coding-agnostic-framework#B-025

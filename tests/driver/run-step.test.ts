@@ -6,18 +6,26 @@ import {
 	readFile,
 	rm,
 	stat,
+	utimes,
 	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { recordDriveTerminalEpisode } from "../../lib/driver/drive-graph-runner.ts";
 import {
 	acquirePlanLock,
 	getPlanLockPath,
 	type LockHandle,
 } from "../../lib/driver/lock.ts";
-import type { DriverEvent, DriverRunSpec } from "../../lib/driver/types.ts";
+import type {
+	DriverEvent,
+	DriverResult,
+	DriverRunSpec,
+} from "../../lib/driver/types.ts";
+import { parseEpisodeRecord } from "../../lib/memory/episodic-records.ts";
+import { createMarkdownMemoryStore } from "../../lib/memory/markdown-store.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
@@ -78,7 +86,6 @@ describe("run-step binary", () => {
 			outcome: "completed",
 			tasksDone: 1,
 			tasksBlocked: 0,
-			completedAt: expect.any(String),
 		});
 
 		const events = await readEvents(fixture.spec.eventLogPath);
@@ -138,6 +145,140 @@ describe("run-step binary", () => {
 		});
 	});
 
+	// @cosmo-behavior plan:episodic-log#B-018
+	test("uses frozen episode actor and attempt identity in the detached runner", async () => {
+		const cases = [
+			{
+				name: "default",
+				backendName: "codex",
+				episodeSource: "coding/worker",
+			},
+			{
+				name: "main",
+				backendName: "claude-cli",
+				episodeSource: "coding/worker",
+			},
+			{
+				name: "project-bound",
+				backendName: "codex",
+				episodeSource: "project-coding/worker",
+			},
+			{
+				name: "live-bound",
+				backendName: "claude-cli",
+				episodeSource: "live-coding/worker",
+			},
+		] as const;
+
+		for (const testCase of cases) {
+			const fixture = await setupFixture(`run-episode-${testCase.name}`, {
+				backendName: testCase.backendName,
+				episodeSource: testCase.episodeSource,
+				episodeAttemptId: `attempt-${testCase.name}`,
+			});
+			await writeEpisodicConfig(fixture.projectRoot, true);
+			const backendBinary =
+				testCase.backendName === "codex"
+					? await writeFakeCodex(fixture.binDir)
+					: await writeFakeClaude(fixture.binDir);
+			const envKey =
+				testCase.backendName === "codex"
+					? "COSMONAUTS_DRIVER_CODEX_BINARY"
+					: "COSMONAUTS_DRIVER_CLAUDE_BINARY";
+
+			const result = await execBinary(["--workdir", fixture.workdir], {
+				cwd: temp.path,
+				env: { [envKey]: backendBinary },
+			});
+
+			expect(result, testCase.name).toMatchObject({ exitCode: 0 });
+			const persistedSpec = JSON.parse(
+				await readFile(join(fixture.workdir, "spec.json"), "utf-8"),
+			) as DriverRunSpec;
+			expect(persistedSpec, testCase.name).toMatchObject({
+				runId: fixture.spec.runId,
+				backendName: testCase.backendName,
+				episodeSource: testCase.episodeSource,
+				episodeAttemptId: `attempt-${testCase.name}`,
+			});
+
+			const completionPath = join(fixture.workdir, "run.completion.json");
+			const completionBytes = await readFile(completionPath, "utf-8");
+			const completion = JSON.parse(completionBytes) as DriverResult & {
+				completedAt: string;
+			};
+			expect(completion, testCase.name).toEqual({
+				runId: fixture.spec.runId,
+				outcome: "completed",
+				tasksDone: 1,
+				tasksBlocked: 0,
+				completedAt: expect.any(String),
+			});
+			await expect(
+				stat(join(fixture.workdir, "graph.json")),
+			).resolves.toBeTruthy();
+			const events = await readEvents(fixture.spec.eventLogPath);
+			expect(
+				events.map((event) => event.type),
+				testCase.name,
+			).toEqual([
+				"run_started",
+				"task_started",
+				"preflight",
+				"preflight",
+				"spawn_started",
+				"spawn_completed",
+				"task_done",
+				"finalize",
+				"run_completed",
+			]);
+
+			let episodes = await readProjectDriveEpisodes(fixture.projectRoot);
+			expect(episodes, testCase.name).toHaveLength(2);
+			expect(
+				episodes.map((episode) => ({
+					source: episode.source,
+					runId: episode.subject.id,
+					outcome: episode.outcome,
+					attempt: episode.tags.find((tag) => tag.startsWith("attempt:")),
+				})),
+			).toEqual(
+				expect.arrayContaining([
+					{
+						source: testCase.episodeSource,
+						runId: fixture.spec.runId,
+						outcome: "started",
+						attempt: `attempt:attempt-${testCase.name}`,
+					},
+					{
+						source: testCase.episodeSource,
+						runId: fixture.spec.runId,
+						outcome: "completed",
+						attempt: `attempt:attempt-${testCase.name}`,
+					},
+				]),
+			);
+			expect(
+				episodes.find((episode) => episode.outcome === "completed")?.timestamp,
+			).toBe(completion.completedAt);
+
+			await utimes(
+				completionPath,
+				new Date("2030-01-01T00:00:00.000Z"),
+				new Date("2030-01-01T00:00:00.000Z"),
+			);
+			await writeFile(completionPath, completionBytes, "utf-8");
+			await recordDriveTerminalEpisode(persistedSpec, completion);
+			episodes = await readProjectDriveEpisodes(fixture.projectRoot);
+			expect(episodes, testCase.name).toHaveLength(2);
+		}
+
+		const runStepSource = await readFile("lib/driver/run-step.ts", "utf-8");
+		expect(runStepSource).not.toContain("CosmonautsRuntime");
+		expect(runStepSource).not.toContain("resolveDriveEpisodeWorker");
+		expect(runStepSource).not.toContain("episode-identity.ts");
+	});
+
 	test("exits nonzero without entering the loop when the plan lock is active", async () => {
 		const fixture = await setupFixture("run-locked");
 		const fakeCodex = await writeFakeCodex(fixture.binDir);
@@ -180,7 +321,9 @@ interface Fixture {
 
 async function setupFixture(
 	runId: string,
-	overrides: Partial<Pick<DriverRunSpec, "backendName">> = {},
+	overrides: Partial<
+		Pick<DriverRunSpec, "backendName" | "episodeSource" | "episodeAttemptId">
+	> = {},
 ): Promise<Fixture> {
 	const projectRoot = join(temp.path, runId, "project");
 	const planSlug = "external-backends-and-cli";
@@ -218,6 +361,12 @@ async function setupFixture(
 		commitPolicy: "no-commit",
 		workdir,
 		eventLogPath: join(workdir, "events.jsonl"),
+		...(overrides.episodeSource
+			? { episodeSource: overrides.episodeSource }
+			: {}),
+		...(overrides.episodeAttemptId
+			? { episodeAttemptId: overrides.episodeAttemptId }
+			: {}),
 	};
 	await writeFile(
 		join(workdir, "spec.json"),
@@ -318,4 +467,37 @@ function isSpawnCompleted(
 	event: DriverEvent,
 ): event is Extract<DriverEvent, { type: "spawn_completed" }> {
 	return event.type === "spawn_completed";
+}
+
+async function writeEpisodicConfig(
+	projectRoot: string,
+	enabled: boolean,
+): Promise<void> {
+	const configDir = join(projectRoot, ".cosmonauts");
+	await mkdir(configDir, { recursive: true });
+	await writeFile(
+		join(configDir, "config.json"),
+		JSON.stringify({ episodicLog: { enabled } }),
+		"utf-8",
+	);
+}
+
+async function readProjectDriveEpisodes(projectRoot: string) {
+	const records = (
+		await createMarkdownMemoryStore({ projectRoot }).retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ text: "", recordTypes: ["episode"] },
+		)
+	).records;
+
+	return records.map((record) => {
+		const metadata = parseEpisodeRecord(record);
+		if (!metadata) throw new Error(`Invalid episode record: ${record.path}`);
+		return {
+			...metadata,
+			source: record.source,
+			tags: record.tags,
+			timestamp: record.timestamp,
+		};
+	});
 }

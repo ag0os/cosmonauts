@@ -143,7 +143,8 @@ export async function runDriveOnGraph(
 		});
 
 		if (finalizerFailure) {
-			const result = stampDriverResult(
+			const result = stampDriveEpisodeResult(
+				runSpec,
 				finalizationFailureResult(
 					runSpec,
 					finalizerFailure,
@@ -166,7 +167,8 @@ export async function runDriveOnGraph(
 			throw new Error("Drive graph scheduler did not produce a result.");
 		}
 
-		const result = stampDriverResult(
+		const result = stampDriveEpisodeResult(
+			runSpec,
 			await toDriverResult(runSpec, ctx, store, ref, schedulerResult),
 		);
 		await emitTerminalLegacyEvent(runSpec, ctx, result);
@@ -175,7 +177,7 @@ export async function runDriveOnGraph(
 		return result;
 	} catch (error) {
 		if (error instanceof EventLogWriteError) {
-			const result = stampDriverResult({
+			const result = stampDriveEpisodeResult(spec, {
 				runId: spec.runId,
 				outcome: "aborted" as const,
 				tasksDone: 0,
@@ -209,6 +211,14 @@ export async function runDriveOnGraph(
 		await recordDriveThrownTerminalEpisode(spec, error);
 		throw error;
 	}
+}
+
+/** Preserve pre-episodic result bytes unless a launch froze complete identity. */
+export function stampDriveEpisodeResult<Result extends DriverResult>(
+	spec: DriverRunSpec,
+	result: Result,
+): Result {
+	return driveEpisodeIdentity(spec) ? stampDriverResult(result) : result;
 }
 
 export function buildDriveTerminalEpisode(

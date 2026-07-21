@@ -132,8 +132,6 @@ describe("cross-plan detached commit serialization", () => {
 		]);
 		expect(firstResult).toMatchObject(completedResult(firstSpec.runId));
 		expect(secondResult).toMatchObject(completedResult(secondSpec.runId));
-		expect(firstResult.completedAt).toEqual(expect.any(String));
-		expect(secondResult.completedAt).toEqual(expect.any(String));
 
 		const firstEvents = await readEvents(firstSpec.eventLogPath);
 		const secondEvents = await readEvents(secondSpec.eventLogPath);

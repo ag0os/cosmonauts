@@ -10,7 +10,10 @@ import { resolveConfiguredExternalBackend } from "../../lib/driver/backend-resol
 import { createCosmonautsSubagentBackend } from "../../lib/driver/backends/cosmonauts-subagent.ts";
 import type { Backend } from "../../lib/driver/backends/types.ts";
 import { resolveDefaultDriveEnvelopePath } from "../../lib/driver/default-envelope.ts";
-import { recordDriveTerminalEpisode } from "../../lib/driver/drive-graph-runner.ts";
+import {
+	recordDriveTerminalEpisode,
+	stampDriveEpisodeResult,
+} from "../../lib/driver/drive-graph-runner.ts";
 import type { startDetached } from "../../lib/driver/driver.ts";
 import { launchDetached, runInline } from "../../lib/driver/driver.ts";
 import { recordDurableFinalizerRetryFailure } from "../../lib/driver/durable-steps.ts";
@@ -56,7 +59,6 @@ import {
 	type DriverRunSpec,
 	type PromptLayers,
 	type StateCommitPolicy,
-	stampDriverResult,
 	validateDriverPlanSlug,
 } from "../../lib/driver/types.ts";
 import { writeDriverWorkdirInputs } from "../../lib/driver/workdir-inputs.ts";
@@ -1574,8 +1576,8 @@ async function writeSourceFinalizationFailure(
 async function persistResumeTerminal(
 	spec: DriverRunSpec,
 	result: DriverResult,
-): Promise<DriverResult & { completedAt: string }> {
-	const completion = stampDriverResult(result);
+): Promise<DriverResult> {
+	const completion = stampDriveEpisodeResult(spec, result);
 	await writeRunCompletion(spec.workdir, completion);
 	await recordDriveTerminalEpisode(spec, completion);
 	return completion;

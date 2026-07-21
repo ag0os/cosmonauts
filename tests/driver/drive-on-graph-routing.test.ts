@@ -32,7 +32,6 @@ describe("Drive-on-graph routing", () => {
 			outcome: "completed",
 			tasksDone: 1,
 			tasksBlocked: 0,
-			completedAt: expect.any(String),
 		});
 		await expectArtifact(fixture.spec.workdir, "spec.json");
 		await expectArtifact(fixture.spec.workdir, "task-queue.txt");
@@ -107,7 +106,6 @@ describe("Drive-on-graph routing", () => {
 				outcome: "completed",
 				tasksDone: 1,
 				tasksBlocked: 0,
-				completedAt: expect.any(String),
 			});
 			await expectArtifact(fixture.spec.workdir, "run.sh");
 			expect(pidRecord.pid).toEqual(expect.any(Number));
@@ -143,6 +141,80 @@ describe("Drive-on-graph routing", () => {
 			}
 		}
 	}, 30_000);
+
+	// @cosmo-behavior plan:episodic-log#B-028
+	test("keeps disabled Drive specs results events and files byte-identical", async () => {
+		const absent = await setupFixture("disabled-absent");
+		const expectedResult = {
+			runId: absent.spec.runId,
+			outcome: "completed" as const,
+			tasksDone: 1,
+			tasksBlocked: 0,
+		};
+
+		const result = await runInline(absent.spec, absent.deps).result;
+
+		expect(result).toEqual(expectedResult);
+		expect(
+			await readFile(join(absent.spec.workdir, "spec.json"), "utf-8"),
+		).toBe(`${JSON.stringify(absent.spec, null, 2)}\n`);
+		expect(
+			await readFile(join(absent.spec.workdir, "run.completion.json"), "utf-8"),
+		).toBe(`${JSON.stringify(expectedResult, null, 2)}\n`);
+		expect(absent.spec).not.toHaveProperty("episodeSource");
+		expect(absent.spec).not.toHaveProperty("episodeAttemptId");
+		expect(await readLegacyEvents(absent.spec.eventLogPath)).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ type: "run_started" }),
+				expect.objectContaining({ type: "spawn_completed" }),
+				expect.objectContaining({ type: "run_completed" }),
+			]),
+		);
+		await expect(
+			stat(join(absent.projectRoot, "memory", "agent")),
+		).rejects.toMatchObject({ code: "ENOENT" });
+
+		const falseConfig = await setupFixture("disabled-false-diagnostic");
+		await writeEpisodicConfig(falseConfig.projectRoot, false);
+		falseConfig.deps.taskManager = new Proxy(falseConfig.deps.taskManager, {
+			get(target, property, receiver) {
+				if (property === "listTasks") {
+					return async () => {
+						throw new Error("disabled scheduler diagnostic");
+					};
+				}
+				return Reflect.get(target, property, receiver);
+			},
+		}) as TaskManager;
+
+		await expect(
+			runInline(falseConfig.spec, falseConfig.deps).result,
+		).rejects.toThrow("disabled scheduler diagnostic");
+
+		const diagnosticEvents = await readLegacyEvents(
+			falseConfig.spec.eventLogPath,
+		);
+		expect(diagnosticEvents.map((event) => event.type)).toEqual([
+			"run_started",
+			"task_started",
+			"preflight",
+			"preflight",
+			"spawn_started",
+			"spawn_completed",
+			"task_done",
+			"driver_diagnostic",
+			"run_aborted",
+		]);
+		expect(publishedEventTypes(falseConfig.deps.published)).toEqual([
+			"task_done",
+			"run_aborted",
+		]);
+		expect(falseConfig.spec).not.toHaveProperty("episodeSource");
+		expect(falseConfig.spec).not.toHaveProperty("episodeAttemptId");
+		await expect(
+			stat(join(falseConfig.projectRoot, "memory", "agent")),
+		).rejects.toMatchObject({ code: "ENOENT" });
+	});
 });
 
 interface Fixture {
@@ -283,6 +355,25 @@ async function readLegacyEvents(
 		.split("\n")
 		.filter(Boolean)
 		.map((line) => JSON.parse(line) as { type: string });
+}
+
+function publishedEventTypes(events: DriverBusEvent[]): string[] {
+	return events.flatMap((event) =>
+		"event" in event ? [event.event.type] : [],
+	);
+}
+
+async function writeEpisodicConfig(
+	projectRoot: string,
+	enabled: boolean,
+): Promise<void> {
+	const configDir = join(projectRoot, ".cosmonauts");
+	await mkdir(configDir, { recursive: true });
+	await writeFile(
+		join(configDir, "config.json"),
+		JSON.stringify({ episodicLog: { enabled } }),
+		"utf-8",
+	);
 }
 
 async function waitForFile(path: string, timeoutMs = 10_000): Promise<void> {

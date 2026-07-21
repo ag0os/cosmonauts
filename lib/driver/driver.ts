@@ -24,6 +24,7 @@ import {
 	bridgeJsonlToActivityBus,
 	createEventSink,
 	type DriverEventPublisher,
+	driveEventBridgeOptions,
 	driveGraphActivityEventSinkOptions,
 	type JsonlActivityBusBridge,
 } from "./event-stream.ts";
@@ -105,6 +106,7 @@ export function runInline(spec: DriverRunSpec, deps: DriverDeps): DriverHandle {
 			runId: spec.runId,
 			parentSessionId: spec.parentSessionId,
 			activityBus: deps.activityBus,
+			...driveEventBridgeOptions(spec),
 			durable: driveGraphActivityEventSinkOptions(spec),
 		});
 
@@ -349,6 +351,7 @@ async function launchDetachedProcess({
 				spec.runId,
 				spec.parentSessionId,
 				deps.activityBus,
+				driveEventBridgeOptions(spec),
 			),
 		);
 	}

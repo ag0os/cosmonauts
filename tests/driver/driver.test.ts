@@ -50,6 +50,7 @@ vi.mock("../../lib/driver/lock.ts", () => ({
 vi.mock("../../lib/driver/event-stream.ts", () => ({
 	bridgeJsonlToActivityBus: mocks.bridgeJsonlToActivityBus,
 	createEventSink: mocks.createEventSink,
+	driveEventBridgeOptions: () => ({ bridgeDriverDiagnostics: false }),
 	driveGraphActivityEventSinkOptions: mocks.driveGraphActivityEventSinkOptions,
 }));
 
@@ -119,6 +120,7 @@ describe("driver", () => {
 			runId: spec.runId,
 			parentSessionId: spec.parentSessionId,
 			activityBus: deps.activityBus,
+			bridgeDriverDiagnostics: false,
 			durable: {
 				rootDir: "/project/missions/sessions",
 				scope: "driver-primitives",
