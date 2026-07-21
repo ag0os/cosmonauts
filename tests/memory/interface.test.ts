@@ -595,6 +595,58 @@ describe("memory interface", () => {
 		});
 	});
 
+	test("documents the episodic gate vocabulary cost and consumer contracts @cosmo-behavior plan:episodic-log#B-029", async () => {
+		const documentation = await readFile(
+			join(process.cwd(), "docs", "memory.md"),
+			"utf-8",
+		);
+		const vocabulary = documentation.slice(
+			documentation.indexOf("### Finite Event Vocabulary"),
+			documentation.indexOf("### Recall, Injection, And W2 Preservation"),
+		);
+		const documentedActions = [
+			...vocabulary.matchAll(/^\| `([^`]+)` \|/gmu),
+		].map((match) => match[1]);
+
+		expect(documentedActions).toEqual(EPISODE_ACTIONS);
+		for (const requiredText of [
+			"project-gated and OFF by default",
+			'"warningThreshold": 500',
+			"There is no user-config loader or user-level gate.",
+			"Each episode is one independent OKF markdown file",
+			"The reserved tag prefixes are exactly `action:`, `outcome:`, `subject:`,",
+			"does not capture raw sessions",
+			"Episodes are recall-only.",
+			"Episodes are never injected",
+			"never indexed in `index.md`",
+			"W2 remember, recall, injection bytes, tool",
+			"remember remains an explicit, sequential tool",
+			"W3 is append-forever",
+			"Every episode-touching retrieval performs a full, current-disk rescan",
+			"There is no episode",
+			"cache, retention window, write cap, automatic pruning, or delete API.",
+			"strictly greater than the",
+			"fresh store's configured threshold",
+			"`writer:cosmonauts` is editable provenance only.",
+			"no SHA-256 integrity envelope, edit detection, trust decision, or",
+			"safe-prune guarantee",
+			"`memory-consolidation` plan owns the machine-vs-human",
+			"persisted `source`, subject, required payload, outcome, and timestamp",
+			"persisted `completedAt` supplies the terminal episode timestamp",
+			"never derives identity from the completion file's mtime",
+			"hard-killed fire-and-forget `launchDetached` child",
+		]) {
+			expect(documentation, requiredText).toContain(requiredText);
+		}
+		expect(documentation).toContain(
+			"Recall's visible warning text\nand structured warning details",
+		);
+		expect(documentation).toContain("Drive publishes a\n`driver_diagnostic`");
+		expect(documentation).toContain(
+			"Pi session state remains the session-scope answer",
+		);
+	});
+
 	test("supports note profile and playbook through the unchanged MemoryStore contract @cosmo-behavior plan:profile-playbooks#B-002", async () => {
 		const projectRoot = join(tmp.path, "authored-types-project");
 		const userRoot = join(tmp.path, "authored-types-user");
