@@ -31,6 +31,7 @@ import type {
 	DriverResult,
 	DriverRunAbortDetails,
 	DriverRunSpec,
+	EventSink,
 } from "./types.ts";
 import { resolveStateCommitPolicy, stampDriverResult } from "./types.ts";
 import { writeDriverWorkdirInputs } from "./workdir-inputs.ts";
@@ -60,7 +61,10 @@ export async function runDriveOnGraph(
 	});
 	const ref = { scope: spec.planSlug, runId: spec.runId };
 	const mode = ctx.mode ?? "inline";
-	const reportEpisodeWarning = driveEpisodeWarningReporter(spec, ctx);
+	const reportEpisodeWarning = createDriveEpisodeWarningReporter(
+		spec,
+		ctx.eventSink,
+	);
 
 	if (shouldRecordDriveStart(spec)) {
 		await recordDriveStartEpisode(spec, reportEpisodeWarning);
@@ -313,13 +317,16 @@ async function captureDriveEpisode(
 	});
 }
 
-function driveEpisodeWarningReporter(
+export function createDriveEpisodeWarningReporter(
 	spec: DriverRunSpec,
-	ctx: RunDriveOnGraphCtx,
+	eventSink: EventSink,
 ): EpisodeWarningReporter {
 	return (warning) =>
-		emit(spec, ctx, {
+		eventSink({
 			type: "driver_diagnostic",
+			runId: spec.runId,
+			parentSessionId: spec.parentSessionId,
+			timestamp: new Date().toISOString(),
 			level: "warning",
 			code: "episode_capture_failed",
 			message: warning.path

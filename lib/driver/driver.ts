@@ -18,7 +18,12 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import type { TaskManager } from "../tasks/task-manager.ts";
 import type { Backend } from "./backends/types.ts";
-import { runDriveOnGraph } from "./drive-graph-runner.ts";
+import {
+	createDriveEpisodeWarningReporter,
+	recordDriveTerminalEpisode,
+	runDriveOnGraph,
+	stampDriveEpisodeResult,
+} from "./drive-graph-runner.ts";
 import { generateBashRunner } from "./driver-script.ts";
 import {
 	bridgeJsonlToActivityBus,
@@ -39,6 +44,7 @@ import type {
 	DriverHandle,
 	DriverResult,
 	DriverRunSpec,
+	EventSink,
 	PromptLayers,
 } from "./types.ts";
 
@@ -101,14 +107,7 @@ export function runInline(spec: DriverRunSpec, deps: DriverDeps): DriverHandle {
 			throw lock;
 		}
 
-		const eventSink = createEventSink({
-			logPath: spec.eventLogPath,
-			runId: spec.runId,
-			parentSessionId: spec.parentSessionId,
-			activityBus: deps.activityBus,
-			...driveEventBridgeOptions(spec),
-			durable: driveGraphActivityEventSinkOptions(spec),
-		});
+		const eventSink = createDriverEventSink(spec, deps);
 
 		return runDriveOnGraph(spec, {
 			taskManager: deps.taskManager,
@@ -147,6 +146,7 @@ export function startDetached(
 	let child: ChildProcess | undefined;
 	let bridge: JsonlActivityBusBridge | undefined;
 	let workdirCreated = false;
+	let abortPromise: Promise<void> | undefined;
 
 	const result = startDetachedProcess({
 		spec,
@@ -172,37 +172,113 @@ export function startDetached(
 		planSlug: spec.planSlug,
 		workdir: spec.workdir,
 		eventLogPath: spec.eventLogPath,
-		async abort() {
-			bridge?.stop();
-			const childWasSpawned = child?.pid !== undefined;
-			if (child?.pid) {
-				if (isProcessAlive(child.pid)) {
-					try {
-						process.kill(child.pid, "SIGTERM");
-					} catch (error) {
-						if ((error as NodeJS.ErrnoException).code !== "ESRCH") {
-							throw error;
-						}
-					}
-				}
-			}
-			if (
-				workdirCreated &&
-				!existsSync(join(spec.workdir, RUN_COMPLETION_FILENAME))
-			) {
-				await writeRunCompletion(spec.workdir, {
-					runId: spec.runId,
-					outcome: "aborted",
-					tasksDone: 0,
-					tasksBlocked: 0,
-				});
-			}
-			if (!childWasSpawned) {
-				controller.abort();
-			}
+		abort() {
+			abortPromise ??= abortDetachedRun({
+				spec,
+				deps,
+				controller,
+				child,
+				bridge,
+				workdirCreated,
+			});
+			return abortPromise;
 		},
 		result,
 	};
+}
+
+interface AbortDetachedRunOptions {
+	readonly spec: DriverRunSpec;
+	readonly deps: DriverDeps;
+	readonly controller: AbortController;
+	readonly child?: ChildProcess;
+	readonly bridge?: JsonlActivityBusBridge;
+	readonly workdirCreated: boolean;
+}
+
+async function abortDetachedRun({
+	spec,
+	deps,
+	controller,
+	child,
+	bridge,
+	workdirCreated,
+}: AbortDetachedRunOptions): Promise<void> {
+	bridge?.stop();
+
+	if (child?.pid !== undefined) {
+		terminateDetachedChild(child.pid);
+		await waitForChildExit(child);
+	} else {
+		controller.abort();
+	}
+
+	if (!workdirCreated) return;
+
+	let completion = await readDetachedCompletion(spec.workdir);
+	if (!completion) {
+		completion = stampDriveEpisodeResult(spec, {
+			runId: spec.runId,
+			outcome: "aborted",
+			tasksDone: 0,
+			tasksBlocked: 0,
+		});
+		await writeRunCompletion(spec.workdir, completion);
+	}
+
+	const eventSink = createDriverEventSink(spec, deps);
+	await recordDriveTerminalEpisode(
+		spec,
+		completion,
+		createDriveEpisodeWarningReporter(spec, eventSink),
+	);
+}
+
+function terminateDetachedChild(pid: number): void {
+	if (!isProcessAlive(pid)) return;
+	try {
+		process.kill(pid, "SIGTERM");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ESRCH") {
+			throw error;
+		}
+	}
+}
+
+async function waitForChildExit(child: ChildProcess): Promise<void> {
+	if (child.exitCode !== null || child.signalCode !== null) return;
+
+	await new Promise<void>((resolve, reject) => {
+		const cleanup = () => {
+			child.off("exit", onExit);
+			child.off("error", onError);
+		};
+		const onExit = () => {
+			cleanup();
+			resolve();
+		};
+		const onError = (error: Error) => {
+			cleanup();
+			reject(error);
+		};
+
+		child.once("exit", onExit);
+		child.once("error", onError);
+		if (child.exitCode !== null || child.signalCode !== null) onExit();
+	});
+}
+
+async function readDetachedCompletion(
+	workdir: string,
+): Promise<DriverResult | undefined> {
+	try {
+		return JSON.parse(
+			await readFile(join(workdir, RUN_COMPLETION_FILENAME), "utf-8"),
+		) as DriverResult;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+		throw error;
+	}
 }
 
 export async function launchDetached(
@@ -227,6 +303,20 @@ export async function launchDetached(
 		eventLogPath: spec.eventLogPath,
 		pid: launch.pid,
 	};
+}
+
+function createDriverEventSink(
+	spec: DriverRunSpec,
+	deps: DriverDeps,
+): EventSink {
+	return createEventSink({
+		logPath: spec.eventLogPath,
+		runId: spec.runId,
+		parentSessionId: spec.parentSessionId,
+		activityBus: deps.activityBus,
+		...driveEventBridgeOptions(spec),
+		durable: driveGraphActivityEventSinkOptions(spec),
+	});
 }
 
 interface StartDetachedProcessOptions {
