@@ -40,7 +40,7 @@ The exact set depends on installed domains; always re-check with `--json`.
 cosmonauts skills export -t claude task plan drive
 cosmonauts skills export -t codex task plan drive
 
-# User-level (~/.claude/skills/ or ~/.codex/skills/)
+# User-level (~/.claude/skills/ or ~/.agents/skills/)
 cosmonauts skills export -t claude --personal task plan
 
 # Everything (use sparingly — many skills target internal agents, not external use)
@@ -50,7 +50,7 @@ cosmonauts skills export -t claude --all
 | Target | Project path | Personal path |
 | --- | --- | --- |
 | `claude` | `.claude/skills/<name>/` | `~/.claude/skills/<name>/` |
-| `codex` | `.agents/skills/<name>/` | `~/.codex/skills/<name>/` |
+| `codex` | `.agents/skills/<name>/` | `~/.agents/skills/<name>/` |
 
 Each skill's `SKILL.md` is copied verbatim into a directory named after the skill. The exported files follow the [Agent Skills](https://github.com/anthropics/skills) standard.
 

@@ -42,7 +42,7 @@ export interface ExportOptions {
  *
  * Personal (user-level):
  *   claude → ~/.claude/skills/<name>/
- *   codex  → ~/.codex/skills/<name>/
+ *   codex  → ~/.agents/skills/<name>/
  */
 export function resolveTargetDir(name: string, options: ExportOptions): string {
 	const scope = options.personal ? "personal" : "project";
@@ -52,12 +52,7 @@ export function resolveTargetDir(name: string, options: ExportOptions): string {
 		case "claude":
 			return join(base, ".claude", "skills", name);
 		case "codex":
-			return join(
-				base,
-				scope === "personal" ? ".codex" : ".agents",
-				"skills",
-				name,
-			);
+			return join(base, ".agents", "skills", name);
 	}
 }
 

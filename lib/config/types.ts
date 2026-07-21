@@ -32,7 +32,7 @@ export interface ProjectConfig {
 	readonly domainBindings?: Readonly<Record<string, string>>;
 	/** Skills relevant to this project. Filters agent skill indices to this set. */
 	readonly skills?: readonly string[];
-	/** Additional skill directories (e.g. "~/.claude/skills", ".codex/skills"). */
+	/** Additional skill directories (e.g. "~/.claude/skills", ".agents/skills"). */
 	readonly skillPaths?: readonly string[];
 	/** Custom named-chain definitions (name → config). */
 	readonly chains?: Readonly<Record<string, ProjectChainConfig>>;

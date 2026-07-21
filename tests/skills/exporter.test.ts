@@ -37,13 +37,13 @@ describe("resolveTargetDir", () => {
 		expect(result).toBe("/project/.agents/skills/task");
 	});
 
-	test("codex personal → ~/.codex/skills/<name>/", () => {
+	test("codex personal → ~/.agents/skills/<name>/", () => {
 		const result = resolveTargetDir("task", {
 			target: "codex",
 			projectRoot: "/project",
 			personal: true,
 		});
-		expect(result).toBe(join(homedir(), ".codex/skills/task"));
+		expect(result).toBe(join(homedir(), ".agents/skills/task"));
 	});
 });
 

@@ -173,7 +173,10 @@ cp -r "$(npm root)/cosmonauts/external-skills/cosmonauts" .claude/skills/cosmona
 cp -r "$(npm root -g)/cosmonauts/external-skills/cosmonauts" ~/.claude/skills/cosmonauts
 
 # Codex, project-level:
-cp -r "$(npm root)/cosmonauts/external-skills/cosmonauts" .codex/skills/cosmonauts
+cp -r "$(npm root)/cosmonauts/external-skills/cosmonauts" .agents/skills/cosmonauts
+
+# Codex, user-level:
+cp -r "$(npm root -g)/cosmonauts/external-skills/cosmonauts" ~/.agents/skills/cosmonauts
 
 # Gemini CLI, user-level:
 cp -r "$(npm root -g)/cosmonauts/external-skills/cosmonauts" ~/.gemini/skills/cosmonauts

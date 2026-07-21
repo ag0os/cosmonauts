@@ -26,7 +26,7 @@ cosmonauts skills export -t claude roadmap plan task
 # Export all skills to Claude Code
 cosmonauts skills export -t claude --all
 
-# Export to user-level directory (~/.claude/skills or ~/.codex/skills)
+# Export to user-level directory (~/.claude/skills or ~/.agents/skills)
 cosmonauts skills export -t claude --personal
 
 # Export to Codex
@@ -38,7 +38,7 @@ cosmonauts skills export -t codex task plan
 | Target | Project directory | Personal directory |
 |--------|------------------|--------------------|
 | `claude` | `.claude/skills/<name>/` | `~/.claude/skills/<name>/` |
-| `codex` | `.codex/skills/<name>/` | `~/.codex/skills/<name>/` |
+| `codex` | `.agents/skills/<name>/` | `~/.agents/skills/<name>/` |
 
 ### What Gets Exported
 

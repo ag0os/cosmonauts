@@ -169,13 +169,13 @@ describe("loadProjectConfig", () => {
 		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
 		await writeFile(
 			join(tmp.path, ".cosmonauts", "config.json"),
-			JSON.stringify({ skillPaths: [".claude/skills", ".codex/skills"] }),
+			JSON.stringify({ skillPaths: [".claude/skills", ".agents/skills"] }),
 		);
 
 		const config = await loadProjectConfig(tmp.path);
 		expect(config.skillPaths).toEqual([
 			resolve(tmp.path, ".claude/skills"),
-			resolve(tmp.path, ".codex/skills"),
+			resolve(tmp.path, ".agents/skills"),
 		]);
 	});
 
