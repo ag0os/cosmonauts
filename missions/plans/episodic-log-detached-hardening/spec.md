@@ -108,33 +108,42 @@ F-003 reorder is the proof.
 
 ## Acceptance Criteria
 
-All criteria are gate-ON unless stated otherwise.
+All criteria are gate-ON unless stated otherwise. The `AC-###` labels are
+durable identifiers — behaviors in `plan.md` cite them by ID, so criteria must
+never be renumbered on edit; append new ones instead.
 
-- With the gate **off**, every touched path behaves byte-identically to
-  current `main` (session/manifest layout, event ordering, output text) — the
-  CDX-001 lesson says enabled-path changes can leak; prove they don't.
-- In a detached run whose terminal episode capture fails, the
+- **AC-001** — With the gate **off**, every touched path behaves
+  byte-identically to current `main` (session/manifest layout, event ordering,
+  output text) — the CDX-001 lesson says enabled-path changes can leak; prove
+  they don't.
+- **AC-002** — In a detached run whose terminal episode capture fails, the
   `driver_diagnostic` is observable on the live parent session bus, and the
   inline happy-path ordering suite stays green (the invariant in constraint 3
   holds).
-- A thrown Drive exit followed by settle and/or resume yields **exactly one**
-  terminal episode for that attempt — never a `failed`+`aborted` pair.
-- Aborting a detached run in the pre-spawn window leaves no live child
-  process, at most one terminal, and never overwrites a stamped completion
-  with an unstamped one.
-- Terminal-only `--resume` of an off-then-enabled completed run records
-  exactly one terminal episode; running the same resume again records nothing
-  new (idempotent via the deterministic attempt id). `docs/memory.md` matches
-  the shipped behavior.
-- Concurrent same-entity status updates from two sessions produce transition
-  episode counts matching the actual transitions (to the depth decided in
-  Open Questions).
-- Drive does not hold the plan lock during episode/diagnostic I/O, and
-  cross-plan commit serialization behavior is unchanged (existing suites
-  green).
-- A dedicated CDX-002 regression test exists (see Test debt) and fails against
-  the pre-CDX-002 behavior.
-- Full verification gates pass: tests, lint, typecheck.
+- **AC-003** — A thrown Drive exit followed by settle and/or resume yields
+  **exactly one** terminal episode for that attempt — never a
+  `failed`+`aborted` pair. This must hold even when the process dies between a
+  successful episode write and its bookkeeping.
+- **AC-004** — Aborting a detached run in the pre-spawn window leaves no live
+  child process, at most one terminal, and never overwrites a stamped
+  completion with an unstamped one.
+- **AC-005** — Terminal-only `--resume` of an off-then-enabled completed run
+  records exactly one terminal episode; running the same resume again records
+  nothing new (idempotent via the deterministic attempt id). `docs/memory.md`
+  matches the shipped behavior.
+- **AC-006** — Concurrent same-entity status updates from two sessions produce
+  transition episode counts matching the actual transitions (to the depth
+  decided in Open Questions).
+- **AC-007** — Drive does not hold the plan lock during episode/diagnostic
+  I/O, and cross-plan commit serialization behavior is unchanged (existing
+  suites green). No hardening path may leave a plan lock permanently held.
+- **AC-008** — A dedicated CDX-002 regression test exists (see Test debt) and
+  fails against the pre-CDX-002 behavior.
+- **AC-009** — Full verification gates pass: tests, lint, typecheck.
+
+No new artifact this plan introduces (lock files, ledger markers) may be
+written where the project's own scanners will mistake it for a plan, task, or
+source file, or where it would dirty a git-tracked directory.
 
 ## Test debt to close
 

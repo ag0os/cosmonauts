@@ -2,7 +2,7 @@
 title: Episodic-log detached-terminal & resume hardening
 status: active
 createdAt: '2026-07-21T22:17:10.000Z'
-updatedAt: '2026-07-22T14:49:43.641Z'
+updatedAt: '2026-07-22T15:38:00.000Z'
 ---
 
 ## Overview
@@ -72,11 +72,12 @@ changes terminal-only resume behavior.
   - Why: the three ordering wants are mutually unsatisfiable with one completion write. A narrow bridge drain preserves all three consumers without changing child JSONL order.
   - Decided by: ratified pre-existing spec/plan direction.
 
-- **D-002 — Persist an attempt-terminal ledger after successful capture**
-  - Decision: `run.terminal-episodes/` contains one deterministic marker per attempt. Every normal, thrown, abort, settle, and resume terminal path reads it; successful capture writes it atomically afterward. Capture failure leaves no marker and remains retryable.
-  - Alternatives: continue relying on control-flow convergence (already disproved by PRF-002/003/F-005); claim before capture (would make failed capture permanently non-retryable); an in-memory set (not restart-safe); a second terminal episode on reconciliation (violates D-009).
-  - Why: exactly-one terminal becomes persisted mechanism rather than an emergent property of which process or catch path ran last. Store-level PRF-001 dedupe remains the concurrent identical-content backstop.
-  - Decided by: ratified pre-existing plan direction.
+- **D-002 — Persist a two-phase attempt-terminal ledger: intent, then confirmation** *(amended 2026-07-22 after review — PR-001)*
+  - Decision: `run.terminal-episodes/` holds one record per attempt with a `state` of `intended` or `recorded`. A terminal writer persists the **intent** — attempt id, outcome, and the exact episode timestamp — *before* calling `recordEpisode`, then rewrites the same record to `recorded` after success. Every normal, thrown, abort, settle, and resume terminal path reads it: a `recorded` record skips capture outright; an `intended` record means "this attempt's terminal is already owned, and here is the exact content it must have", so a retry or a later resume replays capture from the persisted intent rather than synthesizing fresh content.
+  - Alternatives: **write-only-after-success (the previous form of this decision — rejected)**; control-flow convergence (disproved by PRF-002/003/F-005); an in-memory set (not restart-safe); a second terminal episode on reconciliation (violates D-009).
+  - Why: write-after-success is not reconstructible. `recordDriveThrownTerminalEpisode` passes **no** timestamp, so `recordEpisode` stamps wall-clock into both the rendered bytes and the filename hash (`lib/memory/episode.ts`, `lib/memory/markdown-store.ts`). If the process dies after the `failed` episode lands but before its marker, a later resume sees no marker and writes an `aborted` terminal whose outcome *and* timestamp differ — so PRF-001's identical-content dedupe cannot collapse them, and the exact `failed`+`aborted` pair this plan exists to eliminate reappears. Persisting the intent first makes the interrupted window reconstructible: the replay regenerates byte-identical content and converges through the store dedupe.
+  - Retryability is preserved, which was write-after-success's whole rationale: an `intended` record does not mean "done", it means "owned with this content". Capture failure leaves the intent in place and the next attempt retries it verbatim.
+  - Decided by: ratified pre-existing plan direction, claim protocol corrected by plan review PR-001.
 
 - **D-003 — Trust execution-path frozen sources only when `agentId === "worker"`**
   - Decision: an attempt that will execute may reuse a frozen source only when its parsed agent id is exactly `worker`. Any other frozen source is prior provenance only; execution resolves the actual worker and mints identity from that resolution. Reconcile-only resume preserves the frozen source untouched.
@@ -134,9 +135,10 @@ load-bearing for the failure-safe hook design.
 
 ## Behaviors
 
-The authoritative spec lists nine unnumbered Acceptance Criteria bullets. For
-traceability in this plan, `AC-001` through `AC-009` refer to those bullets in
-listed order; the aliases do not amend or reinterpret `spec.md`.
+`spec.md` now carries native `AC-001`–`AC-009` identifiers on its Acceptance
+Criteria *(Added 2026-07-22 after review — PR-005)*. Behavior `Source` fields
+cite those IDs directly, so traceability no longer depends on bullet position
+and survives spec edits. Criteria are never renumbered; new ones append.
 
 ### B-001 - OFF-state bytes and presentation remain identical
 
@@ -264,7 +266,7 @@ listed order; the aliases do not amend or reinterpret `spec.md`.
 - Source: AC-005
 - Context: a human reads the fresh-process Drive reconstruction contract
 - Action: they inspect `docs/memory.md`
-- Expected: it states that off-then-enabled terminal-only resume derives and persists a deterministic run-id attempt id when a source resolves, records one terminal, dedupes repeated resumes, and warns/skips capture honestly when source resolution fails; it no longer presents the unconditional skip as deliberate
+- Expected: the "Fresh-Process Wake And Drive Reconstruction" section gains a paragraph stating that off-then-enabled terminal-only resume derives and persists a deterministic run-id attempt id when a source resolves, records one terminal, dedupes repeated resumes, and warns/skips capture honestly when source resolution fails; the existing unqualified claim that "resume surfaces have terminal evidence" is qualified to match. The `launchDetached` hard-kill residual sentence and the launch-resolution warn/skip sentence stay unchanged — this edit is additive plus one qualification, and removes nothing *(revised 2026-07-22 after review — SF-004/CF-006: the prior wording asserted removal of an "unconditional skip" sentence that does not exist in the file)*
 - Seam: `docs/memory.md`
 - Test: `tests/memory/interface.test.ts` > `documents deterministic off-then-enabled terminal-only resume`
 - Marker: `@cosmo-behavior plan:episodic-log-detached-hardening#B-013`
@@ -274,7 +276,7 @@ listed order; the aliases do not amend or reinterpret `spec.md`.
 - Source: AC-006
 - Context: two episode-producing sessions in an enabled project update one plan status concurrently, including same-target and different-target cases
 - Action: each `PlanManager.updatePlan` runs under the same per-plan file lock and captures after release
-- Expected: each writer reads the status produced by the prior serialized writer; episode count and previous→current details equal actual persisted transitions, with no episode for a same-status write
+- Expected: each writer reads the status produced by the prior serialized writer; episode count and previous→current details equal actual persisted transitions, with no episode for a same-status write. The guarantee is bounded to *episode-producing* writers (see the SF-001 residual in Design 7); a context-free concurrent writer is explicitly out of scope. The lock file lives flat under `.cosmonauts/` and never inside `missions/`
 - Seam: `lib/plans/plan-manager.ts` through `lib/memory/episode-transition-lock.ts`
 - Test: `tests/plans/plan-manager.test.ts` > `serializes enabled same-plan status transition decisions across manager instances`
 - Marker: `@cosmo-behavior plan:episodic-log-detached-hardening#B-014`
@@ -284,10 +286,11 @@ listed order; the aliases do not amend or reinterpret `spec.md`.
 - Source: AC-006
 - Context: two episode-producing sessions in an enabled project update one task status concurrently, including a status-driven filename change
 - Action: each `TaskManager.updateTask` runs under the same per-task file lock and captures after release
-- Expected: read, old filename selection, merge, write/rename, and transition decision share one critical section; episode count and details equal actual transitions, with no lost/duplicate task file
+- Expected: read, old filename selection, merge, write/rename, and transition decision share one critical section; episode count and details equal actual transitions, with no lost/duplicate task file. Concurrent updates spelled `TASK-001` and `task-001` take the **same** lock, because the path derives from the canonical uppercased id; the guarantee is bounded to episode-producing writers as in B-014
 - Seam: `lib/tasks/task-manager.ts` through `lib/memory/episode-transition-lock.ts`
 - Test: `tests/tasks/task-manager-concurrency.test.ts` > `serializes enabled same-task updates and records only actual status transitions`
 - Marker: `@cosmo-behavior plan:episodic-log-detached-hardening#B-015`
+- Additional evidence: `readdir("missions/tasks")` contains no non-`.md` entry during or after a locked update, and `git status --porcelain` is unchanged — the lock must not be archivable by `lib/plans/archive.ts`'s unfiltered task-id prefix match
 
 ### B-016 - Inline Drive releases its plan lock before terminal episode I/O
 
@@ -342,7 +345,7 @@ listed order; the aliases do not amend or reinterpret `spec.md`.
 ### B-021 - Full repository verification remains green
 
 - Source: AC-009
-- Context: B-001 through B-020 and B-022 through B-025 are integrated as one change set
+- Context: B-001 through B-020 and B-022 through B-029 are integrated as one change set
 - Action: the project verification protocol runs
 - Expected: the full 2,645-test green baseline plus new regressions passes, and lint and type checking report no errors
 - Seam: project scripts in `package.json` and the Quality Contract below
@@ -388,6 +391,49 @@ listed order; the aliases do not amend or reinterpret `spec.md`.
 - Seam: pre-`prepareResume()` runtime/source resolution in `cli/drive/subcommand.ts`
 - Test: `tests/cli/drive/graph-resume.test.ts` > `warns and skips terminal capture when off-era resume source cannot resolve`
 - Marker: `@cosmo-behavior plan:episodic-log-detached-hardening#B-025`
+
+*Behaviors B-026 through B-029 were added 2026-07-22 after the two review
+channels; see the Decision Log amendments and Design 2, 3, 4, 6, and 7.*
+
+### B-026 - An interrupted terminal capture cannot become a duplicate pair
+
+- Source: AC-003
+- Context: an enabled attempt records its thrown `failed` episode successfully, then the process dies before the ledger record reaches `state: "recorded"`
+- Action: a later settle or resume reads the persisted `intended` record
+- Expected: it replays the terminal from the record's persisted `outcome` and `timestamp`, producing byte-identical episode content that the store dedupes, and never writes a divergent `aborted` terminal; the attempt still holds exactly one terminal episode
+- Seam: two-phase claim in `lib/driver/run-state.ts` and `lib/driver/drive-graph-runner.ts`
+- Test: `tests/driver/drive-on-graph-recovery.test.ts` > `replays an intended terminal record instead of writing a second outcome`
+- Marker: `@cosmo-behavior plan:episodic-log-detached-hardening#B-026`
+
+### B-027 - A drained bridge always reaches stopped
+
+- Source: AC-002
+- Context: an enabled bridge has published a terminal and entered `draining`, and the detached result then rejects (child dies before completion lands, or a non-ENOENT completion read failure), or no caller ever calls `finish()`
+- Action: the parent settles, or the bridge's internal drain deadline expires
+- Expected: the bridge reaches `stopped` with no live file/directory watcher and no live interval, via the caller's `try/finally` `finish()` on both resolve and reject *and* independently via its own deadline; `stop()` and `finish()` remain mutually idempotent
+- Seam: drain deadline in `lib/driver/event-stream.ts`; unconditional shutdown in `startDetachedProcess` in `lib/driver/driver.ts`
+- Test: `tests/driver/driver-detached.test.ts` > `stops a draining bridge when the detached result rejects`
+- Marker: `@cosmo-behavior plan:episodic-log-detached-hardening#B-027`
+
+### B-028 - Abort leaves no bridge published in the launch window
+
+- Source: AC-004
+- Context: `handle.abort()` runs between `setChild` and `setBridge` during detached launch
+- Action: abort sets `aborted`, yields, and re-reads the entire live launch state
+- Expected: no bridge is published, or a published bridge is stopped immediately; the pid-file write and bridge construction are skipped after an observed abort; no watcher or timer survives
+- Seam: `DetachedLaunchState.aborted` and `launchDetachedProcess` in `lib/driver/driver.ts`
+- Test: `tests/driver/driver.test.ts` > `stops a bridge published during the abort window`
+- Marker: `@cosmo-behavior plan:episodic-log-detached-hardening#B-028`
+
+### B-029 - A rejected plan-lock release stays retryable
+
+- Source: AC-007
+- Context: the first `LockHandle.release()` rejects (read or unlink failure) and the caller's `.finally` backstop then runs
+- Action: the backstop calls `release()` again
+- Expected: the second call genuinely retries and removes the lock rather than returning early; the handle marks itself released only after a successful unlink or after confirming the lock is not ours; ordinary success-path release remains idempotent with no second unlink, and no plan lock is left held by a live process
+- Seam: `createHandle` in `lib/driver/lock.ts`
+- Test: `tests/driver/lock.test.ts` > `retries release after a failed unlink and stays idempotent on success`
+- Marker: `@cosmo-behavior plan:episodic-log-detached-hardening#B-029`
 
 ## Design
 
@@ -442,29 +488,61 @@ writeFallbackRunCompletion(
   workdir: string,
   fallback: DriverResult,
 ): Promise<DriverResult>
-hasRecordedDriveTerminal(workdir: string, attemptId: string): Promise<boolean>
-markDriveTerminalRecorded(workdir: string, attemptId: string): Promise<void>
+readDriveTerminalRecord(
+  workdir: string,
+  attemptId: string,
+): Promise<DriveTerminalRecord | undefined>
+writeDriveTerminalRecord(
+  workdir: string,
+  record: DriveTerminalRecord,
+): Promise<void>
 ```
 
-The marker path is
-`run.terminal-episodes/<sha256(attemptId)>.json`; hashing prevents path traversal
-or target-project filename variance. Marker bytes contain only version `1` and
-the exact attempt id—no wall clock, mtime, random value, or outcome—so redundant
-writes converge byte-for-byte. Marker reads validate the content. The directory
-is created only after an identity-bearing capture succeeds; OFF runs never touch
-it.
+```ts
+interface DriveTerminalRecord {
+  version: 1;
+  attemptId: string;
+  outcome: DriverResult["outcome"];
+  /** The exact episode timestamp; replay must reproduce it verbatim. */
+  timestamp: string;
+  state: "intended" | "recorded";
+}
+```
 
-Normal and thrown terminal capture:
+The record path is `run.terminal-episodes/<sha256(attemptId)>.json`; hashing
+prevents path traversal and target-project filename variance. Bytes are
+deterministic given `(attemptId, outcome, timestamp, state)` — no mtime, no
+random value, no wall clock beyond the persisted episode timestamp itself — so
+redundant writes at the same state converge byte-for-byte. Reads validate
+content and treat a malformed or partially written record as absent. The
+directory is created only on an identity-bearing terminal path; OFF runs never
+touch it.
+
+Terminal capture (normal and thrown) is a two-phase claim:
 
 1. derive the complete frozen identity;
-2. read the persisted marker;
-3. skip when already recorded;
-4. call `recordEpisode`;
-5. write the marker only when the result is `recorded`.
+2. read the persisted record;
+3. `state === "recorded"` → skip entirely;
+4. `state === "intended"` → **replay**: rebuild the episode from the persisted
+   `outcome` and `timestamp` rather than synthesizing new content;
+5. no record → resolve the episode timestamp *once* (completion-backed paths use
+   `result.completedAt`; the thrown path resolves its wall clock here and nowhere
+   else), then persist `state: "intended"`;
+6. call `recordEpisode` with that exact timestamp;
+7. rewrite the same record to `state: "recorded"` on success.
 
-Ledger read/write failure stays non-load-bearing and uses the existing
-`episode_capture_failed` reporter. Failed or disabled capture does not claim the
-attempt. Write-after-success intentionally preserves retryability; PRF-001 store
+This closes PR-001's interrupted window. Because the thrown path's timestamp is
+persisted at step 5 instead of being generated inside `recordEpisode`, a crash
+between steps 6 and 7 leaves an `intended` record that any later settle or
+resume replays into byte-identical episode content — which PRF-001's store
+dedupe collapses — instead of a divergent `aborted` terminal. An `intended`
+record also blocks a *different* outcome from claiming the attempt: settle and
+resume treat `intended` as owned.
+
+Ledger read/write failure stays non-load-bearing and reports through the
+existing `episode_capture_failed` reporter. A failed intent write means capture
+proceeds unclaimed exactly as today (no regression versus current `main`), and a
+failed capture leaves the intent in place for verbatim retry. PRF-001 store
 dedupe remains the identical-concurrent-writer backstop.
 
 `writeFallbackRunCompletion` reads current content before fallback persistence.
@@ -493,6 +571,30 @@ stop. With complete enabled identity, publishing a terminal transitions to
 serializes with any active poll, performs one final poll, closes watchers/timers,
 and is idempotent with `stop()`.
 
+**`draining` must be self-terminating** *(added 2026-07-22 after review —
+DA-001)*. Today the bridge's only self-stop is the terminal event itself
+(`event-stream.ts:591-594`), and that `stop()` is the sole thing that ever clears
+the `retryInterval` installed at `event-stream.ts:661`. Replacing that self-stop
+with a state whose only exit is an external `finish()` would leak watchers and a
+live `setInterval` for the parent's whole lifetime on every path where nobody
+calls `finish()`. Two defenses, both required:
+
+1. **Internal deadline.** Entering `draining` arms a bridge-owned timer; on
+   expiry the bridge performs its final poll and reaches `stopped` on its own,
+   with no external call. The bridge is never dependent on a caller for
+   liveness.
+2. **Unconditional caller shutdown.** `startDetachedProcess` wraps
+   `waitForDetachedResult` in `try/finally` so `await bridge.finish()` runs on
+   **rejection** as well as resolution, and on the `launchDetachedProcess` throw
+   path.
+
+The reject path is not hypothetical: a child that emits `run_completed` and then
+dies before `writeRunCompletion` lands makes `waitForUnexpectedExit`
+(`driver.ts:592-609`) reject 500 ms later, and `startDetached`'s only `.finally`
+merely removes the pid file. On the long-lived `run_driver` tool host that leak
+would persist for the entire Pi session. A non-ENOENT read failure in
+`waitForCompletion` (`driver.ts:578-581`) has the same shape.
+
 `startDetachedProcess` waits for completion as today, then—only for an enabled
 drain—waits for child exit up to an internal 2,000 ms constant. Child exit or
 timeout is followed by `await bridge.finish()`. Timeout bounds parent result
@@ -508,19 +610,35 @@ interface DetachedLaunchState {
   child?: ChildProcess;
   bridge?: JsonlActivityBusBridge;
   workdirCreated: boolean;
+  /** Set by abort() before it yields; publishers must honour it. */
+  aborted: boolean;
 }
 ```
 
 Launch callbacks mutate it; abort receives the object, not snapshots. Abort
-hard-stops the current bridge, calls `controller.abort()`, yields one microtask so
-a synchronous spawn already in progress can publish its child, then re-reads
-live state. If a child exists, abort terminates and awaits it. Only afterward does
-it re-read `workdirCreated`, inspect guarded completion, and reconcile the
-ledger.
+hard-stops the current bridge, sets `aborted`, calls `controller.abort()`, yields
+one microtask so a synchronous spawn already in progress can publish its child,
+then **re-reads the entire live state — not just `child`**. If a child exists,
+abort terminates and awaits it. Only afterward does it re-read `workdirCreated`,
+inspect guarded completion, and reconcile the ledger.
 
-The deterministic race test mocks `spawn` so `handle.abort()` is invoked inside
-the last-check→child-publication window. No production-only sleep or random
-stress loop is acceptable.
+**Publication after abort must not resurrect a bridge** *(added 2026-07-22 after
+review — DA-005/CF-001)*. In `launchDetachedProcess` the bridge is published
+*after* the child and after the pid-file write, so an abort landing between
+`setChild` and `setBridge` would otherwise install a fresh bridge that nothing
+ever stops — the same watcher/timer leak as DA-001, reached by a different route.
+Therefore: `setBridge` stops the bridge immediately (or declines to publish) when
+`aborted` is set; `launchDetachedProcess` re-checks the abort signal after the
+spawn so the pid-file write and bridge construction are skipped; and abort's
+post-yield re-read stops any bridge that appeared regardless.
+
+Two deterministic race tests, both mocking rather than sleeping — no
+production-only sleep or random stress loop is acceptable:
+
+1. `spawn` mocked so `handle.abort()` runs inside the last-check→child-publication
+   window (asserts no live child).
+2. the pid-file write or bridge factory mocked so `handle.abort()` runs between
+   `setChild` and `setBridge` (asserts no live bridge watcher or timer).
 
 ### 5. Deterministic terminal-only resume identity
 
@@ -568,6 +686,25 @@ backstop release failures are contained as described in Design 1. A failed hook
 never runs episode capture while the lock may remain held and never enters a
 second terminal path.
 
+**The backstop only works if `release()` is actually retryable** *(added
+2026-07-22 after review — PR-002)*. `createHandle` in `lib/driver/lock.ts`
+currently sets `released = true` **before** it reads the lock file and unlinks
+it, so if either operation rejects, every later call returns immediately without
+retrying. The advertised "`.finally` backstop" would then be a no-op and the
+lock file would stay on disk owned by a still-live PID — and on the long-lived
+`run_driver` tool host, later same-plan runs are reported as active until that
+process exits, even though the primary result already returned successfully.
+That makes the hook strictly worse than today's release-in-`.finally`, which is
+the opposite of PRF-004's intent.
+
+Fix the contract at the source: `release()` marks itself released only after the
+unlink succeeds *or* after it confirms the lock is not ours; a rejected release
+leaves the handle retryable so the `.finally` backstop can genuinely retry.
+`lib/driver/lock.ts` joins Files to Change. This is a real behavior change to a
+shared primitive, so it carries its own behavior and its own OFF-state evidence:
+release remains idempotent for the ordinary success path, and no caller may
+observe a second unlink.
+
 All primary git operations, durable run/step writes, terminal legacy emission,
 and completion persistence precede the hook. Post-hook capture may write the
 episode and, on failure, its exact `episode_capture_failed` diagnostic; this
@@ -576,7 +713,8 @@ exists to deliver. The cross-plan repo-commit suite guards primary serialization
 
 ### 7. Enabled per-entity status-transition serialization
 
-Create `lib/memory/episode-transition-lock.ts` as the single shared owner:
+Create `lib/memory/episode-transition-lock.ts` as the gate/context decision
+owner — **not** as a new lock protocol:
 
 ```ts
 withEpisodeTransitionLock<T>(options: {
@@ -591,19 +729,71 @@ If `hasEpisodeContext` is false, the helper calls `action` directly. Otherwise i
 loads the current project gate fail-soft; absent/false/config-load failure also
 calls `action` directly, preserving baseline manager semantics (the later
 `recordEpisode` call remains the established warning owner for config failure).
-Only literal enabled enters a waiting, stale-process-safe, owner-checked file
-lock.
+Only literal enabled acquires a lock.
 
-Plan/task managers derive safe colocated lock paths that are not markdown-scanned
-and call this helper around the authoritative read, not-found check, old filename
-(for tasks), merge, primary write/rename, optional plan spec write, and
-previous/current status decision. The helper releases in `finally`; only then
-does existing fail-soft episode capture run.
+**Reuse the existing primitive; do not write a third one** *(added 2026-07-22
+after review — CF-003/PR-004)*. `lib/tasks/lock.ts` already implements exactly
+the described protocol (exclusive creation, waiting, PID+nonce ownership,
+stale-owner recovery, owner-checked idempotent release) and documents that it was
+itself copied from `lib/driver/lock.ts`. Generalize it into a path-parameterized
+`withEntityFileLock(lockPath, fn)`, keep `withTaskCreateLock` as a thin caller,
+and have `episode-transition-lock.ts` own only the gate/context decision and
+delegate acquisition. A third independent copy of stale/release semantics is
+exactly where PR-002 found a lifecycle defect in the second.
 
-Lock files use exclusive creation, owner PID+nonce content, stale-owner recovery,
-and owner-checked idempotent release. They leave no final artifact. No in-memory
-mutex participates. `createPlan`, `createTask`, delete/archive, context-free
-Drive managers, gate-OFF updates, and unrelated mutation paths are unchanged.
+**Lock file placement is `.cosmonauts/`, flat — never colocated** *(added
+2026-07-22 after review — CF-002/DA-004)*:
+
+- `.cosmonauts/episode-plan-<slug>.lock`
+- `.cosmonauts/episode-task-<canonical-id>.lock`
+
+"Colocated but not markdown-scanned" is unsafe for tasks.
+`lib/plans/archive.ts:103-105` does an **unfiltered** `readdir(tasksDir)` and
+selects the task file with `taskFiles.find((f) => f.startsWith(task.id))`, so a
+`missions/tasks/TASK-123*.lock` can be selected instead of `TASK-123-*.md` —
+archiving would move the lock and silently orphan the real task file. Design §7
+also mandates stale-owner recovery, meaning a crashed holder's lock file
+*persists* until the next acquisition, so this is reachable by design rather than
+only by a race. `lib/tasks/lock.ts:26-33` already documents the opposite
+convention verbatim; follow it.
+
+Placement must be **flat** inside `.cosmonauts/`: the ignore rule at
+`.gitignore:21` is `.cosmonauts/*.lock`, a single-level glob, so a `locks/`
+subdirectory would leave the files git-visible and trip Drive's own
+dirty-worktree resume refusal (`refuseDirtyResume`).
+
+**Canonical entity identity** *(added 2026-07-22 after review — PR-003)*: task
+IDs are deliberately case-insensitive — `findTaskFilenameById` uppercases, and
+the existing suite proves `task-001`, `TASK-001`, and `Task-001` are one task.
+The lock path must therefore derive from the **canonical** (uppercased) task id,
+or two writers on the same record would take different locks and defeat B-015
+entirely. Plan slugs use their existing canonical form. The B-015 test includes
+mixed-case concurrent updates.
+
+**Acquisition is fail-soft and bounded** *(added 2026-07-22 after review —
+DA-003)*: this helper sits on the *primary* write path, so it must never
+strengthen a fail-soft subsystem into a load-bearing one — that would contradict
+D-008. On acquisition error, or after a bounded wait, it reports once through the
+established episode-warning channel and runs `action()` **unlocked** rather than
+throwing or waiting forever. An unwritable or held lock path degrades episode
+counting; it never fails or stalls a plan/task update.
+
+Plan/task managers call this helper around the authoritative read, not-found
+check, old filename (for tasks), merge, primary write/rename, optional plan spec
+write, and previous/current status decision. The helper releases in `finally`;
+only then does existing fail-soft episode capture run. Locks leave no final
+artifact. No in-memory mutex participates. `createPlan`, `createTask`,
+delete/archive, context-free Drive managers, gate-OFF updates, and unrelated
+mutation paths are unchanged.
+
+**Named accepted residual** *(added 2026-07-22 after review — SF-001)*: gating
+on `hasEpisodeContext` means an episode-context writer racing a *context-free*
+writer (notably Drive's own managers) is not serialized, so AC-006's guarantee
+covers episode-producing writers only. This is accepted rather than fixed:
+Drive-internal transitions are capture-suppressed by construction under D-006,
+and widening the lock to every writer enlarges the blast radius well past the
+spec's "episode-counting correctness only" scope. B-014/B-015 state this bound
+explicitly rather than implying full mutual exclusion.
 
 ## Files to Change
 
@@ -616,10 +806,13 @@ Drive managers, gate-OFF updates, and unrelated mutation paths are unchanged.
 - `lib/driver/episode-identity.ts` — deterministic run-id-derived F-005 id and exact `agentId === "worker"` predicate; existing new-attempt mint remains. Tests: `tests/cli/drive/{run,graph-resume}.test.ts`.
 - `cli/drive/subcommand.ts` — pre-`prepareResume` identity/failure decision, execution-only source guard, resume ledger, guarded rejection fallback, and removal of successful write-if-missing. Tests: `tests/cli/drive/{run,graph-resume}.test.ts`.
 - `domains/shared/extensions/orchestration/driver-tool.ts` — remove successful settle rewrite and route rejection/launch fallback through stamped-completion guard. Test: `tests/extensions/orchestration-driver-tool.test.ts`.
-- **New:** `lib/memory/episode-transition-lock.ts` — enabled/context-aware gate selection plus one waiting cross-process entity-lock implementation; imports Node filesystem/config only and depends on neither plan nor task modules.
-- **New:** `tests/memory/episode-transition-lock.test.ts` — enabled acquisition/wait/stale cleanup/owner release and absent/false/context-free/config-failure bypass.
-- `lib/plans/plan-manager.ts` — derive per-plan lock path; run update read→write→decision through shared helper; release before capture. Test: `tests/plans/plan-manager.test.ts`.
-- `lib/tasks/task-manager.ts` — derive per-task lock path; run update read/rename/write→decision through shared helper; release before capture. Tests: `tests/tasks/{task-manager,task-manager-concurrency}.test.ts`.
+- **New:** `lib/memory/episode-transition-lock.ts` — enabled/context-aware gate selection **only**, plus fail-soft bounded-wait degradation; delegates all acquisition to the generalized primitive below. Depends on neither plan nor task modules.
+- **New:** `tests/memory/episode-transition-lock.test.ts` — enabled acquisition/wait/stale cleanup/owner release, absent/false/context-free/config-failure bypass, and fail-soft degradation to an unlocked action on acquisition error or wait timeout.
+- `lib/tasks/lock.ts` — generalize into a path-parameterized `withEntityFileLock(lockPath, fn)`; `withTaskCreateLock` becomes a thin caller. No third copy of the lock protocol is created. Tests: existing task-lock suite plus the new entity-lock cases.
+- `lib/driver/lock.ts` — **(added after review, PR-002)** `createHandle` marks released only after a successful unlink or a confirmed not-ours check, so a rejected release stays retryable and the `.finally` backstop is real. Test: `tests/driver/lock.test.ts`.
+- `lib/plans/plan-manager.ts` — derive per-plan lock path under `.cosmonauts/` (flat); run update read→write→decision through shared helper; release before capture. Test: `tests/plans/plan-manager.test.ts`.
+- `lib/tasks/task-manager.ts` — derive per-task lock path from the **canonical uppercased** id under `.cosmonauts/` (flat); run update read/rename/write→decision through shared helper; release before capture. Tests: `tests/tasks/{task-manager,task-manager-concurrency}.test.ts`.
+- `tests/plans/archive.test.ts` — attach B-015 evidence that `missions/tasks/` holds no non-`.md` entry during a locked update, so `lib/plans/archive.ts`'s unfiltered task-id prefix match cannot archive a lock file. Production `archive.ts` is unchanged.
 - `docs/memory.md` — reconcile fresh-process reconstruction with deterministic terminal-only resume and resolution-failure behavior. Test: `tests/memory/interface.test.ts`.
 - `tests/driver/backends/cosmonauts-subagent-resolution.test.ts` — retain CDX-001 exact plain-`worker` role/session-layout regression; production backend code is unchanged.
 - `tests/extensions/orchestration-driver-detached.test.ts` — retain/extend absent/false detached spec and output parity.
@@ -632,12 +825,24 @@ extension, architecture-map, or gate default changes.
 ## Risks
 
 - **Drain liveness and late bytes:** `finish()` must serialize a final read before
-  cleanup; the 2 s child-exit bound must be fake-timer tested. If leak-free
-  cleanup cannot be proven, stop and revise the bridge API.
-- **Ledger write-after-success race:** two truly concurrent different outcomes
-  could both pass a pre-check. Current paths serialize through child exit/settle,
-  and identical races dedupe in the store. If a reachable different-outcome race
-  appears, stop and redesign the claim protocol rather than weaken exactly-once.
+  cleanup; the 2 s child-exit bound must be fake-timer tested. The bridge's own
+  drain deadline and the caller's `try/finally` shutdown are **both** required —
+  neither alone is sufficient, because the reject path has no caller today and a
+  caller-only design leaks a `setInterval` for the parent's lifetime. If leak-free
+  cleanup cannot be proven on the reject path, stop and revise the bridge API.
+- **Ledger claim race:** two truly concurrent *different* outcomes could both
+  pass a pre-check. The two-phase intent narrows this to the window between
+  reading "no record" and writing the intent; current paths also serialize
+  through child exit/settle, and identical races dedupe in the store. If a
+  reachable different-outcome race survives the intent write, stop and redesign
+  the claim protocol rather than weaken exactly-once.
+- **Fail-soft that becomes load-bearing:** the transition lock sits on the
+  primary write path. Any design in which a lock error or a slow holder can fail
+  or stall a plan/task update violates D-008 and is a stop condition — degrade to
+  unlocked-with-warning instead.
+- **Shared-primitive blast radius:** `lib/driver/lock.ts` and `lib/tasks/lock.ts`
+  are used well beyond this plan. Their changes need their own OFF-state evidence;
+  a release-semantics regression there is far worse than the defects being fixed.
 - **Hook/release failure:** once completion exists, no rejection may reach the
   broad terminal catch or caller result. Capture is skipped when release fails;
   only bounded failure reporting and a contained backstop release attempt remain.
@@ -661,11 +866,14 @@ extension, architecture-map, or gate default changes.
 
 | Order | Gate kind | Tier | Binding state | Threshold | Protocol | Degradation / notes |
 |---:|---|---|---|---|---|---|
-| 1 | `correctness` | universal | bound | Current 2,645-test baseline plus all B-001–B-025 regressions passes; lint and type checks are clean | project-discovered | hard fail |
+| 1 | `correctness` | universal | bound | Current 2,645-test baseline plus all B-001–B-029 regressions passes; lint and type checks are clean | project-discovered | hard fail |
 | 2 | `artifact-conformance` | universal | bound | Every behavior has required fields, a root-relative evidence file, and exactly one matching marker near its executable test | artifact evidence | hard fail |
-| 3 | `mutation` | bindable | unbound | Negatives kill terminal reordering, random F-005 ids, marker-before-capture, stale launch snapshots, bridge over-forwarding, stamped downgrade, hook-rejection reclassification, post-hook caller writes, failed-resolution fallthrough, non-worker trust, stale manager reads, OFF lock acquisition, and OFF-layout leakage | pending | unbound; targeted tests plus reviewer judgment required |
-| 4 | `boundary-conformance` | bindable | bound | Gate remains OFF; run-state owns terminal persistence; hook failure cannot create a terminal; enabled entity locks release before capture; no architecture/MemoryStore surface widens | project-discovered | hard fail through exact tests and source review |
-| 5 | `duplication` | bindable | unbound | One terminal ledger, fallback guard, bridge drain, terminal helper, and entity-transition lock implementation exist | pending | unbound; reviewer judgment required |
+| 3 | `mutation` | bindable | unbound | Negatives kill terminal reordering, random F-005 ids, intent-skipped capture, stale launch snapshots, bridge over-forwarding, an unstoppable drain, stamped downgrade, hook-rejection reclassification, post-hook caller writes, failed-resolution fallthrough, non-worker trust, stale manager reads, raw-case lock ids, OFF lock acquisition, and OFF-layout leakage | pending | unbound; targeted tests plus reviewer judgment required |
+| 4 | `duplication` | bindable | unbound | One terminal ledger, fallback guard, bridge drain, and terminal helper exist, and the count of filesystem lock-protocol implementations in the repo does **not** increase | pending | unbound; reviewer judgment required |
+| 5 | `boundary-conformance` | bindable | bound | Gate remains OFF; run-state owns terminal persistence; hook failure cannot create a terminal; enabled entity locks release before capture and degrade fail-soft; no lock or ledger artifact lands in a scanned or git-tracked directory; no architecture/MemoryStore surface widens | project-discovered | hard fail through exact tests and source review |
+
+*Rows 4 and 5 were swapped 2026-07-22 after review (PR-006): the canonical
+ladder orders `duplication` before `boundary-conformance` when both apply.*
 
 Project bindings, run in order:
 
@@ -699,40 +907,59 @@ Every stage follows RED → GREEN → REFACTOR one behavior at a time. If a stag
 requires changing a ratified ordering, gate default, architecture boundary, or
 scope exclusion, stop and revise this plan rather than improvising.
 
-1. **Attempt-terminal ledger (B-022 foundation).** RED marker path/content,
-   fresh-process read, success-only write, and fail-soft error behavior. Wire all
-   terminal builders through it without changing order. This establishes the
-   shared D-009 completion/outcome contract.
+1. **Attempt-terminal ledger (B-022, B-026 foundation).** RED record
+   path/content, fresh-process read, the two-phase intent→recorded claim, replay
+   of an `intended` record, and fail-soft error behavior. The thrown path must
+   resolve its episode timestamp once, at intent time, and pass it explicitly to
+   `recordEpisode` — never let `recordEpisode` stamp wall-clock for a terminal.
+   Wire all terminal builders through it without changing order. This establishes
+   the shared D-009 completion/outcome contract.
 2. **PRF-003 thrown/settle/resume (B-006, B-007, B-010).** Depends on 1. RED
    failed→settle and failed→fresh-resume. Add stamped fallback guard, route CLI/
    tool fallback writers through it, and remove successful tool rewriting.
-3. **PRF-002 live abort state (B-008, B-009).** Depends on 1–2. Replace snapshots,
-   add deterministic mocked-spawn race, terminate/await before completion
-   reconciliation, and reuse ledger/guard.
-4. **F-003/UR-002 bridge drain (B-002–B-005).** Depends on 1–3 and never reorders
-   them. RED allowlist, final poll, timeout, abort stop, parent bus, and terminal-
-   before-completion; implement `finish()` and enabled-only drain.
+3. **PRF-002 live abort state (B-008, B-009, B-028).** Depends on 1–2. Replace
+   snapshots, add the `aborted` flag, add both deterministic mocked races
+   (spawn window and `setChild`→`setBridge` window), terminate/await before
+   completion reconciliation, and reuse ledger/guard.
+4. **F-003/UR-002 bridge drain (B-002–B-005, B-027).** Depends on 1–3 and never
+   reorders them. RED allowlist, final poll, timeout, abort stop, parent bus, and
+   terminal-before-completion; implement `finish()`, the enabled-only drain, the
+   bridge-internal drain deadline, and unconditional `try/finally` shutdown on
+   the reject path.
 5. **F-005 deterministic terminal-only identity (B-011–B-013, B-025).** Depends
    on 1–4. RED successful off-then-enabled, repeat resume, and runtime/source
    failure before `prepareResume`; derive/persist run-id identity, reuse ledger,
-   and reconcile docs. **Stages 1–5 form one atomic delivery checkpoint and must
-   ship together**; no subset is mergeable because all share D-009 ownership.
+   and reconcile docs. **Precondition (SEQ-003):** the identity-preparation
+   helper runs only when the resume will actually terminate inside
+   `prepareResume` — empty `remainingTaskIds` **and** no graph resume state —
+   so a resume the CLI subsequently refuses (`dirty_worktree`, unsupported
+   backend) leaves `spec.json` and `task-queue.txt` byte-unchanged. Add that
+   refusal case as evidence. **Stages 1–5 form one atomic delivery checkpoint and
+   must ship together**; no subset is mergeable because all share D-009 ownership.
 6. **SR-001 execution guard (B-020).** Depends on 5. RED executing non-worker and
    reconcile provenance; enforce exact `agentId === "worker"` only on execution.
-7. **PRF-004 terminal hook (B-016–B-018, B-023, B-024).** Depends on stable 1–5.
-   RED hook order and rejection for all completion-backed outcomes. Isolate
-   rejection from broad catch, contain backstop failure, remove successful CLI/
-   run-step/tool writers, and run cross-plan serialization.
+7. **PRF-004 terminal hook (B-016–B-018, B-023, B-024, B-029).** Depends on
+   stable 1–5. **Fix `lib/driver/lock.ts` release retryability FIRST** — the
+   hook's entire safety story rests on the `.finally` backstop being real, and
+   today a rejected release permanently disables it. Then RED hook order and
+   rejection for all completion-backed outcomes. Isolate rejection from broad
+   catch, contain backstop failure, remove successful CLI/run-step/tool writers,
+   and run cross-plan serialization.
 8. **PRF-007 enabled transition serialization (B-014, B-015).** Independent of
-   6–7 after the 1–5 checkpoint. RED shared lock mechanics, enabled same-entity
-   races, and OFF/context-free/config-failure bypass. Add the shared lock owner;
-   lock only update read→write→decision and release before capture.
+   6–7 after the 1–5 checkpoint. First generalize `lib/tasks/lock.ts` into the
+   path-parameterized primitive — do not author a new lock protocol. Then RED
+   enabled same-entity races (including mixed-case task ids), OFF/context-free/
+   config-failure bypass, fail-soft degradation on acquisition failure, and
+   `.cosmonauts/`-flat placement with no `missions/` or git-visible residue.
+   Lock only update read→write→decision and release before capture.
 9. **CDX-002 dedicated regression (B-019).** Depends on 6. Add persisted graph
    resume with unavailable frozen worker, remaining tasks, inline subagent,
    fallback execution, spec omission, and no stale-source episode; demonstrate
    failure against pre-CDX-002 behavior.
 10. **OFF-state and integration gate (B-001, B-021).** Extend exact disabled
     assertions across 1–9, including CDX-001 layout/output and manager lock bypass.
-    Run `bun run test`, `bun run lint`, `bun run typecheck`, and verify all 25
+    Run `bun run test`, `bun run lint`, `bun run typecheck`, and verify all 29
     markers. Any OFF mismatch, terminal-order failure, hook reclassification,
-    random synthetic id, or duplicate/missing terminal blocks completion.
+    random synthetic id, duplicate/missing terminal, leaked bridge watcher or
+    timer, or lock/ledger artifact in a scanned or git-tracked directory blocks
+    completion.
