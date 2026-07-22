@@ -385,8 +385,18 @@ persisted `completedAt` supplies the terminal episode timestamp and, together
 with run id, attempt id, actor, and outcome, its deterministic identity.
 Reconciliation never derives identity from the completion file's mtime, so
 completion rewrites and resume/abort reconciliation converge on one terminal
-episode. Reconcilable inline, `startDetached` plus `abort()`, and resume surfaces
-have terminal evidence. One residual is deliberately scoped: an externally
+episode. An off-then-enabled terminal-only resume resolves the current Drive
+worker, derives and persists a deterministic attempt id from the persisted run
+id, and records one terminal without a start. Repeating that resume reuses the
+same identity and ledger, so the spec and completion bytes and the terminal
+episode count remain unchanged. If runtime or source resolution fails, Drive
+emits one bounded warning and honestly skips terminal capture without changing
+the primary completion.
+
+Reconcilable inline, `startDetached` plus `abort()`, and
+resume surfaces with a complete frozen or successfully reconstructed identity
+have terminal evidence.
+One residual is deliberately scoped: an externally
 hard-killed fire-and-forget `launchDetached` child has no reconciling parent and
 may leave a start-only episode.
 

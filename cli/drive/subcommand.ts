@@ -18,6 +18,7 @@ import { launchDetached, runInline } from "../../lib/driver/driver.ts";
 import { recordDurableFinalizerRetryFailure } from "../../lib/driver/durable-steps.ts";
 import {
 	type DriveEpisodeIdentity,
+	deriveDriveEpisodeAttemptId,
 	isDriveEpisodeCaptureEnabled,
 	mintDriveEpisodeIdentity,
 	reportDriveEpisodeLaunchWarning,
@@ -272,6 +273,11 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 	const resume = options.resume
 		? await loadResumeDefaults(projectRoot, planSlug, options.resume)
 		: undefined;
+	await prepareTerminalResumeEpisodeIdentity({
+		resume,
+		episodeCaptureEnabled,
+		projectRoot,
+	});
 	if (!(await prepareResume(resume, taskManager))) {
 		return;
 	}
@@ -369,6 +375,52 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 	}
 
 	await runInlineMode(spec, deps);
+}
+
+async function prepareTerminalResumeEpisodeIdentity({
+	resume,
+	episodeCaptureEnabled,
+	projectRoot,
+}: {
+	resume: ResumeDefaults | undefined;
+	episodeCaptureEnabled: boolean;
+	projectRoot: string;
+}): Promise<void> {
+	if (
+		!episodeCaptureEnabled ||
+		!resume ||
+		resume.remainingTaskIds.length > 0 ||
+		(await hasGraphResumeState(resume))
+	) {
+		return;
+	}
+	if (resume.spec.episodeSource && resume.spec.episodeAttemptId) {
+		return;
+	}
+
+	let episodeSource = resume.spec.episodeSource;
+	if (!episodeSource) {
+		let runtime: CosmonautsRuntime;
+		try {
+			runtime = await createDriveRuntime(projectRoot);
+		} catch (error) {
+			reportDriveEpisodeLaunchWarning(error);
+			return;
+		}
+		episodeSource = resolveDriveEpisodeWorker(runtime)?.qualifiedId;
+		if (!episodeSource) {
+			return;
+		}
+	}
+
+	resume.spec = {
+		...resume.spec,
+		episodeSource,
+		episodeAttemptId:
+			resume.spec.episodeAttemptId ??
+			deriveDriveEpisodeAttemptId(resume.spec.runId),
+	};
+	await writeDriverWorkdirInputs(resume.spec, resume.remainingTaskIds);
 }
 
 async function prepareResume(

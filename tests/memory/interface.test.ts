@@ -647,6 +647,32 @@ describe("memory interface", () => {
 		);
 	});
 
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-013
+	test("documents deterministic off-then-enabled terminal-only resume", async () => {
+		const documentation = await readFile(
+			join(process.cwd(), "docs", "memory.md"),
+			"utf-8",
+		);
+		const normalizedDocumentation = documentation.replace(/\s+/gu, " ");
+
+		for (const requiredText of [
+			"off-then-enabled terminal-only resume",
+			"deterministic attempt id from the persisted run id",
+			"records one terminal without a start",
+			"spec and completion bytes and the terminal episode count remain unchanged",
+			"emits one bounded warning and honestly skips terminal capture",
+			"resume surfaces with a complete frozen or successfully reconstructed identity have terminal evidence",
+		]) {
+			expect(normalizedDocumentation, requiredText).toContain(requiredText);
+		}
+		expect(documentation).toContain(
+			"resolution failure warns and skips\ncapture instead of inventing a generic actor.",
+		);
+		expect(documentation).toContain(
+			"an externally\nhard-killed fire-and-forget `launchDetached` child has no reconciling parent and\nmay leave a start-only episode.",
+		);
+	});
+
 	test("supports note profile and playbook through the unchanged MemoryStore contract @cosmo-behavior plan:profile-playbooks#B-002", async () => {
 		const projectRoot = join(tmp.path, "authored-types-project");
 		const userRoot = join(tmp.path, "authored-types-user");

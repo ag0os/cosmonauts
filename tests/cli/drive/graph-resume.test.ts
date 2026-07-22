@@ -1,11 +1,14 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createDriveCompatProgram } from "../../../cli/drive/subcommand.ts";
+import { AgentRegistry } from "../../../lib/agents/index.ts";
+import type { AgentDefinition } from "../../../lib/agents/types.ts";
 import type { Backend } from "../../../lib/driver/backends/types.ts";
 import { compileDriveRunToGraph } from "../../../lib/driver/drive-graph-compiler.ts";
+import { deriveDriveEpisodeAttemptId } from "../../../lib/driver/episode-identity.ts";
 import { writeDriveTerminalRecord } from "../../../lib/driver/run-state.ts";
 import type { DriverEvent, DriverRunSpec } from "../../../lib/driver/types.ts";
 import {
@@ -16,6 +19,7 @@ import {
 import { recordEpisode } from "../../../lib/memory/episode.ts";
 import { parseEpisodeRecord } from "../../../lib/memory/episodic-records.ts";
 import { createMarkdownMemoryStore } from "../../../lib/memory/markdown-store.ts";
+import { CosmonautsRuntime } from "../../../lib/runtime.ts";
 import { TaskManager } from "../../../lib/tasks/task-manager.ts";
 import { captureCliOutput } from "../../helpers/cli.ts";
 import { useTempDir } from "../../helpers/fs.ts";
@@ -41,6 +45,7 @@ const temp = useTempDir("drive-graph-resume-");
 const PLAN_SLUG = "durable-frontend-migration";
 const RUN_ID = "run-previous";
 const WORKER_SOURCE = "cod" + "ing/worker";
+const TERMINAL_COMPLETED_AT = "2026-07-22T19:00:00.000Z";
 type DriverEventInput = DriverEvent extends infer Event
 	? Event extends DriverEvent
 		? Omit<Event, "runId" | "parentSessionId" | "timestamp">
@@ -330,6 +335,231 @@ describe("cosmonauts run drive compat graph resume", () => {
 		expect(episodes[0]?.tags).toContain(`attempt:${attemptId}`);
 		expect(backendMocks.backendRun).not.toHaveBeenCalled();
 	});
+
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-011
+	test("records one run-id-derived terminal for an off-then-enabled completed resume", async () => {
+		const fixture = await setupTerminalOnlyCompletedRun();
+		await enableEpisodeCapture(fixture.spec.projectRoot);
+		const runtimeCreate = vi
+			.spyOn(CosmonautsRuntime, "create")
+			.mockResolvedValue(terminalResumeRuntime());
+
+		await parseDrive([
+			"--plan",
+			PLAN_SLUG,
+			"--resume",
+			RUN_ID,
+			"--resume-dirty",
+		]);
+
+		const attemptId = deriveDriveEpisodeAttemptId(RUN_ID);
+		const persistedSpec = (await readJson(
+			join(fixture.spec.workdir, "spec.json"),
+		)) as DriverRunSpec;
+		const completion = await readJson(
+			join(fixture.spec.workdir, "run.completion.json"),
+		);
+		const episodes = await readProjectDriveEpisodes(process.cwd());
+
+		expect(persistedSpec.episodeSource).toBe(WORKER_SOURCE);
+		expect(persistedSpec.episodeAttemptId).toBe(attemptId);
+		expect(completion).toMatchObject({
+			runId: RUN_ID,
+			outcome: "completed",
+			completedAt: TERMINAL_COMPLETED_AT,
+		});
+		expect(output.stdoutJson()).toMatchObject({
+			runId: RUN_ID,
+			scope: PLAN_SLUG,
+			outcome: "completed",
+			completedAt: TERMINAL_COMPLETED_AT,
+		});
+		expect(episodes).toHaveLength(1);
+		expect(episodes[0]).toMatchObject({
+			action: "drive.run",
+			outcome: "completed",
+			source: persistedSpec.episodeSource,
+			subject: { kind: "run", id: RUN_ID },
+		});
+		expect(episodes[0]?.tags).toContain(
+			`attempt:${persistedSpec.episodeAttemptId}`,
+		);
+		expect(episodes[0]?.tags).not.toContain("outcome:started");
+		expect(runtimeCreate).toHaveBeenCalledTimes(1);
+		expect(backendMocks.backendRun).not.toHaveBeenCalled();
+	});
+
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-012
+	test("repeats deterministic terminal-only resume without changing bytes or episode count", async () => {
+		const fixture = await setupTerminalOnlyCompletedRun();
+		await enableEpisodeCapture(fixture.spec.projectRoot);
+		const runtimeCreate = vi
+			.spyOn(CosmonautsRuntime, "create")
+			.mockResolvedValue(terminalResumeRuntime());
+		const resumeArgs = [
+			"--plan",
+			PLAN_SLUG,
+			"--resume",
+			RUN_ID,
+			"--resume-dirty",
+		];
+
+		await parseDrive(resumeArgs);
+		const attemptId = deriveDriveEpisodeAttemptId(RUN_ID);
+		const firstSpecBytes = await readFile(
+			join(fixture.spec.workdir, "spec.json"),
+			"utf-8",
+		);
+		const firstCompletionBytes = await readFile(
+			join(fixture.spec.workdir, "run.completion.json"),
+			"utf-8",
+		);
+		const firstLedger = await readTerminalLedger(fixture.spec.workdir);
+		const firstEpisodes = await readProjectDriveEpisodes(process.cwd());
+
+		await parseDrive(resumeArgs);
+
+		expect(
+			await readFile(join(fixture.spec.workdir, "spec.json"), "utf-8"),
+		).toBe(firstSpecBytes);
+		expect(
+			await readFile(
+				join(fixture.spec.workdir, "run.completion.json"),
+				"utf-8",
+			),
+		).toBe(firstCompletionBytes);
+		expect(await readTerminalLedger(fixture.spec.workdir)).toEqual(firstLedger);
+		expect(await readProjectDriveEpisodes(process.cwd())).toEqual(
+			firstEpisodes,
+		);
+		expect(firstLedger).toHaveLength(1);
+		expect(firstEpisodes).toHaveLength(1);
+		expect(JSON.parse(firstSpecBytes)).toMatchObject({
+			episodeSource: WORKER_SOURCE,
+			episodeAttemptId: attemptId,
+		});
+		expect(runtimeCreate).toHaveBeenCalledTimes(1);
+		expect(backendMocks.backendRun).not.toHaveBeenCalled();
+	});
+
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-025
+	test("warns and skips terminal capture when off-era resume source cannot resolve", async () => {
+		const fixture = await setupTerminalOnlyCompletedRun();
+		await enableEpisodeCapture(fixture.spec.projectRoot);
+		const failureDetail = "runtime unavailable ".repeat(60);
+		vi.spyOn(CosmonautsRuntime, "create").mockRejectedValue(
+			new Error(failureDetail),
+		);
+		const completionPath = join(fixture.spec.workdir, "run.completion.json");
+		const completionBytes = await readFile(completionPath, "utf-8");
+
+		await parseDrive([
+			"--plan",
+			PLAN_SLUG,
+			"--resume",
+			RUN_ID,
+			"--resume-dirty",
+		]);
+
+		const warnings = output
+			.stderr()
+			.trim()
+			.split("\n")
+			.filter((line) => line.includes("Drive episode capture skipped"));
+		const persistedSpec = (await readJson(
+			join(fixture.spec.workdir, "spec.json"),
+		)) as DriverRunSpec;
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0]?.length).toBeLessThan(600);
+		expect(persistedSpec).not.toHaveProperty("episodeSource");
+		expect(persistedSpec).not.toHaveProperty("episodeAttemptId");
+		expect(await readFile(completionPath, "utf-8")).toBe(completionBytes);
+		expect(output.stdoutJson()).toMatchObject({
+			runId: RUN_ID,
+			scope: PLAN_SLUG,
+			outcome: "completed",
+			completedAt: TERMINAL_COMPLETED_AT,
+		});
+		await expect(
+			access(join(fixture.spec.workdir, "run.terminal-episodes")),
+		).rejects.toMatchObject({ code: "ENOENT" });
+		await expect(
+			access(join(fixture.spec.projectRoot, "memory", "agent", "episodes")),
+		).rejects.toMatchObject({ code: "ENOENT" });
+		expect(backendMocks.backendRun).not.toHaveBeenCalled();
+	});
+
+	test("leaves graph resume inputs byte-identical when dirty or unsupported resume is refused", async () => {
+		const fixture = await setupFullyCompletedGraphRun();
+		await enableEpisodeCapture(fixture.spec.projectRoot);
+		const taskQueuePath = join(fixture.spec.workdir, "task-queue.txt");
+		await writeFile(taskQueuePath, "\n", "utf-8");
+		const specPath = join(fixture.spec.workdir, "spec.json");
+		const specBytes = await readFile(specPath, "utf-8");
+		const taskQueueBytes = await readFile(taskQueuePath, "utf-8");
+		const runtimeCreate = vi
+			.spyOn(CosmonautsRuntime, "create")
+			.mockRejectedValue(new Error("identity preparation must not run"));
+
+		await parseDrive(["--plan", PLAN_SLUG, "--resume", RUN_ID]);
+
+		expect(output.stderr()).toContain('"error":"dirty_worktree"');
+		expect(await readFile(specPath, "utf-8")).toBe(specBytes);
+		expect(await readFile(taskQueuePath, "utf-8")).toBe(taskQueueBytes);
+
+		process.exitCode = undefined;
+		output.restore();
+		output = attachJsonHelpers(captureCliOutput());
+		await parseDrive([
+			"--plan",
+			PLAN_SLUG,
+			"--resume",
+			RUN_ID,
+			"--resume-dirty",
+			"--mode",
+			"detached",
+			"--backend",
+			"cosmonauts-subagent",
+		]);
+
+		expect(output.stderr()).toContain(
+			'"error":"detached_backend_not_supported"',
+		);
+		expect(await readFile(specPath, "utf-8")).toBe(specBytes);
+		expect(await readFile(taskQueuePath, "utf-8")).toBe(taskQueueBytes);
+		expect(runtimeCreate).not.toHaveBeenCalled();
+	});
+
+	test("keeps terminal-only resume artifact-free while episodic capture is off", async () => {
+		const fixture = await setupTerminalOnlyCompletedRun();
+		const runtimeCreate = vi
+			.spyOn(CosmonautsRuntime, "create")
+			.mockRejectedValue(
+				new Error("gate-off resume must not create a runtime"),
+			);
+		const specPath = join(fixture.spec.workdir, "spec.json");
+		const completionPath = join(fixture.spec.workdir, "run.completion.json");
+		const specBytes = await readFile(specPath, "utf-8");
+		const completionBytes = await readFile(completionPath, "utf-8");
+
+		await parseDrive([
+			"--plan",
+			PLAN_SLUG,
+			"--resume",
+			RUN_ID,
+			"--resume-dirty",
+		]);
+
+		expect(runtimeCreate).not.toHaveBeenCalled();
+		expect(await readFile(specPath, "utf-8")).toBe(specBytes);
+		expect(await readFile(completionPath, "utf-8")).toBe(completionBytes);
+		await expect(
+			access(join(fixture.spec.workdir, "run.terminal-episodes")),
+		).rejects.toMatchObject({ code: "ENOENT" });
+		await expect(
+			access(join(fixture.spec.projectRoot, "memory", "agent", "episodes")),
+		).rejects.toMatchObject({ code: "ENOENT" });
+	});
 });
 
 function onlyJsonRecord(
@@ -538,6 +768,76 @@ async function setupFullyCompletedGraphRun(): Promise<{
 		"utf-8",
 	);
 	return fixture;
+}
+
+async function setupTerminalOnlyCompletedRun(): Promise<{
+	taskId: string;
+	spec: DriverRunSpec;
+}> {
+	const projectRoot = process.cwd();
+	await mkdir(projectRoot, { recursive: true });
+	await initGit(projectRoot);
+	await writeFile(join(projectRoot, "envelope.md"), "# Envelope\n", "utf-8");
+	const taskManager = new TaskManager(projectRoot);
+	await taskManager.init({ zeroPadding: 0 });
+	const task = await taskManager.createTask({
+		title: "Terminal-only resume task",
+		labels: [`plan:${PLAN_SLUG}`],
+	});
+	await git(["add", "envelope.md", "missions/tasks"]);
+	await git(["commit", "-m", "add completed drive task"]);
+
+	const workdir = join(
+		projectRoot,
+		"missions",
+		"sessions",
+		PLAN_SLUG,
+		"runs",
+		RUN_ID,
+	);
+	const spec: DriverRunSpec = {
+		runId: RUN_ID,
+		parentSessionId: "previous-parent",
+		projectRoot,
+		planSlug: PLAN_SLUG,
+		taskIds: [task.id],
+		backendName: "codex",
+		promptTemplate: { envelopePath: join(projectRoot, "envelope.md") },
+		preflightCommands: [],
+		postflightCommands: [],
+		commitPolicy: "no-commit",
+		workdir,
+		eventLogPath: join(workdir, "events.jsonl"),
+		remainingTaskIds: [],
+	};
+	await mkdir(workdir, { recursive: true });
+	await writeFile(
+		join(workdir, "spec.json"),
+		`${JSON.stringify(spec, null, 2)}\n`,
+		"utf-8",
+	);
+	await writeFile(join(workdir, "task-queue.txt"), "\n", "utf-8");
+	await writeFile(
+		join(workdir, "events.jsonl"),
+		`${JSON.stringify(event({ type: "task_done", taskId: task.id }))}\n`,
+		"utf-8",
+	);
+	await writeFile(
+		join(workdir, "run.completion.json"),
+		`${JSON.stringify(
+			{
+				runId: RUN_ID,
+				outcome: "completed",
+				tasksDone: 1,
+				tasksBlocked: 0,
+				completedAt: TERMINAL_COMPLETED_AT,
+			},
+			null,
+			2,
+		)}\n`,
+		"utf-8",
+	);
+	return { taskId: task.id, spec };
 }
 
 async function setupGraphRunWithCompletedTaskStatus(): Promise<{
@@ -765,13 +1065,7 @@ async function readJson(path: string): Promise<unknown> {
 }
 
 async function enableFrozenEpisodeIdentity(spec: DriverRunSpec): Promise<void> {
-	const configDir = join(spec.projectRoot, ".cosmonauts");
-	await mkdir(configDir, { recursive: true });
-	await writeFile(
-		join(configDir, "config.json"),
-		JSON.stringify({ episodicLog: { enabled: true } }),
-		"utf-8",
-	);
+	await enableEpisodeCapture(spec.projectRoot);
 	const specPath = join(spec.workdir, "spec.json");
 	const persisted = (await readJson(specPath)) as DriverRunSpec;
 	await writeFile(
@@ -786,6 +1080,49 @@ async function enableFrozenEpisodeIdentity(spec: DriverRunSpec): Promise<void> {
 			2,
 		)}\n`,
 		"utf-8",
+	);
+}
+
+async function enableEpisodeCapture(projectRoot: string): Promise<void> {
+	const configDir = join(projectRoot, ".cosmonauts");
+	await mkdir(configDir, { recursive: true });
+	await writeFile(
+		join(configDir, "config.json"),
+		JSON.stringify({ episodicLog: { enabled: true } }),
+		"utf-8",
+	);
+}
+
+function terminalResumeRuntime(): CosmonautsRuntime {
+	const worker: AgentDefinition = {
+		id: "worker",
+		domain: WORKER_SOURCE.slice(0, WORKER_SOURCE.indexOf("/")),
+		description: "Drive worker",
+		capabilities: [],
+		model: "test/model",
+		tools: "none",
+		extensions: [],
+		skills: [],
+		projectContext: false,
+		session: "ephemeral",
+		loop: false,
+	};
+	return {
+		agentRegistry: new AgentRegistry([worker]),
+		domainContext: undefined,
+	} as CosmonautsRuntime;
+}
+
+async function readTerminalLedger(
+	workdir: string,
+): Promise<Array<{ name: string; bytes: string }>> {
+	const directory = join(workdir, "run.terminal-episodes");
+	const names = (await readdir(directory)).sort();
+	return await Promise.all(
+		names.map(async (name) => ({
+			name,
+			bytes: await readFile(join(directory, name), "utf-8"),
+		})),
 	);
 }
 

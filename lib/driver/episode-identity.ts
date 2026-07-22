@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
 	loadProjectConfig,
 	resolveEpisodicLogConfig,
@@ -87,6 +87,18 @@ export function mintDriveEpisodeIdentity(
 		episodeSource,
 		episodeAttemptId: `attempt-${randomUUID()}`,
 	};
+}
+
+const TERMINAL_RESUME_ATTEMPT_NAMESPACE =
+	"cosmonauts:drive:terminal-only-resume:v1";
+
+export function deriveDriveEpisodeAttemptId(runId: string): string {
+	const digest = createHash("sha256")
+		.update(TERMINAL_RESUME_ATTEMPT_NAMESPACE)
+		.update("\0")
+		.update(runId)
+		.digest("hex");
+	return `attempt-${digest}`;
 }
 
 /** Match recordEpisode's bounded-stderr posture so a large/leaky detail can't flood logs (SR-004). */
