@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import {
+	appendFile,
 	chmod,
 	mkdir,
 	readFile,
@@ -21,7 +22,10 @@ import {
 	type DriverDeps,
 	startDetached,
 } from "../../lib/driver/driver.ts";
-import type { DriverBusEvent } from "../../lib/driver/event-stream.ts";
+import {
+	bridgeJsonlToActivityBus,
+	type DriverBusEvent,
+} from "../../lib/driver/event-stream.ts";
 import { getPlanLockPath } from "../../lib/driver/lock.ts";
 import {
 	readDriveTerminalRecord,
@@ -32,6 +36,7 @@ import type {
 	DriverResult,
 	DriverRunSpec,
 } from "../../lib/driver/types.ts";
+import { FileRunStore } from "../../lib/durable-runtime/index.ts";
 import { recordEpisode } from "../../lib/memory/episode.ts";
 import { parseEpisodeRecord } from "../../lib/memory/episodic-records.ts";
 import { createMarkdownMemoryStore } from "../../lib/memory/markdown-store.ts";
@@ -63,6 +68,8 @@ const envKeys = [
 	"COSMONAUTS_DRIVER_CODEX_BINARY",
 	"COSMONAUTS_TEST_LOCK_PATH",
 	"COSMONAUTS_TEST_LOCK_OBSERVED",
+	"COSMONAUTS_TEST_BACKEND_READY",
+	"COSMONAUTS_TEST_BACKEND_RELEASE",
 ] as const;
 const savedEnv: Partial<Record<(typeof envKeys)[number], string>> = {};
 
@@ -212,6 +219,333 @@ describe("startDetached", () => {
 			stat(join(projectRoot, "memory", "agent")),
 		).rejects.toMatchObject({ code: "ENOENT" });
 	}, 30_000);
+
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-002
+	test("bridges a post-terminal episode capture failure to the detached parent bus", async () => {
+		const fixture = await setupFixture({
+			runId: "run-detached-terminal-capture-failure",
+			episodeIdentity: true,
+		});
+		await writeEpisodicConfig(fixture.projectRoot);
+		const fakeCodex = await writeBlockingFakeCodex(
+			join(temp.path, "blocking-bin"),
+		);
+		const readyPath = join(fixture.spec.workdir, "backend-ready");
+		const releasePath = join(fixture.spec.workdir, "backend-release");
+		setEnv("COSMONAUTS_DRIVER_CODEX_BINARY", fakeCodex);
+		setEnv("COSMONAUTS_TEST_BACKEND_READY", readyPath);
+		setEnv("COSMONAUTS_TEST_BACKEND_RELEASE", releasePath);
+
+		const handle = startDetached(fixture.spec, {
+			...fixture.deps,
+			cosmonautsRoot: fixture.projectRoot,
+		});
+		await waitForFile(readyPath);
+		await blockEpisodeDirectory(fixture.projectRoot);
+		await writeFile(releasePath, "continue\n", "utf-8");
+
+		const result = await handle.result;
+		expect(result).toMatchObject({
+			runId: fixture.spec.runId,
+			outcome: "completed",
+			tasksDone: 1,
+			tasksBlocked: 0,
+		});
+		const legacyEvents = await readDriverEvents(fixture.spec.eventLogPath);
+		const legacyDiagnostics = legacyEvents.filter(isEpisodeCaptureDiagnostic);
+		expect(legacyDiagnostics).toHaveLength(1);
+		expect(legacyEvents.findIndex(isTerminalDriverEvent)).toBeLessThan(
+			legacyEvents.findIndex(isEpisodeCaptureDiagnostic),
+		);
+
+		const parentEvents = publishedDriverEvents(fixture.deps.published);
+		const parentDiagnostics = parentEvents.filter(isEpisodeCaptureDiagnostic);
+		expect(parentDiagnostics).toEqual(legacyDiagnostics);
+		expect(parentDiagnostics).toHaveLength(1);
+		expect(parentEvents.findIndex(isTerminalDriverEvent)).toBeLessThan(
+			parentEvents.findIndex(isEpisodeCaptureDiagnostic),
+		);
+
+		const durable = await new FileRunStore({
+			rootDir: join(fixture.projectRoot, "missions", "sessions"),
+		}).readEvents({ scope: fixture.spec.planSlug, runId: fixture.spec.runId });
+		expect(
+			durable.diagnostics.filter(
+				(diagnostic) => diagnostic.code === "episode_capture_failed",
+			),
+		).toHaveLength(1);
+		expect(
+			JSON.parse(
+				await readFile(
+					join(fixture.spec.workdir, "run.completion.json"),
+					"utf-8",
+				),
+			),
+		).toEqual(result);
+	}, 30_000);
+
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-004
+	test("bounds post-terminal bridge drain when the child does not exit", async () => {
+		const fixture = await setupFixture({
+			runId: "run-detached-bounded-drain",
+			episodeIdentity: true,
+		});
+		const prebuiltRoot = join(temp.path, "bounded-drain-prebuilt");
+		await writeFakePrebuiltRunner(prebuiltRoot, fixture.spec.runId);
+		await mkdir(fixture.spec.workdir, { recursive: true });
+		const terminal = runCompletedDriverEvent(fixture.spec);
+		const diagnostic = episodeCaptureFailedDriverEvent(fixture.spec);
+		await writeFile(
+			fixture.spec.eventLogPath,
+			`${JSON.stringify(terminal)}\n${JSON.stringify(diagnostic)}\n`,
+			"utf-8",
+		);
+		await writeFile(
+			join(fixture.spec.workdir, "run.completion.json"),
+			`${JSON.stringify(completedResult(fixture.spec.runId, "2026-07-22T22:00:00.000Z"), null, 2)}\n`,
+			"utf-8",
+		);
+		const child = createMockDetachedChild(42104);
+		detachedSpawnSeam.next = () => child;
+
+		const startedAt = Date.now();
+		const handle = startDetached(fixture.spec, {
+			...fixture.deps,
+			cosmonautsRoot: prebuiltRoot,
+		});
+		await expect(handle.result).resolves.toMatchObject({
+			outcome: "completed",
+		});
+		const elapsedMs = Date.now() - startedAt;
+
+		expect(elapsedMs).toBeGreaterThanOrEqual(1_900);
+		expect(elapsedMs).toBeLessThan(4_000);
+		expect(publishedDriverEvents(fixture.deps.published)).toEqual([
+			terminal,
+			diagnostic,
+		]);
+		await appendFile(
+			fixture.spec.eventLogPath,
+			`${JSON.stringify(episodeCaptureFailedDriverEvent(fixture.spec, "late"))}\n`,
+			"utf-8",
+		);
+		await delay(300);
+		expect(publishedDriverEvents(fixture.deps.published)).toEqual([
+			terminal,
+			diagnostic,
+		]);
+
+		const identityIncomplete = await setupFixture({
+			runId: "run-detached-immediate-terminal-stop",
+		});
+		const immediatePrebuiltRoot = join(temp.path, "immediate-stop-prebuilt");
+		await writeFakePrebuiltRunner(
+			immediatePrebuiltRoot,
+			identityIncomplete.spec.runId,
+		);
+		await mkdir(identityIncomplete.spec.workdir, { recursive: true });
+		const immediateTerminal = runCompletedDriverEvent(identityIncomplete.spec);
+		await writeFile(
+			identityIncomplete.spec.eventLogPath,
+			`${JSON.stringify(immediateTerminal)}\n${JSON.stringify(episodeCaptureFailedDriverEvent(identityIncomplete.spec))}\n`,
+			"utf-8",
+		);
+		await writeFile(
+			join(identityIncomplete.spec.workdir, "run.completion.json"),
+			`${JSON.stringify(completedResult(identityIncomplete.spec.runId, "2026-07-22T22:10:00.000Z"), null, 2)}\n`,
+			"utf-8",
+		);
+		detachedSpawnSeam.next = () => createMockDetachedChild(42108);
+		const immediateStartedAt = Date.now();
+		const immediateHandle = startDetached(identityIncomplete.spec, {
+			...identityIncomplete.deps,
+			cosmonautsRoot: immediatePrebuiltRoot,
+		});
+		await expect(immediateHandle.result).resolves.toMatchObject({
+			outcome: "completed",
+		});
+		expect(Date.now() - immediateStartedAt).toBeLessThan(1_000);
+		expect(publishedDriverEvents(identityIncomplete.deps.published)).toEqual([
+			immediateTerminal,
+		]);
+
+		const abortFixture = await setupFixture({
+			runId: "run-detached-abort-drain",
+			episodeIdentity: true,
+		});
+		await writeEpisodicConfig(abortFixture.projectRoot);
+		const abortPrebuiltRoot = join(temp.path, "abort-drain-prebuilt");
+		await writeAbortPrebuiltRunner(abortPrebuiltRoot);
+		const abortHandle = startDetached(abortFixture.spec, {
+			...abortFixture.deps,
+			cosmonautsRoot: abortPrebuiltRoot,
+		});
+		await waitForFile(join(abortFixture.spec.workdir, "abort-ready"));
+		const abortTerminal = runCompletedDriverEvent(abortFixture.spec);
+		await appendFile(
+			abortFixture.spec.eventLogPath,
+			`${JSON.stringify(abortTerminal)}\n`,
+			"utf-8",
+		);
+		await waitFor(() =>
+			publishedDriverEvents(abortFixture.deps.published).some(
+				(event) => event.type === "run_completed",
+			),
+		);
+		await abortHandle.abort();
+		await expect(abortHandle.result).resolves.toMatchObject({
+			outcome: "aborted",
+		});
+		await appendFile(
+			abortFixture.spec.eventLogPath,
+			`${JSON.stringify(episodeCaptureFailedDriverEvent(abortFixture.spec, "after abort"))}\n`,
+			"utf-8",
+		);
+		await delay(300);
+		expect(
+			publishedDriverEvents(abortFixture.deps.published).filter(
+				isEpisodeCaptureDiagnostic,
+			),
+		).toEqual([]);
+	}, 10_000);
+
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-027
+	test("stops a draining bridge when the detached result rejects", async () => {
+		const resolved = await setupFixture({
+			runId: "run-drain-finally-resolved",
+			episodeIdentity: true,
+		});
+		const resolvedPrebuilt = join(temp.path, "drain-finally-resolved");
+		await writeFakePrebuiltRunner(resolvedPrebuilt, resolved.spec.runId);
+		await mkdir(resolved.spec.workdir, { recursive: true });
+		await writeFile(
+			resolved.spec.eventLogPath,
+			`${JSON.stringify(runCompletedDriverEvent(resolved.spec))}\n`,
+			"utf-8",
+		);
+		await writeFile(
+			join(resolved.spec.workdir, "run.completion.json"),
+			`${JSON.stringify(completedResult(resolved.spec.runId, "2026-07-22T23:00:00.000Z"), null, 2)}\n`,
+			"utf-8",
+		);
+		detachedSpawnSeam.next = () => createMockDetachedChild(42105, true);
+		const resolvedHandle = startDetached(resolved.spec, {
+			...resolved.deps,
+			cosmonautsRoot: resolvedPrebuilt,
+		});
+		await expect(resolvedHandle.result).resolves.toMatchObject({
+			outcome: "completed",
+		});
+		await appendFile(
+			resolved.spec.eventLogPath,
+			`${JSON.stringify(episodeCaptureFailedDriverEvent(resolved.spec, "after resolve"))}\n`,
+			"utf-8",
+		);
+		await delay(250);
+		expect(
+			publishedDriverEvents(resolved.deps.published).filter(
+				isEpisodeCaptureDiagnostic,
+			),
+		).toEqual([]);
+
+		const rejected = await setupFixture({
+			runId: "run-drain-finally-rejected",
+			episodeIdentity: true,
+		});
+		const rejectedPrebuilt = join(temp.path, "drain-finally-rejected");
+		await writeFakePrebuiltRunner(rejectedPrebuilt, rejected.spec.runId);
+		await mkdir(rejected.spec.workdir, { recursive: true });
+		await writeFile(
+			rejected.spec.eventLogPath,
+			`${JSON.stringify(runCompletedDriverEvent(rejected.spec))}\n`,
+			"utf-8",
+		);
+		const rejectedChild = createMockDetachedChild(42106);
+		detachedSpawnSeam.next = () => rejectedChild;
+		const rejectedHandle = startDetached(rejected.spec, {
+			...rejected.deps,
+			cosmonautsRoot: rejectedPrebuilt,
+		});
+		await waitFor(() =>
+			publishedDriverEvents(rejected.deps.published).some(
+				(event) => event.type === "run_completed",
+			),
+		);
+		rejectedChild.emit("exit", 1, null);
+		await expect(rejectedHandle.result).rejects.toThrow(
+			"Detached driver exited before writing completion",
+		);
+		await appendFile(
+			rejected.spec.eventLogPath,
+			`${JSON.stringify(episodeCaptureFailedDriverEvent(rejected.spec, "after reject"))}\n`,
+			"utf-8",
+		);
+		await delay(250);
+		expect(
+			publishedDriverEvents(rejected.deps.published).filter(
+				isEpisodeCaptureDiagnostic,
+			),
+		).toEqual([]);
+
+		const launchThrow = await setupFixture({
+			runId: "run-drain-finally-launch-throw",
+			episodeIdentity: true,
+		});
+		const launchThrowPrebuilt = join(temp.path, "drain-finally-launch-throw");
+		await writeFakePrebuiltRunner(launchThrowPrebuilt, launchThrow.spec.runId);
+		await mkdir(launchThrow.spec.workdir, { recursive: true });
+		await writeFile(
+			launchThrow.spec.eventLogPath,
+			`${JSON.stringify(runCompletedDriverEvent(launchThrow.spec))}\n`,
+			"utf-8",
+		);
+		detachedSpawnSeam.next = () => createPidThrowingDetachedChild(42107, 3);
+		const launchThrowHandle = startDetached(launchThrow.spec, {
+			...launchThrow.deps,
+			cosmonautsRoot: launchThrowPrebuilt,
+		});
+		await expect(launchThrowHandle.result).rejects.toThrow(
+			"fixture pid access failed",
+		);
+		await appendFile(
+			launchThrow.spec.eventLogPath,
+			`${JSON.stringify(episodeCaptureFailedDriverEvent(launchThrow.spec, "after launch throw"))}\n`,
+			"utf-8",
+		);
+		await delay(250);
+		expect(
+			publishedDriverEvents(launchThrow.deps.published).filter(
+				isEpisodeCaptureDiagnostic,
+			),
+		).toEqual([]);
+
+		const bridgePath = join(temp.path, "self-stopping-drain.jsonl");
+		const selfStoppingPublished: DriverBusEvent[] = [];
+		await writeFile(
+			bridgePath,
+			`${JSON.stringify(runCompletedDriverEvent(launchThrow.spec))}\n`,
+			"utf-8",
+		);
+		const bridge = bridgeJsonlToActivityBus(
+			bridgePath,
+			launchThrow.spec.runId,
+			launchThrow.spec.parentSessionId,
+			{ publish: (event) => selfStoppingPublished.push(event) },
+			{ bridgeDriverDiagnostics: true },
+		);
+		await waitFor(() => selfStoppingPublished.length === 1);
+		await delay(2_200);
+		await appendFile(
+			bridgePath,
+			`${JSON.stringify(episodeCaptureFailedDriverEvent(launchThrow.spec, "after deadline"))}\n`,
+			"utf-8",
+		);
+		await delay(250);
+		expect(selfStoppingPublished).toHaveLength(1);
+		await Promise.all([bridge.finish(), bridge.finish()]);
+		bridge.stop();
+		bridge.stop();
+	}, 15_000);
 
 	// @cosmo-behavior plan:episodic-log#B-019
 	test("reconciles one terminal episode when the parent aborts after detached start", async () => {
@@ -751,6 +1085,40 @@ printf '\`\`\`json\\n{"outcome":"success","files":[],"verification":[]}\\n\`\`\`
 	return path;
 }
 
+async function writeBlockingFakeCodex(binDir: string): Promise<string> {
+	await mkdir(binDir, { recursive: true });
+	const path = join(binDir, "blocking-fake-codex");
+	await writeFile(
+		path,
+		`#!/usr/bin/env bash
+set -euo pipefail
+summary_path=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o)
+      summary_path="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+if [ -z "$summary_path" ] || [ -z "\${COSMONAUTS_TEST_BACKEND_READY:-}" ] || [ -z "\${COSMONAUTS_TEST_BACKEND_RELEASE:-}" ]; then
+  exit 64
+fi
+printf 'ready\\n' > "$COSMONAUTS_TEST_BACKEND_READY"
+while [ ! -f "$COSMONAUTS_TEST_BACKEND_RELEASE" ]; do
+  sleep 0.02
+done
+printf '\`\`\`json\\n{"outcome":"success","files":[],"verification":[]}\\n\`\`\`\\n' > "$summary_path"
+`,
+		"utf-8",
+	);
+	await chmod(path, 0o755);
+	return path;
+}
+
 function setEnv(key: (typeof envKeys)[number], value: string): void {
 	if (!(key in savedEnv)) {
 		savedEnv[key] = process.env[key];
@@ -764,6 +1132,45 @@ function publishedEventTypes(events: DriverBusEvent[]): string[] {
 	);
 }
 
+function runCompletedDriverEvent(
+	spec: DriverRunSpec,
+): Extract<DriverEvent, { type: "run_completed" }> {
+	return {
+		type: "run_completed",
+		runId: spec.runId,
+		parentSessionId: spec.parentSessionId,
+		timestamp: "2026-07-22T22:00:00.000Z",
+		summary: {
+			total: spec.taskIds.length,
+			done: spec.taskIds.length,
+			blocked: 0,
+		},
+	};
+}
+
+function episodeCaptureFailedDriverEvent(
+	spec: DriverRunSpec,
+	message = "Episode capture skipped: fixture failure",
+): Extract<DriverEvent, { type: "driver_diagnostic" }> {
+	return {
+		type: "driver_diagnostic",
+		runId: spec.runId,
+		parentSessionId: spec.parentSessionId,
+		timestamp: "2026-07-22T22:00:01.000Z",
+		level: "warning",
+		code: "episode_capture_failed",
+		message,
+	};
+}
+
+function isTerminalDriverEvent(event: DriverEvent): boolean {
+	return (
+		event.type === "run_completed" ||
+		event.type === "run_aborted" ||
+		event.type === "run_finalization_failed"
+	);
+}
+
 function createMockDetachedChild(pid: number, exited = false): ChildProcess {
 	const emitter = new EventEmitter();
 	Object.assign(emitter, {
@@ -771,6 +1178,29 @@ function createMockDetachedChild(pid: number, exited = false): ChildProcess {
 		exitCode: exited ? 0 : null,
 		signalCode: null,
 		unref: vi.fn(),
+	});
+	return emitter as ChildProcess;
+}
+
+function createPidThrowingDetachedChild(
+	pid: number,
+	throwOnAccess: number,
+): ChildProcess {
+	const emitter = new EventEmitter();
+	let accesses = 0;
+	Object.assign(emitter, {
+		exitCode: null,
+		signalCode: null,
+		unref: vi.fn(),
+	});
+	Object.defineProperty(emitter, "pid", {
+		get() {
+			accesses += 1;
+			if (accesses === throwOnAccess) {
+				throw new Error("fixture pid access failed");
+			}
+			return pid;
+		},
 	});
 	return emitter as ChildProcess;
 }

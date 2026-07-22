@@ -5,10 +5,26 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
 	bridgeJsonlToActivityBus,
 	type DriverBusEvent,
+	type DriverEventBridgeOptions,
 	type DriverEventPublisher,
 	type JsonlActivityBusBridge,
 } from "../../lib/driver/event-stream.ts";
 import type { DriverEvent } from "../../lib/driver/types.ts";
+
+const watchSeam = vi.hoisted(() => ({
+	closeSpies: [] as Array<{ mock: { calls: unknown[][] } }>,
+}));
+
+vi.mock("node:fs", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:fs")>();
+	const trackedWatch = ((...args: unknown[]) => {
+		const watcher = Reflect.apply(actual.watch, actual, args);
+		const closeSpy = vi.spyOn(watcher, "close");
+		watchSeam.closeSpies.push(closeSpy);
+		return watcher;
+	}) as typeof actual.watch;
+	return { ...actual, watch: trackedWatch };
+});
 
 type EventOf<T extends DriverEvent["type"]> = Extract<DriverEvent, { type: T }>;
 
@@ -24,6 +40,7 @@ let bridges: JsonlActivityBusBridge[] = [];
 beforeEach(async () => {
 	tempDir = await mkdtemp(join(tmpdir(), "event-stream-bridge-"));
 	bridges = [];
+	watchSeam.closeSpies = [];
 });
 
 afterEach(async () => {
@@ -126,14 +143,106 @@ describe("bridgeJsonlToActivityBus", () => {
 			event: terminalEvent,
 		});
 	});
+
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-003
+	test("drains only episode capture diagnostics after a terminal event", async () => {
+		const published: DriverBusEvent[] = [];
+		const terminal = runCompletedEvent();
+		const firstDiagnostic = episodeCaptureFailedEvent({
+			message: "first terminal capture warning",
+		});
+		const secondDiagnostic = episodeCaptureFailedEvent({
+			message: "second terminal capture warning",
+		});
+		await writeFile(
+			logPath(),
+			`${[
+				terminal,
+				taskDoneEvent({ taskId: "TASK-SUPPRESSED-1" }),
+				driverDiagnosticEvent({ code: "unrelated_warning" }),
+				firstDiagnostic,
+			]
+				.map((event) => JSON.stringify(event))
+				.join("\n")}\n`,
+			"utf-8",
+		);
+
+		const bridge = startBridge(
+			{ publish: (event) => published.push(event) },
+			{ bridgeDriverDiagnostics: true },
+		);
+		await waitFor(() => published.length === 2);
+		await appendFile(
+			logPath(),
+			`${[
+				taskDoneEvent({ taskId: "TASK-SUPPRESSED-2" }),
+				secondDiagnostic,
+				driverDiagnosticEvent({ code: "another_unrelated_warning" }),
+			]
+				.map((event) => JSON.stringify(event))
+				.join("\n")}\n`,
+			"utf-8",
+		);
+		await bridge.finish();
+
+		expect(published).toEqual([
+			toPublishedEvent(terminal),
+			toPublishedEvent(firstDiagnostic),
+			toPublishedEvent(secondDiagnostic),
+		]);
+	});
+
+	test("final-polls and cleans timers when a draining bridge reaches its deadline", async () => {
+		vi.useFakeTimers();
+		try {
+			const publish = vi.fn();
+			await writeFile(
+				logPath(),
+				`${JSON.stringify(runCompletedEvent())}\n`,
+				"utf-8",
+			);
+			const bridge = startBridge(
+				{ publish },
+				{ bridgeDriverDiagnostics: true },
+			);
+
+			await vi.waitFor(() => {
+				expect(publish).toHaveBeenCalledTimes(1);
+			});
+			await appendFile(
+				logPath(),
+				`${JSON.stringify(episodeCaptureFailedEvent())}\n`,
+				"utf-8",
+			);
+			await vi.advanceTimersByTimeAsync(2_000);
+
+			expect(publish).toHaveBeenCalledTimes(2);
+			expect(vi.getTimerCount()).toBe(0);
+			expect(watchSeam.closeSpies.length).toBeGreaterThan(0);
+			expect(
+				watchSeam.closeSpies.every(
+					(closeSpy) => closeSpy.mock.calls.length > 0,
+				),
+			).toBe(true);
+			bridge.stop();
+			await bridge.finish();
+			expect(vi.getTimerCount()).toBe(0);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 });
 
-function startBridge(bus: DriverEventPublisher): JsonlActivityBusBridge {
+function startBridge(
+	bus: DriverEventPublisher,
+	options: DriverEventBridgeOptions = {},
+): JsonlActivityBusBridge {
 	const bridge = bridgeJsonlToActivityBus(
 		logPath(),
 		baseEvent.runId,
 		baseEvent.parentSessionId,
 		bus,
+		options,
 	);
 	bridges.push(bridge);
 	return bridge;
@@ -160,6 +269,38 @@ function runCompletedEvent(
 		type: "run_completed",
 		summary: { total: 1, done: 1, blocked: 0 },
 		...overrides,
+	};
+}
+
+function driverDiagnosticEvent(
+	overrides: Partial<EventOf<"driver_diagnostic">> = {},
+): EventOf<"driver_diagnostic"> {
+	return {
+		...baseEvent,
+		type: "driver_diagnostic",
+		level: "warning",
+		code: "fixture_warning",
+		message: "fixture diagnostic",
+		...overrides,
+	};
+}
+
+function episodeCaptureFailedEvent(
+	overrides: Partial<EventOf<"driver_diagnostic">> = {},
+): EventOf<"driver_diagnostic"> {
+	return driverDiagnosticEvent({
+		code: "episode_capture_failed",
+		message: "Episode capture skipped: fixture failure",
+		...overrides,
+	});
+}
+
+function toPublishedEvent(event: DriverEvent): DriverBusEvent {
+	return {
+		type: "driver_event",
+		runId: event.runId,
+		parentSessionId: event.parentSessionId,
+		event,
 	};
 }
 

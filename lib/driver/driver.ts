@@ -336,17 +336,29 @@ async function startDetachedProcess({
 	setBridge,
 	markWorkdirCreated,
 }: StartDetachedProcessOptions): Promise<DriverResult> {
-	const launch = await launchDetachedProcess({
-		spec,
-		deps,
-		signal,
-		setChild,
-		setBridge,
-		markWorkdirCreated,
-		bridgeEvents: true,
-	});
+	let bridge: JsonlActivityBusBridge | undefined;
+	try {
+		const launch = await launchDetachedProcess({
+			spec,
+			deps,
+			signal,
+			setChild,
+			setBridge: (started) => {
+				bridge = started;
+				setBridge?.(started);
+			},
+			markWorkdirCreated,
+			bridgeEvents: true,
+		});
 
-	return await waitForDetachedResult(spec.workdir, launch.child);
+		const result = await waitForDetachedResult(spec.workdir, launch.child);
+		if (driveEventBridgeOptions(spec).bridgeDriverDiagnostics === true) {
+			await waitForChildExitWithinDrainDeadline(launch.child);
+		}
+		return result;
+	} finally {
+		await bridge?.finish();
+	}
 }
 
 interface DetachedProcessLaunch {
@@ -564,6 +576,29 @@ async function waitForDetachedResult(
 	return await Promise.race([completion, childExit]);
 }
 
+async function waitForChildExitWithinDrainDeadline(
+	child: ChildProcess,
+): Promise<void> {
+	if (child.exitCode !== null || child.signalCode !== null) return;
+
+	await new Promise<void>((resolve) => {
+		const cleanup = () => {
+			clearTimeout(timeout);
+			child.off("exit", settle);
+			child.off("error", settle);
+		};
+		const settle = () => {
+			cleanup();
+			resolve();
+		};
+		const timeout = setTimeout(settle, DETACHED_BRIDGE_DRAIN_TIMEOUT_MS);
+
+		child.once("exit", settle);
+		child.once("error", settle);
+		if (child.exitCode !== null || child.signalCode !== null) settle();
+	});
+}
+
 async function waitForCompletion(path: string): Promise<DriverResult> {
 	while (true) {
 		try {
@@ -610,3 +645,5 @@ function throwIfAborted(signal: AbortSignal): void {
 		throw new Error("Detached driver start aborted");
 	}
 }
+
+const DETACHED_BRIDGE_DRAIN_TIMEOUT_MS = 2_000;

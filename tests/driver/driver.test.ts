@@ -41,7 +41,10 @@ type RunDriveOnGraphFn = (
 	spec: DriverRunSpec,
 	ctx: RunDriveOnGraphCtx,
 ) => Promise<DriverResult>;
-type BridgeJsonlToActivityBusFn = () => { stop(): void };
+type BridgeJsonlToActivityBusFn = () => {
+	stop(): void;
+	finish(): Promise<void>;
+};
 type RecordDriveTerminalEpisodeFn = (
 	spec: DriverRunSpec,
 	result: DriverResult,
@@ -111,7 +114,10 @@ describe("driver", () => {
 		mocks.runDriveOnGraph.mockReset();
 		mocks.spawn.mockReset();
 		mocks.stampDriveEpisodeResult.mockReset();
-		mocks.bridgeJsonlToActivityBus.mockReturnValue({ stop: vi.fn() });
+		mocks.bridgeJsonlToActivityBus.mockReturnValue({
+			stop: vi.fn(),
+			finish: vi.fn().mockResolvedValue(undefined),
+		});
 		mocks.createEventSink.mockReturnValue(mocks.eventSink);
 		mocks.createDriveEpisodeWarningReporter.mockReturnValue(vi.fn());
 		mocks.driveGraphActivityEventSinkOptions.mockReturnValue({
@@ -313,6 +319,7 @@ describe("driver", () => {
 				bridge.watcherActive = false;
 				bridge.timerActive = false;
 			}),
+			finish: vi.fn().mockResolvedValue(undefined),
 		};
 		let handle: ReturnType<typeof startDetached>;
 		let abortPromise: Promise<void> | undefined;
@@ -330,6 +337,7 @@ describe("driver", () => {
 		await requirePromise(abortPromise);
 
 		expect(bridge.stop).toHaveBeenCalledTimes(1);
+		expect(bridge.finish).toHaveBeenCalledTimes(1);
 		expect(bridge.watcherActive).toBe(false);
 		expect(bridge.timerActive).toBe(false);
 		await expect(

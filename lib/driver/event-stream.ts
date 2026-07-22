@@ -92,6 +92,7 @@ interface TailEventsResult {
 
 export interface JsonlActivityBusBridge {
 	stop(): void;
+	finish(): Promise<void>;
 }
 
 type BridgeErrorReporter = (
@@ -497,33 +498,49 @@ export function bridgeJsonlToActivityBus(
 	const targetName = basename(filePath);
 	const parentDir = dirname(filePath);
 	let cursor = 0;
-	let stopped = false;
+	let state: "active" | "draining" | "stopped" = "active";
 	let tailingStarted = false;
-	let polling = false;
+	let finishing = false;
 	let pollAgain = false;
+	let pollPromise: Promise<void> | undefined;
+	let finishPromise: Promise<void> | undefined;
 	let directoryWatcher: FSWatcher | undefined;
 	let fileWatcher: FSWatcher | undefined;
 	let retryInterval: NodeJS.Timeout | undefined;
 	let missingFileCheckInterval: NodeJS.Timeout | undefined;
 	let missingFileTimeout: NodeJS.Timeout | undefined;
+	let drainDeadline: NodeJS.Timeout | undefined;
+	const isStopped = (): boolean => state === "stopped";
 
-	const stop = (): void => {
-		if (stopped) {
-			return;
-		}
-
-		stopped = true;
+	const clearResources = (): void => {
 		directoryWatcher?.close();
+		directoryWatcher = undefined;
 		fileWatcher?.close();
+		fileWatcher = undefined;
 		if (retryInterval) {
 			clearInterval(retryInterval);
+			retryInterval = undefined;
 		}
 		if (missingFileCheckInterval) {
 			clearInterval(missingFileCheckInterval);
+			missingFileCheckInterval = undefined;
 		}
 		if (missingFileTimeout) {
 			clearTimeout(missingFileTimeout);
+			missingFileTimeout = undefined;
 		}
+		if (drainDeadline) {
+			clearTimeout(drainDeadline);
+			drainDeadline = undefined;
+		}
+	};
+
+	const stop = (): void => {
+		if (isStopped()) return;
+
+		state = "stopped";
+		pollAgain = false;
+		clearResources();
 	};
 
 	const reportError = (
@@ -547,18 +564,33 @@ export function bridgeJsonlToActivityBus(
 	};
 
 	const schedulePoll = (): void => {
-		if (stopped) {
+		if (isStopped() || finishing) {
 			return;
 		}
-		if (polling) {
+		if (pollPromise) {
 			pollAgain = true;
 			return;
 		}
 
-		void poll();
+		pollPromise = poll().finally(() => {
+			pollPromise = undefined;
+		});
+	};
+
+	const enterDraining = (): void => {
+		if (state !== "active") return;
+
+		state = "draining";
+		if (finishing) return;
+
+		drainDeadline = setTimeout(() => {
+			drainDeadline = undefined;
+			void finish();
+		}, JSONL_BRIDGE_DRAIN_TIMEOUT_MS);
 	};
 
 	const processContent = (content: string): void => {
+		if (isStopped()) return;
 		if (cursor > content.length) {
 			cursor = 0;
 		}
@@ -572,6 +604,7 @@ export function bridgeJsonlToActivityBus(
 		parts.pop();
 
 		for (const rawLine of parts) {
+			if (isStopped()) return;
 			const lineStart = cursor;
 			const event = parseDriverEventLine(rawLine, lineStart, reportError);
 			if (!event) {
@@ -583,45 +616,67 @@ export function bridgeJsonlToActivityBus(
 				continue;
 			}
 
+			if (state === "draining") {
+				if (isEpisodeCaptureDiagnosticEvent(event)) {
+					const diagnosticBusEvent = toBusEvent(event, options);
+					if (diagnosticBusEvent) bus.publish(diagnosticBusEvent);
+				}
+				continue;
+			}
+
 			const busEvent = toBusEvent(event, options);
 			if (busEvent) {
 				bus.publish(busEvent);
 			}
+			if (isStopped()) return;
 
 			if (isTerminalEvent(event)) {
-				stop();
-				return;
+				if (options.bridgeDriverDiagnostics === true) {
+					enterDraining();
+				} else {
+					stop();
+					return;
+				}
 			}
 		}
 	};
 
 	const poll = async (): Promise<void> => {
-		if (stopped) {
-			return;
-		}
+		do {
+			pollAgain = false;
+			if (isStopped()) return;
+			try {
+				const content = await readFile(filePath, "utf-8");
+				processContent(content);
+			} catch (error) {
+				if (!isNotFoundError(error)) {
+					reportError(
+						"read_error",
+						"Failed to read driver event JSONL file",
+						error,
+					);
+				}
+			}
+		} while (pollAgain && !isStopped() && !finishing);
+	};
 
-		polling = true;
-		try {
-			processContent(await readFile(filePath, "utf-8"));
-		} catch (error) {
-			if (!isNotFoundError(error)) {
-				reportError(
-					"read_error",
-					"Failed to read driver event JSONL file",
-					error,
-				);
-			}
-		} finally {
-			polling = false;
-			if (pollAgain && !stopped) {
-				pollAgain = false;
-				schedulePoll();
-			}
-		}
+	const finish = (): Promise<void> => {
+		if (finishPromise) return finishPromise;
+		if (isStopped()) return Promise.resolve();
+
+		finishing = true;
+		clearResources();
+		finishPromise = (async () => {
+			await pollPromise;
+			if (isStopped()) return;
+			await poll();
+			stop();
+		})();
+		return finishPromise;
 	};
 
 	const startTailing = (): void => {
-		if (stopped || tailingStarted) {
+		if (isStopped() || tailingStarted) {
 			return;
 		}
 
@@ -719,7 +774,7 @@ export function bridgeJsonlToActivityBus(
 		startWhenFileAppears();
 	}
 
-	return { stop };
+	return { stop, finish };
 }
 
 export async function tailEvents(
@@ -769,6 +824,7 @@ const BRIDGED_EVENT_TYPES = new Set<DriverEvent["type"]>([
 
 const JSONL_BRIDGE_POLL_INTERVAL_MS = 200;
 const JSONL_BRIDGE_MISSING_FILE_TIMEOUT_MS = 30_000;
+const JSONL_BRIDGE_DRAIN_TIMEOUT_MS = 2_000;
 
 async function writeJsonLine(
 	logPath: string,

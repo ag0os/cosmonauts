@@ -5,6 +5,7 @@ import {
 	mkdir,
 	readFile,
 	rename,
+	rm,
 	stat,
 	utimes,
 	writeFile,
@@ -49,7 +50,9 @@ const PARENT_SESSION_ID = "drive-on-graph-acceptance-parent";
 const WORKER_SOURCE = "cod" + "ing/worker";
 
 describe("Drive-on-graph acceptance", () => {
-	test("records one terminal episode for every Drive result outcome after completion persistence @cosmo-behavior plan:episodic-log#B-017", async () => {
+	// @cosmo-behavior plan:episodic-log#B-017
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-005
+	test("emits the terminal legacy event before completion and captures afterward", async () => {
 		const outcomes: DriverResult["outcome"][] = [];
 		const cases = [
 			{
@@ -109,13 +112,30 @@ describe("Drive-on-graph acceptance", () => {
 				});
 			}
 
-			const result = await runDriveOnGraph(
-				fixture.spec,
-				createRunContext(fixture, backend, controller.signal),
-			);
+			const completionPath = join(fixture.spec.workdir, "run.completion.json");
+			const context = createRunContext(fixture, backend, controller.signal);
+			const persistEvent = context.eventSink;
+			let terminalObservedBeforeCompletion = false;
+			context.eventSink = async (event: DriverEvent) => {
+				if (isCompletionTerminalEvent(event)) {
+					expect(await pathExists(completionPath), testCase.name).toBe(false);
+					const episodes = await readProjectDriveEpisodes(fixture.projectRoot);
+					expect(
+						episodes.filter(
+							(episode) =>
+								episode.subject.id === fixture.spec.runId &&
+								episode.outcome !== "started",
+						),
+						testCase.name,
+					).toEqual([]);
+					terminalObservedBeforeCompletion = true;
+				}
+				await persistEvent(event);
+			};
+			const result = await runDriveOnGraph(fixture.spec, context);
 			outcomes.push(result.outcome);
 
-			const completionPath = join(fixture.spec.workdir, "run.completion.json");
+			expect(terminalObservedBeforeCompletion, testCase.name).toBe(true);
 			const completionBytes = await readFile(completionPath, "utf-8");
 			expect(JSON.parse(completionBytes)).toEqual(result);
 			expect(result.completedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/u);
@@ -197,24 +217,51 @@ describe("Drive-on-graph acceptance", () => {
 
 		const captureFailure = await setupFixture("episode-capture-failure", 1);
 		await writeEpisodicConfig(captureFailure.projectRoot, true);
-		await writeFile(
-			join(captureFailure.projectRoot, "memory", "agent"),
-			"collision",
-		);
 		captureFailure.spec = {
 			...captureFailure.spec,
 			episodeSource: WORKER_SOURCE,
 			episodeAttemptId: "attempt-capture-failure",
 		};
+		const captureCompletionPath = join(
+			captureFailure.spec.workdir,
+			"run.completion.json",
+		);
+		const captureContext = createRunContext(
+			captureFailure,
+			createBackend(),
+			new AbortController().signal,
+		);
+		const persistCaptureEvent = captureContext.eventSink;
+		const captureOrder: string[] = [];
+		captureContext.eventSink = async (event: DriverEvent) => {
+			if (isCompletionTerminalEvent(event)) {
+				expect(await pathExists(captureCompletionPath)).toBe(false);
+				captureOrder.push("terminal");
+			}
+			await persistCaptureEvent(event);
+			if (event.type === "run_started") {
+				const agentMemoryPath = join(
+					captureFailure.projectRoot,
+					"memory",
+					"agent",
+				);
+				await rm(agentMemoryPath, { recursive: true, force: true });
+				await writeFile(agentMemoryPath, "collision", "utf-8");
+			}
+			if (
+				event.type === "driver_diagnostic" &&
+				event.code === "episode_capture_failed"
+			) {
+				expect(await pathExists(captureCompletionPath)).toBe(true);
+				captureOrder.push("capture_diagnostic");
+			}
+		};
 		const captureFailureResult = await runDriveOnGraph(
 			captureFailure.spec,
-			createRunContext(
-				captureFailure,
-				createBackend(),
-				new AbortController().signal,
-			),
+			captureContext,
 		);
 		expect(captureFailureResult.outcome).toBe("completed");
+		expect(captureOrder).toEqual(["terminal", "capture_diagnostic"]);
 		expect(
 			JSON.parse(
 				await readFile(
@@ -771,4 +818,22 @@ async function readLegacyEvents(
 		.split("\n")
 		.filter(Boolean)
 		.map((line) => JSON.parse(line) as { type: string });
+}
+
+function isCompletionTerminalEvent(event: DriverEvent): boolean {
+	return (
+		event.type === "run_completed" ||
+		event.type === "run_aborted" ||
+		event.type === "run_finalization_failed"
+	);
+}
+
+async function pathExists(path: string): Promise<boolean> {
+	try {
+		await stat(path);
+		return true;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+		throw error;
+	}
 }

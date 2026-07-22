@@ -195,6 +195,58 @@ describe("event-stream", () => {
 		]);
 	});
 
+	test("finish serializes a final poll across active draining and stopped states", async () => {
+		vi.useFakeTimers();
+		try {
+			const activePublished: DriverBusEvent[] = [];
+			const activeEvent = taskDoneEvent({ taskId: "TASK-ACTIVE-FINISH" });
+			await writeFile(logPath(), `${JSON.stringify(activeEvent)}\n`, "utf-8");
+			const activeBridge = bridgeJsonlToActivityBus(
+				logPath(),
+				"run-1",
+				"parent-session-1",
+				{ publish: (event) => activePublished.push(event) },
+			);
+			await activeBridge.finish();
+			expect(
+				activePublished.flatMap((event) =>
+					"event" in event ? [event.event] : [],
+				),
+			).toEqual([activeEvent]);
+
+			const published: DriverBusEvent[] = [];
+			const terminal = runCompletedEvent();
+			await writeFile(logPath(), `${JSON.stringify(terminal)}\n`, "utf-8");
+			const bridge = bridgeJsonlToActivityBus(
+				logPath(),
+				"run-1",
+				"parent-session-1",
+				{ publish: (event) => published.push(event) },
+				{ bridgeDriverDiagnostics: true },
+			);
+			await vi.waitFor(() => {
+				expect(published).toHaveLength(1);
+			});
+			const diagnostic = driverDiagnosticEvent();
+			await writeFile(
+				logPath(),
+				`${JSON.stringify(terminal)}\n${JSON.stringify(diagnostic)}\n`,
+				"utf-8",
+			);
+
+			await Promise.all([bridge.finish(), bridge.finish()]);
+			bridge.stop();
+			await bridge.finish();
+
+			expect(
+				published.flatMap((event) => ("event" in event ? [event.event] : [])),
+			).toEqual([terminal, diagnostic]);
+			expect(vi.getTimerCount()).toBe(0);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	// @cosmo-behavior plan:drive-resilience-state-model#B-010
 	test("bridges task finalization and plan completion candidate events", () => {
 		expect(toBusEvent(taskFinalizationFailedEvent())).toMatchObject({
@@ -431,6 +483,19 @@ function driverActivityEvent(
 			toolName: "read",
 			summary: "read lib/driver/event-stream.ts",
 		},
+		...overrides,
+	};
+}
+
+function driverDiagnosticEvent(
+	overrides: Partial<EventOf<"driver_diagnostic">> = {},
+): EventOf<"driver_diagnostic"> {
+	return {
+		...baseEvent,
+		type: "driver_diagnostic",
+		level: "warning",
+		code: "episode_capture_failed",
+		message: "Episode capture skipped: fixture failure",
 		...overrides,
 	};
 }
