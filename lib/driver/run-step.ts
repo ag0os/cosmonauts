@@ -11,7 +11,6 @@ import {
 	driveGraphActivityEventSinkOptions,
 } from "./event-stream.ts";
 import { acquirePlanLock } from "./lock.ts";
-import { writeRunCompletion } from "./run-state.ts";
 import type { DriverResult, DriverRunSpec, LockHandle } from "./types.ts";
 
 async function main(): Promise<number> {
@@ -83,12 +82,26 @@ async function runWithLock(
 			abortSignal: controller.signal,
 			cosmonautsRoot: spec.projectRoot,
 			mode: "detached",
+			onTerminalPersisted: lock.release,
 		});
 
-		await writeRunCompletion(spec.workdir, result);
 		return result;
 	} finally {
+		await releasePlanLockBackstop(lock);
+	}
+}
+
+async function releasePlanLockBackstop(lock: LockHandle): Promise<void> {
+	try {
 		await lock.release();
+	} catch (error) {
+		try {
+			process.stderr.write(
+				`[warning] Plan lock release backstop failed: ${formatError(error)}\n`,
+			);
+		} catch {
+			// Backstop reporting cannot replace the authoritative graph result.
+		}
 	}
 }
 

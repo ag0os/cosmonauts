@@ -17,12 +17,18 @@ const driverMocks = vi.hoisted(() => ({
 	runInline: vi.fn((spec: DriverRunSpec, _deps: DriverDeps): DriverHandle => {
 		writeGraphRunFilesSync(spec.workdir, spec.runId);
 		writeLegacyEventSync(spec.workdir, spec.runId, "2026-01-01T00:00:00.000Z");
-		return createHandle(spec, {
+		const result = {
 			runId: spec.runId,
-			outcome: "completed",
+			outcome: "completed" as const,
 			tasksDone: spec.taskIds.length,
 			tasksBlocked: 0,
-		});
+		};
+		writeFileSync(
+			join(spec.workdir, "run.completion.json"),
+			`${JSON.stringify(result, null, 2)}\n`,
+			"utf-8",
+		);
+		return createHandle(spec, result);
 	}),
 	startDetached: vi.fn(),
 }));

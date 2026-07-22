@@ -49,6 +49,7 @@ afterEach(() => {
 });
 
 describe("cross-plan detached commit serialization", () => {
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-018
 	test("serializes driver-owned commits across detached runs in one repo", async () => {
 		const projectRoot = join(temp.path, "project");
 		await setupGitProject(projectRoot);
@@ -83,6 +84,7 @@ describe("cross-plan detached commit serialization", () => {
 			taskId: secondTask.id,
 		});
 		const firstPlanLockPath = getPlanLockPath(firstPlanSlug, projectRoot);
+		const secondPlanLockPath = getPlanLockPath(secondPlanSlug, projectRoot);
 		const repoCommitLockPath = getRepoCommitLockPath(projectRoot);
 		await installCommitMsgHook(projectRoot);
 
@@ -132,6 +134,33 @@ describe("cross-plan detached commit serialization", () => {
 		]);
 		expect(firstResult).toEqual(completedResult(firstSpec.runId));
 		expect(secondResult).toEqual(completedResult(secondSpec.runId));
+		await waitForPathMissing(firstPlanLockPath);
+		await waitForPathMissing(secondPlanLockPath);
+		await expect(stat(firstPlanLockPath)).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+		await expect(stat(secondPlanLockPath)).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+		expect(
+			JSON.parse(
+				await readFile(join(firstSpec.workdir, "run.completion.json"), "utf-8"),
+			),
+		).toEqual(firstResult);
+		expect(
+			JSON.parse(
+				await readFile(
+					join(secondSpec.workdir, "run.completion.json"),
+					"utf-8",
+				),
+			),
+		).toEqual(secondResult);
+		await expect(
+			stat(join(firstSpec.workdir, "graph.json")),
+		).resolves.toBeTruthy();
+		await expect(
+			stat(join(secondSpec.workdir, "graph.json")),
+		).resolves.toBeTruthy();
 
 		const firstEvents = await readEvents(firstSpec.eventLogPath);
 		const secondEvents = await readEvents(secondSpec.eventLogPath);
@@ -436,6 +465,23 @@ async function waitForFile(path: string, timeoutMs = 10_000): Promise<void> {
 		await new Promise((resolve) => setTimeout(resolve, 25));
 	}
 	throw new Error(`timed out waiting for file: ${path}`);
+}
+
+async function waitForPathMissing(
+	path: string,
+	timeoutMs = 10_000,
+): Promise<void> {
+	const startedAt = Date.now();
+	while (Date.now() - startedAt < timeoutMs) {
+		try {
+			await stat(path);
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+			throw error;
+		}
+		await new Promise((resolve) => setTimeout(resolve, 25));
+	}
+	throw new Error(`timed out waiting for path removal: ${path}`);
 }
 
 async function git(

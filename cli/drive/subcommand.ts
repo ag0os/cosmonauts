@@ -572,14 +572,19 @@ async function runInlineMode(
 	const unsubscribe = subscribeToRunEvents(spec.runId);
 	try {
 		const handle = runInline(spec, deps);
-		const result = await handle.result.catch(async (error: unknown) => {
+		await handle.result.catch(async (error: unknown) => {
 			await writeFallbackRunCompletion(
 				spec.workdir,
 				abortedCompletion(spec, error),
 			);
 			throw error;
 		});
-		const completion = await writeFallbackRunCompletion(spec.workdir, result);
+		const completion = await readRunCompletion(spec.workdir);
+		if (!completion) {
+			throw new Error(
+				`Drive graph returned without persisted completion: ${spec.runId}`,
+			);
+		}
 		printJsonStdout(withDriveScope(completion, spec.planSlug));
 		process.exitCode = completion.outcome === "completed" ? 0 : 1;
 	} finally {

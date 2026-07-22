@@ -25,6 +25,7 @@ import {
 	stampDriveEpisodeResult,
 } from "./drive-graph-runner.ts";
 import { generateBashRunner } from "./driver-script.ts";
+import { formatError } from "./errors.ts";
 import {
 	bridgeJsonlToActivityBus,
 	createEventSink,
@@ -118,7 +119,8 @@ export function runInline(spec: DriverRunSpec, deps: DriverDeps): DriverHandle {
 			abortSignal: controller.signal,
 			cosmonautsRoot: deps.cosmonautsRoot,
 			mode: "inline",
-		}).finally(() => lock.release());
+			onTerminalPersisted: lock.release,
+		}).finally(() => releasePlanLockBackstop(lock));
 	});
 
 	return {
@@ -131,6 +133,22 @@ export function runInline(spec: DriverRunSpec, deps: DriverDeps): DriverHandle {
 		},
 		result,
 	};
+}
+
+async function releasePlanLockBackstop(lock: {
+	release(): Promise<void>;
+}): Promise<void> {
+	try {
+		await lock.release();
+	} catch (error) {
+		try {
+			process.stderr.write(
+				`[warning] Plan lock release backstop failed: ${formatError(error)}\n`,
+			);
+		} catch {
+			// Backstop reporting cannot replace the authoritative graph result.
+		}
+	}
 }
 
 export function startDetached(

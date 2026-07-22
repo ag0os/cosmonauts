@@ -39,12 +39,14 @@ import type {
 	DriverRunAbortDetails,
 	DriverRunSpec,
 	EventSink,
+	TerminalPersistedHook,
 } from "./types.ts";
 import { resolveStateCommitPolicy, stampDriverResult } from "./types.ts";
 import { writeDriverWorkdirInputs } from "./workdir-inputs.ts";
 
 export interface RunDriveOnGraphCtx extends RunRunLoopCtx {
 	mode?: "inline" | "detached";
+	onTerminalPersisted?: TerminalPersistedHook;
 }
 
 type DriverEventInput = DriverEvent extends infer Event
@@ -168,8 +170,12 @@ export async function runDriveOnGraph(
 				),
 			);
 			await emitRunFinalizationFailed(runSpec, ctx, result);
-			await writeRunCompletion(runSpec.workdir, result);
-			await recordDriveTerminalEpisode(runSpec, result, reportEpisodeWarning);
+			await persistCompletionBackedTerminal(
+				runSpec,
+				ctx,
+				result,
+				reportEpisodeWarning,
+			);
 			return result;
 		}
 
@@ -188,8 +194,12 @@ export async function runDriveOnGraph(
 			await toDriverResult(runSpec, ctx, store, ref, schedulerResult),
 		);
 		await emitTerminalLegacyEvent(runSpec, ctx, result);
-		await writeRunCompletion(runSpec.workdir, result);
-		await recordDriveTerminalEpisode(runSpec, result, reportEpisodeWarning);
+		await persistCompletionBackedTerminal(
+			runSpec,
+			ctx,
+			result,
+			reportEpisodeWarning,
+		);
 		return result;
 	} catch (error) {
 		if (error instanceof EventLogWriteError) {
@@ -200,8 +210,12 @@ export async function runDriveOnGraph(
 				tasksBlocked: 0,
 				blockedReason: "log write failed",
 			});
-			await writeRunCompletion(spec.workdir, result);
-			await recordDriveTerminalEpisode(spec, result, reportEpisodeWarning);
+			await persistCompletionBackedTerminal(
+				spec,
+				ctx,
+				result,
+				reportEpisodeWarning,
+			);
 			return result;
 		}
 		const details = await exceptionAbortDetails({
@@ -226,6 +240,50 @@ export async function runDriveOnGraph(
 		await emitRunAborted(spec, ctx, formatError(error), details);
 		await recordDriveThrownTerminalEpisode(spec, reportEpisodeWarning);
 		throw error;
+	}
+}
+
+async function persistCompletionBackedTerminal(
+	spec: DriverRunSpec,
+	ctx: RunDriveOnGraphCtx,
+	result: DriverResult,
+	reportEpisodeWarning: EpisodeWarningReporter,
+): Promise<void> {
+	await writeRunCompletion(spec.workdir, result);
+	try {
+		await ctx.onTerminalPersisted?.();
+	} catch (error) {
+		await reportTerminalPersistedHookFailure(spec, ctx, error);
+		return;
+	}
+	await recordDriveTerminalEpisode(spec, result, reportEpisodeWarning);
+}
+
+async function reportTerminalPersistedHookFailure(
+	spec: DriverRunSpec,
+	ctx: RunDriveOnGraphCtx,
+	error: unknown,
+): Promise<void> {
+	const reason = formatError(error);
+	try {
+		await emit(spec, ctx, {
+			type: "driver_diagnostic",
+			level: "warning",
+			code: "terminal_persisted_hook_failed",
+			message: `Terminal persisted hook failed: ${reason}`,
+			phase: "terminal_persisted",
+			details: { reason },
+		});
+		return;
+	} catch {
+		// Fall through to a bounded stderr warning when event persistence is down.
+	}
+	try {
+		process.stderr.write(
+			`[warning] Terminal persisted hook failed: ${reason}\n`,
+		);
+	} catch {
+		// Lock release reporting must not replace the persisted terminal result.
 	}
 }
 

@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { mkdirSync, rmSync } from "node:fs";
 import {
 	appendFile,
 	chmod,
@@ -23,6 +24,9 @@ import {
 	runDriveOnGraph,
 	stampDriveEpisodeResult,
 } from "../../lib/driver/drive-graph-runner.ts";
+import { runInline } from "../../lib/driver/driver.ts";
+import type { DriverBusEvent } from "../../lib/driver/event-stream.ts";
+import { getPlanLockPath } from "../../lib/driver/lock.ts";
 import {
 	readDriveTerminalRecord,
 	writeFallbackRunCompletion,
@@ -279,6 +283,213 @@ describe("Drive-on-graph acceptance", () => {
 				}),
 			]),
 		);
+	});
+
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-016
+	test("invokes terminal-persisted hook after completion and before capture on every completion-backed outcome", async () => {
+		const cases = [
+			{
+				name: "completed",
+				backend: () => createBackend(),
+			},
+			{
+				name: "blocked",
+				backend: () =>
+					createBackend({
+						onRun: async () => blockedBackendResult("worker needs input"),
+					}),
+			},
+			{
+				name: "aborted",
+				backend: (controller: AbortController) =>
+					createBackend({
+						onRun: async () => {
+							controller.abort(new Error("operator aborted"));
+							return successfulBackendResult("aborted after worker return");
+						},
+					}),
+			},
+			{
+				name: "finalization-failed",
+				backend: () => createBackend(),
+				failFinalization: true,
+			},
+		] as const;
+
+		for (const testCase of cases) {
+			const fixture = await setupFixture(`terminal-hook-${testCase.name}`, 2);
+			await writeEpisodicConfig(fixture.projectRoot, true);
+			fixture.spec = {
+				...fixture.spec,
+				episodeSource: WORKER_SOURCE,
+				episodeAttemptId: `attempt-terminal-hook-${testCase.name}`,
+			};
+			const controller = new AbortController();
+			let backend = testCase.backend(controller);
+			if ("failFinalization" in testCase && testCase.failFinalization) {
+				await initGit(fixture.projectRoot);
+				await installFailingCommitHook(fixture.projectRoot);
+				fixture.spec = {
+					...fixture.spec,
+					commitPolicy: "driver-commits",
+				};
+				backend = createBackend({
+					onRun: async (invocation) => {
+						await writeFile(
+							join(invocation.projectRoot, "terminal-hook-change.ts"),
+							"export const changed = true;\n",
+							"utf-8",
+						);
+						return successfulBackendResult("commit must fail");
+					},
+				});
+			}
+
+			const completionPath = join(fixture.spec.workdir, "run.completion.json");
+			const order: string[] = [];
+			const context = createRunContext(fixture, backend, controller.signal);
+			const persistEvent = context.eventSink;
+			context.eventSink = async (event: DriverEvent) => {
+				if (isCompletionTerminalEvent(event)) order.push("terminal");
+				await persistEvent(event);
+			};
+			const hookedContext = {
+				...context,
+				onTerminalPersisted: async () => {
+					order.push("hook");
+					expect(
+						JSON.parse(await readFile(completionPath, "utf-8")),
+						testCase.name,
+					).toMatchObject({ runId: fixture.spec.runId });
+					const episodes = await readProjectDriveEpisodes(fixture.projectRoot);
+					expect(
+						episodes.filter((episode) => episode.outcome !== "started"),
+						testCase.name,
+					).toEqual([]);
+					await utimes(
+						completionPath,
+						new Date("2030-01-01T00:00:00.000Z"),
+						new Date("2030-01-01T00:00:00.000Z"),
+					);
+				},
+			};
+
+			const result = await runDriveOnGraph(fixture.spec, hookedContext);
+
+			expect(order, testCase.name).toEqual(["terminal", "hook"]);
+			expect(
+				(await stat(completionPath)).mtime.toISOString(),
+				testCase.name,
+			).toBe("2030-01-01T00:00:00.000Z");
+			const terminalEpisodes = (
+				await readProjectDriveEpisodes(fixture.projectRoot)
+			).filter((episode) => episode.outcome !== "started");
+			expect(terminalEpisodes, testCase.name).toHaveLength(1);
+			expect(terminalEpisodes[0]?.outcome, testCase.name).toBe(result.outcome);
+		}
+	});
+
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-023
+	test("preserves the persisted terminal when onTerminalPersisted rejects", async () => {
+		const fixture = await setupFixture("terminal-hook-rejection", 1);
+		await writeEpisodicConfig(fixture.projectRoot, true);
+		fixture.spec = {
+			...fixture.spec,
+			episodeSource: WORKER_SOURCE,
+			episodeAttemptId: "attempt-terminal-hook-rejection",
+		};
+		const hookError = new Error("plan lock release failed");
+		const context = {
+			...createRunContext(
+				fixture,
+				createBackend(),
+				new AbortController().signal,
+			),
+			onTerminalPersisted: async () => {
+				throw hookError;
+			},
+		};
+
+		const result = await runDriveOnGraph(fixture.spec, context);
+
+		expect(result.outcome).toBe("completed");
+		expect(
+			JSON.parse(
+				await readFile(
+					join(fixture.spec.workdir, "run.completion.json"),
+					"utf-8",
+				),
+			),
+		).toEqual(result);
+		expect(
+			fixture.events.filter((event) => event.type === "run_completed"),
+		).toHaveLength(1);
+		expect(
+			fixture.events.filter((event) => event.type === "run_aborted"),
+		).toEqual([]);
+		expect(fixture.events).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					type: "driver_diagnostic",
+					code: "terminal_persisted_hook_failed",
+				}),
+			]),
+		);
+		expect(
+			(await readProjectDriveEpisodes(fixture.projectRoot)).map(
+				(episode) => episode.outcome,
+			),
+		).toEqual(["started"]);
+		expect(
+			await readDriveTerminalRecord(
+				fixture.spec.workdir,
+				fixture.spec.episodeAttemptId ?? "missing",
+			),
+		).toBeUndefined();
+
+		const inlineFixture = await setupFixture(
+			"terminal-hook-inline-backstop",
+			1,
+		);
+		const lockPath = getPlanLockPath(
+			inlineFixture.spec.planSlug,
+			inlineFixture.projectRoot,
+		);
+		const published: DriverBusEvent[] = [];
+		const handle = runInline(inlineFixture.spec, {
+			taskManager: inlineFixture.taskManager,
+			backend: createBackend(),
+			activityBus: {
+				publish(event) {
+					published.push(event);
+					if (
+						event.type === "driver_event" &&
+						event.event.type === "run_completed"
+					) {
+						rmSync(lockPath, { force: true });
+						mkdirSync(lockPath);
+					}
+				},
+			},
+			cosmonautsRoot: inlineFixture.projectRoot,
+		});
+		const inlineResult = await handle.result;
+		expect(inlineResult.outcome).toBe("completed");
+		expect(
+			published.filter(
+				(event) =>
+					event.type === "driver_event" && event.event.type === "run_aborted",
+			),
+		).toEqual([]);
+		expect(await readLegacyEvents(inlineFixture.spec.eventLogPath)).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					type: "driver_diagnostic",
+					code: "terminal_persisted_hook_failed",
+				}),
+			]),
+		);
+		await rm(lockPath, { recursive: true, force: true });
 	});
 
 	// @cosmo-behavior plan:episodic-log-detached-hardening#B-006
@@ -810,14 +1021,12 @@ async function persistTerminalAttemptEvidence(
 	);
 }
 
-async function readLegacyEvents(
-	path: string,
-): Promise<Array<{ type: string }>> {
+async function readLegacyEvents(path: string): Promise<DriverEvent[]> {
 	return (await readFile(path, "utf-8"))
 		.trim()
 		.split("\n")
 		.filter(Boolean)
-		.map((line) => JSON.parse(line) as { type: string });
+		.map((line) => JSON.parse(line) as DriverEvent);
 }
 
 function isCompletionTerminalEvent(event: DriverEvent): boolean {

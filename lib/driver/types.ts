@@ -256,6 +256,8 @@ export type SpawnActivity =
 
 export type EventSink = (event: DriverEvent) => Promise<void>;
 
+export type TerminalPersistedHook = () => void | Promise<void>;
+
 export interface DriverHandle {
 	runId: string;
 	planSlug: string;

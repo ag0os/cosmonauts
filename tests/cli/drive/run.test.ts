@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createDriveCompatProgram } from "../../../cli/drive/subcommand.ts";
@@ -652,6 +652,119 @@ describe("cosmonauts run drive compat run", () => {
 			tasksBlocked: 0,
 			blockedReason: "already-running",
 		});
+	});
+
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-024
+	test("does not write successful completion after the graph terminal hook", async () => {
+		const fixture = await setupFixture(1);
+		const completedAt = "2026-07-22T18:00:00.000Z";
+		const preservedMtime = new Date("2030-01-01T00:00:00.000Z");
+		let completionPath = "";
+		driverMocks.runInline.mockImplementationOnce(
+			(spec: DriverRunSpec): DriverHandle => {
+				completionPath = join(spec.workdir, "run.completion.json");
+				const result = {
+					runId: spec.runId,
+					outcome: "completed" as const,
+					tasksDone: spec.taskIds.length,
+					tasksBlocked: 0,
+					completedAt,
+				};
+				return createHandle(
+					spec,
+					(async () => {
+						await writeFile(
+							completionPath,
+							`${JSON.stringify(result, null, 2)}\n`,
+							"utf-8",
+						);
+						await utimes(completionPath, preservedMtime, preservedMtime);
+						return result;
+					})(),
+					false,
+				);
+			},
+		);
+
+		await parseDrive([
+			"--plan",
+			PLAN,
+			"--task-ids",
+			fixture.tasks[0]?.id ?? "TASK-001",
+			"--mode",
+			"inline",
+			"--envelope",
+			fixture.envelopePath,
+		]);
+
+		expect(JSON.parse(await readFile(completionPath, "utf-8"))).toMatchObject({
+			outcome: "completed",
+			completedAt,
+		});
+		expect((await stat(completionPath)).mtime.toISOString()).toBe(
+			preservedMtime.toISOString(),
+		);
+
+		output.restore();
+		output = attachJsonHelpers(captureCliOutput());
+		let missingCompletionPath = "";
+		driverMocks.runInline.mockImplementationOnce(
+			(spec: DriverRunSpec): DriverHandle => {
+				missingCompletionPath = join(spec.workdir, "run.completion.json");
+				return createHandle(
+					spec,
+					{
+						runId: spec.runId,
+						outcome: "completed",
+						tasksDone: spec.taskIds.length,
+						tasksBlocked: 0,
+					},
+					false,
+				);
+			},
+		);
+
+		await expect(
+			parseDrive([
+				"--plan",
+				PLAN,
+				"--task-ids",
+				fixture.tasks[0]?.id ?? "TASK-001",
+				"--mode",
+				"inline",
+				"--envelope",
+				fixture.envelopePath,
+			]),
+		).rejects.toThrow("Drive graph returned without persisted completion");
+		expect(existsSync(missingCompletionPath)).toBe(false);
+
+		const runStepSource = await readFile(
+			join(originalCwd, "lib", "driver", "run-step.ts"),
+			"utf-8",
+		);
+		expect(runStepSource).not.toContain("writeRunCompletion");
+		const driverToolSource = await readFile(
+			join(
+				originalCwd,
+				"domains",
+				"shared",
+				"extensions",
+				"orchestration",
+				"driver-tool.ts",
+			),
+			"utf-8",
+		);
+		const settleStart = driverToolSource.indexOf(
+			"function clearActiveRunOnCompletion",
+		);
+		const settleEnd = driverToolSource.indexOf(
+			"function abortedCompletion",
+			settleStart,
+		);
+		const fulfilledBranch = driverToolSource
+			.slice(settleStart, settleEnd)
+			.split("(error: unknown)")[0];
+		expect(fulfilledBranch).not.toContain("writeFallbackRunCompletion");
 	});
 
 	test("guards resume when the worktree is dirty", async () => {
@@ -2120,14 +2233,26 @@ async function readJsonl(path: string): Promise<JsonlRecord[]> {
 function createHandle(
 	spec: DriverRunSpec,
 	result: DriverResult | Promise<DriverResult>,
+	persistCompletion = true,
 ): DriverHandle {
+	const resolvedResult = Promise.resolve(result);
 	return {
 		runId: spec.runId,
 		planSlug: spec.planSlug,
 		workdir: spec.workdir,
 		eventLogPath: spec.eventLogPath,
 		abort: vi.fn<() => Promise<void>>(async () => undefined),
-		result: Promise.resolve(result),
+		result: persistCompletion
+			? resolvedResult.then(async (completion) => {
+					await mkdir(spec.workdir, { recursive: true });
+					await writeFile(
+						join(spec.workdir, "run.completion.json"),
+						`${JSON.stringify(completion, null, 2)}\n`,
+						"utf-8",
+					);
+					return completion;
+				})
+			: resolvedResult,
 	};
 }
 

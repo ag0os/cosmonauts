@@ -279,6 +279,90 @@ describe("run-step binary", () => {
 		expect(runStepSource).not.toContain("episode-identity.ts");
 	});
 
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-017
+	test("releases the detached plan lock after completion and before episode capture", async () => {
+		const fixture = await setupFixture("run-terminal-persisted-hook", {
+			episodeSource: "coding/worker",
+			episodeAttemptId: "attempt-terminal-persisted-hook",
+		});
+		await writeEpisodicConfig(fixture.projectRoot, true);
+		const fakeCodex = await writeFakeCodex(fixture.binDir);
+		const lockPath = getPlanLockPath(
+			fixture.spec.planSlug,
+			fixture.projectRoot,
+		);
+
+		const result = await execBinary(["--workdir", fixture.workdir], {
+			cwd: temp.path,
+			env: { COSMONAUTS_DRIVER_CODEX_BINARY: fakeCodex },
+		});
+
+		expect(result).toMatchObject({ exitCode: 0 });
+		await expect(stat(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+		const completion = JSON.parse(
+			await readFile(join(fixture.workdir, "run.completion.json"), "utf-8"),
+		) as DriverResult;
+		expect(completion).toMatchObject({
+			runId: fixture.spec.runId,
+			outcome: "completed",
+		});
+		expect(
+			(await readProjectDriveEpisodes(fixture.projectRoot))
+				.map((episode) => episode.outcome)
+				.sort(),
+		).toEqual(["completed", "started"]);
+
+		const runStepSource = await readFile("lib/driver/run-step.ts", "utf-8");
+		expect(runStepSource).toContain("onTerminalPersisted: lock.release");
+		expect(runStepSource).toContain("releasePlanLockBackstop(lock)");
+		expect(runStepSource).not.toContain("writeRunCompletion");
+	});
+
+	test("contains terminal-hook and backstop release failures in the detached child", async () => {
+		const fixture = await setupFixture("run-terminal-hook-release-failure", {
+			episodeSource: "coding/worker",
+			episodeAttemptId: "attempt-terminal-hook-release-failure",
+		});
+		await writeEpisodicConfig(fixture.projectRoot, true);
+		const fakeCodex = await writeFakeCodex(fixture.binDir);
+		const lockPath = getPlanLockPath(
+			fixture.spec.planSlug,
+			fixture.projectRoot,
+		);
+
+		const result = await execBinary(["--workdir", fixture.workdir], {
+			cwd: temp.path,
+			env: {
+				COSMONAUTS_DRIVER_CODEX_BINARY: fakeCodex,
+				COSMONAUTS_TEST_CORRUPT_PLAN_LOCK: lockPath,
+			},
+		});
+
+		expect(result.exitCode).toBe(0);
+		expect(result.stderr).toContain("Plan lock release backstop failed");
+		expect(
+			JSON.parse(
+				await readFile(join(fixture.workdir, "run.completion.json"), "utf-8"),
+			),
+		).toMatchObject({ outcome: "completed" });
+		const events = await readEvents(fixture.spec.eventLogPath);
+		expect(events).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					type: "driver_diagnostic",
+					code: "terminal_persisted_hook_failed",
+				}),
+			]),
+		);
+		expect(events.filter((event) => event.type === "run_aborted")).toEqual([]);
+		expect(
+			(await readProjectDriveEpisodes(fixture.projectRoot)).map(
+				(episode) => episode.outcome,
+			),
+		).toEqual(["started"]);
+		await expect(stat(lockPath)).resolves.toBeTruthy();
+	});
+
 	test("exits nonzero without entering the loop when the plan lock is active", async () => {
 		const fixture = await setupFixture("run-locked");
 		const fakeCodex = await writeFakeCodex(fixture.binDir);
@@ -398,6 +482,10 @@ done
 if [ -z "$summary_path" ]; then
   echo "missing summary path" >&2
   exit 64
+fi
+if [ -n "\${COSMONAUTS_TEST_CORRUPT_PLAN_LOCK:-}" ]; then
+  rm -f "$COSMONAUTS_TEST_CORRUPT_PLAN_LOCK"
+  mkdir "$COSMONAUTS_TEST_CORRUPT_PLAN_LOCK"
 fi
 if [ -n "\${COSMONAUTS_TEST_LOCK_PATH:-}" ] && [ -n "\${COSMONAUTS_TEST_LOCK_OBSERVED:-}" ]; then
   if [ -f "$COSMONAUTS_TEST_LOCK_PATH" ]; then

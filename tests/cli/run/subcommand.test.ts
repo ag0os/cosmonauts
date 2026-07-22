@@ -16,21 +16,26 @@ const chainMocks = vi.hoisted(() => ({
 }));
 
 const driverMocks = vi.hoisted(() => ({
-	runInline: vi.fn(
-		(spec: DriverRunSpec): DriverHandle => ({
+	runInline: vi.fn((spec: DriverRunSpec): DriverHandle => {
+		const result = {
+			runId: spec.runId,
+			outcome: "completed" as const,
+			tasksDone: spec.taskIds.length,
+			tasksBlocked: 0,
+		};
+		return {
 			runId: spec.runId,
 			planSlug: spec.planSlug,
 			workdir: spec.workdir,
 			eventLogPath: spec.eventLogPath,
-			result: Promise.resolve({
-				runId: spec.runId,
-				outcome: "completed" as const,
-				tasksDone: spec.taskIds.length,
-				tasksBlocked: 0,
-			}),
+			result: writeFile(
+				join(spec.workdir, "run.completion.json"),
+				`${JSON.stringify(result, null, 2)}\n`,
+				"utf-8",
+			).then(() => result),
 			abort: vi.fn(),
-		}),
-	),
+		};
+	}),
 	launchDetached: vi.fn(async (spec: DriverRunSpec) => ({
 		runId: spec.runId,
 		planSlug: spec.planSlug,
