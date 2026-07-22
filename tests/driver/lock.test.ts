@@ -1,6 +1,6 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
 	acquirePlanLock,
 	acquireRepoCommitLock,
@@ -11,7 +11,30 @@ import {
 } from "../../lib/driver/lock.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
+const fsMocks = vi.hoisted(() => ({
+	unlink: vi.fn<(...args: unknown[]) => Promise<void>>(),
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:fs/promises")>();
+	return { ...actual, unlink: fsMocks.unlink };
+});
+
+type Unlink = (...args: unknown[]) => Promise<void>;
+
 const temp = useTempDir("driver-lock-test-");
+
+beforeEach(async () => {
+	const actualFs =
+		await vi.importActual<typeof import("node:fs/promises")>(
+			"node:fs/promises",
+		);
+	const actualUnlink = actualFs.unlink as unknown as Unlink;
+	fsMocks.unlink.mockReset();
+	fsMocks.unlink.mockImplementation(async (...args) => {
+		await actualUnlink(...args);
+	});
+});
 
 function requireLockHandle(
 	result:
@@ -57,6 +80,29 @@ describe("driver locks", () => {
 
 		await lock.release();
 		await expectMissing(lockPath);
+	});
+
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-029
+	test("retries release after a failed unlink and stays idempotent on success", async () => {
+		const lock = requireLockHandle(
+			await acquirePlanLock("plan-a", "run-1", temp.path),
+		);
+		const lockPath = getPlanLockPath("plan-a", temp.path);
+		const unlinkError = Object.assign(new Error("unlink failed"), {
+			code: "EIO",
+		});
+		fsMocks.unlink.mockClear();
+		fsMocks.unlink.mockRejectedValueOnce(unlinkError);
+
+		await expect(lock.release().finally(() => lock.release())).rejects.toBe(
+			unlinkError,
+		);
+
+		expect(fsMocks.unlink).toHaveBeenCalledTimes(2);
+		await expectMissing(lockPath);
+
+		await lock.release();
+		expect(fsMocks.unlink).toHaveBeenCalledTimes(2);
 	});
 
 	test("driver repo commit lock atomic acquisition serializes waiters and releases", async () => {

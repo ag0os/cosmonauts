@@ -214,10 +214,10 @@ function createHandle(lockPath: string, expected: LockFileContent): LockHandle {
 			if (released) {
 				return;
 			}
-			released = true;
 
 			const existing = await readLockFile(lockPath);
 			if (!existing || !sameLock(existing, expected)) {
+				released = true;
 				return;
 			}
 
@@ -226,6 +226,7 @@ function createHandle(lockPath: string, expected: LockFileContent): LockHandle {
 					throw error;
 				}
 			});
+			released = true;
 		},
 	};
 }
