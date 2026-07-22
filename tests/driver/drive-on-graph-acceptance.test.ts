@@ -20,7 +20,12 @@ import type {
 import {
 	recordDriveTerminalEpisode,
 	runDriveOnGraph,
+	stampDriveEpisodeResult,
 } from "../../lib/driver/drive-graph-runner.ts";
+import {
+	readDriveTerminalRecord,
+	writeFallbackRunCompletion,
+} from "../../lib/driver/run-state.ts";
 import type {
 	DriverEvent,
 	DriverResult,
@@ -226,6 +231,74 @@ describe("Drive-on-graph acceptance", () => {
 					code: "episode_capture_failed",
 				}),
 			]),
+		);
+	});
+
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-006
+	test("keeps a thrown attempt at one failed terminal when settle writes fallback completion", async () => {
+		const fixture = await setupFixture("thrown-settle-fallback", 1);
+		await writeEpisodicConfig(fixture.projectRoot, true);
+		const attemptId = "attempt-thrown-settle-fallback";
+		fixture.spec = {
+			...fixture.spec,
+			episodeSource: WORKER_SOURCE,
+			episodeAttemptId: attemptId,
+		};
+		const primaryError = new Error("primary graph exit");
+		const context = createRunContext(
+			fixture,
+			createBackend(),
+			new AbortController().signal,
+		);
+		const persistEvent = context.eventSink;
+		context.eventSink = async (event: DriverEvent) => {
+			if (event.type === "run_started") throw primaryError;
+			await persistEvent(event);
+		};
+
+		await expect(runDriveOnGraph(fixture.spec, context)).rejects.toBe(
+			primaryError,
+		);
+		expect(
+			await readDriveTerminalRecord(fixture.spec.workdir, attemptId),
+		).toMatchObject({ outcome: "failed", state: "recorded" });
+
+		const fallback = {
+			runId: fixture.spec.runId,
+			outcome: "aborted",
+			tasksDone: 0,
+			tasksBlocked: 0,
+			blockedReason: primaryError.message,
+		} satisfies DriverResult;
+		await expect(
+			writeFallbackRunCompletion(fixture.spec.workdir, fallback),
+		).resolves.toEqual(fallback);
+		const resumed = stampDriveEpisodeResult(fixture.spec, fallback);
+		const authoritative = await writeFallbackRunCompletion(
+			fixture.spec.workdir,
+			resumed,
+		);
+		await recordDriveTerminalEpisode(fixture.spec, authoritative);
+		const authoritativeBytes = await readFile(
+			join(fixture.spec.workdir, "run.completion.json"),
+			"utf-8",
+		);
+
+		await expect(
+			writeFallbackRunCompletion(fixture.spec.workdir, fallback),
+		).resolves.toEqual(authoritative);
+		expect(
+			await readFile(
+				join(fixture.spec.workdir, "run.completion.json"),
+				"utf-8",
+			),
+		).toBe(authoritativeBytes);
+		const episodes = await readProjectDriveEpisodes(fixture.projectRoot);
+		expect(
+			episodes.filter((episode) => episode.outcome === "failed"),
+		).toHaveLength(1);
+		expect(episodes.filter((episode) => episode.outcome === "aborted")).toEqual(
+			[],
 		);
 	});
 

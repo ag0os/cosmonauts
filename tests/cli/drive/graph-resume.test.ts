@@ -6,12 +6,14 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createDriveCompatProgram } from "../../../cli/drive/subcommand.ts";
 import type { Backend } from "../../../lib/driver/backends/types.ts";
 import { compileDriveRunToGraph } from "../../../lib/driver/drive-graph-compiler.ts";
+import { writeDriveTerminalRecord } from "../../../lib/driver/run-state.ts";
 import type { DriverEvent, DriverRunSpec } from "../../../lib/driver/types.ts";
 import {
 	FileRunStore,
 	type StepRecord,
 	type StepResult,
 } from "../../../lib/durable-runtime/index.ts";
+import { recordEpisode } from "../../../lib/memory/episode.ts";
 import { parseEpisodeRecord } from "../../../lib/memory/episodic-records.ts";
 import { createMarkdownMemoryStore } from "../../../lib/memory/markdown-store.ts";
 import { TaskManager } from "../../../lib/tasks/task-manager.ts";
@@ -256,6 +258,76 @@ describe("cosmonauts run drive compat graph resume", () => {
 			stateCommitSha: "b".repeat(40),
 		});
 		expect(completion).toEqual(withoutScope(onlyJsonRecord(emittedResults)));
+		expect(backendMocks.backendRun).not.toHaveBeenCalled();
+	});
+
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-007
+	test("rehydrates the attempt ledger and skips a second terminal after thrown-exit resume", async () => {
+		const fixture = await setupFullyCompletedGraphRun();
+		await enableFrozenEpisodeIdentity(fixture.spec);
+		const attemptId = "attempt-prior";
+		const failedAt = "2026-07-22T17:10:00.000Z";
+		await recordEpisode({
+			projectRoot: fixture.spec.projectRoot,
+			event: {
+				scope: "project",
+				source: WORKER_SOURCE,
+				action: "drive.run",
+				outcome: "failed",
+				subject: { kind: "run", id: RUN_ID },
+				tags: [`attempt:${attemptId}`],
+				timestamp: failedAt,
+				summary: `Drive run "${RUN_ID}" failed.`,
+				details: `Attempt ${attemptId} reached terminal outcome failed.`,
+			},
+		});
+		await writeDriveTerminalRecord(fixture.spec.workdir, {
+			version: 1,
+			attemptId,
+			outcome: "failed",
+			timestamp: failedAt,
+			state: "recorded",
+		});
+		await writeFile(
+			join(fixture.spec.workdir, "run.completion.json"),
+			`${JSON.stringify(
+				{
+					runId: RUN_ID,
+					outcome: "aborted",
+					tasksDone: 0,
+					tasksBlocked: 0,
+					blockedReason: "thrown process exited",
+				},
+				null,
+				2,
+			)}\n`,
+			"utf-8",
+		);
+
+		await parseDrive([
+			"--plan",
+			PLAN_SLUG,
+			"--resume",
+			RUN_ID,
+			"--resume-dirty",
+		]);
+
+		const completion = await readJson(
+			join(fixture.spec.workdir, "run.completion.json"),
+		);
+		expect(completion).toMatchObject({
+			runId: RUN_ID,
+			outcome: "aborted",
+			completedAt: expect.any(String),
+		});
+		const episodes = await readProjectDriveEpisodes(process.cwd());
+		expect(episodes).toHaveLength(1);
+		expect(episodes[0]).toMatchObject({
+			outcome: "failed",
+			source: WORKER_SOURCE,
+			subject: { kind: "run", id: RUN_ID },
+		});
+		expect(episodes[0]?.tags).toContain(`attempt:${attemptId}`);
 		expect(backendMocks.backendRun).not.toHaveBeenCalled();
 	});
 });

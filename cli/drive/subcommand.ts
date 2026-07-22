@@ -1,6 +1,5 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
 import { readdir, readFile, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,8 +45,9 @@ import {
 	type InlineRunState,
 	RUN_COMPLETION_FILENAME,
 	readPendingFinalization,
+	readRunCompletion,
+	writeFallbackRunCompletion,
 	writeInlineRunState,
-	writeRunCompletion,
 } from "../../lib/driver/run-state.ts";
 import { commitFinalState } from "../../lib/driver/state-commit.ts";
 import { listPendingPlanTaskIds } from "../../lib/driver/task-selection.ts";
@@ -508,14 +508,15 @@ async function runInlineMode(
 	try {
 		const handle = runInline(spec, deps);
 		const result = await handle.result.catch(async (error: unknown) => {
-			await writeRunCompletion(spec.workdir, abortedCompletion(spec, error));
+			await writeFallbackRunCompletion(
+				spec.workdir,
+				abortedCompletion(spec, error),
+			);
 			throw error;
 		});
-		if (!existsSync(join(spec.workdir, RUN_COMPLETION_FILENAME))) {
-			await writeRunCompletion(spec.workdir, result);
-		}
-		printJsonStdout(withDriveScope(result, spec.planSlug));
-		process.exitCode = result.outcome === "completed" ? 0 : 1;
+		const completion = await writeFallbackRunCompletion(spec.workdir, result);
+		printJsonStdout(withDriveScope(completion, spec.planSlug));
+		process.exitCode = completion.outcome === "completed" ? 0 : 1;
 	} finally {
 		unsubscribe();
 	}
@@ -661,7 +662,7 @@ async function hasRunState(workdir: string): Promise<boolean> {
 async function classifyRunDir(
 	runDir: RunDir,
 ): Promise<RunStatusRecord | undefined> {
-	const result = await readCompletion(runDir.workdir);
+	const result = await readRunCompletion(runDir.workdir);
 	if (result) {
 		return {
 			runId: runDir.runId,
@@ -756,20 +757,6 @@ async function readProcessStartedAt(pid: number): Promise<Date> {
 		throw new Error(`Unable to parse process start time for pid ${pid}`);
 	}
 	return startedAt;
-}
-
-async function readCompletion(
-	workdir: string,
-): Promise<DriverResult | undefined> {
-	try {
-		const raw = await readFile(join(workdir, RUN_COMPLETION_FILENAME), "utf-8");
-		return JSON.parse(raw) as DriverResult;
-	} catch (error) {
-		if (isErrnoError(error) && error.code === "ENOENT") {
-			return undefined;
-		}
-		throw error;
-	}
 }
 
 async function readRunPid(workdir: string): Promise<RunPidFile | undefined> {
@@ -1100,19 +1087,6 @@ function resolveOptionalPath(
 
 async function clearRunCompletion(workdir: string): Promise<void> {
 	await rm(join(workdir, RUN_COMPLETION_FILENAME), { force: true });
-}
-
-async function readRunCompletion(
-	workdir: string,
-): Promise<DriverResult | undefined> {
-	try {
-		return JSON.parse(
-			await readFile(join(workdir, RUN_COMPLETION_FILENAME), "utf-8"),
-		) as DriverResult;
-	} catch (error) {
-		if (isErrnoError(error) && error.code === "ENOENT") return undefined;
-		throw error;
-	}
 }
 
 async function prepareInlineWorkdir(spec: DriverRunSpec): Promise<void> {
@@ -1590,8 +1564,10 @@ async function persistResumeTerminal(
 	spec: DriverRunSpec,
 	result: DriverResult,
 ): Promise<DriverResult> {
-	const completion = stampDriveEpisodeResult(spec, result);
-	await writeRunCompletion(spec.workdir, completion);
+	const completion = await writeFallbackRunCompletion(
+		spec.workdir,
+		stampDriveEpisodeResult(spec, result),
+	);
 	await recordDriveTerminalEpisode(spec, completion);
 	return completion;
 }

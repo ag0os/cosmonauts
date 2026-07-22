@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
@@ -31,6 +31,7 @@ import {
 	getRepoCommitLockPath,
 	type LockHandle,
 } from "../../lib/driver/lock.ts";
+import * as runState from "../../lib/driver/run-state.ts";
 import {
 	type DriverEvent,
 	type DriverResult,
@@ -190,6 +191,80 @@ describe("driver e2e run_driver integration", () => {
 		}
 	});
 
+	test("does not rewrite successful completion when the driver handle settles", async () => {
+		const fixture = await setupFixture({ taskCount: 1 });
+		backendMocks.run.mockResolvedValue(successResult());
+		const completionWrites = vi.spyOn(runState, "writeRunCompletion");
+
+		const result = await runDriver(fixture);
+		await waitForCompletion(result.workdir);
+		await delay(0);
+
+		expect(completionWrites).toHaveBeenCalledTimes(1);
+	});
+
+	test("keeps rejection fallback completion and warning text", async () => {
+		const fixture = await setupFixture({ taskCount: 1 });
+		const lock = await acquirePlanLock(
+			fixture.planSlug,
+			"guarded-rejection",
+			fixture.projectRoot,
+		);
+		if ("error" in lock) {
+			throw new Error("Fixture lock unexpectedly active");
+		}
+
+		try {
+			const result = await runDriver(fixture);
+			const completion = await waitForCompletion(result.workdir);
+
+			expect(completion).toMatchObject({
+				runId: result.runId,
+				outcome: "aborted",
+				blockedReason: expect.stringContaining("guarded-rejection"),
+			});
+		} finally {
+			await (lock as LockHandle).release();
+		}
+	});
+
+	test("keeps launch-failure fallback completion and warning text", async () => {
+		const fixture = await setupFixture({ taskCount: 1 });
+		const pi = createMockPi(fixture.projectRoot, {
+			sessionId: PARENT_SESSION_ID,
+		});
+		registerDriverTool(pi as never, vi.fn(), fixture.projectRoot);
+
+		await expect(
+			pi.callTool("run_driver", {
+				planSlug: fixture.planSlug,
+				taskIds: fixture.taskIds,
+				backend: "codex",
+				mode: "inline",
+				envelopePath: fixture.envelopePath,
+				commitPolicy: "no-commit",
+			}),
+		).rejects.toThrow("Unsupported driver backend in inline mode: codex");
+
+		const runsDir = join(
+			fixture.projectRoot,
+			"missions",
+			"sessions",
+			fixture.planSlug,
+			"runs",
+		);
+		const runIds = await readdir(runsDir);
+		expect(runIds).toHaveLength(1);
+		const completion = await waitForCompletion(
+			join(runsDir, runIds[0] as string),
+		);
+		expect(completion).toMatchObject({
+			runId: runIds[0],
+			outcome: "aborted",
+			blockedReason: "Unsupported driver backend in inline mode: codex",
+		});
+	});
+
 	test("driver branch mismatch emits structured preflight failure before transitions", async () => {
 		const fixture = await setupFixture({ taskCount: 1 });
 		await initGit(fixture.projectRoot);
@@ -281,7 +356,7 @@ describe("driver e2e run_driver integration", () => {
 			);
 			const result = await runDriver(fixture, { runtime });
 			await waitForCompletion(result.workdir);
-			await delay(0);
+			await delay(10);
 			const spec = await readSpec(result.workdir);
 			const executed = resolveDriveEpisodeWorker(runtime);
 

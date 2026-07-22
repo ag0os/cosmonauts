@@ -15,9 +15,12 @@ import {
 	PENDING_FINALIZATION_FILENAME,
 	type PendingFinalizationState,
 	pendingFinalizationPath,
+	RUN_COMPLETION_FILENAME,
 	readDriveTerminalRecord,
 	readPendingFinalization,
+	readRunCompletion,
 	writeDriveTerminalRecord,
+	writeFallbackRunCompletion,
 	writePendingFinalization,
 } from "../../lib/driver/run-state.ts";
 import type { DriverResult, DriverRunSpec } from "../../lib/driver/types.ts";
@@ -247,6 +250,57 @@ describe("run-state", () => {
 		expect(
 			await readdir(join(projectRoot, "memory", "agent", "episodes")),
 		).toHaveLength(1);
+	});
+
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-010
+	test("preserves stamped completion bytes against fallback writers", async () => {
+		const stamped = {
+			runId: "run-stamped",
+			outcome: "completed",
+			tasksDone: 3,
+			tasksBlocked: 0,
+			completedAt: "2026-07-22T17:00:00.000Z",
+		} satisfies DriverResult;
+		const fallback = {
+			runId: stamped.runId,
+			outcome: "aborted",
+			tasksDone: 0,
+			tasksBlocked: 0,
+			blockedReason: "fallback writer settled",
+		} satisfies DriverResult;
+
+		for (const writer of ["cli", "driver-tool", "parent-abort"]) {
+			const workdir = join(temp.path, `stamped-${writer}`);
+			await mkdir(workdir, { recursive: true });
+			const completionPath = join(workdir, RUN_COMPLETION_FILENAME);
+			const authoritativeBytes = `${JSON.stringify(stamped)}  \n`;
+			await writeFile(completionPath, authoritativeBytes, "utf-8");
+
+			await expect(
+				writeFallbackRunCompletion(workdir, fallback),
+			).resolves.toEqual(stamped);
+			expect(await readFile(completionPath, "utf-8")).toBe(authoritativeBytes);
+			expect(await readRunCompletion(workdir)).toEqual(stamped);
+		}
+
+		const absentWorkdir = join(temp.path, "absent-completion");
+		await mkdir(absentWorkdir, { recursive: true });
+		await expect(
+			writeFallbackRunCompletion(absentWorkdir, fallback),
+		).resolves.toEqual(fallback);
+		expect(await readRunCompletion(absentWorkdir)).toEqual(fallback);
+
+		const unstampedWorkdir = join(temp.path, "unstamped-completion");
+		await mkdir(unstampedWorkdir, { recursive: true });
+		await writeFile(
+			join(unstampedWorkdir, RUN_COMPLETION_FILENAME),
+			`${JSON.stringify({ ...fallback, blockedReason: "older fallback" })}\n`,
+			"utf-8",
+		);
+		await expect(
+			writeFallbackRunCompletion(unstampedWorkdir, fallback),
+		).resolves.toEqual(fallback);
+		expect(await readRunCompletion(unstampedWorkdir)).toEqual(fallback);
 	});
 
 	// @cosmo-behavior plan:drive-resilience-state-model#B-004

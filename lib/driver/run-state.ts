@@ -95,6 +95,30 @@ export async function writeRunCompletion(
 	);
 }
 
+export async function readRunCompletion(
+	workdir: string,
+): Promise<DriverResult | undefined> {
+	try {
+		return JSON.parse(
+			await readFile(join(workdir, RUN_COMPLETION_FILENAME), "utf-8"),
+		) as DriverResult;
+	} catch (error) {
+		if (isNodeError(error) && error.code === "ENOENT") return undefined;
+		throw error;
+	}
+}
+
+export async function writeFallbackRunCompletion(
+	workdir: string,
+	fallback: DriverResult,
+): Promise<DriverResult> {
+	const current = await readRunCompletion(workdir);
+	if (current?.completedAt !== undefined) return current;
+
+	await writeRunCompletion(workdir, fallback);
+	return fallback;
+}
+
 export async function readDriveTerminalRecord(
 	workdir: string,
 	attemptId: string,

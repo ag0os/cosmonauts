@@ -26,8 +26,8 @@ import {
 import { formatError } from "../../../../lib/driver/errors.ts";
 import { DEFAULT_TASK_TIMEOUT_MS } from "../../../../lib/driver/run-one-task.ts";
 import {
+	writeFallbackRunCompletion,
 	writeInlineRunState,
-	writeRunCompletion,
 } from "../../../../lib/driver/run-state.ts";
 import { listPendingPlanTaskIds } from "../../../../lib/driver/task-selection.ts";
 import {
@@ -301,7 +301,7 @@ export function registerDriverTool(
 				});
 			} catch (error) {
 				if (mode === "inline" && spec) {
-					await writeRunCompletion(
+					await writeFallbackRunCompletion(
 						spec.workdir,
 						abortedCompletionFromRunId(runId, error),
 					).catch(() => undefined);
@@ -497,11 +497,11 @@ function clearActiveRunOnCompletion(
 		.then(
 			(result) => {
 				clearActiveRun(activeKey, handle.runId);
-				return writeRunCompletion(handle.workdir, result);
+				return result;
 			},
 			(error: unknown) => {
 				clearActiveRun(activeKey, handle.runId);
-				return writeRunCompletion(
+				return writeFallbackRunCompletion(
 					handle.workdir,
 					abortedCompletion(handle, error),
 				);
