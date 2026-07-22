@@ -35,9 +35,18 @@ const backendMocks = vi.hoisted(() => ({
 	),
 }));
 
+const sessionFactoryMocks = vi.hoisted(() => ({
+	createAgentSessionFromDefinition: vi.fn(),
+}));
+
 vi.mock("../../../lib/driver/backend-resolution.ts", () => ({
 	resolveConfiguredExternalBackend:
 		backendMocks.resolveConfiguredExternalBackend,
+}));
+
+vi.mock("../../../lib/orchestration/session-factory.ts", () => ({
+	createAgentSessionFromDefinition:
+		sessionFactoryMocks.createAgentSessionFromDefinition,
 }));
 
 const execFileAsync = promisify(execFile);
@@ -45,6 +54,8 @@ const temp = useTempDir("drive-graph-resume-");
 const PLAN_SLUG = "durable-frontend-migration";
 const RUN_ID = "run-previous";
 const WORKER_SOURCE = "cod" + "ing/worker";
+const UNAVAILABLE_WORKER_SOURCE = "retired-" + "cod" + "ing/worker";
+const FALLBACK_WORKER_SOURCE = "fallback-" + "cod" + "ing/worker";
 const TERMINAL_COMPLETED_AT = "2026-07-22T19:00:00.000Z";
 type DriverEventInput = DriverEvent extends infer Event
 	? Event extends DriverEvent
@@ -69,6 +80,10 @@ describe("cosmonauts run drive compat graph resume", () => {
 		process.exitCode = undefined;
 		backendMocks.backendRun.mockClear();
 		backendMocks.resolveConfiguredExternalBackend.mockClear();
+		sessionFactoryMocks.createAgentSessionFromDefinition.mockReset();
+		sessionFactoryMocks.createAgentSessionFromDefinition.mockResolvedValue(
+			successfulWorkerSession(),
+		);
 	});
 
 	afterEach(() => {
@@ -160,6 +175,75 @@ describe("cosmonauts run drive compat graph resume", () => {
 				})
 			)?.status,
 		).toBe("completed");
+	});
+
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-019
+	test("drops an unavailable frozen worker before execution and never attributes the fallback to it", async () => {
+		const fixture = await setupPendingExecutionGraphResume();
+		await enableEpisodeCapture(fixture.spec.projectRoot);
+		const runtimeCreate = vi
+			.spyOn(CosmonautsRuntime, "create")
+			.mockResolvedValue(fallbackExecutionRuntime() as CosmonautsRuntime);
+		const persistedBefore = (await readJson(
+			join(fixture.spec.workdir, "spec.json"),
+		)) as DriverRunSpec;
+
+		expect(persistedBefore.remainingTaskIds).toEqual([fixture.taskId]);
+		expect(persistedBefore.backendName).toBe("cosmonauts-subagent");
+		expect(persistedBefore).toMatchObject({
+			episodeSource: UNAVAILABLE_WORKER_SOURCE,
+			episodeAttemptId: "attempt-stale-worker",
+		});
+		expect(
+			await readFile(join(fixture.spec.workdir, "task-queue.txt"), "utf-8"),
+		).toBe(`${fixture.taskId}\n`);
+
+		await parseDrive([
+			"--plan",
+			PLAN_SLUG,
+			"--resume",
+			RUN_ID,
+			"--resume-dirty",
+			"--mode",
+			"inline",
+			"--backend",
+			"cosmonauts-subagent",
+		]);
+
+		const persistedSpec = (await readJson(
+			join(fixture.spec.workdir, "spec.json"),
+		)) as DriverRunSpec;
+		const episodes = await readProjectDriveEpisodes(fixture.spec.projectRoot);
+		const events = await readFile(fixture.spec.eventLogPath, "utf-8");
+		const [executedDefinition, spawnConfig] =
+			sessionFactoryMocks.createAgentSessionFromDefinition.mock.calls[0] ?? [];
+		const executedWorker = executedDefinition as AgentDefinition;
+
+		expect(output.stdoutJson()).toMatchObject({
+			runId: RUN_ID,
+			scope: PLAN_SLUG,
+			outcome: "completed",
+			tasksDone: 1,
+			tasksBlocked: 0,
+		});
+		expect(runtimeCreate).toHaveBeenCalledTimes(1);
+		expect(
+			sessionFactoryMocks.createAgentSessionFromDefinition,
+		).toHaveBeenCalledTimes(1);
+		expect(`${executedWorker.domain}/${executedWorker.id}`).toBe(
+			FALLBACK_WORKER_SOURCE,
+		);
+		expect(spawnConfig).toMatchObject({
+			role: "worker",
+			agentReference: undefined,
+		});
+		expect(events).toContain(`"resolvedAgentId":"${FALLBACK_WORKER_SOURCE}"`);
+		expect(persistedSpec).not.toHaveProperty("episodeSource");
+		expect(persistedSpec).not.toHaveProperty("episodeAttemptId");
+		// Pre-CDX-002 attributed this fallback execution to the unavailable source.
+		expect(
+			episodes.some((episode) => episode.source === UNAVAILABLE_WORKER_SOURCE),
+		).toBe(false);
 	});
 
 	test("resumes pending task-status finalization with one terminal result", async () => {
@@ -664,6 +748,65 @@ async function setupCompletedTaskWithPendingStateCommit(): Promise<{
 	return { taskId: task.id, spec, store };
 }
 
+async function setupPendingExecutionGraphResume(): Promise<{
+	taskId: string;
+	spec: DriverRunSpec;
+	store: FileRunStore;
+}> {
+	const projectRoot = process.cwd();
+	await mkdir(projectRoot, { recursive: true });
+	await initGit(projectRoot);
+	await writeFile(join(projectRoot, "envelope.md"), "# Envelope\n", "utf-8");
+	const taskManager = new TaskManager(projectRoot);
+	await taskManager.init({ zeroPadding: 0 });
+	const task = await taskManager.createTask({
+		title: "Pending graph resume task",
+		labels: [`plan:${PLAN_SLUG}`],
+	});
+	await git(["add", "envelope.md", "missions/tasks"]);
+	await git(["commit", "-m", "add pending drive task"]);
+
+	const workdir = join(
+		projectRoot,
+		"missions",
+		"sessions",
+		PLAN_SLUG,
+		"runs",
+		RUN_ID,
+	);
+	const spec: DriverRunSpec = {
+		runId: RUN_ID,
+		parentSessionId: "previous-parent",
+		projectRoot,
+		planSlug: PLAN_SLUG,
+		taskIds: [task.id],
+		backendName: "cosmonauts-subagent",
+		promptTemplate: { envelopePath: join(projectRoot, "envelope.md") },
+		preflightCommands: [],
+		postflightCommands: [],
+		commitPolicy: "no-commit",
+		stateCommitPolicy: "none",
+		workdir,
+		eventLogPath: join(workdir, "events.jsonl"),
+		remainingTaskIds: [task.id],
+		episodeSource: UNAVAILABLE_WORKER_SOURCE,
+		episodeAttemptId: "attempt-stale-worker",
+	};
+	await mkdir(workdir, { recursive: true });
+	const store = new FileRunStore({
+		rootDir: join(projectRoot, "missions", "sessions"),
+	});
+	await compileDriveRunToGraph({ spec, store });
+	await writeFile(
+		join(workdir, "spec.json"),
+		`${JSON.stringify(spec, null, 2)}\n`,
+		"utf-8",
+	);
+	await writeFile(join(workdir, "task-queue.txt"), `${task.id}\n`, "utf-8");
+	await writeFile(join(workdir, "events.jsonl"), "", "utf-8");
+	return { taskId: task.id, spec, store };
+}
+
 async function setupCompletedTaskWithPendingTaskStatus(): Promise<{
 	taskId: string;
 	spec: DriverRunSpec;
@@ -1094,9 +1237,38 @@ async function enableEpisodeCapture(projectRoot: string): Promise<void> {
 }
 
 function terminalResumeRuntime(): CosmonautsRuntime {
-	const worker: AgentDefinition = {
+	return {
+		agentRegistry: new AgentRegistry([workerDefinition(WORKER_SOURCE)]),
+		domainContext: undefined,
+	} as CosmonautsRuntime;
+}
+
+function fallbackExecutionRuntime(): Pick<
+	CosmonautsRuntime,
+	| "agentRegistry"
+	| "domainContext"
+	| "domainResolver"
+	| "domainsDir"
+	| "projectSkills"
+	| "skillPaths"
+> {
+	return {
+		agentRegistry: new AgentRegistry([
+			workerDefinition(FALLBACK_WORKER_SOURCE),
+		]),
+		domainContext: undefined,
+		domainResolver: {} as never,
+		domainsDir: process.cwd(),
+		projectSkills: [],
+		skillPaths: [],
+	};
+}
+
+function workerDefinition(qualifiedId: string): AgentDefinition {
+	const separator = qualifiedId.indexOf("/");
+	return {
 		id: "worker",
-		domain: WORKER_SOURCE.slice(0, WORKER_SOURCE.indexOf("/")),
+		domain: qualifiedId.slice(0, separator),
 		description: "Drive worker",
 		capabilities: [],
 		model: "test/model",
@@ -1107,10 +1279,35 @@ function terminalResumeRuntime(): CosmonautsRuntime {
 		session: "ephemeral",
 		loop: false,
 	};
+}
+
+function successfulWorkerSession() {
 	return {
-		agentRegistry: new AgentRegistry([worker]),
-		domainContext: undefined,
-	} as CosmonautsRuntime;
+		session: {
+			sessionId: "fallback-worker-session",
+			messages: [
+				{
+					role: "assistant",
+					content: [{ type: "text", text: "outcome: success" }],
+				},
+			],
+			prompt: vi.fn(),
+			dispose: vi.fn(),
+			subscribe: vi.fn(() => vi.fn()),
+			getSessionStats: () => ({
+				tokens: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					total: 0,
+				},
+				cost: 0,
+				userMessages: 1,
+				toolCalls: 0,
+			}),
+		},
+	};
 }
 
 async function readTerminalLedger(
