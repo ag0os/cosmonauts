@@ -7,6 +7,7 @@ import {
 	access,
 	mkdir,
 	mkdtemp,
+	readdir,
 	readFile,
 	rm,
 	writeFile,
@@ -14,6 +15,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { withEntityFileLock } from "../../lib/entity-file-lock.ts";
 import {
 	createMarkdownMemoryStore,
 	parseEpisodeRecord,
@@ -26,6 +28,12 @@ import {
 	createTaskFixture,
 	createTaskRecordFixture,
 } from "../helpers/tasks.ts";
+
+interface TaskUpdateBypassScenario {
+	readonly name: string;
+	readonly hasEpisodeContext: boolean;
+	readonly config?: string;
+}
 
 describe("TaskManager", () => {
 	let tempDir: string;
@@ -198,9 +206,12 @@ describe("TaskManager", () => {
 		const failingManager = new TaskManager(failureRoot, {
 			episodeSource: "custom/task-owner",
 			reportEpisodeWarning: async (warning) => {
-				const lockReleased = await access(getTaskCreateLockPath(failureRoot))
-					.then(() => false)
-					.catch((error: NodeJS.ErrnoException) => error.code === "ENOENT");
+				const lockReleased = await Promise.all(
+					[
+						getTaskCreateLockPath(failureRoot),
+						taskEpisodeLockPath(failureRoot),
+					].map(isMissing),
+				).then((results) => results.every(Boolean));
 				const persisted = await new TaskManager(failureRoot).getTask(
 					"TASK-001",
 				);
@@ -236,6 +247,155 @@ describe("TaskManager", () => {
 				message: expect.stringContaining("Episode capture skipped"),
 			}),
 		]);
+	});
+
+	it("preserves unlocked task update bytes for every transition-lock bypass", async () => {
+		vi.useFakeTimers();
+		const scenarios: readonly TaskUpdateBypassScenario[] = [
+			{
+				name: "gate-off",
+				hasEpisodeContext: true,
+				config: JSON.stringify({ episodicLog: { enabled: false } }),
+			},
+			{
+				name: "absent-gate",
+				hasEpisodeContext: true,
+			},
+			{
+				name: "context-free",
+				hasEpisodeContext: false,
+				config: JSON.stringify({ episodicLog: { enabled: true } }),
+			},
+			{
+				name: "config-failure",
+				hasEpisodeContext: true,
+				config: "{ malformed config",
+			},
+		];
+		const persistedBytes: string[] = [];
+
+		for (const scenario of scenarios) {
+			const projectRoot = join(tempDir, scenario.name);
+			vi.setSystemTime(new Date("2026-07-22T13:00:00.000Z"));
+			const setupManager = new TaskManager(projectRoot);
+			await setupManager.init();
+			await setupManager.createTask({ title: "Original Task" });
+
+			const warnings: unknown[] = [];
+			const targetManager = new TaskManager(
+				projectRoot,
+				scenario.hasEpisodeContext
+					? {
+							episodeSource: "custom/bypass-owner",
+							reportEpisodeWarning: async (warning) => {
+								warnings.push(warning);
+							},
+						}
+					: undefined,
+			);
+			await targetManager.init();
+			await mkdir(join(projectRoot, ".cosmonauts"), { recursive: true });
+			if (scenario.config !== undefined) {
+				await writeFile(
+					join(projectRoot, ".cosmonauts", "config.json"),
+					scenario.config,
+					"utf-8",
+				);
+			}
+			await mkdir(taskEpisodeLockPath(projectRoot));
+
+			vi.setSystemTime(new Date("2026-07-22T13:01:00.000Z"));
+			const updated = await targetManager.updateTask("task-001", {
+				title: "Updated Task",
+			});
+			expect(updated.title).toBe("Updated Task");
+			expect(warnings).toEqual([]);
+			expect(
+				(await readdir(join(projectRoot, "missions", "tasks"))).sort(),
+			).toEqual(["TASK-001 - Updated Task.md", "config.json"]);
+			persistedBytes.push(
+				await readFile(
+					join(projectRoot, "missions", "tasks", "TASK-001 - Updated Task.md"),
+					"utf-8",
+				),
+			);
+		}
+
+		expect(new Set(persistedBytes).size).toBe(1);
+	});
+
+	it("warns and runs task updates unlocked on lock errors and bounded waits", async () => {
+		vi.useRealTimers();
+		const errorRoot = join(tempDir, "lock-error");
+		const errorSetupManager = new TaskManager(errorRoot);
+		await errorSetupManager.init();
+		await errorSetupManager.createTask({ title: "Original Task" });
+		await writeEpisodicConfig(errorRoot);
+		await mkdir(taskEpisodeLockPath(errorRoot));
+		const errorWarnings: unknown[] = [];
+		const errorManager = new TaskManager(errorRoot, {
+			episodeSource: "custom/lock-error-owner",
+			reportEpisodeWarning: async (warning) => {
+				errorWarnings.push(warning);
+			},
+		});
+
+		await expect(
+			errorManager.updateTask("task-001", { title: "Error Fallback" }),
+		).resolves.toMatchObject({ title: "Error Fallback" });
+		expect(errorWarnings).toEqual([
+			expect.objectContaining({
+				path: taskEpisodeLockPath(errorRoot),
+				message: expect.stringMatching(
+					/lock unavailable.*continuing unlocked/iu,
+				),
+			}),
+		]);
+
+		const timeoutRoot = join(tempDir, "lock-timeout");
+		const timeoutSetupManager = new TaskManager(timeoutRoot);
+		await timeoutSetupManager.init();
+		await timeoutSetupManager.createTask({ title: "Original Task" });
+		await writeEpisodicConfig(timeoutRoot);
+		const timeoutWarnings: unknown[] = [];
+		const timeoutManager = new TaskManager(timeoutRoot, {
+			episodeSource: "custom/lock-timeout-owner",
+			reportEpisodeWarning: async (warning) => {
+				timeoutWarnings.push(warning);
+			},
+		});
+		const releaseHeldLock = deferred<void>();
+		const heldLockStarted = deferred<void>();
+		let lockHeld = true;
+		const heldLock = withEntityFileLock(
+			taskEpisodeLockPath(timeoutRoot),
+			async () => {
+				heldLockStarted.resolve();
+				await releaseHeldLock.promise;
+				lockHeld = false;
+			},
+		);
+		await heldLockStarted.promise;
+		try {
+			await expect(
+				timeoutManager.updateTask("TASK-001", { title: "Timeout Fallback" }),
+			).resolves.toMatchObject({ title: "Timeout Fallback" });
+			expect(lockHeld).toBe(true);
+			expect(timeoutWarnings).toEqual([
+				expect.objectContaining({
+					path: taskEpisodeLockPath(timeoutRoot),
+					message: expect.stringMatching(/timed out.*continuing unlocked/iu),
+				}),
+			]);
+		} finally {
+			releaseHeldLock.resolve();
+			await heldLock;
+		}
+		await expect(
+			access(taskEpisodeLockPath(timeoutRoot)),
+		).rejects.toMatchObject({
+			code: "ENOENT",
+		});
 	});
 
 	it("keeps Drive task-manager construction context-free", async () => {
@@ -1195,6 +1355,27 @@ async function writeEpisodicConfig(projectRoot: string): Promise<void> {
 		JSON.stringify({ episodicLog: { enabled: true } }),
 		"utf-8",
 	);
+}
+
+function taskEpisodeLockPath(projectRoot: string): string {
+	return join(projectRoot, ".cosmonauts", "episode-task-TASK-001.lock");
+}
+
+async function isMissing(path: string): Promise<boolean> {
+	return access(path)
+		.then(() => false)
+		.catch((error: NodeJS.ErrnoException) => error.code === "ENOENT");
+}
+
+function deferred<T>(): {
+	readonly promise: Promise<T>;
+	readonly resolve: (value: T) => void;
+} {
+	let resolvePromise: (value: T) => void = () => undefined;
+	const promise = new Promise<T>((resolve) => {
+		resolvePromise = resolve;
+	});
+	return { promise, resolve: resolvePromise };
 }
 
 async function readProjectEpisodes(projectRoot: string) {

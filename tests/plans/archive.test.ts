@@ -4,22 +4,29 @@
  * directory creation, content preservation, and safety check rejection.
  */
 
+import { execFile } from "node:child_process";
 import {
+	access,
 	mkdir,
 	mkdtemp,
 	readdir,
 	readFile,
 	rm,
 	stat,
+	unlink,
 	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { promisify } from "node:util";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { withEntityFileLock } from "../../lib/entity-file-lock.ts";
 import { archivePlan } from "../../lib/plans/archive.ts";
 import { PlanManager } from "../../lib/plans/plan-manager.ts";
 import { sessionsDirForPlan } from "../../lib/sessions/session-store.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
+
+const execFileAsync = promisify(execFile);
 
 describe("archivePlan", () => {
 	let tempDir: string;
@@ -34,6 +41,7 @@ describe("archivePlan", () => {
 	});
 
 	afterEach(async () => {
+		vi.useRealTimers();
 		await rm(tempDir, { recursive: true, force: true });
 	});
 
@@ -114,6 +122,99 @@ describe("archivePlan", () => {
 			await readdir(join(tempDir, "missions/tasks"))
 		).filter((f) => f.endsWith(".md"));
 		expect(remainingTaskFiles).toHaveLength(0);
+	});
+
+	it("keeps enabled task transition locks outside the archive task scan and git status", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-07-22T12:00:00.000Z"));
+		await planManager.createPlan({
+			slug: "locked-task-plan",
+			title: "Locked Task Plan",
+		});
+		const task = await taskManager.createTask({
+			title: "Locked Task",
+			labels: ["plan:locked-task-plan"],
+		});
+		await taskManager.updateTask(task.id, { status: "Done" });
+
+		const enabledManager = new TaskManager(tempDir, {
+			episodeSource: "custom/archive-safety-owner",
+		});
+		await enabledManager.init({ prefix: "TEST" });
+		await unlink(join(tempDir, "missions", "tasks", "config.json"));
+		await mkdir(join(tempDir, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(tempDir, ".cosmonauts", "config.json"),
+			JSON.stringify({ episodicLog: { enabled: true } }),
+			"utf-8",
+		);
+		await writeFile(
+			join(tempDir, ".gitignore"),
+			".cosmonauts/*.lock\n",
+			"utf-8",
+		);
+		await git(tempDir, ["init"]);
+		await git(tempDir, ["add", "."]);
+		await git(tempDir, [
+			"-c",
+			"user.name=Cosmonauts Test",
+			"-c",
+			"user.email=cosmonauts@example.test",
+			"commit",
+			"-m",
+			"baseline",
+		]);
+		const baselineStatus = await git(tempDir, ["status", "--porcelain"]);
+		expect(baselineStatus).toBe("");
+
+		const lockPath = join(tempDir, ".cosmonauts", "episode-task-TEST-001.lock");
+		const releaseHeldLock = deferred<void>();
+		const heldLockStarted = deferred<void>();
+		const heldLock = withEntityFileLock(lockPath, async () => {
+			heldLockStarted.resolve();
+			await releaseHeldLock.promise;
+		});
+		await heldLockStarted.promise;
+
+		let updateSettled = false;
+		const update = enabledManager
+			.updateTask("test-001", { status: "Done" })
+			.then((updated) => {
+				updateSettled = true;
+				return updated;
+			});
+		try {
+			await vi.advanceTimersByTimeAsync(75);
+			expect(updateSettled).toBe(false);
+			expect(await readdir(join(tempDir, "missions", "tasks"))).toEqual([
+				"TEST-001 - Locked Task.md",
+			]);
+			expect(await git(tempDir, ["status", "--porcelain"])).toBe(
+				baselineStatus,
+			);
+		} finally {
+			vi.setSystemTime(new Date("2026-07-22T12:00:00.000Z"));
+			releaseHeldLock.resolve();
+			await heldLock;
+		}
+		await update;
+
+		expect(await readdir(join(tempDir, "missions", "tasks"))).toEqual([
+			"TEST-001 - Locked Task.md",
+		]);
+		expect(await git(tempDir, ["status", "--porcelain"])).toBe(baselineStatus);
+		await expect(access(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+
+		const archived = await archivePlan(
+			tempDir,
+			"locked-task-plan",
+			planManager,
+			taskManager,
+		);
+		expect(archived.archivedTaskFiles).toEqual(["TEST-001 - Locked Task.md"]);
+		expect(
+			await readdir(join(tempDir, "missions", "archive", "tasks")),
+		).toEqual(["TEST-001 - Locked Task.md"]);
 	});
 
 	it("preserves file content unchanged", async () => {
@@ -543,3 +644,19 @@ describe("archivePlan", () => {
 		});
 	});
 });
+
+async function git(cwd: string, args: string[]): Promise<string> {
+	const { stdout } = await execFileAsync("git", args, { cwd });
+	return stdout.toString();
+}
+
+function deferred<T>(): {
+	readonly promise: Promise<T>;
+	readonly resolve: (value: T) => void;
+} {
+	let resolvePromise: (value: T) => void = () => undefined;
+	const promise = new Promise<T>((resolve) => {
+		resolvePromise = resolve;
+	});
+	return { promise, resolve: resolvePromise };
+}

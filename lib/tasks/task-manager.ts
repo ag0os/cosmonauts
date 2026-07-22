@@ -3,10 +3,12 @@
  * Orchestrates all core modules for task CRUD operations, search, and filtering
  */
 
+import { join } from "node:path";
 import {
 	type EpisodeWarningReporter,
 	recordEpisode,
 } from "../memory/episode.ts";
+import { withEpisodeTransitionLock } from "../memory/episode-transition-lock.ts";
 import {
 	deleteTaskFile,
 	ensureForgeDirectory,
@@ -54,6 +56,11 @@ const TASK_STATUS_OUTCOMES = {
 export interface TaskManagerEpisodeContext {
 	readonly episodeSource: string;
 	readonly reportEpisodeWarning?: EpisodeWarningReporter;
+}
+
+interface TaskUpdateExecution {
+	readonly task: Task;
+	readonly previousStatus?: TaskStatus;
 }
 
 /**
@@ -187,8 +194,34 @@ export class TaskManager {
 			this.assertValidDate(input.dueDate, "dueDate");
 		}
 
-		// Load existing task
-		const existingTask = await this.getTask(id);
+		const execution = await withEpisodeTransitionLock({
+			projectRoot: this.projectRoot,
+			lockPath: getTaskEpisodeTransitionLockPath(this.projectRoot, id),
+			hasEpisodeContext: Boolean(this.episodeContext?.episodeSource),
+			reportEpisodeWarning: this.episodeContext?.reportEpisodeWarning,
+			action: () => this.updateTaskLocked(id, input),
+		});
+
+		if (execution.previousStatus !== undefined) {
+			await this.captureTaskStatusChanged(
+				execution.previousStatus,
+				execution.task,
+			);
+		}
+		return execution.task;
+	}
+
+	private async updateTaskLocked(
+		id: string,
+		input: TaskUpdateInput,
+	): Promise<TaskUpdateExecution> {
+		const targetFile = await this.findTaskFilenameById(id);
+		if (!targetFile) {
+			throw new Error(`Task not found: ${id}`);
+		}
+
+		const existingContent = await readTaskFile(this.projectRoot, targetFile);
+		const existingTask = existingContent ? parseTask(existingContent) : null;
 		if (!existingTask) {
 			throw new Error(`Task not found: ${id}`);
 		}
@@ -223,10 +256,12 @@ export class TaskManager {
 			await saveTaskFile(this.projectRoot, newFilename, content);
 		}
 
-		if (existingTask.status !== updatedTask.status) {
-			await this.captureTaskStatusChanged(existingTask.status, updatedTask);
-		}
-		return updatedTask;
+		return {
+			task: updatedTask,
+			...(existingTask.status !== updatedTask.status
+				? { previousStatus: existingTask.status }
+				: {}),
+		};
 	}
 
 	private async captureTaskCreated(task: Task): Promise<void> {
@@ -494,6 +529,14 @@ export class TaskManager {
 
 function taskFileMayContainLabel(content: string, label: string): boolean {
 	return content.toLowerCase().includes(label.toLowerCase());
+}
+
+function getTaskEpisodeTransitionLockPath(
+	projectRoot: string,
+	id: string,
+): string {
+	const canonicalId = id.toUpperCase();
+	return join(projectRoot, ".cosmonauts", `episode-task-${canonicalId}.lock`);
 }
 
 function matchesStatusFilter(task: Task, filter: TaskListFilter): boolean {
