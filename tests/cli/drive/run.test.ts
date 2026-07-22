@@ -1,5 +1,13 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
+import {
+	mkdir,
+	readdir,
+	readFile,
+	rm,
+	stat,
+	utimes,
+	writeFile,
+} from "node:fs/promises";
 import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createDriveCompatProgram } from "../../../cli/drive/subcommand.ts";
@@ -568,15 +576,16 @@ describe("cosmonauts run drive compat run", () => {
 		expect(spec.promptTemplate.envelopeContent).toBe(legacyContent);
 	});
 
-	test("routes explicit inline and detached modes without invoking real backends", async () => {
+	test("keeps absent-inline and false-detached CLI specs layout and output exact", async () => {
 		const fixture = await setupFixture(1);
 		const runtimeCreate = vi.spyOn(CosmonautsRuntime, "create");
+		const taskId = fixture.tasks[0]?.id ?? "TASK-001";
 
 		await parseDrive([
 			"--plan",
 			PLAN,
 			"--task-ids",
-			fixture.tasks[0]?.id ?? "TASK-001",
+			taskId,
 			"--mode",
 			"inline",
 			"--envelope",
@@ -584,13 +593,42 @@ describe("cosmonauts run drive compat run", () => {
 		]);
 
 		expect(driverMocks.runInline).toHaveBeenCalledTimes(1);
-		expect(JSON.parse(output.stdout())).toMatchObject({ outcome: "completed" });
-		expect(JSON.parse(output.stderr())).toMatchObject({
-			type: "task_done",
-			runId: firstRunInlineSpec().runId,
-		});
-		expect(firstRunInlineSpec()).not.toHaveProperty("episodeSource");
-		expect(firstRunInlineSpec()).not.toHaveProperty("episodeAttemptId");
+		const inlineSpec = firstRunInlineSpec();
+		const inlineCompletion = {
+			runId: inlineSpec.runId,
+			outcome: "completed",
+			tasksDone: 1,
+			tasksBlocked: 0,
+		};
+		expect(output.stdout()).toBe(
+			`${JSON.stringify({ ...inlineCompletion, scope: PLAN })}\n`,
+		);
+		expect(output.stderr()).toBe(
+			`${JSON.stringify({
+				type: "task_done",
+				runId: inlineSpec.runId,
+				parentSessionId: inlineSpec.parentSessionId,
+				timestamp: "2026-01-01T00:00:00.000Z",
+				taskId,
+			})}\n`,
+		);
+		expect(inlineSpec).not.toHaveProperty("episodeSource");
+		expect(inlineSpec).not.toHaveProperty("episodeAttemptId");
+		expect(await readFile(join(inlineSpec.workdir, "spec.json"), "utf-8")).toBe(
+			`${JSON.stringify(inlineSpec, null, 2)}\n`,
+		);
+		expect(
+			await readFile(join(inlineSpec.workdir, "run.completion.json"), "utf-8"),
+		).toBe(`${JSON.stringify(inlineCompletion, null, 2)}\n`);
+		expect((await readdir(inlineSpec.workdir)).sort()).toEqual([
+			"run.completion.json",
+			"run.inline.json",
+			"spec.json",
+			"task-queue.txt",
+		]);
+		expect(existsSync(join(inlineSpec.workdir, "run.terminal-episodes"))).toBe(
+			false,
+		);
 		expect(runtimeCreate).not.toHaveBeenCalled();
 
 		driverMocks.runInline.mockClear();
@@ -602,7 +640,7 @@ describe("cosmonauts run drive compat run", () => {
 			"--plan",
 			PLAN,
 			"--task-ids",
-			fixture.tasks[0]?.id ?? "TASK-001",
+			taskId,
 			"--mode",
 			"detached",
 			"--envelope",
@@ -611,12 +649,24 @@ describe("cosmonauts run drive compat run", () => {
 
 		expect(driverMocks.launchDetached).toHaveBeenCalledTimes(1);
 		expect(driverMocks.runInline).not.toHaveBeenCalled();
-		expect(output.stdoutJson()).toMatchObject({
-			runId: firstLaunchDetachedSpec().runId,
-			planSlug: PLAN,
-		});
-		expect(firstLaunchDetachedSpec()).not.toHaveProperty("episodeSource");
-		expect(firstLaunchDetachedSpec()).not.toHaveProperty("episodeAttemptId");
+		const detachedSpec = firstLaunchDetachedSpec();
+		expect(output.stdout()).toBe(
+			[
+				`Drive run started: ${detachedSpec.runId} - poll with: cosmonauts run status ${detachedSpec.runId}`,
+				JSON.stringify({
+					runId: detachedSpec.runId,
+					scope: PLAN,
+					planSlug: PLAN,
+					workdir: detachedSpec.workdir,
+					eventLogPath: detachedSpec.eventLogPath,
+				}),
+				"",
+			].join("\n"),
+		);
+		expect(output.stderr()).toBe("");
+		expect(detachedSpec).not.toHaveProperty("episodeSource");
+		expect(detachedSpec).not.toHaveProperty("episodeAttemptId");
+		expect(existsSync(detachedSpec.workdir)).toBe(false);
 		expect(runtimeCreate).not.toHaveBeenCalled();
 		expect(existsSync(join(process.cwd(), "memory", "agent"))).toBe(false);
 	});

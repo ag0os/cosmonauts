@@ -1,4 +1,11 @@
-import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import {
+	chmod,
+	mkdir,
+	readdir,
+	readFile,
+	stat,
+	writeFile,
+} from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 import type {
@@ -11,6 +18,7 @@ import {
 	startDetached,
 } from "../../lib/driver/driver.ts";
 import type { DriverBusEvent } from "../../lib/driver/event-stream.ts";
+import { readDriveTerminalRecord } from "../../lib/driver/run-state.ts";
 import type { DriverRunSpec } from "../../lib/driver/types.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { useTempDir } from "../helpers/fs.ts";
@@ -142,8 +150,8 @@ describe("Drive-on-graph routing", () => {
 		}
 	}, 30_000);
 
-	// @cosmo-behavior plan:episodic-log#B-028
-	test("keeps disabled Drive specs results events and files byte-identical", async () => {
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-001
+	test("keeps OFF-state Drive files events layout and output byte-identical across hardened paths", async () => {
 		const absent = await setupFixture("disabled-absent");
 		const expectedResult = {
 			runId: absent.spec.runId,
@@ -163,13 +171,51 @@ describe("Drive-on-graph routing", () => {
 		).toBe(`${JSON.stringify(expectedResult, null, 2)}\n`);
 		expect(absent.spec).not.toHaveProperty("episodeSource");
 		expect(absent.spec).not.toHaveProperty("episodeAttemptId");
-		expect(await readLegacyEvents(absent.spec.eventLogPath)).toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({ type: "run_started" }),
-				expect.objectContaining({ type: "spawn_completed" }),
-				expect.objectContaining({ type: "run_completed" }),
-			]),
-		);
+		expect(
+			(await readLegacyEvents(absent.spec.eventLogPath)).map(
+				(event) => event.type,
+			),
+		).toEqual([
+			"run_started",
+			"task_started",
+			"preflight",
+			"preflight",
+			"spawn_started",
+			"spawn_completed",
+			"task_done",
+			"finalize",
+			"run_completed",
+		]);
+		expect(await readNormalizedEventTypes(absent.spec.workdir)).toEqual([
+			"run_started",
+			"step_ready",
+			"step_started",
+			"step_heartbeat",
+			"step_tool_activity",
+			"step_tool_activity",
+			"step_tool_activity",
+			"step_completed",
+			"step_ready",
+			"step_started",
+			"step_heartbeat",
+			"step_completed",
+			"run_completed",
+		]);
+		expect((await readdir(absent.spec.workdir)).sort()).toEqual([
+			"artifacts",
+			"events.jsonl",
+			"graph.json",
+			"orchestration-events.jsonl",
+			"prompts",
+			"run.completion.json",
+			"run.inline.json",
+			"run.json",
+			"scheduler.json",
+			"spec.json",
+			"steps",
+			"task-queue.txt",
+		]);
+		expect(await findHardenedArtifacts(absent.projectRoot)).toEqual([]);
 		await expect(
 			stat(join(absent.projectRoot, "memory", "agent")),
 		).rejects.toMatchObject({ code: "ENOENT" });
@@ -211,8 +257,64 @@ describe("Drive-on-graph routing", () => {
 		]);
 		expect(falseConfig.spec).not.toHaveProperty("episodeSource");
 		expect(falseConfig.spec).not.toHaveProperty("episodeAttemptId");
+		expect(await findHardenedArtifacts(falseConfig.projectRoot)).toEqual([]);
 		await expect(
 			stat(join(falseConfig.projectRoot, "memory", "agent")),
+		).rejects.toMatchObject({ code: "ENOENT" });
+	});
+
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-021
+	test("integrates detached hardening without regressing the Drive baseline", async () => {
+		const fixture = await setupFixture("integrated-enabled");
+		const episodeAttemptId = "attempt-integrated-enabled";
+		await writeEpisodicConfig(fixture.projectRoot, true);
+		fixture.spec = {
+			...fixture.spec,
+			episodeSource: "integration/worker",
+			episodeAttemptId,
+		};
+
+		const result = await runInline(fixture.spec, fixture.deps).result;
+
+		expect(result).toMatchObject({
+			runId: fixture.spec.runId,
+			outcome: "completed",
+			tasksDone: 1,
+			tasksBlocked: 0,
+			completedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/u),
+		});
+		expect(
+			await readJson(join(fixture.spec.workdir, "run.completion.json")),
+		).toEqual(result);
+		expect(
+			(await readLegacyEvents(fixture.spec.eventLogPath)).map(
+				(event) => event.type,
+			),
+		).toEqual([
+			"run_started",
+			"task_started",
+			"preflight",
+			"preflight",
+			"spawn_started",
+			"spawn_completed",
+			"task_done",
+			"finalize",
+			"run_completed",
+		]);
+		expect(
+			await readDriveTerminalRecord(fixture.spec.workdir, episodeAttemptId),
+		).toEqual({
+			version: 1,
+			attemptId: episodeAttemptId,
+			outcome: "completed",
+			timestamp: result.completedAt,
+			state: "recorded",
+		});
+		expect(
+			await readdir(join(fixture.projectRoot, "memory", "agent", "episodes")),
+		).toHaveLength(2);
+		await expect(
+			stat(join(fixture.projectRoot, "memory", "agent", "index.md")),
 		).rejects.toMatchObject({ code: "ENOENT" });
 	});
 });
@@ -355,6 +457,59 @@ async function readLegacyEvents(
 		.split("\n")
 		.filter(Boolean)
 		.map((line) => JSON.parse(line) as { type: string });
+}
+
+async function readNormalizedEventTypes(workdir: string): Promise<string[]> {
+	return (
+		await readJsonLines(join(workdir, "orchestration-events.jsonl"))
+	).flatMap((record) => {
+		if (
+			typeof record !== "object" ||
+			record === null ||
+			!("event" in record) ||
+			typeof record.event !== "object" ||
+			record.event === null ||
+			!("type" in record.event) ||
+			typeof record.event.type !== "string"
+		) {
+			return [];
+		}
+		return record.event.type === "run_activity" ? [] : [record.event.type];
+	});
+}
+
+async function readJsonLines(path: string): Promise<unknown[]> {
+	return (await readFile(path, "utf-8"))
+		.trim()
+		.split("\n")
+		.filter(Boolean)
+		.map((line) => JSON.parse(line) as unknown);
+}
+
+async function findHardenedArtifacts(projectRoot: string): Promise<string[]> {
+	return (await listRelativePaths(projectRoot)).filter(
+		(path) =>
+			path.includes("run.terminal-episodes") ||
+			path.includes("episode-plan-") ||
+			path.includes("episode-task-") ||
+			path.startsWith("memory/agent/"),
+	);
+}
+
+async function listRelativePaths(
+	root: string,
+	current = root,
+): Promise<string[]> {
+	const paths: string[] = [];
+	for (const entry of await readdir(current, { withFileTypes: true })) {
+		const absolutePath = join(current, entry.name);
+		const relativePath = absolutePath.slice(root.length + 1);
+		paths.push(relativePath);
+		if (entry.isDirectory()) {
+			paths.push(...(await listRelativePaths(root, absolutePath)));
+		}
+	}
+	return paths.sort();
 }
 
 function publishedEventTypes(events: DriverBusEvent[]): string[] {

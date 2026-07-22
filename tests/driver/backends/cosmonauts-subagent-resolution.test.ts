@@ -1,6 +1,13 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+	mkdir,
+	mkdtemp,
+	readdir,
+	readFile,
+	rm,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createRegistryFromDomains } from "../../../lib/agents/index.ts";
@@ -37,32 +44,54 @@ let tempDir: string | undefined;
 
 beforeEach(() => {
 	sessionFactoryMocks.createAgentSessionFromDefinition.mockReset();
-	sessionFactoryMocks.createAgentSessionFromDefinition.mockResolvedValue({
-		session: {
-			sessionId: "dogfood-worker-session",
-			messages: [
-				{
-					role: "assistant",
-					content: [{ type: "text", text: "outcome: success" }],
+	sessionFactoryMocks.createAgentSessionFromDefinition.mockImplementation(
+		async (
+			_definition: AgentDefinition,
+			config: { role: string; planSlug?: string },
+		) => {
+			const sessionFilePath =
+				tempDir && config.planSlug
+					? join(
+							tempDir,
+							"missions",
+							"sessions",
+							config.planSlug,
+							`${config.role}-test-session.jsonl`,
+						)
+					: undefined;
+			if (sessionFilePath) {
+				await mkdir(dirname(sessionFilePath), { recursive: true });
+				await writeFile(sessionFilePath, "", "utf-8");
+			}
+			return {
+				session: {
+					sessionId: "dogfood-worker-session",
+					messages: [
+						{
+							role: "assistant",
+							content: [{ type: "text", text: "outcome: success" }],
+						},
+					],
+					prompt: vi.fn(),
+					dispose: vi.fn(),
+					subscribe: vi.fn(() => vi.fn()),
+					getSessionStats: () => ({
+						tokens: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							total: 0,
+						},
+						cost: 0,
+						userMessages: 1,
+						toolCalls: 0,
+					}),
 				},
-			],
-			prompt: vi.fn(),
-			dispose: vi.fn(),
-			subscribe: vi.fn(() => vi.fn()),
-			getSessionStats: () => ({
-				tokens: {
-					input: 0,
-					output: 0,
-					cacheRead: 0,
-					cacheWrite: 0,
-					total: 0,
-				},
-				cost: 0,
-				userMessages: 1,
-				toolCalls: 0,
-			}),
+				sessionFilePath,
+			};
 		},
-	});
+	);
 });
 
 afterEach(async () => {
@@ -116,7 +145,7 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 	// Regression guard (codex P1): a frozen qualified worker resolution must not
 	// become the spawner `role`, which session-factory bakes into the session
 	// file path (`${role}-<uuid>.jsonl`). Worker SELECTION rides `agentReference`.
-	test("keeps the session role a plain worker when a qualified worker resolution is frozen", async () => {
+	test("keeps the plain-worker session and manifest layout when a qualified worker resolution is frozen", async () => {
 		const domains = await loadDomainsFromSources([
 			{ domainsDir: DOMAINS_DIR, origin: "framework", precedence: 1 },
 			{
@@ -151,6 +180,34 @@ describe("cosmonauts-subagent dogfood worker resolution", () => {
 		expect(
 			(spawnConfig as { agentReference?: unknown }).agentReference,
 		).toEqual(frozen.reference);
+		if (!tempDir) throw new Error("expected temporary project");
+		const planSessionsDir = join(
+			tempDir,
+			"missions",
+			"sessions",
+			"coding-agnostic-framework",
+		);
+		expect((await readdir(planSessionsDir)).sort()).toEqual([
+			"manifest.json",
+			"worker-test-session.jsonl",
+			"worker-test-session.transcript.md",
+		]);
+		const manifest = JSON.parse(
+			await readFile(join(planSessionsDir, "manifest.json"), "utf-8"),
+		) as {
+			sessions: Array<{
+				role: string;
+				sessionFile: string;
+				transcriptFile: string;
+			}>;
+		};
+		expect(manifest.sessions).toEqual([
+			expect.objectContaining({
+				role: "worker",
+				sessionFile: "worker-test-session.jsonl",
+				transcriptFile: "worker-test-session.transcript.md",
+			}),
+		]);
 	});
 
 	test("runs inline Drive with cosmonauts-subagent, omitted envelope input, and no domain override", async () => {

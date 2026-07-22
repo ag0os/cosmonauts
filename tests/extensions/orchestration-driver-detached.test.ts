@@ -124,7 +124,7 @@ describe("run_driver detached mode", () => {
 		expect(existsSync(join(spec.workdir, "spec.json"))).toBe(false);
 	});
 
-	test("keeps false-config detached specs free of episode metadata and runtime resolution", async () => {
+	test("keeps false-config detached specs layout and tool output exact", async () => {
 		const fixture = await setupFixture("disabled-false");
 		await writeEpisodicConfig(fixture.projectRoot, false);
 		const pi = createMockPi(fixture.projectRoot, {
@@ -133,7 +133,7 @@ describe("run_driver detached mode", () => {
 		const getRuntime = vi.fn();
 		registerDriverTool(pi as never, getRuntime as never, fixture.projectRoot);
 
-		await pi.callTool("run_driver", {
+		const response = await pi.callTool("run_driver", {
 			planSlug: fixture.planSlug,
 			taskIds: fixture.taskIds,
 			backend: "claude-cli",
@@ -146,9 +146,27 @@ describe("run_driver detached mode", () => {
 			DriverRunSpec,
 			DriverDeps,
 		];
+		const details = {
+			runId: spec.runId,
+			scope: fixture.planSlug,
+			planSlug: fixture.planSlug,
+			workdir: spec.workdir,
+			eventLogPath: spec.eventLogPath,
+		};
+		expect(response).toEqual({
+			...details,
+			content: [
+				{
+					type: "text",
+					text: `Started driver run ${spec.runId} for ${fixture.planSlug}`,
+				},
+			],
+			details,
+		});
 		expect(spec).not.toHaveProperty("episodeSource");
 		expect(spec).not.toHaveProperty("episodeAttemptId");
 		expect(getRuntime).not.toHaveBeenCalled();
+		expect(existsSync(spec.workdir)).toBe(false);
 		expect(existsSync(join(fixture.projectRoot, "memory", "agent"))).toBe(
 			false,
 		);

@@ -401,17 +401,41 @@ describe("driver e2e run_driver integration", () => {
 		expect(backendMocks.run).toHaveBeenCalledTimes(1);
 	});
 
-	test("keeps absent and false-config inline specs and completions episode-free", async () => {
+	test("keeps absent and false-config inline specs completions layout and result exact", async () => {
 		const absent = await setupFixture({ taskCount: 1 });
 		backendMocks.run.mockResolvedValue(successResult());
 
 		const absentResult = await runDriver(absent);
 		const absentCompletion = await waitForCompletion(absentResult.workdir);
 		const absentSpec = await readSpec(absentResult.workdir);
+		const absentWorkdir = join(
+			absent.projectRoot,
+			"missions",
+			"sessions",
+			PLAN_SLUG,
+			"runs",
+			absentResult.runId,
+		);
 
+		expect(absentResult).toEqual({
+			runId: absentResult.runId,
+			scope: PLAN_SLUG,
+			planSlug: PLAN_SLUG,
+			workdir: absentWorkdir,
+			eventLogPath: join(absentWorkdir, "events.jsonl"),
+		});
 		expect(absentSpec).not.toHaveProperty("episodeSource");
 		expect(absentSpec).not.toHaveProperty("episodeAttemptId");
 		expect(absentCompletion).not.toHaveProperty("completedAt");
+		expect(await readFile(join(absentWorkdir, "spec.json"), "utf-8")).toBe(
+			`${JSON.stringify(absentSpec, null, 2)}\n`,
+		);
+		expect(
+			await readFile(join(absentWorkdir, "run.completion.json"), "utf-8"),
+		).toBe(`${JSON.stringify(absentCompletion, null, 2)}\n`);
+		expect(existsSync(join(absentWorkdir, "run.terminal-episodes"))).toBe(
+			false,
+		);
 		expect(existsSync(join(absent.projectRoot, "memory", "agent"))).toBe(false);
 
 		const disabled = await setupFixture({ taskCount: 1 });
@@ -419,10 +443,34 @@ describe("driver e2e run_driver integration", () => {
 		const disabledResult = await runDriver(disabled);
 		const disabledCompletion = await waitForCompletion(disabledResult.workdir);
 		const disabledSpec = await readSpec(disabledResult.workdir);
+		const disabledWorkdir = join(
+			disabled.projectRoot,
+			"missions",
+			"sessions",
+			PLAN_SLUG,
+			"runs",
+			disabledResult.runId,
+		);
 
+		expect(disabledResult).toEqual({
+			runId: disabledResult.runId,
+			scope: PLAN_SLUG,
+			planSlug: PLAN_SLUG,
+			workdir: disabledWorkdir,
+			eventLogPath: join(disabledWorkdir, "events.jsonl"),
+		});
 		expect(disabledSpec).not.toHaveProperty("episodeSource");
 		expect(disabledSpec).not.toHaveProperty("episodeAttemptId");
 		expect(disabledCompletion).not.toHaveProperty("completedAt");
+		expect(await readFile(join(disabledWorkdir, "spec.json"), "utf-8")).toBe(
+			`${JSON.stringify(disabledSpec, null, 2)}\n`,
+		);
+		expect(
+			await readFile(join(disabledWorkdir, "run.completion.json"), "utf-8"),
+		).toBe(`${JSON.stringify(disabledCompletion, null, 2)}\n`);
+		expect(existsSync(join(disabledWorkdir, "run.terminal-episodes"))).toBe(
+			false,
+		);
 		expect(existsSync(join(disabled.projectRoot, "memory", "agent"))).toBe(
 			false,
 		);
@@ -595,6 +643,7 @@ interface Fixture {
 
 interface DriverResultDetails {
 	runId: string;
+	scope: string;
 	planSlug: string;
 	workdir: string;
 	eventLogPath: string;

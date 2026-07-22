@@ -6,6 +6,7 @@ import {
 	access,
 	mkdir,
 	mkdtemp,
+	readdir,
 	readFile,
 	rm,
 	writeFile,
@@ -20,6 +21,12 @@ import {
 } from "../../lib/memory/index.ts";
 import { PlanManager } from "../../lib/plans/plan-manager.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
+
+interface PlanUpdateBypassScenario {
+	readonly name: string;
+	readonly hasEpisodeContext: boolean;
+	readonly config?: string;
+}
 
 describe("PlanManager", () => {
 	let tempDir: string;
@@ -213,6 +220,98 @@ describe("PlanManager", () => {
 				message: expect.stringContaining("Episode capture skipped"),
 			}),
 		]);
+	});
+
+	it("preserves unlocked plan update bytes for every transition-lock bypass", async () => {
+		vi.useFakeTimers();
+		const scenarios: readonly PlanUpdateBypassScenario[] = [
+			{
+				name: "gate-off",
+				hasEpisodeContext: true,
+				config: JSON.stringify({ episodicLog: { enabled: false } }),
+			},
+			{
+				name: "absent-gate",
+				hasEpisodeContext: true,
+			},
+			{
+				name: "context-free",
+				hasEpisodeContext: false,
+				config: JSON.stringify({ episodicLog: { enabled: true } }),
+			},
+			{
+				name: "config-failure",
+				hasEpisodeContext: true,
+				config: "{ malformed config",
+			},
+		];
+		const planBytes: string[] = [];
+		const specBytes: string[] = [];
+
+		for (const scenario of scenarios) {
+			const projectRoot = join(tempDir, scenario.name);
+			vi.setSystemTime(new Date("2026-07-22T13:00:00.000Z"));
+			await new PlanManager(projectRoot).createPlan({
+				slug: "bypass-plan",
+				title: "Original Plan",
+				spec: "Pinned plan spec.",
+			});
+
+			const warnings: unknown[] = [];
+			const targetManager = new PlanManager(
+				projectRoot,
+				scenario.hasEpisodeContext
+					? {
+							episodeSource: "custom/bypass-owner",
+							reportEpisodeWarning: async (warning) => {
+								warnings.push(warning);
+							},
+						}
+					: undefined,
+			);
+			await mkdir(join(projectRoot, ".cosmonauts"), { recursive: true });
+			if (scenario.config !== undefined) {
+				await writeFile(
+					join(projectRoot, ".cosmonauts", "config.json"),
+					scenario.config,
+					"utf-8",
+				);
+			}
+			const lockPath = planEpisodeLockPath(projectRoot);
+			await mkdir(lockPath);
+
+			vi.setSystemTime(new Date("2026-07-22T13:01:00.000Z"));
+			const updated = await targetManager.updatePlan("bypass-plan", {
+				title: "Updated Plan",
+			});
+
+			expect(updated.title).toBe("Updated Plan");
+			expect(warnings).toEqual([]);
+			await expect(access(lockPath)).resolves.toBeUndefined();
+			expect(
+				(
+					await readdir(join(projectRoot, "missions", "plans", "bypass-plan"))
+				).sort(),
+			).toEqual(["plan.md", "spec.md"]);
+			planBytes.push(
+				await readFile(
+					join(projectRoot, "missions", "plans", "bypass-plan", "plan.md"),
+					"utf-8",
+				),
+			);
+			specBytes.push(
+				await readFile(
+					join(projectRoot, "missions", "plans", "bypass-plan", "spec.md"),
+					"utf-8",
+				),
+			);
+			await expect(access(join(projectRoot, "memory"))).rejects.toMatchObject({
+				code: "ENOENT",
+			});
+		}
+
+		expect(new Set(planBytes).size).toBe(1);
+		expect(new Set(specBytes).size).toBe(1);
 	});
 
 	it("serializes enabled same-plan status transition decisions across manager instances @cosmo-behavior plan:episodic-log-detached-hardening#B-014", async () => {
@@ -924,6 +1023,10 @@ async function writeEpisodicConfig(projectRoot: string): Promise<void> {
 		JSON.stringify({ episodicLog: { enabled: true } }),
 		"utf-8",
 	);
+}
+
+function planEpisodeLockPath(projectRoot: string): string {
+	return join(projectRoot, ".cosmonauts", "episode-plan-bypass-plan.lock");
 }
 
 async function readProjectEpisodes(projectRoot: string) {
