@@ -38,7 +38,7 @@ import { renderPromptForTask } from "./prompt-template.ts";
 import {
 	DETACHED_RUN_PID_FILENAME,
 	RUN_COMPLETION_FILENAME,
-	writeRunCompletion,
+	writeFallbackRunCompletion,
 } from "./run-state.ts";
 import type {
 	DriverHandle,
@@ -143,9 +143,10 @@ export function startDetached(
 	runBackendLivenessCheck(deps.backend);
 
 	const controller = new AbortController();
-	let child: ChildProcess | undefined;
-	let bridge: JsonlActivityBusBridge | undefined;
-	let workdirCreated = false;
+	const launchState: DetachedLaunchState = {
+		workdirCreated: false,
+		aborted: false,
+	};
 	let abortPromise: Promise<void> | undefined;
 
 	const result = startDetachedProcess({
@@ -153,13 +154,17 @@ export function startDetached(
 		deps,
 		signal: controller.signal,
 		setChild: (spawned) => {
-			child = spawned;
+			launchState.child = spawned;
 		},
 		setBridge: (started) => {
-			bridge = started;
+			if (launchState.aborted) {
+				started.stop();
+				return;
+			}
+			launchState.bridge = started;
 		},
 		markWorkdirCreated: () => {
-			workdirCreated = true;
+			launchState.workdirCreated = true;
 		},
 	}).finally(async () => {
 		await rm(join(spec.workdir, DETACHED_RUN_PID_FILENAME), {
@@ -177,9 +182,7 @@ export function startDetached(
 				spec,
 				deps,
 				controller,
-				child,
-				bridge,
-				workdirCreated,
+				launchState,
 			});
 			return abortPromise;
 		},
@@ -187,44 +190,51 @@ export function startDetached(
 	};
 }
 
+interface DetachedLaunchState {
+	child?: ChildProcess;
+	bridge?: JsonlActivityBusBridge;
+	workdirCreated: boolean;
+	aborted: boolean;
+}
+
 interface AbortDetachedRunOptions {
 	readonly spec: DriverRunSpec;
 	readonly deps: DriverDeps;
 	readonly controller: AbortController;
-	readonly child?: ChildProcess;
-	readonly bridge?: JsonlActivityBusBridge;
-	readonly workdirCreated: boolean;
+	readonly launchState: DetachedLaunchState;
 }
 
 async function abortDetachedRun({
 	spec,
 	deps,
 	controller,
-	child,
-	bridge,
-	workdirCreated,
+	launchState,
 }: AbortDetachedRunOptions): Promise<void> {
-	bridge?.stop();
+	launchState.aborted = true;
+	controller.abort();
+	launchState.bridge?.stop();
 
+	await Promise.resolve();
+
+	launchState.bridge?.stop();
+
+	const child = launchState.child;
 	if (child?.pid !== undefined) {
 		terminateDetachedChild(child.pid);
 		await waitForChildExit(child);
-	} else {
-		controller.abort();
 	}
 
-	if (!workdirCreated) return;
+	if (!launchState.workdirCreated) return;
 
-	let completion = await readDetachedCompletion(spec.workdir);
-	if (!completion) {
-		completion = stampDriveEpisodeResult(spec, {
+	const completion = await writeFallbackRunCompletion(
+		spec.workdir,
+		stampDriveEpisodeResult(spec, {
 			runId: spec.runId,
 			outcome: "aborted",
 			tasksDone: 0,
 			tasksBlocked: 0,
-		});
-		await writeRunCompletion(spec.workdir, completion);
-	}
+		}),
+	);
 
 	const eventSink = createDriverEventSink(spec, deps);
 	await recordDriveTerminalEpisode(
@@ -267,20 +277,6 @@ async function waitForChildExit(child: ChildProcess): Promise<void> {
 		if (child.exitCode !== null || child.signalCode !== null) onExit();
 	});
 }
-
-async function readDetachedCompletion(
-	workdir: string,
-): Promise<DriverResult | undefined> {
-	try {
-		return JSON.parse(
-			await readFile(join(workdir, RUN_COMPLETION_FILENAME), "utf-8"),
-		) as DriverResult;
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-		throw error;
-	}
-}
-
 export async function launchDetached(
 	spec: DriverRunSpec,
 	deps: DriverDeps,
@@ -350,7 +346,7 @@ async function startDetachedProcess({
 		bridgeEvents: true,
 	});
 
-	return await waitForDetachedResult(spec.workdir, launch.child, signal);
+	return await waitForDetachedResult(spec.workdir, launch.child);
 }
 
 interface DetachedProcessLaunch {
@@ -417,7 +413,9 @@ async function launchDetachedProcess({
 	if (!child.pid) {
 		throw new Error("Detached driver process did not expose a PID");
 	}
+	throwIfAborted(signal);
 	child.unref();
+	throwIfAborted(signal);
 
 	await writeFile(
 		join(spec.workdir, DETACHED_RUN_PID_FILENAME),
@@ -433,17 +431,18 @@ async function launchDetachedProcess({
 		)}\n`,
 		"utf-8",
 	);
+	throwIfAborted(signal);
 
 	if (bridgeEvents) {
-		setBridge?.(
-			bridgeJsonlToActivityBus(
-				spec.eventLogPath,
-				spec.runId,
-				spec.parentSessionId,
-				deps.activityBus,
-				driveEventBridgeOptions(spec),
-			),
+		const bridge = bridgeJsonlToActivityBus(
+			spec.eventLogPath,
+			spec.runId,
+			spec.parentSessionId,
+			deps.activityBus,
+			driveEventBridgeOptions(spec),
 		);
+		setBridge?.(bridge);
+		throwIfAborted(signal);
 	}
 
 	return { child, pid: child.pid };
@@ -557,21 +556,16 @@ function execFileResult(
 async function waitForDetachedResult(
 	workdir: string,
 	child: ChildProcess,
-	signal: AbortSignal,
 ): Promise<DriverResult> {
 	const completionPath = join(workdir, RUN_COMPLETION_FILENAME);
-	const completion = waitForCompletion(completionPath, signal);
+	const completion = waitForCompletion(completionPath);
 	const childExit = waitForUnexpectedExit(child, completionPath);
 
 	return await Promise.race([completion, childExit]);
 }
 
-async function waitForCompletion(
-	path: string,
-	signal: AbortSignal,
-): Promise<DriverResult> {
+async function waitForCompletion(path: string): Promise<DriverResult> {
 	while (true) {
-		throwIfAborted(signal);
 		try {
 			const raw = await readFile(path, "utf-8");
 			return JSON.parse(raw) as DriverResult;
@@ -580,12 +574,7 @@ async function waitForCompletion(
 				throw error;
 			}
 		}
-		await delay(100, undefined, { signal }).catch((error) => {
-			if ((error as Error).name === "AbortError") {
-				throw new Error("Detached driver result wait aborted");
-			}
-			throw error;
-		});
+		await delay(100);
 	}
 }
 

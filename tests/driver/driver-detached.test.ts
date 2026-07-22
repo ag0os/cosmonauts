@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import {
 	chmod,
 	mkdir,
@@ -22,6 +23,10 @@ import {
 } from "../../lib/driver/driver.ts";
 import type { DriverBusEvent } from "../../lib/driver/event-stream.ts";
 import { getPlanLockPath } from "../../lib/driver/lock.ts";
+import {
+	readDriveTerminalRecord,
+	writeFallbackRunCompletion,
+} from "../../lib/driver/run-state.ts";
 import type {
 	DriverEvent,
 	DriverResult,
@@ -33,6 +38,25 @@ import { createMarkdownMemoryStore } from "../../lib/memory/markdown-store.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
+type ChildProcess = import("node:child_process").ChildProcess;
+
+const detachedSpawnSeam = vi.hoisted(() => ({
+	next: undefined as (() => ChildProcess) | undefined,
+}));
+
+vi.mock("node:child_process", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:child_process")>();
+	const spawn = ((...args: unknown[]) => {
+		const replacement = detachedSpawnSeam.next;
+		if (replacement) {
+			detachedSpawnSeam.next = undefined;
+			return replacement();
+		}
+		return Reflect.apply(actual.spawn, undefined, args);
+	}) as typeof actual.spawn;
+	return { ...actual, spawn };
+});
+
 const temp = useTempDir("driver-detached-test-");
 
 const envKeys = [
@@ -43,6 +67,7 @@ const envKeys = [
 const savedEnv: Partial<Record<(typeof envKeys)[number], string>> = {};
 
 afterEach(() => {
+	detachedSpawnSeam.next = undefined;
 	for (const key of envKeys) {
 		if (savedEnv[key] === undefined) {
 			delete process.env[key];
@@ -295,6 +320,88 @@ describe("startDetached", () => {
 				timestamp: completion.completedAt,
 			});
 		}
+	}, 30_000);
+
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-009
+	test("keeps pre-spawn abort and resume to one terminal attempt", async () => {
+		const fixture = await setupFixture({
+			runId: "run-pre-spawn-abort-resume",
+			episodeIdentity: true,
+		});
+		await writeEpisodicConfig(fixture.projectRoot);
+		await recordDetachedStartEpisode(fixture.spec);
+		const prebuiltRoot = join(temp.path, "pre-spawn-resume-prebuilt-root");
+		await writeFakePrebuiltRunner(prebuiltRoot, fixture.spec.runId);
+		const spawned = deferred<void>();
+		const child = createMockDetachedChild(42009, true);
+		let handle: ReturnType<typeof startDetached>;
+		let parentAbort: Promise<void> | undefined;
+		detachedSpawnSeam.next = () => {
+			parentAbort = handle.abort();
+			spawned.resolve();
+			return child;
+		};
+
+		handle = startDetached(fixture.spec, {
+			...fixture.deps,
+			cosmonautsRoot: prebuiltRoot,
+		});
+		const rejectedResult = handle.result.catch((error: unknown) => error);
+		await spawned.promise;
+		await requirePromise(parentAbort);
+		await expect(rejectedResult).resolves.toBeInstanceOf(Error);
+
+		const completionPath = join(fixture.spec.workdir, "run.completion.json");
+		const parentCompletion = JSON.parse(
+			await readFile(completionPath, "utf-8"),
+		) as DriverResult;
+		expect(parentCompletion).toMatchObject({
+			runId: fixture.spec.runId,
+			outcome: "aborted",
+			completedAt: expect.any(String),
+		});
+
+		const childCompletion = completedResult(
+			fixture.spec.runId,
+			"2026-07-22T20:09:00.000Z",
+		);
+		await recordDriveTerminalEpisode(fixture.spec, childCompletion);
+		const settledCompletion = await writeFallbackRunCompletion(
+			fixture.spec.workdir,
+			childCompletion,
+		);
+		await recordDriveTerminalEpisode(fixture.spec, settledCompletion);
+
+		const freshResumeSpec = JSON.parse(
+			await readFile(join(fixture.spec.workdir, "spec.json"), "utf-8"),
+		) as DriverRunSpec;
+		await recordDriveTerminalEpisode(freshResumeSpec, childCompletion);
+
+		expect(await readFile(completionPath, "utf-8")).toBe(
+			`${JSON.stringify(parentCompletion, null, 2)}\n`,
+		);
+		const ledger = await readDriveTerminalRecord(
+			fixture.spec.workdir,
+			fixture.spec.episodeAttemptId ?? "",
+		);
+		expect(ledger).toMatchObject({
+			attemptId: fixture.spec.episodeAttemptId,
+			outcome: "aborted",
+			state: "recorded",
+		});
+		const episodes = await readProjectDriveEpisodes(fixture.projectRoot);
+		const attemptTag = `attempt:${fixture.spec.episodeAttemptId}`;
+		const terminalEpisodes = episodes.filter(
+			(episode) =>
+				episode.tags.includes(attemptTag) && episode.outcome !== "started",
+		);
+		expect(terminalEpisodes).toHaveLength(1);
+		expect(
+			new Set(terminalEpisodes.map((episode) => episode.outcome)).size,
+		).toBe(1);
+		expect(terminalEpisodes.map((episode) => episode.outcome)).not.toEqual(
+			expect.arrayContaining(["aborted", "completed"]),
+		);
 	}, 30_000);
 
 	test("keeps abort capture and reporter failures non-fatal with one established warning", async () => {
@@ -655,6 +762,33 @@ function publishedEventTypes(events: DriverBusEvent[]): string[] {
 	return events.flatMap((event) =>
 		"event" in event ? [event.event.type] : [],
 	);
+}
+
+function createMockDetachedChild(pid: number, exited = false): ChildProcess {
+	const emitter = new EventEmitter();
+	Object.assign(emitter, {
+		pid,
+		exitCode: exited ? 0 : null,
+		signalCode: null,
+		unref: vi.fn(),
+	});
+	return emitter as ChildProcess;
+}
+
+function deferred<T>(): {
+	promise: Promise<T>;
+	resolve: (value: T) => void;
+} {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((resolvePromise) => {
+		resolve = resolvePromise;
+	});
+	return { promise, resolve };
+}
+
+function requirePromise<T>(promise: Promise<T> | undefined): Promise<T> {
+	if (!promise) throw new Error("Expected the race seam to publish a promise");
+	return promise;
 }
 
 async function waitForFile(path: string, timeoutMs = 10_000): Promise<void> {
