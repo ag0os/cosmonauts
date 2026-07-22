@@ -56,6 +56,7 @@ const RUN_ID = "run-previous";
 const WORKER_SOURCE = "cod" + "ing/worker";
 const UNAVAILABLE_WORKER_SOURCE = "retired-" + "cod" + "ing/worker";
 const FALLBACK_WORKER_SOURCE = "fallback-" + "cod" + "ing/worker";
+const PLANNER_SOURCE = "project-" + "cod" + "ing/planner";
 const TERMINAL_COMPLETED_AT = "2026-07-22T19:00:00.000Z";
 type DriverEventInput = DriverEvent extends infer Event
 	? Event extends DriverEvent
@@ -244,6 +245,60 @@ describe("cosmonauts run drive compat graph resume", () => {
 		expect(
 			episodes.some((episode) => episode.source === UNAVAILABLE_WORKER_SOURCE),
 		).toBe(false);
+	});
+
+	test("treats empty-legacy-queue graph continuation as worker execution", async () => {
+		const fixture = await setupPendingExecutionGraphResume();
+		await enableEpisodeCapture(fixture.spec.projectRoot);
+		const staleAttemptId = "attempt-stale-planner";
+		await writeFile(
+			join(fixture.spec.workdir, "spec.json"),
+			`${JSON.stringify(
+				{
+					...fixture.spec,
+					remainingTaskIds: [],
+					episodeSource: PLANNER_SOURCE,
+					episodeAttemptId: staleAttemptId,
+				},
+				null,
+				2,
+			)}\n`,
+			"utf-8",
+		);
+		await writeFile(
+			fixture.spec.eventLogPath,
+			`${JSON.stringify(event({ type: "task_done", taskId: fixture.taskId }))}\n`,
+			"utf-8",
+		);
+		vi.spyOn(CosmonautsRuntime, "create").mockResolvedValue({
+			...fallbackExecutionRuntime(),
+			agentRegistry: new AgentRegistry([workerDefinition(WORKER_SOURCE)]),
+		} as CosmonautsRuntime);
+
+		await parseDrive([
+			"--plan",
+			PLAN_SLUG,
+			"--resume",
+			RUN_ID,
+			"--resume-dirty",
+			"--mode",
+			"inline",
+			"--backend",
+			"cosmonauts-subagent",
+		]);
+
+		const persistedSpec = (await readJson(
+			join(fixture.spec.workdir, "spec.json"),
+		)) as DriverRunSpec;
+		const episodes = await readProjectDriveEpisodes(fixture.spec.projectRoot);
+		expect(persistedSpec.episodeSource).toBe(WORKER_SOURCE);
+		expect(persistedSpec.episodeAttemptId).toMatch(/^attempt-/u);
+		expect(persistedSpec.episodeAttemptId).not.toBe(staleAttemptId);
+		expect(episodes).toHaveLength(1);
+		expect(episodes[0]?.source).toBe(WORKER_SOURCE);
+		expect(
+			sessionFactoryMocks.createAgentSessionFromDefinition,
+		).toHaveBeenCalledTimes(1);
 	});
 
 	test("resumes pending task-status finalization with one terminal result", async () => {
@@ -473,6 +528,55 @@ describe("cosmonauts run drive compat graph resume", () => {
 		expect(backendMocks.backendRun).not.toHaveBeenCalled();
 	});
 
+	test("records one run-id-derived terminal for a completed graph-backed resume", async () => {
+		const fixture = await setupFullyCompletedGraphRun();
+		await writeFile(
+			join(fixture.spec.workdir, "run.completion.json"),
+			`${JSON.stringify(
+				{
+					runId: RUN_ID,
+					outcome: "completed",
+					tasksDone: 1,
+					tasksBlocked: 0,
+					completedAt: TERMINAL_COMPLETED_AT,
+				},
+				null,
+				2,
+			)}\n`,
+			"utf-8",
+		);
+		await enableEpisodeCapture(fixture.spec.projectRoot);
+		vi.spyOn(CosmonautsRuntime, "create").mockResolvedValue(
+			terminalResumeRuntime(),
+		);
+
+		await parseDrive([
+			"--plan",
+			PLAN_SLUG,
+			"--resume",
+			RUN_ID,
+			"--resume-dirty",
+		]);
+
+		const persistedSpec = (await readJson(
+			join(fixture.spec.workdir, "spec.json"),
+		)) as DriverRunSpec;
+		const episodes = await readProjectDriveEpisodes(process.cwd());
+		expect(persistedSpec).toMatchObject({
+			episodeSource: WORKER_SOURCE,
+			episodeAttemptId: deriveDriveEpisodeAttemptId(RUN_ID),
+		});
+		expect(episodes).toHaveLength(1);
+		expect(episodes[0]).toMatchObject({
+			action: "drive.run",
+			outcome: "completed",
+			source: WORKER_SOURCE,
+			subject: { kind: "run", id: RUN_ID },
+		});
+		expect(await readTerminalLedger(fixture.spec.workdir)).toHaveLength(1);
+		expect(backendMocks.backendRun).not.toHaveBeenCalled();
+	});
+
 	// @cosmo-behavior plan:episodic-log-detached-hardening#B-012
 	test("repeats deterministic terminal-only resume without changing bytes or episode count", async () => {
 		const fixture = await setupTerminalOnlyCompletedRun();
@@ -614,8 +718,21 @@ describe("cosmonauts run drive compat graph resume", () => {
 		expect(runtimeCreate).not.toHaveBeenCalled();
 	});
 
-	test("keeps terminal-only resume artifact-free while episodic capture is off", async () => {
+	test("keeps persisted terminal identity artifact-free while episodic capture is off", async () => {
 		const fixture = await setupTerminalOnlyCompletedRun();
+		await writeFile(
+			join(fixture.spec.workdir, "spec.json"),
+			`${JSON.stringify(
+				{
+					...fixture.spec,
+					episodeSource: WORKER_SOURCE,
+					episodeAttemptId: "attempt-old-enabled-run",
+				},
+				null,
+				2,
+			)}\n`,
+			"utf-8",
+		);
 		const runtimeCreate = vi
 			.spyOn(CosmonautsRuntime, "create")
 			.mockRejectedValue(

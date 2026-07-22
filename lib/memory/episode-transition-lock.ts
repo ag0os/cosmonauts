@@ -114,7 +114,7 @@ export async function withEpisodeTransitionLock<T>(
 			throw error;
 		}
 
-		await reportTransitionLockWarning(options, dependencies, error);
+		void reportTransitionLockWarning(options, dependencies, error);
 		return options.action();
 	}
 }

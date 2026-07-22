@@ -279,7 +279,7 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 		episodeCaptureEnabled,
 		projectRoot,
 	});
-	if (!(await prepareResume(resume, taskManager))) {
+	if (!(await prepareResume(resume, taskManager, episodeCaptureEnabled))) {
 		return;
 	}
 	if (await refuseDirtyResume({ resume, options, projectRoot, planSlug })) {
@@ -299,7 +299,9 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 		return;
 	}
 	const reconcilePriorAttempt =
-		resume !== undefined && resume.remainingTaskIds.length === 0;
+		resume !== undefined &&
+		resume.remainingTaskIds.length === 0 &&
+		!(await hasGraphResumeState(resume));
 	const frozenEpisodeSource = resume?.spec.episodeSource;
 	const trustedFrozenWorkerSource =
 		episodeCaptureEnabled &&
@@ -399,11 +401,12 @@ async function prepareTerminalResumeEpisodeIdentity({
 	episodeCaptureEnabled: boolean;
 	projectRoot: string;
 }): Promise<void> {
+	if (!episodeCaptureEnabled || !resume || resume.remainingTaskIds.length > 0) {
+		return;
+	}
 	if (
-		!episodeCaptureEnabled ||
-		!resume ||
-		resume.remainingTaskIds.length > 0 ||
-		(await hasGraphResumeState(resume))
+		(await hasGraphResumeState(resume)) &&
+		!(await readRunCompletion(resume.spec.workdir))
 	) {
 		return;
 	}
@@ -439,6 +442,7 @@ async function prepareTerminalResumeEpisodeIdentity({
 async function prepareResume(
 	resume: ResumeDefaults | undefined,
 	taskManager: TaskManager,
+	episodeCaptureEnabled: boolean,
 ): Promise<boolean> {
 	if (!resume) {
 		return true;
@@ -463,6 +467,7 @@ async function prepareResume(
 		const completion = await persistResumeTerminal(
 			resume.spec,
 			await legacyPendingFinalizationCompletion(resume, pendingFinalization),
+			episodeCaptureEnabled,
 		);
 		printJsonStdout(withDriveScope(completion, resume.spec.planSlug));
 		return false;
@@ -474,6 +479,7 @@ async function prepareResume(
 			const completion = await persistResumeTerminal(
 				resume.spec,
 				existingCompletion,
+				episodeCaptureEnabled,
 			);
 			printJsonStdout(withDriveScope(completion, resume.spec.planSlug));
 			return false;
@@ -489,6 +495,7 @@ async function prepareResume(
 		const completion = await persistResumeTerminal(
 			resume.spec,
 			await legacyPendingFinalizationCompletion(resume, pendingFinalization),
+			episodeCaptureEnabled,
 		);
 		printJsonStdout(withDriveScope(completion, resume.spec.planSlug));
 	}
@@ -1633,12 +1640,15 @@ async function writeSourceFinalizationFailure(
 async function persistResumeTerminal(
 	spec: DriverRunSpec,
 	result: DriverResult,
+	episodeCaptureEnabled = true,
 ): Promise<DriverResult> {
 	const completion = await writeFallbackRunCompletion(
 		spec.workdir,
 		stampDriveEpisodeResult(spec, result),
 	);
-	await recordDriveTerminalEpisode(spec, completion);
+	if (episodeCaptureEnabled) {
+		await recordDriveTerminalEpisode(spec, completion);
+	}
 	return completion;
 }
 

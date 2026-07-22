@@ -232,6 +232,38 @@ describe("episode transition lock", () => {
 		});
 	});
 
+	test("runs unlocked when the acquisition warning reporter never resolves", async () => {
+		const projectRoot = join(tmp.path, "stalled-warning");
+		const lockPath = episodeLockPath(projectRoot);
+		const acquisitionError = new Error("acquisition failed");
+		const warningStarted = deferred<void>();
+		const reportEpisodeWarning = vi.fn(() => {
+			warningStarted.resolve(undefined);
+			return new Promise<void>(() => undefined);
+		});
+		const action = vi.fn(async () => "unlocked");
+
+		const result = withEpisodeTransitionLock({
+			projectRoot,
+			lockPath,
+			hasEpisodeContext: true,
+			reportEpisodeWarning,
+			action,
+			dependencies: {
+				loadConfig: async () => ({ episodicLog: { enabled: true } }),
+				withEntityFileLock: async <_T>() => {
+					throw acquisitionError;
+				},
+			},
+		});
+
+		await warningStarted.promise;
+		await Promise.resolve();
+		expect(action).toHaveBeenCalledOnce();
+		await expect(result).resolves.toBe("unlocked");
+		expect(reportEpisodeWarning).toHaveBeenCalledOnce();
+	});
+
 	test("bounds a live-owner wait then warns once and runs unlocked", async () => {
 		const projectRoot = join(tmp.path, "timeout");
 		const lockPath = episodeLockPath(projectRoot);
