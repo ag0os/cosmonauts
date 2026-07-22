@@ -25,7 +25,14 @@ import { compileDriveRunStart } from "./drive-graph-compiler.ts";
 import { createDriveSchedulerBackendMap } from "./drive-scheduler-backend.ts";
 import { EventLogWriteError } from "./event-stream.ts";
 import type { RunRunLoopCtx } from "./run-run-loop.ts";
-import { writeInlineRunState, writeRunCompletion } from "./run-state.ts";
+import {
+	type DriveTerminalOutcome,
+	type DriveTerminalRecord,
+	readDriveTerminalRecord,
+	writeDriveTerminalRecord,
+	writeInlineRunState,
+	writeRunCompletion,
+} from "./run-state.ts";
 import type {
 	DriverEvent,
 	DriverResult,
@@ -217,7 +224,7 @@ export async function runDriveOnGraph(
 			},
 		});
 		await emitRunAborted(spec, ctx, formatError(error), details);
-		await recordDriveThrownTerminalEpisode(spec, error, reportEpisodeWarning);
+		await recordDriveThrownTerminalEpisode(spec, reportEpisodeWarning);
 		throw error;
 	}
 }
@@ -236,18 +243,13 @@ export function buildDriveTerminalEpisode(
 ): EpisodeEvent | undefined {
 	const identity = driveEpisodeIdentity(spec);
 	if (!identity || !result.completedAt) return undefined;
-
-	return {
-		scope: "project",
-		source: identity.source,
-		action: "drive.run",
+	return buildClaimedDriveTerminalEpisode(spec, identity, {
+		version: 1,
+		attemptId: identity.attemptId,
 		outcome: result.outcome,
-		subject: { kind: "run", id: spec.runId },
-		tags: [`attempt:${identity.attemptId}`],
 		timestamp: result.completedAt,
-		summary: `Drive run "${spec.runId}" ${result.outcome}.`,
-		details: `Attempt ${identity.attemptId} completed with ${result.tasksDone} done and ${result.tasksBlocked} blocked tasks.`,
-	};
+		state: "intended",
+	});
 }
 
 export async function recordDriveTerminalEpisode(
@@ -255,9 +257,12 @@ export async function recordDriveTerminalEpisode(
 	result: DriverResult,
 	reportWarning?: EpisodeWarningReporter,
 ): Promise<void> {
-	const event = buildDriveTerminalEpisode(spec, result);
-	if (!event) return;
-	await captureDriveEpisode(spec, event, reportWarning);
+	await recordClaimedDriveTerminalEpisode({
+		spec,
+		outcome: result.outcome,
+		resolveTimestamp: () => result.completedAt,
+		reportWarning,
+	});
 }
 
 async function recordDriveStartEpisode(
@@ -284,37 +289,136 @@ async function recordDriveStartEpisode(
 
 async function recordDriveThrownTerminalEpisode(
 	spec: DriverRunSpec,
-	error: unknown,
 	reportWarning: EpisodeWarningReporter,
 ): Promise<void> {
-	const identity = driveEpisodeIdentity(spec);
-	if (!identity) return;
-	await captureDriveEpisode(
+	await recordClaimedDriveTerminalEpisode({
 		spec,
-		{
-			scope: "project",
-			source: identity.source,
-			action: "drive.run",
-			outcome: "failed",
-			subject: { kind: "run", id: spec.runId },
-			tags: [`attempt:${identity.attemptId}`],
-			summary: `Drive run "${spec.runId}" failed.`,
-			details: formatError(error),
-		},
+		outcome: "failed",
+		resolveTimestamp: () => new Date().toISOString(),
 		reportWarning,
-	);
+	});
 }
 
 async function captureDriveEpisode(
 	spec: DriverRunSpec,
 	event: EpisodeEvent,
 	reportWarning?: EpisodeWarningReporter,
-): Promise<void> {
-	await recordEpisode({
+): ReturnType<typeof recordEpisode> {
+	return await recordEpisode({
 		projectRoot: spec.projectRoot,
 		event,
 		reportWarning,
 	});
+}
+
+async function recordClaimedDriveTerminalEpisode(options: {
+	spec: DriverRunSpec;
+	outcome: DriveTerminalOutcome;
+	resolveTimestamp: () => string | undefined;
+	reportWarning?: EpisodeWarningReporter;
+}): Promise<void> {
+	const identity = driveEpisodeIdentity(options.spec);
+	if (!identity) return;
+
+	let record: DriveTerminalRecord | undefined;
+	let ledgerAvailable = true;
+	try {
+		record = await readDriveTerminalRecord(
+			options.spec.workdir,
+			identity.attemptId,
+		);
+	} catch (error) {
+		ledgerAvailable = false;
+		await reportTerminalLedgerFailure(options, "read", error);
+	}
+	if (record?.state === "recorded") return;
+
+	let claimPersisted = record?.state === "intended";
+	if (!record) {
+		const timestamp = options.resolveTimestamp();
+		if (!timestamp) return;
+		record = {
+			version: 1,
+			attemptId: identity.attemptId,
+			outcome: options.outcome,
+			timestamp,
+			state: "intended",
+		};
+		if (ledgerAvailable) {
+			try {
+				await writeDriveTerminalRecord(options.spec.workdir, record);
+				claimPersisted = true;
+			} catch (error) {
+				await reportTerminalLedgerFailure(options, "write intent to", error);
+			}
+		}
+	}
+
+	const event = buildClaimedDriveTerminalEpisode(
+		options.spec,
+		identity,
+		record,
+	);
+	const capture = await captureDriveEpisode(
+		options.spec,
+		event,
+		options.reportWarning,
+	);
+	if (capture.kind !== "recorded" || !claimPersisted) return;
+
+	try {
+		await writeDriveTerminalRecord(options.spec.workdir, {
+			...record,
+			state: "recorded",
+		});
+	} catch (error) {
+		await reportTerminalLedgerFailure(options, "confirm", error);
+	}
+}
+
+function buildClaimedDriveTerminalEpisode(
+	spec: DriverRunSpec,
+	identity: { source: string; attemptId: string },
+	record: DriveTerminalRecord,
+): EpisodeEvent {
+	return {
+		scope: "project",
+		source: identity.source,
+		action: "drive.run",
+		outcome: record.outcome,
+		subject: { kind: "run", id: spec.runId },
+		tags: [`attempt:${identity.attemptId}`],
+		timestamp: record.timestamp,
+		summary: `Drive run "${spec.runId}" ${record.outcome}.`,
+		details: `Attempt ${identity.attemptId} reached terminal outcome ${record.outcome}.`,
+	};
+}
+
+async function reportTerminalLedgerFailure(
+	options: {
+		spec: DriverRunSpec;
+		reportWarning?: EpisodeWarningReporter;
+	},
+	operation: string,
+	error: unknown,
+): Promise<void> {
+	const warning: MemoryWarning = {
+		path: join(options.spec.workdir, "run.terminal-episodes"),
+		message: `Episode terminal ledger unavailable: Failed to ${operation} record: ${formatError(error)}`,
+	};
+	if (options.reportWarning) {
+		try {
+			await options.reportWarning(warning);
+			return;
+		} catch {
+			// The fail-soft warning falls through to stderr.
+		}
+	}
+	try {
+		process.stderr.write(`[warning] ${warning.path}: ${warning.message}\n`);
+	} catch {
+		// Episode capture and warning delivery remain non-load-bearing.
+	}
 }
 
 export function createDriveEpisodeWarningReporter(

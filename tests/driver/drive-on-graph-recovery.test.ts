@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { DRIVE_BACKEND_ORCHESTRATION_CAPABILITIES } from "../../lib/driver/backends/orchestration-adapter.ts";
@@ -7,7 +7,10 @@ import type {
 	BackendRunResult,
 } from "../../lib/driver/backends/types.ts";
 import { compileDriveRunToGraph } from "../../lib/driver/drive-graph-compiler.ts";
-import { runDriveOnGraph } from "../../lib/driver/drive-graph-runner.ts";
+import {
+	recordDriveTerminalEpisode,
+	runDriveOnGraph,
+} from "../../lib/driver/drive-graph-runner.ts";
 import { createDriveSchedulerBackendMap } from "../../lib/driver/drive-scheduler-backend.ts";
 import {
 	createEventSink,
@@ -15,6 +18,10 @@ import {
 	driveEventBridgeOptions,
 	driveGraphActivityEventSinkOptions,
 } from "../../lib/driver/event-stream.ts";
+import {
+	readDriveTerminalRecord,
+	writeDriveTerminalRecord,
+} from "../../lib/driver/run-state.ts";
 import type {
 	BackendName,
 	DriverEvent,
@@ -30,6 +37,7 @@ import {
 	type StepLease,
 	type StepRecord,
 } from "../../lib/durable-runtime/index.ts";
+import { recordEpisode } from "../../lib/memory/episode.ts";
 import { MessageBus } from "../../lib/orchestration/message-bus.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { captureCliOutput } from "../helpers/cli.ts";
@@ -48,6 +56,92 @@ const selectedBackends = [
 ] as const satisfies readonly BackendName[];
 
 describe("Drive-on-graph recovery", () => {
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-026
+	test("replays an intended terminal record instead of writing a second outcome", async () => {
+		const projectRoot = join(temp.path, "intended-terminal-replay", "project");
+		const workdir = join(projectRoot, "run");
+		await mkdir(join(projectRoot, ".cosmonauts"), { recursive: true });
+		await mkdir(workdir, { recursive: true });
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			JSON.stringify({ episodicLog: { enabled: true } }),
+			"utf-8",
+		);
+		const spec = {
+			runId: "run-intended-terminal-replay",
+			parentSessionId: PARENT_SESSION_ID,
+			projectRoot,
+			planSlug: "episodic-log-detached-hardening",
+			taskIds: [],
+			backendName: "codex",
+			promptTemplate: { envelopePath: join(projectRoot, "envelope.md") },
+			preflightCommands: [],
+			postflightCommands: [],
+			commitPolicy: "no-commit",
+			stateCommitPolicy: "none",
+			workdir,
+			eventLogPath: join(workdir, "events.jsonl"),
+			episodeSource: "test/worker",
+			episodeAttemptId: "attempt-intended-terminal-replay",
+		} satisfies DriverRunSpec;
+		const intended = {
+			version: 1,
+			attemptId: spec.episodeAttemptId,
+			outcome: "failed",
+			timestamp: "2026-07-22T16:04:00.000Z",
+			state: "intended",
+		} as const;
+		await writeDriveTerminalRecord(workdir, intended);
+		const firstCapture = await recordEpisode({
+			projectRoot,
+			event: {
+				scope: "project",
+				source: spec.episodeSource,
+				action: "drive.run",
+				outcome: intended.outcome,
+				subject: { kind: "run", id: spec.runId },
+				tags: [`attempt:${spec.episodeAttemptId}`],
+				timestamp: intended.timestamp,
+				summary: `Drive run "${spec.runId}" failed.`,
+				details: `Attempt ${spec.episodeAttemptId} reached terminal outcome failed.`,
+			},
+		});
+		expect(firstCapture.kind).toBe("recorded");
+		if (firstCapture.kind !== "recorded") {
+			throw new Error("Failed to seed the interrupted terminal episode.");
+		}
+		const episodeDir = join(projectRoot, "memory", "agent", "episodes");
+		const originalNames = await readdir(episodeDir);
+		const originalBytes = await readFile(firstCapture.path, "utf-8");
+
+		await recordDriveTerminalEpisode(spec, {
+			runId: spec.runId,
+			outcome: "aborted",
+			tasksDone: 0,
+			tasksBlocked: 0,
+			completedAt: "2026-07-22T16:05:00.000Z",
+		});
+
+		expect(
+			await readDriveTerminalRecord(workdir, spec.episodeAttemptId),
+		).toEqual({ ...intended, state: "recorded" });
+		expect(await readdir(episodeDir)).toEqual(originalNames);
+		expect(await readFile(firstCapture.path, "utf-8")).toBe(originalBytes);
+		expect(originalBytes).toContain(`Timestamp: ${intended.timestamp}`);
+		expect(originalBytes).toContain("Outcome: failed");
+		expect(originalBytes).not.toContain("Outcome: aborted");
+
+		await recordDriveTerminalEpisode(spec, {
+			runId: spec.runId,
+			outcome: "aborted",
+			tasksDone: 0,
+			tasksBlocked: 0,
+			completedAt: "2026-07-22T16:06:00.000Z",
+		});
+		expect(await readdir(episodeDir)).toEqual(originalNames);
+		expect(await readFile(firstCapture.path, "utf-8")).toBe(originalBytes);
+	});
+
 	// @cosmo-behavior plan:episodic-log#B-026
 	test("persists episode capture failure as a non-fatal Drive diagnostic", async () => {
 		const persisted = await seedCaptureFailureRun("persisted-diagnostic");
