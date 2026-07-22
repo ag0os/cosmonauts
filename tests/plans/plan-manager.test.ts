@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { withEntityFileLock } from "../../lib/entity-file-lock.ts";
 import {
 	createMarkdownMemoryStore,
 	parseEpisodeRecord,
@@ -212,6 +213,127 @@ describe("PlanManager", () => {
 				message: expect.stringContaining("Episode capture skipped"),
 			}),
 		]);
+	});
+
+	it("serializes enabled same-plan status transition decisions across manager instances @cosmo-behavior plan:episodic-log-detached-hardening#B-014", async () => {
+		const sameTargetRoot = join(tempDir, "same-target");
+		await writeEpisodicConfig(sameTargetRoot);
+		const sameTargetLockPath = join(
+			sameTargetRoot,
+			".cosmonauts",
+			"episode-plan-shared-plan.lock",
+		);
+		const firstSameTargetManager = new PlanManager(sameTargetRoot, {
+			episodeSource: "custom/first-plan-owner",
+		});
+		const secondSameTargetManager = new PlanManager(sameTargetRoot, {
+			episodeSource: "custom/second-plan-owner",
+		});
+		await firstSameTargetManager.createPlan({
+			slug: "shared-plan",
+			title: "Shared Plan",
+		});
+
+		const releaseHeldLock = deferred<void>();
+		const heldLockStarted = deferred<void>();
+		const heldLock = withEntityFileLock(sameTargetLockPath, async () => {
+			heldLockStarted.resolve();
+			await releaseHeldLock.promise;
+		});
+		await heldLockStarted.promise;
+
+		let settledUpdates = 0;
+		const sameTargetUpdates = [
+			firstSameTargetManager.updatePlan("shared-plan", {
+				status: "completed",
+			}),
+			secondSameTargetManager.updatePlan("shared-plan", {
+				status: "completed",
+			}),
+		];
+		for (const update of sameTargetUpdates) {
+			void update.then(() => {
+				settledUpdates += 1;
+			});
+		}
+		try {
+			await new Promise((resolve) => setTimeout(resolve, 75));
+			expect(settledUpdates).toBe(0);
+		} finally {
+			releaseHeldLock.resolve();
+			await heldLock;
+		}
+		await Promise.all(sameTargetUpdates);
+
+		const sameTargetTransitions = await readPlanStatusTransitions(
+			sameTargetRoot,
+			"shared-plan",
+		);
+		expect(sameTargetTransitions).toHaveLength(1);
+		expect(
+			sameTargetTransitions.map((transition) => transition.content),
+		).toEqual([expect.stringContaining("active to completed")]);
+		expect((await firstSameTargetManager.getPlan("shared-plan"))?.status).toBe(
+			"completed",
+		);
+		await expect(access(sameTargetLockPath)).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+
+		const differentTargetRoot = join(tempDir, "different-target");
+		await writeEpisodicConfig(differentTargetRoot);
+		const firstDifferentTargetManager = new PlanManager(differentTargetRoot, {
+			episodeSource: "custom/first-plan-owner",
+		});
+		const secondDifferentTargetManager = new PlanManager(differentTargetRoot, {
+			episodeSource: "custom/second-plan-owner",
+		});
+		await firstDifferentTargetManager.createPlan({
+			slug: "shared-plan",
+			title: "Shared Plan",
+		});
+		await Promise.all([
+			firstDifferentTargetManager.updatePlan("shared-plan", {
+				status: "completed",
+			}),
+			secondDifferentTargetManager.updatePlan("shared-plan", {
+				status: "active",
+			}),
+		]);
+
+		const persistedDifferentTargetStatus = (
+			await firstDifferentTargetManager.getPlan("shared-plan")
+		)?.status;
+		const differentTargetTransitions = await readPlanStatusTransitions(
+			differentTargetRoot,
+			"shared-plan",
+		);
+		if (persistedDifferentTargetStatus === "active") {
+			expect(differentTargetTransitions).toHaveLength(2);
+			expect(
+				differentTargetTransitions.map((transition) => transition.content),
+			).toEqual(
+				expect.arrayContaining([
+					expect.stringContaining("active to completed"),
+					expect.stringContaining("completed to active"),
+				]),
+			);
+		} else {
+			expect(persistedDifferentTargetStatus).toBe("completed");
+			expect(differentTargetTransitions).toHaveLength(1);
+			expect(differentTargetTransitions[0]?.content).toContain(
+				"active to completed",
+			);
+		}
+		await expect(
+			access(
+				join(
+					differentTargetRoot,
+					".cosmonauts",
+					"episode-plan-shared-plan.lock",
+				),
+			),
+		).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
 	describe("createPlan", () => {
@@ -811,4 +933,26 @@ async function readProjectEpisodes(projectRoot: string) {
 			{ text: "", recordTypes: ["episode"] },
 		)
 	).records;
+}
+
+async function readPlanStatusTransitions(projectRoot: string, slug: string) {
+	return (await readProjectEpisodes(projectRoot)).filter((record) => {
+		const metadata = parseEpisodeRecord(record);
+		return (
+			metadata?.action === "plan.status-changed" &&
+			metadata.subject.kind === "plan" &&
+			metadata.subject.id === slug
+		);
+	});
+}
+
+function deferred<T>(): {
+	readonly promise: Promise<T>;
+	readonly resolve: (value: T) => void;
+} {
+	let resolvePromise: (value: T) => void = () => undefined;
+	const promise = new Promise<T>((resolve) => {
+		resolvePromise = resolve;
+	});
+	return { promise, resolve: resolvePromise };
 }

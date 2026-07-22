@@ -3,10 +3,12 @@
  * Orchestrates all core modules for plan CRUD operations
  */
 
+import { join } from "node:path";
 import {
 	type EpisodeWarningReporter,
 	recordEpisode,
 } from "../memory/episode.ts";
+import { withEpisodeTransitionLock } from "../memory/episode-transition-lock.ts";
 import type { TaskManager } from "../tasks/task-manager.ts";
 import {
 	createPlanDirectory,
@@ -31,6 +33,11 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export interface PlanManagerEpisodeContext {
 	readonly episodeSource: string;
 	readonly reportEpisodeWarning?: EpisodeWarningReporter;
+}
+
+interface PlanUpdateExecution {
+	readonly plan: Plan;
+	readonly previousStatus?: PlanStatus;
 }
 
 export function validateSlug(slug: string): void {
@@ -158,6 +165,31 @@ export class PlanManager {
 	async updatePlan(slug: string, input: PlanUpdateInput): Promise<Plan> {
 		validateSlug(slug);
 
+		const execution = await withEpisodeTransitionLock({
+			projectRoot: this.projectRoot,
+			lockPath: join(
+				this.projectRoot,
+				".cosmonauts",
+				`episode-plan-${slug}.lock`,
+			),
+			hasEpisodeContext: Boolean(this.episodeContext?.episodeSource),
+			reportEpisodeWarning: this.episodeContext?.reportEpisodeWarning,
+			action: () => this.updatePlanLocked(slug, input),
+		});
+
+		if (execution.previousStatus !== undefined) {
+			await this.capturePlanStatusChanged(
+				execution.previousStatus,
+				execution.plan,
+			);
+		}
+		return execution.plan;
+	}
+
+	private async updatePlanLocked(
+		slug: string,
+		input: PlanUpdateInput,
+	): Promise<PlanUpdateExecution> {
 		const existing = await readPlanFile(this.projectRoot, slug);
 		if (!existing) {
 			throw new Error(`Plan not found: ${slug}`);
@@ -189,10 +221,12 @@ export class PlanManager {
 			...updated,
 			spec,
 		};
-		if (existing.status !== updatedPlan.status) {
-			await this.capturePlanStatusChanged(existing.status, updatedPlan);
-		}
-		return updatedPlan;
+		return {
+			plan: updatedPlan,
+			...(existing.status !== updatedPlan.status
+				? { previousStatus: existing.status }
+				: {}),
+		};
 	}
 
 	private async capturePlanCreated(plan: Plan): Promise<void> {
