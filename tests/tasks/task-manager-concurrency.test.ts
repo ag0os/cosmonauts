@@ -206,6 +206,54 @@ describe("TaskManager concurrency", () => {
 			),
 		).rejects.toMatchObject({ code: "ENOENT" });
 	});
+
+	it("keeps enabled transition locks flat for separator and traversal shaped task ids", async () => {
+		const unsafeRoot = join(tempDir, "unsafe-ids");
+		await writeEpisodicConfig(unsafeRoot);
+		const manager = new TaskManager(unsafeRoot, {
+			episodeSource: "custom/unsafe-id-owner",
+		});
+		await manager.createTask({ title: "Real Task" });
+
+		const cosmonautsDir = join(unsafeRoot, ".cosmonauts");
+		const before = (await readdir(cosmonautsDir)).sort();
+
+		for (const unsafeId of [
+			"a/b",
+			"a\\b",
+			"../escape",
+			"../../escape",
+			"TASK-001/../../escape",
+			"",
+		]) {
+			// The primary failure must stay the ordinary not-found error.
+			await expect(
+				manager.updateTask(unsafeId, { status: "In Progress" }),
+			).rejects.toThrow();
+		}
+
+		// No nested directory, no escaped artifact, no leftover lock.
+		expect((await readdir(cosmonautsDir)).sort()).toEqual(before);
+		for (const entry of await readdir(cosmonautsDir, { withFileTypes: true })) {
+			expect(entry.isDirectory()).toBe(false);
+		}
+		await expect(
+			access(join(unsafeRoot, ".cosmonauts", "episode-task-A")),
+		).rejects.toMatchObject({ code: "ENOENT" });
+		await expect(access(join(unsafeRoot, "escape.lock"))).rejects.toMatchObject(
+			{
+				code: "ENOENT",
+			},
+		);
+		await expect(
+			access(join(unsafeRoot, ".cosmonauts", "escape.lock")),
+		).rejects.toMatchObject({ code: "ENOENT" });
+
+		// The real task is untouched and still uses its canonical flat lock path.
+		expect(await listTaskFilenames(unsafeRoot)).toEqual([
+			"TASK-001 - Real Task.md",
+		]);
+	});
 });
 
 async function writeEpisodicConfig(projectRoot: string): Promise<void> {

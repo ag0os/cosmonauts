@@ -3,6 +3,7 @@
  * Orchestrates all core modules for task CRUD operations, search, and filtering
  */
 
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import {
 	type EpisodeWarningReporter,
@@ -531,12 +532,22 @@ function taskFileMayContainLabel(content: string, label: string): boolean {
 	return content.toLowerCase().includes(label.toLowerCase());
 }
 
+/**
+ * Task ids safe to interpolate directly into a flat lock filename. Anything
+ * outside this set (path separators above all) is hashed instead, so a
+ * caller-supplied id can never turn the lock into a nested or escaped path.
+ */
+const SAFE_TASK_LOCK_SEGMENT = /^[A-Z0-9._-]{1,64}$/;
+
 function getTaskEpisodeTransitionLockPath(
 	projectRoot: string,
 	id: string,
 ): string {
 	const canonicalId = id.toUpperCase();
-	return join(projectRoot, ".cosmonauts", `episode-task-${canonicalId}.lock`);
+	const segment = SAFE_TASK_LOCK_SEGMENT.test(canonicalId)
+		? canonicalId
+		: createHash("sha256").update(canonicalId).digest("hex").slice(0, 32);
+	return join(projectRoot, ".cosmonauts", `episode-task-${segment}.lock`);
 }
 
 function matchesStatusFilter(task: Task, filter: TaskListFilter): boolean {
