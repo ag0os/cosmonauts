@@ -20,6 +20,7 @@ import {
 	type DriveEpisodeIdentity,
 	deriveDriveEpisodeAttemptId,
 	isDriveEpisodeCaptureEnabled,
+	isFrozenDriveEpisodeWorkerSource,
 	mintDriveEpisodeIdentity,
 	reportDriveEpisodeLaunchWarning,
 	resolveDriveEpisodeWorker,
@@ -297,10 +298,22 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 	if (refuseUnsupportedDetachedBackend(mode, backendName)) {
 		return;
 	}
+	const reconcilePriorAttempt =
+		resume !== undefined && resume.remainingTaskIds.length === 0;
+	const frozenEpisodeSource = resume?.spec.episodeSource;
+	const trustedFrozenWorkerSource =
+		episodeCaptureEnabled &&
+		!reconcilePriorAttempt &&
+		frozenEpisodeSource !== undefined &&
+		isFrozenDriveEpisodeWorkerSource(frozenEpisodeSource)
+			? frozenEpisodeSource
+			: undefined;
 	const needsExecutionRuntime =
 		mode === "inline" && backendName === "cosmonauts-subagent";
 	const needsEpisodeRuntime =
-		episodeCaptureEnabled && !resume?.spec.episodeSource;
+		episodeCaptureEnabled &&
+		(frozenEpisodeSource === undefined ||
+			(!reconcilePriorAttempt && trustedFrozenWorkerSource === undefined));
 	let runtime: CosmonautsRuntime | undefined;
 	if (needsExecutionRuntime || needsEpisodeRuntime) {
 		try {
@@ -311,14 +324,12 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 		}
 	}
 	const episodeWorker = episodeCaptureEnabled
-		? runtime && resume?.spec.episodeSource
-			? resolveFrozenDriveEpisodeWorker(runtime, resume.spec.episodeSource)
+		? runtime && trustedFrozenWorkerSource
+			? resolveFrozenDriveEpisodeWorker(runtime, trustedFrozenWorkerSource)
 			: runtime
 				? resolveDriveEpisodeWorker(runtime)
 				: undefined
 		: undefined;
-	const reconcilePriorAttempt =
-		resume !== undefined && resume.remainingTaskIds.length === 0;
 	// A resumed run that will EXECUTE (not merely reconcile a prior terminal) but
 	// whose frozen worker no longer resolves would run the fallback default worker
 	// while the stale frozen source misattributes the episode. Omit episode
@@ -329,11 +340,13 @@ async function runDrive(options: DriveRunOptions): Promise<void> {
 		needsExecutionRuntime &&
 		!reconcilePriorAttempt &&
 		runtime !== undefined &&
-		resume?.spec.episodeSource !== undefined &&
+		trustedFrozenWorkerSource !== undefined &&
 		episodeWorker === undefined;
 	const episodeSource =
 		episodeCaptureEnabled && !frozenWorkerLostForExecution
-			? (resume?.spec.episodeSource ?? episodeWorker?.qualifiedId)
+			? reconcilePriorAttempt
+				? (frozenEpisodeSource ?? episodeWorker?.qualifiedId)
+				: (trustedFrozenWorkerSource ?? episodeWorker?.qualifiedId)
 			: undefined;
 	const episodeIdentity = episodeSource
 		? reconcilePriorAttempt && resume?.spec.episodeAttemptId

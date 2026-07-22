@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createDriveCompatProgram } from "../../../cli/drive/subcommand.ts";
 import { AgentRegistry } from "../../../lib/agents/index.ts";
 import type { AgentDefinition } from "../../../lib/agents/types.ts";
+import type { Backend } from "../../../lib/driver/backends/types.ts";
 import {
 	DEFAULT_DRIVE_ENVELOPE_RELATIVE_PATH,
 	resolveDefaultDriveEnvelopePath,
@@ -65,6 +66,13 @@ const backendMocks = vi.hoisted(() => ({
 		capabilities: { canCommit: false, isolatedFromHostSource: true },
 		run: vi.fn(),
 	})),
+	createCosmonautsSubagentBackend: vi.fn(
+		(): Backend => ({
+			name: "cosmonauts-subagent",
+			capabilities: { canCommit: true, isolatedFromHostSource: false },
+			run: vi.fn(),
+		}),
+	),
 }));
 
 const childProcessMocks = vi.hoisted(() => ({
@@ -94,6 +102,10 @@ vi.mock("../../../lib/driver/backends/registry.ts", () => ({
 	resolveBackend: backendMocks.resolveBackend,
 }));
 
+vi.mock("../../../lib/driver/backends/cosmonauts-subagent.ts", () => ({
+	createCosmonautsSubagentBackend: backendMocks.createCosmonautsSubagentBackend,
+}));
+
 vi.mock("node:child_process", () => ({
 	execFile: childProcessMocks.execFile,
 }));
@@ -114,6 +126,7 @@ describe("cosmonauts run drive compat run", () => {
 		driverMocks.runInline.mockClear();
 		driverMocks.launchDetached.mockClear();
 		backendMocks.resolveBackend.mockClear();
+		backendMocks.createCosmonautsSubagentBackend.mockClear();
 		childProcessMocks.execFile.mockClear();
 		childProcessMocks.execFileResult = { stdout: "", stderr: "" };
 	});
@@ -715,6 +728,90 @@ describe("cosmonauts run drive compat run", () => {
 		expect(spec.episodeAttemptId).not.toBe("attempt-original");
 		expect(spec.remainingTaskIds).toEqual(taskIds.slice(1));
 		expect(runtimeCreate).not.toHaveBeenCalled();
+	});
+
+	// @cosmo-behavior plan:episodic-log-detached-hardening#B-020
+	test("trusts only frozen worker agent ids for execution and preserves reconcile provenance", async () => {
+		const fixture = await setupFixture(2);
+		const taskIds = fixture.tasks.map((task) => task.id);
+		const firstTaskDone = [
+			{ type: "task_done" as const, taskId: taskIds[0] ?? "TASK-001" },
+		];
+		await writeEpisodicConfig(process.cwd(), true);
+
+		const arbitraryAgentRuntime = workerRuntime("coding", "live-coding", [
+			agentDefinition("project-coding", "planner"),
+		]);
+		const frozenWorkerRuntime = workerRuntime("coding", "live-coding", [
+			workerDefinition("project-coding"),
+		]);
+		const runtimeCreate = vi
+			.spyOn(CosmonautsRuntime, "create")
+			.mockResolvedValueOnce(arbitraryAgentRuntime as CosmonautsRuntime)
+			.mockResolvedValueOnce(frozenWorkerRuntime as CosmonautsRuntime);
+
+		await writeResumeRun(taskIds, firstTaskDone, {
+			backendName: "cosmonauts-subagent",
+			episodeSource: "project-coding/planner",
+			episodeAttemptId: "attempt-arbitrary-agent",
+		});
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		const arbitraryAgentSpec = firstRunInlineSpec();
+		expect(arbitraryAgentSpec.episodeSource).toBe("live-coding/worker");
+		expect(arbitraryAgentSpec.episodeAttemptId).toMatch(/^attempt-/u);
+		expect(arbitraryAgentSpec.episodeAttemptId).not.toBe(
+			"attempt-arbitrary-agent",
+		);
+		expect(
+			backendMocks.createCosmonautsSubagentBackend,
+		).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				workerResolution: expect.objectContaining({
+					qualifiedId: "live-coding/worker",
+				}),
+			}),
+		);
+
+		await writeResumeRun(taskIds, firstTaskDone, {
+			backendName: "cosmonauts-subagent",
+			episodeSource: "project-coding/worker",
+			episodeAttemptId: "attempt-frozen-worker",
+		});
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		const frozenWorkerSpec = driverMocks.runInline.mock.calls.at(-1)?.[0];
+		expect(frozenWorkerSpec?.episodeSource).toBe("project-coding/worker");
+		expect(frozenWorkerSpec?.episodeAttemptId).toMatch(/^attempt-/u);
+		expect(frozenWorkerSpec?.episodeAttemptId).not.toBe(
+			"attempt-frozen-worker",
+		);
+		expect(
+			backendMocks.createCosmonautsSubagentBackend,
+		).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				workerResolution: expect.objectContaining({
+					qualifiedId: "project-coding/worker",
+				}),
+			}),
+		);
+
+		await writeResumeRun(
+			taskIds,
+			taskIds.map((taskId) => ({ type: "task_done" as const, taskId })),
+			{
+				episodeSource: "project-coding/planner",
+				episodeAttemptId: "attempt-prior-provenance",
+			},
+		);
+		await parseDrive(["--plan", PLAN, "--resume", "run-previous"]);
+
+		const reconciledSpec = JSON.parse(
+			await readFile(join(resumeWorkdir(), "spec.json"), "utf-8"),
+		) as DriverRunSpec;
+		expect(reconciledSpec.episodeSource).toBe("project-coding/planner");
+		expect(reconciledSpec.episodeAttemptId).toBe("attempt-prior-provenance");
+		expect(runtimeCreate).toHaveBeenCalledTimes(2);
 	});
 
 	test("enabled legacy resume resolves a missing frozen source once at the mint seam", async () => {
@@ -1686,6 +1783,7 @@ async function writeEpisodicConfig(
 function workerRuntime(
 	domainContext: string | undefined,
 	targetDomain: string,
+	additionalDefinitions: AgentDefinition[] = [],
 ): Pick<
 	CosmonautsRuntime,
 	| "agentRegistry"
@@ -1695,9 +1793,10 @@ function workerRuntime(
 	| "projectSkills"
 	| "skillPaths"
 > {
-	const definitions = [...new Set(["coding", targetDomain])].map(
-		workerDefinition,
-	);
+	const definitions = [
+		...[...new Set(["coding", targetDomain])].map(workerDefinition),
+		...additionalDefinitions,
+	];
 	const bindingResolver = {
 		resolveAgentReference(qualifiedId: string) {
 			const [role, agentId] = qualifiedId.split("/");
@@ -1729,10 +1828,14 @@ function workerRuntime(
 }
 
 function workerDefinition(domain: string): AgentDefinition {
+	return agentDefinition(domain, "worker");
+}
+
+function agentDefinition(domain: string, id: string): AgentDefinition {
 	return {
-		id: "worker",
+		id,
 		domain,
-		description: `${domain} worker`,
+		description: `${domain} ${id}`,
 		capabilities: [],
 		model: "test/model",
 		tools: "none",

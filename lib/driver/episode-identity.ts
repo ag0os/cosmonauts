@@ -14,6 +14,11 @@ export type DriveEpisodeIdentity = Required<
 	Pick<DriverRunSpec, "episodeAttemptId" | "episodeSource">
 >;
 
+interface ParsedDriveEpisodeSource {
+	role: string;
+	agentId: string;
+}
+
 export async function isDriveEpisodeCaptureEnabled(
 	projectRoot: string,
 ): Promise<boolean> {
@@ -45,17 +50,25 @@ export function resolveDriveEpisodeWorker(
 	return undefined;
 }
 
+export function isFrozenDriveEpisodeWorkerSource(
+	episodeSource: string,
+): boolean {
+	const parsed = parseDriveEpisodeSource(episodeSource);
+	return parsed?.agentId === "worker";
+}
+
 export function resolveFrozenDriveEpisodeWorker(
 	runtime: Pick<CosmonautsRuntime, "agentRegistry" | "domainContext">,
 	episodeSource: string,
 ): SpawnAgentResolution | undefined {
 	try {
-		const [role, agentId, ...rest] = episodeSource.split("/");
-		if (!role || !agentId || rest.length > 0) {
+		const parsed = parseDriveEpisodeSource(episodeSource);
+		if (!parsed) {
 			throw new Error(
 				`invalid frozen worker identity ${JSON.stringify(episodeSource)}`,
 			);
 		}
+		const { role, agentId } = parsed;
 		const reference = {
 			requested: {
 				role: "coding",
@@ -78,6 +91,16 @@ export function resolveFrozenDriveEpisodeWorker(
 		reportDriveEpisodeLaunchWarning(error);
 	}
 	return undefined;
+}
+
+function parseDriveEpisodeSource(
+	episodeSource: string,
+): ParsedDriveEpisodeSource | undefined {
+	const [role, agentId, ...rest] = episodeSource.split("/");
+	if (!role || !agentId || rest.length > 0) {
+		return undefined;
+	}
+	return { role, agentId };
 }
 
 export function mintDriveEpisodeIdentity(
