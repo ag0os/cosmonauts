@@ -379,17 +379,19 @@ async function recordClaimedDriveTerminalEpisode(options: {
 	if (!identity) return;
 
 	let record: DriveTerminalRecord | undefined;
+	let ledgerAvailable = true;
 	try {
 		record = await readDriveTerminalRecord(
 			options.spec.workdir,
 			identity.attemptId,
 		);
 	} catch (error) {
+		ledgerAvailable = false;
 		await reportTerminalLedgerFailure(options, "read", error);
-		return;
 	}
 	if (record?.state === "recorded") return;
 
+	let claimPersisted = record?.state === "intended";
 	if (!record) {
 		const timestamp = options.resolveTimestamp();
 		if (!timestamp) return;
@@ -400,11 +402,13 @@ async function recordClaimedDriveTerminalEpisode(options: {
 			timestamp,
 			state: "intended",
 		};
-		try {
-			await writeDriveTerminalRecord(options.spec.workdir, record);
-		} catch (error) {
-			await reportTerminalLedgerFailure(options, "write intent to", error);
-			return;
+		if (ledgerAvailable) {
+			try {
+				await writeDriveTerminalRecord(options.spec.workdir, record);
+				claimPersisted = true;
+			} catch (error) {
+				await reportTerminalLedgerFailure(options, "write intent to", error);
+			}
 		}
 	}
 
@@ -418,7 +422,7 @@ async function recordClaimedDriveTerminalEpisode(options: {
 		event,
 		options.reportWarning,
 	);
-	if (capture.kind !== "recorded") return;
+	if (capture.kind !== "recorded" || !claimPersisted) return;
 
 	try {
 		await writeDriveTerminalRecord(options.spec.workdir, {

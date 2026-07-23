@@ -193,7 +193,7 @@ describe("run-state", () => {
 		).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
-	test("skips unclaimed capture when terminal ledger access fails", async () => {
+	test("captures unclaimed when terminal ledger access fails", async () => {
 		const projectRoot = join(temp.path, "ledger-failure");
 		const workdir = join(projectRoot, "run");
 		await mkdir(join(projectRoot, ".cosmonauts"), { recursive: true });
@@ -247,9 +247,9 @@ describe("run-state", () => {
 			path: join(workdir, "run.terminal-episodes"),
 			message: expect.stringContaining("Episode terminal ledger unavailable"),
 		});
-		await expect(
-			stat(join(projectRoot, "memory", "agent", "episodes")),
-		).rejects.toMatchObject({ code: "ENOENT" });
+		expect(
+			await readdir(join(projectRoot, "memory", "agent", "episodes")),
+		).toHaveLength(1);
 	});
 
 	// @cosmo-behavior plan:episodic-log-detached-hardening#B-010
