@@ -91,6 +91,13 @@ changes terminal-only resume behavior.
   - Why: both changes correctly place enabled critical sections without moving persistence ownership, turning hook failure into a second terminal, or changing OFF behavior.
   - Decided by: ratified pre-existing spec/plan direction (PRF-004 hook and PRF-007 scope), failure/OFF semantics clarified by plan review PR-001/PR-003.
 
+- **D-005 — A completion-backed terminal-only resume prepares identity even when graph resume state exists** *(added 2026-07-23 after implementation review — UR-001)*
+  - Decision: gate-ON terminal-only identity preparation runs when `remainingTaskIds` is empty and *either* there is no graph resume state *or* `run.completion.json` already exists. `reconcilePriorAttempt` gains the same graph-state awareness, so an empty legacy queue with pending graph steps is treated as execution rather than reconciliation. SEQ-003's original spelling is superseded.
+  - Alternatives: keep SEQ-003 as written (rejected — it makes F-005 unreachable in production, see below); drop the graph-state condition entirely (rejected — it would prepare identity for resumes the CLI later refuses, breaking SEQ-003's byte-unchanged guarantee for `dirty_worktree`/unsupported-backend); decide reconcile-vs-execute from the legacy queue alone (rejected — it lets a non-worker frozen source attribute an executing resume, violating D-003).
+  - Why: SEQ-003's *mechanism* was stricter than the *intent* it stated. `hasGraphResumeState` returns true whenever the run has any graph steps, and every real Drive run is graph-backed, so the original precondition excluded exactly the case F-005 exists to fix. B-011/B-012 still passed because their fixtures carry no durable graph run — the criterion was proven only where it was never in doubt. Requiring a persisted completion keeps the refusal-path guarantee intact (a refused resume has no completion) while restoring F-005 for real completed runs.
+  - Consequence: AC-005 is now reachable on production graph-backed runs. B-011/B-012 keep their existing evidence; a completed graph-backed fixture is the coverage gap this decision exposes and should be added.
+  - Decided by: implementation review (Quality Manager UR-001, corroborated by the independent codex review), human-approved 2026-07-23.
+
 F-005's synthetic attempt id is a separate ratified constraint, not an open
 design choice: it is deterministic, derived from the persisted run id, and never
 random. The gate remains OFF by default.
@@ -929,13 +936,17 @@ scope exclusion, stop and revise this plan rather than improvising.
 5. **F-005 deterministic terminal-only identity (B-011–B-013, B-025).** Depends
    on 1–4. RED successful off-then-enabled, repeat resume, and runtime/source
    failure before `prepareResume`; derive/persist run-id identity, reuse ledger,
-   and reconcile docs. **Precondition (SEQ-003):** the identity-preparation
-   helper runs only when the resume will actually terminate inside
-   `prepareResume` — empty `remainingTaskIds` **and** no graph resume state —
-   so a resume the CLI subsequently refuses (`dirty_worktree`, unsupported
-   backend) leaves `spec.json` and `task-queue.txt` byte-unchanged. Add that
-   refusal case as evidence. **Stages 1–5 form one atomic delivery checkpoint and
-   must ship together**; no subset is mergeable because all share D-009 ownership.
+   and reconcile docs. **Precondition (SEQ-003, amended 2026-07-23 after
+   implementation review — see D-005):** the identity-preparation helper runs
+   only when the resume will actually terminate inside `prepareResume` — empty
+   `remainingTaskIds`, **and** either no graph resume state **or** an existing
+   `run.completion.json`. The original spelling of this precondition was "empty
+   `remainingTaskIds` **and** no graph resume state"; that is stricter than the
+   intent it states and is superseded by D-005. A resume the CLI subsequently
+   refuses (`dirty_worktree`, unsupported backend) must still leave `spec.json`
+   and `task-queue.txt` byte-unchanged. Add that refusal case as evidence.
+   **Stages 1–5 form one atomic delivery checkpoint and must ship together**; no
+   subset is mergeable because all share D-009 ownership.
 6. **SR-001 execution guard (B-020).** Depends on 5. RED executing non-worker and
    reconcile provenance; enforce exact `agentId === "worker"` only on execution.
 7. **PRF-004 terminal hook (B-016–B-018, B-023, B-024, B-029).** Depends on
