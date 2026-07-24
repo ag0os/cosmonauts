@@ -98,6 +98,13 @@ changes terminal-only resume behavior.
   - Consequence: AC-005 is now reachable on production graph-backed runs. B-011/B-012 keep their existing evidence; a completed graph-backed fixture is the coverage gap this decision exposes and should be added.
   - Decided by: implementation review (Quality Manager UR-001, corroborated by the independent codex review), human-approved 2026-07-23.
 
+- **D-006 — AC-001's OFF byte identity excludes the plan-lock-release-failure path** *(added 2026-07-24 after implementation review — TASK-499)*
+  - Decision: with the gate OFF, a *failing* plan-lock release may diverge from current `main`. `runInline` and `run-step` install `onTerminalPersisted` and the swallowing release backstop unconditionally, so when release rejects, Drive resolves with the authoritative persisted result and appends one `terminal_persisted_hook_failed` diagnostic, where `main` rejects the handle and writes no diagnostic. Every OFF path that does **not** hit a release failure remains byte-identical to `main`, and that remains a hard gate. B-023 wins the conflict.
+  - Alternatives: install the hook and swallowing backstop only for identity-bearing runs, restoring exact OFF parity (rejected — it reinstates `main`'s worse semantics, where a Drive run that fully succeeded is reported as failed because post-run lock cleanup failed, and it adds a second untested code path in both `driver.ts` and `run-step.ts`); suppress only the OFF diagnostic to restore event-byte identity while keeping result preservation (rejected — a half-measure that satisfies neither criterion cleanly and still violates AC-001's rejection semantics).
+  - Why: AC-001 and B-023 are mutually exclusive on exactly this path. AC-001 was written to catch enabled-path *wiring* leaking into OFF layout — the CDX-001 lesson — not to preserve a failure semantic that is itself undesirable. The divergence is a failure-of-a-failure: it requires the plan lock's unlink to fail (for example `EIO`) after a run has already persisted its completion. In that window the new behavior is strictly more useful, because cleanup failure no longer masquerades as run failure.
+  - Consequence: AC-001 and B-001 are narrowed in text to name this exclusion; no code changes. This is a *named* narrowing, not silent drift — the same treatment as SF-001. Any OFF divergence on a non-failure path remains a hard failure. TASK-499 is closed by this decision rather than by an implementation.
+  - Decided by: human, 2026-07-24, on the round-2 codex finding and the plan-review characterization.
+
 F-005's synthetic attempt id is a separate ratified constraint, not an open
 design choice: it is deterministic, derived from the persisted run id, and never
 random. The gate remains OFF by default.
@@ -152,7 +159,7 @@ and survives spec edits. Criteria are never renumbered; new ones append.
 - Source: AC-001
 - Context: `episodicLog.enabled` is absent or false across inline, detached, abort, resume, CLI/tool, and plan/task update paths touched by this plan
 - Action: those paths execute with the hardening present
-- Expected: session and manifest paths, serialized specs/results/completions, workdir file layout, legacy/normalized event order, CLI/tool output text, and sequential plan/task bytes equal current `main`; managers do not enter the new entity lock, so concurrent OFF updates retain current unlocked semantics; no terminal-ledger, update-lock, or memory episode artifact remains
+- Expected: session and manifest paths, serialized specs/results/completions, workdir file layout, legacy/normalized event order, CLI/tool output text, and sequential plan/task bytes equal current `main`; managers do not enter the new entity lock, so concurrent OFF updates retain current unlocked semantics; no terminal-ledger, update-lock, or memory episode artifact remains. **Excluded by D-006** *(added 2026-07-24)*: a failing plan-lock release, where OFF now resolves with the persisted result plus one `terminal_persisted_hook_failed` diagnostic instead of rejecting. Every OFF path that does not hit a release failure stays byte-identical, and divergence there remains a hard failure
 - Seam: all production files named in `Files to Change`, including enabled-gate selection in `lib/memory/episode-transition-lock.ts`
 - Test: `tests/driver/drive-on-graph-routing.test.ts` > `keeps OFF-state Drive files events layout and output byte-identical across hardened paths`
 - Marker: `@cosmo-behavior plan:episodic-log-detached-hardening#B-001`
