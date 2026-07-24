@@ -28,6 +28,12 @@ export interface EpisodeTransitionLockOptions<T> {
 	readonly hasEpisodeContext: boolean;
 	readonly action: () => Promise<T>;
 	readonly reportEpisodeWarning?: EpisodeWarningReporter;
+	/**
+	 * Called when the action persisted but the lock could not be confirmed
+	 * released. Design §7 orders capture strictly after release, so the caller
+	 * must skip transition capture rather than run it under a lock we still own.
+	 */
+	readonly onReleaseUnconfirmed?: () => void;
 	readonly dependencies?: Partial<EpisodeTransitionLockDependencies>;
 }
 
@@ -75,6 +81,16 @@ export async function withEpisodeTransitionLock<T>(
 	const lockOptions: EntityFileLockOptions = {
 		retryDelayMs: dependencies.lockRetryDelayMs,
 		waitTimeoutMs: dependencies.lockWaitTimeoutMs,
+		onReleaseUnconfirmed: (error: unknown) => {
+			options.onReleaseUnconfirmed?.();
+			// D-008: the update already persisted, so warning delivery must not
+			// gate the caller.
+			void reportTransitionWarning(
+				options,
+				dependencies,
+				`Episode transition lock release could not be confirmed: ${errorReason(error)} Skipping transition episode capture.`,
+			);
+		},
 	};
 
 	try {
@@ -127,12 +143,21 @@ async function reportTransitionLockWarning<T>(
 	dependencies: EpisodeTransitionLockDependencies,
 	error: unknown,
 ): Promise<void> {
+	await reportTransitionWarning(
+		options,
+		dependencies,
+		`Episode transition lock unavailable: ${errorReason(error)} Continuing unlocked.`,
+	);
+}
+
+async function reportTransitionWarning<T>(
+	options: EpisodeTransitionLockOptions<T>,
+	dependencies: EpisodeTransitionLockDependencies,
+	message: string,
+): Promise<void> {
 	const warning: MemoryWarning = {
 		path: clamp(options.lockPath, MAX_WARNING_PATH_LENGTH),
-		message: clamp(
-			`Episode transition lock unavailable: ${errorReason(error)} Continuing unlocked.`,
-			MAX_WARNING_MESSAGE_LENGTH,
-		),
+		message: clamp(message, MAX_WARNING_MESSAGE_LENGTH),
 	};
 
 	if (options.reportEpisodeWarning) {

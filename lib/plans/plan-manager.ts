@@ -165,6 +165,10 @@ export class PlanManager {
 	async updatePlan(slug: string, input: PlanUpdateInput): Promise<Plan> {
 		validateSlug(slug);
 
+		// Design §7 orders capture strictly after release. If the lock could not
+		// be confirmed released, skip capture rather than run it under a lock this
+		// process still owns; the update itself already persisted.
+		let releaseUnconfirmed = false;
 		const execution = await withEpisodeTransitionLock({
 			projectRoot: this.projectRoot,
 			lockPath: join(
@@ -174,10 +178,13 @@ export class PlanManager {
 			),
 			hasEpisodeContext: Boolean(this.episodeContext?.episodeSource),
 			reportEpisodeWarning: this.episodeContext?.reportEpisodeWarning,
+			onReleaseUnconfirmed: () => {
+				releaseUnconfirmed = true;
+			},
 			action: () => this.updatePlanLocked(slug, input),
 		});
 
-		if (execution.previousStatus !== undefined) {
+		if (!releaseUnconfirmed && execution.previousStatus !== undefined) {
 			await this.capturePlanStatusChanged(
 				execution.previousStatus,
 				execution.plan,

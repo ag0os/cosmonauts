@@ -195,15 +195,22 @@ export class TaskManager {
 			this.assertValidDate(input.dueDate, "dueDate");
 		}
 
+		// Design §7 orders capture strictly after release. If the lock could not
+		// be confirmed released, skip capture rather than run it under a lock this
+		// process still owns; the update itself already persisted.
+		let releaseUnconfirmed = false;
 		const execution = await withEpisodeTransitionLock({
 			projectRoot: this.projectRoot,
 			lockPath: getTaskEpisodeTransitionLockPath(this.projectRoot, id),
 			hasEpisodeContext: Boolean(this.episodeContext?.episodeSource),
 			reportEpisodeWarning: this.episodeContext?.reportEpisodeWarning,
+			onReleaseUnconfirmed: () => {
+				releaseUnconfirmed = true;
+			},
 			action: () => this.updateTaskLocked(id, input),
 		});
 
-		if (execution.previousStatus !== undefined) {
+		if (!releaseUnconfirmed && execution.previousStatus !== undefined) {
 			await this.captureTaskStatusChanged(
 				execution.previousStatus,
 				execution.task,

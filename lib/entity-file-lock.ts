@@ -7,17 +7,31 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { link, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import {
+	link,
+	mkdir,
+	readFile,
+	rename,
+	unlink,
+	writeFile,
+} from "node:fs/promises";
 import { dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 const DEFAULT_RETRY_DELAY_MS = 25;
+const RELEASE_ATTEMPTS = 3;
 
 export interface EntityFileLockOptions {
 	/** Delay between attempts while a live process owns the lock. */
 	readonly retryDelayMs?: number;
 	/** Maximum total wait for a live owner. Omit to wait indefinitely. */
 	readonly waitTimeoutMs?: number;
+	/**
+	 * Called when the lock could not be confirmed released after the action
+	 * already ran. The action's result still stands (D-008); this only lets the
+	 * caller skip follow-up work that assumes the lock is free.
+	 */
+	readonly onReleaseUnconfirmed?: (error: unknown) => void;
 }
 
 export class EntityFileLockTimeoutError extends Error {
@@ -54,7 +68,7 @@ export async function withEntityFileLock<T>(
 	try {
 		return await fn();
 	} finally {
-		await handle.release();
+		await releaseWithRetry(handle, options);
 	}
 }
 
@@ -79,7 +93,7 @@ async function acquireEntityFileLock(
 		}
 
 		if (!isProcessAlive(existing.pid)) {
-			await breakStaleLock(lockPath);
+			await removeLockIfOwner(lockPath, existing);
 			continue;
 		}
 
@@ -187,12 +201,91 @@ function isProcessAlive(pid: number): boolean {
 	}
 }
 
-async function breakStaleLock(lockPath: string): Promise<void> {
-	await unlink(lockPath).catch((error: NodeJS.ErrnoException) => {
-		if (error.code !== "ENOENT") {
-			throw error;
+/**
+ * Reclaim a stale lock, bound to the exact owner that was inspected.
+ *
+ * `rename` moves the directory entry atomically, so exactly one contender can
+ * claim a given lock file: a second contender that inspected the same stale
+ * owner gets `ENOENT` and falls back to normal acquisition instead of removing
+ * the winner's replacement lock. If the claimed content is not the owner we
+ * inspected, a live owner took the slot in the window — put it straight back.
+ */
+async function removeLockIfOwner(
+	lockPath: string,
+	expected: LockFileContent,
+): Promise<void> {
+	const removalPath = createRemovalPath(lockPath);
+	try {
+		await rename(lockPath, removalPath);
+	} catch (error) {
+		// Another contender already claimed this lock file; retry acquisition.
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+			return;
 		}
-	});
+		throw error;
+	}
+
+	try {
+		const claimed = await readLockFile(removalPath);
+		if (claimed && !sameLock(claimed, expected)) {
+			await restoreClaimedLock(removalPath, lockPath);
+		}
+	} finally {
+		await unlink(removalPath).catch(() => undefined);
+	}
+}
+
+/**
+ * Return a lock we claimed but do not own. `link` fails with `EEXIST` rather
+ * than clobbering, so an owner that took the slot meanwhile keeps it. Best
+ * effort by design: restoring must never fail acquisition.
+ */
+async function restoreClaimedLock(
+	removalPath: string,
+	lockPath: string,
+): Promise<void> {
+	await link(removalPath, lockPath).catch(() => undefined);
+}
+
+/**
+ * Removal temps are unique per attempt and keep the `.lock` suffix: a crashed
+ * remover can neither strand a fixed name that blocks every future reclaimer
+ * nor leave a file outside the single-level `.cosmonauts/*.lock` ignore glob.
+ */
+function createRemovalPath(lockPath: string): string {
+	return `${lockPath}.${process.pid}.${randomUUID()}.removing.lock`;
+}
+
+/**
+ * Release the lock we own, retrying a transient failure. D-008: the action has
+ * already run, so a lock we cannot release must never fail the caller. When
+ * release stays unconfirmed the caller is told instead, so follow-up work that
+ * assumes the lock is free can be skipped.
+ */
+async function releaseWithRetry(
+	handle: LockHandle,
+	options: EntityFileLockOptions,
+): Promise<void> {
+	const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+	let lastError: unknown;
+
+	for (let attempt = 1; attempt <= RELEASE_ATTEMPTS; attempt += 1) {
+		try {
+			await handle.release();
+			return;
+		} catch (error) {
+			lastError = error;
+			if (attempt < RELEASE_ATTEMPTS) {
+				await delay(retryDelayMs);
+			}
+		}
+	}
+
+	try {
+		options.onReleaseUnconfirmed?.(lastError);
+	} catch {
+		// Release reporting is never load-bearing for the primary action.
+	}
 }
 
 function createHandle(lockPath: string, expected: LockFileContent): LockHandle {
@@ -221,5 +314,18 @@ function createHandle(lockPath: string, expected: LockFileContent): LockHandle {
 }
 
 function sameLock(a: LockFileContent, b: LockFileContent): boolean {
-	return a.pid === b.pid && a.uuid === b.uuid && a.startedAt === b.startedAt;
+	return (
+		samePid(a.pid, b.pid) && a.uuid === b.uuid && a.startedAt === b.startedAt
+	);
+}
+
+/**
+ * An unreadable lock file parses to a `NaN` PID sentinel. Two reads of one
+ * corrupt file must compare equal (`NaN !== NaN`) so it stays reclaimable.
+ */
+function samePid(a: number, b: number): boolean {
+	if (Number.isNaN(a) && Number.isNaN(b)) {
+		return true;
+	}
+	return a === b;
 }

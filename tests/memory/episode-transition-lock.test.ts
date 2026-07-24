@@ -1,7 +1,15 @@
-import { access, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import {
+	access,
+	mkdir,
+	readdir,
+	readFile,
+	unlink,
+	writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { withEpisodeTransitionLock } from "../../lib/memory/episode-transition-lock.ts";
+import type { EntityFileLockOptions } from "../../lib/tasks/lock.ts";
 import { withEntityFileLock } from "../../lib/tasks/lock.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
@@ -176,6 +184,8 @@ describe("episode transition lock", () => {
 		expect(action).toHaveBeenCalledOnce();
 		expect(reportEpisodeWarning).not.toHaveBeenCalled();
 		await expectMissing(lockPath);
+		// OFF state never enters acquisition, so no lock or removal temp exists.
+		await expectNoLockArtifacts(lockPath);
 	});
 
 	test("bypasses locking and leaves warning ownership to episode capture when config loading fails", async () => {
@@ -376,6 +386,50 @@ describe("episode transition lock", () => {
 		});
 	});
 
+	test("reports an unconfirmed release to the caller and warns that capture is skipped", async () => {
+		const projectRoot = join(tmp.path, "release-unconfirmed");
+		const lockPath = episodeLockPath(projectRoot);
+		await writeEpisodicConfig(projectRoot, true);
+		const releaseError = Object.assign(new Error("unlink failed"), {
+			code: "EIO",
+		});
+		const reportEpisodeWarning = vi.fn();
+		const onReleaseUnconfirmed = vi.fn();
+		const action = vi.fn(async () => "persisted");
+
+		await expect(
+			withEpisodeTransitionLock({
+				projectRoot,
+				lockPath,
+				hasEpisodeContext: true,
+				reportEpisodeWarning,
+				onReleaseUnconfirmed,
+				action,
+				dependencies: {
+					withEntityFileLock: async <T>(
+						_lockPath: string,
+						lockedAction: () => Promise<T>,
+						lockOptions?: EntityFileLockOptions,
+					) => {
+						const result = await lockedAction();
+						lockOptions?.onReleaseUnconfirmed?.(releaseError);
+						return result;
+					},
+				},
+			}),
+		).resolves.toBe("persisted");
+
+		expect(action).toHaveBeenCalledOnce();
+		expect(onReleaseUnconfirmed).toHaveBeenCalledOnce();
+		expect(reportEpisodeWarning).toHaveBeenCalledOnce();
+		expect(reportEpisodeWarning).toHaveBeenCalledWith({
+			path: lockPath,
+			message: expect.stringMatching(
+				/release could not be confirmed.*skipping transition episode capture/iu,
+			),
+		});
+	});
+
 	test("propagates a primary action failure without retrying it unlocked", async () => {
 		const projectRoot = join(tmp.path, "action-failure");
 		const lockPath = episodeLockPath(projectRoot);
@@ -438,6 +492,12 @@ async function readLockContent(lockPath: string): Promise<TestLockContent> {
 
 async function expectMissing(path: string): Promise<void> {
 	await expect(access(path)).rejects.toMatchObject({ code: "ENOENT" });
+}
+
+/** No lock file and no removal temp survive next to the lock path. */
+async function expectNoLockArtifacts(lockPath: string): Promise<void> {
+	const entries = await readdir(join(lockPath, "..")).catch(() => []);
+	expect(entries.filter((entry) => entry.includes(".lock"))).toEqual([]);
 }
 
 function deferred<T>(): {
