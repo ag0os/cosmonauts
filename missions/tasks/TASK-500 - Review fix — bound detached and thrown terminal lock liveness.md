@@ -112,3 +112,23 @@ Fixed by making the `catch` part of the raced promise rather than a side chain,
 and by moving `stop()` into an unconditional `finally` so cleanup runs whatever
 the drain does. Verified RED (`promise rejected "Error: stderr failed" instead
 of resolving`) with a malformed final line and a throwing `console.error`.
+
+### Review round 3 — late poll rejection after stop
+
+Round 3 found a leak adjacent to the round-2 fix. `stop()` clears resources but
+leaves an in-flight `pollPromise` unobserved, and `finish()` returns early once
+stopped rather than awaiting it. If that read then failed — and error reporting
+itself threw — the rejection had no observer and surfaced as an
+`unhandledRejection`, which under default Node behavior can terminate the
+process *after* the detached result was already produced.
+
+Fixed by observing `pollPromise` on a side chain at creation, deliberately
+keeping `pollPromise` itself intact so the final drain still awaits the real
+promise. Note this is the opposite of the round-2 defect and not a repeat of it:
+there the mistake was racing an unprotected promise while the `catch` sat on a
+side chain; here the side chain is exactly right, because the value must stay
+awaitable by the drain while still being observed when nobody awaits it.
+
+Verified RED (`expected [ Error: stderr failed after stop ] to deeply equal []`)
+by holding a read open, stopping the bridge, resolving `finish()`, then failing
+the held read with a throwing `console.error`.

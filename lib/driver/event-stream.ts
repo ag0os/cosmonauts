@@ -575,6 +575,11 @@ export function bridgeJsonlToActivityBus(
 		pollPromise = poll().finally(() => {
 			pollPromise = undefined;
 		});
+		// A stopped bridge resolves `finish()` without awaiting this, so an
+		// in-flight read that fails afterwards would have no observer and could
+		// take the process down as an unhandled rejection. Observe it on a side
+		// chain, keeping `pollPromise` itself intact for the final drain to await.
+		pollPromise.catch(() => undefined);
 	};
 
 	const enterDraining = (): void => {

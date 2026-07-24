@@ -17,16 +17,24 @@ const watchSeam = vi.hoisted(() => ({
 
 const readSeam = vi.hoisted(() => ({
 	stall: false,
+	holdNextRead: false,
+	rejectHeldRead: undefined as undefined | ((error: unknown) => void),
 }));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("node:fs/promises")>();
 	return {
 		...actual,
-		readFile: (...args: Parameters<typeof actual.readFile>) =>
-			readSeam.stall
-				? new Promise(() => undefined)
-				: Reflect.apply(actual.readFile, actual, args),
+		readFile: (...args: Parameters<typeof actual.readFile>) => {
+			if (readSeam.stall) return new Promise(() => undefined);
+			if (readSeam.holdNextRead) {
+				readSeam.holdNextRead = false;
+				return new Promise((_resolve, reject) => {
+					readSeam.rejectHeldRead = reject;
+				});
+			}
+			return Reflect.apply(actual.readFile, actual, args);
+		},
 	};
 });
 
@@ -57,6 +65,8 @@ beforeEach(async () => {
 	bridges = [];
 	watchSeam.closeSpies = [];
 	readSeam.stall = false;
+	readSeam.holdNextRead = false;
+	readSeam.rejectHeldRead = undefined;
 });
 
 afterEach(async () => {
@@ -250,6 +260,45 @@ describe("bridgeJsonlToActivityBus", () => {
 			vi.useRealTimers();
 		}
 	});
+
+	// A stopped bridge never awaits its in-flight poll, so a read that fails
+	// afterwards has nobody observing it. An unhandled rejection here can take
+	// the process down after the run's result was already produced.
+	test("does not leak a late poll rejection after stop", async () => {
+		await writeFile(logPath(), "", "utf-8");
+		readSeam.holdNextRead = true;
+		const bridge = startBridge(
+			{ publish: () => undefined },
+			{ bridgeDriverDiagnostics: true },
+		);
+
+		await vi.waitFor(() => {
+			expect(readSeam.rejectHeldRead).toBeDefined();
+		});
+		// Error reporting itself throws, so the poll rejects rather than swallowing.
+		vi.spyOn(console, "error").mockImplementation(() => {
+			throw new Error("stderr failed after stop");
+		});
+
+		const unhandled: unknown[] = [];
+		const onUnhandled = (reason: unknown) => {
+			unhandled.push(reason);
+		};
+		process.on("unhandledRejection", onUnhandled);
+		try {
+			bridge.stop();
+			await expect(bridge.finish()).resolves.toBeUndefined();
+
+			readSeam.rejectHeldRead?.(
+				Object.assign(new Error("late read failure"), { code: "EIO" }),
+			);
+			await new Promise((resolve) => setTimeout(resolve, 250));
+
+			expect(unhandled).toEqual([]);
+		} finally {
+			process.off("unhandledRejection", onUnhandled);
+		}
+	}, 15_000);
 
 	// The caller awaits finish() in a `finally` AFTER the run's result is already
 	// in hand, so a failure while draining must never replace that result.
