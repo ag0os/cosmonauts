@@ -214,6 +214,10 @@ async function removeLockIfOwner(
 	lockPath: string,
 	expected: LockFileContent,
 ): Promise<void> {
+	if (!(await stillOwnedBy(lockPath, expected))) {
+		return;
+	}
+
 	const removalPath = createRemovalPath(lockPath);
 	try {
 		await rename(lockPath, removalPath);
@@ -232,6 +236,38 @@ async function removeLockIfOwner(
 		}
 	} finally {
 		await unlink(removalPath).catch(() => undefined);
+	}
+}
+
+/**
+ * Non-destructive re-check that `lockPath` still holds the owner we inspected.
+ *
+ * The `rename` claim below is destructive: it empties the slot before we can
+ * see what we took. If a live owner replaced the stale lock in the meantime,
+ * restoring it resurrects a lock whose owner may have already released while
+ * the slot was empty — stranding a live-PID lock that stale recovery will never
+ * reclaim, which blocks callers that wait without a timeout
+ * (`withTaskCreateLock`). That is *below* `main`'s floor, so it must not be the
+ * common path. Verifying through a private hard link first leaves the slot
+ * untouched on the realistic mismatch, so no claim and no restore happen at all.
+ */
+async function stillOwnedBy(
+	lockPath: string,
+	expected: LockFileContent,
+): Promise<boolean> {
+	const verifyPath = createRemovalPath(lockPath);
+	try {
+		await link(lockPath, verifyPath);
+	} catch {
+		// Gone or unlinkable: fall through to acquisition rather than guess.
+		return false;
+	}
+
+	try {
+		const current = await readLockFile(verifyPath);
+		return current !== undefined && sameLock(current, expected);
+	} finally {
+		await unlink(verifyPath).catch(() => undefined);
 	}
 }
 

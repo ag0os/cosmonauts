@@ -7,13 +7,19 @@ import { useTempDir } from "./helpers/fs.ts";
 type FsOperation = (...args: never[]) => Promise<unknown>;
 
 const fsMocks = vi.hoisted(() => ({
+	link: vi.fn<(...args: never[]) => Promise<unknown>>(),
 	rename: vi.fn<(...args: never[]) => Promise<unknown>>(),
 	unlink: vi.fn<(...args: never[]) => Promise<unknown>>(),
 }));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("node:fs/promises")>();
-	return { ...actual, rename: fsMocks.rename, unlink: fsMocks.unlink };
+	return {
+		...actual,
+		link: fsMocks.link,
+		rename: fsMocks.rename,
+		unlink: fsMocks.unlink,
+	};
 });
 
 const tmp = useTempDir("entity-file-lock-");
@@ -25,14 +31,12 @@ beforeEach(async () => {
 		await vi.importActual<typeof import("node:fs/promises")>(
 			"node:fs/promises",
 		);
-	fsMocks.rename.mockReset();
-	fsMocks.rename.mockImplementation((...args) =>
-		(actualFs.rename as unknown as FsOperation)(...args),
-	);
-	fsMocks.unlink.mockReset();
-	fsMocks.unlink.mockImplementation((...args) =>
-		(actualFs.unlink as unknown as FsOperation)(...args),
-	);
+	for (const name of ["link", "rename", "unlink"] as const) {
+		fsMocks[name].mockReset();
+		fsMocks[name].mockImplementation((...args) =>
+			(actualFs[name] as unknown as FsOperation)(...args),
+		);
+	}
 });
 
 afterEach(() => {
@@ -187,6 +191,72 @@ describe("entity file lock — stale reclamation ownership", () => {
 		).resolves.toEqual([1, 2, 3]);
 
 		expect(maxActive).toBe(1);
+		await expectMissing(lockPath);
+		await expectNoResidualFiles(lockPath);
+	});
+
+	// Stranding a live-PID lock is BELOW main's floor: main's blind unlink never
+	// leaves one behind, and `withTaskCreateLock` waits with no timeout, so a
+	// stranded lock blocks task creation until the owning process exits.
+	test("does not strand a live owner that releases while reclamation is in flight", async () => {
+		const lockPath = entityLockPath("strand");
+		const stalePid = 424_247;
+		await writeLockContent(lockPath, {
+			pid: stalePid,
+			uuid: "stale-owner",
+			startedAt: "2026-01-01T00:00:00.000Z",
+		});
+		mockDeadPid(stalePid);
+
+		// Swap in a live owner at whichever syscall the reclaimer first aims at
+		// the lock slot, so this stays neutral to the removal mechanism.
+		let swapped = false;
+		const swapThenRun = async (
+			name: "link" | "rename",
+			args: never[],
+		): Promise<unknown> => {
+			const [from] = args as unknown as [string, string];
+			if (from !== lockPath || swapped) {
+				return (actualFs[name] as unknown as FsOperation)(...args);
+			}
+			swapped = true;
+
+			await (actualFs.unlink as unknown as FsOperation)(lockPath as never);
+			const enteredOwner = deferred<void>();
+			const finishOwner = deferred<void>();
+			const owner = withEntityFileLock(lockPath, async () => {
+				enteredOwner.resolve();
+				await finishOwner.promise;
+				return "owner";
+			});
+			await enteredOwner.promise;
+
+			const result = await (actualFs[name] as unknown as FsOperation)(...args);
+			// The owner finishes and releases while reclamation is mid-flight.
+			finishOwner.resolve();
+			await owner;
+			return result;
+		};
+		fsMocks.link.mockImplementation((...args) => swapThenRun("link", args));
+		fsMocks.rename.mockImplementation((...args) => swapThenRun("rename", args));
+
+		await withEntityFileLock(lockPath, async () => "contender", {
+			retryDelayMs: 2,
+			waitTimeoutMs: 200,
+		}).catch(() => undefined);
+
+		// A caller that waits without a timeout must still make progress.
+		let acquired = false;
+		const result = await Promise.race([
+			withEntityFileLock(lockPath, async () => {
+				acquired = true;
+				return "acquired";
+			}),
+			settle(250).then(() => "blocked"),
+		]);
+
+		expect(result).toBe("acquired");
+		expect(acquired).toBe(true);
 		await expectMissing(lockPath);
 		await expectNoResidualFiles(lockPath);
 	});

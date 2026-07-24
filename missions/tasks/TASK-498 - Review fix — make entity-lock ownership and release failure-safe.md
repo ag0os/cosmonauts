@@ -197,46 +197,45 @@ is unchanged and still accepted. §5 holds: exactly two pid-liveness lock
 protocols (`lib/entity-file-lock.ts`, `lib/driver/lock.ts`); `lib/tasks/lock.ts`
 is untouched and still a thin caller.
 
-### Accepted residual in the rename claim (within §4) — two failure modes
+### Reclamation now verifies before it claims (independent-review finding)
 
-Between the `rename` claim and the `link` restore in `removeLockIfOwner`
-(`lib/entity-file-lock.ts:219-231`), `lockPath` does not exist. Two consequences,
-both reachable only when a contender's inspected owner was replaced between its
-inspection and its claim.
+An independent `codex exec` review probed the no-timeout path and surfaced a
+scenario the author had recorded as an *accepted* §4 residual. It is not
+acceptable: it is **below `main`'s floor**, so it was fixed rather than
+documented.
 
-**(a) Stranding — two contenders.** Contender B holds stale content S; owner A
-meanwhile holds live lock `L_A`.
+Reproduced through the real code path before fixing:
 
-1. B renames `lockPath` (now `L_A`) aside; `lockPath` is briefly absent.
-2. A finishes and calls `release()`: `readLockFile` hits ENOENT, so A marks
-   itself released **without unlinking** (correct — it must never remove a lock
-   it no longer owns).
-3. B sees `L_A != S` and links it back. `L_A` is on disk with nobody left to
-   release it, and its pid is live, so stale reclamation will not reclaim it.
+```
+STRANDED LOCK: pid=57153 (ourPid=57153) uuid=8add015d-...
+NO-TIMEOUT CALLER: raced=BLOCKED taskRan=false
+```
 
-Later same-entity writers time out and run unlocked — fail-soft, bounded by the
-process lifetime. This is §4's accepted residual.
+Mechanism: the `rename` claim empties the slot before the claimant can see what
+it took. If a live owner had replaced the stale lock, that owner's `release()`
+runs while the slot is empty, correctly finds ENOENT and does nothing — and the
+claimant then links the lock back. The result is a live-PID lock with nobody
+left to release it. Stale recovery will never reclaim it (the PID is alive), and
+`withTaskCreateLock` waits with **no timeout**, so task creation blocks until the
+owning process exits. `main`'s blind unlink never strands, so this was a genuine
+regression, not a degradation — it broke §4's own bound of "never worse than
+`main`".
 
-**(b) Third-party entry — three contenders.** *(Corrected 2026-07-24; an earlier
-draft of this note claimed the window produced only stranding, which understated
-it.)* While `lockPath` is absent in step 1 above, a third contender C calling
-`tryCreateLock` succeeds — `O_EXCL` only excludes when the file exists — so C
-enters while A is still inside its critical section. B's restore then fails
-`EEXIST` and is dropped. That is genuine double entry, not merely degradation.
+Fix: `stillOwnedBy` re-checks ownership through a private hard link *before* the
+destructive claim. `link` does not disturb the slot, so on the realistic
+mismatch there is no claim and no restore at all — the live owner keeps its lock
+and releases it normally. The `rename` claim still provides remover exclusivity
+for AC#1, and the post-claim restore remains as a backstop.
 
-**Still strictly better than `main`, and why it is accepted.** `main` blind-
-unlinks by path, so in the *two*-contender case B removes `L_A` and immediately
-acquires: double entry is **deterministic**, which is exactly what the AC#1 test
-reproduces as `expected 2 to be 1`. The shipped mechanism has no two-contender
-double entry (proved by "never removes a live replacement owner"), and requires
-a third concurrent acquirer to hit a sub-millisecond window.
+Residual after the fix: the content must change in the sub-millisecond gap
+*between* the verify and the claim — a doubly-raced window rather than a
+single-raced one. In that sliver the old two failure modes still apply (a
+stranded lock, or a third contender entering while the slot is briefly empty).
+Not closed further: doing so needs an atomic compare-and-remove the platform does
+not offer.
 
-Not mitigated, deliberately. Closing it needs an atomic compare-and-remove the
-platform does not offer. A `link`-preverify before the destructive claim would
-remove the *common* mismatch path at the cost of an extra link/read/unlink on
-every stale reclaim, but the irreducible race (content changes between verify
-and claim) would remain — so it buys a narrower window, not a closed one, in
-exchange for more moving parts in a shared primitive. Given the low-severity,
-local-only threat model and §4's explicit acceptance of this class of residual,
-that trade was declined. Flagged here so a future reviewer can revisit it with
-the real numbers rather than rediscover the window.
+Regression test: "does not strand a live owner that releases while reclamation is
+in flight" swaps in a live owner at whichever syscall the reclaimer touches first,
+so it is neutral to the removal mechanism. It asserts a no-timeout caller still
+makes progress, and fails (`expected 'BLOCKED' not to be 'BLOCKED'`) against the
+pre-fix code.
