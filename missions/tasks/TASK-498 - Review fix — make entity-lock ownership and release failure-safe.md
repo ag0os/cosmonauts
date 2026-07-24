@@ -197,25 +197,46 @@ is unchanged and still accepted. §5 holds: exactly two pid-liveness lock
 protocols (`lib/entity-file-lock.ts`, `lib/driver/lock.ts`); `lib/tasks/lock.ts`
 is untouched and still a thin caller.
 
-### Accepted residual in the rename claim (identified during design, within §4)
+### Accepted residual in the rename claim (within §4) — two failure modes
 
-The rename-away/link-back window can strand a lock, in one narrow interleaving:
+Between the `rename` claim and the `link` restore in `removeLockIfOwner`
+(`lib/entity-file-lock.ts:219-231`), `lockPath` does not exist. Two consequences,
+both reachable only when a contender's inspected owner was replaced between its
+inspection and its claim.
 
-1. Contender B holds stale content S; owner A meanwhile holds live lock `L_A`.
-2. B renames `lockPath` (now `L_A`) to its removal temp — `lockPath` is briefly absent.
-3. A finishes and calls `release()`: `readLockFile` hits ENOENT, so A marks
+**(a) Stranding — two contenders.** Contender B holds stale content S; owner A
+meanwhile holds live lock `L_A`.
+
+1. B renames `lockPath` (now `L_A`) aside; `lockPath` is briefly absent.
+2. A finishes and calls `release()`: `readLockFile` hits ENOENT, so A marks
    itself released **without unlinking** (correct — it must never remove a lock
    it no longer owns).
-4. B sees `L_A != S` and links it back. `L_A` is on disk with nobody left to
+3. B sees `L_A != S` and links it back. `L_A` is on disk with nobody left to
    release it, and its pid is live, so stale reclamation will not reclaim it.
 
-Consequence: later same-entity writers time out and run unlocked — fail-soft,
-exactly D-498-1 §4's accepted residual, and bounded by the process lifetime.
+Later same-entity writers time out and run unlocked — fail-soft, bounded by the
+process lifetime. This is §4's accepted residual.
 
-This is **strictly better than `main`**, whose failure mode in the same window is
-to blind-unlink `L_A`, destroying a live owner's lock and admitting concurrent
-entry — a correctness violation rather than a degradation. Requires A's entire
-remaining critical section plus release to complete inside B's microsecond
-rename→link window. Not mitigated: any fix would need an atomic
-compare-and-remove the platform does not offer, and §4 explicitly rules
-heartbeat/age reclamation of a live-pid lock out of scope.
+**(b) Third-party entry — three contenders.** *(Corrected 2026-07-24; an earlier
+draft of this note claimed the window produced only stranding, which understated
+it.)* While `lockPath` is absent in step 1 above, a third contender C calling
+`tryCreateLock` succeeds — `O_EXCL` only excludes when the file exists — so C
+enters while A is still inside its critical section. B's restore then fails
+`EEXIST` and is dropped. That is genuine double entry, not merely degradation.
+
+**Still strictly better than `main`, and why it is accepted.** `main` blind-
+unlinks by path, so in the *two*-contender case B removes `L_A` and immediately
+acquires: double entry is **deterministic**, which is exactly what the AC#1 test
+reproduces as `expected 2 to be 1`. The shipped mechanism has no two-contender
+double entry (proved by "never removes a live replacement owner"), and requires
+a third concurrent acquirer to hit a sub-millisecond window.
+
+Not mitigated, deliberately. Closing it needs an atomic compare-and-remove the
+platform does not offer. A `link`-preverify before the destructive claim would
+remove the *common* mismatch path at the cost of an extra link/read/unlink on
+every stale reclaim, but the irreducible race (content changes between verify
+and claim) would remain — so it buys a narrower window, not a closed one, in
+exchange for more moving parts in a shared primitive. Given the low-severity,
+local-only threat model and §4's explicit acceptance of this class of residual,
+that trade was declined. Flagged here so a future reviewer can revisit it with
+the real numbers rather than rediscover the window.
