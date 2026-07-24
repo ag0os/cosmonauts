@@ -303,6 +303,44 @@ describe("episode transition lock", () => {
 		});
 	});
 
+	test("returns a persisted update when release fails and the warning reporter never resolves", async () => {
+		const projectRoot = join(tmp.path, "stalled-release-warning");
+		const lockPath = episodeLockPath(projectRoot);
+		const releaseError = new Error("release failed");
+		const warningStarted = deferred<void>();
+		const reportEpisodeWarning = vi.fn(() => {
+			warningStarted.resolve(undefined);
+			return new Promise<void>(() => undefined);
+		});
+		const action = vi.fn(async () => "persisted");
+
+		const result = withEpisodeTransitionLock({
+			projectRoot,
+			lockPath,
+			hasEpisodeContext: true,
+			reportEpisodeWarning,
+			action,
+			dependencies: {
+				loadConfig: async () => ({ episodicLog: { enabled: true } }),
+				withEntityFileLock: async <T>(
+					_lockPath: string,
+					fn: () => Promise<T>,
+				) => {
+					await fn();
+					throw releaseError;
+				},
+			},
+		});
+
+		await warningStarted.promise;
+		await Promise.resolve();
+		expect(action).toHaveBeenCalledOnce();
+		// D-008: the update already persisted, so a never-settling warning
+		// reporter must not stall the caller waiting on it.
+		await expect(result).resolves.toBe("persisted");
+		expect(reportEpisodeWarning).toHaveBeenCalledOnce();
+	});
+
 	test("warns once without overturning a primary result when release fails", async () => {
 		const projectRoot = join(tmp.path, "release-failure");
 		const lockPath = episodeLockPath(projectRoot);

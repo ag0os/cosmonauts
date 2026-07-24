@@ -96,15 +96,18 @@ export async function withEpisodeTransitionLock<T>(
 			lockOptions,
 		);
 	} catch (error: unknown) {
+		// D-008: the action has already run, so warning delivery must never gate
+		// the caller. A never-settling reporter would otherwise stall a plan/task
+		// update that already succeeded (or already failed) on disk.
 		if (execution.state === "rejected") {
 			if (error !== execution.error) {
-				await reportTransitionLockWarning(options, dependencies, error);
+				void reportTransitionLockWarning(options, dependencies, error);
 			}
 			throw execution.error;
 		}
 
 		if (execution.state === "resolved") {
-			await reportTransitionLockWarning(options, dependencies, error);
+			void reportTransitionLockWarning(options, dependencies, error);
 			return execution.result as T;
 		}
 

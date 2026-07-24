@@ -761,6 +761,71 @@ describe("cosmonauts run drive compat graph resume", () => {
 			access(join(fixture.spec.projectRoot, "memory", "agent", "episodes")),
 		).rejects.toMatchObject({ code: "ENOENT" });
 	});
+
+	test("keeps a failing pending finalization artifact-free while episodic capture is off", async () => {
+		const fixture = await setupCompletedTaskWithPendingStateCommit();
+		// Point the pending finalization at a task that does not exist so the
+		// retry cannot be accepted and the failure terminal writer runs.
+		await writeFile(
+			join(fixture.spec.workdir, "pending-finalization.json"),
+			`${JSON.stringify({
+				runId: RUN_ID,
+				planSlug: PLAN_SLUG,
+				createdAt: "2026-06-04T00:00:00.000Z",
+				commitPolicy: "no-commit",
+				stateCommitPolicy: "final-state-commit",
+				reason: "state commit failed: previous hook rejection",
+				phase: "state_commit",
+				taskIds: ["TASK-DOES-NOT-EXIST"],
+				headBeforeFinalization: await gitStdout(["rev-parse", "HEAD"]),
+			})}\n`,
+			"utf-8",
+		);
+		// A prior enabled run froze identity into the spec; the gate is now off.
+		await writeFile(
+			join(fixture.spec.workdir, "spec.json"),
+			`${JSON.stringify(
+				{
+					...fixture.spec,
+					taskIds: [],
+					remainingTaskIds: [],
+					episodeSource: WORKER_SOURCE,
+					episodeAttemptId: "attempt-old-enabled-run",
+				},
+				null,
+				2,
+			)}\n`,
+			"utf-8",
+		);
+
+		await parseDrive([
+			"--plan",
+			PLAN_SLUG,
+			"--resume",
+			RUN_ID,
+			"--resume-dirty",
+		]);
+
+		// Guard: this test is only meaningful if the retry actually failed and the
+		// finalization-failure terminal writer ran.
+		expect(
+			JSON.parse(
+				await readFile(
+					join(fixture.spec.workdir, "run.completion.json"),
+					"utf-8",
+				),
+			),
+		).toMatchObject({ outcome: "finalization_failed" });
+
+		// The finalization retry fails again, so a terminal is persisted — but with
+		// the gate off it must not create ledger or episode artifacts (B-001).
+		await expect(
+			access(join(fixture.spec.workdir, "run.terminal-episodes")),
+		).rejects.toMatchObject({ code: "ENOENT" });
+		await expect(
+			access(join(fixture.spec.projectRoot, "memory", "agent", "episodes")),
+		).rejects.toMatchObject({ code: "ENOENT" });
+	});
 });
 
 function onlyJsonRecord(

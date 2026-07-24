@@ -451,7 +451,11 @@ async function prepareResume(
 	let retriedPendingFinalization = false;
 	const pendingFinalization = resume.pendingFinalization;
 	if (resume.pendingFinalization) {
-		const finalized = await retryPendingFinalization(resume, taskManager);
+		const finalized = await retryPendingFinalization(
+			resume,
+			taskManager,
+			episodeCaptureEnabled,
+		);
 		if (!finalized) {
 			process.exitCode = 1;
 			return false;
@@ -1282,6 +1286,7 @@ async function legacyPendingFinalizationCompletion(
 async function retryPendingFinalization(
 	resume: ResumeDefaults,
 	taskManager: TaskManager,
+	episodeCaptureEnabled: boolean,
 ): Promise<boolean> {
 	const pending = resume.pendingFinalization;
 	if (!pending) {
@@ -1298,7 +1303,12 @@ async function retryPendingFinalization(
 	});
 
 	if (pending.phase === "state_commit") {
-		return retryPendingStateCommit(resume, taskManager, eventSink);
+		return retryPendingStateCommit(
+			resume,
+			taskManager,
+			eventSink,
+			episodeCaptureEnabled,
+		);
 	}
 
 	const result =
@@ -1312,6 +1322,7 @@ async function retryPendingFinalization(
 			pending.taskId,
 			"commit",
 			result.reason,
+			episodeCaptureEnabled,
 		);
 		return false;
 	}
@@ -1329,6 +1340,7 @@ async function retryPendingFinalization(
 			pending.taskId,
 			"task_status",
 			taskStatusResult.reason,
+			episodeCaptureEnabled,
 			result.sha,
 		);
 		return false;
@@ -1347,6 +1359,7 @@ async function retryPendingStateCommit(
 	resume: ResumeDefaults,
 	taskManager: TaskManager,
 	eventSink: (event: DriverEvent) => Promise<void>,
+	episodeCaptureEnabled: boolean,
 ): Promise<boolean> {
 	const pending = resume.pendingFinalization;
 	if (!pending || pending.phase !== "state_commit") {
@@ -1363,6 +1376,7 @@ async function retryPendingStateCommit(
 			spec,
 			pending.taskIds.length,
 			result.reason,
+			episodeCaptureEnabled,
 		);
 		return false;
 	}
@@ -1379,6 +1393,7 @@ async function retryPendingStateCommit(
 				spec,
 				pending.taskIds.length,
 				acceptance.reason,
+				episodeCaptureEnabled,
 			);
 			return false;
 		}
@@ -1469,20 +1484,25 @@ async function writeStateFinalizationFailure(
 	spec: DriverRunSpec,
 	tasksDone: number,
 	reason: string,
+	episodeCaptureEnabled: boolean,
 ): Promise<void> {
 	await writeDurableOnlyFinalizationFailure(spec, {
 		phase: "state_commit",
 		reason,
 	});
-	const completion = await persistResumeTerminal(spec, {
-		runId: spec.runId,
-		outcome: "finalization_failed" as const,
-		tasksDone,
-		tasksBlocked: 0,
-		finalizationPhase: "state_commit",
-		finalizationReason: reason,
-		pendingFinalizationPath: join(spec.workdir, "pending-finalization.json"),
-	});
+	const completion = await persistResumeTerminal(
+		spec,
+		{
+			runId: spec.runId,
+			outcome: "finalization_failed" as const,
+			tasksDone,
+			tasksBlocked: 0,
+			finalizationPhase: "state_commit",
+			finalizationReason: reason,
+			pendingFinalizationPath: join(spec.workdir, "pending-finalization.json"),
+		},
+		episodeCaptureEnabled,
+	);
 	printJsonStdout(completion);
 }
 
@@ -1615,6 +1635,7 @@ async function writeSourceFinalizationFailure(
 	taskId: string,
 	phase: "commit" | "task_status",
 	reason: string,
+	episodeCaptureEnabled: boolean,
 	commitSha?: string,
 ): Promise<void> {
 	await writeDurableOnlyFinalizationFailure(spec, {
@@ -1623,24 +1644,30 @@ async function writeSourceFinalizationFailure(
 		reason,
 		commitSha,
 	});
-	const completion = await persistResumeTerminal(spec, {
-		runId: spec.runId,
-		outcome: "finalization_failed" as const,
-		tasksDone: 0,
-		tasksBlocked: 0,
-		finalizationPhase: phase,
-		finalizationReason: reason,
-		finalizationTaskId: taskId,
-		...(commitSha ? { finalizationCommitSha: commitSha } : {}),
-		pendingFinalizationPath: join(spec.workdir, "pending-finalization.json"),
-	});
+	const completion = await persistResumeTerminal(
+		spec,
+		{
+			runId: spec.runId,
+			outcome: "finalization_failed" as const,
+			tasksDone: 0,
+			tasksBlocked: 0,
+			finalizationPhase: phase,
+			finalizationReason: reason,
+			finalizationTaskId: taskId,
+			...(commitSha ? { finalizationCommitSha: commitSha } : {}),
+			pendingFinalizationPath: join(spec.workdir, "pending-finalization.json"),
+		},
+		episodeCaptureEnabled,
+	);
 	printJsonStdout(completion);
 }
 
 async function persistResumeTerminal(
 	spec: DriverRunSpec,
 	result: DriverResult,
-	episodeCaptureEnabled = true,
+	// Required, never defaulted: a caller that omits the gate would capture
+	// while episodic logging is OFF and create run.terminal-episodes/ (B-001).
+	episodeCaptureEnabled: boolean,
 ): Promise<DriverResult> {
 	const completion = await writeFallbackRunCompletion(
 		spec.workdir,
