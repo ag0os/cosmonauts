@@ -132,3 +132,10 @@ awaitable by the drain while still being observed when nobody awaits it.
 Verified RED (`expected [ Error: stderr failed after stop ] to deeply equal []`)
 by holding a read open, stopping the bridge, resolving `finish()`, then failing
 the held read with a throwing `console.error`.
+
+### Review round 4 — SHIP
+
+No findings. The reviewer additionally ran the bridge suite under
+`NODE_OPTIONS=--unhandled-rejections=strict`, validating the round-3 fix under
+process-fatal rejection behavior rather than only by its event assertion. Full
+suite 2,729/2,729, lint, typecheck, and `git diff --check` all green.

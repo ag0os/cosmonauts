@@ -248,3 +248,18 @@ The reviewer's note that "concurrent callers naturally accumulate after a stale
 lock" is a fair challenge to the likelihood argument and is recorded here rather
 than dismissed: the honest claim is *rarer than `main`*, not *rare in absolute
 terms*.
+
+### Review rounds 2-4 — SHIP
+
+Rounds 2 and 3 raised no new findings against this task; round 4 returned SHIP
+with none outstanding. `settleRelease`, `stillOwnedBy`'s error classification,
+and `removeLockIfOwner`'s boolean semantics were each re-verified as sound.
+
+The stale-reclamation pathname race remains the one accepted residual. Round 2
+independently confirmed the constraint: Node exposes no `flock`/`fcntl`, no
+`renameat2(RENAME_EXCHANGE)`, and no inode-conditional unlink, so no portable
+standard-library syscall sequence closes it. The only stdlib closure is a
+protocol redesign — a per-entity contender directory with a Lamport-bakery
+queue — which the reviewer judged reasonably deferred given the bounded
+degradation and the improvement over `main`. Anyone revisiting this should start
+from that redesign, not from another attempt to patch the pathname window.
