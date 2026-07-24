@@ -155,6 +155,42 @@ describe("entity file lock — stale reclamation ownership", () => {
 		await expectNoResidualFiles(lockPath);
 	});
 
+	// `withTaskCreateLock` waits with no timeout, so a reclamation path that can
+	// spin would hang task creation forever — worse than main's blind unlink.
+	test("serializes contenders with no wait timeout instead of livelocking on a stale owner", async () => {
+		const lockPath = entityLockPath("no-timeout-contenders");
+		const stalePid = 424_246;
+		await writeLockContent(lockPath, {
+			pid: stalePid,
+			uuid: "stale-owner",
+			startedAt: "2026-01-01T00:00:00.000Z",
+		});
+		mockDeadPid(stalePid);
+
+		let active = 0;
+		let maxActive = 0;
+		const runAction = async (id: number) => {
+			active += 1;
+			maxActive = Math.max(maxActive, active);
+			await settle(5);
+			active -= 1;
+			return id;
+		};
+
+		// No `waitTimeoutMs`: these can only settle by making real progress.
+		await expect(
+			Promise.all([
+				withEntityFileLock(lockPath, () => runAction(1), { retryDelayMs: 1 }),
+				withEntityFileLock(lockPath, () => runAction(2), { retryDelayMs: 1 }),
+				withEntityFileLock(lockPath, () => runAction(3), { retryDelayMs: 1 }),
+			]),
+		).resolves.toEqual([1, 2, 3]);
+
+		expect(maxActive).toBe(1);
+		await expectMissing(lockPath);
+		await expectNoResidualFiles(lockPath);
+	});
+
 	test("never removes a live replacement owner that took the slot mid-reclamation", async () => {
 		const lockPath = entityLockPath("replacement-owner");
 		const stalePid = 424_244;
