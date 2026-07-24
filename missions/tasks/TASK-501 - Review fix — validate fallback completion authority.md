@@ -2,7 +2,7 @@
 id: TASK-501
 title: Review fix — validate fallback completion authority
 status: To Do
-priority: medium
+priority: high
 labels:
   - review-fix
   - 'review-round:1'
@@ -11,7 +11,7 @@ labels:
   - pre-existing-on-main
 dependencies: []
 createdAt: '2026-07-22T22:05:32.285Z'
-updatedAt: '2026-07-24T03:33:53.573Z'
+updatedAt: '2026-07-24T04:54:29.278Z'
 ---
 
 ## Description
@@ -28,9 +28,21 @@ abort path already fed that unvalidated object straight into
 `recordDriveTerminalEpisode`, so the "persisted bytes become authoritative
 terminal data" surface predates this plan.
 
-The plan made this path **stricter**, not looser: `main` preserved a persisted
-completion whenever it merely existed, whereas `writeFallbackRunCompletion`
-preserves it only when it carries `completedAt` (B-010).
+The plan changed the fallback WRITE behavior, and this is a real change, not a
+pure relocation *(corrected 2026-07-24 after round-3 review — the earlier "not
+worsened" framing was too broad)*. On `main` the CLI inline-reject path called
+`writeRunCompletion` (unconditional overwrite: `cli/drive/subcommand.ts:510-512`)
+and the driver tool likewise overwrote; on this branch both route through
+`writeFallbackRunCompletion`, which PRESERVES an existing `completedAt`-stamped
+record (`cli/drive/subcommand.ts:586-590`). This is the ratified B-010 behavior
+(fallback writers never downgrade stamped completion) — intended, not
+accidental. But the side effect is real: a syntactically valid record with a
+DIFFERENT `runId` and a truthy `completedAt`, planted in the workdir before the
+fallback runs, is now PRESERVED as authoritative where `main` would have
+overwritten it. So the completion-validation gap (no `runId` match, no shape
+check) is pre-existing in the parser, but B-010 newly gives an unvalidated
+wrong-run record authority on these fallback paths. Validating `runId`/shape
+before honoring a stamped completion is squarely this task's scope.
 
 Two further limits on severity:
 - `writeRunCompletion` uses `writeFileAtomically`, so a crash mid-write cannot

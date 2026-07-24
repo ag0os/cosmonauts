@@ -37,6 +37,19 @@ ownership work"). It uses a link-based removal claim whose ownership logic is
 sound, but it makes `release()` throw on a benign concurrent-removal path and
 left the branch red. Start from it, do not apply it as-is.
 
+Round-3 review (2026-07-24) re-confirmed the release-failure leg specifically:
+when the primary update persists but `unlink` fails, `withEntityFileLock`
+rejects with the lock still on disk (live PID), `withEpisodeTransitionLock`
+returns the persisted result, and the manager then runs episode capture while
+that lock is still held — contrary to Design §7's "release, then capture"
+ordering — after which later same-entity writers time out and run unlocked,
+losing AC-006 serialization until the process exits. This is already this task's
+scope ("preserve the primary update but skip transition capture; retry/recover a
+failed owned-lock release"). Note the bound: because `updatePlan`/`updateTask`
+took NO lock on `main`, the worst case degrades to `main`'s prior unserialized
+behavior, not below it (D-008 fail-soft), which is why it is a follow-up rather
+than a blocker for this plan's own scope.
+
 Original framing follows.
 
 Round-1 remediation for F-003/PR-003/SR-002 and F-004/SR-003/UR-002. Harden the existing shared entity-file lock without creating a third protocol. Prevent stale reclaimers or releasers from deleting replacement-owner locks; preserve same-entity serialization during stale recovery. Make transient owned-lock release failure retry/recover in a bounded way. If release cannot be confirmed, preserve the successful primary update but skip transition episode capture and report truthful bounded warning text. Keep acquisition error/timeout fail-soft and action single-execution.
