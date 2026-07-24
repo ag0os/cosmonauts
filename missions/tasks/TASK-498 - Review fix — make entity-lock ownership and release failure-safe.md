@@ -9,13 +9,35 @@ labels:
   - 'review-round:1'
   - backend
   - testing
-  - 'plan:episodic-log-detached-hardening'
+  - pre-existing-on-main
 dependencies: []
 createdAt: '2026-07-22T22:04:56.416Z'
-updatedAt: '2026-07-23T22:53:51.049Z'
+updatedAt: '2026-07-24T03:33:52.783Z'
 ---
 
 ## Description
+
+**Triage 2026-07-24: PRE-EXISTING ON `main`, not a regression from
+`episodic-log-detached-hardening`. Unlabelled from that plan and kept as a
+standalone follow-up.**
+
+Evidence: `main`'s `lib/tasks/lock.ts` performs the same unconditional
+`unlink(lockPath)` for stale reclamation (line 149) after the same
+`isProcessAlive` check (line 66), with no binding to the inspected PID/UUID.
+`lib/entity-file-lock.ts` inherited that protocol verbatim when the plan
+generalized it — deliberately, since the plan forbade authoring a third lock
+protocol. The defect is therefore older than this plan and equally present on
+`main` for task-create locking.
+
+Consequence is bounded: the transition lock is fail-soft (D-008), so the worst
+case degrades to `main`'s current unserialized behavior rather than below it.
+
+An attempted fix exists in `git stash` ("QM in-flight PR-003 stale-lock
+ownership work"). It uses a link-based removal claim whose ownership logic is
+sound, but it makes `release()` throw on a benign concurrent-removal path and
+left the branch red. Start from it, do not apply it as-is.
+
+Original framing follows.
 
 Round-1 remediation for F-003/PR-003/SR-002 and F-004/SR-003/UR-002. Harden the existing shared entity-file lock without creating a third protocol. Prevent stale reclaimers or releasers from deleting replacement-owner locks; preserve same-entity serialization during stale recovery. Make transient owned-lock release failure retry/recover in a bounded way. If release cannot be confirmed, preserve the successful primary update but skip transition episode capture and report truthful bounded warning text. Keep acquisition error/timeout fail-soft and action single-execution.
 
