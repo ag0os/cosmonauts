@@ -197,45 +197,54 @@ is unchanged and still accepted. §5 holds: exactly two pid-liveness lock
 protocols (`lib/entity-file-lock.ts`, `lib/driver/lock.ts`); `lib/tasks/lock.ts`
 is untouched and still a thin caller.
 
-### Reclamation now verifies before it claims (independent-review finding)
+### Independent review round 1 — three liveness defects fixed, one race accepted
 
-An independent `codex exec` review probed the no-timeout path and surfaced a
-scenario the author had recorded as an *accepted* §4 residual. It is not
-acceptable: it is **below `main`'s floor**, so it was fixed rather than
-documented.
+An independent `codex exec` review returned VERDICT: FIX with four findings.
+Three were liveness defects, all reproduced here as hangs and all fixed
+(commits 047b7cf, f6f89bb, 237ff0c):
 
-Reproduced through the real code path before fixing:
+- **Verification hot-loop (was a regression from this task's own preverify).**
+  `stillOwnedBy` turned every `link` error into "not ours", and the reclaim
+  retry had neither delay nor timeout accounting, so a mount without usable hard
+  links spun forever ignoring `waitTimeoutMs`. Only `ENOENT` now means "gone";
+  other errors propagate, and a declined reclamation falls through to bounded
+  backoff.
+- **Unbounded release.** `releaseWithRetry` bounded attempt *count*, not
+  *duration*, so a never-settling `unlink` stranded `withEntityFileLock`'s
+  `finally` and an already-persisted update never returned — a direct D-008
+  violation. Attempts are now deadline-bounded, and a timed-out attempt stops
+  rather than issuing a second syscall at a path a replacement owner may hold.
+- **Unbounded task-create wait.** `withTaskCreateLock` waited forever, so any
+  lock held by a live PID that nobody will release hung task creation for that
+  process's lifetime. It now waits a bounded 10s and fails loudly; running
+  unlocked is not an option, as it would duplicate task ids.
 
-```
-STRANDED LOCK: pid=57153 (ourPid=57153) uuid=8add015d-...
-NO-TIMEOUT CALLER: raced=BLOCKED taskRan=false
-```
+**The HIGH finding — the reclamation race itself — is accepted, not fixed.**
+`rename` claims an inode exclusively but does not reserve the *pathname*, so
+between the claim and the restore the slot is briefly empty. Two consequences
+survive, both requiring the lock's content to change in the gap between the
+`link` preverify and the `rename` claim:
 
-Mechanism: the `rename` claim empties the slot before the claimant can see what
-it took. If a live owner had replaced the stale lock, that owner's `release()`
-runs while the slot is empty, correctly finds ENOENT and does nothing — and the
-claimant then links the lock back. The result is a live-PID lock with nobody
-left to release it. Stale recovery will never reclaim it (the PID is alive), and
-`withTaskCreateLock` waits with **no timeout**, so task creation blocks until the
-owning process exits. `main`'s blind unlink never strands, so this was a genuine
-regression, not a degradation — it broke §4's own bound of "never worse than
-`main`".
+- a third contender acquires the momentarily empty path and runs alongside the
+  true owner (lost serialization);
+- the true owner releases inside the window, and the restore then resurrects an
+  ownerless live-PID lock.
 
-Fix: `stillOwnedBy` re-checks ownership through a private hard link *before* the
-destructive claim. `link` does not disturb the slot, so on the realistic
-mismatch there is no claim and no restore at all — the live owner keeps its lock
-and releases it normally. The `rename` claim still provides remover exclusivity
-for AC#1, and the post-claim restore remains as a backstop.
+Why it is accepted:
 
-Residual after the fix: the content must change in the sub-millisecond gap
-*between* the verify and the claim — a doubly-raced window rather than a
-single-raced one. In that sliver the old two failure modes still apply (a
-stranded lock, or a third contender entering while the slot is briefly empty).
-Not closed further: doing so needs an atomic compare-and-remove the platform does
-not offer.
+- **No primitive closes it.** It needs an atomic compare-and-remove, or an OS
+  advisory lock released on process death (the reviewer's suggestion). Node's
+  standard library offers neither; `flock` would mean a native dependency in a
+  framework package. A further pre-rename content check provably cannot close a
+  pathname race — the preverify already is one.
+- **Every unbounded consequence is now bounded.** Permanent blocking, the part
+  that was below `main`'s floor, is gone: task-create waits 10s, episode
+  transition locks wait 1s and are fail-soft by D-008.
+- **It remains strictly better than `main`.** `main` double-enters
+  deterministically with only two contenders — reproduced as `expected 2 to be
+  1` — where this needs a third contender inside a doubly-raced window.
 
-Regression test: "does not strand a live owner that releases while reclamation is
-in flight" swaps in a live owner at whichever syscall the reclaimer touches first,
-so it is neutral to the removal mechanism. It asserts a no-timeout caller still
-makes progress, and fails (`expected 'BLOCKED' not to be 'BLOCKED'`) against the
-pre-fix code.
+The reviewer's note that "concurrent callers naturally accumulate after a stale
+lock" is a fair challenge to the likelihood argument and is recorded here rather
+than dismissed: the honest claim is *rarer than `main`*, not *rare in absolute
+terms*.
