@@ -20,12 +20,15 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const DEFAULT_RETRY_DELAY_MS = 25;
 const RELEASE_ATTEMPTS = 3;
+const DEFAULT_RELEASE_TIMEOUT_MS = 2_000;
 
 export interface EntityFileLockOptions {
 	/** Delay between attempts while a live process owns the lock. */
 	readonly retryDelayMs?: number;
 	/** Maximum total wait for a live owner. Omit to wait indefinitely. */
 	readonly waitTimeoutMs?: number;
+	/** Maximum wait for a single release attempt to settle. */
+	readonly releaseTimeoutMs?: number;
 	/**
 	 * Called when the lock could not be confirmed released after the action
 	 * already ran. The action's result still stands (D-008); this only lets the
@@ -92,8 +95,13 @@ async function acquireEntityFileLock(
 			continue;
 		}
 
-		if (!isProcessAlive(existing.pid)) {
-			await removeLockIfOwner(lockPath, existing);
+		// A declined reclamation makes no progress, so it must fall through to the
+		// bounded backoff below rather than retry immediately — this loop is the
+		// one `withTaskCreateLock` runs without a wait timeout.
+		if (
+			!isProcessAlive(existing.pid) &&
+			(await removeLockIfOwner(lockPath, existing))
+		) {
 			continue;
 		}
 
@@ -213,18 +221,18 @@ function isProcessAlive(pid: number): boolean {
 async function removeLockIfOwner(
 	lockPath: string,
 	expected: LockFileContent,
-): Promise<void> {
+): Promise<boolean> {
 	if (!(await stillOwnedBy(lockPath, expected))) {
-		return;
+		return false;
 	}
 
 	const removalPath = createRemovalPath(lockPath);
 	try {
 		await rename(lockPath, removalPath);
 	} catch (error) {
-		// Another contender already claimed this lock file; retry acquisition.
+		// Another contender already claimed it; the slot is free to retry for.
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-			return;
+			return true;
 		}
 		throw error;
 	}
@@ -233,7 +241,9 @@ async function removeLockIfOwner(
 		const claimed = await readLockFile(removalPath);
 		if (claimed && !sameLock(claimed, expected)) {
 			await restoreClaimedLock(removalPath, lockPath);
+			return false;
 		}
+		return true;
 	} finally {
 		await unlink(removalPath).catch(() => undefined);
 	}
@@ -258,9 +268,15 @@ async function stillOwnedBy(
 	const verifyPath = createRemovalPath(lockPath);
 	try {
 		await link(lockPath, verifyPath);
-	} catch {
-		// Gone or unlinkable: fall through to acquisition rather than guess.
-		return false;
+	} catch (error) {
+		// Vanished: the slot is free, so let acquisition retry for it.
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+			return false;
+		}
+		// Anything else (EPERM, EMLINK, a mount without hard links) is not
+		// something retrying fixes — `tryCreateLock` needs `link` too. Fail the
+		// acquisition instead of spinning against it forever.
+		throw error;
 	}
 
 	try {
@@ -303,24 +319,76 @@ async function releaseWithRetry(
 	options: EntityFileLockOptions,
 ): Promise<void> {
 	const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+	const releaseTimeoutMs =
+		options.releaseTimeoutMs ?? DEFAULT_RELEASE_TIMEOUT_MS;
 	let lastError: unknown;
 
 	for (let attempt = 1; attempt <= RELEASE_ATTEMPTS; attempt += 1) {
-		try {
-			await handle.release();
+		const outcome = await settleRelease(handle, releaseTimeoutMs);
+		if (outcome === "released") {
 			return;
-		} catch (error) {
-			lastError = error;
-			if (attempt < RELEASE_ATTEMPTS) {
-				await delay(retryDelayMs);
-			}
 		}
+
+		lastError = outcome.error;
+		// A release that never settled left a syscall in flight. Retrying would
+		// issue a second one against a path a replacement owner may hold by then,
+		// so stop and report instead.
+		if (outcome.timedOut || attempt === RELEASE_ATTEMPTS) {
+			break;
+		}
+		await delay(retryDelayMs);
 	}
 
 	try {
 		options.onReleaseUnconfirmed?.(lastError);
 	} catch {
 		// Release reporting is never load-bearing for the primary action.
+	}
+}
+
+class ReleaseTimeoutError extends Error {
+	constructor(timeoutMs: number) {
+		super(`Timed out after ${timeoutMs}ms releasing the entity lock.`);
+		this.name = "ReleaseTimeoutError";
+	}
+}
+
+type ReleaseOutcome =
+	| "released"
+	| { readonly error: unknown; readonly timedOut: boolean };
+
+/**
+ * Bound one release attempt. Attempt *count* alone does not bound duration: a
+ * wedged filesystem can leave `readFile`/`unlink` pending forever, which would
+ * strand `withEntityFileLock`'s `finally` and never return an update that has
+ * already been written to disk (D-008).
+ */
+async function settleRelease(
+	handle: LockHandle,
+	timeoutMs: number,
+): Promise<ReleaseOutcome> {
+	let timer: NodeJS.Timeout | undefined;
+	const attempt = handle.release();
+	// An abandoned attempt must not surface later as an unhandled rejection.
+	attempt.catch(() => undefined);
+
+	try {
+		await Promise.race([
+			attempt,
+			new Promise<never>((_resolve, reject) => {
+				timer = setTimeout(
+					() => reject(new ReleaseTimeoutError(timeoutMs)),
+					timeoutMs,
+				);
+			}),
+		]);
+		return "released";
+	} catch (error) {
+		return { error, timedOut: error instanceof ReleaseTimeoutError };
+	} finally {
+		if (timer) {
+			clearTimeout(timer);
+		}
 	}
 }
 

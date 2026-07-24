@@ -2,6 +2,10 @@ import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { withEntityFileLock } from "../lib/entity-file-lock.ts";
+import {
+	TASK_CREATE_LOCK_WAIT_TIMEOUT_MS,
+	withTaskCreateLock,
+} from "../lib/tasks/lock.ts";
 import { useTempDir } from "./helpers/fs.ts";
 
 type FsOperation = (...args: never[]) => Promise<unknown>;
@@ -302,6 +306,92 @@ describe("entity file lock — stale reclamation ownership", () => {
 		// The replacement owner's lock survived the reclamation attempt intact.
 		expect(await readLockContent(lockPath)).toEqual(replacement);
 		await expectNoResidualFiles(lockPath);
+	});
+});
+
+describe("entity file lock — degraded filesystem behavior", () => {
+	// A filesystem that refuses hard links (some network/FUSE mounts) must fail
+	// the acquisition, not spin: the reclaim retry has no delay and no timeout
+	// accounting, and `withTaskCreateLock` waits without a timeout.
+	test("propagates a persistent stale-verification failure instead of spinning", async () => {
+		const lockPath = entityLockPath("verify-failure");
+		const stalePid = 424_248;
+		await writeLockContent(lockPath, {
+			pid: stalePid,
+			uuid: "stale-owner",
+			startedAt: "2026-01-01T00:00:00.000Z",
+		});
+		mockDeadPid(stalePid);
+
+		let verifyAttempts = 0;
+		fsMocks.link.mockImplementation(async (...args) => {
+			const [from, to] = args as unknown as [string, string];
+			if (from === lockPath && to.endsWith(".removing.lock")) {
+				verifyAttempts += 1;
+				throw Object.assign(new Error("hard links unavailable"), {
+					code: "EPERM",
+				});
+			}
+			return (actualFs.link as unknown as FsOperation)(...args);
+		});
+
+		await expect(
+			withEntityFileLock(lockPath, async () => "acquired", {
+				retryDelayMs: 1,
+				waitTimeoutMs: 50,
+			}),
+		).rejects.toMatchObject({ code: "EPERM" });
+
+		// Bounded: it must not retry the failing verification in a hot loop.
+		expect(verifyAttempts).toBeLessThanOrEqual(2);
+	});
+
+	test("returns the persisted result when a release syscall never settles", async () => {
+		const lockPath = entityLockPath("release-hang");
+		const action = vi.fn(async () => "persisted");
+		const onReleaseUnconfirmed = vi.fn();
+		fsMocks.unlink.mockImplementation(async (...args) => {
+			const [target] = args as unknown as [string];
+			if (target === lockPath) {
+				// Never settles, as on a wedged filesystem.
+				return new Promise<never>(() => undefined);
+			}
+			return (actualFs.unlink as unknown as FsOperation)(...args);
+		});
+
+		// D-008: the update already persisted, so it must not wait on the lock.
+		await expect(
+			withEntityFileLock(lockPath, action, {
+				retryDelayMs: 1,
+				releaseTimeoutMs: 30,
+				onReleaseUnconfirmed,
+			}),
+		).resolves.toBe("persisted");
+
+		expect(action).toHaveBeenCalledOnce();
+		expect(onReleaseUnconfirmed).toHaveBeenCalledOnce();
+	});
+
+	test("bounds task-create acquisition rather than waiting forever", async () => {
+		const projectRoot = join(tmp.path, "task-create-bound");
+		const lockPath = join(projectRoot, ".cosmonauts", "task-create.lock");
+		// A live-PID lock with no owner left to release it: stale recovery will
+		// never reclaim it, so an unbounded wait would hang task creation.
+		await writeLockContent(lockPath, {
+			pid: process.pid,
+			uuid: "stranded-owner",
+			startedAt: "2026-07-24T12:00:00.000Z",
+		});
+
+		await expect(
+			withTaskCreateLock(projectRoot, async () => "created", {
+				retryDelayMs: 2,
+				waitTimeoutMs: 50,
+			}),
+		).rejects.toMatchObject({ name: "EntityFileLockTimeoutError" });
+
+		// The shipped default must itself be finite.
+		expect(Number.isFinite(TASK_CREATE_LOCK_WAIT_TIMEOUT_MS)).toBe(true);
 	});
 });
 
