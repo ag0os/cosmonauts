@@ -667,12 +667,41 @@ export function bridgeJsonlToActivityBus(
 		finishing = true;
 		clearResources();
 		finishPromise = (async () => {
-			await pollPromise;
-			if (isStopped()) return;
-			await poll();
+			await drainWithinDeadline();
 			stop();
 		})();
 		return finishPromise;
+	};
+
+	/**
+	 * Bound the final drain. `enterDraining`'s deadline only decides WHEN
+	 * `finish()` runs; it does not bound the read inside it. A stalled filesystem
+	 * would otherwise leave `finish()` pending forever, and the detached parent
+	 * awaits it in a `finally` before returning its result.
+	 *
+	 * Stopping unconditionally afterwards is safe: `processContent` early-returns
+	 * once stopped, so a late-settling read can no longer publish.
+	 */
+	const drainWithinDeadline = async (): Promise<void> => {
+		const drain = (async () => {
+			await pollPromise;
+			if (isStopped()) return;
+			await poll();
+		})();
+		// An abandoned drain must not surface later as an unhandled rejection.
+		drain.catch(() => undefined);
+
+		let timer: NodeJS.Timeout | undefined;
+		try {
+			await Promise.race([
+				drain,
+				new Promise<void>((resolve) => {
+					timer = setTimeout(resolve, JSONL_BRIDGE_DRAIN_TIMEOUT_MS);
+				}),
+			]);
+		} finally {
+			if (timer) clearTimeout(timer);
+		}
 	};
 
 	const startTailing = (): void => {

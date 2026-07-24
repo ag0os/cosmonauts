@@ -1,7 +1,7 @@
 ---
 id: TASK-500
 title: Review fix — bound detached and thrown terminal lock liveness
-status: In Progress
+status: Done
 priority: high
 labels:
   - review-fix
@@ -43,7 +43,7 @@ Round-1 remediation for PR-001, PR-002, and PR-004. Review and narrowly harden d
 <!-- AC:BEGIN -->
 - [x] #1 A deterministic child-that-ignores-SIGTERM test proves abort settles through a bounded cleanup/escalation path without leaking listeners/timers/process ownership.
 - [x] #2 Enabled thrown terminal capture does not hold the plan lock during ledger/episode I/O, without creating a completion or second terminal.
-- [ ] #3 Drain reaches stopped and parent result settles within its bound even when final/in-flight read is fault-injected not to settle, while normal final polling still forwards only allowed diagnostics.
+- [x] #3 Drain reaches stopped and parent result settles within its bound even when final/in-flight read is fault-injected not to settle, while normal final polling still forwards only allowed diagnostics.
 - [x] #4 D-001 ordering and gate-OFF observable behavior remain unchanged.
 - [x] #5 Focused/full verification stays green.
 <!-- AC:END -->
@@ -73,37 +73,26 @@ Implemented on `feature/shared-primitive-hardening`.
   green). Impact is nil; the new behavior is also the more robust reading of
   "abort must settle".
 
-### AC#3 / PR-004 — NOT DONE, deliberately deferred
+### AC#3 / PR-004 — DONE
 
-PR-004 was assessed and left unimplemented, so **AC#3 is not met** and this task
-is not fully closed. Recorded precisely so it is not mistaken for covered work.
+Initially deferred, then implemented once the scope of the liveness work made
+it proportionate.
 
-The unbounded read is **not** in `driver.ts` — it is
-`lib/driver/event-stream.ts:663-676`:
+The unbounded read was never in `driver.ts`; it was `finish()` in
+`lib/driver/event-stream.ts`, which awaited `poll()` (and thus `readFile`) with
+no deadline. `JSONL_BRIDGE_DRAIN_TIMEOUT_MS` only decided *when* `finish()` ran
+via `enterDraining`, never how long it could take. `startDetachedProcess` awaits
+`bridge.finish()` in a `finally`, so a stalled filesystem there held the parent
+result open indefinitely.
 
-```ts
-finishPromise = (async () => {
-  await pollPromise;
-  if (isStopped()) return;
-  await poll();      // poll() awaits readFile(filePath) with NO deadline
-  stop();
-})();
-```
+`drainWithinDeadline` now races the drain against that same deadline and calls
+`stop()` unconditionally afterwards. Stopping is safe because `processContent`
+early-returns once stopped, so a late-settling read cannot publish; the
+abandoned drain gets a no-op catch so it cannot surface as an unhandled
+rejection.
 
-`JSONL_BRIDGE_DRAIN_TIMEOUT_MS` only schedules *when* `finish()` is called
-(`enterDraining`); it does not bound the final read *inside* `finish()`. A
-stalled filesystem there leaves `finish()` unsettled, and
-`startDetachedProcess`'s `finally { await bridge?.finish(); }` then hangs the
-parent result.
-
-Why deferred: the kickoff gated PR-004 on being cheap and biased toward
-skipping. The fix means racing the drain against a deadline inside a delicate
-shared state machine (`active`/`draining`/`stopped` × `pollPromise` ×
-`finishing` × `pollAgain`) that every real detached drive run depends on, plus
-an unref'd/cleared timer to avoid holding the event loop open. That is not a
-proportionate risk for a latency nit on a local file read that the triage itself
-rates "bounded in practice; unbounded only on a stalled filesystem".
-
-Sketch if it is picked up: wrap the drain body in `Promise.race` against a
-deadline and call `stop()` unconditionally afterwards — `processContent` already
-early-returns once stopped, so a late-resolving `readFile` cannot publish.
+Verified RED (`expected 'hung' to be 'settled'`) with the final read
+fault-injected never to settle. The pre-existing timer-leak assertions still
+hold: `finish()` holds its deadline timer only while running and clears it in a
+`finally`, which the deadline-path test now asserts after awaiting the bounded
+finish.

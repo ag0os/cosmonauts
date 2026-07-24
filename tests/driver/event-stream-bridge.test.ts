@@ -15,6 +15,21 @@ const watchSeam = vi.hoisted(() => ({
 	closeSpies: [] as Array<{ mock: { calls: unknown[][] } }>,
 }));
 
+const readSeam = vi.hoisted(() => ({
+	stall: false,
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:fs/promises")>();
+	return {
+		...actual,
+		readFile: (...args: Parameters<typeof actual.readFile>) =>
+			readSeam.stall
+				? new Promise(() => undefined)
+				: Reflect.apply(actual.readFile, actual, args),
+	};
+});
+
 vi.mock("node:fs", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("node:fs")>();
 	const trackedWatch = ((...args: unknown[]) => {
@@ -41,6 +56,7 @@ beforeEach(async () => {
 	tempDir = await mkdtemp(join(tmpdir(), "event-stream-bridge-"));
 	bridges = [];
 	watchSeam.closeSpies = [];
+	readSeam.stall = false;
 });
 
 afterEach(async () => {
@@ -215,6 +231,9 @@ describe("bridgeJsonlToActivityBus", () => {
 				"utf-8",
 			);
 			await vi.advanceTimersByTimeAsync(2_000);
+			// The drain deadline hands off to a finish() that is itself bounded,
+			// so let that settle before asserting nothing is left armed.
+			await bridge.finish();
 
 			expect(publish).toHaveBeenCalledTimes(2);
 			expect(vi.getTimerCount()).toBe(0);
@@ -231,6 +250,31 @@ describe("bridgeJsonlToActivityBus", () => {
 			vi.useRealTimers();
 		}
 	});
+
+	// PR-004: the drain deadline only schedules WHEN finish() is called; without
+	// its own bound, finish() awaits a final read that a stalled filesystem never
+	// settles, and the parent result waits on it in a `finally`.
+	test("settles finish() even when the final read never returns", async () => {
+		const publish = vi.fn();
+		await writeFile(
+			logPath(),
+			`${JSON.stringify(runCompletedEvent())}\n`,
+			"utf-8",
+		);
+		const bridge = startBridge({ publish }, { bridgeDriverDiagnostics: true });
+
+		await vi.waitFor(() => {
+			expect(publish).toHaveBeenCalledTimes(1);
+		});
+
+		readSeam.stall = true;
+		const settled = await Promise.race([
+			bridge.finish().then(() => "settled"),
+			new Promise((resolve) => setTimeout(() => resolve("hung"), 4_000)),
+		]);
+
+		expect(settled).toBe("settled");
+	}, 15_000);
 });
 
 function startBridge(
