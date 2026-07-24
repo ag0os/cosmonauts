@@ -1,7 +1,7 @@
 ---
 id: TASK-501
 title: Review fix — validate fallback completion authority
-status: To Do
+status: Done
 priority: high
 labels:
   - review-fix
@@ -59,9 +59,37 @@ Original framing follows.
 Round-1 remediation for SR-004. Narrowly validate persisted run.completion.json before it suppresses a fallback result: require a valid DriverResult shape, exact matching runId, valid terminal outcome fields, and exact completedAt timestamp for stamped authority. Invalid/mismatched content must not let child-controlled bytes replace the parent/CLI/tool fallback, while preserving current valid bytes and D-001 ownership. Avoid widening schemas or unrelated parsers.
 
 <!-- AC:BEGIN -->
-- [ ] #1 A stamped completion suppresses fallback only when it is a valid DriverResult for the same run id.
-- [ ] #2 Malformed, wrong-run, invalid-outcome, and invalid-timestamp completion JSON cannot become authoritative terminal data.
-- [ ] #3 Valid current completion bytes remain untouched and existing CLI/tool/abort behavior stays compatible.
-- [ ] #4 No MemoryStore/config-loader/episode-serializer schema surface widens.
-- [ ] #5 Focused/full verification stays green.
+- [x] #1 A stamped completion suppresses fallback only when it is a valid DriverResult for the same run id.
+- [x] #2 Malformed, wrong-run, invalid-outcome, and invalid-timestamp completion JSON cannot become authoritative terminal data.
+- [x] #3 Valid current completion bytes remain untouched and existing CLI/tool/abort behavior stays compatible.
+- [x] #4 No MemoryStore/config-loader/episode-serializer schema surface widens.
+- [x] #5 Focused/full verification stays green.
 <!-- AC:END -->
+
+## Implementation Notes (2026-07-24, COMPLETE)
+
+Implemented on `feature/shared-primitive-hardening`.
+
+A persisted completion now suppresses a fallback only when it is a plausible
+`DriverResult` for THIS run: exact `runId` match, a known `DriverResult` outcome
+(deliberately excluding the ledger-only `"failed"`, a `DriveTerminalOutcome`
+never written to `run.completion.json`), non-negative integer task counts, and
+an exact-ISO `completedAt`. Per-outcome detail fields are NOT validated — they
+carry no authority, and checking them could reject records the driver
+legitimately wrote. Validation is fail-soft: malformed bytes yield "no
+authority" instead of the previous `SyntaxError`, which matters because the main
+caller is the abort path and it must still settle over garbage.
+
+Scope held narrow: `readRunCompletion` is unchanged, so the CLI resume/read call
+sites (`cli/drive/subcommand.ts:409,480,593,746`) keep reading legacy and
+unstamped records exactly as before (AC#3). No MemoryStore, config-loader, or
+episode-serializer schema widened (AC#4).
+
+False-negative direction checked independently: `stampDriverResult` has exactly
+one caller and never receives an explicit timestamp, so driver-written
+completions always carry a canonical `new Date().toISOString()` stamp that the
+validator accepts. A pre-existing test asserts valid stamped bytes stay
+byte-identical, and it still passes.
+
+RED evidence: the wrong-run record was preserved as authoritative, and malformed
+bytes rejected with `SyntaxError: Unexpected end of JSON input`.

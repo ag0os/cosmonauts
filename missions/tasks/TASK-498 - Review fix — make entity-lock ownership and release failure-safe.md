@@ -1,7 +1,7 @@
 ---
 id: TASK-498
 title: Review fix — make entity-lock ownership and release failure-safe
-status: To Do
+status: Done
 priority: high
 assignee: worker
 labels:
@@ -55,11 +55,11 @@ Original framing follows.
 Round-1 remediation for F-003/PR-003/SR-002 and F-004/SR-003/UR-002. Harden the existing shared entity-file lock without creating a third protocol. Prevent stale reclaimers or releasers from deleting replacement-owner locks; preserve same-entity serialization during stale recovery. Make transient owned-lock release failure retry/recover in a bounded way. If release cannot be confirmed, preserve the successful primary update but skip transition episode capture and report truthful bounded warning text. Keep acquisition error/timeout fail-soft and action single-execution.
 
 <!-- AC:BEGIN -->
-- [ ] #1 Two deterministic stale-recovery contenders cannot both enter and neither removes a replacement owner.
-- [ ] #2 Release never removes a replacement PID/nonce owner and a transient first unlink failure is retried/recovered without changing the primary result.
-- [ ] #3 Plan/task transition capture occurs only after lock release is confirmed; unreleased ownership warns and skips capture.
-- [ ] #4 Acquisition error/timeout still runs the action unlocked exactly once within the bound, and action failure is not retried.
-- [ ] #5 Filesystem lock protocol implementation count remains exactly two and focused/full verification stays green.
+- [x] #1 Two deterministic stale-recovery contenders cannot both enter and neither removes a replacement owner.
+- [x] #2 Release never removes a replacement PID/nonce owner and a transient first unlink failure is retried/recovered without changing the primary result.
+- [x] #3 Plan/task transition capture occurs only after lock release is confirmed; unreleased ownership warns and skips capture.
+- [x] #4 Acquisition error/timeout still runs the action unlocked exactly once within the bound, and action failure is not retried.
+- [x] #5 Filesystem lock protocol implementation count remains exactly two and focused/full verification stays green.
 <!-- AC:END -->
 
 ## Design Decision (D-498-1 — drafted 2026-07-24, pre-implementation)
@@ -152,3 +152,47 @@ unrecorded on a rare `unlink` failure.
 ## Implementation Notes
 
 Attempt 1 failed: worker spawn d30ed70e-6d0a-41b4-afa0-cfcdd5dd34b2 timed out after 300000ms while task remained In Progress with all ACs unchecked. Before changing code, inspect the working tree and git log for partial work from that attempt; preserve or clean it deliberately. This is the first failed attempt.
+
+## Implementation Notes (attempt 2 — 2026-07-24, COMPLETE)
+
+Implemented on `feature/shared-primitive-hardening`. All five ACs verified;
+every new test confirmed RED against the unfixed code before being made green.
+
+**Deviation from D-498-1 §1, with evidence.** The design specified `link` into a
+unique per-attempt removal name plus a content re-read. That mechanism is NOT
+mutually exclusive between removers: two contenders each `link` the *same
+inode*, each re-read it, each match `expected`, and each then `unlink(lockPath)`
+— the second removing the winner's replacement lock. The new AC#1 test pins the
+exact SR-002 interleaving (both contenders inspect the same stale owner; the
+winner reclaims and starts its action; only then does the loser act on its
+removal decision) and gates on the destructive syscall whatever it is, so it is
+mechanism-neutral. It fails `expected 2 to be 1` against BOTH `main`'s blind
+unlink AND the design-literal `link` variant — both were run and observed.
+
+Shipped instead: an **atomic `rename` claim** into a unique per-attempt removal
+temp. `rename` moves the directory entry atomically, so exactly one contender
+can ever claim a given lock file; the loser gets `ENOENT` and falls back to
+normal acquisition. This preserves both stated intents of §1 — owner-bound
+removal, and unique-per-attempt names so a crashed remover cannot strand a fixed
+name and livelock future reclaimers (which matters because `withTaskCreateLock`
+waits with NO timeout) — while actually delivering the exclusivity AC#1 requires.
+On a content mismatch the claimed lock is returned via `link` (fails EEXIST
+rather than clobbering a newer owner), best-effort, never failing acquisition.
+
+Adopted from the stash: `releaseWithRetry` at the caller. **Rejected** from the
+stash, as D-498-1 §2 directed: the throwing `createHandle` release.
+
+**§3 skip-capture — human-confirmed 2026-07-24** (the task's open question):
+dropping a transition episode is the intended trade versus capturing under a
+still-held lock. `withEntityFileLock` reports via a new `onReleaseUnconfirmed`
+option; `withEpisodeTransitionLock` forwards it and warns truthfully; both
+managers gate capture on it. The primary update is always returned (D-008).
+
+Also fixed a latent regression risk in the same primitive: two reads of one
+*corrupt* lock file now compare equal, so an unparseable lock stays reclaimable
+as it is on `main` (`NaN !== NaN` would otherwise have stranded it permanently).
+
+§4's accepted residual (a persistent `unlink` failure strands a live-owner lock)
+is unchanged and still accepted. §5 holds: exactly two pid-liveness lock
+protocols (`lib/entity-file-lock.ts`, `lib/driver/lock.ts`); `lib/tasks/lock.ts`
+is untouched and still a thin caller.
