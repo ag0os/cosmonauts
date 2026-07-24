@@ -305,6 +305,88 @@ describe("run-state", () => {
 		expect(await readRunCompletion(unstampedWorkdir)).toEqual(fallback);
 	});
 
+	// TASK-501: only a valid same-run completion may suppress a fallback writer.
+	test("denies stamped authority to invalid or wrong-run completion records", async () => {
+		const fallback = {
+			runId: "run-authority",
+			outcome: "aborted",
+			tasksDone: 0,
+			tasksBlocked: 0,
+			completedAt: "2026-07-24T09:00:00.000Z",
+		} satisfies DriverResult;
+		const stamped = {
+			runId: fallback.runId,
+			outcome: "completed",
+			tasksDone: 2,
+			tasksBlocked: 0,
+			completedAt: "2026-07-24T08:00:00.000Z",
+		} satisfies DriverResult;
+		const unauthoritative: Record<string, unknown> = {
+			"wrong-run": { ...stamped, runId: "run-other" },
+			"empty-run": { ...stamped, runId: "" },
+			"ledger-only-outcome": { ...stamped, outcome: "failed" },
+			"unknown-outcome": { ...stamped, outcome: "settled" },
+			"loose-timestamp": { ...stamped, completedAt: "2026-07-24T08:00:00Z" },
+			"truthy-timestamp": { ...stamped, completedAt: true },
+			"missing-counts": {
+				runId: stamped.runId,
+				outcome: stamped.outcome,
+				completedAt: stamped.completedAt,
+			},
+			"fractional-counts": { ...stamped, tasksBlocked: 1.5 },
+			"array-record": [stamped],
+			"scalar-record": stamped.completedAt,
+		};
+
+		const settled: Record<string, unknown> = {};
+		for (const [label, planted] of Object.entries(unauthoritative)) {
+			const workdir = join(temp.path, `authority-${label}`);
+			await mkdir(workdir, { recursive: true });
+			await writeFile(
+				join(workdir, RUN_COMPLETION_FILENAME),
+				`${JSON.stringify(planted)}\n`,
+				"utf-8",
+			);
+
+			settled[label] = {
+				returned: await writeFallbackRunCompletion(workdir, fallback),
+				persisted: await readRunCompletion(workdir),
+			};
+		}
+
+		expect(settled).toEqual(
+			Object.fromEntries(
+				Object.keys(unauthoritative).map((label) => [
+					label,
+					{ returned: fallback, persisted: fallback },
+				]),
+			),
+		);
+	});
+
+	// TASK-501: garbage bytes must not crash the fallback (abort) path.
+	test("writes the fallback over malformed completion bytes instead of throwing", async () => {
+		const workdir = join(temp.path, "malformed-completion");
+		await mkdir(workdir, { recursive: true });
+		await writeFile(
+			join(workdir, RUN_COMPLETION_FILENAME),
+			'{"runId": "run-malformed", "outcome":',
+			"utf-8",
+		);
+		const fallback = {
+			runId: "run-malformed",
+			outcome: "aborted",
+			tasksDone: 0,
+			tasksBlocked: 0,
+			completedAt: "2026-07-24T09:30:00.000Z",
+		} satisfies DriverResult;
+
+		await expect(
+			writeFallbackRunCompletion(workdir, fallback),
+		).resolves.toEqual(fallback);
+		expect(await readRunCompletion(workdir)).toEqual(fallback);
+	});
+
 	// @cosmo-behavior plan:drive-resilience-state-model#B-004
 	test("persists phase-specific pending finalization state", async () => {
 		const states = [

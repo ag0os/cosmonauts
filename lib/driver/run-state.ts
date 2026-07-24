@@ -14,11 +14,14 @@ export const INLINE_RUN_STATE_FILENAME = "run.inline.json";
 export const PENDING_FINALIZATION_FILENAME = "pending-finalization.json";
 
 const TERMINAL_EPISODES_DIRECTORY = "run.terminal-episodes";
-const DRIVE_TERMINAL_OUTCOMES = new Set<DriveTerminalOutcome>([
+const DRIVER_RESULT_OUTCOMES = new Set<DriverResult["outcome"]>([
 	"completed",
 	"aborted",
 	"blocked",
 	"finalization_failed",
+]);
+const DRIVE_TERMINAL_OUTCOMES = new Set<DriveTerminalOutcome>([
+	...DRIVER_RESULT_OUTCOMES,
 	"failed",
 ]);
 
@@ -112,8 +115,8 @@ export async function writeFallbackRunCompletion(
 	workdir: string,
 	fallback: DriverResult,
 ): Promise<DriverResult> {
-	const current = await readRunCompletion(workdir);
-	if (current?.completedAt !== undefined) return current;
+	const current = await readAuthoritativeRunCompletion(workdir, fallback.runId);
+	if (current) return current;
 
 	await writeRunCompletion(workdir, fallback);
 	return fallback;
@@ -276,6 +279,69 @@ function isDriveTerminalRecord(
 		isExactIsoTimestamp(candidate.timestamp) &&
 		(candidate.state === "intended" || candidate.state === "recorded")
 	);
+}
+
+/**
+ * Read the persisted completion only when it may speak for `runId`.
+ *
+ * Fallback writers never downgrade a stamped completion (B-010), so whatever
+ * this returns becomes the run's authoritative terminal data — it flows into
+ * `recordDriveTerminalEpisode` and the CLI's printed result. A truthy
+ * `completedAt` alone is not evidence of authority: any syntactically valid
+ * object planted in the workdir would then outrank the parent's own fallback,
+ * including one stamped for a different run. So a record must be a plausible
+ * `DriverResult` for THIS run before it suppresses the fallback; anything else
+ * has no authority and is overwritten, as it was before B-010.
+ *
+ * Fail-soft by design: unreadable or malformed content yields "no authority",
+ * never a throw, because the main caller is the abort path (see
+ * `abortDetachedRun`) which must still settle the run over garbage bytes.
+ */
+async function readAuthoritativeRunCompletion(
+	workdir: string,
+	runId: string,
+): Promise<DriverResult | undefined> {
+	try {
+		const raw = await readFile(join(workdir, RUN_COMPLETION_FILENAME), "utf-8");
+		const value: unknown = JSON.parse(raw);
+		return isStampedRunCompletion(value, runId) ? value : undefined;
+	} catch (error) {
+		if (
+			(isNodeError(error) && error.code === "ENOENT") ||
+			error instanceof SyntaxError
+		) {
+			return undefined;
+		}
+		throw error;
+	}
+}
+
+/**
+ * Validate only the fields that grant a persisted completion its authority:
+ * run identity, a known terminal outcome, the task counts, and the stamp
+ * itself. Per-outcome detail fields are deliberately not checked — they carry
+ * no authority, and deep-validating them would reject records this driver
+ * legitimately wrote.
+ */
+function isStampedRunCompletion(
+	value: unknown,
+	runId: string,
+): value is DriverResult {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const candidate = value as Partial<DriverResult>;
+	return (
+		typeof candidate.runId === "string" &&
+		candidate.runId.length > 0 &&
+		candidate.runId === runId &&
+		DRIVER_RESULT_OUTCOMES.has(candidate.outcome as DriverResult["outcome"]) &&
+		isTaskCount(candidate.tasksDone) &&
+		isTaskCount(candidate.tasksBlocked) &&
+		isExactIsoTimestamp(candidate.completedAt)
+	);
+}
+
+function isTaskCount(value: unknown): value is number {
+	return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
 function isExactIsoTimestamp(value: unknown): value is string {
