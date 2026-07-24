@@ -667,8 +667,14 @@ export function bridgeJsonlToActivityBus(
 		finishing = true;
 		clearResources();
 		finishPromise = (async () => {
-			await drainWithinDeadline();
-			stop();
+			try {
+				await drainWithinDeadline();
+			} catch {
+				// The caller awaits finish() in a `finally` after its result is
+				// already in hand; a drain failure must not replace that result.
+			} finally {
+				stop();
+			}
 		})();
 		return finishPromise;
 	};
@@ -683,13 +689,14 @@ export function bridgeJsonlToActivityBus(
 	 * once stopped, so a late-settling read can no longer publish.
 	 */
 	const drainWithinDeadline = async (): Promise<void> => {
+		// The `catch` must be part of the promise that is raced, not a side chain
+		// off it: attaching it separately silences the unhandled rejection but
+		// still leaves the raced promise rejecting.
 		const drain = (async () => {
 			await pollPromise;
 			if (isStopped()) return;
 			await poll();
-		})();
-		// An abandoned drain must not surface later as an unhandled rejection.
-		drain.catch(() => undefined);
+		})().catch(() => undefined);
 
 		let timer: NodeJS.Timeout | undefined;
 		try {

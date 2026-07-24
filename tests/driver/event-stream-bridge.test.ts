@@ -251,6 +251,37 @@ describe("bridgeJsonlToActivityBus", () => {
 		}
 	});
 
+	// The caller awaits finish() in a `finally` AFTER the run's result is already
+	// in hand, so a failure while draining must never replace that result.
+	test("settles finish() when the final drain rejects", async () => {
+		const publish = vi.fn();
+		await writeFile(
+			logPath(),
+			`${JSON.stringify(runCompletedEvent())}\n`,
+			"utf-8",
+		);
+		const bridge = startBridge({ publish }, { bridgeDriverDiagnostics: true });
+
+		await vi.waitFor(() => {
+			expect(publish).toHaveBeenCalledTimes(1);
+		});
+
+		// A malformed final line makes the drain report an error, and error
+		// reporting itself then throws.
+		await appendFile(logPath(), "not json at all\n", "utf-8");
+		vi.spyOn(console, "error").mockImplementation(() => {
+			throw new Error("stderr failed");
+		});
+
+		await expect(bridge.finish()).resolves.toBeUndefined();
+
+		// Cleanup still happened despite the failure.
+		expect(watchSeam.closeSpies.length).toBeGreaterThan(0);
+		expect(
+			watchSeam.closeSpies.every((closeSpy) => closeSpy.mock.calls.length > 0),
+		).toBe(true);
+	}, 15_000);
+
 	// PR-004: the drain deadline only schedules WHEN finish() is called; without
 	// its own bound, finish() awaits a final read that a stalled filesystem never
 	// settles, and the parent result waits on it in a `finally`.

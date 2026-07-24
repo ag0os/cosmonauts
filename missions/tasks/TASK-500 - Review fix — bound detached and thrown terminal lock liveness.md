@@ -96,3 +96,19 @@ fault-injected never to settle. The pre-existing timer-leak assertions still
 hold: `finish()` holds its deadline timer only while running and clears it in a
 `finally`, which the deadline-path test now asserts after awaiting the bounded
 finish.
+
+### Review round 2 — drain failure made non-load-bearing
+
+Round 2 found that the PR-004 fix above had a defect of its own. The drain's
+`.catch(() => undefined)` was attached as a *side chain*: it silenced the
+unhandled rejection but left the promise passed to `Promise.race` still
+rejecting. So a drain that failed before the deadline won — for example a
+malformed final line whose error reporting itself throws — rejected
+`drainWithinDeadline()`, skipped `stop()`, and rejected `finish()`. Because
+`startDetachedProcess` awaits `bridge.finish()` in a `finally` *after* the run's
+result is already in hand, that cleanup error replaced a valid detached result.
+
+Fixed by making the `catch` part of the raced promise rather than a side chain,
+and by moving `stop()` into an unconditional `finally` so cleanup runs whatever
+the drain does. Verified RED (`promise rejected "Error: stderr failed" instead
+of resolving`) with a malformed final line and a throwing `console.error`.
