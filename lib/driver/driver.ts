@@ -238,8 +238,7 @@ async function abortDetachedRun({
 
 	const child = launchState.child;
 	if (child?.pid !== undefined) {
-		terminateDetachedChild(child.pid);
-		await waitForChildExit(child);
+		await stopDetachedChild(child, child.pid);
 	}
 
 	if (!launchState.workdirCreated) return;
@@ -262,39 +261,57 @@ async function abortDetachedRun({
 	);
 }
 
-function terminateDetachedChild(pid: number): void {
-	if (!isProcessAlive(pid)) return;
+/** Abort must settle, so a child that ignores SIGTERM is escalated on a deadline. */
+async function stopDetachedChild(
+	child: ChildProcess,
+	pid: number,
+): Promise<void> {
+	signalDetachedChild(pid, "SIGTERM");
+	if (await waitForChildExitWithin(child, DETACHED_ABORT_TERM_GRACE_MS)) return;
+	if (!signalDetachedChild(pid, "SIGKILL")) return;
+	await waitForChildExitWithin(child, DETACHED_ABORT_KILL_GRACE_MS);
+}
+
+/** Reports false when the process was already gone, so escalation can stop early. */
+function signalDetachedChild(pid: number, signal: NodeJS.Signals): boolean {
+	if (!isProcessAlive(pid)) return false;
 	try {
-		process.kill(pid, "SIGTERM");
+		process.kill(pid, signal);
+		return true;
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "ESRCH") {
 			throw error;
 		}
+		return false;
 	}
 }
 
-async function waitForChildExit(child: ChildProcess): Promise<void> {
-	if (child.exitCode !== null || child.signalCode !== null) return;
+/** Resolves true only when the child handle confirmed an exit before the deadline. */
+function waitForChildExitWithin(
+	child: ChildProcess,
+	timeoutMs: number,
+): Promise<boolean> {
+	if (child.exitCode !== null || child.signalCode !== null) {
+		return Promise.resolve(true);
+	}
 
-	await new Promise<void>((resolve, reject) => {
-		const cleanup = () => {
+	return new Promise<boolean>((resolve) => {
+		const settle = (exited: boolean) => {
+			clearTimeout(timeout);
 			child.off("exit", onExit);
-			child.off("error", onError);
+			child.off("error", onUnconfirmed);
+			resolve(exited);
 		};
-		const onExit = () => {
-			cleanup();
-			resolve();
-		};
-		const onError = (error: Error) => {
-			cleanup();
-			reject(error);
-		};
+		const onExit = () => settle(true);
+		const onUnconfirmed = () => settle(false);
+		const timeout = setTimeout(onUnconfirmed, timeoutMs);
 
 		child.once("exit", onExit);
-		child.once("error", onError);
+		child.once("error", onUnconfirmed);
 		if (child.exitCode !== null || child.signalCode !== null) onExit();
 	});
 }
+
 export async function launchDetached(
 	spec: DriverRunSpec,
 	deps: DriverDeps,
@@ -371,7 +388,10 @@ async function startDetachedProcess({
 
 		const result = await waitForDetachedResult(spec.workdir, launch.child);
 		if (driveEventBridgeOptions(spec).bridgeDriverDiagnostics === true) {
-			await waitForChildExitWithinDrainDeadline(launch.child);
+			await waitForChildExitWithin(
+				launch.child,
+				DETACHED_BRIDGE_DRAIN_TIMEOUT_MS,
+			);
 		}
 		return result;
 	} finally {
@@ -594,29 +614,6 @@ async function waitForDetachedResult(
 	return await Promise.race([completion, childExit]);
 }
 
-async function waitForChildExitWithinDrainDeadline(
-	child: ChildProcess,
-): Promise<void> {
-	if (child.exitCode !== null || child.signalCode !== null) return;
-
-	await new Promise<void>((resolve) => {
-		const cleanup = () => {
-			clearTimeout(timeout);
-			child.off("exit", settle);
-			child.off("error", settle);
-		};
-		const settle = () => {
-			cleanup();
-			resolve();
-		};
-		const timeout = setTimeout(settle, DETACHED_BRIDGE_DRAIN_TIMEOUT_MS);
-
-		child.once("exit", settle);
-		child.once("error", settle);
-		if (child.exitCode !== null || child.signalCode !== null) settle();
-	});
-}
-
 async function waitForCompletion(path: string): Promise<DriverResult> {
 	while (true) {
 		try {
@@ -665,3 +662,5 @@ function throwIfAborted(signal: AbortSignal): void {
 }
 
 const DETACHED_BRIDGE_DRAIN_TIMEOUT_MS = 2_000;
+const DETACHED_ABORT_TERM_GRACE_MS = 2_000;
+const DETACHED_ABORT_KILL_GRACE_MS = 1_000;

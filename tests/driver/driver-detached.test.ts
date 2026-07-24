@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import {
 	appendFile,
@@ -26,7 +27,7 @@ import {
 	bridgeJsonlToActivityBus,
 	type DriverBusEvent,
 } from "../../lib/driver/event-stream.ts";
-import { getPlanLockPath } from "../../lib/driver/lock.ts";
+import { getPlanLockPath, isProcessAlive } from "../../lib/driver/lock.ts";
 import {
 	readDriveTerminalRecord,
 	writeFallbackRunCompletion,
@@ -72,9 +73,17 @@ const envKeys = [
 	"COSMONAUTS_TEST_BACKEND_RELEASE",
 ] as const;
 const savedEnv: Partial<Record<(typeof envKeys)[number], string>> = {};
+const sentinelPids: number[] = [];
 
 afterEach(() => {
 	detachedSpawnSeam.next = undefined;
+	for (const pid of sentinelPids.splice(0)) {
+		try {
+			process.kill(pid, "SIGKILL");
+		} catch {
+			// The escalation path is expected to have killed it already.
+		}
+	}
 	for (const key of envKeys) {
 		if (savedEnv[key] === undefined) {
 			delete process.env[key];
@@ -810,6 +819,152 @@ describe("startDetached", () => {
 			stderr.mockRestore();
 		}
 	}, 30_000);
+
+	// TASK-500 PR-001
+	test("escalates an ignored SIGTERM to SIGKILL so abort settles on a bounded deadline", async () => {
+		const fixture = await setupFixture({ runId: "run-abort-sigterm-ignored" });
+		const prebuiltRoot = join(temp.path, "sigterm-ignored-prebuilt");
+		await writeFakePrebuiltRunner(prebuiltRoot, fixture.spec.runId);
+		const sentinelPid = await spawnSigtermIgnoringSentinel(
+			join(temp.path, "sigterm-ignored-sentinel"),
+		);
+		const child = createMockDetachedChild(sentinelPid);
+		const kill = vi.spyOn(process, "kill");
+
+		try {
+			detachedSpawnSeam.next = () => child;
+			const handle = startDetached(fixture.spec, {
+				...fixture.deps,
+				cosmonautsRoot: prebuiltRoot,
+			});
+			await waitForFile(join(fixture.spec.workdir, "run.pid"));
+			const baselineExitListeners = child.listenerCount("exit");
+
+			const startedAt = Date.now();
+			await handle.abort();
+			const elapsedMs = Date.now() - startedAt;
+
+			expect(
+				kill.mock.calls
+					.filter(([pid]) => pid === sentinelPid)
+					.map(([, signal]) => signal)
+					.filter((signal) => signal !== 0),
+			).toEqual(["SIGTERM", "SIGKILL"]);
+			await waitFor(() => !isProcessAlive(sentinelPid));
+			expect(elapsedMs).toBeGreaterThanOrEqual(2_800);
+			expect(elapsedMs).toBeLessThan(8_000);
+			expect(child.listenerCount("exit")).toBe(baselineExitListeners);
+			expect(child.listenerCount("error")).toBe(0);
+
+			const abortedResult = {
+				runId: fixture.spec.runId,
+				outcome: "aborted",
+				tasksDone: 0,
+				tasksBlocked: 0,
+			};
+			await expect(handle.result).resolves.toEqual(abortedResult);
+			expect(
+				await readFile(
+					join(fixture.spec.workdir, "run.completion.json"),
+					"utf-8",
+				),
+			).toBe(`${JSON.stringify(abortedResult, null, 2)}\n`);
+			await expect(
+				stat(join(fixture.projectRoot, "memory", "agent")),
+			).rejects.toMatchObject({ code: "ENOENT" });
+
+			// The escalation deadline must not delay a child that does exit; the
+			// sentinel pid is now dead, so this abort only waits on the handle.
+			const fast = await setupFixture({ runId: "run-abort-fast-exit" });
+			const fastPrebuilt = join(temp.path, "fast-exit-prebuilt");
+			await writeFakePrebuiltRunner(fastPrebuilt, fast.spec.runId);
+			const fastChild = createMockDetachedChild(sentinelPid);
+			detachedSpawnSeam.next = () => fastChild;
+			const fastHandle = startDetached(fast.spec, {
+				...fast.deps,
+				cosmonautsRoot: fastPrebuilt,
+			});
+			await waitForFile(join(fast.spec.workdir, "run.pid"));
+
+			const fastStartedAt = Date.now();
+			const aborting = fastHandle.abort();
+			setTimeout(() => fastChild.emit("exit", null, "SIGTERM"), 50);
+			await aborting;
+
+			expect(Date.now() - fastStartedAt).toBeLessThan(1_500);
+			expect(fastChild.listenerCount("exit")).toBe(0);
+			expect(fastChild.listenerCount("error")).toBe(0);
+			await expect(fastHandle.result).resolves.toEqual({
+				runId: fast.spec.runId,
+				outcome: "aborted",
+				tasksDone: 0,
+				tasksBlocked: 0,
+			});
+			// Let the unexpected-exit watchdog observe the completion before teardown.
+			await delay(700);
+		} finally {
+			kill.mockRestore();
+		}
+	}, 30_000);
+
+	// TASK-500 PR-001
+	test("keeps one completion-backed aborted terminal when abort escalates to SIGKILL", async () => {
+		const fixture = await setupFixture({
+			runId: "run-abort-sigterm-ignored-enabled",
+			episodeIdentity: true,
+		});
+		await writeEpisodicConfig(fixture.projectRoot);
+		await recordDetachedStartEpisode(fixture.spec);
+		const prebuiltRoot = join(temp.path, "sigterm-ignored-enabled-prebuilt");
+		await writeFakePrebuiltRunner(prebuiltRoot, fixture.spec.runId);
+		const sentinelPid = await spawnSigtermIgnoringSentinel(
+			join(temp.path, "sigterm-ignored-enabled-sentinel"),
+		);
+
+		detachedSpawnSeam.next = () => createMockDetachedChild(sentinelPid);
+		const handle = startDetached(fixture.spec, {
+			...fixture.deps,
+			cosmonautsRoot: prebuiltRoot,
+		});
+		await waitForFile(join(fixture.spec.workdir, "run.pid"));
+
+		await Promise.all([handle.abort(), handle.abort()]);
+		await waitFor(() => !isProcessAlive(sentinelPid));
+
+		const completion = JSON.parse(
+			await readFile(
+				join(fixture.spec.workdir, "run.completion.json"),
+				"utf-8",
+			),
+		) as DriverResult;
+		expect(completion).toMatchObject({
+			runId: fixture.spec.runId,
+			outcome: "aborted",
+			completedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/u),
+		});
+		await expect(handle.result).resolves.toEqual(completion);
+
+		const attemptTag = `attempt:${fixture.spec.episodeAttemptId}`;
+		const attemptEpisodes = (
+			await readProjectDriveEpisodes(fixture.projectRoot)
+		).filter((episode) => episode.tags.includes(attemptTag));
+		const terminalEpisodes = attemptEpisodes.filter(
+			(episode) => episode.outcome !== "started",
+		);
+		expect(attemptEpisodes).toHaveLength(2);
+		expect(terminalEpisodes).toHaveLength(1);
+		expect(terminalEpisodes[0]).toMatchObject({
+			action: "drive.run",
+			outcome: "aborted",
+			timestamp: completion.completedAt,
+		});
+		expect(
+			await readDriveTerminalRecord(
+				fixture.spec.workdir,
+				fixture.spec.episodeAttemptId ?? "",
+			),
+		).toMatchObject({ outcome: "aborted", state: "recorded" });
+	}, 30_000);
 });
 
 interface FixtureOptions {
@@ -1046,6 +1201,38 @@ function isEpisodeCaptureDiagnostic(
 
 function publishedDriverEvents(events: DriverBusEvent[]): DriverEvent[] {
 	return events.flatMap((event) => ("event" in event ? [event.event] : []));
+}
+
+/**
+ * A live process that ignores SIGTERM, so only escalation can end it. The pid is
+ * registered for `afterEach` cleanup so a timed-out test cannot leak it.
+ */
+async function spawnSigtermIgnoringSentinel(dir: string): Promise<number> {
+	await mkdir(dir, { recursive: true });
+	const scriptPath = join(dir, "ignore-sigterm.sh");
+	const readyPath = join(dir, "sentinel-ready");
+	await writeFile(
+		scriptPath,
+		`#!/usr/bin/env bash
+trap '' TERM
+printf 'ready\\n' > "$1"
+while true; do
+  sleep 0.05
+done
+`,
+		"utf-8",
+	);
+	await chmod(scriptPath, 0o755);
+
+	const child = spawn(scriptPath, [readyPath], { stdio: "ignore" });
+	child.unref();
+	const pid = child.pid;
+	if (pid === undefined) {
+		throw new Error("Sentinel process did not expose a PID");
+	}
+	sentinelPids.push(pid);
+	await waitForFile(readyPath);
+	return pid;
 }
 
 async function writeFakeCodex(binDir: string): Promise<string> {
