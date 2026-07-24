@@ -115,7 +115,7 @@ never be renumbered on edit; append new ones instead.
 - **AC-001** — With the gate **off**, every touched path behaves
   byte-identically to current `main` (session/manifest layout, event ordering,
   output text) — the CDX-001 lesson says enabled-path changes can leak; prove
-  they don't. *Narrowed 2026-07-24 by plan.md's D-006:* one exclusion, the
+  they don't. *Narrowed 2026-07-24 by plan.md's D-010:* one exclusion, the
   plan-lock-release-failure path, where OFF now resolves with the persisted
   result plus a `terminal_persisted_hook_failed` diagnostic rather than
   rejecting as `main` does. This resolves an unavoidable conflict with AC-007 /

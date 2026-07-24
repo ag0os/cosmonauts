@@ -16,7 +16,7 @@ updatedAt: '2026-07-24T03:26:23.832Z'
 
 ## Description
 
-**CLOSED 2026-07-24 by decision, not by implementation. See D-006 in
+**CLOSED 2026-07-24 by decision, not by implementation. See D-010 in
 `missions/plans/episodic-log-detached-hardening/plan.md`.**
 
 Original framing: the `onTerminalPersisted` hook and the swallowing/retry
@@ -37,7 +37,7 @@ Scope of the accepted divergence: gate-OFF **and** plan-lock release failure,
 only. Any OFF divergence on a non-failure path remains a hard failure.
 
 <!-- AC:BEGIN -->
-- [x] #1 The OFF release-failure divergence is recorded as a ratified decision (D-006) with its rejected alternatives, rather than left as silent drift.
+- [x] #1 The OFF release-failure divergence is recorded as a ratified decision (D-010) with its rejected alternatives, rather than left as silent drift.
 - [x] #2 AC-001 in spec.md and B-001 in plan.md name the exclusion explicitly and restate that all other OFF paths stay byte-identical.
 - [x] #3 Enabled identity-bearing hook rejection remains isolated from the broad catch, emits no second terminal, and skips capture — unchanged, verified by B-023.
 - [x] #4 Successful terminal order remains stamp → terminal event → completion → hook → capture — unchanged, verified by B-005/B-016.
