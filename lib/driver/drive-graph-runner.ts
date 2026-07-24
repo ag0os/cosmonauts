@@ -26,6 +26,7 @@ import { createDriveSchedulerBackendMap } from "./drive-scheduler-backend.ts";
 import { EventLogWriteError } from "./event-stream.ts";
 import type { RunRunLoopCtx } from "./run-run-loop.ts";
 import {
+	claimDriveTerminalIntent,
 	type DriveTerminalOutcome,
 	type DriveTerminalRecord,
 	readDriveTerminalRecord,
@@ -395,7 +396,7 @@ async function recordClaimedDriveTerminalEpisode(options: {
 	if (!record) {
 		const timestamp = options.resolveTimestamp();
 		if (!timestamp) return;
-		record = {
+		const intent: DriveTerminalRecord = {
 			version: 1,
 			attemptId: identity.attemptId,
 			outcome: options.outcome,
@@ -404,13 +405,24 @@ async function recordClaimedDriveTerminalEpisode(options: {
 		};
 		if (ledgerAvailable) {
 			try {
-				await writeDriveTerminalRecord(options.spec.workdir, record);
+				// Exclusive claim: a concurrent first-time writer that loses the
+				// race gets the winner's record back and replays it, rather than
+				// persisting its own divergent timestamp (which the store could
+				// not dedupe — two terminals for one attempt).
+				record = await claimDriveTerminalIntent(options.spec.workdir, intent);
 				claimPersisted = true;
 			} catch (error) {
 				await reportTerminalLedgerFailure(options, "write intent to", error);
+				record = intent;
 			}
+		} else {
+			record = intent;
 		}
 	}
+
+	// A concurrent winner may have advanced the claim to "recorded" between our
+	// read above and our claim; if so, the terminal is already captured.
+	if (record.state === "recorded") return;
 
 	const event = buildClaimedDriveTerminalEpisode(
 		options.spec,

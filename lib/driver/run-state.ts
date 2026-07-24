@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
-import { readFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import { link, mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import { writeFileAtomically } from "./atomic-file.ts";
 import type {
 	DriverResult,
@@ -159,6 +159,65 @@ export async function writeDriveTerminalRecord(
 		driveTerminalRecordPath(workdir, record.attemptId),
 		`${JSON.stringify(persisted, null, 2)}\n`,
 	);
+}
+
+/**
+ * Persist the FIRST terminal-intent record as an exclusive claim.
+ *
+ * The plain {@link writeDriveTerminalRecord} overwrites, so two concurrent
+ * first-time writers (for example two simultaneous terminal-only resumes of one
+ * run) would each persist their own divergent timestamp and capture a distinct,
+ * non-dedupable episode — two terminals for one deterministic attempt, which
+ * D-002 forbids. This claim is atomic *and* exclusive: it writes a temp file and
+ * `link`s it into place (the same primitive the plan lock uses), so only one
+ * writer can create the record. A writer that loses the race reads the winner's
+ * complete record and returns THAT, so its later capture replays the winner's
+ * outcome and timestamp byte-identically and the store dedupes the two to one.
+ *
+ * Returns the authoritative persisted record: the caller's own intent when it
+ * wins, or the concurrent winner's record when it loses.
+ */
+export async function claimDriveTerminalIntent(
+	workdir: string,
+	record: DriveTerminalRecord,
+): Promise<DriveTerminalRecord> {
+	if (!isDriveTerminalRecord(record, record.attemptId)) {
+		throw new Error("Invalid Drive terminal record.");
+	}
+	const persisted: DriveTerminalRecord = {
+		version: 1,
+		attemptId: record.attemptId,
+		outcome: record.outcome,
+		timestamp: record.timestamp,
+		state: record.state,
+	};
+	const path = driveTerminalRecordPath(workdir, record.attemptId);
+	const dir = dirname(path);
+	await mkdir(dir, { recursive: true });
+	const tempPath = join(
+		dir,
+		`.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,
+	);
+	try {
+		await writeFile(
+			tempPath,
+			`${JSON.stringify(persisted, null, 2)}\n`,
+			"utf-8",
+		);
+		await link(tempPath, path);
+		return persisted;
+	} catch (error) {
+		if (isNodeError(error) && error.code === "EEXIST") {
+			// A concurrent writer already claimed this attempt; replay its record.
+			// If it is somehow unreadable, fall back to our own intent so capture
+			// still proceeds unclaimed (fail-soft, matching a failed intent write).
+			const existing = await readDriveTerminalRecord(workdir, record.attemptId);
+			return existing ?? persisted;
+		}
+		throw error;
+	} finally {
+		await unlink(tempPath).catch(() => undefined);
+	}
 }
 
 export function pendingFinalizationPath(workdir: string): string {

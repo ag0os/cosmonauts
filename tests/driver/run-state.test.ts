@@ -11,7 +11,9 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { recordDriveTerminalEpisode } from "../../lib/driver/drive-graph-runner.ts";
 import {
+	claimDriveTerminalIntent,
 	clearPendingFinalization,
+	type DriveTerminalRecord,
 	PENDING_FINALIZATION_FILENAME,
 	type PendingFinalizationState,
 	pendingFinalizationPath,
@@ -362,5 +364,48 @@ describe("run-state", () => {
 		expect(pendingFinalizationPath(temp.path)).toBe(
 			`${temp.path}/${PENDING_FINALIZATION_FILENAME}`,
 		);
+	});
+
+	// Supplementary evidence for D-002 exactly-one under concurrency (round-3
+	// codex HIGH). B-026's canonical marker/test stays in drive-on-graph-recovery.
+	test("claims a terminal intent exclusively so concurrent first writers converge on one record", async () => {
+		const workdir = join(temp.path, "concurrent-claim");
+		await mkdir(workdir, { recursive: true });
+		const attemptId = "attempt-shared";
+		const intent = (timestamp: string): DriveTerminalRecord => ({
+			version: 1,
+			attemptId,
+			outcome: "failed",
+			timestamp,
+			state: "intended",
+		});
+
+		// Two writers race the FIRST intent with divergent timestamps. Only one
+		// may win; the loser must replay the winner's record, not persist its own.
+		const [a, b] = await Promise.all([
+			claimDriveTerminalIntent(workdir, intent("2026-07-24T00:00:00.000Z")),
+			claimDriveTerminalIntent(workdir, intent("2026-07-24T09:09:09.000Z")),
+		]);
+
+		expect(a.timestamp).toBe(b.timestamp);
+		expect(["2026-07-24T00:00:00.000Z", "2026-07-24T09:09:09.000Z"]).toContain(
+			a.timestamp,
+		);
+
+		const digest = createHash("sha256").update(attemptId).digest("hex");
+		const dir = join(workdir, "run.terminal-episodes");
+		// Exactly one record file, no leftover temp files, and it matches the
+		// timestamp both callers agreed on.
+		expect(await readdir(dir)).toEqual([`${digest}.json`]);
+		const persisted = await readDriveTerminalRecord(workdir, attemptId);
+		expect(persisted?.timestamp).toBe(a.timestamp);
+
+		// A later claim of the same attempt returns the already-persisted record.
+		const late = await claimDriveTerminalIntent(
+			workdir,
+			intent("2026-07-24T23:59:59.000Z"),
+		);
+		expect(late.timestamp).toBe(a.timestamp);
+		expect(await readdir(dir)).toEqual([`${digest}.json`]);
 	});
 });

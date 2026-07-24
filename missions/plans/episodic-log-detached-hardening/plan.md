@@ -844,12 +844,21 @@ extension, architecture-map, or gate default changes.
   neither alone is sufficient, because the reject path has no caller today and a
   caller-only design leaks a `setInterval` for the parent's lifetime. If leak-free
   cleanup cannot be proven on the reject path, stop and revise the bridge API.
-- **Ledger claim race:** two truly concurrent *different* outcomes could both
-  pass a pre-check. The two-phase intent narrows this to the window between
-  reading "no record" and writing the intent; current paths also serialize
-  through child exit/settle, and identical races dedupe in the store. If a
-  reachable different-outcome race survives the intent write, stop and redesign
-  the claim protocol rather than weaken exactly-once.
+- **Ledger claim race:** two truly concurrent writers could both pass a
+  pre-check. The two-phase intent narrows this to the window between reading "no
+  record" and writing the intent; current paths also serialize through child
+  exit/settle. *(Corrected 2026-07-24 after round-3 review.)* The original note
+  claimed "identical races dedupe in the store", but two concurrent first-time
+  terminal-only resumes of one run produce the **same** outcome with
+  **different** timestamps — each stamps its own `completedAt` — and timestamp
+  participates in episode content and filename hashing, so they do **not**
+  dedupe. That is a reachable double-terminal violating D-002. The fix makes the
+  intent write an **exclusive** claim (`claimDriveTerminalIntent`: temp file +
+  `link`, EEXIST → read winner): only one writer creates the record, and the
+  loser replays the winner's persisted outcome and timestamp, so the two
+  captures are byte-identical and the store collapses them to one. A reachable
+  *different-outcome* race surviving the exclusive intent write remains a
+  stop-and-redesign condition rather than a reason to weaken exactly-once.
 - **Fail-soft that becomes load-bearing:** the transition lock sits on the
   primary write path. Any design in which a lock error or a slow holder can fail
   or stall a plan/task update violates D-008 and is a stop condition — degrade to
