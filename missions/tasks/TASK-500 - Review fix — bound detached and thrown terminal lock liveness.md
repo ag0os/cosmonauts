@@ -61,12 +61,17 @@ Implemented on `feature/shared-primitive-hardening`.
 - **PR-002 (not changed, as directed).** Ratified design per Design §1 and
   B-016/B-017; the thrown path has no completion and keeps caller `.finally`
   release as its backstop. No code change.
-- **Called-out behavior change:** the old `waitForChildExit` *rejected* on the
-  child `error` event; the replacement resolves "not confirmed" instead, so
-  abort proceeds to write the fallback completion and record the aborted
-  terminal rather than rejecting. This is the more robust reading of "abort must
-  settle", no test depended on the rejection, and `error` is only reachable
-  post-spawn — but it is a real edge-case change, flagged for the reviewer.
+- **Behavior change, investigated and cleared.** The old `waitForChildExit`
+  *rejected* on the child `error` event; the replacement resolves "not
+  confirmed", so abort proceeds to write the fallback completion and record the
+  aborted terminal rather than rejecting. Checked rather than assumed: the abort
+  path calls `process.kill(pid, signal)` directly (`driver.ts:279`) and never
+  `child.kill()`, so a failed signal surfaces as a **thrown exception** inside
+  `signalDetachedChild`, not as an `error` event on the child handle. Since the
+  child is already spawned on this path (we hold its pid), the `error` event is
+  effectively unreachable, and no test depended on the rejection (full suite
+  green). Impact is nil; the new behavior is also the more robust reading of
+  "abort must settle".
 
 ### AC#3 / PR-004 — NOT DONE, deliberately deferred
 

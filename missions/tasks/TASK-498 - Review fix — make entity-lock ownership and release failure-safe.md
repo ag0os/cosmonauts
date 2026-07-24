@@ -196,3 +196,26 @@ as it is on `main` (`NaN !== NaN` would otherwise have stranded it permanently).
 is unchanged and still accepted. §5 holds: exactly two pid-liveness lock
 protocols (`lib/entity-file-lock.ts`, `lib/driver/lock.ts`); `lib/tasks/lock.ts`
 is untouched and still a thin caller.
+
+### Accepted residual in the rename claim (identified during design, within §4)
+
+The rename-away/link-back window can strand a lock, in one narrow interleaving:
+
+1. Contender B holds stale content S; owner A meanwhile holds live lock `L_A`.
+2. B renames `lockPath` (now `L_A`) to its removal temp — `lockPath` is briefly absent.
+3. A finishes and calls `release()`: `readLockFile` hits ENOENT, so A marks
+   itself released **without unlinking** (correct — it must never remove a lock
+   it no longer owns).
+4. B sees `L_A != S` and links it back. `L_A` is on disk with nobody left to
+   release it, and its pid is live, so stale reclamation will not reclaim it.
+
+Consequence: later same-entity writers time out and run unlocked — fail-soft,
+exactly D-498-1 §4's accepted residual, and bounded by the process lifetime.
+
+This is **strictly better than `main`**, whose failure mode in the same window is
+to blind-unlink `L_A`, destroying a live owner's lock and admitting concurrent
+entry — a correctness violation rather than a degradation. Requires A's entire
+remaining critical section plus release to complete inside B's microsecond
+rename→link window. Not mitigated: any fix would need an atomic
+compare-and-remove the platform does not offer, and §4 explicitly rules
+heartbeat/age reclamation of a live-pid lock out of scope.
