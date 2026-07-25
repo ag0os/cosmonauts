@@ -1,8 +1,8 @@
 ---
 title: Episodic-log detached-terminal & resume hardening
-status: active
+status: completed
 createdAt: '2026-07-21T22:17:10.000Z'
-updatedAt: '2026-07-22T15:38:00.000Z'
+updatedAt: '2026-07-25T01:01:11.749Z'
 ---
 
 ## Overview
