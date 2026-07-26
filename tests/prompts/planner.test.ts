@@ -7,6 +7,21 @@ const PROMPT_PATH = new URL(
 );
 
 describe("planner prompt", () => {
+	// @cosmo-behavior plan:spec-plan-intent#B-008
+	it("records decision provenance and checks mechanism against intent", async () => {
+		const content = await readFile(PROMPT_PATH, "utf-8");
+
+		expect(content).toContain(
+			"Every entry carries `Decided by:` provenance",
+		);
+		expect(content).toContain(
+			"mutability (ratified vs derived) defaults derive from it",
+		);
+		expect(content).toContain("`references/deviation-protocol.md`");
+		expect(content).toContain("**Intent outranks mechanism.**");
+		expect(content).toContain("name which one wins");
+	});
+
 	it("identifies as a pragmatic architect", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 

@@ -7,6 +7,23 @@ const PROMPT_PATH = new URL(
 );
 
 describe("spec-writer prompt", () => {
+	// @cosmo-behavior plan:spec-plan-intent#B-007
+	it("captures goal and invariants in the intent section", async () => {
+		const content = await readFile(PROMPT_PATH, "utf-8");
+
+		expect(content).toContain("`Intent`");
+		expect(content).toContain("Distill the intent");
+		expect(content).toContain("`INV-###` invariants");
+		expect(content).toContain("outrank any mechanism");
+		expect(content).toContain(
+			"what must remain true no matter how the implementation changes",
+		);
+		expect(content).toContain("state the ranking");
+		expect(content).toContain(
+			"Intent is ratified ground once the human confirms it",
+		);
+	});
+
 	// @cosmo-behavior plan:artifact-format-redesign#B-003
 	it("requires AC identifiers for planned specs without forcing specs for direct fixes", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
