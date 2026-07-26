@@ -38,7 +38,7 @@ Read every file before writing anything:
 Focus on what helps the next agent or human working in this area. Ask:
 
 - **What was the outcome?** — Summarize what exists now that did not before. High-level, not a file listing.
-- **What decisions were made?** — Why was X chosen over Y? What trade-offs were accepted?
+- **What decisions were made?** — Why was X chosen over Y? What trade-offs were accepted? Include supersessions and amend-on-record decisions from the plan's Decision Log — what was amended mid-implementation, why, and what it replaced. An amendment that survived to ship is exactly the knowledge the next plan in this area needs.
 - **What patterns were established?** — Conventions, naming, file organization, API shapes that future work should follow.
 - **What files were affected?** — Which areas of the codebase changed, with enough context to know why.
 - **What surprised you?** — Gotchas, edge cases, things that would bite someone unfamiliar with this area.

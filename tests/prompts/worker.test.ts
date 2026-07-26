@@ -21,9 +21,7 @@ describe("worker prompt", () => {
 		);
 		expect(content).toContain("`references/deviation-protocol.md`");
 		expect(content).toContain("Blocked with a drafted decision entry");
-		expect(content).toContain(
-			"surface every amendment by its decision ID",
-		);
+		expect(content).toContain("surface every amendment by its decision ID");
 		expect(content).toContain(
 			"the deviation classifier leaves the call to you",
 		);

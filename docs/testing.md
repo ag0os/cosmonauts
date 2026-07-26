@@ -226,3 +226,12 @@ afterEach(async () => {
   await rm(tmpDir, { recursive: true });
 });
 ```
+
+## Tests As Evidence
+
+A test asserting planned or ratified behavior is evidence, not an obstacle.
+It changes only after the plan text it proves,
+citing the decision that changed it. Rewriting a test's expectations to make
+new behavior pass —
+without a recorded plan amendment — is drift, and reviewers treat it as such
+(see `domains/shared/skills/work-artifacts/references/deviation-protocol.md`).

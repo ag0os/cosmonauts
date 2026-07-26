@@ -79,9 +79,7 @@ describe("plan skill", () => {
 			"`snap back / amend-on-record / halt-and-escalate / record`",
 		);
 		expect(content).toContain("`references/deviation-protocol.md`");
-		expect(content).toContain(
-			"ratified ground moves only by human decision",
-		);
+		expect(content).toContain("ratified ground moves only by human decision");
 	});
 
 	it("owns plan lifecycle tools readiness and task handoff", async () => {

@@ -11,9 +11,7 @@ describe("planner prompt", () => {
 	it("records decision provenance and checks mechanism against intent", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
-		expect(content).toContain(
-			"Every entry carries `Decided by:` provenance",
-		);
+		expect(content).toContain("Every entry carries `Decided by:` provenance");
 		expect(content).toContain(
 			"mutability (ratified vs derived) defaults derive from it",
 		);
