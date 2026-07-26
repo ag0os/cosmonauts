@@ -11,6 +11,16 @@ async function readPrompt() {
 }
 
 describe("task-manager prompt", () => {
+	// @cosmo-behavior plan:spec-plan-intent#B-012
+	it("carries ratified-ground constraints into task acceptance criteria", async () => {
+		const content = await readFile(PROMPT_PATH, "utf-8");
+
+		expect(content).toContain("Carry mutability with the constraint");
+		expect(content).toContain("stop-and-escalate ground");
+		expect(content).toContain("not worker-adjustable detail");
+		expect(content).toContain("`references/deviation-protocol.md`");
+	});
+
 	// @cosmo-behavior plan:artifact-format-redesign#B-006
 	it("preserves behavior IDs and marker expectations when turning behaviors into ACs", async () => {
 		const content = await readPrompt();

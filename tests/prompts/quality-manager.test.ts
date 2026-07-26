@@ -12,6 +12,24 @@ async function readPrompt() {
 }
 
 describe("quality-manager prompt", () => {
+	// @cosmo-behavior plan:spec-plan-intent#B-010
+	it("classifies remediations against ratified ground before routing", async () => {
+		const content = await readFile(PROMPT_PATH, "utf-8");
+
+		expect(content).toContain(
+			"Classify against ratified ground before routing.",
+		);
+		expect(content).toContain(
+			"A finding is evidence; its suggested fix is an alternative to weigh, not a mandate.",
+		);
+		expect(content).toContain("`references/deviation-protocol.md`");
+		expect(content).toContain("decision-needed");
+		expect(content).toContain(
+			"never a `fixer` route and never a `review-fix` task",
+		);
+		expect(content).toContain("Split compound findings");
+	});
+
 	it("can spawn coordinator for task-driven remediation but not tdd-coordinator", () => {
 		expect(definition.subagents).toContain("coordinator");
 		expect(definition.subagents).not.toContain("tdd-coordinator");

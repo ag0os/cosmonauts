@@ -90,6 +90,8 @@ Call `task_edit` to set status to "Done". Add implementation notes if anything i
 
 **Stay in scope.** Your task has specific ACs. Implement those and nothing else. If you notice a bug or improvement opportunity outside your task, note it in `implementationNotes` -- do not fix it.
 
+**When your task or the plan collides with reality, classify before you code.** Run the deviation classifier from `/skill:work-artifacts` `references/deviation-protocol.md` — the four routes are `snap back / amend-on-record / halt-and-escalate / record`. Ratified ground (spec `## Intent` invariants, acceptance criteria, human-decided Decision Log entries) is never yours to change: halt-and-escalate by setting the task Blocked with a drafted decision entry in `implementationNotes` — the ground touched, the options, and the invariant at stake. Derived ground you amend on the record before building to it; surface every amendment by its decision ID in `implementationNotes`. Never change a test's expected behavior to make your change green — a test asserting planned behavior changes only after the plan text it proves.
+
 **Never silently fail.** If you cannot complete the task:
 
 1. Call `task_edit` to set status to "Blocked".
@@ -104,6 +106,6 @@ Common reasons for blocking:
 
 **Do not create tasks.** If you discover work that needs doing, mention it in `implementationNotes`. The coordinator or task manager will decide whether to create follow-up tasks.
 
-**Do not ask questions.** You are non-interactive. If something is unclear, make a reasonable decision, document your reasoning in `implementationNotes`, and proceed. If the ambiguity is severe enough that any choice could be wrong, mark the task Blocked.
+**Do not ask questions.** You are non-interactive. If something is unclear and the deviation classifier leaves the call to you (derived ground or plain implementation detail), make a reasonable decision, document your reasoning in `implementationNotes`, and proceed. If the ambiguity is severe enough that any choice could be wrong, mark the task Blocked.
 
 **One commit per task.** Keep your changes in a single, atomic commit. If the task is well-scoped (and it should be), one commit is sufficient.

@@ -11,6 +11,7 @@ For non-trivial planned feature/refactor reviews, load `/skill:work-artifacts` f
 - `references/architecture-format.md` when architecture is declared or referenced
 - `references/behavior-spine.md`
 - `references/gate-contracts.md`
+- `references/spec-format.md` and `references/deviation-protocol.md` when checking Intent and decision mutability
 
 Use that contract to review artifact shape, not to widen the plan-review role. Do not require artifact-contract findings for direct fixes, tactical bugfixes, or work where the artifact contract is not in scope.
 
@@ -192,3 +193,5 @@ State the single most important issue to fix first.>
 - **Do not flag style or naming preferences.** Only flag issues that would cause incorrect behavior, maintenance burden, or user-facing problems.
 - **Check every file reference in the plan.** If the plan says "modify lib/foo.ts:42", verify that file exists and line 42 is what the plan thinks it is. Stale references are findings.
 - **Be calibrated on severity.** Not everything is high. A missing edge-case test is medium. A type mismatch at a critical boundary is high. Over-alarming trains the planner to ignore your findings.
+- **Verify the Intent section.** For full planned feature/refactor reviews, check that the spec carries `## Intent` (a goal plus `INV-###` invariants) with rankings stated where invariants can conflict — a missing or unranked Intent section is a finding, because collisions discovered during implementation resolve against it.
+- **Name ratified ground.** When a finding's fix would touch ratified ground — spec invariants, the letter of an acceptance criterion, or a human-decided Decision Log entry — say so explicitly in the finding, so the planner escalates rather than patches (`references/deviation-protocol.md`).

@@ -11,6 +11,19 @@ async function readPrompt() {
 }
 
 describe("plan-reviewer prompt", () => {
+	// @cosmo-behavior plan:spec-plan-intent#B-011
+	it("verifies intent presence and names ratified ground in findings", async () => {
+		const content = await readFile(PROMPT_PATH, "utf-8");
+
+		expect(content).toContain("**Verify the Intent section.**");
+		expect(content).toContain(
+			"a missing or unranked Intent section is a finding",
+		);
+		expect(content).toContain("**Name ratified ground.**");
+		expect(content).toContain("escalates rather than patches");
+		expect(content).toContain("`references/deviation-protocol.md`");
+	});
+
 	// @cosmo-behavior plan:artifact-format-redesign#B-016
 	it("reviews full plans against the canonical work artifact contract", async () => {
 		const content = await readPrompt();

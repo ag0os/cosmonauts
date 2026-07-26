@@ -172,6 +172,8 @@ If project-native checks pass, the reviewer verdict is `correct`, and `latest_in
 
 Otherwise, route remediation using all available evidence: failed checks, reviewer findings, failed `QC-*` criteria, and any `I-###` integration findings.
 
+**Classify against ratified ground before routing.** A finding is evidence; its suggested fix is an alternative to weigh, not a mandate. When a remediation would contradict the active plan's recorded ground — its spec `## Intent` invariants, its acceptance criteria, or a human-decided Decision Log entry — apply `/skill:work-artifacts` `references/deviation-protocol.md` before routing: a remediation that would supersede ratified ground becomes a **decision-needed** item for the human, named in the exit summary (and in `qm.md` when a plan is active) with the finding id, the ratified ground touched, and a drafted decision entry — never a `fixer` route and never a `review-fix` task. Split compound findings so the parts whose ground is derived still proceed through normal remediation. A P0/P1 decision-needed item ends the invocation with a failure summary naming it instead of further remediation rounds against ratified ground; a P2/P3 one is recorded as `deferred` with the decision-needed note.
+
 As you route each finding below, update its `findings_ledger` entry to the matching disposition: `routed-to-fixer` for findings sent to `fixer`, `routed-to-task` for findings turned into remediation tasks, `dismissed-low-confidence` for findings dismissed under the rule below.
 
 - **Dismiss low-confidence findings** (confidence < 0.3). Note them in your status output but do not act on them. Record each in the ledger as `dismissed-low-confidence` — dismissed is tracked, not forgotten.
