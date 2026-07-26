@@ -52,6 +52,7 @@ Before calling `plan_create` or `plan_edit`, run a short visible readiness check
 
 - **Specificity** - The plan names concrete modules, responsibilities, contracts, and files or clearly marked new files.
 - **Constraints** - Scope boundaries, dependency direction, existing-feature interactions, non-goals, and invariants are explicit.
+- **Intent** - For planned feature/refactor work, the spec carries `## Intent` (a goal plus `INV-###` invariants; the plan carries it when no spec exists), with rankings stated where invariants can conflict.
 - **Context** - Claims about existing code are backed by files you actually read; no guessed names, paths, signatures, or helpers.
 - **Behaviors** - Full planned feature/refactor plans have `## Behaviors` entries with context, action, expected result, source `AC-###`, seam, named test, and `@cosmo-behavior plan:<slug>#B-###` marker.
 - **Design derivation** - `## Design` follows from behavior placement. If it cannot trace to behavior seams, source criteria, and named tests, revise the behaviors or design before task creation.
@@ -62,6 +63,16 @@ Before calling `plan_create` or `plan_edit`, run a short visible readiness check
 Reject a full planned feature/refactor plan as not ready if any behavior lacks a named test or marker. In interactive mode, pause for correction or an explicit waiver before writing. In autonomous runs, proceed only as narrowly as the run allows and record the gap in Assumptions, Open Questions, Risks, or the Decision Log.
 
 One-sentence test: if you collapse the plan into "`<end state>` verified by `<evidence>` while preserving `<constraints>`; proceed via `<implementation order>`; if `<conditions>` hold, pivot or abort", the sentence should read as a coherent contract. If a clause is hollow, revisit that section.
+
+## Deviations And Amendments
+
+A live plan is amended on the record, never silently routed around. When
+implementation collides with plan text — or a review finding contradicts it —
+classify the deviation with the four routes of
+`snap back / amend-on-record / halt-and-escalate / record` via
+`/skill:work-artifacts` `references/deviation-protocol.md`. Amendments land as
+dated Decision Log entries with a supersession pointer on the replaced text;
+ratified ground moves only by human decision.
 
 ## Tool Reference
 

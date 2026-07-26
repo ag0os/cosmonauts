@@ -238,7 +238,7 @@ verify it against the signing key, and attach the decoded payload to the request
 ## Common Problems
 
 - **Task is blocked with no resolution path.** Add a note explaining the blocker as a triad — *what was tried, what's still unknown, what would unblock it* — then either: (a) create a new task to resolve the blocker, or (b) restructure the blocked task to work around it. Don't leave tasks in `Blocked` indefinitely without that triad, and don't replace it with vague "stuck" notes.
-- **Acceptance criteria turn out to be wrong mid-implementation.** Update the ACs via `task_edit` before continuing. ACs are a contract — changing them is fine, but working against outdated ACs wastes effort.
+- **Acceptance criteria turn out to be wrong mid-implementation.** Classify the change first via `/skill:work-artifacts` `references/deviation-protocol.md`: a task AC that restates a ratified spec criterion or invariant is not yours to edit — halt-and-escalate with a drafted decision entry in the task notes. A task AC that is derived plan ground is updated on the record: amend via `task_edit` before continuing and surface the change in implementation notes. ACs are a contract — working against outdated ACs wastes effort, and silently working around them is drift.
 - **Task is too large once implementation starts.** Split it. Create new tasks for the overflow, link them to the same plan, and update dependencies. Finish the original task with its reduced scope.
 - **Dependency chain is too deep.** If a task is blocked by 3+ levels of dependencies, look for opportunities to parallelize. Often tasks that seem sequential can be split into independent parts.
 

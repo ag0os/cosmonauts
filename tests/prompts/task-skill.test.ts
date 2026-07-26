@@ -18,6 +18,24 @@ async function readCapabilities() {
 	return readFile(CAPABILITY_PATH, "utf-8");
 }
 
+describe("task skill deviation routing", () => {
+	// @cosmo-behavior plan:spec-plan-intent#B-006
+	it("routes mid-implementation acceptance criteria changes through the deviation classifier", async () => {
+		const content = await readSkill();
+
+		expect(content).toContain(
+			"**Acceptance criteria turn out to be wrong mid-implementation.**",
+		);
+		expect(content).toContain("Classify the change first via");
+		expect(content).toContain("`references/deviation-protocol.md`");
+		expect(content).toContain(
+			"halt-and-escalate with a drafted decision entry",
+		);
+		expect(content).toContain("derived plan ground is updated on the record");
+		expect(content).toContain("silently working around them is drift");
+	});
+});
+
 describe("task skill", () => {
 	// @cosmo-behavior plan:artifact-format-redesign#B-002
 	it("owns task lifecycle guidance while routing artifact format details to work-artifacts", async () => {

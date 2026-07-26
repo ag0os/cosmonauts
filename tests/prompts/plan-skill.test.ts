@@ -62,6 +62,28 @@ describe("plan skill", () => {
 		);
 	});
 
+	// @cosmo-behavior plan:spec-plan-intent#B-005
+	it("checks intent presence and routes deviations to the protocol", async () => {
+		const content = await readSkill();
+
+		expect(content).toContain("**Intent**");
+		expect(content).toContain("`## Intent`");
+		expect(content).toContain("`INV-###` invariants");
+		expect(content).toContain("the plan carries it when no spec exists");
+		expect(content).toContain("rankings stated where invariants can conflict");
+		expect(content).toContain("## Deviations And Amendments");
+		expect(content).toContain(
+			"amended on the record, never silently routed around",
+		);
+		expect(content).toContain(
+			"`snap back / amend-on-record / halt-and-escalate / record`",
+		);
+		expect(content).toContain("`references/deviation-protocol.md`");
+		expect(content).toContain(
+			"ratified ground moves only by human decision",
+		);
+	});
+
 	it("owns plan lifecycle tools readiness and task handoff", async () => {
 		const content = await readSkill();
 
