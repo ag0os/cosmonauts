@@ -1,8 +1,8 @@
 ---
 title: 'Spec/plan intent, mutability, and the deviation protocol'
-status: active
+status: completed
 createdAt: '2026-07-26T14:30:39.745Z'
-updatedAt: '2026-07-26T14:30:39.745Z'
+updatedAt: '2026-07-26T14:44:17.924Z'
 ---
 
 ## Overview
