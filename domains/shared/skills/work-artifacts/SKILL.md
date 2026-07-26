@@ -26,6 +26,7 @@ This is a thin dispatcher for Cosmonauts work-document formats. Canonical artifa
 | Writing or reviewing architecture context or architecture records | `references/architecture-format.md` |
 | Mapping ACs to behaviors, tests, seams, and markers | `references/behavior-spine.md` |
 | Writing or reviewing Quality Contract gates | `references/gate-contracts.md` |
+| Handling a deviation, amendment, or plan/reality collision | `references/deviation-protocol.md` |
 | Choosing artifact diagrams or matrix primitives | `references/visual-primitives.md` |
 | Needing a small template for the current workflow tier | `references/examples.md` |
 
@@ -37,6 +38,7 @@ This is a thin dispatcher for Cosmonauts work-document formats. Canonical artifa
 - `references/architecture-format.md` - `missions/architecture/<slug>.md`, Decision Log, Boundary Model, Architecture Context, and memory distinction.
 - `references/behavior-spine.md` - `AC-###` to `B-###` to seam, test, and `@cosmo-behavior plan:<slug>#B-###` marker.
 - `references/gate-contracts.md` - abstract gate kinds, tiers, binding states, protocol slot, and degradation rules.
+- `references/deviation-protocol.md` - ratified/derived mutability, the deviation classifier, and amend-on-record mechanics.
 - `references/visual-primitives.md` - approved markdown-native visuals and the ASCII-art ban.
 - `references/examples.md` - minimal templates for direct, tactical, planned, and architecture-linked work.
 

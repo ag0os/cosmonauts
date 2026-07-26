@@ -19,6 +19,7 @@ const REQUIRED_REFERENCES = [
 	"gate-contracts.md",
 	"visual-primitives.md",
 	"examples.md",
+	"deviation-protocol.md",
 ] as const;
 
 async function readSkill() {
@@ -165,6 +166,78 @@ describe("work-artifacts skill", () => {
 		);
 		expect(examples).toContain("## Current Architecture");
 		expect(examples).toContain("## Plan Links");
+	});
+
+	// @cosmo-behavior plan:spec-plan-intent#B-001
+	it("requires an intent section with ranked invariants in spec format", async () => {
+		const specFormat = await readReference("spec-format.md");
+
+		expect(specFormat).toContain("- `## Intent`");
+		expect(specFormat).toContain("`## Purpose` stays narrative");
+		expect(specFormat).toContain("Goal: <one sentence");
+		expect(specFormat).toContain("INV-###");
+		expect(specFormat).toContain("outrank any mechanism");
+		expect(specFormat).toContain(
+			"Invariants are ratified ground: changing one is always a human decision.",
+		);
+		expect(specFormat).toContain(
+			"Where two invariants can conflict, state the ranking",
+		);
+		expect(specFormat).toContain("`deviation-protocol.md`");
+	});
+
+	// @cosmo-behavior plan:spec-plan-intent#B-002
+	it("requires a decision log with provenance-derived mutability in plan format", async () => {
+		const planFormat = await readReference("plan-format.md");
+
+		expect(planFormat).toContain("- `## Decision Log`");
+		expect(planFormat).toContain("Every full plan has `## Decision Log`.");
+		expect(planFormat).toContain("Decision:");
+		expect(planFormat).toContain("Alternatives:");
+		expect(planFormat).toContain("Why:");
+		expect(planFormat).toContain("Decided by:");
+		expect(planFormat).toContain("Supersedes:");
+		expect(planFormat).toContain(
+			"Mutability follows from `Decided by:` provenance",
+		);
+		expect(planFormat).toContain("treated as ratified");
+		expect(planFormat).toContain("write it only when overriding");
+		expect(planFormat).toContain(
+			"Plans cite spec invariants by `INV-###` ID and do not restate intent",
+		);
+	});
+
+	// @cosmo-behavior plan:spec-plan-intent#B-003
+	it("defines the deviation classifier and amend-on-record protocol", async () => {
+		const protocol = await readReference("deviation-protocol.md");
+
+		expect(protocol).toContain("The plan is the thing you amend on the record");
+		expect(protocol).toContain(
+			"**snap back / amend-on-record / halt-and-escalate / record**",
+		);
+		expect(protocol).toContain("`ratified`");
+		expect(protocol).toContain("`derived`");
+		expect(protocol).toContain("Always ratified, regardless of markers");
+		expect(protocol).toContain("Write the decision first");
+		expect(protocol).toContain("honestly rejected alternative");
+		expect(protocol).toContain("(superseded by D-###, <date>)");
+		expect(protocol).toContain(
+			"A finding is evidence; its suggested fix is an alternative to weigh",
+		);
+		expect(protocol).toContain("Split compound findings");
+		expect(protocol).toContain(
+			"Changing a test's expected behavior to make the change green",
+		);
+		expect(protocol).toContain("never work from memory of the plan");
+	});
+
+	// @cosmo-behavior plan:spec-plan-intent#B-004
+	it("routes deviation handling to the deviation protocol reference", async () => {
+		const skill = await readSkill();
+
+		expect(skill).toContain("references/deviation-protocol.md");
+		expect(skill).toContain("deviation classifier");
+		expect(skill).toContain("amend-on-record");
 	});
 
 	// @cosmo-behavior plan:artifact-format-redesign#B-020

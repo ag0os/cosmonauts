@@ -8,12 +8,41 @@ Use this order for a full planned feature/refactor plan:
 
 - `## Overview`
 - `## Architecture Context` when the plan depends on a durable architecture record; name the relevant decisions and boundary rules
+- `## Decision Log`
 - `## Behaviors`
 - `## Design`
 - `## Files to Change`
 - `## Risks`
 - `## Quality Contract`
 - `## Implementation Order`
+
+## Decision Log
+
+Every full plan has `## Decision Log`. Entries record meaningful choices —
+planner trade-offs, human directions, and amendments made while implementing.
+
+Use this shape:
+
+```md
+- **D-001 - Decision title**
+  - Decision: the chosen rule or direction
+  - Alternatives: meaningful options rejected, one line each
+  - Why: the reason, naming the spec invariant or goal it serves
+  - Decided by: provenance — for example `human, <date>` or `planner-proposed`
+  - Supersedes: the exact ground replaced (amendments only)
+```
+
+Mutability follows from `Decided by:` provenance: entries decided by the
+human are ratified (stop-and-ask); entries proposed by an agent are derived
+(amend-on-record); entries with no provenance are treated as ratified. An
+explicit `(ratified)` / `(derived)` marker on the title overrides the
+default; write it only when overriding. The full mutability rules, the
+deviation classifier, and amendment mechanics live in
+`deviation-protocol.md`.
+
+Plans cite spec invariants by `INV-###` ID and do not restate intent; the
+spec owns it. A plan with no spec carries the spec-format `## Intent`
+section itself and is then the single source.
 
 ## Behaviors
 

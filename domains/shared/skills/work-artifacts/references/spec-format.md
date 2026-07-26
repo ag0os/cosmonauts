@@ -7,12 +7,41 @@
 Use these sections for planned feature/refactor specs:
 
 - `## Purpose`
+- `## Intent`
 - `## Users`
 - `## User Experience`
 - `## Acceptance Criteria`
 - `## Scope`
 - `## Assumptions`
 - `## Open Questions`
+
+## Intent
+
+`## Intent` separates load-bearing intent from narrative; `## Purpose` stays narrative. Shape:
+
+```md
+## Intent
+
+Goal: <one sentence — what must remain true no matter how the implementation changes>
+
+Invariants — mechanism yields to these:
+
+- INV-001 - The invariant that outranks any specific mechanism.
+- INV-002 - Another invariant.
+```
+
+Rules:
+
+- One goal sentence plus `INV-###` invariants that outrank any mechanism in
+  the plan and tasks derived from this spec.
+- Invariants are ratified ground: changing one is always a human decision.
+- Keep the list short (3-7). An invariant earns its place only when a
+  mechanism elsewhere could plausibly collide with it; otherwise it is
+  Purpose prose.
+- Where two invariants can conflict, state the ranking — say which one wins.
+- When a mechanism collides with intent during implementation, the resolution
+  follows `deviation-protocol.md`: mechanism yields, and the yield is
+  recorded.
 
 ## Acceptance Criteria
 
