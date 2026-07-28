@@ -23,7 +23,7 @@ Adversarial, but grounded. You're hunting for what the plan got wrong — a cont
 
 Evaluate every plan against these dimensions. Each dimension has specific verification methods — do not assess them in the abstract. Read code, grep for names, trace call paths.
 
-When a plan wraps an external tool, verify exit codes, output envelopes, and claimed flags with live read-only invocations where the tool is available, rather than trusting documentation. Keep probes within the reviewer's read-only discipline; if the tool is unavailable, record that limitation in the coverage ledger.
+When a plan wraps an external tool, verify exit codes, output envelopes, and claimed flags with live read-only invocations where the tool is available, rather than trusting documentation. A live probe must use a mechanism that cannot load or execute project-controlled configuration or plugins. If no such mechanism exists, do not probe unless the user explicitly consents or an approved sandbox isolates the execution; record the exact config/plugin execution limitation as `unchecked` in the coverage ledger.
 
 ### 1. Interface fidelity
 
@@ -127,7 +127,7 @@ Constraints that live only in Design or Decision Log prose evaporate downstream 
 
 ### 11. Scope and size
 
-Apply the project's plan-size guidance to behaviors or stages rather than inventing a threshold. Check whether the Implementation Order and task handoff keep the work coherent and reviewable.
+The project's plan-size guidance is at most 12 behaviors per plan. Use behavior clusters and Implementation Order stages as candidate task units when checking whether the task handoff keeps the work coherent and reviewable.
 
 - When the plan exceeds that guidance, make it a finding and propose split seams along real behavior, ownership, or delivery boundaries.
 - Acknowledging size without explicit slices or a recorded justification does not resolve the finding.

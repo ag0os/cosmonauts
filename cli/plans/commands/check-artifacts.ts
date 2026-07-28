@@ -50,7 +50,7 @@ export function registerCheckArtifactsCommand(program: Command): void {
 		});
 }
 
-export async function loadPlanArtifact(
+async function loadPlanArtifact(
 	projectRoot: string,
 	slug: string,
 ): Promise<CliParseResult<LoadedPlanArtifact>> {
@@ -139,7 +139,7 @@ function renderPlainArtifactConformanceResult(
 		lines.push(renderPlainAdvisory(advisory));
 	}
 
-	return lines;
+	return lines.map(escapeTerminalControls);
 }
 
 function renderHumanArtifactConformanceResult(
@@ -167,7 +167,7 @@ function renderHumanArtifactConformanceResult(
 		}
 	}
 
-	return lines;
+	return lines.map(escapeTerminalControls);
 }
 
 function renderPlainIssue(issue: ArtifactConformanceIssue): string {
@@ -208,6 +208,14 @@ function renderHumanIssue(issue: ArtifactConformanceIssue): string {
 	return evidence
 		? `[${issue.kind}] ${evidence}: ${issue.message}`
 		: `[${issue.kind}] ${issue.message}`;
+}
+
+function escapeTerminalControls(value: string): string {
+	return Array.from(value, (character) => {
+		const code = character.charCodeAt(0);
+		if (code > 31 && (code < 127 || code > 159)) return character;
+		return `\\u${code.toString(16).padStart(4, "0")}`;
+	}).join("");
 }
 
 function isDefined<T>(value: T | undefined): value is T {

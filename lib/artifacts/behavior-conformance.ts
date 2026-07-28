@@ -103,10 +103,20 @@ export interface ArtifactConformanceResult {
 	advisories: ArtifactConformanceAdvisory[];
 }
 
-interface MarkdownSection {
+interface MarkdownScan {
 	lines: string[];
+	fenceMaskedLines: string[];
+	quotedMaskedLines: string[];
+}
+
+interface MarkdownSection extends MarkdownScan {
 	startLine: number;
 	endLine: number;
+}
+
+interface MarkdownFence {
+	character: "`" | "~";
+	length: number;
 }
 
 const BEHAVIOR_SECTION_HEADING = "## Behaviors";
@@ -144,7 +154,13 @@ const FIELD_DISPLAY_NAMES: Record<BehaviorFieldName, string> = {
 } as const satisfies Record<BehaviorFieldName, string>;
 
 export function parseBehaviorSection(markdown: string): ParsedBehaviorSection {
-	const section = extractBehaviorSection(markdown);
+	return parseBehaviorSectionFromScan(scanMarkdown(markdown));
+}
+
+function parseBehaviorSectionFromScan(
+	scan: MarkdownScan,
+): ParsedBehaviorSection {
+	const section = extractMarkdownSection(scan, BEHAVIOR_SECTION_HEADING);
 	if (!section) {
 		return {
 			present: false,
@@ -187,7 +203,8 @@ export function parseBehaviorSection(markdown: string): ParsedBehaviorSection {
 export function checkBehaviorConformance(
 	options: CheckBehaviorConformanceOptions,
 ): ArtifactConformanceResult {
-	const section = parseBehaviorSection(options.planMarkdown);
+	const scan = scanMarkdown(options.planMarkdown);
+	const section = parseBehaviorSectionFromScan(scan);
 	const behaviors = section.behaviors.map((behavior) => {
 		if (behavior.withdrawn) {
 			return buildWithdrawnBehaviorEvidence(behavior);
@@ -201,9 +218,9 @@ export function checkBehaviorConformance(
 	});
 	const behaviorIssues = behaviors.flatMap((behavior) => behavior.issues);
 	const structuralIssues = [
-		...validateDecisionReferences(options.planMarkdown),
+		...validateDecisionReferences(scan),
 		...validateBehaviorFilePairing({
-			planMarkdown: options.planMarkdown,
+			scan,
 			behaviors: section.behaviors,
 		}),
 		...validateMarkerUniqueness(section.behaviors),
@@ -223,52 +240,33 @@ export function checkBehaviorConformance(
 	};
 }
 
-function extractBehaviorSection(markdown: string): MarkdownSection | undefined {
-	const lines = normalizeLineEndings(markdown).split("\n");
-	const headingIndex = lines.findIndex(
-		(line) => line.trimEnd() === BEHAVIOR_SECTION_HEADING,
-	);
-
-	if (headingIndex === -1) {
-		return undefined;
-	}
-
-	const nextSecondLevelHeadingIndex = lines.findIndex(
-		(line, index) => index > headingIndex && /^##\s+\S/.test(line),
-	);
-	const endIndex =
-		nextSecondLevelHeadingIndex === -1
-			? lines.length
-			: nextSecondLevelHeadingIndex;
-
-	return {
-		lines: lines.slice(headingIndex + 1, endIndex),
-		startLine: headingIndex + 2,
-		endLine: endIndex,
-	};
-}
-
 function parseBehaviors(section: MarkdownSection): ParsedBehavior[] {
 	const behaviors: ParsedBehavior[] = [];
 
 	for (let index = 0; index < section.lines.length; index += 1) {
 		const line = section.lines[index];
-		if (!line) continue;
+		const scannedLine = section.fenceMaskedLines[index];
+		if (!line || !scannedLine) continue;
 
-		const headingMatch = line.match(BEHAVIOR_HEADING_REGEX);
-		if (!headingMatch) continue;
+		const headingMatch = scannedLine.match(BEHAVIOR_HEADING_REGEX);
+		const rawHeadingMatch = line.match(BEHAVIOR_HEADING_REGEX);
+		if (!headingMatch || !rawHeadingMatch) continue;
 
 		const id = headingMatch[1];
-		const title = headingMatch[2];
+		const title = rawHeadingMatch[2];
 		if (!id || !title) continue;
 
 		const bodyStartIndex = index + 1;
 		const bodyEndIndex = findNextBehaviorHeadingIndex(
-			section.lines,
+			section.fenceMaskedLines,
 			bodyStartIndex,
 		);
 		const fieldLines = parseBehaviorFieldLines({
 			lines: section.lines.slice(bodyStartIndex, bodyEndIndex),
+			fenceMaskedLines: section.fenceMaskedLines.slice(
+				bodyStartIndex,
+				bodyEndIndex,
+			),
 			startLine: section.startLine + bodyStartIndex,
 		});
 
@@ -305,16 +303,19 @@ function findNextBehaviorHeadingIndex(
 
 function parseBehaviorFieldLines({
 	lines,
+	fenceMaskedLines,
 	startLine,
 }: {
 	lines: string[];
+	fenceMaskedLines: string[];
 	startLine: number;
 }): ParsedBehaviorField[] {
 	const fields: ParsedBehaviorField[] = [];
 
 	for (const [index, line] of lines.entries()) {
+		const scannedMatch = fenceMaskedLines[index]?.match(FIELD_LINE_REGEX);
 		const match = line.match(FIELD_LINE_REGEX);
-		if (!match) continue;
+		if (!scannedMatch || !match) continue;
 
 		const label = match[1]?.trim();
 		const value = match[2]?.trim() ?? "";
@@ -410,35 +411,110 @@ function buildWithdrawnBehaviorEvidence(
 	};
 }
 
-/**
- * Text quoted as code is a mention, not a reference: citations and
- * supersession annotations inside inline code spans or fenced code blocks
- * must not resolve against the Decision Log. Masks those regions with
- * blanks so line numbers stay stable for issue reporting.
- */
-function maskQuotedText(lines: readonly string[]): string[] {
-	const masked: string[] = [];
-	let inFence = false;
+function scanMarkdown(markdown: string): MarkdownScan {
+	const lines = normalizeLineEndings(markdown).split("\n");
+	const fenceMaskedLines: string[] = [];
+	const quotedMaskedLines: string[] = [];
+	let fence: MarkdownFence | undefined;
+
 	for (const line of lines) {
-		if (/^\s*(?:```|~~~)/.test(line)) {
-			inFence = !inFence;
-			masked.push("");
+		if (fence) {
+			fenceMaskedLines.push(" ".repeat(line.length));
+			quotedMaskedLines.push(" ".repeat(line.length));
+			if (isFenceClosingLine(line, fence)) fence = undefined;
 			continue;
 		}
-		if (inFence) {
-			masked.push("");
+
+		const openingFence = parseOpeningFence(line);
+		if (openingFence) {
+			fence = openingFence;
+			fenceMaskedLines.push(" ".repeat(line.length));
+			quotedMaskedLines.push(" ".repeat(line.length));
 			continue;
 		}
-		masked.push(line.replace(/`[^`]*`/g, (span) => " ".repeat(span.length)));
+
+		fenceMaskedLines.push(line);
+		quotedMaskedLines.push(maskInlineCodeSpans(line));
+	}
+
+	return { lines, fenceMaskedLines, quotedMaskedLines };
+}
+
+function parseOpeningFence(line: string): MarkdownFence | undefined {
+	const match = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+	const run = match?.[1];
+	if (!run) return undefined;
+	if (run[0] === "`" && match[2]?.includes("`")) return undefined;
+
+	return {
+		character: run[0] as "`" | "~",
+		length: run.length,
+	};
+}
+
+function isFenceClosingLine(line: string, fence: MarkdownFence): boolean {
+	const match = line.match(/^ {0,3}(`+|~+)[ \t]*$/);
+	const run = match?.[1];
+	return (
+		run !== undefined &&
+		run[0] === fence.character &&
+		run.length >= fence.length
+	);
+}
+
+function maskInlineCodeSpans(line: string): string {
+	let masked = "";
+	let cursor = 0;
+	while (cursor < line.length) {
+		if (line[cursor] !== "`") {
+			masked += line[cursor];
+			cursor += 1;
+			continue;
+		}
+
+		const openerEnd = endOfRun(line, cursor, "`");
+		const runLength = openerEnd - cursor;
+		const closingStart = findMatchingRun(line, openerEnd, runLength);
+		if (closingStart === -1) {
+			masked += line.slice(cursor, openerEnd);
+			cursor = openerEnd;
+			continue;
+		}
+
+		const closingEnd = closingStart + runLength;
+		masked += " ".repeat(closingEnd - cursor);
+		cursor = closingEnd;
 	}
 	return masked;
 }
 
+function findMatchingRun(
+	line: string,
+	start: number,
+	runLength: number,
+): number {
+	let cursor = start;
+	while (cursor < line.length) {
+		const next = line.indexOf("`", cursor);
+		if (next === -1) return -1;
+		const end = endOfRun(line, next, "`");
+		if (end - next === runLength) return next;
+		cursor = end;
+	}
+	return -1;
+}
+
+function endOfRun(line: string, start: number, character: string): number {
+	let end = start;
+	while (line[end] === character) end += 1;
+	return end;
+}
+
 function validateDecisionReferences(
-	markdown: string,
+	scan: MarkdownScan,
 ): ArtifactConformanceIssue[] {
 	const decisionSection = extractMarkdownSection(
-		markdown,
+		scan,
 		DECISION_LOG_SECTION_HEADING,
 	);
 	if (!decisionSection) {
@@ -446,7 +522,7 @@ function validateDecisionReferences(
 	}
 
 	const declaredDecisions = new Set<string>();
-	for (const line of decisionSection.lines) {
+	for (const line of decisionSection.quotedMaskedLines) {
 		const match = line.match(DECISION_ENTRY_REGEX);
 		const decisionId = match?.[1];
 		if (decisionId) {
@@ -456,8 +532,7 @@ function validateDecisionReferences(
 
 	const issues: ArtifactConformanceIssue[] = [];
 	const unresolved = new Set<string>();
-	const lines = maskQuotedText(normalizeLineEndings(markdown).split("\n"));
-	for (const [index, line] of lines.entries()) {
+	for (const [index, line] of scan.quotedMaskedLines.entries()) {
 		for (const match of line.matchAll(DECISION_CITATION_REGEX)) {
 			const decisionId = match[0];
 			if (declaredDecisions.has(decisionId) || unresolved.has(decisionId)) {
@@ -474,157 +549,191 @@ function validateDecisionReferences(
 		}
 	}
 
-	issues.push(...validateSupersessionDates({ decisionSection, markdown }));
+	issues.push(...validateSupersessionDates({ decisionSection, scan }));
 	return issues;
 }
 
 function validateSupersessionDates({
 	decisionSection,
-	markdown,
+	scan,
 }: {
 	decisionSection: MarkdownSection;
-	markdown: string;
+	scan: MarkdownScan;
 }): ArtifactConformanceIssue[] {
+	const pointerIssues: ArtifactConformanceIssue[] = [];
+	const annotationIssues: ArtifactConformanceIssue[] = [];
+	const decisionStartIndex = decisionSection.startLine - 1;
+
+	for (const [index, line] of scan.quotedMaskedLines.entries()) {
+		if (index >= decisionStartIndex && index < decisionSection.endLine) {
+			const pointerIssue = validateSupersessionPointer(line, index + 1);
+			if (pointerIssue) pointerIssues.push(pointerIssue);
+		}
+		annotationIssues.push(...validateSupersessionAnnotations(line, index + 1));
+	}
+	return [...pointerIssues, ...annotationIssues];
+}
+
+function validateSupersessionPointer(
+	line: string,
+	lineNumber: number,
+): ArtifactConformanceIssue | undefined {
+	const value = line.match(/^\s*-\s+Supersedes:\s*(.+)$/i)?.[1]?.trim();
+	if (!value || !/^D-\d{3}(?:\s*,.*)?$/.test(value)) return undefined;
+	if (ISO_DATE_REGEX.test(value)) return undefined;
+
+	const actual = `Supersedes: ${value}`;
+	return {
+		kind: "undated-supersession",
+		message: `Supersession pointer must include an ISO date: ${actual}.`,
+		line: lineNumber,
+		actual,
+	};
+}
+
+function validateSupersessionAnnotations(
+	line: string,
+	lineNumber: number,
+): ArtifactConformanceIssue[] {
 	const issues: ArtifactConformanceIssue[] = [];
-	let decisionStartIndex = 0;
+	for (const match of line.matchAll(SUPERSESSION_ANNOTATION_REGEX)) {
+		const annotation = match[0];
+		if (ISO_DATE_REGEX.test(annotation)) continue;
 
-	for (let index = 0; index < decisionSection.lines.length; index += 1) {
-		const line = decisionSection.lines[index];
-		if (!line) continue;
-		if (DECISION_ENTRY_REGEX.test(line)) {
-			decisionStartIndex = index;
-		}
-
-		const match = line.match(/^\s*-\s+Supersedes:\s*(.+)$/i);
-		if (!match) continue;
-
-		const nextDecisionIndex = decisionSection.lines.findIndex(
-			(candidate, candidateIndex) =>
-				candidateIndex > index && DECISION_ENTRY_REGEX.test(candidate),
-		);
-		const blockEnd =
-			nextDecisionIndex === -1
-				? decisionSection.lines.length
-				: nextDecisionIndex;
-		const decisionBlock = decisionSection.lines
-			.slice(decisionStartIndex, blockEnd)
-			.join("\n");
-		if (ISO_DATE_REGEX.test(decisionBlock)) {
-			continue;
-		}
-
-		const actual = `Supersedes: ${match[1]?.trim() ?? ""}`;
 		issues.push({
 			kind: "undated-supersession",
-			message: `Supersession pointer must include an ISO date: ${actual}.`,
-			line: decisionSection.startLine + index,
-			actual,
+			message: `Supersession annotation must include an ISO date: ${annotation}.`,
+			line: lineNumber,
+			actual: annotation,
 		});
 	}
-
-	const lines = maskQuotedText(normalizeLineEndings(markdown).split("\n"));
-	for (const [index, line] of lines.entries()) {
-		for (const match of line.matchAll(SUPERSESSION_ANNOTATION_REGEX)) {
-			const annotation = match[0];
-			if (ISO_DATE_REGEX.test(annotation)) {
-				continue;
-			}
-
-			issues.push({
-				kind: "undated-supersession",
-				message: `Supersession annotation must include an ISO date: ${annotation}.`,
-				line: index + 1,
-				actual: annotation,
-			});
-		}
-	}
-
 	return issues;
+}
+
+interface BehaviorFileReference {
+	field: "seam" | "test";
+	path: string;
+	line?: number;
 }
 
 function validateBehaviorFilePairing({
-	planMarkdown,
+	scan,
 	behaviors,
 }: {
-	planMarkdown: string;
+	scan: MarkdownScan;
 	behaviors: ParsedBehavior[];
 }): ArtifactConformanceIssue[] {
 	const filesSection = extractMarkdownSection(
-		planMarkdown,
+		scan,
 		FILES_TO_CHANGE_SECTION_HEADING,
 	);
-	if (!filesSection) {
-		return [];
-	}
+	if (!filesSection) return [];
 
-	const filesText = filesSection.lines.join("\n");
-	const issues: ArtifactConformanceIssue[] = [];
+	const filesText = filesSection.fenceMaskedLines.join("\n");
+	return behaviors.flatMap((behavior) =>
+		validateBehaviorReferences(behavior, filesText),
+	);
+}
 
-	for (const behavior of behaviors) {
-		if (behavior.withdrawn) continue;
+function validateBehaviorReferences(
+	behavior: ParsedBehavior,
+	filesText: string,
+): ArtifactConformanceIssue[] {
+	if (behavior.withdrawn) return [];
 
-		const references: Array<{
-			field: "seam" | "test";
-			path: string;
-			line?: number;
-		}> = [];
-		const seamField = behavior.fields.seam;
-		if (seamField) {
-			for (const path of extractSeamFilePaths(seamField.value)) {
-				references.push({
-					field: "seam",
-					path,
-					line: seamField.lineNumber,
-				});
-			}
-		}
+	return collectBehaviorFileReferences(behavior).flatMap((reference) => {
+		if (fileReferenceAppears(reference.path, filesText)) return [];
+		return [unpairedBehaviorFileIssue(behavior, reference)];
+	});
+}
 
-		const testField = behavior.fields.test;
-		const testPath = testField
-			? parseTestReferencePath(testField.value)
-			: undefined;
-		if (testField && testPath) {
+function collectBehaviorFileReferences(
+	behavior: ParsedBehavior,
+): BehaviorFileReference[] {
+	const references: BehaviorFileReference[] = [];
+	const seamField = behavior.fields.seam;
+	if (seamField) {
+		for (const path of extractSeamFilePaths(seamField.value)) {
 			references.push({
-				field: "test",
-				path: testPath,
-				line: testField.lineNumber,
-			});
-		}
-
-		for (const reference of references) {
-			if (fileReferenceAppears(reference.path, filesText)) {
-				continue;
-			}
-
-			issues.push({
-				kind: "unpaired-behavior-file",
-				message: `Behavior ${behavior.id} ${FIELD_DISPLAY_NAMES[reference.field]} file is missing from ## Files to Change: ${reference.path}.`,
-				behaviorId: behavior.id,
-				field: reference.field,
-				line: reference.line,
-				path: reference.path,
+				field: "seam",
+				path,
+				line: seamField.lineNumber,
 			});
 		}
 	}
 
-	return issues;
+	const testField = behavior.fields.test;
+	const testPath = testField
+		? parseTestReferencePath(testField.value)
+		: undefined;
+	if (testField && testPath) {
+		references.push({
+			field: "test",
+			path: testPath,
+			line: testField.lineNumber,
+		});
+	}
+	return references;
+}
+
+function unpairedBehaviorFileIssue(
+	behavior: ParsedBehavior,
+	reference: BehaviorFileReference,
+): ArtifactConformanceIssue {
+	return {
+		kind: "unpaired-behavior-file",
+		message: `Behavior ${behavior.id} ${FIELD_DISPLAY_NAMES[reference.field]} file is missing from ## Files to Change: ${reference.path}.`,
+		behaviorId: behavior.id,
+		field: reference.field,
+		line: reference.line,
+		path: reference.path,
+	};
 }
 
 function fileReferenceAppears(path: string, filesText: string): boolean {
-	const pattern = escapeRegExp(path).replaceAll("\\*", "[^`\\s,]+");
-	return new RegExp(`(?:^|[\\s\`(])${pattern}(?=$|[\\s\`,)])`, "m").test(
-		filesText,
-	);
+	return filesText
+		.split(/[\s`(),]+/)
+		.some((candidate) => wildcardPathMatches(path, candidate));
 }
 
-function escapeRegExp(value: string): string {
-	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function wildcardPathMatches(pattern: string, candidate: string): boolean {
+	if (!pattern.includes("*")) return pattern === candidate;
+
+	const segments = pattern.split("*").filter((segment) => segment.length > 0);
+	if (segments.length === 0) return candidate.length > 0;
+
+	const leadingWildcard = pattern.startsWith("*");
+	const trailingWildcard = pattern.endsWith("*");
+	let segmentIndex = 0;
+	let cursor = 0;
+
+	if (!leadingWildcard) {
+		const first = segments[0];
+		if (!first || !candidate.startsWith(first)) return false;
+		cursor = first.length;
+		segmentIndex = 1;
+	}
+
+	const middleEnd = trailingWildcard ? segments.length : segments.length - 1;
+	for (; segmentIndex < middleEnd; segmentIndex += 1) {
+		const segment = segments[segmentIndex];
+		if (!segment) continue;
+		const found = candidate.indexOf(segment, cursor);
+		if (found === -1) return false;
+		cursor = found + segment.length;
+	}
+
+	if (trailingWildcard) return true;
+	const last = segments.at(-1);
+	if (!last) return false;
+	const lastStart = candidate.length - last.length;
+	return lastStart >= cursor && candidate.startsWith(last, lastStart);
 }
 
 function extractSeamFilePaths(value: string): string[] {
 	const paths: string[] = [];
-	for (const match of value.matchAll(/`([^`]+)`/g)) {
-		const candidate = match[1]?.trim();
+	for (const match of value.matchAll(/`([^`]+)`|([^\s`,()]+)/g)) {
+		const candidate = (match[1] ?? match[2])?.trim();
 		if (candidate && looksLikeProjectFilePath(candidate)) {
 			paths.push(candidate);
 		}
@@ -975,25 +1084,25 @@ function normalizeLineEndings(content: string): string {
 }
 
 function extractMarkdownSection(
-	markdown: string,
+	scan: MarkdownScan,
 	heading: string,
 ): MarkdownSection | undefined {
-	const lines = normalizeLineEndings(markdown).split("\n");
-	const headingIndex = lines.findIndex((line) => line.trimEnd() === heading);
-	if (headingIndex === -1) {
-		return undefined;
-	}
+	const headingIndex = scan.fenceMaskedLines.findIndex(
+		(line) => line.trimEnd() === heading,
+	);
+	if (headingIndex === -1) return undefined;
 
-	const nextSecondLevelHeadingIndex = lines.findIndex(
+	const nextHeadingIndex = scan.fenceMaskedLines.findIndex(
 		(line, index) => index > headingIndex && /^##\s+\S/.test(line),
 	);
 	const endIndex =
-		nextSecondLevelHeadingIndex === -1
-			? lines.length
-			: nextSecondLevelHeadingIndex;
+		nextHeadingIndex === -1 ? scan.lines.length : nextHeadingIndex;
+	const sectionStart = headingIndex + 1;
 
 	return {
-		lines: lines.slice(headingIndex + 1, endIndex),
+		lines: scan.lines.slice(sectionStart, endIndex),
+		fenceMaskedLines: scan.fenceMaskedLines.slice(sectionStart, endIndex),
+		quotedMaskedLines: scan.quotedMaskedLines.slice(sectionStart, endIndex),
 		startLine: headingIndex + 2,
 		endLine: endIndex,
 	};

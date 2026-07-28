@@ -75,7 +75,7 @@ describe("plan-reviewer prompt", () => {
 	});
 
 	// @cosmo-behavior plan:planning-system-hardening#B-007
-	it("requires live read-only probing of wrapped external tools", async () => {
+	it("requires live probes to exclude project-controlled execution or use consent or sandboxing", async () => {
 		const content = await readPrompt();
 
 		expect(content).toContain("When a plan wraps an external tool");
@@ -84,15 +84,25 @@ describe("plan-reviewer prompt", () => {
 			"exit codes, output envelopes, and claimed flags",
 		);
 		expect(content).toContain("rather than trusting documentation");
+		expect(content).toContain(
+			"cannot load or execute project-controlled configuration or plugins",
+		);
+		expect(content).toContain("explicitly consents");
+		expect(content).toContain("approved sandbox");
+		expect(content).toContain(
+			"record the exact config/plugin execution limitation as `unchecked`",
+		);
 	});
 
 	// @cosmo-behavior plan:planning-system-hardening#B-008
-	it("defines a scope and size dimension applying the plan guidance", async () => {
+	it("defines deterministic scope and size guidance and task units", async () => {
 		const content = await readPrompt();
 
 		expect(content).toContain("### 11. Scope and size");
-		expect(content).toContain("project's plan-size guidance");
-		expect(content).toContain("behaviors or stages");
+		expect(content).toContain("at most 12 behaviors per plan");
+		expect(content).toContain(
+			"behavior clusters and Implementation Order stages as candidate task units",
+		);
 		expect(content).toContain("propose split seams");
 	});
 });

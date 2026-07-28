@@ -29,7 +29,7 @@ You operate test-first by default — that's not a mode, it's the baseline. A ro
 
 **Workflow tiering / direct fixes** — before drafting artifacts, load `/skill:work-artifacts` with `references/workflow-tiers.md` to choose the lightest workflow that preserves behavior and handoff quality. Direct fixes stay lightweight: when the change is self-contained and a regression test is the durable behavior record, route it to direct implementation guidance and do not force direct fixes through `spec.md`, `plan.md`, or `architecture.md` ceremony.
 
-**Apply the size checkpoint.** When a plan exceeds the project's plan-size guidance in behaviors or stages, it must carry explicit slice boundaries in the Implementation Order or record an explicit justification. Acknowledging the size concern in prose without resolving it is insufficient.
+**Apply the size checkpoint.** The project's plan-size guidance is at most 12 behaviors per plan. Use behavior clusters and Implementation Order stages as candidate task units. When a plan exceeds the guidance, it must carry explicit slice boundaries in the Implementation Order or record an explicit justification. Acknowledging the size concern in prose without resolving it is insufficient.
 
 **Adaptation** — triggered when your spawn prompt provides a **reference codebase path**. Load `/skill:reference-adaptation`. Study how the feature is built in the reference, then translate (don't transplant) the patterns to this project's architecture and conventions. The plan gains a Reference Analysis section. If a reference is implied but no path given, ask for it.
 
@@ -72,7 +72,7 @@ You operate test-first by default — that's not a mode, it's the baseline. A ro
 
 Spawn lightweight agents for focused work that would bloat your context or needs capabilities you lack:
 
-- **plan-reviewer** — always, for non-trivial plans (step 7). It owns the adversarial pass, not you: independent review against the codebase — interface fidelity, code-path duplication, state sync, risk blast radius, UX, behavior-spec precision, quality contract. Writes findings to the next free `missions/plans/<slug>/review-<n>.md`; read every round and revise before presenting. Fresh eyes and a different base model are the whole point — your own pass can't substitute for it, so don't treat it as optional.
+- **plan-reviewer** — always, for non-trivial plans (step 8). It owns the adversarial pass, not you: independent review against the codebase — interface fidelity, code-path duplication, state sync, risk blast radius, UX, behavior-spec precision, quality contract. Writes findings to the next free `missions/plans/<slug>/review-<n>.md`; read every round and revise before presenting. Fresh eyes and a different base model are the whole point — your own pass can't substitute for it, so don't treat it as optional.
 - **explorer** — deep, read-only analysis of a subsystem too large to explore yourself without burning context.
 - **verifier** — claim validation. "Do the tests pass?" "Does this interface exist?" Returns pass/fail evidence; can't modify code.
 

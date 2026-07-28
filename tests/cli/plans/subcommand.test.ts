@@ -29,6 +29,39 @@ describe("createPlanProgram", () => {
 		expect(commandNames).toContain("check-artifacts");
 	});
 
+	it("escapes terminal controls in text diagnostics while preserving JSON data", () => {
+		const controlSequence = "\u001b";
+		const result: ArtifactConformanceResult = {
+			ok: false,
+			planSlug: `unsafe${controlSequence}[31m\nplan`,
+			behaviors: [],
+			withdrawn: 0,
+			issues: [
+				{
+					kind: "unpaired-behavior-file",
+					message: `unsafe${controlSequence}[2J\rmessage`,
+					behaviorId: "B-001",
+					field: "seam",
+					path: `lib/${controlSequence}[1mfile.ts`,
+				},
+			],
+			advisories: [],
+		};
+
+		expect(renderArtifactConformanceResult(result, "json")).toBe(result);
+		for (const mode of ["plain", "human"] as const) {
+			const rendered = renderArtifactConformanceResult(
+				result,
+				mode,
+			) as string[];
+			const text = rendered.join("\n");
+			expect(text).not.toContain(controlSequence);
+			expect(text).toContain("\\u001b");
+			expect(text).toContain("\\u000a");
+			expect(text).toContain("\\u000d");
+		}
+	});
+
 	it("renders advisories and withdrawn counts in json plain and human formats", () => {
 		const result: ArtifactConformanceResult = {
 			ok: true,

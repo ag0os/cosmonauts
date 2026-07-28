@@ -691,6 +691,219 @@ example \`*(superseded by D-097, <date>)*\`.
 		expect(result.issues).toEqual([]);
 	});
 
+	test("masks Markdown code spans and fences before decision declaration and citation scans", () => {
+		const result = checkBehaviorConformance({
+			planSlug: "markdown-masking",
+			planMarkdown: `# Markdown masking
+
+\`\`\`md
+## Decision Log
+- **D-777 - Fenced fake decision section**
+\`\`\`
+
+## Decision Log
+
+- **D-001 - Real decision**
+  - Decision: keep the real declaration
+  - Decided by: user-directed, 2026-07-28
+
+\`\`- **D-097 - Inline quoted declaration**\`\`
+
+\`\`\`\`md
+- **D-098 - Backtick-fenced declaration**
+\`\`\`
+## Fake section inside the outer fence
+\`\`\`\`
+
+~~~~md
+- **D-099 - Tilde-fenced declaration**
+~~~
+## Another fake section
+~~~~
+
+## Overview
+
+Real citations D-097, D-098, and D-099 must remain unresolved.
+
+## Behaviors
+### B-001 - Withdrawn evidence *(withdrawn by D-001, 2026-07-28)*
+
+## Appendix
+
+\`\`\`
+D-096 and *(withdrawn by D-095)* remain masked through an unmatched fence.
+
+## Decision Log
+- **D-096 - Also masked**
+`,
+		});
+
+		expect(result.issues.map((issue) => [issue.kind, issue.actual])).toEqual([
+			["unresolved-decision-citation", "D-097"],
+			["unresolved-decision-citation", "D-098"],
+			["unresolved-decision-citation", "D-099"],
+		]);
+	});
+
+	test("uses only second-level headings outside fences to discover sections", () => {
+		const section = parseBehaviorSection(`\`\`\`md
+## Behaviors
+### B-999 - Fenced fake behavior
+\`\`\`
+
+## Behaviors
+### B-001 - Real behavior
+- Source: AC-001
+- Context: fenced headings occur around artifact sections
+- Action: the parser discovers the real section
+- Expected: fenced headings do not start or end sections
+- Seam: lib/artifacts/behavior-conformance.ts
+- Test: tests/artifacts/behavior-conformance.test.ts
+- Marker: @cosmo-behavior plan:section-scan#B-001
+
+\`\`\`md
+## Files to Change
+\`\`\`
+
+### B-002 - Still in the real behavior section
+- Source: AC-001
+- Context: a fenced second-level heading appears in Behaviors
+- Action: the parser continues scanning
+- Expected: both real behavior entries are parsed
+- Seam: lib/artifacts/behavior-conformance.ts
+- Test: tests/artifacts/behavior-conformance.test.ts
+- Marker: @cosmo-behavior plan:section-scan#B-002
+
+## Files to Change
+`);
+
+		expect(section.behaviors.map((behavior) => behavior.id)).toEqual([
+			"B-001",
+			"B-002",
+		]);
+	});
+
+	test("requires the supersession pointer itself to carry an ISO date", () => {
+		const result = checkBehaviorConformance({
+			planSlug: "supersession-pointer",
+			planMarkdown: `## Decision Log
+
+- **D-001 - Original**
+  - Decision: original path
+  - Decided by: user-directed, 2026-07-27
+
+- **D-002 - Replacement**
+  - Decision: replacement path
+  - Decided by: user-directed, 2026-07-28
+  - Supersedes: D-001
+
+## Behaviors
+### B-001 - Withdrawn evidence *(withdrawn by D-001, 2026-07-28)*
+`,
+		});
+
+		expect(result.issues).toContainEqual(
+			expect.objectContaining({
+				kind: "undated-supersession",
+				actual: "Supersedes: D-001",
+			}),
+		);
+	});
+
+	test("pairs repeated wildcard seams without backtracking and rejects a long nonmatch", async () => {
+		const projectRoot = await createTempDir("behavior-conformance-wildcard-");
+		await mkdir(join(projectRoot, "tests"), { recursive: true });
+		await writeFile(
+			join(projectRoot, "tests", "wildcard.test.ts"),
+			"@cosmo-behavior plan:wildcard-pairing#B-001\n",
+			"utf-8",
+		);
+		const behavior = behaviorMarkdownFor({
+			behaviorId: "B-001",
+			source: "AC-001",
+			testReference: "`tests/wildcard.test.ts` > `wildcard pairing`",
+			marker: "@cosmo-behavior plan:wildcard-pairing#B-001",
+		}).replace(
+			"`lib/artifacts/behavior-conformance.ts`",
+			"lib/**/generated-**.ts",
+		);
+
+		const paired = checkBehaviorConformance({
+			planSlug: "wildcard-pairing",
+			projectRoot,
+			planMarkdown: `${behavior}\n## Files to Change\n\n- \`lib/a/b/generated-output.ts\`\n- \`tests/wildcard.test.ts\`\n`,
+		});
+		expect(paired.issues).toEqual([]);
+
+		const longNonmatch = checkBehaviorConformance({
+			planSlug: "wildcard-pairing",
+			projectRoot,
+			planMarkdown: `${behavior}\n## Files to Change\n\n- \`lib/${"a".repeat(20_000)}.js\`\n- \`tests/wildcard.test.ts\`\n`,
+		});
+		expect(longNonmatch.issues).toContainEqual(
+			expect.objectContaining({
+				kind: "unpaired-behavior-file",
+				field: "seam",
+				path: "lib/**/generated-**.ts",
+			}),
+		);
+	});
+
+	test("pairs unquoted file seams and ignores non-file seam names", async () => {
+		const projectRoot = await createTempDir("behavior-conformance-seams-");
+		await mkdir(join(projectRoot, "tests"), { recursive: true });
+		await writeFile(
+			join(projectRoot, "tests", "seam.test.ts"),
+			"@cosmo-behavior plan:unquoted-seam#B-001\n",
+			"utf-8",
+		);
+		const behavior = behaviorMarkdownFor({
+			behaviorId: "B-001",
+			source: "AC-001",
+			testReference: "tests/seam.test.ts > `unquoted seam`",
+			marker: "@cosmo-behavior plan:unquoted-seam#B-001",
+		}).replace(
+			"`lib/artifacts/behavior-conformance.ts`",
+			"lib/unquoted.ts validateConformance",
+		);
+		const result = checkBehaviorConformance({
+			planSlug: "unquoted-seam",
+			projectRoot,
+			planMarkdown: `${behavior}\n## Files to Change\n\n- lib/unquoted.ts\n\`\`\`md\n## Risks\n\`\`\`\n- tests/seam.test.ts\n\n## Real next section\n`,
+		});
+
+		expect(result.issues).toEqual([]);
+	});
+
+	test("reports the Test pairing evidence when the Seam alone is paired", async () => {
+		const projectRoot = await createTempDir("behavior-conformance-test-pair-");
+		await mkdir(join(projectRoot, "tests"), { recursive: true });
+		await writeFile(
+			join(projectRoot, "tests", "missing-pair.test.ts"),
+			"@cosmo-behavior plan:test-pairing#B-006\n",
+			"utf-8",
+		);
+		const result = checkBehaviorConformance({
+			planSlug: "test-pairing",
+			projectRoot,
+			planMarkdown: `${behaviorMarkdownFor({
+				behaviorId: "B-006",
+				source: "AC-006",
+				testReference: "`tests/missing-pair.test.ts` > `missing test pair`",
+				marker: "@cosmo-behavior plan:test-pairing#B-006",
+			})}\n## Files to Change\n\n- \`lib/artifacts/behavior-conformance.ts\`\n`,
+		});
+
+		expect(result.issues).toEqual([
+			expect.objectContaining({
+				kind: "unpaired-behavior-file",
+				field: "test",
+				behaviorId: "B-006",
+				path: "tests/missing-pair.test.ts",
+			}),
+		]);
+	});
+
 	// @cosmo-behavior plan:planning-system-hardening#B-012
 	test("checks pairing, marker uniqueness, withdrawn behaviors, and size advisory", async () => {
 		const projectRoot = await createTempDir("behavior-conformance-extended-");

@@ -141,6 +141,53 @@ describe("plan check-artifacts command", () => {
 		}
 	});
 
+	it("keeps 13-behavior advisories non-blocking in human plain and json command flows", async () => {
+		for (const mode of ["human", "plain", "json"] as const) {
+			const result = await runPlanCheckArtifactsCommand(
+				modeArgs(mode, "advisory-plan"),
+				async (projectRoot) => {
+					await writePlanWithBody(
+						projectRoot,
+						"advisory-plan",
+						advisoryPlanMarkdown(),
+					);
+					await writeTestFile(
+						projectRoot,
+						"tests/advisory.test.ts",
+						Array.from(
+							{ length: 13 },
+							(_, index) =>
+								`@cosmo-behavior plan:advisory-plan#B-${String(index + 1).padStart(3, "0")}`,
+						).join("\n"),
+					);
+				},
+			);
+
+			expect(result.stderr).toBe("");
+			expect(result.exitCalls).toEqual([]);
+			if (mode === "json") {
+				expect(JSON.parse(result.stdout)).toMatchObject({
+					ok: true,
+					issues: [],
+					advisories: [
+						{
+							kind: "behavior-count-guidance",
+							count: 13,
+							guidance: 12,
+						},
+					],
+				});
+			} else {
+				expect(result.stdout).toContain(
+					mode === "human" ? "Advisories: 1" : "advisories=1",
+				);
+				expect(result.stdout).toContain("behavior-count-guidance");
+				expect(result.stdout).toContain("13 behaviors");
+				expect(result.stdout).toContain("guidance of 12");
+			}
+		}
+	});
+
 	// @cosmo-behavior plan:artifact-conformance-gate#B-011
 	it("reports invalid slug and missing plan diagnostics before scanning artifacts", async () => {
 		const invalidSlug = await runPlanCheckArtifactsCommand([
@@ -262,6 +309,23 @@ async function writeTestFile(
 	const filePath = join(projectRoot, path);
 	await mkdir(dirname(filePath), { recursive: true });
 	await writeFile(filePath, `${content}\n`, "utf-8");
+}
+
+function advisoryPlanMarkdown(): string {
+	return `## Behaviors
+
+${Array.from({ length: 13 }, (_, index) => {
+	const number = String(index + 1).padStart(3, "0");
+	return `### B-${number} - Advisory behavior ${number}
+- Source: AC-009
+- Context: A conforming plan has more than twelve behaviors.
+- Action: The command validates the requested plan artifact.
+- Expected: It reports a non-blocking size advisory.
+- Seam: \`cli/plans/commands/check-artifacts.ts\`
+- Test: \`tests/advisory.test.ts\` > \`advisory behavior ${number}\`
+- Marker: \`@cosmo-behavior plan:advisory-plan#B-${number}\``;
+}).join("\n\n")}
+`;
 }
 
 function behaviorPlanMarkdown({

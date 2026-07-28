@@ -119,11 +119,14 @@ describe("planner prompt", () => {
 	});
 
 	// @cosmo-behavior plan:planning-system-hardening#B-003
-	it("enforces the size checkpoint with slice boundaries or justification", async () => {
+	it("enforces deterministic size guidance with discoverable task units", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
 		expect(content).toContain("**Apply the size checkpoint.**");
-		expect(content).toContain("project's plan-size guidance");
+		expect(content).toContain("at most 12 behaviors per plan");
+		expect(content).toContain(
+			"behavior clusters and Implementation Order stages as candidate task units",
+		);
 		expect(content).toContain(
 			"explicit slice boundaries in the Implementation Order or record an explicit justification",
 		);
@@ -150,6 +153,17 @@ describe("planner prompt", () => {
 
 		expect(content).toContain(
 			"If the design executes anything project-controlled, name the trust boundary and the consent gate.",
+		);
+	});
+
+	it("pins the plan-reviewer sidecar to workflow step 8", async () => {
+		const content = await readFile(PROMPT_PATH, "utf-8");
+
+		expect(content).toContain(
+			"**plan-reviewer** — always, for non-trivial plans (step 8).",
+		);
+		expect(content).not.toContain(
+			"**plan-reviewer** — always, for non-trivial plans (step 7).",
 		);
 	});
 });
