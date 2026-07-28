@@ -279,11 +279,16 @@ function parseBehaviors(section: MarkdownSection): ParsedBehavior[] {
 			title: title.trim(),
 			heading: line,
 			lineNumber: section.startLine + index,
-			// Withdrawal must come from the quote-masked heading: a code-quoted
-			// annotation is a mention and the behavior stays active.
-			withdrawn: WITHDRAWN_ANNOTATION_REGEX.test(
-				section.quotedMaskedLines[index] ?? scannedLine,
-			),
+			// Withdrawal requires the exact dated annotation to end the heading
+			// in BOTH views: the raw line (nothing may follow it, not even
+			// quoted text that masking would blank into satisfying the anchor)
+			// and the quote-masked line (a code-quoted annotation is a mention
+			// and the behavior stays active).
+			withdrawn:
+				WITHDRAWN_ANNOTATION_REGEX.test(line) &&
+				WITHDRAWN_ANNOTATION_REGEX.test(
+					section.quotedMaskedLines[index] ?? scannedLine,
+				),
 			fields: Object.fromEntries(
 				fieldLines.map((field) => [field.name, field]),
 			) as ParsedBehaviorFields,
@@ -611,8 +616,11 @@ function validateSupersessionDates({
 			const pointerIssue = validateSupersessionPointer({
 				line,
 				lineNumber: index + 1,
+				// Boundary and date detection both use the quote-masked view so a
+				// fenced or code-quoted decision example inside an entry neither
+				// splits the entry nor contributes a date.
 				entryBlock: decisionEntryBlockAt({
-					lines: scan.lines,
+					lines: scan.quotedMaskedLines,
 					sectionStart: decisionStartIndex,
 					sectionEnd: decisionSection.endLine,
 					lineIndex: index,

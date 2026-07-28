@@ -815,18 +815,49 @@ Another stray backtick \` sits here.
 
 	// @cosmo-behavior plan:planning-system-hardening#B-012
 	test("does not withdraw a heading with trailing text after the annotation", () => {
+		for (const trailing of ["trailing garbage", "`trailing code`"]) {
+			const result = checkBehaviorConformance({
+				planSlug: "planning-system-hardening",
+				planMarkdown: `# Planning system hardening
+
+## Behaviors
+
+### B-001 - Sample *(withdrawn by D-001, 2026-07-28)* ${trailing}
+`,
+			});
+
+			expect(result.withdrawn, trailing).toBe(0);
+			expect(result.issues.length, trailing).toBeGreaterThan(0);
+		}
+	});
+
+	// @cosmo-behavior plan:planning-system-hardening#B-011
+	test("keeps the entry date visible when a fenced decision example splits the entry", () => {
 		const result = checkBehaviorConformance({
 			planSlug: "planning-system-hardening",
 			planMarkdown: `# Planning system hardening
 
-## Behaviors
+## Decision Log
 
-### B-001 - Sample *(withdrawn by D-001, 2026-07-28)* trailing garbage
+- **D-001 - Original**
+  - Decision: keep the original ground
+  - Decided by: planner-proposed, 2026-07-28
+
+- **D-002 - Amendment quoting an example entry**
+  - Decision: document the entry grammar
+  - Decided by: planner-proposed, 2026-07-28
+
+\`\`\`md
+- **D-999 - Example**
+\`\`\`
+
+  - Supersedes: the original descriptive ground
 `,
 		});
 
-		expect(result.withdrawn).toBe(0);
-		expect(result.issues.length).toBeGreaterThan(0);
+		expect(
+			result.issues.filter((issue) => issue.kind === "undated-supersession"),
+		).toEqual([]);
 	});
 
 	// @cosmo-behavior plan:planning-system-hardening#B-011
