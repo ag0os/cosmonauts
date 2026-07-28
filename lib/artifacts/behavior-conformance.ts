@@ -127,10 +127,12 @@ const BEHAVIOR_HEADING_REGEX = /^###\s+(B-\d{3})\s*(?:-|–|—)\s*(.+?)\s*$/;
 const DECISION_ENTRY_REGEX = /^-\s+\*\*(D-\d{3})\s+(?:-|–|—)\s+.+?\*\*/;
 const DECISION_CITATION_REGEX = /\bD-\d{3}\b/g;
 const ISO_DATE_REGEX = /\b\d{4}-\d{2}-\d{2}\b/;
-const WITHDRAWN_ANNOTATION_REGEX = /\*\(withdrawn\b[^)]*\)\*/i;
+const WITHDRAWN_ANNOTATION_REGEX =
+	/\*\(withdrawn by D-\d{3}, \d{4}-\d{2}-\d{2}(?:\s+—\s+[^)]+)?\)\*/;
 const SUPERSESSION_ANNOTATION_REGEX =
 	/\*\((?:(?:partially\s+)?superseded|withdrawn)\s+by\b[^)]*\)\*/gi;
 const FIELD_LINE_REGEX = /^-\s*([^:]+):\s*(.*)$/;
+const MAX_WILDCARD_PATH_COMPARISONS = 4_096;
 
 const FIELD_LABELS: Record<string, BehaviorFieldName> = {
 	source: "source",
@@ -414,13 +416,11 @@ function buildWithdrawnBehaviorEvidence(
 function scanMarkdown(markdown: string): MarkdownScan {
 	const lines = normalizeLineEndings(markdown).split("\n");
 	const fenceMaskedLines: string[] = [];
-	const quotedMaskedLines: string[] = [];
 	let fence: MarkdownFence | undefined;
 
 	for (const line of lines) {
 		if (fence) {
 			fenceMaskedLines.push(" ".repeat(line.length));
-			quotedMaskedLines.push(" ".repeat(line.length));
 			if (isFenceClosingLine(line, fence)) fence = undefined;
 			continue;
 		}
@@ -429,14 +429,15 @@ function scanMarkdown(markdown: string): MarkdownScan {
 		if (openingFence) {
 			fence = openingFence;
 			fenceMaskedLines.push(" ".repeat(line.length));
-			quotedMaskedLines.push(" ".repeat(line.length));
 			continue;
 		}
 
 		fenceMaskedLines.push(line);
-		quotedMaskedLines.push(maskInlineCodeSpans(line));
 	}
 
+	const quotedMaskedLines = maskInlineCodeSpans(
+		fenceMaskedLines.join("\n"),
+	).split("\n");
 	return { lines, fenceMaskedLines, quotedMaskedLines };
 }
 
@@ -462,27 +463,27 @@ function isFenceClosingLine(line: string, fence: MarkdownFence): boolean {
 	);
 }
 
-function maskInlineCodeSpans(line: string): string {
+function maskInlineCodeSpans(content: string): string {
 	let masked = "";
 	let cursor = 0;
-	while (cursor < line.length) {
-		if (line[cursor] !== "`") {
-			masked += line[cursor];
+	while (cursor < content.length) {
+		if (content[cursor] !== "`") {
+			masked += content[cursor];
 			cursor += 1;
 			continue;
 		}
 
-		const openerEnd = endOfRun(line, cursor, "`");
+		const openerEnd = endOfRun(content, cursor, "`");
 		const runLength = openerEnd - cursor;
-		const closingStart = findMatchingRun(line, openerEnd, runLength);
+		const closingStart = findMatchingRun(content, openerEnd, runLength);
 		if (closingStart === -1) {
-			masked += line.slice(cursor, openerEnd);
+			masked += content.slice(cursor, openerEnd);
 			cursor = openerEnd;
 			continue;
 		}
 
 		const closingEnd = closingStart + runLength;
-		masked += " ".repeat(closingEnd - cursor);
+		masked += content.slice(cursor, closingEnd).replaceAll(/[^\n]/g, " ");
 		cursor = closingEnd;
 	}
 	return masked;
@@ -517,12 +518,8 @@ function validateDecisionReferences(
 		scan,
 		DECISION_LOG_SECTION_HEADING,
 	);
-	if (!decisionSection) {
-		return [];
-	}
-
 	const declaredDecisions = new Set<string>();
-	for (const line of decisionSection.quotedMaskedLines) {
+	for (const line of decisionSection?.quotedMaskedLines ?? []) {
 		const match = line.match(DECISION_ENTRY_REGEX);
 		const decisionId = match?.[1];
 		if (decisionId) {
@@ -549,7 +546,9 @@ function validateDecisionReferences(
 		}
 	}
 
-	issues.push(...validateSupersessionDates({ decisionSection, scan }));
+	if (decisionSection) {
+		issues.push(...validateSupersessionDates({ decisionSection, scan }));
+	}
 	return issues;
 }
 
@@ -579,8 +578,7 @@ function validateSupersessionPointer(
 	lineNumber: number,
 ): ArtifactConformanceIssue | undefined {
 	const value = line.match(/^\s*-\s+Supersedes:\s*(.+)$/i)?.[1]?.trim();
-	if (!value || !/^D-\d{3}(?:\s*,.*)?$/.test(value)) return undefined;
-	if (ISO_DATE_REGEX.test(value)) return undefined;
+	if (!value || ISO_DATE_REGEX.test(value)) return undefined;
 
 	const actual = `Supersedes: ${value}`;
 	return {
@@ -616,6 +614,13 @@ interface BehaviorFileReference {
 	line?: number;
 }
 
+interface ChangedFileIndex {
+	exactPaths: ReadonlySet<string>;
+	wildcardCandidates: readonly string[];
+	wildcardMatches: Map<string, boolean>;
+	remainingWildcardComparisons: number;
+}
+
 function validateBehaviorFilePairing({
 	scan,
 	behaviors,
@@ -630,8 +635,14 @@ function validateBehaviorFilePairing({
 	if (!filesSection) return [];
 
 	const changedPaths = extractChangedFilePaths(filesSection.fenceMaskedLines);
+	const changedFileIndex: ChangedFileIndex = {
+		exactPaths: new Set(changedPaths),
+		wildcardCandidates: changedPaths,
+		wildcardMatches: new Map(),
+		remainingWildcardComparisons: MAX_WILDCARD_PATH_COMPARISONS,
+	};
 	return behaviors.flatMap((behavior) =>
-		validateBehaviorReferences(behavior, changedPaths),
+		validateBehaviorReferences(behavior, changedFileIndex),
 	);
 }
 
@@ -647,12 +658,12 @@ function extractChangedFilePaths(lines: readonly string[]): string[] {
 
 function validateBehaviorReferences(
 	behavior: ParsedBehavior,
-	changedPaths: readonly string[],
+	changedFileIndex: ChangedFileIndex,
 ): ArtifactConformanceIssue[] {
 	if (behavior.withdrawn) return [];
 
 	return collectBehaviorFileReferences(behavior).flatMap((reference) => {
-		if (fileReferenceAppears(reference.path, changedPaths)) return [];
+		if (fileReferenceAppears(reference.path, changedFileIndex)) return [];
 		return [unpairedBehaviorFileIssue(behavior, reference)];
 	});
 }
@@ -702,9 +713,29 @@ function unpairedBehaviorFileIssue(
 
 function fileReferenceAppears(
 	path: string,
-	changedPaths: readonly string[],
+	changedFileIndex: ChangedFileIndex,
 ): boolean {
-	return changedPaths.some((candidate) => wildcardPathMatches(path, candidate));
+	if (!path.includes("*")) {
+		return changedFileIndex.exactPaths.has(path);
+	}
+
+	const cached = changedFileIndex.wildcardMatches.get(path);
+	if (cached !== undefined) return cached;
+
+	for (const candidate of changedFileIndex.wildcardCandidates) {
+		if (changedFileIndex.remainingWildcardComparisons === 0) {
+			changedFileIndex.wildcardMatches.set(path, false);
+			return false;
+		}
+		changedFileIndex.remainingWildcardComparisons -= 1;
+		if (wildcardPathMatches(path, candidate)) {
+			changedFileIndex.wildcardMatches.set(path, true);
+			return true;
+		}
+	}
+
+	changedFileIndex.wildcardMatches.set(path, false);
+	return false;
 }
 
 function wildcardPathMatches(pattern: string, candidate: string): boolean {

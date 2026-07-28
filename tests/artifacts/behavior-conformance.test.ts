@@ -652,6 +652,34 @@ The implementation still cites D-001, but this pointer to D-099 is unresolved.
 	});
 
 	// @cosmo-behavior plan:planning-system-hardening#B-011
+	test("checks real decision citations when the Decision Log is absent", () => {
+		const conformingPlan = behaviorMarkdownFor({
+			behaviorId: "B-011",
+			source: "AC-010",
+			testReference:
+				"`tests/artifacts/behavior-conformance.test.ts` > `checks real decision citations when the Decision Log is absent`",
+			marker: "@cosmo-behavior plan:planning-system-hardening#B-011",
+		});
+
+		const noCitation = checkBehaviorConformance({
+			planSlug: "planning-system-hardening",
+			planMarkdown: conformingPlan,
+		});
+		expect(noCitation.ok).toBe(true);
+		expect(noCitation.issues).toEqual([]);
+
+		const unresolvedCitation = checkBehaviorConformance({
+			planSlug: "planning-system-hardening",
+			planMarkdown: `${conformingPlan}\n## Overview\n\nThe implementation relies on D-404.\n`,
+		});
+		expect(unresolvedCitation.issues).toContainEqual(
+			expect.objectContaining({
+				kind: "unresolved-decision-citation",
+				actual: "D-404",
+			}),
+		);
+	});
+
 	test("ignores citations and annotations quoted as code", () => {
 		const result = checkBehaviorConformance({
 			planSlug: "planning-system-hardening",
@@ -746,6 +774,54 @@ D-096 and *(withdrawn by D-095)* remain masked through an unmatched fence.
 		]);
 	});
 
+	test("preserves inline code span delimiters across lines", () => {
+		const quotedDeclaration = checkBehaviorConformance({
+			planSlug: "multiline-code-span",
+			planMarkdown: `## Decision Log
+
+The quoted declaration starts here: \`\`
+- **D-097 - Quoted declaration**
+and closes here.\`\`
+
+## Overview
+
+The real citation D-097 remains unresolved.
+
+## Behaviors
+### B-001 - Withdrawn evidence *(withdrawn by D-097, 2026-07-28)*
+`,
+		});
+		expect(
+			quotedDeclaration.issues.filter(
+				(issue) => issue.kind === "unresolved-decision-citation",
+			),
+		).toEqual([
+			expect.objectContaining({
+				actual: "D-097",
+			}),
+		]);
+
+		const quotedCitation = checkBehaviorConformance({
+			planSlug: "multiline-code-span",
+			planMarkdown: `## Decision Log
+
+- **D-001 - Real declaration**
+  - Decision: preserve multiline quoting
+  - Decided by: user-directed, 2026-07-28
+
+## Overview
+
+The quoted citation starts here: \`\`
+D-099 is only sample text
+and closes here.\`\`
+
+## Behaviors
+### B-001 - Withdrawn evidence *(withdrawn by D-001, 2026-07-28)*
+`,
+		});
+		expect(quotedCitation.issues).toEqual([]);
+	});
+
 	test("uses only second-level headings outside fences to discover sections", () => {
 		const section = parseBehaviorSection(`\`\`\`md
 ## Behaviors
@@ -809,6 +885,123 @@ D-096 and *(withdrawn by D-095)* remain masked through an unmatched fence.
 				actual: "Supersedes: D-001",
 			}),
 		);
+	});
+
+	test("validates dates on every non-empty free-text Supersedes pointer", () => {
+		const undatedPointers = [
+			"D-001 and D-002",
+			"D-001 / D-002",
+			"behavior B-001",
+		] as const;
+
+		for (const pointer of undatedPointers) {
+			const result = checkBehaviorConformance({
+				planSlug: "supersession-pointer",
+				planMarkdown: supersessionPlan(pointer),
+			});
+			expect(result.issues, pointer).toContainEqual(
+				expect.objectContaining({
+					kind: "undated-supersession",
+					actual: `Supersedes: ${pointer}`,
+				}),
+			);
+		}
+
+		for (const pointer of undatedPointers) {
+			const datedPointer = `${pointer}, 2026-07-28`;
+			const result = checkBehaviorConformance({
+				planSlug: "supersession-pointer",
+				planMarkdown: supersessionPlan(datedPointer),
+			});
+			expect(
+				result.issues.filter((issue) => issue.kind === "undated-supersession"),
+				datedPointer,
+			).toEqual([]);
+		}
+	});
+
+	test("only exact dated decision-pointer withdrawals bypass active behavior checks", () => {
+		const valid = checkBehaviorConformance({
+			planSlug: "withdrawal-grammar",
+			planMarkdown: withdrawalPlan("*(withdrawn by D-001, 2026-07-28)*"),
+		});
+		expect(valid.withdrawn).toBe(1);
+		expect(valid.behaviors[0]).toMatchObject({ withdrawn: true, issues: [] });
+
+		for (const annotation of [
+			"*(withdrawn by D-001)*",
+			"*(withdrawn pending D-001, 2026-07-28)*",
+		]) {
+			const result = checkBehaviorConformance({
+				planSlug: "withdrawal-grammar",
+				planMarkdown: withdrawalPlan(annotation),
+			});
+			const evidence = result.behaviors[0];
+			expect(evidence?.withdrawn, annotation).toBe(false);
+			expect(
+				evidence?.issues.map((issue) => issue.field),
+				annotation,
+			).toEqual(
+				expect.arrayContaining([
+					"source",
+					"context",
+					"action",
+					"expected",
+					"seam",
+					"test",
+					"marker",
+				]),
+			);
+		}
+	});
+
+	test("bounds wildcard pairing while exact references remain indexed", async () => {
+		const projectRoot = await createTempDir("behavior-conformance-bounded-");
+		await mkdir(join(projectRoot, "tests"), { recursive: true });
+		const behaviorCount = 80;
+		await writeFile(
+			join(projectRoot, "tests", "bounded.test.ts"),
+			Array.from(
+				{ length: behaviorCount },
+				(_, index) =>
+					`// @cosmo-behavior plan:bounded-pairing#B-${String(index + 1).padStart(3, "0")}`,
+			).join("\n"),
+			"utf-8",
+		);
+		const behaviors = Array.from({ length: behaviorCount }, (_, index) => {
+			const behaviorId = `B-${String(index + 1).padStart(3, "0")}`;
+			return `### ${behaviorId} - Bounded wildcard pairing
+
+- Source: AC-001
+- Context: many behavior references share a wildcard seam
+- Action: the checker pairs changed files without an unbounded Cartesian scan
+- Expected: wildcard work fails closed at its bound while exact tests stay paired
+- Seam: \`lib/*/target-${index}.ts\`
+- Test: \`tests/bounded.test.ts\` > \`bounded wildcard pairing\`
+- Marker: \`@cosmo-behavior plan:bounded-pairing#${behaviorId}\``;
+		}).join("\n\n");
+		const changedPaths = [
+			...Array.from(
+				{ length: behaviorCount },
+				(_, index) => `- \`lib/decoy-${index}.ts\``,
+			),
+			...Array.from(
+				{ length: behaviorCount },
+				(_, index) => `- \`lib/deep/target-${index}.ts\``,
+			),
+			"- `tests/bounded.test.ts`",
+		].join("\n");
+
+		const result = checkBehaviorConformance({
+			planSlug: "bounded-pairing",
+			projectRoot,
+			planMarkdown: `## Behaviors\n\n${behaviors}\n\n## Files to Change\n\n${changedPaths}\n`,
+		});
+		const pairingIssues = result.issues.filter(
+			(issue) => issue.kind === "unpaired-behavior-file",
+		);
+		expect(pairingIssues.length).toBeGreaterThan(0);
+		expect(pairingIssues.every((issue) => issue.field === "seam")).toBe(true);
 	});
 
 	test("pairs repeated wildcard seams without backtracking and rejects a long nonmatch", async () => {
@@ -941,6 +1134,12 @@ D-096 and *(withdrawn by D-095)* remain masked through an unmatched fence.
 			projectRoot,
 			planMarkdown: `# Pairing check
 
+## Decision Log
+
+- **D-001 - Withdraw removed behavior**
+  - Decision: retain the removed behavior as dated evidence
+  - Decided by: planner-proposed, 2026-07-28
+
 ## Behaviors
 
 ${activeBehaviors}
@@ -982,6 +1181,12 @@ ${activeBehaviors}
 			projectRoot,
 			planMarkdown: `# Pairing check
 
+## Decision Log
+
+- **D-001 - Withdraw removed behavior**
+  - Decision: retain the removed behavior as dated evidence
+  - Decided by: planner-proposed, 2026-07-28
+
 ## Behaviors
 
 ${activeBehaviors
@@ -1021,12 +1226,14 @@ ${activeBehaviors
 		});
 		const extendedBlockingKinds = new Set([
 			"unresolved-decision-citation",
-			"undated-supersession",
 			"unpaired-behavior-file",
 			"duplicate-marker",
 		]);
 
 		expect(result.withdrawn).toBe(2);
+		expect(
+			result.issues.filter((issue) => issue.kind === "undated-supersession"),
+		).not.toHaveLength(0);
 		expect(
 			result.issues.filter((issue) => extendedBlockingKinds.has(issue.kind)),
 		).toEqual([]);
@@ -1053,6 +1260,39 @@ function behaviorMarkdown(testReference: string): string {
 - Seam: \`lib/artifacts/behavior-conformance.ts\`
 - Test: ${testReference}
 - Marker: \`@cosmo-behavior plan:artifact-conformance-gate#B-005\`
+`;
+}
+
+function supersessionPlan(pointer: string): string {
+	return `## Decision Log
+
+- **D-001 - Original one**
+  - Decision: preserve the first ground
+  - Decided by: user-directed, 2026-07-26
+
+- **D-002 - Original two**
+  - Decision: preserve the second ground
+  - Decided by: user-directed, 2026-07-27
+
+- **D-003 - Amendment**
+  - Decision: replace the exact named ground
+  - Decided by: planner-proposed, amend-on-record, 2026-07-28
+  - Supersedes: ${pointer}
+
+## Behaviors
+### B-001 - Withdrawn evidence *(withdrawn by D-003, 2026-07-28)*
+`;
+}
+
+function withdrawalPlan(annotation: string): string {
+	return `## Decision Log
+
+- **D-001 - Withdrawal decision**
+  - Decision: withdraw obsolete evidence
+  - Decided by: planner-proposed, 2026-07-28
+
+## Behaviors
+### B-001 - Obsolete evidence ${annotation}
 `;
 }
 
