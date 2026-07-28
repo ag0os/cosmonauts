@@ -711,12 +711,13 @@ example \`*(superseded by D-097, <date>)*\`.
 
 \`\`\`\`md
 - **D-098 - Backtick-fenced declaration**
+  - Supersedes: D-001
 \`\`\`
 ## Fake section inside the outer fence
 \`\`\`\`
 
 ~~~~md
-- **D-099 - Tilde-fenced declaration**
+- **D-099 - Tilde-fenced declaration** *(withdrawn by D-001)*
 ~~~
 ## Another fake section
 ~~~~

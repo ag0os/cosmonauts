@@ -629,20 +629,30 @@ function validateBehaviorFilePairing({
 	);
 	if (!filesSection) return [];
 
-	const filesText = filesSection.fenceMaskedLines.join("\n");
+	const changedPaths = extractChangedFilePaths(filesSection.fenceMaskedLines);
 	return behaviors.flatMap((behavior) =>
-		validateBehaviorReferences(behavior, filesText),
+		validateBehaviorReferences(behavior, changedPaths),
 	);
+}
+
+function extractChangedFilePaths(lines: readonly string[]): string[] {
+	const paths = new Set<string>();
+	for (const line of lines) {
+		for (const candidate of line.split(/[\s`(),]+/)) {
+			if (looksLikeProjectFilePath(candidate)) paths.add(candidate);
+		}
+	}
+	return [...paths];
 }
 
 function validateBehaviorReferences(
 	behavior: ParsedBehavior,
-	filesText: string,
+	changedPaths: readonly string[],
 ): ArtifactConformanceIssue[] {
 	if (behavior.withdrawn) return [];
 
 	return collectBehaviorFileReferences(behavior).flatMap((reference) => {
-		if (fileReferenceAppears(reference.path, filesText)) return [];
+		if (fileReferenceAppears(reference.path, changedPaths)) return [];
 		return [unpairedBehaviorFileIssue(behavior, reference)];
 	});
 }
@@ -690,10 +700,11 @@ function unpairedBehaviorFileIssue(
 	};
 }
 
-function fileReferenceAppears(path: string, filesText: string): boolean {
-	return filesText
-		.split(/[\s`(),]+/)
-		.some((candidate) => wildcardPathMatches(path, candidate));
+function fileReferenceAppears(
+	path: string,
+	changedPaths: readonly string[],
+): boolean {
+	return changedPaths.some((candidate) => wildcardPathMatches(path, candidate));
 }
 
 function wildcardPathMatches(pattern: string, candidate: string): boolean {
