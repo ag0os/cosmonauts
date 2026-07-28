@@ -719,6 +719,92 @@ example \`*(superseded by D-097, <date>)*\`.
 		expect(result.issues).toEqual([]);
 	});
 
+	// @cosmo-behavior plan:planning-system-hardening#B-012
+	test("keeps a behavior active when its withdrawal annotation is quoted as code", () => {
+		const result = checkBehaviorConformance({
+			planSlug: "planning-system-hardening",
+			planMarkdown: `# Planning system hardening
+
+## Decision Log
+
+- **D-001 - Withdrawal ground**
+  - Decision: withdraw the second behavior
+  - Decided by: planner-proposed, 2026-07-28
+
+## Behaviors
+
+### B-012 - Documents the grammar \`*(withdrawn by D-001, 2026-07-28)*\`
+
+- Source: AC-010
+- Context: a heading quotes the exact dated withdrawal grammar as a syntax example
+- Action: the checker classifies the behavior
+- Expected: the behavior stays active and receives normal evidence validation
+- Seam: \`lib/artifacts/behavior-conformance.ts\`
+- Test: \`tests/artifacts/behavior-conformance.test.ts\` > \`keeps a behavior active when its withdrawal annotation is quoted as code\`
+- Marker: \`@cosmo-behavior plan:planning-system-hardening#B-012\`
+
+### B-002 - Actually withdrawn *(withdrawn by D-001, 2026-07-28)*
+`,
+		});
+
+		expect(result.withdrawn).toBe(1);
+		expect(
+			result.behaviors.map((behavior) => [
+				behavior.behaviorId,
+				behavior.withdrawn,
+			]),
+		).toEqual([
+			["B-012", false],
+			["B-002", true],
+		]);
+		expect(result.issues).toEqual([]);
+	});
+
+	// @cosmo-behavior plan:planning-system-hardening#B-011
+	test("masks same-paragraph multiline spans but never across block boundaries", () => {
+		const result = checkBehaviorConformance({
+			planSlug: "planning-system-hardening",
+			planMarkdown: `# Planning system hardening
+
+## Decision Log
+
+- **D-001 - Only decision**
+  - Decision: keep it
+  - Decided by: planner-proposed, 2026-07-28
+
+## Overview
+
+A valid span may continue \`across a soft
+line break mentioning D-097\` without creating a citation.
+
+A stray backtick \` sits in this paragraph.
+
+This paragraph cites D-099 and must still be flagged.
+
+Another stray backtick \` sits here.
+
+## Behaviors
+
+### B-011 - Checker resolves decisions
+
+- Source: AC-010
+- Context: multiline spans and stray backticks appear in prose
+- Action: the checker scans the plan
+- Expected: same-paragraph spans mask; block-crossing pairs never mask
+- Seam: \`lib/artifacts/behavior-conformance.ts\`
+- Test: \`tests/artifacts/behavior-conformance.test.ts\` > \`masks same-paragraph multiline spans but never across block boundaries\`
+- Marker: \`@cosmo-behavior plan:planning-system-hardening#B-011\`
+`,
+		});
+
+		expect(result.issues).toEqual([
+			expect.objectContaining({
+				kind: "unresolved-decision-citation",
+				actual: "D-099",
+			}),
+		]);
+	});
+
 	test("masks Markdown code spans and fences before decision declaration and citation scans", () => {
 		const result = checkBehaviorConformance({
 			planSlug: "markdown-masking",

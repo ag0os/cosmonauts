@@ -279,7 +279,11 @@ function parseBehaviors(section: MarkdownSection): ParsedBehavior[] {
 			title: title.trim(),
 			heading: line,
 			lineNumber: section.startLine + index,
-			withdrawn: WITHDRAWN_ANNOTATION_REGEX.test(title),
+			// Withdrawal must come from the quote-masked heading: a code-quoted
+			// annotation is a mention and the behavior stays active.
+			withdrawn: WITHDRAWN_ANNOTATION_REGEX.test(
+				section.quotedMaskedLines[index] ?? scannedLine,
+			),
 			fields: Object.fromEntries(
 				fieldLines.map((field) => [field.name, field]),
 			) as ParsedBehaviorFields,
@@ -437,9 +441,7 @@ function scanMarkdown(markdown: string): MarkdownScan {
 		fenceMaskedLines.push(line);
 	}
 
-	const quotedMaskedLines = maskInlineCodeSpans(
-		fenceMaskedLines.join("\n"),
-	).split("\n");
+	const quotedMaskedLines = maskInlineCodeSpansByBlock(fenceMaskedLines);
 	return { lines, fenceMaskedLines, quotedMaskedLines };
 }
 
@@ -463,6 +465,39 @@ function isFenceClosingLine(line: string, fence: MarkdownFence): boolean {
 		run[0] === fence.character &&
 		run.length >= fence.length
 	);
+}
+
+/**
+ * Inline code spans cannot cross Markdown block boundaries: blank lines,
+ * headings, and new list items end the inline context, so a stray backtick
+ * in one block must never pair with a backtick in another and mask the
+ * real content between them. Spans may still continue across soft line
+ * breaks within one block.
+ */
+function maskInlineCodeSpansByBlock(lines: readonly string[]): string[] {
+	const masked: string[] = [];
+	let block: string[] = [];
+	const flush = () => {
+		if (block.length === 0) return;
+		masked.push(...maskInlineCodeSpans(block.join("\n")).split("\n"));
+		block = [];
+	};
+
+	for (const line of lines) {
+		if (/^\s*$/.test(line)) {
+			flush();
+			masked.push(line);
+			continue;
+		}
+		if (/^#{1,6}\s/.test(line)) {
+			flush();
+			masked.push(maskInlineCodeSpans(line));
+			continue;
+		}
+		block.push(line);
+	}
+	flush();
+	return masked;
 }
 
 function maskInlineCodeSpans(content: string): string {
