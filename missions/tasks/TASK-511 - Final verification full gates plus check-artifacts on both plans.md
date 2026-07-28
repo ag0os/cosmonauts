@@ -1,7 +1,7 @@
 ---
 id: TASK-511
 title: 'Final verification: full gates plus check-artifacts on both plans'
-status: Blocked
+status: To Do
 priority: medium
 labels:
   - 'plan:planning-system-hardening'
@@ -11,7 +11,7 @@ dependencies:
   - TASK-509
   - TASK-510
 createdAt: '2026-07-28T17:21:48.781Z'
-updatedAt: '2026-07-28T20:13:00.923Z'
+updatedAt: '2026-07-28T20:20:15.981Z'
 ---
 
 <!-- AC:BEGIN -->
