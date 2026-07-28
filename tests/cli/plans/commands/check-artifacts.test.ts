@@ -43,10 +43,13 @@ describe("plan check-artifacts command", () => {
 					ok: true,
 					planSlug: "passing-plan",
 					planPath: "missions/plans/passing-plan/plan.md",
+					withdrawn: 0,
 					issues: [],
+					advisories: [],
 					behaviors: [
 						{
 							behaviorId: "B-009",
+							withdrawn: false,
 							marker: "@cosmo-behavior plan:passing-plan#B-009",
 							testFile: "tests/passing.test.ts",
 							issues: [],
@@ -55,11 +58,11 @@ describe("plan check-artifacts command", () => {
 				});
 			} else if (mode === "plain") {
 				expect(result.stdout).toBe(
-					"ok artifact-conformance passing-plan behaviors=1 issues=0\n",
+					"ok artifact-conformance passing-plan behaviors=1 withdrawn=0 issues=0 advisories=0\n",
 				);
 			} else {
 				expect(result.stdout).toBe(
-					"Artifact conformance passed for passing-plan.\nBehaviors: 1\nIssues: 0\n",
+					"Artifact conformance passed for passing-plan.\nBehaviors: 1\nWithdrawn: 0\nIssues: 0\nAdvisories: 0\n",
 				);
 			}
 		}
@@ -98,6 +101,8 @@ describe("plan check-artifacts command", () => {
 				expect(JSON.parse(result.stdout)).toMatchObject({
 					ok: false,
 					planSlug: "failing-plan",
+					withdrawn: 0,
+					advisories: [],
 					issues: [
 						{
 							kind: "invalid-marker",
@@ -110,7 +115,7 @@ describe("plan check-artifacts command", () => {
 				});
 			} else if (mode === "plain") {
 				expect(result.stdout).toContain(
-					"fail artifact-conformance failing-plan behaviors=1 issues=1\n",
+					"fail artifact-conformance failing-plan behaviors=1 withdrawn=0 issues=1 advisories=0\n",
 				);
 				expect(result.stdout).toContain(
 					"issue kind=invalid-marker behavior=B-010 field=marker line=",
@@ -123,7 +128,9 @@ describe("plan check-artifacts command", () => {
 					"Artifact conformance failed for failing-plan.",
 				);
 				expect(result.stdout).toContain("Behaviors: 1");
+				expect(result.stdout).toContain("Withdrawn: 0");
 				expect(result.stdout).toContain("Issues: 1");
+				expect(result.stdout).toContain("Advisories: 0");
 				expect(result.stdout).toContain(
 					"- [invalid-marker] B-010 marker line ",
 				);

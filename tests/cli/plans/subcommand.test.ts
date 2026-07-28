@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { renderArtifactConformanceResult } from "../../../cli/plans/commands/check-artifacts.ts";
 import { createPlanProgram } from "../../../cli/plans/index.ts";
+import type { ArtifactConformanceResult } from "../../../lib/artifacts/index.ts";
 
 describe("createPlanProgram", () => {
 	it("returns a Commander program", () => {
@@ -25,5 +27,40 @@ describe("createPlanProgram", () => {
 		expect(commandNames).toContain("delete");
 		expect(commandNames).toContain("archive");
 		expect(commandNames).toContain("check-artifacts");
+	});
+
+	it("renders advisories and withdrawn counts in json plain and human formats", () => {
+		const result: ArtifactConformanceResult = {
+			ok: true,
+			planSlug: "advisory-plan",
+			behaviors: [],
+			withdrawn: 2,
+			issues: [],
+			advisories: [
+				{
+					kind: "behavior-count-guidance",
+					message:
+						"Plan has 13 behaviors, exceeding the guidance of 12; consider splitting it along a real boundary.",
+					count: 13,
+					guidance: 12,
+				},
+			],
+		};
+
+		expect(renderArtifactConformanceResult(result, "json")).toBe(result);
+		expect(renderArtifactConformanceResult(result, "plain")).toEqual([
+			"ok artifact-conformance advisory-plan behaviors=0 withdrawn=2 issues=0 advisories=1",
+			"advisory kind=behavior-count-guidance count=13 guidance=12 message=Plan has 13 behaviors, exceeding the guidance of 12; consider splitting it along a real boundary.",
+		]);
+		expect(renderArtifactConformanceResult(result, "human")).toEqual([
+			"Artifact conformance passed for advisory-plan.",
+			"Behaviors: 0",
+			"Withdrawn: 2",
+			"Issues: 0",
+			"Advisories: 1",
+			"",
+			"Advisories:",
+			"- [behavior-count-guidance] Plan has 13 behaviors, exceeding the guidance of 12; consider splitting it along a real boundary.",
+		]);
 	});
 });

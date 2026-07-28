@@ -20,7 +20,20 @@ export type ArtifactConformanceIssueKind =
 	| "invalid-marker"
 	| "invalid-test-reference"
 	| "missing-test-file"
-	| "missing-marker";
+	| "missing-marker"
+	| "unresolved-decision-citation"
+	| "undated-supersession"
+	| "unpaired-behavior-file"
+	| "duplicate-marker";
+
+export type ArtifactConformanceAdvisoryKind = "behavior-count-guidance";
+
+export interface ArtifactConformanceAdvisory {
+	kind: ArtifactConformanceAdvisoryKind;
+	message: string;
+	count: number;
+	guidance: number;
+}
 
 export interface ParsedBehaviorField {
 	name: BehaviorFieldName;
@@ -39,6 +52,7 @@ export interface ParsedBehavior {
 	title: string;
 	heading: string;
 	lineNumber: number;
+	withdrawn: boolean;
 	fields: ParsedBehaviorFields;
 	fieldLines: ParsedBehaviorField[];
 	testReferenceText?: string;
@@ -66,6 +80,7 @@ export interface ParsedBehaviorSection {
 
 export interface BehaviorConformanceEvidence {
 	behaviorId: string;
+	withdrawn: boolean;
 	marker?: string;
 	testFile?: string;
 	issues: ArtifactConformanceIssue[];
@@ -83,7 +98,9 @@ export interface ArtifactConformanceResult {
 	planSlug: string;
 	planPath?: string;
 	behaviors: BehaviorConformanceEvidence[];
+	withdrawn: number;
 	issues: ArtifactConformanceIssue[];
+	advisories: ArtifactConformanceAdvisory[];
 }
 
 interface MarkdownSection {
@@ -93,7 +110,16 @@ interface MarkdownSection {
 }
 
 const BEHAVIOR_SECTION_HEADING = "## Behaviors";
+const DECISION_LOG_SECTION_HEADING = "## Decision Log";
+const FILES_TO_CHANGE_SECTION_HEADING = "## Files to Change";
+const BEHAVIOR_COUNT_GUIDANCE = 12;
 const BEHAVIOR_HEADING_REGEX = /^###\s+(B-\d{3})\s*(?:-|–|—)\s*(.+?)\s*$/;
+const DECISION_ENTRY_REGEX = /^-\s+\*\*(D-\d{3})\s+(?:-|–|—)\s+.+?\*\*/;
+const DECISION_CITATION_REGEX = /\bD-\d{3}\b/g;
+const ISO_DATE_REGEX = /\b\d{4}-\d{2}-\d{2}\b/;
+const WITHDRAWN_ANNOTATION_REGEX = /\*\(withdrawn\b[^)]*\)\*/i;
+const SUPERSESSION_ANNOTATION_REGEX =
+	/\*\((?:(?:partially\s+)?superseded|withdrawn)\s+by\b[^)]*\)\*/gi;
 const FIELD_LINE_REGEX = /^-\s*([^:]+):\s*(.*)$/;
 
 const FIELD_LABELS: Record<string, BehaviorFieldName> = {
@@ -162,22 +188,38 @@ export function checkBehaviorConformance(
 	options: CheckBehaviorConformanceOptions,
 ): ArtifactConformanceResult {
 	const section = parseBehaviorSection(options.planMarkdown);
-	const behaviors = section.behaviors.map((behavior) =>
-		validateBehavior({
+	const behaviors = section.behaviors.map((behavior) => {
+		if (behavior.withdrawn) {
+			return buildWithdrawnBehaviorEvidence(behavior);
+		}
+
+		return validateBehavior({
 			behavior,
 			planSlug: options.planSlug,
 			projectRoot: options.projectRoot ?? process.cwd(),
-		}),
-	);
+		});
+	});
 	const behaviorIssues = behaviors.flatMap((behavior) => behavior.issues);
-	const issues = [...section.issues, ...behaviorIssues];
+	const structuralIssues = [
+		...validateDecisionReferences(options.planMarkdown),
+		...validateBehaviorFilePairing({
+			planMarkdown: options.planMarkdown,
+			behaviors: section.behaviors,
+		}),
+		...validateMarkerUniqueness(section.behaviors),
+	];
+	const issues = [...section.issues, ...behaviorIssues, ...structuralIssues];
+	const advisories = buildBehaviorCountAdvisories(section.behaviors.length);
 
 	return {
 		ok: issues.length === 0,
 		planSlug: options.planSlug,
 		planPath: options.planPath,
 		behaviors,
+		withdrawn: section.behaviors.filter((behavior) => behavior.withdrawn)
+			.length,
 		issues,
+		advisories,
 	};
 }
 
@@ -235,6 +277,7 @@ function parseBehaviors(section: MarkdownSection): ParsedBehavior[] {
 			title: title.trim(),
 			heading: line,
 			lineNumber: section.startLine + index,
+			withdrawn: WITHDRAWN_ANNOTATION_REGEX.test(title),
 			fields: Object.fromEntries(
 				fieldLines.map((field) => [field.name, field]),
 			) as ParsedBehaviorFields,
@@ -341,10 +384,288 @@ function validateBehavior({
 
 	return {
 		behaviorId: behavior.id,
+		withdrawn: false,
 		marker,
 		testFile: testReference.path,
 		issues,
 	};
+}
+
+function buildWithdrawnBehaviorEvidence(
+	behavior: ParsedBehavior,
+): BehaviorConformanceEvidence {
+	const marker = behavior.fields.marker
+		? trimOptionalSurroundingBackticks(behavior.fields.marker.value)
+		: undefined;
+	const testFile = behavior.fields.test
+		? parseTestReferencePath(behavior.fields.test.value)
+		: undefined;
+
+	return {
+		behaviorId: behavior.id,
+		withdrawn: true,
+		marker,
+		testFile,
+		issues: [],
+	};
+}
+
+function validateDecisionReferences(
+	markdown: string,
+): ArtifactConformanceIssue[] {
+	const decisionSection = extractMarkdownSection(
+		markdown,
+		DECISION_LOG_SECTION_HEADING,
+	);
+	if (!decisionSection) {
+		return [];
+	}
+
+	const declaredDecisions = new Set<string>();
+	for (const line of decisionSection.lines) {
+		const match = line.match(DECISION_ENTRY_REGEX);
+		const decisionId = match?.[1];
+		if (decisionId) {
+			declaredDecisions.add(decisionId);
+		}
+	}
+
+	const issues: ArtifactConformanceIssue[] = [];
+	const unresolved = new Set<string>();
+	const lines = normalizeLineEndings(markdown).split("\n");
+	for (const [index, line] of lines.entries()) {
+		for (const match of line.matchAll(DECISION_CITATION_REGEX)) {
+			const decisionId = match[0];
+			if (declaredDecisions.has(decisionId) || unresolved.has(decisionId)) {
+				continue;
+			}
+
+			unresolved.add(decisionId);
+			issues.push({
+				kind: "unresolved-decision-citation",
+				message: `Decision citation ${decisionId} does not resolve to a Decision Log entry.`,
+				line: index + 1,
+				actual: decisionId,
+			});
+		}
+	}
+
+	issues.push(...validateSupersessionDates({ decisionSection, markdown }));
+	return issues;
+}
+
+function validateSupersessionDates({
+	decisionSection,
+	markdown,
+}: {
+	decisionSection: MarkdownSection;
+	markdown: string;
+}): ArtifactConformanceIssue[] {
+	const issues: ArtifactConformanceIssue[] = [];
+	let decisionStartIndex = 0;
+
+	for (let index = 0; index < decisionSection.lines.length; index += 1) {
+		const line = decisionSection.lines[index];
+		if (!line) continue;
+		if (DECISION_ENTRY_REGEX.test(line)) {
+			decisionStartIndex = index;
+		}
+
+		const match = line.match(/^\s*-\s+Supersedes:\s*(.+)$/i);
+		if (!match) continue;
+
+		const nextDecisionIndex = decisionSection.lines.findIndex(
+			(candidate, candidateIndex) =>
+				candidateIndex > index && DECISION_ENTRY_REGEX.test(candidate),
+		);
+		const blockEnd =
+			nextDecisionIndex === -1
+				? decisionSection.lines.length
+				: nextDecisionIndex;
+		const decisionBlock = decisionSection.lines
+			.slice(decisionStartIndex, blockEnd)
+			.join("\n");
+		if (ISO_DATE_REGEX.test(decisionBlock)) {
+			continue;
+		}
+
+		const actual = `Supersedes: ${match[1]?.trim() ?? ""}`;
+		issues.push({
+			kind: "undated-supersession",
+			message: `Supersession pointer must include an ISO date: ${actual}.`,
+			line: decisionSection.startLine + index,
+			actual,
+		});
+	}
+
+	const lines = normalizeLineEndings(markdown).split("\n");
+	for (const [index, line] of lines.entries()) {
+		for (const match of line.matchAll(SUPERSESSION_ANNOTATION_REGEX)) {
+			const annotation = match[0];
+			if (ISO_DATE_REGEX.test(annotation)) {
+				continue;
+			}
+
+			issues.push({
+				kind: "undated-supersession",
+				message: `Supersession annotation must include an ISO date: ${annotation}.`,
+				line: index + 1,
+				actual: annotation,
+			});
+		}
+	}
+
+	return issues;
+}
+
+function validateBehaviorFilePairing({
+	planMarkdown,
+	behaviors,
+}: {
+	planMarkdown: string;
+	behaviors: ParsedBehavior[];
+}): ArtifactConformanceIssue[] {
+	const filesSection = extractMarkdownSection(
+		planMarkdown,
+		FILES_TO_CHANGE_SECTION_HEADING,
+	);
+	if (!filesSection) {
+		return [];
+	}
+
+	const filesText = filesSection.lines.join("\n");
+	const issues: ArtifactConformanceIssue[] = [];
+
+	for (const behavior of behaviors) {
+		if (behavior.withdrawn) continue;
+
+		const references: Array<{
+			field: "seam" | "test";
+			path: string;
+			line?: number;
+		}> = [];
+		const seamField = behavior.fields.seam;
+		if (seamField) {
+			for (const path of extractSeamFilePaths(seamField.value)) {
+				references.push({
+					field: "seam",
+					path,
+					line: seamField.lineNumber,
+				});
+			}
+		}
+
+		const testField = behavior.fields.test;
+		const testPath = testField
+			? parseTestReferencePath(testField.value)
+			: undefined;
+		if (testField && testPath) {
+			references.push({
+				field: "test",
+				path: testPath,
+				line: testField.lineNumber,
+			});
+		}
+
+		for (const reference of references) {
+			if (fileReferenceAppears(reference.path, filesText)) {
+				continue;
+			}
+
+			issues.push({
+				kind: "unpaired-behavior-file",
+				message: `Behavior ${behavior.id} ${FIELD_DISPLAY_NAMES[reference.field]} file is missing from ## Files to Change: ${reference.path}.`,
+				behaviorId: behavior.id,
+				field: reference.field,
+				line: reference.line,
+				path: reference.path,
+			});
+		}
+	}
+
+	return issues;
+}
+
+function fileReferenceAppears(path: string, filesText: string): boolean {
+	const pattern = escapeRegExp(path).replaceAll("\\*", "[^`\\s,]+");
+	return new RegExp(`(?:^|[\\s\`(])${pattern}(?=$|[\\s\`,)])`, "m").test(
+		filesText,
+	);
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function extractSeamFilePaths(value: string): string[] {
+	const paths: string[] = [];
+	for (const match of value.matchAll(/`([^`]+)`/g)) {
+		const candidate = match[1]?.trim();
+		if (candidate && looksLikeProjectFilePath(candidate)) {
+			paths.push(candidate);
+		}
+	}
+
+	return [...new Set(paths)];
+}
+
+function looksLikeProjectFilePath(value: string): boolean {
+	if (value.startsWith("@") || /\s/.test(value)) {
+		return false;
+	}
+
+	return /(?:^|\/)[^/]*\.[A-Za-z0-9*]+$/.test(value);
+}
+
+function validateMarkerUniqueness(
+	behaviors: ParsedBehavior[],
+): ArtifactConformanceIssue[] {
+	const firstBehaviorByMarker = new Map<string, string>();
+	const issues: ArtifactConformanceIssue[] = [];
+
+	for (const behavior of behaviors) {
+		if (behavior.withdrawn || !behavior.fields.marker) {
+			continue;
+		}
+
+		const marker = trimOptionalSurroundingBackticks(
+			behavior.fields.marker.value,
+		);
+		const firstBehaviorId = firstBehaviorByMarker.get(marker);
+		if (!firstBehaviorId) {
+			firstBehaviorByMarker.set(marker, behavior.id);
+			continue;
+		}
+
+		issues.push({
+			kind: "duplicate-marker",
+			message: `Behavior ${behavior.id} duplicates marker ${marker} already used by ${firstBehaviorId}.`,
+			behaviorId: behavior.id,
+			field: "marker",
+			line: behavior.fields.marker.lineNumber,
+			marker,
+			actual: marker,
+		});
+	}
+
+	return issues;
+}
+
+function buildBehaviorCountAdvisories(
+	count: number,
+): ArtifactConformanceAdvisory[] {
+	if (count <= BEHAVIOR_COUNT_GUIDANCE) {
+		return [];
+	}
+
+	return [
+		{
+			kind: "behavior-count-guidance",
+			message: `Plan has ${count} behaviors, exceeding the guidance of ${BEHAVIOR_COUNT_GUIDANCE}; consider splitting it along a real boundary.`,
+			count,
+			guidance: BEHAVIOR_COUNT_GUIDANCE,
+		},
+	];
 }
 
 function validateRequiredFields(
@@ -627,4 +948,29 @@ function normalizeFieldLabel(label: string): string {
 
 function normalizeLineEndings(content: string): string {
 	return content.replace(/\r\n/g, "\n");
+}
+
+function extractMarkdownSection(
+	markdown: string,
+	heading: string,
+): MarkdownSection | undefined {
+	const lines = normalizeLineEndings(markdown).split("\n");
+	const headingIndex = lines.findIndex((line) => line.trimEnd() === heading);
+	if (headingIndex === -1) {
+		return undefined;
+	}
+
+	const nextSecondLevelHeadingIndex = lines.findIndex(
+		(line, index) => index > headingIndex && /^##\s+\S/.test(line),
+	);
+	const endIndex =
+		nextSecondLevelHeadingIndex === -1
+			? lines.length
+			: nextSecondLevelHeadingIndex;
+
+	return {
+		lines: lines.slice(headingIndex + 1, endIndex),
+		startLine: headingIndex + 2,
+		endLine: endIndex,
+	};
 }

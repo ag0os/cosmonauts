@@ -1,4 +1,11 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import {
+	mkdir,
+	mkdtemp,
+	readFile,
+	rm,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
@@ -591,6 +598,184 @@ ${behaviorFields}
 				},
 			],
 		});
+	});
+
+	// @cosmo-behavior plan:planning-system-hardening#B-011
+	test("flags unresolved decision citations and undated supersession pointers", () => {
+		const result = checkBehaviorConformance({
+			planSlug: "planning-system-hardening",
+			planMarkdown: `# Planning system hardening
+
+## Decision Log
+
+- **D-001 - Original decision**
+  - Decision: choose the original path
+  - Decided by: planner-proposed, 2026-07-28
+
+- **D-002 - Undated amendment**
+  - Decision: replace part of the original path
+  - Decided by: planner-proposed
+  - Supersedes: D-001
+
+- **D-003 - Dated annotation** *(superseded by D-001, 2026-07-28)*
+  - Decision: preserve dated heading annotations
+  - Decided by: planner-proposed, 2026-07-28
+
+## Overview
+
+The implementation still cites D-001, but this pointer to D-099 is unresolved.
+
+## Behaviors
+
+### B-011 - Checker resolves decisions
+
+- Source: AC-010
+- Context: decision citations and supersession pointers appear in a plan
+- Action: the checker resolves and dates them
+- Expected: unresolved citations and undated pointers are distinct issues
+- Seam: \`lib/artifacts/behavior-conformance.ts\`
+- Test: \`tests/artifacts/behavior-conformance.test.ts\` > \`flags unresolved decision citations and undated supersession pointers\`
+- Marker: \`@cosmo-behavior plan:planning-system-hardening#B-011\`
+`,
+		});
+
+		expect(result.issues).toEqual([
+			expect.objectContaining({
+				kind: "unresolved-decision-citation",
+				actual: "D-099",
+			}),
+			expect.objectContaining({
+				kind: "undated-supersession",
+				actual: "Supersedes: D-001",
+			}),
+		]);
+	});
+
+	// @cosmo-behavior plan:planning-system-hardening#B-012
+	test("checks pairing, marker uniqueness, withdrawn behaviors, and size advisory", async () => {
+		const projectRoot = await createTempDir("behavior-conformance-extended-");
+		await mkdir(join(projectRoot, "tests"), { recursive: true });
+		await writeFile(
+			join(projectRoot, "tests", "evidence.test.ts"),
+			Array.from(
+				{ length: 12 },
+				(_, index) =>
+					`// @cosmo-behavior plan:pairing-check#B-${String(index + 1).padStart(3, "0")}`,
+			).join("\n"),
+			"utf-8",
+		);
+
+		const activeBehaviors = Array.from({ length: 12 }, (_, index) => {
+			const number = String(index + 1).padStart(3, "0");
+			const behaviorId = `B-${number}`;
+			const seam =
+				behaviorId === "B-012" ? "lib/unpaired.ts" : "lib/evidence.ts";
+			const markerId = behaviorId === "B-002" ? "B-001" : behaviorId;
+			return `### ${behaviorId} - Extended check ${number}
+
+- Source: AC-010
+- Context: an active behavior has conformance evidence
+- Action: the extended checker validates it
+- Expected: blocking and advisory evidence stays distinct
+- Seam: \`${seam}\`
+- Test: \`tests/evidence.test.ts\` > \`extended check ${number}\`
+- Marker: \`@cosmo-behavior plan:pairing-check#${markerId}\``;
+		}).join("\n\n");
+
+		const result = checkBehaviorConformance({
+			planSlug: "pairing-check",
+			projectRoot,
+			planMarkdown: `# Pairing check
+
+## Behaviors
+
+${activeBehaviors}
+
+### B-013 - Removed behavior *(withdrawn by D-001, 2026-07-28 — no test ships)*
+
+## Files to Change
+
+- \`lib/evidence.ts\`
+- \`tests/evidence.test.ts\`
+`,
+		});
+
+		expect(result.ok).toBe(false);
+		expect(result.withdrawn).toBe(1);
+		expect(
+			result.behaviors.find((behavior) => behavior.behaviorId === "B-013"),
+		).toMatchObject({
+			withdrawn: true,
+			issues: [],
+		});
+		expect(result.issues.map((issue) => issue.kind).sort()).toEqual([
+			"duplicate-marker",
+			"invalid-marker",
+			"unpaired-behavior-file",
+		]);
+		expect(result.advisories).toEqual([
+			{
+				kind: "behavior-count-guidance",
+				message:
+					"Plan has 13 behaviors, exceeding the guidance of 12; consider splitting it along a real boundary.",
+				count: 13,
+				guidance: 12,
+			},
+		]);
+
+		const advisoryOnly = checkBehaviorConformance({
+			planSlug: "pairing-check",
+			projectRoot,
+			planMarkdown: `# Pairing check
+
+## Behaviors
+
+${activeBehaviors
+	.replace(
+		"- Test: `tests/evidence.test.ts` > `extended check 002`\n- Marker: `@cosmo-behavior plan:pairing-check#B-001`",
+		"- Test: `tests/evidence.test.ts` > `extended check 002`\n- Marker: `@cosmo-behavior plan:pairing-check#B-002`",
+	)
+	.replace("lib/unpaired.ts", "lib/evidence.ts")}
+
+### B-013 - Removed behavior *(withdrawn by D-001, 2026-07-28 — no test ships)*
+
+## Files to Change
+
+- \`lib/evidence.ts\`
+- \`tests/evidence.test.ts\`
+`,
+		});
+		expect(advisoryOnly.ok).toBe(true);
+		expect(advisoryOnly.issues).toEqual([]);
+		expect(advisoryOnly.advisories).toHaveLength(1);
+	});
+
+	// @cosmo-behavior plan:planning-system-hardening#B-013
+	test("keeps the analysis-capabilities artifacts passing under extended checks", async () => {
+		const planPath = join(
+			process.cwd(),
+			"missions",
+			"plans",
+			"analysis-capabilities",
+			"plan.md",
+		);
+		const result = checkBehaviorConformance({
+			planSlug: "analysis-capabilities",
+			planPath: "missions/plans/analysis-capabilities/plan.md",
+			projectRoot: process.cwd(),
+			planMarkdown: await readFile(planPath, "utf-8"),
+		});
+		const extendedBlockingKinds = new Set([
+			"unresolved-decision-citation",
+			"undated-supersession",
+			"unpaired-behavior-file",
+			"duplicate-marker",
+		]);
+
+		expect(result.withdrawn).toBe(2);
+		expect(
+			result.issues.filter((issue) => extendedBlockingKinds.has(issue.kind)),
+		).toEqual([]);
 	});
 
 	async function createTempDir(prefix: string): Promise<string> {

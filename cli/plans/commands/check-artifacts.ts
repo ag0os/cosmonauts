@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Command } from "commander";
 import {
+	type ArtifactConformanceAdvisory,
 	type ArtifactConformanceIssue,
 	type ArtifactConformanceResult,
 	checkBehaviorConformance,
@@ -128,11 +129,14 @@ function renderPlainArtifactConformanceResult(
 ): string[] {
 	const status = result.ok ? "ok" : "fail";
 	const lines = [
-		`${status} artifact-conformance ${result.planSlug} behaviors=${result.behaviors.length} issues=${result.issues.length}`,
+		`${status} artifact-conformance ${result.planSlug} behaviors=${result.behaviors.length} withdrawn=${result.withdrawn} issues=${result.issues.length} advisories=${result.advisories.length}`,
 	];
 
 	for (const issue of result.issues) {
 		lines.push(renderPlainIssue(issue));
+	}
+	for (const advisory of result.advisories) {
+		lines.push(renderPlainAdvisory(advisory));
 	}
 
 	return lines;
@@ -145,13 +149,21 @@ function renderHumanArtifactConformanceResult(
 	const lines = [
 		`Artifact conformance ${status} for ${result.planSlug}.`,
 		`Behaviors: ${result.behaviors.length}`,
+		`Withdrawn: ${result.withdrawn}`,
 		`Issues: ${result.issues.length}`,
+		`Advisories: ${result.advisories.length}`,
 	];
 
 	if (!result.ok) {
 		lines.push("");
 		for (const issue of result.issues) {
 			lines.push(`- ${renderHumanIssue(issue)}`);
+		}
+	}
+	if (result.advisories.length > 0) {
+		lines.push("", "Advisories:");
+		for (const advisory of result.advisories) {
+			lines.push(`- [${advisory.kind}] ${advisory.message}`);
 		}
 	}
 
@@ -172,6 +184,15 @@ function renderPlainIssue(issue: ArtifactConformanceIssue): string {
 	];
 
 	return parts.filter(isDefined).join(" ");
+}
+
+function renderPlainAdvisory(advisory: ArtifactConformanceAdvisory): string {
+	return [
+		`advisory kind=${advisory.kind}`,
+		`count=${advisory.count}`,
+		`guidance=${advisory.guidance}`,
+		`message=${advisory.message}`,
+	].join(" ");
 }
 
 function renderHumanIssue(issue: ArtifactConformanceIssue): string {
