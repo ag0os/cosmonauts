@@ -119,7 +119,7 @@ describe("planner prompt", () => {
 	});
 
 	// @cosmo-behavior plan:planning-system-hardening#B-003
-	it("enforces deterministic size guidance with discoverable task units", async () => {
+	it("enforces the size checkpoint with slice boundaries or justification", async () => {
 		const content = await readFile(PROMPT_PATH, "utf-8");
 
 		expect(content).toContain("**Apply the size checkpoint.**");

@@ -127,6 +127,8 @@ const BEHAVIOR_HEADING_REGEX = /^###\s+(B-\d{3})\s*(?:-|–|—)\s*(.+?)\s*$/;
 const DECISION_ENTRY_REGEX = /^-\s+\*\*(D-\d{3})\s+(?:-|–|—)\s+.+?\*\*/;
 const DECISION_CITATION_REGEX = /\bD-\d{3}\b/g;
 const ISO_DATE_REGEX = /\b\d{4}-\d{2}-\d{2}\b/;
+const STRUCTURED_SUPERSESSION_POINTER_REGEX =
+	/^D-\d{3}(?:(?:\s*,\s*|\s*\/\s*|\s+and\s+)D-\d{3})*(?:(?:\s*,\s*|\s+)\d{4}-\d{2}-\d{2})?$/;
 const WITHDRAWN_ANNOTATION_REGEX =
 	/\*\(withdrawn by D-\d{3}, \d{4}-\d{2}-\d{2}(?:\s+—\s+[^)]+)?\)\*/;
 const SUPERSESSION_ANNOTATION_REGEX =
@@ -578,7 +580,10 @@ function validateSupersessionPointer(
 	lineNumber: number,
 ): ArtifactConformanceIssue | undefined {
 	const value = line.match(/^\s*-\s+Supersedes:\s*(.+)$/i)?.[1]?.trim();
-	if (!value || ISO_DATE_REGEX.test(value)) return undefined;
+	if (!value || !STRUCTURED_SUPERSESSION_POINTER_REGEX.test(value)) {
+		return undefined;
+	}
+	if (ISO_DATE_REGEX.test(value)) return undefined;
 
 	const actual = `Supersedes: ${value}`;
 	return {

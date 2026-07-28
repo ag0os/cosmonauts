@@ -887,11 +887,11 @@ and closes here.\`\`
 		);
 	});
 
-	test("validates dates on every non-empty free-text Supersedes pointer", () => {
+	test("validates dates on structured multi-decision Supersedes pointers", () => {
 		const undatedPointers = [
 			"D-001 and D-002",
-			"D-001 / D-002",
-			"behavior B-001",
+			"D-001/D-002",
+			"D-001,D-002",
 		] as const;
 
 		for (const pointer of undatedPointers) {
@@ -916,6 +916,23 @@ and closes here.\`\`
 			expect(
 				result.issues.filter((issue) => issue.kind === "undated-supersession"),
 				datedPointer,
+			).toEqual([]);
+		}
+	});
+
+	test("accepts descriptive legacy Supersedes grounds without pointer dates", () => {
+		for (const pointer of [
+			"D-005 and Design's `pi.exec` mechanism",
+			"prior provider-discovery-error unbound reason",
+			"B-013/B-016/Design delegation through Verifier",
+		]) {
+			const result = checkBehaviorConformance({
+				planSlug: "supersession-pointer",
+				planMarkdown: supersessionPlan(pointer),
+			});
+			expect(
+				result.issues.filter((issue) => issue.kind === "undated-supersession"),
+				pointer,
 			).toEqual([]);
 		}
 	});
@@ -1226,14 +1243,12 @@ ${activeBehaviors
 		});
 		const extendedBlockingKinds = new Set([
 			"unresolved-decision-citation",
+			"undated-supersession",
 			"unpaired-behavior-file",
 			"duplicate-marker",
 		]);
 
 		expect(result.withdrawn).toBe(2);
-		expect(
-			result.issues.filter((issue) => issue.kind === "undated-supersession"),
-		).not.toHaveLength(0);
 		expect(
 			result.issues.filter((issue) => extendedBlockingKinds.has(issue.kind)),
 		).toEqual([]);

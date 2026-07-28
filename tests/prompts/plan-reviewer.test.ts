@@ -75,7 +75,7 @@ describe("plan-reviewer prompt", () => {
 	});
 
 	// @cosmo-behavior plan:planning-system-hardening#B-007
-	it("requires live probes to exclude project-controlled execution or use consent or sandboxing", async () => {
+	it("requires live read-only probing of wrapped external tools", async () => {
 		const content = await readPrompt();
 
 		expect(content).toContain("When a plan wraps an external tool");
@@ -95,7 +95,7 @@ describe("plan-reviewer prompt", () => {
 	});
 
 	// @cosmo-behavior plan:planning-system-hardening#B-008
-	it("defines deterministic scope and size guidance and task units", async () => {
+	it("defines a scope and size dimension applying the plan guidance", async () => {
 		const content = await readPrompt();
 
 		expect(content).toContain("### 11. Scope and size");
