@@ -90,4 +90,66 @@ describe("planner prompt", () => {
 		expect(content).toContain("cite addressed findings round-qualified");
 		expect(content).toContain("`review-2.md PR-003`");
 	});
+
+	// @cosmo-behavior plan:planning-system-hardening#B-001
+	it("requires a closing consistency pass over decisions and stage ordering", async () => {
+		const content = await readFile(PROMPT_PATH, "utf-8");
+
+		expect(content).toContain("**Run the closing consistency pass.**");
+		expect(content).toContain(
+			"Walk every Decision Log entry against the design text and behaviors it governs.",
+		);
+		expect(content).toContain(
+			"Walk the Implementation Order for intermediate states where a shipped artifact references a seam that no longer exists.",
+		);
+		expect(content).toContain(
+			"Complete this pass before presenting the plan or handing it to plan-reviewer.",
+		);
+	});
+
+	// @cosmo-behavior plan:planning-system-hardening#B-002
+	it("requires state-space enumeration with no implementer-decided cells", async () => {
+		const content = await readFile(PROMPT_PATH, "utf-8");
+
+		expect(content).toContain(
+			"For designs that introduce states, bindings, or classifications, enumerate inputs × states",
+		);
+		expect(content).toContain("a defined outcome for every cell");
+		expect(content).toContain("no implementer-decided cells");
+	});
+
+	// @cosmo-behavior plan:planning-system-hardening#B-003
+	it("enforces the size checkpoint with slice boundaries or justification", async () => {
+		const content = await readFile(PROMPT_PATH, "utf-8");
+
+		expect(content).toContain("**Apply the size checkpoint.**");
+		expect(content).toContain("project's plan-size guidance");
+		expect(content).toContain(
+			"explicit slice boundaries in the Implementation Order or record an explicit justification",
+		);
+		expect(content).toContain(
+			"Acknowledging the size concern in prose without resolving it is insufficient.",
+		);
+	});
+
+	// @cosmo-behavior plan:planning-system-hardening#B-004
+	it("requires expected clauses provable by the named test", async () => {
+		const content = await readFile(PROMPT_PATH, "utf-8");
+
+		expect(content).toContain(
+			"Phrase each behavior's Expected clause as what its named test can actually assert.",
+		);
+		expect(content).toContain(
+			"Behaviors proved by content tests must state text obligations, not runtime outcomes.",
+		);
+	});
+
+	// @cosmo-behavior plan:planning-system-hardening#B-005
+	it("requires naming trust boundary and consent gate for project-controlled execution", async () => {
+		const content = await readFile(PROMPT_PATH, "utf-8");
+
+		expect(content).toContain(
+			"If the design executes anything project-controlled, name the trust boundary and the consent gate.",
+		);
+	});
 });
