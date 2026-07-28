@@ -24,7 +24,7 @@ INV-1..INV-4 ratified).
   and a findings format, writes to a fixed `missions/plans/<slug>/review.md`
   (line 144), and has no coverage ledger, live-probe instruction, or
   scope/size dimension. Each round overwrites the last — the
-  `analysis-capabilities` plan's D-008/D-012 already cite a vanished round.
+  `analysis-capabilities` plan's `D-008`/`D-012` already cite a vanished round.
 - `lib/artifacts/behavior-conformance.ts` checks required behavior fields,
   root-relative test files, and marker presence; surfaced by
   `cosmonauts plan check-artifacts <slug>`
@@ -71,7 +71,11 @@ INV-1..INV-4 ratified).
     missing from Files to Change, duplicate marker — plus a non-blocking
     advisory channel (behavior count beyond guidance). Withdrawn behaviors
     are detected by the `*(withdrawn` annotation on the behavior heading,
-    excluded from required-test checks, and reported as withdrawn. No
+    excluded from required-test checks, and reported as withdrawn. Citations
+    and annotations quoted as code (inline spans, fenced blocks) are
+    mentions, not references, and are ignored by these scans — added
+    2026-07-28 when this plan's own prose (a foreign-plan citation and the
+    literal annotation grammar) tripped the first implementation. No
     parallel checker.
   - Alternatives: a separate plan-lint command (splits the conformance story
     the artifact-conformance gate depends on); blocking on size (violates

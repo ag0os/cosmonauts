@@ -410,6 +410,30 @@ function buildWithdrawnBehaviorEvidence(
 	};
 }
 
+/**
+ * Text quoted as code is a mention, not a reference: citations and
+ * supersession annotations inside inline code spans or fenced code blocks
+ * must not resolve against the Decision Log. Masks those regions with
+ * blanks so line numbers stay stable for issue reporting.
+ */
+function maskQuotedText(lines: readonly string[]): string[] {
+	const masked: string[] = [];
+	let inFence = false;
+	for (const line of lines) {
+		if (/^\s*(?:```|~~~)/.test(line)) {
+			inFence = !inFence;
+			masked.push("");
+			continue;
+		}
+		if (inFence) {
+			masked.push("");
+			continue;
+		}
+		masked.push(line.replace(/`[^`]*`/g, (span) => " ".repeat(span.length)));
+	}
+	return masked;
+}
+
 function validateDecisionReferences(
 	markdown: string,
 ): ArtifactConformanceIssue[] {
@@ -432,7 +456,7 @@ function validateDecisionReferences(
 
 	const issues: ArtifactConformanceIssue[] = [];
 	const unresolved = new Set<string>();
-	const lines = normalizeLineEndings(markdown).split("\n");
+	const lines = maskQuotedText(normalizeLineEndings(markdown).split("\n"));
 	for (const [index, line] of lines.entries()) {
 		for (const match of line.matchAll(DECISION_CITATION_REGEX)) {
 			const decisionId = match[0];
@@ -498,7 +522,7 @@ function validateSupersessionDates({
 		});
 	}
 
-	const lines = normalizeLineEndings(markdown).split("\n");
+	const lines = maskQuotedText(normalizeLineEndings(markdown).split("\n"));
 	for (const [index, line] of lines.entries()) {
 		for (const match of line.matchAll(SUPERSESSION_ANNOTATION_REGEX)) {
 			const annotation = match[0];

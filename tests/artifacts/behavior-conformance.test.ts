@@ -651,6 +651,46 @@ The implementation still cites D-001, but this pointer to D-099 is unresolved.
 		]);
 	});
 
+	// @cosmo-behavior plan:planning-system-hardening#B-011
+	test("ignores citations and annotations quoted as code", () => {
+		const result = checkBehaviorConformance({
+			planSlug: "planning-system-hardening",
+			planMarkdown: `# Planning system hardening
+
+## Decision Log
+
+- **D-001 - Only decision**
+  - Decision: keep it
+  - Decided by: planner-proposed, 2026-07-28
+
+## Overview
+
+Another plan's \`D-098\`/\`D-099\` are mentions, not citations, and so are the
+annotation grammar template \`*(withdrawn by D-###, <date>)*\` and the undated
+example \`*(superseded by D-097, <date>)*\`.
+
+\`\`\`ts
+// D-096 inside a fenced block is also a mention
+// *(withdrawn by D-095)*
+\`\`\`
+
+## Behaviors
+
+### B-011 - Checker resolves decisions
+
+- Source: AC-010
+- Context: quoted citations appear in prose spans and fenced blocks
+- Action: the checker scans the plan
+- Expected: quoted mentions produce no citation or supersession issues
+- Seam: \`lib/artifacts/behavior-conformance.ts\`
+- Test: \`tests/artifacts/behavior-conformance.test.ts\` > \`ignores citations and annotations quoted as code\`
+- Marker: \`@cosmo-behavior plan:planning-system-hardening#B-011\`
+`,
+		});
+
+		expect(result.issues).toEqual([]);
+	});
+
 	// @cosmo-behavior plan:planning-system-hardening#B-012
 	test("checks pairing, marker uniqueness, withdrawn behaviors, and size advisory", async () => {
 		const projectRoot = await createTempDir("behavior-conformance-extended-");
