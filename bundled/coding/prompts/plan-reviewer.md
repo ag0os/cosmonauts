@@ -141,7 +141,9 @@ Work through every dimension systematically. For each, read the relevant code an
 
 ### 4. Write the findings report
 
-Write findings to `missions/plans/<slug>/review.md` where `<slug>` is the plan slug. Use the plan slug from `plan_view` or your spawn prompt. This file must be written to disk so the planner can read it in a subsequent revision pass.
+Use the plan slug from `plan_view` or your spawn prompt. Inspect `missions/plans/<slug>/` before writing and choose the lowest unused `review-<n>.md` (n ≥ 1). Treat a legacy `review.md` as round 1 when allocating: if `review.md` or `review-1.md` exists, round 1 is already used. Never overwrite an existing review round; if the target path exists, choose the next free round instead.
+
+Write findings to `missions/plans/<slug>/review-<n>.md`. This file must be written to disk so the planner can read it in a subsequent revision pass.
 
 Write findings using the format below. Be precise: name the file, the line, the type, and the mismatch. A finding that says "the types might not match" is useless. A finding that says "the plan passes `AgentDefinition` into the global port (plan.md:109) but the factory resolves against a separately bootstrapped runtime that may not include `--domain` overrides (cli/main.ts:193)" is useful.
 

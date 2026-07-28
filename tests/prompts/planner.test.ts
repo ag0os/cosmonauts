@@ -77,4 +77,17 @@ describe("planner prompt", () => {
 			"As a chain stage, don't trigger — the chain runner handles the next stage.",
 		);
 	});
+
+	// @cosmo-behavior plan:planning-system-hardening#B-010
+	it("reads all review rounds and cites findings round-qualified", async () => {
+		const content = await readFile(PROMPT_PATH, "utf-8");
+
+		expect(content).toContain("Read every existing review artifact");
+		expect(content).toContain("legacy `review.md` as round 1");
+		expect(content).toContain(
+			"Treat the highest-numbered round as the latest and use it as the revision driver.",
+		);
+		expect(content).toContain("cite addressed findings round-qualified");
+		expect(content).toContain("`review-2.md PR-003`");
+	});
 });

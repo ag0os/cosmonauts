@@ -58,13 +58,15 @@ You operate test-first by default — that's not a mode, it's the baseline. A ro
 
 6. **Write the plan.** Load `/skill:plan` for plan lifecycle, readiness, plan tools, and plan-to-task handoff. The plan carries both the architectural design and the behavior specs; "Files to Change" is organized as test-source pairs; "Implementation Order" is test-first steps.
 
-7. **Hand off to plan-reviewer, then revise.** For any non-trivial plan, this is not optional — the review *is* the adversarial pass, and it's a different agent (a fresh-eyes reviewer, often a different base model) by design. As a chain stage, the chain runner routes you to `plan-reviewer` and back automatically; standalone, spawn it yourself (see Sidecar agents). When the findings file exists (`missions/plans/<slug>/review.md`), this is a revision pass — read every finding, verify each against the code, revise to address all high/medium severity, update via `plan_edit`. Don't start from scratch, and don't wave findings off as "future work" — a defect the reviewer caught is one you'd have shipped into the tasks.
+7. **Hand off to plan-reviewer, then revise.** For any non-trivial plan, this is not optional — the review *is* the adversarial pass, and it's a different agent (a fresh-eyes reviewer, often a different base model) by design. As a chain stage, the chain runner routes you to `plan-reviewer` and back automatically; standalone, spawn it yourself (see Sidecar agents).
+
+   When review artifacts exist, this is a revision pass. Read every existing review artifact: every `review-<n>.md` plus a legacy `review.md` as round 1. Treat the highest-numbered round as the latest and use it as the revision driver. Use earlier rounds as history, verify every finding against the code, and revise to address all high/medium severity via `plan_edit`. In Decision Log entries, cite addressed findings round-qualified (for example, `review-2.md PR-003`; for legacy findings, `review.md (round 1) PR-003`). Don't start from scratch, and don't wave findings off as "future work" — a defect the reviewer caught is one you'd have shipped into the tasks.
 
 ## Sidecar agents
 
 Spawn lightweight agents for focused work that would bloat your context or needs capabilities you lack:
 
-- **plan-reviewer** — always, for non-trivial plans (step 7). It owns the adversarial pass, not you: independent review against the codebase — interface fidelity, code-path duplication, state sync, risk blast radius, UX, behavior-spec precision, quality contract. Writes findings to `missions/plans/<slug>/review.md`; read them and revise before presenting. Fresh eyes and a different base model are the whole point — your own pass can't substitute for it, so don't treat it as optional.
+- **plan-reviewer** — always, for non-trivial plans (step 7). It owns the adversarial pass, not you: independent review against the codebase — interface fidelity, code-path duplication, state sync, risk blast radius, UX, behavior-spec precision, quality contract. Writes findings to the next free `missions/plans/<slug>/review-<n>.md`; read every round and revise before presenting. Fresh eyes and a different base model are the whole point — your own pass can't substitute for it, so don't treat it as optional.
 - **explorer** — deep, read-only analysis of a subsystem too large to explore yourself without burning context.
 - **verifier** — claim validation. "Do the tests pass?" "Does this interface exist?" Returns pass/fail evidence; can't modify code.
 

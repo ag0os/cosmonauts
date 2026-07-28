@@ -51,4 +51,15 @@ describe("plan-reviewer prompt", () => {
 		);
 		expect(content).not.toMatch(/\b(vitest|biome|fallow|tsc)\b/i);
 	});
+
+	// @cosmo-behavior plan:planning-system-hardening#B-009
+	it("writes findings to the next free round file and never overwrites", async () => {
+		const content = await readPrompt();
+
+		expect(content).toContain("lowest unused `review-<n>.md`");
+		expect(content).toContain(
+			"Treat a legacy `review.md` as round 1 when allocating",
+		);
+		expect(content).toContain("Never overwrite an existing review round");
+	});
 });
