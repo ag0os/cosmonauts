@@ -2380,6 +2380,14 @@ describe("parallel group execution", () => {
 		let parallelEndEmittedEarly = false;
 
 		const events: ChainEvent[] = [];
+		let signalPlannerFailed!: () => void;
+		const plannerFailed = new Promise<void>((resolve) => {
+			signalPlannerFailed = resolve;
+		});
+		let signalWorkerStarted!: () => void;
+		const workerStarted = new Promise<void>((resolve) => {
+			signalWorkerStarted = resolve;
+		});
 		let resolveWorker!: () => void;
 
 		spawnerRef.current = {
@@ -2394,8 +2402,9 @@ describe("parallel group execution", () => {
 					};
 				}
 				// Worker blocks until explicitly resolved.
-				await new Promise<void>((r) => {
-					resolveWorker = r;
+				await new Promise<void>((resolve) => {
+					resolveWorker = resolve;
+					signalWorkerStarted();
 				});
 				workerSettled = true;
 				return { success: true, sessionId: "s-worker", messages: [] };
@@ -2404,6 +2413,13 @@ describe("parallel group execution", () => {
 		};
 
 		const onEvent = (e: ChainEvent) => {
+			if (
+				e.type === "stage_end" &&
+				e.stage.name === "planner" &&
+				!e.result.success
+			) {
+				signalPlannerFailed();
+			}
 			if (e.type === "parallel_end" && !workerSettled) {
 				parallelEndEmittedEarly = true;
 			}
@@ -2416,17 +2432,15 @@ describe("parallel group execution", () => {
 		);
 		const chainPromise = runChain(makeConfig([step], { onEvent }));
 
-		// Yield to let planner's synchronous failure propagate through promises.
-		// A macrotask boundary ensures all pending microtasks (planner's chain)
-		// have been processed before we assert the intermediate state.
-		await new Promise<void>((r) => setTimeout(r, 0));
-
-		// Worker is still blocked — parallel_end must NOT have been emitted yet.
-		expect(parallelEndEmittedEarly).toBe(false);
-
-		// Unblock worker.
-		resolveWorker();
-		await chainPromise;
+		await workerStarted;
+		try {
+			await plannerFailed;
+			// Worker is still blocked — parallel_end must NOT have been emitted yet.
+			expect(parallelEndEmittedEarly).toBe(false);
+		} finally {
+			resolveWorker();
+			await chainPromise;
+		}
 
 		// parallel_end now exists and carries the failure.
 		expect(workerSettled).toBe(true);
