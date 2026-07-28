@@ -16,6 +16,7 @@ import {
 	loadArchitectureIndexArtifact,
 	loadArchitectureModuleArtifact,
 	loadPlanPageData,
+	type PlanReviewRound,
 	type PlanViewerData,
 	validateArchitectureResource,
 } from "./loaders.ts";
@@ -295,7 +296,7 @@ async function renderPlanPageRoute(options: {
 			`<p class="meta">${escapeHtml(data.plan.status)} plan - ${escapeHtml(data.plan.slug)}</p>`,
 			renderDocumentSection("Plan", data.planDocument),
 			renderDocumentSection("Spec", data.specDocument),
-			renderDocumentSection("Review", data.reviewDocument),
+			renderReviewSection(data.reviewRounds, data.reviewDocument),
 			renderTaskStatusSection(data),
 		].join("\n"),
 	);
@@ -424,6 +425,32 @@ function renderDocumentSection(
 		'<section class="markdown">',
 		`<h2>${escapeHtml(title)}</h2>`,
 		document.html,
+		"</section>",
+	].join("\n");
+}
+
+function renderReviewSection(
+	rounds: readonly PlanReviewRound[] | undefined,
+	currentDocument: ArtifactDocument | undefined,
+): string {
+	if (!rounds || rounds.length === 0) {
+		return renderDocumentSection("Review", currentDocument);
+	}
+	if (
+		rounds.length === 1 &&
+		rounds[0]?.document.sourcePath.endsWith("/review.md")
+	) {
+		return renderDocumentSection("Review", rounds[0].document);
+	}
+
+	const currentRound = rounds.at(-1)?.round;
+	return [
+		'<section class="markdown">',
+		"<h2>Reviews</h2>",
+		...rounds.flatMap((review) => [
+			`<h3>Round ${review.round}${review.round === currentRound ? ' <span class="meta">(current)</span>' : ""}</h3>`,
+			review.document.html,
+		]),
 		"</section>",
 	].join("\n");
 }

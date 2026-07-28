@@ -1,4 +1,4 @@
-import { access, readFile } from "node:fs/promises";
+import { access, readdir, readFile } from "node:fs/promises";
 import { isAbsolute, posix, relative, resolve } from "node:path";
 import matter from "gray-matter";
 import { ARCHITECTURE_MAP_OUTPUT_DIR } from "../architecture-map/types.ts";
@@ -28,11 +28,17 @@ export interface PlanTaskStatus {
 	readonly counts: Readonly<Record<TaskStatus, number>>;
 }
 
+export interface PlanReviewRound {
+	readonly round: number;
+	readonly document: ArtifactDocument;
+}
+
 export interface PlanViewerData {
 	readonly plan: Plan;
 	readonly planDocument: ArtifactDocument;
 	readonly specDocument?: ArtifactDocument;
 	readonly reviewDocument?: ArtifactDocument;
+	readonly reviewRounds?: readonly PlanReviewRound[];
 	readonly taskStatus: PlanTaskStatus;
 	readonly taskConfigExists: boolean;
 }
@@ -68,7 +74,8 @@ export async function loadPlanPageData(options: {
 	const plan = await manager.getPlan(options.slug);
 	if (!plan) return null;
 
-	const reviewDocument = await loadPlanReviewArtifact(options);
+	const reviewRounds = await loadPlanReviewArtifacts(options);
+	const reviewDocument = reviewRounds.at(-1)?.document;
 	const taskStatus = await loadPlanTaskStatus(options);
 	const taskConfigExists = await projectFileExists(
 		options.projectRoot,
@@ -93,7 +100,7 @@ export async function loadPlanPageData(options: {
 					}),
 				}
 			: {}),
-		...(reviewDocument ? { reviewDocument } : {}),
+		...(reviewDocument ? { reviewDocument, reviewRounds } : {}),
 		taskStatus,
 		taskConfigExists,
 	};
@@ -103,18 +110,39 @@ export async function loadPlanReviewArtifact(options: {
 	readonly projectRoot: string;
 	readonly slug: string;
 }): Promise<ArtifactDocument | null> {
+	const reviews = await loadPlanReviewArtifacts(options);
+	return reviews.at(-1)?.document ?? null;
+}
+
+async function loadPlanReviewArtifacts(options: {
+	readonly projectRoot: string;
+	readonly slug: string;
+}): Promise<readonly PlanReviewRound[]> {
 	validateSlug(options.slug);
 
-	const sourcePath = `missions/plans/${options.slug}/review.md`;
-	const markdown = await readProjectFile(options.projectRoot, sourcePath);
-	if (markdown === null) return null;
+	const planPath = `missions/plans/${options.slug}`;
+	const filenames = await readProjectDirectory(options.projectRoot, planPath);
+	const reviewFiles = numberedReviewFiles(filenames);
+	if (filenames.includes("review.md")) reviewFiles.set(1, "review.md");
 
-	return artifactDocument({
-		kind: "review",
-		sourcePath,
-		title: "Review",
-		markdown,
-	});
+	const reviews: PlanReviewRound[] = [];
+	for (const [round, filename] of [...reviewFiles.entries()].sort(
+		([left], [right]) => left - right,
+	)) {
+		const sourcePath = `${planPath}/${filename}`;
+		const markdown = await readProjectFile(options.projectRoot, sourcePath);
+		if (markdown === null) continue;
+		reviews.push({
+			round,
+			document: artifactDocument({
+				kind: "review",
+				sourcePath,
+				title: filename === "review.md" ? "Review" : `Review Round ${round}`,
+				markdown,
+			}),
+		});
+	}
+	return reviews;
 }
 
 export async function loadReviewArtifact(options: {
@@ -230,6 +258,32 @@ function artifactDocument(input: {
 
 function stripFrontmatter(markdown: string): string {
 	return matter(markdown).content.trim();
+}
+
+function numberedReviewFiles(
+	filenames: readonly string[],
+): Map<number, string> {
+	const reviews = new Map<number, string>();
+	for (const filename of filenames) {
+		const match = filename.match(/^review-(\d+)\.md$/u);
+		const round = Number(match?.[1]);
+		if (Number.isSafeInteger(round) && round >= 1) reviews.set(round, filename);
+	}
+	return reviews;
+}
+
+async function readProjectDirectory(
+	projectRoot: string,
+	projectPath: string,
+): Promise<readonly string[]> {
+	const absolute = safeProjectFilePath(projectRoot, projectPath);
+
+	try {
+		return await readdir(absolute);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+		throw error;
+	}
 }
 
 async function readProjectFile(

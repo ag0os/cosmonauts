@@ -128,6 +128,83 @@ describe("artifact-viewer server", () => {
 		).rejects.toThrow();
 	});
 
+	test("displays a numbered-only plan review", async () => {
+		const manager = new PlanManager(tmp.path);
+		await manager.createPlan({
+			slug: "numbered-review",
+			title: "Numbered Review",
+			description: "# Plan",
+		});
+		await writeFile(
+			join(tmp.path, "missions", "plans", "numbered-review", "review-1.md"),
+			"# Numbered Round One",
+			"utf-8",
+		);
+
+		const page = await request("/plans/numbered-review");
+
+		expect(page.statusCode).toBe(200);
+		expect(page.body).toContain("Numbered Round One");
+		expect(page.body).toContain(
+			'<h3>Round 1 <span class="meta">(current)</span></h3>',
+		);
+		expect(page.body).not.toContain("No review markdown found");
+	});
+
+	test("displays mixed legacy and numbered review rounds chronologically with the latest current", async () => {
+		const manager = new PlanManager(tmp.path);
+		await manager.createPlan({
+			slug: "mixed-reviews",
+			title: "Mixed Reviews",
+			description: "# Plan",
+		});
+		const planDir = join(tmp.path, "missions", "plans", "mixed-reviews");
+		await Promise.all([
+			writeFile(join(planDir, "review.md"), "# Legacy Round One", "utf-8"),
+			writeFile(join(planDir, "review-2.md"), "# Numbered Round Two", "utf-8"),
+			writeFile(join(planDir, "review-10.md"), "# Numbered Round Ten", "utf-8"),
+		]);
+
+		const page = await request("/plans/mixed-reviews");
+
+		expect(page.statusCode).toBe(200);
+		expect(page.body.indexOf("Legacy Round One")).toBeLessThan(
+			page.body.indexOf("Numbered Round Two"),
+		);
+		expect(page.body.indexOf("Numbered Round Two")).toBeLessThan(
+			page.body.indexOf("Numbered Round Ten"),
+		);
+		expect(page.body).toContain("<h3>Round 1</h3>");
+		expect(page.body).toContain("<h3>Round 2</h3>");
+		expect(page.body).toContain(
+			'<h3>Round 10 <span class="meta">(current)</span></h3>',
+		);
+		expect(page.body).not.toContain(
+			'<h3>Round 1 <span class="meta">(current)</span></h3>',
+		);
+	});
+
+	test("keeps legacy-only review rendering compatible", async () => {
+		const manager = new PlanManager(tmp.path);
+		await manager.createPlan({
+			slug: "legacy-review",
+			title: "Legacy Review",
+			description: "# Plan",
+		});
+		await writeFile(
+			join(tmp.path, "missions", "plans", "legacy-review", "review.md"),
+			"# Legacy Review Body",
+			"utf-8",
+		);
+
+		const page = await request("/plans/legacy-review");
+
+		expect(page.statusCode).toBe(200);
+		expect(page.body).toContain("<h2>Review</h2>");
+		expect(page.body).toContain("Legacy Review Body");
+		expect(page.body).not.toContain("No review markdown found");
+	});
+
 	test("rejects traversal routes before artifact reads @cosmo-behavior plan:code-structure-map#B-017", async () => {
 		const dependencies = {
 			loadArchitectureIndex: vi.fn(),
