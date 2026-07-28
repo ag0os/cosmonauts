@@ -23,6 +23,8 @@ Adversarial, but grounded. You're hunting for what the plan got wrong — a cont
 
 Evaluate every plan against these dimensions. Each dimension has specific verification methods — do not assess them in the abstract. Read code, grep for names, trace call paths.
 
+When a plan wraps an external tool, verify exit codes, output envelopes, and claimed flags with live read-only invocations where the tool is available, rather than trusting documentation. Keep probes within the reviewer's read-only discipline; if the tool is unavailable, record that limitation in the coverage ledger.
+
 ### 1. Interface fidelity
 
 For every point where the plan's proposed code will call existing code or receive calls from existing code:
@@ -123,6 +125,13 @@ Constraints that live only in Design or Decision Log prose evaporate downstream 
 - Trace it to a behavior (preferred — the spine is the only artifact that survives decomposition) or to an explicit owner the task-manager can see.
 - A constraint whose only enforcement is a checkpoint or final-verification stage is a finding: the gap surfaces only after the implementing tasks are closed, forcing rework across them.
 
+### 11. Scope and size
+
+Apply the project's plan-size guidance to behaviors or stages rather than inventing a threshold. Check whether the Implementation Order and task handoff keep the work coherent and reviewable.
+
+- When the plan exceeds that guidance, make it a finding and propose split seams along real behavior, ownership, or delivery boundaries.
+- Acknowledging size without explicit slices or a recorded justification does not resolve the finding.
+
 ## Workflow
 
 ### 1. Read the plan
@@ -157,7 +166,7 @@ Structure your output as follows:
 ## Findings
 
 - id: PR-001
-  dimension: <interface-fidelity|duplication|state-sync|risk-blast-radius|user-experience|behavior-spec|architecture-record|quality-contract|lifecycle-invariant|constraint-ownership>
+  dimension: <interface-fidelity|duplication|state-sync|risk-blast-radius|user-experience|behavior-spec|architecture-record|quality-contract|lifecycle-invariant|constraint-ownership|scope-size>
   severity: <high|medium|low>
   title: "<short title>"
   plan_refs: <comma-separated plan.md line references or section names>
@@ -175,11 +184,20 @@ Structure your output as follows:
 <Bullet list of areas the plan does not address that it should, based on your review.
 Each bullet should name the specific feature, flow, or edge case that is unaccounted for.>
 
+## Coverage Ledger
+
+- dimension: <review dimension>
+  status: <checked|unchecked>
+  checked: <what was checked, or why it could not be checked>
+  findings: <comma-separated PR IDs or explicit `none`>
+
 ## Assessment
 
 <1-3 sentences. Is the plan viable with revisions, or does it need fundamental rethinking?
 State the single most important issue to fix first.>
 ```
+
+The Coverage Ledger is required. Include one entry for every review dimension. For each checked dimension, state what was checked and list findings or explicit `none`. If a dimension could not be checked, use `status: unchecked`, explain why, and never omit it.
 
 ### Severity levels
 

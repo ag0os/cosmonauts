@@ -62,4 +62,37 @@ describe("plan-reviewer prompt", () => {
 		);
 		expect(content).toContain("Never overwrite an existing review round");
 	});
+
+	// @cosmo-behavior plan:planning-system-hardening#B-006
+	it("requires a per-dimension coverage ledger with explicit none", async () => {
+		const content = await readPrompt();
+
+		expect(content).toContain("## Coverage Ledger");
+		expect(content).toContain("one entry for every review dimension");
+		expect(content).toContain("what was checked");
+		expect(content).toContain("findings or explicit `none`");
+		expect(content).toContain("status: unchecked");
+	});
+
+	// @cosmo-behavior plan:planning-system-hardening#B-007
+	it("requires live read-only probing of wrapped external tools", async () => {
+		const content = await readPrompt();
+
+		expect(content).toContain("When a plan wraps an external tool");
+		expect(content).toContain("live read-only invocations");
+		expect(content).toContain(
+			"exit codes, output envelopes, and claimed flags",
+		);
+		expect(content).toContain("rather than trusting documentation");
+	});
+
+	// @cosmo-behavior plan:planning-system-hardening#B-008
+	it("defines a scope and size dimension applying the plan guidance", async () => {
+		const content = await readPrompt();
+
+		expect(content).toContain("### 11. Scope and size");
+		expect(content).toContain("project's plan-size guidance");
+		expect(content).toContain("behaviors or stages");
+		expect(content).toContain("propose split seams");
+	});
 });
