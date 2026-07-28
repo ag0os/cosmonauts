@@ -208,7 +208,7 @@ INV-1..INV-4 ratified).
 - Source: AC-009, AC-010
 - Context: the real `missions/plans/analysis-capabilities/` artifacts on disk (legacy `review.md`, withdrawn B-020/B-032)
 - Action: the extended checker runs against that slug
-- Expected: no new blocking issues are introduced by this plan's checker extensions — withdrawn behaviors classify as withdrawn, the legacy round is readable — proving backward compatibility on live artifacts
+- Expected: no new blocking issues are introduced by this plan's checker extensions — withdrawn behaviors classify as withdrawn — proving backward compatibility on live artifacts *(amended 2026-07-28: "the legacy round is readable" trimmed per the provability rule — round readability is a prompt contract proven by B-009/B-010, not lib behavior this test can assert)*
 - Seam: `lib/artifacts/behavior-conformance.ts`
 - Test: `tests/artifacts/behavior-conformance.test.ts` > `keeps the analysis-capabilities artifacts passing under extended checks`
 - Marker: `@cosmo-behavior plan:planning-system-hardening#B-013`
@@ -224,7 +224,11 @@ beyond guidance). Parse decision entries (`- **D-### -`) and citations
 (`D-###` tokens in body text) from the plan body already loaded by
 `loadPlanArtifact`; supersession pointers are `Supersedes:` lines and
 `*(superseded by D-###, <date>)*` / `*(withdrawn by D-###, <date>)*`
-annotations — the dated form is required. Withdrawn behaviors are headings
+annotations — the dated form is required. Precisely (recorded 2026-07-28
+after review): a structured decision-ID pointer dates itself; any other
+`Supersedes:` ground must carry an ISO date within its decision entry
+(typically the Decided-by line); heading withdrawal annotations must match
+the exact dated grammar anchored at the end of the heading. Withdrawn behaviors are headings
 matching `*(withdrawn` — exclude from required-field/test issues, count them
 in a `withdrawn` result field. Pairing: each behavior's Seam and Test files
 must appear somewhere in the `## Files to Change` section when that section

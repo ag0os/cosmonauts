@@ -130,7 +130,7 @@ const ISO_DATE_REGEX = /\b\d{4}-\d{2}-\d{2}\b/;
 const STRUCTURED_SUPERSESSION_POINTER_REGEX =
 	/^D-\d{3}(?:(?:\s*,\s*|\s*\/\s*|\s+and\s+)D-\d{3})*(?:(?:\s*,\s*|\s+)\d{4}-\d{2}-\d{2})?$/;
 const WITHDRAWN_ANNOTATION_REGEX =
-	/\*\(withdrawn by D-\d{3}, \d{4}-\d{2}-\d{2}(?:\s+—\s+[^)]+)?\)\*/;
+	/\*\(withdrawn by D-\d{3}, \d{4}-\d{2}-\d{2}(?:\s+—\s+[^)]+)?\)\*\s*$/;
 const SUPERSESSION_ANNOTATION_REGEX =
 	/\*\((?:(?:partially\s+)?superseded|withdrawn)\s+by\b[^)]*\)\*/gi;
 const FIELD_LINE_REGEX = /^-\s*([^:]+):\s*(.*)$/;
@@ -494,6 +494,12 @@ function maskInlineCodeSpansByBlock(lines: readonly string[]): string[] {
 			masked.push(maskInlineCodeSpans(line));
 			continue;
 		}
+		// A new list item interrupts the inline context: a stray backtick in
+		// one item must never pair into a later item and mask the content
+		// between them. Continuation lines of the same item stay in-block.
+		if (/^\s*(?:[-*+]|\d+[.)])\s/.test(line)) {
+			flush();
+		}
 		block.push(line);
 	}
 	flush();
@@ -602,7 +608,16 @@ function validateSupersessionDates({
 
 	for (const [index, line] of scan.quotedMaskedLines.entries()) {
 		if (index >= decisionStartIndex && index < decisionSection.endLine) {
-			const pointerIssue = validateSupersessionPointer(line, index + 1);
+			const pointerIssue = validateSupersessionPointer({
+				line,
+				lineNumber: index + 1,
+				entryBlock: decisionEntryBlockAt({
+					lines: scan.lines,
+					sectionStart: decisionStartIndex,
+					sectionEnd: decisionSection.endLine,
+					lineIndex: index,
+				}),
+			});
 			if (pointerIssue) pointerIssues.push(pointerIssue);
 		}
 		annotationIssues.push(...validateSupersessionAnnotations(line, index + 1));
@@ -610,15 +625,53 @@ function validateSupersessionDates({
 	return [...pointerIssues, ...annotationIssues];
 }
 
-function validateSupersessionPointer(
-	line: string,
-	lineNumber: number,
-): ArtifactConformanceIssue | undefined {
-	const value = line.match(/^\s*-\s+Supersedes:\s*(.+)$/i)?.[1]?.trim();
-	if (!value || !STRUCTURED_SUPERSESSION_POINTER_REGEX.test(value)) {
-		return undefined;
+function decisionEntryBlockAt({
+	lines,
+	sectionStart,
+	sectionEnd,
+	lineIndex,
+}: {
+	lines: readonly string[];
+	sectionStart: number;
+	sectionEnd: number;
+	lineIndex: number;
+}): string {
+	let start = sectionStart;
+	for (let index = lineIndex; index >= sectionStart; index -= 1) {
+		if (DECISION_ENTRY_REGEX.test(lines[index] ?? "")) {
+			start = index;
+			break;
+		}
 	}
-	if (ISO_DATE_REGEX.test(value)) return undefined;
+	let end = sectionEnd;
+	for (let index = lineIndex + 1; index < sectionEnd; index += 1) {
+		if (DECISION_ENTRY_REGEX.test(lines[index] ?? "")) {
+			end = index;
+			break;
+		}
+	}
+	return lines.slice(start, end).join("\n");
+}
+
+function validateSupersessionPointer({
+	line,
+	lineNumber,
+	entryBlock,
+}: {
+	line: string;
+	lineNumber: number;
+	entryBlock: string;
+}): ArtifactConformanceIssue | undefined {
+	const value = line.match(/^\s*-\s+Supersedes:\s*(.+)$/i)?.[1]?.trim();
+	if (!value) return undefined;
+
+	// A structured decision-ID pointer must date itself; any other
+	// Supersedes ground must at least carry an ISO date within its decision
+	// entry (typically on the Decided-by line), so no supersession is undated.
+	const dated = STRUCTURED_SUPERSESSION_POINTER_REGEX.test(value)
+		? ISO_DATE_REGEX.test(value)
+		: ISO_DATE_REGEX.test(entryBlock);
+	if (dated) return undefined;
 
 	const actual = `Supersedes: ${value}`;
 	return {

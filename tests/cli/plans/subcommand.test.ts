@@ -62,6 +62,7 @@ describe("createPlanProgram", () => {
 		}
 	});
 
+	// @cosmo-behavior plan:planning-system-hardening#B-012
 	it("renders advisories and withdrawn counts in json plain and human formats", () => {
 		const result: ArtifactConformanceResult = {
 			ok: true,

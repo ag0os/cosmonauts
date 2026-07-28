@@ -783,6 +783,10 @@ This paragraph cites D-099 and must still be flagged.
 
 Another stray backtick \` sits here.
 
+- first bullet holds a stray backtick \`
+- second bullet cites D-098 and must be flagged
+- third bullet holds another stray backtick \`
+
 ## Behaviors
 
 ### B-011 - Checker resolves decisions
@@ -802,7 +806,54 @@ Another stray backtick \` sits here.
 				kind: "unresolved-decision-citation",
 				actual: "D-099",
 			}),
+			expect.objectContaining({
+				kind: "unresolved-decision-citation",
+				actual: "D-098",
+			}),
 		]);
+	});
+
+	// @cosmo-behavior plan:planning-system-hardening#B-012
+	test("does not withdraw a heading with trailing text after the annotation", () => {
+		const result = checkBehaviorConformance({
+			planSlug: "planning-system-hardening",
+			planMarkdown: `# Planning system hardening
+
+## Behaviors
+
+### B-001 - Sample *(withdrawn by D-001, 2026-07-28)* trailing garbage
+`,
+		});
+
+		expect(result.withdrawn).toBe(0);
+		expect(result.issues.length).toBeGreaterThan(0);
+	});
+
+	// @cosmo-behavior plan:planning-system-hardening#B-011
+	test("flags a descriptive Supersedes ground whose decision entry carries no date", () => {
+		const result = checkBehaviorConformance({
+			planSlug: "planning-system-hardening",
+			planMarkdown: `# Planning system hardening
+
+## Decision Log
+
+- **D-001 - Original**
+  - Decision: keep the original ground
+  - Decided by: planner-proposed, 2026-07-28
+
+- **D-002 - Undated amendment**
+  - Decision: replace it
+  - Decided by: planner-proposed
+  - Supersedes: D-001 because it changed
+`,
+		});
+
+		expect(result.issues).toContainEqual(
+			expect.objectContaining({
+				kind: "undated-supersession",
+				actual: "Supersedes: D-001 because it changed",
+			}),
+		);
 	});
 
 	test("masks Markdown code spans and fences before decision declaration and citation scans", () => {
@@ -865,9 +916,11 @@ D-096 and *(withdrawn by D-095)* remain masked through an unmatched fence.
 			planSlug: "multiline-code-span",
 			planMarkdown: `## Decision Log
 
-The quoted declaration starts here: \`\`
+The quoted declaration sits in a fence:
+
+\`\`\`md
 - **D-097 - Quoted declaration**
-and closes here.\`\`
+\`\`\`
 
 ## Overview
 
