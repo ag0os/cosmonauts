@@ -1,14 +1,14 @@
 ---
 id: TASK-529
 title: Remove the provider sandbox boundary per the ratified D-025 deferral
-status: Blocked
+status: Done
 priority: high
 labels:
   - 'plan:analysis-capability-runtime'
   - backend
 dependencies: []
 createdAt: '2026-07-29T20:55:57.651Z'
-updatedAt: '2026-07-29T21:03:50.236Z'
+updatedAt: '2026-07-29T22:27:00.783Z'
 ---
 
 ## Description
