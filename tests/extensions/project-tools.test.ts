@@ -12,8 +12,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
-	discoverFallowProvider,
 	FALLOW_VALIDATED_ENGINE_VERSION,
+	fallowPlatformPackageName,
 } from "../../domains/shared/extensions/project-tools/fallow-provider.ts";
 import projectToolsExtension, {
 	createProjectToolsExtension,
@@ -89,6 +89,53 @@ async function grantConsent(
 			},
 		}),
 	);
+}
+
+async function createInstalledFallowExecutable(
+	projectRoot: string,
+): Promise<string> {
+	const platformPackage = fallowPlatformPackageName({
+		platform: process.platform,
+		architecture: process.arch,
+	});
+	if (platformPackage === null) {
+		throw new Error(
+			`Unsupported installed Fallow fixture: ${process.platform}-${process.arch}`,
+		);
+	}
+	const packageRoot = join(
+		projectRoot,
+		"node_modules",
+		...platformPackage.split("/"),
+	);
+	const executable = join(
+		packageRoot,
+		process.platform === "win32" ? "fallow.exe" : "fallow",
+	);
+	await Promise.all([
+		mkdir(join(projectRoot, "node_modules", "fallow"), { recursive: true }),
+		mkdir(packageRoot, { recursive: true }),
+	]);
+	await Promise.all([
+		writeFile(
+			join(projectRoot, "node_modules", "fallow", "package.json"),
+			JSON.stringify({
+				name: "fallow",
+				version: FALLOW_VALIDATED_ENGINE_VERSION,
+				optionalDependencies: {
+					[platformPackage]: FALLOW_VALIDATED_ENGINE_VERSION,
+				},
+			}),
+		),
+		writeFile(
+			join(packageRoot, "package.json"),
+			JSON.stringify({
+				name: platformPackage,
+				version: FALLOW_VALIDATED_ENGINE_VERSION,
+			}),
+		),
+	]);
+	return executable;
 }
 
 function capabilityStatusBlock(systemPrompt: string): string {
@@ -223,8 +270,13 @@ describe("project-tools extension", () => {
 					}
 				: {
 						kind: "code-exit",
-						code: 3,
-						stdout: "defaults in effect\n",
+						code: 0,
+						stdout: `loaded config: fixture\n${JSON.stringify({
+							boundaries: {
+								zones: [{ name: "ui", patterns: ["src/ui/**"] }],
+								rules: [{ from: "ui", allow: [] }],
+							},
+						})}\n`,
 						stderr: "",
 					};
 		const failedIntrospection: ProviderProcessExecutor = async () => ({
@@ -237,21 +289,25 @@ describe("project-tools extension", () => {
 			{
 				...bound,
 				expectedState: "bound",
+				expectedReason: `provider \`fallow@${FALLOW_VALIDATED_ENGINE_VERSION}\``,
 				executeProcess: successfulIntrospection,
 			},
 			{
 				...unbound,
 				expectedState: "unbound",
+				expectedReason: "`no-provider`",
 				executeProcess: successfulIntrospection,
 			},
 			{
 				...failed,
 				expectedState: "failed",
+				expectedReason: "`provider-signal`",
 				executeProcess: failedIntrospection,
 			},
 			{
 				...withheld,
 				expectedState: "unbound",
+				expectedReason: "`execution-not-consented`",
 				executeProcess: successfulIntrospection,
 			},
 		] as const;
@@ -275,11 +331,16 @@ describe("project-tools extension", () => {
 
 			expect(rows, fixture.projectRoot).toHaveLength(7);
 			for (const capability of ANALYSIS_CAPABILITIES) {
-				expect(block).toContain(`| \`${capability}\` |`);
+				const row = rows.find((candidate) =>
+					candidate.startsWith(`| \`${capability}\` |`),
+				);
+				expect(row, `${fixture.projectRoot}:${capability}`).toContain(
+					`| \`${fixture.expectedState}\` |`,
+				);
+				expect(row, `${fixture.projectRoot}:${capability}`).toContain(
+					fixture.expectedReason,
+				);
 			}
-			expect(
-				rows.some((row) => row.includes(`\`${fixture.expectedState}\``)),
-			).toBe(true);
 			expect(block).not.toMatch(/command|executable|npx/iu);
 		}
 	});
@@ -808,7 +869,9 @@ describe("project-tools extension", () => {
 		await writeFile(join(fixture.projectRoot, "fallow.toml"), "");
 		await grantConsent(fixture.projectRoot, fixture.userStateRoot);
 		let pidPath: string | undefined;
-		const executable = join(tmpDir, "cancellation-fallow");
+		const executable = await createInstalledFallowExecutable(
+			fixture.projectRoot,
+		);
 		await writeFile(
 			executable,
 			[
@@ -849,7 +912,6 @@ describe("project-tools extension", () => {
 		const pi = createMockPi({ cwd: fixture.projectRoot });
 		createProjectToolsExtension({
 			userStateRoot: fixture.userStateRoot,
-			injectedExecutablePath: executable,
 			executeProcess,
 		})(pi as never);
 		const controller = new AbortController();
@@ -1311,21 +1373,37 @@ describe("project-tools extension", () => {
 					await rm(join(tmpDir, otherPath), { force: true });
 				}
 				await writeFile(join(tmpDir, path), contents, "utf8");
-				const discovery = await discoverFallowProvider({
-					projectRoot: tmpDir,
+				const pi = createMockPi({ cwd: tmpDir });
+				createProjectToolsExtension({
 					userStateRoot,
 					injectedExecutablePath: executable,
 					executeProcess,
-				});
+				})(pi as never);
+				const status = resultDetails(await pi.callTool("analysis_status", {}));
+				const capabilities = status.capabilities as readonly Record<
+					string,
+					unknown
+				>[];
 
-				expect(discovery.status).toBe("detected");
-				expect(discovery.bindings.map(({ capability }) => capability)).toEqual([
+				expect(status.kind).toBe("status");
+				expect(capabilities.map(({ capability }) => capability)).toEqual([
 					...ANALYSIS_CAPABILITIES,
 				]);
+				const supported = capabilities.filter(({ state }) => state === "bound");
+				expect(supported).toHaveLength(6);
+				for (const binding of supported) {
+					expect(binding).toMatchObject({
+						provider: {
+							id: "fallow",
+							name: "Fallow",
+							version: FALLOW_VALIDATED_ENGINE_VERSION,
+						},
+						scopes: expect.any(Array),
+					});
+					expect(binding.scopes as readonly unknown[]).not.toHaveLength(0);
+				}
 				expect(
-					discovery.bindings.find(
-						({ capability }) => capability === "complexity",
-					),
+					capabilities.find(({ capability }) => capability === "complexity"),
 				).toMatchObject({
 					state: "bound",
 					provider: {
@@ -1336,20 +1414,56 @@ describe("project-tools extension", () => {
 					scopes: ["project"],
 					metrics: ["cyclomatic", "cognitive", "crap"],
 				});
-				expect(JSON.stringify(discovery.bindings)).not.toMatch(
-					/command|executable|npx/iu,
-				);
+				expect(
+					capabilities.find(
+						({ capability }) => capability === "boundary-conformance",
+					),
+				).toEqual({
+					state: "unbound",
+					capability: "boundary-conformance",
+					reason: "provider-not-configured",
+					providerId: "fallow",
+				});
+				expect(JSON.stringify(status)).not.toMatch(/command|executable|npx/iu);
 			}
 
 			await rm(join(tmpDir, "package.json"), { force: true });
 			await writeFile(join(tmpDir, ".fallowrc.toml"), "", "utf8");
-			const stale = await discoverFallowProvider({
-				projectRoot: tmpDir,
+			const stalePi = createMockPi({ cwd: tmpDir });
+			createProjectToolsExtension({
 				userStateRoot,
 				injectedExecutablePath: executable,
 				executeProcess,
-			});
-			expect(stale.status).toBe("absent");
+			})(stalePi as never);
+			const staleStatus = resultDetails(
+				await stalePi.callTool("analysis_status", {}),
+			);
+			expect(staleStatus.capabilities).toEqual(
+				ANALYSIS_CAPABILITIES.map((capability) => ({
+					state: "unbound",
+					capability,
+					reason: "no-provider",
+				})),
+			);
+
+			await rm(join(tmpDir, ".fallowrc.toml"));
+			await writeFile(
+				join(tmpDir, "package.json"),
+				JSON.stringify({ devDependencies: { fallow: "2.54.2" } }),
+			);
+			const uninstalledPi = createMockPi({ cwd: tmpDir });
+			createProjectToolsExtension({ userStateRoot })(uninstalledPi as never);
+			const uninstalledStatus = resultDetails(
+				await uninstalledPi.callTool("analysis_status", {}),
+			);
+			expect(uninstalledStatus.capabilities).toEqual(
+				ANALYSIS_CAPABILITIES.map((capability) => ({
+					state: "unbound",
+					capability,
+					reason: "provider-not-installed",
+					providerId: "fallow",
+				})),
+			);
 		});
 
 		test("detects fallow from fallow.toml", async () => {

@@ -24,6 +24,7 @@ import {
 	fallowPlatformPackageName,
 	resolveInstalledFallowExecutable,
 } from "../../domains/shared/extensions/project-tools/fallow-provider.ts";
+import { createProjectToolsExtension } from "../../domains/shared/extensions/project-tools/index.ts";
 import {
 	type ProviderProcessExecutor,
 	type ProviderProcessInvocation,
@@ -37,6 +38,7 @@ import {
 	type AnalysisResult,
 	type AnalysisTraceTarget,
 } from "../../lib/analysis/index.ts";
+import { createMockPi } from "../helpers/mocks/index.ts";
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = resolve(TEST_DIR, "../..");
@@ -45,6 +47,55 @@ const execFileAsync = promisify(execFile);
 let fixtureRoot: string;
 let projectRoot: string;
 let userStateRoot: string;
+
+interface ToolResult {
+	readonly content: readonly { readonly type: string; readonly text: string }[];
+	readonly details: unknown;
+}
+
+const VALID_TOOL_PARAMS = {
+	analysis_dead_code: {},
+	analysis_duplication: {},
+	analysis_complexity: { metric: "cyclomatic" },
+	analysis_boundaries: {},
+	analysis_audit: { base: "HEAD" },
+	analysis_trace: { target: { kind: "file", path: "src/index.ts" } },
+	analysis_fix_preview: {},
+} as const;
+
+const CAPABILITY_REQUESTS = [
+	{ capability: "dead-code", scope: { kind: "project" } },
+	{ capability: "duplication", scope: { kind: "project" } },
+	{
+		capability: "complexity",
+		scope: { kind: "project" },
+		metric: "cyclomatic",
+	},
+	{
+		capability: "boundary-conformance",
+		scope: { kind: "project" },
+	},
+	{
+		capability: "changed-scope-audit",
+		scope: { kind: "changed", base: "HEAD" },
+	},
+	{
+		capability: "trace",
+		scope: {
+			kind: "target",
+			target: {
+				kind: "symbol",
+				path: "src/lib/unused.ts",
+				symbol: "unusedValue",
+			},
+		},
+	},
+	{ capability: "fix-preview", scope: { kind: "project" } },
+] as const satisfies readonly AnalysisRequest[];
+
+function resultDetails(result: unknown): Record<string, unknown> {
+	return (result as ToolResult).details as Record<string, unknown>;
+}
 
 beforeEach(async () => {
 	fixtureRoot = await mkdtemp(join(tmpdir(), "fallow-provider-test-"));
@@ -596,6 +647,56 @@ describe("Fallow provider discovery", () => {
 		expect(injected.runtime.provider.version).toBe(
 			FALLOW_VALIDATED_ENGINE_VERSION,
 		);
+
+		const fakeGlobalRoot = join(fixtureRoot, "fake-global");
+		await createExecutable(
+			join(
+				fakeGlobalRoot,
+				process.platform === "win32" ? "fallow.exe" : "fallow",
+			),
+		);
+		const originalPath = process.env.PATH;
+		let globalProbeInvocations = 0;
+		process.env.PATH = fakeGlobalRoot;
+		try {
+			const noLocalProvider = await discoverFallowProvider({
+				projectRoot,
+				userStateRoot,
+				executeProcess: async () => {
+					globalProbeInvocations += 1;
+					throw new Error("global or mutable provider lookup must not run");
+				},
+			});
+			expect(noLocalProvider).toMatchObject({
+				status: "unbound",
+				reason: "provider-not-installed",
+			});
+			expect(
+				noLocalProvider.bindings.every(
+					(binding) =>
+						binding.state === "unbound" &&
+						binding.reason === "provider-not-installed",
+				),
+			).toBe(true);
+		} finally {
+			if (originalPath === undefined) {
+				delete process.env.PATH;
+			} else {
+				process.env.PATH = originalPath;
+			}
+		}
+		expect(globalProbeInvocations).toBe(0);
+
+		const fixtureRuntime = await discoveredRuntimeWithFixtures();
+		const results = await Promise.all(
+			CAPABILITY_REQUESTS.map((request) => fixtureRuntime.execute(request)),
+		);
+		expect(results).toHaveLength(ANALYSIS_CAPABILITIES.length);
+		expect(
+			results.every(
+				(result) => result.provider.version === FALLOW_VALIDATED_ENGINE_VERSION,
+			),
+		).toBe(true);
 	});
 
 	test("resolves supported POSIX and Windows native platform packages without PATH or package-manager shims", async () => {
@@ -986,31 +1087,39 @@ describe("Fallow provider discovery", () => {
 		const run = successfulIntrospection({
 			configExitCode: 3,
 		});
-
-		const discovery = await discoverFallowProvider({
-			projectRoot,
+		const pi = createMockPi({ cwd: projectRoot });
+		createProjectToolsExtension({
 			userStateRoot,
 			injectedExecutablePath: executable,
 			executeProcess: run.execute,
-		});
-
-		expect(
-			discovery.bindings.find(
-				({ capability }) => capability === "boundary-conformance",
-			),
-		).toEqual({
+		})(pi as never);
+		const status = resultDetails(await pi.callTool("analysis_status", {}));
+		const boundaryStatus = (
+			status.capabilities as readonly Record<string, unknown>[]
+		).find(({ capability }) => capability === "boundary-conformance");
+		expect(boundaryStatus).toEqual({
 			state: "unbound",
 			capability: "boundary-conformance",
 			reason: "provider-not-configured",
 			providerId: "fallow",
 		});
 		expect(
-			discovery.bindings.filter(
+			(status.capabilities as readonly Record<string, unknown>[]).filter(
 				({ capability }) => capability !== "boundary-conformance",
 			),
-		).toSatisfy((bindings: typeof discovery.bindings) =>
+		).toSatisfy((bindings: readonly Record<string, unknown>[]) =>
 			bindings.every(({ state }) => state === "bound"),
 		);
+		const invocationCountAfterStatus = run.invocations.length;
+		expect(resultDetails(await pi.callTool("analysis_boundaries", {}))).toEqual(
+			{
+				kind: "unbound",
+				capability: "boundary-conformance",
+				reason: "provider-not-configured",
+				providerId: "fallow",
+			},
+		);
+		expect(run.invocations).toHaveLength(invocationCountAfterStatus);
 	});
 
 	// @cosmo-behavior plan:analysis-capability-runtime#B-037
@@ -1020,73 +1129,71 @@ describe("Fallow provider discovery", () => {
 		const executable = await createExecutable(
 			join(fixtureRoot, "injected", "fallow"),
 		);
-		const run = successfulIntrospection({ version: "2.55.0" });
-
-		const discovery = await discoverFallowProvider({
-			projectRoot,
+		const invocations: ProviderProcessInvocation[] = [];
+		const executeProcess: ProviderProcessExecutor = async (invocation) => {
+			invocations.push(invocation);
+			if (invocation.args.includes("--version")) {
+				return {
+					kind: "code-exit",
+					code: 0,
+					stdout: "fallow 2.55.0\n",
+					stderr: "",
+				};
+			}
+			if (invocation.args[0] === "config") {
+				return {
+					kind: "code-exit",
+					code: 0,
+					stdout: `loaded config: ${projectRoot}/fallow.toml\n${JSON.stringify({
+						boundaries: {
+							zones: [{ name: "ui", patterns: ["src/ui/**"] }],
+							rules: [{ from: "ui", allow: [] }],
+						},
+					})}\n`,
+					stderr: "",
+				};
+			}
+			return {
+				kind: "code-exit",
+				code: 0,
+				stdout: JSON.stringify({
+					schema_version: 999,
+					version: "2.55.0",
+					total_issues: 0,
+				}),
+				stderr: "",
+			};
+		};
+		const pi = createMockPi({ cwd: projectRoot });
+		createProjectToolsExtension({
 			userStateRoot,
 			injectedExecutablePath: executable,
-			executeProcess: run.execute,
-		});
-		expect(discovery.status).toBe("detected");
-		if (discovery.status !== "detected") {
-			throw new Error(
-				`Expected detected provider, received ${discovery.status}`,
-			);
-		}
-		expect(discovery.runtime.provider.version).toBe("2.55.0");
+			executeProcess,
+		})(pi as never);
+		const status = resultDetails(await pi.callTool("analysis_status", {}));
 		expect(
-			discovery.bindings
+			(status.capabilities as readonly Record<string, unknown>[])
 				.filter(({ state }) => state === "bound")
 				.every(
 					(binding) =>
-						binding.state === "bound" && binding.provider.version === "2.55.0",
+						(binding.provider as { readonly version?: string }).version ===
+						"2.55.0",
 				),
 		).toBe(true);
-
-		expect(
-			discovery.runtime.validateEnvelopeSchema("dead-code", {
-				schema_version: 999,
-				version: "2.55.0",
-			}),
-		).toMatchObject({
-			kind: "unsupported-schema",
-			providerDetails: {
-				providerId: "fallow",
-				data: {
-					capability: "dead-code",
-					actualSchemaVersion: 999,
-					expectedSchemaVersions: [4],
-				},
+		const execution = pi.callTool("analysis_dead_code", {});
+		await expect(execution).rejects.toMatchObject({
+			name: "AnalysisProviderError",
+			failureClass: "unsupported-schema",
+			process: {
+				exitCode: 0,
 			},
 		});
+		await expect(execution).rejects.toThrow(
+			/Capability: dead-code[\s\S]*Provider: fallow@2\.55\.0[\s\S]*Failure class: unsupported-schema/u,
+		);
 		expect(
-			discovery.runtime.validateEnvelopeSchema("dead-code", {
-				schema_version: 4,
-				version: "2.55.0",
-			}),
-		).toBeUndefined();
-		expect(
-			discovery.runtime.validateEnvelopeSchema("trace", {
-				file: "src/index.ts",
-			}),
-		).toBeUndefined();
-		expect(
-			discovery.runtime.validateEnvelopeSchema("trace", {
-				schema_version: 999,
-				file: "src/index.ts",
-			}),
-		).toMatchObject({
-			kind: "unsupported-schema",
-			providerDetails: {
-				providerId: "fallow",
-				data: {
-					capability: "trace",
-					actualSchemaVersion: 999,
-					expectedSchemaVersions: [],
-				},
-			},
-		});
+			invocations.filter(({ args }) => args[0] === "dead-code"),
+		).toHaveLength(1);
 	});
 });
 
@@ -1312,37 +1419,8 @@ describe("Fallow capability execution", () => {
 	// @cosmo-behavior plan:analysis-capability-runtime#B-007
 	test("normalizes every supported capability and preserves its native envelope", async () => {
 		const runtime = await discoveredRuntimeWithFixtures();
-		const requests = [
-			{ capability: "dead-code", scope: { kind: "project" } },
-			{ capability: "duplication", scope: { kind: "project" } },
-			{
-				capability: "complexity",
-				scope: { kind: "project" },
-				metric: "cyclomatic",
-			},
-			{
-				capability: "boundary-conformance",
-				scope: { kind: "project" },
-			},
-			{
-				capability: "changed-scope-audit",
-				scope: { kind: "changed", base: "HEAD" },
-			},
-			{
-				capability: "trace",
-				scope: {
-					kind: "target",
-					target: {
-						kind: "symbol",
-						path: "src/lib/unused.ts",
-						symbol: "unusedValue",
-					},
-				},
-			},
-			{ capability: "fix-preview", scope: { kind: "project" } },
-		] as const satisfies readonly AnalysisRequest[];
 
-		for (const request of requests) {
+		for (const request of CAPABILITY_REQUESTS) {
 			const fixture = await loadCapabilityFixture(request.capability);
 			const result = await runtime.execute(request);
 
@@ -1597,28 +1675,58 @@ describe("Fallow capability execution", () => {
 
 	// @cosmo-behavior plan:analysis-capability-runtime#B-010
 	test("requires and preserves a nonempty explicit audit base", async () => {
-		const runtime = await discoveredRuntimeWithFixtures();
-		const introspectionCount = runtime.invocations.length;
+		await writeFile(join(projectRoot, "fallow.toml"), "", "utf8");
+		await recordConsent();
+		const executable = await createExecutable(
+			join(fixtureRoot, "injected", "fallow"),
+		);
+		const fixture = await loadCapabilityFixture("changed-scope-audit");
+		const invocations: ProviderProcessInvocation[] = [];
+		const executeProcess: ProviderProcessExecutor = async (invocation) => {
+			invocations.push(invocation);
+			if (invocation.args.includes("--version")) {
+				return {
+					kind: "code-exit",
+					code: 0,
+					stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+					stderr: "",
+				};
+			}
+			if (invocation.args[0] === "config") {
+				return {
+					kind: "code-exit",
+					code: 3,
+					stdout: "no config file found, using defaults\n",
+					stderr: "",
+				};
+			}
+			return {
+				kind: "code-exit",
+				code: fixture.envelope.code,
+				stdout: fixture.envelope.stdout,
+				stderr: fixture.envelope.stderr,
+			};
+		};
+		const pi = createMockPi({ cwd: projectRoot });
+		createProjectToolsExtension({
+			userStateRoot,
+			injectedExecutablePath: executable,
+			executeProcess,
+		})(pi as never);
 		const invalidBases = [undefined, "", "   "] as const;
 
 		for (const base of invalidBases) {
-			const request = {
-				capability: "changed-scope-audit",
-				scope: { kind: "changed", ...(base === undefined ? {} : { base }) },
-			} as unknown as AnalysisRequest;
-			await expect(runtime.execute(request)).rejects.toMatchObject({
-				name: "AnalysisProviderError",
-				failureClass: "missing-base",
-			});
+			await expect(
+				pi.callTool("analysis_audit", base === undefined ? {} : { base }),
+			).rejects.toThrow(/base must be a nonempty string/iu);
 		}
-		expect(runtime.invocations).toHaveLength(introspectionCount);
+		expect(invocations).toHaveLength(0);
 
 		const literalBase = "HEAD";
-		const completed = await runtime.execute({
-			capability: "changed-scope-audit",
-			scope: { kind: "changed", base: literalBase },
-		});
-		expect(runtime.invocations.at(-1)?.args).toEqual([
+		const completed = resultDetails(
+			await pi.callTool("analysis_audit", { base: literalBase }),
+		);
+		expect(invocations.at(-1)?.args).toEqual([
 			"audit",
 			"--base",
 			literalBase,
@@ -1629,7 +1737,6 @@ describe("Fallow capability execution", () => {
 		]);
 		expect(completed.scope).toEqual({ kind: "changed", base: literalBase });
 
-		const fixture = await loadCapabilityFixture("changed-scope-audit");
 		const mismatchedPayload = {
 			...(fixture.envelope.payload as Readonly<Record<string, unknown>>),
 			base_ref: "main",
@@ -1875,54 +1982,49 @@ describe("Fallow capability execution", () => {
 			return runProviderProcess(invocation, signal, options);
 		};
 		const before = await snapshotWholeTree(projectRoot);
-
-		const discovery = await discoverFallowProvider({
-			projectRoot,
+		const pi = createMockPi({ cwd: projectRoot });
+		createProjectToolsExtension({
 			userStateRoot,
 			injectedExecutablePath: executablePath,
 			executeProcess,
-		});
-		if (discovery.status !== "detected") {
-			throw new Error(
-				`Expected detected provider, received ${discovery.status}`,
-			);
-		}
-		const requests = [
-			{ capability: "dead-code", scope: { kind: "project" } },
-			{ capability: "duplication", scope: { kind: "project" } },
-			{
-				capability: "complexity",
-				scope: { kind: "project" },
-				metric: "cyclomatic",
-			},
-			{
-				capability: "boundary-conformance",
-				scope: { kind: "project" },
-			},
-			{
-				capability: "changed-scope-audit",
-				scope: { kind: "changed", base: "HEAD" },
-			},
-			{
-				capability: "trace",
-				scope: {
-					kind: "target",
-					target: {
-						kind: "symbol",
-						path: "src/lib/unused.ts",
-						symbol: "unusedValue",
-					},
-				},
-			},
-			{ capability: "fix-preview", scope: { kind: "project" } },
-		] as const satisfies readonly AnalysisRequest[];
-		const results = [];
-		for (const request of requests) {
-			results.push(await discovery.runtime.execute(request));
+		})(pi as never);
+		const registeredToolNames = [...pi.tools.keys()];
+		expect(registeredToolNames).toEqual([
+			"analysis_status",
+			"analysis_dead_code",
+			"analysis_duplication",
+			"analysis_complexity",
+			"analysis_boundaries",
+			"analysis_audit",
+			"analysis_trace",
+			"analysis_fix_preview",
+		]);
+		expect(registeredToolNames).toEqual([...ANALYSIS_TOOL_NAMES]);
+		expect(
+			registeredToolNames.some((name) =>
+				/(?:apply|write|mutat)|analysis_fix$/u.test(name),
+			),
+		).toBe(false);
+
+		const status = resultDetails(await pi.callTool("analysis_status", {}));
+		const results: Record<string, unknown>[] = [];
+		for (const [toolName, params] of Object.entries(VALID_TOOL_PARAMS)) {
+			results.push(resultDetails(await pi.callTool(toolName, params)));
 		}
 		const after = await snapshotWholeTree(projectRoot);
 
+		expect(status).toMatchObject({
+			kind: "status",
+			capabilities: expect.arrayContaining(
+				ANALYSIS_CAPABILITIES.map((capability) =>
+					expect.objectContaining({ capability }),
+				),
+			),
+		});
 		expect(results).toHaveLength(ANALYSIS_CAPABILITIES.length);
+		expect(results.map(({ capability }) => capability)).toEqual([
+			...ANALYSIS_CAPABILITIES,
+		]);
 		expect(after).toEqual(before);
 		expect(before[".fallow/preexisting.bin"]).toBeDefined();
 		expect(
@@ -1934,7 +2036,5 @@ describe("Fallow capability execution", () => {
 		expect(fixInvocation?.args).toEqual(
 			expect.arrayContaining(["--dry-run", "--no-cache"]),
 		);
-		expect(ANALYSIS_TOOL_NAMES).not.toContain("analysis_fix");
-		expect(ANALYSIS_TOOL_NAMES).not.toContain("analysis_apply");
 	});
 });

@@ -1,4 +1,8 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import { createProjectToolsExtension } from "../../domains/shared/extensions/project-tools/index.ts";
 import {
 	ANALYSIS_CAPABILITIES,
 	ANALYSIS_CAPABILITY_TOOL_NAMES,
@@ -13,6 +17,8 @@ import {
 	resolveAnalysisBindings,
 	resolveAnalysisRequest,
 } from "../../lib/analysis/index.ts";
+import { loadProjectConfig } from "../../lib/config/index.ts";
+import { createMockPi } from "../helpers/mocks/index.ts";
 
 const FALLOW_PROVIDER = {
 	id: "fallow",
@@ -80,20 +86,37 @@ function detected(
 
 describe("analysis binding resolver", () => {
 	// @cosmo-behavior plan:analysis-capability-runtime#B-003
-	test("honors project provider preference without changing capability names", () => {
+	test("honors project provider preference without changing capability names", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "analysis-preference-"));
 		const detections = [detected(FALLOW_PROVIDER), detected(FAKE_PROVIDER)];
-		const fallowBindings = resolveAnalysisBindings({
-			detections,
-			providerPreference: "fallow",
-		});
-		const fakeBindings = resolveAnalysisBindings({
-			detections,
-			providerPreference: "fake",
-		});
-		const unavailableBindings = resolveAnalysisBindings({
-			detections: [detected(FALLOW_PROVIDER)],
-			providerPreference: "fake",
-		});
+		const bindingsForConfiguredProvider = async (
+			provider: string,
+			availableDetections = detections,
+		): Promise<readonly AnalysisBinding[]> => {
+			await mkdir(join(projectRoot, ".cosmonauts"), { recursive: true });
+			await writeFile(
+				join(projectRoot, ".cosmonauts", "config.json"),
+				JSON.stringify({ analysis: { provider } }),
+			);
+			const config = await loadProjectConfig(projectRoot);
+			return resolveAnalysisBindings({
+				detections: availableDetections,
+				providerPreference: config.analysis?.provider,
+			});
+		};
+
+		let fallowBindings: readonly AnalysisBinding[];
+		let fakeBindings: readonly AnalysisBinding[];
+		let unavailableBindings: readonly AnalysisBinding[];
+		try {
+			fallowBindings = await bindingsForConfiguredProvider("fallow");
+			fakeBindings = await bindingsForConfiguredProvider("fake");
+			unavailableBindings = await bindingsForConfiguredProvider("fake", [
+				detected(FALLOW_PROVIDER),
+			]);
+		} finally {
+			await rm(projectRoot, { recursive: true, force: true });
+		}
 
 		expect(fallowBindings.map(({ capability }) => capability)).toEqual([
 			...ANALYSIS_CAPABILITIES,
@@ -151,7 +174,7 @@ describe("analysis binding resolver", () => {
 	});
 
 	// @cosmo-behavior plan:analysis-capability-runtime#B-033
-	test("degrades an unadvertised scope kind without widening", () => {
+	test("degrades an unadvertised scope kind without widening", async () => {
 		const bindings = resolveAnalysisBindings({
 			detections: [detected(FALLOW_PROVIDER)],
 		});
@@ -175,6 +198,43 @@ describe("analysis binding resolver", () => {
 		expect(resolution).not.toHaveProperty("request");
 		expect(resolution).not.toHaveProperty("failure");
 		expect(resolution).not.toHaveProperty("execute");
+
+		let providerInvocations = 0;
+		const pi = createMockPi({ cwd: "/fixture/project" });
+		createProjectToolsExtension({
+			loadConfig: async () => ({}),
+			discoverProvider: (async () => ({
+				status: "detected",
+				signal: { kind: "config", path: "fallow.toml" },
+				detection: detected(FALLOW_PROVIDER),
+				bindings: projectOnlyBindings,
+				runtime: {
+					provider: FALLOW_PROVIDER,
+					executablePath: "/fixture/fallow",
+					executeProcess: async () => {
+						throw new Error("process execution is not expected");
+					},
+					validateEnvelopeSchema: () => undefined,
+					currentBindings: async () => projectOnlyBindings,
+					execute: async () => {
+						providerInvocations += 1;
+						throw new Error("provider execution is not expected");
+					},
+					dispose: () => undefined,
+				},
+			})) as never,
+		})(pi as never);
+		const toolResult = (await pi.callTool("analysis_dead_code", {
+			paths: ["lib/analysis"],
+		})) as { readonly details: unknown };
+
+		expect(toolResult.details).toEqual({
+			kind: "unsupported-scope",
+			capability: "dead-code",
+			requestedScopeKind: "paths",
+			supportedScopeKinds: ["project"],
+		});
+		expect(providerInvocations).toBe(0);
 	});
 
 	test("resolves every trace target against provider identity requirements", () => {
