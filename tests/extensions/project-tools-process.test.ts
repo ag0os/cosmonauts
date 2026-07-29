@@ -23,10 +23,48 @@ function nodeInvocation(script: string) {
 
 function terminationIgnoringScript(label: string): string {
 	return `
+		const { spawn } = require("node:child_process");
+		const descendant = spawn(process.execPath, ["-e", [
+			'process.on("SIGTERM", () => process.stderr.write("${label}:descendant-ignored\\\\n"));',
+			'setInterval(() => {}, 1_000);',
+		].join("\\n")], { stdio: ["ignore", "inherit", "inherit"] });
 		process.on("SIGTERM", () => process.stderr.write("${label}:ignored\\n"));
-		process.stdout.write("${label}:ready\\n");
+		process.stdout.write("${label}:ready:" + process.pid + ":" + descendant.pid + "\\n");
 		setInterval(() => {}, 1_000);
 	`;
+}
+
+function processExists(processId: number): boolean {
+	try {
+		process.kill(processId, 0);
+		return true;
+	} catch (error) {
+		return !(
+			error instanceof Error &&
+			"code" in error &&
+			error.code === "ESRCH"
+		);
+	}
+}
+
+async function expectProcessGone(processId: number): Promise<void> {
+	const deadline = Date.now() + 1_000;
+	while (Date.now() < deadline) {
+		if (!processExists(processId)) return;
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+	expect(processExists(processId)).toBe(false);
+}
+
+function processIdsFromOutput(
+	output: string,
+	label: string,
+): readonly number[] {
+	const match = output.match(new RegExp(`${label}:ready:(\\d+):(\\d+)`, "u"));
+	if (match?.[1] === undefined || match[2] === undefined) {
+		throw new Error(`Missing ${label} process IDs in provider output.`);
+	}
+	return [Number(match[1]), Number(match[2])];
 }
 
 async function waitForFileSize(
@@ -266,6 +304,9 @@ describe("project-tools provider process runner", () => {
 		expect(Date.now() - abortStartedAt).toBeLessThan(2_000);
 		expect(aborted).not.toHaveProperty("signal");
 		expect(aborted).not.toHaveProperty("code");
+		for (const processId of processIdsFromOutput(aborted.stdout, "abort")) {
+			await expectProcessGone(processId);
+		}
 
 		const timeoutStartedAt = Date.now();
 		const timedOut = await runProviderProcess(
@@ -289,5 +330,8 @@ describe("project-tools provider process runner", () => {
 		expect(Date.now() - timeoutStartedAt).toBeLessThan(2_000);
 		expect(timedOut).not.toHaveProperty("signal");
 		expect(timedOut).not.toHaveProperty("code");
+		for (const processId of processIdsFromOutput(timedOut.stdout, "timeout")) {
+			await expectProcessGone(processId);
+		}
 	}, 10_000);
 });

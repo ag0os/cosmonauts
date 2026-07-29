@@ -63,6 +63,16 @@ const FALLOW_CANONICAL_SIGNALS = [
 ] as const;
 
 type FallowSignalKind = "config" | "package";
+type SupportedFallowPlatform = "darwin" | "linux" | "win32";
+type SupportedFallowArchitecture = "arm64" | "x64";
+type FallowLinuxLibc = "gnu" | "musl";
+
+interface InstalledFallowExecutableOptions {
+	readonly projectRoot: string;
+	readonly platform?: NodeJS.Platform;
+	readonly architecture?: string;
+	readonly linuxLibc?: FallowLinuxLibc;
+}
 
 interface FallowDetectionSignal {
 	readonly kind: FallowSignalKind;
@@ -209,8 +219,145 @@ async function executableExists(path: string): Promise<boolean> {
 	}
 }
 
+async function executableExistsForPlatform(
+	path: string,
+	platform: NodeJS.Platform,
+): Promise<boolean> {
+	try {
+		if (!(await stat(path)).isFile()) return false;
+		await access(path, platform === "win32" ? constants.F_OK : constants.X_OK);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 function configuredPath(projectRoot: string, path: string): string {
 	return isAbsolute(path) ? path : resolve(projectRoot, path);
+}
+
+function supportedFallowPlatform(
+	platform: NodeJS.Platform,
+): SupportedFallowPlatform | null {
+	switch (platform) {
+		case "darwin":
+		case "linux":
+		case "win32":
+			return platform;
+		default:
+			return null;
+	}
+}
+
+function supportedFallowArchitecture(
+	architecture: string,
+): SupportedFallowArchitecture | null {
+	return architecture === "arm64" || architecture === "x64"
+		? architecture
+		: null;
+}
+
+function currentLinuxLibc(): FallowLinuxLibc {
+	const report = process.report?.getReport() as
+		| { readonly header?: Readonly<Record<string, unknown>> }
+		| undefined;
+	const header =
+		typeof report === "object" && report !== null ? report.header : undefined;
+	return typeof header?.glibcVersionRuntime === "string" ? "gnu" : "musl";
+}
+
+export function fallowPlatformPackageName(options: {
+	readonly platform: NodeJS.Platform;
+	readonly architecture: string;
+	readonly linuxLibc?: FallowLinuxLibc;
+}): string | null {
+	const platform = supportedFallowPlatform(options.platform);
+	const architecture = supportedFallowArchitecture(options.architecture);
+	if (platform === null || architecture === null) return null;
+	if (platform === "linux") {
+		return `@fallow-cli/linux-${architecture}-${
+			options.linuxLibc ?? currentLinuxLibc()
+		}`;
+	}
+	if (platform === "win32") {
+		return `@fallow-cli/win32-${architecture}-msvc`;
+	}
+	return `@fallow-cli/darwin-${architecture}`;
+}
+
+interface PackageRecord {
+	readonly name?: unknown;
+	readonly version?: unknown;
+	readonly optionalDependencies?: unknown;
+}
+
+async function readPackageRecord(path: string): Promise<PackageRecord | null> {
+	try {
+		const parsed = JSON.parse(await readFile(path, "utf8")) as unknown;
+		return typeof parsed === "object" &&
+			parsed !== null &&
+			!Array.isArray(parsed)
+			? (parsed as PackageRecord)
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Resolve the platform package's native analyzer without invoking the npm shim
+ * or consulting PATH, global installations, or a mutable package fetch.
+ */
+export async function resolveInstalledFallowExecutable(
+	options: InstalledFallowExecutableOptions,
+): Promise<string | null> {
+	const platform = options.platform ?? process.platform;
+	const platformPackage = fallowPlatformPackageName({
+		platform,
+		architecture: options.architecture ?? process.arch,
+		linuxLibc: options.linuxLibc,
+	});
+	if (platformPackage === null) return null;
+
+	const projectRoot = resolve(options.projectRoot);
+	const fallowPackage = await readPackageRecord(
+		join(projectRoot, "node_modules", "fallow", "package.json"),
+	);
+	if (
+		fallowPackage?.name !== FALLOW_PROVIDER_ID ||
+		typeof fallowPackage.version !== "string" ||
+		typeof fallowPackage.optionalDependencies !== "object" ||
+		fallowPackage.optionalDependencies === null ||
+		Array.isArray(fallowPackage.optionalDependencies)
+	) {
+		return null;
+	}
+	const declaredPlatformVersion = (
+		fallowPackage.optionalDependencies as Readonly<Record<string, unknown>>
+	)[platformPackage];
+	if (declaredPlatformVersion !== fallowPackage.version) return null;
+
+	const platformPackagePath = join(
+		projectRoot,
+		"node_modules",
+		...platformPackage.split("/"),
+	);
+	const platformPackageRecord = await readPackageRecord(
+		join(platformPackagePath, "package.json"),
+	);
+	if (
+		platformPackageRecord?.name !== platformPackage ||
+		platformPackageRecord.version !== fallowPackage.version
+	) {
+		return null;
+	}
+	const executablePath = join(
+		platformPackagePath,
+		platform === "win32" ? "fallow.exe" : "fallow",
+	);
+	return (await executableExistsForPlatform(executablePath, platform))
+		? executablePath
+		: null;
 }
 
 export async function detectFallowSignal(
@@ -258,16 +405,14 @@ async function resolveFallowExecutable(
 	>,
 ): Promise<string | null> {
 	const projectRoot = resolve(options.projectRoot);
+	const installedExecutable = await resolveInstalledFallowExecutable({
+		projectRoot,
+	});
 	const candidates = [
 		options.configuredExecutablePath === undefined
 			? undefined
 			: configuredPath(projectRoot, options.configuredExecutablePath),
-		join(
-			projectRoot,
-			"node_modules",
-			".bin",
-			process.platform === "win32" ? "fallow.cmd" : "fallow",
-		),
+		installedExecutable ?? undefined,
 		options.injectedExecutablePath === undefined
 			? undefined
 			: resolve(options.injectedExecutablePath),
@@ -466,6 +611,22 @@ function processFailure(
 					outcome.reason instanceof Error
 						? outcome.reason.message
 						: String(outcome.reason),
+				stderr: outcome.stderr,
+			},
+		};
+	}
+	if (outcome.kind === "termination-error") {
+		const initiatingReason =
+			outcome.initiated.kind === "timeout"
+				? outcome.initiated.reason
+				: outcome.initiated.reason instanceof Error
+					? outcome.initiated.reason.message
+					: String(outcome.initiated.reason);
+		return {
+			kind: "spawn-error",
+			message: `Fallow ${operation} process-tree cleanup failed after ${outcome.initiated.kind}: ${outcome.error.message}`,
+			process: {
+				reason: `${outcome.error.code}: ${initiatingReason}`,
 				stderr: outcome.stderr,
 			},
 		};

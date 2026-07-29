@@ -21,6 +21,8 @@ import { AnalysisProviderError } from "../../domains/shared/extensions/project-t
 import {
 	discoverFallowProvider,
 	FALLOW_VALIDATED_ENGINE_VERSION,
+	fallowPlatformPackageName,
+	resolveInstalledFallowExecutable,
 } from "../../domains/shared/extensions/project-tools/fallow-provider.ts";
 import {
 	type ProviderProcessExecutor,
@@ -62,6 +64,57 @@ async function createExecutable(path: string): Promise<string> {
 	return path;
 }
 
+async function createInstalledFallowPackage(
+	root: string,
+	options: {
+		readonly platform?: NodeJS.Platform;
+		readonly architecture?: string;
+		readonly linuxLibc?: "gnu" | "musl";
+	} = {},
+): Promise<string> {
+	const platform = options.platform ?? process.platform;
+	const architecture = options.architecture ?? process.arch;
+	const platformPackage = fallowPlatformPackageName({
+		platform,
+		architecture,
+		linuxLibc: options.linuxLibc,
+	});
+	if (platformPackage === null) {
+		throw new Error(`Unsupported Fallow fixture: ${platform}-${architecture}`);
+	}
+	const platformPackageRoot = join(
+		root,
+		"node_modules",
+		...platformPackage.split("/"),
+	);
+	const executablePath = join(
+		platformPackageRoot,
+		platform === "win32" ? "fallow.exe" : "fallow",
+	);
+	await mkdir(join(root, "node_modules", "fallow"), { recursive: true });
+	await mkdir(platformPackageRoot, { recursive: true });
+	await writeFile(
+		join(root, "node_modules", "fallow", "package.json"),
+		JSON.stringify({
+			name: "fallow",
+			version: FALLOW_VALIDATED_ENGINE_VERSION,
+			optionalDependencies: {
+				[platformPackage]: FALLOW_VALIDATED_ENGINE_VERSION,
+			},
+		}),
+	);
+	await writeFile(
+		join(platformPackageRoot, "package.json"),
+		JSON.stringify({
+			name: platformPackage,
+			version: FALLOW_VALIDATED_ENGINE_VERSION,
+		}),
+	);
+	await writeFile(executablePath, "#!/bin/sh\nexit 0\n", "utf8");
+	if (platform !== "win32") await chmod(executablePath, 0o755);
+	return executablePath;
+}
+
 async function recordConsent(
 	consentedProjectRoot = projectRoot,
 	stateRoot = userStateRoot,
@@ -91,6 +144,37 @@ async function waitFor(
 		}
 		await new Promise((resolve) => setTimeout(resolve, 10));
 	}
+}
+
+function processExists(processId: number): boolean {
+	try {
+		process.kill(processId, 0);
+		return true;
+	} catch (error) {
+		return !(
+			error instanceof Error &&
+			"code" in error &&
+			error.code === "ESRCH"
+		);
+	}
+}
+
+async function expectProcessGone(processId: number): Promise<void> {
+	await waitFor(() => !processExists(processId));
+	expect(processExists(processId)).toBe(false);
+}
+
+function installedProviderProcessIds(
+	stdout: string,
+	label: string,
+): readonly number[] {
+	const match = stdout.match(new RegExp(`${label}:ready:(\\d+):(\\d+)`, "u"));
+	if (match?.[1] === undefined || match[2] === undefined) {
+		throw new Error(
+			`Missing ${label} process IDs in installed-provider output.`,
+		);
+	}
+	return [Number(match[1]), Number(match[2])];
 }
 
 function successfulIntrospection(options?: {
@@ -430,14 +514,11 @@ describe("Fallow provider discovery", () => {
 				`Expected live pinned provider, received ${liveDiscovery.status}`,
 			);
 		}
-		expect(liveDiscovery.runtime.executablePath).toBe(
-			join(
-				repositoryRoot,
-				"node_modules",
-				".bin",
-				process.platform === "win32" ? "fallow.cmd" : "fallow",
-			),
-		);
+		const repositoryExecutable = await resolveInstalledFallowExecutable({
+			projectRoot: repositoryRoot,
+		});
+		expect(repositoryExecutable).not.toBeNull();
+		expect(liveDiscovery.runtime.executablePath).toBe(repositoryExecutable);
 		expect(liveDiscovery.runtime.provider.version).toBe(
 			FALLOW_VALIDATED_ENGINE_VERSION,
 		);
@@ -450,9 +531,7 @@ describe("Fallow provider discovery", () => {
 		const configuredExecutable = await createExecutable(
 			join(fixtureRoot, "configured", "fallow"),
 		);
-		const projectExecutable = await createExecutable(
-			join(projectRoot, "node_modules", ".bin", "fallow"),
-		);
+		const projectExecutable = await createInstalledFallowPackage(projectRoot);
 		const injectedExecutable = await createExecutable(
 			join(fixtureRoot, "injected", "fallow"),
 		);
@@ -519,6 +598,152 @@ describe("Fallow provider discovery", () => {
 		);
 	});
 
+	test("resolves supported POSIX and Windows native platform packages without PATH or package-manager shims", async () => {
+		const originalPath = process.env.PATH;
+		process.env.PATH = join(fixtureRoot, "path-must-not-be-used");
+		try {
+			for (const platformCase of [
+				{ platform: "darwin", architecture: "arm64" },
+				{ platform: "darwin", architecture: "x64" },
+				{ platform: "linux", architecture: "arm64", linuxLibc: "gnu" },
+				{ platform: "linux", architecture: "x64", linuxLibc: "musl" },
+				{ platform: "win32", architecture: "arm64" },
+				{ platform: "win32", architecture: "x64" },
+			] as const) {
+				const caseRoot = join(
+					fixtureRoot,
+					`${platformCase.platform}-${platformCase.architecture}-${
+						"linuxLibc" in platformCase ? platformCase.linuxLibc : "native"
+					}`,
+				);
+				await mkdir(caseRoot, { recursive: true });
+				const expected = await createInstalledFallowPackage(
+					caseRoot,
+					platformCase,
+				);
+				await createExecutable(
+					join(
+						caseRoot,
+						"node_modules",
+						".bin",
+						platformCase.platform === "win32" ? "fallow.cmd" : "fallow",
+					),
+				);
+				await createExecutable(join(fixtureRoot, "global", "fallow"));
+
+				await expect(
+					resolveInstalledFallowExecutable({
+						projectRoot: caseRoot,
+						...platformCase,
+					}),
+				).resolves.toBe(expected);
+			}
+		} finally {
+			if (originalPath === undefined) {
+				delete process.env.PATH;
+			} else {
+				process.env.PATH = originalPath;
+			}
+		}
+	});
+
+	test("installed native provider preserves crash evidence and cleans descendants on abort and timeout", async () => {
+		await writeFile(join(projectRoot, "fallow.toml"), "", "utf8");
+		await recordConsent();
+		const deadCodeFixture = await loadCapabilityFixture("dead-code");
+		const executablePath = await createInstalledFallowPackage(projectRoot);
+		await writeFile(
+			executablePath,
+			[
+				`#!${process.execPath}`,
+				'const { spawn } = require("node:child_process");',
+				"const args = process.argv.slice(2);",
+				'if (args.includes("--version")) {',
+				`\tconsole.log("fallow ${FALLOW_VALIDATED_ENGINE_VERSION}");`,
+				'} else if (args[0] === "config") {',
+				"\tconsole.log(JSON.stringify({ boundaries: { zones: [], rules: [] } }));",
+				'} else if (args[0] === "dead-code") {',
+				`\tprocess.stdout.write(${JSON.stringify(deadCodeFixture.envelope.stdout)}, () => process.kill(process.pid, "SIGTERM"));`,
+				'} else if (args[0] === "hang") {',
+				"\tconst label = args[1];",
+				'\tconst descendantScript = \'const label = process.argv[1]; process.on("SIGTERM", () => process.stderr.write(label + ":descendant-ignored\\\\n")); setInterval(() => {}, 1_000);\';',
+				'\tconst descendant = spawn(process.execPath, ["-e", descendantScript, label], { stdio: ["ignore", "inherit", "inherit"] });',
+				'\tprocess.on("SIGTERM", () => process.stderr.write(label + ":ignored\\n"));',
+				'\tprocess.stdout.write(label + ":ready:" + process.pid + ":" + descendant.pid + "\\n");',
+				"\tsetInterval(() => {}, 1_000);",
+				"}",
+				"",
+			].join("\n"),
+			"utf8",
+		);
+		await chmod(executablePath, 0o755);
+
+		const discovery = await discoverFallowProvider({
+			projectRoot,
+			userStateRoot,
+		});
+		if (discovery.status !== "detected") {
+			throw new Error(
+				`Expected detected provider, received ${discovery.status}`,
+			);
+		}
+		await expect(
+			discovery.runtime.execute({
+				capability: "dead-code",
+				scope: { kind: "project" },
+			}),
+		).rejects.toThrow(
+			/Capability: dead-code[\s\S]*Failure class: provider-signal[\s\S]*signal=SIGTERM/u,
+		);
+
+		const abortController = new AbortController();
+		const abortReason = new Error("installed provider abort");
+		const abortedExecution = runProviderProcess(
+			{
+				executablePath,
+				args: ["hang", "abort"],
+				cwd: projectRoot,
+			},
+			abortController.signal,
+			{ timeoutMs: 5_000, terminationGraceMs: 75 },
+		);
+		setTimeout(() => abortController.abort(abortReason), 250);
+		const aborted = await abortedExecution;
+		expect(aborted).toMatchObject({
+			kind: "aborted",
+			reason: abortReason,
+		});
+		expect(aborted.stdout).toContain("abort:ready:");
+		for (const processId of installedProviderProcessIds(
+			aborted.stdout,
+			"abort",
+		)) {
+			await expectProcessGone(processId);
+		}
+
+		const timedOut = await runProviderProcess(
+			{
+				executablePath,
+				args: ["hang", "timeout"],
+				cwd: projectRoot,
+			},
+			undefined,
+			{ timeoutMs: 250, terminationGraceMs: 75 },
+		);
+		expect(timedOut).toMatchObject({
+			kind: "timeout",
+			timeoutMs: 250,
+			reason: "Timed out after 250ms",
+		});
+		expect(timedOut.stdout).toContain("timeout:ready:");
+		for (const processId of installedProviderProcessIds(
+			timedOut.stdout,
+			"timeout",
+		)) {
+			await expectProcessGone(processId);
+		}
+	}, 15_000);
+
 	test("reports a signaled provider without an executable as not installed", async () => {
 		await writeFile(join(projectRoot, "fallow.toml"), "", "utf8");
 		await recordConsent();
@@ -548,16 +773,13 @@ describe("Fallow provider discovery", () => {
 	test("keeps introspection behind consent stored outside the project", async () => {
 		const signalPath = join(projectRoot, ".fallow.toml");
 		await writeFile(signalPath, "signal = true\n", "utf8");
-		const executable = await createExecutable(
-			join(projectRoot, "node_modules", ".bin", "fallow"),
-		);
+		await createInstalledFallowPackage(projectRoot);
 		const run = successfulIntrospection();
 		const entriesBefore = await readdir(projectRoot, { recursive: true });
 
 		const withheld = await discoverFallowProvider({
 			projectRoot,
 			userStateRoot,
-			injectedExecutablePath: executable,
 			executeProcess: run.execute,
 		});
 		expect(run.invocations).toEqual([]);
@@ -688,8 +910,7 @@ describe("Fallow provider discovery", () => {
 		await writeFile(join(projectRoot, "fallow.toml"), "", "utf8");
 		await recordConsent();
 		const sentinel = join(projectRoot, "sandbox-unavailable-sentinel.txt");
-		const executable = join(projectRoot, "node_modules", ".bin", "fallow");
-		await mkdir(dirname(executable), { recursive: true });
+		const executable = await createInstalledFallowPackage(projectRoot);
 		await writeFile(
 			executable,
 			`#!${process.execPath}\nrequire("node:fs").writeFileSync(${JSON.stringify(sentinel)}, "provider-ran\\n");\n`,
@@ -1384,12 +1605,12 @@ describe("Fallow capability execution", () => {
 			untracked: expectedChanges.untracked.join("\n"),
 		});
 
-		const executablePath = join(
-			REPOSITORY_ROOT,
-			"node_modules",
-			".bin",
-			process.platform === "win32" ? "fallow.cmd" : "fallow",
-		);
+		const executablePath = await resolveInstalledFallowExecutable({
+			projectRoot: REPOSITORY_ROOT,
+		});
+		if (executablePath === null) {
+			throw new Error("Expected the repository's native Fallow executable.");
+		}
 		const discovery = await discoverFallowProvider({
 			projectRoot,
 			userStateRoot,
@@ -1445,8 +1666,7 @@ describe("Fallow capability execution", () => {
 		const userSentinel = join(fixtureRoot, "user-owned-sentinel.txt");
 		await writeFile(userSentinel, "user-owned\n", "utf8");
 		const fixture = await loadCapabilityFixture("dead-code");
-		const executablePath = join(projectRoot, "node_modules", ".bin", "fallow");
-		await mkdir(dirname(executablePath), { recursive: true });
+		const executablePath = await createInstalledFallowPackage(projectRoot);
 		await writeFile(
 			executablePath,
 			[
@@ -1536,12 +1756,12 @@ describe("Fallow capability execution", () => {
 	test("leaves the entire worktree unchanged across status and every capability", async () => {
 		await createLiveProviderProject(projectRoot);
 		await recordConsent();
-		const executablePath = join(
-			REPOSITORY_ROOT,
-			"node_modules",
-			".bin",
-			process.platform === "win32" ? "fallow.cmd" : "fallow",
-		);
+		const executablePath = await resolveInstalledFallowExecutable({
+			projectRoot: REPOSITORY_ROOT,
+		});
+		if (executablePath === null) {
+			throw new Error("Expected the repository's native Fallow executable.");
+		}
 		const invocations: ProviderProcessInvocation[] = [];
 		const executeProcess: ProviderProcessExecutor = (
 			invocation,
