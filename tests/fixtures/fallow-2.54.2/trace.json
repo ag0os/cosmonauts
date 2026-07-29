@@ -1,0 +1,40 @@
+{
+	"fixtureSchemaVersion": 1,
+	"name": "trace",
+	"kind": "capability",
+	"provenance": {
+		"envelopeSource": "live-engine",
+		"provider": "fallow",
+		"package": "fallow",
+		"engineVersion": "2.54.2"
+	},
+	"command": {
+		"executable": "node_modules/.bin/fallow",
+		"args": [
+			"dead-code",
+			"--trace",
+			"src/lib/unused.ts:unusedValue",
+			"--format",
+			"json",
+			"--quiet",
+			"--no-cache"
+		],
+		"cwd": "<fixture-project>"
+	},
+	"envelope": {
+		"code": 0,
+		"signal": null,
+		"stdout": "{\n  \"file\": \"src/lib/unused.ts\",\n  \"export_name\": \"unusedValue\",\n  \"file_reachable\": false,\n  \"is_entry_point\": false,\n  \"is_used\": false,\n  \"direct_references\": [],\n  \"re_export_chains\": [],\n  \"reason\": \"File is unreachable from any entry point\"\n}\n",
+		"stderr": "   0.000595125s  WARN node_modules directory not found. Run `npm install` / `pnpm install` first for accurate results.\n",
+		"payload": {
+			"file": "src/lib/unused.ts",
+			"export_name": "unusedValue",
+			"file_reachable": false,
+			"is_entry_point": false,
+			"is_used": false,
+			"direct_references": [],
+			"re_export_chains": [],
+			"reason": "File is unreachable from any entry point"
+		}
+	}
+}

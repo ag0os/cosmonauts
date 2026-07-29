@@ -1,0 +1,109 @@
+{
+	"fixtureSchemaVersion": 1,
+	"name": "config-healthy",
+	"kind": "config-introspection",
+	"provenance": {
+		"envelopeSource": "live-engine",
+		"provider": "fallow",
+		"package": "fallow",
+		"engineVersion": "2.54.2"
+	},
+	"command": {
+		"executable": "node_modules/.bin/fallow",
+		"args": ["config", "--format", "json", "--quiet", "--no-cache"],
+		"cwd": "<fixture-project>"
+	},
+	"envelope": {
+		"code": 0,
+		"signal": null,
+		"stdout": "loaded config: <fixture-project>/.fallowrc.json\n{\n  \"entry\": [\n    \"src/index.ts\"\n  ],\n  \"ignorePatterns\": [],\n  \"framework\": [],\n  \"workspaces\": null,\n  \"ignoreDependencies\": [],\n  \"ignoreExports\": [],\n  \"usedClassMembers\": [],\n  \"duplicates\": {\n    \"enabled\": true,\n    \"mode\": \"mild\",\n    \"minTokens\": 20,\n    \"minLines\": 4,\n    \"threshold\": 0.0,\n    \"ignore\": [],\n    \"skipLocal\": false,\n    \"crossLanguage\": false,\n    \"ignoreImports\": false,\n    \"normalization\": {}\n  },\n  \"health\": {\n    \"maxCyclomatic\": 2,\n    \"maxCognitive\": 2,\n    \"maxCrap\": 4.0,\n    \"ignore\": [],\n    \"ownership\": {\n      \"botPatterns\": [\n        \"*\\\\[bot\\\\]*\",\n        \"dependabot*\",\n        \"renovate*\",\n        \"github-actions*\",\n        \"svc-*\",\n        \"*-service-account*\"\n      ],\n      \"emailMode\": \"handle\"\n    },\n    \"suggestInlineSuppression\": true\n  },\n  \"rules\": {\n    \"unused-files\": \"error\",\n    \"unused-exports\": \"error\",\n    \"unused-types\": \"error\",\n    \"unused-dependencies\": \"error\",\n    \"unused-dev-dependencies\": \"warn\",\n    \"unused-optional-dependencies\": \"warn\",\n    \"unused-enum-members\": \"error\",\n    \"unused-class-members\": \"error\",\n    \"unresolved-imports\": \"error\",\n    \"unlisted-dependencies\": \"error\",\n    \"duplicate-exports\": \"error\",\n    \"type-only-dependencies\": \"warn\",\n    \"test-only-dependencies\": \"warn\",\n    \"circular-dependencies\": \"error\",\n    \"boundary-violation\": \"error\",\n    \"coverage-gaps\": \"off\",\n    \"feature-flags\": \"off\",\n    \"stale-suppressions\": \"warn\"\n  },\n  \"boundaries\": {\n    \"zones\": [\n      {\n        \"name\": \"ui\",\n        \"patterns\": [\n          \"src/ui/**\"\n        ]\n      },\n      {\n        \"name\": \"data\",\n        \"patterns\": [\n          \"src/data/**\"\n        ]\n      }\n    ],\n    \"rules\": [\n      {\n        \"from\": \"ui\",\n        \"allow\": []\n      }\n    ]\n  },\n  \"flags\": {\n    \"configObjectHeuristics\": false\n  },\n  \"resolve\": {},\n  \"production\": false,\n  \"plugins\": [],\n  \"dynamicallyLoaded\": [],\n  \"overrides\": [],\n  \"publicPackages\": [],\n  \"sealed\": false\n}\n",
+		"stderr": "",
+		"payload": {
+			"entry": ["src/index.ts"],
+			"ignorePatterns": [],
+			"framework": [],
+			"workspaces": null,
+			"ignoreDependencies": [],
+			"ignoreExports": [],
+			"usedClassMembers": [],
+			"duplicates": {
+				"enabled": true,
+				"mode": "mild",
+				"minTokens": 20,
+				"minLines": 4,
+				"threshold": 0,
+				"ignore": [],
+				"skipLocal": false,
+				"crossLanguage": false,
+				"ignoreImports": false,
+				"normalization": {}
+			},
+			"health": {
+				"maxCyclomatic": 2,
+				"maxCognitive": 2,
+				"maxCrap": 4,
+				"ignore": [],
+				"ownership": {
+					"botPatterns": [
+						"*\\[bot\\]*",
+						"dependabot*",
+						"renovate*",
+						"github-actions*",
+						"svc-*",
+						"*-service-account*"
+					],
+					"emailMode": "handle"
+				},
+				"suggestInlineSuppression": true
+			},
+			"rules": {
+				"unused-files": "error",
+				"unused-exports": "error",
+				"unused-types": "error",
+				"unused-dependencies": "error",
+				"unused-dev-dependencies": "warn",
+				"unused-optional-dependencies": "warn",
+				"unused-enum-members": "error",
+				"unused-class-members": "error",
+				"unresolved-imports": "error",
+				"unlisted-dependencies": "error",
+				"duplicate-exports": "error",
+				"type-only-dependencies": "warn",
+				"test-only-dependencies": "warn",
+				"circular-dependencies": "error",
+				"boundary-violation": "error",
+				"coverage-gaps": "off",
+				"feature-flags": "off",
+				"stale-suppressions": "warn"
+			},
+			"boundaries": {
+				"zones": [
+					{
+						"name": "ui",
+						"patterns": ["src/ui/**"]
+					},
+					{
+						"name": "data",
+						"patterns": ["src/data/**"]
+					}
+				],
+				"rules": [
+					{
+						"from": "ui",
+						"allow": []
+					}
+				]
+			},
+			"flags": {
+				"configObjectHeuristics": false
+			},
+			"resolve": {},
+			"production": false,
+			"plugins": [],
+			"dynamicallyLoaded": [],
+			"overrides": [],
+			"publicPackages": [],
+			"sealed": false
+		}
+	}
+}

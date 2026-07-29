@@ -1,0 +1,23 @@
+{
+	"fixtureSchemaVersion": 1,
+	"name": "config-defaults",
+	"kind": "config-introspection",
+	"provenance": {
+		"envelopeSource": "live-engine",
+		"provider": "fallow",
+		"package": "fallow",
+		"engineVersion": "2.54.2"
+	},
+	"command": {
+		"executable": "node_modules/.bin/fallow",
+		"args": ["config", "--format", "json", "--quiet", "--no-cache"],
+		"cwd": "<fixture-project>"
+	},
+	"envelope": {
+		"code": 3,
+		"signal": null,
+		"stdout": "no config file found, using defaults\n",
+		"stderr": "",
+		"payload": null
+	}
+}

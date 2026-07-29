@@ -1,0 +1,202 @@
+{
+	"fixtureSchemaVersion": 1,
+	"name": "changed-scope-audit",
+	"kind": "capability",
+	"provenance": {
+		"envelopeSource": "live-engine",
+		"provider": "fallow",
+		"package": "fallow",
+		"engineVersion": "2.54.2"
+	},
+	"command": {
+		"executable": "node_modules/.bin/fallow",
+		"args": [
+			"audit",
+			"--base",
+			"HEAD",
+			"--format",
+			"json",
+			"--quiet",
+			"--no-cache"
+		],
+		"cwd": "<fixture-project>"
+	},
+	"expectedWorkingTreeChanges": {
+		"tracked": ["src/tracked.ts"],
+		"staged": ["src/staged.ts"],
+		"untracked": ["src/untracked.ts"]
+	},
+	"envelope": {
+		"code": 1,
+		"signal": null,
+		"stdout": "{\n  \"schema_version\": 3,\n  \"version\": \"2.54.2\",\n  \"command\": \"audit\",\n  \"verdict\": \"fail\",\n  \"changed_files_count\": 3,\n  \"base_ref\": \"HEAD\",\n  \"head_sha\": \"69533b1\",\n  \"elapsed_ms\": 89,\n  \"summary\": {\n    \"dead_code_issues\": 3,\n    \"dead_code_has_errors\": true,\n    \"complexity_findings\": 0,\n    \"max_cyclomatic\": null,\n    \"duplication_clone_groups\": 0\n  },\n  \"dead_code\": {\n    \"schema_version\": 4,\n    \"version\": \"2.54.2\",\n    \"elapsed_ms\": 19,\n    \"total_issues\": 3,\n    \"entry_points\": {\n      \"total\": 1,\n      \"sources\": {\n        \"manual_entry\": 1\n      }\n    },\n    \"summary\": {\n      \"total_issues\": 3,\n      \"unused_files\": 2,\n      \"unused_exports\": 1,\n      \"unused_types\": 0,\n      \"unused_dependencies\": 0,\n      \"unused_enum_members\": 0,\n      \"unused_class_members\": 0,\n      \"unresolved_imports\": 0,\n      \"unlisted_dependencies\": 0,\n      \"duplicate_exports\": 0,\n      \"type_only_dependencies\": 0,\n      \"test_only_dependencies\": 0,\n      \"circular_dependencies\": 0,\n      \"boundary_violations\": 0,\n      \"stale_suppressions\": 0\n    },\n    \"unused_files\": [\n      {\n        \"path\": \"src/staged.ts\",\n        \"actions\": [\n          {\n            \"type\": \"delete-file\",\n            \"auto_fixable\": false,\n            \"description\": \"Delete this file\",\n            \"note\": \"File deletion may remove runtime functionality not visible to static analysis\"\n          },\n          {\n            \"type\": \"suppress-file\",\n            \"auto_fixable\": false,\n            \"description\": \"Suppress with a file-level comment at the top of the file\",\n            \"comment\": \"// fallow-ignore-file unused-file\"\n          }\n        ]\n      },\n      {\n        \"path\": \"src/untracked.ts\",\n        \"actions\": [\n          {\n            \"type\": \"delete-file\",\n            \"auto_fixable\": false,\n            \"description\": \"Delete this file\",\n            \"note\": \"File deletion may remove runtime functionality not visible to static analysis\"\n          },\n          {\n            \"type\": \"suppress-file\",\n            \"auto_fixable\": false,\n            \"description\": \"Suppress with a file-level comment at the top of the file\",\n            \"comment\": \"// fallow-ignore-file unused-file\"\n          }\n        ]\n      }\n    ],\n    \"unused_exports\": [\n      {\n        \"path\": \"src/tracked.ts\",\n        \"export_name\": \"trackedUnused\",\n        \"is_type_only\": false,\n        \"line\": 2,\n        \"col\": 13,\n        \"span_start\": 44,\n        \"is_re_export\": false,\n        \"actions\": [\n          {\n            \"type\": \"remove-export\",\n            \"auto_fixable\": true,\n            \"description\": \"Remove the `export` keyword from the declaration\"\n          },\n          {\n            \"type\": \"suppress-line\",\n            \"auto_fixable\": false,\n            \"description\": \"Suppress with an inline comment above the line\",\n            \"comment\": \"// fallow-ignore-next-line unused-export\"\n          }\n        ]\n      }\n    ],\n    \"unused_types\": [],\n    \"unused_dependencies\": [],\n    \"unused_dev_dependencies\": [],\n    \"unused_optional_dependencies\": [],\n    \"unused_enum_members\": [],\n    \"unused_class_members\": [],\n    \"unresolved_imports\": [],\n    \"unlisted_dependencies\": [],\n    \"duplicate_exports\": [],\n    \"type_only_dependencies\": [],\n    \"test_only_dependencies\": [],\n    \"circular_dependencies\": [],\n    \"boundary_violations\": [],\n    \"stale_suppressions\": []\n  },\n  \"duplication\": {\n    \"clone_groups\": [],\n    \"clone_families\": [],\n    \"stats\": {\n      \"total_files\": 6,\n      \"files_with_clones\": 0,\n      \"total_lines\": 46,\n      \"duplicated_lines\": 0,\n      \"total_tokens\": 262,\n      \"duplicated_tokens\": 0,\n      \"clone_groups\": 0,\n      \"clone_instances\": 0,\n      \"duplication_percentage\": 0.0\n    }\n  },\n  \"complexity\": {\n    \"findings\": [],\n    \"summary\": {\n      \"files_analyzed\": 3,\n      \"functions_analyzed\": 0,\n      \"functions_above_threshold\": 0,\n      \"max_cyclomatic_threshold\": 2,\n      \"max_cognitive_threshold\": 2,\n      \"max_crap_threshold\": 4.0,\n      \"severity_critical_count\": 0,\n      \"severity_high_count\": 0,\n      \"severity_moderate_count\": 0\n    },\n    \"vital_signs\": {\n      \"dead_file_pct\": 66.7,\n      \"dead_export_pct\": 25.0,\n      \"avg_cyclomatic\": 0.0,\n      \"p90_cyclomatic\": 0,\n      \"unused_dep_count\": 0,\n      \"circular_dep_count\": 0,\n      \"counts\": {\n        \"total_files\": 3,\n        \"total_exports\": 4,\n        \"dead_files\": 2,\n        \"dead_exports\": 1,\n        \"total_lines\": 7,\n        \"files_scored\": 0,\n        \"total_deps\": 0\n      },\n      \"total_loc\": 7\n    }\n  }\n}\n",
+		"stderr": "   0.032888833s  WARN node_modules directory not found. Run `npm install` / `pnpm install` first for accurate results.\n   0.080166041s  WARN node_modules directory not found. Run `npm install` / `pnpm install` first for accurate results.\n",
+		"payload": {
+			"schema_version": 3,
+			"version": "2.54.2",
+			"command": "audit",
+			"verdict": "fail",
+			"changed_files_count": 3,
+			"base_ref": "HEAD",
+			"head_sha": "69533b1",
+			"elapsed_ms": 89,
+			"summary": {
+				"dead_code_issues": 3,
+				"dead_code_has_errors": true,
+				"complexity_findings": 0,
+				"max_cyclomatic": null,
+				"duplication_clone_groups": 0
+			},
+			"dead_code": {
+				"schema_version": 4,
+				"version": "2.54.2",
+				"elapsed_ms": 19,
+				"total_issues": 3,
+				"entry_points": {
+					"total": 1,
+					"sources": {
+						"manual_entry": 1
+					}
+				},
+				"summary": {
+					"total_issues": 3,
+					"unused_files": 2,
+					"unused_exports": 1,
+					"unused_types": 0,
+					"unused_dependencies": 0,
+					"unused_enum_members": 0,
+					"unused_class_members": 0,
+					"unresolved_imports": 0,
+					"unlisted_dependencies": 0,
+					"duplicate_exports": 0,
+					"type_only_dependencies": 0,
+					"test_only_dependencies": 0,
+					"circular_dependencies": 0,
+					"boundary_violations": 0,
+					"stale_suppressions": 0
+				},
+				"unused_files": [
+					{
+						"path": "src/staged.ts",
+						"actions": [
+							{
+								"type": "delete-file",
+								"auto_fixable": false,
+								"description": "Delete this file",
+								"note": "File deletion may remove runtime functionality not visible to static analysis"
+							},
+							{
+								"type": "suppress-file",
+								"auto_fixable": false,
+								"description": "Suppress with a file-level comment at the top of the file",
+								"comment": "// fallow-ignore-file unused-file"
+							}
+						]
+					},
+					{
+						"path": "src/untracked.ts",
+						"actions": [
+							{
+								"type": "delete-file",
+								"auto_fixable": false,
+								"description": "Delete this file",
+								"note": "File deletion may remove runtime functionality not visible to static analysis"
+							},
+							{
+								"type": "suppress-file",
+								"auto_fixable": false,
+								"description": "Suppress with a file-level comment at the top of the file",
+								"comment": "// fallow-ignore-file unused-file"
+							}
+						]
+					}
+				],
+				"unused_exports": [
+					{
+						"path": "src/tracked.ts",
+						"export_name": "trackedUnused",
+						"is_type_only": false,
+						"line": 2,
+						"col": 13,
+						"span_start": 44,
+						"is_re_export": false,
+						"actions": [
+							{
+								"type": "remove-export",
+								"auto_fixable": true,
+								"description": "Remove the `export` keyword from the declaration"
+							},
+							{
+								"type": "suppress-line",
+								"auto_fixable": false,
+								"description": "Suppress with an inline comment above the line",
+								"comment": "// fallow-ignore-next-line unused-export"
+							}
+						]
+					}
+				],
+				"unused_types": [],
+				"unused_dependencies": [],
+				"unused_dev_dependencies": [],
+				"unused_optional_dependencies": [],
+				"unused_enum_members": [],
+				"unused_class_members": [],
+				"unresolved_imports": [],
+				"unlisted_dependencies": [],
+				"duplicate_exports": [],
+				"type_only_dependencies": [],
+				"test_only_dependencies": [],
+				"circular_dependencies": [],
+				"boundary_violations": [],
+				"stale_suppressions": []
+			},
+			"duplication": {
+				"clone_groups": [],
+				"clone_families": [],
+				"stats": {
+					"total_files": 6,
+					"files_with_clones": 0,
+					"total_lines": 46,
+					"duplicated_lines": 0,
+					"total_tokens": 262,
+					"duplicated_tokens": 0,
+					"clone_groups": 0,
+					"clone_instances": 0,
+					"duplication_percentage": 0
+				}
+			},
+			"complexity": {
+				"findings": [],
+				"summary": {
+					"files_analyzed": 3,
+					"functions_analyzed": 0,
+					"functions_above_threshold": 0,
+					"max_cyclomatic_threshold": 2,
+					"max_cognitive_threshold": 2,
+					"max_crap_threshold": 4,
+					"severity_critical_count": 0,
+					"severity_high_count": 0,
+					"severity_moderate_count": 0
+				},
+				"vital_signs": {
+					"dead_file_pct": 66.7,
+					"dead_export_pct": 25,
+					"avg_cyclomatic": 0,
+					"p90_cyclomatic": 0,
+					"unused_dep_count": 0,
+					"circular_dep_count": 0,
+					"counts": {
+						"total_files": 3,
+						"total_exports": 4,
+						"dead_files": 2,
+						"dead_exports": 1,
+						"total_lines": 7,
+						"files_scored": 0,
+						"total_deps": 0
+					},
+					"total_loc": 7
+				}
+			}
+		}
+	}
+}

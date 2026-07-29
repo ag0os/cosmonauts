@@ -1,0 +1,98 @@
+{
+	"fixtureSchemaVersion": 1,
+	"name": "boundary-conformance",
+	"kind": "capability",
+	"provenance": {
+		"envelopeSource": "live-engine",
+		"provider": "fallow",
+		"package": "fallow",
+		"engineVersion": "2.54.2"
+	},
+	"command": {
+		"executable": "node_modules/.bin/fallow",
+		"args": [
+			"dead-code",
+			"--boundary-violations",
+			"--format",
+			"json",
+			"--quiet",
+			"--no-cache"
+		],
+		"cwd": "<fixture-project>"
+	},
+	"envelope": {
+		"code": 1,
+		"signal": null,
+		"stdout": "{\n  \"schema_version\": 4,\n  \"version\": \"2.54.2\",\n  \"elapsed_ms\": 6,\n  \"total_issues\": 1,\n  \"entry_points\": {\n    \"total\": 1,\n    \"sources\": {\n      \"manual_entry\": 1\n    }\n  },\n  \"summary\": {\n    \"total_issues\": 1,\n    \"unused_files\": 0,\n    \"unused_exports\": 0,\n    \"unused_types\": 0,\n    \"unused_dependencies\": 0,\n    \"unused_enum_members\": 0,\n    \"unused_class_members\": 0,\n    \"unresolved_imports\": 0,\n    \"unlisted_dependencies\": 0,\n    \"duplicate_exports\": 0,\n    \"type_only_dependencies\": 0,\n    \"test_only_dependencies\": 0,\n    \"circular_dependencies\": 0,\n    \"boundary_violations\": 1,\n    \"stale_suppressions\": 0\n  },\n  \"unused_files\": [],\n  \"unused_exports\": [],\n  \"unused_types\": [],\n  \"unused_dependencies\": [],\n  \"unused_dev_dependencies\": [],\n  \"unused_optional_dependencies\": [],\n  \"unused_enum_members\": [],\n  \"unused_class_members\": [],\n  \"unresolved_imports\": [],\n  \"unlisted_dependencies\": [],\n  \"duplicate_exports\": [],\n  \"type_only_dependencies\": [],\n  \"test_only_dependencies\": [],\n  \"circular_dependencies\": [],\n  \"boundary_violations\": [\n    {\n      \"from_path\": \"src/ui/view.ts\",\n      \"to_path\": \"src/data/store.ts\",\n      \"from_zone\": \"ui\",\n      \"to_zone\": \"data\",\n      \"import_specifier\": \"src/data/store.ts\",\n      \"line\": 1,\n      \"col\": 9,\n      \"actions\": [\n        {\n          \"type\": \"refactor-boundary\",\n          \"auto_fixable\": false,\n          \"description\": \"Move the import through an allowed zone or restructure the dependency\",\n          \"note\": \"This import crosses an architecture boundary that is not permitted by the configured rules\"\n        },\n        {\n          \"type\": \"suppress-line\",\n          \"auto_fixable\": false,\n          \"description\": \"Suppress with an inline comment above the line\",\n          \"comment\": \"// fallow-ignore-next-line boundary-violation\"\n        }\n      ]\n    }\n  ],\n  \"stale_suppressions\": []\n}\n",
+		"stderr": "   0.000569625s  WARN node_modules directory not found. Run `npm install` / `pnpm install` first for accurate results.\n",
+		"payload": {
+			"schema_version": 4,
+			"version": "2.54.2",
+			"elapsed_ms": 6,
+			"total_issues": 1,
+			"entry_points": {
+				"total": 1,
+				"sources": {
+					"manual_entry": 1
+				}
+			},
+			"summary": {
+				"total_issues": 1,
+				"unused_files": 0,
+				"unused_exports": 0,
+				"unused_types": 0,
+				"unused_dependencies": 0,
+				"unused_enum_members": 0,
+				"unused_class_members": 0,
+				"unresolved_imports": 0,
+				"unlisted_dependencies": 0,
+				"duplicate_exports": 0,
+				"type_only_dependencies": 0,
+				"test_only_dependencies": 0,
+				"circular_dependencies": 0,
+				"boundary_violations": 1,
+				"stale_suppressions": 0
+			},
+			"unused_files": [],
+			"unused_exports": [],
+			"unused_types": [],
+			"unused_dependencies": [],
+			"unused_dev_dependencies": [],
+			"unused_optional_dependencies": [],
+			"unused_enum_members": [],
+			"unused_class_members": [],
+			"unresolved_imports": [],
+			"unlisted_dependencies": [],
+			"duplicate_exports": [],
+			"type_only_dependencies": [],
+			"test_only_dependencies": [],
+			"circular_dependencies": [],
+			"boundary_violations": [
+				{
+					"from_path": "src/ui/view.ts",
+					"to_path": "src/data/store.ts",
+					"from_zone": "ui",
+					"to_zone": "data",
+					"import_specifier": "src/data/store.ts",
+					"line": 1,
+					"col": 9,
+					"actions": [
+						{
+							"type": "refactor-boundary",
+							"auto_fixable": false,
+							"description": "Move the import through an allowed zone or restructure the dependency",
+							"note": "This import crosses an architecture boundary that is not permitted by the configured rules"
+						},
+						{
+							"type": "suppress-line",
+							"auto_fixable": false,
+							"description": "Suppress with an inline comment above the line",
+							"comment": "// fallow-ignore-next-line boundary-violation"
+						}
+					]
+				}
+			],
+			"stale_suppressions": []
+		}
+	}
+}

@@ -1,0 +1,23 @@
+{
+	"fixtureSchemaVersion": 1,
+	"name": "config-error",
+	"kind": "config-introspection",
+	"provenance": {
+		"envelopeSource": "live-engine",
+		"provider": "fallow",
+		"package": "fallow",
+		"engineVersion": "2.54.2"
+	},
+	"command": {
+		"executable": "node_modules/.bin/fallow",
+		"args": ["config", "--format", "json", "--quiet", "--no-cache"],
+		"cwd": "<fixture-project>"
+	},
+	"envelope": {
+		"code": 2,
+		"signal": null,
+		"stdout": "",
+		"stderr": "error: Failed to parse <fixture-project>/.fallowrc.json: Failed to parse config file <fixture-project>/.fallowrc.json: expected value at line 1 column 12\n",
+		"payload": null
+	}
+}

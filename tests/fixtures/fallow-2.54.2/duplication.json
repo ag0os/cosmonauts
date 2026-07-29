@@ -1,0 +1,142 @@
+{
+	"fixtureSchemaVersion": 1,
+	"name": "duplication",
+	"kind": "capability",
+	"provenance": {
+		"envelopeSource": "live-engine",
+		"provider": "fallow",
+		"package": "fallow",
+		"engineVersion": "2.54.2"
+	},
+	"command": {
+		"executable": "node_modules/.bin/fallow",
+		"args": [
+			"dupes",
+			"--min-tokens",
+			"20",
+			"--min-lines",
+			"4",
+			"--format",
+			"json",
+			"--quiet",
+			"--no-cache"
+		],
+		"cwd": "<fixture-project>"
+	},
+	"envelope": {
+		"code": 0,
+		"signal": null,
+		"stdout": "{\n  \"schema_version\": 4,\n  \"version\": \"2.54.2\",\n  \"elapsed_ms\": 4,\n  \"clone_groups\": [\n    {\n      \"instances\": [\n        {\n          \"file\": \"src/duplicate-a.ts\",\n          \"start_line\": 1,\n          \"end_line\": 7,\n          \"start_col\": 31,\n          \"end_col\": 23,\n          \"fragment\": \"input: string): string {\\n\\tconst trimmed = input.trim();\\n\\tconst lowered = trimmed.toLowerCase();\\n\\tconst normalized = lowered.replaceAll(\\\" \\\", \\\"-\\\");\\n\\treturn normalized.startsWith(\\\"order-\\\")\\n\\t\\t? normalized\\n\\t\\t: `order-${normalized\"\n        },\n        {\n          \"file\": \"src/duplicate-b.ts\",\n          \"start_line\": 1,\n          \"end_line\": 7,\n          \"start_col\": 33,\n          \"end_col\": 23,\n          \"fragment\": \"input: string): string {\\n\\tconst trimmed = input.trim();\\n\\tconst lowered = trimmed.toLowerCase();\\n\\tconst normalized = lowered.replaceAll(\\\" \\\", \\\"-\\\");\\n\\treturn normalized.startsWith(\\\"order-\\\")\\n\\t\\t? normalized\\n\\t\\t: `order-${normalized\"\n        }\n      ],\n      \"token_count\": 49,\n      \"line_count\": 7,\n      \"actions\": [\n        {\n          \"type\": \"extract-shared\",\n          \"auto_fixable\": false,\n          \"description\": \"Extract duplicated code (7 lines, 2 instances) into a shared function\"\n        },\n        {\n          \"type\": \"suppress-line\",\n          \"auto_fixable\": false,\n          \"description\": \"Suppress with an inline comment above the duplicated code\",\n          \"comment\": \"// fallow-ignore-next-line code-duplication\"\n        }\n      ]\n    }\n  ],\n  \"clone_families\": [\n    {\n      \"files\": [\n        \"src/duplicate-a.ts\",\n        \"src/duplicate-b.ts\"\n      ],\n      \"groups\": [\n        {\n          \"instances\": [\n            {\n              \"file\": \"src/duplicate-a.ts\",\n              \"start_line\": 1,\n              \"end_line\": 7,\n              \"start_col\": 31,\n              \"end_col\": 23,\n              \"fragment\": \"input: string): string {\\n\\tconst trimmed = input.trim();\\n\\tconst lowered = trimmed.toLowerCase();\\n\\tconst normalized = lowered.replaceAll(\\\" \\\", \\\"-\\\");\\n\\treturn normalized.startsWith(\\\"order-\\\")\\n\\t\\t? normalized\\n\\t\\t: `order-${normalized\"\n            },\n            {\n              \"file\": \"src/duplicate-b.ts\",\n              \"start_line\": 1,\n              \"end_line\": 7,\n              \"start_col\": 33,\n              \"end_col\": 23,\n              \"fragment\": \"input: string): string {\\n\\tconst trimmed = input.trim();\\n\\tconst lowered = trimmed.toLowerCase();\\n\\tconst normalized = lowered.replaceAll(\\\" \\\", \\\"-\\\");\\n\\treturn normalized.startsWith(\\\"order-\\\")\\n\\t\\t? normalized\\n\\t\\t: `order-${normalized\"\n            }\n          ],\n          \"token_count\": 49,\n          \"line_count\": 7\n        }\n      ],\n      \"total_duplicated_lines\": 7,\n      \"total_duplicated_tokens\": 49,\n      \"suggestions\": [\n        {\n          \"kind\": \"ExtractFunction\",\n          \"description\": \"Extract shared function (7 lines) from duplicate-a.ts, duplicate-b.ts\",\n          \"estimated_savings\": 7\n        }\n      ],\n      \"actions\": [\n        {\n          \"type\": \"extract-shared\",\n          \"auto_fixable\": false,\n          \"description\": \"Extract 1 duplicated code block (7 lines) into a shared module\",\n          \"note\": \"These clone groups share the same files, indicating a structural relationship — refactor together\"\n        },\n        {\n          \"type\": \"apply-suggestion\",\n          \"auto_fixable\": false,\n          \"description\": \"Extract shared function (7 lines) from duplicate-a.ts, duplicate-b.ts\"\n        },\n        {\n          \"type\": \"suppress-line\",\n          \"auto_fixable\": false,\n          \"description\": \"Suppress with an inline comment above the duplicated code\",\n          \"comment\": \"// fallow-ignore-next-line code-duplication\"\n        }\n      ]\n    }\n  ],\n  \"stats\": {\n    \"total_files\": 6,\n    \"files_with_clones\": 2,\n    \"total_lines\": 46,\n    \"duplicated_lines\": 14,\n    \"total_tokens\": 262,\n    \"duplicated_tokens\": 49,\n    \"clone_groups\": 1,\n    \"clone_instances\": 2,\n    \"duplication_percentage\": 30.434782608695656\n  }\n}\n",
+		"stderr": "",
+		"payload": {
+			"schema_version": 4,
+			"version": "2.54.2",
+			"elapsed_ms": 4,
+			"clone_groups": [
+				{
+					"instances": [
+						{
+							"file": "src/duplicate-a.ts",
+							"start_line": 1,
+							"end_line": 7,
+							"start_col": 31,
+							"end_col": 23,
+							"fragment": "input: string): string {\n\tconst trimmed = input.trim();\n\tconst lowered = trimmed.toLowerCase();\n\tconst normalized = lowered.replaceAll(\" \", \"-\");\n\treturn normalized.startsWith(\"order-\")\n\t\t? normalized\n\t\t: `order-${normalized"
+						},
+						{
+							"file": "src/duplicate-b.ts",
+							"start_line": 1,
+							"end_line": 7,
+							"start_col": 33,
+							"end_col": 23,
+							"fragment": "input: string): string {\n\tconst trimmed = input.trim();\n\tconst lowered = trimmed.toLowerCase();\n\tconst normalized = lowered.replaceAll(\" \", \"-\");\n\treturn normalized.startsWith(\"order-\")\n\t\t? normalized\n\t\t: `order-${normalized"
+						}
+					],
+					"token_count": 49,
+					"line_count": 7,
+					"actions": [
+						{
+							"type": "extract-shared",
+							"auto_fixable": false,
+							"description": "Extract duplicated code (7 lines, 2 instances) into a shared function"
+						},
+						{
+							"type": "suppress-line",
+							"auto_fixable": false,
+							"description": "Suppress with an inline comment above the duplicated code",
+							"comment": "// fallow-ignore-next-line code-duplication"
+						}
+					]
+				}
+			],
+			"clone_families": [
+				{
+					"files": ["src/duplicate-a.ts", "src/duplicate-b.ts"],
+					"groups": [
+						{
+							"instances": [
+								{
+									"file": "src/duplicate-a.ts",
+									"start_line": 1,
+									"end_line": 7,
+									"start_col": 31,
+									"end_col": 23,
+									"fragment": "input: string): string {\n\tconst trimmed = input.trim();\n\tconst lowered = trimmed.toLowerCase();\n\tconst normalized = lowered.replaceAll(\" \", \"-\");\n\treturn normalized.startsWith(\"order-\")\n\t\t? normalized\n\t\t: `order-${normalized"
+								},
+								{
+									"file": "src/duplicate-b.ts",
+									"start_line": 1,
+									"end_line": 7,
+									"start_col": 33,
+									"end_col": 23,
+									"fragment": "input: string): string {\n\tconst trimmed = input.trim();\n\tconst lowered = trimmed.toLowerCase();\n\tconst normalized = lowered.replaceAll(\" \", \"-\");\n\treturn normalized.startsWith(\"order-\")\n\t\t? normalized\n\t\t: `order-${normalized"
+								}
+							],
+							"token_count": 49,
+							"line_count": 7
+						}
+					],
+					"total_duplicated_lines": 7,
+					"total_duplicated_tokens": 49,
+					"suggestions": [
+						{
+							"kind": "ExtractFunction",
+							"description": "Extract shared function (7 lines) from duplicate-a.ts, duplicate-b.ts",
+							"estimated_savings": 7
+						}
+					],
+					"actions": [
+						{
+							"type": "extract-shared",
+							"auto_fixable": false,
+							"description": "Extract 1 duplicated code block (7 lines) into a shared module",
+							"note": "These clone groups share the same files, indicating a structural relationship — refactor together"
+						},
+						{
+							"type": "apply-suggestion",
+							"auto_fixable": false,
+							"description": "Extract shared function (7 lines) from duplicate-a.ts, duplicate-b.ts"
+						},
+						{
+							"type": "suppress-line",
+							"auto_fixable": false,
+							"description": "Suppress with an inline comment above the duplicated code",
+							"comment": "// fallow-ignore-next-line code-duplication"
+						}
+					]
+				}
+			],
+			"stats": {
+				"total_files": 6,
+				"files_with_clones": 2,
+				"total_lines": 46,
+				"duplicated_lines": 14,
+				"total_tokens": 262,
+				"duplicated_tokens": 49,
+				"clone_groups": 1,
+				"clone_instances": 2,
+				"duplication_percentage": 30.434782608695656
+			}
+		}
+	}
+}

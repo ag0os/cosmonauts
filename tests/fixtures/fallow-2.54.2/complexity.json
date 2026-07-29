@@ -1,0 +1,183 @@
+{
+	"fixtureSchemaVersion": 1,
+	"name": "complexity",
+	"kind": "capability",
+	"provenance": {
+		"envelopeSource": "live-engine",
+		"provider": "fallow",
+		"package": "fallow",
+		"engineVersion": "2.54.2"
+	},
+	"command": {
+		"executable": "node_modules/.bin/fallow",
+		"args": [
+			"health",
+			"--complexity",
+			"--max-cyclomatic",
+			"2",
+			"--max-cognitive",
+			"2",
+			"--format",
+			"json",
+			"--quiet",
+			"--no-cache"
+		],
+		"cwd": "<fixture-project>"
+	},
+	"envelope": {
+		"code": 1,
+		"signal": null,
+		"stdout": "{\n  \"schema_version\": 4,\n  \"version\": \"2.54.2\",\n  \"elapsed_ms\": 6,\n  \"findings\": [\n    {\n      \"path\": \"src/complex.ts\",\n      \"name\": \"classify\",\n      \"line\": 1,\n      \"col\": 7,\n      \"cyclomatic\": 5,\n      \"cognitive\": 4,\n      \"line_count\": 12,\n      \"param_count\": 1,\n      \"exceeded\": \"all\",\n      \"severity\": \"moderate\",\n      \"crap\": 30.0,\n      \"coverage_tier\": \"none\",\n      \"actions\": [\n        {\n          \"type\": \"refactor-function\",\n          \"auto_fixable\": false,\n          \"description\": \"Refactor `classify` to reduce complexity (extract helper functions, simplify branching)\",\n          \"note\": \"Consider splitting into smaller functions with single responsibilities\"\n        },\n        {\n          \"type\": \"suppress-line\",\n          \"auto_fixable\": false,\n          \"description\": \"Suppress with an inline comment above the function declaration\",\n          \"comment\": \"// fallow-ignore-next-line complexity\",\n          \"placement\": \"above-function-declaration\"\n        }\n      ]\n    },\n    {\n      \"path\": \"src/duplicate-b.ts\",\n      \"name\": \"normalizeInvoice\",\n      \"line\": 1,\n      \"col\": 7,\n      \"cyclomatic\": 2,\n      \"cognitive\": 1,\n      \"line_count\": 8,\n      \"param_count\": 1,\n      \"exceeded\": \"crap\",\n      \"severity\": \"moderate\",\n      \"crap\": 6.0,\n      \"coverage_tier\": \"none\",\n      \"actions\": [\n        {\n          \"type\": \"add-tests\",\n          \"auto_fixable\": false,\n          \"description\": \"Add test coverage for `normalizeInvoice` to lower its CRAP score (coverage reduces risk even without refactoring)\",\n          \"note\": \"CRAP = CC^2 * (1 - cov/100)^3 + CC; higher coverage is the fastest way to bring CRAP under threshold\"\n        },\n        {\n          \"type\": \"refactor-function\",\n          \"auto_fixable\": false,\n          \"description\": \"Refactor `normalizeInvoice` to reduce complexity (extract helper functions, simplify branching)\",\n          \"note\": \"Consider splitting into smaller functions with single responsibilities\"\n        },\n        {\n          \"type\": \"suppress-line\",\n          \"auto_fixable\": false,\n          \"description\": \"Suppress with an inline comment above the function declaration\",\n          \"comment\": \"// fallow-ignore-next-line complexity\",\n          \"placement\": \"above-function-declaration\"\n        }\n      ]\n    },\n    {\n      \"path\": \"src/duplicate-a.ts\",\n      \"name\": \"normalizeOrder\",\n      \"line\": 1,\n      \"col\": 7,\n      \"cyclomatic\": 2,\n      \"cognitive\": 1,\n      \"line_count\": 8,\n      \"param_count\": 1,\n      \"exceeded\": \"crap\",\n      \"severity\": \"moderate\",\n      \"crap\": 6.0,\n      \"coverage_tier\": \"none\",\n      \"actions\": [\n        {\n          \"type\": \"add-tests\",\n          \"auto_fixable\": false,\n          \"description\": \"Add test coverage for `normalizeOrder` to lower its CRAP score (coverage reduces risk even without refactoring)\",\n          \"note\": \"CRAP = CC^2 * (1 - cov/100)^3 + CC; higher coverage is the fastest way to bring CRAP under threshold\"\n        },\n        {\n          \"type\": \"refactor-function\",\n          \"auto_fixable\": false,\n          \"description\": \"Refactor `normalizeOrder` to reduce complexity (extract helper functions, simplify branching)\",\n          \"note\": \"Consider splitting into smaller functions with single responsibilities\"\n        },\n        {\n          \"type\": \"suppress-line\",\n          \"auto_fixable\": false,\n          \"description\": \"Suppress with an inline comment above the function declaration\",\n          \"comment\": \"// fallow-ignore-next-line complexity\",\n          \"placement\": \"above-function-declaration\"\n        }\n      ]\n    }\n  ],\n  \"summary\": {\n    \"files_analyzed\": 10,\n    \"functions_analyzed\": 7,\n    \"functions_above_threshold\": 3,\n    \"max_cyclomatic_threshold\": 2,\n    \"max_cognitive_threshold\": 2,\n    \"max_crap_threshold\": 4.0,\n    \"severity_critical_count\": 0,\n    \"severity_high_count\": 0,\n    \"severity_moderate_count\": 3\n  },\n  \"vital_signs\": {\n    \"dead_file_pct\": 60.0,\n    \"dead_export_pct\": 16.7,\n    \"avg_cyclomatic\": 1.9,\n    \"p90_cyclomatic\": 5,\n    \"maintainability_avg\": 83.2,\n    \"unused_dep_count\": 0,\n    \"circular_dep_count\": 0,\n    \"counts\": {\n      \"total_files\": 10,\n      \"total_exports\": 12,\n      \"dead_files\": 6,\n      \"dead_exports\": 2,\n      \"total_lines\": 63,\n      \"files_scored\": 6,\n      \"total_deps\": 0\n    },\n    \"unit_size_profile\": {\n      \"low_risk\": 100.0,\n      \"medium_risk\": 0.0,\n      \"high_risk\": 0.0,\n      \"very_high_risk\": 0.0\n    },\n    \"unit_interfacing_profile\": {\n      \"low_risk\": 100.0,\n      \"medium_risk\": 0.0,\n      \"high_risk\": 0.0,\n      \"very_high_risk\": 0.0\n    },\n    \"p95_fan_in\": 1,\n    \"coupling_high_pct\": 0.0,\n    \"total_loc\": 63\n  }\n}\n",
+		"stderr": "   0.006712083s  WARN node_modules directory not found. Run `npm install` / `pnpm install` first for accurate results.\n",
+		"payload": {
+			"schema_version": 4,
+			"version": "2.54.2",
+			"elapsed_ms": 6,
+			"findings": [
+				{
+					"path": "src/complex.ts",
+					"name": "classify",
+					"line": 1,
+					"col": 7,
+					"cyclomatic": 5,
+					"cognitive": 4,
+					"line_count": 12,
+					"param_count": 1,
+					"exceeded": "all",
+					"severity": "moderate",
+					"crap": 30,
+					"coverage_tier": "none",
+					"actions": [
+						{
+							"type": "refactor-function",
+							"auto_fixable": false,
+							"description": "Refactor `classify` to reduce complexity (extract helper functions, simplify branching)",
+							"note": "Consider splitting into smaller functions with single responsibilities"
+						},
+						{
+							"type": "suppress-line",
+							"auto_fixable": false,
+							"description": "Suppress with an inline comment above the function declaration",
+							"comment": "// fallow-ignore-next-line complexity",
+							"placement": "above-function-declaration"
+						}
+					]
+				},
+				{
+					"path": "src/duplicate-b.ts",
+					"name": "normalizeInvoice",
+					"line": 1,
+					"col": 7,
+					"cyclomatic": 2,
+					"cognitive": 1,
+					"line_count": 8,
+					"param_count": 1,
+					"exceeded": "crap",
+					"severity": "moderate",
+					"crap": 6,
+					"coverage_tier": "none",
+					"actions": [
+						{
+							"type": "add-tests",
+							"auto_fixable": false,
+							"description": "Add test coverage for `normalizeInvoice` to lower its CRAP score (coverage reduces risk even without refactoring)",
+							"note": "CRAP = CC^2 * (1 - cov/100)^3 + CC; higher coverage is the fastest way to bring CRAP under threshold"
+						},
+						{
+							"type": "refactor-function",
+							"auto_fixable": false,
+							"description": "Refactor `normalizeInvoice` to reduce complexity (extract helper functions, simplify branching)",
+							"note": "Consider splitting into smaller functions with single responsibilities"
+						},
+						{
+							"type": "suppress-line",
+							"auto_fixable": false,
+							"description": "Suppress with an inline comment above the function declaration",
+							"comment": "// fallow-ignore-next-line complexity",
+							"placement": "above-function-declaration"
+						}
+					]
+				},
+				{
+					"path": "src/duplicate-a.ts",
+					"name": "normalizeOrder",
+					"line": 1,
+					"col": 7,
+					"cyclomatic": 2,
+					"cognitive": 1,
+					"line_count": 8,
+					"param_count": 1,
+					"exceeded": "crap",
+					"severity": "moderate",
+					"crap": 6,
+					"coverage_tier": "none",
+					"actions": [
+						{
+							"type": "add-tests",
+							"auto_fixable": false,
+							"description": "Add test coverage for `normalizeOrder` to lower its CRAP score (coverage reduces risk even without refactoring)",
+							"note": "CRAP = CC^2 * (1 - cov/100)^3 + CC; higher coverage is the fastest way to bring CRAP under threshold"
+						},
+						{
+							"type": "refactor-function",
+							"auto_fixable": false,
+							"description": "Refactor `normalizeOrder` to reduce complexity (extract helper functions, simplify branching)",
+							"note": "Consider splitting into smaller functions with single responsibilities"
+						},
+						{
+							"type": "suppress-line",
+							"auto_fixable": false,
+							"description": "Suppress with an inline comment above the function declaration",
+							"comment": "// fallow-ignore-next-line complexity",
+							"placement": "above-function-declaration"
+						}
+					]
+				}
+			],
+			"summary": {
+				"files_analyzed": 10,
+				"functions_analyzed": 7,
+				"functions_above_threshold": 3,
+				"max_cyclomatic_threshold": 2,
+				"max_cognitive_threshold": 2,
+				"max_crap_threshold": 4,
+				"severity_critical_count": 0,
+				"severity_high_count": 0,
+				"severity_moderate_count": 3
+			},
+			"vital_signs": {
+				"dead_file_pct": 60,
+				"dead_export_pct": 16.7,
+				"avg_cyclomatic": 1.9,
+				"p90_cyclomatic": 5,
+				"maintainability_avg": 83.2,
+				"unused_dep_count": 0,
+				"circular_dep_count": 0,
+				"counts": {
+					"total_files": 10,
+					"total_exports": 12,
+					"dead_files": 6,
+					"dead_exports": 2,
+					"total_lines": 63,
+					"files_scored": 6,
+					"total_deps": 0
+				},
+				"unit_size_profile": {
+					"low_risk": 100,
+					"medium_risk": 0,
+					"high_risk": 0,
+					"very_high_risk": 0
+				},
+				"unit_interfacing_profile": {
+					"low_risk": 100,
+					"medium_risk": 0,
+					"high_risk": 0,
+					"very_high_risk": 0
+				},
+				"p95_fan_in": 1,
+				"coupling_high_pct": 0,
+				"total_loc": 63
+			}
+		}
+	}
+}
