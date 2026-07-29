@@ -428,6 +428,11 @@ describe("project-tools extension", () => {
 		})(pi as never);
 		const controller = new AbortController();
 		const execution = pi.callTool("analysis_dead_code", {}, controller.signal);
+		// Reaching the capability child costs three sequential Node spawns
+		// (--version, config, then dead-code), so this precondition wait is
+		// generous: it only establishes that the child is up before the abort
+		// experiment starts. The bounded-termination assertions below stay tight
+		// against the 250ms grace period — they are the behavioral evidence.
 		await waitFor(async () => {
 			try {
 				await readFile(pidPath, "utf8");
@@ -435,7 +440,7 @@ describe("project-tools extension", () => {
 			} catch {
 				return false;
 			}
-		});
+		}, 30_000);
 		const pid = Number(await readFile(pidPath, "utf8"));
 		expect(processExists(pid)).toBe(true);
 		const abortStartedAt = Date.now();
