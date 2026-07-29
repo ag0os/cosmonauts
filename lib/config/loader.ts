@@ -9,7 +9,11 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { createDefaultProjectConfig } from "./defaults.ts";
-import type { ProjectConfig, ProjectEpisodicLogConfig } from "./types.ts";
+import type {
+	ProjectAnalysisConfig,
+	ProjectConfig,
+	ProjectEpisodicLogConfig,
+} from "./types.ts";
 
 export const EPISODE_WARNING_THRESHOLD_DEFAULT = 500;
 
@@ -91,6 +95,7 @@ export async function loadProjectConfig(
 		chains?: ProjectConfig["chains"];
 		architectureMap?: ProjectConfig["architectureMap"];
 		episodicLog?: ProjectConfig["episodicLog"];
+		analysis?: ProjectConfig["analysis"];
 	} = {};
 
 	if (typeof obj.domain === "string") {
@@ -159,6 +164,10 @@ export async function loadProjectConfig(
 		config.episodicLog = parseEpisodicLogConfig(obj.episodicLog);
 	}
 
+	if ("analysis" in obj) {
+		config.analysis = parseAnalysisConfig(obj.analysis);
+	}
+
 	return config;
 }
 
@@ -213,6 +222,27 @@ function parseEpisodicLogConfig(
 	}
 
 	return episodicLog;
+}
+
+function parseAnalysisConfig(
+	value: unknown,
+): ProjectAnalysisConfig | undefined {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		console.error(
+			`[warning] Skipping malformed analysis: expected an object, got ${formatConfigValue(value)}.`,
+		);
+		return undefined;
+	}
+
+	const obj = value as Record<string, unknown>;
+	if (!("provider" in obj)) return undefined;
+	if (typeof obj.provider !== "string" || obj.provider.trim().length === 0) {
+		console.error(
+			`[warning] Skipping malformed analysis.provider: expected a non-empty string, got ${formatConfigValue(obj.provider)}.`,
+		);
+		return undefined;
+	}
+	return { provider: obj.provider.trim() };
 }
 
 function parseArchitectureMapConfig(

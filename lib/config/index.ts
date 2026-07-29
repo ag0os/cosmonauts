@@ -6,6 +6,7 @@ export {
 	scaffoldProjectConfig,
 } from "./loader.ts";
 export type {
+	ProjectAnalysisConfig,
 	ProjectChainConfig,
 	ProjectConfig,
 	ProjectEpisodicLogConfig,

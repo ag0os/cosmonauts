@@ -447,4 +447,73 @@ describe("loadProjectConfig", () => {
 		);
 		warn.mockRestore();
 	});
+
+	// @cosmo-behavior plan:analysis-capability-runtime#B-028
+	test("isolates malformed analysis provider config from unrelated settings", async () => {
+		const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+		await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+		const configPath = join(tmp.path, ".cosmonauts", "config.json");
+		const unrelated = {
+			domain: "coding",
+			activeDomains: ["coding", "writing"],
+			domainBindings: { coding: "ruby-coding" },
+			skills: ["typescript", "testing"],
+			skillPaths: [".agents/skills"],
+			chains: {
+				verify: { description: "Verify", chain: "worker -> reviewer" },
+			},
+			architectureMap: {
+				sourceRoots: ["lib", "domains"],
+				moduleRoots: ["lib/analysis"],
+				exclude: ["fixtures"],
+				injectionMaxBytes: 12000,
+				narrative: { enabled: true, maxModulesPerRun: 4 },
+			},
+			episodicLog: { enabled: true, warningThreshold: 73 },
+		} as const;
+		const expectedUnrelated = {
+			...unrelated,
+			skillPaths: [resolve(tmp.path, ".agents/skills")],
+		};
+
+		for (const malformed of [
+			{ analysis: ["fallow"] },
+			{ analysis: { provider: 42 } },
+			{ analysis: { provider: "  " } },
+		]) {
+			warn.mockClear();
+			await writeFile(
+				configPath,
+				JSON.stringify({ ...unrelated, ...malformed }),
+			);
+
+			const loaded = await loadProjectConfig(tmp.path);
+			const { analysis: _analysis, ...loadedUnrelated } = loaded;
+
+			expect(loaded.analysis).toBeUndefined();
+			expect(loadedUnrelated).toEqual(expectedUnrelated);
+			expect(warn).toHaveBeenCalledOnce();
+			const message = String(warn.mock.calls[0]?.[0]);
+			expect(message).toContain(
+				Array.isArray(malformed.analysis) ? "analysis" : "analysis.provider",
+			);
+			expect(message).toContain(
+				JSON.stringify(
+					Array.isArray(malformed.analysis)
+						? malformed.analysis
+						: malformed.analysis.provider,
+				),
+			);
+		}
+
+		warn.mockClear();
+		await writeFile(
+			configPath,
+			JSON.stringify({ ...unrelated, analysis: { provider: " fallow " } }),
+		);
+		const loaded = await loadProjectConfig(tmp.path);
+		expect(loaded.analysis).toEqual({ provider: "fallow" });
+		expect(warn).not.toHaveBeenCalled();
+		warn.mockRestore();
+	});
 });

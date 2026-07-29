@@ -28,6 +28,11 @@ export interface ProjectEpisodicLogConfig {
 	readonly warningThreshold?: number;
 }
 
+/** Optional structural-analysis provider preference. */
+export interface ProjectAnalysisConfig {
+	readonly provider?: string;
+}
+
 /** Project-level configuration loaded from `.cosmonauts/config.json`. */
 export interface ProjectConfig {
 	/** Default domain for this project (e.g. "coding"). */
@@ -46,4 +51,6 @@ export interface ProjectConfig {
 	readonly architectureMap?: ProjectArchitectureMapConfig;
 	/** Project-only, off-by-default episodic-log capture settings. */
 	readonly episodicLog?: ProjectEpisodicLogConfig;
+	/** Optional provider preference; absence uses automatic detection. */
+	readonly analysis?: ProjectAnalysisConfig;
 }

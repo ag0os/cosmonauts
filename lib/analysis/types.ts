@@ -21,11 +21,33 @@ export const ANALYSIS_CAPABILITIES = [
 	...ANALYSIS_OPERATIONAL_CAPABILITIES,
 ] as const;
 
+export const ANALYSIS_CAPABILITY_TOOL_NAMES = {
+	"dead-code": "analysis_dead_code",
+	duplication: "analysis_duplication",
+	complexity: "analysis_complexity",
+	"boundary-conformance": "analysis_boundaries",
+	"changed-scope-audit": "analysis_audit",
+	trace: "analysis_trace",
+	"fix-preview": "analysis_fix_preview",
+} as const satisfies Readonly<Record<AnalysisCapability, string>>;
+
+export const ANALYSIS_TOOL_NAMES = [
+	"analysis_status",
+	ANALYSIS_CAPABILITY_TOOL_NAMES["dead-code"],
+	ANALYSIS_CAPABILITY_TOOL_NAMES.duplication,
+	ANALYSIS_CAPABILITY_TOOL_NAMES.complexity,
+	ANALYSIS_CAPABILITY_TOOL_NAMES["boundary-conformance"],
+	ANALYSIS_CAPABILITY_TOOL_NAMES["changed-scope-audit"],
+	ANALYSIS_CAPABILITY_TOOL_NAMES.trace,
+	ANALYSIS_CAPABILITY_TOOL_NAMES["fix-preview"],
+] as const;
+
 export type AnalysisGateCapability =
 	(typeof ANALYSIS_GATE_CAPABILITIES)[number];
 export type AnalysisOperationalCapability =
 	(typeof ANALYSIS_OPERATIONAL_CAPABILITIES)[number];
 export type AnalysisCapability = (typeof ANALYSIS_CAPABILITIES)[number];
+export type AnalysisToolName = (typeof ANALYSIS_TOOL_NAMES)[number];
 
 export const ANALYSIS_VERDICT_CAPABILITIES = [
 	...ANALYSIS_GATE_CAPABILITIES,
@@ -335,6 +357,52 @@ export type ProviderDetection =
 			readonly providerId: string;
 			readonly failure: AnalysisFailure;
 	  };
+
+export interface ResolveAnalysisBindingsOptions {
+	readonly detections: readonly ProviderDetection[];
+	readonly providerPreference?: string;
+}
+
+export interface AnalysisReadyResolution {
+	readonly kind: "ready";
+	readonly binding: Extract<AnalysisBinding, { state: "bound" }>;
+	readonly request: AnalysisRequest;
+}
+
+export interface AnalysisUnboundResolution {
+	readonly kind: "unbound";
+	readonly capability: AnalysisCapability;
+	readonly reason: AnalysisUnboundReason;
+	readonly providerId?: string;
+}
+
+export interface AnalysisFailedResolution {
+	readonly kind: "failed";
+	readonly capability: AnalysisCapability;
+	readonly providerId?: string;
+	readonly failure: AnalysisFailure;
+}
+
+export interface AnalysisUnsupportedMetricResolution {
+	readonly kind: "unsupported-metric";
+	readonly capability: "complexity";
+	readonly requestedMetric: AnalysisMetric;
+	readonly availableMetrics: readonly AnalysisMetric[];
+}
+
+export interface AnalysisUnsupportedScopeResolution {
+	readonly kind: "unsupported-scope";
+	readonly capability: AnalysisCapability;
+	readonly requestedScopeKind: AnalysisScope["kind"];
+	readonly supportedScopeKinds: readonly AnalysisScope["kind"][];
+}
+
+export type AnalysisRequestResolution =
+	| AnalysisReadyResolution
+	| AnalysisUnboundResolution
+	| AnalysisFailedResolution
+	| AnalysisUnsupportedMetricResolution
+	| AnalysisUnsupportedScopeResolution;
 
 /**
  * Leaf-level completed-result fields whose provider neutrality is audited in
