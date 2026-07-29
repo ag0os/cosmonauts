@@ -1,3 +1,5 @@
+import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
 	chmod,
 	mkdir,
@@ -8,18 +10,32 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { AnalysisProviderError } from "../../domains/shared/extensions/project-tools/analysis-provider-error.ts";
 import {
 	discoverFallowProvider,
 	FALLOW_VALIDATED_ENGINE_VERSION,
 } from "../../domains/shared/extensions/project-tools/fallow-provider.ts";
-import type {
-	ProviderProcessExecutor,
-	ProviderProcessInvocation,
+import {
+	type ProviderProcessExecutor,
+	type ProviderProcessInvocation,
+	type ProviderProcessOutcome,
+	runProviderProcess,
 } from "../../domains/shared/extensions/project-tools/process-runner.ts";
-import { ANALYSIS_CAPABILITIES } from "../../lib/analysis/index.ts";
+import {
+	ANALYSIS_CAPABILITIES,
+	ANALYSIS_TOOL_NAMES,
+	type AnalysisRequest,
+	type AnalysisResult,
+} from "../../lib/analysis/index.ts";
 
+const TEST_DIR = dirname(fileURLToPath(import.meta.url));
+const REPOSITORY_ROOT = resolve(TEST_DIR, "../..");
+const FALLOW_FIXTURE_ROOT = resolve(TEST_DIR, "../fixtures/fallow-2.54.2");
+const execFileAsync = promisify(execFile);
 let fixtureRoot: string;
 let projectRoot: string;
 let userStateRoot: string;
@@ -99,6 +115,274 @@ function successfulIntrospection(options?: {
 			};
 		},
 	};
+}
+
+interface CapabilityFixture {
+	readonly name: AnalysisRequest["capability"];
+	readonly envelope: {
+		readonly code: number;
+		readonly stdout: string;
+		readonly stderr: string;
+		readonly payload: unknown;
+	};
+}
+
+async function loadCapabilityFixture(
+	capability: AnalysisRequest["capability"],
+): Promise<CapabilityFixture> {
+	return JSON.parse(
+		await readFile(join(FALLOW_FIXTURE_ROOT, `${capability}.json`), "utf8"),
+	) as CapabilityFixture;
+}
+
+async function discoveredRuntimeWithFixtures(options?: {
+	readonly capabilityOutcome?: ProviderProcessOutcome;
+}): Promise<{
+	readonly execute: (
+		request: AnalysisRequest,
+		signal?: AbortSignal,
+	) => Promise<AnalysisResult>;
+	readonly invocations: readonly ProviderProcessInvocation[];
+}> {
+	await writeFile(join(projectRoot, "fallow.toml"), "", "utf8");
+	await recordConsent();
+	const executable = await createExecutable(
+		join(fixtureRoot, "injected", "fallow"),
+	);
+	const fixtures = new Map(
+		await Promise.all(
+			ANALYSIS_CAPABILITIES.map(
+				async (capability) =>
+					[capability, await loadCapabilityFixture(capability)] as const,
+			),
+		),
+	);
+	const invocations: ProviderProcessInvocation[] = [];
+	const executeProcess: ProviderProcessExecutor = async (invocation) => {
+		invocations.push(invocation);
+		if (invocation.args.includes("--version")) {
+			return {
+				kind: "code-exit",
+				code: 0,
+				stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+				stderr: "",
+			};
+		}
+		if (invocation.args[0] === "config") {
+			return {
+				kind: "code-exit",
+				code: 0,
+				stdout: `loaded config: ${projectRoot}/fallow.toml\n${JSON.stringify({
+					boundaries: {
+						zones: [{ name: "ui", patterns: ["src/ui/**"] }],
+						rules: [{ from: "ui", allow: [] }],
+					},
+				})}\n`,
+				stderr: "",
+			};
+		}
+		if (options?.capabilityOutcome !== undefined) {
+			return options.capabilityOutcome;
+		}
+		const fixture = [...fixtures.values()].find(({ name }) => {
+			switch (name) {
+				case "dead-code":
+					return (
+						invocation.args[0] === "dead-code" &&
+						!invocation.args.includes("--boundary-violations") &&
+						!invocation.args.includes("--trace")
+					);
+				case "duplication":
+					return invocation.args[0] === "dupes";
+				case "complexity":
+					return invocation.args[0] === "health";
+				case "boundary-conformance":
+					return invocation.args.includes("--boundary-violations");
+				case "changed-scope-audit":
+					return invocation.args[0] === "audit";
+				case "trace":
+					return invocation.args.includes("--trace");
+				case "fix-preview":
+					return invocation.args[0] === "fix";
+			}
+			return false;
+		});
+		if (fixture === undefined) {
+			throw new Error(
+				`No fixture for invocation: ${invocation.args.join(" ")}`,
+			);
+		}
+		return {
+			kind: "code-exit",
+			code: fixture.envelope.code,
+			stdout: fixture.envelope.stdout,
+			stderr: fixture.envelope.stderr,
+		};
+	};
+	const discovery = await discoverFallowProvider({
+		projectRoot,
+		userStateRoot,
+		injectedExecutablePath: executable,
+		executeProcess,
+	});
+	if (discovery.status !== "detected") {
+		throw new Error(`Expected detected provider, received ${discovery.status}`);
+	}
+	return { ...discovery.runtime, invocations };
+}
+
+async function writeProjectFile(
+	root: string,
+	path: string,
+	contents: string,
+): Promise<void> {
+	const destination = join(root, path);
+	await mkdir(dirname(destination), { recursive: true });
+	await writeFile(destination, contents, "utf8");
+}
+
+async function createLiveProviderProject(root: string): Promise<void> {
+	await writeProjectFile(
+		root,
+		"package.json",
+		'{"name":"provider-runtime-fixture","private":true,"type":"module","scripts":{"start":"node src/index.ts"}}\n',
+	);
+	await writeProjectFile(
+		root,
+		"tsconfig.json",
+		'{"compilerOptions":{"strict":true},"include":["src/**/*.ts"]}\n',
+	);
+	await writeProjectFile(
+		root,
+		".fallowrc.json",
+		`${JSON.stringify({
+			entry: ["src/index.ts"],
+			duplicates: {
+				enabled: true,
+				mode: "mild",
+				minTokens: 20,
+				minLines: 4,
+			},
+			health: {
+				maxCyclomatic: 2,
+				maxCognitive: 2,
+				maxCrap: 4,
+			},
+			boundaries: {
+				zones: [
+					{ name: "ui", patterns: ["src/ui/**"] },
+					{ name: "data", patterns: ["src/data/**"] },
+				],
+				rules: [{ from: "ui", allow: [] }],
+			},
+		})}\n`,
+	);
+	await writeProjectFile(root, ".gitignore", ".fallow/\n");
+	await writeProjectFile(
+		root,
+		"src/index.ts",
+		'import { render } from "./ui/view.ts";\nconsole.log(render());\n',
+	);
+	await writeProjectFile(
+		root,
+		"src/ui/view.ts",
+		[
+			'import { secret } from "../data/store.ts";',
+			"export function render(): string { return secret; }",
+			"export function unusedRender(): string { return secret.trim(); }",
+			"",
+		].join("\n"),
+	);
+	await writeProjectFile(
+		root,
+		"src/data/store.ts",
+		'export const secret = "classified";\n',
+	);
+	await writeProjectFile(
+		root,
+		"src/lib/unused.ts",
+		"export const unusedValue = 42;\n",
+	);
+	const duplicate = [
+		"export function normalizeOrder(input: string): string {",
+		"\tconst trimmed = input.trim();",
+		"\tconst lowered = trimmed.toLowerCase();",
+		'\tconst normalized = lowered.replaceAll(" ", "-");',
+		'\treturn normalized.startsWith("order-") ? normalized : `order-' +
+			"$" +
+			"{normalized}`;",
+		"}",
+		"",
+	].join("\n");
+	await writeProjectFile(root, "src/duplicate-a.ts", duplicate);
+	await writeProjectFile(
+		root,
+		"src/duplicate-b.ts",
+		duplicate.replace("normalizeOrder", "normalizeInvoice"),
+	);
+	await writeProjectFile(
+		root,
+		"src/complex.ts",
+		[
+			"export function classify(input: number): string {",
+			'\tif (input > 100) return "huge";',
+			'\tif (input > 10) return "large";',
+			'\tif (input > 0) return "positive";',
+			'\treturn input === 0 ? "zero" : "negative";',
+			"}",
+			"",
+		].join("\n"),
+	);
+
+	await execFileAsync("git", ["init", "--quiet"], { cwd: root });
+	await execFileAsync("git", ["config", "user.name", "Fixture Author"], {
+		cwd: root,
+	});
+	await execFileAsync(
+		"git",
+		["config", "user.email", "fixture@example.invalid"],
+		{
+			cwd: root,
+		},
+	);
+	await execFileAsync("git", ["add", "."], { cwd: root });
+	await execFileAsync("git", ["commit", "--quiet", "-m", "fixture base"], {
+		cwd: root,
+		env: {
+			...process.env,
+			GIT_AUTHOR_DATE: "2026-01-01T00:00:00Z",
+			GIT_COMMITTER_DATE: "2026-01-01T00:00:00Z",
+		},
+	});
+	await writeProjectFile(root, ".fallow/preexisting.bin", "keep-me\n");
+}
+
+async function snapshotWholeTree(
+	root: string,
+): Promise<Readonly<Record<string, string>>> {
+	const snapshot: Record<string, string> = {};
+
+	async function visit(directory: string): Promise<void> {
+		const entries = await readdir(directory, { withFileTypes: true });
+		entries.sort((left, right) => left.name.localeCompare(right.name));
+		for (const entry of entries) {
+			const path = join(directory, entry.name);
+			const relativePath = path.slice(root.length + 1);
+			if (entry.isDirectory()) {
+				snapshot[`${relativePath}/`] = "directory";
+				await visit(path);
+			} else if (entry.isSymbolicLink()) {
+				snapshot[relativePath] = "symlink";
+			} else {
+				snapshot[relativePath] = createHash("sha256")
+					.update(await readFile(path))
+					.digest("hex");
+			}
+		}
+	}
+
+	await visit(root);
+	return snapshot;
 }
 
 describe("Fallow provider discovery", () => {
@@ -420,5 +704,376 @@ describe("Fallow provider discovery", () => {
 				},
 			},
 		});
+	});
+});
+
+describe("Fallow capability execution", () => {
+	// @cosmo-behavior plan:analysis-capability-runtime#B-007
+	test("normalizes every supported capability and preserves its native envelope", async () => {
+		const runtime = await discoveredRuntimeWithFixtures();
+		const requests = [
+			{ capability: "dead-code", scope: { kind: "project" } },
+			{ capability: "duplication", scope: { kind: "project" } },
+			{
+				capability: "complexity",
+				scope: { kind: "project" },
+				metric: "cyclomatic",
+			},
+			{
+				capability: "boundary-conformance",
+				scope: { kind: "project" },
+			},
+			{
+				capability: "changed-scope-audit",
+				scope: { kind: "changed", base: "HEAD" },
+			},
+			{
+				capability: "trace",
+				scope: {
+					kind: "target",
+					target: {
+						kind: "symbol",
+						path: "src/lib/unused.ts",
+						symbol: "unusedValue",
+					},
+				},
+			},
+			{ capability: "fix-preview", scope: { kind: "project" } },
+		] as const satisfies readonly AnalysisRequest[];
+
+		for (const request of requests) {
+			const fixture = await loadCapabilityFixture(request.capability);
+			const result = await runtime.execute(request);
+
+			expect(result).toMatchObject({
+				capability: request.capability,
+				provider: {
+					id: "fallow",
+					name: "Fallow",
+					version: FALLOW_VALIDATED_ENGINE_VERSION,
+				},
+				scope: request.scope,
+				native: {
+					providerId: "fallow",
+					exitCode: fixture.envelope.code,
+					payload: fixture.envelope.payload,
+					stderr: fixture.envelope.stderr,
+				},
+			});
+			expect(result.native.payload).toEqual(fixture.envelope.payload);
+			expect(result.native.stderr).toBe(fixture.envelope.stderr);
+
+			if (result.kind === "findings") {
+				expect(result.verdict).toBe("fail");
+				expect(result.findings.length).toBeGreaterThan(0);
+			} else if (result.kind === "trace") {
+				expect(result.verdict).toBe("not-applicable");
+				expect(result.trace.evidence.length).toBeGreaterThan(0);
+			} else {
+				expect(result.verdict).toBe("not-applicable");
+				expect(result.proposals).toHaveLength(2);
+			}
+		}
+	});
+
+	// @cosmo-behavior plan:analysis-capability-runtime#B-008
+	test("treats exit one as completed failing analysis with findings", async () => {
+		const runtime = await discoveredRuntimeWithFixtures();
+		const fixture = await loadCapabilityFixture("dead-code");
+		const payload = fixture.envelope.payload as {
+			readonly total_issues: number;
+			readonly unused_files: readonly {
+				readonly actions: readonly unknown[];
+			}[];
+			readonly unused_exports: readonly {
+				readonly actions: readonly unknown[];
+			}[];
+			readonly boundary_violations: readonly {
+				readonly actions: readonly unknown[];
+			}[];
+		};
+
+		const result = await runtime.execute({
+			capability: "dead-code",
+			scope: { kind: "project" },
+		});
+
+		expect(fixture.envelope.code).toBe(1);
+		expect(result.kind).toBe("findings");
+		if (result.kind !== "findings") {
+			throw new Error(`Expected findings, received ${result.kind}`);
+		}
+		expect(result.verdict).toBe("fail");
+		expect(result.findings).toHaveLength(payload.total_issues);
+		expect(result.findings.flatMap(({ actions }) => actions)).toHaveLength(
+			[
+				...payload.unused_files,
+				...payload.unused_exports,
+				...payload.boundary_violations,
+			].reduce((count, finding) => count + finding.actions.length, 0),
+		);
+		expect(result.findings[0]).toMatchObject({
+			locations: [{ path: expect.any(String) }],
+			actions: expect.arrayContaining([
+				{
+					description: expect.any(String),
+					providerDetails: {
+						providerId: "fallow",
+						data: expect.any(Object),
+					},
+				},
+			]),
+		});
+		expect(result.native.payload).toEqual(payload);
+	});
+
+	// @cosmo-behavior plan:analysis-capability-runtime#B-009
+	test("throws serialized failures for every unclassifiable provider outcome", async () => {
+		const invalidOutcomes = [
+			{
+				name: "exit two",
+				outcome: {
+					kind: "code-exit",
+					code: 2,
+					stdout: "",
+					stderr: "provider configuration failed",
+				},
+				failureClass: "provider-exit",
+			},
+			{
+				name: "error envelope",
+				outcome: {
+					kind: "code-exit",
+					code: 0,
+					stdout: JSON.stringify({
+						schema_version: 4,
+						error: "analysis unavailable",
+					}),
+					stderr: "provider error detail",
+				},
+				failureClass: "invalid-output",
+			},
+			{
+				name: "invalid JSON",
+				outcome: {
+					kind: "code-exit",
+					code: 0,
+					stdout: "{not-json",
+					stderr: "parse detail",
+				},
+				failureClass: "invalid-output",
+			},
+			{
+				name: "verdictless analysis",
+				outcome: {
+					kind: "code-exit",
+					code: 0,
+					stdout: JSON.stringify({ schema_version: 4 }),
+					stderr: "classification detail",
+				},
+				failureClass: "invalid-output",
+			},
+		] as const satisfies readonly {
+			readonly name: string;
+			readonly outcome: ProviderProcessOutcome;
+			readonly failureClass: string;
+		}[];
+
+		for (const invalid of invalidOutcomes) {
+			const runtime = await discoveredRuntimeWithFixtures({
+				capabilityOutcome: invalid.outcome,
+			});
+			let thrown: unknown;
+			try {
+				await runtime.execute({
+					capability: "dead-code",
+					scope: { kind: "project" },
+				});
+			} catch (error) {
+				thrown = error;
+			}
+
+			expect(thrown, invalid.name).toBeInstanceOf(AnalysisProviderError);
+			expect((thrown as Error).message).toContain("Analysis failed to run.");
+			expect((thrown as Error).message).toContain("Capability: dead-code");
+			expect((thrown as Error).message).toContain(
+				`Provider: fallow@${FALLOW_VALIDATED_ENGINE_VERSION}`,
+			);
+			expect((thrown as Error).message).toContain(
+				`Failure class: ${invalid.failureClass}`,
+			);
+			expect((thrown as Error).message).toContain(
+				`Process evidence: exit=${String(
+					invalid.outcome.kind === "code-exit" ? invalid.outcome.code : "none",
+				)}`,
+			);
+			expect((thrown as Error).message).toContain(
+				`stderr=${invalid.outcome.stderr || "none"}`,
+			);
+		}
+
+		const operationalRuntime = await discoveredRuntimeWithFixtures();
+		const [trace, preview] = await Promise.all([
+			operationalRuntime.execute({
+				capability: "trace",
+				scope: {
+					kind: "target",
+					target: {
+						kind: "symbol",
+						path: "src/lib/unused.ts",
+						symbol: "unusedValue",
+					},
+				},
+			}),
+			operationalRuntime.execute({
+				capability: "fix-preview",
+				scope: { kind: "project" },
+			}),
+		]);
+		expect(trace.verdict).toBe("not-applicable");
+		expect(preview.verdict).toBe("not-applicable");
+		expect(trace.native.payload).not.toHaveProperty("verdict");
+		expect(preview.native.payload).not.toHaveProperty("verdict");
+	});
+
+	// @cosmo-behavior plan:analysis-capability-runtime#B-010
+	test("requires and preserves a nonempty explicit audit base", async () => {
+		const runtime = await discoveredRuntimeWithFixtures();
+		const introspectionCount = runtime.invocations.length;
+		const invalidBases = [undefined, "", "   "] as const;
+
+		for (const base of invalidBases) {
+			const request = {
+				capability: "changed-scope-audit",
+				scope: { kind: "changed", ...(base === undefined ? {} : { base }) },
+			} as unknown as AnalysisRequest;
+			await expect(runtime.execute(request)).rejects.toMatchObject({
+				name: "AnalysisProviderError",
+				failureClass: "missing-base",
+			});
+		}
+		expect(runtime.invocations).toHaveLength(introspectionCount);
+
+		const literalBase = "HEAD";
+		const completed = await runtime.execute({
+			capability: "changed-scope-audit",
+			scope: { kind: "changed", base: literalBase },
+		});
+		expect(runtime.invocations.at(-1)?.args).toEqual([
+			"audit",
+			"--base",
+			literalBase,
+			"--format",
+			"json",
+			"--quiet",
+			"--no-cache",
+		]);
+		expect(completed.scope).toEqual({ kind: "changed", base: literalBase });
+
+		const fixture = await loadCapabilityFixture("changed-scope-audit");
+		const mismatchedPayload = {
+			...(fixture.envelope.payload as Readonly<Record<string, unknown>>),
+			base_ref: "main",
+		};
+		const mismatchedRuntime = await discoveredRuntimeWithFixtures({
+			capabilityOutcome: {
+				kind: "code-exit",
+				code: fixture.envelope.code,
+				stdout: JSON.stringify(mismatchedPayload),
+				stderr: fixture.envelope.stderr,
+			},
+		});
+		await expect(
+			mismatchedRuntime.execute({
+				capability: "changed-scope-audit",
+				scope: { kind: "changed", base: literalBase },
+			}),
+		).rejects.toMatchObject({
+			name: "AnalysisProviderError",
+			failureClass: "invalid-output",
+		});
+	});
+
+	// @cosmo-behavior plan:analysis-capability-runtime#B-012
+	test("leaves the entire worktree unchanged across status and every capability", async () => {
+		await createLiveProviderProject(projectRoot);
+		await recordConsent();
+		const executablePath = join(
+			REPOSITORY_ROOT,
+			"node_modules",
+			".bin",
+			process.platform === "win32" ? "fallow.cmd" : "fallow",
+		);
+		const invocations: ProviderProcessInvocation[] = [];
+		const executeProcess: ProviderProcessExecutor = (
+			invocation,
+			signal,
+			options,
+		) => {
+			invocations.push(invocation);
+			return runProviderProcess(invocation, signal, options);
+		};
+		const before = await snapshotWholeTree(projectRoot);
+
+		const discovery = await discoverFallowProvider({
+			projectRoot,
+			userStateRoot,
+			injectedExecutablePath: executablePath,
+			executeProcess,
+		});
+		if (discovery.status !== "detected") {
+			throw new Error(
+				`Expected detected provider, received ${discovery.status}`,
+			);
+		}
+		const requests = [
+			{ capability: "dead-code", scope: { kind: "project" } },
+			{ capability: "duplication", scope: { kind: "project" } },
+			{
+				capability: "complexity",
+				scope: { kind: "project" },
+				metric: "cyclomatic",
+			},
+			{
+				capability: "boundary-conformance",
+				scope: { kind: "project" },
+			},
+			{
+				capability: "changed-scope-audit",
+				scope: { kind: "changed", base: "HEAD" },
+			},
+			{
+				capability: "trace",
+				scope: {
+					kind: "target",
+					target: {
+						kind: "symbol",
+						path: "src/lib/unused.ts",
+						symbol: "unusedValue",
+					},
+				},
+			},
+			{ capability: "fix-preview", scope: { kind: "project" } },
+		] as const satisfies readonly AnalysisRequest[];
+		const results = [];
+		for (const request of requests) {
+			results.push(await discovery.runtime.execute(request));
+		}
+		const after = await snapshotWholeTree(projectRoot);
+
+		expect(results).toHaveLength(ANALYSIS_CAPABILITIES.length);
+		expect(after).toEqual(before);
+		expect(before[".fallow/preexisting.bin"]).toBeDefined();
+		expect(
+			invocations
+				.filter(({ args }) => !args.includes("--version"))
+				.every(({ args }) => args.includes("--no-cache")),
+		).toBe(true);
+		const fixInvocation = invocations.find(({ args }) => args[0] === "fix");
+		expect(fixInvocation?.args).toEqual(
+			expect.arrayContaining(["--dry-run", "--no-cache"]),
+		);
+		expect(ANALYSIS_TOOL_NAMES).not.toContain("analysis_fix");
+		expect(ANALYSIS_TOOL_NAMES).not.toContain("analysis_apply");
 	});
 });

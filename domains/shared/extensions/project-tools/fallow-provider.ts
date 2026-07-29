@@ -2,9 +2,19 @@ import { access, constants, readFile, stat } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import {
 	ANALYSIS_CAPABILITIES,
+	type AnalysisAction,
 	type AnalysisBinding,
 	type AnalysisCapability,
+	type AnalysisEvidence,
 	type AnalysisFailure,
+	type AnalysisFinding,
+	type AnalysisFindingSeverity,
+	type AnalysisFixProposal,
+	type AnalysisLocation,
+	type AnalysisRequest,
+	type AnalysisResult,
+	type AnalysisScope,
+	type AnalysisTraceEdge,
 	type DetectedAnalysisCapability,
 	type DetectedAnalysisProvider,
 	type ProviderDetection,
@@ -12,6 +22,7 @@ import {
 	resolveAnalysisBindings,
 } from "../../../../lib/analysis/index.ts";
 import { hasAnalysisExecutionConsent } from "./analysis-consent.ts";
+import { AnalysisProviderError } from "./analysis-provider-error.ts";
 import {
 	type ProviderProcessExecutor,
 	type ProviderProcessOutcome,
@@ -49,6 +60,10 @@ interface FallowProviderRuntime {
 	readonly executablePath: string;
 	readonly executeProcess: ProviderProcessExecutor;
 	readonly validateEnvelopeSchema: typeof validateFallowEnvelopeSchema;
+	readonly execute: (
+		request: AnalysisRequest,
+		signal?: AbortSignal,
+	) => Promise<AnalysisResult>;
 }
 
 type FallowProviderDiscovery =
@@ -348,7 +363,7 @@ function capabilities(
 		{
 			capability: "fix-preview",
 			status: "supported",
-			scopes: ["project", "paths"],
+			scopes: ["project"],
 		},
 	];
 }
@@ -425,16 +440,28 @@ async function introspectProvider(
 		status: "detected",
 		provider: detectedProvider,
 	} as const;
+	const runtimeBase = {
+		provider,
+		executablePath,
+		executeProcess,
+		validateEnvelopeSchema: validateFallowEnvelopeSchema,
+	};
 	return {
 		status: "detected",
 		signal,
 		detection,
 		bindings: resolveAnalysisBindings({ detections: [detection] }),
 		runtime: {
-			provider,
-			executablePath,
-			executeProcess,
-			validateEnvelopeSchema: validateFallowEnvelopeSchema,
+			...runtimeBase,
+			execute: (request, abortSignal) =>
+				executeFallowCapability(
+					{
+						...runtimeBase,
+						projectRoot: options.projectRoot,
+					},
+					request,
+					abortSignal,
+				),
 		},
 	};
 }
@@ -526,4 +553,739 @@ function validateFallowEnvelopeSchema(
 			},
 		},
 	};
+}
+
+interface FallowExecutionRuntime {
+	readonly projectRoot: string;
+	readonly provider: ProviderIdentity;
+	readonly executablePath: string;
+	readonly executeProcess: ProviderProcessExecutor;
+	readonly validateEnvelopeSchema: typeof validateFallowEnvelopeSchema;
+}
+
+const FALLOW_JSON_ARGS = ["--format", "json", "--quiet", "--no-cache"] as const;
+
+const DEAD_CODE_COLLECTIONS = [
+	"unused_files",
+	"unused_exports",
+	"unused_types",
+	"unused_dependencies",
+	"unused_dev_dependencies",
+	"unused_optional_dependencies",
+	"unused_enum_members",
+	"unused_class_members",
+	"unresolved_imports",
+	"unlisted_dependencies",
+	"duplicate_exports",
+	"type_only_dependencies",
+	"test_only_dependencies",
+	"circular_dependencies",
+	"boundary_violations",
+	"stale_suppressions",
+] as const;
+
+function objectRecord(
+	value: unknown,
+): Readonly<Record<string, unknown>> | null {
+	return typeof value === "object" && value !== null && !Array.isArray(value)
+		? (value as Readonly<Record<string, unknown>>)
+		: null;
+}
+
+function stringValue(
+	record: Readonly<Record<string, unknown>>,
+	key: string,
+): string | undefined {
+	const value = record[key];
+	return typeof value === "string" ? value : undefined;
+}
+
+function numberValue(
+	record: Readonly<Record<string, unknown>>,
+	key: string,
+): number | undefined {
+	const value = record[key];
+	return typeof value === "number" && Number.isFinite(value)
+		? value
+		: undefined;
+}
+
+function requiredArray(
+	record: Readonly<Record<string, unknown>>,
+	key: string,
+): readonly unknown[] {
+	const value = record[key];
+	if (!Array.isArray(value)) {
+		throw new Error(`expected ${key} to be an array`);
+	}
+	return value;
+}
+
+function providerDetails(data: Readonly<Record<string, unknown>>): {
+	readonly providerId: typeof FALLOW_PROVIDER_ID;
+	readonly data: Readonly<Record<string, unknown>>;
+} {
+	return { providerId: FALLOW_PROVIDER_ID, data };
+}
+
+function normalizeActions(
+	record: Readonly<Record<string, unknown>>,
+): readonly AnalysisAction[] {
+	if (record.actions === undefined) return [];
+	if (!Array.isArray(record.actions)) {
+		throw new Error("expected finding actions to be an array");
+	}
+	return record.actions.map((value, index) => {
+		const action = objectRecord(value);
+		if (action === null) {
+			throw new Error(`expected action ${index} to be an object`);
+		}
+		const description = stringValue(action, "description");
+		if (description === undefined || description.trim().length === 0) {
+			throw new Error(`expected action ${index} to carry a description`);
+		}
+		return {
+			description,
+			providerDetails: providerDetails(action),
+		};
+	});
+}
+
+function findingLocations(
+	record: Readonly<Record<string, unknown>>,
+): readonly AnalysisLocation[] {
+	const path =
+		stringValue(record, "path") ??
+		stringValue(record, "file") ??
+		stringValue(record, "from_path");
+	if (path === undefined) return [];
+	const line = numberValue(record, "line") ?? numberValue(record, "start_line");
+	const column = numberValue(record, "col") ?? numberValue(record, "start_col");
+	const endLine = numberValue(record, "end_line");
+	const endColumn = numberValue(record, "end_col");
+	return [
+		{
+			path,
+			...(line === undefined ? {} : { line }),
+			...(column === undefined ? {} : { column }),
+			...(endLine === undefined ? {} : { endLine }),
+			...(endColumn === undefined ? {} : { endColumn }),
+		},
+	];
+}
+
+function findingSeverity(
+	record: Readonly<Record<string, unknown>>,
+): AnalysisFindingSeverity {
+	switch (stringValue(record, "severity")) {
+		case "critical":
+		case "high":
+		case "error":
+			return "error";
+		case "moderate":
+		case "warning":
+		case "warn":
+			return "warning";
+		case "info":
+			return "info";
+		default:
+			return "unknown";
+	}
+}
+
+function findingSubject(
+	record: Readonly<Record<string, unknown>>,
+): string | undefined {
+	return (
+		stringValue(record, "export_name") ??
+		stringValue(record, "name") ??
+		stringValue(record, "dependency") ??
+		stringValue(record, "package") ??
+		stringValue(record, "path") ??
+		stringValue(record, "from_path")
+	);
+}
+
+function collectionLabel(collection: string): string {
+	return collection.replaceAll("_", " ");
+}
+
+function normalizeDeadCodeFindings(
+	payload: Readonly<Record<string, unknown>>,
+	idPrefix: string,
+): readonly AnalysisFinding[] {
+	const totalIssues = numberValue(payload, "total_issues");
+	if (totalIssues === undefined || !Number.isInteger(totalIssues)) {
+		throw new Error("expected dead-code total_issues to be an integer");
+	}
+	const findings: AnalysisFinding[] = [];
+	for (const collection of DEAD_CODE_COLLECTIONS) {
+		for (const [index, value] of requiredArray(payload, collection).entries()) {
+			const finding = objectRecord(value);
+			if (finding === null) {
+				throw new Error(`expected ${collection}[${index}] to be an object`);
+			}
+			const subject = findingSubject(finding);
+			findings.push({
+				id: `${idPrefix}:${collection}:${index}`,
+				category:
+					collection === "boundary_violations"
+						? "boundary-conformance"
+						: "dead-code",
+				severity: findingSeverity(finding),
+				message: `${collectionLabel(collection)}${
+					subject === undefined ? "" : `: ${subject}`
+				}`,
+				locations: findingLocations(finding),
+				actions: normalizeActions(finding),
+				providerDetails: providerDetails(finding),
+			});
+		}
+	}
+	if (findings.length !== totalIssues) {
+		throw new Error(
+			`dead-code total_issues ${totalIssues} does not match ${findings.length} findings`,
+		);
+	}
+	return findings;
+}
+
+function normalizeDuplicationFindings(
+	payload: Readonly<Record<string, unknown>>,
+	idPrefix: string,
+): readonly AnalysisFinding[] {
+	return requiredArray(payload, "clone_groups").map((value, index) => {
+		const group = objectRecord(value);
+		if (group === null) {
+			throw new Error(`expected clone_groups[${index}] to be an object`);
+		}
+		const instances = requiredArray(group, "instances");
+		const locations = instances.map((instanceValue, instanceIndex) => {
+			const instance = objectRecord(instanceValue);
+			if (instance === null) {
+				throw new Error(
+					`expected clone_groups[${index}].instances[${instanceIndex}] to be an object`,
+				);
+			}
+			const [location] = findingLocations(instance);
+			if (location === undefined) {
+				throw new Error(
+					`expected clone_groups[${index}].instances[${instanceIndex}] to carry a file`,
+				);
+			}
+			return location;
+		});
+		const lineCount = numberValue(group, "line_count");
+		return {
+			id: `${idPrefix}:clone_groups:${index}`,
+			category: "duplication",
+			severity: findingSeverity(group),
+			message: `duplicated code${
+				lineCount === undefined ? "" : `: ${lineCount} lines`
+			} across ${instances.length} instances`,
+			locations,
+			actions: normalizeActions(group),
+			providerDetails: providerDetails(group),
+		};
+	});
+}
+
+function normalizeComplexityFindings(
+	payload: Readonly<Record<string, unknown>>,
+	idPrefix: string,
+): readonly AnalysisFinding[] {
+	return requiredArray(payload, "findings").map((value, index) => {
+		const finding = objectRecord(value);
+		if (finding === null) {
+			throw new Error(`expected findings[${index}] to be an object`);
+		}
+		const subject = findingSubject(finding);
+		return {
+			id: `${idPrefix}:findings:${index}`,
+			category: "complexity",
+			severity: findingSeverity(finding),
+			message: `complexity threshold exceeded${
+				subject === undefined ? "" : `: ${subject}`
+			}`,
+			locations: findingLocations(finding),
+			actions: normalizeActions(finding),
+			providerDetails: providerDetails(finding),
+		};
+	});
+}
+
+function normalizeBoundaryFindings(
+	payload: Readonly<Record<string, unknown>>,
+	idPrefix: string,
+): readonly AnalysisFinding[] {
+	const totalIssues = numberValue(payload, "total_issues");
+	const values = requiredArray(payload, "boundary_violations");
+	if (totalIssues === undefined || totalIssues !== values.length) {
+		throw new Error(
+			"expected boundary total_issues to match boundary_violations",
+		);
+	}
+	return values.map((value, index) => {
+		const finding = objectRecord(value);
+		if (finding === null) {
+			throw new Error(`expected boundary_violations[${index}] to be an object`);
+		}
+		const fromPath = stringValue(finding, "from_path");
+		const toPath = stringValue(finding, "to_path");
+		return {
+			id: `${idPrefix}:boundary_violations:${index}`,
+			category: "boundary-conformance",
+			severity: findingSeverity(finding),
+			message: `boundary violation${
+				fromPath === undefined || toPath === undefined
+					? ""
+					: `: ${fromPath} -> ${toPath}`
+			}`,
+			locations: findingLocations(finding),
+			actions: normalizeActions(finding),
+			providerDetails: providerDetails(finding),
+		};
+	});
+}
+
+function targetDescription(
+	request: Extract<AnalysisRequest, { capability: "trace" }>,
+): string {
+	const target = request.scope.target;
+	switch (target.kind) {
+		case "symbol":
+			return target.path === undefined
+				? target.symbol
+				: `${target.path}:${target.symbol}`;
+		case "file":
+			return target.path;
+		case "dependency":
+			return target.dependency;
+		case "duplicate-location":
+			return `${target.location.path}:${String(target.location.line ?? "")}`;
+	}
+}
+
+function traceArgs(
+	request: Extract<AnalysisRequest, { capability: "trace" }>,
+): readonly string[] {
+	const target = request.scope.target;
+	switch (target.kind) {
+		case "symbol":
+			if (target.path === undefined || target.path.trim().length === 0) {
+				throw new Error("symbol trace requires a nonempty path");
+			}
+			return ["dead-code", "--trace", `${target.path}:${target.symbol}`];
+		case "file":
+			return ["dead-code", "--trace-file", target.path];
+		case "dependency":
+			return ["dead-code", "--trace-dependency", target.dependency];
+		case "duplicate-location":
+			if (target.location.line === undefined) {
+				throw new Error("duplicate-location trace requires a line");
+			}
+			return [
+				"dupes",
+				"--trace",
+				`${target.location.path}:${target.location.line}`,
+			];
+	}
+}
+
+function scopePathArgs(scope: AnalysisScope): readonly string[] {
+	if (scope.kind !== "paths") return [];
+	return scope.paths.flatMap((path) => ["--file", path]);
+}
+
+function capabilityArgs(request: AnalysisRequest): readonly string[] {
+	let operation: readonly string[];
+	switch (request.capability) {
+		case "dead-code":
+			operation = ["dead-code", ...scopePathArgs(request.scope)];
+			break;
+		case "duplication":
+			operation = ["dupes"];
+			break;
+		case "complexity":
+			operation = ["health", "--complexity"];
+			break;
+		case "boundary-conformance":
+			operation = [
+				"dead-code",
+				"--boundary-violations",
+				...scopePathArgs(request.scope),
+			];
+			break;
+		case "changed-scope-audit":
+			if (request.scope.base.trim().length === 0) {
+				throw new Error("changed-scope audit requires a nonempty base");
+			}
+			operation = ["audit", "--base", request.scope.base];
+			break;
+		case "trace":
+			operation = traceArgs(request);
+			break;
+		case "fix-preview":
+			operation = ["fix", "--dry-run"];
+			break;
+	}
+	return [...operation, ...FALLOW_JSON_ARGS];
+}
+
+function traceNode(record: Readonly<Record<string, unknown>>): string | null {
+	const path = stringValue(record, "file") ?? stringValue(record, "path");
+	const symbol =
+		stringValue(record, "export_name") ?? stringValue(record, "name");
+	if (path === undefined) return null;
+	return symbol === undefined ? path : `${path}:${symbol}`;
+}
+
+function normalizeTrace(
+	request: Extract<AnalysisRequest, { capability: "trace" }>,
+	payload: Readonly<Record<string, unknown>>,
+): {
+	readonly nodes: readonly string[];
+	readonly edges: readonly AnalysisTraceEdge[];
+	readonly evidence: readonly AnalysisEvidence[];
+} {
+	if (Object.keys(payload).length === 0) {
+		throw new Error("expected trace evidence");
+	}
+	const target = traceNode(payload) ?? targetDescription(request);
+	const nodes = new Set([target]);
+	const edges: AnalysisTraceEdge[] = [];
+	for (const collection of ["direct_references", "re_export_chains"] as const) {
+		const values = payload[collection];
+		if (values === undefined) continue;
+		if (!Array.isArray(values)) {
+			throw new Error(`expected trace ${collection} to be an array`);
+		}
+		for (const value of values) {
+			const reference = objectRecord(value);
+			if (reference === null) continue;
+			const node = traceNode(reference);
+			if (node === null) continue;
+			nodes.add(node);
+			edges.push({ from: node, to: target });
+		}
+	}
+	const reason = stringValue(payload, "reason");
+	const path = stringValue(payload, "file") ?? stringValue(payload, "path");
+	const locations = path === undefined ? [] : [{ path }];
+	return {
+		nodes: [...nodes],
+		edges,
+		evidence: [
+			{
+				message: reason ?? `Trace evidence for ${targetDescription(request)}`,
+				locations,
+				providerDetails: providerDetails(payload),
+			},
+		],
+	};
+}
+
+function normalizeFixProposals(
+	payload: Readonly<Record<string, unknown>>,
+): readonly AnalysisFixProposal[] {
+	if (payload.dry_run !== true) {
+		throw new Error("expected fix preview to assert dry_run true");
+	}
+	return requiredArray(payload, "fixes").map((value, index) => {
+		const fix = objectRecord(value);
+		if (fix === null) {
+			throw new Error(`expected fixes[${index}] to be an object`);
+		}
+		const type = stringValue(fix, "type");
+		const name = stringValue(fix, "name");
+		const path = stringValue(fix, "path");
+		const line = numberValue(fix, "line");
+		return {
+			description: [type, name].filter((part) => part !== undefined).join(": "),
+			locations:
+				path === undefined
+					? []
+					: [{ path, ...(line === undefined ? {} : { line }) }],
+			providerDetails: providerDetails(fix),
+		};
+	});
+}
+
+function analysisFindings(
+	request: Exclude<AnalysisRequest, { capability: "trace" | "fix-preview" }>,
+	payload: Readonly<Record<string, unknown>>,
+): {
+	readonly findings: readonly AnalysisFinding[];
+	readonly verdict: "pass" | "fail";
+} {
+	switch (request.capability) {
+		case "dead-code": {
+			const findings = normalizeDeadCodeFindings(payload, "fallow:dead-code");
+			return { findings, verdict: findings.length === 0 ? "pass" : "fail" };
+		}
+		case "duplication": {
+			const findings = normalizeDuplicationFindings(
+				payload,
+				"fallow:duplication",
+			);
+			return { findings, verdict: findings.length === 0 ? "pass" : "fail" };
+		}
+		case "complexity": {
+			const findings = normalizeComplexityFindings(
+				payload,
+				"fallow:complexity",
+			);
+			return { findings, verdict: findings.length === 0 ? "pass" : "fail" };
+		}
+		case "boundary-conformance": {
+			const findings = normalizeBoundaryFindings(
+				payload,
+				"fallow:boundary-conformance",
+			);
+			return { findings, verdict: findings.length === 0 ? "pass" : "fail" };
+		}
+		case "changed-scope-audit": {
+			if (payload.base_ref !== request.scope.base) {
+				throw new Error(
+					`expected audit base_ref ${JSON.stringify(request.scope.base)}, received ${JSON.stringify(payload.base_ref)}`,
+				);
+			}
+			const verdict = payload.verdict;
+			if (verdict !== "pass" && verdict !== "fail") {
+				throw new Error("expected audit verdict to be pass or fail");
+			}
+			const deadCode = objectRecord(payload.dead_code);
+			const duplication = objectRecord(payload.duplication);
+			const complexity = objectRecord(payload.complexity);
+			const invalidNestedEnvelope = [
+				["dead_code", payload.dead_code, deadCode],
+				["duplication", payload.duplication, duplication],
+				["complexity", payload.complexity, complexity],
+			].find(
+				([, value, normalized]) =>
+					value !== undefined && value !== null && normalized === null,
+			);
+			if (invalidNestedEnvelope !== undefined) {
+				throw new Error(
+					`expected audit ${String(invalidNestedEnvelope[0])} to be an object`,
+				);
+			}
+			if (
+				verdict === "fail" &&
+				(deadCode === null || duplication === null || complexity === null)
+			) {
+				throw new Error(
+					"expected audit dead_code, duplication, and complexity envelopes",
+				);
+			}
+			return {
+				verdict,
+				findings: [
+					...(deadCode === null
+						? []
+						: normalizeDeadCodeFindings(deadCode, "fallow:audit:dead-code")),
+					...(duplication === null
+						? []
+						: normalizeDuplicationFindings(
+								duplication,
+								"fallow:audit:duplication",
+							)),
+					...(complexity === null
+						? []
+						: normalizeComplexityFindings(
+								complexity,
+								"fallow:audit:complexity",
+							)),
+				],
+			};
+		}
+	}
+}
+
+function providerFailure(
+	runtime: FallowExecutionRuntime,
+	capability: AnalysisCapability,
+	failure: AnalysisFailure,
+): never {
+	throw new AnalysisProviderError({
+		capability,
+		provider: `${runtime.provider.id}@${runtime.provider.version}`,
+		failureClass: failure.kind,
+		process: {
+			exitCode: failure.process?.exitCode,
+			signal: failure.process?.signal,
+			reason: failure.process?.reason ?? failure.message,
+			stderrSummary: failure.process?.stderr,
+		},
+	});
+}
+
+function executionInvalidOutput(
+	capability: AnalysisCapability,
+	outcome: Extract<ProviderProcessOutcome, { kind: "code-exit" }>,
+	message: string,
+): AnalysisFailure {
+	return {
+		...invalidOutput(capability, message),
+		process: {
+			exitCode: outcome.code,
+			reason: message,
+			stderr: outcome.stderr,
+		},
+	};
+}
+
+function carriesErrorEnvelope(
+	payload: Readonly<Record<string, unknown>>,
+): boolean {
+	return (
+		"error" in payload ||
+		"errors" in payload ||
+		payload.status === "error" ||
+		payload.success === false
+	);
+}
+
+async function executeFallowCapability(
+	runtime: FallowExecutionRuntime,
+	request: AnalysisRequest,
+	signal?: AbortSignal,
+): Promise<AnalysisResult> {
+	let args: readonly string[];
+	try {
+		args = capabilityArgs(request);
+	} catch (error) {
+		return providerFailure(runtime, request.capability, {
+			kind:
+				request.capability === "changed-scope-audit"
+					? "missing-base"
+					: "invalid-output",
+			message: error instanceof Error ? error.message : String(error),
+			process: {
+				reason: error instanceof Error ? error.message : String(error),
+			},
+		});
+	}
+
+	const outcome = await runtime.executeProcess(
+		{
+			executablePath: runtime.executablePath,
+			args,
+			cwd: runtime.projectRoot,
+		},
+		signal,
+	);
+	if (
+		outcome.kind !== "code-exit" ||
+		(outcome.code !== 0 && outcome.code !== 1)
+	) {
+		return providerFailure(
+			runtime,
+			request.capability,
+			processFailure(request.capability, outcome),
+		);
+	}
+
+	let payload: unknown;
+	try {
+		payload = JSON.parse(outcome.stdout) as unknown;
+	} catch {
+		return providerFailure(
+			runtime,
+			request.capability,
+			executionInvalidOutput(
+				request.capability,
+				outcome,
+				"expected valid JSON",
+			),
+		);
+	}
+	const record = objectRecord(payload);
+	if (record === null) {
+		return providerFailure(
+			runtime,
+			request.capability,
+			executionInvalidOutput(
+				request.capability,
+				outcome,
+				"expected a JSON object",
+			),
+		);
+	}
+	if (carriesErrorEnvelope(record)) {
+		return providerFailure(
+			runtime,
+			request.capability,
+			executionInvalidOutput(
+				request.capability,
+				outcome,
+				"provider returned an error envelope",
+			),
+		);
+	}
+	const schemaFailure = runtime.validateEnvelopeSchema(
+		request.capability,
+		record,
+	);
+	if (schemaFailure !== undefined) {
+		return providerFailure(runtime, request.capability, {
+			...schemaFailure,
+			process: {
+				exitCode: outcome.code,
+				reason: schemaFailure.message,
+				stderr: outcome.stderr,
+			},
+		});
+	}
+
+	const native = {
+		providerId: FALLOW_PROVIDER_ID,
+		exitCode: outcome.code,
+		payload,
+		stderr: outcome.stderr,
+	} as const;
+	try {
+		if (request.capability === "trace") {
+			return {
+				kind: "trace",
+				capability: "trace",
+				provider: runtime.provider,
+				scope: request.scope,
+				verdict: "not-applicable",
+				trace: normalizeTrace(request, record),
+				native,
+			};
+		}
+		if (request.capability === "fix-preview") {
+			return {
+				kind: "fix-preview",
+				capability: "fix-preview",
+				provider: runtime.provider,
+				scope: request.scope,
+				verdict: "not-applicable",
+				proposals: normalizeFixProposals(record),
+				native,
+			};
+		}
+		const normalized = analysisFindings(request, record);
+		return {
+			kind: "findings",
+			capability: request.capability,
+			provider: runtime.provider,
+			scope: request.scope,
+			verdict: normalized.verdict,
+			findings: normalized.findings,
+			native,
+		} as AnalysisResult;
+	} catch (error) {
+		return providerFailure(
+			runtime,
+			request.capability,
+			executionInvalidOutput(
+				request.capability,
+				outcome,
+				error instanceof Error ? error.message : String(error),
+			),
+		);
+	}
 }

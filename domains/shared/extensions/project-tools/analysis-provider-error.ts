@@ -1,6 +1,6 @@
 export interface AnalysisProviderErrorProcessEvidence {
 	readonly exitCode?: number;
-	readonly signal?: NodeJS.Signals;
+	readonly signal?: string;
 	readonly reason?: string;
 	readonly stderrSummary?: string;
 }
