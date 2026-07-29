@@ -148,6 +148,18 @@ type FallowSpawnPrecondition =
 			readonly bindings: readonly AnalysisBinding[];
 	  };
 
+class FallowSpawnPreconditionError extends Error {
+	readonly precondition: Exclude<FallowSpawnPrecondition, { kind: "ready" }>;
+
+	constructor(
+		precondition: Exclude<FallowSpawnPrecondition, { kind: "ready" }>,
+	) {
+		super("Fallow provider spawn preconditions are no longer satisfied.");
+		this.name = "FallowSpawnPreconditionError";
+		this.precondition = precondition;
+	}
+}
+
 export class FallowBindingUnavailableError extends Error {
 	readonly bindings: readonly AnalysisBinding[];
 
@@ -167,19 +179,28 @@ type FallowProviderDiscovery =
 	| {
 			readonly status: "unbound";
 			readonly signal: FallowDetectionSignal;
-			readonly reason: "provider-not-installed" | "execution-not-consented";
+			readonly reason: "provider-not-installed";
+			readonly bindings: readonly AnalysisBinding[];
+	  }
+	| {
+			readonly status: "unbound";
+			readonly signal: FallowDetectionSignal;
+			readonly reason: "execution-not-consented";
+			readonly executableResolution: FallowExecutableResolutionKind;
 			readonly bindings: readonly AnalysisBinding[];
 	  }
 	| {
 			readonly status: "failed";
 			readonly signal: FallowDetectionSignal;
 			readonly detection: Extract<ProviderDetection, { status: "failed" }>;
+			readonly executableResolution?: FallowExecutableResolutionKind;
 			readonly bindings: readonly AnalysisBinding[];
 	  }
 	| {
 			readonly status: "detected";
 			readonly signal: FallowDetectionSignal;
 			readonly detection: Extract<ProviderDetection, { status: "detected" }>;
+			readonly executableResolution: FallowExecutableResolutionKind;
 			readonly bindings: readonly AnalysisBinding[];
 			readonly runtime: FallowProviderRuntime;
 	  };
@@ -629,6 +650,23 @@ async function validateSpawnPreconditions(options: {
 	return { kind: "ready" };
 }
 
+function finalSpawnPrecondition(options: {
+	readonly projectRoot: string;
+	readonly userStateRoot?: string;
+	readonly executablePath: string;
+	readonly bindingIdentity: FallowBindingIdentity;
+	readonly captureExecutableIdentity: (
+		executablePath: string,
+	) => Promise<FallowExecutableIdentity>;
+}): () => Promise<void> {
+	return async () => {
+		const precondition = await validateSpawnPreconditions(options);
+		if (precondition.kind !== "ready") {
+			throw new FallowSpawnPreconditionError(precondition);
+		}
+	};
+}
+
 function processFailure(
 	operation: string,
 	outcome: ProviderProcessOutcome,
@@ -806,6 +844,7 @@ function capabilities(
 function failedDiscovery(
 	signal: FallowDetectionSignal,
 	failure: AnalysisFailure,
+	executableResolution?: FallowExecutableResolutionKind,
 ): FallowProviderDiscovery {
 	const detection = {
 		status: "failed",
@@ -816,6 +855,7 @@ function failedDiscovery(
 		status: "failed",
 		signal,
 		detection,
+		...(executableResolution === undefined ? {} : { executableResolution }),
 		bindings: resolveAnalysisBindings({ detections: [detection] }),
 	};
 }
@@ -825,6 +865,7 @@ function abortedDiscovery(
 	operation: string,
 	abortSignal: AbortSignal,
 	outcome?: ProviderProcessOutcome,
+	executableResolution?: FallowExecutableResolutionKind,
 ): FallowProviderDiscovery {
 	return failedDiscovery(
 		detectionSignal,
@@ -834,6 +875,7 @@ function abortedDiscovery(
 			stdout: outcome?.stdout ?? "",
 			stderr: outcome?.stderr ?? "",
 		}),
+		executableResolution,
 	);
 }
 
@@ -886,15 +928,21 @@ function abortedExecution(reason: unknown): AnalysisFailure {
 function discoveryFromSpawnPrecondition(
 	detectionSignal: FallowDetectionSignal,
 	precondition: FallowSpawnPrecondition,
+	executableResolution: FallowExecutableResolutionKind,
 ): FallowProviderDiscovery | undefined {
 	if (precondition.kind === "ready") return undefined;
 	if (precondition.kind === "failed") {
-		return failedDiscovery(detectionSignal, precondition.failure);
+		return failedDiscovery(
+			detectionSignal,
+			precondition.failure,
+			executableResolution,
+		);
 	}
 	return {
 		status: "unbound",
 		signal: detectionSignal,
 		reason: "execution-not-consented",
+		executableResolution,
 		bindings: precondition.bindings,
 	};
 }
@@ -909,43 +957,74 @@ async function introspectProvider(
 ): Promise<FallowProviderDiscovery> {
 	const captureIdentity =
 		options.captureExecutableIdentity ?? captureExecutableIdentity;
+	const spawnPreconditionOptions = {
+		projectRoot: options.projectRoot,
+		userStateRoot: options.userStateRoot,
+		executablePath,
+		bindingIdentity,
+		captureExecutableIdentity: captureIdentity,
+	} as const;
+	const beforeSpawn = finalSpawnPrecondition(spawnPreconditionOptions);
 	if (options.signal?.aborted) {
-		return abortedDiscovery(detectionSignal, "version", options.signal);
+		return abortedDiscovery(
+			detectionSignal,
+			"version",
+			options.signal,
+			undefined,
+			executableResolution,
+		);
 	}
 	const versionPrecondition = discoveryFromSpawnPrecondition(
 		detectionSignal,
-		await validateSpawnPreconditions({
-			projectRoot: options.projectRoot,
-			userStateRoot: options.userStateRoot,
-			executablePath,
-			bindingIdentity,
-			captureExecutableIdentity: captureIdentity,
-		}),
+		await validateSpawnPreconditions(spawnPreconditionOptions),
+		executableResolution,
 	);
 	if (versionPrecondition !== undefined) return versionPrecondition;
 	if (options.signal?.aborted) {
-		return abortedDiscovery(detectionSignal, "version", options.signal);
+		return abortedDiscovery(
+			detectionSignal,
+			"version",
+			options.signal,
+			undefined,
+			executableResolution,
+		);
 	}
-	const versionOutcome = await executeProcess(
-		{
-			executablePath: bindingIdentity.executable.canonicalPath,
-			args: ["--version", "--no-cache"],
-			cwd: options.projectRoot,
-		},
-		options.signal,
-	);
+	let versionOutcome: ProviderProcessOutcome;
+	try {
+		versionOutcome = await executeProcess(
+			{
+				executablePath: bindingIdentity.executable.canonicalPath,
+				args: ["--version", "--no-cache"],
+				cwd: options.projectRoot,
+			},
+			options.signal,
+			{ beforeSpawn },
+		);
+	} catch (error) {
+		if (error instanceof FallowSpawnPreconditionError) {
+			const discovery = discoveryFromSpawnPrecondition(
+				detectionSignal,
+				error.precondition,
+				executableResolution,
+			);
+			if (discovery !== undefined) return discovery;
+		}
+		throw error;
+	}
 	if (options.signal?.aborted) {
 		return abortedDiscovery(
 			detectionSignal,
 			"version",
 			options.signal,
 			versionOutcome,
+			executableResolution,
 		);
 	}
 	if (versionOutcome.kind !== "code-exit" || versionOutcome.code !== 0) {
 		return failedDiscovery(
 			detectionSignal,
 			processFailure("version", versionOutcome),
+			executableResolution,
 		);
 	}
 	const version = parseVersion(versionOutcome.stdout);
@@ -953,37 +1032,54 @@ async function introspectProvider(
 		return failedDiscovery(
 			detectionSignal,
 			invalidOutput("version", "expected `fallow <version>`"),
+			executableResolution,
 		);
 	}
 
 	const configPrecondition = discoveryFromSpawnPrecondition(
 		detectionSignal,
-		await validateSpawnPreconditions({
-			projectRoot: options.projectRoot,
-			userStateRoot: options.userStateRoot,
-			executablePath,
-			bindingIdentity,
-			captureExecutableIdentity: captureIdentity,
-		}),
+		await validateSpawnPreconditions(spawnPreconditionOptions),
+		executableResolution,
 	);
 	if (configPrecondition !== undefined) return configPrecondition;
 	if (options.signal?.aborted) {
-		return abortedDiscovery(detectionSignal, "config", options.signal);
+		return abortedDiscovery(
+			detectionSignal,
+			"config",
+			options.signal,
+			undefined,
+			executableResolution,
+		);
 	}
-	const configOutcome = await executeProcess(
-		{
-			executablePath: bindingIdentity.executable.canonicalPath,
-			args: ["config", "--format", "json", "--quiet", "--no-cache"],
-			cwd: options.projectRoot,
-		},
-		options.signal,
-	);
+	let configOutcome: ProviderProcessOutcome;
+	try {
+		configOutcome = await executeProcess(
+			{
+				executablePath: bindingIdentity.executable.canonicalPath,
+				args: ["config", "--format", "json", "--quiet", "--no-cache"],
+				cwd: options.projectRoot,
+			},
+			options.signal,
+			{ beforeSpawn },
+		);
+	} catch (error) {
+		if (error instanceof FallowSpawnPreconditionError) {
+			const discovery = discoveryFromSpawnPrecondition(
+				detectionSignal,
+				error.precondition,
+				executableResolution,
+			);
+			if (discovery !== undefined) return discovery;
+		}
+		throw error;
+	}
 	if (options.signal?.aborted) {
 		return abortedDiscovery(
 			detectionSignal,
 			"config",
 			options.signal,
 			configOutcome,
+			executableResolution,
 		);
 	}
 	let config: FallowConfig | null;
@@ -995,12 +1091,14 @@ async function introspectProvider(
 			return failedDiscovery(
 				detectionSignal,
 				invalidOutput("config", "expected a JSON object after any preamble"),
+				executableResolution,
 			);
 		}
 	} else {
 		return failedDiscovery(
 			detectionSignal,
 			processFailure("config", configOutcome),
+			executableResolution,
 		);
 	}
 
@@ -1033,6 +1131,7 @@ async function introspectProvider(
 		...runtimeBase,
 		executablePath: bindingIdentity.executable.canonicalPath,
 		projectRoot: options.projectRoot,
+		beforeSpawn,
 	};
 	let invalidatedFailure: AnalysisFailure | undefined;
 	const currentBindings = async (): Promise<readonly AnalysisBinding[]> => {
@@ -1062,6 +1161,7 @@ async function introspectProvider(
 		status: "detected",
 		signal: detectionSignal,
 		detection,
+		executableResolution,
 		bindings: resolvedBindings,
 		runtime: {
 			...runtimeBase,
@@ -1088,11 +1188,27 @@ async function introspectProvider(
 								abortedExecution(combined.signal.reason),
 							);
 						}
-						return executeFallowCapability(
-							executionRuntime,
-							request,
-							combined.signal,
-						);
+						try {
+							return await executeFallowCapability(
+								executionRuntime,
+								request,
+								combined.signal,
+							);
+						} catch (error) {
+							if (error instanceof FallowSpawnPreconditionError) {
+								if (error.precondition.kind === "failed") {
+									invalidatedFailure = error.precondition.failure;
+									if (!lifecycleController.signal.aborted) {
+										lifecycleController.abort(error.precondition.failure);
+									}
+									executionQueue.close(error.precondition.failure);
+								}
+								throw new FallowBindingUnavailableError(
+									error.precondition.bindings,
+								);
+							}
+							throw error;
+						}
 					}, combined.signal);
 				} catch (error) {
 					if (error instanceof ProviderExecutionQueueAbortedError) {
@@ -1152,7 +1268,13 @@ export async function discoverFallowProvider(
 		};
 	}
 	if (options.signal?.aborted) {
-		return abortedDiscovery(detectionSignal, "discovery", options.signal);
+		return abortedDiscovery(
+			detectionSignal,
+			"discovery",
+			options.signal,
+			undefined,
+			resolvedExecutable.resolutionKind,
+		);
 	}
 
 	const authorization = await readAnalysisExecutionAuthorization({
@@ -1161,13 +1283,20 @@ export async function discoverFallowProvider(
 		userStateRoot: options.userStateRoot,
 	});
 	if (options.signal?.aborted) {
-		return abortedDiscovery(detectionSignal, "discovery", options.signal);
+		return abortedDiscovery(
+			detectionSignal,
+			"discovery",
+			options.signal,
+			undefined,
+			resolvedExecutable.resolutionKind,
+		);
 	}
 	if (authorization?.consented !== true) {
 		return {
 			status: "unbound",
 			signal: detectionSignal,
 			reason: "execution-not-consented",
+			executableResolution: resolvedExecutable.resolutionKind,
 			bindings: providerNotAvailableBindings("execution-not-consented"),
 		};
 	}
@@ -1181,6 +1310,7 @@ export async function discoverFallowProvider(
 				"project-identity-changed",
 				"Fallow project identity changed during provider discovery.",
 			),
+			resolvedExecutable.resolutionKind,
 		);
 	}
 
@@ -1196,6 +1326,7 @@ export async function discoverFallowProvider(
 				"provider-executable-identity-changed",
 				"Fallow executable identity could not be established before provider introspection.",
 			),
+			resolvedExecutable.resolutionKind,
 		);
 	}
 	const bindingIdentity: FallowBindingIdentity = {
@@ -1259,6 +1390,7 @@ interface FallowExecutionRuntime {
 	readonly provider: ProviderIdentity;
 	readonly executablePath: string;
 	readonly executeProcess: ProviderProcessExecutor;
+	readonly beforeSpawn: () => Promise<void>;
 	readonly validateEnvelopeSchema: typeof validateFallowEnvelopeSchema;
 }
 
@@ -2014,7 +2146,13 @@ function normalizedCapabilityResult(
 			};
 		}
 		const normalized = analysisFindings(request, envelope.record);
-		reconcileVerdictEvidence(outcome, envelope.record, normalized);
+		const completeEvidence =
+			request.capability === "complexity"
+				? findingsOutcome(
+						normalizeComplexityFindings(envelope.record, "fallow:complexity"),
+					)
+				: normalized;
+		reconcileVerdictEvidence(outcome, envelope.record, completeEvidence);
 		if (request.capability === "complexity") {
 			return {
 				kind: "findings",
@@ -2077,6 +2215,7 @@ async function executeFallowCapability(
 			cwd: runtime.projectRoot,
 		},
 		signal,
+		{ beforeSpawn: runtime.beforeSpawn },
 	);
 	if (
 		outcome.kind !== "code-exit" ||

@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
+import { rmSync } from "node:fs";
 import {
 	chmod,
 	mkdir,
@@ -708,7 +709,7 @@ describe("Fallow provider discovery", () => {
 		).toBe(true);
 	});
 
-	test("surfaces configured, package-native, and injected resolution provenance without commands", async () => {
+	test("surfaces resolution provenance for detected, consent-withheld, and introspection-failed states without commands", async () => {
 		await writeFile(
 			join(projectRoot, "package.json"),
 			JSON.stringify({ devDependencies: { fallow: "2.54.2" } }),
@@ -764,7 +765,43 @@ describe("Fallow provider discovery", () => {
 		);
 		expect(resultDetails(injectedStatus).resolutionProvenance).toBe("injected");
 
-		for (const status of [configuredStatus, packageStatus, injectedStatus]) {
+		await rm(join(userStateRoot, "analysis-execution-consent.json"));
+		const withheldStatus = await statusFor(
+			{ injectedExecutablePath: injectedExecutable },
+			successfulIntrospection().execute,
+		);
+		expect(resultDetails(withheldStatus)).toMatchObject({
+			resolutionProvenance: "injected",
+			capabilities: expect.arrayContaining([
+				expect.objectContaining({
+					state: "unbound",
+					reason: "execution-not-consented",
+				}),
+			]),
+		});
+
+		await recordConsent();
+		const failedStatus = await statusFor(
+			{ injectedExecutablePath: injectedExecutable },
+			successfulIntrospection({ configExitCode: 2 }).execute,
+		);
+		expect(resultDetails(failedStatus)).toMatchObject({
+			resolutionProvenance: "injected",
+			capabilities: expect.arrayContaining([
+				expect.objectContaining({
+					state: "failed",
+					failure: expect.objectContaining({ kind: "invalid-config" }),
+				}),
+			]),
+		});
+
+		for (const status of [
+			configuredStatus,
+			packageStatus,
+			injectedStatus,
+			withheldStatus,
+			failedStatus,
+		]) {
 			expect(status.content[0]?.text).not.toMatch(
 				/(?:\bnpx\b|\bnode_modules\b|--[a-z-]+)/u,
 			);
@@ -827,6 +864,58 @@ describe("Fallow provider discovery", () => {
 		});
 		expect(identityReads).toBe(2);
 		expect(executeProcess).not.toHaveBeenCalled();
+	});
+
+	test("re-reads consent after runner preparation immediately before spawn", async () => {
+		await writeFile(join(projectRoot, "fallow.toml"), "");
+		await recordConsent();
+		const spawnMarker = join(fixtureRoot, "provider-spawned");
+		const executable = join(fixtureRoot, "prepared-revocation", "fallow");
+		await mkdir(dirname(executable), { recursive: true });
+		await writeFile(
+			executable,
+			[
+				"#!/bin/sh",
+				`touch '${spawnMarker.replaceAll("'", "'\\''")}'`,
+				`echo "fallow ${FALLOW_VALIDATED_ENGINE_VERSION}"`,
+				"exit 0",
+				"",
+			].join("\n"),
+			"utf8",
+		);
+		await chmod(executable, 0o755);
+		const consentPath = join(userStateRoot, "analysis-execution-consent.json");
+		let runnerPreparations = 0;
+		const executeProcess: ProviderProcessExecutor = (
+			invocation,
+			signal,
+			options,
+		) =>
+			runProviderProcess(invocation, signal, {
+				...options,
+				onOutputSpoolReady: (outputSpoolRoot) => {
+					options?.onOutputSpoolReady?.(outputSpoolRoot);
+					runnerPreparations += 1;
+					rmSync(consentPath);
+				},
+			});
+
+		const discovery = await discoverFallowProvider({
+			projectRoot,
+			userStateRoot,
+			injectedExecutablePath: executable,
+			executeProcess,
+		});
+
+		expect(discovery).toMatchObject({
+			status: "unbound",
+			reason: "execution-not-consented",
+			executableResolution: "injected",
+		});
+		expect(runnerPreparations).toBe(1);
+		await expect(readFile(spawnMarker)).rejects.toMatchObject({
+			code: "ENOENT",
+		});
 	});
 
 	test("resolves supported POSIX and Windows native platform packages without PATH or package-manager shims", async () => {
@@ -1489,15 +1578,21 @@ describe("Fallow capability execution", () => {
 					stderr: fixture.envelope.stderr,
 				},
 			});
-			await expect(
-				exclusiveRuntime.execute({
-					capability: "complexity",
-					scope: { kind: "project" },
-					metric,
-				}),
-			).rejects.toMatchObject({
-				name: "AnalysisProviderError",
-				failureClass: "invalid-output",
+			const exclusiveResult = await exclusiveRuntime.execute({
+				capability: "complexity",
+				scope: { kind: "project" },
+				metric,
+			});
+			expect(exclusiveResult).toMatchObject({
+				kind: "findings",
+				capability: "complexity",
+				metric,
+				verdict: "pass",
+				findings: [],
+				native: {
+					exitCode: 1,
+					payload: exclusivePayload,
+				},
 			});
 		}
 	});

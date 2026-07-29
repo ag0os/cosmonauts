@@ -20,6 +20,7 @@ import {
 	detectFallowSignal,
 	discoverFallowProvider,
 	FallowBindingUnavailableError,
+	type FallowExecutableResolutionKind,
 } from "./fallow-provider.ts";
 import type { ProviderProcessExecutor } from "./process-runner.ts";
 
@@ -47,6 +48,7 @@ type DetectedFallowDiscovery = Extract<
 interface AnalysisSessionSnapshot {
 	readonly bindings: readonly AnalysisBinding[];
 	readonly runtime?: DetectedFallowDiscovery["runtime"];
+	readonly resolutionProvenance?: FallowExecutableResolutionKind;
 }
 
 interface SnapshotDiscovery {
@@ -603,8 +605,13 @@ export function createProjectToolsExtension(
 							providerPreference,
 						})
 					: discovery.bindings;
+			const resolutionProvenance =
+				"executableResolution" in discovery
+					? discovery.executableResolution
+					: undefined;
 			return {
 				bindings,
+				...(resolutionProvenance === undefined ? {} : { resolutionProvenance }),
 				...(discovery.status === "detected"
 					? { runtime: discovery.runtime }
 					: {}),
@@ -731,10 +738,10 @@ export function createProjectToolsExtension(
 				);
 				return textResult({
 					kind: "status",
-					...(snapshot.runtime === undefined
+					...(snapshot.resolutionProvenance === undefined
 						? {}
 						: {
-								resolutionProvenance: snapshot.runtime.executableResolution,
+								resolutionProvenance: snapshot.resolutionProvenance,
 							}),
 					capabilities: snapshot.bindings,
 				} as const);

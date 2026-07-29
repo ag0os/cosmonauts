@@ -18,9 +18,14 @@ export interface ProviderProcessInvocation {
 	readonly cwd: string;
 }
 
-interface ProviderProcessRunOptions {
+export interface ProviderProcessRunOptions {
 	readonly timeoutMs?: number;
 	readonly terminationGraceMs?: number;
+	/**
+	 * Final asynchronous authorization hook. Runner preparation is complete
+	 * before this is awaited, and spawn follows synchronously when it resolves.
+	 */
+	readonly beforeSpawn?: () => Promise<void>;
 	/** Test-only lifecycle observer; cannot change output capture behavior. */
 	readonly onOutputSpoolReady?: (outputSpoolRoot: string) => void;
 }
@@ -250,6 +255,15 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 	}
 
 	try {
+		await options?.beforeSpawn?.();
+		if (signal?.aborted) {
+			return {
+				kind: "aborted",
+				reason: signal.reason,
+				stdout: "",
+				stderr: "",
+			};
+		}
 		return await new Promise((resolve) => {
 			let settled = false;
 			let termination: InitiatedTermination | undefined;
