@@ -2,6 +2,12 @@ import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+export {
+	AnalysisProviderError,
+	type AnalysisProviderErrorOptions,
+	type AnalysisProviderErrorProcessEvidence,
+} from "./analysis-provider-error.ts";
+
 interface AnalysisTool {
 	name: string;
 	configFile: string;

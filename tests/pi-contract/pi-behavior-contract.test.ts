@@ -13,6 +13,7 @@ import {
 import { stream as anthropicStream } from "@earendil-works/pi-ai/api/anthropic-messages";
 import { Type } from "typebox";
 import { describe, expect, test } from "vitest";
+import { AnalysisProviderError } from "../../domains/shared/extensions/project-tools/index.ts";
 
 // Contract tests against the REAL @earendil-works/pi-* packages (no MockPi, no
 // network). Cosmonauts depends on undocumented Pi behaviors that nothing in
@@ -244,5 +245,76 @@ describe("pi contract: transformContext runs before every provider call", () => 
 		for (const texts of seenCallTexts) {
 			expect(texts.some((text) => text.includes("INJECTED-MARKER"))).toBe(true);
 		}
+	});
+});
+
+describe("pi contract: thrown analysis provider errors", () => {
+	// @cosmo-behavior plan:analysis-capability-runtime#B-030
+	test("preserves serialized capability failure in Pi error content", async () => {
+		const expectedMessage = [
+			"Analysis failed to run.",
+			"Capability: dead-code",
+			"Provider: fallow@2.54.2",
+			"Failure class: signal-exit",
+			"Process evidence: exit=none; signal=SIGTERM; reason=none; stderr=provider crashed",
+		].join("\n");
+		const failure = new AnalysisProviderError({
+			capability: "dead-code",
+			provider: "fallow@2.54.2",
+			failureClass: "signal-exit",
+			process: {
+				signal: "SIGTERM",
+				stderrSummary: "provider crashed",
+			},
+		});
+		const tool: AgentTool = {
+			name: "analysis_dead_code",
+			label: "Analysis dead code",
+			description: "Real-Pi error transport probe.",
+			parameters: Type.Object({}),
+			execute: async () => {
+				throw failure;
+			},
+		};
+		const core = createFauxCore({});
+		core.setResponses([
+			fauxAssistantMessage([fauxToolCall("analysis_dead_code", {})], {
+				stopReason: "toolUse",
+			}),
+			fauxAssistantMessage("done"),
+		]);
+		const context: AgentContext = {
+			systemPrompt: "contract",
+			messages: [],
+			tools: [tool],
+		};
+		const toolEndEvents: Array<{
+			readonly isError: boolean;
+			readonly result: AgentToolResult<unknown>;
+		}> = [];
+
+		await runAgentLoop(
+			[{ role: "user", content: "go", timestamp: 0 }],
+			context,
+			{
+				model: core.models[0] as Model<never>,
+				convertToLlm: (messages) => messages as never,
+			},
+			async (event) => {
+				if (event.type === "tool_execution_end") {
+					toolEndEvents.push(event);
+				}
+			},
+			undefined,
+			core.stream,
+		);
+
+		expect(failure.message).toBe(expectedMessage);
+		expect(toolEndEvents).toHaveLength(1);
+		expect(toolEndEvents[0]?.isError).toBe(true);
+		expect(toolEndEvents[0]?.result.details).toEqual({});
+		expect(toolEndEvents[0]?.result.content).toEqual([
+			{ type: "text", text: expectedMessage },
+		]);
 	});
 });

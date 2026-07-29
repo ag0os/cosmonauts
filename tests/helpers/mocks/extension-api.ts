@@ -31,7 +31,11 @@ export interface MockPi {
 	appendEntry(customType: string, data: unknown): void;
 
 	/** Invoke a registered tool by name. */
-	callTool(name: string, params: unknown): Promise<unknown>;
+	callTool(
+		name: string,
+		params: unknown,
+		signal?: AbortSignal,
+	): Promise<unknown>;
 
 	/** Fire all handlers for an event, returning the last handler's result. */
 	fireEvent(name: string, event?: unknown, ctx?: unknown): Promise<unknown>;
@@ -67,10 +71,10 @@ export function createMockPi(options?: MockPiOptions): MockPi {
 			entries.push({ customType, data });
 		},
 
-		async callTool(name: string, params: unknown) {
+		async callTool(name: string, params: unknown, signal?: AbortSignal) {
 			const tool = tools.get(name);
 			if (!tool) throw new Error(`Tool not found: ${name}`);
-			return tool.execute("call-id", params, undefined, undefined, {
+			return tool.execute("call-id", params, signal, undefined, {
 				cwd,
 				getSystemPrompt: () => options?.systemPrompt ?? "",
 			});
