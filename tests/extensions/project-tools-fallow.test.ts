@@ -995,7 +995,7 @@ describe("Fallow capability execution", () => {
 	});
 
 	// @cosmo-behavior plan:analysis-capability-runtime#B-026
-	test("audits tracked staged and untracked dirty base changes from HEAD using the real pinned engine", async () => {
+	test("audits tracked staged and untracked dirty base changes from HEAD", async () => {
 		await createLiveProviderProject(projectRoot);
 		await recordConsent();
 		await writeProjectFile(

@@ -9,7 +9,7 @@ export interface ProviderProcessInvocation {
 	readonly cwd: string;
 }
 
-export interface ProviderProcessRunOptions {
+interface ProviderProcessRunOptions {
 	readonly timeoutMs?: number;
 	readonly terminationGraceMs?: number;
 }
@@ -138,14 +138,16 @@ export const runProviderProcess: ProviderProcessExecutor = (
 			return;
 		}
 
+		const appendStdout = (chunk: string): void => {
+			stdout += chunk;
+		};
+		const appendStderr = (chunk: string): void => {
+			stderr += chunk;
+		};
 		child.stdout?.setEncoding("utf8");
 		child.stderr?.setEncoding("utf8");
-		child.stdout?.on("data", (chunk: string) => {
-			stdout += chunk;
-		});
-		child.stderr?.on("data", (chunk: string) => {
-			stderr += chunk;
-		});
+		child.stdout?.on("data", appendStdout);
+		child.stderr?.on("data", appendStderr);
 
 		const beginTermination = (initiated: InitiatedTermination): void => {
 			if (settled || termination) return;

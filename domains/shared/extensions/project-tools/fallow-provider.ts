@@ -940,6 +940,24 @@ function traceNode(record: Readonly<Record<string, unknown>>): string | null {
 	return symbol === undefined ? path : `${path}:${symbol}`;
 }
 
+function traceReferenceEdges(
+	payload: Readonly<Record<string, unknown>>,
+	collection: "direct_references" | "re_export_chains",
+	target: string,
+): readonly AnalysisTraceEdge[] {
+	const values = payload[collection];
+	if (values === undefined) return [];
+	if (!Array.isArray(values)) {
+		throw new Error(`expected trace ${collection} to be an array`);
+	}
+	return values.flatMap((value) => {
+		const reference = objectRecord(value);
+		if (reference === null) return [];
+		const node = traceNode(reference);
+		return node === null ? [] : [{ from: node, to: target }];
+	});
+}
+
 function normalizeTrace(
 	request: Extract<AnalysisRequest, { capability: "trace" }>,
 	payload: Readonly<Record<string, unknown>>,
@@ -952,23 +970,11 @@ function normalizeTrace(
 		throw new Error("expected trace evidence");
 	}
 	const target = traceNode(payload) ?? targetDescription(request);
-	const nodes = new Set([target]);
-	const edges: AnalysisTraceEdge[] = [];
-	for (const collection of ["direct_references", "re_export_chains"] as const) {
-		const values = payload[collection];
-		if (values === undefined) continue;
-		if (!Array.isArray(values)) {
-			throw new Error(`expected trace ${collection} to be an array`);
-		}
-		for (const value of values) {
-			const reference = objectRecord(value);
-			if (reference === null) continue;
-			const node = traceNode(reference);
-			if (node === null) continue;
-			nodes.add(node);
-			edges.push({ from: node, to: target });
-		}
-	}
+	const collections = ["direct_references", "re_export_chains"] as const;
+	const edges = collections.flatMap((collection) =>
+		traceReferenceEdges(payload, collection, target),
+	);
+	const nodes = new Set([target, ...edges.map(({ from }) => from)]);
 	const reason = stringValue(payload, "reason");
 	const path = stringValue(payload, "file") ?? stringValue(payload, "path");
 	const locations = path === undefined ? [] : [{ path }];
@@ -1011,94 +1017,96 @@ function normalizeFixProposals(
 	});
 }
 
+interface NormalizedAnalysisFindings {
+	readonly findings: readonly AnalysisFinding[];
+	readonly verdict: "pass" | "fail";
+}
+
+function findingsOutcome(
+	findings: readonly AnalysisFinding[],
+): NormalizedAnalysisFindings {
+	return { findings, verdict: findings.length === 0 ? "pass" : "fail" };
+}
+
+function auditEnvelope(
+	payload: Readonly<Record<string, unknown>>,
+	key: "dead_code" | "duplication" | "complexity",
+): Readonly<Record<string, unknown>> | null {
+	const value = payload[key];
+	if (value === undefined || value === null) return null;
+	const envelope = objectRecord(value);
+	if (envelope === null) {
+		throw new Error(`expected audit ${key} to be an object`);
+	}
+	return envelope;
+}
+
+function auditFindings(
+	request: Extract<AnalysisRequest, { capability: "changed-scope-audit" }>,
+	payload: Readonly<Record<string, unknown>>,
+): NormalizedAnalysisFindings {
+	if (payload.base_ref !== request.scope.base) {
+		throw new Error(
+			`expected audit base_ref ${JSON.stringify(request.scope.base)}, received ${JSON.stringify(payload.base_ref)}`,
+		);
+	}
+	const verdict = payload.verdict;
+	if (verdict !== "pass" && verdict !== "fail") {
+		throw new Error("expected audit verdict to be pass or fail");
+	}
+	const deadCode = auditEnvelope(payload, "dead_code");
+	const duplication = auditEnvelope(payload, "duplication");
+	const complexity = auditEnvelope(payload, "complexity");
+	if (
+		verdict === "fail" &&
+		(deadCode === null || duplication === null || complexity === null)
+	) {
+		throw new Error(
+			"expected audit dead_code, duplication, and complexity envelopes",
+		);
+	}
+	const findings: AnalysisFinding[] = [];
+	if (deadCode !== null) {
+		findings.push(
+			...normalizeDeadCodeFindings(deadCode, "fallow:audit:dead-code"),
+		);
+	}
+	if (duplication !== null) {
+		findings.push(
+			...normalizeDuplicationFindings(duplication, "fallow:audit:duplication"),
+		);
+	}
+	if (complexity !== null) {
+		findings.push(
+			...normalizeComplexityFindings(complexity, "fallow:audit:complexity"),
+		);
+	}
+	return { findings, verdict };
+}
+
 function analysisFindings(
 	request: Exclude<AnalysisRequest, { capability: "trace" | "fix-preview" }>,
 	payload: Readonly<Record<string, unknown>>,
-): {
-	readonly findings: readonly AnalysisFinding[];
-	readonly verdict: "pass" | "fail";
-} {
+): NormalizedAnalysisFindings {
 	switch (request.capability) {
-		case "dead-code": {
-			const findings = normalizeDeadCodeFindings(payload, "fallow:dead-code");
-			return { findings, verdict: findings.length === 0 ? "pass" : "fail" };
-		}
-		case "duplication": {
-			const findings = normalizeDuplicationFindings(
-				payload,
-				"fallow:duplication",
+		case "dead-code":
+			return findingsOutcome(
+				normalizeDeadCodeFindings(payload, "fallow:dead-code"),
 			);
-			return { findings, verdict: findings.length === 0 ? "pass" : "fail" };
-		}
-		case "complexity": {
-			const findings = normalizeComplexityFindings(
-				payload,
-				"fallow:complexity",
+		case "duplication":
+			return findingsOutcome(
+				normalizeDuplicationFindings(payload, "fallow:duplication"),
 			);
-			return { findings, verdict: findings.length === 0 ? "pass" : "fail" };
-		}
-		case "boundary-conformance": {
-			const findings = normalizeBoundaryFindings(
-				payload,
-				"fallow:boundary-conformance",
+		case "complexity":
+			return findingsOutcome(
+				normalizeComplexityFindings(payload, "fallow:complexity"),
 			);
-			return { findings, verdict: findings.length === 0 ? "pass" : "fail" };
-		}
-		case "changed-scope-audit": {
-			if (payload.base_ref !== request.scope.base) {
-				throw new Error(
-					`expected audit base_ref ${JSON.stringify(request.scope.base)}, received ${JSON.stringify(payload.base_ref)}`,
-				);
-			}
-			const verdict = payload.verdict;
-			if (verdict !== "pass" && verdict !== "fail") {
-				throw new Error("expected audit verdict to be pass or fail");
-			}
-			const deadCode = objectRecord(payload.dead_code);
-			const duplication = objectRecord(payload.duplication);
-			const complexity = objectRecord(payload.complexity);
-			const invalidNestedEnvelope = [
-				["dead_code", payload.dead_code, deadCode],
-				["duplication", payload.duplication, duplication],
-				["complexity", payload.complexity, complexity],
-			].find(
-				([, value, normalized]) =>
-					value !== undefined && value !== null && normalized === null,
+		case "boundary-conformance":
+			return findingsOutcome(
+				normalizeBoundaryFindings(payload, "fallow:boundary-conformance"),
 			);
-			if (invalidNestedEnvelope !== undefined) {
-				throw new Error(
-					`expected audit ${String(invalidNestedEnvelope[0])} to be an object`,
-				);
-			}
-			if (
-				verdict === "fail" &&
-				(deadCode === null || duplication === null || complexity === null)
-			) {
-				throw new Error(
-					"expected audit dead_code, duplication, and complexity envelopes",
-				);
-			}
-			return {
-				verdict,
-				findings: [
-					...(deadCode === null
-						? []
-						: normalizeDeadCodeFindings(deadCode, "fallow:audit:dead-code")),
-					...(duplication === null
-						? []
-						: normalizeDuplicationFindings(
-								duplication,
-								"fallow:audit:duplication",
-							)),
-					...(complexity === null
-						? []
-						: normalizeComplexityFindings(
-								complexity,
-								"fallow:audit:complexity",
-							)),
-				],
-			};
-		}
+		case "changed-scope-audit":
+			return auditFindings(request, payload);
 	}
 }
 
@@ -1146,46 +1154,21 @@ function carriesErrorEnvelope(
 	);
 }
 
-async function executeFallowCapability(
+type CompletedFallowOutcome = Extract<
+	ProviderProcessOutcome,
+	{ kind: "code-exit" }
+>;
+
+interface ParsedFallowEnvelope {
+	readonly payload: unknown;
+	readonly record: Readonly<Record<string, unknown>>;
+}
+
+function parseFallowEnvelope(
 	runtime: FallowExecutionRuntime,
 	request: AnalysisRequest,
-	signal?: AbortSignal,
-): Promise<AnalysisResult> {
-	let args: readonly string[];
-	try {
-		args = capabilityArgs(request);
-	} catch (error) {
-		return providerFailure(runtime, request.capability, {
-			kind:
-				request.capability === "changed-scope-audit"
-					? "missing-base"
-					: "invalid-output",
-			message: error instanceof Error ? error.message : String(error),
-			process: {
-				reason: error instanceof Error ? error.message : String(error),
-			},
-		});
-	}
-
-	const outcome = await runtime.executeProcess(
-		{
-			executablePath: runtime.executablePath,
-			args,
-			cwd: runtime.projectRoot,
-		},
-		signal,
-	);
-	if (
-		outcome.kind !== "code-exit" ||
-		(outcome.code !== 0 && outcome.code !== 1)
-	) {
-		return providerFailure(
-			runtime,
-			request.capability,
-			processFailure(request.capability, outcome),
-		);
-	}
-
+	outcome: CompletedFallowOutcome,
+): ParsedFallowEnvelope {
 	let payload: unknown;
 	try {
 		payload = JSON.parse(outcome.stdout) as unknown;
@@ -1237,11 +1220,19 @@ async function executeFallowCapability(
 			},
 		});
 	}
+	return { payload, record };
+}
 
+function normalizedCapabilityResult(
+	runtime: FallowExecutionRuntime,
+	request: AnalysisRequest,
+	outcome: CompletedFallowOutcome,
+	envelope: ParsedFallowEnvelope,
+): AnalysisResult {
 	const native = {
 		providerId: FALLOW_PROVIDER_ID,
 		exitCode: outcome.code,
-		payload,
+		payload: envelope.payload,
 		stderr: outcome.stderr,
 	} as const;
 	try {
@@ -1252,7 +1243,7 @@ async function executeFallowCapability(
 				provider: runtime.provider,
 				scope: request.scope,
 				verdict: "not-applicable",
-				trace: normalizeTrace(request, record),
+				trace: normalizeTrace(request, envelope.record),
 				native,
 			};
 		}
@@ -1263,11 +1254,11 @@ async function executeFallowCapability(
 				provider: runtime.provider,
 				scope: request.scope,
 				verdict: "not-applicable",
-				proposals: normalizeFixProposals(record),
+				proposals: normalizeFixProposals(envelope.record),
 				native,
 			};
 		}
-		const normalized = analysisFindings(request, record);
+		const normalized = analysisFindings(request, envelope.record);
 		return {
 			kind: "findings",
 			capability: request.capability,
@@ -1288,4 +1279,51 @@ async function executeFallowCapability(
 			),
 		);
 	}
+}
+
+async function executeFallowCapability(
+	runtime: FallowExecutionRuntime,
+	request: AnalysisRequest,
+	signal?: AbortSignal,
+): Promise<AnalysisResult> {
+	let args: readonly string[];
+	try {
+		args = capabilityArgs(request);
+	} catch (error) {
+		return providerFailure(runtime, request.capability, {
+			kind:
+				request.capability === "changed-scope-audit"
+					? "missing-base"
+					: "invalid-output",
+			message: error instanceof Error ? error.message : String(error),
+			process: {
+				reason: error instanceof Error ? error.message : String(error),
+			},
+		});
+	}
+
+	const outcome = await runtime.executeProcess(
+		{
+			executablePath: runtime.executablePath,
+			args,
+			cwd: runtime.projectRoot,
+		},
+		signal,
+	);
+	if (
+		outcome.kind !== "code-exit" ||
+		(outcome.code !== 0 && outcome.code !== 1)
+	) {
+		return providerFailure(
+			runtime,
+			request.capability,
+			processFailure(request.capability, outcome),
+		);
+	}
+	return normalizedCapabilityResult(
+		runtime,
+		request,
+		outcome,
+		parseFallowEnvelope(runtime, request, outcome),
+	);
 }

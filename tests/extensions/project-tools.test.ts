@@ -319,7 +319,7 @@ describe("project-tools extension", () => {
 	});
 
 	// @cosmo-behavior plan:analysis-capability-runtime#B-005
-	test("lists every capability unbound in a Python project and every tool degrades", async () => {
+	test("reports and returns every capability unbound for a Python fixture", async () => {
 		const fixture = await createProjectFixture("python");
 		await writeFile(join(fixture.projectRoot, "pyproject.toml"), "[project]\n");
 		const pi = createMockPi({ cwd: fixture.projectRoot });
@@ -353,7 +353,7 @@ describe("project-tools extension", () => {
 	});
 
 	// @cosmo-behavior plan:analysis-capability-runtime#B-027
-	test("rejects empty scoped inputs before provider invocation", async () => {
+	test("rejects empty scopes and trace targets instead of widening", async () => {
 		const fixture = await createProjectFixture("invalid-input");
 		await writeFile(join(fixture.projectRoot, "fallow.toml"), "");
 		await grantConsent(fixture.projectRoot, fixture.userStateRoot);
