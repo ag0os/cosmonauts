@@ -1,7 +1,7 @@
 ---
 id: TASK-523
 title: Bound provider concurrency and peak copies without losing evidence
-status: To Do
+status: In Progress
 priority: high
 labels:
   - backend
@@ -12,7 +12,7 @@ labels:
   - 'plan:analysis-capability-runtime'
 dependencies: []
 createdAt: '2026-07-29T18:36:32.665Z'
-updatedAt: '2026-07-29T18:36:32.665Z'
+updatedAt: '2026-07-29T19:19:13.754Z'
 ---
 
 ## Description

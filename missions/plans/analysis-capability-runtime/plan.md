@@ -118,7 +118,7 @@ split itself.
   - Decided by: planner, amend-on-record, 2026-07-27
   - Supersedes: D-007 skill placement
 
-- **D-012 - Disable all provider writes, not only fix application**
+- **D-012 - Disable all provider writes, not only fix application** *(superseded by D-025, 2026-07-29)*
   - Decision: every analysis/introspection invocation includes the provider's no-cache option; version detection uses a non-writing version call; tests snapshot the worktree across status and every capability. Fix preview additionally requires dry-run.
   - Alternatives: ignore generated caches (still worktree mutation); clean caches afterward (mutates and risks deleting preexisting data); test only source files (too narrow).
   - Why: review PR-001 showed ordinary analysis writes `.fallow/cache.bin`/`churn.bin`; INV-5 and AC-008 cover every capability tool. (Cited finding is from a prior review round's numbering, not the parent plan's `review.md`; premise independently re-verified 2026-07-27 with a live run — `fallow dead-code` writes `.fallow/cache.bin` without `--no-cache`.)
@@ -206,6 +206,13 @@ split itself.
   - Why: serves the Intent goal by making each slice independently valuable and gate-clean. The retained legacy prose injection is what makes the seams safe: slice 1 adds the runtime without touching consumers, slice 2 swaps consumers and deletes the bridge in the same stage, slice 3 extends procedures onto the surface slice 2 distributed.
   - Decided by: human, user-chose-among-options, 2026-07-29
   - Supersedes: the parent plan's single-backlog delivery and the "decide at task creation" wording of its Implementation Order slice-boundary note
+
+- **D-025 - Enforce provider read-only execution outside the provider contract**
+  - Decision: every provider subprocess runs through an OS-enforced sandbox that denies writes outside a runner-owned private temporary directory, presents the target project read-only, and supplies a fixed allowlisted environment with no inherited host variables. macOS uses `sandbox-exec`; Linux uses `bwrap`. If the applicable boundary executable is absent or the sandbox cannot start, provider execution fails unavailable rather than spawning unsandboxed. Provider no-cache and fix dry-run flags remain defense in depth, not the INV-5 boundary.
+  - Alternatives: trust no-cache/dry-run flags (a malicious project-controlled executable can ignore them); recursively change project permissions (mutates the checkout, races other processes, and does not protect user files); copy the project to a temporary tree (breaks project identity and Git behavior while still requiring a confinement boundary for host files); clean changes afterward (too late for secrets or writes outside the project).
+  - Why: security review SR-001 proved consent authorizes execution but does not authorize repository mutation or host credential inheritance. INV-5 requires the write prohibition to be enforced independently of repository-controlled provider behavior.
+  - Decided by: implementation agent, amend-on-record for TASK-522, 2026-07-29
+  - Supersedes: D-012's reliance on provider arguments and worktree snapshots as the enforcement mechanism
 
 ## Behaviors
 
