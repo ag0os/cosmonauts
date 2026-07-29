@@ -12,7 +12,7 @@ labels:
   - 'plan:analysis-capability-runtime'
 dependencies: []
 createdAt: '2026-07-29T18:36:32.636Z'
-updatedAt: '2026-07-29T18:36:32.636Z'
+updatedAt: '2026-07-29T19:05:02.163Z'
 ---
 
 ## Description
