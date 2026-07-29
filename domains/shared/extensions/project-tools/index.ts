@@ -48,6 +48,24 @@ interface AnalysisSessionSnapshot {
 	readonly runtime?: DetectedFallowDiscovery["runtime"];
 }
 
+interface SnapshotDiscovery {
+	readonly cwd: string;
+	readonly controller: AbortController;
+	readonly consumers: Set<symbol>;
+	readonly promise: Promise<AnalysisSessionSnapshot>;
+	settled: boolean;
+}
+
+class AnalysisDiscoveryAbortedError extends Error {
+	readonly reason: unknown;
+
+	constructor(reason: unknown) {
+		super(reason instanceof Error ? reason.message : String(reason));
+		this.name = "AnalysisDiscoveryAbortedError";
+		this.reason = reason;
+	}
+}
+
 export interface ProjectToolsExtensionDeps {
 	readonly userStateRoot?: string;
 	readonly configuredExecutablePath?: string;
@@ -407,6 +425,21 @@ function throwProviderFailure(
 	});
 }
 
+function discoveryAbortFailure(
+	error: AnalysisDiscoveryAbortedError,
+): AnalysisFailure {
+	return {
+		kind: "aborted",
+		message: "Fallow discovery was aborted.",
+		process: {
+			reason:
+				error.reason instanceof Error
+					? error.reason.message
+					: String(error.reason),
+		},
+	};
+}
+
 function nonreadyResult(
 	resolution: Exclude<AnalysisRequestResolution, { readonly kind: "ready" }>,
 ): ReturnType<typeof textResult> {
@@ -427,7 +460,10 @@ function registerCapabilityTool(
 		readonly label: string;
 		readonly description: string;
 		readonly parameters: ReturnType<typeof Type.Object>;
-		readonly getSnapshot: (cwd: string) => Promise<AnalysisSessionSnapshot>;
+		readonly getSnapshot: (
+			cwd: string,
+			signal?: AbortSignal,
+		) => Promise<AnalysisSessionSnapshot>;
 	},
 ): void {
 	pi.registerTool({
@@ -438,7 +474,19 @@ function registerCapabilityTool(
 		executionMode: "parallel",
 		execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
 			const request = parseCapabilityRequest(options.capability, params);
-			const snapshot = await options.getSnapshot(ctx.cwd);
+			let snapshot: AnalysisSessionSnapshot;
+			try {
+				snapshot = await options.getSnapshot(ctx.cwd, signal);
+			} catch (error) {
+				if (error instanceof AnalysisDiscoveryAbortedError) {
+					return throwProviderFailure(
+						options.capability,
+						FALLOW_PROVIDER_ID,
+						discoveryAbortFailure(error),
+					);
+				}
+				throw error;
+			}
 			const resolution = resolveAnalysisRequest(snapshot.bindings, request);
 			if (resolution.kind !== "ready") return nonreadyResult(resolution);
 			if (snapshot.runtime === undefined) {
@@ -464,18 +512,26 @@ export function createProjectToolsExtension(
 	const discoverProvider = deps.discoverProvider ?? discoverFallowProvider;
 
 	return function projectToolsExtension(pi: ExtensionAPI): void {
-		let snapshotCwd: string | undefined;
-		let snapshotPromise: Promise<AnalysisSessionSnapshot> | undefined;
+		let snapshotDiscovery: SnapshotDiscovery | undefined;
 
-		const clearSnapshot = (): void => {
-			snapshotCwd = undefined;
-			snapshotPromise = undefined;
+		const clearSnapshot = (reason: string): void => {
+			const obsoleteDiscovery = snapshotDiscovery;
+			snapshotDiscovery = undefined;
+			if (obsoleteDiscovery !== undefined && !obsoleteDiscovery.settled) {
+				obsoleteDiscovery.controller.abort(
+					new AnalysisDiscoveryAbortedError(reason),
+				);
+			}
 		};
 
 		const discoverSnapshot = async (
 			cwd: string,
+			signal: AbortSignal,
 		): Promise<AnalysisSessionSnapshot> => {
 			const config = await loadConfig(cwd);
+			if (signal.aborted) {
+				throw new AnalysisDiscoveryAbortedError(signal.reason);
+			}
 			const providerPreference = config.analysis?.provider;
 			if (
 				providerPreference !== undefined &&
@@ -495,6 +551,7 @@ export function createProjectToolsExtension(
 				injectedExecutablePath: deps.injectedExecutablePath,
 				userStateRoot: deps.userStateRoot,
 				executeProcess: deps.executeProcess,
+				signal,
 			});
 			const bindings =
 				providerPreference !== undefined && discovery.status === "absent"
@@ -511,12 +568,101 @@ export function createProjectToolsExtension(
 			};
 		};
 
-		const getSnapshot = (cwd: string): Promise<AnalysisSessionSnapshot> => {
-			if (snapshotPromise === undefined || snapshotCwd !== cwd) {
-				snapshotCwd = cwd;
-				snapshotPromise = discoverSnapshot(cwd);
+		const createSnapshotDiscovery = (cwd: string): SnapshotDiscovery => {
+			const controller = new AbortController();
+			let discovery: SnapshotDiscovery;
+			const promise = discoverSnapshot(cwd, controller.signal);
+			discovery = {
+				cwd,
+				controller,
+				consumers: new Set(),
+				promise,
+				settled: false,
+			};
+			void promise.then(
+				() => {
+					discovery.settled = true;
+				},
+				() => {
+					discovery.settled = true;
+				},
+			);
+			return discovery;
+		};
+
+		const releaseConsumer = (
+			discovery: SnapshotDiscovery,
+			consumer: symbol,
+			abortReason?: unknown,
+		): void => {
+			discovery.consumers.delete(consumer);
+			if (
+				abortReason === undefined ||
+				discovery.settled ||
+				discovery.consumers.size > 0
+			) {
+				return;
 			}
-			return snapshotPromise;
+			if (snapshotDiscovery === discovery) snapshotDiscovery = undefined;
+			discovery.controller.abort(
+				new AnalysisDiscoveryAbortedError(abortReason),
+			);
+		};
+
+		const waitForSnapshot = (
+			discovery: SnapshotDiscovery,
+			signal?: AbortSignal,
+		): Promise<AnalysisSessionSnapshot> => {
+			if (signal?.aborted) {
+				return Promise.reject(new AnalysisDiscoveryAbortedError(signal.reason));
+			}
+			const consumer = Symbol("snapshot-consumer");
+			discovery.consumers.add(consumer);
+			return new Promise((resolve, reject) => {
+				let finished = false;
+				const finish = (): boolean => {
+					if (finished) return false;
+					finished = true;
+					signal?.removeEventListener("abort", abort);
+					return true;
+				};
+				const abort = (): void => {
+					if (!finish()) return;
+					releaseConsumer(discovery, consumer, signal?.reason);
+					reject(new AnalysisDiscoveryAbortedError(signal?.reason));
+				};
+
+				signal?.addEventListener("abort", abort, { once: true });
+				if (signal?.aborted) {
+					abort();
+					return;
+				}
+				discovery.promise.then(
+					(snapshot) => {
+						if (!finish()) return;
+						releaseConsumer(discovery, consumer);
+						resolve(snapshot);
+					},
+					(error: unknown) => {
+						if (!finish()) return;
+						releaseConsumer(discovery, consumer);
+						reject(error);
+					},
+				);
+			});
+		};
+
+		const getSnapshot = (
+			cwd: string,
+			signal?: AbortSignal,
+		): Promise<AnalysisSessionSnapshot> => {
+			if (snapshotDiscovery === undefined || snapshotDiscovery.cwd !== cwd) {
+				if (snapshotDiscovery !== undefined) {
+					clearSnapshot("Analysis discovery cwd changed.");
+				}
+				snapshotDiscovery = createSnapshotDiscovery(cwd);
+			}
+			return waitForSnapshot(snapshotDiscovery, signal);
 		};
 
 		pi.registerTool({
@@ -526,10 +672,10 @@ export function createProjectToolsExtension(
 				"Report the binding state, provider, scopes, metrics, and diagnostic reason for every analysis capability.",
 			parameters: Type.Object({}, { additionalProperties: false }),
 			executionMode: "parallel",
-			execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+			execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
 				const parsed = paramsObject(params, "analysis_status");
 				assertOnlyKeys(parsed, [], "analysis_status");
-				const snapshot = await getSnapshot(ctx.cwd);
+				const snapshot = await getSnapshot(ctx.cwd, signal);
 				return textResult({
 					kind: "status",
 					capabilities: snapshot.bindings,
@@ -613,10 +759,10 @@ export function createProjectToolsExtension(
 		});
 
 		pi.on("session_start", async () => {
-			clearSnapshot();
+			clearSnapshot("Analysis session started.");
 		});
 		pi.on("session_shutdown", async () => {
-			clearSnapshot();
+			clearSnapshot("Analysis session shut down.");
 		});
 		pi.on("before_agent_start", async (event, ctx) => {
 			const [tools, snapshot] = await Promise.all([

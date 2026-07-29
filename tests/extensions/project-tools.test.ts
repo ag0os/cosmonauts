@@ -16,7 +16,10 @@ import {
 import projectToolsExtension, {
 	createProjectToolsExtension,
 } from "../../domains/shared/extensions/project-tools/index.ts";
-import type { ProviderProcessExecutor } from "../../domains/shared/extensions/project-tools/process-runner.ts";
+import {
+	type ProviderProcessExecutor,
+	runProviderProcess,
+} from "../../domains/shared/extensions/project-tools/process-runner.ts";
 import {
 	ANALYSIS_CAPABILITIES,
 	ANALYSIS_TOOL_NAMES,
@@ -452,6 +455,291 @@ describe("project-tools extension", () => {
 		expect(Date.now() - abortStartedAt).toBeLessThan(2_000);
 		await waitFor(() => !processExists(pid));
 		expect(processExists(pid)).toBe(false);
+	});
+
+	test.each([
+		"version",
+		"config",
+	] as const)("aborting first-use during %s discovery terminates introspection and reports failure", async (phase) => {
+		const fixture = await createProjectFixture(`cold-${phase}-cancellation`);
+		await writeFile(join(fixture.projectRoot, "fallow.toml"), "");
+		await grantConsent(fixture.projectRoot, fixture.userStateRoot);
+		const pidPath = join(tmpDir, `${phase}-discovery-child.pid`);
+		const executable = join(tmpDir, `${phase}-discovery-fallow`);
+		await writeFile(executable, "#!/bin/sh\nexit 0\n");
+		await chmod(executable, 0o755);
+		const executeProcess: ProviderProcessExecutor = (
+			invocation,
+			signal,
+			options,
+		) => {
+			const operation = invocation.args.includes("--version")
+				? "version"
+				: "config";
+			if (operation !== phase) {
+				return Promise.resolve(
+					operation === "version"
+						? {
+								kind: "code-exit",
+								code: 0,
+								stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+								stderr: "",
+							}
+						: {
+								kind: "code-exit",
+								code: 3,
+								stdout: "defaults in effect\n",
+								stderr: "",
+							},
+				);
+			}
+			return runProviderProcess(
+				{
+					executablePath: process.execPath,
+					args: [
+						"-e",
+						[
+							'const { writeFileSync } = require("node:fs");',
+							`writeFileSync(${JSON.stringify(pidPath)}, String(process.pid));`,
+							'process.on("SIGTERM", () => {});',
+							"setTimeout(() => process.exit(0), 10_000);",
+						].join("\n"),
+					],
+					cwd: invocation.cwd,
+				},
+				signal,
+				options,
+			);
+		};
+		const pi = createMockPi({ cwd: fixture.projectRoot });
+		createProjectToolsExtension({
+			userStateRoot: fixture.userStateRoot,
+			injectedExecutablePath: executable,
+			executeProcess,
+		})(pi as never);
+		const controller = new AbortController();
+		const execution = pi.callTool("analysis_dead_code", {}, controller.signal);
+		const executionOutcome = execution.then(
+			(value) => ({ kind: "resolved", value }) as const,
+			(error: unknown) => ({ kind: "rejected", error }) as const,
+		);
+		await waitFor(async () => {
+			try {
+				await readFile(pidPath, "utf8");
+				return true;
+			} catch {
+				return false;
+			}
+		}, 5_000);
+		const pid = Number(await readFile(pidPath, "utf8"));
+		const abortStartedAt = Date.now();
+
+		controller.abort(new Error(`cancelled during ${phase} discovery`));
+
+		const outcome = await executionOutcome;
+		expect(outcome.kind).toBe("rejected");
+		expect(outcome.kind === "rejected" ? outcome.error : undefined).toEqual(
+			expect.objectContaining({
+				failureClass: "aborted",
+			}),
+		);
+		expect(String(outcome.kind === "rejected" ? outcome.error : "")).toMatch(
+			new RegExp(
+				`Failure class: aborted[\\s\\S]*cancelled during ${phase} discovery`,
+				"u",
+			),
+		);
+		await waitFor(() => !processExists(pid), 5_000);
+		expect(Date.now() - abortStartedAt).toBeLessThan(5_000);
+		expect(processExists(pid)).toBe(false);
+	}, 15_000);
+
+	test.each([
+		"session_start",
+		"session_shutdown",
+	] as const)("%s aborts obsolete discovery and a later call discovers afresh", async (lifecycleEvent) => {
+		const fixture = await createProjectFixture(`${lifecycleEvent}-discovery`);
+		await writeFile(join(fixture.projectRoot, "fallow.toml"), "");
+		await grantConsent(fixture.projectRoot, fixture.userStateRoot);
+		const pidPath = join(tmpDir, `${lifecycleEvent}-discovery-child.pid`);
+		const executable = join(tmpDir, `${lifecycleEvent}-discovery-fallow`);
+		await writeFile(executable, "#!/bin/sh\nexit 0\n");
+		await chmod(executable, 0o755);
+		let versionInvocationCount = 0;
+		const executeProcess: ProviderProcessExecutor = (
+			invocation,
+			signal,
+			options,
+		) => {
+			if (!invocation.args.includes("--version")) {
+				return Promise.resolve({
+					kind: "code-exit",
+					code: 3,
+					stdout: "defaults in effect\n",
+					stderr: "",
+				});
+			}
+			versionInvocationCount += 1;
+			if (versionInvocationCount > 1) {
+				return Promise.resolve({
+					kind: "code-exit",
+					code: 0,
+					stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+					stderr: "",
+				});
+			}
+			return runProviderProcess(
+				{
+					executablePath: process.execPath,
+					args: [
+						"-e",
+						[
+							'const { writeFileSync } = require("node:fs");',
+							`writeFileSync(${JSON.stringify(pidPath)}, String(process.pid));`,
+							'process.on("SIGTERM", () => {});',
+							"setTimeout(() => process.exit(0), 10_000);",
+						].join("\n"),
+					],
+					cwd: invocation.cwd,
+				},
+				signal,
+				options,
+			);
+		};
+		const pi = createMockPi({ cwd: fixture.projectRoot });
+		createProjectToolsExtension({
+			userStateRoot: fixture.userStateRoot,
+			injectedExecutablePath: executable,
+			executeProcess,
+		})(pi as never);
+		const obsoleteStatus = pi.callTool("analysis_status", {});
+		await waitFor(async () => {
+			try {
+				await readFile(pidPath, "utf8");
+				return true;
+			} catch {
+				return false;
+			}
+		}, 5_000);
+		const pid = Number(await readFile(pidPath, "utf8"));
+		const resetStartedAt = Date.now();
+
+		await pi.fireEvent(lifecycleEvent);
+
+		const obsoleteDetails = resultDetails(await obsoleteStatus);
+		expect(obsoleteDetails.capabilities).toSatisfy(
+			(capabilities: unknown) =>
+				Array.isArray(capabilities) &&
+				capabilities.every(
+					(binding) =>
+						typeof binding === "object" &&
+						binding !== null &&
+						(binding as { state?: string }).state === "failed",
+				),
+		);
+		await waitFor(() => !processExists(pid), 5_000);
+		expect(Date.now() - resetStartedAt).toBeLessThan(5_000);
+
+		const freshDetails = resultDetails(
+			await pi.callTool("analysis_status", {}),
+		);
+		expect(freshDetails.capabilities).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					state: "bound",
+					capability: "dead-code",
+				}),
+			]),
+		);
+		expect(versionInvocationCount).toBe(2);
+	}, 15_000);
+
+	test("one cancelled caller detaches without aborting shared discovery needed by another", async () => {
+		const fixture = await createProjectFixture("shared-discovery");
+		await writeFile(join(fixture.projectRoot, "fallow.toml"), "");
+		await grantConsent(fixture.projectRoot, fixture.userStateRoot);
+		const executable = join(tmpDir, "shared-discovery-fallow");
+		await writeFile(executable, "#!/bin/sh\nexit 0\n");
+		await chmod(executable, 0o755);
+		let releaseVersion: (() => void) | undefined;
+		const versionGate = new Promise<void>((resolve) => {
+			releaseVersion = resolve;
+		});
+		const invocations: Parameters<ProviderProcessExecutor>[0][] = [];
+		const discoverySignals: (AbortSignal | undefined)[] = [];
+		const executeProcess: ProviderProcessExecutor = async (
+			invocation,
+			signal,
+		) => {
+			invocations.push(invocation);
+			discoverySignals.push(signal);
+			if (invocation.args.includes("--version")) {
+				await versionGate;
+				return {
+					kind: "code-exit",
+					code: 0,
+					stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+					stderr: "",
+				};
+			}
+			if (invocation.args[0] === "config") {
+				return {
+					kind: "code-exit",
+					code: 3,
+					stdout: "defaults in effect\n",
+					stderr: "",
+				};
+			}
+			return {
+				kind: "aborted",
+				reason: signal?.reason,
+				stdout: "",
+				stderr: "",
+			};
+		};
+		const pi = createMockPi({ cwd: fixture.projectRoot });
+		createProjectToolsExtension({
+			userStateRoot: fixture.userStateRoot,
+			injectedExecutablePath: executable,
+			executeProcess,
+		})(pi as never);
+		const controller = new AbortController();
+		const cancelledCall = pi.callTool(
+			"analysis_dead_code",
+			{},
+			controller.signal,
+		);
+		const activeCall = pi.callTool("analysis_status", {});
+		await waitFor(() => invocations.length === 1);
+
+		controller.abort(new Error("only one caller cancelled"));
+		const cancellationState = await Promise.race([
+			cancelledCall.then(
+				() => "resolved",
+				() => "rejected",
+			),
+			new Promise<"pending">((resolve) =>
+				setTimeout(() => resolve("pending"), 200),
+			),
+		]);
+		releaseVersion?.();
+
+		const activeDetails = resultDetails(await activeCall);
+		await expect(cancelledCall).rejects.toThrow(
+			/Failure class: aborted[\s\S]*only one caller cancelled/u,
+		);
+		expect(cancellationState).toBe("rejected");
+		expect(activeDetails.capabilities).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					state: "bound",
+					capability: "dead-code",
+				}),
+			]),
+		);
+		expect(invocations).toHaveLength(2);
+		expect(discoverySignals[0]?.aborted).toBe(false);
+		expect(discoverySignals[1]).toBe(discoverySignals[0]);
 	});
 
 	describe("fallow detection", () => {

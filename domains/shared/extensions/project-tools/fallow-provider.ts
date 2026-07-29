@@ -104,6 +104,8 @@ interface DiscoverFallowProviderOptions {
 	/** User-owned state root containing the per-project consent decision. */
 	readonly userStateRoot?: string;
 	readonly executeProcess?: ProviderProcessExecutor;
+	/** Session-owned cancellation for version/config discovery subprocesses. */
+	readonly signal?: AbortSignal;
 }
 
 interface FallowConfig {
@@ -385,33 +387,78 @@ function failedDiscovery(
 	};
 }
 
+function abortedDiscovery(
+	detectionSignal: FallowDetectionSignal,
+	operation: string,
+	abortSignal: AbortSignal,
+	outcome?: ProviderProcessOutcome,
+): FallowProviderDiscovery {
+	return failedDiscovery(
+		detectionSignal,
+		processFailure(operation, {
+			kind: "aborted",
+			reason: abortSignal.reason,
+			stdout: outcome?.stdout ?? "",
+			stderr: outcome?.stderr ?? "",
+		}),
+	);
+}
+
 async function introspectProvider(
 	options: DiscoverFallowProviderOptions,
-	signal: FallowDetectionSignal,
+	detectionSignal: FallowDetectionSignal,
 	executablePath: string,
 	executeProcess: ProviderProcessExecutor,
 ): Promise<FallowProviderDiscovery> {
-	const versionOutcome = await executeProcess({
-		executablePath,
-		args: ["--version"],
-		cwd: options.projectRoot,
-	});
+	if (options.signal?.aborted) {
+		return abortedDiscovery(detectionSignal, "version", options.signal);
+	}
+	const versionOutcome = await executeProcess(
+		{
+			executablePath,
+			args: ["--version"],
+			cwd: options.projectRoot,
+		},
+		options.signal,
+	);
+	if (options.signal?.aborted) {
+		return abortedDiscovery(
+			detectionSignal,
+			"version",
+			options.signal,
+			versionOutcome,
+		);
+	}
 	if (versionOutcome.kind !== "code-exit" || versionOutcome.code !== 0) {
-		return failedDiscovery(signal, processFailure("version", versionOutcome));
+		return failedDiscovery(
+			detectionSignal,
+			processFailure("version", versionOutcome),
+		);
 	}
 	const version = parseVersion(versionOutcome.stdout);
 	if (version === null) {
 		return failedDiscovery(
-			signal,
+			detectionSignal,
 			invalidOutput("version", "expected `fallow <version>`"),
 		);
 	}
 
-	const configOutcome = await executeProcess({
-		executablePath,
-		args: ["config", "--format", "json", "--quiet", "--no-cache"],
-		cwd: options.projectRoot,
-	});
+	const configOutcome = await executeProcess(
+		{
+			executablePath,
+			args: ["config", "--format", "json", "--quiet", "--no-cache"],
+			cwd: options.projectRoot,
+		},
+		options.signal,
+	);
+	if (options.signal?.aborted) {
+		return abortedDiscovery(
+			detectionSignal,
+			"config",
+			options.signal,
+			configOutcome,
+		);
+	}
 	let config: FallowConfig | null;
 	if (configOutcome.kind === "code-exit" && configOutcome.code === 3) {
 		config = null;
@@ -419,12 +466,15 @@ async function introspectProvider(
 		config = parseConfig(configOutcome.stdout);
 		if (config === null) {
 			return failedDiscovery(
-				signal,
+				detectionSignal,
 				invalidOutput("config", "expected a JSON object after any preamble"),
 			);
 		}
 	} else {
-		return failedDiscovery(signal, processFailure("config", configOutcome));
+		return failedDiscovery(
+			detectionSignal,
+			processFailure("config", configOutcome),
+		);
 	}
 
 	const provider = {
@@ -448,7 +498,7 @@ async function introspectProvider(
 	};
 	return {
 		status: "detected",
-		signal,
+		signal: detectionSignal,
 		detection,
 		bindings: resolveAnalysisBindings({ detections: [detection] }),
 		runtime: {
@@ -469,8 +519,8 @@ async function introspectProvider(
 export async function discoverFallowProvider(
 	options: DiscoverFallowProviderOptions,
 ): Promise<FallowProviderDiscovery> {
-	const signal = await detectFallowSignal(options.projectRoot);
-	if (signal === null) {
+	const detectionSignal = await detectFallowSignal(options.projectRoot);
+	if (detectionSignal === null) {
 		const detection = {
 			status: "absent",
 			providerId: FALLOW_PROVIDER_ID,
@@ -481,15 +531,21 @@ export async function discoverFallowProvider(
 			bindings: resolveAnalysisBindings({ detections: [detection] }),
 		};
 	}
+	if (options.signal?.aborted) {
+		return abortedDiscovery(detectionSignal, "discovery", options.signal);
+	}
 
 	const executablePath = await resolveFallowExecutable(options);
 	if (executablePath === null) {
 		return {
 			status: "unbound",
-			signal,
+			signal: detectionSignal,
 			reason: "provider-not-installed",
 			bindings: providerNotAvailableBindings("provider-not-installed"),
 		};
+	}
+	if (options.signal?.aborted) {
+		return abortedDiscovery(detectionSignal, "discovery", options.signal);
 	}
 
 	const consented = await hasAnalysisExecutionConsent({
@@ -497,10 +553,13 @@ export async function discoverFallowProvider(
 		providerId: FALLOW_PROVIDER_ID,
 		userStateRoot: options.userStateRoot,
 	});
+	if (options.signal?.aborted) {
+		return abortedDiscovery(detectionSignal, "discovery", options.signal);
+	}
 	if (!consented) {
 		return {
 			status: "unbound",
-			signal,
+			signal: detectionSignal,
 			reason: "execution-not-consented",
 			bindings: providerNotAvailableBindings("execution-not-consented"),
 		};
@@ -508,7 +567,7 @@ export async function discoverFallowProvider(
 
 	return introspectProvider(
 		options,
-		signal,
+		detectionSignal,
 		executablePath,
 		options.executeProcess ?? runProviderProcess,
 	);
