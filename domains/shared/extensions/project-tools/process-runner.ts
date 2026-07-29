@@ -1,27 +1,13 @@
 import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
-import {
-	access,
-	constants,
-	mkdir,
-	mkdtemp,
-	readFile,
-	realpath,
-	rm,
-} from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { finished } from "node:stream/promises";
 
 export const DEFAULT_PROVIDER_TIMEOUT_MS = 30_000;
 export const DEFAULT_TERMINATION_GRACE_MS = 250;
 export const DEFAULT_FORCE_KILL_WAIT_MS = 1_000;
-const SANDBOX_UNAVAILABLE_CODE = "SANDBOX_UNAVAILABLE";
-const MACOS_SANDBOX_EXECUTABLE = "/usr/bin/sandbox-exec";
-const LINUX_SANDBOX_EXECUTABLE_CANDIDATES = [
-	"/usr/bin/bwrap",
-	"/bin/bwrap",
-] as const;
 const PROVIDER_STDOUT_SPOOL = "provider-stdout.log";
 const PROVIDER_STDERR_SPOOL = "provider-stderr.log";
 const OUTPUT_CAPTURE_FAILED_CODE = "OUTPUT_CAPTURE_FAILED";
@@ -35,10 +21,8 @@ export interface ProviderProcessInvocation {
 interface ProviderProcessRunOptions {
 	readonly timeoutMs?: number;
 	readonly terminationGraceMs?: number;
-	/** Test seam that can only select another enforced boundary or fail closed. */
-	readonly sandboxPlatform?: NodeJS.Platform;
-	/** Test-only lifecycle observer; cannot change the prepared boundary. */
-	readonly onSandboxReady?: (tempRoot: string) => void;
+	/** Test-only lifecycle observer; cannot change output capture behavior. */
+	readonly onOutputSpoolReady?: (outputSpoolRoot: string) => void;
 }
 
 interface ProviderProcessOutput {
@@ -91,14 +75,6 @@ type InitiatedTermination =
 const PROCESS_TREE_CLEANUP_FAILED_CODE = "PROCESS_TREE_CLEANUP_FAILED";
 const PROCESS_TREE_POLL_MS = 10;
 
-interface PreparedProviderSandbox {
-	readonly executablePath: string;
-	readonly args: readonly string[];
-	readonly cwd: string;
-	readonly env: Readonly<Record<string, string>>;
-	readonly tempRoot: string;
-}
-
 function finiteTimeout(value: number | undefined): number {
 	return value !== undefined && Number.isFinite(value) && value > 0
 		? value
@@ -118,172 +94,6 @@ function errorWithOptionalCode(
 		return Object.assign(error, { code: error.code });
 	}
 	return error;
-}
-
-function sandboxUnavailable(
-	message: string,
-): Error & { readonly code: string } {
-	return Object.assign(new Error(message), {
-		code: SANDBOX_UNAVAILABLE_CODE,
-	});
-}
-
-async function executableAvailable(path: string): Promise<boolean> {
-	try {
-		await access(path, constants.X_OK);
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-async function resolveSandboxExecutable(
-	platform: NodeJS.Platform,
-): Promise<string> {
-	if (platform === "darwin") {
-		if (await executableAvailable(MACOS_SANDBOX_EXECUTABLE)) {
-			return MACOS_SANDBOX_EXECUTABLE;
-		}
-		throw sandboxUnavailable(
-			`Provider sandbox boundary is unavailable at ${MACOS_SANDBOX_EXECUTABLE}.`,
-		);
-	}
-
-	if (platform === "linux") {
-		for (const candidate of LINUX_SANDBOX_EXECUTABLE_CANDIDATES) {
-			if (await executableAvailable(candidate)) return candidate;
-		}
-		throw sandboxUnavailable(
-			"Provider sandbox boundary is unavailable: bubblewrap was not found.",
-		);
-	}
-
-	throw sandboxUnavailable(
-		`Provider sandbox boundary is unavailable on ${platform}.`,
-	);
-}
-
-function providerPath(): string {
-	return [
-		dirname(process.execPath),
-		"/opt/homebrew/bin",
-		"/usr/local/bin",
-		"/usr/bin",
-		"/bin",
-		"/usr/sbin",
-		"/sbin",
-	]
-		.filter((path, index, paths) => paths.indexOf(path) === index)
-		.join(":");
-}
-
-function providerEnvironment(
-	tempRoot: string,
-	platform: NodeJS.Platform,
-): Readonly<Record<string, string>> {
-	const home = join(tempRoot, "home");
-	const temporary = join(tempRoot, "tmp");
-	return {
-		HOME: home,
-		TMPDIR: temporary,
-		TMP: temporary,
-		TEMP: temporary,
-		PATH: providerPath(),
-		LANG: "C",
-		LC_ALL: "C",
-		NO_COLOR: "1",
-		GIT_CONFIG_NOSYSTEM: "1",
-		GIT_CONFIG_GLOBAL: "/dev/null",
-		GIT_TERMINAL_PROMPT: "0",
-		...(platform === "darwin"
-			? { __CF_USER_TEXT_ENCODING: "0x0:0x0:0x0" }
-			: {}),
-	};
-}
-
-function macosSandboxProfile(tempRoot: string): string {
-	return [
-		"(version 1)",
-		"(deny default)",
-		"(allow process*)",
-		"(allow file-read*)",
-		"(allow sysctl-read)",
-		'(allow file-write* (literal "/dev/null"))',
-		`(allow file-write* (subpath ${JSON.stringify(tempRoot)}))`,
-	].join("");
-}
-
-async function prepareProviderSandbox(
-	invocation: ProviderProcessInvocation,
-	options?: ProviderProcessRunOptions,
-): Promise<PreparedProviderSandbox> {
-	await access(invocation.executablePath, constants.X_OK);
-	const platform = options?.sandboxPlatform ?? process.platform;
-	const sandboxExecutable = await resolveSandboxExecutable(platform);
-	const createdTempRoot = await mkdtemp(
-		join(tmpdir(), "cosmonauts-provider-sandbox-"),
-	);
-	const tempRoot = await realpath(createdTempRoot);
-	await Promise.all([
-		mkdir(join(tempRoot, "home"), { mode: 0o700 }),
-		mkdir(join(tempRoot, "tmp"), { mode: 0o700 }),
-	]);
-	const env = providerEnvironment(tempRoot, platform);
-
-	if (platform === "darwin") {
-		return {
-			executablePath: sandboxExecutable,
-			args: [
-				"-p",
-				macosSandboxProfile(tempRoot),
-				invocation.executablePath,
-				...invocation.args,
-			],
-			cwd: invocation.cwd,
-			env,
-			tempRoot,
-		};
-	}
-
-	if (platform === "linux") {
-		return {
-			executablePath: sandboxExecutable,
-			args: [
-				"--die-with-parent",
-				"--unshare-all",
-				"--new-session",
-				"--ro-bind",
-				"/",
-				"/",
-				"--dev",
-				"/dev",
-				"--proc",
-				"/proc",
-				"--bind",
-				tempRoot,
-				tempRoot,
-				"--chdir",
-				invocation.cwd,
-				"--clearenv",
-				...Object.entries(env).flatMap(([key, value]) => [
-					"--setenv",
-					key,
-					value,
-				]),
-				"--",
-				invocation.executablePath,
-				...invocation.args,
-			],
-			cwd: invocation.cwd,
-			env,
-			tempRoot,
-		};
-	}
-
-	await rm(tempRoot, { recursive: true, force: true });
-	throw sandboxUnavailable(
-		`Provider sandbox boundary is unavailable on ${platform}.`,
-	);
 }
 
 function terminationOutcome(
@@ -401,9 +211,11 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 
 	const timeoutMs = finiteTimeout(options?.timeoutMs);
 	const terminationGraceMs = finiteGracePeriod(options?.terminationGraceMs);
-	let sandbox: PreparedProviderSandbox;
+	let outputSpoolRoot: string;
 	try {
-		sandbox = await prepareProviderSandbox(invocation, options);
+		outputSpoolRoot = await mkdtemp(
+			join(tmpdir(), "cosmonauts-provider-output-"),
+		);
 	} catch (error) {
 		const spawnError =
 			error instanceof Error ? error : new Error(String(error));
@@ -415,7 +227,7 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 		};
 	}
 	if (signal?.aborted) {
-		await rm(sandbox.tempRoot, { recursive: true, force: true });
+		await rm(outputSpoolRoot, { recursive: true, force: true });
 		return {
 			kind: "aborted",
 			reason: signal.reason,
@@ -424,9 +236,9 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 		};
 	}
 	try {
-		options?.onSandboxReady?.(sandbox.tempRoot);
+		options?.onOutputSpoolReady?.(outputSpoolRoot);
 	} catch (error) {
-		await rm(sandbox.tempRoot, { recursive: true, force: true });
+		await rm(outputSpoolRoot, { recursive: true, force: true });
 		const spawnError =
 			error instanceof Error ? error : new Error(String(error));
 		return {
@@ -451,9 +263,8 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 
 			let child: ReturnType<typeof spawn>;
 			try {
-				child = spawn(sandbox.executablePath, [...sandbox.args], {
-					cwd: sandbox.cwd,
-					env: sandbox.env,
+				child = spawn(invocation.executablePath, [...invocation.args], {
+					cwd: invocation.cwd,
 					detached: process.platform !== "win32",
 					shell: false,
 					stdio: ["ignore", "pipe", "pipe"],
@@ -471,8 +282,8 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 				return;
 			}
 
-			const stdoutPath = join(sandbox.tempRoot, PROVIDER_STDOUT_SPOOL);
-			const stderrPath = join(sandbox.tempRoot, PROVIDER_STDERR_SPOOL);
+			const stdoutPath = join(outputSpoolRoot, PROVIDER_STDOUT_SPOOL);
+			const stderrPath = join(outputSpoolRoot, PROVIDER_STDERR_SPOOL);
 			const stdoutSink = createWriteStream(stdoutPath, { flags: "wx" });
 			const stderrSink = createWriteStream(stderrPath, { flags: "wx" });
 			const stdoutFinished = finished(stdoutSink);
@@ -730,6 +541,6 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 			}, timeoutMs);
 		});
 	} finally {
-		await rm(sandbox.tempRoot, { recursive: true, force: true });
+		await rm(outputSpoolRoot, { recursive: true, force: true });
 	}
 };

@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -7,11 +7,9 @@ import {
 	DEFAULT_TERMINATION_GRACE_MS,
 	runProviderProcess,
 } from "../../domains/shared/extensions/project-tools/process-runner.ts";
-import { useTempDir } from "../helpers/fs.ts";
 
 const CHILD_TIMEOUT_MS = 250;
 const TERMINATION_GRACE_MS = 75;
-const tmp = useTempDir("provider-process-boundary-");
 
 function nodeInvocation(script: string) {
 	return {
@@ -77,7 +75,7 @@ async function waitForFileSize(
 		try {
 			if ((await stat(path)).size >= minimumBytes) return;
 		} catch {
-			// The spool file is created asynchronously after sandbox preparation.
+			// The spool file is created asynchronously after output setup.
 		}
 		await new Promise((resolve) => setTimeout(resolve, 10));
 	}
@@ -87,103 +85,6 @@ async function waitForFileSize(
 }
 
 describe("project-tools provider process runner", () => {
-	test("confines a malicious provider and supplies only allowlisted environment", async () => {
-		const projectRoot = join(tmp.path, "project");
-		const projectTarget = join(projectRoot, "provider-write.txt");
-		const userSentinel = join(tmp.path, "user-sentinel.txt");
-		await mkdir(projectRoot);
-		await writeFile(userSentinel, "user-owned\n", "utf8");
-		const inheritedSecret = process.env.OPENAI_API_KEY;
-		process.env.OPENAI_API_KEY = "must-not-reach-provider";
-
-		let outcome: Awaited<ReturnType<typeof runProviderProcess>>;
-		try {
-			outcome = await runProviderProcess({
-				executablePath: process.execPath,
-				args: [
-					"-e",
-					[
-						'const { writeFileSync } = require("node:fs");',
-						"const attempt = (path) => {",
-						'\ttry { writeFileSync(path, "malicious\\n"); return true; }',
-						"\tcatch { return false; }",
-						"};",
-						`console.log(JSON.stringify({ projectWrite: attempt(${JSON.stringify(projectTarget)}), userWrite: attempt(${JSON.stringify(userSentinel)}), env: process.env }));`,
-					].join("\n"),
-				],
-				cwd: projectRoot,
-			});
-		} finally {
-			if (inheritedSecret === undefined) {
-				delete process.env.OPENAI_API_KEY;
-			} else {
-				process.env.OPENAI_API_KEY = inheritedSecret;
-			}
-		}
-
-		expect(outcome).toMatchObject({ kind: "code-exit", code: 0 });
-		if (outcome.kind !== "code-exit") {
-			throw new Error(`Expected code-exit, received ${outcome.kind}`);
-		}
-		const payload = JSON.parse(outcome.stdout) as {
-			readonly projectWrite: boolean;
-			readonly userWrite: boolean;
-			readonly env: Readonly<Record<string, string>>;
-		};
-		expect(payload.projectWrite).toBe(false);
-		expect(payload.userWrite).toBe(false);
-		expect(payload.env).not.toHaveProperty("OPENAI_API_KEY");
-		expect(Object.keys(payload.env).sort()).toEqual(
-			[
-				"GIT_CONFIG_GLOBAL",
-				"GIT_CONFIG_NOSYSTEM",
-				"GIT_TERMINAL_PROMPT",
-				"HOME",
-				"LANG",
-				"LC_ALL",
-				"NO_COLOR",
-				"PATH",
-				"TEMP",
-				"TMP",
-				"TMPDIR",
-				...(process.platform === "darwin" ? ["__CF_USER_TEXT_ENCODING"] : []),
-			].sort(),
-		);
-		await expect(readFile(projectTarget, "utf8")).rejects.toMatchObject({
-			code: "ENOENT",
-		});
-		expect(await readFile(userSentinel, "utf8")).toBe("user-owned\n");
-	});
-
-	test("fails closed when the OS sandbox boundary is unavailable", async () => {
-		const projectRoot = join(tmp.path, "unavailable-project");
-		const sentinel = join(projectRoot, "sentinel.txt");
-		await mkdir(projectRoot);
-		await writeFile(sentinel, "unchanged\n", "utf8");
-
-		const outcome = await runProviderProcess(
-			{
-				executablePath: process.execPath,
-				args: [
-					"-e",
-					`require("node:fs").writeFileSync(${JSON.stringify(sentinel)}, "changed\\n")`,
-				],
-				cwd: projectRoot,
-			},
-			undefined,
-			{
-				sandboxPlatform: "win32",
-			},
-		);
-
-		expect(outcome.kind).toBe("spawn-error");
-		if (outcome.kind !== "spawn-error") {
-			throw new Error(`Expected spawn-error, received ${outcome.kind}`);
-		}
-		expect(outcome.error.code).toBe("SANDBOX_UNAVAILABLE");
-		expect(await readFile(sentinel, "utf8")).toBe("unchanged\n");
-	});
-
 	test("spools large output losslessly and removes the private copies", async () => {
 		const payloadBytes = 2 * 1024 * 1024;
 		const stderrBytes = 1024 * 1024;
@@ -191,7 +92,7 @@ describe("project-tools provider process runner", () => {
 			payload: "λ".repeat(payloadBytes / 2),
 		});
 		const expectedStderr = `stderr-start\n${"é".repeat(stderrBytes / 2)}\nstderr-end`;
-		let sandboxRoot: string | undefined;
+		let outputSpoolRoot: string | undefined;
 
 		const execution = runProviderProcess(
 			nodeInvocation(`
@@ -201,17 +102,17 @@ describe("project-tools provider process runner", () => {
 			`),
 			undefined,
 			{
-				onSandboxReady: (tempRoot) => {
-					sandboxRoot = tempRoot;
+				onOutputSpoolReady: (root) => {
+					outputSpoolRoot = root;
 				},
 			},
 		);
 
-		while (sandboxRoot === undefined) {
+		while (outputSpoolRoot === undefined) {
 			await new Promise((resolve) => setTimeout(resolve, 5));
 		}
-		const stdoutSpool = join(sandboxRoot, "provider-stdout.log");
-		const stderrSpool = join(sandboxRoot, "provider-stderr.log");
+		const stdoutSpool = join(outputSpoolRoot, "provider-stdout.log");
+		const stderrSpool = join(outputSpoolRoot, "provider-stderr.log");
 		await Promise.all([
 			waitForFileSize(stdoutSpool, Buffer.byteLength(expectedStdout)),
 			waitForFileSize(stderrSpool, Buffer.byteLength(expectedStderr)),
@@ -224,7 +125,9 @@ describe("project-tools provider process runner", () => {
 			stdout: expectedStdout,
 			stderr: expectedStderr,
 		});
-		await expect(stat(sandboxRoot)).rejects.toMatchObject({ code: "ENOENT" });
+		await expect(stat(outputSpoolRoot)).rejects.toMatchObject({
+			code: "ENOENT",
+		});
 	});
 
 	// @cosmo-behavior plan:analysis-capability-runtime#B-029
