@@ -19,6 +19,7 @@ import { AnalysisProviderError } from "./analysis-provider-error.ts";
 import {
 	detectFallowSignal,
 	discoverFallowProvider,
+	FallowBindingUnavailableError,
 } from "./fallow-provider.ts";
 import type { ProviderProcessExecutor } from "./process-runner.ts";
 
@@ -460,6 +461,16 @@ function nonreadyResult(
 	return textResult(resolution);
 }
 
+async function refreshSnapshotBindings(
+	snapshot: AnalysisSessionSnapshot,
+): Promise<AnalysisSessionSnapshot> {
+	if (snapshot.runtime === undefined) return snapshot;
+	return {
+		...snapshot,
+		bindings: await snapshot.runtime.currentBindings(),
+	};
+}
+
 function registerCapabilityTool(
 	pi: ExtensionAPI,
 	options: {
@@ -483,7 +494,9 @@ function registerCapabilityTool(
 			const request = parseCapabilityRequest(options.capability, params);
 			let snapshot: AnalysisSessionSnapshot;
 			try {
-				snapshot = await options.getSnapshot(ctx.cwd, signal);
+				snapshot = await refreshSnapshotBindings(
+					await options.getSnapshot(ctx.cwd, signal),
+				);
 			} catch (error) {
 				if (error instanceof AnalysisDiscoveryAbortedError) {
 					return throwProviderFailure(
@@ -507,7 +520,20 @@ function registerCapabilityTool(
 					},
 				);
 			}
-			return textResult(await snapshot.runtime.execute(request, signal));
+			try {
+				return textResult(await snapshot.runtime.execute(request, signal));
+			} catch (error) {
+				if (error instanceof FallowBindingUnavailableError) {
+					const liveResolution = resolveAnalysisRequest(
+						error.bindings,
+						request,
+					);
+					if (liveResolution.kind !== "ready") {
+						return nonreadyResult(liveResolution);
+					}
+				}
+				throw error;
+			}
 		},
 	});
 }
@@ -696,7 +722,9 @@ export function createProjectToolsExtension(
 			execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
 				const parsed = paramsObject(params, "analysis_status");
 				assertOnlyKeys(parsed, [], "analysis_status");
-				const snapshot = await getSnapshot(ctx.cwd, signal);
+				const snapshot = await refreshSnapshotBindings(
+					await getSnapshot(ctx.cwd, signal),
+				);
 				return textResult({
 					kind: "status",
 					capabilities: snapshot.bindings,
@@ -786,10 +814,11 @@ export function createProjectToolsExtension(
 			clearSnapshot("Analysis session shut down.");
 		});
 		pi.on("before_agent_start", async (event, ctx) => {
-			const [tools, snapshot] = await Promise.all([
+			const [tools, cachedSnapshot] = await Promise.all([
 				detectTools(ctx.cwd),
 				getSnapshot(ctx.cwd),
 			]);
+			const snapshot = await refreshSnapshotBindings(cachedSnapshot);
 			const blocks = [
 				event.systemPrompt,
 				...(tools.length === 0 ? [] : [buildToolsBlock(tools)]),

@@ -6,7 +6,9 @@ import {
 	mkdtemp,
 	readdir,
 	readFile,
+	realpath,
 	rm,
+	symlink,
 	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -14,6 +16,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { hasAnalysisExecutionConsent } from "../../domains/shared/extensions/project-tools/analysis-consent.ts";
 import { AnalysisProviderError } from "../../domains/shared/extensions/project-tools/analysis-provider-error.ts";
 import {
 	discoverFallowProvider,
@@ -64,12 +67,13 @@ async function recordConsent(
 	stateRoot = userStateRoot,
 ): Promise<void> {
 	await mkdir(stateRoot, { recursive: true });
+	const canonicalProjectRoot = await realpath(consentedProjectRoot);
 	await writeFile(
 		join(stateRoot, "analysis-execution-consent.json"),
 		`${JSON.stringify({
 			schemaVersion: 1,
 			projects: {
-				[consentedProjectRoot]: { providers: ["fallow"] },
+				[canonicalProjectRoot]: { providers: ["fallow"] },
 			},
 		})}\n`,
 		"utf8",
@@ -463,7 +467,10 @@ describe("Fallow provider discovery", () => {
 		});
 		expect(
 			configuredRun.invocations.map(({ executablePath }) => executablePath),
-		).toEqual([configuredExecutable, configuredExecutable]);
+		).toEqual([
+			await realpath(configuredExecutable),
+			await realpath(configuredExecutable),
+		]);
 		expect(
 			configured.bindings.filter(({ state }) => state === "bound"),
 		).not.toHaveLength(0);
@@ -480,7 +487,10 @@ describe("Fallow provider discovery", () => {
 		}
 		expect(
 			projectRun.invocations.map(({ executablePath }) => executablePath),
-		).toEqual([projectExecutable, projectExecutable]);
+		).toEqual([
+			await realpath(projectExecutable),
+			await realpath(projectExecutable),
+		]);
 		expect(project.runtime.provider.version).toBe(
 			FALLOW_VALIDATED_ENGINE_VERSION,
 		);
@@ -500,7 +510,10 @@ describe("Fallow provider discovery", () => {
 		}
 		expect(
 			injectedRun.invocations.map(({ executablePath }) => executablePath),
-		).toEqual([injectedExecutable, injectedExecutable]);
+		).toEqual([
+			await realpath(injectedExecutable),
+			await realpath(injectedExecutable),
+		]);
 		expect(injected.runtime.provider.version).toBe(
 			FALLOW_VALIDATED_ENGINE_VERSION,
 		);
@@ -579,6 +592,96 @@ describe("Fallow provider discovery", () => {
 		});
 		expect(consented.status).toBe("detected");
 		expect(run.invocations).toHaveLength(2);
+	});
+
+	test("authorizes only the current canonical project identity", async () => {
+		const goodProject = join(fixtureRoot, "canonical-good");
+		const otherProject = join(fixtureRoot, "canonical-other");
+		const projectLink = join(fixtureRoot, "canonical-project");
+		const consentRoot = join(fixtureRoot, "canonical-user-state");
+		await Promise.all([
+			mkdir(goodProject, { recursive: true }),
+			mkdir(otherProject, { recursive: true }),
+			mkdir(consentRoot, { recursive: true }),
+		]);
+		await symlink(goodProject, projectLink, "dir");
+
+		await writeFile(
+			join(consentRoot, "analysis-execution-consent.json"),
+			JSON.stringify({
+				schemaVersion: 1,
+				projects: {
+					[projectLink]: { providers: ["fallow"] },
+				},
+			}),
+			"utf8",
+		);
+		await expect(
+			hasAnalysisExecutionConsent({
+				projectRoot: projectLink,
+				providerId: "fallow",
+				userStateRoot: consentRoot,
+			}),
+		).resolves.toBe(false);
+
+		await recordConsent(goodProject, consentRoot);
+		await expect(
+			hasAnalysisExecutionConsent({
+				projectRoot: projectLink,
+				providerId: "fallow",
+				userStateRoot: consentRoot,
+			}),
+		).resolves.toBe(true);
+
+		await rm(projectLink);
+		await symlink(otherProject, projectLink, "dir");
+		await expect(
+			hasAnalysisExecutionConsent({
+				projectRoot: projectLink,
+				providerId: "fallow",
+				userStateRoot: consentRoot,
+			}),
+		).resolves.toBe(false);
+	});
+
+	test("revoking consent between introspection subprocesses withholds the provider", async () => {
+		await writeFile(join(projectRoot, "fallow.toml"), "", "utf8");
+		await recordConsent();
+		const executable = await createExecutable(
+			join(fixtureRoot, "revoked-during-introspection", "fallow"),
+		);
+		const invocations: ProviderProcessInvocation[] = [];
+		const executeProcess: ProviderProcessExecutor = async (invocation) => {
+			invocations.push(invocation);
+			if (invocation.args.includes("--version")) {
+				await rm(join(userStateRoot, "analysis-execution-consent.json"));
+				return {
+					kind: "code-exit",
+					code: 0,
+					stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+					stderr: "",
+				};
+			}
+			return {
+				kind: "code-exit",
+				code: 3,
+				stdout: "defaults in effect\n",
+				stderr: "",
+			};
+		};
+
+		const discovery = await discoverFallowProvider({
+			projectRoot,
+			userStateRoot,
+			injectedExecutablePath: executable,
+			executeProcess,
+		});
+
+		expect(discovery).toMatchObject({
+			status: "unbound",
+			reason: "execution-not-consented",
+		});
+		expect(invocations).toHaveLength(1);
 	});
 
 	test("reports failed when the provider sandbox boundary is unavailable", async () => {

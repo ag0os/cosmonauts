@@ -3,7 +3,9 @@ import {
 	mkdir,
 	mkdtemp,
 	readFile,
+	realpath,
 	rm,
+	symlink,
 	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -77,12 +79,13 @@ async function grantConsent(
 	projectRoot: string,
 	userStateRoot: string,
 ): Promise<void> {
+	const canonicalProjectRoot = await realpath(projectRoot);
 	await writeFile(
 		join(userStateRoot, "analysis-execution-consent.json"),
 		JSON.stringify({
 			schemaVersion: 1,
 			projects: {
-				[projectRoot]: { providers: ["fallow"] },
+				[canonicalProjectRoot]: { providers: ["fallow"] },
 			},
 		}),
 	);
@@ -364,6 +367,309 @@ describe("project-tools extension", () => {
 			]),
 		);
 		expect(invocationCount).toBe(2);
+	});
+
+	test("revoking consent after status prevents cached capability execution", async () => {
+		const fixture = await createProjectFixture("live-consent-revocation");
+		await writeFile(join(fixture.projectRoot, "fallow.toml"), "");
+		await grantConsent(fixture.projectRoot, fixture.userStateRoot);
+		const executable = join(tmpDir, "live-consent-fallow");
+		await writeFile(executable, "#!/bin/sh\nexit 0\n");
+		await chmod(executable, 0o755);
+		const invocations: Parameters<ProviderProcessExecutor>[0][] = [];
+		const executeProcess: ProviderProcessExecutor = async (invocation) => {
+			invocations.push(invocation);
+			if (invocation.args.includes("--version")) {
+				return {
+					kind: "code-exit",
+					code: 0,
+					stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+					stderr: "",
+				};
+			}
+			if (invocation.args[0] === "config") {
+				return {
+					kind: "code-exit",
+					code: 3,
+					stdout: "defaults in effect\n",
+					stderr: "",
+				};
+			}
+			return {
+				kind: "code-exit",
+				code: 0,
+				stdout: JSON.stringify({ schema_version: 4, total_issues: 0 }),
+				stderr: "",
+			};
+		};
+		const pi = createMockPi({ cwd: fixture.projectRoot });
+		createProjectToolsExtension({
+			userStateRoot: fixture.userStateRoot,
+			injectedExecutablePath: executable,
+			executeProcess,
+		})(pi as never);
+
+		const initialStatus = resultDetails(
+			await pi.callTool("analysis_status", {}),
+		);
+		expect(initialStatus.capabilities).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					state: "bound",
+					capability: "dead-code",
+				}),
+			]),
+		);
+		expect(invocations).toHaveLength(2);
+
+		await rm(join(fixture.userStateRoot, "analysis-execution-consent.json"));
+
+		expect(
+			resultDetails(await pi.callTool("analysis_dead_code", {})),
+		).toMatchObject({
+			kind: "unbound",
+			capability: "dead-code",
+			reason: "execution-not-consented",
+			providerId: "fallow",
+		});
+		const revokedStatus = resultDetails(
+			await pi.callTool("analysis_status", {}),
+		);
+		expect(revokedStatus.capabilities).toSatisfy(
+			(capabilities: unknown) =>
+				Array.isArray(capabilities) &&
+				capabilities.every(
+					(binding) =>
+						typeof binding === "object" &&
+						binding !== null &&
+						(binding as { state?: string; reason?: string }).state ===
+							"unbound" &&
+						(binding as { state?: string; reason?: string }).reason ===
+							"execution-not-consented",
+				),
+		);
+		expect(invocations).toHaveLength(2);
+	});
+
+	test("invalidates a cached binding when the executable is replaced", async () => {
+		const fixture = await createProjectFixture("executable-replacement");
+		await writeFile(join(fixture.projectRoot, "fallow.toml"), "");
+		await grantConsent(fixture.projectRoot, fixture.userStateRoot);
+		const executable = join(tmpDir, "replaceable-fallow");
+		await writeFile(executable, "#!/bin/sh\n# inspected\nexit 0\n");
+		await chmod(executable, 0o755);
+		const invocations: Parameters<ProviderProcessExecutor>[0][] = [];
+		const executeProcess: ProviderProcessExecutor = async (invocation) => {
+			invocations.push(invocation);
+			if (invocation.args.includes("--version")) {
+				return {
+					kind: "code-exit",
+					code: 0,
+					stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+					stderr: "",
+				};
+			}
+			if (invocation.args[0] === "config") {
+				return {
+					kind: "code-exit",
+					code: 3,
+					stdout: "defaults in effect\n",
+					stderr: "",
+				};
+			}
+			return {
+				kind: "code-exit",
+				code: 0,
+				stdout: JSON.stringify({ schema_version: 4, total_issues: 0 }),
+				stderr: "",
+			};
+		};
+		const pi = createMockPi({ cwd: fixture.projectRoot });
+		createProjectToolsExtension({
+			userStateRoot: fixture.userStateRoot,
+			injectedExecutablePath: executable,
+			executeProcess,
+		})(pi as never);
+		await pi.callTool("analysis_status", {});
+		expect(invocations).toHaveLength(2);
+
+		await writeFile(executable, "#!/bin/sh\n# replacement\nexit 0\n");
+		await chmod(executable, 0o755);
+
+		await expect(pi.callTool("analysis_dead_code", {})).rejects.toMatchObject({
+			name: "AnalysisProviderError",
+			failureClass: "invalid-config",
+		});
+		const status = resultDetails(await pi.callTool("analysis_status", {}));
+		expect(status.capabilities).toSatisfy(
+			(capabilities: unknown) =>
+				Array.isArray(capabilities) &&
+				capabilities.every(
+					(binding) =>
+						typeof binding === "object" &&
+						binding !== null &&
+						(binding as { state?: string }).state === "failed",
+				),
+		);
+		expect(invocations).toHaveLength(2);
+	});
+
+	test("invalidates a cached binding when the executable symlink is retargeted", async () => {
+		const fixture = await createProjectFixture("executable-retarget");
+		await writeFile(join(fixture.projectRoot, "fallow.toml"), "");
+		await grantConsent(fixture.projectRoot, fixture.userStateRoot);
+		const firstExecutable = join(tmpDir, "first-fallow");
+		const replacementExecutable = join(tmpDir, "replacement-fallow");
+		const executableLink = join(tmpDir, "linked-fallow");
+		await Promise.all([
+			writeFile(firstExecutable, "#!/bin/sh\nexit 0\n"),
+			writeFile(replacementExecutable, "#!/bin/sh\nexit 0\n"),
+		]);
+		await Promise.all([
+			chmod(firstExecutable, 0o755),
+			chmod(replacementExecutable, 0o755),
+		]);
+		await symlink(firstExecutable, executableLink, "file");
+		const invocations: Parameters<ProviderProcessExecutor>[0][] = [];
+		const executeProcess: ProviderProcessExecutor = async (invocation) => {
+			invocations.push(invocation);
+			return invocation.args.includes("--version")
+				? {
+						kind: "code-exit",
+						code: 0,
+						stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+						stderr: "",
+					}
+				: {
+						kind: "code-exit",
+						code: 3,
+						stdout: "defaults in effect\n",
+						stderr: "",
+					};
+		};
+		const pi = createMockPi({ cwd: fixture.projectRoot });
+		createProjectToolsExtension({
+			userStateRoot: fixture.userStateRoot,
+			injectedExecutablePath: executableLink,
+			executeProcess,
+		})(pi as never);
+		await pi.callTool("analysis_status", {});
+		expect(invocations).toHaveLength(2);
+
+		await rm(executableLink);
+		await symlink(replacementExecutable, executableLink, "file");
+
+		await expect(pi.callTool("analysis_dead_code", {})).rejects.toMatchObject({
+			name: "AnalysisProviderError",
+			failureClass: "invalid-config",
+		});
+		expect(invocations).toHaveLength(2);
+	});
+
+	test("concurrent lifecycle status and tools cannot reuse a binding after project retargeting", async () => {
+		const fixtureRoot = join(tmpDir, "concurrent-project-retarget");
+		const goodProject = join(fixtureRoot, "good");
+		const otherProject = join(fixtureRoot, "other");
+		const projectLink = join(fixtureRoot, "project");
+		const userStateRoot = join(fixtureRoot, "user-state");
+		await Promise.all([
+			mkdir(goodProject, { recursive: true }),
+			mkdir(otherProject, { recursive: true }),
+			mkdir(userStateRoot, { recursive: true }),
+		]);
+		await Promise.all([
+			writeFile(join(goodProject, "fallow.toml"), ""),
+			writeFile(join(otherProject, "fallow.toml"), ""),
+		]);
+		await symlink(goodProject, projectLink, "dir");
+		const [canonicalGoodProject, canonicalOtherProject] = await Promise.all([
+			realpath(goodProject),
+			realpath(otherProject),
+		]);
+		await writeFile(
+			join(userStateRoot, "analysis-execution-consent.json"),
+			JSON.stringify({
+				schemaVersion: 1,
+				projects: {
+					[canonicalGoodProject]: { providers: ["fallow"] },
+					[canonicalOtherProject]: { providers: ["fallow"] },
+				},
+			}),
+		);
+		const executable = join(fixtureRoot, "shared-fallow");
+		await writeFile(executable, "#!/bin/sh\nexit 0\n");
+		await chmod(executable, 0o755);
+		const invocations: Parameters<ProviderProcessExecutor>[0][] = [];
+		const executeProcess: ProviderProcessExecutor = async (invocation) => {
+			invocations.push(invocation);
+			if (invocation.args.includes("--version")) {
+				return {
+					kind: "code-exit",
+					code: 0,
+					stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+					stderr: "",
+				};
+			}
+			if (invocation.args[0] === "config") {
+				return {
+					kind: "code-exit",
+					code: 3,
+					stdout: "defaults in effect\n",
+					stderr: "",
+				};
+			}
+			return {
+				kind: "code-exit",
+				code: 0,
+				stdout: JSON.stringify({ schema_version: 4, total_issues: 0 }),
+				stderr: "",
+			};
+		};
+		const pi = createMockPi({ cwd: projectLink });
+		createProjectToolsExtension({
+			userStateRoot,
+			injectedExecutablePath: executable,
+			executeProcess,
+		})(pi as never);
+		await pi.callTool("analysis_status", {});
+		expect(invocations).toHaveLength(2);
+
+		await rm(projectLink);
+		await symlink(otherProject, projectLink, "dir");
+
+		const outcomes = await Promise.allSettled([
+			pi.callTool("analysis_status", {}),
+			pi.callTool("analysis_dead_code", {}),
+			pi.callTool("analysis_duplication", {}),
+			pi.fireEvent("session_start"),
+		]);
+
+		expect(outcomes[0]?.status).toBe("fulfilled");
+		for (const outcome of outcomes.slice(1)) {
+			if (outcome === outcomes.at(-1)) {
+				expect(outcome.status).toBe("fulfilled");
+			} else {
+				expect(outcome.status).toBe("rejected");
+				expect(
+					outcome.status === "rejected" ? outcome.reason : undefined,
+				).toMatchObject({
+					name: "AnalysisProviderError",
+				});
+				expect(
+					["invalid-config", "aborted"].includes(
+						String(
+							outcome.status === "rejected" &&
+								typeof outcome.reason === "object" &&
+								outcome.reason !== null &&
+								"failureClass" in outcome.reason
+								? outcome.reason.failureClass
+								: "",
+						),
+					),
+				).toBe(true);
+			}
+		}
+		expect(invocations).toHaveLength(2);
 	});
 
 	// @cosmo-behavior plan:analysis-capability-runtime#B-005
@@ -966,12 +1272,13 @@ describe("project-tools extension", () => {
 			await writeFile(executable, "#!/bin/sh\nexit 0\n", "utf8");
 			await chmod(executable, 0o755);
 			await mkdir(userStateRoot, { recursive: true });
+			const canonicalTmpDir = await realpath(tmpDir);
 			await writeFile(
 				join(userStateRoot, "analysis-execution-consent.json"),
 				JSON.stringify({
 					schemaVersion: 1,
 					projects: {
-						[tmpDir]: { providers: ["fallow"] },
+						[canonicalTmpDir]: { providers: ["fallow"] },
 					},
 				}),
 			);

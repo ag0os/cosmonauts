@@ -1,4 +1,12 @@
-import { access, constants, readFile, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import {
+	access,
+	constants,
+	open,
+	readFile,
+	realpath,
+	stat,
+} from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import {
 	ANALYSIS_CAPABILITIES,
@@ -20,8 +28,9 @@ import {
 	type ProviderDetection,
 	type ProviderIdentity,
 	resolveAnalysisBindings,
+	resolveAnalysisRequest,
 } from "../../../../lib/analysis/index.ts";
-import { hasAnalysisExecutionConsent } from "./analysis-consent.ts";
+import { readAnalysisExecutionAuthorization } from "./analysis-consent.ts";
 import { AnalysisProviderError } from "./analysis-provider-error.ts";
 import {
 	type ProviderProcessExecutor,
@@ -65,11 +74,47 @@ interface FallowProviderRuntime {
 	readonly executablePath: string;
 	readonly executeProcess: ProviderProcessExecutor;
 	readonly validateEnvelopeSchema: typeof validateFallowEnvelopeSchema;
+	readonly currentBindings: () => Promise<readonly AnalysisBinding[]>;
 	readonly execute: (
 		request: AnalysisRequest,
 		signal?: AbortSignal,
 	) => Promise<AnalysisResult>;
 	readonly dispose: (reason: unknown) => void;
+}
+
+interface FallowExecutableIdentity {
+	readonly canonicalPath: string;
+	readonly device: number;
+	readonly inode: number;
+	readonly mode: number;
+	readonly size: number;
+	readonly modifiedAtMs: number;
+	readonly changedAtMs: number;
+	readonly sha256: string;
+}
+
+interface FallowBindingIdentity {
+	readonly canonicalProjectRoot: string;
+	readonly executable: FallowExecutableIdentity;
+}
+
+type FallowSpawnPrecondition =
+	| { readonly kind: "ready" }
+	| { readonly kind: "unbound"; readonly bindings: readonly AnalysisBinding[] }
+	| {
+			readonly kind: "failed";
+			readonly failure: AnalysisFailure;
+			readonly bindings: readonly AnalysisBinding[];
+	  };
+
+export class FallowBindingUnavailableError extends Error {
+	readonly bindings: readonly AnalysisBinding[];
+
+	constructor(bindings: readonly AnalysisBinding[]) {
+		super("Fallow provider binding is no longer executable.");
+		this.name = "FallowBindingUnavailableError";
+		this.bindings = bindings;
+	}
 }
 
 type FallowProviderDiscovery =
@@ -129,6 +174,17 @@ function providerNotAvailableBindings(
 		capability,
 		reason,
 		providerId: FALLOW_PROVIDER_ID,
+	}));
+}
+
+function providerFailedBindings(
+	failure: AnalysisFailure,
+): readonly AnalysisBinding[] {
+	return ANALYSIS_CAPABILITIES.map((capability) => ({
+		state: "failed",
+		capability,
+		providerId: FALLOW_PROVIDER_ID,
+		failure,
 	}));
 }
 
@@ -222,6 +278,149 @@ async function resolveFallowExecutable(
 		}
 	}
 	return null;
+}
+
+function sameFileStats(
+	left: Awaited<ReturnType<typeof stat>>,
+	right: Awaited<ReturnType<typeof stat>>,
+): boolean {
+	return (
+		left.dev === right.dev &&
+		left.ino === right.ino &&
+		left.mode === right.mode &&
+		left.size === right.size &&
+		left.mtimeMs === right.mtimeMs &&
+		left.ctimeMs === right.ctimeMs
+	);
+}
+
+async function captureExecutableIdentity(
+	executablePath: string,
+): Promise<FallowExecutableIdentity> {
+	const canonicalPath = await realpath(executablePath);
+	const handle = await open(canonicalPath, "r");
+	try {
+		const before = await handle.stat();
+		const contents = await handle.readFile();
+		const after = await handle.stat();
+		const currentCanonicalPath = await realpath(executablePath);
+		const current = await stat(currentCanonicalPath);
+		if (
+			canonicalPath !== currentCanonicalPath ||
+			!sameFileStats(before, after) ||
+			!sameFileStats(after, current)
+		) {
+			throw new Error("Executable changed while its identity was captured.");
+		}
+		return {
+			canonicalPath,
+			device: after.dev,
+			inode: after.ino,
+			mode: after.mode,
+			size: after.size,
+			modifiedAtMs: after.mtimeMs,
+			changedAtMs: after.ctimeMs,
+			sha256: createHash("sha256").update(contents).digest("hex"),
+		};
+	} finally {
+		await handle.close();
+	}
+}
+
+function sameExecutableIdentity(
+	left: FallowExecutableIdentity,
+	right: FallowExecutableIdentity,
+): boolean {
+	return (
+		left.canonicalPath === right.canonicalPath &&
+		left.device === right.device &&
+		left.inode === right.inode &&
+		left.mode === right.mode &&
+		left.size === right.size &&
+		left.modifiedAtMs === right.modifiedAtMs &&
+		left.changedAtMs === right.changedAtMs &&
+		left.sha256 === right.sha256
+	);
+}
+
+function bindingIdentityFailure(
+	reason: "project-identity-changed" | "provider-executable-identity-changed",
+	message: string,
+): AnalysisFailure {
+	return {
+		kind: "invalid-config",
+		message,
+		process: { reason },
+		providerDetails: {
+			providerId: FALLOW_PROVIDER_ID,
+			data: { reason },
+		},
+	};
+}
+
+async function validateSpawnPreconditions(options: {
+	readonly projectRoot: string;
+	readonly userStateRoot?: string;
+	readonly executablePath: string;
+	readonly bindingIdentity: FallowBindingIdentity;
+}): Promise<FallowSpawnPrecondition> {
+	const authorization = await readAnalysisExecutionAuthorization({
+		projectRoot: options.projectRoot,
+		providerId: FALLOW_PROVIDER_ID,
+		userStateRoot: options.userStateRoot,
+	});
+	if (authorization?.consented !== true) {
+		return {
+			kind: "unbound",
+			bindings: providerNotAvailableBindings("execution-not-consented"),
+		};
+	}
+	if (
+		authorization.canonicalProjectRoot !==
+		options.bindingIdentity.canonicalProjectRoot
+	) {
+		const failure = bindingIdentityFailure(
+			"project-identity-changed",
+			"Fallow project identity changed after provider introspection.",
+		);
+		return {
+			kind: "failed",
+			failure,
+			bindings: providerFailedBindings(failure),
+		};
+	}
+
+	let currentExecutable: FallowExecutableIdentity;
+	try {
+		currentExecutable = await captureExecutableIdentity(options.executablePath);
+	} catch {
+		const failure = bindingIdentityFailure(
+			"provider-executable-identity-changed",
+			"Fallow executable identity could not be revalidated after provider introspection.",
+		);
+		return {
+			kind: "failed",
+			failure,
+			bindings: providerFailedBindings(failure),
+		};
+	}
+	if (
+		!sameExecutableIdentity(
+			currentExecutable,
+			options.bindingIdentity.executable,
+		)
+	) {
+		const failure = bindingIdentityFailure(
+			"provider-executable-identity-changed",
+			"Fallow executable identity changed after provider introspection.",
+		);
+		return {
+			kind: "failed",
+			failure,
+			bindings: providerFailedBindings(failure),
+		};
+	}
+	return { kind: "ready" };
 }
 
 function processFailure(
@@ -462,18 +661,48 @@ function abortedExecution(reason: unknown): AnalysisFailure {
 	};
 }
 
+function discoveryFromSpawnPrecondition(
+	detectionSignal: FallowDetectionSignal,
+	precondition: FallowSpawnPrecondition,
+): FallowProviderDiscovery | undefined {
+	if (precondition.kind === "ready") return undefined;
+	if (precondition.kind === "failed") {
+		return failedDiscovery(detectionSignal, precondition.failure);
+	}
+	return {
+		status: "unbound",
+		signal: detectionSignal,
+		reason: "execution-not-consented",
+		bindings: precondition.bindings,
+	};
+}
+
 async function introspectProvider(
 	options: DiscoverFallowProviderOptions,
 	detectionSignal: FallowDetectionSignal,
 	executablePath: string,
+	bindingIdentity: FallowBindingIdentity,
 	executeProcess: ProviderProcessExecutor,
 ): Promise<FallowProviderDiscovery> {
 	if (options.signal?.aborted) {
 		return abortedDiscovery(detectionSignal, "version", options.signal);
 	}
+	const versionPrecondition = discoveryFromSpawnPrecondition(
+		detectionSignal,
+		await validateSpawnPreconditions({
+			projectRoot: options.projectRoot,
+			userStateRoot: options.userStateRoot,
+			executablePath,
+			bindingIdentity,
+		}),
+	);
+	if (versionPrecondition !== undefined) return versionPrecondition;
+	if (options.signal?.aborted) {
+		return abortedDiscovery(detectionSignal, "version", options.signal);
+	}
 	const versionOutcome = await executeProcess(
 		{
-			executablePath,
+			executablePath: bindingIdentity.executable.canonicalPath,
 			args: ["--version"],
 			cwd: options.projectRoot,
 		},
@@ -501,9 +730,22 @@ async function introspectProvider(
 		);
 	}
 
+	const configPrecondition = discoveryFromSpawnPrecondition(
+		detectionSignal,
+		await validateSpawnPreconditions({
+			projectRoot: options.projectRoot,
+			userStateRoot: options.userStateRoot,
+			executablePath,
+			bindingIdentity,
+		}),
+	);
+	if (configPrecondition !== undefined) return configPrecondition;
+	if (options.signal?.aborted) {
+		return abortedDiscovery(detectionSignal, "config", options.signal);
+	}
 	const configOutcome = await executeProcess(
 		{
-			executablePath,
+			executablePath: bindingIdentity.executable.canonicalPath,
 			args: ["config", "--format", "json", "--quiet", "--no-cache"],
 			cwd: options.projectRoot,
 		},
@@ -554,36 +796,75 @@ async function introspectProvider(
 		executeProcess,
 		validateEnvelopeSchema: validateFallowEnvelopeSchema,
 	};
+	const resolvedBindings = resolveAnalysisBindings({ detections: [detection] });
 	const executionQueue = new ProviderExecutionQueue(
 		FALLOW_MAX_CONCURRENT_ANALYSES,
 	);
 	const lifecycleController = new AbortController();
 	const executionRuntime = {
 		...runtimeBase,
+		executablePath: bindingIdentity.executable.canonicalPath,
 		projectRoot: options.projectRoot,
+	};
+	let invalidatedFailure: AnalysisFailure | undefined;
+	const currentBindings = async (): Promise<readonly AnalysisBinding[]> => {
+		if (invalidatedFailure !== undefined) {
+			return providerFailedBindings(invalidatedFailure);
+		}
+		const precondition = await validateSpawnPreconditions({
+			projectRoot: options.projectRoot,
+			userStateRoot: options.userStateRoot,
+			executablePath,
+			bindingIdentity,
+		});
+		if (precondition.kind === "failed") {
+			invalidatedFailure = precondition.failure;
+			if (!lifecycleController.signal.aborted) {
+				lifecycleController.abort(precondition.failure);
+			}
+			executionQueue.close(precondition.failure);
+			return precondition.bindings;
+		}
+		return precondition.kind === "unbound"
+			? precondition.bindings
+			: resolvedBindings;
 	};
 	return {
 		status: "detected",
 		signal: detectionSignal,
 		detection,
-		bindings: resolveAnalysisBindings({ detections: [detection] }),
+		bindings: resolvedBindings,
 		runtime: {
 			...runtimeBase,
+			currentBindings,
 			execute: async (request, abortSignal) => {
 				const combined = combinedAbortSignal([
 					abortSignal,
 					lifecycleController.signal,
 				]);
 				try {
-					return await executionQueue.run(
-						() =>
-							executeFallowCapability(
+					return await executionQueue.run(async () => {
+						const liveBindings = await currentBindings();
+						const liveResolution = resolveAnalysisRequest(
+							liveBindings,
+							request,
+						);
+						if (liveResolution.kind !== "ready") {
+							throw new FallowBindingUnavailableError(liveBindings);
+						}
+						if (combined.signal?.aborted) {
+							return providerFailure(
 								executionRuntime,
-								request,
-								combined.signal,
-							),
-						combined.signal,
-					);
+								request.capability,
+								abortedExecution(combined.signal.reason),
+							);
+						}
+						return executeFallowCapability(
+							executionRuntime,
+							request,
+							combined.signal,
+						);
+					}, combined.signal);
 				} catch (error) {
 					if (error instanceof ProviderExecutionQueueAbortedError) {
 						return providerFailure(
@@ -610,6 +891,12 @@ async function introspectProvider(
 export async function discoverFallowProvider(
 	options: DiscoverFallowProviderOptions,
 ): Promise<FallowProviderDiscovery> {
+	let initialCanonicalProjectRoot: string | undefined;
+	try {
+		initialCanonicalProjectRoot = await realpath(resolve(options.projectRoot));
+	} catch {
+		initialCanonicalProjectRoot = undefined;
+	}
 	const detectionSignal = await detectFallowSignal(options.projectRoot);
 	if (detectionSignal === null) {
 		const detection = {
@@ -639,7 +926,7 @@ export async function discoverFallowProvider(
 		return abortedDiscovery(detectionSignal, "discovery", options.signal);
 	}
 
-	const consented = await hasAnalysisExecutionConsent({
+	const authorization = await readAnalysisExecutionAuthorization({
 		projectRoot: options.projectRoot,
 		providerId: FALLOW_PROVIDER_ID,
 		userStateRoot: options.userStateRoot,
@@ -647,7 +934,7 @@ export async function discoverFallowProvider(
 	if (options.signal?.aborted) {
 		return abortedDiscovery(detectionSignal, "discovery", options.signal);
 	}
-	if (!consented) {
+	if (authorization?.consented !== true) {
 		return {
 			status: "unbound",
 			signal: detectionSignal,
@@ -655,11 +942,41 @@ export async function discoverFallowProvider(
 			bindings: providerNotAvailableBindings("execution-not-consented"),
 		};
 	}
+	if (
+		initialCanonicalProjectRoot === undefined ||
+		authorization.canonicalProjectRoot !== initialCanonicalProjectRoot
+	) {
+		return failedDiscovery(
+			detectionSignal,
+			bindingIdentityFailure(
+				"project-identity-changed",
+				"Fallow project identity changed during provider discovery.",
+			),
+		);
+	}
+
+	let executableIdentity: FallowExecutableIdentity;
+	try {
+		executableIdentity = await captureExecutableIdentity(executablePath);
+	} catch {
+		return failedDiscovery(
+			detectionSignal,
+			bindingIdentityFailure(
+				"provider-executable-identity-changed",
+				"Fallow executable identity could not be established before provider introspection.",
+			),
+		);
+	}
+	const bindingIdentity: FallowBindingIdentity = {
+		canonicalProjectRoot: authorization.canonicalProjectRoot,
+		executable: executableIdentity,
+	};
 
 	return introspectProvider(
 		options,
 		detectionSignal,
 		executablePath,
+		bindingIdentity,
 		options.executeProcess ?? runProviderProcess,
 	);
 }

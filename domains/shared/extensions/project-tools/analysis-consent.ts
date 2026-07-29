@@ -17,6 +17,11 @@ interface AnalysisExecutionConsentState {
 	>;
 }
 
+export interface AnalysisExecutionAuthorization {
+	readonly canonicalProjectRoot: string;
+	readonly consented: boolean;
+}
+
 function defaultUserStateRoot(): string {
 	return join(homedir(), ".cosmonauts");
 }
@@ -53,9 +58,9 @@ function parseConsentState(
  * Repository configuration is deliberately not consulted. A repository may
  * advertise a provider, but it cannot grant itself permission to execute one.
  */
-export async function hasAnalysisExecutionConsent(
+export async function readAnalysisExecutionAuthorization(
 	options: AnalysisExecutionConsentOptions,
-): Promise<boolean> {
+): Promise<AnalysisExecutionAuthorization | null> {
 	const projectRoot = resolve(options.projectRoot);
 	const userStateRoot = resolve(
 		options.userStateRoot ?? defaultUserStateRoot(),
@@ -67,20 +72,29 @@ export async function hasAnalysisExecutionConsent(
 	}
 
 	const consentPath = join(userStateRoot, ANALYSIS_EXECUTION_CONSENT_FILE);
-	let parsed: unknown;
 	let canonicalProjectRoot: string;
 	try {
-		const [projectRealpath, consentRealpath, contents] = await Promise.all([
-			realpath(projectRoot),
+		canonicalProjectRoot = await realpath(projectRoot);
+	} catch {
+		return null;
+	}
+	if (isPathInside(canonicalProjectRoot, userStateRoot)) {
+		throw new Error(
+			"Analysis execution consent state must be held outside the target project.",
+		);
+	}
+
+	let parsed: unknown;
+	try {
+		const [consentRealpath, contents] = await Promise.all([
 			realpath(consentPath),
 			readFile(consentPath, "utf8"),
 		]);
-		if (isPathInside(projectRealpath, consentRealpath)) {
+		if (isPathInside(canonicalProjectRoot, consentRealpath)) {
 			throw new Error(
 				"Analysis execution consent state must be held outside the target project.",
 			);
 		}
-		canonicalProjectRoot = projectRealpath;
 		parsed = JSON.parse(contents);
 	} catch (error) {
 		if (
@@ -89,15 +103,24 @@ export async function hasAnalysisExecutionConsent(
 		) {
 			throw error;
 		}
-		return false;
+		return { canonicalProjectRoot, consented: false };
 	}
 	const state = parseConsentState(parsed);
-	if (state === null) return false;
+	if (state === null) return { canonicalProjectRoot, consented: false };
 
-	const projectConsent =
-		state.projects[canonicalProjectRoot] ?? state.projects[projectRoot];
+	const projectConsent = state.projects[canonicalProjectRoot];
+	return {
+		canonicalProjectRoot,
+		consented:
+			Array.isArray(projectConsent?.providers) &&
+			projectConsent.providers.includes(options.providerId),
+	};
+}
+
+export async function hasAnalysisExecutionConsent(
+	options: AnalysisExecutionConsentOptions,
+): Promise<boolean> {
 	return (
-		Array.isArray(projectConsent?.providers) &&
-		projectConsent.providers.includes(options.providerId)
+		(await readAnalysisExecutionAuthorization(options))?.consented === true
 	);
 }
