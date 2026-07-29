@@ -118,7 +118,7 @@ split itself.
   - Decided by: planner, amend-on-record, 2026-07-27
   - Supersedes: D-007 skill placement
 
-- **D-012 - Disable all provider writes, not only fix application** *(superseded by D-025, 2026-07-29)*
+- **D-012 - Disable all provider writes, not only fix application**
   - Decision: every analysis/introspection invocation includes the provider's no-cache option; version detection uses a non-writing version call; tests snapshot the worktree across status and every capability. Fix preview additionally requires dry-run.
   - Alternatives: ignore generated caches (still worktree mutation); clean caches afterward (mutates and risks deleting preexisting data); test only source files (too narrow).
   - Why: review PR-001 showed ordinary analysis writes `.fallow/cache.bin`/`churn.bin`; INV-5 and AC-008 cover every capability tool. (Cited finding is from a prior review round's numbering, not the parent plan's `review.md`; premise independently re-verified 2026-07-27 with a live run — `fallow dead-code` writes `.fallow/cache.bin` without `--no-cache`.)
@@ -207,12 +207,12 @@ split itself.
   - Decided by: human, user-chose-among-options, 2026-07-29
   - Supersedes: the parent plan's single-backlog delivery and the "decide at task creation" wording of its Implementation Order slice-boundary note
 
-- **D-025 - Enforce provider read-only execution outside the provider contract**
-  - Decision: every provider subprocess runs through an OS-enforced sandbox that denies writes outside a runner-owned private temporary directory, presents the target project read-only, and supplies a fixed allowlisted environment with no inherited host variables. macOS uses `sandbox-exec`; Linux uses `bwrap`. If the applicable boundary executable is absent or the sandbox cannot start, provider execution fails unavailable rather than spawning unsandboxed. Provider no-cache and fix dry-run flags remain defense in depth, not the INV-5 boundary.
-  - Alternatives: trust no-cache/dry-run flags (a malicious project-controlled executable can ignore them); recursively change project permissions (mutates the checkout, races other processes, and does not protect user files); copy the project to a temporary tree (breaks project identity and Git behavior while still requiring a confinement boundary for host files); clean changes afterward (too late for secrets or writes outside the project).
-  - Why: security review SR-001 proved consent authorizes execution but does not authorize repository mutation or host credential inheritance. INV-5 requires the write prohibition to be enforced independently of repository-controlled provider behavior.
-  - Decided by: implementation agent, amend-on-record for TASK-522, 2026-07-29
-  - Supersedes: D-012's reliance on provider arguments and worktree snapshots as the enforcement mechanism
+- **D-025 - Defer OS-enforced provider sandboxing to a follow-up** *(ratified)*
+  - Decision: this slice does not sandbox provider subprocesses. D-012 stands unchanged as the INV-5 enforcement mechanism: no-cache on every invocation, dry-run for fix preview, non-writing version detection, and whole-worktree snapshot tests — on top of D-014's per-project execution consent. The security review's SR-001 concern (a consented repository binary inherits host environment and write authority) is recorded as follow-up work for a later plan, not addressed here.
+  - Alternatives: require an OS sandbox and fail closed when none exists — the mechanism TASK-522 actually implemented, using `sandbox-exec` on macOS and `bwrap` on Linux (rejected: it has no Windows branch and bubblewrap is absent by default on many Linux distributions, so every analysis capability becomes uncallable there. That narrows ratified AC-003 and AC-011, and it contradicted TASK-526's own requirement of POSIX and Windows resolution. Consent already means a human explicitly authorized this binary, so failing closed traded a real availability regression for defense against the threat D-014 was designed to gate); sandbox-when-available with a visible reduced-confinement binding state (rejected for this slice: it keeps availability but adds a confinement dimension to the status contract that the two sibling slices would have to consume, which is scope this slice was not reviewed for).
+  - Why: serves the Intent goal and INV-2 — a capability that cannot run on a supported platform is not honest degradation, it is an unshippable regression against ratified acceptance criteria. INV-5 remains enforced by D-012 and proven by B-012's whole-worktree snapshot, which is what the plan was reviewed and ratified against.
+  - Decided by: human, user-chose-among-options, 2026-07-29
+  - Supersedes: the OS-sandbox mechanism introduced for TASK-522 and its supersession pointer on D-012, both withdrawn on the same date
 
 ## Behaviors
 
