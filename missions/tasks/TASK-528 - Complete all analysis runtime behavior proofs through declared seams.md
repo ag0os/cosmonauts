@@ -1,7 +1,7 @@
 ---
 id: TASK-528
 title: Complete all analysis runtime behavior proofs through declared seams
-status: To Do
+status: Done
 priority: high
 labels:
   - testing
@@ -11,7 +11,7 @@ labels:
   - 'plan:analysis-capability-runtime'
 dependencies: []
 createdAt: '2026-07-29T18:36:32.814Z'
-updatedAt: '2026-07-29T18:36:32.814Z'
+updatedAt: '2026-07-29T20:28:43.410Z'
 ---
 
 ## Description
@@ -34,8 +34,8 @@ that is owned by TASK-527, so do not duplicate it here. Focus this task on
 ACs #2–#4.
 
 <!-- AC:BEGIN -->
-- [ ] #1 All 23 active behaviors have the exact recorded test name and exact marker; B-032 remains withdrawn without an executable test.
-- [ ] #2 B-003/B-004/B-006/B-007/B-010–B-012/B-025/B-027/B-033/B-035–B-037 prove their full Expected clauses through config, registered-tool, status, real-provider, or Pi seams named by the plan.
-- [ ] #3 The B-012 real-engine snapshot invokes analysis_status plus all seven registered capabilities and proves the actual registration has no apply/mutating tool.
-- [ ] #4 Mutation-style cases catch unsupported-input provider invocation, stripped native output, incorrect status rows, tool writes, ignored schema drift, and installed-provider cancellation regressions.
+- [x] #1 All 23 active behaviors have the exact recorded test name and exact marker; B-032 remains withdrawn without an executable test.
+- [x] #2 B-003/B-004/B-006/B-007/B-010–B-012/B-025/B-027/B-033/B-035–B-037 prove their full Expected clauses through config, registered-tool, status, real-provider, or Pi seams named by the plan.
+- [x] #3 The B-012 real-engine snapshot invokes analysis_status plus all seven registered capabilities and proves the actual registration has no apply/mutating tool.
+- [x] #4 Mutation-style cases catch unsupported-input provider invocation, stripped native output, incorrect status rows, tool writes, ignored schema drift, and installed-provider cancellation regressions.
 <!-- AC:END -->
