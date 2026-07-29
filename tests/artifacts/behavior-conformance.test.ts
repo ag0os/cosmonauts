@@ -1398,19 +1398,15 @@ ${activeBehaviors
 
 	// @cosmo-behavior plan:planning-system-hardening#B-013
 	test("keeps the analysis-capabilities artifacts passing under extended checks", async () => {
-		const planPath = join(
-			process.cwd(),
-			"missions",
-			"plans",
-			"analysis-capabilities",
-			"plan.md",
-		);
-		const result = checkBehaviorConformance({
-			planSlug: "analysis-capabilities",
-			planPath: "missions/plans/analysis-capabilities/plan.md",
-			projectRoot: process.cwd(),
-			planMarkdown: await readFile(planPath, "utf-8"),
-		});
+		// The parent plan was split into three delivery slices (its own D-024), so
+		// the artifacts this guards now live in three plans. Their withdrawn
+		// entries still total the parent's two: B-032 in the runtime slice and
+		// B-020 in the investigation slice.
+		const planSlugs = [
+			"analysis-capability-runtime",
+			"analysis-gate-rewiring",
+			"analysis-investigation-procedures",
+		];
 		const extendedBlockingKinds = new Set([
 			"unresolved-decision-citation",
 			"undated-supersession",
@@ -1418,10 +1414,29 @@ ${activeBehaviors
 			"duplicate-marker",
 		]);
 
-		expect(result.withdrawn).toBe(2);
-		expect(
-			result.issues.filter((issue) => extendedBlockingKinds.has(issue.kind)),
-		).toEqual([]);
+		let withdrawn = 0;
+		for (const planSlug of planSlugs) {
+			const planPath = join(
+				process.cwd(),
+				"missions",
+				"plans",
+				planSlug,
+				"plan.md",
+			);
+			const result = checkBehaviorConformance({
+				planSlug,
+				planPath: `missions/plans/${planSlug}/plan.md`,
+				projectRoot: process.cwd(),
+				planMarkdown: await readFile(planPath, "utf-8"),
+			});
+
+			expect(
+				result.issues.filter((issue) => extendedBlockingKinds.has(issue.kind)),
+			).toEqual([]);
+			withdrawn += result.withdrawn;
+		}
+
+		expect(withdrawn).toBe(2);
 	});
 
 	async function createTempDir(prefix: string): Promise<string> {
