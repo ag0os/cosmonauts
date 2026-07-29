@@ -1,7 +1,7 @@
 ---
 id: TASK-513
 title: Pin the reference engine and capture live provider envelopes
-status: To Do
+status: Done
 priority: high
 labels:
   - 'plan:analysis-capability-runtime'
@@ -9,7 +9,7 @@ labels:
   - testing
 dependencies: []
 createdAt: '2026-07-29T16:40:48.854Z'
-updatedAt: '2026-07-29T16:40:48.854Z'
+updatedAt: '2026-07-29T17:06:02.103Z'
 ---
 
 ## Description
@@ -33,10 +33,10 @@ Ratified ground: INV-1..5 outrank any mechanism. Gate kinds for this task:
 is the changed-scope base for any audit at task close.
 
 <!-- AC:BEGIN -->
-- [ ] #1 The reference provider engine is pinned at exactly 2.54.2 in this repository's package manifest and lockfile.
-- [ ] #2 Captured live envelopes exist as test fixtures for every capability the reference provider supports, including a changed-scope audit over a working tree carrying tracked, staged, and untracked changes.
-- [ ] #3 The config-introspection exit-code matrix is captured as fixtures covering healthy-with-config, defaults-in-effect (exit 3 with a plain-text stdout preamble), and error (exit 2), per `D-022`.
-- [ ] #4 Each fixture records whether its envelope came from the live engine or from a captured payload, so later behaviors can state which they use.
-- [ ] #5 Capture leaves the worktree unchanged: no provider cache or generated file is committed, and no capture step depends on writing into the repository (`INV-5`).
-- [ ] #6 The project's test, lint, and type-check steps pass.
+- [x] #1 The reference provider engine is pinned at exactly 2.54.2 in this repository's package manifest and lockfile.
+- [x] #2 Captured live envelopes exist as test fixtures for every capability the reference provider supports, including a changed-scope audit over a working tree carrying tracked, staged, and untracked changes.
+- [x] #3 The config-introspection exit-code matrix is captured as fixtures covering healthy-with-config, defaults-in-effect (exit 3 with a plain-text stdout preamble), and error (exit 2), per `D-022`.
+- [x] #4 Each fixture records whether its envelope came from the live engine or from a captured payload, so later behaviors can state which they use.
+- [x] #5 Capture leaves the worktree unchanged: no provider cache or generated file is committed, and no capture step depends on writing into the repository (`INV-5`).
+- [x] #6 The project's test, lint, and type-check steps pass.
 <!-- AC:END -->

@@ -1,7 +1,7 @@
 ---
 id: TASK-514
 title: 'Analysis core contract, capability vocabulary, and two-tool paper validation'
-status: To Do
+status: Done
 priority: high
 labels:
   - 'plan:analysis-capability-runtime'
@@ -9,7 +9,7 @@ labels:
 dependencies:
   - TASK-513
 createdAt: '2026-07-29T16:40:48.856Z'
-updatedAt: '2026-07-29T16:40:48.856Z'
+updatedAt: '2026-07-29T17:17:10.294Z'
 ---
 
 ## Description
@@ -33,10 +33,10 @@ fail). Record the commit HEAD at task start; that SHA is the changed-scope
 base for any audit at task close.
 
 <!-- AC:BEGIN -->
-- [ ] #1 `B-001` — the capability documentation states one vocabulary of exactly the seven capability names; the four gate-facing names match the gate-contracts vocabulary exactly and the three operational capabilities introduce no competing gate alias.
-- [ ] #2 `B-002` — the validation record maps every generic result field to at least two real tools with no more than one being the reference provider, provider-tags every single-provider aspect, and covers all seven capabilities.
-- [ ] #3 The analysis core expresses the contract: discriminated capability, scope, binding, and result types; verdict per result kind (`D-013`, ratified); and the `failed` binding state distinct from unbound (`D-009`).
-- [ ] #4 The core imports neither Pi nor concrete provider code (`D-004`).
-- [ ] #5 Any generic field the validation record cannot map to two real tools moves under a provider tag before the schema is frozen (`INV-4`).
-- [ ] #6 Tests carry `@cosmo-behavior plan:analysis-capability-runtime#B-001` and `#B-002` near the executable test, and the project's test, lint, and type-check steps pass.
+- [x] #1 `B-001` — the capability documentation states one vocabulary of exactly the seven capability names; the four gate-facing names match the gate-contracts vocabulary exactly and the three operational capabilities introduce no competing gate alias.
+- [x] #2 `B-002` — the validation record maps every generic result field to at least two real tools with no more than one being the reference provider, provider-tags every single-provider aspect, and covers all seven capabilities.
+- [x] #3 The analysis core expresses the contract: discriminated capability, scope, binding, and result types; verdict per result kind (`D-013`, ratified); and the `failed` binding state distinct from unbound (`D-009`).
+- [x] #4 The core imports neither Pi nor concrete provider code (`D-004`).
+- [x] #5 Any generic field the validation record cannot map to two real tools moves under a provider tag before the schema is frozen (`INV-4`).
+- [x] #6 Tests carry `@cosmo-behavior plan:analysis-capability-runtime#B-001` and `#B-002` near the executable test, and the project's test, lint, and type-check steps pass.
 <!-- AC:END -->

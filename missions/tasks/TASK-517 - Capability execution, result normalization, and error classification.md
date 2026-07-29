@@ -1,7 +1,7 @@
 ---
 id: TASK-517
 title: 'Capability execution, result normalization, and error classification'
-status: To Do
+status: Done
 priority: high
 labels:
   - 'plan:analysis-capability-runtime'
@@ -9,7 +9,7 @@ labels:
 dependencies:
   - TASK-516
 createdAt: '2026-07-29T16:40:48.862Z'
-updatedAt: '2026-07-29T16:40:48.862Z'
+updatedAt: '2026-07-29T17:54:06.501Z'
 ---
 
 ## Description
@@ -34,10 +34,10 @@ fail). Record the commit HEAD at task start; that SHA is the changed-scope
 base for any audit at task close.
 
 <!-- AC:BEGIN -->
-- [ ] #1 `B-007` — analysis-kind results carry capability, provider, version, scope, base, and verdict, while trace and fix-preview carry `verdict: "not-applicable"` with their evidence and proposals (`D-013`, ratified); every result preserves the complete provider-tagged native payload, stderr, and exit without truncation.
-- [ ] #2 `B-008` — a provider exit of 1 with valid findings JSON is a completed failing analysis with all findings and actions present: no exception and no flattening into prose.
-- [ ] #3 `B-009` — exit 2, an error envelope, invalid JSON, or JSON that cannot support a verdict for a verdict-bearing capability throws an `AnalysisProviderError` whose message names failed-to-run status, capability, provider, failure class, and process evidence (`D-020`); a successful trace or fix-preview completes without a fabricated verdict and without throwing.
-- [ ] #4 `B-010` — changed-scope audit errors before provider invocation on a missing, empty, or whitespace base and never widens; a valid base is passed literally and echoed in the result scope.
-- [ ] #5 `B-012` — a whole-worktree snapshot including ignored provider cache paths is byte-identical before and after status plus every capability including fix preview; every invocation disables caches, fix preview is dry-run, and no apply tool exists.
-- [ ] #6 Tests carry the `@cosmo-behavior plan:analysis-capability-runtime#B-007` through `#B-010` and `#B-012` markers, and the project's test, lint, and type-check steps pass.
+- [x] #1 `B-007` — analysis-kind results carry capability, provider, version, scope, base, and verdict, while trace and fix-preview carry `verdict: "not-applicable"` with their evidence and proposals (`D-013`, ratified); every result preserves the complete provider-tagged native payload, stderr, and exit without truncation.
+- [x] #2 `B-008` — a provider exit of 1 with valid findings JSON is a completed failing analysis with all findings and actions present: no exception and no flattening into prose.
+- [x] #3 `B-009` — exit 2, an error envelope, invalid JSON, or JSON that cannot support a verdict for a verdict-bearing capability throws an `AnalysisProviderError` whose message names failed-to-run status, capability, provider, failure class, and process evidence (`D-020`); a successful trace or fix-preview completes without a fabricated verdict and without throwing.
+- [x] #4 `B-010` — changed-scope audit errors before provider invocation on a missing, empty, or whitespace base and never widens; a valid base is passed literally and echoed in the result scope.
+- [x] #5 `B-012` — a whole-worktree snapshot including ignored provider cache paths is byte-identical before and after status plus every capability including fix preview; every invocation disables caches, fix preview is dry-run, and no apply tool exists.
+- [x] #6 Tests carry the `@cosmo-behavior plan:analysis-capability-runtime#B-007` through `#B-010` and `#B-012` markers, and the project's test, lint, and type-check steps pass.
 <!-- AC:END -->
