@@ -7,17 +7,27 @@ refactoring the underlying code.
 
 ## Current Gate
 
-Run the full gate with:
+Cosmonauts exposes the change-regression gate through the provider-neutral
+`changed-scope-audit` capability. The `analysis_audit` tool requires an
+explicit base, runs only after per-project execution consent, and preserves the
+provider's complete structured result. A failed or unavailable binding is
+reported explicitly; it is never converted to a pass.
+
+For direct provider diagnosis, the equivalent change-scoped operation is:
 
 ```bash
-fallow audit
+fallow audit --base <base-sha> --format json --quiet --explain --no-cache
 ```
 
-Current policy:
+`fallow audit` is not a full-project cleanliness check. Current policy has two
+scopes:
 
-- Dead code must be clean without a baseline.
-- Health must report `functions_above_threshold: 0`.
-- Duplication must be clean without a baseline.
+- Change regression blocks a `fail` verdict or a provider runtime failure from
+  the explicit base. Unbound capability state remains visible and requires
+  reviewer judgment.
+- Full-project exception hygiene remains a deliberate provider-maintenance
+  check: dead code and duplication are clean without baselines, and health
+  reports `functions_above_threshold: 0`.
 
 There is no longer a temporary duplication baseline and no inline complexity
 suppressions. Both were removed by the
@@ -34,8 +44,11 @@ Reason: public API.
 
 Cosmonauts publishes TypeScript source and supports consumers and tests
 deep-importing stable module entry points such as `lib/agents/index.ts`,
-`lib/domains/index.ts`, `lib/runtime.ts`, and selected orchestration modules.
-Those exports may be externally consumed even when no in-repository import exists.
+`lib/analysis/index.ts`, `lib/domains/index.ts`, `lib/runtime.ts`, and selected
+orchestration modules. `lib/analysis/index.ts` is the provider-neutral public
+boundary for capability vocabulary, bindings, requests, results, failures, and
+pure resolution. Those exports may be externally consumed even when no
+in-repository import exists.
 
 What is needed to remove this exception:
 

@@ -13,6 +13,10 @@ replacement for Fallow's exhaustive reference.
 - Fallow repository: <https://github.com/fallow-rs/fallow>
 - Local agent skill: `bundled/coding/skills/fallow/SKILL.md`
 - Cosmonauts configuration: [`../fallow.toml`](../fallow.toml)
+- Provider-neutral runtime contract:
+  [`analysis-capabilities.md`](analysis-capabilities.md)
+- Cross-provider schema evidence:
+  [`analysis-provider-validation.md`](analysis-provider-validation.md)
 - Cosmonauts exception policy: [`fallow-exceptions.md`](fallow-exceptions.md)
 - Recommended workflow integration:
   [`fallow-workflow-integration.md`](fallow-workflow-integration.md)
@@ -39,6 +43,40 @@ Fallow does not replace:
 Use Fallow alongside those tools. A clean Fallow result means the configured
 structural checks passed for the selected scope; it does not mean the program is
 correct.
+
+## Cosmonauts Runtime Adapter
+
+Cosmonauts ships Fallow `2.54.2` as the reference implementation behind its
+provider-neutral analysis capabilities. The stable public contract lives at
+[`../lib/analysis/index.ts`](../lib/analysis/index.ts); Fallow detection,
+process execution, and normalization remain in the `project-tools` extension.
+
+The adapter recognizes `.fallowrc.json`, `fallow.toml`, `.fallow.toml`, and a
+project package dependency. It resolves only an explicitly configured
+executable, the target project's package-installed binary, or an injected test
+binary. It never searches `PATH` and never performs a mutable package fetch.
+Before executing a project-resolved binary, it requires per-project consent
+recorded outside the repository.
+
+When bound, the adapter exposes:
+
+| Capability | Fallow operation and delivered scope |
+|---|---|
+| `dead-code` | Project or explicit paths. |
+| `duplication` | Project only. |
+| `complexity` | Project only; cyclomatic, cognitive, and CRAP metrics. |
+| `boundary-conformance` | Project or explicit paths, only when zones and rules are configured. |
+| `changed-scope-audit` | Changed scope from a required explicit base. |
+| `trace` | Exactly one symbol, file, dependency, or duplicate location. |
+| `fix-preview` | Project-only dry-run proposals. |
+
+All provider invocations are shell-free and timeout-bounded. Analysis, config
+introspection, and preview operations are cache-disabled; version detection is
+intrinsically read-only. Completed findings preserve parsed native JSON,
+stderr, and exit status. Invalid configuration, crashes, signals,
+cancellation, timeouts, unsupported schemas, and unclassifiable output surface
+as provider failures rather than clean results. The generic runtime never
+applies a Fallow fix.
 
 ## The Command Surface
 
@@ -324,8 +362,10 @@ package scripts, and monorepo dependency ownership.
 
 ## Safe Fixes
 
-Fallow can automate supported unused-export and dependency changes. Treat this
-as a mutation workflow, not an analysis command:
+The Cosmonauts `fix-preview` capability stops after a cache-disabled dry run and
+has no apply input. Fallow can also automate supported unused-export and
+dependency changes when a maintainer invokes the provider directly. Treat that
+direct use as a separate mutation workflow, not as a capability call:
 
 ```bash
 # 1. Preview
@@ -389,6 +429,9 @@ Important policy fields include:
 
 Prefer explicit, narrow configuration over suppressions. Keep the reason for
 each durable exception in [`fallow-exceptions.md`](fallow-exceptions.md).
+This repository's `entry` list includes `lib/analysis/index.ts` because the
+provider-neutral analysis contract is a supported public deep-import even when
+no in-repository import reaches every export.
 
 The upstream configuration reference is:
 <https://github.com/fallow-rs/docs/tree/main/configuration>.
@@ -449,10 +492,26 @@ should be used deliberately.
 
 ## Agent And Programmatic Interfaces
 
+### Cosmonauts capability tools
+
+Agents use the stable tools documented in
+[`analysis-capabilities.md`](analysis-capabilities.md), not the provider CLI
+surface below. `analysis_status` reports all seven capability bindings,
+including provider/version, supported scopes and metrics, and diagnostic
+unbound or failed state. The remaining tools return normalized findings, trace
+evidence, or preview proposals while preserving the complete Fallow payload.
+
+This runtime is shipped, but consumer prompt and allowlist rewiring belongs to
+the `analysis-gate-rewiring` slice. The legacy detected-command prompt remains
+temporarily so existing consumers are not stranded. The concrete Fallow skill
+also remains shipped until that slice removes it; direct links to it are
+therefore intentional in this document.
+
 ### CLI
 
 The CLI has the broadest command surface and is the simplest integration point
-for a project-level gate. Parse JSON instead of terminal output.
+for provider diagnosis and provider-specific maintenance. Parse JSON instead of
+terminal output.
 
 ### MCP
 
@@ -525,4 +584,3 @@ See the
 - [Suppressions](https://github.com/fallow-rs/docs/blob/main/configuration/suppression.mdx)
 - [CI integrations](https://github.com/fallow-rs/docs/blob/main/integrations/ci.mdx)
 - [Agent skills](https://github.com/fallow-rs/docs/blob/main/integrations/agent-skills.mdx)
-

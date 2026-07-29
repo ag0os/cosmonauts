@@ -1,11 +1,11 @@
 # Analysis Provider Validation
 
-This record freezes the generic analysis result contract against real tool
-surfaces. The reference evidence is the reviewed Fallow 2.54.2 capture set in
-`tests/fixtures/fallow-2.54.2/`; every independent mapping points to a second
-real tool. A mapping is structural, not a claim that two tools use identical
-names or policies: adapters may derive a verdict, message, or local ID only
-from classifiable tool evidence and configured thresholds.
+This record validates the delivered generic analysis result contract against
+real tool surfaces. The reference evidence is the reviewed Fallow 2.54.2
+capture set in `tests/fixtures/fallow-2.54.2/`; every independent mapping points
+to a second real tool. A mapping is structural, not a claim that two tools use
+identical names or policies: adapters may derive a verdict, message, or local
+ID only from classifiable tool evidence and configured thresholds.
 
 Primary independent references:
 
@@ -26,6 +26,34 @@ Primary independent references:
   [`--fix-dry-run`](https://eslint.org/docs/latest/use/command-line-interface#--fix-dry-run)
   document JSON findings, locations, severities, suggestions/fixes, version,
   exit codes, and preview-only output.
+
+## Delivered reference validation
+
+The shipped Fallow adapter and fixtures exercise all seven capabilities. The
+package and lockfile pin Fallow `2.54.2`, and the adapter validates each
+completed envelope against the schema versions captured from that engine.
+Completed provider exits `0` and `1` remain results when their JSON is
+classifiable; other execution exits, signals, timeouts, aborts, invalid JSON,
+error envelopes, and unsupported schema versions are failures.
+
+The adapter advertises only native scope support:
+
+| Capability | Delivered Fallow binding |
+|---|---|
+| `dead-code` | `project`, `paths` |
+| `duplication` | `project` |
+| `complexity` | `project`; `cyclomatic`, `cognitive`, and `crap` metrics |
+| `boundary-conformance` | `project`, `paths` only when zones and rules are configured; otherwise `provider-not-configured` |
+| `changed-scope-audit` | `changed` with a required explicit base |
+| `trace` | `target` for a symbol, file, dependency, or duplicate location |
+| `fix-preview` | `project`; dry-run only |
+
+Every analysis, config-introspection, and preview invocation disables the
+provider cache; version detection uses its intrinsically read-only operation.
+The live no-write checks snapshot the whole worktree, including ignored
+provider state. The live dirty-scope fixture proves that the changed-scope
+audit covers tracked, staged, and untracked files without widening beyond its
+explicit base.
 
 ## Generic result field evidence
 
@@ -110,7 +138,7 @@ to that finding; otherwise the optional coordinate is omitted.
 | `trace` | Fallow 2.54.2: captured target reachability, references, chains, and reason. | dependency-cruiser JSON: module nodes, dependency edges, cycles, and via paths. |
 | `fix-preview` | Fallow 2.54.2: captured dry-run removal proposals with no applied fixes. | ESLint `--fix-dry-run`: JSON reports proposed output without writing files. |
 
-## Freeze decision
+## Delivered contract decision
 
 Every leaf field in `ANALYSIS_RESULT_GENERIC_FIELDS` has reference and
 independent evidence above. The generic contract intentionally excludes every

@@ -1,6 +1,7 @@
 # Integrating Fallow Into Cosmonauts Coding Workflows
 
-This document recommends how Cosmonauts should use Fallow throughout the work
+This document records how Fallow backs Cosmonauts' analysis capability runtime
+and how the remaining workflow integration is staged across the work
 lifecycle:
 
 > roadmap → plan → tasks → sessions → archive → memory
@@ -39,50 +40,47 @@ For Fallow's capability reference, commands, and limitations, see
 - Automatically converting every hotspot or clone into a refactoring task.
 - Bulk-applying Fallow fixes without trace evidence and behavioral verification.
 
-## Investigation Snapshot
+## Delivery Status
 
-The July 2026 investigation found a useful but incomplete integration.
-
-### What Exists
+### Runtime delivered in this slice
 
 - [`../fallow.toml`](../fallow.toml) identifies stable public entry points,
-  runtime-loaded domain files, and production-only duplication analysis.
-- `domains/shared/extensions/project-tools/index.ts` detects Fallow and injects
-  `npx fallow audit` into an agent system prompt.
-- `bundled/coding/prompts/quality-manager.md` asks the Verifier to execute a
-  detected analysis tool on feature branches.
-- The Quality Manager routes failed analysis findings through narrow remediation
-  rather than editing code itself.
-- Migration-shaped changes already require an early stale-reference/dead-code
-  sweep.
-- The coding domain ships a detailed Fallow skill that agents can load on
-  demand.
+  including `lib/analysis/index.ts`, runtime-loaded domain files, and
+  production-only duplication analysis.
+- `lib/analysis/index.ts` exports the provider-neutral vocabulary, requests,
+  binding states, results, failures, and pure resolver.
+- `project-tools` registers `analysis_status` plus one tool for each of the
+  seven capabilities. Agent-start status lists every binding with its provider,
+  version, scopes, metrics, and diagnostic state.
+- Fallow is pinned exactly at `2.54.2`. Its adapter uses an explicitly
+  configured or project-local executable without `PATH` or mutable-fetch
+  fallback, requires per-project execution consent, disables analysis/config
+  caches, preserves complete JSON/stderr, validates schemas, and distinguishes
+  findings from process/runtime failures.
+- Boundary conformance remains visibly `provider-not-configured` until the
+  resolved Fallow configuration has both zones and rules.
+- The live changed-scope fixture covers tracked, staged, and untracked files
+  from an explicit base. Fix support is dry-run only, and whole-worktree
+  snapshots prove that status and capability calls do not write provider
+  caches or source files.
 
-### What Is Missing Or Misleading
+### Sequential follow-up boundaries
 
-- `project-tools` models an analysis tool as one description and one command. It
-  does not expose supported gate kinds, configuration state, version, scope,
-  output schema, or available investigations.
-- The injected command uses mutable `npx fallow`; Fallow is not pinned in
-  `package.json`.
-- Agent execution does not require `--format json --quiet --explain`, so
-  structured findings can be flattened into terminal prose.
-- The Quality Manager skips the audit for working-tree reviews on the base
-  branch, even though `fallow audit` can analyze that scope.
-- Plans use abstract `complexity`, `duplication`, `boundary-conformance`, and
-  `dead-code` gates, but the runtime exposes only a generic “codebase audit.”
-- `fallow list --boundaries` reported `configured: false`. A zero boundary count
-  therefore does not enforce the documented three-layer architecture.
-- No repository CI workflow was found for Fallow.
-- [`fallow-exceptions.md`](fallow-exceptions.md) calls `fallow audit` the full
-  gate even though `audit` is change-scoped.
-- A live changed-scope audit passed while a live full-project combined scan
-  reported existing dead-code/API-surface candidates, clone groups, and
-  complexity findings. That is expected evidence for a two-lane policy, not a
-  contradiction in Fallow.
+- `analysis-gate-rewiring` changes Quality Manager, Verifier, and Fixer
+  consumption to the generic capability tools, distributes the extension and
+  shared analysis skill to the seven v1 roles, removes the retained
+  detected-command prose, and deletes the concrete provider skill.
+- `analysis-investigation-procedures` teaches Planner, Plan Reviewer, Worker,
+  and Refactorer the provider-neutral investigation, trace-before-delete, and
+  task-close audit procedures.
+- CI enforcement, scheduled full-project stewardship, repository boundary-zone
+  authoring, a second executable provider, and MCP/Node transports remain
+  follow-up work outside those slices.
 
-Re-run the analysis before implementation; these observations are a dated
-snapshot, not a permanent statement of repository state.
+Until `analysis-gate-rewiring` lands, the legacy detected-command block and the
+concrete Fallow skill remain intentionally shipped so existing consumers and
+links are not stranded. The runtime is additive; no completion claim for the
+remaining `analysis-tools` roadmap work is implied.
 
 ## Operating Model: Two Lanes
 
@@ -174,92 +172,61 @@ that the implementation is wrong.
 
 ## Runtime Binding Architecture
 
-Generic artifacts should continue naming abstract gate kinds. The concrete
-mapping belongs in the detected-project-tools layer.
+Generic artifacts name capabilities and abstract gate kinds. The concrete
+mapping is implemented at the `project-tools` provider edge.
 
 ```text
 plan Quality Contract
   └─ abstract gate kind
-       └─ project-tools binding resolver
-            └─ Fallow adapter
-                 ├─ changed-scope audit
-                 ├─ full-project analysis
-                 ├─ health and trends
-                 └─ trace and fix preview
-                      └─ normalized findings
-                           ├─ Verifier evidence
-                           ├─ Quality Manager ledger
-                           ├─ Fixer/worker remediation
-                           └─ archive/memory summary
+       └─ stable analysis capability
+            └─ lib/analysis binding resolver
+                 └─ project-tools session binding
+                      └─ consented Fallow adapter
+                           ├─ normalized findings
+                           ├─ trace evidence
+                           ├─ preview proposals
+                           └─ complete native envelope
 ```
 
 This preserves language-agnostic plans: another repository can bind the same
 gate kind to a different tool or report it as unbound.
 
-### Recommended Provider Contract
+### Delivered Provider Contract
 
-Replace the current single-command `AnalysisTool` shape with a typed provider
-contract along these lines:
+The exact public contract is
+[`../lib/analysis/index.ts`](../lib/analysis/index.ts), with its field-level
+cross-tool evidence in
+[`analysis-provider-validation.md`](analysis-provider-validation.md). V1
+selects one provider per project/session, either by optional
+`analysis.provider` preference or auto-detection. The provider advertises
+support per capability, including scope kinds and complexity metrics.
 
-```ts
-type AnalysisGateKind =
-  | "dead-code"
-  | "duplication"
-  | "complexity"
-  | "boundary-conformance";
+Bindings are `bound`, `unbound`, or `failed`. Requests can resolve to ready,
+unbound, unsupported scope, unsupported metric, or failed. Completed
+analysis-kind results carry `pass` or `fail`; trace and fix preview carry
+`not-applicable` with evidence or proposals. Findings retain locations,
+severity, actions, provider-tagged details, and adapter-local IDs with no
+cross-session determinism promise. The native envelope preserves parsed
+payload, stderr, and completed exit code without truncation.
 
-interface AnalysisBinding {
-  readonly gateKind: AnalysisGateKind;
-  readonly configured: boolean;
-  readonly enforcement: "blocking" | "advisory";
-  readonly scopes: readonly ("changed" | "project")[];
-}
+### Runtime Placement
 
-interface AnalysisFinding {
-  readonly id: string;
-  readonly gateKind: AnalysisGateKind;
-  readonly severity: "error" | "warn";
-  readonly path?: string;
-  readonly line?: number;
-  readonly message: string;
-  readonly actions: readonly AnalysisAction[];
-}
+The provider-neutral core has no Pi or Fallow dependency. The existing Pi
+`project-tools` extension owns provider signal detection, consent-gated
+introspection, process execution, normalization, session snapshotting, status
+injection, and tool registration. It uses a local signal-aware process runner
+because the required exit/signal/abort distinction is stricter than the
+available Pi execution helper preserves.
 
-interface AnalysisResult {
-  readonly tool: "fallow";
-  readonly version: string;
-  readonly operation: "audit" | "full" | "health" | "trace" | "fix-preview";
-  readonly scope: "changed" | "project";
-  readonly base?: string;
-  readonly verdict: "pass" | "warn" | "fail" | "error";
-  readonly findings: readonly AnalysisFinding[];
-}
-```
-
-The exact implementation may preserve Fallow's native JSON envelopes rather
-than copying every field. The important properties are typed gate binding,
-explicit scope, version/configuration evidence, and lossless findings.
-
-### Pi-First Implementation Choice
-
-The first implementation should extend the existing Pi `project-tools`
-extension:
-
-1. detect Fallow and the exact executable/version;
-2. inspect the resolved configuration;
-3. register a read-only analysis tool or provide normalized executable claims;
-4. capture stdout, stderr, and exit status separately;
-5. return structured JSON to the calling role.
-
-Start with the Fallow CLI because it covers `audit`, feature flags, tracing,
-configuration inspection, and operational commands. Consider
-`@fallow-cli/fallow-node` later for high-frequency, long-lived read-only
-analysis. The Node bindings do not replace the entire CLI surface.
-
-Do not require an external MCP server for the first slice. Fallow MCP is a good
-optional adapter for hosts that already support MCP and tool-level permissions.
+The CLI transport is sufficient for v1. Fallow MCP and Node bindings remain
+possible future adapters, not runtime dependencies.
 
 ## Workflow-Stage Integration
+
+The runtime rows below describe the intended end-to-end workflow. Final-gate
+consumer rewiring lands in `analysis-gate-rewiring`; planning and task-close
+procedures land in `analysis-investigation-procedures`. They are not claimed as
+delivered by the runtime slice.
 
 | Stage or role | Use Fallow for | Do not use it for |
 |---|---|---|
@@ -476,48 +443,43 @@ Before simplifying a complex function:
 4. make the smallest structural improvement;
 5. compare the before/after finding instead of chasing the project score.
 
-## Implementation Sequence
+## Delivery Sequence
 
-### Phase 0: Reproducible Truth
+### Delivered: Capability Runtime
 
-- Pin the current accepted Fallow version in `devDependencies`.
-- Add package scripts for changed audit, full analysis, health, and flags.
-- Make rule severities, thresholds, and `audit.gate = "new-only"` explicit.
-- Correct the distinction between `audit` and full-project analysis in
-  [`fallow-exceptions.md`](fallow-exceptions.md).
-- Classify the current full-project findings before deleting or baselining them.
+- Pin Fallow `2.54.2` in package and lock data.
+- Export the provider-neutral contract from `lib/analysis/index.ts`.
+- Register typed status and capability tools in `project-tools`.
+- Detect the executable, version, resolved configuration, and boundary state
+  behind execution consent.
+- Preserve structured results and provider failures without mutation or cache
+  writes.
+- Prove explicit-base dirty scope, schema validation, cancellation, timeout,
+  and whole-worktree no-write behavior.
 
-### Phase 1: Lossless Final Gate
+### Next: `analysis-gate-rewiring`
 
-- Expand `project-tools` from one command to typed gate bindings.
-- Require JSON, quiet mode, and explanations.
-- Detect Fallow version, resolved config, and boundary configuration.
-- Run the audit for feature branches and dirty-base reviews.
-- Normalize exit codes and preserve structured actions.
-- Add prompt/extension tests for binding, scope, and error behavior.
+- Resolve final Quality Contract gates through capability bindings.
+- Run changed-scope gates for feature-branch and dirty-base reviews.
+- Route complete findings through narrow remediation and re-verification.
+- Replace the legacy detected-command bridge and concrete provider skill with
+  the shared provider-neutral procedure in the same slice.
 
-### Phase 2: Earlier Feedback
+### Then: `analysis-investigation-procedures`
 
-- Give Planner and Plan Reviewer read-only project info, health, duplication,
-  and trace operations.
-- Preserve task-start base and applicable gate kinds in execution context.
-- Add worker task-close audits and coordinator wave audits.
-- Make migration sweeps an explicit task-completion claim.
+- Give Planner and Plan Reviewer capability-based structure, duplication,
+  complexity, and trace evidence before design.
+- Add trace-before-delete and task-close audit procedures for Worker and
+  Refactorer.
+- Preserve explicit no-evidence/unbound records without leaking provider
+  commands into shipped generic content.
 
-### Phase 3: Architecture Enforcement
+### Later Follow-Up
 
-- Audit actual dependency direction.
-- Introduce custom zones and advisory boundary findings.
-- Resolve or document existing violations.
-- Change boundary conformance to a blocking binding only after the model is
-  trustworthy.
-
-### Phase 4: Stewardship And Memory
-
-- Save periodic health snapshots.
-- Publish trend, hotspot, target, feature-flag, and suppression summaries.
-- Feed reviewed cleanup opportunities into roadmap/task planning.
-- Record meaningful quality deltas in archive/memory.
+- Add pull-request enforcement and report publication.
+- Schedule full-project health, trend, hotspot, flag, and suppression review.
+- Audit actual dependency direction and configure trustworthy boundary zones.
+- Feed reviewed maintenance opportunities into roadmap and task planning.
 
 ## Success Criteria
 
@@ -537,4 +499,3 @@ The integration is successful when:
   empty rule set;
 - Fallow remains one part of the larger correctness gate alongside tests,
   typechecking, linting, and review.
-
