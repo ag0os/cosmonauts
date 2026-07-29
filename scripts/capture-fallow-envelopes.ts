@@ -511,6 +511,13 @@ function commandArgs(
 	];
 }
 
+function verdictCommandArgs(
+	command: string,
+	...operationArgs: readonly string[]
+): readonly string[] {
+	return [...commandArgs(command, ...operationArgs), "--fail-on-issues"];
+}
+
 export async function captureFallowEnvelopes(
 	options: CaptureOptions,
 ): Promise<readonly string[]> {
@@ -550,21 +557,27 @@ export async function captureFallowEnvelopes(
 				name: "dead-code",
 				kind: "capability",
 				cwd: configuredRoot,
-				args: commandArgs("dead-code"),
+				args: verdictCommandArgs("dead-code"),
 				expectedCodes: [0, 1],
 			},
 			{
 				name: "duplication",
 				kind: "capability",
 				cwd: configuredRoot,
-				args: commandArgs("dupes", "--min-tokens", "20", "--min-lines", "4"),
+				args: verdictCommandArgs(
+					"dupes",
+					"--min-tokens",
+					"20",
+					"--min-lines",
+					"4",
+				),
 				expectedCodes: [0, 1],
 			},
 			{
 				name: "complexity",
 				kind: "capability",
 				cwd: configuredRoot,
-				args: commandArgs(
+				args: verdictCommandArgs(
 					"health",
 					"--complexity",
 					"--max-cyclomatic",
@@ -578,14 +591,14 @@ export async function captureFallowEnvelopes(
 				name: "boundary-conformance",
 				kind: "capability",
 				cwd: configuredRoot,
-				args: commandArgs("dead-code", "--boundary-violations"),
+				args: verdictCommandArgs("dead-code", "--boundary-violations"),
 				expectedCodes: [0, 1],
 			},
 			{
 				name: "changed-scope-audit",
 				kind: "capability",
 				cwd: configuredRoot,
-				args: commandArgs("audit", "--base", "HEAD"),
+				args: verdictCommandArgs("audit", "--base", "HEAD"),
 				expectedCodes: [0, 1],
 				expectedWorkingTreeChanges: {
 					tracked: ["src/tracked.ts"],

@@ -1359,18 +1359,15 @@ describe("Fallow capability execution", () => {
 					stderr: fixture.envelope.stderr,
 				},
 			});
-			const exclusiveResult = await exclusiveRuntime.execute({
-				capability: "complexity",
-				scope: { kind: "project" },
-				metric,
-			});
-			expect(exclusiveResult).toMatchObject({
-				kind: "findings",
-				capability: "complexity",
-				metric,
-				verdict: "pass",
-				findings: [],
-				native: { payload: exclusivePayload },
+			await expect(
+				exclusiveRuntime.execute({
+					capability: "complexity",
+					scope: { kind: "project" },
+					metric,
+				}),
+			).rejects.toMatchObject({
+				name: "AnalysisProviderError",
+				failureClass: "invalid-output",
 			});
 		}
 	});
@@ -1463,6 +1460,76 @@ describe("Fallow capability execution", () => {
 			]),
 		});
 		expect(result.native.payload).toEqual(payload);
+	});
+
+	test("rejects structurally valid verdict evidence that contradicts the provider exit", async () => {
+		const duplicationFixture = await loadCapabilityFixture("duplication");
+		const auditFixture = await loadCapabilityFixture("changed-scope-audit");
+		const contradictions = [
+			{
+				name: "exit one with zero findings",
+				request: {
+					capability: "duplication",
+					scope: { kind: "project" },
+				},
+				code: 1,
+				payload: { schema_version: 4, clone_groups: [] },
+			},
+			{
+				name: "exit one with asserted pass",
+				request: {
+					capability: "changed-scope-audit",
+					scope: { kind: "changed", base: "HEAD" },
+				},
+				code: 1,
+				payload: {
+					schema_version: 3,
+					base_ref: "HEAD",
+					verdict: "pass",
+				},
+			},
+			{
+				name: "exit zero with findings",
+				request: {
+					capability: "duplication",
+					scope: { kind: "project" },
+				},
+				code: 0,
+				payload: duplicationFixture.envelope.payload,
+			},
+			{
+				name: "exit zero with asserted fail",
+				request: {
+					capability: "changed-scope-audit",
+					scope: { kind: "changed", base: "HEAD" },
+				},
+				code: 0,
+				payload: auditFixture.envelope.payload,
+			},
+		] as const satisfies readonly {
+			readonly name: string;
+			readonly request: AnalysisRequest;
+			readonly code: 0 | 1;
+			readonly payload: unknown;
+		}[];
+
+		for (const contradiction of contradictions) {
+			const runtime = await discoveredRuntimeWithFixtures({
+				capabilityOutcome: {
+					kind: "code-exit",
+					code: contradiction.code,
+					stdout: JSON.stringify(contradiction.payload),
+					stderr: `${contradiction.name} detail`,
+				},
+			});
+
+			await expect(
+				runtime.execute(contradiction.request),
+				contradiction.name,
+			).rejects.toThrow(
+				/Failure class: invalid-output[\s\S]*Process evidence: exit=[01]/u,
+			);
+		}
 	});
 
 	test("executes every Fallow-supported trace target variant", async () => {
@@ -1693,6 +1760,7 @@ describe("Fallow capability execution", () => {
 			"json",
 			"--quiet",
 			"--no-cache",
+			"--fail-on-issues",
 		]);
 		expect(completed.scope).toEqual({ kind: "changed", base: literalBase });
 
@@ -1893,11 +1961,9 @@ describe("Fallow capability execution", () => {
 		]);
 		expect(after).toEqual(before);
 		expect(before[".fallow/preexisting.bin"]).toBeDefined();
-		expect(
-			invocations
-				.filter(({ args }) => !args.includes("--version"))
-				.every(({ args }) => args.includes("--no-cache")),
-		).toBe(true);
+		expect(invocations.every(({ args }) => args.includes("--no-cache"))).toBe(
+			true,
+		);
 		const fixInvocation = invocations.find(({ args }) => args[0] === "fix");
 		expect(fixInvocation?.args).toEqual(
 			expect.arrayContaining(["--dry-run", "--no-cache"]),

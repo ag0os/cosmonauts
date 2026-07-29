@@ -20,7 +20,8 @@
 			"--format",
 			"json",
 			"--quiet",
-			"--no-cache"
+			"--no-cache",
+			"--fail-on-issues"
 		],
 		"cwd": "<fixture-project>"
 	},

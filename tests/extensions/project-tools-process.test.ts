@@ -32,6 +32,25 @@ function terminationIgnoringScript(label: string): string {
 	`;
 }
 
+function naturallyExitingDescendantScript(
+	label: string,
+	exit: "code" | "signal",
+): string {
+	const exitStatement =
+		exit === "code"
+			? "process.exit(0)"
+			: 'process.kill(process.pid, "SIGTERM")';
+	return `
+		const { spawn } = require("node:child_process");
+		const descendant = spawn(process.execPath, ["-e", "setInterval(() => {}, 1_000)"], {
+			stdio: "ignore",
+		});
+		process.stdout.write("${label}:ready:" + process.pid + ":" + descendant.pid + "\\n", () => {
+			${exitStatement};
+		});
+	`;
+}
+
 function processExists(processId: number): boolean {
 	try {
 		process.kill(processId, 0);
@@ -128,6 +147,34 @@ describe("project-tools provider process runner", () => {
 		await expect(stat(outputSpoolRoot)).rejects.toMatchObject({
 			code: "ENOENT",
 		});
+	});
+
+	test("reaps descendants after providers exit naturally or by signal", async () => {
+		for (const exit of ["code", "signal"] as const) {
+			const label = `natural-${exit}`;
+			const outcome = await runProviderProcess(
+				nodeInvocation(naturallyExitingDescendantScript(label, exit)),
+				undefined,
+				{ terminationGraceMs: TERMINATION_GRACE_MS },
+			);
+			const processIds = processIdsFromOutput(outcome.stdout, label);
+			try {
+				expect(outcome.kind).toBe(
+					exit === "code" ? "code-exit" : "signal-exit",
+				);
+				for (const processId of processIds) {
+					await expectProcessGone(processId);
+				}
+			} finally {
+				for (const processId of processIds) {
+					try {
+						process.kill(processId, "SIGKILL");
+					} catch {
+						// The runner already reaped the process.
+					}
+				}
+			}
+		}
 	});
 
 	// @cosmo-behavior plan:analysis-capability-runtime#B-029

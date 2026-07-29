@@ -260,6 +260,7 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 			let runnerStderr = "";
 			let childClosed = false;
 			let windowsTreeKillCompleted = false;
+			let naturalOutcomeFactory: ProviderProcessOutcomeFactory | undefined;
 
 			let child: ReturnType<typeof spawn>;
 			try {
@@ -359,6 +360,29 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 				}));
 			};
 
+			const processTreeCleanupError = (message: string): void => {
+				const initiated = termination;
+				if (initiated !== undefined) {
+					terminationError(initiated, message);
+					return;
+				}
+				runnerStderr = appendRunnerError(runnerStderr, message);
+				child.stdout?.unpipe(stdoutSink);
+				child.stderr?.unpipe(stderrSink);
+				child.stdout?.destroy();
+				child.stderr?.destroy();
+				if (!stdoutSink.writableEnded) stdoutSink.end();
+				if (!stderrSink.writableEnded) stderrSink.end();
+				settle((stdout, stderr) => ({
+					kind: "spawn-error",
+					error: Object.assign(new Error(message), {
+						code: PROCESS_TREE_CLEANUP_FAILED_CODE,
+					}),
+					stdout,
+					stderr,
+				}));
+			};
+
 			const processTreeGone = (): boolean => {
 				const processId = child.pid;
 				if (processId === undefined) return true;
@@ -368,19 +392,29 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 				return !processGroupExists(processId);
 			};
 
-			const maybeFinishTermination = (): void => {
-				const initiated = termination;
-				if (initiated === undefined || !childClosed || !processTreeGone()) {
+			const maybeFinishProcessTreeCleanup = (): void => {
+				if (!childClosed || !processTreeGone()) {
 					return;
 				}
-				settle((stdout, stderr) =>
-					terminationOutcome(initiated, stdout, stderr),
-				);
+				const initiated = termination;
+				if (initiated !== undefined) {
+					settle((stdout, stderr) =>
+						terminationOutcome(initiated, stdout, stderr),
+					);
+					return;
+				}
+				const factory = naturalOutcomeFactory;
+				if (factory !== undefined) settle(factory);
 			};
 
 			const pollForTerminatedTree = (): void => {
-				if (settled || termination === undefined) return;
-				maybeFinishTermination();
+				if (
+					settled ||
+					(termination === undefined && naturalOutcomeFactory === undefined)
+				) {
+					return;
+				}
+				maybeFinishProcessTreeCleanup();
 				if (settled) return;
 				processTreePollTimer = setTimeout(
 					pollForTerminatedTree,
@@ -388,13 +422,13 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 				);
 			};
 
-			const forceKillProcessTree = (initiated: InitiatedTermination): void => {
+			const forceKillProcessTree = (): void => {
 				if (settled) return;
 				if (process.platform === "win32") {
 					const processId = child.pid;
 					if (processId === undefined) {
 						windowsTreeKillCompleted = true;
-						maybeFinishTermination();
+						maybeFinishProcessTreeCleanup();
 						return;
 					}
 					taskkillProcessTree(processId, true, (error) => {
@@ -406,7 +440,7 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 						} else {
 							windowsTreeKillCompleted = true;
 						}
-						maybeFinishTermination();
+						maybeFinishProcessTreeCleanup();
 					});
 				} else if (child.pid !== undefined) {
 					const error = signalPosixProcessGroup(child.pid, "SIGKILL");
@@ -421,10 +455,9 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 				pollForTerminatedTree();
 				forceKillDeadlineTimer = setTimeout(() => {
 					if (settled) return;
-					maybeFinishTermination();
+					maybeFinishProcessTreeCleanup();
 					if (!settled) {
-						terminationError(
-							initiated,
+						processTreeCleanupError(
 							`Provider process tree did not terminate within ${
 								terminationGraceMs + DEFAULT_FORCE_KILL_WAIT_MS
 							}ms.`,
@@ -433,13 +466,11 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 				}, DEFAULT_FORCE_KILL_WAIT_MS);
 			};
 
-			const beginTermination = (initiated: InitiatedTermination): void => {
-				if (settled || termination) return;
-				termination = initiated;
+			const beginProcessTreeCleanup = (): void => {
 				if (timeoutTimer) clearTimeout(timeoutTimer);
 
 				forceKillTimer = setTimeout(() => {
-					forceKillProcessTree(initiated);
+					forceKillProcessTree();
 				}, terminationGraceMs);
 
 				if (process.platform === "win32") {
@@ -454,7 +485,7 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 							} else {
 								windowsTreeKillCompleted = true;
 							}
-							maybeFinishTermination();
+							maybeFinishProcessTreeCleanup();
 						});
 					}
 				} else if (child.pid !== undefined) {
@@ -466,7 +497,21 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 						);
 					}
 				}
-				maybeFinishTermination();
+				maybeFinishProcessTreeCleanup();
+			};
+
+			const beginTermination = (initiated: InitiatedTermination): void => {
+				if (settled || termination || naturalOutcomeFactory) return;
+				termination = initiated;
+				beginProcessTreeCleanup();
+			};
+
+			const completeNaturalExit = (
+				factory: ProviderProcessOutcomeFactory,
+			): void => {
+				if (settled || termination || naturalOutcomeFactory) return;
+				naturalOutcomeFactory = factory;
+				beginProcessTreeCleanup();
 			};
 
 			function abort(): void {
@@ -483,10 +528,11 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 						runnerStderr,
 						`Provider process emitted an error during termination: ${error.message}`,
 					);
-					maybeFinishTermination();
+					maybeFinishProcessTreeCleanup();
 					return;
 				}
-				settle((stdout, stderr) => ({
+				childClosed = true;
+				completeNaturalExit((stdout, stderr) => ({
 					kind: "spawn-error",
 					error: errorWithOptionalCode(error),
 					stdout,
@@ -494,14 +540,18 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 				}));
 			});
 
-			child.once("close", (code, exitSignal) => {
+			const childExit = (
+				code: number | null,
+				exitSignal: NodeJS.Signals | null,
+			): void => {
+				if (childClosed) return;
+				childClosed = true;
 				if (termination) {
-					childClosed = true;
-					maybeFinishTermination();
+					maybeFinishProcessTreeCleanup();
 					return;
 				}
 				if (typeof code === "number") {
-					settle((stdout, stderr) => ({
+					completeNaturalExit((stdout, stderr) => ({
 						kind: "code-exit",
 						code,
 						stdout,
@@ -510,7 +560,7 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 					return;
 				}
 				if (exitSignal !== null) {
-					settle((stdout, stderr) => ({
+					completeNaturalExit((stdout, stderr) => ({
 						kind: "signal-exit",
 						signal: exitSignal,
 						stdout,
@@ -518,7 +568,7 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 					}));
 					return;
 				}
-				settle((stdout, stderr) => ({
+				completeNaturalExit((stdout, stderr) => ({
 					kind: "spawn-error",
 					error: new Error(
 						"Provider process closed without an exit code or signal",
@@ -526,6 +576,11 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 					stdout,
 					stderr,
 				}));
+			};
+
+			child.once("exit", childExit);
+			child.once("close", (code, exitSignal) => {
+				childExit(code, exitSignal);
 			});
 
 			signal?.addEventListener("abort", abort, { once: true });

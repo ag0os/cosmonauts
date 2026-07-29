@@ -10,7 +10,14 @@
 	},
 	"command": {
 		"executable": "node_modules/.bin/fallow",
-		"args": ["dead-code", "--format", "json", "--quiet", "--no-cache"],
+		"args": [
+			"dead-code",
+			"--format",
+			"json",
+			"--quiet",
+			"--no-cache",
+			"--fail-on-issues"
+		],
 		"cwd": "<fixture-project>"
 	},
 	"envelope": {

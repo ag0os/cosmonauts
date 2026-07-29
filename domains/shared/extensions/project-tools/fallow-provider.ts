@@ -884,7 +884,7 @@ async function introspectProvider(
 	const versionOutcome = await executeProcess(
 		{
 			executablePath: bindingIdentity.executable.canonicalPath,
-			args: ["--version"],
+			args: ["--version", "--no-cache"],
 			cwd: options.projectRoot,
 		},
 		options.signal,
@@ -1593,7 +1593,13 @@ function capabilityArgs(request: AnalysisRequest): readonly string[] {
 			operation = ["fix", "--dry-run"];
 			break;
 	}
-	return [...operation, ...FALLOW_JSON_ARGS];
+	return [
+		...operation,
+		...FALLOW_JSON_ARGS,
+		...(request.capability === "trace" || request.capability === "fix-preview"
+			? []
+			: ["--fail-on-issues"]),
+	];
 }
 
 function traceNode(record: Readonly<Record<string, unknown>>): string | null {
@@ -1690,6 +1696,36 @@ function findingsOutcome(
 	findings: readonly AnalysisFinding[],
 ): NormalizedAnalysisFindings {
 	return { findings, verdict: findings.length === 0 ? "pass" : "fail" };
+}
+
+function reconcileVerdictEvidence(
+	outcome: CompletedFallowOutcome,
+	payload: Readonly<Record<string, unknown>>,
+	normalized: NormalizedAnalysisFindings,
+): void {
+	const findingsVerdict = normalized.findings.length === 0 ? "pass" : "fail";
+	if (normalized.verdict !== findingsVerdict) {
+		throw new Error(
+			`provider verdict ${normalized.verdict} contradicts ${normalized.findings.length} normalized findings`,
+		);
+	}
+	if ("verdict" in payload) {
+		const assertedVerdict = payload.verdict;
+		if (assertedVerdict !== "pass" && assertedVerdict !== "fail") {
+			throw new Error("expected asserted verdict to be pass or fail");
+		}
+		if (assertedVerdict !== findingsVerdict) {
+			throw new Error(
+				`asserted verdict ${assertedVerdict} contradicts ${normalized.findings.length} normalized findings`,
+			);
+		}
+	}
+	const exitVerdict = outcome.code === 0 ? "pass" : "fail";
+	if (exitVerdict !== findingsVerdict) {
+		throw new Error(
+			`provider exit ${outcome.code} contradicts ${normalized.findings.length} normalized findings`,
+		);
+	}
 }
 
 function auditEnvelope(
@@ -1927,6 +1963,7 @@ function normalizedCapabilityResult(
 			};
 		}
 		const normalized = analysisFindings(request, envelope.record);
+		reconcileVerdictEvidence(outcome, envelope.record, normalized);
 		if (request.capability === "complexity") {
 			return {
 				kind: "findings",
