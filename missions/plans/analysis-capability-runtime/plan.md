@@ -1,28 +1,52 @@
 ---
-title: Analysis capability abstraction
+title: Analysis capability runtime
 status: active
-createdAt: '2026-07-27T17:10:11.520Z'
-updatedAt: '2026-07-27T23:45:00.000Z'
+createdAt: '2026-07-29T00:00:00.000Z'
+updatedAt: '2026-07-29T00:00:00.000Z'
 ---
 
 ## Overview
 
-Replace the current one-command project-tool injection with a provider-agnostic structural-analysis runtime. The stable core owns seven capability names and typed outcomes; the `project-tools` extension owns Pi registration and session discovery; a Fallow CLI adapter is the first concrete provider. Agent procedures call only generic capability tools, while runtime status/results may identify the resolved provider and version under INV-1.
+Slice 1 of 3 of the ratified `analysis-capabilities` design, split by D-024 on
+2026-07-29. This slice replaces nothing yet: it builds the provider-agnostic
+structural-analysis runtime underneath the existing surface. The stable core
+owns seven capability names and typed outcomes; the `project-tools` extension
+owns Pi registration and session discovery; a Fallow CLI adapter is the first
+concrete provider. The legacy "Detected Analysis Tools" prose injection is
+retained here by design and deleted by the `analysis-gate-rewiring` slice, so
+no shipped prompt is stranded against a missing block and no gate window opens.
 
-The end state is:
+The end state of this slice is:
 
 - Capability vocabulary: `dead-code`, `duplication`, `complexity`, `boundary-conformance`, `changed-scope-audit`, `trace`, and `fix-preview`. The first four exactly reuse gate-contract vocabulary; the last three are operations, not competing gate aliases.
-- Generic tools: `analysis_status`, `analysis_dead_code`, `analysis_duplication`, `analysis_complexity`, `analysis_boundaries`, `analysis_audit`, `analysis_trace`, and `analysis_fix_preview`.
+- Generic tools: `analysis_status`, `analysis_dead_code`, `analysis_duplication`, `analysis_complexity`, `analysis_boundaries`, `analysis_audit`, `analysis_trace`, and `analysis_fix_preview`, all registered and callable.
 - Optional project preference: `.cosmonauts/config.json` may name one provider; absence means auto-detect. Changing the provider never changes prompts, skills, plans, or tool names.
 - Session status lists every capability as `bound`, `unbound`, or `failed`. `failed` is reserved for attempted provider discovery/runtime uncertainty and is never degraded as unsupported. Tool calls return completed/unbound/unsupported-metric/unsupported-scope or throw a Pi tool error. Provider subprocesses run only with recorded per-project execution consent (D-014); without it, detection stays read-only and status shows detected-but-withheld.
 - Every provider subprocess is shell-free, cache-disabled, and read-only. Fix support is preview-only; no request, tool, or callback can apply changes.
-- Quality Manager executes changed-scope capabilities directly. Remediation consumers rerun the same capability request and treat their own fresh structured result as ground truth (D-019), avoiding the lossy child-assistant-text boundary while still giving Verifier a generic capability-claim procedure.
 
-This is one planned feature, not an architecture-linked umbrella. The durable provider boundary is the exported `lib/analysis/index.ts` contract plus `docs/analysis-capabilities.md`; create a separate architecture record only if a later second-provider/polyglot plan changes that boundary.
+What this slice deliberately does not do: rewire any consumer. Quality
+Manager, Verifier, Fixer, planner, plan-reviewer, worker, and refactorer
+prompts, agent tool allowlists, the shared analysis skill, and the deletion of
+the concrete provider skill all belong to the two sibling slices. The runtime
+must not foreclose them — D-013, D-016, D-019, and D-021 are carried here so
+the contract it freezes is the one those slices consume.
 
-Out of scope remains CI enforcement, scheduled full-project stewardship, repository boundary-zone authoring, a second executable provider, MCP/Node transports, and fix application. INV-3 and INV-5 outrank every derived convenience below.
+This is one planned feature, not an architecture-linked umbrella. The durable
+provider boundary is the exported `lib/analysis/index.ts` contract plus
+`docs/analysis-capabilities.md`; create a separate architecture record only if
+a later second-provider/polyglot plan changes that boundary.
+
+Out of scope remains CI enforcement, scheduled full-project stewardship,
+repository boundary-zone authoring, a second executable provider, MCP/Node
+transports, and fix application. INV-3 and INV-5 outrank every derived
+convenience below.
 
 ## Decision Log
+
+D-001 through D-023 were decided on the parent plan and are carried here
+verbatim, provenance and dates preserved, so every citation in this slice
+resolves against the ground it was actually decided on. D-024 records the
+split itself.
 
 - **D-001 - Use one project-level provider preference in v1**
   - Decision: add optional `analysis: { provider: string }`; absence means auto-detect, while an explicit unavailable provider remains visibly unbound without fallback.
@@ -51,7 +75,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - **D-005 - Use the pinned project-local CLI through `pi.exec`** *(superseded by D-008, 2026-07-27)*
   - Decision: resolve a project-local executable and invoke through `pi.exec`, throwing on uncertainty.
   - Alternatives: mutable fetching; Node bindings; MCP.
-  - Why: originally selected as Pi-first, but review proved Pi normalizes signal exits to code 0 and cannot establish INV-3. (Cited finding is from a prior review round's numbering, not the current `review.md`; premise independently re-verified 2026-07-27 against `pi-coding-agent/dist/core/exec.js` — `code ?? 0`.)
+  - Why: originally selected as Pi-first, but review proved Pi normalizes signal exits to code 0 and cannot establish INV-3. (Cited finding is from a prior review round's numbering, not the parent plan's `review.md`; premise independently re-verified 2026-07-27 against `pi-coding-agent/dist/core/exec.js` — `code ?? 0`.)
   - Decided by: planner-proposed, 2026-07-27
 
 - **D-006 - Cache only reconstructible session discovery**
@@ -97,15 +121,16 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - **D-012 - Disable all provider writes, not only fix application**
   - Decision: every analysis/introspection invocation includes the provider's no-cache option; version detection uses a non-writing version call; tests snapshot the worktree across status and every capability. Fix preview additionally requires dry-run.
   - Alternatives: ignore generated caches (still worktree mutation); clean caches afterward (mutates and risks deleting preexisting data); test only source files (too narrow).
-  - Why: review PR-001 showed ordinary analysis writes `.fallow/cache.bin`/`churn.bin`; INV-5 and AC-008 cover every capability tool. (Cited finding is from a prior review round's numbering, not the current `review.md`; premise independently re-verified 2026-07-27 with a live run — `fallow dead-code` writes `.fallow/cache.bin` without `--no-cache`.)
+  - Why: review PR-001 showed ordinary analysis writes `.fallow/cache.bin`/`churn.bin`; INV-5 and AC-008 cover every capability tool. (Cited finding is from a prior review round's numbering, not the parent plan's `review.md`; premise independently re-verified 2026-07-27 with a live run — `fallow dead-code` writes `.fallow/cache.bin` without `--no-cache`.)
   - Decided by: planner, amend-on-record, 2026-07-27
   - Supersedes: prior B-012 proof based only on absence of apply/fix dry-run
 
-- **D-013 - Discriminate verdict by result kind**
+- **D-013 - Discriminate verdict by result kind** *(ratified)*
   - Decision: analysis-kind results (`dead-code`, `duplication`, `complexity`, `boundary-conformance`, `changed-scope-audit`) carry an asserted or derived verdict; operational results (`trace`, `fix-preview`) carry `verdict: "not-applicable"` plus their evidence/proposals. Fabricating pass/fail for an operational result is itself a normalization error; B-009's cannot-support-a-verdict throw applies only to verdict-bearing kinds.
   - Alternatives: universal mandatory verdict (forces inventing meaning the provider never asserted — INV-3 forbids guessing — or throwing on every successful trace/fix-preview call, gutting two required capabilities); dropping the verdict field entirely for operational kinds (loses the uniform envelope).
   - Why: current-round review PR-002 proved Fallow asserts a verdict only for audit-style analysis; trace and `fix --dry-run` return evidence/changes with no verdict. This reads AC-003's field list as applying per result kind — surfaced for human confirmation at plan ratification; halt-and-escalate if a literal universal-verdict reading is required.
-  - Decided by: review-synthesis agent, amend-on-record, 2026-07-27
+  - Ratified: the human confirmed the per-kind reading on 2026-07-29 after being shown both readings and the consequence of the literal one (fabricate a verdict, violating INV-3, or throw on every successful trace/fix-preview call). The halt-and-escalate branch is closed and AC-003 needs no amendment; this entry is now ratified ground and moves only by a further human decision.
+  - Decided by: review-synthesis agent, amend-on-record, 2026-07-27; ratified by human, 2026-07-29
   - Supersedes: the universal-verdict clause of Design §1 and B-007/B-009's undiscriminated expectations
 
 - **D-014 - Execution consent gates provider spawning**
@@ -175,6 +200,13 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
   - Why: review Missing Coverage — B-029 proved classification of a timeout, not the existence of a bound.
   - Decided by: review-synthesis agent, amend-on-record, 2026-07-27
 
+- **D-024 - Deliver the design as three sequential slices** *(ratified)*
+  - Decision: the parent plan `analysis-capabilities` is split at its own marked slice boundaries into `analysis-capability-runtime` (stages 1–5), `analysis-gate-rewiring` (stages 6–7), and `analysis-investigation-procedures` (stage 8), delivered in that order. Each slice carries the ratified Intent and the full acceptance-criteria list verbatim, the complete D-001–D-024 Decision Log verbatim, and its own behaviors with their original `B-###` IDs and slice-scoped markers. Withdrawn behaviors stay withdrawn in their home slice (B-032 here, B-020 in the investigation slice) and are neither resurrected nor renumbered. The parent plan is archived as the design of record; its behaviors are not duplicated back into it.
+  - Alternatives: one plan with all 35 active behaviors (~3x the 3–12-task guidance, a long drive with a large blast radius before anything ships, and the size advisory left standing); a two-way split with one combined consumer slice (second slice still ~11 behaviors across seven roles, still above guidance); partitioning the acceptance criteria across slices rather than carrying them whole (impossible without editing ratified ground — B-024 alone sources AC-009, AC-010, and AC-012, so no clean partition exists).
+  - Why: serves the Intent goal by making each slice independently valuable and gate-clean. The retained legacy prose injection is what makes the seams safe: slice 1 adds the runtime without touching consumers, slice 2 swaps consumers and deletes the bridge in the same stage, slice 3 extends procedures onto the surface slice 2 distributed.
+  - Decided by: human, user-chose-among-options, 2026-07-29
+  - Supersedes: the parent plan's single-backlog delivery and the "decide at task creation" wording of its Implementation Order slice-boundary note
+
 ## Behaviors
 
 ### B-001 - One documented capability vocabulary
@@ -184,7 +216,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: all seven required capabilities exist; the four gate-facing names match exactly; operational capabilities introduce no aliases
 - Seam: `docs/analysis-capabilities.md`, `domains/shared/skills/work-artifacts/references/gate-contracts.md`
 - Test: `tests/analysis/contracts.test.ts` > `documents one capability vocabulary aligned with gate kinds`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-001`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-001`
 
 ### B-002 - Generic schemas have cross-tool evidence
 - Source: AC-002
@@ -193,7 +225,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: common fields map across both tools; all single-provider data is provider-tagged; every capability is covered
 - Seam: `docs/analysis-provider-validation.md`, `lib/analysis/types.ts`
 - Test: `tests/analysis/contracts.test.ts` > `documents two-tool evidence and provider-tags single-provider data`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-002`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-002`
 
 ### B-003 - Provider preference swaps bindings, not procedures
 - Source: AC-003
@@ -202,7 +234,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: tool/capability names stay fixed; support binds to the preference; unavailable explicit preference is unbound without fallback
 - Seam: `lib/config/loader.ts`, `lib/analysis/binding-resolver.ts`
 - Test: `tests/analysis/binding-resolver.test.ts` > `honors project provider preference without changing capability names`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-003`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-003`
 
 ### B-004 - Detected reference provider publishes complete status
 - Source: AC-003, AC-007, AC-011
@@ -211,7 +243,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: supported capabilities bind with provider/version/scopes/metrics; the config-less package signal still binds (config introspection exit 3 is defaults-in-effect per D-022); the unresolvable-executable case reports every capability unbound `provider-not-installed` (D-015); status has no command; the stale `.fallowrc.toml` signal is not treated as canonical
 - Seam: `domains/shared/extensions/project-tools/index.ts`, `domains/shared/extensions/project-tools/fallow-provider.ts`
 - Test: `tests/extensions/project-tools.test.ts` > `detects every canonical provider config and reports version scopes and metrics without commands`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-004`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-004`
 
 ### B-005 - A non-JS project visibly degrades
 - Source: AC-004
@@ -220,7 +252,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: all seven capabilities are listed unbound with reasons; each tool returns unbound; none is omitted or passed
 - Seam: `domains/shared/extensions/project-tools/index.ts`
 - Test: `tests/extensions/project-tools.test.ts` > `reports and returns every capability unbound for a Python fixture`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-005`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-005`
 
 ### B-006 - Unconfigured boundaries are unbound, not clean
 - Source: AC-004
@@ -229,7 +261,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: boundary-conformance alone is unbound with `provider-not-configured`; zero native violations is not conformance
 - Seam: `domains/shared/extensions/project-tools/fallow-provider.ts`, `lib/analysis/binding-resolver.ts`
 - Test: `tests/extensions/project-tools-fallow.test.ts` > `leaves boundary conformance unbound when rules are not configured`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-006`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-006`
 
 ### B-007 - Successful results preserve generic and native evidence
 - Source: AC-003, AC-011
@@ -238,7 +270,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: analysis-kind results carry capability/provider/version/scope/base/verdict; operational results (trace, fix preview) carry `verdict: "not-applicable"` with their evidence/proposals (D-013); all preserve complete provider-tagged payload/stderr/exit without truncation
 - Seam: `domains/shared/extensions/project-tools/fallow-provider.ts`, `lib/analysis/types.ts`
 - Test: `tests/extensions/project-tools-fallow.test.ts` > `normalizes every supported capability and preserves its native envelope`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-007`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-007`
 
 ### B-008 - Findings exit is completed analysis
 - Source: AC-005, AC-011
@@ -247,7 +279,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: status is completed, verdict fail, all findings/actions are present, and no exception/prose flattening occurs
 - Seam: `domains/shared/extensions/project-tools/fallow-provider.ts`
 - Test: `tests/extensions/project-tools-fallow.test.ts` > `treats exit one as completed failing analysis with findings`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-008`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-008`
 
 ### B-009 - Invalid provider outcomes throw serialized failures
 - Source: AC-005
@@ -256,7 +288,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: `AnalysisProviderError.message` names failed-to-run status, capability, provider, failure class, and process evidence (D-020); no case returns clean or empty findings
 - Seam: `domains/shared/extensions/project-tools/fallow-provider.ts`
 - Test: `tests/extensions/project-tools-fallow.test.ts` > `throws serialized failures for every unclassifiable provider outcome`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-009`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-009`
 
 ### B-010 - Changed audit refuses an absent base
 - Source: AC-006
@@ -265,7 +297,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: tool errors before provider invocation and never widens; a valid base is passed literally and echoed in scope
 - Seam: `domains/shared/extensions/project-tools/index.ts`, `domains/shared/extensions/project-tools/fallow-provider.ts`
 - Test: `tests/extensions/project-tools-fallow.test.ts` > `requires and preserves a nonempty explicit audit base`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-010`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-010`
 
 ### B-011 - Unsupported metrics degrade narrowly
 - Source: AC-007
@@ -274,7 +306,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: unsupported-metric names requested/available metrics without provider invocation or zero findings
 - Seam: `lib/analysis/binding-resolver.ts`, `domains/shared/extensions/project-tools/index.ts`
 - Test: `tests/analysis/binding-resolver.test.ts` > `degrades only an unavailable complexity metric`; tool-level case in `tests/extensions/project-tools.test.ts`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-011`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-011`
 
 ### B-012 - Every capability is non-mutating
 - Source: AC-008
@@ -283,115 +315,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: all analysis/introspection calls disable caches, fix preview is dry-run, before/after bytes and paths match, and no apply tool exists
 - Seam: `domains/shared/extensions/project-tools/process-runner.ts`, `domains/shared/extensions/project-tools/fallow-provider.ts`, `domains/shared/extensions/project-tools/index.ts`
 - Test: `tests/extensions/project-tools-fallow.test.ts` > `leaves the entire worktree unchanged across status and every capability`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-012`
-
-### B-013 - Feature-branch gates use the literal merge base
-- Source: AC-009
-- Context: Quality Manager reviews a feature branch with bound structural gates
-- Action: it calls changed-scope audit directly
-- Expected: the prompt instructs supplying the literal merge-base SHA as the base, consuming per-gate verdicts/findings from the direct tool result, and never synthesizing a command or Verifier handoff
-- Seam: `bundled/coding/prompts/quality-manager.md`
-- Test: `tests/prompts/quality-manager.test.ts` > `runs bound feature branch gates directly through the changed scope capability`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-013`
-
-### B-014 - Dirty-base gates use HEAD explicitly
-- Source: AC-009
-- Context: Quality Manager reviews dirty work on the local base branch
-- Action: it calls changed-scope audit directly
-- Expected: the prompt instructs supplying the literal HEAD SHA as the base and forbids skipping the audit because no branch range exists
-- Seam: `bundled/coding/prompts/quality-manager.md`
-- Test: `tests/prompts/quality-manager.test.ts` > `runs bound dirty base gates from an explicit HEAD base`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-014`
-
-### B-015 - Unsupported gates enter degraded reporting
-- Source: AC-004, AC-009
-- Context: a bindable gate's runtime capability is genuinely unbound
-- Action: Quality Manager resolves it
-- Expected: report says unbound/not enforced and reviewer judgment; it is neither pass nor hard failure
-- Seam: `bundled/coding/prompts/quality-manager.md`, `domains/shared/skills/work-artifacts/references/gate-contracts.md`
-- Test: `tests/prompts/quality-manager.test.ts` > `uses runtime unbound status for degraded gate reporting`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-015`
-
-### B-016 - Failed gates block and findings replay at remediation
-- Source: AC-005, AC-009
-- Context: direct Quality Manager analysis returns completed blocking findings or a tool error
-- Action: it routes remediation
-- Expected: the prompt instructs that tool errors are failed-to-run blockers, that findings route as the exact capability request plus human-readable finding designations (file:line, category, quoted message), and that the remediator reruns that request before editing and works from its own fresh result under the minimal-change constraint (D-019)
-- Seam: `bundled/coding/prompts/quality-manager.md`, `bundled/coding/prompts/fixer.md`
-- Test: `tests/prompts/quality-manager.test.ts` > `separates failed to run gates and routes findings for direct replay`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-016`
-
-### B-017 - Verifier validates capability claims directly
-- Source: AC-009
-- Context: a parent supplies capability/scope/base/metric claim
-- Action: Verifier validates it
-- Expected: it calls status and named generic tool, reports completed/unbound/unsupported/failed distinctly, and never uses provider commands
-- Seam: `bundled/coding/prompts/verifier.md`
-- Test: `tests/prompts/analysis-procedures.test.ts` > `gives verifier a provider agnostic capability claim protocol`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-017`
-
-### B-018 - Fixer replays findings and edits normally
-- Source: AC-008, AC-009
-- Context: Fixer receives a capability request and human-readable finding designations
-- Action: it reruns analysis and remediates
-- Expected: the prompt instructs rerunning the capability request before editing and working from the fresh result as ground truth (D-019); it traces before deletion, may preview, treats actions as proposals, and applies only ordinary narrow edits
-- Seam: `bundled/coding/prompts/fixer.md`
-- Test: `tests/prompts/analysis-procedures.test.ts` > `keeps fixer remediation replayed trace first preview only and agent edited`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-018`
-
-### B-019 - Planner investigates through capabilities
-- Source: AC-010
-- Context: Planner designs non-trivial work
-- Action: it checks bindings and relevant touched-area complexity/duplication/boundaries/traces
-- Expected: evidence or unbound uncertainty enters design/risks with no provider command/name in procedure
-- Seam: `bundled/coding/prompts/planner.md`
-- Test: `tests/prompts/analysis-procedures.test.ts` > `expresses planner investigation in capability terms`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-019`
-
-### B-020 - Explorer maps available evidence *(withdrawn by D-021, 2026-07-27 — Explorer is not a v1 consumer; no test or marker ships for this entry)*
-- Source: AC-010
-- Context: Explorer maps a subsystem
-- Action: it checks bindings and invokes relevant investigations
-- Expected: report cites capability evidence or explicit gaps without provider procedures
-- Seam: `bundled/coding/prompts/explorer.md`
-- Test: `tests/prompts/analysis-procedures.test.ts` > `expresses explorer evidence gathering in capability terms`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-020`
-
-### B-021 - Plan Reviewer challenges with capability evidence
-- Source: AC-010
-- Context: Plan Reviewer checks duplicate paths, dependency direction, deletions
-- Action: it checks bindings/investigations
-- Expected: findings cite capability evidence or visible limitations without provider procedures
-- Seam: `bundled/coding/prompts/plan-reviewer.md`
-- Test: `tests/prompts/analysis-procedures.test.ts` > `expresses plan review challenges in capability terms`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-021`
-
-### B-022 - Worker audits and traces before completion
-- Source: AC-010
-- Context: Worker is green after refactor and has not committed
-- Action: it audits from current pre-commit HEAD and traces deletions
-- Expected: the prompt instructs correcting completed findings narrowly, recording unbound, blocking completion on failed, and stating evidence in capability terms
-- Seam: `bundled/coding/prompts/worker.md`
-- Test: `tests/prompts/analysis-procedures.test.ts` > `requires worker trace before delete and audit at task close`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-022`
-
-### B-023 - Refactorer audits without metric chasing
-- Source: AC-010
-- Context: behavior is green and a structural delta is uncommitted
-- Action: Refactorer traces moves/removals and audits from structural-change base
-- Expected: completed/unbound/failed evidence is explicit and no metric overrides no-behavior-change discipline
-- Seam: `bundled/coding/prompts/refactorer.md`
-- Test: `tests/prompts/analysis-procedures.test.ts` > `requires refactorer trace and changed scope evidence without metric chasing`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-023`
-
-### B-024 - Every consumer receives a generic provider-free surface
-- Source: AC-009, AC-010, AC-012
-- Context: agent definitions assemble under a project skill allowlist that omits analysis
-- Action: tool allowlists/skills and every shipped `bundled/`/`domains/` prompt, skill, and generic work-artifact reference are inspected
-- Expected: the set of shipped agents loading project-tools is exactly the seven v1 consumers (D-021), asserted by exhaustive enumeration over all agent definitions so drift fails the gate; the shared analysis skill remains visible and contains the availability-check opening (D-021); generic shipped surfaces contain no Fallow name/command; provider docs/runtime source are explicit exclusions
-- Seam: `bundled/coding/agents/*.ts`, `domains/shared/skills/analysis/SKILL.md`, `domains/shared/skills/work-artifacts/references/*.md`
-- Test: `tests/domains/coding-agents.test.ts` > `gives analysis consumers generic tools and shared skill under project filtering`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-024`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-012`
 
 ### B-025 - Reference engine resolution is reproducible
 - Source: AC-011
@@ -400,7 +324,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: exact 2.54.2 pin in this repository's package/lock; resolution follows D-015 (never PATH/global, never mutable fetch); detected version in every result; the version/schema mismatch policy is proven separately by B-037
 - Seam: `package.json`, `bun.lock`, `domains/shared/extensions/project-tools/fallow-provider.ts`
 - Test: `tests/extensions/project-tools-fallow.test.ts` > `uses the exact pinned project local provider engine`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-025`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-025`
 
 ### B-026 - Dirty audit covers tracked staged and untracked files
 - Source: AC-009
@@ -409,7 +333,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: changed scope and normalized/native evidence account for all three classes; otherwise the test fails and implementation must redesign before prompt behavior lands
 - Seam: `domains/shared/extensions/project-tools/fallow-provider.ts`
 - Test: `tests/extensions/project-tools-fallow.test.ts` > `audits tracked staged and untracked dirty base changes from HEAD`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-026`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-026`
 
 ### B-027 - Empty path and trace inputs never widen
 - Source: AC-003, AC-006
@@ -418,7 +342,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: validation throws before provider invocation; no request becomes project scope
 - Seam: `domains/shared/extensions/project-tools/index.ts`
 - Test: `tests/extensions/project-tools.test.ts` > `rejects empty scopes and trace targets instead of widening`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-027`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-027`
 
 ### B-028 - Malformed analysis config is isolated visibly
 - Source: AC-003, AC-004
@@ -427,7 +351,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: warning names the bad field/value, analysis preference is ignored, and every unrelated key remains unchanged
 - Seam: `lib/config/loader.ts`
 - Test: `tests/config/loader.test.ts` > `isolates malformed analysis provider config from unrelated settings`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-028`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-028`
 
 ### B-029 - Process outcomes preserve crash abort and timeout
 - Source: AC-005
@@ -436,7 +360,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: mutually exclusive typed outcomes retain signal/reason/output and none is normalized to code 0; a child that ignores graceful termination is force-killed within the bounded grace period and the outcome retains the initiating reason (D-023); the runner's own tests spawn real short-lived children (self-signaling, termination-ignoring, nonexistent binary) on all supported platforms — doubles are reserved for adapter-level tests that inject the runner
 - Seam: `domains/shared/extensions/project-tools/process-runner.ts`
 - Test: `tests/extensions/project-tools-process.test.ts` > `distinguishes signal abort timeout and spawn failure from clean exit`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-029`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-029`
 
 ### B-030 - Pi preserves structured error evidence in error content
 - Source: AC-005
@@ -445,16 +369,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: `tool_execution_end.isError` is true, details may be empty, and the result content preserves the message's capability/provider/failure-class/process evidence intact
 - Seam: `@earendil-works/pi-agent-core` tool loop, `domains/shared/extensions/project-tools/index.ts`
 - Test: `tests/pi-contract/pi-behavior-contract.test.ts` > `preserves serialized capability failure in Pi error content`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-030`
-
-### B-031 - Migration sweeps combine capability and explicit search
-- Source: AC-009, AC-011
-- Context: work moves/renames files, exports, commands, config keys, or paths
-- Action: Worker/Quality Manager perform the migration sweep
-- Expected: the prompts instruct running the dead-code capability when bound, and always running the explicit old-identifier/path search across runtime/tests/docs, because structural reachability cannot prove stale strings absent
-- Seam: `bundled/coding/prompts/worker.md`, `bundled/coding/prompts/quality-manager.md`
-- Test: `tests/prompts/quality-manager.test.ts` > `preserves explicit migration reference searches even when dead code is bound`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-031`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-030`
 
 ### B-032 - Finding IDs are deterministic across replay *(withdrawn by D-019, 2026-07-27 — IDs are adapter-internal; no cross-session determinism contract or test ships)*
 - Source: AC-009, AC-011
@@ -463,7 +378,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: IDs derive from provider/capability/category/identity/location/message content, not array position or session state, so routed IDs resolve exactly
 - Seam: `domains/shared/extensions/project-tools/fallow-provider.ts`, `lib/analysis/types.ts`
 - Test: `tests/extensions/project-tools-fallow.test.ts` > `derives stable finding identifiers across repeated analysis`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-032`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-032`
 
 ### B-033 - Unsupported scopes degrade narrowly
 - Source: AC-003, AC-006
@@ -472,7 +387,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: a structured unsupported-scope outcome names the requested and supported kinds without provider invocation; the request never widens and is never reported as provider failure (D-016)
 - Seam: `lib/analysis/binding-resolver.ts`, `domains/shared/extensions/project-tools/index.ts`
 - Test: `tests/analysis/binding-resolver.test.ts` > `degrades an unadvertised scope kind without widening`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-033`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-033`
 
 ### B-034 - No provider subprocess without execution consent
 - Source: AC-003, AC-004
@@ -481,7 +396,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: zero subprocesses spawn (sentinel untouched, runner never invoked); status shows the provider detected-but-withheld with reason `execution-not-consented`; tools return the withheld state; the paired consent-granted case binds normally (D-014)
 - Seam: `domains/shared/extensions/project-tools/index.ts`
 - Test: `tests/extensions/project-tools.test.ts` > `withholds all provider execution until consent is recorded`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-034`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-034`
 
 ### B-035 - Agent start injects the capability status rows
 - Source: AC-004
@@ -490,7 +405,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: the returned system prompt contains one row per capability (all seven) with state and reason and no commands, in every fixture including the no-consent one (D-018)
 - Seam: `domains/shared/extensions/project-tools/index.ts`
 - Test: `tests/extensions/project-tools.test.ts` > `injects the seven-row capability status into the system prompt`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-035`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-035`
 
 ### B-036 - Pi cancellation terminates the provider child
 - Source: AC-005
@@ -499,7 +414,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: the child receives bounded termination, the tool throws the serialized aborted failure (never a clean or empty result), and no orphan process persists (D-017)
 - Seam: `domains/shared/extensions/project-tools/index.ts`, `domains/shared/extensions/project-tools/fallow-provider.ts`, `domains/shared/extensions/project-tools/process-runner.ts`
 - Test: `tests/extensions/project-tools.test.ts` > `aborting a capability tool terminates the provider child`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-036`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-036`
 
 ### B-037 - Version and schema drift never silently normalize
 - Source: AC-011
@@ -508,7 +423,7 @@ Out of scope remains CI enforcement, scheduled full-project stewardship, reposit
 - Expected: the mismatched version binds with the detected version surfaced in status; an out-of-contract envelope is an `AnalysisFailure`, never a silently normalized completed result (D-015)
 - Seam: `domains/shared/extensions/project-tools/fallow-provider.ts`
 - Test: `tests/extensions/project-tools-fallow.test.ts` > `surfaces version drift and fails out-of-contract envelopes`
-- Marker: `@cosmo-behavior plan:analysis-capabilities#B-037`
+- Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-037`
 
 ## Design
 
@@ -549,13 +464,15 @@ type ProviderDetection =
 
 Detected support entries can mark a capability supported or `provider-not-configured`. The resolver preserves failed detection, rejects unsupported metrics and unadvertised scope kinds before execution (D-016), and keeps provider executors in the session runtime while exposing serializable binding status. Provider executors take the Pi `execute` AbortSignal as an explicit parameter (D-017).
 
+This contract is what the two sibling slices consume. Freezing it correctly here — verdict discrimination, the unsupported-scope and unsupported-metric outcomes, the failed state — is the whole reason this slice ships first.
+
 ### 2. Config and canonical detection
 
 Extend `ProjectConfig` with optional `ProjectAnalysisConfig { provider?: string }`. Parse only nonempty strings; malformed object/provider fields warn with value and preserve unrelated config (B-028).
 
 The reference adapter recognizes canonical `.fallowrc.json`, `fallow.toml`, `.fallow.toml`, and package dependency signals. It does not perpetuate `.fallowrc.toml`. Signal detection is always file-read-only; executable introspection (version, config, boundaries) is consent-gated per D-014. Executable resolution and the version/schema policy follow D-015; a signal without a resolvable executable is unbound `provider-not-installed`. Config introspection follows the D-022 per-operation exit contract (exit 3 is defaults-in-effect; the stdout preamble is tolerated). No signal means absent/unbound. A detected/selected provider whose attempted introspection fails produces failed bindings, not unsupported. Real-engine tests obtain the pinned binary through the D-015 injection seam (fixtures link the repo-pinned engine); each real-engine behavior states whether it runs the live engine or captured envelopes.
 
-Pin Fallow exactly at 2.54.2 in package/lock. `.cosmonauts/config.json` may explicitly select it for dogfooding, but skill visibility does not depend on this repository's skill list.
+Pin Fallow exactly at 2.54.2 in package/lock. `.cosmonauts/config.json` may explicitly select it for dogfooding. Note that this repository currently has only a Homebrew-global engine and no package pin: that is the modeled signal-without-executable state (D-015), not a defect, and installing the pin in this slice is what moves it.
 
 ### 3. Signal-aware non-mutating provider runner
 
@@ -567,46 +484,19 @@ B-012 snapshots all files, including ignored `.fallow` paths, across status and 
 
 ### 4. Pi tools, errors, and session state
 
-Register all eight tools immediately. Discovery runs at first need — `before_agent_start` injection or the first tool call — sharing one session/cwd promise (D-018), and respects the D-014 consent gate. The injected status block lists seven concise rows: bound provider/version/scopes/metrics; unbound reason (including detected-but-withheld); failed-to-run reason. The legacy "Detected Analysis Tools" prose injection survives unchanged until the Quality Manager rewiring stage deletes it, so no shipped prompt is stranded against a missing block. Clear snapshot on session start/shutdown.
+Register all eight tools immediately. Discovery runs at first need — `before_agent_start` injection or the first tool call — sharing one session/cwd promise (D-018), and respects the D-014 consent gate. The injected status block lists seven concise rows: bound provider/version/scopes/metrics; unbound reason (including detected-but-withheld); failed-to-run reason. The legacy "Detected Analysis Tools" prose injection survives unchanged through this entire slice; the `analysis-gate-rewiring` slice deletes it in the same stage that rewires its consumers, so no shipped prompt is stranded. Clear snapshot on session start/shutdown.
 
 Unbound returns structured skip; unsupported metric or scope returns a narrow unsupported outcome; failed binding/tool execution throws `AnalysisProviderError`. Because Pi discards custom error details, the error message itself names capability, provider, failure class, and process evidence (D-020). The real Pi contract test asserts `isError: true` and that the message arrives intact; extension-unit rejection alone is not accepted evidence.
 
 Successful tool `content` contains complete JSON including native payload; `details` mirrors it for renderers. No result artifact or in-memory cross-session cache is correctness-critical.
 
-### 5. Direct gate execution and remediation rerun
+Tool registration is additive in this slice: whichever agents already load `project-tools` gain the tools, and no shipped prompt yet instructs their use. Distributing the extension to exactly the seven v1 consumer roles (D-021) is the gate-rewiring slice's B-024, not this slice's work.
 
-`gate-contracts.md` clarifies runtime status is authoritative evidence without mutating plan rows:
+### 5. Documentation and public entry
 
-- bound + completed: evaluate actual verdict;
-- genuinely unbound: degraded, reviewer judgment;
-- failed binding/invocation: failed-to-run, blocking;
-- unsupported metric: degrade only that metric.
+`docs/analysis-capabilities.md` is provider-neutral. `docs/analysis-provider-validation.md` is a deliberately concrete AC-002 evidence record (Fallow plus Knip, jscpd, Radon, dependency-cruiser, Semgrep baseline analysis, ESLint dry-run as applicable). Update the provider workflow docs — `docs/fallow.md`, `docs/fallow-workflow-integration.md`, and `docs/fallow-exceptions.md`, whose Current Gate section and `fallow.toml` entry documentation drift under this plan — to describe the capability runtime and name the follow-up boundaries. `fallow.toml` gains the stable `lib/analysis/index.ts` public entry.
 
-Quality Manager calls `analysis_status` and `analysis_audit` itself. Feature branch base is literal merge-base; dirty-base is literal HEAD. The direct tool result retains full findings/native data. Bound gates absent a classifiable per-gate verdict fail-to-run.
-
-For remediation, Quality Manager routes the exact generic request (capability, base/scope/metric) plus human-readable finding designations (file:line, category, quoted message), not copied model-authored payload (D-019). Fixer or a remediation Worker reruns the same capability tool before editing and treats its own fresh structured/native result as ground truth. Unbound or tool error at rerun yields not-resolved and triggers Quality Manager re-analysis; no stale finding is guessed. After edits, Quality Manager reruns directly.
-
-Verifier still consumes capabilities for explicit validation claims, but it is not the lossless transport in the Quality Manager gate path. Its final report identifies status/evidence; remediation consumers never depend on child tool results crossing `extractAssistantText`.
-
-Migration work always retains the explicit old-name/path repository search across runtime roots, tests, docs, and tracked references. Bound dead-code analysis is additive evidence, never a replacement for stale strings/config/command checks.
-
-### 6. Role procedures and shared skill
-
-Delete the Fallow skill tree. Add provider-neutral `domains/shared/skills/analysis/SKILL.md` covering status, completed/unbound/unsupported/failed, explicit base, trace-first, preview-only, rerun-before-edit remediation, and narrow remediation—without provider names/commands/apply. The skill opens with the availability check (D-021): call `analysis_status` first; if the tool is not registered in this session, analysis is not part of this role's surface — state that and proceed without it, no retries, no provider commands.
-
-Add `project-tools` to the seven v1 consumers: Quality Manager, Verifier, Fixer, Planner, Plan Reviewer, Worker, Refactorer (D-021). Add `analysis` to explicit role skill allowlists; wildcard roles receive it because shared skills are automatically merged into effective project skills even when a project allowlist omits it — which makes the skill visible to wildcard agents without the tools (reviewer panel, distiller, integration-verifier, cody, main/cosmo), so the availability-check opening is load-bearing, not a courtesy.
-
-Role procedures:
-
-- Planner/Plan Reviewer: investigate when bound; record evidence or its absence — the full four-state protocol is not taught to investigation roles (D-021).
-- Worker/Refactorer: trace before delete, audit before commit, block on failed bound capability, never chase metrics.
-- Quality Manager: direct gate execution, explicit degradation/failure, ID/request routing, always-preserved migration search.
-- Verifier: generic claim validation, not transport.
-- Fixer: rerun IDs, trace/preview, normal narrow edits only.
-
-### 7. Documentation
-
-`docs/analysis-capabilities.md` is provider-neutral. `docs/analysis-provider-validation.md` is a deliberately concrete AC-002 evidence record (Fallow plus Knip, jscpd, Radon, dependency-cruiser, Semgrep baseline analysis, ESLint dry-run as applicable). Update Fallow/provider workflow docs — including `docs/fallow-exceptions.md`, whose Current Gate section and `fallow.toml` entry documentation drift under this plan — and remove shipped-skill links; refresh the ROADMAP analysis-tools entry at completion. Provider-specific docs/runtime source are excluded from INV-1 content scans; all `bundled/`/`domains/` prompts, skills, and generic work-artifact references are included.
+Shipped-skill link removal and the ROADMAP refresh belong to the sibling slices: the concrete provider skill is still shipped until the gate-rewiring slice deletes it, so its links stay valid here. Provider-specific docs and runtime source are excluded from INV-1 content scans; all `bundled/`/`domains/` prompts, skills, and generic work-artifact references are included.
 
 ## Files to Change
 
@@ -617,75 +507,51 @@ Role procedures:
 - `tests/extensions/project-tools.test.ts` ↔ `domains/shared/extensions/project-tools/index.ts`.
 - `tests/extensions/project-tools-fallow.test.ts` (new) ↔ `domains/shared/extensions/project-tools/fallow-provider.ts` (new).
 - `tests/pi-contract/pi-behavior-contract.test.ts` ↔ `domains/shared/extensions/project-tools/index.ts` — real Pi error conversion contract.
-- `tests/domains/coding-agents.test.ts` ↔ `bundled/coding/agents/quality-manager.ts`.
-- `tests/domains/coding-agents.test.ts` ↔ `bundled/coding/agents/verifier.ts`.
-- `tests/domains/coding-agents.test.ts` ↔ `bundled/coding/agents/fixer.ts`.
-- `tests/domains/coding-agents.test.ts` ↔ `bundled/coding/agents/planner.ts`.
-- `tests/domains/coding-agents.test.ts` ↔ `bundled/coding/agents/plan-reviewer.ts`.
-- `tests/domains/coding-agents.test.ts` ↔ `bundled/coding/agents/explorer.ts`.
-- `tests/domains/coding-agents.test.ts` ↔ `bundled/coding/agents/worker.ts`.
-- `tests/domains/coding-agents.test.ts` ↔ `bundled/coding/agents/refactorer.ts`.
-- `tests/prompts/quality-manager.test.ts` ↔ `bundled/coding/prompts/quality-manager.md`, `domains/shared/skills/work-artifacts/references/gate-contracts.md`.
-- `tests/prompts/analysis-procedures.test.ts` (new) ↔ `bundled/coding/prompts/verifier.md`.
-- `tests/prompts/analysis-procedures.test.ts` (new) ↔ `bundled/coding/prompts/fixer.md`.
-- `tests/prompts/analysis-procedures.test.ts` (new) ↔ `bundled/coding/prompts/planner.md`.
-- `tests/prompts/analysis-procedures.test.ts` (new) ↔ `bundled/coding/prompts/explorer.md`.
-- `tests/prompts/analysis-procedures.test.ts` (new) ↔ `bundled/coding/prompts/plan-reviewer.md`.
-- `tests/prompts/analysis-procedures.test.ts` (new) ↔ `bundled/coding/prompts/worker.md`.
-- `tests/prompts/analysis-procedures.test.ts` (new) ↔ `bundled/coding/prompts/refactorer.md`.
-- `domains/shared/skills/analysis/SKILL.md` (new) ↔ `tests/domains/coding-agents.test.ts` (B-024 availability-check assertion).
 - `tests/helpers/mocks/extension-api.ts` — optional signal parameter for tool invocation (D-017/B-036).
 - `docs/fallow-exceptions.md` — align the Current Gate section with the capability runtime; document the `lib/analysis/index.ts` entry addition.
-- `ROADMAP.md` — refresh the analysis-tools entry status at plan completion.
-- `bundled/coding/skills/fallow/` (delete) — concrete shipped agent procedure removal.
 - `package.json`, `bun.lock` — exact provider pin.
 - `fallow.toml` — stable `lib/analysis/index.ts` public entry.
 - `docs/fallow.md`, `docs/fallow-workflow-integration.md` — provider docs aligned to capability runtime/follow-up boundaries.
 
 ## Risks
 
-- **Dirty scope may need adapter composition.** Live probing (2026-07-27) shows `audit --base HEAD` already covers tracked, staged, and untracked files, so B-026 is expected to pass as verification; if a regression ever omits a class, redesign before prompts — incomplete scope is failed-to-run under INV-3.
+- **Dirty scope may need adapter composition.** Live probing (2026-07-27) shows `audit --base HEAD` already covers tracked, staged, and untracked files, so B-026 is expected to pass as verification; if a regression ever omits a class, redesign before the sibling slices consume it — incomplete scope is failed-to-run under INV-3.
 - **Process termination is platform-sensitive.** B-029's runner tests spawn real short-lived children on all supported platforms (self-signaling, termination-ignoring, nonexistent binary); doubles are reserved for adapter-level tests that inject the runner. Any unclassified termination is failure, never code 0.
 - **Analyzer caches violate INV-5.** `--no-cache` and whole-worktree snapshots are mandatory for status and all tools; cleaning files afterward is not acceptable.
 - **Provider JSON may drift.** Unknown fields stay native; unclassifiable verdict/finding/error output throws. Live pinned envelopes seed contract fixtures.
 - **Generic schema may be provider-shaped.** AC-002 is a precondition: unsupported common fields move under provider tags before implementation.
-- **Pi error evidence lives in message content.** Custom Error fields/details are not transport. Canonical JSON message plus real Pi contract test is mandatory.
-- **Remediation rerun can observe drift.** The remediator's fresh rerun is ground truth (D-019); a finding that no longer reproduces is reported not-resolved and returns to Quality Manager rather than applying stale advice.
-- **Full native payloads are large.** Losslessness outranks token savings here; focused calls and direct/replayed consumption bound the cost. No truncation.
+- **Pi error evidence lives in message content.** Custom Error fields/details are not transport. A structured-prose message plus the real Pi contract test is mandatory (D-020).
+- **Full native payloads are large.** Losslessness outranks token savings here; focused calls and direct consumption bound the cost. No truncation.
 - **Session cache can stale.** Clear on lifecycle reset; no process-global/persisted correctness state.
-- **Shared skill visibility must respect filters.** Place only provider-neutral procedure in shared; provider docs remain outside skills.
-- **Quality Manager regression surface is large.** Preserve legacy QC rows, universal gates, ledger, local-base logic, migration search, minimal remediation, and round budget through characterization/content tests.
 - **V1 is not polyglot routing.** If ratified ACs require simultaneous providers, halt/escalate the open question.
 - **Boundary zero is unsafe.** Unbound until rules are proven configured; introspection error is failed, not degraded.
 - **Invalid scoped input could widen.** B-027 runtime validation is mandatory even if model/tool schema validation is bypassed on resume/tests.
 - **Consent gating adds first-run friction.** A detected provider stays withheld until per-project execution consent is recorded (D-014); status must make the consent path obvious, or users will read withheld as broken.
 - **Per-session discovery cost is accepted.** One config read plus ~3 short local subprocess calls, at most once per session at first need; revisit with a validated persisted cache only if chain latency measurably suffers — cross-session caching risks stale bindings (D-006).
+- **A frozen contract is expensive to change later.** This slice freezes what two sibling slices consume. If a sibling slice discovers the contract cannot express what a consumer needs, that is an amend-on-record on this plan's design, reopened deliberately — not a workaround in the consumer.
 
 ## Quality Contract
 
 | Order | Gate kind | Tier | Binding state | Threshold | Protocol | Degradation / notes |
 |---:|---|---|---|---|---|---|
 | 1 | `correctness` | universal | bound | Project-native tests, style, and type/schema checks pass, including real Pi error, signal runner, dirty-scope, and no-write tests | project-discovered | hard fail |
-| 2 | `artifact-conformance` | universal | bound | Every non-withdrawn B-### entry (B-001–B-037, less withdrawn B-020/B-032) has its named test and exact marker | artifact evidence | hard fail |
+| 2 | `artifact-conformance` | universal | bound | Every non-withdrawn B-### entry in this plan (B-001–B-012, B-025–B-030, B-033–B-037; B-032 withdrawn) has its named test and exact marker | artifact evidence | hard fail |
 | 3 | `mutation` | bindable | unbound | Project-specific mutation evidence | pending | unbound/not enforced; adversarial no-write/error tests and reviewer judgment required |
 | 4 | `duplication` | bindable | bound | Changed scope introduces no blocking clone finding | capability resolution | genuine unbound degrades; failed blocks |
 | 5 | `complexity` | bindable | bound | No configured changed-scope metric violation; unavailable requested metrics degrade individually | capability resolution | never treat unsupported as zero |
 | 6 | `boundary-conformance` | bindable | unbound | Configured zones have no changed-scope violation | pending configuration | unbound until rules; reviewer checks direction; introspection failure blocks |
 | 7 | `dead-code` | bindable | bound | No blocking changed-scope reachability/dependency finding and explicit migration searches find no stale references | capability resolution plus explicit search | capability is additive to migration search; failed blocks |
 
-Rows 4, 5, and 7 are bound-by-delivery: their enforcement path is what stages 1–5 plus the engine pin create, so binding state is evaluated at the final ladder run, not before. The `failed blocks` vocabulary lands with the gate-contracts.md amendment in the consumer-rewiring stage, before any ladder consumer relies on it.
+Rows 4, 5, and 7 are bound-by-delivery: their enforcement path is exactly what this slice plus the engine pin create, so binding state is evaluated at this slice's final ladder run, not before. The `failed blocks` vocabulary lands with the gate-contracts.md amendment in the `analysis-gate-rewiring` slice; until then rows 4–7 are evaluated by the reviewer against the runtime status this slice publishes.
 
 ## Implementation Order
 
 1. **RED B-029/B-030/B-036 first: prove execution/error/cancellation seams.** Implement/test the signal-aware runner (real short-lived children, timeout escalation per D-023), real Pi error-message behavior, and Pi-signal-to-child abort propagation (D-017). Install the pin and capture live envelopes for every capability — including a dirty audit with tracked/staged/untracked changes and the config exit-code matrix — feeding the AC-002 validation record before the stage-2 schema freeze. If signal death or error evidence remains ambiguous, stop; INV-3 outranks the rest.
 2. **RED B-001–B-003/B-011/B-028: contracts, docs skeleton, config, pure resolver.** Validate paper mappings before promoting fields to generic.
 3. **RED B-004/B-006–B-012/B-025/B-027/B-033/B-037: provider adapter.** Implement canonical detection, consent-gated introspection (D-014), executable resolution and the version/schema policy (D-015), strict input, unsupported-scope degradation (D-016), no-cache, dry-run, and error classification one behavior at a time, against the stage-1 captured envelopes.
-4. **RED B-026: real dirty-scope integration.** Use temp Git fixture with tracked/staged/untracked. If provider is incomplete, amend adapter composition before any consumer prompt changes.
-5. **RED B-005/B-034/B-035: Pi composition/status.** All-tools registration, first-need snapshot (D-018), seven-row injection including detected-but-withheld, the consent gate (D-014), failed state, and lifecycle reset. The legacy prose injection is retained until stage 7 deletes it with the Quality Manager rewiring — no silent gate window.
-6. **RED B-024: distribute extension/shared skill and delete provider skill.** Test under an explicit project skill filter omitting analysis; run repository-wide shipped generic-content scan.
-7. **RED B-013–B-018/B-031: Quality Manager, Verifier, Fixer.** Characterize existing QC/ledger/base/migration behavior, then introduce direct gates, failed/unbound distinction, request-plus-designation remediation routing (D-019), always-on explicit migration searches — and delete the legacy prose injection in this same stage.
-8. **RED B-019/B-021–B-023: planning/implementation roles.** Add each marker/test before prompt edits; keep procedures provider-free (B-020 withdrawn — Explorer is not a v1 consumer).
-9. **Complete provider/workflow documentation and public entry.** Re-run stale-link/provider-skill scans.
-10. **Run full ladder.** Project-native tests/lint/typecheck, artifact conformance, and bound changed-scope gates from explicit base. Mutation/boundaries remain visibly degraded. Ratified collision → halt/escalate; false derived mechanism → amend-on-record before code.
+4. **RED B-026: real dirty-scope integration.** Use temp Git fixture with tracked/staged/untracked. If provider is incomplete, amend adapter composition before the slice closes — the sibling slices consume this contract.
+5. **RED B-005/B-034/B-035: Pi composition/status.** All-tools registration, first-need snapshot (D-018), seven-row injection including detected-but-withheld, the consent gate (D-014), failed state, and lifecycle reset. The legacy prose injection is retained — deleting it belongs to the gate-rewiring slice.
+6. **Complete provider/runtime documentation and the public entry.** `docs/analysis-capabilities.md`, `docs/analysis-provider-validation.md`, the fallow doc alignment, and the `fallow.toml` entry. Provider-skill links stay valid; the skill is still shipped.
+7. **Run the ladder.** Project-native tests/lint/typecheck, artifact conformance for this plan's behaviors, and bound changed-scope gates from an explicit base. Mutation/boundaries remain visibly degraded. Ratified collision → halt/escalate; false derived mechanism → amend-on-record before code.
 
-Slice boundaries (candidate split per the project's 3–12-task guidance; decide at task creation): stages 1–5 (`analysis-capability-runtime` — ACs 1–8, 11, 12), stages 6–7 (`analysis-gate-rewiring` — AC-009), stage 8 (`analysis-investigation-procedures` — AC-010), stages 9–10 close whichever slice ships last. Each slice is independently valuable and gate-clean; the retained legacy injection bridge makes the seams safe.
+If a stage surfaces unexpected complexity, stop at that stage rather than pressing through: the contract this slice freezes is consumed by two sibling plans, so an unresolved ambiguity here is cheaper to fix than after they build on it.
