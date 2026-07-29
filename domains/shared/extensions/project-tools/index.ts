@@ -1,5 +1,26 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { detectFallowSignal } from "./fallow-provider.ts";
+import { Type } from "typebox";
+import {
+	ANALYSIS_CAPABILITY_TOOL_NAMES,
+	ANALYSIS_METRICS,
+	type AnalysisBinding,
+	type AnalysisCapability,
+	type AnalysisFailure,
+	type AnalysisMetric,
+	type AnalysisProjectOrPathsScope,
+	type AnalysisRequest,
+	type AnalysisRequestResolution,
+	type AnalysisTraceTarget,
+	resolveAnalysisBindings,
+	resolveAnalysisRequest,
+} from "../../../../lib/analysis/index.ts";
+import { loadProjectConfig } from "../../../../lib/config/index.ts";
+import { AnalysisProviderError } from "./analysis-provider-error.ts";
+import {
+	detectFallowSignal,
+	discoverFallowProvider,
+} from "./fallow-provider.ts";
+import type { ProviderProcessExecutor } from "./process-runner.ts";
 
 export {
 	AnalysisProviderError,
@@ -7,12 +28,92 @@ export {
 	type AnalysisProviderErrorProcessEvidence,
 } from "./analysis-provider-error.ts";
 
+const FALLOW_PROVIDER_ID = "fallow";
+
 interface AnalysisTool {
 	name: string;
 	configFile: string;
 	description: string;
 	auditCommand: string;
 }
+
+type FallowDiscovery = Awaited<ReturnType<typeof discoverFallowProvider>>;
+type DetectedFallowDiscovery = Extract<
+	FallowDiscovery,
+	{ readonly status: "detected" }
+>;
+
+interface AnalysisSessionSnapshot {
+	readonly bindings: readonly AnalysisBinding[];
+	readonly runtime?: DetectedFallowDiscovery["runtime"];
+}
+
+export interface ProjectToolsExtensionDeps {
+	readonly userStateRoot?: string;
+	readonly configuredExecutablePath?: string;
+	readonly injectedExecutablePath?: string;
+	readonly executeProcess?: ProviderProcessExecutor;
+	readonly loadConfig?: typeof loadProjectConfig;
+	readonly discoverProvider?: typeof discoverFallowProvider;
+}
+
+interface RawParams {
+	readonly [key: string]: unknown;
+}
+
+const ProjectPathsSchema = Type.Optional(
+	Type.Array(Type.String({ minLength: 1 }), {
+		description:
+			"Project-relative paths. Omit for project scope; when present it must be non-empty.",
+		minItems: 1,
+	}),
+);
+
+const ProjectOrPathsParameters = Type.Object(
+	{
+		paths: ProjectPathsSchema,
+	},
+	{ additionalProperties: false },
+);
+
+const TraceTargetSchema = Type.Union([
+	Type.Object(
+		{
+			kind: Type.Literal("symbol"),
+			symbol: Type.String({ minLength: 1 }),
+			path: Type.Optional(Type.String({ minLength: 1 })),
+		},
+		{ additionalProperties: false },
+	),
+	Type.Object(
+		{
+			kind: Type.Literal("file"),
+			path: Type.String({ minLength: 1 }),
+		},
+		{ additionalProperties: false },
+	),
+	Type.Object(
+		{
+			kind: Type.Literal("dependency"),
+			dependency: Type.String({ minLength: 1 }),
+		},
+		{ additionalProperties: false },
+	),
+	Type.Object(
+		{
+			kind: Type.Literal("duplicate-location"),
+			location: Type.Object(
+				{
+					path: Type.String({ minLength: 1 }),
+					line: Type.Integer({ minimum: 1 }),
+					column: Type.Optional(Type.Integer({ minimum: 1 })),
+				},
+				{ additionalProperties: false },
+			),
+		},
+		{ additionalProperties: false },
+	),
+]);
 
 function fallowTool(configFile: string): AnalysisTool {
 	return {
@@ -45,13 +146,493 @@ function buildToolsBlock(tools: AnalysisTool[]): string {
 	return `## Detected Analysis Tools\n\n${lines.join("\n")}`;
 }
 
-export default function projectToolsExtension(pi: ExtensionAPI): void {
-	pi.on("before_agent_start", async (event, ctx) => {
-		const tools = await detectTools(ctx.cwd);
-		if (tools.length === 0) return;
+function statusReason(binding: AnalysisBinding): string {
+	if (binding.state === "bound") {
+		const scopes = binding.scopes.map((scope) => `\`${scope}\``).join(", ");
+		const metrics =
+			binding.metrics === undefined
+				? ""
+				: `; metrics ${binding.metrics
+						.map((metric) => `\`${metric}\``)
+						.join(", ")}`;
+		return `provider \`${binding.provider.id}@${binding.provider.version}\`; scopes ${scopes}${metrics}`;
+	}
+	if (binding.state === "unbound") {
+		const provider =
+			binding.providerId === undefined
+				? ""
+				: `; provider \`${binding.providerId}\``;
+		return `\`${binding.reason}\`${provider}`;
+	}
+	const provider =
+		binding.providerId === undefined
+			? ""
+			: `; provider \`${binding.providerId}\``;
+	const message = binding.failure.message
+		.replaceAll("|", "\\|")
+		.replaceAll(/\s+/gu, " ");
+	return `\`${binding.failure.kind}\`${provider}; ${message}`;
+}
 
-		return {
-			systemPrompt: `${event.systemPrompt}\n\n${buildToolsBlock(tools)}`,
-		};
+function buildCapabilityStatusBlock(
+	bindings: readonly AnalysisBinding[],
+): string {
+	const rows = bindings.map(
+		(binding) =>
+			`| \`${binding.capability}\` | \`${binding.state}\` | ${statusReason(binding)} |`,
+	);
+	return [
+		"## Analysis Capability Status",
+		"",
+		"| Capability | State | Reason |",
+		"|---|---|---|",
+		...rows,
+	].join("\n");
+}
+
+function textResult<T>(details: T): {
+	content: { type: "text"; text: string }[];
+	readonly details: T;
+} {
+	return {
+		content: [{ type: "text", text: JSON.stringify(details, null, 2) }],
+		details,
+	};
+}
+
+function paramsObject(value: unknown, toolName: string): RawParams {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		throw new Error(`${toolName} requires an object input.`);
+	}
+	return value as RawParams;
+}
+
+function assertOnlyKeys(
+	params: RawParams,
+	allowedKeys: readonly string[],
+	toolName: string,
+): void {
+	const unexpected = Object.keys(params).find(
+		(key) => !allowedKeys.includes(key),
+	);
+	if (unexpected !== undefined) {
+		throw new Error(`${toolName} does not accept ${unexpected}.`);
+	}
+}
+
+function nonemptyString(value: unknown, label: string): string {
+	if (typeof value !== "string" || value.trim().length === 0) {
+		throw new Error(`${label} must be a nonempty string.`);
+	}
+	return value.trim();
+}
+
+function projectPath(value: unknown, label: string): string {
+	const path = nonemptyString(value, label);
+	const segments = path.split(/[\\/]/u);
+	if (
+		path.startsWith("/") ||
+		path.startsWith("\\") ||
+		/^[A-Za-z]:[\\/]/u.test(path) ||
+		segments.includes("..")
+	) {
+		throw new Error(`${label} must be a project-relative path.`);
+	}
+	return path;
+}
+
+function projectOrPathsScope(
+	params: RawParams,
+	toolName: string,
+): AnalysisProjectOrPathsScope {
+	assertOnlyKeys(params, ["paths"], toolName);
+	if (params.paths === undefined) return { kind: "project" };
+	if (!Array.isArray(params.paths) || params.paths.length === 0) {
+		throw new Error(`${toolName} paths must contain at least one path.`);
+	}
+	return {
+		kind: "paths",
+		paths: params.paths.map((path, index) =>
+			projectPath(path, `${toolName} paths[${index}]`),
+		),
+	};
+}
+
+function analysisMetric(value: unknown): AnalysisMetric {
+	const metric = nonemptyString(value, "analysis_complexity metric");
+	if (!(ANALYSIS_METRICS as readonly string[]).includes(metric)) {
+		throw new Error(
+			`analysis_complexity metric must be one of ${ANALYSIS_METRICS.join(", ")}.`,
+		);
+	}
+	return metric as AnalysisMetric;
+}
+
+function traceTarget(value: unknown): AnalysisTraceTarget {
+	const target = paramsObject(value, "analysis_trace target");
+	const kind = nonemptyString(target.kind, "analysis_trace target kind");
+	switch (kind) {
+		case "symbol":
+			assertOnlyKeys(target, ["kind", "symbol", "path"], "analysis_trace");
+			return {
+				kind,
+				symbol: nonemptyString(target.symbol, "analysis_trace symbol target"),
+				...(target.path === undefined
+					? {}
+					: { path: projectPath(target.path, "analysis_trace symbol path") }),
+			};
+		case "file":
+			assertOnlyKeys(target, ["kind", "path"], "analysis_trace");
+			return {
+				kind,
+				path: projectPath(target.path, "analysis_trace file target"),
+			};
+		case "dependency":
+			assertOnlyKeys(target, ["kind", "dependency"], "analysis_trace");
+			return {
+				kind,
+				dependency: nonemptyString(
+					target.dependency,
+					"analysis_trace dependency target",
+				),
+			};
+		case "duplicate-location": {
+			assertOnlyKeys(target, ["kind", "location"], "analysis_trace");
+			const location = paramsObject(
+				target.location,
+				"analysis_trace duplicate location",
+			);
+			assertOnlyKeys(
+				location,
+				["path", "line", "column"],
+				"analysis_trace duplicate location",
+			);
+			if (!Number.isInteger(location.line) || Number(location.line) < 1) {
+				throw new Error(
+					"analysis_trace duplicate location line must be a positive integer.",
+				);
+			}
+			if (
+				location.column !== undefined &&
+				(!Number.isInteger(location.column) || Number(location.column) < 1)
+			) {
+				throw new Error(
+					"analysis_trace duplicate location column must be a positive integer.",
+				);
+			}
+			return {
+				kind,
+				location: {
+					path: projectPath(
+						location.path,
+						"analysis_trace duplicate location path",
+					),
+					line: Number(location.line),
+					...(location.column === undefined
+						? {}
+						: { column: Number(location.column) }),
+				},
+			};
+		}
+		default:
+			throw new Error(
+				"analysis_trace target kind must be symbol, file, dependency, or duplicate-location.",
+			);
+	}
+}
+
+function parseCapabilityRequest(
+	capability: AnalysisCapability,
+	value: unknown,
+): AnalysisRequest {
+	const toolName = ANALYSIS_CAPABILITY_TOOL_NAMES[capability];
+	const params = paramsObject(value, toolName);
+	switch (capability) {
+		case "dead-code":
+		case "duplication":
+		case "boundary-conformance":
+		case "fix-preview":
+			return {
+				capability,
+				scope: projectOrPathsScope(params, toolName),
+			} as AnalysisRequest;
+		case "complexity":
+			assertOnlyKeys(params, ["paths", "metric"], toolName);
+			return {
+				capability,
+				scope: projectOrPathsScope(
+					Object.fromEntries(
+						Object.entries(params).filter(([key]) => key === "paths"),
+					),
+					toolName,
+				),
+				metric: analysisMetric(params.metric),
+			};
+		case "changed-scope-audit":
+			assertOnlyKeys(params, ["base"], toolName);
+			return {
+				capability,
+				scope: {
+					kind: "changed",
+					base: nonemptyString(params.base, `${toolName} base`),
+				},
+			};
+		case "trace":
+			assertOnlyKeys(params, ["target"], toolName);
+			return {
+				capability,
+				scope: {
+					kind: "target",
+					target: traceTarget(params.target),
+				},
+			};
+	}
+}
+
+function throwProviderFailure(
+	capability: AnalysisCapability,
+	providerId: string | undefined,
+	failure: AnalysisFailure,
+): never {
+	throw new AnalysisProviderError({
+		capability,
+		provider: providerId ?? "unknown",
+		failureClass: failure.kind,
+		process: {
+			exitCode: failure.process?.exitCode,
+			signal: failure.process?.signal,
+			reason: failure.process?.reason ?? failure.message,
+			stderrSummary: failure.process?.stderr,
+		},
 	});
 }
+
+function nonreadyResult(
+	resolution: Exclude<AnalysisRequestResolution, { readonly kind: "ready" }>,
+): ReturnType<typeof textResult> {
+	if (resolution.kind === "failed") {
+		return throwProviderFailure(
+			resolution.capability,
+			resolution.providerId,
+			resolution.failure,
+		);
+	}
+	return textResult(resolution);
+}
+
+function registerCapabilityTool(
+	pi: ExtensionAPI,
+	options: {
+		readonly capability: AnalysisCapability;
+		readonly label: string;
+		readonly description: string;
+		readonly parameters: ReturnType<typeof Type.Object>;
+		readonly getSnapshot: (cwd: string) => Promise<AnalysisSessionSnapshot>;
+	},
+): void {
+	pi.registerTool({
+		name: ANALYSIS_CAPABILITY_TOOL_NAMES[options.capability],
+		label: options.label,
+		description: options.description,
+		parameters: options.parameters,
+		executionMode: "parallel",
+		execute: async (_toolCallId, params, signal, _onUpdate, ctx) => {
+			const request = parseCapabilityRequest(options.capability, params);
+			const snapshot = await options.getSnapshot(ctx.cwd);
+			const resolution = resolveAnalysisRequest(snapshot.bindings, request);
+			if (resolution.kind !== "ready") return nonreadyResult(resolution);
+			if (snapshot.runtime === undefined) {
+				return throwProviderFailure(
+					options.capability,
+					resolution.binding.provider.id,
+					{
+						kind: "invalid-config",
+						message: "Bound analysis capability has no session runtime.",
+						process: { reason: "missing-session-runtime" },
+					},
+				);
+			}
+			return textResult(await snapshot.runtime.execute(request, signal));
+		},
+	});
+}
+
+export function createProjectToolsExtension(
+	deps: ProjectToolsExtensionDeps = {},
+): (pi: ExtensionAPI) => void {
+	const loadConfig = deps.loadConfig ?? loadProjectConfig;
+	const discoverProvider = deps.discoverProvider ?? discoverFallowProvider;
+
+	return function projectToolsExtension(pi: ExtensionAPI): void {
+		let snapshotCwd: string | undefined;
+		let snapshotPromise: Promise<AnalysisSessionSnapshot> | undefined;
+
+		const clearSnapshot = (): void => {
+			snapshotCwd = undefined;
+			snapshotPromise = undefined;
+		};
+
+		const discoverSnapshot = async (
+			cwd: string,
+		): Promise<AnalysisSessionSnapshot> => {
+			const config = await loadConfig(cwd);
+			const providerPreference = config.analysis?.provider;
+			if (
+				providerPreference !== undefined &&
+				providerPreference !== FALLOW_PROVIDER_ID
+			) {
+				return {
+					bindings: resolveAnalysisBindings({
+						detections: [],
+						providerPreference,
+					}),
+				};
+			}
+
+			const discovery = await discoverProvider({
+				projectRoot: cwd,
+				configuredExecutablePath: deps.configuredExecutablePath,
+				injectedExecutablePath: deps.injectedExecutablePath,
+				userStateRoot: deps.userStateRoot,
+				executeProcess: deps.executeProcess,
+			});
+			const bindings =
+				providerPreference !== undefined && discovery.status === "absent"
+					? resolveAnalysisBindings({
+							detections: [discovery.detection],
+							providerPreference,
+						})
+					: discovery.bindings;
+			return {
+				bindings,
+				...(discovery.status === "detected"
+					? { runtime: discovery.runtime }
+					: {}),
+			};
+		};
+
+		const getSnapshot = (cwd: string): Promise<AnalysisSessionSnapshot> => {
+			if (snapshotPromise === undefined || snapshotCwd !== cwd) {
+				snapshotCwd = cwd;
+				snapshotPromise = discoverSnapshot(cwd);
+			}
+			return snapshotPromise;
+		};
+
+		pi.registerTool({
+			name: "analysis_status",
+			label: "Analysis Status",
+			description:
+				"Report the binding state, provider, scopes, metrics, and diagnostic reason for every analysis capability.",
+			parameters: Type.Object({}, { additionalProperties: false }),
+			executionMode: "parallel",
+			execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
+				const parsed = paramsObject(params, "analysis_status");
+				assertOnlyKeys(parsed, [], "analysis_status");
+				const snapshot = await getSnapshot(ctx.cwd);
+				return textResult({
+					kind: "status",
+					capabilities: snapshot.bindings,
+				} as const);
+			},
+		});
+
+		registerCapabilityTool(pi, {
+			capability: "dead-code",
+			label: "Analysis: Dead Code",
+			description:
+				"Find unreachable files, exports, types, or dependencies in project or explicit path scope.",
+			parameters: ProjectOrPathsParameters,
+			getSnapshot,
+		});
+		registerCapabilityTool(pi, {
+			capability: "duplication",
+			label: "Analysis: Duplication",
+			description:
+				"Find structurally duplicated code in project or explicit path scope.",
+			parameters: ProjectOrPathsParameters,
+			getSnapshot,
+		});
+		registerCapabilityTool(pi, {
+			capability: "complexity",
+			label: "Analysis: Complexity",
+			description:
+				"Find units violating one requested complexity metric in project or explicit path scope.",
+			parameters: Type.Object(
+				{
+					metric: Type.Union(
+						ANALYSIS_METRICS.map((metric) => Type.Literal(metric)),
+					),
+					paths: ProjectPathsSchema,
+				},
+				{ additionalProperties: false },
+			),
+			getSnapshot,
+		});
+		registerCapabilityTool(pi, {
+			capability: "boundary-conformance",
+			label: "Analysis: Boundaries",
+			description:
+				"Find dependencies that violate configured boundaries in project or explicit path scope.",
+			parameters: ProjectOrPathsParameters,
+			getSnapshot,
+		});
+		registerCapabilityTool(pi, {
+			capability: "changed-scope-audit",
+			label: "Analysis: Changed Scope Audit",
+			description:
+				"Audit changes from one explicit non-empty revision or ref without widening scope.",
+			parameters: Type.Object(
+				{
+					base: Type.String({ minLength: 1 }),
+				},
+				{ additionalProperties: false },
+			),
+			getSnapshot,
+		});
+		registerCapabilityTool(pi, {
+			capability: "trace",
+			label: "Analysis: Trace",
+			description:
+				"Trace exactly one symbol, file, dependency, or duplicate location.",
+			parameters: Type.Object(
+				{
+					target: TraceTargetSchema,
+				},
+				{ additionalProperties: false },
+			),
+			getSnapshot,
+		});
+		registerCapabilityTool(pi, {
+			capability: "fix-preview",
+			label: "Analysis: Fix Preview",
+			description:
+				"Return proposed changes for project or explicit path scope without applying them.",
+			parameters: ProjectOrPathsParameters,
+			getSnapshot,
+		});
+
+		pi.on("session_start", async () => {
+			clearSnapshot();
+		});
+		pi.on("session_shutdown", async () => {
+			clearSnapshot();
+		});
+		pi.on("before_agent_start", async (event, ctx) => {
+			const [tools, snapshot] = await Promise.all([
+				detectTools(ctx.cwd),
+				getSnapshot(ctx.cwd),
+			]);
+			const blocks = [
+				event.systemPrompt,
+				...(tools.length === 0 ? [] : [buildToolsBlock(tools)]),
+				buildCapabilityStatusBlock(snapshot.bindings),
+			];
+			return {
+				systemPrompt: blocks.join("\n\n"),
+			};
+		});
+	};
+}
+
+export default createProjectToolsExtension();
