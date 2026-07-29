@@ -214,6 +214,13 @@ split itself.
   - Decided by: human, user-chose-among-options, 2026-07-29
   - Supersedes: the OS-sandbox mechanism introduced for TASK-522 and its supersession pointer on D-012, both withdrawn on the same date
 
+- **D-026 - Disclose executable-resolution provenance and its trust boundary**
+  - Decision: status reports whether the provider executable came from an explicit configured path, the automatic package-native platform resolver, or the injected test seam. The automatic path validates package metadata and directly selects the platform package's native entry, so the runtime does not interpose an npm shim or signal-swallowing wrapper. A configured path is operator-declared trust, and the injected seam is test-declared trust: either may name an arbitrary executable whose wrapper behavior the runtime cannot reliably introspect.
+  - Alternatives: reject apparent wrappers by file format or launcher inspection (unsound for scripts, native launchers, replaced files, and platform differences); hide provenance behind one executable-path abstraction (overstates INV-3 for operator/test-supplied executables); require upstream signatures or attestations (no such complete trust chain is available in the current package contract, so this remains a future decision rather than a silent partial check).
+  - Why: INV-3 is established for the runtime-selected process boundary and automatic platform-package path, not for arbitrary operator-supplied program semantics. Visible provenance makes that guarantee boundary reviewable without leaking commands into generic status.
+  - Decided by: codex review remediation, amend-on-record, 2026-07-29
+  - Supersedes: D-015's implication that all three resolution paths provide equivalent executable provenance
+
 ## Behaviors
 
 ### B-001 - One documented capability vocabulary
