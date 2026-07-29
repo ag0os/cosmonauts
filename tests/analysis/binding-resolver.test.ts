@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { createProjectToolsExtension } from "../../domains/shared/extensions/project-tools/index.ts";
 import {
 	ANALYSIS_CAPABILITIES,
@@ -153,7 +153,7 @@ describe("analysis binding resolver", () => {
 	});
 
 	// @cosmo-behavior plan:analysis-capability-runtime#B-011
-	test("degrades only an unavailable complexity metric", () => {
+	test("degrades only an unavailable complexity metric", async () => {
 		const bindings = resolveAnalysisBindings({
 			detections: [detected(FALLOW_PROVIDER)],
 		});
@@ -171,6 +171,38 @@ describe("analysis binding resolver", () => {
 		});
 		expect(resolution).not.toHaveProperty("findings");
 		expect(resolution).not.toHaveProperty("execute");
+
+		const providerExecutor = vi.fn(async () => {
+			throw new Error("provider execution is not expected");
+		});
+		const pi = createMockPi({ cwd: "/fixture/project" });
+		createProjectToolsExtension({
+			loadConfig: async () => ({}),
+			discoverProvider: (async () => ({
+				status: "detected",
+				signal: { kind: "config", path: "fallow.toml" },
+				detection: detected(FALLOW_PROVIDER),
+				bindings,
+				runtime: {
+					provider: FALLOW_PROVIDER,
+					executablePath: "/fixture/fallow",
+					executableResolution: "injected",
+					executeProcess: async () => {
+						throw new Error("process execution is not expected");
+					},
+					validateEnvelopeSchema: () => undefined,
+					currentBindings: async () => bindings,
+					execute: providerExecutor,
+					dispose: () => undefined,
+				},
+			})) as never,
+		})(pi as never);
+		const toolResult = (await pi.callTool("analysis_complexity", {
+			metric: "cognitive",
+		})) as { readonly details: unknown };
+
+		expect(toolResult.details).toEqual(resolution);
+		expect(providerExecutor).not.toHaveBeenCalled();
 	});
 
 	// @cosmo-behavior plan:analysis-capability-runtime#B-033

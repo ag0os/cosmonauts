@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { hasAnalysisExecutionConsent } from "../../domains/shared/extensions/project-tools/analysis-consent.ts";
 import { AnalysisProviderError } from "../../domains/shared/extensions/project-tools/analysis-provider-error.ts";
 import {
@@ -570,6 +570,7 @@ describe("Fallow provider discovery", () => {
 		});
 		expect(repositoryExecutable).not.toBeNull();
 		expect(liveDiscovery.runtime.executablePath).toBe(repositoryExecutable);
+		expect(liveDiscovery.runtime.executableResolution).toBe("package-native");
 		expect(liveDiscovery.runtime.provider.version).toBe(
 			FALLOW_VALIDATED_ENGINE_VERSION,
 		);
@@ -604,6 +605,12 @@ describe("Fallow provider discovery", () => {
 		expect(
 			configured.bindings.filter(({ state }) => state === "bound"),
 		).not.toHaveLength(0);
+		if (configured.status !== "detected") {
+			throw new Error(
+				`Expected detected provider, received ${configured.status}`,
+			);
+		}
+		expect(configured.runtime.executableResolution).toBe("configured");
 
 		const projectRun = successfulIntrospection();
 		const project = await discoverFallowProvider({
@@ -624,6 +631,7 @@ describe("Fallow provider discovery", () => {
 		expect(project.runtime.provider.version).toBe(
 			FALLOW_VALIDATED_ENGINE_VERSION,
 		);
+		expect(project.runtime.executableResolution).toBe("package-native");
 
 		await rm(projectExecutable);
 		const injectedRun = successfulIntrospection();
@@ -647,6 +655,7 @@ describe("Fallow provider discovery", () => {
 		expect(injected.runtime.provider.version).toBe(
 			FALLOW_VALIDATED_ENGINE_VERSION,
 		);
+		expect(injected.runtime.executableResolution).toBe("injected");
 
 		const fakeGlobalRoot = join(fixtureRoot, "fake-global");
 		await createExecutable(
@@ -697,6 +706,127 @@ describe("Fallow provider discovery", () => {
 				(result) => result.provider.version === FALLOW_VALIDATED_ENGINE_VERSION,
 			),
 		).toBe(true);
+	});
+
+	test("surfaces configured, package-native, and injected resolution provenance without commands", async () => {
+		await writeFile(
+			join(projectRoot, "package.json"),
+			JSON.stringify({ devDependencies: { fallow: "2.54.2" } }),
+		);
+		await recordConsent();
+		const configuredExecutable = await createExecutable(
+			join(fixtureRoot, "configured-status", "fallow"),
+		);
+		const injectedExecutable = await createExecutable(
+			join(fixtureRoot, "injected-status", "fallow"),
+		);
+
+		const statusFor = async (
+			options: {
+				readonly configuredExecutablePath?: string;
+				readonly injectedExecutablePath?: string;
+			},
+			executeProcess: ProviderProcessExecutor,
+		): Promise<ToolResult> => {
+			const pi = createMockPi({ cwd: projectRoot });
+			createProjectToolsExtension({
+				userStateRoot,
+				...options,
+				executeProcess,
+			})(pi as never);
+			return (await pi.callTool("analysis_status", {})) as ToolResult;
+		};
+
+		const configuredStatus = await statusFor(
+			{
+				configuredExecutablePath: configuredExecutable,
+				injectedExecutablePath: injectedExecutable,
+			},
+			successfulIntrospection().execute,
+		);
+		expect(resultDetails(configuredStatus).resolutionProvenance).toBe(
+			"configured",
+		);
+
+		const installedExecutable = await createInstalledFallowPackage(projectRoot);
+		const packageStatus = await statusFor(
+			{ injectedExecutablePath: injectedExecutable },
+			successfulIntrospection().execute,
+		);
+		expect(resultDetails(packageStatus).resolutionProvenance).toBe(
+			"package-native",
+		);
+
+		await rm(installedExecutable);
+		const injectedStatus = await statusFor(
+			{ injectedExecutablePath: injectedExecutable },
+			successfulIntrospection().execute,
+		);
+		expect(resultDetails(injectedStatus).resolutionProvenance).toBe("injected");
+
+		for (const status of [configuredStatus, packageStatus, injectedStatus]) {
+			expect(status.content[0]?.text).not.toMatch(
+				/(?:\bnpx\b|\bnode_modules\b|--[a-z-]+)/u,
+			);
+		}
+	});
+
+	test("keeps the consent revocation window minimal when revoked after preconditions begin but before spawn", async () => {
+		await writeFile(join(projectRoot, "fallow.toml"), "");
+		await recordConsent();
+		const executable = await createExecutable(
+			join(fixtureRoot, "revocation-window", "fallow"),
+		);
+		const identity = {
+			canonicalPath: await realpath(executable),
+			device: 1,
+			inode: 1,
+			mode: 0o755,
+			size: 1,
+			modifiedAtMs: 1,
+			changedAtMs: 1,
+			sha256: "identity",
+		};
+		let identityReads = 0;
+		let markIdentityReadStarted = (): void => {
+			throw new Error("Identity-read start resolver was not initialized.");
+		};
+		const identityReadStarted = new Promise<void>((resolveStarted) => {
+			markIdentityReadStarted = resolveStarted;
+		});
+		let finishIdentityRead = (): void => {
+			throw new Error("Identity-read finish resolver was not initialized.");
+		};
+		const identityReadCanFinish = new Promise<void>((resolveFinish) => {
+			finishIdentityRead = resolveFinish;
+		});
+		const executeProcess = vi.fn<ProviderProcessExecutor>();
+		const discoveryPromise = discoverFallowProvider({
+			projectRoot,
+			userStateRoot,
+			injectedExecutablePath: executable,
+			captureExecutableIdentity: async () => {
+				identityReads += 1;
+				if (identityReads === 2) {
+					markIdentityReadStarted();
+					await identityReadCanFinish;
+				}
+				return identity;
+			},
+			executeProcess,
+		});
+
+		await identityReadStarted;
+		await rm(join(userStateRoot, "analysis-execution-consent.json"));
+		finishIdentityRead();
+		const discovery = await discoveryPromise;
+
+		expect(discovery).toMatchObject({
+			status: "unbound",
+			reason: "execution-not-consented",
+		});
+		expect(identityReads).toBe(2);
+		expect(executeProcess).not.toHaveBeenCalled();
 	});
 
 	test("resolves supported POSIX and Windows native platform packages without PATH or package-manager shims", async () => {

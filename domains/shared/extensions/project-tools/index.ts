@@ -197,6 +197,7 @@ function statusReason(binding: AnalysisBinding): string {
 
 function buildCapabilityStatusBlock(
 	bindings: readonly AnalysisBinding[],
+	executableResolution?: DetectedFallowDiscovery["runtime"]["executableResolution"],
 ): string {
 	const rows = bindings.map(
 		(binding) =>
@@ -205,6 +206,9 @@ function buildCapabilityStatusBlock(
 	return [
 		"## Analysis Capability Status",
 		"",
+		...(executableResolution === undefined
+			? []
+			: [`Resolution provenance: \`${executableResolution}\`.`, ""]),
 		"| Capability | State | Reason |",
 		"|---|---|---|",
 		...rows,
@@ -727,6 +731,11 @@ export function createProjectToolsExtension(
 				);
 				return textResult({
 					kind: "status",
+					...(snapshot.runtime === undefined
+						? {}
+						: {
+								resolutionProvenance: snapshot.runtime.executableResolution,
+							}),
 					capabilities: snapshot.bindings,
 				} as const);
 			},
@@ -822,7 +831,10 @@ export function createProjectToolsExtension(
 			const blocks = [
 				event.systemPrompt,
 				...(tools.length === 0 ? [] : [buildToolsBlock(tools)]),
-				buildCapabilityStatusBlock(snapshot.bindings),
+				buildCapabilityStatusBlock(
+					snapshot.bindings,
+					snapshot.runtime?.executableResolution,
+				),
 			];
 			return {
 				systemPrompt: blocks.join("\n\n"),

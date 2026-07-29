@@ -87,6 +87,11 @@ type SupportedFallowPlatform = "darwin" | "linux" | "win32";
 type SupportedFallowArchitecture = "arm64" | "x64";
 type FallowLinuxLibc = "gnu" | "musl";
 
+export type FallowExecutableResolutionKind =
+	| "configured"
+	| "package-native"
+	| "injected";
+
 interface InstalledFallowExecutableOptions {
 	readonly projectRoot: string;
 	readonly platform?: NodeJS.Platform;
@@ -102,6 +107,7 @@ interface FallowDetectionSignal {
 interface FallowProviderRuntime {
 	readonly provider: ProviderIdentity;
 	readonly executablePath: string;
+	readonly executableResolution: FallowExecutableResolutionKind;
 	readonly executeProcess: ProviderProcessExecutor;
 	readonly validateEnvelopeSchema: typeof validateFallowEnvelopeSchema;
 	readonly currentBindings: () => Promise<readonly AnalysisBinding[]>;
@@ -126,6 +132,11 @@ interface FallowExecutableIdentity {
 interface FallowBindingIdentity {
 	readonly canonicalProjectRoot: string;
 	readonly executable: FallowExecutableIdentity;
+}
+
+interface ResolvedFallowExecutable {
+	readonly executablePath: string;
+	readonly resolutionKind: FallowExecutableResolutionKind;
 }
 
 type FallowSpawnPrecondition =
@@ -185,6 +196,10 @@ interface DiscoverFallowProviderOptions {
 	/** User-owned state root containing the per-project consent decision. */
 	readonly userStateRoot?: string;
 	readonly executeProcess?: ProviderProcessExecutor;
+	/** Injectable filesystem identity reader for deterministic race tests. */
+	readonly captureExecutableIdentity?: (
+		executablePath: string,
+	) => Promise<FallowExecutableIdentity>;
 	/** Session-owned cancellation for version/config discovery subprocesses. */
 	readonly signal?: AbortSignal;
 }
@@ -423,24 +438,44 @@ async function resolveFallowExecutable(
 		DiscoverFallowProviderOptions,
 		"projectRoot" | "configuredExecutablePath" | "injectedExecutablePath"
 	>,
-): Promise<string | null> {
+): Promise<ResolvedFallowExecutable | null> {
 	const projectRoot = resolve(options.projectRoot);
+	const configuredExecutable =
+		options.configuredExecutablePath === undefined
+			? undefined
+			: configuredPath(projectRoot, options.configuredExecutablePath);
+	if (
+		configuredExecutable !== undefined &&
+		(await executableExists(configuredExecutable))
+	) {
+		return {
+			executablePath: configuredExecutable,
+			resolutionKind: "configured",
+		};
+	}
+
 	const installedExecutable = await resolveInstalledFallowExecutable({
 		projectRoot,
 	});
-	const candidates = [
-		options.configuredExecutablePath === undefined
-			? undefined
-			: configuredPath(projectRoot, options.configuredExecutablePath),
-		installedExecutable ?? undefined,
+	if (installedExecutable !== null) {
+		return {
+			executablePath: installedExecutable,
+			resolutionKind: "package-native",
+		};
+	}
+
+	const injectedExecutable =
 		options.injectedExecutablePath === undefined
 			? undefined
-			: resolve(options.injectedExecutablePath),
-	];
-	for (const candidate of candidates) {
-		if (candidate !== undefined && (await executableExists(candidate))) {
-			return candidate;
-		}
+			: resolve(options.injectedExecutablePath);
+	if (
+		injectedExecutable !== undefined &&
+		(await executableExists(injectedExecutable))
+	) {
+		return {
+			executablePath: injectedExecutable,
+			resolutionKind: "injected",
+		};
 	}
 	return null;
 }
@@ -528,36 +563,15 @@ async function validateSpawnPreconditions(options: {
 	readonly userStateRoot?: string;
 	readonly executablePath: string;
 	readonly bindingIdentity: FallowBindingIdentity;
+	readonly captureExecutableIdentity: (
+		executablePath: string,
+	) => Promise<FallowExecutableIdentity>;
 }): Promise<FallowSpawnPrecondition> {
-	const authorization = await readAnalysisExecutionAuthorization({
-		projectRoot: options.projectRoot,
-		providerId: FALLOW_PROVIDER_ID,
-		userStateRoot: options.userStateRoot,
-	});
-	if (authorization?.consented !== true) {
-		return {
-			kind: "unbound",
-			bindings: providerNotAvailableBindings("execution-not-consented"),
-		};
-	}
-	if (
-		authorization.canonicalProjectRoot !==
-		options.bindingIdentity.canonicalProjectRoot
-	) {
-		const failure = bindingIdentityFailure(
-			"project-identity-changed",
-			"Fallow project identity changed after provider introspection.",
-		);
-		return {
-			kind: "failed",
-			failure,
-			bindings: providerFailedBindings(failure),
-		};
-	}
-
 	let currentExecutable: FallowExecutableIdentity;
 	try {
-		currentExecutable = await captureExecutableIdentity(options.executablePath);
+		currentExecutable = await options.captureExecutableIdentity(
+			options.executablePath,
+		);
 	} catch {
 		const failure = bindingIdentityFailure(
 			"provider-executable-identity-changed",
@@ -583,6 +597,33 @@ async function validateSpawnPreconditions(options: {
 			kind: "failed",
 			failure,
 			bindings: providerFailedBindings(failure),
+		};
+	}
+
+	const authorization = await readAnalysisExecutionAuthorization({
+		projectRoot: options.projectRoot,
+		providerId: FALLOW_PROVIDER_ID,
+		userStateRoot: options.userStateRoot,
+	});
+	if (
+		authorization !== null &&
+		authorization.canonicalProjectRoot !==
+			options.bindingIdentity.canonicalProjectRoot
+	) {
+		const failure = bindingIdentityFailure(
+			"project-identity-changed",
+			"Fallow project identity changed after provider introspection.",
+		);
+		return {
+			kind: "failed",
+			failure,
+			bindings: providerFailedBindings(failure),
+		};
+	}
+	if (authorization?.consented !== true) {
+		return {
+			kind: "unbound",
+			bindings: providerNotAvailableBindings("execution-not-consented"),
 		};
 	}
 	return { kind: "ready" };
@@ -864,7 +905,10 @@ async function introspectProvider(
 	executablePath: string,
 	bindingIdentity: FallowBindingIdentity,
 	executeProcess: ProviderProcessExecutor,
+	executableResolution: FallowExecutableResolutionKind,
 ): Promise<FallowProviderDiscovery> {
+	const captureIdentity =
+		options.captureExecutableIdentity ?? captureExecutableIdentity;
 	if (options.signal?.aborted) {
 		return abortedDiscovery(detectionSignal, "version", options.signal);
 	}
@@ -875,6 +919,7 @@ async function introspectProvider(
 			userStateRoot: options.userStateRoot,
 			executablePath,
 			bindingIdentity,
+			captureExecutableIdentity: captureIdentity,
 		}),
 	);
 	if (versionPrecondition !== undefined) return versionPrecondition;
@@ -918,6 +963,7 @@ async function introspectProvider(
 			userStateRoot: options.userStateRoot,
 			executablePath,
 			bindingIdentity,
+			captureExecutableIdentity: captureIdentity,
 		}),
 	);
 	if (configPrecondition !== undefined) return configPrecondition;
@@ -974,6 +1020,7 @@ async function introspectProvider(
 	const runtimeBase = {
 		provider,
 		executablePath,
+		executableResolution,
 		executeProcess,
 		validateEnvelopeSchema: validateFallowEnvelopeSchema,
 	};
@@ -997,6 +1044,7 @@ async function introspectProvider(
 			userStateRoot: options.userStateRoot,
 			executablePath,
 			bindingIdentity,
+			captureExecutableIdentity: captureIdentity,
 		});
 		if (precondition.kind === "failed") {
 			invalidatedFailure = precondition.failure;
@@ -1094,8 +1142,8 @@ export async function discoverFallowProvider(
 		return abortedDiscovery(detectionSignal, "discovery", options.signal);
 	}
 
-	const executablePath = await resolveFallowExecutable(options);
-	if (executablePath === null) {
+	const resolvedExecutable = await resolveFallowExecutable(options);
+	if (resolvedExecutable === null) {
 		return {
 			status: "unbound",
 			signal: detectionSignal,
@@ -1138,7 +1186,9 @@ export async function discoverFallowProvider(
 
 	let executableIdentity: FallowExecutableIdentity;
 	try {
-		executableIdentity = await captureExecutableIdentity(executablePath);
+		executableIdentity = await (
+			options.captureExecutableIdentity ?? captureExecutableIdentity
+		)(resolvedExecutable.executablePath);
 	} catch {
 		return failedDiscovery(
 			detectionSignal,
@@ -1156,9 +1206,10 @@ export async function discoverFallowProvider(
 	return introspectProvider(
 		options,
 		detectionSignal,
-		executablePath,
+		resolvedExecutable.executablePath,
 		bindingIdentity,
 		options.executeProcess ?? runProviderProcess,
+		resolvedExecutable.resolutionKind,
 	);
 }
 
