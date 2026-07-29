@@ -75,6 +75,19 @@ async function recordConsent(
 	);
 }
 
+async function waitFor(
+	predicate: () => boolean,
+	timeoutMs = 2_000,
+): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (!predicate()) {
+		if (Date.now() >= deadline) {
+			throw new Error(`Condition was not met within ${timeoutMs}ms.`);
+		}
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+}
+
 function successfulIntrospection(options?: {
 	readonly version?: string;
 	readonly config?: unknown;
@@ -750,6 +763,121 @@ describe("Fallow provider discovery", () => {
 });
 
 describe("Fallow capability execution", () => {
+	test("bounds concurrent analyses and removes cancelled work from the queue", async () => {
+		await writeFile(join(projectRoot, "fallow.toml"), "", "utf8");
+		await recordConsent();
+		const executable = await createExecutable(
+			join(fixtureRoot, "injected", "fallow"),
+		);
+		const fixture = await loadCapabilityFixture("dead-code");
+		const capabilityStarts: number[] = [];
+		const releases: Array<() => void> = [];
+		let active = 0;
+		let peakActive = 0;
+		const executeProcess: ProviderProcessExecutor = async (invocation) => {
+			if (invocation.args.includes("--version")) {
+				return {
+					kind: "code-exit",
+					code: 0,
+					stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+					stderr: "",
+				};
+			}
+			if (invocation.args[0] === "config") {
+				return {
+					kind: "code-exit",
+					code: 0,
+					stdout: JSON.stringify({ boundaries: { zones: [], rules: [] } }),
+					stderr: "",
+				};
+			}
+
+			const invocationNumber = capabilityStarts.length + 1;
+			capabilityStarts.push(invocationNumber);
+			active += 1;
+			peakActive = Math.max(peakActive, active);
+			await new Promise<void>((resolve) => releases.push(resolve));
+			active -= 1;
+			return {
+				kind: "code-exit",
+				code: fixture.envelope.code,
+				stdout: fixture.envelope.stdout,
+				stderr: fixture.envelope.stderr,
+			};
+		};
+		const discovery = await discoverFallowProvider({
+			projectRoot,
+			userStateRoot,
+			injectedExecutablePath: executable,
+			executeProcess,
+		});
+		if (discovery.status !== "detected") {
+			throw new Error(
+				`Expected detected provider, received ${discovery.status}`,
+			);
+		}
+		const request = {
+			capability: "dead-code",
+			scope: { kind: "project" },
+		} as const satisfies AnalysisRequest;
+		const cancelledController = new AbortController();
+		const first = discovery.runtime.execute(request);
+		const cancelled = discovery.runtime.execute(
+			request,
+			cancelledController.signal,
+		);
+		const third = discovery.runtime.execute(request);
+
+		await waitFor(() => capabilityStarts.length === 1);
+		expect(peakActive).toBe(1);
+		cancelledController.abort(new Error("cancelled while queued"));
+		await expect(cancelled).rejects.toMatchObject({
+			name: "AnalysisProviderError",
+			failureClass: "aborted",
+		});
+		expect(capabilityStarts).toEqual([1]);
+
+		releases.shift()?.();
+		await first;
+		await waitFor(() => capabilityStarts.length === 2);
+		expect(peakActive).toBe(1);
+		releases.shift()?.();
+		await third;
+
+		const afterCleanup = discovery.runtime.execute(request);
+		await waitFor(() => capabilityStarts.length === 3);
+		expect(peakActive).toBe(1);
+		releases.shift()?.();
+		await afterCleanup;
+		expect(capabilityStarts).toEqual([1, 2, 3]);
+	});
+
+	test("preserves a large successful native payload and stderr byte for byte", async () => {
+		const fixture = await loadCapabilityFixture("dead-code");
+		const payload = {
+			...(fixture.envelope.payload as Readonly<Record<string, unknown>>),
+			large_native_evidence: "λ\u0000é".repeat(350_000),
+		};
+		const stdout = JSON.stringify(payload);
+		const stderr = `provider-stderr-start\n${"ø\u0000".repeat(250_000)}\nprovider-stderr-end`;
+		const runtime = await discoveredRuntimeWithFixtures({
+			capabilityOutcome: {
+				kind: "code-exit",
+				code: fixture.envelope.code,
+				stdout,
+				stderr,
+			},
+		});
+
+		const result = await runtime.execute({
+			capability: "dead-code",
+			scope: { kind: "project" },
+		});
+
+		expect(JSON.stringify(result.native.payload)).toBe(stdout);
+		expect(result.native.stderr).toBe(stderr);
+	});
+
 	// @cosmo-behavior plan:analysis-capability-runtime#B-007
 	test("normalizes every supported capability and preserves its native envelope", async () => {
 		const runtime = await discoveredRuntimeWithFixtures();

@@ -1,14 +1,17 @@
 import { spawn } from "node:child_process";
+import { createWriteStream } from "node:fs";
 import {
 	access,
 	constants,
 	mkdir,
 	mkdtemp,
+	readFile,
 	realpath,
 	rm,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { finished } from "node:stream/promises";
 
 export const DEFAULT_PROVIDER_TIMEOUT_MS = 30_000;
 export const DEFAULT_TERMINATION_GRACE_MS = 250;
@@ -18,6 +21,9 @@ const LINUX_SANDBOX_EXECUTABLE_CANDIDATES = [
 	"/usr/bin/bwrap",
 	"/bin/bwrap",
 ] as const;
+const PROVIDER_STDOUT_SPOOL = "provider-stdout.log";
+const PROVIDER_STDERR_SPOOL = "provider-stderr.log";
+const OUTPUT_CAPTURE_FAILED_CODE = "OUTPUT_CAPTURE_FAILED";
 
 export interface ProviderProcessInvocation {
 	readonly executablePath: string;
@@ -279,6 +285,24 @@ function terminationOutcome(
 	return { ...termination, stdout, stderr };
 }
 
+type ProviderProcessOutcomeFactory = (
+	stdout: string,
+	stderr: string,
+) => ProviderProcessOutcome;
+
+function appendRunnerStderr(stderr: string, runnerStderr: string): string {
+	if (runnerStderr.length === 0) return stderr;
+	return `${stderr}${stderr.length === 0 ? "" : "\n"}${runnerStderr}`;
+}
+
+async function readableSpool(path: string): Promise<string> {
+	try {
+		return await readFile(path, "utf8");
+	} catch {
+		return "";
+	}
+}
+
 export const runProviderProcess: ProviderProcessExecutor = async (
 	invocation,
 	signal,
@@ -333,21 +357,11 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 
 	try {
 		return await new Promise((resolve) => {
-			let stdout = "";
-			let stderr = "";
 			let settled = false;
 			let termination: InitiatedTermination | undefined;
 			let timeoutTimer: NodeJS.Timeout | undefined;
 			let forceKillTimer: NodeJS.Timeout | undefined;
-
-			const settle = (outcome: ProviderProcessOutcome): void => {
-				if (settled) return;
-				settled = true;
-				if (timeoutTimer) clearTimeout(timeoutTimer);
-				if (forceKillTimer) clearTimeout(forceKillTimer);
-				signal?.removeEventListener("abort", abort);
-				resolve(outcome);
-			};
+			let runnerStderr = "";
 
 			let child: ReturnType<typeof spawn>;
 			try {
@@ -360,25 +374,67 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 			} catch (error) {
 				const spawnError =
 					error instanceof Error ? error : new Error(String(error));
-				settle({
+				resolve({
 					kind: "spawn-error",
 					error: errorWithOptionalCode(spawnError),
-					stdout,
-					stderr,
+					stdout: "",
+					stderr: "",
 				});
 				return;
 			}
 
-			const appendStdout = (chunk: string): void => {
-				stdout += chunk;
+			const stdoutPath = join(sandbox.tempRoot, PROVIDER_STDOUT_SPOOL);
+			const stderrPath = join(sandbox.tempRoot, PROVIDER_STDERR_SPOOL);
+			const stdoutSink = createWriteStream(stdoutPath, { flags: "wx" });
+			const stderrSink = createWriteStream(stderrPath, { flags: "wx" });
+			const stdoutFinished = finished(stdoutSink);
+			const stderrFinished = finished(stderrSink);
+			if (child.stdout === null) {
+				stdoutSink.end();
+			} else {
+				child.stdout.pipe(stdoutSink);
+			}
+			if (child.stderr === null) {
+				stderrSink.end();
+			} else {
+				child.stderr.pipe(stderrSink);
+			}
+
+			const settle = (factory: ProviderProcessOutcomeFactory): void => {
+				if (settled) return;
+				settled = true;
+				if (timeoutTimer) clearTimeout(timeoutTimer);
+				if (forceKillTimer) clearTimeout(forceKillTimer);
+				signal?.removeEventListener("abort", abort);
+				void (async () => {
+					try {
+						await Promise.all([stdoutFinished, stderrFinished]);
+						const [stdout, stderr] = await Promise.all([
+							readFile(stdoutPath, "utf8"),
+							readFile(stderrPath, "utf8"),
+						]);
+						resolve(factory(stdout, appendRunnerStderr(stderr, runnerStderr)));
+					} catch (error) {
+						const [stdout, stderr] = await Promise.all([
+							readableSpool(stdoutPath),
+							readableSpool(stderrPath),
+						]);
+						const captureError =
+							error instanceof Error ? error : new Error(String(error));
+						resolve({
+							kind: "spawn-error",
+							error: Object.assign(
+								new Error(
+									`Provider output capture failed: ${captureError.message}`,
+								),
+								{ code: OUTPUT_CAPTURE_FAILED_CODE },
+							),
+							stdout,
+							stderr: appendRunnerStderr(stderr, runnerStderr),
+						});
+					}
+				})();
 			};
-			const appendStderr = (chunk: string): void => {
-				stderr += chunk;
-			};
-			child.stdout?.setEncoding("utf8");
-			child.stderr?.setEncoding("utf8");
-			child.stdout?.on("data", appendStdout);
-			child.stderr?.on("data", appendStderr);
 
 			const beginTermination = (initiated: InitiatedTermination): void => {
 				if (settled || termination) return;
@@ -392,8 +448,10 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 					} catch (error) {
 						const message =
 							error instanceof Error ? error.message : String(error);
-						stderr += `\nProvider force-kill failed: ${message}`;
-						settle(terminationOutcome(initiated, stdout, stderr));
+						runnerStderr += `Provider force-kill failed: ${message}`;
+						settle((stdout, stderr) =>
+							terminationOutcome(initiated, stdout, stderr),
+						);
 					}
 				}, terminationGraceMs);
 
@@ -402,7 +460,7 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 				} catch (error) {
 					const message =
 						error instanceof Error ? error.message : String(error);
-					stderr += `\nProvider graceful termination failed: ${message}`;
+					runnerStderr += `Provider graceful termination failed: ${message}`;
 				}
 			};
 
@@ -415,43 +473,54 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 
 			child.once("error", (error) => {
 				if (termination) {
-					settle(terminationOutcome(termination, stdout, stderr));
+					const initiated = termination;
+					settle((stdout, stderr) =>
+						terminationOutcome(initiated, stdout, stderr),
+					);
 					return;
 				}
-				settle({
+				settle((stdout, stderr) => ({
 					kind: "spawn-error",
 					error: errorWithOptionalCode(error),
 					stdout,
 					stderr,
-				});
+				}));
 			});
 
 			child.once("close", (code, exitSignal) => {
 				if (termination) {
-					settle(terminationOutcome(termination, stdout, stderr));
+					const initiated = termination;
+					settle((stdout, stderr) =>
+						terminationOutcome(initiated, stdout, stderr),
+					);
 					return;
 				}
 				if (typeof code === "number") {
-					settle({ kind: "code-exit", code, stdout, stderr });
+					settle((stdout, stderr) => ({
+						kind: "code-exit",
+						code,
+						stdout,
+						stderr,
+					}));
 					return;
 				}
 				if (exitSignal !== null) {
-					settle({
+					settle((stdout, stderr) => ({
 						kind: "signal-exit",
 						signal: exitSignal,
 						stdout,
 						stderr,
-					});
+					}));
 					return;
 				}
-				settle({
+				settle((stdout, stderr) => ({
 					kind: "spawn-error",
 					error: new Error(
 						"Provider process closed without an exit code or signal",
 					),
 					stdout,
 					stderr,
-				});
+				}));
 			});
 
 			signal?.addEventListener("abort", abort, { once: true });

@@ -28,9 +28,14 @@ import {
 	type ProviderProcessOutcome,
 	runProviderProcess,
 } from "./process-runner.ts";
+import {
+	ProviderExecutionQueue,
+	ProviderExecutionQueueAbortedError,
+} from "./provider-execution-queue.ts";
 
 const FALLOW_PROVIDER_ID = "fallow";
 export const FALLOW_VALIDATED_ENGINE_VERSION = "2.54.2";
+export const FALLOW_MAX_CONCURRENT_ANALYSES = 1;
 
 const FALLOW_VALIDATED_SCHEMA_VERSIONS = {
 	"dead-code": [4],
@@ -64,6 +69,7 @@ interface FallowProviderRuntime {
 		request: AnalysisRequest,
 		signal?: AbortSignal,
 	) => Promise<AnalysisResult>;
+	readonly dispose: (reason: unknown) => void;
 }
 
 type FallowProviderDiscovery =
@@ -404,6 +410,52 @@ function abortedDiscovery(
 	);
 }
 
+function combinedAbortSignal(signals: readonly (AbortSignal | undefined)[]): {
+	readonly signal?: AbortSignal;
+	readonly dispose: () => void;
+} {
+	const present = signals.filter(
+		(signal): signal is AbortSignal => signal !== undefined,
+	);
+	if (present.length === 0) {
+		return { dispose: () => undefined };
+	}
+	if (present.length === 1) {
+		return { signal: present[0], dispose: () => undefined };
+	}
+
+	const controller = new AbortController();
+	const listeners = new Map<AbortSignal, () => void>();
+	const dispose = (): void => {
+		for (const [signal, listener] of listeners) {
+			signal.removeEventListener("abort", listener);
+		}
+		listeners.clear();
+	};
+	for (const signal of present) {
+		if (signal.aborted) {
+			controller.abort(signal.reason);
+			break;
+		}
+		const listener = (): void => {
+			if (!controller.signal.aborted) controller.abort(signal.reason);
+			dispose();
+		};
+		listeners.set(signal, listener);
+		signal.addEventListener("abort", listener, { once: true });
+	}
+	return { signal: controller.signal, dispose };
+}
+
+function abortedExecution(reason: unknown): AnalysisFailure {
+	const message = reason instanceof Error ? reason.message : String(reason);
+	return {
+		kind: "aborted",
+		message: "Fallow analysis execution was aborted.",
+		process: { reason: message },
+	};
+}
+
 async function introspectProvider(
 	options: DiscoverFallowProviderOptions,
 	detectionSignal: FallowDetectionSignal,
@@ -496,6 +548,14 @@ async function introspectProvider(
 		executeProcess,
 		validateEnvelopeSchema: validateFallowEnvelopeSchema,
 	};
+	const executionQueue = new ProviderExecutionQueue(
+		FALLOW_MAX_CONCURRENT_ANALYSES,
+	);
+	const lifecycleController = new AbortController();
+	const executionRuntime = {
+		...runtimeBase,
+		projectRoot: options.projectRoot,
+	};
 	return {
 		status: "detected",
 		signal: detectionSignal,
@@ -503,15 +563,40 @@ async function introspectProvider(
 		bindings: resolveAnalysisBindings({ detections: [detection] }),
 		runtime: {
 			...runtimeBase,
-			execute: (request, abortSignal) =>
-				executeFallowCapability(
-					{
-						...runtimeBase,
-						projectRoot: options.projectRoot,
-					},
-					request,
+			execute: async (request, abortSignal) => {
+				const combined = combinedAbortSignal([
 					abortSignal,
-				),
+					lifecycleController.signal,
+				]);
+				try {
+					return await executionQueue.run(
+						() =>
+							executeFallowCapability(
+								executionRuntime,
+								request,
+								combined.signal,
+							),
+						combined.signal,
+					);
+				} catch (error) {
+					if (error instanceof ProviderExecutionQueueAbortedError) {
+						return providerFailure(
+							executionRuntime,
+							request.capability,
+							abortedExecution(error.reason),
+						);
+					}
+					throw error;
+				} finally {
+					combined.dispose();
+				}
+			},
+			dispose: (reason) => {
+				if (!lifecycleController.signal.aborted) {
+					lifecycleController.abort(reason);
+				}
+				executionQueue.close(reason);
+			},
 		},
 	};
 }

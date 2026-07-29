@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -27,6 +27,25 @@ function terminationIgnoringScript(label: string): string {
 		process.stdout.write("${label}:ready\\n");
 		setInterval(() => {}, 1_000);
 	`;
+}
+
+async function waitForFileSize(
+	path: string,
+	minimumBytes: number,
+	timeoutMs = 2_000,
+): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		try {
+			if ((await stat(path)).size >= minimumBytes) return;
+		} catch {
+			// The spool file is created asynchronously after sandbox preparation.
+		}
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+	throw new Error(
+		`Expected ${path} to reach ${minimumBytes} bytes within ${timeoutMs}ms.`,
+	);
 }
 
 describe("project-tools provider process runner", () => {
@@ -125,6 +144,49 @@ describe("project-tools provider process runner", () => {
 		}
 		expect(outcome.error.code).toBe("SANDBOX_UNAVAILABLE");
 		expect(await readFile(sentinel, "utf8")).toBe("unchanged\n");
+	});
+
+	test("spools large output losslessly and removes the private copies", async () => {
+		const payloadBytes = 2 * 1024 * 1024;
+		const stderrBytes = 1024 * 1024;
+		const expectedStdout = JSON.stringify({
+			payload: "λ".repeat(payloadBytes / 2),
+		});
+		const expectedStderr = `stderr-start\n${"é".repeat(stderrBytes / 2)}\nstderr-end`;
+		let sandboxRoot: string | undefined;
+
+		const execution = runProviderProcess(
+			nodeInvocation(`
+				process.stdout.write(JSON.stringify({ payload: "λ".repeat(${payloadBytes / 2}) }));
+				process.stderr.write("stderr-start\\n" + "é".repeat(${stderrBytes / 2}) + "\\nstderr-end");
+				setTimeout(() => process.exit(0), 250);
+			`),
+			undefined,
+			{
+				onSandboxReady: (tempRoot) => {
+					sandboxRoot = tempRoot;
+				},
+			},
+		);
+
+		while (sandboxRoot === undefined) {
+			await new Promise((resolve) => setTimeout(resolve, 5));
+		}
+		const stdoutSpool = join(sandboxRoot, "provider-stdout.log");
+		const stderrSpool = join(sandboxRoot, "provider-stderr.log");
+		await Promise.all([
+			waitForFileSize(stdoutSpool, Buffer.byteLength(expectedStdout)),
+			waitForFileSize(stderrSpool, Buffer.byteLength(expectedStderr)),
+		]);
+
+		const outcome = await execution;
+		expect(outcome).toEqual({
+			kind: "code-exit",
+			code: 0,
+			stdout: expectedStdout,
+			stderr: expectedStderr,
+		});
+		await expect(stat(sandboxRoot)).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
 	// @cosmo-behavior plan:analysis-capability-runtime#B-029

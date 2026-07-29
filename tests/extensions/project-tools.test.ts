@@ -708,6 +708,75 @@ describe("project-tools extension", () => {
 		expect(versionInvocationCount).toBe(2);
 	}, 15_000);
 
+	test("session shutdown aborts active analysis and removes queued analysis work", async () => {
+		const fixture = await createProjectFixture("session-analysis-queue");
+		await writeFile(join(fixture.projectRoot, "fallow.toml"), "");
+		await grantConsent(fixture.projectRoot, fixture.userStateRoot);
+		const executable = join(tmpDir, "session-analysis-queue-fallow");
+		await writeFile(executable, "#!/bin/sh\nexit 0\n");
+		await chmod(executable, 0o755);
+		let capabilityInvocations = 0;
+		const executeProcess: ProviderProcessExecutor = async (
+			invocation,
+			signal,
+		) => {
+			if (invocation.args.includes("--version")) {
+				return {
+					kind: "code-exit",
+					code: 0,
+					stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+					stderr: "",
+				};
+			}
+			if (invocation.args[0] === "config") {
+				return {
+					kind: "code-exit",
+					code: 3,
+					stdout: "defaults in effect\n",
+					stderr: "",
+				};
+			}
+			capabilityInvocations += 1;
+			return await new Promise((resolve) => {
+				const abort = (): void => {
+					resolve({
+						kind: "aborted",
+						reason: signal?.reason,
+						stdout: "",
+						stderr: "",
+					});
+				};
+				signal?.addEventListener("abort", abort, { once: true });
+				if (signal?.aborted) abort();
+			});
+		};
+		const pi = createMockPi({ cwd: fixture.projectRoot });
+		createProjectToolsExtension({
+			userStateRoot: fixture.userStateRoot,
+			injectedExecutablePath: executable,
+			executeProcess,
+		})(pi as never);
+		await pi.callTool("analysis_status", {});
+
+		const active = pi.callTool("analysis_dead_code", {});
+		const queued = pi.callTool("analysis_duplication", {});
+		await waitFor(() => capabilityInvocations === 1);
+
+		await pi.fireEvent("session_shutdown");
+		const outcomes = await Promise.allSettled([active, queued]);
+
+		expect(capabilityInvocations).toBe(1);
+		for (const outcome of outcomes) {
+			expect(outcome.status).toBe("rejected");
+			expect(
+				outcome.status === "rejected" ? outcome.reason : undefined,
+			).toMatchObject({
+				name: "AnalysisProviderError",
+				failureClass: "aborted",
+			});
+		}
+	});
+
 	test("one cancelled caller detaches without aborting shared discovery needed by another", async () => {
 		const fixture = await createProjectFixture("shared-discovery");
 		await writeFile(join(fixture.projectRoot, "fallow.toml"), "");

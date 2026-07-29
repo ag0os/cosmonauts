@@ -54,6 +54,8 @@ interface SnapshotDiscovery {
 	readonly consumers: Set<symbol>;
 	readonly promise: Promise<AnalysisSessionSnapshot>;
 	settled: boolean;
+	snapshot?: AnalysisSessionSnapshot;
+	clearReason?: string;
 }
 
 class AnalysisDiscoveryAbortedError extends Error {
@@ -517,11 +519,17 @@ export function createProjectToolsExtension(
 		const clearSnapshot = (reason: string): void => {
 			const obsoleteDiscovery = snapshotDiscovery;
 			snapshotDiscovery = undefined;
-			if (obsoleteDiscovery !== undefined && !obsoleteDiscovery.settled) {
+			if (obsoleteDiscovery === undefined) return;
+			obsoleteDiscovery.clearReason = reason;
+			if (!obsoleteDiscovery.settled) {
 				obsoleteDiscovery.controller.abort(
 					new AnalysisDiscoveryAbortedError(reason),
 				);
+				return;
 			}
+			obsoleteDiscovery.snapshot?.runtime?.dispose(
+				new AnalysisDiscoveryAbortedError(reason),
+			);
 		};
 
 		const discoverSnapshot = async (
@@ -580,8 +588,16 @@ export function createProjectToolsExtension(
 				settled: false,
 			};
 			void promise.then(
-				() => {
+				(snapshot) => {
+					discovery.snapshot = snapshot;
 					discovery.settled = true;
+					if (snapshotDiscovery !== discovery) {
+						snapshot.runtime?.dispose(
+							new AnalysisDiscoveryAbortedError(
+								discovery.clearReason ?? "Analysis discovery became obsolete.",
+							),
+						);
+					}
 				},
 				() => {
 					discovery.settled = true;
