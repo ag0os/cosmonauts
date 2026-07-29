@@ -17,12 +17,6 @@ const REFERENCE_ENGINE_VERSION = "2.54.2";
 const FIXTURE_SCHEMA_VERSION = 1;
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = resolve(SCRIPT_DIR, "..");
-const LOCAL_FALLOW_EXECUTABLE = join(
-	REPOSITORY_ROOT,
-	"node_modules",
-	".bin",
-	process.platform === "win32" ? "fallow.cmd" : "fallow",
-);
 
 export type FallowEnvelopeSource = "live-engine" | "captured-payload";
 
@@ -84,6 +78,7 @@ interface CapturedFixture {
 
 interface CaptureOptions {
 	readonly outputRoot: string;
+	readonly repositoryRoot?: string;
 }
 
 interface ProjectCapture {
@@ -116,14 +111,16 @@ function run(
 		let stdout = "";
 		let stderr = "";
 
+		const appendStdout = (chunk: string): void => {
+			stdout += chunk;
+		};
+		const appendStderr = (chunk: string): void => {
+			stderr += chunk;
+		};
 		child.stdout.setEncoding("utf8");
 		child.stderr.setEncoding("utf8");
-		child.stdout.on("data", (chunk: string) => {
-			stdout += chunk;
-		});
-		child.stderr.on("data", (chunk: string) => {
-			stderr += chunk;
-		});
+		child.stdout.on("data", appendStdout);
+		child.stderr.on("data", appendStderr);
 		child.once("error", reject);
 		child.once("close", (code, signal) => {
 			resolveOutcome({ code, signal, stdout, stderr });
@@ -442,9 +439,12 @@ function parsePayload(stdout: string): unknown {
 	return null;
 }
 
-async function verifyPinnedLocalEngine(): Promise<void> {
+async function verifyPinnedLocalEngine(
+	repositoryRoot: string,
+	localFallowExecutable: string,
+): Promise<void> {
 	const packageManifest = JSON.parse(
-		await readFile(join(REPOSITORY_ROOT, "package.json"), "utf8"),
+		await readFile(join(repositoryRoot, "package.json"), "utf8"),
 	) as { devDependencies?: Record<string, string> };
 	if (packageManifest.devDependencies?.fallow !== REFERENCE_ENGINE_VERSION) {
 		throw new Error(
@@ -452,14 +452,14 @@ async function verifyPinnedLocalEngine(): Promise<void> {
 		);
 	}
 
-	const executable = await stat(LOCAL_FALLOW_EXECUTABLE).catch(() => null);
+	const executable = await stat(localFallowExecutable).catch(() => null);
 	if (executable === null) {
 		throw new Error(
-			`Project-local Fallow executable is missing: ${LOCAL_FALLOW_EXECUTABLE}`,
+			`Project-local Fallow executable is missing: ${localFallowExecutable}`,
 		);
 	}
-	const version = await run(LOCAL_FALLOW_EXECUTABLE, ["--version"], {
-		cwd: REPOSITORY_ROOT,
+	const version = await run(localFallowExecutable, ["--version"], {
+		cwd: repositoryRoot,
 	});
 	if (
 		version.code !== 0 ||
@@ -473,6 +473,7 @@ async function verifyPinnedLocalEngine(): Promise<void> {
 
 async function assertOutputOutsideRepository(
 	outputRoot: string,
+	repositoryRoot: string,
 ): Promise<string> {
 	const output = await stat(outputRoot).catch(() => null);
 	if (output === null || !output.isDirectory()) {
@@ -481,7 +482,7 @@ async function assertOutputOutsideRepository(
 		);
 	}
 	const [repositoryPath, outputPath] = await Promise.all([
-		realpath(REPOSITORY_ROOT),
+		realpath(repositoryRoot),
 		realpath(outputRoot),
 	]);
 	const fromRepository = relative(repositoryPath, outputPath);
@@ -513,8 +514,18 @@ function commandArgs(
 export async function captureFallowEnvelopes(
 	options: CaptureOptions,
 ): Promise<readonly string[]> {
-	await verifyPinnedLocalEngine();
-	const outputRoot = await assertOutputOutsideRepository(options.outputRoot);
+	const repositoryRoot = options.repositoryRoot ?? REPOSITORY_ROOT;
+	const localFallowExecutable = join(
+		repositoryRoot,
+		"node_modules",
+		".bin",
+		process.platform === "win32" ? "fallow.cmd" : "fallow",
+	);
+	await verifyPinnedLocalEngine(repositoryRoot, localFallowExecutable);
+	const outputRoot = await assertOutputOutsideRepository(
+		options.outputRoot,
+		repositoryRoot,
+	);
 	const captureRoot = await mkdtemp(
 		join(tmpdir(), "cosmonauts-fallow-capture-"),
 	);
@@ -629,7 +640,7 @@ export async function captureFallowEnvelopes(
 		const written: string[] = [];
 
 		for (const capture of captures) {
-			const rawOutcome = await run(LOCAL_FALLOW_EXECUTABLE, capture.args, {
+			const rawOutcome = await run(localFallowExecutable, capture.args, {
 				cwd: capture.cwd,
 			});
 			if (

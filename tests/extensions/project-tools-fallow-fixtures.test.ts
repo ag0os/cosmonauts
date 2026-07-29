@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, readlink, symlink } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -23,6 +23,7 @@ const FIXTURE_ROOT = join(
 	"fallow-2.54.2",
 );
 const output = useTempDir("fallow-capture-output-");
+const sourceRepository = useTempDir("fallow-capture-source-");
 
 interface CapturedFixture {
 	readonly fixtureSchemaVersion: number;
@@ -59,9 +60,9 @@ async function loadFixture(name: string): Promise<CapturedFixture> {
 	) as CapturedFixture;
 }
 
-async function snapshotRepositoryFiles(): Promise<
-	Readonly<Record<string, string>>
-> {
+async function snapshotRepositoryFiles(
+	repositoryRoot: string,
+): Promise<Readonly<Record<string, string>>> {
 	const files: Record<string, string> = {};
 	const excludedDirectories = new Set([
 		".git",
@@ -76,25 +77,32 @@ async function snapshotRepositoryFiles(): Promise<
 	): Promise<void> {
 		const entries = await readdir(directory, { withFileTypes: true });
 		for (const entry of entries) {
+			const absolutePath = join(directory, entry.name);
 			const relativePath =
 				relativeDirectory.length === 0
 					? entry.name
 					: join(relativeDirectory, entry.name);
 			if (entry.isDirectory()) {
 				if (!excludedDirectories.has(relativePath)) {
-					await visit(join(directory, entry.name), relativePath);
+					await visit(absolutePath, relativePath);
 				}
+				continue;
+			}
+			if (entry.isSymbolicLink()) {
+				files[relativePath] = createHash("sha256")
+					.update(await readlink(absolutePath))
+					.digest("hex");
 				continue;
 			}
 			if (entry.isFile()) {
 				files[relativePath] = createHash("sha256")
-					.update(await readFile(join(directory, entry.name)))
+					.update(await readFile(absolutePath))
 					.digest("hex");
 			}
 		}
 	}
 
-	await visit(REPOSITORY_ROOT, "");
+	await visit(repositoryRoot, "");
 	return files;
 }
 
@@ -228,19 +236,28 @@ describe("pinned Fallow capture fixtures", () => {
 	});
 
 	it("captures through the local pin without changing the repository worktree", async () => {
+		await execFileAsync("git", ["clone", "--quiet", REPOSITORY_ROOT, "."], {
+			cwd: sourceRepository.path,
+		});
+		await symlink(
+			join(REPOSITORY_ROOT, "node_modules"),
+			join(sourceRepository.path, "node_modules"),
+			process.platform === "win32" ? "junction" : "dir",
+		);
 		const [beforeStatus, beforeFiles] = await Promise.all([
 			execFileAsync(
 				"git",
 				["status", "--porcelain=v1", "--untracked-files=all"],
 				{
-					cwd: REPOSITORY_ROOT,
+					cwd: sourceRepository.path,
 				},
 			),
-			snapshotRepositoryFiles(),
+			snapshotRepositoryFiles(sourceRepository.path),
 		]);
 
 		const written = await captureFallowEnvelopes({
 			outputRoot: output.path,
+			repositoryRoot: sourceRepository.path,
 		});
 
 		const [afterStatus, afterFiles] = await Promise.all([
@@ -248,10 +265,10 @@ describe("pinned Fallow capture fixtures", () => {
 				"git",
 				["status", "--porcelain=v1", "--untracked-files=all"],
 				{
-					cwd: REPOSITORY_ROOT,
+					cwd: sourceRepository.path,
 				},
 			),
-			snapshotRepositoryFiles(),
+			snapshotRepositoryFiles(sourceRepository.path),
 		]);
 		expect(written).toHaveLength(
 			FALLOW_CAPABILITY_FIXTURES.length + FALLOW_CONFIG_FIXTURES.length,

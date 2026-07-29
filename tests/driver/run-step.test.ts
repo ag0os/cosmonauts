@@ -42,15 +42,9 @@ describe("run-step binary", () => {
 
 		await execFileAsync(
 			"bun",
-			[
-				"build",
-				"--compile",
-				resolve("lib/driver/run-step.ts"),
-				"--outfile",
-				binaryPath,
-			],
+			["build", "--compile", "lib/driver/run-step.ts", "--outfile", binaryPath],
 			{
-				cwd: compiledDir,
+				cwd: resolve("."),
 				maxBuffer: 1024 * 1024 * 10,
 			},
 		);
