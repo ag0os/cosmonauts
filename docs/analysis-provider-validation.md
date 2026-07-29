@@ -81,6 +81,7 @@ explicit base.
 | `scope.paths[]` | Fallow 2.54.2: path-capable operations accept selected project paths. | Radon CLI: commands walk or analyze explicitly supplied files and directories. | generic |
 | `scope.base` | Fallow 2.54.2: audit capture records `base_ref: "HEAD"`. | Semgrep diff-aware scan: `SEMGREP_BASELINE_REF` supplies the explicit comparison base. | generic |
 | `scope.target` | Fallow 2.54.2: trace capture targets an export in a file. | dependency-cruiser CLI: focus/include options select a module and its dependency neighborhood. | generic |
+| `metric` | Fallow 2.54.2: complexity findings discriminate cyclomatic, cognitive, and CRAP threshold violations. | Radon CLI: complexity commands and reports identify cyclomatic as the requested metric. | generic |
 | `verdict` | Fallow 2.54.2: audit asserts `fail`; other analysis verdicts are classifiable from findings while trace/fix assert none. | dependency-cruiser CLI: rule violations and configured severity determine a failing or clean validation outcome. | generic |
 | `findings[].id` | Fallow 2.54.2: category, location, and message inputs support an adapter-local ID. | Knip Code Climate: each issue includes a fingerprint; JSON issue fields also support a local ID. | generic |
 | `findings[].category` | Fallow 2.54.2: payload collections distinguish dead code, clones, complexity, and boundary violations. | Knip JSON: enabled issue types are distinct keys for files, exports, dependencies, cycles, and related categories. | generic |

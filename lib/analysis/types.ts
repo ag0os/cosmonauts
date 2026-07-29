@@ -265,7 +265,9 @@ type AnalysisFindingsResultFor<
 export type AnalysisFindingsResult =
 	| AnalysisFindingsResultFor<"dead-code", AnalysisProjectOrPathsScope>
 	| AnalysisFindingsResultFor<"duplication", AnalysisProjectOrPathsScope>
-	| AnalysisFindingsResultFor<"complexity", AnalysisProjectOrPathsScope>
+	| (AnalysisFindingsResultFor<"complexity", AnalysisProjectOrPathsScope> & {
+			readonly metric: AnalysisMetric;
+	  })
 	| AnalysisFindingsResultFor<
 			"boundary-conformance",
 			AnalysisProjectOrPathsScope
@@ -457,6 +459,7 @@ export const ANALYSIS_RESULT_GENERIC_FIELDS = [
 	"scope.paths[]",
 	"scope.base",
 	"scope.target",
+	"metric",
 	"verdict",
 	"findings[].id",
 	"findings[].category",

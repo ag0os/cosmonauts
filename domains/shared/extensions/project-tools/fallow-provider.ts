@@ -19,6 +19,7 @@ import {
 	type AnalysisFindingSeverity,
 	type AnalysisFixProposal,
 	type AnalysisLocation,
+	type AnalysisMetric,
 	type AnalysisRequest,
 	type AnalysisResult,
 	type AnalysisScope,
@@ -61,6 +62,25 @@ const FALLOW_CANONICAL_SIGNALS = [
 	"fallow.toml",
 	".fallow.toml",
 ] as const;
+
+const FALLOW_COMPLEXITY_METRICS_BY_EXCEEDED = {
+	cyclomatic: ["cyclomatic"],
+	cognitive: ["cognitive"],
+	both: ["cyclomatic", "cognitive"],
+	crap: ["crap"],
+	cyclomatic_crap: ["cyclomatic", "crap"],
+	cognitive_crap: ["cognitive", "crap"],
+	all: ["cyclomatic", "cognitive", "crap"],
+} as const satisfies Readonly<Record<string, readonly AnalysisMetric[]>>;
+
+type FallowComplexityExceeded =
+	keyof typeof FALLOW_COMPLEXITY_METRICS_BY_EXCEEDED;
+
+function isFallowComplexityExceeded(
+	value: string,
+): value is FallowComplexityExceeded {
+	return Object.hasOwn(FALLOW_COMPLEXITY_METRICS_BY_EXCEEDED, value);
+}
 
 type FallowSignalKind = "config" | "package";
 type SupportedFallowPlatform = "darwin" | "linux" | "win32";
@@ -1421,14 +1441,29 @@ function normalizeDuplicationFindings(
 function normalizeComplexityFindings(
 	payload: Readonly<Record<string, unknown>>,
 	idPrefix: string,
+	metric?: AnalysisMetric,
 ): readonly AnalysisFinding[] {
-	return requiredArray(payload, "findings").map((value, index) => {
+	const findings: AnalysisFinding[] = [];
+	for (const [index, value] of requiredArray(payload, "findings").entries()) {
 		const finding = objectRecord(value);
 		if (finding === null) {
 			throw new Error(`expected findings[${index}] to be an object`);
 		}
+		if (metric !== undefined) {
+			const exceeded = stringValue(finding, "exceeded");
+			if (exceeded === undefined || !isFallowComplexityExceeded(exceeded)) {
+				throw new Error(
+					`expected findings[${index}].exceeded to identify supported metrics`,
+				);
+			}
+			const applicableMetrics: readonly AnalysisMetric[] =
+				FALLOW_COMPLEXITY_METRICS_BY_EXCEEDED[exceeded];
+			if (!applicableMetrics.includes(metric)) {
+				continue;
+			}
+		}
 		const subject = findingSubject(finding);
-		return {
+		findings.push({
 			id: `${idPrefix}:findings:${index}`,
 			category: "complexity",
 			severity: findingSeverity(finding),
@@ -1438,8 +1473,9 @@ function normalizeComplexityFindings(
 			locations: findingLocations(finding),
 			actions: normalizeActions(finding),
 			providerDetails: providerDetails(finding),
-		};
-	});
+		});
+	}
+	return findings;
 }
 
 function normalizeBoundaryFindings(
@@ -1727,7 +1763,11 @@ function analysisFindings(
 			);
 		case "complexity":
 			return findingsOutcome(
-				normalizeComplexityFindings(payload, "fallow:complexity"),
+				normalizeComplexityFindings(
+					payload,
+					"fallow:complexity",
+					request.metric,
+				),
 			);
 		case "boundary-conformance":
 			return findingsOutcome(
@@ -1887,6 +1927,18 @@ function normalizedCapabilityResult(
 			};
 		}
 		const normalized = analysisFindings(request, envelope.record);
+		if (request.capability === "complexity") {
+			return {
+				kind: "findings",
+				capability: "complexity",
+				provider: runtime.provider,
+				scope: request.scope,
+				metric: request.metric,
+				verdict: normalized.verdict,
+				findings: normalized.findings,
+				native,
+			};
+		}
 		return {
 			kind: "findings",
 			capability: request.capability,

@@ -176,6 +176,9 @@ describe("analysis core contracts", () => {
 			Extract<AnalysisResult, { capability: "dead-code" }>["verdict"]
 		>().toEqualTypeOf<"pass" | "fail">();
 		expectTypeOf<
+			Extract<AnalysisResult, { capability: "complexity" }>["metric"]
+		>().toEqualTypeOf<"cyclomatic" | "cognitive" | "crap">();
+		expectTypeOf<
 			Extract<AnalysisResult, { capability: "trace" }>["verdict"]
 		>().toEqualTypeOf<"not-applicable">();
 		expectTypeOf<

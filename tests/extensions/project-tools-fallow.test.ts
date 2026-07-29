@@ -1206,6 +1206,109 @@ describe("Fallow capability execution", () => {
 		expect(result.native.stderr).toBe(stderr);
 	});
 
+	test("isolates mixed complexity findings and verdicts by requested metric", async () => {
+		const fixture = await loadCapabilityFixture("complexity");
+		const payload = fixture.envelope.payload as Readonly<
+			Record<string, unknown>
+		> & {
+			readonly findings: readonly Readonly<Record<string, unknown>>[];
+		};
+		const exemplar = payload.findings[0];
+		if (exemplar === undefined) {
+			throw new Error("Expected a captured complexity finding.");
+		}
+		const exceededValues = [
+			"cyclomatic",
+			"cognitive",
+			"both",
+			"crap",
+			"cyclomatic_crap",
+			"cognitive_crap",
+			"all",
+		] as const;
+		const metricCases = [
+			{
+				metric: "cyclomatic",
+				applicable: ["cyclomatic", "both", "cyclomatic_crap", "all"],
+			},
+			{
+				metric: "cognitive",
+				applicable: ["cognitive", "both", "cognitive_crap", "all"],
+			},
+			{
+				metric: "crap",
+				applicable: ["crap", "cyclomatic_crap", "cognitive_crap", "all"],
+			},
+		] as const;
+		const findings = exceededValues.map((exceeded) => ({
+			...exemplar,
+			path: `src/${exceeded}.ts`,
+			name: `${exceeded}Only`,
+			exceeded,
+		}));
+		const mixedPayload = { ...payload, findings };
+
+		for (const { metric, applicable } of metricCases) {
+			const mixedRuntime = await discoveredRuntimeWithFixtures({
+				capabilityOutcome: {
+					kind: "code-exit",
+					code: 1,
+					stdout: JSON.stringify(mixedPayload),
+					stderr: fixture.envelope.stderr,
+				},
+			});
+			const mixedResult = await mixedRuntime.execute({
+				capability: "complexity",
+				scope: { kind: "project" },
+				metric,
+			});
+			expect(mixedResult).toMatchObject({
+				kind: "findings",
+				capability: "complexity",
+				metric,
+				verdict: "fail",
+				native: { payload: mixedPayload },
+			});
+			if (mixedResult.kind !== "findings") {
+				throw new Error(`Expected findings, received ${mixedResult.kind}.`);
+			}
+			expect(
+				mixedResult.findings.map(
+					(finding) => finding.providerDetails?.data.exceeded,
+				),
+			).toEqual(applicable);
+
+			const exclusivePayload = {
+				...payload,
+				findings: findings.filter(
+					(finding) =>
+						!applicable.some((exceeded) => exceeded === finding.exceeded),
+				),
+			};
+			const exclusiveRuntime = await discoveredRuntimeWithFixtures({
+				capabilityOutcome: {
+					kind: "code-exit",
+					code: 1,
+					stdout: JSON.stringify(exclusivePayload),
+					stderr: fixture.envelope.stderr,
+				},
+			});
+			const exclusiveResult = await exclusiveRuntime.execute({
+				capability: "complexity",
+				scope: { kind: "project" },
+				metric,
+			});
+			expect(exclusiveResult).toMatchObject({
+				kind: "findings",
+				capability: "complexity",
+				metric,
+				verdict: "pass",
+				findings: [],
+				native: { payload: exclusivePayload },
+			});
+		}
+	});
+
 	// @cosmo-behavior plan:analysis-capability-runtime#B-007
 	test("normalizes every supported capability and preserves its native envelope", async () => {
 		const runtime = await discoveredRuntimeWithFixtures();
