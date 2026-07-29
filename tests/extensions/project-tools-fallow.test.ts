@@ -994,6 +994,115 @@ describe("Fallow capability execution", () => {
 		});
 	});
 
+	// @cosmo-behavior plan:analysis-capability-runtime#B-026
+	test("audits tracked staged and untracked dirty base changes from HEAD using the real pinned engine", async () => {
+		await createLiveProviderProject(projectRoot);
+		await recordConsent();
+		await writeProjectFile(
+			projectRoot,
+			"src/data/store.ts",
+			[
+				'export const secret = "classified";',
+				"export const trackedUnused = 99;",
+				"",
+			].join("\n"),
+		);
+		await writeProjectFile(
+			projectRoot,
+			"src/staged.ts",
+			"export const stagedValue = 3;\n",
+		);
+		await execFileAsync("git", ["add", "src/staged.ts"], { cwd: projectRoot });
+		await writeProjectFile(
+			projectRoot,
+			"src/untracked.ts",
+			"export const untrackedValue = 4;\n",
+		);
+
+		const expectedChanges = {
+			tracked: ["src/data/store.ts"],
+			staged: ["src/staged.ts"],
+			untracked: ["src/untracked.ts"],
+		};
+		const changedScope = {
+			tracked: (
+				await execFileAsync("git", ["diff", "--name-only"], {
+					cwd: projectRoot,
+				})
+			).stdout.trim(),
+			staged: (
+				await execFileAsync("git", ["diff", "--cached", "--name-only"], {
+					cwd: projectRoot,
+				})
+			).stdout.trim(),
+			untracked: (
+				await execFileAsync(
+					"git",
+					["ls-files", "--others", "--exclude-standard"],
+					{ cwd: projectRoot },
+				)
+			).stdout.trim(),
+		};
+		expect(changedScope).toEqual({
+			tracked: expectedChanges.tracked.join("\n"),
+			staged: expectedChanges.staged.join("\n"),
+			untracked: expectedChanges.untracked.join("\n"),
+		});
+
+		const executablePath = join(
+			REPOSITORY_ROOT,
+			"node_modules",
+			".bin",
+			process.platform === "win32" ? "fallow.cmd" : "fallow",
+		);
+		const discovery = await discoverFallowProvider({
+			projectRoot,
+			userStateRoot,
+			injectedExecutablePath: executablePath,
+		});
+		if (discovery.status !== "detected") {
+			throw new Error(
+				`Expected detected provider, received ${discovery.status}`,
+			);
+		}
+		expect(discovery.runtime.executablePath).toBe(executablePath);
+		expect(discovery.runtime.provider.version).toBe(
+			FALLOW_VALIDATED_ENGINE_VERSION,
+		);
+
+		const result = await discovery.runtime.execute({
+			capability: "changed-scope-audit",
+			scope: { kind: "changed", base: "HEAD" },
+		});
+		expect(result.kind).toBe("findings");
+		if (result.kind !== "findings") {
+			throw new Error(`Expected findings, received ${result.kind}`);
+		}
+		expect(result.scope).toEqual({ kind: "changed", base: "HEAD" });
+
+		const payload = result.native.payload as {
+			readonly changed_files_count: number;
+			readonly dead_code: {
+				readonly unused_files: readonly { readonly path: string }[];
+				readonly unused_exports: readonly { readonly path: string }[];
+			};
+		};
+		const expectedPaths = Object.values(expectedChanges).flat();
+		const nativeEvidencePaths = [
+			...payload.dead_code.unused_files.map(({ path }) => path),
+			...payload.dead_code.unused_exports.map(({ path }) => path),
+		];
+		const normalizedEvidencePaths = result.findings.flatMap(({ locations }) =>
+			locations.map(({ path }) => path),
+		);
+
+		expect(payload.changed_files_count).toBe(expectedPaths.length);
+		expect(nativeEvidencePaths).toEqual(expect.arrayContaining(expectedPaths));
+		expect(normalizedEvidencePaths).toEqual(
+			expect.arrayContaining(expectedPaths),
+		);
+	});
+
 	// @cosmo-behavior plan:analysis-capability-runtime#B-012
 	test("leaves the entire worktree unchanged across status and every capability", async () => {
 		await createLiveProviderProject(projectRoot);
