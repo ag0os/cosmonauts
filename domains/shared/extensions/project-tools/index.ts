@@ -1,6 +1,5 @@
-import { access, readFile } from "node:fs/promises";
-import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { detectFallowSignal } from "./fallow-provider.ts";
 
 export {
 	AnalysisProviderError,
@@ -15,15 +14,6 @@ interface AnalysisTool {
 	auditCommand: string;
 }
 
-async function fileExists(path: string): Promise<boolean> {
-	try {
-		await access(path);
-		return true;
-	} catch {
-		return false;
-	}
-}
-
 function fallowTool(configFile: string): AnalysisTool {
 	return {
 		name: "fallow",
@@ -35,32 +25,8 @@ function fallowTool(configFile: string): AnalysisTool {
 }
 
 async function detectFallow(cwd: string): Promise<AnalysisTool | null> {
-	const configFiles = ["fallow.toml", ".fallowrc.json", ".fallowrc.toml"];
-	for (const file of configFiles) {
-		if (await fileExists(join(cwd, file))) {
-			return fallowTool(file);
-		}
-	}
-
-	const pkgPath = join(cwd, "package.json");
-	if (await fileExists(pkgPath)) {
-		try {
-			const pkg = JSON.parse(await readFile(pkgPath, "utf-8")) as {
-				dependencies?: Record<string, string>;
-				devDependencies?: Record<string, string>;
-			};
-			if (
-				pkg.devDependencies?.fallow !== undefined ||
-				pkg.dependencies?.fallow !== undefined
-			) {
-				return fallowTool("package.json");
-			}
-		} catch {
-			// unparseable package.json — skip
-		}
-	}
-
-	return null;
+	const signal = await detectFallowSignal(cwd);
+	return signal === null ? null : fallowTool(signal.path);
 }
 
 async function detectTools(cwd: string): Promise<AnalysisTool[]> {

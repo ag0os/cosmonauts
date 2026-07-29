@@ -1,8 +1,14 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import {
+	discoverFallowProvider,
+	FALLOW_VALIDATED_ENGINE_VERSION,
+} from "../../domains/shared/extensions/project-tools/fallow-provider.ts";
 import projectToolsExtension from "../../domains/shared/extensions/project-tools/index.ts";
+import type { ProviderProcessExecutor } from "../../domains/shared/extensions/project-tools/process-runner.ts";
+import { ANALYSIS_CAPABILITIES } from "../../lib/analysis/index.ts";
 import { createMockPi } from "../helpers/mocks/index.ts";
 
 let tmpDir: string;
@@ -34,6 +40,92 @@ describe("project-tools extension", () => {
 	});
 
 	describe("fallow detection", () => {
+		// @cosmo-behavior plan:analysis-capability-runtime#B-004
+		test("detects every canonical provider config and reports version scopes and metrics without commands", async () => {
+			const userStateRoot = join(tmpDir, "..", "user-state");
+			const executable = join(tmpDir, "..", "fixture-fallow");
+			await writeFile(executable, "#!/bin/sh\nexit 0\n", "utf8");
+			await chmod(executable, 0o755);
+			await mkdir(userStateRoot, { recursive: true });
+			await writeFile(
+				join(userStateRoot, "analysis-execution-consent.json"),
+				JSON.stringify({
+					schemaVersion: 1,
+					projects: {
+						[tmpDir]: { providers: ["fallow"] },
+					},
+				}),
+			);
+			const executeProcess: ProviderProcessExecutor = async (invocation) =>
+				invocation.args.includes("--version")
+					? {
+							kind: "code-exit",
+							code: 0,
+							stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+							stderr: "",
+						}
+					: {
+							kind: "code-exit",
+							code: 3,
+							stdout: "no config file found, using defaults\n",
+							stderr: "",
+						};
+
+			const signals = [
+				[".fallowrc.json", "{}"],
+				["fallow.toml", ""],
+				[".fallow.toml", ""],
+				[
+					"package.json",
+					JSON.stringify({ devDependencies: { fallow: "2.54.2" } }),
+				],
+			] as const;
+			for (const [path, contents] of signals) {
+				for (const [otherPath] of signals) {
+					await rm(join(tmpDir, otherPath), { force: true });
+				}
+				await writeFile(join(tmpDir, path), contents, "utf8");
+				const discovery = await discoverFallowProvider({
+					projectRoot: tmpDir,
+					userStateRoot,
+					injectedExecutablePath: executable,
+					executeProcess,
+				});
+
+				expect(discovery.status).toBe("detected");
+				expect(discovery.bindings.map(({ capability }) => capability)).toEqual([
+					...ANALYSIS_CAPABILITIES,
+				]);
+				expect(
+					discovery.bindings.find(
+						({ capability }) => capability === "complexity",
+					),
+				).toMatchObject({
+					state: "bound",
+					provider: {
+						id: "fallow",
+						name: "Fallow",
+						version: FALLOW_VALIDATED_ENGINE_VERSION,
+					},
+					scopes: ["project"],
+					metrics: ["cyclomatic", "cognitive", "crap"],
+				});
+				expect(JSON.stringify(discovery.bindings)).not.toMatch(
+					/command|executable|npx/iu,
+				);
+			}
+
+			await rm(join(tmpDir, "package.json"), { force: true });
+			await writeFile(join(tmpDir, ".fallowrc.toml"), "", "utf8");
+			const stale = await discoverFallowProvider({
+				projectRoot: tmpDir,
+				userStateRoot,
+				injectedExecutablePath: executable,
+				executeProcess,
+			});
+			expect(stale.status).toBe("absent");
+		});
+
 		test("detects fallow from fallow.toml", async () => {
 			await writeFile(join(tmpDir, "fallow.toml"), "");
 			const result = (await fireBeforeAgentStart(tmpDir)) as {
@@ -53,13 +145,13 @@ describe("project-tools extension", () => {
 			expect(result.systemPrompt).toContain("`.fallowrc.json`");
 		});
 
-		test("detects fallow from .fallowrc.toml", async () => {
-			await writeFile(join(tmpDir, ".fallowrc.toml"), "");
+		test("detects fallow from .fallow.toml", async () => {
+			await writeFile(join(tmpDir, ".fallow.toml"), "");
 			const result = (await fireBeforeAgentStart(tmpDir)) as {
 				systemPrompt: string;
 			};
 			expect(result.systemPrompt).toContain("**fallow**");
-			expect(result.systemPrompt).toContain("`.fallowrc.toml`");
+			expect(result.systemPrompt).toContain("`.fallow.toml`");
 		});
 
 		test("detects fallow from package.json devDependencies", async () => {
