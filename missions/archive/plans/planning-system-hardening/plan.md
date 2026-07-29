@@ -1,8 +1,8 @@
 ---
 title: Planning system hardening
-status: active
+status: completed
 createdAt: '2026-07-28T17:19:32.018Z'
-updatedAt: '2026-07-28T17:19:32.018Z'
+updatedAt: '2026-07-29T14:28:29.108Z'
 ---
 
 ## Overview
