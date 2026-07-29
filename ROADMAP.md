@@ -86,6 +86,12 @@ Markdown stays the source of truth for agents; humans get a rendered **HTML comp
 - Humans-only — agents keep reading the markdown source; this is purely additive
 - Extensible later to tasks / reviews / run-status
 
+**Known changes needed (2026-07-29, after `planning-system-hardening`):**
+
+- Render versioned plan-review rounds: the reviewer now writes immutable `review-<n>.md` rounds (legacy `review.md` = round 1), but the viewer still loads only `missions/plans/<slug>/review.md` — rounds ≥ 2 are invisible. A quality-manager fixer implementation was reverted (`e269c72`: symlink-following read behind a lexical-only filename check = arbitrary-file read through the server); reimplement with real path containment — resolve the real path, require it inside the project root, regression-test a symlinked round file.
+- Related: the quality-manager review panel writes generic `review-round-N.md` names into `missions/reviews/` and overwrites earlier plans' rounds — needs plan-scoped naming, which also changes what the viewer should list there.
+- Overall review first: the viewer has not been human-tested yet — walk `cosmonauts serve` end to end, judge what actually makes it useful day-to-day, and scope further changes from that pass rather than assumption.
+
 ### `agent-messaging`: Agent-to-Agent Messaging
 
 Replace filesystem polling with push-based communication between agents. Address when coordinator-loop cost or latency becomes symptomatic; not urgent at current scale. Shared substrate: feeds orchestration's durable-coordinator-loops and the autonomy executive-assistant.
