@@ -247,13 +247,11 @@ describe("project-tools extension", () => {
 	test("withholds all provider execution until consent is recorded", async () => {
 		const fixture = await createProjectFixture("consent");
 		await writeFile(join(fixture.projectRoot, "fallow.toml"), "");
-		const sentinel = join(tmpDir, "provider-spawned");
 		const executable = join(tmpDir, "consent-fallow");
 		await writeFile(
 			executable,
 			[
 				"#!/bin/sh",
-				`echo invoked >> ${JSON.stringify(sentinel)}`,
 				'if [ "$1" = "--version" ]; then',
 				`  echo "fallow ${FALLOW_VALIDATED_ENGINE_VERSION}"`,
 				"  exit 0",
@@ -267,11 +265,21 @@ describe("project-tools extension", () => {
 			].join("\n"),
 		);
 		await chmod(executable, 0o755);
+		let invocationCount = 0;
+		const executeProcess: ProviderProcessExecutor = (
+			invocation,
+			signal,
+			options,
+		) => {
+			invocationCount += 1;
+			return runProviderProcess(invocation, signal, options);
+		};
 
 		const withheldPi = createMockPi({ cwd: fixture.projectRoot });
 		createProjectToolsExtension({
 			userStateRoot: fixture.userStateRoot,
 			injectedExecutablePath: executable,
+			executeProcess,
 		})(withheldPi as never);
 		const injected = (await withheldPi.fireEvent(
 			"before_agent_start",
@@ -295,15 +303,14 @@ describe("project-tools extension", () => {
 				providerId: "fallow",
 			});
 		}
-		await expect(readFile(sentinel, "utf8")).rejects.toMatchObject({
-			code: "ENOENT",
-		});
+		expect(invocationCount).toBe(0);
 
 		await grantConsent(fixture.projectRoot, fixture.userStateRoot);
 		const consentedPi = createMockPi({ cwd: fixture.projectRoot });
 		createProjectToolsExtension({
 			userStateRoot: fixture.userStateRoot,
 			injectedExecutablePath: executable,
+			executeProcess,
 		})(consentedPi as never);
 		const consentedStatus = resultDetails(
 			await consentedPi.callTool("analysis_status", {}),
@@ -318,7 +325,7 @@ describe("project-tools extension", () => {
 				}),
 			]),
 		);
-		expect(await readFile(sentinel, "utf8")).toContain("invoked");
+		expect(invocationCount).toBe(2);
 	});
 
 	// @cosmo-behavior plan:analysis-capability-runtime#B-005
@@ -401,7 +408,7 @@ describe("project-tools extension", () => {
 		const fixture = await createProjectFixture("cancellation");
 		await writeFile(join(fixture.projectRoot, "fallow.toml"), "");
 		await grantConsent(fixture.projectRoot, fixture.userStateRoot);
-		const pidPath = join(tmpDir, "capability-child.pid");
+		let pidPath: string | undefined;
 		const executable = join(tmpDir, "cancellation-fallow");
 		await writeFile(
 			executable,
@@ -417,17 +424,34 @@ describe("project-tools extension", () => {
 				'  console.log("defaults in effect");',
 				"  process.exit(3);",
 				"}",
-				`writeFileSync(${JSON.stringify(pidPath)}, String(process.pid));`,
+				'writeFileSync(process.env.TMPDIR + "/capability-child.pid", String(process.pid));',
 				'process.on("SIGTERM", () => {});',
 				"setInterval(() => {}, 1_000);",
 				"",
 			].join("\n"),
 		);
 		await chmod(executable, 0o755);
+		const executeProcess: ProviderProcessExecutor = (
+			invocation,
+			signal,
+			options,
+		) =>
+			runProviderProcess(invocation, signal, {
+				...options,
+				onSandboxReady: (tempRoot) => {
+					if (
+						!invocation.args.includes("--version") &&
+						invocation.args[0] !== "config"
+					) {
+						pidPath = join(tempRoot, "tmp", "capability-child.pid");
+					}
+				},
+			});
 		const pi = createMockPi({ cwd: fixture.projectRoot });
 		createProjectToolsExtension({
 			userStateRoot: fixture.userStateRoot,
 			injectedExecutablePath: executable,
+			executeProcess,
 		})(pi as never);
 		const controller = new AbortController();
 		const execution = pi.callTool("analysis_dead_code", {}, controller.signal);
@@ -437,6 +461,7 @@ describe("project-tools extension", () => {
 		// experiment starts. The bounded-termination assertions below stay tight
 		// against the 250ms grace period — they are the behavioral evidence.
 		await waitFor(async () => {
+			if (pidPath === undefined) return false;
 			try {
 				await readFile(pidPath, "utf8");
 				return true;
@@ -444,6 +469,9 @@ describe("project-tools extension", () => {
 				return false;
 			}
 		}, 30_000);
+		if (pidPath === undefined) {
+			throw new Error("Capability sandbox did not expose its PID path.");
+		}
 		const pid = Number(await readFile(pidPath, "utf8"));
 		expect(processExists(pid)).toBe(true);
 		const abortStartedAt = Date.now();
@@ -464,7 +492,7 @@ describe("project-tools extension", () => {
 		const fixture = await createProjectFixture(`cold-${phase}-cancellation`);
 		await writeFile(join(fixture.projectRoot, "fallow.toml"), "");
 		await grantConsent(fixture.projectRoot, fixture.userStateRoot);
-		const pidPath = join(tmpDir, `${phase}-discovery-child.pid`);
+		let pidPath: string | undefined;
 		const executable = join(tmpDir, `${phase}-discovery-fallow`);
 		await writeFile(executable, "#!/bin/sh\nexit 0\n");
 		await chmod(executable, 0o755);
@@ -500,7 +528,7 @@ describe("project-tools extension", () => {
 						"-e",
 						[
 							'const { writeFileSync } = require("node:fs");',
-							`writeFileSync(${JSON.stringify(pidPath)}, String(process.pid));`,
+							`writeFileSync(process.env.TMPDIR + "/${phase}-discovery-child.pid", String(process.pid));`,
 							'process.on("SIGTERM", () => {});',
 							"setTimeout(() => process.exit(0), 10_000);",
 						].join("\n"),
@@ -508,7 +536,12 @@ describe("project-tools extension", () => {
 					cwd: invocation.cwd,
 				},
 				signal,
-				options,
+				{
+					...options,
+					onSandboxReady: (tempRoot) => {
+						pidPath = join(tempRoot, "tmp", `${phase}-discovery-child.pid`);
+					},
+				},
 			);
 		};
 		const pi = createMockPi({ cwd: fixture.projectRoot });
@@ -524,6 +557,7 @@ describe("project-tools extension", () => {
 			(error: unknown) => ({ kind: "rejected", error }) as const,
 		);
 		await waitFor(async () => {
+			if (pidPath === undefined) return false;
 			try {
 				await readFile(pidPath, "utf8");
 				return true;
@@ -531,6 +565,11 @@ describe("project-tools extension", () => {
 				return false;
 			}
 		}, 5_000);
+		if (pidPath === undefined) {
+			throw new Error(
+				`${phase} discovery sandbox did not expose its PID path.`,
+			);
+		}
 		const pid = Number(await readFile(pidPath, "utf8"));
 		const abortStartedAt = Date.now();
 
@@ -561,7 +600,7 @@ describe("project-tools extension", () => {
 		const fixture = await createProjectFixture(`${lifecycleEvent}-discovery`);
 		await writeFile(join(fixture.projectRoot, "fallow.toml"), "");
 		await grantConsent(fixture.projectRoot, fixture.userStateRoot);
-		const pidPath = join(tmpDir, `${lifecycleEvent}-discovery-child.pid`);
+		let pidPath: string | undefined;
 		const executable = join(tmpDir, `${lifecycleEvent}-discovery-fallow`);
 		await writeFile(executable, "#!/bin/sh\nexit 0\n");
 		await chmod(executable, 0o755);
@@ -595,7 +634,7 @@ describe("project-tools extension", () => {
 						"-e",
 						[
 							'const { writeFileSync } = require("node:fs");',
-							`writeFileSync(${JSON.stringify(pidPath)}, String(process.pid));`,
+							`writeFileSync(process.env.TMPDIR + "/${lifecycleEvent}-discovery-child.pid", String(process.pid));`,
 							'process.on("SIGTERM", () => {});',
 							"setTimeout(() => process.exit(0), 10_000);",
 						].join("\n"),
@@ -603,7 +642,16 @@ describe("project-tools extension", () => {
 					cwd: invocation.cwd,
 				},
 				signal,
-				options,
+				{
+					...options,
+					onSandboxReady: (tempRoot) => {
+						pidPath = join(
+							tempRoot,
+							"tmp",
+							`${lifecycleEvent}-discovery-child.pid`,
+						);
+					},
+				},
 			);
 		};
 		const pi = createMockPi({ cwd: fixture.projectRoot });
@@ -614,6 +662,7 @@ describe("project-tools extension", () => {
 		})(pi as never);
 		const obsoleteStatus = pi.callTool("analysis_status", {});
 		await waitFor(async () => {
+			if (pidPath === undefined) return false;
 			try {
 				await readFile(pidPath, "utf8");
 				return true;
@@ -621,6 +670,11 @@ describe("project-tools extension", () => {
 				return false;
 			}
 		}, 5_000);
+		if (pidPath === undefined) {
+			throw new Error(
+				`${lifecycleEvent} discovery sandbox did not expose its PID path.`,
+			);
+		}
 		const pid = Number(await readFile(pidPath, "utf8"));
 		const resetStartedAt = Date.now();
 

@@ -1,7 +1,23 @@
 import { spawn } from "node:child_process";
+import {
+	access,
+	constants,
+	mkdir,
+	mkdtemp,
+	realpath,
+	rm,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
 export const DEFAULT_PROVIDER_TIMEOUT_MS = 30_000;
 export const DEFAULT_TERMINATION_GRACE_MS = 250;
+const SANDBOX_UNAVAILABLE_CODE = "SANDBOX_UNAVAILABLE";
+const MACOS_SANDBOX_EXECUTABLE = "/usr/bin/sandbox-exec";
+const LINUX_SANDBOX_EXECUTABLE_CANDIDATES = [
+	"/usr/bin/bwrap",
+	"/bin/bwrap",
+] as const;
 
 export interface ProviderProcessInvocation {
 	readonly executablePath: string;
@@ -12,6 +28,10 @@ export interface ProviderProcessInvocation {
 interface ProviderProcessRunOptions {
 	readonly timeoutMs?: number;
 	readonly terminationGraceMs?: number;
+	/** Test seam that can only select another enforced boundary or fail closed. */
+	readonly sandboxPlatform?: NodeJS.Platform;
+	/** Test-only lifecycle observer; cannot change the prepared boundary. */
+	readonly onSandboxReady?: (tempRoot: string) => void;
 }
 
 interface ProviderProcessOutput {
@@ -56,6 +76,14 @@ type InitiatedTermination =
 			readonly timeoutMs: number;
 	  };
 
+interface PreparedProviderSandbox {
+	readonly executablePath: string;
+	readonly args: readonly string[];
+	readonly cwd: string;
+	readonly env: Readonly<Record<string, string>>;
+	readonly tempRoot: string;
+}
+
 function finiteTimeout(value: number | undefined): number {
 	return value !== undefined && Number.isFinite(value) && value > 0
 		? value
@@ -77,6 +105,172 @@ function errorWithOptionalCode(
 	return error;
 }
 
+function sandboxUnavailable(
+	message: string,
+): Error & { readonly code: string } {
+	return Object.assign(new Error(message), {
+		code: SANDBOX_UNAVAILABLE_CODE,
+	});
+}
+
+async function executableAvailable(path: string): Promise<boolean> {
+	try {
+		await access(path, constants.X_OK);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+async function resolveSandboxExecutable(
+	platform: NodeJS.Platform,
+): Promise<string> {
+	if (platform === "darwin") {
+		if (await executableAvailable(MACOS_SANDBOX_EXECUTABLE)) {
+			return MACOS_SANDBOX_EXECUTABLE;
+		}
+		throw sandboxUnavailable(
+			`Provider sandbox boundary is unavailable at ${MACOS_SANDBOX_EXECUTABLE}.`,
+		);
+	}
+
+	if (platform === "linux") {
+		for (const candidate of LINUX_SANDBOX_EXECUTABLE_CANDIDATES) {
+			if (await executableAvailable(candidate)) return candidate;
+		}
+		throw sandboxUnavailable(
+			"Provider sandbox boundary is unavailable: bubblewrap was not found.",
+		);
+	}
+
+	throw sandboxUnavailable(
+		`Provider sandbox boundary is unavailable on ${platform}.`,
+	);
+}
+
+function providerPath(): string {
+	return [
+		dirname(process.execPath),
+		"/opt/homebrew/bin",
+		"/usr/local/bin",
+		"/usr/bin",
+		"/bin",
+		"/usr/sbin",
+		"/sbin",
+	]
+		.filter((path, index, paths) => paths.indexOf(path) === index)
+		.join(":");
+}
+
+function providerEnvironment(
+	tempRoot: string,
+	platform: NodeJS.Platform,
+): Readonly<Record<string, string>> {
+	const home = join(tempRoot, "home");
+	const temporary = join(tempRoot, "tmp");
+	return {
+		HOME: home,
+		TMPDIR: temporary,
+		TMP: temporary,
+		TEMP: temporary,
+		PATH: providerPath(),
+		LANG: "C",
+		LC_ALL: "C",
+		NO_COLOR: "1",
+		GIT_CONFIG_NOSYSTEM: "1",
+		GIT_CONFIG_GLOBAL: "/dev/null",
+		GIT_TERMINAL_PROMPT: "0",
+		...(platform === "darwin"
+			? { __CF_USER_TEXT_ENCODING: "0x0:0x0:0x0" }
+			: {}),
+	};
+}
+
+function macosSandboxProfile(tempRoot: string): string {
+	return [
+		"(version 1)",
+		"(deny default)",
+		"(allow process*)",
+		"(allow file-read*)",
+		"(allow sysctl-read)",
+		'(allow file-write* (literal "/dev/null"))',
+		`(allow file-write* (subpath ${JSON.stringify(tempRoot)}))`,
+	].join("");
+}
+
+async function prepareProviderSandbox(
+	invocation: ProviderProcessInvocation,
+	options?: ProviderProcessRunOptions,
+): Promise<PreparedProviderSandbox> {
+	await access(invocation.executablePath, constants.X_OK);
+	const platform = options?.sandboxPlatform ?? process.platform;
+	const sandboxExecutable = await resolveSandboxExecutable(platform);
+	const createdTempRoot = await mkdtemp(
+		join(tmpdir(), "cosmonauts-provider-sandbox-"),
+	);
+	const tempRoot = await realpath(createdTempRoot);
+	await Promise.all([
+		mkdir(join(tempRoot, "home"), { mode: 0o700 }),
+		mkdir(join(tempRoot, "tmp"), { mode: 0o700 }),
+	]);
+	const env = providerEnvironment(tempRoot, platform);
+
+	if (platform === "darwin") {
+		return {
+			executablePath: sandboxExecutable,
+			args: [
+				"-p",
+				macosSandboxProfile(tempRoot),
+				invocation.executablePath,
+				...invocation.args,
+			],
+			cwd: invocation.cwd,
+			env,
+			tempRoot,
+		};
+	}
+
+	if (platform === "linux") {
+		return {
+			executablePath: sandboxExecutable,
+			args: [
+				"--die-with-parent",
+				"--unshare-all",
+				"--new-session",
+				"--ro-bind",
+				"/",
+				"/",
+				"--dev",
+				"/dev",
+				"--proc",
+				"/proc",
+				"--bind",
+				tempRoot,
+				tempRoot,
+				"--chdir",
+				invocation.cwd,
+				"--clearenv",
+				...Object.entries(env).flatMap(([key, value]) => [
+					"--setenv",
+					key,
+					value,
+				]),
+				"--",
+				invocation.executablePath,
+				...invocation.args,
+			],
+			cwd: invocation.cwd,
+			env,
+			tempRoot,
+		};
+	}
+
+	await rm(tempRoot, { recursive: true, force: true });
+	throw sandboxUnavailable(
+		`Provider sandbox boundary is unavailable on ${platform}.`,
+	);
+}
+
 function terminationOutcome(
 	termination: InitiatedTermination,
 	stdout: string,
@@ -85,7 +279,7 @@ function terminationOutcome(
 	return { ...termination, stdout, stderr };
 }
 
-export const runProviderProcess: ProviderProcessExecutor = (
+export const runProviderProcess: ProviderProcessExecutor = async (
 	invocation,
 	signal,
 	options,
@@ -101,137 +295,178 @@ export const runProviderProcess: ProviderProcessExecutor = (
 
 	const timeoutMs = finiteTimeout(options?.timeoutMs);
 	const terminationGraceMs = finiteGracePeriod(options?.terminationGraceMs);
-
-	return new Promise((resolve) => {
-		let stdout = "";
-		let stderr = "";
-		let settled = false;
-		let termination: InitiatedTermination | undefined;
-		let timeoutTimer: NodeJS.Timeout | undefined;
-		let forceKillTimer: NodeJS.Timeout | undefined;
-
-		const settle = (outcome: ProviderProcessOutcome): void => {
-			if (settled) return;
-			settled = true;
-			if (timeoutTimer) clearTimeout(timeoutTimer);
-			if (forceKillTimer) clearTimeout(forceKillTimer);
-			signal?.removeEventListener("abort", abort);
-			resolve(outcome);
+	let sandbox: PreparedProviderSandbox;
+	try {
+		sandbox = await prepareProviderSandbox(invocation, options);
+	} catch (error) {
+		const spawnError =
+			error instanceof Error ? error : new Error(String(error));
+		return {
+			kind: "spawn-error",
+			error: errorWithOptionalCode(spawnError),
+			stdout: "",
+			stderr: "",
 		};
-
-		let child: ReturnType<typeof spawn>;
-		try {
-			child = spawn(invocation.executablePath, [...invocation.args], {
-				cwd: invocation.cwd,
-				shell: false,
-				stdio: ["ignore", "pipe", "pipe"],
-			});
-		} catch (error) {
-			const spawnError =
-				error instanceof Error ? error : new Error(String(error));
-			settle({
-				kind: "spawn-error",
-				error: errorWithOptionalCode(spawnError),
-				stdout,
-				stderr,
-			});
-			return;
-		}
-
-		const appendStdout = (chunk: string): void => {
-			stdout += chunk;
+	}
+	if (signal?.aborted) {
+		await rm(sandbox.tempRoot, { recursive: true, force: true });
+		return {
+			kind: "aborted",
+			reason: signal.reason,
+			stdout: "",
+			stderr: "",
 		};
-		const appendStderr = (chunk: string): void => {
-			stderr += chunk;
+	}
+	try {
+		options?.onSandboxReady?.(sandbox.tempRoot);
+	} catch (error) {
+		await rm(sandbox.tempRoot, { recursive: true, force: true });
+		const spawnError =
+			error instanceof Error ? error : new Error(String(error));
+		return {
+			kind: "spawn-error",
+			error: errorWithOptionalCode(spawnError),
+			stdout: "",
+			stderr: "",
 		};
-		child.stdout?.setEncoding("utf8");
-		child.stderr?.setEncoding("utf8");
-		child.stdout?.on("data", appendStdout);
-		child.stderr?.on("data", appendStderr);
+	}
 
-		const beginTermination = (initiated: InitiatedTermination): void => {
-			if (settled || termination) return;
-			termination = initiated;
-			if (timeoutTimer) clearTimeout(timeoutTimer);
+	try {
+		return await new Promise((resolve) => {
+			let stdout = "";
+			let stderr = "";
+			let settled = false;
+			let termination: InitiatedTermination | undefined;
+			let timeoutTimer: NodeJS.Timeout | undefined;
+			let forceKillTimer: NodeJS.Timeout | undefined;
 
-			forceKillTimer = setTimeout(() => {
+			const settle = (outcome: ProviderProcessOutcome): void => {
 				if (settled) return;
-				try {
-					child.kill("SIGKILL");
-				} catch (error) {
-					const message =
-						error instanceof Error ? error.message : String(error);
-					stderr += `\nProvider force-kill failed: ${message}`;
-					settle(terminationOutcome(initiated, stdout, stderr));
-				}
-			}, terminationGraceMs);
+				settled = true;
+				if (timeoutTimer) clearTimeout(timeoutTimer);
+				if (forceKillTimer) clearTimeout(forceKillTimer);
+				signal?.removeEventListener("abort", abort);
+				resolve(outcome);
+			};
 
+			let child: ReturnType<typeof spawn>;
 			try {
-				child.kill("SIGTERM");
+				child = spawn(sandbox.executablePath, [...sandbox.args], {
+					cwd: sandbox.cwd,
+					env: sandbox.env,
+					shell: false,
+					stdio: ["ignore", "pipe", "pipe"],
+				});
 			} catch (error) {
-				const message = error instanceof Error ? error.message : String(error);
-				stderr += `\nProvider graceful termination failed: ${message}`;
-			}
-		};
-
-		function abort(): void {
-			beginTermination({
-				kind: "aborted",
-				reason: signal?.reason,
-			});
-		}
-
-		child.once("error", (error) => {
-			if (termination) {
-				settle(terminationOutcome(termination, stdout, stderr));
-				return;
-			}
-			settle({
-				kind: "spawn-error",
-				error: errorWithOptionalCode(error),
-				stdout,
-				stderr,
-			});
-		});
-
-		child.once("close", (code, exitSignal) => {
-			if (termination) {
-				settle(terminationOutcome(termination, stdout, stderr));
-				return;
-			}
-			if (typeof code === "number") {
-				settle({ kind: "code-exit", code, stdout, stderr });
-				return;
-			}
-			if (exitSignal !== null) {
+				const spawnError =
+					error instanceof Error ? error : new Error(String(error));
 				settle({
-					kind: "signal-exit",
-					signal: exitSignal,
+					kind: "spawn-error",
+					error: errorWithOptionalCode(spawnError),
 					stdout,
 					stderr,
 				});
 				return;
 			}
-			settle({
-				kind: "spawn-error",
-				error: new Error(
-					"Provider process closed without an exit code or signal",
-				),
-				stdout,
-				stderr,
-			});
-		});
 
-		signal?.addEventListener("abort", abort, { once: true });
-		if (signal?.aborted) {
-			abort();
-		}
-		timeoutTimer = setTimeout(() => {
-			beginTermination({
-				kind: "timeout",
-				reason: `Timed out after ${timeoutMs}ms`,
-				timeoutMs,
+			const appendStdout = (chunk: string): void => {
+				stdout += chunk;
+			};
+			const appendStderr = (chunk: string): void => {
+				stderr += chunk;
+			};
+			child.stdout?.setEncoding("utf8");
+			child.stderr?.setEncoding("utf8");
+			child.stdout?.on("data", appendStdout);
+			child.stderr?.on("data", appendStderr);
+
+			const beginTermination = (initiated: InitiatedTermination): void => {
+				if (settled || termination) return;
+				termination = initiated;
+				if (timeoutTimer) clearTimeout(timeoutTimer);
+
+				forceKillTimer = setTimeout(() => {
+					if (settled) return;
+					try {
+						child.kill("SIGKILL");
+					} catch (error) {
+						const message =
+							error instanceof Error ? error.message : String(error);
+						stderr += `\nProvider force-kill failed: ${message}`;
+						settle(terminationOutcome(initiated, stdout, stderr));
+					}
+				}, terminationGraceMs);
+
+				try {
+					child.kill("SIGTERM");
+				} catch (error) {
+					const message =
+						error instanceof Error ? error.message : String(error);
+					stderr += `\nProvider graceful termination failed: ${message}`;
+				}
+			};
+
+			function abort(): void {
+				beginTermination({
+					kind: "aborted",
+					reason: signal?.reason,
+				});
+			}
+
+			child.once("error", (error) => {
+				if (termination) {
+					settle(terminationOutcome(termination, stdout, stderr));
+					return;
+				}
+				settle({
+					kind: "spawn-error",
+					error: errorWithOptionalCode(error),
+					stdout,
+					stderr,
+				});
 			});
-		}, timeoutMs);
-	});
+
+			child.once("close", (code, exitSignal) => {
+				if (termination) {
+					settle(terminationOutcome(termination, stdout, stderr));
+					return;
+				}
+				if (typeof code === "number") {
+					settle({ kind: "code-exit", code, stdout, stderr });
+					return;
+				}
+				if (exitSignal !== null) {
+					settle({
+						kind: "signal-exit",
+						signal: exitSignal,
+						stdout,
+						stderr,
+					});
+					return;
+				}
+				settle({
+					kind: "spawn-error",
+					error: new Error(
+						"Provider process closed without an exit code or signal",
+					),
+					stdout,
+					stderr,
+				});
+			});
+
+			signal?.addEventListener("abort", abort, { once: true });
+			if (signal?.aborted) {
+				abort();
+			}
+			timeoutTimer = setTimeout(() => {
+				beginTermination({
+					kind: "timeout",
+					reason: `Timed out after ${timeoutMs}ms`,
+					timeoutMs,
+				});
+			}, timeoutMs);
+		});
+	} finally {
+		await rm(sandbox.tempRoot, { recursive: true, force: true });
+	}
 };

@@ -1,3 +1,4 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -6,9 +7,11 @@ import {
 	DEFAULT_TERMINATION_GRACE_MS,
 	runProviderProcess,
 } from "../../domains/shared/extensions/project-tools/process-runner.ts";
+import { useTempDir } from "../helpers/fs.ts";
 
 const CHILD_TIMEOUT_MS = 250;
 const TERMINATION_GRACE_MS = 75;
+const tmp = useTempDir("provider-process-boundary-");
 
 function nodeInvocation(script: string) {
 	return {
@@ -27,6 +30,103 @@ function terminationIgnoringScript(label: string): string {
 }
 
 describe("project-tools provider process runner", () => {
+	test("confines a malicious provider and supplies only allowlisted environment", async () => {
+		const projectRoot = join(tmp.path, "project");
+		const projectTarget = join(projectRoot, "provider-write.txt");
+		const userSentinel = join(tmp.path, "user-sentinel.txt");
+		await mkdir(projectRoot);
+		await writeFile(userSentinel, "user-owned\n", "utf8");
+		const inheritedSecret = process.env.OPENAI_API_KEY;
+		process.env.OPENAI_API_KEY = "must-not-reach-provider";
+
+		let outcome: Awaited<ReturnType<typeof runProviderProcess>>;
+		try {
+			outcome = await runProviderProcess({
+				executablePath: process.execPath,
+				args: [
+					"-e",
+					[
+						'const { writeFileSync } = require("node:fs");',
+						"const attempt = (path) => {",
+						'\ttry { writeFileSync(path, "malicious\\n"); return true; }',
+						"\tcatch { return false; }",
+						"};",
+						`console.log(JSON.stringify({ projectWrite: attempt(${JSON.stringify(projectTarget)}), userWrite: attempt(${JSON.stringify(userSentinel)}), env: process.env }));`,
+					].join("\n"),
+				],
+				cwd: projectRoot,
+			});
+		} finally {
+			if (inheritedSecret === undefined) {
+				delete process.env.OPENAI_API_KEY;
+			} else {
+				process.env.OPENAI_API_KEY = inheritedSecret;
+			}
+		}
+
+		expect(outcome).toMatchObject({ kind: "code-exit", code: 0 });
+		if (outcome.kind !== "code-exit") {
+			throw new Error(`Expected code-exit, received ${outcome.kind}`);
+		}
+		const payload = JSON.parse(outcome.stdout) as {
+			readonly projectWrite: boolean;
+			readonly userWrite: boolean;
+			readonly env: Readonly<Record<string, string>>;
+		};
+		expect(payload.projectWrite).toBe(false);
+		expect(payload.userWrite).toBe(false);
+		expect(payload.env).not.toHaveProperty("OPENAI_API_KEY");
+		expect(Object.keys(payload.env).sort()).toEqual(
+			[
+				"GIT_CONFIG_GLOBAL",
+				"GIT_CONFIG_NOSYSTEM",
+				"GIT_TERMINAL_PROMPT",
+				"HOME",
+				"LANG",
+				"LC_ALL",
+				"NO_COLOR",
+				"PATH",
+				"TEMP",
+				"TMP",
+				"TMPDIR",
+				...(process.platform === "darwin" ? ["__CF_USER_TEXT_ENCODING"] : []),
+			].sort(),
+		);
+		await expect(readFile(projectTarget, "utf8")).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+		expect(await readFile(userSentinel, "utf8")).toBe("user-owned\n");
+	});
+
+	test("fails closed when the OS sandbox boundary is unavailable", async () => {
+		const projectRoot = join(tmp.path, "unavailable-project");
+		const sentinel = join(projectRoot, "sentinel.txt");
+		await mkdir(projectRoot);
+		await writeFile(sentinel, "unchanged\n", "utf8");
+
+		const outcome = await runProviderProcess(
+			{
+				executablePath: process.execPath,
+				args: [
+					"-e",
+					`require("node:fs").writeFileSync(${JSON.stringify(sentinel)}, "changed\\n")`,
+				],
+				cwd: projectRoot,
+			},
+			undefined,
+			{
+				sandboxPlatform: "win32",
+			},
+		);
+
+		expect(outcome.kind).toBe("spawn-error");
+		if (outcome.kind !== "spawn-error") {
+			throw new Error(`Expected spawn-error, received ${outcome.kind}`);
+		}
+		expect(outcome.error.code).toBe("SANDBOX_UNAVAILABLE");
+		expect(await readFile(sentinel, "utf8")).toBe("unchanged\n");
+	});
+
 	// @cosmo-behavior plan:analysis-capability-runtime#B-029
 	test("distinguishes signal abort timeout and spawn failure from clean exit", async () => {
 		expect(Number.isFinite(DEFAULT_PROVIDER_TIMEOUT_MS)).toBe(true);
