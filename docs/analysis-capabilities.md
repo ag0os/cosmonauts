@@ -55,12 +55,16 @@ Requests are discriminated by capability. Project and path scopes are
 available only when a binding advertises them. A path scope contains at least
 one trimmed project-relative path. Changed-scope audit requires a non-empty
 `base`. Trace requires exactly one target kind: symbol, file, dependency, or
-duplicate location. Complexity alone requires a metric. Fix preview has no
-apply option.
+duplicate location. A symbol's project-relative `path` and a duplicate
+location's positive `line` are optional provider-neutral identity fields;
+providers advertise whether each is optional or required. Complexity alone
+requires a metric. Fix preview has no apply option.
 
-Bindings advertise supported scope kinds and, for complexity, metrics.
-Unsupported scope or metric requests are rejected before provider execution;
-they are never widened and never represented as an empty clean result.
+Bindings advertise supported scope kinds, complexity metrics, and trace target
+requirements. Unsupported scopes, metrics, target kinds, or missing
+provider-required target identity return a structured unsupported result before
+provider execution; they are never widened, misreported as provider invalid
+output, or represented as an empty clean result.
 
 Every provider invocation is shell-free, bounded by a finite timeout, and
 non-mutating. Cancellation reaches the provider process and is reported as an

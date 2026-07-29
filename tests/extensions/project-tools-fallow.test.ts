@@ -30,6 +30,7 @@ import {
 	ANALYSIS_TOOL_NAMES,
 	type AnalysisRequest,
 	type AnalysisResult,
+	type AnalysisTraceTarget,
 } from "../../lib/analysis/index.ts";
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
@@ -203,10 +204,13 @@ async function discoveredRuntimeWithFixtures(options?: {
 					return (
 						invocation.args[0] === "dead-code" &&
 						!invocation.args.includes("--boundary-violations") &&
-						!invocation.args.includes("--trace")
+						!invocation.args.some((arg) => arg.startsWith("--trace"))
 					);
 				case "duplication":
-					return invocation.args[0] === "dupes";
+					return (
+						invocation.args[0] === "dupes" &&
+						!invocation.args.some((arg) => arg.startsWith("--trace"))
+					);
 				case "complexity":
 					return invocation.args[0] === "health";
 				case "boundary-conformance":
@@ -214,7 +218,7 @@ async function discoveredRuntimeWithFixtures(options?: {
 				case "changed-scope-audit":
 					return invocation.args[0] === "audit";
 				case "trace":
-					return invocation.args.includes("--trace");
+					return invocation.args.some((arg) => arg.startsWith("--trace"));
 				case "fix-preview":
 					return invocation.args[0] === "fix";
 			}
@@ -995,6 +999,64 @@ describe("Fallow capability execution", () => {
 			]),
 		});
 		expect(result.native.payload).toEqual(payload);
+	});
+
+	test("executes every Fallow-supported trace target variant", async () => {
+		const runtime = await discoveredRuntimeWithFixtures();
+		const requests = [
+			{
+				target: {
+					kind: "symbol",
+					symbol: "render",
+					path: "src/render.ts",
+				},
+				args: ["dead-code", "--trace", "src/render.ts:render"],
+			},
+			{
+				target: { kind: "file", path: "src/render.ts" },
+				args: ["dead-code", "--trace-file", "src/render.ts"],
+			},
+			{
+				target: { kind: "dependency", dependency: "typebox" },
+				args: ["dead-code", "--trace-dependency", "typebox"],
+			},
+			{
+				target: {
+					kind: "duplicate-location",
+					location: { path: "src/render.ts", line: 12 },
+				},
+				args: ["dupes", "--trace", "src/render.ts:12"],
+			},
+			{
+				target: {
+					kind: "duplicate-location",
+					location: { path: "src/render.ts", line: 12, column: 4 },
+				},
+				args: ["dupes", "--trace", "src/render.ts:12"],
+			},
+		] as const satisfies readonly {
+			readonly target: AnalysisTraceTarget;
+			readonly args: readonly string[];
+		}[];
+
+		for (const testCase of requests) {
+			const before = runtime.invocations.length;
+			const result = await runtime.execute({
+				capability: "trace",
+				scope: { kind: "target", target: testCase.target },
+			});
+			expect(result).toMatchObject({
+				kind: "trace",
+				scope: { target: testCase.target },
+			});
+			expect(runtime.invocations[before]?.args).toEqual([
+				...testCase.args,
+				"--format",
+				"json",
+				"--quiet",
+				"--no-cache",
+			]);
+		}
 	});
 
 	// @cosmo-behavior plan:analysis-capability-runtime#B-009

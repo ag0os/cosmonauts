@@ -67,7 +67,7 @@ When bound, the adapter exposes:
 | `complexity` | Project only; cyclomatic, cognitive, and CRAP metrics. |
 | `boundary-conformance` | Project or explicit paths, only when zones and rules are configured. |
 | `changed-scope-audit` | Changed scope from a required explicit base. |
-| `trace` | Exactly one symbol, file, dependency, or duplicate location. |
+| `trace` | Exactly one symbol (required project-relative path), file, dependency, or duplicate location (required positive line; optional column). |
 | `fix-preview` | Project-only dry-run proposals. |
 
 All provider invocations are shell-free and timeout-bounded. Analysis, config

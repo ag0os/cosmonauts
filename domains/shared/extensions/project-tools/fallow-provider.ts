@@ -367,6 +367,12 @@ function capabilities(
 			capability: "trace",
 			status: "supported",
 			scopes: ["target"],
+			traceTargets: [
+				{ kind: "symbol", path: "required" },
+				{ kind: "file" },
+				{ kind: "dependency" },
+				{ kind: "duplicate-location", line: "required" },
+			],
 		},
 		{
 			capability: "fix-preview",

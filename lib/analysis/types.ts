@@ -96,14 +96,40 @@ export type AnalysisTraceTarget =
 	| {
 			readonly kind: "symbol";
 			readonly symbol: string;
+			/** Optional generic identity; individual providers may require it. */
 			readonly path?: string;
 	  }
 	| { readonly kind: "file"; readonly path: string }
 	| { readonly kind: "dependency"; readonly dependency: string }
 	| {
 			readonly kind: "duplicate-location";
-			readonly location: AnalysisLocation;
+			readonly location: AnalysisDuplicateTraceLocation;
 	  };
+
+export interface AnalysisDuplicateTraceLocation {
+	readonly path: string;
+	readonly line?: number;
+	readonly column?: number;
+}
+
+/**
+ * Provider-advertised trace target legality. Optional generic identity may be
+ * required by a bound implementation without narrowing the provider-neutral
+ * request union.
+ */
+export type AnalysisTraceTargetSupport =
+	| {
+			readonly kind: "symbol";
+			readonly path: "optional" | "required";
+	  }
+	| { readonly kind: "file" }
+	| { readonly kind: "dependency" }
+	| {
+			readonly kind: "duplicate-location";
+			readonly line: "optional" | "required";
+	  };
+
+export type AnalysisTraceTargetIdentityField = "path" | "line";
 
 export interface AnalysisTargetScope {
 	readonly kind: "target";
@@ -315,6 +341,7 @@ export type AnalysisBinding =
 			readonly provider: ProviderIdentity;
 			readonly scopes: readonly AnalysisScope["kind"][];
 			readonly metrics?: readonly AnalysisMetric[];
+			readonly traceTargets?: readonly AnalysisTraceTargetSupport[];
 	  }
 	| {
 			readonly state: "unbound";
@@ -335,6 +362,7 @@ export type DetectedAnalysisCapability =
 			readonly status: "supported";
 			readonly scopes: readonly AnalysisScope["kind"][];
 			readonly metrics?: readonly AnalysisMetric[];
+			readonly traceTargets?: readonly AnalysisTraceTargetSupport[];
 	  }
 	| {
 			readonly capability: AnalysisCapability;
@@ -397,12 +425,23 @@ export interface AnalysisUnsupportedScopeResolution {
 	readonly supportedScopeKinds: readonly AnalysisScope["kind"][];
 }
 
+export interface AnalysisUnsupportedTargetResolution {
+	readonly kind: "unsupported-target";
+	readonly capability: "trace";
+	readonly providerId: string;
+	readonly requestedTargetKind: AnalysisTraceTarget["kind"];
+	readonly reason: "unsupported-kind" | "missing-identity";
+	readonly missingIdentityFields: readonly AnalysisTraceTargetIdentityField[];
+	readonly supportedTargets: readonly AnalysisTraceTargetSupport[];
+}
+
 export type AnalysisRequestResolution =
 	| AnalysisReadyResolution
 	| AnalysisUnboundResolution
 	| AnalysisFailedResolution
 	| AnalysisUnsupportedMetricResolution
-	| AnalysisUnsupportedScopeResolution;
+	| AnalysisUnsupportedScopeResolution
+	| AnalysisUnsupportedTargetResolution;
 
 /**
  * Leaf-level completed-result fields whose provider neutrality is audited in

@@ -12,6 +12,9 @@ Primary independent references:
 - [Knip reporters](https://knip.dev/features/reporters) document JSON issues,
   issue-type keys, paths, names, positions, Code Climate severity and
   fingerprints.
+- [Knip trace arguments](https://knip.dev/reference/cli#--trace) document
+  export-name, file, and dependency targets; an export name can be traced
+  alone or combined with a file target.
 - [jscpd JSON reporting](https://github.com/kucherenko/jscpd/blob/master/packages/finder/src/reporters/json.ts)
   documents clone pairs, fragments, file ranges, token/line counts, and
   statistics.
@@ -45,8 +48,18 @@ The adapter advertises only native scope support:
 | `complexity` | `project`; `cyclomatic`, `cognitive`, and `crap` metrics |
 | `boundary-conformance` | `project`, `paths` only when zones and rules are configured; otherwise `provider-not-configured` |
 | `changed-scope-audit` | `changed` with a required explicit base |
-| `trace` | `target` for a symbol, file, dependency, or duplicate location |
+| `trace` | `target`; symbol requires `path`, duplicate location requires `line`, file and dependency require no additional identity |
 | `fix-preview` | `project`; dry-run only |
+
+The generic trace union deliberately keeps symbol `path` and duplicate
+location `line` optional. Fallow advertises both as required and the resolver
+degrades an underspecified request before provider execution. Knip demonstrates
+why symbol paths cannot be globally required: it traces an export name alone
+and optionally combines that name with a file. A jscpd-backed adapter can use
+its clone-pair file ranges to resolve duplicate groups for a path and treat a
+supplied line as a disambiguator, while a dependency-cruiser adapter can
+advertise only file and dependency targets. Each provider therefore exposes
+only the generic target forms it can honor.
 
 Every analysis, config-introspection, and preview invocation disables the
 provider cache; version detection uses its intrinsically read-only operation.

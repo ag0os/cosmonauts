@@ -125,7 +125,7 @@ const TraceTargetSchema = Type.Union([
 			location: Type.Object(
 				{
 					path: Type.String({ minLength: 1 }),
-					line: Type.Integer({ minimum: 1 }),
+					line: Type.Optional(Type.Integer({ minimum: 1 })),
 					column: Type.Optional(Type.Integer({ minimum: 1 })),
 				},
 				{ additionalProperties: false },
@@ -327,7 +327,10 @@ function traceTarget(value: unknown): AnalysisTraceTarget {
 				["path", "line", "column"],
 				"analysis_trace duplicate location",
 			);
-			if (!Number.isInteger(location.line) || Number(location.line) < 1) {
+			if (
+				location.line !== undefined &&
+				(!Number.isInteger(location.line) || Number(location.line) < 1)
+			) {
 				throw new Error(
 					"analysis_trace duplicate location line must be a positive integer.",
 				);
@@ -347,7 +350,9 @@ function traceTarget(value: unknown): AnalysisTraceTarget {
 						location.path,
 						"analysis_trace duplicate location path",
 					),
-					line: Number(location.line),
+					...(location.line === undefined
+						? {}
+						: { line: Number(location.line) }),
 					...(location.column === undefined
 						? {}
 						: { column: Number(location.column) }),
@@ -756,7 +761,7 @@ export function createProjectToolsExtension(
 			capability: "trace",
 			label: "Analysis: Trace",
 			description:
-				"Trace exactly one symbol, file, dependency, or duplicate location.",
+				"Trace exactly one symbol, file, dependency, or duplicate location; provider-specific identity requirements are reported before execution.",
 			parameters: Type.Object(
 				{
 					target: TraceTargetSchema,

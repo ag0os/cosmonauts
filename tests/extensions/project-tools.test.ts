@@ -152,6 +152,44 @@ describe("project-tools extension", () => {
 				expect(parameters.additionalProperties, name).toBe(false);
 			}
 		});
+
+		test("keeps optional trace identity fields optional in the TypeBox schema", () => {
+			const pi = createMockPi();
+			projectToolsExtension(pi as never);
+			const parameters = (
+				pi.tools.get("analysis_trace") as unknown as {
+					readonly parameters: {
+						readonly properties: {
+							readonly target: {
+								readonly anyOf: readonly {
+									readonly properties: Readonly<
+										Record<
+											string,
+											{
+												readonly const?: string;
+												readonly required?: readonly string[];
+											}
+										>
+									>;
+									readonly required: readonly string[];
+								}[];
+							};
+						};
+					};
+				}
+			).parameters;
+			const variants = parameters.properties.target.anyOf;
+			const symbol = variants.find(
+				(schema) => schema.properties.kind?.const === "symbol",
+			);
+			const duplicate = variants.find(
+				(schema) => schema.properties.kind?.const === "duplicate-location",
+			);
+
+			expect(symbol?.required).toEqual(["kind", "symbol"]);
+			expect(duplicate?.required).toEqual(["kind", "location"]);
+			expect(duplicate?.properties.location?.required).toEqual(["path"]);
+		});
 	});
 
 	// @cosmo-behavior plan:analysis-capability-runtime#B-035
@@ -401,6 +439,61 @@ describe("project-tools extension", () => {
 			);
 		}
 		expect(invocationCount).toBe(0);
+	});
+
+	test("degrades Fallow trace targets missing provider identity before execution", async () => {
+		const fixture = await createProjectFixture("unsupported-trace-targets");
+		await writeFile(join(fixture.projectRoot, "fallow.toml"), "");
+		await grantConsent(fixture.projectRoot, fixture.userStateRoot);
+		const executable = join(tmpDir, "unsupported-trace-targets-fallow");
+		await writeFile(executable, "#!/bin/sh\nexit 0\n");
+		await chmod(executable, 0o755);
+		let capabilityInvocations = 0;
+		const executeProcess: ProviderProcessExecutor = async (invocation) => {
+			if (invocation.args.includes("--version")) {
+				return {
+					kind: "code-exit",
+					code: 0,
+					stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+					stderr: "",
+				};
+			}
+			if (invocation.args[0] === "config") {
+				return {
+					kind: "code-exit",
+					code: 3,
+					stdout: "defaults in effect\n",
+					stderr: "",
+				};
+			}
+			capabilityInvocations += 1;
+			throw new Error("provider capability execution must not start");
+		};
+		const pi = createMockPi({ cwd: fixture.projectRoot });
+		createProjectToolsExtension({
+			userStateRoot: fixture.userStateRoot,
+			injectedExecutablePath: executable,
+			executeProcess,
+		})(pi as never);
+		const targets = [
+			{ kind: "symbol", symbol: "render" },
+			{
+				kind: "duplicate-location",
+				location: { path: "src/render.ts" },
+			},
+		] as const;
+
+		for (const target of targets) {
+			expect(
+				resultDetails(await pi.callTool("analysis_trace", { target })),
+			).toMatchObject({
+				kind: "unsupported-target",
+				capability: "trace",
+				providerId: "fallow",
+				reason: "missing-identity",
+			});
+		}
+		expect(capabilityInvocations).toBe(0);
 	});
 
 	// @cosmo-behavior plan:analysis-capability-runtime#B-036

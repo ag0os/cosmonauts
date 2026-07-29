@@ -9,6 +9,7 @@ import {
 	ANALYSIS_RESULT_GENERIC_FIELDS,
 	type AnalysisBinding,
 	type AnalysisResult,
+	type AnalysisTraceTarget,
 } from "../../lib/analysis/index.ts";
 
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
@@ -186,6 +187,44 @@ describe("analysis core contracts", () => {
 		expectTypeOf<
 			Extract<AnalysisBinding, { state: "unbound" }>
 		>().not.toEqualTypeOf<Extract<AnalysisBinding, { state: "failed" }>>();
+	});
+
+	test("keeps provider-specific trace identity optional in the generic target union", () => {
+		const targets = [
+			{ kind: "symbol", symbol: "render" },
+			{ kind: "symbol", symbol: "render", path: "src/render.ts" },
+			{ kind: "file", path: "src/render.ts" },
+			{ kind: "dependency", dependency: "typebox" },
+			{
+				kind: "duplicate-location",
+				location: { path: "src/render.ts" },
+			},
+			{
+				kind: "duplicate-location",
+				location: { path: "src/render.ts", line: 12 },
+			},
+			{
+				kind: "duplicate-location",
+				location: { path: "src/render.ts", line: 12, column: 4 },
+			},
+		] as const satisfies readonly AnalysisTraceTarget[];
+
+		expect(targets.map(({ kind }) => kind)).toEqual([
+			"symbol",
+			"symbol",
+			"file",
+			"dependency",
+			"duplicate-location",
+			"duplicate-location",
+			"duplicate-location",
+		]);
+		expectTypeOf<
+			Extract<AnalysisTraceTarget, { kind: "duplicate-location" }>["location"]
+		>().toEqualTypeOf<{
+			readonly path: string;
+			readonly line?: number;
+			readonly column?: number;
+		}>();
 	});
 
 	test("keeps the analysis core independent from Pi and provider code", async () => {

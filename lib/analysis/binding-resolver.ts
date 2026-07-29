@@ -3,6 +3,9 @@ import {
 	type AnalysisBinding,
 	type AnalysisRequest,
 	type AnalysisRequestResolution,
+	type AnalysisTraceTarget,
+	type AnalysisTraceTargetIdentityField,
+	type AnalysisTraceTargetSupport,
 	type DetectedAnalysisProvider,
 	type ProviderDetection,
 	type ResolveAnalysisBindingsOptions,
@@ -64,6 +67,13 @@ function detectedProviderBindings(
 				...(support.metrics === undefined
 					? {}
 					: { metrics: [...support.metrics] }),
+				...(support.traceTargets === undefined
+					? {}
+					: {
+							traceTargets: support.traceTargets.map((target) => ({
+								...target,
+							})),
+						}),
 			};
 		}
 		return {
@@ -109,6 +119,29 @@ export function resolveAnalysisBindings(
 	}
 
 	throw new Error("Analysis provider selection reached an invalid state.");
+}
+
+function missingTraceTargetIdentity(
+	target: AnalysisTraceTarget,
+	support: AnalysisTraceTargetSupport,
+): readonly AnalysisTraceTargetIdentityField[] {
+	if (
+		target.kind === "symbol" &&
+		support.kind === "symbol" &&
+		support.path === "required" &&
+		target.path === undefined
+	) {
+		return ["path"];
+	}
+	if (
+		target.kind === "duplicate-location" &&
+		support.kind === "duplicate-location" &&
+		support.line === "required" &&
+		target.location.line === undefined
+	) {
+		return ["line"];
+	}
+	return [];
 }
 
 /**
@@ -162,6 +195,27 @@ export function resolveAnalysisRequest(
 			requestedMetric: request.metric,
 			availableMetrics: [...(binding.metrics ?? [])],
 		};
+	}
+	if (request.capability === "trace") {
+		const supportedTargets = binding.traceTargets ?? [];
+		const support = supportedTargets.find(
+			(target) => target.kind === request.scope.target.kind,
+		);
+		const missingIdentityFields =
+			support === undefined
+				? []
+				: missingTraceTargetIdentity(request.scope.target, support);
+		if (support === undefined || missingIdentityFields.length > 0) {
+			return {
+				kind: "unsupported-target",
+				capability: "trace",
+				providerId: binding.provider.id,
+				requestedTargetKind: request.scope.target.kind,
+				reason: support === undefined ? "unsupported-kind" : "missing-identity",
+				missingIdentityFields,
+				supportedTargets: supportedTargets.map((target) => ({ ...target })),
+			};
+		}
 	}
 	return {
 		kind: "ready",

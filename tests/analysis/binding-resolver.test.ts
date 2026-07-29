@@ -3,9 +3,13 @@ import {
 	ANALYSIS_CAPABILITIES,
 	ANALYSIS_CAPABILITY_TOOL_NAMES,
 	ANALYSIS_TOOL_NAMES,
+	type AnalysisBinding,
 	type AnalysisFailure,
+	type AnalysisTraceTarget,
+	type AnalysisTraceTargetSupport,
 	type DetectedAnalysisProvider,
 	type ProviderDetection,
+	type ProviderIdentity,
 	resolveAnalysisBindings,
 	resolveAnalysisRequest,
 } from "../../lib/analysis/index.ts";
@@ -21,6 +25,34 @@ const FAKE_PROVIDER = {
 	name: "Fake analyzer",
 	version: "1.0.0",
 } as const;
+
+const DEPENDENCY_CRUISER_PROVIDER = {
+	id: "dependency-cruiser",
+	name: "dependency-cruiser",
+	version: "17.3.2",
+} as const;
+
+const FALLOW_TRACE_TARGETS = [
+	{ kind: "symbol", path: "required" },
+	{ kind: "file" },
+	{ kind: "dependency" },
+	{ kind: "duplicate-location", line: "required" },
+] as const satisfies readonly AnalysisTraceTargetSupport[];
+
+function traceBinding(
+	traceTargets: readonly AnalysisTraceTargetSupport[],
+	provider: ProviderIdentity = FALLOW_PROVIDER,
+): readonly AnalysisBinding[] {
+	return [
+		{
+			state: "bound",
+			capability: "trace",
+			provider,
+			scopes: ["target"],
+			traceTargets,
+		},
+	];
+}
 
 function detected(
 	provider: DetectedAnalysisProvider["provider"],
@@ -143,6 +175,135 @@ describe("analysis binding resolver", () => {
 		expect(resolution).not.toHaveProperty("request");
 		expect(resolution).not.toHaveProperty("failure");
 		expect(resolution).not.toHaveProperty("execute");
+	});
+
+	test("resolves every trace target against provider identity requirements", () => {
+		const cases = [
+			{
+				name: "symbol without provider-required path",
+				target: { kind: "symbol", symbol: "render" },
+				expected: {
+					kind: "unsupported-target",
+					reason: "missing-identity",
+					missingIdentityFields: ["path"],
+				},
+			},
+			{
+				name: "symbol with path",
+				target: {
+					kind: "symbol",
+					symbol: "render",
+					path: "src/render.ts",
+				},
+				expected: { kind: "ready" },
+			},
+			{
+				name: "file",
+				target: { kind: "file", path: "src/render.ts" },
+				expected: { kind: "ready" },
+			},
+			{
+				name: "dependency",
+				target: { kind: "dependency", dependency: "typebox" },
+				expected: { kind: "ready" },
+			},
+			{
+				name: "duplicate location without provider-required line",
+				target: {
+					kind: "duplicate-location",
+					location: { path: "src/render.ts" },
+				},
+				expected: {
+					kind: "unsupported-target",
+					reason: "missing-identity",
+					missingIdentityFields: ["line"],
+				},
+			},
+			{
+				name: "duplicate location with line",
+				target: {
+					kind: "duplicate-location",
+					location: { path: "src/render.ts", line: 12 },
+				},
+				expected: { kind: "ready" },
+			},
+			{
+				name: "duplicate location with optional column",
+				target: {
+					kind: "duplicate-location",
+					location: { path: "src/render.ts", line: 12, column: 4 },
+				},
+				expected: { kind: "ready" },
+			},
+		] as const satisfies readonly {
+			readonly name: string;
+			readonly target: AnalysisTraceTarget;
+			readonly expected: Readonly<Record<string, unknown>>;
+		}[];
+
+		for (const testCase of cases) {
+			const resolution = resolveAnalysisRequest(
+				traceBinding(FALLOW_TRACE_TARGETS),
+				{
+					capability: "trace",
+					scope: { kind: "target", target: testCase.target },
+				},
+			);
+			expect(resolution, testCase.name).toMatchObject(testCase.expected);
+		}
+	});
+
+	test("allows another provider to accept trace targets without optional identity", () => {
+		const flexibleTargets = [
+			{ kind: "symbol", path: "optional" },
+			{ kind: "file" },
+			{ kind: "dependency" },
+			{ kind: "duplicate-location", line: "optional" },
+		] as const satisfies readonly AnalysisTraceTargetSupport[];
+		const targets = [
+			{ kind: "symbol", symbol: "render" },
+			{
+				kind: "duplicate-location",
+				location: { path: "src/render.ts" },
+			},
+		] as const satisfies readonly AnalysisTraceTarget[];
+
+		for (const target of targets) {
+			expect(
+				resolveAnalysisRequest(traceBinding(flexibleTargets, FAKE_PROVIDER), {
+					capability: "trace",
+					scope: { kind: "target", target },
+				}),
+			).toMatchObject({ kind: "ready", binding: { provider: FAKE_PROVIDER } });
+		}
+	});
+
+	test("degrades a target kind the bound provider does not advertise", () => {
+		const dependencyGraphTargets = [
+			{ kind: "file" },
+			{ kind: "dependency" },
+		] as const satisfies readonly AnalysisTraceTargetSupport[];
+
+		expect(
+			resolveAnalysisRequest(
+				traceBinding(dependencyGraphTargets, DEPENDENCY_CRUISER_PROVIDER),
+				{
+					capability: "trace",
+					scope: {
+						kind: "target",
+						target: { kind: "symbol", symbol: "render" },
+					},
+				},
+			),
+		).toEqual({
+			kind: "unsupported-target",
+			capability: "trace",
+			providerId: "dependency-cruiser",
+			requestedTargetKind: "symbol",
+			reason: "unsupported-kind",
+			missingIdentityFields: [],
+			supportedTargets: dependencyGraphTargets,
+		});
 	});
 
 	test("preserves failed detection and exposes only serializable resolution state", () => {
