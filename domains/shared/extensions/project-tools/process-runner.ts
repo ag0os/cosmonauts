@@ -81,6 +81,24 @@ type InitiatedTermination =
 const PROCESS_TREE_CLEANUP_FAILED_CODE = "PROCESS_TREE_CLEANUP_FAILED";
 const PROCESS_TREE_POLL_MS = 10;
 
+export type TaskkillExitOutcome =
+	| { readonly kind: "terminated" }
+	| { readonly kind: "unverified"; readonly error: Error };
+
+export function classifyTaskkillExitCode(
+	code: number | null,
+): TaskkillExitOutcome {
+	if (code === 0) return { kind: "terminated" };
+	return {
+		kind: "unverified",
+		error: new Error(
+			`taskkill exited with code ${String(
+				code,
+			)}; this did not positively establish process-tree termination.`,
+		),
+	};
+}
+
 function finiteTimeout(value: number | undefined): number {
 	return value !== undefined && Number.isFinite(value) && value > 0
 		? value
@@ -185,11 +203,12 @@ function taskkillProcessTree(
 	};
 	killer.once("error", complete);
 	killer.once("close", (code) => {
-		if (code === 0 || code === 128) {
+		const outcome = classifyTaskkillExitCode(code);
+		if (outcome.kind === "terminated") {
 			complete();
 			return;
 		}
-		complete(new Error(`taskkill exited with code ${String(code)}.`));
+		complete(outcome.error);
 	});
 }
 

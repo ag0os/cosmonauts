@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
+	classifyTaskkillExitCode,
 	DEFAULT_PROVIDER_TIMEOUT_MS,
 	DEFAULT_TERMINATION_GRACE_MS,
 	runProviderProcess,
@@ -104,6 +105,20 @@ async function waitForFileSize(
 }
 
 describe("project-tools provider process runner", () => {
+	test("requires positive taskkill evidence before reporting tree termination", () => {
+		expect(classifyTaskkillExitCode(0)).toEqual({ kind: "terminated" });
+
+		const ambiguous = classifyTaskkillExitCode(128);
+		expect(ambiguous.kind).toBe("unverified");
+		if (ambiguous.kind !== "unverified") {
+			throw new Error("Expected taskkill exit 128 to remain unverified.");
+		}
+		expect(ambiguous.error.message).toContain("code 128");
+		expect(ambiguous.error.message).toContain(
+			"did not positively establish process-tree termination",
+		);
+	});
+
 	test("spools large output losslessly and removes the private copies", async () => {
 		const payloadBytes = 2 * 1024 * 1024;
 		const stderrBytes = 1024 * 1024;
