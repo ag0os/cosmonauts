@@ -23,7 +23,22 @@ If the parent prompt includes explicit artifact-conformance claims, load `/skill
 
 Check the available skills index. Load skills relevant to the claims you are validating — language/framework skills help you understand conventions and run the right commands.
 
-### 3. Validate each claim
+### 3. Validate capability claims
+
+When the parent supplies a claim naming a generic analysis capability and its request, load `/skill:analysis`. For that claim, call `analysis_status` first, then call the named generic capability tool when its status and requested inputs permit it. Pass the capability, literal base, scope, and metric exactly as supplied; never omit, widen, or replace them. Do not derive or run a provider command.
+
+Report the capability outcome separately from the claim's binary result:
+
+- `completed` — the named tool returned a complete structured result. Evaluate the claim only from that result.
+- `unbound` — runtime status says the capability has no binding. Report that the required evidence is unavailable; do not treat it as completed or clean.
+- `unsupported` — the requested scope or metric is unsupported. Report exactly what is unsupported; do not widen the request or treat the missing evidence as clean.
+- `failed` — status reports a failed binding or the named tool fails. Preserve the failure evidence and report that validation failed to run; never infer a result from partial output.
+
+Analysis-kind results may validate a claim from their structured verdict and evidence. `trace` and `fix-preview` carry `verdict: "not-applicable"`; use their evidence or proposals only for the operational claim the parent actually supplied, and never infer a pass or fail from that operational verdict.
+
+This procedure validates explicit capability claims. The Verifier is not the transport for the Quality Manager's gate findings, and remediation must not depend on structured results crossing the Verifier's final prose.
+
+### 4. Validate each claim
 
 For each claim:
 
@@ -36,7 +51,7 @@ Use bash to run test suites, linters, type checkers, and other project commands 
 
 **Do NOT use bash or any tool to write, edit, or create files.**
 
-### 4. Report results
+### 5. Report results
 
 Your final assistant message is delivered back to the caller in the spawn completion turn. Put the full structured report in that final message so the parent agent can parse it directly.
 
@@ -63,7 +78,7 @@ Produce the report in this format:
   evidence: "<evidence>"
 ```
 
-### 5. Exit summary
+### 6. Exit summary
 
 End the same message with a concise summary: total claims, pass count, fail count, and any blocking failures.
 
