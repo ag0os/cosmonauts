@@ -1402,6 +1402,11 @@ ${activeBehaviors
 		// the artifacts this guards now live in three plans. Their withdrawn
 		// entries still total the parent's two: B-032 in the runtime slice and
 		// B-020 in the investigation slice.
+		//
+		// Slices archive one at a time as they ship, so each is resolved from
+		// missions/plans/ or missions/archive/plans/. Following the family across
+		// both locations keeps the guard whole instead of breaking at every
+		// archive and shrinking the withdrawn total.
 		const planSlugs = [
 			"analysis-capability-runtime",
 			"analysis-gate-rewiring",
@@ -1416,18 +1421,34 @@ ${activeBehaviors
 
 		let withdrawn = 0;
 		for (const planSlug of planSlugs) {
-			const planPath = join(
-				process.cwd(),
-				"missions",
-				"plans",
-				planSlug,
-				"plan.md",
-			);
+			const candidates = [
+				join("missions", "plans", planSlug, "plan.md"),
+				join("missions", "archive", "plans", planSlug, "plan.md"),
+			];
+			let planPath: string | undefined;
+			let planMarkdown: string | undefined;
+			for (const candidate of candidates) {
+				try {
+					planMarkdown = await readFile(
+						join(process.cwd(), candidate),
+						"utf-8",
+					);
+					planPath = candidate;
+					break;
+				} catch {
+					// Try the next lifecycle location.
+				}
+			}
+			if (planPath === undefined || planMarkdown === undefined) {
+				throw new Error(
+					`Plan ${planSlug} was found in neither missions/plans/ nor missions/archive/plans/.`,
+				);
+			}
 			const result = checkBehaviorConformance({
 				planSlug,
-				planPath: `missions/plans/${planSlug}/plan.md`,
+				planPath,
 				projectRoot: process.cwd(),
-				planMarkdown: await readFile(planPath, "utf-8"),
+				planMarkdown,
 			});
 
 			expect(

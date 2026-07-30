@@ -1,8 +1,8 @@
 ---
 title: Analysis capability runtime
-status: active
+status: completed
 createdAt: '2026-07-29T00:00:00.000Z'
-updatedAt: '2026-07-30T00:00:00.000Z'
+updatedAt: '2026-07-30T15:29:43.545Z'
 ---
 
 ## Overview
