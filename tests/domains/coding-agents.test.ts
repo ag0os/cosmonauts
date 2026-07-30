@@ -7,18 +7,23 @@
  * configuration, not behavior, and should not be snapshot-tested.
  */
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
 import architectureMemoryExtension from "../../domains/shared/extensions/architecture-memory/index.ts";
 import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
+import {
+	buildSkillsOverride,
+	resolveEffectiveProjectSkills,
+} from "../../lib/agents/skills.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
 import {
 	DomainRegistry,
 	DomainResolver,
 	loadDomainsFromSources,
 } from "../../lib/domains/index.ts";
+import type { LoadedDomain } from "../../lib/domains/types.ts";
 import {
 	buildToolAllowlist,
 	resolveExtensionPaths,
@@ -42,9 +47,11 @@ const BUNDLED_CODING_DIR = resolve(
 	"bundled",
 	"coding",
 );
+const REPOSITORY_ROOT = resolve(DOMAINS_DIR, "..");
 
 const tmp = useTempDir("coding-agents-");
 let allDefinitions: AgentDefinition[] = [];
+let loadedDomains: LoadedDomain[] = [];
 let resolver: DomainResolver;
 
 beforeAll(async () => {
@@ -65,6 +72,7 @@ beforeAll(async () => {
 	}
 
 	allDefinitions = [...codingDomain.agents.values()];
+	loadedDomains = domains;
 	resolver = new DomainResolver(new DomainRegistry(domains));
 });
 
@@ -150,6 +158,115 @@ describe("coding domain agent invariants", () => {
 			expect(def.id.length).toBeGreaterThan(0);
 			expect(def.description.length).toBeGreaterThan(0);
 		}
+	});
+
+	it("gives analysis consumers generic tools and shared skill under project filtering", async () => {
+		// @cosmo-behavior plan:analysis-gate-rewiring#B-024
+		const expectedConsumers = [
+			"fixer",
+			"plan-reviewer",
+			"planner",
+			"quality-manager",
+			"refactorer",
+			"verifier",
+			"worker",
+		];
+		const shippedDefinitions = loadedDomains.flatMap((domain) => [
+			...domain.agents.values(),
+		]);
+		const actualConsumers = shippedDefinitions
+			.filter((definition) => definition.extensions.includes("project-tools"))
+			.map((definition) => definition.id)
+			.sort();
+
+		expect(actualConsumers).toEqual(expectedConsumers);
+
+		const effectiveProjectSkills = await resolveEffectiveProjectSkills({
+			projectSkills: ["project-skill-without-analysis"],
+			resolver,
+		});
+		expect(effectiveProjectSkills).toContain("analysis");
+
+		const discoveredSkills = [
+			...new Set(
+				loadedDomains
+					.flatMap((domain) => [...domain.skills])
+					.concat(["project-skill-without-analysis"]),
+			),
+		].map((name) => ({ name }));
+
+		for (const definition of shippedDefinitions) {
+			const override = buildSkillsOverride(
+				definition.skills,
+				effectiveProjectSkills,
+			);
+			const resolvedSkills =
+				override?.({
+					skills: discoveredSkills as never,
+					diagnostics: [],
+				}).skills ?? discoveredSkills;
+			const resolvedNames = resolvedSkills.map((skill) => skill.name);
+
+			if (
+				expectedConsumers.includes(definition.id) ||
+				definition.skills.includes("*")
+			) {
+				expect(resolvedNames, definition.id).toContain("analysis");
+			}
+		}
+
+		const sharedSkillPath = join(
+			DOMAINS_DIR,
+			"shared",
+			"skills",
+			"analysis",
+			"SKILL.md",
+		);
+		const sharedSkill = await readFile(sharedSkillPath, "utf8");
+		expect(sharedSkill).toMatch(
+			/# Analysis[\s\S]*?## Availability check\s+Call `analysis_status` first\./u,
+		);
+		expect(sharedSkill).toContain(
+			"If the tool is not registered in this session, state that analysis is not part of this role's surface and proceed without it.",
+		);
+		expect(sharedSkill).toContain("Do not retry");
+		expect(sharedSkill).toMatch(/\bcompleted\b/iu);
+		expect(sharedSkill).toMatch(/\bunbound\b/iu);
+		expect(sharedSkill).toMatch(/\bunsupported\b/iu);
+		expect(sharedSkill).toMatch(/\bfailed\b/iu);
+		expect(sharedSkill).toContain("explicit base");
+		expect(sharedSkill).toContain("Trace first");
+		expect(sharedSkill).toContain("Preview only");
+		expect(sharedSkill).toContain("Rerun before editing");
+
+		const legacySkillPath = ["bundled", "coding", "skills", "fallow"].join("/");
+		await expect(
+			access(join(REPOSITORY_ROOT, legacySkillPath)),
+		).rejects.toThrow();
+
+		const legacyReferences = await findTextMatches(
+			[
+				join(REPOSITORY_ROOT, "lib"),
+				join(REPOSITORY_ROOT, "cli"),
+				join(REPOSITORY_ROOT, "bin"),
+				join(REPOSITORY_ROOT, "bundled"),
+				join(REPOSITORY_ROOT, "domains"),
+				join(REPOSITORY_ROOT, "scripts"),
+				join(REPOSITORY_ROOT, "tests"),
+			],
+			(content) => content.includes(legacySkillPath),
+		);
+		expect(legacyReferences).toEqual([]);
+
+		const providerName = ["fal", "low"].join("");
+		const genericSurfaceMatches = await findTextMatches(
+			[join(REPOSITORY_ROOT, "bundled"), join(REPOSITORY_ROOT, "domains")],
+			(content, path) =>
+				path.endsWith(".md") &&
+				(path.includes("/prompts/") || path.includes("/skills/")) &&
+				new RegExp(`\\b${providerName}\\b`, "iu").test(content),
+		);
+		expect(genericSurfaceMatches).toEqual([]);
 	});
 
 	it("registers architecture_map_read at extension factory load for architecture-consuming agents @cosmo-behavior plan:memory-interface#B-015", async () => {
@@ -281,4 +398,34 @@ function resultText(result: {
 	content: { type: "text"; text: string }[];
 }): string {
 	return result.content.map((entry) => entry.text).join("\n");
+}
+
+async function findTextMatches(
+	roots: readonly string[],
+	matches: (content: string, path: string) => boolean,
+): Promise<string[]> {
+	const files = (
+		await Promise.all(roots.map((root) => listFilesRecursively(root)))
+	).flat();
+	const matchedPaths: string[] = [];
+
+	for (const path of files) {
+		const content = await readFile(path, "utf8");
+		if (matches(content, path)) {
+			matchedPaths.push(path.slice(REPOSITORY_ROOT.length + 1));
+		}
+	}
+
+	return matchedPaths.sort();
+}
+
+async function listFilesRecursively(root: string): Promise<string[]> {
+	const entries = await readdir(root, { withFileTypes: true });
+	const paths = await Promise.all(
+		entries.map((entry) => {
+			const path = join(root, entry.name);
+			return entry.isDirectory() ? listFilesRecursively(path) : [path];
+		}),
+	);
+	return paths.flat();
 }

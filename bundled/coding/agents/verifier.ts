@@ -7,7 +7,7 @@ const definition: AgentDefinition = {
 	capabilities: ["healthy-codebase-harness", "coding-readonly"],
 	model: "openai-codex/gpt-5.6-sol",
 	tools: "verification",
-	extensions: [],
+	extensions: ["project-tools"],
 	skills: ["*"],
 	subagents: [],
 	projectContext: true,
