@@ -1,5 +1,14 @@
 import { createHash } from "node:crypto";
 import {
+	closeSync,
+	fstatSync,
+	openSync,
+	readFileSync,
+	realpathSync,
+	type Stats,
+	statSync,
+} from "node:fs";
+import {
 	access,
 	constants,
 	open,
@@ -31,7 +40,10 @@ import {
 	resolveAnalysisBindings,
 	resolveAnalysisRequest,
 } from "../../../../lib/analysis/index.ts";
-import { readAnalysisExecutionAuthorization } from "./analysis-consent.ts";
+import {
+	readAnalysisExecutionAuthorization,
+	readAnalysisExecutionAuthorizationSync,
+} from "./analysis-consent.ts";
 import { AnalysisProviderError } from "./analysis-provider-error.ts";
 import {
 	type ProviderProcessExecutor,
@@ -221,6 +233,8 @@ interface DiscoverFallowProviderOptions {
 	readonly captureExecutableIdentity?: (
 		executablePath: string,
 	) => Promise<FallowExecutableIdentity>;
+	/** Injectable synchronous consent reader for final-validation race tests. */
+	readonly readExecutionAuthorizationSync?: typeof readAnalysisExecutionAuthorizationSync;
 	/** Session-owned cancellation for version/config discovery subprocesses. */
 	readonly signal?: AbortSignal;
 }
@@ -501,10 +515,7 @@ async function resolveFallowExecutable(
 	return null;
 }
 
-function sameFileStats(
-	left: Awaited<ReturnType<typeof stat>>,
-	right: Awaited<ReturnType<typeof stat>>,
-): boolean {
+function sameFileStats(left: Stats, right: Stats): boolean {
 	return (
 		left.dev === right.dev &&
 		left.ino === right.ino &&
@@ -513,6 +524,39 @@ function sameFileStats(
 		left.mtimeMs === right.mtimeMs &&
 		left.ctimeMs === right.ctimeMs
 	);
+}
+
+function captureExecutableIdentitySync(
+	executablePath: string,
+): FallowExecutableIdentity {
+	const canonicalPath = realpathSync(executablePath);
+	const descriptor = openSync(canonicalPath, "r");
+	try {
+		const before = fstatSync(descriptor);
+		const contents = readFileSync(descriptor);
+		const after = fstatSync(descriptor);
+		const currentCanonicalPath = realpathSync(executablePath);
+		const current = statSync(currentCanonicalPath);
+		if (
+			canonicalPath !== currentCanonicalPath ||
+			!sameFileStats(before, after) ||
+			!sameFileStats(after, current)
+		) {
+			throw new Error("Executable changed while its identity was captured.");
+		}
+		return {
+			canonicalPath,
+			device: after.dev,
+			inode: after.ino,
+			mode: after.mode,
+			size: after.size,
+			modifiedAtMs: after.mtimeMs,
+			changedAtMs: after.ctimeMs,
+			sha256: createHash("sha256").update(contents).digest("hex"),
+		};
+	} finally {
+		closeSync(descriptor);
+	}
 }
 
 async function captureExecutableIdentity(
@@ -579,20 +623,25 @@ function bindingIdentityFailure(
 	};
 }
 
-async function validateSpawnPreconditions(options: {
+function validateSpawnPreconditions(options: {
 	readonly projectRoot: string;
 	readonly userStateRoot?: string;
 	readonly executablePath: string;
 	readonly bindingIdentity: FallowBindingIdentity;
-	readonly captureExecutableIdentity: (
-		executablePath: string,
-	) => Promise<FallowExecutableIdentity>;
-}): Promise<FallowSpawnPrecondition> {
+	readonly readExecutionAuthorizationSync: typeof readAnalysisExecutionAuthorizationSync;
+}): FallowSpawnPrecondition {
+	/*
+	 * This is intentionally one synchronous final validation. Turning either
+	 * check back into an await recreates the stale-precondition cycle.
+	 */
+	const authorization = options.readExecutionAuthorizationSync({
+		projectRoot: options.projectRoot,
+		providerId: FALLOW_PROVIDER_ID,
+		userStateRoot: options.userStateRoot,
+	});
 	let currentExecutable: FallowExecutableIdentity;
 	try {
-		currentExecutable = await options.captureExecutableIdentity(
-			options.executablePath,
-		);
+		currentExecutable = captureExecutableIdentitySync(options.executablePath);
 	} catch {
 		const failure = bindingIdentityFailure(
 			"provider-executable-identity-changed",
@@ -621,11 +670,6 @@ async function validateSpawnPreconditions(options: {
 		};
 	}
 
-	const authorization = await readAnalysisExecutionAuthorization({
-		projectRoot: options.projectRoot,
-		providerId: FALLOW_PROVIDER_ID,
-		userStateRoot: options.userStateRoot,
-	});
 	if (
 		authorization !== null &&
 		authorization.canonicalProjectRoot !==
@@ -655,12 +699,10 @@ function finalSpawnPrecondition(options: {
 	readonly userStateRoot?: string;
 	readonly executablePath: string;
 	readonly bindingIdentity: FallowBindingIdentity;
-	readonly captureExecutableIdentity: (
-		executablePath: string,
-	) => Promise<FallowExecutableIdentity>;
-}): () => Promise<void> {
-	return async () => {
-		const precondition = await validateSpawnPreconditions(options);
+	readonly readExecutionAuthorizationSync: typeof readAnalysisExecutionAuthorizationSync;
+}): () => void {
+	return () => {
+		const precondition = validateSpawnPreconditions(options);
 		if (precondition.kind !== "ready") {
 			throw new FallowSpawnPreconditionError(precondition);
 		}
@@ -955,14 +997,14 @@ async function introspectProvider(
 	executeProcess: ProviderProcessExecutor,
 	executableResolution: FallowExecutableResolutionKind,
 ): Promise<FallowProviderDiscovery> {
-	const captureIdentity =
-		options.captureExecutableIdentity ?? captureExecutableIdentity;
 	const spawnPreconditionOptions = {
 		projectRoot: options.projectRoot,
 		userStateRoot: options.userStateRoot,
 		executablePath,
 		bindingIdentity,
-		captureExecutableIdentity: captureIdentity,
+		readExecutionAuthorizationSync:
+			options.readExecutionAuthorizationSync ??
+			readAnalysisExecutionAuthorizationSync,
 	} as const;
 	const beforeSpawn = finalSpawnPrecondition(spawnPreconditionOptions);
 	if (options.signal?.aborted) {
@@ -976,7 +1018,7 @@ async function introspectProvider(
 	}
 	const versionPrecondition = discoveryFromSpawnPrecondition(
 		detectionSignal,
-		await validateSpawnPreconditions(spawnPreconditionOptions),
+		validateSpawnPreconditions(spawnPreconditionOptions),
 		executableResolution,
 	);
 	if (versionPrecondition !== undefined) return versionPrecondition;
@@ -1038,7 +1080,7 @@ async function introspectProvider(
 
 	const configPrecondition = discoveryFromSpawnPrecondition(
 		detectionSignal,
-		await validateSpawnPreconditions(spawnPreconditionOptions),
+		validateSpawnPreconditions(spawnPreconditionOptions),
 		executableResolution,
 	);
 	if (configPrecondition !== undefined) return configPrecondition;
@@ -1138,12 +1180,14 @@ async function introspectProvider(
 		if (invalidatedFailure !== undefined) {
 			return providerFailedBindings(invalidatedFailure);
 		}
-		const precondition = await validateSpawnPreconditions({
+		const precondition = validateSpawnPreconditions({
 			projectRoot: options.projectRoot,
 			userStateRoot: options.userStateRoot,
 			executablePath,
 			bindingIdentity,
-			captureExecutableIdentity: captureIdentity,
+			readExecutionAuthorizationSync:
+				options.readExecutionAuthorizationSync ??
+				readAnalysisExecutionAuthorizationSync,
 		});
 		if (precondition.kind === "failed") {
 			invalidatedFailure = precondition.failure;
@@ -1390,7 +1434,7 @@ interface FallowExecutionRuntime {
 	readonly provider: ProviderIdentity;
 	readonly executablePath: string;
 	readonly executeProcess: ProviderProcessExecutor;
-	readonly beforeSpawn: () => Promise<void>;
+	readonly beforeSpawn: () => void;
 	readonly validateEnvelopeSchema: typeof validateFallowEnvelopeSchema;
 }
 

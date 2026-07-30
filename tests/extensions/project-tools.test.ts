@@ -290,24 +290,28 @@ describe("project-tools extension", () => {
 				...bound,
 				expectedState: "bound",
 				expectedReason: `provider \`fallow@${FALLOW_VALIDATED_ENGINE_VERSION}\``,
+				expectedProvenance: "injected",
 				executeProcess: successfulIntrospection,
 			},
 			{
 				...unbound,
 				expectedState: "unbound",
 				expectedReason: "`no-provider`",
+				expectedProvenance: undefined,
 				executeProcess: successfulIntrospection,
 			},
 			{
 				...failed,
 				expectedState: "failed",
 				expectedReason: "`provider-signal`",
+				expectedProvenance: "injected",
 				executeProcess: failedIntrospection,
 			},
 			{
 				...withheld,
 				expectedState: "unbound",
 				expectedReason: "`execution-not-consented`",
+				expectedProvenance: "injected",
 				executeProcess: successfulIntrospection,
 			},
 		] as const;
@@ -339,6 +343,13 @@ describe("project-tools extension", () => {
 				);
 				expect(row, `${fixture.projectRoot}:${capability}`).toContain(
 					fixture.expectedReason,
+				);
+			}
+			if (fixture.expectedProvenance === undefined) {
+				expect(block).not.toContain("Resolution provenance:");
+			} else {
+				expect(block).toContain(
+					`Resolution provenance: \`${fixture.expectedProvenance}\`.`,
 				);
 			}
 			expect(block).not.toMatch(/command|executable|npx/iu);

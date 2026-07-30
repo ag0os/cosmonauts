@@ -840,7 +840,7 @@ export function createProjectToolsExtension(
 				...(tools.length === 0 ? [] : [buildToolsBlock(tools)]),
 				buildCapabilityStatusBlock(
 					snapshot.bindings,
-					snapshot.runtime?.executableResolution,
+					snapshot.resolutionProvenance,
 				),
 			];
 			return {

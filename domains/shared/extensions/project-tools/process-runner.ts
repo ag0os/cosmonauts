@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { createWriteStream } from "node:fs";
+import { closeSync, createWriteStream, openSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,10 +22,11 @@ export interface ProviderProcessRunOptions {
 	readonly timeoutMs?: number;
 	readonly terminationGraceMs?: number;
 	/**
-	 * Final asynchronous authorization hook. Runner preparation is complete
-	 * before this is awaited, and spawn follows synchronously when it resolves.
+	 * Final synchronous authorization and executable-identity validation.
+	 * Runner preparation is complete before this runs, and spawn follows without
+	 * an intervening await.
 	 */
-	readonly beforeSpawn?: () => Promise<void>;
+	readonly beforeSpawn?: () => void;
 	/** Test-only lifecycle observer; cannot change output capture behavior. */
 	readonly onOutputSpoolReady?: (outputSpoolRoot: string) => void;
 }
@@ -240,9 +241,17 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 			stderr: "",
 		};
 	}
+	const stdoutPath = join(outputSpoolRoot, PROVIDER_STDOUT_SPOOL);
+	const stderrPath = join(outputSpoolRoot, PROVIDER_STDERR_SPOOL);
+	let stdoutDescriptor = -1;
+	let stderrDescriptor = -1;
 	try {
+		stdoutDescriptor = openSync(stdoutPath, "wx", 0o600);
+		stderrDescriptor = openSync(stderrPath, "wx", 0o600);
 		options?.onOutputSpoolReady?.(outputSpoolRoot);
 	} catch (error) {
+		if (stdoutDescriptor >= 0) closeSync(stdoutDescriptor);
+		if (stderrDescriptor >= 0) closeSync(stderrDescriptor);
 		await rm(outputSpoolRoot, { recursive: true, force: true });
 		const spawnError =
 			error instanceof Error ? error : new Error(String(error));
@@ -255,14 +264,22 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 	}
 
 	try {
-		await options?.beforeSpawn?.();
 		if (signal?.aborted) {
+			closeSync(stdoutDescriptor);
+			closeSync(stderrDescriptor);
 			return {
 				kind: "aborted",
 				reason: signal.reason,
 				stdout: "",
 				stderr: "",
 			};
+		}
+		try {
+			options?.beforeSpawn?.();
+		} catch (error) {
+			closeSync(stdoutDescriptor);
+			closeSync(stderrDescriptor);
+			throw error;
 		}
 		return await new Promise((resolve) => {
 			let settled = false;
@@ -286,6 +303,8 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 					windowsHide: true,
 				});
 			} catch (error) {
+				closeSync(stdoutDescriptor);
+				closeSync(stderrDescriptor);
 				const spawnError =
 					error instanceof Error ? error : new Error(String(error));
 				resolve({
@@ -297,10 +316,14 @@ export const runProviderProcess: ProviderProcessExecutor = async (
 				return;
 			}
 
-			const stdoutPath = join(outputSpoolRoot, PROVIDER_STDOUT_SPOOL);
-			const stderrPath = join(outputSpoolRoot, PROVIDER_STDERR_SPOOL);
-			const stdoutSink = createWriteStream(stdoutPath, { flags: "wx" });
-			const stderrSink = createWriteStream(stderrPath, { flags: "wx" });
+			const stdoutSink = createWriteStream(stdoutPath, {
+				fd: stdoutDescriptor,
+				autoClose: true,
+			});
+			const stderrSink = createWriteStream(stderrPath, {
+				fd: stderrDescriptor,
+				autoClose: true,
+			});
 			const stdoutFinished = finished(stdoutSink);
 			const stderrFinished = finished(stderrSink);
 			if (child.stdout === null) {

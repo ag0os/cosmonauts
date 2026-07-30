@@ -1,3 +1,4 @@
+import { readFileSync, realpathSync } from "node:fs";
 import { readFile, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
@@ -96,6 +97,68 @@ export async function readAnalysisExecutionAuthorization(
 			);
 		}
 		parsed = JSON.parse(contents);
+	} catch (error) {
+		if (
+			error instanceof Error &&
+			error.message.includes("outside the target project")
+		) {
+			throw error;
+		}
+		return { canonicalProjectRoot, consented: false };
+	}
+	const state = parseConsentState(parsed);
+	if (state === null) return { canonicalProjectRoot, consented: false };
+
+	const projectConsent = state.projects[canonicalProjectRoot];
+	return {
+		canonicalProjectRoot,
+		consented:
+			Array.isArray(projectConsent?.providers) &&
+			projectConsent.providers.includes(options.providerId),
+	};
+}
+
+/**
+ * Synchronous counterpart used by the final pre-spawn validation.
+ *
+ * Keeping the consent and executable checks in one event-loop turn prevents
+ * either asynchronous precondition from becoming stale while the other waits.
+ */
+export function readAnalysisExecutionAuthorizationSync(
+	options: AnalysisExecutionConsentOptions,
+): AnalysisExecutionAuthorization | null {
+	const projectRoot = resolve(options.projectRoot);
+	const userStateRoot = resolve(
+		options.userStateRoot ?? defaultUserStateRoot(),
+	);
+	if (isPathInside(projectRoot, userStateRoot)) {
+		throw new Error(
+			"Analysis execution consent state must be held outside the target project.",
+		);
+	}
+
+	const consentPath = join(userStateRoot, ANALYSIS_EXECUTION_CONSENT_FILE);
+	let canonicalProjectRoot: string;
+	try {
+		canonicalProjectRoot = realpathSync(projectRoot);
+	} catch {
+		return null;
+	}
+	if (isPathInside(canonicalProjectRoot, userStateRoot)) {
+		throw new Error(
+			"Analysis execution consent state must be held outside the target project.",
+		);
+	}
+
+	let parsed: unknown;
+	try {
+		const consentRealpath = realpathSync(consentPath);
+		if (isPathInside(canonicalProjectRoot, consentRealpath)) {
+			throw new Error(
+				"Analysis execution consent state must be held outside the target project.",
+			);
+		}
+		parsed = JSON.parse(readFileSync(consentPath, "utf8"));
 	} catch (error) {
 		if (
 			error instanceof Error &&
