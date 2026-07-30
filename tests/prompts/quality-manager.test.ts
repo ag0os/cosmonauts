@@ -61,6 +61,12 @@ describe("quality-manager prompt", () => {
 		expect(content).toContain(
 			"Fall back to `origin/main` only when no local base branch exists.",
 		);
+		expect(content).toContain(
+			"scope all changed-file lists, diffs, and detected-analysis-tool audit commands from that merge-base",
+		);
+		expect(content).toContain(
+			"already merged integration history; treat them as outside the review scope and do not flag them as out-of-scope violations for the feature branch.",
+		);
 
 		// Critical Rule 2 now prefers the local base branch.
 		expect(content).toContain(
@@ -68,6 +74,20 @@ describe("quality-manager prompt", () => {
 		);
 		expect(content).not.toContain(
 			"**Always review against `main` (or `origin/main` when available).**",
+		);
+		expect(content).toContain(
+			"Do not review against stale `origin/main` when a local `main` or `master` exists, and do not report already-merged local-base history as a feature-branch scope violation.",
+		);
+	});
+
+	it("pins feature-branch audits to the literal local merge-base SHA", async () => {
+		const content = await readPrompt();
+
+		expect(content).toContain(
+			"include one audit claim for **feature-branch reviews only** (skip for working-tree reviews on the base branch). Append `--base <merge-base-sha>` to the tool's listed audit command, substituting the actual SHA resolved in step 2 (not the shell variable name).",
+		);
+		expect(content).toContain(
+			"The verifier runs in a separate session with no shell state, so the command must have the value baked in.",
 		);
 	});
 
@@ -153,6 +173,42 @@ describe("quality-manager prompt", () => {
 		);
 	});
 
+	it("parses legacy QC criteria into their existing verification tracks", async () => {
+		const content = await readPrompt();
+
+		expect(content).toContain(
+			"The Quality Contract can appear in two formats. Support both in the same invocation:",
+		);
+		expect(content).toContain("1. **Legacy `QC-*` list entries.**");
+		for (const field of [
+			"**id** — the `QC-NNN` identifier",
+			"**category** — one of `correctness`, `architecture`, `integration`, `behavior`",
+			"**criterion** — the testable assertion",
+			"**verification** — `verifier`, `reviewer`, or `manual`",
+			"**command** — present only for `verifier` type",
+		]) {
+			expect(content).toContain(field);
+		}
+		expect(content).toContain(
+			'log a warning (e.g., "Warning: could not parse QC entry — skipping") and continue.',
+		);
+		expect(content).toContain(
+			"Hold the parsed legacy criteria in working state as three lists: `verifier_criteria`",
+		);
+		expect(content).toContain(
+			"append one claim per entry in `verifier_criteria`",
+		);
+		expect(content).toContain(
+			"the full `reviewer_criteria` list from step 2.5",
+		);
+		expect(content).toContain(
+			"confirm all non-manual legacy contract criteria have passed",
+		);
+		expect(content).toContain(
+			"`QC-NNN [manual]: requires human verification — <criterion text>`",
+		);
+	});
+
 	it("reports abstract Quality Contract gate ladders without replacing legacy QC criteria", async () => {
 		// @cosmo-behavior plan:artifact-format-redesign#B-014
 		const content = await readPrompt();
@@ -167,10 +223,21 @@ describe("quality-manager prompt", () => {
 		expect(content).toContain(
 			"Universal gate rows map to sign-off checks or explicit manual verification when safe",
 		);
-		expect(content).toContain("`degraded_gates`");
-		expect(content).toContain("unbound/not enforced");
-		expect(content).toContain("`protocol_pending_gates`");
-		expect(content).toContain("protocol pending");
+		expect(content).toContain(
+			"`universal_gate_status` — one record per row with `Tier: universal`.",
+		);
+		expect(content).toContain(
+			"`degraded_gates` — every `Tier: bindable` row with `Binding state: unbound`.",
+		);
+		expect(content).toContain(
+			"Report these as unbound/not enforced, with the gate kind, threshold, and degradation notes. They are not silent passes and are not hard failures in this generic prompt contract.",
+		);
+		expect(content).toContain(
+			"`protocol_pending_gates` — every `Tier: bindable` row with `Binding state: bound` but no usable `Protocol` value.",
+		);
+		expect(content).toContain(
+			"Report these as protocol pending unless a legacy criterion (`QC-*`) or a detected project-native analysis tool separately supplies an executable claim for the same gate kind.",
+		);
 		expect(content).toContain(
 			"Legacy `verifier_criteria`, `reviewer_criteria`, and `manual_criteria` behavior is unchanged for old `QC-*` entries.",
 		);
@@ -181,5 +248,82 @@ describe("quality-manager prompt", () => {
 		expect(content).toContain("Degraded bindable gates:");
 		expect(content).toContain("Protocol-pending gates:");
 		expect(content).toContain("Legacy manual criteria:");
+	});
+
+	it("carries stable finding ids through disposition lifecycle and sign-off", async () => {
+		const content = await readPrompt();
+
+		expect(content).toContain(
+			"the durable record that carries every finding forward by id across rounds",
+		);
+		expect(content).toContain(
+			"Each reviewer finding has a stable id (`F-###`), each integration finding (`I-###`), each failed contract criterion (`QC-###`), and specialist findings keep their own ids (`UR-###`, `SR-###`, etc.).",
+		);
+		expect(content).toContain(
+			"`open` → `routed-to-fixer` / `routed-to-task` → `verified-resolved`",
+		);
+		expect(content).toContain(
+			"The terminal dispositions are `verified-resolved`, `dismissed-low-confidence`, and `deferred`; `open` and `routed-*` are never terminal.",
+		);
+		expect(content).toContain(
+			"every entry must hold a terminal disposition (`verified-resolved` / `dismissed-low-confidence` / `deferred`) before you exit",
+		);
+		expect(content).toContain(
+			'A fresh re-review that simply returns "no findings" does NOT close a prior finding.',
+		);
+		expect(content).toContain(
+			"A finding is resolved only when its specific fix is verified present",
+		);
+	});
+
+	it("sweeps migration-shaped changes across runtime tests and docs", async () => {
+		const content = await readPrompt();
+
+		expect(content).toContain(
+			"For any migration-shaped task or diff that moves or renames files, directories, exported symbols, commands, config keys, or hard-coded paths",
+		);
+		expect(content).toContain(
+			"runtime source directories (`lib/`, `cli/`, `bin/`, `domains/`, `bundled/`, `scripts/`) plus `tests/`, `docs/`, and any other tracked references.",
+		);
+		expect(content).toContain(
+			"Prioritize runtime source findings over tests/docs cleanup, and route stale runtime references as correctness blockers.",
+		);
+		expect(content).toContain(
+			"otherwise add explicit verifier claims that grep/search for the old identifiers or paths named by the migration.",
+		);
+	});
+
+	it("constrains auxiliary analysis remediation to the narrowest blocking fix", async () => {
+		const content = await readPrompt();
+
+		expect(content).toContain(
+			"make the NARROWEST change that clears the specific flagged finding at the flagged location",
+		);
+		expect(content).toContain(
+			"do NOT refactor passing code to satisfy a metric, and do NOT enlarge the diff beyond what the finding requires.",
+		);
+		expect(content).toContain(
+			"Only act on auxiliary-tool findings that block a binding gate.",
+		);
+		expect(content).toContain(
+			"never a broad refactor of already-passing code inside a remediation pass.",
+		);
+	});
+
+	it("limits remediation to three rounds and exits with a failure summary", async () => {
+		const content = await readPrompt();
+
+		expect(content).toContain(
+			"three remediation rounds, then escalate with a clear failure summary",
+		);
+		expect(content).toContain(
+			"Run at most 3 quality rounds in a single invocation. If still failing, exit with a clear failure summary.",
+		);
+		expect(content).toContain(
+			"If the round budget is exhausted with P0/P1 findings still non-terminal, do not force a stop: exit with a failure summary instead",
+		);
+		expect(content).toContain(
+			"**Bound remediation loops to 3 rounds.** Escalate if not converging.",
+		);
 	});
 });
