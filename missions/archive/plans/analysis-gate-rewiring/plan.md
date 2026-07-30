@@ -1,8 +1,8 @@
 ---
 title: Analysis gate rewiring
-status: active
+status: completed
 createdAt: '2026-07-29T00:00:00.000Z'
-updatedAt: '2026-07-29T00:00:00.000Z'
+updatedAt: '2026-07-30T19:28:49.014Z'
 ---
 
 ## Overview
