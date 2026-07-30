@@ -10,6 +10,10 @@ const WORKER_PROMPT_PATH = new URL(
 	"../../bundled/coding/prompts/worker.md",
 	import.meta.url,
 );
+const GATE_CONTRACTS_PATH = new URL(
+	"../../domains/shared/skills/work-artifacts/references/gate-contracts.md",
+	import.meta.url,
+);
 
 async function readPrompt() {
 	return readFile(PROMPT_PATH, "utf-8");
@@ -101,6 +105,11 @@ describe("quality-manager prompt", () => {
 		expect(content).toContain(
 			'call `analysis_audit({ base: "<literal-merge-base-sha>" })` yourself',
 		);
+		// The Expected clause is the literal SHA, not the placeholder: prove the
+		// prompt requires substitution and rejects a ref or shell variable.
+		expect(content).toContain(
+			"substituting the actual resolved SHA rather than the placeholder, a shell variable name, or a branch/ref name",
+		);
 		expect(content).toContain(
 			"Consume the complete structured tool result directly, including its per-gate verdict evidence and gate-aligned findings.",
 		);
@@ -117,21 +126,48 @@ describe("quality-manager prompt", () => {
 			'call `analysis_audit({ base: "<literal-HEAD-sha>" })` yourself',
 		);
 		expect(content).toContain(
+			"substituting the actual SHA returned by `git rev-parse HEAD`",
+		);
+		expect(content).toContain(
 			"Do not skip the audit merely because there is no branch range.",
 		);
 	});
 
 	// @cosmo-behavior plan:analysis-gate-rewiring#B-015
 	it("uses runtime unbound status for degraded gate reporting", async () => {
-		const content = await readPrompt();
+		const [content, gateContracts] = await Promise.all([
+			readPrompt(),
+			readFile(GATE_CONTRACTS_PATH, "utf-8"),
+		]);
 
 		expect(content).toContain(
 			"Runtime status is authoritative evidence for this invocation; do not rewrite the plan row.",
 		);
+		// "genuinely" unbound: only a real absence of binding degrades. A failed
+		// binding is a different outcome and must not reach degraded reporting.
 		expect(content).toContain(
-			"report the gate as `unbound/not enforced — reviewer judgment required`",
+			"When its required capability or the changed-scope audit capability is genuinely `unbound`, report the gate as `unbound/not enforced — reviewer judgment required` in `degraded_gates`",
 		);
 		expect(content).toContain("This is neither a pass nor a hard failure.");
+
+		// Resolution is mutually exclusive — a row may not be both completed and
+		// degraded, nor both failed-to-run and protocol-pending.
+		expect(content).toContain(
+			"Each resolved row lands in exactly one of `completed_bound_gates`, `degraded_gates`, or `failed_to_run_gates`.",
+		);
+		expect(content).toContain(
+			"A row must never appear as both completed and degraded, or both failed-to-run and protocol-pending.",
+		);
+
+		// The second declared seam: the generic vocabulary the prompt resolves against.
+		expect(gateContracts).toContain("## Resolution Outcomes");
+		expect(gateContracts).toContain(
+			"**Genuinely unbound.** When the binding is `unbound`, record a degraded state: the gate is not enforced and requires reviewer judgment.",
+		);
+		expect(gateContracts).toContain(
+			"This outcome is blocking, never a pass, and never a silent degradation to the unbound state.",
+		);
+		expect(gateContracts).not.toContain("Fallow");
 	});
 
 	// @cosmo-behavior plan:analysis-gate-rewiring#B-016
@@ -153,6 +189,14 @@ describe("quality-manager prompt", () => {
 		);
 		expect(content).toContain(
 			"If a bound gate has no classifiable per-gate verdict, report it as `failed-to-run`, never as a pass.",
+		);
+		// The Expected clause requires the remediator to work under the
+		// minimal-change constraint; routing alone does not prove it.
+		expect(content).toContain(
+			"the remediation prompt MUST carry an explicit minimal-change constraint: make the NARROWEST change that clears the specific flagged finding at the flagged location",
+		);
+		expect(content).toContain(
+			"do NOT enlarge the diff beyond what the finding requires",
 		);
 	});
 

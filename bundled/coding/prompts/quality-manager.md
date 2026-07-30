@@ -71,12 +71,17 @@ After parsing `gate_ladder_rows`, classify them into reporting state without inv
 
 #### Resolve bindable gates against runtime status
 
-For bindable `duplication`, `complexity`, and `dead-code` rows, call `analysis_status` yourself before deciding whether the declared ladder row is enforceable. Runtime status is authoritative evidence for this invocation; do not rewrite the plan row. Resolve each gate as follows:
+For every bindable row whose gate kind has a runtime capability — `duplication`, `complexity`, `dead-code`, and `boundary-conformance` — call `analysis_status` yourself before deciding whether the declared ladder row is enforceable. Do not resolve only the gates the changed-scope audit happens to cover: a bindable gate kind with a runtime capability that you never resolve can hide a failed binding behind a protocol-pending label. Runtime status is authoritative evidence for this invocation; do not rewrite the plan row.
 
-- When its required capability or the changed-scope audit capability is genuinely `unbound`, report the gate as `unbound/not enforced — reviewer judgment required` in `degraded_gates`. This is neither a pass nor a hard failure.
-- When status reports `failed`, status itself errors, or a bound capability invocation errors, report the affected gate as `failed-to-run` and blocking, distinct from degraded/unbound. Put it in `failed_to_run_gates`; never convert it to a pass or an unbound state.
-- When a requested metric or scope is unsupported, degrade only that metric or scope. Never treat an unsupported metric as zero and never silently widen the request.
-- When the required capabilities are bound, remove the row from `protocol_pending_gates` and execute the changed-scope audit yourself. Do not require a prose `Protocol` value when the runtime binding supplies the direct capability path.
+Runtime resolution is exclusive. Each resolved row lands in exactly one of `completed_bound_gates`, `degraded_gates`, or `failed_to_run_gates`. Before recording the runtime outcome, remove the row from every other bucket, including the `degraded_gates` or `protocol_pending_gates` entry derived from its declared `Binding state`. The declared state is retained only as provenance in the report line; it never coexists with a contradicting runtime outcome. A row must never appear as both completed and degraded, or both failed-to-run and protocol-pending.
+
+Resolve each gate as follows:
+
+- When its required capability or the changed-scope audit capability is genuinely `unbound`, report the gate as `unbound/not enforced — reviewer judgment required` in `degraded_gates`, removing it from `protocol_pending_gates` and `completed_bound_gates`. This is neither a pass nor a hard failure.
+- When status reports `failed`, status itself errors, or a bound capability invocation errors, report the affected gate as `failed-to-run` and blocking, distinct from degraded/unbound. Put it in `failed_to_run_gates` and remove it from `degraded_gates` and `protocol_pending_gates`; never convert it to a pass or an unbound state.
+- When a requested metric or scope is unsupported, degrade only that metric or scope. Never treat an unsupported metric as zero and never silently widen the request. If a gate's only supported scope is wider than the review scope, record that gate as degraded for this invocation rather than widening it.
+- When the required capabilities are bound, remove the row from `protocol_pending_gates` and `degraded_gates`, and execute its capability yourself. Do not require a prose `Protocol` value when the runtime binding supplies the direct capability path.
+- A bound `boundary-conformance` row is resolved by calling its own capability, not by the changed-scope audit. A failed boundary binding or invocation is `failed-to-run` and blocking; genuinely unbound boundary rules stay degraded.
 
 Use the literal `ANALYSIS_BASE_SHA` established in step 2:
 
@@ -244,7 +249,7 @@ After each remediation pass:
 Before exiting successfully:
 - If `activePlanSlug` exists and `latest_integration_overall` is `missing`, spawn `integration-verifier` once, then read `missions/plans/<activePlanSlug>/integration-report.md` before deciding merge-readiness.
 - Confirm check commands pass.
-- Confirm every runtime-bound `duplication`, `complexity`, and `dead-code` gate has a classifiable `pass` from the Quality Manager's latest direct changed-scope result. Any entry in `failed_to_run_gates`, or any bound gate without a classifiable verdict, blocks merge-readiness.
+- Confirm every runtime-bound bindable gate — `duplication`, `complexity`, `dead-code`, and `boundary-conformance` — has a classifiable `pass` from the Quality Manager's own latest direct capability result. Any entry in `failed_to_run_gates`, or any bound gate without a classifiable verdict, blocks merge-readiness. A bindable gate kind with a runtime capability that was never resolved is itself a blocker: it may not reach sign-off as protocol-pending.
 - Confirm all review reports from the final round have `Overall: correct` or `Overall: no findings in scope`.
 - **Ledger gate.** Reconcile the `findings_ledger`: every entry must hold a terminal disposition (`verified-resolved` / `dismissed-low-confidence` / `deferred`) before you exit — no entry may remain `open` or merely `routed-*`. Do not rely on the merged findings list of the final round being empty alone — a fresh round can come back empty while a prior finding is still unresolved. Apply by priority:
   - **P0/P1 (severity `high`)** still `open`/`routed-*` without `verified-resolved` → **block `merge-ready`**. Continue remediation or exit with a failure summary naming the unresolved findings. A high/P1 finding is never eligible for `deferred`.

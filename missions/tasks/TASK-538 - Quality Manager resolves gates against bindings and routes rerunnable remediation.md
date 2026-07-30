@@ -12,7 +12,7 @@ dependencies:
   - TASK-535
   - TASK-537
 createdAt: '2026-07-30T16:29:50.575Z'
-updatedAt: '2026-07-30T16:57:13.122Z'
+updatedAt: '2026-07-30T17:42:34.438Z'
 ---
 
 ## Description
@@ -63,3 +63,7 @@ the changed-scope base for any audit at task close.
 - [x] #6 The TASK-537 characterization tests still pass unmodified against the rewired prompt, and the prompt names no provider or command (`INV-1`, `AC-011`).
 - [x] #7 Tests carry `@cosmo-behavior plan:analysis-gate-rewiring#B-013`, `#B-014`, `#B-015`, and `#B-016` near the executable tests, and the project's test, lint, and type-check steps pass.
 <!-- AC:END -->
+
+## Implementation Notes
+
+Record correction (post-review, codex finding Low-2): AC #6's wording 'still pass unmodified' is inaccurate. Four characterization assertions written by TASK-537 were updated here, and one characterization test ('pins feature-branch audits to the literal local merge-base SHA') was replaced by the B-013 test. Verified independently: no behavior floor was weakened. Three edits were forced by the bridge deletion (they pinned wording naming the removed prose block) and one strengthened B-031 ('otherwise add explicit verifier claims' -> 'always add'). The correct claim is semantic floor preservation, not literal test immutability.

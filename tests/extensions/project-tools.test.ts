@@ -353,6 +353,19 @@ describe("project-tools extension", () => {
 				);
 			}
 			expect(block).not.toMatch(/command|executable|npx/iu);
+
+			// Regression guard for the deleted legacy bridge: asserting the
+			// capability block is present does not prove the prose block is gone,
+			// so reject the legacy heading and its runnable audit command across
+			// the WHOLE injected prompt, not just the capability block. Without
+			// this, reintroducing both surfaces would still pass the suite.
+			expect(injected.systemPrompt).not.toContain(
+				`## ${["Detected", "Analysis", "Tools"].join(" ")}`,
+			);
+			expect(injected.systemPrompt).not.toMatch(
+				new RegExp(`\\b${["fal", "low"].join("")}\\s+(?:audit|check)\\b`, "iu"),
+			);
+			expect(injected.systemPrompt).not.toContain("--base <merge-base-sha>");
 		}
 	});
 

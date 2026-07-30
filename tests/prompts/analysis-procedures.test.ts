@@ -19,10 +19,24 @@ describe("analysis role procedures", () => {
 		expect(content).toContain(
 			"capability, literal base, scope, and metric exactly as supplied",
 		);
-		expect(content).toContain("`completed`");
-		expect(content).toContain("`unbound`");
-		expect(content).toContain("`unsupported`");
-		expect(content).toContain("`failed`");
+		// The Expected clause requires the four outcomes to be reported
+		// *distinctly*. Asserting the bare labels would pass on any prompt that
+		// merely mentions them, so pin each outcome's operative semantics.
+		expect(content).toContain(
+			"Report the capability outcome separately from the claim's binary result:",
+		);
+		expect(content).toContain(
+			"`completed` — the named tool returned a complete structured result. Evaluate the claim only from that result.",
+		);
+		expect(content).toContain(
+			"`unbound` — runtime status says the capability has no binding. Report that the required evidence is unavailable; do not treat it as completed or clean.",
+		);
+		expect(content).toContain(
+			"`unsupported` — the requested scope or metric is unsupported. Report exactly what is unsupported; do not widen the request or treat the missing evidence as clean.",
+		);
+		expect(content).toContain(
+			"`failed` — status reports a failed binding or the named tool fails. Preserve the failure evidence and report that validation failed to run; never infer a result from partial output.",
+		);
 		expect(content).toContain(
 			'`trace` and `fix-preview` carry `verdict: "not-applicable"`',
 		);
