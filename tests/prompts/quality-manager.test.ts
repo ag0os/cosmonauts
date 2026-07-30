@@ -6,9 +6,23 @@ const PROMPT_PATH = new URL(
 	"../../bundled/coding/prompts/quality-manager.md",
 	import.meta.url,
 );
+const WORKER_PROMPT_PATH = new URL(
+	"../../bundled/coding/prompts/worker.md",
+	import.meta.url,
+);
 
 async function readPrompt() {
 	return readFile(PROMPT_PATH, "utf-8");
+}
+
+function migrationParagraph(content: string, marker: string) {
+	const paragraph = content
+		.split("\n\n")
+		.find((candidate) => candidate.includes(marker));
+	if (paragraph === undefined) {
+		throw new Error(`Missing migration paragraph containing: ${marker}`);
+	}
+	return paragraph;
 }
 
 describe("quality-manager prompt", () => {
@@ -351,7 +365,49 @@ describe("quality-manager prompt", () => {
 			"Prioritize runtime source findings over tests/docs cleanup, and route stale runtime references as correctness blockers.",
 		);
 		expect(content).toContain(
-			"otherwise add explicit verifier claims that grep/search for the old identifiers or paths named by the migration.",
+			"always add explicit verifier claims that grep/search for the old identifiers or paths named by the migration.",
+		);
+	});
+
+	// @cosmo-behavior plan:analysis-gate-rewiring#B-031
+	it("preserves explicit migration reference searches even when dead code is bound", async () => {
+		const [qualityManagerContent, workerContent] = await Promise.all([
+			readPrompt(),
+			readFile(WORKER_PROMPT_PATH, "utf-8"),
+		]);
+		const migrationInstructions = [
+			migrationParagraph(
+				qualityManagerContent,
+				"For any migration-shaped task or diff",
+			),
+			migrationParagraph(
+				workerContent,
+				"**Migration-shaped work has a pre-completion sweep.**",
+			),
+		];
+
+		for (const instructions of migrationInstructions) {
+			expect(instructions).toContain(
+				"When the `dead-code` capability is bound, run it over the migration scope as additive evidence.",
+			);
+			expect(instructions).toContain(
+				"Always run an explicit old-identifier/path search across runtime source, tests, and docs, whether or not the `dead-code` capability is bound.",
+			);
+			expect(instructions).toContain(
+				"Structural reachability cannot prove stale strings absent.",
+			);
+			expect(instructions).not.toContain("Fallow");
+			expect(instructions).not.toMatch(
+				/\b(?:bunx|npx|npm exec|pnpm exec|yarn dlx)\b|analysis_[a-z_]+\s*\(/u,
+			);
+		}
+
+		const workerInstructions = migrationInstructions[1];
+		expect(workerInstructions).toContain(
+			"Search runtime source first (`lib/`, `cli/`, `bin/`, `domains/`, `bundled/`, `scripts/`), then tests and docs (`tests/`, `docs/`, and any other tracked references).",
+		);
+		expect(workerInstructions).toContain(
+			"do not treat a tests/docs-only sweep as sufficient",
 		);
 	});
 

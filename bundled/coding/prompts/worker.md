@@ -56,7 +56,7 @@ When the plan or design names a rule and identifies multiple seams, files, or ca
 
 **Direct fixes stay lighter.** Direct fixes still require a regression test first, but no marker ceremony unless the fix is tied to a plan.
 
-**Migration-shaped work has a pre-completion sweep.** If the task moves or renames a file, directory, exported symbol, command, config key, or hard-coded path, grep the entire repository source tree for the old identifier/path before marking the task done. Search runtime source first (`lib/`, `cli/`, `bin/`, `domains/`, `bundled/`, `scripts/`), then tests and docs (`tests/`, `docs/`, and any other tracked references). Update every stale reference you find; do not treat a tests/docs-only sweep as sufficient, because stale runtime source can break later stages mid-run.
+**Migration-shaped work has a pre-completion sweep.** If the task moves or renames a file, directory, exported symbol, command, config key, or hard-coded path, perform the sweep before marking the task done. When the `dead-code` capability is bound, run it over the migration scope as additive evidence. Always run an explicit old-identifier/path search across runtime source, tests, and docs, whether or not the `dead-code` capability is bound. Structural reachability cannot prove stale strings absent. Search runtime source first (`lib/`, `cli/`, `bin/`, `domains/`, `bundled/`, `scripts/`), then tests and docs (`tests/`, `docs/`, and any other tracked references). Update every stale reference you find; do not treat a tests/docs-only sweep as sufficient, because stale runtime source can break later stages mid-run.
 
 ### 6. Check ACs Incrementally
 
