@@ -1429,74 +1429,17 @@ describe("project-tools extension", () => {
 				})),
 			);
 		});
-
-		test("detects fallow from fallow.toml", async () => {
-			await writeFile(join(tmpDir, "fallow.toml"), "");
-			const result = (await fireBeforeAgentStart(tmpDir)) as {
-				systemPrompt: string;
-			};
-			expect(result.systemPrompt).toContain("## Detected Analysis Tools");
-			expect(result.systemPrompt).toContain("**fallow**");
-			expect(result.systemPrompt).toContain("`fallow.toml`");
-		});
-
-		test("detects fallow from .fallowrc.json", async () => {
-			await writeFile(join(tmpDir, ".fallowrc.json"), "{}");
-			const result = (await fireBeforeAgentStart(tmpDir)) as {
-				systemPrompt: string;
-			};
-			expect(result.systemPrompt).toContain("**fallow**");
-			expect(result.systemPrompt).toContain("`.fallowrc.json`");
-		});
-
-		test("detects fallow from .fallow.toml", async () => {
-			await writeFile(join(tmpDir, ".fallow.toml"), "");
-			const result = (await fireBeforeAgentStart(tmpDir)) as {
-				systemPrompt: string;
-			};
-			expect(result.systemPrompt).toContain("**fallow**");
-			expect(result.systemPrompt).toContain("`.fallow.toml`");
-		});
-
-		test("detects fallow from package.json devDependencies", async () => {
-			const result = await detectFallowPackage({
-				devDependencies: { fallow: "^1.0.0" },
-			});
-			expect(result.systemPrompt).toContain("**fallow**");
-			expect(result.systemPrompt).toContain("`package.json`");
-		});
-
-		test("detects fallow from package.json dependencies", async () => {
-			const result = await detectFallowPackage({
-				dependencies: { fallow: "^1.0.0" },
-			});
-			expect(result.systemPrompt).toContain("**fallow**");
-		});
-
-		test("prefers config file over package.json — fallow appears exactly once", async () => {
-			await writeFile(join(tmpDir, "fallow.toml"), "");
-			await writeFile(
-				join(tmpDir, "package.json"),
-				JSON.stringify({ devDependencies: { fallow: "^1.0.0" } }),
-			);
-			const result = (await fireBeforeAgentStart(tmpDir)) as {
-				systemPrompt: string;
-			};
-			expect(result.systemPrompt).toContain("`fallow.toml`");
-			expect(result.systemPrompt.match(/\*\*fallow\*\*/g)).toHaveLength(1);
-		});
 	});
 
-	describe("no tools detected", () => {
-		test("injects capability status when no legacy tools are configured", async () => {
+	describe("capability status injection", () => {
+		test("injects unbound capability status when no provider is configured", async () => {
 			const result = (await fireBeforeAgentStart(tmpDir)) as {
 				systemPrompt: string;
 			};
 			expect(result.systemPrompt).toContain("## Analysis Capability Status");
-			expect(result.systemPrompt).not.toContain("## Detected Analysis Tools");
 		});
 
-		test("omits only the legacy block when package.json has no fallow entry", async () => {
+		test("injects unbound capability status when package.json has no provider entry", async () => {
 			await writeFile(
 				join(tmpDir, "package.json"),
 				JSON.stringify({ devDependencies: { typescript: "^5.0.0" } }),
@@ -1505,7 +1448,6 @@ describe("project-tools extension", () => {
 				systemPrompt: string;
 			};
 			expect(result.systemPrompt).toContain("## Analysis Capability Status");
-			expect(result.systemPrompt).not.toContain("## Detected Analysis Tools");
 		});
 
 		test("still injects unbound status when package.json is unparseable", async () => {
@@ -1514,41 +1456,14 @@ describe("project-tools extension", () => {
 				systemPrompt: string;
 			};
 			expect(result.systemPrompt).toContain("## Analysis Capability Status");
-			expect(result.systemPrompt).not.toContain("## Detected Analysis Tools");
 		});
-	});
 
-	describe("system prompt injection", () => {
-		test("appends tools block after existing system prompt content", async () => {
-			await writeFile(join(tmpDir, "fallow.toml"), "");
+		test("appends capability status after existing system prompt content", async () => {
 			const result = (await fireBeforeAgentStart(tmpDir, "my base prompt")) as {
 				systemPrompt: string;
 			};
 			expect(result.systemPrompt).toMatch(/^my base prompt/);
-			expect(result.systemPrompt).toContain("## Detected Analysis Tools");
-		});
-
-		test("includes audit command in injected block", async () => {
-			await writeFile(join(tmpDir, "fallow.toml"), "");
-			const result = (await fireBeforeAgentStart(tmpDir)) as {
-				systemPrompt: string;
-			};
-			expect(result.systemPrompt).toContain("`npx fallow audit`");
-		});
-
-		test("includes tool description in injected block", async () => {
-			await writeFile(join(tmpDir, "fallow.toml"), "");
-			const result = (await fireBeforeAgentStart(tmpDir)) as {
-				systemPrompt: string;
-			};
-			expect(result.systemPrompt).toContain("TypeScript/JavaScript");
+			expect(result.systemPrompt).toContain("## Analysis Capability Status");
 		});
 	});
 });
-
-async function detectFallowPackage(packageJson: object): Promise<{
-	systemPrompt: string;
-}> {
-	await writeFile(join(tmpDir, "package.json"), JSON.stringify(packageJson));
-	return (await fireBeforeAgentStart(tmpDir)) as { systemPrompt: string };
-}

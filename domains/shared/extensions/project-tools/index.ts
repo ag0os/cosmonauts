@@ -17,7 +17,6 @@ import {
 import { loadProjectConfig } from "../../../../lib/config/index.ts";
 import { AnalysisProviderError } from "./analysis-provider-error.ts";
 import {
-	detectFallowSignal,
 	discoverFallowProvider,
 	FallowBindingUnavailableError,
 	type FallowExecutableResolutionKind,
@@ -31,13 +30,6 @@ export {
 } from "./analysis-provider-error.ts";
 
 const FALLOW_PROVIDER_ID = "fallow";
-
-interface AnalysisTool {
-	name: string;
-	configFile: string;
-	description: string;
-	auditCommand: string;
-}
 
 type FallowDiscovery = Awaited<ReturnType<typeof discoverFallowProvider>>;
 type DetectedFallowDiscovery = Extract<
@@ -137,37 +129,6 @@ const TraceTargetSchema = Type.Union([
 		{ additionalProperties: false },
 	),
 ]);
-
-function fallowTool(configFile: string): AnalysisTool {
-	return {
-		name: "fallow",
-		configFile,
-		description:
-			"TypeScript/JavaScript dead code, duplication, and complexity audit",
-		auditCommand: "npx fallow audit",
-	};
-}
-
-async function detectFallow(cwd: string): Promise<AnalysisTool | null> {
-	const signal = await detectFallowSignal(cwd);
-	return signal === null ? null : fallowTool(signal.path);
-}
-
-async function detectTools(cwd: string): Promise<AnalysisTool[]> {
-	const results = await Promise.all([
-		detectFallow(cwd),
-		// Future: detectReek(cwd), detectCargoUdeps(cwd), etc.
-	]);
-	return results.filter((t): t is AnalysisTool => t !== null);
-}
-
-function buildToolsBlock(tools: AnalysisTool[]): string {
-	const lines = tools.map(
-		(t) =>
-			`- **${t.name}** (\`${t.configFile}\`) — ${t.description}. Audit command: \`${t.auditCommand}\``,
-	);
-	return `## Detected Analysis Tools\n\n${lines.join("\n")}`;
-}
 
 function statusReason(binding: AnalysisBinding): string {
 	if (binding.state === "bound") {
@@ -830,14 +791,10 @@ export function createProjectToolsExtension(
 			clearSnapshot("Analysis session shut down.");
 		});
 		pi.on("before_agent_start", async (event, ctx) => {
-			const [tools, cachedSnapshot] = await Promise.all([
-				detectTools(ctx.cwd),
-				getSnapshot(ctx.cwd),
-			]);
+			const cachedSnapshot = await getSnapshot(ctx.cwd);
 			const snapshot = await refreshSnapshotBindings(cachedSnapshot);
 			const blocks = [
 				event.systemPrompt,
-				...(tools.length === 0 ? [] : [buildToolsBlock(tools)]),
 				buildCapabilityStatusBlock(
 					snapshot.bindings,
 					snapshot.resolutionProvenance,

@@ -11,7 +11,6 @@ replacement for Fallow's exhaustive reference.
 - Full documentation: <https://docs.fallow.tools>
 - Source documentation: <https://github.com/fallow-rs/docs>
 - Fallow repository: <https://github.com/fallow-rs/fallow>
-- Local agent skill: `bundled/coding/skills/fallow/SKILL.md`
 - Cosmonauts configuration: [`../fallow.toml`](../fallow.toml)
 - Provider-neutral runtime contract:
   [`analysis-capabilities.md`](analysis-capabilities.md)
@@ -501,11 +500,9 @@ including provider/version, supported scopes and metrics, and diagnostic
 unbound or failed state. The remaining tools return normalized findings, trace
 evidence, or preview proposals while preserving the complete Fallow payload.
 
-This runtime is shipped, but consumer prompt and allowlist rewiring belongs to
-the `analysis-gate-rewiring` slice. The legacy detected-command prompt remains
-temporarily so existing consumers are not stranded. The concrete Fallow skill
-also remains shipped until that slice removes it; direct links to it are
-therefore intentional in this document.
+Consumer prompts and allowlists use this provider-neutral capability surface
+and the shared analysis procedure. Provider-specific commands remain confined
+to diagnosis and maintenance documentation such as this page.
 
 ### CLI
 

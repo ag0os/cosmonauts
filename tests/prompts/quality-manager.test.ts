@@ -76,7 +76,7 @@ describe("quality-manager prompt", () => {
 			"Fall back to `origin/main` only when no local base branch exists.",
 		);
 		expect(content).toContain(
-			"scope all changed-file lists, diffs, and detected-analysis-tool audit commands from that merge-base",
+			"Scope all changed-file lists and diffs from that merge-base, and supply the literal merge-base SHA to the direct capability.",
 		);
 		expect(content).toContain(
 			"already merged integration history; treat them as outside the review scope and do not flag them as out-of-scope violations for the feature branch.",
@@ -91,17 +91,6 @@ describe("quality-manager prompt", () => {
 		);
 		expect(content).toContain(
 			"Do not review against stale `origin/main` when a local `main` or `master` exists, and do not report already-merged local-base history as a feature-branch scope violation.",
-		);
-	});
-
-	it("pins feature-branch audits to the literal local merge-base SHA", async () => {
-		const content = await readPrompt();
-
-		expect(content).toContain(
-			"include one audit claim for **feature-branch reviews only** (skip for working-tree reviews on the base branch). Append `--base <merge-base-sha>` to the tool's listed audit command, substituting the actual SHA resolved in step 2 (not the shell variable name).",
-		);
-		expect(content).toContain(
-			"The verifier runs in a separate session with no shell state, so the command must have the value baked in.",
 		);
 	});
 
@@ -312,7 +301,7 @@ describe("quality-manager prompt", () => {
 			"`protocol_pending_gates` — every `Tier: bindable` row with `Binding state: bound` but no usable `Protocol` value.",
 		);
 		expect(content).toContain(
-			"Report these as protocol pending unless a legacy criterion (`QC-*`) or a detected project-native analysis tool separately supplies an executable claim for the same gate kind.",
+			"Report these as protocol pending unless a legacy criterion (`QC-*`) or a project-native check separately supplies an executable claim for the same gate kind.",
 		);
 		expect(content).toContain(
 			"Legacy `verifier_criteria`, `reviewer_criteria`, and `manual_criteria` behavior is unchanged for old `QC-*` entries.",

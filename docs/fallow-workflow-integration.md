@@ -64,23 +64,17 @@ For Fallow's capability reference, commands, and limitations, see
   snapshots prove that status and capability calls do not write provider
   caches or source files.
 
-### Sequential follow-up boundaries
+### Delivery boundaries
 
-- `analysis-gate-rewiring` changes Quality Manager, Verifier, and Fixer
-  consumption to the generic capability tools, distributes the extension and
-  shared analysis skill to the seven v1 roles, removes the retained
-  detected-command prose, and deletes the concrete provider skill.
+- `analysis-gate-rewiring` delivered generic capability consumption for Quality
+  Manager, Verifier, and Fixer, and distributed the extension and shared
+  analysis skill to the seven v1 roles.
 - `analysis-investigation-procedures` teaches Planner, Plan Reviewer, Worker,
   and Refactorer the provider-neutral investigation, trace-before-delete, and
   task-close audit procedures.
 - CI enforcement, scheduled full-project stewardship, repository boundary-zone
   authoring, a second executable provider, and MCP/Node transports remain
   follow-up work outside those slices.
-
-Until `analysis-gate-rewiring` lands, the legacy detected-command block and the
-concrete Fallow skill remain intentionally shipped so existing consumers and
-links are not stranded. The runtime is additive; no completion claim for the
-remaining `analysis-tools` roadmap work is implied.
 
 ## Operating Model: Two Lanes
 
@@ -457,13 +451,12 @@ Before simplifying a complex function:
 - Prove explicit-base dirty scope, schema validation, cancellation, timeout,
   and whole-worktree no-write behavior.
 
-### Next: `analysis-gate-rewiring`
+### Delivered: `analysis-gate-rewiring`
 
 - Resolve final Quality Contract gates through capability bindings.
 - Run changed-scope gates for feature-branch and dirty-base reviews.
 - Route complete findings through narrow remediation and re-verification.
-- Replace the legacy detected-command bridge and concrete provider skill with
-  the shared provider-neutral procedure in the same slice.
+- Use the shared provider-neutral procedure across the seven v1 consumer roles.
 
 ### Then: `analysis-investigation-procedures`
 
