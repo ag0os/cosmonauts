@@ -1,14 +1,14 @@
 ---
 id: TASK-535
 title: 'Gate resolution vocabulary for bound, unbound, failed, and unsupported gates'
-status: In Progress
+status: Done
 priority: high
 labels:
   - 'plan:analysis-gate-rewiring'
   - backend
 dependencies: []
 createdAt: '2026-07-30T16:29:02.078Z'
-updatedAt: '2026-07-30T16:35:00.204Z'
+updatedAt: '2026-07-30T16:38:08.713Z'
 ---
 
 ## Description
@@ -43,9 +43,11 @@ base for any audit at task close.
 - [x] #3 The unsupported-metric outcome degrades only the unavailable metric and is never treated as zero (`AC-007`, `D-016`).
 - [x] #4 The amendment introduces no capability or gate name that `analysis-capability-runtime` did not already define (`AC-001`).
 - [x] #5 `gate-contracts.md` still contains no concrete provider name, tool name, or runnable command, and the existing gate-kind, tier, binding-state, artifact-conformance-scope, and ladder-shape sections remain intact (`INV-1`).
-- [ ] #6 Existing generic-artifact content tests covering `gate-contracts.md` still pass, and the project's test, lint, and type-check steps pass.
+- [x] #6 Existing generic-artifact content tests covering `gate-contracts.md` still pass, and the project's test, lint, and type-check steps pass.
 <!-- AC:END -->
 
 ## Implementation Notes
 
 partial
+
+AC 6 lint gate satisfied after 23561a7 excluded the generated missions/tasks/config.json from Biome; that failure was pre-existing Drive/CLI formatting churn, not this task's change. Work committed at 241df4f.
