@@ -91,6 +91,68 @@ describe("quality-manager prompt", () => {
 		);
 	});
 
+	// @cosmo-behavior plan:analysis-gate-rewiring#B-013
+	it("runs bound feature branch gates directly through the changed scope capability", async () => {
+		const content = await readPrompt();
+
+		expect(content).toContain(
+			'call `analysis_audit({ base: "<literal-merge-base-sha>" })` yourself',
+		);
+		expect(content).toContain(
+			"Consume the complete structured tool result directly, including its per-gate verdict evidence and gate-aligned findings.",
+		);
+		expect(content).toContain(
+			"Do not synthesize an audit command, add an audit claim to the verifier, or use the verifier as transport for these findings.",
+		);
+	});
+
+	// @cosmo-behavior plan:analysis-gate-rewiring#B-014
+	it("runs bound dirty base gates from an explicit HEAD base", async () => {
+		const content = await readPrompt();
+
+		expect(content).toContain(
+			'call `analysis_audit({ base: "<literal-HEAD-sha>" })` yourself',
+		);
+		expect(content).toContain(
+			"Do not skip the audit merely because there is no branch range.",
+		);
+	});
+
+	// @cosmo-behavior plan:analysis-gate-rewiring#B-015
+	it("uses runtime unbound status for degraded gate reporting", async () => {
+		const content = await readPrompt();
+
+		expect(content).toContain(
+			"Runtime status is authoritative evidence for this invocation; do not rewrite the plan row.",
+		);
+		expect(content).toContain(
+			"report the gate as `unbound/not enforced — reviewer judgment required`",
+		);
+		expect(content).toContain("This is neither a pass nor a hard failure.");
+	});
+
+	// @cosmo-behavior plan:analysis-gate-rewiring#B-016
+	it("separates failed to run gates and routes findings for direct replay", async () => {
+		const content = await readPrompt();
+
+		expect(content).toContain(
+			"report the affected gate as `failed-to-run` and blocking, distinct from degraded/unbound",
+		);
+		expect(content).toContain(
+			"Route the exact capability request — capability plus its literal base, scope, and metric when applicable",
+		);
+		expect(content).toContain("file:line, category, and quoted message");
+		expect(content).toContain(
+			"Never copy a model-authored payload as the remediation contract.",
+		);
+		expect(content).toContain(
+			"rerun that exact request before editing and treat its own fresh structured result as ground truth",
+		);
+		expect(content).toContain(
+			"If a bound gate has no classifiable per-gate verdict, report it as `failed-to-run`, never as a pass.",
+		);
+	});
+
 	it("routes integration findings through the existing remediation flow", async () => {
 		const content = await readPrompt();
 
