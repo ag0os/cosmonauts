@@ -1,7 +1,7 @@
 ---
 id: TASK-541
 title: Delete the legacy Detected Analysis Tools bridge
-status: To Do
+status: Done
 priority: high
 labels:
   - 'plan:analysis-gate-rewiring'
@@ -11,7 +11,7 @@ dependencies:
   - TASK-539
   - TASK-540
 createdAt: '2026-07-30T16:29:50.584Z'
-updatedAt: '2026-07-30T16:29:50.584Z'
+updatedAt: '2026-07-30T17:15:06.957Z'
 ---
 
 ## Description
@@ -44,12 +44,11 @@ is migration-shaped: pair the bound capability with the explicit
 old-string search. Record the commit HEAD at task start; that SHA is the
 changed-scope base for any audit at task close.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 The `## Detected Analysis Tools` prose block is no longer built or injected by `domains/shared/extensions/project-tools/index.ts`.
-- [ ] #2 An explicit repository-wide search for the string `Detected Analysis Tools` and for the injection's builder finds no remaining reference in runtime source, prompts, skills, tests, or docs.
-- [ ] #3 The five existing `tests/extensions/project-tools.test.ts` assertions about the injected block are removed or replaced by assertions on the capability status injection; none is left asserting the deleted block's presence.
-- [ ] #4 The D-018 capability status injection at `before_agent_start` still injects the seven capability rows and its tests pass.
-- [ ] #5 Links to the deleted `bundled/coding/skills/fallow/` skill are removed from `docs/fallow.md`, `docs/fallow-workflow-integration.md`, and `docs/fallow-exceptions.md`, while the provider documentation content itself is retained.
-- [ ] #6 No shipped prompt or skill is left referencing an analysis surface that no longer exists, and the project's test, lint, and type-check steps pass.
+- [x] #1 The `## Detected Analysis Tools` prose block is no longer built or injected by `domains/shared/extensions/project-tools/index.ts`.
+- [x] #2 An explicit repository-wide search for the string `Detected Analysis Tools` and for the injection's builder finds no remaining reference in runtime source, prompts, skills, tests, or docs.
+- [x] #3 The five existing `tests/extensions/project-tools.test.ts` assertions about the injected block are removed or replaced by assertions on the capability status injection; none is left asserting the deleted block's presence.
+- [x] #4 The D-018 capability status injection at `before_agent_start` still injects the seven capability rows and its tests pass.
+- [x] #5 Links to the deleted `bundled/coding/skills/fallow/` skill are removed from `docs/fallow.md`, `docs/fallow-workflow-integration.md`, and `docs/fallow-exceptions.md`, while the provider documentation content itself is retained.
+- [x] #6 No shipped prompt or skill is left referencing an analysis surface that no longer exists, and the project's test, lint, and type-check steps pass.
 <!-- AC:END -->

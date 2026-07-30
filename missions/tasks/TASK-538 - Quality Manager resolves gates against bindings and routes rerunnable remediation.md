@@ -3,7 +3,7 @@ id: TASK-538
 title: >-
   Quality Manager resolves gates against bindings and routes rerunnable
   remediation
-status: To Do
+status: Done
 priority: high
 labels:
   - 'plan:analysis-gate-rewiring'
@@ -12,7 +12,7 @@ dependencies:
   - TASK-535
   - TASK-537
 createdAt: '2026-07-30T16:29:50.575Z'
-updatedAt: '2026-07-30T16:29:50.575Z'
+updatedAt: '2026-07-30T16:57:13.122Z'
 ---
 
 ## Description
@@ -54,13 +54,12 @@ Gate kinds: `correctness` (hard fail), `artifact-conformance` (hard fail),
 from an explicit base). Record the commit HEAD at task start; that SHA is
 the changed-scope base for any audit at task close.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 `B-013` — `tests/prompts/quality-manager.test.ts` > `runs bound feature branch gates directly through the changed scope capability` proves the prompt instructs supplying the literal merge-base SHA as the base, consuming per-gate verdicts and findings from the direct tool result, and never synthesizing a command or a verifier handoff.
-- [ ] #2 `B-014` — `tests/prompts/quality-manager.test.ts` > `runs bound dirty base gates from an explicit HEAD base` proves the prompt instructs supplying the literal HEAD SHA as the base and forbids skipping the audit because no branch range exists.
-- [ ] #3 `B-015` — `tests/prompts/quality-manager.test.ts` > `uses runtime unbound status for degraded gate reporting` proves a genuinely unbound bindable gate is reported unbound / not enforced with reviewer judgment — neither a pass nor a hard failure — using the vocabulary amended into `gate-contracts.md` by TASK-535.
-- [ ] #4 `B-016` — `tests/prompts/quality-manager.test.ts` > `separates failed to run gates and routes findings for direct replay` proves a capability tool error is a failed-to-run blocker distinct from degraded, and that findings route as the exact capability request (capability, base/scope/metric) plus human-readable designations — file:line, category, quoted message — never copied model-authored payload (`D-019`).
-- [ ] #5 A bound gate whose result carries no classifiable per-gate verdict is reported failed-to-run, not a pass (`INV-3`).
-- [ ] #6 The TASK-537 characterization tests still pass unmodified against the rewired prompt, and the prompt names no provider or command (`INV-1`, `AC-011`).
-- [ ] #7 Tests carry `@cosmo-behavior plan:analysis-gate-rewiring#B-013`, `#B-014`, `#B-015`, and `#B-016` near the executable tests, and the project's test, lint, and type-check steps pass.
+- [x] #1 `B-013` — `tests/prompts/quality-manager.test.ts` > `runs bound feature branch gates directly through the changed scope capability` proves the prompt instructs supplying the literal merge-base SHA as the base, consuming per-gate verdicts and findings from the direct tool result, and never synthesizing a command or a verifier handoff.
+- [x] #2 `B-014` — `tests/prompts/quality-manager.test.ts` > `runs bound dirty base gates from an explicit HEAD base` proves the prompt instructs supplying the literal HEAD SHA as the base and forbids skipping the audit because no branch range exists.
+- [x] #3 `B-015` — `tests/prompts/quality-manager.test.ts` > `uses runtime unbound status for degraded gate reporting` proves a genuinely unbound bindable gate is reported unbound / not enforced with reviewer judgment — neither a pass nor a hard failure — using the vocabulary amended into `gate-contracts.md` by TASK-535.
+- [x] #4 `B-016` — `tests/prompts/quality-manager.test.ts` > `separates failed to run gates and routes findings for direct replay` proves a capability tool error is a failed-to-run blocker distinct from degraded, and that findings route as the exact capability request (capability, base/scope/metric) plus human-readable designations — file:line, category, quoted message — never copied model-authored payload (`D-019`).
+- [x] #5 A bound gate whose result carries no classifiable per-gate verdict is reported failed-to-run, not a pass (`INV-3`).
+- [x] #6 The TASK-537 characterization tests still pass unmodified against the rewired prompt, and the prompt names no provider or command (`INV-1`, `AC-011`).
+- [x] #7 Tests carry `@cosmo-behavior plan:analysis-gate-rewiring#B-013`, `#B-014`, `#B-015`, and `#B-016` near the executable tests, and the project's test, lint, and type-check steps pass.
 <!-- AC:END -->
