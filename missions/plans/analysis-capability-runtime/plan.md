@@ -2,7 +2,7 @@
 title: Analysis capability runtime
 status: active
 createdAt: '2026-07-29T00:00:00.000Z'
-updatedAt: '2026-07-29T00:00:00.000Z'
+updatedAt: '2026-07-30T00:00:00.000Z'
 ---
 
 ## Overview
@@ -221,6 +221,14 @@ split itself.
   - Decided by: codex review remediation, amend-on-record, 2026-07-29
   - Supersedes: D-015's implication that all three resolution paths provide equivalent executable provenance
 
+- **D-027 - Use one synchronous final validation and disclose the residual path-to-exec window**
+  - Decision: complete all runner preparation, including creation and opening of the private stdout/stderr spools, before one combined synchronous pre-spawn validation. That validation re-reads execution consent and captures the executable's canonical absolute path, filesystem identity, and content digest in one event-loop turn; no await remains between it and `spawn`. The runner spawns the validated canonical absolute path. This is atomic against same-process asynchronous interleaving, but it is not an OS-atomic path-to-exec guarantee: another process can still alter consent between the synchronous reads, replace the pathname after identity capture, or race the pathname-based spawn.
+  - Constraint: two independent async preconditions plus a path-based spawn cannot both be last. Reordering the old asynchronous consent and identity awaits only moves the stale window and is not a valid future remediation.
+  - Alternatives: reorder the asynchronous checks again (rejected because it reproduces the prior finding from the other side); execute the open validation descriptor (unavailable because Node's portable `child_process.spawn` command is a pathname string and Node exposes no `fexecve`/descriptor-as-executable primitive; `stdio` descriptors are I/O only); use `/proc/self/fd` or `/dev/fd` as the command (rejected as non-portable and still dependent on platform-specific descriptor inheritance and script-loader behavior).
+  - Why: the synchronous combined step closes the in-process async gap and catches revocation during runner setup plus executable replacement during the consent read without claiming an unavailable kernel guarantee. Holding or validating an open descriptor cannot bind Node's later pathname spawn to that descriptor, so the external residual window remains explicit.
+  - Decided by: codex review remediation, amend-on-record, 2026-07-30
+  - Supersedes: sequential pre-spawn ordering as a TOCTOU remediation strategy
+
 ## Behaviors
 
 ### B-001 - One documented capability vocabulary
@@ -416,7 +424,7 @@ split itself.
 - Source: AC-004
 - Context: fixtures cover bound, unbound, failed, and detected-but-withheld states
 - Action: `before_agent_start` fires
-- Expected: the returned system prompt contains one row per capability (all seven) with state and reason and no commands, in every fixture including the no-consent one (D-018)
+- Expected: the returned system prompt contains one row per capability (all seven) with state and reason and no commands, in every fixture including the no-consent one (D-018); every state with a resolved executable also includes its resolution provenance, including consent-withheld and introspection-failed snapshots that have no runtime (D-026)
 - Seam: `domains/shared/extensions/project-tools/index.ts`
 - Test: `tests/extensions/project-tools.test.ts` > `injects the seven-row capability status into the system prompt`
 - Marker: `@cosmo-behavior plan:analysis-capability-runtime#B-035`
