@@ -229,6 +229,12 @@ split itself.
   - Decided by: codex review remediation, amend-on-record, 2026-07-30
   - Supersedes: sequential pre-spawn ordering as a TOCTOU remediation strategy
 
+- **D-028 - Fail closed when Windows process-tree termination is unverified**
+  - Decision: only `taskkill /T` exit code 0 positively establishes process-tree termination. Exit code 128 and every other nonzero or missing exit code remain unverified; after the existing bounded graceful and forced attempts, the runner reports `PROCESS_TREE_CLEANUP_FAILED` instead of settling a clean natural, aborted, or timed-out outcome without positive evidence. Full Windows process-tree ownership, including descendants that escape the observed tree, would require a lifetime ownership mechanism such as Windows Job Objects and is deferred outside this signal-aware read-only runner slice.
+  - Alternatives: continue accepting exit 128 after the root exits (rejected because it infers descendant termination from ambiguous evidence and violates INV-3); introduce Windows Job Objects in this remediation (rejected because cross-platform process ownership is a larger mechanism than the reviewed slice and would repeat the scope expansion ratified out in D-025).
+  - Why: INV-3 requires uncertainty to remain a failure, never a clean result. Classifying the `taskkill` result directly closes the false-success claim while preserving the established POSIX process-group behavior and the slice's platform boundary.
+  - Decided by: codex review remediation, amend-on-record, 2026-07-30
+
 ## Behaviors
 
 ### B-001 - One documented capability vocabulary
