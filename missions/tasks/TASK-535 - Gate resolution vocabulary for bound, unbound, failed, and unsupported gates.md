@@ -1,14 +1,14 @@
 ---
 id: TASK-535
 title: 'Gate resolution vocabulary for bound, unbound, failed, and unsupported gates'
-status: To Do
+status: In Progress
 priority: high
 labels:
   - 'plan:analysis-gate-rewiring'
   - backend
 dependencies: []
 createdAt: '2026-07-30T16:29:02.078Z'
-updatedAt: '2026-07-30T16:29:02.078Z'
+updatedAt: '2026-07-30T16:35:00.204Z'
 ---
 
 ## Description
@@ -37,12 +37,15 @@ Gate kinds: `correctness` (hard fail) and `artifact-conformance` (hard
 fail). Record the commit HEAD at task start; that SHA is the changed-scope
 base for any audit at task close.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 `domains/shared/skills/work-artifacts/references/gate-contracts.md` defines four resolution outcomes for a bindable gate: bound-and-completed (evaluate the actual verdict), genuinely unbound (degraded — not enforced, reviewer judgment), failed binding or invocation (failed-to-run, blocking), and unsupported metric (degrade only that metric).
-- [ ] #2 The failed-to-run outcome is stated as never a pass and never a silent degradation, distinct from the unbound degraded state (`INV-3`, `D-009`).
-- [ ] #3 The unsupported-metric outcome degrades only the unavailable metric and is never treated as zero (`AC-007`, `D-016`).
-- [ ] #4 The amendment introduces no capability or gate name that `analysis-capability-runtime` did not already define (`AC-001`).
-- [ ] #5 `gate-contracts.md` still contains no concrete provider name, tool name, or runnable command, and the existing gate-kind, tier, binding-state, artifact-conformance-scope, and ladder-shape sections remain intact (`INV-1`).
+- [x] #1 `domains/shared/skills/work-artifacts/references/gate-contracts.md` defines four resolution outcomes for a bindable gate: bound-and-completed (evaluate the actual verdict), genuinely unbound (degraded — not enforced, reviewer judgment), failed binding or invocation (failed-to-run, blocking), and unsupported metric (degrade only that metric).
+- [x] #2 The failed-to-run outcome is stated as never a pass and never a silent degradation, distinct from the unbound degraded state (`INV-3`, `D-009`).
+- [x] #3 The unsupported-metric outcome degrades only the unavailable metric and is never treated as zero (`AC-007`, `D-016`).
+- [x] #4 The amendment introduces no capability or gate name that `analysis-capability-runtime` did not already define (`AC-001`).
+- [x] #5 `gate-contracts.md` still contains no concrete provider name, tool name, or runnable command, and the existing gate-kind, tier, binding-state, artifact-conformance-scope, and ladder-shape sections remain intact (`INV-1`).
 - [ ] #6 Existing generic-artifact content tests covering `gate-contracts.md` still pass, and the project's test, lint, and type-check steps pass.
 <!-- AC:END -->
+
+## Implementation Notes
+
+partial
