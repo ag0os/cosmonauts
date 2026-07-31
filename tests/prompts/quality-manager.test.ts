@@ -200,6 +200,42 @@ describe("quality-manager prompt", () => {
 		);
 	});
 
+	// @cosmo-behavior plan:analysis-gate-coverage#B-043
+	it("resolves bound gates only from declared coverage", async () => {
+		const content = await readPrompt();
+
+		expect(content).toContain(
+			"A completed result resolves a bound gate to `pass` only when the result's declared coverage names that gate and no gate-aligned finding contradicts it.",
+		);
+		expect(content).toContain(
+			"Gate-aligned findings resolve their declared-covered gate categories as failed.",
+		);
+		expect(content).toContain(
+			"A category outside the result's declared coverage is degraded or `failed-to-run`; absence of findings for an undeclared category is never a pass.",
+		);
+		expect(content).toContain(
+			"If a bound gate has no classifiable per-gate verdict, report it as `failed-to-run`, never as a pass.",
+		);
+		expect(content).toContain(
+			'`trace` and `fix-preview` results carry `verdict: "not-applicable"` and can never pass or fail a gate.',
+		);
+		expect(content).toContain(
+			"Do not inspect provider-specific native fields to invent a gate verdict.",
+		);
+		expect(content).toContain(
+			"Each resolved row lands in exactly one of `completed_bound_gates`, `degraded_gates`, or `failed_to_run_gates`.",
+		);
+		expect(content).toContain(
+			"A bound `boundary-conformance` row is resolved by calling its own capability, not by the changed-scope audit.",
+		);
+		expect(content).not.toContain(
+			"only when the result explicitly represents complete coverage for those gates",
+		);
+		expect(content).not.toContain(
+			"A category with no matching finding is a pass only when the structured result makes complete coverage for that gate classifiable.",
+		);
+	});
+
 	it("routes integration findings through the existing remediation flow", async () => {
 		const content = await readPrompt();
 

@@ -90,8 +90,9 @@ Use the literal `ANALYSIS_BASE_SHA` established in step 2:
 
 Consume the complete structured tool result directly, including its per-gate verdict evidence and gate-aligned findings. Require the result to echo `capability: "changed-scope-audit"` and the exact changed scope/base requested. Resolve each bound gate only from the completed generic result:
 
-- An aggregate `pass` resolves every covered bound gate as passed only when the result explicitly represents complete coverage for those gates.
-- An aggregate `fail` plus complete gate-aligned findings resolves every gate category with matching findings as failed. A category with no matching finding is a pass only when the structured result makes complete coverage for that gate classifiable.
+- A completed result resolves a bound gate to `pass` only when the result's declared coverage names that gate and no gate-aligned finding contradicts it.
+- Gate-aligned findings resolve their declared-covered gate categories as failed.
+- A category outside the result's declared coverage is degraded or `failed-to-run`; absence of findings for an undeclared category is never a pass.
 - If a bound gate has no classifiable per-gate verdict, report it as `failed-to-run`, never as a pass.
 - `trace` and `fix-preview` results carry `verdict: "not-applicable"` and can never pass or fail a gate.
 
