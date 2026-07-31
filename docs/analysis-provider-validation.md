@@ -12,6 +12,8 @@ Primary independent references:
 - [Knip reporters](https://knip.dev/features/reporters) document JSON issues,
   issue-type keys, paths, names, positions, Code Climate severity and
   fingerprints.
+- [Knip rules and filters](https://knip.dev/features/rules-and-filters)
+  document selecting the issue types included in a run.
 - [Knip trace arguments](https://knip.dev/reference/cli#--trace) document
   export-name, file, and dependency targets; an export name can be traced
   alone or combined with a file target.
@@ -83,6 +85,7 @@ explicit base.
 | `scope.target` | Fallow 2.54.2: trace capture targets an export in a file. | dependency-cruiser CLI: focus/include options select a module and its dependency neighborhood. | generic |
 | `metric` | Fallow 2.54.2: complexity findings discriminate cyclomatic, cognitive, and CRAP threshold violations. | Radon CLI: complexity commands and reports identify cyclomatic as the requested metric. | generic |
 | `verdict` | Fallow 2.54.2: audit asserts `fail`; other analysis verdicts are classifiable from findings while trace/fix assert none. | dependency-cruiser CLI: rule violations and configured severity determine a failing or clean validation outcome. | generic |
+| `coverage[]` | Fallow 2.54.2: provider operation and configuration determine the evaluated gate categories, and the captured single-capability and audit envelopes expose the analyzer outputs used to derive that set. | Knip CLI: `--include` names the issue types reported by a run and JSON retains issue-type keys, providing an independent category set an adapter can expose as evaluated coverage. | generic |
 | `findings[].id` | Fallow 2.54.2: category, location, and message inputs support an adapter-local ID. | Knip Code Climate: each issue includes a fingerprint; JSON issue fields also support a local ID. | generic |
 | `findings[].category` | Fallow 2.54.2: payload collections distinguish dead code, clones, complexity, and boundary violations. | Knip JSON: enabled issue types are distinct keys for files, exports, dependencies, cycles, and related categories. | generic |
 | `findings[].severity` | Fallow 2.54.2: complexity findings carry native severity and unranked findings can be preserved as unknown. | ESLint JSON: every lint message carries warning or error severity. | generic |
@@ -136,6 +139,7 @@ to that finding; otherwise the optional coordinate is omitted.
 | CRAP coverage tiers, vital-sign profiles, percentile and maintainability aggregates | Fallow 2.54.2: captured complexity envelope exposes these measurements. | `providerDetails.data` |
 | Zone names, import specifier spelling, and provider boundary action notes | Fallow 2.54.2: captured boundary envelope exposes these rule-engine details. | `providerDetails.data` |
 | Audit head SHA, changed-file count, and embedded per-analyzer summaries | Fallow 2.54.2: captured audit envelope exposes this composition. | `native.payload` |
+| Audit subsection names used to derive declared coverage | Fallow 2.54.2: the native audit payload uses `dead_code`, `duplication`, and `complexity` sections and nests `boundary_violations` under `dead_code`; those exact composition keys are not generic coverage members. | `native.payload` |
 | Reachability booleans, entry-point flags, direct-reference shape, and re-export-chain shape | Fallow 2.54.2: captured trace envelope exposes these exact semantics. | `providerDetails.data` |
 | Raw fix type, symbol name, `dry_run`, and `total_fixed` counters | Fallow 2.54.2: captured fix-preview envelope exposes these exact fields. | `providerDetails.data` |
 | Any unenumerated provider field preserved for losslessness | Fallow 2.54.2: the reviewed captures contain additional native structure not promoted generically. | `native.payload` |

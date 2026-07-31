@@ -203,6 +203,37 @@ describe("analysis core contracts", () => {
 		>().not.toHaveProperty("coverage");
 	});
 
+	// @cosmo-behavior plan:analysis-gate-coverage#B-044
+	test("records two tool validation for declared gate coverage", async () => {
+		const validation = await readRepositoryFile(
+			"docs/analysis-provider-validation.md",
+		);
+		const coverageRow = markdownRows(
+			validation,
+			"Generic result field evidence",
+		).find(([field]) => unquoteCode(field ?? "") === "coverage[]");
+
+		expect(coverageRow).toEqual([
+			"`coverage[]`",
+			expect.stringMatching(/^Fallow 2\.54\.2:/u),
+			expect.stringMatching(/^Knip[^:]*:/u),
+			"generic",
+		]);
+		expect(
+			`${coverageRow?.[1] ?? ""} ${coverageRow?.[2] ?? ""}`.match(/Fallow/gu),
+		).toHaveLength(1);
+
+		const providerCoverageRow = markdownRows(
+			validation,
+			"Provider-tagged aspects",
+		).find(([aspect]) => /declared coverage/iu.test(aspect ?? ""));
+		expect(providerCoverageRow).toEqual([
+			expect.stringMatching(/coverage/iu),
+			expect.stringMatching(/^Fallow 2\.54\.2:/u),
+			"`native.payload`",
+		]);
+	});
+
 	test("discriminates result verdicts and failed bindings", () => {
 		expectTypeOf<
 			Extract<AnalysisResult, { capability: "dead-code" }>["verdict"]

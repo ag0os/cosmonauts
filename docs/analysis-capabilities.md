@@ -133,14 +133,16 @@ the exact echoed scope, a verdict field, and a complete provider-tagged native
 envelope.
 
 Dead code, duplication, complexity, boundary conformance, and changed-scope
-audit return findings with `verdict: "pass" | "fail"`. Findings carry an
-adapter-local ID, gate-aligned category, severity, message, locations, generic
-action descriptions, and optional provider-tagged details.
+audit return findings with `verdict: "pass" | "fail"`. Every such completed
+verdict-bearing result declares its non-empty evaluated gate coverage using
+the existing gate-facing capability vocabulary. Findings carry an adapter-local
+ID, gate-aligned category, severity, message, locations, generic action
+descriptions, and optional provider-tagged details.
 
 Trace returns graph nodes, edges, and evidence. Fix preview returns proposal
 descriptions and locations. These two result kinds carry
 `verdict: "not-applicable"`: neither operation asserts pass or fail, and the
-runtime must not fabricate one.
+runtime must not fabricate one. They declare no evaluated gate coverage.
 
 Fields that cannot be supported by two independent implementations do not
 enter the generic result shape. They remain under a `{ providerId, data }`

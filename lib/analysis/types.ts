@@ -467,6 +467,7 @@ export const ANALYSIS_RESULT_GENERIC_FIELDS = [
 	"scope.target",
 	"metric",
 	"verdict",
+	"coverage[]",
 	"findings[].id",
 	"findings[].category",
 	"findings[].severity",
