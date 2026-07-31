@@ -89,6 +89,30 @@ sub-envelopes. This zero-scope rule is atomic: a missing, malformed, or nonzero
 counter invalidates the result rather than returning partial coverage or
 silently passing an undeclared analyzer.
 
+### Boundary coverage and configuration reach
+
+Whether a dead-code-family invocation evaluates boundaries depends on the
+resolved configuration, and the adapter's configuration identity capture hashes
+only the canonical signal files it can read locally. Fallow 2.54.2 resolves
+`extends` from relative paths, `npm:` packages, and `https://` URLs, and it also
+accepts configuration carried in `package.json`. A change to any of those alters
+the resolved configuration while leaving every hashed signal byte-identical, and
+an HTTPS source cannot be verified locally at all.
+
+The capture therefore reports its own completeness rather than implying a
+guarantee it does not provide. When the closure is local — a canonical signal is
+present and declares no `extends` — the discovery-time boundary answer is
+reused, because the identity check already fails closed on any change to it.
+When the closure reaches outside those files, the adapter re-resolves the
+configuration for that invocation instead of reusing the snapshot. Withholding
+coverage would not be sound in that case: boundaries may still be configured,
+and the resulting findings would then contradict the declared coverage and fail
+normalization.
+
+The residual is the same one D-027 records for executable identity: Node cannot
+make a configuration read and a path-based spawn atomic, so a mutation landing
+between them is outside the guarantee.
+
 ## Generic result field evidence
 
 | Generic field | Reference provider evidence | Independent tool evidence | Decision |

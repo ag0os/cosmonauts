@@ -709,6 +709,139 @@ describe("project-tools extension", () => {
 		expect(invocations).toHaveLength(2);
 	});
 
+	test.each([
+		{
+			name: "an extended configuration",
+			configFileName: ".fallowrc.json",
+			rootConfig: {
+				extends: ["./base-config.json"],
+				boundaries: {
+					zones: [{ name: "ui", patterns: ["src/ui/**"] }],
+					rules: [{ from: "ui", allow: [] }],
+				},
+			},
+		},
+		{
+			name: "configuration outside the hashed signals",
+			configFileName: null,
+			rootConfig: {
+				boundaries: {
+					zones: [{ name: "ui", patterns: ["src/ui/**"] }],
+					rules: [{ from: "ui", allow: [] }],
+				},
+			},
+		},
+	])("re-resolves boundary coverage per invocation for $name", async ({
+		configFileName,
+		rootConfig,
+	}) => {
+		const fixture = await createProjectFixture(
+			`unverifiable-closure-${configFileName ?? "package-json"}`,
+		);
+		await writeFile(
+			join(fixture.projectRoot, "package.json"),
+			JSON.stringify({ devDependencies: { fallow: "2.54.2" } }),
+		);
+		if (configFileName !== null) {
+			await writeFile(
+				join(fixture.projectRoot, configFileName),
+				JSON.stringify(rootConfig),
+			);
+		}
+		await grantConsent(fixture.projectRoot, fixture.userStateRoot);
+		const executable = join(
+			tmpDir,
+			`unverifiable-${configFileName ?? "package"}-fallow`,
+		);
+		await writeFile(executable, "#!/bin/sh\nexit 0\n");
+		await chmod(executable, 0o755);
+		// The resolved configuration the provider reports, independent of the
+		// hashed signals. Mutated between calls to model an extended source
+		// changing with no local trace.
+		let resolvedBoundaries: unknown = rootConfig.boundaries;
+		const configInvocations: number[] = [];
+		const executeProcess: ProviderProcessExecutor = async (invocation) => {
+			if (invocation.args.includes("--version")) {
+				return {
+					kind: "code-exit",
+					code: 0,
+					stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+					stderr: "",
+				};
+			}
+			if (invocation.args[0] === "config") {
+				configInvocations.push(configInvocations.length);
+				return {
+					kind: "code-exit",
+					code: 0,
+					stdout: `loaded config\n${JSON.stringify({ boundaries: resolvedBoundaries })}`,
+					stderr: "",
+				};
+			}
+			return {
+				kind: "code-exit",
+				code: 0,
+				stdout: JSON.stringify({
+					schema_version: 4,
+					total_issues: 0,
+					summary: { total_issues: 0 },
+					unused_files: [],
+					unused_exports: [],
+					unused_types: [],
+					unused_dependencies: [],
+					unused_dev_dependencies: [],
+					unused_optional_dependencies: [],
+					unused_enum_members: [],
+					unused_class_members: [],
+					unresolved_imports: [],
+					unlisted_dependencies: [],
+					duplicate_exports: [],
+					type_only_dependencies: [],
+					test_only_dependencies: [],
+					circular_dependencies: [],
+					boundary_violations: [],
+					stale_suppressions: [],
+				}),
+				stderr: "",
+			};
+		};
+		const pi = createMockPi({ cwd: fixture.projectRoot });
+		createProjectToolsExtension({
+			userStateRoot: fixture.userStateRoot,
+			injectedExecutablePath: executable,
+			executeProcess,
+		})(pi as never);
+
+		await pi.callTool("analysis_status", {});
+		const discoveryConfigCalls = configInvocations.length;
+
+		const configured = resultDetails(
+			await pi.callTool("analysis_dead_code", {}),
+		);
+		expect(configured.coverage).toEqual(["dead-code", "boundary-conformance"]);
+		expect(configInvocations.length).toBeGreaterThan(discoveryConfigCalls);
+
+		// The extended source drops its boundary rules. No hashed signal
+		// changed, so the identity capture cannot see it.
+		resolvedBoundaries = { zones: [], rules: [] };
+
+		const unconfigured = resultDetails(
+			await pi.callTool("analysis_dead_code", {}),
+		);
+		expect(unconfigured.coverage).toEqual(["dead-code"]);
+
+		// And back again, proving the re-resolution is live in both directions
+		// rather than sticky.
+		resolvedBoundaries = rootConfig.boundaries;
+		const reconfigured = resultDetails(
+			await pi.callTool("analysis_dead_code", {}),
+		);
+		expect(reconfigured.coverage).toEqual([
+			"dead-code",
+			"boundary-conformance",
+		]);
+	});
+
 	test("invalidates a cached binding when the executable is replaced", async () => {
 		const fixture = await createProjectFixture("executable-replacement");
 		await writeFile(join(fixture.projectRoot, "fallow.toml"), "");

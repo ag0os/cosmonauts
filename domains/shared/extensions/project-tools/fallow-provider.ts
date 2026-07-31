@@ -154,7 +154,11 @@ interface ResolvedFallowExecutable {
 }
 
 type FallowSpawnPrecondition =
-	| { readonly kind: "ready"; readonly configurationIdentity: string }
+	| {
+			readonly kind: "ready";
+			readonly configurationIdentity: string;
+			readonly configurationClosureLocallyVerified: boolean;
+	  }
 	| { readonly kind: "unbound"; readonly bindings: readonly AnalysisBinding[] }
 	| {
 			readonly kind: "failed";
@@ -569,8 +573,36 @@ function isMissingFileError(error: unknown): boolean {
 	);
 }
 
-function captureConfigurationIdentitySync(projectRoot: string): string {
+/**
+ * Local configuration identity, plus whether that identity is a complete
+ * account of what determines the resolved configuration.
+ *
+ * Fallow resolves `extends` from relative paths, `npm:` packages, and
+ * `https://` URLs, and it also accepts configuration from `package.json`.
+ * Hashing the canonical signal files therefore cannot detect every change that
+ * alters the resolved configuration, and an HTTPS source cannot be verified
+ * locally at all. Rather than ship a partial check that implies a guarantee it
+ * does not provide, the capture reports its own completeness and callers
+ * withhold configuration-derived coverage when it is not complete (D-026).
+ */
+interface FallowConfigurationIdentity {
+	readonly identity: string;
+	/**
+	 * True only when a canonical signal file was present and no hashed signal
+	 * declares external inheritance. An `extends` key cannot appear in JSON or
+	 * TOML without the literal token, so absence of the token proves the closure
+	 * is local; a false positive only withholds coverage, which is the safe
+	 * direction.
+	 */
+	readonly closureLocallyVerified: boolean;
+}
+
+function captureConfigurationIdentitySync(
+	projectRoot: string,
+): FallowConfigurationIdentity {
 	const identity = createHash("sha256");
+	let sawCanonicalSignal = false;
+	let declaresExternalInheritance = false;
 	for (const signal of FALLOW_CANONICAL_SIGNALS) {
 		const configPath = join(projectRoot, signal);
 		let descriptor: number;
@@ -581,6 +613,7 @@ function captureConfigurationIdentitySync(projectRoot: string): string {
 			identity.update(`${signal}\0missing\0`);
 			continue;
 		}
+		sawCanonicalSignal = true;
 		try {
 			const before = fstatSync(descriptor);
 			if (!before.isFile()) {
@@ -596,11 +629,15 @@ function captureConfigurationIdentitySync(projectRoot: string): string {
 			identity.update(`${signal}\0file\0${canonicalPath}\0`);
 			identity.update(contents);
 			identity.update("\0");
+			if (contents.includes("extends")) declaresExternalInheritance = true;
 		} finally {
 			closeSync(descriptor);
 		}
 	}
-	return identity.digest("hex");
+	return {
+		identity: identity.digest("hex"),
+		closureLocallyVerified: sawCanonicalSignal && !declaresExternalInheritance,
+	};
 }
 
 async function captureExecutableIdentity(
@@ -752,9 +789,9 @@ function validateSpawnPreconditions(options: {
 		};
 	}
 
-	let configurationIdentity: string;
+	let configuration: FallowConfigurationIdentity;
 	try {
-		configurationIdentity = captureConfigurationIdentitySync(
+		configuration = captureConfigurationIdentitySync(
 			options.bindingIdentity.canonicalProjectRoot,
 		);
 	} catch {
@@ -769,7 +806,7 @@ function validateSpawnPreconditions(options: {
 	}
 	if (
 		options.expectedConfigurationIdentity !== undefined &&
-		configurationIdentity !== options.expectedConfigurationIdentity
+		configuration.identity !== options.expectedConfigurationIdentity
 	) {
 		const failure = configurationIdentityFailure(
 			"Fallow configuration changed after provider introspection.",
@@ -780,7 +817,11 @@ function validateSpawnPreconditions(options: {
 			bindings: providerFailedBindings(failure),
 		};
 	}
-	return { kind: "ready", configurationIdentity };
+	return {
+		kind: "ready",
+		configurationIdentity: configuration.identity,
+		configurationClosureLocallyVerified: configuration.closureLocallyVerified,
+	};
 }
 
 function finalSpawnPrecondition(options: {
@@ -1268,6 +1309,19 @@ async function introspectProvider(
 		version,
 	} as const;
 	const hasConfiguredBoundaries = boundariesConfigured(config);
+	/*
+	 * Detection reports what the provider supports; coverage asserts what an
+	 * invocation actually evaluated. They diverge when the resolved
+	 * configuration depends on sources the identity capture cannot account for
+	 * (`extends` targets, or configuration carried in package.json). The
+	 * boundary capability still resolves through its own request, but the
+	 * dead-code family stops claiming boundary coverage it cannot stand behind
+	 * — under-declaring degrades the gate visibly (INV-2), while over-declaring
+	 * would pass a gate the invocation never evaluated (INV-3).
+	 */
+	const boundaryCoverageVerifiable =
+		hasConfiguredBoundaries &&
+		configCompletionPrecondition.configurationClosureLocallyVerified;
 	const detectedProvider: DetectedAnalysisProvider = {
 		provider,
 		capabilities: capabilities(hasConfiguredBoundaries),
@@ -1296,7 +1350,9 @@ async function introspectProvider(
 		...runtimeBase,
 		executablePath: bindingIdentity.executable.canonicalPath,
 		projectRoot: options.projectRoot,
-		boundariesConfigured: hasConfiguredBoundaries,
+		declaresBoundaryCoverage: boundaryCoverageVerifiable,
+		configurationClosureLocallyVerified:
+			configCompletionPrecondition.configurationClosureLocallyVerified,
 		beforeSpawn: finalSpawnPrecondition(executionPreconditionOptions),
 	};
 	let invalidatedFailure: AnalysisFailure | undefined;
@@ -1551,7 +1607,20 @@ interface FallowExecutionRuntime {
 	readonly projectRoot: string;
 	readonly provider: ProviderIdentity;
 	readonly executablePath: string;
-	readonly boundariesConfigured: boolean;
+	/**
+	 * Whether a dead-code-family invocation may declare `boundary-conformance`
+	 * coverage: boundaries are configured AND the configuration closure is
+	 * locally verifiable. Not a report of whether boundaries are configured.
+	 * Only consult this when `configurationClosureLocallyVerified` is true.
+	 */
+	readonly declaresBoundaryCoverage: boolean;
+	/**
+	 * Whether the configuration identity capture accounts for every input to the
+	 * resolved configuration. False when a hashed signal declares `extends` or
+	 * when configuration is carried outside the canonical signals, in which case
+	 * boundary coverage is re-resolved per invocation rather than reused.
+	 */
+	readonly configurationClosureLocallyVerified: boolean;
 	readonly executeProcess: ProviderProcessExecutor;
 	readonly beforeSpawn: () => void;
 	readonly validateEnvelopeSchema: typeof validateFallowEnvelopeSchema;
@@ -2197,7 +2266,7 @@ function auditFindings(
 }
 
 function analysisFindings(
-	runtime: FallowExecutionRuntime,
+	declaresBoundaryCoverage: boolean,
 	request: Exclude<AnalysisRequest, { capability: "trace" | "fix-preview" }>,
 	payload: Readonly<Record<string, unknown>>,
 ): NormalizedFallowAnalysis {
@@ -2208,7 +2277,7 @@ function analysisFindings(
 			);
 			return {
 				...outcome,
-				coverage: runtime.boundariesConfigured
+				coverage: declaresBoundaryCoverage
 					? [request.capability, "boundary-conformance"]
 					: [request.capability],
 			};
@@ -2236,7 +2305,7 @@ function analysisFindings(
 			return { ...outcome, coverage: [request.capability] };
 		}
 		case "changed-scope-audit":
-			return auditFindings(request, payload, runtime.boundariesConfigured);
+			return auditFindings(request, payload, declaresBoundaryCoverage);
 	}
 }
 
@@ -2358,6 +2427,7 @@ function normalizedCapabilityResult(
 	request: AnalysisRequest,
 	outcome: CompletedFallowOutcome,
 	envelope: ParsedFallowEnvelope,
+	declaresBoundaryCoverage: boolean,
 ): AnalysisResult {
 	const native = {
 		providerId: FALLOW_PROVIDER_ID,
@@ -2388,7 +2458,11 @@ function normalizedCapabilityResult(
 				native,
 			};
 		}
-		const normalized = analysisFindings(runtime, request, envelope.record);
+		const normalized = analysisFindings(
+			declaresBoundaryCoverage,
+			request,
+			envelope.record,
+		);
 		assertFallowFindingsCovered(normalized.findings, normalized.coverage);
 		const completeEvidence =
 			request.capability === "complexity"
@@ -2433,6 +2507,62 @@ function normalizedCapabilityResult(
 	}
 }
 
+/**
+ * Whether this invocation may declare `boundary-conformance` coverage.
+ *
+ * The discovery-time answer is only reusable when the configuration closure is
+ * locally verifiable, because the identity capture then accounts for every
+ * input to it. When the closure reaches outside the hashed signals — an
+ * `extends` target or configuration carried in package.json — the snapshot can
+ * be stale in either direction, so the provider is asked again for this
+ * invocation. Withholding coverage instead would be unsound: boundaries could
+ * still be configured, and the resulting findings would then contradict the
+ * declared coverage and fail normalization (B-042).
+ */
+async function resolveBoundaryCoverage(
+	runtime: FallowExecutionRuntime,
+	request: AnalysisRequest,
+	signal?: AbortSignal,
+): Promise<boolean> {
+	const usesDeadCodeFamily =
+		request.capability === "dead-code" ||
+		request.capability === "changed-scope-audit";
+	if (!usesDeadCodeFamily) return false;
+	if (runtime.configurationClosureLocallyVerified) {
+		return runtime.declaresBoundaryCoverage;
+	}
+	const outcome = await runtime.executeProcess(
+		{
+			executablePath: runtime.executablePath,
+			args: ["config", "--format", "json", "--quiet", "--no-cache"],
+			cwd: runtime.projectRoot,
+		},
+		signal,
+		{ beforeSpawn: runtime.beforeSpawn },
+	);
+	if (outcome.kind === "code-exit" && outcome.code === 3) return false;
+	if (outcome.kind !== "code-exit" || outcome.code !== 0) {
+		return providerFailure(
+			runtime,
+			request.capability,
+			processFailure("config", outcome),
+		);
+	}
+	const config = parseConfig(outcome.stdout);
+	if (config === null) {
+		return providerFailure(
+			runtime,
+			request.capability,
+			executionInvalidOutput(
+				request.capability,
+				outcome,
+				"expected a JSON object after any preamble while resolving boundary configuration",
+			),
+		);
+	}
+	return boundariesConfigured(config);
+}
+
 async function executeFallowCapability(
 	runtime: FallowExecutionRuntime,
 	request: AnalysisRequest,
@@ -2454,6 +2584,11 @@ async function executeFallowCapability(
 		});
 	}
 
+	const declaresBoundaryCoverage = await resolveBoundaryCoverage(
+		runtime,
+		request,
+		signal,
+	);
 	const outcome = await runtime.executeProcess(
 		{
 			executablePath: runtime.executablePath,
@@ -2478,5 +2613,6 @@ async function executeFallowCapability(
 		request,
 		outcome,
 		parseFallowEnvelope(runtime, request, outcome),
+		declaresBoundaryCoverage,
 	);
 }
