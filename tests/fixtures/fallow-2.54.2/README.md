@@ -23,3 +23,8 @@ separate promotion step.
 `changed-scope-audit.json` is captured from a Git worktree carrying all three
 change classes: a tracked unstaged edit, a staged addition, and an untracked
 addition.
+
+`zero-change-audit.json` is captured separately from a clean Git worktree. Its
+Fallow 2.54.2 payload reports `changed_files_count: 0` and numeric zero summary
+counters for dead code, duplication, and complexity while omitting all three
+analysis sub-envelopes.

@@ -26,6 +26,7 @@ export const FALLOW_CAPABILITY_FIXTURES = [
 	"complexity",
 	"boundary-conformance",
 	"changed-scope-audit",
+	"zero-change-audit",
 	"trace",
 	"fix-preview",
 ] as const;
@@ -138,7 +139,10 @@ async function writeProjectFile(
 	await writeFile(destination, contents, "utf8");
 }
 
-async function createConfiguredProject(projectRoot: string): Promise<void> {
+async function createConfiguredProject(
+	projectRoot: string,
+	options: { readonly includeWorkingTreeChanges?: boolean } = {},
+): Promise<void> {
 	await writeProjectFile(
 		projectRoot,
 		"package.json",
@@ -310,6 +314,7 @@ async function createConfiguredProject(projectRoot: string): Promise<void> {
 	if (commit.code !== 0) {
 		throw new Error(`Unable to commit capture fixture: ${commit.stderr}`);
 	}
+	if (options.includeWorkingTreeChanges === false) return;
 
 	await writeProjectFile(
 		projectRoot,
@@ -537,10 +542,12 @@ export async function captureFallowEnvelopes(
 		join(tmpdir(), "cosmonauts-fallow-capture-"),
 	);
 	const configuredRoot = join(captureRoot, "configured");
+	const cleanConfiguredRoot = join(captureRoot, "configured-clean");
 	const defaultsRoot = join(captureRoot, "defaults");
 	const errorRoot = join(captureRoot, "error");
 	await Promise.all([
 		mkdir(configuredRoot, { recursive: true }),
+		mkdir(cleanConfiguredRoot, { recursive: true }),
 		mkdir(defaultsRoot, { recursive: true }),
 		mkdir(errorRoot, { recursive: true }),
 	]);
@@ -548,6 +555,9 @@ export async function captureFallowEnvelopes(
 	try {
 		await Promise.all([
 			createConfiguredProject(configuredRoot),
+			createConfiguredProject(cleanConfiguredRoot, {
+				includeWorkingTreeChanges: false,
+			}),
 			createConfigProject(defaultsRoot, "defaults"),
 			createConfigProject(errorRoot, "error"),
 		]);
@@ -607,6 +617,13 @@ export async function captureFallowEnvelopes(
 				},
 			},
 			{
+				name: "zero-change-audit",
+				kind: "capability",
+				cwd: cleanConfiguredRoot,
+				args: verdictCommandArgs("audit", "--base", "HEAD"),
+				expectedCodes: [0],
+			},
+			{
 				name: "trace",
 				kind: "capability",
 				cwd: configuredRoot,
@@ -648,7 +665,9 @@ export async function captureFallowEnvelopes(
 		];
 
 		const before = await Promise.all(
-			[configuredRoot, defaultsRoot, errorRoot].map(snapshotFiles),
+			[configuredRoot, cleanConfiguredRoot, defaultsRoot, errorRoot].map(
+				snapshotFiles,
+			),
 		);
 		const written: string[] = [];
 
@@ -707,7 +726,9 @@ export async function captureFallowEnvelopes(
 		}
 
 		const after = await Promise.all(
-			[configuredRoot, defaultsRoot, errorRoot].map(snapshotFiles),
+			[configuredRoot, cleanConfiguredRoot, defaultsRoot, errorRoot].map(
+				snapshotFiles,
+			),
 		);
 		if (JSON.stringify(after) !== JSON.stringify(before)) {
 			throw new Error(

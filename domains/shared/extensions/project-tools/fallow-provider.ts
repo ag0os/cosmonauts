@@ -2105,16 +2105,26 @@ function auditEnvelope(
 	return envelope;
 }
 
-function emptyAuditSummaryReports(
+function zeroScopeAuditCoverage(
 	payload: Readonly<Record<string, unknown>>,
-	key: "dead_code_issues" | "duplication_clone_groups" | "complexity_findings",
-): boolean {
-	if (numberValue(payload, "changed_files_count") !== 0) return false;
+	configuredBoundaries: boolean,
+): AnalysisGateCoverage {
 	const summary = objectRecord(payload.summary);
 	if (summary === null) {
 		throw new Error("expected an audit summary for an empty changed scope");
 	}
-	return numberValue(summary, key) === 0;
+	for (const key of [
+		"dead_code_issues",
+		"duplication_clone_groups",
+		"complexity_findings",
+	] as const) {
+		if (numberValue(summary, key) !== 0) {
+			throw new Error(`expected zero-change audit summary ${key} to equal 0`);
+		}
+	}
+	return configuredBoundaries
+		? ["dead-code", "boundary-conformance", "duplication", "complexity"]
+		: ["dead-code", "duplication", "complexity"];
 }
 
 function auditFindings(
@@ -2142,18 +2152,24 @@ function auditFindings(
 			"expected audit dead_code, duplication, and complexity envelopes",
 		);
 	}
+	if (numberValue(payload, "changed_files_count") === 0) {
+		if (deadCode !== null || duplication !== null || complexity !== null) {
+			throw new Error(
+				"expected a zero-change audit to omit analysis sub-envelopes",
+			);
+		}
+		return {
+			findings: [],
+			verdict,
+			coverage: zeroScopeAuditCoverage(payload, configuredBoundaries),
+		};
+	}
 	const findings: AnalysisFinding[] = [];
 	const coverage: AnalysisGateCapability[] = [];
-	let deadCodeCovered = false;
 	if (deadCode !== null) {
 		findings.push(
 			...normalizeDeadCodeFindings(deadCode, "fallow:audit:dead-code"),
 		);
-		deadCodeCovered = true;
-	} else if (emptyAuditSummaryReports(payload, "dead_code_issues")) {
-		deadCodeCovered = true;
-	}
-	if (deadCodeCovered) {
 		coverage.push("dead-code");
 		if (configuredBoundaries) coverage.push("boundary-conformance");
 	}
@@ -2162,15 +2178,11 @@ function auditFindings(
 			...normalizeDuplicationFindings(duplication, "fallow:audit:duplication"),
 		);
 		coverage.push("duplication");
-	} else if (emptyAuditSummaryReports(payload, "duplication_clone_groups")) {
-		coverage.push("duplication");
 	}
 	if (complexity !== null) {
 		findings.push(
 			...normalizeComplexityFindings(complexity, "fallow:audit:complexity"),
 		);
-		coverage.push("complexity");
-	} else if (emptyAuditSummaryReports(payload, "complexity_findings")) {
 		coverage.push("complexity");
 	}
 	const firstCapability = coverage[0];

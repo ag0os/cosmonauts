@@ -102,6 +102,8 @@ function completedFixtureOutcome(fixture: CapturedFixture) {
 async function replayRuntime(
 	name: string,
 	configFixtureName: "config-healthy" | "config-defaults",
+	auditFixtureName = "changed-scope-audit",
+	auditPayloadOverride?: unknown,
 ) {
 	const root = join(replayRoot.path, name);
 	const projectRoot = join(root, "project");
@@ -131,7 +133,15 @@ async function replayRuntime(
 
 	const [configFixture, capabilityFixtures] = await Promise.all([
 		loadFixture(configFixtureName),
-		Promise.all(VERDICT_FIXTURE_NAMES.map(loadFixture)),
+		Promise.all(
+			VERDICT_FIXTURE_NAMES.map((fixtureName) =>
+				loadFixture(
+					fixtureName === "changed-scope-audit"
+						? auditFixtureName
+						: fixtureName,
+				),
+			),
+		),
 	]);
 	const executeProcess: ProviderProcessExecutor = async (invocation) => {
 		if (invocation.args.includes("--version")) {
@@ -159,6 +169,7 @@ async function replayRuntime(
 				case "boundary-conformance":
 					return invocation.args.includes("--boundary-violations");
 				case "changed-scope-audit":
+				case "zero-change-audit":
 					return invocation.args[0] === "audit";
 				default:
 					return false;
@@ -187,7 +198,14 @@ async function replayRuntime(
 				stdout: JSON.stringify(auditPayload.dead_code),
 			};
 		}
-		return completedFixtureOutcome(fixture);
+		const outcome = completedFixtureOutcome(fixture);
+		if (
+			fixture.name === auditFixtureName &&
+			auditPayloadOverride !== undefined
+		) {
+			return { ...outcome, stdout: JSON.stringify(auditPayloadOverride) };
+		}
+		return outcome;
 	};
 	const discovery = await discoverFallowProvider({
 		projectRoot,
@@ -350,6 +368,145 @@ describe("pinned Fallow capture fixtures", () => {
 				"src/untracked.ts",
 			]),
 		);
+	});
+
+	it("replays the captured zero-change audit with complete declared coverage", async () => {
+		const fixture = await loadFixture("zero-change-audit");
+		const payload = objectPayload(fixture);
+		const runtime = await replayRuntime(
+			"zero-change",
+			"config-healthy",
+			"zero-change-audit",
+		);
+
+		expect(fixture.provenance).toEqual({
+			envelopeSource: "live-engine",
+			provider: "fallow",
+			package: "fallow",
+			engineVersion: "2.54.2",
+		});
+		expect(payload).toMatchObject({
+			changed_files_count: 0,
+			verdict: "pass",
+			summary: {
+				dead_code_issues: 0,
+				duplication_clone_groups: 0,
+				complexity_findings: 0,
+			},
+		});
+		expect(payload).not.toHaveProperty("dead_code");
+		expect(payload).not.toHaveProperty("duplication");
+		expect(payload).not.toHaveProperty("complexity");
+
+		await expect(
+			runtime.execute({
+				capability: "changed-scope-audit",
+				scope: { kind: "changed", base: "HEAD" },
+			}),
+		).resolves.toMatchObject({
+			kind: "findings",
+			verdict: "pass",
+			coverage: [
+				"dead-code",
+				"boundary-conformance",
+				"duplication",
+				"complexity",
+			],
+			findings: [],
+		});
+
+		const unconfiguredRuntime = await replayRuntime(
+			"zero-change-unconfigured",
+			"config-defaults",
+			"zero-change-audit",
+		);
+		await expect(
+			unconfiguredRuntime.execute({
+				capability: "changed-scope-audit",
+				scope: { kind: "changed", base: "HEAD" },
+			}),
+		).resolves.toMatchObject({
+			kind: "findings",
+			verdict: "pass",
+			coverage: ["dead-code", "duplication", "complexity"],
+			findings: [],
+		});
+	});
+
+	it("fails closed for incomplete or contradictory zero-change summary evidence", async () => {
+		const fixture = await loadFixture("zero-change-audit");
+		const payload = objectPayload(fixture);
+		const summary = payload.summary as Readonly<Record<string, unknown>>;
+		const summaryKeys = [
+			"dead_code_issues",
+			"duplication_clone_groups",
+			"complexity_findings",
+		] as const;
+		const mutations = [
+			{
+				name: "missing",
+				value: undefined,
+			},
+			{
+				name: "malformed",
+				value: "0",
+			},
+			{
+				name: "nonzero",
+				value: 1,
+			},
+		] as const;
+
+		for (const key of summaryKeys) {
+			for (const mutation of mutations) {
+				const mutatedSummary = { ...summary, [key]: mutation.value };
+				if (mutation.value === undefined) delete mutatedSummary[key];
+				const runtime = await replayRuntime(
+					`${mutation.name}-${key}`,
+					"config-healthy",
+					"zero-change-audit",
+					{ ...payload, summary: mutatedSummary },
+				);
+
+				await expect(
+					runtime.execute({
+						capability: "changed-scope-audit",
+						scope: { kind: "changed", base: "HEAD" },
+					}),
+					`${mutation.name} ${key}`,
+				).rejects.toMatchObject({
+					name: "AnalysisProviderError",
+					failureClass: "invalid-output",
+				});
+			}
+		}
+
+		for (const mutation of mutations) {
+			const mutatedPayload = {
+				...payload,
+				changed_files_count: mutation.value,
+			};
+			if (mutation.value === undefined) {
+				delete mutatedPayload.changed_files_count;
+			}
+			const runtime = await replayRuntime(
+				`${mutation.name}-changed-files-count`,
+				"config-healthy",
+				"zero-change-audit",
+				mutatedPayload,
+			);
+
+			await expect(
+				runtime.execute({
+					capability: "changed-scope-audit",
+					scope: { kind: "changed", base: "HEAD" },
+				}),
+				`${mutation.name} changed_files_count`,
+			).rejects.toMatchObject({
+				name: "AnalysisProviderError",
+				failureClass: "invalid-output",
+			});
+		}
 	});
 
 	it("captures the config-introspection exit-code matrix and text preambles", async () => {

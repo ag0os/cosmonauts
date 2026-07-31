@@ -70,6 +70,25 @@ provider state. The live dirty-scope fixture proves that the changed-scope
 audit covers tracked, staged, and untracked files without widening beyond its
 explicit base.
 
+### Fallow audit coverage derivation
+
+Fallow audit coverage has two provider-specific evidence paths. For a non-empty
+changed scope, the adapter derives each category only from its successfully
+parsed `dead_code`, `duplication`, or `complexity` sub-envelope. The dead-code
+sub-envelope additionally covers `boundary-conformance` only when boundary
+zones and rules were revalidated for that invocation.
+
+The captured Fallow 2.54.2 empty-scope envelope has a different documented
+shape: `changed_files_count` is numeric zero, all three sub-envelopes are
+omitted, and the category-specific `dead_code_issues`,
+`duplication_clone_groups`, and `complexity_findings` summary counters are each
+numeric zero. Together, those counters are the provider's explicit evidence
+that every analyzer has an empty result over the empty selected scope, so the
+adapter derives the same non-empty coverage set without fabricating analyzer
+sub-envelopes. This zero-scope rule is atomic: a missing, malformed, or nonzero
+counter invalidates the result rather than returning partial coverage or
+silently passing an undeclared analyzer.
+
 ## Generic result field evidence
 
 | Generic field | Reference provider evidence | Independent tool evidence | Decision |
@@ -139,7 +158,7 @@ to that finding; otherwise the optional coordinate is omitted.
 | CRAP coverage tiers, vital-sign profiles, percentile and maintainability aggregates | Fallow 2.54.2: captured complexity envelope exposes these measurements. | `providerDetails.data` |
 | Zone names, import specifier spelling, and provider boundary action notes | Fallow 2.54.2: captured boundary envelope exposes these rule-engine details. | `providerDetails.data` |
 | Audit head SHA, changed-file count, and embedded per-analyzer summaries | Fallow 2.54.2: captured audit envelope exposes this composition. | `native.payload` |
-| Audit subsection names used to derive declared coverage | Fallow 2.54.2: the native audit payload uses `dead_code`, `duplication`, and `complexity` sections and nests `boundary_violations` under `dead_code`; those exact composition keys are not generic coverage members. | `native.payload` |
+| Audit evidence used to derive declared coverage | Fallow 2.54.2: non-empty audit payloads use `dead_code`, `duplication`, and `complexity` sections and nest `boundary_violations` under `dead_code`; the captured zero-change payload instead uses an atomic set of three zero summary counters. Those exact composition keys and counters are not generic coverage members. | `native.payload` |
 | Reachability booleans, entry-point flags, direct-reference shape, and re-export-chain shape | Fallow 2.54.2: captured trace envelope exposes these exact semantics. | `providerDetails.data` |
 | Raw fix type, symbol name, `dry_run`, and `total_fixed` counters | Fallow 2.54.2: captured fix-preview envelope exposes these exact fields. | `providerDetails.data` |
 | Any unenumerated provider field preserved for losslessness | Fallow 2.54.2: the reviewed captures contain additional native structure not promoted generically. | `native.payload` |

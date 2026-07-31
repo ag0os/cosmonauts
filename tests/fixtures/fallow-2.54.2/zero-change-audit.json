@@ -1,0 +1,48 @@
+{
+	"fixtureSchemaVersion": 1,
+	"name": "zero-change-audit",
+	"kind": "capability",
+	"provenance": {
+		"envelopeSource": "live-engine",
+		"provider": "fallow",
+		"package": "fallow",
+		"engineVersion": "2.54.2"
+	},
+	"command": {
+		"executable": "node_modules/.bin/fallow",
+		"args": [
+			"audit",
+			"--base",
+			"HEAD",
+			"--format",
+			"json",
+			"--quiet",
+			"--no-cache",
+			"--fail-on-issues"
+		],
+		"cwd": "<fixture-project>"
+	},
+	"envelope": {
+		"code": 0,
+		"signal": null,
+		"stdout": "{\n  \"schema_version\": 3,\n  \"version\": \"2.54.2\",\n  \"command\": \"audit\",\n  \"verdict\": \"pass\",\n  \"changed_files_count\": 0,\n  \"base_ref\": \"HEAD\",\n  \"head_sha\": \"69533b1\",\n  \"elapsed_ms\": 18,\n  \"summary\": {\n    \"dead_code_issues\": 0,\n    \"dead_code_has_errors\": false,\n    \"complexity_findings\": 0,\n    \"max_cyclomatic\": null,\n    \"duplication_clone_groups\": 0\n  }\n}\n",
+		"stderr": "",
+		"payload": {
+			"schema_version": 3,
+			"version": "2.54.2",
+			"command": "audit",
+			"verdict": "pass",
+			"changed_files_count": 0,
+			"base_ref": "HEAD",
+			"head_sha": "69533b1",
+			"elapsed_ms": 18,
+			"summary": {
+				"dead_code_issues": 0,
+				"dead_code_has_errors": false,
+				"complexity_findings": 0,
+				"max_cyclomatic": null,
+				"duplication_clone_groups": 0
+			}
+		}
+	}
+}
