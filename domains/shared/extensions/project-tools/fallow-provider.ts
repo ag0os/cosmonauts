@@ -27,6 +27,7 @@ import {
 	type AnalysisFinding,
 	type AnalysisFindingSeverity,
 	type AnalysisFixProposal,
+	type AnalysisGateCapability,
 	type AnalysisGateCoverage,
 	type AnalysisLocation,
 	type AnalysisMetric,
@@ -831,7 +832,7 @@ function boundariesConfigured(config: FallowConfig | null): boolean {
 }
 
 function capabilities(
-	config: FallowConfig | null,
+	hasConfiguredBoundaries: boolean,
 ): readonly DetectedAnalysisCapability[] {
 	return [
 		{
@@ -850,7 +851,7 @@ function capabilities(
 			scopes: ["project"],
 			metrics: ["cyclomatic", "cognitive", "crap"],
 		},
-		boundariesConfigured(config)
+		hasConfiguredBoundaries
 			? {
 					capability: "boundary-conformance",
 					status: "supported",
@@ -1150,9 +1151,10 @@ async function introspectProvider(
 		name: "Fallow",
 		version,
 	} as const;
+	const hasConfiguredBoundaries = boundariesConfigured(config);
 	const detectedProvider: DetectedAnalysisProvider = {
 		provider,
-		capabilities: capabilities(config),
+		capabilities: capabilities(hasConfiguredBoundaries),
 	};
 	const detection = {
 		status: "detected",
@@ -1174,6 +1176,7 @@ async function introspectProvider(
 		...runtimeBase,
 		executablePath: bindingIdentity.executable.canonicalPath,
 		projectRoot: options.projectRoot,
+		boundariesConfigured: hasConfiguredBoundaries,
 		beforeSpawn,
 	};
 	let invalidatedFailure: AnalysisFailure | undefined;
@@ -1434,6 +1437,7 @@ interface FallowExecutionRuntime {
 	readonly projectRoot: string;
 	readonly provider: ProviderIdentity;
 	readonly executablePath: string;
+	readonly boundariesConfigured: boolean;
 	readonly executeProcess: ProviderProcessExecutor;
 	readonly beforeSpawn: () => void;
 	readonly validateEnvelopeSchema: typeof validateFallowEnvelopeSchema;
@@ -1920,6 +1924,10 @@ interface NormalizedAnalysisFindings {
 	readonly verdict: "pass" | "fail";
 }
 
+interface NormalizedFallowAnalysis extends NormalizedAnalysisFindings {
+	readonly coverage: AnalysisGateCoverage;
+}
+
 function findingsOutcome(
 	findings: readonly AnalysisFinding[],
 ): NormalizedAnalysisFindings {
@@ -1969,10 +1977,23 @@ function auditEnvelope(
 	return envelope;
 }
 
+function emptyAuditSummaryReports(
+	payload: Readonly<Record<string, unknown>>,
+	key: "dead_code_issues" | "duplication_clone_groups" | "complexity_findings",
+): boolean {
+	if (numberValue(payload, "changed_files_count") !== 0) return false;
+	const summary = objectRecord(payload.summary);
+	if (summary === null) {
+		throw new Error("expected an audit summary for an empty changed scope");
+	}
+	return numberValue(summary, key) === 0;
+}
+
 function auditFindings(
 	request: Extract<AnalysisRequest, { capability: "changed-scope-audit" }>,
 	payload: Readonly<Record<string, unknown>>,
-): NormalizedAnalysisFindings {
+	configuredBoundaries: boolean,
+): NormalizedFallowAnalysis {
 	if (payload.base_ref !== request.scope.base) {
 		throw new Error(
 			`expected audit base_ref ${JSON.stringify(request.scope.base)}, received ${JSON.stringify(payload.base_ref)}`,
@@ -1994,51 +2015,88 @@ function auditFindings(
 		);
 	}
 	const findings: AnalysisFinding[] = [];
+	const coverage: AnalysisGateCapability[] = [];
+	let deadCodeCovered = false;
 	if (deadCode !== null) {
 		findings.push(
 			...normalizeDeadCodeFindings(deadCode, "fallow:audit:dead-code"),
 		);
+		deadCodeCovered = true;
+	} else if (emptyAuditSummaryReports(payload, "dead_code_issues")) {
+		deadCodeCovered = true;
+	}
+	if (deadCodeCovered) {
+		coverage.push("dead-code");
+		if (configuredBoundaries) coverage.push("boundary-conformance");
 	}
 	if (duplication !== null) {
 		findings.push(
 			...normalizeDuplicationFindings(duplication, "fallow:audit:duplication"),
 		);
+		coverage.push("duplication");
+	} else if (emptyAuditSummaryReports(payload, "duplication_clone_groups")) {
+		coverage.push("duplication");
 	}
 	if (complexity !== null) {
 		findings.push(
 			...normalizeComplexityFindings(complexity, "fallow:audit:complexity"),
 		);
+		coverage.push("complexity");
+	} else if (emptyAuditSummaryReports(payload, "complexity_findings")) {
+		coverage.push("complexity");
 	}
-	return { findings, verdict };
+	const firstCapability = coverage[0];
+	if (firstCapability === undefined) {
+		throw new Error("expected audit to contain a normalized analysis envelope");
+	}
+	return {
+		findings,
+		verdict,
+		coverage: [firstCapability, ...coverage.slice(1)],
+	};
 }
 
 function analysisFindings(
+	runtime: FallowExecutionRuntime,
 	request: Exclude<AnalysisRequest, { capability: "trace" | "fix-preview" }>,
 	payload: Readonly<Record<string, unknown>>,
-): NormalizedAnalysisFindings {
+): NormalizedFallowAnalysis {
 	switch (request.capability) {
-		case "dead-code":
-			return findingsOutcome(
+		case "dead-code": {
+			const outcome = findingsOutcome(
 				normalizeDeadCodeFindings(payload, "fallow:dead-code"),
 			);
-		case "duplication":
-			return findingsOutcome(
+			return {
+				...outcome,
+				coverage: runtime.boundariesConfigured
+					? [request.capability, "boundary-conformance"]
+					: [request.capability],
+			};
+		}
+		case "duplication": {
+			const outcome = findingsOutcome(
 				normalizeDuplicationFindings(payload, "fallow:duplication"),
 			);
-		case "complexity":
-			return findingsOutcome(
+			return { ...outcome, coverage: [request.capability] };
+		}
+		case "complexity": {
+			const outcome = findingsOutcome(
 				normalizeComplexityFindings(
 					payload,
 					"fallow:complexity",
 					request.metric,
 				),
 			);
-		case "boundary-conformance":
-			return findingsOutcome(
+			return { ...outcome, coverage: [request.capability] };
+		}
+		case "boundary-conformance": {
+			const outcome = findingsOutcome(
 				normalizeBoundaryFindings(payload, "fallow:boundary-conformance"),
 			);
+			return { ...outcome, coverage: [request.capability] };
+		}
 		case "changed-scope-audit":
-			return auditFindings(request, payload);
+			return auditFindings(request, payload, runtime.boundariesConfigured);
 	}
 }
 
@@ -2190,11 +2248,7 @@ function normalizedCapabilityResult(
 				native,
 			};
 		}
-		const normalized = analysisFindings(request, envelope.record);
-		const coverage: AnalysisGateCoverage =
-			request.capability === "changed-scope-audit"
-				? ["dead-code", "duplication", "complexity"]
-				: [request.capability];
+		const normalized = analysisFindings(runtime, request, envelope.record);
 		const completeEvidence =
 			request.capability === "complexity"
 				? findingsOutcome(
@@ -2210,7 +2264,7 @@ function normalizedCapabilityResult(
 				scope: request.scope,
 				metric: request.metric,
 				verdict: normalized.verdict,
-				coverage,
+				coverage: normalized.coverage,
 				findings: normalized.findings,
 				native,
 			};
@@ -2221,7 +2275,7 @@ function normalizedCapabilityResult(
 			provider: runtime.provider,
 			scope: request.scope,
 			verdict: normalized.verdict,
-			coverage,
+			coverage: normalized.coverage,
 			findings: normalized.findings,
 			native,
 		} as AnalysisResult;

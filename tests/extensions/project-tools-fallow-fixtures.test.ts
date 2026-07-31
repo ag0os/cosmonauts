@@ -1,10 +1,28 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readdir, readFile, readlink, symlink } from "node:fs/promises";
+import {
+	chmod,
+	mkdir,
+	readdir,
+	readFile,
+	readlink,
+	realpath,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import {
+	discoverFallowProvider,
+	FALLOW_VALIDATED_ENGINE_VERSION,
+} from "../../domains/shared/extensions/project-tools/fallow-provider.ts";
+import type { ProviderProcessExecutor } from "../../domains/shared/extensions/project-tools/process-runner.ts";
+import type {
+	AnalysisGateCoverage,
+	AnalysisRequest,
+} from "../../lib/analysis/index.ts";
 import {
 	captureFallowEnvelopes,
 	FALLOW_CAPABILITY_FIXTURES,
@@ -24,6 +42,15 @@ const FIXTURE_ROOT = join(
 );
 const output = useTempDir("fallow-capture-output-");
 const sourceRepository = useTempDir("fallow-capture-source-");
+const replayRoot = useTempDir("fallow-coverage-replay-");
+
+const VERDICT_FIXTURE_NAMES = [
+	"dead-code",
+	"duplication",
+	"complexity",
+	"boundary-conformance",
+	"changed-scope-audit",
+] as const;
 
 interface CapturedFixture {
 	readonly fixtureSchemaVersion: number;
@@ -58,6 +85,104 @@ async function loadFixture(name: string): Promise<CapturedFixture> {
 	return JSON.parse(
 		await readFile(join(FIXTURE_ROOT, `${name}.json`), "utf8"),
 	) as CapturedFixture;
+}
+
+function completedFixtureOutcome(fixture: CapturedFixture) {
+	if (fixture.envelope.code === null) {
+		throw new Error(`${fixture.name} did not capture a completed process.`);
+	}
+	return {
+		kind: "code-exit",
+		code: fixture.envelope.code,
+		stdout: fixture.envelope.stdout,
+		stderr: fixture.envelope.stderr,
+	} as const;
+}
+
+async function replayRuntime(
+	name: string,
+	configFixtureName: "config-healthy" | "config-defaults",
+) {
+	const root = join(replayRoot.path, name);
+	const projectRoot = join(root, "project");
+	const userStateRoot = join(root, "user-state");
+	const executablePath = join(root, "bin", "fallow");
+	await Promise.all([
+		mkdir(projectRoot, { recursive: true }),
+		mkdir(userStateRoot, { recursive: true }),
+		mkdir(dirname(executablePath), { recursive: true }),
+	]);
+	await Promise.all([
+		writeFile(join(projectRoot, "fallow.toml"), "", "utf8"),
+		writeFile(executablePath, "#!/bin/sh\nexit 0\n", "utf8"),
+	]);
+	await chmod(executablePath, 0o755);
+	const canonicalProjectRoot = await realpath(projectRoot);
+	await writeFile(
+		join(userStateRoot, "analysis-execution-consent.json"),
+		`${JSON.stringify({
+			schemaVersion: 1,
+			projects: {
+				[canonicalProjectRoot]: { providers: ["fallow"] },
+			},
+		})}\n`,
+		"utf8",
+	);
+
+	const [configFixture, capabilityFixtures] = await Promise.all([
+		loadFixture(configFixtureName),
+		Promise.all(VERDICT_FIXTURE_NAMES.map(loadFixture)),
+	]);
+	const executeProcess: ProviderProcessExecutor = async (invocation) => {
+		if (invocation.args.includes("--version")) {
+			return {
+				kind: "code-exit",
+				code: 0,
+				stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+				stderr: "",
+			};
+		}
+		if (invocation.args[0] === "config") {
+			return completedFixtureOutcome(configFixture);
+		}
+		const fixture = capabilityFixtures.find((candidate) => {
+			switch (candidate.name) {
+				case "dead-code":
+					return (
+						invocation.args[0] === "dead-code" &&
+						!invocation.args.includes("--boundary-violations")
+					);
+				case "duplication":
+					return invocation.args[0] === "dupes";
+				case "complexity":
+					return invocation.args[0] === "health";
+				case "boundary-conformance":
+					return invocation.args.includes("--boundary-violations");
+				case "changed-scope-audit":
+					return invocation.args[0] === "audit";
+				default:
+					return false;
+			}
+		});
+		if (fixture === undefined) {
+			throw new Error(
+				`No captured fixture matches: ${invocation.args.join(" ")}`,
+			);
+		}
+		return completedFixtureOutcome(fixture);
+	};
+	const discovery = await discoverFallowProvider({
+		projectRoot,
+		userStateRoot,
+		injectedExecutablePath: executablePath,
+		executeProcess,
+	});
+	if (discovery.status !== "detected") {
+		throw new Error(
+			`Expected detected provider, received ${discovery.status}.`,
+		);
+	}
+	return discovery.runtime;
 }
 
 async function snapshotRepositoryFiles(
@@ -232,6 +357,100 @@ describe("pinned Fallow capture fixtures", () => {
 			expect(fixture.kind).toBe("config-introspection");
 			expect(fixture.provenance.envelopeSource).toBe("live-engine");
 			expect(fixture.command.args).toContain("--no-cache");
+		}
+	});
+
+	// @cosmo-behavior plan:analysis-gate-coverage#B-041
+	it("derives declared gate coverage from real provider envelopes", async () => {
+		const configuredRuntime = await replayRuntime(
+			"configured",
+			"config-healthy",
+		);
+		const configuredCases = [
+			{
+				request: {
+					capability: "dead-code",
+					scope: { kind: "project" },
+				},
+				coverage: ["dead-code", "boundary-conformance"],
+			},
+			{
+				request: {
+					capability: "duplication",
+					scope: { kind: "project" },
+				},
+				coverage: ["duplication"],
+			},
+			{
+				request: {
+					capability: "complexity",
+					scope: { kind: "project" },
+					metric: "cyclomatic",
+				},
+				coverage: ["complexity"],
+			},
+			{
+				request: {
+					capability: "boundary-conformance",
+					scope: { kind: "project" },
+				},
+				coverage: ["boundary-conformance"],
+			},
+			{
+				request: {
+					capability: "changed-scope-audit",
+					scope: { kind: "changed", base: "HEAD" },
+				},
+				coverage: [
+					"dead-code",
+					"boundary-conformance",
+					"duplication",
+					"complexity",
+				],
+			},
+		] as const satisfies readonly {
+			readonly request: AnalysisRequest;
+			readonly coverage: AnalysisGateCoverage;
+		}[];
+
+		for (const { request, coverage } of configuredCases) {
+			const result = await configuredRuntime.execute(request);
+			expect(result).toMatchObject({ kind: "findings", coverage });
+			if (result.kind !== "findings") {
+				throw new Error(`Expected findings, received ${result.kind}.`);
+			}
+			expect(new Set(result.coverage).size).toBe(result.coverage.length);
+		}
+
+		const unconfiguredRuntime = await replayRuntime(
+			"unconfigured",
+			"config-defaults",
+		);
+		for (const { request, coverage } of [
+			{
+				request: {
+					capability: "dead-code",
+					scope: { kind: "project" },
+				},
+				coverage: ["dead-code"],
+			},
+			{
+				request: {
+					capability: "changed-scope-audit",
+					scope: { kind: "changed", base: "HEAD" },
+				},
+				coverage: ["dead-code", "duplication", "complexity"],
+			},
+		] as const satisfies readonly {
+			readonly request: AnalysisRequest;
+			readonly coverage: AnalysisGateCoverage;
+		}[]) {
+			const result = await unconfiguredRuntime.execute(request);
+			expect(result).toMatchObject({ kind: "findings", coverage });
+			if (result.kind !== "findings") {
+				throw new Error(`Expected findings, received ${result.kind}.`);
+			}
+			expect(new Set(result.coverage).size).toBe(result.coverage.length);
 		}
 	});
 
