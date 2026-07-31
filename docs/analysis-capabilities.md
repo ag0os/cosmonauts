@@ -111,6 +111,14 @@ Repository configuration cannot grant execution consent to itself. Missing,
 malformed, repository-contained, or non-matching consent leaves execution
 withheld.
 
+For Fallow, the boundary-configuration signal used by declared coverage is
+bound to the canonical configuration inputs observed during introspection.
+Consent, executable identity, and that configuration identity are revalidated
+together in the final synchronous pre-spawn callback. A configuration change
+invalidates the binding instead of reusing discovery-time coverage. Node cannot
+make filesystem reads and a path-based process spawn OS-atomic, so a mutation
+after that callback remains outside this guarantee.
+
 A capability binding has one of three states:
 
 - `bound` identifies the implementation and advertises scope kinds and metrics.

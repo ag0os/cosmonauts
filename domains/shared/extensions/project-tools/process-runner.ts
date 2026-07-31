@@ -22,7 +22,8 @@ export interface ProviderProcessRunOptions {
 	readonly timeoutMs?: number;
 	readonly terminationGraceMs?: number;
 	/**
-	 * Final synchronous authorization and executable-identity validation.
+	 * Final synchronous authorization, executable-identity, and provider-config
+	 * validation.
 	 * Runner preparation is complete before this runs, and spawn follows without
 	 * an intervening await.
 	 */

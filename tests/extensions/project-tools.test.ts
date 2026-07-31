@@ -536,6 +536,179 @@ describe("project-tools extension", () => {
 		expect(invocations).toHaveLength(2);
 	});
 
+	test("fails closed when configured boundaries are removed after discovery", async () => {
+		const fixture = await createProjectFixture("configured-boundaries-removed");
+		const configPath = join(fixture.projectRoot, ".fallowrc.json");
+		await Promise.all([
+			writeFile(
+				join(fixture.projectRoot, "package.json"),
+				JSON.stringify({ devDependencies: { fallow: "2.54.2" } }),
+			),
+			writeFile(
+				configPath,
+				JSON.stringify({
+					boundaries: {
+						zones: [{ name: "ui", patterns: ["src/ui/**"] }],
+						rules: [{ from: "ui", allow: [] }],
+					},
+				}),
+			),
+		]);
+		await grantConsent(fixture.projectRoot, fixture.userStateRoot);
+		const executable = join(tmpDir, "configured-boundaries-fallow");
+		await writeFile(executable, "#!/bin/sh\nexit 0\n");
+		await chmod(executable, 0o755);
+		const invocations: Parameters<ProviderProcessExecutor>[0][] = [];
+		const executeProcess: ProviderProcessExecutor = async (
+			invocation,
+			_signal,
+			options,
+		) => {
+			options?.beforeSpawn?.();
+			invocations.push(invocation);
+			if (invocation.args.includes("--version")) {
+				return {
+					kind: "code-exit",
+					code: 0,
+					stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+					stderr: "",
+				};
+			}
+			if (invocation.args[0] === "config") {
+				return {
+					kind: "code-exit",
+					code: 0,
+					stdout: `loaded config: ${configPath}\n${await readFile(configPath, "utf8")}\n`,
+					stderr: "",
+				};
+			}
+			return {
+				kind: "code-exit",
+				code: 0,
+				stdout: JSON.stringify({
+					schema_version: 4,
+					total_issues: 0,
+					summary: { total_issues: 0 },
+					unused_files: [],
+					unused_exports: [],
+					unused_types: [],
+					unused_dependencies: [],
+					unused_dev_dependencies: [],
+					unused_optional_dependencies: [],
+					unused_enum_members: [],
+					unused_class_members: [],
+					unresolved_imports: [],
+					unlisted_dependencies: [],
+					duplicate_exports: [],
+					type_only_dependencies: [],
+					test_only_dependencies: [],
+					circular_dependencies: [],
+					boundary_violations: [],
+					stale_suppressions: [],
+				}),
+				stderr: "",
+			};
+		};
+		const pi = createMockPi({ cwd: fixture.projectRoot });
+		createProjectToolsExtension({
+			userStateRoot: fixture.userStateRoot,
+			injectedExecutablePath: executable,
+			executeProcess,
+		})(pi as never);
+
+		const status = resultDetails(await pi.callTool("analysis_status", {}));
+		expect(status.capabilities).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					state: "bound",
+					capability: "boundary-conformance",
+				}),
+			]),
+		);
+		expect(invocations).toHaveLength(2);
+
+		await rm(configPath);
+
+		await expect(pi.callTool("analysis_dead_code", {})).rejects.toMatchObject({
+			name: "AnalysisProviderError",
+			failureClass: "invalid-config",
+			process: { reason: "provider-configuration-changed" },
+		});
+		expect(invocations).toHaveLength(2);
+	});
+
+	test("fails closed when boundaries are configured after discovery", async () => {
+		const fixture = await createProjectFixture("unconfigured-boundaries-added");
+		const configPath = join(fixture.projectRoot, ".fallowrc.json");
+		await writeFile(
+			join(fixture.projectRoot, "package.json"),
+			JSON.stringify({ devDependencies: { fallow: "2.54.2" } }),
+		);
+		await grantConsent(fixture.projectRoot, fixture.userStateRoot);
+		const executable = join(tmpDir, "unconfigured-boundaries-fallow");
+		await writeFile(executable, "#!/bin/sh\nexit 0\n");
+		await chmod(executable, 0o755);
+		const invocations: Parameters<ProviderProcessExecutor>[0][] = [];
+		const executeProcess: ProviderProcessExecutor = async (
+			invocation,
+			_signal,
+			options,
+		) => {
+			options?.beforeSpawn?.();
+			invocations.push(invocation);
+			if (invocation.args.includes("--version")) {
+				return {
+					kind: "code-exit",
+					code: 0,
+					stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+					stderr: "",
+				};
+			}
+			return {
+				kind: "code-exit",
+				code: 3,
+				stdout: "no config file found, using defaults\n",
+				stderr: "",
+			};
+		};
+		const pi = createMockPi({ cwd: fixture.projectRoot });
+		createProjectToolsExtension({
+			userStateRoot: fixture.userStateRoot,
+			injectedExecutablePath: executable,
+			executeProcess,
+		})(pi as never);
+
+		const status = resultDetails(await pi.callTool("analysis_status", {}));
+		expect(status.capabilities).toEqual(
+			expect.arrayContaining([
+				{
+					state: "unbound",
+					capability: "boundary-conformance",
+					reason: "provider-not-configured",
+					providerId: "fallow",
+				},
+			]),
+		);
+		expect(invocations).toHaveLength(2);
+
+		await writeFile(
+			configPath,
+			JSON.stringify({
+				boundaries: {
+					zones: [{ name: "ui", patterns: ["src/ui/**"] }],
+					rules: [{ from: "ui", allow: [] }],
+				},
+			}),
+		);
+
+		await expect(pi.callTool("analysis_dead_code", {})).rejects.toMatchObject({
+			name: "AnalysisProviderError",
+			failureClass: "invalid-config",
+			process: { reason: "provider-configuration-changed" },
+		});
+		expect(invocations).toHaveLength(2);
+	});
+
 	test("invalidates a cached binding when the executable is replaced", async () => {
 		const fixture = await createProjectFixture("executable-replacement");
 		await writeFile(join(fixture.projectRoot, "fallow.toml"), "");

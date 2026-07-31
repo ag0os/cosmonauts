@@ -154,7 +154,7 @@ interface ResolvedFallowExecutable {
 }
 
 type FallowSpawnPrecondition =
-	| { readonly kind: "ready" }
+	| { readonly kind: "ready"; readonly configurationIdentity: string }
 	| { readonly kind: "unbound"; readonly bindings: readonly AnalysisBinding[] }
 	| {
 			readonly kind: "failed";
@@ -561,6 +561,48 @@ function captureExecutableIdentitySync(
 	}
 }
 
+function isMissingFileError(error: unknown): boolean {
+	return (
+		error instanceof Error &&
+		"code" in error &&
+		(error as NodeJS.ErrnoException).code === "ENOENT"
+	);
+}
+
+function captureConfigurationIdentitySync(projectRoot: string): string {
+	const identity = createHash("sha256");
+	for (const signal of FALLOW_CANONICAL_SIGNALS) {
+		const configPath = join(projectRoot, signal);
+		let descriptor: number;
+		try {
+			descriptor = openSync(configPath, "r");
+		} catch (error) {
+			if (!isMissingFileError(error)) throw error;
+			identity.update(`${signal}\0missing\0`);
+			continue;
+		}
+		try {
+			const before = fstatSync(descriptor);
+			if (!before.isFile()) {
+				throw new Error(`${configPath} is not a regular file.`);
+			}
+			const contents = readFileSync(descriptor);
+			const after = fstatSync(descriptor);
+			const canonicalPath = realpathSync(configPath);
+			const current = statSync(canonicalPath);
+			if (!sameFileStats(before, after) || !sameFileStats(after, current)) {
+				throw new Error("Fallow configuration changed while it was captured.");
+			}
+			identity.update(`${signal}\0file\0${canonicalPath}\0`);
+			identity.update(contents);
+			identity.update("\0");
+		} finally {
+			closeSync(descriptor);
+		}
+	}
+	return identity.digest("hex");
+}
+
 async function captureExecutableIdentity(
 	executablePath: string,
 ): Promise<FallowExecutableIdentity> {
@@ -625,16 +667,32 @@ function bindingIdentityFailure(
 	};
 }
 
+function configurationIdentityFailure(message: string): AnalysisFailure {
+	const reason = "provider-configuration-changed";
+	return {
+		kind: "invalid-config",
+		message,
+		process: { reason },
+		providerDetails: {
+			providerId: FALLOW_PROVIDER_ID,
+			data: { reason },
+		},
+	};
+}
+
 function validateSpawnPreconditions(options: {
 	readonly projectRoot: string;
 	readonly userStateRoot?: string;
 	readonly executablePath: string;
 	readonly bindingIdentity: FallowBindingIdentity;
+	readonly expectedConfigurationIdentity?: string;
 	readonly readExecutionAuthorizationSync: typeof readAnalysisExecutionAuthorizationSync;
 }): FallowSpawnPrecondition {
 	/*
-	 * This is intentionally one synchronous final validation. Turning either
-	 * check back into an await recreates the stale-precondition cycle.
+	 * This is intentionally one synchronous final validation. Turning any check
+	 * back into an await recreates the stale-precondition cycle. Node cannot make
+	 * these filesystem reads and a path-based spawn OS-atomic, so a mutation after
+	 * this callback remains outside the guarantee.
 	 */
 	const authorization = options.readExecutionAuthorizationSync({
 		projectRoot: options.projectRoot,
@@ -693,7 +751,36 @@ function validateSpawnPreconditions(options: {
 			bindings: providerNotAvailableBindings("execution-not-consented"),
 		};
 	}
-	return { kind: "ready" };
+
+	let configurationIdentity: string;
+	try {
+		configurationIdentity = captureConfigurationIdentitySync(
+			options.bindingIdentity.canonicalProjectRoot,
+		);
+	} catch {
+		const failure = configurationIdentityFailure(
+			"Fallow configuration identity could not be established before provider execution.",
+		);
+		return {
+			kind: "failed",
+			failure,
+			bindings: providerFailedBindings(failure),
+		};
+	}
+	if (
+		options.expectedConfigurationIdentity !== undefined &&
+		configurationIdentity !== options.expectedConfigurationIdentity
+	) {
+		const failure = configurationIdentityFailure(
+			"Fallow configuration changed after provider introspection.",
+		);
+		return {
+			kind: "failed",
+			failure,
+			bindings: providerFailedBindings(failure),
+		};
+	}
+	return { kind: "ready", configurationIdentity };
 }
 
 function finalSpawnPrecondition(options: {
@@ -701,6 +788,7 @@ function finalSpawnPrecondition(options: {
 	readonly userStateRoot?: string;
 	readonly executablePath: string;
 	readonly bindingIdentity: FallowBindingIdentity;
+	readonly expectedConfigurationIdentity?: string;
 	readonly readExecutionAuthorizationSync: typeof readAnalysisExecutionAuthorizationSync;
 }): () => void {
 	return () => {
@@ -1080,9 +1168,12 @@ async function introspectProvider(
 		);
 	}
 
+	const configSpawnPrecondition = validateSpawnPreconditions(
+		spawnPreconditionOptions,
+	);
 	const configPrecondition = discoveryFromSpawnPrecondition(
 		detectionSignal,
-		validateSpawnPreconditions(spawnPreconditionOptions),
+		configSpawnPrecondition,
 		executableResolution,
 	);
 	if (configPrecondition !== undefined) return configPrecondition;
@@ -1145,6 +1236,31 @@ async function introspectProvider(
 			executableResolution,
 		);
 	}
+	const configCompletionPrecondition = validateSpawnPreconditions(
+		spawnPreconditionOptions,
+	);
+	const configCompletionFailure = discoveryFromSpawnPrecondition(
+		detectionSignal,
+		configCompletionPrecondition,
+		executableResolution,
+	);
+	if (configCompletionFailure !== undefined) return configCompletionFailure;
+	if (
+		configSpawnPrecondition.kind !== "ready" ||
+		configCompletionPrecondition.kind !== "ready" ||
+		configSpawnPrecondition.configurationIdentity !==
+			configCompletionPrecondition.configurationIdentity
+	) {
+		return failedDiscovery(
+			detectionSignal,
+			configurationIdentityFailure(
+				"Fallow configuration changed during provider introspection.",
+			),
+			executableResolution,
+		);
+	}
+	const expectedConfigurationIdentity =
+		configCompletionPrecondition.configurationIdentity;
 
 	const provider = {
 		id: FALLOW_PROVIDER_ID,
@@ -1172,27 +1288,25 @@ async function introspectProvider(
 		FALLOW_MAX_CONCURRENT_ANALYSES,
 	);
 	const lifecycleController = new AbortController();
+	const executionPreconditionOptions = {
+		...spawnPreconditionOptions,
+		expectedConfigurationIdentity,
+	};
 	const executionRuntime = {
 		...runtimeBase,
 		executablePath: bindingIdentity.executable.canonicalPath,
 		projectRoot: options.projectRoot,
 		boundariesConfigured: hasConfiguredBoundaries,
-		beforeSpawn,
+		beforeSpawn: finalSpawnPrecondition(executionPreconditionOptions),
 	};
 	let invalidatedFailure: AnalysisFailure | undefined;
 	const currentBindings = async (): Promise<readonly AnalysisBinding[]> => {
 		if (invalidatedFailure !== undefined) {
 			return providerFailedBindings(invalidatedFailure);
 		}
-		const precondition = validateSpawnPreconditions({
-			projectRoot: options.projectRoot,
-			userStateRoot: options.userStateRoot,
-			executablePath,
-			bindingIdentity,
-			readExecutionAuthorizationSync:
-				options.readExecutionAuthorizationSync ??
-				readAnalysisExecutionAuthorizationSync,
-		});
+		const precondition = validateSpawnPreconditions(
+			executionPreconditionOptions,
+		);
 		if (precondition.kind === "failed") {
 			invalidatedFailure = precondition.failure;
 			if (!lifecycleController.signal.aborted) {

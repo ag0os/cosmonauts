@@ -1,7 +1,7 @@
 ---
 id: TASK-547
 title: Keep boundary coverage synchronized with invocation configuration
-status: To Do
+status: Blocked
 priority: high
 assignee: worker
 labels:
@@ -12,7 +12,7 @@ labels:
   - 'plan:analysis-gate-coverage'
 dependencies: []
 createdAt: '2026-07-31T16:39:00.963Z'
-updatedAt: '2026-07-31T16:45:46.838Z'
+updatedAt: '2026-07-31T17:16:24.624Z'
 ---
 
 ## Description
@@ -27,4 +27,4 @@ Review round 1 finding F-001. The Fallow runtime caches `boundariesConfigured` a
 
 ## Implementation Notes
 
-Ordering constraint carried from slice 1's D-027 (see memory/analysis-capability-runtime.md): two independent async preconditions plus a path-based spawn cannot both be last. Consent-last leaves executable identity stale; identity-last leaves consent stale. Two review rounds each 'fixed' one and reopened the other. Do NOT add configuration revalidation as a third independent async precondition ordered before or after the existing pair — fold it into the same single synchronous pre-spawn validation that already reads consent and captures executable identity, and document any residual honestly. Reordering is never the fix.
+task timed out after 1800000ms
