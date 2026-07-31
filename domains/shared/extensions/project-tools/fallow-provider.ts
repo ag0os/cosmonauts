@@ -1934,6 +1934,20 @@ function findingsOutcome(
 	return { findings, verdict: findings.length === 0 ? "pass" : "fail" };
 }
 
+export function assertFallowFindingsCovered(
+	findings: readonly Pick<AnalysisFinding, "category">[],
+	coverage: AnalysisGateCoverage,
+): void {
+	const uncoveredFinding = findings.find(
+		(finding) => !coverage.includes(finding.category),
+	);
+	if (uncoveredFinding !== undefined) {
+		throw new Error(
+			`normalized finding category ${uncoveredFinding.category} is outside declared coverage [${coverage.join(", ")}]`,
+		);
+	}
+}
+
 function reconcileVerdictEvidence(
 	outcome: CompletedFallowOutcome,
 	payload: Readonly<Record<string, unknown>>,
@@ -2249,6 +2263,7 @@ function normalizedCapabilityResult(
 			};
 		}
 		const normalized = analysisFindings(runtime, request, envelope.record);
+		assertFallowFindingsCovered(normalized.findings, normalized.coverage);
 		const completeEvidence =
 			request.capability === "complexity"
 				? findingsOutcome(

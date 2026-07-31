@@ -169,6 +169,24 @@ async function replayRuntime(
 				`No captured fixture matches: ${invocation.args.join(" ")}`,
 			);
 		}
+		if (
+			configFixtureName === "config-defaults" &&
+			fixture.name === "dead-code"
+		) {
+			const auditFixture = capabilityFixtures.find(
+				(candidate) => candidate.name === "changed-scope-audit",
+			);
+			const auditPayload = auditFixture?.envelope.payload as
+				| Readonly<Record<string, unknown>>
+				| undefined;
+			if (auditPayload?.dead_code === undefined) {
+				throw new Error("Captured audit fixture has no dead-code envelope.");
+			}
+			return {
+				...completedFixtureOutcome(fixture),
+				stdout: JSON.stringify(auditPayload.dead_code),
+			};
+		}
 		return completedFixtureOutcome(fixture);
 	};
 	const discovery = await discoverFallowProvider({

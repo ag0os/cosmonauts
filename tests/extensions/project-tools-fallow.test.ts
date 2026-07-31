@@ -23,6 +23,7 @@ import {
 } from "../../domains/shared/extensions/project-tools/analysis-consent.ts";
 import { AnalysisProviderError } from "../../domains/shared/extensions/project-tools/analysis-provider-error.ts";
 import {
+	assertFallowFindingsCovered,
 	discoverFallowProvider,
 	FALLOW_VALIDATED_ENGINE_VERSION,
 	fallowPlatformPackageName,
@@ -294,6 +295,7 @@ async function loadCapabilityFixture(
 }
 
 async function discoveredRuntimeWithFixtures(options?: {
+	readonly boundariesConfigured?: boolean;
 	readonly capabilityOutcome?: ProviderProcessOutcome;
 }): Promise<{
 	readonly execute: (
@@ -327,6 +329,14 @@ async function discoveredRuntimeWithFixtures(options?: {
 			};
 		}
 		if (invocation.args[0] === "config") {
+			if (options?.boundariesConfigured === false) {
+				return {
+					kind: "code-exit",
+					code: 3,
+					stdout: "no config file found, using defaults\n",
+					stderr: "",
+				};
+			}
 			return {
 				kind: "code-exit",
 				code: 0,
@@ -1449,7 +1459,12 @@ describe("Fallow capability execution", () => {
 				return {
 					kind: "code-exit",
 					code: 0,
-					stdout: JSON.stringify({ boundaries: { zones: [], rules: [] } }),
+					stdout: JSON.stringify({
+						boundaries: {
+							zones: [{ name: "ui", patterns: ["src/ui/**"] }],
+							rules: [{ from: "ui", allow: [] }],
+						},
+					}),
 					stderr: "",
 				};
 			}
@@ -1742,6 +1757,125 @@ describe("Fallow capability execution", () => {
 			]),
 		});
 		expect(result.native.payload).toEqual(payload);
+	});
+
+	// @cosmo-behavior plan:analysis-gate-coverage#B-042
+	test("rejects findings outside the declared gate coverage", async () => {
+		const deadCodeFixture = await loadCapabilityFixture("dead-code");
+		const auditFixture = await loadCapabilityFixture("changed-scope-audit");
+		const deadCodePayload = deadCodeFixture.envelope.payload as Readonly<
+			Record<string, unknown>
+		>;
+		const auditPayload = auditFixture.envelope.payload as Readonly<
+			Record<string, unknown>
+		>;
+		const boundaryViolation = (
+			deadCodePayload.boundary_violations as readonly unknown[]
+		)[0];
+		const auditDeadCode = auditPayload.dead_code as Readonly<
+			Record<string, unknown>
+		>;
+		const auditDeadCodeSummary = auditDeadCode.summary as Readonly<
+			Record<string, unknown>
+		>;
+		const auditSummary = auditPayload.summary as Readonly<
+			Record<string, unknown>
+		>;
+		const auditPayloadWithBoundaryFinding = {
+			...auditPayload,
+			summary: {
+				...auditSummary,
+				dead_code_issues: 4,
+			},
+			dead_code: {
+				...auditDeadCode,
+				total_issues: 4,
+				summary: {
+					...auditDeadCodeSummary,
+					total_issues: 4,
+					boundary_violations: 1,
+				},
+				boundary_violations: [boundaryViolation],
+			},
+		};
+		const cases = [
+			{
+				name: "single-capability",
+				request: {
+					capability: "dead-code",
+					scope: { kind: "project" },
+				},
+				payload: deadCodePayload,
+			},
+			{
+				name: "changed-scope-audit",
+				request: {
+					capability: "changed-scope-audit",
+					scope: { kind: "changed", base: "HEAD" },
+				},
+				payload: auditPayloadWithBoundaryFinding,
+			},
+		] as const satisfies readonly {
+			readonly name: string;
+			readonly request: AnalysisRequest;
+			readonly payload: unknown;
+		}[];
+
+		for (const testCase of cases) {
+			const stderr = `${testCase.name} provider evidence`;
+			const contradictoryRuntime = await discoveredRuntimeWithFixtures({
+				boundariesConfigured: false,
+				capabilityOutcome: {
+					kind: "code-exit",
+					code: 1,
+					stdout: JSON.stringify(testCase.payload),
+					stderr,
+				},
+			});
+			let thrown: unknown;
+			try {
+				await contradictoryRuntime.execute(testCase.request);
+			} catch (error) {
+				thrown = error;
+			}
+
+			expect(thrown, testCase.name).toBeInstanceOf(AnalysisProviderError);
+			expect(thrown, testCase.name).toMatchObject({
+				capability: testCase.request.capability,
+				provider: `fallow@${FALLOW_VALIDATED_ENGINE_VERSION}`,
+				failureClass: "invalid-output",
+				process: {
+					exitCode: 1,
+					stderrSummary: stderr,
+				},
+			});
+			expect((thrown as Error).message, testCase.name).toMatch(
+				/Capability: (?:dead-code|changed-scope-audit)[\s\S]*Provider: fallow@2\.54\.2[\s\S]*Failure class: invalid-output[\s\S]*Process evidence: exit=1[\s\S]*normalized finding category boundary-conformance is outside declared coverage/u,
+			);
+
+			const configuredRuntime = await discoveredRuntimeWithFixtures({
+				capabilityOutcome: {
+					kind: "code-exit",
+					code: 1,
+					stdout: JSON.stringify(testCase.payload),
+					stderr,
+				},
+			});
+			const result = await configuredRuntime.execute(testCase.request);
+			expect(result).toMatchObject({
+				kind: "findings",
+				coverage: expect.arrayContaining(["boundary-conformance"]),
+				findings: expect.arrayContaining([
+					expect.objectContaining({ category: "boundary-conformance" }),
+				]),
+			});
+		}
+
+		expect(() =>
+			assertFallowFindingsCovered([{ category: "duplication" }], ["dead-code"]),
+		).toThrow(
+			"normalized finding category duplication is outside declared coverage [dead-code]",
+		);
 	});
 
 	test("rejects structurally valid verdict evidence that contradicts the provider exit", async () => {
