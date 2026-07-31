@@ -1,7 +1,7 @@
 ---
 id: TASK-547
 title: Keep boundary coverage synchronized with invocation configuration
-status: Blocked
+status: Done
 priority: high
 assignee: worker
 labels:
@@ -12,7 +12,7 @@ labels:
   - 'plan:analysis-gate-coverage'
 dependencies: []
 createdAt: '2026-07-31T16:39:00.963Z'
-updatedAt: '2026-07-31T17:16:24.624Z'
+updatedAt: '2026-07-31T17:18:30.081Z'
 ---
 
 ## Description
