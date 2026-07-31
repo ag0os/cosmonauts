@@ -1,7 +1,7 @@
 ---
 id: TASK-545
 title: Validate the coverage member against two real tools and document it
-status: To Do
+status: Done
 priority: high
 labels:
   - 'plan:analysis-gate-coverage'
@@ -9,7 +9,7 @@ labels:
 dependencies:
   - TASK-542
 createdAt: '2026-07-31T15:45:17.727Z'
-updatedAt: '2026-07-31T15:45:17.727Z'
+updatedAt: '2026-07-31T16:20:38.576Z'
 ---
 
 ## Description
@@ -50,12 +50,11 @@ Record the commit SHA at task start; that SHA is the changed-scope base for
 any audit run at task close. Ratified ground: INV-1..INV-5, D-013, D-024,
 D-025, D-029, D-030, D-031. Shipped docs stay stack-agnostic.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 `ANALYSIS_RESULT_GENERIC_FIELDS` includes the coverage leaf field and the existing B-002 proof stays green with the field-evidence table in matching order
-- [ ] #2 `docs/analysis-provider-validation.md` maps the coverage member to Fallow 2.54.2 reference evidence and to independent evidence from a second real tool that is not Fallow, with decision `generic`
-- [ ] #3 Any aspect of coverage only one provider can express is recorded in the provider-tagged table rather than claimed as generic
-- [ ] #4 `docs/analysis-capabilities.md` states that completed verdict-bearing results declare their evaluated gate coverage and that `trace`/`fix-preview` declare none
-- [ ] #5 `tests/analysis/contracts.test.ts` proves the two-tool validation record exists for the coverage member in a test named `records two tool validation for declared gate coverage` carrying marker `@cosmo-behavior plan:analysis-gate-coverage#B-044`
-- [ ] #6 The project test, lint, and type-check steps pass, and no existing test is deleted or rewritten to make the change green
+- [x] #1 `ANALYSIS_RESULT_GENERIC_FIELDS` includes the coverage leaf field and the existing B-002 proof stays green with the field-evidence table in matching order
+- [x] #2 `docs/analysis-provider-validation.md` maps the coverage member to Fallow 2.54.2 reference evidence and to independent evidence from a second real tool that is not Fallow, with decision `generic`
+- [x] #3 Any aspect of coverage only one provider can express is recorded in the provider-tagged table rather than claimed as generic
+- [x] #4 `docs/analysis-capabilities.md` states that completed verdict-bearing results declare their evaluated gate coverage and that `trace`/`fix-preview` declare none
+- [x] #5 `tests/analysis/contracts.test.ts` proves the two-tool validation record exists for the coverage member in a test named `records two tool validation for declared gate coverage` carrying marker `@cosmo-behavior plan:analysis-gate-coverage#B-044`
+- [x] #6 The project test, lint, and type-check steps pass, and no existing test is deleted or rewritten to make the change green
 <!-- AC:END -->

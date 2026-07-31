@@ -1,7 +1,7 @@
 ---
 id: TASK-543
 title: Fallow adapter derives declared coverage from the real invocation
-status: To Do
+status: Done
 priority: high
 labels:
   - 'plan:analysis-gate-coverage'
@@ -9,7 +9,7 @@ labels:
 dependencies:
   - TASK-542
 createdAt: '2026-07-31T15:45:17.720Z'
-updatedAt: '2026-07-31T15:45:17.720Z'
+updatedAt: '2026-07-31T16:05:09.288Z'
 ---
 
 ## Description
@@ -61,13 +61,12 @@ any audit run at task close. Ratified ground: INV-1..INV-5, D-013, D-024,
 D-025, D-029, D-030, D-031. Do not change which capabilities Fallow
 supports, add a second provider, or change the gate vocabulary.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 Declared coverage on every completed Fallow verdict-bearing result is derived from the invocation actually performed, not from a per-result-kind constant
-- [ ] #2 A single-capability result declares its own capability, and a changed-scope audit declares exactly the categories whose provider sub-envelopes were present and normalized
-- [ ] #3 The dead-code family declares `boundary-conformance` in addition to its nominal categories exactly when the provider reports boundary zones and rules configured, and omits it otherwise (D-031)
-- [ ] #4 The configured-boundary signal reaches normalization through the provider execution runtime rather than being hardcoded or re-derived from the normalized findings
-- [ ] #5 Declared coverage is non-empty and free of duplicate entries on every completed verdict-bearing Fallow result
-- [ ] #6 `tests/extensions/project-tools-fallow-fixtures.test.ts` asserts declared coverage for each verdict-bearing capability against the captured `tests/fixtures/fallow-2.54.2/` envelopes, covering both the boundary-configured and boundary-unconfigured dead-code cases, in a test named `derives declared gate coverage from real provider envelopes` carrying marker `@cosmo-behavior plan:analysis-gate-coverage#B-041`
-- [ ] #7 The project test, lint, and type-check steps pass, and no existing test is deleted or rewritten to make the change green
+- [x] #1 Declared coverage on every completed Fallow verdict-bearing result is derived from the invocation actually performed, not from a per-result-kind constant
+- [x] #2 A single-capability result declares its own capability, and a changed-scope audit declares exactly the categories whose provider sub-envelopes were present and normalized
+- [x] #3 The dead-code family declares `boundary-conformance` in addition to its nominal categories exactly when the provider reports boundary zones and rules configured, and omits it otherwise (D-031)
+- [x] #4 The configured-boundary signal reaches normalization through the provider execution runtime rather than being hardcoded or re-derived from the normalized findings
+- [x] #5 Declared coverage is non-empty and free of duplicate entries on every completed verdict-bearing Fallow result
+- [x] #6 `tests/extensions/project-tools-fallow-fixtures.test.ts` asserts declared coverage for each verdict-bearing capability against the captured `tests/fixtures/fallow-2.54.2/` envelopes, covering both the boundary-configured and boundary-unconfigured dead-code cases, in a test named `derives declared gate coverage from real provider envelopes` carrying marker `@cosmo-behavior plan:analysis-gate-coverage#B-041`
+- [x] #7 The project test, lint, and type-check steps pass, and no existing test is deleted or rewritten to make the change green
 <!-- AC:END -->

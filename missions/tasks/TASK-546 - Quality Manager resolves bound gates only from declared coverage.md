@@ -1,7 +1,7 @@
 ---
 id: TASK-546
 title: Quality Manager resolves bound gates only from declared coverage
-status: To Do
+status: Done
 priority: high
 labels:
   - 'plan:analysis-gate-coverage'
@@ -10,7 +10,7 @@ dependencies:
   - TASK-544
   - TASK-545
 createdAt: '2026-07-31T15:45:42.243Z'
-updatedAt: '2026-07-31T15:45:42.243Z'
+updatedAt: '2026-07-31T16:25:00.171Z'
 ---
 
 ## Description
@@ -62,13 +62,12 @@ D-025, D-029, D-030, D-031. INV-1 governs shipped prompts: reference
 capabilities, never concrete tool names or commands, and keep the prompt
 stack-agnostic.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 The prompt resolves a bound gate to `pass` only when the completed result declares that gate covered and no finding contradicts it
-- [ ] #2 A category outside the declared coverage is reported as degraded or failed-to-run and is never passed by absence of findings
-- [ ] #3 The unsatisfiable "complete coverage" wording is gone from the gate-resolution section, while the failed-to-run rule for unclassifiable gates, the `not-applicable` rule for `trace`/`fix-preview`, and the prohibition on reading provider-native fields remain
-- [ ] #4 The exclusive-bucket resolution rule and the boundary-conformance own-capability resolution added by `analysis-gate-rewiring` remain intact
-- [ ] #5 The prompt names no concrete tool, command, or provider and remains stack-agnostic (INV-1)
-- [ ] #6 `tests/prompts/quality-manager.test.ts` pins the operative sentences and proves the negative case — an undeclared category is not passed by absence of findings — in a test named `resolves bound gates only from declared coverage` carrying marker `@cosmo-behavior plan:analysis-gate-coverage#B-043`
-- [ ] #7 The project test, lint, and type-check steps pass, and no existing test is deleted or rewritten to make the change green
+- [x] #1 The prompt resolves a bound gate to `pass` only when the completed result declares that gate covered and no finding contradicts it
+- [x] #2 A category outside the declared coverage is reported as degraded or failed-to-run and is never passed by absence of findings
+- [x] #3 The unsatisfiable "complete coverage" wording is gone from the gate-resolution section, while the failed-to-run rule for unclassifiable gates, the `not-applicable` rule for `trace`/`fix-preview`, and the prohibition on reading provider-native fields remain
+- [x] #4 The exclusive-bucket resolution rule and the boundary-conformance own-capability resolution added by `analysis-gate-rewiring` remain intact
+- [x] #5 The prompt names no concrete tool, command, or provider and remains stack-agnostic (INV-1)
+- [x] #6 `tests/prompts/quality-manager.test.ts` pins the operative sentences and proves the negative case — an undeclared category is not passed by absence of findings — in a test named `resolves bound gates only from declared coverage` carrying marker `@cosmo-behavior plan:analysis-gate-coverage#B-043`
+- [x] #7 The project test, lint, and type-check steps pass, and no existing test is deleted or rewritten to make the change green
 <!-- AC:END -->

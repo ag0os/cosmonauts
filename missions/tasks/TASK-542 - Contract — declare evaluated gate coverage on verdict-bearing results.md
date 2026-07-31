@@ -1,14 +1,14 @@
 ---
 id: TASK-542
 title: Contract — declare evaluated gate coverage on verdict-bearing results
-status: To Do
+status: Done
 priority: high
 labels:
   - 'plan:analysis-gate-coverage'
   - backend
 dependencies: []
 createdAt: '2026-07-31T15:44:31.559Z'
-updatedAt: '2026-07-31T15:44:31.559Z'
+updatedAt: '2026-07-31T15:54:32.535Z'
 ---
 
 ## Description
@@ -57,13 +57,12 @@ any audit run at task close. Ratified ground for this plan: INV-1..INV-5
 re-litigate or amend without a human decision on the record. Do not change
 the seven capability names or the gate vocabulary.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 Every completed verdict-bearing result (`dead-code`, `duplication`, `complexity`, `boundary-conformance`, `changed-scope-audit`) carries a required coverage member drawn from the existing `AnalysisGateCapability` union, with no new gate name and no provider-specific member
-- [ ] #2 The coverage member is typed so that an absent or empty coverage list is a `tsc` error rather than a test-only failure
-- [ ] #3 `trace` and `fix-preview` results gain no coverage member and keep `verdict: "not-applicable"` (D-013)
-- [ ] #4 Every construction site across `lib/`, `domains/`, `bundled/`, and `tests/` is updated in the same change and the type-check gate is clean
-- [ ] #5 `tests/analysis/contracts.test.ts` proves presence on each verdict-bearing kind and absence on `trace`/`fix-preview` in a test named `declares evaluated gate coverage on every verdict bearing result` carrying marker `@cosmo-behavior plan:analysis-gate-coverage#B-040`
-- [ ] #6 `ANALYSIS_RESULT_GENERIC_FIELDS` and `docs/analysis-provider-validation.md` are unchanged by this task, and the existing B-002 validation proof stays green
-- [ ] #7 The project test, lint, and type-check steps pass, and no existing test is deleted or rewritten to make the change green
+- [x] #1 Every completed verdict-bearing result (`dead-code`, `duplication`, `complexity`, `boundary-conformance`, `changed-scope-audit`) carries a required coverage member drawn from the existing `AnalysisGateCapability` union, with no new gate name and no provider-specific member
+- [x] #2 The coverage member is typed so that an absent or empty coverage list is a `tsc` error rather than a test-only failure
+- [x] #3 `trace` and `fix-preview` results gain no coverage member and keep `verdict: "not-applicable"` (D-013)
+- [x] #4 Every construction site across `lib/`, `domains/`, `bundled/`, and `tests/` is updated in the same change and the type-check gate is clean
+- [x] #5 `tests/analysis/contracts.test.ts` proves presence on each verdict-bearing kind and absence on `trace`/`fix-preview` in a test named `declares evaluated gate coverage on every verdict bearing result` carrying marker `@cosmo-behavior plan:analysis-gate-coverage#B-040`
+- [x] #6 `ANALYSIS_RESULT_GENERIC_FIELDS` and `docs/analysis-provider-validation.md` are unchanged by this task, and the existing B-002 validation proof stays green
+- [x] #7 The project test, lint, and type-check steps pass, and no existing test is deleted or rewritten to make the change green
 <!-- AC:END -->
