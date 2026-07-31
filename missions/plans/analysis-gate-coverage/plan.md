@@ -57,6 +57,13 @@ cite this plan's own AC-013 through AC-017.
   - Why: settles the spec's Open Question. Uniform presence makes the consumer rule uniform and makes fabricating coverage a type error rather than a convention.
   - Decided by: planner-proposed, 2026-07-30
 
+- **D-031 - Declared coverage is derived from the invocation, including the boundary category the dead-code family can emit**
+  - Decision: a provider path declares every gate category that invocation actually evaluated, not the nominal capability alone. For Fallow, the `dead-code` path and the audit's `dead_code` envelope declare `boundary-conformance` in addition to their nominal categories **only when the provider reports boundary zones and rules configured** — the same condition under which detection advertises `boundary-conformance` as supported rather than `provider-not-configured`. `duplication`, `complexity`, and `boundary-conformance` paths declare exactly their own category.
+  - Supersedes: B-041's Expected enumeration, which read that the audit declares dead-code, duplication, and complexity and that a single-capability result declares exactly its own capability.
+  - Alternatives: keep the superseded enumeration literally (rejected — `normalizeDeadCodeFindings` maps the `boundary_violations` collection to `boundary-conformance` findings in both the `dead-code` and audit paths, so any project with configured zones would turn a legitimate provider result into a B-042 contradiction failure, breaking two working capabilities); always declare `boundary-conformance` for the dead-code family regardless of configuration (rejected — with no zones configured nothing about boundaries was evaluated, so the declaration would assert coverage the run never produced, which is the fabrication this plan exists to prevent); drop or re-category the boundary findings emitted by the dead-code path (rejected — B-042 forbids reconciling a contradiction by dropping a finding, and re-categorizing changes the gate vocabulary this plan excludes).
+  - Why: serves INV-2 (a category is declared covered only when it was genuinely evaluated, so nothing reads as passed by default) and INV-3 (the contradiction check stays a real invariant — a boundary finding with no configured zones remains an error rather than being absorbed by a permanently widened coverage list). D-030's uniform-presence rule is preserved: coverage is still required and non-empty on every verdict-bearing result.
+  - Decided by: human, user-chose-among-options, 2026-07-31
+
 ## Behaviors
 
 Numbered from B-040 to stay clear of the parent design's B-001–B-037 family.
@@ -74,7 +81,7 @@ Numbered from B-040 to stay clear of the parent design's B-001–B-037 family.
 - Source: AC-013, AC-014
 - Context: the Fallow adapter normalizes a changed-scope audit and each single-capability result
 - Action: it builds the completed result
-- Expected: declared coverage is derived from the invocation actually performed and matches the captured 2.54.2 envelopes; the audit declares dead-code, duplication, and complexity, and a single-capability result declares exactly its own capability (D-030)
+- Expected: declared coverage is derived from the invocation actually performed and matches the captured 2.54.2 envelopes; the audit declares dead-code, duplication, and complexity, a single-capability result declares its own capability, and the dead-code family additionally declares boundary-conformance exactly when the provider reports boundary zones and rules configured (D-030, D-031) *(Expected amended by D-031, 2026-07-31; the superseded enumeration — audit declares three categories, single-capability declares exactly its own — is recorded as the rejected alternative there)*
 - Seam: `domains/shared/extensions/project-tools/fallow-provider.ts`
 - Test: `tests/extensions/project-tools-fallow-fixtures.test.ts` > `derives declared gate coverage from real provider envelopes`
 - Marker: `@cosmo-behavior plan:analysis-gate-coverage#B-041`
@@ -121,7 +128,11 @@ pattern of encoding ratified contracts as types rather than conventions.
 
 The Fallow adapter derives coverage from the invocation it performed, not from a
 constant. The audit path declares the three categories it merges; each
-single-capability path declares its own. Coverage is cross-checked against the
+single-capability path declares its own; and the dead-code family declares
+`boundary-conformance` as well exactly when boundary zones and rules are
+configured, since that is the condition under which the same invocation
+evaluates them (D-031). Deriving that condition requires the configured-boundary
+signal detection already computes to reach execution. Coverage is cross-checked against the
 findings actually normalized: a finding outside coverage raises
 `AnalysisProviderError` with the evidence intact (B-042), reusing slice 1's
 failure-evidence shape from D-020.
