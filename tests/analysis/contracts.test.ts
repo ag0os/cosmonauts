@@ -8,6 +8,7 @@ import {
 	ANALYSIS_OPERATIONAL_CAPABILITIES,
 	ANALYSIS_RESULT_GENERIC_FIELDS,
 	type AnalysisBinding,
+	type AnalysisGateCoverage,
 	type AnalysisResult,
 	type AnalysisTraceTarget,
 } from "../../lib/analysis/index.ts";
@@ -169,6 +170,37 @@ describe("analysis core contracts", () => {
 				/^(?!.*Fallow)(?:Knip|jscpd|Radon|dependency-cruiser|Semgrep|ESLint)[^:]*:/u,
 			);
 		}
+	});
+
+	// @cosmo-behavior plan:analysis-gate-coverage#B-040
+	test("declares evaluated gate coverage on every verdict bearing result", () => {
+		expectTypeOf<Extract<AnalysisResult, { capability: "dead-code" }>>()
+			.toHaveProperty("coverage")
+			.toEqualTypeOf<AnalysisGateCoverage>();
+		expectTypeOf<Extract<AnalysisResult, { capability: "duplication" }>>()
+			.toHaveProperty("coverage")
+			.toEqualTypeOf<AnalysisGateCoverage>();
+		expectTypeOf<Extract<AnalysisResult, { capability: "complexity" }>>()
+			.toHaveProperty("coverage")
+			.toEqualTypeOf<AnalysisGateCoverage>();
+		expectTypeOf<
+			Extract<AnalysisResult, { capability: "boundary-conformance" }>
+		>()
+			.toHaveProperty("coverage")
+			.toEqualTypeOf<AnalysisGateCoverage>();
+		expectTypeOf<
+			Extract<AnalysisResult, { capability: "changed-scope-audit" }>
+		>()
+			.toHaveProperty("coverage")
+			.toEqualTypeOf<AnalysisGateCoverage>();
+
+		expectTypeOf<readonly []>().not.toMatchTypeOf<AnalysisGateCoverage>();
+		expectTypeOf<
+			Extract<AnalysisResult, { capability: "trace" }>
+		>().not.toHaveProperty("coverage");
+		expectTypeOf<
+			Extract<AnalysisResult, { capability: "fix-preview" }>
+		>().not.toHaveProperty("coverage");
 	});
 
 	test("discriminates result verdicts and failed bindings", () => {

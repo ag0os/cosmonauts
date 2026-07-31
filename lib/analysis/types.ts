@@ -44,6 +44,10 @@ export const ANALYSIS_TOOL_NAMES = [
 
 export type AnalysisGateCapability =
 	(typeof ANALYSIS_GATE_CAPABILITIES)[number];
+export type AnalysisGateCoverage = readonly [
+	AnalysisGateCapability,
+	...AnalysisGateCapability[],
+];
 export type AnalysisOperationalCapability =
 	(typeof ANALYSIS_OPERATIONAL_CAPABILITIES)[number];
 export type AnalysisCapability = (typeof ANALYSIS_CAPABILITIES)[number];
@@ -236,19 +240,21 @@ export interface AnalysisNativeEnvelope {
 	readonly stderr: string;
 }
 
-interface AnalysisCompletedResultBase<
+type AnalysisCompletedResultBase<
 	Kind extends string,
 	Capability extends AnalysisCapability,
 	Scope extends AnalysisScope,
 	Verdict extends AnalysisVerdict | "not-applicable",
-> {
+> = {
 	readonly kind: Kind;
 	readonly capability: Capability;
 	readonly provider: ProviderIdentity;
 	readonly scope: Scope;
 	readonly verdict: Verdict;
 	readonly native: AnalysisNativeEnvelope;
-}
+} & (Verdict extends AnalysisVerdict
+	? { readonly coverage: AnalysisGateCoverage }
+	: unknown);
 
 type AnalysisFindingsResultFor<
 	Capability extends AnalysisVerdictCapability,

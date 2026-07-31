@@ -19,6 +19,7 @@ export type {
 	AnalysisFixPreviewResult,
 	AnalysisFixProposal,
 	AnalysisGateCapability,
+	AnalysisGateCoverage,
 	AnalysisLocation,
 	AnalysisMetric,
 	AnalysisNativeEnvelope,

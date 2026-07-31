@@ -27,6 +27,7 @@ import {
 	type AnalysisFinding,
 	type AnalysisFindingSeverity,
 	type AnalysisFixProposal,
+	type AnalysisGateCoverage,
 	type AnalysisLocation,
 	type AnalysisMetric,
 	type AnalysisRequest,
@@ -2190,6 +2191,10 @@ function normalizedCapabilityResult(
 			};
 		}
 		const normalized = analysisFindings(request, envelope.record);
+		const coverage: AnalysisGateCoverage =
+			request.capability === "changed-scope-audit"
+				? ["dead-code", "duplication", "complexity"]
+				: [request.capability];
 		const completeEvidence =
 			request.capability === "complexity"
 				? findingsOutcome(
@@ -2205,6 +2210,7 @@ function normalizedCapabilityResult(
 				scope: request.scope,
 				metric: request.metric,
 				verdict: normalized.verdict,
+				coverage,
 				findings: normalized.findings,
 				native,
 			};
@@ -2215,6 +2221,7 @@ function normalizedCapabilityResult(
 			provider: runtime.provider,
 			scope: request.scope,
 			verdict: normalized.verdict,
+			coverage,
 			findings: normalized.findings,
 			native,
 		} as AnalysisResult;

@@ -37,6 +37,7 @@ import {
 } from "../../domains/shared/extensions/project-tools/process-runner.ts";
 import {
 	ANALYSIS_CAPABILITIES,
+	ANALYSIS_GATE_CAPABILITIES,
 	ANALYSIS_TOOL_NAMES,
 	type AnalysisRequest,
 	type AnalysisResult,
@@ -1673,12 +1674,20 @@ describe("Fallow capability execution", () => {
 
 			if (result.kind === "findings") {
 				expect(result.verdict).toBe("fail");
+				expect(result.coverage.length).toBeGreaterThan(0);
+				expect(
+					result.coverage.every((capability) =>
+						ANALYSIS_GATE_CAPABILITIES.includes(capability),
+					),
+				).toBe(true);
 				expect(result.findings.length).toBeGreaterThan(0);
 			} else if (result.kind === "trace") {
 				expect(result.verdict).toBe("not-applicable");
+				expect(result).not.toHaveProperty("coverage");
 				expect(result.trace.evidence.length).toBeGreaterThan(0);
 			} else {
 				expect(result.verdict).toBe("not-applicable");
+				expect(result).not.toHaveProperty("coverage");
 				expect(result.proposals).toHaveLength(2);
 			}
 		}
