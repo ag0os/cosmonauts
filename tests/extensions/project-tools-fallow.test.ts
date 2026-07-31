@@ -2359,8 +2359,72 @@ describe("Fallow capability execution", () => {
 		const status = resultDetails(await pi.callTool("analysis_status", {}));
 		const results: Record<string, unknown>[] = [];
 		for (const [toolName, params] of Object.entries(VALID_TOOL_PARAMS)) {
-			results.push(resultDetails(await pi.callTool(toolName, params)));
+			const toolResult = (await pi.callTool(toolName, params)) as ToolResult;
+			const details = resultDetails(toolResult);
+			const modelVisibleText = toolResult.content[0]?.text;
+			if (modelVisibleText === undefined) {
+				throw new Error(`Expected model-visible JSON from ${toolName}.`);
+			}
+			const modelVisible = JSON.parse(modelVisibleText) as Record<
+				string,
+				unknown
+			>;
+			expect(modelVisible, toolName).toEqual(details);
+			if (
+				toolName === "analysis_trace" ||
+				toolName === "analysis_fix_preview"
+			) {
+				expect(details, toolName).not.toHaveProperty("coverage");
+				expect(modelVisible, toolName).not.toHaveProperty("coverage");
+			} else {
+				expect(details.coverage, toolName).toEqual(modelVisible.coverage);
+				expect(details.coverage, toolName).toEqual(expect.any(Array));
+				expect(details.coverage, toolName).not.toHaveLength(0);
+			}
+			results.push(details);
 		}
+
+		const deadCodeFixture = await loadCapabilityFixture("dead-code");
+		const contradictionPi = createMockPi({ cwd: projectRoot });
+		createProjectToolsExtension({
+			userStateRoot,
+			injectedExecutablePath: executablePath,
+			executeProcess: async (invocation) => {
+				if (invocation.args.includes("--version")) {
+					return {
+						kind: "code-exit",
+						code: 0,
+						stdout: `fallow ${FALLOW_VALIDATED_ENGINE_VERSION}\n`,
+						stderr: "",
+					};
+				}
+				if (invocation.args[0] === "config") {
+					return {
+						kind: "code-exit",
+						code: 3,
+						stdout: "no config file found, using defaults\n",
+						stderr: "",
+					};
+				}
+				return {
+					kind: "code-exit",
+					code: deadCodeFixture.envelope.code,
+					stdout: deadCodeFixture.envelope.stdout,
+					stderr: deadCodeFixture.envelope.stderr,
+				};
+			},
+		})(contradictionPi as never);
+		const contradiction = contradictionPi.callTool("analysis_dead_code", {});
+		await expect(contradiction).rejects.toBeInstanceOf(AnalysisProviderError);
+		await expect(contradiction).rejects.toMatchObject({
+			name: "AnalysisProviderError",
+			capability: "dead-code",
+			failureClass: "invalid-output",
+		});
+		await expect(contradiction).rejects.toThrow(
+			/normalized finding category boundary-conformance is outside declared coverage/u,
+		);
+
 		const after = await snapshotWholeTree(projectRoot);
 
 		expect(status).toMatchObject({
