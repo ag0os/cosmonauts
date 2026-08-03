@@ -1821,61 +1821,77 @@ describe("Fallow capability execution", () => {
 			readonly payload: unknown;
 		}[];
 
+		/*
+		 * The guard is the reason declared coverage can be trusted: without it an
+		 * adapter could declare anything. Under D-032 a boundary finding is itself
+		 * the evidence that boundaries were evaluated, so it self-covers and the
+		 * reference adapter's normalizers cannot construct a finding outside its
+		 * own declared coverage — every category they emit is derived from the
+		 * same evidence that declares it. The invariant is therefore proven
+		 * directly at its seam, and the paths that previously produced a
+		 * contradiction are proven to normalize cleanly instead, under both
+		 * configured and unconfigured boundaries.
+		 */
 		for (const testCase of cases) {
 			const stderr = `${testCase.name} provider evidence`;
-			const contradictoryRuntime = await discoveredRuntimeWithFixtures({
-				boundariesConfigured: false,
-				capabilityOutcome: {
-					kind: "code-exit",
-					code: 1,
-					stdout: JSON.stringify(testCase.payload),
-					stderr,
-				},
-			});
-			let thrown: unknown;
-			try {
-				await contradictoryRuntime.execute(testCase.request);
-			} catch (error) {
-				thrown = error;
+			for (const boundariesConfigured of [true, false]) {
+				const runtime = await discoveredRuntimeWithFixtures({
+					boundariesConfigured,
+					capabilityOutcome: {
+						kind: "code-exit",
+						code: 1,
+						stdout: JSON.stringify(testCase.payload),
+						stderr,
+					},
+				});
+				const result = await runtime.execute(testCase.request);
+				expect(
+					result,
+					`${testCase.name}/${boundariesConfigured}`,
+				).toMatchObject({
+					kind: "findings",
+					coverage: expect.arrayContaining(["boundary-conformance"]),
+					findings: expect.arrayContaining([
+						expect.objectContaining({ category: "boundary-conformance" }),
+					]),
+				});
 			}
+		}
 
-			expect(thrown, testCase.name).toBeInstanceOf(AnalysisProviderError);
-			expect(thrown, testCase.name).toMatchObject({
-				capability: testCase.request.capability,
-				provider: `fallow@${FALLOW_VALIDATED_ENGINE_VERSION}`,
-				failureClass: "invalid-output",
-				process: {
-					exitCode: 1,
-					stderrSummary: stderr,
-				},
-			});
-			expect((thrown as Error).message, testCase.name).toMatch(
-				/Capability: (?:dead-code|changed-scope-audit)[\s\S]*Provider: fallow@2\.54\.2[\s\S]*Failure class: invalid-output[\s\S]*Process evidence: exit=1[\s\S]*normalized finding category boundary-conformance is outside declared coverage/u,
+		for (const { findings, coverage, message } of [
+			{
+				findings: [{ category: "duplication" } as const],
+				coverage: ["dead-code"] as const,
+				message:
+					"normalized finding category duplication is outside declared coverage [dead-code]",
+			},
+			{
+				findings: [{ category: "boundary-conformance" } as const],
+				coverage: ["dead-code"] as const,
+				message:
+					"normalized finding category boundary-conformance is outside declared coverage [dead-code]",
+			},
+			{
+				findings: [
+					{ category: "dead-code" } as const,
+					{ category: "complexity" } as const,
+				],
+				coverage: ["dead-code", "duplication"] as const,
+				message:
+					"normalized finding category complexity is outside declared coverage [dead-code, duplication]",
+			},
+		]) {
+			expect(() => assertFallowFindingsCovered(findings, coverage)).toThrow(
+				message,
 			);
-
-			const configuredRuntime = await discoveredRuntimeWithFixtures({
-				capabilityOutcome: {
-					kind: "code-exit",
-					code: 1,
-					stdout: JSON.stringify(testCase.payload),
-					stderr,
-				},
-			});
-			const result = await configuredRuntime.execute(testCase.request);
-			expect(result).toMatchObject({
-				kind: "findings",
-				coverage: expect.arrayContaining(["boundary-conformance"]),
-				findings: expect.arrayContaining([
-					expect.objectContaining({ category: "boundary-conformance" }),
-				]),
-			});
 		}
 
 		expect(() =>
-			assertFallowFindingsCovered([{ category: "duplication" }], ["dead-code"]),
-		).toThrow(
-			"normalized finding category duplication is outside declared coverage [dead-code]",
-		);
+			assertFallowFindingsCovered(
+				[{ category: "dead-code" }, { category: "boundary-conformance" }],
+				["dead-code", "boundary-conformance"],
+			),
+		).not.toThrow();
 	});
 
 	test("rejects structurally valid verdict evidence that contradicts the provider exit", async () => {
@@ -2414,15 +2430,33 @@ describe("Fallow capability execution", () => {
 				};
 			},
 		})(contradictionPi as never);
-		const contradiction = contradictionPi.callTool("analysis_dead_code", {});
-		await expect(contradiction).rejects.toBeInstanceOf(AnalysisProviderError);
-		await expect(contradiction).rejects.toMatchObject({
-			name: "AnalysisProviderError",
-			capability: "dead-code",
-			failureClass: "invalid-output",
-		});
-		await expect(contradiction).rejects.toThrow(
-			/normalized finding category boundary-conformance is outside declared coverage/u,
+		/*
+		 * Caller-facing evidence that boundary coverage is evidence-derived rather
+		 * than configuration-derived (D-032): this provider reports no
+		 * configuration at all (`config` exits 3, defaults in effect), yet the
+		 * captured envelope carries a boundary violation. The registered tool must
+		 * therefore declare the category — proving the claim survives transport
+		 * through Pi and does not depend on a configuration snapshot that an
+		 * external `extends` source could have invalidated.
+		 */
+		const unconfiguredResult = (await contradictionPi.callTool(
+			"analysis_dead_code",
+			{},
+		)) as ToolResult;
+		const unconfiguredDetails = resultDetails(unconfiguredResult);
+		const unconfiguredText = unconfiguredResult.content[0]?.text;
+		if (unconfiguredText === undefined) {
+			throw new Error("Expected model-visible JSON from analysis_dead_code.");
+		}
+		expect(unconfiguredDetails.coverage).toEqual([
+			"dead-code",
+			"boundary-conformance",
+		]);
+		expect(JSON.parse(unconfiguredText)).toEqual(unconfiguredDetails);
+		expect(unconfiguredDetails.findings).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ category: "boundary-conformance" }),
+			]),
 		);
 
 		const after = await snapshotWholeTree(projectRoot);

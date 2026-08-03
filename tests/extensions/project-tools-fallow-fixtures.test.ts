@@ -180,24 +180,6 @@ async function replayRuntime(
 				`No captured fixture matches: ${invocation.args.join(" ")}`,
 			);
 		}
-		if (
-			configFixtureName === "config-defaults" &&
-			fixture.name === "dead-code"
-		) {
-			const auditFixture = capabilityFixtures.find(
-				(candidate) => candidate.name === "changed-scope-audit",
-			);
-			const auditPayload = auditFixture?.envelope.payload as
-				| Readonly<Record<string, unknown>>
-				| undefined;
-			if (auditPayload?.dead_code === undefined) {
-				throw new Error("Captured audit fixture has no dead-code envelope.");
-			}
-			return {
-				...completedFixtureOutcome(fixture),
-				stdout: JSON.stringify(auditPayload.dead_code),
-			};
-		}
 		const outcome = completedFixtureOutcome(fixture);
 		if (
 			fixture.name === auditFixtureName &&
@@ -406,15 +388,13 @@ describe("pinned Fallow capture fixtures", () => {
 		).resolves.toMatchObject({
 			kind: "findings",
 			verdict: "pass",
-			coverage: [
-				"dead-code",
-				"boundary-conformance",
-				"duplication",
-				"complexity",
-			],
+			coverage: ["dead-code", "duplication", "complexity"],
 			findings: [],
 		});
 
+		// An empty changed scope produces no findings, so nothing evidences a
+		// boundary evaluation and the category is not declared — identically with
+		// and without configured zones (D-032).
 		const unconfiguredRuntime = await replayRuntime(
 			"zero-change-unconfigured",
 			"config-defaults",
@@ -543,6 +523,9 @@ describe("pinned Fallow capture fixtures", () => {
 		);
 		const configuredCases = [
 			{
+				// The captured dead-code envelope carries a boundary violation, and
+				// that finding is itself the evidence boundaries were evaluated
+				// (D-032). Coverage does not depend on the resolved configuration.
 				request: {
 					capability: "dead-code",
 					scope: { kind: "project" },
@@ -572,16 +555,14 @@ describe("pinned Fallow capture fixtures", () => {
 				coverage: ["boundary-conformance"],
 			},
 			{
+				// The captured audit's dead_code sub-envelope reports no boundary
+				// violation, so nothing evidences a boundary evaluation and the
+				// category is not declared.
 				request: {
 					capability: "changed-scope-audit",
 					scope: { kind: "changed", base: "HEAD" },
 				},
-				coverage: [
-					"dead-code",
-					"boundary-conformance",
-					"duplication",
-					"complexity",
-				],
+				coverage: ["dead-code", "duplication", "complexity"],
 			},
 		] as const satisfies readonly {
 			readonly request: AnalysisRequest;
@@ -597,29 +578,19 @@ describe("pinned Fallow capture fixtures", () => {
 			expect(new Set(result.coverage).size).toBe(result.coverage.length);
 		}
 
+		// Declared coverage is derived from envelope evidence alone, so the same
+		// envelopes produce the same coverage whether or not the project
+		// configures boundary zones. This is what makes the claim unforgeable by a
+		// stale or externally inherited configuration (D-032). The dedicated
+		// boundary capability is excluded because it is legitimately unbound
+		// without configured zones — a binding property, not a coverage one.
 		const unconfiguredRuntime = await replayRuntime(
 			"unconfigured",
 			"config-defaults",
 		);
-		for (const { request, coverage } of [
-			{
-				request: {
-					capability: "dead-code",
-					scope: { kind: "project" },
-				},
-				coverage: ["dead-code"],
-			},
-			{
-				request: {
-					capability: "changed-scope-audit",
-					scope: { kind: "changed", base: "HEAD" },
-				},
-				coverage: ["dead-code", "duplication", "complexity"],
-			},
-		] as const satisfies readonly {
-			readonly request: AnalysisRequest;
-			readonly coverage: AnalysisGateCoverage;
-		}[]) {
+		for (const { request, coverage } of configuredCases.filter(
+			({ request: { capability } }) => capability !== "boundary-conformance",
+		)) {
 			const result = await unconfiguredRuntime.execute(request);
 			expect(result).toMatchObject({ kind: "findings", coverage });
 			if (result.kind !== "findings") {

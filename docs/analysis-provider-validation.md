@@ -75,8 +75,8 @@ explicit base.
 Fallow audit coverage has two provider-specific evidence paths. For a non-empty
 changed scope, the adapter derives each category only from its successfully
 parsed `dead_code`, `duplication`, or `complexity` sub-envelope. The dead-code
-sub-envelope additionally covers `boundary-conformance` only when boundary
-zones and rules were revalidated for that invocation.
+sub-envelope additionally covers `boundary-conformance` only when it carried a
+boundary violation, per the evidence rule below.
 
 The captured Fallow 2.54.2 empty-scope envelope has a different documented
 shape: `changed_files_count` is numeric zero, all three sub-envelopes are
@@ -89,29 +89,37 @@ sub-envelopes. This zero-scope rule is atomic: a missing, malformed, or nonzero
 counter invalidates the result rather than returning partial coverage or
 silently passing an undeclared analyzer.
 
-### Boundary coverage and configuration reach
+### Boundary coverage is derived from evidence, not configuration
 
-Whether a dead-code-family invocation evaluates boundaries depends on the
-resolved configuration, and the adapter's configuration identity capture hashes
-only the canonical signal files it can read locally. Fallow 2.54.2 resolves
-`extends` from relative paths, `npm:` packages, and `https://` URLs, and it also
-accepts configuration carried in `package.json`. A change to any of those alters
-the resolved configuration while leaving every hashed signal byte-identical, and
-an HTTPS source cannot be verified locally at all.
+Fallow reports boundary violations inside its dead-code envelope, so a
+dead-code or audit invocation can evaluate boundary conformance. Whether it did
+depends on the resolved configuration — and that cannot be established soundly
+from the adapter. Fallow 2.54.2 resolves `extends` from relative paths, `npm:`
+packages, and `https://` URLs, and also accepts configuration in `package.json`,
+so hashing the canonical signal files cannot detect every change that alters the
+resolved configuration; an escaped key such as `"ext\u0065nds"` defeats any
+local token probe; and a separate configuration process can never be atomic with
+the capability process it describes.
 
-The capture therefore reports its own completeness rather than implying a
-guarantee it does not provide. When the closure is local — a canonical signal is
-present and declares no `extends` — the discovery-time boundary answer is
-reused, because the identity check already fails closed on any change to it.
-When the closure reaches outside those files, the adapter re-resolves the
-configuration for that invocation instead of reusing the snapshot. Withholding
-coverage would not be sound in that case: boundaries may still be configured,
-and the resulting findings would then contradict the declared coverage and fail
-normalization.
+The adapter therefore does not consult configuration when declaring coverage. A
+boundary finding is itself proof that boundaries were evaluated, so the
+dead-code family declares `boundary-conformance` exactly when the invocation
+produced such a finding. A clean run declares nothing for the category rather
+than asserting a configuration-derived guarantee it cannot back.
 
-The residual is the same one D-027 records for executable identity: Node cannot
-make a configuration read and a path-based spawn atomic, so a mutation landing
-between them is outside the guarantee.
+This under-declares in the safe direction: the gate degrades visibly instead of
+passing without evidence, and the claim cannot be forged by a stale or
+externally inherited configuration because no configuration snapshot
+participates in it. No consumer loses anything — a bound `boundary-conformance`
+row is resolved by calling its own capability, never from the changed-scope
+audit.
+
+A known limitation is recorded rather than half-closed: capability bindings are
+cached at discovery, so if an external configuration source removes boundary
+zones mid-session, the dedicated boundary capability remains bound and reports a
+clean result for rules that no longer exist. Changes to the canonical signal
+files themselves are caught, because the configuration identity check fails
+closed on them.
 
 ## Generic result field evidence
 
