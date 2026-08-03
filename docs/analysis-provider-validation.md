@@ -114,7 +114,18 @@ participates in it. No consumer loses anything — a bound `boundary-conformance
 row is resolved by calling its own capability, never from the changed-scope
 audit.
 
-A known limitation is recorded rather than half-closed: capability bindings are
+A gate capability is reported unbound when the provider will not evaluate it —
+when every rule contributing to it is disabled. That determination reads
+top-level rule severities only. A configuration that leaves a rule enabled
+globally and disables it through a per-path `overrides` entry covering the
+analyzed scope is not detected, because the adapter cannot know which files the
+provider will analyze until after it runs; matching override globs against that
+scope would imply a guarantee it cannot provide. Audit coverage is additionally
+protected by evidence — a dead-code finding declares the category whatever the
+configuration says — so the residual is confined to a clean result under a
+scope-wide override.
+
+A second known limitation is recorded rather than half-closed: capability bindings are
 cached at discovery, so if an external configuration source removes boundary
 zones mid-session, the dedicated boundary capability remains bound and reports a
 clean result for rules that no longer exist. Changes to the canonical signal

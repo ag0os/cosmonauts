@@ -296,6 +296,7 @@ async function loadCapabilityFixture(
 
 async function discoveredRuntimeWithFixtures(options?: {
 	readonly boundariesConfigured?: boolean;
+	readonly config?: unknown;
 	readonly capabilityOutcome?: ProviderProcessOutcome;
 }): Promise<{
 	readonly execute: (
@@ -340,12 +341,14 @@ async function discoveredRuntimeWithFixtures(options?: {
 			return {
 				kind: "code-exit",
 				code: 0,
-				stdout: `loaded config: ${projectRoot}/fallow.toml\n${JSON.stringify({
-					boundaries: {
-						zones: [{ name: "ui", patterns: ["src/ui/**"] }],
-						rules: [{ from: "ui", allow: [] }],
+				stdout: `loaded config: ${projectRoot}/fallow.toml\n${JSON.stringify(
+					options?.config ?? {
+						boundaries: {
+							zones: [{ name: "ui", patterns: ["src/ui/**"] }],
+							rules: [{ from: "ui", allow: [] }],
+						},
 					},
-				})}\n`,
+				)}\n`,
 				stderr: "",
 			};
 		}
@@ -1445,6 +1448,103 @@ describe("Fallow provider discovery", () => {
 					.capabilities as readonly Record<string, unknown>[]
 			).find(({ capability }) => capability === "dead-code"),
 		).toMatchObject({ state: "bound", capability: "dead-code" });
+	});
+
+	test("keeps audit coverage consistent with the dead-code binding", async () => {
+		/*
+		 * The audit embeds a dead_code sub-envelope, so it could declare the
+		 * category covered while the dedicated capability is unbound for exactly
+		 * the same configuration — passing a bound gate through the audit that the
+		 * capability itself refuses to answer. Coverage must agree with the
+		 * binding.
+		 */
+		const auditFixture = await loadCapabilityFixture("changed-scope-audit");
+		const disabled = Object.fromEntries(
+			[
+				"unused-files",
+				"unused-exports",
+				"unused-types",
+				"unused-dependencies",
+				"unused-dev-dependencies",
+				"unused-optional-dependencies",
+				"unused-enum-members",
+				"unused-class-members",
+				"unresolved-imports",
+				"unlisted-dependencies",
+				"duplicate-exports",
+				"type-only-dependencies",
+				"test-only-dependencies",
+				"circular-dependencies",
+				"stale-suppressions",
+			].map((rule) => [rule, "off"]),
+		);
+		const auditPayload = auditFixture.envelope.payload as Record<
+			string,
+			unknown
+		>;
+		const deadCode = auditPayload.dead_code as Record<string, unknown>;
+		// A clean dead-code sub-envelope: with every rule disabled the emptiness is
+		// not evidence of a clean scope, so it must not be declared covered.
+		const cleanAudit = {
+			...auditPayload,
+			verdict: "pass",
+			summary: {
+				...(auditPayload.summary as Record<string, unknown>),
+				dead_code_issues: 0,
+				dead_code_has_errors: false,
+			},
+			dead_code: {
+				...deadCode,
+				total_issues: 0,
+				summary: {
+					...(deadCode.summary as Record<string, unknown>),
+					total_issues: 0,
+					unused_files: 0,
+					unused_exports: 0,
+				},
+				unused_files: [],
+				unused_exports: [],
+			},
+		};
+		const runtime = await discoveredRuntimeWithFixtures({
+			config: { rules: disabled },
+			capabilityOutcome: {
+				kind: "code-exit",
+				code: 0,
+				stdout: JSON.stringify(cleanAudit),
+				stderr: "",
+			},
+		});
+		const result = await runtime.execute({
+			capability: "changed-scope-audit",
+			scope: { kind: "changed", base: "HEAD" },
+		});
+		if (result.kind !== "findings") {
+			throw new Error(`Expected findings, received ${result.kind}.`);
+		}
+		expect(result.coverage).not.toContain("dead-code");
+		expect(result.coverage).toEqual(["duplication", "complexity"]);
+
+		// Evidence outranks configuration: the same disabled rules with a dead-code
+		// finding present must still declare the category, or the finding would
+		// contradict its own result and fail normalization.
+		const withFindings = await discoveredRuntimeWithFixtures({
+			config: { rules: disabled },
+			capabilityOutcome: {
+				kind: "code-exit",
+				code: auditFixture.envelope.code,
+				stdout: auditFixture.envelope.stdout,
+				stderr: auditFixture.envelope.stderr,
+			},
+		});
+		const evidenced = await withFindings.execute({
+			capability: "changed-scope-audit",
+			scope: { kind: "changed", base: "HEAD" },
+		});
+		if (evidenced.kind !== "findings") {
+			throw new Error(`Expected findings, received ${evidenced.kind}.`);
+		}
+		expect(evidenced.coverage).toContain("dead-code");
 	});
 
 	test("reports boundary conformance unbound when its rule is disabled", async () => {

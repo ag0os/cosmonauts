@@ -1334,12 +1334,10 @@ async function introspectProvider(
 		version,
 	} as const;
 	const hasConfiguredBoundaries = boundariesConfigured(config);
+	const evaluatesDeadCode = deadCodeEvaluated(config);
 	const detectedProvider: DetectedAnalysisProvider = {
 		provider,
-		capabilities: capabilities({
-			hasConfiguredBoundaries,
-			evaluatesDeadCode: deadCodeEvaluated(config),
-		}),
+		capabilities: capabilities({ hasConfiguredBoundaries, evaluatesDeadCode }),
 	};
 	const detection = {
 		status: "detected",
@@ -1365,6 +1363,7 @@ async function introspectProvider(
 		...runtimeBase,
 		executablePath: bindingIdentity.executable.canonicalPath,
 		projectRoot: options.projectRoot,
+		evaluatesDeadCode,
 		beforeSpawn: finalSpawnPrecondition(executionPreconditionOptions),
 	};
 	let invalidatedFailure: AnalysisFailure | undefined;
@@ -1619,6 +1618,14 @@ interface FallowExecutionRuntime {
 	readonly projectRoot: string;
 	readonly provider: ProviderIdentity;
 	readonly executablePath: string;
+	/**
+	 * Whether the provider will evaluate dead-code for this session, from the
+	 * same determination that decides the capability's binding. Audit coverage
+	 * must agree with it: declaring `dead-code` covered while the dedicated
+	 * capability is unbound would pass a gate through the audit that the
+	 * capability itself refuses to answer.
+	 */
+	readonly evaluatesDeadCode: boolean;
 	readonly executeProcess: ProviderProcessExecutor;
 	readonly beforeSpawn: () => void;
 	readonly validateEnvelopeSchema: typeof validateFallowEnvelopeSchema;
@@ -2202,6 +2209,7 @@ function auditEnvelope(
 
 function zeroScopeAuditCoverage(
 	payload: Readonly<Record<string, unknown>>,
+	evaluatesDeadCode: boolean,
 ): AnalysisGateCoverage {
 	const summary = objectRecord(payload.summary);
 	if (summary === null) {
@@ -2216,12 +2224,15 @@ function zeroScopeAuditCoverage(
 			throw new Error(`expected zero-change audit summary ${key} to equal 0`);
 		}
 	}
-	return ["dead-code", "duplication", "complexity"];
+	return evaluatesDeadCode
+		? ["dead-code", "duplication", "complexity"]
+		: ["duplication", "complexity"];
 }
 
 function auditFindings(
 	request: Extract<AnalysisRequest, { capability: "changed-scope-audit" }>,
 	payload: Readonly<Record<string, unknown>>,
+	evaluatesDeadCode: boolean,
 ): NormalizedFallowAnalysis {
 	if (payload.base_ref !== request.scope.base) {
 		throw new Error(
@@ -2252,16 +2263,31 @@ function auditFindings(
 		return {
 			findings: [],
 			verdict,
-			coverage: zeroScopeAuditCoverage(payload),
+			coverage: zeroScopeAuditCoverage(payload, evaluatesDeadCode),
 		};
 	}
 	const findings: AnalysisFinding[] = [];
 	const coverage: AnalysisGateCapability[] = [];
 	if (deadCode !== null) {
-		findings.push(
-			...normalizeDeadCodeFindings(deadCode, "fallow:audit:dead-code"),
+		const deadCodeFindings = normalizeDeadCodeFindings(
+			deadCode,
+			"fallow:audit:dead-code",
 		);
-		coverage.push("dead-code");
+		findings.push(...deadCodeFindings);
+		/*
+		 * Evidence outranks configuration, exactly as it does for boundaries: a
+		 * dead-code finding proves the analyzer ran whatever the rule severities
+		 * say. Configuration only decides the clean case, where there is no
+		 * evidence either way — and there, an all-disabled rule set means the
+		 * empty result is not proof of a clean scope and must not be declared
+		 * covered.
+		 */
+		if (
+			evaluatesDeadCode ||
+			deadCodeFindings.some(({ category }) => category === "dead-code")
+		) {
+			coverage.push("dead-code");
+		}
 	}
 	if (duplication !== null) {
 		findings.push(
@@ -2290,6 +2316,7 @@ function auditFindings(
 function analysisFindings(
 	request: Exclude<AnalysisRequest, { capability: "trace" | "fix-preview" }>,
 	payload: Readonly<Record<string, unknown>>,
+	evaluatesDeadCode: boolean,
 ): NormalizedFallowAnalysis {
 	switch (request.capability) {
 		case "dead-code": {
@@ -2328,7 +2355,7 @@ function analysisFindings(
 			return { ...outcome, coverage: [request.capability] };
 		}
 		case "changed-scope-audit":
-			return auditFindings(request, payload);
+			return auditFindings(request, payload, evaluatesDeadCode);
 	}
 }
 
@@ -2480,7 +2507,11 @@ function normalizedCapabilityResult(
 				native,
 			};
 		}
-		const normalized = analysisFindings(request, envelope.record);
+		const normalized = analysisFindings(
+			request,
+			envelope.record,
+			runtime.evaluatesDeadCode,
+		);
 		assertFallowFindingsCovered(normalized.findings, normalized.coverage);
 		const completeEvidence =
 			request.capability === "complexity"

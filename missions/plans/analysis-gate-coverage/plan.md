@@ -85,6 +85,13 @@ cite this plan's own AC-013 through AC-017.
   - Decided by: implementer, amend-on-record, 2026-08-03
   - Note: narrows when the reference provider advertises one capability. It does not change the capability vocabulary or which capabilities the provider supports, so it stays inside this plan's stated exclusions.
 
+- **D-035 - Per-path rule overrides are a recorded boundary, not a partial check**
+  - Decision: the disabled-rule determination reads top-level rule severities only. A configuration that leaves a rule enabled globally and disables it through a per-path `overrides` entry matching the analyzed scope is not detected, and the capability stays bound. Record the boundary in the delivered documentation rather than implementing a partial check.
+  - Alternatives: match override globs against the analyzed scope (rejected — the adapter does not know which files the provider will analyze until after it runs, so this needs glob semantics plus a scope intersection the provider alone can compute; a partial matcher would imply a guarantee it cannot provide, which is the failure mode the ratified disclosure principle exists to prevent); unbind whenever any override mentions a contributing rule (rejected — an override narrowing one rule for test files is ordinary configuration, so this would degrade the gate for most real projects and train operators to ignore the signal).
+  - Why: the same reasoning that settled the boundary-coverage question. Where a property cannot be verified reliably, surface the boundary and record it rather than shipping a check that looks complete. The residual is narrower than the cases already closed: it requires a configuration that deliberately disables analysis for the whole analyzed scope while appearing enabled globally.
+  - Consequence: audit coverage is additionally protected by evidence — a dead-code finding declares the category whatever the configuration says — so the residual is confined to a clean result under a scope-wide override.
+  - Decided by: implementer, amend-on-record, 2026-08-03
+
 ## Behaviors
 
 Numbered from B-040 to stay clear of the parent design's B-001–B-037 family.
