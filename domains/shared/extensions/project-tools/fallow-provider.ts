@@ -923,17 +923,53 @@ function parseConfig(stdout: string): FallowConfig | null {
 }
 
 /**
- * Whether the provider will actually evaluate boundary conformance.
+ * Rule keys that can enable a provider collection.
  *
- * Configured zones and rules are necessary but not sufficient: the
- * `boundary-violation` severity can be set to `off`, in which case a boundary
- * run reports nothing regardless of the zones present. Advertising the
- * capability as supported there would let a clean result stand in for an
- * evaluation that never happened, which INV-2 forbids — so the capability is
- * reported unbound instead, visibly and openly.
+ * The shipped reference documents the severity map with plural keys
+ * (`unused-files`) and the issue-type tokens in singular (`unused-file`), so
+ * either spelling is accepted as evidence that a rule is disabled. Accepting
+ * both over-detects "disabled", which is the safe direction: a missed
+ * detection would leave a capability bound and could pass a gate the provider
+ * never evaluated, while an extra detection only degrades the gate visibly.
  */
+function ruleKeysForCollection(collection: string): readonly string[] {
+	const plural = collection.replaceAll("_", "-");
+	const singular = plural.endsWith("ies")
+		? `${plural.slice(0, -3)}y`
+		: plural.endsWith("s")
+			? plural.slice(0, -1)
+			: plural;
+	return plural === singular ? [plural] : [plural, singular];
+}
+
+function ruleDisabled(
+	config: FallowConfig | null,
+	collection: string,
+): boolean {
+	return ruleKeysForCollection(collection).some(
+		(key) => config?.rules?.[key] === "off",
+	);
+}
+
+/**
+ * Whether the provider will actually evaluate a gate capability.
+ *
+ * Configured inputs are necessary but not sufficient: every rule feeding a
+ * capability can be set to `off`, in which case a run reports nothing whatever
+ * the code contains. Advertising the capability as supported there would let a
+ * clean result stand in for an evaluation that never happened — and because a
+ * single-capability result declares its own capability by construction, that
+ * over-declaration cannot be caught downstream. INV-2 requires the opposite:
+ * report it unbound, visibly, and never execute it.
+ */
+function deadCodeEvaluated(config: FallowConfig | null): boolean {
+	return DEAD_CODE_COLLECTIONS.filter(
+		(collection) => collection !== "boundary_violations",
+	).some((collection) => !ruleDisabled(config, collection));
+}
+
 function boundariesConfigured(config: FallowConfig | null): boolean {
-	if (config?.rules?.["boundary-violation"] === "off") return false;
+	if (ruleDisabled(config, "boundary_violations")) return false;
 	return (
 		Array.isArray(config?.boundaries?.zones) &&
 		config.boundaries.zones.length > 0 &&
@@ -942,15 +978,22 @@ function boundariesConfigured(config: FallowConfig | null): boolean {
 	);
 }
 
-function capabilities(
-	hasConfiguredBoundaries: boolean,
-): readonly DetectedAnalysisCapability[] {
+function capabilities(options: {
+	readonly hasConfiguredBoundaries: boolean;
+	readonly evaluatesDeadCode: boolean;
+}): readonly DetectedAnalysisCapability[] {
+	const { hasConfiguredBoundaries, evaluatesDeadCode } = options;
 	return [
-		{
-			capability: "dead-code",
-			status: "supported",
-			scopes: ["project", "paths"],
-		},
+		evaluatesDeadCode
+			? {
+					capability: "dead-code",
+					status: "supported",
+					scopes: ["project", "paths"],
+				}
+			: {
+					capability: "dead-code",
+					status: "provider-not-configured",
+				},
 		{
 			capability: "duplication",
 			status: "supported",
@@ -1293,7 +1336,10 @@ async function introspectProvider(
 	const hasConfiguredBoundaries = boundariesConfigured(config);
 	const detectedProvider: DetectedAnalysisProvider = {
 		provider,
-		capabilities: capabilities(hasConfiguredBoundaries),
+		capabilities: capabilities({
+			hasConfiguredBoundaries,
+			evaluatesDeadCode: deadCodeEvaluated(config),
+		}),
 	};
 	const detection = {
 		status: "detected",

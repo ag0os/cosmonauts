@@ -45,10 +45,10 @@ The adapter advertises only native scope support:
 
 | Capability | Delivered Fallow binding |
 |---|---|
-| `dead-code` | `project`, `paths` |
+| `dead-code` | `project`, `paths`; `provider-not-configured` when every contributing rule is disabled |
 | `duplication` | `project` |
 | `complexity` | `project`; `cyclomatic`, `cognitive`, and `crap` metrics |
-| `boundary-conformance` | `project`, `paths` only when zones and rules are configured; otherwise `provider-not-configured` |
+| `boundary-conformance` | `project`, `paths` only when zones and rules are configured and the `boundary-violation` rule is not disabled; otherwise `provider-not-configured` |
 | `changed-scope-audit` | `changed` with a required explicit base |
 | `trace` | `target`; symbol requires `path`, duplicate location requires `line`, file and dependency require no additional identity |
 | `fix-preview` | `project`; dry-run only |

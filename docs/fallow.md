@@ -61,10 +61,10 @@ When bound, the adapter exposes:
 
 | Capability | Fallow operation and delivered scope |
 |---|---|
-| `dead-code` | Project or explicit paths. |
+| `dead-code` | Project or explicit paths, unless every contributing rule is disabled. |
 | `duplication` | Project only. |
 | `complexity` | Project only; cyclomatic, cognitive, and CRAP metrics. |
-| `boundary-conformance` | Project or explicit paths, only when zones and rules are configured. |
+| `boundary-conformance` | Project or explicit paths, only when zones and rules are configured and the `boundary-violation` rule is not disabled. |
 | `changed-scope-audit` | Changed scope from a required explicit base. |
 | `trace` | Exactly one symbol (required project-relative path), file, dependency, or duplicate location (required positive line; optional column). |
 | `fix-preview` | Project-only dry-run proposals. |

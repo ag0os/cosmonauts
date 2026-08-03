@@ -78,10 +78,10 @@ cite this plan's own AC-013 through AC-017.
   - Why: keeps this corrective plan narrow, consistent with the ratified three-way slice split recorded on the parent design. Surfaced by independent review, which noted this plan makes a bound gate reachable for the first time and so converts a latent staleness bug into a reachable one — that is the reason it is recorded rather than left silent.
   - Decided by: human, user-chose-among-options, 2026-08-03
 
-- **D-034 - A disabled boundary rule reports the capability unbound**
-  - Decision: `boundary-conformance` is advertised as supported only when configured zones and rules are present **and** the provider's `boundary-violation` severity is not `off`. With the rule disabled the capability is reported unbound with `provider-not-configured` and is never executed.
+- **D-034 - A gate capability whose contributing rules are all disabled is reported unbound**
+  - Decision: a gate capability is advertised as supported only when the provider will actually evaluate it. `boundary-conformance` additionally requires the `boundary-violation` severity not be `off`; `dead-code` requires at least one of its contributing rules to remain enabled. Otherwise the capability is reported unbound with `provider-not-configured` and is never executed. Either documented spelling of a rule key (plural `unused-files`, singular `unused-file`) counts as evidence that the rule is disabled, because over-detecting "disabled" degrades a gate visibly while under-detecting it would leave a capability bound and could pass a gate the provider never evaluated.
   - Alternatives: keep requiring only non-empty zones and rules (rejected — the provider then reports nothing whatever the code contains, so a clean single-capability result would declare `boundary-conformance` covered under D-030 and a bound gate could pass on an evaluation that never happened); declare the capability bound but withhold coverage from its own result (rejected — it contradicts D-030's uniform-presence rule and leaves a bound gate with no classifiable verdict, which INV-3 makes an error rather than a quiet degradation).
-  - Why: serves INV-2 directly — an unsupported capability is reported unbound and skipped openly rather than silently passed. Surfaced by independent review on the one path the evidence rule cannot protect: a single-capability result declares its own capability by construction, so over-declaration there has to be prevented at the binding, not at normalization. Unlike the staleness recorded separately, this is static local configuration the adapter already reads at discovery, so it is verifiable without any cross-process assumption.
+  - Why: serves INV-2 directly — an unsupported capability is reported unbound and skipped openly rather than silently passed. Surfaced by independent review across two rounds, on the one class of path the evidence rule cannot protect: a single-capability result declares its own capability by construction, so over-declaration there has to be prevented at the binding, not at normalization. `dead-code` matters most because it is a bound row in this plan's own Quality Contract. Unlike the staleness recorded separately, this is static local configuration the adapter already reads at discovery, so it is verifiable without any cross-process assumption.
   - Decided by: implementer, amend-on-record, 2026-08-03
   - Note: narrows when the reference provider advertises one capability. It does not change the capability vocabulary or which capabilities the provider supports, so it stays inside this plan's stated exclusions.
 
@@ -184,8 +184,12 @@ remediation are preserved.
   is bounded, but every construction site must be updated in the same change or
   the type-check gate fails loudly — which is the desired failure mode.
 - **Coverage could be faked.** An adapter could declare coverage it did not
-  produce. B-042's contradiction check is the guard; it is derived from real
-  envelopes rather than asserted.
+  produce. B-042's contradiction check catches only under-declaration — a
+  finding whose category the result did not declare. Over-declaration with no
+  findings is indistinguishable from a clean evaluation at that seam, so it is
+  prevented upstream instead: each declaration is derived from evidence in the
+  invocation's own envelope, and a capability the provider will not evaluate is
+  reported unbound rather than executed.
 - **The consumer rule can regress into a silent pass.** The whole defect was a
   gate passing without evidence. B-043 must assert the negative — an undeclared
   category is not a pass — not merely that a covered category passes.

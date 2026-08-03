@@ -1359,6 +1359,94 @@ describe("Fallow provider discovery", () => {
 		expect(run.invocations).toHaveLength(invocationCountAfterStatus);
 	});
 
+	test("reports a gate capability unbound when its rules are disabled", async () => {
+		await writeFile(join(projectRoot, "fallow.toml"), "", "utf8");
+		await recordConsent();
+		const executable = await createExecutable(
+			join(fixtureRoot, "injected", "fallow"),
+		);
+		/*
+		 * Every rule feeding dead-code is off, so the provider reports nothing
+		 * whatever the code contains. `dead-code` is a bound gate row in this
+		 * plan's Quality Contract, so leaving it advertised as supported would let
+		 * a clean covered result pass that gate on an evaluation that never
+		 * happened — and a single-capability result declares its own capability by
+		 * construction, so nothing downstream could catch it.
+		 */
+		const disabledDeadCodeRules = Object.fromEntries(
+			[
+				"unused-files",
+				"unused-exports",
+				"unused-types",
+				"unused-dependencies",
+				"unused-dev-dependencies",
+				"unused-optional-dependencies",
+				"unused-enum-members",
+				"unused-class-members",
+				"unresolved-imports",
+				"unlisted-dependencies",
+				"duplicate-exports",
+				"type-only-dependencies",
+				"test-only-dependencies",
+				"circular-dependencies",
+				"stale-suppressions",
+			].map((rule) => [rule, "off"]),
+		);
+		const run = successfulIntrospection({
+			config: { rules: disabledDeadCodeRules },
+		});
+		const pi = createMockPi({ cwd: projectRoot });
+		createProjectToolsExtension({
+			userStateRoot,
+			injectedExecutablePath: executable,
+			executeProcess: run.execute,
+		})(pi as never);
+
+		const status = resultDetails(await pi.callTool("analysis_status", {}));
+		expect(
+			(status.capabilities as readonly Record<string, unknown>[]).find(
+				({ capability }) => capability === "dead-code",
+			),
+		).toEqual({
+			state: "unbound",
+			capability: "dead-code",
+			reason: "provider-not-configured",
+			providerId: "fallow",
+		});
+
+		const invocationCountAfterStatus = run.invocations.length;
+		const result = resultDetails(await pi.callTool("analysis_dead_code", {}));
+		expect(result).toEqual({
+			kind: "unbound",
+			capability: "dead-code",
+			reason: "provider-not-configured",
+			providerId: "fallow",
+		});
+		expect(result).not.toHaveProperty("coverage");
+		expect(run.invocations).toHaveLength(invocationCountAfterStatus);
+
+		// One rule left enabled is enough for the provider to report something, so
+		// the capability stays bound. This is what keeps the check from degrading
+		// every project that merely tunes its rule severities.
+		const partial = successfulIntrospection({
+			config: {
+				rules: { ...disabledDeadCodeRules, "unused-exports": "warn" },
+			},
+		});
+		const partialPi = createMockPi({ cwd: projectRoot });
+		createProjectToolsExtension({
+			userStateRoot,
+			injectedExecutablePath: executable,
+			executeProcess: partial.execute,
+		})(partialPi as never);
+		expect(
+			(
+				resultDetails(await partialPi.callTool("analysis_status", {}))
+					.capabilities as readonly Record<string, unknown>[]
+			).find(({ capability }) => capability === "dead-code"),
+		).toMatchObject({ state: "bound", capability: "dead-code" });
+	});
+
 	test("reports boundary conformance unbound when its rule is disabled", async () => {
 		await writeFile(join(projectRoot, "fallow.toml"), "", "utf8");
 		await recordConsent();
