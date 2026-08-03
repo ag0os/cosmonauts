@@ -84,8 +84,10 @@ omitted, and the category-specific `dead_code_issues`,
 `duplication_clone_groups`, and `complexity_findings` summary counters are each
 numeric zero. Together, those counters are the provider's explicit evidence
 that every analyzer has an empty result over the empty selected scope, so the
-adapter derives the same non-empty coverage set without fabricating analyzer
-sub-envelopes. This zero-scope rule is atomic: a missing, malformed, or nonzero
+adapter derives coverage from them without fabricating analyzer sub-envelopes.
+An empty scope produces no findings, so this path is decided by configuration
+alone: `dead-code` joins the derived set only when its contributing rules leave
+it evaluated. This zero-scope rule is atomic: a missing, malformed, or nonzero
 counter invalidates the result rather than returning partial coverage or
 silently passing an undeclared analyzer.
 
@@ -119,8 +121,10 @@ when every rule contributing to it is disabled. That determination reads
 top-level rule severities only. A configuration that leaves a rule enabled
 globally and disables it through a per-path `overrides` entry covering the
 analyzed scope is not detected, because the adapter cannot know which files the
-provider will analyze until after it runs; matching override globs against that
-scope would imply a guarantee it cannot provide. Audit coverage is additionally
+provider will analyze until after it runs. One spelling of this — a final
+override using the universal glob — is decidable without that knowledge, but
+detecting only that spelling narrows the residual without changing its
+character, so the boundary is recorded instead. Audit coverage is additionally
 protected by evidence — a dead-code finding declares the category whatever the
 configuration says — so the residual is confined to a clean result under a
 scope-wide override.

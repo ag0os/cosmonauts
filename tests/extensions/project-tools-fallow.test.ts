@@ -1545,6 +1545,30 @@ describe("Fallow provider discovery", () => {
 			throw new Error(`Expected findings, received ${evidenced.kind}.`);
 		}
 		expect(evidenced.coverage).toContain("dead-code");
+
+		// The fourth combination: clean and enabled. An empty result IS evidence of
+		// a clean scope when the analyzer was allowed to report, so the category is
+		// declared and the gate can legitimately pass on it.
+		const cleanEnabled = await discoveredRuntimeWithFixtures({
+			capabilityOutcome: {
+				kind: "code-exit",
+				code: 0,
+				stdout: JSON.stringify(cleanAudit),
+				stderr: "",
+			},
+		});
+		const enabled = await cleanEnabled.execute({
+			capability: "changed-scope-audit",
+			scope: { kind: "changed", base: "HEAD" },
+		});
+		if (enabled.kind !== "findings") {
+			throw new Error(`Expected findings, received ${enabled.kind}.`);
+		}
+		expect(enabled.coverage).toEqual([
+			"dead-code",
+			"duplication",
+			"complexity",
+		]);
 	});
 
 	test("reports boundary conformance unbound when its rule is disabled", async () => {
