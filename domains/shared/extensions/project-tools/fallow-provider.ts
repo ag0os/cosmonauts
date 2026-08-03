@@ -246,6 +246,8 @@ interface FallowConfig {
 		readonly zones?: readonly unknown[];
 		readonly rules?: readonly unknown[];
 	};
+	/** Per-issue-type severity. A rule set to `off` is not evaluated. */
+	readonly rules?: Readonly<Record<string, unknown>>;
 }
 
 function providerNotAvailableBindings(
@@ -920,7 +922,18 @@ function parseConfig(stdout: string): FallowConfig | null {
 	}
 }
 
+/**
+ * Whether the provider will actually evaluate boundary conformance.
+ *
+ * Configured zones and rules are necessary but not sufficient: the
+ * `boundary-violation` severity can be set to `off`, in which case a boundary
+ * run reports nothing regardless of the zones present. Advertising the
+ * capability as supported there would let a clean result stand in for an
+ * evaluation that never happened, which INV-2 forbids — so the capability is
+ * reported unbound instead, visibly and openly.
+ */
 function boundariesConfigured(config: FallowConfig | null): boolean {
+	if (config?.rules?.["boundary-violation"] === "off") return false;
 	return (
 		Array.isArray(config?.boundaries?.zones) &&
 		config.boundaries.zones.length > 0 &&

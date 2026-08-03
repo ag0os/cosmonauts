@@ -1359,6 +1359,61 @@ describe("Fallow provider discovery", () => {
 		expect(run.invocations).toHaveLength(invocationCountAfterStatus);
 	});
 
+	test("reports boundary conformance unbound when its rule is disabled", async () => {
+		await writeFile(join(projectRoot, "fallow.toml"), "", "utf8");
+		await recordConsent();
+		const executable = await createExecutable(
+			join(fixtureRoot, "injected", "fallow"),
+		);
+		/*
+		 * Zones and rules are configured, so the capability looks available — but
+		 * the `boundary-violation` severity is off, so a boundary run reports
+		 * nothing whatever the code contains. Treating that as a supported
+		 * capability would let a clean result stand in for an evaluation that
+		 * never happened: coverage would declare the category and a bound gate
+		 * could pass on it. INV-2 requires the opposite — report it unbound,
+		 * visibly, and never execute it.
+		 */
+		const run = successfulIntrospection({
+			config: {
+				boundaries: {
+					zones: [{ name: "ui", patterns: ["src/ui/**"] }],
+					rules: [{ from: "ui", allow: [] }],
+				},
+				rules: { "boundary-violation": "off" },
+			},
+		});
+		const pi = createMockPi({ cwd: projectRoot });
+		createProjectToolsExtension({
+			userStateRoot,
+			injectedExecutablePath: executable,
+			executeProcess: run.execute,
+		})(pi as never);
+
+		const status = resultDetails(await pi.callTool("analysis_status", {}));
+		expect(
+			(status.capabilities as readonly Record<string, unknown>[]).find(
+				({ capability }) => capability === "boundary-conformance",
+			),
+		).toEqual({
+			state: "unbound",
+			capability: "boundary-conformance",
+			reason: "provider-not-configured",
+			providerId: "fallow",
+		});
+
+		const invocationCountAfterStatus = run.invocations.length;
+		const result = resultDetails(await pi.callTool("analysis_boundaries", {}));
+		expect(result).toEqual({
+			kind: "unbound",
+			capability: "boundary-conformance",
+			reason: "provider-not-configured",
+			providerId: "fallow",
+		});
+		expect(result).not.toHaveProperty("coverage");
+		expect(run.invocations).toHaveLength(invocationCountAfterStatus);
+	});
+
 	// @cosmo-behavior plan:analysis-capability-runtime#B-037
 	test("surfaces version drift and fails out-of-contract envelopes", async () => {
 		await writeFile(join(projectRoot, "fallow.toml"), "", "utf8");
@@ -1822,8 +1877,14 @@ describe("Fallow capability execution", () => {
 		}[];
 
 		/*
-		 * The guard is the reason declared coverage can be trusted: without it an
-		 * adapter could declare anything. Under D-032 a boundary finding is itself
+		 * The guard catches under-declaration only: a finding whose category the
+		 * result did not declare. It cannot detect over-declaration — declaring a
+		 * category that produced no findings is indistinguishable from a clean
+		 * evaluation at this seam, which is why over-declaration is prevented
+		 * upstream instead, by deriving each declaration from evidence and by
+		 * reporting a capability unbound when the provider will not evaluate it.
+		 *
+		 * Under D-032 a boundary finding is itself
 		 * the evidence that boundaries were evaluated, so it self-covers and the
 		 * reference adapter's normalizers cannot construct a finding outside its
 		 * own declared coverage — every category they emit is derived from the

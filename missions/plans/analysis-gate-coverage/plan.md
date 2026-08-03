@@ -78,6 +78,13 @@ cite this plan's own AC-013 through AC-017.
   - Why: keeps this corrective plan narrow, consistent with the ratified three-way slice split recorded on the parent design. Surfaced by independent review, which noted this plan makes a bound gate reachable for the first time and so converts a latent staleness bug into a reachable one — that is the reason it is recorded rather than left silent.
   - Decided by: human, user-chose-among-options, 2026-08-03
 
+- **D-034 - A disabled boundary rule reports the capability unbound**
+  - Decision: `boundary-conformance` is advertised as supported only when configured zones and rules are present **and** the provider's `boundary-violation` severity is not `off`. With the rule disabled the capability is reported unbound with `provider-not-configured` and is never executed.
+  - Alternatives: keep requiring only non-empty zones and rules (rejected — the provider then reports nothing whatever the code contains, so a clean single-capability result would declare `boundary-conformance` covered under D-030 and a bound gate could pass on an evaluation that never happened); declare the capability bound but withhold coverage from its own result (rejected — it contradicts D-030's uniform-presence rule and leaves a bound gate with no classifiable verdict, which INV-3 makes an error rather than a quiet degradation).
+  - Why: serves INV-2 directly — an unsupported capability is reported unbound and skipped openly rather than silently passed. Surfaced by independent review on the one path the evidence rule cannot protect: a single-capability result declares its own capability by construction, so over-declaration there has to be prevented at the binding, not at normalization. Unlike the staleness recorded separately, this is static local configuration the adapter already reads at discovery, so it is verifiable without any cross-process assumption.
+  - Decided by: implementer, amend-on-record, 2026-08-03
+  - Note: narrows when the reference provider advertises one capability. It does not change the capability vocabulary or which capabilities the provider supports, so it stays inside this plan's stated exclusions.
+
 ## Behaviors
 
 Numbered from B-040 to stay clear of the parent design's B-001–B-037 family.
