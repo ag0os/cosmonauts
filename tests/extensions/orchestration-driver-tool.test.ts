@@ -73,6 +73,15 @@ const temp = useTempDir("driver-e2e-test-");
 const execFileAsync = promisify(execFile);
 const PLAN_SLUG = "driver-e2e";
 const PARENT_SESSION_ID = "driver-e2e-parent-session";
+/**
+ * How long to poll for a real driver run to land its artifacts.
+ *
+ * These are pure waits — they return the moment the artifact appears, so the
+ * ceiling only costs time on genuine failure. It has to clear the wall-clock a
+ * run actually takes under parallel suite load, which the sibling driver suites
+ * already put at 10s; the previous 5s was a coin flip under contention.
+ */
+const RUN_SETTLE_TIMEOUT_MS = 10_000;
 const TERMINAL_EVENTS = new Set<DriverEvent["type"]>([
 	"run_completed",
 	"run_aborted",
@@ -356,7 +365,6 @@ describe("driver e2e run_driver integration", () => {
 			);
 			const result = await runDriver(fixture, { runtime });
 			await waitForCompletion(result.workdir);
-			await delay(10);
 			const spec = await readSpec(result.workdir);
 			const executed = resolveDriveEpisodeWorker(runtime);
 
@@ -649,6 +657,13 @@ interface DriverResultDetails {
 	eventLogPath: string;
 }
 
+/** Shape `run_driver` returns when it declines to start a run. */
+interface DriverDeclinedDetails {
+	error: string;
+	activeRunId?: string;
+	message?: string;
+}
+
 interface RunDriverOverrides {
 	branch?: string;
 	commitPolicy?: "driver-commits" | "backend-commits" | "no-commit";
@@ -708,10 +723,40 @@ async function setupFixture({
 	};
 }
 
+/**
+ * Starts a run, waiting out the previous run's active-run guard.
+ *
+ * `run_driver` holds a module-level active-run entry keyed by cwd + plan slug
+ * and clears it when the driver handle settles — which happens *after* the
+ * completion file lands. A test that launches the same fixture twice in a row
+ * must therefore wait for that clear, and a fixed sleep loses the race under
+ * suite load. Poll the guard instead of guessing at it.
+ */
 async function runDriver(
 	fixture: Fixture,
 	overrides: RunDriverOverrides = {},
 ): Promise<DriverResultDetails> {
+	const deadline = Date.now() + RUN_SETTLE_TIMEOUT_MS;
+	let declined: DriverDeclinedDetails | undefined;
+
+	while (Date.now() < deadline) {
+		const details = await launchDriver(fixture, overrides);
+		if (!("error" in details)) {
+			return details;
+		}
+		declined = details;
+		await delay(10);
+	}
+
+	throw new Error(
+		`run_driver never accepted a launch: ${JSON.stringify(declined)}`,
+	);
+}
+
+async function launchDriver(
+	fixture: Fixture,
+	overrides: RunDriverOverrides = {},
+): Promise<DriverResultDetails | DriverDeclinedDetails> {
 	const pi = createMockPi(fixture.projectRoot, {
 		sessionId: PARENT_SESSION_ID,
 	});
@@ -764,7 +809,7 @@ async function runDriver(
 	}
 
 	const response = (await pi.callTool("run_driver", params)) as {
-		details: DriverResultDetails;
+		details: DriverResultDetails | DriverDeclinedDetails;
 	};
 
 	return response.details;
@@ -854,7 +899,7 @@ async function readSpec(workdir: string): Promise<DriverRunSpec> {
 
 async function waitForCompletion(workdir: string): Promise<DriverResult> {
 	const completionPath = join(workdir, "run.completion.json");
-	const deadline = Date.now() + 5_000;
+	const deadline = Date.now() + RUN_SETTLE_TIMEOUT_MS;
 	let lastError: unknown;
 
 	while (Date.now() < deadline) {
@@ -876,7 +921,7 @@ async function waitForCompletion(workdir: string): Promise<DriverResult> {
 async function waitForTerminalEvents(
 	eventLogPath: string,
 ): Promise<DriverEvent[]> {
-	const deadline = Date.now() + 5_000;
+	const deadline = Date.now() + RUN_SETTLE_TIMEOUT_MS;
 	let lastError: unknown;
 
 	while (Date.now() < deadline) {

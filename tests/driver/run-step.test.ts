@@ -35,7 +35,11 @@ const temp = useTempDir("run-step-test-");
 let compiledDir = "";
 let binaryPath = "";
 
-describe("run-step binary", () => {
+// Every test here spawns the compiled `cosmonauts-drive-step` binary, so each
+// one pays real process-startup cost that scales with suite-wide load; the
+// frozen-identity test below spawns it four times. Declare the same 30s budget
+// the sibling detached-driver suites use rather than relying on the default.
+describe("run-step binary", { timeout: 30_000 }, () => {
 	beforeAll(async () => {
 		compiledDir = await mkdtemp(join(tmpdir(), "run-step-bin-"));
 		binaryPath = join(compiledDir, "cosmonauts-drive-step");

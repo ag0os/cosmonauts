@@ -26,7 +26,18 @@ export function useTempDir(prefix: string): { path: string } {
 	});
 
 	afterEach(async () => {
-		await rm(ref.path, { recursive: true, force: true });
+		// Driver e2e tests hand back control once their artifacts land, while
+		// background work (episode capture, lock release) can still be writing
+		// under the temp root. A plain recursive rm then races that writer and
+		// fails with ENOTEMPTY under parallel suite load, so let rm retry —
+		// that is exactly what these options are for. Cleanup is not an
+		// assertion, so retrying hides nothing a test was proving.
+		await rm(ref.path, {
+			recursive: true,
+			force: true,
+			maxRetries: 10,
+			retryDelay: 50,
+		});
 	});
 
 	return ref;

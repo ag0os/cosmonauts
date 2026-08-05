@@ -53,7 +53,10 @@ const PLAN_SLUG = "durable-frontend-migration";
 const PARENT_SESSION_ID = "drive-on-graph-acceptance-parent";
 const WORKER_SOURCE = "cod" + "ing/worker";
 
-describe("Drive-on-graph acceptance", () => {
+// Every test here drives a real graph through `runDriveOnGraph` over a git
+// fixture, so each pays real subprocess cost that scales with suite-wide load.
+// Declare the same 30s budget the sibling drive-on-graph suites use.
+describe("Drive-on-graph acceptance", { timeout: 30_000 }, () => {
 	// @cosmo-behavior plan:episodic-log#B-017
 	// @cosmo-behavior plan:episodic-log-detached-hardening#B-005
 	test("emits the terminal legacy event before completion and captures afterward", async () => {

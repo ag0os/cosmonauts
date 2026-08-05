@@ -202,9 +202,12 @@ function requireRun(result: ChainResult): { runId: string; scope: "chain" } {
 	return result.run;
 }
 
+// Pure wait: returns as soon as the completion lands, so the ceiling only costs
+// time on genuine failure. 5s was under what a run takes under parallel suite
+// load; 10s matches the sibling driver suites.
 async function waitForCompletion(workdir: string): Promise<void> {
 	const completionPath = join(workdir, "run.completion.json");
-	const deadline = Date.now() + 5_000;
+	const deadline = Date.now() + 10_000;
 	let lastError: unknown;
 	while (Date.now() < deadline) {
 		try {

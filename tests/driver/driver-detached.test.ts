@@ -146,7 +146,7 @@ describe("startDetached", () => {
 			"utf-8",
 		);
 		expect(copiedBinary).toContain("prebuilt-test-runner");
-	});
+	}, 30_000);
 
 	test("driver detached codex e2e prepares the workdir, launches the compiled runner, bridges events, and leaves locking to the child", async () => {
 		const { spec, deps, taskId, projectRoot } = await setupFixture({
@@ -1424,9 +1424,12 @@ async function fileExists(path: string): Promise<boolean> {
 	}
 }
 
+// Pure wait: returns as soon as the predicate holds, so the ceiling only costs
+// time on genuine failure. Matches the 10s `waitForFile` uses above. Tests that
+// prove a bounded settle measure `elapsedMs` directly and do not rely on this.
 async function waitFor(
 	predicate: () => boolean | Promise<boolean>,
-	timeoutMs = 5_000,
+	timeoutMs = 10_000,
 ): Promise<void> {
 	const startedAt = Date.now();
 	while (Date.now() - startedAt < timeoutMs) {
