@@ -62,17 +62,20 @@ The base that lets a domain or agent run on a schedule, wake periodically, react
 - Consumers (folded in): executive assistant (Cosmonauts-work supervisor), `ambient-cosmo` (herdr terminal supervisor), external `channels`; cross-links `agent-messaging`
 - Source of truth: `missions/architecture/autonomy.md`
 
-### `analysis-tools`: Static-Analysis Tooling for Agent Code Quality (Spike)
+### `analysis-tools`: Static-Analysis Tooling for Agent Code Quality
 
-**First slice ✅ shipped with `code-structure-map` W1 (2026-07-03):** the audit shipped bundled with architectural-memory W1 (→ `missions/archive/plans/code-structure-map/analysis-tools-audit.md`) and selected the **TypeScript compiler API** as the map substrate; it kept Fallow as the agent-loop audit substrate. Acting on its recommendations is follow-up — the rest of this entry stays here.
+**Capability foundation ✅ shipped (2026-08-05):** the initial audit shipped with `code-structure-map` W1 (2026-07-03 → `missions/archive/plans/code-structure-map/analysis-tools-audit.md`). The ratified `analysis-capabilities` design then shipped through `analysis-capability-runtime`, `analysis-gate-rewiring`, and `analysis-investigation-procedures`, with `analysis-gate-coverage` as the corrective plan:
 
-A spike/improvement track: review how Cosmonauts leverages static analysis to help agents produce great code, and where to take it. Today it's only Biome (lint/format) + `tsc` for this repo's TypeScript — nothing surfaced to agents as a dedicated capability, and nothing for non-TS codebases. Targets the user's project (any codebase), not just cosmonauts.
+- A provider-neutral seven-capability contract, structured results, explicit binding/failure states, and a pinned reference-provider runtime are available to agents.
+- Quality Manager, Verifier, and Fixer resolve gates through capabilities; the generic analysis skill and capability surface are distributed to all seven v1 consumer roles.
+- Gate coverage is declared by each completed invocation and reconciled against runtime bindings, so absent mutation support and disabled repository boundary rules remain visibly degraded rather than becoming silent passes.
+- Planner, Plan Reviewer, Worker, and Refactorer now investigate, trace, and audit through capability procedures without embedding provider commands in shipped generic content.
 
-- Audit the current code-quality arc: how lint/typecheck are used in the quality gates and the agent loop today — are agents leveraging them, or just running the gate ad hoc?
-- Use what we have better: richer rule sets, type-aware checks, complexity/dead-code/security signals fed back to `worker`/`quality-manager` as structured findings, not just pass/fail
-- Other languages/codebases: per-language analyzers (ESLint, ruff/mypy, clippy, …) and how a domain/skill surfaces the right one per project
-- Universal layer: a language-agnostic option (tree-sitter, `semgrep`) and a common findings contract (e.g. SARIF) so the framework speaks one analysis-results format across languages
-- Pairs with `architectural-memory` (shared static-analysis substrate — dependency-cruiser/ts-morph/tree-sitter): that track *understands* the code; this one *catches problems* as agents write it
+What remains on this track is expansion and policy work, not completion of the shipped v1 surface:
+
+- Add polyglot provider routing and validate a second executable provider; non-JavaScript/TypeScript projects still surface the unsupported capabilities explicitly.
+- Author repository boundary zones where enforcement is wanted, and decide whether to add CI enforcement or scheduled full-project stewardship.
+- Evaluate additional MCP/Node transports and any fix-application workflow separately; capability fixes remain preview-only until that safety design is ratified.
 
 ### `artifact-viewer`: Human-Friendly HTML Views (Plans + Architecture)
 
