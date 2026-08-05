@@ -21,6 +21,31 @@ const REFACTORER_PROMPT_PATH = new URL(
 	import.meta.url,
 );
 
+/**
+ * The four-state outcome vocabulary implementing roles carry. Investigation
+ * roles must not carry it (D-021) — they gate nothing, so the distinction they
+ * need is evidence versus no evidence.
+ */
+const GATE_OUTCOME_VOCABULARY =
+	/\b(?:completed|unbound|unsupported|failed)\b/iu;
+
+/**
+ * Isolate the blank-line-delimited block a procedure was written into.
+ *
+ * The D-021 guard is scoped to the procedure rather than the whole prompt on
+ * purpose: these are ordinary English words, so a whole-file assertion would
+ * fail on unrelated prose without proving anything more about the procedure.
+ */
+function procedureBlock(content: string, opening: string): string {
+	const block = content
+		.split(/\n[ \t]*\n/)
+		.find((candidate) => candidate.includes(opening));
+	if (!block) {
+		throw new Error(`No block in the prompt opens with: ${opening}`);
+	}
+	return block;
+}
+
 describe("analysis role procedures", () => {
 	// @cosmo-behavior plan:analysis-gate-rewiring#B-017
 	it("gives verifier a provider agnostic capability claim protocol", async () => {
@@ -121,7 +146,9 @@ describe("analysis role procedures", () => {
 		expect(content).toContain(
 			"As an investigation role, use only the two-way outcome: evidence, or no evidence — record it; neither outcome blocks the design.",
 		);
-		expect(content).not.toMatch(/\b(?:failed|unbound)\b/iu);
+		expect(
+			procedureBlock(content, "Before writing a non-trivial design"),
+		).not.toMatch(GATE_OUTCOME_VOCABULARY);
 		expect(content).not.toMatch(
 			new RegExp(`\\b${["fal", "low"].join("")}\\b`, "iu"),
 		);
@@ -143,6 +170,9 @@ describe("analysis role procedures", () => {
 		expect(content).toContain(
 			"As an investigation role, use only the two-way outcome: evidence, or no evidence — record it; neither outcome blocks the review.",
 		);
+		expect(
+			procedureBlock(content, "When challenging duplicate code paths"),
+		).not.toMatch(GATE_OUTCOME_VOCABULARY);
 		expect(content).not.toMatch(
 			new RegExp(`\\b${["fal", "low"].join("")}\\b`, "iu"),
 		);

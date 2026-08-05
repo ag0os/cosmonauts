@@ -73,9 +73,11 @@ The base that lets a domain or agent run on a schedule, wake periodically, react
 
 What remains on this track is expansion and policy work, not completion of the shipped v1 surface:
 
-- Add polyglot provider routing and validate a second executable provider; non-JavaScript/TypeScript projects still surface the unsupported capabilities explicitly.
+- Add polyglot provider routing and validate a second executable provider; non-JavaScript/TypeScript projects still surface the unsupported capabilities explicitly. Targets the user's project (any codebase), not just cosmonauts — per-language analyzers (ESLint, ruff/mypy, clippy, …) and how a domain surfaces the right one per project.
+- Universal layer: a language-agnostic option (tree-sitter, `semgrep`) behind the same capability contract, and whether the generic result envelope should speak an interchange format (e.g. SARIF) across languages.
 - Author repository boundary zones where enforcement is wanted, and decide whether to add CI enforcement or scheduled full-project stewardship.
 - Evaluate additional MCP/Node transports and any fix-application workflow separately; capability fixes remain preview-only until that safety design is ratified.
+- Pairs with `architectural-memory` (shared static-analysis substrate): that track *understands* the code; this one *catches problems* as agents write it.
 
 ### `artifact-viewer`: Human-Friendly HTML Views (Plans + Architecture)
 
