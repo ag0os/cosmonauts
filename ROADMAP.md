@@ -69,7 +69,7 @@ The base that lets a domain or agent run on a schedule, wake periodically, react
 - A provider-neutral seven-capability contract, structured results, explicit binding/failure states, and a pinned reference-provider runtime are available to agents.
 - Quality Manager resolves the gate ladder by calling capabilities directly; Verifier validates capability claims without being the transport for gate findings, and Fixer reruns the routed request before editing. The generic analysis skill and capability surface reach all seven v1 consumer roles.
 - Each completed verdict-bearing result declares which gate categories it actually evaluated, so a category the run never covered can no longer read as a clean pass.
-- Gates degrade visibly through separate routes rather than one: mutation has no capability at all and stays unbound by Quality Contract declaration; `boundary-conformance` resolves unbound in this repository through its `provider-not-configured` binding; and a failed binding or invocation reports failed-to-run instead of passing.
+- Two gates stay visibly degraded in this repository rather than silently passing: `mutation`, which has no capability and is declared unbound, and `boundary-conformance`, which resolves unbound through `provider-not-configured`. A provider failure is a separate blocking outcome, not a degraded one — the full resolution vocabulary lives in `domains/shared/skills/work-artifacts/references/gate-contracts.md`.
 - Planner, Plan Reviewer, Worker, and Refactorer now investigate, trace, and audit through capability procedures without embedding provider commands in shipped generic content.
 
 What remains on this track is expansion and policy work, not completion of the shipped v1 surface:
