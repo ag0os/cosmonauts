@@ -11,6 +11,10 @@ const PLANNER_PROMPT_PATH = new URL(
 	`${PROMPT_ROOT}planner.md`,
 	import.meta.url,
 );
+const PLAN_REVIEWER_PROMPT_PATH = new URL(
+	`${PROMPT_ROOT}plan-reviewer.md`,
+	import.meta.url,
+);
 
 describe("analysis role procedures", () => {
 	// @cosmo-behavior plan:analysis-gate-rewiring#B-017
@@ -113,6 +117,27 @@ describe("analysis role procedures", () => {
 			"As an investigation role, use only the two-way outcome: evidence, or no evidence — record it; neither outcome blocks the design.",
 		);
 		expect(content).not.toMatch(/\b(?:failed|unbound)\b/iu);
+		expect(content).not.toMatch(
+			new RegExp(`\\b${["fal", "low"].join("")}\\b`, "iu"),
+		);
+	});
+
+	// @cosmo-behavior plan:analysis-investigation-procedures#B-021
+	it("expresses plan review challenges in capability terms", async () => {
+		const content = await readFile(PLAN_REVIEWER_PROMPT_PATH, "utf-8");
+
+		expect(content).toContain(
+			"When challenging duplicate code paths, dependency direction against a declared architecture record, and proposed deletions, inspect the runtime capability bindings and use capability evidence alongside reading the code.",
+		);
+		expect(content).toContain(
+			"Every finding that rests on capability evidence must cite that evidence.",
+		);
+		expect(content).toContain(
+			"When relevant capability evidence is unavailable, mark the dimension `unchecked` in the Coverage Ledger, state the reason plainly, and never imply that the dimension was checked.",
+		);
+		expect(content).toContain(
+			"As an investigation role, use only the two-way outcome: evidence, or no evidence — record it; neither outcome blocks the review.",
+		);
 		expect(content).not.toMatch(
 			new RegExp(`\\b${["fal", "low"].join("")}\\b`, "iu"),
 		);

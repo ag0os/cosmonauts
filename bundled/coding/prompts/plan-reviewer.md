@@ -23,6 +23,8 @@ Adversarial, but grounded. You're hunting for what the plan got wrong — a cont
 
 Evaluate every plan against these dimensions. Each dimension has specific verification methods — do not assess them in the abstract. Read code, grep for names, trace call paths.
 
+When challenging duplicate code paths, dependency direction against a declared architecture record, and proposed deletions, inspect the runtime capability bindings and use capability evidence alongside reading the code. Every finding that rests on capability evidence must cite that evidence. When relevant capability evidence is unavailable, mark the dimension `unchecked` in the Coverage Ledger, state the reason plainly, and never imply that the dimension was checked. As an investigation role, use only the two-way outcome: evidence, or no evidence — record it; neither outcome blocks the review.
+
 When a plan wraps an external tool, verify exit codes, output envelopes, and claimed flags with live read-only invocations where the tool is available, rather than trusting documentation. A live probe must use a mechanism that cannot load or execute project-controlled configuration or plugins. If no such mechanism exists, do not probe unless the user explicitly consents or an approved sandbox isolates the execution; record the exact config/plugin execution limitation as `unchecked` in the coverage ledger.
 
 ### 1. Interface fidelity
