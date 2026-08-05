@@ -1,7 +1,7 @@
 ---
 id: TASK-550
 title: Plan Reviewer challenges with capability evidence or names its absence
-status: To Do
+status: Done
 priority: high
 labels:
   - 'plan:analysis-investigation-procedures'
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-549
 createdAt: '2026-08-05T15:24:21.075Z'
-updatedAt: '2026-08-05T15:24:21.075Z'
+updatedAt: '2026-08-05T15:32:03.844Z'
 ---
 
 ## Description
@@ -65,13 +65,12 @@ Ratified ground: INV-1..INV-5, D-013, D-021. Do not un-withdraw B-020. Do
 not touch the capability runtime, the gate vocabulary, or any other role's
 prompt.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 Plan Reviewer prompt instructs checking runtime capability bindings and using capability evidence when challenging duplicate code paths, dependency direction, and proposed deletions
-- [ ] #2 Plan Reviewer prompt requires a finding resting on capability evidence to cite it, and requires unavailable evidence to be stated plainly — recorded as an `unchecked` Coverage Ledger dimension with its reason — never implied as checked
-- [ ] #3 Plan Reviewer procedure stays two-way (evidence vs no evidence — record it): it does not distinguish failed from unbound and does not block on any capability state (D-021)
-- [ ] #4 The existing live-probe paragraph and the existing Coverage Ledger requirement are preserved, and `tests/prompts/plan-reviewer.test.ts` still passes unchanged
-- [ ] #5 No concrete analyzer name, provider name, or runnable command appears anywhere in `bundled/coding/prompts/plan-reviewer.md`
-- [ ] #6 `tests/prompts/analysis-procedures.test.ts` contains a test named `expresses plan review challenges in capability terms` carrying marker `@cosmo-behavior plan:analysis-investigation-procedures#B-021`, which pins the operative sentence of each obligation above rather than bare tokens, and asserts the absence of any provider name across the whole prompt
-- [ ] #7 The project test, lint, and type-check steps pass, and no existing test is deleted, renamed, or weakened
+- [x] #1 Plan Reviewer prompt instructs checking runtime capability bindings and using capability evidence when challenging duplicate code paths, dependency direction, and proposed deletions
+- [x] #2 Plan Reviewer prompt requires a finding resting on capability evidence to cite it, and requires unavailable evidence to be stated plainly — recorded as an `unchecked` Coverage Ledger dimension with its reason — never implied as checked
+- [x] #3 Plan Reviewer procedure stays two-way (evidence vs no evidence — record it): it does not distinguish failed from unbound and does not block on any capability state (D-021)
+- [x] #4 The existing live-probe paragraph and the existing Coverage Ledger requirement are preserved, and `tests/prompts/plan-reviewer.test.ts` still passes unchanged
+- [x] #5 No concrete analyzer name, provider name, or runnable command appears anywhere in `bundled/coding/prompts/plan-reviewer.md`
+- [x] #6 `tests/prompts/analysis-procedures.test.ts` contains a test named `expresses plan review challenges in capability terms` carrying marker `@cosmo-behavior plan:analysis-investigation-procedures#B-021`, which pins the operative sentence of each obligation above rather than bare tokens, and asserts the absence of any provider name across the whole prompt
+- [x] #7 The project test, lint, and type-check steps pass, and no existing test is deleted, renamed, or weakened
 <!-- AC:END -->

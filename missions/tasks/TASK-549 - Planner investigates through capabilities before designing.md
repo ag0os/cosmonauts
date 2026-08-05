@@ -1,7 +1,7 @@
 ---
 id: TASK-549
 title: Planner investigates through capabilities before designing
-status: To Do
+status: Done
 priority: high
 labels:
   - 'plan:analysis-investigation-procedures'
@@ -9,7 +9,7 @@ labels:
   - testing
 dependencies: []
 createdAt: '2026-08-05T15:24:21.070Z'
-updatedAt: '2026-08-05T15:24:21.070Z'
+updatedAt: '2026-08-05T15:28:32.098Z'
 ---
 
 ## Description
@@ -62,13 +62,12 @@ Ratified ground: INV-1..INV-5, D-013, D-021. Do not un-withdraw B-020 or
 add an Explorer procedure. Do not touch the capability runtime, the gate
 vocabulary, the seven capability names, or any other role's prompt.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 Planner prompt instructs checking runtime capability bindings and gathering complexity, duplication, boundary, and trace evidence for the areas a design will touch, before the design is written
-- [ ] #2 Planner prompt requires capability evidence — or its explicit absence — to be recorded in the design and risks, and states that missing evidence is never read as a clean baseline
-- [ ] #3 Planner procedure stays two-way (evidence vs no evidence — record it): it does not distinguish failed from unbound and does not block on any capability state (D-021)
-- [ ] #4 No concrete analyzer name, provider name, or runnable command appears anywhere in `bundled/coding/prompts/planner.md`
-- [ ] #5 `tests/prompts/analysis-procedures.test.ts` contains a test named `expresses planner investigation in capability terms` carrying marker `@cosmo-behavior plan:analysis-investigation-procedures#B-019`, which pins the operative sentence of each obligation above rather than bare tokens, and asserts the absence of any provider name across the whole prompt
-- [ ] #6 Every pre-existing assertion in `tests/prompts/analysis-procedures.test.ts` still passes unchanged, and no existing test is deleted, renamed, or weakened
-- [ ] #7 The project test, lint, and type-check steps pass
+- [x] #1 Planner prompt instructs checking runtime capability bindings and gathering complexity, duplication, boundary, and trace evidence for the areas a design will touch, before the design is written
+- [x] #2 Planner prompt requires capability evidence — or its explicit absence — to be recorded in the design and risks, and states that missing evidence is never read as a clean baseline
+- [x] #3 Planner procedure stays two-way (evidence vs no evidence — record it): it does not distinguish failed from unbound and does not block on any capability state (D-021)
+- [x] #4 No concrete analyzer name, provider name, or runnable command appears anywhere in `bundled/coding/prompts/planner.md`
+- [x] #5 `tests/prompts/analysis-procedures.test.ts` contains a test named `expresses planner investigation in capability terms` carrying marker `@cosmo-behavior plan:analysis-investigation-procedures#B-019`, which pins the operative sentence of each obligation above rather than bare tokens, and asserts the absence of any provider name across the whole prompt
+- [x] #6 Every pre-existing assertion in `tests/prompts/analysis-procedures.test.ts` still passes unchanged, and no existing test is deleted, renamed, or weakened
+- [x] #7 The project test, lint, and type-check steps pass
 <!-- AC:END -->

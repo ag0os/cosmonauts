@@ -1,7 +1,7 @@
 ---
 id: TASK-551
 title: Worker traces before deleting and audits the changed scope at task close
-status: To Do
+status: Done
 priority: high
 labels:
   - 'plan:analysis-investigation-procedures'
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-550
 createdAt: '2026-08-05T15:24:21.077Z'
-updatedAt: '2026-08-05T15:24:21.077Z'
+updatedAt: '2026-08-05T15:37:09.848Z'
 ---
 
 ## Description
@@ -78,14 +78,17 @@ Manager, Verifier, or Fixer prompts — those belong to the two prior slices.
 A gap discovered in them is an amend-on-record against the owning plan,
 never a workaround here.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 Worker prompt requires tracing reachability and references before removing a file, export, type, or dependency
-- [ ] #2 Worker prompt requires a changed-scope audit before commit and before marking the task Done, from an explicit literal base equal to the commit SHA recorded at task start (the current pre-commit HEAD), with symbolic refs, branch names, shell variables, and silent widening all forbidden
-- [ ] #3 Worker prompt states each of the four outcomes with its own operative rule: completed findings are corrected with the narrowest change at the flagged location and never by refactoring passing code to improve a metric; unbound is recorded in implementation notes and never read as clean; unsupported degrades only that metric or scope; failed blocks completion and the task is set Blocked with the failure evidence preserved
-- [ ] #4 Worker prompt states that previewed changes are proposals for review and that the Worker applies only ordinary, narrow, reviewable edits itself
-- [ ] #5 The `analysis-gate-rewiring` migration-sweep clause in `bundled/coding/prompts/worker.md` is preserved intact, and `tests/prompts/worker.test.ts` plus every existing assertion that pins that clause still pass unchanged
-- [ ] #6 No concrete analyzer name, provider name, or runnable command appears anywhere in `bundled/coding/prompts/worker.md`
-- [ ] #7 `tests/prompts/analysis-procedures.test.ts` contains a test named `requires worker trace before delete and audit at task close` carrying marker `@cosmo-behavior plan:analysis-investigation-procedures#B-022`, which pins the operative sentence of each obligation above rather than bare tokens, and asserts the absence of any provider name across the whole prompt
-- [ ] #8 The project test, lint, and type-check steps pass, and no existing test is deleted, renamed, or weakened
+- [x] #1 Worker prompt requires tracing reachability and references before removing a file, export, type, or dependency
+- [x] #2 Worker prompt requires a changed-scope audit before commit and before marking the task Done, from an explicit literal base equal to the commit SHA recorded at task start (the current pre-commit HEAD), with symbolic refs, branch names, shell variables, and silent widening all forbidden
+- [x] #3 Worker prompt states each of the four outcomes with its own operative rule: completed findings are corrected with the narrowest change at the flagged location and never by refactoring passing code to improve a metric; unbound is recorded in implementation notes and never read as clean; unsupported degrades only that metric or scope; failed blocks completion and the task is set Blocked with the failure evidence preserved
+- [x] #4 Worker prompt states that previewed changes are proposals for review and that the Worker applies only ordinary, narrow, reviewable edits itself
+- [x] #5 The `analysis-gate-rewiring` migration-sweep clause in `bundled/coding/prompts/worker.md` is preserved intact, and `tests/prompts/worker.test.ts` plus every existing assertion that pins that clause still pass unchanged
+- [x] #6 No concrete analyzer name, provider name, or runnable command appears anywhere in `bundled/coding/prompts/worker.md`
+- [x] #7 `tests/prompts/analysis-procedures.test.ts` contains a test named `requires worker trace before delete and audit at task close` carrying marker `@cosmo-behavior plan:analysis-investigation-procedures#B-022`, which pins the operative sentence of each obligation above rather than bare tokens, and asserts the absence of any provider name across the whole prompt
+- [x] #8 The project test, lint, and type-check steps pass, and no existing test is deleted, renamed, or weakened
 <!-- AC:END -->
+
+## Implementation Notes
+
+Task-start changed-scope base: 752f8b547984bb9839026c53c1bb9a9b94db3a31. The runtime changed-scope capability was unavailable in this Codex backend and was not treated as a clean result. A manual narrow diff audit used that explicit literal base over bundled/coding/prompts/worker.md and tests/prompts/analysis-procedures.test.ts and found only the intended 50 insertions. The preserved migration-sweep paragraph hash remained identical. Verification passed: bun run test (248 files, 2868 tests), bun run lint, and bun run typecheck.

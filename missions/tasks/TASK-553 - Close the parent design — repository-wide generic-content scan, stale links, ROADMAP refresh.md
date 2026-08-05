@@ -3,7 +3,7 @@ id: TASK-553
 title: >-
   Close the parent design — repository-wide generic-content scan, stale links,
   ROADMAP refresh
-status: To Do
+status: Done
 priority: high
 labels:
   - 'plan:analysis-investigation-procedures'
@@ -11,7 +11,7 @@ labels:
 dependencies:
   - TASK-552
 createdAt: '2026-08-05T15:24:21.081Z'
-updatedAt: '2026-08-05T15:24:21.081Z'
+updatedAt: '2026-08-05T15:53:07.522Z'
 ---
 
 ## Description
@@ -60,12 +60,25 @@ not a gap to close. Do not touch the capability runtime, the gate
 vocabulary, the seven capability names, or which capabilities the reference
 provider supports.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 A repository-wide scan of shipped prompts, skills, and generic work-artifact references under `bundled/` and `domains/` finds no concrete analyzer name, provider name, vendor-specific flag, or runnable analysis command, and the scan coverage and result are recorded in the task implementation notes
-- [ ] #2 A stale-link scan over the same shipped surface finds no surviving reference to any path, skill, or heading deleted by the three slices, and any hit found is fixed
-- [ ] #3 The `analysis-tools` entry in `ROADMAP.md` records the shipped capability surface, gate rewiring, gate coverage, and role procedures, and leaves standing only what genuinely remains open on that track
-- [ ] #4 `cosmonauts plan check-artifacts analysis-investigation-procedures` reports zero issues and zero advisories with `Withdrawn: 1`
-- [ ] #5 The project test, lint, and type-check steps pass, and the sibling slices' preserved prompt tests pass unchanged
-- [ ] #6 The bound changed-scope gates run from an explicit literal base and their outcomes are recorded, with mutation and boundary-conformance reported as visibly degraded by design rather than worked around
+- [x] #1 A repository-wide scan of shipped prompts, skills, and generic work-artifact references under `bundled/` and `domains/` finds no concrete analyzer name, provider name, vendor-specific flag, or runnable analysis command, and the scan coverage and result are recorded in the task implementation notes
+- [x] #2 A stale-link scan over the same shipped surface finds no surviving reference to any path, skill, or heading deleted by the three slices, and any hit found is fixed
+- [x] #3 The `analysis-tools` entry in `ROADMAP.md` records the shipped capability surface, gate rewiring, gate coverage, and role procedures, and leaves standing only what genuinely remains open on that track
+- [x] #4 `cosmonauts plan check-artifacts analysis-investigation-procedures` reports zero issues and zero advisories with `Withdrawn: 1`
+- [x] #5 The project test, lint, and type-check steps pass, and the sibling slices' preserved prompt tests pass unchanged
+- [x] #6 The bound changed-scope gates run from an explicit literal base and their outcomes are recorded, with mutation and boundary-conformance reported as visibly degraded by design rather than worked around
 <!-- AC:END -->
+
+## Implementation Notes
+
+Task-start changed-scope base: `a891fc018aae8a9d330373155c4acfb3fb5dd377` (literal commit recorded before closeout edits).
+
+
+Closeout evidence (2026-08-05):
+- Shipped generic-content surface: every Markdown prompt, skill root, skill reference, capability document, and other Markdown artifact under `bundled/` and `domains/`, excluding the provider runtime at `domains/shared/extensions/project-tools/`: 118 files total (19 prompts, 46 skill roots, 42 skill references, 10 capability documents, 1 other artifact).
+- Provider/analyzer scan: case-insensitive searches for the reference provider, prior migration analyzers, comparison providers, provider-specific command forms, and vendor flags returned 0 matches. A broader flag check produced only unrelated Docker `apk --no-cache` examples; those are package-install flags, not analysis invocations.
+- Stale-link scan: exact searches for the deleted `bundled/coding/skills/fallow/` tree, `/skill:fallow`, the retired `Detected Analysis Tools` heading, and the removed audit-handoff prose returned 0 matches across `bundled/` and `domains/`. A filesystem check resolved 32 relative Markdown links with 0 missing targets.
+- `ROADMAP.md` now records the shipped seven-capability surface, consumer/gate rewiring, corrective gate-coverage semantics, and four role procedures. Remaining work is limited to polyglot/second-provider expansion, optional repository boundary policy plus CI or scheduled stewardship, additional transports, and separately ratified fix application.
+- Project verification passed: `bun run test` (248 files, 2869 tests, including preserved analysis, Quality Manager, Plan Reviewer, Planner, and Worker prompt suites), `bun run lint` (522 files), and `bun run typecheck`.
+- Artifact conformance passed: Behaviors: 5; Withdrawn: 1; Issues: 0; Advisories: 0.
+- Final capability audit used literal base `a891fc018aae8a9d330373155c4acfb3fb5dd377`. Runtime status bound dead-code, duplication, complexity, and changed-scope-audit; `analysis_audit` returned `pass`, declared coverage `[dead-code, duplication, complexity]`, and returned 0 findings. Mutation has no runtime capability and boundary-conformance is `unbound` with reason `provider-not-configured`; both remain visibly degraded by the ratified Quality Contract and were not worked around. One-run consent lived only in a temporary out-of-repository directory, which was removed; persistent user consent was unchanged.

@@ -3,7 +3,7 @@ id: TASK-552
 title: >-
   Refactorer traces and audits from the structural-change base without metric
   chasing
-status: To Do
+status: Done
 priority: high
 labels:
   - 'plan:analysis-investigation-procedures'
@@ -12,7 +12,7 @@ labels:
 dependencies:
   - TASK-551
 createdAt: '2026-08-05T15:24:21.079Z'
-updatedAt: '2026-08-05T15:24:21.079Z'
+updatedAt: '2026-08-05T15:41:55.483Z'
 ---
 
 ## Description
@@ -68,14 +68,17 @@ Ratified ground: INV-1..INV-5, D-013, D-021. Do not touch the capability
 runtime, the gate vocabulary, the seven capability names, or any other
 role's prompt.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 Refactorer prompt requires tracing reachability and references before moving or removing a file, export, type, or dependency
-- [ ] #2 Refactorer prompt requires a changed-scope audit from an explicit literal structural-change base SHA, with symbolic refs, branch names, and silent widening forbidden
-- [ ] #3 Refactorer prompt states each outcome with its own operative rule: completed evidence is stated; unbound is recorded as unavailable and never read as clean; unsupported degrades only that metric or scope; failed blocks completion and the task is set Blocked with the failure evidence preserved
-- [ ] #4 Refactorer prompt states explicitly that no-behavior-change discipline outranks every metric — a better number is never a reason to change behavior, and a finding that cannot be cleared without changing observable behavior is noted rather than acted on
-- [ ] #5 Refactorer prompt states that previewed changes are proposals for review, not authorization to edit
-- [ ] #6 No concrete analyzer name, provider name, or runnable command appears anywhere in `bundled/coding/prompts/refactorer.md`
-- [ ] #7 `tests/prompts/analysis-procedures.test.ts` contains a test named `requires refactorer trace and changed scope evidence without metric chasing` carrying marker `@cosmo-behavior plan:analysis-investigation-procedures#B-023`, which pins the operative sentence of each obligation above rather than bare tokens, and asserts the absence of any provider name across the whole prompt
-- [ ] #8 The project test, lint, and type-check steps pass, and no existing test is deleted, renamed, or weakened
+- [x] #1 Refactorer prompt requires tracing reachability and references before moving or removing a file, export, type, or dependency
+- [x] #2 Refactorer prompt requires a changed-scope audit from an explicit literal structural-change base SHA, with symbolic refs, branch names, and silent widening forbidden
+- [x] #3 Refactorer prompt states each outcome with its own operative rule: completed evidence is stated; unbound is recorded as unavailable and never read as clean; unsupported degrades only that metric or scope; failed blocks completion and the task is set Blocked with the failure evidence preserved
+- [x] #4 Refactorer prompt states explicitly that no-behavior-change discipline outranks every metric — a better number is never a reason to change behavior, and a finding that cannot be cleared without changing observable behavior is noted rather than acted on
+- [x] #5 Refactorer prompt states that previewed changes are proposals for review, not authorization to edit
+- [x] #6 No concrete analyzer name, provider name, or runnable command appears anywhere in `bundled/coding/prompts/refactorer.md`
+- [x] #7 `tests/prompts/analysis-procedures.test.ts` contains a test named `requires refactorer trace and changed scope evidence without metric chasing` carrying marker `@cosmo-behavior plan:analysis-investigation-procedures#B-023`, which pins the operative sentence of each obligation above rather than bare tokens, and asserts the absence of any provider name across the whole prompt
+- [x] #8 The project test, lint, and type-check steps pass, and no existing test is deleted, renamed, or weakened
 <!-- AC:END -->
+
+## Implementation Notes
+
+Task-start structural-change base: a5859eff2045f20f7cba803a71997421a17d1c63. The runtime changed-scope capability was unavailable in this Codex backend and was not treated as a clean result. A manual narrow diff audit used that explicit literal base over bundled/coding/prompts/refactorer.md and tests/prompts/analysis-procedures.test.ts; it found only the intended 63 insertions with no whitespace errors. Verification passed: bun run test (248 files, 2869 tests), bun run lint, and bun run typecheck.
