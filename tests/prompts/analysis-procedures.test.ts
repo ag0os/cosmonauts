@@ -15,6 +15,7 @@ const PLAN_REVIEWER_PROMPT_PATH = new URL(
 	`${PROMPT_ROOT}plan-reviewer.md`,
 	import.meta.url,
 );
+const WORKER_PROMPT_PATH = new URL(`${PROMPT_ROOT}worker.md`, import.meta.url);
 
 describe("analysis role procedures", () => {
 	// @cosmo-behavior plan:analysis-gate-rewiring#B-017
@@ -137,6 +138,42 @@ describe("analysis role procedures", () => {
 		);
 		expect(content).toContain(
 			"As an investigation role, use only the two-way outcome: evidence, or no evidence — record it; neither outcome blocks the review.",
+		);
+		expect(content).not.toMatch(
+			new RegExp(`\\b${["fal", "low"].join("")}\\b`, "iu"),
+		);
+	});
+
+	// @cosmo-behavior plan:analysis-investigation-procedures#B-022
+	it("requires worker trace before delete and audit at task close", async () => {
+		const content = await readFile(WORKER_PROMPT_PATH, "utf-8");
+
+		expect(content).toContain(
+			"At task start, record the current pre-commit `HEAD` commit SHA as the changed-scope audit base and preserve that literal SHA for task close.",
+		);
+		expect(content).toContain(
+			"Before removing a file, export, type, dependency, or other structural element, trace its reachability and references; when the trace capability is available, deleting without that evidence is unacceptable.",
+		);
+		expect(content).toContain(
+			"Before both committing and marking the task Done, run the changed-scope audit with the recorded task-start commit SHA as its explicit literal base.",
+		);
+		expect(content).toContain(
+			"Never omit the base, substitute a branch name, symbolic ref, or shell variable, or let the requested scope widen to the whole project.",
+		);
+		expect(content).toContain(
+			"For `completed`, correct each flagged finding with the narrowest change that clears that specific finding at its flagged location; never refactor already-passing code to improve a metric or enlarge the diff beyond what the finding requires.",
+		);
+		expect(content).toContain(
+			"For `unbound`, record in the task's implementation notes that the evidence was unavailable and continue; never treat unavailable evidence as a clean result.",
+		);
+		expect(content).toContain(
+			"For `unsupported`, degrade only the unsupported metric or scope; never widen the request or treat the missing evidence as zero.",
+		);
+		expect(content).toContain(
+			"For `failed`, a failed binding or failed invocation blocks completion: preserve the failure evidence in the task's implementation notes, set the task Blocked, and do not mark it Done.",
+		);
+		expect(content).toContain(
+			"Changes returned by a preview capability are proposals for review, not authorization to edit; apply only ordinary, narrow, reviewable edits yourself.",
 		);
 		expect(content).not.toMatch(
 			new RegExp(`\\b${["fal", "low"].join("")}\\b`, "iu"),

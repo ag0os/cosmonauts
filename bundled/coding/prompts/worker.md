@@ -20,6 +20,8 @@ If the task has a `plan:` label, also read the plan at `missions/plans/<slug>/pl
 
 Call `task_edit` to set status to "In Progress" and assignee to "worker". This signals to the coordinator that work has begun and who owns it.
 
+At task start, record the current pre-commit `HEAD` commit SHA as the changed-scope audit base and preserve that literal SHA for task close.
+
 ### 3. Load Skills
 
 Check the available skills index and load skills that match this project and task:
@@ -56,6 +58,8 @@ When the plan or design names a rule and identifies multiple seams, files, or ca
 
 **Direct fixes stay lighter.** Direct fixes still require a regression test first, but no marker ceremony unless the fix is tied to a plan.
 
+**Trace and preview before structural edits.** Before removing a file, export, type, dependency, or other structural element, trace its reachability and references; when the trace capability is available, deleting without that evidence is unacceptable. Changes returned by a preview capability are proposals for review, not authorization to edit; apply only ordinary, narrow, reviewable edits yourself.
+
 **Migration-shaped work has a pre-completion sweep.** If the task moves or renames a file, directory, exported symbol, command, config key, or hard-coded path, perform the sweep before marking the task done. When the `dead-code` capability is bound, run it over the migration scope as additive evidence. Always run an explicit old-identifier/path search across runtime source, tests, and docs, whether or not the `dead-code` capability is bound. Structural reachability cannot prove stale strings absent. Search runtime source first (`lib/`, `cli/`, `bin/`, `domains/`, `bundled/`, `scripts/`), then tests and docs (`tests/`, `docs/`, and any other tracked references). Update every stale reference you find; do not treat a tests/docs-only sweep as sufficient, because stale runtime source can break later stages mid-run.
 
 ### 6. Check ACs Incrementally
@@ -71,6 +75,15 @@ Run the project's test suite (or the relevant subset) to verify your changes:
 - Run existing tests first to confirm you have not broken anything.
 - If the task requires new tests, write and run them.
 - If tests fail, fix the issue before proceeding. Do not commit failing tests.
+
+**Audit the changed scope before completion.** Before both committing and marking the task Done, run the changed-scope audit with the recorded task-start commit SHA as its explicit literal base. Never omit the base, substitute a branch name, symbolic ref, or shell variable, or let the requested scope widen to the whole project.
+
+Apply the audit outcome as a completion protocol:
+
+- For `completed`, correct each flagged finding with the narrowest change that clears that specific finding at its flagged location; never refactor already-passing code to improve a metric or enlarge the diff beyond what the finding requires.
+- For `unbound`, record in the task's implementation notes that the evidence was unavailable and continue; never treat unavailable evidence as a clean result.
+- For `unsupported`, degrade only the unsupported metric or scope; never widen the request or treat the missing evidence as zero.
+- For `failed`, a failed binding or failed invocation blocks completion: preserve the failure evidence in the task's implementation notes, set the task Blocked, and do not mark it Done.
 
 ### 8. Commit
 
