@@ -73,6 +73,7 @@ The base that lets a domain or agent run on a schedule, wake periodically, react
 
 What remains on this track is expansion and policy work, not completion of the shipped v1 surface:
 
+- Deepen the signal itself: richer rule sets, type-aware checks, and security signals fed to `worker`/`quality-manager` as structured findings. Only the structural half of this shipped — the v1 taxonomy has no security capability, and the reference provider is syntactic rather than type-aware.
 - Add polyglot provider routing and validate a second executable provider; non-JavaScript/TypeScript projects still surface the unsupported capabilities explicitly. Targets the user's project (any codebase), not just cosmonauts — per-language analyzers (ESLint, ruff/mypy, clippy, …) and how a domain surfaces the right one per project.
 - Universal layer: a language-agnostic option (tree-sitter, `semgrep`) behind the same capability contract, and whether the generic result envelope should speak an interchange format (e.g. SARIF) across languages.
 - Author repository boundary zones where enforcement is wanted, and decide whether to add CI enforcement or scheduled full-project stewardship.
