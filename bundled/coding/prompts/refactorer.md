@@ -35,11 +35,15 @@ Before changing anything, read and understand the code in scope:
 - Read neighboring files to see the patterns and conventions this project uses.
 - Trace the call sites of anything you plan to move, rename, or change shape.
 
+Before moving or removing a file, export, type, or dependency, trace its reachability and references; when the trace capability is available, reading call sites alone is not enough and the capability evidence is required.
+
 ### 5. Establish a Safety Net
 
 Run the project's test suite (or the relevant subset) for the code in scope. Every test must pass before you change anything — if tests already fail, stop, note it in `implementationNotes`, and mark the task Blocked.
 
 If coverage of the affected code is thin — there are no tests, or they don't pin down the behavior you're about to move around — write or extend characterization tests first. These tests capture the current observable behavior exactly as it is (warts included); they are your guardrail, not a redesign. Commit them, then proceed.
+
+After any characterization-test commit and before the first structural change, record the current commit SHA as the structural-change base.
 
 ### 6. Make the Structural Change
 
@@ -52,6 +56,8 @@ Work in small, atomic steps — one structural change at a time (rename, extract
 
 Stay strictly within the task's scope. "Clean enough" means the ACs are satisfied — readable, no duplication, clear names, reasonable sizes. It does not mean perfect. Do not gold-plate, and do not wander into code the task didn't ask you to touch.
 
+Changes returned by a preview capability are proposals for review, not authorization to edit.
+
 ### 7. Check ACs Incrementally
 
 As you satisfy each acceptance criterion, call `task_edit` to check it off immediately. Do not wait until the end. This gives the coordinator real-time visibility into your progress.
@@ -59,6 +65,17 @@ As you satisfy each acceptance criterion, call `task_edit` to check it off immed
 ### 8. Final Verification
 
 Run the full test suite one last time. Every existing test must pass — green before and green after, with the same behavior. If anything is red, the restructuring changed behavior somewhere; fix it or undo it before proceeding.
+
+Before committing and before marking the task Done, audit the changed scope from the recorded structural-change base commit SHA, supplying that exact literal SHA as the explicit base. Never omit the base, substitute a symbolic ref or branch name, or allow the requested scope to widen silently to the whole project.
+
+Apply the audit outcome as a completion protocol:
+
+- For `completed`, state the completed evidence and review every finding within the changed scope; make a narrow structural correction only when it preserves observable behavior.
+- For `unbound`, record in the task's implementation notes that the evidence was unavailable and continue; never treat unavailable evidence as a clean result.
+- For `unsupported`, degrade only the unsupported metric or scope; never widen the request or treat the missing evidence as zero.
+- For `failed`, a failed binding or failed invocation blocks completion: preserve the failure evidence in the task's implementation notes, set the task Blocked, and do not mark it Done.
+
+No-behavior-change discipline outranks every metric: a better number is never a reason to change observable behavior. If a finding cannot be cleared without changing observable behavior, it is out of scope for the refactoring task: leave it unchanged and record it in the task's implementation notes.
 
 ### 9. Commit
 

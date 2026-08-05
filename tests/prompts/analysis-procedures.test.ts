@@ -16,6 +16,10 @@ const PLAN_REVIEWER_PROMPT_PATH = new URL(
 	import.meta.url,
 );
 const WORKER_PROMPT_PATH = new URL(`${PROMPT_ROOT}worker.md`, import.meta.url);
+const REFACTORER_PROMPT_PATH = new URL(
+	`${PROMPT_ROOT}refactorer.md`,
+	import.meta.url,
+);
 
 describe("analysis role procedures", () => {
 	// @cosmo-behavior plan:analysis-gate-rewiring#B-017
@@ -174,6 +178,48 @@ describe("analysis role procedures", () => {
 		);
 		expect(content).toContain(
 			"Changes returned by a preview capability are proposals for review, not authorization to edit; apply only ordinary, narrow, reviewable edits yourself.",
+		);
+		expect(content).not.toMatch(
+			new RegExp(`\\b${["fal", "low"].join("")}\\b`, "iu"),
+		);
+	});
+
+	// @cosmo-behavior plan:analysis-investigation-procedures#B-023
+	it("requires refactorer trace and changed scope evidence without metric chasing", async () => {
+		const content = await readFile(REFACTORER_PROMPT_PATH, "utf-8");
+
+		expect(content).toContain(
+			"Before moving or removing a file, export, type, or dependency, trace its reachability and references; when the trace capability is available, reading call sites alone is not enough and the capability evidence is required.",
+		);
+		expect(content).toContain(
+			"After any characterization-test commit and before the first structural change, record the current commit SHA as the structural-change base.",
+		);
+		expect(content).toContain(
+			"Before committing and before marking the task Done, audit the changed scope from the recorded structural-change base commit SHA, supplying that exact literal SHA as the explicit base.",
+		);
+		expect(content).toContain(
+			"Never omit the base, substitute a symbolic ref or branch name, or allow the requested scope to widen silently to the whole project.",
+		);
+		expect(content).toContain(
+			"For `completed`, state the completed evidence and review every finding within the changed scope; make a narrow structural correction only when it preserves observable behavior.",
+		);
+		expect(content).toContain(
+			"For `unbound`, record in the task's implementation notes that the evidence was unavailable and continue; never treat unavailable evidence as a clean result.",
+		);
+		expect(content).toContain(
+			"For `unsupported`, degrade only the unsupported metric or scope; never widen the request or treat the missing evidence as zero.",
+		);
+		expect(content).toContain(
+			"For `failed`, a failed binding or failed invocation blocks completion: preserve the failure evidence in the task's implementation notes, set the task Blocked, and do not mark it Done.",
+		);
+		expect(content).toContain(
+			"No-behavior-change discipline outranks every metric: a better number is never a reason to change observable behavior.",
+		);
+		expect(content).toContain(
+			"If a finding cannot be cleared without changing observable behavior, it is out of scope for the refactoring task: leave it unchanged and record it in the task's implementation notes.",
+		);
+		expect(content).toContain(
+			"Changes returned by a preview capability are proposals for review, not authorization to edit.",
 		);
 		expect(content).not.toMatch(
 			new RegExp(`\\b${["fal", "low"].join("")}\\b`, "iu"),
