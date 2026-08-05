@@ -101,16 +101,30 @@ code changed — `git diff` over `lib/`, `bin/`, and the extensions is empty.
 - **Coverage attaches only to verdict-bearing results.** `lib/analysis/types.ts`
   makes it structural — `trace` and `fix-preview` cannot carry it. D-013
   enforced by the type rather than by convention.
-- **A `codex exec` killed by `timeout` can leave an orphaned child running for
-  over an hour**, and that orphan is enough load to make `tests/driver/*` time
-  out in full-suite runs while passing in isolation. Kill orphans (`pkill -x
-  codex`) before trusting a red suite. This is a new, concrete cause for the
-  previously-vague "driver tests flake under concurrent load" note.
+- **Drive leaks its codex backend worker.** A bare `codex` process spawned by
+  Drive outlived its own task, the four tasks after it, and the run reaching
+  `completed` — still alive 68 minutes later while Drive reported success.
+  Timing is exact, not inferred: the orphan's start resolves to 12:25:03 local
+  and Drive's `spawn_started` for TASK-549 is `15:25:03Z` in a UTC−3 zone. The
+  mechanism inside Drive was NOT determined — whether the backend declines to
+  exit after its turn or Drive fails to kill the process group is still open,
+  and worth a real investigation on Drive's own ground.
+  After any Drive run, check for a surviving `codex` (`ps -eo pid,etime,command
+  | grep '[c]odex'`) before trusting a red suite; that load alone makes
+  `tests/driver/*` time out while the same files pass in isolation.
+  *(Correction: the first version of this entry blamed a `codex exec` review run
+  killed by `timeout`. Both halves were wrong — `timeout` never fired, that run
+  exited 0, and the review rounds began 45 minutes after the orphan started. The
+  mechanism was inferred from the word `timeout` in the command line rather than
+  from evidence. Check an orphan's `etime` against your own launch times before
+  attributing it.)*
 - **`tests/driver/run-step.test.ts > uses frozen episode actor…` fails on clean
   `main` too** (2864/2865 there) — a 5000ms wall-clock timeout, not an
   assertion. It belongs to `episodic-log#B-018` and is worth a follow-up on that
   plan's ground. Prove attribution by checking out the base branch and running
-  the suite there before blaming your own work.
+  the suite there before blaming your own work. Note this is a *separate* defect
+  from the leaked Drive worker above: the orphan made it fire more often, but
+  the timeout still reproduces on a quiet machine with nothing else running.
 - **The Quality Manager panel still writes the generic
   `missions/reviews/review-round-1.md`** and clobbered another plan's tracked
   review. It restored the file itself this time, but the plan-scoped-naming bug
