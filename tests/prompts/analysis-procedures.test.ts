@@ -7,6 +7,10 @@ const VERIFIER_PROMPT_PATH = new URL(
 	import.meta.url,
 );
 const FIXER_PROMPT_PATH = new URL(`${PROMPT_ROOT}fixer.md`, import.meta.url);
+const PLANNER_PROMPT_PATH = new URL(
+	`${PROMPT_ROOT}planner.md`,
+	import.meta.url,
+);
 
 describe("analysis role procedures", () => {
 	// @cosmo-behavior plan:analysis-gate-rewiring#B-017
@@ -93,5 +97,24 @@ describe("analysis role procedures", () => {
 			new RegExp(`\\b${["fal", "low"].join("")}\\b`, "iu"),
 		);
 		expect(content).not.toContain(["analysis", "apply"].join("_"));
+	});
+
+	// @cosmo-behavior plan:analysis-investigation-procedures#B-019
+	it("expresses planner investigation in capability terms", async () => {
+		const content = await readFile(PLANNER_PROMPT_PATH, "utf-8");
+
+		expect(content).toContain(
+			"Before writing a non-trivial design, inspect the runtime capability bindings, then use `analysis_complexity`, `analysis_duplication`, `analysis_boundaries`, and `analysis_trace` to gather evidence for every area the design will touch and every symbol it will move, reuse, or remove.",
+		);
+		expect(content).toContain(
+			"Record the resulting capability evidence, or the explicit absence of evidence, in both the design and its risk register; missing evidence is uncertainty, never a clean baseline.",
+		);
+		expect(content).toContain(
+			"As an investigation role, use only the two-way outcome: evidence, or no evidence — record it; neither outcome blocks the design.",
+		);
+		expect(content).not.toMatch(/\b(?:failed|unbound)\b/iu);
+		expect(content).not.toMatch(
+			new RegExp(`\\b${["fal", "low"].join("")}\\b`, "iu"),
+		);
 	});
 });
