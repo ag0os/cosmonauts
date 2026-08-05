@@ -67,8 +67,8 @@ The base that lets a domain or agent run on a schedule, wake periodically, react
 **Capability foundation ✅ shipped (2026-08-05):** the initial audit shipped with `code-structure-map` W1 (2026-07-03 → `missions/archive/plans/code-structure-map/analysis-tools-audit.md`). The ratified `analysis-capabilities` design then shipped through `analysis-capability-runtime`, `analysis-gate-rewiring`, and `analysis-investigation-procedures`, with `analysis-gate-coverage` as the corrective plan:
 
 - A provider-neutral seven-capability contract, structured results, explicit binding/failure states, and a pinned reference-provider runtime are available to agents.
-- Quality Manager, Verifier, and Fixer resolve gates through capabilities; the generic analysis skill and capability surface are distributed to all seven v1 consumer roles.
-- Gate coverage is declared by each completed invocation and reconciled against runtime bindings, so absent mutation support and disabled repository boundary rules remain visibly degraded rather than becoming silent passes.
+- Quality Manager resolves the gate ladder by calling capabilities directly; Verifier validates capability claims without being the transport for gate findings, and Fixer reruns the routed request before editing. The generic analysis skill and capability surface reach all seven v1 consumer roles.
+- Gate coverage is declared by each completed verdict-bearing invocation and reconciled against runtime bindings, so absent mutation support and this repository's unconfigured boundary rules remain visibly degraded rather than becoming silent passes.
 - Planner, Plan Reviewer, Worker, and Refactorer now investigate, trace, and audit through capability procedures without embedding provider commands in shipped generic content.
 
 What remains on this track is expansion and policy work, not completion of the shipped v1 surface:
