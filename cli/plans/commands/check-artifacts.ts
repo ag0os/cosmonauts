@@ -50,6 +50,17 @@ export function registerCheckArtifactsCommand(program: Command): void {
 		});
 }
 
+/**
+ * Plan lifecycle locations, in resolution order (D-006).
+ *
+ * A plan is archived on ship, so an active-only lookup left the gate unable to
+ * check exactly the plans whose markers have had the most time to rot.
+ */
+const PLAN_LOCATIONS = [
+	["missions", "plans"],
+	["missions", "archive", "plans"],
+] as const;
+
 async function loadPlanArtifact(
 	projectRoot: string,
 	slug: string,
@@ -63,37 +74,31 @@ async function loadPlanArtifact(
 		};
 	}
 
-	const planPath = `missions/plans/${slug}/plan.md`;
-	const absolutePlanPath = join(
-		projectRoot,
-		"missions",
-		"plans",
-		slug,
-		"plan.md",
-	);
-
-	try {
-		return {
-			ok: true,
-			value: {
-				slug,
-				path: planPath,
-				markdown: await readFile(absolutePlanPath, "utf-8"),
-			},
-		};
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+	for (const location of PLAN_LOCATIONS) {
+		const segments = [...location, slug, "plan.md"];
+		try {
 			return {
-				ok: false,
-				error: `Plan not found: ${slug}`,
+				ok: true,
+				value: {
+					slug,
+					path: segments.join("/"),
+					markdown: await readFile(join(projectRoot, ...segments), "utf-8"),
+				},
 			};
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+				return {
+					ok: false,
+					error: String(error),
+				};
+			}
 		}
-
-		return {
-			ok: false,
-			error: String(error),
-		};
 	}
+
+	return {
+		ok: false,
+		error: `Plan not found: ${slug}`,
+	};
 }
 
 export function renderArtifactConformanceResult(

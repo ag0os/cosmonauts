@@ -64,6 +64,13 @@ Excluded:
   - Why: The brief explicitly excludes back-migration and asks for conformance against the new contract. Treating legacy plans as failures preserves a clear gate and avoids scope creep.
   - Decided by: plan-reviewer finding accepted
 
+- **D-006 — `check-artifacts` resolves archived plans as well as active ones** *(added 2026-08-06)*
+  - Decision: `loadPlanArtifact` reads `missions/plans/<slug>/plan.md` first and falls back to `missions/archive/plans/<slug>/plan.md`. "Missing plan" now means absent from both, and the reported `planPath` names the location actually used.
+  - Alternatives: Keep active-only lookup (the superseded B-011 mechanism) — rejected because every plan is archived on ship, so the CLI gate was unusable for exactly the plans whose markers have had the most time to rot. Add an explicit `--archived` flag — rejected as a second thing to remember for something never ambiguous, since a slug resolves to at most one location. Let callers pass an arbitrary plan path — rejected as widening the CLI surface past AC-009.
+  - Why: Serves AC-009's letter ("non-zero exit code on invalid slug, missing plan, or conformance failure") rather than the incidental directory mechanism B-011 wrapped around it. The gate exists to keep behavior markers honest, and markers must outlive archival; `tests/artifacts/behavior-conformance.test.ts` already resolves both locations internally for that reason, so the CLI was the inconsistent surface. Consistent with D-005: an archived plan lacking the behavior spine still fails by design, it is simply now reachable.
+  - Supersedes: B-011's Context clause "no `missions/plans/<slug>/plan.md` file exists".
+  - Decided by: implementer, amend-on-record, 2026-08-06
+
 ## Behaviors
 
 ### B-001 — Parses planned behavior entries
@@ -169,7 +176,7 @@ Excluded:
 ### B-011 — CLI rejects invalid slugs and missing plans before conformance checking
 
 - Source: AC-009
-- Context: a command target is not a valid plan slug or no `missions/plans/<slug>/plan.md` file exists
+- Context: a command target is not a valid plan slug or no `plan.md` exists under either `missions/plans/<slug>/` or `missions/archive/plans/<slug>/` *(superseded by D-006, 2026-08-06; was: "no `missions/plans/<slug>/plan.md` file exists")*
 - Action: the CLI command is invoked
 - Expected: it prints normal CLI diagnostics in the requested output mode, performs no artifact scan, and exits non-zero
 - Seam: `cli/plans/commands/check-artifacts.ts`; `lib/plans/plan-manager.ts`

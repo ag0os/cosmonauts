@@ -203,41 +203,100 @@ describe("plan check-artifacts command", () => {
 
 		for (const mode of ["human", "plain", "json"] as const) {
 			const result = await runPlanCheckArtifactsCommand(
-				modeArgs(mode, "archived-only"),
-				async (projectRoot) => {
-					const archivedPlanPath = join(
-						projectRoot,
-						"missions",
-						"archive",
-						"plans",
-						"archived-only",
-						"plan.md",
-					);
-					await mkdir(dirname(archivedPlanPath), { recursive: true });
-					await writeFile(
-						archivedPlanPath,
-						behaviorPlanMarkdown({
-							slug: "archived-only",
-							behaviorId: "B-011",
-							testFile: "tests/archived.test.ts",
-							testName:
-								"reports invalid slug and missing plan diagnostics before scanning artifacts",
-						}),
-					);
-				},
+				modeArgs(mode, "absent-everywhere"),
 			);
 
 			expect(result.exitCalls).toEqual([1]);
 			if (mode === "json") {
 				expect(JSON.parse(result.stdout)).toEqual({
-					error: "Plan not found: archived-only",
+					error: "Plan not found: absent-everywhere",
 				});
 				expect(result.stderr).toBe("");
 			} else {
 				expect(result.stdout).toBe("");
-				expect(result.stderr).toBe("Error: Plan not found: archived-only\n");
+				expect(result.stderr).toBe(
+					"Error: Plan not found: absent-everywhere\n",
+				);
 			}
 		}
+	});
+
+	// A plan is archived on ship, so an active-only lookup left the gate unable
+	// to check exactly the plans whose markers have had the most time to rot.
+	// @cosmo-behavior plan:artifact-conformance-gate#B-011
+	it("resolves an archived plan and reports its archive path", async () => {
+		const result = await runPlanCheckArtifactsCommand(
+			modeArgs("json", "archived-only"),
+			async (projectRoot) => {
+				await writeArchivedPlan(
+					projectRoot,
+					"archived-only",
+					behaviorPlanMarkdown({
+						slug: "archived-only",
+						behaviorId: "B-011",
+						testFile: "tests/archived.test.ts",
+						testName: "resolves an archived plan and reports its archive path",
+					}),
+				);
+				await writeTestFile(
+					projectRoot,
+					"tests/archived.test.ts",
+					"@cosmo-behavior plan:archived-only#B-011",
+				);
+			},
+		);
+
+		expect(result.stderr).toBe("");
+		expect(result.exitCalls).toEqual([]);
+		expect(JSON.parse(result.stdout)).toMatchObject({
+			ok: true,
+			planSlug: "archived-only",
+			planPath: "missions/archive/plans/archived-only/plan.md",
+			issues: [],
+		});
+	});
+
+	// An active plan still wins, so a re-opened slug is never checked against
+	// the stale archived copy.
+	it("prefers the active plan when a slug exists in both locations", async () => {
+		const result = await runPlanCheckArtifactsCommand(
+			modeArgs("json", "both-locations"),
+			async (projectRoot) => {
+				await writePlanWithBody(
+					projectRoot,
+					"both-locations",
+					behaviorPlanMarkdown({
+						slug: "both-locations",
+						behaviorId: "B-011",
+						testFile: "tests/active.test.ts",
+						testName: "prefers the active plan when a slug exists in both",
+					}),
+				);
+				await writeTestFile(
+					projectRoot,
+					"tests/active.test.ts",
+					"@cosmo-behavior plan:both-locations#B-011",
+				);
+				await writeArchivedPlan(
+					projectRoot,
+					"both-locations",
+					behaviorPlanMarkdown({
+						slug: "both-locations",
+						behaviorId: "B-011",
+						marker: "@cosmo-behavior plan:both-locations#B-999",
+						testFile: "tests/stale-archived.test.ts",
+						testName: "stale archived copy that must not be read",
+					}),
+				);
+			},
+		);
+
+		expect(result.exitCalls).toEqual([]);
+		expect(JSON.parse(result.stdout)).toMatchObject({
+			ok: true,
+			planPath: "missions/plans/both-locations/plan.md",
+			issues: [],
+		});
 	});
 });
 
@@ -299,6 +358,23 @@ async function writePlanWithBody(
 		title: slug,
 		description: body,
 	});
+}
+
+async function writeArchivedPlan(
+	projectRoot: string,
+	slug: string,
+	body: string,
+): Promise<void> {
+	const archivedPlanPath = join(
+		projectRoot,
+		"missions",
+		"archive",
+		"plans",
+		slug,
+		"plan.md",
+	);
+	await mkdir(dirname(archivedPlanPath), { recursive: true });
+	await writeFile(archivedPlanPath, body, "utf-8");
 }
 
 async function writeTestFile(
