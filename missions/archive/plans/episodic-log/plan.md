@@ -177,6 +177,13 @@ Boundary rules:
   - Why: this is ratified OQ3; performance data informs adoption/reassessment.
   - Decided by: user-directed.
 
+- **D-011 — Re-anchor B-028 to the renamed OFF-state parity test** (added 2026-08-06)
+  - Decision: B-028's `Test:` names `tests/driver/drive-on-graph-routing.test.ts` > `keeps OFF-state Drive files events layout and output byte-identical across hardened paths`, which now carries the `episodic-log#B-028` marker alongside its existing `episodic-log-detached-hardening#B-001` marker. An `Additional evidence:` field names the corroborating tool-path and compiled-binary tests, since B-028's four clauses are proven across three files while the conformance model anchors one behavior to one named test.
+  - Alternatives: leave the anchor broken (rejected — the checker reports a permanent `missing-marker`, which trains reviewers to ignore it); add the marker without amending the `Test:` line (rejected — clears the checker while the recorded test name stays wrong, converting a visible signal into a silent inconsistency); withdraw B-028 as absorbed by `episodic-log-detached-hardening#B-001` (rejected — B-001 carries a D-010 exclusion for failing plan-lock release, so withdrawing B-028 in its favour would quietly inherit that carve-out into AC-001's unqualified default-state promise).
+  - Why: preserves AC-001's ratified default-state guarantee by pointing it at the tests that actually prove it, rather than at a test name that no longer exists. The detached-hardening plan renamed the OFF-state parity test without carrying the predecessor marker forward; the coverage survived, the provenance did not.
+  - Supersedes: B-028's `Test:` line naming `keeps disabled Drive specs results events and files byte-identical`.
+  - Decided by: human (escalated by the implementer as ratified ground — AC-001 letter plus default-state declaration — and ratified 2026-08-06). Background: `missions/reviews/episodic-log-b028-conformance-escalation.md`.
+
 ## Behaviors
 
 ### B-001 - Project config is safely off by default
@@ -456,8 +463,9 @@ Boundary rules:
 - Action: specs are created and Drive executes/aborts
 - Expected: no episode source/attempt field is serialized, detached launch still avoids runtime resolution, result/completion/events/spec bytes match baselines, and no project/user episode/index path appears
 - Seam: Drive launch and `runDriveOnGraph()` disabled branches
-- Test: `tests/driver/drive-on-graph-routing.test.ts` > `keeps disabled Drive specs results events and files byte-identical`
+- Test: `tests/driver/drive-on-graph-routing.test.ts` > `keeps OFF-state Drive files events layout and output byte-identical across hardened paths` *(superseded by D-011, 2026-08-06; was: `keeps disabled Drive specs results events and files byte-identical`, renamed by episodic-log-detached-hardening without carrying this marker forward)*
 - Marker: `@cosmo-behavior plan:episodic-log#B-028`
+- Additional evidence: the primary test covers the inline OFF state; clauses are corroborated by exact assertions in `tests/extensions/orchestration-driver-tool.test.ts` > `keeps absent and false-config inline specs completions layout and result exact` (tool path, absent and false config, no `run.terminal-episodes`, no `memory/agent`) and by the disabled-gate compiled-binary runs in `tests/driver/run-step.test.ts`, whose B-018 test asserts the detached child's source carries no `CosmonautsRuntime`, `resolveDriveEpisodeWorker`, or `episode-identity.ts` reference — the structural proof of "detached launch still avoids runtime resolution" (D-011 open question)
 
 ### B-029 - Documentation states the full W3 contract
 

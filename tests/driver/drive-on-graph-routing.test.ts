@@ -151,6 +151,7 @@ describe("Drive-on-graph routing", () => {
 	}, 30_000);
 
 	// @cosmo-behavior plan:episodic-log-detached-hardening#B-001
+	// @cosmo-behavior plan:episodic-log#B-028
 	test("keeps OFF-state Drive files events layout and output byte-identical across hardened paths", async () => {
 		const absent = await setupFixture("disabled-absent");
 		const expectedResult = {

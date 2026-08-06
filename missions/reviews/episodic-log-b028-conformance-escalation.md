@@ -1,6 +1,7 @@
 # Escalation — `episodic-log#B-028` has lost its conformance anchor
 
-**Status**: drafted decision, awaiting human ratification. No code applied.
+**Status**: RESOLVED — option C ratified by the human on 2026-08-06 and applied
+as `episodic-log` D-011. See "Outcome" at the end.
 **Raised**: 2026-08-06, by the implementer, while fixing a load-sensitive test class.
 **Route**: halt-and-escalate per `work-artifacts/references/deviation-protocol.md`.
 
@@ -117,3 +118,26 @@ resolution symbols — rather than by an OFF-state detached run asserting no
 episode artifacts appear. If that structural proof is considered sufficient,
 option C closes this cleanly. If not, closing B-028 properly needs a small new
 test, not just a marker move.
+
+## Outcome
+
+Option C ratified 2026-08-06 and applied:
+
+- `episodic-log` D-011 records the decision, with the superseded `Test:` text
+  kept in place behind a dated pointer.
+- B-028's `Test:` now names `keeps OFF-state Drive files events layout and
+  output byte-identical across hardened paths`, and an `Additional evidence:`
+  field names the corroborating tool-path and compiled-binary tests.
+- `tests/driver/drive-on-graph-routing.test.ts` carries
+  `@cosmo-behavior plan:episodic-log#B-028` alongside its existing
+  `episodic-log-detached-hardening#B-001` marker.
+
+Verified: `episodic-log` drops from 18 to 17 conformance issues — the
+`missing-marker` is gone and B-028 reports none. The 17 that remain are all
+pre-existing `unpaired-behavior-file` archive hygiene, untouched by this change.
+`episodic-log-detached-hardening` stays at 28, unchanged.
+
+**The open question above was NOT closed by this decision.** It was ratified on
+the basis that B-018's structural source-scan is sufficient for clause 2. No
+OFF-state test exercises detached launch behaviourally. If that judgement is
+ever revisited, the fix is a new test, not another marker move.
