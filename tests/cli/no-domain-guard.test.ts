@@ -24,10 +24,11 @@ function runtimeWithDomains(...ids: string[]): CosmonautsRuntime {
 }
 
 function runModeForDomains(...ids: string[]): ReturnType<typeof selectRunMode> {
-	return selectRunMode(
-		cliOptions(),
-		hasRunnableDefaultDomain(runtimeWithDomains(...ids)),
-	);
+	return selectRunMode({
+		options: cliOptions(),
+		hasRunnableDefault: hasRunnableDefaultDomain(runtimeWithDomains(...ids)),
+		hasInteractiveTerminal: true,
+	});
 }
 
 describe("no-domain guard", () => {
@@ -38,10 +39,13 @@ describe("no-domain guard", () => {
 		);
 		expect(runModeForDomains("shared", "main")).toBe("interactive");
 		expect(
-			selectRunMode(
-				cliOptions({ print: true, prompt: "go" }),
-				hasRunnableDefaultDomain(runtimeWithDomains("shared", "main")),
-			),
+			selectRunMode({
+				options: cliOptions({ print: true, prompt: "go" }),
+				hasRunnableDefault: hasRunnableDefaultDomain(
+					runtimeWithDomains("shared", "main"),
+				),
+				hasInteractiveTerminal: true,
+			}),
 		).toBe("print");
 	});
 

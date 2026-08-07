@@ -255,6 +255,7 @@ export function buildInitSessionConfig(cwd: string) {
 
 type CliRunMode =
 	| "no-domain-guard"
+	| "no-tty-guard"
 	| "list-domains"
 	| "list-agents"
 	| "dump-prompt"
@@ -262,10 +263,28 @@ type CliRunMode =
 	| "print"
 	| "interactive";
 
-export function selectRunMode(
-	options: CliOptions,
-	hasRunnableDefault: boolean,
-): CliRunMode {
+export interface SelectRunModeInput {
+	options: CliOptions;
+	hasRunnableDefault: boolean;
+	/**
+	 * Whether an interactive terminal is attached.
+	 *
+	 * Interactive mode is the fallthrough default, and the root command accepts
+	 * free `[prompt...]` text, so any argv the subcommand table does not match
+	 * lands here — a misplaced global flag or a mistyped subcommand becomes a
+	 * prompt rather than an error. Without a terminal that silently starts a
+	 * long-lived agent session in a script, CI job, or agent harness, where it
+	 * hangs instead of failing. Only interactive mode needs a terminal; every
+	 * other mode is legitimately non-interactive.
+	 */
+	hasInteractiveTerminal: boolean;
+}
+
+export function selectRunMode({
+	options,
+	hasRunnableDefault,
+	hasInteractiveTerminal,
+}: SelectRunModeInput): CliRunMode {
 	const isBypassCommand =
 		options.init ||
 		options.listDomains ||
@@ -280,6 +299,7 @@ export function selectRunMode(
 	if (options.dumpPrompt) return "dump-prompt";
 	if (options.init) return "init";
 	if (options.print) return "print";
+	if (!hasInteractiveTerminal) return "no-tty-guard";
 	return "interactive";
 }
 
@@ -287,9 +307,14 @@ async function run(options: CliOptions): Promise<void> {
 	const { cwd, runtime } = await createCliRuntimeContext(options);
 	const runtimeHasRunnableDefault = hasRunnableDefaultDomain(runtime);
 
-	const mode = selectRunMode(options, runtimeHasRunnableDefault);
+	const mode = selectRunMode({
+		options,
+		hasRunnableDefault: runtimeHasRunnableDefault,
+		hasInteractiveTerminal: process.stdin.isTTY === true,
+	});
 	const handlers: Record<CliRunMode, () => Promise<void>> = {
 		"no-domain-guard": async () => handleNoDomainGuard(),
+		"no-tty-guard": async () => handleNoTtyGuard(),
 		"list-domains": () => handleListDomains(runtime, options),
 		"list-agents": () => handleListAgents(runtime, options),
 		"dump-prompt": () => handleDumpPrompt(runtime, options),
@@ -334,6 +359,15 @@ export function resolveDumpPromptDomain(
 function handleNoDomainGuard(): void {
 	printCliError(buildNoRunnableDefaultDomainMessage(), {});
 	process.exitCode = 1;
+}
+
+function handleNoTtyGuard(): void {
+	printCliError(buildNoInteractiveTerminalMessage(), {});
+	process.exitCode = 1;
+}
+
+export function buildNoInteractiveTerminalMessage(): string {
+	return "Refusing to start an interactive session: no terminal is attached to stdin. This usually means a subcommand was mistyped or a global flag was placed before it — the root command takes free prompt text, so anything the subcommand table does not match becomes a prompt (for example `cosmonauts --json plan ...` instead of `cosmonauts plan ... --json`). Run `cosmonauts --help` for the subcommand list, or use `--print` for non-interactive output.";
 }
 
 function buildNoRunnableDefaultDomainMessage(): string {

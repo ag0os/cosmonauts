@@ -74,13 +74,19 @@ interface RunModeScenario {
 	name: string;
 	options: Partial<CliOptions>;
 	hasRunnableDefault: boolean;
+	/** Defaults to true; set false to exercise the no-TTY guard. */
+	hasInteractiveTerminal?: boolean;
 	expected: ExpectedRunMode;
 }
 
 function expectRunModes(scenarios: readonly RunModeScenario[]): void {
 	for (const scenario of scenarios) {
 		expect(
-			selectRunMode(cliOptions(scenario.options), scenario.hasRunnableDefault),
+			selectRunMode({
+				options: cliOptions(scenario.options),
+				hasRunnableDefault: scenario.hasRunnableDefault,
+				hasInteractiveTerminal: scenario.hasInteractiveTerminal ?? true,
+			}),
 			scenario.name,
 		).toBe(scenario.expected);
 	}
@@ -601,6 +607,84 @@ describe("resolveDumpPromptDomain", () => {
 // ============================================================================
 
 describe("selectRunMode", () => {
+	test("refuses to start an interactive session with no terminal attached", () => {
+		expectRunModes([
+			{
+				name: "bare invocation without a tty",
+				options: {},
+				hasRunnableDefault: true,
+				hasInteractiveTerminal: false,
+				expected: "no-tty-guard",
+			},
+			{
+				// A mistyped subcommand or a global flag placed before one falls
+				// through to the root command, whose `[prompt...]` argument turns
+				// it into prompt text rather than an error.
+				name: "unmatched argv captured as prompt text without a tty",
+				options: { prompt: "plan check-artifacts some-slug" },
+				hasRunnableDefault: true,
+				hasInteractiveTerminal: false,
+				expected: "no-tty-guard",
+			},
+			{
+				name: "same invocation at a terminal is still interactive",
+				options: { prompt: "plan check-artifacts some-slug" },
+				hasRunnableDefault: true,
+				hasInteractiveTerminal: true,
+				expected: "interactive",
+			},
+		]);
+	});
+
+	test("leaves every non-interactive mode reachable without a terminal", () => {
+		expectRunModes([
+			{
+				name: "print",
+				options: { print: true, prompt: "run it" },
+				hasRunnableDefault: true,
+				hasInteractiveTerminal: false,
+				expected: "print",
+			},
+			{
+				name: "list domains",
+				options: { listDomains: true },
+				hasRunnableDefault: false,
+				hasInteractiveTerminal: false,
+				expected: "list-domains",
+			},
+			{
+				name: "list agents",
+				options: { listAgents: true },
+				hasRunnableDefault: false,
+				hasInteractiveTerminal: false,
+				expected: "list-agents",
+			},
+			{
+				name: "dump prompt",
+				options: { dumpPrompt: true },
+				hasRunnableDefault: false,
+				hasInteractiveTerminal: false,
+				expected: "dump-prompt",
+			},
+			{
+				name: "init",
+				options: { init: true },
+				hasRunnableDefault: false,
+				hasInteractiveTerminal: false,
+				expected: "init",
+			},
+			{
+				// The no-domain guard is the more actionable diagnostic, so it
+				// still wins when neither a domain nor a terminal is present.
+				name: "no-domain guard outranks the tty guard",
+				options: {},
+				hasRunnableDefault: false,
+				hasInteractiveTerminal: false,
+				expected: "no-domain-guard",
+			},
+		]);
+	});
+
 	test("routes non-bypass commands to no-domain guard when no domain is installed", () => {
 		expectRunModes([
 			{
