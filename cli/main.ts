@@ -297,7 +297,14 @@ export function selectRunMode({
 	if (options.listDomains) return "list-domains";
 	if (options.listAgents) return "list-agents";
 	if (options.dumpPrompt) return "dump-prompt";
-	if (options.init) return "init";
+	if (options.init) {
+		// `init` runs its bootstrap through a full interactive session once a
+		// runnable domain exists, so it needs a terminal for the same reason
+		// interactive mode does. Without a runnable domain it only prints its
+		// specialized diagnostic and exits, which is legitimately headless.
+		if (hasRunnableDefault && !hasInteractiveTerminal) return "no-tty-guard";
+		return "init";
+	}
 	if (options.print) return "print";
 	if (!hasInteractiveTerminal) return "no-tty-guard";
 	return "interactive";
@@ -314,7 +321,7 @@ async function run(options: CliOptions): Promise<void> {
 	});
 	const handlers: Record<CliRunMode, () => Promise<void>> = {
 		"no-domain-guard": async () => handleNoDomainGuard(),
-		"no-tty-guard": async () => handleNoTtyGuard(),
+		"no-tty-guard": async () => handleNoTtyGuard(options),
 		"list-domains": () => handleListDomains(runtime, options),
 		"list-agents": () => handleListAgents(runtime, options),
 		"dump-prompt": () => handleDumpPrompt(runtime, options),
@@ -361,13 +368,35 @@ function handleNoDomainGuard(): void {
 	process.exitCode = 1;
 }
 
-function handleNoTtyGuard(): void {
-	printCliError(buildNoInteractiveTerminalMessage(), {});
+function handleNoTtyGuard(options: CliOptions): void {
+	printCliError(
+		buildNoInteractiveTerminalMessage(options.init ? "init" : "fallthrough"),
+		{},
+	);
 	process.exitCode = 1;
 }
 
-export function buildNoInteractiveTerminalMessage(): string {
-	return "Refusing to start an interactive session: no terminal is attached to stdin. This usually means a subcommand was mistyped or a global flag was placed before it — the root command takes free prompt text, so anything the subcommand table does not match becomes a prompt (for example `cosmonauts --json plan ...` instead of `cosmonauts plan ... --json`). Run `cosmonauts --help` for the subcommand list, or use `--print` for non-interactive output.";
+/**
+ * Explains a refused interactive session.
+ *
+ * The two callers fail for different reasons and need different advice. `init`
+ * is a valid command that simply needs a terminal, so pointing its user at a
+ * suspected typo would send them hunting for a mistake they did not make.
+ * Everything else reached interactive mode by falling through the subcommand
+ * table into the root command's free `[prompt...]` argument, where a mistyped
+ * subcommand or a misplaced global flag really is the likely cause.
+ */
+export function buildNoInteractiveTerminalMessage(
+	cause: "init" | "fallthrough",
+): string {
+	const lead =
+		"Refusing to start an interactive session: no terminal is attached to stdin.";
+
+	if (cause === "init") {
+		return `${lead} \`cosmonauts init\` bootstraps your project through an interactive session, so it has to run from a terminal.`;
+	}
+
+	return `${lead} This usually means a subcommand was mistyped or a global flag was placed before it — the root command takes free prompt text, so anything the subcommand table does not match becomes a prompt (for example \`cosmonauts --json plan ...\` instead of \`cosmonauts plan ... --json\`). Run \`cosmonauts --help\` for the subcommand list, or use \`--print\` for non-interactive output.`;
 }
 
 function buildNoRunnableDefaultDomainMessage(): string {

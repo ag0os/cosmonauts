@@ -10,6 +10,7 @@ import {
 	type AgentListItem,
 	buildInitNoRunnableDefaultDomainLines,
 	buildInitSessionConfig,
+	buildNoInteractiveTerminalMessage,
 	type DomainListItem,
 	discoverBundledPackageDirs,
 	isCosmonautsFrameworkRepo,
@@ -633,7 +634,40 @@ describe("selectRunMode", () => {
 				hasInteractiveTerminal: true,
 				expected: "interactive",
 			},
+			{
+				// `init` bootstraps through a full interactive session once a
+				// runnable domain exists, so it hangs headless for exactly the
+				// same reason interactive mode does.
+				name: "init would start a session without a tty",
+				options: { init: true },
+				hasRunnableDefault: true,
+				hasInteractiveTerminal: false,
+				expected: "no-tty-guard",
+			},
+			{
+				name: "init at a terminal still bootstraps",
+				options: { init: true },
+				hasRunnableDefault: true,
+				hasInteractiveTerminal: true,
+				expected: "init",
+			},
 		]);
+	});
+
+	test("explains the no-terminal refusal differently per cause", () => {
+		// A fallthrough is almost never "I meant to open a TUI" — it is a
+		// mistyped subcommand or a global flag placed before one, so the message
+		// points there rather than just reporting the missing terminal.
+		const fallthrough = buildNoInteractiveTerminalMessage("fallthrough");
+		expect(fallthrough).toMatch(/mistyped|placed before/u);
+		expect(fallthrough).toContain("--print");
+		expect(fallthrough).toContain("cosmonauts --help");
+
+		// `init` is a valid command that simply needs a terminal. Blaming a typo
+		// would send its user hunting for a mistake they did not make.
+		const init = buildNoInteractiveTerminalMessage("init");
+		expect(init).toContain("cosmonauts init");
+		expect(init).not.toMatch(/mistyped|placed before/u);
 	});
 
 	test("leaves every non-interactive mode reachable without a terminal", () => {
@@ -667,7 +701,9 @@ describe("selectRunMode", () => {
 				expected: "dump-prompt",
 			},
 			{
-				name: "init",
+				// Without a runnable domain, init only prints its specialized
+				// diagnostic and exits, so it needs no terminal.
+				name: "init diagnostic without a runnable domain",
 				options: { init: true },
 				hasRunnableDefault: false,
 				hasInteractiveTerminal: false,
