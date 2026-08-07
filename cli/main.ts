@@ -274,8 +274,12 @@ export interface SelectRunModeInput {
 	 * lands here — a misplaced global flag or a mistyped subcommand becomes a
 	 * prompt rather than an error. Without a terminal that silently starts a
 	 * long-lived agent session in a script, CI job, or agent harness, where it
-	 * hangs instead of failing. Only interactive mode needs a terminal; every
-	 * other mode is legitimately non-interactive.
+	 * hangs instead of failing.
+	 *
+	 * Two modes start a session and so require a terminal: `interactive`, and
+	 * `init` once a runnable domain exists. Every other mode — including the
+	 * `init` diagnostic that runs without a runnable domain — is legitimately
+	 * non-interactive and stays reachable.
 	 */
 	hasInteractiveTerminal: boolean;
 }
@@ -370,10 +374,20 @@ function handleNoDomainGuard(): void {
 
 function handleNoTtyGuard(options: CliOptions): void {
 	printCliError(
-		buildNoInteractiveTerminalMessage(options.init ? "init" : "fallthrough"),
+		buildNoInteractiveTerminalMessage(selectNoTtyCause(options)),
 		{},
 	);
 	process.exitCode = 1;
+}
+
+/**
+ * Picks which refusal explanation the guard owes the caller.
+ *
+ * Extracted so the mapping is pinned by a test: it is otherwise invisible to
+ * the selector tests, and hard-coding either cause would leave them green.
+ */
+export function selectNoTtyCause(options: CliOptions): "init" | "fallthrough" {
+	return options.init ? "init" : "fallthrough";
 }
 
 /**

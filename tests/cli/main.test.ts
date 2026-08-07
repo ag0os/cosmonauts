@@ -19,6 +19,7 @@ import {
 	renderDomainsList,
 	resolveDumpPromptDomain,
 	resolveInteractiveExtensionPaths,
+	selectNoTtyCause,
 	selectRunMode,
 } from "../../cli/main.ts";
 import type { CliOptions } from "../../cli/types.ts";
@@ -652,6 +653,17 @@ describe("selectRunMode", () => {
 				expected: "init",
 			},
 		]);
+	});
+
+	test("routes each refused invocation to its own explanation", () => {
+		// Pins the handler's mapping. Without this, hard-coding either cause
+		// leaves every other test in this file green while init callers get
+		// told to hunt for a typo they did not make.
+		expect(selectNoTtyCause(cliOptions({ init: true }))).toBe("init");
+		expect(selectNoTtyCause(cliOptions())).toBe("fallthrough");
+		expect(
+			selectNoTtyCause(cliOptions({ prompt: "plan check-artifacts x" })),
+		).toBe("fallthrough");
 	});
 
 	test("explains the no-terminal refusal differently per cause", () => {
