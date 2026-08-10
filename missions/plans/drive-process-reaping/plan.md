@@ -148,20 +148,20 @@ the test established.*
 - Test: `tests/driver/run-step.test.ts` > `reaps its backend process group when the runner is signalled`
 - Marker: `@cosmo-behavior plan:drive-process-reaping#B-006`
 
-### B-007 - An escaped pipe holder cannot keep the process alive
+### B-007 - An escaped pipe holder cannot keep the process alive *(withdrawn by D-010, 2026-08-10 — covered a session-escaping descendant that no group reap can reach and that was never observed; the bounded-drain machinery it required cost more defects than it prevented)*
 - Source: AC-002, D-008
 - Context: a descendant calls `setsid()`, leaving the group, and still holds an inherited pipe
 - Action: the backend settles and the process finishes
-- Expected: the drain reaches its deadline and the read is *cancelled*, not merely abandoned, so the process exits instead of waiting out the escapee; the escapee is still alive at settle, proving the group reap could not reach it
+- Expected: the drain reaches its deadline and the read is cancelled, not merely abandoned, so the process exits instead of waiting out the escapee
 - Seam: `lib/driver/backends/cli-process.ts`
 - Test: `tests/driver/backends/process-reaping.test.ts` > `exits when a descendant escapes the group still holding a pipe`
 - Marker: `@cosmo-behavior plan:drive-process-reaping#B-007`
 
-### B-008 - A truncated report is never handed back as success
+### B-008 - A truncated report is never handed back as success *(withdrawn by D-010, 2026-08-10 — existed only to contain a defect introduced by B-007's machinery; with partial output gone the failure mode is unreachable)*
 - Source: AC-005, D-009
 - Context: the stdout drain times out or fails after the child wrote an outcome line but before its fenced report closed
 - Action: the backend returns
-- Expected: the returned stdout is empty rather than partial, so `parseReport` yields `unknown` instead of honouring a stale `outcome: success` line that the unterminated fence would have overridden
+- Expected: the returned stdout is empty rather than partial, so `parseReport` yields `unknown` instead of honouring a stale `outcome: success` line
 - Seam: `lib/driver/backends/cli-process.ts`
 - Test: `tests/driver/backends/process-reaping.test.ts` > `does not hand back a truncated report that parses as success`
 - Marker: `@cosmo-behavior plan:drive-process-reaping#B-008`
@@ -379,6 +379,28 @@ the test established.*
     partial output — a rare path that was never part of the observed bug. This
     round therefore removes machinery instead of adding it.
   - Decided by: independent review + implementer, amend-on-record, 2026-08-10
+
+- **D-010 - Ship the reap; withdraw the speculative hardening**
+  - Decision: keep the process-group reap and everything with a negative-controlled
+    test (B-001, B-002, B-003, B-006, plus B-004's abort signalling and B-005's
+    reporting). Remove the drain deadline, the cancellable stream reader, partial
+    output, the shutdown registry loop and its `terminating` flag, and behaviors
+    B-007/B-008 that existed to guard them. The drain is a plain
+    `await Promise.all([stdout, stderr])` again, exactly as on `main`.
+  - Why: four independent review rounds each found real defects, and after the
+    first they were *all* in this hardening, never in the reap. The observed leak
+    is a descendant with redirected stdio, fixed by the reap and proven by
+    negative control. The in-group pipe-holder case (B-002) is fixed by the
+    reap-before-drain ordering alone and needs no deadline. What remained was
+    protection against a `setsid()` escapee — never observed here, not handled on
+    `main` either — bought at roughly one new defect per round, including one
+    (D-009) that could report a failed task as successful.
+  - Accepted gaps, deliberately not fixed: a `setsid()` descendant holding a pipe
+    can still stall the drain, as on `main`; a stalled event sink is awaited
+    unbounded; teardown reaps a single snapshot, so a backend registering during
+    shutdown is not covered. Each is recorded here rather than guessed at, and
+    none is reachable through the failure that motivated this plan.
+  - Decided by: human, user-chose-among-options, 2026-08-10
 
 - **D-005 - Windows keeps today's behaviour, recorded as a gap**
   - Decision: mirror `detached: process.platform !== "win32"`; on win32 the
