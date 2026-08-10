@@ -36,13 +36,10 @@ export interface CliBackendProcessResult {
  */
 const activeBackendGroups = new Set<number>();
 
-/**
- * Once teardown starts the registry is closed: a backend that registers after
- * the teardown snapshot is reaped immediately rather than outliving it. Bun
- * still returns a subprocess when handed an already-aborted signal, so this race
- * is reachable rather than theoretical.
- */
-let terminating: ReapProcessGroupOptions | undefined;
+/** Set once shutdown begins; see `isTerminating` for the one-way caveat. */
+let terminating = false;
+/** Caps how long shutdown will keep re-draining the registry. */
+const TEARDOWN_DEADLINE_MS = 2_000;
 
 /**
  * Runs a CLI backend and does not return while any process still in its group is
@@ -83,28 +80,23 @@ export async function runCliBackendProcess({
 
 	// Start draining before awaiting exit so a chatty child cannot deadlock on a
 	// full pipe buffer, but do not await the drain until the group is reaped.
-	const stdoutPromise = new Response(child.stdout).text();
-	const stderrPromise = new Response(child.stderr).text();
+	const stdoutDrain = drainStream(child.stdout);
+	const stderrDrain = drainStream(child.stderr);
 
 	const groupPid = CAN_REAP_PROCESS_GROUP ? child.pid : undefined;
-	const teardown = registerBackendGroup(groupPid);
+	registerBackendGroup(groupPid);
 
 	try {
 		const exitCode = await child.exited;
-		if (teardown) {
-			// Teardown already began; reap now rather than finishing the task.
-			await reapProcessGroup(groupPid as number, teardown);
-		} else {
-			await reapBackendGroup({ groupPid, invocation, backendName });
-		}
+		await reapBackendGroup({ groupPid, invocation, backendName });
 		// Ownership ends with the reap, not with the drain. Holding a dead pid in
 		// the registry across the drain would leave it signalable after the OS
 		// could have recycled it.
 		releaseBackendGroup(groupPid);
 
 		const stdout = await drainWithinDeadline({
-			stdoutPromise,
-			stderrPromise,
+			stdoutDrain,
+			stderrDrain,
 			invocation,
 			backendName,
 		});
@@ -112,16 +104,15 @@ export async function runCliBackendProcess({
 		return { exitCode, stdout };
 	} finally {
 		releaseBackendGroup(groupPid);
+		// Abandoning a read leaves it an active event-loop resource, which would
+		// hold this process open exactly as an uncleared timer did.
+		stdoutDrain.cancel();
+		stderrDrain.cancel();
 	}
 }
 
-/** Returns teardown options when termination already began, else undefined. */
-function registerBackendGroup(
-	groupPid: number | undefined,
-): ReapProcessGroupOptions | undefined {
-	if (groupPid === undefined) return undefined;
-	activeBackendGroups.add(groupPid);
-	return terminating;
+function registerBackendGroup(groupPid: number | undefined): void {
+	if (groupPid !== undefined) activeBackendGroups.add(groupPid);
 }
 
 function releaseBackendGroup(groupPid: number | undefined): void {
@@ -129,25 +120,96 @@ function releaseBackendGroup(groupPid: number | undefined): void {
 }
 
 /**
- * Terminates every backend group this process still owns, and closes the
- * registry so a backend spawned mid-teardown is reaped rather than stranded.
+ * Terminates every backend group this process still owns.
  *
  * The detached runner calls this when it is being torn down. Abort signals the
  * runner's own group, and the backend deliberately leads a *different* one, so
  * without this a killed runner would orphan exactly the process this plan exists
  * to stop leaking — the runner never reaches its own reap once it is signalled.
+ *
+ * It re-snapshots until the registry drains, because a backend can register
+ * *after* the first snapshot: Bun still returns a subprocess when handed an
+ * already-aborted signal. A single snapshot would return while that late backend
+ * was still running, and the runner would then be killed on top of it. Bounded,
+ * so a backend that keeps running cannot hold shutdown open — its group is
+ * reaped on the next pass regardless of whether its task finished.
  */
 export async function reapActiveBackendGroups(
 	options: ReapProcessGroupOptions = {},
 ): Promise<void> {
-	terminating = options;
-	const groups = [...activeBackendGroups];
-	await Promise.all(
-		groups.map(async (pid) => {
-			await reapProcessGroup(pid, options);
-			activeBackendGroups.delete(pid);
-		}),
-	);
+	terminating = true;
+	const deadline = Date.now() + TEARDOWN_DEADLINE_MS;
+	while (activeBackendGroups.size > 0) {
+		const groups = [...activeBackendGroups];
+		await Promise.all(
+			groups.map(async (pid) => {
+				await reapProcessGroup(pid, options);
+				activeBackendGroups.delete(pid);
+			}),
+		);
+		if (Date.now() >= deadline) return;
+	}
+}
+
+/**
+ * True once shutdown has begun. One-way and process-global by design: the only
+ * caller is the detached runner's signal handler, in a process that is exiting.
+ * Do not call `reapActiveBackendGroups` from a long-lived host without giving
+ * this a reset — every later backend would be treated as shutting down.
+ */
+export function isTerminating(): boolean {
+	return terminating;
+}
+
+/**
+ * A stream read that can be given up on without leaking the read itself.
+ *
+ * `new Response(stream).text()` cannot be cancelled once it locks the stream, so
+ * a timeout could only abandon the promise — leaving the read an active
+ * event-loop resource that holds the process open. Reading through an explicit
+ * reader keeps cancellation available, and keeps whatever arrived before the
+ * deadline instead of discarding it.
+ */
+interface StreamDrain {
+	readonly text: Promise<string>;
+	/** Partial text captured so far; meaningful after `cancel()`. */
+	partial(): string;
+	cancel(): void;
+}
+
+function drainStream(source: unknown): StreamDrain {
+	if (!(source instanceof ReadableStream)) {
+		// Test stubs hand back plain strings rather than a live pipe.
+		const text = new Response(
+			source as ConstructorParameters<typeof Response>[0],
+		).text();
+		return { text, partial: () => "", cancel: () => undefined };
+	}
+
+	const reader = (source as ReadableStream<Uint8Array>).getReader();
+	const decoder = new TextDecoder();
+	let captured = "";
+	let cancelled = false;
+
+	const text = (async () => {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			if (value) captured += decoder.decode(value, { stream: true });
+		}
+		captured += decoder.decode();
+		return captured;
+	})();
+
+	return {
+		text,
+		partial: () => captured,
+		cancel: () => {
+			if (cancelled) return;
+			cancelled = true;
+			void reader.cancel().catch(() => undefined);
+		},
+	};
 }
 
 /**
@@ -155,37 +217,53 @@ export async function reapActiveBackendGroups(
  * gone, anything still holding a pipe has escaped the group (`setsid()`), and no
  * amount of waiting is guaranteed to end.
  *
- * The two streams are bounded independently. Only stdout is returned, so a stuck
+ * The two streams are bounded and reported independently. A stuck or failed
  * *stderr* must not discard an already-complete stdout — that would turn a
- * successful task into an unparseable report and a spurious failure.
+ * successful task into an unparseable report and a spurious failure — and a
+ * stuck stderr is still a leaked pipe holder, so it is reported rather than
+ * passed over in silence.
  */
 async function drainWithinDeadline({
-	stdoutPromise,
-	stderrPromise,
+	stdoutDrain,
+	stderrDrain,
 	invocation,
 	backendName,
 }: {
-	stdoutPromise: Promise<string>;
-	stderrPromise: Promise<string>;
+	stdoutDrain: StreamDrain;
+	stderrDrain: StreamDrain;
 	invocation: BackendInvocation;
 	backendName: string;
 }): Promise<string> {
-	const [stdout] = await Promise.all([
-		settleWithin(stdoutPromise, DRAIN_DEADLINE_MS),
-		settleWithin(stderrPromise, DRAIN_DEADLINE_MS),
+	const [stdout, stderr] = await Promise.all([
+		settleWithin(stdoutDrain.text, DRAIN_DEADLINE_MS),
+		settleWithin(stderrDrain.text, DRAIN_DEADLINE_MS),
 	]);
-	if (stdout !== undefined) return stdout;
 
-	await reportDiagnostic({
-		invocation,
-		code: "BACKEND_OUTPUT_DRAIN_TIMED_OUT",
-		message: `${backendName} backend stdout was still held open ${DRAIN_DEADLINE_MS}ms after its process group was reaped; a descendant has left the group and the output is lost`,
-	});
-	return "";
+	const stuck: string[] = [];
+	if (stdout.state !== "settled") stuck.push(`stdout (${stdout.state})`);
+	if (stderr.state !== "settled") stuck.push(`stderr (${stderr.state})`);
+
+	if (stuck.length > 0) {
+		await reportDiagnostic({
+			invocation,
+			code: "BACKEND_OUTPUT_DRAIN_TIMED_OUT",
+			message: `${backendName} backend output was not fully drained ${DRAIN_DEADLINE_MS}ms after its process group was reaped (${stuck.join(", ")}); a descendant may have left the group`,
+		});
+	}
+
+	// Whatever arrived before the deadline is still the child's own output, and
+	// is far more useful to the report parser than an empty string.
+	return stdout.state === "settled" ? stdout.value : stdoutDrain.partial();
 }
 
+type Settled<T> =
+	| { readonly state: "settled"; readonly value: T }
+	| { readonly state: "timed-out" }
+	| { readonly state: "failed" };
+
 /**
- * Resolves the value, or `undefined` once the deadline passes.
+ * Resolves how the promise ended rather than throwing, so one stream's failure
+ * cannot discard the other's result.
  *
  * The timer is always cleared. An uncleared `setTimeout` stays referenced and
  * keeps the event loop alive, which would hold the detached runner open past the
@@ -194,13 +272,16 @@ async function drainWithinDeadline({
 async function settleWithin<T>(
 	value: Promise<T>,
 	timeoutMs: number,
-): Promise<T | undefined> {
+): Promise<Settled<T>> {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	try {
 		return await Promise.race([
-			value,
-			new Promise<undefined>((settle) => {
-				timer = setTimeout(() => settle(undefined), timeoutMs);
+			value.then(
+				(resolved): Settled<T> => ({ state: "settled", value: resolved }),
+				(): Settled<T> => ({ state: "failed" }),
+			),
+			new Promise<Settled<T>>((settle) => {
+				timer = setTimeout(() => settle({ state: "timed-out" }), timeoutMs);
 			}),
 		]);
 	} finally {
@@ -245,27 +326,22 @@ async function reportDiagnostic({
 	code: string;
 	message: string;
 }): Promise<void> {
-	try {
-		const delivered = await settleWithin(
-			invocation
-				.eventSink({
-					type: "driver_diagnostic",
-					level: "warning",
-					code,
-					message,
-					phase: "spawn",
-					taskId: invocation.taskId,
-					runId: invocation.runId,
-					parentSessionId: invocation.parentSessionId,
-					timestamp: new Date().toISOString(),
-				})
-				.then(() => true),
-			DIAGNOSTIC_DEADLINE_MS,
-		);
-		if (delivered) return;
-	} catch {
-		// Falls through to stderr below.
-	}
+	const delivered = await settleWithin(
+		invocation.eventSink({
+			type: "driver_diagnostic",
+			level: "warning",
+			code,
+			message,
+			phase: "spawn",
+			taskId: invocation.taskId,
+			runId: invocation.runId,
+			parentSessionId: invocation.parentSessionId,
+			timestamp: new Date().toISOString(),
+		}),
+		DIAGNOSTIC_DEADLINE_MS,
+	);
+	if (delivered.state === "settled") return;
+
 	try {
 		process.stderr.write(`[warning] ${message}\n`);
 	} catch {

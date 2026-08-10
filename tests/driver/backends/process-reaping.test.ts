@@ -24,7 +24,12 @@ interface HarnessObservation {
 }
 
 type HarnessOutcome =
-	| { settled: true; observation: HarnessObservation }
+	| {
+			settled: true;
+			observation: HarnessObservation;
+			/** Wall-clock until the harness *process* exited, not just run(). */
+			processExitMs: number;
+	  }
 	| { settled: false; descendantPid: number | undefined };
 
 const spawnedDescendants = new Set<number>();
@@ -75,7 +80,11 @@ afterEach(() => {
  */
 async function writeLeakyBackend(
 	binDir: string,
-	options: { holdsPipes: boolean; ignoreSigterm?: boolean },
+	options: {
+		holdsPipes: boolean;
+		ignoreSigterm?: boolean;
+		escapesGroup?: boolean;
+	},
 ): Promise<string> {
 	const path = join(binDir, "leaky-backend");
 	const pidPath = join(binDir, "..", "descendant.pid");
@@ -101,25 +110,33 @@ done
 	);
 	await chmod(sentinelPath, 0o755);
 
-	const descendant = options.ignoreSigterm
-		? `"${sentinelPath}" "${readyPath}" ${redirect} &`
-		: `sleep 60 ${redirect} &`;
+	// `setsid()` moves the descendant into a new session, so no group reap can
+	// reach it, and it keeps stderr — the case where only cancelling the read lets
+	// this process exit. It signals readiness so the backend cannot exit before
+	// the escape has actually happened, which would make the test vacuous.
+	const escapedDescendant = `python3 -c 'import os,time; os.setsid(); open("${readyPath}","w").write("ready"); time.sleep(60)' >/dev/null &`;
+	const descendant = options.escapesGroup
+		? escapedDescendant
+		: options.ignoreSigterm
+			? `"${sentinelPath}" "${readyPath}" ${redirect} &`
+			: `sleep 60 ${redirect} &`;
 
 	// Waiting for the trap to be installed is what makes the escalation test
 	// deterministic. The reap fires within ~30ms of this script exiting, which
 	// readily beats `trap` being installed in a freshly forked shell — and a
 	// descendant signalled before its trap exists dies to SIGTERM by default
 	// disposition, silently turning the escalation test into a coin flip.
-	const awaitReady = options.ignoreSigterm
-		? `for _ in $(seq 1 400); do
+	const awaitReady =
+		options.ignoreSigterm || options.escapesGroup
+			? `for _ in $(seq 1 400); do
   [ -f "${readyPath}" ] && break
   sleep 0.01
 done
 if [ ! -f "${readyPath}" ]; then
-  echo "sentinel never signalled readiness" >&2
+  echo "descendant never signalled readiness" >&2
   exit 70
 fi`
-		: "";
+			: "";
 
 	await writeFile(
 		path,
@@ -218,6 +235,7 @@ async function runHarness(options: {
 	backendModule: "codex" | "claude-cli";
 	holdsPipes: boolean;
 	ignoreSigterm?: boolean;
+	escapesGroup?: boolean;
 	deadlineMs?: number;
 }): Promise<HarnessOutcome> {
 	const workdir = join(temp.path, `wd-${Math.random().toString(36).slice(2)}`);
@@ -230,6 +248,9 @@ async function runHarness(options: {
 		...(options.ignoreSigterm === undefined
 			? {}
 			: { ignoreSigterm: options.ignoreSigterm }),
+		...(options.escapesGroup === undefined
+			? {}
+			: { escapesGroup: options.escapesGroup }),
 	});
 	const harness = await writeHarness(workdir, options.backendModule);
 
@@ -254,6 +275,7 @@ async function runHarness(options: {
 	});
 
 	const deadlineMs = options.deadlineMs ?? 12_000;
+	const startedAt = Date.now();
 	const exited = await new Promise<boolean>((settle) => {
 		const timer = setTimeout(() => settle(false), deadlineMs);
 		child.once("exit", () => {
@@ -262,6 +284,7 @@ async function runHarness(options: {
 		});
 	});
 
+	const processExitMs = Date.now() - startedAt;
 	const recordedPid = await readPidFile(workdir, "descendant.pid");
 	if (recordedPid !== undefined) spawnedDescendants.add(recordedPid);
 	// The backend child leads its own group. Killing the harness reaches neither
@@ -284,7 +307,7 @@ async function runHarness(options: {
 		stdout.slice(marker + "HARNESS_RESULT ".length).trim(),
 	) as HarnessObservation;
 	spawnedDescendants.add(observation.descendantPid);
-	return { settled: true, observation };
+	return { settled: true, observation, processExitMs };
 }
 
 async function readPidFile(
@@ -362,6 +385,42 @@ describe("backend process reaping", { timeout: 30_000 }, () => {
 		// to SIGKILL — or one whose grace silently collapsed to zero — would pass.
 		expect(observation.settledMs).toBeGreaterThanOrEqual(1_800);
 		expect(observation.settledMs).toBeLessThan(10_000);
+	});
+
+	// @cosmo-behavior plan:drive-process-reaping#B-007
+	test("exits when a descendant escapes the group still holding a pipe", async () => {
+		const outcome = await runHarness({
+			backendModule: "codex",
+			holdsPipes: false,
+			escapesGroup: true,
+		});
+
+		expect(
+			outcome.settled,
+			"backend.run() never settled against a setsid escapee holding stderr",
+		).toBe(true);
+		if (!outcome.settled) return;
+		const { observation } = outcome;
+
+		// Non-vacuity: the escapee must still be alive, or nothing was holding the
+		// pipe and the test proves nothing. setsid() puts it beyond the group reap
+		// by construction, which is exactly why the drain has to be bounded.
+		expect(
+			observation.descendantAliveAtSettle,
+			"the setsid escapee was not alive at settle, so no pipe was held",
+		).toBe(true);
+		// It held stderr, so the drain must have run to its deadline.
+		expect(observation.settledMs).toBeGreaterThanOrEqual(1_800);
+
+		// Settling is not enough. Abandoning the read leaves it an active
+		// event-loop resource, so the *process* stays alive until the escapee
+		// exits (60s here). Only cancelling the reader lets it exit, and process
+		// exit is what actually matters for the runner.
+		expect(
+			outcome.processExitMs,
+			`harness process lingered ${outcome.processExitMs}ms: the timed-out pipe read was abandoned rather than cancelled`,
+		).toBeLessThan(10_000);
+		expect(observation.exitCode).toBe(0);
 	});
 
 	// @cosmo-behavior plan:drive-process-reaping#B-005

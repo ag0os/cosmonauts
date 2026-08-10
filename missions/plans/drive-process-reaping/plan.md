@@ -148,6 +148,15 @@ the test established.*
 - Test: `tests/driver/run-step.test.ts` > `reaps its backend process group when the runner is signalled`
 - Marker: `@cosmo-behavior plan:drive-process-reaping#B-006`
 
+### B-007 - An escaped pipe holder cannot keep the process alive
+- Source: AC-002, D-008
+- Context: a descendant calls `setsid()`, leaving the group, and still holds an inherited pipe
+- Action: the backend settles and the process finishes
+- Expected: the drain reaches its deadline and the read is *cancelled*, not merely abandoned, so the process exits instead of waiting out the escapee; the escapee is still alive at settle, proving the group reap could not reach it
+- Seam: `lib/driver/backends/cli-process.ts`
+- Test: `tests/driver/backends/process-reaping.test.ts` > `exits when a descendant escapes the group still holding a pipe`
+- Marker: `@cosmo-behavior plan:drive-process-reaping#B-007`
+
 ## Files to Change
 
 - `lib/process/process-group.ts` — new; extracted POSIX primitives plus the
@@ -314,6 +323,28 @@ the test established.*
     plan's scope; (b) a dead leader's PGID is only a number, so rapid pid reuse
     could in principle misaddress a signal — inherent to POSIX group reaping and
     narrowed, not eliminated, by releasing ownership at reap time.
+  - Decided by: independent review + implementer, amend-on-record, 2026-08-10
+
+- **D-008 - Bounding an await is not bounding a resource**
+  - Decision: a timed-out stream read is *cancelled*, not abandoned; the two
+    streams are settled independently so neither a timeout nor a rejection on one
+    can discard the other; both are reported; whatever arrived before the
+    deadline is returned rather than an empty string; shutdown re-snapshots the
+    group registry until it drains, bounded.
+  - Why: found by the third review, 2026-08-10. `settleWithin` bounded how long
+    the code *waited*, but the pending pipe read stayed an active event-loop
+    resource, so the process still could not exit — the identical defect to the
+    uncleared timer D-007 fixed, one layer down. Negative control: without the
+    cancel the escapee test never exits (fails at the 12s harness deadline);
+    with it, 2.8s. The single-snapshot teardown likewise returned while a
+    late-registered backend was still running.
+  - Also corrected: returning `""` on a drain timeout discarded a complete
+    machine report; a rejected stderr still failed the task despite good stdout;
+    a stderr-only timeout was reported nowhere.
+  - Recorded, not fixed: `terminating` is one-way and process-global. That is
+    sound for the detached runner (a process that is exiting) and is the only
+    caller, but `isTerminating` documents that a long-lived host would need a
+    reset before calling shutdown.
   - Decided by: independent review + implementer, amend-on-record, 2026-08-10
 
 - **D-005 - Windows keeps today's behaviour, recorded as a gap**
