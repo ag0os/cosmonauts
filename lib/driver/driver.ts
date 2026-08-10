@@ -16,6 +16,10 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import {
+	processGroupExists,
+	signalPosixProcessGroup,
+} from "../process/process-group.ts";
 import type { TaskManager } from "../tasks/task-manager.ts";
 import type { Backend } from "./backends/types.ts";
 import {
@@ -272,8 +276,31 @@ async function stopDetachedChild(
 	await waitForChildExitWithin(child, DETACHED_ABORT_KILL_GRACE_MS);
 }
 
-/** Reports false when the process was already gone, so escalation can stop early. */
+/**
+ * Reports false when the tree was already gone, so escalation can stop early.
+ *
+ * Signals the runner's whole process group, not its pid alone. `run.sh` execs
+ * the step binary, so that pid *is* the step binary — but the backend process is
+ * its child, and POSIX kill-by-pid does not reach children, which left the
+ * backend running after every abort.
+ *
+ * Negating the pid is safe here under INV-4 precisely because this runner was
+ * spawned `detached` (see `launchDetachedProcess`) and therefore leads its own
+ * group; the driver process never belongs to it. Do not extend this to a pid
+ * that was not detached by this code.
+ */
 function signalDetachedChild(pid: number, signal: NodeJS.Signals): boolean {
+	if (!CAN_SIGNAL_PROCESS_GROUP) {
+		return signalDetachedPid(pid, signal);
+	}
+	if (!processGroupExists(pid)) return false;
+	const error = signalPosixProcessGroup(pid, signal);
+	if (error) throw error;
+	return true;
+}
+
+/** Windows has no process-group signalling, so it keeps pid-only behaviour. */
+function signalDetachedPid(pid: number, signal: NodeJS.Signals): boolean {
 	if (!isProcessAlive(pid)) return false;
 	try {
 		process.kill(pid, signal);
@@ -661,6 +688,7 @@ function throwIfAborted(signal: AbortSignal): void {
 	}
 }
 
+const CAN_SIGNAL_PROCESS_GROUP = process.platform !== "win32";
 const DETACHED_BRIDGE_DRAIN_TIMEOUT_MS = 2_000;
 const DETACHED_ABORT_TERM_GRACE_MS = 2_000;
 const DETACHED_ABORT_KILL_GRACE_MS = 1_000;

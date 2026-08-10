@@ -264,12 +264,19 @@ describe("driver", () => {
 		const spawned = deferred<void>();
 		const terminationSent = deferred<void>();
 		const mockChild = createMockChild(41008);
+		const childPid = mockChild.child.pid;
+		if (childPid === undefined) {
+			throw new Error("mock detached child did not expose a PID");
+		}
 		let handle: ReturnType<typeof startDetached>;
 		let abortPromise: Promise<void> | undefined;
+		// Abort addresses the runner's process group, so every call here is a
+		// negated pid: first the liveness probe, then the signal itself.
 		const kill = vi.spyOn(process, "kill").mockImplementation((pid, signal) => {
-			expect(pid).toBe(mockChild.child.pid);
-			expect(signal).toBe("SIGTERM");
-			terminationSent.resolve();
+			expect(pid).toBe(-childPid);
+			if (signal === "SIGTERM") {
+				terminationSent.resolve();
+			}
 			return true;
 		});
 		mocks.spawn.mockImplementation(() => {
@@ -290,7 +297,10 @@ describe("driver", () => {
 			});
 			await flushMicrotasks();
 			expect(abortSettled).toBe(false);
-			expect(kill).toHaveBeenCalledTimes(1);
+			expect(kill.mock.calls).toEqual([
+				[-childPid, 0],
+				[-childPid, "SIGTERM"],
+			]);
 			expect(mocks.bridgeJsonlToActivityBus).not.toHaveBeenCalled();
 
 			mockChild.exit();

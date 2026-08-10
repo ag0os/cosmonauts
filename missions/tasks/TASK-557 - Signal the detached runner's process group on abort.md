@@ -1,13 +1,13 @@
 ---
 id: TASK-557
 title: Signal the detached runner's process group on abort
-status: To Do
+status: Done
 priority: high
 labels:
   - 'plan:drive-process-reaping'
 dependencies: []
 createdAt: '2026-08-10T18:47:50.217Z'
-updatedAt: '2026-08-10T18:47:50.217Z'
+updatedAt: '2026-08-10T19:09:22.535Z'
 ---
 
 ## Description
@@ -25,7 +25,6 @@ tests/driver/driver-detached.test.ts:824 (TASK-500 PR-001) asserts
 `kill.mock.calls.filter(([pid]) => pid === sentinelPid)`. That becomes
 `-sentinelPid` by construction. Update the assertion and the escalation
 order together.
-
 
 <!-- AC:BEGIN -->
 - [ ] #1 signalDetachedChild addresses the runner's group, and the negation is applied only to a pid spawned detached by this code.

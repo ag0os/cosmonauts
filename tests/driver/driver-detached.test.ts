@@ -41,6 +41,7 @@ import { FileRunStore } from "../../lib/durable-runtime/index.ts";
 import { recordEpisode } from "../../lib/memory/episode.ts";
 import { parseEpisodeRecord } from "../../lib/memory/episodic-records.ts";
 import { createMarkdownMemoryStore } from "../../lib/memory/markdown-store.ts";
+import { processGroupExists } from "../../lib/process/process-group.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
@@ -79,7 +80,9 @@ afterEach(() => {
 	detachedSpawnSeam.next = undefined;
 	for (const pid of sentinelPids.splice(0)) {
 		try {
-			process.kill(pid, "SIGKILL");
+			// Group-kill: the sentinel leads its own group and respawns a sleep, so
+			// killing only the leader would leave that child behind.
+			process.kill(-pid, "SIGKILL");
 		} catch {
 			// The escalation path is expected to have killed it already.
 		}
@@ -844,13 +847,29 @@ describe("startDetached", () => {
 			await handle.abort();
 			const elapsedMs = Date.now() - startedAt;
 
+			// @cosmo-behavior plan:drive-process-reaping#B-004
+			// Addressed to the group (negated pid), not the leader alone: the real
+			// runner execs the step binary, whose backend child a pid-only signal
+			// never reached.
 			expect(
 				kill.mock.calls
-					.filter(([pid]) => pid === sentinelPid)
+					.filter(([pid]) => pid === -sentinelPid)
 					.map(([, signal]) => signal)
 					.filter((signal) => signal !== 0),
 			).toEqual(["SIGTERM", "SIGKILL"]);
+			// INV-4: the sentinel's is the ONLY group addressed. Any other negated
+			// pid would be a group this process merely belongs to — including its
+			// own, which would make abort take down the driver that issued it.
+			expect(
+				kill.mock.calls
+					.map(([pid]) => pid)
+					.filter((pid) => pid < 0 && pid !== -sentinelPid),
+			).toEqual([]);
 			await waitFor(() => !isProcessAlive(sentinelPid));
+			// The point of signalling the group: the sentinel respawns a `sleep`
+			// child, which a leader-only kill would strand. Nothing in the tree
+			// survives the abort.
+			await waitFor(() => !processGroupExists(sentinelPid));
 			expect(elapsedMs).toBeGreaterThanOrEqual(2_800);
 			expect(elapsedMs).toBeLessThan(8_000);
 			expect(child.listenerCount("exit")).toBe(baselineExitListeners);
@@ -1224,7 +1243,14 @@ done
 	);
 	await chmod(scriptPath, 0o755);
 
-	const child = spawn(scriptPath, [readyPath], { stdio: "ignore" });
+	// Detached so the sentinel leads its own process group, exactly as
+	// `launchDetachedProcess` spawns the real runner. Abort signals the group, so
+	// a non-detached sentinel would not be addressable as one and the test would
+	// assert against a topology the driver never produces.
+	const child = spawn(scriptPath, [readyPath], {
+		stdio: "ignore",
+		detached: true,
+	});
 	child.unref();
 	const pid = child.pid;
 	if (pid === undefined) {
