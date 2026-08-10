@@ -28,6 +28,7 @@ type HarnessOutcome =
 	| { settled: false; descendantPid: number | undefined };
 
 const spawnedDescendants = new Set<number>();
+const spawnedBackendGroups = new Set<number>();
 
 function isAlive(pid: number): boolean {
 	try {
@@ -46,6 +47,14 @@ function isAlive(pid: number): boolean {
 afterEach(() => {
 	vi.unstubAllGlobals();
 	vi.restoreAllMocks();
+	for (const pid of spawnedBackendGroups) {
+		try {
+			process.kill(-pid, "SIGKILL");
+		} catch {
+			// The reap under test is expected to have emptied the group already.
+		}
+	}
+	spawnedBackendGroups.clear();
 	for (const pid of spawnedDescendants) {
 		if (isAlive(pid)) {
 			try {
@@ -123,6 +132,7 @@ while [ "$#" -gt 0 ]; do
     *) shift ;;
   esac
 done
+printf '%s\\n' "$$" > "${join(binDir, "..", "backend.pid")}"
 ${descendant}
 printf '%s\\n' "$!" > "${pidPath}"
 ${awaitReady}
@@ -252,8 +262,13 @@ async function runHarness(options: {
 		});
 	});
 
-	const recordedPid = await readDescendantPid(workdir);
+	const recordedPid = await readPidFile(workdir, "descendant.pid");
 	if (recordedPid !== undefined) spawnedDescendants.add(recordedPid);
+	// The backend child leads its own group. Killing the harness reaches neither
+	// it nor its descendants, so a timing-out test would otherwise strand exactly
+	// the processes this suite exists to catch.
+	const backendPid = await readPidFile(workdir, "backend.pid");
+	if (backendPid !== undefined) spawnedBackendGroups.add(backendPid);
 
 	if (!exited) {
 		child.kill("SIGKILL");
@@ -272,9 +287,12 @@ async function runHarness(options: {
 	return { settled: true, observation };
 }
 
-async function readDescendantPid(workdir: string): Promise<number | undefined> {
+async function readPidFile(
+	workdir: string,
+	name: string,
+): Promise<number | undefined> {
 	try {
-		const raw = await readFile(join(workdir, "descendant.pid"), "utf-8");
+		const raw = await readFile(join(workdir, name), "utf-8");
 		const pid = Number(raw.trim());
 		return Number.isInteger(pid) && pid > 0 ? pid : undefined;
 	} catch {
@@ -347,10 +365,11 @@ describe("backend process reaping", { timeout: 30_000 }, () => {
 	});
 
 	// @cosmo-behavior plan:drive-process-reaping#B-005
-	test("surfaces a tree that survives escalation", async () => {
-		// SIGKILL cannot be ignored, so a genuine survivor is not constructible.
-		// The reachable equivalent is a group this process may not signal, which
-		// takes reapProcessGroup down the same `survived` branch.
+	test("reports a tree it could not reap", async () => {
+		// SIGKILL cannot be ignored, so a group that outlives the kill deadline is
+		// not constructible on a healthy host. The reachable equivalent is a group
+		// this process is not permitted to signal, which reaches the same
+		// `survived` branch and the same reporting path.
 		const workdir = join(temp.path, "survived");
 		await mkdir(workdir, { recursive: true });
 		await writeFile(join(workdir, "prompt.md"), "do the thing\n", "utf-8");

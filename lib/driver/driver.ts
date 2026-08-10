@@ -265,15 +265,40 @@ async function abortDetachedRun({
 	);
 }
 
-/** Abort must settle, so a child that ignores SIGTERM is escalated on a deadline. */
+/**
+ * Abort must settle, so a tree that ignores SIGTERM is escalated on a deadline.
+ *
+ * Escalation is gated on the whole group, not the leader alone: the runner dies
+ * promptly from SIGTERM, so a leader-only condition would skip SIGKILL entirely
+ * and strand any same-group descendant that ignored the SIGTERM.
+ */
 async function stopDetachedChild(
 	child: ChildProcess,
 	pid: number,
 ): Promise<void> {
 	signalDetachedChild(pid, "SIGTERM");
-	if (await waitForChildExitWithin(child, DETACHED_ABORT_TERM_GRACE_MS)) return;
+	if (await waitForTreeExitWithin(child, pid, DETACHED_ABORT_TERM_GRACE_MS)) {
+		return;
+	}
 	if (!signalDetachedChild(pid, "SIGKILL")) return;
-	await waitForChildExitWithin(child, DETACHED_ABORT_KILL_GRACE_MS);
+	await waitForTreeExitWithin(child, pid, DETACHED_ABORT_KILL_GRACE_MS);
+}
+
+/** Resolves true only when the child handle exited AND its group is empty. */
+async function waitForTreeExitWithin(
+	child: ChildProcess,
+	pid: number,
+	timeoutMs: number,
+): Promise<boolean> {
+	const deadline = Date.now() + timeoutMs;
+	if (!(await waitForChildExitWithin(child, timeoutMs))) return false;
+	if (!CAN_SIGNAL_PROCESS_GROUP) return true;
+
+	while (processGroupExists(pid)) {
+		if (Date.now() >= deadline) return false;
+		await delay(TREE_EXIT_POLL_MS);
+	}
+	return true;
 }
 
 /**
@@ -689,6 +714,7 @@ function throwIfAborted(signal: AbortSignal): void {
 }
 
 const CAN_SIGNAL_PROCESS_GROUP = process.platform !== "win32";
+const TREE_EXIT_POLL_MS = 25;
 const DETACHED_BRIDGE_DRAIN_TIMEOUT_MS = 2_000;
 const DETACHED_ABORT_TERM_GRACE_MS = 2_000;
 const DETACHED_ABORT_KILL_GRACE_MS = 1_000;

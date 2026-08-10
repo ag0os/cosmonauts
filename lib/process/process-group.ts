@@ -84,11 +84,11 @@ export async function reapProcessGroup(
 	}[] = [
 		{
 			signal: "SIGTERM",
-			graceMs: options.termGraceMs ?? DEFAULT_REAP_TERM_GRACE_MS,
+			graceMs: boundedGrace(options.termGraceMs, DEFAULT_REAP_TERM_GRACE_MS),
 		},
 		{
 			signal: "SIGKILL",
-			graceMs: options.killGraceMs ?? DEFAULT_REAP_KILL_GRACE_MS,
+			graceMs: boundedGrace(options.killGraceMs, DEFAULT_REAP_KILL_GRACE_MS),
 		},
 	];
 
@@ -109,6 +109,18 @@ export async function reapProcessGroup(
 		kind: "survived",
 		reason: `process group ${processGroupId} still had live members after SIGTERM and SIGKILL`,
 	};
+}
+
+/**
+ * Keeps "bounded by construction" literally true. `NaN` or `Infinity` would make
+ * the deadline comparison never hold, turning the escalation loop into the
+ * unbounded wait this helper exists to prevent.
+ */
+function boundedGrace(graceMs: number | undefined, fallbackMs: number): number {
+	if (graceMs === undefined || !Number.isFinite(graceMs) || graceMs < 0) {
+		return fallbackMs;
+	}
+	return graceMs;
 }
 
 async function waitForGroupExit(

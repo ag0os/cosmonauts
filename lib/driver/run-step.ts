@@ -4,6 +4,7 @@ import { parseArgs } from "node:util";
 import { MessageBus } from "../orchestration/message-bus.ts";
 import { TaskManager } from "../tasks/task-manager.ts";
 import { resolveConfiguredBackend } from "./backend-resolution.ts";
+import { reapActiveBackendGroups } from "./backends/cli-process.ts";
 import { runDriveOnGraph } from "./drive-graph-runner.ts";
 import {
 	createEventSink,
@@ -12,6 +13,34 @@ import {
 } from "./event-stream.ts";
 import { acquirePlanLock } from "./lock.ts";
 import type { DriverResult, DriverRunSpec, LockHandle } from "./types.ts";
+
+/**
+ * Abort signals this runner's process group. The backend deliberately leads a
+ * *different* group so it can be reaped without killing this process — which
+ * means a signalled runner would otherwise die without ever reaching its own
+ * reap, orphaning exactly the process this plan exists to stop leaking.
+ *
+ * The driver escalates to SIGKILL 2s after SIGTERM, so the grace here is short
+ * enough to complete inside that window.
+ */
+const TERMINATION_SIGNALS: readonly NodeJS.Signals[] = ["SIGTERM", "SIGINT"];
+const RUNNER_TEARDOWN_GRACE_MS = 400;
+
+function installTerminationHandlers(controller: AbortController): void {
+	for (const signal of TERMINATION_SIGNALS) {
+		process.once(signal, () => {
+			controller.abort();
+			void reapActiveBackendGroups({
+				termGraceMs: RUNNER_TEARDOWN_GRACE_MS,
+				killGraceMs: RUNNER_TEARDOWN_GRACE_MS,
+			})
+				.catch(() => undefined)
+				.finally(() => {
+					process.exitCode = 1;
+				});
+		});
+	}
+}
 
 async function main(): Promise<number> {
 	const workdir = parseWorkdir();
@@ -72,6 +101,7 @@ async function runWithLock(
 			durable: driveGraphActivityEventSinkOptions(spec),
 		});
 		const controller = new AbortController();
+		installTerminationHandlers(controller);
 
 		const result = await runDriveOnGraph(spec, {
 			taskManager,

@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import {
 	chmod,
 	mkdir,
@@ -26,8 +26,37 @@ import type {
 } from "../../lib/driver/types.ts";
 import { parseEpisodeRecord } from "../../lib/memory/episodic-records.ts";
 import { createMarkdownMemoryStore } from "../../lib/memory/markdown-store.ts";
+import { processGroupExists } from "../../lib/process/process-group.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { useTempDir } from "../helpers/fs.ts";
+
+async function waitFor(
+	condition: () => boolean,
+	timeoutMs = 5_000,
+): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (!condition()) {
+		if (Date.now() >= deadline) {
+			throw new Error("Timed out waiting for condition");
+		}
+		await new Promise((settle) => setTimeout(settle, 25));
+	}
+}
+
+async function waitForFile(path: string, timeoutMs = 20_000): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (true) {
+		try {
+			await stat(path);
+			return;
+		} catch {
+			if (Date.now() >= deadline) {
+				throw new Error(`Timed out waiting for ${path}`);
+			}
+			await new Promise((settle) => setTimeout(settle, 25));
+		}
+	}
+}
 
 const execFileAsync = promisify(execFile);
 const temp = useTempDir("run-step-test-");
@@ -397,7 +426,80 @@ describe("run-step binary", { timeout: 30_000 }, () => {
 			await (lock as LockHandle).release();
 		}
 	});
+
+	// @cosmo-behavior plan:drive-process-reaping#B-006
+	test("reaps its backend process group when the runner is signalled", async () => {
+		const fixture = await setupFixture("run-signalled-teardown");
+		const backendPidPath = join(fixture.workdir, "backend.pid");
+		const fakeCodex = await writeSlowLeakyCodex(
+			fixture.binDir,
+			backendPidPath,
+			join(fixture.workdir, "backend.ready"),
+		);
+
+		const runner = spawn(binaryPath, ["--workdir", fixture.workdir], {
+			cwd: temp.path,
+			env: { ...process.env, COSMONAUTS_DRIVER_CODEX_BINARY: fakeCodex },
+			stdio: "ignore",
+		});
+
+		try {
+			// Signal only once the backend is genuinely mid-task, so the teardown
+			// path is what reaps it rather than a normal completion.
+			await waitForFile(join(fixture.workdir, "backend.ready"));
+			const backendPid = Number(
+				(await readFile(backendPidPath, "utf-8")).trim(),
+			);
+			expect(processGroupExists(backendPid)).toBe(true);
+
+			runner.kill("SIGTERM");
+			await new Promise<void>((settle) => runner.once("exit", () => settle()));
+
+			// The backend leads its own group, so the runner's group signal never
+			// reaches it. Only the runner's own teardown can, and it must have run
+			// before the runner exited.
+			await waitFor(() => !processGroupExists(backendPid), 8_000);
+			expect(processGroupExists(backendPid)).toBe(false);
+		} finally {
+			runner.kill("SIGKILL");
+			await killGroupIfPresent(backendPidPath);
+		}
+	});
 });
+
+async function killGroupIfPresent(pidPath: string): Promise<void> {
+	try {
+		const pid = Number((await readFile(pidPath, "utf-8")).trim());
+		if (Number.isInteger(pid) && pid > 0) process.kill(-pid, "SIGKILL");
+	} catch {
+		// Nothing left to clean up.
+	}
+}
+
+/**
+ * A backend that starts a descendant and then stays busy, so the runner can be
+ * signalled while the task is still in flight.
+ */
+async function writeSlowLeakyCodex(
+	binDir: string,
+	pidPath: string,
+	readyPath: string,
+): Promise<string> {
+	const path = join(binDir, "slow-leaky-codex");
+	await writeFile(
+		path,
+		`#!/usr/bin/env bash
+set -uo pipefail
+printf '%s\\n' "$$" > "${pidPath}"
+sleep 120 >/dev/null 2>&1 </dev/null &
+printf 'ready\\n' > "${readyPath}"
+sleep 120
+`,
+		"utf-8",
+	);
+	await chmod(path, 0o755);
+	return path;
+}
 
 interface Fixture {
 	projectRoot: string;

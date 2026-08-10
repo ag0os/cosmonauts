@@ -124,22 +124,46 @@ silently implied, and surfaced under INV-2.
 - Action: the backend returns
 - Expected: the failure is surfaced on the run's channels rather than folded into a clean result; the run does not present a reaping failure as a successful task
 - Seam: `lib/driver/backends/*`
-- Test: `tests/driver/backends/process-reaping.test.ts` > `surfaces a tree that survives escalation`
+- Test: `tests/driver/backends/process-reaping.test.ts` > `reports a tree it could not reap`
 - Marker: `@cosmo-behavior plan:drive-process-reaping#B-005`
+
+*Test renamed 2026-08-10 after independent review: a group outliving the SIGKILL
+deadline is not constructible on a healthy host, so the test drives the same
+`survived` branch via a group it may not signal. The old name claimed more than
+the test established.*
+
+### B-006 - A signalled runner reaps its backend group before it dies
+- Source: AC-004, D-006
+- Context: a detached runner is signalled while its backend is mid-task
+- Action: the runner terminates
+- Expected: the backend's process group is gone once the runner has exited; the runner's own group signal cannot reach that group, so only its teardown can
+- Seam: `lib/driver/run-step.ts`, `lib/driver/backends/cli-process.ts`
+- Test: `tests/driver/run-step.test.ts` > `reaps its backend process group when the runner is signalled`
+- Marker: `@cosmo-behavior plan:drive-process-reaping#B-006`
 
 ## Files to Change
 
-- `lib/process/process-group.ts` — new; extracted POSIX primitives.
+- `lib/process/process-group.ts` — new; extracted POSIX primitives plus the
+  bounded `reapProcessGroup` escalation.
 - `domains/shared/extensions/project-tools/process-runner.ts` — import the
   extracted primitives; no behavioural change.
+- `lib/driver/backends/cli-process.ts` — new; the shared spawn/reap/drain path
+  and the active-group registry both CLI backends use.
 - `lib/driver/backends/codex.ts`, `lib/driver/backends/claude-cli.ts` — detach,
   reap, then drain.
-- `lib/driver/backends/bun-runtime.ts` — `BunSpawnOptions` gains `detached`.
-- `lib/driver/driver.ts` — `signalDetachedChild` addresses the group.
+- `lib/driver/backends/bun-runtime.ts` — `BunSpawnOptions` gains `detached`;
+  `BunSubprocess` exposes `pid`.
+- `lib/driver/driver.ts` — `signalDetachedChild` addresses the group; escalation
+  gated on the group emptying.
+- `lib/driver/run-step.ts` — termination handlers that reap the backend group
+  before the runner dies (D-006).
 - `tests/driver/backends/process-reaping.test.ts` — new; real processes, explicit
   30s budget.
+- `tests/driver/run-step.test.ts` — signalled-runner teardown (B-006).
 - `tests/driver/driver-detached.test.ts` — pinned abort assertion updated for the
   negated pid.
+- `tests/driver/driver.test.ts` — pre-spawn abort window updated for the group
+  probe and signal.
 
 ## Risks
 
@@ -235,6 +259,33 @@ silently implied, and surfaced under INV-2.
   - Why: killing the pipe holders is what lets the drain terminate, so ordering
     fixes the hang for free rather than papering over it.
   - Decided by: planner-proposed, 2026-08-10
+
+- **D-006 - The backend leads its own group, so the runner must reap it before dying**
+  - Decision: `run-step` installs SIGTERM/SIGINT handlers that abort the run and
+    reap any live backend group on a short grace, and the backend registers its
+    group for exactly that. Escalation on the abort path is gated on the group
+    being empty, not on the leader's exit. The stdout/stderr drain and the
+    diagnostic report are both bounded.
+  - Supersedes: the original Design claim that "the two group topologies do not
+    conflict… the step binary dying does not orphan the backend, because the
+    backend is reaped by the same process that spawned it". That holds only when
+    the runner exits normally. A *signalled* runner never reaches its reap, and
+    since abort signals the runner's group and the backend leads a different one,
+    the backend was orphaned on every detached abort — reintroducing this plan's
+    own defect on the abort path.
+  - Alternatives: keep the backend in the runner's group (rejected — reaping it
+    would then mean signalling the group the runner itself leads, killing the
+    runner and violating INV-4); have the driver discover and signal the backend's
+    group (rejected — requires publishing a second pid channel and still races the
+    runner's own teardown).
+  - Also recorded: a descendant that calls `setsid()` leaves the group entirely
+    and is beyond any group reap. INV-1 is therefore bounded by group membership,
+    not by the process tree. The drain is bounded rather than unbounded precisely
+    so such an escapee holding the pipes cannot hang the backend forever, and the
+    loss is reported under INV-2.
+  - Why: found by independent codex review, 2026-08-10; all three were real
+    defects reachable on the normal detached-abort path.
+  - Decided by: independent review + implementer, amend-on-record, 2026-08-10
 
 - **D-005 - Windows keeps today's behaviour, recorded as a gap**
   - Decision: mirror `detached: process.platform !== "win32"`; on win32 the
