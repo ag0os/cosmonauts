@@ -4,6 +4,10 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { finished } from "node:stream/promises";
+import {
+	processGroupExists,
+	signalPosixProcessGroup,
+} from "../../../../lib/process/process-group.ts";
 
 export const DEFAULT_PROVIDER_TIMEOUT_MS = 30_000;
 export const DEFAULT_TERMINATION_GRACE_MS = 250;
@@ -141,34 +145,6 @@ function appendRunnerStderr(stderr: string, runnerStderr: string): string {
 
 function appendRunnerError(current: string, message: string): string {
 	return `${current}${current.length === 0 ? "" : "\n"}${message}`;
-}
-
-function processGroupExists(processGroupId: number): boolean {
-	try {
-		process.kill(-processGroupId, 0);
-		return true;
-	} catch (error) {
-		return !(
-			error instanceof Error &&
-			"code" in error &&
-			error.code === "ESRCH"
-		);
-	}
-}
-
-function signalPosixProcessGroup(
-	processGroupId: number,
-	signal: NodeJS.Signals,
-): Error | undefined {
-	try {
-		process.kill(-processGroupId, signal);
-		return undefined;
-	} catch (error) {
-		if (error instanceof Error && "code" in error && error.code === "ESRCH") {
-			return undefined;
-		}
-		return error instanceof Error ? error : new Error(String(error));
-	}
 }
 
 function windowsTaskkillPath(): string {
