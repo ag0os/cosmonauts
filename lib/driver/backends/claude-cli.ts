@@ -1,4 +1,4 @@
-import type { BunRuntime } from "./bun-runtime.ts";
+import { runCliBackendProcess } from "./cli-process.ts";
 import { isDisabledEnv, parseBackendArgsEnv } from "./env-args.ts";
 import type { Backend } from "./types.ts";
 
@@ -11,8 +11,6 @@ export const CLAUDE_ARGS_ENV = "COSMONAUTS_DRIVER_CLAUDE_ARGS";
 export const CLAUDE_SKIP_PERMISSIONS_ENV =
 	"COSMONAUTS_DRIVER_CLAUDE_SKIP_PERMISSIONS";
 const CLAUDE_SKIP_PERMISSIONS_ARG = "--dangerously-skip-permissions";
-
-declare const Bun: BunRuntime;
 
 export function createClaudeCliBackend(
 	deps: ClaudeCliBackendDeps = {},
@@ -29,18 +27,11 @@ export function createClaudeCliBackend(
 		},
 		async run(invocation) {
 			const start = Date.now();
-			const child = Bun.spawn([binary, ...args, "-p"], {
-				cwd: invocation.projectRoot,
-				stdin: Bun.file(invocation.promptPath),
-				stdout: "pipe",
-				stderr: "pipe",
-				signal: invocation.signal,
+			const { exitCode, stdout } = await runCliBackendProcess({
+				argv: [binary, ...args, "-p"],
+				invocation,
+				backendName: "claude-cli",
 			});
-
-			const stdoutPromise = new Response(child.stdout).text();
-			const stderrPromise = new Response(child.stderr).text();
-			const exitCode = await child.exited;
-			const [stdout] = await Promise.all([stdoutPromise, stderrPromise]);
 
 			return {
 				exitCode,

@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { BunRuntime } from "./bun-runtime.ts";
+import { runCliBackendProcess } from "./cli-process.ts";
 import { isDisabledEnv, parseBackendArgsEnv } from "./env-args.ts";
 import type { Backend } from "./types.ts";
 
@@ -14,8 +14,6 @@ export const CODEX_ARGS_ENV = "COSMONAUTS_DRIVER_CODEX_ARGS";
 export const CODEX_EXEC_ARGS_ENV = "COSMONAUTS_DRIVER_CODEX_EXEC_ARGS";
 export const CODEX_YOLO_ENV = "COSMONAUTS_DRIVER_CODEX_YOLO";
 const CODEX_YOLO_ARG = "--yolo";
-
-declare const Bun: BunRuntime;
 
 export function createCodexBackend(deps: CodexBackendDeps = {}): Backend {
 	const binary = deps.binary ?? "codex";
@@ -35,21 +33,11 @@ export function createCodexBackend(deps: CodexBackendDeps = {}): Backend {
 				invocation.workdir,
 				`${invocation.taskId}-summary.txt`,
 			);
-			const child = Bun.spawn(
-				[...codexExecArgv({ binary, globalArgs, extraArgs, summaryPath })],
-				{
-					cwd: invocation.projectRoot,
-					stdin: Bun.file(invocation.promptPath),
-					stdout: "pipe",
-					stderr: "pipe",
-					signal: invocation.signal,
-				},
-			);
-
-			const stdoutPromise = new Response(child.stdout).text();
-			const stderrPromise = new Response(child.stderr).text();
-			const exitCode = await child.exited;
-			const [stdout] = await Promise.all([stdoutPromise, stderrPromise]);
+			const { exitCode, stdout } = await runCliBackendProcess({
+				argv: codexExecArgv({ binary, globalArgs, extraArgs, summaryPath }),
+				invocation,
+				backendName: "codex",
+			});
 			const summary = await readSummary(summaryPath);
 
 			return {

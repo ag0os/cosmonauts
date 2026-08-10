@@ -1,7 +1,9 @@
 import { execFile } from "node:child_process";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { createCodexBackend } from "../../../lib/driver/backends/codex.ts";
+import type { DriverEvent } from "../../../lib/driver/types.ts";
 import { useTempDir } from "../../helpers/fs.ts";
 
 const repoRoot = resolve(import.meta.dirname, "..", "..", "..");
@@ -42,6 +44,8 @@ function isAlive(pid: number): boolean {
  * failing the suite.
  */
 afterEach(() => {
+	vi.unstubAllGlobals();
+	vi.restoreAllMocks();
 	for (const pid of spawnedDescendants) {
 		if (isAlive(pid)) {
 			try {
@@ -65,10 +69,49 @@ async function writeLeakyBackend(
 	options: { holdsPipes: boolean; ignoreSigterm?: boolean },
 ): Promise<string> {
 	const path = join(binDir, "leaky-backend");
+	const pidPath = join(binDir, "..", "descendant.pid");
+	const readyPath = join(binDir, "..", "descendant.ready");
 	const redirect = options.holdsPipes ? "" : ">/dev/null 2>&1 </dev/null";
+
+	// The SIGTERM-ignoring shape must *respawn* its sleep, matching
+	// `spawnSigtermIgnoringSentinel` in the detached-driver suite. A plain
+	// `bash -c 'trap "" TERM; sleep 60'` does not survive a group SIGTERM: the
+	// sleep is signalled directly, bash's wait returns, and bash exits normally,
+	// so the group empties on SIGTERM and escalation is never exercised.
+	const sentinelPath = join(binDir, "sigterm-sentinel");
+	await writeFile(
+		sentinelPath,
+		`#!/usr/bin/env bash
+trap '' TERM
+printf 'ready\\n' > "$1"
+while true; do
+  sleep 0.05
+done
+`,
+		"utf-8",
+	);
+	await chmod(sentinelPath, 0o755);
+
 	const descendant = options.ignoreSigterm
-		? `bash -c 'trap "" TERM; sleep 60' ${redirect} &`
+		? `"${sentinelPath}" "${readyPath}" ${redirect} &`
 		: `sleep 60 ${redirect} &`;
+
+	// Waiting for the trap to be installed is what makes the escalation test
+	// deterministic. The reap fires within ~30ms of this script exiting, which
+	// readily beats `trap` being installed in a freshly forked shell — and a
+	// descendant signalled before its trap exists dies to SIGTERM by default
+	// disposition, silently turning the escalation test into a coin flip.
+	const awaitReady = options.ignoreSigterm
+		? `for _ in $(seq 1 400); do
+  [ -f "${readyPath}" ] && break
+  sleep 0.01
+done
+if [ ! -f "${readyPath}" ]; then
+  echo "sentinel never signalled readiness" >&2
+  exit 70
+fi`
+		: "";
+
 	await writeFile(
 		path,
 		`#!/usr/bin/env bash
@@ -81,7 +124,8 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 ${descendant}
-printf '%s\\n' "$!" > "${join(binDir, "..", "descendant.pid")}"
+printf '%s\\n' "$!" > "${pidPath}"
+${awaitReady}
 printf 'backend-stdout\\n'
 # The codex backend returns the summary file in preference to stdout, so the
 # marker has to appear in both for one assertion to cover both backends.
@@ -293,8 +337,78 @@ describe("backend process reaping", { timeout: 30_000 }, () => {
 			observation.descendantAliveAtSettle,
 			`SIGTERM-ignoring descendant ${observation.descendantPid} survived the reap`,
 		).toBe(false);
-		// Asserted directly rather than inferred from the helper's default, so a
-		// later change to that default cannot silently unbound this deadline.
+		// Both bounds asserted directly rather than inferred from the reaper's
+		// defaults. The lower bound is what proves escalation actually happened:
+		// the tree could only have died to SIGKILL, so the call must have waited
+		// out the SIGTERM grace first. Without it, a reaper that skipped straight
+		// to SIGKILL — or one whose grace silently collapsed to zero — would pass.
+		expect(observation.settledMs).toBeGreaterThanOrEqual(1_800);
 		expect(observation.settledMs).toBeLessThan(10_000);
+	});
+
+	// @cosmo-behavior plan:drive-process-reaping#B-005
+	test("surfaces a tree that survives escalation", async () => {
+		// SIGKILL cannot be ignored, so a genuine survivor is not constructible.
+		// The reachable equivalent is a group this process may not signal, which
+		// takes reapProcessGroup down the same `survived` branch.
+		const workdir = join(temp.path, "survived");
+		await mkdir(workdir, { recursive: true });
+		await writeFile(join(workdir, "prompt.md"), "do the thing\n", "utf-8");
+
+		const childPid = 987_654;
+		vi.spyOn(process, "kill").mockImplementation(((
+			pid: number,
+			signal?: string | number,
+		) => {
+			if (pid !== -childPid) return true;
+			// The group is alive, but signalling it is refused.
+			if (signal === 0) return true;
+			throw Object.assign(new Error("operation not permitted"), {
+				code: "EPERM",
+			});
+		}) as typeof process.kill);
+
+		vi.stubGlobal("Bun", {
+			file: (path: string) => ({ path }),
+			spawn: () => ({
+				exited: Promise.resolve(0),
+				stdout: "backend-stdout\n",
+				stderr: "",
+				pid: childPid,
+			}),
+		});
+
+		const events: DriverEvent[] = [];
+		const result = await createCodexBackend({
+			binary: "unused",
+			globalArgs: [],
+			extraArgs: [],
+		}).run({
+			runId: "run-survived",
+			promptPath: join(workdir, "prompt.md"),
+			workdir,
+			projectRoot: workdir,
+			taskId: "TASK-001",
+			parentSessionId: "test-parent",
+			planSlug: "drive-process-reaping",
+			eventSink: async (event) => {
+				events.push(event);
+			},
+		});
+
+		const diagnostics = events.filter(
+			(event) => event.type === "driver_diagnostic",
+		);
+		expect(diagnostics).toHaveLength(1);
+		expect(diagnostics[0]).toMatchObject({
+			type: "driver_diagnostic",
+			level: "warning",
+			code: "BACKEND_PROCESS_TREE_SURVIVED",
+			taskId: "TASK-001",
+			runId: "run-survived",
+		});
+		// The backend's own exit code stays authoritative — the diagnostic reports
+		// the leak rather than rewriting the task's result.
+		expect(result.exitCode).toBe(0);
 	});
 });

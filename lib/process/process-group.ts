@@ -42,3 +42,83 @@ export function signalPosixProcessGroup(
 		return error instanceof Error ? error : new Error(String(error));
 	}
 }
+
+export const DEFAULT_REAP_TERM_GRACE_MS = 2_000;
+export const DEFAULT_REAP_KILL_GRACE_MS = 1_000;
+const REAP_POLL_MS = 25;
+
+export interface ReapProcessGroupOptions {
+	readonly termGraceMs?: number;
+	readonly killGraceMs?: number;
+}
+
+export type ReapProcessGroupOutcome =
+	/** Nothing was left to reap: the tree had already exited on its own. */
+	| { readonly kind: "already-exited" }
+	/** Survivors existed and are now gone. `signal` is the one that ended them. */
+	| { readonly kind: "reaped"; readonly signal: NodeJS.Signals }
+	/** Escalation completed and something is still alive, or signalling failed. */
+	| { readonly kind: "survived"; readonly reason: string };
+
+/**
+ * Terminates every survivor in a process group on a bounded deadline: SIGTERM,
+ * a grace period, then SIGKILL.
+ *
+ * Bounded by construction (INV-3) — it never waits on a tree that will not die,
+ * and reports `survived` instead so the caller can surface it (INV-2) rather
+ * than presenting a leak as a clean result. `processGroupId` must be a pid this
+ * code spawned `detached`, so the negated address names a group we lead and
+ * never one we merely belong to (INV-4).
+ */
+export async function reapProcessGroup(
+	processGroupId: number,
+	options: ReapProcessGroupOptions = {},
+): Promise<ReapProcessGroupOutcome> {
+	if (!processGroupExists(processGroupId)) {
+		return { kind: "already-exited" };
+	}
+
+	const escalation: readonly {
+		signal: NodeJS.Signals;
+		graceMs: number;
+	}[] = [
+		{
+			signal: "SIGTERM",
+			graceMs: options.termGraceMs ?? DEFAULT_REAP_TERM_GRACE_MS,
+		},
+		{
+			signal: "SIGKILL",
+			graceMs: options.killGraceMs ?? DEFAULT_REAP_KILL_GRACE_MS,
+		},
+	];
+
+	for (const { signal, graceMs } of escalation) {
+		const error = signalPosixProcessGroup(processGroupId, signal);
+		if (error) {
+			return {
+				kind: "survived",
+				reason: `failed to send ${signal} to process group ${processGroupId}: ${error.message}`,
+			};
+		}
+		if (await waitForGroupExit(processGroupId, graceMs)) {
+			return { kind: "reaped", signal };
+		}
+	}
+
+	return {
+		kind: "survived",
+		reason: `process group ${processGroupId} still had live members after SIGTERM and SIGKILL`,
+	};
+}
+
+async function waitForGroupExit(
+	processGroupId: number,
+	graceMs: number,
+): Promise<boolean> {
+	const deadline = Date.now() + graceMs;
+	while (true) {
+		if (!processGroupExists(processGroupId)) return true;
+		if (Date.now() >= deadline) return false;
+		await new Promise((settle) => setTimeout(settle, REAP_POLL_MS));
+	}
+}

@@ -1,7 +1,7 @@
 ---
 id: TASK-556
 title: Reap the backend process tree in the codex and claude-cli backends
-status: To Do
+status: Done
 priority: high
 labels:
   - 'plan:drive-process-reaping'
@@ -9,7 +9,7 @@ dependencies:
   - TASK-554
   - TASK-555
 createdAt: '2026-08-10T18:47:50.215Z'
-updatedAt: '2026-08-10T18:48:02.073Z'
+updatedAt: '2026-08-10T18:59:54.861Z'
 ---
 
 ## Description

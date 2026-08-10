@@ -166,6 +166,9 @@ describe("claude-cli backend", () => {
 			stdout: "pipe",
 			stderr: "pipe",
 			signal,
+			// The child leads its own process group so its descendants can be
+			// reaped once it exits (plan:drive-process-reaping).
+			detached: true,
 		});
 		expect(result).toMatchObject({ exitCode: 0, stdout: "OUTCOME: success\n" });
 		expect(result.durationMs).toEqual(expect.any(Number));
