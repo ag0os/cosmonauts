@@ -25,6 +25,15 @@ import type { DriverResult, DriverRunSpec, LockHandle } from "./types.ts";
  */
 const TERMINATION_SIGNALS: readonly NodeJS.Signals[] = ["SIGTERM", "SIGINT"];
 const RUNNER_TEARDOWN_GRACE_MS = 400;
+/**
+ * Installing a handler replaces SIGTERM's default disposition, so the runner no
+ * longer dies on its own. Under `DriverHandle.abort()` the parent's SIGKILL
+ * still bounds it, but a standalone `kill` would not — cancellation-insensitive
+ * work could keep it alive indefinitely. This backstop restores "a signalled
+ * process exits" without truncating the ordinary shutdown, which is what lets
+ * the run write its completion and settle its terminal episode.
+ */
+const RUNNER_HARD_EXIT_MS = 10_000;
 
 function installTerminationHandlers(controller: AbortController): void {
 	for (const signal of TERMINATION_SIGNALS) {
@@ -37,6 +46,9 @@ function installTerminationHandlers(controller: AbortController): void {
 				.catch(() => undefined)
 				.finally(() => {
 					process.exitCode = 1;
+					// Unref'd: it fires only if something else is still holding the loop
+					// open past the deadline, and never delays an otherwise clean exit.
+					setTimeout(() => process.exit(1), RUNNER_HARD_EXIT_MS).unref();
 				});
 		});
 	}

@@ -452,8 +452,13 @@ describe("run-step binary", { timeout: 30_000 }, () => {
 			);
 			expect(processGroupExists(backendPid)).toBe(true);
 
+			const signalledAt = Date.now();
 			runner.kill("SIGTERM");
 			await new Promise<void>((settle) => runner.once("exit", () => settle()));
+			// The runner must not linger past the driver's 2s SIGKILL escalation, or
+			// its cleanup gets cut off mid-write. An uncleared deadline timer in the
+			// backend's drain kept the event loop alive for exactly that long.
+			expect(Date.now() - signalledAt).toBeLessThan(2_000);
 
 			// The backend leads its own group, so the runner's group signal never
 			// reaches it. Only the runner's own teardown can, and it must have run

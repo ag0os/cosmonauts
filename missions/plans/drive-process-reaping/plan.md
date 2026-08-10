@@ -287,6 +287,28 @@ the test established.*
     defects reachable on the normal detached-abort path.
   - Decided by: independent review + implementer, amend-on-record, 2026-08-10
 
+- **D-007 - Deadlines must be cancellable, and the two output streams bounded separately**
+  - Decision: every `Promise.race` deadline clears its timer; stdout and stderr
+    are bounded independently so a stuck stderr cannot discard a complete stdout;
+    the group registry is closed during teardown and released at reap time rather
+    than after the drain; the runner keeps an unref'd hard-exit backstop.
+  - Why: found by re-review of the first remediation, 2026-08-10. An uncleared
+    `setTimeout` stays referenced and keeps the event loop alive, which held the
+    detached runner open ~2s past its work — through the driver's own SIGKILL
+    deadline, so its cleanup would have been cut off mid-write. Measured directly:
+    B-006 went from 3565ms to 426ms once the timers were cleared, and that bound
+    is now asserted. Returning `""` when only stderr hung was worse than a
+    liveness issue: an already-complete machine report would be discarded and the
+    task would fail spuriously.
+  - Recorded gaps, not fixed here: (a) because Drive backends advertise
+    `canCancel: false`, an abandoned backend continuation can still emit
+    `spawn_failed` and block a task after the scheduler has terminalized the run
+    as cancelled — that lives in `lib/durable-runtime/scheduler.ts`, outside this
+    plan's scope; (b) a dead leader's PGID is only a number, so rapid pid reuse
+    could in principle misaddress a signal — inherent to POSIX group reaping and
+    narrowed, not eliminated, by releasing ownership at reap time.
+  - Decided by: independent review + implementer, amend-on-record, 2026-08-10
+
 - **D-005 - Windows keeps today's behaviour, recorded as a gap**
   - Decision: mirror `detached: process.platform !== "win32"`; on win32 the
     backends reap only the direct child.

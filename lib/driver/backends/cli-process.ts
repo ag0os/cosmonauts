@@ -37,6 +37,14 @@ export interface CliBackendProcessResult {
 const activeBackendGroups = new Set<number>();
 
 /**
+ * Once teardown starts the registry is closed: a backend that registers after
+ * the teardown snapshot is reaped immediately rather than outliving it. Bun
+ * still returns a subprocess when handed an already-aborted signal, so this race
+ * is reachable rather than theoretical.
+ */
+let terminating: ReapProcessGroupOptions | undefined;
+
+/**
  * Runs a CLI backend and does not return while any process still in its group is
  * alive.
  *
@@ -79,26 +87,50 @@ export async function runCliBackendProcess({
 	const stderrPromise = new Response(child.stderr).text();
 
 	const groupPid = CAN_REAP_PROCESS_GROUP ? child.pid : undefined;
-	if (groupPid !== undefined) activeBackendGroups.add(groupPid);
+	const teardown = registerBackendGroup(groupPid);
 
 	try {
 		const exitCode = await child.exited;
-		await reapBackendGroup({ child, invocation, backendName });
+		if (teardown) {
+			// Teardown already began; reap now rather than finishing the task.
+			await reapProcessGroup(groupPid as number, teardown);
+		} else {
+			await reapBackendGroup({ groupPid, invocation, backendName });
+		}
+		// Ownership ends with the reap, not with the drain. Holding a dead pid in
+		// the registry across the drain would leave it signalable after the OS
+		// could have recycled it.
+		releaseBackendGroup(groupPid);
+
 		const stdout = await drainWithinDeadline({
-			output: stdoutPromise,
-			otherOutput: stderrPromise,
+			stdoutPromise,
+			stderrPromise,
 			invocation,
 			backendName,
 		});
 
 		return { exitCode, stdout };
 	} finally {
-		if (groupPid !== undefined) activeBackendGroups.delete(groupPid);
+		releaseBackendGroup(groupPid);
 	}
 }
 
+/** Returns teardown options when termination already began, else undefined. */
+function registerBackendGroup(
+	groupPid: number | undefined,
+): ReapProcessGroupOptions | undefined {
+	if (groupPid === undefined) return undefined;
+	activeBackendGroups.add(groupPid);
+	return terminating;
+}
+
+function releaseBackendGroup(groupPid: number | undefined): void {
+	if (groupPid !== undefined) activeBackendGroups.delete(groupPid);
+}
+
 /**
- * Terminates every backend group this process still owns.
+ * Terminates every backend group this process still owns, and closes the
+ * registry so a backend spawned mid-teardown is reaped rather than stranded.
  *
  * The detached runner calls this when it is being torn down. Abort signals the
  * runner's own group, and the backend deliberately leads a *different* one, so
@@ -108,60 +140,86 @@ export async function runCliBackendProcess({
 export async function reapActiveBackendGroups(
 	options: ReapProcessGroupOptions = {},
 ): Promise<void> {
+	terminating = options;
 	const groups = [...activeBackendGroups];
-	await Promise.all(groups.map((pid) => reapProcessGroup(pid, options)));
+	await Promise.all(
+		groups.map(async (pid) => {
+			await reapProcessGroup(pid, options);
+			activeBackendGroups.delete(pid);
+		}),
+	);
 }
 
 /**
  * INV-3: the drain must not outlive the reap indefinitely. Once the group is
  * gone, anything still holding a pipe has escaped the group (`setsid()`), and no
- * amount of waiting is guaranteed to end. Losing tail output is strictly better
- * than never settling; the loss is reported rather than silent.
+ * amount of waiting is guaranteed to end.
+ *
+ * The two streams are bounded independently. Only stdout is returned, so a stuck
+ * *stderr* must not discard an already-complete stdout — that would turn a
+ * successful task into an unparseable report and a spurious failure.
  */
 async function drainWithinDeadline({
-	output,
-	otherOutput,
+	stdoutPromise,
+	stderrPromise,
 	invocation,
 	backendName,
 }: {
-	output: Promise<string>;
-	otherOutput: Promise<string>;
+	stdoutPromise: Promise<string>;
+	stderrPromise: Promise<string>;
 	invocation: BackendInvocation;
 	backendName: string;
 }): Promise<string> {
-	// Both pipes are drained, but only stdout is returned; a stderr reader that
-	// never finishes must not hold the call open either.
-	const drained = await Promise.race([
-		Promise.all([output, otherOutput]).then(([stdout]) => stdout),
-		delay(DRAIN_DEADLINE_MS).then(() => undefined),
+	const [stdout] = await Promise.all([
+		settleWithin(stdoutPromise, DRAIN_DEADLINE_MS),
+		settleWithin(stderrPromise, DRAIN_DEADLINE_MS),
 	]);
-	if (drained !== undefined) return drained;
+	if (stdout !== undefined) return stdout;
 
 	await reportDiagnostic({
 		invocation,
 		code: "BACKEND_OUTPUT_DRAIN_TIMED_OUT",
-		message: `${backendName} backend output was still held open ${DRAIN_DEADLINE_MS}ms after its process group was reaped; a descendant has left the group and its output is lost`,
+		message: `${backendName} backend stdout was still held open ${DRAIN_DEADLINE_MS}ms after its process group was reaped; a descendant has left the group and the output is lost`,
 	});
 	return "";
 }
 
-function delay(ms: number): Promise<void> {
-	return new Promise((settle) => setTimeout(settle, ms));
+/**
+ * Resolves the value, or `undefined` once the deadline passes.
+ *
+ * The timer is always cleared. An uncleared `setTimeout` stays referenced and
+ * keeps the event loop alive, which would hold the detached runner open past the
+ * driver's SIGKILL deadline and get its cleanup cut off mid-write.
+ */
+async function settleWithin<T>(
+	value: Promise<T>,
+	timeoutMs: number,
+): Promise<T | undefined> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		return await Promise.race([
+			value,
+			new Promise<undefined>((settle) => {
+				timer = setTimeout(() => settle(undefined), timeoutMs);
+			}),
+		]);
+	} finally {
+		if (timer !== undefined) clearTimeout(timer);
+	}
 }
 
 async function reapBackendGroup({
-	child,
+	groupPid,
 	invocation,
 	backendName,
 }: {
-	child: { readonly pid?: number };
+	groupPid: number | undefined;
 	invocation: BackendInvocation;
 	backendName: string;
 }): Promise<void> {
-	const pid = child.pid;
-	if (!CAN_REAP_PROCESS_GROUP || pid === undefined) return;
+	if (groupPid === undefined) return;
 
-	const outcome = await reapProcessGroup(pid);
+	const outcome = await reapProcessGroup(groupPid);
 	if (outcome.kind !== "survived") return;
 
 	await reportDiagnostic({
@@ -176,8 +234,7 @@ async function reapBackendGroup({
  *
  * Reporting must not itself fail or stall the task — the backend's exit code is
  * the authoritative result — so a sink that rejects *or never settles* degrades
- * to stderr on a deadline. An unbounded await here would reintroduce the hang
- * this plan exists to remove.
+ * to stderr on a deadline.
  */
 async function reportDiagnostic({
 	invocation,
@@ -189,7 +246,7 @@ async function reportDiagnostic({
 	message: string;
 }): Promise<void> {
 	try {
-		const delivered = await Promise.race([
+		const delivered = await settleWithin(
 			invocation
 				.eventSink({
 					type: "driver_diagnostic",
@@ -203,8 +260,8 @@ async function reportDiagnostic({
 					timestamp: new Date().toISOString(),
 				})
 				.then(() => true),
-			delay(DIAGNOSTIC_DEADLINE_MS).then(() => false),
-		]);
+			DIAGNOSTIC_DEADLINE_MS,
+		);
 		if (delivered) return;
 	} catch {
 		// Falls through to stderr below.

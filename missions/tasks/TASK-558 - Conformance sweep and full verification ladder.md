@@ -1,7 +1,7 @@
 ---
 id: TASK-558
 title: Conformance sweep and full verification ladder
-status: To Do
+status: Done
 priority: high
 labels:
   - 'plan:drive-process-reaping'
@@ -9,7 +9,7 @@ dependencies:
   - TASK-556
   - TASK-557
 createdAt: '2026-08-10T18:47:50.219Z'
-updatedAt: '2026-08-10T18:48:02.511Z'
+updatedAt: '2026-08-10T19:48:41.162Z'
 ---
 
 ## Description
