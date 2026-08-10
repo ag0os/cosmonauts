@@ -69,11 +69,18 @@ was spawned `detached: true` and is therefore its own group leader; the driver
 process never belongs to that group. The negation is applied only to a pid this
 code detached — never to an arbitrary pid.
 
-**The two group topologies do not conflict.** Once backends detach into their own
-groups, an abort's group-kill of the runner's group no longer reaches them —
+**The two group topologies do not conflict.** ~~Once backends detach into their
+own groups, an abort's group-kill of the runner's group no longer reaches them —
 which is why the backend must own its own reaping regardless. The step binary
 dying does not orphan the backend, because the backend is reaped by the same
-process that spawned it, before it returns.
+process that spawned it, before it returns.~~
+
+*Superseded by D-006, 2026-08-10.* The second sentence holds only when the runner
+exits **normally**. A *signalled* runner never reaches its own reap, so on every
+detached abort the backend was orphaned — this plan's own defect, relocated to
+the abort path. The runner therefore reaps live backend groups from a termination
+handler (B-006), and INV-1 is bounded by group membership rather than by the
+process tree, since a `setsid()` descendant leaves the group entirely.
 
 **Windows.** Mirror the split `project-tools` already makes
 (`detached: process.platform !== "win32"`): on win32 the backends keep today's
