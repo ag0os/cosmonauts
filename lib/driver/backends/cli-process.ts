@@ -82,9 +82,25 @@ export async function runCliBackendProcess({
 	// full pipe buffer, but do not await the drain until the group is reaped.
 	const stdoutDrain = drainStream(child.stdout);
 	const stderrDrain = drainStream(child.stderr);
+	// A rejection handler has to be attached now, not when the drain is finally
+	// awaited: the gap spans the whole task, and Bun treats an unhandled
+	// rejection as fatal. The real handling still happens at the await.
+	stdoutDrain.text.catch(() => undefined);
+	stderrDrain.text.catch(() => undefined);
 
 	const groupPid = CAN_REAP_PROCESS_GROUP ? child.pid : undefined;
-	registerBackendGroup(groupPid);
+	// A backend can register after shutdown's last empty snapshot — Bun still
+	// returns a subprocess when handed an already-aborted signal. The teardown
+	// loop cannot see it, so it has to reap itself rather than run its task to
+	// completion under a runner that is already dying.
+	const registeredDuringShutdown = registerBackendGroup(groupPid);
+	if (registeredDuringShutdown && groupPid !== undefined) {
+		await reapProcessGroup(groupPid);
+		releaseBackendGroup(groupPid);
+		stdoutDrain.cancel();
+		stderrDrain.cancel();
+		return { exitCode: await child.exited, stdout: "" };
+	}
 
 	try {
 		const exitCode = await child.exited;
@@ -111,8 +127,11 @@ export async function runCliBackendProcess({
 	}
 }
 
-function registerBackendGroup(groupPid: number | undefined): void {
-	if (groupPid !== undefined) activeBackendGroups.add(groupPid);
+/** Reports whether shutdown had already begun when this group registered. */
+function registerBackendGroup(groupPid: number | undefined): boolean {
+	if (groupPid === undefined) return false;
+	activeBackendGroups.add(groupPid);
+	return terminating;
 }
 
 function releaseBackendGroup(groupPid: number | undefined): void {
@@ -140,6 +159,7 @@ export async function reapActiveBackendGroups(
 	terminating = true;
 	const deadline = Date.now() + TEARDOWN_DEADLINE_MS;
 	while (activeBackendGroups.size > 0) {
+		if (Date.now() >= deadline) return;
 		const groups = [...activeBackendGroups];
 		await Promise.all(
 			groups.map(async (pid) => {
@@ -172,8 +192,6 @@ export function isTerminating(): boolean {
  */
 interface StreamDrain {
 	readonly text: Promise<string>;
-	/** Partial text captured so far; meaningful after `cancel()`. */
-	partial(): string;
 	cancel(): void;
 }
 
@@ -183,7 +201,7 @@ function drainStream(source: unknown): StreamDrain {
 		const text = new Response(
 			source as ConstructorParameters<typeof Response>[0],
 		).text();
-		return { text, partial: () => "", cancel: () => undefined };
+		return { text, cancel: () => undefined };
 	}
 
 	const reader = (source as ReadableStream<Uint8Array>).getReader();
@@ -192,18 +210,21 @@ function drainStream(source: unknown): StreamDrain {
 	let cancelled = false;
 
 	const text = (async () => {
-		while (true) {
-			const { done, value } = await reader.read();
-			if (done) break;
-			if (value) captured += decoder.decode(value, { stream: true });
+		try {
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+				if (value) captured += decoder.decode(value, { stream: true });
+			}
+			captured += decoder.decode();
+			return captured;
+		} finally {
+			reader.releaseLock();
 		}
-		captured += decoder.decode();
-		return captured;
 	})();
 
 	return {
 		text,
-		partial: () => captured,
 		cancel: () => {
 			if (cancelled) return;
 			cancelled = true;
@@ -251,9 +272,13 @@ async function drainWithinDeadline({
 		});
 	}
 
-	// Whatever arrived before the deadline is still the child's own output, and
-	// is far more useful to the report parser than an empty string.
-	return stdout.state === "settled" ? stdout.value : stdoutDrain.partial();
+	// Deliberately empty rather than partial. `parseReport` only honours a
+	// *closed* ```json fence, so truncated output drops to the bare
+	// `outcome: <x>` line scan — and a stream cut after an early
+	// "outcome: success" line, but before the fenced failure report that would
+	// have overridden it, parses as a successful task. Empty yields `unknown`,
+	// which fails safe. Preserving output is not worth inventing a success.
+	return stdout.state === "settled" ? stdout.value : "";
 }
 
 type Settled<T> =
@@ -317,6 +342,18 @@ async function reapBackendGroup({
  * the authoritative result — so a sink that rejects *or never settles* degrades
  * to stderr on a deadline.
  */
+/** A sink may throw before returning a promise; that must not fail the task. */
+function invokeSink(
+	invocation: BackendInvocation,
+	event: Parameters<BackendInvocation["eventSink"]>[0],
+): Promise<void> {
+	try {
+		return invocation.eventSink(event);
+	} catch (error) {
+		return Promise.reject(error);
+	}
+}
+
 async function reportDiagnostic({
 	invocation,
 	code,
@@ -327,7 +364,7 @@ async function reportDiagnostic({
 	message: string;
 }): Promise<void> {
 	const delivered = await settleWithin(
-		invocation.eventSink({
+		invokeSink(invocation, {
 			type: "driver_diagnostic",
 			level: "warning",
 			code,

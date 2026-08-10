@@ -3,6 +3,7 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { createCodexBackend } from "../../../lib/driver/backends/codex.ts";
+import { parseReport } from "../../../lib/driver/report-parser.ts";
 import type { DriverEvent } from "../../../lib/driver/types.ts";
 import { useTempDir } from "../../helpers/fs.ts";
 
@@ -84,6 +85,7 @@ async function writeLeakyBackend(
 		holdsPipes: boolean;
 		ignoreSigterm?: boolean;
 		escapesGroup?: boolean;
+		truncatedReport?: boolean;
 	},
 ): Promise<string> {
 	const path = join(binDir, "leaky-backend");
@@ -114,7 +116,10 @@ done
 	// reach it, and it keeps stderr — the case where only cancelling the read lets
 	// this process exit. It signals readiness so the backend cannot exit before
 	// the escape has actually happened, which would make the test vacuous.
-	const escapedDescendant = `python3 -c 'import os,time; os.setsid(); open("${readyPath}","w").write("ready"); time.sleep(60)' >/dev/null &`;
+	// When the truncated-report case runs, the escapee keeps *stdout* so the
+	// backend's half-written report is what the drain times out on.
+	const escapeRedirect = options.truncatedReport ? "" : ">/dev/null";
+	const escapedDescendant = `python3 -c 'import os,time; os.setsid(); open("${readyPath}","w").write("ready"); time.sleep(60)' ${escapeRedirect} &`;
 	const descendant = options.escapesGroup
 		? escapedDescendant
 		: options.ignoreSigterm
@@ -153,6 +158,13 @@ printf '%s\\n' "$$" > "${join(binDir, "..", "backend.pid")}"
 ${descendant}
 printf '%s\\n' "$!" > "${pidPath}"
 ${awaitReady}
+${
+	options.truncatedReport
+		? `printf 'outcome: success\\n'
+printf '\\x60\\x60\\x60json\\n{"outcome":"failure",'
+exit 0`
+		: ""
+}
 printf 'backend-stdout\\n'
 # The codex backend returns the summary file in preference to stdout, so the
 # marker has to appear in both for one assertion to cover both backends.
@@ -236,6 +248,7 @@ async function runHarness(options: {
 	holdsPipes: boolean;
 	ignoreSigterm?: boolean;
 	escapesGroup?: boolean;
+	truncatedReport?: boolean;
 	deadlineMs?: number;
 }): Promise<HarnessOutcome> {
 	const workdir = join(temp.path, `wd-${Math.random().toString(36).slice(2)}`);
@@ -251,6 +264,9 @@ async function runHarness(options: {
 		...(options.escapesGroup === undefined
 			? {}
 			: { escapesGroup: options.escapesGroup }),
+		...(options.truncatedReport === undefined
+			? {}
+			: { truncatedReport: options.truncatedReport }),
 	});
 	const harness = await writeHarness(workdir, options.backendModule);
 
@@ -421,6 +437,31 @@ describe("backend process reaping", { timeout: 30_000 }, () => {
 			`harness process lingered ${outcome.processExitMs}ms: the timed-out pipe read was abandoned rather than cancelled`,
 		).toBeLessThan(10_000);
 		expect(observation.exitCode).toBe(0);
+	});
+
+	// @cosmo-behavior plan:drive-process-reaping#B-008
+	test("does not hand back a truncated report that parses as success", async () => {
+		const outcome = await runHarness({
+			// claude-cli returns stdout directly; codex would substitute its summary
+			// file and hide the defect.
+			backendModule: "claude-cli",
+			holdsPipes: false,
+			escapesGroup: true,
+			truncatedReport: true,
+		});
+
+		expect(outcome.settled).toBe(true);
+		if (!outcome.settled) return;
+		const { observation } = outcome;
+		expect(observation.descendantAliveAtSettle).toBe(true);
+
+		// The child wrote "outcome: success" and then an unterminated ```json
+		// fence carrying a failure. `parseReport` only honours a *closed* fence,
+		// so returning that partial text would drop to the bare outcome-line scan
+		// and report a successful task. Empty fails safe as `unknown`.
+		expect(observation.stdout).toBe("");
+		expect(parseReport(observation.stdout).outcome).not.toBe("success");
+		expect(parseReport(observation.stdout).outcome).toBe("unknown");
 	});
 
 	// @cosmo-behavior plan:drive-process-reaping#B-005

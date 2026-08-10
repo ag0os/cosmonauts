@@ -157,6 +157,15 @@ the test established.*
 - Test: `tests/driver/backends/process-reaping.test.ts` > `exits when a descendant escapes the group still holding a pipe`
 - Marker: `@cosmo-behavior plan:drive-process-reaping#B-007`
 
+### B-008 - A truncated report is never handed back as success
+- Source: AC-005, D-009
+- Context: the stdout drain times out or fails after the child wrote an outcome line but before its fenced report closed
+- Action: the backend returns
+- Expected: the returned stdout is empty rather than partial, so `parseReport` yields `unknown` instead of honouring a stale `outcome: success` line that the unterminated fence would have overridden
+- Seam: `lib/driver/backends/cli-process.ts`
+- Test: `tests/driver/backends/process-reaping.test.ts` > `does not hand back a truncated report that parses as success`
+- Marker: `@cosmo-behavior plan:drive-process-reaping#B-008`
+
 ## Files to Change
 
 - `lib/process/process-group.ts` — new; extracted POSIX primitives plus the
@@ -345,6 +354,30 @@ the test established.*
     sound for the detached runner (a process that is exiting) and is the only
     caller, but `isTerminating` documents that a long-lived host would need a
     reset before calling shutdown.
+  - Decided by: independent review + implementer, amend-on-record, 2026-08-10
+
+- **D-009 - Fail safe over preserving output; cut hardening surface rather than grow it**
+  - Decision: a drain that times out or fails returns **empty**, never partial;
+    a backend that registers after shutdown began reaps itself instead of running
+    its task; the diagnostic sink is guarded against a synchronous throw; the
+    teardown deadline is checked before each pass; drain rejection handlers are
+    attached at creation.
+  - Supersedes: D-008's "whatever arrived before the deadline is returned rather
+    than an empty string". That was wrong and strictly less safe than what it
+    replaced. `parseReport` only honours a *closed* ```json fence, so truncated
+    output falls through to the bare `outcome:` line scan — a stream cut after an
+    early "outcome: success" but before the fenced failure that would have
+    overridden it parses as a **successful task**. Empty yields `unknown`, which
+    fails safe. Negative control: restoring partial output fails B-008.
+  - Why: found by the fourth review, 2026-08-10. Three of its four findings were
+    defects introduced by the previous round's remediation, including the
+    late-registration guard that D-008 dropped when `terminating` was simplified
+    to a boolean.
+  - Standing note: the observed leak is fixed by the group reap, which is covered
+    by negative-controlled tests (B-001/B-002/B-003/B-006). Every review round
+    since has found defects only in the *hardening* around escaped descendants and
+    partial output — a rare path that was never part of the observed bug. This
+    round therefore removes machinery instead of adding it.
   - Decided by: independent review + implementer, amend-on-record, 2026-08-10
 
 - **D-005 - Windows keeps today's behaviour, recorded as a gap**
