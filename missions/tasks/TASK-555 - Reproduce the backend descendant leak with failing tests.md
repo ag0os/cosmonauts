@@ -1,13 +1,13 @@
 ---
 id: TASK-555
 title: Reproduce the backend descendant leak with failing tests
-status: To Do
+status: Done
 priority: high
 labels:
   - 'plan:drive-process-reaping'
 dependencies: []
 createdAt: '2026-08-10T18:47:50.213Z'
-updatedAt: '2026-08-10T18:47:50.213Z'
+updatedAt: '2026-08-10T18:51:47.779Z'
 ---
 
 ## Description
@@ -26,7 +26,6 @@ is real.
 Assert liveness explicitly with a pid check. The old detection channel
 (driver suites blowing vitest's 5000ms default) is retired: a green suite
 is not evidence that nothing leaked.
-
 
 <!-- AC:BEGIN -->
 - [ ] #1 B-001 test: a fake backend binary whose direct child exits 0 after starting a descendant that redirects its stdio and outlives it. Asserts no process in the backend's group is alive once backend.run() settles, and that the returned exitCode is still the direct child's.
