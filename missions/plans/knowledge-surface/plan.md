@@ -2,7 +2,7 @@
 title: 'Knowledge surface: project knowledge for every agent'
 status: active
 createdAt: '2026-08-18T20:03:19.945Z'
-updatedAt: '2026-08-18T20:45:33.576Z'
+updatedAt: '2026-08-18T21:22:54.287Z'
 ---
 
 ## Overview
@@ -21,15 +21,14 @@ OFF. Repo-content migration is ordinary reviewed source content and is not
 gated. This plan does not implement consolidation, working state, episode or
 explicit-save changes, embeddings, retention, or autonomy-host behavior.
 
-**Readiness: human rulings landed 2026-08-18.** D-009 ruled option A (AC-007
-amended: OFF-identity governs the gated runtime surface; content corrections
-permitted). D-010 ruled option B (INV-1/INV-2 and AC-003/AC-005 amended: the
-boundary governs dedicated knowledge/memory tools and framework pathways;
-generic tools and external backends stay documented, trusted project
-capabilities). See the Decision Log and the amended `spec.md`. The plan body
-must now be revised to the selected mechanisms (B-003/B-006/B-008/B-009, Files
-to Change, Quality Contract) and re-reviewed; task creation waits for that
-revision.
+**Readiness: ruling revision complete 2026-08-18.** D-009 ruled option A
+(AC-007 amended: OFF-identity governs the gated runtime surface; content
+corrections permitted). D-010 ruled option B (INV-1/INV-2 and AC-003/AC-005
+amended: the boundary governs dedicated knowledge/memory tools and framework
+pathways; generic tools and external backends stay documented, trusted project
+capabilities). The body now applies both selected mechanisms, Precondition 0 is
+satisfied, and `review-3.md` is this revision's required review record. This
+revision creates no tasks and performs no implementation.
 
 ## Architecture Context
 
@@ -66,10 +65,10 @@ Boundary rules:
 - Current disk is authoritative. Missing roots produce empty results and no
   read-time scaffolding; edits, promotions, and deletions are visible on the
   next retrieval.
-- The literal INV-1/INV-2 boundary applies to every registered agent tool and
-  every agent execution surface unless the human amends it. The plan no longer
-  narrows those terms to “knowledge-specific tools” or `AgentDefinition`
-  sessions (review.md PR-001).
+- Per D-010 option B, INV-1/INV-2 govern dedicated knowledge/memory tools and
+  framework knowledge pathways. Generic project tools and external backends
+  remain trusted, human-supervised, git-reviewed project-file capabilities
+  outside that boundary; documentation, not a sandbox, owns that trust seam.
 
 ## Decision Log
 
@@ -276,7 +275,8 @@ Boundary rules:
 - Source: AC-002
 - Context: a pre-migration inventory freezes all 36 markdown paths/digests, all
   10 bundle headers, and every JSONL record ID and field
-- Action: the migrated corpus and active source/prompt tree are audited
+- Action: the migrated corpus and the unconditionally corrected active
+  source/prompt tree are audited
 - Expected: each source maps one-to-one to the destination and field matrix in
   Design §6, including byte-preserved body content and `planTitle`; no root
   distillation or `.knowledge.jsonl` remains under `memory/`, and no active
@@ -317,25 +317,30 @@ Boundary rules:
 - Test: `tests/cli/session.test.ts` > `enforces one reserved enabled recall across initial switched and spawned loader paths`
 - Marker: `@cosmo-behavior plan:knowledge-surface#B-005`
 
-### B-006 - Every agent and registered tool obeys the single read/write path
+### B-006 - Dedicated knowledge and memory pathways use the shared boundary
 
 - Source: AC-003, AC-005
-- Context: enabled Pi agents use generic read/grep/find/ls/bash/edit/write tools,
-  and Codex/Claude Drive agents run from the project root
-- Action: they attempt direct reads or writes under project/user `knowledge/`
-  and then attempt supported `recall`/proposal operations
-- Expected: direct tool/backend access cannot read or mutate curated knowledge;
-  supported reads and machine proposals succeed only through shared
-  `MemoryStore` adapters, and every agent receives the bounded index plus detail
-  retrieval
-- Seam: Pi built-in tool policy, framework knowledge adapters, and external
-  Drive backend prompt/execution boundary
-- Test: `tests/driver/prompt-template.test.ts` > `prevents Pi and external agents from bypassing MemoryStore knowledge authority`
+- Context: enabled ordinary, Cosmo, agent-memory, and distiller sessions use
+  injected `MemoryStore` spies while shipped documentation describes generic Pi
+  project tools and Codex/Claude Drive backends
+- Action: framework index injection, knowledge and agent-memory recall, the
+  existing `remember` operation, and the dedicated proposal operation run, then
+  the documented trust boundary is audited
+- Expected: every framework knowledge index/detail read calls
+  `MemoryStore.retrieve`, and agent-memory composition uses the shared retrieval
+  combiner; existing `remember` writes authored notes/profiles/playbooks through
+  `MemoryStore.write` to ordinary memory, while a dedicated machine knowledge
+  write calls `MemoryStore.write` and creates only a proposal. Framework adapters
+  perform no direct knowledge-file IO. Documentation states that generic
+  read/grep/find/ls/bash/edit/write tools and external backends can access
+  ordinary project files under human supervision and git review and are not
+  sandboxed by this feature
+- Seam: `lib/extensions/knowledge-surface/`,
+  `lib/extensions/knowledge-context/`,
+  `lib/extensions/knowledge-proposals/`,
+  `domains/shared/extensions/agent-memory/index.ts`, and `docs/memory.md`
+- Test: `tests/extensions/agent-memory.test.ts` > `routes remember recall and knowledge proposals through MemoryStore and documents trusted generic access`
 - Marker: `@cosmo-behavior plan:knowledge-surface#B-006`
-
-*B-006 is ratified behavior but has no approved mechanism until D-010 is ruled;
-its test and implementation seam must be amended to the human-selected route
-before task creation.*
 
 ### B-007 - One provider-visible budget bounds populated and empty contexts
 
@@ -352,31 +357,33 @@ before task creation.*
 - Test: `tests/extensions/architecture-memory.test.ts` > `bounds the final three-surface provider context and emits nothing for an empty surface`
 - Marker: `@cosmo-behavior plan:knowledge-surface#B-007`
 
-### B-008 - The default OFF session surface stays byte-identical
+### B-008 - The default OFF gated surface matches frozen baselines
 
 - Source: AC-007
 - Context: config is absent, false, malformed, or edited during a live OFF
   session for Cosmo, map consumer, extension-free agent, distiller, and a Pi
   package host
 - Action: initial/switch/spawn/package sessions assemble and turns run against
-  frozen pre-plan baselines
-- Expected: effective prompt bytes (including project context), tool schemas,
-  hidden/provider messages, visible results, and extension discovery equal the
-  baseline; no knowledge adapter/store is constructed; a config edit has no
-  effect until explicit session reload
+  frozen pre-plan gated-surface baselines plus the D-009 content-correction
+  allowlist
+- Expected: gated extension discovery, knowledge tool schemas,
+  hidden/provider messages, and visible results or filesystem effects
+  attributable to the gated adapters equal the baseline; every prompt byte
+  outside the permitted distiller-persona, archive-guidance, and
+  project-context/doc pointer corrections equals the baseline; no knowledge
+  adapter/store is constructed; a config edit has no effect until explicit
+  session reload
 - Seam: config/session assembly, package extension discovery, existing memory
-  extensions, distiller prompt, archive guidance, and project context
-- Test: `tests/episodic/pre-w3-disabled-baselines.test.ts` > `preserves pre-knowledge prompts tools contexts package discovery and filesystem effects while off`
+  extensions, distiller prompt, archive guidance, and project context including
+  `AGENTS.md`
+- Test: `tests/episodic/pre-w3-disabled-baselines.test.ts` > `keeps the gated knowledge surface inert off while allowing only the ruled content corrections`
 - Marker: `@cosmo-behavior plan:knowledge-surface#B-008`
-
-*B-008 is ratified behavior but conflicts with B-003/B-009 and live pointer
-updates until D-009 is ruled.*
 
 ### B-009 - Distiller guidance requires distilled OKF proposals
 
 - Source: AC-006
-- Context: the enabled existing distiller receives archived artifacts and only
-  filtered Tier-2 transcript markdown
+- Context: the existing distiller receives archived artifacts and only filtered
+  Tier-2 transcript markdown
 - Action: it follows its active persona and archive-skill contract
 - Expected: both require 3-15 one-concept OKF proposals using only the four
   knowledge types, require writer/source/date, forbid JSONL, embeddings, and
@@ -437,16 +444,29 @@ updates until D-009 is ruled.*
 
 ## Design
 
-### 1. Blocking boundary rulings
+### 1. Ruled runtime and trust boundaries
 
-D-009 and D-010 are preconditions, not risks workers may accept. The plan keeps
-B-003/B-006/B-008/B-009 visible so the exact ratified collision is testable, but
-no task may be authored from them until the human-selected route is written as
-a dated Decision Log amendment. If the human selects a scope amendment, the
-spec/architecture ground must be amended first; the plan then derives from that
-new ground. If the human selects literal enforcement, a separate architecture
-record or explicit expansion of this plan must define a sound portable sandbox
-before implementation.
+D-009 option A partitions OFF verification into two explicit sets. The gated
+runtime surface—knowledge extension discovery, adapter/tool registration,
+retrieval, index/context injection, store construction, and resulting runtime
+or filesystem effects—must match frozen OFF baselines. The only excluded
+content deltas are the ruled corrections to the distiller persona, archive
+guidance, and stale project-context/doc pointers, including `AGENTS.md`; tests
+pin those exact correction regions and fail any additional prompt delta. INV-3
+and AC-006 therefore apply unconditionally while AC-007 still proves that the
+gate adds nothing when OFF.
+
+D-010 option B governs dedicated knowledge/memory tools and framework memory
+pathways. Knowledge index injection, `recall`, agent-memory composition, the
+existing `remember` operation, and the dedicated proposal operation all depend
+inward on `MemoryStore`. `remember` continues to write authored
+notes/profiles/playbooks under ordinary memory; only machine knowledge output
+uses the proposal path outside curated `knowledge/`. Generic Pi project tools
+and external Codex/Claude backends remain unchanged trusted project-file
+capabilities. `docs/memory.md` must state that human supervision and git review,
+not this feature, govern their direct file access. No path-string guard,
+portable sandbox, tool disablement, backend restriction, or prompt-only claim
+of technical enforcement is added.
 
 ### 2. Gate, packaging, and session coordination
 
@@ -569,9 +589,10 @@ refuses non-identical occupants. Proposal frontmatter keeps the intended
 curated resource so human promotion is a reviewed move/copy. A proposal exits
 only by human promotion or rejection/deletion; there is no pending state.
 
-The literal guarantee that generic tools/backends also cannot bypass this store
-remains blocked on D-010; this section does not pretend dedicated-store safety
-solves that larger boundary.
+Per D-010 option B, this store and its adapters own the enforceable dedicated
+knowledge/memory boundary. Generic tools and backends are intentionally not
+wrapped or filtered; their trusted direct project-file access is documented and
+is not represented as store-enforced safety.
 
 ### 5. Recall and combined context
 
@@ -645,8 +666,8 @@ compatibility reader/writer remains.
 
 ### 7. Distiller and backfill
 
-The extraction agent remains `bundled/coding/agents/distiller.ts`. Subject to
-D-009, its active persona and archive guidance require 3-15 synthesized,
+The extraction agent remains `bundled/coding/agents/distiller.ts`. Its active
+persona and archive guidance unconditionally require 3-15 synthesized,
 one-concept proposals and prohibit raw transcript excerpts, file contents,
 command output, embeddings, and JSONL.
 
@@ -663,7 +684,7 @@ The currently verified result is 19 slugs:
 `orchestration-hardening`, `orchestration-surface-consolidation`,
 `package-system`, `quality-contracts`, `roadmap-system`, `ruby-rails-skills`.
 
-Explicit trusted procedure after D-009/D-010 are resolved:
+Explicit trusted procedure under the D-009/D-010 rulings:
 
 1. record `.cosmonauts/config.json` bytes and digest;
 2. temporarily enable the surface for the developer-controlled repository;
@@ -689,14 +710,15 @@ is absent evidence, not a clean baseline; Quality Contract rows remain degraded.
 Pi 0.80.6 supplies `DefaultResourceLoader`, factory registration,
 `before_agent_start`, context transforms, real loader tool maps, and the
 cross-extension API object used for per-session coordination. The design reuses
-those seams and adds no custom session runtime or registry. D-010 remains open
-because Pi does not supply a portable filesystem sandbox that makes generic
-shell/file tools incapable of bypassing ordinary markdown paths.
+those seams and adds no custom session runtime or registry. Per D-010 option B,
+Pi's lack of a portable generic filesystem sandbox requires no replacement
+mechanism in this plan: generic tools and external backends remain the
+documented trust boundary.
 
 ## Files to Change
 
-The list below covers settled design. D-009/D-010 may add or remove files only
-after their human amendments; workers must not infer those deltas.
+The list below applies the selected D-009 option A and D-010 option B mechanisms;
+workers must not infer sandbox, tool-disablement, or additional prompt changes.
 
 - `tests/config/loader.test.ts` ↔ `lib/config/types.ts`,
   `lib/config/loader.ts`, `lib/config/index.ts` — literal-true/default-OFF gate.
@@ -723,8 +745,10 @@ after their human amendments; workers must not infer those deltas.
   `lib/memory/multi-store-retrieval.ts`, and new
   `lib/memory/injection-budget.ts` — record/store/proposal/retrieval/budget core.
 - `tests/episodic/pre-w3-disabled-baselines.test.ts` ↔ all config/session/
-  extension/distiller/project-context seams — freeze effective OFF prompts,
-  tools, contexts, package discovery, config-edit behavior, and filesystem.
+  extension/distiller/project-context seams — freeze OFF adapter discovery,
+  tools, retrieval, contexts, store construction, gated-adapter-attributable
+  runtime/filesystem effects, and all prompt bytes outside the exact D-009
+  correction allowlist.
 - New `tests/fixtures/knowledge-seed-inventory.json`, existing `memory/*.md`,
   existing `memory/*.knowledge.jsonl`, and new `knowledge/` — complete audited
   field migration.
@@ -734,44 +758,54 @@ after their human amendments; workers must not infer those deltas.
 - `tests/prompts/archive-skill.test.ts` ↔
   `bundled/coding/prompts/distiller.md`,
   `bundled/coding/agents/distiller.ts`, and
-  `domains/shared/skills/archive/SKILL.md` — only after D-009 amendment.
+  `domains/shared/skills/archive/SKILL.md` — unconditional OKF proposal guidance
+  and legacy JSONL retirement per D-009 option A.
 - `tests/prompts/archive-skill.test.ts` ↔ new
   `memory/agent/proposals/` backfill records/review index — 3-15 per derived
   slug plus human review evidence.
 - `tests/tasks/file-system.test.ts`, `tests/cli/scaffold/subcommand.test.ts`, and
   `tests/plans/archive.test.ts` ↔ `lib/tasks/file-system.ts`,
   `cli/scaffold/commands/missions.ts`, `lib/plans/archive.ts`, and
-  `domains/shared/extensions/plans/index.ts` — project layout/proposal readiness;
-  any agent-visible OFF output change is subject to D-009.
+  `domains/shared/extensions/plans/index.ts` — project layout/proposal readiness
+  plus permitted live project-context correction.
 - `tests/prompts/archive-skill.test.ts` ↔ `docs/memory.md`, `README.md`,
-  `ROADMAP.md`, `domains/shared/skills/roadmap/SKILL.md`,
+  `ROADMAP.md`, `AGENTS.md`, `domains/shared/skills/roadmap/SKILL.md`,
   `docs/designs/cosmo-ambient-assistant.md`, and permitted live cross-links in
   `missions/architecture/knowledge-and-memory.md` and
-  `missions/architecture/code-structure-map.md` — update stale live pointers.
-  `AGENTS.md` is not changed without the D-009 human amendment because Pi injects
-  it into OFF sessions.
-- `tests/driver/prompt-template.test.ts` and external-backend source files —
-  deliberately unspecified until D-010 selects amendment, sandbox, or disable
-  semantics; no worker may add a direct-filesystem fallback.
+  `missions/architecture/code-structure-map.md` — update stale live pointers
+  and document the ruled knowledge/trust surface. D-009 option A permits the
+  corresponding project-context/doc corrections.
+- `tests/extensions/agent-memory.test.ts` ↔ the explicit framework knowledge
+  adapters, `domains/shared/extensions/agent-memory/index.ts`, and
+  `docs/memory.md` — prove knowledge/memory reads, existing `remember` writes,
+  and dedicated proposal writes use `MemoryStore`, with only machine knowledge
+  output restricted to proposals; document generic Pi project tools and
+  Codex/Claude backends as trusted, human-supervised, git-reviewed access
+  outside INV-1/INV-2. Generic tool and external-backend source files are
+  unchanged; no sandbox or disable mechanism is added.
 - `fallow.toml` — declare only the new explicit framework extension entry
   points as dynamically loaded; add no suppression for core exports.
 
 ## Risks
 
-- **R-001 — Ratified prompt collision (blocking/high).** D-009. No code/tasks
-  until human ruling, spec/plan amendment, and re-review. `review.md PR-002`.
-- **R-002 — Ratified all-tool/all-agent collision (blocking/high).** D-010. A
-  dedicated store cannot constrain generic shell/file tools or external YOLO
-  backends. No path-string approximation or silent narrowing is allowed.
-  `review.md PR-001`.
+- **R-001 — OFF-baseline scope drift (medium).** D-009 option A resolves the
+  former blocking prompt collision. The remaining risk is allowing an
+  unapproved prompt delta or accidentally exempting gated runtime output; the
+  frozen gated-surface baseline plus exact correction allowlist must fail both.
+  `review.md PR-002`.
+- **R-002 — Governed/trusted boundary confusion (high).** D-010 option B
+  resolves the former blocking all-tool/all-agent collision. Dedicated tools
+  and framework pathways must still use `MemoryStore`, while documentation must
+  state that generic tools and external backends are trusted and not sandboxed;
+  neither side may be represented as the other. `review.md PR-001`.
 - **R-003 — Migration completeness/semantics (high).** Missing fields or
   synthesized body changes fail AC-002. The full matrix and frozen hashes/IDs
   mitigate. Stop if a source cannot map without changing meaning; do not add a
   fifth type or consolidate. `review.md PR-006`.
 - **R-004 — Proposal path escape (high).** Project-controlled symlinks could
   redirect a naive write. Realpath/non-symlink ancestor validation, exclusive
-  atomic creation, and negative tests are mandatory. Generic-tool bypass remains
-  D-010 rather than being mislabeled solved.
+  atomic creation, and negative tests are mandatory. Generic-tool edits are the
+  documented D-010 option B trust boundary, not a proposal-store escape defect.
 - **R-005 — Duplicate tools/double injection (medium).** Explicit adapter
   placement, reserved recall, one WeakMap policy, absent-policy legacy behavior,
   and provider-visible tests own this. `review.md PR-003/PR-004/PR-007`.
@@ -794,41 +828,49 @@ Plan-specific assertions:
 2. Proposal traversal, absolute resource, missing provenance, wrong scope/type,
    symlink ancestor, collision, and interrupted-write mutations create neither
    curated nor partial files (B-002).
-3. Initial CLI, switch, spawn, and package-host fixtures prove final tools and
-   effective prompts: one reserved recall when enabled; no gated adapter/tool or
-   byte change when OFF (B-005/B-008/B-012, subject to D-009).
+3. Initial CLI, switch, spawn, and package-host fixtures prove one reserved
+   recall when enabled and an inert gated runtime when OFF: no gated discovery,
+   tool, retrieval, context, store, or gated-adapter-attributable filesystem
+   effect. Prompt bytes outside the exact distiller/archive/project-context
+   correction allowlist remain identical (B-005/B-008/B-012).
 4. Final provider-visible three-surface context, after every handler, is at most
    24,000 UTF-8 bytes; oversized bodies are absent and empty stores emit nothing
    (B-007).
-5. Direct generic Pi and external-backend read/write attempts are covered by a
-   human-approved D-010 mechanism; dedicated-tool tests alone cannot satisfy
-   INV-1/INV-2 (B-006).
+5. Executable extension tests invoke the existing `remember`, framework
+   knowledge/agent-memory recall and index paths, and the dedicated proposal
+   operation. Every path calls the shared `MemoryStore` seam; `remember` keeps
+   authored notes/profiles/playbooks in ordinary memory, while machine knowledge
+   output creates only proposals. Shipped documentation explicitly identifies
+   generic project tools and external backends as trusted, human-supervised,
+   git-reviewed access outside that technical boundary and promises no sandbox
+   (B-006).
 6. Backfill completeness is computed from repository archive directories, each
    slug yields 3-15 proposals, config restores on failure/cancellation, and
    human no-verbatim approval is recorded before acceptance (B-010).
 7. Static checks find no active JSONL writer/instruction, embeddings,
    consolidation, working state, episode/explicit-save change, retention, or
-   default-ON setting after D-009 is resolved.
+   default-ON setting.
 
 | Order | Gate kind | Tier | Binding state | Threshold | Protocol | Degradation / notes |
 |---:|---|---|---|---|---|---|
-| 1 | `correctness` | universal | bound | All behavior tests plus project-native test, lint, and type-check evidence pass | project-discovered | hard fail; D-009/D-010 first |
+| 1 | `correctness` | universal | bound | All behavior tests plus project-native test, lint, and type-check evidence pass | project-discovered | hard fail |
 | 2 | `artifact-conformance` | universal | bound | All 12 behavior entries resolve to existing test files with exact markers | artifact evidence | hard fail |
-| 3 | `mutation` | bindable | unbound | Path authority, migration, budget, OFF identity, backfill, and all-tool bypass negative cases survive realistic faults | pending | unbound globally; named negatives mandatory, reviewer judgment required |
+| 3 | `mutation` | bindable | unbound | Path authority, migration, budget, OFF gated-surface identity, correction-allowlist, backfill, and dedicated-path bypass negative cases survive realistic faults | pending | unbound globally; named negatives mandatory, reviewer judgment required |
 | 4 | `duplication` | bindable | unbound | One knowledge parser/store/retrieval combiner/budget allocator/session policy | pending | execution not consented; reviewer judgment required |
 | 5 | `complexity` | bindable | unbound | Store, allocator, policy, and adapters stay focused | pending | execution not consented; reviewer judgment required |
-| 6 | `boundary-conformance` | bindable | unbound | `lib/memory/` stays Pi/config/domain independent and the human-approved D-010 boundary is enforced | pending | execution not consented; reviewer judgment required |
+| 6 | `boundary-conformance` | bindable | unbound | `lib/memory/` stays Pi/config/domain independent; dedicated/framework pathways enforce D-010 option B and generic/external trust remains documentation-only | pending | execution not consented; reviewer judgment required |
 | 7 | `dead-code` | bindable | unbound | JSONL API/types/tests are removed and explicit extension entries are reachable | pending | execution not consented; reviewer judgment required |
 
 ## Implementation Order
 
-**Precondition 0 — human rulings.** Halt for D-009 and D-010. Amend ratified
-spec/architecture ground where applicable; add dated decisions with exact
-supersession pointers; revise B-003/B-006/B-008/B-009, Files to Change, and
-Quality Contract to the selected mechanisms; run a new plan-review round. No
-tasks or implementation before this exit.
+**Precondition 0 — human rulings (satisfied 2026-08-18).** D-009 option A and
+D-010 option B are recorded verbatim in the Decision Log, their amended spec
+letters carry supersession markers, and this revision applies the selected
+mechanisms to B-003/B-006/B-008/B-009, design, files, risks, quality gates, and
+implementation instructions. `review-3.md` records the required new review
+round. No task or implementation is part of this revision.
 
-After that amendment:
+Implementation stages remain:
 
 1. **Characterize and freeze (B-003, B-008, B-012).** Capture effective prompts,
    real final tools, package discovery, current files, config behavior, seed
@@ -843,11 +885,12 @@ After that amendment:
    disk-only truth.
 4. **Recall and combined context (B-004-B-007).** Add shared result composition,
    knowledge recall, known agent-memory composition, metadata-only index, and
-   final provider-visible allocator in that order. Apply the D-010 mechanism at
-   every generic/external seam before claiming B-006.
-5. **Distiller/proposal adaptation (B-002, B-009).** Apply D-009 exactly; test
-   active guidance and tool authority before changing output. Do not implement
-   consolidation or a second extractor.
+   final provider-visible allocator in that order. Apply D-010 option B at every
+   dedicated/framework seam and document the generic/external trust boundary
+   before claiming B-006; add no sandbox or tool/backend restriction.
+5. **Distiller/proposal adaptation (B-002, B-009).** Apply D-009 option A
+   unconditionally; test active guidance and tool authority before changing
+   output. Do not implement consolidation or a second extractor.
 6. **Atomic migration/retirement (B-003).** Generate and validate all
    destinations against the field matrix; update human-approved live pointers;
    then remove all 46 legacy files and session JSONL API/types/tests in the same
@@ -856,14 +899,14 @@ After that amendment:
    procedure, validate 3-15 per repository-derived slug, restore config on every
    exit, and halt for human no-verbatim diff approval. Do not promote.
 8. **Layout/docs (B-001, B-011).** Add only the scaffold/archive and pointer
-   changes allowed by D-009, keep user-home reads non-scaffolding, and keep repo
-   gate OFF.
+   changes permitted by D-009 option A, keep user-home reads non-scaffolding,
+   document the D-010 option B trust boundary, and keep the repo gate OFF.
 9. **Integrated refactor/gates (B-001-B-012).** Run correctness and artifact
    conformance, manually inspect unbound structural gates, and verify every
    exclusion. Stop/amend rather than adding consolidation, embeddings, cache
-   correctness state, retention, working state, or unapproved sandbox/backend
-   semantics.
+   correctness state, retention, working state, sandboxing, or backend/tool
+   restrictions.
 
-Candidate task slices after rulings are stages 1-2, 3, 4, 5, 6, 7, 8, and 9
-(eight tasks). Each worker owns named behaviors and runs RED → GREEN → REFACTOR;
-no stage batches tests after implementation.
+Candidate task slices remain stages 1-2, 3, 4, 5, 6, 7, 8, and 9 (eight tasks).
+Each worker owns named behaviors and runs RED → GREEN → REFACTOR; no stage
+batches tests after implementation.
