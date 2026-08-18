@@ -33,7 +33,8 @@ result-checks, the executive assistant, and the ambient terminal assistant.
   dreaming/periodic *within* a run) → child/detached → **daemon** (survives
   restarts, durable state — required for true always-on).
 - **Durable wake-state:** what it remembers across wakes + restarts **is the
-  episodic log** — reuse agent-memory, don't invent a second store.
+  episodic log** — reuse the memory system's log (`knowledge-and-memory.md`),
+  don't invent a second store.
 - **Wake handler:** runs a payload (spawn / chain / Drive / consolidation job).
   Cost-efficient: **skip empty cycles, dedup, silent-ack** (the `heartbeat` value).
 - **Declaration model:** agents/domains *declare* their triggers (in the agent
@@ -70,8 +71,11 @@ the always-on angle. Two daemons would be the duplication to avoid.
 > **W1 picked up 2026-07-17** as the active spec-ready plan
 > `missions/plans/autonomy-host/` (with `episodic-log` as the wake-state
 > dependency and `memory-consolidation` as the first payload), per the
-> agent-memory ◆reassess decision: in-process host, config-gated off by
-> default. W2+ remain unprioritized.
+> memory-track ◆reassess decision: in-process host, config-gated off by
+> default. W2+ remain unprioritized. **Resequenced 2026-08-18** (ratified,
+> `knowledge-and-memory.md` §10): the host now queues behind the
+> knowledge-surface plan and the reframed `memory-consolidation` — by the time
+> it runs, it has a payload worth scheduling.
 
 - **W1 — Scheduling/lifecycle substrate (Layer A)** *(active slice → `autonomy`)*.
   Trigger types + in-process host + durable wake-state (episodic) + cost-efficient
@@ -98,9 +102,9 @@ the always-on angle. Two daemons would be the duplication to avoid.
 
 - **↔ Orchestration:** shared daemon / `scheduler-form` / `durable-coordinator-loops`.
   Decide one host (lean: same process).
-- **↔ Memory:** the episodic log is the autonomy audit trail **and** agent-memory's
-  episodic facet **and** the wake-state — one log, three roles. "Dreaming" (memory
-  W4) is the first payload.
+- **↔ Memory:** the episodic log is the autonomy audit trail **and** the memory
+  system's episodic facet (`knowledge-and-memory.md`) **and** the wake-state —
+  one log, three roles. "Dreaming" (memory W4) is the first payload.
 - **↔ `agent-messaging`** (own roadmap item, cross-linked): push comms for EA
   real-time + orchestration coordinator loops.
 - **Pi-First:** audit Pi session-state / `pi.appendEntry()` / pi-skills + any
@@ -125,5 +129,6 @@ the always-on angle. Two daemons would be the duplication to avoid.
   spec.
 - **Shares host/store** with `orchestration-future.md` (`scheduler-form`,
   `durable-coordinator-loops`).
-- **Cross-links (not absorbed):** `agent-messaging` (shared substrate);
-  agent-memory's episodic facet (the log); "dreaming" (memory W4 payload).
+- **Cross-links (not absorbed):** `agent-messaging` (shared substrate); the
+  memory system's episodic facet (the log — `knowledge-and-memory.md`);
+  "dreaming" (memory W4 payload).
