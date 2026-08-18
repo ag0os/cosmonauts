@@ -333,12 +333,14 @@ ratified; IDs are provisional and deliberately not `INV-###`.
 - **C-3 — Nothing is pruned that is not already durably represented**, and only
   when its bytes are unchanged since the run read them.
 - **C-4 — Every machine write is visible and attributable** — provenance in the
-  record, project-scope results reviewable as a diff.
+  record, project-scope results reviewable as a diff. *(Promoted →
+  `knowledge-surface` INV-6, human-ratified 2026-08-18.)*
 - **C-5 — Consolidation output is lossy by design.** One record per input is a
   failure, not a success.
 - **C-6 — Knowledge records are distilled, never verbatim.** Transcripts contain
   raw file contents and command output, plausibly secrets; knowledge is
   git-tracked. Verbatim excerpting is an exfiltration path with a friendly name.
+  *(Promoted → `knowledge-surface` INV-5, human-ratified 2026-08-18.)*
 - **C-7 — The always-on cost of memory does not grow with the size of the log.**
   Episodes are never injected and never indexed.
 - **C-8 — Consolidation may propose memory; it may never produce product.**
