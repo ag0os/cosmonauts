@@ -32,14 +32,31 @@ without the always-on cost growing with the size of the corpus.
 Invariants — mechanism yields to these. INV-1 through INV-4 carry ground the
 human ratified 2026-08-18 in `knowledge-and-memory.md` §11; INV-5 and INV-6
 promote candidates C-6 and C-4 from its §9, ratified for this plan 2026-08-18.
+INV-1 and INV-2 were amended 2026-08-18 by the human's D-010 ruling (plan
+Decision Log): they govern the memory system's own surfaces, not generic
+project tools.
 
-- INV-1 — Write authority is narrow and enforced by path: no agent tool writes
-  inside `knowledge/`. Machine-produced knowledge lands outside `knowledge/`
-  as proposals; content enters `knowledge/` only through a human act — direct
-  edit, or reviewed promotion.
-- INV-2 — Read is wide and single-pathed: every agent reaches knowledge
-  through the shared memory interface (`write`/`retrieve`/`consolidate`).
-  No second retrieval path.
+- INV-1 — Write authority is narrow and enforced by path: no dedicated
+  knowledge or memory tool, and no framework memory pathway, writes inside
+  `knowledge/`. Machine-produced knowledge lands outside `knowledge/` as
+  proposals; content enters `knowledge/` through a human act — direct edit or
+  reviewed promotion. General-purpose project tools (file edit, shell) and
+  external backends remain trusted, human-supervised, git-reviewed
+  project-file capabilities outside this invariant's scope; that trust
+  boundary is documented, not sandboxed.
+  *(Amended 2026-08-18 by human ruling D-010; original letter — "no agent
+  tool writes inside `knowledge/`" — superseded: literally enforcing it
+  against generic shell/file tools requires a sound portable sandbox, which
+  is rejected architecture for this plan.)*
+- INV-2 — Read is wide and single-pathed at the framework level: the
+  knowledge retrieval feature (index, `recall`, injection) reaches every
+  agent through the shared memory interface
+  (`write`/`retrieve`/`consolidate`); no second framework retrieval path.
+  Generic file access by trusted project tools is not a retrieval path and is
+  outside this invariant's scope.
+  *(Amended 2026-08-18 by human ruling D-010; original letter — "every agent
+  reaches knowledge through the shared memory interface … no second
+  retrieval path" — superseded for the same reason as INV-1.)*
 - INV-3 — One format: knowledge records are OKF v0.1 markdown with the
   `decision | trade-off | gotcha | convention` type vocabulary. After
   migration, nothing writes `.knowledge.jsonl`.
@@ -116,20 +133,32 @@ the surface (including for this repo) is a separate adoption decision.
   JSONL read/write path is removed.
 - [ ] AC-003 — With the gate enabled, every agent can retrieve knowledge
   through the shared memory interface (scope, then recency, then explicit
-  `recall`), covered by tests; no retrieval path exists outside the interface.
+  `recall`), covered by tests; no framework retrieval path exists outside the
+  interface. *(Amended 2026-08-18 by human ruling D-010; original letter said
+  "no retrieval path" — superseded.)*
 - [ ] AC-004 — With the gate enabled, a compact knowledge index is injected
   inside a reassessed combined per-turn budget spanning all three injected
   surfaces (memory index, architecture map, knowledge index); the bound is
   documented and enforced; an oversized corpus degrades by omitting detail,
   never by unbounded injection.
-- [ ] AC-005 — No registered agent tool writes inside `knowledge/`;
-  machine-produced records land as proposals outside it; both pinned by tests.
+- [ ] AC-005 — No dedicated knowledge/memory tool writes inside `knowledge/`;
+  machine-produced records land as proposals outside it; both pinned by
+  tests. The trust boundary for generic project tools and external backends
+  is documented. *(Amended 2026-08-18 by human ruling D-010; original letter
+  said "no registered agent tool" — superseded.)*
 - [ ] AC-006 — Archived plans lacking a distillation are enumerated and a
   backfill run produces OKF proposal records for each; the distiller's output
   format is OKF proposals, not JSONL.
-- [ ] AC-007 — With the gate off (the default), agent-visible behavior is
-  identical to before this plan: no injection, no new tools, byte-identical
-  prompts.
+- [ ] AC-007 — With the gate off (the default), the gated runtime surface is
+  inert: no knowledge injection, no knowledge tools or retrieval, no gated
+  extension discovered — pinned against frozen baselines. Content corrections
+  shipped by this plan — the distiller persona and archive guidance emitting
+  OKF proposals instead of JSONL, and stale pointer updates in project
+  context and docs — are explicitly permitted, ordinary reviewed repo changes
+  even though they alter prompt bytes. *(Amended 2026-08-18 by human ruling
+  D-009; original letter — "byte-identical prompts" — superseded: it
+  collided with INV-3/AC-006, since the same prompt cannot be byte-frozen
+  and simultaneously stop instructing JSONL.)*
 - [ ] AC-008 — Project gates pass (the test, lint, and type-check steps);
   shipped skills and prompts remain stack-agnostic; `docs/memory.md` and
   affected pointers document the knowledge surface.
