@@ -22,4 +22,5 @@ D-014 requires one existing coding extraction mechanism; D-022 is the recorded d
 - [ ] #1 Current repository and `DomainResolver` evidence establishes the single installed coding distiller and its prompt/test ownership immediately before Stage 5 starts.
 - [ ] #2 When `bundled/coding/` still owns the distiller, the Stage 5 handoff names that existing location; when `coding-extraction` has landed, implementation remains stopped until D-022 is applied on the record to the resolved installed-domain paths.
 - [ ] #3 The precondition introduces no duplicate distiller, framework extraction path, consolidation mechanism, source implementation, or shipped prompt/skill change.
+- [ ] #4 The resolved location and its evidence (paths checked, `DomainResolver` output) are recorded as a dated confirmation note appended to this task file — or as the D-022 on-record plan amendment when extraction has landed — before TASK-563 starts; without that record this task is not complete.
 <!-- AC:END -->
