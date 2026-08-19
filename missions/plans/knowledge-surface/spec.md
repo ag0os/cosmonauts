@@ -50,13 +50,17 @@ project tools.
   is rejected architecture for this plan.)*
 - INV-2 — Read is wide and single-pathed at the framework level: the
   knowledge retrieval feature (index, `recall`, injection) reaches every
-  agent through the shared memory interface
+  agent in a cosmonauts-assembled session through the shared memory interface
   (`write`/`retrieve`/`consolidate`); no second framework retrieval path.
   Generic file access by trusted project tools is not a retrieval path and is
   outside this invariant's scope.
   *(Amended 2026-08-18 by human ruling D-010; original letter — "every agent
   reaches knowledge through the shared memory interface … no second
   retrieval path" — superseded for the same reason as INV-1.)*
+  *(Scope amended 2026-08-19 by human ruling D-015: "every agent" means every
+  agent in a cosmonauts-assembled session. A bare Pi package host loading the
+  npm package without cosmonauts session assembly is out of scope for the
+  enabled surface and must remain inert while the gate is off.)*
 - INV-3 — One format: knowledge records are OKF v0.1 markdown with the
   `decision | trade-off | gotcha | convention` type vocabulary. After
   migration, nothing writes `.knowledge.jsonl`.
@@ -131,11 +135,14 @@ the surface (including for this repo) is a separate adoption decision.
   distillation and every record in the 10 `.knowledge.jsonl` bundles is
   represented as an OKF knowledge record with provenance preserved, and the
   JSONL read/write path is removed.
-- [ ] AC-003 — With the gate enabled, every agent can retrieve knowledge
-  through the shared memory interface (scope, then recency, then explicit
-  `recall`), covered by tests; no framework retrieval path exists outside the
-  interface. *(Amended 2026-08-18 by human ruling D-010; original letter said
-  "no retrieval path" — superseded.)*
+- [ ] AC-003 — With the gate enabled, every agent in a cosmonauts-assembled
+  session can retrieve knowledge through the shared memory interface (scope,
+  then recency, then explicit `recall`), covered by tests; no framework
+  retrieval path exists outside the interface. *(Amended 2026-08-18 by human
+  ruling D-010; original letter said "no retrieval path" — superseded.
+  Scope amended 2026-08-19 by human ruling D-015: "every agent" means every
+  agent in a cosmonauts-assembled session; bare Pi package hosts are out of
+  scope and stay inert while the gate is off.)*
 - [ ] AC-004 — With the gate enabled, a compact knowledge index is injected
   inside a reassessed combined per-turn budget spanning all three injected
   surfaces (memory index, architecture map, knowledge index); the bound is

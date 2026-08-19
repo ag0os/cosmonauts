@@ -234,6 +234,37 @@ Boundary rules:
     extraction; moving it would create a parallel path before a second domain
     proves the need.
   - Decided by: planner-proposed, 2026-08-18.
+- **D-015 — RULED: "every agent" scopes to cosmonauts-assembled sessions.**
+  - Decision: spec INV-2 and AC-003 are scope-amended in `spec.md` (marked in
+    place). The enabled knowledge surface — index, `recall`, injection —
+    reaches every agent in a cosmonauts-assembled session. A bare Pi package
+    host that loads this npm package without cosmonauts session assembly is
+    out of scope for the enabled surface and must remain inert while the gate
+    is off (B-012 stands); this out-of-scope status is a documentation
+    obligation.
+  - Alternatives: design and test an enabled package-host loading path —
+    rejected: it requires auto-loaded, config-reading adapters under the
+    package root, exactly the uncontrolled-registration shape D-008 exists to
+    avoid; supporting external harnesses is not this plan's goal.
+  - Why: resolves `review-4.md PR-002` — the ratified "every agent" letter
+    could not be satisfied for hosts that never call `buildSessionParams`.
+  - Supersedes: the unscoped "every agent" letters of INV-2/AC-003.
+  - Decided by: human, 2026-08-19.
+- **D-016 — RULED: the supervised backfill's temporary gate enablement is
+  ratified.**
+  - Decision: D-013's mechanism — temporarily enabling the gate in this
+    repository for the backfill batch, restoring `.cosmonauts/config.json`
+    byte-for-byte in a `finally` path, and halting for human diff review —
+    is blessed as compatible with the spec's "enabling the surface is a
+    separate adoption decision" letter. D-013's authority upgrades from
+    planner-proposed to human-ratified for this mechanism.
+  - Alternatives: a gateless backfill writing proposals through trusted
+    generic tools — rejected: it bypasses the dedicated proposal-tool seam
+    the backfill exists to exercise and validate.
+  - Why: resolves the adversarial-review finding SF-2 (PARTIAL) — temporary
+    supervised enablement was decided on planner authority while touching a
+    ratified default-state declaration.
+  - Decided by: human, 2026-08-19.
 
 ## Behaviors
 
