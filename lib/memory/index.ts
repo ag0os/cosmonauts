@@ -26,6 +26,12 @@ export {
 	parseEpisodeTagEnvelope,
 } from "./episodic-records.ts";
 export {
+	allocateInjectionBudget,
+	type InjectionAllocation,
+	type InjectionBudgetResult,
+	type InjectionSection,
+} from "./injection-budget.ts";
+export {
 	type DerivedKnowledgeProposalIdentity,
 	deriveKnowledgeProposalIdentity,
 	KNOWLEDGE_RECORD_TYPES,
@@ -39,6 +45,11 @@ export {
 } from "./knowledge-store.ts";
 export type { MarkdownMemoryStoreOptions } from "./markdown-store.ts";
 export { createMarkdownMemoryStore } from "./markdown-store.ts";
+export {
+	type CombinedMemoryRetrieveResult,
+	combineMemoryRetrieval,
+	type MemoryRetrievalRequest,
+} from "./multi-store-retrieval.ts";
 export {
 	type KnowledgeProposalIdentity,
 	MEMORY_KINDS,

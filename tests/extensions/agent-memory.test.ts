@@ -9,6 +9,8 @@ import {
 	createAgentMemoryExtension,
 } from "../../domains/shared/extensions/agent-memory/index.ts";
 import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
+import { writeKnowledgeProposalThroughStore } from "../../lib/extensions/knowledge-surface/knowledge-tools.ts";
+import { createKnowledgeSurfaceSessionExtension } from "../../lib/extensions/knowledge-surface/session-extension.ts";
 import {
 	createEpisodeRecord,
 	createMarkdownMemoryStore,
@@ -2494,11 +2496,233 @@ describe("agent-memory extension", () => {
 		expect(result.message.content).toContain("Use recall(query)");
 		expect(result.message.content).not.toContain("�");
 	});
+
+	test("routes authorized remember and all knowledge paths through MemoryStore without widening legacy authority @cosmo-behavior plan:knowledge-surface#B-006", async () => {
+		const projectRoot = join(tmp.path, "knowledge-boundary-project");
+		const userRoot = join(tmp.path, "knowledge-boundary-user");
+		const matchingProfile = record({
+			type: "profile",
+			scope: "user",
+			title: "User profile",
+			description: "Durable profile.",
+			resource: "memory/agent/profile.md",
+			path: join(userRoot, "memory", "agent", "profile.md"),
+			timestamp: "2026-07-01T00:00:00.000Z",
+			content: "PROFILE_PIN_SURVIVES_NEWER_KNOWLEDGE",
+		});
+		const knowledgeRecords = Array.from({ length: 6 }, (_, index) =>
+			record({
+				type: "decision",
+				title: `Boundary decision ${index}`,
+				description: "shared-boundary match",
+				resource: `knowledge/boundary-${index}.md`,
+				path: join(projectRoot, "knowledge", `boundary-${index}.md`),
+				timestamp: new Date(Date.UTC(2026, 7, 1, 0, 0, index)).toISOString(),
+				content: `Knowledge detail ${index}`,
+			}),
+		);
+		const authoredWrite = vi.fn<MemoryStore["write"]>(async (draft) => ({
+			kind: "written",
+			path: join(projectRoot, "memory", "agent", "notes", "remembered.md"),
+			record: record({
+				type: draft.type,
+				scope: draft.scope,
+				kind: draft.kind,
+				title: draft.title,
+				description: draft.description,
+				content: draft.content,
+				tags: draft.tags,
+			}),
+		}));
+		const authoredRetrieve = vi.fn<MemoryStore["retrieve"]>(async () => ({
+			records: [matchingProfile],
+			searchedScopes: ["project", "user"],
+			skippedScopes: [],
+			warnings: [],
+			stats: { filesScanned: 1, bytesRead: 111, durationMs: 3 },
+		}));
+		const knowledgeWrite = vi.fn<MemoryStore["write"]>(async (draft) => ({
+			kind: "written",
+			path: join(projectRoot, "memory", "agent", "proposals", "plan", "p.md"),
+			record: record({
+				type: draft.type,
+				title: draft.title,
+				description: draft.description,
+				content: draft.content,
+				resource: draft.resource ?? "knowledge/plan/p.md",
+			}),
+		}));
+		const knowledgeRetrieve = vi.fn<MemoryStore["retrieve"]>(async () => ({
+			records: knowledgeRecords,
+			searchedScopes: ["project", "user"],
+			skippedScopes: [],
+			warnings: [],
+			stats: { filesScanned: 6, bytesRead: 666, durationMs: 4 },
+		}));
+		const authoredStore = memoryStore({
+			write: authoredWrite,
+			retrieve: authoredRetrieve,
+		});
+		const knowledgeStore = memoryStore({
+			write: knowledgeWrite,
+			retrieve: knowledgeRetrieve,
+		});
+		const createAuthoredStore = vi.fn(() => authoredStore);
+		const createKnowledgeStore = vi.fn(() => knowledgeStore);
+		const pi = createMockPi({ cwd: projectRoot });
+		installKnowledgeSurface(pi, {
+			agentId: "main/cosmo",
+			registerAgentMemoryTools: true,
+			authorizeAuthoredMemory: true,
+			registerArchitectureTool: false,
+			authorizeArchitecture: false,
+			recallOwner: "agent-memory",
+			canPropose: false,
+			userCosmonautsRoot: userRoot,
+			createAuthoredStore,
+			createKnowledgeStore,
+		});
+		await pi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: buildAgentIdentityMarker("main/cosmo") },
+			{ cwd: projectRoot },
+		);
+
+		const recalled = (await pi.callTool("recall", {
+			query: "shared-boundary",
+			limit: 2,
+		})) as ToolResult;
+		expect(records(recalled.details)).toHaveLength(3);
+		expect(records(recalled.details)[0]).toMatchObject({
+			type: "profile",
+			content: "PROFILE_PIN_SURVIVES_NEWER_KNOWLEDGE",
+		});
+		expect(records(recalled.details).slice(1)).toEqual(
+			expect.arrayContaining([expect.objectContaining({ type: "decision" })]),
+		);
+		expect(recalled.details).toMatchObject({
+			stats: { filesScanned: 7, bytesRead: 777 },
+		});
+		expect(resultText(recalled)).not.toContain("filesScanned");
+		expect(knowledgeRetrieve).toHaveBeenCalled();
+		expect(authoredRetrieve).toHaveBeenCalled();
+
+		await pi.callTool("remember", {
+			type: "note",
+			title: "Ordinary authored note",
+			description: "Stays in authored memory.",
+			content: "Remembered separately from proposals.",
+			scope: "project",
+		});
+		await pi.callTool("remember", {
+			type: "profile",
+			content: "Complete profile replacement through authored memory.",
+			changeSummary: "Added the shared-boundary preference.",
+		});
+		await pi.callTool("remember", {
+			type: "playbook",
+			title: "Boundary playbook",
+			description: "Ordinary authored procedure.",
+			content: "1. Keep the proposal path separate.",
+			scope: "project",
+		});
+		expect(authoredWrite).toHaveBeenCalledTimes(3);
+		expect(knowledgeWrite).not.toHaveBeenCalled();
+
+		await writeKnowledgeProposalThroughStore({
+			store: knowledgeStore,
+			draft: {
+				type: "decision",
+				scope: "project",
+				kind: "semantic",
+				title: "Proposal stays separate",
+				description: "Machine proposal path.",
+				content: "Proposed knowledge.",
+				tags: [],
+				resource: "knowledge/plan/proposal.md",
+				writer: "main/distiller",
+				source: "missions/plans/plan/plan.md",
+				date: "2026-08-20T00:00:00.000Z",
+				proposalIdentity: { planSlug: "plan", key: "abc123" },
+			},
+		});
+		expect(knowledgeWrite).toHaveBeenCalledOnce();
+		expect(authoredWrite).toHaveBeenCalledTimes(3);
+
+		const guardedAuthoredFactory = vi.fn(() => authoredStore);
+		const guardedArchitectureRetrieve = vi.fn<MemoryStore["retrieve"]>();
+		const guardedArchitectureFactory = vi.fn(() =>
+			memoryStore({ retrieve: guardedArchitectureRetrieve }),
+		);
+		const ineligiblePi = createMockPi({ cwd: projectRoot });
+		installKnowledgeSurface(ineligiblePi, {
+			agentId: "main/synthetic",
+			registerAgentMemoryTools: true,
+			authorizeAuthoredMemory: false,
+			registerArchitectureTool: true,
+			authorizeArchitecture: false,
+			recallOwner: "agent-memory",
+			canPropose: false,
+			userCosmonautsRoot: userRoot,
+			createAuthoredStore: guardedAuthoredFactory,
+			createKnowledgeStore,
+			createArchitectureStore: guardedArchitectureFactory,
+		});
+		const ineligibleContext = await ineligiblePi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: buildAgentIdentityMarker("main/synthetic") },
+			{ cwd: projectRoot },
+		);
+		expect(
+			(ineligibleContext as { message: { content: string } }).message.content,
+		).toContain("Knowledge index");
+		expect(
+			(ineligibleContext as { message: { content: string } }).message.content,
+		).not.toContain("Agent memory index context");
+		await ineligiblePi.callTool("remember", { content: "must not write" });
+		await ineligiblePi.callTool("architecture_map_read", {});
+		await ineligiblePi.callTool("recall", { query: "shared-boundary" });
+		expect(guardedAuthoredFactory).not.toHaveBeenCalled();
+		expect(guardedArchitectureFactory).not.toHaveBeenCalled();
+		expect(guardedArchitectureRetrieve).not.toHaveBeenCalled();
+
+		for (const relativePath of [
+			"../../lib/extensions/knowledge-surface/session-extension.ts",
+			"../../lib/extensions/knowledge-surface/knowledge-tools.ts",
+			"../../lib/extensions/knowledge-surface/combined-context.ts",
+		]) {
+			const source = await readFile(
+				new URL(relativePath, import.meta.url),
+				"utf-8",
+			);
+			expect(source).not.toMatch(/from ["']node:fs/);
+		}
+		const docs = await readFile(
+			new URL("../../docs/memory.md", import.meta.url),
+			"utf-8",
+		);
+		expect(docs).toContain("human-supervised");
+		expect(docs).toContain("git-reviewed");
+		expect(docs).toContain("deliberately not sandboxed");
+		expect(docs).not.toContain("bare-host support is enabled");
+	});
 });
 
 interface ToolResult {
 	content: { type: "text"; text: string }[];
 	details: unknown;
+}
+
+function installKnowledgeSurface(
+	pi: ReturnType<typeof createMockPi>,
+	options: Parameters<typeof createKnowledgeSurfaceSessionExtension>[0],
+): void {
+	const extension = createKnowledgeSurfaceSessionExtension(options);
+	if (typeof extension === "function") {
+		extension(pi as never);
+		return;
+	}
+	extension.factory(pi as never);
 }
 
 function resultText(result: ToolResult): string {

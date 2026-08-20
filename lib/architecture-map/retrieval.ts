@@ -82,6 +82,7 @@ export function createArchitectureMapMemoryStore(
 			scope: MemoryScopeContext,
 			query: MemoryQuery,
 		): Promise<MemoryRetrieveResult> {
+			const startedAt = performance.now();
 			assertBoundProjectRoot({
 				boundProjectRoot: projectRoot,
 				requestedProjectRoot: scope.projectRoot,
@@ -92,12 +93,24 @@ export function createArchitectureMapMemoryStore(
 				config,
 				analyzer: deps.analyzer,
 			});
-			return retrieveArchitectureMap({
+			const result = await retrieveArchitectureMap({
 				projectRoot,
 				freshness,
 				scope,
 				query,
 			});
+			return {
+				...result,
+				stats: {
+					filesScanned: result.records.length,
+					bytesRead: result.records.reduce(
+						(total, record) =>
+							total + Buffer.byteLength(record.content, "utf-8"),
+						0,
+					),
+					durationMs: performance.now() - startedAt,
+				},
+			};
 		},
 
 		async consolidate() {

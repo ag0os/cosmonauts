@@ -3,6 +3,18 @@ import type {
 	ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import {
+	loadProjectConfig,
+	resolveEpisodicLogConfig,
+} from "../../config/index.ts";
+import {
+	combineMemoryRetrieval,
+	KNOWLEDGE_RECORD_TYPES,
+	type MemoryRecordDraft,
+	type MemoryRetrievalRequest,
+	type MemoryStore,
+	type MemoryWriteResult,
+} from "../../memory/index.ts";
 
 const DEFAULT_RECALL_LIMIT = 5;
 const MAX_RECALL_LIMIT = 20;
@@ -18,8 +30,117 @@ export type KnowledgeRecallHandler = (
 	request: KnowledgeRecallRequest,
 ) => Promise<AgentToolResult<Record<string, unknown>>>;
 
-export function createEmptyKnowledgeRecallHandler(): KnowledgeRecallHandler {
-	return async (request) => emptyKnowledgeRecallResult(request);
+export interface AuthoredRecallStoreOptions {
+	readonly projectRoot: string;
+	readonly episodeWarningThreshold?: number;
+}
+
+export interface KnowledgeRecallOptions {
+	readonly createKnowledgeStore: (projectRoot: string) => MemoryStore;
+	readonly createAuthoredStore?: (
+		options: AuthoredRecallStoreOptions,
+	) => MemoryStore;
+	readonly loadConfig?: typeof loadProjectConfig;
+}
+
+export function createKnowledgeRecallHandler(
+	options: KnowledgeRecallOptions,
+): KnowledgeRecallHandler {
+	return async (request) => {
+		const query = request.query.trim();
+		if (!query) {
+			return textResult("Recall requires non-empty query text.", {
+				status: "invalid_request",
+				reason: "query must be a non-empty string",
+			});
+		}
+
+		const requests: MemoryRetrievalRequest[] = [
+			{
+				key: "knowledge",
+				store: options.createKnowledgeStore(request.projectRoot),
+				scope: {
+					projectRoot: request.projectRoot,
+					scopes: ["project", "user"] as const,
+				},
+				query: { text: query, recordTypes: KNOWLEDGE_RECORD_TYPES },
+			},
+		];
+		if (options.createAuthoredStore) {
+			const settings = resolveEpisodicLogConfig(
+				await (options.loadConfig ?? loadProjectConfig)(request.projectRoot),
+			);
+			requests.push({
+				key: "memory",
+				store: options.createAuthoredStore({
+					projectRoot: request.projectRoot,
+					...(settings.enabled
+						? { episodeWarningThreshold: settings.warningThreshold }
+						: {}),
+				}),
+				scope: {
+					projectRoot: request.projectRoot,
+					scopes: ["project", "user"] as const,
+				},
+				query: {
+					text: query,
+					recordTypes: settings.enabled
+						? ["note", "profile", "playbook", "episode"]
+						: ["note", "profile", "playbook"],
+				},
+			});
+		}
+
+		const result = await combineMemoryRetrieval({
+			requests,
+			limit: request.limit,
+		});
+		const records = result.records.map((record) => ({
+			type: record.type,
+			title: record.title,
+			description: record.description,
+			scope: record.scope,
+			kind: record.kind,
+			tags: record.tags,
+			timestamp: record.timestamp,
+			resource: record.resource,
+			path: record.path,
+			content: record.content,
+			...(record.writer ? { writer: record.writer } : {}),
+			...(record.source ? { source: record.source } : {}),
+			...(record.date ? { date: record.date } : {}),
+		}));
+		const details = {
+			status: records.length > 0 ? "matched" : "no_match",
+			query,
+			limit: request.limit,
+			searchedScopes: result.searchedScopes,
+			skippedScopes: result.skippedScopes,
+			warnings: result.warnings,
+			stats: result.stats,
+			records,
+		};
+		if (records.length === 0) {
+			return textResult(`No durable records matched "${query}".`, details);
+		}
+		return textResult(
+			[
+				`Found ${records.length} durable record${records.length === 1 ? "" : "s"} for "${query}".`,
+				...records.map((record) =>
+					[
+						`## Durable record: ${record.title}`,
+						`type: ${record.type}`,
+						`scope: ${record.scope}`,
+						`timestamp: ${record.timestamp}`,
+						`resource: ${record.resource}`,
+						"",
+						record.content,
+					].join("\n"),
+				),
+			].join("\n\n"),
+			details,
+		);
+	};
 }
 
 export function registerKnowledgeRecallTool(
@@ -48,25 +169,21 @@ export function registerKnowledgeRecallTool(
 	});
 }
 
-export function emptyKnowledgeRecallResult(
-	request: KnowledgeRecallRequest,
+/** Shared write seam used by the dedicated proposal adapter in the next slice. */
+export function writeKnowledgeProposalThroughStore(options: {
+	readonly store: MemoryStore;
+	readonly draft: MemoryRecordDraft;
+}): Promise<MemoryWriteResult> {
+	return options.store.write(options.draft);
+}
+
+function textResult(
+	text: string,
+	details: Record<string, unknown>,
 ): AgentToolResult<Record<string, unknown>> {
 	return {
-		content: [
-			{
-				type: "text",
-				text: `No knowledge records matched "${request.query}".`,
-			},
-		],
-		details: {
-			status: "no_match",
-			query: request.query,
-			limit: request.limit,
-			searchedScopes: ["project", "user"],
-			skippedScopes: [],
-			warnings: [],
-			records: [],
-		},
+		content: [{ type: "text", text }],
+		details,
 	};
 }
 

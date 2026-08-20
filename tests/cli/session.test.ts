@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { AgentRegistry } from "../../lib/agents/resolver.ts";
+import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
+import { createKnowledgeSurfaceSessionExtension } from "../../lib/extensions/knowledge-surface/session-extension.ts";
 import {
 	clearPendingSwitch,
 	consumePendingSwitch,
 	setPendingSwitch,
 } from "../../lib/interactive/agent-switch.ts";
+import type { MemoryStore } from "../../lib/memory/index.ts";
+import { createMockPi } from "../helpers/mocks/index.ts";
 
 const mocks = vi.hoisted(() => ({
 	buildSessionParams: vi.fn(),
@@ -207,6 +211,63 @@ describe("createSession", () => {
 					extensionFactories: [switchedFactory],
 				}),
 			}),
+		);
+
+		const retrieve = vi.fn<MemoryStore["retrieve"]>(async () => ({
+			records: [
+				{
+					type: "decision",
+					scope: "project",
+					kind: "semantic",
+					title: "B-005 reaches knowledge",
+					description: "Functional enabled recall evidence.",
+					resource: "knowledge/b-005.md",
+					tags: [],
+					timestamp: "2026-08-20T00:00:00.000Z",
+					content: "KNOWLEDGE_RECALL_REACHED_STORE",
+					path: "/tmp/project/knowledge/b-005.md",
+				},
+			],
+			searchedScopes: ["project", "user"],
+			skippedScopes: [],
+			warnings: [],
+			stats: { filesScanned: 1, bytesRead: 64, durationMs: 1 },
+		}));
+		const store: MemoryStore = {
+			write: async () => ({ kind: "unsupported", reason: "read fixture" }),
+			retrieve,
+			consolidate: async () => ({ kind: "noop", reason: "read fixture" }),
+		};
+		const functional = createKnowledgeSurfaceSessionExtension({
+			agentId: "coding/worker",
+			registerAgentMemoryTools: false,
+			authorizeAuthoredMemory: false,
+			registerArchitectureTool: false,
+			authorizeArchitecture: false,
+			recallOwner: "knowledge",
+			canPropose: false,
+			createKnowledgeStore: () => store,
+		});
+		if (typeof functional === "function") {
+			throw new Error("Expected named enabled knowledge extension");
+		}
+		const pi = createMockPi({ cwd: "/tmp/project" });
+		functional.factory(pi as never);
+		await pi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: buildAgentIdentityMarker("coding/worker") },
+			{ cwd: "/tmp/project" },
+		);
+		const recalled = (await pi.callTool("recall", {
+			query: "B-005 reaches knowledge",
+		})) as { content: Array<{ type: "text"; text: string }> };
+		expect(recalled.content.map((entry) => entry.text).join("\n")).toContain(
+			"KNOWLEDGE_RECALL_REACHED_STORE",
+		);
+		expect(retrieve).toHaveBeenCalledTimes(2);
+		expect(retrieve).toHaveBeenLastCalledWith(
+			{ projectRoot: "/tmp/project", scopes: ["project", "user"] },
+			expect.objectContaining({ text: "B-005 reaches knowledge" }),
 		);
 	});
 

@@ -15,9 +15,11 @@ import {
 	type ArchitectureMapFreshness,
 	type ArchitectureMapMemoryStoreOptions,
 } from "../../lib/architecture-map/index.ts";
+import { createKnowledgeSurfaceSessionExtension } from "../../lib/extensions/knowledge-surface/session-extension.ts";
 import type {
 	MemoryRetrieveResult,
 	MemoryStore,
+	RetrievedMemoryRecord,
 } from "../../lib/memory/index.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import { createMockPi } from "../helpers/mocks/index.ts";
@@ -422,7 +424,238 @@ describe("architecture-memory extension", () => {
 		expect(contentHashFreshness).not.toHaveBeenCalled();
 		contentHashFreshness.mockRestore();
 	});
+
+	test("bounds the authorized single-factory three-surface context exposes scan stats and emits nothing when empty @cosmo-behavior plan:knowledge-surface#B-007", async () => {
+		const projectRoot = join(tmp.path, "combined-context-project");
+		const userRoot = join(tmp.path, "combined-context-user");
+		const memoryRecords = [
+			contextRecord({
+				type: "profile",
+				scope: "user",
+				title: "User profile",
+				resource: "memory/agent/profile.md",
+				path: join(userRoot, "memory", "agent", "profile.md"),
+				content: "Profile body remains provider-visible.",
+			}),
+			...Array.from({ length: 20 }, (_, index) =>
+				contextRecord({
+					title: `Memory row ${index}`,
+					description: `Memory metadata ${index} ${"m".repeat(500)}`,
+					resource: `memory/agent/notes/${index}.md`,
+					path: join(projectRoot, "memory", "agent", "notes", `${index}.md`),
+					content: `MEMORY_BODY_SENTINEL_${index}`,
+				}),
+			),
+		];
+		const knowledgeRecords = Array.from({ length: 60 }, (_, index) =>
+			contextRecord({
+				type: "decision",
+				title: `Knowledge row ${index.toString().padStart(2, "0")}`,
+				description: `Knowledge metadata ${index} ${"界".repeat(220)}`,
+				resource: `knowledge/${index}.md`,
+				path: join(projectRoot, "knowledge", `${index}.md`),
+				content: `KNOWLEDGE_BODY_SENTINEL_${index}`,
+				timestamp: new Date(Date.UTC(2026, 7, 1, 0, 0, index)).toISOString(),
+			}),
+		);
+		const architectureRecords = [
+			contextRecord({
+				type: "code-structure-index",
+				title: "Architecture Map",
+				description: "Generated architecture map.",
+				resource: "memory/architecture/index.md",
+				path: join(projectRoot, "memory", "architecture", "index.md"),
+				content: `Architecture map freshness: current (test)\n${"architecture ".repeat(2_000)}`,
+			}),
+		];
+		const authoredRetrieve = vi.fn(async () =>
+			contextResult(memoryRecords, {
+				filesScanned: 21,
+				bytesRead: 2_100,
+				durationMs: 80,
+			}),
+		);
+		const knowledgeRetrieve = vi.fn(async () =>
+			contextResult(knowledgeRecords, {
+				filesScanned: 60,
+				bytesRead: 6_000,
+				durationMs: 90,
+			}),
+		);
+		const architectureRetrieve = vi.fn(async () => ({
+			...contextResult(architectureRecords, {
+				filesScanned: 1,
+				bytesRead: 1_000,
+				durationMs: 70,
+			}),
+			details: {
+				kind: "architecture-map",
+				status: "index",
+				freshness: { kind: "current", hash: "test" },
+				resource: "memory/architecture/index.md",
+			},
+		}));
+		const pi = createMockPi({ cwd: projectRoot });
+		installKnowledgeSurface(pi, {
+			agentId: "coding/planner",
+			registerAgentMemoryTools: false,
+			authorizeAuthoredMemory: true,
+			registerArchitectureTool: true,
+			authorizeArchitecture: true,
+			recallOwner: "knowledge",
+			canPropose: false,
+			userCosmonautsRoot: userRoot,
+			createAuthoredStore: () => memoryStore({ retrieve: authoredRetrieve }),
+			createKnowledgeStore: () => memoryStore({ retrieve: knowledgeRetrieve }),
+			createArchitectureStore: () =>
+				memoryStore({ retrieve: architectureRetrieve }),
+		});
+
+		expect(pi.events.get("before_agent_start")).toHaveLength(1);
+		const injected = (await pi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: buildAgentIdentityMarker("coding/planner") },
+			{ cwd: projectRoot },
+		)) as {
+			message: {
+				customType: string;
+				content: string;
+				display: boolean;
+				details: Record<string, unknown>;
+			};
+		};
+		const bytes = Buffer.byteLength(injected.message.content, "utf-8");
+		expect(injected.message).toMatchObject({
+			customType: "cosmonauts-combined-context",
+			display: false,
+		});
+		expect(bytes).toBeLessThanOrEqual(24_000);
+		expect(bytes).toBeGreaterThan(18_000);
+		expect(injected.message.content).toContain("Agent memory index context");
+		expect(injected.message.content).toContain(
+			"Architecture map index context",
+		);
+		expect(injected.message.content).toContain("Knowledge index");
+		expect(injected.message.content).toContain("recall(query)");
+		expect(injected.message.content).toContain("architecture_map_read");
+		expect(injected.message.content).not.toContain("MEMORY_BODY_SENTINEL_");
+		expect(injected.message.content).not.toContain("KNOWLEDGE_BODY_SENTINEL_");
+		const visibleKnowledgeRows =
+			injected.message.content.match(/^- type: decision$/gm) ?? [];
+		expect(visibleKnowledgeRows.length).toBeGreaterThan(0);
+		expect(visibleKnowledgeRows.length).toBeLessThanOrEqual(50);
+		expect(injected.message.content).not.toContain("Knowledge row 09");
+		expect(injected.message.content).not.toContain("�");
+		expect(injected.message.details).toMatchObject({
+			sections: {
+				memory: {
+					stats: { filesScanned: 21, bytesRead: 2_100, durationMs: 80 },
+				},
+				architecture: {
+					stats: { filesScanned: 1, bytesRead: 1_000, durationMs: 70 },
+				},
+				knowledge: {
+					stats: { filesScanned: 60, bytesRead: 6_000, durationMs: 90 },
+				},
+			},
+			aggregate: {
+				filesScanned: 82,
+				bytesRead: 9_100,
+				durationMs: expect.any(Number),
+			},
+		});
+		expect(
+			(injected.message.details.aggregate as { durationMs: number }).durationMs,
+		).toBeLessThan(240);
+		const filtered = (await pi.fireEvent("context", {
+			messages: [
+				{ customType: "agent-memory-context", content: "legacy memory" },
+				{ customType: "architecture-map-context", content: "legacy map" },
+				{ customType: "cosmonauts-combined-context", content: "older" },
+				injected.message,
+				{ role: "user", content: "keep" },
+			],
+		})) as { messages: unknown[] };
+		expect(filtered.messages).toEqual([
+			injected.message,
+			{ role: "user", content: "keep" },
+		]);
+
+		const emptyAuthoredRetrieve = vi.fn(async () => contextResult([]));
+		const emptyKnowledgeRetrieve = vi.fn(async () => contextResult([]));
+		const emptyArchitectureRetrieve = vi.fn(async () => contextResult([]));
+		const emptyPi = createMockPi({ cwd: projectRoot });
+		installKnowledgeSurface(emptyPi, {
+			agentId: "coding/planner",
+			registerAgentMemoryTools: false,
+			authorizeAuthoredMemory: true,
+			registerArchitectureTool: true,
+			authorizeArchitecture: true,
+			recallOwner: "knowledge",
+			canPropose: false,
+			userCosmonautsRoot: userRoot,
+			createAuthoredStore: () =>
+				memoryStore({ retrieve: emptyAuthoredRetrieve }),
+			createKnowledgeStore: () =>
+				memoryStore({ retrieve: emptyKnowledgeRetrieve }),
+			createArchitectureStore: () =>
+				memoryStore({ retrieve: emptyArchitectureRetrieve }),
+		});
+		await expect(
+			emptyPi.fireEvent(
+				"before_agent_start",
+				{ systemPrompt: buildAgentIdentityMarker("coding/planner") },
+				{ cwd: projectRoot },
+			),
+		).resolves.toBeUndefined();
+		expect(emptyAuthoredRetrieve).toHaveBeenCalledOnce();
+		expect(emptyKnowledgeRetrieve).toHaveBeenCalledOnce();
+		expect(emptyArchitectureRetrieve).toHaveBeenCalledOnce();
+	});
 });
+
+function contextRecord(
+	overrides: Partial<RetrievedMemoryRecord>,
+): RetrievedMemoryRecord {
+	return {
+		type: "note",
+		scope: "project",
+		kind: "semantic",
+		title: "Context record",
+		description: "Context metadata.",
+		resource: "memory/agent/notes/context.md",
+		tags: [],
+		timestamp: "2026-08-01T00:00:00.000Z",
+		content: "Context body.",
+		path: "/tmp/context.md",
+		...overrides,
+	};
+}
+
+function installKnowledgeSurface(
+	pi: ReturnType<typeof createMockPi>,
+	options: Parameters<typeof createKnowledgeSurfaceSessionExtension>[0],
+): void {
+	const extension = createKnowledgeSurfaceSessionExtension(options);
+	if (typeof extension === "function") {
+		extension(pi as never);
+		return;
+	}
+	extension.factory(pi as never);
+}
+
+function contextResult(
+	records: readonly RetrievedMemoryRecord[],
+	stats = { filesScanned: 0, bytesRead: 0, durationMs: 0 },
+): MemoryRetrieveResult {
+	return {
+		records,
+		searchedScopes: ["project", "user"],
+		skippedScopes: [],
+		warnings: [],
+		stats,
+	};
+}
 
 interface ToolResult {
 	content: { type: "text"; text: string }[];

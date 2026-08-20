@@ -26,6 +26,10 @@ const CONSUMING_AGENT_IDS = new Set([
 	"coding/quality-manager",
 ]);
 
+export interface ArchitectureMemoryAuthorizationState {
+	authorized: boolean;
+}
+
 interface ArchitectureMemoryDeps {
 	readonly authorizedAgentIds: ReadonlySet<string>;
 	readonly loadConfig: (projectRoot: string) => Promise<ArchitectureMapConfig>;
@@ -38,6 +42,8 @@ interface ArchitectureMemoryDeps {
 	readonly createStore: (
 		options: ArchitectureMapMemoryStoreOptions,
 	) => MemoryStore;
+	readonly authorizationState: ArchitectureMemoryAuthorizationState;
+	readonly registerContextHandler: boolean;
 }
 
 function textResult(
@@ -62,10 +68,12 @@ export function createArchitectureMemoryExtension(
 		analyzer: deps.analyzer ?? typescriptSourceAnalyzer,
 		checkFreshness: deps.checkFreshness ?? checkArchitectureMapStatFreshness,
 		createStore: deps.createStore ?? createArchitectureMapMemoryStore,
+		authorizationState: deps.authorizationState ?? { authorized: false },
+		registerContextHandler: deps.registerContextHandler ?? true,
 	};
 
 	return function architectureMemoryExtension(pi: ExtensionAPI): void {
-		let authorized = false;
+		const auth = resolvedDeps.authorizationState;
 
 		pi.registerTool({
 			name: "architecture_map_read",
@@ -87,7 +95,7 @@ export function createArchitectureMemoryExtension(
 				),
 			}),
 			execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
-				if (!authorized) return unauthorizedResult();
+				if (!auth.authorized) return unauthorizedResult();
 
 				const cwd = getCwd(ctx);
 				const result = await retrieveArchitectureMap({
@@ -100,20 +108,21 @@ export function createArchitectureMemoryExtension(
 		});
 
 		pi.on("session_start", async () => {
-			authorized = false;
+			auth.authorized = false;
 		});
 
 		pi.on("session_shutdown", async () => {
-			authorized = false;
+			auth.authorized = false;
 		});
+		if (!resolvedDeps.registerContextHandler) return;
 
 		pi.on("before_agent_start", async (event, ctx) => {
 			const systemPrompt = getSystemPrompt(event);
-			authorized = isConsumingAgent(
+			auth.authorized = isConsumingAgent(
 				systemPrompt,
 				resolvedDeps.authorizedAgentIds,
 			);
-			if (!authorized) return;
+			if (!auth.authorized) return;
 
 			const cwd = getCwd(ctx);
 			if (!(await architectureDirExists(cwd))) return;
@@ -298,6 +307,26 @@ function buildContextMessage(options: {
 		budget = nextBudget;
 	}
 	return `${header}${excerpt}${footer}`;
+}
+
+export function renderArchitectureContext(
+	result: MemoryRetrieveResult,
+): string | undefined {
+	const record = result.records[0];
+	if (!record && result.warnings.length === 0) return undefined;
+	const details = architectureDetails(result.details);
+	return [
+		"Architecture map index context",
+		formatFreshnessBanner(details?.freshness ?? { kind: "missing" }),
+		"Call `architecture_map_read` with no `module` for the full index, or with a module resource for a shard.",
+		...(result.warnings.length > 0
+			? result.warnings.map((warning) => `Warning: ${warning.message}`)
+			: []),
+		"",
+		record?.content ?? "",
+	]
+		.filter((line, index, lines) => line !== "" || lines[index - 1] !== "")
+		.join("\n");
 }
 
 function formatFreshnessBanner(freshness: ArchitectureMapFreshness): string {

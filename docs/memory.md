@@ -189,6 +189,13 @@ Memory writes are always visible tool calls:
 
 ## Recall And Injection
 
+Dedicated knowledge and memory tools, plus Cosmonauts' framework recall and
+injection paths, reach durable records through `MemoryStore`. Generic Pi
+project tools and the Codex and Claude Drive backends remain trusted,
+human-supervised, git-reviewed project-file capabilities. They are deliberately not sandboxed
+by the knowledge surface; this boundary does not claim disabled
+tools, path guards, or enabled bare-host support.
+
 Cosmo uses an index-inject plus pull-recall model. On each authorized
 before_agent_start, the extension performs one current-disk list retrieval
 across all three authored types and renders one hidden agent-memory-context

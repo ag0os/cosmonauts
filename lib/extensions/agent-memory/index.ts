@@ -81,9 +81,13 @@ export interface AgentMemoryExtensionDeps {
 	readonly authorizedAgentId?: string | null;
 	/** Enabled-session knowledge seam. Omitted in the legacy package wrapper. */
 	readonly knowledgeRecall?: KnowledgeRecallHandler;
+	/** Shared by the one enabled session composer and guarded legacy tools. */
+	readonly authorizationState?: AgentMemoryAuthorizationState;
+	/** Legacy wrappers own injection by default; enabled composition disables it. */
+	readonly registerContextHandler?: boolean;
 }
 
-interface AuthorizationState {
+export interface AgentMemoryAuthorizationState {
 	authorized: boolean;
 }
 
@@ -183,7 +187,8 @@ export function createAgentMemoryExtension(
 			createMarkdownMemoryStore(options));
 
 	return function agentMemoryExtension(pi: ExtensionAPI): void {
-		const auth: AuthorizationState = { authorized: false };
+		const auth = deps.authorizationState ?? { authorized: false };
+		const registerContextHandler = deps.registerContextHandler ?? true;
 
 		pi.registerTool({
 			name: "remember",
@@ -262,25 +267,14 @@ export function createAgentMemoryExtension(
 			}),
 			execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 				const projectRoot = getCwd(ctx);
-				if (!auth.authorized) {
-					if (deps.knowledgeRecall) {
-						return deps.knowledgeRecall({
-							query: normalizeString((params as RecallParams).query) ?? "",
-							limit: normalizeLimit((params as RecallParams).limit),
-							projectRoot,
-						});
-					}
-					return unauthorizedResult(authorizedAgentId);
-				}
 				if (deps.knowledgeRecall) {
-					// Keep the framework seam live now; Stage 4 composes its records with
-					// the authored result instead of this intentionally empty baseline.
-					await deps.knowledgeRecall({
+					return deps.knowledgeRecall({
 						query: normalizeString((params as RecallParams).query) ?? "",
 						limit: normalizeLimit((params as RecallParams).limit),
 						projectRoot,
 					});
 				}
+				if (!auth.authorized) return unauthorizedResult(authorizedAgentId);
 				const settings = resolveEpisodicLogConfig(
 					await loadConfig(projectRoot),
 				);
@@ -312,6 +306,8 @@ export function createAgentMemoryExtension(
 			auth.authorized = false;
 		});
 
+		if (!registerContextHandler) return;
+
 		pi.on("before_agent_start", async (event, ctx) => {
 			auth.authorized =
 				authorizedAgentId !== null &&
@@ -321,7 +317,7 @@ export function createAgentMemoryExtension(
 
 			const projectRoot = getOptionalCwd(ctx);
 			if (!projectRoot) return;
-			const result = await retrieveMemoryContext({
+			const result = await retrieveAuthoredMemoryContext({
 				store: createStore({
 					ctx: { cwd: projectRoot },
 					userCosmonautsRoot,
@@ -331,7 +327,7 @@ export function createAgentMemoryExtension(
 				projectRoot,
 			});
 			if (result.records.length === 0 && result.warnings.length === 0) return;
-			const content = buildMemoryContext({
+			const content = renderAuthoredMemoryContext({
 				records: result.records,
 				warnings: result.warnings,
 				projectRoot,
@@ -531,7 +527,7 @@ async function recall(options: {
 	});
 }
 
-async function retrieveMemoryContext(options: {
+async function retrieveAuthoredMemoryContext(options: {
 	readonly store: MemoryStore;
 	readonly projectRoot: string;
 }): Promise<MemoryRetrieveResult> {
@@ -544,12 +540,14 @@ async function retrieveMemoryContext(options: {
 	);
 }
 
-function buildMemoryContext(options: {
+export function renderAuthoredMemoryContext(options: {
 	readonly records: MemoryRetrieveResult["records"];
 	readonly warnings: MemoryRetrieveResult["warnings"];
 	readonly projectRoot: string;
 	readonly userCosmonautsRoot: string;
+	readonly maxBytes?: number;
 }): string | undefined {
+	const maxBytes = options.maxBytes ?? INDEX_INJECTION_MAX_BYTES;
 	const profiles = options.records
 		.filter((record) => record.type === "profile")
 		.toSorted(compareContextRecords);
@@ -574,9 +572,9 @@ function buildMemoryContext(options: {
 	].join("\n")}${warningsSection}`;
 	if (!profile && indexRecords.length === 0) {
 		const warningsOnly = `${contextHeader}Use recall(query) for full authored memory record details.\n`;
-		return byteLength(warningsOnly) <= INDEX_INJECTION_MAX_BYTES
+		return byteLength(warningsOnly) <= maxBytes
 			? warningsOnly
-			: truncateUtf8(warningsOnly, INDEX_INJECTION_MAX_BYTES);
+			: truncateUtf8(warningsOnly, maxBytes);
 	}
 	const profileSection = profile
 		? formatProfileContext({
@@ -587,12 +585,11 @@ function buildMemoryContext(options: {
 		: "";
 	if (indexRecords.length === 0) {
 		const profileOnly = `${contextHeader}${profileSection}`;
-		if (byteLength(profileOnly) <= INDEX_INJECTION_MAX_BYTES)
-			return profileOnly;
+		if (byteLength(profileOnly) <= maxBytes) return profileOnly;
 		return truncateWithFooter({
 			header: contextHeader,
 			content: profileSection,
-			maxBytes: INDEX_INJECTION_MAX_BYTES,
+			maxBytes,
 			footerForBytes: (includedBytes) =>
 				`\n[Memory context truncated. Truncated profile section from ${byteLength(
 					profileSection,
@@ -618,12 +615,12 @@ function buildMemoryContext(options: {
 		.join("\n")}\n`;
 	const header = `${contextHeader}${profileSection}${indexHeader}`;
 	const complete = `${header}${indexBody}`;
-	if (byteLength(complete) <= INDEX_INJECTION_MAX_BYTES) return complete;
+	if (byteLength(complete) <= maxBytes) return complete;
 
 	return truncateWithFooter({
 		header,
 		content: indexBody,
-		maxBytes: INDEX_INJECTION_MAX_BYTES,
+		maxBytes,
 		footerForBytes: (includedBytes) =>
 			`\n[Memory index truncated. Truncated memory index from ${byteLength(
 				indexBody,
