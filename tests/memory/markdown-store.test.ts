@@ -5,6 +5,7 @@ import {
 	readFile,
 	rm,
 	stat,
+	symlink,
 	utimes,
 	writeFile,
 } from "node:fs/promises";
@@ -14,6 +15,7 @@ import { describe, expect, test } from "vitest";
 import {
 	canonicalizePlaybookName,
 	createEpisodeRecord,
+	createKnowledgeMemoryStore,
 	createMarkdownMemoryStore,
 	PROFILE_WRITE_MAX_BYTES,
 } from "../../lib/memory/index.ts";
@@ -1995,6 +1997,332 @@ describe("markdown memory store", () => {
 		expect(
 			retrieved.records.map((record) => [record.type, record.content]),
 		).toEqual([["profile", "Third complete profile."]]);
+	});
+});
+
+describe("knowledge memory store", () => {
+	test("reads minimal and annotated project and user OKF knowledge without scaffolding scope leakage or symlink traversal @cosmo-behavior plan:knowledge-surface#B-001", async () => {
+		const projectRoot = join(tmp.path, "knowledge-project");
+		const userRoot = join(tmp.path, "knowledge-user");
+		const store = createKnowledgeMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+		});
+
+		const missing = await store.retrieve(
+			{ projectRoot, scopes: ["session", "project", "user"] },
+			{},
+		);
+		expect(missing).toMatchObject({
+			records: [],
+			searchedScopes: ["project", "user"],
+			skippedScopes: [{ scope: "session" }],
+			warnings: [],
+			stats: { filesScanned: 0, bytesRead: 0 },
+		});
+		await expect(stat(join(projectRoot, "knowledge"))).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+		await expect(stat(join(userRoot, "knowledge"))).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+
+		const projectKnowledge = join(projectRoot, "knowledge");
+		const userKnowledge = join(userRoot, "knowledge");
+		const minimalPath = join(projectKnowledge, "minimal.md");
+		const annotatedPath = join(projectKnowledge, "nested", "trade.md");
+		const gotchaPath = join(userKnowledge, "gotcha.md");
+		const conventionPath = join(userKnowledge, "nested", "convention.md");
+		await mkdir(dirname(annotatedPath), { recursive: true });
+		await mkdir(dirname(conventionPath), { recursive: true });
+		await writeFile(
+			minimalPath,
+			"---\ntype: decision\n---\n\n# Minimal title\n\nMinimal description from the first paragraph.\n\nMore detail.\n",
+			"utf-8",
+		);
+		await utimes(
+			minimalPath,
+			new Date("2026-08-20T09:00:00.000Z"),
+			new Date("2026-08-20T09:00:00.000Z"),
+		);
+		await writeFile(
+			annotatedPath,
+			matter.stringify("Annotated body.", {
+				type: "trade-off",
+				title: "Explicit title",
+				description: "Explicit description.",
+				resource: "knowledge/nested/trade.md",
+				tags: ["design", "cost"],
+				timestamp: "2026-08-20T10:00:00.000Z",
+				scope: "project",
+				kind: "semantic",
+				writer: "example/distiller",
+				source: "missions/plans/example/plan.md",
+				date: "2026-08-20T08:00:00.000Z",
+			}),
+			"utf-8",
+		);
+		await writeFile(
+			gotchaPath,
+			"---\ntype: gotcha\n---\n\nA user-scoped fallback paragraph.\n",
+			"utf-8",
+		);
+		await writeFile(
+			conventionPath,
+			"---\ntype: convention\n---\n\n# User convention\n\nKeep it deterministic.\n",
+			"utf-8",
+		);
+
+		const reservedIndex = join(projectKnowledge, "nested", "index.md");
+		const wrongScope = join(projectKnowledge, "wrong-scope.md");
+		const badType = join(projectKnowledge, "bad-type.md");
+		const badMetadata = join(projectKnowledge, "bad-metadata.md");
+		const badResource = join(projectKnowledge, "bad-resource.md");
+		const symlinkedFile = join(projectKnowledge, "linked.md");
+		const externalDir = join(tmp.path, "external-knowledge");
+		const symlinkedDirectory = join(projectKnowledge, "linked-directory");
+		await writeFile(
+			reservedIndex,
+			"---\ntype: decision\n---\nReserved.\n",
+			"utf-8",
+		);
+		await writeFile(
+			wrongScope,
+			"---\ntype: decision\nscope: user\n---\nWrong physical scope.\n",
+			"utf-8",
+		);
+		await writeFile(
+			badType,
+			"---\ntype: rationale\n---\nFifth type.\n",
+			"utf-8",
+		);
+		await writeFile(
+			badMetadata,
+			"---\ntype: decision\ntags: design\n---\nMalformed tags.\n",
+			"utf-8",
+		);
+		await writeFile(
+			badResource,
+			"---\ntype: decision\nresource: ../escape.md\n---\nUnsafe resource.\n",
+			"utf-8",
+		);
+		const malformedExplicit = [
+			["empty-title.md", { title: "" }],
+			["bad-description.md", { description: 42 }],
+			["bad-timestamp.md", { timestamp: "not-a-date" }],
+			["bad-kind.md", { kind: "procedural" }],
+			["bad-writer.md", { writer: ["example/distiller"] }],
+			["bad-source.md", { source: 42 }],
+			["bad-date.md", { date: "not-a-date" }],
+			["mismatched-resource.md", { resource: "somewhere-else.md" }],
+		] as const;
+		const malformedPaths: string[] = [];
+		for (const [fileName, metadata] of malformedExplicit) {
+			const path = join(projectKnowledge, fileName);
+			malformedPaths.push(path);
+			await writeFile(
+				path,
+				matter.stringify("Malformed explicit metadata.", {
+					type: "decision",
+					...metadata,
+				}),
+				"utf-8",
+			);
+		}
+		await symlink(minimalPath, symlinkedFile);
+		await mkdir(externalDir, { recursive: true });
+		await writeFile(
+			join(externalDir, "outside.md"),
+			"---\ntype: decision\n---\nOutside through a symlink.\n",
+			"utf-8",
+		);
+		await symlink(externalDir, symlinkedDirectory);
+
+		const result = await store.retrieve(
+			{ projectRoot, scopes: ["project", "user"] },
+			{ recordTypes: ["decision", "trade-off", "gotcha", "convention"] },
+		);
+		expect(result.records.map((record) => record.type).sort()).toEqual([
+			"convention",
+			"decision",
+			"gotcha",
+			"trade-off",
+		]);
+		expect(
+			result.records.find((record) => record.path === minimalPath),
+		).toEqual(
+			expect.objectContaining({
+				title: "Minimal title",
+				description: "Minimal description from the first paragraph.",
+				resource: "minimal.md",
+				tags: [],
+				timestamp: "2026-08-20T09:00:00.000Z",
+				scope: "project",
+				kind: "semantic",
+			}),
+		);
+		expect(
+			result.records.find((record) => record.path === annotatedPath),
+		).toEqual(
+			expect.objectContaining({
+				writer: "example/distiller",
+				source: "missions/plans/example/plan.md",
+				date: "2026-08-20T08:00:00.000Z",
+			}),
+		);
+		expect(result.records.find((record) => record.path === gotchaPath)).toEqual(
+			expect.objectContaining({
+				title: "gotcha",
+				description: "A user-scoped fallback paragraph.",
+				resource: "gotcha.md",
+				scope: "user",
+			}),
+		);
+		expect(result.records.map((record) => record.path)).not.toEqual(
+			expect.arrayContaining([
+				reservedIndex,
+				symlinkedFile,
+				join(externalDir, "outside.md"),
+			]),
+		);
+		expect(result.warnings.map((warning) => warning.path).sort()).toEqual(
+			[badMetadata, badResource, badType, ...malformedPaths, wrongScope].sort(),
+		);
+	});
+
+	test("filters current knowledge by physical scope and query then applies explicit or mtime recency and limit @cosmo-behavior plan:knowledge-surface#B-004", async () => {
+		const projectRoot = join(tmp.path, "current-knowledge-project");
+		const userRoot = join(tmp.path, "current-knowledge-user");
+		const projectKnowledge = join(projectRoot, "knowledge");
+		const userKnowledge = join(userRoot, "knowledge");
+		await mkdir(projectKnowledge, { recursive: true });
+		await mkdir(userKnowledge, { recursive: true });
+		const explicit = join(projectKnowledge, "explicit.md");
+		const fallbackA = join(projectKnowledge, "a-fallback.md");
+		const fallbackB = join(projectKnowledge, "b-fallback.md");
+		const fallbackC = join(projectKnowledge, "c-fallback.md");
+		const deleted = join(projectKnowledge, "deleted.md");
+		const nonmatching = join(projectKnowledge, "newest-nonmatching.md");
+		const userOnly = join(userKnowledge, "user-only.md");
+		await writeFile(
+			explicit,
+			matter.stringify("Body needle-explicit.", {
+				type: "decision",
+				title: "Title needle-title",
+				description: "Description needle-description.",
+				resource: "knowledge/explicit.md",
+				tags: ["needle-tag"],
+				timestamp: "2026-08-20T10:00:00.000Z",
+				scope: "project",
+				kind: "semantic",
+			}),
+			"utf-8",
+		);
+		for (const [path, body] of [
+			[fallbackA, "needle current body A"],
+			[fallbackB, "needle current body B"],
+			[fallbackC, "needle current body C"],
+			[deleted, "needle deleted body"],
+			[nonmatching, "unrelated newest body"],
+			[userOnly, "needle user body"],
+		] as const) {
+			await writeFile(path, `---\ntype: convention\n---\n\n${body}\n`, "utf-8");
+		}
+		await utimes(
+			explicit,
+			new Date("2026-08-20T15:00:00.000Z"),
+			new Date("2026-08-20T15:00:00.000Z"),
+		);
+		await utimes(
+			fallbackA,
+			new Date("2026-08-20T11:00:00.000Z"),
+			new Date("2026-08-20T11:00:00.000Z"),
+		);
+		await utimes(
+			fallbackB,
+			new Date("2026-08-20T11:00:00.000Z"),
+			new Date("2026-08-20T11:00:00.000Z"),
+		);
+		await utimes(
+			fallbackC,
+			new Date("2026-08-20T11:00:00.000Z"),
+			new Date("2026-08-20T11:00:00.000Z"),
+		);
+		await utimes(
+			deleted,
+			new Date("2026-08-20T12:00:00.000Z"),
+			new Date("2026-08-20T12:00:00.000Z"),
+		);
+		await utimes(
+			nonmatching,
+			new Date("2026-08-20T14:00:00.000Z"),
+			new Date("2026-08-20T14:00:00.000Z"),
+		);
+		await utimes(
+			userOnly,
+			new Date("2026-08-20T16:00:00.000Z"),
+			new Date("2026-08-20T16:00:00.000Z"),
+		);
+
+		const store = createKnowledgeMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+		});
+		for (const query of [
+			"NEEDLE-TITLE",
+			"needle-description",
+			"needle-tag",
+			"knowledge/explicit.md",
+			"needle-explicit",
+		]) {
+			const match = await store.retrieve(
+				{ projectRoot, scopes: ["project"] },
+				{ text: query, recordTypes: ["decision"] },
+			);
+			expect(
+				match.records.map((record) => record.path),
+				query,
+			).toEqual([explicit]);
+		}
+
+		await writeFile(
+			fallbackA,
+			"---\ntype: convention\n---\n\nneedle edited body A\n",
+			"utf-8",
+		);
+		await utimes(
+			fallbackA,
+			new Date("2026-08-20T13:00:00.000Z"),
+			new Date("2026-08-20T13:00:00.000Z"),
+		);
+		await rm(deleted);
+
+		const projectOnly = await store.retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ text: "needle", recordTypes: ["decision", "convention"], limit: 4 },
+		);
+		expect(projectOnly.records.map((record) => record.path)).toEqual([
+			fallbackA,
+			fallbackB,
+			fallbackC,
+			explicit,
+		]);
+		expect(projectOnly.records[0]).toMatchObject({
+			content: "needle edited body A",
+			timestamp: "2026-08-20T13:00:00.000Z",
+		});
+		expect(projectOnly.records.map((record) => record.path)).not.toEqual(
+			expect.arrayContaining([deleted, nonmatching, userOnly]),
+		);
+
+		const bothScopes = await store.retrieve(
+			{ projectRoot, scopes: ["project", "user"] },
+			{ text: "needle", limit: 2 },
+		);
+		expect(bothScopes.records.map((record) => record.path)).toEqual([
+			userOnly,
+			fallbackA,
+		]);
 	});
 });
 

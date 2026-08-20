@@ -1,5 +1,14 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import {
+	access,
+	chmod,
+	mkdir,
+	readdir,
+	readFile,
+	stat,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import matter from "gray-matter";
 import { describe, expect, test, vi } from "vitest";
@@ -13,9 +22,12 @@ import {
 	parseEpisodeRecord,
 } from "../../lib/memory/episodic-records.ts";
 import {
+	createKnowledgeMemoryStore,
 	createMarkdownMemoryStore,
+	deriveKnowledgeProposalIdentity,
 	MEMORY_KINDS,
 	MEMORY_SCOPES,
+	type MemoryRecordDraft,
 	type MemoryStore,
 	type RetrievedMemoryRecord,
 } from "../../lib/memory/index.ts";
@@ -695,17 +707,19 @@ describe("memory interface", () => {
 				),
 			]);
 
-		// W2 shipped with types.ts byte-identical to W1 (its proof point). The
-		// memory-hardening added optional MemoryRetrieveStats; episodic-log then
-		// added only optional RetrievedMemoryRecord.source. Re-pin that narrow seam.
+		// Knowledge proposals extend the shared seam only with optional fields, so
+		// existing stores and minimal human records remain source-compatible.
 		expect(createHash("sha256").update(typesSource).digest("hex")).toBe(
-			"46d5548e22af81209095f9cda25b6fb6a0d7d8ffb20b4f978415cab046e4d607",
+			"a75046ce0b8dd1d109a0828f4ca8d28fe98860e4ea212e939262f02dae7b4cfd",
 		);
 		expect(
 			createHash("sha256").update(architectureAdapterSource).digest("hex"),
 		).toBe("12831c7ee41a852da7b667a0dfa7a2baa0d58799490eb5c782589d7a5f573ba8");
 		expect(typesSource).toContain("readonly type: string;");
 		expect(typesSource).toContain("readonly recordTypes?: readonly string[];");
+		expect(typesSource).toContain("readonly proposalIdentity?:");
+		expect(typesSource).toContain("readonly writer?: string;");
+		expect(typesSource).toContain("readonly date?: string;");
 		expect(typesSource).toContain('readonly kind: "written";');
 		expect(typesSource).toContain('readonly kind: "unsupported";');
 		expect(typesSource).toContain('readonly kind: "failed";');
@@ -1083,6 +1097,321 @@ describe("memory interface", () => {
 		expect(publicSource).not.toMatch(
 			/deleteEpisode|pruneEpisode|verifyEpisode|safePrune/u,
 		);
+	});
+});
+
+describe("knowledge proposal interface", () => {
+	test("contains attributable proposal writes and keys writer while deduplicating same-writer retries without path escape @cosmo-behavior plan:knowledge-surface#B-002", async () => {
+		const projectRoot = join(tmp.path, "proposal-project");
+		const userRoot = join(tmp.path, "proposal-user");
+		const store: MemoryStore = createKnowledgeMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+		});
+		const stable = {
+			planSlug: "knowledge-surface",
+			type: "decision" as const,
+			title: "Keep proposals outside knowledge",
+			description: "Machine knowledge waits for human promotion.",
+			content: "Dedicated machine writes land under the proposal tree.",
+			tags: ["review", "boundary", "review"],
+			source: "missions/plans/knowledge-surface/plan.md",
+			writer: " example/distiller ",
+		};
+		const identity = deriveKnowledgeProposalIdentity(stable);
+		const firstDraft = {
+			type: stable.type,
+			scope: "project" as const,
+			kind: "semantic" as const,
+			title: stable.title,
+			description: stable.description,
+			content: stable.content,
+			tags: identity.tags,
+			timestamp: "2026-08-20T10:00:00.000Z",
+			resource: identity.resource,
+			writer: identity.writer,
+			source: stable.source,
+			date: "2026-08-20T10:00:00.000Z",
+			proposalIdentity: identity.proposalIdentity,
+		};
+
+		const first = await store.write(firstDraft);
+		expect(first).toMatchObject({
+			kind: "written",
+			path: join(
+				projectRoot,
+				"memory",
+				"agent",
+				"proposals",
+				"knowledge-surface",
+				identity.resource.slice(identity.resource.lastIndexOf("/") + 1),
+			),
+			record: {
+				writer: "example/distiller",
+				source: stable.source,
+				date: "2026-08-20T10:00:00.000Z",
+				tags: ["boundary", "review"],
+			},
+		});
+		if (first.kind !== "written") throw new Error("expected proposal write");
+		const firstBytes = await readFile(first.path, "utf-8");
+		const firstStat = await stat(first.path);
+		const parsed = matter(firstBytes);
+		expect(parsed.data).toMatchObject({
+			type: "decision",
+			resource: identity.resource,
+			tags: ["boundary", "review"],
+			timestamp: "2026-08-20T10:00:00.000Z",
+			scope: "project",
+			kind: "semantic",
+			writer: "example/distiller",
+			source: stable.source,
+			date: "2026-08-20T10:00:00.000Z",
+		});
+		await expect(access(join(projectRoot, "knowledge"))).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+
+		const retry = await store.write({
+			...firstDraft,
+			timestamp: "2026-08-20T11:00:00.000Z",
+			date: "2026-08-20T11:00:00.000Z",
+		});
+		expect(retry).toMatchObject({ kind: "written", path: first.path });
+		expect(await readFile(first.path, "utf-8")).toBe(firstBytes);
+		expect((await stat(first.path)).mtimeMs).toBe(firstStat.mtimeMs);
+
+		const alternate = deriveKnowledgeProposalIdentity({
+			...stable,
+			writer: "main/cosmo",
+		});
+		const writerChanged = await store.write({
+			...firstDraft,
+			writer: alternate.writer,
+			resource: alternate.resource,
+			proposalIdentity: alternate.proposalIdentity,
+		});
+		expect(writerChanged).toMatchObject({ kind: "written" });
+		if (writerChanged.kind !== "written") {
+			throw new Error("expected writer-keyed proposal write");
+		}
+		expect(writerChanged.path).not.toBe(first.path);
+
+		const sourceDated = deriveKnowledgeProposalIdentity({
+			...stable,
+			sourceDate: "2026-08-20T12:00:00Z",
+		});
+		expect(sourceDated.proposalIdentity.sourceDate).toBe(
+			"2026-08-20T12:00:00.000Z",
+		);
+		expect(sourceDated.resource).not.toBe(identity.resource);
+		const identityMutations = [
+			deriveKnowledgeProposalIdentity({ ...stable, planSlug: "other-plan" }),
+			deriveKnowledgeProposalIdentity({ ...stable, type: "gotcha" }),
+			deriveKnowledgeProposalIdentity({ ...stable, title: "Changed title" }),
+			deriveKnowledgeProposalIdentity({
+				...stable,
+				description: "Changed description.",
+			}),
+			deriveKnowledgeProposalIdentity({
+				...stable,
+				content: "Changed content.",
+			}),
+			deriveKnowledgeProposalIdentity({ ...stable, tags: ["changed"] }),
+			deriveKnowledgeProposalIdentity({ ...stable, source: "another-source" }),
+			alternate,
+			sourceDated,
+		];
+		expect(
+			new Set([
+				identity.resource,
+				...identityMutations.map((item) => item.resource),
+			]).size,
+		).toBe(10);
+
+		const raceStable = { ...stable, title: "Concurrent proposal" };
+		const raceIdentity = deriveKnowledgeProposalIdentity(raceStable);
+		const raceDraft = {
+			...firstDraft,
+			title: raceStable.title,
+			resource: raceIdentity.resource,
+			proposalIdentity: raceIdentity.proposalIdentity,
+		};
+		const raced = await Promise.all([
+			store.write({
+				...raceDraft,
+				timestamp: "2026-08-20T13:00:00.000Z",
+				date: "2026-08-20T13:00:00.000Z",
+			}),
+			store.write({
+				...raceDraft,
+				timestamp: "2026-08-20T14:00:00.000Z",
+				date: "2026-08-20T14:00:00.000Z",
+			}),
+		]);
+		if (raced[0]?.kind !== "written" || raced[1]?.kind !== "written") {
+			throw new Error("expected concurrent proposal writes to converge");
+		}
+		expect(raced[1].path).toBe(raced[0].path);
+		const raceFiles = (
+			await readdir(
+				join(projectRoot, "memory", "agent", "proposals", "knowledge-surface"),
+			)
+		).filter((name) => name.includes(raceIdentity.proposalIdentity.key));
+		expect(raceFiles).toHaveLength(1);
+
+		for (const field of [
+			"title",
+			"description",
+			"content",
+			"tags",
+			"resource",
+			"writer",
+			"source",
+			"date",
+			"timestamp",
+			"proposalIdentity",
+		] as const) {
+			const missing: Partial<MemoryRecordDraft> = { ...firstDraft };
+			delete missing[field];
+			await expect(
+				store.write(missing as MemoryRecordDraft),
+			).resolves.toMatchObject({ kind: "unsupported" });
+		}
+
+		const invalidDrafts = [
+			{ ...firstDraft, scope: "user" as const },
+			{ ...firstDraft, type: "note" },
+			{ ...firstDraft, kind: "procedural" as const },
+			{ ...firstDraft, resource: "../knowledge/escape.md" },
+			{ ...firstDraft, resource: "/absolute/escape.md" },
+			{
+				...firstDraft,
+				proposalIdentity: { ...identity.proposalIdentity, key: "000000000000" },
+			},
+			{
+				...firstDraft,
+				proposalIdentity: {
+					...identity.proposalIdentity,
+					planSlug: "../escape",
+				},
+			},
+			{
+				...firstDraft,
+				proposalIdentity: {
+					...identity.proposalIdentity,
+					sourceDate: "not-a-date",
+				},
+			},
+		] as const;
+		for (const invalid of invalidDrafts) {
+			await expect(store.write(invalid)).resolves.toMatchObject({
+				kind: "unsupported",
+			});
+		}
+		await expect(access(join(userRoot, "knowledge"))).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+		await expect(access(join(tmp.path, "escape.md"))).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+
+		const symlinkRoot = join(tmp.path, "symlink-proposal-project");
+		const external = join(tmp.path, "external-proposals");
+		await mkdir(join(symlinkRoot, "memory", "agent"), { recursive: true });
+		await mkdir(external, { recursive: true });
+		await symlink(external, join(symlinkRoot, "memory", "agent", "proposals"));
+		const symlinkStore = createKnowledgeMemoryStore({
+			projectRoot: symlinkRoot,
+		});
+		await expect(symlinkStore.write(firstDraft)).resolves.toMatchObject({
+			kind: "failed",
+			reason: expect.stringContaining("symlink"),
+		});
+		expect(await readdir(external)).toEqual([]);
+
+		const interruptedStable = {
+			...stable,
+			title: "Interrupted proposal",
+		};
+		const interruptedIdentity =
+			deriveKnowledgeProposalIdentity(interruptedStable);
+		const proposalPlanDirectory = join(
+			projectRoot,
+			"memory",
+			"agent",
+			"proposals",
+			"knowledge-surface",
+		);
+		const interruptedPath = join(
+			proposalPlanDirectory,
+			interruptedIdentity.resource.slice(
+				interruptedIdentity.resource.lastIndexOf("/") + 1,
+			),
+		);
+		let interrupted: Awaited<ReturnType<MemoryStore["write"]>>;
+		await chmod(proposalPlanDirectory, 0o500);
+		try {
+			interrupted = await store.write({
+				...firstDraft,
+				title: interruptedStable.title,
+				resource: interruptedIdentity.resource,
+				proposalIdentity: interruptedIdentity.proposalIdentity,
+			});
+		} finally {
+			await chmod(proposalPlanDirectory, 0o700);
+		}
+		expect(interrupted).toMatchObject({
+			kind: "failed",
+			path: interruptedPath,
+		});
+		await expect(access(interruptedPath)).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+		expect(
+			(await readdir(proposalPlanDirectory)).filter((name) =>
+				name.includes(".tmp"),
+			),
+		).toEqual([]);
+
+		const collisionStable = { ...stable, title: "Occupied proposal" };
+		const collisionIdentity = deriveKnowledgeProposalIdentity(collisionStable);
+		const collisionPath = join(
+			projectRoot,
+			"memory",
+			"agent",
+			"proposals",
+			collisionIdentity.proposalIdentity.planSlug,
+			collisionIdentity.resource.slice(
+				collisionIdentity.resource.lastIndexOf("/") + 1,
+			),
+		);
+		await mkdir(join(collisionPath, ".."), { recursive: true });
+		await writeFile(
+			collisionPath,
+			"interrupted or foreign occupant\n",
+			"utf-8",
+		);
+		const collision = await store.write({
+			...firstDraft,
+			title: collisionStable.title,
+			resource: collisionIdentity.resource,
+			proposalIdentity: collisionIdentity.proposalIdentity,
+		});
+		expect(collision).toMatchObject({ kind: "failed", path: collisionPath });
+		expect(await readFile(collisionPath, "utf-8")).toBe(
+			"interrupted or foreign occupant\n",
+		);
+		expect(
+			(await readdir(join(collisionPath, ".."))).filter((name) =>
+				name.includes(".tmp"),
+			),
+		).toEqual([]);
+
+		await expect(store.consolidate()).resolves.toEqual({
+			kind: "noop",
+			reason: expect.stringContaining("does not consolidate"),
+		});
 	});
 });
 

@@ -10,6 +10,12 @@ export interface MemoryScopeContext {
 	readonly sessionId?: string;
 }
 
+export interface KnowledgeProposalIdentity {
+	readonly planSlug: string;
+	readonly key: string;
+	readonly sourceDate?: string;
+}
+
 export interface MemoryRecordDraft {
 	/** W1 authored records use "note"; derived adapters may reject writes. */
 	readonly type: string;
@@ -20,7 +26,11 @@ export interface MemoryRecordDraft {
 	readonly content: string;
 	readonly tags: readonly string[];
 	readonly timestamp?: string;
+	readonly resource?: string;
+	readonly writer?: string;
 	readonly source?: string;
+	readonly date?: string;
+	readonly proposalIdentity?: KnowledgeProposalIdentity;
 }
 
 export interface MemoryQuery {
@@ -39,7 +49,9 @@ export interface RetrievedMemoryRecord {
 	readonly resource: string;
 	readonly tags: readonly string[];
 	readonly timestamp: string;
+	readonly writer?: string;
 	readonly source?: string;
+	readonly date?: string;
 	readonly content: string;
 	readonly path: string;
 }

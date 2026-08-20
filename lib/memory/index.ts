@@ -25,9 +25,22 @@ export {
 	parseEpisodeRecord,
 	parseEpisodeTagEnvelope,
 } from "./episodic-records.ts";
+export {
+	type DerivedKnowledgeProposalIdentity,
+	deriveKnowledgeProposalIdentity,
+	KNOWLEDGE_RECORD_TYPES,
+	type KnowledgeProposalIdentityInput,
+	type KnowledgeProvenance,
+	type KnowledgeRecordType,
+} from "./knowledge-records.ts";
+export {
+	createKnowledgeMemoryStore,
+	type KnowledgeMemoryStoreOptions,
+} from "./knowledge-store.ts";
 export type { MarkdownMemoryStoreOptions } from "./markdown-store.ts";
 export { createMarkdownMemoryStore } from "./markdown-store.ts";
 export {
+	type KnowledgeProposalIdentity,
 	MEMORY_KINDS,
 	MEMORY_SCOPES,
 	type MemoryConsolidateResult,
