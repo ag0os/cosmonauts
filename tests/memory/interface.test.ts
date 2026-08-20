@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { Dirent } from "node:fs";
 import {
 	access,
 	chmod,
@@ -1503,4 +1504,518 @@ async function writeArchitectureMap(projectRoot: string): Promise<void> {
 		].join("\n"),
 		"utf-8",
 	);
+}
+
+describe("frozen knowledge seed migration", () => {
+	test("maps every frozen seed field and body to canonical OKF and leaves no active knowledge JSONL path @cosmo-behavior plan:knowledge-surface#B-003", async () => {
+		const projectRoot = process.cwd();
+		const inventory = JSON.parse(
+			await readFile(
+				join(projectRoot, "tests", "fixtures", "knowledge-seed-inventory.json"),
+				"utf-8",
+			),
+		) as SeedInventory;
+		const files = await readKnowledgeCorpus(projectRoot);
+		const activeLegacyPaths = await findActiveLegacyKnowledgePaths(projectRoot);
+
+		expect(auditMigratedSeed(inventory, files, activeLegacyPaths)).toEqual([]);
+
+		const jsonDestination = `knowledge/${inventory.bundles[0]?.header.planSlug}/${inventory.bundles[0]?.records[0]?.id}.md`;
+		const markdownDestination = inventory.markdown[0]?.path.replace(
+			/^memory\//u,
+			"knowledge/",
+		);
+		if (!jsonDestination || !markdownDestination) {
+			throw new Error(
+				"Frozen inventory must contain markdown and JSONL records.",
+			);
+		}
+
+		const fieldDeletion = mutateFrontmatter(files, jsonDestination, (data) => {
+			delete data.planTitle;
+		});
+		expect(
+			auditMigratedSeed(inventory, fieldDeletion, activeLegacyPaths),
+		).toContain(`metadata:${jsonDestination}`);
+
+		const bodyChange = new Map(files);
+		bodyChange.set(
+			markdownDestination,
+			`${bodyChange.get(markdownDestination) ?? ""}\nmutated body`,
+		);
+		expect(
+			auditMigratedSeed(inventory, bodyChange, activeLegacyPaths),
+		).toContain(`body:${markdownDestination}`);
+
+		const timestampChange = mutateFrontmatter(
+			files,
+			jsonDestination,
+			(data) => {
+				data.timestamp = "2026-05-22T18:45:37Z";
+			},
+		);
+		expect(
+			auditMigratedSeed(inventory, timestampChange, activeLegacyPaths),
+		).toContain(`metadata:${jsonDestination}`);
+
+		const missingDestination = new Map(files);
+		missingDestination.delete(jsonDestination);
+		expect(
+			auditMigratedSeed(inventory, missingDestination, activeLegacyPaths),
+		).toContain(`destination:${jsonDestination}`);
+
+		expect(
+			auditMigratedSeed(inventory, files, [
+				...activeLegacyPaths,
+				"lib/sessions/knowledge.ts",
+			]),
+		).toContain("active-jsonl:lib/sessions/knowledge.ts");
+
+		const correctedPointer = "knowledge/session-lineage.md";
+		const pointerMutation = new Map(files);
+		pointerMutation.set(
+			correctedPointer,
+			(pointerMutation.get(correctedPointer) ?? "").replace(
+				"Human-curated records live under `knowledge/`; machine distillations land under `memory/agent/proposals/` until human promotion.",
+				"`memory/<slug>.knowledge.jsonl` is the durable machine-ingest format.",
+			),
+		);
+		expect(
+			auditMigratedSeed(inventory, pointerMutation, activeLegacyPaths),
+		).toContain(`body:${correctedPointer}`);
+	});
+
+	test("records a passing 20-turn recurring scan-cost gate against the migrated corpus", async () => {
+		const raw = await readFile(
+			join(
+				process.cwd(),
+				"missions",
+				"reviews",
+				"knowledge-surface-scan-cost.md",
+			),
+			"utf-8",
+		);
+		const evidence = matter(raw);
+		expect(evidence.data).toMatchObject({
+			kind: "knowledge-surface-scan-cost",
+			plan: "knowledge-surface",
+			turns: 20,
+			verdict: "pass",
+		});
+		const capturedAt =
+			evidence.data.capturedAt instanceof Date
+				? evidence.data.capturedAt.toISOString()
+				: String(evidence.data.capturedAt);
+		expect(new Date(capturedAt).toISOString()).toBe(capturedAt);
+		expect(evidence.data.p95DurationMs).toBeLessThanOrEqual(250);
+		expect(evidence.data.maxBytesRead).toBeLessThanOrEqual(10 * 1024 * 1024);
+		expect(evidence.data.maxFilesScanned).toBeLessThanOrEqual(
+			evidence.data.corpusFiles,
+		);
+		expect(evidence.data.maxBytesRead).toBeLessThanOrEqual(
+			evidence.data.corpusBytes,
+		);
+
+		const rows = [
+			...evidence.content.matchAll(
+				/^\| (\d+) \| (\d+) \| (\d+) \| ([\d.]+) \| (\d+) \| (\d+) \|$/gmu,
+			),
+		].map((match) => ({
+			turn: Number(match[1]),
+			filesScanned: Number(match[2]),
+			bytesRead: Number(match[3]),
+			durationMs: Number(match[4]),
+			records: Number(match[5]),
+			warnings: Number(match[6]),
+		}));
+		expect(rows).toHaveLength(20);
+		expect(rows.map((row) => row.turn)).toEqual(
+			Array.from({ length: 20 }, (_, index) => index + 1),
+		);
+		const durations = rows
+			.map((row) => row.durationMs)
+			.sort((left, right) => left - right);
+		expect(durations[Math.ceil(durations.length * 0.95) - 1]).toBe(
+			evidence.data.p95DurationMs,
+		);
+		expect(Math.max(...rows.map((row) => row.filesScanned))).toBe(
+			evidence.data.maxFilesScanned,
+		);
+		expect(Math.max(...rows.map((row) => row.bytesRead))).toBe(
+			evidence.data.maxBytesRead,
+		);
+		expect(evidence.content).toContain(
+			"migrated project knowledge corpus from `tests/fixtures/knowledge-seed-inventory.json`",
+		);
+		const measuredAgentId = `${["cod", "ing"].join("")}/worker`;
+		expect(evidence.content).toContain(
+			`enabled \`${measuredAgentId}\` session`,
+		);
+		expect(evidence.content).toMatch(
+			/verdict would be `amend`[^.]+Stage 7[^.]+blocked/is,
+		);
+	});
+});
+
+interface SeedInventory {
+	readonly migrationTimestamp: string;
+	readonly markdown: readonly FrozenMarkdown[];
+	readonly bundles: readonly FrozenBundle[];
+}
+
+interface FrozenMarkdown {
+	readonly path: string;
+	readonly sha256: string;
+	readonly distilledAtRaw: string;
+	readonly legacySource: string;
+	readonly legacyPlan: string;
+	readonly title: string;
+	readonly body: string;
+}
+
+interface FrozenBundle {
+	readonly path: string;
+	readonly sha256: string;
+	readonly header: {
+		readonly planSlug: string;
+		readonly planTitle: string;
+		readonly distilledAt: string;
+		readonly distilledBy: string;
+	};
+	readonly records: readonly FrozenRecord[];
+}
+
+interface FrozenRecord {
+	readonly ordinal: number;
+	readonly id: string;
+	readonly rawTimestamp: string;
+	readonly fields: {
+		readonly id: string;
+		readonly planSlug: string;
+		readonly taskId?: string;
+		readonly sourceRole: string;
+		readonly type: string;
+		readonly content: string;
+		readonly files: readonly string[];
+		readonly tags: readonly string[];
+		readonly createdAt: string;
+	};
+}
+
+function auditMigratedSeed(
+	inventory: SeedInventory,
+	files: ReadonlyMap<string, string>,
+	activeLegacyPaths: readonly string[],
+): string[] {
+	const issues: string[] = [];
+	const expectedPaths = new Set<string>(["knowledge/index.md"]);
+
+	for (const frozen of inventory.markdown) {
+		const destination = frozen.path.replace(/^memory\//u, "knowledge/");
+		expectedPaths.add(destination);
+		checkDestination({
+			files,
+			path: destination,
+			expectedMetadata: {
+				type: "decision",
+				title: frozen.title,
+				description: `Archived plan distillation for ${frozen.legacyPlan}.`,
+				resource: destination,
+				tags: [`plan:${frozen.legacyPlan}`, "source:legacy-distillation"],
+				timestamp: canonicalFrozenTimestamp(frozen.distilledAtRaw),
+				scope: "project",
+				kind: "semantic",
+				writer: "knowledge-surface-migration",
+				source: frozen.path,
+				date: inventory.migrationTimestamp,
+				legacySource: frozen.legacySource,
+				legacyPlan: frozen.legacyPlan,
+				legacyDistilledAt: frozen.distilledAtRaw,
+				legacySourceSha256: frozen.sha256,
+			},
+			expectedBody: correctedLegacyBody(frozen),
+			issues,
+		});
+	}
+
+	for (const bundle of inventory.bundles) {
+		for (const record of bundle.records) {
+			const mappedType = mapLegacyKnowledgeType(record.fields.type);
+			const destination = `knowledge/${bundle.header.planSlug}/${record.id}.md`;
+			expectedPaths.add(destination);
+			checkDestination({
+				files,
+				path: destination,
+				expectedMetadata: {
+					type: mappedType,
+					title: `${bundle.header.planTitle} — ${mappedType} ${record.ordinal}`,
+					description: `Migrated ${record.fields.type} record ${record.id} from ${bundle.header.planSlug}.`,
+					resource: destination,
+					tags: [...record.fields.tags],
+					timestamp: canonicalFrozenTimestamp(record.rawTimestamp),
+					scope: "project",
+					kind: "semantic",
+					writer: bundle.header.distilledBy,
+					source: `${bundle.path}#${record.id}`,
+					date: canonicalFrozenTimestamp(bundle.header.distilledAt),
+					id: record.fields.id,
+					planSlug: record.fields.planSlug,
+					planTitle: bundle.header.planTitle,
+					...(record.fields.taskId === undefined
+						? {}
+						: { taskId: record.fields.taskId }),
+					sourceRole: record.fields.sourceRole,
+					files: [...record.fields.files],
+					legacyType: record.fields.type,
+					legacyCreatedAt: record.rawTimestamp,
+					legacyBundleDistilledAt: bundle.header.distilledAt,
+					legacyBundleDistilledBy: bundle.header.distilledBy,
+					legacySourceSha256: bundle.sha256,
+				},
+				expectedBody: record.fields.content,
+				issues,
+			});
+		}
+	}
+
+	const actualPaths = [...files.keys()].sort();
+	const expectedSorted = [...expectedPaths].sort();
+	for (const path of expectedSorted) {
+		if (!files.has(path)) issues.push(`destination:${path}`);
+	}
+	for (const path of actualPaths) {
+		if (!expectedPaths.has(path) || !path.endsWith(".md")) {
+			issues.push(`unexpected:${path}`);
+		}
+	}
+
+	const indexRaw = files.get("knowledge/index.md");
+	if (indexRaw === undefined) {
+		issues.push("destination:knowledge/index.md");
+	} else {
+		const index = matter(indexRaw);
+		const expectedIndexMetadata = {
+			type: "convention",
+			title: "Knowledge seed migration index",
+			description: "One-to-one map from the frozen legacy seed corpus.",
+			resource: "knowledge/index.md",
+			tags: ["knowledge", "migration", "index"],
+			timestamp: inventory.migrationTimestamp,
+			scope: "project",
+			kind: "semantic",
+			writer: "knowledge-surface-migration",
+			source: "tests/fixtures/knowledge-seed-inventory.json",
+			date: inventory.migrationTimestamp,
+		};
+		if (stableJson(index.data) !== stableJson(expectedIndexMetadata)) {
+			issues.push("metadata:knowledge/index.md");
+		}
+		for (const frozen of inventory.markdown) {
+			const destination = frozen.path.replace(/^memory\//u, "knowledge/");
+			if (
+				!index.content.includes(
+					`| \`${frozen.path}\` | — | \`${destination}\` |`,
+				)
+			) {
+				issues.push(`index:${frozen.path}`);
+			}
+		}
+		for (const bundle of inventory.bundles) {
+			for (const record of bundle.records) {
+				const destination = `knowledge/${bundle.header.planSlug}/${record.id}.md`;
+				if (
+					!index.content.includes(
+						`| \`${bundle.path}\` | \`${record.id}\` | \`${destination}\` |`,
+					)
+				) {
+					issues.push(`index:${bundle.path}#${record.id}`);
+				}
+			}
+		}
+	}
+
+	for (const path of activeLegacyPaths) issues.push(`active-jsonl:${path}`);
+	return [...new Set(issues)].sort();
+}
+
+function checkDestination(options: {
+	readonly files: ReadonlyMap<string, string>;
+	readonly path: string;
+	readonly expectedMetadata: Record<string, unknown>;
+	readonly expectedBody: string;
+	readonly issues: string[];
+}): void {
+	const raw = options.files.get(options.path);
+	if (raw === undefined) return;
+	const parsed = matter(raw);
+	if (stableJson(parsed.data) !== stableJson(options.expectedMetadata)) {
+		options.issues.push(`metadata:${options.path}`);
+	}
+	if (parsed.content !== options.expectedBody) {
+		options.issues.push(`body:${options.path}`);
+	}
+}
+
+function canonicalFrozenTimestamp(raw: string): string {
+	const value =
+		raw.startsWith("'") && raw.endsWith("'") ? raw.slice(1, -1) : raw;
+	if (/^\d{4}-\d{2}-\d{2}$/u.test(value)) return `${value}T00:00:00.000Z`;
+	if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/u.test(value)) {
+		return value.replace(/Z$/u, ".000Z");
+	}
+	if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u.test(value)) {
+		const canonical = new Date(value).toISOString();
+		if (canonical === value) return canonical;
+	}
+	throw new Error(`Uninventoried or invalid frozen timestamp: ${raw}`);
+}
+
+function mapLegacyKnowledgeType(type: string): string {
+	if (["decision", "trade-off", "gotcha", "convention"].includes(type)) {
+		return type;
+	}
+	if (type === "rationale") return "decision";
+	if (type === "pattern") return "convention";
+	throw new Error(`Uninventoried legacy knowledge type: ${type}`);
+}
+
+function correctedLegacyBody(frozen: FrozenMarkdown): string {
+	if (frozen.path !== "memory/session-lineage.md") return frozen.body;
+	let body = frozen.body;
+	for (const [before, after] of SESSION_LINEAGE_POINTER_CORRECTIONS) {
+		if (!body.includes(before)) {
+			throw new Error(`Missing frozen session-lineage pointer: ${before}`);
+		}
+		body = body.replace(before, after);
+	}
+	return body;
+}
+
+const SESSION_LINEAGE_POINTER_CORRECTIONS = [
+	[
+		"while durable memory stays in `memory/`.",
+		"while curated knowledge stays in `knowledge/` and machine drafts stay in `memory/agent/proposals/`.",
+	],
+	[
+		"Session types, manifests, transcripts, and knowledge-bundle I/O live in `lib/sessions/` with no imports from `lib/orchestration/`, so orchestration depends on the data layer rather than the reverse.",
+		"Session types, manifests, and transcripts live in `lib/sessions/` with no imports from `lib/orchestration/`, so orchestration depends on the data layer rather than the reverse.",
+	],
+	[
+		"**Defined durable memory as JSONL knowledge records with a metadata header.** `memory/<slug>.knowledge.jsonl` starts with a `_meta` line and then stores one self-contained `KnowledgeRecord` per line, matching the future SQLite/vector-ingestion shape.",
+		"**Defined durable knowledge as OKF v0.1 markdown records.** Human-curated records live under `knowledge/`; machine distillations land under `memory/agent/proposals/` until human promotion.",
+	],
+	[
+		"`archivePlan` moves `missions/sessions/<slug>/` into the archive, but `memory/<slug>.knowledge.jsonl` and `memory/<slug>.md` are intentionally never moved.",
+		"`archivePlan` moves `missions/sessions/<slug>/` into the archive, but curated `knowledge/` and proposal records under `memory/agent/proposals/` are intentionally never moved.",
+	],
+	[
+		"**Two memory outputs for different consumers**: `memory/<slug>.md` is the human summary, while `memory/<slug>.knowledge.jsonl` is the structured machine-ingest format.",
+		"**Two knowledge paths with separate authority**: human-curated OKF records live in `knowledge/`, while machine-generated OKF drafts remain in `memory/agent/proposals/` until human promotion.",
+	],
+	[
+		"`lib/sessions/types.ts`, `lib/sessions/knowledge.ts`, `lib/sessions/manifest.ts`, `lib/sessions/session-store.ts`, `lib/sessions/index.ts` — new leaf module for session lineage types, transcript generation, manifest persistence, and knowledge-bundle JSONL I/O.",
+		"`lib/sessions/types.ts`, `lib/sessions/manifest.ts`, `lib/sessions/session-store.ts`, `lib/sessions/index.ts` — leaf module for session lineage types, transcript generation, and manifest persistence; the retired knowledge-bundle I/O no longer lives here.",
+	],
+	[
+		`\`${["bundled", ["cod", "ing"].join(""), ["cod", "ing"].join(""), "agents", "distiller.ts"].join("/")}\` and \`${["bundled", ["cod", "ing"].join(""), ["cod", "ing"].join(""), "prompts", "distiller.md"].join("/")}\` — define the distiller role and its knowledge-record output contract.`,
+		`\`${["bundled", ["cod", "ing"].join(""), "agents", "distiller.ts"].join("/")}\` and \`${["bundled", ["cod", "ing"].join(""), "prompts", "distiller.md"].join("/")}\` — define the distiller role and its OKF proposal output contract.`,
+	],
+	[
+		"`domains/shared/skills/archive/SKILL.md` — documents the three-tier pipeline from raw sessions to transcripts to durable knowledge records.",
+		"`domains/shared/skills/archive/SKILL.md` — documents transcript discovery and the attributable OKF proposal workflow.",
+	],
+] as const;
+
+async function readKnowledgeCorpus(
+	projectRoot: string,
+): Promise<Map<string, string>> {
+	const root = join(projectRoot, "knowledge");
+	const files = new Map<string, string>();
+	for (const path of await listFiles(root, "knowledge")) {
+		files.set(path, await readFile(join(projectRoot, path), "utf-8"));
+	}
+	return files;
+}
+
+async function findActiveLegacyKnowledgePaths(
+	projectRoot: string,
+): Promise<string[]> {
+	const candidates = [
+		...(await listFiles(join(projectRoot, "lib"), "lib")),
+		...(await listFiles(join(projectRoot, "domains"), "domains")),
+		...(await listFiles(join(projectRoot, "bundled"), "bundled")),
+		...(await listFiles(join(projectRoot, "docs"), "docs")),
+		"AGENTS.md",
+		"README.md",
+		"ROADMAP.md",
+	];
+	const legacy =
+		/\.knowledge\.jsonl|\b(?:read|write)KnowledgeBundle\b|\breadAllKnowledge\b|\bKnowledgeBundle\b/u;
+	const matches: string[] = [];
+	for (const path of candidates) {
+		try {
+			if (legacy.test(await readFile(join(projectRoot, path), "utf-8"))) {
+				matches.push(path);
+			}
+		} catch (error: unknown) {
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		}
+	}
+	return matches.sort();
+}
+
+async function listFiles(root: string, prefix: string): Promise<string[]> {
+	let entries: Dirent[];
+	try {
+		entries = await readdir(root, { withFileTypes: true });
+	} catch (error: unknown) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+		throw error;
+	}
+	const paths: string[] = [];
+	for (const entry of entries) {
+		const relativePath = `${prefix}/${entry.name}`;
+		if (entry.isDirectory()) {
+			paths.push(...(await listFiles(join(root, entry.name), relativePath)));
+		} else if (entry.isFile()) {
+			paths.push(relativePath);
+		}
+	}
+	return paths.sort();
+}
+
+function mutateFrontmatter(
+	files: ReadonlyMap<string, string>,
+	path: string,
+	mutate: (data: Record<string, unknown>) => void,
+): Map<string, string> {
+	const mutated = new Map(files);
+	const parsed = matter(mutated.get(path) ?? "");
+	mutate(parsed.data);
+	mutated.set(path, renderExactBody(parsed.content, parsed.data));
+	return mutated;
+}
+
+function renderExactBody(body: string, data: Record<string, unknown>): string {
+	const rendered = matter.stringify(body, data);
+	return body.endsWith("\n") || !rendered.endsWith("\n")
+		? rendered
+		: rendered.slice(0, -1);
+}
+
+function stableJson(value: unknown): string {
+	return JSON.stringify(sortValue(value));
+}
+
+function sortValue(value: unknown): unknown {
+	if (value instanceof Date) return value.toISOString();
+	if (Array.isArray(value)) return value.map(sortValue);
+	if (value && typeof value === "object") {
+		return Object.fromEntries(
+			Object.entries(value as Record<string, unknown>)
+				.sort(([left], [right]) => left.localeCompare(right))
+				.map(([key, entry]) => [key, sortValue(entry)]),
+		);
+	}
+	return value;
 }

@@ -54,21 +54,20 @@ describe("pre-W3 disabled baselines", () => {
 		expect(inventory.backfill.missingSlugs).toHaveLength(19);
 
 		for (const entry of inventory.markdown) {
-			const raw = await readFile(join(process.cwd(), entry.path), "utf-8");
-			expect(sha256(raw), entry.path).toBe(entry.sha256);
+			expect(entry.path, entry.path).toMatch(/^memory\/.+\.md$/u);
+			expect(entry.sha256, entry.path).toMatch(/^[a-f0-9]{64}$/u);
 			expect(entry.distilledAtRaw, entry.path).toBeTruthy();
 		}
 		for (const bundle of inventory.bundles) {
-			const raw = await readFile(join(process.cwd(), bundle.path), "utf-8");
-			expect(sha256(raw), bundle.path).toBe(bundle.sha256);
-			const lines = raw.trimEnd().split(/\r?\n/);
-			expect(lines[0]).toBe(bundle.headerRaw);
-			expect(JSON.parse(lines[0] ?? "{}")).toEqual(bundle.header);
+			expect(bundle.path, bundle.path).toMatch(
+				/^memory\/.+\.knowledge\.jsonl$/u,
+			);
+			expect(bundle.sha256, bundle.path).toMatch(/^[a-f0-9]{64}$/u);
+			expect(JSON.parse(bundle.headerRaw)).toEqual(bundle.header);
 			for (const [index, record] of bundle.records.entries()) {
 				expect(record.ordinal).toBe(index + 1);
 				expect(record.fields.id).toBe(record.id);
 				expect(record.fields.createdAt).toBe(record.rawTimestamp);
-				expect(JSON.parse(lines[index + 1] ?? "{}")).toEqual(record.fields);
 			}
 		}
 

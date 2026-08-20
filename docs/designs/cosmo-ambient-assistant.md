@@ -213,10 +213,10 @@ shape `cosmo` needs from it.
 
 ### How this relates to the memory Cosmonauts already has
 
-Cosmonauts already has a *memory* directory and roadmap items
-(`architecture-of-record`, `embedding-memory`, `memory/<slug>.knowledge.jsonl`).
-But that is **code/architecture knowledge distilled from completed plans** — what
-the *codebase* is and why. What `cosmo`-as-assistant needs is a different axis:
+Cosmonauts already has curated project knowledge under `knowledge/` and derived
+architecture state under `memory/architecture/`. That is **code/architecture
+knowledge distilled from completed plans** — what the *codebase* is and why.
+What `cosmo`-as-assistant needs is a different axis:
 **operational / personal memory** — what the *user* does and how they like to
 work. The separate memory effort should decide whether these are one substrate
 with multiple record types or sibling systems; this design assumes at minimum a

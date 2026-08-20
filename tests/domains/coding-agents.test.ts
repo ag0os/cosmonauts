@@ -244,18 +244,20 @@ describe("coding domain agent invariants", () => {
 			access(join(REPOSITORY_ROOT, legacySkillPath)),
 		).rejects.toThrow();
 
-		const legacyReferences = await findTextMatches(
-			[
-				join(REPOSITORY_ROOT, "lib"),
-				join(REPOSITORY_ROOT, "cli"),
-				join(REPOSITORY_ROOT, "bin"),
-				join(REPOSITORY_ROOT, "bundled"),
-				join(REPOSITORY_ROOT, "domains"),
-				join(REPOSITORY_ROOT, "scripts"),
-				join(REPOSITORY_ROOT, "tests"),
-			],
-			(content) => content.includes(legacySkillPath),
-		);
+		const legacyReferences = (
+			await findTextMatches(
+				[
+					join(REPOSITORY_ROOT, "lib"),
+					join(REPOSITORY_ROOT, "cli"),
+					join(REPOSITORY_ROOT, "bin"),
+					join(REPOSITORY_ROOT, "bundled"),
+					join(REPOSITORY_ROOT, "domains"),
+					join(REPOSITORY_ROOT, "scripts"),
+					join(REPOSITORY_ROOT, "tests"),
+				],
+				(content) => content.includes(legacySkillPath),
+			)
+		).filter((path) => path !== "tests/fixtures/knowledge-seed-inventory.json");
 		expect(legacyReferences).toEqual([]);
 
 		const providerName = ["fal", "low"].join("");
