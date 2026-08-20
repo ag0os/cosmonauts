@@ -10,12 +10,34 @@ import {
 	EPISODE_WARNING_THRESHOLD_DEFAULT,
 	loadProjectConfig,
 	resolveEpisodicLogConfig,
+	resolveKnowledgeSurfaceConfig,
 } from "../../lib/config/loader.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("config-test-");
 
 describe("loadProjectConfig", () => {
+	test("enables the knowledge surface only for literal true", async () => {
+		for (const [value, expected] of [
+			[true, true],
+			[false, false],
+			["true", false],
+			[1, false],
+			[null, false],
+		] as const) {
+			await mkdir(join(tmp.path, ".cosmonauts"), { recursive: true });
+			await writeFile(
+				join(tmp.path, ".cosmonauts", "config.json"),
+				JSON.stringify({ knowledgeSurface: { enabled: value } }),
+			);
+
+			const config = await loadProjectConfig(tmp.path);
+			expect(resolveKnowledgeSurfaceConfig(config).enabled).toBe(expected);
+		}
+
+		expect(resolveKnowledgeSurfaceConfig({}).enabled).toBe(false);
+	});
+
 	test("returns empty config when file does not exist", async () => {
 		const config = await loadProjectConfig(tmp.path);
 		expect(config).toEqual({});

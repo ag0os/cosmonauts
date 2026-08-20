@@ -13,6 +13,7 @@ import type {
 	ProjectAnalysisConfig,
 	ProjectConfig,
 	ProjectEpisodicLogConfig,
+	ProjectKnowledgeSurfaceConfig,
 } from "./types.ts";
 
 export const EPISODE_WARNING_THRESHOLD_DEFAULT = 500;
@@ -20,6 +21,10 @@ export const EPISODE_WARNING_THRESHOLD_DEFAULT = 500;
 export interface ResolvedEpisodicLogConfig {
 	readonly enabled: boolean;
 	readonly warningThreshold: number;
+}
+
+export interface ResolvedKnowledgeSurfaceConfig {
+	readonly enabled: boolean;
 }
 
 type MutableArchitectureMapConfig = {
@@ -96,6 +101,7 @@ export async function loadProjectConfig(
 		architectureMap?: ProjectConfig["architectureMap"];
 		episodicLog?: ProjectConfig["episodicLog"];
 		analysis?: ProjectConfig["analysis"];
+		knowledgeSurface?: ProjectConfig["knowledgeSurface"];
 	} = {};
 
 	if (typeof obj.domain === "string") {
@@ -168,7 +174,38 @@ export async function loadProjectConfig(
 		config.analysis = parseAnalysisConfig(obj.analysis);
 	}
 
+	if ("knowledgeSurface" in obj) {
+		config.knowledgeSurface = parseKnowledgeSurfaceConfig(obj.knowledgeSurface);
+	}
+
 	return config;
+}
+
+export function resolveKnowledgeSurfaceConfig(
+	config: Pick<ProjectConfig, "knowledgeSurface">,
+): ResolvedKnowledgeSurfaceConfig {
+	return { enabled: config.knowledgeSurface?.enabled === true };
+}
+
+function parseKnowledgeSurfaceConfig(
+	value: unknown,
+): ProjectKnowledgeSurfaceConfig | undefined {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		console.error(
+			`[warning] Skipping malformed knowledgeSurface: expected an object, got ${formatConfigValue(value)}.`,
+		);
+		return undefined;
+	}
+
+	const obj = value as Record<string, unknown>;
+	if (!("enabled" in obj)) return {};
+	if (typeof obj.enabled !== "boolean") {
+		console.error(
+			`[warning] Skipping malformed knowledgeSurface.enabled: expected a boolean, got ${formatConfigValue(obj.enabled)}.`,
+		);
+		return {};
+	}
+	return { enabled: obj.enabled };
 }
 
 export function resolveEpisodicLogConfig(

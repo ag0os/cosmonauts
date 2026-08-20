@@ -56,7 +56,10 @@ import {
 	clearPendingSwitch,
 	consumePendingSwitch,
 } from "../lib/interactive/agent-switch.ts";
-import { buildToolAllowlist } from "../lib/orchestration/definition-resolution.ts";
+import {
+	assertEnabledRecallOwner,
+	buildToolAllowlist,
+} from "../lib/orchestration/definition-resolution.ts";
 import type { PiFlags } from "./pi-flags.ts";
 
 /**
@@ -98,6 +101,9 @@ function toResourceLoaderOptions(
 		noSkills: true,
 		...(params.extensionPaths.length > 0 && {
 			additionalExtensionPaths: params.extensionPaths,
+		}),
+		...(params.extensionFactories?.length > 0 && {
+			extensionFactories: params.extensionFactories,
 		}),
 		...(params.skillsOverride && { skillsOverride: params.skillsOverride }),
 		...(params.additionalSkillPaths && {
@@ -594,6 +600,9 @@ export async function createSession(
 						modelRegistry: sharedModelRegistry,
 						resourceLoaderOptions: newResourceLoaderOptions,
 					});
+					if (newParams.knowledgeSurfaceEnabled) {
+						assertEnabledRecallOwner(services.resourceLoader);
+					}
 					const result = await createAgentSessionFromServices({
 						services,
 						sessionManager: sm,
@@ -624,6 +633,9 @@ export async function createSession(
 			modelRegistry: sharedModelRegistry,
 			resourceLoaderOptions,
 		});
+		if (params.knowledgeSurfaceEnabled) {
+			assertEnabledRecallOwner(services.resourceLoader);
+		}
 		const result = await createAgentSessionFromServices({
 			services,
 			sessionManager: sm,

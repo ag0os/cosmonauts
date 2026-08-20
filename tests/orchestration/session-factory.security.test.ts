@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
 	sessionOpen: vi.fn(),
 	sessionInMemory: vi.fn(),
 	buildSessionParams: vi.fn(),
+	loaderOptions: vi.fn(),
 }));
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
@@ -14,9 +15,21 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 	},
 	createAgentSession: mocks.createAgentSession,
 	DefaultResourceLoader: class {
+		private readonly options: { extensionFactories?: { name: string }[] };
+		constructor(options: { extensionFactories?: { name: string }[] }) {
+			this.options = options;
+			mocks.loaderOptions(options);
+		}
 		async reload() {}
 		getExtensions() {
-			return { extensions: [], errors: [], runtime: {} };
+			return {
+				extensions: (this.options.extensionFactories ?? []).map((factory) => ({
+					path: `<inline:${factory.name}>`,
+					tools: new Map([["recall", {}]]),
+				})),
+				errors: [],
+				runtime: {},
+			};
 		}
 	},
 	getAgentDir: () => "/tmp/test-agent-dir",
@@ -59,6 +72,8 @@ describe("session-factory planSlug validation", () => {
 			promptContent: "system prompt",
 			tools: [],
 			extensionPaths: [],
+			extensionFactories: [],
+			knowledgeSurfaceEnabled: false,
 			skillsOverride: undefined,
 			additionalSkillPaths: undefined,
 			projectContext: false,
@@ -70,6 +85,35 @@ describe("session-factory planSlug validation", () => {
 		mocks.createAgentSession.mockResolvedValue({
 			session: { sessionId: "session-1" },
 		});
+	});
+
+	test("passes the enabled inline knowledge factory to spawned sessions", async () => {
+		const factory = {
+			name: "cosmonauts-knowledge-surface",
+			factory: vi.fn(),
+		};
+		mocks.buildSessionParams.mockResolvedValue({
+			promptContent: "system prompt",
+			tools: [],
+			extensionPaths: [],
+			extensionFactories: [factory],
+			knowledgeSurfaceEnabled: true,
+			skillsOverride: undefined,
+			additionalSkillPaths: undefined,
+			projectContext: false,
+			model: { id: "test/model" },
+			thinkingLevel: undefined,
+		});
+
+		await createAgentSessionFromDefinition(
+			TEST_AGENT,
+			{ role: "planner", cwd: "/tmp/project", prompt: "plan" },
+			"/tmp/domains",
+		);
+
+		expect(mocks.loaderOptions).toHaveBeenCalledWith(
+			expect.objectContaining({ extensionFactories: [factory] }),
+		);
 	});
 
 	test("rejects invalid planSlug before creating session persistence paths", async () => {

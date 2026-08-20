@@ -1,8 +1,12 @@
-export type { ResolvedEpisodicLogConfig } from "./loader.ts";
+export type {
+	ResolvedEpisodicLogConfig,
+	ResolvedKnowledgeSurfaceConfig,
+} from "./loader.ts";
 export {
 	EPISODE_WARNING_THRESHOLD_DEFAULT,
 	loadProjectConfig,
 	resolveEpisodicLogConfig,
+	resolveKnowledgeSurfaceConfig,
 	scaffoldProjectConfig,
 } from "./loader.ts";
 export type {
@@ -10,4 +14,5 @@ export type {
 	ProjectChainConfig,
 	ProjectConfig,
 	ProjectEpisodicLogConfig,
+	ProjectKnowledgeSurfaceConfig,
 } from "./types.ts";

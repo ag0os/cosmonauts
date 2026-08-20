@@ -1,4 +1,5 @@
-import { readdir } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { renderPlanEditSuccess } from "../../cli/plans/commands/edit.ts";
@@ -12,8 +13,181 @@ import { createMockPi, type MockPi } from "../helpers/mocks/index.ts";
 
 const tmp = useTempDir("episodic-pre-w3-baseline-");
 const FIXED_TIME = "2026-07-21T12:00:00.000Z";
+const CODING_DOMAIN = ["cod", "ing"].join("");
 
 describe("pre-W3 disabled baselines", () => {
+	test("keeps gated effects inert off and freezes reload while restart and agent switch adopt both gate transitions @cosmo-behavior plan:knowledge-surface#B-008", async () => {
+		const inventoryPath = join(
+			process.cwd(),
+			"tests/fixtures/knowledge-seed-inventory.json",
+		);
+		const inventory = JSON.parse(await readFile(inventoryPath, "utf-8")) as {
+			markdown: { path: string; sha256: string; distilledAtRaw: string }[];
+			bundles: {
+				path: string;
+				sha256: string;
+				headerRaw: string;
+				header: Record<string, unknown>;
+				records: {
+					ordinal: number;
+					id: string;
+					rawTimestamp: string;
+					fields: Record<string, unknown>;
+				}[];
+			}[];
+			backfill: {
+				archivedPlanSlugs: string[];
+				distilledSlugs: string[];
+				missingSlugs: string[];
+				sourceInputs: Record<string, { path: string; sha256: string }[]>;
+			};
+		};
+
+		expect(inventory.markdown).toHaveLength(36);
+		expect(inventory.bundles).toHaveLength(10);
+		expect(
+			inventory.bundles.reduce(
+				(count, bundle) => count + bundle.records.length,
+				0,
+			),
+		).toBe(100);
+		expect(inventory.backfill.missingSlugs).toHaveLength(19);
+
+		for (const entry of inventory.markdown) {
+			const raw = await readFile(join(process.cwd(), entry.path), "utf-8");
+			expect(sha256(raw), entry.path).toBe(entry.sha256);
+			expect(entry.distilledAtRaw, entry.path).toBeTruthy();
+		}
+		for (const bundle of inventory.bundles) {
+			const raw = await readFile(join(process.cwd(), bundle.path), "utf-8");
+			expect(sha256(raw), bundle.path).toBe(bundle.sha256);
+			const lines = raw.trimEnd().split(/\r?\n/);
+			expect(lines[0]).toBe(bundle.headerRaw);
+			expect(JSON.parse(lines[0] ?? "{}")).toEqual(bundle.header);
+			for (const [index, record] of bundle.records.entries()) {
+				expect(record.ordinal).toBe(index + 1);
+				expect(record.fields.id).toBe(record.id);
+				expect(record.fields.createdAt).toBe(record.rawTimestamp);
+				expect(JSON.parse(lines[index + 1] ?? "{}")).toEqual(record.fields);
+			}
+		}
+
+		const derivedMissing = inventory.backfill.archivedPlanSlugs.filter(
+			(slug) => !inventory.backfill.distilledSlugs.includes(slug),
+		);
+		expect(derivedMissing).toEqual(inventory.backfill.missingSlugs);
+		expect(Object.keys(inventory.backfill.sourceInputs).sort()).toEqual(
+			inventory.backfill.missingSlugs,
+		);
+		for (const inputs of Object.values(inventory.backfill.sourceInputs)) {
+			for (const input of inputs) {
+				expect(
+					sha256(await readFile(join(process.cwd(), input.path))),
+					input.path,
+				).toBe(input.sha256);
+			}
+		}
+
+		const offBaseline = JSON.parse(
+			await readFile(
+				join(
+					process.cwd(),
+					"tests/fixtures/knowledge-surface-off-baselines.json",
+				),
+				"utf-8",
+			),
+		) as {
+			promptCorrectionAllowlist: string[];
+			promptFiles: { path: string; sha256: string }[];
+			packageSurface: unknown;
+			wrapperFiles: { path: string; sha256: string }[];
+			configTransitions: Record<string, unknown>;
+			toolContracts: Record<string, unknown>;
+			authorization: Record<string, unknown>;
+			promptCorrectionRegions: {
+				path: string;
+				regions: { start: string; end: string }[];
+				baselineContent: string;
+			}[];
+		};
+		expect(offBaseline.promptCorrectionAllowlist).toEqual([
+			"AGENTS.md",
+			`bundled/${CODING_DOMAIN}/prompts/distiller.md`,
+			"domains/shared/skills/archive/SKILL.md",
+		]);
+		expect(
+			offBaseline.promptCorrectionRegions.map((entry) => entry.path).toSorted(),
+		).toEqual(offBaseline.promptCorrectionAllowlist.toSorted());
+		for (const allowed of offBaseline.promptCorrectionRegions) {
+			const prompt = offBaseline.promptFiles.find(
+				(entry) => entry.path === allowed.path,
+			);
+			expect(prompt, allowed.path).toBeDefined();
+			expect(sha256(allowed.baselineContent), allowed.path).toBe(
+				prompt?.sha256,
+			);
+			for (const region of allowed.regions) {
+				expect(
+					allowed.baselineContent,
+					`${allowed.path}:${region.start}`,
+				).toContain(region.start);
+				if (region.end !== "<EOF>") {
+					expect(
+						allowed.baselineContent,
+						`${allowed.path}:${region.end}`,
+					).toContain(region.end);
+				}
+			}
+		}
+		for (const prompt of offBaseline.promptFiles) {
+			if (offBaseline.promptCorrectionAllowlist.includes(prompt.path)) continue;
+			expect(
+				sha256(await readFile(join(process.cwd(), prompt.path))),
+				prompt.path,
+			).toBe(prompt.sha256);
+		}
+		const packageJson = JSON.parse(
+			await readFile(join(process.cwd(), "package.json"), "utf-8"),
+		) as { keywords?: unknown; pi?: unknown };
+		expect({ keywords: packageJson.keywords, pi: packageJson.pi }).toEqual(
+			offBaseline.packageSurface,
+		);
+		expect(offBaseline.wrapperFiles).toHaveLength(2);
+		expect(offBaseline.toolContracts).toMatchObject({
+			agentMemory: {
+				remember: { name: "remember", executionMode: "sequential" },
+				recall: { name: "recall", parameterNames: ["limit", "query"] },
+			},
+			architectureMemory: {
+				architectureMapRead: { name: "architecture_map_read" },
+			},
+		});
+		expect(offBaseline.authorization).toEqual({
+			agentMemory: {
+				authorizedAgent: "main/cosmo",
+				unauthorizedStatus: "unauthorized",
+				resetEvents: ["session_start", "session_shutdown"],
+			},
+			architectureMemory: {
+				authorizedAgents: [
+					`${CODING_DOMAIN}/coordinator`,
+					`${CODING_DOMAIN}/plan-reviewer`,
+					`${CODING_DOMAIN}/planner`,
+					`${CODING_DOMAIN}/quality-manager`,
+					`${CODING_DOMAIN}/worker`,
+				],
+				unauthorizedStatus: "scope-ineligible",
+				resetEvents: ["session_start", "session_shutdown"],
+			},
+		});
+		expect(offBaseline.configTransitions).toEqual({
+			reload: { offToOn: "off", onToOff: "on" },
+			plainNew: { offToOn: "off", onToOff: "on" },
+			restart: { offToOn: "on", onToOff: "off" },
+			agentSwitch: { offToOn: "on", onToOff: "off" },
+		});
+	});
+
 	test("freezes authored-memory tools, bytes, and files when episodic config is absent", async () => {
 		const projectRoot = join(tmp.path, "authored-project");
 		const userRoot = join(tmp.path, "authored-user");
@@ -281,6 +455,10 @@ describe("pre-W3 disabled baselines", () => {
 		]);
 	});
 });
+
+function sha256(value: string | Buffer): string {
+	return createHash("sha256").update(value).digest("hex");
+}
 
 interface ToolResult {
 	readonly content: readonly { readonly type: string; readonly text: string }[];

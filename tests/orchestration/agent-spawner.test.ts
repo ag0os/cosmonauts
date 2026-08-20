@@ -16,7 +16,10 @@ import {
 	resolveExtensionPaths,
 	resolveTools,
 } from "../../lib/orchestration/agent-spawner.ts";
-import { buildToolAllowlist } from "../../lib/orchestration/definition-resolution.ts";
+import {
+	assertEnabledRecallOwner,
+	buildToolAllowlist,
+} from "../../lib/orchestration/definition-resolution.ts";
 import { loadPrompt, renderRuntimeTemplate } from "../../lib/prompts/loader.ts";
 
 const DOMAINS_DIR = resolve(
@@ -235,6 +238,29 @@ function fakeLoader(
 }
 
 describe("buildToolAllowlist", () => {
+	test("names both recall-owner paths in enabled collisions", () => {
+		const loader = {
+			getExtensions: () => ({
+				extensions: [
+					{
+						path: "<inline:cosmonauts-knowledge-surface>",
+						tools: new Map([["recall", {}]]),
+					},
+					{
+						path: "/installed/conflict/index.ts",
+						tools: new Map([["recall", {}]]),
+					},
+				],
+				errors: [],
+				runtime: {},
+			}),
+		} as unknown as Parameters<typeof assertEnabledRecallOwner>[0];
+
+		expect(() => assertEnabledRecallOwner(loader)).toThrow(
+			/<inline:cosmonauts-knowledge-surface>.*\/installed\/conflict\/index\.ts/,
+		);
+	});
+
 	test("preserves extension tool names when built-in set is empty (coordinator case)", () => {
 		// Regression: in Pi 0.68+ the `tools` field is a global allowlist. An
 		// agent with tools:"none" must still surface extension-provided tools

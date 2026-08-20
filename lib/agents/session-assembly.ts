@@ -5,13 +5,23 @@
  * cli/session.ts and lib/orchestration/session-factory.ts.
  */
 
+import { join, resolve } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import type {
+	InlineExtension,
+	ModelRegistry,
+} from "@earendil-works/pi-coding-agent";
+import {
+	loadProjectConfig,
+	resolveKnowledgeSurfaceConfig,
+} from "../config/index.ts";
+import type { ProjectConfig } from "../config/types.ts";
 import { resolveDefaultDomain } from "../domains/default-domain.ts";
 import type { RuntimeContext } from "../domains/prompt-assembly.ts";
 import { assemblePrompts } from "../domains/prompt-assembly.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
+import { createKnowledgeSurfaceSessionExtension } from "../extensions/knowledge-surface/session-extension.ts";
 import {
 	resolveExtensionPaths,
 	resolveTools,
@@ -31,6 +41,14 @@ import {
 	type SkillsOverrideFn,
 } from "./skills.ts";
 import type { AgentDefinition } from "./types.ts";
+
+const ARCHITECTURE_MEMORY_CONSUMERS = new Set([
+	"coding/planner",
+	"coding/plan-reviewer",
+	"coding/coordinator",
+	"coding/worker",
+	"coding/quality-manager",
+]);
 
 // ============================================================================
 // Interfaces
@@ -63,6 +81,8 @@ export interface BuildSessionParamsOptions {
 	thinkingLevelOverride?: ThinkingLevel;
 	/** Additional extension paths to append after resolved def.extensions paths. */
 	extraExtensionPaths?: readonly string[];
+	/** Injectable project config loader for frozen gate tests. */
+	loadConfig?: (projectRoot: string) => Promise<ProjectConfig>;
 }
 
 export interface SessionParams {
@@ -72,6 +92,10 @@ export interface SessionParams {
 	tools: ReturnType<typeof resolveTools>;
 	/** Absolute paths to Pi extension directories. */
 	extensionPaths: string[];
+	/** Gate-selected inline factories supplied only by Cosmonauts assembly. */
+	extensionFactories: InlineExtension[];
+	/** Frozen gate selection for this assembled session. */
+	knowledgeSurfaceEnabled: boolean;
 	/** Skill filter callback for DefaultResourceLoader, or undefined for unrestricted access. */
 	skillsOverride: SkillsOverrideFn | undefined;
 	/** Additional skill directory paths, or undefined if none. */
@@ -112,6 +136,7 @@ export async function buildSessionParams(
 		modelRegistry,
 		thinkingLevelOverride,
 		extraExtensionPaths,
+		loadConfig = loadProjectConfig,
 	} = options;
 
 	// Tool resolution
@@ -145,9 +170,54 @@ export async function buildSessionParams(
 		domainsDir,
 		resolver,
 	});
-	const extensionPaths = extraExtensionPaths?.length
-		? [...resolvedExtensionPaths, ...extraExtensionPaths]
+	const knowledgeSurfaceEnabled = resolveKnowledgeSurfaceConfig(
+		await loadConfig(cwd),
+	).enabled;
+	const sharedExtensionsDir = resolve(
+		domainsDir ?? join(import.meta.dirname, "..", "..", "domains"),
+		"shared",
+		"extensions",
+	);
+	const exactAgentMemoryPath = join(sharedExtensionsDir, "agent-memory");
+	const exactArchitectureMemoryPath = join(
+		sharedExtensionsDir,
+		"architecture-memory",
+	);
+	const registerAgentMemoryTools = resolvedExtensionPaths.some(
+		(path) => resolve(path) === exactAgentMemoryPath,
+	);
+	const registerArchitectureTool = resolvedExtensionPaths.some(
+		(path) => resolve(path) === exactArchitectureMemoryPath,
+	);
+	const retainedResolvedPaths = knowledgeSurfaceEnabled
+		? resolvedExtensionPaths.filter((path) => {
+				const normalized = resolve(path);
+				return (
+					normalized !== exactAgentMemoryPath &&
+					normalized !== exactArchitectureMemoryPath
+				);
+			})
 		: resolvedExtensionPaths;
+	const extensionPaths = extraExtensionPaths?.length
+		? [...retainedResolvedPaths, ...extraExtensionPaths]
+		: retainedResolvedPaths;
+	const agentId = qualifyAgentId(def.id, def.domain);
+	const extensionFactories: InlineExtension[] = knowledgeSurfaceEnabled
+		? [
+				createKnowledgeSurfaceSessionExtension({
+					agentId,
+					registerAgentMemoryTools,
+					authorizeAuthoredMemory:
+						registerAgentMemoryTools && agentId === "main/cosmo",
+					registerArchitectureTool,
+					authorizeArchitecture:
+						registerArchitectureTool &&
+						ARCHITECTURE_MEMORY_CONSUMERS.has(agentId),
+					recallOwner: registerAgentMemoryTools ? "agent-memory" : "knowledge",
+					canPropose: agentId === "coding/distiller",
+				}),
+			]
+		: [];
 
 	// Skill override construction
 	const effectiveProjectSkills = ignoreProjectSkills
@@ -181,6 +251,8 @@ export async function buildSessionParams(
 		promptContent,
 		tools,
 		extensionPaths,
+		extensionFactories,
+		knowledgeSurfaceEnabled,
 		skillsOverride,
 		additionalSkillPaths,
 		projectContext: def.projectContext,

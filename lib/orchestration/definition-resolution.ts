@@ -8,6 +8,7 @@ import { join } from "node:path";
 import type { ResourceLoader } from "@earendil-works/pi-coding-agent";
 import type { AgentToolSet } from "../agents/index.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
+import { KNOWLEDGE_SURFACE_EXTENSION_NAME } from "../extensions/knowledge-surface/constants.ts";
 
 // ============================================================================
 // Tool Resolution
@@ -51,6 +52,22 @@ export function buildToolAllowlist(
 		for (const name of ext.tools.keys()) names.add(name);
 	}
 	return [...names];
+}
+
+/** Fail closed if an enabled session does not own exactly one framework recall. */
+export function assertEnabledRecallOwner(loader: ResourceLoader): void {
+	const expectedOwner = `<inline:${KNOWLEDGE_SURFACE_EXTENSION_NAME}>`;
+	const owners = loader
+		.getExtensions()
+		.extensions.filter((extension) => extension.tools.has("recall"))
+		.map((extension) => extension.path);
+
+	if (owners.length === 1 && owners[0] === expectedOwner) return;
+
+	const namedOwners = owners.length > 0 ? owners : ["<none>"];
+	throw new Error(
+		`Enabled knowledge surface requires exactly one framework recall owned by ${expectedOwner}; found ${namedOwners.length === 1 && namedOwners[0] === "<none>" ? "no registered recall" : `recall owners ${namedOwners.map((owner) => JSON.stringify(owner)).join(" and ")}`}. Remove or rename the conflicting extension tool.`,
+	);
 }
 
 // ============================================================================

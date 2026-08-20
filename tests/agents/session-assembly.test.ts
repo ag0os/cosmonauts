@@ -6,18 +6,24 @@
  */
 
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { extractAgentIdFromSystemPrompt } from "../../lib/agents/runtime-identity.ts";
+import {
+	buildAgentIdentityMarker,
+	extractAgentIdFromSystemPrompt,
+} from "../../lib/agents/runtime-identity.ts";
 import {
 	type BuildSessionParamsOptions,
 	buildSessionParams,
 } from "../../lib/agents/session-assembly.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
+import { loadDomainsFromSources } from "../../lib/domains/loader.ts";
 import { DomainRegistry } from "../../lib/domains/registry.ts";
 import { DomainResolver } from "../../lib/domains/resolver.ts";
 import type { LoadedDomain } from "../../lib/domains/types.ts";
 import { useTempDir } from "../helpers/fs.ts";
+import { createMockPi } from "../helpers/mocks/index.ts";
 
 // Model resolution falls through to Pi's real built-in model catalog, whose
 // contents change across Pi version bumps. Stub it so these tests assert on
@@ -30,6 +36,8 @@ vi.mock("@earendil-works/pi-ai/providers/all", () => ({
 }));
 
 const tmp = useTempDir("session-assembly-");
+const REPO_ROOT = resolve(fileURLToPath(import.meta.url), "..", "..", "..");
+const REPO_DOMAINS_DIR = join(REPO_ROOT, "domains");
 
 // ============================================================================
 // Helpers
@@ -205,6 +213,185 @@ describe("buildSessionParams", () => {
 	});
 
 	describe("extension paths", () => {
+		it("keeps OFF assembly byte-for-byte and composes one enabled inline surface", async () => {
+			await setupMinimalDomains(tmp.path);
+			for (const name of ["agent-memory", "architecture-memory", "unrelated"]) {
+				await mkdir(join(tmp.path, "shared", "extensions", name), {
+					recursive: true,
+				});
+			}
+			const def = makeDef({
+				domain: "main",
+				extensions: ["agent-memory", "architecture-memory", "unrelated"],
+			});
+			const off = await buildSessionParams(
+				makeOptions({ def, loadConfig: async () => ({}) }),
+			);
+			const on = await buildSessionParams(
+				makeOptions({
+					def,
+					loadConfig: async () => ({
+						knowledgeSurface: { enabled: true },
+					}),
+				}),
+			);
+
+			expect(off.knowledgeSurfaceEnabled).toBe(false);
+			expect(off.extensionFactories).toEqual([]);
+			expect(off.extensionPaths).toEqual([
+				join(tmp.path, "shared", "extensions", "agent-memory"),
+				join(tmp.path, "shared", "extensions", "architecture-memory"),
+				join(tmp.path, "shared", "extensions", "unrelated"),
+			]);
+			expect(on.knowledgeSurfaceEnabled).toBe(true);
+			expect(on.extensionFactories).toHaveLength(1);
+			expect(on.extensionFactories[0]).toMatchObject({
+				name: "cosmonauts-knowledge-surface",
+			});
+			expect(on.extensionPaths).toEqual([
+				join(tmp.path, "shared", "extensions", "unrelated"),
+			]);
+		});
+
+		it("freezes reload and plain-new policy while reassembly adopts both gate edits", async () => {
+			await setupMinimalDomains(tmp.path);
+			let enabled = false;
+			const options = makeOptions({
+				loadConfig: async () => ({ knowledgeSurface: { enabled } }),
+			});
+
+			const initiallyOff = await buildSessionParams(options);
+			enabled = true;
+			// Reload/plain-new reuse the already assembled params.
+			expect(initiallyOff.extensionFactories).toEqual([]);
+			expect(initiallyOff.knowledgeSurfaceEnabled).toBe(false);
+
+			const switchedOn = await buildSessionParams(options);
+			enabled = false;
+			expect(switchedOn.extensionFactories).toHaveLength(1);
+			expect(switchedOn.knowledgeSurfaceEnabled).toBe(true);
+
+			const switchedOff = await buildSessionParams(options);
+			expect(switchedOff.extensionFactories).toEqual([]);
+			expect(switchedOff.knowledgeSurfaceEnabled).toBe(false);
+		});
+
+		it("keeps exact-wrapper tools registered without widening synthetic authorization", async () => {
+			await setupMinimalDomains(tmp.path, { agentId: "synthetic" });
+			for (const name of ["agent-memory", "architecture-memory"]) {
+				await mkdir(join(tmp.path, "shared", "extensions", name), {
+					recursive: true,
+				});
+			}
+			const def = makeDef({
+				id: "synthetic",
+				domain: "main",
+				extensions: ["agent-memory", "architecture-memory"],
+			});
+			const params = await buildSessionParams(
+				makeOptions({
+					def,
+					loadConfig: async () => ({
+						knowledgeSurface: { enabled: true },
+					}),
+				}),
+			);
+			const inline = params.extensionFactories[0];
+			if (!inline || typeof inline === "function") {
+				throw new Error("Expected a named inline knowledge extension");
+			}
+			const pi = createMockPi({ cwd: tmp.path });
+			await inline.factory(pi as never);
+
+			expect([...pi.tools.keys()].sort()).toEqual([
+				"architecture_map_read",
+				"recall",
+				"remember",
+			]);
+			const before = await pi.fireEvent(
+				"before_agent_start",
+				{ systemPrompt: buildAgentIdentityMarker("main/synthetic") },
+				{ cwd: tmp.path },
+			);
+			expect(before).toBeUndefined();
+			expect(
+				(
+					(await pi.callTool("remember", { content: "no" })) as {
+						details: unknown;
+					}
+				).details,
+			).toMatchObject({ status: "unauthorized" });
+			expect(
+				(
+					(await pi.callTool("architecture_map_read", {})) as {
+						details: unknown;
+					}
+				).details,
+			).toMatchObject({ status: "scope-ineligible" });
+			expect(
+				(
+					(await pi.callTool("recall", { query: "surface" })) as {
+						details: unknown;
+					}
+				).details,
+			).toMatchObject({ status: "no_match", records: [] });
+		});
+
+		it("composes exactly one framework recall for every shipped definition", async () => {
+			const loadedDomains = await loadDomainsFromSources([
+				{
+					domainsDir: REPO_DOMAINS_DIR,
+					origin: "builtin",
+					precedence: 1,
+				},
+				{
+					domainsDir: join(REPO_ROOT, "bundled", "coding"),
+					sourceType: "domain-root",
+					origin: "bundled",
+					precedence: 2,
+				},
+			]);
+			const resolver = new DomainResolver(new DomainRegistry(loadedDomains));
+			const definitions = loadedDomains.flatMap((domain) =>
+				[...domain.agents.values()].map((definition) => ({
+					...definition,
+					domain: domain.manifest.id,
+				})),
+			);
+
+			for (const def of definitions) {
+				const params = await buildSessionParams({
+					def,
+					cwd: tmp.path,
+					domainsDir: REPO_DOMAINS_DIR,
+					resolver,
+					loadConfig: async () => ({
+						knowledgeSurface: { enabled: true },
+					}),
+				});
+				const inline = params.extensionFactories[0];
+				if (!inline || typeof inline === "function") {
+					throw new Error(`Expected named inline extension for ${def.id}`);
+				}
+				const pi = createMockPi({ cwd: tmp.path });
+				pi.registerTool({
+					name: "unrelated",
+					execute: async () => ({ content: [], details: { status: "ok" } }),
+				});
+				await inline.factory(pi as never);
+
+				expect(
+					[...pi.tools.keys()].filter((name) => name === "recall"),
+					def.id,
+				).toHaveLength(1);
+				expect(pi.tools.has("unrelated"), def.id).toBe(true);
+				expect(
+					((await pi.callTool("unrelated", {})) as { details: unknown })
+						.details,
+				).toEqual({ status: "ok" });
+			}
+		});
+
 		it("returns empty array for agent with no extensions", async () => {
 			await setupMinimalDomains(tmp.path);
 			const params = await buildSessionParams(makeOptions());

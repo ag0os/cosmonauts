@@ -33,6 +33,11 @@ export interface ProjectAnalysisConfig {
 	readonly provider?: string;
 }
 
+/** Project-only, off-by-default knowledge-surface gate. */
+export interface ProjectKnowledgeSurfaceConfig {
+	readonly enabled?: boolean;
+}
+
 /** Project-level configuration loaded from `.cosmonauts/config.json`. */
 export interface ProjectConfig {
 	/** Default domain for this project (e.g. "coding"). */
@@ -53,4 +58,6 @@ export interface ProjectConfig {
 	readonly episodicLog?: ProjectEpisodicLogConfig;
 	/** Optional provider preference; absence uses automatic detection. */
 	readonly analysis?: ProjectAnalysisConfig;
+	/** Project-only knowledge surface. Only literal true enables it. */
+	readonly knowledgeSurface?: ProjectKnowledgeSurfaceConfig;
 }

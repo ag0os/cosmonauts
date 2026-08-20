@@ -1,0 +1,574 @@
+{
+	"version": 1,
+	"promptCorrectionAllowlist": [
+		"AGENTS.md",
+		"bundled/coding/prompts/distiller.md",
+		"domains/shared/skills/archive/SKILL.md"
+	],
+	"promptFiles": [
+		{
+			"path": "AGENTS.md",
+			"sha256": "ccaa81fcc62f144c9d0628e2dc81ff35cef0b22e1c5856d321cda1be4ea68be0"
+		},
+		{
+			"path": "bundled/coding/prompts/cody.md",
+			"sha256": "7e253b4f92984ea3826def38103b8321cf2957e4279310c6d4c3eda172800f65"
+		},
+		{
+			"path": "bundled/coding/prompts/coordinator.md",
+			"sha256": "6601e34affb6fc086b0c6f28ce405cb2c47d6156930b03f2e0b6aa072b8e2480"
+		},
+		{
+			"path": "bundled/coding/prompts/distiller.md",
+			"sha256": "c13bfce44efc5fa8292529430b058df70385d5c963f248d280a8f77bd3aa6e55"
+		},
+		{
+			"path": "bundled/coding/prompts/explorer.md",
+			"sha256": "877d2f622c4a6267749ede131ed3031f76f3b904bbe89ba8e3e5224cc84f5ca9"
+		},
+		{
+			"path": "bundled/coding/prompts/fixer.md",
+			"sha256": "237582577595238eb8bedc90524cae87a034b3dd81e35c2d4dfe5624d9ff91a4"
+		},
+		{
+			"path": "bundled/coding/prompts/integration-verifier.md",
+			"sha256": "21c52aaa642ad61ab148225245deedc69c45ec8c3635c4e92a9ecbfef505a9a3"
+		},
+		{
+			"path": "bundled/coding/prompts/performance-reviewer.md",
+			"sha256": "efb926156977d7951a2ff29fbf9436d8aec0784f8e5050b8b269cd95efa89513"
+		},
+		{
+			"path": "bundled/coding/prompts/plan-reviewer.md",
+			"sha256": "18887c788f699dc992c7906fcb4d606584c5ca7b40db62d007e611e92164b0bf"
+		},
+		{
+			"path": "bundled/coding/prompts/planner.md",
+			"sha256": "95f615e37d305e5d52098d41f20f86a4b36dc22fc858c215029f0f611cdea0ef"
+		},
+		{
+			"path": "bundled/coding/prompts/quality-manager.md",
+			"sha256": "6faaa7602c817f119f9b66f004433d3638be0b2dd81e4454d467f64685201c40"
+		},
+		{
+			"path": "bundled/coding/prompts/refactorer.md",
+			"sha256": "90ad68d9b11b5326d9267f1d092f60e2aac0fa5d51937191a63af033a13dc127"
+		},
+		{
+			"path": "bundled/coding/prompts/reviewer.md",
+			"sha256": "02f294b7c332484225c1e2f45a56c97c1fb02fe47c20118cf8237f1ae14c212d"
+		},
+		{
+			"path": "bundled/coding/prompts/security-reviewer.md",
+			"sha256": "7e14ce32c8f1f76d7f644c87ab204aeb0adee2a6cf93d3f7532e2abaf99f4f01"
+		},
+		{
+			"path": "bundled/coding/prompts/spec-writer.md",
+			"sha256": "6cb6816db702deb9a7cba18ddbfa46ed76b33f9551ea87fe9deea3a93d543f80"
+		},
+		{
+			"path": "bundled/coding/prompts/task-manager.md",
+			"sha256": "cf20bcb523296c3c0a474e8f875f250123b1c206a0602817d3ce57a0162fcfb9"
+		},
+		{
+			"path": "bundled/coding/prompts/ux-reviewer.md",
+			"sha256": "d7e82554934886161bcf23358eb35443cec4605bdbb55de6b970d23d040b52e4"
+		},
+		{
+			"path": "bundled/coding/prompts/verifier.md",
+			"sha256": "9592cb27f6dbfdb1b4d3f361931ac4563e1b91711e2aef9fa7a061b7ef061f06"
+		},
+		{
+			"path": "bundled/coding/prompts/worker.md",
+			"sha256": "1f4af0e68b0bb375e5c03748b8deb800629cc9bd71f78e095daa3a412d23d4e4"
+		},
+		{
+			"path": "bundled/coding/skills/creating-skills/SKILL.md",
+			"sha256": "8cca0d5489a725c444cda5a918cb4ffbb810b0de04003b719d9c480c94a9ea87"
+		},
+		{
+			"path": "bundled/coding/skills/creating-skills/references/architecture.md",
+			"sha256": "ecd5f578c142c86f612cf79b989cf34148831c77f7804784b1a3b2819671af40"
+		},
+		{
+			"path": "bundled/coding/skills/creating-skills/references/complex-skills.md",
+			"sha256": "cf3ffb02290859795cc364d76a6391fbc06134179c4fddcfb7dfcfefe4246f3e"
+		},
+		{
+			"path": "bundled/coding/skills/creating-skills/references/evaluation.md",
+			"sha256": "1cc9eea246bc1e32e41446dea1e7e583a89093f84b55a3326a296a5a07a8dc6f"
+		},
+		{
+			"path": "bundled/coding/skills/creating-skills/references/foundations.md",
+			"sha256": "03e6b499394b86fd9f661ce8eea95a31482d059e3f1ce4242933b92c64f13c8f"
+		},
+		{
+			"path": "bundled/coding/skills/design-dialogue/SKILL.md",
+			"sha256": "6a7387540003b8823596485a82c4f88d7d3f37b74117e3a6990e83f0fe5c72ad"
+		},
+		{
+			"path": "bundled/coding/skills/engineering-principles/SKILL.md",
+			"sha256": "a8c6f654930a0642b3512a2fa232e6c8a01903dade8235a3576aac3b813d25ab"
+		},
+		{
+			"path": "bundled/coding/skills/find-docs/SKILL.md",
+			"sha256": "8c80518f4c7163352bd2fdf92fa012e85b1c66577d81ada3ac6d2076569fdaf5"
+		},
+		{
+			"path": "bundled/coding/skills/git-workflow/SKILL.md",
+			"sha256": "9c33aa645a5c6801bc133568a2d2ed0dcbf6ec8fb1b6fe5a5b62cbc9617e4d6e"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-api/SKILL.md",
+			"sha256": "86ac33edac039b06ba87e2e938f0d448b06236d66d1ae117ff494b914fceb629"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-api/references/patterns.md",
+			"sha256": "6d66a982bb5d9a999f63e0b6bad7e63eacbd716aa0a71002dc380993de23a26b"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-architecture/SKILL.md",
+			"sha256": "bafe3c0d7d13e8bb7ef2bfd649782176da2d7c562286e88b714a1363554d2a82"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-architecture/references/patterns.md",
+			"sha256": "c72e90e3de7535576e96adfed00111ebca15addaf193cb912ee117ad8f4785c4"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-auth/SKILL.md",
+			"sha256": "0e606969a7c30555eabf4bf04b5429cc26c2cac3dc059952099fb12887f0d746"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-auth/references/patterns.md",
+			"sha256": "4ad76142cc715ca840998882cf9540e383b32ac2ed1fe19054b25dca4f44561a"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-caching/SKILL.md",
+			"sha256": "6f4e44f90ab6e357653e434d8c02640639f160b20c1fe58a7c8006732bd8516b"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-caching/references/patterns.md",
+			"sha256": "cd25d8cc3263c1def518dd9db7cea0ab362ff6aa19eb3d278576891fad63ed1b"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-controllers/SKILL.md",
+			"sha256": "d65d27c3175d9154a4f5f29a7f274dab5ac27bc46a5b53d86ef0b04cf581ef36"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-controllers/references/patterns.md",
+			"sha256": "1e27b7a01a6af8ed976cdc0f8526aec918e8bf858a9d4ad172cbbefa12cf612f"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-conventions/SKILL.md",
+			"sha256": "b70b4bebcc4aeaa785ea4773beda38ba28be120c635fecaa38256394e2606663"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-conventions/references/detection-commands.md",
+			"sha256": "5ba906c712b1091c5883404235033e1f601ecf73c409f4ef4155dc16dd7d6b99"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-devops/SKILL.md",
+			"sha256": "f1b0483ef142c40720242a64f53d0844e353e7060db475dededa9a50a99a9d45"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-devops/references/patterns.md",
+			"sha256": "fdf1e5b479467e123dff8ece9189ed2c6f255b1f0b1e8f4b40fc3b1004b79481"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-graphql/SKILL.md",
+			"sha256": "de5870f70c4f94a9053d5c5acc7bee37fff38034ba2e538b1aba86fdfd4ee24f"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-graphql/references/patterns.md",
+			"sha256": "bf4dc8ca3e624fb97f0be154185a9ea6f2979a31e6169115ef460d38344a47d3"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-hotwire/SKILL.md",
+			"sha256": "e3c7ddcda222603d8ccdb5dbf4328f03588af19efe4a3f3f4ccd9d26f5a6294d"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-hotwire/references/stimulus.md",
+			"sha256": "b3fb3658c78b4cfe7a2494d3afac8a70a2ea987c30fd8d1e7086901106c6f19a"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-hotwire/references/turbo.md",
+			"sha256": "d4bae0c3f1b5d23f0ba15cea25dc94dfee17259c0f836b4fecf63a0bc0d27ff8"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-jobs/SKILL.md",
+			"sha256": "e69189d538cc9d74b6c613bf69f2c187e2e6d5380942e9cd038b81fb57c2c02e"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-jobs/references/patterns.md",
+			"sha256": "a61c418ae67a9fab38b75d1d8505dc795026edae58c50ddd7b9cfa8ddd8d1158"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-mailers/SKILL.md",
+			"sha256": "71115fee7bf42ac84f6cd9f8268809bfa15f2f8e3cc88ba3f1b6723a5795f1e8"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-mailers/references/patterns.md",
+			"sha256": "74087e0911d4e1422916c19f7f9658972b4a3e30128bdc4efd5214e84b80c836"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-models/SKILL.md",
+			"sha256": "7629ac98adae7e70a3612b1ee9f698467dded805094ca1686d35b2b589faabe6"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-models/references/associations.md",
+			"sha256": "bcae8cb88a45646403519918d920f2da85c9a58012fe9fa8364a33b4150ba8a4"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-models/references/migrations.md",
+			"sha256": "38841d46d4748705d6b9439036c0dc4480623c58e8913b5f4be6392846d87df3"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-models/references/validations.md",
+			"sha256": "71210104e080fcf0ea80fb4cc7b40304fb34520b3c536e171e112266b79a5a17"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-models/references/value-objects.md",
+			"sha256": "a4e9fcfce350ab9ea70f6fbfac3fe54d00f02dfa5d41e34aaf34bcfb168e31fe"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-services/SKILL.md",
+			"sha256": "f5be201ae70750f5a75b52bedd46077dda2fe6adcefb4c9936fcd4f2fc2e7538"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-services/references/patterns.md",
+			"sha256": "1303aac209e4b2c542f80ff2cad96eb38435a1cc040dd84b61b401e34b504f4e"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-stack-profiles/SKILL.md",
+			"sha256": "00335d79f77ded6b4c6cbf9820f8de3ecba232c10c7e92c2830e523803f12bf1"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-stack-profiles/references/profiles.md",
+			"sha256": "bf120cdc58f353a7d8464d20ee7d605a01817013268afb9391e5b18e7582d5c0"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-testing/SKILL.md",
+			"sha256": "5fb2d3bec6371df6b59e45c66115bc72fbf7a4dc523c779ecf9d3a3b8da0e280"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-testing/references/patterns.md",
+			"sha256": "9a36857b7026f8583309254004fce684c7169eaf7937a1011a57d39a398ca294"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-views/SKILL.md",
+			"sha256": "caafea8236db9b40940e85664b1103cec63e963d53a0f1d53241877a33fd4454"
+		},
+		{
+			"path": "bundled/coding/skills/languages/rails/rails-views/references/patterns.md",
+			"sha256": "7296f2a981dc788fd29dff0c2063e28a08367ecb6330159e28654a933ada8f10"
+		},
+		{
+			"path": "bundled/coding/skills/languages/react/SKILL.md",
+			"sha256": "bcf4d3f0709c7590870edb6f1090bf1c6aac7dc41fb91be0dfc4c9ad775069ea"
+		},
+		{
+			"path": "bundled/coding/skills/languages/react/references/react-19.md",
+			"sha256": "076913b42dfb6fb63c82477b29c9f68c20238aaeabc93d57b050adeea2386f26"
+		},
+		{
+			"path": "bundled/coding/skills/languages/react/references/server-components.md",
+			"sha256": "7304ec488e9a3566b8073540d7fe9784d0b90db7ec663991a0a5f4933cc54293"
+		},
+		{
+			"path": "bundled/coding/skills/languages/ruby/ruby-object-design/SKILL.md",
+			"sha256": "f8c9b822dbe30763e0a41af37e8596d525f2041a563e920aa3fac8f1d1cad970"
+		},
+		{
+			"path": "bundled/coding/skills/languages/ruby/ruby-object-design/references/class-vs-module.md",
+			"sha256": "3f333aa6e4b44b742bfa9a7271dfc7ac848725a615c6e556be93d4af7cb746a9"
+		},
+		{
+			"path": "bundled/coding/skills/languages/ruby/ruby-object-design/references/data-structures.md",
+			"sha256": "b4dad905e5564f445099853f93c12f57ebf75e05effe0b68fe6e3802fb10def3"
+		},
+		{
+			"path": "bundled/coding/skills/languages/ruby/ruby-refactoring/SKILL.md",
+			"sha256": "e8d80776fd7cb79904f59eb5d8df54f427f89ef6406ceebe563a2598ac631b90"
+		},
+		{
+			"path": "bundled/coding/skills/languages/ruby/ruby-refactoring/references/code-smells.md",
+			"sha256": "5ece43e11d7726787770a83d57fafed14208bc3e8e6b298ea7110fddffb7572e"
+		},
+		{
+			"path": "bundled/coding/skills/languages/ruby/ruby-refactoring/references/refactoring-patterns.md",
+			"sha256": "12b7c05e37239ca88fd6181dc749c0637136ba5302c96243ea6fd87ffc52e82a"
+		},
+		{
+			"path": "bundled/coding/skills/languages/typescript/SKILL.md",
+			"sha256": "0c4f746ea54e2aba555770f9b114445b09a4cf6fc504d21a758e8f5158d7c2c5"
+		},
+		{
+			"path": "bundled/coding/skills/languages/typescript/references/testing-patterns.md",
+			"sha256": "a5f1b9868e295269c1952422e4427df8b759c930f942346fdb0d1985583e7b29"
+		},
+		{
+			"path": "bundled/coding/skills/languages/typescript/references/type-patterns.md",
+			"sha256": "5cffcdb62530b479f40fb74b0003edcae6e65d7d7e1245b6df79e44206b8b1e0"
+		},
+		{
+			"path": "bundled/coding/skills/playwright-cli/SKILL.md",
+			"sha256": "165976a644e329c3b6c204ce999d3c61b1168982d3f995cd904b401bd03d5549"
+		},
+		{
+			"path": "bundled/coding/skills/refactoring/SKILL.md",
+			"sha256": "79b3bcd777a41ee861786882297d35d395a0601f85a6b64e6dc211a600546877"
+		},
+		{
+			"path": "bundled/coding/skills/reference-adaptation/SKILL.md",
+			"sha256": "242a399a6ae59d7aaae1982ee72dac567ed4cc686369c6635eb4199a12f76248"
+		},
+		{
+			"path": "bundled/coding/skills/tdd/SKILL.md",
+			"sha256": "c19cf4c9768850eca8cc1df805716e394126de13331a0b1a9c1b29d44452db9e"
+		},
+		{
+			"path": "bundled/coding/skills/web-search/SKILL.md",
+			"sha256": "f042c930f6050ff0eaf82b56f74d9a5a7c73deb725220453825846eac6e90eea"
+		},
+		{
+			"path": "domains/main/prompts/cosmo.md",
+			"sha256": "773eda7010115c348da68913306485b27ddfa9679511e894bf2ca34982d69333"
+		},
+		{
+			"path": "domains/main/skills/dispatch/SKILL.md",
+			"sha256": "8e21c16d7e1e1ad1afc76934941cfca0ab41ea05886a50d6913530ab025eb28d"
+		},
+		{
+			"path": "domains/main/skills/script-coordinator/SKILL.md",
+			"sha256": "ea04ac685ec808106d3a1d4e485a09b6b64d6564fc1fe817f43de0097310736c"
+		},
+		{
+			"path": "domains/shared/skills/agent-packaging/SKILL.md",
+			"sha256": "1a0a87f5e6f469f438b4a24499d79579c856e1c117f57b19ef61e8d486380287"
+		},
+		{
+			"path": "domains/shared/skills/analysis/SKILL.md",
+			"sha256": "a6c60208c05b75b6798ffceaea5883454ebd70822efcde313ebc5248f6449e4c"
+		},
+		{
+			"path": "domains/shared/skills/architecture/SKILL.md",
+			"sha256": "a69380c8c394c6064460e2800f77ecebc621f3291802f9c23bb7ed55add9c7a3"
+		},
+		{
+			"path": "domains/shared/skills/archive/SKILL.md",
+			"sha256": "bae72243c35909810a9b14e5554d8a8cb3e63f503813c51f47e13d4e2a320bed"
+		},
+		{
+			"path": "domains/shared/skills/drive/SKILL.md",
+			"sha256": "67803d12d3c0c2644b932ec4db1c366539c921c7d2dffedc992108f57f40398b"
+		},
+		{
+			"path": "domains/shared/skills/init/SKILL.md",
+			"sha256": "f19dfaa3d92ba5970620a3d90089653f0bb5f721dc0e670e5d733502c187f214"
+		},
+		{
+			"path": "domains/shared/skills/pi/SKILL.md",
+			"sha256": "e98e8b2e474113813e63324ecfaeab241cb17881c35f80870da684002a2b203d"
+		},
+		{
+			"path": "domains/shared/skills/plan/SKILL.md",
+			"sha256": "e98f05ff50d62d716aa0bbc80784e115245bb8d0babadb1ce5978886d67f7101"
+		},
+		{
+			"path": "domains/shared/skills/roadmap/SKILL.md",
+			"sha256": "e60854f74c33d5acf8e8b45b2c57422d424374ebb35eb8cbee3fc49c33df7e9c"
+		},
+		{
+			"path": "domains/shared/skills/skill-writing/SKILL.md",
+			"sha256": "9b2456a2c1b57189efc06de6453170e706f2b73006f92179982cda9eabe9c0ef"
+		},
+		{
+			"path": "domains/shared/skills/skill-writing/references/skill-adaptation.md",
+			"sha256": "256a591a5c3357c2b2c399dd274fad0eeb110f9cf0c9e11262301bf2c77b7171"
+		},
+		{
+			"path": "domains/shared/skills/skills-cli/SKILL.md",
+			"sha256": "7b856d02023359936162fae973d6c062f6816e325a405d519a93e986b533779c"
+		},
+		{
+			"path": "domains/shared/skills/spawning/SKILL.md",
+			"sha256": "c85c727d6104509b519def8b18e45f58c344f469a4c01ff1b269efdb5b2c36cb"
+		},
+		{
+			"path": "domains/shared/skills/task/SKILL.md",
+			"sha256": "f21e0a9932719f643f889f805f0af3a35b1d5f7a3e6bb24fbc570d941a54db07"
+		},
+		{
+			"path": "domains/shared/skills/work-artifacts/SKILL.md",
+			"sha256": "13d2665ef7dad6c41c23a08bfbedc4f670f8c581c7d06157108f6042a08fdd56"
+		},
+		{
+			"path": "domains/shared/skills/work-artifacts/references/architecture-format.md",
+			"sha256": "24b34c00dba2e9c8c8a4fbd0bcfc9b7b21ec97f4e74c98e2f9c574427ea01a50"
+		},
+		{
+			"path": "domains/shared/skills/work-artifacts/references/behavior-spine.md",
+			"sha256": "4457655511b4b8a3b1437bc377f1ad1daa8af3a454de23ec5db9e41a760c5af0"
+		},
+		{
+			"path": "domains/shared/skills/work-artifacts/references/deviation-protocol.md",
+			"sha256": "be7a84ae9fa041a4c3c61017a5b16ef1e9f27afd8292024c20c0620e6753488a"
+		},
+		{
+			"path": "domains/shared/skills/work-artifacts/references/examples.md",
+			"sha256": "45778a28c2a7e4a9371c8f08ed826870a95dd880a06845214ff9779c3c9c1b51"
+		},
+		{
+			"path": "domains/shared/skills/work-artifacts/references/gate-contracts.md",
+			"sha256": "f1af3c80e5c5c50a3dbaefa4dfcc355eb5c83b09a38a59d35d75baf970dac202"
+		},
+		{
+			"path": "domains/shared/skills/work-artifacts/references/plan-format.md",
+			"sha256": "5980633827a58694894341244649ea2ab5de2367b088d4ede79b428f8afa6459"
+		},
+		{
+			"path": "domains/shared/skills/work-artifacts/references/spec-format.md",
+			"sha256": "c5645fcaf8f2773a76b766abdc0a98d585b7ea69b2d2d6513ccc7a7cc988a2a1"
+		},
+		{
+			"path": "domains/shared/skills/work-artifacts/references/visual-primitives.md",
+			"sha256": "cdae1011cbac659acb69297366d496ccb988f2a10d3f6732b2816c3b696368bd"
+		},
+		{
+			"path": "domains/shared/skills/work-artifacts/references/workflow-tiers.md",
+			"sha256": "10590ba5d9bc8e324ee4b53e8fea545208eaf955af09b272389afade4b4c6f72"
+		}
+	],
+	"packageSurface": {
+		"keywords": ["pi-package"],
+		"pi": {
+			"extensions": ["./domains/shared/extensions"],
+			"themes": ["./themes"]
+		}
+	},
+	"wrapperFiles": [
+		{
+			"path": "domains/shared/extensions/agent-memory/index.ts",
+			"sha256": "29d1be1e1bdb7d0ed1fca0b9fafd7176152cb7e784296770f98eca3420157bf6"
+		},
+		{
+			"path": "domains/shared/extensions/architecture-memory/index.ts",
+			"sha256": "9cdda8425b4b811650f653eb3745c39e10e7bea5d44135b54b086f36c0612655"
+		}
+	],
+	"configTransitions": {
+		"reload": {
+			"offToOn": "off",
+			"onToOff": "on"
+		},
+		"plainNew": {
+			"offToOn": "off",
+			"onToOff": "on"
+		},
+		"restart": {
+			"offToOn": "on",
+			"onToOff": "off"
+		},
+		"agentSwitch": {
+			"offToOn": "on",
+			"onToOff": "off"
+		}
+	},
+	"toolContracts": {
+		"agentMemory": {
+			"remember": {
+				"name": "remember",
+				"label": "Remember",
+				"description": "Save an explicit note, user profile, or playbook to agent memory.",
+				"executionMode": "sequential",
+				"parameterNames": [
+					"changeSummary",
+					"confirmUpdate",
+					"content",
+					"description",
+					"kind",
+					"scope",
+					"tags",
+					"title",
+					"type"
+				]
+			},
+			"recall": {
+				"name": "recall",
+				"label": "Recall",
+				"description": "Search authored agent-memory records: notes, the user profile, and playbooks.",
+				"parameterNames": ["limit", "query"]
+			}
+		},
+		"architectureMemory": {
+			"architectureMapRead": {
+				"name": "architecture_map_read",
+				"label": "Read Architecture Map",
+				"description": "Read the generated architecture-map index or a module shard by module resource.",
+				"parameterNames": ["module", "resource"]
+			}
+		}
+	},
+	"authorization": {
+		"agentMemory": {
+			"authorizedAgent": "main/cosmo",
+			"unauthorizedStatus": "unauthorized",
+			"resetEvents": ["session_start", "session_shutdown"]
+		},
+		"architectureMemory": {
+			"authorizedAgents": [
+				"coding/coordinator",
+				"coding/plan-reviewer",
+				"coding/planner",
+				"coding/quality-manager",
+				"coding/worker"
+			],
+			"unauthorizedStatus": "scope-ineligible",
+			"resetEvents": ["session_start", "session_shutdown"]
+		}
+	},
+	"promptCorrectionRegions": [
+		{
+			"path": "bundled/coding/prompts/distiller.md",
+			"regions": [
+				{
+					"start": "# Distiller",
+					"end": "<EOF>"
+				}
+			],
+			"baselineContent": "# Distiller\n\nYou're the Distiller. You read everything a completed plan left behind — the plan, the tasks, the session transcripts — and you keep only the few insights worth carrying forward, as a structured `KnowledgeBundle` JSONL file built for future SQLite + vector-embedding ingestion.\n\nRuthless about the bar: 3–15 records, each one essential (a future agent would be worse off without it), self-contained (understandable without the source it came from), concrete (a specific instruction, not a platitude), and actionable. Mechanical steps and obvious details don't make the cut. You're read-only except for writing the output files to `memory/` — don't touch source, task, or session artifacts.\n\n## Inputs\n\nYou will be invoked with a plan slug. Everything you need is derivable from that slug.\n\n## Workflow\n\nFollow these steps in order.\n\n### 1. Read the Plan\n\nRead `missions/plans/<planSlug>/plan.md`. If it does not exist, try `missions/archive/plans/<planSlug>/plan.md`. Understand:\n\n- The plan title\n- The problem being solved\n- The approach chosen and why\n- Any explicit decisions or trade-offs documented in the plan\n\nRead `missions/plans/<planSlug>/spec.md` (or its archive equivalent) if present — it may contain context the plan omits.\n\n### 2. Read the Tasks\n\nSearch for task files with the label `plan:<planSlug>`. Read each one fully. Note:\n\n- Acceptance criteria (what was actually verified)\n- Implementation notes appended during work\n- Task status and any task-level decisions\n\nIf tasks are in `missions/archive/tasks/`, read them from there.\n\n### 3. Read the Session Manifest\n\nRead `missions/sessions/<planSlug>/manifest.json`. This file is a `SessionManifest` with the following shape:\n\n```json\n{\n  \"planSlug\": \"...\",\n  \"createdAt\": \"...\",\n  \"updatedAt\": \"...\",\n  \"sessions\": [\n    {\n      \"sessionId\": \"...\",\n      \"role\": \"...\",\n      \"parentSessionId\": \"...\",\n      \"taskId\": \"...\",\n      \"startedAt\": \"...\",\n      \"completedAt\": \"...\",\n      \"outcome\": \"success\" | \"failed\",\n      \"sessionFile\": \"relative-path.jsonl\",\n      \"transcriptFile\": \"relative-path.transcript.md\",\n      \"stats\": { \"tokens\": {...}, \"cost\": 0, \"durationMs\": 0, \"turns\": 0, \"toolCalls\": 0 }\n    }\n  ]\n}\n```\n\nIf the manifest does not exist, proceed with only the plan and task content — do not fail.\n\n### 4. Read Transcript Files\n\nFor each session in the manifest that has a `transcriptFile`, read:\n`missions/sessions/<planSlug>/<transcriptFile>`\n\nRead in this order:\n1. `planner` role first (design intent and approach rationale)\n2. Worker roles next (implementation decisions, patterns established, gotchas encountered)\n3. `quality-manager` and reviewer roles last (quality findings, final decisions)\n\nFocus on:\n- Why certain approaches were chosen over alternatives\n- Non-obvious implementation decisions\n- Patterns established that future agents should follow\n- Gotchas, edge cases, or constraints discovered during work\n- Conventions introduced or extended\n\nSkip `toolResult` and mechanical content — focus on reasoning and decisions.\n\n### 5. Extract KnowledgeRecords\n\nFrom the accumulated source materials, extract 3–15 `KnowledgeRecord` objects. Each record captures one concept — a single, discrete piece of knowledge.\n\n**KnowledgeRecord JSON schema:**\n\n```json\n{\n  \"id\": \"<UUID v4>\",\n  \"planSlug\": \"<string>\",\n  \"taskId\": \"<string | undefined>\",\n  \"sourceRole\": \"<string — agent role that produced this knowledge, e.g. 'planner', 'worker'>\",\n  \"type\": \"<KnowledgeType>\",\n  \"content\": \"<string — the knowledge itself, self-contained and embeddable>\",\n  \"files\": [\"<relative file paths this knowledge relates to>\"],\n  \"tags\": [\"<free-form categorical tags>\"],\n  \"createdAt\": \"<ISO 8601 timestamp>\"\n}\n```\n\n**KnowledgeType enum** — use exactly one of:\n\n| Value | When to use |\n|-------|-------------|\n| `\"decision\"` | A choice made between alternatives (e.g. chose X over Y) |\n| `\"rationale\"` | The reasoning behind an architectural or design choice |\n| `\"pattern\"` | A reusable convention or approach established by this work |\n| `\"trade-off\"` | An accepted compromise with understood costs |\n| `\"gotcha\"` | A non-obvious constraint, edge case, or footgun to avoid |\n| `\"convention\"` | A naming, file organization, or API shape rule to follow |\n\n**Quality bar — apply ruthlessly:**\n\n- **Essential only**: If future agents would be fine without knowing this, omit it. Do not distill mechanical steps or obvious implementation details.\n- **Self-contained**: The `content` field must be understandable without reading the plan, tasks, or transcripts. It is the field that gets embedded for semantic search — it must stand alone.\n- **Concrete**: Prefer \"Use `writeFile` from `node:fs/promises`, not `fs.writeFileSync`, to avoid blocking the event loop in session writes\" over \"avoid synchronous I/O.\" Specific is more useful than general.\n- **Actionable**: Each record should help a future agent do something better or avoid something bad.\n- **No duplicates**: If two records say essentially the same thing, merge them into one better record.\n\n**Quantity**: Extract at least 3 and no more than 15 records. If you find fewer than 3 meaningful insights, include the most valuable ones you can find. If you find more than 15, cull ruthlessly — keep only the highest-value records.\n\n### 6. Assemble the KnowledgeBundle\n\nAssemble all records into a `KnowledgeBundle`:\n\n```json\n{\n  \"planSlug\": \"<string>\",\n  \"planTitle\": \"<string>\",\n  \"distilledAt\": \"<ISO 8601 timestamp>\",\n  \"distilledBy\": \"distiller\",\n  \"records\": [<KnowledgeRecord>, ...]\n}\n```\n\n### 7. Write the JSONL Output\n\nWrite the bundle to `memory/<planSlug>.knowledge.jsonl` at the project root. Create the `memory/` directory if it does not exist.\n\n**JSONL format**: Write one JSON object per line, no trailing comma, no outer array wrapper.\n\n- **First line**: metadata header with `_meta: true`\n- **Subsequent lines**: one `KnowledgeRecord` per line\n\nUse this canonical format exactly:\n\n```\n{\"_meta\":true,\"planSlug\":\"...\",\"planTitle\":\"...\",\"distilledAt\":\"...\",\"distilledBy\":\"distiller\"}\n{\"id\":\"...\",\"planSlug\":\"...\",\"taskId\":\"TASK-001\",\"sourceRole\":\"worker\",\"type\":\"decision\",\"content\":\"...\",\"files\":[...],\"tags\":[...],\"createdAt\":\"...\"}\n{\"id\":\"...\",\"planSlug\":\"...\",\"sourceRole\":\"planner\",\"type\":\"pattern\",\"content\":\"...\",\"files\":[...],\"tags\":[...],\"createdAt\":\"...\"}\n...\n```\n\nEach `KnowledgeRecord` line must be a complete, standalone JSON object (not nested inside the header).\n\n### 8. Write the Human-Readable Summary (Optional)\n\nIf the plan had meaningful decisions worth preserving for human readers, also write `memory/<planSlug>.md` following this format:\n\n```markdown\n---\nsource: session\nplan: <slug>\ndistilledAt: <ISO 8601>\n---\n\n# <Plan Title>\n\n## What Was Built\n[2-4 sentence outcome summary]\n\n## Key Decisions\n- [decision: why X over Y]\n\n## Patterns Established\n- [pattern: what to follow in future work]\n\n## Gotchas & Lessons\n- [lesson: non-obvious constraint or footgun]\n```\n\nOnly write the `.md` file if you have enough meaningful content to fill at least 3 sections. If the plan was trivial, the JSONL file alone is sufficient.\n\n## Output\n\nYour final output must confirm:\n- The path written: `memory/<planSlug>.knowledge.jsonl`\n- The number of records extracted\n- Whether a `.md` summary was also written\n\nDo not print the JSONL content to stdout — just write the file and confirm.\n"
+		},
+		{
+			"path": "domains/shared/skills/archive/SKILL.md",
+			"regions": [
+				{
+					"start": "description:",
+					"end": "---"
+				},
+				{
+					"start": "## Structured Knowledge Records (Distiller Agent)",
+					"end": "## Common Problems"
+				}
+			],
+			"baselineContent": "---\nname: archive\ndescription: Distill archived plans and tasks into concise memory files that capture decisions, patterns, and lessons. Use after completing and archiving a plan, or when distilling session transcripts into knowledge records. Do NOT load for creating plans, managing tasks, or active implementation.\n---\n\n# Archive Distillation\n\nAfter a plan is archived, its learnings should be distilled into a memory file — a concise record of what was built, why, and what the next person working in this area needs to know.\n\n## When to Distill\n\nDistill after `plan_archive` moves a completed plan and its tasks to `missions/archive/`. Not every archived plan needs distillation — skip it for trivial plans (single-task, no meaningful decisions). Distill when the work established patterns, made non-obvious decisions, or changed areas of the codebase others will touch.\n\n## Distillation Procedure\n\n### 1. Locate Archived Materials\n\nFind the archived plan directory and its associated tasks:\n\n- **Plan**: `missions/archive/plans/<slug>/plan.md` (and optional `spec.md`)\n- **Tasks**: `missions/archive/tasks/` — look for task files containing a `plan:<slug>` label in their frontmatter\n\nThe slug is the plan's directory name (e.g., `response-cache`, `auth-system`).\n\n### 2. Read All Source Materials\n\nRead every file before writing anything:\n\n- Read `plan.md` fully — understand the original design intent\n- Read `spec.md` if it exists — the problem definition may contain context the plan omits\n- Read each associated task file — pay attention to:\n  - Acceptance criteria (what was actually verified)\n  - Implementation notes appended during work\n  - Status and any task-level decisions\n\n### 3. Extract Learnings\n\nFocus on what helps the next agent or human working in this area. Ask:\n\n- **What was the outcome?** — Summarize what exists now that did not before. High-level, not a file listing.\n- **What decisions were made?** — Why was X chosen over Y? What trade-offs were accepted? Include supersessions and amend-on-record decisions from the plan's Decision Log — what was amended mid-implementation, why, and what it replaced. An amendment that survived to ship is exactly the knowledge the next plan in this area needs.\n- **What patterns were established?** — Conventions, naming, file organization, API shapes that future work should follow.\n- **What files were affected?** — Which areas of the codebase changed, with enough context to know why.\n- **What surprised you?** — Gotchas, edge cases, things that would bite someone unfamiliar with this area.\n\n### 4. Write the Memory File\n\nWrite to `memory/<slug>.md` at the project root. Create the `memory/` directory if it does not exist.\n\n## Memory File Format\n\n```markdown\n---\nsource: archive\nplan: <slug>\ndistilledAt: <ISO 8601 date>\n---\n\n# <Plan Title>\n\n## What Was Built\n[2-4 sentence summary of the outcome. What exists now that did not before.]\n\n## Key Decisions\n- [Decision: why X was chosen over Y]\n- [Decision: trade-off that was accepted and why]\n\n## Patterns Established\n- [Pattern: convention or approach that future work should follow]\n- [Pattern: naming, file organization, or API shape to reuse]\n\n## Files Changed\n- `path/to/file.ts` — [what changed and why]\n- `path/to/other.ts` — [what changed and why]\n\n## Gotchas & Lessons\n- [Lesson: something that surprised you or would bite someone later]\n- [Lesson: edge case or constraint that is not obvious from the code]\n```\n\n### Frontmatter Fields\n\n- `source` — Always `archive` for plan distillations. Tracks provenance.\n- `plan` — The plan slug. Links the memory back to the archived plan.\n- `distilledAt` — ISO 8601 timestamp of when the distillation was created.\n\n### Section Guidelines\n\n**What Was Built** — Outcome, not process. \"Added an in-memory LRU cache to the API client with TTL-based expiration\" not \"Created cache.ts, modified client.ts, added tests.\"\n\n**Key Decisions** — Each entry states the decision AND the reasoning. \"Used LRU eviction over LFU because access patterns are recency-biased and LRU is simpler to implement correctly.\" Omit decisions that are obvious from the code.\n\n**Patterns Established** — Things the next developer should follow. \"All cache configuration uses an options object with defaults, matching the existing API client pattern.\" Only include patterns that are non-obvious or that you consciously chose.\n\n**Files Changed** — Not every file, just the ones that matter. Group related changes. Include enough context that someone can find the right area of the codebase without reading git history.\n\n**Gotchas & Lessons** — The most valuable section. Things that are true but not obvious. \"The cache must be invalidated before the response is returned, not after — reversing this order causes stale reads in write-then-read patterns.\"\n\n## Where Memory Files Go\n\n- **Location**: `memory/` at the project root\n- **Naming**: `<slug>.md` matching the plan slug (e.g., `memory/response-cache.md`)\n- **Purpose**: Project-level context files consumed by agents alongside AGENTS.md and skills. They accumulate institutional knowledge about the codebase.\n\n## Good vs Bad Distillation\n\n**Good distillation is:**\n\n- **Concise** — 50-150 lines. If it is longer, you are including too much detail.\n- **Decision-focused** — \"We chose X because Y\", not \"we implemented X.\"\n- **Forward-looking** — Helps the next person working in this area. Written for a reader who has not seen the plan.\n- **Actionable** — Contains patterns to follow and gotchas to avoid, not just history.\n\n**Bad distillation is:**\n\n- **A changelog** — That is what git history is for. Do not list commits or PRs.\n- **A copy of the plan** — That is what the archive is for. Do not repeat the design section.\n- **A file listing without context** — \"Changed foo.ts, bar.ts, baz.ts\" tells the reader nothing.\n- **Vague** — \"We learned a lot about testing\" is not actionable. State what you learned.\n\n**Litmus test**: If someone reads only the memory file (not the plan, not the tasks, not the git log), can they understand what was built, why the key decisions were made, and what to watch out for? If yes, the distillation is good.\n\n## Source-Agnostic Design\n\nThe memory format is general. While archives are the primary source, the same structure works for any knowledge source:\n\n- **Session transcripts** — Conversation logs distilled into memory\n- **Design reviews** — Discussion notes distilled into decisions and patterns\n- **Decision records** — ADRs distilled into the same sections\n\nThe `source` frontmatter field tracks provenance. Use `archive` for plan distillations, and other values (e.g., `session`, `design-review`) for other sources. The memory format stays the same regardless of where the knowledge came from.\n\n---\n\n## Structured Knowledge Records (Distiller Agent)\n\nIn addition to human-readable `.md` memory files, a dedicated distiller agent produces structured knowledge records optimized for future semantic search and database ingestion.\n\n### Three-Tier Knowledge Pipeline\n\nKnowledge flows through three tiers during plan execution and archival:\n\n```\nTier 1 — Raw sessions (JSONL)   →   Tier 2 — Transcripts (markdown)   →   Tier 3 — Knowledge records (JSONL)\n  missions/sessions/<slug>/             missions/sessions/<slug>/                memory/<slug>.knowledge.jsonl\n  (ephemeral — debug/replay)            (intermediate — distiller input)          (durable — survives archive)\n```\n\n**Tier 1 — Raw sessions** (`missions/sessions/<slug>/*.jsonl`): Complete Pi session JSONL files saved during plan execution. Ephemeral — for debugging and replay. Moved to `missions/archive/sessions/<slug>/` when the plan is archived.\n\n**Tier 2 — Transcripts** (`missions/sessions/<slug>/*.transcript.md`): Filtered, readable markdown summaries generated at session completion. These are the distiller's primary input. Archived alongside the raw sessions.\n\n**Tier 3 — Knowledge records** (`memory/<slug>.knowledge.jsonl`): The durable output. Each record is a self-contained unit of knowledge with structured metadata designed for future SQLite + vector embedding ingestion. **Knowledge records are never moved on archive** — they persist in `memory/` and accumulate across all plans.\n\n### Invoking the Distiller Agent\n\nAfter `plan_archive` completes, spawn the `distiller` agent to produce knowledge records for the plan:\n\n```\nspawn_agent distiller \"Distill the <planSlug> plan into knowledge records\"\n```\n\nThe distiller agent:\n1. Reads `missions/archive/plans/<slug>/plan.md` (or the active path if not yet archived)\n2. Reads all tasks with `plan:<slug>` label\n3. Reads `missions/sessions/<slug>/manifest.json` to locate session transcripts\n4. Reads transcript files (planner → workers → quality-manager)\n5. Extracts 3–15 `KnowledgeRecord` objects, one concept per record\n6. Writes `memory/<slug>.knowledge.jsonl` — one JSON object per line\n7. Optionally writes `memory/<slug>.md` for human readers (same format as above)\n\n**When to invoke the distiller**: Invoke it for the same plans that warrant manual distillation — non-trivial plans that established patterns, made non-obvious decisions, or changed areas others will touch. Skip trivial single-task plans.\n\n**If no session transcripts exist** (sessions were in-memory or pre-date this feature), the distiller falls back to plan and task content alone. Invoke it anyway — it will produce records from whatever source material is available.\n\n### Knowledge Record Format\n\nEach line of `memory/<slug>.knowledge.jsonl` is a standalone JSON object. The first line is a bundle header; subsequent lines are `KnowledgeRecord` objects:\n\n```jsonl\n{\"planSlug\":\"auth-system\",\"planTitle\":\"Auth System\",\"distilledAt\":\"...\",\"distilledBy\":\"distiller\",\"recordCount\":5}\n{\"id\":\"...\",\"planSlug\":\"auth-system\",\"type\":\"decision\",\"content\":\"Used JWT over session cookies because...\",\"files\":[\"lib/auth/token.ts\"],\"tags\":[\"auth\",\"jwt\"],\"createdAt\":\"...\"}\n```\n\n**KnowledgeRecord fields:**\n- `id` — UUID v4, unique record identifier\n- `planSlug` — links back to the source plan\n- `taskId` — (optional) links to a specific task if the knowledge is task-scoped\n- `sourceRole` — agent role that produced the knowledge (e.g. `planner`, `worker`)\n- `type` — one of: `decision`, `rationale`, `pattern`, `trade-off`, `gotcha`, `convention`\n- `content` — the knowledge itself; self-contained and embeddable; the field used for semantic search\n- `files` — relative paths the knowledge relates to (enables scoped retrieval)\n- `tags` — free-form categorical tags\n- `createdAt` — ISO 8601 timestamp\n\n### Knowledge Records and Archive\n\nKnowledge records in `memory/` are the **durable layer** of the pipeline:\n\n- `memory/<slug>.knowledge.jsonl` is **not moved or deleted** when a plan is archived\n- `memory/<slug>.md` is **not moved or deleted** when a plan is archived\n- Session files (`missions/sessions/<slug>/`) are moved to `missions/archive/sessions/<slug>/` during archive — transcripts go with them\n- Knowledge records accumulate in `memory/` across all plans and are the canonical long-term memory store\n\n## Common Problems\n\n- **Distillation is too detailed — reads like the plan copy.** Apply the litmus test: if someone needs the plan to understand the memory file, it failed. Focus on decisions and gotchas, not design walkthrough.\n- **Memory file is missing the \"Gotchas\" section.** This is the highest-value section. If nothing surprised you, look harder — edge cases, ordering constraints, things that broke during implementation.\n- **No session transcripts available for the distiller.** The distiller falls back to plan + task content. Invoke it anyway — it produces useful records from whatever source material exists.\n- **Memory file duplicates what's obvious from the code.** Don't document what `git blame` can tell you. Document the *why* behind decisions and the *context* that code can't capture.\n\n## Related Skills\n\n- `/skill:plan` — Creating and managing the plans that feed into archives\n- `/skill:task` — Task lifecycle that precedes archival\n- `/skill:roadmap` — Where work items originate before becoming plans\n"
+		},
+		{
+			"path": "AGENTS.md",
+			"regions": [
+				{
+					"start": "## Work Lifecycle",
+					"end": "## When Working on This Codebase"
+				},
+				{
+					"start": "## Key Directories",
+					"end": "## Documentation"
+				},
+				{
+					"start": "## Documentation",
+					"end": "<EOF>"
+				}
+			],
+			"baselineContent": "# Cosmonauts\n\nCosmonauts is an AI agent orchestration framework built on `@earendil-works/pi-coding-agent` (Pi). Agents and humans imagine, design, and build together across a spectrum — from fully automated chain runs to always-on, side-by-side pairing.\n\n**Status**: Early development. Architecture is evolving. Expect breaking changes.\n\n## Design Principles\n\n### Pi-First\n\nBefore designing any feature, check what Pi already provides. The checklist:\n\n1. **Does Pi's core handle it?** — `createAgentSession`, `DefaultResourceLoader`, `buildSystemPrompt`, built-in tools, session management, compaction, cost tracking. Use it directly.\n2. **Does pi-skills provide it?** — `brave-search`, `browser-tools`, etc. Depend on it or adapt it.\n3. **Does Pi's extension/skill system enable it?** — `pi.on()` lifecycle events, `pi.registerTool()`, `pi.appendEntry()` for state, `pi.sendMessage()` for injection. Build an extension.\n4. **Only then build custom.** — If Pi can't handle it, build it ourselves.\n\nAs Pi evolves (lockstep versioning), re-audit its API before each phase for features that might obsolete planned custom work.\n\n### Architecture at a glance\n\n- **Three layers**:\n  - **Framework** (`lib/`) — orchestration, persistence, tasks, CLI, agent loading. Domain-agnostic.\n  - **Domain agents** — built-in domains live in `domains/` (`shared/`, `main/`); installable domains live in `bundled/` (`coding/`). Each domain ships its own agents, prompts, capabilities, and skills.\n  - **Executive layer** (`domains/main/`) — hosts `cosmo`, the cross-domain top-level assistant.\n- **Three pillars** — agent definitions (declarative config), system prompts (composable layers), and skills (on-demand knowledge). See `docs/prompts.md` for the four-layer composition.\n- **Adding a new domain = adding a new domain directory with a `domain.ts` manifest.** No framework changes needed.\n- **Built-in leads**: `main/cosmo` (executive, cross-domain) and `coding/cody` (coding-domain interactive lead).\n\n## Tech Stack\n\n(See `package.json` for the actual dependency versions and scripts — only the non-obvious constraints are noted here.)\n\n- Runtime: Bun for dev; the CLI also runs under Node as a fallback.\n- Language: TypeScript — ESM, strict mode.\n- Pi (`@earendil-works/pi-*`, repo: https://github.com/earendil-works/pi) uses **lockstep versioning**: keep all four packages (`pi-agent-core`, `pi-ai`, `pi-coding-agent`, `pi-tui`) on the same exact version and bump them together. Re-audit Pi's API on each bump (see the Pi-First principle).\n\n## Conventions\n\n- ESM imports everywhere. Use `import type` for type-only imports.\n- Include `.ts` extensions in relative imports.\n- Prefer `interface` for object shapes, `type` for unions/intersections.\n- Prefer `as const` objects over enums.\n- Use `unknown` over `any`. Narrow before use.\n- Keep functions small. Use options objects for 3+ parameters.\n- Tests go in `tests/` mirroring the source structure.\n- One concept per test. Descriptive names: \"returns undefined for missing keys\", not \"test1\".\n- Use temp directories for filesystem tests. Clean up in `afterEach`.\n\n## Work Lifecycle\n\nWork flows: **roadmap → plan → tasks → sessions → archive → memory**. Each stage has a skill: `/skill:roadmap`, `/skill:plan`, `/skill:task`, `/skill:archive`. Plans, tasks, reviews, and archives live in `missions/`; distilled knowledge in `memory/`. We dogfood cosmonauts on itself, so most of these directories are tracked here — only `missions/sessions/` (and its archive counterpart) are gitignored as high-volume, regenerable transcripts.\n\n## When Working on This Codebase\n\n- Verify after changes: `bun run test`, `bun run lint`, `bun run typecheck`.\n- For non-trivial features (multi-file or design decisions), scope into tasks before implementing — see `/skill:plan` and `/skill:task`.\n- For small, self-contained changes, skip the task system.\n\n## Key Directories\n\n**Source code:**\n- `lib/` — framework code (agents, orchestration, tasks, plans, workflows, domains, config)\n- `domains/` — built-in domains (`shared/`, `main/`)\n- `bundled/` — installable domain packages (`coding/`)\n- `cli/`, `bin/` — CLI implementation and entry points\n- `tests/` — Vitest suites mirroring source\n- `docs/` — reference documentation\n\n**Project artifacts (tracked — we dogfood cosmonauts on itself):**\n- `missions/plans/`, `missions/tasks/`, `missions/reviews/`, `missions/archive/` — work artifacts\n- `memory/` — distilled knowledge from completed work\n- `.cosmonauts/` — project config\n\n**Gitignored:** `missions/sessions/` and `missions/archive/sessions/` — high-volume, regenerable transcripts.\n\n`package.json` \"files\" controls the npm tarball — `missions/`, `memory/`, `.cosmonauts/`, `tests/`, and `docs/` are not shipped to consumers.\n\n## Documentation\n\n- `ROADMAP.md` — work backlog (prioritized items first, ideas below)\n- `docs/prompts.md` — four-layer prompt composition\n- `docs/orchestration.md` — chains, workflows, drive, CLI surface, chain events/stats\n- `docs/testing.md` — testing standards and patterns\n- `memory/` — distilled knowledge from completed work\n- Pi framework API reference lives in the **`pi` skill** (`domains/shared/skills/pi/SKILL.md`) — loaded on demand, not a standalone doc. It should track the pinned `@earendil-works/pi-*` version and current Pi repo/docs.\n"
+		}
+	]
+}

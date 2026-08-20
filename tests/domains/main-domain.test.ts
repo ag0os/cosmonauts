@@ -2,6 +2,7 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createAgentMemoryExtension } from "../../domains/shared/extensions/agent-memory/index.ts";
 import { createRegistryFromDomains } from "../../lib/agents/index.ts";
@@ -326,6 +327,56 @@ describe("main domain built-in discovery", () => {
 		await expect(
 			readdir(join(userCosmonautsRoot, "memory")),
 		).rejects.toMatchObject({ code: "ENOENT" });
+	});
+
+	it("keeps gate-selected inline knowledge adapters outside package auto-discovery @cosmo-behavior plan:knowledge-surface#B-012", async () => {
+		const packageJson = JSON.parse(
+			await readFile(join(REPO_ROOT, "package.json"), "utf-8"),
+		) as { pi?: { extensions?: string[] } };
+		expect(packageJson.pi?.extensions).toEqual(["./domains/shared/extensions"]);
+
+		for (const wrapper of ["agent-memory", "architecture-memory"]) {
+			const source = await readFile(
+				join(SHARED_DOMAIN_DIR, "extensions", wrapper, "index.ts"),
+				"utf-8",
+			);
+			expect(source).toContain(`lib/extensions/${wrapper}/index.ts`);
+			expect(source).not.toContain("registerTool({");
+		}
+
+		const discovered = await readdir(join(SHARED_DOMAIN_DIR, "extensions"));
+		expect(discovered).not.toContain("knowledge-surface");
+		expect(discovered).not.toContain("knowledge-proposals");
+
+		const bareProject = join(tmp.path, "bare-pi-package-host");
+		const loader = new DefaultResourceLoader({
+			cwd: bareProject,
+			agentDir: join(tmp.path, "bare-pi-agent"),
+			noExtensions: true,
+			noSkills: true,
+			additionalExtensionPaths: discovered.map((name) =>
+				join(SHARED_DOMAIN_DIR, "extensions", name),
+			),
+		});
+		await loader.reload();
+		const loaded = loader.getExtensions();
+		expect(
+			loaded.errors.filter(
+				(error) =>
+					error.path.includes("knowledge-surface") ||
+					error.path.includes("knowledge-proposals"),
+			),
+		).toEqual([]);
+		expect(loaded.extensions.map((extension) => extension.path)).not.toContain(
+			"<inline:cosmonauts-knowledge-surface>",
+		);
+		const toolNames = loaded.extensions.flatMap((extension) => [
+			...extension.tools.keys(),
+		]);
+		expect(toolNames).toContain("remember");
+		expect(toolNames).toContain("recall");
+		expect(toolNames).toContain("architecture_map_read");
+		expect(toolNames).not.toContain("knowledge_propose");
 	});
 });
 

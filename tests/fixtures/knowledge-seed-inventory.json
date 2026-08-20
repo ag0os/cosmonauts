@@ -1,0 +1,2999 @@
+{
+	"version": 1,
+	"frozenFrom": "pre-feature knowledge-surface Stage 1",
+	"markdown": [
+		{
+			"path": "memory/analysis-capability-runtime.md",
+			"sha256": "59e11747e730fb73d8807f55ee79792a3b111af940069ccffe6f293a653d26ae",
+			"distilledAtRaw": "2026-07-30T00:00:00.000Z"
+		},
+		{
+			"path": "memory/analysis-gate-coverage.md",
+			"sha256": "08aa039a6f1f3157b982fde3c75d1384fa2f9aa2f8d4480d4522f719df1c2ddd",
+			"distilledAtRaw": "2026-08-03T00:00:00.000Z"
+		},
+		{
+			"path": "memory/analysis-gate-rewiring.md",
+			"sha256": "404dbbf05b98d688380c8c507d8adb556eb364e276f5c547a66164d8ac75a1d3",
+			"distilledAtRaw": "2026-07-30T00:00:00.000Z"
+		},
+		{
+			"path": "memory/analysis-investigation-procedures.md",
+			"sha256": "2a436137fedf5de831dabcad8aef1899c179ccf9fcba765d492ee3945768191b",
+			"distilledAtRaw": "2026-08-05T00:00:00.000Z"
+		},
+		{
+			"path": "memory/artifact-conformance-gate.md",
+			"sha256": "00958b17aaaf406282e82a4fb299e32677e39a164b92b2f44284b4c50ed1909b",
+			"distilledAtRaw": "2026-05-22T18:45:37Z"
+		},
+		{
+			"path": "memory/artifact-format-redesign.md",
+			"sha256": "0e542512ca472d859087e399c6cad200d3a4cf88b1d990b60debaaaf9a330967",
+			"distilledAtRaw": "2026-05-22T12:48:36Z"
+		},
+		{
+			"path": "memory/chain-fanout.md",
+			"sha256": "6fb6b5caa0a1b6cff544a80610dc9528f5e23f3302008cf769d21f718300e0ba",
+			"distilledAtRaw": "2026-04-15T15:05:13Z"
+		},
+		{
+			"path": "memory/chain-profiler.md",
+			"sha256": "15b571e79d7add81fdcd44454cb62471d6a2c6da97012caabde915159b0beda5",
+			"distilledAtRaw": "2026-04-15T15:04:48Z"
+		},
+		{
+			"path": "memory/code-structure-map.md",
+			"sha256": "4287bc17699919f7209fd2378794624c246f7331aae4f163ac7c5be751365335",
+			"distilledAtRaw": "'2026-07-06'"
+		},
+		{
+			"path": "memory/domain-config.md",
+			"sha256": "7e71d9a625522bf7b171f9c3a4ea6776b1403a776b216734a53bbcb0ea0519f2",
+			"distilledAtRaw": "2026-04-17T00:00:00.000Z"
+		},
+		{
+			"path": "memory/domain-eject-and-tiers.md",
+			"sha256": "40a13ee003c0752b3150a4a6beaab0ae4e499dc5a44a7f25d13e71c850c0e0fb",
+			"distilledAtRaw": "2026-04-15T15:04:53Z"
+		},
+		{
+			"path": "memory/drive-process-reaping.md",
+			"sha256": "24eedd01d11dc65b95d17be3c9237234c28f12aea88f345c9715a6a5518e3600",
+			"distilledAtRaw": "2026-08-14"
+		},
+		{
+			"path": "memory/drive-resilience-state-model.md",
+			"sha256": "be306a1e7284d9b4b883326b307b560675e31402fb79fde1a8394111edd59b55",
+			"distilledAtRaw": "2026-05-26T16:21:11Z"
+		},
+		{
+			"path": "memory/durable-backend-step-model.md",
+			"sha256": "8665732bb9ed4c18ca373641b4cae8936f2565374b8af43e57bb3962a5428d14",
+			"distilledAtRaw": "2026-06-04T22:30:00Z"
+		},
+		{
+			"path": "memory/durable-frontend-migration.md",
+			"sha256": "e17afb868c73273137b028387dc8cd4ef7eca6e17ab1533fe0c6b0c4fb3c7516",
+			"distilledAtRaw": "2026-06-04T22:00:00Z"
+		},
+		{
+			"path": "memory/durable-graph-scheduler.md",
+			"sha256": "84d4353e3be1b5f1b8d8eece6cac31d763bd2dd581137df0543238704e21aa28",
+			"distilledAtRaw": "2026-06-04T22:30:00Z"
+		},
+		{
+			"path": "memory/durable-run-store-events.md",
+			"sha256": "ee58c34c713254aaf939f6fbb676395160191660702fd851d3248c629221e367",
+			"distilledAtRaw": "2026-06-04T22:30:00Z"
+		},
+		{
+			"path": "memory/episodic-log-detached-hardening.md",
+			"sha256": "13ff529b151adc9fae047602256b808a418e6e7c1c96b1e7817cf1ba4e8a4dea",
+			"distilledAtRaw": "'2026-07-24T22:30:00.000Z'"
+		},
+		{
+			"path": "memory/episodic-log.md",
+			"sha256": "9153daca0b16b751a3683951edc52f75fe893ae1878b4c734c751da4be02b9d3",
+			"distilledAtRaw": "'2026-07-21'"
+		},
+		{
+			"path": "memory/forge-lifecycle.md",
+			"sha256": "42b0b134bc8649babe8ffca907ed2ca6924dfa478dfe8e870112ffd65803957f",
+			"distilledAtRaw": "2026-03-05T15:41:00.000Z"
+		},
+		{
+			"path": "memory/init-command.md",
+			"sha256": "cc306f6ef3043f49ed645de3d262935689dcb10233932eea16fbde69d76f5bd5",
+			"distilledAtRaw": "2026-04-15T15:04:46Z"
+		},
+		{
+			"path": "memory/integration-verifier.md",
+			"sha256": "36b8f276e554d817ce430635b66b8d84ee5a76055e72cf612fde82ea69e3fd8c",
+			"distilledAtRaw": "2026-04-15T14:47:25Z"
+		},
+		{
+			"path": "memory/interactive-agent-switch.md",
+			"sha256": "c84f64958f14fbaf4b9977dafa69c23b712f316cb34dbb751f672c7de9505791",
+			"distilledAtRaw": "2026-04-15T15:05:00Z"
+		},
+		{
+			"path": "memory/local-vs-shared.md",
+			"sha256": "ce64e547706b7e6aa1d9283ac0ab11e672428a9d920420729346ceb2c9602f25",
+			"distilledAtRaw": "2026-04-17T00:00:00.000Z"
+		},
+		{
+			"path": "memory/memory-hardening.md",
+			"sha256": "389a857d498180f2cb2de453b9c40000a4f0bd1d9f5ceec92deb9d2a7657b845",
+			"distilledAtRaw": "'2026-07-16'"
+		},
+		{
+			"path": "memory/memory-interface.md",
+			"sha256": "0571012294034dde4ef05244c2fcb5ce73673c87320434572997a879f13ec892",
+			"distilledAtRaw": "'2026-07-09'"
+		},
+		{
+			"path": "memory/orchestration-refactor.md",
+			"sha256": "b0566128087cb942e77b590cde2d586ff66aa723a835754d5be5880e7d427bc0",
+			"distilledAtRaw": "2026-04-17T00:00:00.000Z"
+		},
+		{
+			"path": "memory/parallel-agent-spawning.md",
+			"sha256": "aa51cd14c9a14b4c1158fd77ae6586756fe11c936de972767d489d07c13d0d4c",
+			"distilledAtRaw": "2026-04-17T00:00:00.000Z"
+		},
+		{
+			"path": "memory/planning-system-hardening.md",
+			"sha256": "cfc0fd62f5e362b029dc2c79656d24a9c7ec47d0a46a0cb90fc69a71ace8b91c",
+			"distilledAtRaw": "2026-07-29T00:00:00.000Z"
+		},
+		{
+			"path": "memory/profile-playbooks.md",
+			"sha256": "d76148635a54ddfce7a9f4e0843060d17616ed3f74ce7322b6e3a7770574140e",
+			"distilledAtRaw": "'2026-07-14'"
+		},
+		{
+			"path": "memory/prompt-architecture.md",
+			"sha256": "c0dd0560b797c9b7548b48dc69ab81ec68c8d69859d82de2684f287a7443cce9",
+			"distilledAtRaw": "2026-03-05T15:41:00.000Z"
+		},
+		{
+			"path": "memory/runtime-consolidation.md",
+			"sha256": "7be6b386ae6159c6452d3271e349bc63e6677e74e39a7c4a0d217be54b88c263",
+			"distilledAtRaw": "2026-04-17T00:00:00.000Z"
+		},
+		{
+			"path": "memory/session-lineage.md",
+			"sha256": "9365c9a8cd5c6df9b6e5d1c3b95beb4f4ae2fb81689d77b6b2858ab182a39962",
+			"distilledAtRaw": "2026-04-15T15:07:51Z"
+		},
+		{
+			"path": "memory/spec-plan-intent.md",
+			"sha256": "2c8d2eb1d2570ace4d972ab1d105831efe96ca866d8365cc93872411904315dd",
+			"distilledAtRaw": "2026-08-14"
+		},
+		{
+			"path": "memory/spec-plan-quality-gates-a.md",
+			"sha256": "76fd817c61dc49c6a8fe0f4525991d07384848d2c9911c4288bbd3041748fb74",
+			"distilledAtRaw": "2026-04-17T16:20:00.000Z"
+		},
+		{
+			"path": "memory/task-id-system.md",
+			"sha256": "b4e71b5cba6596263366dfa97ad19cae03ac1574c90fc8ed1158f22dad4719b5",
+			"distilledAtRaw": "'2026-06-30'"
+		}
+	],
+	"bundles": [
+		{
+			"path": "memory/artifact-conformance-gate.knowledge.jsonl",
+			"sha256": "5eeeb882b0ff83ce2b09f0b12973eecbd78783eef419944b4b6c25b99131940f",
+			"headerRaw": "{\"_meta\":true,\"planSlug\":\"artifact-conformance-gate\",\"planTitle\":\"Artifact Conformance Gate\",\"distilledAt\":\"2026-05-22T18:45:37Z\",\"distilledBy\":\"distiller\"}",
+			"header": {
+				"_meta": true,
+				"planSlug": "artifact-conformance-gate",
+				"planTitle": "Artifact Conformance Gate",
+				"distilledAt": "2026-05-22T18:45:37Z",
+				"distilledBy": "distiller"
+			},
+			"records": [
+				{
+					"ordinal": 1,
+					"id": "e16e7f59-28d6-4d24-a76d-c050a3e592f3",
+					"rawTimestamp": "2026-05-22T18:45:37Z",
+					"fields": {
+						"id": "e16e7f59-28d6-4d24-a76d-c050a3e592f3",
+						"planSlug": "artifact-conformance-gate",
+						"taskId": "TASK-319",
+						"sourceRole": "planner",
+						"type": "decision",
+						"content": "Behavior artifact conformance lives in `lib/artifacts/behavior-conformance.ts` and is re-exported from `lib/artifacts/index.ts`; keep it independent from CLI, Drive, tasks, prompt runtime, and plan-manager code because behavior-marker validation is a reusable work-artifact contract rather than plan CRUD or orchestration behavior.",
+						"files": [
+							"lib/artifacts/behavior-conformance.ts",
+							"lib/artifacts/index.ts"
+						],
+						"tags": [
+							"artifacts",
+							"behavior-conformance",
+							"module-boundary",
+							"dependency-direction"
+						],
+						"createdAt": "2026-05-22T18:45:37Z"
+					}
+				},
+				{
+					"ordinal": 2,
+					"id": "a6db4224-06ea-407d-8c6a-4f5e64313da6",
+					"rawTimestamp": "2026-05-22T18:45:37Z",
+					"fields": {
+						"id": "a6db4224-06ea-407d-8c6a-4f5e64313da6",
+						"planSlug": "artifact-conformance-gate",
+						"taskId": "TASK-322",
+						"sourceRole": "planner",
+						"type": "trade-off",
+						"content": "The v1 artifact-conformance gate checks exact `@cosmo-behavior plan:<slug>#B-###` marker text anywhere in the referenced file and deliberately does not parse test ASTs or verify proximity to the named test. This language-agnostic text check is deterministic and cheap, but callers must not treat it as proof that the marker is attached to the correct `it()` or `test()` block.",
+						"files": [
+							"lib/artifacts/behavior-conformance.ts",
+							"tests/artifacts/behavior-conformance.test.ts",
+							"domains/shared/skills/work-artifacts/references/behavior-spine.md"
+						],
+						"tags": ["markers", "testing", "trade-off", "v1-scope"],
+						"createdAt": "2026-05-22T18:45:37Z"
+					}
+				},
+				{
+					"ordinal": 3,
+					"id": "5dd16d9e-164d-4531-9d49-e9aec6043215",
+					"rawTimestamp": "2026-05-22T18:45:37Z",
+					"fields": {
+						"id": "5dd16d9e-164d-4531-9d49-e9aec6043215",
+						"planSlug": "artifact-conformance-gate",
+						"taskId": "TASK-321",
+						"sourceRole": "worker",
+						"type": "pattern",
+						"content": "When reading file paths authored in plans, validate before reading: parse the first inline-code span or text before `>`, require a non-empty project-root-relative path, reject NUL bytes plus POSIX/Windows absolutes, reject lexical traversal outside the real project root, check missing files without reading contents, and use `realpath` containment to reject symlink escapes before UTF-8 reads.",
+						"files": [
+							"lib/artifacts/behavior-conformance.ts",
+							"tests/artifacts/behavior-conformance.test.ts"
+						],
+						"tags": [
+							"path-safety",
+							"filesystem",
+							"security",
+							"test-references"
+						],
+						"createdAt": "2026-05-22T18:45:37Z"
+					}
+				},
+				{
+					"ordinal": 4,
+					"id": "feec1a69-3f85-4bf6-ab1d-2d0cdb7c3537",
+					"rawTimestamp": "2026-05-22T18:45:37Z",
+					"fields": {
+						"id": "feec1a69-3f85-4bf6-ab1d-2d0cdb7c3537",
+						"planSlug": "artifact-conformance-gate",
+						"taskId": "TASK-323",
+						"sourceRole": "worker",
+						"type": "convention",
+						"content": "`cosmonauts plan check-artifacts <slug>` validates only active plans at `missions/plans/<slug>/plan.md`: it uses `process.cwd()` as the project root, validates the slug with `validateSlug()`, does not scan archived plans or all active plans, prints the full `ArtifactConformanceResult` in JSON mode, and exits non-zero for invalid slugs, missing plans, or conformance failures.",
+						"files": [
+							"cli/plans/commands/check-artifacts.ts",
+							"cli/plans/index.ts",
+							"tests/cli/plans/commands/check-artifacts.test.ts",
+							"tests/cli/plans/subcommand.test.ts"
+						],
+						"tags": ["cli", "plans", "artifact-conformance", "output-modes"],
+						"createdAt": "2026-05-22T18:45:37Z"
+					}
+				},
+				{
+					"ordinal": 5,
+					"id": "78d25e3c-44dd-4a0a-910e-cf07fb060b67",
+					"rawTimestamp": "2026-05-22T18:45:37Z",
+					"fields": {
+						"id": "78d25e3c-44dd-4a0a-910e-cf07fb060b67",
+						"planSlug": "artifact-conformance-gate",
+						"taskId": "TASK-320",
+						"sourceRole": "worker",
+						"type": "convention",
+						"content": "The implemented artifact-conformance issue kinds are `missing-behavior-section`, `missing-behavior-entry`, `missing-behavior-field`, `invalid-marker`, `invalid-test-reference`, `missing-test-file`, and `missing-marker`; future integrations should consume these structured `kind` values plus behavior, field, path, marker, expected, and actual evidence instead of scraping human CLI prose.",
+						"files": [
+							"lib/artifacts/behavior-conformance.ts",
+							"cli/plans/commands/check-artifacts.ts"
+						],
+						"tags": [
+							"diagnostics",
+							"structured-evidence",
+							"api-contract",
+							"quality-gates"
+						],
+						"createdAt": "2026-05-22T18:45:37Z"
+					}
+				},
+				{
+					"ordinal": 6,
+					"id": "f32f3b30-6f3f-411a-bbe6-ff1c14f67b2d",
+					"rawTimestamp": "2026-05-22T18:45:37Z",
+					"fields": {
+						"id": "f32f3b30-6f3f-411a-bbe6-ff1c14f67b2d",
+						"planSlug": "artifact-conformance-gate",
+						"taskId": "TASK-319",
+						"sourceRole": "worker",
+						"type": "pattern",
+						"content": "The behavior-section parser is intentionally line-oriented and canonical-shape only: it looks for an exact `## Behaviors` section, parses `### B-###` headings with `-`, `–`, or `—`, accepts one-line bullet fields for Source, Context, Action, Expected, Seam, Test, and Marker, and normalizes `Expected result` to `Expected` rather than supporting arbitrary markdown prose.",
+						"files": [
+							"lib/artifacts/behavior-conformance.ts",
+							"tests/artifacts/behavior-conformance.test.ts"
+						],
+						"tags": [
+							"markdown-parser",
+							"behavior-spine",
+							"canonical-format",
+							"line-oriented"
+						],
+						"createdAt": "2026-05-22T18:45:37Z"
+					}
+				},
+				{
+					"ordinal": 7,
+					"id": "d59eae84-3a0a-4763-a01d-fbf12c393d56",
+					"rawTimestamp": "2026-05-22T18:45:37Z",
+					"fields": {
+						"id": "d59eae84-3a0a-4763-a01d-fbf12c393d56",
+						"planSlug": "artifact-conformance-gate",
+						"taskId": "TASK-324",
+						"sourceRole": "planner",
+						"type": "gotcha",
+						"content": "Legacy plans missing the current behavior-spine fields are expected to fail artifact conformance; do not broaden parser compatibility or silently accept old prose-only behavior shapes to make them pass. Migrate legacy plans separately if they need to pass the gate.",
+						"files": [
+							"domains/shared/skills/work-artifacts/references/behavior-spine.md",
+							"domains/shared/skills/work-artifacts/references/gate-contracts.md",
+							"missions/archive/plans/artifact-conformance-gate/plan.md"
+						],
+						"tags": [
+							"legacy-plans",
+							"migration",
+							"behavior-spine",
+							"scope-control"
+						],
+						"createdAt": "2026-05-22T18:45:37Z"
+					}
+				},
+				{
+					"ordinal": 8,
+					"id": "96772d1d-31e5-4a0a-88b8-38ba89f30d52",
+					"rawTimestamp": "2026-05-22T18:45:37Z",
+					"fields": {
+						"id": "96772d1d-31e5-4a0a-88b8-38ba89f30d52",
+						"planSlug": "artifact-conformance-gate",
+						"taskId": "TASK-324",
+						"sourceRole": "worker",
+						"type": "convention",
+						"content": "Generic work-artifact gate references may now state that `artifact-conformance` is mechanically checkable for required behavior fields, root-relative test files, and exact marker presence, but they must still avoid concrete command/tool columns, project-specific bindings, Quality Contract runner details, Drive auto-wiring, AST parsing, marker proximity checks, broad workflow-tier enforcement, or legacy migration promises.",
+						"files": [
+							"domains/shared/skills/work-artifacts/references/behavior-spine.md",
+							"domains/shared/skills/work-artifacts/references/gate-contracts.md",
+							"tests/prompts/work-artifacts-skill.test.ts"
+						],
+						"tags": [
+							"work-artifacts",
+							"gate-contracts",
+							"scope-control",
+							"documentation"
+						],
+						"createdAt": "2026-05-22T18:45:37Z"
+					}
+				}
+			]
+		},
+		{
+			"path": "memory/artifact-format-redesign.knowledge.jsonl",
+			"sha256": "7600d094e9c31971cba4a66614da41862109d0a031b3cd8a1eac9ef573684560",
+			"headerRaw": "{\"_meta\":true,\"planSlug\":\"artifact-format-redesign\",\"planTitle\":\"Work-document format redesign: spec, plan, architecture + behavior spine + gate contracts\",\"distilledAt\":\"2026-05-22T12:48:36Z\",\"distilledBy\":\"distiller\"}",
+			"header": {
+				"_meta": true,
+				"planSlug": "artifact-format-redesign",
+				"planTitle": "Work-document format redesign: spec, plan, architecture + behavior spine + gate contracts",
+				"distilledAt": "2026-05-22T12:48:36Z",
+				"distilledBy": "distiller"
+			},
+			"records": [
+				{
+					"ordinal": 1,
+					"id": "f91b76d5-366e-4bec-8ca7-01d61593a13a",
+					"rawTimestamp": "2026-05-22T12:48:36Z",
+					"fields": {
+						"id": "f91b76d5-366e-4bec-8ca7-01d61593a13a",
+						"planSlug": "artifact-format-redesign",
+						"taskId": "TASK-305",
+						"sourceRole": "planner",
+						"type": "decision",
+						"content": "Canonical work-artifact format rules live in `domains/shared/skills/work-artifacts/` as a thin `SKILL.md` dispatcher with directly linked references; role skills such as `/skill:plan`, `/skill:task`, and `/skill:tdd` should route to that shared skill instead of duplicating spec/plan/architecture, behavior-spine, or gate-contract rules.",
+						"files": [
+							"domains/shared/skills/work-artifacts/SKILL.md",
+							"domains/shared/skills/work-artifacts/references/workflow-tiers.md",
+							"domains/shared/skills/work-artifacts/references/spec-format.md",
+							"domains/shared/skills/work-artifacts/references/plan-format.md",
+							"domains/shared/skills/work-artifacts/references/architecture-format.md",
+							"domains/shared/skills/work-artifacts/references/behavior-spine.md",
+							"domains/shared/skills/plan/SKILL.md",
+							"domains/shared/skills/task/SKILL.md",
+							"bundled/coding/coding/skills/tdd/SKILL.md"
+						],
+						"tags": [
+							"skills",
+							"work-artifacts",
+							"artifact-format",
+							"thin-dispatcher"
+						],
+						"createdAt": "2026-05-22T12:48:36Z"
+					}
+				},
+				{
+					"ordinal": 2,
+					"id": "405290ed-f89e-4bbe-a702-d7217674a4a5",
+					"rawTimestamp": "2026-05-22T12:48:36Z",
+					"fields": {
+						"id": "405290ed-f89e-4bbe-a702-d7217674a4a5",
+						"planSlug": "artifact-format-redesign",
+						"taskId": "TASK-305",
+						"sourceRole": "planner",
+						"type": "pattern",
+						"content": "Use four workflow tiers when choosing artifact ceremony: direct fixes use TDD and a regression test only; tactical bugfix/task work may use a small task or tiny plan without a spec; planned feature/refactor work uses `spec.md` plus a behavior-first `plan.md`; architectural or multi-plan work adds a durable architecture record.",
+						"files": [
+							"domains/shared/skills/work-artifacts/references/workflow-tiers.md",
+							"domains/shared/skills/work-artifacts/references/examples.md",
+							"bundled/coding/coding/prompts/spec-writer.md",
+							"bundled/coding/coding/prompts/planner.md"
+						],
+						"tags": ["workflow-tiers", "direct-fix", "planning", "tdd"],
+						"createdAt": "2026-05-22T12:48:36Z"
+					}
+				},
+				{
+					"ordinal": 3,
+					"id": "5143b45c-7fe9-481a-be3b-dfbd700b8587",
+					"rawTimestamp": "2026-05-22T12:48:36Z",
+					"fields": {
+						"id": "5143b45c-7fe9-481a-be3b-dfbd700b8587",
+						"planSlug": "artifact-format-redesign",
+						"taskId": "TASK-308",
+						"sourceRole": "planner",
+						"type": "convention",
+						"content": "For planned work, specs use stable `AC-###` IDs and plans decompose them into `B-###` behavior entries with context, action, expected result, source AC, seam, named test, and a plain `@cosmo-behavior plan:<slug>#B-###` marker placed near the executable test; a behavior with no named test or marker means the plan is not ready.",
+						"files": [
+							"domains/shared/skills/work-artifacts/references/behavior-spine.md",
+							"domains/shared/skills/work-artifacts/references/plan-format.md",
+							"domains/shared/skills/plan/SKILL.md",
+							"bundled/coding/coding/skills/tdd/SKILL.md",
+							"bundled/coding/coding/prompts/worker.md"
+						],
+						"tags": ["behavior-spine", "markers", "testing", "plan-readiness"],
+						"createdAt": "2026-05-22T12:48:36Z"
+					}
+				},
+				{
+					"ordinal": 4,
+					"id": "a1919f2b-300a-4fee-9881-8192f14652a4",
+					"rawTimestamp": "2026-05-22T12:48:36Z",
+					"fields": {
+						"id": "a1919f2b-300a-4fee-9881-8192f14652a4",
+						"planSlug": "artifact-format-redesign",
+						"taskId": "TASK-306",
+						"sourceRole": "planner",
+						"type": "decision",
+						"content": "Durable architecture records belong at `missions/architecture/<slug>.md`, not inside implementation plan directories or `memory/`; create them only when they change implementation or review through durable boundaries, dependency rules, state ownership, or multi-plan decisions, and have dependent plans cite them in an `Architecture Context` section.",
+						"files": [
+							"domains/shared/skills/architecture/SKILL.md",
+							"domains/shared/skills/work-artifacts/references/architecture-format.md",
+							"domains/shared/skills/work-artifacts/references/plan-format.md",
+							"tests/prompts/architecture-skill.test.ts"
+						],
+						"tags": [
+							"architecture",
+							"architecture-context",
+							"boundaries",
+							"memory"
+						],
+						"createdAt": "2026-05-22T12:48:36Z"
+					}
+				},
+				{
+					"ordinal": 5,
+					"id": "bc820c99-0d7c-4377-8be0-41353cdc899b",
+					"rawTimestamp": "2026-05-22T12:48:36Z",
+					"fields": {
+						"id": "bc820c99-0d7c-4377-8be0-41353cdc899b",
+						"planSlug": "artifact-format-redesign",
+						"taskId": "TASK-305",
+						"sourceRole": "planner",
+						"type": "decision",
+						"content": "Generic `Quality Contract` sections are ordered gate ladders by gate kind, tier, binding state, threshold, and degradation notes; generic artifacts must not contain concrete tool names or command columns, because project-specific bindings and gate execution protocols are deferred to follow-up enforcement/configuration work.",
+						"files": [
+							"domains/shared/skills/work-artifacts/references/gate-contracts.md",
+							"domains/shared/skills/work-artifacts/references/plan-format.md",
+							"tests/prompts/work-artifacts-skill.test.ts"
+						],
+						"tags": [
+							"quality-contract",
+							"gates",
+							"tooling",
+							"deferred-enforcement"
+						],
+						"createdAt": "2026-05-22T12:48:36Z"
+					}
+				},
+				{
+					"ordinal": 6,
+					"id": "0a6f10ef-b44c-4c71-9f73-87d7166e7c99",
+					"rawTimestamp": "2026-05-22T12:48:36Z",
+					"fields": {
+						"id": "0a6f10ef-b44c-4c71-9f73-87d7166e7c99",
+						"planSlug": "artifact-format-redesign",
+						"taskId": "TASK-317",
+						"sourceRole": "worker",
+						"type": "gotcha",
+						"content": "`quality-manager` must parse abstract gate-ladder tables separately from legacy `QC-*` criteria: rows with `Gate kind`, `Tier`, and `Binding state` become `gate_ladder_rows`, unbound bindable gates are reported in `degraded_gates`, bound rows without protocol are `protocol pending`, and ladder rows must not be warned or skipped as malformed legacy criteria merely because they lack `QC-*`, `verification`, or `command` fields.",
+						"files": [
+							"bundled/coding/coding/prompts/quality-manager.md",
+							"tests/prompts/quality-manager.test.ts"
+						],
+						"tags": [
+							"quality-manager",
+							"quality-contract",
+							"gate-ladder",
+							"legacy-compatibility"
+						],
+						"createdAt": "2026-05-22T12:48:36Z"
+					}
+				},
+				{
+					"ordinal": 7,
+					"id": "d5ae6c28-c604-47ab-9b07-c6c0ca7942fd",
+					"rawTimestamp": "2026-05-22T12:48:36Z",
+					"fields": {
+						"id": "d5ae6c28-c604-47ab-9b07-c6c0ca7942fd",
+						"planSlug": "artifact-format-redesign",
+						"taskId": "TASK-307",
+						"sourceRole": "plan-reviewer",
+						"type": "gotcha",
+						"content": "Agents with explicit skill allowlists do not automatically see new shared skills: because skill assembly filters explicit agents to their declared list, `planner`, `spec-writer`, `task-manager`, and especially `plan-reviewer` had to add `work-artifacts` (and relevant `architecture`/`task`) explicitly or they could not load the artifact contract they are expected to produce or review.",
+						"files": [
+							"bundled/coding/coding/agents/planner.ts",
+							"bundled/coding/coding/agents/spec-writer.ts",
+							"bundled/coding/coding/agents/task-manager.ts",
+							"bundled/coding/coding/agents/plan-reviewer.ts",
+							"tests/agents/skills.test.ts",
+							"lib/agents/skills.ts"
+						],
+						"tags": [
+							"agent-skills",
+							"allowlists",
+							"work-artifacts",
+							"plan-reviewer"
+						],
+						"createdAt": "2026-05-22T12:48:36Z"
+					}
+				},
+				{
+					"ordinal": 8,
+					"id": "be56ab3b-8a64-42f7-8198-c432fc47a5a7",
+					"rawTimestamp": "2026-05-22T12:48:36Z",
+					"fields": {
+						"id": "be56ab3b-8a64-42f7-8198-c432fc47a5a7",
+						"planSlug": "artifact-format-redesign",
+						"taskId": "TASK-316",
+						"sourceRole": "planner",
+						"type": "pattern",
+						"content": "Review and verification prompts should consume artifact guidance only when artifact conformance or plan context is in scope: reviewers load `work-artifacts` for behavior markers, architecture context, and gate-ladder claims only when relevant; verifiers validate explicit artifact-conformance claims with evidence and must not expand beyond the provided claims; integration-verifier audits declared architecture context, boundary models, behavior seams, and abstract gate rows without inventing unstated rules.",
+						"files": [
+							"bundled/coding/coding/prompts/reviewer.md",
+							"bundled/coding/coding/prompts/verifier.md",
+							"bundled/coding/coding/prompts/integration-verifier.md",
+							"tests/prompts/reviewer.test.ts",
+							"tests/prompts/verifier.test.ts",
+							"tests/prompts/integration-verifier.test.ts"
+						],
+						"tags": [
+							"review",
+							"verification",
+							"artifact-conformance",
+							"scope-control"
+						],
+						"createdAt": "2026-05-22T12:48:36Z"
+					}
+				},
+				{
+					"ordinal": 9,
+					"id": "53bc7848-0c6b-4866-ae0f-fc373b046ff8",
+					"rawTimestamp": "2026-05-22T12:48:36Z",
+					"fields": {
+						"id": "53bc7848-0c6b-4866-ae0f-fc373b046ff8",
+						"planSlug": "artifact-format-redesign",
+						"taskId": "TASK-309",
+						"sourceRole": "planner",
+						"type": "pattern",
+						"content": "Task decomposition for behavior-first plans must preserve behavior ownership: task acceptance criteria name the owned `B-###` behaviors, carry the expected `@cosmo-behavior` marker into worker context, assign every behavior cluster to at least one task, and avoid making workers invent missing architecture or artifact structure.",
+						"files": [
+							"domains/shared/skills/task/SKILL.md",
+							"bundled/coding/coding/prompts/task-manager.md",
+							"tests/prompts/task-skill.test.ts",
+							"tests/prompts/task-manager.test.ts"
+						],
+						"tags": ["tasks", "behavior-ownership", "task-manager", "markers"],
+						"createdAt": "2026-05-22T12:48:36Z"
+					}
+				},
+				{
+					"ordinal": 10,
+					"id": "839dbc85-2cae-4934-b5e8-34d02c4da92c",
+					"rawTimestamp": "2026-05-22T12:48:36Z",
+					"fields": {
+						"id": "839dbc85-2cae-4934-b5e8-34d02c4da92c",
+						"planSlug": "artifact-format-redesign",
+						"taskId": "TASK-318",
+						"sourceRole": "worker",
+						"type": "pattern",
+						"content": "For prompt and skill contract tests, assert stable contract phrases, behavior IDs, marker syntax, routing instructions, and refusal rules instead of snapshotting full markdown files; include mutation-style negative checks such as no full-stack ceremony for direct fixes, no concrete gate tools in generic references, no shelfware architecture records, and no silent skipping of abstract gate-ladder rows.",
+						"files": [
+							"tests/prompts/work-artifacts-skill.test.ts",
+							"tests/prompts/plan-skill.test.ts",
+							"tests/prompts/task-skill.test.ts",
+							"tests/prompts/tdd-skill.test.ts",
+							"tests/prompts/quality-manager.test.ts",
+							"tests/prompts/architecture-skill.test.ts"
+						],
+						"tags": [
+							"tests",
+							"prompt-contracts",
+							"mutation-thinking",
+							"markdown"
+						],
+						"createdAt": "2026-05-22T12:48:36Z"
+					}
+				}
+			]
+		},
+		{
+			"path": "memory/domain-config.knowledge.jsonl",
+			"sha256": "5dca08ea0ef56874c9acf24c769c6d76179d42a0228efa713182f7f84012b777",
+			"headerRaw": "{\"_meta\":true,\"planSlug\":\"domain-config\",\"planTitle\":\"Domain Configuration Architecture\",\"distilledAt\":\"2026-04-17T00:00:00.000Z\",\"distilledBy\":\"distiller\"}",
+			"header": {
+				"_meta": true,
+				"planSlug": "domain-config",
+				"planTitle": "Domain Configuration Architecture",
+				"distilledAt": "2026-04-17T00:00:00.000Z",
+				"distilledBy": "distiller"
+			},
+			"records": [
+				{
+					"ordinal": 1,
+					"id": "7a3f9c2e-1b4d-4e8f-a5c6-3d9b2f7e1a0c",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "7a3f9c2e-1b4d-4e8f-a5c6-3d9b2f7e1a0c",
+						"planSlug": "domain-config",
+						"sourceRole": "planner",
+						"type": "decision",
+						"content": "The three-layer architecture (Framework / Domain / Executive-Assistant) was chosen to keep the framework entirely domain-agnostic. The framework in lib/ orchestrates, persists, and runs agents but contains no coding-specific knowledge. Each domain is a self-contained directory (domains/{id}/) that adds its own agents, prompts, capabilities, skills, extensions, and workflows. The executive-assistant layer (Layer 3) was explicitly deferred — it is not implemented and is reserved for a future always-on heartbeat agent.",
+						"files": ["lib/domains/", "domains/shared/", "domains/coding/"],
+						"tags": ["architecture", "domains", "three-layer"],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 2,
+					"id": "2b8e4d6f-9c3a-4b7e-8f1d-5a0c6e9b3f2a",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "2b8e4d6f-9c3a-4b7e-8f1d-5a0c6e9b3f2a",
+						"planSlug": "domain-config",
+						"sourceRole": "planner",
+						"type": "convention",
+						"content": "Every domain must be a directory under domains/ containing a domain.ts manifest file. Without domain.ts the directory is silently skipped by loadDomains(). The fixed directory shape is: domain.ts (manifest), agents/ (*.ts definitions), prompts/ (*.md persona files), capabilities/ (*.md capability packs), skills/ (subdirectories), extensions/ (subdirectories), and optionally workflows.ts. Deviating from this layout breaks automatic discovery — the loader is non-recursive and indexes only the expected subdirectory names.",
+						"files": [
+							"lib/domains/loader.ts",
+							"domains/shared/domain.ts",
+							"domains/coding/domain.ts"
+						],
+						"tags": ["domains", "convention", "directory-layout", "discovery"],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 3,
+					"id": "9d1c5f3b-7a2e-4c8d-b6f0-4e8a1c3b9d5f",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "9d1c5f3b-7a2e-4c8d-b6f0-4e8a1c3b9d5f",
+						"planSlug": "domain-config",
+						"sourceRole": "planner",
+						"type": "convention",
+						"content": "All agent IDs inside the framework use the qualified format {domain}/{agent} (e.g. coding/worker, coding/planner). Agent definitions are stored with qualified keys in AgentRegistry. Subagents allowlists in AgentDefinition must list qualified IDs. The runtime identity marker regex was updated to accept / in the capture group ([a-z0-9/-]+) so extractAgentIdFromSystemPrompt returns qualified IDs. For display only (e.g. ROLE_LABELS), strip the domain prefix — coding/worker renders as Worker.",
+						"files": [
+							"lib/agents/runtime-identity.ts",
+							"lib/agents/resolver.ts",
+							"domains/shared/extensions/orchestration/index.ts"
+						],
+						"tags": [
+							"agent-ids",
+							"qualified-id",
+							"convention",
+							"runtime-identity"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 4,
+					"id": "4f6a8b0d-2e5c-4f9a-b3d7-1c0f6e8a4b2d",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "4f6a8b0d-2e5c-4f9a-b3d7-1c0f6e8a4b2d",
+						"planSlug": "domain-config",
+						"sourceRole": "planner",
+						"type": "pattern",
+						"content": "System prompts are assembled in a strict four-layer order by assemblePrompts() in lib/domains/prompt-assembly.ts: Layer 0 — domains/shared/prompts/base.md (always); Layer 1 — per capability in agent.capabilities[], domain-first then shared fallback, error if missing in both; Layer 2 — domains/{domain}/prompts/{agent.id}.md (auto-loaded persona, not listed in capabilities); Layer 3 — domains/shared/prompts/runtime/sub-agent.md (only when spawned as a sub-agent). Layers are concatenated with \\n\\n. Do not manually list base or persona in capabilities — they are injected by convention.",
+						"files": [
+							"lib/domains/prompt-assembly.ts",
+							"domains/shared/prompts/base.md",
+							"domains/shared/prompts/runtime/sub-agent.md"
+						],
+						"tags": [
+							"prompt-assembly",
+							"four-layer",
+							"capabilities",
+							"convention"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 5,
+					"id": "1e0b3d5f-8a7c-4d9b-f2e4-6a0c8f5e1b3d",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "1e0b3d5f-8a7c-4d9b-f2e4-6a0c8f5e1b3d",
+						"planSlug": "domain-config",
+						"sourceRole": "planner",
+						"type": "pattern",
+						"content": "All resource resolution (capabilities, skills, extensions) uses a two-tier domain-first then shared fallback pattern: check domains/{agent-domain}/{resource-type}/{name} first, then fall back to domains/shared/{resource-type}/{name}. Missing capabilities are errors; missing extensions are silently skipped. DomainRegistry.resolveCapability(name, preferredDomain) encapsulates this pattern for capability paths. Use it rather than constructing paths manually.",
+						"files": [
+							"lib/domains/registry.ts",
+							"lib/domains/prompt-assembly.ts",
+							"lib/orchestration/agent-spawner.ts"
+						],
+						"tags": [
+							"resolution",
+							"domain-first",
+							"shared-fallback",
+							"capabilities",
+							"extensions"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 6,
+					"id": "6c8d2f0b-4a9e-4c1d-b5f3-7e2a4d6c8f0b",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "6c8d2f0b-4a9e-4c1d-b5f3-7e2a4d6c8f0b",
+						"planSlug": "domain-config",
+						"sourceRole": "worker",
+						"type": "convention",
+						"content": "The shared domain is always loaded before all other domains. loadDomains() sorts discovered domain directories so shared comes first, then remaining domains alphabetically. This load order is critical because all other domains depend on shared capabilities and extensions being indexed first. Do not rely on filesystem readdir ordering — the explicit sort is the guarantee.",
+						"files": ["lib/domains/loader.ts"],
+						"tags": ["domains", "load-order", "shared", "discovery"],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 7,
+					"id": "3a5c7e9b-0f2d-4a6c-8e1b-5f3d7a9c0e2b",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "3a5c7e9b-0f2d-4a6c-8e1b-5f3d7a9c0e2b",
+						"planSlug": "domain-config",
+						"taskId": "TASK-057",
+						"sourceRole": "worker",
+						"type": "gotcha",
+						"content": "Moving extension directories from extensions/X/ to domains/shared/extensions/X/ adds two directory levels, which breaks every relative import inside the extension files. For example, ../../lib/agents/index.ts becomes ../../../../lib/agents/index.ts. Every extension's index.ts must have all its relative imports updated. This is not caught by TypeScript until runtime because the moved files still resolve at their new paths. Verify with bun run typecheck after any extension move.",
+						"files": [
+							"domains/shared/extensions/orchestration/index.ts",
+							"domains/shared/extensions/tasks/index.ts",
+							"domains/shared/extensions/plans/index.ts",
+							"domains/shared/extensions/todo/index.ts",
+							"domains/shared/extensions/init/index.ts"
+						],
+						"tags": ["extensions", "import-paths", "migration", "gotcha"],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 8,
+					"id": "8f0d2b4e-6c9a-4b7f-d1e3-0a2c4f6d8b0e",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "8f0d2b4e-6c9a-4b7f-d1e3-0a2c4f6d8b0e",
+						"planSlug": "domain-config",
+						"taskId": "TASK-057",
+						"sourceRole": "worker",
+						"type": "gotcha",
+						"content": "After moving prompt files in TASK-055, subsequent agent spawns immediately failed because the Pi framework still resolved prompt slugs from the old prompts/ path. TASK-057 had to be retried twice before the root cause was identified. Lesson: when migrating prompt/skill/extension paths, update all consumers (especially the agent spawner and cli/session.ts) in the same operation as the file move. Never leave a window where old path constants and new file locations diverge.",
+						"files": [
+							"lib/orchestration/agent-spawner.ts",
+							"cli/session.ts",
+							"domains/shared/prompts/base.md"
+						],
+						"tags": [
+							"prompts",
+							"migration",
+							"sequencing",
+							"gotcha",
+							"agent-spawner"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 9,
+					"id": "5e7a9c1b-3f0d-4e6a-b8c2-2d4f6a8c0b1e",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "5e7a9c1b-3f0d-4e6a-b8c2-2d4f6a8c0b1e",
+						"planSlug": "domain-config",
+						"taskId": "TASK-067",
+						"sourceRole": "worker",
+						"type": "gotcha",
+						"content": "The orchestration extension's spawn permission check (isSubagentAllowed) validates both the unqualified ID (targetDef.id, e.g. worker) and the qualified ID (${targetDef.domain}/${targetDef.id}, e.g. coding/worker) against the caller's subagents list. This allows subagents arrays written with either form to work during the transition period. Going forward, subagents arrays in agent definitions should use qualified IDs exclusively to avoid ambiguity.",
+						"files": ["domains/shared/extensions/orchestration/index.ts"],
+						"tags": [
+							"orchestration",
+							"subagents",
+							"qualified-id",
+							"spawn-permission",
+							"gotcha"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 10,
+					"id": "0b2d4f6a-8c1e-4b3d-f5a7-9e0c2b4d6f8a",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "0b2d4f6a-8c1e-4b3d-f5a7-9e0c2b4d6f8a",
+						"planSlug": "domain-config",
+						"sourceRole": "planner",
+						"type": "trade-off",
+						"content": "Module-level registry singletons (DEFAULT_REGISTRY = createDefaultRegistry()) existed in five files: chain-parser.ts, chain-runner.ts, agent-spawner.ts, orchestration extension, and cli/main.ts. These were replaced with registry-as-parameter throughout, but createDefaultRegistry() was kept as a convenience bridge for tests and backward compat. The accepted trade-off: production code must always receive registry as a parameter; createDefaultRegistry() is acceptable in tests but should not be called in production paths.",
+						"files": [
+							"lib/agents/resolver.ts",
+							"lib/orchestration/chain-parser.ts",
+							"lib/orchestration/chain-runner.ts",
+							"lib/orchestration/agent-spawner.ts",
+							"domains/shared/extensions/orchestration/index.ts",
+							"cli/main.ts"
+						],
+						"tags": ["registry", "singleton", "backward-compat", "trade-off"],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 11,
+					"id": "e1a3c5f7-b9d0-4e2a-c4f6-8b0d2e4f6a8c",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "e1a3c5f7-b9d0-4e2a-c4f6-8b0d2e4f6a8c",
+						"planSlug": "domain-config",
+						"sourceRole": "planner",
+						"type": "pattern",
+						"content": "Domain context for agent resolution follows a strict priority chain: (1) --domain CLI flag, (2) projectConfig.domain from .cosmonauts/config.json, (3) scan all domains with ambiguity error if the unqualified name matches agents in multiple domains. Code that resolves agents should always accept an explicit domain context parameter and propagate it rather than defaulting to scan-all.",
+						"files": [
+							"cli/main.ts",
+							"lib/agents/resolver.ts",
+							"lib/config/types.ts"
+						],
+						"tags": ["domain-context", "resolution", "cli", "config"],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 12,
+					"id": "7d9b1e3f-5a7c-4d0b-e2f4-6c8a0b2d4f6e",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "7d9b1e3f-5a7c-4d0b-e2f4-6c8a0b2d4f6e",
+						"planSlug": "domain-config",
+						"taskId": "TASK-053",
+						"sourceRole": "planner",
+						"type": "decision",
+						"content": "AgentDefinition.capabilities replaces the old prompts array. The capabilities array lists only unqualified capability pack names (e.g. [\"core\", \"tasks\", \"coding-readwrite\"]) — never paths. The base prompt (base.md) and the agent persona prompt are NOT listed in capabilities; they are auto-injected by assemblePrompts() at layers 0 and 2. The domain field on AgentDefinition is set at runtime by the loader and must not appear in the static definition files.",
+						"files": [
+							"lib/agents/types.ts",
+							"lib/domains/prompt-assembly.ts",
+							"domains/coding/agents/cosmo.ts"
+						],
+						"tags": [
+							"agent-definition",
+							"capabilities",
+							"prompts",
+							"convention"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				}
+			]
+		},
+		{
+			"path": "memory/drive-resilience-state-model.knowledge.jsonl",
+			"sha256": "8b8b8472175ff23749db9c89779f697515e1a112d8ed93cb8b900ce2c429e97e",
+			"headerRaw": "{\"_meta\":true,\"planSlug\":\"drive-resilience-state-model\",\"planTitle\":\"Drive Resilience and Finalization State Model\",\"distilledAt\":\"2026-05-26T16:21:11Z\",\"distilledBy\":\"distiller\",\"recordCount\":10}",
+			"header": {
+				"_meta": true,
+				"planSlug": "drive-resilience-state-model",
+				"planTitle": "Drive Resilience and Finalization State Model",
+				"distilledAt": "2026-05-26T16:21:11Z",
+				"distilledBy": "distiller",
+				"recordCount": 10
+			},
+			"records": [
+				{
+					"ordinal": 1,
+					"id": "7e520716-4721-415c-819e-a5deb654cf86",
+					"rawTimestamp": "2026-05-26T16:21:11Z",
+					"fields": {
+						"id": "7e520716-4721-415c-819e-a5deb654cf86",
+						"planSlug": "drive-resilience-state-model",
+						"sourceRole": "planner",
+						"type": "decision",
+						"content": "Drive finalization infrastructure failures are represented as Drive run/task outcomes (`finalization_failed`) and events, not as a new global task status and not as behavioral `Blocked`. A verified task whose driver-owned commit or task-status finalization fails remains not Done/Blocked, with recovery truth in `pending-finalization.json`, events, and `run.completion.json`.",
+						"files": [
+							"lib/driver/types.ts",
+							"lib/driver/run-one-task.ts",
+							"lib/driver/run-run-loop.ts",
+							"lib/driver/run-state.ts"
+						],
+						"tags": ["drive", "finalization", "state-model", "tasks"],
+						"createdAt": "2026-05-26T16:21:11Z"
+					}
+				},
+				{
+					"ordinal": 2,
+					"id": "c83dd57f-5a6b-45c5-851a-d91a1e59781b",
+					"rawTimestamp": "2026-05-26T16:21:11Z",
+					"fields": {
+						"id": "c83dd57f-5a6b-45c5-851a-d91a1e59781b",
+						"planSlug": "drive-resilience-state-model",
+						"taskId": "TASK-326",
+						"sourceRole": "worker",
+						"type": "pattern",
+						"content": "Persist pending finalization as a phase-specific recovery contract in the run workdir: commit pending state must include `headBeforeFinalization`, task-status pending state must include `commitSha`, and state-commit pending state must include the run `taskIds` plus `headBeforeFinalization`. Keep `blockedTaskId`/`blockedReason` reserved for behavioral blocks and use finalization-specific fields (`finalizationPhase`, `finalizationReason`, optional task/commit details, `pendingFinalizationPath`) in `DriverResult`.",
+						"files": [
+							"lib/driver/types.ts",
+							"lib/driver/run-state.ts",
+							"lib/driver/run-run-loop.ts"
+						],
+						"tags": [
+							"drive",
+							"pending-finalization",
+							"driver-result",
+							"contract"
+						],
+						"createdAt": "2026-05-26T16:21:11Z"
+					}
+				},
+				{
+					"ordinal": 3,
+					"id": "b7bb17cd-7cef-48dd-9110-f7837b654a5e",
+					"rawTimestamp": "2026-05-26T16:21:11Z",
+					"fields": {
+						"id": "b7bb17cd-7cef-48dd-9110-f7837b654a5e",
+						"planSlug": "drive-resilience-state-model",
+						"taskId": "TASK-331",
+						"sourceRole": "worker",
+						"type": "pattern",
+						"content": "CLI resume must handle `pending-finalization.json` before spawning any backend work. Retry the recorded finalization phase first, clear stale completion state and the pending file only after success, then recompute dirty-worktree safety before continuing remaining tasks; do not treat `task_finalization_failed` as task completion for resume slicing until a later `task_done` exists.",
+						"files": [
+							"cli/drive/subcommand.ts",
+							"lib/driver/run-state.ts",
+							"lib/driver/run-one-task.ts"
+						],
+						"tags": ["drive", "resume", "recovery", "dirty-worktree"],
+						"createdAt": "2026-05-26T16:21:11Z"
+					}
+				},
+				{
+					"ordinal": 4,
+					"id": "f7e06e1d-186c-4291-aae0-cc2abc9354e0",
+					"rawTimestamp": "2026-05-26T16:21:11Z",
+					"fields": {
+						"id": "f7e06e1d-186c-4291-aae0-cc2abc9354e0",
+						"planSlug": "drive-resilience-state-model",
+						"taskId": "TASK-332",
+						"sourceRole": "worker",
+						"type": "gotcha",
+						"content": "Do not accept externally completed state-commit finalization based only on a clean worktree and changed HEAD. Resume may clear pending `state_commit` only when every pending task ID still resolves through `TaskManager.getTask()` and currently has status `Done`; changed HEAD without current Done task files may be unrelated or may have reverted the task-state updates.",
+						"files": [
+							"cli/drive/subcommand.ts",
+							"lib/driver/run-state.ts",
+							"lib/tasks/task-manager.ts"
+						],
+						"tags": ["drive", "resume", "state-commit", "external-evidence"],
+						"createdAt": "2026-05-26T16:21:11Z"
+					}
+				},
+				{
+					"ordinal": 5,
+					"id": "e5dfcbdb-aeb0-4370-a561-4d5cfc53f911",
+					"rawTimestamp": "2026-05-26T16:21:11Z",
+					"fields": {
+						"id": "e5dfcbdb-aeb0-4370-a561-4d5cfc53f911",
+						"planSlug": "drive-resilience-state-model",
+						"taskId": "TASK-329",
+						"sourceRole": "worker",
+						"type": "decision",
+						"content": "`stateCommitPolicy` defaults are owned by driver core, not individual frontends: resolve to `final-state-commit` when `commitPolicy` is `driver-commits`, otherwise `none`, unless an explicit override is provided. CLI Drive and Pi `run_driver` should pass overrides but rely on the shared resolver so successful run behavior cannot diverge by frontend.",
+						"files": [
+							"lib/driver/types.ts",
+							"cli/drive/subcommand.ts",
+							"domains/shared/extensions/orchestration/driver-tool.ts",
+							"lib/driver/prompt-template.ts"
+						],
+						"tags": ["drive", "state-commit-policy", "frontend-consistency"],
+						"createdAt": "2026-05-26T16:21:11Z"
+					}
+				},
+				{
+					"ordinal": 6,
+					"id": "d81a3f41-9951-4e32-a0a0-833016538d4f",
+					"rawTimestamp": "2026-05-26T16:21:11Z",
+					"fields": {
+						"id": "d81a3f41-9951-4e32-a0a0-833016538d4f",
+						"planSlug": "drive-resilience-state-model",
+						"taskId": "TASK-330",
+						"sourceRole": "worker",
+						"type": "convention",
+						"content": "Final Drive state commits are deliberately narrow: stage only this run's task markdown files under `missions/tasks/` for the run task IDs, use the project-root repository commit lock, and exclude source files, `missions/sessions/`, archive moves, reviews, and `memory/`. Source commits keep excluding `missions/**`, `memory/**`, and `.cosmonauts/*.lock`.",
+						"files": [
+							"lib/driver/run-run-loop.ts",
+							"lib/driver/run-one-task.ts",
+							"lib/driver/lock.ts"
+						],
+						"tags": ["drive", "git", "state-commit", "pathspecs"],
+						"createdAt": "2026-05-26T16:21:11Z"
+					}
+				},
+				{
+					"ordinal": 7,
+					"id": "6cb9cb01-b376-456a-918a-9aae06529402",
+					"rawTimestamp": "2026-05-26T16:21:11Z",
+					"fields": {
+						"id": "6cb9cb01-b376-456a-918a-9aae06529402",
+						"planSlug": "drive-resilience-state-model",
+						"taskId": "TASK-328",
+						"sourceRole": "worker",
+						"type": "gotcha",
+						"content": "All Drive commit operations and finalization retries must acquire the repository commit lock from `spec.projectRoot`, not `cosmonautsRoot` or framework/package roots. Splitting lock roots between CLI and `run_driver` can allow concurrent commits in the same project and invalidate lock-file pathspec regression coverage.",
+						"files": [
+							"lib/driver/run-one-task.ts",
+							"lib/driver/driver.ts",
+							"domains/shared/extensions/orchestration/driver-tool.ts",
+							"lib/driver/lock.ts"
+						],
+						"tags": ["drive", "commit-lock", "run_driver", "cli"],
+						"createdAt": "2026-05-26T16:21:11Z"
+					}
+				},
+				{
+					"ordinal": 8,
+					"id": "f204a48b-afaa-4718-93c9-79d686ea9c84",
+					"rawTimestamp": "2026-05-26T16:21:11Z",
+					"fields": {
+						"id": "f204a48b-afaa-4718-93c9-79d686ea9c84",
+						"planSlug": "drive-resilience-state-model",
+						"taskId": "TASK-333",
+						"sourceRole": "worker",
+						"type": "pattern",
+						"content": "Expose finalization as additive observable events instead of replacing existing Drive events. Emit `finalize` phase events plus `task_finalization_failed`, terminal `run_finalization_failed`, and `plan_completion_candidate`; bridge these through the activity bus, make `run_finalization_failed` stop detached event bridging, and surface finalization details in `watch_events`, `drive status`, and `drive list` without blocked-field overload.",
+						"files": [
+							"lib/driver/types.ts",
+							"lib/driver/event-stream.ts",
+							"domains/shared/extensions/orchestration/watch-events-tool.ts",
+							"cli/drive/subcommand.ts"
+						],
+						"tags": ["drive", "events", "status", "watch_events"],
+						"createdAt": "2026-05-26T16:21:11Z"
+					}
+				},
+				{
+					"ordinal": 9,
+					"id": "fac9f54b-ce9f-462a-bc1e-8b323d26eedd",
+					"rawTimestamp": "2026-05-26T16:21:11Z",
+					"fields": {
+						"id": "fac9f54b-ce9f-462a-bc1e-8b323d26eedd",
+						"planSlug": "drive-resilience-state-model",
+						"taskId": "TASK-334",
+						"sourceRole": "worker",
+						"type": "trade-off",
+						"content": "Drive emits `plan_completion_candidate` when all tasks labeled `plan:<slug>` are Done after successful finalization, but it intentionally does not edit the plan, archive artifacts, distill memory, push, or open PRs. This gives coordinators useful completion evidence without moving lifecycle ownership into the driver.",
+						"files": [
+							"lib/driver/run-run-loop.ts",
+							"lib/driver/types.ts",
+							"domains/shared/extensions/orchestration/watch-events-tool.ts"
+						],
+						"tags": [
+							"drive",
+							"plan-lifecycle",
+							"completion-candidate",
+							"scope"
+						],
+						"createdAt": "2026-05-26T16:21:11Z"
+					}
+				},
+				{
+					"ordinal": 10,
+					"id": "73686149-6b17-47bb-8cf1-dd5ba690ad75",
+					"rawTimestamp": "2026-05-26T16:21:11Z",
+					"fields": {
+						"id": "73686149-6b17-47bb-8cf1-dd5ba690ad75",
+						"planSlug": "drive-resilience-state-model",
+						"taskId": "TASK-328",
+						"sourceRole": "worker",
+						"type": "gotcha",
+						"content": "Verification-only tasks with no source changes are a successful source-finalization case only when the report is structured success and postflight passed; emit commit finalization as skipped with reason `no_changes`, do not emit `commit_made`, and continue to task-status finalization. Preserve stricter handling for unknown reports so no-change inference does not silently complete ambiguous work.",
+						"files": [
+							"lib/driver/run-one-task.ts",
+							"domains/shared/extensions/orchestration/watch-events-tool.ts"
+						],
+						"tags": [
+							"drive",
+							"verification-only",
+							"no-changes",
+							"commit-finalization"
+						],
+						"createdAt": "2026-05-26T16:21:11Z"
+					}
+				}
+			]
+		},
+		{
+			"path": "memory/local-vs-shared.knowledge.jsonl",
+			"sha256": "24664b85f6e9ab36fb37e0dfdfe38c3a338174ec2c1d490cc51744ba9b2444cd",
+			"headerRaw": "{\"_meta\":true,\"planSlug\":\"local-vs-shared\",\"planTitle\":\"Separate Local Work Artifacts from Shared Repository\",\"distilledAt\":\"2026-04-17T00:00:00.000Z\",\"distilledBy\":\"distiller\"}",
+			"header": {
+				"_meta": true,
+				"planSlug": "local-vs-shared",
+				"planTitle": "Separate Local Work Artifacts from Shared Repository",
+				"distilledAt": "2026-04-17T00:00:00.000Z",
+				"distilledBy": "distiller"
+			},
+			"records": [
+				{
+					"ordinal": 1,
+					"id": "7a3f2b9c-1d4e-4a82-b6f3-9e5c82d71a04",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "7a3f2b9c-1d4e-4a82-b6f3-9e5c82d71a04",
+						"planSlug": "local-vs-shared",
+						"taskId": "COSMO-046",
+						"sourceRole": "planner",
+						"type": "decision",
+						"content": "The local-vs-shared boundary: `missions/`, `memory/`, `.cosmonauts/`, and `.claude/` are gitignored personal work artifacts. Framework code in `lib/`, `domains/`, `bundled/`, and `cli/` is tracked. `ROADMAP.md` and `AGENTS.md` are framework documentation and also remain tracked — they describe the system, not a user's personal work history.",
+						"files": [
+							".gitignore",
+							"lib/",
+							"domains/",
+							"bundled/",
+							"missions/",
+							"memory/"
+						],
+						"tags": [
+							"gitignore",
+							"local-vs-shared",
+							"repo-layout",
+							"scaffolding"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 2,
+					"id": "2d8f5c6b-3e7a-4b91-a2d4-6c8e93f42b15",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "2d8f5c6b-3e7a-4b91-a2d4-6c8e93f42b15",
+						"planSlug": "local-vs-shared",
+						"sourceRole": "planner",
+						"type": "rationale",
+						"content": "No runtime code changes were required to establish the local-vs-shared boundary. All file-system operations in `lib/tasks/` already accepted `projectRoot` as a parameter and used `mkdir({ recursive: true })`. The gap was purely at the git/distribution layer — the directories were simply tracked when they shouldn't have been. Existing agent path resolution was already correct.",
+						"files": ["lib/tasks/file-system.ts", "lib/tasks/task-manager.ts"],
+						"tags": ["local-vs-shared", "projectRoot", "path-resolution"],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 3,
+					"id": "5b1e4d7a-9c2f-4e63-b8a1-3d7f24c91b26",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "5b1e4d7a-9c2f-4e63-b8a1-3d7f24c91b26",
+						"planSlug": "local-vs-shared",
+						"taskId": "COSMO-047",
+						"sourceRole": "worker",
+						"type": "pattern",
+						"content": "`ensureForgeDirectory` in `lib/tasks/file-system.ts` creates the full local scaffold via `Promise.all` with `mkdir({ recursive: true })`. The canonical scaffold is: `missions/tasks/`, `missions/plans/`, `missions/archive/tasks/`, `missions/archive/plans/`, `missions/reviews/`, and `memory/`. The function is idempotent — safe to call on existing projects. It never overwrites `missions/tasks/config.json` if it already exists.",
+						"files": [
+							"lib/tasks/file-system.ts",
+							"lib/tasks/task-manager.ts",
+							"cli/tasks/commands/init.ts"
+						],
+						"tags": [
+							"scaffolding",
+							"ensureForgeDirectory",
+							"idempotent",
+							"missions",
+							"memory"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 4,
+					"id": "8f3c2e9b-4d6a-4f71-a5b2-2e9d43f82c37",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "8f3c2e9b-4d6a-4f71-a5b2-2e9d43f82c37",
+						"planSlug": "local-vs-shared",
+						"taskId": "COSMO-048",
+						"sourceRole": "worker",
+						"type": "decision",
+						"content": "`DEFAULT_WORKFLOWS` in `lib/workflows/defaults.ts` is an empty array — the framework ships with no built-in named workflows. Workflows are defined exclusively in the project-local `.cosmonauts/config.json`. Without a config file, `loadWorkflows()` returns `[]` and `resolveWorkflow()` throws for any name. This keeps the framework opinion-free; projects define what they need.",
+						"files": [
+							"lib/workflows/defaults.ts",
+							"lib/config/loader.ts",
+							".cosmonauts/config.example.json"
+						],
+						"tags": ["workflows", "defaults", "local-vs-shared", "config"],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 5,
+					"id": "1e6d3b8c-7f4a-4d52-b9c3-4a2f61e73d48",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "1e6d3b8c-7f4a-4d52-b9c3-4a2f61e73d48",
+						"planSlug": "local-vs-shared",
+						"taskId": "COSMO-048",
+						"sourceRole": "worker",
+						"type": "convention",
+						"content": "`.cosmonauts/config.example.json` is the canonical, git-tracked workflow template. `.gitignore` uses `.cosmonauts/*` with a `!.cosmonauts/config.example.json` exception to track only the example file. Users copy it to `.cosmonauts/config.json` and customize. The example file is the single source of truth for the standard named workflows (plan-and-build, implement, verify) — not `lib/config/defaults.ts`.",
+						"files": [
+							".cosmonauts/config.example.json",
+							".gitignore",
+							"lib/workflows/defaults.ts"
+						],
+						"tags": [
+							"config",
+							"workflows",
+							"gitignore",
+							"convention",
+							"config.example.json"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 6,
+					"id": "4c9f1e2d-6a8b-4c43-a7d5-8b3e52f94e59",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "4c9f1e2d-6a8b-4c43-a7d5-8b3e52f94e59",
+						"planSlug": "local-vs-shared",
+						"taskId": "COSMO-049",
+						"sourceRole": "worker",
+						"type": "gotcha",
+						"content": "Extending `ensureForgeDirectory` to pre-create `memory/` and `missions/archive/` broke tests in `tests/plans/archive.test.ts`. Those tests had precondition assertions that the directories did not exist before `archivePlan()` was called. Fix: remove stale precondition assertions; instead test that the specific plan is not present in the archive rather than asserting the archive directory doesn't exist.",
+						"files": [
+							"lib/tasks/file-system.ts",
+							"tests/plans/archive.test.ts"
+						],
+						"tags": [
+							"testing",
+							"ensureForgeDirectory",
+							"archive",
+							"gotcha",
+							"precondition"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 7,
+					"id": "9e2b4f7c-5d1a-4e34-b6c8-1d4f73a85f60",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "9e2b4f7c-5d1a-4e34-b6c8-1d4f73a85f60",
+						"planSlug": "local-vs-shared",
+						"taskId": "COSMO-046",
+						"sourceRole": "worker",
+						"type": "gotcha",
+						"content": "After adding paths to `.gitignore`, run `git rm --cached -r missions/ memory/ .claude/` to remove them from the git index without deleting local copies. Existing clones will see those paths show up as deleted files on the next `git pull` — this is expected and correct, not a mistake. Document this in the commit message so collaborators are not surprised.",
+						"files": [".gitignore"],
+						"tags": [
+							"git",
+							"gitignore",
+							"git-rm-cached",
+							"untracking",
+							"gotcha"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 8,
+					"id": "3b7d6c1e-8a2f-4f25-c4b9-6e5a84b96a71",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "3b7d6c1e-8a2f-4f25-c4b9-6e5a84b96a71",
+						"planSlug": "local-vs-shared",
+						"sourceRole": "planner",
+						"type": "convention",
+						"content": "The canonical scaffolding entrypoint is `cosmonauts scaffold missions` (CLI), which calls `TaskManager.init()` → `ensureForgeDirectory`. This is the single command new users run after cloning to create all local directories. It must remain idempotent so it can safely be re-run on existing projects. The `bundled/` directory contains installable domain packages (source of truth for domains); `missions/` holds local active work artifacts; `memory/` holds distilled knowledge — all three are distinct layers with different git tracking status.",
+						"files": [
+							"lib/tasks/task-manager.ts",
+							"lib/tasks/file-system.ts",
+							"cli/tasks/commands/init.ts",
+							"bundled/",
+							"missions/",
+							"memory/"
+						],
+						"tags": [
+							"scaffolding",
+							"init",
+							"bundled",
+							"missions",
+							"memory",
+							"local-vs-shared",
+							"convention"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				}
+			]
+		},
+		{
+			"path": "memory/orchestration-refactor.knowledge.jsonl",
+			"sha256": "61cf69f6fde07ef63279f9c449584bad850fe07af3b5886afc9449c5f33f703e",
+			"headerRaw": "{\"_meta\":true,\"planSlug\":\"orchestration-refactor\",\"planTitle\":\"Orchestration Module Decomposition\",\"distilledAt\":\"2026-04-17T00:00:00.000Z\",\"distilledBy\":\"distiller\"}",
+			"header": {
+				"_meta": true,
+				"planSlug": "orchestration-refactor",
+				"planTitle": "Orchestration Module Decomposition",
+				"distilledAt": "2026-04-17T00:00:00.000Z",
+				"distilledBy": "distiller"
+			},
+			"records": [
+				{
+					"ordinal": 1,
+					"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567801",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567801",
+						"planSlug": "orchestration-refactor",
+						"taskId": "TASK-099",
+						"sourceRole": "planner",
+						"type": "rationale",
+						"content": "session-factory.ts was the primary motivation for the entire refactor. The 60-line session creation block inside spawn() was extracted into createAgentSessionFromDefinition() specifically so the parallel-agent-spawning plan can reuse it for multi-turn sessions without duplicating setup logic. The other extractions (model-resolution, definition-resolution) were opportunistic cleanup made possible by the same pass.",
+						"files": [
+							"lib/orchestration/session-factory.ts",
+							"lib/orchestration/agent-spawner.ts"
+						],
+						"tags": [
+							"orchestration",
+							"session-factory",
+							"parallel-spawning",
+							"refactor"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 2,
+					"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567802",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567802",
+						"planSlug": "orchestration-refactor",
+						"sourceRole": "planner",
+						"type": "pattern",
+						"content": "When splitting a monolithic orchestration file, extract pure-function leaf modules first (model-resolution.ts, definition-resolution.ts, rendering.ts, authorization.ts), then extract the stateful/compositional pieces (session-factory.ts, chain-tool.ts, spawn-tool.ts) that depend on them, and slim the entry point last. This ordering avoids temporary circular dependencies during the refactor.",
+						"files": [
+							"lib/orchestration/model-resolution.ts",
+							"lib/orchestration/definition-resolution.ts",
+							"lib/orchestration/session-factory.ts",
+							"domains/shared/extensions/orchestration/rendering.ts",
+							"domains/shared/extensions/orchestration/authorization.ts"
+						],
+						"tags": [
+							"orchestration",
+							"refactor",
+							"module-decomposition",
+							"ordering"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 3,
+					"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567803",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567803",
+						"planSlug": "orchestration-refactor",
+						"sourceRole": "planner",
+						"type": "convention",
+						"content": "When extracting modules from a file that has external consumers, add re-exports in the original file (export * from './new-module.ts') to preserve the public API without breaking import paths. agent-spawner.ts re-exports everything from model-resolution.ts, definition-resolution.ts, and session-factory.ts so callers importing from agent-spawner.ts continue to work unchanged.",
+						"files": ["lib/orchestration/agent-spawner.ts"],
+						"tags": [
+							"orchestration",
+							"re-export",
+							"backward-compat",
+							"convention"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 4,
+					"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567804",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567804",
+						"planSlug": "orchestration-refactor",
+						"sourceRole": "planner",
+						"type": "pattern",
+						"content": "Dependency direction in lib/orchestration/ is strictly linear: model-resolution.ts and definition-resolution.ts are pure leaf modules with no internal deps → session-factory.ts imports from both → agent-spawner.ts imports from session-factory.ts. chain-runner.ts imports directly from model-resolution.ts (not through agent-spawner.ts). No cycles.",
+						"files": [
+							"lib/orchestration/model-resolution.ts",
+							"lib/orchestration/definition-resolution.ts",
+							"lib/orchestration/session-factory.ts",
+							"lib/orchestration/agent-spawner.ts",
+							"lib/orchestration/chain-runner.ts"
+						],
+						"tags": [
+							"orchestration",
+							"dependency-direction",
+							"imports",
+							"architecture"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 5,
+					"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567805",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567805",
+						"planSlug": "orchestration-refactor",
+						"sourceRole": "planner",
+						"type": "pattern",
+						"content": "Pi extension tools are registered via register*(pi, getRuntime) functions: registerChainTool(pi, getRuntime) in chain-tool.ts and registerSpawnTool(pi, getRuntime) in spawn-tool.ts. Each tool module is self-contained (imports its own rendering and authorization helpers) and exports only the registration function. index.ts calls them in order, keeping it at ~30 lines.",
+						"files": [
+							"domains/shared/extensions/orchestration/chain-tool.ts",
+							"domains/shared/extensions/orchestration/spawn-tool.ts",
+							"domains/shared/extensions/orchestration/index.ts"
+						],
+						"tags": [
+							"orchestration",
+							"extension",
+							"tool-registration",
+							"pattern"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 6,
+					"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567806",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567806",
+						"planSlug": "orchestration-refactor",
+						"taskId": "TASK-104",
+						"sourceRole": "worker",
+						"type": "gotcha",
+						"content": "Tool registration order in the orchestration extension must be preserved: registerChainTool() must be called before registerSpawnTool() in index.ts. Reversing this order changes the order tools appear in agent context, which can affect behavior. This constraint is invisible from the tool implementations themselves — it is only documented in the plan and enforced by the index.ts call order.",
+						"files": ["domains/shared/extensions/orchestration/index.ts"],
+						"tags": [
+							"orchestration",
+							"extension",
+							"tool-registration",
+							"order",
+							"gotcha"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 7,
+					"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567807",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567807",
+						"planSlug": "orchestration-refactor",
+						"taskId": "TASK-097",
+						"sourceRole": "worker",
+						"type": "gotcha",
+						"content": "When TASK-097 ran, definition-resolution.ts already existed on disk from a prior incomplete refactoring but agent-spawner.ts still had inline duplicates of those functions. The worker had to reconcile both — removing duplicates and rewriting agent-spawner.ts cleanly — rather than doing a simple extraction. Large files in active development accumulate partial extractions that must be reconciled before a clean split is possible.",
+						"files": [
+							"lib/orchestration/agent-spawner.ts",
+							"lib/orchestration/definition-resolution.ts"
+						],
+						"tags": [
+							"orchestration",
+							"refactor",
+							"gotcha",
+							"incremental-state"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 8,
+					"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567808",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567808",
+						"planSlug": "orchestration-refactor",
+						"taskId": "TASK-101",
+						"sourceRole": "planner",
+						"type": "decision",
+						"content": "isSubagentAllowed() was extracted to its own authorization.ts module despite being a single small function. The decision was made because authorization is a distinct security-policy concern that should be independently readable, testable, and replaceable — not because of size. Even a 15-line function warrants its own module when it represents a separate conceptual responsibility.",
+						"files": [
+							"domains/shared/extensions/orchestration/authorization.ts",
+							"domains/shared/extensions/orchestration/spawn-tool.ts"
+						],
+						"tags": [
+							"orchestration",
+							"authorization",
+							"single-responsibility",
+							"decision"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 9,
+					"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567809",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567809",
+						"planSlug": "orchestration-refactor",
+						"sourceRole": "planner",
+						"type": "trade-off",
+						"content": "No new test files were added during this refactor. Tests remain in tests/orchestration/agent-spawner.test.ts and tests/orchestration/agent-spawner.spawn.test.ts and test behavior through the public API (agent-spawner.ts re-exports), not through internal module paths. Trade-off: internal modules like model-resolution.ts and session-factory.ts are not independently tested. Accepted because this is a pure structural refactor with no behavior changes — existing tests provide sufficient coverage through the re-export surface.",
+						"files": [
+							"tests/orchestration/agent-spawner.test.ts",
+							"tests/orchestration/agent-spawner.spawn.test.ts"
+						],
+						"tags": ["orchestration", "testing", "trade-off", "coverage"],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 10,
+					"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567810",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567810",
+						"planSlug": "orchestration-refactor",
+						"taskId": "TASK-099",
+						"sourceRole": "worker",
+						"type": "gotcha",
+						"content": "Task AC checkboxes (inside AC:BEGIN/AC:END blocks) cannot be ticked using task_edit — the tool does not support checkbox toggling. Workers must edit the raw markdown file directly, replacing '- [ ]' with '- [x]' inside the AC block. Discovered in TASK-099 and confirmed again in TASK-103; several tasks were left with unticked ACs despite complete implementations.",
+						"files": [],
+						"tags": ["task-system", "workflow", "gotcha", "ac-checkboxes"],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 11,
+					"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567811",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567811",
+						"planSlug": "orchestration-refactor",
+						"sourceRole": "planner",
+						"type": "pattern",
+						"content": "The four-concern decomposition model for orchestration files: (1) pure resolution/mapping functions as leaf modules with no internal deps, (2) a factory/builder that composes the leaf modules into a configured object, (3) tool registration functions that take (pi, getRuntime) and encapsulate one tool each, (4) a thin entry-point (index.ts or agent-spawner.ts) that wires everything together and re-exports the public API. Future extensions that grow too large should follow this same four-layer split.",
+						"files": [
+							"lib/orchestration/model-resolution.ts",
+							"lib/orchestration/definition-resolution.ts",
+							"lib/orchestration/session-factory.ts",
+							"lib/orchestration/agent-spawner.ts",
+							"domains/shared/extensions/orchestration/rendering.ts",
+							"domains/shared/extensions/orchestration/authorization.ts",
+							"domains/shared/extensions/orchestration/chain-tool.ts",
+							"domains/shared/extensions/orchestration/spawn-tool.ts",
+							"domains/shared/extensions/orchestration/index.ts"
+						],
+						"tags": [
+							"orchestration",
+							"architecture",
+							"pattern",
+							"extension-design",
+							"decomposition"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				}
+			]
+		},
+		{
+			"path": "memory/parallel-agent-spawning.knowledge.jsonl",
+			"sha256": "7c727656905fb2563cc0b366445e9628c5cb4c25701fffda2da21a3c59642e75",
+			"headerRaw": "{\"_meta\":true,\"planSlug\":\"parallel-agent-spawning\",\"planTitle\":\"Parallel Agent Spawning\",\"distilledAt\":\"2026-04-17T00:00:00.000Z\",\"distilledBy\":\"distiller\"}",
+			"header": {
+				"_meta": true,
+				"planSlug": "parallel-agent-spawning",
+				"planTitle": "Parallel Agent Spawning",
+				"distilledAt": "2026-04-17T00:00:00.000Z",
+				"distilledBy": "distiller"
+			},
+			"records": [
+				{
+					"ordinal": 1,
+					"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+						"planSlug": "parallel-agent-spawning",
+						"taskId": "TASK-111",
+						"sourceRole": "planner",
+						"type": "decision",
+						"content": "spawn_agent is non-blocking: it returns { status: 'accepted', spawnId } immediately, and the child session runs as a background Promise. This enables parallelism — coordinators call spawn_agent N times and all N children run concurrently. Blocking spawn was rejected because it would serialize all child work, preventing a coordinator from dispatching a full wave of tasks at once. The non-blocking pattern is adapted from OpenClaw's sessions_spawn, where LLMs were shown to handle 'accepted' returns correctly when the prompt contract is clear.",
+						"files": [
+							"domains/shared/extensions/orchestration/spawn-tool.ts",
+							"lib/orchestration/agent-spawner.ts"
+						],
+						"tags": [
+							"spawning",
+							"parallelism",
+							"non-blocking",
+							"coordinator",
+							"decision"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 2,
+					"id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+						"planSlug": "parallel-agent-spawning",
+						"taskId": "TASK-110",
+						"sourceRole": "planner",
+						"type": "pattern",
+						"content": "Coordinator agents use a wave-and-wait loop for parallel work: (1) call spawn_agent once per ready task — each returns 'accepted' immediately; (2) summarize what was spawned in the turn response; (3) the spawner's multi-turn loop calls session.prompt() with each child's completion message as it arrives; (4) the coordinator processes each completion turn: verifies task done status, handles failures; (5) if more tasks are now unblocked, spawn the next wave and repeat. The loop exits when activeCount() == 0. This pattern lives in agent-spawner.ts and activates only when the spawn tracker has registered children — sessions without spawns are unaffected.",
+						"files": [
+							"lib/orchestration/agent-spawner.ts",
+							"domains/coding/prompts/coordinator.md"
+						],
+						"tags": [
+							"coordinator",
+							"spawning",
+							"multi-turn",
+							"pattern",
+							"parallelism"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 3,
+					"id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+						"planSlug": "parallel-agent-spawning",
+						"taskId": "TASK-112",
+						"sourceRole": "planner",
+						"type": "convention",
+						"content": "Completion messages injected into parent sessions follow this exact format: \"[spawn_completion] spawnId=<id> role=<role> outcome=<success|failed> summary=<brief text>\". This is a protocol — the spawner's formatCompletionMessage() helper, the coordinator.md delegation section, and spawning.md capability doc all use this verbatim string format. The [spawn_completion] prefix lets the coordinator distinguish completion turns from normal user messages. Do not change the format without updating all three locations.",
+						"files": [
+							"lib/orchestration/agent-spawner.ts",
+							"domains/coding/prompts/coordinator.md",
+							"domains/shared/capabilities/spawning.md"
+						],
+						"tags": [
+							"spawning",
+							"completion",
+							"protocol",
+							"convention",
+							"coordinator"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 4,
+					"id": "d4e5f6a7-b8c9-0123-def0-234567890123",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "d4e5f6a7-b8c9-0123-def0-234567890123",
+						"planSlug": "parallel-agent-spawning",
+						"taskId": "TASK-109",
+						"sourceRole": "planner",
+						"type": "pattern",
+						"content": "The spawner (agent-spawner.ts) and spawn tool (spawn-tool.ts) share state through a module-level Map<sessionId, SpawnTracker> managed by getOrCreateTracker() and removeTracker() in spawn-tracker.ts. The spawner calls getOrCreateTracker(sessionId) before session.prompt() so the tracker exists before any tool calls can register children; the spawn tool calls getOrCreateTracker(parentSessionId) from inside the tool handler to register each new child. This decouples the two components without a direct import dependency and is safe for concurrent multi-session use because the map is keyed by session ID.",
+						"files": [
+							"lib/orchestration/spawn-tracker.ts",
+							"lib/orchestration/agent-spawner.ts",
+							"domains/shared/extensions/orchestration/spawn-tool.ts"
+						],
+						"tags": [
+							"spawning",
+							"registry",
+							"module-state",
+							"pattern",
+							"architecture",
+							"bridge"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 5,
+					"id": "e5f6a7b8-c9d0-1234-ef01-345678901234",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "e5f6a7b8-c9d0-1234-ef01-345678901234",
+						"planSlug": "parallel-agent-spawning",
+						"taskId": "TASK-110",
+						"sourceRole": "planner",
+						"type": "gotcha",
+						"content": "The parent coordinator session must stay alive until all child completions have been received. If the spawner's multi-turn loop exits early (session throws, is disposed, or the caller cancels before activeCount() == 0), background child Promises continue running but their completion events are never consumed — they become orphaned. There is no crash recovery for in-process spawns. removeTracker() must be called in a finally block to clean up the module-level registry, but this does not cancel running children.",
+						"files": [
+							"lib/orchestration/agent-spawner.ts",
+							"lib/orchestration/spawn-tracker.ts"
+						],
+						"tags": ["spawning", "lifecycle", "orphan", "gotcha", "cleanup"],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 6,
+					"id": "f6a7b8c9-d0e1-2345-f012-456789012345",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "f6a7b8c9-d0e1-2345-f012-456789012345",
+						"planSlug": "parallel-agent-spawning",
+						"taskId": "TASK-112",
+						"sourceRole": "planner",
+						"type": "gotcha",
+						"content": "LLM agents default to treating tool return values as results. Without explicit prompt instructions, a coordinator receiving { status: 'accepted', spawnId } from spawn_agent will interpret 'accepted' as the child's outcome and move on — never waiting for actual completions. coordinator.md and spawning.md are the primary guardrails; they must explicitly state that spawn_agent is non-blocking and that results arrive later as [spawn_completion] messages. When extending or replacing these files, preserve the non-blocking contract language or coordinators will silently break.",
+						"files": [
+							"domains/coding/prompts/coordinator.md",
+							"domains/shared/capabilities/spawning.md"
+						],
+						"tags": [
+							"spawning",
+							"non-blocking",
+							"prompt-engineering",
+							"gotcha",
+							"llm-behavior"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 7,
+					"id": "a7b8c9d0-e1f2-3456-0123-567890123456",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "a7b8c9d0-e1f2-3456-0123-567890123456",
+						"planSlug": "parallel-agent-spawning",
+						"taskId": "TASK-106",
+						"sourceRole": "planner",
+						"type": "rationale",
+						"content": "Two resource bounds govern parallel spawning: (1) a semaphore caps simultaneous active child sessions at maxConcurrentSpawns (default 5, from spawn-limits.ts) to prevent saturating API rate limits — new spawns queue on acquire() rather than fail; (2) maxSpawnDepth (default 2) prevents recursive fan-out — coordinator (depth 0) spawns worker (depth 1), worker cannot spawn further by default. The semaphore uses FIFO queuing: acquire() pushes a resolve callback; release() shifts the next waiter and calls it directly so the slot stays consumed without an extra tick.",
+						"files": [
+							"lib/orchestration/semaphore.ts",
+							"lib/orchestration/spawn-limits.ts",
+							"lib/orchestration/spawn-tracker.ts"
+						],
+						"tags": [
+							"spawning",
+							"semaphore",
+							"limits",
+							"rate-limiting",
+							"resource-bounds",
+							"rationale"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 8,
+					"id": "b8c9d0e1-f2a3-4567-1234-678901234567",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "b8c9d0e1-f2a3-4567-1234-678901234567",
+						"planSlug": "parallel-agent-spawning",
+						"taskId": "TASK-112",
+						"sourceRole": "planner",
+						"type": "trade-off",
+						"content": "Parallel workers that touch overlapping files simultaneously will cause data loss or merge conflicts. There is no file locking or sandboxing. The only mitigation is task design: coordinator.md instructs workers to operate on independent files, and tasks should be scoped to non-overlapping file sets. This is an accepted architectural limitation — conflict resolution is deferred to a future sandboxing or merge layer. When designing task waves for the coordinator, file independence is a first-class constraint, not an afterthought.",
+						"files": ["domains/coding/prompts/coordinator.md"],
+						"tags": [
+							"parallelism",
+							"filesystem",
+							"conflicts",
+							"trade-off",
+							"limitation"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 9,
+					"id": "c9d0e1f2-a3b4-5678-2345-789012345678",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "c9d0e1f2-a3b4-5678-2345-789012345678",
+						"planSlug": "parallel-agent-spawning",
+						"taskId": "TASK-110",
+						"sourceRole": "worker",
+						"type": "gotcha",
+						"content": "The spawner's multi-turn loop calls nextCompletion(), which awaits the message bus. A hung child blocks the parent indefinitely. Per-spawn timeouts are required: on timeout, all still-running spawns are failed via tracker.fail() in a batch (runningSpawns() enumerates them), and failure completion messages are returned together. The dangling nextCompletion() Promise resolves benignly on the first fail() call since the bus fires immediately. Without this, one stuck child session can hang the entire coordinator.",
+						"files": [
+							"lib/orchestration/agent-spawner.ts",
+							"lib/orchestration/spawn-tracker.ts"
+						],
+						"tags": [
+							"spawning",
+							"timeout",
+							"multi-turn",
+							"gotcha",
+							"hang-prevention"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 10,
+					"id": "d0e1f2a3-b4c5-6789-3456-890123456789",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "d0e1f2a3-b4c5-6789-3456-890123456789",
+						"planSlug": "parallel-agent-spawning",
+						"taskId": "TASK-110",
+						"sourceRole": "planner",
+						"type": "decision",
+						"content": "Completion results are delivered to the parent by the spawner calling session.prompt() directly, not via pi.sendUserMessage({ deliverAs: 'followUp' }) from inside the extension. The pi.sendUserMessage approach requires an active Pi event loop running after session.prompt() resolves — the timing window is unreliable. Keeping the spawner in control (it calls session.prompt() for each completion) gives a clear, predictable lifecycle: prompt → completion loop → prompt → loop → done → dispose. The spawner passes a MessageBus instance through PiSpawnerOptions; callers that don't provide one get a fresh default bus.",
+						"files": ["lib/orchestration/agent-spawner.ts"],
+						"tags": [
+							"spawning",
+							"completion",
+							"multi-turn",
+							"decision",
+							"lifecycle",
+							"pi-api"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				}
+			]
+		},
+		{
+			"path": "memory/planning-system-hardening.knowledge.jsonl",
+			"sha256": "cce8e1961005fc90b463e9e933856a7dd9f645f6b189945bc992fb1464019f2e",
+			"headerRaw": "{\"_meta\":true,\"planSlug\":\"planning-system-hardening\",\"planTitle\":\"Planning system hardening\",\"distilledAt\":\"2026-07-29T15:00:00.000Z\",\"distilledBy\":\"distiller\"}",
+			"header": {
+				"_meta": true,
+				"planSlug": "planning-system-hardening",
+				"planTitle": "Planning system hardening",
+				"distilledAt": "2026-07-29T15:00:00.000Z",
+				"distilledBy": "distiller"
+			},
+			"records": [
+				{
+					"ordinal": 1,
+					"id": "2bb0d4da-6467-4cf8-8dd8-1f5d1cbfc886",
+					"rawTimestamp": "2026-07-29T15:00:00.000Z",
+					"fields": {
+						"id": "2bb0d4da-6467-4cf8-8dd8-1f5d1cbfc886",
+						"planSlug": "planning-system-hardening",
+						"sourceRole": "planner",
+						"type": "decision",
+						"content": "Keep planning-system hardening focused on authoring prompts, versioned review artifacts, and the existing mechanical conformance checker; do not add standing multi-lens review orchestration or change reviewer model configuration. The evidence run showed that roughly 70% of later-layer findings were mechanical, so those defects should be caught cheaply upstream while expensive multi-lens adjudication remains on demand.",
+						"files": [
+							"bundled/coding/prompts/planner.md",
+							"bundled/coding/prompts/plan-reviewer.md",
+							"lib/artifacts/behavior-conformance.ts"
+						],
+						"tags": ["planning", "scope", "mechanical-conformance", "review"],
+						"createdAt": "2026-07-29T15:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 2,
+					"id": "340f16d9-ccdb-4a40-bb33-e0a97f5326e8",
+					"rawTimestamp": "2026-07-29T15:00:00.000Z",
+					"fields": {
+						"id": "340f16d9-ccdb-4a40-bb33-e0a97f5326e8",
+						"planSlug": "planning-system-hardening",
+						"sourceRole": "planner",
+						"type": "convention",
+						"content": "Plan-review findings use immutable `review-<n>.md` rounds allocated at the lowest unused number; a legacy `review.md` counts as round 1. Reviewers never overwrite a round, and planners read every round, use the latest as the revision driver, and cite findings with the filename (for example, `review-2.md PR-003`) so evidence chains remain resolvable.",
+						"files": [
+							"bundled/coding/prompts/planner.md",
+							"bundled/coding/prompts/plan-reviewer.md"
+						],
+						"tags": [
+							"review-rounds",
+							"citations",
+							"evidence",
+							"backward-compatibility"
+						],
+						"createdAt": "2026-07-29T15:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 3,
+					"id": "49337adf-b5e2-4929-a64a-705068228b85",
+					"rawTimestamp": "2026-07-29T15:00:00.000Z",
+					"fields": {
+						"id": "49337adf-b5e2-4929-a64a-705068228b85",
+						"planSlug": "planning-system-hardening",
+						"sourceRole": "planner",
+						"type": "pattern",
+						"content": "Before handing off a plan, the planner must walk every decision against the design and governed behaviors, inspect implementation order for broken intermediate states, enumerate every input × state cell with no implementer-decided outcomes, and either define slice boundaries or record a justification when size guidance is exceeded. Designs that execute project-controlled material must also name the trust boundary and consent gate.",
+						"files": [
+							"bundled/coding/prompts/planner.md",
+							"tests/prompts/planner.test.ts"
+						],
+						"tags": [
+							"planner",
+							"consistency",
+							"state-space",
+							"scope",
+							"trust-boundary"
+						],
+						"createdAt": "2026-07-29T15:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 4,
+					"id": "640cc581-46d1-4f81-9ee8-d1ce87b6e9c8",
+					"rawTimestamp": "2026-07-29T15:00:00.000Z",
+					"fields": {
+						"id": "640cc581-46d1-4f81-9ee8-d1ce87b6e9c8",
+						"planSlug": "planning-system-hardening",
+						"sourceRole": "planner",
+						"type": "pattern",
+						"content": "A behavior's Expected clause must state only what its named test can assert. In particular, prompt content tests prove textual obligations, not downstream runtime outcomes; trim or split behavior claims when the named seam cannot establish the full statement.",
+						"files": [
+							"bundled/coding/prompts/planner.md",
+							"tests/prompts/planner.test.ts",
+							"missions/archive/plans/planning-system-hardening/plan.md"
+						],
+						"tags": ["behavior-contracts", "test-provability", "content-tests"],
+						"createdAt": "2026-07-29T15:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 5,
+					"id": "7d7fbd80-9c64-4366-8137-2544c706ed67",
+					"rawTimestamp": "2026-07-29T15:00:00.000Z",
+					"fields": {
+						"id": "7d7fbd80-9c64-4366-8137-2544c706ed67",
+						"planSlug": "planning-system-hardening",
+						"sourceRole": "planner",
+						"type": "pattern",
+						"content": "Plan reviews make silence auditable with a coverage ledger that names every review dimension, what was checked, and either findings, explicit none, or unchecked status. When a plan wraps an external tool, reviewers should use available read-only live probes to verify exit codes, output envelopes, and claimed flags rather than trusting documentation alone; scope and size are a dedicated review dimension.",
+						"files": [
+							"bundled/coding/prompts/plan-reviewer.md",
+							"tests/prompts/plan-reviewer.test.ts"
+						],
+						"tags": ["reviewer", "coverage-ledger", "live-probe", "scope"],
+						"createdAt": "2026-07-29T15:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 6,
+					"id": "84bb6f4f-cbd2-47ac-b044-a26689a685a0",
+					"rawTimestamp": "2026-07-29T15:00:00.000Z",
+					"fields": {
+						"id": "84bb6f4f-cbd2-47ac-b044-a26689a685a0",
+						"planSlug": "planning-system-hardening",
+						"sourceRole": "planner",
+						"type": "decision",
+						"content": "Extend `checkBehaviorConformance` rather than creating a parallel plan linter. Unresolved decision citations, undated supersessions, Files-to-Change pairing gaps, and duplicate markers are blocking issues; behavior count beyond guidance belongs in the non-blocking `advisories` channel and must render distinctly in human, plain, and JSON CLI output. Checks tied to optional structures are skipped when those structures are absent to preserve legacy small plans.",
+						"files": [
+							"lib/artifacts/behavior-conformance.ts",
+							"cli/plans/commands/check-artifacts.ts",
+							"tests/artifacts/behavior-conformance.test.ts",
+							"tests/cli/plans/subcommand.test.ts"
+						],
+						"tags": [
+							"artifact-conformance",
+							"advisories",
+							"backward-compatibility",
+							"cli"
+						],
+						"createdAt": "2026-07-29T15:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 7,
+					"id": "9a200991-aac0-4c92-8966-4c0ca1229826",
+					"rawTimestamp": "2026-07-29T15:00:00.000Z",
+					"fields": {
+						"id": "9a200991-aac0-4c92-8966-4c0ca1229826",
+						"planSlug": "planning-system-hardening",
+						"sourceRole": "reviewer",
+						"type": "gotcha",
+						"content": "Markdown syntax examples must not become active conformance references. Citation and annotation scans should treat fenced blocks and inline code as mentions, while preserving separate raw, fence-masked, and quote-masked views so each semantic check can choose the correct representation. Decision-entry boundary and date detection must use the quote-masked view; fenced decision examples otherwise split real entries or contribute false dates.",
+						"files": [
+							"lib/artifacts/behavior-conformance.ts",
+							"tests/artifacts/behavior-conformance.test.ts"
+						],
+						"tags": [
+							"markdown",
+							"masking",
+							"citations",
+							"decision-log",
+							"false-positive"
+						],
+						"createdAt": "2026-07-29T15:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 8,
+					"id": "abe89965-2f2d-4c4d-a91c-fdd3c671fa7c",
+					"rawTimestamp": "2026-07-29T15:00:00.000Z",
+					"fields": {
+						"id": "abe89965-2f2d-4c4d-a91c-fdd3c671fa7c",
+						"planSlug": "planning-system-hardening",
+						"sourceRole": "reviewer",
+						"type": "gotcha",
+						"content": "A behavior is withdrawn only when an exact dated `withdrawn by D-###` annotation ends its heading in both the raw and quote-masked views. Checking only masked text lets code-quoted trailing garbage disappear and satisfy an end anchor; checking only raw text mishandles legitimate quoted content before the annotation. Withdrawn behaviors retain their IDs, are excluded from required-evidence checks, and are reported separately.",
+						"files": [
+							"lib/artifacts/behavior-conformance.ts",
+							"tests/artifacts/behavior-conformance.test.ts"
+						],
+						"tags": [
+							"withdrawn-behavior",
+							"markdown",
+							"annotation-grammar",
+							"regression"
+						],
+						"createdAt": "2026-07-29T15:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 9,
+					"id": "c787e46e-8c65-4ef8-b861-5e24b38ec63b",
+					"rawTimestamp": "2026-07-29T15:00:00.000Z",
+					"fields": {
+						"id": "c787e46e-8c65-4ef8-b861-5e24b38ec63b",
+						"planSlug": "planning-system-hardening",
+						"sourceRole": "reviewer",
+						"type": "convention",
+						"content": "For decision supersession validation, a structured decision-ID pointer is self-dating, but a descriptive or free-text `Supersedes:` ground requires an ISO date within the same decision entry, normally on its Decided-by line. Quoted examples must be masked before entry boundaries and dates are evaluated.",
+						"files": [
+							"lib/artifacts/behavior-conformance.ts",
+							"tests/artifacts/behavior-conformance.test.ts",
+							"missions/archive/plans/planning-system-hardening/plan.md"
+						],
+						"tags": ["supersession", "decision-log", "dates", "conformance"],
+						"createdAt": "2026-07-29T15:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 10,
+					"id": "d2ad84ec-c3a4-48e5-91df-ab46239d81cd",
+					"rawTimestamp": "2026-07-29T15:00:00.000Z",
+					"fields": {
+						"id": "d2ad84ec-c3a4-48e5-91df-ab46239d81cd",
+						"planSlug": "planning-system-hardening",
+						"sourceRole": "reviewer",
+						"type": "trade-off",
+						"content": "Bound inline-code span pairing to paragraph or list-item scale, with blank lines, headings, and list items interrupting the context. This prevents stray backticks in one bullet from masking real citations in adjacent bullets and bounds the scanner enough for realistic plan files; a separate whole-file size cap was intentionally not added.",
+						"files": [
+							"lib/artifacts/behavior-conformance.ts",
+							"tests/artifacts/behavior-conformance.test.ts"
+						],
+						"tags": ["markdown", "performance", "inline-code", "scanner"],
+						"createdAt": "2026-07-29T15:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 11,
+					"id": "ef176c88-16de-4856-8559-e8111b4c14d1",
+					"rawTimestamp": "2026-07-29T15:00:00.000Z",
+					"fields": {
+						"id": "ef176c88-16de-4856-8559-e8111b4c14d1",
+						"planSlug": "planning-system-hardening",
+						"sourceRole": "reviewer",
+						"type": "gotcha",
+						"content": "Round versioning is currently a prompt contract only; framework artifact-reading code does not consume plan review rounds. An attempted artifact-viewer change was reverted because it was outside the plan and followed symlinks after only a lexical path check. Any future viewer support must be separately scoped and enforce real path containment before reading round files.",
+						"files": [
+							"bundled/coding/prompts/planner.md",
+							"bundled/coding/prompts/plan-reviewer.md"
+						],
+						"tags": [
+							"scope-control",
+							"artifact-viewer",
+							"path-containment",
+							"symlink",
+							"security"
+						],
+						"createdAt": "2026-07-29T15:00:00.000Z"
+					}
+				}
+			]
+		},
+		{
+			"path": "memory/runtime-consolidation.knowledge.jsonl",
+			"sha256": "35b5cbc38a3387502aaec6759f060235b9e9c45e17bccfd5c160dc818cb4cfd8",
+			"headerRaw": "{\"_meta\":true,\"planSlug\":\"runtime-consolidation\",\"planTitle\":\"Runtime Consolidation: Unified Bootstrap, Domain Validation, and Qualified-Role Utilities\",\"distilledAt\":\"2026-04-17T00:00:00.000Z\",\"distilledBy\":\"distiller\"}",
+			"header": {
+				"_meta": true,
+				"planSlug": "runtime-consolidation",
+				"planTitle": "Runtime Consolidation: Unified Bootstrap, Domain Validation, and Qualified-Role Utilities",
+				"distilledAt": "2026-04-17T00:00:00.000Z",
+				"distilledBy": "distiller"
+			},
+			"records": [
+				{
+					"ordinal": 1,
+					"id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+						"planSlug": "runtime-consolidation",
+						"sourceRole": "planner",
+						"type": "decision",
+						"content": "Introduced `CosmonautsRuntime` (`lib/runtime.ts`) as a single immutable bootstrap container to eliminate registry divergence. Previously, `cli/main.ts`, `orchestration/index.ts`, and `agent-spawner.ts` each performed their own config+domain loading sequence independently, with `agent-spawner.ts` falling back to a static `createDefaultRegistry()` that imported 8 coding-domain agent files at module load time. Any consumer that forgot to pass a registry silently got the stale static one. The fix: one `CosmonautsRuntime.create()` call per process entry point, result shared across all consumers.",
+						"files": [
+							"lib/runtime.ts",
+							"cli/main.ts",
+							"lib/orchestration/agent-spawner.ts",
+							"domains/shared/extensions/orchestration/index.ts"
+						],
+						"tags": [
+							"runtime",
+							"bootstrap",
+							"registry",
+							"architecture",
+							"refactoring"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 2,
+					"id": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+						"planSlug": "runtime-consolidation",
+						"sourceRole": "planner",
+						"type": "gotcha",
+						"content": "The dual-registry bug was triggered by optional `registry` parameters with `createDefaultRegistry()` as the default. `chain-runner.ts:resolveRegistry()`, `chain-parser.ts:parseChain(expression, registry?)`, and `agent-spawner.ts:createPiSpawner(registry?)` all silently fell back to a statically-built registry that reflected only the hardcoded coding-domain agents — not whatever domains were dynamically loaded at runtime. The symptom was agents resolving correctly in one code path but silently failing or using wrong definitions in another. Fix: remove all fallbacks and make `registry` required everywhere. Zero optional-registry parameters remain in the codebase.",
+						"files": [
+							"lib/agents/resolver.ts",
+							"lib/orchestration/chain-runner.ts",
+							"lib/orchestration/chain-parser.ts",
+							"lib/orchestration/agent-spawner.ts",
+							"lib/orchestration/types.ts"
+						],
+						"tags": [
+							"registry",
+							"dual-registry",
+							"bug",
+							"fallback",
+							"static-imports"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 3,
+					"id": "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
+						"planSlug": "runtime-consolidation",
+						"sourceRole": "planner",
+						"type": "pattern",
+						"content": "All orchestration consumers must receive `AgentRegistry` (or a full `CosmonautsRuntime`) as an explicit dependency — never build one locally or fall back to a module-level default. Concretely: `createPiSpawner(registry: AgentRegistry, domainsDir: string)` — both required. `parseChain(expression, registry, domainContext?)` — registry required. `ChainConfig.registry` — required field. `AgentRegistry` constructor requires a `builtins: readonly AgentDefinition[]` parameter with no default. Any new consumer of agent definitions must accept the runtime or registry from its caller.",
+						"files": [
+							"lib/runtime.ts",
+							"lib/orchestration/agent-spawner.ts",
+							"lib/orchestration/chain-runner.ts",
+							"lib/orchestration/chain-parser.ts",
+							"lib/orchestration/types.ts",
+							"lib/agents/resolver.ts"
+						],
+						"tags": [
+							"registry",
+							"dependency-injection",
+							"pattern",
+							"no-defaults"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 4,
+					"id": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a",
+						"planSlug": "runtime-consolidation",
+						"sourceRole": "planner",
+						"type": "pattern",
+						"content": "Use `lib/agents/qualified-role.ts` for all `<domain>/<agent>` string operations — never inline `indexOf('/')` or `split('/')`. The module exports four functions: `qualifyRole(id, domain?)` builds `'coding/worker'`; `unqualifyRole(qualified)` strips the domain prefix returning `'worker'`; `splitRole(qualified)` returns `{ domain: string | undefined, id: string }`; `roleToConfigKey(role)` maps `'coding/task-manager'` → `'taskManager'` for config lookup. `qualifyAgentId` in `runtime-identity.ts` is now a re-export alias of `qualifyRole` for backward compatibility. These replaced duplicated inline implementations in `agent-spawner.ts`, `chain-runner.ts`, `resolver.ts`, and `orchestration/index.ts`.",
+						"files": [
+							"lib/agents/qualified-role.ts",
+							"lib/agents/runtime-identity.ts",
+							"lib/agents/index.ts",
+							"tests/agents/qualified-role.test.ts"
+						],
+						"tags": [
+							"qualified-role",
+							"string-utilities",
+							"convention",
+							"domain-agent-id"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 5,
+					"id": "e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8a9b",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8a9b",
+						"planSlug": "runtime-consolidation",
+						"sourceRole": "planner",
+						"type": "decision",
+						"content": "`CosmonautsRuntime` uses a static async `create()` factory (not a constructor) because domain loading requires dynamic `import()`. The returned object is `Object.freeze()`d — immutable after creation, no hot-reload. Domain changes during a session are not picked up; this is an accepted trade-off (domains don't change at runtime). `CosmonautsRuntimeOptions` requires `{ domainsDir: string; projectRoot: string; domainOverride?: string }`. `domainContext` resolves as `domainOverride ?? projectConfig.domain`.",
+						"files": ["lib/runtime.ts", "tests/runtime.test.ts"],
+						"tags": ["runtime", "async", "immutable", "factory", "design"],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 6,
+					"id": "f6a7b8c9-d0e1-4f2a-3b4c-5d6e7f8a9b0c",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "f6a7b8c9-d0e1-4f2a-3b4c-5d6e7f8a9b0c",
+						"planSlug": "runtime-consolidation",
+						"taskId": "TASK-082",
+						"sourceRole": "worker",
+						"type": "gotcha",
+						"content": "`validateDomains()` in `lib/domains/validator.ts` is a standalone pure function independent of `CosmonautsRuntime`. This is deliberate: if validation were coupled to runtime construction, loader tests using minimal temp-dir fixtures would fail on missing prompts/capabilities. The validator is called inside `CosmonautsRuntime.create()` after `loadDomains()`, but tests can call `loadDomains()` directly and skip validation. Do not merge validation into the domain loader itself — keep the two steps separate.",
+						"files": [
+							"lib/domains/validator.ts",
+							"lib/runtime.ts",
+							"tests/domains/validator.test.ts"
+						],
+						"tags": [
+							"validation",
+							"test-isolation",
+							"domain-validator",
+							"pure-function"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 7,
+					"id": "a7b8c9d0-e1f2-4a3b-4c5d-6e7f8a9b0c1d",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "a7b8c9d0-e1f2-4a3b-4c5d-6e7f8a9b0c1d",
+						"planSlug": "runtime-consolidation",
+						"taskId": "TASK-087",
+						"sourceRole": "worker",
+						"type": "pattern",
+						"content": "The orchestration extension caches `CosmonautsRuntime` per-cwd using a `Map<string, Promise<CosmonautsRuntime>>` held inside the extension function closure — NOT at module level. Each extension instance gets its own cache map; this is what enables test isolation (tests that create fresh extension instances get fresh caches). A module-level cache would leak state across tests. The helper is `getRuntime(cwd: string): Promise<CosmonautsRuntime>` and is called by both `chain_run` and `spawn_agent` tool handlers.",
+						"files": [
+							"domains/shared/extensions/orchestration/index.ts",
+							"tests/extensions/orchestration.test.ts"
+						],
+						"tags": [
+							"orchestration-extension",
+							"caching",
+							"runtime",
+							"test-isolation",
+							"closure"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 8,
+					"id": "b8c9d0e1-f2a3-4b4c-5d6e-7f8a9b0c1d2e",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "b8c9d0e1-f2a3-4b4c-5d6e-7f8a9b0c1d2e",
+						"planSlug": "runtime-consolidation",
+						"taskId": "TASK-086",
+						"sourceRole": "worker",
+						"type": "gotcha",
+						"content": "When `cli/main.ts` migrated to receive `runtime.workflows`, `loadWorkflows`/`resolveWorkflow`/`listWorkflows` in `lib/workflows/loader.ts` rejected the value because those functions accepted `WorkflowDefinition[]` (mutable) while `runtime.workflows` is `readonly WorkflowDefinition[]`. Fix: widen all workflow loader function signatures to accept `readonly WorkflowDefinition[]`. Any future function that receives data from a frozen runtime object must accept `readonly` arrays — do not cast with `as WorkflowDefinition[]`.",
+						"files": ["lib/workflows/loader.ts", "cli/main.ts"],
+						"tags": [
+							"typescript",
+							"readonly",
+							"frozen",
+							"workflows",
+							"type-widening"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 9,
+					"id": "c9d0e1f2-a3b4-4c5d-6e7f-8a9b0c1d2e3f",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "c9d0e1f2-a3b4-4c5d-6e7f-8a9b0c1d2e3f",
+						"planSlug": "runtime-consolidation",
+						"sourceRole": "planner",
+						"type": "convention",
+						"content": "Domain validation severity rules in `lib/domains/validator.ts`: **errors** (halt startup via `DomainValidationError`) for — missing persona prompt, unresolved capability, unresolved extension, unresolved domain lead. **Warnings** (logged to stderr, startup continues) for — subagent entry that doesn't resolve (may be a future domain), workflow stage that doesn't resolve to a known agent. Rationale: errors cover things that would cause immediate runtime failures; warnings cover forward-references that may be intentionally cross-domain. Do not promote subagent resolution to an error — agent definitions commonly reference agents in domains that haven't been loaded yet.",
+						"files": [
+							"lib/domains/validator.ts",
+							"tests/domains/validator.test.ts"
+						],
+						"tags": [
+							"validation",
+							"severity",
+							"domain-validator",
+							"convention"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				},
+				{
+					"ordinal": 10,
+					"id": "d0e1f2a3-b4c5-4d6e-7f8a-9b0c1d2e3f4a",
+					"rawTimestamp": "2026-04-17T00:00:00.000Z",
+					"fields": {
+						"id": "d0e1f2a3-b4c5-4d6e-7f8a-9b0c1d2e3f4a",
+						"planSlug": "runtime-consolidation",
+						"sourceRole": "planner",
+						"type": "rationale",
+						"content": "Migration order for consolidating scattered bootstrapping into `CosmonautsRuntime`: (1) `lib/agents/qualified-role.ts` + tests — pure utility, no deps, unblocks everything; (2) `lib/domains/validator.ts` + tests — depends only on domain types; (3) `lib/runtime.ts` + tests — composes config+domains+validation+registries; (4) `agent-spawner.ts` — remove defaults, import utilities; (5) `chain-runner.ts` + `chain-parser.ts` + `types.ts` — remove defaults, make registry required; (6) `cli/main.ts` + `cli/session.ts` — replace bootstrap block with runtime; (7) orchestration extension — replace `loadRuntimeDomainContext` with cached runtime; (8) `resolver.ts` + `agents/index.ts` cleanup — remove `createDefaultRegistry`, `resolveAgent`, static imports. This order avoids circular migration issues: utilities before consumers, runtime before CLI, CLI before final cleanup.",
+						"files": [
+							"lib/agents/qualified-role.ts",
+							"lib/domains/validator.ts",
+							"lib/runtime.ts",
+							"lib/orchestration/agent-spawner.ts",
+							"lib/orchestration/chain-runner.ts",
+							"lib/orchestration/chain-parser.ts",
+							"cli/main.ts",
+							"cli/session.ts",
+							"domains/shared/extensions/orchestration/index.ts",
+							"lib/agents/resolver.ts",
+							"lib/agents/index.ts"
+						],
+						"tags": [
+							"migration",
+							"implementation-order",
+							"refactoring",
+							"bootstrap"
+						],
+						"createdAt": "2026-04-17T00:00:00.000Z"
+					}
+				}
+			]
+		},
+		{
+			"path": "memory/spec-plan-quality-gates-a.knowledge.jsonl",
+			"sha256": "87f7aa0a011b339fdd8e12e865aaa7f60d9564e16af8b7ca9074ffd25da98158",
+			"headerRaw": "{\"_meta\":true,\"planSlug\":\"spec-plan-quality-gates-a\",\"planTitle\":\"Prompt-Only Spec/Plan Quality Gates (Plan A)\",\"distilledAt\":\"2026-04-17T16:20:00.000Z\",\"distilledBy\":\"distiller\"}",
+			"header": {
+				"_meta": true,
+				"planSlug": "spec-plan-quality-gates-a",
+				"planTitle": "Prompt-Only Spec/Plan Quality Gates (Plan A)",
+				"distilledAt": "2026-04-17T16:20:00.000Z",
+				"distilledBy": "distiller"
+			},
+			"records": [
+				{
+					"ordinal": 1,
+					"id": "3f8a4c1d-7e2b-4a9f-b6d3-1c5e8f0a2b3e",
+					"rawTimestamp": "2026-04-17T16:20:00.000Z",
+					"fields": {
+						"id": "3f8a4c1d-7e2b-4a9f-b6d3-1c5e8f0a2b3e",
+						"planSlug": "spec-plan-quality-gates-a",
+						"sourceRole": "planner",
+						"type": "trade-off",
+						"content": "Quality gates that block execution in interactive mode must convert blockers to explicit assumptions in autonomous/non-interactive mode — they must never deadlock. In spec-writer and planner prompts, unchecked required readiness items block plan_create in interactive mode (until resolved or explicitly waived), but in autonomous mode those same items become explicit Assumptions/Open Questions and execution continues with narrowed scope. Hard-blocking autonomous runs deadlocks existing chains like plan-and-build; always proceeding without surfacing gaps makes the rubric toothless. The asymmetry is the correct design: interactive = gate, autonomous = document-and-proceed.",
+						"files": [
+							"bundled/coding/coding/prompts/spec-writer.md",
+							"bundled/coding/coding/prompts/planner.md"
+						],
+						"tags": [
+							"quality-gates",
+							"interactive-vs-autonomous",
+							"spec-writer",
+							"planner",
+							"design-decision"
+						],
+						"createdAt": "2026-04-17T16:20:00.000Z"
+					}
+				},
+				{
+					"ordinal": 2,
+					"id": "9b2c5d6e-1f3a-4b8c-97d2-5e0f1a2b3c4d",
+					"rawTimestamp": "2026-04-17T16:20:00.000Z",
+					"fields": {
+						"id": "9b2c5d6e-1f3a-4b8c-97d2-5e0f1a2b3c4d",
+						"planSlug": "spec-plan-quality-gates-a",
+						"sourceRole": "planner",
+						"type": "decision",
+						"content": "The critical-assumption escalation threshold is fixed at 3 in spec-writer.md with an explicit human waiver path. When critical assumptions reach 3 in interactive mode, spec-writer must run one more clarification round before writing the spec — unless the human explicitly waives with 'proceed with assumptions'. Critical assumptions are those that change user-visible behavior, scope boundaries, existing-feature interaction, or acceptance criteria. The fixed threshold was chosen over project-configurable or feature-size-inferred thresholds because Plan A excludes framework/config work, a fixed value is visible, simple, and testable, and the waiver path prevents trapping interactive users in an unnecessary loop when they knowingly accept the assumptions.",
+						"files": [
+							"bundled/coding/coding/prompts/spec-writer.md",
+							"tests/prompts/spec-writer.test.ts"
+						],
+						"tags": [
+							"quality-gates",
+							"spec-writer",
+							"assumption-budget",
+							"interactive",
+							"design-decision"
+						],
+						"createdAt": "2026-04-17T16:20:00.000Z"
+					}
+				},
+				{
+					"ordinal": 3,
+					"id": "a1b2c3d4-e5f6-4789-8bcd-ef0123456789",
+					"rawTimestamp": "2026-04-17T16:20:00.000Z",
+					"fields": {
+						"id": "a1b2c3d4-e5f6-4789-8bcd-ef0123456789",
+						"planSlug": "spec-plan-quality-gates-a",
+						"sourceRole": "planner",
+						"type": "rationale",
+						"content": "The four-factor readiness rubric (Specificity, Constraints, Context, Success criteria) is the shared shell used in both spec-writer and planner readiness checks, but with role-tailored checklist items under each heading. Using identical headings makes the gate recognizable and auditable by humans across both phases; using tailored items prevents a generic checklist vague enough to block nothing. For spec-writer: Specificity checks purpose/user/happy-path/failure-flow; Constraints checks scope/existing-feature interactions; Context checks code/doc citations; Success criteria checks user-verifiable ACs with ≥⅓ error/edge coverage. For planner: same headings but items target architecture (module boundaries, dependency direction, integration seams, QC-rule reference).",
+						"files": [
+							"bundled/coding/coding/prompts/spec-writer.md",
+							"bundled/coding/coding/prompts/planner.md"
+						],
+						"tags": [
+							"quality-gates",
+							"rubric",
+							"spec-writer",
+							"planner",
+							"four-factor",
+							"design-decision"
+						],
+						"createdAt": "2026-04-17T16:20:00.000Z"
+					}
+				},
+				{
+					"ordinal": 4,
+					"id": "b4c5d6e7-f8a9-4bcd-af01-2345678901ab",
+					"rawTimestamp": "2026-04-17T16:20:00.000Z",
+					"fields": {
+						"id": "b4c5d6e7-f8a9-4bcd-af01-2345678901ab",
+						"planSlug": "spec-plan-quality-gates-a",
+						"taskId": "TASK-190",
+						"sourceRole": "worker",
+						"type": "decision",
+						"content": "Cosmo's planning router has three named paths — spec-writer, cosmo-facilitates-dialogue, and planner-autonomous — not two. Collapsing to a binary spec-writer/planner router drops the existing Cosmo-facilitated interactive design dialogue behavior already encoded at bundled/coding/coding/prompts/cosmo.md:37-40. The three signals are: (1) fuzzy/no-spec → spec-writer; (2) user wants interactive design dialogue or request is concrete enough for architecture back-and-forth → cosmo-facilitates-dialogue (Cosmo loads /skill:design-dialogue, walks frame→shape→detail in-session, then spawns planner); (3) 'just decide'/'go ahead'/'commit', non-interactive, or post-dialogue → planner-autonomous. Each route requires a visible route announcement with Route, Why, and Next fields before Cosmo proceeds.",
+						"files": [
+							"bundled/coding/coding/prompts/cosmo.md",
+							"tests/prompts/cosmo.test.ts"
+						],
+						"tags": [
+							"cosmo",
+							"router",
+							"three-path",
+							"design-decision",
+							"interactive"
+						],
+						"createdAt": "2026-04-17T16:20:00.000Z"
+					}
+				},
+				{
+					"ordinal": 5,
+					"id": "c7d8e9f0-a1b2-4cde-b345-6789012345bc",
+					"rawTimestamp": "2026-04-17T16:20:00.000Z",
+					"fields": {
+						"id": "c7d8e9f0-a1b2-4cde-b345-6789012345bc",
+						"planSlug": "spec-plan-quality-gates-a",
+						"sourceRole": "plan-reviewer",
+						"type": "gotcha",
+						"content": "The plan-reviewer caught that the initial plan proposed a binary spec-writer/planner router, misreading the existing cosmo.md contract. bundled/coding/coding/prompts/cosmo.md:37-40 already encodes three distinct planning behaviors — fuzzy work to spec-writer, interactive design dialogue stays in Cosmo itself, and autonomous planner only once direction is settled. A worker implementing the binary router literally would have silently dropped the Cosmo-facilitated interactive design dialogue path. Lesson: before planning changes to a prompt file, read the actual current prompt — the existing contract may be richer than the design doc assumes.",
+						"files": [
+							"bundled/coding/coding/prompts/cosmo.md",
+							"missions/archive/plans/spec-plan-quality-gates-a/review.md"
+						],
+						"tags": [
+							"cosmo",
+							"plan-reviewer",
+							"gotcha",
+							"interface-fidelity",
+							"prompt-contract"
+						],
+						"createdAt": "2026-04-17T16:20:00.000Z"
+					}
+				},
+				{
+					"ordinal": 6,
+					"id": "d0e1f2a3-b4c5-4def-8123-456789abcdef",
+					"rawTimestamp": "2026-04-17T16:20:00.000Z",
+					"fields": {
+						"id": "d0e1f2a3-b4c5-4def-8123-456789abcdef",
+						"planSlug": "spec-plan-quality-gates-a",
+						"sourceRole": "plan-reviewer",
+						"type": "convention",
+						"content": "Readiness check blocks emitted before plan_create must remain conversational-only output — they must not become new persisted sections in spec.md or plan.md. The spec-writer output format persists exactly: Purpose, Users, User Experience, Acceptance Criteria, Scope, Assumptions, Open Questions. The planner output format (planner.md:218-248) must not gain a new Plan Readiness Check section. This boundary matters because downstream agents (planner, plan-reviewer) treat spec.md as the authoritative source of requirements; adding a Readiness Check section would change the artifact shape those agents consume. Enforce this boundary with a reviewer-verified QC criterion (not auto-tested) that inspects the persisted output format sections directly.",
+						"files": [
+							"bundled/coding/coding/prompts/spec-writer.md",
+							"bundled/coding/coding/prompts/planner.md"
+						],
+						"tags": [
+							"quality-gates",
+							"spec-writer",
+							"planner",
+							"persistence-boundary",
+							"convention",
+							"QC-007"
+						],
+						"createdAt": "2026-04-17T16:20:00.000Z"
+					}
+				},
+				{
+					"ordinal": 7,
+					"id": "e3f4a5b6-c7d8-4ef0-9234-56789abcdef0",
+					"rawTimestamp": "2026-04-17T16:20:00.000Z",
+					"fields": {
+						"id": "e3f4a5b6-c7d8-4ef0-9234-56789abcdef0",
+						"planSlug": "spec-plan-quality-gates-a",
+						"taskId": "TASK-192",
+						"sourceRole": "worker",
+						"type": "pattern",
+						"content": "Prompt-contract tests use the readFile + toContain pattern to lock durable phrases, not snapshot full prompt files. Pattern: import readFile from node:fs/promises, resolve the prompt path with new URL(..., import.meta.url), read with utf-8 encoding, then assert expect(content).toContain('exact-phrase') in describe/it blocks. Assert section labels and behavioral key phrases (routing signals, gate behavior, waiver language, threshold wording) — not every line of copy. This lets prompt wording be refined without causing test churn while still preventing silent deletion of routing contracts, phase-transition announcements, blocking rules, and non-persisted-output boundaries. See tests/prompts/integration-verifier.test.ts and tests/prompts/quality-manager.test.ts as canonical examples.",
+						"files": [
+							"tests/prompts/cosmo.test.ts",
+							"tests/prompts/spec-writer.test.ts",
+							"tests/prompts/planner.test.ts",
+							"tests/prompts/integration-verifier.test.ts",
+							"tests/prompts/quality-manager.test.ts"
+						],
+						"tags": [
+							"testing",
+							"prompt-contract",
+							"pattern",
+							"readFile",
+							"toContain"
+						],
+						"createdAt": "2026-04-17T16:20:00.000Z"
+					}
+				},
+				{
+					"ordinal": 8,
+					"id": "f6a7b8c9-d0e1-4f01-a345-6789abcdef01",
+					"rawTimestamp": "2026-04-17T16:20:00.000Z",
+					"fields": {
+						"id": "f6a7b8c9-d0e1-4f01-a345-6789abcdef01",
+						"planSlug": "spec-plan-quality-gates-a",
+						"taskId": "TASK-191",
+						"sourceRole": "worker",
+						"type": "convention",
+						"content": "When adding a pre-tool-call gate that references existing quality rules, the gate must point to the existing rule rather than restate it. planner.md step 5 already defines the QC rule (3-8 criteria, ≥⅓ failure/edge cases). The Plan Readiness Check block's Success criteria item says 'the QC section meets the rule already defined in step 5' rather than copying the counts. Adding a third independent copy of the same rule inside the same file creates silent drift risk: if the canonical rule changes, the gate copy does not update. The same principle applies anywhere in the codebase — references beat copies.",
+						"files": [
+							"bundled/coding/coding/prompts/planner.md",
+							"tests/prompts/planner.test.ts"
+						],
+						"tags": [
+							"planner",
+							"quality-gates",
+							"duplication",
+							"convention",
+							"PR-002"
+						],
+						"createdAt": "2026-04-17T16:20:00.000Z"
+					}
+				},
+				{
+					"ordinal": 9,
+					"id": "12a34b56-c7d8-4e9f-b012-3456789abcde",
+					"rawTimestamp": "2026-04-17T16:20:00.000Z",
+					"fields": {
+						"id": "12a34b56-c7d8-4e9f-b012-3456789abcde",
+						"planSlug": "spec-plan-quality-gates-a",
+						"taskId": "TASK-189",
+						"sourceRole": "worker",
+						"type": "convention",
+						"content": "Phase cadence (Frame → Shape → Detail) for spec-writer belongs in spec-writer.md, not in the design-dialogue skill. bundled/coding/coding/skills/design-dialogue/SKILL.md:98-100 explicitly says requirements capture belongs to spec-writer, and bundled/coding/coding/agents/spec-writer.ts:9-11 shows spec-writer does not load that skill. Encoding the cadence in the persona prompt satisfies the plan without violating agent-definition scope or broadening a skill past its explicit boundaries. General rule: if a skill explicitly excludes a behavior, put that behavior in the agent's persona prompt, not in the skill.",
+						"files": [
+							"bundled/coding/coding/prompts/spec-writer.md",
+							"bundled/coding/coding/skills/design-dialogue/SKILL.md",
+							"bundled/coding/coding/agents/spec-writer.ts"
+						],
+						"tags": [
+							"spec-writer",
+							"skills",
+							"design-dialogue",
+							"convention",
+							"D-009"
+						],
+						"createdAt": "2026-04-17T16:20:00.000Z"
+					}
+				},
+				{
+					"ordinal": 10,
+					"id": "23b45c67-d8e9-4f0a-8123-456789abcdef",
+					"rawTimestamp": "2026-04-17T16:20:00.000Z",
+					"fields": {
+						"id": "23b45c67-d8e9-4f0a-8123-456789abcdef",
+						"planSlug": "spec-plan-quality-gates-a",
+						"sourceRole": "quality-manager",
+						"type": "gotcha",
+						"content": "Expanding cosmo.subagents in bundled/coding/coding/agents/cosmo.ts breaks the coding-agents invariant test (tests/domains/coding-agents.test.ts) if that test hardcodes expected agent IDs. The round-1 finding F-001 was triggered by cosmo.subagents referencing new agent IDs absent from the invariant fixture. The fix: have the invariant test derive expected definitions from the real coding-domain loader (loadDomainsFromSources) rather than a hardcoded list, so the test stays valid as the allowlist evolves. Whenever a new agent is added to any subagents allowlist, verify the invariant test loads the full live domain rather than asserting against a static snapshot.",
+						"files": [
+							"tests/domains/coding-agents.test.ts",
+							"bundled/coding/coding/agents/cosmo.ts"
+						],
+						"tags": [
+							"cosmo",
+							"invariant-test",
+							"subagents",
+							"gotcha",
+							"quality-manager"
+						],
+						"createdAt": "2026-04-17T16:20:00.000Z"
+					}
+				}
+			]
+		}
+	],
+	"backfill": {
+		"archivedPlanSlugs": [
+			"agent-thinking-levels",
+			"analysis-capabilities",
+			"analysis-capability-runtime",
+			"analysis-gate-coverage",
+			"analysis-gate-rewiring",
+			"analysis-investigation-procedures",
+			"artifact-conformance-gate",
+			"artifact-format-redesign",
+			"chain-fanout",
+			"chain-profiler",
+			"code-structure-map",
+			"coding-agnostic-framework",
+			"dialogic-planner",
+			"domain-authoring",
+			"domain-config",
+			"domain-eject-and-tiers",
+			"drive-process-reaping",
+			"drive-resilience-state-model",
+			"drive-smoke-fixes",
+			"driver-primitives",
+			"durable-backend-step-model",
+			"durable-frontend-migration",
+			"durable-graph-scheduler",
+			"durable-run-store-events",
+			"episodic-log",
+			"episodic-log-detached-hardening",
+			"external-agent-orchestration",
+			"external-backends-and-cli",
+			"fallow-temp-exceptions-cleanup",
+			"forge-lifecycle",
+			"framework-extraction",
+			"init-command",
+			"integration-verifier",
+			"interactive-agent-switch",
+			"local-vs-shared",
+			"main-domain-and-cosmo-rename",
+			"memory-hardening",
+			"memory-interface",
+			"observability",
+			"orchestration-hardening",
+			"orchestration-refactor",
+			"orchestration-surface-consolidation",
+			"package-system",
+			"parallel-agent-spawning",
+			"planning-system-hardening",
+			"profile-playbooks",
+			"prompt-architecture",
+			"quality-contracts",
+			"roadmap-system",
+			"ruby-rails-skills",
+			"runtime-consolidation",
+			"session-lineage",
+			"spec-plan-intent",
+			"spec-plan-quality-gates-a",
+			"task-id-system"
+		],
+		"distilledSlugs": [
+			"analysis-capability-runtime",
+			"analysis-gate-coverage",
+			"analysis-gate-rewiring",
+			"analysis-investigation-procedures",
+			"artifact-conformance-gate",
+			"artifact-format-redesign",
+			"chain-fanout",
+			"chain-profiler",
+			"code-structure-map",
+			"domain-config",
+			"domain-eject-and-tiers",
+			"drive-process-reaping",
+			"drive-resilience-state-model",
+			"durable-backend-step-model",
+			"durable-frontend-migration",
+			"durable-graph-scheduler",
+			"durable-run-store-events",
+			"episodic-log",
+			"episodic-log-detached-hardening",
+			"forge-lifecycle",
+			"init-command",
+			"integration-verifier",
+			"interactive-agent-switch",
+			"local-vs-shared",
+			"memory-hardening",
+			"memory-interface",
+			"orchestration-refactor",
+			"parallel-agent-spawning",
+			"planning-system-hardening",
+			"profile-playbooks",
+			"prompt-architecture",
+			"runtime-consolidation",
+			"session-lineage",
+			"spec-plan-intent",
+			"spec-plan-quality-gates-a",
+			"task-id-system"
+		],
+		"missingSlugs": [
+			"agent-thinking-levels",
+			"analysis-capabilities",
+			"coding-agnostic-framework",
+			"dialogic-planner",
+			"domain-authoring",
+			"drive-smoke-fixes",
+			"driver-primitives",
+			"external-agent-orchestration",
+			"external-backends-and-cli",
+			"fallow-temp-exceptions-cleanup",
+			"framework-extraction",
+			"main-domain-and-cosmo-rename",
+			"observability",
+			"orchestration-hardening",
+			"orchestration-surface-consolidation",
+			"package-system",
+			"quality-contracts",
+			"roadmap-system",
+			"ruby-rails-skills"
+		],
+		"sourceInputs": {
+			"agent-thinking-levels": [
+				{
+					"path": "missions/archive/plans/agent-thinking-levels/plan.md",
+					"sha256": "ec3e66728234f11605ce3fba13b6a894cf0bd6c39b816efa30c277c307edc5f6"
+				}
+			],
+			"analysis-capabilities": [
+				{
+					"path": "missions/archive/plans/analysis-capabilities/plan.md",
+					"sha256": "40f07299651468805408f40be9a5fcda67293bbbf03cafa064eea0c565130d13"
+				},
+				{
+					"path": "missions/archive/plans/analysis-capabilities/review.md",
+					"sha256": "9970fe4f0ae4d35fa1e6402a1ec5a200d773c1fb4f9e5fcc7aaae541416fca87"
+				},
+				{
+					"path": "missions/archive/plans/analysis-capabilities/spec.md",
+					"sha256": "08c6fada3207683d56edde64ee3ab55be72de147c9820a6e46c291f7c7883ef9"
+				}
+			],
+			"coding-agnostic-framework": [
+				{
+					"path": "missions/archive/plans/coding-agnostic-framework/dogfood-drive-verification.md",
+					"sha256": "5d8ecb36ec13f72d1cd9bdff51830086b1eaa96e7a764cab1a06ab5cfaab4ef9"
+				},
+				{
+					"path": "missions/archive/plans/coding-agnostic-framework/integration-report.md",
+					"sha256": "2a643267fb79e727a3d383edac91f1259e8bfee045a8175b9748210d0a75475e"
+				},
+				{
+					"path": "missions/archive/plans/coding-agnostic-framework/leakage-findings.md",
+					"sha256": "65e75a501010efbb5fb10cc81fc3f37bc0b21acfa2e7af2aee704de993071877"
+				},
+				{
+					"path": "missions/archive/plans/coding-agnostic-framework/plan.md",
+					"sha256": "c5407d4a9b2528645142fc4807eff01c4e522cf4d3163c6f14a5748b95598e8e"
+				},
+				{
+					"path": "missions/archive/plans/coding-agnostic-framework/qm.md",
+					"sha256": "1c346672e0dc951d6b6261a11af8672147e3e4c122c8e190276148d3199e3b69"
+				},
+				{
+					"path": "missions/archive/plans/coding-agnostic-framework/review.md",
+					"sha256": "f0c1c325596771f2ff1630af3109025d32e4dc626b2fa27667b89af2f8776248"
+				},
+				{
+					"path": "missions/archive/plans/coding-agnostic-framework/spec.md",
+					"sha256": "30c558976c19ad8a44f1cae291bb0881a500a396680e9f4702da605c5a4a1b01"
+				},
+				{
+					"path": "missions/archive/plans/coding-agnostic-framework/test-decoupling-ledger.md",
+					"sha256": "972ba86eb65c41bce0df962ac5729df86dc28ff2b3628800066cebdcc831b060"
+				}
+			],
+			"dialogic-planner": [
+				{
+					"path": "missions/archive/plans/dialogic-planner/plan.md",
+					"sha256": "e2f4c8f3e312cef28832c2bec7b43464421f1f2ed527f6b83ce97fcf67feeaf6"
+				}
+			],
+			"domain-authoring": [
+				{
+					"path": "missions/archive/plans/domain-authoring/integration-report.md",
+					"sha256": "e8fd3d0c93c47bf7ae7a7ccd35a7d8cd37f1d7cd90ee8416e12c5e49f7a8e8cc"
+				},
+				{
+					"path": "missions/archive/plans/domain-authoring/plan.md",
+					"sha256": "387a7db3bacf33deecf4a6065900b212caa6d539b27808a3a99b7301eaf5a60d"
+				},
+				{
+					"path": "missions/archive/plans/domain-authoring/review.md",
+					"sha256": "8328eb01b25b368328e0c78459e2835aeb1f3f4da71c78e13491e72e48ccbddd"
+				},
+				{
+					"path": "missions/archive/plans/domain-authoring/spec.md",
+					"sha256": "aa33196a49f7512f9c40bfe3e08436701534549aae21e474ad94d826341b11e5"
+				}
+			],
+			"drive-smoke-fixes": [
+				{
+					"path": "missions/archive/plans/drive-smoke-fixes/plan.md",
+					"sha256": "67595eda77f1f83916d64254e2f9854f5d939ef05abab6131f167a1d679c09f4"
+				}
+			],
+			"driver-primitives": [
+				{
+					"path": "missions/archive/plans/driver-primitives/plan.md",
+					"sha256": "b69a80acce523cd3f5357063850799fbe84eed7d57a49fda01d7d7314943d2bc"
+				},
+				{
+					"path": "missions/archive/plans/driver-primitives/review.md",
+					"sha256": "0929c4bb306c2645cbae4fa91cba4fc53de0d48c3b81c228c7f29f24199ed62a"
+				}
+			],
+			"external-agent-orchestration": [
+				{
+					"path": "missions/archive/plans/external-agent-orchestration/plan.md",
+					"sha256": "7fbbd204ff1fbe57bf95c36810b96dd9388db90d8c72216d3a2167f359bc7572"
+				},
+				{
+					"path": "missions/archive/plans/external-agent-orchestration/review.md",
+					"sha256": "bb214cc1932b5bf905e3e0130e83a8d442581d0e1bf54713bb791b4983cbe93d"
+				},
+				{
+					"path": "missions/archive/plans/external-agent-orchestration/spec.md",
+					"sha256": "c7dc0f577c8e94c0fd027802a335e5d3847d32a981730f9a1679d668bd5eef50"
+				}
+			],
+			"external-backends-and-cli": [
+				{
+					"path": "missions/archive/plans/external-backends-and-cli/plan.md",
+					"sha256": "9e971dc2819f0d67e89f78da9aa62e5ea89efb3b3e059219ab819d5fb2057413"
+				},
+				{
+					"path": "missions/archive/plans/external-backends-and-cli/review.md",
+					"sha256": "fa658a51055db66f97fd73d3cd544546dc3a45cc3533d3f15239959033436ada"
+				}
+			],
+			"fallow-temp-exceptions-cleanup": [
+				{
+					"path": "missions/archive/plans/fallow-temp-exceptions-cleanup/plan.md",
+					"sha256": "7fb50f734562dfe83bb1e0e88c571403c735e58a632325ea22eb04eeeb5d59e9"
+				},
+				{
+					"path": "missions/archive/plans/fallow-temp-exceptions-cleanup/review.md",
+					"sha256": "99e5a272bc3efa452f609c0e69958ff59d8c1f1f0b2b02d8508071430320380e"
+				}
+			],
+			"framework-extraction": [
+				{
+					"path": "missions/archive/plans/framework-extraction/plan.md",
+					"sha256": "e7e422fdab93101a7f3ef5c624a2e281a338fd98227ae8cd0c2d45c8b3a933ad"
+				},
+				{
+					"path": "missions/archive/plans/framework-extraction/spec.md",
+					"sha256": "2594bec80cad9eeffc92e8b34b030c9ec942111a3f0630a9303d06b4d61276b5"
+				}
+			],
+			"main-domain-and-cosmo-rename": [
+				{
+					"path": "missions/archive/plans/main-domain-and-cosmo-rename/plan.md",
+					"sha256": "cc8fb56a3dc6e9d9688d84a76e35d41606792f8ba609dc5f0a1173469fe98c89"
+				},
+				{
+					"path": "missions/archive/plans/main-domain-and-cosmo-rename/review.md",
+					"sha256": "322001de6570b62f0a57d01490594c1fad91cf53f5220d54e13b587c6f343397"
+				}
+			],
+			"observability": [
+				{
+					"path": "missions/archive/plans/observability/plan.md",
+					"sha256": "78d5166437166d4e7c39e9440767a73851b140e60d00327f19f87b094b972a8d"
+				}
+			],
+			"orchestration-hardening": [
+				{
+					"path": "missions/archive/plans/orchestration-hardening/plan.md",
+					"sha256": "d8ef62e49d5b47e19a490cb128947e92d301bd72a12fd6f4c57bd82dc9b7f1cd"
+				},
+				{
+					"path": "missions/archive/plans/orchestration-hardening/spec.md",
+					"sha256": "2e640fde0fb04efc12242cb4805e38e4d4404b730a770cec70f64cbee5e1a2c0"
+				}
+			],
+			"orchestration-surface-consolidation": [
+				{
+					"path": "missions/archive/plans/orchestration-surface-consolidation/plan.md",
+					"sha256": "5377afeff42fe69dd646306191be16db7402710a055b6a88798338fd14e91c36"
+				},
+				{
+					"path": "missions/archive/plans/orchestration-surface-consolidation/review.md",
+					"sha256": "a9bf93b057e26f9f1393314c53613f0a6eec05146bf3ca03b6fbc6a455ac55a7"
+				},
+				{
+					"path": "missions/archive/plans/orchestration-surface-consolidation/spec.md",
+					"sha256": "ae9c5cff12f14d9445b8da5783e349160214566b9df7b7a6d42291bbe2553e23"
+				}
+			],
+			"package-system": [
+				{
+					"path": "missions/archive/plans/package-system/plan.md",
+					"sha256": "fa9605bb402a8aa59a5ec977b2cb9dbd4ed73f75eceb98d377fac8f964b0aa8e"
+				},
+				{
+					"path": "missions/archive/plans/package-system/spec.md",
+					"sha256": "a3e3a5b692736e1373266c542f01ecd78626546d0b7187c98f43269154d0fa01"
+				}
+			],
+			"quality-contracts": [
+				{
+					"path": "missions/archive/plans/quality-contracts/plan.md",
+					"sha256": "3e42233d5568a02fb182af5fbc519f60a56b503fdd386c6c393c62aa63625a0b"
+				}
+			],
+			"roadmap-system": [
+				{
+					"path": "missions/archive/plans/roadmap-system/plan.md",
+					"sha256": "078ce4c47bb23f4b3c974107210d81959c6990ebaae82e2942befa0daad2925c"
+				}
+			],
+			"ruby-rails-skills": [
+				{
+					"path": "missions/archive/plans/ruby-rails-skills/plan.md",
+					"sha256": "f36cbde726f8fbaae156dd057365b56fe713a8dd78f0fa570bff17e923a9e136"
+				},
+				{
+					"path": "missions/archive/plans/ruby-rails-skills/spec.md",
+					"sha256": "c42fa753642e14ff6b3adeb10d39751ef997c8f8e895b976338c549995731492"
+				}
+			]
+		}
+	}
+}

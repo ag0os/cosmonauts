@@ -75,6 +75,8 @@ const BASE_PARAMS = {
 	promptContent: "test prompt",
 	tools: [],
 	extensionPaths: [],
+	extensionFactories: [],
+	knowledgeSurfaceEnabled: false,
 	skillsOverride: undefined,
 	additionalSkillPaths: undefined,
 	projectContext: false,
@@ -119,6 +121,91 @@ describe("createSession", () => {
 		expect(mocks.buildSessionParams).toHaveBeenCalledWith(
 			expect.objectContaining({
 				extraExtensionPaths: ["/tmp/extensions/agent-switch"],
+			}),
+		);
+	});
+
+	test("preserves legacy registration and authorization while enforcing one enabled recall across every session path @cosmo-behavior plan:knowledge-surface#B-005", async () => {
+		const initialFactory = {
+			name: "cosmonauts-knowledge-surface",
+			factory: vi.fn(),
+		};
+		const switchedFactory = {
+			name: "cosmonauts-knowledge-surface",
+			factory: vi.fn(),
+		};
+		mocks.buildSessionParams
+			.mockResolvedValueOnce({
+				...BASE_PARAMS,
+				extensionFactories: [initialFactory],
+				knowledgeSurfaceEnabled: true,
+			})
+			.mockResolvedValueOnce({
+				...BASE_PARAMS,
+				extensionFactories: [switchedFactory],
+				knowledgeSurfaceEnabled: true,
+			});
+		mocks.createAgentSessionServices.mockImplementation(async (options) => ({
+			diagnostics: {},
+			resourceLoader: {
+				getExtensions: () => ({
+					extensions: (
+						options.resourceLoaderOptions.extensionFactories ?? []
+					).map((factory: { name: string }) => ({
+						path: `<inline:${factory.name}>`,
+						tools: new Map([["recall", {}]]),
+					})),
+					errors: [],
+					runtime: {},
+				}),
+			},
+		}));
+		mocks.createAgentSessionRuntime.mockImplementation(
+			async (
+				createRuntime: (args: {
+					cwd: string;
+					sessionManager: unknown;
+					sessionStartEvent?: unknown;
+				}) => Promise<unknown>,
+				runtimeOptions: { cwd: string; sessionManager: unknown },
+			) => {
+				await createRuntime({
+					cwd: runtimeOptions.cwd,
+					sessionManager: runtimeOptions.sessionManager,
+				});
+				setPendingSwitch("planner");
+				return createRuntime({
+					cwd: runtimeOptions.cwd,
+					sessionManager: runtimeOptions.sessionManager,
+				});
+			},
+		);
+
+		await createSession({
+			definition: TEST_DEF,
+			cwd: "/tmp/project",
+			domainsDir: "/tmp/domains",
+			persistent: false,
+			agentRegistry: {
+				resolve: () => ({ ...TEST_DEF, id: "planner" }),
+			} as unknown as AgentRegistry,
+			domainContext: "coding",
+		});
+
+		expect(mocks.createAgentSessionServices).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({
+				resourceLoaderOptions: expect.objectContaining({
+					extensionFactories: [initialFactory],
+				}),
+			}),
+		);
+		expect(mocks.createAgentSessionServices).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({
+				resourceLoaderOptions: expect.objectContaining({
+					extensionFactories: [switchedFactory],
+				}),
 			}),
 		);
 	});

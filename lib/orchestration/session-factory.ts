@@ -22,7 +22,10 @@ import type { AgentDefinition } from "../agents/types.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
 import { validateSlug } from "../plans/plan-manager.ts";
 import { sessionsDirForPlan } from "../sessions/session-store.ts";
-import { buildToolAllowlist } from "./definition-resolution.ts";
+import {
+	assertEnabledRecallOwner,
+	buildToolAllowlist,
+} from "./definition-resolution.ts";
 import type { SpawnConfig } from "./types.ts";
 
 // ============================================================================
@@ -82,6 +85,9 @@ export async function createAgentSessionFromDefinition(
 		...(params.extensionPaths.length > 0 && {
 			additionalExtensionPaths: params.extensionPaths,
 		}),
+		...(params.extensionFactories?.length > 0 && {
+			extensionFactories: params.extensionFactories,
+		}),
 		...(params.skillsOverride && { skillsOverride: params.skillsOverride }),
 		...(params.additionalSkillPaths && {
 			additionalSkillPaths: params.additionalSkillPaths,
@@ -91,6 +97,9 @@ export async function createAgentSessionFromDefinition(
 		}),
 	});
 	await loader.reload();
+	if (params.knowledgeSurfaceEnabled) {
+		assertEnabledRecallOwner(loader);
+	}
 
 	const toolAllowlist = buildToolAllowlist(params.tools, loader);
 
