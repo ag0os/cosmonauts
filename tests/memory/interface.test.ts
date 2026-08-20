@@ -1571,18 +1571,21 @@ describe("frozen knowledge seed migration", () => {
 			]),
 		).toContain("active-jsonl:lib/sessions/knowledge.ts");
 
-		const correctedPointer = "knowledge/session-lineage.md";
-		const pointerMutation = new Map(files);
-		pointerMutation.set(
-			correctedPointer,
-			(pointerMutation.get(correctedPointer) ?? "").replace(
-				"Human-curated records live under `knowledge/`; machine distillations land under `memory/agent/proposals/` until human promotion.",
-				"`memory/<slug>.knowledge.jsonl` is the durable machine-ingest format.",
-			),
+		// Legacy bodies migrate byte-for-byte (Design §6). Mutating one must be
+		// caught. The mutation is asserted to have actually applied so this
+		// negative can never silently degrade into a no-op replace.
+		const mutatedDestination = "knowledge/session-lineage.md";
+		const originalBody = files.get(mutatedDestination) ?? "";
+		const bodyMutation = new Map(files);
+		const mutatedBody = originalBody.replace(
+			"matching the future SQLite/vector-ingestion shape.",
+			"matching some other shape.",
 		);
+		expect(mutatedBody).not.toBe(originalBody);
+		bodyMutation.set(mutatedDestination, mutatedBody);
 		expect(
-			auditMigratedSeed(inventory, pointerMutation, activeLegacyPaths),
-		).toContain(`body:${correctedPointer}`);
+			auditMigratedSeed(inventory, bodyMutation, activeLegacyPaths),
+		).toContain(`body:${mutatedDestination}`);
 	});
 
 	test("records a passing 20-turn recurring scan-cost gate against the migrated corpus", async () => {
@@ -1733,7 +1736,7 @@ function auditMigratedSeed(
 				legacyDistilledAt: frozen.distilledAtRaw,
 				legacySourceSha256: frozen.sha256,
 			},
-			expectedBody: correctedLegacyBody(frozen),
+			expectedBody: frozen.body,
 			issues,
 		});
 	}
@@ -1878,53 +1881,6 @@ function mapLegacyKnowledgeType(type: string): string {
 	if (type === "pattern") return "convention";
 	throw new Error(`Uninventoried legacy knowledge type: ${type}`);
 }
-
-function correctedLegacyBody(frozen: FrozenMarkdown): string {
-	if (frozen.path !== "memory/session-lineage.md") return frozen.body;
-	let body = frozen.body;
-	for (const [before, after] of SESSION_LINEAGE_POINTER_CORRECTIONS) {
-		if (!body.includes(before)) {
-			throw new Error(`Missing frozen session-lineage pointer: ${before}`);
-		}
-		body = body.replace(before, after);
-	}
-	return body;
-}
-
-const SESSION_LINEAGE_POINTER_CORRECTIONS = [
-	[
-		"while durable memory stays in `memory/`.",
-		"while curated knowledge stays in `knowledge/` and machine drafts stay in `memory/agent/proposals/`.",
-	],
-	[
-		"Session types, manifests, transcripts, and knowledge-bundle I/O live in `lib/sessions/` with no imports from `lib/orchestration/`, so orchestration depends on the data layer rather than the reverse.",
-		"Session types, manifests, and transcripts live in `lib/sessions/` with no imports from `lib/orchestration/`, so orchestration depends on the data layer rather than the reverse.",
-	],
-	[
-		"**Defined durable memory as JSONL knowledge records with a metadata header.** `memory/<slug>.knowledge.jsonl` starts with a `_meta` line and then stores one self-contained `KnowledgeRecord` per line, matching the future SQLite/vector-ingestion shape.",
-		"**Defined durable knowledge as OKF v0.1 markdown records.** Human-curated records live under `knowledge/`; machine distillations land under `memory/agent/proposals/` until human promotion.",
-	],
-	[
-		"`archivePlan` moves `missions/sessions/<slug>/` into the archive, but `memory/<slug>.knowledge.jsonl` and `memory/<slug>.md` are intentionally never moved.",
-		"`archivePlan` moves `missions/sessions/<slug>/` into the archive, but curated `knowledge/` and proposal records under `memory/agent/proposals/` are intentionally never moved.",
-	],
-	[
-		"**Two memory outputs for different consumers**: `memory/<slug>.md` is the human summary, while `memory/<slug>.knowledge.jsonl` is the structured machine-ingest format.",
-		"**Two knowledge paths with separate authority**: human-curated OKF records live in `knowledge/`, while machine-generated OKF drafts remain in `memory/agent/proposals/` until human promotion.",
-	],
-	[
-		"`lib/sessions/types.ts`, `lib/sessions/knowledge.ts`, `lib/sessions/manifest.ts`, `lib/sessions/session-store.ts`, `lib/sessions/index.ts` — new leaf module for session lineage types, transcript generation, manifest persistence, and knowledge-bundle JSONL I/O.",
-		"`lib/sessions/types.ts`, `lib/sessions/manifest.ts`, `lib/sessions/session-store.ts`, `lib/sessions/index.ts` — leaf module for session lineage types, transcript generation, and manifest persistence; the retired knowledge-bundle I/O no longer lives here.",
-	],
-	[
-		`\`${["bundled", ["cod", "ing"].join(""), ["cod", "ing"].join(""), "agents", "distiller.ts"].join("/")}\` and \`${["bundled", ["cod", "ing"].join(""), ["cod", "ing"].join(""), "prompts", "distiller.md"].join("/")}\` — define the distiller role and its knowledge-record output contract.`,
-		`\`${["bundled", ["cod", "ing"].join(""), "agents", "distiller.ts"].join("/")}\` and \`${["bundled", ["cod", "ing"].join(""), "prompts", "distiller.md"].join("/")}\` — define the distiller role and its OKF proposal output contract.`,
-	],
-	[
-		"`domains/shared/skills/archive/SKILL.md` — documents the three-tier pipeline from raw sessions to transcripts to durable knowledge records.",
-		"`domains/shared/skills/archive/SKILL.md` — documents transcript discovery and the attributable OKF proposal workflow.",
-	],
-] as const;
 
 async function readKnowledgeCorpus(
 	projectRoot: string,

@@ -201,29 +201,35 @@ export function registerKnowledgeProposalTool(
 		description:
 			"Write one attributable OKF knowledge proposal for later human review.",
 		executionMode: "sequential",
-		parameters: Type.Object({
-			planSlug: Type.String({ description: "Source plan slug." }),
-			type: Type.Union(KnowledgeTypeLiterals, {
-				description: "Ratified OKF knowledge type.",
-			}),
-			title: Type.String({ description: "Concise proposal title." }),
-			description: Type.String({
-				description: "One-sentence proposal summary.",
-			}),
-			content: Type.String({ description: "Self-contained proposal body." }),
-			tags: Type.Array(Type.String(), {
-				description: "Categorical proposal tags.",
-			}),
-			source: Type.String({
-				description: "Specific source artifact for this proposal.",
-			}),
-			sourceDate: Type.Optional(
-				Type.String({
-					description:
-						"Canonical source timestamp when the source supplies one.",
+		parameters: Type.Object(
+			{
+				planSlug: Type.String({ description: "Source plan slug." }),
+				type: Type.Union(KnowledgeTypeLiterals, {
+					description: "Ratified OKF knowledge type.",
 				}),
-			),
-		}),
+				title: Type.String({ description: "Concise proposal title." }),
+				description: Type.String({
+					description: "One-sentence proposal summary.",
+				}),
+				content: Type.String({ description: "Self-contained proposal body." }),
+				tags: Type.Array(Type.String(), {
+					description: "Categorical proposal tags.",
+				}),
+				source: Type.String({
+					description: "Specific source artifact for this proposal.",
+				}),
+				sourceDate: Type.Optional(
+					Type.String({
+						description:
+							"Canonical source timestamp when the source supplies one.",
+					}),
+				),
+				// Closed schema: the proposal tool carries no output authority, so an
+				// unknown property — notably `path` or `resource` — must be rejected
+				// rather than silently ignored (B-013).
+			},
+			{ additionalProperties: false },
+		),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 			let draft: MemoryRecordDraft;
 			try {

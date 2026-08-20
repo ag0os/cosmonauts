@@ -22,34 +22,34 @@ legacySourceSha256: 9365c9a8cd5c6df9b6e5d1c3b95beb4f4ae2fb81689d77b6b2858ab182a3
 
 ## What Was Built
 
-Added plan-scoped session capture for chain and workflow execution. When a spawn carries a `planSlug`, Cosmonauts now persists the raw Pi session as JSONL under `missions/sessions/<slug>/`, writes a readable transcript markdown file, and records the session in a per-plan manifest with lineage and stats. The same plan also introduced a dedicated `lib/sessions/` module, a distiller agent, and archive support so session artifacts move into `missions/archive/sessions/<slug>/` while curated knowledge stays in `knowledge/` and machine drafts stay in `memory/agent/proposals/`.
+Added plan-scoped session capture for chain and workflow execution. When a spawn carries a `planSlug`, Cosmonauts now persists the raw Pi session as JSONL under `missions/sessions/<slug>/`, writes a readable transcript markdown file, and records the session in a per-plan manifest with lineage and stats. The same plan also introduced a dedicated `lib/sessions/` module, a distiller agent, and archive support so session artifacts move into `missions/archive/sessions/<slug>/` while durable memory stays in `memory/`.
 
 ## Key Decisions
 
 - **Made persistence opt-in through `planSlug`.** Plan-linked runs get file-backed sessions, but ordinary interactive and non-plan spawns still use in-memory sessions so existing behavior stays unchanged.
-- **Kept `lib/sessions/` as a leaf module.** Session types, manifests, and transcripts live in `lib/sessions/` with no imports from `lib/orchestration/`, so orchestration depends on the data layer rather than the reverse.
+- **Kept `lib/sessions/` as a leaf module.** Session types, manifests, transcripts, and knowledge-bundle I/O live in `lib/sessions/` with no imports from `lib/orchestration/`, so orchestration depends on the data layer rather than the reverse.
 - **Used transcripts as the distillation input, not raw JSONL.** Transcript generation keeps user prompts, assistant text/thinking, and tool call names, while dropping tool arguments and tool-result payloads to make later distillation readable and signal-heavy.
-- **Defined durable knowledge as OKF v0.1 markdown records.** Human-curated records live under `knowledge/`; machine distillations land under `memory/agent/proposals/` until human promotion.
-- **Separated ephemeral session artifacts from durable memory.** `archivePlan` moves `missions/sessions/<slug>/` into the archive, but curated `knowledge/` and proposal records under `memory/agent/proposals/` are intentionally never moved.
+- **Defined durable memory as JSONL knowledge records with a metadata header.** `memory/<slug>.knowledge.jsonl` starts with a `_meta` line and then stores one self-contained `KnowledgeRecord` per line, matching the future SQLite/vector-ingestion shape.
+- **Separated ephemeral session artifacts from durable memory.** `archivePlan` moves `missions/sessions/<slug>/` into the archive, but `memory/<slug>.knowledge.jsonl` and `memory/<slug>.md` are intentionally never moved.
 - **Made lineage capture best-effort in the spawner `finally` path.** Failed spawns should still record outcome/transcript data when possible, but lineage write failures must not crash the real work.
 
 ## Patterns Established
 
 - **Plan session layout**: `missions/sessions/<slug>/manifest.json` plus `<role>-<uuid>.jsonl` and matching `<role>-<uuid>.transcript.md` files.
 - **Plan identity threading**: `completionLabel: plan:<slug>` is the canonical chain/workflow label; `derivePlanSlug()` is the seam that turns that label into persistence context for downstream spawns.
-- **Two knowledge paths with separate authority**: human-curated OKF records live in `knowledge/`, while machine-generated OKF drafts remain in `memory/agent/proposals/` until human promotion.
+- **Two memory outputs for different consumers**: `memory/<slug>.md` is the human summary, while `memory/<slug>.knowledge.jsonl` is the structured machine-ingest format.
 - **Transcript-first distillation order**: planner reasoning first, then worker implementation sessions, then reviewer/quality sessions so later distillation preserves design intent before implementation detail.
 - **Per-record knowledge shape**: each knowledge record is one concept with explicit `type`, `files`, `tags`, provenance, and standalone `content` suitable for semantic search.
 
 ## Files Changed
 
-- `lib/sessions/types.ts`, `lib/sessions/manifest.ts`, `lib/sessions/session-store.ts`, `lib/sessions/index.ts` — leaf module for session lineage types, transcript generation, and manifest persistence; the retired knowledge-bundle I/O no longer lives here.
+- `lib/sessions/types.ts`, `lib/sessions/knowledge.ts`, `lib/sessions/manifest.ts`, `lib/sessions/session-store.ts`, `lib/sessions/index.ts` — new leaf module for session lineage types, transcript generation, manifest persistence, and knowledge-bundle JSONL I/O.
 - `lib/orchestration/types.ts` and `lib/orchestration/chain-runner.ts` — added `planSlug` plumbing and derivation from `plan:<slug>` completion labels.
 - `lib/orchestration/session-factory.ts` — switches plan-linked spawns from `SessionManager.inMemory()` to file-backed `SessionManager.open()` sessions under `missions/sessions/<slug>/`.
 - `lib/orchestration/agent-spawner.ts` — captures final messages before disposal, writes transcript markdown, and appends manifest records after success or failure.
 - `lib/plans/archive.ts` — archives session directories alongside plans and tasks while leaving `memory/` untouched.
-- `bundled/coding/agents/distiller.ts` and `bundled/coding/prompts/distiller.md` — define the distiller role and its OKF proposal output contract.
-- `domains/shared/skills/archive/SKILL.md` — documents transcript discovery and the attributable OKF proposal workflow.
+- `bundled/coding/coding/agents/distiller.ts` and `bundled/coding/coding/prompts/distiller.md` — define the distiller role and its knowledge-record output contract.
+- `domains/shared/skills/archive/SKILL.md` — documents the three-tier pipeline from raw sessions to transcripts to durable knowledge records.
 
 ## Gotchas & Lessons
 

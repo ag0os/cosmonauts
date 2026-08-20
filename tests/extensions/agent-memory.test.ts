@@ -2761,7 +2761,12 @@ describe("agent-memory extension", () => {
 		const parameters = contract.parameters as {
 			readonly properties: Record<string, unknown>;
 			readonly required: readonly string[];
+			readonly additionalProperties?: unknown;
 		};
+		// The tool carries no output authority, so the schema must REJECT an
+		// unknown property rather than accept and ignore it. Absence from
+		// `properties` alone would still let `resource`/`path` validate.
+		expect(parameters.additionalProperties).toBe(false);
 		expect(Object.keys(parameters.properties).sort()).toEqual([
 			"content",
 			"description",

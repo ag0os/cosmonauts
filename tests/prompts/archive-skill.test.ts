@@ -64,6 +64,15 @@ describe("archive skill", () => {
 			expect(guidance).not.toMatch(
 				/\.knowledge\.jsonl|SQLite|vector embedding/i,
 			);
+			// Proposal-only output: guidance must not ALSO instruct writing the
+			// retired root distillation. Asserting the proposal wording is present
+			// is not enough — a contradicting legacy instruction can sit beside it.
+			expect(guidance).not.toMatch(
+				/write\s+to\s+`?memory\/<(?:plan)?[Ss]lug>\.md`?/i,
+			);
+			expect(guidance).not.toMatch(
+				/\*\*Location\*\*:\s*`?memory\/`?\s+at the project root/i,
+			);
 		}
 
 		expect(definition).toContain('id: "distiller"');

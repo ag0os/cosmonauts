@@ -5,7 +5,7 @@ description: Distill archived plans and tasks into concise memory files that cap
 
 # Archive Distillation
 
-After a plan is archived, its learnings should be distilled into a memory file — a concise record of what was built, why, and what the next person working in this area needs to know.
+After a plan is archived, its learnings should be distilled into durable knowledge — a concise record of what was built, why, and what the next person working in this area needs to know.
 
 ## When to Distill
 
@@ -43,19 +43,17 @@ Focus on what helps the next agent or human working in this area. Ask:
 - **What files were affected?** — Which areas of the codebase changed, with enough context to know why.
 - **What surprised you?** — Gotchas, edge cases, things that would bite someone unfamiliar with this area.
 
-### 4. Write the Memory File
+### 4. Submit the Distillation
 
-Write to `memory/<slug>.md` at the project root. Create the `memory/` directory if it does not exist.
+Do not write a root `memory/<slug>.md` file — that format is retired and its read/write path no longer exists. Machine-produced distillations are submitted as OKF proposals through `propose_knowledge`, which writes only under `memory/agent/proposals/`. See "Machine Knowledge Proposals" below for the full contract.
 
-## Memory File Format
+Curated records live under `knowledge/`, and content enters it only by a human act — a direct edit or a reviewed promotion. Never write there from an agent pathway.
+
+## Distillation Shape
+
+The sections below describe what a good distillation *says*. Use them to shape proposal content; they are not a file template for a separate output.
 
 ```markdown
----
-source: archive
-plan: <slug>
-distilledAt: <ISO 8601 date>
----
-
 # <Plan Title>
 
 ## What Was Built
@@ -78,12 +76,6 @@ distilledAt: <ISO 8601 date>
 - [Lesson: edge case or constraint that is not obvious from the code]
 ```
 
-### Frontmatter Fields
-
-- `source` — Always `archive` for plan distillations. Tracks provenance.
-- `plan` — The plan slug. Links the memory back to the archived plan.
-- `distilledAt` — ISO 8601 timestamp of when the distillation was created.
-
 ### Section Guidelines
 
 **What Was Built** — Outcome, not process. "Added an in-memory LRU cache to the API client with TTL-based expiration" not "Created cache.ts, modified client.ts, added tests."
@@ -96,11 +88,11 @@ distilledAt: <ISO 8601 date>
 
 **Gotchas & Lessons** — The most valuable section. Things that are true but not obvious. "The cache must be invalidated before the response is returned, not after — reversing this order causes stale reads in write-then-read patterns."
 
-## Where Memory Files Go
+## Where Distilled Knowledge Goes
 
-- **Location**: `memory/` at the project root
-- **Naming**: `<slug>.md` matching the plan slug (e.g., `memory/response-cache.md`)
-- **Purpose**: Project-level context files consumed by agents alongside AGENTS.md and skills. They accumulate institutional knowledge about the codebase.
+- **Machine output**: `memory/agent/proposals/` — the sole root a distillation pathway may write. Records land there attributably and await review.
+- **Curated knowledge**: `knowledge/` at the project root, with a user-scoped twin under `~/.cosmonauts/knowledge/`. Human-curated, git-tracked, readable by every agent. Content enters only by human edit or reviewed promotion.
+- **Purpose**: Project-level context consumed by agents alongside AGENTS.md and skills. It accumulates institutional knowledge about the codebase.
 
 ## Good vs Bad Distillation
 
@@ -128,7 +120,7 @@ The memory format is general. While archives are the primary source, the same st
 - **Design reviews** — Discussion notes distilled into decisions and patterns
 - **Decision records** — ADRs distilled into the same sections
 
-The `source` frontmatter field tracks provenance. Use `archive` for plan distillations, and other values (e.g., `session`, `design-review`) for other sources. The memory format stays the same regardless of where the knowledge came from.
+Provenance travels with every machine-written record as `writer`, `source`, and `date`, where `source` names the specific supporting artifact the knowledge came from. The record shape stays the same regardless of which source supplied it.
 
 ---
 
