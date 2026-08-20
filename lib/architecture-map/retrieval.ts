@@ -15,7 +15,11 @@ import { assertBoundProjectRoot } from "../memory/paths.ts";
 import { typescriptSourceAnalyzer } from "./analyzer.ts";
 import { loadArchitectureMapConfig } from "./config.ts";
 import { checkArchitectureMapStatFreshness } from "./freshness.ts";
-import type { ArchitectureMapFreshness, SourceAnalyzer } from "./types.ts";
+import type {
+	ArchitectureMapFreshness,
+	ArchitectureMapScanObserver,
+	SourceAnalyzer,
+} from "./types.ts";
 
 const ARCHITECTURE_DIR = "memory/architecture";
 const INDEX_PATH = "index.md";
@@ -38,6 +42,7 @@ export interface ArchitectureMapMemoryDeps {
 		readonly projectRoot: string;
 		readonly config: Awaited<ReturnType<typeof loadArchitectureMapConfig>>;
 		readonly analyzer: Pick<SourceAnalyzer, "getConfigInputs">;
+		readonly observer?: ArchitectureMapScanObserver;
 	}) => Promise<ArchitectureMapFreshness>;
 }
 
@@ -83,31 +88,31 @@ export function createArchitectureMapMemoryStore(
 			query: MemoryQuery,
 		): Promise<MemoryRetrieveResult> {
 			const startedAt = performance.now();
+			const tally = { filesScanned: 0, bytesRead: 0 };
+			const observer = createScanObserver(tally);
 			assertBoundProjectRoot({
 				boundProjectRoot: projectRoot,
 				requestedProjectRoot: scope.projectRoot,
 			});
-			const config = await deps.loadConfig(projectRoot);
+			const config = await deps.loadConfig(projectRoot, observer);
 			const freshness = await deps.checkFreshness({
 				projectRoot,
 				config,
 				analyzer: deps.analyzer,
+				observer,
 			});
 			const result = await retrieveArchitectureMap({
 				projectRoot,
 				freshness,
 				scope,
 				query,
+				observer,
 			});
 			return {
 				...result,
 				stats: {
-					filesScanned: result.records.length,
-					bytesRead: result.records.reduce(
-						(total, record) =>
-							total + Buffer.byteLength(record.content, "utf-8"),
-						0,
-					),
+					filesScanned: tally.filesScanned,
+					bytesRead: tally.bytesRead,
 					durationMs: performance.now() - startedAt,
 				},
 			};
@@ -127,6 +132,7 @@ async function retrieveArchitectureMap(options: {
 	readonly freshness: ArchitectureMapFreshness;
 	readonly scope: MemoryScopeContext;
 	readonly query: MemoryQuery;
+	readonly observer: ArchitectureMapScanObserver;
 }): Promise<MemoryRetrieveResult> {
 	const projectRequested = options.scope.scopes.includes("project");
 	const skippedScopes = options.scope.scopes
@@ -174,6 +180,7 @@ async function retrieveArchitectureMap(options: {
 			projectRoot: options.projectRoot,
 			resource,
 			freshness: options.freshness,
+			observer: options.observer,
 		});
 		if (!record) {
 			return {
@@ -188,6 +195,7 @@ async function retrieveArchitectureMap(options: {
 					resource,
 					availableModules: await listArchitectureMapModules(
 						options.projectRoot,
+						options.observer,
 					),
 				} satisfies ArchitectureMapRetrievalDetails,
 			};
@@ -213,6 +221,7 @@ async function retrieveArchitectureMap(options: {
 	const record = await readIndexRecord({
 		projectRoot: options.projectRoot,
 		freshness: options.freshness,
+		observer: options.observer,
 	});
 	if (!record) {
 		return {
@@ -250,9 +259,10 @@ async function retrieveArchitectureMap(options: {
 async function readIndexRecord(options: {
 	readonly projectRoot: string;
 	readonly freshness: ArchitectureMapFreshness;
+	readonly observer: ArchitectureMapScanObserver;
 }): Promise<RetrievedMemoryRecord | undefined> {
 	const path = architecturePath(options.projectRoot, INDEX_PATH);
-	const raw = await readMapFile(path);
+	const raw = await readMapFile(path, options.observer);
 	if (raw === undefined) return undefined;
 	const parsed = matter(raw);
 	const timestamp =
@@ -277,6 +287,7 @@ async function readShardRecord(options: {
 	readonly projectRoot: string;
 	readonly resource: string;
 	readonly freshness: ArchitectureMapFreshness;
+	readonly observer: ArchitectureMapScanObserver;
 }): Promise<RetrievedMemoryRecord | undefined> {
 	const shardPath = resourceToShardPath(options.resource);
 	const absoluteShardPath = safeArchitecturePath(
@@ -284,7 +295,7 @@ async function readShardRecord(options: {
 		shardPath,
 	);
 	if (!absoluteShardPath) return undefined;
-	const raw = await readMapFile(absoluteShardPath);
+	const raw = await readMapFile(absoluteShardPath, options.observer);
 	if (raw === undefined) return undefined;
 	const parsed = matter(raw);
 	if (parsed.data.resource !== options.resource) return undefined;
@@ -308,17 +319,19 @@ async function readShardRecord(options: {
 
 export async function listArchitectureMapModules(
 	projectRoot: string,
+	observer?: ArchitectureMapScanObserver,
 ): Promise<string[]> {
 	const modulesRoot = safeArchitecturePath(projectRoot, "modules");
 	if (!modulesRoot) return [];
 	const modules = new Set<string>();
-	await collectModuleResources(modulesRoot, modules);
+	await collectModuleResources(modulesRoot, modules, observer);
 	return [...modules].sort();
 }
 
 async function collectModuleResources(
 	directory: string,
 	modules: Set<string>,
+	observer?: ArchitectureMapScanObserver,
 ): Promise<void> {
 	let entries: Dirent[];
 	try {
@@ -331,11 +344,11 @@ async function collectModuleResources(
 	for (const entry of entries) {
 		const path = join(directory, entry.name);
 		if (entry.isDirectory()) {
-			await collectModuleResources(path, modules);
+			await collectModuleResources(path, modules, observer);
 			continue;
 		}
 		if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
-		const file = await readMapFile(path);
+		const file = await readMapFile(path, observer);
 		if (!file) continue;
 		const resource = readShardResource(file);
 		if (typeof resource === "string" && validateResource(resource).ok) {
@@ -418,13 +431,33 @@ function architecturePath(
 	return join(projectRoot, ARCHITECTURE_DIR, pathInArchitectureDir);
 }
 
-async function readMapFile(path: string): Promise<string | undefined> {
+async function readMapFile(
+	path: string,
+	observer?: ArchitectureMapScanObserver,
+): Promise<string | undefined> {
 	try {
-		return await readFile(path, "utf-8");
+		const raw = await readFile(path, "utf-8");
+		observer?.fileRead(path, Buffer.byteLength(raw, "utf-8"));
+		return raw;
 	} catch (error: unknown) {
 		if (isMissingFile(error)) return undefined;
 		throw error;
 	}
+}
+
+function createScanObserver(tally: {
+	filesScanned: number;
+	bytesRead: number;
+}): ArchitectureMapScanObserver {
+	return {
+		fileRead(_path, bytesRead) {
+			tally.filesScanned += 1;
+			tally.bytesRead += bytesRead;
+		},
+		fileStat() {
+			tally.filesScanned += 1;
+		},
+	};
 }
 
 function formatFreshnessBanner(freshness: ArchitectureMapFreshness): string {

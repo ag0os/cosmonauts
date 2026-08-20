@@ -612,7 +612,156 @@ describe("architecture-memory extension", () => {
 		expect(emptyKnowledgeRetrieve).toHaveBeenCalledOnce();
 		expect(emptyArchitectureRetrieve).toHaveBeenCalledOnce();
 	});
+
+	test("aggregates real knowledge and multi-file architecture IO without counting the rendered freshness banner @cosmo-behavior plan:knowledge-surface#B-007", async () => {
+		const projectRoot = join(tmp.path, "combined-real-store-project");
+		const userRoot = join(tmp.path, "combined-real-store-user");
+		const configRaw = `${JSON.stringify({
+			knowledgeSurface: { enabled: true },
+			architectureMap: { sourceRoots: ["src"] },
+		})}\n`;
+		const tsconfigRaw = '{ "compilerOptions": { "module": "NodeNext" } }\n';
+		const knowledgeRaw = [
+			"---",
+			"type: decision",
+			"title: Real combined row",
+			"description: Real-store aggregate fixture.",
+			"scope: project",
+			"kind: semantic",
+			"resource: knowledge/combined-real.md",
+			"tags:",
+			"  - test",
+			"timestamp: 2026-08-20T00:00:00.000Z",
+			"---",
+			"",
+			"Combined real-store body.",
+			"",
+		].join("\n");
+		await mkdir(join(projectRoot, ".cosmonauts"), { recursive: true });
+		await mkdir(join(projectRoot, "src", "nested"), { recursive: true });
+		await mkdir(join(projectRoot, "knowledge"), { recursive: true });
+		await mkdir(join(userRoot, "knowledge"), { recursive: true });
+		await mkdir(join(projectRoot, "memory", "architecture"), {
+			recursive: true,
+		});
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			configRaw,
+			"utf-8",
+		);
+		await writeFile(
+			join(projectRoot, "package.json"),
+			'{ "name": "combined-real-store" }\n',
+			"utf-8",
+		);
+		await writeFile(join(projectRoot, "tsconfig.json"), tsconfigRaw, "utf-8");
+		await writeFile(
+			join(projectRoot, "src", "alpha.ts"),
+			"export const alpha = 1;\n",
+			"utf-8",
+		);
+		await writeFile(
+			join(projectRoot, "src", "nested", "beta.ts"),
+			"export const beta = 2;\n",
+			"utf-8",
+		);
+		await writeFile(
+			join(projectRoot, "knowledge", "combined-real.md"),
+			knowledgeRaw,
+			"utf-8",
+		);
+
+		const config = await architectureMap.loadArchitectureMapConfig(projectRoot);
+		const fingerprint =
+			await architectureMap.computeArchitectureMapStatFingerprint({
+				projectRoot,
+				config,
+				analyzer: {
+					getConfigInputs: async () => ["package.json", "tsconfig.json"],
+				},
+			});
+		const indexRaw = [
+			"---",
+			"type: code-structure-index",
+			"resource: memory/architecture/index.md",
+			`statFingerprint: ${fingerprint.hash}`,
+			"---",
+			"",
+			"# Real combined architecture",
+			"",
+		].join("\n");
+		await writeFile(
+			join(projectRoot, "memory", "architecture", "index.md"),
+			indexRaw,
+			"utf-8",
+		);
+
+		const pi = createMockPi({ cwd: projectRoot });
+		installKnowledgeSurface(pi, {
+			agentId: "coding/worker",
+			registerAgentMemoryTools: false,
+			authorizeAuthoredMemory: false,
+			registerArchitectureTool: true,
+			authorizeArchitecture: true,
+			recallOwner: "knowledge",
+			canPropose: false,
+			userCosmonautsRoot: userRoot,
+		});
+
+		const injected = (await pi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: buildAgentIdentityMarker("coding/worker") },
+			{ cwd: projectRoot },
+		)) as { message: { content: string; details: CombinedContextDetails } };
+		const expectedArchitectureBytes = Buffer.byteLength(
+			configRaw + indexRaw + tsconfigRaw + indexRaw,
+			"utf-8",
+		);
+		expect(injected.message.content).toContain("Knowledge index");
+		expect(injected.message.content).toContain(
+			"Architecture map freshness: current",
+		);
+		expect(injected.message.details).toMatchObject({
+			sections: {
+				knowledge: {
+					stats: {
+						filesScanned: 1,
+						bytesRead: Buffer.byteLength(knowledgeRaw, "utf-8"),
+					},
+				},
+				architecture: {
+					stats: {
+						filesScanned: 12,
+						bytesRead: expectedArchitectureBytes,
+					},
+				},
+			},
+			aggregate: {
+				filesScanned: 13,
+				bytesRead:
+					Buffer.byteLength(knowledgeRaw, "utf-8") + expectedArchitectureBytes,
+				durationMs: expect.any(Number),
+			},
+		});
+	});
 });
+
+interface CombinedContextDetails {
+	readonly sections: Record<
+		string,
+		{
+			readonly stats: {
+				readonly filesScanned: number;
+				readonly bytesRead: number;
+			};
+		}
+	>;
+	readonly aggregate: {
+		readonly filesScanned: number;
+		readonly bytesRead: number;
+		readonly durationMs: number;
+	};
+}
 
 function contextRecord(
 	overrides: Partial<RetrievedMemoryRecord>,

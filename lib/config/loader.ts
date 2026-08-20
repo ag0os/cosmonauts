@@ -50,6 +50,10 @@ function expandTilde(p: string): string {
 const CONFIG_DIR = ".cosmonauts";
 const CONFIG_FILE = "config.json";
 
+export interface ProjectConfigLoadOptions {
+	readonly onFileRead?: (path: string, bytesRead: number) => void;
+}
+
 /**
  * Load project configuration from `.cosmonauts/config.json`.
  * Returns an empty config if the file does not exist.
@@ -58,12 +62,14 @@ const CONFIG_FILE = "config.json";
 // fallow-ignore-next-line complexity
 export async function loadProjectConfig(
 	projectRoot: string,
+	options: ProjectConfigLoadOptions = {},
 ): Promise<ProjectConfig> {
 	const configPath = join(projectRoot, CONFIG_DIR, CONFIG_FILE);
 
 	let raw: string;
 	try {
 		raw = await readFile(configPath, "utf-8");
+		options.onFileRead?.(configPath, Buffer.byteLength(raw, "utf-8"));
 	} catch (error: unknown) {
 		// Missing config file is expected; other read failures should surface.
 		if (

@@ -32,6 +32,7 @@ export type {
 	ArchitectureMapConfig,
 	ArchitectureMapFreshness,
 	ArchitectureMapIndex,
+	ArchitectureMapScanObserver,
 	GenerateArchitectureMapOptions,
 	GenerateArchitectureMapResult,
 	GeneratedNarrative,

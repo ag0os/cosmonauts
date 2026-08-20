@@ -7,6 +7,7 @@ import { canonicalizeArchitectureMapConfig } from "./config.ts";
 import type {
 	ArchitectureMapConfig,
 	ArchitectureMapFreshness,
+	ArchitectureMapScanObserver,
 	ProjectSnapshot,
 	SourceAnalyzer,
 	SourceFileSnapshot,
@@ -18,6 +19,7 @@ interface ProjectSnapshotOptions {
 	readonly projectRoot: string;
 	readonly config: ArchitectureMapConfig;
 	readonly analyzer: Pick<SourceAnalyzer, "getConfigInputs">;
+	readonly observer?: ArchitectureMapScanObserver;
 }
 
 interface ArchitectureMapFreshnessOptions extends ProjectSnapshotOptions {
@@ -64,11 +66,13 @@ export function compareFreshnessHashes(
 export async function readArchitectureMapIndexFrontmatter(options: {
 	readonly projectRoot: string;
 	readonly indexPath?: string;
+	readonly observer?: ArchitectureMapScanObserver;
 }): Promise<ArchitectureMapIndexFrontmatter | undefined> {
 	const indexPath = options.indexPath ?? join(options.projectRoot, INDEX_PATH);
 	let raw: string;
 	try {
 		raw = await readFile(indexPath, "utf-8");
+		options.observer?.fileRead(indexPath, Buffer.byteLength(raw, "utf-8"));
 	} catch (error: unknown) {
 		if (
 			error &&
@@ -99,6 +103,7 @@ export async function createProjectSnapshot(
 	const sourceFiles = await collectSourceFileSnapshots(
 		options.projectRoot,
 		options.config,
+		options.observer,
 	);
 	const analyzerConfigFiles = await collectAnalyzerConfigFiles(options);
 	const hash = createHash("sha256");
@@ -137,12 +142,15 @@ export async function computeArchitectureMapStatFingerprint(
 	const sourceFiles = await collectSourceFileStats(
 		options.projectRoot,
 		options.config,
+		options.observer,
 	);
 	const analyzerConfigFiles = await collectAnalyzerConfigFiles(options);
 	const files: StatFingerprintFile[] = [...sourceFiles];
 
 	for (const configPath of analyzerConfigFiles) {
-		const configStat = await stat(join(options.projectRoot, configPath));
+		const absolute = join(options.projectRoot, configPath);
+		const configStat = await stat(absolute);
+		options.observer?.fileStat(absolute);
 		files.push({
 			path: configPath,
 			size: configStat.size,
@@ -172,6 +180,7 @@ export async function computeArchitectureMapStatFingerprint(
 async function collectSourceFileSnapshots(
 	projectRoot: string,
 	config: ArchitectureMapConfig,
+	observer?: ArchitectureMapScanObserver,
 ): Promise<readonly SourceFileSnapshot[]> {
 	const paths = await collectSourceFilePaths(projectRoot, config);
 	const files: SourceFileSnapshot[] = [];
@@ -181,6 +190,8 @@ async function collectSourceFileSnapshots(
 			stat(absolute),
 			readFile(absolute),
 		]);
+		observer?.fileStat(absolute);
+		observer?.fileRead(absolute, contents.byteLength);
 		files.push({
 			path,
 			size: fileStat.size,
@@ -194,12 +205,14 @@ async function collectSourceFileSnapshots(
 async function collectSourceFileStats(
 	projectRoot: string,
 	config: ArchitectureMapConfig,
+	observer?: ArchitectureMapScanObserver,
 ): Promise<readonly StatFingerprintFile[]> {
 	const paths = await collectSourceFilePaths(projectRoot, config);
 	const files: StatFingerprintFile[] = [];
 	for (const path of paths) {
 		const absolute = join(projectRoot, path);
 		const fileStat = await stat(absolute);
+		observer?.fileStat(absolute);
 		files.push({
 			path,
 			size: fileStat.size,
@@ -273,6 +286,7 @@ async function collectAnalyzerConfigFiles(
 	const rawInputs = await options.analyzer.getConfigInputs(
 		options.projectRoot,
 		options.config,
+		options.observer,
 	);
 	const configFiles = new Set<string>();
 
@@ -282,6 +296,7 @@ async function collectAnalyzerConfigFiles(
 		const absolute = join(options.projectRoot, repoPath);
 		try {
 			const inputStat = await stat(absolute);
+			options.observer?.fileStat(absolute);
 			if (inputStat.isFile()) configFiles.add(repoPath);
 		} catch (error: unknown) {
 			if (

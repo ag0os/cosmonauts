@@ -10,7 +10,10 @@ import {
 } from "node:path";
 import { loadProjectConfig } from "../config/index.ts";
 import type { ProjectConfig } from "../config/types.ts";
-import type { ArchitectureMapConfig } from "./types.ts";
+import type {
+	ArchitectureMapConfig,
+	ArchitectureMapScanObserver,
+} from "./types.ts";
 import { ARCHITECTURE_MAP_OUTPUT_DIR } from "./types.ts";
 
 interface Logger {
@@ -53,8 +56,11 @@ const DEFAULT_MAX_MODULES_PER_RUN = 20;
 
 export async function loadArchitectureMapConfig(
 	projectRoot: string,
+	observer?: ArchitectureMapScanObserver,
 ): Promise<ArchitectureMapConfig> {
-	const projectConfig = await loadProjectConfig(projectRoot);
+	const projectConfig = await loadProjectConfig(projectRoot, {
+		onFileRead: (path, bytesRead) => observer?.fileRead(path, bytesRead),
+	});
 	return resolveArchitectureMapConfig({ projectRoot, projectConfig });
 }
 

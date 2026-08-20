@@ -45,10 +45,17 @@ export interface ProjectSnapshot {
 	readonly analyzerConfigFiles: readonly string[];
 }
 
+/** Per-operation observer used to account for recurring architecture disk work. */
+export interface ArchitectureMapScanObserver {
+	fileRead(path: string, bytesRead: number): void;
+	fileStat(path: string): void;
+}
+
 export interface SourceAnalyzer {
 	getConfigInputs(
 		projectRoot: string,
 		config: ArchitectureMapConfig,
+		observer?: ArchitectureMapScanObserver,
 	): Promise<readonly string[]>;
 	analyze(input: AnalysisInput): Promise<AnalysisResult>;
 }

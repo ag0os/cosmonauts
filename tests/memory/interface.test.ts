@@ -8,13 +8,18 @@ import {
 	readFile,
 	stat,
 	symlink,
+	unlink,
 	writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
 import matter from "gray-matter";
 import { describe, expect, test, vi } from "vitest";
 import type { ArchitectureMapRetrievalDetails } from "../../lib/architecture-map/index.ts";
-import { createArchitectureMapMemoryStore } from "../../lib/architecture-map/index.ts";
+import {
+	computeArchitectureMapStatFingerprint,
+	createArchitectureMapMemoryStore,
+	loadArchitectureMapConfig,
+} from "../../lib/architecture-map/index.ts";
 import { recordEpisode } from "../../lib/memory/episode.ts";
 import {
 	createEpisodeRecord,
@@ -715,7 +720,7 @@ describe("memory interface", () => {
 		);
 		expect(
 			createHash("sha256").update(architectureAdapterSource).digest("hex"),
-		).toBe("abb7eb2afc9f759bbb2d9f9e58f4a93ad61aba97f503c1e73696b03e12010722");
+		).toBe("ab64b61e95f6393db8e1edeec56e3d9994cb4e8d3a2fc525962f1b7ff04454d7");
 		expect(typesSource).toContain("readonly type: string;");
 		expect(typesSource).toContain("readonly recordTypes?: readonly string[];");
 		expect(typesSource).toContain("readonly proposalIdentity?:");
@@ -1012,6 +1017,123 @@ describe("memory interface", () => {
 			kind: "unsupported",
 			reason:
 				"Architecture-map memory is generated derived state; writes remain owned by generateArchitectureMap.",
+		});
+	});
+
+	test("accounts for real architecture config freshness and map IO across index unknown-module and missing-index retrievals @cosmo-behavior plan:knowledge-surface#B-007", async () => {
+		const projectRoot = join(tmp.path, "architecture-scan-stats");
+		const configRaw = `${JSON.stringify({
+			architectureMap: { sourceRoots: ["src"] },
+		})}\n`;
+		const packageRaw = '{ "name": "architecture-scan-fixture" }\n';
+		const tsconfigRaw = '{ "compilerOptions": { "module": "NodeNext" } }\n';
+		await mkdir(join(projectRoot, ".cosmonauts"), { recursive: true });
+		await mkdir(join(projectRoot, "src", "nested"), { recursive: true });
+		await mkdir(join(projectRoot, "memory", "architecture", "modules", "src"), {
+			recursive: true,
+		});
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			configRaw,
+			"utf-8",
+		);
+		await writeFile(join(projectRoot, "package.json"), packageRaw, "utf-8");
+		await writeFile(join(projectRoot, "tsconfig.json"), tsconfigRaw, "utf-8");
+		await writeFile(
+			join(projectRoot, "src", "alpha.ts"),
+			"export const alpha = 1;\n",
+			"utf-8",
+		);
+		await writeFile(
+			join(projectRoot, "src", "nested", "beta.tsx"),
+			"export const beta = <span />;\n",
+			"utf-8",
+		);
+
+		const config = await loadArchitectureMapConfig(projectRoot);
+		const fingerprint = await computeArchitectureMapStatFingerprint({
+			projectRoot,
+			config,
+			analyzer: {
+				getConfigInputs: async () => ["package.json", "tsconfig.json"],
+			},
+		});
+		const indexRaw = [
+			"---",
+			"type: code-structure-index",
+			"resource: memory/architecture/index.md",
+			`statFingerprint: ${fingerprint.hash}`,
+			"---",
+			"",
+			"# Architecture scan fixture",
+			"",
+		].join("\n");
+		const alphaShard =
+			"---\ntype: code-structure-module\nresource: src/alpha\n---\n\n# alpha\n";
+		const betaShard =
+			"---\ntype: code-structure-module\nresource: src/beta\n---\n\n# beta\n";
+		const indexPath = join(projectRoot, "memory", "architecture", "index.md");
+		await writeFile(indexPath, indexRaw, "utf-8");
+		await writeFile(
+			join(projectRoot, "memory", "architecture", "modules", "src", "alpha.md"),
+			alphaShard,
+			"utf-8",
+		);
+		await writeFile(
+			join(projectRoot, "memory", "architecture", "modules", "src", "beta.md"),
+			betaShard,
+			"utf-8",
+		);
+
+		const store = createArchitectureMapMemoryStore({ projectRoot });
+		const index = await store.retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ recordTypes: ["code-structure-index"], limit: 1 },
+		);
+		const expectedIndexBytes = Buffer.byteLength(
+			configRaw + indexRaw + tsconfigRaw + indexRaw,
+			"utf-8",
+		);
+		expect(index.stats).toMatchObject({
+			filesScanned: 12,
+			bytesRead: expectedIndexBytes,
+			durationMs: expect.any(Number),
+		});
+		expect(index.records).toHaveLength(1);
+		expect(index.records[0]?.content).toContain(
+			"Architecture map freshness: current",
+		);
+		expect(index.records[0]?.content).not.toHaveLength(indexRaw.length);
+
+		const unknown = await store.retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{ resource: "src/missing" },
+		);
+		expect(unknown.details).toMatchObject({
+			kind: "architecture-map",
+			status: "unknown-module",
+			availableModules: ["src/alpha", "src/beta"],
+		});
+		expect(unknown.stats).toMatchObject({
+			filesScanned: 13,
+			bytesRead: Buffer.byteLength(
+				configRaw + indexRaw + tsconfigRaw + alphaShard + betaShard,
+				"utf-8",
+			),
+		});
+
+		await unlink(indexPath);
+		const missing = await store.retrieve(
+			{ projectRoot, scopes: ["project"] },
+			{},
+		);
+		expect(missing.details).toMatchObject({
+			kind: "architecture-map",
+			status: "missing-index",
+		});
+		expect(missing.stats).toMatchObject({
+			filesScanned: 1,
+			bytesRead: Buffer.byteLength(configRaw, "utf-8"),
 		});
 	});
 
@@ -1599,10 +1721,15 @@ describe("frozen knowledge seed migration", () => {
 			"utf-8",
 		);
 		const evidence = matter(raw);
+		const measuredAgentId = `${["cod", "ing"].join("")}/worker`;
 		expect(evidence.data).toMatchObject({
 			kind: "knowledge-surface-scan-cost",
 			plan: "knowledge-surface",
 			turns: 20,
+			agentId: measuredAgentId,
+			composition: "buildSessionParams",
+			durationThresholdMs: 250,
+			bytesThreshold: 10 * 1024 * 1024,
 			verdict: "pass",
 		});
 		const capturedAt =
@@ -1610,8 +1737,12 @@ describe("frozen knowledge seed migration", () => {
 				? evidence.data.capturedAt.toISOString()
 				: String(evidence.data.capturedAt);
 		expect(new Date(capturedAt).toISOString()).toBe(capturedAt);
-		expect(evidence.data.p95DurationMs).toBeLessThanOrEqual(250);
-		expect(evidence.data.maxBytesRead).toBeLessThanOrEqual(10 * 1024 * 1024);
+		expect(evidence.data.p95DurationMs).toBeLessThanOrEqual(
+			evidence.data.durationThresholdMs,
+		);
+		expect(evidence.data.maxBytesRead).toBeLessThanOrEqual(
+			evidence.data.bytesThreshold,
+		);
 		expect(evidence.data.maxFilesScanned).toBeLessThanOrEqual(
 			evidence.data.corpusFiles,
 		);
@@ -1621,15 +1752,20 @@ describe("frozen knowledge seed migration", () => {
 
 		const rows = [
 			...evidence.content.matchAll(
-				/^\| (\d+) \| (\d+) \| (\d+) \| ([\d.]+) \| (\d+) \| (\d+) \|$/gmu,
+				/^\| (\d+) \| (\d+) \| (\d+) \| (\d+) \| (\d+) \| (\d+) \| (\d+) \| (\d+) \| (\d+) \| ([\d.]+) \| (\d+) \|$/gmu,
 			),
 		].map((match) => ({
 			turn: Number(match[1]),
-			filesScanned: Number(match[2]),
-			bytesRead: Number(match[3]),
-			durationMs: Number(match[4]),
-			records: Number(match[5]),
-			warnings: Number(match[6]),
+			knowledgeFiles: Number(match[2]),
+			knowledgeBytes: Number(match[3]),
+			knowledgeRecords: Number(match[4]),
+			architectureFiles: Number(match[5]),
+			architectureBytes: Number(match[6]),
+			architectureRecords: Number(match[7]),
+			filesScanned: Number(match[8]),
+			bytesRead: Number(match[9]),
+			durationMs: Number(match[10]),
+			warnings: Number(match[11]),
 		}));
 		expect(rows).toHaveLength(20);
 		expect(rows.map((row) => row.turn)).toEqual(
@@ -1647,12 +1783,20 @@ describe("frozen knowledge seed migration", () => {
 		expect(Math.max(...rows.map((row) => row.bytesRead))).toBe(
 			evidence.data.maxBytesRead,
 		);
+		expect(rows.every((row) => row.architectureFiles > 0)).toBe(true);
+		expect(rows.every((row) => row.architectureRecords === 1)).toBe(true);
+		expect(rows.every((row) => row.knowledgeRecords === 136)).toBe(true);
+		expect(evidence.data.architectureIoFiles).toBe(rows[0]?.architectureFiles);
+		expect(evidence.data.architectureIoBytes).toBe(rows[0]?.architectureBytes);
 		expect(evidence.content).toContain(
 			"migrated project knowledge corpus from `tests/fixtures/knowledge-seed-inventory.json`",
 		);
-		const measuredAgentId = `${["cod", "ing"].join("")}/worker`;
 		expect(evidence.content).toContain(
 			`enabled \`${measuredAgentId}\` session`,
+		);
+		expect(evidence.content).toContain("production `buildSessionParams`");
+		expect(evidence.content).toContain(
+			"architecture authorization selected by session assembly",
 		);
 		expect(evidence.content).toMatch(
 			/verdict would be `amend`[^.]+Stage 7[^.]+blocked/is,

@@ -1,4 +1,5 @@
 export type {
+	ProjectConfigLoadOptions,
 	ResolvedEpisodicLogConfig,
 	ResolvedKnowledgeSurfaceConfig,
 } from "./loader.ts";

@@ -13,6 +13,7 @@ import type {
 	AnalysisInput,
 	AnalysisResult,
 	ArchitectureMapConfig,
+	ArchitectureMapScanObserver,
 	ModuleDependency,
 	ModuleSkeleton,
 	PublicExport,
@@ -35,10 +36,17 @@ export const typescriptSourceAnalyzer = createTypeScriptSourceAnalyzer();
 async function getTypeScriptConfigInputs(
 	projectRoot: string,
 	_config: ArchitectureMapConfig,
+	observer?: ArchitectureMapScanObserver,
 ): Promise<readonly string[]> {
 	const inputs = new Set<string>();
-	await addIfFile(projectRoot, "package.json", inputs);
-	await collectTsconfigInputs(projectRoot, "tsconfig.json", inputs, new Set());
+	await addIfFile(projectRoot, "package.json", inputs, observer);
+	await collectTsconfigInputs(
+		projectRoot,
+		"tsconfig.json",
+		inputs,
+		new Set(),
+		observer,
+	);
 	return [...inputs].sort();
 }
 
@@ -440,15 +448,17 @@ async function collectTsconfigInputs(
 	repoPath: string,
 	inputs: Set<string>,
 	seen: Set<string>,
+	observer?: ArchitectureMapScanObserver,
 ): Promise<void> {
 	const normalized = normalizeRepoPath(repoPath);
 	if (seen.has(normalized)) return;
 	seen.add(normalized);
-	const added = await addIfFile(projectRoot, normalized, inputs);
+	const added = await addIfFile(projectRoot, normalized, inputs, observer);
 	if (!added) return;
 
 	const absolute = resolve(projectRoot, normalized);
 	const raw = await readFile(absolute, "utf-8");
+	observer?.fileRead(absolute, Buffer.byteLength(raw, "utf-8"));
 	// Parse with TypeScript's JSONC-aware reader (not JSON.parse) so a tsconfig
 	// with comments or trailing commas — which the analyzer itself honors via
 	// ts.readConfigFile — still yields its `extends` chain. Otherwise a base
@@ -464,7 +474,13 @@ async function collectTsconfigInputs(
 			extension,
 		);
 		if (extendedPath) {
-			await collectTsconfigInputs(projectRoot, extendedPath, inputs, seen);
+			await collectTsconfigInputs(
+				projectRoot,
+				extendedPath,
+				inputs,
+				seen,
+				observer,
+			);
 		}
 	}
 }
@@ -473,9 +489,12 @@ async function addIfFile(
 	projectRoot: string,
 	repoPath: string,
 	inputs: Set<string>,
+	observer?: ArchitectureMapScanObserver,
 ): Promise<boolean> {
 	try {
-		const fileStat = await stat(resolve(projectRoot, repoPath));
+		const absolute = resolve(projectRoot, repoPath);
+		const fileStat = await stat(absolute);
+		observer?.fileStat(absolute);
 		if (!fileStat.isFile()) return false;
 		inputs.add(normalizeRepoPath(repoPath));
 		return true;
