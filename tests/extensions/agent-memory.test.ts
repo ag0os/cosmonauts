@@ -13,9 +13,11 @@ import { writeKnowledgeProposalThroughStore } from "../../lib/extensions/knowled
 import { createKnowledgeSurfaceSessionExtension } from "../../lib/extensions/knowledge-surface/session-extension.ts";
 import {
 	createEpisodeRecord,
+	createKnowledgeMemoryStore,
 	createMarkdownMemoryStore,
 	type MemoryKind,
 	type MemoryQuery,
+	type MemoryRecordDraft,
 	type MemoryScopeName,
 	type MemoryStore,
 	type MemoryWriteResult,
@@ -2705,6 +2707,161 @@ describe("agent-memory extension", () => {
 		expect(docs).toContain("git-reviewed");
 		expect(docs).toContain("deliberately not sandboxed");
 		expect(docs).not.toContain("bare-host support is enabled");
+	});
+
+	test("registers proposal authority only for the distiller with no path input and same-writer idempotent writes @cosmo-behavior plan:knowledge-surface#B-013", async () => {
+		const projectRoot = join(tmp.path, "distiller-proposal-project");
+		const userRoot = join(tmp.path, "distiller-proposal-user");
+		const qualifiedDistillerId = `${["cod", "ing"].join("")}/distiller`;
+		let currentTime = "2026-08-20T10:00:00.000Z";
+		const persistedStore = createKnowledgeMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+		});
+		const drafts: MemoryRecordDraft[] = [];
+		const write = vi.fn<MemoryStore["write"]>(async (draft) => {
+			drafts.push(draft);
+			return persistedStore.write(draft);
+		});
+		const createKnowledgeStore = vi.fn(
+			(): MemoryStore => ({
+				...persistedStore,
+				write,
+			}),
+		);
+		const distillerPi = createMockPi({ cwd: projectRoot });
+		installKnowledgeSurface(distillerPi, {
+			agentId: qualifiedDistillerId,
+			registerAgentMemoryTools: false,
+			authorizeAuthoredMemory: false,
+			registerArchitectureTool: false,
+			authorizeArchitecture: false,
+			recallOwner: "knowledge",
+			canPropose: true,
+			userCosmonautsRoot: userRoot,
+			now: () => new Date(currentTime),
+			createKnowledgeStore,
+		});
+		const ordinaryPi = createMockPi({ cwd: projectRoot });
+		installKnowledgeSurface(ordinaryPi, {
+			agentId: "main/cosmo",
+			registerAgentMemoryTools: false,
+			authorizeAuthoredMemory: false,
+			registerArchitectureTool: false,
+			authorizeArchitecture: false,
+			recallOwner: "knowledge",
+			canPropose: true,
+			userCosmonautsRoot: userRoot,
+			createKnowledgeStore,
+		});
+
+		expect(distillerPi.tools.has("propose_knowledge")).toBe(true);
+		expect(ordinaryPi.tools.has("propose_knowledge")).toBe(false);
+		const contract = fullToolContract(distillerPi, "propose_knowledge");
+		const parameters = contract.parameters as {
+			readonly properties: Record<string, unknown>;
+			readonly required: readonly string[];
+		};
+		expect(Object.keys(parameters.properties).sort()).toEqual([
+			"content",
+			"description",
+			"planSlug",
+			"source",
+			"sourceDate",
+			"tags",
+			"title",
+			"type",
+		]);
+		expect([...parameters.required].sort()).toEqual([
+			"content",
+			"description",
+			"planSlug",
+			"source",
+			"tags",
+			"title",
+			"type",
+		]);
+		expect(parameters.properties).not.toHaveProperty("path");
+		expect(parameters.properties).not.toHaveProperty("resource");
+		expect(
+			(
+				parameters.properties.type as {
+					readonly anyOf: readonly { readonly const: string }[];
+				}
+			).anyOf.map((entry) => entry.const),
+		).toEqual(["decision", "trade-off", "gotcha", "convention"]);
+
+		const proposal = {
+			planSlug: "knowledge-surface",
+			type: "decision",
+			title: "Keep machine output in proposals",
+			description: "Separates machine drafts from curated knowledge.",
+			content:
+				"Machine-produced knowledge remains a proposal until a human promotes it.",
+			tags: ["authority", "knowledge", "authority"],
+			source: "missions/plans/knowledge-surface/plan.md",
+		};
+		const first = (await distillerPi.callTool(
+			"propose_knowledge",
+			proposal,
+		)) as ToolResult;
+		expect(first.details).toMatchObject({ status: "written" });
+		const firstPath = stringDetail(first.details, "path");
+		const firstBytes = await readFile(firstPath, "utf-8");
+		currentTime = "2026-08-20T11:00:00.000Z";
+		const retry = (await distillerPi.callTool(
+			"propose_knowledge",
+			proposal,
+		)) as ToolResult;
+
+		expect(write).toHaveBeenCalledTimes(2);
+		expect(drafts[0]).toMatchObject({
+			type: "decision",
+			scope: "project",
+			kind: "semantic",
+			writer: qualifiedDistillerId,
+			source: proposal.source,
+			date: "2026-08-20T10:00:00.000Z",
+			timestamp: "2026-08-20T10:00:00.000Z",
+			resource: expect.stringMatching(
+				/^knowledge\/knowledge-surface\/decision-keep-machine-output-in-proposals-[a-f0-9]{12}\.md$/u,
+			),
+			tags: ["authority", "knowledge"],
+			proposalIdentity: {
+				planSlug: "knowledge-surface",
+				key: expect.stringMatching(/^[a-f0-9]{12}$/u),
+			},
+		});
+		expect(drafts[1]).toMatchObject({
+			...drafts[0],
+			date: "2026-08-20T11:00:00.000Z",
+			timestamp: "2026-08-20T11:00:00.000Z",
+		});
+		expect(retry.details).toMatchObject({
+			status: "written",
+			path: firstPath,
+			record: { timestamp: "2026-08-20T10:00:00.000Z" },
+		});
+		expect(await readFile(firstPath, "utf-8")).toBe(firstBytes);
+		expect(await fileSnapshot(projectRoot, "knowledge")).toEqual([]);
+		expect(
+			await fileSnapshot(projectRoot, "memory/agent/proposals"),
+		).toHaveLength(1);
+
+		const invalidType = (await distillerPi.callTool("propose_knowledge", {
+			...proposal,
+			type: "pattern",
+		})) as ToolResult;
+		const invalidDate = (await distillerPi.callTool("propose_knowledge", {
+			...proposal,
+			sourceDate: "not-a-date",
+		})) as ToolResult;
+		expect(invalidType.details).toMatchObject({ status: "invalid_request" });
+		expect(invalidDate.details).toMatchObject({ status: "invalid_request" });
+		expect(write).toHaveBeenCalledTimes(2);
+		await expect(
+			ordinaryPi.callTool("propose_knowledge", proposal),
+		).rejects.toThrow("Tool not found: propose_knowledge");
 	});
 });
 

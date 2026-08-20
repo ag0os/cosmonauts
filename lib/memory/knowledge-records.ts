@@ -50,6 +50,11 @@ export interface KnowledgeProposalIdentityInput {
 }
 
 export interface DerivedKnowledgeProposalIdentity {
+	readonly type: KnowledgeRecordType;
+	readonly title: string;
+	readonly description: string;
+	readonly content: string;
+	readonly source: string;
 	readonly resource: string;
 	readonly writer: string;
 	readonly tags: readonly string[];
@@ -190,6 +195,11 @@ export function deriveKnowledgeProposalIdentity(
 	const key = createHash("sha256").update(stable).digest("hex").slice(0, 12);
 	const fileName = `${input.type}-${slugify(title)}-${key}.md`;
 	return {
+		type: input.type,
+		title,
+		description,
+		content,
+		source,
 		resource: `knowledge/${input.planSlug}/${fileName}`,
 		writer,
 		tags,
@@ -281,18 +291,18 @@ export function normalizeKnowledgeProposal(
 		return {
 			ok: true,
 			record: {
-				type: draft.type,
-				title: draft.title,
-				description: draft.description,
-				resource: draft.resource,
+				type: identity.type,
+				title: identity.title,
+				description: identity.description,
+				resource: identity.resource,
 				tags: identity.tags,
 				timestamp,
 				scope: "project",
 				kind: "semantic",
 				writer: identity.writer,
-				source: draft.source,
+				source: identity.source,
 				date,
-				content: draft.content,
+				content: identity.content,
 			},
 			proposalIdentity: identity.proposalIdentity,
 		};

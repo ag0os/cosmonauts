@@ -22,6 +22,7 @@ import { KNOWLEDGE_SURFACE_EXTENSION_NAME } from "./constants.ts";
 import {
 	createKnowledgeRecallHandler,
 	type KnowledgeRecallHandler,
+	registerKnowledgeProposalTool,
 	registerKnowledgeRecallTool,
 } from "./knowledge-tools.ts";
 
@@ -107,6 +108,13 @@ export function createKnowledgeSurfaceSessionExtension(
 				})(pi);
 			} else {
 				registerKnowledgeRecallTool(pi, recallKnowledge);
+			}
+			if (options.canPropose && options.agentId === "coding/distiller") {
+				registerKnowledgeProposalTool(pi, {
+					now,
+					createKnowledgeStore: (projectRoot) =>
+						createKnowledgeStore({ projectRoot, userCosmonautsRoot }),
+				});
 			}
 
 			if (options.registerArchitectureTool) {

@@ -132,81 +132,41 @@ The `source` frontmatter field tracks provenance. Use `archive` for plan distill
 
 ---
 
-## Structured Knowledge Records (Distiller Agent)
+## Machine Knowledge Proposals (Distiller Agent)
 
-In addition to human-readable `.md` memory files, a dedicated distiller agent produces structured knowledge records optimized for future semantic search and database ingestion.
+The existing coding distiller turns completed-work evidence into reviewable OKF v0.1 markdown proposals. This contract is stack-agnostic and does not introduce a second extractor.
 
-### Three-Tier Knowledge Pipeline
+### Tier-2 discovery
 
-Knowledge flows through three tiers during plan execution and archival:
+For `<planSlug>`, probe both manifest roots:
 
-```
-Tier 1 — Raw sessions (JSONL)   →   Tier 2 — Transcripts (markdown)   →   Tier 3 — Knowledge records (JSONL)
-  missions/sessions/<slug>/             missions/sessions/<slug>/                memory/<slug>.knowledge.jsonl
-  (ephemeral — debug/replay)            (intermediate — distiller input)          (durable — survives archive)
-```
+- `missions/sessions/<planSlug>/manifest.json`
+- `missions/archive/sessions/<planSlug>/manifest.json`
 
-**Tier 1 — Raw sessions** (`missions/sessions/<slug>/*.jsonl`): Complete Pi session JSONL files saved during plan execution. Ephemeral — for debugging and replay. Moved to `missions/archive/sessions/<slug>/` when the plan is archived.
+Collect each manifest entry whose `transcriptFile` ends in `.transcript.md`. Resolve the references within the corresponding active or archived session root, union both sets, and path-deduplicate before reading. Use every transcript in that union. Fall back to the plan and tasks only when neither root yields any manifest-referenced transcripts; one missing or empty root does not discard transcripts supplied by the other.
 
-**Tier 2 — Transcripts** (`missions/sessions/<slug>/*.transcript.md`): Filtered, readable markdown summaries generated at session completion. These are the distiller's primary input. Archived alongside the raw sessions.
+After `plan_archive` completes, invoke the existing `distiller` for non-trivial plans that established decisions, trade-offs, gotchas, or conventions. It reads active and archived plan/task evidence as applicable and submits 3–15 proposals, each about one concept.
 
-**Tier 3 — Knowledge records** (`memory/<slug>.knowledge.jsonl`): The durable output. Each record is a self-contained unit of knowledge with structured metadata designed for future SQLite + vector embedding ingestion. **Knowledge records are never moved on archive** — they persist in `memory/` and accumulate across all plans.
+### Proposal contract
 
-### Invoking the Distiller Agent
+Every machine proposal is OKF v0.1 markdown and uses exactly one type:
 
-After `plan_archive` completes, spawn the `distiller` agent to produce knowledge records for the plan:
+- `decision`
+- `trade-off`
+- `gotcha`
+- `convention`
 
-```
-spawn_agent distiller "Distill the <planSlug> plan into knowledge records"
-```
+Full machine provenance requires `writer`, `source`, and `date`. The source names the specific supporting artifact; the configured proposal adapter supplies the qualified distiller writer and derives the write date when no source date exists.
 
-The distiller agent:
-1. Reads `missions/archive/plans/<slug>/plan.md` (or the active path if not yet archived)
-2. Reads all tasks with `plan:<slug>` label
-3. Reads `missions/sessions/<slug>/manifest.json` to locate session transcripts
-4. Reads transcript files (planner → workers → quality-manager)
-5. Extracts 3–15 `KnowledgeRecord` objects, one concept per record
-6. Writes `memory/<slug>.knowledge.jsonl` — one JSON object per line
-7. Optionally writes `memory/<slug>.md` for human readers (same format as above)
+Use `propose_knowledge` for each proposal. Its inputs are the plan slug, type, title, description, content, tags, source, and optional source date—never an output path or resource. `memory/agent/proposals/` is the sole machine-knowledge output root. Promotion into curated `knowledge/` remains a human act after review.
 
-**When to invoke the distiller**: Invoke it for the same plans that warrant manual distillation — non-trivial plans that established patterns, made non-obvious decisions, or changed areas others will touch. Skip trivial single-task plans.
-
-**If no session transcripts exist** (sessions were in-memory or pre-date this feature), the distiller falls back to plan and task content alone. Invoke it anyway — it will produce records from whatever source material is available.
-
-### Knowledge Record Format
-
-Each line of `memory/<slug>.knowledge.jsonl` is a standalone JSON object. The first line is a bundle header; subsequent lines are `KnowledgeRecord` objects:
-
-```jsonl
-{"planSlug":"auth-system","planTitle":"Auth System","distilledAt":"...","distilledBy":"distiller","recordCount":5}
-{"id":"...","planSlug":"auth-system","type":"decision","content":"Used JWT over session cookies because...","files":["lib/auth/token.ts"],"tags":["auth","jwt"],"createdAt":"..."}
-```
-
-**KnowledgeRecord fields:**
-- `id` — UUID v4, unique record identifier
-- `planSlug` — links back to the source plan
-- `taskId` — (optional) links to a specific task if the knowledge is task-scoped
-- `sourceRole` — agent role that produced the knowledge (e.g. `planner`, `worker`)
-- `type` — one of: `decision`, `rationale`, `pattern`, `trade-off`, `gotcha`, `convention`
-- `content` — the knowledge itself; self-contained and embeddable; the field used for semantic search
-- `files` — relative paths the knowledge relates to (enables scoped retrieval)
-- `tags` — free-form categorical tags
-- `createdAt` — ISO 8601 timestamp
-
-### Knowledge Records and Archive
-
-Knowledge records in `memory/` are the **durable layer** of the pipeline:
-
-- `memory/<slug>.knowledge.jsonl` is **not moved or deleted** when a plan is archived
-- `memory/<slug>.md` is **not moved or deleted** when a plan is archived
-- Session files (`missions/sessions/<slug>/`) are moved to `missions/archive/sessions/<slug>/` during archive — transcripts go with them
-- Knowledge records accumulate in `memory/` across all plans and are the canonical long-term memory store
+Do not copy verbatim transcript, file, or command excerpts. Do not write JSONL. Do not create embeddings. Do not create a consolidation path, working state, retention behavior, episode change, or explicit-save change. Generic project tools and external backends remain trusted and human-supervised outside this deliberately unsandboxed memory boundary; the proposal pathway does not alter them.
 
 ## Common Problems
 
 - **Distillation is too detailed — reads like the plan copy.** Apply the litmus test: if someone needs the plan to understand the memory file, it failed. Focus on decisions and gotchas, not design walkthrough.
 - **Memory file is missing the "Gotchas" section.** This is the highest-value section. If nothing surprised you, look harder — edge cases, ordering constraints, things that broke during implementation.
-- **No session transcripts available for the distiller.** The distiller falls back to plan + task content. Invoke it anyway — it produces useful records from whatever source material exists.
+- **No session transcripts available for the distiller.** Confirm that neither active nor archived manifest root yields a transcript, then fall back to plan and task content.
 - **Memory file duplicates what's obvious from the code.** Don't document what `git blame` can tell you. Document the *why* behind decisions and the *context* that code can't capture.
 
 ## Related Skills
