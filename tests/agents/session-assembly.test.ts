@@ -253,7 +253,7 @@ describe("buildSessionParams", () => {
 			]);
 		});
 
-		it("freezes reload and plain-new policy while reassembly adopts both gate edits", async () => {
+		it("reassembles both gate edits into a fresh factory selection", async () => {
 			await setupMinimalDomains(tmp.path);
 			let enabled = false;
 			const options = makeOptions({
@@ -262,7 +262,6 @@ describe("buildSessionParams", () => {
 
 			const initiallyOff = await buildSessionParams(options);
 			enabled = true;
-			// Reload/plain-new reuse the already assembled params.
 			expect(initiallyOff.extensionFactories).toEqual([]);
 			expect(initiallyOff.knowledgeSurfaceEnabled).toBe(false);
 

@@ -1,11 +1,16 @@
 import { createHash } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test, vi } from "vitest";
 import { renderPlanEditSuccess } from "../../cli/plans/commands/edit.ts";
+import { createSession } from "../../cli/session.ts";
 import { renderTaskCreateSuccess } from "../../cli/tasks/commands/create.ts";
 import { renderTaskEditSuccess } from "../../cli/tasks/commands/edit.ts";
+import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import { buildAgentIdentityMarker } from "../../lib/agents/runtime-identity.ts";
+import type { AgentDefinition } from "../../lib/agents/types.ts";
+import { setSharedRegistry } from "../../lib/interactive/agent-switch.ts";
 import { PlanManager } from "../../lib/plans/plan-manager.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 import { useTempDir } from "../helpers/fs.ts";
@@ -14,6 +19,15 @@ import { createMockPi, type MockPi } from "../helpers/mocks/index.ts";
 const tmp = useTempDir("episodic-pre-w3-baseline-");
 const FIXED_TIME = "2026-07-21T12:00:00.000Z";
 const CODING_DOMAIN = ["cod", "ing"].join("");
+const REPO_ROOT = resolve(fileURLToPath(import.meta.url), "..", "..", "..");
+const AGENT_SWITCH_EXTENSION = join(
+	REPO_ROOT,
+	"domains",
+	"shared",
+	"extensions",
+	"agent-switch",
+);
+const KNOWLEDGE_SENTINEL = "B008_KNOWLEDGE_STORE_CONSTRUCTED";
 
 describe("pre-W3 disabled baselines", () => {
 	test("keeps gated effects inert off and freezes reload while restart and agent switch adopt both gate transitions @cosmo-behavior plan:knowledge-surface#B-008", async () => {
@@ -191,6 +205,129 @@ describe("pre-W3 disabled baselines", () => {
 			plainNew: { offToOn: "off", onToOff: "on" },
 			restart: { offToOn: "on", onToOff: "off" },
 			agentSwitch: { offToOn: "on", onToOff: "off" },
+		});
+	});
+
+	test("drives real Pi reload and plain new-session seams with frozen factories in both directions @cosmo-behavior plan:knowledge-surface#B-008", async () => {
+		const projectRoot = join(tmp.path, "frozen-transition-project");
+		const domainsDir = join(tmp.path, "frozen-transition-domains");
+		const agentDir = join(tmp.path, "frozen-transition-pi-agent");
+		const definitions = transitionDefinitions();
+		const registry = new AgentRegistry(definitions);
+		await setupTransitionFixture({ projectRoot, domainsDir, definitions });
+
+		await withPiAgentDir(agentDir, async () => {
+			for (const [initial, edited] of [
+				[false, true],
+				[true, false],
+			] as const) {
+				await writeKnowledgeGate(projectRoot, initial);
+				const runtime = await createTransitionSession({
+					definition: definitions[0],
+					projectRoot,
+					domainsDir,
+					registry,
+				});
+				try {
+					await expectKnowledgeSurface(runtime.services.resourceLoader, {
+						enabled: initial,
+						projectRoot,
+						agentId: "main/source",
+					});
+
+					await writeKnowledgeGate(projectRoot, edited);
+					await runtime.services.resourceLoader.reload();
+					await expectKnowledgeSurface(runtime.services.resourceLoader, {
+						enabled: initial,
+						projectRoot,
+						agentId: "main/source",
+					});
+
+					await runtime.newSession();
+					await expectKnowledgeSurface(runtime.services.resourceLoader, {
+						enabled: initial,
+						projectRoot,
+						agentId: "main/source",
+					});
+				} finally {
+					runtime.session.dispose();
+				}
+			}
+		});
+	});
+
+	test("drives restart reassembly and the shipped agent command to adopt both gate edits @cosmo-behavior plan:knowledge-surface#B-008", async () => {
+		const projectRoot = join(tmp.path, "reassembled-transition-project");
+		const domainsDir = join(tmp.path, "reassembled-transition-domains");
+		const agentDir = join(tmp.path, "reassembled-transition-pi-agent");
+		const definitions = transitionDefinitions();
+		const registry = new AgentRegistry(definitions);
+		await setupTransitionFixture({ projectRoot, domainsDir, definitions });
+		setSharedRegistry(registry, "main");
+
+		await withPiAgentDir(agentDir, async () => {
+			for (const [initial, edited] of [
+				[false, true],
+				[true, false],
+			] as const) {
+				await writeKnowledgeGate(projectRoot, initial);
+				const beforeRestart = await createTransitionSession({
+					definition: definitions[0],
+					projectRoot,
+					domainsDir,
+					registry,
+				});
+				try {
+					await expectKnowledgeSurface(beforeRestart.services.resourceLoader, {
+						enabled: initial,
+						projectRoot,
+						agentId: "main/source",
+					});
+					await writeKnowledgeGate(projectRoot, edited);
+
+					const restarted = await createTransitionSession({
+						definition: definitions[0],
+						projectRoot,
+						domainsDir,
+						registry,
+					});
+					try {
+						await expectKnowledgeSurface(restarted.services.resourceLoader, {
+							enabled: edited,
+							projectRoot,
+							agentId: "main/source",
+						});
+					} finally {
+						restarted.session.dispose();
+					}
+				} finally {
+					beforeRestart.session.dispose();
+				}
+
+				await writeKnowledgeGate(projectRoot, initial);
+				const switched = await createTransitionSession({
+					definition: definitions[0],
+					projectRoot,
+					domainsDir,
+					registry,
+				});
+				try {
+					await expectKnowledgeSurface(switched.services.resourceLoader, {
+						enabled: initial,
+						projectRoot,
+						agentId: "main/source",
+					});
+					await writeKnowledgeGate(projectRoot, edited);
+					await invokeAgentSwitch(switched, "target");
+					await expectKnowledgeSurface(switched.services.resourceLoader, {
+						enabled: edited,
+						projectRoot,
+						agentId: "main/target",
+					});
+				} finally {
+					switched.session.dispose();
+				}
+			}
 		});
 	});
 
@@ -461,6 +598,224 @@ describe("pre-W3 disabled baselines", () => {
 		]);
 	});
 });
+
+type TransitionRuntime = Awaited<ReturnType<typeof createSession>>;
+type TransitionResourceLoader = TransitionRuntime["services"]["resourceLoader"];
+
+function transitionDefinitions(): readonly [AgentDefinition, AgentDefinition] {
+	const base = {
+		description: "B-008 transition fixture",
+		capabilities: [],
+		model: "anthropic/claude-opus-4-7",
+		tools: "none",
+		extensions: [],
+		skills: [],
+		projectContext: false,
+		session: "ephemeral",
+		loop: false,
+		domain: "main",
+	} as const;
+	return [
+		{ ...base, id: "source" },
+		{ ...base, id: "target" },
+	];
+}
+
+async function setupTransitionFixture(options: {
+	projectRoot: string;
+	domainsDir: string;
+	definitions: readonly AgentDefinition[];
+}): Promise<void> {
+	await Promise.all([
+		mkdir(join(options.domainsDir, "framework"), { recursive: true }),
+		mkdir(join(options.domainsDir, "main", "prompts"), { recursive: true }),
+		mkdir(join(options.projectRoot, "knowledge"), { recursive: true }),
+	]);
+	await Promise.all([
+		writeFile(
+			join(options.domainsDir, "framework", "base.md"),
+			"# B-008 framework fixture\n",
+			"utf-8",
+		),
+		...options.definitions.map((definition) =>
+			writeFile(
+				join(options.domainsDir, "main", "prompts", `${definition.id}.md`),
+				`# ${definition.id}\nB-008 transition agent.\n`,
+				"utf-8",
+			),
+		),
+		writeFile(
+			join(options.projectRoot, "knowledge", "gate-transition.md"),
+			[
+				"---",
+				"type: decision",
+				"title: B-008 gate transition sentinel",
+				"description: Proves the enabled surface constructed and queried the knowledge store.",
+				"resource: knowledge/gate-transition.md",
+				"tags:",
+				"  - b-008",
+				`timestamp: '${FIXED_TIME}'`,
+				"scope: project",
+				"kind: semantic",
+				"---",
+				"",
+				KNOWLEDGE_SENTINEL,
+				"",
+			].join("\n"),
+			"utf-8",
+		),
+	]);
+}
+
+async function writeKnowledgeGate(
+	projectRoot: string,
+	enabled: boolean,
+): Promise<void> {
+	const configDir = join(projectRoot, ".cosmonauts");
+	await mkdir(configDir, { recursive: true });
+	await writeFile(
+		join(configDir, "config.json"),
+		`${JSON.stringify({ knowledgeSurface: { enabled } }, null, "\t")}\n`,
+		"utf-8",
+	);
+}
+
+async function withPiAgentDir(
+	agentDir: string,
+	run: () => Promise<void>,
+): Promise<void> {
+	const previous = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+	try {
+		await run();
+	} finally {
+		if (previous === undefined) {
+			delete process.env.PI_CODING_AGENT_DIR;
+		} else {
+			process.env.PI_CODING_AGENT_DIR = previous;
+		}
+	}
+}
+
+async function createTransitionSession(options: {
+	definition: AgentDefinition;
+	projectRoot: string;
+	domainsDir: string;
+	registry: AgentRegistry;
+}): Promise<TransitionRuntime> {
+	return createSession({
+		definition: options.definition,
+		cwd: options.projectRoot,
+		domainsDir: options.domainsDir,
+		persistent: false,
+		piFlags: { noSession: true, noThemes: true },
+		agentRegistry: options.registry,
+		domainContext: "main",
+		extraExtensionPaths: [AGENT_SWITCH_EXTENSION],
+	});
+}
+
+async function expectKnowledgeSurface(
+	resourceLoader: TransitionResourceLoader,
+	options: { enabled: boolean; projectRoot: string; agentId: string },
+): Promise<void> {
+	const loaded = resourceLoader.getExtensions();
+	expect(loaded.errors).toEqual([]);
+	const knowledgeExtensions = loaded.extensions.filter(
+		(extension) => extension.path === "<inline:cosmonauts-knowledge-surface>",
+	);
+	const toolNames = loaded.extensions.flatMap((extension) => [
+		...extension.tools.keys(),
+	]);
+
+	if (!options.enabled) {
+		expect(knowledgeExtensions).toEqual([]);
+		expect(toolNames).not.toContain("recall");
+		expect(
+			loaded.extensions.flatMap(
+				(extension) => extension.handlers.get("before_agent_start") ?? [],
+			),
+		).toEqual([]);
+		return;
+	}
+
+	expect(knowledgeExtensions).toHaveLength(1);
+	expect(toolNames.filter((name) => name === "recall")).toHaveLength(1);
+	const knowledgeExtension = knowledgeExtensions[0];
+	if (!knowledgeExtension)
+		throw new Error("Missing enabled knowledge extension");
+
+	const beforeAgentStart =
+		knowledgeExtension.handlers.get("before_agent_start");
+	expect(beforeAgentStart).toHaveLength(1);
+	const beforeResult = asRecord(
+		await beforeAgentStart?.[0]?.(
+			{
+				type: "before_agent_start",
+				prompt: "B-008 transition",
+				images: [],
+				systemPrompt: buildAgentIdentityMarker(options.agentId),
+			},
+			{ cwd: options.projectRoot } as never,
+		),
+	);
+	const combinedMessage = asRecord(beforeResult.message);
+	expect(combinedMessage.customType).toBe("cosmonauts-combined-context");
+	expect(combinedMessage.content).toContain("B-008 gate transition sentinel");
+	expect(combinedMessage.content).not.toContain(KNOWLEDGE_SENTINEL);
+
+	const contextHandlers = knowledgeExtension.handlers.get("context");
+	expect(contextHandlers).toHaveLength(1);
+	const providerResult = asRecord(
+		await contextHandlers?.[0]?.(
+			{
+				type: "context",
+				messages: [
+					{
+						customType: "agent-memory-context",
+						content: "legacy provider context",
+					},
+					combinedMessage,
+				],
+			},
+			{ cwd: options.projectRoot } as never,
+		),
+	);
+	expect(providerResult.messages).toEqual([combinedMessage]);
+
+	const recall = knowledgeExtension.tools.get("recall");
+	if (!recall) throw new Error("Missing enabled recall tool");
+	const recalled = asToolResult(
+		await recall.definition.execute(
+			"b-008-call",
+			{ query: KNOWLEDGE_SENTINEL },
+			undefined,
+			undefined,
+			{ cwd: options.projectRoot } as never,
+		),
+	);
+	expect(recalled.content.map((entry) => entry.text).join("\n")).toContain(
+		KNOWLEDGE_SENTINEL,
+	);
+}
+
+async function invokeAgentSwitch(
+	runtime: TransitionRuntime,
+	targetAgentId: string,
+): Promise<void> {
+	const loaded = runtime.services.resourceLoader.getExtensions();
+	const command = loaded.extensions
+		.map((extension) => extension.commands.get("agent"))
+		.find((candidate) => candidate !== undefined);
+	if (!command) throw new Error("Missing shipped /agent command");
+
+	await command.handler(targetAgentId, {
+		ui: { notify: vi.fn() },
+		sessionManager: runtime.session.sessionManager,
+		newSession: (options: Parameters<TransitionRuntime["newSession"]>[0]) =>
+			runtime.newSession(options),
+	} as never);
+}
 
 function sha256(value: string | Buffer): string {
 	return createHash("sha256").update(value).digest("hex");
