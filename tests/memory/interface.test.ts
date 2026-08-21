@@ -1931,7 +1931,17 @@ function auditMigratedSeed(
 		if (!files.has(path)) issues.push(`destination:${path}`);
 	}
 	for (const path of actualPaths) {
-		if (!expectedPaths.has(path) || !path.endsWith(".md")) {
+		if (expectedPaths.has(path)) continue;
+		if (!path.endsWith(".md")) {
+			issues.push(`unexpected:${path}`);
+			continue;
+		}
+		// `knowledge/` is a living human-curated store, so a record added after
+		// the migration is legitimate and must not fail this audit. What the
+		// audit forbids is stray MIGRATION output: every migrated record carries
+		// `legacySourceSha256`, so an unexpected file claiming that provenance is
+		// still an issue.
+		if (matter(files.get(path) ?? "").data.legacySourceSha256 !== undefined) {
 			issues.push(`unexpected:${path}`);
 		}
 	}
