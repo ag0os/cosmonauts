@@ -1,0 +1,1070 @@
+{
+	"version": 1,
+	"plan": "knowledge-surface",
+	"generatedAt": "2026-08-21T15:01:54.026Z",
+	"beforeConfigDigest": "890d02aa85df1daccbdd177f01503c6477c04e9e352fa000daf9e1b5fb87d8a6",
+	"temporaryConfigDigest": "e3d93fa1ff7612d86cd4432d7d3b0e8d83bab95b350d9a4c4ddd5fc2de576911",
+	"afterConfigDigest": "890d02aa85df1daccbdd177f01503c6477c04e9e352fa000daf9e1b5fb87d8a6",
+	"missingSlugs": [
+		"agent-thinking-levels",
+		"analysis-capabilities",
+		"coding-agnostic-framework",
+		"dialogic-planner",
+		"domain-authoring",
+		"drive-smoke-fixes",
+		"driver-primitives",
+		"external-agent-orchestration",
+		"external-backends-and-cli",
+		"fallow-temp-exceptions-cleanup",
+		"framework-extraction",
+		"main-domain-and-cosmo-rename",
+		"observability",
+		"orchestration-hardening",
+		"orchestration-surface-consolidation",
+		"package-system",
+		"quality-contracts",
+		"roadmap-system",
+		"ruby-rails-skills"
+	],
+	"sourceInputs": [
+		{
+			"planSlug": "agent-thinking-levels",
+			"path": "missions/archive/plans/agent-thinking-levels/plan.md",
+			"sha256": "ec3e66728234f11605ce3fba13b6a894cf0bd6c39b816efa30c277c307edc5f6"
+		},
+		{
+			"planSlug": "analysis-capabilities",
+			"path": "missions/archive/plans/analysis-capabilities/plan.md",
+			"sha256": "40f07299651468805408f40be9a5fcda67293bbbf03cafa064eea0c565130d13"
+		},
+		{
+			"planSlug": "analysis-capabilities",
+			"path": "missions/archive/plans/analysis-capabilities/review.md",
+			"sha256": "9970fe4f0ae4d35fa1e6402a1ec5a200d773c1fb4f9e5fcc7aaae541416fca87"
+		},
+		{
+			"planSlug": "analysis-capabilities",
+			"path": "missions/archive/plans/analysis-capabilities/spec.md",
+			"sha256": "08c6fada3207683d56edde64ee3ab55be72de147c9820a6e46c291f7c7883ef9"
+		},
+		{
+			"planSlug": "coding-agnostic-framework",
+			"path": "missions/archive/plans/coding-agnostic-framework/dogfood-drive-verification.md",
+			"sha256": "5d8ecb36ec13f72d1cd9bdff51830086b1eaa96e7a764cab1a06ab5cfaab4ef9"
+		},
+		{
+			"planSlug": "coding-agnostic-framework",
+			"path": "missions/archive/plans/coding-agnostic-framework/integration-report.md",
+			"sha256": "2a643267fb79e727a3d383edac91f1259e8bfee045a8175b9748210d0a75475e"
+		},
+		{
+			"planSlug": "coding-agnostic-framework",
+			"path": "missions/archive/plans/coding-agnostic-framework/leakage-findings.md",
+			"sha256": "65e75a501010efbb5fb10cc81fc3f37bc0b21acfa2e7af2aee704de993071877"
+		},
+		{
+			"planSlug": "coding-agnostic-framework",
+			"path": "missions/archive/plans/coding-agnostic-framework/plan.md",
+			"sha256": "c5407d4a9b2528645142fc4807eff01c4e522cf4d3163c6f14a5748b95598e8e"
+		},
+		{
+			"planSlug": "coding-agnostic-framework",
+			"path": "missions/archive/plans/coding-agnostic-framework/qm.md",
+			"sha256": "1c346672e0dc951d6b6261a11af8672147e3e4c122c8e190276148d3199e3b69"
+		},
+		{
+			"planSlug": "coding-agnostic-framework",
+			"path": "missions/archive/plans/coding-agnostic-framework/review.md",
+			"sha256": "f0c1c325596771f2ff1630af3109025d32e4dc626b2fa27667b89af2f8776248"
+		},
+		{
+			"planSlug": "coding-agnostic-framework",
+			"path": "missions/archive/plans/coding-agnostic-framework/spec.md",
+			"sha256": "30c558976c19ad8a44f1cae291bb0881a500a396680e9f4702da605c5a4a1b01"
+		},
+		{
+			"planSlug": "coding-agnostic-framework",
+			"path": "missions/archive/plans/coding-agnostic-framework/test-decoupling-ledger.md",
+			"sha256": "972ba86eb65c41bce0df962ac5729df86dc28ff2b3628800066cebdcc831b060"
+		},
+		{
+			"planSlug": "dialogic-planner",
+			"path": "missions/archive/plans/dialogic-planner/plan.md",
+			"sha256": "e2f4c8f3e312cef28832c2bec7b43464421f1f2ed527f6b83ce97fcf67feeaf6"
+		},
+		{
+			"planSlug": "domain-authoring",
+			"path": "missions/archive/plans/domain-authoring/integration-report.md",
+			"sha256": "e8fd3d0c93c47bf7ae7a7ccd35a7d8cd37f1d7cd90ee8416e12c5e49f7a8e8cc"
+		},
+		{
+			"planSlug": "domain-authoring",
+			"path": "missions/archive/plans/domain-authoring/plan.md",
+			"sha256": "387a7db3bacf33deecf4a6065900b212caa6d539b27808a3a99b7301eaf5a60d"
+		},
+		{
+			"planSlug": "domain-authoring",
+			"path": "missions/archive/plans/domain-authoring/review.md",
+			"sha256": "8328eb01b25b368328e0c78459e2835aeb1f3f4da71c78e13491e72e48ccbddd"
+		},
+		{
+			"planSlug": "domain-authoring",
+			"path": "missions/archive/plans/domain-authoring/spec.md",
+			"sha256": "aa33196a49f7512f9c40bfe3e08436701534549aae21e474ad94d826341b11e5"
+		},
+		{
+			"planSlug": "drive-smoke-fixes",
+			"path": "missions/archive/plans/drive-smoke-fixes/plan.md",
+			"sha256": "67595eda77f1f83916d64254e2f9854f5d939ef05abab6131f167a1d679c09f4"
+		},
+		{
+			"planSlug": "driver-primitives",
+			"path": "missions/archive/plans/driver-primitives/plan.md",
+			"sha256": "b69a80acce523cd3f5357063850799fbe84eed7d57a49fda01d7d7314943d2bc"
+		},
+		{
+			"planSlug": "driver-primitives",
+			"path": "missions/archive/plans/driver-primitives/review.md",
+			"sha256": "0929c4bb306c2645cbae4fa91cba4fc53de0d48c3b81c228c7f29f24199ed62a"
+		},
+		{
+			"planSlug": "external-agent-orchestration",
+			"path": "missions/archive/plans/external-agent-orchestration/plan.md",
+			"sha256": "7fbbd204ff1fbe57bf95c36810b96dd9388db90d8c72216d3a2167f359bc7572"
+		},
+		{
+			"planSlug": "external-agent-orchestration",
+			"path": "missions/archive/plans/external-agent-orchestration/review.md",
+			"sha256": "bb214cc1932b5bf905e3e0130e83a8d442581d0e1bf54713bb791b4983cbe93d"
+		},
+		{
+			"planSlug": "external-agent-orchestration",
+			"path": "missions/archive/plans/external-agent-orchestration/spec.md",
+			"sha256": "c7dc0f577c8e94c0fd027802a335e5d3847d32a981730f9a1679d668bd5eef50"
+		},
+		{
+			"planSlug": "external-backends-and-cli",
+			"path": "missions/archive/plans/external-backends-and-cli/plan.md",
+			"sha256": "9e971dc2819f0d67e89f78da9aa62e5ea89efb3b3e059219ab819d5fb2057413"
+		},
+		{
+			"planSlug": "external-backends-and-cli",
+			"path": "missions/archive/plans/external-backends-and-cli/review.md",
+			"sha256": "fa658a51055db66f97fd73d3cd544546dc3a45cc3533d3f15239959033436ada"
+		},
+		{
+			"planSlug": "fallow-temp-exceptions-cleanup",
+			"path": "missions/archive/plans/fallow-temp-exceptions-cleanup/plan.md",
+			"sha256": "7fb50f734562dfe83bb1e0e88c571403c735e58a632325ea22eb04eeeb5d59e9"
+		},
+		{
+			"planSlug": "fallow-temp-exceptions-cleanup",
+			"path": "missions/archive/plans/fallow-temp-exceptions-cleanup/review.md",
+			"sha256": "99e5a272bc3efa452f609c0e69958ff59d8c1f1f0b2b02d8508071430320380e"
+		},
+		{
+			"planSlug": "framework-extraction",
+			"path": "missions/archive/plans/framework-extraction/plan.md",
+			"sha256": "e7e422fdab93101a7f3ef5c624a2e281a338fd98227ae8cd0c2d45c8b3a933ad"
+		},
+		{
+			"planSlug": "framework-extraction",
+			"path": "missions/archive/plans/framework-extraction/spec.md",
+			"sha256": "2594bec80cad9eeffc92e8b34b030c9ec942111a3f0630a9303d06b4d61276b5"
+		},
+		{
+			"planSlug": "main-domain-and-cosmo-rename",
+			"path": "missions/archive/plans/main-domain-and-cosmo-rename/plan.md",
+			"sha256": "cc8fb56a3dc6e9d9688d84a76e35d41606792f8ba609dc5f0a1173469fe98c89"
+		},
+		{
+			"planSlug": "main-domain-and-cosmo-rename",
+			"path": "missions/archive/plans/main-domain-and-cosmo-rename/review.md",
+			"sha256": "322001de6570b62f0a57d01490594c1fad91cf53f5220d54e13b587c6f343397"
+		},
+		{
+			"planSlug": "observability",
+			"path": "missions/archive/plans/observability/plan.md",
+			"sha256": "78d5166437166d4e7c39e9440767a73851b140e60d00327f19f87b094b972a8d"
+		},
+		{
+			"planSlug": "orchestration-hardening",
+			"path": "missions/archive/plans/orchestration-hardening/plan.md",
+			"sha256": "d8ef62e49d5b47e19a490cb128947e92d301bd72a12fd6f4c57bd82dc9b7f1cd"
+		},
+		{
+			"planSlug": "orchestration-hardening",
+			"path": "missions/archive/plans/orchestration-hardening/spec.md",
+			"sha256": "2e640fde0fb04efc12242cb4805e38e4d4404b730a770cec70f64cbee5e1a2c0"
+		},
+		{
+			"planSlug": "orchestration-surface-consolidation",
+			"path": "missions/archive/plans/orchestration-surface-consolidation/plan.md",
+			"sha256": "5377afeff42fe69dd646306191be16db7402710a055b6a88798338fd14e91c36"
+		},
+		{
+			"planSlug": "orchestration-surface-consolidation",
+			"path": "missions/archive/plans/orchestration-surface-consolidation/review.md",
+			"sha256": "a9bf93b057e26f9f1393314c53613f0a6eec05146bf3ca03b6fbc6a455ac55a7"
+		},
+		{
+			"planSlug": "orchestration-surface-consolidation",
+			"path": "missions/archive/plans/orchestration-surface-consolidation/spec.md",
+			"sha256": "ae9c5cff12f14d9445b8da5783e349160214566b9df7b7a6d42291bbe2553e23"
+		},
+		{
+			"planSlug": "package-system",
+			"path": "missions/archive/plans/package-system/plan.md",
+			"sha256": "fa9605bb402a8aa59a5ec977b2cb9dbd4ed73f75eceb98d377fac8f964b0aa8e"
+		},
+		{
+			"planSlug": "package-system",
+			"path": "missions/archive/plans/package-system/spec.md",
+			"sha256": "a3e3a5b692736e1373266c542f01ecd78626546d0b7187c98f43269154d0fa01"
+		},
+		{
+			"planSlug": "quality-contracts",
+			"path": "missions/archive/plans/quality-contracts/plan.md",
+			"sha256": "3e42233d5568a02fb182af5fbc519f60a56b503fdd386c6c393c62aa63625a0b"
+		},
+		{
+			"planSlug": "roadmap-system",
+			"path": "missions/archive/plans/roadmap-system/plan.md",
+			"sha256": "078ce4c47bb23f4b3c974107210d81959c6990ebaae82e2942befa0daad2925c"
+		},
+		{
+			"planSlug": "ruby-rails-skills",
+			"path": "missions/archive/plans/ruby-rails-skills/plan.md",
+			"sha256": "f36cbde726f8fbaae156dd057365b56fe713a8dd78f0fa570bff17e923a9e136"
+		},
+		{
+			"planSlug": "ruby-rails-skills",
+			"path": "missions/archive/plans/ruby-rails-skills/spec.md",
+			"sha256": "c42fa753642e14ff6b3adeb10d39751ef997c8f8e895b976338c549995731492"
+		}
+	],
+	"proposals": [
+		{
+			"planSlug": "agent-thinking-levels",
+			"path": "memory/agent/proposals/agent-thinking-levels/convention-thinking-configuration-mirrors-model-configuration-cd7df7a01e8a.md",
+			"sha256": "326d29bbf149a38b8980c93a6ac970220dc2ddec8504c8bf2715af7b1625e3cb"
+		},
+		{
+			"planSlug": "agent-thinking-levels",
+			"path": "memory/agent/proposals/agent-thinking-levels/decision-agent-thinking-levels-use-the-existing-session-api-c20e259c3cf0.md",
+			"sha256": "24b7f893acfc5aab3b8154d90aa8d887cb1b649ef4716ef6db3c1992047da024"
+		},
+		{
+			"planSlug": "agent-thinking-levels",
+			"path": "memory/agent/proposals/agent-thinking-levels/decision-cli-thinking-selection-applies-to-spawned-chain-agents-2e9e749c9a93.md",
+			"sha256": "460653dd8ce35bdb5363d3feff955929bb2b5fa5b63717ce2fb79979cf2bed17"
+		},
+		{
+			"planSlug": "agent-thinking-levels",
+			"path": "memory/agent/proposals/agent-thinking-levels/decision-thinking-level-precedence-is-explicit-spawn-role-definition-then-chain-default-489e6fbbbf7c.md",
+			"sha256": "a0d909ab9d8fb56ff7b812773fc9e0e0d8c49dedba210d0c52d8acb81f9c0f0a"
+		},
+		{
+			"planSlug": "agent-thinking-levels",
+			"path": "memory/agent/proposals/agent-thinking-levels/gotcha-thinking-defaults-have-model-compatibility-and-cost-consequences-0838019db078.md",
+			"sha256": "0070dd586e92ceac21e1459bb263742556f42e6f6112f14896fac699715f56cb"
+		},
+		{
+			"planSlug": "analysis-capabilities",
+			"path": "memory/agent/proposals/analysis-capabilities/convention-distinguish-unavailable-support-from-attempted-execution-failure-5f76fa3cd9f6.md",
+			"sha256": "7eb4b68be481a488174a3cc1407c8bc460ae154f6ba88658bb69578148dace14"
+		},
+		{
+			"planSlug": "analysis-capabilities",
+			"path": "memory/agent/proposals/analysis-capabilities/decision-keep-capability-contracts-inward-and-provider-i-o-at-the-edge-f8a26fe54361.md",
+			"sha256": "cb53caffc376e1e6c7e5d702968e202ba68601a55c6e5e269bdb2f842dbe83e5"
+		},
+		{
+			"planSlug": "analysis-capabilities",
+			"path": "memory/agent/proposals/analysis-capabilities/decision-remediation-should-rerun-the-capability-request-0e4c153bf768.md",
+			"sha256": "d0648c7e15fb7645163607ca034ae5ad6dc43b0c611126171a53ebad8f9a7f16"
+		},
+		{
+			"planSlug": "analysis-capabilities",
+			"path": "memory/agent/proposals/analysis-capabilities/decision-subprocess-runners-must-preserve-termination-evidence-bd028b62e097.md",
+			"sha256": "5b68f536e25d6c2cd515cb0f85d2614b341edf9ee6955b342e12fd5cda5b496a"
+		},
+		{
+			"planSlug": "analysis-capabilities",
+			"path": "memory/agent/proposals/analysis-capabilities/decision-verdicts-belong-only-to-verdict-bearing-result-kinds-baba5126c16b.md",
+			"sha256": "82d712bac59179eb15ae1358d93a98466ce52b759b9cfe0fbbeab379501a0810"
+		},
+		{
+			"planSlug": "analysis-capabilities",
+			"path": "memory/agent/proposals/analysis-capabilities/gotcha-read-only-analysis-includes-caches-and-introspection-side-effects-0a47377172bb.md",
+			"sha256": "703f9946aa503cc46aba59cccda2405a9d0ed39e4ae75088a521d05c2c1ab437"
+		},
+		{
+			"planSlug": "analysis-capabilities",
+			"path": "memory/agent/proposals/analysis-capabilities/gotcha-read-only-discovery-must-not-execute-repository-controlled-binaries-4daa87bf45f1.md",
+			"sha256": "8cdef8e9fc2f8e827fd33c1f965ea0f8f46f86deadefa4cb1eb917879cf8d355"
+		},
+		{
+			"planSlug": "analysis-capabilities",
+			"path": "memory/agent/proposals/analysis-capabilities/gotcha-scoped-requests-must-never-widen-silently-7b27b13e9580.md",
+			"sha256": "943b3298fa012c0be91ff9f8f9edbb1fc98203b67dcc91464a1282305a059da8"
+		},
+		{
+			"planSlug": "coding-agnostic-framework",
+			"path": "memory/agent/proposals/coding-agnostic-framework/convention-make-test-decoupling-inventories-executable-77e4edfce8f8.md",
+			"sha256": "fd313710b01c498c26739524e6fdef3a3d220314974eee35f43284da2d7dba1d"
+		},
+		{
+			"planSlug": "coding-agnostic-framework",
+			"path": "memory/agent/proposals/coding-agnostic-framework/convention-scan-only-audits-require-dispositions-dc7158170ebe.md",
+			"sha256": "b0dfe082ab02f183a65d5354f1c505798cfc6e4b9cafb1325341ee6ded4be5c3"
+		},
+		{
+			"planSlug": "coding-agnostic-framework",
+			"path": "memory/agent/proposals/coding-agnostic-framework/convention-use-minimal-synthetic-installable-domains-in-framework-tests-175081e06afa.md",
+			"sha256": "531d0b717339f73a30ff39e37a627d7a407be4e4e636b7a15e9b469c32d8e583"
+		},
+		{
+			"planSlug": "coding-agnostic-framework",
+			"path": "memory/agent/proposals/coding-agnostic-framework/decision-centralize-default-domain-resolution-6b4ce4c3d528.md",
+			"sha256": "16ebf4cd38f27e9f9407efa833c028e17afdbf88f077afe1ae60e8ee087bc673"
+		},
+		{
+			"planSlug": "coding-agnostic-framework",
+			"path": "memory/agent/proposals/coding-agnostic-framework/decision-define-cli-runnability-by-default-assistant-availability-5469f5261041.md",
+			"sha256": "e8279cd3bccd85b363eff3c7171c71ebd2b236c479ed52bb997728704e9ee832"
+		},
+		{
+			"planSlug": "coding-agnostic-framework",
+			"path": "memory/agent/proposals/coding-agnostic-framework/decision-framework-orchestration-defaults-belong-outside-domains-651b280aa3b3.md",
+			"sha256": "631403b58b2545af015f3e12f3e0e491ef325e6a77a2ff95dd7e5f25d4bde57e"
+		},
+		{
+			"planSlug": "coding-agnostic-framework",
+			"path": "memory/agent/proposals/coding-agnostic-framework/decision-record-resolved-agent-identity-at-the-resolution-seam-ebfefe8e525c.md",
+			"sha256": "98d03b163a9f63416e69f31d81a9c46e4b40bad094bf7cf6fe269f4864e73fb2"
+		},
+		{
+			"planSlug": "coding-agnostic-framework",
+			"path": "memory/agent/proposals/coding-agnostic-framework/gotcha-resource-fallback-is-not-runtime-identity-5617245fd787.md",
+			"sha256": "ec7bf5063eeeab3bb57c5cb52bf58c61a73317eabe078ed146697ffb9d880d6e"
+		},
+		{
+			"planSlug": "coding-agnostic-framework",
+			"path": "memory/agent/proposals/coding-agnostic-framework/gotcha-unqualified-role-routing-can-depend-on-absence-a5c80afea366.md",
+			"sha256": "aef4a54ae3330f84c014258c9e7027b73f5c0681da01e8510c8741a532e74e22"
+		},
+		{
+			"planSlug": "coding-agnostic-framework",
+			"path": "memory/agent/proposals/coding-agnostic-framework/trade-off-relocate-defaults-while-preserving-explicit-legacy-paths-4b2f53926cfe.md",
+			"sha256": "2e57530288971304306511e21ccd9da4a89448fa410f666ec142ace1efbe74e4"
+		},
+		{
+			"planSlug": "dialogic-planner",
+			"path": "memory/agent/proposals/dialogic-planner/convention-fuzzy-ideas-diverge-before-converging-70b8c140adbe.md",
+			"sha256": "d8068378e43808d50edc383267726de2d222646af6807f4c38c63ae51f1a99d3"
+		},
+		{
+			"planSlug": "dialogic-planner",
+			"path": "memory/agent/proposals/dialogic-planner/convention-product-framing-and-engineering-design-have-separate-owners-179d7edfdf8b.md",
+			"sha256": "54cfe43545e92650861e862cfe271d6ed386911bb9b2d7fac3692051c6164851"
+		},
+		{
+			"planSlug": "dialogic-planner",
+			"path": "memory/agent/proposals/dialogic-planner/decision-order-delivery-design-as-structure-behaviors-then-tasks-d9c9d0b4e4b3.md",
+			"sha256": "26d563fcbf0bfbfeec26062155cfb18a57ad8423d68a136afd266e3db98c57e2"
+		},
+		{
+			"planSlug": "dialogic-planner",
+			"path": "memory/agent/proposals/dialogic-planner/decision-planning-behavior-follows-invocation-mode-09cae39c21eb.md",
+			"sha256": "1516412ce0352cbf703a8748c48e84efca20dceb9806cfd31322ab85ea4a1eaa"
+		},
+		{
+			"planSlug": "dialogic-planner",
+			"path": "memory/agent/proposals/dialogic-planner/decision-review-the-final-planning-artifact-before-execution-1815e1f855c5.md",
+			"sha256": "77da4d73ae36391e3a72db825f03b7f8ecc5196a3674f23e5765d1c3e7bcd198"
+		},
+		{
+			"planSlug": "dialogic-planner",
+			"path": "memory/agent/proposals/dialogic-planner/decision-run-independent-review-lenses-as-a-parallel-panel-57f3c2303050.md",
+			"sha256": "821b06462afc8bcba774d31f4645f8c7c686627e8d28fd60be3a28b8996ec2ac"
+		},
+		{
+			"planSlug": "dialogic-planner",
+			"path": "memory/agent/proposals/dialogic-planner/trade-off-defer-planner-memory-reads-until-retrieval-is-selective-c0a20fbee6ab.md",
+			"sha256": "a59a0d602521aa1ca29e9ca07a6b82e5399e0f4c8d226d1db8c7677a7911df0c"
+		},
+		{
+			"planSlug": "domain-authoring",
+			"path": "memory/agent/proposals/domain-authoring/convention-centralize-public-surface-interpretation-791e3b2822c1.md",
+			"sha256": "4561c24298148d72d7d47c8b73c28a4443146298267b0e39479894861817491a"
+		},
+		{
+			"planSlug": "domain-authoring",
+			"path": "memory/agent/proposals/domain-authoring/convention-domain-prompt-directories-contain-personas-only-da50fed4900e.md",
+			"sha256": "20401b10d211423e0a62fff091e1f23ee7a597ce791f7ec3a3951a7c8fa19226"
+		},
+		{
+			"planSlug": "domain-authoring",
+			"path": "memory/agent/proposals/domain-authoring/decision-binding-precedence-is-live-then-project-then-same-name-ff37893a4bed.md",
+			"sha256": "aa542dec2261d276fdf7b37d6e643c155afe3bf0fd18ea6e590b29a7bc7c3b7d"
+		},
+		{
+			"planSlug": "domain-authoring",
+			"path": "memory/agent/proposals/domain-authoring/decision-domain-id-conflicts-are-precedence-sensitive-and-provenance-rich-1f0f7492ec33.md",
+			"sha256": "7f138e4e79d76be0ab422ceb61942cf60c2139663dde9f8427013195693c8dc9"
+		},
+		{
+			"planSlug": "domain-authoring",
+			"path": "memory/agent/proposals/domain-authoring/decision-domain-visibility-is-default-public-with-an-explicit-internal-deny-list-1ee3b85b7ab2.md",
+			"sha256": "371ecddf14523a2269535a7bbf0ccdec204eccefb137dd94395271760133e473"
+		},
+		{
+			"planSlug": "domain-authoring",
+			"path": "memory/agent/proposals/domain-authoring/decision-live-binding-state-is-shared-by-reference-and-reconstructed-from-session-history-49ffa526be1c.md",
+			"sha256": "abfeed93cfdaf5cc1bf338fe9ef85ad5b4786ae7676056ce4459e1bf7fd4031d"
+		},
+		{
+			"planSlug": "domain-authoring",
+			"path": "memory/agent/proposals/domain-authoring/decision-role-binding-preserves-requested-and-resolved-identities-b4d06d0f7fd4.md",
+			"sha256": "2e84e78504112b2f2592c564d3e4df81334b082b7caec1a88f7681a5c7e14fde"
+		},
+		{
+			"planSlug": "domain-authoring",
+			"path": "memory/agent/proposals/domain-authoring/gotcha-a-root-domain-package-needs-an-exact-source-kind-0ea8c48c4ec3.md",
+			"sha256": "2532f2d58167c72225659c04ba69c651cce54306c235d463117e41d8e13e1f9d"
+		},
+		{
+			"planSlug": "domain-authoring",
+			"path": "memory/agent/proposals/domain-authoring/gotcha-filter-inactive-providers-before-validation-and-conflict-detection-bbdc4c09d611.md",
+			"sha256": "b71d0188f0d8b8762d7a9e560a9b671dddb97fb442bccab2c4c9c4c607681e66"
+		},
+		{
+			"planSlug": "domain-authoring",
+			"path": "memory/agent/proposals/domain-authoring/gotcha-malformed-execution-identity-bindings-must-not-disappear-silently-0ca22b5e1c57.md",
+			"sha256": "ad923f674a3b5ea740d4a1a8dfb4c3567a2a9dbf2f602c2333896b3636569920"
+		},
+		{
+			"planSlug": "domain-authoring",
+			"path": "memory/agent/proposals/domain-authoring/trade-off-live-binding-switches-affect-future-resolutions-only-453f418ffe4c.md",
+			"sha256": "5bca4d3b1efd72d115334148b42d7763b1417a8f04217318852000d7ea249caf"
+		},
+		{
+			"planSlug": "drive-smoke-fixes",
+			"path": "memory/agent/proposals/drive-smoke-fixes/convention-blocked-input-reports-include-the-command-and-observed-output-1b59099646e2.md",
+			"sha256": "abec0d87173d81a5523fe8ae8f158d8a3df6fc4a584c8b723f929c6067ade789"
+		},
+		{
+			"planSlug": "drive-smoke-fixes",
+			"path": "memory/agent/proposals/drive-smoke-fixes/decision-put-progress-evidence-in-the-model-visible-tool-channel-9ee3b579fdc2.md",
+			"sha256": "d331a0fcad9bef0b5f97424908284c0b9e4a7e2ccc5b3e6bee86d681c0c15ed5"
+		},
+		{
+			"planSlug": "drive-smoke-fixes",
+			"path": "memory/agent/proposals/drive-smoke-fixes/decision-retry-contradicted-missing-path-blocks-once-0c0f18f82edb.md",
+			"sha256": "4b9930969f7c40f572923e929b1c3710944bbd2b5e04f2aa25011185df8f1256"
+		},
+		{
+			"planSlug": "drive-smoke-fixes",
+			"path": "memory/agent/proposals/drive-smoke-fixes/decision-separate-backend-execution-root-from-artifact-storage-6859be3f977f.md",
+			"sha256": "e8ad39b71796de7a33755d95f09075e5c0f097bac411c89031c317b588d045e1"
+		},
+		{
+			"planSlug": "drive-smoke-fixes",
+			"path": "memory/agent/proposals/drive-smoke-fixes/decision-serialize-file-backed-id-allocation-with-a-filesystem-lock-bcda72ead313.md",
+			"sha256": "bb4022146e6b548a8a7ae2cf6df12088828cd160a46582f391ee53fb8abbb72a"
+		},
+		{
+			"planSlug": "drive-smoke-fixes",
+			"path": "memory/agent/proposals/drive-smoke-fixes/gotcha-filesystem-locks-need-stale-owner-recovery-1ac71644b732.md",
+			"sha256": "b1ec6ff0eee973ed556aa43a6f2ec6af89eff377834dfa54a1d424363b759e3d"
+		},
+		{
+			"planSlug": "drive-smoke-fixes",
+			"path": "memory/agent/proposals/drive-smoke-fixes/trade-off-bound-event-text-while-preserving-cursor-based-recovery-68ae5aac0e38.md",
+			"sha256": "130bc7e791145da1933b7955b800226f6fd00726a35f32232d1dc5b524b77bee"
+		},
+		{
+			"planSlug": "driver-primitives",
+			"path": "memory/agent/proposals/driver-primitives/convention-exclude-orchestration-metadata-from-driver-created-commits-10c760f10119.md",
+			"sha256": "d9af5d90f1721b631379394726c9699d604c4b4586be0e4ef955c22dd1a76349"
+		},
+		{
+			"planSlug": "driver-primitives",
+			"path": "memory/agent/proposals/driver-primitives/convention-inject-backends-and-preserve-the-full-child-execution-context-9b2c1f1104d1.md",
+			"sha256": "48f46480ddafcd0241b12e840e7c369af058d5d4e29cb857d4762fb3023ca12e"
+		},
+		{
+			"planSlug": "driver-primitives",
+			"path": "memory/agent/proposals/driver-primitives/decision-keep-execution-specifications-serializable-9943a3fe1f66.md",
+			"sha256": "caefe662f2f5b532506400e8c36e8e1481c6d8579492a5e5a79f0c12aa078a18"
+		},
+		{
+			"planSlug": "driver-primitives",
+			"path": "memory/agent/proposals/driver-primitives/decision-persist-events-before-publishing-live-notifications-629cf67176df.md",
+			"sha256": "24aeab097e7f62fb53886063ff55f4e0262f5e9133bcd689e9dc6988df2f89b2"
+		},
+		{
+			"planSlug": "driver-primitives",
+			"path": "memory/agent/proposals/driver-primitives/decision-return-a-run-handle-immediately-for-long-running-tools-86b515c032f0.md",
+			"sha256": "733a05ffdede275a0067055d5834ce59c931002c986436dd3430feff08ce4586"
+		},
+		{
+			"planSlug": "driver-primitives",
+			"path": "memory/agent/proposals/driver-primitives/decision-separate-report-parsing-from-outcome-derivation-7ea03d90cac2.md",
+			"sha256": "7d2c2c84601d55c5c332bdeb29ca53f9ff6f52b41be7c9b11565f478f8201b24"
+		},
+		{
+			"planSlug": "driver-primitives",
+			"path": "memory/agent/proposals/driver-primitives/decision-share-one-lock-agnostic-run-loop-across-execution-modes-844393369f81.md",
+			"sha256": "4aabbbe2799359f1fa0501164772a4822e0a6945840c502e9e2f210fb6295593"
+		},
+		{
+			"planSlug": "driver-primitives",
+			"path": "memory/agent/proposals/driver-primitives/decision-use-separate-locks-for-run-ownership-and-commit-serialization-93706f272d83.md",
+			"sha256": "99af116de5c98fbc9216030e3d6f0b35a0a3954b66fa45b2a288947b5850b371"
+		},
+		{
+			"planSlug": "driver-primitives",
+			"path": "memory/agent/proposals/driver-primitives/gotcha-a-successful-commit-and-task-state-update-are-not-atomic-2e859524b84b.md",
+			"sha256": "3ca5221c759dd32477e5f26c2ca1ed18c100c222374972592245d9dfce723eab"
+		},
+		{
+			"planSlug": "driver-primitives",
+			"path": "memory/agent/proposals/driver-primitives/gotcha-event-isolation-requires-both-type-namespaces-and-session-correlation-9371d61b699f.md",
+			"sha256": "66efae3ae9e3d2d5e1009b1b54b68e9ce74db632b683dd9a4fc77e0b89b48ac5"
+		},
+		{
+			"planSlug": "driver-primitives",
+			"path": "memory/agent/proposals/driver-primitives/trade-off-treat-partial-work-as-committed-progress-not-completion-f995e96b8a64.md",
+			"sha256": "e40afac67ca6c75013a9014ce57e623a362a3b5283461d5b70b318faf29ca6ec"
+		},
+		{
+			"planSlug": "external-agent-orchestration",
+			"path": "memory/agent/proposals/external-agent-orchestration/convention-explicit-packages-own-their-external-tool-policy-000375673764.md",
+			"sha256": "c1097013bf2d9cce664b7118e5bf947e7aa8f37716fadef76630a122c3c32d3f"
+		},
+		{
+			"planSlug": "external-agent-orchestration",
+			"path": "memory/agent/proposals/external-agent-orchestration/convention-separate-runtime-cwd-from-temporary-prompt-assets-691518d1d8d1.md",
+			"sha256": "94db2045b99a8153fa7baab286197a6d7503c4e8e50f4673cadefe45419f201d"
+		},
+		{
+			"planSlug": "external-agent-orchestration",
+			"path": "memory/agent/proposals/external-agent-orchestration/convention-single-source-internal-and-packaged-skill-filtering-e7ef7b9e0e45.md",
+			"sha256": "b197087e4c89357c49484f323feeb0a596d40da142d069ee2a2ccb646dfa5270"
+		},
+		{
+			"planSlug": "external-agent-orchestration",
+			"path": "memory/agent/proposals/external-agent-orchestration/decision-make-subscription-safe-authentication-the-default-5b1767f36b6b.md",
+			"sha256": "5d32e7670871a0f704a994d8d9dc5a60f72444388d9ce047fa76fe641cd18a11"
+		},
+		{
+			"planSlug": "external-agent-orchestration",
+			"path": "memory/agent/proposals/external-agent-orchestration/decision-use-declarative-package-definitions-as-the-export-boundary-049f529b6f02.md",
+			"sha256": "5c41ccd71b186b0f6a4be715ee55f8e9d11c77acbfbd05cc12cd9671015709f9"
+		},
+		{
+			"planSlug": "external-agent-orchestration",
+			"path": "memory/agent/proposals/external-agent-orchestration/gotcha-mocked-compiler-tests-can-miss-generated-entry-failures-363a54d47115.md",
+			"sha256": "ba049247444dc216b5dd8f38a07523e6e0abf3a58f9872269e350eae964cd034"
+		},
+		{
+			"planSlug": "external-agent-orchestration",
+			"path": "memory/agent/proposals/external-agent-orchestration/gotcha-raw-internal-prompts-require-portability-checks-c9f3957423a3.md",
+			"sha256": "8945e968fea330a0e75cde3c301424c3bd4b83ffc443ae169c486e6097dbe015"
+		},
+		{
+			"planSlug": "external-agent-orchestration",
+			"path": "memory/agent/proposals/external-agent-orchestration/trade-off-inline-full-skill-content-for-hermetic-exports-fcffc137447f.md",
+			"sha256": "27a06e0a2afa7d09d592c64ef3606de0ace43dca32abfe618cd1fc066fb02ef1"
+		},
+		{
+			"planSlug": "external-agent-orchestration",
+			"path": "memory/agent/proposals/external-agent-orchestration/trade-off-schema-extensibility-does-not-imply-exporter-support-b0a0b1b28b1f.md",
+			"sha256": "772ccdf8add6a5afa865f880f9737767d6d81421efea54407e9153db8e59f12a"
+		},
+		{
+			"planSlug": "external-backends-and-cli",
+			"path": "memory/agent/proposals/external-backends-and-cli/convention-detached-run-specifications-remain-serializable-boundary-contracts-433214fcb2fa.md",
+			"sha256": "7fdf14828d23907a31686ccc15b6996a017625e9ff2ed1b372d6a706e39e4a5f"
+		},
+		{
+			"planSlug": "external-backends-and-cli",
+			"path": "memory/agent/proposals/external-backends-and-cli/convention-execution-mode-parity-is-behavioral-not-byte-identical-a83d62d06e4b.md",
+			"sha256": "4941c3445ef452f18ec332e08f1e5ed37b09e1a8371c5a606e0b17dd67781689"
+		},
+		{
+			"planSlug": "external-backends-and-cli",
+			"path": "memory/agent/proposals/external-backends-and-cli/convention-external-command-adapters-use-structured-argv-and-explicit-probes-a0a5d3c464fa.md",
+			"sha256": "acdc96e1dff3096f191cacf9085dcad6e3c1edb52c8d5675a27771cff747b257"
+		},
+		{
+			"planSlug": "external-backends-and-cli",
+			"path": "memory/agent/proposals/external-backends-and-cli/decision-detached-execution-process-owns-the-complete-run-lifecycle-5be90075ea34.md",
+			"sha256": "7c6560333e3c4c2d679823dddb1f4b83b534234ba578f1bc64cd8414e296bbff"
+		},
+		{
+			"planSlug": "external-backends-and-cli",
+			"path": "memory/agent/proposals/external-backends-and-cli/decision-detached-mode-rejects-session-coupled-backends-5fc511e830cc.md",
+			"sha256": "0f1faedbd3d63f70e1f7ee867858090259a615cda545c9df1d21a9b024db7252"
+		},
+		{
+			"planSlug": "external-backends-and-cli",
+			"path": "memory/agent/proposals/external-backends-and-cli/decision-plan-locks-and-repository-commit-locks-protect-different-scopes-e47c42eaeb93.md",
+			"sha256": "6216e0bcfaddee27bb3efc80420059a63ff9dd22b5daf55271c1862660a45b34"
+		},
+		{
+			"planSlug": "external-backends-and-cli",
+			"path": "memory/agent/proposals/external-backends-and-cli/decision-separate-volatile-process-identity-from-durable-run-completion-4374fdf531bc.md",
+			"sha256": "511261daed0f74ae3bf323c25262a01e857e804a82f1f077a2e82831c5bb60d2"
+		},
+		{
+			"planSlug": "external-backends-and-cli",
+			"path": "memory/agent/proposals/external-backends-and-cli/gotcha-agent-renames-can-invalidate-delegated-domain-authorization-a9c088e63be1.md",
+			"sha256": "4ba2c8895f19633c8e5bef764d4ed2adcdd3c45864347a48d02d5974eb0dd3c7"
+		},
+		{
+			"planSlug": "external-backends-and-cli",
+			"path": "memory/agent/proposals/external-backends-and-cli/gotcha-jsonl-tailers-must-preserve-unread-byte-boundaries-bf48bbcfd814.md",
+			"sha256": "5d97d7d97559d357c0fec90ef6c9df7bf1fb3724e099aca0c7006681a7f8fbaf"
+		},
+		{
+			"planSlug": "external-backends-and-cli",
+			"path": "memory/agent/proposals/external-backends-and-cli/gotcha-killing-a-detached-supervisor-may-leave-backend-children-alive-c4b311ecbcf2.md",
+			"sha256": "399ecd11d84db3a076dc9c9b8c5029571d07a0e939c420016e5f1c295cf8036f"
+		},
+		{
+			"planSlug": "external-backends-and-cli",
+			"path": "memory/agent/proposals/external-backends-and-cli/gotcha-resuming-after-interruption-requires-a-clean-tree-guard-85f4100abcba.md",
+			"sha256": "19c778488a8a28e81dba47321ebd04c4d63e5cf6bf0069bebde3483328b2ae77"
+		},
+		{
+			"planSlug": "external-backends-and-cli",
+			"path": "memory/agent/proposals/external-backends-and-cli/trade-off-per-run-compilation-freezes-source-at-a-measurable-cost-3683e358268b.md",
+			"sha256": "78e8bb74c634fcbe1781cad1586f24f81b8fe8445ed47bfce8e3e2952e47bc02"
+		},
+		{
+			"planSlug": "fallow-temp-exceptions-cleanup",
+			"path": "memory/agent/proposals/fallow-temp-exceptions-cleanup/convention-lock-observable-behavior-before-complexity-refactors-2c8bb1e4896e.md",
+			"sha256": "b119193e8147719afc8898245fdce983ce303c6394463f1dea63461c4829991a"
+		},
+		{
+			"planSlug": "fallow-temp-exceptions-cleanup",
+			"path": "memory/agent/proposals/fallow-temp-exceptions-cleanup/convention-reduce-complexity-with-behavior-shaped-decomposition-03412f83e6b7.md",
+			"sha256": "2c08da8aac204aebd33a21db9ba534baaff4d787b6af8d968dda678a67b3367e"
+		},
+		{
+			"planSlug": "fallow-temp-exceptions-cleanup",
+			"path": "memory/agent/proposals/fallow-temp-exceptions-cleanup/decision-classify-static-analysis-exceptions-by-intent-before-removal-5eb5be411728.md",
+			"sha256": "7f2057104296d878b2a740fb346039c6a41a661efdae3f2328ba76ca5467d460"
+		},
+		{
+			"planSlug": "fallow-temp-exceptions-cleanup",
+			"path": "memory/agent/proposals/fallow-temp-exceptions-cleanup/decision-keep-shared-cli-helpers-below-command-business-logic-c9f0cf9c61ea.md",
+			"sha256": "be254250f61243378b4cf9bad48d70b0e5cfb89e9e2b82d352b8ee82f26769c3"
+		},
+		{
+			"planSlug": "fallow-temp-exceptions-cleanup",
+			"path": "memory/agent/proposals/fallow-temp-exceptions-cleanup/decision-remove-duplication-baselines-in-two-gated-phases-1cc93d95f50e.md",
+			"sha256": "c7a035d9caee383ac50e04ecb40081f141a37738c5dcb6e9cfbc540cbc0cdd24"
+		},
+		{
+			"planSlug": "fallow-temp-exceptions-cleanup",
+			"path": "memory/agent/proposals/fallow-temp-exceptions-cleanup/gotcha-parallel-refactors-must-serialize-shared-file-ownership-7cba54bfddd9.md",
+			"sha256": "840ed6d10f1ec2a8278ab37d89589139efeee0b87866d30c4ee3fa32f6aff8ed"
+		},
+		{
+			"planSlug": "fallow-temp-exceptions-cleanup",
+			"path": "memory/agent/proposals/fallow-temp-exceptions-cleanup/trade-off-deduplicate-tests-without-hiding-their-intent-4c010f540d1c.md",
+			"sha256": "caa6754d9b2db3493c9e7cb57c9db529175ae5a33e66d0073a2befb5db149439"
+		},
+		{
+			"planSlug": "framework-extraction",
+			"path": "memory/agent/proposals/framework-extraction/convention-bundled-domains-use-the-public-package-layout-f6a66b9c9460.md",
+			"sha256": "4b46c2ca6e6b7d8dd39b136bc13a4f978ace0aa3ba321ffe5a2f02fa61c5ce1a"
+		},
+		{
+			"planSlug": "framework-extraction",
+			"path": "memory/agent/proposals/framework-extraction/decision-agent-independent-commands-remain-usable-without-installed-domains-7d2b546acb2f.md",
+			"sha256": "8cdbaf254e7dc5aabf90e46d99a4a148e613865f9143b3a85e013545542b9c4b"
+		},
+		{
+			"planSlug": "framework-extraction",
+			"path": "memory/agent/proposals/framework-extraction/decision-keep-framework-infrastructure-built-in-and-distribute-domains-as-packages-e3166df5beea.md",
+			"sha256": "2c047a69fec3827ac96a17936d20915bcbe78057a36b2589972797a776f96133"
+		},
+		{
+			"planSlug": "framework-extraction",
+			"path": "memory/agent/proposals/framework-extraction/decision-persist-installation-origin-for-source-aware-updates-0ac910aafb53.md",
+			"sha256": "29bc005a3e3627ab46286ff1ddf5f11a72bcabed6f2fa2e193273bafc2248a73"
+		},
+		{
+			"planSlug": "framework-extraction",
+			"path": "memory/agent/proposals/framework-extraction/gotcha-published-package-allowlists-must-include-runtime-loaded-content-0db4b160b25d.md",
+			"sha256": "1ed4cda8ad0081c8212bd9c1c7166e25ae19e26119af1beb4910807acfcf2b51"
+		},
+		{
+			"planSlug": "framework-extraction",
+			"path": "memory/agent/proposals/framework-extraction/gotcha-resolve-bundled-catalog-paths-from-the-framework-installation-8ffa9ae28867.md",
+			"sha256": "3b19348a58e15ac30ea17e277bfbaefe70c3936a062f2221feabd1896b074a77"
+		},
+		{
+			"planSlug": "framework-extraction",
+			"path": "memory/agent/proposals/framework-extraction/gotcha-use-an-isolated-worktree-when-moving-live-loaded-agent-definitions-9860b515e4ac.md",
+			"sha256": "cbf5bd158fbbd708b0b47f6410c839273e34109238843e8a0734c780ae1f98a9"
+		},
+		{
+			"planSlug": "framework-extraction",
+			"path": "memory/agent/proposals/framework-extraction/trade-off-package-variants-may-share-one-domain-identity-f55497c26ee4.md",
+			"sha256": "8924531108542566544d6f62fbea8e20282d6a27b2edbbf13c944cad80354b25"
+		},
+		{
+			"planSlug": "main-domain-and-cosmo-rename",
+			"path": "memory/agent/proposals/main-domain-and-cosmo-rename/convention-qualify-cross-domain-agent-references-not-same-domain-references-b3881bcd6a72.md",
+			"sha256": "e66f551652df8acec1ee735bfc4f70650187ae4e3905ecfb9885d197c2de91a5"
+		},
+		{
+			"planSlug": "main-domain-and-cosmo-rename",
+			"path": "memory/agent/proposals/main-domain-and-cosmo-rename/convention-scope-persistent-lead-sessions-by-domain-19c3d4cab205.md",
+			"sha256": "43ccfe71661f37e8c3c0b37c4993b828a2f660aaad58b2537ca385067b42c991"
+		},
+		{
+			"planSlug": "main-domain-and-cosmo-rename",
+			"path": "memory/agent/proposals/main-domain-and-cosmo-rename/decision-attach-rename-guidance-at-the-role-resolution-boundary-a667dc58b228.md",
+			"sha256": "489c46d0652efeb27dfb4ce051effb496fedab516f8e2bc509c7e57fa782fd43"
+		},
+		{
+			"planSlug": "main-domain-and-cosmo-rename",
+			"path": "memory/agent/proposals/main-domain-and-cosmo-rename/decision-delegation-only-agents-receive-no-baseline-coding-tools-2d0ae04a5e7f.md",
+			"sha256": "686cd15cd27ab6ea84bc3773de9fb4e9a0f8e463c66163aaf5a4d66697fb0a10"
+		},
+		{
+			"planSlug": "main-domain-and-cosmo-rename",
+			"path": "memory/agent/proposals/main-domain-and-cosmo-rename/decision-resolve-cli-defaults-from-domain-manifests-7e7d35be13b9.md",
+			"sha256": "0c0a0cbb9134b7849a674714ed0c40ac40ab329f57706361247e8f30069029f9"
+		},
+		{
+			"planSlug": "main-domain-and-cosmo-rename",
+			"path": "memory/agent/proposals/main-domain-and-cosmo-rename/decision-separate-the-cross-domain-executive-from-domain-coordinators-4beb3a757704.md",
+			"sha256": "30e9a8e2d6e2f07de03d603c4cae17ccca28aebb82095cb2f35ae8721d9f35eb"
+		},
+		{
+			"planSlug": "main-domain-and-cosmo-rename",
+			"path": "memory/agent/proposals/main-domain-and-cosmo-rename/gotcha-built-in-infrastructure-domains-do-not-satisfy-installation-guards-d6290944ea4b.md",
+			"sha256": "d4e7dc9f52497c77438c29d82131294d5342c56a4944aac74d4082e8dabab254"
+		},
+		{
+			"planSlug": "main-domain-and-cosmo-rename",
+			"path": "memory/agent/proposals/main-domain-and-cosmo-rename/trade-off-delete-demonstrably-unused-packages-without-migration-machinery-6f4dce89bd04.md",
+			"sha256": "7cf528d7aadf5372eecbc1b00a6b3bd2cfe7605bcd538c58bcc2c29484b0a03a"
+		},
+		{
+			"planSlug": "main-domain-and-cosmo-rename",
+			"path": "memory/agent/proposals/main-domain-and-cosmo-rename/trade-off-prompts-may-reference-optional-capabilities-with-an-explicit-fallback-cc55f11b1292.md",
+			"sha256": "487b90f5a7f7bfe9ba1236536ae1abeff25710756d2f3e958cbca54a5c2f1366"
+		},
+		{
+			"planSlug": "observability",
+			"path": "memory/agent/proposals/observability/convention-aggregate-usage-at-stage-iteration-granularity-85eb532a0d87.md",
+			"sha256": "364adf0714aab8769c3df64fb24180c8add706125858f5bee22e0d5ca3057f01"
+		},
+		{
+			"planSlug": "observability",
+			"path": "memory/agent/proposals/observability/convention-maintain-a-canonical-framework-capability-reference-05f31d318852.md",
+			"sha256": "be560343462431791d84244adf8eb9066363d031704300304d3ac0b04a789ad0"
+		},
+		{
+			"planSlug": "observability",
+			"path": "memory/agent/proposals/observability/decision-observe-spawned-sessions-at-their-boundary-b1afd08c1766.md",
+			"sha256": "92836a8eeb25f96b21f4e534bfad808fd7e3d23acb4b529e6e601856e36c0832"
+		},
+		{
+			"planSlug": "observability",
+			"path": "memory/agent/proposals/observability/decision-separate-local-diagnostics-from-orchestration-event-streaming-137ef7301a99.md",
+			"sha256": "b8cb3603d1d46194c186d58299f04ce5ed77e1b36ef40327608ec9e5b956e59c"
+		},
+		{
+			"planSlug": "observability",
+			"path": "memory/agent/proposals/observability/gotcha-capture-session-statistics-before-disposal-69a98573f304.md",
+			"sha256": "73bebd4a3fa7de2dc9dc13c898ee2f49a912880205e785924a2a344a8eb49e45"
+		},
+		{
+			"planSlug": "observability",
+			"path": "memory/agent/proposals/observability/gotcha-do-not-assume-automatic-compaction-works-for-ephemeral-sessions-9608b54dbb0d.md",
+			"sha256": "e4f3cc83c352a088ed90b662e25189ef9c397abbc12d532ade3ea42e501161a1"
+		},
+		{
+			"planSlug": "orchestration-hardening",
+			"path": "memory/agent/proposals/orchestration-hardening/convention-abnormal-scheduler-drains-carry-structured-causes-f3e58fc623bd.md",
+			"sha256": "ab0927586d8704eca025fb609a0db61503922ccc8b2954a17fcd9d634701d931"
+		},
+		{
+			"planSlug": "orchestration-hardening",
+			"path": "memory/agent/proposals/orchestration-hardening/convention-migration-completion-requires-a-repository-wide-stale-reference-sweep-b464d0b32bb9.md",
+			"sha256": "4ad636d9b6a75fc558559941c42b76867cc0318510a6f9b11be8f4209f31bf4c"
+		},
+		{
+			"planSlug": "orchestration-hardening",
+			"path": "memory/agent/proposals/orchestration-hardening/convention-multi-seam-behaviors-require-proof-at-every-declared-seam-b49f4076aafd.md",
+			"sha256": "9dd9e3bd8a6b3f3c6d2c5bc8b784db146b4fa79075ee7a018fb2c2a3640b64cf"
+		},
+		{
+			"planSlug": "orchestration-hardening",
+			"path": "memory/agent/proposals/orchestration-hardening/convention-shared-primitives-trigger-blast-radius-verification-2568ca08406f.md",
+			"sha256": "87c469f18fdeabc9e5638291f9516fa39218ec450243ef05b02a79ddf1b3989c"
+		},
+		{
+			"planSlug": "orchestration-hardening",
+			"path": "memory/agent/proposals/orchestration-hardening/convention-task-graphs-encode-only-true-dependencies-2a9fe187a49c.md",
+			"sha256": "43109fbb4c349227b3f35ef955fe08196e5b3ca905bb44f4ac5e1f1bcddefb88"
+		},
+		{
+			"planSlug": "orchestration-hardening",
+			"path": "memory/agent/proposals/orchestration-hardening/decision-centralized-design-intent-outranks-a-narrow-single-site-criterion-06ae294dcc0a.md",
+			"sha256": "979e03666d4110aefdb091754d74fa6979d2c28b8c99b8944422f47bb4700c56"
+		},
+		{
+			"planSlug": "orchestration-hardening",
+			"path": "memory/agent/proposals/orchestration-hardening/decision-long-running-orchestration-snapshots-its-tooling-inputs-4adca0881101.md",
+			"sha256": "b541a0f211f38503aa242ab7a90e24962e76975fcd28f5a8181420078613288f"
+		},
+		{
+			"planSlug": "orchestration-hardening",
+			"path": "memory/agent/proposals/orchestration-hardening/decision-terminal-evidence-overrides-stale-running-state-3e069d31eb89.md",
+			"sha256": "027f6971af8549f49dd930204436312e182638a7bfbf8a709bdcf6cbfb12b1ef"
+		},
+		{
+			"planSlug": "orchestration-hardening",
+			"path": "memory/agent/proposals/orchestration-hardening/gotcha-detached-launcher-exit-is-not-run-completion-e675a31c59f4.md",
+			"sha256": "ee8133ca427e042e2fa16a8167ca6f50020d923a29dbd12a0cdc3f12ff62f773"
+		},
+		{
+			"planSlug": "orchestration-hardening",
+			"path": "memory/agent/proposals/orchestration-hardening/gotcha-review-scope-must-use-the-actual-local-integration-base-d79330e02510.md",
+			"sha256": "cf4441127ab4820e1502f3f414f4e50f8c4e18ff4f1a89ce383b972b1defc2d6"
+		},
+		{
+			"planSlug": "orchestration-surface-consolidation",
+			"path": "memory/agent/proposals/orchestration-surface-consolidation/convention-keep-compatibility-evidence-opaque-at-the-runtime-boundary-7c2985ed1bfa.md",
+			"sha256": "75fe8c1ee8dd2aafb67c783b2a2ade877c776ad1c1e0666362117dc90168f5a9"
+		},
+		{
+			"planSlug": "orchestration-surface-consolidation",
+			"path": "memory/agent/proposals/orchestration-surface-consolidation/convention-machine-oriented-run-commands-reserve-stdout-for-one-json-value-984e325059cd.md",
+			"sha256": "519560f2681f94399893760fe4a43f6c03303c45024dc5110ecc81114ef3113e"
+		},
+		{
+			"planSlug": "orchestration-surface-consolidation",
+			"path": "memory/agent/proposals/orchestration-surface-consolidation/convention-resolve-exact-saved-names-before-permissive-expression-syntax-1c84062e557a.md",
+			"sha256": "69b1e0f870faac5ed3820b0e96b5a17b09b3f9b91e59a6f2aeb000bf957201f3"
+		},
+		{
+			"planSlug": "orchestration-surface-consolidation",
+			"path": "memory/agent/proposals/orchestration-surface-consolidation/convention-scheduler-store-wrappers-may-alter-event-writes-only-44853d9f23d4.md",
+			"sha256": "3c0a6b262d93282d3276fafd67f2ede29d5de7888a62359eda216e80c09269d9"
+		},
+		{
+			"planSlug": "orchestration-surface-consolidation",
+			"path": "memory/agent/proposals/orchestration-surface-consolidation/decision-centralize-graph-run-initialization-behind-an-adoption-safe-seam-73be7424d376.md",
+			"sha256": "bd79a052c4a5b82d467842b1e99c4495d61658d9d7c554be5cb068941e278468"
+		},
+		{
+			"planSlug": "orchestration-surface-consolidation",
+			"path": "memory/agent/proposals/orchestration-surface-consolidation/decision-keep-frontend-interruptions-distinct-from-scheduler-exits-32fc84a6ff18.md",
+			"sha256": "168ba8a5d21f22be178d4cf65740541044126cc4b995aeeb3a6ca19bfe0df469"
+		},
+		{
+			"planSlug": "orchestration-surface-consolidation",
+			"path": "memory/agent/proposals/orchestration-surface-consolidation/decision-model-a-future-compiler-shape-without-migrating-the-hot-path-a0afad14e72e.md",
+			"sha256": "f9c81acaa598988e8b308dbe6b42b96a9a976cf2168df9450f7f1b840e923bb8"
+		},
+		{
+			"planSlug": "orchestration-surface-consolidation",
+			"path": "memory/agent/proposals/orchestration-surface-consolidation/gotcha-compatibility-cursors-belong-to-the-projected-event-space-305639b5057f.md",
+			"sha256": "2070c6fc07c680fda83f2fe88c4bdc1a1becc32df6bff571ea45b2edb221278a"
+		},
+		{
+			"planSlug": "orchestration-surface-consolidation",
+			"path": "memory/agent/proposals/orchestration-surface-consolidation/gotcha-dispatched-subcommands-may-bypass-top-level-runtime-bootstrap-fc34fadb77a9.md",
+			"sha256": "99e067f1f3e5baea623faa0f329ce7b9e6d993d9cb6f4455d9a30a3107c71274"
+		},
+		{
+			"planSlug": "orchestration-surface-consolidation",
+			"path": "memory/agent/proposals/orchestration-surface-consolidation/gotcha-repair-partial-initialization-without-rewriting-durable-truth-4f840a4a0897.md",
+			"sha256": "242e4fbf923755e0d805136ee2654b5755ca5ad26c20dfd9e6a2157bbc510939"
+		},
+		{
+			"planSlug": "orchestration-surface-consolidation",
+			"path": "memory/agent/proposals/orchestration-surface-consolidation/gotcha-resume-graphs-from-the-authoritative-original-work-set-4476da97b205.md",
+			"sha256": "55514167c05263fd09046cabfb29eec04f318a909b4f62e0d28673b6b5258d99"
+		},
+		{
+			"planSlug": "orchestration-surface-consolidation",
+			"path": "memory/agent/proposals/orchestration-surface-consolidation/trade-off-retain-a-scoped-legacy-fallback-while-normalized-compatibility-matures-2e4a802832e4.md",
+			"sha256": "f5f9ddd65b238f980a904d4d95498710805ce5ae0322f4228843dd9a1123a816"
+		},
+		{
+			"planSlug": "package-system",
+			"path": "memory/agent/proposals/package-system/convention-order-domain-sources-from-stable-baseline-to-ephemeral-override-108b23aaeeac.md",
+			"sha256": "c21f946abbd1a3dcb283c97c21bccb1088e12b612fa8f67a0aabb5b0cd70c452"
+		},
+		{
+			"planSlug": "package-system",
+			"path": "memory/agent/proposals/package-system/convention-preserve-ordered-roots-for-merged-domains-c649426ed313.md",
+			"sha256": "ab5d40ea4223b710b65f4b733dc5a444a59ba35d30bd9b57f8cbeae0131980eb"
+		},
+		{
+			"planSlug": "package-system",
+			"path": "memory/agent/proposals/package-system/convention-use-own-portable-shared-resource-resolution-tiers-aba8064ae7c8.md",
+			"sha256": "7dcdb66f9730224c14dbe91e02296bf6654f59377671984b960eacae18b71d18"
+		},
+		{
+			"planSlug": "package-system",
+			"path": "memory/agent/proposals/package-system/decision-keep-package-discovery-outside-domain-loading-7e44ac283988.md",
+			"sha256": "fd2b9538c1f5223645e78f6655240976f07c8efeae952a3a4f054b3213dac040"
+		},
+		{
+			"planSlug": "package-system",
+			"path": "memory/agent/proposals/package-system/decision-merge-duplicate-domain-ids-at-the-resource-boundary-db453f51d253.md",
+			"sha256": "0998a29869ac2600e20b9abf5e19b50c6295842869addd20cb95d454e252a8b5"
+		},
+		{
+			"planSlug": "package-system",
+			"path": "memory/agent/proposals/package-system/decision-resolve-domain-resources-through-one-runtime-abstraction-9c20ce38a309.md",
+			"sha256": "adb172d91dd5db9562452fdb6e9d5e595cd3134105ede064cf15054c5f981fa7"
+		},
+		{
+			"planSlug": "package-system",
+			"path": "memory/agent/proposals/package-system/decision-treat-shared-as-a-special-final-fallback-d14e3bfecbf8.md",
+			"sha256": "cfa1290063d9a20d7820ee67a7107db007064ecbe59ac82a87090a1e64ac001d"
+		},
+		{
+			"planSlug": "package-system",
+			"path": "memory/agent/proposals/package-system/decision-validate-package-declarations-before-installation-writes-3e2262cf67a6.md",
+			"sha256": "cb91dbc4d4a0ef5993bbff396e973a3968beffb5bc3507b8ff9c3b1aaa374db4"
+		},
+		{
+			"planSlug": "package-system",
+			"path": "memory/agent/proposals/package-system/trade-off-separate-persistent-installs-from-session-only-development-inputs-cbb3da2f3646.md",
+			"sha256": "630b39dccf3da8daced15b00335114049db7b73817aee7bc7dc52b64a5b761ca"
+		},
+		{
+			"planSlug": "quality-contracts",
+			"path": "memory/agent/proposals/quality-contracts/convention-every-quality-criterion-has-an-id-and-verification-owner-b638e2e87bb7.md",
+			"sha256": "6e0a55c7153ecf16d50dc97919c32e758d9bd2be3bc666a9cbffd7e09f3dd5c3"
+		},
+		{
+			"planSlug": "quality-contracts",
+			"path": "memory/agent/proposals/quality-contracts/convention-non-manual-contract-criteria-gate-merge-readiness-4d188dfeb079.md",
+			"sha256": "e7fd05c7a2d1fd1b45c0222c5a2b424b05c2af01115ccdf757b9e8c696153c7b"
+		},
+		{
+			"planSlug": "quality-contracts",
+			"path": "memory/agent/proposals/quality-contracts/convention-quality-criteria-state-observable-outcomes-51f424cf0193.md",
+			"sha256": "6063963e6984e7efc83b182d105af46c0823318c38da4ad3cfc34699464fbf8e"
+		},
+		{
+			"planSlug": "quality-contracts",
+			"path": "memory/agent/proposals/quality-contracts/decision-contract-failures-enter-normal-remediation-routing-611ff55f2995.md",
+			"sha256": "080590b873f76e44dbb54341341f4b2503d9983f12bd5613aacbcc1ce2a93d39"
+		},
+		{
+			"planSlug": "quality-contracts",
+			"path": "memory/agent/proposals/quality-contracts/decision-plan-quality-contracts-augment-baseline-verification-9e7118808315.md",
+			"sha256": "a58854c1ca5864cc7c368fd48a7956b661f481f03ce1088e1e9a6dd8e8acd4c2"
+		},
+		{
+			"planSlug": "quality-contracts",
+			"path": "memory/agent/proposals/quality-contracts/decision-quality-contracts-live-with-the-plan-874d7a794448.md",
+			"sha256": "4697dec85a731e2302d2ab3a7e5bf4e11a82cf3fd560bba6635deea7c958f229"
+		},
+		{
+			"planSlug": "quality-contracts",
+			"path": "memory/agent/proposals/quality-contracts/trade-off-convention-based-contracts-avoid-schema-overhead-e4ca30aafbb1.md",
+			"sha256": "34531ef9d4c778bf40e19dc36fc00586228d4e8e24e1cb6c4dbb3fa4393cd027"
+		},
+		{
+			"planSlug": "roadmap-system",
+			"path": "memory/agent/proposals/roadmap-system/convention-roadmap-location-encodes-item-status-874717a06386.md",
+			"sha256": "0510bcb2708daed0b15a6f314ce12bc0d99d2d019e868a6a4728497e5044074a"
+		},
+		{
+			"planSlug": "roadmap-system",
+			"path": "memory/agent/proposals/roadmap-system/convention-size-each-roadmap-item-to-one-planning-unit-d0fc6eb8e2e2.md",
+			"sha256": "70d0d8016af4f02860133369fe962a8d3e09171eb1d11d6360dac157f49cfb3c"
+		},
+		{
+			"planSlug": "roadmap-system",
+			"path": "memory/agent/proposals/roadmap-system/decision-humans-own-priority-agents-maintain-lifecycle-state-d001b0a8e4e8.md",
+			"sha256": "1353baedf464548e012122fd86672b9fc0ca478c79fe87082f1f32bce72c89e0"
+		},
+		{
+			"planSlug": "roadmap-system",
+			"path": "memory/agent/proposals/roadmap-system/decision-keep-in-flight-work-visible-until-archival-completes-61e9a76e97ed.md",
+			"sha256": "26a36a297467bd9de00cbcfb5fb277595d31b1e709e49e18e6279b27b7bf5a14"
+		},
+		{
+			"planSlug": "roadmap-system",
+			"path": "memory/agent/proposals/roadmap-system/decision-separate-architectural-truth-from-directional-truth-2faecffc1b91.md",
+			"sha256": "f3b61156d6297c869928d0c543d7f0d92e60a1f55777762cc4fefc43bac5e8bc"
+		},
+		{
+			"planSlug": "roadmap-system",
+			"path": "memory/agent/proposals/roadmap-system/decision-use-priority-horizons-instead-of-sequential-phases-d63f0d28bb32.md",
+			"sha256": "d65ecef7de60083a2e0f240c8e2a972eac537c0aaee23ed3b17e1662610c0917"
+		},
+		{
+			"planSlug": "roadmap-system",
+			"path": "memory/agent/proposals/roadmap-system/trade-off-start-roadmap-governance-as-a-manual-protocol-e2a32f569619.md",
+			"sha256": "e934a432e6f0b27f88991646368a81a13d50989ffe3dd9ff3cdd52c3ebeec3ef"
+		},
+		{
+			"planSlug": "ruby-rails-skills",
+			"path": "memory/agent/proposals/ruby-rails-skills/convention-base-language-guidance-must-remain-framework-agnostic-c75c76be4755.md",
+			"sha256": "3318dac09c8a90023e5359493a4ff47ef505636fdf484da69912aea9223dd9f3"
+		},
+		{
+			"planSlug": "ruby-rails-skills",
+			"path": "memory/agent/proposals/ruby-rails-skills/convention-public-skill-ids-are-explicit-and-globally-descriptive-057db25b9960.md",
+			"sha256": "f67b812589e0ef373722157703213416bf274363fa2d43cd972afabf08d98ad1"
+		},
+		{
+			"planSlug": "ruby-rails-skills",
+			"path": "memory/agent/proposals/ruby-rails-skills/convention-reference-documents-are-private-assets-of-one-parent-skill-0c88c64d420c.md",
+			"sha256": "d77b147b416c9c8003cf01b0bd43fb26e390eca532ec8531e1a497add385a65e"
+		},
+		{
+			"planSlug": "ruby-rails-skills",
+			"path": "memory/agent/proposals/ruby-rails-skills/convention-skill-pack-qa-must-verify-boundaries-and-navigation-76692eb11015.md",
+			"sha256": "b2f4cb3eed528ed4ef409b0ebd34d99251b33418cd1ed247413058532c918095"
+		},
+		{
+			"planSlug": "ruby-rails-skills",
+			"path": "memory/agent/proposals/ruby-rails-skills/decision-canonical-cross-domain-guidance-is-linked-not-duplicated-9706094dacc2.md",
+			"sha256": "d34ae9d2887b981f274fe6a64a0b58802a6f3755a909cd88666a7643a4c465b4"
+		},
+		{
+			"planSlug": "ruby-rails-skills",
+			"path": "memory/agent/proposals/ruby-rails-skills/decision-nested-content-packs-should-reuse-recursive-discovery-and-export-seams-bb405af07ae0.md",
+			"sha256": "ea110d73b6ec99478d64f04e7f9ccc84e4a528c33db984859fb6a691f0dd5278"
+		},
+		{
+			"planSlug": "ruby-rails-skills",
+			"path": "memory/agent/proposals/ruby-rails-skills/decision-redistribute-source-content-when-target-boundaries-change-e1257171c3ec.md",
+			"sha256": "3427f6611de96be56fcba7ef54aed7a9e1fcd6ac9d7f1698a23a586889cfbea6"
+		},
+		{
+			"planSlug": "ruby-rails-skills",
+			"path": "memory/agent/proposals/ruby-rails-skills/decision-repository-detection-belongs-in-foundational-meta-skills-46d85c49865f.md",
+			"sha256": "4d921703181781befd5402e0f03d8e724793a6182f1d598eb9e4d270ec4ffdc0"
+		},
+		{
+			"planSlug": "ruby-rails-skills",
+			"path": "memory/agent/proposals/ruby-rails-skills/trade-off-prefer-coherent-skill-granularity-over-an-arbitrary-task-count-target-15753117dba5.md",
+			"sha256": "f94bfadc6fd7a61b5d2ec9179501f8aeb5b18618012d2011d328581966a9ed5d"
+		}
+	],
+	"aggregateProposalDigest": "f22ae61f24b82d534f68f5d4e4dfccfd08344cf59558dbee72f5118e1e0053c1",
+	"noPromotion": true
+}
