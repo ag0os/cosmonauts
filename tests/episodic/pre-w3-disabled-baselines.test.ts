@@ -137,6 +137,13 @@ describe("pre-W3 disabled baselines", () => {
 					).toContain(region.end);
 				}
 			}
+			expect(
+				stripCorrectionRegions(
+					await readFile(join(process.cwd(), allowed.path), "utf-8"),
+					allowed.regions,
+				),
+				`${allowed.path} changed outside the exact D-009 correction regions`,
+			).toBe(stripCorrectionRegions(allowed.baselineContent, allowed.regions));
 		}
 		for (const prompt of offBaseline.promptFiles) {
 			if (offBaseline.promptCorrectionAllowlist.includes(prompt.path)) continue;
@@ -457,6 +464,24 @@ describe("pre-W3 disabled baselines", () => {
 
 function sha256(value: string | Buffer): string {
 	return createHash("sha256").update(value).digest("hex");
+}
+
+function stripCorrectionRegions(
+	content: string,
+	regions: readonly { start: string; end: string }[],
+): string {
+	let stripped = content;
+	for (const region of regions) {
+		const start = stripped.indexOf(region.start);
+		if (start < 0) throw new Error(`Missing correction start: ${region.start}`);
+		const end =
+			region.end === "<EOF>"
+				? stripped.length
+				: stripped.indexOf(region.end, start + region.start.length);
+		if (end < 0) throw new Error(`Missing correction end: ${region.end}`);
+		stripped = `${stripped.slice(0, start)}<D-009-CORRECTION>${stripped.slice(end)}`;
+	}
+	return stripped;
 }
 
 interface ToolResult {

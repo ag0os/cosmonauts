@@ -21,6 +21,7 @@ const PLANS_DIR = "plans";
 const ARCHIVE_DIR = "archive";
 const REVIEWS_DIR = "reviews";
 const MEMORY_DIR = "memory";
+const KNOWLEDGE_DIR = "knowledge";
 const CONFIG_FILE = "config.json";
 
 /**
@@ -31,6 +32,7 @@ const CONFIG_FILE = "config.json";
  *   missions/archive/plans/
  *   missions/reviews/
  *   memory/
+ *   knowledge/
  *
  * Idempotent — safe to call on an already-scaffolded project.
  *
@@ -47,6 +49,7 @@ export async function ensureForgeDirectory(
 	const archivePlansDir = join(missionsDir, ARCHIVE_DIR, PLANS_DIR);
 	const reviewsDir = join(missionsDir, REVIEWS_DIR);
 	const memoryDir = join(projectRoot, MEMORY_DIR);
+	const knowledgeDir = join(projectRoot, KNOWLEDGE_DIR);
 
 	await Promise.all([
 		mkdir(tasksDir, { recursive: true }),
@@ -55,6 +58,7 @@ export async function ensureForgeDirectory(
 		mkdir(archivePlansDir, { recursive: true }),
 		mkdir(reviewsDir, { recursive: true }),
 		mkdir(memoryDir, { recursive: true }),
+		mkdir(knowledgeDir, { recursive: true }),
 	]);
 
 	return tasksDir;

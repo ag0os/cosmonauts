@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import matter from "gray-matter";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
 	deriveKnowledgeProposalIdentity,
@@ -117,14 +118,29 @@ describe("knowledge surface recoverable backfill", () => {
 		await expectMissing(
 			join(REPO_ROOT, ".cosmonauts", "config.json.backfill-prerun"),
 		);
-		await expectMissing(
-			join(
-				REPO_ROOT,
-				"missions",
-				"reviews",
-				"knowledge-surface-backfill-approval.md",
+		const reviewIndexRaw = await readFile(reviewIndexPath);
+		const approval = matter(
+			await readFile(
+				join(
+					REPO_ROOT,
+					"missions",
+					"reviews",
+					"knowledge-surface-backfill-approval.md",
+				),
+				"utf-8",
 			),
-		);
+		).data as Record<string, unknown>;
+		expect(approval).toMatchObject({
+			kind: "knowledge-surface-backfill-approval",
+			plan: "knowledge-surface",
+			stage: "7B",
+			decision: "approve",
+			noVerbatimAttested: true,
+			reviewIndexDigest: sha256(reviewIndexRaw),
+			aggregateProposalDigest: index.aggregateProposalDigest,
+			proposalCount: index.proposals.length,
+			slugCount: EXPECTED_MISSING_SLUGS.length,
+		});
 		expect(await curatedDistillerFiles(REPO_ROOT)).toEqual([]);
 	});
 

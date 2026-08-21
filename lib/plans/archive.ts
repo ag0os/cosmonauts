@@ -19,6 +19,7 @@ const ARCHIVE_PLANS_DIR = "missions/archive/plans";
 const ARCHIVE_TASKS_DIR = "missions/archive/tasks";
 const ARCHIVE_SESSIONS_DIR = "missions/archive/sessions";
 const MEMORY_DIR = "memory";
+const KNOWLEDGE_DIR = "knowledge";
 
 // ============================================================================
 // Types
@@ -36,6 +37,8 @@ export interface ArchiveResult {
 	archivedTaskFiles: string[];
 	/** Whether the memory/ directory was ensured (created or already existed) */
 	memoryDirEnsured: boolean;
+	/** Whether the knowledge/ directory was ensured (created or already existed) */
+	knowledgeDirEnsured: boolean;
 	/** Absolute path where the sessions directory was moved, if it existed */
 	archivedSessionsPath?: string;
 }
@@ -53,7 +56,7 @@ export interface ArchiveResult {
  * 3. Creates archive directories as needed
  * 4. Moves the plan directory to missions/archive/plans/<slug>/
  * 5. Moves all tasks with plan:<slug> label to missions/archive/tasks/
- * 6. Ensures memory/ directory exists at project root
+ * 6. Ensures memory/ and knowledge/ directories exist at project root
  *
  * @param projectRoot - The root directory of the project
  * @param slug - The plan slug to archive
@@ -124,15 +127,20 @@ export async function archivePlan(
 		archivedSessionsPath = destSessionsDir;
 	}
 
-	// 7. Ensure memory/ directory exists
+	// 7. Ensure sibling memory/ and knowledge/ roots exist
 	const memoryDir = join(projectRoot, MEMORY_DIR);
-	await mkdir(memoryDir, { recursive: true });
+	const knowledgeDir = join(projectRoot, KNOWLEDGE_DIR);
+	await Promise.all([
+		mkdir(memoryDir, { recursive: true }),
+		mkdir(knowledgeDir, { recursive: true }),
+	]);
 
 	return {
 		planSlug: slug,
 		archivedPlanPath: destPlanDir,
 		archivedTaskFiles,
 		memoryDirEnsured: true,
+		knowledgeDirEnsured: true,
 		archivedSessionsPath,
 	};
 }

@@ -186,6 +186,7 @@ function renderInitializedHumanResult(
 		"- Created missions/archive/plans/",
 		"- Created missions/reviews/",
 		"- Created memory/",
+		"- Created knowledge/",
 		`- Created missions/tasks/config.json with prefix: ${result.config.prefix}`,
 		renderProjectConfigLine(result.projectConfigCreated),
 	];

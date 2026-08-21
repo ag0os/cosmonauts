@@ -43,7 +43,7 @@ What's built:
 - Agent spawner creating scoped Pi sessions from declarative agent definitions
 - `main/cosmo` cross-domain orchestration, `coding/cody` coding-domain coordination, and specialist roles such as planner, task-manager, worker, reviewer, and fixer
 - Four-layer system prompt architecture with capability-aligned composition
-- Plan lifecycle: create plans, link tasks, archive completed work, distill learnings into memory
+- Plan lifecycle: create plans, link tasks, archive completed work, submit machine proposals under `memory/`, and promote reviewed knowledge by a human act into `knowledge/`
 - Drive runs for approved plan-linked task batches via `run_driver`, normalized `run_status`/`run_watch` observation, deprecated `watch_events` compatibility, and `cosmonauts run drive`
 - Named chains for common pipelines (`plan-and-build`, `spec-and-build`, `implement`, `verify`, `adapt`) with adversarial plan review as the default
 - CLI with interactive and non-interactive modes
@@ -89,7 +89,7 @@ cosmonauts install coding
 cosmonauts run chain plan-and-build "describe what you want to build"
 ```
 
-The `scaffold missions` command creates `missions/` and `memory/` directories for tasks, plans, and archived work, plus `.cosmonauts/config.json` with default named chains and skills. You can customize the config to match your project, or use the defaults as-is.
+The `scaffold missions` command creates `missions/`, `memory/`, and `knowledge/` for tasks, plans, machine memory/proposals, and curated knowledge, plus a minimal `.cosmonauts/config.json`. The knowledge surface remains OFF unless `knowledgeSurface.enabled` is literally `true`; see [docs/memory.md](./docs/memory.md).
 
 ## Usage
 
@@ -314,9 +314,10 @@ cosmonauts/
 ├── cli/              CLI implementation
 ├── bin/              CLI entry points (cosmonauts)
 ├── tests/            Test suites (Vitest)
-├── missions/         Local, gitignored — active tasks, plans, and archived work (created by init)
-├── memory/           Local, gitignored — distilled knowledge from completed work (created by init)
-├── .cosmonauts/      Local, gitignored — project config (created by init)
+├── missions/         Active tasks, plans, reviews, sessions, and archived work (created by scaffold)
+├── memory/           Authored memory, derived state, and machine proposals (created by scaffold)
+├── knowledge/        Human-curated OKF knowledge records (created by scaffold)
+├── .cosmonauts/      Project config (created by scaffold)
 └── docs/             Reference documentation
 ```
 
@@ -375,6 +376,7 @@ Agents coordinate through task state — no message bus, no shared memory. The c
 - **[AGENTS.md](./AGENTS.md)** — Project conventions and instructions for agents working on this codebase.
 - **[docs/domains.md](./docs/domains.md)** — Domain package layout, authoring contract, visibility, active domains, and bindings.
 - **[docs/orchestration.md](./docs/orchestration.md)** — Chains, Drive, normalized run observation, CLI surface.
+- **[docs/memory.md](./docs/memory.md)** — Authored memory, curated knowledge, proposal authority, retrieval bounds, and gate adoption.
 - **[docs/prompts.md](./docs/prompts.md)** — Four-layer prompt composition.
 - **[docs/testing.md](./docs/testing.md)** — Testing standards and patterns.
 - Pi framework API reference: the **`pi` skill** (`domains/shared/skills/pi/SKILL.md`), loaded on demand. It tracks the pinned `@earendil-works/pi-*` packages and points agents to the current Pi repo and docs.

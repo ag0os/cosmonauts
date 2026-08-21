@@ -301,7 +301,7 @@ describe("archivePlan", () => {
 		expect(archiveTasksStats.isDirectory()).toBe(true);
 	});
 
-	it("creates memory/ directory at project root", async () => {
+	it("creates memory/ and knowledge/ directories at project root @cosmo-behavior plan:knowledge-surface#B-001", async () => {
 		await planManager.createPlan({
 			slug: "memory-test",
 			title: "Memory Test",
@@ -315,9 +315,12 @@ describe("archivePlan", () => {
 		);
 
 		expect(result.memoryDirEnsured).toBe(true);
+		expect(result.knowledgeDirEnsured).toBe(true);
 
-		const memoryStats = await stat(join(tempDir, "memory"));
-		expect(memoryStats.isDirectory()).toBe(true);
+		for (const root of ["memory", "knowledge"]) {
+			const rootStats = await stat(join(tempDir, root));
+			expect(rootStats.isDirectory(), root).toBe(true);
+		}
 	});
 
 	it("succeeds when memory/ directory already exists", async () => {

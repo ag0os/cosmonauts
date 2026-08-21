@@ -67,6 +67,15 @@ describe("ensureForgeDirectory", () => {
 		expect(stats.isDirectory()).toBe(true);
 	});
 
+	test("creates project memory and knowledge roots together @cosmo-behavior plan:knowledge-surface#B-001", async () => {
+		await ensureForgeDirectory(testDir);
+
+		for (const root of ["memory", "knowledge"]) {
+			const stats = await stat(join(testDir, root));
+			expect(stats.isDirectory(), root).toBe(true);
+		}
+	});
+
 	test("returns path to missions/tasks/", async () => {
 		const result = await ensureForgeDirectory(testDir);
 

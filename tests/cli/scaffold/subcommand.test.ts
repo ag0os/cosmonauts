@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MissionsScaffoldResult } from "../../../cli/scaffold/commands/missions.ts";
@@ -98,6 +98,7 @@ describe("renderMissionsScaffoldResult", () => {
 			"- Created missions/archive/plans/",
 			"- Created missions/reviews/",
 			"- Created memory/",
+			"- Created knowledge/",
 			"- Created missions/tasks/config.json with prefix: COSMO",
 			"- Created .cosmonauts/config.json with default named chains",
 			"- Project name: Cosmonauts",
@@ -161,6 +162,14 @@ describe("missions scaffold helpers", () => {
 			prefix: "COSMO",
 			projectName: "Cosmonauts",
 		});
+		for (const root of ["memory", "knowledge"]) {
+			const rootStats = await stat(join(tempDir, root));
+			expect(rootStats.isDirectory(), root).toBe(true);
+			await expect(
+				readFile(join(tempDir, root, "index.md"), "utf-8"),
+				root,
+			).rejects.toThrow();
+		}
 	});
 });
 
@@ -363,6 +372,7 @@ function expectedHumanInitializedOutput({
 		"- Created missions/archive/plans/",
 		"- Created missions/reviews/",
 		"- Created memory/",
+		"- Created knowledge/",
 		"- Created missions/tasks/config.json with prefix: COSMO",
 		projectConfigLine,
 	];

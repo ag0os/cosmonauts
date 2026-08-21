@@ -49,7 +49,7 @@ As Pi evolves (lockstep versioning), re-audit its API before each phase for feat
 
 ## Work Lifecycle
 
-Work flows: **roadmap → plan → tasks → sessions → archive → memory**. Each stage has a skill: `/skill:roadmap`, `/skill:plan`, `/skill:task`, `/skill:archive`. Plans, tasks, reviews, and archives live in `missions/`; distilled knowledge in `memory/`. We dogfood cosmonauts on itself, so most of these directories are tracked here — only `missions/sessions/` (and its archive counterpart) are gitignored as high-volume, regenerable transcripts.
+Work flows: **roadmap → plan → tasks → sessions → archive → proposals/review → knowledge**. Each stage has a skill: `/skill:roadmap`, `/skill:plan`, `/skill:task`, `/skill:archive`. Plans, tasks, reviews, and archives live in `missions/`; agent memory, derived architecture state, and machine proposals live in `memory/`; human-curated OKF records live in `knowledge/`. Machine output enters `knowledge/` only through a human act. We dogfood cosmonauts on itself, so most of these directories are tracked here — only `missions/sessions/` (and its archive counterpart) are gitignored as high-volume, regenerable transcripts.
 
 ## When Working on This Codebase
 
@@ -69,12 +69,13 @@ Work flows: **roadmap → plan → tasks → sessions → archive → memory**. 
 
 **Project artifacts (tracked — we dogfood cosmonauts on itself):**
 - `missions/plans/`, `missions/tasks/`, `missions/reviews/`, `missions/archive/` — work artifacts
-- `memory/` — distilled knowledge from completed work
+- `memory/` — authored memory, derived architecture state, and machine knowledge proposals
+- `knowledge/` — human-curated project knowledge in OKF markdown
 - `.cosmonauts/` — project config
 
 **Gitignored:** `missions/sessions/` and `missions/archive/sessions/` — high-volume, regenerable transcripts.
 
-`package.json` "files" controls the npm tarball — `missions/`, `memory/`, `.cosmonauts/`, `tests/`, and `docs/` are not shipped to consumers.
+`package.json` "files" controls the npm tarball — `missions/`, `memory/`, `knowledge/`, `.cosmonauts/`, `tests/`, and `docs/` are not shipped to consumers.
 
 ## Documentation
 
@@ -82,5 +83,6 @@ Work flows: **roadmap → plan → tasks → sessions → archive → memory**. 
 - `docs/prompts.md` — four-layer prompt composition
 - `docs/orchestration.md` — chains, workflows, drive, CLI surface, chain events/stats
 - `docs/testing.md` — testing standards and patterns
-- `memory/` — distilled knowledge from completed work
+- `docs/memory.md` — authored memory, curated knowledge, proposal flow, retrieval bounds, and gate policy
+- `knowledge/` — curated project knowledge; machine proposals remain under `memory/agent/proposals/` until human promotion
 - Pi framework API reference lives in the **`pi` skill** (`domains/shared/skills/pi/SKILL.md`) — loaded on demand, not a standalone doc. It should track the pinned `@earendil-works/pi-*` version and current Pi repo/docs.

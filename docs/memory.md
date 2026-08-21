@@ -231,6 +231,96 @@ requested limit at 20; a matching profile is pinned first outside that window
 so full-profile recovery cannot be shadowed by newer records. W2 adds no type
 parameter and no automatic relevance/push-recall gate.
 
+## Curated Knowledge Surface
+
+Knowledge is the durable, human-curated payload carried by the memory
+substrate. Project knowledge lives at `<projectRoot>/knowledge/`; its
+user-scoped twin lives at `~/.cosmonauts/knowledge/`. The user twin starts empty:
+no project seed is copied into the user root. A missing root is an empty store,
+and reads do not create either root—there is no read-time scaffolding. Project
+scaffolding and plan archival ensure the project `knowledge/` and `memory/`
+directories together, but retrieval never creates files or copies records.
+
+Knowledge records are OKF v0.1 markdown and use exactly one type:
+
+- `decision`
+- `trade-off`
+- `gotcha`
+- `convention`
+
+A minimal human OKF record needs only a ratified `type` plus a markdown body.
+Title, description, resource, tags, timestamp, scope, and semantic kind are
+derived from the physical file and mtime when omitted; optional human
+provenance remains valid. Machine proposals use the same four types but have a
+strict contract: full machine provenance requires `writer`, `source`, and
+`date`, plus the complete canonical identity and normalized metadata enforced
+by the proposal adapter.
+
+Machine knowledge exists only as proposals under
+`memory/agent/proposals/`. Every proposal must be distilled, non-verbatim, and
+attributable to a specific plan, task, or Tier-2 transcript. The flow is
+proposal → human review → human promotion. Promotion into curated `knowledge/`
+is a human act, either a direct edit or an explicitly reviewed file move.
+Stage 7 approval is not promotion and does not move any proposal. The migrated
+seed corpus is a one-to-one conversion rather than consolidation; the retired
+root markdown distillations and JSONL knowledge bundles have no live read/write
+path.
+
+When enabled, every Cosmonauts-assembled agent receives the compact knowledge
+index and the shared `recall` tool. Dedicated knowledge and memory tools, plus
+framework retrieval and injection paths, use `MemoryStore`; no second
+framework knowledge path exists. Existing narrow legacy authorization remains:
+authored `remember` stays limited to Cosmo, and architecture-map detail reads
+stay limited to their established agent set. A matching profile is pinned
+outside the combined recall limit, preserving full-profile recovery while
+knowledge and other matching records compete within the requested result
+window.
+
+One provider-visible UTF-8 allocator bounds the enabled memory index,
+architecture map, and knowledge index together at 24,000 bytes, including
+headers and truncation notices. Non-empty sections receive a fair initial share
+and unused bytes are redistributed deterministically. Detail is omitted before
+the bound can be exceeded, and each section directs the agent to its detail
+tool. Message details expose per-section and aggregate scan statistics. The
+ratified 20-turn scan evidence measured the complete eligible corpus at 413
+file operations and 423,016 bytes per turn, with p95 18.916 ms; see
+`missions/reviews/knowledge-surface-scan-cost.md` for inputs, raw rows,
+thresholds, and the `pass` verdict.
+
+The project gate is `.cosmonauts/config.json`:
+
+~~~json
+{
+  "knowledgeSurface": {
+    "enabled": true
+  }
+}
+~~~
+
+The knowledge surface is enabled only when the gate value is literally true.
+The gate is `knowledgeSurface.enabled`; it is OFF by default, and absent, false,
+malformed, and non-boolean values remain off. Gate policy is frozen when
+Cosmonauts assembles a session. Pi resource reload and a plain new-session
+request preserve that frozen policy in both directions. A process restart or
+`/agent` switch reassembles the session and adopts the current project value in
+both directions.
+
+The enabled scope is every Cosmonauts-assembled agent. Bare Pi package hosts
+are outside the enabled contract; no enabled bare-host promise is made. While
+OFF, package loading stays at its frozen baseline with no knowledge adapter,
+tool, retrieval, or injection. Generic Pi project tools and the Codex and Claude
+Drive backends remain trusted, human-supervised, git-reviewed, and deliberately
+unsandboxed project-file capabilities. They are outside the dedicated
+knowledge/memory authority boundary; this feature adds no sandbox, disabled
+tool promise, or path guard.
+
+The knowledge surface deliberately makes no change to consolidation, working
+state, the episode or episodic log, explicit save / explicit-save behavior,
+embeddings, a similarity backend, retention, raw-session deletion,
+autonomy-host behavior, enabled bare-host behavior, cache behavior, or registry
+correctness state. It adds no cache or alternate correctness registry, changes
+no existing narrow authorization, and enables no feature by default.
+
 ## W3 Episodic Log
 
 ### Project Gate And Store Layout
