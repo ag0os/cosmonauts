@@ -174,6 +174,56 @@ describe("createPiSpawner", () => {
 			undefined,
 		);
 	});
+
+	test("aborts and awaits a running Pi session before disposing it mid-run", async () => {
+		const order: string[] = [];
+		let releaseAbort: (() => void) | undefined;
+		const abortFinished = new Promise<void>((resolve) => {
+			releaseAbort = resolve;
+		});
+		const promptStarted = vi.fn();
+		const session = {
+			sessionId: "spawn-session",
+			messages: [],
+			prompt: vi.fn(async () => {
+				promptStarted();
+				await new Promise<never>(() => undefined);
+			}),
+			abort: vi.fn(async () => {
+				order.push("abort:start");
+				await abortFinished;
+				order.push("abort:end");
+			}),
+			dispose: vi.fn(() => order.push("dispose")),
+			getSessionStats: vi.fn(),
+			subscribe: vi.fn(),
+		};
+		sessionFactoryMocks.createAgentSessionFromDefinition.mockResolvedValue({
+			session,
+		});
+
+		const controller = new AbortController();
+		const spawner = createPiSpawner(FIXTURE_REGISTRY, DOMAINS_DIR);
+		const spawned = spawner.spawn({
+			role: "planner",
+			cwd: "/tmp/project",
+			model: "test/model",
+			prompt: "run",
+			signal: controller.signal,
+		});
+		await vi.waitFor(() => expect(promptStarted).toHaveBeenCalledTimes(1));
+
+		controller.abort();
+		await vi.waitFor(() => expect(session.abort).toHaveBeenCalledTimes(1));
+		expect(session.dispose).not.toHaveBeenCalled();
+		releaseAbort?.();
+
+		await expect(spawned).resolves.toMatchObject({
+			success: false,
+			error: expect.stringMatching(/abort/i),
+		});
+		expect(order).toEqual(["abort:start", "abort:end", "dispose"]);
+	});
 });
 
 describe("resolveTools", () => {

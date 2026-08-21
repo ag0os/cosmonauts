@@ -218,29 +218,80 @@ async function runSpawnSession(
 	spawnTimeoutMs: number,
 ): Promise<CompletedSpawnExecution> {
 	const { session, tracker } = prepared;
+	const cancellation = createSessionCancellation(session, config.signal);
 
 	prepared.unsubscribe = subscribeToSpawnEvents(session, config);
 
-	const startMs = Date.now();
-	await session.prompt(config.prompt);
+	try {
+		const startMs = Date.now();
+		await cancellation.waitFor(session.prompt(config.prompt));
 
-	while (tracker.activeCount() > 0) {
-		const messages = await awaitNextCompletionMessages(tracker, spawnTimeoutMs);
-		for (const message of messages) {
-			await session.prompt(message);
+		while (tracker.activeCount() > 0) {
+			const messages = await cancellation.waitFor(
+				awaitNextCompletionMessages(tracker, spawnTimeoutMs),
+			);
+			for (const message of messages) {
+				await cancellation.waitFor(session.prompt(message));
+			}
 		}
+
+		const stats = captureSpawnStats(session, Date.now() - startMs);
+
+		return {
+			outcome: "success",
+			stats,
+			result: {
+				success: true,
+				sessionId: session.sessionId,
+				messages: [...session.messages],
+				stats,
+			},
+		};
+	} finally {
+		await cancellation.finish();
+	}
+}
+
+interface SessionCancellation {
+	waitFor<T>(operation: Promise<T>): Promise<T>;
+	finish(): Promise<void>;
+}
+
+function createSessionCancellation(
+	session: AgentSession,
+	signal: AbortSignal | undefined,
+): SessionCancellation {
+	if (!signal) {
+		return {
+			waitFor: async <T>(operation: Promise<T>) => operation,
+			finish: async () => undefined,
+		};
 	}
 
-	const stats = captureSpawnStats(session, Date.now() - startMs);
+	let abortPromise: Promise<void> | undefined;
+	let rejectCancellation: ((error: Error) => void) | undefined;
+	const cancelled = new Promise<never>((_resolve, reject) => {
+		rejectCancellation = reject;
+	});
+	const abort = () => {
+		abortPromise ??= session.abort();
+		void abortPromise.then(
+			() => rejectCancellation?.(new Error("Spawn aborted")),
+			(error: unknown) =>
+				rejectCancellation?.(
+					error instanceof Error ? error : new Error(String(error)),
+				),
+		);
+	};
+	signal.addEventListener("abort", abort, { once: true });
+	if (signal.aborted) abort();
 
 	return {
-		outcome: "success",
-		stats,
-		result: {
-			success: true,
-			sessionId: session.sessionId,
-			messages: [...session.messages],
-			stats,
+		waitFor: async <T>(operation: Promise<T>) =>
+			Promise.race([operation, cancelled]),
+		async finish() {
+			signal.removeEventListener("abort", abort);
+			await abortPromise;
 		},
 	};
 }
