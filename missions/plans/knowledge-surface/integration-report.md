@@ -1,61 +1,150 @@
 # Integration Report
 
 plan: knowledge-surface
-overall: incorrect
+task: TASK-568
+overall: correct
+reviewedAt: 2026-08-21
 
 ## Overall Assessment
 
-The implemented TASK-559–TASK-564 scope is structurally present, but one shipped archive instruction still contradicts B-009’s proposals-only contract and the declared transition/collision seams lack executable regression coverage. B-010, B-011, D-027, the accepted migration sweep, the empty tracked `memory/`, and baseline timing flakes were not treated as defects.
+The integrated knowledge-surface implementation satisfies the two bound gates.
+The mutation, duplication, complexity, boundary-conformance, and dead-code
+capabilities remain unbound with execution not consented, so the findings below
+are explicitly degraded reviewer judgments, not mechanical passes. No behavior
+expectation was changed to obtain GREEN and no Stage-9 production-code repair was
+needed.
+
+The initial artifact check exposed one derived plan/reality collision: B-010
+still named `tests/prompts/archive-skill.test.ts`, while TASK-565 implemented and
+marked it in `tests/scripts/knowledge-surface-backfill.test.ts`. Before continuing,
+the plan was amended on-record to the executable owner, multiline decision
+headings were normalized for the existing artifact parser without changing their
+decisions, and the distiller prompt/definition pairing was made explicit. The
+same check then returned `ok: true`, 13 behaviors, and zero issues. This is the
+only integration repair; its red-before-green evidence is the two ordered
+`cosmonauts plan check-artifacts knowledge-surface --json` results.
+
+## Ordered Quality Contract
+
+| Order | Gate | Binding | Result |
+| ---: | --- | --- | --- |
+| 1 | correctness | bound | PASS — all nine named behavior files passed (140 tests), then `bun run test`, `bun run lint`, and `bun run typecheck` passed. The first full-suite run hit the unrelated cross-plan commit-lock timing test; that test passed in isolation and the complete native suite passed on rerun. |
+| 2 | artifact-conformance | bound | PASS — `cosmonauts plan check-artifacts knowledge-surface --json` returned `ok: true`; B-001 through B-013 each resolve to an existing named test file with the exact marker and no issues. |
+| 3 | mutation | unbound bindable | DEGRADED reviewer judgment: acceptable. Named negative controls are executable and detect the required fault classes; no mutation engine result is claimed. |
+| 4 | duplication | unbound bindable | DEGRADED reviewer judgment: acceptable. Targeted source/search inspection found one implementation for every named knowledge-surface responsibility; no project-wide duplication-tool result is claimed. |
+| 5 | complexity | unbound bindable | DEGRADED reviewer judgment: acceptable. The parser/store/combiner/allocator/composer/tool/lifecycle seams remain focused and separately testable; no complexity-tool result is claimed. |
+| 6 | boundary-conformance | unbound bindable | DEGRADED reviewer judgment: acceptable for the knowledge-surface delta. Dependency direction, wrappers, authorization, and documented trust seams were checked manually; no boundary-tool result is claimed. |
+| 7 | dead-code | unbound bindable | DEGRADED reviewer judgment: acceptable. Targeted reachability/scope searches and the full suite found no forbidden surviving or newly introduced surface; no dead-code-tool result is claimed. |
+
+## Artifact Ownership
+
+Each behavior remains owned by exactly one earlier implementing task:
+
+- TASK-560: B-001, B-002, B-004
+- TASK-559: B-005, B-008, B-012
+- TASK-561: B-006, B-007
+- TASK-563: B-009, B-013
+- TASK-564: B-003
+- TASK-565: B-010
+- TASK-567: B-011
+
+TASK-562 and TASK-566 are non-behavior precondition/human checkpoints. TASK-568
+owns no B-### behavior.
+
+## Degraded Mutation Judgment
+
+The named tests contain observable negative controls for every required class:
+
+- B-001/B-002 reject traversal, absolute resources, scope/type/provenance loss,
+  symlinked roots, nonconforming occupants, changed stable identity, writer-only
+  identity changes, and time-advanced same-writer retries.
+- B-003's frozen-corpus audit explicitly mutates `planTitle`, body bytes,
+  timestamps, destinations, legacy fields, and active JSONL pointers.
+- B-007 drives oversized three-surface allocation and the all-empty case,
+  asserting the 24,000-byte cap, discoverability, scan details, and no message.
+- B-005/B-006 use synthetic ineligible wrapper owners and store spies to catch
+  authored-memory/architecture authorization widening, direct IO, duplicate
+  recall ownership, and profile shadowing beyond the visible recall limit.
+- B-008 reads current shipped files, rejects D-009 deltas outside exact allowed
+  regions, and executes both OFF→ON and ON→OFF through real reload/plain-new and
+  restart/`/agent` seams.
+- B-010 covers injected failure, fake and production-spawner cancellation,
+  conditional restoration, concurrent config edits, hard-kill recovery evidence,
+  unindexed-orphan cleanup, digest-complete indexing, and no promotion.
+- The supervised-artifact test reads the approval file directly and asserts
+  `decision: approve`, no-verbatim attestation, review-index digest, aggregate
+  proposal digest, counts, and no curated distiller output. Removing the file,
+  changing it to reject, or changing either digest is therefore detectable.
+
+## Degraded Structural Judgments
+
+The focused implementations are singular and explicit:
+
+- parser/normalizer and proposal identity: `lib/memory/knowledge-records.ts`
+- store: `createKnowledgeMemoryStore` in `lib/memory/knowledge-store.ts`
+- retrieval combiner: `combineMemoryRetrieval`
+- budget allocator: `allocateInjectionBudget`
+- enabled session composer: `createKnowledgeSurfaceSessionExtension`
+- proposal adapter derivation: `deriveKnowledgeProposalIdentity` plus the thin
+  draft adapter in `knowledge-tools.ts`
+- backfill lifecycle: `runKnowledgeSurfaceBackfill`
+
+The enabled composer disables both legacy `before_agent_start` handlers and
+registers the single combined handler. The package wrappers only re-export the
+inward implementations. Searches found no knowledge-surface WeakMap, module
+singleton, EventBus correctness handoff, speculative registry/backend,
+correctness cache, second extractor, surviving migration program, or duplicate
+enabled context handler. `fallow.toml` is unchanged.
+
+The new domain-neutral memory core files (`knowledge-records.ts`,
+`knowledge-store.ts`, `multi-store-retrieval.ts`, and `injection-budget.ts`)
+import no Pi, config, agent, domain, session, task, plan, or architecture-map
+module. Pi/config adapters depend inward on `MemoryStore`. Two older episodic
+capture files under `lib/memory/` retain their pre-plan config imports; the
+knowledge-surface delta did not touch them, and changing them here would violate
+the explicit episode-change exclusion. Legacy authored-memory and architecture
+authorization remains identity-gated. Documentation states that generic Pi
+project tools and Codex/Claude backends are trusted, human-supervised,
+git-reviewed, and deliberately unsandboxed rather than claiming a sandbox.
+
+## Stage 6 / Stage 7B Recheck
+
+The earlier gate artifacts were read and revalidated, not regenerated:
+
+- Scan-cost evidence is unchanged and contains 20 raw turns with `verdict:
+  pass`; p95 is 18.916 ms against 250 ms, maximum bytes are 423,016 against 10
+  MiB, and maximum files scanned are 413 against the 413-file eligible bound.
+- `memory/agent/proposals/backfill-review.json` hashes to
+  `e61eaf52d7ca488657323c06e6f6f03463447265158a6eaf114a0faf25e3a6b4`,
+  matching the human approval. It binds 164 proposals across 19 slugs,
+  `noPromotion: true`, and aggregate digest
+  `f22ae61f24b82d534f68f5d4e4dfccfd08344cf59558dbee72f5118e1e0053c1`.
+- The approval records reviewer Agustin Calabrese, `decision: approve`,
+  `noVerbatimAttested: true`, zero rejected proposals, and the same digests and
+  counts.
+- `.cosmonauts/config.json` hashes to the index's before/after digest
+  `890d02aa85df1daccbdd177f01503c6477c04e9e352fa000daf9e1b5fb87d8a6`
+  and has no `knowledgeSurface.enabled: true`; the gate is OFF.
+
+## Scope / Dead-Code Judgment
+
+Active source, CLI, shipped prompts/skills, package metadata, and live docs
+contain no `.knowledge.jsonl` or retired session-knowledge API reference. The
+curated corpus and proposal corpus use only `decision`, `trade-off`, `gotcha`,
+and `convention`; all 164 `coding/distiller` records remain under
+`memory/agent/proposals/`, with none in curated knowledge. The store's required
+`consolidate` method is an explicit no-op and adds no consolidation behavior.
+
+The implementation-range diff contains no working-state, episodic/episode,
+explicit-save, embeddings/similarity, retention/raw-session deletion,
+autonomy-host, enabled bare-host, or `fallow.toml` change. The project config is
+OFF and the example explicitly uses `enabled: false`. The only shipped
+prompt/skill deltas are the existing coding distiller persona and shared archive
+skill; their executable contract rejects stack-specific examples and legacy or
+excluded output instructions.
 
 ## Findings
 
-- id: I-001
-  priority: P1
-  severity: high
-  confidence: 0.99
-  complexity: simple
-  contract: B-009 / INV-1 / INV-3
-  files: domains/shared/skills/archive/SKILL.md, tests/prompts/archive-skill.test.ts
-  lineRange: domains/shared/skills/archive/SKILL.md:42-79
-  summary: The archive skill still tells the acting agent to write `memory/<slug>.md`, create `memory/`, and emit the legacy `source/plan/distilledAt` memory-file template, even though its later proposal section says `memory/agent/proposals/` is the sole machine-knowledge output root. This directly contradicts B-009’s required active archive contract and the proposals-only path invariant. The B-009 test at `tests/prompts/archive-skill.test.ts:25-72` checks that proposal language exists but never rejects the earlier write-to-root instruction, so both incompatible instructions pass. Concrete failure scenario: an archive/distiller run follows the first complete procedure, creates a new machine-authored `memory/example.md`, and bypasses `propose_knowledge`, strict proposal provenance, and human promotion review.
-  suggestedFix: Replace or explicitly supersede the legacy write-to-`memory/<slug>.md` procedure with the proposal-tool workflow, and add a negative assertion that active archive guidance contains no machine instruction or template for root `memory/<slug>.md` output.
-  task:
-    title: -
-    labels: -
-    acceptanceCriteria:
-      1. Archive guidance names `memory/agent/proposals/` as the only machine-knowledge output and contains no instruction to write `memory/<slug>.md`.
-      2. B-009 coverage fails if a root-memory output instruction or legacy distillation template is reintroduced.
-
-- id: I-002
-  priority: P1
-  severity: medium
-  confidence: 0.98
-  complexity: complex
-  contract: B-008 transition seams
-  files: tests/episodic/pre-w3-disabled-baselines.test.ts, tests/agents/session-assembly.test.ts, cli/session.ts
-  lineRange: tests/episodic/pre-w3-disabled-baselines.test.ts:18-183
-  summary: The B-008 marker test does not execute reload, plain-new, restart, or `/agent` transition behavior; it only asserts that a frozen JSON object contains the expected transition labels. The nearby assembly test at `tests/agents/session-assembly.test.ts:276-298` similarly reuses an already-returned params object for “reload/plain-new” rather than driving either runtime seam. Production reassembly does occur in `cli/session.ts:555-590`, but no test proves the frozen-versus-reassembled matrix. Concrete failure scenario: a future reload callback begins rebuilding resources from edited config and turns an OFF session ON mid-runtime; the static fixture and params-object assertions remain green because neither invokes reload.
-  suggestedFix: Add executable transition tests through the actual CLI/Pi runtime replacement seams for both OFF→ON and ON→OFF: reload and plain-new must retain the frozen selection, while restart and `/agent` switch must rebuild and adopt the edit. Assert tool/context/store effects, not only config labels.
-  task:
-    title: Exercise the B-008 frozen and reassembled transition matrix
-    labels: plan:knowledge-surface, testing
-    acceptanceCriteria:
-      1. Reload and plain-new tests execute their real session seams and retain the prior gate state in both directions without knowledge store construction when frozen OFF.
-      2. Restart and `/agent` switch tests execute reassembly and adopt OFF→ON and ON→OFF edits, asserting observable tool/context outcomes.
-
-- id: I-003
-  priority: P1
-  severity: medium
-  confidence: 0.97
-  complexity: complex
-  contract: B-005 collision at initial, switch, and spawn seams
-  files: tests/cli/session.test.ts, tests/orchestration/session-factory.security.test.ts, cli/session.ts, lib/orchestration/session-factory.ts
-  lineRange: tests/cli/session.test.ts:116-273
-  summary: Production calls the recall-owner assertion on switch and initial CLI paths (`cli/session.ts:582-584`, `cli/session.ts:613-615`) and on spawned sessions (`lib/orchestration/session-factory.ts:82-84`), but tests exercise only the single-owner success case. The B-005 test’s loader mock manufactures only the inline owner, while the spawned-session test at `tests/orchestration/session-factory.security.test.ts:77-110` only checks factory forwarding. No seam test loads an arbitrary extension that also registers `recall`, verifies failure before session use, or checks that both owner paths appear. Concrete failure scenario: collision checking is accidentally removed from the spawned path; an installed extension and the framework both register `recall`, yet all current B-005 tests still pass because none creates the conflicting owner at that seam.
-  suggestedFix: Add independent initial-CLI, `/agent`-switch, and spawned-session collision cases whose loaders expose the inline framework owner plus an arbitrary path owner; assert assembly fails with both paths and does not create/use the session. Keep a success case at each seam for unrelated tools.
-  task:
-    title: Cover B-005 recall collisions at every declared session seam
-    labels: plan:knowledge-surface, testing
-    acceptanceCriteria:
-      1. Initial CLI, `/agent` switch, and spawned-session tests each fail on an inline-plus-arbitrary `recall` collision and name both owner paths.
-      2. Each seam proves unrelated extension tools remain callable when no recall collision exists.
+No unresolved Stage-9 finding remains. The prior integration findings are
+closed by the archive proposal-only correction and TASK-569/TASK-570's real
+transition and collision-seam regressions.

@@ -85,8 +85,7 @@ Boundary rules:
   allows item ② to ride with this plan or adjacent; it is scoped out to keep
   this plan within task bounds and ships as its own small plan reusing
   profile mechanics. Decided by: planner-proposed, 2026-08-18.
-- **D-003 — Intent invariants INV-5 and INV-6 promoted from candidates
-  C-6 and C-4** of `knowledge-and-memory.md` §9 into this spec's `## Intent`.
+- **D-003 — Intent invariants INV-5 and INV-6 promoted from candidates C-6 and C-4** of `knowledge-and-memory.md` §9 into this spec's `## Intent`.
   Decided by: human (ratified 2026-08-18).
 - **D-004 — Use `memory/agent/proposals/` as the plan-stage proposal path.**
   - Decision: machine-produced project proposals live under
@@ -153,8 +152,7 @@ Boundary rules:
   *(D-008's `ExtensionAPI`-keyed WeakMap and reload-transition mechanism is
   superseded by D-017, 2026-08-19; the original entry is preserved verbatim.)*
 
-- **D-009 — RULED: amend AC-007; OFF-identity governs the gated runtime
-  surface, not prompt-content corrections (option A).**
+- **D-009 — RULED: amend AC-007; OFF-identity governs the gated runtime surface, not prompt-content corrections (option A).**
   - Decision: AC-007's letter is amended in `spec.md`. The OFF guarantee
     covers the gated surface — no knowledge injection, tools, retrieval, or
     gated extension discovery — pinned against frozen baselines. The distiller
@@ -171,8 +169,7 @@ Boundary rules:
   - Supersedes: spec AC-007's original "byte-identical prompts" letter
     (marked in place in `spec.md`).
   - Decided by: human, 2026-08-18.
-- **D-010 — RULED: amend INV-1/INV-2 and AC-003/AC-005 to govern the memory
-  system's own surfaces (option B).**
+- **D-010 — RULED: amend INV-1/INV-2 and AC-003/AC-005 to govern the memory system's own surfaces (option B).**
   - Decision: the invariants' letters are amended in `spec.md`. INV-1 binds
     dedicated knowledge/memory tools and framework memory pathways — machine
     knowledge is proposals-only, promotion is human. INV-2 binds the
@@ -258,8 +255,7 @@ Boundary rules:
     could not be satisfied for hosts that never call `buildSessionParams`.
   - Supersedes: the unscoped "every agent" letters of INV-2/AC-003.
   - Decided by: human, 2026-08-19.
-- **D-016 — RULED: the supervised backfill's temporary gate enablement is
-  ratified.**
+- **D-016 — RULED: the supervised backfill's temporary gate enablement is ratified.**
   - Decision: D-013's mechanism — temporarily enabling the gate in this
     repository for the backfill batch, restoring `.cosmonauts/config.json`
     byte-for-byte in a `finally` path, and halting for human diff review —
@@ -274,8 +270,7 @@ Boundary rules:
     ratified default-state declaration.
   - Decided by: human, 2026-08-19.
 
-- **D-017 — AMENDMENT to D-008: compose one configured Pi inline extension
-  at session assembly (2026-08-19).**
+- **D-017 — AMENDMENT to D-008: compose one configured Pi inline extension at session assembly (2026-08-19).**
   - Decision: `buildSessionParams` resolves the gate once, removes only the
     exact shared agent-memory/architecture-memory wrappers from the enabled
     path set, and supplies one named `InlineExtension` through Pi's
@@ -297,8 +292,7 @@ Boundary rules:
   - Supersedes: D-008's WeakMap mechanism and its claim that resource reload or
     plain session recreation re-resolves the gate; D-008's frozen authority,
     explicit placement, and package-host intent stand.
-- **D-018 — Split human OKF reads from machine proposal provenance
-  (2026-08-19).**
+- **D-018 — Split human OKF reads from machine proposal provenance (2026-08-19).**
   - Decision: a human-curated knowledge file requires only a valid ratified
     `type`; recommended OKF metadata degrades to deterministic read-time
     fallbacks and writer/source/date may be absent. Machine proposal writes
@@ -328,8 +322,7 @@ Boundary rules:
   - Decided by: planner, amend-on-record, 2026-08-19.
   - Supersedes: Design §4's byte-identical-only occupant rule for proposal
     retries and extends D-011's draft contract with typed proposal identity.
-- **D-020 — Separate machine-verifiable backfill GREEN from human approval
-  (2026-08-19).**
+- **D-020 — Separate machine-verifiable backfill GREEN from human approval (2026-08-19).**
   - Decision: `scripts/knowledge-surface-backfill.ts` exposes a callable,
     dependency-injected batch seam whose failure and cancellation paths are
     testable. Machine GREEN means restored config, validated 3-15 proposals per
@@ -344,8 +337,7 @@ Boundary rules:
   - Decided by: planner, amend-on-record, 2026-08-19.
   - Supersedes: B-010/Stage 7's combined worker-plus-human completion shape;
     the ratified temporary-enable, restore, halt, and no-promotion rules stand.
-- **D-021 — Use non-colliding legacy keys and canonical migration timestamps
-  (2026-08-19).**
+- **D-021 — Use non-colliding legacy keys and canonical migration timestamps (2026-08-19).**
   - Decision: preserved legacy values use the exact keys in Design §6
     (`legacySource`, `legacyType`, and companions), never reserved `source` or
     `type`. Destination timestamps are canonical UTC RFC3339 with millisecond
@@ -357,8 +349,7 @@ Boundary rules:
   - Decided by: planner, amend-on-record, 2026-08-19.
   - Supersedes: Design §6's ambiguous custom-key labels and unnormalized
     `distilledAt` mapping.
-- **D-022 — Sequence distiller adaptation against `coding-extraction`
-  (2026-08-19).**
+- **D-022 — Sequence distiller adaptation against `coding-extraction` (2026-08-19).**
   - Decision: this plan assumes `bundled/coding/` is present when its distiller
     slice starts. If active plan `coding-extraction` lands first, stop before
     that slice and amend file/test ownership to the installed coding-domain
@@ -369,8 +360,7 @@ Boundary rules:
   - Why: this preserves D-014's single extraction mechanism without coupling
     framework contracts to a path another active plan removes.
   - Decided by: planner-proposed, 2026-08-19.
-- **D-023 — Preserve legacy extension registration and authorization separately
-  (2026-08-19).**
+- **D-023 — Preserve legacy extension registration and authorization separately (2026-08-19).**
   - Decision: wrapper substitution carries separate booleans for registering
     agent-memory tools, authorizing authored-memory access/context, registering
     the architecture tool, and authorizing architecture access/context.
@@ -399,8 +389,7 @@ Boundary rules:
     the remaining F-04 deficiency.
   - Decided by: planner, amend-on-record, 2026-08-19.
   - Supersedes: Design §4's stable-object list that omitted writer.
-- **D-025 — Measure recurring scan cost in the first post-migration slice
-  (2026-08-19).**
+- **D-025 — Measure recurring scan cost in the first post-migration slice (2026-08-19).**
   - Decision: Stage 6 cannot reach GREEN until 20 enabled turns run against the
     migrated corpus and write `missions/reviews/knowledge-surface-scan-cost.md`
     with corpus inputs, aggregate stats, p95 duration, threshold verdict, and
@@ -413,8 +402,7 @@ Boundary rules:
     `review-5.md PR-002`.
   - Decided by: planner, amend-on-record, 2026-08-19.
   - Supersedes: Design §5/Stage 9's final-checkpoint-only measurement ownership.
-- **D-026 — RULED: conditional config restore; a concurrent edit is never
-  overwritten (2026-08-19).**
+- **D-026 — RULED: conditional config restore; a concurrent edit is never overwritten (2026-08-19).**
   - Decision: at restore time the batch compares `.cosmonauts/config.json` to
     the exact temporary-enabled bytes it wrote. Unchanged → restore the
     pre-run snapshot byte-for-byte as before. Changed → the batch never
@@ -431,8 +419,7 @@ Boundary rules:
   - Supersedes: the unconditional `finally` restoration letter in D-013/D-016
     and Design §7.
   - Decided by: human, 2026-08-19.
-- **D-027 — Production spawner cancellation must actually abort
-  (2026-08-19).**
+- **D-027 — Production spawner cancellation must actually abort (2026-08-19).**
   - Decision: `createPiSpawner` honors `SpawnConfig.signal` during a run, not
     only before session preparation — abort interrupts the running Pi
     session, awaits its termination, and makes `dispose()` effective.
@@ -446,8 +433,7 @@ Boundary rules:
   - Why: resolves `review-6.md PR-001` — the cancellation guarantee B-010
     states must hold on the production composition.
   - Decided by: coordinator, amend-on-record, 2026-08-19.
-- **D-028 — The profile stays pinned outside the combined recall limit
-  (2026-08-19).**
+- **D-028 — The profile stays pinned outside the combined recall limit (2026-08-19).**
   - Decision: the combined retrieval combiner preserves the shipped profile
     rule — matching profiles are excluded from the visible limit and
     prepended; knowledge and other records compete under the limit. B-006's
@@ -458,8 +444,7 @@ Boundary rules:
   - Why: resolves `review-6.md PR-002`; `docs/memory.md` documents the pin as
     required so recovery cannot be shadowed by newer records.
   - Decided by: coordinator, amend-on-record, 2026-08-19.
-- **D-029 — Failed or cancelled batches leave no unindexed proposals
-  (2026-08-19).**
+- **D-029 — Failed or cancelled batches leave no unindexed proposals (2026-08-19).**
   - Decision: proposals belong to a slug's set only when that slug completes
     validation and the review index binds them. On failure or cancellation,
     before exit — and again before any rerun distills a slug — the batch
@@ -705,7 +690,7 @@ Review-6 findings (applied 2026-08-19):
 - Seam: `scripts/knowledge-surface-backfill.ts`, archive inventory,
   `.cosmonauts/config.json`, `memory/agent/proposals/`, and
   `memory/agent/proposals/backfill-review.json`
-- Test: `tests/prompts/archive-skill.test.ts` > `runs all repository-derived backfill slugs and restores config on success failure and cancellation before review`
+- Test: `tests/scripts/knowledge-surface-backfill.test.ts` > `runs all repository-derived backfill slugs and restores config on success failure and cancellation before review`
 - Marker: `@cosmo-behavior plan:knowledge-surface#B-010`
 
 ### B-011 - Shipped documentation states the bounded live contract
@@ -1164,11 +1149,12 @@ is added.
   existing `memory/*.knowledge.jsonl`, and new `knowledge/` — complete migration.
 - `tests/sessions/knowledge.test.ts` ↔ delete `lib/sessions/knowledge.ts`; update
   `lib/sessions/index.ts` and `lib/sessions/types.ts` — retire JSONL.
-- `tests/prompts/archive-skill.test.ts` ↔ coding distiller prompt/definition and
+- `tests/prompts/archive-skill.test.ts` ↔ `bundled/coding/prompts/distiller.md`,
+  `bundled/coding/agents/distiller.ts`, and
   `domains/shared/skills/archive/SKILL.md` — active/archive Tier-2 discovery and
   proposal-only output. If D-022 triggers, ownership follows the extracted
   installed domain.
-- `tests/prompts/archive-skill.test.ts` ↔ new
+- `tests/scripts/knowledge-surface-backfill.test.ts` ↔ new
   `scripts/knowledge-surface-backfill.ts`, proposal/review-index records, and
   `missions/reviews/knowledge-surface-backfill-approval.md` — callable restore
   lifecycle (conditional restoration per D-026, partial-proposal cleanup per
