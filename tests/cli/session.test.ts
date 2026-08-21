@@ -89,6 +89,47 @@ const BASE_PARAMS = {
 };
 
 const TEST_SESSION_DIR = "/tmp/pi-agent/sessions/--tmp-project--/worker";
+const FRAMEWORK_RECALL_OWNER = "<inline:cosmonauts-knowledge-surface>";
+const CONFLICTING_RECALL_OWNER = "/installed/conflict/index.ts";
+
+interface CallableTestSession {
+	callTool(name: string, args?: unknown): Promise<unknown>;
+}
+
+function frameworkRecallLoader() {
+	return {
+		getExtensions: () => ({
+			extensions: [
+				{
+					path: FRAMEWORK_RECALL_OWNER,
+					tools: new Map([["recall", {}]]),
+				},
+			],
+			errors: [],
+			runtime: {},
+		}),
+	};
+}
+
+function recallCollisionLoader() {
+	return {
+		getExtensions: () => ({
+			extensions: [
+				...frameworkRecallLoader().getExtensions().extensions,
+				{
+					path: CONFLICTING_RECALL_OWNER,
+					tools: new Map([["recall", {}]]),
+				},
+			],
+			errors: [],
+			runtime: {},
+		}),
+	};
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 describe("createSession", () => {
 	beforeEach(() => {
@@ -130,6 +171,9 @@ describe("createSession", () => {
 	});
 
 	test("preserves legacy registration and authorization while enforcing one enabled recall across every session path @cosmo-behavior plan:knowledge-surface#B-005", async () => {
+		const initialUnrelatedTool = vi.fn(async () => "initial-tool-called");
+		const switchedUnrelatedTool = vi.fn(async () => "switched-tool-called");
+		const createdSessions: CallableTestSession[] = [];
 		const initialFactory = {
 			name: "cosmonauts-knowledge-surface",
 			factory: vi.fn(),
@@ -141,29 +185,70 @@ describe("createSession", () => {
 		mocks.buildSessionParams
 			.mockResolvedValueOnce({
 				...BASE_PARAMS,
+				extensionPaths: ["/installed/initial-tools/index.ts"],
 				extensionFactories: [initialFactory],
 				knowledgeSurfaceEnabled: true,
 			})
 			.mockResolvedValueOnce({
 				...BASE_PARAMS,
+				extensionPaths: ["/installed/switched-tools/index.ts"],
 				extensionFactories: [switchedFactory],
 				knowledgeSurfaceEnabled: true,
 			});
-		mocks.createAgentSessionServices.mockImplementation(async (options) => ({
-			diagnostics: {},
-			resourceLoader: {
-				getExtensions: () => ({
-					extensions: (
-						options.resourceLoaderOptions.extensionFactories ?? []
-					).map((factory: { name: string }) => ({
-						path: `<inline:${factory.name}>`,
-						tools: new Map([["recall", {}]]),
-					})),
-					errors: [],
-					runtime: {},
-				}),
-			},
-		}));
+		mocks.createAgentSessionServices.mockImplementation(async (options) => {
+			const pathExtensions = (
+				options.resourceLoaderOptions.additionalExtensionPaths ?? []
+			).map((path: string) => ({
+				path,
+				tools: new Map([
+					[
+						path.includes("switched")
+							? "switched_unrelated_tool"
+							: "initial_unrelated_tool",
+						{
+							execute: path.includes("switched")
+								? switchedUnrelatedTool
+								: initialUnrelatedTool,
+						},
+					],
+				]),
+			}));
+			const inlineExtensions = (
+				options.resourceLoaderOptions.extensionFactories ?? []
+			).map((factory: { name: string }) => ({
+				path: `<inline:${factory.name}>`,
+				tools: new Map([["recall", {}]]),
+			}));
+			return {
+				diagnostics: {},
+				resourceLoader: {
+					getExtensions: () => ({
+						extensions: [...inlineExtensions, ...pathExtensions],
+						errors: [],
+						runtime: {},
+					}),
+				},
+			};
+		});
+		mocks.createAgentSessionFromServices.mockImplementation(async (options) => {
+			const session: CallableTestSession = {
+				async callTool(name, args) {
+					if (!options.tools.includes(name)) {
+						throw new Error(`Tool ${name} is not callable`);
+					}
+					for (const extension of options.services.resourceLoader.getExtensions()
+						.extensions) {
+						const tool = extension.tools.get(name) as
+							| { execute?: (input?: unknown) => Promise<unknown> }
+							| undefined;
+						if (tool?.execute) return tool.execute(args);
+					}
+					throw new Error(`Tool ${name} has no executable definition`);
+				},
+			};
+			createdSessions.push(session);
+			return { session };
+		});
 		mocks.createAgentSessionRuntime.mockImplementation(
 			async (
 				createRuntime: (args: {
@@ -212,6 +297,15 @@ describe("createSession", () => {
 				}),
 			}),
 		);
+		expect(createdSessions).toHaveLength(2);
+		await expect(
+			createdSessions[0]?.callTool("initial_unrelated_tool"),
+		).resolves.toBe("initial-tool-called");
+		await expect(
+			createdSessions[1]?.callTool("switched_unrelated_tool"),
+		).resolves.toBe("switched-tool-called");
+		expect(initialUnrelatedTool).toHaveBeenCalledTimes(1);
+		expect(switchedUnrelatedTool).toHaveBeenCalledTimes(1);
 
 		const retrieve = vi.fn<MemoryStore["retrieve"]>(async () => ({
 			records: [
@@ -269,6 +363,115 @@ describe("createSession", () => {
 			{ projectRoot: "/tmp/project", scopes: ["project", "user"] },
 			expect.objectContaining({ text: "B-005 reaches knowledge" }),
 		);
+	});
+
+	test("rejects an enabled initial CLI recall collision before creating the session", async () => {
+		mocks.buildSessionParams.mockResolvedValue({
+			...BASE_PARAMS,
+			extensionPaths: [CONFLICTING_RECALL_OWNER],
+			extensionFactories: [
+				{ name: "cosmonauts-knowledge-surface", factory: vi.fn() },
+			],
+			knowledgeSurfaceEnabled: true,
+		});
+		mocks.createAgentSessionServices.mockResolvedValue({
+			diagnostics: {},
+			resourceLoader: recallCollisionLoader(),
+		});
+		mocks.createAgentSessionRuntime.mockImplementation(
+			(
+				createRuntime: (args: {
+					cwd: string;
+					sessionManager: unknown;
+					sessionStartEvent?: unknown;
+				}) => Promise<unknown>,
+				runtimeOptions: { cwd: string; sessionManager: unknown },
+			) =>
+				createRuntime({
+					cwd: runtimeOptions.cwd,
+					sessionManager: runtimeOptions.sessionManager,
+				}),
+		);
+
+		await expect(
+			createSession({
+				definition: TEST_DEF,
+				cwd: "/tmp/project",
+				domainsDir: "/tmp/domains",
+				persistent: false,
+			}),
+		).rejects.toThrow(
+			new RegExp(
+				`${escapeRegExp(FRAMEWORK_RECALL_OWNER)}.*${escapeRegExp(CONFLICTING_RECALL_OWNER)}`,
+			),
+		);
+		expect(mocks.createAgentSessionFromServices).not.toHaveBeenCalled();
+	});
+
+	test("rejects an enabled /agent recall collision before replacing the active session", async () => {
+		mocks.buildSessionParams
+			.mockResolvedValueOnce({
+				...BASE_PARAMS,
+				extensionFactories: [
+					{ name: "cosmonauts-knowledge-surface", factory: vi.fn() },
+				],
+				knowledgeSurfaceEnabled: true,
+			})
+			.mockResolvedValueOnce({
+				...BASE_PARAMS,
+				extensionPaths: [CONFLICTING_RECALL_OWNER],
+				extensionFactories: [
+					{ name: "cosmonauts-knowledge-surface", factory: vi.fn() },
+				],
+				knowledgeSurfaceEnabled: true,
+			});
+		mocks.createAgentSessionServices
+			.mockResolvedValueOnce({
+				diagnostics: {},
+				resourceLoader: frameworkRecallLoader(),
+			})
+			.mockResolvedValueOnce({
+				diagnostics: {},
+				resourceLoader: recallCollisionLoader(),
+			});
+		mocks.createAgentSessionRuntime.mockImplementation(
+			async (
+				createRuntime: (args: {
+					cwd: string;
+					sessionManager: unknown;
+					sessionStartEvent?: unknown;
+				}) => Promise<unknown>,
+				runtimeOptions: { cwd: string; sessionManager: unknown },
+			) => {
+				await createRuntime({
+					cwd: runtimeOptions.cwd,
+					sessionManager: runtimeOptions.sessionManager,
+				});
+				setPendingSwitch("planner");
+				return createRuntime({
+					cwd: runtimeOptions.cwd,
+					sessionManager: runtimeOptions.sessionManager,
+				});
+			},
+		);
+
+		await expect(
+			createSession({
+				definition: TEST_DEF,
+				cwd: "/tmp/project",
+				domainsDir: "/tmp/domains",
+				persistent: false,
+				agentRegistry: {
+					resolve: () => ({ ...TEST_DEF, id: "planner" }),
+				} as unknown as AgentRegistry,
+				domainContext: "coding",
+			}),
+		).rejects.toThrow(
+			new RegExp(
+				`${escapeRegExp(FRAMEWORK_RECALL_OWNER)}.*${escapeRegExp(CONFLICTING_RECALL_OWNER)}`,
+			),
+		);
+		expect(mocks.createAgentSessionFromServices).toHaveBeenCalledTimes(1);
 	});
 
 	test("switch path uses the session manager Pi provides, not a new one", async () => {
