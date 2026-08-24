@@ -95,12 +95,18 @@ describe("knowledge surface recoverable backfill", () => {
 			sha256(await readFile(join(REPO_ROOT, ".cosmonauts", "config.json"))),
 		);
 
+		// A proposal exits the proposals area only by human promotion or deletion.
+		// Promotions are recorded, so an indexed proposal must still be readable at
+		// its original path OR at its recorded promoted path — with the same digest,
+		// which also proves promotion moved bytes unchanged.
+		const promoted = await recordedPromotions(REPO_ROOT);
 		const counts = new Map<string, number>();
 		for (const proposal of index.proposals) {
 			expect(proposal.path).toMatch(
 				new RegExp(`^memory/agent/proposals/${proposal.planSlug}/[^/]+\\.md$`),
 			);
-			expect(sha256(await readFile(join(REPO_ROOT, proposal.path)))).toBe(
+			const livePath = promoted.get(proposal.path) ?? proposal.path;
+			expect(sha256(await readFile(join(REPO_ROOT, livePath))), livePath).toBe(
 				proposal.sha256,
 			);
 			counts.set(proposal.planSlug, (counts.get(proposal.planSlug) ?? 0) + 1);
@@ -110,7 +116,7 @@ describe("knowledge surface recoverable backfill", () => {
 			expect(counts.get(slug), slug).toBeLessThanOrEqual(15);
 		}
 		expect(index.proposals.map(({ path }) => path).sort()).toEqual(
-			await proposalFiles(REPO_ROOT),
+			[...(await proposalFiles(REPO_ROOT)), ...promoted.keys()].sort(),
 		);
 		expect(index.aggregateProposalDigest).toBe(
 			aggregateDigest(index.proposals),
@@ -141,7 +147,14 @@ describe("knowledge surface recoverable backfill", () => {
 			proposalCount: index.proposals.length,
 			slugCount: EXPECTED_MISSING_SLUGS.length,
 		});
-		expect(await curatedDistillerFiles(REPO_ROOT)).toEqual([]);
+		// INV-1 forbids the machine pathway writing into knowledge/, not a human
+		// placing a distiller-authored record there by promotion. A file's `writer`
+		// records who authored it, not who promoted it, so the filesystem cannot
+		// tell the two apart — a recorded promotion is what distinguishes them.
+		// The store-level refusal is proved separately by B-002 and B-013.
+		expect(await curatedDistillerFiles(REPO_ROOT)).toEqual(
+			[...promoted.values()].sort(),
+		);
 	});
 
 	test("restores config and writes a digest-complete no-promotion review index", async () => {
@@ -531,6 +544,40 @@ async function proposalFiles(projectRoot: string): Promise<string[]> {
 		if (errorCode(error) === "ENOENT") return [];
 		throw error;
 	}
+}
+
+/**
+ * Human promotion records under `missions/reviews/`, as proposal path -> curated
+ * path. Promotion is a human act (INV-1) and this is its only audit trail, so an
+ * unrecorded distiller-authored file under `knowledge/` remains a failure.
+ */
+async function recordedPromotions(
+	projectRoot: string,
+): Promise<Map<string, string>> {
+	const reviews = join(projectRoot, "missions", "reviews");
+	const moves = new Map<string, string>();
+	let entries: string[];
+	try {
+		entries = await readdir(reviews);
+	} catch {
+		return moves;
+	}
+	for (const entry of entries.sort()) {
+		if (!entry.endsWith(".md")) continue;
+		const data = matter(await readFile(join(reviews, entry), "utf-8")).data as {
+			kind?: unknown;
+			promotions?: unknown;
+		};
+		if (data.kind !== "knowledge-surface-promotion") continue;
+		if (!Array.isArray(data.promotions)) continue;
+		for (const move of data.promotions) {
+			const { from, to } = move as { from?: unknown; to?: unknown };
+			if (typeof from === "string" && typeof to === "string") {
+				moves.set(from, to);
+			}
+		}
+	}
+	return moves;
 }
 
 async function curatedDistillerFiles(projectRoot: string): Promise<string[]> {
