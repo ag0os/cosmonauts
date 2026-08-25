@@ -6,19 +6,9 @@ Work backlog in two sections. **Prioritized** items at the top are ordered — p
 
 Re-assessed and reordered **2026-08-25** in a human-led re-planning session, replacing the 2026-06 capability-track ordering (that queue's history — `task-id-system` through `knowledge-surface`, all shipped — lives in `knowledge/` and git history). The organizing thesis: **cosmonauts as a harness-agnostic software factory.** Factory assets — agents, skills, workflows, knowledge, the architecture picture — are defined once, in cosmonauts; any harness (cosmonauts itself, Claude Code, Codex, Gemini, …) can play coordinator or worker; and the factory improves itself from its own session data.
 
-Agreed spine: **portable harness** (`harness-adapters`, `drive-envelope`, `external-session-capture`) → **factory quality** (`factory-modes`, `architecture-aware-planning`, `worker-inloop-analysis`) → **knowledge-and-memory continuation** (per the §10.1 amendment in `missions/architecture/knowledge-and-memory.md`) → **`agent-interaction`** → **`domains`**. Items marked **(thread)** are deliberately small and run alongside whatever is on top — start them at the first opportunity; they block nothing.
+Agreed spine: **portable harness** (`harness-adapters`, `drive-envelope`, `coordinator-packages` — added 2026-08-25 — `external-session-capture`) → **factory quality** (`factory-modes`, `architecture-aware-planning`, `worker-inloop-analysis`) → **knowledge-and-memory continuation** (per the §10.1 amendment in `missions/architecture/knowledge-and-memory.md`) → **`agent-interaction`** → **`domains`**. Items marked **(thread)** are deliberately small and run alongside whatever is on top — start them at the first opportunity; they block nothing.
 
-Active plans are not roadmap items: `memory-consolidation` (re-spec required before tasks — see §10.1), `autonomy-host`, `coding-extraction`, and `superplanning-integration` (plus the deferred `web-research` spec) live under `missions/plans/`.
-
-### `harness-adapters`: Single-Source Factory Assets, Consumed From Any Harness
-
-Cosmonauts assets (agents, skills, workflows, commands) are authored once and consumed natively from external harnesses — no hand-maintained copies.
-
-- Per-harness thin wrappers: a format/header shim plus a symlink or pointer to the same internal content — explicitly **not** compilation into divergent copies. The `skills-cli` export is the seed
-- Bring `/spec-to-backlog` and `/implement-plan` home: authored in-repo, emitted as generated Claude Code commands (today they live outside the repo as hand-maintained user-level commands)
-- Motivation is coordinator flexibility and economics: subscription Claude Code as coordinator today, another harness or an internal cosmonauts coordinator tomorrow, without re-authoring anything
-- Define the harness-adapter contract in a small source-of-truth doc as part of the plan's spec
-- Cross-links: `skills-cli` skill · `missions/architecture/tool-ecosystem.md` · `external-session-capture` (the capture half of the same contract)
+Active plans are not roadmap items: `harness-adapters` (picked up 2026-08-25 — was the top of this queue), `memory-consolidation` (re-spec required before tasks — see §10.1), `autonomy-host`, `coding-extraction`, and `superplanning-integration` (plus the deferred `web-research` spec) live under `missions/plans/`.
 
 ### `drive-envelope`: Drive as a Free Envelope
 
@@ -28,6 +18,15 @@ Decouple Drive's value (isolation, gates, session capture, reporting) from the p
 - Callable internally (agent, chain) and externally (any harness with cosmonauts knowledge driving the CLI non-interactively)
 - Free-form runs still record sessions and outcomes, so they feed the memory loop like plan-backed runs
 - Source of truth: `missions/architecture/orchestration-future.md` (extends the `runStart` seam)
+
+### `coordinator-packages`: Packaged Cosmonauts Coordinators for Any Harness
+
+Launch an external harness (Claude Code, Codex) already *being* a cosmonauts coordinator — a packaged agent whose identity is "coordinate this cosmonauts project through the CLI", in flavors (cosmo = general assistant, cody = coding coordinator). The binary-export mechanism exists (`cosmonauts export`, Claude-Forge-style; `packages/cosmo-spec-writer-claude` and `cosmo-worker-codex` prove it); this makes coordinators first-class and thin.
+
+- Coordinator personas get a git-tracked native home — today each package's external-safe system prompt (`packages/*/*-system.md`) is hand-written and gitignored, the same no-source-of-truth disease the commands had
+- Thin-coordinator principle: the package carries identity + CLI knowledge; skills and commands come from the `harness-adapters` sync (`skillDelivery: "reference"`, not inline-frozen), so a running coordinator never drifts from the repo
+- Flavors are configuration over one coordinator template, not hand-forked prompts
+- Consumes: `harness-adapters` (assets + registry) · `drive-envelope` (the coordinator's main lever) · pairs with `external-session-capture` (coordinator sessions are precisely the ones worth capturing)
 
 ### `external-session-capture`: Externally-Coordinated Sessions Feed the Memory Loop
 
