@@ -4,112 +4,165 @@ Work backlog in two sections. **Prioritized** items at the top are ordered — p
 
 ## Prioritized
 
-Ordered — pick from the top. Curated 2026-06 from a full-backlog reprioritization (~15 scattered items consolidated into capability **tracks**, each with a source-of-truth doc under `missions/architecture/`, linked per entry); **cross-track sequence agreed 2026-06-18** in an implementation-ordering session. The committed spine front-loads the live bug and cheap high-felt-need wins, then the compounding code-memory substrate, then the assistant-memory win, then multi-agent leverage, then the multi-domain platform. **Two scope notes from that session:** (1) `architectural-memory` *bundles* two cheap riders from Ideas — `analysis-tools` (audit) and `artifact-viewer` (render its map + plans); (2) `agent-memory` is committed **only through W1–W2** (the assistant-remembers-you win), then a **reassess gate** decides whether to climb into **`autonomy` / always-on** (Ideas — in-process host first, co-delivers orchestration's deferred scheduler/coordinator-loops; `agent-swarms` Waves B/C and `agent-memory` W3–W4 are gated on that host). The remaining items stay unordered Ideas below. **Amended 2026-08-18 (human-ratified):** the memory track was unified and renamed **`knowledge-and-memory`** (`missions/architecture/knowledge-and-memory.md`, superseding `agent-memory.md` + `architectural-memory.md`; the derived map carved out to `code-structure-map.md`), and its §10 resequencing inserts a knowledge-surface plan ahead of `memory-consolidation` and `autonomy-host` — see the queue note below.
+Re-assessed and reordered **2026-08-25** in a human-led re-planning session, replacing the 2026-06 capability-track ordering (that queue's history — `task-id-system` through `knowledge-surface`, all shipped — lives in `knowledge/` and git history). The organizing thesis: **cosmonauts as a harness-agnostic software factory.** Factory assets — agents, skills, workflows, knowledge, the architecture picture — are defined once, in cosmonauts; any harness (cosmonauts itself, Claude Code, Codex, Gemini, …) can play coordinator or worker; and the factory improves itself from its own session data.
 
-> `task-id-system` — ✅ **DONE (2026-06-30)**, merged + archived; migrated to `knowledge/task-id-system.md`. Removed from the queue.
+Agreed spine: **portable harness** (`harness-adapters`, `drive-envelope`, `external-session-capture`) → **factory quality** (`factory-modes`, `architecture-aware-planning`, `worker-inloop-analysis`) → **knowledge-and-memory continuation** (per the §10.1 amendment in `missions/architecture/knowledge-and-memory.md`) → **`agent-interaction`** → **`domains`**. Items marked **(thread)** are deliberately small and run alongside whatever is on top — start them at the first opportunity; they block nothing.
 
-### `agent-tools`: Native Agent Tools (Web Research + Browser) — ⏸ PARKED
+Active plans are not roadmap items: `memory-consolidation` (re-spec required before tasks — see §10.1), `autonomy-host`, `coding-extraction`, and `superplanning-integration` (plus the deferred `web-research` spec) live under `missions/plans/`.
 
-**⏸ PARKED (2026-07-01).** On hold; `architectural-memory` W1 has since **shipped (2026-07-03 → `knowledge/code-structure-map.md`)**, so **the next prioritized track is `agent-memory` (below).** S1 (native web research) is deferred — the warm spec lives at `missions/plans/web-research/` (status `deferred`), parked in favor of a cheaper *research-delegation* direction (delegate research to codex/claude-cli via the driver seam) that is noted but not yet scoped into a plan. Browser (S2) is not started. Revive the native web-research slice when fully-autonomous chain runs need grounded/cited, machine-consumable facts.
+### `harness-adapters`: Single-Source Factory Assets, Consumed From Any Harness
 
-Make borrowed/bolted-on capabilities feel **native** — registered tools (the established `pi.registerTool` + TypeBox pattern) with explicit capability docs, so agents reach for them instead of leaving for Claude Code/Codex. Today web research is **absent**; browser exists only as an under-surfaced shell-out skill. First slice: **web research**. Full assessment + theme in the source-of-truth doc.
+Cosmonauts assets (agents, skills, workflows, commands) are authored once and consumed natively from external harnesses — no hand-maintained copies.
 
-- Web research (build native): `web_search` + `web_fetch` primitives behind a pluggable backend (Brave / Tavily / Exa / SearXNG) → a thin `researcher` skill/agent that composes them
-- Browser (keep Playwright): first sharpen the `playwright-cli` skill — self-contained (inline reference, stack-agnostic), explicit use-cases, surfaced to `cosmo` + coding agents; upgrade to a thin native `browser` tool wrapping Playwright if usage stays low
-- Pi-First: evaluate `pi-skills` brave-search / browser-tools before building; lean native for control + the clean pattern
-- Cross-link: document the tool-authoring contract (currently code-only) with `domains`, for when installable domains add tools
-- Source of truth: `missions/architecture/tool-ecosystem.md`
+- Per-harness thin wrappers: a format/header shim plus a symlink or pointer to the same internal content — explicitly **not** compilation into divergent copies. The `skills-cli` export is the seed
+- Bring `/spec-to-backlog` and `/implement-plan` home: authored in-repo, emitted as generated Claude Code commands (today they live outside the repo as hand-maintained user-level commands)
+- Motivation is coordinator flexibility and economics: subscription Claude Code as coordinator today, another harness or an internal cosmonauts coordinator tomorrow, without re-authoring anything
+- Define the harness-adapter contract in a small source-of-truth doc as part of the plan's spec
+- Cross-links: `skills-cli` skill · `missions/architecture/tool-ecosystem.md` · `external-session-capture` (the capture half of the same contract)
 
-> `architectural-memory` W1 — ✅ **DONE (2026-07-03)**, merged + archived; migrated to `knowledge/code-structure-map.md`. Shipped the derived code-structure map (`cosmonauts architecture generate`) plus the bundled `analysis-tools` audit and `artifact-viewer` (`cosmonauts serve`) first slices — TS compiler-API analyzer, two-tier freshness, OKF index+shards under `memory/architecture/`, agent index-injection for the five consuming agents, dependency-free HTML viewer. **OKF v0.1** is the knowledge record format (ratified 2026-07-02; now recorded in `missions/architecture/knowledge-and-memory.md`). W2–W4 waves + the remainder of each rider Idea stay in the source-of-truth doc / below. **Next prioritized item: `agent-memory` below** — its W1 retrofits this map's retrieval onto the shared `write`/`retrieve`/`consolidate` interface.
+### `drive-envelope`: Drive as a Free Envelope
 
-> `agent-memory` W1–W2 — ✅ **DONE** (W1 2026-07-09 → `knowledge/memory-interface.md`; W2 2026-07-14 → `knowledge/profile-playbooks.md`; post-W2 hardening 2026-07-16 → `knowledge/memory-hardening.md`). Shared `write`/`retrieve`/`consolidate` interface + plain-text substrate, Cosmo `remember`/`recall`, profile + explicit playbooks (explicit-save v1); verified live against real Pi; scan-cost instrumented. **◆ Reassess gate ANSWERED 2026-07-17: build the remaining infrastructure now, decide adoption later.** W3 (episodic log), W4 (consolidation/dreaming), and the autonomy Layer-A host are picked up as three active spec-ready plans — `missions/plans/{episodic-log,memory-consolidation,autonomy-host}/` — all shipping config-gated **off** by default (in-process host only; daemon stays autonomy W2). A later use-it decision flips them on. `agent-swarms` and `domains` consciously queue behind this push. Optional embeddings backend stays contingent per `missions/architecture/knowledge-and-memory.md`.
+Decouple Drive's value (isolation, gates, session capture, reporting) from the plan+task ceremony so one-off and externally-triggered work can use it too.
 
-> `agent-memory` W3 (episodic log) — ✅ **DONE (2026-07-21)**, on local `main` (unpushed); migrated to `knowledge/episodic-log.md`. Config-gated off-by-default episodic log over the markdown store; recall-yes/injection-no; QM + independent codex review passed (codex verdict SHIP). **Follow-up scoped:** `missions/plans/episodic-log-detached-hardening/spec.md` bundles 7 deferred enabled-only Drive detached-terminal/resume edge-case fixes (F-003/F-005/PRF-002/PRF-003/PRF-004/PRF-007/SR-001) + one CDX-002 test-debt item — not yet designed; run `/skill:plan` on it when picked up. *(Since shipped + archived — see knowledge.)*
+- "Run N drive agents on X" from a prompt/brief — no plan or task required; plan-backed Drive unchanged
+- Callable internally (agent, chain) and externally (any harness with cosmonauts knowledge driving the CLI non-interactively)
+- Free-form runs still record sessions and outcomes, so they feed the memory loop like plan-backed runs
+- Source of truth: `missions/architecture/orchestration-future.md` (extends the `runStart` seam)
 
-> `knowledge-and-memory` — **track unified + resequenced 2026-08-18 (human-ratified).** Source of truth: `missions/architecture/knowledge-and-memory.md` (supersedes `agent-memory.md` + `architectural-memory.md`; derived map carved out to `code-structure-map.md`). Memory is the mechanism, knowledge is the payload; episodes are the spine, artifacts + transcripts are the content. **Ratified order:** ① knowledge surface (`knowledge/` beside `memory/` + empty user twin, OKF-only records, all-agent retrieval via injected index + shared `recall`, one 24,000-byte combined bound, corpus migration, and proposals-only distillation) ② working state ③ `memory-consolidation` reframed as the general pump ④ `autonomy-host` unchanged. The knowledge-surface implementation remains literal-true gated and OFF by default; machine proposals stay under `memory/agent/proposals/` until a human promotion act.
+### `external-session-capture`: Externally-Coordinated Sessions Feed the Memory Loop
 
-### `agent-swarms`: Multi-Agent Swarms with a Coordinator
+Work coordinated from outside (Claude Code, Codex, …) currently leaves nothing our memory system can read; define the capture contract.
 
-N agents work as a team toward one objective, communicating through a coordinator. First slice: **read/opinion swarms** (codebase understanding, spike investigation, multi-lens review) — they mutate nothing and need no isolation. The full forward arc (mutable swarms, durable nesting, real parallelism/isolation, script-coordinated mode) lives in the orchestration source of truth.
+- Specify what an externally-coordinated run leaves behind — transcript tier, episode pointers, artifacts — and where it lands
+- Adapter-side hook: the `harness-adapters` exports carry the capture instructions/mechanism, so capture is part of using cosmonauts from outside, not a separate chore
+- The contract becomes a source behind `memory-consolidation`'s pluggable-sources seam (§10.1: the re-spec consumes this)
+- Cross-links: `harness-adapters` · `missions/architecture/knowledge-and-memory.md` §5
 
-- Shard work across N read-only agents — a different slice per agent, not today's same-prompt fan-out
-- Coordinator collects and synthesizes per-agent opinions into one result
-- Coordinator modes: spawned in-process, or the interactive main session as coordinator
-- Builds on existing fan-out + `spawn_agent` + the `quality-manager` parallel-specialist pattern; no worktree isolation for this slice
-- Source of truth & later waves: `missions/architecture/orchestration-future.md`
+### `knowledge-adoption` (thread): Turn On What We Built, In This Repo
+
+Every memory/knowledge feature shipped so far is gated OFF and unconsumed; all remaining design rests on theory. Flip that, deliberately and on record.
+
+- Enable the knowledge-surface gates in this repository — a dogfooding decision recorded as such; shipped defaults stay OFF
+- Deliberately run internal cosmonauts coordinators and agents: recent usage has been external-coordinator-only, so internal agents are the unobserved population
+- Record what retrieval actually does — recall usage, index cost against the 24,000-byte combined budget, observed behavior changes — as evidence for the consolidation and budget decisions
+- Revisit the 155 approved-but-unpromoted proposals once index contents matter to a live consumer
+
+### `factory-evals` (thread): Stop Driving Blind — Instrumentation First
+
+No evals drive development today; changes to agents and workflows land unmeasured. Start with a scoreboard over signals we already produce.
+
+- Harvest existing artifacts into a persistent scoreboard with baselines: drive/chain run stats, gate outcomes, review-round counts, test/lint results, cost per plan
+- Every factory change — prompt, agent, workflow — lands against a baseline instead of an anecdote
+- Deferred rungs, on purpose: frozen task suites replayed against agent/prompt changes; retrieval A/B (pairs with `knowledge-adoption` evidence)
+
+### `factory-modes`: Legible Collaboration Modes
+
+One agent set, one swapped prompt layer per mode — the mode explicit to both the agents and the user. Parallel per-mode domains were considered and rejected 2026-08-25 (duplication and drift — the same disease as the hand-copied skills).
+
+- A mode layer in the four-layer prompt assembly: **dialogic-product** (spec conversations — user value, UX), **dialogic-plan** (trade-offs, current architecture, blast radius of the change), **full-factory** (post-spec, agents decide)
+- A per-run `on-uncertainty` policy, declared up front and legible in every mode: `decide | ask-and-continue | ask-and-halt`
+- Escalation never blocks: park the question durably, notify, continue parallelizable work — "finished except one parked question" is an outcome the user chose, never a surprise
+- Durable resume for `ask-and-continue` is `autonomy-host`'s event-wait trigger (the host's first factory-critical consumer)
+- Absorbs from `dialogic-planner-followups`: the dialogic idle-fallback rule and the canonical trigger-phrase vocabulary
+
+### `architecture-aware-planning`: Plans That Know the Architecture
+
+Planning conversations and plan artifacts consult the current architecture and state the blast radius of proposed changes.
+
+- Planner and plan-reviewer consume the derived code-structure map plus the intended-architecture knowledge record; `dialogic-plan` mode surfaces both in conversation
+- Plans state change impact and extension-health reasoning: which boundaries the change touches, and how it respects or deliberately amends them
+- The map's two-tier freshness must be trustworthy at planning time
+- Source of truth: `missions/architecture/code-structure-map.md` (derived map + drift signal), with the intended-architecture record class from `knowledge-and-memory.md`
+
+### `worker-inloop-analysis`: Workers Self-Correct While Writing
+
+Static-analysis feedback inside the worker's write loop, not only at end-of-task gates — catch "this code is getting worse" while it's cheap to fix.
+
+- Wire the shipped seven-capability analysis contract into the worker (and refactorer) coding workflow: complexity/CRAP-style signals consulted as code is written
+- Policy and prompts, not new infrastructure — the capability runtime shipped 2026-08; SwarmForge's per-language engineering article is the inspiration, our provider-neutral contract is the mechanism
+- Quality gates unchanged; this is earlier, self-directed feedback, not a gate replacement
+
+### `observational-memory`: Investigate OM and Design Its Seam
+
+Pi-First investigation of Mastra-style observational memory via the existing Pi port, before the consolidation pump is re-specced.
+
+- Audit and trial `pi-observational-memory` (github.com/elpapi42/pi-observational-memory): Observer/Reflector/Dropper background workers, threshold-driven, compaction-as-rendering
+- Requires the Pi lockstep bump to ≥0.81.0 (`agent_settled` event) — with the mandated full API re-audit that accompanies any bump
+- Design the seams: its `recall` tool vs ours (name collision); Reflector output as a live source for the consolidation pump; whether a continuously-maintained observation log subsumes the working-state singleton
+- Findings resolve two §10.1 dispositions: working state (parked pending this) and the `memory-consolidation` re-spec
+
+### `agent-interaction`: The Live Coordinator Triangle
+
+Real-time coordinator↔worker↔verifier interaction — reframed 2026-08-25 from `agent-swarms` breadth: the live triangle is the value; N-agent parallelism is not a goal until it proves value.
+
+- First: assess what orchestration/messaging surfaces already exist and what a coordinator actually needs mid-run
+- Reference design for the mailbox: SwarmForge's validated send — closed header schema, generated bodies, durable per-agent queues where state is file location, refuse-never-repair (`missions/architecture/spikes/swarmforge-workflow-spec.md`)
+- Merges the former `agent-messaging` idea: push-based completion/events replacing filesystem polling, idempotency keys, depth-aware dispatch
+- Breadth swarms and the later waves stay in the source of truth: `missions/architecture/orchestration-future.md`
 
 ### `domains`: Domain System — Extraction, Boundary & Routing
 
-Domains are composable agentic bundles (agents, prompts, capabilities, skills, tools, chains — the full stack) that extend Cosmonauts; the plugin substrate is **~80% built** (git/local/symlink/catalog install, manifest, multi-source precedence+merge, `eject`, `update`). This track finishes and documents it, ships a minimal core, and adds domain routing. Full model in the source-of-truth doc.
+Domains are composable agentic bundles (agents, prompts, capabilities, skills, tools, chains — the full stack) that extend Cosmonauts; the plugin substrate is **~80% built** (git/local/symlink/catalog install, manifest, multi-source precedence+merge, `eject`, `update`). This track finishes and documents it, ships a minimal core, and adds domain routing. It is the gate for **opening cosmonauts to the world**. Full model in the source-of-truth doc.
 
-- Core bundle = framework + `shared` (stdlib) + `main` (default assistant); no merge; audit the `shared`/`main` split. `coding` + future/experimental domains = external repos. **Partly done:** S2 Wave 1 made `shared`+`main` a runnable coding-less install and produced a `shared`/`main` leakage scan (`missions/archive/plans/coding-agnostic-framework/leakage-findings.md`) whose Wave-2 dispositions feed the move
-- Extract `coding` to its own repo (mechanism exists; `--link` symlink for the both-repos dev loop). **Wave 1 DONE (2026-06-29)** — framework made coding-agnostic in place (plan `coding-agnostic-framework`, archived; merged to local `main`, not pushed). **Wave 2** = the physical move, tracked by the active `coding-extraction` plan
-- Customization model: override-layer (precedence merge, asset-granular — customize without forking, upgrades preserved) + `eject` for full forks
-- New mechanics: **domain routing** (`cosmo` picks the right domain — beyond skill-routing) + domain-aware skill discovery (folds in `domain-aware-skills`, `skill-routing`)
-- Boundary/definition contract documented; declarative-format decision (manifest/agents/chains → data; tools stay code); domain composition/inheritance deferred
+- Core bundle = framework + `shared` (stdlib) + `main` (default assistant); no merge; audit the `shared`/`main` split. **Partly done:** S2 Wave 1 made `shared`+`main` a runnable coding-less install and produced a leakage scan (`missions/archive/plans/coding-agnostic-framework/leakage-findings.md`) whose Wave-2 dispositions feed the move
+- Extract `coding` to its own repo (mechanism exists; `--link` symlink for the both-repos dev loop). **Wave 1 DONE (2026-06-29)**; **Wave 2** = the physical move, tracked by the active `coding-extraction` plan
+- Customization model: override-layer (precedence merge, asset-granular) + `eject` for full forks
+- New mechanics: **domain routing** (`cosmo` picks the right domain) + domain-aware skill discovery (folds in `domain-aware-skills`, `skill-routing`)
+- Boundary/definition contract documented; declarative-format decision; composition/inheritance deferred
 - Source of truth: `missions/architecture/domains.md`
 
 ## Ideas
 
 Unordered candidates — pick only when directed. Several are full capability tracks with their own source-of-truth doc under `missions/architecture/`; the entry links to it.
 
+### `agent-tools`: Native Agent Tools (Web Research + Browser) — ⏸ PARKED
+
+**⏸ PARKED (2026-07-01; moved to Ideas 2026-08-25.)** S1 (native web research) is deferred — the warm spec lives at `missions/plans/web-research/` (status `deferred`), parked in favor of a cheaper *research-delegation* direction (delegate research to codex/claude-cli via the driver seam — now naturally part of the `harness-adapters`/`drive-envelope` direction). Browser (S2) is not started. Revive the native web-research slice when fully-autonomous chain runs need grounded/cited, machine-consumable facts.
+
+- Web research (build native): `web_search` + `web_fetch` primitives behind a pluggable backend (Tavily / Exa / SearXNG — Brave free tier is dead) → a thin `researcher` skill/agent
+- Browser (keep Playwright): sharpen the `playwright-cli` skill first; upgrade to a thin native `browser` tool if usage stays low
+- Source of truth: `missions/architecture/tool-ecosystem.md`
+
 ### `autonomy`: Autonomy / Always-On Substrate
 
-The base that lets a domain or agent run on a schedule, wake periodically, react to events, or stay always-on — plus the governance that makes autonomous action safe. The same substrate powers memory "dreaming," periodic result-checks, the executive assistant, and the ambient terminal assistant. **W1 (Layer A) picked up 2026-07-17** into the active `autonomy-host` plan (in-process host + triggers + durable wake-state on the episodic log, config-gated off) as part of the agent-memory ◆reassess decision; **the daemon (W2), governance (W3), EA (W4), ambient (W5), and `channels` remain here, unprioritized.** Co-delivers orchestration's deferred scheduler-form + durable-coordinator-loops, which in turn unblock `agent-swarms` Waves B/C. Full model in the source-of-truth doc.
+The base that lets a domain or agent run on a schedule, wake periodically, react to events, or stay always-on — plus the governance that makes autonomous action safe. **W1 (Layer A) is the active `autonomy-host` plan** (in-process host + triggers + durable wake-state, config-gated off); **the daemon (W2), governance (W3), EA (W4), ambient (W5), and `channels` remain here, unprioritized.** The host now has two named consumers: the `memory-consolidation` dreaming loop and `factory-modes`' `ask-and-continue` escalation (event-wait trigger). Full model in the source-of-truth doc.
 
-- Layer A (base): triggers (interval / one-shot / event-wait / always-on) · lifecycle host (in-process → child → daemon) · durable wake-state (= the episodic log) · cost-efficient wake handler (skip empty, dedup, silent-ack)
-- Agents/domains *declare* their triggers; the host fires them (pluggable, opt-in)
-- Layer B (acting agents): trust tiers (auto / act-then-announce / reserved) + audit log + caps + escalate-to-human + a steering channel (where Telegram/WhatsApp transports plug in)
-- Shares ONE long-lived host + durable store with the orchestration durable runtime — this delivers orchestration's deferred scheduler-form/daemon + durable-coordinator-loops
-- Consumers (folded in): executive assistant (Cosmonauts-work supervisor), `ambient-cosmo` (herdr terminal supervisor), external `channels`; cross-links `agent-messaging`
+- Layer A (base): triggers (interval / one-shot / event-wait / always-on) · lifecycle host (in-process → child → daemon) · durable wake-state · cost-efficient wake handler
+- Layer B (acting agents): trust tiers + audit log + caps + escalate-to-human + a steering channel
+- Shares ONE long-lived host + durable store with the orchestration durable runtime
+- Consumers (folded in): executive assistant, `ambient-cosmo`, external `channels`; cross-links `agent-interaction`
 - Source of truth: `missions/architecture/autonomy.md`
 
 ### `analysis-tools`: Static-Analysis Tooling for Agent Code Quality
 
-**Capability foundation ✅ shipped (2026-08-05):** the initial audit shipped with `code-structure-map` W1 (2026-07-03 → `missions/archive/plans/code-structure-map/analysis-tools-audit.md`). The ratified `analysis-capabilities` design then shipped through `analysis-capability-runtime`, `analysis-gate-rewiring`, and `analysis-investigation-procedures`, with `analysis-gate-coverage` as the corrective plan:
+**Capability foundation ✅ shipped (2026-08-05)** through the analysis-capabilities plans: a provider-neutral seven-capability contract, structured results, explicit binding/failure states, a pinned reference provider, gate-category declarations, and capability procedures for the consumer roles. The in-loop wiring slice is now the Prioritized item `worker-inloop-analysis`. What remains here is expansion and policy work:
 
-- A provider-neutral seven-capability contract, structured results, explicit binding/failure states, and a pinned reference-provider runtime are available to agents.
-- Quality Manager resolves the gate ladder by calling capabilities directly; Verifier validates capability claims without being the transport for gate findings, and Fixer reruns the routed request before editing. The generic analysis skill and capability surface reach all seven v1 consumer roles.
-- Each completed verdict-bearing result declares which gate categories it actually evaluated, so a category the run never covered can no longer read as a clean pass.
-- Two gates stay visibly degraded in this repository rather than silently passing: `mutation`, which has no capability and is declared unbound, and `boundary-conformance`, which resolves unbound through `provider-not-configured`. A provider failure is a separate blocking outcome, not a degraded one — the full resolution vocabulary lives in `domains/shared/skills/work-artifacts/references/gate-contracts.md`.
-- Planner, Plan Reviewer, Worker, and Refactorer now investigate, trace, and audit through capability procedures without embedding provider commands in shipped generic content.
+- Deepen the signal: richer rule sets, type-aware checks, and security signals as structured findings (v1 taxonomy has no security capability; the reference provider is syntactic)
+- Polyglot provider routing and a second validated executable provider — ArchSpec is the concrete candidate (`archspec-provider` below); per-language analyzers (ESLint, ruff/mypy, clippy, …) surfaced per project
+- Universal layer: a language-agnostic option (tree-sitter, `semgrep`) behind the same contract; consider SARIF for the result envelope
+- Author repository boundary zones where enforcement is wanted; decide CI enforcement or scheduled stewardship
+- Additional MCP/Node transports and any fix-application workflow evaluated separately; capability fixes stay preview-only until that safety design is ratified
+- Pairs with `code-structure-map` (shared static-analysis substrate): that track *understands* the code; this one *catches problems* as agents write it
 
-What remains on this track is expansion and policy work, not completion of the shipped v1 surface:
+### `archspec-provider`: Ruby/Rails Analysis Provider (ArchSpec)
 
-- Deepen the signal itself: richer rule sets, type-aware checks, and security signals fed to `worker`/`quality-manager` as structured findings. Only the structural half of this shipped — the v1 taxonomy has no security capability, and the reference provider is syntactic rather than type-aware.
-- Add polyglot provider routing and validate a second executable provider. Detection keys on the provider's own config or package dependency rather than on project language, so until then a project where no provider is detected surfaces all seven capabilities explicitly as unbound. Targets the user's project (any codebase), not just cosmonauts — per-language analyzers (ESLint, ruff/mypy, clippy, …) and how a domain surfaces the right one per project.
-- Universal layer: a language-agnostic option (tree-sitter, `semgrep`) behind the same capability contract, and whether the generic result envelope should speak an interchange format (e.g. SARIF) across languages.
-- Author repository boundary zones where enforcement is wanted, and decide whether to add CI enforcement or scheduled full-project stewardship.
-- Evaluate additional MCP/Node transports and any fix-application workflow separately; capability fixes remain preview-only until that safety design is ratified.
-- Pairs with `code-structure-map` (`missions/architecture/code-structure-map.md`, shared static-analysis substrate): that track *understands* the code; this one *catches problems* as agents write it.
+Investigate ArchSpec (archspecrb.dev) — architecture-boundary static analysis for Ruby, the fallow analogue — and integrate it as the second executable provider behind the shipped analysis-capability contract, active when the target codebase is Ruby/Rails.
 
-### `artifact-viewer`: Human-Friendly HTML Views (Plans + Architecture)
+- Investigate first: map ArchSpec's surface (`init`/`check`/`explain`/`todo`, `--format json`, non-zero exit on violations, rules in `Archspec.rb`, Rails/Layered/Hexagonal/Clean/… templates) onto the seven-capability taxonomy — it is a natural `boundary-conformance` binding, a gate that today resolves unbound everywhere
+- Detection keys on the provider's own config or dependency (an `Archspec.rb` / Gemfile entry), not project language — per the shipped routing rule
+- This is the "second validated executable provider" slice of `analysis-tools` made concrete: it validates that the provider-neutral contract actually is provider-neutral
+- Cross-links: `analysis-tools` · `worker-inloop-analysis` (in-loop signals route through the same binding when the project is Ruby)
 
-**First slice ✅ shipped with `code-structure-map` W1 (2026-07-03):** the plans + architecture-map HTML view (`cosmonauts serve`) shipped bundled with architectural-memory W1 — dependency-free, escaped-markdown, deterministic SVG module graph, read-only. Later surfaces (tasks / reviews / run-status) stay here.
+### `artifact-viewer`: Human-Friendly HTML Views (Plans + Architecture + Runs)
 
-Markdown stays the source of truth for agents; humans get a rendered **HTML companion** so they keep visibility as agents do the work. Render cosmonauts' key artifacts as readable HTML — starting with **plans** and the **architecture map**. A cross-cutting presentation layer; the `code-structure-map` track's deferred HTML/diagram view folds in here.
+**First slice ✅ shipped with `code-structure-map` W1 (2026-07-03):** the plans + architecture-map HTML view (`cosmonauts serve`) — dependency-free, escaped-markdown, deterministic SVG module graph, read-only. Markdown stays the source of truth for agents; humans get a rendered companion. **Ambition extended 2026-08-25 toward factory observability:**
 
-- Plans: render `missions/plans/<slug>/{plan,spec,review}.md` + task list/status as a navigable HTML view
-- Architecture: render the derived map (`code-structure-map` W1) — module graph + per-module pages + Mermaid diagrams
-- One surface — `cosmonauts serve` (generalizes the deferred `cosmonauts arch serve`); no build step, single static bundle; markdown is rendered *to* HTML, never replaced
-- Humans-only — agents keep reading the markdown source; this is purely additive
-- Extensible later to tasks / reviews / run-status
-
-**Known changes needed (2026-07-29, after `planning-system-hardening`):**
-
-- Render versioned plan-review rounds: the reviewer now writes immutable `review-<n>.md` rounds (legacy `review.md` = round 1), but the viewer still loads only `missions/plans/<slug>/review.md` — rounds ≥ 2 are invisible. A quality-manager fixer implementation was reverted (`e269c72`: symlink-following read behind a lexical-only filename check = arbitrary-file read through the server); reimplement with real path containment — resolve the real path, require it inside the project root, regression-test a symlinked round file.
-- Related: the quality-manager review panel writes generic `review-round-N.md` names into `missions/reviews/` and overwrites earlier plans' rounds — needs plan-scoped naming, which also changes what the viewer should list there.
-- Overall review first: the viewer has not been human-tested yet — walk `cosmonauts serve` end to end, judge what actually makes it useful day-to-day, and scope further changes from that pass rather than assumption.
-
-### `agent-messaging`: Agent-to-Agent Messaging
-
-Replace filesystem polling with push-based communication between agents. Address when coordinator-loop cost or latency becomes symptomatic; not urgent at current scale. Shared substrate: feeds orchestration's durable-coordinator-loops and the autonomy executive-assistant.
-
-- Event bus or completion callback system for spawned agents
-- Coordinator receives results directly instead of re-reading task files each iteration
-- In-memory pub/sub that the orchestration extension hooks into
-- Idempotency keys to prevent duplicate processing
-- Depth-aware dispatch (only direct requester receives completion events)
+- Render workflow/chain definitions per domain graphically — which agents act at which stage
+- Real-time run visibility: what domains/agents are working right now, live run status
+- Later: inspect other sessions (output, token spend) and inject a message into one — the write half rides on `agent-interaction`
+- Plans: render `missions/plans/<slug>/` + task list/status as a navigable view; render versioned `review-<n>.md` rounds (currently invisible — reimplement the reverted symlink-unsafe fix with real path containment)
+- Quality-manager review panel writes generic `review-round-N.md` names that overwrite other plans' rounds — needs plan-scoped naming, which changes what the viewer lists
+- Overall review first: walk `cosmonauts serve` end to end and scope from that pass, not assumption
 
 ### `hook-system`: Plugin & Hook System
 
@@ -117,99 +170,82 @@ Lifecycle hooks at chain, stage, and spawn levels for extensibility without modi
 
 - Hook categories: chain lifecycle, stage lifecycle, agent spawn, tool execution
 - Fire-and-forget hooks (parallel, void) and modifying hooks (sequential, merged results)
-- Hook registration via config or extension API
+- Registration via config or extension API
 - Key hooks: before_chain_start, after_stage_end, before_agent_spawn, after_tool_call
-- Enables plugins for logging, metrics, custom validation, and external integrations
 
 ### `spec-to-backlog`: Automated Spec→Plan→Tasks Pipeline + Planning-Agent Hardening
 
-Distilled from the first fully-instrumented spec→plan→tasks run (plan `code-structure-map`, 2026-07-02/03) — observations, findings, and the forward design live in `missions/architecture/spikes/spec-to-backlog-pipeline.md`.
+Distilled from the first fully-instrumented spec→plan→tasks run (2026-07-02/03) — observations and forward design in `missions/architecture/spikes/spec-to-backlog-pipeline.md`. Agent hardening and the external-coordinator workflow (the Claude Code command `/spec-to-backlog`) are ✅ DONE; `harness-adapters` will bring that command home as a generated export.
 
-- ✅ **Agent hardening — DONE 2026-07-03:** planner sanity-check gained four systematic-failure checks (state exit-transitions, invariant-vs-written-fields tracing, spec cost questions answered, target-project variance + packaging interactions); `plan-reviewer` gained dimensions 9 *lifecycle-and-invariant attack* and 10 *constraint ownership* (its contract review found a defect set fully disjoint from the adversarial design review — both channels needed); `task-manager` gained a Design/Decision-Log/Files-to-Change constraint sweep (checkpoint tasks don't count as owners)
-- ✅ **External-coordinator workflow — DONE 2026-07-03:** shipped as the Claude Code command `/spec-to-backlog` (user-level, beside `/implement-plan`): planner→plan-reviewer chain → independent adversarial multi-lens review → synthesized revision → human gate → task-manager chain → mechanical coverage matrix → compliance review → task fixes. Claude Code coordinates; cosmonauts agents do the work
-- **Remaining:** collect run data on whether the hardened single agents close the gap the external adversarial channel currently covers; then a **self-contained cosmonauts version** — multi-lens sharded review (different prompt per reviewer + adversarial verify) is not expressible in the chain DSL, making this the first concrete consumer of `agent-swarms` Wave A; the novel agents are the revisors (planner re-invoked with verified findings + "change nothing else")
-- Spec creation stays human-interactive; `prd-ingestion` (below) is the principled path to a non-interactive spec entry point
-- Cross-links: `agent-swarms` (sharded fan-out) · `prd-ingestion` (spec entry) · `dialogic-planner-followups` (panel-value validation — this run is a supporting data point)
+- **Remaining:** collect run data on whether the hardened single agents close the gap the external adversarial channel covers; then a **self-contained cosmonauts version** — multi-lens sharded review is not expressible in the chain DSL, making this a concrete consumer of `agent-interaction`
+- Spec creation stays human-interactive; `prd-ingestion` (below) is the principled non-interactive entry point
+- Cross-links: `agent-interaction` · `prd-ingestion` · `dialogic-planner-followups`
 
 ### `prd-ingestion`: PRD Ingestion Skill + Non-Interactive Spec-Writer Mode
 
-Accept a written PRD as input and either proceed (if complete) or refuse with a structured gap list (if ambiguous). Unlocks PRD → merge-ready PR automation without making the system hallucinate product judgment. Needed only when a real PRD input stream exists.
+Accept a written PRD as input and either proceed (if complete) or refuse with a structured gap list (if ambiguous). Needed only when a real PRD input stream exists.
 
-- New shared skill `prd-ingestion/SKILL.md` with a PRD completeness checklist (goals, users, success criteria, scope, edge cases, non-goals, constraints, acceptance signals)
-- New `spec-writer` mode: `--prd <path>` reads a PRD and validates against the checklist
-- If PRD complete: generate `spec.md` without interactive questions
-- If PRD has gaps: refuse with structured `missions/plans/<slug>/gaps.md` listing each missing or ambiguous item
-- Non-interactive chain mode treats the gap list as a chain abort condition rather than proceeding with flagged assumptions
-- Distinct from current "flag assumptions" behavior — this refuses rather than guesses when product judgment is required
+- New shared skill with a PRD completeness checklist (goals, users, success criteria, scope, edge cases, non-goals, constraints, acceptance signals)
+- `spec-writer --prd <path>` validates against the checklist; complete → `spec.md` without questions; gaps → structured `gaps.md` refusal
+- Non-interactive chain mode treats the gap list as an abort condition — refuses rather than guesses when product judgment is required
 
 ### `behavioral-regression`: Behavioral Regression Skill
 
-Tests passing ≠ behavior unchanged. For bug fixes and refactors where preservation is the point, a skill that guides workers to capture golden outputs and characterization tests before changing code.
+Tests passing ≠ behavior unchanged. For bug fixes and refactors where preservation is the point, a skill guiding workers to capture golden outputs and characterization tests before changing code.
 
-- New skill `behavioral-regression/SKILL.md` covering characterization tests, golden output files, snapshot testing, approval testing patterns
-- Loaded by `worker`, `refactorer`, and `fixer` when the task carries the label `preserve-behavior` or `refactor`
-- Task template for preservation-work adds a mandatory AC: "existing behavior verified unchanged via golden outputs or characterization tests"
-- `quality-manager` runs regression checks as part of verification for tasks with these labels
-- Complements product tests rather than replacing them — targets the "change code, not behavior" case that tests alone don't cover
+- Skill covers characterization tests, golden outputs, snapshot/approval patterns
+- Loaded by `worker`, `refactorer`, `fixer` on `preserve-behavior` / `refactor` labels; task template adds a mandatory preservation AC
+- `quality-manager` runs regression checks for these labels
 
 ### `bug-triage`: Bug Triage Skill
 
-Structured triage that produces either a minimal plan (complex bug) or a direct task (simple bug). **Skill only — `cosmo` remains the interface.** Do NOT promote to a dedicated agent; the routing procedure is the value, not a new role.
+Structured triage producing either a minimal plan (complex bug) or a direct task (simple bug). **Skill only — `cosmo` remains the interface;** do NOT promote to a dedicated agent.
 
-- New shared skill `bug-triage/SKILL.md` loaded by `cosmo`
-- Covers repro steps, blast radius, duplicate check against archived plans, severity assessment, routing decision
-- Triage artifact `missions/triage/<slug>.md` links to either a plan slug (complex → full plan) or a task ID (simple → direct fix)
-- Standard severity labels feed into quality-manager priority handling (P0 bug skips the design-review gate entirely)
+- Covers repro, blast radius, duplicate check against archived plans, severity, routing decision
+- Triage artifact `missions/triage/<slug>.md` links to a plan slug or task ID
+- Severity labels feed quality-manager priority handling (P0 skips the design-review gate)
 
 ### `dialogic-planner-followups`: Review-Derived Followups from `dialogic-planner`
 
-Items deferred from the `dialogic-planner` branch. Polish items pruned; load-bearing ones kept.
+Items deferred from the `dialogic-planner` branch. **Note 2026-08-25:** the dialogic idle-fallback rule and the canonical trigger-phrase vocabulary are absorbed by `factory-modes`; what remains here:
 
-- **Panel-value validation.** Measure whether the three-specialist code-review panel (security, performance, UX) inside `quality-manager` produces materially different findings from a single multi-lens generalist `reviewer` after real-world runs. If specialists catch meaningfully different issues, the pattern is justified and new lenses can be added (below). If not, retire the specialists and beef up the generalist. Agent count must be justified by observed friction.
-- **Additional reviewer lenses.** Once panel-value validation confirms the specialist pattern earns its keep, consider adding: data-integrity/migration-safety (schema changes, reversibility, lock duration), reliability/failure-recovery (retries, timeouts, idempotency, circuit breakers), observability (tracing, alerting — distinct from perf metrics). Each a focused specialist matching the existing template.
-- **TDD-specific review lens for `plan-reviewer`.** `plan-reviewer` has no "Behaviors completeness" or "test-spec atomicity" dimensions, so TDD plans pass review on architecture but miss TDD-discipline gaps. Extend `plan-reviewer.md` with a conditional dimension that applies when a `## Behaviors` section is present, rather than adding a `tdd-reviewer` agent.
-- **Dialogic idle fallback.** The `design-dialogue` skill waits for user direction at pass boundaries with no timeout guidance. Rule: if the user does not respond within the session, commit current defaults and document them as assumptions in the plan.
-- **Canonical trigger-phrase vocabulary.** The "just decide" signal works but is informal. Document a canonical list (`[autonomous]` tag, "just do it", "commit", "go ahead") that `cosmo` and the planner agree on, so mode switches are deterministic.
+- **Panel-value validation.** Measure whether the three-specialist review panel inside `quality-manager` produces materially different findings from a single multi-lens generalist. If not, retire the specialists. Agent count must be justified by observed friction — `factory-evals` provides the instrument
+- **Additional reviewer lenses** (data-integrity/migration-safety, reliability/failure-recovery, observability) — only after panel-value validation confirms the pattern
+- **TDD-specific review dimension for `plan-reviewer`** — conditional on a `## Behaviors` section, not a new agent
 
 ### `tdd-orchestration-followups`: Deferred Work from `tdd-orchestration-hardening`
 
-Items scoped out of the `tdd-orchestration-hardening` plan. Captured here so they survive archival and can be picked up when the cost/benefit shifts.
+Captured so they survive archival; pick up when the cost/benefit shifts.
 
-- **Commit cadence inside TDD tasks.** Each task currently produces three commits (RED + GREEN + REFACTOR), which ships failing tests at every RED commit (red CI on every push) and ~3× history noise. Switch to single-commit-per-task: only `refactorer` commits; `test-writer` and `implementer` stage only; on phase failure the coordinator uses `git reset --mixed` to preserve unstaged files as a recovery point. Touches `test-writer.md`, `implementer.md`, `refactorer.md`, and `tdd-coordinator.md` failure paths. Revisit when red-CI cost or history noise becomes measured.
-- **Merge `implementer` + `refactorer` into one agent.** The GREEN/REFACTOR phase boundary is currently enforced across two separate agents for a relatively weak discipline win, at the cost of an extra spawn per task (~33% of per-task orchestration overhead). The load-bearing boundary is RED/GREEN between `test-writer` and the implementer; REFACTOR can be a second step inside the same session. Touches both agent definitions, both prompts, and the `GREEN complete:` → `REFACTOR complete:` handoff contract in `tdd-coordinator.md`. Revisit if per-task orchestration cost becomes measured.
+- **Commit cadence inside TDD tasks:** switch to single-commit-per-task (only `refactorer` commits; stage-only for the others; `git reset --mixed` recovery). Revisit when red-CI cost or history noise becomes measured
+- **Merge `implementer` + `refactorer`:** the load-bearing boundary is RED/GREEN; REFACTOR can be a second step in the same session. Revisit if per-task orchestration cost becomes measured
 
 ### `language-skills`: Language Skill Pack
 
-Write language skills for Rust, Python, Swift, and Go. Skill *content* that ships inside (extracted) domains — downstream of the `domains` track.
+Write language skills for Rust, Python, Swift, and Go — skill content that ships inside (extracted) domains; downstream of `domains`.
 
-- Follow the established pattern in `domains/coding/skills/languages/typescript/SKILL.md`
-- Each skill covers idioms, best practices, toolchain conventions, and testing patterns
-- Workers load the appropriate skill based on project language
+- Follow the pattern in `domains/coding/skills/languages/typescript/SKILL.md`
+- Each covers idioms, best practices, toolchain conventions, testing patterns
 
 ### `domain-skills`: Domain Skill Pack
 
-Write domain skills for testing, code-review, frontend, devops, api-design, and database. Skill *content* that ships inside domains — downstream of the `domains` track.
+Write domain skills for testing, code-review, frontend, devops, api-design, and database — skill content that ships inside domains; downstream of `domains`.
 
 - Follow existing conventions in `domains/coding/skills/`
-- Testing skill covers strategy, coverage, mocking, and test organization
-- Code-review skill covers what to look for, how to structure findings
-- Frontend, devops, api-design, database skills cover domain-specific patterns and best practices
 
 ### `headless-init`: Headless Project Bootstrap (`init --print` / `--emit-files`)
 
-`cosmonauts init` is REPL-only today: it launches the domain lead to chat about `AGENTS.md` and skill choices, then writes files after the user confirms. External orchestrators (Claude Code, Codex driving cosmonauts from outside) can't bootstrap a fresh project without a human at the terminal. Surface a non-interactive mode that produces the same artifacts as a single-shot proposal.
+`cosmonauts init` is REPL-only; external orchestrators can't bootstrap a fresh project without a human at the terminal. Surface a non-interactive mode. (Natural rider on the `harness-adapters` direction.)
 
-- `cosmonauts init --print` runs the bootstrap agent in print mode and emits the proposed `AGENTS.md` content to stdout; no files written
-- `cosmonauts init --emit-files <dir>` writes proposed `AGENTS.md` and any skill-suggestion files into `<dir>` without prompting; reports a summary on stderr; exits non-zero if the bootstrap agent declines
-- Bootstrap prompt reworked so the agent produces a structured, single-shot proposal (no clarifying questions in this mode); structured envelope documented in the bootstrap persona
-- Existing interactive `cosmonauts init` REPL remains the default — unchanged
-- Tests cover both new modes against a fixture project; assert produced `AGENTS.md` is non-empty and carries the expected section headings
+- `init --print` emits the proposed `AGENTS.md` to stdout; `init --emit-files <dir>` writes proposals without prompting, non-zero exit if the bootstrap agent declines
+- Bootstrap prompt reworked for structured single-shot proposals; interactive REPL remains the default
+- Tests cover both modes against a fixture project
 
 ### `product-domain`: Product Strategy Domain (split from `superplanning-integration`)
 
-A specialized domain for product work — idea validation, product planning, and product review (`product-planner`, `product-reviewer`, `product-researcher` agents + `forcing-questions` / `review-personas` / `product-docs` skills + brainstorm / plan-product / product-to-code chains). Split out of the `superplanning-integration` plan (whose coding-agent-hardening half remains that plan's active scope). A concrete first consumer of the `domains` extraction vision.
+A specialized domain for product work — idea validation, product planning, product review. A concrete first consumer of the `domains` extraction vision, and the natural home for `factory-modes`' **dialogic-product** conversations at full depth.
 
-- Build as a specialized **external domain** per the `domains` track conventions, not embedded in the framework
-- `product-researcher` is gated on `agent-tools` web research; until then it documents methodology for manual research
-- Detailed design already exists: `missions/plans/superplanning-integration/{plan.md,spec.md}` (the product-domain sections)
-- Cross-links: `domains` (how it ships/installs) · `agent-tools` (web-research dependency)
+- Build as an external domain per `domains` conventions, not embedded
+- `product-researcher` is gated on web research (`agent-tools`); until then it documents methodology
+- Detailed design exists: `missions/plans/superplanning-integration/{plan.md,spec.md}` (the product-domain sections)
+- Cross-links: `domains` · `agent-tools` · `factory-modes`

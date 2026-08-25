@@ -1,7 +1,8 @@
 # Knowledge & Memory — Unified Forward Architecture
 
 **Status: RATIFIED 2026-08-18 (drafted by agent; every ruling Decided-by:
-human).** Forward source of truth for cosmonauts' knowledge & memory system.
+human). §10 amended on record 2026-08-25 — see §10.1.** Forward source of
+truth for cosmonauts' knowledge & memory system.
 Supersedes `agent-memory.md` (absorbed whole) and `architectural-memory.md`
 (curated facets absorbed; the derived code-structure map carved out to
 `code-structure-map.md`). All seven §11 questions were ruled 2026-08-18. §9's
@@ -371,13 +372,53 @@ bringing distiller coverage from 10/36 to consistent.
 
 1. **Knowledge surface** *(new plan)* — `knowledge/` beside `memory/` plus the
    user twin, record format, all-agent retrieval, combined injection budget,
-   migration of the existing corpus, distiller coverage.
+   migration of the existing corpus, distiller coverage. *(completed
+   2026-08-21 — shipped, archived, distilled to
+   `knowledge/knowledge-surface.md`)*
 2. **Working state** *(small; could ride with 1)* — the singleton
-   "where we left off" record.
+   "where we left off" record. *(superseded 2026-08-25 — parked; see §10.1)*
 3. **`memory-consolidation` (W4)** — reframed as the general pump: pluggable
    sources, episodes as spine, lossy by design, trust rules, prune safety.
+   *(amended 2026-08-25 — re-spec required before tasks; see §10.1)*
 4. **`autonomy-host`** — unchanged; it is the scheduler, and by then it has a
-   payload worth scheduling.
+   payload worth scheduling. *(§10.1 adds a second named consumer)*
+
+### §10.1 Amendment — 2026-08-25 (Decided-by: human)
+
+Amended on record in the 2026-08-25 re-assessment session, after the
+knowledge-surface ship and in the same session that reorganized `ROADMAP.md`
+around the portable-harness / software-factory thesis. The
+infrastructure-first stance stands; the queue changes as follows:
+
+1. **① Knowledge surface — completed** (2026-08-21). Leaves the queue.
+2. **Two items are inserted ahead of the remaining queue:**
+   - **Adoption** — enable the shipped knowledge surface *in this repository*
+     (a dogfooding act, on record; shipped defaults stay OFF), deliberately
+     exercising internal cosmonauts coordinators and agents — recent usage
+     has been external-coordinator-only, so internal agents are the
+     unobserved population — and record what retrieval actually does. Every
+     remaining design decision currently rests on theory; this converts them
+     to observations. *(ROADMAP: `knowledge-adoption`.)*
+   - **Observational-memory investigation** — Pi-First audit and trial of
+     `pi-observational-memory` (github.com/elpapi42/pi-observational-memory;
+     requires the Pi lockstep bump to ≥0.81.0 for `agent_settled`, with the
+     mandated API re-audit), and design of its seams with this system: its
+     `recall` tool vs ours, Reflector output as a live consolidation source,
+     and whether a continuously-maintained observation log subsumes working
+     state. *(ROADMAP: `observational-memory`.)*
+3. **② Working state — parked pending the OM investigation.** *Supersedes
+   "small; could ride with 1":* an observation log may provide "where we left
+   off" for free; build the singleton only if the investigation says
+   otherwise.
+4. **③ `memory-consolidation` — position unchanged, re-spec before any
+   tasks.** The sources contract must admit OM reflections and
+   externally-coordinated session data (ROADMAP: `external-session-capture`)
+   behind the pluggable-sources seam, and the spec's stale open question on
+   where candidates live must be reconciled with §11's proposals-area ruling
+   rather than re-litigated by a planner.
+5. **④ `autonomy-host` — unchanged in shape, still last.** It gains a second
+   named consumer beside the dreaming loop: `factory-modes`'
+   `ask-and-continue` escalation resumes on the host's event-wait trigger.
 
 ---
 
