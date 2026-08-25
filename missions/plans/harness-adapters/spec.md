@@ -65,29 +65,36 @@ from the repo.
 
 ## Intent
 
-*Drafted 2026-08-25; INV-1..6 **ratified 2026-08-25 (Decided-by: human)**.*
+*Drafted 2026-08-25; INV-001..INV-006 **ratified 2026-08-25 (Decided-by: human)**.*
+*Goal added and identifiers normalized 2026-08-25 (Decided-by: human) — see Amendments.*
 
-- **INV-1 — Single source of truth.** Every exported/linked asset is
+Goal: Cosmonauts assets are authored once and remain live or mechanically
+verifiable in every supported harness, so coordinators can switch harnesses
+without re-authoring or silent drift.
+
+Invariants — mechanism yields to these:
+
+- **INV-001 — Single source of truth.** Every exported/linked asset is
   traceable to exactly one in-repo source; no exported copy is
   authoritative. Editing a wrapper is a conflict, not a fork.
-- **INV-2 — Sync never destroys local edits.** A target whose content no
+- **INV-002 — Sync never destroys local edits.** A target whose content no
   longer matches its recorded provenance is reported as a conflict and left
   byte-intact. (The current `rm -rf` + `cp` behavior is the named failure
   mode; same spirit as knowledge-surface D-026.)
-- **INV-3 — Drift is mechanically detectable.** A single command with
+- **INV-003 — Drift is mechanically detectable.** A single command with
   nonzero exit reports, for every registered target: missing, current,
   source-ahead, or locally-edited. Suitable for CI.
-- **INV-4 — Rendered facts are introspected, never mirrored.** Any table of
+- **INV-004 — Rendered facts are introspected, never mirrored.** Any table of
   chains, skills, agents, or paths that lands in an exported asset is
   generated from the live registry/CLI at sync time, or replaced by an
   instruction to query the CLI. Hand-mirrored inventories are the named
   failure mode (the `adapt` chain and the 3-missing-skills table).
-- **INV-5 — One harness registry.** Every export mechanism (skills,
+- **INV-005 — One harness registry.** Every export mechanism (skills,
   commands, agent packages) resolves targets through one registry: target
   id, per-scope directories, supported asset kinds, rendering transform.
   No second target vocabulary. Adding a harness means adding a registry
   entry, not a new code path.
-- **INV-6 — Link mode is opt-in and local-paths-only**, mirroring
+- **INV-006 — Link mode is opt-in and local-paths-only**, mirroring
   `packages install --link` semantics. (Symlinks are rejected elsewhere in
   this codebase for good reason — knowledge-store — so the adapter states
   why they are safe here: developer-machine convenience, single-owner
@@ -95,39 +102,46 @@ from the repo.
 
 ## Acceptance Criteria
 
-- **AC-1** A harness registry exists and is the single resolution path for
+- **AC-001** A harness registry exists and is the single resolution path for
   target id → {project dir, personal dir, supported asset kinds,
   transform}; the existing `skills export` targets (`claude`, `codex`) and
   the agent-package targets (`claude-cli`, `codex`) resolve through it
   under one reconciled vocabulary.
-- **AC-2** Skills sync supports link mode and copy mode; copy mode writes a
+- **AC-002** Skills sync supports link mode and copy mode; copy mode writes a
   provenance manifest and marker; both modes support `--check` with
   the four-state report (missing / current / source-ahead / locally-edited)
   and nonzero exit on any non-current state.
-- **AC-3** A locally-edited target is never overwritten by sync; the
+- **AC-003** A locally-edited target is never overwritten by sync; the
   conflict is reported with both paths and the resolution options.
-- **AC-4** A `command` asset kind exists with a git-tracked native home;
+- **AC-004** A `command` asset kind exists with a git-tracked native home;
   `spec-to-backlog` and `implement-plan` are migrated into it and render to
   Claude Code's command format (frontmatter `description` +
   `argument-hint` + body). Their rendered output in `~/.claude/commands/`
   is byte-equivalent to today's hand-maintained files modulo the
   provenance marker, at migration time.
-- **AC-5** The external `cosmonauts` skill's chain table and skill
+- **AC-005** The external `cosmonauts` skill's chain table and skill
   inventory are generated from live introspection at sync time (which
   requires the CLI to be able to enumerate named chains), and the generated
   copies for at least the Claude Code target replace today's manual copies.
-- **AC-6** Nested skill names (e.g. `languages/rails/rails-api`) export
+- **AC-006** Nested skill names (e.g. `languages/rails/rails-api`) export
   without collision and with a recorded flattening rule; a name collision
   across domains is a reported error, not first-wins silence.
-- **AC-7** The repo's own stale exports (`.claude/skills/*`) are
+- **AC-007** The repo's own stale exports under `.claude/skills/*` are
   regenerated through the new path as the first live validation; the
-  obsolete-path `skills-cli` copy is the named regression test.
+  obsolete-path `skills-cli` copy is the named regression test. The
+  validation set is exactly the four verified cosmonauts exports —
+  `plan`, `roadmap`, `skills-cli`, `task`. `playwright-cli` is **excluded**:
+  it is a foreign asset generated by `playwright-cli install --skills`, not
+  a cosmonauts export. Generally: where a cosmonauts source and a target
+  that is not traceable to it share a name, the target is a permanent
+  conflict, never a migration candidate.
+  *(Amended 2026-08-25 by A-001; superseded text preserved there.)*
 
 ## Out of Scope
 
 - **Agent-package binaries** — `cosmonauts export <agent-id>` keeps its
   richer compile path; this plan re-homes its target resolution onto the
-  shared registry (AC-1) and must not preclude a future
+  shared registry (AC-001) and must not preclude a future
   `skillDelivery: "reference"` mode (a packaged coordinator consuming
   live-synced assets instead of an inline-frozen snapshot). Building that
   mode — and the coordinator packages themselves, including a git-tracked
@@ -174,10 +188,42 @@ from the repo.
   packaging story.
 - **Default mode** — is link the default on developer machines with copy
   the explicit choice, or copy-with-provenance the default and link the
-  opt-in? (INV-6 fixes opt-in *availability*, not the default.)
+  opt-in? (INV-006 fixes opt-in *availability*, not the default.)
 - **Should the repo's own `.claude/` exports become git-tracked?** Today
   export destinations are gitignored, which is what made drift invisible to
   review. Tracked-generated vs ignored-but-checked is a plan-stage call
   with CI implications.
 - **Does `--check` run as a repo gate** (check-artifacts style) or stay a
   manual/CI-only command in v1?
+
+## Amendments
+
+Ratified amendments to this spec, recorded per
+`work-artifacts/references/deviation-protocol.md`. Ratification is human-only.
+
+- **A-001 — AC-007's validation set excludes `playwright-cli`.**
+  - Superseded text: "The repo's own stale exports (`.claude/skills/*`) are
+    regenerated through the new path as the first live validation; the
+    obsolete-path `skills-cli` copy is the named regression test."
+  - Why it failed: the text assumes all five `.claude/skills/*` directories
+    are stale cosmonauts exports. Verified 2026-08-25, four are;
+    `.claude/skills/playwright-cli/` is a third-party asset generated by
+    `playwright-cli install --skills` (7450 bytes, 8 files, carries an
+    `allowed-tools:` frontmatter key its cosmonauts source lacks), while the
+    cosmonauts source is a 2693-byte wrapper whose body instructs the reader
+    to run that generator. Migrating it would destroy richer third-party
+    data — the destructive override INV-002/AC-003 forbid.
+  - Alternatives rejected: keeping all five behind per-target authorization
+    evidence (leaves the identical trap for the next same-named foreign
+    skill); narrowing to four with no general rule (same).
+  - Why: serves INV-002 (sync never destroys local edits) and AC-003.
+  - Decided by: human, 2026-08-25
+
+- **A-002 — Intent gains a canonical Goal; INV/AC identifiers normalized.**
+  - Added the Goal sentence required by
+    `work-artifacts/references/spec-format.md`, and renumbered `INV-1..6` to
+    `INV-001..INV-006` and `AC-1..7` to `AC-001..AC-007` throughout. No
+    invariant or criterion changed in substance.
+  - Why: the deviation protocol's discriminator appeals to a canonical
+    Intent goal; an invariant-only Intent leaves implementers without one.
+  - Decided by: human, 2026-08-25
