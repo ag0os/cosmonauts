@@ -22,6 +22,10 @@ import {
 	resolveHarnessTransactionPaths,
 	sha256,
 } from "../../lib/harness-adapters/provenance.ts";
+import {
+	GENERATED_BY_MARKER,
+	stripGeneratedByMarker,
+} from "../../lib/harness-adapters/render.ts";
 import type {
 	HarnessManifestSnapshot,
 	HarnessNodeSnapshot,
@@ -33,6 +37,7 @@ import {
 	createSkillsExportSyncRequest,
 	observeHarnessNodeSnapshot,
 	planHarnessSync,
+	runClaudeCommandPairBootstrap,
 	serializeOwnerRootJournal,
 	withOwnerRootTransaction,
 } from "../../lib/harness-adapters/sync.ts";
@@ -57,6 +62,240 @@ afterEach(async () => {
 });
 
 describe("harness sync planning", () => {
+	test("bootstraps and migrates both commands as one nonhistorical recoverable transaction", async () => {
+		// @cosmo-behavior plan:harness-adapters#B-009
+		const mismatch = await createCommandBootstrapFixture("mismatch");
+		await seedNativeCommandSources(mismatch);
+		await writeFile(
+			mismatch.nativePaths[1] ?? "",
+			Buffer.concat([
+				mismatch.liveBytes[1] ?? Buffer.alloc(0),
+				Buffer.from("drift"),
+			]),
+		);
+		const mismatchBefore = await snapshotCommandBootstrapFixture(mismatch);
+		let mismatchLocks = 0;
+		await expect(
+			runClaudeCommandPairBootstrap({
+				projectRoot: mismatch.projectRoot,
+				homeRoot: mismatch.homeRoot,
+				lockRunner: async (_path, action) => {
+					mismatchLocks += 1;
+					return action();
+				},
+			}),
+		).rejects.toThrow(/pair equality/i);
+		expect(mismatchLocks).toBe(0);
+		expect(await snapshotCommandBootstrapFixture(mismatch)).toEqual(
+			mismatchBefore,
+		);
+
+		const lockedMismatch =
+			await createCommandBootstrapFixture("locked-mismatch");
+		await seedNativeCommandSources(lockedMismatch);
+		let lockedMismatchLocks = 0;
+		await expect(
+			runClaudeCommandPairBootstrap({
+				projectRoot: lockedMismatch.projectRoot,
+				homeRoot: lockedMismatch.homeRoot,
+				lockRunner: async (_path, action) => {
+					lockedMismatchLocks += 1;
+					return action();
+				},
+				onTransactionLock: async () => {
+					await writeFile(
+						lockedMismatch.livePaths[0] ?? "",
+						Buffer.concat([
+							lockedMismatch.liveBytes[0] ?? Buffer.alloc(0),
+							Buffer.from("concurrent drift"),
+						]),
+					);
+				},
+			}),
+		).rejects.toThrow(/pair equality/i);
+		expect(lockedMismatchLocks).toBe(1);
+		expect(
+			(await observeHarnessNodeSnapshot(lockedMismatch.manifestPath)).kind,
+		).toBe("absent");
+		expect(
+			(await observeHarnessNodeSnapshot(lockedMismatch.journalPath)).kind,
+		).toBe("absent");
+		expect(await readFile(lockedMismatch.livePaths[1] ?? "")).toEqual(
+			lockedMismatch.liveBytes[1],
+		);
+
+		const rollback = await createCommandBootstrapFixture("rollback");
+		await expect(
+			runClaudeCommandPairBootstrap({
+				projectRoot: rollback.projectRoot,
+				homeRoot: rollback.homeRoot,
+				stopAfter: "commit-ready",
+			}),
+		).rejects.toThrow(/restored old command bytes/i);
+		for (let index = 0; index < 2; index += 1) {
+			expect(await readFile(rollback.livePaths[index] ?? "")).toEqual(
+				rollback.liveBytes[index],
+			);
+		}
+		expect((await observeHarnessNodeSnapshot(rollback.manifestPath)).kind).toBe(
+			"absent",
+		);
+		expect((await observeHarnessNodeSnapshot(rollback.journalPath)).kind).toBe(
+			"absent",
+		);
+
+		const rollingCrash = await createCommandBootstrapFixture("rolling-crash");
+		await expect(
+			runClaudeCommandPairBootstrap({
+				projectRoot: rollingCrash.projectRoot,
+				homeRoot: rollingCrash.homeRoot,
+				stopAfter: "rolling-back",
+			}),
+		).rejects.toThrow(/injected stop after rolling-back/i);
+		expect(
+			JSON.parse(await readFile(rollingCrash.journalPath, "utf8")),
+		).toMatchObject({ phase: "rolling-back", atomicSet: true });
+		expect(
+			await withOwnerRootTransaction(
+				{
+					ownerRoot: join(rollingCrash.homeRoot, ".claude"),
+					targetId: "claude",
+				},
+				async () => "recovered",
+			),
+		).toMatchObject({
+			state: "completed",
+			recovery: { state: "restored-old", phase: "rolling-back" },
+		});
+		for (let index = 0; index < 2; index += 1) {
+			expect(await readFile(rollingCrash.livePaths[index] ?? "")).toEqual(
+				rollingCrash.liveBytes[index],
+			);
+		}
+		expect(
+			await runClaudeCommandPairBootstrap({
+				projectRoot: rollingCrash.projectRoot,
+				homeRoot: rollingCrash.homeRoot,
+			}),
+		).toMatchObject({ phase: "complete" });
+
+		const recoverable = await createCommandBootstrapFixture("recoverable");
+		let firstRunLocks = 0;
+		await expect(
+			runClaudeCommandPairBootstrap({
+				projectRoot: recoverable.projectRoot,
+				homeRoot: recoverable.homeRoot,
+				stopAfter: "installed",
+				lockRunner: async (_path, action) => {
+					firstRunLocks += 1;
+					return action();
+				},
+			}),
+		).rejects.toThrow(/injected stop after installed/i);
+		expect(firstRunLocks).toBe(1);
+		const installed = JSON.parse(
+			await readFile(recoverable.evidencePath, "utf8"),
+		) as Record<string, unknown> & {
+			commands: Array<Record<string, unknown>>;
+		};
+		expect(installed).toMatchObject({
+			schemaVersion: 1,
+			authorizationKind: "ratified-live-bootstrap",
+			phase: "installed",
+			cleanupPolicy: "after-evidence",
+			atomicSet: true,
+			markerVersion: 1,
+		});
+		expect(installed.commands).toHaveLength(2);
+		expect(installed.commands.map((row) => row.assetId)).toEqual([
+			"command:spec-to-backlog",
+			"command:implement-plan",
+		]);
+		for (let index = 0; index < 2; index += 1) {
+			const row = installed.commands[index];
+			const expected = recoverable.liveBytes[index] ?? Buffer.alloc(0);
+			const native = await readFile(recoverable.nativePaths[index] ?? "");
+			const final = await readFile(recoverable.livePaths[index] ?? "");
+			expect(native).toEqual(expected);
+			expect(final.includes(GENERATED_BY_MARKER)).toBe(true);
+			expect(stripGeneratedByMarker(final)).toEqual(expected);
+			expect(row).toMatchObject({
+				livePath: `~/.claude/commands/${recoverable.names[index]}.md`,
+				nativePath: `external-commands/${recoverable.names[index]}.md`,
+				outputPath: `~/.claude/commands/${recoverable.names[index]}.md`,
+				liveLength: expected.length,
+				nativeLength: expected.length,
+				renderLength: expected.length,
+				finalLength: expected.length,
+				liveDigest: sha256(expected),
+				nativeDigest: sha256(expected),
+				renderDigest: sha256(expected),
+				finalDigest: sha256(expected),
+			});
+		}
+		const heldJournal = JSON.parse(
+			await readFile(recoverable.journalPath, "utf8"),
+		) as OwnerRootTransactionJournal;
+		expect(heldJournal).toMatchObject({
+			phase: "committed",
+			cleanupPolicy: "after-evidence",
+			atomicSet: true,
+		});
+		expect(heldJournal.members).toHaveLength(2);
+		for (const member of heldJournal.members) {
+			expect((await observeHarnessNodeSnapshot(member.backupPath)).kind).toBe(
+				"file",
+			);
+		}
+		expect(installed.commands.map((row) => row.backupPath)).toEqual([
+			`~/.cosmonauts-harness-claude-${heldJournal.transactionId}-0.backup`,
+			`~/.cosmonauts-harness-claude-${heldJournal.transactionId}-1.backup`,
+		]);
+
+		let retryLocks = 0;
+		const complete = await runClaudeCommandPairBootstrap({
+			projectRoot: recoverable.projectRoot,
+			homeRoot: recoverable.homeRoot,
+			lockRunner: async (_path, action) => {
+				retryLocks += 1;
+				return action();
+			},
+		});
+		expect(retryLocks).toBe(1);
+		expect(complete).toMatchObject({
+			phase: "complete",
+			authorizationKind: "ratified-live-bootstrap",
+			receipt: {
+				transactionId: heldJournal.transactionId,
+			},
+		});
+		const checkRows = complete.checkRows ?? [];
+		expect(checkRows).toHaveLength(2);
+		expect(
+			checkRows.every((row) => row.exitCode === 0 && row.reason === "current"),
+		).toBe(true);
+		expect(
+			complete.commands.every((row) => row.backupExit === "removed-exact"),
+		).toBe(true);
+		expect(
+			(await observeHarnessNodeSnapshot(recoverable.journalPath)).kind,
+		).toBe("absent");
+		for (const member of heldJournal.members) {
+			expect((await observeHarnessNodeSnapshot(member.backupPath)).kind).toBe(
+				"absent",
+			);
+		}
+		expect(
+			await runClaudeCommandPairBootstrap({
+				projectRoot: recoverable.projectRoot,
+				homeRoot: recoverable.homeRoot,
+				lockRunner: async () => {
+					throw new Error("complete retry must not acquire the lock");
+				},
+			}),
+		).toEqual(complete);
+	});
+
 	test("recovers every phase vector through one sibling lock while retaining evidence holds", async () => {
 		// @cosmo-behavior plan:harness-adapters#B-007
 		const applyFixture = await createTransactionFixture("apply", 2);
@@ -954,6 +1193,109 @@ interface RecoveryVector {
 	readonly targets: readonly ("old" | "new" | "missing" | "other")[];
 	readonly backups: readonly ("old" | "absent" | "other")[];
 	readonly stages: readonly ("new" | "absent" | "other")[];
+}
+
+interface CommandBootstrapFixture {
+	readonly root: string;
+	readonly projectRoot: string;
+	readonly homeRoot: string;
+	readonly names: readonly ["spec-to-backlog", "implement-plan"];
+	readonly livePaths: readonly [string, string];
+	readonly nativePaths: readonly [string, string];
+	readonly liveBytes: readonly [Buffer, Buffer];
+	readonly evidencePath: string;
+	readonly manifestPath: string;
+	readonly journalPath: string;
+}
+
+async function createCommandBootstrapFixture(
+	label: string,
+): Promise<CommandBootstrapFixture> {
+	const root = await mkdtemp(join(tmpdir(), `command-bootstrap-${label}-`));
+	tempRoots.push(root);
+	const projectRoot = join(root, "project");
+	const homeRoot = join(root, "home");
+	const commandDirectory = join(homeRoot, ".claude", "commands");
+	const evidenceDirectory = join(
+		projectRoot,
+		"missions",
+		"plans",
+		"harness-adapters",
+	);
+	await Promise.all([
+		mkdir(commandDirectory, { recursive: true }),
+		mkdir(evidenceDirectory, { recursive: true }),
+	]);
+	await writeFile(
+		join(evidenceDirectory, "repo-export-validation-evidence.json"),
+		`${JSON.stringify({
+			schemaVersion: 1,
+			phase: "complete",
+			externalBundle: { phase: "complete" },
+		})}\n`,
+	);
+	const names = ["spec-to-backlog", "implement-plan"] as const;
+	const livePaths = names.map((name) =>
+		join(commandDirectory, `${name}.md`),
+	) as unknown as readonly [string, string];
+	const nativePaths = names.map((name) =>
+		join(projectRoot, "external-commands", `${name}.md`),
+	) as unknown as readonly [string, string];
+	const liveBytes = names.map((name) =>
+		Buffer.from(
+			`---\ndescription: ${name} fixture\nargument-hint: <plan-slug> [mode]\n---\n\n# ${name}\n\nExact body bytes for ${label}.\n`,
+		),
+	) as unknown as readonly [Buffer, Buffer];
+	await Promise.all(
+		livePaths.map((path, index) => writeFile(path, liveBytes[index] ?? "")),
+	);
+	const ownerRoot = join(homeRoot, ".claude");
+	return {
+		root,
+		projectRoot,
+		homeRoot,
+		names,
+		livePaths,
+		nativePaths,
+		liveBytes,
+		evidencePath: join(evidenceDirectory, "command-migration-evidence.json"),
+		manifestPath: join(ownerRoot, ".cosmonauts-harness-manifest.json"),
+		journalPath: resolveHarnessTransactionPaths(ownerRoot, "claude")
+			.journalPath,
+	};
+}
+
+async function seedNativeCommandSources(
+	fixture: CommandBootstrapFixture,
+): Promise<void> {
+	await mkdir(join(fixture.projectRoot, "external-commands"), {
+		recursive: true,
+	});
+	await Promise.all(
+		fixture.nativePaths.map((path, index) =>
+			writeFile(path, fixture.liveBytes[index] ?? ""),
+		),
+	);
+}
+
+async function snapshotCommandBootstrapFixture(
+	fixture: CommandBootstrapFixture,
+): Promise<Record<string, unknown>> {
+	return {
+		live: await Promise.all(fixture.livePaths.map((path) => readFile(path))),
+		native: await Promise.all(
+			fixture.nativePaths.map(async (path) => {
+				try {
+					return await readFile(path);
+				} catch {
+					return undefined;
+				}
+			}),
+		),
+		manifest: await observeHarnessNodeSnapshot(fixture.manifestPath),
+		journal: await observeHarnessNodeSnapshot(fixture.journalPath),
+		evidence: await observeHarnessNodeSnapshot(fixture.evidencePath),
+	};
 }
 
 async function createTransactionFixture(

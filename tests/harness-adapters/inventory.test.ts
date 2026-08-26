@@ -18,7 +18,10 @@ import {
 	getStaticHarnessAsset,
 	resolveHarnessAssetTarget,
 } from "../../lib/harness-adapters/registry.ts";
-import { GENERATED_BY_MARKER } from "../../lib/harness-adapters/render.ts";
+import {
+	GENERATED_BY_MARKER,
+	stripGeneratedByMarker,
+} from "../../lib/harness-adapters/render.ts";
 import { syncHarnessAsset } from "../../lib/harness-adapters/sync.ts";
 import type {
 	HarnessAsset,
@@ -560,7 +563,7 @@ describe("live harness inventory characterization", () => {
 
 	test("pins both fixed live Claude command byte baselines", async () => {
 		for (const baseline of LIVE_COMMAND_BASELINES) {
-			const bytes = await readFile(baseline.path);
+			const bytes = stripGeneratedByMarker(await readFile(baseline.path));
 			expect(createHash("sha256").update(bytes).digest("hex")).toBe(
 				baseline.byteSha256,
 			);

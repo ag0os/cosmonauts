@@ -75,6 +75,50 @@ export function renderIdentityMarkdown(source: Uint8Array): Buffer {
 	]);
 }
 
+export function stripGeneratedByMarker(rendered: Uint8Array): Buffer {
+	const bytes = Buffer.from(rendered);
+	const offset = frontmatterEndOffset(bytes);
+	if (
+		offset === 0 ||
+		!bytes
+			.subarray(offset, offset + GENERATED_BY_MARKER.length)
+			.equals(GENERATED_BY_MARKER)
+	) {
+		throw new Error(
+			"Rendered Markdown does not contain the generated-by marker at the deterministic frontmatter boundary.",
+		);
+	}
+	if (
+		bytes.indexOf(GENERATED_BY_MARKER, offset + GENERATED_BY_MARKER.length) !==
+		-1
+	) {
+		throw new Error(
+			"Rendered Markdown contains more than one generated-by marker.",
+		);
+	}
+	return Buffer.concat([
+		bytes.subarray(0, offset),
+		bytes.subarray(offset + GENERATED_BY_MARKER.length),
+	]);
+}
+
+export function assertClaudeCommandFrontmatter(source: Uint8Array): void {
+	const bytes = Buffer.from(source);
+	const offset = frontmatterEndOffset(bytes);
+	if (offset === 0) {
+		throw new Error("Claude command source requires YAML frontmatter.");
+	}
+	const frontmatter = bytes.subarray(0, offset).toString("utf8");
+	if (!/^description:[^\r\n]+$/m.test(frontmatter)) {
+		throw new Error("Claude command source requires a non-empty description.");
+	}
+	if (!/^argument-hint:[^\r\n]+$/m.test(frontmatter)) {
+		throw new Error(
+			"Claude command source requires a non-empty argument-hint.",
+		);
+	}
+}
+
 export async function prepareHarnessMaterialization(options: {
 	readonly projectRoot: string;
 	readonly asset: HarnessAsset;

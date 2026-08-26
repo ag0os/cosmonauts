@@ -40,15 +40,21 @@ import {
 	serializeHarnessManifest,
 	sha256,
 } from "./provenance.ts";
+import {
+	getStaticHarnessAsset,
+	resolveHarnessAssetTarget,
+} from "./registry.ts";
 import type {
 	GeneratedHarnessNode,
 	PreparedHarnessMaterialization,
 	RenderedFileNode,
 } from "./render.ts";
 import {
+	assertClaudeCommandFrontmatter,
 	digestRenderedFiles,
 	GENERATED_BY_MARKER_VERSION,
 	prepareHarnessMaterialization,
+	stripGeneratedByMarker,
 	writePreparedTarget,
 } from "./render.ts";
 import type {
@@ -845,6 +851,1114 @@ export interface WithOwnerRootTransactionOptions {
 	readonly evidenceReceipt?: OwnerRootEvidenceReceipt;
 	/** Deterministic fault injection for the release-uncertainty contract. */
 	readonly lockRunner?: EntityLockRunner;
+}
+
+export type ClaudeCommandBootstrapStop =
+	| "prepared"
+	| "installing"
+	| "commit-ready"
+	| "rolling-back"
+	| "installed"
+	| "checked"
+	| "backup-cleanup";
+
+export interface RunClaudeCommandPairBootstrapOptions {
+	readonly projectRoot: string;
+	readonly homeRoot: string;
+	readonly now?: () => Date;
+	readonly stopAfter?: ClaudeCommandBootstrapStop;
+	readonly onTransactionLock?: () => void | Promise<void>;
+	readonly onPhasePersisted?: (
+		phase: OwnerRootTransactionPhase,
+	) => void | Promise<void>;
+	readonly lockRunner?: NonNullable<
+		WithOwnerRootTransactionOptions["lockRunner"]
+	>;
+}
+
+const CLAUDE_COMMAND_BOOTSTRAP_SPECS = [
+	{
+		assetId: "command:spec-to-backlog",
+		name: "spec-to-backlog",
+		nativeRelativePath: "external-commands/spec-to-backlog.md",
+	},
+	{
+		assetId: "command:implement-plan",
+		name: "implement-plan",
+		nativeRelativePath: "external-commands/implement-plan.md",
+	},
+] as const;
+
+type ClaudeCommandEvidencePhase =
+	| "authorized"
+	| "installed"
+	| "checked"
+	| "complete";
+
+interface ClaudeCommandEvidenceRow {
+	readonly assetId: (typeof CLAUDE_COMMAND_BOOTSTRAP_SPECS)[number]["assetId"];
+	readonly livePath: string;
+	readonly nativePath: string;
+	readonly outputPath: string;
+	readonly liveLength: number;
+	readonly nativeLength: number;
+	readonly renderLength: number;
+	readonly finalLength?: number;
+	readonly liveDigest: string;
+	readonly nativeDigest: string;
+	readonly renderDigest: string;
+	readonly finalDigest?: string;
+	readonly materializedDigest: string;
+	readonly manifestKey: string;
+	readonly oldState: HarnessNodeSnapshot;
+	readonly newState: HarnessNodeSnapshot;
+	readonly backupPath?: string;
+	readonly backupExit?: "removed-exact";
+}
+
+interface ClaudeCommandCheckRow {
+	readonly assetId: string;
+	readonly targetPath: string;
+	readonly exitCode: 0 | 1;
+	readonly beforeStatus: SyncHarnessAssetResult["beforeStatus"];
+	readonly reason: SyncHarnessAssetResult["reason"];
+}
+
+export interface ClaudeCommandMigrationEvidence {
+	readonly schemaVersion: 1;
+	readonly authorizationKind: "ratified-live-bootstrap";
+	readonly phase: ClaudeCommandEvidencePhase;
+	readonly transactionId: string;
+	readonly ownerId: "authority:cosmonauts/core";
+	readonly ownerRoot: string;
+	readonly target: "claude";
+	readonly scope: "personal";
+	readonly cleanupPolicy: "after-evidence";
+	readonly atomicSet: true;
+	readonly markerVersion: 1;
+	readonly newManifestDigest: string;
+	readonly manifestKeys: readonly [string, string];
+	readonly commands: readonly [
+		ClaudeCommandEvidenceRow,
+		ClaudeCommandEvidenceRow,
+	];
+	readonly recoveryOutcome?: string;
+	readonly receipt?: OwnerRootEvidenceReceipt;
+	readonly checkRows?: readonly [ClaudeCommandCheckRow, ClaudeCommandCheckRow];
+	readonly authorizedAt: string;
+	readonly installedAt?: string;
+	readonly checkedAt?: string;
+	readonly completedAt?: string;
+}
+
+interface PreparedClaudeCommand {
+	readonly spec: (typeof CLAUDE_COMMAND_BOOTSTRAP_SPECS)[number];
+	readonly asset: HarnessAsset;
+	readonly target: ResolvedHarnessAssetTarget;
+	readonly liveBytes: Buffer;
+	readonly nativeBytes: Buffer;
+	readonly renderedBytes: Buffer;
+	readonly strippedRenderedBytes: Buffer;
+	readonly oldState: HarnessNodeSnapshot;
+	readonly newState: HarnessNodeSnapshot;
+	readonly manifestEntry: MaterializedHarnessManifestEntry;
+	readonly manifestKey: string;
+}
+
+export async function runClaudeCommandPairBootstrap(
+	options: RunClaudeCommandPairBootstrapOptions,
+): Promise<ClaudeCommandMigrationEvidence> {
+	const projectRoot = await realpath(options.projectRoot);
+	const homeRoot = await realpath(options.homeRoot);
+	const evidencePath = join(
+		projectRoot,
+		"missions/plans/harness-adapters/command-migration-evidence.json",
+	);
+	await assertCommandBootstrapPrerequisites(projectRoot);
+	const existing = await readCommandMigrationEvidence(evidencePath);
+	if (existing?.phase === "complete") {
+		await validateCompleteCommandEvidence(existing, projectRoot, homeRoot);
+		return existing;
+	}
+
+	if (existing?.phase === "installed" || existing?.phase === "checked") {
+		return finishClaudeCommandEvidence({
+			...options,
+			projectRoot,
+			homeRoot,
+			evidencePath,
+			evidence: existing,
+		});
+	}
+
+	let recoveryOutcome: string | undefined;
+	if (existing?.phase === "authorized") {
+		validateCommandEvidenceIdentity(existing, projectRoot, homeRoot);
+		const ownerRoot = join(homeRoot, ".claude");
+		const journalPath = resolveHarnessTransactionPaths(
+			ownerRoot,
+			"claude",
+		).journalPath;
+		if (await pathExists(journalPath)) {
+			const recoveryResult = await withOwnerRootTransaction(
+				{
+					ownerRoot,
+					targetId: "claude",
+					...(options.lockRunner ? { lockRunner: options.lockRunner } : {}),
+				},
+				async () => "recovered" as const,
+			);
+			assertConfirmedOwnerRootResult(recoveryResult);
+			if (recoveryResult.state === "recovery-required") {
+				if (
+					recoveryResult.recovery.state !== "evidence-required" ||
+					recoveryResult.recovery.transactionId !== existing.transactionId
+				) {
+					throw new Error(
+						`Claude command recovery is ambiguous: ${JSON.stringify(recoveryResult.recovery)}.`,
+					);
+				}
+				const installed = await makeInstalledCommandEvidence(
+					existing,
+					ownerRoot,
+					"committed:evidence-required",
+					(options.now ?? (() => new Date()))().toISOString(),
+				);
+				await persistAndReadCommandEvidence(evidencePath, installed);
+				if (options.stopAfter === "installed") {
+					throw new Error("injected stop after installed");
+				}
+				return finishClaudeCommandEvidence({
+					...options,
+					projectRoot,
+					homeRoot,
+					evidencePath,
+					evidence: installed,
+				});
+			}
+			recoveryOutcome = describeOwnerRootRecovery(recoveryResult.recovery);
+		}
+	}
+
+	const timestamp = (options.now ?? (() => new Date()))().toISOString();
+	const exportedAt = existing?.authorizedAt ?? timestamp;
+	const prepared = await prepareClaudeCommandPair(
+		projectRoot,
+		homeRoot,
+		true,
+		exportedAt,
+	);
+	const ownerRoot = prepared[0].target.ownerRoot;
+	const manifestPath = join(ownerRoot, ".cosmonauts-harness-manifest.json");
+	const manifest = await readHarnessManifest(manifestPath);
+	assertCommandManifestIsBootstrapReady(manifest, prepared);
+	const oldManifest = await observeManifestSnapshot(manifestPath);
+	const newManifestContents = serializeHarnessManifest({
+		schemaVersion: 1,
+		entries: {
+			...manifest.entries,
+			...Object.fromEntries(
+				prepared.map((row) => [row.manifestKey, row.manifestEntry]),
+			),
+		},
+	});
+	const transactionId = existing?.transactionId ?? randomUUID();
+	const authorized =
+		existing ??
+		makeAuthorizedCommandEvidence({
+			projectRoot,
+			homeRoot,
+			transactionId,
+			timestamp,
+			newManifestContents,
+			prepared,
+		});
+	await persistAndReadCommandEvidence(evidencePath, authorized);
+
+	const transactionResult = await withOwnerRootTransaction(
+		{
+			ownerRoot,
+			targetId: "claude",
+			...(options.lockRunner ? { lockRunner: options.lockRunner } : {}),
+		},
+		async (transaction) => {
+			await options.onTransactionLock?.();
+			const lockedPrepared = await prepareClaudeCommandPair(
+				projectRoot,
+				homeRoot,
+				false,
+				exportedAt,
+			);
+			await assertLockedCommandPairMatchesEvidence(
+				lockedPrepared,
+				authorized,
+				projectRoot,
+				homeRoot,
+			);
+			const result = await applySyncPlanInTransaction(transaction, {
+				oldManifest,
+				newManifestContents,
+				cleanupPolicy: "after-evidence",
+				transactionId,
+				members: lockedPrepared.map((row) => ({
+					targetPath: row.target.targetPath,
+					oldState: row.oldState,
+					newState: row.newState,
+					writeStage: (stagePath) => writeFile(stagePath, row.renderedBytes),
+				})),
+				onPhasePersisted: async (phase) => {
+					await options.onPhasePersisted?.(phase);
+					if (phase === options.stopAfter) {
+						throw new Error(`injected stop after ${phase}`);
+					}
+					if (
+						phase === "commit-ready" &&
+						options.stopAfter === "rolling-back"
+					) {
+						throw new Error("injected failure before rolling back");
+					}
+				},
+			});
+			if (result.state === "evidence-required") {
+				try {
+					await assertInstalledCommandPairMatchesEvidence(authorized, homeRoot);
+				} catch (error) {
+					const rollback = await rollbackCommittedCommandPair(
+						transaction,
+						transactionId,
+					);
+					if (rollback.state === "restored-old") {
+						throw new Error(
+							"Installed Claude command verification failed; both old commands and the old manifest were restored.",
+							{ cause: error },
+						);
+					}
+					throw new Error(
+						`Installed Claude command verification is ambiguous; recoverable state was preserved: ${rollback.reason}.`,
+						{ cause: error },
+					);
+				}
+			}
+			return result;
+		},
+	);
+	assertConfirmedOwnerRootResult(transactionResult);
+	if (transactionResult.state === "recovery-required") {
+		throw new Error(
+			`Claude command recovery is ambiguous: ${JSON.stringify(transactionResult.recovery)}.`,
+		);
+	}
+	if (transactionResult.result.state !== "evidence-required") {
+		throw new Error(
+			transactionResult.result.state === "restored-old"
+				? "Claude command transaction restored old command bytes."
+				: `Claude command transaction did not reach evidence hold: ${JSON.stringify(transactionResult.result)}.`,
+		);
+	}
+	const installed = await makeInstalledCommandEvidence(
+		authorized,
+		ownerRoot,
+		recoveryOutcome ?? describeOwnerRootRecovery(transactionResult.recovery),
+		(options.now ?? (() => new Date()))().toISOString(),
+	);
+	await persistAndReadCommandEvidence(evidencePath, installed);
+	if (options.stopAfter === "installed") {
+		throw new Error("injected stop after installed");
+	}
+	return finishClaudeCommandEvidence({
+		...options,
+		projectRoot,
+		homeRoot,
+		evidencePath,
+		evidence: installed,
+	});
+}
+
+async function assertCommandBootstrapPrerequisites(
+	projectRoot: string,
+): Promise<void> {
+	const prerequisitePath = join(
+		projectRoot,
+		"missions/plans/harness-adapters/repo-export-validation-evidence.json",
+	);
+	let value: unknown;
+	try {
+		value = JSON.parse(await readFile(prerequisitePath, "utf8"));
+	} catch (error) {
+		throw new Error(
+			`Project and personal-bundle evidence must be durable and complete before Claude command bootstrap: ${prerequisitePath}.`,
+			{ cause: error },
+		);
+	}
+	if (
+		!isRecordValue(value) ||
+		value.schemaVersion !== 1 ||
+		value.phase !== "complete" ||
+		!isRecordValue(value.externalBundle) ||
+		value.externalBundle.phase !== "complete"
+	) {
+		throw new Error(
+			"Project and personal-bundle evidence must be durable and complete before Claude command bootstrap.",
+		);
+	}
+}
+
+async function prepareClaudeCommandPair(
+	projectRoot: string,
+	homeRoot: string,
+	createNativeSources: boolean,
+	exportedAt: string,
+): Promise<readonly [PreparedClaudeCommand, PreparedClaudeCommand]> {
+	const livePaths = CLAUDE_COMMAND_BOOTSTRAP_SPECS.map((spec) =>
+		join(homeRoot, ".claude", "commands", `${spec.name}.md`),
+	);
+	const nativePaths = CLAUDE_COMMAND_BOOTSTRAP_SPECS.map((spec) =>
+		join(projectRoot, spec.nativeRelativePath),
+	);
+	const liveBytes = await Promise.all(livePaths.map((path) => readFile(path)));
+	for (const bytes of liveBytes) assertClaudeCommandFrontmatter(bytes);
+
+	const nativeExists = await Promise.all(nativePaths.map(pathExists));
+	if (nativeExists.some(Boolean) && !nativeExists.every(Boolean)) {
+		throw new Error(
+			"Claude command native bootstrap is partial; pair equality cannot be established.",
+		);
+	}
+	if (!nativeExists.some(Boolean)) {
+		if (!createNativeSources) {
+			throw new Error(
+				"Claude command native sources are missing under the transaction lock.",
+			);
+		}
+		for (let index = 0; index < nativePaths.length; index += 1) {
+			await writeDurableFile(
+				nativePaths[index] ?? "",
+				liveBytes[index] ?? Buffer.alloc(0),
+			);
+		}
+	}
+	const nativeBytes = await Promise.all(
+		nativePaths.map((path) => readFile(path)),
+	);
+	for (const bytes of nativeBytes) assertClaudeCommandFrontmatter(bytes);
+
+	const rows: PreparedClaudeCommand[] = [];
+	for (
+		let index = 0;
+		index < CLAUDE_COMMAND_BOOTSTRAP_SPECS.length;
+		index += 1
+	) {
+		const spec = CLAUDE_COMMAND_BOOTSTRAP_SPECS[index];
+		const live = liveBytes[index];
+		const native = nativeBytes[index];
+		if (!spec || !live || !native) {
+			throw new Error("Claude command pair preparation is incomplete.");
+		}
+		const registered = getStaticHarnessAsset(spec.assetId);
+		if (!registered || registered.kind !== "command") {
+			throw new Error(
+				`Fixed Claude command asset is not registered: ${spec.assetId}.`,
+			);
+		}
+		const asset = { ...registered, sourceRoot: projectRoot };
+		const target = resolveHarnessAssetTarget({
+			targetId: "claude",
+			asset,
+			roots: { projectRoot, homeRoot },
+			scope: "personal",
+			requestedMode: "copy",
+		});
+		if (
+			target.targetPath !== livePaths[index] ||
+			resolve(projectRoot, asset.sourcePath) !== nativePaths[index]
+		) {
+			throw new Error(
+				`Fixed Claude command path contract changed for ${spec.assetId}.`,
+			);
+		}
+		const materialization = await prepareHarnessMaterialization({
+			projectRoot,
+			asset,
+			target,
+			mode: "copy",
+		});
+		const rendered = materialization.copyNodes[0];
+		if (
+			materialization.copyNodes.length !== 1 ||
+			!rendered ||
+			rendered.relativePath !== ""
+		) {
+			throw new Error(
+				`Claude command render shape changed for ${spec.assetId}.`,
+			);
+		}
+		const stripped = stripGeneratedByMarker(rendered.bytes);
+		if (!live.equals(native) || !live.equals(stripped)) {
+			throw new Error(
+				`Claude command pair equality failed for ${spec.assetId}; live, native, and marker-stripped render bytes must match before either command moves.`,
+			);
+		}
+		const desired = await syncHarnessAsset({
+			projectRoot,
+			asset,
+			target,
+			check: true,
+			now: () => new Date(exportedAt),
+		});
+		const owner = await resolveAssetOwnerIdentity(asset, projectRoot);
+		rows.push({
+			spec,
+			asset,
+			target,
+			liveBytes: live,
+			nativeBytes: native,
+			renderedBytes: rendered.bytes,
+			strippedRenderedBytes: stripped,
+			oldState: await observeHarnessNodeSnapshot(target.targetPath),
+			newState: fileNodeSnapshot(rendered.bytes),
+			manifestEntry: desired.manifestEntry,
+			manifestKey: manifestEntryKey(owner, spec.assetId),
+		});
+	}
+	return rows as unknown as readonly [
+		PreparedClaudeCommand,
+		PreparedClaudeCommand,
+	];
+}
+
+function assertCommandManifestIsBootstrapReady(
+	manifest: HarnessProvenanceManifest,
+	prepared: readonly PreparedClaudeCommand[],
+): void {
+	for (const row of prepared) {
+		if (manifest.entries[row.manifestKey]) {
+			throw new Error(
+				`Claude command ${row.spec.assetId} already has manifest provenance; ratified bootstrap cannot run again.`,
+			);
+		}
+		const claim = Object.values(manifest.entries).find(
+			(entry) => entry.outputPath === row.target.targetPath,
+		);
+		if (claim) {
+			throw new Error(
+				`Claude command output is already claimed by ${claim.assetId}: ${row.target.targetPath}.`,
+			);
+		}
+	}
+}
+
+function makeAuthorizedCommandEvidence(options: {
+	readonly projectRoot: string;
+	readonly homeRoot: string;
+	readonly transactionId: string;
+	readonly timestamp: string;
+	readonly newManifestContents: string;
+	readonly prepared: readonly [PreparedClaudeCommand, PreparedClaudeCommand];
+}): ClaudeCommandMigrationEvidence {
+	const commands = options.prepared.map((row) => {
+		const digest = sha256(row.liveBytes);
+		return {
+			assetId: row.spec.assetId,
+			livePath: displayCommandPath(
+				row.target.targetPath,
+				options.projectRoot,
+				options.homeRoot,
+			),
+			nativePath: displayCommandPath(
+				resolve(options.projectRoot, row.asset.sourcePath),
+				options.projectRoot,
+				options.homeRoot,
+			),
+			outputPath: displayCommandPath(
+				row.target.targetPath,
+				options.projectRoot,
+				options.homeRoot,
+			),
+			liveLength: row.liveBytes.length,
+			nativeLength: row.nativeBytes.length,
+			renderLength: row.strippedRenderedBytes.length,
+			liveDigest: digest,
+			nativeDigest: sha256(row.nativeBytes),
+			renderDigest: sha256(row.strippedRenderedBytes),
+			materializedDigest: sha256(row.renderedBytes),
+			manifestKey: row.manifestKey,
+			oldState: row.oldState,
+			newState: row.newState,
+		};
+	}) as unknown as readonly [
+		ClaudeCommandEvidenceRow,
+		ClaudeCommandEvidenceRow,
+	];
+	return {
+		schemaVersion: 1,
+		authorizationKind: "ratified-live-bootstrap",
+		phase: "authorized",
+		transactionId: options.transactionId,
+		ownerId: "authority:cosmonauts/core",
+		ownerRoot: "~/.claude",
+		target: "claude",
+		scope: "personal",
+		cleanupPolicy: "after-evidence",
+		atomicSet: true,
+		markerVersion: GENERATED_BY_MARKER_VERSION,
+		newManifestDigest: sha256(options.newManifestContents),
+		manifestKeys: [commands[0].manifestKey, commands[1].manifestKey],
+		commands,
+		authorizedAt: options.timestamp,
+	};
+}
+
+async function makeInstalledCommandEvidence(
+	evidence: ClaudeCommandMigrationEvidence,
+	ownerRoot: string,
+	recoveryOutcome: string,
+	installedAt: string,
+): Promise<ClaudeCommandMigrationEvidence> {
+	const journalPath = resolveHarnessTransactionPaths(
+		ownerRoot,
+		"claude",
+	).journalPath;
+	const value: unknown = JSON.parse(await readFile(journalPath, "utf8"));
+	if (
+		!isOwnerRootJournal(value) ||
+		value.transactionId !== evidence.transactionId ||
+		value.phase !== "committed" ||
+		value.cleanupPolicy !== "after-evidence" ||
+		value.members.length !== 2 ||
+		value.newManifest.kind !== "file" ||
+		value.newManifest.digest !== evidence.newManifestDigest
+	) {
+		throw new Error(
+			"Committed Claude command journal does not match evidence.",
+		);
+	}
+	await assertInstalledCommandPairMatchesEvidence(evidence, dirname(ownerRoot));
+	const commands = evidence.commands.map((row, index) => {
+		const member = value.members[index];
+		if (
+			!member ||
+			!nodeSnapshotsEqual(member.oldState, row.oldState) ||
+			!nodeSnapshotsEqual(member.newState, row.newState)
+		) {
+			throw new Error(
+				"Committed Claude command member does not match evidence.",
+			);
+		}
+		return {
+			...row,
+			finalLength: row.liveLength,
+			finalDigest: row.liveDigest,
+			backupPath: displayCommandHomePath(member.backupPath, dirname(ownerRoot)),
+		};
+	}) as unknown as readonly [
+		ClaudeCommandEvidenceRow,
+		ClaudeCommandEvidenceRow,
+	];
+	return {
+		...evidence,
+		phase: "installed",
+		commands,
+		recoveryOutcome,
+		installedAt,
+	};
+}
+
+async function finishClaudeCommandEvidence(options: {
+	readonly projectRoot: string;
+	readonly homeRoot: string;
+	readonly evidencePath: string;
+	readonly evidence: ClaudeCommandMigrationEvidence;
+	readonly now?: () => Date;
+	readonly stopAfter?: ClaudeCommandBootstrapStop;
+	readonly lockRunner?: NonNullable<
+		WithOwnerRootTransactionOptions["lockRunner"]
+	>;
+}): Promise<ClaudeCommandMigrationEvidence> {
+	validateCommandEvidenceIdentity(
+		options.evidence,
+		options.projectRoot,
+		options.homeRoot,
+	);
+	await assertInstalledCommandPairMatchesEvidence(
+		options.evidence,
+		options.homeRoot,
+	);
+	const installedRaw = await readFile(options.evidencePath, "utf8");
+	const receipt =
+		options.evidence.phase === "installed"
+			? {
+					transactionId: options.evidence.transactionId,
+					evidencePath: options.evidencePath,
+					evidenceDigest: sha256(installedRaw),
+				}
+			: options.evidence.receipt;
+	const ownerRoot = join(options.homeRoot, ".claude");
+	const result = await withOwnerRootTransaction(
+		{
+			ownerRoot,
+			targetId: "claude",
+			...(receipt && options.evidence.phase === "installed"
+				? { evidenceReceipt: receipt }
+				: {}),
+			...(options.lockRunner ? { lockRunner: options.lockRunner } : {}),
+		},
+		async (transaction) => {
+			let current = options.evidence;
+			if (current.phase === "installed") {
+				const checkRows = await runClaudeCommandSelectedCheck(
+					options.projectRoot,
+					options.homeRoot,
+				);
+				if (
+					checkRows.some(
+						(row) => row.exitCode !== 0 || row.reason !== "current",
+					)
+				) {
+					throw new Error(
+						`Claude command selected check did not reach zero: ${JSON.stringify(checkRows)}.`,
+					);
+				}
+				const timestamp = (options.now ?? (() => new Date()))().toISOString();
+				current = {
+					...current,
+					phase: "checked",
+					receipt,
+					checkRows,
+					checkedAt: timestamp,
+				};
+				await persistAndReadCommandEvidence(options.evidencePath, current);
+				if (options.stopAfter === "checked") {
+					throw new Error("injected stop after checked");
+				}
+			}
+
+			const commands: ClaudeCommandEvidenceRow[] = [];
+			for (let index = 0; index < current.commands.length; index += 1) {
+				const row = current.commands[index];
+				if (!row) throw new Error("Claude command evidence row is missing.");
+				const backupPath = commandBackupPath(
+					ownerRoot,
+					current.transactionId,
+					index,
+				);
+				const backup = await observeHarnessNodeSnapshot(backupPath);
+				if (backup.kind !== "absent") {
+					if (!nodeSnapshotsEqual(backup, row.oldState)) {
+						throw new Error(
+							`Retained Claude command backup is ambiguous: ${backupPath}.`,
+						);
+					}
+					await revalidateBeforeSiblingMutation(transaction, backupPath);
+					await rm(backupPath, { recursive: true, force: true });
+				}
+				commands.push({ ...row, backupExit: "removed-exact" });
+			}
+			await syncDirectory(
+				dirname(commandBackupPath(ownerRoot, current.transactionId, 0)),
+			);
+			current = {
+				...current,
+				commands: commands as unknown as readonly [
+					ClaudeCommandEvidenceRow,
+					ClaudeCommandEvidenceRow,
+				],
+			};
+			await persistAndReadCommandEvidence(options.evidencePath, current);
+			if (options.stopAfter === "backup-cleanup") {
+				throw new Error("injected stop after backup cleanup");
+			}
+			const timestamp = (options.now ?? (() => new Date()))().toISOString();
+			const complete = {
+				...current,
+				phase: "complete",
+				completedAt: timestamp,
+			} as const satisfies ClaudeCommandMigrationEvidence;
+			return persistAndReadCommandEvidence(options.evidencePath, complete);
+		},
+	);
+	assertConfirmedOwnerRootResult(result);
+	if (result.state !== "completed") {
+		throw new Error(
+			`Cannot finalize Claude command evidence: ${JSON.stringify(result)}.`,
+		);
+	}
+	return result.result;
+}
+
+async function runClaudeCommandSelectedCheck(
+	projectRoot: string,
+	homeRoot: string,
+): Promise<readonly [ClaudeCommandCheckRow, ClaudeCommandCheckRow]> {
+	const rows: ClaudeCommandCheckRow[] = [];
+	for (const spec of CLAUDE_COMMAND_BOOTSTRAP_SPECS) {
+		const registered = getStaticHarnessAsset(spec.assetId);
+		if (!registered) throw new Error(`Missing command asset: ${spec.assetId}.`);
+		const asset = { ...registered, sourceRoot: projectRoot };
+		const target = resolveHarnessAssetTarget({
+			targetId: "claude",
+			asset,
+			roots: { projectRoot, homeRoot },
+			scope: "personal",
+			requestedMode: "copy",
+		});
+		const result = await syncHarnessAsset({
+			projectRoot,
+			asset,
+			target,
+			check: true,
+		});
+		rows.push({
+			assetId: spec.assetId,
+			targetPath: displayCommandPath(target.targetPath, projectRoot, homeRoot),
+			exitCode: result.exitCode,
+			beforeStatus: result.beforeStatus,
+			reason: result.reason,
+		});
+	}
+	return rows as unknown as readonly [
+		ClaudeCommandCheckRow,
+		ClaudeCommandCheckRow,
+	];
+}
+
+async function assertLockedCommandPairMatchesEvidence(
+	prepared: readonly PreparedClaudeCommand[],
+	evidence: ClaudeCommandMigrationEvidence,
+	projectRoot: string,
+	homeRoot: string,
+): Promise<void> {
+	const reread = await Promise.all(
+		CLAUDE_COMMAND_BOOTSTRAP_SPECS.flatMap((spec) => [
+			readFile(join(homeRoot, ".claude", "commands", `${spec.name}.md`)),
+			readFile(join(projectRoot, spec.nativeRelativePath)),
+		]),
+	);
+	for (let index = 0; index < prepared.length; index += 1) {
+		const row = prepared[index];
+		const expected = evidence.commands[index];
+		const rereadLive = reread[index * 2];
+		const rereadNative = reread[index * 2 + 1];
+		if (
+			!row ||
+			!expected ||
+			!rereadLive ||
+			!rereadNative ||
+			row.spec.assetId !== expected.assetId ||
+			!rereadLive.equals(row.liveBytes) ||
+			!rereadNative.equals(row.nativeBytes) ||
+			sha256(row.liveBytes) !== expected.liveDigest ||
+			sha256(row.nativeBytes) !== expected.nativeDigest ||
+			sha256(row.strippedRenderedBytes) !== expected.renderDigest
+		) {
+			throw new Error(
+				"Claude command pair equality changed under the personal Claude transaction lock; no command was moved.",
+			);
+		}
+	}
+}
+
+async function rollbackCommittedCommandPair(
+	transaction: OwnerRootTransaction,
+	transactionId: string,
+): Promise<
+	| { readonly state: "restored-old" }
+	| { readonly state: "ambiguous"; readonly reason: string }
+> {
+	const value: unknown = JSON.parse(
+		await readFile(transaction.journalPath, "utf8"),
+	);
+	if (
+		!isOwnerRootJournal(value) ||
+		value.transactionId !== transactionId ||
+		value.phase !== "committed" ||
+		value.cleanupPolicy !== "after-evidence" ||
+		value.members.length !== 2
+	) {
+		return { state: "ambiguous", reason: "committed-journal-mismatch" };
+	}
+	const observed = await observeJournalVector(value);
+	if (
+		observed.manifest !== "new" ||
+		observed.hasOther ||
+		!commitVectorIsNew(observed.members)
+	) {
+		return { state: "ambiguous", reason: "post-install-vector-changed" };
+	}
+	const rollingBack = { ...value, phase: "rolling-back" } as const;
+	await persistJournal(transaction, rollingBack);
+	return rollbackJournal(transaction, rollingBack);
+}
+
+async function assertInstalledCommandPairMatchesEvidence(
+	evidence: ClaudeCommandMigrationEvidence,
+	homeRoot: string,
+): Promise<void> {
+	for (
+		let index = 0;
+		index < CLAUDE_COMMAND_BOOTSTRAP_SPECS.length;
+		index += 1
+	) {
+		const spec = CLAUDE_COMMAND_BOOTSTRAP_SPECS[index];
+		const row = evidence.commands[index];
+		if (!spec || !row || row.assetId !== spec.assetId) {
+			throw new Error("Claude command evidence pair identity is invalid.");
+		}
+		const final = await readFile(
+			join(homeRoot, ".claude", "commands", `${spec.name}.md`),
+		);
+		const stripped = stripGeneratedByMarker(final);
+		if (
+			sha256(stripped) !== row.liveDigest ||
+			stripped.length !== row.liveLength ||
+			sha256(final) !== row.materializedDigest
+		) {
+			throw new Error(
+				`Installed Claude command bytes are ambiguous for ${spec.assetId}; pending evidence and backups were preserved.`,
+			);
+		}
+	}
+}
+
+async function validateCompleteCommandEvidence(
+	evidence: ClaudeCommandMigrationEvidence,
+	projectRoot: string,
+	homeRoot: string,
+): Promise<void> {
+	validateCommandEvidenceIdentity(evidence, projectRoot, homeRoot);
+	if (
+		!evidence.receipt ||
+		!evidence.checkRows ||
+		evidence.checkRows.some(
+			(row) => row.exitCode !== 0 || row.reason !== "current",
+		) ||
+		evidence.commands.some((row) => row.backupExit !== "removed-exact")
+	) {
+		throw new Error(
+			"Complete Claude command evidence is missing receipt, check, or cleanup proof.",
+		);
+	}
+	await assertInstalledCommandPairMatchesEvidence(evidence, homeRoot);
+	for (let index = 0; index < evidence.commands.length; index += 1) {
+		const native = await readFile(
+			join(
+				projectRoot,
+				CLAUDE_COMMAND_BOOTSTRAP_SPECS[index]?.nativeRelativePath ?? "",
+			),
+		);
+		if (sha256(native) !== evidence.commands[index]?.nativeDigest) {
+			throw new Error(
+				"Complete Claude command native bytes no longer match evidence.",
+			);
+		}
+		if (
+			(
+				await observeHarnessNodeSnapshot(
+					commandBackupPath(
+						join(homeRoot, ".claude"),
+						evidence.transactionId,
+						index,
+					),
+				)
+			).kind !== "absent"
+		) {
+			throw new Error(
+				"Complete Claude command evidence still has a retained backup.",
+			);
+		}
+	}
+}
+
+function validateCommandEvidenceIdentity(
+	evidence: ClaudeCommandMigrationEvidence,
+	projectRoot: string,
+	homeRoot: string,
+): void {
+	if (
+		evidence.schemaVersion !== 1 ||
+		evidence.authorizationKind !== "ratified-live-bootstrap" ||
+		evidence.ownerId !== "authority:cosmonauts/core" ||
+		evidence.ownerRoot !== "~/.claude" ||
+		evidence.target !== "claude" ||
+		evidence.scope !== "personal" ||
+		evidence.cleanupPolicy !== "after-evidence" ||
+		evidence.atomicSet !== true ||
+		evidence.markerVersion !== GENERATED_BY_MARKER_VERSION ||
+		evidence.commands.length !== 2
+	) {
+		throw new Error("Claude command migration evidence identity is invalid.");
+	}
+	for (
+		let index = 0;
+		index < CLAUDE_COMMAND_BOOTSTRAP_SPECS.length;
+		index += 1
+	) {
+		const spec = CLAUDE_COMMAND_BOOTSTRAP_SPECS[index];
+		const row = evidence.commands[index];
+		if (
+			!spec ||
+			!row ||
+			row.assetId !== spec.assetId ||
+			row.livePath !== `~/.claude/commands/${spec.name}.md` ||
+			row.outputPath !== row.livePath ||
+			row.nativePath !== spec.nativeRelativePath ||
+			row.liveDigest !== row.nativeDigest ||
+			row.liveDigest !== row.renderDigest ||
+			row.liveLength !== row.nativeLength ||
+			row.liveLength !== row.renderLength ||
+			(evidence.phase !== "authorized" &&
+				(row.finalDigest !== row.liveDigest ||
+					row.finalLength !== row.liveLength ||
+					row.backupPath !==
+						`~/.cosmonauts-harness-claude-${evidence.transactionId}-${index}.backup`)) ||
+			evidence.manifestKeys[index] !== row.manifestKey ||
+			resolve(projectRoot, row.nativePath) !==
+				join(projectRoot, spec.nativeRelativePath) ||
+			join(homeRoot, row.livePath.slice(2)) !==
+				join(homeRoot, ".claude", "commands", `${spec.name}.md`)
+		) {
+			throw new Error(
+				"Claude command migration evidence path identity is invalid.",
+			);
+		}
+	}
+}
+
+async function readCommandMigrationEvidence(
+	path: string,
+): Promise<ClaudeCommandMigrationEvidence | undefined> {
+	let value: unknown;
+	try {
+		value = JSON.parse(await readFile(path, "utf8"));
+	} catch (error) {
+		if (isNodeError(error) && error.code === "ENOENT") return undefined;
+		throw new Error(`Cannot read Claude command migration evidence: ${path}.`, {
+			cause: error,
+		});
+	}
+	if (
+		!isRecordValue(value) ||
+		value.schemaVersion !== 1 ||
+		value.authorizationKind !== "ratified-live-bootstrap" ||
+		!(["authorized", "installed", "checked", "complete"] as const).includes(
+			value.phase as ClaudeCommandEvidencePhase,
+		) ||
+		!Array.isArray(value.commands) ||
+		value.commands.length !== 2
+	) {
+		throw new Error(`Malformed Claude command migration evidence: ${path}.`);
+	}
+	return value as unknown as ClaudeCommandMigrationEvidence;
+}
+
+async function persistAndReadCommandEvidence(
+	path: string,
+	evidence: ClaudeCommandMigrationEvidence,
+): Promise<ClaudeCommandMigrationEvidence> {
+	const raw = `${JSON.stringify(evidence, null, "\t")}\n`;
+	await writeDurableFile(path, raw);
+	const reread = await readFile(path, "utf8");
+	if (reread !== raw) {
+		throw new Error(`Claude command evidence durable re-read failed: ${path}.`);
+	}
+	const parsed = await readCommandMigrationEvidence(path);
+	if (!parsed || JSON.stringify(parsed) !== JSON.stringify(evidence)) {
+		throw new Error(
+			`Claude command evidence semantic re-read failed: ${path}.`,
+		);
+	}
+	return parsed;
+}
+
+function commandBackupPath(
+	ownerRoot: string,
+	transactionId: string,
+	index: number,
+): string {
+	const journalPath = resolveHarnessTransactionPaths(
+		ownerRoot,
+		"claude",
+	).journalPath;
+	const stem = `${basename(journalPath, ".journal.json")}-${transactionId}-${index}`;
+	return join(dirname(journalPath), `${stem}.backup`);
+}
+
+function displayCommandPath(
+	path: string,
+	projectRoot: string,
+	homeRoot: string,
+): string {
+	const absolute = resolve(path);
+	const projectRelative = relative(projectRoot, absolute);
+	if (
+		projectRelative !== "" &&
+		!projectRelative.startsWith(`..${sep}`) &&
+		projectRelative !== ".." &&
+		!isAbsolute(projectRelative)
+	) {
+		return projectRelative.split(sep).join("/");
+	}
+	const homeRelative = relative(homeRoot, absolute);
+	if (
+		homeRelative !== "" &&
+		!homeRelative.startsWith(`..${sep}`) &&
+		homeRelative !== ".." &&
+		!isAbsolute(homeRelative)
+	) {
+		return `~/${homeRelative.split(sep).join("/")}`;
+	}
+	throw new Error(
+		`Claude command evidence path is outside fixed roots: ${path}.`,
+	);
+}
+
+function displayCommandHomePath(path: string, homeRoot: string): string {
+	const homeRelative = relative(homeRoot, resolve(path));
+	if (
+		homeRelative === "" ||
+		homeRelative.startsWith(`..${sep}`) ||
+		homeRelative === ".." ||
+		isAbsolute(homeRelative)
+	) {
+		throw new Error(
+			`Claude command evidence path is outside the fixed home root: ${path}.`,
+		);
+	}
+	return `~/${homeRelative.split(sep).join("/")}`;
+}
+
+function fileNodeSnapshot(bytes: Uint8Array): HarnessNodeSnapshot {
+	return {
+		kind: "file",
+		digest: sha256(Buffer.concat([Buffer.from("file\0"), Buffer.from(bytes)])),
+	};
+}
+
+function describeOwnerRootRecovery(recovery: OwnerRootRecoveryResult): string {
+	return recovery.state === "none"
+		? "none"
+		: recovery.state === "restored-old"
+			? `restored-old:${recovery.phase}`
+			: recovery.state === "committed-new"
+				? `committed-new:${recovery.phase}`
+				: recovery.state;
+}
+
+function assertConfirmedOwnerRootResult<T>(
+	result: OwnerRootTransactionResult<T>,
+): asserts result is Exclude<
+	OwnerRootTransactionResult<T>,
+	{ readonly state: "lock-contended" | "persisted-release-unconfirmed" }
+> {
+	if (result.state === "lock-contended") {
+		throw new Error(
+			`Claude command transaction lock contended at ${result.lockPath}.`,
+		);
+	}
+	if (result.state === "persisted-release-unconfirmed") {
+		throw new Error(
+			`Claude command transaction release is unconfirmed: ${errorMessage(result.error)}.`,
+		);
+	}
 }
 
 /**
@@ -1794,7 +2908,10 @@ async function writeManifestSnapshot(
 	await writeDurableFile(transaction.manifestPath, snapshot.contents);
 }
 
-async function writeDurableFile(path: string, contents: string): Promise<void> {
+async function writeDurableFile(
+	path: string,
+	contents: string | Uint8Array,
+): Promise<void> {
 	const directory = dirname(path);
 	await mkdir(directory, { recursive: true });
 	const temporary = join(
@@ -1803,7 +2920,11 @@ async function writeDurableFile(path: string, contents: string): Promise<void> {
 	);
 	const handle = await open(temporary, "wx", 0o600);
 	try {
-		await handle.writeFile(contents, "utf8");
+		if (typeof contents === "string") {
+			await handle.writeFile(contents, "utf8");
+		} else {
+			await handle.writeFile(contents);
+		}
 		await handle.sync();
 	} finally {
 		await handle.close();
