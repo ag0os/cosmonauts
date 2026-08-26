@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, realpath } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import type {
 	HarnessAsset,
 	HarnessManifestEntry,
@@ -61,6 +61,53 @@ export interface HarnessTransactionPaths {
 	readonly journalPath: string;
 }
 
+export interface LegacyCopiedNodeShape {
+	readonly relativePath: string;
+	readonly nodeType: "directory" | "file";
+}
+
+export interface LegacyMigrationExpectation {
+	readonly revision: string;
+	readonly sourceRelativePath: string;
+	readonly owner: OwnerIdentity;
+	readonly assetId: string;
+	readonly outputPath: string;
+	readonly nodeShape: readonly LegacyCopiedNodeShape[];
+}
+
+/**
+ * Proof assembled by the project-only migration edge after it has read the
+ * named git object and observed the live target. The inward core deliberately
+ * receives bytes-derived facts only and has no git or target-reading callback.
+ */
+export interface LegacyMigrationProof {
+	readonly revision: string;
+	readonly sourceRelativePath: string;
+	readonly owner: OwnerIdentity;
+	readonly assetId: string;
+	readonly outputPath: string;
+	readonly historicalRenderedDigest: string;
+	readonly currentTargetDigest: string;
+	readonly historicalNodeShape: readonly LegacyCopiedNodeShape[];
+	readonly currentTargetNodeShape: readonly LegacyCopiedNodeShape[];
+}
+
+export interface LegacyMigrationAuthorization
+	extends LegacyMigrationExpectation {
+	readonly authorizationKind: "legacy-copied-target";
+	readonly consumption: "one-time";
+	readonly historicalRenderedDigest: string;
+	readonly targetDigest: string;
+}
+
+const LEGACY_MIGRATION_ASSET_IDS = new Set([
+	"skill:shared/plan",
+	"skill:shared/roadmap",
+	"skill:shared/skills-cli",
+	"skill:shared/task",
+	"external-skill:cosmonauts",
+]);
+
 export interface StableHarnessStateObservation<T> {
 	readonly manifest: HarnessProvenanceManifest;
 	readonly journalPresent: boolean;
@@ -80,6 +127,73 @@ interface FileObservation {
 
 export function sha256(bytes: Uint8Array | string): string {
 	return createHash("sha256").update(bytes).digest("hex");
+}
+
+/**
+ * Convert injected historical/live proof into the sole copied-target migration
+ * capability. Every identity, digest, and node-shape boundary must agree
+ * exactly. This function is pure and intentionally cannot read git or a target.
+ */
+export function verifyLegacyMigrationProof(
+	proof: LegacyMigrationProof,
+	expected: LegacyMigrationExpectation,
+): LegacyMigrationAuthorization | undefined {
+	if (!LEGACY_MIGRATION_ASSET_IDS.has(expected.assetId)) return undefined;
+	if (!isGitRelativePath(expected.sourceRelativePath)) return undefined;
+	if (!isAbsolute(expected.outputPath)) return undefined;
+	if (!isCopiedNodeShape(expected.nodeShape)) return undefined;
+	if (
+		proof.revision !== expected.revision ||
+		proof.sourceRelativePath !== expected.sourceRelativePath ||
+		!sameJson(proof.owner, expected.owner) ||
+		proof.assetId !== expected.assetId ||
+		proof.outputPath !== expected.outputPath ||
+		proof.historicalRenderedDigest !== proof.currentTargetDigest ||
+		!sameJson(proof.historicalNodeShape, expected.nodeShape) ||
+		!sameJson(proof.currentTargetNodeShape, expected.nodeShape) ||
+		!isCopiedNodeShape(proof.historicalNodeShape) ||
+		!isCopiedNodeShape(proof.currentTargetNodeShape)
+	) {
+		return undefined;
+	}
+
+	return {
+		authorizationKind: "legacy-copied-target",
+		consumption: "one-time",
+		...expected,
+		historicalRenderedDigest: proof.historicalRenderedDigest,
+		targetDigest: proof.currentTargetDigest,
+	};
+}
+
+function isGitRelativePath(path: string): boolean {
+	return (
+		path.length > 0 &&
+		!isAbsolute(path) &&
+		!path.includes("\\") &&
+		path
+			.split("/")
+			.every((segment) => segment !== "" && segment !== "." && segment !== "..")
+	);
+}
+
+function isCopiedNodeShape(nodes: readonly LegacyCopiedNodeShape[]): boolean {
+	const paths = new Set<string>();
+	for (const node of nodes) {
+		if (
+			(node.nodeType !== "directory" && node.nodeType !== "file") ||
+			(node.relativePath !== "" && !isGitRelativePath(node.relativePath)) ||
+			paths.has(node.relativePath)
+		) {
+			return false;
+		}
+		paths.add(node.relativePath);
+	}
+	return nodes.length > 0 && nodes[0]?.relativePath === "";
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+	return JSON.stringify(left) === JSON.stringify(right);
 }
 
 /**

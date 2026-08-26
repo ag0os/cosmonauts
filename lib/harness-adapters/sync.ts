@@ -75,7 +75,8 @@ export interface SyncHarnessAssetResult {
 		| "link-map-changed"
 		| "generated-input-changed"
 		| "locally-edited"
-		| "unmanaged"
+		| "foreign-owner"
+		| "foreign-or-untraceable"
 		| "pending-journal"
 		| "concurrent-change";
 	readonly wroteTarget: boolean;
@@ -187,7 +188,7 @@ async function syncHarnessAssetCore(
 			return noWriteResult(entry, {
 				requestedMode,
 				beforeStatus: "locally-edited",
-				reason: foreignClaim ? "locally-edited" : "unmanaged",
+				reason: foreignClaim ? "foreign-owner" : "foreign-or-untraceable",
 			});
 		}
 		if (options.check) {
@@ -654,6 +655,7 @@ export interface PlanHarnessSyncOptions {
 
 export type HarnessDriftReason =
 	| SyncPlanReason
+	| "foreign-or-untraceable"
 	| "concurrent-change"
 	| "mode-conversion"
 	| "source-changed"
@@ -662,10 +664,26 @@ export type HarnessDriftReason =
 
 export interface ClassifiedHarnessSyncPlanRow
 	extends Omit<HarnessSyncPlanRow, "reason"> {
+	readonly sourcePath: string;
 	readonly recordedMode?: SyncMode;
 	readonly requestedMode: SyncMode;
 	readonly beforeStatus: SyncStatus;
 	readonly reason: HarnessDriftReason;
+	readonly conflict?: HarnessConflictReport;
+}
+
+export interface HarnessConflictGuidance {
+	readonly action: "port" | "preserve" | "safe-transfer";
+	readonly message: string;
+}
+
+export interface HarnessConflictReport {
+	readonly sourcePath: string;
+	readonly targetPath: string;
+	readonly owner: OwnerIdentity;
+	readonly conflictingOwner?: OwnerIdentity;
+	readonly reason: HarnessDriftReason;
+	readonly guidance: readonly HarnessConflictGuidance[];
 }
 
 export interface ClassifiedHarnessSyncPlan
@@ -679,8 +697,10 @@ interface RowContext {
 	readonly asset: HarnessAsset;
 	readonly targetId: HarnessSyncInventoryRow["targetId"];
 	readonly scope: HarnessSyncInventoryRow["scope"];
+	readonly sourcePath: string;
 	readonly targetPath: string;
 	readonly owner: OwnerIdentity;
+	readonly conflictingOwner?: OwnerIdentity;
 	readonly recordedMode?: SyncMode;
 	readonly requestedMode: SyncMode;
 }
@@ -801,6 +821,7 @@ export async function planHarnessSync(
 					)
 					.map((entry) =>
 						classifyStaleEntry({
+							projectRoot: options.projectRoot,
 							request,
 							entry,
 							currentProjectOwner,
@@ -849,8 +870,10 @@ function classifyInventoryRow(options: {
 		asset: row.asset,
 		targetId: row.targetId,
 		scope: row.scope,
-		targetPath: row.targetPath,
+		sourcePath: resolve(row.asset.sourceRoot, row.asset.sourcePath),
+		targetPath: resolve(row.targetPath),
 		owner,
+		...(foreignClaim ? { conflictingOwner: foreignClaim.owner } : {}),
 		...(matchingClaim ? { recordedMode: matchingClaim.mode } : {}),
 		requestedMode: resolveHarnessSyncMode(
 			request.requestedMode,
@@ -872,7 +895,12 @@ function classifyInventoryRow(options: {
 			return makeRow(context, "source-ahead", "source-unavailable", "none");
 		}
 		if (!matchingClaim) {
-			return makeRow(context, "locally-edited", "unmanaged", "none");
+			return makeRow(
+				context,
+				"locally-edited",
+				"foreign-or-untraceable",
+				"none",
+			);
 		}
 		return classifyRemovedSource(context, matchingClaim, observation);
 	}
@@ -880,7 +908,7 @@ function classifyInventoryRow(options: {
 	if (!matchingClaim) {
 		return observation.state === "absent"
 			? makeRow(context, "missing", "missing", "create")
-			: makeRow(context, "locally-edited", "unmanaged", "none");
+			: makeRow(context, "locally-edited", "foreign-or-untraceable", "none");
 	}
 	if (observation.state === "absent") {
 		return makeRow(context, "missing", "missing", "create");
@@ -895,6 +923,7 @@ function classifyInventoryRow(options: {
 }
 
 function classifyStaleEntry(options: {
+	readonly projectRoot: string;
 	readonly request: SyncRequest;
 	readonly entry: HarnessManifestEntry;
 	readonly currentProjectOwner: OwnerIdentity;
@@ -902,7 +931,7 @@ function classifyStaleEntry(options: {
 	readonly health: ReadonlyMap<string, SourceHealthRow["status"]>;
 }): ClassifiedHarnessSyncPlanRow {
 	const { request, entry, currentProjectOwner, observation, health } = options;
-	const context = contextFromEntry(request, entry);
+	const context = contextFromEntry(request, entry, options.projectRoot);
 	if (!ownersMatch(entry.owner, currentProjectOwner)) {
 		return makeRow(context, "locally-edited", "foreign-owner", "none");
 	}
@@ -969,7 +998,7 @@ async function planTransfers(
 			if (entry) {
 				rows.push(
 					makeRow(
-						contextFromEntry(options.request, entry),
+						contextFromEntry(options.request, entry, options.projectRoot),
 						"locally-edited",
 						"transfer-entry-mismatch",
 						"none",
@@ -987,7 +1016,11 @@ async function planTransfers(
 			asset: inventory.asset,
 			targetId: inventory.targetId,
 			scope: inventory.scope,
-			targetPath: inventory.targetPath,
+			sourcePath: resolve(
+				inventory.asset.sourceRoot,
+				inventory.asset.sourcePath,
+			),
+			targetPath: resolve(inventory.targetPath),
 			owner,
 			recordedMode: entry.mode,
 			requestedMode: resolveHarnessSyncMode(
@@ -1054,7 +1087,11 @@ function planForgets(options: SpecialPlanContext): ClassifiedHarnessSyncPlan {
 					? entry.owner
 					: options.currentProjectOwner
 				: options.currentProjectOwner;
-		const context = contextFromEntry(options.request, entry);
+		const context = contextFromEntry(
+			options.request,
+			entry,
+			options.projectRoot,
+		);
 		if (!ownersMatch(entry.owner, invokingOwner)) {
 			rows.push(makeRow(context, "locally-edited", "foreign-owner", "none"));
 			continue;
@@ -1078,6 +1115,7 @@ function planForgets(options: SpecialPlanContext): ClassifiedHarnessSyncPlan {
 function contextFromEntry(
 	request: SyncRequest,
 	entry: HarnessManifestEntry,
+	projectRoot: string,
 ): RowContext {
 	return {
 		request,
@@ -1097,7 +1135,8 @@ function contextFromEntry(
 		},
 		targetId: entry.target,
 		scope: entry.scope,
-		targetPath: entry.outputPath,
+		sourcePath: resolve(projectRoot, entry.sourcePath),
+		targetPath: resolve(entry.outputPath),
 		owner: entry.owner,
 		recordedMode: entry.mode,
 		requestedMode: resolveHarnessSyncMode(request.requestedMode, entry.mode),
@@ -1111,11 +1150,16 @@ function makeRow(
 	action: SyncPlanAction,
 ): ClassifiedHarnessSyncPlanRow {
 	const effectiveAction = context.request.check ? "none" : action;
+	const conflict =
+		status === "locally-edited" && effectiveAction === "none"
+			? makeConflictReport(context, reason)
+			: undefined;
 	return {
 		assetId: context.asset.assetId,
 		kind: context.asset.kind,
 		targetId: context.targetId,
 		scope: context.scope,
+		sourcePath: context.sourcePath,
 		targetPath: context.targetPath,
 		owner: context.owner,
 		status,
@@ -1123,12 +1167,50 @@ function makeRow(
 		requestedMode: context.requestedMode,
 		beforeStatus: status,
 		reason,
+		...(conflict ? { conflict } : {}),
 		action: effectiveAction,
 		writesTarget:
 			effectiveAction === "create" ||
 			effectiveAction === "replace" ||
 			effectiveAction === "remove-target-and-entry",
 		writesManifest: effectiveAction !== "none",
+	};
+}
+
+function makeConflictReport(
+	context: RowContext,
+	reason: HarnessDriftReason,
+): HarnessConflictReport {
+	const guidance: HarnessConflictGuidance[] = [
+		{
+			action: "preserve",
+			message: `Preserve the existing target at ${context.targetPath}; sync will not overwrite it.`,
+		},
+		{
+			action: "port",
+			message: `Port intentional local content into ${context.sourcePath}, then restore or remove the conflicting target before syncing again.`,
+		},
+	];
+	if (
+		reason === "foreign-owner" ||
+		reason === "edited-target-cannot-transfer" ||
+		reason === "transfer-entry-mismatch"
+	) {
+		guidance.push({
+			action: "safe-transfer",
+			message:
+				"Use explicit owner transfer only when the asset/output identity matches and the target is absent or exactly matches the old baseline.",
+		});
+	}
+	return {
+		sourcePath: context.sourcePath,
+		targetPath: context.targetPath,
+		owner: context.owner,
+		...(context.conflictingOwner
+			? { conflictingOwner: context.conflictingOwner }
+			: {}),
+		reason,
+		guidance,
 	};
 }
 

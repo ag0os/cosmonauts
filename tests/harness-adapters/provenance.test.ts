@@ -6,6 +6,7 @@ import {
 	readFile,
 	readlink,
 	rm,
+	symlink,
 	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -18,6 +19,8 @@ import {
 	resolveAssetOwnerIdentity,
 	resolveHarnessTransactionPaths,
 	serializeHarnessManifest,
+	sha256,
+	verifyLegacyMigrationProof,
 } from "../../lib/harness-adapters/provenance.ts";
 import { renderIdentityMarkdown } from "../../lib/harness-adapters/render.ts";
 import {
@@ -229,7 +232,7 @@ describe("harness provenance", () => {
 		});
 		expect(unmanaged).toMatchObject({
 			beforeStatus: "locally-edited",
-			reason: "unmanaged",
+			reason: "foreign-or-untraceable",
 			wroteTarget: false,
 			wroteManifest: false,
 			exitCode: 1,
@@ -549,6 +552,423 @@ describe("harness provenance", () => {
 			/harness\s+sync\b.*--check/,
 		);
 	});
+
+	test("preserves edited foreign and untraceable targets and permits only safe lineage or owner transfer", async () => {
+		// @cosmo-behavior plan:harness-adapters#B-008
+		const root = await mkdtemp(join(tmpdir(), "harness-conflicts-"));
+		tempRoots.push(root);
+		const projectA = join(root, "project-a");
+		const projectB = join(root, "project-b");
+		const homeRoot = join(root, "home");
+		await Promise.all(
+			[projectA, projectB, homeRoot].map((path) =>
+				mkdir(path, { recursive: true }),
+			),
+		);
+
+		const editedAsset = asset("skill:edited", projectA, "edited", "project");
+		const wrongLinkAsset = asset(
+			"skill:wrong-link",
+			projectA,
+			"wrong-link",
+			"project",
+		);
+		const foreignAssetA = asset(
+			"skill:foreign",
+			projectA,
+			"foreign",
+			"project",
+		);
+		const foreignAssetB = { ...foreignAssetA, sourceRoot: projectB };
+		const unmanagedAsset = asset(
+			"skill:shared/plan",
+			projectA,
+			"plan",
+			"project",
+		);
+		const unknownFrontmatterBytes = Buffer.from(
+			"---\nname: plan\ndescription: plan\nunknown-rich-key: [opaque, bytes]\n---\n# Plan\n",
+		);
+		await Promise.all([
+			writeSource(editedAsset, Buffer.from("# Edited baseline\n")),
+			writeSource(wrongLinkAsset, Buffer.from("# Linked baseline\n")),
+			writeSource(foreignAssetA, Buffer.from("# Project A\n")),
+			writeSource(foreignAssetB, Buffer.from("# Project B\n")),
+			writeSource(unmanagedAsset, unknownFrontmatterBytes),
+		]);
+
+		const editedTarget = target(editedAsset, homeRoot);
+		const wrongLinkTarget = target(wrongLinkAsset, homeRoot, "link");
+		const foreignTarget = target(foreignAssetB, homeRoot);
+		const unmanagedTarget = target(unmanagedAsset, homeRoot);
+		await syncHarnessAsset({
+			projectRoot: projectA,
+			asset: editedAsset,
+			target: editedTarget,
+			now: fixedNow,
+		});
+		await syncHarnessAsset({
+			projectRoot: projectA,
+			asset: wrongLinkAsset,
+			target: wrongLinkTarget,
+			now: fixedNow,
+		});
+		await syncHarnessAsset({
+			projectRoot: projectB,
+			asset: foreignAssetB,
+			target: foreignTarget,
+			now: fixedNow,
+		});
+		await writeFile(join(editedTarget.targetPath, "SKILL.md"), "local edit\n");
+		const wrongSource = join(root, "wrong-source");
+		await mkdir(wrongSource);
+		await rm(wrongLinkTarget.targetPath, { recursive: true });
+		await symlink(wrongSource, wrongLinkTarget.targetPath, "dir");
+		await mkdir(unmanagedTarget.targetPath, { recursive: true });
+		await writeFile(
+			join(unmanagedTarget.targetPath, "SKILL.md"),
+			renderIdentityMarkdown(unknownFrontmatterBytes),
+		);
+
+		const transferExactA = asset(
+			"skill:transfer-exact",
+			projectA,
+			"transfer-exact",
+			"project",
+		);
+		const transferEditedA = asset(
+			"skill:transfer-edited",
+			projectA,
+			"transfer-edited",
+			"project",
+		);
+		const transferAbsentA = asset(
+			"skill:transfer-absent",
+			projectA,
+			"transfer-absent",
+			"project",
+		);
+		const transferAssetsB = [
+			{ ...transferExactA, sourceRoot: projectB },
+			{ ...transferEditedA, sourceRoot: projectB },
+			{ ...transferAbsentA, sourceRoot: projectB },
+		] as const;
+		await Promise.all([
+			...transferAssetsB.map((transferAsset) =>
+				writeSource(transferAsset, Buffer.from(`# ${transferAsset.assetId}\n`)),
+			),
+			writeSource(transferExactA, Buffer.from("# transfer exact\n")),
+			writeSource(transferEditedA, Buffer.from("# transfer edited\n")),
+			writeSource(transferAbsentA, Buffer.from("# transfer absent\n")),
+		]);
+		for (const transferAsset of transferAssetsB) {
+			await syncHarnessAsset({
+				projectRoot: projectB,
+				asset: transferAsset,
+				target: target(transferAsset, homeRoot),
+				now: fixedNow,
+			});
+		}
+		const transferEditedTarget = target(transferEditedA, homeRoot);
+		const transferAbsentTarget = target(transferAbsentA, homeRoot);
+		await writeFile(
+			join(transferEditedTarget.targetPath, "SKILL.md"),
+			"edited transfer target\n",
+		);
+		await rm(transferAbsentTarget.targetPath, { recursive: true });
+
+		const manifestPath = join(
+			editedTarget.ownerRoot,
+			".cosmonauts-harness-manifest.json",
+		);
+		const manifest = await readHarnessManifest(manifestPath);
+		const ownerA = await resolveAssetOwnerIdentity(editedAsset, projectA);
+		const ownerB = await resolveAssetOwnerIdentity(foreignAssetB, projectB);
+		const beforeProtected = await snapshotTree(editedTarget.ownerRoot);
+
+		const attempts = await Promise.all([
+			syncHarnessAsset({
+				projectRoot: projectA,
+				asset: editedAsset,
+				target: editedTarget,
+				now: laterNow,
+			}),
+			syncHarnessAsset({
+				projectRoot: projectA,
+				asset: wrongLinkAsset,
+				target: wrongLinkTarget,
+				now: laterNow,
+			}),
+			syncHarnessAsset({
+				projectRoot: projectA,
+				asset: foreignAssetA,
+				target: target(foreignAssetA, homeRoot),
+				now: laterNow,
+			}),
+			syncHarnessAsset({
+				projectRoot: projectA,
+				asset: unmanagedAsset,
+				target: unmanagedTarget,
+				now: laterNow,
+			}),
+		]);
+		expect(
+			attempts.map(({ beforeStatus, reason, wroteTarget, wroteManifest }) => ({
+				beforeStatus,
+				reason,
+				wroteTarget,
+				wroteManifest,
+			})),
+		).toEqual([
+			{
+				beforeStatus: "locally-edited",
+				reason: "locally-edited",
+				wroteTarget: false,
+				wroteManifest: false,
+			},
+			{
+				beforeStatus: "locally-edited",
+				reason: "locally-edited",
+				wroteTarget: false,
+				wroteManifest: false,
+			},
+			{
+				beforeStatus: "locally-edited",
+				reason: "foreign-owner",
+				wroteTarget: false,
+				wroteManifest: false,
+			},
+			{
+				beforeStatus: "locally-edited",
+				reason: "foreign-or-untraceable",
+				wroteTarget: false,
+				wroteManifest: false,
+			},
+		]);
+
+		const conflictPlan = await planHarnessSync({
+			projectRoot: projectA,
+			request: {
+				reconciliation: "partial",
+				check: false,
+				assetIds: [
+					editedAsset.assetId,
+					wrongLinkAsset.assetId,
+					foreignAssetA.assetId,
+					unmanagedAsset.assetId,
+				],
+			},
+			inventory: [
+				inventory(editedAsset, editedTarget.targetPath, "edited", ownerA),
+				inventory(wrongLinkAsset, wrongLinkTarget.targetPath, "edited", ownerA),
+				inventory(
+					foreignAssetA,
+					foreignTarget.targetPath,
+					"exact-baseline",
+					ownerB,
+				),
+				inventory(unmanagedAsset, unmanagedTarget.targetPath, "exact-baseline"),
+			],
+			manifestEntries: Object.values(manifest.entries),
+			sourceHealth: [
+				health(editedAsset.sourceRootId, "complete"),
+				health(wrongLinkAsset.sourceRootId, "complete"),
+				health(foreignAssetA.sourceRootId, "complete"),
+				health(unmanagedAsset.sourceRootId, "complete"),
+			],
+		});
+		for (const row of conflictPlan.rows) {
+			expect(row).toMatchObject({
+				status: "locally-edited",
+				action: "none",
+				writesTarget: false,
+				writesManifest: false,
+				conflict: {
+					sourcePath: join(
+						projectA,
+						row.assetId === "skill:shared/plan"
+							? "plan"
+							: row.assetId.replace("skill:", ""),
+					),
+					targetPath: row.targetPath,
+					owner: ownerA,
+					reason: row.reason,
+					guidance: expect.arrayContaining([
+						expect.objectContaining({ action: "preserve" }),
+					]),
+				},
+			});
+		}
+		expect(
+			conflictPlan.rows.find((row) => row.assetId === foreignAssetA.assetId),
+		).toMatchObject({
+			reason: "foreign-owner",
+			conflict: {
+				conflictingOwner: ownerB,
+				guidance: expect.arrayContaining([
+					expect.objectContaining({ action: "safe-transfer" }),
+				]),
+			},
+		});
+		expect(
+			conflictPlan.rows.find((row) => row.assetId === unmanagedAsset.assetId),
+		).toMatchObject({
+			reason: "foreign-or-untraceable",
+			conflict: {
+				guidance: expect.arrayContaining([
+					expect.objectContaining({ action: "port" }),
+				]),
+			},
+		});
+
+		const transferEntries = transferAssetsB.map((transferAsset) => {
+			const entry =
+				manifest.entries[manifestEntryKey(ownerB, transferAsset.assetId)];
+			if (!entry) throw new Error(`missing ${transferAsset.assetId}`);
+			return entry;
+		});
+		const transferPlan = await planHarnessSync({
+			projectRoot: projectA,
+			request: {
+				reconciliation: "partial",
+				check: false,
+				assetIds: [
+					transferExactA.assetId,
+					transferEditedA.assetId,
+					transferAbsentA.assetId,
+				],
+				transferOwner: {
+					oldOwnerId: ownerB.ownerId,
+					assetIds: [
+						transferExactA.assetId,
+						transferEditedA.assetId,
+						transferAbsentA.assetId,
+					],
+				},
+			},
+			inventory: [
+				inventory(
+					transferExactA,
+					target(transferExactA, homeRoot).targetPath,
+					"exact-baseline",
+					ownerB,
+				),
+				inventory(
+					transferEditedA,
+					transferEditedTarget.targetPath,
+					"edited",
+					ownerB,
+				),
+				inventory(
+					transferAbsentA,
+					transferAbsentTarget.targetPath,
+					"absent",
+					ownerB,
+				),
+			],
+			manifestEntries: transferEntries,
+			sourceHealth: [health(transferExactA.sourceRootId, "complete")],
+		});
+		expect(transferPlan.rows).toEqual([
+			expect.objectContaining({
+				assetId: transferExactA.assetId,
+				action: "transfer-entry",
+				previousManifestKey: manifestEntryKey(ownerB, transferExactA.assetId),
+				nextManifestKey: manifestEntryKey(ownerA, transferExactA.assetId),
+				writesTarget: false,
+				writesManifest: true,
+			}),
+			expect.objectContaining({
+				assetId: transferEditedA.assetId,
+				action: "none",
+				reason: "edited-target-cannot-transfer",
+				writesTarget: false,
+				writesManifest: false,
+				conflict: expect.objectContaining({
+					sourcePath: join(projectA, "transfer-edited"),
+					targetPath: transferEditedTarget.targetPath,
+					owner: ownerA,
+					reason: "edited-target-cannot-transfer",
+					guidance: expect.arrayContaining([
+						expect.objectContaining({ action: "preserve" }),
+						expect.objectContaining({ action: "safe-transfer" }),
+					]),
+				}),
+			}),
+			expect.objectContaining({
+				assetId: transferAbsentA.assetId,
+				action: "transfer-entry",
+				previousManifestKey: manifestEntryKey(ownerB, transferAbsentA.assetId),
+				nextManifestKey: manifestEntryKey(ownerA, transferAbsentA.assetId),
+				writesTarget: false,
+				writesManifest: true,
+			}),
+		]);
+
+		const copiedNodes = [
+			{ relativePath: "", nodeType: "directory" },
+			{ relativePath: "SKILL.md", nodeType: "file" },
+		] as const;
+		const targetDigest = sha256(
+			renderIdentityMarkdown(unknownFrontmatterBytes),
+		);
+		const expectedLineage = {
+			revision: "0123456789abcdef0123456789abcdef01234567",
+			sourceRelativePath: "domains/shared/skills/plan",
+			owner: ownerA,
+			assetId: unmanagedAsset.assetId,
+			outputPath: unmanagedTarget.targetPath,
+			nodeShape: copiedNodes,
+		} as const;
+		const exactProof = {
+			...expectedLineage,
+			historicalRenderedDigest: targetDigest,
+			currentTargetDigest: targetDigest,
+			historicalNodeShape: copiedNodes,
+			currentTargetNodeShape: copiedNodes,
+		} as const;
+		expect(verifyLegacyMigrationProof(exactProof, expectedLineage)).toEqual({
+			authorizationKind: "legacy-copied-target",
+			consumption: "one-time",
+			...expectedLineage,
+			historicalRenderedDigest: targetDigest,
+			targetDigest,
+		});
+		const wrongNodes = [
+			...copiedNodes,
+			{ relativePath: "foreign.md", nodeType: "file" as const },
+		];
+		const failedProofs = [
+			{ ...exactProof, revision: "different" },
+			{ ...exactProof, sourceRelativePath: "domains/shared/skills/task" },
+			{ ...exactProof, owner: ownerB },
+			{ ...exactProof, assetId: "skill:shared/task" },
+			{ ...exactProof, outputPath: join(homeRoot, ".claude/skills/task") },
+			{ ...exactProof, historicalRenderedDigest: sha256("different") },
+			{ ...exactProof, currentTargetDigest: sha256("different") },
+			{ ...exactProof, historicalNodeShape: wrongNodes },
+			{ ...exactProof, currentTargetNodeShape: wrongNodes },
+		];
+		for (const proof of failedProofs) {
+			expect(
+				verifyLegacyMigrationProof(proof, expectedLineage),
+			).toBeUndefined();
+		}
+		const playwrightProof = {
+			...exactProof,
+			assetId: "skill:playwright-cli",
+			outputPath: join(homeRoot, ".claude/skills/playwright-cli"),
+		};
+		expect(
+			verifyLegacyMigrationProof(playwrightProof, {
+				...expectedLineage,
+				assetId: playwrightProof.assetId,
+				outputPath: playwrightProof.outputPath,
+			}),
+		).toBeUndefined();
+
+		expect(await snapshotTree(editedTarget.ownerRoot)).toEqual(beforeProtected);
+	});
 });
 
 function asset(
@@ -681,6 +1101,9 @@ async function snapshotTree(root: string): Promise<Record<string, unknown>> {
 			size: stats.size,
 			mtimeMs: stats.mtimeMs,
 			...(stats.isSymbolicLink() ? { link: await readlink(path) } : {}),
+			...(stats.isFile()
+				? { bytes: (await readFile(path)).toString("hex") }
+				: {}),
 		};
 		if (!stats.isDirectory() || stats.isSymbolicLink()) return;
 		const children = await readdir(path);
