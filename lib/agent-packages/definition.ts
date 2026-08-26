@@ -31,6 +31,7 @@ const TOOL_PRESETS = new Set<AgentToolSet>([
 	"none",
 ]);
 const TARGETS = new Set<ExternalRuntimeTarget>([
+	"claude",
 	"claude-cli",
 	"codex",
 	"gemini-cli",
@@ -189,7 +190,7 @@ function parseTargets(
 	for (const [target, options] of Object.entries(object)) {
 		if (!isTarget(target)) {
 			throw new Error(
-				`targets contains unsupported target "${target}"; expected one of claude-cli, codex, gemini-cli, open-code`,
+				`targets contains unsupported target "${target}"; expected one of claude, claude-cli, codex, gemini-cli, open-code`,
 			);
 		}
 		targets[target] = parseTargetOptions(options, `targets.${target}`);

@@ -3,6 +3,7 @@ import type { AgentToolSet } from "../agents/types.ts";
 
 type AgentPackageSchemaVersion = 1;
 export type ExternalRuntimeTarget =
+	| "claude"
 	| "claude-cli"
 	| "codex"
 	| "gemini-cli"
