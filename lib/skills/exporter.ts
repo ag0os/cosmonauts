@@ -136,6 +136,7 @@ interface EvaluatedGroup {
 	readonly planRows: readonly ClassifiedHarnessSyncPlanRow[];
 	readonly desired: ReadonlyMap<string, MaterializedHarnessManifestEntry>;
 	readonly manifestEntries: readonly MaterializedHarnessManifestEntry[];
+	readonly expectedTargetSnapshots: ReadonlyMap<string, HarnessNodeSnapshot>;
 	readonly oldManifest: HarnessManifestSnapshot;
 	readonly consistencyReason?: "concurrent-change" | "pending-journal";
 }
@@ -144,6 +145,8 @@ interface ObservedOwnerGroup {
 	readonly manifestEntries: readonly MaterializedHarnessManifestEntry[];
 	readonly observations: readonly ObservedHarnessTarget[];
 	readonly inventory: readonly HarnessSyncInventoryRow[];
+	readonly targetSnapshots: ReadonlyMap<string, HarnessNodeSnapshot>;
+	readonly concurrentChange: boolean;
 }
 
 type GroupTransactionActionResult =
@@ -307,14 +310,27 @@ export async function runHarnessSync(
 			const actionResult = transactionResult.result;
 			const currentRows = actionResult.current.planRows;
 			for (const row of currentRows) {
+				const localEditConflict =
+					actionResult.state === "applied" &&
+					actionResult.applied.state === "local-edit-conflict" &&
+					actionResult.applied.targetPaths.includes(row.targetPath);
 				reports.push({
 					...reportRow(normalizedOptions, row),
-					final:
-						actionResult.state === "applied" &&
-						row.action !== "none" &&
-						actionResult.applied.state === "committed"
-							? "current"
-							: row.beforeStatus,
+					...(localEditConflict
+						? {
+								before: "locally-edited" as const,
+								reason: "locally-edited",
+								action: "none",
+								final: "locally-edited" as const,
+							}
+						: {
+								final:
+									actionResult.state === "applied" &&
+									row.action !== "none" &&
+									actionResult.applied.state === "committed"
+										? "current"
+										: row.beforeStatus,
+							}),
 					recovery: transactionResult.recovery,
 					...(actionResult.state === "applied" &&
 					actionResult.applied.state !== "committed"
@@ -507,7 +523,13 @@ async function evaluateGroup(
 			return observed;
 		},
 	});
-	const { manifestEntries, observations, inventory } = stable.target;
+	const {
+		manifestEntries,
+		observations,
+		inventory,
+		targetSnapshots,
+		concurrentChange: targetConcurrentChange,
+	} = stable.target;
 	const oldManifest: HarnessManifestSnapshot = stable.manifestFile.exists
 		? {
 				kind: "file",
@@ -524,7 +546,8 @@ async function evaluateGroup(
 		sourceHealth: options.sourceHealth,
 	});
 	const desired = new Map<string, MaterializedHarnessManifestEntry>();
-	const consistencyReason = stable.reason;
+	const consistencyReason =
+		stable.reason ?? (targetConcurrentChange ? "concurrent-change" : undefined);
 	if (consistencyReason) {
 		return {
 			planRows: plan.rows.map((row) =>
@@ -532,6 +555,7 @@ async function evaluateGroup(
 			),
 			desired,
 			manifestEntries,
+			expectedTargetSnapshots: targetSnapshots,
 			oldManifest,
 			consistencyReason,
 		};
@@ -599,7 +623,13 @@ async function evaluateGroup(
 			};
 		}),
 	);
-	return { planRows: enhancedRows, desired, manifestEntries, oldManifest };
+	return {
+		planRows: enhancedRows,
+		desired,
+		manifestEntries,
+		expectedTargetSnapshots: targetSnapshots,
+		oldManifest,
+	};
 }
 
 async function observeOwnerGroupTargets(
@@ -622,6 +652,20 @@ async function observeOwnerGroupTargets(
 				matchesSelection(options.request.scopes, entry.scope) &&
 				matchesSelection(options.request.kinds, entry.kind) &&
 				matchesSelection(selectedAssetIds, entry.assetId)),
+	);
+	const targetPaths = new Set([
+		...group.rows.map(({ target }) => target.targetPath),
+		...selectedManifestEntries.map((entry) => entry.outputPath),
+	]);
+	// Bracket provenance classification with raw snapshots so apply receives the
+	// exact byte/type/link baseline that authorized each planned target action.
+	const targetSnapshots = new Map(
+		await Promise.all(
+			[...targetPaths].map(
+				async (targetPath) =>
+					[targetPath, await observeHarnessNodeSnapshot(targetPath)] as const,
+			),
+		),
 	);
 	const observations = await Promise.all(
 		selectedManifestEntries.map(observeHarnessManifestTarget),
@@ -664,7 +708,28 @@ async function observeOwnerGroupTargets(
 			},
 		),
 	);
-	return { manifestEntries, observations, inventory };
+	const targetSnapshotsAfter = new Map(
+		await Promise.all(
+			[...targetPaths].map(
+				async (targetPath) =>
+					[targetPath, await observeHarnessNodeSnapshot(targetPath)] as const,
+			),
+		),
+	);
+	const concurrentChange = [...targetPaths].some(
+		(targetPath) =>
+			!sameHarnessNodeSnapshot(
+				targetSnapshots.get(targetPath),
+				targetSnapshotsAfter.get(targetPath),
+			),
+	);
+	return {
+		manifestEntries,
+		observations,
+		inventory,
+		targetSnapshots,
+		concurrentChange,
+	};
 }
 
 function matchesSelection<T>(
@@ -719,9 +784,15 @@ async function applyEvaluatedGroup(
 			const key = findManifestKey(entries, row);
 			if (key) delete entries[key];
 			if (row.action === "remove-target-and-entry") {
+				const oldState = evaluated.expectedTargetSnapshots.get(row.targetPath);
+				if (!oldState) {
+					throw new Error(
+						`Missing classified target state for ${row.assetId}.`,
+					);
+				}
 				members.push({
 					targetPath: row.targetPath,
-					oldState: await observeHarnessNodeSnapshot(row.targetPath),
+					oldState,
 					newState: { kind: "absent" },
 					writeStage: async () => {},
 				});
@@ -760,9 +831,13 @@ async function applyEvaluatedGroup(
 			await rm(scratch, { recursive: true, force: true });
 		}
 		entries[manifestEntryKey(desired.owner, desired.assetId)] = desired;
+		const oldState = evaluated.expectedTargetSnapshots.get(row.targetPath);
+		if (!oldState) {
+			throw new Error(`Missing classified target state for ${row.assetId}.`);
+		}
 		members.push({
 			targetPath: row.targetPath,
-			oldState: await observeHarnessNodeSnapshot(row.targetPath),
+			oldState,
 			newState,
 			writeStage: (stagePath) =>
 				writePreparedTarget({ targetPath: stagePath, prepared }),
@@ -920,6 +995,19 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
+}
+
+function sameHarnessNodeSnapshot(
+	left: HarnessNodeSnapshot | undefined,
+	right: HarnessNodeSnapshot | undefined,
+): boolean {
+	return (
+		left !== undefined &&
+		right !== undefined &&
+		left.kind === right.kind &&
+		(left.kind === "absent" ||
+			(right.kind !== "absent" && left.digest === right.digest))
+	);
 }
 
 async function canonicalExistingRoot(path: string): Promise<string> {

@@ -2,7 +2,15 @@
  * Tests for skill exporter.
  */
 
-import { lstat, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+	lstat,
+	mkdir,
+	readFile,
+	readlink,
+	rm,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -12,6 +20,7 @@ import {
 	serializeHarnessManifest,
 } from "../../lib/harness-adapters/provenance.ts";
 import { renderIdentityMarkdown } from "../../lib/harness-adapters/render.ts";
+import { observeHarnessNodeSnapshot } from "../../lib/harness-adapters/sync.ts";
 import type {
 	HarnessAsset,
 	SourceHealthRow,
@@ -215,6 +224,170 @@ describe("exportSkill", () => {
 });
 
 describe("runHarnessSync selection", () => {
+	test("preserves a target created after lock-held missing classification", async () => {
+		const fixture = await createBoundaryMutationFixture("create");
+		let observationCount = 0;
+		let classifiedMutation: Awaited<
+			ReturnType<typeof observeHarnessNodeSnapshot>
+		> | null = null;
+
+		const report = await runHarnessSync({
+			...boundarySyncOptions(fixture),
+			onOwnerGroupTargetsObserved: async () => {
+				observationCount += 1;
+				if (observationCount !== 2) return;
+				await mkdir(fixture.targetPath, { recursive: true });
+				await writeFile(
+					join(fixture.targetPath, "SKILL.md"),
+					"# Local creation\n",
+				);
+				classifiedMutation = await observeHarnessNodeSnapshot(
+					fixture.targetPath,
+				);
+			},
+		});
+
+		expect(observationCount).toBe(2);
+		expect(report).toMatchObject({
+			exitCode: 1,
+			rows: [
+				{
+					asset: fixture.asset.assetId,
+					before: "locally-edited",
+					reason: "locally-edited",
+					action: "none",
+					final: "locally-edited",
+				},
+			],
+		});
+		expect(await observeHarnessNodeSnapshot(fixture.targetPath)).toEqual(
+			classifiedMutation,
+		);
+		expect(await readFile(join(fixture.targetPath, "SKILL.md"), "utf8")).toBe(
+			"# Local creation\n",
+		);
+		await expect(exists(fixture.manifestPath)).resolves.toBe(false);
+		await expect(exists(fixture.journalPath)).resolves.toBe(false);
+	});
+
+	test("preserves a managed target replaced after lock-held classification", async () => {
+		const fixture = await createBoundaryMutationFixture("replace");
+		await expect(
+			runHarnessSync(boundarySyncOptions(fixture)),
+		).resolves.toMatchObject({ exitCode: 0 });
+		await writeFile(fixture.sourcePath, "# Source v2\n");
+		const manifestBefore = await readFile(fixture.manifestPath, "utf8");
+		const localTarget = join(fixture.projectRoot, "local-link-target");
+		await mkdir(localTarget, { recursive: true });
+		await writeFile(join(localTarget, "SKILL.md"), "# Local replacement\n");
+		let observationCount = 0;
+		let classifiedMutation: Awaited<
+			ReturnType<typeof observeHarnessNodeSnapshot>
+		> | null = null;
+
+		const report = await runHarnessSync({
+			...boundarySyncOptions(fixture),
+			onOwnerGroupTargetsObserved: async () => {
+				observationCount += 1;
+				if (observationCount !== 2) return;
+				await rm(fixture.targetPath, { recursive: true });
+				await symlink(localTarget, fixture.targetPath, "dir");
+				classifiedMutation = await observeHarnessNodeSnapshot(
+					fixture.targetPath,
+				);
+			},
+		});
+
+		expect(observationCount).toBe(2);
+		expect(report).toMatchObject({
+			exitCode: 1,
+			rows: [
+				{
+					asset: fixture.asset.assetId,
+					before: "locally-edited",
+					reason: "locally-edited",
+					action: "none",
+					final: "locally-edited",
+				},
+			],
+		});
+		expect(await observeHarnessNodeSnapshot(fixture.targetPath)).toEqual(
+			classifiedMutation,
+		);
+		expect((await lstat(fixture.targetPath)).isSymbolicLink()).toBe(true);
+		expect(await readlink(fixture.targetPath)).toBe(localTarget);
+		expect(await readFile(join(fixture.targetPath, "SKILL.md"), "utf8")).toBe(
+			"# Local replacement\n",
+		);
+		expect(await readFile(fixture.manifestPath, "utf8")).toBe(manifestBefore);
+		await expect(exists(fixture.journalPath)).resolves.toBe(false);
+	});
+
+	test("aborts source-removal apply when the target changes after lock-held classification", async () => {
+		const fixture = await createBoundaryMutationFixture("source-removal");
+		await expect(
+			runHarnessSync(boundarySyncOptions(fixture)),
+		).resolves.toMatchObject({ exitCode: 0 });
+		const manifestBefore = {
+			contents: await readFile(fixture.manifestPath, "utf8"),
+			mtimeMs: (await lstat(fixture.manifestPath)).mtimeMs,
+		};
+		let observationCount = 0;
+		let classifiedMutation: Awaited<
+			ReturnType<typeof observeHarnessNodeSnapshot>
+		> | null = null;
+
+		const report = await runHarnessSync({
+			...boundarySyncOptions(fixture),
+			assets: [],
+			request: {
+				targetIds: ["claude"],
+				scopes: ["project"],
+				kinds: ["skill"],
+				reconciliation: "complete",
+				check: false,
+			},
+			onOwnerGroupTargetsObserved: async () => {
+				observationCount += 1;
+				if (observationCount !== 2) return;
+				await writeFile(
+					join(fixture.targetPath, "SKILL.md"),
+					"# Local edit before removal\n",
+				);
+				classifiedMutation = await observeHarnessNodeSnapshot(
+					fixture.targetPath,
+				);
+			},
+		});
+
+		expect(observationCount).toBe(2);
+		expect(report).toMatchObject({
+			exitCode: 1,
+			rows: [
+				{
+					asset: fixture.asset.assetId,
+					before: "locally-edited",
+					reason: "locally-edited",
+					action: "none",
+					final: "locally-edited",
+				},
+			],
+		});
+		expect(await observeHarnessNodeSnapshot(fixture.targetPath)).toEqual(
+			classifiedMutation,
+		);
+		expect(await readFile(join(fixture.targetPath, "SKILL.md"), "utf8")).toBe(
+			"# Local edit before removal\n",
+		);
+		expect(await readFile(fixture.manifestPath, "utf8")).toBe(
+			manifestBefore.contents,
+		);
+		expect((await lstat(fixture.manifestPath)).mtimeMs).toBe(
+			manifestBefore.mtimeMs,
+		);
+		await expect(exists(fixture.journalPath)).resolves.toBe(false);
+	});
+
 	test("omitted target selects Claude and Codex while descriptor scope defaults apply", async () => {
 		const projectRoot = join(tmp.path, "selection-project");
 		const homeRoot = join(tmp.path, "selection-home");
@@ -617,4 +790,76 @@ async function exists(path: string): Promise<boolean> {
 	} catch {
 		return false;
 	}
+}
+
+interface BoundaryMutationFixture {
+	readonly projectRoot: string;
+	readonly homeRoot: string;
+	readonly sourcePath: string;
+	readonly asset: HarnessAsset;
+	readonly sourceHealth: readonly SourceHealthRow[];
+	readonly targetPath: string;
+	readonly manifestPath: string;
+	readonly journalPath: string;
+}
+
+async function createBoundaryMutationFixture(
+	label: string,
+): Promise<BoundaryMutationFixture> {
+	const projectRoot = join(tmp.path, `boundary-${label}-project`);
+	const homeRoot = join(tmp.path, `boundary-${label}-home`);
+	const sourceRoot = join(projectRoot, "source");
+	const sourcePath = join(sourceRoot, "skill", "SKILL.md");
+	await Promise.all([
+		mkdir(homeRoot, { recursive: true }),
+		mkdir(join(sourceRoot, "skill"), { recursive: true }),
+	]);
+	await writeFile(sourcePath, "# Source\n");
+	const asset = {
+		assetId: `skill:boundary-${label}`,
+		kind: "skill",
+		ownership: { kind: "project" },
+		sourceRootId: `root:boundary-${label}`,
+		sourceRoot,
+		sourcePath: "skill",
+		logicalPath: `boundary-${label}`,
+		outputIdentity: `boundary-${label}`,
+		defaultScope: "project",
+	} as const satisfies HarnessAsset;
+	const ownerRoot = join(projectRoot, ".claude");
+	return {
+		projectRoot,
+		homeRoot,
+		sourcePath,
+		asset,
+		sourceHealth: [
+			{
+				sourceRootId: asset.sourceRootId,
+				sourceRoot,
+				domain: `boundary-${label}`,
+				status: "complete",
+				issues: [],
+			},
+		],
+		targetPath: join(ownerRoot, "skills", `boundary-${label}`),
+		manifestPath: join(ownerRoot, ".cosmonauts-harness-manifest.json"),
+		journalPath: resolveHarnessTransactionPaths(ownerRoot, "claude")
+			.journalPath,
+	};
+}
+
+function boundarySyncOptions(fixture: BoundaryMutationFixture) {
+	return {
+		projectRoot: fixture.projectRoot,
+		homeRoot: fixture.homeRoot,
+		assets: [fixture.asset],
+		sourceHealth: fixture.sourceHealth,
+		request: {
+			targetIds: ["claude"],
+			scopes: ["project"],
+			assetIds: [fixture.asset.assetId],
+			reconciliation: "partial",
+			check: false,
+		},
+	} as const;
 }

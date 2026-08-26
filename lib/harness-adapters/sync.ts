@@ -2088,6 +2088,11 @@ export type ApplySyncPlanResult =
 	| { readonly state: "evidence-required"; readonly transactionId: string }
 	| { readonly state: "restored-old"; readonly transactionId: string }
 	| {
+			readonly state: "local-edit-conflict";
+			readonly transactionId: string;
+			readonly targetPaths: readonly string[];
+	  }
+	| {
 			readonly state: "ambiguous";
 			readonly transactionId: string;
 			readonly reason: string;
@@ -2158,19 +2163,25 @@ export async function applySyncPlanInTransaction(
 			reason: "old-manifest-mismatch",
 		};
 	}
-	for (const member of members) {
-		if (
-			!nodeSnapshotsEqual(
-				await observeHarnessNodeSnapshot(member.targetPath),
-				member.oldState,
-			)
-		) {
-			return {
-				state: "ambiguous",
-				transactionId,
-				reason: `old-target-mismatch:${member.targetPath}`,
-			};
-		}
+	const changedTargetPaths = (
+		await Promise.all(
+			members.map(async (member) => ({
+				member,
+				matches: nodeSnapshotsEqual(
+					await observeHarnessNodeSnapshot(member.targetPath),
+					member.oldState,
+				),
+			})),
+		)
+	)
+		.filter(({ matches }) => !matches)
+		.map(({ member }) => member.targetPath);
+	if (changedTargetPaths.length > 0) {
+		return {
+			state: "local-edit-conflict",
+			transactionId,
+			targetPaths: changedTargetPaths,
+		};
 	}
 
 	await persistJournal(transaction, journal);
