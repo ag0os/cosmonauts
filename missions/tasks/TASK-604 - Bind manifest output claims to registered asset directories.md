@@ -1,7 +1,7 @@
 ---
 id: TASK-604
 title: Bind manifest output claims to registered asset directories
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -12,7 +12,7 @@ labels:
   - 'plan:harness-adapters'
 dependencies: []
 createdAt: '2026-08-26T12:30:22.729Z'
-updatedAt: '2026-08-26T12:30:22.729Z'
+updatedAt: '2026-08-26T14:56:50.747Z'
 ---
 
 ## Description
