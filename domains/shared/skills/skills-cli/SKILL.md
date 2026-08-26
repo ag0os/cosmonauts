@@ -33,12 +33,18 @@ cosmonauts skills export -t claude --personal
 cosmonauts skills export -t codex task plan
 ```
 
-### Targets
+### Inspect Resolved Targets
 
-| Target | Project directory | Personal directory |
-|--------|------------------|--------------------|
-| `claude` | `.claude/skills/<name>/` | `~/.claude/skills/<name>/` |
-| `codex` | `.agents/skills/<name>/` | `~/.agents/skills/<name>/` |
+Ask the harness registry for its resolved rows instead of relying on a
+hand-maintained path list. This check is read-only, emits JSON, and exits
+nonzero when any selected output is not current:
+
+```bash
+cosmonauts harness --json sync --check
+```
+
+Narrow the report with repeatable `--target`, `--scope`, `--kind`, or
+`--asset` selectors when you only need specific resolved rows.
 
 ### What Gets Exported
 
