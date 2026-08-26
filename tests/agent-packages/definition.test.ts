@@ -278,6 +278,66 @@ describe("loadAgentPackageDefinition", () => {
 			},
 		});
 	});
+
+	it("parses canonical legacy and future target blocks without selecting support", async () => {
+		// @cosmo-behavior plan:harness-adapters#B-002
+		const validTargets = {
+			claude: {
+				promptMode: "replace",
+				skillDelivery: "inline",
+				allowedTools: ["Read", "Glob"],
+			},
+			"claude-cli": { promptMode: "append" },
+			codex: { allowedTools: ["read"] },
+			"gemini-cli": { skillDelivery: "inline" },
+			"open-code": {},
+		} as const;
+
+		for (const [target, options] of Object.entries(validTargets)) {
+			const filePath = await writeDefinition(`target-${target}.json`, {
+				...baseDefinition,
+				targets: { [target]: options },
+			});
+
+			const parsed = await loadAgentPackageDefinition(filePath);
+			expect(parsed.targets).toEqual({ [target]: options });
+		}
+
+		const ambiguousClaudePath = await writeDefinition(
+			"both-claude-targets.json",
+			{
+				...baseDefinition,
+				targets: {
+					claude: { promptMode: "replace" },
+					"claude-cli": { promptMode: "append" },
+				},
+			},
+		);
+		await expect(
+			loadAgentPackageDefinition(ambiguousClaudePath),
+		).resolves.toMatchObject({
+			targets: {
+				claude: { promptMode: "replace" },
+				"claude-cli": { promptMode: "append" },
+			},
+		});
+
+		for (const [target, options] of Object.entries({
+			claude: { promptMode: "prepend" },
+			"claude-cli": { skillDelivery: "reference" },
+			codex: { allowedTools: "read" },
+			"gemini-cli": { promptMode: 1 },
+			"open-code": null,
+		})) {
+			const filePath = await writeDefinition(`invalid-target-${target}.json`, {
+				...baseDefinition,
+				targets: { [target]: options },
+			});
+			await expect(loadAgentPackageDefinition(filePath)).rejects.toThrow(
+				new RegExp(`targets\\.${target.replace("-", "\\-")}`),
+			);
+		}
+	});
 });
 
 describe("definitionFromAgent", () => {

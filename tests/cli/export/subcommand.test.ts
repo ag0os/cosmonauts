@@ -322,6 +322,120 @@ describe("createExportProgram", () => {
 		});
 	});
 
+	it("maps registry selection to the unchanged serialized package contract", async () => {
+		// @cosmo-behavior plan:harness-adapters#B-003
+		packageMocks.buildAgentPackage.mockResolvedValueOnce(
+			makePackage({ packageId: "alpha-explorer-claude-cli" }),
+		);
+		await parseExport([
+			"alpha/explorer",
+			"--target",
+			"claude-cli",
+			"--out",
+			join(tmp.path, "generated-claude"),
+		]);
+		const generatedBuild = packageMocks.buildAgentPackage.mock
+			.calls[0]?.[0] as BuildAgentPackageOptions;
+		expect(generatedBuild.definition).toMatchObject({
+			id: "alpha-explorer-claude-cli",
+			targets: { claude: {} },
+		});
+		expect(generatedBuild.target).toBe("claude-cli");
+
+		output.restore();
+		output = captureCliOutput();
+		packageMocks.buildAgentPackage.mockClear();
+		packageMocks.compileAgentPackageBinary.mockClear();
+		const canonicalPath = join(tmp.path, "canonical-claude.json");
+		const canonicalOut = join(tmp.path, "canonical-claude");
+		const canonicalDefinition = {
+			schemaVersion: 1,
+			id: "canonical-claude-package",
+			description: "Canonical Claude definition.",
+			prompt: { kind: "inline", content: "Preserve this prompt." },
+			tools: { preset: "coding" },
+			skills: { mode: "allowlist", names: ["tdd"] },
+			projectContext: "omit",
+			targets: {
+				claude: {
+					promptMode: "replace" as const,
+					skillDelivery: "inline" as const,
+					allowedTools: ["Read", "Glob"],
+				},
+			},
+		};
+		await writeFile(
+			canonicalPath,
+			JSON.stringify(canonicalDefinition),
+			"utf-8",
+		);
+		packageMocks.buildAgentPackage.mockResolvedValueOnce(
+			makePackage({
+				packageId: canonicalDefinition.id,
+				target: "claude-cli",
+				targetOptions: canonicalDefinition.targets.claude,
+			}),
+		);
+
+		await parseExport([
+			"--definition",
+			canonicalPath,
+			"--target",
+			"claude-cli",
+			"--out",
+			canonicalOut,
+		]);
+
+		expect(packageMocks.buildAgentPackage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				definition: expect.objectContaining({
+					id: canonicalDefinition.id,
+					targets: canonicalDefinition.targets,
+				}),
+				target: "claude-cli",
+			}),
+		);
+		expect(packageMocks.compileAgentPackageBinary).toHaveBeenCalledWith({
+			agentPackage: expect.objectContaining({
+				packageId: canonicalDefinition.id,
+				target: "claude-cli",
+				targetOptions: canonicalDefinition.targets.claude,
+			}),
+			outFile: canonicalOut,
+		});
+		expect(JSON.parse(output.stdout().trim())).toEqual({
+			packageId: canonicalDefinition.id,
+			target: "claude-cli",
+			outputPath: canonicalOut,
+		});
+
+		output.restore();
+		output = captureCliOutput();
+		packageMocks.buildAgentPackage.mockClear();
+		packageMocks.compileAgentPackageBinary.mockClear();
+		const ambiguousPath = join(tmp.path, "ambiguous-claude.json");
+		await writeFile(
+			ambiguousPath,
+			JSON.stringify({
+				...canonicalDefinition,
+				targets: { claude: {}, "claude-cli": {} },
+			}),
+			"utf-8",
+		);
+		await expect(
+			parseExport([
+				"--definition",
+				ambiguousPath,
+				"--target",
+				"claude-cli",
+				"--out",
+				join(tmp.path, "ambiguous"),
+			]),
+		).rejects.toThrow(/ambiguous.*claude.*claude-cli/i);
+		expect(packageMocks.buildAgentPackage).not.toHaveBeenCalled();
+		expect(packageMocks.compileAgentPackageBinary).not.toHaveBeenCalled();
+	});
+
 	it("rejects definitions that do not declare the selected target before building", async () => {
 		const definitionPath = join(tmp.path, "claude-only.json");
 		await writeFile(

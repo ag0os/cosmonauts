@@ -251,6 +251,60 @@ describe("buildAgentPackage", () => {
 		expect(agentPackage.systemPrompt).toContain("Practice red-green-refactor.");
 	});
 
+	it("preserves serialized targets prompt and tool options and inline skill delivery", async () => {
+		await writeFlatSkill(
+			"portable-tdd",
+			"# Portable TDD\n\nKeep this skill inline.",
+		);
+		const targetCases = [
+			{
+				target: "claude-cli" as const,
+				options: {
+					promptMode: "replace" as const,
+					skillDelivery: "inline" as const,
+					allowedTools: ["Read", "Glob"],
+				},
+			},
+			{
+				target: "codex" as const,
+				options: {
+					promptMode: "append" as const,
+					skillDelivery: "inline" as const,
+					allowedTools: ["read_file"],
+				},
+			},
+		];
+
+		for (const { target, options } of targetCases) {
+			const agentPackage = await buildAgentPackage({
+				definition: makeDefinition({
+					id: `portable-${target}`,
+					tools: { preset: "coding", notes: "Keep the selected preset." },
+					skills: { mode: "allowlist", names: ["portable-tdd"] },
+					targets: { [target]: options },
+				}),
+				agentRegistry: new AgentRegistry([]),
+				skillPaths: [join(tmp.path, "skills")],
+				target,
+			});
+
+			expect(agentPackage).toMatchObject({
+				packageId: `portable-${target}`,
+				target,
+				targetOptions: options,
+				tools: "coding",
+				skills: [
+					expect.objectContaining({
+						name: "portable-tdd",
+						content: "# Portable TDD\n\nKeep this skill inline.",
+					}),
+				],
+			});
+			expect(agentPackage.systemPrompt).toContain("# Packaged Skills");
+			expect(agentPackage.systemPrompt).toContain("## portable-tdd");
+		}
+	});
+
 	it("fails clearly when the selected target was not declared", async () => {
 		await expect(
 			buildAgentPackage({

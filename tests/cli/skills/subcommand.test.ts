@@ -144,6 +144,20 @@ describe("createSkillsProgram", () => {
 		expect(commandNames).toContain("export");
 	});
 
+	it("keeps the compatibility export vocabulary at Claude and Codex", () => {
+		const program = createSkillsProgram();
+		const exportCommand = program.commands.find(
+			(command) => command.name() === "export",
+		);
+		expect(exportCommand).toBeDefined();
+		expect(exportCommand?.description()).toBe(
+			"Export skills to Claude Code or Codex directories",
+		);
+		expect(exportCommand?.helpInformation()).toContain(
+			"Target harness: claude, codex",
+		);
+	});
+
 	it("exposes --json, --plain, --domain, and --plugin-dir output options", () => {
 		const program = createSkillsProgram();
 		const optionNames = program.options.map((o) => o.long);

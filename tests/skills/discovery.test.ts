@@ -2,7 +2,7 @@
  * Tests for skill discovery across domains.
  */
 
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { describe, expect, test } from "vitest";
 import type { LoadedDomain } from "../../lib/domains/types.ts";
@@ -231,6 +231,111 @@ describe("discoverSkills", () => {
 		expect(skills).toHaveLength(1);
 		expect(skills[0]?.description).toBe("Override TDD");
 		expect(skills[0]?.dirPath).toBe(join(overrideRoot, "skills", "tdd"));
+	});
+
+	test("keeps tolerant first-root discovery when a later candidate cannot be read", async () => {
+		const overrideRoot = join(tmp.path, "tolerant-override");
+		const baseRoot = join(tmp.path, "tolerant-base");
+		await writeSkill(
+			join(overrideRoot, "skills"),
+			"tdd",
+			"Override stays effective",
+		);
+		await writeSkill(join(baseRoot, "skills"), "tdd", "Base is shadowed");
+		const brokenDir = join(baseRoot, "skills", "broken");
+		await mkdir(brokenDir, { recursive: true });
+		await symlink(
+			join(tmp.path, "missing-skill.md"),
+			join(brokenDir, "SKILL.md"),
+		);
+		const domain: LoadedDomain = {
+			...makeDomain("coding", overrideRoot),
+			rootDirs: [overrideRoot, baseRoot],
+		};
+
+		await expect(discoverSkills([domain])).resolves.toEqual([
+			expect.objectContaining({
+				name: "tdd",
+				description: "Override stays effective",
+				dirPath: join(overrideRoot, "skills", "tdd"),
+			}),
+		]);
+	});
+
+	test("exposes strict candidate shapes and read or parse failures as health data", async () => {
+		const healthyRoot = join(tmp.path, "strict-healthy");
+		const failedRoot = join(tmp.path, "strict-failed");
+		const nestedDir = join(
+			healthyRoot,
+			"skills",
+			"languages",
+			"rails",
+			"rails-api",
+		);
+		await mkdir(nestedDir, { recursive: true });
+		await writeFile(
+			join(nestedDir, "SKILL.md"),
+			"---\nname: rails-api\ndescription: Rails API patterns\n---\n",
+		);
+		await mkdir(join(healthyRoot, "skills"), { recursive: true });
+		await writeFile(
+			join(healthyRoot, "skills", "quick-ref.md"),
+			"---\nname: quick-ref\ndescription: Quick reference\n---\n",
+		);
+		const malformedPath = join(failedRoot, "skills", "malformed", "SKILL.md");
+		await mkdir(join(malformedPath, ".."), { recursive: true });
+		await writeFile(malformedPath, "---\nname: [unterminated\n---\n");
+
+		const discoveryModule = (await import(
+			"../../lib/skills/discovery.ts"
+		)) as Record<string, unknown>;
+		const strictDiscovery = discoveryModule.discoverSkillCandidatesStrict;
+		expect(
+			typeof strictDiscovery,
+			"B-011 requires strict discovery beside tolerant discoverSkills",
+		).toBe("function");
+		if (typeof strictDiscovery !== "function") return;
+
+		const domain: LoadedDomain = {
+			...makeDomain("coding", healthyRoot),
+			rootDirs: [healthyRoot, failedRoot],
+		};
+		const result = (await strictDiscovery([domain])) as {
+			readonly candidates: readonly Record<string, unknown>[];
+			readonly sourceHealth: readonly Record<string, unknown>[];
+		};
+
+		expect(result.candidates).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					name: "rails-api",
+					domain: "coding",
+					dirPath: nestedDir,
+					logicalPath: "languages/rails/rails-api",
+					outputIdentity: "rails-api",
+				}),
+				expect.objectContaining({
+					name: "quick-ref",
+					domain: "coding",
+					dirPath: join(healthyRoot, "skills", "quick-ref.md"),
+					logicalPath: "quick-ref",
+					outputIdentity: "quick-ref",
+				}),
+			]),
+		);
+		expect(result.sourceHealth).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					sourceRoot: healthyRoot,
+					status: "complete",
+				}),
+				expect.objectContaining({
+					sourceRoot: failedRoot,
+					status: "incomplete",
+				}),
+			]),
+		);
+		expect(JSON.stringify(result.sourceHealth)).toContain(malformedPath);
 	});
 
 	test("ignores extra skill paths that do not exist", async () => {

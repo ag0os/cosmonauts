@@ -12,6 +12,41 @@ import { useTempDir } from "../helpers/fs.ts";
 const tmp = useTempDir("skills-export-");
 
 describe("resolveTargetDir", () => {
+	test("keeps the complete legacy target and scope matrix", () => {
+		const cases = [
+			{
+				target: "claude" as const,
+				personal: false,
+				expected: "/project/.claude/skills/contract",
+			},
+			{
+				target: "claude" as const,
+				personal: true,
+				expected: join(homedir(), ".claude/skills/contract"),
+			},
+			{
+				target: "codex" as const,
+				personal: false,
+				expected: "/project/.agents/skills/contract",
+			},
+			{
+				target: "codex" as const,
+				personal: true,
+				expected: join(homedir(), ".agents/skills/contract"),
+			},
+		];
+
+		expect(
+			cases.map(({ target, personal }) =>
+				resolveTargetDir("contract", {
+					target,
+					projectRoot: "/project",
+					personal,
+				}),
+			),
+		).toEqual(cases.map(({ expected }) => expected));
+	});
+
 	test("claude project → .claude/skills/<name>/", () => {
 		const result = resolveTargetDir("plan", {
 			target: "claude",
