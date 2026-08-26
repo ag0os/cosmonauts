@@ -86,9 +86,9 @@ describe("harness provenance", () => {
 		});
 
 		const authorityA = asset(
-			"authority:command",
+			"command:implement-plan",
 			packageA,
-			"command.md",
+			"implement-plan.md",
 			"authority",
 			"command",
 		);
@@ -98,7 +98,7 @@ describe("harness provenance", () => {
 			writeSource(authorityB, Buffer.from("# Stable authority\n")),
 		]);
 		const authorityTarget = target(authorityA, homeRoot);
-		await syncHarnessAsset({
+		const installedAuthority = await syncHarnessAsset({
 			projectRoot: projectA,
 			asset: authorityA,
 			target: authorityTarget,
@@ -435,6 +435,31 @@ describe("harness provenance", () => {
 				reason: "source-removed",
 				action: "none",
 			},
+		]);
+
+		const authorityEntry = installedAuthority.manifestEntry;
+		const removedAuthority = cloneEntry(
+			authorityEntry,
+			authorityEntry.assetId,
+			join(homeRoot, "removed-authority"),
+		);
+		const removedAuthorityPlan = await planHarnessSync({
+			projectRoot: projectB,
+			request: { reconciliation: "complete", check: true },
+			inventory: [],
+			manifestEntries: [removedAuthority],
+			targetObservations: [observation(removedAuthority, "exact-baseline")],
+			sourceHealth: [health(authorityA.sourceRootId, "complete")],
+		});
+		expect(removedAuthorityPlan.rows).toEqual([
+			expect.objectContaining({
+				owner: authorityEntry.owner,
+				status: "source-ahead",
+				reason: "source-removed",
+				action: "none",
+				writesTarget: false,
+				writesManifest: false,
+			}),
 		]);
 
 		const explicitModePlan = await planHarnessSync({

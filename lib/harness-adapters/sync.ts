@@ -3604,7 +3604,8 @@ function classifyStaleEntry(options: {
 }): ClassifiedHarnessSyncPlanRow {
 	const { request, entry, currentProjectOwner, observation, health } = options;
 	const context = contextFromEntry(request, entry, options.projectRoot);
-	if (!ownersMatch(entry.owner, currentProjectOwner)) {
+	const expectedOwner = expectedOwnerForEntry(entry, currentProjectOwner);
+	if (!ownersMatch(entry.owner, expectedOwner)) {
 		return makeRow(context, "locally-edited", "foreign-owner", "none");
 	}
 	const rootHealth = health.get(entry.sourceRootId);
@@ -3753,12 +3754,11 @@ function planForgets(options: SpecialPlanContext): ClassifiedHarnessSyncPlan {
 				row.scope === entry.scope &&
 				row.targetPath === entry.outputPath,
 		);
-		const invokingOwner =
-			descriptor?.asset.ownership.kind === "authority"
-				? entry.owner.kind === "authority"
-					? entry.owner
-					: options.currentProjectOwner
-				: options.currentProjectOwner;
+		const invokingOwner = expectedOwnerForEntry(
+			entry,
+			options.currentProjectOwner,
+			descriptor?.asset,
+		);
 		const context = contextFromEntry(
 			options.request,
 			entry,
@@ -3822,6 +3822,21 @@ function contextFromEntry(
 		owner: entry.owner,
 		recordedMode: entry.mode,
 		requestedMode: resolveHarnessSyncMode(request.requestedMode, entry.mode),
+	};
+}
+
+function expectedOwnerForEntry(
+	entry: HarnessManifestEntry,
+	currentProjectOwner: OwnerIdentity,
+	descriptor = getStaticHarnessAsset(entry.assetId),
+): OwnerIdentity {
+	if (descriptor?.ownership.kind !== "authority") {
+		return currentProjectOwner;
+	}
+	return {
+		kind: "authority",
+		ownerId: `authority:${descriptor.ownership.authorityId}`,
+		authorityId: descriptor.ownership.authorityId,
 	};
 }
 

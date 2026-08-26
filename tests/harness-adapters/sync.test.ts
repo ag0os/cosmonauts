@@ -1418,6 +1418,181 @@ describe("harness sync planning", () => {
 			action: "none",
 		});
 
+		const authorityRemovedAssets = [
+			authorityAsset("external-skill:cosmonauts", "cosmonauts"),
+			authorityAsset(
+				"command:spec-to-backlog",
+				"spec-to-backlog.md",
+				"command",
+			),
+			authorityAsset("command:implement-plan", "implement-plan.md", "command"),
+		] as const;
+		const authorityRemovedExact = entry(
+			authorityRemovedAssets[0],
+			authorityOwner,
+			fixture,
+			"personal",
+			join(fixture.projectA, "authority-removed", "exact"),
+		);
+		const authorityRemovedAbsent = entry(
+			authorityRemovedAssets[1],
+			authorityOwner,
+			fixture,
+			"personal",
+			join(fixture.projectA, "authority-removed", "absent"),
+		);
+		const authorityRemovedEdited = entry(
+			authorityRemovedAssets[2],
+			authorityOwner,
+			fixture,
+			"personal",
+			join(fixture.projectA, "authority-removed", "edited"),
+		);
+		const authorityRemovedEntries = [
+			authorityRemovedExact,
+			authorityRemovedAbsent,
+			authorityRemovedEdited,
+		];
+		const authorityRemovedPlan = await planHarnessSync({
+			projectRoot: fixture.projectB,
+			request: completeRequest,
+			inventory: [],
+			manifestEntries: authorityRemovedEntries,
+			targetObservations: [
+				observation(authorityRemovedExact, "exact-baseline"),
+				observation(authorityRemovedAbsent, "absent"),
+				observation(authorityRemovedEdited, "edited"),
+			],
+			sourceHealth: [health("root:healthy", "complete")],
+		});
+		expect(
+			authorityRemovedPlan.rows.map(
+				({
+					assetId,
+					status,
+					reason,
+					action,
+					writesTarget,
+					writesManifest,
+				}) => ({
+					assetId,
+					status,
+					reason,
+					action,
+					writesTarget,
+					writesManifest,
+				}),
+			),
+		).toEqual([
+			{
+				assetId: "external-skill:cosmonauts",
+				status: "source-ahead",
+				reason: "source-removed",
+				action: "remove-target-and-entry",
+				writesTarget: true,
+				writesManifest: true,
+			},
+			{
+				assetId: "command:spec-to-backlog",
+				status: "source-ahead",
+				reason: "source-removed",
+				action: "forget-entry",
+				writesTarget: false,
+				writesManifest: true,
+			},
+			{
+				assetId: "command:implement-plan",
+				status: "locally-edited",
+				reason: "source-removed",
+				action: "none",
+				writesTarget: false,
+				writesManifest: false,
+			},
+		]);
+
+		const forgetAuthorityPlan = await planHarnessSync({
+			projectRoot: fixture.projectB,
+			request: {
+				reconciliation: "complete",
+				check: false,
+				forgetRemovedAssetIds: [authorityRemovedEdited.assetId],
+			},
+			inventory: [],
+			manifestEntries: [authorityRemovedEdited],
+			targetObservations: [observation(authorityRemovedEdited, "edited")],
+			sourceHealth: [health("root:healthy", "complete")],
+		});
+		expect(forgetAuthorityPlan.rows).toEqual([
+			expect.objectContaining({
+				status: "source-ahead",
+				reason: "explicit-forget",
+				action: "forget-entry",
+				writesTarget: false,
+				writesManifest: true,
+			}),
+		]);
+
+		const incompleteAuthorityPlan = await planHarnessSync({
+			projectRoot: fixture.projectB,
+			request: completeRequest,
+			inventory: [],
+			manifestEntries: [authorityRemovedExact],
+			targetObservations: [
+				observation(authorityRemovedExact, "exact-baseline"),
+			],
+			sourceHealth: [health("root:healthy", "incomplete")],
+		});
+		expect(incompleteAuthorityPlan).toMatchObject({ aborted: true });
+		expect(incompleteAuthorityPlan.rows[0]).toMatchObject({
+			reason: "inventory-incomplete",
+			action: "none",
+			writesTarget: false,
+			writesManifest: false,
+		});
+
+		const unavailableAuthorityPlan = await planHarnessSync({
+			projectRoot: fixture.projectB,
+			request: completeRequest,
+			inventory: [],
+			manifestEntries: [authorityRemovedExact],
+			targetObservations: [
+				observation(authorityRemovedExact, "exact-baseline"),
+			],
+			sourceHealth: [],
+		});
+		expect(unavailableAuthorityPlan.rows[0]).toMatchObject({
+			reason: "source-unavailable",
+			action: "none",
+			writesTarget: false,
+			writesManifest: false,
+		});
+
+		const foreignAuthorityOwner = {
+			kind: "authority",
+			ownerId: "authority:other/core",
+			authorityId: "other/core",
+		} as unknown as OwnerIdentity;
+		const foreignAuthorityEntry = {
+			...authorityRemovedExact,
+			owner: foreignAuthorityOwner,
+		};
+		const foreignAuthorityPlan = await planHarnessSync({
+			projectRoot: fixture.projectB,
+			request: completeRequest,
+			inventory: [],
+			manifestEntries: [foreignAuthorityEntry],
+			targetObservations: [
+				observation(foreignAuthorityEntry, "exact-baseline"),
+			],
+			sourceHealth: [health("root:healthy", "complete")],
+		});
+		expect(foreignAuthorityPlan.rows[0]).toMatchObject({
+			reason: "foreign-owner",
+			action: "none",
+			writesTarget: false,
+			writesManifest: false,
+		});
+
 		const checkPlan = await planHarnessSync({
 			projectRoot: fixture.projectA,
 			request: { ...completeRequest, check: true },
