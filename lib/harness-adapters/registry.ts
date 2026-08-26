@@ -1,5 +1,6 @@
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { COSMONAUTS_BUNDLE_RESERVED_NAMES } from "./inventory.ts";
 import type {
 	HarnessAsset,
 	HarnessAssetAdapter,
@@ -81,6 +82,7 @@ const STATIC_HARNESS_ASSETS = [
 		outputIdentity: "cosmonauts",
 		defaultScope: "personal",
 		generatedInputs: "cosmonauts-inventory",
+		reservedNames: COSMONAUTS_BUNDLE_RESERVED_NAMES,
 	},
 	{
 		assetId: "command:spec-to-backlog",

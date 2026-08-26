@@ -38,6 +38,75 @@ export interface HarnessAsset {
 	readonly outputIdentity: string;
 	readonly defaultScope: HarnessScope;
 	readonly generatedInputs?: "cosmonauts-inventory";
+	/** Additional names reserved by one asset in the output collision namespace. */
+	readonly reservedNames?: readonly string[];
+}
+
+export type SkillCandidateShape = "directory" | "flat-wrapper";
+
+/** Plain export-discovery row; it carries no runtime or loader objects. */
+export interface SkillCandidate {
+	readonly name: string;
+	readonly description: string;
+	readonly domain: string;
+	readonly dirPath: string;
+	readonly sourceRootId: string;
+	readonly sourceRoot: string;
+	readonly sourcePath: string;
+	readonly logicalPath: string;
+	readonly outputIdentity: string;
+	readonly flatteningRule: "frontmatter-name";
+	readonly targetShape: SkillCandidateShape;
+}
+
+export type SourceHealthIssueKind =
+	| "availability"
+	| "read"
+	| "permission"
+	| "io"
+	| "parse";
+
+export interface SourceHealthIssue {
+	readonly kind: SourceHealthIssueKind;
+	readonly path: string;
+	readonly message: string;
+	readonly code?: string;
+}
+
+/** Health for one declared discovery root. */
+export interface SourceHealthRow {
+	readonly sourceRootId: string;
+	readonly sourceRoot: string;
+	readonly domain: string;
+	readonly status: "complete" | "incomplete";
+	readonly issues: readonly SourceHealthIssue[];
+}
+
+export interface ChainInventoryRow {
+	readonly name: string;
+	readonly description: string;
+	readonly expression: string;
+}
+
+export interface SkillInventoryRow {
+	readonly name: string;
+	readonly domain: string;
+	readonly description: string;
+}
+
+export interface HarnessPathRow {
+	readonly target: ImplementedHarnessTargetId;
+	readonly kind: MaterializedAssetKind;
+	readonly project: string;
+	readonly personal: string;
+}
+
+export interface RuntimeInventorySnapshot {
+	readonly chains: readonly ChainInventoryRow[];
+	readonly effectiveSkills: readonly SkillInventoryRow[];
+	readonly candidates: readonly SkillCandidate[];
+	readonly sourceHealth: readonly SourceHealthRow[];
+	readonly paths: readonly HarnessPathRow[];
 }
 
 export type HarnessTransform = "identity" | "claude-command";

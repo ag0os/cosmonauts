@@ -2,7 +2,14 @@
  * Tests for skill discovery across domains.
  */
 
-import { mkdir, readdir, readFile, symlink, writeFile } from "node:fs/promises";
+import {
+	chmod,
+	mkdir,
+	readdir,
+	readFile,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { describe, expect, test } from "vitest";
 import type { LoadedDomain } from "../../lib/domains/types.ts";
@@ -265,6 +272,8 @@ describe("discoverSkills", () => {
 	test("exposes strict candidate shapes and read or parse failures as health data", async () => {
 		const healthyRoot = join(tmp.path, "strict-healthy");
 		const failedRoot = join(tmp.path, "strict-failed");
+		const permissionRoot = join(tmp.path, "strict-permission");
+		const missingRoot = join(tmp.path, "strict-missing");
 		const nestedDir = join(
 			healthyRoot,
 			"skills",
@@ -285,6 +294,23 @@ describe("discoverSkills", () => {
 		const malformedPath = join(failedRoot, "skills", "malformed", "SKILL.md");
 		await mkdir(join(malformedPath, ".."), { recursive: true });
 		await writeFile(malformedPath, "---\nname: [unterminated\n---\n");
+		const vanishedPath = join(failedRoot, "skills", "vanished", "SKILL.md");
+		await mkdir(join(vanishedPath, ".."), { recursive: true });
+		await symlink(join(tmp.path, "missing-strict-skill.md"), vanishedPath);
+		const ioPath = join(failedRoot, "skills", "io-error", "SKILL.md");
+		await mkdir(ioPath, { recursive: true });
+		const deniedPath = join(
+			permissionRoot,
+			"skills",
+			"permission-error",
+			"SKILL.md",
+		);
+		await mkdir(join(deniedPath, ".."), { recursive: true });
+		await writeFile(
+			deniedPath,
+			"---\nname: permission-error\ndescription: denied\n---\n",
+		);
+		await chmod(deniedPath, 0o000);
 
 		const discoveryModule = (await import(
 			"../../lib/skills/discovery.ts"
@@ -298,12 +324,17 @@ describe("discoverSkills", () => {
 
 		const domain: LoadedDomain = {
 			...makeDomain("coding", healthyRoot),
-			rootDirs: [healthyRoot, failedRoot],
+			rootDirs: [healthyRoot, failedRoot, permissionRoot, missingRoot],
 		};
-		const result = (await strictDiscovery([domain])) as {
+		let result: {
 			readonly candidates: readonly Record<string, unknown>[];
 			readonly sourceHealth: readonly Record<string, unknown>[];
 		};
+		try {
+			result = (await strictDiscovery([domain])) as typeof result;
+		} finally {
+			await chmod(deniedPath, 0o600);
+		}
 
 		expect(result.candidates).toEqual(
 			expect.arrayContaining([
@@ -313,6 +344,8 @@ describe("discoverSkills", () => {
 					dirPath: nestedDir,
 					logicalPath: "languages/rails/rails-api",
 					outputIdentity: "rails-api",
+					flatteningRule: "frontmatter-name",
+					targetShape: "directory",
 				}),
 				expect.objectContaining({
 					name: "quick-ref",
@@ -320,6 +353,8 @@ describe("discoverSkills", () => {
 					dirPath: join(healthyRoot, "skills", "quick-ref.md"),
 					logicalPath: "quick-ref",
 					outputIdentity: "quick-ref",
+					flatteningRule: "frontmatter-name",
+					targetShape: "flat-wrapper",
 				}),
 			]),
 		);
@@ -333,9 +368,35 @@ describe("discoverSkills", () => {
 					sourceRoot: failedRoot,
 					status: "incomplete",
 				}),
+				expect.objectContaining({
+					sourceRoot: permissionRoot,
+					status: "incomplete",
+				}),
+				expect.objectContaining({
+					sourceRoot: missingRoot,
+					status: "incomplete",
+				}),
 			]),
 		);
-		expect(JSON.stringify(result.sourceHealth)).toContain(malformedPath);
+		const healthJson = JSON.stringify(result.sourceHealth);
+		for (const failedPath of [
+			malformedPath,
+			vanishedPath,
+			ioPath,
+			deniedPath,
+			missingRoot,
+		]) {
+			expect(healthJson).toContain(failedPath);
+		}
+		for (const issueKind of [
+			"availability",
+			"read",
+			"permission",
+			"io",
+			"parse",
+		]) {
+			expect(healthJson).toContain(`"kind":"${issueKind}"`);
+		}
 	});
 
 	test("ignores extra skill paths that do not exist", async () => {

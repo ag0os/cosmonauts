@@ -1,6 +1,7 @@
 export type { HarnessScope } from "../harness-adapters/types.ts";
 export {
 	type DiscoveredSkill,
+	discoverSkillCandidatesStrict,
 	discoverSkills,
 	type ExtraSkillSource,
 } from "./discovery.ts";

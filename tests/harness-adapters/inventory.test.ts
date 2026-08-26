@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import { getStaticHarnessAsset } from "../../lib/harness-adapters/registry.ts";
 
 const PROJECT_EXPORT_BASELINES = [
 	{
@@ -239,6 +240,14 @@ describe("live harness inventory characterization", () => {
 			...STRICT_CANDIDATE_CASES.nestedOverride,
 			STRICT_CANDIDATE_CASES.flat,
 			...STRICT_CANDIDATE_CASES.collisions,
+			...STRICT_CANDIDATE_CASES.bundle.reservedNames.map(
+				(outputIdentity, index) => ({
+					domain: index % 2 === 0 ? "shared" : "coding",
+					sourceRootId: `reserved:${index}`,
+					logicalPath: `reserved/${outputIdentity}`,
+					outputIdentity,
+				}),
+			),
 		].map((candidate, index) => {
 			const sourceRootId =
 				"sourceRootId" in candidate ? candidate.sourceRootId : "project:skills";
@@ -255,27 +264,41 @@ describe("live harness inventory characterization", () => {
 		const sourceHealth = [
 			...new Set(candidates.map((candidate) => candidate.sourceRootId)),
 		].map((sourceRootId) => ({ sourceRootId, status: "complete" }));
+		const registeredBundle = getStaticHarnessAsset("external-skill:cosmonauts");
+		expect(registeredBundle).toMatchObject({
+			assetId: "external-skill:cosmonauts",
+			outputIdentity: "cosmonauts",
+			ownership: { kind: "authority", authorityId: "cosmonauts/core" },
+			reservedNames: STRICT_CANDIDATE_CASES.bundle.reservedNames,
+		});
+		if (!registeredBundle) throw new Error("Expected registered bundle asset");
+		const nestedBundleNames = await Promise.all(
+			["", "chains", "plans", "skills", "tasks"].map(async (directory) => {
+				const content = await readFile(
+					join(
+						process.cwd(),
+						"external-skills",
+						"cosmonauts",
+						directory,
+						"SKILL.md",
+					),
+					"utf-8",
+				);
+				return content.match(/^name:\s*(.+)$/m)?.[1]?.trim();
+			}),
+		);
+		expect(nestedBundleNames).toEqual(
+			STRICT_CANDIDATE_CASES.bundle.reservedNames,
+		);
 		const prepared = (await prepare({
 			candidates,
 			sourceHealth,
-			staticAssets: [
-				{
-					...STRICT_CANDIDATE_CASES.bundle,
-					kind: "skill",
-					ownership: {
-						kind: "authority",
-						authorityId: "cosmonauts/core",
-					},
-					sourceRootId: "cosmonauts:external-skills",
-					sourceRoot: join(process.cwd(), "external-skills"),
-					sourcePath: "cosmonauts",
-					logicalPath: "cosmonauts",
-					defaultScope: "personal",
-				},
-			],
+			staticAssets: [registeredBundle],
 		})) as {
 			readonly assets: readonly Record<string, unknown>[];
 			readonly collisions: readonly Record<string, unknown>[];
+			readonly reconciliationAuthority: string;
+			readonly canReconcile: boolean;
 		};
 
 		expect(
@@ -302,6 +325,57 @@ describe("live harness inventory characterization", () => {
 		);
 		expect(
 			prepared.collisions.map((collision) => collision.outputIdentity).sort(),
-		).toEqual(["cosmonauts-tasks", "deploy"]);
+		).toEqual([
+			"cosmonauts",
+			"cosmonauts-chains",
+			"cosmonauts-plans",
+			"cosmonauts-skills",
+			"cosmonauts-tasks",
+			"deploy",
+		]);
+		expect(prepared.canReconcile).toBe(false);
+		expect(prepared.reconciliationAuthority).toBe("blocked-collision");
+		expect(
+			prepared.assets.filter(
+				(asset) => asset.assetId === "external-skill:cosmonauts",
+			),
+		).toHaveLength(1);
+		expect(
+			prepared.assets.some((asset) =>
+				STRICT_CANDIDATE_CASES.bundle.reservedNames
+					.slice(1)
+					.some((name) => asset.assetId === `external-skill:${name}`),
+			),
+		).toBe(false);
+		expect(prepared.assets).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					logicalPath: "quick-ref",
+					flatteningRule: "frontmatter-name",
+					targetShape: "flat-wrapper",
+				}),
+			]),
+		);
+
+		const incomplete = (await prepare({
+			candidates: candidates.slice(0, 1),
+			sourceHealth: [
+				{
+					sourceRootId: candidates[0]?.sourceRootId,
+					status: "incomplete",
+				},
+			],
+			staticAssets: [],
+		})) as {
+			readonly reconciliationAuthority: string;
+			readonly canReconcile: boolean;
+		};
+		expect(incomplete).toMatchObject({
+			reconciliationAuthority: "blocked-incomplete-discovery",
+			canReconcile: false,
+		});
+		expect(inventorySource).not.toMatch(
+			/\b(?:writeFile|rename|rm|mkdir|symlink)\s*\(/,
+		);
 	});
 });
