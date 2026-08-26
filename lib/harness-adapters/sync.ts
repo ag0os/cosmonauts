@@ -3580,6 +3580,16 @@ function planForgets(options: SpecialPlanContext): ClassifiedHarnessSyncPlan {
 			rows.push(makeRow(context, "current", "source-still-present", "none"));
 			continue;
 		}
+		if (
+			options.sourceHealth.find(
+				(row) => row.sourceRootId === entry.sourceRootId,
+			)?.status === "incomplete"
+		) {
+			rows.push(
+				makeRow(context, "source-ahead", "inventory-incomplete", "none"),
+			);
+			continue;
+		}
 		rows.push(
 			makeRow(context, "source-ahead", "explicit-forget", "forget-entry"),
 		);

@@ -2,11 +2,15 @@
  * Tests for skill exporter.
  */
 
-import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { renderIdentityMarkdown } from "../../lib/harness-adapters/render.ts";
+import type {
+	HarnessAsset,
+	SourceHealthRow,
+} from "../../lib/harness-adapters/types.ts";
 import {
 	exportSkill,
 	resolveTargetDir,
@@ -259,6 +263,119 @@ describe("runHarnessSync selection", () => {
 		expect(report.exitCode).toBe(1);
 		await expect(exists(join(homeRoot, ".claude"))).resolves.toBe(false);
 		await expect(exists(join(homeRoot, ".agents"))).resolves.toBe(false);
+	});
+
+	test("forgets only after a still-declared source root is completely observed", async () => {
+		const projectRoot = join(tmp.path, "forget-health-project");
+		const homeRoot = join(tmp.path, "forget-health-home");
+		const sourceRoot = join(projectRoot, "declared-root");
+		await Promise.all([
+			mkdir(homeRoot, { recursive: true }),
+			mkdir(join(sourceRoot, "skill"), { recursive: true }),
+		]);
+		await writeFile(join(sourceRoot, "skill", "SKILL.md"), "# Declared\n");
+		const asset = {
+			assetId: "skill:declared",
+			kind: "skill",
+			ownership: { kind: "project" },
+			sourceRootId: "root:declared",
+			sourceRoot,
+			sourcePath: "skill",
+			logicalPath: "declared",
+			outputIdentity: "declared",
+			defaultScope: "project",
+		} as const satisfies HarnessAsset;
+		const completeHealth = {
+			sourceRootId: asset.sourceRootId,
+			sourceRoot,
+			domain: "declared",
+			status: "complete",
+			issues: [],
+		} as const satisfies SourceHealthRow;
+		const forget = (sourceHealth: readonly SourceHealthRow[]) =>
+			runHarnessSync({
+				projectRoot,
+				homeRoot,
+				assets: [],
+				sourceHealth,
+				request: {
+					targetIds: ["claude"],
+					scopes: ["project"],
+					kinds: ["skill"],
+					reconciliation: "complete",
+					check: false,
+					forgetRemovedAssetIds: [asset.assetId],
+				},
+			});
+		expect(
+			(
+				await runHarnessSync({
+					projectRoot,
+					homeRoot,
+					assets: [asset],
+					sourceHealth: [completeHealth],
+					request: {
+						targetIds: ["claude"],
+						scopes: ["project"],
+						assetIds: [asset.assetId],
+						reconciliation: "partial",
+						check: false,
+					},
+				})
+			).exitCode,
+		).toBe(0);
+
+		const manifestPath = join(
+			projectRoot,
+			".claude",
+			".cosmonauts-harness-manifest.json",
+		);
+		const targetPath = join(
+			projectRoot,
+			".claude",
+			"skills",
+			"declared",
+			"SKILL.md",
+		);
+		await rm(join(sourceRoot, "skill"), { recursive: true });
+		const before = {
+			manifest: await readFile(manifestPath, "utf8"),
+			target: await readFile(targetPath, "utf8"),
+		};
+
+		const incomplete = await forget([
+			{
+				...completeHealth,
+				status: "incomplete",
+				issues: [{ kind: "read", path: sourceRoot, message: "unreadable" }],
+			},
+		]);
+		expect(incomplete).toMatchObject({
+			exitCode: 1,
+			rows: [
+				{
+					reason: "inventory-incomplete",
+					action: "none",
+					final: "source-ahead",
+				},
+			],
+		});
+		expect(await readFile(manifestPath, "utf8")).toBe(before.manifest);
+		expect(await readFile(targetPath, "utf8")).toBe(before.target);
+
+		await expect(forget([completeHealth])).resolves.toMatchObject({
+			exitCode: 0,
+			rows: [{ action: "forget-entry", final: "current" }],
+		});
+		expect(await readFile(targetPath, "utf8")).toBe(before.target);
+
+		await writeFile(manifestPath, before.manifest);
+		await rm(sourceRoot, { recursive: true });
+		await expect(forget([])).resolves.toMatchObject({
+			exitCode: 0,
+			rows: [{ action: "forget-entry", final: "current" }],
+		});
+		expect(await readFile(targetPath, "utf8")).toBe(before.target);
 	});
 });
 
