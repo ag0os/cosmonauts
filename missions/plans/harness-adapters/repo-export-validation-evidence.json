@@ -1,0 +1,405 @@
+{
+	"schemaVersion": 1,
+	"kind": "repository-harness-export-validation",
+	"phase": "complete",
+	"transactionId": "50b69806-0380-4841-ac2d-1cd1a2b71c15",
+	"projectRoot": "/Users/cosmos/Projects/cosmonauts",
+	"ownerRoot": "/Users/cosmos/Projects/cosmonauts/.claude",
+	"target": "claude",
+	"scope": "project",
+	"cleanupPolicy": "after-evidence",
+	"atomicSet": true,
+	"selectedAssetIds": [
+		"skill:shared/plan",
+		"skill:shared/roadmap",
+		"skill:shared/skills-cli",
+		"skill:shared/task"
+	],
+	"newManifestDigest": "adeab048a195ea06fef59306cb565b847eaac5f95915d06d19e23fc0d56e031e",
+	"excludedTarget": {
+		"assetId": "skill:coding/playwright-cli",
+		"outputPath": "/Users/cosmos/Projects/cosmonauts/.claude/skills/playwright-cli",
+		"digest": "3915865aedc7698c19d697257103d1a9131a9b4bc2a84d3a08df4f0e3edab624",
+		"status": "locally-edited",
+		"reason": "foreign-or-untraceable"
+	},
+	"protectedAssets": [
+		{
+			"label": "playwright-cli",
+			"path": "/Users/cosmos/Projects/cosmonauts/.claude/skills/playwright-cli",
+			"snapshot": {
+				"kind": "directory",
+				"digest": "3915865aedc7698c19d697257103d1a9131a9b4bc2a84d3a08df4f0e3edab624"
+			}
+		},
+		{
+			"label": "personal-cosmonauts-bundle",
+			"path": "/Users/cosmos/.claude/skills/cosmonauts",
+			"snapshot": {
+				"kind": "directory",
+				"digest": "dc5d0d6dce2889a3545fe3fb0a0a5eff47ff0be4b6d6df90f9da92821fd9c382"
+			}
+		},
+		{
+			"label": "live-spec-to-backlog-command",
+			"path": "/Users/cosmos/.claude/commands/spec-to-backlog.md",
+			"snapshot": {
+				"kind": "file",
+				"digest": "446147b268104e4667046283884db60df4fd7128dc4ecc8783bfbfa8babd7420"
+			}
+		},
+		{
+			"label": "live-implement-plan-command",
+			"path": "/Users/cosmos/.claude/commands/implement-plan.md",
+			"snapshot": {
+				"kind": "file",
+				"digest": "d015992d00763ad19321b86c2b1d2e85dbe8f85370c56be75d398628d098be0d"
+			}
+		}
+	],
+	"rows": [
+		{
+			"authorizationKind": "legacy-copied-target",
+			"consumption": "one-time",
+			"revision": "9290725704bb29f302dca9433061d13227c35bf8",
+			"sourceRelativePath": "domains/shared/skills/plan",
+			"historicalDigest": "5f9ad28ecdcabe79f81a2dc0d6f25ab7c0066a3af1f04507b287ab2e199afcf7",
+			"sourceDigest": "ddf4888fd0129f9a4a3b76769e46452c4636d026513c07ff5dc8417ea3905143",
+			"oldDigest": "5f9ad28ecdcabe79f81a2dc0d6f25ab7c0066a3af1f04507b287ab2e199afcf7",
+			"newDigest": "52ddacfc376d038a1f2879e45fe2f4119867543bc4061c1ebe6a8f8aec491f6c",
+			"ownerId": "project:1cf3e769af5efee3ccde0d3e3cad4a090cf497d711146828be4bfcd609ec571f",
+			"assetId": "skill:shared/plan",
+			"manifestKey": "[\"project:1cf3e769af5efee3ccde0d3e3cad4a090cf497d711146828be4bfcd609ec571f\",\"skill:shared/plan\"]",
+			"outputPath": "/Users/cosmos/Projects/cosmonauts/.claude/skills/plan",
+			"nodeShape": [
+				{
+					"relativePath": "",
+					"nodeType": "directory"
+				},
+				{
+					"relativePath": "SKILL.md",
+					"nodeType": "file"
+				}
+			],
+			"backupPath": "/Users/cosmos/Projects/cosmonauts/.cosmonauts-harness-claude-50b69806-0380-4841-ac2d-1cd1a2b71c15-0.backup",
+			"oldState": {
+				"kind": "directory",
+				"digest": "5f9ad28ecdcabe79f81a2dc0d6f25ab7c0066a3af1f04507b287ab2e199afcf7"
+			},
+			"recoveryOutcome": "none",
+			"timestamp": "2026-08-26T11:10:39.047Z",
+			"receipt": {
+				"transactionId": "50b69806-0380-4841-ac2d-1cd1a2b71c15",
+				"evidencePath": "/Users/cosmos/Projects/cosmonauts/missions/plans/harness-adapters/repo-export-validation-evidence.json",
+				"evidenceDigest": "9a07fdb350a23eee6ab139fba6cece831caa262ea51304e20e5348906fbe9682"
+			},
+			"checkRow": {
+				"owner": {
+					"kind": "project",
+					"ownerId": "project:1cf3e769af5efee3ccde0d3e3cad4a090cf497d711146828be4bfcd609ec571f",
+					"projectRoot": "/Users/cosmos/Projects/cosmonauts"
+				},
+				"ownerDiagnostics": ["projectRoot=/Users/cosmos/Projects/cosmonauts"],
+				"target": "claude",
+				"scope": "project",
+				"kind": "skill",
+				"asset": "skill:shared/plan",
+				"source": "/Users/cosmos/Projects/cosmonauts/domains/shared/skills/plan",
+				"targetPath": "/Users/cosmos/Projects/cosmonauts/.claude/skills/plan",
+				"recordedMode": "copy",
+				"requestedMode": "copy",
+				"before": "current",
+				"reason": "current",
+				"action": "none",
+				"final": "current",
+				"discovery": []
+			},
+			"backupExit": "removed-exact"
+		},
+		{
+			"authorizationKind": "legacy-copied-target",
+			"consumption": "one-time",
+			"revision": "9290725704bb29f302dca9433061d13227c35bf8",
+			"sourceRelativePath": "domains/shared/skills/roadmap",
+			"historicalDigest": "973c72f8488983897897b80ac6df6b7796c9d742a9cd6ddd840c597c91d56f64",
+			"sourceDigest": "13f93b99884800ac71e6da2ec9dc9e0ea3584093ef9df70434f6426da8d6c572",
+			"oldDigest": "973c72f8488983897897b80ac6df6b7796c9d742a9cd6ddd840c597c91d56f64",
+			"newDigest": "c9fa72b073aaa5e8a86e0f8e23c4fae3f4e8f635a56cd0c6b4c5c37dad7f9c19",
+			"ownerId": "project:1cf3e769af5efee3ccde0d3e3cad4a090cf497d711146828be4bfcd609ec571f",
+			"assetId": "skill:shared/roadmap",
+			"manifestKey": "[\"project:1cf3e769af5efee3ccde0d3e3cad4a090cf497d711146828be4bfcd609ec571f\",\"skill:shared/roadmap\"]",
+			"outputPath": "/Users/cosmos/Projects/cosmonauts/.claude/skills/roadmap",
+			"nodeShape": [
+				{
+					"relativePath": "",
+					"nodeType": "directory"
+				},
+				{
+					"relativePath": "SKILL.md",
+					"nodeType": "file"
+				}
+			],
+			"backupPath": "/Users/cosmos/Projects/cosmonauts/.cosmonauts-harness-claude-50b69806-0380-4841-ac2d-1cd1a2b71c15-1.backup",
+			"oldState": {
+				"kind": "directory",
+				"digest": "973c72f8488983897897b80ac6df6b7796c9d742a9cd6ddd840c597c91d56f64"
+			},
+			"recoveryOutcome": "none",
+			"timestamp": "2026-08-26T11:10:39.047Z",
+			"receipt": {
+				"transactionId": "50b69806-0380-4841-ac2d-1cd1a2b71c15",
+				"evidencePath": "/Users/cosmos/Projects/cosmonauts/missions/plans/harness-adapters/repo-export-validation-evidence.json",
+				"evidenceDigest": "9a07fdb350a23eee6ab139fba6cece831caa262ea51304e20e5348906fbe9682"
+			},
+			"checkRow": {
+				"owner": {
+					"kind": "project",
+					"ownerId": "project:1cf3e769af5efee3ccde0d3e3cad4a090cf497d711146828be4bfcd609ec571f",
+					"projectRoot": "/Users/cosmos/Projects/cosmonauts"
+				},
+				"ownerDiagnostics": ["projectRoot=/Users/cosmos/Projects/cosmonauts"],
+				"target": "claude",
+				"scope": "project",
+				"kind": "skill",
+				"asset": "skill:shared/roadmap",
+				"source": "/Users/cosmos/Projects/cosmonauts/domains/shared/skills/roadmap",
+				"targetPath": "/Users/cosmos/Projects/cosmonauts/.claude/skills/roadmap",
+				"recordedMode": "copy",
+				"requestedMode": "copy",
+				"before": "current",
+				"reason": "current",
+				"action": "none",
+				"final": "current",
+				"discovery": []
+			},
+			"backupExit": "removed-exact"
+		},
+		{
+			"authorizationKind": "legacy-copied-target",
+			"consumption": "one-time",
+			"revision": "9290725704bb29f302dca9433061d13227c35bf8",
+			"sourceRelativePath": "domains/shared/skills/skills-cli",
+			"historicalDigest": "41152dadfb55241cd422db32acaf5d044f1ebd20bc8e7cc521f3ebb063dc0f80",
+			"sourceDigest": "de6279ef983447ea56f9e516cd534e2efbd5a8578c3a12e5515779466c075020",
+			"oldDigest": "41152dadfb55241cd422db32acaf5d044f1ebd20bc8e7cc521f3ebb063dc0f80",
+			"newDigest": "c1e3a2498a631677f16335e8eb7b8d3fa59b0fb61ee0e96d8e3a8afd7d28dd3d",
+			"ownerId": "project:1cf3e769af5efee3ccde0d3e3cad4a090cf497d711146828be4bfcd609ec571f",
+			"assetId": "skill:shared/skills-cli",
+			"manifestKey": "[\"project:1cf3e769af5efee3ccde0d3e3cad4a090cf497d711146828be4bfcd609ec571f\",\"skill:shared/skills-cli\"]",
+			"outputPath": "/Users/cosmos/Projects/cosmonauts/.claude/skills/skills-cli",
+			"nodeShape": [
+				{
+					"relativePath": "",
+					"nodeType": "directory"
+				},
+				{
+					"relativePath": "SKILL.md",
+					"nodeType": "file"
+				}
+			],
+			"backupPath": "/Users/cosmos/Projects/cosmonauts/.cosmonauts-harness-claude-50b69806-0380-4841-ac2d-1cd1a2b71c15-2.backup",
+			"oldState": {
+				"kind": "directory",
+				"digest": "41152dadfb55241cd422db32acaf5d044f1ebd20bc8e7cc521f3ebb063dc0f80"
+			},
+			"recoveryOutcome": "none",
+			"timestamp": "2026-08-26T11:10:39.047Z",
+			"receipt": {
+				"transactionId": "50b69806-0380-4841-ac2d-1cd1a2b71c15",
+				"evidencePath": "/Users/cosmos/Projects/cosmonauts/missions/plans/harness-adapters/repo-export-validation-evidence.json",
+				"evidenceDigest": "9a07fdb350a23eee6ab139fba6cece831caa262ea51304e20e5348906fbe9682"
+			},
+			"checkRow": {
+				"owner": {
+					"kind": "project",
+					"ownerId": "project:1cf3e769af5efee3ccde0d3e3cad4a090cf497d711146828be4bfcd609ec571f",
+					"projectRoot": "/Users/cosmos/Projects/cosmonauts"
+				},
+				"ownerDiagnostics": ["projectRoot=/Users/cosmos/Projects/cosmonauts"],
+				"target": "claude",
+				"scope": "project",
+				"kind": "skill",
+				"asset": "skill:shared/skills-cli",
+				"source": "/Users/cosmos/Projects/cosmonauts/domains/shared/skills/skills-cli",
+				"targetPath": "/Users/cosmos/Projects/cosmonauts/.claude/skills/skills-cli",
+				"recordedMode": "copy",
+				"requestedMode": "copy",
+				"before": "current",
+				"reason": "current",
+				"action": "none",
+				"final": "current",
+				"discovery": []
+			},
+			"backupExit": "removed-exact"
+		},
+		{
+			"authorizationKind": "legacy-copied-target",
+			"consumption": "one-time",
+			"revision": "9290725704bb29f302dca9433061d13227c35bf8",
+			"sourceRelativePath": "domains/shared/skills/task",
+			"historicalDigest": "c4c95f41a503534c12d027da44280de68d9190177e3dc2280b7099e314f5a4f9",
+			"sourceDigest": "8a3325b005590313e31b9aff6504665a4df3b9b9e52f86a8492275e6cd37610f",
+			"oldDigest": "c4c95f41a503534c12d027da44280de68d9190177e3dc2280b7099e314f5a4f9",
+			"newDigest": "35aaa57888bb565262a218d06cd390847fb932b74cbdc420cb6cd187f39cc93b",
+			"ownerId": "project:1cf3e769af5efee3ccde0d3e3cad4a090cf497d711146828be4bfcd609ec571f",
+			"assetId": "skill:shared/task",
+			"manifestKey": "[\"project:1cf3e769af5efee3ccde0d3e3cad4a090cf497d711146828be4bfcd609ec571f\",\"skill:shared/task\"]",
+			"outputPath": "/Users/cosmos/Projects/cosmonauts/.claude/skills/task",
+			"nodeShape": [
+				{
+					"relativePath": "",
+					"nodeType": "directory"
+				},
+				{
+					"relativePath": "SKILL.md",
+					"nodeType": "file"
+				}
+			],
+			"backupPath": "/Users/cosmos/Projects/cosmonauts/.cosmonauts-harness-claude-50b69806-0380-4841-ac2d-1cd1a2b71c15-3.backup",
+			"oldState": {
+				"kind": "directory",
+				"digest": "c4c95f41a503534c12d027da44280de68d9190177e3dc2280b7099e314f5a4f9"
+			},
+			"recoveryOutcome": "none",
+			"timestamp": "2026-08-26T11:10:39.047Z",
+			"receipt": {
+				"transactionId": "50b69806-0380-4841-ac2d-1cd1a2b71c15",
+				"evidencePath": "/Users/cosmos/Projects/cosmonauts/missions/plans/harness-adapters/repo-export-validation-evidence.json",
+				"evidenceDigest": "9a07fdb350a23eee6ab139fba6cece831caa262ea51304e20e5348906fbe9682"
+			},
+			"checkRow": {
+				"owner": {
+					"kind": "project",
+					"ownerId": "project:1cf3e769af5efee3ccde0d3e3cad4a090cf497d711146828be4bfcd609ec571f",
+					"projectRoot": "/Users/cosmos/Projects/cosmonauts"
+				},
+				"ownerDiagnostics": ["projectRoot=/Users/cosmos/Projects/cosmonauts"],
+				"target": "claude",
+				"scope": "project",
+				"kind": "skill",
+				"asset": "skill:shared/task",
+				"source": "/Users/cosmos/Projects/cosmonauts/domains/shared/skills/task",
+				"targetPath": "/Users/cosmos/Projects/cosmonauts/.claude/skills/task",
+				"recordedMode": "copy",
+				"requestedMode": "copy",
+				"before": "current",
+				"reason": "current",
+				"action": "none",
+				"final": "current",
+				"discovery": []
+			},
+			"backupExit": "removed-exact"
+		}
+	],
+	"authorizedAt": "2026-08-26T11:10:38.355Z",
+	"installedAt": "2026-08-26T11:10:38.449Z",
+	"receipt": {
+		"transactionId": "50b69806-0380-4841-ac2d-1cd1a2b71c15",
+		"evidencePath": "/Users/cosmos/Projects/cosmonauts/missions/plans/harness-adapters/repo-export-validation-evidence.json",
+		"evidenceDigest": "9a07fdb350a23eee6ab139fba6cece831caa262ea51304e20e5348906fbe9682"
+	},
+	"checkedAt": "2026-08-26T11:10:39.047Z",
+	"completedAt": "2026-08-26T11:10:39.047Z",
+	"externalBundle": {
+		"authorizationKind": "legacy-copied-target",
+		"consumption": "one-time",
+		"phase": "complete",
+		"transactionId": "9336b6a7-4eb5-4d3b-b57d-5063b1c9b715",
+		"revision": "e4f9be0dbe48281ceb6c28bd157c7395ade2dec5",
+		"sourceRelativePath": "external-skills/cosmonauts",
+		"historicalDigest": "dc5d0d6dce2889a3545fe3fb0a0a5eff47ff0be4b6d6df90f9da92821fd9c382",
+		"sourceDigest": "3730da0fad806c6a8dec8086961aab671ef3c87572f66436782f055632bc578f",
+		"oldDigest": "dc5d0d6dce2889a3545fe3fb0a0a5eff47ff0be4b6d6df90f9da92821fd9c382",
+		"newDigest": "c1e70b5f3c6bf3d6f996fc64f931cee3cc0986c657358365e2cf63942908e0f6",
+		"ownerId": "authority:cosmonauts/core",
+		"authorityId": "cosmonauts/core",
+		"assetId": "external-skill:cosmonauts",
+		"manifestKey": "[\"authority:cosmonauts/core\",\"external-skill:cosmonauts\"]",
+		"ownerRoot": "/Users/cosmos/.claude",
+		"outputPath": "/Users/cosmos/.claude/skills/cosmonauts",
+		"nodeShape": [
+			{
+				"relativePath": "",
+				"nodeType": "directory"
+			},
+			{
+				"relativePath": "chains",
+				"nodeType": "directory"
+			},
+			{
+				"relativePath": "chains/SKILL.md",
+				"nodeType": "file"
+			},
+			{
+				"relativePath": "plans",
+				"nodeType": "directory"
+			},
+			{
+				"relativePath": "plans/SKILL.md",
+				"nodeType": "file"
+			},
+			{
+				"relativePath": "SKILL.md",
+				"nodeType": "file"
+			},
+			{
+				"relativePath": "skills",
+				"nodeType": "directory"
+			},
+			{
+				"relativePath": "skills/SKILL.md",
+				"nodeType": "file"
+			},
+			{
+				"relativePath": "tasks",
+				"nodeType": "directory"
+			},
+			{
+				"relativePath": "tasks/SKILL.md",
+				"nodeType": "file"
+			}
+		],
+		"newManifestDigest": "a73e8f13b94100897a2c9730c0e773ca96dc9c7885f0b3aa9651fd085b1e1889",
+		"backupPath": "/Users/cosmos/.cosmonauts-harness-claude-9336b6a7-4eb5-4d3b-b57d-5063b1c9b715-0.backup",
+		"oldState": {
+			"kind": "directory",
+			"digest": "dc5d0d6dce2889a3545fe3fb0a0a5eff47ff0be4b6d6df90f9da92821fd9c382"
+		},
+		"recoveryOutcome": "none",
+		"authorizedAt": "2026-08-26T11:32:40.672Z",
+		"installedAt": "2026-08-26T11:32:40.720Z",
+		"receipt": {
+			"transactionId": "9336b6a7-4eb5-4d3b-b57d-5063b1c9b715",
+			"evidencePath": "/Users/cosmos/.cosmonauts-harness-claude-9336b6a7-4eb5-4d3b-b57d-5063b1c9b715.evidence-receipt.json",
+			"evidenceDigest": "aea2f39699804316106062b63a23cab15e184dd03d0b339068271bcb8d596d8b"
+		},
+		"checkRow": {
+			"owner": {
+				"kind": "authority",
+				"ownerId": "authority:cosmonauts/core",
+				"authorityId": "cosmonauts/core"
+			},
+			"ownerDiagnostics": [
+				"authority=cosmonauts/core",
+				"generatingProjectRoot=/Users/cosmos/Projects/cosmonauts"
+			],
+			"target": "claude",
+			"scope": "personal",
+			"kind": "skill",
+			"asset": "external-skill:cosmonauts",
+			"source": "/Users/cosmos/Projects/cosmonauts/external-skills/cosmonauts",
+			"targetPath": "/Users/cosmos/.claude/skills/cosmonauts",
+			"recordedMode": "copy",
+			"requestedMode": "copy",
+			"before": "current",
+			"reason": "current",
+			"action": "none",
+			"final": "current",
+			"discovery": [],
+			"generatingProjectRoot": "/Users/cosmos/Projects/cosmonauts"
+		},
+		"checkedAt": "2026-08-26T11:32:41.232Z",
+		"backupExit": "removed-exact",
+		"completedAt": "2026-08-26T11:32:41.238Z"
+	}
+}

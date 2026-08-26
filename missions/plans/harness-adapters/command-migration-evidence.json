@@ -1,0 +1,98 @@
+{
+	"schemaVersion": 1,
+	"authorizationKind": "ratified-live-bootstrap",
+	"phase": "complete",
+	"transactionId": "250f7025-ca3b-41a6-a7ee-33c9532b9fdf",
+	"ownerId": "authority:cosmonauts/core",
+	"ownerRoot": "~/.claude",
+	"target": "claude",
+	"scope": "personal",
+	"cleanupPolicy": "after-evidence",
+	"atomicSet": true,
+	"markerVersion": 1,
+	"newManifestDigest": "342671a384db260fb13bb193584bf5599c4354f4ed015bcdf36b57171016ddfc",
+	"manifestKeys": [
+		"[\"authority:cosmonauts/core\",\"command:spec-to-backlog\"]",
+		"[\"authority:cosmonauts/core\",\"command:implement-plan\"]"
+	],
+	"commands": [
+		{
+			"assetId": "command:spec-to-backlog",
+			"livePath": "~/.claude/commands/spec-to-backlog.md",
+			"nativePath": "external-commands/spec-to-backlog.md",
+			"outputPath": "~/.claude/commands/spec-to-backlog.md",
+			"liveLength": 7534,
+			"nativeLength": 7534,
+			"renderLength": 7534,
+			"liveDigest": "1981c27f3c5ffb4f448bd4741a9700f38f013ada366f739f93c38ab8cb588cc7",
+			"nativeDigest": "1981c27f3c5ffb4f448bd4741a9700f38f013ada366f739f93c38ab8cb588cc7",
+			"renderDigest": "1981c27f3c5ffb4f448bd4741a9700f38f013ada366f739f93c38ab8cb588cc7",
+			"materializedDigest": "bdc97dbd4a22a460f0f2618065a212f3ee47ffabb13cf1fbbcd4683d2f6080e2",
+			"manifestKey": "[\"authority:cosmonauts/core\",\"command:spec-to-backlog\"]",
+			"oldState": {
+				"kind": "file",
+				"digest": "446147b268104e4667046283884db60df4fd7128dc4ecc8783bfbfa8babd7420"
+			},
+			"newState": {
+				"kind": "file",
+				"digest": "7000bdab67482a396451cc262286517f81a018cda778a11a0492835844e1c112"
+			},
+			"finalLength": 7534,
+			"finalDigest": "1981c27f3c5ffb4f448bd4741a9700f38f013ada366f739f93c38ab8cb588cc7",
+			"backupPath": "~/.cosmonauts-harness-claude-250f7025-ca3b-41a6-a7ee-33c9532b9fdf-0.backup",
+			"backupExit": "removed-exact"
+		},
+		{
+			"assetId": "command:implement-plan",
+			"livePath": "~/.claude/commands/implement-plan.md",
+			"nativePath": "external-commands/implement-plan.md",
+			"outputPath": "~/.claude/commands/implement-plan.md",
+			"liveLength": 7669,
+			"nativeLength": 7669,
+			"renderLength": 7669,
+			"liveDigest": "b73abe6e6a7d24a43c92cd1d06f95027b645630c289854978faae777d33f037b",
+			"nativeDigest": "b73abe6e6a7d24a43c92cd1d06f95027b645630c289854978faae777d33f037b",
+			"renderDigest": "b73abe6e6a7d24a43c92cd1d06f95027b645630c289854978faae777d33f037b",
+			"materializedDigest": "25c13e5d6bdf7e30220283075190c5668be1870f40a605fa32c2a26f4e3dfef9",
+			"manifestKey": "[\"authority:cosmonauts/core\",\"command:implement-plan\"]",
+			"oldState": {
+				"kind": "file",
+				"digest": "d015992d00763ad19321b86c2b1d2e85dbe8f85370c56be75d398628d098be0d"
+			},
+			"newState": {
+				"kind": "file",
+				"digest": "047f6a94eb06e30f1dedf0dd32087a4a6b063a2cb2bf8f70775c0a6eaa4a19db"
+			},
+			"finalLength": 7669,
+			"finalDigest": "b73abe6e6a7d24a43c92cd1d06f95027b645630c289854978faae777d33f037b",
+			"backupPath": "~/.cosmonauts-harness-claude-250f7025-ca3b-41a6-a7ee-33c9532b9fdf-1.backup",
+			"backupExit": "removed-exact"
+		}
+	],
+	"authorizedAt": "2026-08-26T11:53:28.680Z",
+	"recoveryOutcome": "none",
+	"installedAt": "2026-08-26T11:53:28.698Z",
+	"receipt": {
+		"transactionId": "250f7025-ca3b-41a6-a7ee-33c9532b9fdf",
+		"evidencePath": "/Users/cosmos/Projects/cosmonauts/missions/plans/harness-adapters/command-migration-evidence.json",
+		"evidenceDigest": "3cb6d49572faabd657cc803cb0c85cdc1134ebff0b86f2bb9a9ff6dbc28a72fa"
+	},
+	"checkRows": [
+		{
+			"assetId": "command:spec-to-backlog",
+			"targetPath": "~/.claude/commands/spec-to-backlog.md",
+			"exitCode": 0,
+			"beforeStatus": "current",
+			"reason": "current"
+		},
+		{
+			"assetId": "command:implement-plan",
+			"targetPath": "~/.claude/commands/implement-plan.md",
+			"exitCode": 0,
+			"beforeStatus": "current",
+			"reason": "current"
+		}
+	],
+	"checkedAt": "2026-08-26T11:55:15.767Z",
+	"completedAt": "2026-08-26T11:55:15.769Z"
+}
