@@ -489,6 +489,296 @@ describe("repository harness export validation", () => {
 		const complete = await runRepositoryExportValidation(common);
 		expect(complete.phase).toBe("complete");
 	});
+
+	// @cosmo-behavior plan:harness-adapters#B-012
+	test("resumes project cleanup after a crash immediately after the first backup deletion", async () => {
+		const fixture = await createFixture();
+		const common = {
+			projectRoot: fixture.root,
+			homeRoot: fixture.home,
+			evidencePath: fixture.evidencePath,
+			revisions: Object.fromEntries(
+				PROJECT_EXPORT_ROWS.map((row) => [row.assetId, fixture.revision]),
+			),
+			selectedCheck: currentSelectedCheck,
+		} as const;
+
+		await expect(
+			runRepositoryExportValidation({
+				...common,
+				stopAfter: "first-backup-deletion",
+			}),
+		).rejects.toThrow("injected stop after first backup deletion");
+		const interrupted = JSON.parse(
+			await readFile(fixture.evidencePath, "utf8"),
+		) as {
+			phase: string;
+			rows: Array<{
+				assetId: string;
+				historicalDigest: string;
+				backupPath: string;
+				cleanupIntent?: {
+					transactionId: string;
+					memberIndex: number;
+					assetId: string;
+					expectedBackup: { kind: string; digest: string };
+				};
+			}>;
+		};
+		expect(interrupted.phase).toBe("checked");
+		const firstInterrupted = interrupted.rows[0];
+		expect(interrupted.rows[0]?.cleanupIntent).toMatchObject({
+			transactionId: expect.any(String),
+			memberIndex: 0,
+			assetId: firstInterrupted?.assetId,
+			expectedBackup: {
+				kind: "directory",
+				digest: firstInterrupted?.historicalDigest,
+			},
+		});
+		await expectMissing(interrupted.rows[0]?.backupPath ?? "");
+		for (const row of interrupted.rows.slice(1)) await access(row.backupPath);
+
+		const complete = await runRepositoryExportValidation(common);
+		expect(complete.phase).toBe("complete");
+		expect(
+			complete.rows.every((row) => row.backupExit === "removed-exact"),
+		).toBe(true);
+		for (const row of complete.rows) await expectMissing(row.backupPath);
+	});
+
+	// @cosmo-behavior plan:harness-adapters#B-012
+	test("resumes personal bundle cleanup after a crash immediately after its backup deletion", async () => {
+		const fixture = await createFixture();
+		const projectOptions = {
+			projectRoot: fixture.root,
+			homeRoot: fixture.home,
+			evidencePath: fixture.evidencePath,
+			revisions: Object.fromEntries(
+				PROJECT_EXPORT_ROWS.map((row) => [row.assetId, fixture.revision]),
+			),
+			selectedCheck: currentSelectedCheck,
+		} as const;
+		await runRepositoryExportValidation(projectOptions);
+		const bundleOptions = {
+			projectRoot: fixture.root,
+			homeRoot: fixture.home,
+			evidencePath: fixture.evidencePath,
+			revision: fixture.revision,
+			asset: fixture.externalBundleAsset,
+			generatedNodes: fixture.externalBundleGeneratedNodes,
+			selectedCheck: currentExternalBundleCheck,
+		} as const;
+
+		await expect(
+			runPersonalBundleValidation({
+				...bundleOptions,
+				stopAfter: "first-backup-deletion",
+			}),
+		).rejects.toThrow("injected stop after first backup deletion");
+		const interrupted = JSON.parse(
+			await readFile(fixture.evidencePath, "utf8"),
+		) as {
+			externalBundle: {
+				assetId: string;
+				historicalDigest: string;
+				backupPath: string;
+				cleanupIntent?: {
+					transactionId: string;
+					memberIndex: number;
+					assetId: string;
+					expectedBackup: { kind: string; digest: string };
+				};
+			};
+		};
+		expect(interrupted.externalBundle.cleanupIntent).toMatchObject({
+			transactionId: expect.any(String),
+			memberIndex: 0,
+			assetId: interrupted.externalBundle.assetId,
+			expectedBackup: {
+				kind: "directory",
+				digest: interrupted.externalBundle.historicalDigest,
+			},
+		});
+		await expectMissing(interrupted.externalBundle.backupPath);
+
+		const complete = await runPersonalBundleValidation(bundleOptions);
+		expect(complete.externalBundle).toMatchObject({
+			phase: "complete",
+			backupExit: "removed-exact",
+		});
+		await expectMissing(complete.externalBundle?.backupPath ?? "");
+	});
+
+	// @cosmo-behavior plan:harness-adapters#B-012
+	test("rejects an absent project backup without a matching cleanup intent", async () => {
+		const fixture = await createFixture();
+		const common = {
+			projectRoot: fixture.root,
+			homeRoot: fixture.home,
+			evidencePath: fixture.evidencePath,
+			revisions: Object.fromEntries(
+				PROJECT_EXPORT_ROWS.map((row) => [row.assetId, fixture.revision]),
+			),
+			selectedCheck: currentSelectedCheck,
+		} as const;
+
+		await expect(
+			runRepositoryExportValidation({ ...common, stopAfter: "checked" }),
+		).rejects.toThrow("injected stop after checked");
+		const checked = JSON.parse(
+			await readFile(fixture.evidencePath, "utf8"),
+		) as {
+			rows: Array<{ backupPath: string; cleanupIntent?: unknown }>;
+		};
+		const first = checked.rows[0];
+		expect(first?.cleanupIntent).toBeUndefined();
+		await rm(first?.backupPath ?? "", { recursive: true, force: true });
+
+		await expect(runRepositoryExportValidation(common)).rejects.toThrow(
+			/absent without cleanup intent/i,
+		);
+		for (const row of checked.rows.slice(1)) await access(row.backupPath);
+	});
+
+	// @cosmo-behavior plan:harness-adapters#B-012
+	test("preserves a changed project backup and reports it as ambiguous", async () => {
+		const fixture = await createFixture();
+		const common = {
+			projectRoot: fixture.root,
+			homeRoot: fixture.home,
+			evidencePath: fixture.evidencePath,
+			revisions: Object.fromEntries(
+				PROJECT_EXPORT_ROWS.map((row) => [row.assetId, fixture.revision]),
+			),
+			selectedCheck: currentSelectedCheck,
+		} as const;
+
+		await expect(
+			runRepositoryExportValidation({ ...common, stopAfter: "checked" }),
+		).rejects.toThrow("injected stop after checked");
+		const checked = JSON.parse(
+			await readFile(fixture.evidencePath, "utf8"),
+		) as { rows: Array<{ backupPath: string }> };
+		const changedPath = join(checked.rows[0]?.backupPath ?? "", "changed.txt");
+		await writeFile(changedPath, "ambiguous changed backup bytes\n");
+
+		await expect(runRepositoryExportValidation(common)).rejects.toThrow(
+			/retained backup is ambiguous/i,
+		);
+		expect(await readFile(changedPath, "utf8")).toBe(
+			"ambiguous changed backup bytes\n",
+		);
+		for (const row of checked.rows) await access(row.backupPath);
+	});
+
+	// @cosmo-behavior plan:harness-adapters#B-012
+	test("never removes an evidence-nominated same-user path", async () => {
+		const fixture = await createFixture();
+		const common = {
+			projectRoot: fixture.root,
+			homeRoot: fixture.home,
+			evidencePath: fixture.evidencePath,
+			revisions: Object.fromEntries(
+				PROJECT_EXPORT_ROWS.map((row) => [row.assetId, fixture.revision]),
+			),
+			selectedCheck: currentSelectedCheck,
+		} as const;
+
+		await expect(
+			runRepositoryExportValidation({ ...common, stopAfter: "checked" }),
+		).rejects.toThrow("injected stop after checked");
+		const checked = JSON.parse(
+			await readFile(fixture.evidencePath, "utf8"),
+		) as {
+			rows: Array<{
+				backupPath: string;
+				oldState: { kind: string; digest?: string };
+			}>;
+		};
+		const sameUserRoot = await mkdtemp(
+			join(tmpdir(), "repo-export-same-user-path-"),
+		);
+		tempRoots.push(sameUserRoot);
+		const nominatedPath = join(sameUserRoot, "nominated-backup");
+		await mkdir(nominatedPath, { recursive: true });
+		await writeFile(
+			join(nominatedPath, "SKILL.md"),
+			await readFile(join(checked.rows[0]?.backupPath ?? "", "SKILL.md")),
+		);
+		const firstRow = checked.rows[0];
+		if (!firstRow) throw new Error("Fixture evidence has no first row.");
+		checked.rows[0] = {
+			...firstRow,
+			backupPath: nominatedPath,
+			oldState: { kind: "directory", digest: "crafted-evidence-digest" },
+		};
+		await writeFile(
+			fixture.evidencePath,
+			`${JSON.stringify(checked, null, "\t")}\n`,
+		);
+
+		await expect(runRepositoryExportValidation(common)).rejects.toThrow(
+			/migration backup identity is invalid/i,
+		);
+		expect(await readFile(join(nominatedPath, "SKILL.md"))).not.toHaveLength(0);
+		for (const row of checked.rows.slice(1)) await access(row.backupPath);
+	});
+
+	// @cosmo-behavior plan:harness-adapters#B-012
+	test("never removes a personal path nominated by external-bundle evidence", async () => {
+		const fixture = await createFixture();
+		await runRepositoryExportValidation({
+			projectRoot: fixture.root,
+			homeRoot: fixture.home,
+			evidencePath: fixture.evidencePath,
+			revisions: Object.fromEntries(
+				PROJECT_EXPORT_ROWS.map((row) => [row.assetId, fixture.revision]),
+			),
+			selectedCheck: currentSelectedCheck,
+		});
+		const bundleOptions = {
+			projectRoot: fixture.root,
+			homeRoot: fixture.home,
+			evidencePath: fixture.evidencePath,
+			revision: fixture.revision,
+			asset: fixture.externalBundleAsset,
+			generatedNodes: fixture.externalBundleGeneratedNodes,
+			selectedCheck: currentExternalBundleCheck,
+		} as const;
+		await expect(
+			runPersonalBundleValidation({
+				...bundleOptions,
+				stopAfter: "checked",
+			}),
+		).rejects.toThrow("injected stop after checked");
+		const checked = JSON.parse(
+			await readFile(fixture.evidencePath, "utf8"),
+		) as {
+			externalBundle: { backupPath: string; oldState: unknown };
+		};
+		const canonicalBackupPath = checked.externalBundle.backupPath;
+		const nominatedPath = join(fixture.home, "personal-notes");
+		await mkdir(nominatedPath, { recursive: true });
+		await writeFile(join(nominatedPath, "keep.txt"), "keep personal bytes\n");
+		checked.externalBundle = {
+			...checked.externalBundle,
+			backupPath: nominatedPath,
+			oldState: { kind: "directory", digest: "crafted-evidence-digest" },
+		};
+		await writeFile(
+			fixture.evidencePath,
+			`${JSON.stringify(checked, null, "\t")}\n`,
+		);
+
+		await expect(runPersonalBundleValidation(bundleOptions)).rejects.toThrow(
+			/migration backup identity is invalid/i,
+		);
+		expect(await readFile(join(nominatedPath, "keep.txt"), "utf8")).toBe(
+			"keep personal bytes\n",
+		);
+		await access(canonicalBackupPath);
+	});
 });
 
 interface Fixture {

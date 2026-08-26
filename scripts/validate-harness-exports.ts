@@ -111,6 +111,7 @@ export type RepositoryValidationStop =
 	| "rolling-back"
 	| "installed"
 	| "checked"
+	| "first-backup-deletion"
 	| "backup-cleanup";
 
 export interface RepositorySelectedCheckRow {
@@ -182,8 +183,20 @@ export interface RepositoryEvidenceRow {
 	readonly recoveryOutcome: string;
 	readonly receipt?: RepositoryEvidenceReceipt;
 	readonly checkRow?: RepositorySelectedCheckRow;
+	readonly cleanupIntent?: RepositoryBackupCleanupIntent;
 	readonly backupExit?: "removed-exact";
 	readonly timestamp: string;
+}
+
+export interface RepositoryBackupCleanupIntent {
+	readonly schemaVersion: 1;
+	readonly transactionId: string;
+	readonly memberIndex: number;
+	readonly assetId: string;
+	readonly expectedBackup: {
+		readonly kind: "directory" | "file";
+		readonly digest: string;
+	};
 }
 
 export interface RepositoryEvidenceReceipt {
@@ -246,6 +259,7 @@ export interface ExternalBundleEvidence {
 	readonly recoveryOutcome: string;
 	readonly receipt?: RepositoryEvidenceReceipt;
 	readonly checkRow?: RepositorySelectedCheckRow;
+	readonly cleanupIntent?: RepositoryBackupCleanupIntent;
 	readonly backupExit?: "removed-exact";
 	readonly authorizedAt: string;
 	readonly installedAt?: string;
@@ -404,6 +418,7 @@ export async function runRepositoryExportValidation(
 	const existing = await readEvidence(evidencePath);
 	if (existing?.phase === "complete") {
 		validateEvidenceIdentity(existing, projectRoot, evidencePath);
+		await assertRepositoryBackupCleanupComplete(existing);
 		await assertProtectedAssets(
 			existing.protectedAssets.filter(
 				(asset) =>
@@ -752,6 +767,7 @@ export async function runPersonalBundleValidation(
 	const existing = repositoryEvidence.externalBundle;
 	if (existing?.phase === "complete") {
 		validateExternalBundleIdentity(existing, homeRoot);
+		await assertExternalBundleBackupCleanupComplete(existing, projectRoot);
 		const current = await observeHarnessNodeSnapshot(existing.outputPath);
 		if (snapshotDigest(current) !== existing.newDigest) {
 			throw new Error(
@@ -1081,27 +1097,67 @@ async function finishExternalBundleEvidence(options: {
 				}
 			}
 
-			const backup = await observeHarnessNodeSnapshot(current.backupPath);
-			if (
-				!(backup.kind === "absent" && current.backupExit === "removed-exact")
-			) {
-				if (!sameSnapshot(backup, current.oldState)) {
+			const backupPath = canonicalMigrationBackupPath(
+				current.ownerRoot,
+				current.transactionId,
+				0,
+			);
+			const cleanupIntent = await deriveExternalBundleCleanupIntent(
+				options.projectRoot,
+				current,
+			);
+			assertEvidenceBackupIdentity(
+				current.backupPath,
+				backupPath,
+				current.assetId,
+			);
+			let backup = await observeHarnessNodeSnapshot(backupPath);
+			if (!current.cleanupIntent) {
+				if (backup.kind === "absent") {
 					throw new Error(
-						`Retained personal bundle backup is ambiguous: ${current.backupPath}.`,
+						`Retained personal bundle backup is absent without cleanup intent: ${backupPath}.`,
 					);
 				}
-				await rm(current.backupPath, { recursive: true, force: true });
+				assertExactCleanupBackup(
+					backup,
+					cleanupIntent,
+					backupPath,
+					current.assetId,
+				);
+				current = { ...current, cleanupIntent };
+				repositoryEvidence = { ...repositoryEvidence, externalBundle: current };
+				await persistEvidence(options.evidencePath, repositoryEvidence);
+			} else {
+				assertMatchingCleanupIntent(
+					current.cleanupIntent,
+					cleanupIntent,
+					current.assetId,
+				);
 			}
+			backup = await observeHarnessNodeSnapshot(backupPath);
+			if (backup.kind !== "absent") {
+				assertExactCleanupBackup(
+					backup,
+					cleanupIntent,
+					backupPath,
+					current.assetId,
+				);
+				await rm(backupPath, { recursive: true, force: true });
+			}
+			if (options.stopAfter === "first-backup-deletion") {
+				throw new Error("injected stop after first backup deletion");
+			}
+			await syncDirectory(dirname(backupPath));
 			const timestamp = (options.now ?? (() => new Date()))().toISOString();
-			current = { ...current, backupExit: "removed-exact" };
+			current = { ...current, cleanupIntent, backupExit: "removed-exact" };
 			repositoryEvidence = { ...repositoryEvidence, externalBundle: current };
+			await persistEvidence(options.evidencePath, repositoryEvidence);
 			await unlink(externalBundleReceiptPath(current)).catch(
 				(error: NodeJS.ErrnoException) => {
 					if (error.code !== "ENOENT") throw error;
 				},
 			);
 			if (options.stopAfter === "backup-cleanup") {
-				await persistEvidence(options.evidencePath, repositoryEvidence);
 				throw new Error("injected stop after backup cleanup");
 			}
 			await assertProtectedAssets(
@@ -1336,6 +1392,37 @@ function validateExternalBundleIdentity(
 			"Personal bundle evidence identity does not match this run.",
 		);
 	}
+	const backupPath = canonicalMigrationBackupPath(
+		evidence.ownerRoot,
+		evidence.transactionId,
+		0,
+	);
+	assertEvidenceBackupIdentity(
+		evidence.backupPath,
+		backupPath,
+		evidence.assetId,
+	);
+}
+
+async function assertExternalBundleBackupCleanupComplete(
+	evidence: ExternalBundleEvidence,
+	projectRoot: string,
+): Promise<void> {
+	const intent = await deriveExternalBundleCleanupIntent(projectRoot, evidence);
+	if (!evidence.cleanupIntent || evidence.backupExit !== "removed-exact") {
+		throw new Error("Personal bundle backup cleanup evidence is incomplete.");
+	}
+	assertMatchingCleanupIntent(evidence.cleanupIntent, intent, evidence.assetId);
+	const backupPath = canonicalMigrationBackupPath(
+		evidence.ownerRoot,
+		evidence.transactionId,
+		0,
+	);
+	if ((await observeHarnessNodeSnapshot(backupPath)).kind !== "absent") {
+		throw new Error(
+			`Personal bundle backup cleanup is incomplete: ${backupPath}.`,
+		);
+	}
 }
 
 async function assertCompleteProjectEvidence(
@@ -1362,11 +1449,27 @@ async function assertCompleteProjectEvidence(
 			"Project evidence is not the durable complete exact four-row authorization required before the personal bundle.",
 		);
 	}
-	for (const row of evidence.rows) {
-		if ((await observeHarnessNodeSnapshot(row.backupPath)).kind !== "absent") {
+	await assertRepositoryBackupCleanupComplete(evidence);
+}
+
+async function assertRepositoryBackupCleanupComplete(
+	evidence: RepositoryExportValidationEvidence,
+): Promise<void> {
+	for (const [index, row] of evidence.rows.entries()) {
+		const intent = await deriveRepositoryCleanupIntent(evidence, row, index);
+		if (!row.cleanupIntent || row.backupExit !== "removed-exact") {
 			throw new Error(
-				`Project backup cleanup is incomplete: ${row.backupPath}.`,
+				`Project backup cleanup evidence is incomplete for ${row.assetId}.`,
 			);
+		}
+		assertMatchingCleanupIntent(row.cleanupIntent, intent, row.assetId);
+		const backupPath = canonicalMigrationBackupPath(
+			evidence.ownerRoot,
+			evidence.transactionId,
+			index,
+		);
+		if ((await observeHarnessNodeSnapshot(backupPath)).kind !== "absent") {
+			throw new Error(`Project backup cleanup is incomplete: ${backupPath}.`);
 		}
 	}
 }
@@ -1450,28 +1553,91 @@ async function finishInstalledEvidence(options: {
 			const cleanupTimestamp = (
 				options.now ?? (() => new Date())
 			)().toISOString();
-			for (const row of current.rows) {
-				const backup = await observeHarnessNodeSnapshot(row.backupPath);
-				if (backup.kind === "absent" && row.backupExit === "removed-exact") {
-					continue;
-				}
-				if (!sameSnapshot(backup, row.oldState)) {
+			const cleanupMembers = await Promise.all(
+				current.rows.map(async (row, index) => {
+					const backupPath = canonicalMigrationBackupPath(
+						current.ownerRoot,
+						current.transactionId,
+						index,
+					);
+					assertEvidenceBackupIdentity(row.backupPath, backupPath, row.assetId);
+					return {
+						backupPath,
+						cleanupIntent: await deriveRepositoryCleanupIntent(
+							current,
+							row,
+							index,
+						),
+					};
+				}),
+			);
+			for (const [index, row] of current.rows.entries()) {
+				const cleanupMember = cleanupMembers[index];
+				if (!cleanupMember) {
 					throw new Error(
-						`Retained backup is ambiguous for ${row.assetId}: ${row.backupPath}.`,
+						`Migration cleanup member is absent for ${row.assetId}.`,
 					);
 				}
-				await rm(row.backupPath, { recursive: true, force: true });
-			}
-			current = {
-				...current,
-				rows: current.rows.map((row) => ({
-					...row,
-					backupExit: "removed-exact",
-					timestamp: cleanupTimestamp,
-				})),
-			};
-			if (options.stopAfter === "backup-cleanup") {
+				const { backupPath, cleanupIntent } = cleanupMember;
+				let backup = await observeHarnessNodeSnapshot(backupPath);
+				if (!row.cleanupIntent) {
+					if (backup.kind === "absent") {
+						throw new Error(
+							`Retained backup is absent without cleanup intent for ${row.assetId}: ${backupPath}.`,
+						);
+					}
+					assertExactCleanupBackup(
+						backup,
+						cleanupIntent,
+						backupPath,
+						row.assetId,
+					);
+					current = {
+						...current,
+						rows: current.rows.map((candidate, candidateIndex) =>
+							candidateIndex === index
+								? { ...candidate, cleanupIntent }
+								: candidate,
+						),
+					};
+					await persistEvidence(options.evidencePath, current);
+				} else {
+					assertMatchingCleanupIntent(
+						row.cleanupIntent,
+						cleanupIntent,
+						row.assetId,
+					);
+				}
+				backup = await observeHarnessNodeSnapshot(backupPath);
+				if (backup.kind !== "absent") {
+					assertExactCleanupBackup(
+						backup,
+						cleanupIntent,
+						backupPath,
+						row.assetId,
+					);
+					await rm(backupPath, { recursive: true, force: true });
+				}
+				if (index === 0 && options.stopAfter === "first-backup-deletion") {
+					throw new Error("injected stop after first backup deletion");
+				}
+				await syncDirectory(dirname(backupPath));
+				current = {
+					...current,
+					rows: current.rows.map((candidate, candidateIndex) =>
+						candidateIndex === index
+							? {
+									...candidate,
+									cleanupIntent,
+									backupExit: "removed-exact" as const,
+									timestamp: cleanupTimestamp,
+								}
+							: candidate,
+					),
+				};
 				await persistEvidence(options.evidencePath, current);
+			}
+			if (options.stopAfter === "backup-cleanup") {
 				throw new Error("injected stop after backup cleanup");
 			}
 			await assertProtectedAssets(current.protectedAssets);
@@ -2218,6 +2384,14 @@ function validateEvidenceIdentity(
 			"Repository export evidence identity does not match this run.",
 		);
 	}
+	for (const [index, row] of evidence.rows.entries()) {
+		const backupPath = canonicalMigrationBackupPath(
+			evidence.ownerRoot,
+			evidence.transactionId,
+			index,
+		);
+		assertEvidenceBackupIdentity(row.backupPath, backupPath, row.assetId);
+	}
 }
 
 async function writeDurableFile(path: string, contents: string): Promise<void> {
@@ -2248,8 +2422,176 @@ async function writeDurableFile(path: string, contents: string): Promise<void> {
 	}
 }
 
+async function syncDirectory(path: string): Promise<void> {
+	const handle = await open(path, "r");
+	try {
+		await handle.sync();
+	} finally {
+		await handle.close();
+	}
+}
+
 function snapshotDigest(snapshot: HarnessNodeSnapshot): string {
 	return snapshot.kind === "absent" ? sha256("absent") : snapshot.digest;
+}
+
+function canonicalMigrationBackupPath(
+	ownerRoot: string,
+	transactionId: string,
+	memberIndex: number,
+): string {
+	if (!isCanonicalTransactionId(transactionId)) {
+		throw new Error(
+			`Migration transaction identity is invalid: ${transactionId}.`,
+		);
+	}
+	if (!Number.isSafeInteger(memberIndex) || memberIndex < 0) {
+		throw new Error(`Migration member index is invalid: ${memberIndex}.`);
+	}
+	const journalPath = resolveHarnessTransactionPaths(
+		ownerRoot,
+		"claude",
+	).journalPath;
+	const journalStem = basename(journalPath, ".journal.json");
+	return join(
+		dirname(journalPath),
+		`${journalStem}-${transactionId}-${memberIndex}.backup`,
+	);
+}
+
+async function deriveRepositoryCleanupIntent(
+	evidence: RepositoryExportValidationEvidence,
+	row: RepositoryEvidenceRow,
+	memberIndex: number,
+): Promise<RepositoryBackupCleanupIntent> {
+	const expected = PROJECT_EXPORT_ROWS[memberIndex];
+	if (
+		!expected ||
+		row.assetId !== expected.assetId ||
+		row.sourceRelativePath !== expected.sourceRelativePath ||
+		row.outputPath !== join(evidence.projectRoot, expected.outputRelativePath)
+	) {
+		throw new Error(
+			`Migration lineage identity is invalid for ${row.assetId}.`,
+		);
+	}
+	const historical = await readGitTree(
+		evidence.projectRoot,
+		row.revision,
+		expected.sourceRelativePath,
+	);
+	return cleanupIntentFromHistorical({
+		transactionId: evidence.transactionId,
+		memberIndex,
+		assetId: row.assetId,
+		evidenceHistoricalDigest: row.historicalDigest,
+		evidenceOldDigest: row.oldDigest,
+		evidenceNodeShape: row.nodeShape,
+		historical,
+	});
+}
+
+async function deriveExternalBundleCleanupIntent(
+	projectRoot: string,
+	evidence: ExternalBundleEvidence,
+): Promise<RepositoryBackupCleanupIntent> {
+	const historical = await readGitTree(
+		projectRoot,
+		evidence.revision,
+		"external-skills/cosmonauts",
+	);
+	return cleanupIntentFromHistorical({
+		transactionId: evidence.transactionId,
+		memberIndex: 0,
+		assetId: evidence.assetId,
+		evidenceHistoricalDigest: evidence.historicalDigest,
+		evidenceOldDigest: evidence.oldDigest,
+		evidenceNodeShape: evidence.nodeShape,
+		historical,
+	});
+}
+
+function cleanupIntentFromHistorical(options: {
+	readonly transactionId: string;
+	readonly memberIndex: number;
+	readonly assetId: string;
+	readonly evidenceHistoricalDigest: string;
+	readonly evidenceOldDigest: string;
+	readonly evidenceNodeShape: readonly LegacyCopiedNodeShape[];
+	readonly historical: TreeBytes;
+}): RepositoryBackupCleanupIntent {
+	const historicalDigest = snapshotDigest(options.historical.snapshot);
+	if (
+		options.evidenceOldDigest !== historicalDigest ||
+		options.evidenceHistoricalDigest !== historicalDigest ||
+		JSON.stringify(options.evidenceNodeShape) !==
+			JSON.stringify(options.historical.shape)
+	) {
+		throw new Error(
+			`Migration lineage digest is inconsistent for ${options.assetId}.`,
+		);
+	}
+	const snapshot = options.historical.snapshot;
+	if (snapshot.kind === "absent" || snapshot.kind === "symlink") {
+		throw new Error(
+			`Migration lineage shape is invalid for ${options.assetId}.`,
+		);
+	}
+	return {
+		schemaVersion: 1,
+		transactionId: options.transactionId,
+		memberIndex: options.memberIndex,
+		assetId: options.assetId,
+		expectedBackup: {
+			kind: snapshot.kind,
+			digest: snapshot.digest,
+		},
+	};
+}
+
+function assertEvidenceBackupIdentity(
+	evidencePath: string,
+	canonicalPath: string,
+	assetId: string,
+): void {
+	if (evidencePath !== canonicalPath) {
+		throw new Error(
+			`Migration backup identity is invalid for ${assetId}; expected ${canonicalPath}.`,
+		);
+	}
+}
+
+function assertMatchingCleanupIntent(
+	actual: RepositoryBackupCleanupIntent,
+	expected: RepositoryBackupCleanupIntent,
+	assetId: string,
+): void {
+	if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+		throw new Error(`Migration cleanup intent is invalid for ${assetId}.`);
+	}
+}
+
+function assertExactCleanupBackup(
+	backup: HarnessNodeSnapshot,
+	intent: RepositoryBackupCleanupIntent,
+	backupPath: string,
+	assetId: string,
+): void {
+	if (
+		backup.kind === "absent" ||
+		backup.kind !== intent.expectedBackup.kind ||
+		backup.digest !== intent.expectedBackup.digest
+	) {
+		throw new Error(
+			`Retained backup is ambiguous for ${assetId}: ${backupPath}.`,
+		);
+	}
+}
+
+function isCanonicalTransactionId(value: string): boolean {
+	return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+		value,
+	);
 }
 
 function sameSnapshot(
