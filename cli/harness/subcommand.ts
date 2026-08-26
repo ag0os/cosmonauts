@@ -2,7 +2,10 @@
 
 import { homedir } from "node:os";
 import { Command, Option } from "commander";
-import { prepareSkillExportAssets } from "../../lib/harness-adapters/inventory.ts";
+import {
+	createCosmonautsInventoryGeneratedNode,
+	prepareSkillExportAssets,
+} from "../../lib/harness-adapters/inventory.ts";
 import {
 	listImplementedHarnessTargetIds,
 	listStaticHarnessAssets,
@@ -152,6 +155,17 @@ export function createHarnessProgram(
 				assets,
 				sourceHealth,
 				request,
+				...(discovery.runtimeInventory
+					? {
+							generatedNodesByAssetId: {
+								"external-skill:cosmonauts": [
+									createCosmonautsInventoryGeneratedNode(
+										discovery.runtimeInventory,
+									),
+								],
+							},
+						}
+					: {}),
 			});
 			renderHarnessReport(report, getOutputMode(program.opts()));
 			if (report.exitCode !== 0) process.exitCode = 1;

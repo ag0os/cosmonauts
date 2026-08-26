@@ -200,6 +200,8 @@ export interface ProvenanceBase {
 	readonly outputPath: string;
 	readonly mode: SyncMode;
 	readonly exportedAt: string;
+	/** Canonical project whose live runtime supplied generated bundle facts. */
+	readonly generatingProjectRoot?: string;
 }
 
 export interface HarnessManifestEntry extends ProvenanceBase {

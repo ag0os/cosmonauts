@@ -1,6 +1,6 @@
 ---
 name: cosmonauts
-description: Drive the cosmonauts agent-orchestration system from outside (Claude Code, Codex, Gemini CLI, or any agent that can shell out). Use this skill when the user asks to use cosmonauts, run a cosmonauts named chain, drive a plan, create cosmonauts tasks, or manage plans/tasks/sessions in a cosmonauts project. Cosmonauts can also drive Claude Code or Codex itself as an execution backend.
+description: Drive the cosmonauts agent-orchestration system from outside (Claude Code, Codex, or any agent that can shell out). Use this skill when the user asks to use cosmonauts, run a cosmonauts named chain, drive a plan, create cosmonauts tasks, or manage plans/tasks/sessions in a cosmonauts project. Cosmonauts can also drive Claude Code or Codex itself as an execution backend.
 ---
 
 # Cosmonauts (from outside)
@@ -31,15 +31,15 @@ The data flow: **plan → tasks → drive → sessions**. Plans contain the desi
 
 See `cosmonauts-tasks`, `cosmonauts-plans`, and `cosmonauts-chains` for the CRUD and chain-running details.
 
-## Discovery (always start here)
+## Live inventory (always start here)
 
-Before doing anything in an unfamiliar cosmonauts project, introspect what's actually installed:
+Read `references/generated-inventory.md` when it is present. Cosmonauts generates that file from the invoking project's effective chains, visible skills, and supported materialized harness paths when this bundle is synchronized.
+
+If the generated file is unavailable, query the live runtime instead:
 
 ```bash
-cosmonauts --list-domains --json     # which domains are available (e.g. "coding", "shared")
-cosmonauts --list-agents --json      # qualified agent IDs (e.g. "coding/planner", "main/cosmo")
-cosmonauts run chain list            # named chains you can run
-cosmonauts skills list --json        # internal skills the agents can load
+cosmonauts run chain list
+cosmonauts skills list --json
 ```
 
 Every JSON-emitting cosmonauts command accepts `--json` (machine output) or `--plain` (tab-separated, no padding). Use `--json` by default.
@@ -58,11 +58,13 @@ Every JSON-emitting cosmonauts command accepts `--json` (machine output) or `--p
 
 The user says "design and build an auth system." Don't decompose manually:
 
+After discovering the effective named chains, invoke the appropriate live name:
+
 ```bash
-cosmonauts run chain plan-and-build "design an auth system with email and OAuth"
+cosmonauts run chain <chain-name> "design an auth system with email and OAuth"
 ```
 
-`plan-and-build` is a named chain that runs `planner → plan-reviewer → planner → task-manager → coordinator → integration-verifier → quality-manager`. **It runs end-to-end non-interactively** — no REPL, no approval prompt between design and implementation. If the user expects a review gate before code is written, split into two calls: a design-only chain (`cosmonauts run chain "planner -> plan-reviewer" ...`) first, then `cosmonauts run drive --plan <slug>` once the plan and tasks are reviewed. See `cosmonauts-chains` for the split-pipeline recipe and the chain DSL syntax.
+Named chains run end-to-end non-interactively. If the user expects a review gate before code is written, split the workflow into separate invocations. See `cosmonauts-chains` for the chain DSL syntax and the split-pipeline recipe.
 
 ### Recipe 2 — Run a known plan through an external backend (drive)
 
@@ -157,32 +159,15 @@ This skill is about the **second** form.
 
 - **Don't parse human-formatted output.** Always pass `--json` or `--plain`.
 - **Don't shell out to cosmonauts from inside a cosmonauts session.** If you're already running as a cosmonauts internal agent (e.g. `coding/cody`), you have native tools for tasks/plans/drive; use those.
-- **Don't assume the project has a coding domain installed.** Check `cosmonauts --list-domains --json` first. If empty, suggest `cosmonauts install coding`.
+- **Don't assume a particular chain or skill is installed.** Use the generated inventory or its live fallbacks first.
 - **Don't expect a chain run to pause for approval.** Chains run from first stage to last without pausing — there is no REPL, no plan-approval gate, no clarifying-question loop in the CLI. If you need a design-review gate, split the pipeline (design-only chain → human/agent review → `cosmonauts run drive --plan <slug>`). See `cosmonauts-chains` → "Run a named chain".
 - **Don't pass `--json` to `cosmonauts run` commands.** They emit JSON natively and don't define the flag. The other subcommands (task, plan, skills, packages, session, scaffold) do accept `--json`.
 
 ## Updating this bundle
 
-This skill set is shipped with cosmonauts. To pull a newer version into your harness:
+This skill set is one stable-authority asset shipped with cosmonauts. Synchronize or check that asset through the harness adapter:
 
 ```bash
-# Claude Code, project-level:
-cp -r "$(npm root)/cosmonauts/external-skills/cosmonauts" .claude/skills/cosmonauts
-
-# Claude Code, user-level:
-cp -r "$(npm root -g)/cosmonauts/external-skills/cosmonauts" ~/.claude/skills/cosmonauts
-
-# Codex, project-level:
-cp -r "$(npm root)/cosmonauts/external-skills/cosmonauts" .agents/skills/cosmonauts
-
-# Codex, user-level:
-cp -r "$(npm root -g)/cosmonauts/external-skills/cosmonauts" ~/.agents/skills/cosmonauts
-
-# Gemini CLI, user-level:
-cp -r "$(npm root -g)/cosmonauts/external-skills/cosmonauts" ~/.gemini/skills/cosmonauts
-
-# Gemini CLI, project-level:
-cp -r "$(npm root)/cosmonauts/external-skills/cosmonauts" .gemini/skills/cosmonauts
+cosmonauts harness sync --asset external-skill:cosmonauts
+cosmonauts harness sync --asset external-skill:cosmonauts --check
 ```
-
-Replace `npm root` with whichever path manager you use; the bundle ships at `external-skills/cosmonauts/` inside the cosmonauts package.

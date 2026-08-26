@@ -16,7 +16,11 @@ import {
 	listImplementedHarnessTargetIds,
 } from "../../lib/harness-adapters/registry.ts";
 import { createSkillsExportSyncRequest } from "../../lib/harness-adapters/sync.ts";
-import type { SourceHealthRow } from "../../lib/harness-adapters/types.ts";
+import type {
+	RuntimeInventorySnapshot,
+	SourceHealthRow,
+} from "../../lib/harness-adapters/types.ts";
+import { composeHarnessRuntimeInventory } from "../../lib/harness-runtime-inventory.ts";
 import { discoverFrameworkBundledPackageDirs } from "../../lib/packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../../lib/runtime.ts";
 import type {
@@ -24,7 +28,7 @@ import type {
 	ExtraSkillSource,
 } from "../../lib/skills/index.ts";
 import {
-	discoverSkillCandidatesStrict,
+	type discoverSkillCandidatesStrict,
 	discoverSkills,
 	runHarnessSync,
 } from "../../lib/skills/index.ts";
@@ -125,6 +129,7 @@ export interface RuntimeSkillExportDiscovery {
 		ReturnType<typeof discoverSkillCandidatesStrict>
 	>["candidates"];
 	readonly sourceHealth: readonly SourceHealthRow[];
+	readonly runtimeInventory?: RuntimeInventorySnapshot;
 }
 
 /** Strict runtime discovery shared by harness sync and compatibility export. */
@@ -145,12 +150,15 @@ export async function discoverRuntimeSkillExports(
 		domainOverride: options.domain,
 		pluginDirs: options.pluginDir?.length ? [...options.pluginDir] : undefined,
 	});
-	const projectExtras: ExtraSkillSource[] = (
-		runtime.projectConfig.skillPaths ?? []
-	).map((skillsDir) => ({ skillsDir, domain: PROJECT_SKILL_DOMAIN }));
-	return discoverSkillCandidatesStrict(runtime.domains, projectExtras, {
-		domainContext: runtime.domainContext,
+	const runtimeInventory = await composeHarnessRuntimeInventory({
+		projectRoot,
+		runtime,
 	});
+	return {
+		candidates: runtimeInventory.candidates,
+		sourceHealth: runtimeInventory.sourceHealth,
+		runtimeInventory,
+	};
 }
 
 export function createSkillsProgram(): Command {

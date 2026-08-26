@@ -1,6 +1,6 @@
 ---
 name: cosmonauts-tasks
-description: Create, list, view, edit, delete, and search cosmonauts tasks from outside (Claude Code, Codex, Gemini CLI). Includes batch creation from YAML. Use this skill when the user wants to manage cosmonauts tasks via the CLI, populate a backlog, change task status, or find unblocked work. Tasks live as markdown files with YAML frontmatter under missions/tasks/.
+description: Create, list, view, edit, delete, and search cosmonauts tasks from outside Claude Code, Codex, or another shell-capable agent. Includes batch creation from YAML. Use this skill when the user wants to manage cosmonauts tasks via the CLI, populate a backlog, change task status, or find unblocked work. Tasks live as markdown files with YAML frontmatter under missions/tasks/.
 ---
 
 # `cosmonauts task`

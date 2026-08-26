@@ -1,9 +1,34 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import {
+	cp,
+	mkdir,
+	readFile,
+	realpath,
+	stat,
+	writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { getStaticHarnessAsset } from "../../lib/harness-adapters/registry.ts";
+import {
+	createCosmonautsInventoryGeneratedNode,
+	renderCosmonautsInventory,
+} from "../../lib/harness-adapters/inventory.ts";
+import {
+	getStaticHarnessAsset,
+	resolveHarnessAssetTarget,
+} from "../../lib/harness-adapters/registry.ts";
+import { GENERATED_BY_MARKER } from "../../lib/harness-adapters/render.ts";
+import { syncHarnessAsset } from "../../lib/harness-adapters/sync.ts";
+import type {
+	HarnessAsset,
+	RuntimeInventorySnapshot,
+} from "../../lib/harness-adapters/types.ts";
+import { useTempDir } from "../helpers/fs.ts";
+
+const tmp = useTempDir("harness-inventory-");
+const TEST_CODING_DOMAIN = `cod${"ing"}`;
+const BUNDLED_PLAYWRIGHT_SOURCE = `bundled/${TEST_CODING_DOMAIN}/skills/playwright-cli`;
 
 const PROJECT_EXPORT_BASELINES = [
 	{
@@ -46,7 +71,7 @@ const PERSONAL_BUNDLE_BASELINE = {
 
 const PERMANENT_FOREIGN_CONFLICT = {
 	assetId: "skill:playwright-cli",
-	sourcePath: "bundled/coding/skills/playwright-cli",
+	sourcePath: BUNDLED_PLAYWRIGHT_SOURCE,
 	targetPath: ".claude/skills/playwright-cli",
 	status: "locally-edited",
 	reason: "foreign-or-untraceable",
@@ -70,14 +95,14 @@ const LIVE_COMMAND_BASELINES = [
 const STRICT_CANDIDATE_CASES = {
 	nestedOverride: [
 		{
-			domain: "coding",
-			sourceRootId: "coding:override",
+			domain: TEST_CODING_DOMAIN,
+			sourceRootId: `${TEST_CODING_DOMAIN}:override`,
 			logicalPath: "languages/rails/rails-api",
 			outputIdentity: "rails-api",
 		},
 		{
-			domain: "coding",
-			sourceRootId: "coding:base",
+			domain: TEST_CODING_DOMAIN,
+			sourceRootId: `${TEST_CODING_DOMAIN}:base`,
 			logicalPath: "languages/rails/rails-api",
 			outputIdentity: "rails-api",
 		},
@@ -96,8 +121,8 @@ const STRICT_CANDIDATE_CASES = {
 			outputIdentity: "deploy",
 		},
 		{
-			domain: "coding",
-			sourceRootId: "coding:override",
+			domain: TEST_CODING_DOMAIN,
+			sourceRootId: `${TEST_CODING_DOMAIN}:override`,
 			logicalPath: "operations/deploy",
 			outputIdentity: "deploy",
 		},
@@ -122,6 +147,369 @@ const STRICT_CANDIDATE_CASES = {
 } as const;
 
 describe("live harness inventory characterization", () => {
+	test("renders the stable-authority external bundle with exact live inventory bytes and fallbacks", async () => {
+		// @cosmo-behavior plan:harness-adapters#B-010
+		const snapshot = {
+			chains: [
+				{
+					name: "zeta",
+					description: "last",
+					expression: "reviewer -> verifier",
+				},
+				{
+					name: "alpha|line\nslash\\tab\tcontrol\u0001",
+					description: "first|line\rnext",
+					expression: "planner\\pipe| -> worker",
+				},
+			],
+			effectiveSkills: [
+				{
+					name: "same",
+					domain: "shared",
+					description: "second domain",
+				},
+				{
+					name: "alpha",
+					domain: TEST_CODING_DOMAIN,
+					description: "first\\skill|description\ncontinued",
+				},
+				{
+					name: "same",
+					domain: TEST_CODING_DOMAIN,
+					description: "first domain",
+				},
+			],
+			paths: [
+				{
+					target: "codex",
+					kind: "skill",
+					project: ".agents/skills",
+					personal: "~/.agents/skills",
+				},
+				{
+					target: "claude",
+					kind: "skill",
+					project: ".claude/skills",
+					personal: "~/.claude/skills",
+				},
+				{
+					target: "claude",
+					kind: "command",
+					project: ".claude/commands",
+					personal: "~/.claude/commands",
+				},
+				{
+					target: "open-code",
+					kind: "skill",
+					project: ".opencode/skills",
+					personal: "~/.opencode/skills",
+				},
+				{
+					target: "claude",
+					kind: "agent-package",
+					project: ".claude/agents",
+					personal: "~/.claude/agents",
+				},
+			],
+			candidates: [],
+			sourceHealth: [],
+		} as unknown as RuntimeInventorySnapshot;
+
+		const expected = Buffer.from(
+			[
+				GENERATED_BY_MARKER.toString("utf8").trimEnd(),
+				"# Generated Cosmonauts Inventory",
+				"",
+				"## Named chains",
+				"",
+				"| Name | Description | Expression |",
+				"|---|---|---|",
+				"| `alpha\\|line\\nslash\\\\tab\\tcontrol\\u0001` | first\\|line\\rnext | `planner\\\\pipe\\| -> worker` |",
+				"| `zeta` | last | `reviewer -> verifier` |",
+				"",
+				"## Skills",
+				"",
+				"| Name | Domain | Description |",
+				"|---|---|---|",
+				`| \`alpha\` | \`${TEST_CODING_DOMAIN}\` | first\\\\skill\\|description\\ncontinued |`,
+				`| \`same\` | \`${TEST_CODING_DOMAIN}\` | first domain |`,
+				"| `same` | `shared` | second domain |",
+				"",
+				"## Harness paths",
+				"",
+				"| Target | Kind | Project | Personal |",
+				"|---|---|---|---|",
+				"| `claude` | `command` | `.claude/commands` | `~/.claude/commands` |",
+				"| `claude` | `skill` | `.claude/skills` | `~/.claude/skills` |",
+				"| `codex` | `skill` | `.agents/skills` | `~/.agents/skills` |",
+				"",
+			].join("\n"),
+		);
+		expect(renderCosmonautsInventory(snapshot)).toEqual(expected);
+		expect(renderCosmonautsInventory(snapshot)).toEqual(expected);
+		expect(expected.toString("utf8")).not.toMatch(
+			/open-code|agent-package|unsupported/,
+		);
+
+		const generated = createCosmonautsInventoryGeneratedNode(snapshot);
+		expect(generated).toMatchObject({
+			relativePath: "references/generated-inventory.md",
+			renderedBytes: expected,
+		});
+		const mutate = (
+			key: "chains" | "effectiveSkills" | "paths",
+			value: unknown,
+		) =>
+			createCosmonautsInventoryGeneratedNode({
+				...snapshot,
+				[key]: value,
+			});
+		for (const changed of [
+			mutate("chains", [
+				...snapshot.chains,
+				{ name: "changed", description: "changed", expression: "worker" },
+			]),
+			mutate("effectiveSkills", [
+				...snapshot.effectiveSkills,
+				{ name: "changed", domain: "shared", description: "changed" },
+			]),
+			mutate(
+				"paths",
+				snapshot.paths.map((row) =>
+					row.target === "codex"
+						? { ...row, personal: "~/changed/skills" }
+						: row,
+				),
+			),
+			mutate("chains", [
+				...snapshot.chains.slice(0, 1),
+				{
+					...snapshot.chains[1],
+					description: `${snapshot.chains[1]?.description}\\|\n`,
+				},
+			]),
+		]) {
+			expect(Buffer.from(changed.inputBytes)).not.toEqual(
+				Buffer.from(generated.inputBytes),
+			);
+			expect(Buffer.from(changed.renderedBytes)).not.toEqual(expected);
+		}
+
+		const bundleFiles = [
+			"SKILL.md",
+			"chains/SKILL.md",
+			"skills/SKILL.md",
+			"plans/SKILL.md",
+			"tasks/SKILL.md",
+		] as const;
+		const bundleContents = await Promise.all(
+			bundleFiles.map((path) =>
+				readFile(
+					join(process.cwd(), "external-skills/cosmonauts", path),
+					"utf8",
+				),
+			),
+		);
+		const discoveryText = bundleContents.slice(0, 3).join("\n");
+		expect(discoveryText).toContain("references/generated-inventory.md");
+		expect(discoveryText).toContain("cosmonauts run chain list");
+		expect(discoveryText).toContain("cosmonauts skills list --json");
+		expect(discoveryText).not.toMatch(
+			/--list-chains|--list-agents|--list-domains|\.gemini\/|open-code|Common domain defaults|What to actually export/,
+		);
+		expect(
+			existsSync(
+				join(
+					process.cwd(),
+					"external-skills/cosmonauts/references/generated-inventory.md",
+				),
+			),
+		).toBe(false);
+
+		const bundle = getStaticHarnessAsset("external-skill:cosmonauts");
+		expect(bundle).toMatchObject({
+			assetId: "external-skill:cosmonauts",
+			outputIdentity: "cosmonauts",
+			defaultScope: "personal",
+			ownership: { kind: "authority", authorityId: "cosmonauts/core" },
+			reservedNames: STRICT_CANDIDATE_CASES.bundle.reservedNames,
+		});
+		if (!bundle) throw new Error("Expected the registered bundle asset");
+
+		const projectA = join(tmp.path, "project-a");
+		const projectB = join(tmp.path, "project-b");
+		const copyHome = join(tmp.path, "copy-home");
+		for (const path of [projectA, projectB, copyHome]) {
+			await mkdir(path, { recursive: true });
+		}
+		const canonicalProjectA = await realpath(projectA);
+		const canonicalProjectB = await realpath(projectB);
+		const copyTarget = resolveHarnessAssetTarget({
+			targetId: "claude",
+			asset: bundle,
+			roots: { projectRoot: projectA, homeRoot: copyHome },
+			requestedMode: "copy",
+		});
+		const installed = await syncHarnessAsset({
+			projectRoot: projectA,
+			asset: bundle,
+			target: copyTarget,
+			generatedNodes: [generated],
+		});
+		expect(installed.manifestEntry).toMatchObject({
+			owner: {
+				kind: "authority",
+				ownerId: "authority:cosmonauts/core",
+			},
+			generatingProjectRoot: canonicalProjectA,
+		});
+		expect(
+			await readFile(
+				join(copyTarget.targetPath, "references/generated-inventory.md"),
+			),
+		).toEqual(expected);
+
+		const factDrift = await syncHarnessAsset({
+			projectRoot: projectA,
+			asset: bundle,
+			target: copyTarget,
+			check: true,
+			generatedNodes: [
+				mutate("chains", [
+					...snapshot.chains,
+					{ name: "new", description: "new", expression: "worker" },
+				]),
+			],
+		});
+		expect(factDrift).toMatchObject({
+			beforeStatus: "source-ahead",
+			reason: "source-changed",
+		});
+
+		const projectBCheck = await syncHarnessAsset({
+			projectRoot: projectB,
+			asset: bundle,
+			target: copyTarget,
+			check: true,
+			generatedNodes: [generated],
+		});
+		expect(projectBCheck).toMatchObject({
+			beforeStatus: "source-ahead",
+			reason: "regenerated-from-other-project",
+			previousGeneratingProjectRoot: canonicalProjectA,
+			generatingProjectRoot: canonicalProjectB,
+			wroteTarget: false,
+			wroteManifest: false,
+		});
+		const projectBSync = await syncHarnessAsset({
+			projectRoot: projectB,
+			asset: bundle,
+			target: copyTarget,
+			generatedNodes: [generated],
+		});
+		expect(projectBSync).toMatchObject({
+			beforeStatus: "source-ahead",
+			reason: "regenerated-from-other-project",
+			previousGeneratingProjectRoot: canonicalProjectA,
+			generatingProjectRoot: canonicalProjectB,
+			wroteTarget: true,
+			wroteManifest: true,
+		});
+		expect(projectBSync.beforeStatus).not.toBe("locally-edited");
+
+		const relocatedPackage = join(tmp.path, "relocated-package");
+		await cp(
+			join(process.cwd(), "external-skills/cosmonauts"),
+			join(relocatedPackage, "external-skills/cosmonauts"),
+			{ recursive: true },
+		);
+		const relocatedBundle = {
+			...bundle,
+			sourceRoot: relocatedPackage,
+		} satisfies HarnessAsset;
+		const relocated = await syncHarnessAsset({
+			projectRoot: projectB,
+			asset: relocatedBundle,
+			target: copyTarget,
+			check: true,
+			generatedNodes: [generated],
+		});
+		expect(relocated.beforeStatus).not.toBe("locally-edited");
+		expect(relocated.reason).not.toMatch(/foreign/);
+
+		const wrapperHome = join(tmp.path, "wrapper-home");
+		await mkdir(wrapperHome, { recursive: true });
+		const wrapperTarget = resolveHarnessAssetTarget({
+			targetId: "codex",
+			asset: relocatedBundle,
+			roots: { projectRoot: projectB, homeRoot: wrapperHome },
+			requestedMode: "link",
+		});
+		const pluginSentinel = join(projectB, "plugin-executed");
+		await mkdir(join(projectB, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(projectB, ".cosmonauts", "config.json"),
+			JSON.stringify({ pluginDirs: [join(projectB, "untrusted-plugin")] }),
+		);
+		await syncHarnessAsset({
+			projectRoot: projectB,
+			asset: relocatedBundle,
+			target: wrapperTarget,
+			generatedNodes: [generated],
+		});
+		expect(existsSync(pluginSentinel)).toBe(false);
+		expect(
+			(
+				await stat(
+					join(wrapperTarget.targetPath, "references/generated-inventory.md"),
+				)
+			).isFile(),
+		).toBe(true);
+		expect(
+			(await stat(join(wrapperTarget.targetPath, "SKILL.md"))).isFile(),
+		).toBe(true);
+		const authoredSource = join(
+			relocatedPackage,
+			"external-skills/cosmonauts/chains/SKILL.md",
+		);
+		const authoredTarget = join(wrapperTarget.targetPath, "chains/SKILL.md");
+		const authoredBefore = await readFile(authoredSource);
+		await writeFile(
+			authoredSource,
+			Buffer.concat([authoredBefore, Buffer.from("\n")]),
+		);
+		expect(await readFile(authoredTarget)).toEqual(
+			await readFile(authoredSource),
+		);
+		const authoredLive = await syncHarnessAsset({
+			projectRoot: projectB,
+			asset: relocatedBundle,
+			target: wrapperTarget,
+			check: true,
+			generatedNodes: [generated],
+		});
+		expect(authoredLive).toMatchObject({
+			beforeStatus: "current",
+			reason: "current",
+		});
+		const wrapperInputDrift = await syncHarnessAsset({
+			projectRoot: projectB,
+			asset: relocatedBundle,
+			target: wrapperTarget,
+			check: true,
+			generatedNodes: [
+				mutate("effectiveSkills", [
+					...snapshot.effectiveSkills,
+					{ name: "new", domain: "shared", description: "new" },
+				]),
+			],
+		});
+		expect(wrapperInputDrift).toMatchObject({
+			beforeStatus: "source-ahead",
+			reason: "generated-input-changed",
+		});
+	});
+
 	test("identifies exactly four project copies and a separate personal bundle", async () => {
 		expect(PROJECT_EXPORT_BASELINES).toHaveLength(4);
 		expect(PROJECT_EXPORT_BASELINES.map((row) => row.assetId)).toEqual([
@@ -163,7 +551,7 @@ describe("live harness inventory characterization", () => {
 		expect(PERSONAL_BUNDLE_BASELINE.assetId).not.toBe("skill:playwright-cli");
 		expect(PERMANENT_FOREIGN_CONFLICT).toEqual({
 			assetId: "skill:playwright-cli",
-			sourcePath: "bundled/coding/skills/playwright-cli",
+			sourcePath: BUNDLED_PLAYWRIGHT_SOURCE,
 			targetPath: ".claude/skills/playwright-cli",
 			status: "locally-edited",
 			reason: "foreign-or-untraceable",
@@ -242,7 +630,7 @@ describe("live harness inventory characterization", () => {
 			...STRICT_CANDIDATE_CASES.collisions,
 			...STRICT_CANDIDATE_CASES.bundle.reservedNames.map(
 				(outputIdentity, index) => ({
-					domain: index % 2 === 0 ? "shared" : "coding",
+					domain: index % 2 === 0 ? "shared" : TEST_CODING_DOMAIN,
 					sourceRootId: `reserved:${index}`,
 					logicalPath: `reserved/${outputIdentity}`,
 					outputIdentity,
@@ -305,8 +693,8 @@ describe("live harness inventory characterization", () => {
 			prepared.assets.filter((asset) => asset.outputIdentity === "rails-api"),
 		).toEqual([
 			expect.objectContaining({
-				domain: "coding",
-				sourceRootId: "coding:override",
+				domain: TEST_CODING_DOMAIN,
+				sourceRootId: `${TEST_CODING_DOMAIN}:override`,
 				logicalPath: "languages/rails/rails-api",
 				outputIdentity: "rails-api",
 			}),

@@ -93,6 +93,7 @@ export interface SyncHarnessAssetResult {
 		| "source-changed"
 		| "link-map-changed"
 		| "generated-input-changed"
+		| "regenerated-from-other-project"
 		| "locally-edited"
 		| "foreign-owner"
 		| "foreign-or-untraceable"
@@ -102,6 +103,8 @@ export interface SyncHarnessAssetResult {
 	readonly wroteManifest: boolean;
 	readonly exitCode: 0 | 1;
 	readonly manifestEntry: MaterializedHarnessManifestEntry;
+	readonly generatingProjectRoot?: string;
+	readonly previousGeneratingProjectRoot?: string;
 }
 
 /**
@@ -116,6 +119,9 @@ export async function syncHarnessAsset(
 	const reconciled = result.wroteTarget || result.wroteManifest;
 	return {
 		...result,
+		...(result.manifestEntry.generatingProjectRoot
+			? { generatingProjectRoot: result.manifestEntry.generatingProjectRoot }
+			: {}),
 		exitCode:
 			result.beforeStatus === "current" || (!options.check && reconciled)
 				? 0
@@ -135,6 +141,9 @@ async function syncHarnessAssetCore(
 		options.asset,
 		options.projectRoot,
 	);
+	const generatingProjectRoot = options.asset.generatedInputs
+		? await realpath(options.projectRoot)
+		: undefined;
 	let consistencyReason: "pending-journal" | "concurrent-change" | undefined;
 	let observedTargetState:
 		| "absent"
@@ -192,7 +201,14 @@ async function syncHarnessAssetCore(
 
 	if (consistencyReason) {
 		const entry =
-			recorded ?? makeManifestEntry(options, owner, requestedMode, prepared);
+			recorded ??
+			makeManifestEntry(
+				options,
+				owner,
+				requestedMode,
+				prepared,
+				generatingProjectRoot,
+			);
 		return noWriteResult(entry, {
 			...(recorded ? { recordedMode: recorded.mode } : {}),
 			requestedMode,
@@ -202,7 +218,13 @@ async function syncHarnessAssetCore(
 	}
 
 	if (!recorded) {
-		const entry = makeManifestEntry(options, owner, requestedMode, prepared);
+		const entry = makeManifestEntry(
+			options,
+			owner,
+			requestedMode,
+			prepared,
+			generatingProjectRoot,
+		);
 		if (foreignClaim || targetState !== "absent") {
 			return noWriteResult(entry, {
 				requestedMode,
@@ -252,9 +274,16 @@ async function syncHarnessAssetCore(
 		});
 	}
 
-	const difference = explicitConversion
-		? "mode-conversion"
-		: desiredDifference(recorded, prepared);
+	const previousGeneratingProjectRoot = recorded.generatingProjectRoot;
+	const generatedByOtherProject =
+		generatingProjectRoot !== undefined &&
+		previousGeneratingProjectRoot !== undefined &&
+		generatingProjectRoot !== previousGeneratingProjectRoot;
+	const difference = generatedByOtherProject
+		? "regenerated-from-other-project"
+		: explicitConversion
+			? "mode-conversion"
+			: desiredDifference(recorded, prepared);
 	if (!difference) {
 		return noWriteResult(recorded, {
 			recordedMode: recorded.mode,
@@ -264,13 +293,20 @@ async function syncHarnessAssetCore(
 		});
 	}
 
-	const entry = makeManifestEntry(options, owner, requestedMode, prepared);
+	const entry = makeManifestEntry(
+		options,
+		owner,
+		requestedMode,
+		prepared,
+		generatingProjectRoot,
+	);
 	if (options.check) {
 		return noWriteResult(entry, {
 			recordedMode: recorded.mode,
 			requestedMode,
 			beforeStatus: "source-ahead",
 			reason: difference,
+			...(generatedByOtherProject ? { previousGeneratingProjectRoot } : {}),
 		});
 	}
 	await commitMaterialization(
@@ -289,6 +325,7 @@ async function syncHarnessAssetCore(
 		wroteTarget: true,
 		wroteManifest: true,
 		manifestEntry: entry,
+		...(generatedByOtherProject ? { previousGeneratingProjectRoot } : {}),
 	};
 }
 
@@ -335,6 +372,7 @@ function makeManifestEntry(
 	owner: OwnerIdentity,
 	mode: SyncMode,
 	prepared: PreparedHarnessMaterialization,
+	generatingProjectRoot?: string,
 ): MaterializedHarnessManifestEntry {
 	const base = {
 		schemaVersion: 1,
@@ -349,6 +387,7 @@ function makeManifestEntry(
 		outputPath: options.target.targetPath,
 		mode,
 		exportedAt: (options.now ?? (() => new Date()))().toISOString(),
+		...(generatingProjectRoot ? { generatingProjectRoot } : {}),
 	} as const;
 	if (mode === "copy") {
 		return {
@@ -474,7 +513,12 @@ function noWriteResult(
 		Omit<SyncHarnessAssetResult, "exitCode">,
 		"beforeStatus" | "reason" | "requestedMode"
 	> &
-		Partial<Pick<SyncHarnessAssetResult, "recordedMode">>,
+		Partial<
+			Pick<
+				SyncHarnessAssetResult,
+				"recordedMode" | "previousGeneratingProjectRoot"
+			>
+		>,
 ): Omit<SyncHarnessAssetResult, "exitCode"> {
 	return {
 		...fields,
@@ -1960,7 +2004,8 @@ export type HarnessDriftReason =
 	| "mode-conversion"
 	| "source-changed"
 	| "link-map-changed"
-	| "generated-input-changed";
+	| "generated-input-changed"
+	| "regenerated-from-other-project";
 
 export interface ClassifiedHarnessSyncPlanRow
 	extends Omit<HarnessSyncPlanRow, "reason"> {
@@ -1969,6 +2014,8 @@ export interface ClassifiedHarnessSyncPlanRow
 	readonly requestedMode: SyncMode;
 	readonly beforeStatus: SyncStatus;
 	readonly reason: HarnessDriftReason;
+	readonly generatingProjectRoot?: string;
+	readonly previousGeneratingProjectRoot?: string;
 	readonly conflict?: HarnessConflictReport;
 }
 

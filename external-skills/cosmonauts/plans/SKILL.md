@@ -1,6 +1,6 @@
 ---
 name: cosmonauts-plans
-description: Create, list, view, edit, delete, and archive cosmonauts plans from outside (Claude Code, Codex, Gemini CLI). Use this skill when the user wants to register a design as a cosmonauts plan, link tasks to it, change its status, or archive a completed plan. Plans live as a directory per slug under missions/plans/.
+description: Create, list, view, edit, delete, and archive cosmonauts plans from outside Claude Code, Codex, or another shell-capable agent. Use this skill when the user wants to register a design as a cosmonauts plan, link tasks to it, change its status, or archive a completed plan. Plans live as a directory per slug under missions/plans/.
 ---
 
 # `cosmonauts plan`

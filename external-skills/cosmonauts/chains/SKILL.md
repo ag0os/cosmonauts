@@ -1,11 +1,11 @@
 ---
 name: cosmonauts-chains
-description: Run cosmonauts named chains and chain DSL expressions from outside (Claude Code, Codex, Gemini CLI). Use this skill when the user wants to run a multi-agent pipeline (plan-and-build, verify, implement, etc.), compose a custom chain of agents, or kick off cosmonauts non-interactively. Covers chain DSL syntax, completion labels, profiling, and how to inspect results (chains produce file artifacts and sessions, not stdout work products).
+description: Run cosmonauts named chains and chain DSL expressions from outside Claude Code, Codex, or another shell-capable agent. Use this skill when the user wants to run a multi-agent pipeline, compose a custom chain of agents, or kick off cosmonauts non-interactively. Covers chain DSL syntax, completion labels, profiling, and how to inspect results.
 ---
 
 # `cosmonauts run chain`
 
-Multi-agent pipelines are invoked through `cosmonauts run chain`. Pass either a **named chain** (for example `plan-and-build`) or a **chain DSL expression** (for example `planner -> coordinator`).
+Multi-agent pipelines are invoked through `cosmonauts run chain`. Pass either a live **named chain** or a **chain DSL expression**.
 
 ## Discover what's installed
 
@@ -13,22 +13,12 @@ Multi-agent pipelines are invoked through `cosmonauts run chain`. Pass either a 
 cosmonauts run chain list
 ```
 
-The command emits JSON rows shaped like `{ "name": "...", "description": "...", "chain": "..." }`. Common coding-domain defaults:
-
-| Chain | Pipeline | Use when |
-| --- | --- | --- |
-| `plan-and-build` | planner -> plan-reviewer -> planner -> task-manager -> coordinator -> integration-verifier -> quality-manager | Greenfield feature from a one-line goal, with adversarial plan review. |
-| `spec-and-build` | spec-writer -> planner -> plan-reviewer -> planner -> task-manager -> coordinator -> integration-verifier -> quality-manager | You have a vague idea; let cosmonauts write the spec first. |
-| `implement` | task-manager -> coordinator -> integration-verifier -> quality-manager | You already have an approved plan; decompose and execute it. |
-| `verify` | quality-manager | Run quality checks and remediation on the current diff. |
-| `adapt` | planner -> task-manager -> coordinator -> integration-verifier -> quality-manager | Adapt patterns from a reference codebase path. |
-
-Exact names depend on the project's `.cosmonauts/config.json` and installed domains; always re-check with `cosmonauts run chain list`.
+The command emits JSON rows shaped like `{ "name": "...", "description": "...", "chain": "..." }`. When `../references/generated-inventory.md` is present, its named-chain section contains the same sync-time facts. Exact names depend on the current project, so do not rely on an authored list.
 
 ## Run a named chain
 
 ```bash
-cosmonauts run chain plan-and-build "design an auth system with email + OAuth"
+cosmonauts run chain <chain-name> "design an auth system with email + OAuth"
 ```
 
 Chains are non-interactive once launched. They run from first stage to last, do not enter a REPL, and do not pause for plan approval between design and implementation.
@@ -50,7 +40,7 @@ cosmonauts run chain "planner -> plan-reviewer" "design an auth system"
 cosmonauts run drive --plan auth-system --backend claude-cli --mode detached
 ```
 
-Use `implement` or a custom chain like `task-manager -> coordinator -> integration-verifier -> quality-manager` when you want the execution half without re-running the planner.
+Use a discovered execution-oriented chain or a custom expression when you want only the execution half.
 
 ## Chain DSL
 
@@ -67,7 +57,7 @@ cosmonauts run chain "planner -> [task-manager, reviewer] -> coordinator" "desig
 cosmonauts run chain "coordinator -> reviewer[3]" "multi-pass review"
 ```
 
-Stage identifiers are agent IDs, qualified or unqualified. `cosmonauts --list-agents --json` shows valid IDs. If a stage is not unique across domains, qualify it (`coding/planner`).
+Stage identifiers are agent IDs, qualified or unqualified. Qualify any identifier that is not unique across domains.
 
 **Fan-out caveat:** `reviewer[3]` spawns three reviewers that each receive the same prompt. It does not partition work or assign different tasks per instance. Use fan-out for independent parallel passes, not for task distribution.
 
@@ -105,7 +95,7 @@ cosmonauts session info <id-prefix> --include-text --json
 ### Run a full pipeline and read the result
 
 ```bash
-cosmonauts run chain plan-and-build \
+cosmonauts run chain <chain-name> \
   "design an HTTP rate limiter with a token bucket strategy" \
   2> chain.log
 EXIT=$?
@@ -122,7 +112,7 @@ cosmonauts session info <id-prefix> --include-text --json
 ### Plan-only run
 
 ```bash
-cosmonauts run chain "planner -> plan-reviewer" "build feature X" 2> chain.log
+cosmonauts run chain "<stage> -> <review-stage>" "build feature X" 2> chain.log
 cosmonauts plan list --json
 ```
 
@@ -131,7 +121,7 @@ This drops the task-manager and coordinator tail. The planner produces a design 
 ### Profile a chain run
 
 ```bash
-cosmonauts --profile run chain plan-and-build "..."
+cosmonauts --profile run chain <chain-name> "..."
 ls missions/sessions/_profiles/
 ```
 

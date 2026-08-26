@@ -378,6 +378,15 @@ function isManifestEntry(
 	) {
 		return false;
 	}
+	if (
+		(value.assetId === "external-skill:cosmonauts" &&
+			(typeof value.generatingProjectRoot !== "string" ||
+				!isAbsolute(value.generatingProjectRoot))) ||
+		(Object.hasOwn(value, "generatingProjectRoot") &&
+			typeof value.generatingProjectRoot !== "string")
+	) {
+		return false;
+	}
 	if (value.provenance.kind === "copy") {
 		return (
 			typeof value.provenance.baselineDigest === "string" &&

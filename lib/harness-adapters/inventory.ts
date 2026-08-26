@@ -1,5 +1,9 @@
+import type { GeneratedHarnessNode } from "./render.ts";
+import { GENERATED_BY_MARKER } from "./render.ts";
 import type {
 	HarnessAsset,
+	HarnessPathRow,
+	RuntimeInventorySnapshot,
 	SkillCandidate,
 	SkillCandidateShape,
 	SourceHealthRow,
@@ -13,6 +17,175 @@ export const COSMONAUTS_BUNDLE_RESERVED_NAMES = [
 	"cosmonauts-skills",
 	"cosmonauts-tasks",
 ] as const;
+
+export const COSMONAUTS_GENERATED_INVENTORY_PATH =
+	"references/generated-inventory.md" as const;
+
+const MATERIALIZED_PATH_KEYS = [
+	"claude:command",
+	"claude:skill",
+	"codex:skill",
+] as const;
+
+interface RenderableCosmonautsInventory {
+	readonly chains: RuntimeInventorySnapshot["chains"];
+	readonly effectiveSkills: RuntimeInventorySnapshot["effectiveSkills"];
+	readonly paths: readonly HarnessPathRow[];
+}
+
+/** Render the stable external bundle's only generated file as exact bytes. */
+export function renderCosmonautsInventory(
+	snapshot: RenderableCosmonautsInventory,
+): Buffer {
+	const inventory = normalizeCosmonautsInventory(snapshot);
+	const lines = [
+		GENERATED_BY_MARKER.toString("utf8").trimEnd(),
+		"# Generated Cosmonauts Inventory",
+		"",
+		"## Named chains",
+		"",
+		"| Name | Description | Expression |",
+		"|---|---|---|",
+		...inventory.chains.map(
+			(row) =>
+				`| ${codeCell(row.name)} | ${textCell(row.description)} | ${codeCell(row.expression)} |`,
+		),
+		"",
+		"## Skills",
+		"",
+		"| Name | Domain | Description |",
+		"|---|---|---|",
+		...inventory.effectiveSkills.map(
+			(row) =>
+				`| ${codeCell(row.name)} | ${codeCell(row.domain)} | ${textCell(row.description)} |`,
+		),
+		"",
+		"## Harness paths",
+		"",
+		"| Target | Kind | Project | Personal |",
+		"|---|---|---|---|",
+		...inventory.paths.map(
+			(row) =>
+				`| ${codeCell(row.target)} | ${codeCell(row.kind)} | ${codeCell(row.project)} | ${codeCell(row.personal)} |`,
+		),
+		"",
+	];
+	return Buffer.from(lines.join("\n"));
+}
+
+/**
+ * Preserve raw live facts separately from rendered bytes so either a schema
+ * input change or a renderer change advances generated-wrapper provenance.
+ */
+export function createCosmonautsInventoryGeneratedNode(
+	snapshot: RenderableCosmonautsInventory,
+): GeneratedHarnessNode {
+	const normalized = normalizeCosmonautsInventory(snapshot);
+	return {
+		relativePath: COSMONAUTS_GENERATED_INVENTORY_PATH,
+		inputBytes: Buffer.from(JSON.stringify(normalized)),
+		renderedBytes: renderCosmonautsInventory(normalized),
+	};
+}
+
+function normalizeCosmonautsInventory(
+	snapshot: RenderableCosmonautsInventory,
+): RenderableCosmonautsInventory {
+	return {
+		chains: [...snapshot.chains].sort(
+			(left, right) =>
+				compareText(left.name, right.name) ||
+				compareText(left.description, right.description) ||
+				compareText(left.expression, right.expression),
+		),
+		effectiveSkills: [...snapshot.effectiveSkills].sort(
+			(left, right) =>
+				compareText(left.name, right.name) ||
+				compareText(left.domain, right.domain) ||
+				compareText(left.description, right.description),
+		),
+		paths: selectMaterializedPaths(snapshot.paths),
+	};
+}
+
+function selectMaterializedPaths(
+	paths: RenderableCosmonautsInventory["paths"],
+): HarnessPathRow[] {
+	const byKey = new Map<string, HarnessPathRow>();
+	for (const row of paths) {
+		const key = `${row.target}:${row.kind}`;
+		if (!(MATERIALIZED_PATH_KEYS as readonly string[]).includes(key)) continue;
+		if (byKey.has(key)) {
+			throw new Error(`Duplicate materialized harness path row: ${key}.`);
+		}
+		byKey.set(key, row);
+	}
+	return MATERIALIZED_PATH_KEYS.map((key) => {
+		const row = byKey.get(key);
+		if (!row) throw new Error(`Missing materialized harness path row: ${key}.`);
+		return row;
+	});
+}
+
+function codeCell(value: string): string {
+	return `\`${escapeInventoryCell(value)}\``;
+}
+
+function textCell(value: string): string {
+	return escapeInventoryCell(value);
+}
+
+function escapeInventoryCell(value: string): string {
+	let escaped = "";
+	for (const character of value) {
+		const codePoint = character.codePointAt(0);
+		if (codePoint === undefined) continue;
+		switch (character) {
+			case "\\":
+				escaped += "\\\\";
+				break;
+			case "|":
+				escaped += "\\|";
+				break;
+			case "`":
+				escaped += "\\`";
+				break;
+			case "\b":
+				escaped += "\\b";
+				break;
+			case "\f":
+				escaped += "\\f";
+				break;
+			case "\n":
+				escaped += "\\n";
+				break;
+			case "\r":
+				escaped += "\\r";
+				break;
+			case "\t":
+				escaped += "\\t";
+				break;
+			default:
+				escaped += isControlCodePoint(codePoint)
+					? `\\u${codePoint.toString(16).padStart(4, "0")}`
+					: character;
+		}
+	}
+	return escaped;
+}
+
+function isControlCodePoint(codePoint: number): boolean {
+	return (
+		(codePoint >= 0 && codePoint <= 0x1f) ||
+		(codePoint >= 0x7f && codePoint <= 0x9f) ||
+		codePoint === 0x2028 ||
+		codePoint === 0x2029
+	);
+}
+
+function compareText(left: string, right: string): number {
+	return left < right ? -1 : left > right ? 1 : 0;
+}
 
 export interface PreparedSkillAsset extends HarnessAsset {
 	readonly domain?: string;
