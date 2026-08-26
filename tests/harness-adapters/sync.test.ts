@@ -806,6 +806,222 @@ describe("harness sync planning", () => {
 		expect(acquiredEscapingLock).toBe(false);
 	});
 
+	test("fresh recovery restores prepared creation transactions with absent old targets", async () => {
+		// @cosmo-behavior plan:harness-adapters#B-007
+		const fixture = await createTransactionFixture("prepared-creation", 1);
+		const journal: OwnerRootTransactionJournal = {
+			...fixture.journal,
+			members: fixture.journal.members.map((member) => ({
+				...member,
+				oldState: { kind: "absent" },
+			})),
+		};
+		await rm(fixture.members[0]?.targetPath ?? "", {
+			recursive: true,
+			force: true,
+		});
+		await writeFile(fixture.journalPath, serializeOwnerRootJournal(journal));
+
+		expect(await runFreshRecovery({ ...fixture, journal })).toMatchObject({
+			state: "completed",
+			recovery: { state: "restored-old", phase: "prepared" },
+		});
+		expect(
+			await observeHarnessNodeSnapshot(fixture.members[0]?.targetPath ?? ""),
+		).toEqual({ kind: "absent" });
+		expect(await observeHarnessNodeSnapshot(fixture.journalPath)).toEqual({
+			kind: "absent",
+		});
+	});
+
+	test("fresh recovery converges removal transactions with absent new targets across phases", async () => {
+		// @cosmo-behavior plan:harness-adapters#B-007
+		const cases = [
+			{
+				phase: "prepared",
+				manifest: "old",
+				target: "old",
+				backup: "absent",
+				expectedIntent: "old",
+			},
+			{
+				phase: "installing",
+				manifest: "old",
+				target: "missing",
+				backup: "old",
+				expectedIntent: "old",
+			},
+			{
+				phase: "commit-ready",
+				manifest: "old",
+				target: "missing",
+				backup: "old",
+				expectedIntent: "new",
+			},
+			{
+				phase: "committed",
+				manifest: "new",
+				target: "missing",
+				backup: "old",
+				expectedIntent: "new",
+			},
+			{
+				phase: "rolling-back",
+				manifest: "new",
+				target: "missing",
+				backup: "old",
+				expectedIntent: "old",
+			},
+		] as const;
+
+		for (const recoveryCase of cases) {
+			const fixture = await seededRecoveryFixture(
+				`removal-${recoveryCase.phase}`,
+				recoveryCase.phase,
+				{
+					manifest: recoveryCase.manifest,
+					targets: [recoveryCase.target],
+					backups: [recoveryCase.backup],
+					stages: ["absent"],
+				},
+			);
+			const journal: OwnerRootTransactionJournal = {
+				...fixture.journal,
+				members: fixture.journal.members.map((member) => ({
+					...member,
+					newState: { kind: "absent" },
+				})),
+			};
+			await writeFile(fixture.journalPath, serializeOwnerRootJournal(journal));
+
+			expect(await runFreshRecovery({ ...fixture, journal })).toMatchObject({
+				state: "completed",
+				recovery: {
+					state:
+						recoveryCase.expectedIntent === "old"
+							? "restored-old"
+							: "committed-new",
+					phase: recoveryCase.phase,
+				},
+			});
+			const member = fixture.members[0];
+			if (!member) throw new Error("Missing removal fixture member.");
+			if (recoveryCase.expectedIntent === "old") {
+				expect(await readFile(member.targetPath)).toEqual(member.oldBytes);
+				expect(await readFile(fixture.manifestPath, "utf8")).toBe(
+					fixture.oldManifest.contents,
+				);
+			} else {
+				expect(await observeHarnessNodeSnapshot(member.targetPath)).toEqual({
+					kind: "absent",
+				});
+				expect(await readFile(fixture.manifestPath, "utf8")).toBe(
+					fixture.newManifest.contents,
+				);
+			}
+		}
+	});
+
+	test("fresh recovery restores manifest-only forget transfer and absent-target removal intent", async () => {
+		// @cosmo-behavior plan:harness-adapters#B-007
+		const operations = [
+			"forget",
+			"owner-transfer",
+			"absent-target-source-removal",
+		] as const;
+		const cases = [
+			{ phase: "prepared", manifest: "old", expectedIntent: "old" },
+			{ phase: "installing", manifest: "old", expectedIntent: "old" },
+			{ phase: "commit-ready", manifest: "old", expectedIntent: "new" },
+			{ phase: "committed", manifest: "new", expectedIntent: "new" },
+			{ phase: "rolling-back", manifest: "new", expectedIntent: "old" },
+		] as const;
+
+		for (const operation of operations) {
+			for (const recoveryCase of cases) {
+				const fixture = await seededRecoveryFixture(
+					`${operation}-${recoveryCase.phase}`,
+					recoveryCase.phase,
+					{
+						manifest: recoveryCase.manifest,
+						targets: [],
+						backups: [],
+						stages: [],
+					},
+					0,
+				);
+
+				expect(await runFreshRecovery(fixture)).toMatchObject({
+					state: "completed",
+					recovery: {
+						state:
+							recoveryCase.expectedIntent === "old"
+								? "restored-old"
+								: "committed-new",
+						phase: recoveryCase.phase,
+					},
+				});
+				expect(await readFile(fixture.manifestPath, "utf8")).toBe(
+					recoveryCase.expectedIntent === "old"
+						? fixture.oldManifest.contents
+						: fixture.newManifest.contents,
+				);
+				expect(await observeHarnessNodeSnapshot(fixture.journalPath)).toEqual({
+					kind: "absent",
+				});
+			}
+		}
+	});
+
+	test("fresh recovery preserves equal old and new target relations for cross-project regeneration", async () => {
+		// @cosmo-behavior plan:harness-adapters#B-007
+		const cases = [
+			{ phase: "installing", manifest: "old", expectedIntent: "old" },
+			{ phase: "commit-ready", manifest: "old", expectedIntent: "new" },
+			{ phase: "committed", manifest: "new", expectedIntent: "new" },
+		] as const;
+
+		for (const recoveryCase of cases) {
+			const fixture = await seededRecoveryFixture(
+				`equal-old-new-${recoveryCase.phase}`,
+				recoveryCase.phase,
+				{
+					manifest: recoveryCase.manifest,
+					targets: ["old"],
+					backups: ["old"],
+					stages: ["absent"],
+				},
+			);
+			const journal: OwnerRootTransactionJournal = {
+				...fixture.journal,
+				members: fixture.journal.members.map((member) => ({
+					...member,
+					newState: member.oldState,
+				})),
+			};
+			await writeFile(fixture.journalPath, serializeOwnerRootJournal(journal));
+
+			expect(await runFreshRecovery({ ...fixture, journal })).toMatchObject({
+				state: "completed",
+				recovery: {
+					state:
+						recoveryCase.expectedIntent === "old"
+							? "restored-old"
+							: "committed-new",
+					phase: recoveryCase.phase,
+				},
+			});
+			expect(await readFile(fixture.members[0]?.targetPath ?? "")).toEqual(
+				fixture.members[0]?.oldBytes,
+			);
+			expect(await readFile(fixture.manifestPath, "utf8")).toBe(
+				recoveryCase.expectedIntent === "old"
+					? fixture.oldManifest.contents
+					: fixture.newManifest.contents,
+			);
+		}
+	});
+
 	test("reconciles healthy complete partial transfer and source-removed inventories without destructive inference", async () => {
 		// @cosmo-behavior plan:harness-adapters#B-004
 		const fixture = await createFixture();

@@ -2318,9 +2318,9 @@ async function recoverOwnerRootJournal(
 			observed.manifest === "old" &&
 			observed.members.every(
 				(row) =>
-					row.target === "old" &&
-					row.backup === "absent" &&
-					(row.stage === "new" || row.stage === "absent"),
+					row.target.matchesOld &&
+					row.backup.isAbsent &&
+					(row.stage.matchesNew || row.stage.isAbsent),
 			)
 		) {
 			await cleanupPrepared(transaction, journal);
@@ -2445,11 +2445,17 @@ async function finishCommittedRecovery(
 		: { state: "committed-new", phase: originalPhase };
 }
 
-type VectorState = "old" | "new" | "missing" | "absent" | "other";
+interface ObservedNodeRelation {
+	readonly matchesOld: boolean;
+	readonly matchesNew: boolean;
+	readonly isAbsent: boolean;
+	readonly isOther: boolean;
+}
+
 interface ObservedJournalMember {
-	readonly target: VectorState;
-	readonly backup: VectorState;
-	readonly stage: VectorState;
+	readonly target: ObservedNodeRelation;
+	readonly backup: ObservedNodeRelation;
+	readonly stage: ObservedNodeRelation;
 }
 
 async function observeJournalVector(
@@ -2467,23 +2473,20 @@ async function observeJournalVector(
 			: "other";
 	const members = await Promise.all(
 		journal.members.map(async (member) => ({
-			target: classifyNode(
+			target: classifyNodeRelations(
 				await observeHarnessNodeSnapshot(member.targetPath),
 				member.oldState,
 				member.newState,
-				true,
 			),
-			backup: classifyNode(
+			backup: classifyNodeRelations(
 				await observeHarnessNodeSnapshot(member.backupPath),
 				member.oldState,
 				{ kind: "absent" },
-				false,
 			),
-			stage: classifyNode(
+			stage: classifyNodeRelations(
 				await observeHarnessNodeSnapshot(member.stagePath),
 				{ kind: "absent" },
 				member.newState,
-				false,
 			),
 		})),
 	);
@@ -2491,31 +2494,25 @@ async function observeJournalVector(
 		manifest,
 		members,
 		hasOther: members.some(
-			(row) =>
-				row.target === "other" ||
-				row.backup === "other" ||
-				row.stage === "other",
+			(row) => row.target.isOther || row.backup.isOther || row.stage.isOther,
 		),
 	};
 }
 
-function classifyNode(
+function classifyNodeRelations(
 	actual: HarnessNodeSnapshot,
 	oldState: HarnessNodeSnapshot,
 	newState: HarnessNodeSnapshot,
-	target: boolean,
-): VectorState {
-	if (actual.kind === "absent") {
-		return target && newState.kind === "absent"
-			? "new"
-			: target
-				? "missing"
-				: "absent";
-	}
-	if (nodeSnapshotsEqual(actual, oldState)) return "old";
-	if (nodeSnapshotsEqual(actual, newState))
-		return newState.kind === "absent" ? "absent" : "new";
-	return "other";
+): ObservedNodeRelation {
+	const matchesOld = nodeSnapshotsEqual(actual, oldState);
+	const matchesNew = nodeSnapshotsEqual(actual, newState);
+	const isAbsent = actual.kind === "absent";
+	return {
+		matchesOld,
+		matchesNew,
+		isAbsent,
+		isOther: !matchesOld && !matchesNew && !isAbsent,
+	};
 }
 
 function installingVectorCanRollback(
@@ -2524,18 +2521,15 @@ function installingVectorCanRollback(
 ): boolean {
 	return rows.every((row, index) => {
 		const member = journal.members[index];
-		if (!member || (row.stage !== "new" && row.stage !== "absent"))
-			return false;
+		if (!member || (!row.stage.matchesNew && !row.stage.isAbsent)) return false;
 		if (member.oldState.kind === "absent") {
 			return (
-				(row.target === "missing" || row.target === "new") &&
-				row.backup === "absent"
+				(row.target.matchesOld || row.target.matchesNew) && row.backup.isAbsent
 			);
 		}
 		return (
-			(row.target === "old" && row.backup === "absent") ||
-			((row.target === "missing" || row.target === "new") &&
-				row.backup === "old")
+			(row.target.matchesOld && row.backup.isAbsent) ||
+			((row.target.isAbsent || row.target.matchesNew) && row.backup.matchesOld)
 		);
 	});
 }
@@ -2543,9 +2537,9 @@ function installingVectorCanRollback(
 function commitVectorIsNew(rows: readonly ObservedJournalMember[]): boolean {
 	return rows.every(
 		(row) =>
-			row.target === "new" &&
-			(row.backup === "old" || row.backup === "absent") &&
-			row.stage === "absent",
+			row.target.matchesNew &&
+			(row.backup.matchesOld || row.backup.isAbsent) &&
+			row.stage.isAbsent,
 	);
 }
 
@@ -2557,9 +2551,11 @@ function evidenceCommitVectorIsNew(
 		const member = journal.members[index];
 		return (
 			member !== undefined &&
-			row.target === "new" &&
-			row.stage === "absent" &&
-			row.backup === (member.oldState.kind === "absent" ? "absent" : "old")
+			row.target.matchesNew &&
+			row.stage.isAbsent &&
+			(member.oldState.kind === "absent"
+				? row.backup.isAbsent
+				: row.backup.matchesOld)
 		);
 	});
 }
@@ -2573,15 +2569,13 @@ function rollingBackVectorCanRestore(
 		if (!member) return false;
 		if (member.oldState.kind === "absent") {
 			return (
-				(row.target === "missing" || row.target === "new") &&
-				row.backup === "absent"
+				(row.target.matchesOld || row.target.matchesNew) && row.backup.isAbsent
 			);
 		}
 		return (
-			(row.target === "old" &&
-				(row.backup === "old" || row.backup === "absent")) ||
-			((row.target === "new" || row.target === "missing") &&
-				row.backup === "old")
+			(row.target.matchesOld &&
+				(row.backup.matchesOld || row.backup.isAbsent)) ||
+			((row.target.matchesNew || row.target.isAbsent) && row.backup.matchesOld)
 		);
 	});
 }
@@ -2607,14 +2601,14 @@ async function rollbackJournal(
 		if (!member || !row)
 			return { state: "ambiguous", reason: "rollback-member-missing" };
 		if (member.oldState.kind === "absent") {
-			if (row.target === "new")
+			if (row.target.matchesNew && !row.target.matchesOld)
 				await removeExactTarget(
 					transaction,
 					member.targetPath,
 					member.newState,
 				);
-		} else if (row.target !== "old") {
-			if (row.target === "new") {
+		} else if (!row.target.matchesOld) {
+			if (row.target.matchesNew) {
 				await removeExactTarget(
 					transaction,
 					member.targetPath,
@@ -2809,7 +2803,6 @@ function isOwnerRootJournal(
 		isManifestSnapshot(value.oldManifest) &&
 		isManifestSnapshot(value.newManifest) &&
 		Array.isArray(value.members) &&
-		value.members.length > 0 &&
 		value.members.every(isJournalMember)
 	);
 }
@@ -2821,8 +2814,7 @@ function isJournalMember(value: unknown): value is OwnerRootJournalMember {
 		typeof value.stagePath === "string" &&
 		typeof value.backupPath === "string" &&
 		isNodeSnapshot(value.oldState) &&
-		isNodeSnapshot(value.newState) &&
-		value.newState.kind !== "absent"
+		isNodeSnapshot(value.newState)
 	);
 }
 
