@@ -22,6 +22,7 @@ import {
 	resolveHarnessTransactionPaths,
 	sha256,
 } from "../../lib/harness-adapters/provenance.ts";
+import { resolveHarnessAssetTarget } from "../../lib/harness-adapters/registry.ts";
 import {
 	GENERATED_BY_MARKER,
 	stripGeneratedByMarker,
@@ -39,6 +40,7 @@ import {
 	planHarnessSync,
 	runClaudeCommandPairBootstrap,
 	serializeOwnerRootJournal,
+	syncHarnessAsset,
 	withOwnerRootTransaction,
 } from "../../lib/harness-adapters/sync.ts";
 import type {
@@ -62,6 +64,85 @@ afterEach(async () => {
 });
 
 describe("harness sync planning", () => {
+	test("routes the writable single-asset entry point through the owner lock and journal without erasing a concurrent edit", async () => {
+		const root = await mkdtemp(join(tmpdir(), "harness-single-asset-sync-"));
+		tempRoots.push(root);
+		const projectRoot = join(root, "project");
+		const homeRoot = join(root, "home");
+		const sourceRoot = join(projectRoot, "sources");
+		const sourcePath = join(sourceRoot, "example", "SKILL.md");
+		await mkdir(dirname(sourcePath), { recursive: true });
+		await writeFile(sourcePath, "# Original\n");
+		const asset: HarnessAsset = {
+			assetId: "skill:example",
+			kind: "skill",
+			ownership: { kind: "project" },
+			sourceRootId: "test:single-asset",
+			sourceRoot,
+			sourcePath: "example",
+			logicalPath: "example",
+			outputIdentity: "example",
+			defaultScope: "project",
+		};
+		const target = resolveHarnessAssetTarget({
+			targetId: "claude",
+			asset,
+			scope: "project",
+			roots: { projectRoot, homeRoot },
+		});
+		await syncHarnessAsset({ projectRoot, asset, target });
+		const manifestPath = join(
+			target.ownerRoot,
+			".cosmonauts-harness-manifest.json",
+		);
+		const manifestBefore = await readFile(manifestPath, "utf8");
+		await writeFile(sourcePath, "# Source changed\n");
+		const localEdit = "# Concurrent local edit\n";
+		const transactionPaths = resolveHarnessTransactionPaths(
+			target.ownerRoot,
+			target.targetId,
+		);
+		let observedTransaction = false;
+
+		const result = await syncHarnessAsset({
+			projectRoot,
+			asset,
+			target,
+			onPhasePersisted: async (phase, journal) => {
+				if (phase !== "installing") return;
+				observedTransaction = true;
+				expect(
+					JSON.parse(await readFile(transactionPaths.lockPath, "utf8")),
+				).toMatchObject({ pid: process.pid });
+				expect(await readFile(transactionPaths.journalPath, "utf8")).toBe(
+					serializeOwnerRootJournal(journal),
+				);
+				await writeFile(join(target.targetPath, "SKILL.md"), localEdit);
+			},
+		});
+
+		expect(observedTransaction).toBe(true);
+		expect(result).toMatchObject({
+			beforeStatus: "locally-edited",
+			reason: "concurrent-change",
+			wroteTarget: false,
+			wroteManifest: false,
+			exitCode: 1,
+		});
+		expect(await readFile(join(target.targetPath, "SKILL.md"), "utf8")).toBe(
+			localEdit,
+		);
+		expect(await readFile(manifestPath, "utf8")).toBe(manifestBefore);
+		expect(
+			await observeHarnessNodeSnapshot(transactionPaths.journalPath),
+		).toEqual({ kind: "absent" });
+		expect(await observeHarnessNodeSnapshot(transactionPaths.lockPath)).toEqual(
+			{
+				kind: "absent",
+			},
+		);
+	});
+
 	test("bootstraps and migrates both commands as one nonhistorical recoverable transaction", async () => {
 		// @cosmo-behavior plan:harness-adapters#B-009
 		const mismatch = await createCommandBootstrapFixture("mismatch");

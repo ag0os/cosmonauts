@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
 	lstat,
 	mkdir,
+	mkdtemp,
 	open,
 	readdir,
 	readFile,
@@ -12,6 +13,7 @@ import {
 	unlink,
 	writeFile,
 } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import {
 	basename,
 	dirname,
@@ -84,6 +86,13 @@ export interface SyncHarnessAssetOptions {
 	readonly now?: () => Date;
 	/** Reuse an enclosing owner-group check window instead of rereading state. */
 	readonly checkObservation?: HarnessAssetCheckObservation;
+	/** Deterministic synchronization point for transaction regression tests. */
+	readonly onTransactionLock?: () => void | Promise<void>;
+	/** Deterministic fault/edit injection after a durable transaction phase. */
+	readonly onPhasePersisted?: (
+		phase: OwnerRootTransactionPhase,
+		journal: OwnerRootTransactionJournal,
+	) => void | Promise<void>;
 }
 
 export interface HarnessAssetCheckObservation {
@@ -121,14 +130,161 @@ export interface SyncHarnessAssetResult {
 }
 
 /**
- * Materialize one already-resolved catalogue asset. All source, generated-node,
- * and containment validation completes before an owner root can be created.
- * Multi-row locking/journaling is layered over this single-row primitive.
+ * Inspect or materialize one already-resolved catalogue asset. Check mode is
+ * observation-only; writable calls reclassify under the canonical owner lock
+ * and apply through the same journaled transaction seam as multi-row sync.
  */
 export async function syncHarnessAsset(
 	options: SyncHarnessAssetOptions,
 ): Promise<SyncHarnessAssetResult> {
-	const result = await syncHarnessAssetCore(options);
+	if (options.check) {
+		return finalizeSyncHarnessAssetResult(
+			await syncHarnessAssetCore(options),
+			true,
+		);
+	}
+	if (options.checkObservation) {
+		throw new Error("A harness check observation requires check mode.");
+	}
+	const preview = await syncHarnessAssetCore({ ...options, check: true });
+	if (
+		preview.beforeStatus !== "missing" &&
+		preview.beforeStatus !== "source-ahead"
+	) {
+		if (
+			preview.beforeStatus === "locally-edited" &&
+			options.target.requestedMode !== undefined &&
+			preview.recordedMode !== undefined &&
+			options.target.requestedMode !== preview.recordedMode
+		) {
+			throw new Error(
+				`Asset "${options.asset.assetId}" can convert from recorded mode "${preview.recordedMode}" to requested mode "${preview.requestedMode}" only from an intact recorded baseline.`,
+			);
+		}
+		return finalizeSyncHarnessAssetResult(preview, false);
+	}
+
+	const transactionResult = await withOwnerRootTransaction(
+		{
+			ownerRoot: options.target.ownerRoot,
+			targetId: options.target.targetId,
+		},
+		async (transaction) => {
+			await options.onTransactionLock?.();
+			const transactionTargetPath = join(
+				transaction.canonicalOwnerRoot,
+				relative(
+					resolve(options.target.ownerRoot),
+					resolve(options.target.targetPath),
+				),
+			);
+			const observed = await observeWritableHarnessAsset(transaction, options);
+			const classified = await syncHarnessAssetCore({
+				...options,
+				check: true,
+				checkObservation: {
+					manifest: observed.manifest,
+					target: observed.target,
+				},
+			});
+			if (observed.concurrentChange) {
+				return {
+					classified: concurrentAssetResult(classified),
+				} as const;
+			}
+			if (
+				classified.beforeStatus === "locally-edited" &&
+				options.target.requestedMode !== undefined &&
+				classified.recordedMode !== undefined &&
+				options.target.requestedMode !== classified.recordedMode
+			) {
+				throw new Error(
+					`Asset "${options.asset.assetId}" can convert from recorded mode "${classified.recordedMode}" to requested mode "${classified.requestedMode}" only from an intact recorded baseline.`,
+				);
+			}
+			if (
+				classified.beforeStatus !== "missing" &&
+				classified.beforeStatus !== "source-ahead"
+			) {
+				return { classified } as const;
+			}
+
+			const prepared = await prepareHarnessMaterialization({
+				projectRoot: options.projectRoot,
+				asset: options.asset,
+				target: options.target,
+				mode: classified.requestedMode,
+				generatedNodes: options.generatedNodes,
+			});
+			const newState = await observePreparedHarnessTarget(prepared);
+			const key = manifestEntryKey(
+				classified.manifestEntry.owner,
+				classified.manifestEntry.assetId,
+			);
+			const applied = await applySyncPlanInTransaction(transaction, {
+				oldManifest: observed.manifestFile,
+				newManifestContents: serializeHarnessManifest({
+					schemaVersion: 1,
+					entries: {
+						...observed.manifest.entries,
+						[key]: classified.manifestEntry,
+					},
+				}),
+				members: [
+					{
+						targetPath: transactionTargetPath,
+						oldState: observed.targetSnapshot,
+						newState,
+						writeStage: (stagePath) =>
+							writePreparedTarget({ targetPath: stagePath, prepared }),
+					},
+				],
+				...(options.onPhasePersisted
+					? { onPhasePersisted: options.onPhasePersisted }
+					: {}),
+			});
+			return { classified, applied } as const;
+		},
+	);
+
+	if (transactionResult.state === "lock-contended") {
+		throw new Error(
+			`Harness transaction lock contended at ${transactionResult.lockPath}.`,
+		);
+	}
+	if (transactionResult.state === "recovery-required") {
+		throw new Error(
+			`Harness transaction recovery is required: ${JSON.stringify(transactionResult.recovery)}.`,
+		);
+	}
+	if (transactionResult.state === "persisted-release-unconfirmed") {
+		throw new Error(
+			`Harness transaction release is unconfirmed: ${errorMessage(transactionResult.error)}.`,
+		);
+	}
+	const { classified, applied } = transactionResult.result;
+	if (!applied) return finalizeSyncHarnessAssetResult(classified, false);
+	if (applied.state === "committed") {
+		return finalizeSyncHarnessAssetResult(
+			{ ...classified, wroteTarget: true, wroteManifest: true },
+			false,
+		);
+	}
+	if (applied.state === "local-edit-conflict") {
+		return finalizeSyncHarnessAssetResult(
+			concurrentAssetResult(classified),
+			false,
+		);
+	}
+	throw new Error(
+		`Harness transaction did not commit asset "${options.asset.assetId}": ${JSON.stringify(applied)}.`,
+	);
+}
+
+function finalizeSyncHarnessAssetResult(
+	result: Omit<SyncHarnessAssetResult, "exitCode">,
+	check: boolean,
+): SyncHarnessAssetResult {
 	const reconciled = result.wroteTarget || result.wroteManifest;
 	return {
 		...result,
@@ -136,18 +292,99 @@ export async function syncHarnessAsset(
 			? { generatingProjectRoot: result.manifestEntry.generatingProjectRoot }
 			: {}),
 		exitCode:
-			result.beforeStatus === "current" || (!options.check && reconciled)
-				? 0
-				: 1,
+			result.beforeStatus === "current" || (!check && reconciled) ? 0 : 1,
+	};
+}
+
+interface WritableHarnessAssetObservation {
+	readonly manifest: HarnessProvenanceManifest;
+	readonly manifestFile: HarnessManifestSnapshot;
+	readonly target: TargetObservation;
+	readonly targetSnapshot: HarnessNodeSnapshot;
+	readonly concurrentChange: boolean;
+}
+
+async function observeWritableHarnessAsset(
+	transaction: OwnerRootTransaction,
+	options: SyncHarnessAssetOptions,
+): Promise<WritableHarnessAssetObservation> {
+	const owner = await resolveAssetOwnerIdentity(
+		options.asset,
+		options.projectRoot,
+	);
+	const key = manifestEntryKey(owner, options.asset.assetId);
+	const stable = await observeStableHarnessState({
+		manifestPath: transaction.manifestPath,
+		journalPath: transaction.journalPath,
+		observeTarget: async (manifest) => {
+			const before = await observeHarnessNodeSnapshot(
+				options.target.targetPath,
+			);
+			const recorded = manifest.entries[key];
+			const state = recorded
+				? await observeRecordedTarget(options.target.targetPath, recorded)
+				: await pathState(options.target.targetPath);
+			const after = await observeHarnessNodeSnapshot(options.target.targetPath);
+			const target: TargetObservation =
+				state === "intact"
+					? {
+							state: "exact-baseline",
+							baselineOwnerId: owner.ownerId,
+							baselineAssetId: options.asset.assetId,
+						}
+					: state === "absent"
+						? { state: "absent" }
+						: { state: "edited" };
+			return { before, after, target };
+		},
+	});
+	return {
+		manifest: stable.manifest,
+		manifestFile: stable.manifestFile.exists
+			? {
+					kind: "file",
+					digest: stable.manifestFile.digest,
+					contents: stable.manifestFile.contents,
+				}
+			: { kind: "absent" },
+		target: stable.target.target,
+		targetSnapshot: stable.target.before,
+		concurrentChange:
+			stable.concurrentChange ||
+			!nodeSnapshotsEqual(stable.target.before, stable.target.after),
+	};
+}
+
+async function observePreparedHarnessTarget(
+	prepared: PreparedHarnessMaterialization,
+): Promise<HarnessNodeSnapshot> {
+	const scratch = await mkdtemp(join(tmpdir(), "cosmonauts-harness-render-"));
+	const scratchTarget = join(scratch, "target");
+	try {
+		await writePreparedTarget({ targetPath: scratchTarget, prepared });
+		return await observeHarnessNodeSnapshot(scratchTarget);
+	} finally {
+		await rm(scratch, { recursive: true, force: true });
+	}
+}
+
+function concurrentAssetResult(
+	result: Omit<SyncHarnessAssetResult, "exitCode">,
+): Omit<SyncHarnessAssetResult, "exitCode"> {
+	return {
+		...result,
+		beforeStatus: "locally-edited",
+		reason: "concurrent-change",
+		wroteTarget: false,
+		wroteManifest: false,
 	};
 }
 
 async function syncHarnessAssetCore(
 	options: SyncHarnessAssetOptions,
 ): Promise<Omit<SyncHarnessAssetResult, "exitCode">> {
-	if (options.checkObservation && !options.check) {
-		throw new Error("A harness check observation requires check mode.");
-	}
+	if (!options.check)
+		throw new Error("Harness asset classification requires check mode.");
 	const explicitLinkPreparation =
 		options.target.requestedMode === "link"
 			? await prepareHarnessMaterialization({
@@ -178,35 +415,31 @@ async function syncHarnessAssetCore(
 		| "edited"
 		| undefined;
 	let manifest: HarnessProvenanceManifest;
-	if (options.check) {
-		if (options.checkObservation) {
-			manifest = options.checkObservation.manifest;
-			observedTargetState =
-				options.checkObservation.target.state === "exact-baseline"
-					? "intact"
-					: options.checkObservation.target.state;
-		} else {
-			const transactionPaths = resolveHarnessTransactionPaths(
-				options.target.ownerRoot,
-				options.target.targetId,
-			);
-			const observation = await observeStableHarnessState({
-				manifestPath,
-				journalPath: transactionPaths.journalPath,
-				observeTarget: async (observedManifest) => {
-					const observedKey = manifestEntryKey(owner, options.asset.assetId);
-					const observedRecorded = observedManifest.entries[observedKey];
-					return observedRecorded
-						? observeRecordedTarget(options.target.targetPath, observedRecorded)
-						: pathState(options.target.targetPath);
-				},
-			});
-			manifest = observation.manifest;
-			observedTargetState = observation.target;
-			consistencyReason = observation.reason;
-		}
+	if (options.checkObservation) {
+		manifest = options.checkObservation.manifest;
+		observedTargetState =
+			options.checkObservation.target.state === "exact-baseline"
+				? "intact"
+				: options.checkObservation.target.state;
 	} else {
-		manifest = await readHarnessManifest(manifestPath);
+		const transactionPaths = resolveHarnessTransactionPaths(
+			options.target.ownerRoot,
+			options.target.targetId,
+		);
+		const observation = await observeStableHarnessState({
+			manifestPath,
+			journalPath: transactionPaths.journalPath,
+			observeTarget: async (observedManifest) => {
+				const observedKey = manifestEntryKey(owner, options.asset.assetId);
+				const observedRecorded = observedManifest.entries[observedKey];
+				return observedRecorded
+					? observeRecordedTarget(options.target.targetPath, observedRecorded)
+					: pathState(options.target.targetPath);
+			},
+		});
+		manifest = observation.manifest;
+		observedTargetState = observation.target;
+		consistencyReason = observation.reason;
 	}
 	const key = manifestEntryKey(owner, options.asset.assetId);
 	const recorded = manifest.entries[key];
@@ -268,40 +501,17 @@ async function syncHarnessAssetCore(
 				reason: foreignClaim ? "foreign-owner" : "foreign-or-untraceable",
 			});
 		}
-		if (options.check) {
-			return noWriteResult(entry, {
-				requestedMode,
-				beforeStatus: "missing",
-				reason: "missing",
-			});
-		}
-		await commitMaterialization(
-			options.target,
-			prepared,
-			manifest,
-			key,
-			entry,
-			manifestPath,
-		);
-		return {
+		return noWriteResult(entry, {
 			requestedMode,
 			beforeStatus: "missing",
 			reason: "missing",
-			wroteTarget: true,
-			wroteManifest: true,
-			manifestEntry: entry,
-		};
+		});
 	}
 
 	const explicitConversion =
 		options.target.requestedMode !== undefined &&
 		options.target.requestedMode !== recorded.mode;
 	if (targetState !== "intact") {
-		if (explicitConversion && !options.check) {
-			throw new Error(
-				`Asset "${options.asset.assetId}" can convert from recorded mode "${recorded.mode}" to requested mode "${requestedMode}" only from an intact recorded baseline.`,
-			);
-		}
 		return noWriteResult(recorded, {
 			recordedMode: recorded.mode,
 			requestedMode,
@@ -336,33 +546,13 @@ async function syncHarnessAssetCore(
 		prepared,
 		generatingProjectRoot,
 	);
-	if (options.check) {
-		return noWriteResult(entry, {
-			recordedMode: recorded.mode,
-			requestedMode,
-			beforeStatus: "source-ahead",
-			reason: difference,
-			...(generatedByOtherProject ? { previousGeneratingProjectRoot } : {}),
-		});
-	}
-	await commitMaterialization(
-		options.target,
-		prepared,
-		manifest,
-		key,
-		entry,
-		manifestPath,
-	);
-	return {
+	return noWriteResult(entry, {
 		recordedMode: recorded.mode,
 		requestedMode,
 		beforeStatus: "source-ahead",
 		reason: difference,
-		wroteTarget: true,
-		wroteManifest: true,
-		manifestEntry: entry,
 		...(generatedByOtherProject ? { previousGeneratingProjectRoot } : {}),
-	};
+	});
 }
 
 async function validateOwnerTarget(
@@ -516,31 +706,6 @@ function desiredDifference(
 		return "generated-input-changed";
 	}
 	return sameJson(recordedNodes, preparedNodes) ? undefined : "source-changed";
-}
-
-async function commitMaterialization(
-	target: ResolvedHarnessAssetTarget,
-	prepared: PreparedHarnessMaterialization,
-	manifest: HarnessProvenanceManifest,
-	key: string,
-	entry: MaterializedHarnessManifestEntry,
-	manifestPath: string,
-): Promise<void> {
-	await writePreparedTarget({ targetPath: target.targetPath, prepared });
-	const installed = await observeRecordedTarget(target.targetPath, entry);
-	if (installed !== "intact") {
-		throw new Error(
-			`Installed target for asset "${entry.assetId}" did not match its prepared provenance.`,
-		);
-	}
-	await mkdir(target.ownerRoot, { recursive: true });
-	await writeFile(
-		manifestPath,
-		serializeHarnessManifest({
-			schemaVersion: 1,
-			entries: { ...manifest.entries, [key]: entry },
-		}),
-	);
 }
 
 function noWriteResult(
@@ -2164,6 +2329,27 @@ export async function applySyncPlanInTransaction(
 		journal = { ...journal, phase: "installing" };
 		await persistJournal(transaction, journal);
 		await options.onPhasePersisted?.("installing", journal);
+		const changedBeforeInstall = (
+			await Promise.all(
+				members.map(async (member) => ({
+					member,
+					matches: nodeSnapshotsEqual(
+						await observeHarnessNodeSnapshot(member.targetPath),
+						member.oldState,
+					),
+				})),
+			)
+		)
+			.filter(({ matches }) => !matches)
+			.map(({ member }) => member.targetPath);
+		if (changedBeforeInstall.length > 0) {
+			await cleanupPrepared(transaction, journal);
+			return {
+				state: "local-edit-conflict",
+				transactionId,
+				targetPaths: changedBeforeInstall,
+			};
+		}
 
 		for (const member of members) {
 			await revalidateBeforeOwnerMutation(transaction, member.targetPath);
