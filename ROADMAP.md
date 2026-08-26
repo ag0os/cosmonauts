@@ -6,7 +6,7 @@ Work backlog in two sections. **Prioritized** items at the top are ordered — p
 
 Re-assessed and reordered **2026-08-25** in a human-led re-planning session, replacing the 2026-06 capability-track ordering (that queue's history — `task-id-system` through `knowledge-surface`, all shipped — lives in `knowledge/` and git history). The organizing thesis: **cosmonauts as a harness-agnostic software factory.** Factory assets — agents, skills, workflows, knowledge, the architecture picture — are defined once, in cosmonauts; any harness (cosmonauts itself, Claude Code, Codex, Gemini, …) can play coordinator or worker; and the factory improves itself from its own session data.
 
-Agreed spine: **portable harness** (`harness-adapters`, `drive-envelope`, `coordinator-packages` — added 2026-08-25 — `external-session-capture`) → **factory quality** (`factory-modes`, `architecture-aware-planning`, `worker-inloop-analysis`) → **knowledge-and-memory continuation** (per the §10.1 amendment in `missions/architecture/knowledge-and-memory.md`) → **`agent-interaction`** → **`domains`**. Items marked **(thread)** are deliberately small and run alongside whatever is on top — start them at the first opportunity; they block nothing.
+Agreed spine: **portable harness** (`harness-adapters`, `drive-envelope`, `vendored-skills` — added 2026-08-26, sequencing unconfirmed — `coordinator-packages` — added 2026-08-25 — `external-session-capture`) → **factory quality** (`factory-modes`, `architecture-aware-planning`, `worker-inloop-analysis`) → **knowledge-and-memory continuation** (per the §10.1 amendment in `missions/architecture/knowledge-and-memory.md`) → **`agent-interaction`** → **`domains`**. Items marked **(thread)** are deliberately small and run alongside whatever is on top — start them at the first opportunity; they block nothing.
 
 Active plans are not roadmap items: `harness-adapters` (picked up 2026-08-25 — was the top of this queue), `memory-consolidation` (re-spec required before tasks — see §10.1), `autonomy-host`, `coding-extraction`, and `superplanning-integration` (plus the deferred `web-research` spec) live under `missions/plans/`.
 
@@ -28,6 +28,23 @@ Decouple Drive's value (isolation, gates, session capture, reporting) from the p
 - Callable internally (agent, chain) and externally (any harness with cosmonauts knowledge driving the CLI non-interactively)
 - Free-form runs still record sessions and outcomes, so they feed the memory loop like plan-backed runs
 - Source of truth: `missions/architecture/orchestration-future.md` (extends the `runStart` seam)
+
+### `vendored-skills`: Cosmonauts Carries Third-Party Skills Too
+
+*Added 2026-08-26. Proposed placement is after `drive-envelope`; the 2026-08-25 spine was human-ratified, so treat this insertion as pending confirmation — nothing downstream blocks on it.*
+
+Today the portable-harness thesis is only half true. Switch harness and your **cosmonauts** assets follow you; your hand-installed **third-party** skills do not. `playwright-cli` is the proof — installed by hand twice, once in Claude Code and once in cosmonauts, so agents could use the tool in both. That is exactly the hand-maintained-copy drift `harness-adapters` exists to kill, one layer out. Make cosmonauts able to store and sync skills it did not author.
+
+- **Does not invalidate `harness-adapters`.** Spec amendment A-001 excluded `playwright-cli` from *migration* because it was not traceable to a cosmonauts source — correct then, correct now. Vendoring is a different, additive operation with its own evidence.
+- **Native vs vendored must be a real distinction**, for mechanical reasons rather than taxonomy:
+  - *Lifecycle* — native skills are authored here and you edit the source; vendored skills are authored upstream, so a local edit forks them and upstream updates need re-import. Opposite defaults.
+  - *Two provenance hops* — `INV-001` traces every export to one in-repo source, but a vendored skill's in-repo source is itself a copy. Needs upstream → vendored → exported, with drift detectable at **both** hops; the shipped manifest models only the second.
+  - *Direction* — `harness sync` is repo → harness. Vendoring needs a separate ingest operation (upstream/harness → repo). Collapsing both into one command is the trap.
+  - *Redistribution* — native skills ship in the npm tarball freely; third-party ones raise licensing questions `package.json` "files" does not currently consider.
+- **The hard part.** Vendoring reopens `INV-002`'s worst case. "Foreign means never touch" is a clean rule the whole conflict machinery rests on; "…unless vendored" creates a class where cosmonauts overwrites something it did not author. Note that importing `playwright-cli` means adopting the **generated** artifact as source of truth (7450 bytes, 8 files, an `allowed-tools:` key) over the 2693-byte cosmonauts wrapper that merely tells you to run the generator — precisely the adopt operation D-014 forbids. Import must therefore be explicit, one-time and proof-carrying, in the shape of the D-018 command bootstrap, never an inference from name or byte equality.
+- **Naming trap**: `external-skills/` already means the opposite — skills cosmonauts exposes *outward* to other harnesses. Do not reuse "external" for "imported from outside"; prefer `vendor-skills/` or `imported-skills/` so direction stays unambiguous.
+- **Open ruling that shapes the rest of the design**: is a vendored skill editable in-repo at all, or strictly read-only until re-imported? That one choice determines the provenance model, the conflict rules, and whether "local patch on top of upstream" is a supported concept.
+- Cross-links: `harness-adapters` (registry, provenance, `HarnessAsset.ownership` is the natural seam for a third variant) · `domains` (owns *publish*; this is *ingest*, a different concern) · `coordinator-packages` (a thin coordinator wants vendored skills synced too)
 
 ### `coordinator-packages`: Packaged Cosmonauts Coordinators for Any Harness
 

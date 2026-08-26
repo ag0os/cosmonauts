@@ -172,9 +172,11 @@ Invariants — mechanism yields to these:
 - The Claude Code and Codex skill/command formats remain
   markdown-with-frontmatter loaded from well-known directories; if a
   harness moves to a packaged format, that lands in its registry transform.
-- Symlinked skill directories are followed by Claude Code and Codex
+- Symlinked skill **directories** are followed by Claude Code and Codex
   (empirically true today: `~/.agents/skills/cosmonauts` and three
-  hand-made `~/.claude/skills/*` symlinks are in daily use).
+  hand-made `~/.claude/skills/*` symlinks are in daily use). Symlinked
+  `SKILL.md` **files** are followed by Claude Code only; Codex ignores them.
+  *(Measured 2026-08-26; see A-003.)*
 - The two migrated commands remain cosmonauts-generic (usable from any
   cosmonauts project), which is why personal scope (`~/.claude/commands/`)
   is their default render target.
@@ -227,3 +229,38 @@ Ratified amendments to this spec, recorded per
   - Why: the deviation protocol's discriminator appeals to a canonical
     Intent goal; an invariant-only Intent leaves implementers without one.
   - Decided by: human, 2026-08-25
+
+- **A-003 — Link-shape support is registered per target, not per mode.**
+  - Superseded text: the Assumptions bullet "Symlinked skill directories are
+    followed by Claude Code and Codex", insofar as the plan extrapolated it from
+    directory symlinks to `SKILL.md` file symlinks for every target.
+  - Why it failed: the assumption is true as written but was read more broadly
+    than it was measured. A controlled Checkpoint B sandbox probe varying only
+    link shape found Codex 0.147.0 discovers a directory-symlinked skill but
+    **not** either `SKILL.md` file-symlink shape (flat-skill or
+    generated-wrapper); Claude Code discovers all three. Reproduced
+    independently via `codex -a never exec --ephemeral --ignore-user-config
+    --sandbox read-only`. Under the unamended reading, `harness sync --target
+    codex --link` would emit a wrapper Codex silently cannot load — no error and
+    no drift signal.
+  - Amendment: link support is registered per target **and per link shape**. The
+    Claude skill adapter registers `directory`, `flat-skill`, and
+    `generated-wrapper`; the Codex skill adapter registers only `directory`. A
+    `--link` selection resolving to an unregistered shape fails before any
+    owner-root or manifest write, naming the asset, the resolved shape, and the
+    shapes that target does register. Explicit link never falls back to copy, and
+    no provenance is recorded for a rejected request. Copy mode is unaffected for
+    every target and shape. `AC-002`'s "supports link mode and copy mode" is read
+    accordingly: availability is per target/shape, not universal.
+  - Alternatives rejected: falling back to copy for Codex (silently violates an
+    explicit `--link`, and the plan's Link-harness-support risk forbids it);
+    leaving link support unqualified (produces undetectably broken skills, which
+    is exactly what `INV-003` exists to prevent); treating the probe as the
+    plan's split trigger (the fix extends the existing `supportedModes`
+    mechanism under `B-001`/`B-005` exactly as D-019 did, needing no thirteenth
+    behavior).
+  - Why: keeps `INV-006` link mode opt-in *and honest about what a target can
+    actually load*, and keeps `INV-003` drift detection meaningful. Slice C was
+    unaffected — every live migration is copy mode against Claude.
+  - Implemented by plan decision D-021 and TASK-594.
+  - Decided by: human, 2026-08-26

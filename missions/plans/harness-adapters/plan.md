@@ -179,6 +179,7 @@ Capability evidence: `analysis_complexity`, `analysis_duplication`, `analysis_bo
   - Alternatives: Falling back to copy for Codex was rejected because the plan's Link-harness-support risk forbids it and it would silently violate an explicit `--link`. Leaving `supportedModes: ["copy", "link"]` unqualified was rejected because `harness sync --target codex --link` then emits a wrapper Codex cannot load, with no error and no drift signal — undetectable brokenness that `INV-003` exists to prevent. Treating the probe as the plan's split trigger was rejected because the fix extends the existing `supportedModes` mechanism under `B-001`/`B-005` exactly as D-019 did, requiring no thirteenth behavior.
   - Why: Keeps `INV-006` link mode opt-in and honest about what a target can actually load, and keeps `INV-003` drift detection meaningful, while leaving Slice C (copy-only against Claude) unaffected.
   - Decided by: human, 2026-08-26
+  - Ratified into the spec as amendment **A-003** (2026-08-26), which also corrects the Assumptions bullet this decision was measured against.
 
 ### Review disposition
 
