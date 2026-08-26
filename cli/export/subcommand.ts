@@ -14,6 +14,11 @@ import type {
 } from "../../lib/agent-packages/types.ts";
 import { qualifyRole } from "../../lib/agents/qualified-role.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
+import {
+	getHarnessPackageTarget,
+	listHarnessPackageTargetLabels,
+	resolveHarnessPackageDefinitionTarget,
+} from "../../lib/harness-adapters/registry.ts";
 import { discoverFrameworkBundledPackageDirs } from "../../lib/packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../../lib/runtime.ts";
 
@@ -32,11 +37,7 @@ interface ResolvedExportInput {
 }
 
 const DEFAULT_TARGET: SupportedExportTarget = "claude-cli";
-const SUPPORTED_TARGETS = [
-	"claude-cli",
-	"codex",
-] as const satisfies readonly SupportedExportTarget[];
-const SUPPORTED_TARGET_LABEL = SUPPORTED_TARGETS.join(", ");
+const SUPPORTED_TARGET_LABEL = listHarnessPackageTargetLabels().join(", ");
 
 export function createExportProgram(): Command {
 	const program = new Command();
@@ -118,24 +119,22 @@ function requireOutFile(outFile: string | undefined): string {
 }
 
 function parseTarget(value: string): SupportedExportTarget {
-	if (isSupportedTarget(value)) return value;
+	const target = getHarnessPackageTarget(value);
+	if (target) return target.packageCompatibility.serializedTarget;
 	throw new Error(
 		`unsupported-target: "${value}" is not supported. Supported export targets: ${SUPPORTED_TARGET_LABEL}`,
 	);
-}
-
-function isSupportedTarget(value: string): value is SupportedExportTarget {
-	return SUPPORTED_TARGETS.includes(value as SupportedExportTarget);
 }
 
 function assertDefinitionDeclaresTarget(
 	definition: AgentPackageDefinition,
 	target: SupportedExportTarget,
 ): void {
-	if (definition.targets[target]) return;
-	throw new Error(
-		`Agent package definition "${definition.id}" does not declare target "${target}". Add targets.${target} after reviewing the package for that runtime.`,
-	);
+	resolveHarnessPackageDefinitionTarget({
+		definitionId: definition.id,
+		targets: definition.targets,
+		target,
+	});
 }
 
 function validateInputMode(

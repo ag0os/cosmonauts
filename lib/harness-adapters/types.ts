@@ -50,6 +50,7 @@ export interface HarnessAssetAdapter {
 }
 
 export interface HarnessPackageCompatibility {
+	readonly canonicalDefinitionKey: "claude" | "codex";
 	readonly definitionKeys: readonly string[];
 	readonly serializedTarget: "claude-cli" | "codex";
 	readonly packageIdSuffix: "claude-cli" | "codex";

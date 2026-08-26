@@ -4,6 +4,7 @@ import type { AgentDefinition } from "../agents/types.ts";
 import { resolveDefaultDomain } from "../domains/default-domain.ts";
 import { assemblePrompts } from "../domains/prompt-assembly.ts";
 import type { DomainResolver } from "../domains/resolver.ts";
+import { resolveHarnessPackageDefinitionTarget } from "../harness-adapters/registry.ts";
 import { assertRawSourcePromptExportable } from "./compatibility.ts";
 import { readPackagePrompt } from "./definition.ts";
 import { resolvePackageSkills } from "./skills.ts";
@@ -30,7 +31,11 @@ export async function buildAgentPackage(
 	options: BuildAgentPackageOptions,
 ): Promise<AgentPackage> {
 	const { definition, target } = options;
-	const targetOptions = requireTargetOptions(definition, target);
+	const resolvedTarget = resolveHarnessPackageDefinitionTarget({
+		definitionId: definition.id,
+		targets: definition.targets,
+		target,
+	});
 	const sourceAgent = resolveSourceAgent(options);
 	const sourceAgentId = sourceAgent
 		? qualifyRole(sourceAgent.id, sourceAgent.domain)
@@ -63,20 +68,9 @@ export async function buildAgentPackage(
 			? { thinkingLevel: sourceAgent.thinkingLevel }
 			: {}),
 		projectContext: "omit",
-		target,
-		targetOptions,
+		target: resolvedTarget.serializedTarget,
+		targetOptions: resolvedTarget.targetOptions,
 	};
-}
-
-function requireTargetOptions(
-	definition: AgentPackageDefinition,
-	target: SupportedExportTarget,
-) {
-	const targetOptions = definition.targets[target];
-	if (targetOptions) return targetOptions;
-	throw new Error(
-		`Agent package definition "${definition.id}" does not declare target "${target}". Add targets.${target} after reviewing the package for that runtime.`,
-	);
 }
 
 function resolveSourceAgent(

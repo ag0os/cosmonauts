@@ -11,6 +11,12 @@ const skillPath = join(
 	"SKILL.md",
 );
 
+const packageGuidancePaths = [
+	"README.md",
+	"docs/orchestration.md",
+	"domains/shared/skills/agent-packaging/SKILL.md",
+] as const;
+
 async function readSkill(): Promise<string> {
 	return readFile(skillPath, "utf-8");
 }
@@ -55,5 +61,21 @@ describe("agent-packaging skill", () => {
 		expect(content).toContain("spawn_agent");
 		expect(content).toContain("chain_run");
 		expect(content).toContain("drive");
+	});
+
+	test("documents canonical package keys and unchanged serialized target labels", async () => {
+		const contents = await Promise.all(
+			packageGuidancePaths.map((path) =>
+				readFile(join(process.cwd(), path), "utf-8"),
+			),
+		);
+
+		for (const content of contents) {
+			expect(content).toContain("`targets.claude`");
+			expect(content).toContain("`targets.codex`");
+			expect(content).toContain("`claude-cli, codex`");
+			expect(content).not.toContain('targets["claude-cli"]');
+			expect(content).not.toContain('skillDelivery: "reference"');
+		}
 	});
 });

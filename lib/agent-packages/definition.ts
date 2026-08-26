@@ -3,6 +3,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import matter from "gray-matter";
 import { qualifyRole } from "../agents/qualified-role.ts";
 import type { AgentDefinition, AgentToolSet } from "../agents/types.ts";
+import { getHarnessPackageTarget } from "../harness-adapters/registry.ts";
 import type {
 	AgentPackageDefinition,
 	ExternalRuntimeTarget,
@@ -120,16 +121,22 @@ export function definitionFromAgent(
 	target: SupportedExportTarget = "claude-cli",
 ): AgentPackageDefinition {
 	const sourceAgent = qualifyRole(definition.id, definition.domain);
+	const registryTarget = getHarnessPackageTarget(target);
+	if (!registryTarget) {
+		throw new Error(`Harness package target "${target}" is not registered.`);
+	}
+	const { canonicalDefinitionKey, packageIdSuffix } =
+		registryTarget.packageCompatibility;
 	return {
 		schemaVersion: 1,
-		id: `${sourceAgent.replaceAll("/", "-")}-${target}`,
+		id: `${sourceAgent.replaceAll("/", "-")}-${packageIdSuffix}`,
 		description: definition.description,
 		sourceAgent,
 		prompt: { kind: "source-agent" },
 		tools: { preset: definition.tools },
 		skills: { mode: "source-agent" },
 		projectContext: "omit",
-		targets: { [target]: {} },
+		targets: { [canonicalDefinitionKey]: {} },
 	};
 }
 

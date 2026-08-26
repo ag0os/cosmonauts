@@ -227,7 +227,7 @@ Export from a source agent shorthand:
 cosmonauts export coding/explorer --target claude-cli --out bin/explorer-claude
 ```
 
-`--target` defaults to `claude-cli`; Phase 1 rejects other export targets before compiling. Provide exactly one of `--definition <path>` or `<agent-id>`. The shorthand normalizes through a generated package definition that uses the source agent prompt, tools, and skills, so it is compatibility-gated and rejects agents whose raw internal prompts depend on Cosmonauts-only extensions, subagents, or extension-backed capabilities. For planner-like exports, write an explicit definition with an external-safe prompt instead.
+`--target` defaults to `claude-cli`; the supported serialized labels are `claude-cli, codex`, and other values are rejected before compiling. Provide exactly one of `--definition <path>` or `<agent-id>`. The shorthand normalizes through a generated package definition that uses the source agent prompt, tools, and skills, so it is compatibility-gated and rejects agents whose raw internal prompts depend on Cosmonauts-only extensions, subagents, or extension-backed capabilities. For planner-like exports, write an explicit definition with an external-safe prompt instead.
 
 Package definitions are JSON:
 
@@ -251,7 +251,7 @@ Package definitions are JSON:
   },
   "projectContext": "omit",
   "targets": {
-    "claude-cli": {
+    "claude": {
       "promptMode": "append",
       "skillDelivery": "inline",
       "allowedTools": ["Read", "Glob", "Grep", "Bash", "Edit", "Write", "TodoWrite", "Task"]
@@ -269,7 +269,8 @@ Fields:
 - `tools.preset` is `coding`, `readonly`, `verification`, or `none`.
 - `skills.mode` is `none`, `source-agent`, or `allowlist` with `names`; selected skills are embedded as inline markdown.
 - `projectContext` must be `omit` in Phase 1.
-- `targets["claude-cli"]` accepts `promptMode` (`append` or `replace`), `skillDelivery` (`inline`), and optional exact Claude `allowedTools`.
+- Canonical definition blocks are `targets.claude` and `targets.codex`; the serialized CLI/package labels remain `claude-cli, codex` for compatibility.
+- `targets.claude` accepts `promptMode` (`append` or `replace`), `skillDelivery` (`inline`), and optional exact Claude `allowedTools`.
 
 The export command prints one JSON success line with `packageId`, `target`, and `outputPath` when compilation succeeds.
 

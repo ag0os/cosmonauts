@@ -238,7 +238,7 @@ describe("createExportProgram", () => {
 			prompt: { kind: "source-agent" },
 			tools: { preset: "readonly" },
 			skills: { mode: "source-agent" },
-			targets: { "claude-cli": {} },
+			targets: { claude: {} },
 		});
 		expect(packageMocks.compileAgentPackageBinary).toHaveBeenCalledWith(
 			expect.objectContaining({ outFile: outPath }),

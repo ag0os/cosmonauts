@@ -353,7 +353,7 @@ describe("definitionFromAgent", () => {
 			tools: { preset: "readonly" },
 			skills: { mode: "source-agent" },
 			projectContext: "omit",
-			targets: { "claude-cli": {} },
+			targets: { claude: {} },
 		});
 	});
 

@@ -26,7 +26,7 @@ Work with the human to produce a prompt that makes sense in the destination runt
 2. Propose an external-safe prompt that describes only capabilities the exported agent can actually use.
 3. Review the prompt with the human and revise it until internal-only references are removed or replaced.
 4. Choose skill delivery declaratively: usually `mode: "none"`, `mode: "source-agent"`, or an allowlist of skill names that should be embedded.
-5. Choose the target tool policy declaratively. Pick the package `tools.preset` and, when needed, target-specific `targets["claude-cli"].allowedTools` rather than copying internal tool names by habit. For full Claude Code capability, use a coding preset with Claude-native `allowedTools: ["default"]` instead of enumerating stale tool names.
+5. Choose the target tool policy declaratively. Pick the package `tools.preset` and, when needed, target-specific `targets.claude.allowedTools` rather than copying internal tool names by habit. For full Claude Code capability, use a coding preset with Claude-native `allowedTools: ["default"]` instead of enumerating stale tool names.
 
 ## Author the AgentPackageDefinition
 
@@ -39,7 +39,7 @@ Write or present a complete `AgentPackageDefinition` for human review. Include:
 - a declarative `tools` policy
 - a declarative `skills` selection
 - `projectContext: "omit"`
-- a target block such as `targets["claude-cli"]` or `targets.codex` with prompt mode, inline skill delivery, and any target-native allowed tools
+- one canonical registry target block: `targets.claude` or `targets.codex`, with prompt mode, inline skill delivery, and any target-native allowed tools. The serialized CLI/package labels remain `claude-cli, codex`.
 
 Prefer an explicit external-safe prompt for agents whose internal instructions depend on Cosmonauts orchestration. Use `prompt.kind: "source-agent"` only when compatibility checks show the internal prompt and tool assumptions are safe for the target runtime.
 

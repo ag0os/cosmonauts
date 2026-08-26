@@ -258,6 +258,7 @@ describe("buildAgentPackage", () => {
 		);
 		const targetCases = [
 			{
+				definitionKey: "claude",
 				target: "claude-cli" as const,
 				options: {
 					promptMode: "replace" as const,
@@ -266,6 +267,16 @@ describe("buildAgentPackage", () => {
 				},
 			},
 			{
+				definitionKey: "claude-cli",
+				target: "claude-cli" as const,
+				options: {
+					promptMode: "append" as const,
+					skillDelivery: "inline" as const,
+					allowedTools: ["Read"],
+				},
+			},
+			{
+				definitionKey: "codex",
 				target: "codex" as const,
 				options: {
 					promptMode: "append" as const,
@@ -275,13 +286,13 @@ describe("buildAgentPackage", () => {
 			},
 		];
 
-		for (const { target, options } of targetCases) {
+		for (const { definitionKey, target, options } of targetCases) {
 			const agentPackage = await buildAgentPackage({
 				definition: makeDefinition({
-					id: `portable-${target}`,
+					id: `portable-${definitionKey}`,
 					tools: { preset: "coding", notes: "Keep the selected preset." },
 					skills: { mode: "allowlist", names: ["portable-tdd"] },
-					targets: { [target]: options },
+					targets: { [definitionKey]: options },
 				}),
 				agentRegistry: new AgentRegistry([]),
 				skillPaths: [join(tmp.path, "skills")],
@@ -289,7 +300,7 @@ describe("buildAgentPackage", () => {
 			});
 
 			expect(agentPackage).toMatchObject({
-				packageId: `portable-${target}`,
+				packageId: `portable-${definitionKey}`,
 				target,
 				targetOptions: options,
 				tools: "coding",
@@ -303,6 +314,20 @@ describe("buildAgentPackage", () => {
 			expect(agentPackage.systemPrompt).toContain("# Packaged Skills");
 			expect(agentPackage.systemPrompt).toContain("## portable-tdd");
 		}
+	});
+
+	it("rejects ambiguous Claude definition keys before reading package content", async () => {
+		await expect(
+			buildAgentPackage({
+				definition: makeDefinition({
+					prompt: { kind: "file", path: join(tmp.path, "missing.md") },
+					targets: { claude: {}, "claude-cli": {} },
+				}),
+				agentRegistry: new AgentRegistry([]),
+				skillPaths: [],
+				target: "claude-cli",
+			}),
+		).rejects.toThrow(/ambiguous.*claude.*claude-cli/i);
 	});
 
 	it("fails clearly when the selected target was not declared", async () => {
