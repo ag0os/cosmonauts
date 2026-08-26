@@ -1,8 +1,35 @@
 import {
+	lstat,
+	mkdir,
+	readdir,
+	readFile,
+	realpath,
+	writeFile,
+} from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import type {
+	HarnessProvenanceManifest,
+	MaterializedHarnessManifestEntry,
+} from "./provenance.ts";
+import {
 	manifestEntryKey,
 	ownersMatch,
+	readHarnessManifest,
 	resolveAssetOwnerIdentity,
+	serializeHarnessManifest,
+	sha256,
 } from "./provenance.ts";
+import type {
+	GeneratedHarnessNode,
+	PreparedHarnessMaterialization,
+	RenderedFileNode,
+} from "./render.ts";
+import {
+	digestRenderedFiles,
+	GENERATED_BY_MARKER_VERSION,
+	prepareHarnessMaterialization,
+	writePreparedTarget,
+} from "./render.ts";
 import type {
 	HarnessAsset,
 	HarnessManifestEntry,
@@ -11,13 +38,543 @@ import type {
 	HarnessSyncPlanRow,
 	ObservedHarnessTarget,
 	OwnerIdentity,
+	ResolvedHarnessAssetTarget,
 	SourceHealthRow,
+	SyncMode,
 	SyncPlanAction,
 	SyncPlanReason,
 	SyncRequest,
 	SyncStatus,
 	TargetObservation,
 } from "./types.ts";
+
+export interface SyncHarnessAssetOptions {
+	readonly projectRoot: string;
+	readonly asset: HarnessAsset;
+	readonly target: ResolvedHarnessAssetTarget;
+	readonly check?: boolean;
+	readonly generatedNodes?: readonly GeneratedHarnessNode[];
+	readonly now?: () => Date;
+}
+
+export interface SyncHarnessAssetResult {
+	readonly recordedMode?: SyncMode;
+	readonly requestedMode: SyncMode;
+	readonly beforeStatus:
+		| "missing"
+		| "current"
+		| "source-ahead"
+		| "locally-edited";
+	readonly reason:
+		| "missing"
+		| "current"
+		| "mode-conversion"
+		| "source-changed"
+		| "link-map-changed"
+		| "generated-input-changed"
+		| "locally-edited"
+		| "unmanaged";
+	readonly wroteTarget: boolean;
+	readonly wroteManifest: boolean;
+	readonly manifestEntry: MaterializedHarnessManifestEntry;
+}
+
+/**
+ * Materialize one already-resolved catalogue asset. All source, generated-node,
+ * and containment validation completes before an owner root can be created.
+ * Multi-row locking/journaling is layered over this single-row primitive.
+ */
+export async function syncHarnessAsset(
+	options: SyncHarnessAssetOptions,
+): Promise<SyncHarnessAssetResult> {
+	await validateOwnerTarget(options.target);
+	const manifestPath = join(
+		options.target.ownerRoot,
+		".cosmonauts-harness-manifest.json",
+	);
+	const manifest = await readHarnessManifest(manifestPath);
+	const owner = await resolveAssetOwnerIdentity(
+		options.asset,
+		options.projectRoot,
+	);
+	const key = manifestEntryKey(owner, options.asset.assetId);
+	const recorded = manifest.entries[key];
+	const requestedMode =
+		options.target.requestedMode ?? recorded?.mode ?? "copy";
+	const prepared = await prepareHarnessMaterialization({
+		projectRoot: options.projectRoot,
+		asset: options.asset,
+		target: options.target,
+		mode: requestedMode,
+		generatedNodes: options.generatedNodes,
+	});
+
+	const foreignClaim = Object.values(manifest.entries).find(
+		(entry) =>
+			entry.outputPath === options.target.targetPath &&
+			!ownersMatch(entry.owner, owner),
+	);
+	const targetState = recorded
+		? await observeRecordedTarget(options.target.targetPath, recorded)
+		: await pathState(options.target.targetPath);
+
+	if (!recorded) {
+		const entry = makeManifestEntry(options, owner, requestedMode, prepared);
+		if (foreignClaim || targetState !== "absent") {
+			return noWriteResult(entry, {
+				requestedMode,
+				beforeStatus: "locally-edited",
+				reason: foreignClaim ? "locally-edited" : "unmanaged",
+			});
+		}
+		if (options.check) {
+			return noWriteResult(entry, {
+				requestedMode,
+				beforeStatus: "missing",
+				reason: "missing",
+			});
+		}
+		await commitMaterialization(
+			options.target,
+			prepared,
+			manifest,
+			key,
+			entry,
+			manifestPath,
+		);
+		return {
+			requestedMode,
+			beforeStatus: "missing",
+			reason: "missing",
+			wroteTarget: true,
+			wroteManifest: true,
+			manifestEntry: entry,
+		};
+	}
+
+	const explicitConversion =
+		options.target.requestedMode !== undefined &&
+		options.target.requestedMode !== recorded.mode;
+	if (targetState !== "intact") {
+		if (explicitConversion && !options.check) {
+			throw new Error(
+				`Asset "${options.asset.assetId}" can convert from recorded mode "${recorded.mode}" to requested mode "${requestedMode}" only from an intact recorded baseline.`,
+			);
+		}
+		return noWriteResult(recorded, {
+			recordedMode: recorded.mode,
+			requestedMode,
+			beforeStatus: targetState === "absent" ? "missing" : "locally-edited",
+			reason: targetState === "absent" ? "missing" : "locally-edited",
+		});
+	}
+
+	const difference = explicitConversion
+		? "mode-conversion"
+		: desiredDifference(recorded, prepared);
+	if (!difference) {
+		return noWriteResult(recorded, {
+			recordedMode: recorded.mode,
+			requestedMode,
+			beforeStatus: "current",
+			reason: "current",
+		});
+	}
+
+	const entry = makeManifestEntry(options, owner, requestedMode, prepared);
+	if (options.check) {
+		return noWriteResult(entry, {
+			recordedMode: recorded.mode,
+			requestedMode,
+			beforeStatus: "source-ahead",
+			reason: difference,
+		});
+	}
+	await commitMaterialization(
+		options.target,
+		prepared,
+		manifest,
+		key,
+		entry,
+		manifestPath,
+	);
+	return {
+		recordedMode: recorded.mode,
+		requestedMode,
+		beforeStatus: "source-ahead",
+		reason: difference,
+		wroteTarget: true,
+		wroteManifest: true,
+		manifestEntry: entry,
+	};
+}
+
+async function validateOwnerTarget(
+	target: ResolvedHarnessAssetTarget,
+): Promise<void> {
+	if (!isAbsolute(target.ownerRoot)) {
+		throw new Error(
+			`Harness owner root must be absolute: ${target.ownerRoot}.`,
+		);
+	}
+	assertContained(target.ownerRoot, target.targetDirectory, "target directory");
+	assertContained(target.ownerRoot, target.targetPath, "target path");
+	if (resolve(dirname(target.targetDirectory)) !== resolve(target.ownerRoot)) {
+		throw new Error(
+			`Harness target directory must be a registered direct child of its owner root: ${target.targetDirectory}.`,
+		);
+	}
+	if (resolve(dirname(target.targetPath)) !== resolve(target.targetDirectory)) {
+		throw new Error(
+			`Harness target path must be a registered direct child of its target directory: ${target.targetPath}.`,
+		);
+	}
+	for (const path of [target.ownerRoot, target.targetDirectory]) {
+		try {
+			const stats = await lstat(path);
+			if (stats.isSymbolicLink()) {
+				throw new Error(
+					`Harness ${path === target.ownerRoot ? "owner root" : "target directory"} cannot be a symlink: ${path}.`,
+				);
+			}
+			if (!stats.isDirectory()) {
+				throw new Error(`Harness directory path is not a directory: ${path}.`);
+			}
+		} catch (error) {
+			if (isNodeError(error) && error.code === "ENOENT") continue;
+			throw error;
+		}
+	}
+}
+
+function makeManifestEntry(
+	options: SyncHarnessAssetOptions,
+	owner: OwnerIdentity,
+	mode: SyncMode,
+	prepared: PreparedHarnessMaterialization,
+): MaterializedHarnessManifestEntry {
+	const base = {
+		schemaVersion: 1,
+		owner,
+		assetId: options.asset.assetId,
+		kind: options.asset.kind,
+		target: options.target.targetId,
+		scope: options.target.scope,
+		sourceRootId: options.asset.sourceRootId,
+		sourcePath: options.asset.sourcePath,
+		logicalPath: options.asset.logicalPath,
+		outputPath: options.target.targetPath,
+		mode,
+		exportedAt: (options.now ?? (() => new Date()))().toISOString(),
+	} as const;
+	if (mode === "copy") {
+		return {
+			...base,
+			provenance: {
+				kind: "copy",
+				baselineDigest: prepared.baselineDigest,
+				sourceDigest: prepared.sourceDigest,
+				renderedDigest: prepared.renderedDigest,
+				targetDigest: prepared.renderedDigest,
+				markerVersion: GENERATED_BY_MARKER_VERSION,
+			},
+		};
+	}
+	if (options.asset.generatedInputs) {
+		return {
+			...base,
+			provenance: {
+				kind: "generated-wrapper",
+				baselineDigest: prepared.baselineDigest,
+				authoredLinks: prepared.authoredLinks,
+				generatedNodes: prepared.generatedNodes.map(
+					({ relativePath, inputDigest, renderedDigest, targetDigest }) => ({
+						relativePath,
+						inputDigest,
+						renderedDigest,
+						targetDigest,
+					}),
+				),
+			},
+		};
+	}
+	if (!prepared.directLinkShape) {
+		throw new Error(
+			`Link asset "${options.asset.assetId}" has no registered direct-link shape.`,
+		);
+	}
+	return {
+		...base,
+		provenance: {
+			kind: "direct-link",
+			expectedCanonicalSource: prepared.canonicalSource,
+			linkShape: prepared.directLinkShape,
+		},
+	};
+}
+
+function desiredDifference(
+	recorded: MaterializedHarnessManifestEntry,
+	prepared: PreparedHarnessMaterialization,
+): SyncHarnessAssetResult["reason"] | undefined {
+	if (recorded.mode === "copy") {
+		return recorded.provenance.kind === "copy" &&
+			recorded.provenance.baselineDigest === prepared.baselineDigest &&
+			recorded.provenance.sourceDigest === prepared.sourceDigest &&
+			recorded.provenance.renderedDigest === prepared.renderedDigest
+			? undefined
+			: "source-changed";
+	}
+	if (recorded.provenance.kind === "direct-link") {
+		return recorded.provenance.expectedCanonicalSource ===
+			prepared.canonicalSource &&
+			recorded.provenance.linkShape === prepared.directLinkShape
+			? undefined
+			: "link-map-changed";
+	}
+	if (recorded.provenance.kind !== "generated-wrapper") {
+		return "link-map-changed";
+	}
+	if (!sameJson(recorded.provenance.authoredLinks, prepared.authoredLinks)) {
+		return "link-map-changed";
+	}
+	const recordedNodes = recorded.provenance.generatedNodes ?? [];
+	const preparedNodes = prepared.generatedNodes.map(
+		({ relativePath, inputDigest, renderedDigest, targetDigest }) => ({
+			relativePath,
+			inputDigest,
+			renderedDigest,
+			targetDigest,
+		}),
+	);
+	if (
+		recordedNodes.length !== preparedNodes.length ||
+		recordedNodes.some(
+			(node, index) =>
+				node.relativePath !== preparedNodes[index]?.relativePath ||
+				node.inputDigest !== preparedNodes[index]?.inputDigest,
+		)
+	) {
+		return "generated-input-changed";
+	}
+	return sameJson(recordedNodes, preparedNodes) ? undefined : "source-changed";
+}
+
+async function commitMaterialization(
+	target: ResolvedHarnessAssetTarget,
+	prepared: PreparedHarnessMaterialization,
+	manifest: HarnessProvenanceManifest,
+	key: string,
+	entry: MaterializedHarnessManifestEntry,
+	manifestPath: string,
+): Promise<void> {
+	await writePreparedTarget({ targetPath: target.targetPath, prepared });
+	const installed = await observeRecordedTarget(target.targetPath, entry);
+	if (installed !== "intact") {
+		throw new Error(
+			`Installed target for asset "${entry.assetId}" did not match its prepared provenance.`,
+		);
+	}
+	await mkdir(target.ownerRoot, { recursive: true });
+	await writeFile(
+		manifestPath,
+		serializeHarnessManifest({
+			schemaVersion: 1,
+			entries: { ...manifest.entries, [key]: entry },
+		}),
+	);
+}
+
+function noWriteResult(
+	manifestEntry: MaterializedHarnessManifestEntry,
+	fields: Pick<
+		SyncHarnessAssetResult,
+		"beforeStatus" | "reason" | "requestedMode"
+	> &
+		Partial<Pick<SyncHarnessAssetResult, "recordedMode">>,
+): SyncHarnessAssetResult {
+	return {
+		...fields,
+		wroteTarget: false,
+		wroteManifest: false,
+		manifestEntry,
+	};
+}
+
+async function observeRecordedTarget(
+	targetPath: string,
+	entry: MaterializedHarnessManifestEntry,
+): Promise<"absent" | "intact" | "edited"> {
+	const state = await pathState(targetPath);
+	if (state === "absent") return "absent";
+	try {
+		if (entry.provenance.kind === "copy") {
+			const nodes = await readCopiedTarget(targetPath);
+			return digestRenderedFiles(nodes) === entry.provenance.baselineDigest
+				? "intact"
+				: "edited";
+		}
+		if (entry.provenance.kind === "direct-link") {
+			return (await directLinkMatches(targetPath, entry.provenance))
+				? "intact"
+				: "edited";
+		}
+		return (await generatedWrapperMatches(targetPath, entry.provenance))
+			? "intact"
+			: "edited";
+	} catch (error) {
+		if (isNodeError(error) && error.code === "ENOENT") return "edited";
+		return "edited";
+	}
+}
+
+async function readCopiedTarget(
+	targetPath: string,
+): Promise<readonly RenderedFileNode[]> {
+	const rootStats = await lstat(targetPath);
+	if (rootStats.isSymbolicLink()) return [];
+	if (rootStats.isFile()) {
+		return [{ relativePath: "", bytes: await readFile(targetPath) }];
+	}
+	if (!rootStats.isDirectory()) return [];
+	const nodes: RenderedFileNode[] = [];
+	async function walk(directory: string, prefix: string): Promise<void> {
+		const entries = await readdir(directory, { withFileTypes: true });
+		entries.sort((left, right) => left.name.localeCompare(right.name));
+		for (const child of entries) {
+			const childPath = join(directory, child.name);
+			const relativePath = prefix ? `${prefix}/${child.name}` : child.name;
+			const stats = await lstat(childPath);
+			if (stats.isSymbolicLink()) {
+				nodes.push({
+					relativePath: `${relativePath}\0link`,
+					bytes: Buffer.alloc(0),
+				});
+				continue;
+			}
+			if (stats.isDirectory()) {
+				await walk(childPath, relativePath);
+				continue;
+			}
+			if (!stats.isFile()) {
+				nodes.push({
+					relativePath: `${relativePath}\0special`,
+					bytes: Buffer.alloc(0),
+				});
+				continue;
+			}
+			nodes.push({ relativePath, bytes: await readFile(childPath) });
+		}
+	}
+	await walk(targetPath, "");
+	return nodes;
+}
+
+async function directLinkMatches(
+	targetPath: string,
+	provenance: Extract<
+		MaterializedHarnessManifestEntry["provenance"],
+		{ readonly kind: "direct-link" }
+	>,
+): Promise<boolean> {
+	if (provenance.linkShape === "directory") {
+		const stats = await lstat(targetPath);
+		return (
+			stats.isSymbolicLink() &&
+			(await realpath(targetPath)) === provenance.expectedCanonicalSource
+		);
+	}
+	if (provenance.linkShape !== "flat-skill") return false;
+	const stats = await lstat(targetPath);
+	if (!stats.isDirectory() || stats.isSymbolicLink()) return false;
+	const children = await readdir(targetPath);
+	if (children.length !== 1 || children[0] !== "SKILL.md") return false;
+	const link = join(targetPath, "SKILL.md");
+	return (
+		(await lstat(link)).isSymbolicLink() &&
+		(await realpath(link)) === provenance.expectedCanonicalSource
+	);
+}
+
+async function generatedWrapperMatches(
+	targetPath: string,
+	provenance: Extract<
+		MaterializedHarnessManifestEntry["provenance"],
+		{ readonly kind: "generated-wrapper" }
+	>,
+): Promise<boolean> {
+	const authored = provenance.authoredLinks;
+	const generated = provenance.generatedNodes;
+	if (!authored || !generated) return false;
+	const expectedPaths = new Set([
+		...authored.map((node) => node.relativePath),
+		...generated.map((node) => node.relativePath),
+	]);
+	const actualPaths = await listLeafPaths(targetPath);
+	if (!sameJson([...expectedPaths].sort(), actualPaths)) return false;
+	for (const link of authored) {
+		const path = join(targetPath, ...link.relativePath.split("/"));
+		if (!(await lstat(path)).isSymbolicLink()) return false;
+		if ((await realpath(path)) !== link.expectedCanonicalSource) return false;
+	}
+	for (const node of generated) {
+		const path = join(targetPath, ...node.relativePath.split("/"));
+		const stats = await lstat(path);
+		if (!stats.isFile() || stats.isSymbolicLink()) return false;
+		if (sha256(await readFile(path)) !== node.targetDigest) return false;
+	}
+	return true;
+}
+
+async function listLeafPaths(root: string): Promise<readonly string[]> {
+	const paths: string[] = [];
+	async function walk(directory: string, prefix: string): Promise<void> {
+		const entries = await readdir(directory, { withFileTypes: true });
+		for (const entry of entries) {
+			const path = join(directory, entry.name);
+			const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+			const stats = await lstat(path);
+			if (stats.isDirectory() && !stats.isSymbolicLink()) {
+				await walk(path, relativePath);
+			} else {
+				paths.push(relativePath);
+			}
+		}
+	}
+	await walk(root, "");
+	return paths.sort();
+}
+
+async function pathState(path: string): Promise<"absent" | "present"> {
+	try {
+		await lstat(path);
+		return "present";
+	} catch (error) {
+		if (isNodeError(error) && error.code === "ENOENT") return "absent";
+		throw error;
+	}
+}
+
+function assertContained(root: string, candidate: string, label: string): void {
+	const relativePath = relative(resolve(root), resolve(candidate));
+	if (
+		relativePath === "" ||
+		(!relativePath.startsWith(`..${sep}`) &&
+			relativePath !== ".." &&
+			!isAbsolute(relativePath))
+	) {
+		return;
+	}
+	throw new Error(`${label} escapes harness owner root: ${candidate}.`);
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+	return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+	return error instanceof Error && "code" in error;
+}
 
 export interface PlanHarnessSyncOptions {
 	readonly projectRoot: string;
