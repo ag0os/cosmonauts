@@ -2206,6 +2206,8 @@ export interface ApplySyncPlanInTransactionOptions {
 	) => void | Promise<void>;
 }
 
+const HARNESS_TRANSACTION_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
+
 export type ApplySyncPlanResult =
 	| { readonly state: "committed"; readonly transactionId: string }
 	| { readonly state: "evidence-required"; readonly transactionId: string }
@@ -2233,7 +2235,7 @@ export async function applySyncPlanInTransaction(
 		);
 	}
 	const transactionId = options.transactionId ?? randomUUID();
-	if (!/^[A-Za-z0-9._-]+$/.test(transactionId)) {
+	if (!isHarnessTransactionId(transactionId)) {
 		throw new Error(`Invalid harness transaction id: ${transactionId}.`);
 	}
 	const memberPaths = new Set<string>();
@@ -2998,7 +3000,7 @@ function isOwnerRootJournal(
 	if (!isRecordValue(value)) return false;
 	return (
 		value.schemaVersion === 1 &&
-		typeof value.transactionId === "string" &&
+		isHarnessTransactionId(value.transactionId) &&
 		typeof value.canonicalOwnerRoot === "string" &&
 		isImplementedHarnessTargetId(value.targetId) &&
 		[
@@ -3016,6 +3018,12 @@ function isOwnerRootJournal(
 		isManifestSnapshot(value.newManifest) &&
 		Array.isArray(value.members) &&
 		value.members.every(isJournalMember)
+	);
+}
+
+function isHarnessTransactionId(value: unknown): value is string {
+	return (
+		typeof value === "string" && HARNESS_TRANSACTION_ID_PATTERN.test(value)
 	);
 }
 

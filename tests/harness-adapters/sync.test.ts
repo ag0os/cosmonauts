@@ -616,6 +616,51 @@ describe("harness sync planning", () => {
 		);
 		coveredRows.add(2);
 
+		for (const phase of ["rolling-back", "committed"] as const) {
+			const traversal = await seededRecoveryFixture(
+				`transaction-id-traversal-${phase}`,
+				phase,
+				{
+					manifest: "new",
+					targets: ["new"],
+					backups: ["absent"],
+					stages: ["absent"],
+				},
+			);
+			const transactionId = "../../../escaped-journal-artifact";
+			const member = traversal.journal.members[0];
+			const fixtureMember = traversal.members[0];
+			if (!member || !fixtureMember) {
+				throw new Error("Expected traversal journal member.");
+			}
+			const stem = `${basename(traversal.journalPath, ".journal.json")}-${transactionId}-0`;
+			const stagePath = join(dirname(traversal.journalPath), `${stem}.stage`);
+			const backupPath = join(dirname(traversal.journalPath), `${stem}.backup`);
+			expect(dirname(stagePath)).not.toBe(dirname(traversal.ownerRoot));
+			expect(dirname(backupPath)).not.toBe(dirname(traversal.ownerRoot));
+			await writeNode(backupPath, fixtureMember.oldBytes);
+			const craftedJournal: OwnerRootTransactionJournal = {
+				...traversal.journal,
+				transactionId,
+				members: [{ ...member, stagePath, backupPath }],
+			};
+			const journalBytes = serializeOwnerRootJournal(craftedJournal);
+			await writeFile(traversal.journalPath, journalBytes);
+			const before = await observeHarnessNodeSnapshot(traversal.root);
+
+			expect(
+				await runFreshRecovery({ ...traversal, journal: craftedJournal }),
+			).toMatchObject({
+				state: "recovery-required",
+				recovery: {
+					state: "ambiguous",
+					reason: "Malformed harness owner-root journal.",
+				},
+			});
+			expect(await observeHarnessNodeSnapshot(traversal.root)).toEqual(before);
+			expect(await readFile(traversal.journalPath, "utf8")).toBe(journalBytes);
+		}
+
 		for (const protectedNode of [
 			"owner-root",
 			"adapter-directory",
