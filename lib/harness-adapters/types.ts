@@ -8,6 +8,7 @@ export type HarnessScope = "project" | "personal";
 export type HarnessAssetKind = "skill" | "command" | "agent-package";
 export type MaterializedAssetKind = "skill" | "command";
 export type SyncMode = "copy" | "link";
+export type HarnessLinkShape = "directory" | "flat-skill" | "generated-wrapper";
 export type SyncStatus =
 	| "missing"
 	| "current"
@@ -128,6 +129,7 @@ export interface HarnessAssetAdapter {
 	readonly directory: string;
 	readonly transform: HarnessTransform;
 	readonly supportedModes: readonly SyncMode[];
+	readonly supportedLinkShapes: readonly HarnessLinkShape[];
 }
 
 export interface HarnessPackageCompatibility {
@@ -163,6 +165,7 @@ export interface ResolvedHarnessTargetDirectory {
 	readonly targetDirectory: string;
 	readonly transform: HarnessTransform;
 	readonly supportedModes: readonly SyncMode[];
+	readonly supportedLinkShapes: readonly HarnessLinkShape[];
 }
 
 export interface ResolvedHarnessAssetTarget

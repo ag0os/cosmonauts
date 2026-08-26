@@ -16,6 +16,7 @@ import type {
 import { sha256 } from "./provenance.ts";
 import type {
 	HarnessAsset,
+	HarnessLinkShape,
 	ResolvedHarnessAssetTarget,
 	SyncMode,
 } from "./types.ts";
@@ -83,6 +84,8 @@ export async function prepareHarnessMaterialization(options: {
 }): Promise<PreparedHarnessMaterialization> {
 	validateTargetShape(options.asset, options.target, options.mode);
 	const source = await readRegisteredSource(options.projectRoot, options.asset);
+	const linkShape = resolveLinkShape(options.asset, source.shape);
+	validateLinkShape(options.asset, options.target, options.mode, linkShape);
 	const generated = prepareGeneratedNodes(options.generatedNodes ?? []);
 	validateGeneratedShape(options.asset, source, generated);
 
@@ -156,6 +159,30 @@ export async function prepareHarnessMaterialization(options: {
 		authoredLinks: authoredLinks.sort(compareRelativePath),
 		generatedNodes: generated,
 	};
+}
+
+function resolveLinkShape(
+	asset: HarnessAsset,
+	sourceShape: "directory" | "file",
+): HarnessLinkShape {
+	if (asset.generatedInputs) return "generated-wrapper";
+	return sourceShape === "directory" ? "directory" : "flat-skill";
+}
+
+function validateLinkShape(
+	asset: HarnessAsset,
+	target: ResolvedHarnessAssetTarget,
+	mode: SyncMode,
+	linkShape: HarnessLinkShape,
+): void {
+	if (mode !== "link" || target.supportedLinkShapes.includes(linkShape)) return;
+	const registered =
+		target.supportedLinkShapes.length > 0
+			? target.supportedLinkShapes.join(", ")
+			: "none";
+	throw new Error(
+		`Asset "${asset.assetId}" resolves link shape "${linkShape}", which harness target "${target.targetId}" does not register; registered link shapes: ${registered}. Use copy mode or select a target that registers this link shape.`,
+	);
 }
 
 export async function writePreparedTarget(options: {

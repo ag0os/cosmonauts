@@ -17,11 +17,20 @@ import type {
 	SyncMode,
 } from "./types.ts";
 
-const SKILL_ADAPTER = {
+const CLAUDE_SKILL_ADAPTER = {
 	kind: "skill",
 	directory: "skills",
 	transform: "identity",
 	supportedModes: ["copy", "link"],
+	supportedLinkShapes: ["directory", "flat-skill", "generated-wrapper"],
+} as const satisfies HarnessAssetAdapter;
+
+const CODEX_SKILL_ADAPTER = {
+	kind: "skill",
+	directory: "skills",
+	transform: "identity",
+	supportedModes: ["copy", "link"],
+	supportedLinkShapes: ["directory"],
 } as const satisfies HarnessAssetAdapter;
 
 const PACKAGE_ROOT = resolve(
@@ -36,12 +45,13 @@ const HARNESS_TARGETS: readonly HarnessTargetDescriptor[] = [
 		status: "implemented",
 		ownerDirectory: ".claude",
 		adapters: [
-			SKILL_ADAPTER,
+			CLAUDE_SKILL_ADAPTER,
 			{
 				kind: "command",
 				directory: "commands",
 				transform: "claude-command",
 				supportedModes: ["copy"],
+				supportedLinkShapes: [],
 			},
 		],
 		packageCompatibility: {
@@ -55,7 +65,7 @@ const HARNESS_TARGETS: readonly HarnessTargetDescriptor[] = [
 		id: "codex",
 		status: "implemented",
 		ownerDirectory: ".agents",
-		adapters: [SKILL_ADAPTER],
+		adapters: [CODEX_SKILL_ADAPTER],
 		packageCompatibility: {
 			canonicalDefinitionKey: "codex",
 			definitionKeys: ["codex"],
@@ -277,6 +287,7 @@ export function resolveHarnessTargetDirectory(
 		targetDirectory: join(ownerRoot, adapter.directory),
 		transform: adapter.transform,
 		supportedModes: adapter.supportedModes,
+		supportedLinkShapes: adapter.supportedLinkShapes,
 	};
 }
 

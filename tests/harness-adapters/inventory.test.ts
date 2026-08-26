@@ -440,7 +440,7 @@ describe("live harness inventory characterization", () => {
 		const wrapperHome = join(tmp.path, "wrapper-home");
 		await mkdir(wrapperHome, { recursive: true });
 		const wrapperTarget = resolveHarnessAssetTarget({
-			targetId: "codex",
+			targetId: "claude",
 			asset: relocatedBundle,
 			roots: { projectRoot: projectB, homeRoot: wrapperHome },
 			requestedMode: "link",

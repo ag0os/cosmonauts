@@ -486,6 +486,121 @@ describe("harness asset rendering", () => {
 			wroteManifest: false,
 		});
 
+		const codexOwner = join(projectRoot, ".agents");
+		const codexManifest = join(codexOwner, ".cosmonauts-harness-manifest.json");
+		const codexFlatTarget = resolveHarnessAssetTarget({
+			targetId: "codex",
+			asset: flatAsset,
+			roots: { projectRoot, homeRoot },
+			requestedMode: "link",
+		});
+		await expect(
+			syncHarnessAsset({
+				projectRoot,
+				asset: flatAsset,
+				target: codexFlatTarget,
+				now: fixedNow,
+			}),
+		).rejects.toThrow(/skill:flat.*flat-skill.*directory/i);
+		expect(await pathExists(codexOwner)).toBe(false);
+		expect(await pathExists(codexFlatTarget.targetPath)).toBe(false);
+		expect(await pathExists(codexManifest)).toBe(false);
+
+		const codexWrapperTarget = resolveHarnessAssetTarget({
+			targetId: "codex",
+			asset: wrapperAsset,
+			roots: { projectRoot, homeRoot },
+			requestedMode: "link",
+		});
+		await expect(
+			syncHarnessAsset({
+				projectRoot,
+				asset: wrapperAsset,
+				target: codexWrapperTarget,
+				generatedNodes: [
+					{
+						relativePath: "references/generated.md",
+						inputBytes: generatedInput,
+						renderedBytes: generatedBytes,
+					},
+				],
+				now: fixedNow,
+			}),
+		).rejects.toThrow(/skill:bundle.*generated-wrapper.*directory/i);
+		expect(await pathExists(codexOwner)).toBe(false);
+		expect(await pathExists(codexWrapperTarget.targetPath)).toBe(false);
+		expect(await pathExists(codexManifest)).toBe(false);
+
+		const codexDirectoryTarget = resolveHarnessAssetTarget({
+			targetId: "codex",
+			asset: directoryAsset,
+			roots: { projectRoot, homeRoot },
+			requestedMode: "link",
+		});
+		const codexDirectory = await syncHarnessAsset({
+			projectRoot,
+			asset: directoryAsset,
+			target: codexDirectoryTarget,
+			now: fixedNow,
+		});
+		expect(codexDirectory.manifestEntry.provenance).toMatchObject({
+			kind: "direct-link",
+			linkShape: "directory",
+		});
+		expect(await realpath(codexDirectoryTarget.targetPath)).toBe(
+			await realpath(directorySource),
+		);
+
+		const codexFlatCopyTarget = resolveHarnessAssetTarget({
+			targetId: "codex",
+			asset: flatAsset,
+			roots: { projectRoot, homeRoot },
+			requestedMode: "copy",
+		});
+		const codexFlatCopy = await syncHarnessAsset({
+			projectRoot,
+			asset: flatAsset,
+			target: codexFlatCopyTarget,
+			now: fixedNow,
+		});
+		expect(codexFlatCopy.manifestEntry.provenance.kind).toBe("copy");
+		expect(
+			(await lstat(join(codexFlatCopyTarget.targetPath, "SKILL.md"))).isFile(),
+		).toBe(true);
+
+		const codexWrapperCopyTarget = resolveHarnessAssetTarget({
+			targetId: "codex",
+			asset: wrapperAsset,
+			roots: { projectRoot, homeRoot },
+			requestedMode: "copy",
+		});
+		const codexWrapperCopy = await syncHarnessAsset({
+			projectRoot,
+			asset: wrapperAsset,
+			target: codexWrapperCopyTarget,
+			generatedNodes: [
+				{
+					relativePath: "references/generated.md",
+					inputBytes: generatedInput,
+					renderedBytes: generatedBytes,
+				},
+			],
+			now: fixedNow,
+		});
+		expect(codexWrapperCopy.manifestEntry.provenance.kind).toBe("copy");
+		expect(
+			(
+				await lstat(join(codexWrapperCopyTarget.targetPath, "SKILL.md"))
+			).isFile(),
+		).toBe(true);
+		expect(
+			(
+				await lstat(
+					join(codexWrapperCopyTarget.targetPath, "references", "generated.md"),
+				)
+			).isFile(),
+		).toBe(true);
+
 		const bareLink = target(copyAsset, projectRoot, homeRoot, "link");
 		const conversion = await syncHarnessAsset({
 			projectRoot,
@@ -680,6 +795,7 @@ function fakeTarget(
 		targetDirectory: join(ownerRoot, "skills"),
 		transform: "identity",
 		supportedModes: ["copy", "link"],
+		supportedLinkShapes: ["directory", "flat-skill", "generated-wrapper"],
 		assetId: asset.assetId,
 		targetPath: join(ownerRoot, "skills", asset.outputIdentity),
 		requestedMode,

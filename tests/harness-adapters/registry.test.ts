@@ -73,6 +73,7 @@ describe("harness adapter registry", () => {
 			targetDirectory: join(PROJECT_ROOT, ".claude", "skills"),
 			transform: "identity",
 			supportedModes: ["copy", "link"],
+			supportedLinkShapes: ["directory", "flat-skill", "generated-wrapper"],
 		});
 		expect(
 			resolveHarnessTargetDirectory({
@@ -86,6 +87,7 @@ describe("harness adapter registry", () => {
 			targetDirectory: join("/users/cosmo", ".claude", "commands"),
 			transform: "claude-command",
 			supportedModes: ["copy"],
+			supportedLinkShapes: [],
 		});
 		expect(
 			resolveHarnessTargetDirectory({
@@ -99,6 +101,7 @@ describe("harness adapter registry", () => {
 			targetDirectory: join("/users/cosmo", ".agents", "skills"),
 			transform: "identity",
 			supportedModes: ["copy", "link"],
+			supportedLinkShapes: ["directory"],
 		});
 
 		const runtimeSkill = createRuntimeSkillDescriptor({

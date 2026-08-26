@@ -132,6 +132,16 @@ export async function syncHarnessAsset(
 async function syncHarnessAssetCore(
 	options: SyncHarnessAssetOptions,
 ): Promise<Omit<SyncHarnessAssetResult, "exitCode">> {
+	const explicitLinkPreparation =
+		options.target.requestedMode === "link"
+			? await prepareHarnessMaterialization({
+					projectRoot: options.projectRoot,
+					asset: options.asset,
+					target: options.target,
+					mode: "link",
+					generatedNodes: options.generatedNodes,
+				})
+			: undefined;
 	await validateOwnerTarget(options.target);
 	const manifestPath = join(
 		options.target.ownerRoot,
@@ -180,13 +190,15 @@ async function syncHarnessAssetCore(
 		options.target.requestedMode,
 		recorded?.mode,
 	);
-	const prepared = await prepareHarnessMaterialization({
-		projectRoot: options.projectRoot,
-		asset: options.asset,
-		target: options.target,
-		mode: requestedMode,
-		generatedNodes: options.generatedNodes,
-	});
+	const prepared =
+		explicitLinkPreparation ??
+		(await prepareHarnessMaterialization({
+			projectRoot: options.projectRoot,
+			asset: options.asset,
+			target: options.target,
+			mode: requestedMode,
+			generatedNodes: options.generatedNodes,
+		}));
 
 	const foreignClaim = Object.values(manifest.entries).find(
 		(entry) =>
