@@ -68,7 +68,7 @@ Work coordinated from outside (Claude Code, Codex, …) currently leaves nothing
 
 Every memory/knowledge feature shipped so far is gated OFF and unconsumed; all remaining design rests on theory. Flip that, deliberately and on record.
 
-- Enable the knowledge-surface gates in this repository — a dogfooding decision recorded as such; shipped defaults stay OFF
+- ✅ **Done 2026-08-26**: `knowledgeSurface.enabled: true` set in `.cosmonauts/config.json` — a deliberate dogfooding decision for this repository only; shipped defaults stay OFF. Triggered by the `harness-adapters` archive, whose distillation was blocked because `propose_knowledge` is gated behind it.
 - Deliberately run internal cosmonauts coordinators and agents: recent usage has been external-coordinator-only, so internal agents are the unobserved population
 - Record what retrieval actually does — recall usage, index cost against the 24,000-byte combined budget, observed behavior changes — as evidence for the consolidation and budget decisions
 - Revisit the 155 approved-but-unpromoted proposals once index contents matter to a live consumer

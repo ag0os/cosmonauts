@@ -20,5 +20,8 @@
 		"tdd",
 		"typescript",
 		"web-search"
-	]
+	],
+	"knowledgeSurface": {
+		"enabled": true
+	}
 }
