@@ -10,6 +10,16 @@ Agreed spine: **portable harness** (`harness-adapters`, `drive-envelope`, `coord
 
 Active plans are not roadmap items: `harness-adapters` (picked up 2026-08-25 — was the top of this queue), `memory-consolidation` (re-spec required before tasks — see §10.1), `autonomy-host`, `coding-extraction`, and `superplanning-integration` (plus the deferred `web-research` spec) live under `missions/plans/`.
 
+### `chain-stage-context` (thread): Later Chain Stages Run Blind
+
+Only the first stage of a chain receives the user prompt; every later stage falls through to a one-line role default, so a post-review revision stage has no idea a review was just written. Small, and it wants to land before the next planning-chain run — every `/spec-to-backlog` and `plan-and-build` run until then is exposed.
+
+- **The defect**: `injectUserPrompt` (`lib/orchestration/chain-steps.ts:50`) mutates only `steps[0]`. Later stages carry no `stage.prompt`, so `resolveStagePrompt` (`chain-steps.ts:77-85`) returns the bare default from `stage-prompts.ts:8` — for the planner, `"Analyze the project and design an implementation plan."` No prior-stage output is passed forward anywhere; `buildStagePrompt` special-cases only `coordinator` label scoping, and `plan-session-context.ts` is transcript lineage only.
+- **Observed 2026-08-25** on `planner -> plan-reviewer -> planner`: the reviewer wrote `review-4.md` (1 high, 4 medium — a self-deadlocking owner-lock re-acquisition, and transaction artifacts left untracked at the repo root), then the terminal planner ran **24 seconds doing only reads** and revised nothing. The agent was correct — it was told to design a plan and found a finished one. The findings had to be applied by hand. Blast radius: `plan-and-build` (`bundled/coding/chains.ts:6`) ships as `planner -> plan-reviewer -> planner -> task-manager -> ...`, so it can decompose a plan whose final review round was never addressed, with `task-manager` proceeding on no signal.
+- **Minimal fix**: make the default planner stage prompt revision-aware — if review artifacts exist for the active plan, this is a revision pass; address the highest-numbered round. The planner persona already carries exactly that contract (`bundled/coding/prompts/planner.md:71`) and honors it unprompted when it runs first; the default stage prompt simply never puts it in that mode.
+- **The real decision**: how much prior-stage context later stages should receive. Step-0-only injection is plausibly deliberate (context bloat on long chains) — decide and record it rather than patching past it. Pair the outcome with a guard so a chain that advances past an unaddressed review round is detectable rather than silent.
+- Cross-links: `drive-envelope` (same orchestration seam) · `factory-evals` (review-round counts are already a named scoreboard signal) · evidence in `missions/plans/harness-adapters/review-4.md`
+
 ### `drive-envelope`: Drive as a Free Envelope
 
 Decouple Drive's value (isolation, gates, session capture, reporting) from the plan+task ceremony so one-off and externally-triggered work can use it too.
