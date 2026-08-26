@@ -508,6 +508,135 @@ describe("runHarnessSync selection", () => {
 		);
 	});
 
+	test("accepts and upgrades a legacy manifest entry whose output identity differs from its source directory", async () => {
+		const projectRoot = join(tmp.path, "legacy-identity-project");
+		const homeRoot = join(tmp.path, "legacy-identity-home");
+		const sourceRoot = join(projectRoot, "source");
+		await Promise.all([
+			mkdir(homeRoot, { recursive: true }),
+			mkdir(join(sourceRoot, "legacy-directory"), { recursive: true }),
+			mkdir(join(sourceRoot, "unrelated"), { recursive: true }),
+		]);
+		await Promise.all([
+			writeFile(
+				join(sourceRoot, "legacy-directory", "SKILL.md"),
+				"---\nname: frontmatter-name\ndescription: Legacy identity\n---\n",
+			),
+			writeFile(
+				join(sourceRoot, "unrelated", "SKILL.md"),
+				"---\nname: unrelated\ndescription: Unrelated\n---\n",
+			),
+		]);
+		const legacyAsset = {
+			assetId: "skill:legacy-directory",
+			kind: "skill",
+			ownership: { kind: "project" },
+			sourceRootId: "root:legacy-identity",
+			sourceRoot,
+			sourcePath: "legacy-directory",
+			logicalPath: "legacy-directory",
+			outputIdentity: "frontmatter-name",
+			defaultScope: "project",
+		} as const satisfies HarnessAsset;
+		const unrelatedAsset = {
+			...legacyAsset,
+			assetId: "skill:unrelated",
+			sourcePath: "unrelated",
+			logicalPath: "unrelated",
+			outputIdentity: "unrelated",
+		} as const satisfies HarnessAsset;
+		const sourceHealth = [
+			{
+				sourceRootId: legacyAsset.sourceRootId,
+				sourceRoot,
+				domain: "legacy-identity",
+				status: "complete",
+				issues: [],
+			},
+		] as const satisfies readonly SourceHealthRow[];
+		const options = {
+			projectRoot,
+			homeRoot,
+			assets: [legacyAsset, unrelatedAsset],
+			sourceHealth,
+			request: {
+				targetIds: ["claude"],
+				scopes: ["project"],
+				kinds: ["skill"],
+				assetIds: [legacyAsset.assetId, unrelatedAsset.assetId],
+				reconciliation: "partial",
+				check: false,
+			},
+		} as const;
+
+		await expect(runHarnessSync(options)).resolves.toMatchObject({
+			exitCode: 0,
+		});
+		const ownerRoot = join(projectRoot, ".claude");
+		const manifestPath = join(ownerRoot, ".cosmonauts-harness-manifest.json");
+		const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+			entries: Record<string, Record<string, unknown>>;
+		};
+		const legacyEntry = Object.values(manifest.entries).find(
+			(entry) => entry.assetId === legacyAsset.assetId,
+		);
+		if (!legacyEntry) throw new Error("Expected installed legacy entry.");
+		delete legacyEntry.outputIdentity;
+		await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+		const targetsBefore = await Promise.all(
+			[legacyAsset, unrelatedAsset].map((asset) =>
+				observeHarnessNodeSnapshot(
+					join(ownerRoot, "skills", asset.outputIdentity),
+				),
+			),
+		);
+
+		const checked = await runHarnessSync({
+			...options,
+			request: { ...options.request, check: true },
+		});
+		expect(checked.exitCode).toBe(0);
+		expect(checked.rows).toHaveLength(2);
+		expect(checked.rows.every((row) => row.final === "current")).toBe(true);
+		expect(checked.rows.every((row) => row.action === "none")).toBe(true);
+
+		const synced = await runHarnessSync(options);
+		expect(synced).toMatchObject({
+			exitCode: 0,
+			rows: expect.arrayContaining([
+				expect.objectContaining({
+					asset: legacyAsset.assetId,
+					before: "current",
+					reason: "current",
+					action: "refresh-entry",
+					final: "current",
+				}),
+				expect.objectContaining({
+					asset: unrelatedAsset.assetId,
+					action: "none",
+					final: "current",
+				}),
+			]),
+		});
+		const upgraded = JSON.parse(await readFile(manifestPath, "utf8")) as {
+			entries: Record<string, Record<string, unknown>>;
+		};
+		expect(
+			Object.values(upgraded.entries).find(
+				(entry) => entry.assetId === legacyAsset.assetId,
+			)?.outputIdentity,
+		).toBe(legacyAsset.outputIdentity);
+		expect(
+			await Promise.all(
+				[legacyAsset, unrelatedAsset].map((asset) =>
+					observeHarnessNodeSnapshot(
+						join(ownerRoot, "skills", asset.outputIdentity),
+					),
+				),
+			),
+		).toEqual(targetsBefore);
+	});
+
 	test("omitted target selects Claude and Codex while descriptor scope defaults apply", async () => {
 		const projectRoot = join(tmp.path, "selection-project");
 		const homeRoot = join(tmp.path, "selection-home");

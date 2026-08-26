@@ -479,43 +479,9 @@ function manifestOutputIdentity(
 	value: Record<string, unknown>,
 ): string | undefined {
 	if (typeof value.outputIdentity === "string") return value.outputIdentity;
-	if (typeof value.assetId !== "string" || typeof value.kind !== "string") {
-		return undefined;
-	}
-	const staticOutputIdentity = legacyStaticOutputIdentity(
-		value.assetId,
-		value.kind,
-	);
-	if (staticOutputIdentity) return staticOutputIdentity;
-	if (
-		value.kind !== "skill" ||
-		!value.assetId.startsWith("skill:") ||
-		typeof value.logicalPath !== "string"
-	) {
-		return undefined;
-	}
-	const assetIdentity = value.assetId.slice("skill:".length);
-	if (
-		assetIdentity !== value.logicalPath &&
-		!assetIdentity.endsWith(`/${value.logicalPath}`)
-	) {
-		return undefined;
-	}
-	return basename(value.logicalPath);
-}
-
-/** Compatibility for schema-v1 entries written before outputIdentity existed. */
-function legacyStaticOutputIdentity(
-	assetId: string,
-	kind: string,
-): string | undefined {
-	if (kind === "skill" && assetId === "external-skill:cosmonauts") {
-		return "cosmonauts";
-	}
-	if (kind !== "command") return undefined;
-	if (assetId === "command:spec-to-backlog") return "spec-to-backlog.md";
-	if (assetId === "command:implement-plan") return "implement-plan.md";
-	return undefined;
+	return typeof value.outputPath === "string"
+		? basename(value.outputPath)
+		: undefined;
 }
 
 function isAuthoredLink(value: unknown): value is HarnessAuthoredLink {

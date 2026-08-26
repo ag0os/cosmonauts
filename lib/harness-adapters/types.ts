@@ -266,6 +266,7 @@ export type SyncPlanAction =
 	| "none"
 	| "create"
 	| "replace"
+	| "refresh-entry"
 	| "remove-target-and-entry"
 	| "forget-entry"
 	| "transfer-entry";

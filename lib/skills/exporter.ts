@@ -592,15 +592,26 @@ async function evaluateGroup(
 				},
 				generatedNodes: generatedNodesFor(options, catalogue.asset),
 			});
-			desired.set(row.targetPath, checked.manifestEntry);
+			const refreshLegacyEntry =
+				checked.beforeStatus === "current" &&
+				checked.manifestEntry.outputIdentity === undefined;
+			const desiredEntry = refreshLegacyEntry
+				? {
+						...checked.manifestEntry,
+						outputIdentity: basename(checked.manifestEntry.outputPath),
+					}
+				: checked.manifestEntry;
+			desired.set(row.targetPath, desiredEntry);
 			if (row.status === "locally-edited") return row;
 			const action = options.request.check
 				? "none"
-				: checked.beforeStatus === "missing"
-					? "create"
-					: checked.beforeStatus === "source-ahead"
-						? "replace"
-						: "none";
+				: refreshLegacyEntry
+					? "refresh-entry"
+					: checked.beforeStatus === "missing"
+						? "create"
+						: checked.beforeStatus === "source-ahead"
+							? "replace"
+							: "none";
 			return {
 				...row,
 				status: checked.beforeStatus,
@@ -813,6 +824,10 @@ async function applyEvaluatedGroup(
 		const desired = evaluated.desired.get(row.targetPath);
 		if (!catalogue || !desired) {
 			throw new Error(`Missing prepared catalogue row for ${row.assetId}.`);
+		}
+		if (row.action === "refresh-entry") {
+			entries[manifestEntryKey(desired.owner, desired.assetId)] = desired;
+			continue;
 		}
 		const prepared = await prepareHarnessMaterialization({
 			projectRoot: options.projectRoot,
