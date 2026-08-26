@@ -13,9 +13,11 @@ import type {
 } from "./provenance.ts";
 import {
 	manifestEntryKey,
+	observeStableHarnessState,
 	ownersMatch,
 	readHarnessManifest,
 	resolveAssetOwnerIdentity,
+	resolveHarnessTransactionPaths,
 	serializeHarnessManifest,
 	sha256,
 } from "./provenance.ts";
@@ -73,9 +75,12 @@ export interface SyncHarnessAssetResult {
 		| "link-map-changed"
 		| "generated-input-changed"
 		| "locally-edited"
-		| "unmanaged";
+		| "unmanaged"
+		| "pending-journal"
+		| "concurrent-change";
 	readonly wroteTarget: boolean;
 	readonly wroteManifest: boolean;
+	readonly exitCode: 0 | 1;
 	readonly manifestEntry: MaterializedHarnessManifestEntry;
 }
 
@@ -87,20 +92,65 @@ export interface SyncHarnessAssetResult {
 export async function syncHarnessAsset(
 	options: SyncHarnessAssetOptions,
 ): Promise<SyncHarnessAssetResult> {
+	const result = await syncHarnessAssetCore(options);
+	const reconciled = result.wroteTarget || result.wroteManifest;
+	return {
+		...result,
+		exitCode:
+			result.beforeStatus === "current" || (!options.check && reconciled)
+				? 0
+				: 1,
+	};
+}
+
+async function syncHarnessAssetCore(
+	options: SyncHarnessAssetOptions,
+): Promise<Omit<SyncHarnessAssetResult, "exitCode">> {
 	await validateOwnerTarget(options.target);
 	const manifestPath = join(
 		options.target.ownerRoot,
 		".cosmonauts-harness-manifest.json",
 	);
-	const manifest = await readHarnessManifest(manifestPath);
 	const owner = await resolveAssetOwnerIdentity(
 		options.asset,
 		options.projectRoot,
 	);
+	let consistencyReason: "pending-journal" | "concurrent-change" | undefined;
+	let observedTargetState:
+		| "absent"
+		| "present"
+		| "intact"
+		| "edited"
+		| undefined;
+	let manifest: HarnessProvenanceManifest;
+	if (options.check) {
+		const transactionPaths = resolveHarnessTransactionPaths(
+			options.target.ownerRoot,
+			options.target.targetId,
+		);
+		const observation = await observeStableHarnessState({
+			manifestPath,
+			journalPath: transactionPaths.journalPath,
+			observeTarget: async (observedManifest) => {
+				const observedKey = manifestEntryKey(owner, options.asset.assetId);
+				const observedRecorded = observedManifest.entries[observedKey];
+				return observedRecorded
+					? observeRecordedTarget(options.target.targetPath, observedRecorded)
+					: pathState(options.target.targetPath);
+			},
+		});
+		manifest = observation.manifest;
+		observedTargetState = observation.target;
+		consistencyReason = observation.reason;
+	} else {
+		manifest = await readHarnessManifest(manifestPath);
+	}
 	const key = manifestEntryKey(owner, options.asset.assetId);
 	const recorded = manifest.entries[key];
-	const requestedMode =
-		options.target.requestedMode ?? recorded?.mode ?? "copy";
+	const requestedMode = resolveHarnessSyncMode(
+		options.target.requestedMode,
+		recorded?.mode,
+	);
 	const prepared = await prepareHarnessMaterialization({
 		projectRoot: options.projectRoot,
 		asset: options.asset,
@@ -114,9 +164,22 @@ export async function syncHarnessAsset(
 			entry.outputPath === options.target.targetPath &&
 			!ownersMatch(entry.owner, owner),
 	);
-	const targetState = recorded
-		? await observeRecordedTarget(options.target.targetPath, recorded)
-		: await pathState(options.target.targetPath);
+	const targetState =
+		observedTargetState ??
+		(recorded
+			? await observeRecordedTarget(options.target.targetPath, recorded)
+			: await pathState(options.target.targetPath));
+
+	if (consistencyReason) {
+		const entry =
+			recorded ?? makeManifestEntry(options, owner, requestedMode, prepared);
+		return noWriteResult(entry, {
+			...(recorded ? { recordedMode: recorded.mode } : {}),
+			requestedMode,
+			beforeStatus: "source-ahead",
+			reason: consistencyReason,
+		});
+	}
 
 	if (!recorded) {
 		const entry = makeManifestEntry(options, owner, requestedMode, prepared);
@@ -388,11 +451,11 @@ async function commitMaterialization(
 function noWriteResult(
 	manifestEntry: MaterializedHarnessManifestEntry,
 	fields: Pick<
-		SyncHarnessAssetResult,
+		Omit<SyncHarnessAssetResult, "exitCode">,
 		"beforeStatus" | "reason" | "requestedMode"
 	> &
 		Partial<Pick<SyncHarnessAssetResult, "recordedMode">>,
-): SyncHarnessAssetResult {
+): Omit<SyncHarnessAssetResult, "exitCode"> {
 	return {
 		...fields,
 		wroteTarget: false,
@@ -589,6 +652,28 @@ export interface PlanHarnessSyncOptions {
 	readonly pendingJournalOwnerIds?: readonly string[];
 }
 
+export type HarnessDriftReason =
+	| SyncPlanReason
+	| "concurrent-change"
+	| "mode-conversion"
+	| "source-changed"
+	| "link-map-changed"
+	| "generated-input-changed";
+
+export interface ClassifiedHarnessSyncPlanRow
+	extends Omit<HarnessSyncPlanRow, "reason"> {
+	readonly recordedMode?: SyncMode;
+	readonly requestedMode: SyncMode;
+	readonly beforeStatus: SyncStatus;
+	readonly reason: HarnessDriftReason;
+}
+
+export interface ClassifiedHarnessSyncPlan
+	extends Omit<HarnessSyncPlan, "rows"> {
+	readonly rows: readonly ClassifiedHarnessSyncPlanRow[];
+	readonly exitCode: 0 | 1;
+}
+
 interface RowContext {
 	readonly request: SyncRequest;
 	readonly asset: HarnessAsset;
@@ -596,6 +681,8 @@ interface RowContext {
 	readonly scope: HarnessSyncInventoryRow["scope"];
 	readonly targetPath: string;
 	readonly owner: OwnerIdentity;
+	readonly recordedMode?: SyncMode;
+	readonly requestedMode: SyncMode;
 }
 
 /**
@@ -622,7 +709,7 @@ export function createSkillsExportSyncRequest(
  */
 export async function planHarnessSync(
 	options: PlanHarnessSyncOptions,
-): Promise<HarnessSyncPlan> {
+): Promise<ClassifiedHarnessSyncPlan> {
 	validateRequest(options.request);
 	const request = normalizeRequest(options.request);
 	const currentProjectOwner = await resolveAssetOwnerIdentity(
@@ -637,26 +724,30 @@ export async function planHarnessSync(
 	);
 
 	if (request.transferOwner) {
-		return planTransfers({
-			...options,
-			request,
-			currentProjectOwner,
-			observations,
-		});
+		return withPlanExitCode(
+			await planTransfers({
+				...options,
+				request,
+				currentProjectOwner,
+				observations,
+			}),
+		);
 	}
 	if (request.forgetRemovedAssetIds) {
-		return planForgets({
-			...options,
-			request,
-			currentProjectOwner,
-			observations,
-		});
+		return withPlanExitCode(
+			planForgets({
+				...options,
+				request,
+				currentProjectOwner,
+				observations,
+			}),
+		);
 	}
 
 	const selectedInventory = options.inventory.filter((row) =>
 		matchesRequest(row, request),
 	);
-	const inventoryRows: HarnessSyncPlanRow[] = [];
+	const inventoryRows: ClassifiedHarnessSyncPlanRow[] = [];
 	for (const row of selectedInventory) {
 		const owner = await resolveAssetOwnerIdentity(
 			row.asset,
@@ -735,10 +826,11 @@ export async function planHarnessSync(
 			rows,
 			aborted: true,
 			abortReason: "inventory-incomplete",
+			exitCode: 1,
 		};
 	}
 
-	return { request, rows, aborted: false };
+	return withPlanExitCode({ request, rows, aborted: false });
 }
 
 function classifyInventoryRow(options: {
@@ -748,8 +840,10 @@ function classifyInventoryRow(options: {
 	readonly observation: TargetObservation;
 	readonly claims: readonly HarnessManifestEntry[];
 	readonly health: ReadonlyMap<string, SourceHealthRow["status"]>;
-}): HarnessSyncPlanRow {
+}): ClassifiedHarnessSyncPlanRow {
 	const { request, row, owner, observation, claims, health } = options;
+	const matchingClaim = claims.find((entry) => ownersMatch(entry.owner, owner));
+	const foreignClaim = claims.find((entry) => !ownersMatch(entry.owner, owner));
 	const context: RowContext = {
 		request,
 		asset: row.asset,
@@ -757,9 +851,12 @@ function classifyInventoryRow(options: {
 		scope: row.scope,
 		targetPath: row.targetPath,
 		owner,
+		...(matchingClaim ? { recordedMode: matchingClaim.mode } : {}),
+		requestedMode: resolveHarnessSyncMode(
+			request.requestedMode,
+			matchingClaim?.mode,
+		),
 	};
-	const matchingClaim = claims.find((entry) => ownersMatch(entry.owner, owner));
-	const foreignClaim = claims.find((entry) => !ownersMatch(entry.owner, owner));
 
 	if (health.get(row.asset.sourceRootId) === "incomplete") {
 		return makeRow(context, "source-ahead", "inventory-incomplete", "none");
@@ -791,6 +888,9 @@ function classifyInventoryRow(options: {
 	if (!isExactBaselineFor(observation, matchingClaim)) {
 		return makeRow(context, "locally-edited", "locally-edited", "none");
 	}
+	if (context.requestedMode !== matchingClaim.mode) {
+		return makeRow(context, "source-ahead", "mode-conversion", "replace");
+	}
 	return makeRow(context, "current", "current", "none");
 }
 
@@ -800,7 +900,7 @@ function classifyStaleEntry(options: {
 	readonly currentProjectOwner: OwnerIdentity;
 	readonly observation: TargetObservation;
 	readonly health: ReadonlyMap<string, SourceHealthRow["status"]>;
-}): HarnessSyncPlanRow {
+}): ClassifiedHarnessSyncPlanRow {
 	const { request, entry, currentProjectOwner, observation, health } = options;
 	const context = contextFromEntry(request, entry);
 	if (!ownersMatch(entry.owner, currentProjectOwner)) {
@@ -820,7 +920,7 @@ function classifyRemovedSource(
 	context: RowContext,
 	entry: HarnessManifestEntry,
 	observation: TargetObservation,
-): HarnessSyncPlanRow {
+): ClassifiedHarnessSyncPlanRow {
 	if (observation.state === "absent") {
 		return makeRow(context, "source-ahead", "source-removed", "forget-entry");
 	}
@@ -843,11 +943,11 @@ interface SpecialPlanContext extends PlanHarnessSyncOptions {
 
 async function planTransfers(
 	options: SpecialPlanContext,
-): Promise<HarnessSyncPlan> {
+): Promise<ClassifiedHarnessSyncPlan> {
 	const transfer = options.request.transferOwner;
 	if (!transfer) throw new Error("transfer request is missing transferOwner");
 	const pending = new Set(options.pendingJournalOwnerIds ?? []);
-	const rows: HarnessSyncPlanRow[] = [];
+	const rows: ClassifiedHarnessSyncPlanRow[] = [];
 
 	for (const assetId of transfer.assetIds) {
 		const inventory = options.inventory.find(
@@ -889,6 +989,11 @@ async function planTransfers(
 			scope: inventory.scope,
 			targetPath: inventory.targetPath,
 			owner,
+			recordedMode: entry.mode,
+			requestedMode: resolveHarnessSyncMode(
+				options.request.requestedMode,
+				entry.mode,
+			),
 		};
 		if (pending.has(entry.owner.ownerId) || pending.has(owner.ownerId)) {
 			rows.push(makeRow(context, "source-ahead", "pending-journal", "none"));
@@ -918,12 +1023,17 @@ async function planTransfers(
 		});
 	}
 
-	return { request: options.request, rows, aborted: false };
+	return {
+		request: options.request,
+		rows,
+		aborted: false,
+		exitCode: 1,
+	};
 }
 
-function planForgets(options: SpecialPlanContext): HarnessSyncPlan {
+function planForgets(options: SpecialPlanContext): ClassifiedHarnessSyncPlan {
 	const forgetIds = new Set(options.request.forgetRemovedAssetIds ?? []);
-	const rows: HarnessSyncPlanRow[] = [];
+	const rows: ClassifiedHarnessSyncPlanRow[] = [];
 	for (const entry of options.manifestEntries) {
 		if (
 			!forgetIds.has(entry.assetId) ||
@@ -957,7 +1067,12 @@ function planForgets(options: SpecialPlanContext): HarnessSyncPlan {
 			makeRow(context, "source-ahead", "explicit-forget", "forget-entry"),
 		);
 	}
-	return { request: options.request, rows, aborted: false };
+	return {
+		request: options.request,
+		rows,
+		aborted: false,
+		exitCode: rows.some((row) => row.status !== "current") ? 1 : 0,
+	};
 }
 
 function contextFromEntry(
@@ -984,15 +1099,17 @@ function contextFromEntry(
 		scope: entry.scope,
 		targetPath: entry.outputPath,
 		owner: entry.owner,
+		recordedMode: entry.mode,
+		requestedMode: resolveHarnessSyncMode(request.requestedMode, entry.mode),
 	};
 }
 
 function makeRow(
 	context: RowContext,
 	status: SyncStatus,
-	reason: SyncPlanReason,
+	reason: HarnessDriftReason,
 	action: SyncPlanAction,
-): HarnessSyncPlanRow {
+): ClassifiedHarnessSyncPlanRow {
 	const effectiveAction = context.request.check ? "none" : action;
 	return {
 		assetId: context.asset.assetId,
@@ -1002,6 +1119,9 @@ function makeRow(
 		targetPath: context.targetPath,
 		owner: context.owner,
 		status,
+		...(context.recordedMode ? { recordedMode: context.recordedMode } : {}),
+		requestedMode: context.requestedMode,
+		beforeStatus: status,
 		reason,
 		action: effectiveAction,
 		writesTarget:
@@ -1012,7 +1132,26 @@ function makeRow(
 	};
 }
 
-function abortMutation(row: HarnessSyncPlanRow): HarnessSyncPlanRow {
+/** Explicit request, then sticky recorded mode, then copy for new assets. */
+export function resolveHarnessSyncMode(
+	requestedMode: SyncMode | undefined,
+	recordedMode: SyncMode | undefined,
+): SyncMode {
+	return requestedMode ?? recordedMode ?? "copy";
+}
+
+function withPlanExitCode(
+	plan: Omit<ClassifiedHarnessSyncPlan, "exitCode">,
+): ClassifiedHarnessSyncPlan {
+	return {
+		...plan,
+		exitCode: plan.rows.some((row) => row.status !== "current") ? 1 : 0,
+	};
+}
+
+function abortMutation(
+	row: ClassifiedHarnessSyncPlanRow,
+): ClassifiedHarnessSyncPlanRow {
 	if (!row.writesTarget && !row.writesManifest) return row;
 	return {
 		...row,

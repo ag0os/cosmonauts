@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
-import { readFile, realpath } from "node:fs/promises";
+import { lstat, readFile, realpath } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import type {
 	HarnessAsset,
 	HarnessManifestEntry,
+	ImplementedHarnessTargetId,
 	OwnerIdentity,
 } from "./types.ts";
 
@@ -54,8 +56,102 @@ export const EMPTY_HARNESS_MANIFEST = {
 	entries: {},
 } as const satisfies HarnessProvenanceManifest;
 
+export interface HarnessTransactionPaths {
+	readonly lockPath: string;
+	readonly journalPath: string;
+}
+
+export interface StableHarnessStateObservation<T> {
+	readonly manifest: HarnessProvenanceManifest;
+	readonly journalPresent: boolean;
+	readonly target: T;
+	readonly concurrentChange: boolean;
+	readonly exitCode: 0 | 1;
+	readonly status?: "source-ahead";
+	readonly reason?: "concurrent-change" | "pending-journal";
+}
+
+interface FileObservation {
+	readonly exists: boolean;
+	readonly digest?: string;
+	readonly version?: string;
+	readonly contents?: string;
+}
+
 export function sha256(bytes: Uint8Array | string): string {
 	return createHash("sha256").update(bytes).digest("hex");
+}
+
+/**
+ * Resolve the sibling transaction artifacts shared by every kind and scope
+ * under one harness owner root. The target id identifies the registered owner
+ * directory (`.claude` or `.agents`); scope deliberately does not participate.
+ */
+export function resolveHarnessTransactionPaths(
+	ownerRoot: string,
+	targetId: ImplementedHarnessTargetId,
+): HarnessTransactionPaths {
+	const parent = dirname(resolve(ownerRoot));
+	const stem = `.cosmonauts-harness-${targetId}`;
+	return {
+		lockPath: join(parent, `${stem}.lock`),
+		journalPath: join(parent, `${stem}.journal.json`),
+	};
+}
+
+/**
+ * Observe a target between two raw manifest/journal reads. This function is
+ * intentionally observation-only: it does not provision roots, acquire a
+ * lock, recover a journal, or rewrite malformed/old state. Raw fingerprints
+ * make appearance, disappearance, replacement, and byte changes visible.
+ */
+export async function observeStableHarnessState<T>(options: {
+	readonly manifestPath: string;
+	readonly journalPath: string;
+	readonly observeTarget: (manifest: HarnessProvenanceManifest) => Promise<T>;
+}): Promise<StableHarnessStateObservation<T>> {
+	const [manifestBefore, journalBefore] = await Promise.all([
+		observeFile(options.manifestPath),
+		observeFile(options.journalPath),
+	]);
+	const manifest = parseObservedManifest(manifestBefore, options.manifestPath);
+	const target = await options.observeTarget(manifest);
+	const [manifestAfter, journalAfter] = await Promise.all([
+		observeFile(options.manifestPath),
+		observeFile(options.journalPath),
+	]);
+	const concurrentChange =
+		!sameFileObservation(manifestBefore, manifestAfter) ||
+		!sameFileObservation(journalBefore, journalAfter);
+	if (concurrentChange) {
+		return {
+			manifest,
+			journalPresent: journalBefore.exists || journalAfter.exists,
+			target,
+			concurrentChange: true,
+			exitCode: 1,
+			status: "source-ahead",
+			reason: "concurrent-change",
+		};
+	}
+	if (journalBefore.exists) {
+		return {
+			manifest,
+			journalPresent: true,
+			target,
+			concurrentChange: false,
+			exitCode: 1,
+			status: "source-ahead",
+			reason: "pending-journal",
+		};
+	}
+	return {
+		manifest,
+		journalPresent: false,
+		target,
+		concurrentChange: false,
+		exitCode: 0,
+	};
 }
 
 /**
@@ -111,6 +207,13 @@ export async function readHarnessManifest(
 		}
 		throw error;
 	}
+	return parseHarnessManifest(contents, manifestPath);
+}
+
+function parseHarnessManifest(
+	contents: string,
+	manifestPath: string,
+): HarnessProvenanceManifest {
 	const parsed: unknown = JSON.parse(contents);
 	if (
 		!isRecord(parsed) ||
@@ -214,4 +317,58 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
 	return error instanceof Error && "code" in error;
+}
+
+async function observeFile(path: string): Promise<FileObservation> {
+	try {
+		const before = await lstat(path, { bigint: true });
+		const contents = await readFile(path, "utf8");
+		const after = await lstat(path, { bigint: true });
+		return {
+			exists: true,
+			digest: sha256(contents),
+			version: [
+				before.dev,
+				before.ino,
+				before.size,
+				before.mtimeNs,
+				before.ctimeNs,
+				after.dev,
+				after.ino,
+				after.size,
+				after.mtimeNs,
+				after.ctimeNs,
+			].join(":"),
+			contents,
+		};
+	} catch (error) {
+		if (isNodeError(error) && error.code === "ENOENT") {
+			return { exists: false };
+		}
+		throw error;
+	}
+}
+
+function parseObservedManifest(
+	observation: FileObservation,
+	manifestPath: string,
+): HarnessProvenanceManifest {
+	if (!observation.exists) return EMPTY_HARNESS_MANIFEST;
+	if (observation.contents === undefined) {
+		throw new Error(
+			`Harness manifest bytes were not observed: ${manifestPath}.`,
+		);
+	}
+	return parseHarnessManifest(observation.contents, manifestPath);
+}
+
+function sameFileObservation(
+	left: FileObservation,
+	right: FileObservation,
+): boolean {
+	return (
+		left.exists === right.exists &&
+		left.digest === right.digest &&
+		left.version === right.version
+	);
 }
