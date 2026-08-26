@@ -576,10 +576,7 @@ export async function runRepositoryExportValidation(
 					if (phase === options.stopAfter) {
 						throw new Error(`injected stop after ${phase}`);
 					}
-					if (
-						phase === "commit-ready" &&
-						options.stopAfter === "rolling-back"
-					) {
+					if (phase === "installing" && options.stopAfter === "rolling-back") {
 						throw new Error("injected failure before rolling back");
 					}
 				},
@@ -920,10 +917,7 @@ export async function runPersonalBundleValidation(
 					if (phase === options.stopAfter) {
 						throw new Error(`injected stop after ${phase}`);
 					}
-					if (
-						phase === "commit-ready" &&
-						options.stopAfter === "rolling-back"
-					) {
+					if (phase === "installing" && options.stopAfter === "rolling-back") {
 						throw new Error("injected failure before rolling back");
 					}
 				},

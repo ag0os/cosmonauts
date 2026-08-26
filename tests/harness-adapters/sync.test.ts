@@ -124,25 +124,26 @@ describe("harness sync planning", () => {
 			lockedMismatch.liveBytes[1],
 		);
 
-		const rollback = await createCommandBootstrapFixture("rollback");
+		const commitIntent = await createCommandBootstrapFixture("commit-intent");
 		await expect(
 			runClaudeCommandPairBootstrap({
-				projectRoot: rollback.projectRoot,
-				homeRoot: rollback.homeRoot,
+				projectRoot: commitIntent.projectRoot,
+				homeRoot: commitIntent.homeRoot,
 				stopAfter: "commit-ready",
 			}),
-		).rejects.toThrow(/restored old command bytes/i);
-		for (let index = 0; index < 2; index += 1) {
-			expect(await readFile(rollback.livePaths[index] ?? "")).toEqual(
-				rollback.liveBytes[index],
-			);
-		}
-		expect((await observeHarnessNodeSnapshot(rollback.manifestPath)).kind).toBe(
-			"absent",
-		);
-		expect((await observeHarnessNodeSnapshot(rollback.journalPath)).kind).toBe(
-			"absent",
-		);
+		).rejects.toThrow(/did not reach evidence hold/i);
+		expect(
+			JSON.parse(await readFile(commitIntent.journalPath, "utf8")),
+		).toMatchObject({ phase: "commit-ready" });
+		expect(
+			(await observeHarnessNodeSnapshot(commitIntent.manifestPath)).kind,
+		).toBe("absent");
+		expect(
+			await runClaudeCommandPairBootstrap({
+				projectRoot: commitIntent.projectRoot,
+				homeRoot: commitIntent.homeRoot,
+			}),
+		).toMatchObject({ phase: "complete" });
 
 		const rollingCrash = await createCommandBootstrapFixture("rolling-crash");
 		await expect(
@@ -351,6 +352,143 @@ describe("harness sync planning", () => {
 				member.newBytes.toString("utf8"),
 			);
 		}
+
+		for (const phase of ["commit-ready", "committed"] as const) {
+			const inProcess = await createTransactionFixture(
+				`in-process-${phase}`,
+				1,
+			);
+			const interrupted = await withOwnerRootTransaction(
+				{ ownerRoot: inProcess.ownerRoot, targetId: "claude" },
+				async (transaction) =>
+					applySyncPlanInTransaction(transaction, {
+						oldManifest: inProcess.oldManifest,
+						newManifestContents: inProcess.newManifest.contents,
+						members: inProcess.members.map((member) => ({
+							targetPath: member.targetPath,
+							oldState: member.oldState,
+							newState: member.newState,
+							writeStage: (path) => writeNode(path, member.newBytes),
+						})),
+						onPhasePersisted: (persistedPhase) => {
+							if (persistedPhase === phase) {
+								throw new Error(`in-process failure after ${phase}`);
+							}
+						},
+					}),
+			);
+			expect(interrupted).toMatchObject({
+				state: "completed",
+				result: { state: "ambiguous" },
+			});
+			expect(
+				JSON.parse(await readFile(inProcess.journalPath, "utf8")),
+			).toMatchObject({ phase });
+
+			const hardCrash = await seededRecoveryFixture(
+				`hard-crash-${phase}`,
+				phase,
+				{
+					manifest: phase === "commit-ready" ? "old" : "new",
+					targets: ["new"],
+					backups: ["old"],
+					stages: ["absent"],
+				},
+			);
+			expect(await runFreshRecovery(inProcess)).toMatchObject({
+				state: "completed",
+				recovery: { state: "committed-new", phase },
+			});
+			expect(await runFreshRecovery(hardCrash)).toMatchObject({
+				state: "completed",
+				recovery: { state: "committed-new", phase },
+			});
+			expect(await observeFinalTransactionIntent(inProcess)).toEqual(
+				await observeFinalTransactionIntent(hardCrash),
+			);
+		}
+
+		for (const phase of ["prepared", "installing"] as const) {
+			const preCommit = await createTransactionFixture(
+				`pre-commit-${phase}`,
+				1,
+			);
+			const interrupted = await withOwnerRootTransaction(
+				{ ownerRoot: preCommit.ownerRoot, targetId: "claude" },
+				async (transaction) =>
+					applySyncPlanInTransaction(transaction, {
+						oldManifest: preCommit.oldManifest,
+						newManifestContents: preCommit.newManifest.contents,
+						members: preCommit.members.map((member) => ({
+							targetPath: member.targetPath,
+							oldState: member.oldState,
+							newState: member.newState,
+							writeStage: (path) => writeNode(path, member.newBytes),
+						})),
+						onPhasePersisted: (persistedPhase) => {
+							if (persistedPhase === phase) {
+								throw new Error(`in-process failure after ${phase}`);
+							}
+						},
+					}),
+			);
+			expect(interrupted).toMatchObject({
+				state: "completed",
+				result: { state: "restored-old" },
+			});
+			expect(await readFile(preCommit.manifestPath, "utf8")).toBe(
+				preCommit.oldManifest.contents,
+			);
+			expect(await readFile(preCommit.members[0]?.targetPath ?? "")).toEqual(
+				preCommit.members[0]?.oldBytes,
+			);
+			expect(await observeHarnessNodeSnapshot(preCommit.journalPath)).toEqual({
+				kind: "absent",
+			});
+		}
+
+		const partialCleanup = await createTransactionFixture("partial-cleanup", 2);
+		const cleanupFailure = await withOwnerRootTransaction(
+			{ ownerRoot: partialCleanup.ownerRoot, targetId: "claude" },
+			async (transaction) =>
+				applySyncPlanInTransaction(transaction, {
+					oldManifest: partialCleanup.oldManifest,
+					newManifestContents: partialCleanup.newManifest.contents,
+					members: partialCleanup.members.map((member) => ({
+						targetPath: member.targetPath,
+						oldState: member.oldState,
+						newState: member.newState,
+						writeStage: (path) => writeNode(path, member.newBytes),
+					})),
+					onPhasePersisted: async (phase, persistedJournal) => {
+						if (phase !== "committed") return;
+						await rm(persistedJournal.members[0]?.backupPath ?? "");
+						throw new Error("cleanup failed after removing one backup");
+					},
+				}),
+		);
+		expect(cleanupFailure).toMatchObject({
+			state: "completed",
+			result: { state: "ambiguous" },
+		});
+		const persistedCleanupJournal = JSON.parse(
+			await readFile(partialCleanup.journalPath, "utf8"),
+		) as OwnerRootTransactionJournal;
+		expect(persistedCleanupJournal).toMatchObject({ phase: "committed" });
+		expect(
+			await observeHarnessNodeSnapshot(
+				persistedCleanupJournal.members[0]?.backupPath ?? "",
+			),
+		).toEqual({ kind: "absent" });
+		expect(
+			await observeHarnessNodeSnapshot(
+				persistedCleanupJournal.members[1]?.backupPath ?? "",
+			),
+		).toEqual(persistedCleanupJournal.members[1]?.oldState);
+		expect(await runFreshRecovery(partialCleanup)).toMatchObject({
+			state: "completed",
+			recovery: { state: "committed-new", phase: "committed" },
+		});
 
 		const aliasPath = join(applyFixture.root, "owner-alias");
 		await symlink(dirname(applyFixture.ownerRoot), aliasPath, "dir");
@@ -1703,6 +1841,28 @@ async function snapshotTransactionFixture(
 				target: await observeHarnessNodeSnapshot(member.targetPath),
 				stage: await observeHarnessNodeSnapshot(member.stagePath),
 				backup: await observeHarnessNodeSnapshot(member.backupPath),
+			})),
+		),
+	};
+}
+
+async function observeFinalTransactionIntent(
+	fixture: TransactionFixture,
+): Promise<Record<string, unknown>> {
+	return {
+		manifest:
+			(await readFile(fixture.manifestPath, "utf8")) ===
+			fixture.newManifest.contents
+				? "new"
+				: "other",
+		journal: (await observeHarnessNodeSnapshot(fixture.journalPath)).kind,
+		members: await Promise.all(
+			fixture.members.map(async (member) => ({
+				target: (await readFile(member.targetPath)).equals(member.newBytes)
+					? "new"
+					: "other",
+				stage: (await observeHarnessNodeSnapshot(member.stagePath)).kind,
+				backup: (await observeHarnessNodeSnapshot(member.backupPath)).kind,
 			})),
 		),
 	};

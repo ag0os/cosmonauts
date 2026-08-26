@@ -1129,10 +1129,7 @@ export async function runClaudeCommandPairBootstrap(
 					if (phase === options.stopAfter) {
 						throw new Error(`injected stop after ${phase}`);
 					}
-					if (
-						phase === "commit-ready" &&
-						options.stopAfter === "rolling-back"
-					) {
+					if (phase === "installing" && options.stopAfter === "rolling-back") {
 						throw new Error("injected failure before rolling back");
 					}
 				},
@@ -1141,18 +1138,8 @@ export async function runClaudeCommandPairBootstrap(
 				try {
 					await assertInstalledCommandPairMatchesEvidence(authorized, homeRoot);
 				} catch (error) {
-					const rollback = await rollbackCommittedCommandPair(
-						transaction,
-						transactionId,
-					);
-					if (rollback.state === "restored-old") {
-						throw new Error(
-							"Installed Claude command verification failed; both old commands and the old manifest were restored.",
-							{ cause: error },
-						);
-					}
 					throw new Error(
-						`Installed Claude command verification is ambiguous; recoverable state was preserved: ${rollback.reason}.`,
+						"Installed Claude command verification is ambiguous; committed recovery state was preserved.",
 						{ cause: error },
 					);
 				}
@@ -1675,38 +1662,6 @@ async function assertLockedCommandPairMatchesEvidence(
 	}
 }
 
-async function rollbackCommittedCommandPair(
-	transaction: OwnerRootTransaction,
-	transactionId: string,
-): Promise<
-	| { readonly state: "restored-old" }
-	| { readonly state: "ambiguous"; readonly reason: string }
-> {
-	const value: unknown = JSON.parse(
-		await readFile(transaction.journalPath, "utf8"),
-	);
-	if (
-		!isOwnerRootJournal(value) ||
-		value.transactionId !== transactionId ||
-		value.phase !== "committed" ||
-		value.cleanupPolicy !== "after-evidence" ||
-		value.members.length !== 2
-	) {
-		return { state: "ambiguous", reason: "committed-journal-mismatch" };
-	}
-	const observed = await observeJournalVector(value);
-	if (
-		observed.manifest !== "new" ||
-		observed.hasOther ||
-		!commitVectorIsNew(observed.members)
-	) {
-		return { state: "ambiguous", reason: "post-install-vector-changed" };
-	}
-	const rollingBack = { ...value, phase: "rolling-back" } as const;
-	await persistJournal(transaction, rollingBack);
-	return rollbackJournal(transaction, rollingBack);
-}
-
 async function assertInstalledCommandPairMatchesEvidence(
 	evidence: ClaudeCommandMigrationEvidence,
 	homeRoot: string,
@@ -2184,9 +2139,9 @@ export async function applySyncPlanInTransaction(
 		};
 	}
 
-	await persistJournal(transaction, journal);
-	await options.onPhasePersisted?.("prepared", journal);
 	try {
+		await persistJournal(transaction, journal);
+		await options.onPhasePersisted?.("prepared", journal);
 		for (let index = 0; index < members.length; index += 1) {
 			const member = members[index];
 			const planned = options.members[index];
@@ -2251,8 +2206,38 @@ export async function applySyncPlanInTransaction(
 		return cleanup.state === "ambiguous"
 			? { ...cleanup, transactionId }
 			: { state: "committed", transactionId };
-	} catch {
-		journal = { ...journal, phase: "rolling-back" };
+	} catch (error) {
+		let persistedJournal: OwnerRootTransactionJournal;
+		try {
+			persistedJournal = parseOwnerRootJournal(
+				await readFile(transaction.journalPath, "utf8"),
+				transaction,
+			);
+		} catch (journalError) {
+			return {
+				state: "ambiguous",
+				transactionId,
+				reason: `transaction-failed-journal-unreadable:${errorMessage(journalError)}`,
+			};
+		}
+		if (persistedJournal.transactionId !== transactionId) {
+			return {
+				state: "ambiguous",
+				transactionId,
+				reason: "transaction-failed-journal-changed",
+			};
+		}
+		if (
+			persistedJournal.phase === "commit-ready" ||
+			persistedJournal.phase === "committed"
+		) {
+			return {
+				state: "ambiguous",
+				transactionId,
+				reason: `${persistedJournal.phase}-recovery-required:${errorMessage(error)}`,
+			};
+		}
+		journal = { ...persistedJournal, phase: "rolling-back" };
 		await persistJournal(transaction, journal);
 		await options.onPhasePersisted?.("rolling-back", journal);
 		const rollback = await rollbackJournal(transaction, journal);

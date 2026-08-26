@@ -116,11 +116,7 @@ describe("repository harness export validation", () => {
 		const interruptedEvidence = JSON.parse(
 			await readFile(fixture.evidencePath, "utf8"),
 		) as { externalBundle: { backupPath: string } };
-		expect(
-			await readFile(
-				`${interruptedEvidence.externalBundle.backupPath}/SKILL.md`,
-			),
-		).toEqual(oldBundle);
+		await expectMissing(interruptedEvidence.externalBundle.backupPath);
 		expect(
 			JSON.parse(
 				await readFile(
@@ -351,7 +347,7 @@ describe("repository harness export validation", () => {
 		);
 	});
 
-	test("a prepared-phase failure is recovered on retry before the whole set is installed", async () => {
+	test("a prepared-phase failure rolls back before retry installs the whole set", async () => {
 		const fixture = await createFixture();
 		const before = await Promise.all(
 			PROJECT_EXPORT_ROWS.map((row) =>
@@ -378,7 +374,9 @@ describe("repository harness export validation", () => {
 			),
 		);
 		expect(interrupted).toEqual(before);
-		await access(join(fixture.root, ".cosmonauts-harness-claude.journal.json"));
+		await expectMissing(
+			join(fixture.root, ".cosmonauts-harness-claude.journal.json"),
+		);
 
 		const complete = await runRepositoryExportValidation({
 			projectRoot: fixture.root,
@@ -390,11 +388,9 @@ describe("repository harness export validation", () => {
 			selectedCheck: currentSelectedCheck,
 		});
 		expect(complete.phase).toBe("complete");
-		expect(
-			complete.rows.every((row) =>
-				row.recoveryOutcome.startsWith("restored-old:prepared"),
-			),
-		).toBe(true);
+		expect(complete.rows.every((row) => row.recoveryOutcome === "none")).toBe(
+			true,
+		);
 		await expectMissing(
 			join(fixture.root, ".cosmonauts-harness-claude.journal.json"),
 		);
