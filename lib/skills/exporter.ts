@@ -8,12 +8,17 @@
 import { cp, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { resolveHarnessTargetDirectory } from "../harness-adapters/registry.ts";
+import type {
+	HarnessScope,
+	ImplementedHarnessTargetId,
+} from "../harness-adapters/types.ts";
 
 /** Supported export targets. */
-export type ExportTarget = "claude" | "codex";
+export type ExportTarget = ImplementedHarnessTargetId;
 
 /** Scope of the export: project-local or user-level (personal). */
-export type ExportScope = "project" | "personal";
+export type ExportScope = HarnessScope;
 
 /** Result of exporting a single skill. */
 export interface ExportResult {
@@ -45,15 +50,14 @@ export interface ExportOptions {
  *   codex  → ~/.agents/skills/<name>/
  */
 export function resolveTargetDir(name: string, options: ExportOptions): string {
-	const scope = options.personal ? "personal" : "project";
-	const base = scope === "personal" ? homedir() : options.projectRoot;
-
-	switch (options.target) {
-		case "claude":
-			return join(base, ".claude", "skills", name);
-		case "codex":
-			return join(base, ".agents", "skills", name);
-	}
+	const scope: HarnessScope = options.personal ? "personal" : "project";
+	const target = resolveHarnessTargetDirectory({
+		targetId: options.target,
+		scope,
+		kind: "skill",
+		roots: { projectRoot: options.projectRoot, homeRoot: homedir() },
+	});
+	return join(target.targetDirectory, name);
 }
 
 /**

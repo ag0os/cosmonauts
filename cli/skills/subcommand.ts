@@ -10,6 +10,10 @@
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
+import {
+	isImplementedHarnessTargetId,
+	listImplementedHarnessTargetIds,
+} from "../../lib/harness-adapters/registry.ts";
 import { discoverFrameworkBundledPackageDirs } from "../../lib/packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../../lib/runtime.ts";
 import type {
@@ -23,8 +27,6 @@ import {
 } from "../../lib/skills/index.ts";
 import type { CliOutputMode } from "../shared/output.ts";
 import { getOutputMode, printJson, printLines } from "../shared/output.ts";
-
-const VALID_TARGETS: ReadonlySet<string> = new Set(["claude", "codex"]);
 
 /** Label applied to skills discovered via `projectConfig.skillPaths`. */
 const PROJECT_SKILL_DOMAIN = "project";
@@ -164,15 +166,15 @@ export function createSkillsProgram(): Command {
 		.argument("[skills...]", "Skill names to export")
 		.action(async (skillNames: string[], options) => {
 			try {
-				if (!VALID_TARGETS.has(options.target)) {
+				if (!isImplementedHarnessTargetId(options.target, "skill")) {
 					console.error(
-						`Invalid target "${options.target}". Must be one of: claude, codex`,
+						`Invalid target "${options.target}". Must be one of: ${listImplementedHarnessTargetIds("skill").join(", ")}`,
 					);
 					process.exitCode = 1;
 					return;
 				}
 
-				const target = options.target as ExportTarget;
+				const target: ExportTarget = options.target;
 				const projectRoot = process.cwd();
 				const programOpts = program.opts<SkillsProgramOptions>();
 				const allSkills = await discoverAllRuntimeSkills(programOpts);

@@ -19,6 +19,7 @@
 	"files": [
 		"bundled/",
 		"domains/",
+		"external-commands/",
 		"external-skills/",
 		"lib/",
 		"cli/",

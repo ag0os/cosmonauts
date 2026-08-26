@@ -1,3 +1,4 @@
+export type { HarnessScope } from "../harness-adapters/types.ts";
 export {
 	type DiscoveredSkill,
 	discoverSkills,
