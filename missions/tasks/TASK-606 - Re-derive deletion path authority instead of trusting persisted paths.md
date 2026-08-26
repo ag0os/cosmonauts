@@ -1,7 +1,7 @@
 ---
 id: TASK-606
 title: Re-derive deletion path authority instead of trusting persisted paths
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -9,7 +9,7 @@ labels:
   - 'plan:harness-adapters'
 dependencies: []
 createdAt: '2026-08-26T14:18:15.362Z'
-updatedAt: '2026-08-26T14:18:15.362Z'
+updatedAt: '2026-08-26T14:34:38.208Z'
 ---
 
 ## Description
@@ -25,10 +25,10 @@ Root cause for both: deletion/restoration authority is READ from persisted data 
 Note on threat model: the plan scopes hostile same-user races out of the boundary, so this is NOT primarily an adversarial fix. The in-scope case is corruption, a bug, or schema drift producing a bad path and destroying user data such as ~/.claude/settings.json. Fix it as a correctness property that holds regardless of adversary. Ratified ground: INV-002, AC-003, B-004, B-007, B-008, Design sections 5, 7, and 10.
 
 <!-- AC:BEGIN -->
-- [ ] #1 A manifest entry whose `outputPath` does not exactly equal the path re-derived from its `(target, scope, kind, outputIdentity)` through the registry is refused as invalid; it never becomes a removal candidate and never authorizes any write or delete.
-- [ ] #2 A manifest entry whose stored key disagrees with its `(ownerId, assetId)`, or whose target/kind has no registered adapter, is refused the same way.
-- [ ] #3 Journal member target paths are validated as strict children of a registered adapter directory for the journal target and scope, not merely as owner-root descendants; a journal failing this is treated as the Design section 7 malformed/owner-path-schema row, preserving all state and reporting ambiguous.
-- [ ] #4 Deletion and rollback can never remove or restore an owner root, an adapter directory, a manifest, a journal, a lock, or any non-asset path, proven by negative tests that attempt exactly those through a crafted manifest and a crafted journal.
-- [ ] #5 A refused manifest or journal produces a nonzero reported conflict and leaves every byte on disk intact, including the offending target.
-- [ ] #6 All legitimate flows are unaffected: existing B-004/B-006/B-007/B-008/B-012 tests pass under their existing titles and markers, the four repo skills, personal bundle, and both live commands still sync and check clean, and no new behavior marker is added.
+- [x] #1 A manifest entry whose `outputPath` does not exactly equal the path re-derived from its `(target, scope, kind, outputIdentity)` through the registry is refused as invalid; it never becomes a removal candidate and never authorizes any write or delete.
+- [x] #2 A manifest entry whose stored key disagrees with its `(ownerId, assetId)`, or whose target/kind has no registered adapter, is refused the same way.
+- [x] #3 Journal member target paths are validated as strict children of a registered adapter directory for the journal target and scope, not merely as owner-root descendants; a journal failing this is treated as the Design section 7 malformed/owner-path-schema row, preserving all state and reporting ambiguous.
+- [x] #4 Deletion and rollback can never remove or restore an owner root, an adapter directory, a manifest, a journal, a lock, or any non-asset path, proven by negative tests that attempt exactly those through a crafted manifest and a crafted journal.
+- [x] #5 A refused manifest or journal produces a nonzero reported conflict and leaves every byte on disk intact, including the offending target.
+- [x] #6 All legitimate flows are unaffected: existing B-004/B-006/B-007/B-008/B-012 tests pass under their existing titles and markers, the four repo skills, personal bundle, and both live commands still sync and check clean, and no new behavior marker is added.
 <!-- AC:END -->
