@@ -337,6 +337,14 @@ describe("loadAgentPackageDefinition", () => {
 				new RegExp(`targets\\.${target.replace("-", "\\-")}`),
 			);
 		}
+
+		const unknownTargetPath = await writeDefinition("unknown-target.json", {
+			...baseDefinition,
+			targets: { "future-harness": {} },
+		});
+		await expect(loadAgentPackageDefinition(unknownTargetPath)).rejects.toThrow(
+			'targets contains unsupported target "future-harness"; expected one of claude, claude-cli, codex, gemini-cli, open-code',
+		);
 	});
 });
 

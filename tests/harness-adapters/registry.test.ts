@@ -7,6 +7,9 @@ import {
 	createRuntimeSkillDescriptor,
 	getHarnessTarget,
 	getStaticHarnessAsset,
+	isHarnessPackageDefinitionKey,
+	isImplementedHarnessTargetId,
+	listHarnessPackageDefinitionKeys,
 	listHarnessTargets,
 	resolveHarnessAssetTarget,
 	resolveHarnessTargetDirectory,
@@ -44,6 +47,47 @@ describe("harness adapter registry", () => {
 			join(PROJECT_ROOT, ".agents", "skills", "plan"),
 			join(homedir(), ".agents", "skills", "plan"),
 		]);
+	});
+
+	test("keeps new registry targets free of agent-package provenance and journal consumer edits", async () => {
+		expect(listHarnessPackageDefinitionKeys()).toEqual([
+			"claude",
+			"claude-cli",
+			"codex",
+			"gemini-cli",
+			"open-code",
+		]);
+		for (const key of listHarnessPackageDefinitionKeys()) {
+			expect(isHarnessPackageDefinitionKey(key)).toBe(true);
+		}
+		expect(isHarnessPackageDefinitionKey("future-harness")).toBe(false);
+		expect(isImplementedHarnessTargetId("claude")).toBe(true);
+		expect(isImplementedHarnessTargetId("codex")).toBe(true);
+		expect(isImplementedHarnessTargetId("open-code")).toBe(false);
+		expect(isImplementedHarnessTargetId("gemini-cli")).toBe(false);
+
+		const [definitionSource, packageTypesSource, provenanceSource, syncSource] =
+			await Promise.all([
+				readFile("lib/agent-packages/definition.ts", "utf-8"),
+				readFile("lib/agent-packages/types.ts", "utf-8"),
+				readFile("lib/harness-adapters/provenance.ts", "utf-8"),
+				readFile("lib/harness-adapters/sync.ts", "utf-8"),
+			]);
+
+		expect(definitionSource).toContain("isHarnessPackageDefinitionKey");
+		expect(definitionSource).not.toMatch(/const TARGETS\s*=/);
+		expect(packageTypesSource).toContain("HarnessPackageDefinitionKey");
+		expect(packageTypesSource).toContain("HarnessPackageTargetLabel");
+		expect(packageTypesSource).not.toMatch(/\|\s*"gemini-cli"/);
+		expect(packageTypesSource).not.toMatch(/"claude-cli"\s*\|\s*"codex"/);
+		expect(provenanceSource).toContain(
+			"isImplementedHarnessTargetId(value.target)",
+		);
+		expect(provenanceSource).not.toMatch(/value\.target\s*!==\s*"claude"/);
+		expect(syncSource).toContain(
+			"isImplementedHarnessTargetId(value.targetId)",
+		);
+		expect(syncSource).not.toMatch(/value\.targetId\s*===\s*"claude"/);
 	});
 
 	test("resolves registry and compatibility skill-export targets from one contract", async () => {

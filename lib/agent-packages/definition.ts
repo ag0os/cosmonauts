@@ -3,7 +3,11 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import matter from "gray-matter";
 import { qualifyRole } from "../agents/qualified-role.ts";
 import type { AgentDefinition, AgentToolSet } from "../agents/types.ts";
-import { getHarnessPackageTarget } from "../harness-adapters/registry.ts";
+import {
+	getHarnessPackageTarget,
+	isHarnessPackageDefinitionKey,
+	listHarnessPackageDefinitionKeys,
+} from "../harness-adapters/registry.ts";
 import type {
 	AgentPackageDefinition,
 	ExternalRuntimeTarget,
@@ -31,14 +35,6 @@ const TOOL_PRESETS = new Set<AgentToolSet>([
 	"verification",
 	"none",
 ]);
-const TARGETS = new Set<ExternalRuntimeTarget>([
-	"claude",
-	"claude-cli",
-	"codex",
-	"gemini-cli",
-	"open-code",
-]);
-
 export async function loadAgentPackageDefinition(
 	definitionPath: string,
 ): Promise<AgentPackageDefinition> {
@@ -195,9 +191,9 @@ function parseTargets(
 		{};
 
 	for (const [target, options] of Object.entries(object)) {
-		if (!isTarget(target)) {
+		if (!isHarnessPackageDefinitionKey(target)) {
 			throw new Error(
-				`targets contains unsupported target "${target}"; expected one of claude, claude-cli, codex, gemini-cli, open-code`,
+				`targets contains unsupported target "${target}"; expected one of ${listHarnessPackageDefinitionKeys().join(", ")}`,
 			);
 		}
 		targets[target] = parseTargetOptions(options, `targets.${target}`);
@@ -302,10 +298,6 @@ function requireStringArray(value: unknown, field: string): readonly string[] {
 
 function isToolPreset(value: string): value is AgentToolSet {
 	return TOOL_PRESETS.has(value as AgentToolSet);
-}
-
-function isTarget(value: string): value is ExternalRuntimeTarget {
-	return TARGETS.has(value as ExternalRuntimeTarget);
 }
 
 function stripFrontmatter(raw: string): string {

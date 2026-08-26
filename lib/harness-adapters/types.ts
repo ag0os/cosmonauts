@@ -151,6 +151,7 @@ export interface DeclaredHarnessTarget {
 	readonly id: Exclude<HarnessTargetId, ImplementedHarnessTargetId>;
 	readonly status: "declared";
 	readonly adapters: readonly [];
+	readonly definitionKeys: readonly string[];
 }
 
 export type HarnessTargetDescriptor =

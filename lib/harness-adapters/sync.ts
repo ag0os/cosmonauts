@@ -44,6 +44,7 @@ import {
 } from "./provenance.ts";
 import {
 	getStaticHarnessAsset,
+	isImplementedHarnessTargetId,
 	resolveHarnessAssetTarget,
 } from "./registry.ts";
 import type {
@@ -2988,7 +2989,7 @@ function isOwnerRootJournal(
 		value.schemaVersion === 1 &&
 		typeof value.transactionId === "string" &&
 		typeof value.canonicalOwnerRoot === "string" &&
-		(value.targetId === "claude" || value.targetId === "codex") &&
+		isImplementedHarnessTargetId(value.targetId) &&
 		[
 			"prepared",
 			"installing",

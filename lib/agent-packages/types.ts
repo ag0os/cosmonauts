@@ -1,14 +1,13 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { AgentToolSet } from "../agents/types.ts";
+import type {
+	HarnessPackageDefinitionKey,
+	HarnessPackageTargetLabel,
+} from "../harness-adapters/registry.ts";
 
 type AgentPackageSchemaVersion = 1;
-export type ExternalRuntimeTarget =
-	| "claude"
-	| "claude-cli"
-	| "codex"
-	| "gemini-cli"
-	| "open-code";
-export type SupportedExportTarget = "claude-cli" | "codex";
+export type ExternalRuntimeTarget = HarnessPackageDefinitionKey;
+export type SupportedExportTarget = HarnessPackageTargetLabel;
 type SkillDeliveryMode = "inline";
 export type SystemPromptMode = "append" | "replace";
 

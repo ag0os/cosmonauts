@@ -1,15 +1,13 @@
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { COSMONAUTS_BUNDLE_RESERVED_NAMES } from "./inventory.ts";
+import { getHarnessTarget } from "./target-registry.ts";
 import type {
 	HarnessAsset,
 	HarnessAssetAdapter,
-	HarnessPackageCompatibility,
 	HarnessScope,
-	HarnessTargetDescriptor,
 	HarnessTargetId,
 	ImplementedHarnessTarget,
-	ImplementedHarnessTargetId,
 	MaterializedAssetKind,
 	ResolvedHarnessAssetTarget,
 	ResolvedHarnessTargetDirectory,
@@ -17,68 +15,13 @@ import type {
 	SyncMode,
 } from "./types.ts";
 
-const CLAUDE_SKILL_ADAPTER = {
-	kind: "skill",
-	directory: "skills",
-	transform: "identity",
-	supportedModes: ["copy", "link"],
-	supportedLinkShapes: ["directory", "flat-skill", "generated-wrapper"],
-} as const satisfies HarnessAssetAdapter;
-
-const CODEX_SKILL_ADAPTER = {
-	kind: "skill",
-	directory: "skills",
-	transform: "identity",
-	supportedModes: ["copy", "link"],
-	supportedLinkShapes: ["directory"],
-} as const satisfies HarnessAssetAdapter;
+export * from "./target-registry.ts";
 
 const PACKAGE_ROOT = resolve(
 	dirname(fileURLToPath(import.meta.url)),
 	"..",
 	"..",
 );
-
-const HARNESS_TARGETS: readonly HarnessTargetDescriptor[] = [
-	{
-		id: "claude",
-		status: "implemented",
-		ownerDirectory: ".claude",
-		adapters: [
-			CLAUDE_SKILL_ADAPTER,
-			{
-				kind: "command",
-				directory: "commands",
-				transform: "claude-command",
-				supportedModes: ["copy"],
-				supportedLinkShapes: [],
-			},
-		],
-		packageCompatibility: {
-			canonicalDefinitionKey: "claude",
-			definitionKeys: ["claude", "claude-cli"],
-			serializedTarget: "claude-cli",
-			packageIdSuffix: "claude-cli",
-		},
-	},
-	{
-		id: "codex",
-		status: "implemented",
-		ownerDirectory: ".agents",
-		adapters: [CODEX_SKILL_ADAPTER],
-		packageCompatibility: {
-			canonicalDefinitionKey: "codex",
-			definitionKeys: ["codex"],
-			serializedTarget: "codex",
-			packageIdSuffix: "codex",
-		},
-	},
-	{
-		id: "open-code",
-		status: "declared",
-		adapters: [],
-	},
-];
 
 const STATIC_HARNESS_ASSETS = [
 	{
@@ -139,107 +82,6 @@ export interface ResolveHarnessAssetTargetOptions {
 	readonly roots: ScopeRoots;
 	readonly scope?: HarnessScope;
 	readonly requestedMode?: SyncMode;
-}
-
-export interface ResolveHarnessPackageDefinitionTargetOptions<
-	T extends object,
-> {
-	readonly definitionId: string;
-	readonly targets: Readonly<Partial<Record<string, T>>>;
-	readonly target: string;
-}
-
-export interface ResolvedHarnessPackageDefinitionTarget<T extends object> {
-	readonly targetId: ImplementedHarnessTargetId;
-	readonly definitionKey: string;
-	readonly serializedTarget: HarnessPackageCompatibility["serializedTarget"];
-	readonly packageIdSuffix: HarnessPackageCompatibility["packageIdSuffix"];
-	readonly targetOptions: T;
-}
-
-export function listHarnessTargets(): readonly HarnessTargetDescriptor[] {
-	return HARNESS_TARGETS;
-}
-
-export function getHarnessTarget(
-	targetId: string,
-): HarnessTargetDescriptor | undefined {
-	return HARNESS_TARGETS.find(({ id }) => id === targetId);
-}
-
-export function listImplementedHarnessTargetIds(
-	kind?: MaterializedAssetKind,
-): readonly ImplementedHarnessTargetId[] {
-	return HARNESS_TARGETS.filter(
-		(target): target is ImplementedHarnessTarget =>
-			target.status === "implemented" &&
-			(kind === undefined ||
-				target.adapters.some((adapter) => adapter.kind === kind)),
-	).map(({ id }) => id);
-}
-
-export function isImplementedHarnessTargetId(
-	value: string,
-	kind?: MaterializedAssetKind,
-): value is ImplementedHarnessTargetId {
-	return listImplementedHarnessTargetIds(kind).some((id) => id === value);
-}
-
-export function listHarnessPackageTargetLabels(): readonly HarnessPackageCompatibility["serializedTarget"][] {
-	return implementedHarnessTargets().map(
-		({ packageCompatibility }) => packageCompatibility.serializedTarget,
-	);
-}
-
-export function getHarnessPackageTarget(
-	serializedTarget: string,
-): ImplementedHarnessTarget | undefined {
-	return implementedHarnessTargets().find(
-		({ packageCompatibility }) =>
-			packageCompatibility.serializedTarget === serializedTarget,
-	);
-}
-
-export function resolveHarnessPackageDefinitionTarget<T extends object>(
-	options: ResolveHarnessPackageDefinitionTargetOptions<T>,
-): ResolvedHarnessPackageDefinitionTarget<T> {
-	const target = getHarnessPackageTarget(options.target);
-	if (!target) {
-		throw new Error(
-			`Harness package target "${options.target}" is not registered.`,
-		);
-	}
-
-	const { packageCompatibility } = target;
-	const matchingKeys = packageCompatibility.definitionKeys.filter((key) =>
-		Object.hasOwn(options.targets, key),
-	);
-	if (matchingKeys.length > 1) {
-		throw new Error(
-			`ambiguous-package-target: Agent package definition "${options.definitionId}" declares multiple keys for target "${packageCompatibility.serializedTarget}": ${matchingKeys.join(", ")}. Declare exactly one.`,
-		);
-	}
-
-	const definitionKey = matchingKeys[0];
-	if (!definitionKey) {
-		throw new Error(
-			`Agent package definition "${options.definitionId}" does not declare target "${packageCompatibility.serializedTarget}". Add targets.${packageCompatibility.canonicalDefinitionKey} after reviewing the package for that runtime.`,
-		);
-	}
-	const targetOptions = options.targets[definitionKey];
-	if (!targetOptions) {
-		throw new Error(
-			`Agent package definition "${options.definitionId}" does not declare target "${packageCompatibility.serializedTarget}". Add targets.${packageCompatibility.canonicalDefinitionKey} after reviewing the package for that runtime.`,
-		);
-	}
-
-	return {
-		targetId: target.id,
-		definitionKey,
-		serializedTarget: packageCompatibility.serializedTarget,
-		packageIdSuffix: packageCompatibility.packageIdSuffix,
-		targetOptions,
-	};
 }
 
 export function listStaticHarnessAssets(): readonly HarnessAsset[] {
@@ -325,13 +167,6 @@ function requireImplementedTarget(
 		);
 	}
 	return target;
-}
-
-function implementedHarnessTargets(): readonly ImplementedHarnessTarget[] {
-	return HARNESS_TARGETS.filter(
-		(target): target is ImplementedHarnessTarget =>
-			target.status === "implemented",
-	);
 }
 
 function requireAdapter(

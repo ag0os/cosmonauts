@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { isImplementedHarnessTargetId } from "./target-registry.ts";
 import type {
 	HarnessAsset,
 	HarnessManifestEntry,
@@ -370,7 +371,7 @@ function isManifestEntry(
 	if (
 		typeof value.assetId !== "string" ||
 		(value.kind !== "skill" && value.kind !== "command") ||
-		(value.target !== "claude" && value.target !== "codex") ||
+		!isImplementedHarnessTargetId(value.target) ||
 		(value.scope !== "project" && value.scope !== "personal") ||
 		typeof value.sourceRootId !== "string" ||
 		typeof value.sourcePath !== "string" ||
