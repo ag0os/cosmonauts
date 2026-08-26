@@ -1,12 +1,31 @@
+import { randomUUID } from "node:crypto";
 import {
 	lstat,
 	mkdir,
+	open,
 	readdir,
 	readFile,
+	readlink,
 	realpath,
+	rename,
+	rm,
+	unlink,
 	writeFile,
 } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import {
+	basename,
+	dirname,
+	isAbsolute,
+	join,
+	relative,
+	resolve,
+	sep,
+} from "node:path";
+import type { EntityFileLockOptions } from "../entity-file-lock.ts";
+import {
+	EntityFileLockTimeoutError,
+	withEntityFileLock,
+} from "../entity-file-lock.ts";
 import type {
 	HarnessProvenanceManifest,
 	MaterializedHarnessManifestEntry,
@@ -638,6 +657,1265 @@ function sameJson(left: unknown, right: unknown): boolean {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
 	return error instanceof Error && "code" in error;
+}
+
+const DEFAULT_HARNESS_LOCK_WAIT_TIMEOUT_MS = 2_000;
+const activeOwnerRootTransactions = new WeakSet<object>();
+declare const ownerRootTransactionBrand: unique symbol;
+
+export type HarnessNodeSnapshot =
+	| { readonly kind: "absent" }
+	| {
+			readonly kind: "file" | "directory" | "symlink";
+			readonly digest: string;
+	  };
+
+export type HarnessManifestSnapshot =
+	| { readonly kind: "absent" }
+	| {
+			readonly kind: "file";
+			readonly digest: string;
+			readonly contents: string;
+	  };
+
+export type OwnerRootTransactionPhase =
+	| "prepared"
+	| "installing"
+	| "commit-ready"
+	| "committed"
+	| "rolling-back";
+
+export type OwnerRootCleanupPolicy = "after-commit" | "after-evidence";
+
+export interface OwnerRootJournalMember {
+	readonly targetPath: string;
+	readonly stagePath: string;
+	readonly backupPath: string;
+	readonly oldState: HarnessNodeSnapshot;
+	readonly newState: HarnessNodeSnapshot;
+}
+
+export interface OwnerRootTransactionJournal {
+	readonly schemaVersion: 1;
+	readonly transactionId: string;
+	readonly canonicalOwnerRoot: string;
+	readonly targetId: ResolvedHarnessAssetTarget["targetId"];
+	readonly phase: OwnerRootTransactionPhase;
+	readonly cleanupPolicy: OwnerRootCleanupPolicy;
+	readonly atomicSet: true;
+	readonly manifestPath: string;
+	readonly oldManifest: HarnessManifestSnapshot;
+	readonly newManifest: HarnessManifestSnapshot;
+	readonly members: readonly OwnerRootJournalMember[];
+}
+
+/** Opaque proof that the canonical owner-root sibling lock is currently held. */
+export interface OwnerRootTransaction {
+	readonly canonicalOwnerRoot: string;
+	readonly lockPath: string;
+	readonly journalPath: string;
+	readonly manifestPath: string;
+	readonly targetId: ResolvedHarnessAssetTarget["targetId"];
+	readonly [ownerRootTransactionBrand]: true;
+}
+
+export interface OwnerRootEvidenceReceipt {
+	readonly transactionId: string;
+	readonly evidencePath: string;
+	readonly evidenceDigest: string;
+}
+
+export type OwnerRootRecoveryResult =
+	| { readonly state: "none" }
+	| {
+			readonly state: "restored-old";
+			readonly phase: OwnerRootTransactionPhase;
+	  }
+	| {
+			readonly state: "committed-new";
+			readonly phase: OwnerRootTransactionPhase;
+	  }
+	| {
+			readonly state: "evidence-required";
+			readonly phase: "committed";
+			readonly transactionId: string;
+	  }
+	| {
+			readonly state: "ambiguous";
+			readonly reason: string;
+			readonly phase?: OwnerRootTransactionPhase;
+	  };
+
+export type OwnerRootTransactionResult<T> =
+	| {
+			readonly state: "completed";
+			readonly result: T;
+			readonly recovery: OwnerRootRecoveryResult;
+	  }
+	| {
+			readonly state: "recovery-required";
+			readonly recovery: Extract<
+				OwnerRootRecoveryResult,
+				{ readonly state: "ambiguous" | "evidence-required" }
+			>;
+	  }
+	| {
+			readonly state: "lock-contended";
+			readonly lockPath: string;
+			readonly ownerPid?: number;
+			readonly waitTimeoutMs: number;
+			exitCode: 1;
+	  }
+	| {
+			readonly state: "persisted-release-unconfirmed";
+			readonly persisted: Exclude<
+				OwnerRootTransactionResult<T>,
+				{ readonly state: "lock-contended" | "persisted-release-unconfirmed" }
+			>;
+			readonly error: unknown;
+			exitCode: 1;
+	  };
+
+type EntityLockRunner = <T>(
+	lockPath: string,
+	fn: () => Promise<T>,
+	options: EntityFileLockOptions,
+) => Promise<T>;
+
+export interface WithOwnerRootTransactionOptions {
+	readonly ownerRoot: string;
+	readonly targetId: ResolvedHarnessAssetTarget["targetId"];
+	readonly waitTimeoutMs?: number;
+	readonly evidenceReceipt?: OwnerRootEvidenceReceipt;
+	/** Deterministic fault injection for the release-uncertainty contract. */
+	readonly lockRunner?: EntityLockRunner;
+}
+
+/**
+ * Validate first, acquire exactly one canonical sibling lock, recover once, and
+ * pass one opaque lock-held capability to all apply/migration work.
+ */
+export async function withOwnerRootTransaction<T>(
+	options: WithOwnerRootTransactionOptions,
+	action: (transaction: OwnerRootTransaction) => Promise<T>,
+): Promise<OwnerRootTransactionResult<T>> {
+	const canonicalOwnerRoot = await canonicalizeOwnerRootReadOnly(
+		options.ownerRoot,
+	);
+	const paths = resolveHarnessTransactionPaths(
+		canonicalOwnerRoot,
+		options.targetId,
+	);
+	const manifestPath = join(
+		canonicalOwnerRoot,
+		".cosmonauts-harness-manifest.json",
+	);
+	const waitTimeoutMs =
+		options.waitTimeoutMs ?? DEFAULT_HARNESS_LOCK_WAIT_TIMEOUT_MS;
+	const lockRunner = options.lockRunner ?? withEntityFileLock;
+	let releaseError: unknown;
+
+	try {
+		const persisted = await lockRunner(
+			paths.lockPath,
+			async () => {
+				await revalidateCanonicalOwnerRoot(canonicalOwnerRoot);
+				const transaction = {
+					canonicalOwnerRoot,
+					lockPath: paths.lockPath,
+					journalPath: paths.journalPath,
+					manifestPath,
+					targetId: options.targetId,
+				} as OwnerRootTransaction;
+				activeOwnerRootTransactions.add(transaction);
+				try {
+					const recovery = await recoverOwnerRootJournal(
+						transaction,
+						options.evidenceReceipt,
+					);
+					if (
+						recovery.state === "ambiguous" ||
+						recovery.state === "evidence-required"
+					) {
+						return { state: "recovery-required", recovery } as const;
+					}
+					return {
+						state: "completed",
+						result: await action(transaction),
+						recovery,
+					} as const;
+				} finally {
+					activeOwnerRootTransactions.delete(transaction);
+				}
+			},
+			{
+				waitTimeoutMs,
+				onReleaseUnconfirmed: (error) => {
+					releaseError = error;
+				},
+			},
+		);
+		if (releaseError !== undefined) {
+			return {
+				state: "persisted-release-unconfirmed",
+				persisted,
+				error: releaseError,
+				exitCode: 1,
+			};
+		}
+		return persisted;
+	} catch (error) {
+		if (!(error instanceof EntityFileLockTimeoutError)) throw error;
+		return {
+			state: "lock-contended",
+			lockPath: error.lockPath,
+			...(await readLockOwnerPid(error.lockPath)),
+			waitTimeoutMs,
+			exitCode: 1,
+		};
+	}
+}
+
+export interface OwnerRootTransactionMemberPlan {
+	readonly targetPath: string;
+	readonly oldState: HarnessNodeSnapshot;
+	readonly newState: Exclude<HarnessNodeSnapshot, { readonly kind: "absent" }>;
+	readonly writeStage: (stagePath: string) => Promise<void>;
+}
+
+export interface ApplySyncPlanInTransactionOptions {
+	readonly oldManifest: HarnessManifestSnapshot;
+	readonly newManifestContents: string;
+	readonly members: readonly OwnerRootTransactionMemberPlan[];
+	readonly cleanupPolicy?: OwnerRootCleanupPolicy;
+	readonly transactionId?: string;
+	readonly onPhasePersisted?: (
+		phase: OwnerRootTransactionPhase,
+		journal: OwnerRootTransactionJournal,
+	) => void | Promise<void>;
+}
+
+export type ApplySyncPlanResult =
+	| { readonly state: "committed"; readonly transactionId: string }
+	| { readonly state: "evidence-required"; readonly transactionId: string }
+	| { readonly state: "restored-old"; readonly transactionId: string }
+	| {
+			readonly state: "ambiguous";
+			readonly transactionId: string;
+			readonly reason: string;
+	  };
+
+/** Apply an already-rendered atomic set without acquiring another lock. */
+export async function applySyncPlanInTransaction(
+	transaction: OwnerRootTransaction,
+	options: ApplySyncPlanInTransactionOptions,
+): Promise<ApplySyncPlanResult> {
+	assertActiveTransaction(transaction);
+	if (await pathExists(transaction.journalPath)) {
+		throw new Error(
+			"Cannot apply a harness sync plan while a journal is pending.",
+		);
+	}
+	if (options.members.length === 0) {
+		throw new Error(
+			"A harness owner-root transaction requires at least one member.",
+		);
+	}
+	const transactionId = options.transactionId ?? randomUUID();
+	if (!/^[A-Za-z0-9._-]+$/.test(transactionId)) {
+		throw new Error(`Invalid harness transaction id: ${transactionId}.`);
+	}
+	const memberPaths = new Set<string>();
+	const members: OwnerRootJournalMember[] = options.members.map(
+		(member, index) => {
+			assertContained(
+				transaction.canonicalOwnerRoot,
+				member.targetPath,
+				"transaction target",
+			);
+			const targetPath = resolve(member.targetPath);
+			if (memberPaths.has(targetPath)) {
+				throw new Error(`Duplicate harness transaction target: ${targetPath}.`);
+			}
+			memberPaths.add(targetPath);
+			const stem = `${basename(transaction.journalPath, ".journal.json")}-${transactionId}-${index}`;
+			return {
+				targetPath,
+				stagePath: join(dirname(transaction.journalPath), `${stem}.stage`),
+				backupPath: join(dirname(transaction.journalPath), `${stem}.backup`),
+				oldState: member.oldState,
+				newState: member.newState,
+			};
+		},
+	);
+	const newManifest = manifestSnapshot(options.newManifestContents);
+	let journal: OwnerRootTransactionJournal = {
+		schemaVersion: 1,
+		transactionId,
+		canonicalOwnerRoot: transaction.canonicalOwnerRoot,
+		targetId: transaction.targetId,
+		phase: "prepared",
+		cleanupPolicy: options.cleanupPolicy ?? "after-commit",
+		atomicSet: true,
+		manifestPath: transaction.manifestPath,
+		oldManifest: options.oldManifest,
+		newManifest,
+		members,
+	};
+
+	if (
+		!(await nodeSnapshotsEqual(
+			await observeManifestSnapshot(transaction.manifestPath),
+			options.oldManifest,
+		))
+	) {
+		return {
+			state: "ambiguous",
+			transactionId,
+			reason: "old-manifest-mismatch",
+		};
+	}
+	for (const member of members) {
+		if (
+			!nodeSnapshotsEqual(
+				await observeHarnessNodeSnapshot(member.targetPath),
+				member.oldState,
+			)
+		) {
+			return {
+				state: "ambiguous",
+				transactionId,
+				reason: `old-target-mismatch:${member.targetPath}`,
+			};
+		}
+	}
+
+	await persistJournal(transaction, journal);
+	await options.onPhasePersisted?.("prepared", journal);
+	try {
+		for (let index = 0; index < members.length; index += 1) {
+			const member = members[index];
+			const planned = options.members[index];
+			if (!member || !planned) throw new Error("Missing transaction member.");
+			await revalidateBeforeSiblingMutation(transaction, member.stagePath);
+			await planned.writeStage(member.stagePath);
+			if (
+				!nodeSnapshotsEqual(
+					await observeHarnessNodeSnapshot(member.stagePath),
+					member.newState,
+				)
+			) {
+				throw new Error(
+					`Prepared stage does not match new snapshot: ${member.stagePath}.`,
+				);
+			}
+		}
+		journal = { ...journal, phase: "installing" };
+		await persistJournal(transaction, journal);
+		await options.onPhasePersisted?.("installing", journal);
+
+		for (const member of members) {
+			await revalidateBeforeOwnerMutation(transaction, member.targetPath);
+			if (member.oldState.kind !== "absent") {
+				await revalidateBeforeSiblingMutation(transaction, member.backupPath);
+				await rename(member.targetPath, member.backupPath);
+			}
+			await revalidateBeforeOwnerMutation(transaction, member.targetPath);
+			await mkdir(dirname(member.targetPath), { recursive: true });
+			await revalidateBeforeOwnerMutation(transaction, member.targetPath);
+			await revalidateBeforeSiblingMutation(transaction, member.stagePath);
+			await rename(member.stagePath, member.targetPath);
+		}
+		if (!(await allMembersMatch(journal, "new"))) {
+			throw new Error(
+				"Installed harness transaction did not verify as exact new state.",
+			);
+		}
+		journal = { ...journal, phase: "commit-ready" };
+		await persistJournal(transaction, journal);
+		await options.onPhasePersisted?.("commit-ready", journal);
+		await writeManifestSnapshot(transaction, journal.newManifest);
+		if (
+			!nodeSnapshotsEqual(
+				await observeManifestSnapshot(transaction.manifestPath),
+				journal.newManifest,
+			)
+		) {
+			throw new Error("Committed harness manifest did not verify.");
+		}
+		journal = { ...journal, phase: "committed" };
+		await persistJournal(transaction, journal);
+		await options.onPhasePersisted?.("committed", journal);
+		if (journal.cleanupPolicy === "after-evidence") {
+			return { state: "evidence-required", transactionId };
+		}
+		const cleanup = await cleanupCommitted(transaction, journal);
+		return cleanup.state === "ambiguous"
+			? { ...cleanup, transactionId }
+			: { state: "committed", transactionId };
+	} catch {
+		journal = { ...journal, phase: "rolling-back" };
+		await persistJournal(transaction, journal);
+		await options.onPhasePersisted?.("rolling-back", journal);
+		const rollback = await rollbackJournal(transaction, journal);
+		return rollback.state === "ambiguous"
+			? { ...rollback, transactionId }
+			: { state: "restored-old", transactionId };
+	}
+}
+
+export function serializeOwnerRootJournal(
+	journal: OwnerRootTransactionJournal,
+): string {
+	return `${JSON.stringify(journal, null, 2)}\n`;
+}
+
+export async function observeHarnessNodeSnapshot(
+	path: string,
+): Promise<HarnessNodeSnapshot> {
+	let info: Awaited<ReturnType<typeof lstat>>;
+	try {
+		info = await lstat(path);
+	} catch (error) {
+		if (isNodeError(error) && error.code === "ENOENT")
+			return { kind: "absent" };
+		throw error;
+	}
+	if (info.isSymbolicLink()) {
+		return { kind: "symlink", digest: sha256(`link\0${await readlink(path)}`) };
+	}
+	if (info.isFile()) {
+		return {
+			kind: "file",
+			digest: sha256(
+				Buffer.concat([Buffer.from("file\0"), await readFile(path)]),
+			),
+		};
+	}
+	if (!info.isDirectory()) {
+		return { kind: "file", digest: sha256("unsupported-special-node") };
+	}
+	const children = await readdir(path);
+	children.sort((left, right) => left.localeCompare(right));
+	const vector: unknown[] = [];
+	for (const child of children) {
+		vector.push([child, await observeHarnessNodeSnapshot(join(path, child))]);
+	}
+	return { kind: "directory", digest: sha256(JSON.stringify(vector)) };
+}
+
+async function recoverOwnerRootJournal(
+	transaction: OwnerRootTransaction,
+	receipt?: OwnerRootEvidenceReceipt,
+): Promise<OwnerRootRecoveryResult> {
+	let journal: OwnerRootTransactionJournal;
+	try {
+		const contents = await readFile(transaction.journalPath, "utf8");
+		journal = parseOwnerRootJournal(contents, transaction);
+	} catch (error) {
+		if (isNodeError(error) && error.code === "ENOENT") return { state: "none" };
+		return { state: "ambiguous", reason: errorMessage(error) };
+	}
+	const observed = await observeJournalVector(journal);
+	if (observed.manifest === "other" || observed.hasOther) {
+		return {
+			state: "ambiguous",
+			phase: journal.phase,
+			reason: "transaction-vector-other",
+		};
+	}
+
+	if (journal.phase === "prepared") {
+		if (
+			observed.manifest === "old" &&
+			observed.members.every(
+				(row) =>
+					row.target === "old" &&
+					row.backup === "absent" &&
+					(row.stage === "new" || row.stage === "absent"),
+			)
+		) {
+			await cleanupPrepared(transaction, journal);
+			return { state: "restored-old", phase: journal.phase };
+		}
+		return {
+			state: "ambiguous",
+			phase: journal.phase,
+			reason: "prepared-vector-invalid",
+		};
+	}
+
+	if (journal.phase === "installing") {
+		if (
+			observed.manifest !== "old" ||
+			!installingVectorCanRollback(journal, observed.members)
+		) {
+			return {
+				state: "ambiguous",
+				phase: journal.phase,
+				reason: "installing-vector-invalid",
+			};
+		}
+		const rollingBack = { ...journal, phase: "rolling-back" } as const;
+		await persistJournal(transaction, rollingBack);
+		const rolledBack = await rollbackJournal(transaction, rollingBack);
+		return rolledBack.state === "ambiguous"
+			? { ...rolledBack, phase: rollingBack.phase }
+			: { state: "restored-old", phase: journal.phase };
+	}
+
+	if (journal.phase === "commit-ready") {
+		if (
+			(observed.manifest !== "old" && observed.manifest !== "new") ||
+			!commitVectorIsNew(observed.members)
+		) {
+			return {
+				state: "ambiguous",
+				phase: journal.phase,
+				reason: "commit-ready-vector-invalid",
+			};
+		}
+		if (observed.manifest === "old")
+			await writeManifestSnapshot(transaction, journal.newManifest);
+		const committed = { ...journal, phase: "committed" } as const;
+		await persistJournal(transaction, committed);
+		return finishCommittedRecovery(
+			transaction,
+			committed,
+			receipt,
+			journal.phase,
+		);
+	}
+
+	if (journal.phase === "committed") {
+		if (observed.manifest !== "new" || !commitVectorIsNew(observed.members)) {
+			return {
+				state: "ambiguous",
+				phase: journal.phase,
+				reason: "committed-vector-invalid",
+			};
+		}
+		return finishCommittedRecovery(
+			transaction,
+			journal,
+			receipt,
+			journal.phase,
+		);
+	}
+
+	if (!rollingBackVectorCanRestore(journal, observed.members)) {
+		return {
+			state: "ambiguous",
+			phase: journal.phase,
+			reason: "rolling-back-vector-invalid",
+		};
+	}
+	const rolledBack = await rollbackJournal(transaction, journal);
+	return rolledBack.state === "ambiguous"
+		? { ...rolledBack, phase: journal.phase }
+		: { state: "restored-old", phase: journal.phase };
+}
+
+async function finishCommittedRecovery(
+	transaction: OwnerRootTransaction,
+	journal: OwnerRootTransactionJournal,
+	receipt: OwnerRootEvidenceReceipt | undefined,
+	originalPhase: OwnerRootTransactionPhase,
+): Promise<OwnerRootRecoveryResult> {
+	if (journal.cleanupPolicy === "after-evidence") {
+		const observed = await observeJournalVector(journal);
+		if (!evidenceCommitVectorIsNew(journal, observed.members)) {
+			return {
+				state: "ambiguous",
+				phase: "committed",
+				reason: "evidence-backup-required",
+			};
+		}
+		if (!receipt) {
+			return {
+				state: "evidence-required",
+				phase: "committed",
+				transactionId: journal.transactionId,
+			};
+		}
+		const valid = await verifyEvidenceReceipt(journal, receipt);
+		if (!valid) {
+			return {
+				state: "ambiguous",
+				phase: "committed",
+				reason: "evidence-receipt-invalid",
+			};
+		}
+		await revalidateBeforeSiblingMutation(transaction, transaction.journalPath);
+		await unlink(transaction.journalPath);
+		await syncDirectory(dirname(transaction.journalPath));
+		return { state: "committed-new", phase: originalPhase };
+	}
+	const cleanup = await cleanupCommitted(transaction, journal);
+	return cleanup.state === "ambiguous"
+		? { ...cleanup, phase: originalPhase }
+		: { state: "committed-new", phase: originalPhase };
+}
+
+type VectorState = "old" | "new" | "missing" | "absent" | "other";
+interface ObservedJournalMember {
+	readonly target: VectorState;
+	readonly backup: VectorState;
+	readonly stage: VectorState;
+}
+
+async function observeJournalVector(
+	journal: OwnerRootTransactionJournal,
+): Promise<{
+	readonly manifest: "old" | "new" | "other";
+	readonly members: readonly ObservedJournalMember[];
+	readonly hasOther: boolean;
+}> {
+	const manifestSnapshot = await observeManifestSnapshot(journal.manifestPath);
+	const manifest = nodeSnapshotsEqual(manifestSnapshot, journal.oldManifest)
+		? "old"
+		: nodeSnapshotsEqual(manifestSnapshot, journal.newManifest)
+			? "new"
+			: "other";
+	const members = await Promise.all(
+		journal.members.map(async (member) => ({
+			target: classifyNode(
+				await observeHarnessNodeSnapshot(member.targetPath),
+				member.oldState,
+				member.newState,
+				true,
+			),
+			backup: classifyNode(
+				await observeHarnessNodeSnapshot(member.backupPath),
+				member.oldState,
+				{ kind: "absent" },
+				false,
+			),
+			stage: classifyNode(
+				await observeHarnessNodeSnapshot(member.stagePath),
+				{ kind: "absent" },
+				member.newState,
+				false,
+			),
+		})),
+	);
+	return {
+		manifest,
+		members,
+		hasOther: members.some(
+			(row) =>
+				row.target === "other" ||
+				row.backup === "other" ||
+				row.stage === "other",
+		),
+	};
+}
+
+function classifyNode(
+	actual: HarnessNodeSnapshot,
+	oldState: HarnessNodeSnapshot,
+	newState: HarnessNodeSnapshot,
+	target: boolean,
+): VectorState {
+	if (actual.kind === "absent") {
+		return target ? "missing" : "absent";
+	}
+	if (nodeSnapshotsEqual(actual, oldState)) return "old";
+	if (nodeSnapshotsEqual(actual, newState))
+		return newState.kind === "absent" ? "absent" : "new";
+	return "other";
+}
+
+function installingVectorCanRollback(
+	journal: OwnerRootTransactionJournal,
+	rows: readonly ObservedJournalMember[],
+): boolean {
+	return rows.every((row, index) => {
+		const member = journal.members[index];
+		if (!member || (row.stage !== "new" && row.stage !== "absent"))
+			return false;
+		if (member.oldState.kind === "absent") {
+			return (
+				(row.target === "missing" || row.target === "new") &&
+				row.backup === "absent"
+			);
+		}
+		return (
+			(row.target === "old" && row.backup === "absent") ||
+			((row.target === "missing" || row.target === "new") &&
+				row.backup === "old")
+		);
+	});
+}
+
+function commitVectorIsNew(rows: readonly ObservedJournalMember[]): boolean {
+	return rows.every(
+		(row) =>
+			row.target === "new" &&
+			(row.backup === "old" || row.backup === "absent") &&
+			row.stage === "absent",
+	);
+}
+
+function evidenceCommitVectorIsNew(
+	journal: OwnerRootTransactionJournal,
+	rows: readonly ObservedJournalMember[],
+): boolean {
+	return rows.every((row, index) => {
+		const member = journal.members[index];
+		return (
+			member !== undefined &&
+			row.target === "new" &&
+			row.stage === "absent" &&
+			row.backup === (member.oldState.kind === "absent" ? "absent" : "old")
+		);
+	});
+}
+
+function rollingBackVectorCanRestore(
+	journal: OwnerRootTransactionJournal,
+	rows: readonly ObservedJournalMember[],
+): boolean {
+	return rows.every((row, index) => {
+		const member = journal.members[index];
+		if (!member) return false;
+		if (member.oldState.kind === "absent") {
+			return (
+				(row.target === "missing" || row.target === "new") &&
+				row.backup === "absent"
+			);
+		}
+		return (
+			(row.target === "old" &&
+				(row.backup === "old" || row.backup === "absent")) ||
+			((row.target === "new" || row.target === "missing") &&
+				row.backup === "old")
+		);
+	});
+}
+
+async function rollbackJournal(
+	transaction: OwnerRootTransaction,
+	journal: OwnerRootTransactionJournal,
+): Promise<
+	| { readonly state: "restored-old" }
+	| { readonly state: "ambiguous"; readonly reason: string }
+> {
+	const observed = await observeJournalVector(journal);
+	if (
+		observed.manifest === "other" ||
+		observed.hasOther ||
+		!rollingBackVectorCanRestore(journal, observed.members)
+	) {
+		return { state: "ambiguous", reason: "rollback-vector-changed" };
+	}
+	for (let index = 0; index < journal.members.length; index += 1) {
+		const member = journal.members[index];
+		const row = observed.members[index];
+		if (!member || !row)
+			return { state: "ambiguous", reason: "rollback-member-missing" };
+		if (member.oldState.kind === "absent") {
+			if (row.target === "new")
+				await removeExactTarget(
+					transaction,
+					member.targetPath,
+					member.newState,
+				);
+		} else if (row.target !== "old") {
+			if (row.target === "new") {
+				await removeExactTarget(
+					transaction,
+					member.targetPath,
+					member.newState,
+				);
+			}
+			await revalidateBeforeOwnerMutation(transaction, member.targetPath);
+			await revalidateBeforeSiblingMutation(transaction, member.backupPath);
+			await mkdir(dirname(member.targetPath), { recursive: true });
+			await revalidateBeforeOwnerMutation(transaction, member.targetPath);
+			await rename(member.backupPath, member.targetPath);
+		}
+	}
+	await writeManifestSnapshot(transaction, journal.oldManifest);
+	if (!(await allMembersMatch(journal, "old")))
+		return { state: "ambiguous", reason: "rollback-verification-failed" };
+	await cleanupExactArtifacts(transaction, journal, true);
+	return { state: "restored-old" };
+}
+
+async function cleanupPrepared(
+	transaction: OwnerRootTransaction,
+	journal: OwnerRootTransactionJournal,
+): Promise<void> {
+	await cleanupExactArtifacts(transaction, journal, true);
+}
+
+async function cleanupCommitted(
+	transaction: OwnerRootTransaction,
+	journal: OwnerRootTransactionJournal,
+): Promise<
+	| { readonly state: "committed" }
+	| { readonly state: "ambiguous"; readonly reason: string }
+> {
+	for (const member of journal.members) {
+		const backup = await observeHarnessNodeSnapshot(member.backupPath);
+		if (
+			backup.kind !== "absent" &&
+			!nodeSnapshotsEqual(backup, member.oldState)
+		) {
+			return {
+				state: "ambiguous",
+				reason: `backup-changed:${member.backupPath}`,
+			};
+		}
+		const stage = await observeHarnessNodeSnapshot(member.stagePath);
+		if (
+			stage.kind !== "absent" &&
+			!nodeSnapshotsEqual(stage, member.newState)
+		) {
+			return {
+				state: "ambiguous",
+				reason: `stage-changed:${member.stagePath}`,
+			};
+		}
+	}
+	await cleanupExactArtifacts(transaction, journal, true);
+	return { state: "committed" };
+}
+
+async function cleanupExactArtifacts(
+	transaction: OwnerRootTransaction,
+	journal: OwnerRootTransactionJournal,
+	removeJournal: boolean,
+): Promise<void> {
+	for (const member of journal.members) {
+		await removeIfExact(transaction, member.stagePath, member.newState);
+		await removeIfExact(transaction, member.backupPath, member.oldState);
+	}
+	if (removeJournal) {
+		await revalidateBeforeSiblingMutation(transaction, transaction.journalPath);
+		await unlink(transaction.journalPath).catch(
+			(error: NodeJS.ErrnoException) => {
+				if (error.code !== "ENOENT") throw error;
+			},
+		);
+		await syncDirectory(dirname(transaction.journalPath));
+	}
+}
+
+async function removeExactTarget(
+	transaction: OwnerRootTransaction,
+	path: string,
+	expected: HarnessNodeSnapshot,
+): Promise<void> {
+	if (!nodeSnapshotsEqual(await observeHarnessNodeSnapshot(path), expected)) {
+		throw new Error(`Refusing to remove changed harness target: ${path}.`);
+	}
+	await revalidateBeforeOwnerMutation(transaction, path);
+	await rm(path, { recursive: true, force: true });
+}
+
+async function removeIfExact(
+	transaction: OwnerRootTransaction,
+	path: string,
+	expected: HarnessNodeSnapshot,
+): Promise<void> {
+	const actual = await observeHarnessNodeSnapshot(path);
+	if (actual.kind === "absent") return;
+	if (expected.kind === "absent" || !nodeSnapshotsEqual(actual, expected))
+		return;
+	await revalidateBeforeSiblingMutation(transaction, path);
+	await rm(path, { recursive: true, force: true });
+}
+
+async function allMembersMatch(
+	journal: OwnerRootTransactionJournal,
+	state: "old" | "new",
+): Promise<boolean> {
+	const matches = await Promise.all(
+		journal.members.map(async (member) =>
+			nodeSnapshotsEqual(
+				await observeHarnessNodeSnapshot(member.targetPath),
+				state === "old" ? member.oldState : member.newState,
+			),
+		),
+	);
+	return matches.every(Boolean);
+}
+
+function parseOwnerRootJournal(
+	contents: string,
+	transaction: OwnerRootTransaction,
+): OwnerRootTransactionJournal {
+	const value: unknown = JSON.parse(contents);
+	if (!isOwnerRootJournal(value))
+		throw new Error("Malformed harness owner-root journal.");
+	if (
+		value.canonicalOwnerRoot !== transaction.canonicalOwnerRoot ||
+		value.targetId !== transaction.targetId ||
+		value.manifestPath !== transaction.manifestPath
+	) {
+		throw new Error("Harness owner-root journal identity mismatch.");
+	}
+	if (nodeSnapshotsEqual(value.oldManifest, value.newManifest)) {
+		throw new Error(
+			"Harness owner-root journal manifest snapshots are indistinguishable.",
+		);
+	}
+	const expectedPrefix = `${basename(transaction.journalPath, ".journal.json")}-${value.transactionId}-`;
+	const targetPaths = new Set<string>();
+	for (let index = 0; index < value.members.length; index += 1) {
+		const member = value.members[index];
+		if (!member) throw new Error("Harness journal member missing.");
+		assertContained(
+			transaction.canonicalOwnerRoot,
+			member.targetPath,
+			"journal target",
+		);
+		if (targetPaths.has(member.targetPath)) {
+			throw new Error("Harness owner-root journal has duplicate target paths.");
+		}
+		targetPaths.add(member.targetPath);
+		if (
+			member.stagePath !==
+				join(
+					dirname(transaction.journalPath),
+					`${expectedPrefix}${index}.stage`,
+				) ||
+			member.backupPath !==
+				join(
+					dirname(transaction.journalPath),
+					`${expectedPrefix}${index}.backup`,
+				)
+		) {
+			throw new Error("Harness journal artifact path mismatch.");
+		}
+	}
+	return value;
+}
+
+function isOwnerRootJournal(
+	value: unknown,
+): value is OwnerRootTransactionJournal {
+	if (!isRecordValue(value)) return false;
+	return (
+		value.schemaVersion === 1 &&
+		typeof value.transactionId === "string" &&
+		typeof value.canonicalOwnerRoot === "string" &&
+		(value.targetId === "claude" || value.targetId === "codex") &&
+		[
+			"prepared",
+			"installing",
+			"commit-ready",
+			"committed",
+			"rolling-back",
+		].includes(String(value.phase)) &&
+		(value.cleanupPolicy === "after-commit" ||
+			value.cleanupPolicy === "after-evidence") &&
+		value.atomicSet === true &&
+		typeof value.manifestPath === "string" &&
+		isManifestSnapshot(value.oldManifest) &&
+		isManifestSnapshot(value.newManifest) &&
+		Array.isArray(value.members) &&
+		value.members.length > 0 &&
+		value.members.every(isJournalMember)
+	);
+}
+
+function isJournalMember(value: unknown): value is OwnerRootJournalMember {
+	return (
+		isRecordValue(value) &&
+		typeof value.targetPath === "string" &&
+		typeof value.stagePath === "string" &&
+		typeof value.backupPath === "string" &&
+		isNodeSnapshot(value.oldState) &&
+		isNodeSnapshot(value.newState) &&
+		value.newState.kind !== "absent"
+	);
+}
+
+function isManifestSnapshot(value: unknown): value is HarnessManifestSnapshot {
+	return (
+		isRecordValue(value) &&
+		(value.kind === "absent" ||
+			(value.kind === "file" &&
+				typeof value.digest === "string" &&
+				typeof value.contents === "string" &&
+				value.digest === sha256(value.contents)))
+	);
+}
+
+function isNodeSnapshot(value: unknown): value is HarnessNodeSnapshot {
+	return (
+		isRecordValue(value) &&
+		(value.kind === "absent" ||
+			((value.kind === "file" ||
+				value.kind === "directory" ||
+				value.kind === "symlink") &&
+				typeof value.digest === "string"))
+	);
+}
+
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function manifestSnapshot(contents: string): HarnessManifestSnapshot {
+	return { kind: "file", digest: sha256(contents), contents };
+}
+
+async function observeManifestSnapshot(
+	path: string,
+): Promise<HarnessManifestSnapshot> {
+	try {
+		const contents = await readFile(path, "utf8");
+		return manifestSnapshot(contents);
+	} catch (error) {
+		if (isNodeError(error) && error.code === "ENOENT")
+			return { kind: "absent" };
+		throw error;
+	}
+}
+
+function nodeSnapshotsEqual(
+	left: HarnessNodeSnapshot | HarnessManifestSnapshot,
+	right: HarnessNodeSnapshot | HarnessManifestSnapshot,
+): boolean {
+	return (
+		left.kind === right.kind &&
+		(left.kind === "absent" ||
+			(right.kind !== "absent" && left.digest === right.digest))
+	);
+}
+
+async function persistJournal(
+	transaction: OwnerRootTransaction,
+	journal: OwnerRootTransactionJournal,
+): Promise<void> {
+	await revalidateBeforeSiblingMutation(transaction, transaction.journalPath);
+	await writeDurableFile(
+		transaction.journalPath,
+		serializeOwnerRootJournal(journal),
+	);
+}
+
+async function writeManifestSnapshot(
+	transaction: OwnerRootTransaction,
+	snapshot: HarnessManifestSnapshot,
+): Promise<void> {
+	await revalidateBeforeOwnerMutation(transaction, transaction.manifestPath);
+	if (snapshot.kind === "absent") {
+		await unlink(transaction.manifestPath).catch(
+			(error: NodeJS.ErrnoException) => {
+				if (error.code !== "ENOENT") throw error;
+			},
+		);
+		await syncDirectory(dirname(transaction.manifestPath));
+		return;
+	}
+	await writeDurableFile(transaction.manifestPath, snapshot.contents);
+}
+
+async function writeDurableFile(path: string, contents: string): Promise<void> {
+	const directory = dirname(path);
+	await mkdir(directory, { recursive: true });
+	const temporary = join(
+		directory,
+		`.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,
+	);
+	const handle = await open(temporary, "wx", 0o600);
+	try {
+		await handle.writeFile(contents, "utf8");
+		await handle.sync();
+	} finally {
+		await handle.close();
+	}
+	try {
+		await rename(temporary, path);
+		await syncDirectory(directory);
+	} catch (error) {
+		await unlink(temporary).catch(() => undefined);
+		throw error;
+	}
+}
+
+async function syncDirectory(path: string): Promise<void> {
+	const handle = await open(path, "r");
+	try {
+		await handle.sync();
+	} finally {
+		await handle.close();
+	}
+}
+
+async function verifyEvidenceReceipt(
+	journal: OwnerRootTransactionJournal,
+	receipt: OwnerRootEvidenceReceipt,
+): Promise<boolean> {
+	if (receipt.transactionId !== journal.transactionId) return false;
+	let contents: string;
+	try {
+		contents = await readFile(receipt.evidencePath, "utf8");
+	} catch {
+		return false;
+	}
+	if (sha256(contents) !== receipt.evidenceDigest) return false;
+	try {
+		const parsed: unknown = JSON.parse(contents);
+		return (
+			isRecordValue(parsed) &&
+			parsed.schemaVersion === 1 &&
+			parsed.transactionId === journal.transactionId &&
+			parsed.phase === "installed" &&
+			journal.newManifest.kind === "file" &&
+			parsed.newManifestDigest === journal.newManifest.digest &&
+			(await allMembersMatch(journal, "new"))
+		);
+	} catch {
+		return false;
+	}
+}
+
+async function canonicalizeOwnerRootReadOnly(
+	ownerRoot: string,
+): Promise<string> {
+	if (!isAbsolute(ownerRoot))
+		throw new Error(`Harness owner root must be absolute: ${ownerRoot}.`);
+	const resolved = resolve(ownerRoot);
+	try {
+		const declared = await lstat(resolved);
+		if (declared.isSymbolicLink()) {
+			throw new Error(`Harness owner root cannot be a symlink: ${resolved}.`);
+		}
+	} catch (error) {
+		if (!(isNodeError(error) && error.code === "ENOENT")) throw error;
+	}
+	const canonicalParent = await realpath(dirname(resolved));
+	const candidate = join(canonicalParent, basename(resolved));
+	try {
+		const info = await lstat(candidate);
+		if (info.isSymbolicLink() || !info.isDirectory()) {
+			throw new Error(
+				`Harness owner root must be a real directory: ${candidate}.`,
+			);
+		}
+		if ((await realpath(candidate)) !== candidate) {
+			throw new Error(
+				`Harness owner root canonical identity changed: ${candidate}.`,
+			);
+		}
+	} catch (error) {
+		if (!(isNodeError(error) && error.code === "ENOENT")) throw error;
+	}
+	return candidate;
+}
+
+async function revalidateCanonicalOwnerRoot(
+	canonicalOwnerRoot: string,
+): Promise<void> {
+	const parent = dirname(canonicalOwnerRoot);
+	if ((await realpath(parent)) !== parent)
+		throw new Error(`Harness owner parent changed: ${parent}.`);
+	try {
+		const info = await lstat(canonicalOwnerRoot);
+		if (
+			info.isSymbolicLink() ||
+			!info.isDirectory() ||
+			(await realpath(canonicalOwnerRoot)) !== canonicalOwnerRoot
+		) {
+			throw new Error(
+				`Harness owner root containment changed: ${canonicalOwnerRoot}.`,
+			);
+		}
+	} catch (error) {
+		if (!(isNodeError(error) && error.code === "ENOENT")) throw error;
+	}
+}
+
+async function revalidateBeforeOwnerMutation(
+	transaction: OwnerRootTransaction,
+	path: string,
+): Promise<void> {
+	assertActiveTransaction(transaction);
+	assertContained(transaction.canonicalOwnerRoot, path, "owner-root mutation");
+	await revalidateCanonicalOwnerRoot(transaction.canonicalOwnerRoot);
+	await revalidateOwnerPathParents(transaction.canonicalOwnerRoot, path);
+}
+
+async function revalidateOwnerPathParents(
+	canonicalOwnerRoot: string,
+	path: string,
+): Promise<void> {
+	const relativePath = relative(canonicalOwnerRoot, resolve(path));
+	const parentSegments = relativePath.split(sep).filter(Boolean).slice(0, -1);
+	let current = canonicalOwnerRoot;
+	for (const segment of parentSegments) {
+		current = join(current, segment);
+		try {
+			const info = await lstat(current);
+			if (info.isSymbolicLink() || !info.isDirectory()) {
+				throw new Error(
+					`Harness owner-root containment changed at ${current}.`,
+				);
+			}
+		} catch (error) {
+			if (isNodeError(error) && error.code === "ENOENT") return;
+			throw error;
+		}
+	}
+}
+
+async function revalidateBeforeSiblingMutation(
+	transaction: OwnerRootTransaction,
+	path: string,
+): Promise<void> {
+	assertActiveTransaction(transaction);
+	if (dirname(resolve(path)) !== dirname(transaction.canonicalOwnerRoot)) {
+		throw new Error(
+			`Harness transaction artifact escapes canonical sibling directory: ${path}.`,
+		);
+	}
+	await revalidateCanonicalOwnerRoot(transaction.canonicalOwnerRoot);
+}
+
+function assertActiveTransaction(transaction: OwnerRootTransaction): void {
+	if (!activeOwnerRootTransactions.has(transaction)) {
+		throw new Error(
+			"OwnerRootTransaction is not an active lock-held capability.",
+		);
+	}
+}
+
+async function readLockOwnerPid(
+	lockPath: string,
+): Promise<{ readonly ownerPid?: number }> {
+	try {
+		const parsed: unknown = JSON.parse(await readFile(lockPath, "utf8"));
+		if (
+			isRecordValue(parsed) &&
+			Number.isInteger(parsed.pid) &&
+			Number(parsed.pid) > 0
+		) {
+			return { ownerPid: Number(parsed.pid) };
+		}
+	} catch {
+		// The timeout row still names the exact lock when its owner bytes are bad.
+	}
+	return {};
+}
+
+async function pathExists(path: string): Promise<boolean> {
+	try {
+		await lstat(path);
+		return true;
+	} catch (error) {
+		if (isNodeError(error) && error.code === "ENOENT") return false;
+		throw error;
+	}
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }
 
 export interface PlanHarnessSyncOptions {
