@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve } from "node:path";
-import { isImplementedHarnessTargetId } from "./target-registry.ts";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import {
+	isImplementedHarnessTargetId,
+	resolveRegisteredHarnessAssetPath,
+} from "./target-registry.ts";
 import type {
 	HarnessAsset,
 	HarnessManifestEntry,
@@ -232,7 +235,10 @@ export async function observeStableHarnessState<T>(options: {
 		observeFile(options.manifestPath),
 		observeFile(options.journalPath),
 	]);
-	const manifest = parseObservedManifest(manifestBefore, options.manifestPath);
+	const manifest = await parseObservedManifest(
+		manifestBefore,
+		options.manifestPath,
+	);
 	const target = await options.observeTarget(manifest);
 	const [manifestAfter, journalAfter] = await Promise.all([
 		observeFile(options.manifestPath),
@@ -331,10 +337,10 @@ export async function readHarnessManifest(
 	return parseHarnessManifest(contents, manifestPath);
 }
 
-function parseHarnessManifest(
+async function parseHarnessManifest(
 	contents: string,
 	manifestPath: string,
-): HarnessProvenanceManifest {
+): Promise<HarnessProvenanceManifest> {
 	const parsed: unknown = JSON.parse(contents);
 	if (
 		!isRecord(parsed) ||
@@ -344,7 +350,7 @@ function parseHarnessManifest(
 		throw new Error(`Invalid harness provenance manifest: ${manifestPath}.`);
 	}
 	for (const [key, value] of Object.entries(parsed.entries)) {
-		if (!isManifestEntry(value)) {
+		if (!(await isManifestEntry(value, key, manifestPath))) {
 			throw new Error(
 				`Invalid harness provenance manifest entry "${key}" in ${manifestPath}.`,
 			);
@@ -364,9 +370,11 @@ export function serializeHarnessManifest(
 	return `${JSON.stringify({ schemaVersion: 1, entries }, null, 2)}\n`;
 }
 
-function isManifestEntry(
+async function isManifestEntry(
 	value: unknown,
-): value is MaterializedHarnessManifestEntry {
+	key: string,
+	manifestPath: string,
+): Promise<boolean> {
 	if (!isRecord(value) || value.schemaVersion !== 1) return false;
 	if (
 		typeof value.assetId !== "string" ||
@@ -376,6 +384,8 @@ function isManifestEntry(
 		typeof value.sourceRootId !== "string" ||
 		typeof value.sourcePath !== "string" ||
 		typeof value.logicalPath !== "string" ||
+		(Object.hasOwn(value, "outputIdentity") &&
+			typeof value.outputIdentity !== "string") ||
 		typeof value.outputPath !== "string" ||
 		(value.mode !== "copy" && value.mode !== "link") ||
 		typeof value.exportedAt !== "string" ||
@@ -383,6 +393,29 @@ function isManifestEntry(
 		typeof value.owner.ownerId !== "string" ||
 		!isRecord(value.provenance)
 	) {
+		return false;
+	}
+	if (!isOwnerIdentity(value.owner)) return false;
+	const owner = value.owner as unknown as OwnerIdentity;
+	if (key !== manifestEntryKey(owner, value.assetId)) return false;
+	const outputIdentity = manifestOutputIdentity(value);
+	if (!outputIdentity) return false;
+	try {
+		const claimedOwnerRoot = dirname(dirname(value.outputPath));
+		if (
+			value.outputPath !==
+				resolveRegisteredHarnessAssetPath({
+					ownerRoot: claimedOwnerRoot,
+					targetId: value.target as ImplementedHarnessTargetId,
+					kind: value.kind,
+					outputIdentity,
+				}) ||
+			(await realpath(claimedOwnerRoot)) !==
+				(await realpath(dirname(manifestPath)))
+		) {
+			return false;
+		}
+	} catch {
 		return false;
 	}
 	if (
@@ -419,6 +452,70 @@ function isManifestEntry(
 		Array.isArray(value.provenance.generatedNodes) &&
 		value.provenance.generatedNodes.every(isGeneratedNode)
 	);
+}
+
+function isOwnerIdentity(value: Record<string, unknown>): boolean {
+	if (value.kind === "authority") {
+		return (
+			value.ownerId === "authority:cosmonauts/core" &&
+			value.authorityId === "cosmonauts/core" &&
+			Object.keys(value).length === 3
+		);
+	}
+	if (
+		value.kind !== "project" ||
+		typeof value.ownerId !== "string" ||
+		typeof value.projectRoot !== "string" ||
+		!isAbsolute(value.projectRoot) ||
+		resolve(value.projectRoot) !== value.projectRoot ||
+		Object.keys(value).length !== 3
+	) {
+		return false;
+	}
+	return value.ownerId === `project:${sha256(value.projectRoot)}`;
+}
+
+function manifestOutputIdentity(
+	value: Record<string, unknown>,
+): string | undefined {
+	if (typeof value.outputIdentity === "string") return value.outputIdentity;
+	if (typeof value.assetId !== "string" || typeof value.kind !== "string") {
+		return undefined;
+	}
+	const staticOutputIdentity = legacyStaticOutputIdentity(
+		value.assetId,
+		value.kind,
+	);
+	if (staticOutputIdentity) return staticOutputIdentity;
+	if (
+		value.kind !== "skill" ||
+		!value.assetId.startsWith("skill:") ||
+		typeof value.logicalPath !== "string"
+	) {
+		return undefined;
+	}
+	const assetIdentity = value.assetId.slice("skill:".length);
+	if (
+		assetIdentity !== value.logicalPath &&
+		!assetIdentity.endsWith(`/${value.logicalPath}`)
+	) {
+		return undefined;
+	}
+	return basename(value.logicalPath);
+}
+
+/** Compatibility for schema-v1 entries written before outputIdentity existed. */
+function legacyStaticOutputIdentity(
+	assetId: string,
+	kind: string,
+): string | undefined {
+	if (kind === "skill" && assetId === "external-skill:cosmonauts") {
+		return "cosmonauts";
+	}
+	if (kind !== "command") return undefined;
+	if (assetId === "command:spec-to-backlog") return "spec-to-backlog.md";
+	if (assetId === "command:implement-plan") return "implement-plan.md";
+	return undefined;
 }
 
 function isAuthoredLink(value: unknown): value is HarnessAuthoredLink {
@@ -481,10 +578,10 @@ async function observeFile(
 	}
 }
 
-function parseObservedManifest(
+async function parseObservedManifest(
 	observation: StableHarnessFileObservation,
 	manifestPath: string,
-): HarnessProvenanceManifest {
+): Promise<HarnessProvenanceManifest> {
 	if (!observation.exists) return EMPTY_HARNESS_MANIFEST;
 	if (observation.contents === undefined) {
 		throw new Error(

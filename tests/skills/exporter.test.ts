@@ -12,14 +12,17 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, test } from "vitest";
 import type { HarnessProvenanceManifest } from "../../lib/harness-adapters/provenance.ts";
 import {
 	resolveHarnessTransactionPaths,
 	serializeHarnessManifest,
 } from "../../lib/harness-adapters/provenance.ts";
-import { renderIdentityMarkdown } from "../../lib/harness-adapters/render.ts";
+import {
+	digestRenderedFiles,
+	renderIdentityMarkdown,
+} from "../../lib/harness-adapters/render.ts";
 import { observeHarnessNodeSnapshot } from "../../lib/harness-adapters/sync.ts";
 import type {
 	HarnessAsset,
@@ -386,6 +389,123 @@ describe("runHarnessSync selection", () => {
 			manifestBefore.mtimeMs,
 		);
 		await expect(exists(fixture.journalPath)).resolves.toBe(false);
+	});
+
+	test("refuses malformed manifest path authority without changing any owner bytes", async () => {
+		const cases = [
+			{
+				label: "output-path",
+				mutate: async (entry: Record<string, unknown>, _ownerRoot: string) => {
+					const settingsPath = join(_ownerRoot, "settings.json");
+					const settingsBytes = Buffer.from('{"theme":"untouched"}\n');
+					await writeFile(settingsPath, settingsBytes);
+					entry.outputPath = settingsPath;
+					const provenance = entry.provenance as Record<string, unknown>;
+					provenance.baselineDigest = digestRenderedFiles([
+						{ relativePath: "", bytes: settingsBytes },
+					]);
+				},
+			},
+			{
+				label: "output-identity",
+				mutate: async (entry: Record<string, unknown>) => {
+					entry.outputIdentity = "another-asset";
+				},
+			},
+			{
+				label: "owner-shape",
+				mutate: async (entry: Record<string, unknown>) => {
+					delete (entry.owner as Record<string, unknown>).projectRoot;
+				},
+			},
+			{
+				label: "unsupported-adapter",
+				mutate: async (entry: Record<string, unknown>) => {
+					entry.target = "codex";
+					entry.kind = "command";
+				},
+			},
+		] as const;
+
+		for (const testCase of cases) {
+			const fixture = await createBoundaryMutationFixture(
+				`manifest-${testCase.label}`,
+			);
+			await expect(
+				runHarnessSync(boundarySyncOptions(fixture)),
+			).resolves.toMatchObject({ exitCode: 0 });
+			const manifest = JSON.parse(
+				await readFile(fixture.manifestPath, "utf8"),
+			) as { entries: Record<string, Record<string, unknown>> };
+			const stored = Object.entries(manifest.entries)[0];
+			if (!stored) throw new Error("Expected one installed manifest entry.");
+			await testCase.mutate(stored[1], dirname(fixture.manifestPath));
+			await writeFile(
+				fixture.manifestPath,
+				`${JSON.stringify(manifest, null, 2)}\n`,
+			);
+			const before = await observeHarnessNodeSnapshot(fixture.projectRoot);
+
+			const report = await runHarnessSync({
+				...boundarySyncOptions(fixture),
+				assets: [],
+				request: {
+					targetIds: ["claude"],
+					scopes: ["project"],
+					kinds: ["skill"],
+					reconciliation: "complete",
+					check: false,
+				},
+			});
+
+			expect(report).toMatchObject({
+				exitCode: 1,
+				rows: [
+					{
+						asset: "(owner-root)",
+						action: "failed",
+						final: "source-ahead",
+					},
+				],
+			});
+			expect(report.rows[0]?.reason).toContain("Invalid harness provenance");
+			expect(await observeHarnessNodeSnapshot(fixture.projectRoot)).toEqual(
+				before,
+			);
+		}
+
+		const fixture = await createBoundaryMutationFixture("manifest-key");
+		await expect(
+			runHarnessSync(boundarySyncOptions(fixture)),
+		).resolves.toMatchObject({ exitCode: 0 });
+		const manifest = JSON.parse(
+			await readFile(fixture.manifestPath, "utf8"),
+		) as { entries: Record<string, Record<string, unknown>> };
+		const stored = Object.entries(manifest.entries)[0];
+		if (!stored) throw new Error("Expected one installed manifest entry.");
+		delete manifest.entries[stored[0]];
+		manifest.entries['["wrong-owner","wrong-asset"]'] = stored[1];
+		await writeFile(
+			fixture.manifestPath,
+			`${JSON.stringify(manifest, null, 2)}\n`,
+		);
+		const before = await observeHarnessNodeSnapshot(fixture.projectRoot);
+		const report = await runHarnessSync({
+			...boundarySyncOptions(fixture),
+			assets: [],
+			request: {
+				targetIds: ["claude"],
+				scopes: ["project"],
+				kinds: ["skill"],
+				reconciliation: "complete",
+				check: false,
+			},
+		});
+		expect(report.exitCode).toBe(1);
+		expect(report.rows[0]?.reason).toContain("Invalid harness provenance");
+		expect(await observeHarnessNodeSnapshot(fixture.projectRoot)).toEqual(
+			before,
+		);
 	});
 
 	test("omitted target selects Claude and Codex while descriptor scope defaults apply", async () => {

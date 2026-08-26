@@ -45,6 +45,7 @@ import {
 import {
 	getStaticHarnessAsset,
 	isImplementedHarnessTargetId,
+	isRegisteredHarnessAssetPath,
 	resolveHarnessAssetTarget,
 } from "./registry.ts";
 import type {
@@ -611,6 +612,7 @@ function makeManifestEntry(
 		sourceRootId: options.asset.sourceRootId,
 		sourcePath: options.asset.sourcePath,
 		logicalPath: options.asset.logicalPath,
+		outputIdentity: options.asset.outputIdentity,
 		outputPath: options.target.targetPath,
 		mode,
 		exportedAt: (options.now ?? (() => new Date()))().toISOString(),
@@ -2237,12 +2239,8 @@ export async function applySyncPlanInTransaction(
 	const memberPaths = new Set<string>();
 	const members: OwnerRootJournalMember[] = options.members.map(
 		(member, index) => {
-			assertContained(
-				transaction.canonicalOwnerRoot,
-				member.targetPath,
-				"transaction target",
-			);
 			const targetPath = resolve(member.targetPath);
+			assertRegisteredTransactionTarget(transaction, targetPath);
 			if (memberPaths.has(targetPath)) {
 				throw new Error(`Duplicate harness transaction target: ${targetPath}.`);
 			}
@@ -2954,11 +2952,7 @@ function parseOwnerRootJournal(
 	for (let index = 0; index < value.members.length; index += 1) {
 		const member = value.members[index];
 		if (!member) throw new Error("Harness journal member missing.");
-		assertContained(
-			transaction.canonicalOwnerRoot,
-			member.targetPath,
-			"journal target",
-		);
+		assertRegisteredTransactionTarget(transaction, member.targetPath);
 		if (targetPaths.has(member.targetPath)) {
 			throw new Error("Harness owner-root journal has duplicate target paths.");
 		}
@@ -2979,6 +2973,23 @@ function parseOwnerRootJournal(
 		}
 	}
 	return value;
+}
+
+function assertRegisteredTransactionTarget(
+	transaction: OwnerRootTransaction,
+	targetPath: string,
+): void {
+	if (
+		!isRegisteredHarnessAssetPath({
+			ownerRoot: transaction.canonicalOwnerRoot,
+			targetId: transaction.targetId,
+			targetPath,
+		})
+	) {
+		throw new Error(
+			`Harness transaction target is not a registered adapter asset path: ${targetPath}.`,
+		);
+	}
 }
 
 function isOwnerRootJournal(

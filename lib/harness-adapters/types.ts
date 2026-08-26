@@ -201,6 +201,8 @@ export interface ProvenanceBase {
 	readonly sourceRootId: string;
 	readonly sourcePath: string;
 	readonly logicalPath: string;
+	/** Stable final path segment used to re-derive outputPath through the registry. */
+	readonly outputIdentity?: string;
 	readonly outputPath: string;
 	readonly mode: SyncMode;
 	readonly exportedAt: string;

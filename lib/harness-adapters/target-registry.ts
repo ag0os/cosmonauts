@@ -1,11 +1,20 @@
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import type {
 	HarnessAssetAdapter,
 	HarnessPackageCompatibility,
 	HarnessTargetDescriptor,
+	HarnessTargetId,
 	ImplementedHarnessTarget,
 	ImplementedHarnessTargetId,
 	MaterializedAssetKind,
 } from "./types.ts";
+
+export interface ResolveRegisteredHarnessAssetPathOptions {
+	readonly ownerRoot: string;
+	readonly targetId: HarnessTargetId;
+	readonly kind: MaterializedAssetKind;
+	readonly outputIdentity: string;
+}
 
 const CLAUDE_SKILL_ADAPTER = {
 	kind: "skill",
@@ -150,6 +159,64 @@ export function isImplementedHarnessTargetId(
 		typeof value === "string" &&
 		listImplementedHarnessTargetIds(kind).some((id) => id === value)
 	);
+}
+
+/** Re-derive one materialized path from registry-owned adapter facts. */
+export function resolveRegisteredHarnessAssetPath(
+	options: ResolveRegisteredHarnessAssetPathOptions,
+): string {
+	const target = getHarnessTarget(options.targetId);
+	if (!target || target.status !== "implemented") {
+		throw new Error(`Harness target "${options.targetId}" is not implemented.`);
+	}
+	const adapter = target.adapters.find(
+		(candidate) => candidate.kind === options.kind,
+	);
+	if (!adapter) {
+		throw new Error(
+			`Harness target "${target.id}" does not support asset kind "${options.kind}".`,
+		);
+	}
+	const ownerRoot = resolve(options.ownerRoot);
+	if (basename(ownerRoot) !== target.ownerDirectory) {
+		throw new Error(
+			`Harness owner root does not match registered target "${target.id}": ${ownerRoot}.`,
+		);
+	}
+	assertAssetOutputIdentity(options.outputIdentity);
+	return join(ownerRoot, adapter.directory, options.outputIdentity);
+}
+
+/** A transaction member must be an immediate asset child of one adapter. */
+export function isRegisteredHarnessAssetPath(options: {
+	readonly ownerRoot: string;
+	readonly targetId: HarnessTargetId;
+	readonly targetPath: string;
+}): boolean {
+	const target = getHarnessTarget(options.targetId);
+	if (!target || target.status !== "implemented") return false;
+	const ownerRoot = resolve(options.ownerRoot);
+	if (basename(ownerRoot) !== target.ownerDirectory) return false;
+	const targetPath = resolve(options.targetPath);
+	return target.adapters.some(
+		(adapter) => dirname(targetPath) === join(ownerRoot, adapter.directory),
+	);
+}
+
+function assertAssetOutputIdentity(outputIdentity: string): void {
+	if (
+		outputIdentity.length === 0 ||
+		outputIdentity === "." ||
+		outputIdentity === ".." ||
+		isAbsolute(outputIdentity) ||
+		outputIdentity.includes("/") ||
+		outputIdentity.includes("\\") ||
+		outputIdentity.includes("\0")
+	) {
+		throw new Error(
+			`Invalid harness asset output identity: ${outputIdentity}.`,
+		);
+	}
 }
 
 /** Every known package-definition key, including syntax-only future targets. */

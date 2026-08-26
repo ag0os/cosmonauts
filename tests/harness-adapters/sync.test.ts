@@ -616,6 +616,70 @@ describe("harness sync planning", () => {
 		);
 		coveredRows.add(2);
 
+		for (const protectedNode of [
+			"owner-root",
+			"adapter-directory",
+			"manifest",
+			"journal",
+			"lock",
+			"non-asset",
+		] as const) {
+			const protectedFixture = await createTransactionFixture(
+				`protected-${protectedNode}`,
+				1,
+			);
+			const protectedPath =
+				protectedNode === "owner-root"
+					? protectedFixture.ownerRoot
+					: protectedNode === "adapter-directory"
+						? join(protectedFixture.ownerRoot, "skills")
+						: protectedNode === "manifest"
+							? protectedFixture.manifestPath
+							: protectedNode === "journal"
+								? protectedFixture.journalPath
+								: protectedNode === "lock"
+									? protectedFixture.lockPath
+									: join(protectedFixture.ownerRoot, "settings.json");
+			if (protectedNode === "non-asset") {
+				await writeFile(protectedPath, '{"untouched":true}\n');
+			}
+			const member = protectedFixture.journal.members[0];
+			if (!member) throw new Error("Expected protected journal member.");
+			const craftedJournal: OwnerRootTransactionJournal = {
+				...protectedFixture.journal,
+				phase: "rolling-back",
+				members: [
+					{
+						...member,
+						targetPath: protectedPath,
+						oldState: { kind: "absent" },
+						newState: await observeHarnessNodeSnapshot(protectedPath),
+					},
+				],
+			};
+			await writeFile(
+				protectedFixture.journalPath,
+				serializeOwnerRootJournal(craftedJournal),
+			);
+			const before = await observeHarnessNodeSnapshot(protectedFixture.root);
+
+			expect(
+				await runFreshRecovery({
+					...protectedFixture,
+					journal: craftedJournal,
+				}),
+			).toMatchObject({
+				state: "recovery-required",
+				recovery: {
+					state: "ambiguous",
+					reason: expect.stringContaining("registered adapter asset path"),
+				},
+			});
+			expect(await observeHarnessNodeSnapshot(protectedFixture.root)).toEqual(
+				before,
+			);
+		}
+
 		const manifestOther = await seededRecoveryFixture("row-3", "prepared", {
 			manifest: "other",
 			targets: ["old"],
