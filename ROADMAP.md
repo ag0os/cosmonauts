@@ -6,7 +6,7 @@ Work backlog in two sections. **Prioritized** items at the top are ordered — p
 
 Re-assessed and reordered **2026-08-25** in a human-led re-planning session, replacing the 2026-06 capability-track ordering (that queue's history — `task-id-system` through `knowledge-surface`, all shipped — lives in `knowledge/` and git history). The organizing thesis: **cosmonauts as a harness-agnostic software factory.** Factory assets — agents, skills, workflows, knowledge, the architecture picture — are defined once, in cosmonauts; any harness (cosmonauts itself, Claude Code, Codex, Gemini, …) can play coordinator or worker; and the factory improves itself from its own session data.
 
-Agreed spine: **portable harness** (`harness-adapters`, `drive-envelope`, `vendored-skills` — added 2026-08-26, sequencing unconfirmed — `coordinator-packages` — added 2026-08-25 — `external-session-capture`) → **factory quality** (`factory-modes`, `architecture-aware-planning`, `worker-inloop-analysis`) → **knowledge-and-memory continuation** (per the §10.1 amendment in `missions/architecture/knowledge-and-memory.md`) → **`agent-interaction`** → **`domains`**. Items marked **(thread)** are deliberately small and run alongside whatever is on top — start them at the first opportunity; they block nothing.
+Agreed spine: **portable harness** (`harness-adapters`, `drive-envelope`, `vendored-skills` — added 2026-08-26 — `coordinator-packages` — added 2026-08-25 — `external-session-capture`) → **factory quality** (`factory-modes`, `architecture-aware-planning`, `worker-inloop-analysis`) → **knowledge-and-memory continuation** (per the §10.1 amendment in `missions/architecture/knowledge-and-memory.md`) → **`agent-interaction`** → **`domains`**. Items marked **(thread)** are deliberately small and run alongside whatever is on top — start them at the first opportunity; they block nothing.
 
 Active plans are not roadmap items: `harness-adapters` (picked up 2026-08-25 — was the top of this queue), `memory-consolidation` (re-spec required before tasks — see §10.1), `autonomy-host`, `coding-extraction`, and `superplanning-integration` (plus the deferred `web-research` spec) live under `missions/plans/`.
 
@@ -31,7 +31,7 @@ Decouple Drive's value (isolation, gates, session capture, reporting) from the p
 
 ### `vendored-skills`: Cosmonauts Carries Third-Party Skills Too
 
-*Added 2026-08-26. Proposed placement is after `drive-envelope`; the 2026-08-25 spine was human-ratified, so treat this insertion as pending confirmation — nothing downstream blocks on it.*
+*Added 2026-08-26; placement after `drive-envelope` confirmed by the human on 2026-08-26, extending the ratified 2026-08-25 spine. Nothing downstream blocks on it.*
 
 Today the portable-harness thesis is only half true. Switch harness and your **cosmonauts** assets follow you; your hand-installed **third-party** skills do not. `playwright-cli` is the proof — installed by hand twice, once in Claude Code and once in cosmonauts, so agents could use the tool in both. That is exactly the hand-maintained-copy drift `harness-adapters` exists to kill, one layer out. Make cosmonauts able to store and sync skills it did not author.
 

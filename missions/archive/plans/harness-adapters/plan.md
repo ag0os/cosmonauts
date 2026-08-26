@@ -1,8 +1,8 @@
 ---
 title: 'Harness Adapters: Single-Source Factory Assets'
-status: active
+status: completed
 createdAt: '2026-08-25T17:12:38.973Z'
-updatedAt: '2026-08-25T20:15:00.000Z'
+updatedAt: '2026-08-26T18:13:25.654Z'
 ---
 
 ## Overview
