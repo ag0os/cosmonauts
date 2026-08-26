@@ -1,16 +1,19 @@
 /** Shared compatibility facade for harness skill export and harness sync. */
 
-import { lstat, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { lstat, mkdtemp, realpath, rm } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import type { MaterializedHarnessManifestEntry } from "../harness-adapters/provenance.ts";
+import type {
+	HarnessProvenanceManifest,
+	MaterializedHarnessManifestEntry,
+} from "../harness-adapters/provenance.ts";
 import {
 	manifestEntryKey,
+	observeStableHarnessState,
 	ownersMatch,
-	readHarnessManifest,
 	resolveAssetOwnerIdentity,
+	resolveHarnessTransactionPaths,
 	serializeHarnessManifest,
-	sha256,
 } from "../harness-adapters/provenance.ts";
 import {
 	getHarnessTarget,
@@ -81,6 +84,11 @@ export interface HarnessSyncOptions {
 	readonly generatedNodesByAssetId?: Readonly<
 		Record<string, readonly GeneratedHarnessNode[]>
 	>;
+	/** Injectable synchronization point for deterministic observation tests. */
+	readonly onOwnerGroupTargetsObserved?: (group: {
+		readonly ownerRoot: string;
+		readonly targetId: ImplementedHarnessTargetId;
+	}) => void | Promise<void>;
 }
 
 export interface HarnessSyncReportRow {
@@ -129,6 +137,13 @@ interface EvaluatedGroup {
 	readonly desired: ReadonlyMap<string, MaterializedHarnessManifestEntry>;
 	readonly manifestEntries: readonly MaterializedHarnessManifestEntry[];
 	readonly oldManifest: HarnessManifestSnapshot;
+	readonly consistencyReason?: "concurrent-change" | "pending-journal";
+}
+
+interface ObservedOwnerGroup {
+	readonly manifestEntries: readonly MaterializedHarnessManifestEntry[];
+	readonly observations: readonly ObservedHarnessTarget[];
+	readonly inventory: readonly HarnessSyncInventoryRow[];
 }
 
 type GroupTransactionActionResult =
@@ -238,7 +253,16 @@ export async function runHarnessSync(
 			reportRow(normalizedOptions, row),
 		);
 		if (normalizedOptions.request.check) {
-			reports.push(...baseRows);
+			if (baseRows.length === 0 && evaluated.consistencyReason) {
+				reports.push(
+					await syntheticRecoveryRow(normalizedOptions, group, {
+						state: evaluated.consistencyReason,
+						detail: "Owner-group state was not stable during check.",
+					}),
+				);
+			} else {
+				reports.push(...baseRows);
+			}
 			continue;
 		}
 
@@ -467,13 +491,140 @@ async function evaluateGroup(
 		group.ownerRoot,
 		".cosmonauts-harness-manifest.json",
 	);
-	const [manifest, oldManifest] = await Promise.all([
-		readHarnessManifest(manifestPath),
-		observeManifestFile(manifestPath),
-	]);
+	const transactionPaths = resolveHarnessTransactionPaths(
+		group.ownerRoot,
+		group.targetId,
+	);
+	const stable = await observeStableHarnessState({
+		manifestPath,
+		journalPath: transactionPaths.journalPath,
+		observeTarget: async (manifest) => {
+			const observed = await observeOwnerGroupTargets(options, group, manifest);
+			await options.onOwnerGroupTargetsObserved?.({
+				ownerRoot: group.ownerRoot,
+				targetId: group.targetId,
+			});
+			return observed;
+		},
+	});
+	const { manifestEntries, observations, inventory } = stable.target;
+	const oldManifest: HarnessManifestSnapshot = stable.manifestFile.exists
+		? {
+				kind: "file",
+				digest: stable.manifestFile.digest,
+				contents: stable.manifestFile.contents,
+			}
+		: { kind: "absent" };
+	const plan = await planHarnessSync({
+		projectRoot: options.projectRoot,
+		request: options.request,
+		inventory,
+		manifestEntries,
+		targetObservations: observations,
+		sourceHealth: options.sourceHealth,
+	});
+	const desired = new Map<string, MaterializedHarnessManifestEntry>();
+	const consistencyReason = stable.reason;
+	if (consistencyReason) {
+		return {
+			planRows: plan.rows.map((row) =>
+				withOwnerGroupConsistencyFailure(row, consistencyReason),
+			),
+			desired,
+			manifestEntries,
+			oldManifest,
+			consistencyReason,
+		};
+	}
+	const inventoryByPath = new Map(
+		inventory.map((row) => [row.targetPath, row.targetObservation]),
+	);
+	const enhancedRows = await Promise.all(
+		plan.rows.map(async (row): Promise<ClassifiedHarnessSyncPlanRow> => {
+			if (
+				plan.aborted ||
+				row.reason === "inventory-incomplete" ||
+				row.reason === "transaction-aborted-incomplete-inventory" ||
+				row.reason === "foreign-owner" ||
+				row.reason === "source-removed" ||
+				row.reason === "source-unavailable" ||
+				row.reason === "explicit-forget" ||
+				row.reason === "owner-transfer"
+			) {
+				return row;
+			}
+			const catalogue = group.rows.find(
+				(candidate) => candidate.target.targetPath === row.targetPath,
+			);
+			if (!catalogue) return row;
+			const checked = await syncHarnessAsset({
+				projectRoot: options.projectRoot,
+				asset: catalogue.asset,
+				target: catalogue.target,
+				check: true,
+				checkObservation: {
+					manifest: stable.manifest,
+					target: inventoryByPath.get(row.targetPath) ?? { state: "edited" },
+				},
+				generatedNodes: generatedNodesFor(options, catalogue.asset),
+			});
+			desired.set(row.targetPath, checked.manifestEntry);
+			if (row.status === "locally-edited") return row;
+			const action = options.request.check
+				? "none"
+				: checked.beforeStatus === "missing"
+					? "create"
+					: checked.beforeStatus === "source-ahead"
+						? "replace"
+						: "none";
+			return {
+				...row,
+				status: checked.beforeStatus,
+				beforeStatus: checked.beforeStatus,
+				reason: checked.reason,
+				action,
+				recordedMode: checked.recordedMode,
+				requestedMode: checked.requestedMode,
+				...(checked.generatingProjectRoot
+					? { generatingProjectRoot: checked.generatingProjectRoot }
+					: {}),
+				...(checked.previousGeneratingProjectRoot
+					? {
+							previousGeneratingProjectRoot:
+								checked.previousGeneratingProjectRoot,
+						}
+					: {}),
+				writesTarget: action === "create" || action === "replace",
+				writesManifest: action !== "none",
+			};
+		}),
+	);
+	return { planRows: enhancedRows, desired, manifestEntries, oldManifest };
+}
+
+async function observeOwnerGroupTargets(
+	options: HarnessSyncOptions,
+	group: OwnerGroup,
+	manifest: HarnessProvenanceManifest,
+): Promise<ObservedOwnerGroup> {
 	const manifestEntries = Object.values(manifest.entries);
+	const cataloguePaths = new Set(
+		group.rows.map(({ target }) => target.targetPath),
+	);
+	const selectedAssetIds =
+		options.request.forgetRemovedAssetIds ??
+		options.request.transferOwner?.assetIds ??
+		options.request.assetIds;
+	const selectedManifestEntries = manifestEntries.filter(
+		(entry) =>
+			cataloguePaths.has(entry.outputPath) ||
+			(entry.target === group.targetId &&
+				matchesSelection(options.request.scopes, entry.scope) &&
+				matchesSelection(options.request.kinds, entry.kind) &&
+				matchesSelection(selectedAssetIds, entry.assetId)),
+	);
 	const observations = await Promise.all(
-		manifestEntries.map(observeHarnessManifestTarget),
+		selectedManifestEntries.map(observeHarnessManifestTarget),
 	);
 	const observationByPath = new Map(
 		observations.map((observation) => [observation.targetPath, observation]),
@@ -513,72 +664,30 @@ async function evaluateGroup(
 			},
 		),
 	);
-	const plan = await planHarnessSync({
-		projectRoot: options.projectRoot,
-		request: options.request,
-		inventory,
-		manifestEntries,
-		targetObservations: observations,
-		sourceHealth: options.sourceHealth,
-	});
-	const desired = new Map<string, MaterializedHarnessManifestEntry>();
-	const enhancedRows = await Promise.all(
-		plan.rows.map(async (row): Promise<ClassifiedHarnessSyncPlanRow> => {
-			if (
-				plan.aborted ||
-				row.reason === "inventory-incomplete" ||
-				row.reason === "transaction-aborted-incomplete-inventory" ||
-				row.reason === "foreign-owner" ||
-				row.reason === "source-removed" ||
-				row.reason === "source-unavailable" ||
-				row.reason === "explicit-forget" ||
-				row.reason === "owner-transfer"
-			) {
-				return row;
-			}
-			const catalogue = group.rows.find(
-				(candidate) => candidate.target.targetPath === row.targetPath,
-			);
-			if (!catalogue) return row;
-			const checked = await syncHarnessAsset({
-				projectRoot: options.projectRoot,
-				asset: catalogue.asset,
-				target: catalogue.target,
-				check: true,
-				generatedNodes: generatedNodesFor(options, catalogue.asset),
-			});
-			desired.set(row.targetPath, checked.manifestEntry);
-			if (row.status === "locally-edited") return row;
-			const action = options.request.check
-				? "none"
-				: checked.beforeStatus === "missing"
-					? "create"
-					: checked.beforeStatus === "source-ahead"
-						? "replace"
-						: "none";
-			return {
-				...row,
-				status: checked.beforeStatus,
-				beforeStatus: checked.beforeStatus,
-				reason: checked.reason,
-				action,
-				recordedMode: checked.recordedMode,
-				requestedMode: checked.requestedMode,
-				...(checked.generatingProjectRoot
-					? { generatingProjectRoot: checked.generatingProjectRoot }
-					: {}),
-				...(checked.previousGeneratingProjectRoot
-					? {
-							previousGeneratingProjectRoot:
-								checked.previousGeneratingProjectRoot,
-						}
-					: {}),
-				writesTarget: action === "create" || action === "replace",
-				writesManifest: action !== "none",
-			};
-		}),
-	);
-	return { planRows: enhancedRows, desired, manifestEntries, oldManifest };
+	return { manifestEntries, observations, inventory };
+}
+
+function matchesSelection<T>(
+	values: readonly T[] | undefined,
+	value: T,
+): boolean {
+	return values === undefined || values.includes(value);
+}
+
+function withOwnerGroupConsistencyFailure(
+	row: ClassifiedHarnessSyncPlanRow,
+	reason: "concurrent-change" | "pending-journal",
+): ClassifiedHarnessSyncPlanRow {
+	const { conflict: _conflict, ...stableRow } = row;
+	return {
+		...stableRow,
+		status: "source-ahead",
+		beforeStatus: "source-ahead",
+		reason,
+		action: "none",
+		writesTarget: false,
+		writesManifest: false,
+	};
 }
 
 async function applyEvaluatedGroup(
@@ -783,19 +892,6 @@ async function observeUnmanagedTarget(
 		if (isNodeError(error) && error.code === "ENOENT") {
 			return { targetPath: path, state: "absent" };
 		}
-		throw error;
-	}
-}
-
-async function observeManifestFile(
-	path: string,
-): Promise<HarnessManifestSnapshot> {
-	try {
-		const contents = await readFile(path, "utf8");
-		return { kind: "file", digest: sha256(contents), contents };
-	} catch (error) {
-		if (isNodeError(error) && error.code === "ENOENT")
-			return { kind: "absent" };
 		throw error;
 	}
 }

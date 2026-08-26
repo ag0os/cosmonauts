@@ -110,6 +110,7 @@ const LEGACY_MIGRATION_ASSET_IDS = new Set([
 
 export interface StableHarnessStateObservation<T> {
 	readonly manifest: HarnessProvenanceManifest;
+	readonly manifestFile: StableHarnessFileObservation;
 	readonly journalPresent: boolean;
 	readonly target: T;
 	readonly concurrentChange: boolean;
@@ -118,12 +119,14 @@ export interface StableHarnessStateObservation<T> {
 	readonly reason?: "concurrent-change" | "pending-journal";
 }
 
-interface FileObservation {
-	readonly exists: boolean;
-	readonly digest?: string;
-	readonly version?: string;
-	readonly contents?: string;
-}
+export type StableHarnessFileObservation =
+	| { readonly exists: false }
+	| {
+			readonly exists: true;
+			readonly digest: string;
+			readonly version: string;
+			readonly contents: string;
+	  };
 
 export function sha256(bytes: Uint8Array | string): string {
 	return createHash("sha256").update(bytes).digest("hex");
@@ -240,6 +243,7 @@ export async function observeStableHarnessState<T>(options: {
 	if (concurrentChange) {
 		return {
 			manifest,
+			manifestFile: manifestBefore,
 			journalPresent: journalBefore.exists || journalAfter.exists,
 			target,
 			concurrentChange: true,
@@ -251,6 +255,7 @@ export async function observeStableHarnessState<T>(options: {
 	if (journalBefore.exists) {
 		return {
 			manifest,
+			manifestFile: manifestBefore,
 			journalPresent: true,
 			target,
 			concurrentChange: false,
@@ -261,6 +266,7 @@ export async function observeStableHarnessState<T>(options: {
 	}
 	return {
 		manifest,
+		manifestFile: manifestBefore,
 		journalPresent: false,
 		target,
 		concurrentChange: false,
@@ -442,7 +448,9 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
 	return error instanceof Error && "code" in error;
 }
 
-async function observeFile(path: string): Promise<FileObservation> {
+async function observeFile(
+	path: string,
+): Promise<StableHarnessFileObservation> {
 	try {
 		const before = await lstat(path, { bigint: true });
 		const contents = await readFile(path, "utf8");
@@ -473,7 +481,7 @@ async function observeFile(path: string): Promise<FileObservation> {
 }
 
 function parseObservedManifest(
-	observation: FileObservation,
+	observation: StableHarnessFileObservation,
 	manifestPath: string,
 ): HarnessProvenanceManifest {
 	if (!observation.exists) return EMPTY_HARNESS_MANIFEST;
@@ -486,12 +494,10 @@ function parseObservedManifest(
 }
 
 function sameFileObservation(
-	left: FileObservation,
-	right: FileObservation,
+	left: StableHarnessFileObservation,
+	right: StableHarnessFileObservation,
 ): boolean {
-	return (
-		left.exists === right.exists &&
-		left.digest === right.digest &&
-		left.version === right.version
-	);
+	if (left.exists !== right.exists) return false;
+	if (!left.exists || !right.exists) return true;
+	return left.digest === right.digest && left.version === right.version;
 }

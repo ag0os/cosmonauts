@@ -6,6 +6,11 @@ import { lstat, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import type { HarnessProvenanceManifest } from "../../lib/harness-adapters/provenance.ts";
+import {
+	resolveHarnessTransactionPaths,
+	serializeHarnessManifest,
+} from "../../lib/harness-adapters/provenance.ts";
 import { renderIdentityMarkdown } from "../../lib/harness-adapters/render.ts";
 import type {
 	HarnessAsset,
@@ -376,6 +381,232 @@ describe("runHarnessSync selection", () => {
 			rows: [{ action: "forget-entry", final: "current" }],
 		});
 		expect(await readFile(targetPath, "utf8")).toBe(before.target);
+	});
+
+	test("uses one stable owner-group observation for catalogue and stale check rows", async () => {
+		const projectRoot = join(tmp.path, "stable-check-project");
+		const homeRoot = join(tmp.path, "stable-check-home");
+		const sourceRoot = join(projectRoot, "stable-check-source");
+		await Promise.all([
+			mkdir(homeRoot, { recursive: true }),
+			mkdir(join(sourceRoot, "current"), { recursive: true }),
+			mkdir(join(sourceRoot, "stale"), { recursive: true }),
+		]);
+		await Promise.all([
+			writeFile(join(sourceRoot, "current", "SKILL.md"), "# Current\n"),
+			writeFile(join(sourceRoot, "stale", "SKILL.md"), "# Stale\n"),
+		]);
+		const current = {
+			assetId: "skill:stable-current",
+			kind: "skill",
+			ownership: { kind: "project" },
+			sourceRootId: "root:stable-check",
+			sourceRoot,
+			sourcePath: "current",
+			logicalPath: "stable-current",
+			outputIdentity: "stable-current",
+			defaultScope: "project",
+		} as const satisfies HarnessAsset;
+		const stale = {
+			...current,
+			assetId: "skill:stable-stale",
+			sourcePath: "stale",
+			logicalPath: "stable-stale",
+			outputIdentity: "stable-stale",
+		} as const satisfies HarnessAsset;
+		const sourceHealth = [
+			{
+				sourceRootId: current.sourceRootId,
+				sourceRoot,
+				domain: "stable-check",
+				status: "complete",
+				issues: [],
+			},
+		] as const satisfies readonly SourceHealthRow[];
+		const baseOptions = {
+			projectRoot,
+			homeRoot,
+			sourceHealth,
+			request: {
+				targetIds: ["claude"],
+				scopes: ["project"],
+				kinds: ["skill"],
+				reconciliation: "complete",
+				check: true,
+			},
+		} as const;
+		await expect(
+			runHarnessSync({
+				...baseOptions,
+				assets: [current, stale],
+				request: { ...baseOptions.request, check: false },
+			}),
+		).resolves.toMatchObject({ exitCode: 0 });
+
+		const ownerRoot = join(projectRoot, ".claude");
+		const manifestPath = join(ownerRoot, ".cosmonauts-harness-manifest.json");
+		const transactionPaths = resolveHarnessTransactionPaths(
+			ownerRoot,
+			"claude",
+		);
+		const assertConsistencyRows = (
+			report: Awaited<ReturnType<typeof runHarnessSync>>,
+			reason: "concurrent-change" | "pending-journal",
+		) => {
+			expect(report.exitCode).toBe(1);
+			expect(report.rows).toHaveLength(2);
+			expect(report.rows.map((row) => row.asset).sort()).toEqual([
+				current.assetId,
+				stale.assetId,
+			]);
+			expect(report.rows.every((row) => row.reason === reason)).toBe(true);
+			expect(report.rows.every((row) => row.action === "none")).toBe(true);
+		};
+		await expect(
+			runHarnessSync({ ...baseOptions, assets: [current] }),
+		).resolves.toMatchObject({
+			exitCode: 1,
+			rows: expect.arrayContaining([
+				expect.objectContaining({
+					asset: current.assetId,
+					reason: "current",
+				}),
+				expect.objectContaining({
+					asset: stale.assetId,
+					reason: "source-removed",
+				}),
+			]),
+		});
+
+		let manifestWindows = 0;
+		const concurrentManifest = await runHarnessSync({
+			...baseOptions,
+			assets: [current],
+			onOwnerGroupTargetsObserved: async () => {
+				manifestWindows += 1;
+				const manifest = JSON.parse(
+					await readFile(manifestPath, "utf8"),
+				) as HarnessProvenanceManifest;
+				const first = Object.entries(manifest.entries)[0];
+				if (!first) throw new Error("stable check manifest entry missing");
+				const [key, entry] = first;
+				await writeFile(
+					manifestPath,
+					serializeHarnessManifest({
+						...manifest,
+						entries: {
+							...manifest.entries,
+							[key]: {
+								...entry,
+								exportedAt: "2035-01-01T00:00:00.000Z",
+							},
+						},
+					}),
+				);
+			},
+		});
+		assertConsistencyRows(concurrentManifest, "concurrent-change");
+		expect(manifestWindows).toBe(1);
+
+		let journalWindows = 0;
+		const concurrentJournal = await runHarnessSync({
+			...baseOptions,
+			assets: [current],
+			onOwnerGroupTargetsObserved: async () => {
+				journalWindows += 1;
+				await writeFile(transactionPaths.journalPath, '{"phase":"prepared"}\n');
+			},
+		});
+		assertConsistencyRows(concurrentJournal, "concurrent-change");
+		expect(journalWindows).toBe(1);
+
+		const beforePending = {
+			manifest: await readFile(manifestPath, "utf8"),
+			manifestMtime: (await lstat(manifestPath)).mtimeMs,
+			journal: await readFile(transactionPaths.journalPath, "utf8"),
+			journalMtime: (await lstat(transactionPaths.journalPath)).mtimeMs,
+			current: await readFile(
+				join(ownerRoot, "skills", "stable-current", "SKILL.md"),
+				"utf8",
+			),
+			stale: await readFile(
+				join(ownerRoot, "skills", "stable-stale", "SKILL.md"),
+				"utf8",
+			),
+		};
+		let pendingWindows = 0;
+		const pending = await runHarnessSync({
+			...baseOptions,
+			assets: [current],
+			onOwnerGroupTargetsObserved: () => {
+				pendingWindows += 1;
+			},
+		});
+		assertConsistencyRows(pending, "pending-journal");
+		expect(pendingWindows).toBe(1);
+		expect(await readFile(manifestPath, "utf8")).toBe(beforePending.manifest);
+		expect((await lstat(manifestPath)).mtimeMs).toBe(
+			beforePending.manifestMtime,
+		);
+		expect(await readFile(transactionPaths.journalPath, "utf8")).toBe(
+			beforePending.journal,
+		);
+		expect((await lstat(transactionPaths.journalPath)).mtimeMs).toBe(
+			beforePending.journalMtime,
+		);
+		expect(
+			await readFile(
+				join(ownerRoot, "skills", "stable-current", "SKILL.md"),
+				"utf8",
+			),
+		).toBe(beforePending.current);
+		expect(
+			await readFile(
+				join(ownerRoot, "skills", "stable-stale", "SKILL.md"),
+				"utf8",
+			),
+		).toBe(beforePending.stale);
+		await expect(exists(transactionPaths.lockPath)).resolves.toBe(false);
+
+		const emptyOwnerRoot = join(projectRoot, ".agents");
+		const emptyTransactionPaths = resolveHarnessTransactionPaths(
+			emptyOwnerRoot,
+			"codex",
+		);
+		await writeFile(
+			emptyTransactionPaths.journalPath,
+			'{"phase":"prepared"}\n',
+		);
+		const emptyJournalBefore = {
+			bytes: await readFile(emptyTransactionPaths.journalPath, "utf8"),
+			mtime: (await lstat(emptyTransactionPaths.journalPath)).mtimeMs,
+		};
+		await expect(
+			runHarnessSync({
+				projectRoot,
+				homeRoot,
+				assets: [],
+				sourceHealth: [],
+				request: {
+					targetIds: ["codex"],
+					scopes: ["project"],
+					kinds: ["skill"],
+					reconciliation: "complete",
+					check: true,
+				},
+			}),
+		).resolves.toMatchObject({
+			exitCode: 1,
+			rows: [{ asset: "(owner-root)", reason: "pending-journal" }],
+		});
+		expect(await readFile(emptyTransactionPaths.journalPath, "utf8")).toBe(
+			emptyJournalBefore.bytes,
+		);
+		expect((await lstat(emptyTransactionPaths.journalPath)).mtimeMs).toBe(
+			emptyJournalBefore.mtime,
+		);
+		await expect(exists(emptyOwnerRoot)).resolves.toBe(false);
+		await expect(exists(emptyTransactionPaths.lockPath)).resolves.toBe(false);
 	});
 });
 

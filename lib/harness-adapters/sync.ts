@@ -82,6 +82,13 @@ export interface SyncHarnessAssetOptions {
 	readonly check?: boolean;
 	readonly generatedNodes?: readonly GeneratedHarnessNode[];
 	readonly now?: () => Date;
+	/** Reuse an enclosing owner-group check window instead of rereading state. */
+	readonly checkObservation?: HarnessAssetCheckObservation;
+}
+
+export interface HarnessAssetCheckObservation {
+	readonly manifest: HarnessProvenanceManifest;
+	readonly target: TargetObservation;
 }
 
 export interface SyncHarnessAssetResult {
@@ -138,6 +145,9 @@ export async function syncHarnessAsset(
 async function syncHarnessAssetCore(
 	options: SyncHarnessAssetOptions,
 ): Promise<Omit<SyncHarnessAssetResult, "exitCode">> {
+	if (options.checkObservation && !options.check) {
+		throw new Error("A harness check observation requires check mode.");
+	}
 	const explicitLinkPreparation =
 		options.target.requestedMode === "link"
 			? await prepareHarnessMaterialization({
@@ -169,24 +179,32 @@ async function syncHarnessAssetCore(
 		| undefined;
 	let manifest: HarnessProvenanceManifest;
 	if (options.check) {
-		const transactionPaths = resolveHarnessTransactionPaths(
-			options.target.ownerRoot,
-			options.target.targetId,
-		);
-		const observation = await observeStableHarnessState({
-			manifestPath,
-			journalPath: transactionPaths.journalPath,
-			observeTarget: async (observedManifest) => {
-				const observedKey = manifestEntryKey(owner, options.asset.assetId);
-				const observedRecorded = observedManifest.entries[observedKey];
-				return observedRecorded
-					? observeRecordedTarget(options.target.targetPath, observedRecorded)
-					: pathState(options.target.targetPath);
-			},
-		});
-		manifest = observation.manifest;
-		observedTargetState = observation.target;
-		consistencyReason = observation.reason;
+		if (options.checkObservation) {
+			manifest = options.checkObservation.manifest;
+			observedTargetState =
+				options.checkObservation.target.state === "exact-baseline"
+					? "intact"
+					: options.checkObservation.target.state;
+		} else {
+			const transactionPaths = resolveHarnessTransactionPaths(
+				options.target.ownerRoot,
+				options.target.targetId,
+			);
+			const observation = await observeStableHarnessState({
+				manifestPath,
+				journalPath: transactionPaths.journalPath,
+				observeTarget: async (observedManifest) => {
+					const observedKey = manifestEntryKey(owner, options.asset.assetId);
+					const observedRecorded = observedManifest.entries[observedKey];
+					return observedRecorded
+						? observeRecordedTarget(options.target.targetPath, observedRecorded)
+						: pathState(options.target.targetPath);
+				},
+			});
+			manifest = observation.manifest;
+			observedTargetState = observation.target;
+			consistencyReason = observation.reason;
+		}
 	} else {
 		manifest = await readHarnessManifest(manifestPath);
 	}
