@@ -5,22 +5,33 @@ import {
 	mkdtemp,
 	readFile,
 	rm,
+	symlink,
 	writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import type { GeneratedHarnessNode } from "../../lib/harness-adapters/render.ts";
 import { renderIdentityMarkdown } from "../../lib/harness-adapters/render.ts";
+import type { HarnessAsset } from "../../lib/harness-adapters/types.ts";
 import {
+	EXTERNAL_BUNDLE_ASSET_ID,
 	PROJECT_EXPORT_ROWS,
+	proveExternalBundleLineage,
 	proveRepositoryExportLineage,
 	type RepositorySelectedCheck,
+	runPersonalBundleValidation,
 	runRepositoryExportValidation,
 } from "../../scripts/validate-harness-exports.ts";
 
 const execFileAsync = promisify(execFile);
 const tempRoots: string[] = [];
+const PLAYWRIGHT_FOREIGN_ASSET_ID = [
+	"skill:",
+	"cod" + "ing",
+	"/playwright-cli",
+].join("");
 
 afterEach(async () => {
 	await Promise.all(
@@ -31,6 +42,219 @@ afterEach(async () => {
 });
 
 describe("repository harness export validation", () => {
+	test("validates evidence-held recovery for four repo exports before the personal bundle", async () => {
+		// @cosmo-behavior plan:harness-adapters#B-012
+		const fixture = await createFixture();
+		const bundleOptions = {
+			projectRoot: fixture.root,
+			homeRoot: fixture.home,
+			evidencePath: fixture.evidencePath,
+			revision: fixture.revision,
+			asset: fixture.externalBundleAsset,
+			generatedNodes: fixture.externalBundleGeneratedNodes,
+			selectedCheck: currentExternalBundleCheck,
+			now: () => new Date("2026-08-26T12:30:00.000Z"),
+		} as const;
+		const oldBundle = await readFile(`${fixture.externalBundlePath}/SKILL.md`);
+		const oldPlaywright = await readFile(fixture.playwrightPath);
+		const oldCommands = await Promise.all(
+			fixture.commandPaths.map((path) => readFile(path)),
+		);
+
+		await expect(runPersonalBundleValidation(bundleOptions)).rejects.toThrow(
+			/project evidence.*complete/i,
+		);
+		expect(await readFile(`${fixture.externalBundlePath}/SKILL.md`)).toEqual(
+			oldBundle,
+		);
+
+		const projectEvidence = await runRepositoryExportValidation({
+			projectRoot: fixture.root,
+			homeRoot: fixture.home,
+			evidencePath: fixture.evidencePath,
+			revisions: Object.fromEntries(
+				PROJECT_EXPORT_ROWS.map((row) => [row.assetId, fixture.revision]),
+			),
+			selectedCheck: currentSelectedCheck,
+		});
+		expect(projectEvidence.phase).toBe("complete");
+		expect(projectEvidence.rows.map((row) => row.assetId)).toEqual(
+			PROJECT_EXPORT_ROWS.map((row) => row.assetId),
+		);
+		expect(projectEvidence.rows).toHaveLength(4);
+		expect(
+			projectEvidence.rows.every(
+				(row) =>
+					row.historicalDigest === row.oldDigest &&
+					row.receipt?.transactionId === projectEvidence.transactionId &&
+					row.checkRow?.final === "current" &&
+					row.backupExit === "removed-exact",
+			),
+		).toBe(true);
+
+		await writeFile(`${fixture.externalBundlePath}/SKILL.md`, "foreign\n");
+		await expect(proveExternalBundleLineage(bundleOptions)).rejects.toThrow(
+			/historical byte lineage/i,
+		);
+		await expect(runPersonalBundleValidation(bundleOptions)).rejects.toThrow(
+			/historical byte lineage/i,
+		);
+		expect(
+			JSON.parse(await readFile(fixture.evidencePath, "utf8")),
+		).not.toHaveProperty("externalBundle");
+		await expectMissing(
+			join(fixture.home, ".claude/.cosmonauts-harness-manifest.json"),
+		);
+		await writeFile(`${fixture.externalBundlePath}/SKILL.md`, oldBundle);
+
+		await expect(
+			runPersonalBundleValidation({
+				...bundleOptions,
+				stopAfter: "rolling-back",
+			}),
+		).rejects.toThrow(/rolling back|rolling-back/i);
+		const interruptedEvidence = JSON.parse(
+			await readFile(fixture.evidencePath, "utf8"),
+		) as { externalBundle: { backupPath: string } };
+		expect(
+			await readFile(
+				`${interruptedEvidence.externalBundle.backupPath}/SKILL.md`,
+			),
+		).toEqual(oldBundle);
+		expect(
+			JSON.parse(
+				await readFile(
+					join(fixture.home, ".cosmonauts-harness-claude.journal.json"),
+					"utf8",
+				),
+			),
+		).toMatchObject({ phase: "rolling-back" });
+
+		let lockRuns = 0;
+		const uncertainRunner = async <T>(
+			_path: string,
+			action: () => Promise<T>,
+			lockOptions: { onReleaseUnconfirmed?: (error: unknown) => void },
+		): Promise<T> => {
+			const result = await action();
+			lockRuns += 1;
+			if (lockRuns === 2) {
+				lockOptions.onReleaseUnconfirmed?.(
+					new Error("injected bundle release uncertainty"),
+				);
+			}
+			return result;
+		};
+		await expect(
+			runPersonalBundleValidation({
+				...bundleOptions,
+				lockRunner: uncertainRunner,
+			}),
+		).rejects.toThrow(/release is unconfirmed/i);
+		await access(interruptedEvidence.externalBundle.backupPath);
+
+		const complete = await runPersonalBundleValidation(bundleOptions);
+		expect(complete.phase).toBe("complete");
+		expect(complete.rows).toHaveLength(4);
+		expect(complete.externalBundle).toMatchObject({
+			phase: "complete",
+			assetId: EXTERNAL_BUNDLE_ASSET_ID,
+			manifestKey: expect.any(String),
+			recoveryOutcome: "committed:evidence-required",
+			checkRow: { final: "current" },
+			backupExit: "removed-exact",
+		});
+		expect(complete.externalBundle?.receipt?.transactionId).toBe(
+			complete.externalBundle?.transactionId,
+		);
+		await expectMissing(complete.externalBundle?.backupPath ?? "");
+		await expectMissing(
+			join(fixture.home, ".cosmonauts-harness-claude.journal.json"),
+		);
+		expect(await readFile(fixture.playwrightPath)).toEqual(oldPlaywright);
+		expect(
+			await Promise.all(fixture.commandPaths.map((path) => readFile(path))),
+		).toEqual(oldCommands);
+		expect(await readFile(join(fixture.root, ".gitignore"), "utf8")).toContain(
+			".agents/",
+		);
+		expect(await readFile(join(fixture.root, ".gitignore"), "utf8")).toContain(
+			".cosmonauts-harness-*",
+		);
+		expect(
+			await readFile(`${fixture.externalBundlePath}/SKILL.md`, "utf8"),
+		).toContain("Generated by cosmonauts");
+
+		const provisionRoot = await mkdtemp(
+			join(tmpdir(), "harness-full-default-"),
+		);
+		tempRoots.push(provisionRoot);
+		const provisionProject = join(provisionRoot, "project");
+		const provisionHome = join(provisionRoot, "home");
+		await execFileAsync("git", [
+			"clone",
+			"-q",
+			"--no-local",
+			process.cwd(),
+			provisionProject,
+		]);
+		await symlink(
+			join(process.cwd(), "node_modules"),
+			join(provisionProject, "node_modules"),
+			"dir",
+		);
+		const localExclude = join(provisionProject, ".git/info/exclude");
+		await writeFile(
+			localExclude,
+			`${await readFile(localExclude, "utf8")}node_modules\n`,
+		);
+		await mkdir(join(provisionProject, ".claude/skills/playwright-cli"), {
+			recursive: true,
+		});
+		await mkdir(provisionHome, { recursive: true });
+		const provisionedConflict = join(
+			provisionProject,
+			".claude/skills/playwright-cli/SKILL.md",
+		);
+		await writeFile(provisionedConflict, "ratified foreign bytes\n");
+		const sync = await execJsonAllowFailure(
+			["harness", "--json", "sync", "--kind", "skill"],
+			provisionProject,
+			provisionHome,
+		);
+		const check = await execJsonAllowFailure(
+			["harness", "--json", "sync", "--kind", "skill", "--check"],
+			provisionProject,
+			provisionHome,
+		);
+		for (const report of [sync, check]) {
+			expect(report.processExit).toBe(1);
+			expect(report.body.exitCode).toBe(1);
+			expect(report.body.rows.filter((row) => row.final !== "current")).toEqual(
+				[
+					expect.objectContaining({
+						asset: PLAYWRIGHT_FOREIGN_ASSET_ID,
+						target: "claude",
+						scope: "project",
+						reason: "foreign-or-untraceable",
+						final: "locally-edited",
+					}),
+				],
+			);
+		}
+		await access(join(provisionProject, ".agents/skills"));
+		await expectMissing(join(provisionProject, ".codex/skills"));
+		expect(await readFile(provisionedConflict, "utf8")).toBe(
+			"ratified foreign bytes\n",
+		);
+		const { stdout: status } = await execFileAsync(
+			"git",
+			["status", "--porcelain", "--untracked-files=all"],
+			{ cwd: provisionProject },
+		);
+		expect(status).toBe("");
+	});
+
 	test("authorizes exactly the four ratified rows from named git bytes and rejects a changed target before locking", async () => {
 		const fixture = await createFixture();
 		expect(PROJECT_EXPORT_ROWS.map((row) => row.assetId)).toEqual([
@@ -273,6 +497,10 @@ interface Fixture {
 	readonly revision: string;
 	readonly evidencePath: string;
 	readonly playwrightPath: string;
+	readonly externalBundlePath: string;
+	readonly externalBundleAsset: HarnessAsset;
+	readonly externalBundleGeneratedNodes: readonly GeneratedHarnessNode[];
+	readonly commandPaths: readonly string[];
 }
 
 async function createFixture(): Promise<Fixture> {
@@ -298,7 +526,34 @@ async function createFixture(): Promise<Fixture> {
 			`---\nname: ${row.name}\ndescription: old ${row.name}\n---\n\n# Old ${row.name}\n`,
 		);
 	}
+	const externalBundleAsset: HarnessAsset = {
+		assetId: EXTERNAL_BUNDLE_ASSET_ID,
+		kind: "skill",
+		ownership: { kind: "authority", authorityId: "cosmonauts/core" },
+		sourceRootId: "cosmonauts:package",
+		sourceRoot: root,
+		sourcePath: "external-skills/cosmonauts",
+		logicalPath: "external-skills/cosmonauts",
+		outputIdentity: "cosmonauts",
+		defaultScope: "personal",
+		generatedInputs: "cosmonauts-inventory",
+	};
+	for (const relativePath of [
+		"SKILL.md",
+		"chains/SKILL.md",
+		"plans/SKILL.md",
+		"skills/SKILL.md",
+		"tasks/SKILL.md",
+	]) {
+		const sourcePath = join(root, externalBundleAsset.sourcePath, relativePath);
+		await mkdir(dirname(sourcePath), { recursive: true });
+		await writeFile(
+			sourcePath,
+			`---\nname: cosmonauts-${relativePath}\ndescription: old bundle\n---\n\n# Old bundle\n`,
+		);
+	}
 	await execFileAsync("git", ["add", ".gitignore", "domains"], { cwd: root });
+	await execFileAsync("git", ["add", "external-skills"], { cwd: root });
 	await execFileAsync("git", ["commit", "-qm", "legacy sources"], {
 		cwd: root,
 	});
@@ -318,6 +573,31 @@ async function createFixture(): Promise<Fixture> {
 			`---\nname: ${row.name}\ndescription: corrected ${row.name}\n---\n\n# Current ${row.name}\n`,
 		);
 	}
+	const externalBundlePath = join(home, ".claude/skills/cosmonauts");
+	for (const relativePath of [
+		"SKILL.md",
+		"chains/SKILL.md",
+		"plans/SKILL.md",
+		"skills/SKILL.md",
+		"tasks/SKILL.md",
+	]) {
+		const sourcePath = join(root, externalBundleAsset.sourcePath, relativePath);
+		const targetPath = join(externalBundlePath, relativePath);
+		await mkdir(dirname(targetPath), { recursive: true });
+		await writeFile(targetPath, await readFile(sourcePath));
+		await writeFile(
+			sourcePath,
+			`---\nname: cosmonauts-${relativePath}\ndescription: current bundle\n---\n\n# Current bundle\n`,
+		);
+	}
+	const commandPaths = [
+		join(home, ".claude/commands/spec-to-backlog.md"),
+		join(home, ".claude/commands/implement-plan.md"),
+	] as const;
+	for (const [index, path] of commandPaths.entries()) {
+		await mkdir(dirname(path), { recursive: true });
+		await writeFile(path, `protected command ${index}\n`);
+	}
 	const playwrightPath = join(root, ".claude/skills/playwright-cli/SKILL.md");
 	await mkdir(dirname(playwrightPath), { recursive: true });
 	await writeFile(playwrightPath, "foreign playwright bytes\n");
@@ -331,6 +611,18 @@ async function createFixture(): Promise<Fixture> {
 			"missions/plans/harness-adapters/repo-export-validation-evidence.json",
 		),
 		playwrightPath,
+		externalBundlePath,
+		externalBundleAsset,
+		externalBundleGeneratedNodes: [
+			{
+				relativePath: "references/generated-inventory.md",
+				inputBytes: Buffer.from("fixture inventory inputs"),
+				renderedBytes: Buffer.from(
+					"<!-- Generated by cosmonauts; do not edit. -->\n# Fixture inventory\n",
+				),
+			},
+		],
+		commandPaths,
 	};
 }
 
@@ -346,6 +638,60 @@ const currentSelectedCheck: RepositorySelectedCheck = async ({ rows }) => ({
 	})),
 });
 
+const currentExternalBundleCheck: RepositorySelectedCheck = async ({
+	rows,
+}) => ({
+	exitCode: 0,
+	rows: rows.map((row) => ({
+		asset: row.assetId,
+		targetPath: row.outputPath,
+		before: "current",
+		reason: "current",
+		action: "none",
+		final: "current",
+	})),
+});
+
 async function expectMissing(path: string): Promise<void> {
 	await expect(access(path)).rejects.toMatchObject({ code: "ENOENT" });
+}
+
+interface HarnessJsonReport {
+	readonly exitCode: number;
+	readonly rows: ReadonlyArray<{
+		readonly asset: string;
+		readonly target: string;
+		readonly scope: string;
+		readonly reason: string;
+		readonly final: string;
+	}>;
+}
+
+async function execJsonAllowFailure(
+	args: readonly string[],
+	cwd: string,
+	home: string,
+): Promise<{ readonly processExit: number; readonly body: HarnessJsonReport }> {
+	try {
+		const { stdout } = await execFileAsync(
+			"bun",
+			[join(cwd, "bin/cosmonauts"), ...args],
+			{
+				cwd,
+				env: { ...process.env, HOME: home },
+				maxBuffer: 10 * 1024 * 1024,
+			},
+		);
+		return { processExit: 0, body: JSON.parse(stdout) as HarnessJsonReport };
+	} catch (error) {
+		const failed = error as {
+			readonly code?: number;
+			readonly stdout?: string;
+		};
+		if (typeof failed.stdout !== "string") throw error;
+		return {
+			processExit: failed.code ?? 1,
+			body: JSON.parse(failed.stdout) as HarnessJsonReport,
+		};
+	}
 }

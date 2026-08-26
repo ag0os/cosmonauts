@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { createCosmonautsInventoryGeneratedNode } from "../lib/harness-adapters/inventory.ts";
 import type {
 	HarnessProvenanceManifest,
 	LegacyCopiedNodeShape,
@@ -31,7 +32,11 @@ import {
 	sha256,
 	verifyLegacyMigrationProof,
 } from "../lib/harness-adapters/provenance.ts";
-import { resolveHarnessAssetTarget } from "../lib/harness-adapters/registry.ts";
+import {
+	getStaticHarnessAsset,
+	resolveHarnessAssetTarget,
+} from "../lib/harness-adapters/registry.ts";
+import type { GeneratedHarnessNode } from "../lib/harness-adapters/render.ts";
 import {
 	prepareHarnessMaterialization,
 	writePreparedTarget,
@@ -53,9 +58,15 @@ import type {
 	HarnessAsset,
 	ResolvedHarnessAssetTarget,
 } from "../lib/harness-adapters/types.ts";
+import { composeHarnessRuntimeInventory } from "../lib/harness-runtime-inventory.ts";
+import { discoverFrameworkBundledPackageDirs } from "../lib/packages/dev-bundled.ts";
+import { CosmonautsRuntime } from "../lib/runtime.ts";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_REVISION = "9290725704bb29f302dca9433061d13227c35bf8";
+const DEFAULT_EXTERNAL_BUNDLE_REVISION =
+	"e4f9be0dbe48281ceb6c28bd157c7395ade2dec5";
+export const EXTERNAL_BUNDLE_ASSET_ID = "external-skill:cosmonauts" as const;
 const EVIDENCE_RELATIVE_PATH =
 	"missions/plans/harness-adapters/repo-export-validation-evidence.json";
 const REQUIRED_IGNORE_RULES = [".agents/", ".cosmonauts-harness-*"] as const;
@@ -96,6 +107,8 @@ export type RepositoryEvidencePhase =
 	| "complete";
 export type RepositoryValidationStop =
 	| "prepared"
+	| "installing"
+	| "rolling-back"
 	| "installed"
 	| "checked"
 	| "backup-cleanup";
@@ -109,9 +122,14 @@ export interface RepositorySelectedCheckRow {
 	readonly final: string;
 }
 
+interface SelectedCheckSubject {
+	readonly assetId: string;
+	readonly outputPath: string;
+}
+
 export type RepositorySelectedCheck = (options: {
 	readonly projectRoot: string;
-	readonly rows: readonly RepositoryPreparedRow[];
+	readonly rows: readonly SelectedCheckSubject[];
 }) => Promise<{
 	readonly exitCode: number;
 	readonly rows: readonly RepositorySelectedCheckRow[];
@@ -201,6 +219,63 @@ export interface RepositoryExportValidationEvidence {
 	readonly installedAt?: string;
 	readonly checkedAt?: string;
 	readonly completedAt?: string;
+	readonly externalBundle?: ExternalBundleEvidence;
+}
+
+export interface ExternalBundleEvidence {
+	readonly authorizationKind: "legacy-copied-target";
+	readonly consumption: "one-time";
+	readonly phase: RepositoryEvidencePhase;
+	readonly transactionId: string;
+	readonly revision: string;
+	readonly sourceRelativePath: "external-skills/cosmonauts";
+	readonly historicalDigest: string;
+	readonly sourceDigest: string;
+	readonly oldDigest: string;
+	readonly newDigest: string;
+	readonly ownerId: string;
+	readonly authorityId: "cosmonauts/core";
+	readonly assetId: typeof EXTERNAL_BUNDLE_ASSET_ID;
+	readonly manifestKey: string;
+	readonly ownerRoot: string;
+	readonly outputPath: string;
+	readonly nodeShape: readonly LegacyCopiedNodeShape[];
+	readonly newManifestDigest: string;
+	readonly backupPath: string;
+	readonly oldState: HarnessNodeSnapshot;
+	readonly recoveryOutcome: string;
+	readonly receipt?: RepositoryEvidenceReceipt;
+	readonly checkRow?: RepositorySelectedCheckRow;
+	readonly backupExit?: "removed-exact";
+	readonly authorizedAt: string;
+	readonly installedAt?: string;
+	readonly checkedAt?: string;
+	readonly completedAt?: string;
+}
+
+export interface ExternalBundleMigrationProof {
+	readonly asset: HarnessAsset;
+	readonly target: ResolvedHarnessAssetTarget;
+	readonly authorization: LegacyMigrationAuthorization;
+	readonly historicalDigest: string;
+	readonly sourceDigest: string;
+	readonly oldDigest: string;
+	readonly nodeShape: readonly LegacyCopiedNodeShape[];
+}
+
+interface ExternalBundlePrepared {
+	readonly asset: HarnessAsset;
+	readonly target: ResolvedHarnessAssetTarget;
+	readonly outputPath: string;
+	readonly authorization: LegacyMigrationAuthorization;
+	readonly historicalDigest: string;
+	readonly sourceDigest: string;
+	readonly oldDigest: string;
+	readonly newDigest: string;
+	readonly oldState: HarnessNodeSnapshot;
+	readonly newState: HarnessNodeSnapshot;
+	readonly manifestEntry: MaterializedHarnessManifestEntry;
+	readonly writeStage: (stagePath: string) => Promise<void>;
 }
 
 interface ProtectedAssetEvidence {
@@ -218,6 +293,22 @@ export interface RunRepositoryExportValidationOptions {
 	readonly homeRoot?: string;
 	readonly evidencePath?: string;
 	readonly revisions?: Partial<Record<RepositoryExportAssetId, string>>;
+	readonly now?: () => Date;
+	readonly selectedCheck?: RepositorySelectedCheck;
+	readonly stopAfter?: RepositoryValidationStop;
+	readonly onTransactionLock?: () => void | Promise<void>;
+	readonly lockRunner?: NonNullable<
+		WithOwnerRootTransactionOptions["lockRunner"]
+	>;
+}
+
+export interface RunPersonalBundleValidationOptions {
+	readonly projectRoot: string;
+	readonly homeRoot?: string;
+	readonly evidencePath?: string;
+	readonly revision?: string;
+	readonly asset?: HarnessAsset;
+	readonly generatedNodes?: readonly GeneratedHarnessNode[];
 	readonly now?: () => Date;
 	readonly selectedCheck?: RepositorySelectedCheck;
 	readonly stopAfter?: RepositoryValidationStop;
@@ -313,7 +404,13 @@ export async function runRepositoryExportValidation(
 	const existing = await readEvidence(evidencePath);
 	if (existing?.phase === "complete") {
 		validateEvidenceIdentity(existing, projectRoot, evidencePath);
-		await assertProtectedAssets(existing.protectedAssets);
+		await assertProtectedAssets(
+			existing.protectedAssets.filter(
+				(asset) =>
+					!existing.externalBundle ||
+					asset.label !== "personal-cosmonauts-bundle",
+			),
+		);
 		await assertNoVisibleTransactionArtifacts(projectRoot);
 		return existing;
 	}
@@ -461,8 +558,14 @@ export async function runRepositoryExportValidation(
 				cleanupPolicy: "after-evidence",
 				transactionId,
 				onPhasePersisted: (phase) => {
-					if (phase === "prepared" && options.stopAfter === "prepared") {
-						throw new Error("injected stop after prepared");
+					if (phase === options.stopAfter) {
+						throw new Error(`injected stop after ${phase}`);
+					}
+					if (
+						phase === "commit-ready" &&
+						options.stopAfter === "rolling-back"
+					) {
+						throw new Error("injected failure before rolling back");
 					}
 				},
 			});
@@ -530,6 +633,766 @@ export async function runRepositoryExportValidation(
 		selectedCheck: options.selectedCheck ?? runFreshSelectedCheck,
 		lockRunner: options.lockRunner,
 	});
+}
+
+/**
+ * Establish the personal bundle's one-time D-015 authorization without
+ * changing its target, manifest, journal, or repository evidence.
+ */
+export async function proveExternalBundleLineage(options: {
+	readonly projectRoot: string;
+	readonly homeRoot?: string;
+	readonly revision?: string;
+	readonly asset?: HarnessAsset;
+}): Promise<ExternalBundleMigrationProof> {
+	const projectRoot = await realpath(options.projectRoot);
+	const homeRoot = options.homeRoot
+		? await realpath(options.homeRoot)
+		: resolve(process.env.HOME ?? dirname(projectRoot));
+	const asset = options.asset ?? requireExternalBundleAsset();
+	const sourceRoot = await realpath(asset.sourceRoot);
+	const sourceRelativePath = portableRelative(
+		projectRoot,
+		join(sourceRoot, asset.sourcePath),
+	);
+	if (
+		asset.assetId !== EXTERNAL_BUNDLE_ASSET_ID ||
+		asset.kind !== "skill" ||
+		asset.ownership.kind !== "authority" ||
+		asset.ownership.authorityId !== "cosmonauts/core" ||
+		asset.outputIdentity !== "cosmonauts" ||
+		sourceRelativePath !== "external-skills/cosmonauts"
+	) {
+		throw new Error(
+			"External bundle asset does not match its stable authority, source, asset, and output identity.",
+		);
+	}
+	const revision = options.revision ?? DEFAULT_EXTERNAL_BUNDLE_REVISION;
+	const target = resolveHarnessAssetTarget({
+		targetId: "claude",
+		asset,
+		scope: "personal",
+		requestedMode: "copy",
+		roots: { projectRoot, homeRoot },
+	});
+	const owner = await resolveAssetOwnerIdentity(asset, projectRoot);
+	const [historical, currentTarget, source] = await Promise.all([
+		readGitTree(projectRoot, revision, sourceRelativePath),
+		readFilesystemTree(target.targetPath),
+		readFilesystemTree(join(sourceRoot, asset.sourcePath)),
+	]);
+	const expected = {
+		revision,
+		sourceRelativePath,
+		owner,
+		assetId: EXTERNAL_BUNDLE_ASSET_ID,
+		outputPath: target.targetPath,
+		nodeShape: historical.shape,
+	} as const;
+	const authorization = verifyLegacyMigrationProof(
+		{
+			...expected,
+			historicalRenderedDigest: snapshotDigest(historical.snapshot),
+			currentTargetDigest: snapshotDigest(currentTarget.snapshot),
+			historicalNodeShape: historical.shape,
+			currentTargetNodeShape: currentTarget.shape,
+		},
+		expected,
+	);
+	if (!authorization) {
+		throw new Error(
+			`Historical byte lineage failed for ${EXTERNAL_BUNDLE_ASSET_ID} at ${revision}:${sourceRelativePath}; personal bundle and manifest preserved.`,
+		);
+	}
+	return {
+		asset,
+		target,
+		authorization,
+		historicalDigest: snapshotDigest(historical.snapshot),
+		sourceDigest: snapshotDigest(source.snapshot),
+		oldDigest: snapshotDigest(currentTarget.snapshot),
+		nodeShape: historical.shape,
+	};
+}
+
+/** Run step 8b only after the durable four-row project evidence is complete. */
+export async function runPersonalBundleValidation(
+	options: RunPersonalBundleValidationOptions,
+): Promise<RepositoryExportValidationEvidence> {
+	const requestedProjectRoot = resolve(options.projectRoot);
+	const projectRoot = await realpath(options.projectRoot);
+	const homeRoot = options.homeRoot
+		? await realpath(options.homeRoot)
+		: resolve(process.env.HOME ?? dirname(projectRoot));
+	const requestedEvidencePath = resolve(
+		options.evidencePath ?? join(requestedProjectRoot, EVIDENCE_RELATIVE_PATH),
+	);
+	const evidencePath = join(
+		projectRoot,
+		relative(requestedProjectRoot, requestedEvidencePath),
+	);
+	assertContained(projectRoot, evidencePath, "repository evidence");
+	await assertIgnorePrerequisites(projectRoot);
+	await assertNoVisibleTransactionArtifacts(projectRoot);
+
+	let repositoryEvidence = await readEvidence(evidencePath);
+	if (!repositoryEvidence || repositoryEvidence.phase !== "complete") {
+		throw new Error(
+			"Project evidence must be durable and complete before personal bundle migration.",
+		);
+	}
+	validateEvidenceIdentity(repositoryEvidence, projectRoot, evidencePath);
+	await assertCompleteProjectEvidence(repositoryEvidence);
+	await assertProtectedAssets(
+		repositoryEvidence.protectedAssets.filter(
+			(asset) => asset.label !== "personal-cosmonauts-bundle",
+		),
+	);
+
+	const existing = repositoryEvidence.externalBundle;
+	if (existing?.phase === "complete") {
+		validateExternalBundleIdentity(existing, homeRoot);
+		const current = await observeHarnessNodeSnapshot(existing.outputPath);
+		if (snapshotDigest(current) !== existing.newDigest) {
+			throw new Error(
+				`Completed personal bundle evidence no longer matches ${existing.outputPath}.`,
+			);
+		}
+		return repositoryEvidence;
+	}
+	if (existing?.phase === "installed" || existing?.phase === "checked") {
+		validateExternalBundleIdentity(existing, homeRoot);
+		return finishExternalBundleEvidence({
+			...options,
+			projectRoot,
+			homeRoot,
+			evidencePath,
+			repositoryEvidence,
+			selectedCheck: options.selectedCheck ?? runFreshExternalBundleCheck,
+		});
+	}
+
+	let priorRecoveryOutcome: string | undefined;
+	if (existing?.phase === "authorized") {
+		validateExternalBundleIdentity(existing, homeRoot);
+		const journalPath = resolveHarnessTransactionPaths(
+			existing.ownerRoot,
+			"claude",
+		).journalPath;
+		if (await pathExists(journalPath)) {
+			const recovered = await withOwnerRootTransaction(
+				{
+					ownerRoot: existing.ownerRoot,
+					targetId: "claude",
+					...(options.lockRunner ? { lockRunner: options.lockRunner } : {}),
+				},
+				async () => "recovered" as const,
+			);
+			if (recovered.state === "persisted-release-unconfirmed") {
+				throw new Error(
+					`Harness transaction release is unconfirmed: ${errorMessage(recovered.error)}. Retry before command bootstrap.`,
+				);
+			}
+			if (recovered.state === "lock-contended") {
+				throw new Error(
+					`Harness transaction lock contended at ${recovered.lockPath}.`,
+				);
+			}
+			if (recovered.state === "recovery-required") {
+				if (
+					recovered.recovery.state !== "evidence-required" ||
+					recovered.recovery.transactionId !== existing.transactionId
+				) {
+					throw new Error(
+						`Harness recovery is ambiguous: ${JSON.stringify(recovered.recovery)}.`,
+					);
+				}
+				const journal = await readCommittedJournal(
+					existing.ownerRoot,
+					existing.transactionId,
+				);
+				const installed = makeInstalledExternalBundleEvidence(
+					existing,
+					journal,
+					"committed:evidence-required",
+					(options.now ?? (() => new Date()))().toISOString(),
+				);
+				repositoryEvidence = {
+					...repositoryEvidence,
+					externalBundle: installed,
+				};
+				await persistEvidence(evidencePath, repositoryEvidence);
+				if (options.stopAfter === "installed") {
+					throw new Error("injected stop after installed");
+				}
+				return finishExternalBundleEvidence({
+					...options,
+					projectRoot,
+					homeRoot,
+					evidencePath,
+					repositoryEvidence,
+					selectedCheck: options.selectedCheck ?? runFreshExternalBundleCheck,
+				});
+			}
+			priorRecoveryOutcome = describeRecovery(recovered.recovery);
+		}
+	}
+
+	const proof = await proveExternalBundleLineage({
+		projectRoot,
+		homeRoot,
+		revision: options.revision,
+		asset: options.asset,
+	});
+	const generatedNodes =
+		options.generatedNodes ??
+		(await createLiveExternalBundleGeneratedNodes(projectRoot, proof.asset));
+	const timestamp = (options.now ?? (() => new Date()))().toISOString();
+	const prepared = await prepareExternalBundle(
+		projectRoot,
+		proof,
+		generatedNodes,
+		() => new Date(existing?.authorizedAt ?? timestamp),
+	);
+	const ownerRoot = prepared.target.ownerRoot;
+	const manifestPath = join(ownerRoot, ".cosmonauts-harness-manifest.json");
+	const manifest = await readHarnessManifest(manifestPath);
+	assertNoExternalBundleClaim(manifest, prepared);
+	const oldManifest = await observeManifest(manifestPath);
+	const newManifestContents = mergeExternalBundleManifest(manifest, prepared);
+	const transactionId = existing?.transactionId ?? randomUUID();
+	const externalBundle =
+		existing ??
+		makeAuthorizedExternalBundleEvidence({
+			transactionId,
+			timestamp,
+			newManifestContents,
+			prepared,
+		});
+	repositoryEvidence = { ...repositoryEvidence, externalBundle };
+	await persistEvidence(evidencePath, repositoryEvidence);
+
+	const transactionResult = await withOwnerRootTransaction(
+		{
+			ownerRoot,
+			targetId: "claude",
+			...(options.lockRunner ? { lockRunner: options.lockRunner } : {}),
+		},
+		async (transaction) => {
+			await options.onTransactionLock?.();
+			const lockedProof = await proveExternalBundleLineage({
+				projectRoot,
+				homeRoot,
+				revision: options.revision,
+				asset: options.asset,
+			});
+			assertExternalProofMatchesEvidence(lockedProof, externalBundle);
+			return applySyncPlanInTransaction(transaction, {
+				oldManifest,
+				newManifestContents,
+				members: [
+					{
+						targetPath: prepared.outputPath,
+						oldState: prepared.oldState,
+						newState: prepared.newState,
+						writeStage: prepared.writeStage,
+					},
+				],
+				cleanupPolicy: "after-evidence",
+				transactionId,
+				onPhasePersisted: (phase) => {
+					if (phase === options.stopAfter) {
+						throw new Error(`injected stop after ${phase}`);
+					}
+					if (
+						phase === "commit-ready" &&
+						options.stopAfter === "rolling-back"
+					) {
+						throw new Error("injected failure before rolling back");
+					}
+				},
+			});
+		},
+	);
+
+	if (transactionResult.state === "persisted-release-unconfirmed") {
+		throw new Error(
+			`Harness transaction release is unconfirmed: ${errorMessage(transactionResult.error)}. Retry before command bootstrap.`,
+		);
+	}
+	if (transactionResult.state === "lock-contended") {
+		throw new Error(
+			`Harness transaction lock contended at ${transactionResult.lockPath}.`,
+		);
+	}
+	if (transactionResult.state === "recovery-required") {
+		if (
+			transactionResult.recovery.state !== "evidence-required" ||
+			transactionResult.recovery.transactionId !== transactionId
+		) {
+			throw new Error(
+				`Harness recovery is ambiguous: ${JSON.stringify(transactionResult.recovery)}.`,
+			);
+		}
+	} else if (transactionResult.result.state !== "evidence-required") {
+		throw new Error(
+			transactionResult.result.state === "restored-old"
+				? "Harness migration restored old personal bundle bytes after a prepared/install failure."
+				: `Personal bundle migration did not reach evidence hold: ${JSON.stringify(transactionResult.result)}.`,
+		);
+	}
+
+	const journal = await readCommittedJournal(ownerRoot, transactionId);
+	const recovery =
+		priorRecoveryOutcome ??
+		(transactionResult.state === "completed"
+			? describeRecovery(transactionResult.recovery)
+			: "committed:evidence-required");
+	const installed = makeInstalledExternalBundleEvidence(
+		externalBundle,
+		journal,
+		recovery,
+		(options.now ?? (() => new Date()))().toISOString(),
+	);
+	repositoryEvidence = { ...repositoryEvidence, externalBundle: installed };
+	await persistEvidence(evidencePath, repositoryEvidence);
+	if (options.stopAfter === "installed") {
+		throw new Error("injected stop after installed");
+	}
+	return finishExternalBundleEvidence({
+		...options,
+		projectRoot,
+		homeRoot,
+		evidencePath,
+		repositoryEvidence,
+		selectedCheck: options.selectedCheck ?? runFreshExternalBundleCheck,
+	});
+}
+
+async function prepareExternalBundle(
+	projectRoot: string,
+	proof: ExternalBundleMigrationProof,
+	generatedNodes: readonly GeneratedHarnessNode[],
+	now: () => Date,
+): Promise<ExternalBundlePrepared> {
+	const prepared = await prepareHarnessMaterialization({
+		projectRoot,
+		asset: proof.asset,
+		target: proof.target,
+		mode: "copy",
+		generatedNodes,
+	});
+	const desired = await syncHarnessAsset({
+		projectRoot,
+		asset: proof.asset,
+		target: proof.target,
+		check: true,
+		generatedNodes,
+		now,
+	});
+	const scratch = await mkdtemp(
+		join(tmpdir(), "cosmonauts-external-bundle-render-"),
+	);
+	const scratchTarget = join(scratch, "cosmonauts");
+	let newState: HarnessNodeSnapshot;
+	try {
+		await writePreparedTarget({ targetPath: scratchTarget, prepared });
+		newState = await observeHarnessNodeSnapshot(scratchTarget);
+	} finally {
+		await rm(scratch, { recursive: true, force: true });
+	}
+	const oldState = await observeHarnessNodeSnapshot(proof.target.targetPath);
+	if (snapshotDigest(oldState) !== proof.oldDigest) {
+		throw new Error(
+			"Historical byte lineage changed while preparing the personal bundle; no migration writes were made.",
+		);
+	}
+	return {
+		asset: proof.asset,
+		target: proof.target,
+		outputPath: proof.target.targetPath,
+		authorization: proof.authorization,
+		historicalDigest: proof.historicalDigest,
+		sourceDigest: proof.sourceDigest,
+		oldDigest: proof.oldDigest,
+		newDigest: snapshotDigest(newState),
+		oldState,
+		newState,
+		manifestEntry: desired.manifestEntry,
+		writeStage: (stagePath) =>
+			writePreparedTarget({ targetPath: stagePath, prepared }),
+	};
+}
+
+async function finishExternalBundleEvidence(options: {
+	readonly projectRoot: string;
+	readonly homeRoot: string;
+	readonly evidencePath: string;
+	readonly repositoryEvidence: RepositoryExportValidationEvidence;
+	readonly selectedCheck: RepositorySelectedCheck;
+	readonly stopAfter?: RepositoryValidationStop;
+	readonly now?: () => Date;
+	readonly lockRunner?: NonNullable<
+		WithOwnerRootTransactionOptions["lockRunner"]
+	>;
+}): Promise<RepositoryExportValidationEvidence> {
+	const externalBundle = options.repositoryEvidence.externalBundle;
+	if (
+		!externalBundle ||
+		(externalBundle.phase !== "installed" && externalBundle.phase !== "checked")
+	) {
+		throw new Error("Personal bundle evidence is not ready for finalization.");
+	}
+	const receipt =
+		externalBundle.phase === "installed"
+			? await createExternalBundleReceiptProjection(
+					externalBundle,
+					options.evidencePath,
+				)
+			: undefined;
+	const result = await withOwnerRootTransaction(
+		{
+			ownerRoot: externalBundle.ownerRoot,
+			targetId: "claude",
+			...(receipt ? { evidenceReceipt: receipt } : {}),
+			...(options.lockRunner ? { lockRunner: options.lockRunner } : {}),
+		},
+		async () => {
+			let repositoryEvidence = options.repositoryEvidence;
+			let current = externalBundle;
+			if (current.phase === "installed") {
+				const checked = await options.selectedCheck({
+					projectRoot: options.projectRoot,
+					rows: [externalBundleAsPrepared(current)],
+				});
+				assertExternalBundleSelectedCheck(checked, current);
+				const timestamp = (options.now ?? (() => new Date()))().toISOString();
+				current = {
+					...current,
+					phase: "checked",
+					receipt,
+					checkRow: checked.rows[0],
+					checkedAt: timestamp,
+				};
+				repositoryEvidence = { ...repositoryEvidence, externalBundle: current };
+				await persistEvidence(options.evidencePath, repositoryEvidence);
+				if (options.stopAfter === "checked") {
+					throw new Error("injected stop after checked");
+				}
+			}
+
+			const backup = await observeHarnessNodeSnapshot(current.backupPath);
+			if (
+				!(backup.kind === "absent" && current.backupExit === "removed-exact")
+			) {
+				if (!sameSnapshot(backup, current.oldState)) {
+					throw new Error(
+						`Retained personal bundle backup is ambiguous: ${current.backupPath}.`,
+					);
+				}
+				await rm(current.backupPath, { recursive: true, force: true });
+			}
+			const timestamp = (options.now ?? (() => new Date()))().toISOString();
+			current = { ...current, backupExit: "removed-exact" };
+			repositoryEvidence = { ...repositoryEvidence, externalBundle: current };
+			await unlink(externalBundleReceiptPath(current)).catch(
+				(error: NodeJS.ErrnoException) => {
+					if (error.code !== "ENOENT") throw error;
+				},
+			);
+			if (options.stopAfter === "backup-cleanup") {
+				await persistEvidence(options.evidencePath, repositoryEvidence);
+				throw new Error("injected stop after backup cleanup");
+			}
+			await assertProtectedAssets(
+				repositoryEvidence.protectedAssets.filter(
+					(asset) => asset.label !== "personal-cosmonauts-bundle",
+				),
+			);
+			const complete = {
+				...repositoryEvidence,
+				externalBundle: {
+					...current,
+					phase: "complete",
+					completedAt: timestamp,
+				},
+			} as const satisfies RepositoryExportValidationEvidence;
+			await persistEvidence(options.evidencePath, complete);
+			return complete;
+		},
+	);
+
+	if (result.state === "persisted-release-unconfirmed") {
+		throw new Error(
+			`Harness transaction release is unconfirmed: ${errorMessage(result.error)}. Retry before command bootstrap.`,
+		);
+	}
+	if (result.state !== "completed") {
+		throw new Error(
+			`Cannot finalize personal bundle evidence: ${JSON.stringify(result)}.`,
+		);
+	}
+	await assertNoVisibleTransactionArtifacts(options.projectRoot);
+	return result.result;
+}
+
+function makeAuthorizedExternalBundleEvidence(options: {
+	readonly transactionId: string;
+	readonly timestamp: string;
+	readonly newManifestContents: string;
+	readonly prepared: ExternalBundlePrepared;
+}): ExternalBundleEvidence {
+	const journalPath = resolveHarnessTransactionPaths(
+		options.prepared.target.ownerRoot,
+		"claude",
+	).journalPath;
+	const journalStem = basename(journalPath, ".journal.json");
+	return {
+		authorizationKind: "legacy-copied-target",
+		consumption: "one-time",
+		phase: "authorized",
+		transactionId: options.transactionId,
+		revision: options.prepared.authorization.revision,
+		sourceRelativePath: "external-skills/cosmonauts",
+		historicalDigest: options.prepared.historicalDigest,
+		sourceDigest: options.prepared.sourceDigest,
+		oldDigest: options.prepared.oldDigest,
+		newDigest: options.prepared.newDigest,
+		ownerId: options.prepared.authorization.owner.ownerId,
+		authorityId: "cosmonauts/core",
+		assetId: EXTERNAL_BUNDLE_ASSET_ID,
+		manifestKey: manifestEntryKey(
+			options.prepared.authorization.owner,
+			EXTERNAL_BUNDLE_ASSET_ID,
+		),
+		ownerRoot: options.prepared.target.ownerRoot,
+		outputPath: options.prepared.outputPath,
+		nodeShape: options.prepared.authorization.nodeShape,
+		newManifestDigest: sha256(options.newManifestContents),
+		backupPath: join(
+			dirname(journalPath),
+			`${journalStem}-${options.transactionId}-0.backup`,
+		),
+		oldState: options.prepared.oldState,
+		recoveryOutcome: "not-started",
+		authorizedAt: options.timestamp,
+	};
+}
+
+function makeInstalledExternalBundleEvidence(
+	evidence: ExternalBundleEvidence,
+	journal: OwnerRootTransactionJournal,
+	recoveryOutcome: string,
+	timestamp: string,
+): ExternalBundleEvidence {
+	const member = journal.members[0];
+	if (
+		journal.phase !== "committed" ||
+		journal.cleanupPolicy !== "after-evidence" ||
+		journal.members.length !== 1 ||
+		journal.newManifest.kind !== "file" ||
+		journal.newManifest.digest !== evidence.newManifestDigest ||
+		!member ||
+		member.targetPath !== evidence.outputPath ||
+		member.backupPath !== evidence.backupPath ||
+		!sameSnapshot(member.oldState, evidence.oldState) ||
+		snapshotDigest(member.newState) !== evidence.newDigest
+	) {
+		throw new Error(
+			"Committed personal bundle journal does not match evidence.",
+		);
+	}
+	return {
+		...evidence,
+		phase: "installed",
+		recoveryOutcome,
+		installedAt: timestamp,
+	};
+}
+
+async function createExternalBundleReceiptProjection(
+	evidence: ExternalBundleEvidence,
+	repositoryEvidencePath: string,
+): Promise<RepositoryEvidenceReceipt> {
+	const evidencePath = externalBundleReceiptPath(evidence);
+	const repositoryEvidenceDigest = sha256(
+		await readFile(repositoryEvidencePath, "utf8"),
+	);
+	const raw = `${JSON.stringify(
+		{
+			schemaVersion: 1,
+			transactionId: evidence.transactionId,
+			phase: "installed",
+			newManifestDigest: evidence.newManifestDigest,
+			repositoryEvidencePath,
+			repositoryEvidenceDigest,
+		},
+		null,
+		"\t",
+	)}\n`;
+	await writeDurableFile(evidencePath, raw);
+	return {
+		transactionId: evidence.transactionId,
+		evidencePath,
+		evidenceDigest: sha256(raw),
+	};
+}
+
+function externalBundleReceiptPath(evidence: ExternalBundleEvidence): string {
+	return join(
+		dirname(evidence.ownerRoot),
+		`.cosmonauts-harness-claude-${evidence.transactionId}.evidence-receipt.json`,
+	);
+}
+
+function mergeExternalBundleManifest(
+	manifest: HarnessProvenanceManifest,
+	prepared: ExternalBundlePrepared,
+): string {
+	const entries = { ...manifest.entries } as Record<
+		string,
+		MaterializedHarnessManifestEntry
+	>;
+	entries[
+		manifestEntryKey(prepared.manifestEntry.owner, prepared.asset.assetId)
+	] = prepared.manifestEntry;
+	return serializeHarnessManifest({ schemaVersion: 1, entries });
+}
+
+function assertNoExternalBundleClaim(
+	manifest: HarnessProvenanceManifest,
+	prepared: ExternalBundlePrepared,
+): void {
+	for (const entry of Object.values(manifest.entries)) {
+		if (entry.outputPath === prepared.outputPath) {
+			throw new Error(
+				`Personal bundle target already has a manifest claim: ${entry.outputPath}.`,
+			);
+		}
+	}
+}
+
+function assertExternalProofMatchesEvidence(
+	proof: ExternalBundleMigrationProof,
+	evidence: ExternalBundleEvidence,
+): void {
+	if (
+		evidence.revision !== proof.authorization.revision ||
+		evidence.historicalDigest !== proof.historicalDigest ||
+		evidence.oldDigest !== proof.oldDigest ||
+		evidence.ownerId !== proof.authorization.owner.ownerId ||
+		evidence.outputPath !== proof.authorization.outputPath ||
+		JSON.stringify(evidence.nodeShape) !== JSON.stringify(proof.nodeShape)
+	) {
+		throw new Error(
+			"Historical byte lineage changed under lock for the personal bundle.",
+		);
+	}
+}
+
+function externalBundleAsPrepared(
+	evidence: ExternalBundleEvidence,
+): SelectedCheckSubject {
+	return {
+		assetId: EXTERNAL_BUNDLE_ASSET_ID,
+		outputPath: evidence.outputPath,
+	};
+}
+
+function assertExternalBundleSelectedCheck(
+	check: Awaited<ReturnType<RepositorySelectedCheck>>,
+	evidence: ExternalBundleEvidence,
+): void {
+	const row = check.rows[0];
+	if (
+		check.exitCode !== 0 ||
+		check.rows.length !== 1 ||
+		!row ||
+		row.asset !== evidence.assetId ||
+		row.targetPath !== evidence.outputPath ||
+		row.final !== "current"
+	) {
+		throw new Error(
+			`The personal-bundle selected harness check was not zero/current: ${JSON.stringify(check)}.`,
+		);
+	}
+}
+
+function validateExternalBundleIdentity(
+	evidence: ExternalBundleEvidence,
+	homeRoot: string,
+): void {
+	if (
+		evidence.assetId !== EXTERNAL_BUNDLE_ASSET_ID ||
+		evidence.authorityId !== "cosmonauts/core" ||
+		evidence.sourceRelativePath !== "external-skills/cosmonauts" ||
+		evidence.ownerRoot !== join(homeRoot, ".claude") ||
+		evidence.outputPath !== join(homeRoot, ".claude/skills/cosmonauts") ||
+		!evidence.manifestKey.includes(EXTERNAL_BUNDLE_ASSET_ID) ||
+		!evidence.ownerId.startsWith("authority:") ||
+		!resolve(evidence.outputPath).startsWith(resolve(homeRoot) + sep)
+	) {
+		throw new Error(
+			"Personal bundle evidence identity does not match this run.",
+		);
+	}
+}
+
+async function assertCompleteProjectEvidence(
+	evidence: RepositoryExportValidationEvidence,
+): Promise<void> {
+	if (
+		evidence.phase !== "complete" ||
+		evidence.rows.length !== PROJECT_EXPORT_ROWS.length ||
+		evidence.rows.some((row, index) => {
+			const expected = PROJECT_EXPORT_ROWS[index];
+			return (
+				!expected ||
+				row.assetId !== expected.assetId ||
+				row.historicalDigest !== row.oldDigest ||
+				row.receipt?.transactionId !== evidence.transactionId ||
+				row.checkRow?.final !== "current" ||
+				row.backupExit !== "removed-exact" ||
+				!row.manifestKey.includes(row.ownerId) ||
+				!row.manifestKey.includes(row.assetId)
+			);
+		})
+	) {
+		throw new Error(
+			"Project evidence is not the durable complete exact four-row authorization required before the personal bundle.",
+		);
+	}
+	for (const row of evidence.rows) {
+		if ((await observeHarnessNodeSnapshot(row.backupPath)).kind !== "absent") {
+			throw new Error(
+				`Project backup cleanup is incomplete: ${row.backupPath}.`,
+			);
+		}
+	}
+}
+
+function requireExternalBundleAsset(): HarnessAsset {
+	const asset = getStaticHarnessAsset(EXTERNAL_BUNDLE_ASSET_ID);
+	if (!asset)
+		throw new Error("Registered external cosmonauts bundle is absent.");
+	return asset;
+}
+
+async function createLiveExternalBundleGeneratedNodes(
+	projectRoot: string,
+	asset: HarnessAsset,
+): Promise<readonly GeneratedHarnessNode[]> {
+	const frameworkRoot = await realpath(asset.sourceRoot);
+	const runtime = await CosmonautsRuntime.create({
+		builtinDomainsDir: join(frameworkRoot, "domains"),
+		projectRoot,
+		bundledDirs: await discoverFrameworkBundledPackageDirs(frameworkRoot),
+	});
+	const inventory = await composeHarnessRuntimeInventory({
+		projectRoot,
+		runtime,
+	});
+	return [createCosmonautsInventoryGeneratedNode(inventory)];
 }
 
 async function finishInstalledEvidence(options: {
@@ -991,6 +1854,37 @@ const runFreshSelectedCheck: RepositorySelectedCheck = async ({
 	}
 };
 
+const runFreshExternalBundleCheck: RepositorySelectedCheck = async ({
+	projectRoot,
+}) => {
+	const args = [
+		"harness",
+		"--json",
+		"sync",
+		"--target",
+		"claude",
+		"--scope",
+		"personal",
+		"--kind",
+		"skill",
+		"--asset",
+		EXTERNAL_BUNDLE_ASSET_ID,
+		"--check",
+	];
+	try {
+		const { stdout } = await execFileAsync("cosmonauts", args, {
+			cwd: projectRoot,
+			maxBuffer: 10 * 1024 * 1024,
+		});
+		return parseSelectedCheck(stdout, 0);
+	} catch (error) {
+		if (isRecord(error) && typeof error.stdout === "string") {
+			return parseSelectedCheck(error.stdout, 1);
+		}
+		throw error;
+	}
+};
+
 function parseSelectedCheck(
 	stdout: string,
 	exitCode: number,
@@ -1409,7 +2303,10 @@ function errorMessage(error: unknown): string {
 }
 
 async function main(): Promise<void> {
-	const evidence = await runRepositoryExportValidation({
+	await runRepositoryExportValidation({
+		projectRoot: process.cwd(),
+	});
+	const evidence = await runPersonalBundleValidation({
 		projectRoot: process.cwd(),
 	});
 	process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);
