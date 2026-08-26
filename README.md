@@ -186,6 +186,25 @@ Agents use the same driver through `run_driver` and monitor new runs with `run_s
 
 External backends are `codex` and `claude-cli`; `cosmonauts-subagent` is inline-only for in-process Cosmonauts agent runs. See `domains/shared/skills/drive/SKILL.md` and `lib/driver/README.md` for backend environment controls.
 
+### Harness Sync
+
+Synchronize runtime-visible skills and registered commands into supported Claude Code and Codex owner roots with provenance-aware copy or local-link materialization:
+
+```bash
+cosmonauts harness sync [--target <id>] [--scope project|personal] \
+  [--kind skill|command] [--asset <assetId>] [--copy|--link] \
+  [--check] [--forget-removed <assetId>] [--transfer-owner <ownerId>] \
+  [--json|--plain]
+```
+
+`--target`, `--scope`, `--kind`, and `--asset` are repeatable and deduplicated. With no target, supported Claude and Codex targets are selected. With no scope, every descriptor uses its registered default (runtime skills are project-scoped; the external `cosmonauts` bundle and commands are personal). An explicit scope overrides those defaults. Any explicit asset list is a partial reconciliation; omitted catalogue and manifest rows are untouched. `--copy` and `--link` are exclusive, and command assets support copy only.
+
+`--check` is read-only and reports each selected row as one of `missing`, `current`, `source-ahead`, or `locally-edited`. Rows include owner diagnostics, source and target paths, recorded and requested modes, before reason, action and final state, recovery/evidence/discovery detail, and any release warning. JSON and tab-separated plain reports are available with `--json` and `--plain`.
+
+A normal sync exits nonzero for any conflict, incomplete inventory, ambiguous recovery, evidence-required state, containment or write failure, or unconfirmed release row. A check exits nonzero for every non-`current` row and never calls transaction or materialization code. `--forget-removed` cannot combine with check, mode, asset selection, or owner transfer. `--transfer-owner` requires explicit assets and cannot combine with check, mode, or forget.
+
+`cosmonauts skills export --target claude|codex [--personal] (--all|<skills...>)` remains the compatibility skill-only facade. Every invocation is partial, including `--all`, so it never reconciles the external bundle, commands, or omitted manifest entries.
+
 ### Task Management
 
 Manage tasks directly via subcommands:

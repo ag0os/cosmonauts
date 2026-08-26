@@ -3,9 +3,10 @@
  * detection helpers (isCosmonautsFrameworkRepo, discoverBundledPackageDirs).
  */
 
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { createHarnessProgram } from "../../cli/harness/subcommand.ts";
 import {
 	type AgentListItem,
 	buildInitNoRunnableDefaultDomainLines,
@@ -95,6 +96,50 @@ function expectRunModes(scenarios: readonly RunModeScenario[]): void {
 }
 
 describe("parseCliArgs", () => {
+	test("registers and documents harness sync without a root chain-list flag", async () => {
+		const harness = createHarnessProgram();
+		const sync = harness.commands.find((command) => command.name() === "sync");
+		const vocabulary = [
+			"--target",
+			"--scope",
+			"--kind",
+			"--asset",
+			"--copy",
+			"--link",
+			"--check",
+			"--forget-removed",
+			"--transfer-owner",
+			"--json",
+			"--plain",
+		];
+		const [mainSource, readme, orchestration] = await Promise.all([
+			readFile(new URL("../../cli/main.ts", import.meta.url), "utf8"),
+			readFile(new URL("../../README.md", import.meta.url), "utf8"),
+			readFile(new URL("../../docs/orchestration.md", import.meta.url), "utf8"),
+		]);
+		expect(mainSource).toMatch(/subcommand === "harness"/);
+		expect(sync).toBeDefined();
+		for (const flag of vocabulary) {
+			expect(
+				`${harness.helpInformation()}\n${sync?.helpInformation()}`,
+			).toContain(flag);
+			expect(readme).toContain(flag);
+			expect(orchestration).toContain(flag);
+		}
+		for (const state of [
+			"missing",
+			"current",
+			"source-ahead",
+			"locally-edited",
+		]) {
+			expect(readme).toContain(state);
+			expect(orchestration).toContain(state);
+		}
+		expect(mainSource).not.toContain("--list-chains");
+		expect(readme).not.toContain("--list-chains");
+		expect(orchestration).not.toContain("--list-chains");
+	});
+
 	test("defaults: interactive mode, no prompt", () => {
 		const opts = parseCliArgs([]);
 

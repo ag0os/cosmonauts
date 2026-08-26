@@ -2,11 +2,16 @@
  * Tests for skill exporter.
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { exportSkill, resolveTargetDir } from "../../lib/skills/exporter.ts";
+import { renderIdentityMarkdown } from "../../lib/harness-adapters/render.ts";
+import {
+	exportSkill,
+	resolveTargetDir,
+	runHarnessSync,
+} from "../../lib/skills/exporter.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("skills-export-");
@@ -83,6 +88,17 @@ describe("resolveTargetDir", () => {
 });
 
 describe("exportSkill", () => {
+	test("routes compatibility export through provenance without a destructive copier", async () => {
+		const source = await readFile(
+			new URL("../../lib/skills/exporter.ts", import.meta.url),
+			"utf8",
+		);
+		expect(source).not.toMatch(/\bcp\s*\(/);
+		expect(source).not.toMatch(/rm\s*\(\s*targetPath/);
+		expect(source).toContain("runHarnessSync");
+		expect(source).toContain("applySyncPlanInTransaction");
+	});
+
 	test("copies SKILL.md to target directory", async () => {
 		// Create source skill
 		const sourceDir = join(tmp.path, "source", "plan");
@@ -158,7 +174,7 @@ describe("exportSkill", () => {
 
 		// But SKILL.md should still be there
 		const content = await readFile(join(first.targetPath, "SKILL.md"), "utf-8");
-		expect(content).toBe("v1");
+		expect(content).toBe(renderIdentityMarkdown(Buffer.from("v1")).toString());
 	});
 
 	test("overwrites existing export", async () => {
@@ -183,6 +199,74 @@ describe("exportSkill", () => {
 			join(result.targetPath, "SKILL.md"),
 			"utf-8",
 		);
-		expect(content).toBe("version 2");
+		expect(content).toBe(
+			renderIdentityMarkdown(Buffer.from("version 2")).toString(),
+		);
 	});
 });
+
+describe("runHarnessSync selection", () => {
+	test("omitted target selects Claude and Codex while descriptor scope defaults apply", async () => {
+		const projectRoot = join(tmp.path, "selection-project");
+		const homeRoot = join(tmp.path, "selection-home");
+		const sourceRoot = join(tmp.path, "selection-source");
+		await Promise.all([
+			mkdir(projectRoot, { recursive: true }),
+			mkdir(homeRoot, { recursive: true }),
+			mkdir(join(sourceRoot, "skill"), { recursive: true }),
+		]);
+		await writeFile(join(sourceRoot, "skill", "SKILL.md"), "# Selection\n");
+		const report = await runHarnessSync({
+			projectRoot,
+			homeRoot,
+			assets: [
+				{
+					assetId: "skill:selection",
+					kind: "skill",
+					ownership: {
+						kind: "authority",
+						authorityId: "cosmonauts/core",
+					},
+					sourceRootId: "selection:root",
+					sourceRoot,
+					sourcePath: "skill",
+					logicalPath: "skill",
+					outputIdentity: "selection",
+					defaultScope: "personal",
+				},
+			],
+			sourceHealth: [
+				{
+					sourceRootId: "selection:root",
+					sourceRoot,
+					domain: "selection",
+					status: "complete",
+					issues: [],
+				},
+			],
+			request: {
+				reconciliation: "partial",
+				check: true,
+				assetIds: ["skill:selection", "skill:selection"],
+			},
+		});
+		expect(
+			report.rows.map(({ target, scope, asset }) => ({ target, scope, asset })),
+		).toEqual([
+			{ target: "claude", scope: "personal", asset: "skill:selection" },
+			{ target: "codex", scope: "personal", asset: "skill:selection" },
+		]);
+		expect(report.exitCode).toBe(1);
+		await expect(exists(join(homeRoot, ".claude"))).resolves.toBe(false);
+		await expect(exists(join(homeRoot, ".agents"))).resolves.toBe(false);
+	});
+});
+
+async function exists(path: string): Promise<boolean> {
+	try {
+		await lstat(path);
+		return true;
+	} catch {
+		return false;
+	}
+}

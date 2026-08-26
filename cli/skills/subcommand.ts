@@ -10,10 +10,13 @@
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
+import { prepareSkillExportAssets } from "../../lib/harness-adapters/inventory.ts";
 import {
 	isImplementedHarnessTargetId,
 	listImplementedHarnessTargetIds,
 } from "../../lib/harness-adapters/registry.ts";
+import { createSkillsExportSyncRequest } from "../../lib/harness-adapters/sync.ts";
+import type { SourceHealthRow } from "../../lib/harness-adapters/types.ts";
 import { discoverFrameworkBundledPackageDirs } from "../../lib/packages/dev-bundled.ts";
 import { CosmonautsRuntime } from "../../lib/runtime.ts";
 import type {
@@ -21,9 +24,9 @@ import type {
 	ExtraSkillSource,
 } from "../../lib/skills/index.ts";
 import {
+	discoverSkillCandidatesStrict,
 	discoverSkills,
-	type ExportTarget,
-	exportSkill,
+	runHarnessSync,
 } from "../../lib/skills/index.ts";
 import type { CliOutputMode } from "../shared/output.ts";
 import { getOutputMode, printJson, printLines } from "../shared/output.ts";
@@ -86,8 +89,9 @@ export function renderSkillsList(
  * `cosmonauts export`, then discover every skill it can see — domain skill
  * dirs plus user-configured `skillPaths`.
  */
-async function discoverAllRuntimeSkills(
+export async function discoverAllRuntimeSkills(
 	options: SkillsProgramOptions,
+	projectRoot = process.cwd(),
 ): Promise<DiscoveredSkill[]> {
 	const frameworkRoot = resolve(
 		dirname(fileURLToPath(import.meta.url)),
@@ -101,7 +105,7 @@ async function discoverAllRuntimeSkills(
 
 	const runtime = await CosmonautsRuntime.create({
 		builtinDomainsDir: join(frameworkRoot, "domains"),
-		projectRoot: process.cwd(),
+		projectRoot,
 		bundledDirs,
 		domainOverride: options.domain,
 		pluginDirs,
@@ -112,6 +116,39 @@ async function discoverAllRuntimeSkills(
 	).map((skillsDir) => ({ skillsDir, domain: PROJECT_SKILL_DOMAIN }));
 
 	return discoverSkills(runtime.domains, projectExtras, {
+		domainContext: runtime.domainContext,
+	});
+}
+
+export interface RuntimeSkillExportDiscovery {
+	readonly candidates: Awaited<
+		ReturnType<typeof discoverSkillCandidatesStrict>
+	>["candidates"];
+	readonly sourceHealth: readonly SourceHealthRow[];
+}
+
+/** Strict runtime discovery shared by harness sync and compatibility export. */
+export async function discoverRuntimeSkillExports(
+	options: SkillsProgramOptions,
+	projectRoot = process.cwd(),
+): Promise<RuntimeSkillExportDiscovery> {
+	const frameworkRoot = resolve(
+		dirname(fileURLToPath(import.meta.url)),
+		"..",
+		"..",
+	);
+	const bundledDirs = await discoverFrameworkBundledPackageDirs(frameworkRoot);
+	const runtime = await CosmonautsRuntime.create({
+		builtinDomainsDir: join(frameworkRoot, "domains"),
+		projectRoot,
+		bundledDirs,
+		domainOverride: options.domain,
+		pluginDirs: options.pluginDir?.length ? [...options.pluginDir] : undefined,
+	});
+	const projectExtras: ExtraSkillSource[] = (
+		runtime.projectConfig.skillPaths ?? []
+	).map((skillsDir) => ({ skillsDir, domain: PROJECT_SKILL_DOMAIN }));
+	return discoverSkillCandidatesStrict(runtime.domains, projectExtras, {
 		domainContext: runtime.domainContext,
 	});
 }
@@ -174,10 +211,14 @@ export function createSkillsProgram(): Command {
 					return;
 				}
 
-				const target: ExportTarget = options.target;
 				const projectRoot = process.cwd();
 				const programOpts = program.opts<SkillsProgramOptions>();
-				const allSkills = await discoverAllRuntimeSkills(programOpts);
+				const discovered = await discoverRuntimeSkillExports(
+					programOpts,
+					projectRoot,
+				);
+				const inventory = prepareSkillExportAssets(discovered);
+				const allSkills = inventory.assets;
 
 				if (allSkills.length === 0) {
 					console.log("No skills found to export.");
@@ -193,7 +234,9 @@ export function createSkillsProgram(): Command {
 						return;
 					}
 
-					const skillMap = new Map(allSkills.map((s) => [s.name, s]));
+					const skillMap = new Map(
+						allSkills.map((skill) => [skill.outputIdentity, skill]),
+					);
 					const missing = skillNames.filter((n) => !skillMap.has(n));
 					if (missing.length > 0) {
 						console.error(
@@ -208,17 +251,27 @@ export function createSkillsProgram(): Command {
 						.filter((s) => s !== undefined);
 				}
 
-				// Export each skill
-				for (const skill of toExport) {
-					const result = await exportSkill(skill.dirPath, skill.name, {
-						target,
-						projectRoot,
-						personal: options.personal,
-					});
-					console.log(`  exported: ${skill.name} → ${result.targetPath}`);
+				const baseRequest = createSkillsExportSyncRequest(
+					toExport.map((skill) => skill.assetId),
+				);
+				const report = await runHarnessSync({
+					projectRoot,
+					homeRoot: (await import("node:os")).homedir(),
+					assets: toExport,
+					sourceHealth: discovered.sourceHealth,
+					request: {
+						...baseRequest,
+						targetIds: [options.target],
+						scopes: [options.personal ? "personal" : "project"],
+					},
+				});
+				for (const row of report.rows) {
+					console.log(`  exported: ${row.asset} → ${row.targetPath}`);
 				}
-
-				console.log(`\n${toExport.length} skill(s) exported to ${target}.`);
+				console.log(
+					`\n${toExport.length} skill(s) exported to ${options.target}.`,
+				);
+				if (report.exitCode !== 0) process.exitCode = 1;
 			} catch (error) {
 				console.error(`Error exporting skills: ${error}`);
 				process.exitCode = 1;

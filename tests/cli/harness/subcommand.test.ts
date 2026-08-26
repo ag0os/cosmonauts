@@ -1,0 +1,385 @@
+import { existsSync } from "node:fs";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import {
+	createHarnessProgram,
+	parseSyncRequest,
+} from "../../../cli/harness/subcommand.ts";
+import type { RuntimeSkillExportDiscovery } from "../../../cli/skills/subcommand.ts";
+import {
+	type HarnessSyncReport,
+	runHarnessSync,
+} from "../../../lib/skills/exporter.ts";
+import { captureCliOutput } from "../../helpers/cli.ts";
+import { useTempDir } from "../../helpers/fs.ts";
+
+const tmp = useTempDir("harness-cli-");
+
+afterEach(() => {
+	process.exitCode = undefined;
+	vi.restoreAllMocks();
+});
+
+describe("cosmonauts harness sync", () => {
+	test("registers the complete repeatable selector and reporting vocabulary", () => {
+		const program = createHarnessProgram();
+		const sync = program.commands.find((command) => command.name() === "sync");
+		expect(sync).toBeDefined();
+		expect(sync?.options.map((option) => option.long)).toEqual(
+			expect.arrayContaining([
+				"--target",
+				"--scope",
+				"--kind",
+				"--asset",
+				"--copy",
+				"--link",
+				"--check",
+				"--forget-removed",
+				"--transfer-owner",
+			]),
+		);
+		expect(program.options.map((option) => option.long)).toEqual([
+			"--json",
+			"--plain",
+		]);
+	});
+
+	test("deduplicates selectors and makes explicit assets partial", () => {
+		expect(
+			parseSyncRequest({
+				target: ["claude", "claude"],
+				scope: ["project", "project"],
+				kind: ["skill", "skill"],
+				asset: ["skill:alpha/plan", "skill:alpha/plan"],
+				forgetRemoved: [],
+				check: true,
+			}),
+		).toEqual({
+			targetIds: ["claude"],
+			scopes: ["project"],
+			kinds: ["skill"],
+			assetIds: ["skill:alpha/plan"],
+			reconciliation: "partial",
+			check: true,
+		});
+	});
+
+	test("rejects forget and transfer combinations before discovery or sync", async () => {
+		const discover = vi.fn();
+		const sync = vi.fn();
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		await createHarnessProgram({ discover, sync }).parseAsync(
+			["sync", "--forget-removed", "skill:x", "--check"],
+			{ from: "user" },
+		);
+		expect(discover).not.toHaveBeenCalled();
+		expect(sync).not.toHaveBeenCalled();
+		expect(error).toHaveBeenCalledWith(
+			expect.stringContaining("--forget-removed cannot combine"),
+		);
+		expect(process.exitCode).toBe(1);
+	});
+
+	test("emits every diagnostic report field in JSON and preserves exit status", async () => {
+		const output = captureCliOutput();
+		const report = reportFixture();
+		await createHarnessProgram({
+			projectRoot: tmp.path,
+			homeRoot: join(tmp.path, "home"),
+			discover: async () => emptyDiscovery(),
+			sync: async () => report,
+		}).parseAsync(["--json", "sync"], { from: "user" });
+		const parsed = JSON.parse(output.stdout()) as HarnessSyncReport;
+		expect(parsed).toEqual(report);
+		expect(process.exitCode).toBe(1);
+		output.restore();
+	});
+
+	test("check reports missing without creating roots locks manifests or targets", async () => {
+		const fixture = await runtimeSkillFixture("check");
+		const output = captureCliOutput();
+		await createHarnessProgram({
+			projectRoot: fixture.projectRoot,
+			homeRoot: fixture.homeRoot,
+			discover: async () => fixture.discovery,
+		}).parseAsync(
+			[
+				"--json",
+				"sync",
+				"--target",
+				"claude",
+				"--asset",
+				"skill:alpha/plan",
+				"--check",
+			],
+			{ from: "user" },
+		);
+		const parsed = JSON.parse(output.stdout()) as HarnessSyncReport;
+		expect(parsed.rows[0]).toMatchObject({
+			asset: "skill:alpha/plan",
+			before: "missing",
+			final: "missing",
+			action: "none",
+		});
+		expect(parsed.exitCode).toBe(1);
+		expect(existsSync(join(fixture.projectRoot, ".claude"))).toBe(false);
+		expect(
+			existsSync(join(fixture.projectRoot, ".cosmonauts-harness-claude.lock")),
+		).toBe(false);
+		output.restore();
+	});
+
+	test("normal sync materializes through provenance and a subsequent check is current", async () => {
+		const fixture = await runtimeSkillFixture("sync");
+		const firstOutput = captureCliOutput();
+		const dependencies = {
+			projectRoot: fixture.projectRoot,
+			homeRoot: fixture.homeRoot,
+			discover: async () => fixture.discovery,
+			sync: (options: Parameters<typeof runHarnessSync>[0]) =>
+				runHarnessSync({
+					...options,
+					assets: options.assets.filter(
+						(asset) => asset.assetId === "skill:alpha/plan",
+					),
+				}),
+		};
+		await createHarnessProgram(dependencies).parseAsync(
+			["--json", "sync", "--target", "claude", "--asset", "skill:alpha/plan"],
+			{ from: "user" },
+		);
+		const first = JSON.parse(firstOutput.stdout()) as HarnessSyncReport;
+		expect(first).toMatchObject({ exitCode: 0 });
+		expect(first.rows[0]).toMatchObject({
+			before: "missing",
+			final: "current",
+		});
+		firstOutput.restore();
+
+		const target = join(
+			fixture.projectRoot,
+			".claude",
+			"skills",
+			"plan",
+			"SKILL.md",
+		);
+		expect(await readFile(target, "utf8")).toContain("Generated by cosmonauts");
+		const secondOutput = captureCliOutput();
+		await createHarnessProgram(dependencies).parseAsync(
+			[
+				"--json",
+				"sync",
+				"--target",
+				"claude",
+				"--asset",
+				"skill:alpha/plan",
+				"--check",
+			],
+			{ from: "user" },
+		);
+		const second = JSON.parse(secondOutput.stdout()) as HarnessSyncReport;
+		expect(second).toMatchObject({ exitCode: 0 });
+		expect(second.rows[0]).toMatchObject({
+			before: "current",
+			final: "current",
+		});
+		secondOutput.restore();
+	});
+
+	test("complete sync preserves an edited removed source and explicit forget changes only provenance", async () => {
+		const fixture = await runtimeSkillFixture("forget");
+		const dependencies = {
+			projectRoot: fixture.projectRoot,
+			homeRoot: fixture.homeRoot,
+			discover: async () => fixture.discovery,
+			sync: (options: Parameters<typeof runHarnessSync>[0]) =>
+				runHarnessSync({
+					...options,
+					assets: options.assets.filter(
+						(asset) => asset.assetId === "skill:alpha/plan",
+					),
+				}),
+		};
+		const initialOutput = captureCliOutput();
+		await createHarnessProgram(dependencies).parseAsync(
+			["--json", "sync", "--target", "claude", "--asset", "skill:alpha/plan"],
+			{ from: "user" },
+		);
+		initialOutput.restore();
+		const targetDir = join(fixture.projectRoot, ".claude", "skills", "plan");
+		await writeFile(join(targetDir, "SKILL.md"), "local edit\n");
+		await rm(join(fixture.projectRoot, "domain-alpha", "skills", "plan"), {
+			recursive: true,
+		});
+		const removedDiscovery: RuntimeSkillExportDiscovery = {
+			candidates: [],
+			sourceHealth: fixture.discovery.sourceHealth,
+		};
+
+		const conflictOutput = captureCliOutput();
+		await createHarnessProgram({
+			...dependencies,
+			discover: async () => removedDiscovery,
+		}).parseAsync(["--json", "sync", "--target", "claude", "--kind", "skill"], {
+			from: "user",
+		});
+		const conflict = JSON.parse(conflictOutput.stdout()) as HarnessSyncReport;
+		expect(conflict).toMatchObject({ exitCode: 1 });
+		expect(conflict.rows[0]).toMatchObject({
+			before: "locally-edited",
+			reason: "source-removed",
+			action: "none",
+		});
+		expect(await readFile(join(targetDir, "SKILL.md"), "utf8")).toBe(
+			"local edit\n",
+		);
+		conflictOutput.restore();
+
+		process.exitCode = undefined;
+		const forgetOutput = captureCliOutput();
+		await createHarnessProgram({
+			...dependencies,
+			discover: async () => removedDiscovery,
+		}).parseAsync(
+			[
+				"--json",
+				"sync",
+				"--target",
+				"claude",
+				"--scope",
+				"project",
+				"--forget-removed",
+				"skill:alpha/plan",
+			],
+			{ from: "user" },
+		);
+		const forgotten = JSON.parse(forgetOutput.stdout()) as HarnessSyncReport;
+		expect(forgotten).toMatchObject({ exitCode: 0 });
+		expect(forgotten.rows[0]).toMatchObject({
+			action: "forget-entry",
+			final: "current",
+		});
+		expect(await readFile(join(targetDir, "SKILL.md"), "utf8")).toBe(
+			"local edit\n",
+		);
+		const manifest = JSON.parse(
+			await readFile(
+				join(
+					fixture.projectRoot,
+					".claude",
+					".cosmonauts-harness-manifest.json",
+				),
+				"utf8",
+			),
+		) as { entries: Record<string, unknown> };
+		expect(manifest.entries).toEqual({});
+		forgetOutput.restore();
+	});
+
+	test("rejects command link mode before owner-root or manifest writes", async () => {
+		const projectRoot = join(tmp.path, "command-project");
+		const homeRoot = join(tmp.path, "command-home");
+		await Promise.all([
+			mkdir(projectRoot, { recursive: true }),
+			mkdir(homeRoot, { recursive: true }),
+		]);
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		await createHarnessProgram({
+			projectRoot,
+			homeRoot,
+			discover: async () => emptyDiscovery(),
+		}).parseAsync(
+			["sync", "--target", "claude", "--kind", "command", "--link"],
+			{ from: "user" },
+		);
+		expect(error).toHaveBeenCalledWith(
+			expect.stringMatching(/command:spec-to-backlog.*link.*copy/i),
+		);
+		expect(existsSync(join(homeRoot, ".claude"))).toBe(false);
+		expect(existsSync(join(homeRoot, ".cosmonauts-harness-claude.lock"))).toBe(
+			false,
+		);
+	});
+});
+
+async function runtimeSkillFixture(label: string) {
+	const projectRoot = join(tmp.path, `${label}-project`);
+	const homeRoot = join(tmp.path, `${label}-home`);
+	const sourceRoot = join(projectRoot, "domain-alpha");
+	const skillDir = join(sourceRoot, "skills", "plan");
+	await Promise.all([
+		mkdir(skillDir, { recursive: true }),
+		mkdir(homeRoot, { recursive: true }),
+	]);
+	await writeFile(
+		join(skillDir, "SKILL.md"),
+		"---\nname: plan\ndescription: Plans\n---\n# Plan\n",
+	);
+	return {
+		projectRoot,
+		homeRoot,
+		discovery: {
+			candidates: [
+				{
+					name: "plan",
+					description: "Plans",
+					domain: "alpha",
+					dirPath: skillDir,
+					sourceRootId: "alpha:test",
+					sourceRoot,
+					sourcePath: "skills/plan",
+					logicalPath: "plan",
+					outputIdentity: "plan",
+					flatteningRule: "frontmatter-name" as const,
+					targetShape: "directory" as const,
+				},
+			],
+			sourceHealth: [
+				{
+					sourceRootId: "alpha:test",
+					sourceRoot,
+					domain: "alpha",
+					status: "complete" as const,
+					issues: [],
+				},
+			],
+		} satisfies RuntimeSkillExportDiscovery,
+	};
+}
+
+function emptyDiscovery(): RuntimeSkillExportDiscovery {
+	return { candidates: [], sourceHealth: [] };
+}
+
+function reportFixture(): HarnessSyncReport {
+	return {
+		exitCode: 1,
+		rows: [
+			{
+				owner: {
+					kind: "authority",
+					ownerId: "authority:cosmonauts/core",
+					authorityId: "cosmonauts/core",
+				},
+				ownerDiagnostics: ["authority=cosmonauts/core"],
+				target: "claude",
+				scope: "personal",
+				kind: "command",
+				asset: "command:implement-plan",
+				source: "/source/implement-plan.md",
+				targetPath: "/home/.claude/commands/implement-plan.md",
+				recordedMode: "copy",
+				requestedMode: "copy",
+				before: "locally-edited",
+				reason: "locally-edited",
+				action: "none",
+				final: "locally-edited",
+				recovery: { state: "ambiguous", reason: "transaction-vector-other" },
+				evidence: "required",
+				discovery: ["read:/source:denied"],
+				releaseWarning: "release unconfirmed",
+			},
+		],
+	};
+}

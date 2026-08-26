@@ -879,7 +879,7 @@ export async function withOwnerRootTransaction<T>(
 export interface OwnerRootTransactionMemberPlan {
 	readonly targetPath: string;
 	readonly oldState: HarnessNodeSnapshot;
-	readonly newState: Exclude<HarnessNodeSnapshot, { readonly kind: "absent" }>;
+	readonly newState: HarnessNodeSnapshot;
 	readonly writeStage: (stagePath: string) => Promise<void>;
 }
 
@@ -914,11 +914,6 @@ export async function applySyncPlanInTransaction(
 	if (await pathExists(transaction.journalPath)) {
 		throw new Error(
 			"Cannot apply a harness sync plan while a journal is pending.",
-		);
-	}
-	if (options.members.length === 0) {
-		throw new Error(
-			"A harness owner-root transaction requires at least one member.",
 		);
 	}
 	const transactionId = options.transactionId ?? randomUUID();
@@ -997,8 +992,10 @@ export async function applySyncPlanInTransaction(
 			const member = members[index];
 			const planned = options.members[index];
 			if (!member || !planned) throw new Error("Missing transaction member.");
-			await revalidateBeforeSiblingMutation(transaction, member.stagePath);
-			await planned.writeStage(member.stagePath);
+			if (member.newState.kind !== "absent") {
+				await revalidateBeforeSiblingMutation(transaction, member.stagePath);
+				await planned.writeStage(member.stagePath);
+			}
 			if (
 				!nodeSnapshotsEqual(
 					await observeHarnessNodeSnapshot(member.stagePath),
@@ -1020,11 +1017,13 @@ export async function applySyncPlanInTransaction(
 				await revalidateBeforeSiblingMutation(transaction, member.backupPath);
 				await rename(member.targetPath, member.backupPath);
 			}
-			await revalidateBeforeOwnerMutation(transaction, member.targetPath);
-			await mkdir(dirname(member.targetPath), { recursive: true });
-			await revalidateBeforeOwnerMutation(transaction, member.targetPath);
-			await revalidateBeforeSiblingMutation(transaction, member.stagePath);
-			await rename(member.stagePath, member.targetPath);
+			if (member.newState.kind !== "absent") {
+				await revalidateBeforeOwnerMutation(transaction, member.targetPath);
+				await mkdir(dirname(member.targetPath), { recursive: true });
+				await revalidateBeforeOwnerMutation(transaction, member.targetPath);
+				await revalidateBeforeSiblingMutation(transaction, member.stagePath);
+				await rename(member.stagePath, member.targetPath);
+			}
 		}
 		if (!(await allMembersMatch(journal, "new"))) {
 			throw new Error(
@@ -1102,6 +1101,25 @@ export async function observeHarnessNodeSnapshot(
 		vector.push([child, await observeHarnessNodeSnapshot(join(path, child))]);
 	}
 	return { kind: "directory", digest: sha256(JSON.stringify(vector)) };
+}
+
+/** Observe one manifest-owned target using the same provenance classifier as sync. */
+export async function observeHarnessManifestTarget(
+	entry: MaterializedHarnessManifestEntry,
+): Promise<ObservedHarnessTarget> {
+	const state = await observeRecordedTarget(entry.outputPath, entry);
+	return {
+		targetPath: entry.outputPath,
+		...(state === "absent"
+			? { state: "absent" as const }
+			: state === "intact"
+				? {
+						state: "exact-baseline" as const,
+						baselineOwnerId: entry.owner.ownerId,
+						baselineAssetId: entry.assetId,
+					}
+				: { state: "edited" as const }),
+	};
 }
 
 async function recoverOwnerRootJournal(
@@ -1318,7 +1336,11 @@ function classifyNode(
 	target: boolean,
 ): VectorState {
 	if (actual.kind === "absent") {
-		return target ? "missing" : "absent";
+		return target && newState.kind === "absent"
+			? "new"
+			: target
+				? "missing"
+				: "absent";
 	}
 	if (nodeSnapshotsEqual(actual, oldState)) return "old";
 	if (nodeSnapshotsEqual(actual, newState))

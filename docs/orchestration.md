@@ -105,6 +105,7 @@ cosmonauts run chain plan-and-build "auth"    # Named chain
 cosmonauts run chain "planner -> coordinator" # Raw chain DSL
 cosmonauts run drive --plan auth-system       # Driver task runs
 cosmonauts run status run-abc --scope chain   # Normalized run status
+cosmonauts harness sync --check --json        # Read-only harness drift report
 cosmonauts export --definition agent-package.json --out bin/agent
 cosmonauts export coding/explorer --target claude-cli --out bin/explorer
 ```
@@ -120,6 +121,25 @@ Key flags:
 - `--dump-prompt -a <id>` — print the composed system prompt for an agent
 
 Run `cosmonauts --help` for the full list.
+
+### Harness adapter synchronization
+
+The registered harness surface is:
+
+```text
+cosmonauts harness sync [--target <id>] [--scope project|personal]
+  [--kind skill|command] [--asset <assetId>] [--copy|--link]
+  [--check] [--forget-removed <assetId>] [--transfer-owner <ownerId>]
+  [--json|--plain]
+```
+
+The four selectors are repeatable and deduplicated. Omitted target selects supported Claude and Codex adapters. Omitted scope applies descriptor defaults: runtime skills use project scope, while the external `cosmonauts` bundle and both commands use personal scope. Explicit scope overrides descriptor defaults. Supplying any `--asset` makes the run partial; kind and asset filters isolate only matching catalogue rows. `--copy` and `--link` are mutually exclusive, and command assets reject link mode before owner-root or manifest writes.
+
+The report has exactly four public states: `missing`, `current`, `source-ahead`, and `locally-edited`. Each row exposes owner kind/ID/diagnostics, target/scope/kind/asset, absolute source and target, recorded/requested mode, before state and reason, action and final state, recovery/evidence/discovery detail, and release warnings. Use `--json` for structured output or `--plain` for tab-separated rows.
+
+Normal sync exits nonzero when any row has a conflict, incomplete inventory, ambiguous recovery, evidence-required state, containment or write failure, or unconfirmed release. `--check` is stricter: it exits nonzero for every non-`current` row, performs stable double-read observation, and never calls transaction or materialization code. Forget cannot combine with check, mode, explicit asset selection, or transfer. Transfer requires explicit asset IDs and cannot combine with check, mode, or forget.
+
+The legacy `cosmonauts skills export` command is a partial skill-only facade over the same discovery, descriptor, renderer, classifier, and transaction path. Named and `--all` exports never infer removal for the external bundle, commands, or omitted skills.
 
 ## Tools the agents use
 

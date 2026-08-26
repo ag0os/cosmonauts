@@ -11,5 +11,9 @@ export {
 	type ExportScope,
 	type ExportTarget,
 	exportSkill,
+	type HarnessSyncOptions,
+	type HarnessSyncReport,
+	type HarnessSyncReportRow,
 	resolveTargetDir,
+	runHarnessSync,
 } from "./exporter.ts";

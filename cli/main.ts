@@ -50,6 +50,7 @@ import { createArchitectureProgram } from "./architecture/subcommand.ts";
 import { createCreateProgram } from "./create/subcommand.ts";
 import { createEjectProgram } from "./eject/subcommand.ts";
 import { createExportProgram } from "./export/subcommand.ts";
+import { createHarnessProgram } from "./harness/subcommand.ts";
 import {
 	createInstallProgram,
 	createPackagesProgram,
@@ -707,6 +708,7 @@ if (runInvocation) {
 	subcommand === "plan" ||
 	subcommand === "scaffold" ||
 	subcommand === "skills" ||
+	subcommand === "harness" ||
 	subcommand === "create" ||
 	subcommand === "install" ||
 	subcommand === "uninstall" ||
@@ -726,6 +728,7 @@ if (runInvocation) {
 		plan: createPlanProgram,
 		scaffold: createScaffoldProgram,
 		skills: createSkillsProgram,
+		harness: createHarnessProgram,
 		create: createCreateProgram,
 		install: createInstallProgram,
 		uninstall: createUninstallProgram,
