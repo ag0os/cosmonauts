@@ -1,7 +1,7 @@
 ---
 id: TASK-595
 title: Restore absent-state and manifest-only transaction recovery
-status: In Progress
+status: Done
 priority: high
 assignee: worker
 labels:
@@ -12,7 +12,7 @@ labels:
   - 'plan:harness-adapters'
 dependencies: []
 createdAt: '2026-08-26T12:24:22.496Z'
-updatedAt: '2026-08-26T12:40:05.446Z'
+updatedAt: '2026-08-26T12:50:24.374Z'
 ---
 
 ## Description
@@ -26,11 +26,11 @@ KNOWN PITFALL (an earlier partial attempt hit this and regressed): the naive fix
 Also remediate F-003: preserve old/new relation information instead of lossy single-state classification. Cover prepared creation (absent old) and equal-old/new target snapshots across installing, commit-ready, and committed recovery, including D-020 same-byte cross-project regeneration.
 
 <!-- AC:BEGIN -->
-- [ ] #1 Fresh recovery accepts and correctly classifies creation members whose old target snapshot is absent, including prepared-phase restoration.
-- [ ] #2 Fresh recovery accepts removal members whose new target snapshot is absent and converges correctly in every applicable prepared/installing/commit-ready/committed/rolling-back phase.
-- [ ] #3 Manifest-only forget, owner-transfer, and absent-target source-removal transactions with zero target members recover old/new manifest intent after crashes instead of becoming malformed.
-- [ ] #4 Regression tests exercise absent old/new snapshots and zero-member vectors through the public transaction/recovery seam and fail for the current exclusions.
-- [ ] #5 All existing harness-adapter and project-native checks remain green.
+- [x] #1 Fresh recovery accepts and correctly classifies creation members whose old target snapshot is absent, including prepared-phase restoration.
+- [x] #2 Fresh recovery accepts removal members whose new target snapshot is absent and converges correctly in every applicable prepared/installing/commit-ready/committed/rolling-back phase.
+- [x] #3 Manifest-only forget, owner-transfer, and absent-target source-removal transactions with zero target members recover old/new manifest intent after crashes instead of becoming malformed.
+- [x] #4 Regression tests exercise absent old/new snapshots and zero-member vectors through the public transaction/recovery seam and fail for the current exclusions.
+- [x] #5 All existing harness-adapter and project-native checks remain green.
 <!-- AC:END -->
 
 ## Implementation Notes

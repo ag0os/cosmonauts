@@ -1,7 +1,7 @@
 ---
 id: TASK-597
 title: Make migration backup cleanup crash-resumable
-status: To Do
+status: Done
 priority: medium
 labels:
   - backend
@@ -11,7 +11,7 @@ labels:
   - 'plan:harness-adapters'
 dependencies: []
 createdAt: '2026-08-26T12:26:21.066Z'
-updatedAt: '2026-08-26T12:30:22.723Z'
+updatedAt: '2026-08-26T13:18:26.293Z'
 ---
 
 ## Description
@@ -23,11 +23,11 @@ Remediate general-review finding F-004 against B-012/Design §7. Repository and 
 Remediate both F-004 and SR-001. Before any cleanup, derive backup paths from validated canonical transaction identity, journal parent, and fixed member index; never trust evidence-supplied cleanup paths or oldState snapshots as authorization. Persist per-backup cleanup intent before deleting, fsync, and resume exact deletions safely.
 
 <!-- AC:BEGIN -->
-- [ ] #1 A hard interruption immediately after the first project-set backup deletion resumes to complete evidence without manual repair or lost old bytes.
-- [ ] #2 The equivalent interruption for the personal bundle resumes safely to complete evidence.
-- [ ] #3 Cleanup intent is durable before deletion, and absent backup is accepted only as completion of a matching exact cleanup intent.
-- [ ] #4 Ambiguous or changed backup bytes remain preserved and nonzero.
-- [ ] #5 All migration, harness-adapter, and project-native checks remain green.
+- [x] #1 A hard interruption immediately after the first project-set backup deletion resumes to complete evidence without manual repair or lost old bytes.
+- [x] #2 The equivalent interruption for the personal bundle resumes safely to complete evidence.
+- [x] #3 Cleanup intent is durable before deletion, and absent backup is accepted only as completion of a matching exact cleanup intent.
+- [x] #4 Ambiguous or changed backup bytes remain preserved and nonzero.
+- [x] #5 All migration, harness-adapter, and project-native checks remain green.
 <!-- AC:END -->
 
 ## Implementation Notes
