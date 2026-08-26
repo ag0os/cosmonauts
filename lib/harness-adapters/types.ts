@@ -14,6 +14,18 @@ export type SyncStatus =
 	| "source-ahead"
 	| "locally-edited";
 
+export type OwnerIdentity =
+	| {
+			readonly kind: "project";
+			readonly ownerId: string;
+			readonly projectRoot: string;
+	  }
+	| {
+			readonly kind: "authority";
+			readonly ownerId: "authority:cosmonauts/core";
+			readonly authorityId: "cosmonauts/core";
+	  };
+
 export type AssetOwnership =
 	| { readonly kind: "project" }
 	| { readonly kind: "authority"; readonly authorityId: "cosmonauts/core" };
@@ -158,4 +170,117 @@ export interface ResolvedHarnessAssetTarget
 	readonly assetId: string;
 	readonly targetPath: string;
 	readonly requestedMode?: SyncMode;
+}
+
+export interface SyncRequest {
+	readonly targetIds?: readonly HarnessTargetId[];
+	readonly scopes?: readonly HarnessScope[];
+	readonly kinds?: readonly MaterializedAssetKind[];
+	readonly assetIds?: readonly string[];
+	readonly requestedMode?: SyncMode;
+	readonly reconciliation: "complete" | "partial";
+	readonly check: boolean;
+	readonly forgetRemovedAssetIds?: readonly string[];
+	readonly transferOwner?: {
+		readonly oldOwnerId: string;
+		readonly assetIds: readonly string[];
+	};
+}
+
+export interface ProvenanceBase {
+	readonly schemaVersion: 1;
+	readonly owner: OwnerIdentity;
+	readonly assetId: string;
+	readonly kind: MaterializedAssetKind;
+	readonly target: ImplementedHarnessTargetId;
+	readonly scope: HarnessScope;
+	readonly sourceRootId: string;
+	readonly sourcePath: string;
+	readonly logicalPath: string;
+	readonly outputPath: string;
+	readonly mode: SyncMode;
+	readonly exportedAt: string;
+}
+
+export interface HarnessManifestEntry extends ProvenanceBase {
+	readonly provenance:
+		| { readonly kind: "copy"; readonly baselineDigest: string }
+		| {
+				readonly kind: "direct-link";
+				readonly expectedCanonicalSource: string;
+		  }
+		| {
+				readonly kind: "generated-wrapper";
+				readonly baselineDigest: string;
+		  };
+}
+
+export type TargetObservation =
+	| { readonly state: "absent" | "edited" }
+	| {
+			readonly state: "exact-baseline";
+			readonly baselineOwnerId?: string;
+			readonly baselineAssetId?: string;
+	  };
+
+export interface HarnessSyncInventoryRow {
+	readonly asset: HarnessAsset;
+	readonly targetId: ImplementedHarnessTargetId;
+	readonly scope: HarnessScope;
+	readonly targetPath: string;
+	readonly source: "present" | "absent";
+	readonly targetObservation: TargetObservation;
+}
+
+export type ObservedHarnessTarget = TargetObservation & {
+	readonly targetPath: string;
+};
+
+export type SyncPlanReason =
+	| "current"
+	| "missing"
+	| "source-removed"
+	| "source-unavailable"
+	| "inventory-incomplete"
+	| "transaction-aborted-incomplete-inventory"
+	| "partial-observation"
+	| "locally-edited"
+	| "unmanaged"
+	| "foreign-owner"
+	| "explicit-forget"
+	| "source-still-present"
+	| "owner-transfer"
+	| "edited-target-cannot-transfer"
+	| "pending-journal"
+	| "transfer-entry-mismatch";
+
+export type SyncPlanAction =
+	| "none"
+	| "create"
+	| "replace"
+	| "remove-target-and-entry"
+	| "forget-entry"
+	| "transfer-entry";
+
+export interface HarnessSyncPlanRow {
+	readonly assetId: string;
+	readonly kind: MaterializedAssetKind;
+	readonly targetId: ImplementedHarnessTargetId;
+	readonly scope: HarnessScope;
+	readonly targetPath: string;
+	readonly owner: OwnerIdentity;
+	readonly status: SyncStatus;
+	readonly reason: SyncPlanReason;
+	readonly action: SyncPlanAction;
+	readonly writesTarget: boolean;
+	readonly writesManifest: boolean;
+	readonly previousManifestKey?: string;
+	readonly nextManifestKey?: string;
+}
+
+export interface HarnessSyncPlan {
+	readonly request: SyncRequest;
+	readonly rows: readonly HarnessSyncPlanRow[];
+	readonly aborted: boolean;
+	readonly abortReason?: "inventory-incomplete";
 }
