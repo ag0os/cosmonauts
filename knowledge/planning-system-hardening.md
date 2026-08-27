@@ -70,6 +70,8 @@ and first-class withdrawn behaviors.
 - Every Markdown semantic test picks its correct view: raw lines,
   fence-masked, or quote-masked (`scanMarkdown` produces all three).
 
+- **Broad plan review can fan out specialized lenses — on demand, not as standing orchestration (from dialogic-planner).** The shipped security-reviewer, performance-reviewer, and ux-reviewer agents share one output shape with distinct lenses; independent lenses run in parallel and findings combine before build work starts. Specialization buys depth without serializing unrelated analysis, and the common format keeps aggregation predictable. This stays an on-demand pattern — this plan explicitly decided against standing multi-lens review orchestration.
+
 ## Files Changed
 
 - `bundled/coding/prompts/planner.md`, `plan-reviewer.md` — the eight new

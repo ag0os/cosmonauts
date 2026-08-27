@@ -39,7 +39,7 @@ Extended the chain DSL from a flat `stage -> stage` list to a step model that su
 - **Parallel topology is explicit and shallow.** Supported forms are bracket groups and fan-out only; nested groups, fan-out inside groups, and loop stages inside parallel steps are rejected at parse time.
 - **User prompt injection happens at the first executable step.** If the first step is parallel, every member gets the same appended user prompt.
 - **Rendering and logging use shared formatting.** CLI and TUI surfaces should call `formatChainSteps()` and consume `chain_start`, `parallel_start`, and `parallel_end` rather than hand-formatting DSL strings.
-- **Workflow resolution is the fallback, not the default.** Inputs recognized by `isChainDslExpression()` are treated as raw DSL; only non-DSL inputs fall back to named workflow lookup.
+- **Saved-name lookup now runs first; expression parsing is the fallback.** *(Corrected 2026-08-27 — orchestration-surface-consolidation reversed the original precedence recorded here, which was: DSL-recognized inputs treated as raw DSL, named lookup only for non-DSL inputs.)* For a command accepting either a saved definition or a raw expression, perform exact saved-name lookup first, then fall back to expression parsing; reserve command words only in the ambiguous positional form, and provide an explicit name-only option so a valid saved item colliding with a command word stays addressable without DSL fallback.
 - **Parallel test coverage is seam-specific.** Parser, runner, CLI dispatch, logger, TUI rendering, and extension-tool wiring each gained focused tests instead of relying on one broad integration test.
 
 ## Files Changed
