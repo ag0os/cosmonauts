@@ -1640,13 +1640,31 @@ describe("frozen knowledge seed migration", () => {
 		const files = await readKnowledgeCorpus(projectRoot);
 		const activeLegacyPaths = await findActiveLegacyKnowledgePaths(projectRoot);
 
-		expect(auditMigratedSeed(inventory, files, activeLegacyPaths)).toEqual([]);
+		// Bodies migrated byte-for-byte (Design §6). After migration, a body may
+		// legally drift only through the sanctioned curation path — a direct edit
+		// recorded in a promotion-ledger round's `curatedRecords` list
+		// (docs/memory.md). The filter forgives exactly those recorded paths;
+		// metadata, destination, and index checks stay fully enforced.
+		const curatedBodies = await recordedCuratedBodies(projectRoot);
+		const withoutRecordedCuration = (issues: readonly string[]) =>
+			issues.filter(
+				(issue) =>
+					!(
+						issue.startsWith("body:") &&
+						curatedBodies.has(issue.slice("body:".length))
+					),
+			);
+
+		expect(
+			withoutRecordedCuration(
+				auditMigratedSeed(inventory, files, activeLegacyPaths),
+			),
+		).toEqual([]);
 
 		const jsonDestination = `knowledge/${inventory.bundles[0]?.header.planSlug}/${inventory.bundles[0]?.records[0]?.id}.md`;
-		const markdownDestination = inventory.markdown[0]?.path.replace(
-			/^memory\//u,
-			"knowledge/",
-		);
+		const markdownDestination = inventory.markdown
+			.map((entry) => entry.path.replace(/^memory\//u, "knowledge/"))
+			.find((path) => !curatedBodies.has(path));
 		if (!jsonDestination || !markdownDestination) {
 			throw new Error(
 				"Frozen inventory must contain markdown and JSONL records.",
@@ -1693,21 +1711,21 @@ describe("frozen knowledge seed migration", () => {
 			]),
 		).toContain("active-jsonl:lib/sessions/knowledge.ts");
 
-		// Legacy bodies migrate byte-for-byte (Design §6). Mutating one must be
-		// caught. The mutation is asserted to have actually applied so this
-		// negative can never silently degrade into a no-op replace.
-		const mutatedDestination = "knowledge/session-lineage.md";
-		const originalBody = files.get(mutatedDestination) ?? "";
+		// A mutation to any body without a recorded curation entry must surface
+		// through the *filtered* pipeline — the curation filter forgives only the
+		// recorded paths, never a fresh unrecorded edit. The append is asserted to
+		// have actually applied so this negative can never silently degrade into
+		// a no-op replace.
+		const originalBody = files.get(markdownDestination) ?? "";
 		const bodyMutation = new Map(files);
-		const mutatedBody = originalBody.replace(
-			"matching the future SQLite/vector-ingestion shape.",
-			"matching some other shape.",
-		);
+		const mutatedBody = `${originalBody}\nmutated body`;
 		expect(mutatedBody).not.toBe(originalBody);
-		bodyMutation.set(mutatedDestination, mutatedBody);
+		bodyMutation.set(markdownDestination, mutatedBody);
 		expect(
-			auditMigratedSeed(inventory, bodyMutation, activeLegacyPaths),
-		).toContain(`body:${mutatedDestination}`);
+			withoutRecordedCuration(
+				auditMigratedSeed(inventory, bodyMutation, activeLegacyPaths),
+			),
+		).toContain(`body:${markdownDestination}`);
 	});
 
 	test("records a passing 20-turn recurring scan-cost gate against the migrated corpus", async () => {
@@ -1993,6 +2011,39 @@ function auditMigratedSeed(
 
 	for (const path of activeLegacyPaths) issues.push(`active-jsonl:${path}`);
 	return [...new Set(issues)].sort();
+}
+
+/**
+ * Curated-record paths whose bodies were legally edited after migration, as
+ * recorded in `missions/reviews/` promotion-ledger rounds
+ * (kind: knowledge-surface-promotion, `curatedRecords`). Direct edits are the
+ * promotion path docs/memory.md sanctions; the ledger keeps them attributable
+ * and lets the byte-for-byte migration audit forgive exactly those paths.
+ */
+async function recordedCuratedBodies(
+	projectRoot: string,
+): Promise<Set<string>> {
+	const reviews = join(projectRoot, "missions", "reviews");
+	const recorded = new Set<string>();
+	let entries: string[];
+	try {
+		entries = await readdir(reviews);
+	} catch {
+		return recorded;
+	}
+	for (const entry of entries.sort()) {
+		if (!entry.endsWith(".md")) continue;
+		const data = matter(await readFile(join(reviews, entry), "utf-8")).data as {
+			kind?: unknown;
+			curatedRecords?: unknown;
+		};
+		if (data.kind !== "knowledge-surface-promotion") continue;
+		if (!Array.isArray(data.curatedRecords)) continue;
+		for (const path of data.curatedRecords) {
+			if (typeof path === "string") recorded.add(path);
+		}
+	}
+	return recorded;
 }
 
 function checkDestination(options: {

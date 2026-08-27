@@ -9,6 +9,27 @@ ratifiedVia: missions/reviews/knowledge-proposal-backlog-dispositions.md
 promotedCount: 0
 rejectedCount: 38
 promotions: []
+curatedRecords:
+  - knowledge/analysis-capability-runtime.md
+  - knowledge/analysis-gate-coverage.md
+  - knowledge/analysis-gate-rewiring.md
+  - knowledge/artifact-format-redesign.md
+  - knowledge/chain-profiler.md
+  - knowledge/code-structure-map.md
+  - knowledge/domain-config.md
+  - knowledge/domain-eject-and-tiers.md
+  - knowledge/drive-process-reaping.md
+  - knowledge/drive-resilience-state-model.md
+  - knowledge/durable-backend-step-model.md
+  - knowledge/durable-frontend-migration.md
+  - knowledge/durable-graph-scheduler.md
+  - knowledge/durable-run-store-events.md
+  - knowledge/orchestration-refactor.md
+  - knowledge/parallel-agent-spawning.md
+  - knowledge/runtime-consolidation.md
+  - knowledge/session-lineage.md
+  - knowledge/spec-plan-intent.md
+  - knowledge/spec-plan-quality-gates-a.md
 rejections:
   - path: memory/agent/proposals/orchestration-surface-consolidation/convention-keep-compatibility-evidence-opaque-at-the-runtime-boundary-7c2985ed1bfa.md
     sha256: 75fe8c1ee8dd2aafb67c783b2a2ade877c776ad1c1e0666362117dc90168f5a9
