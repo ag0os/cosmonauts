@@ -91,32 +91,59 @@ describe("knowledge surface recoverable backfill", () => {
 		expect(index.missingSlugs).toEqual(EXPECTED_MISSING_SLUGS);
 		expect(index.noPromotion).toBe(true);
 		expect(index.afterConfigDigest).toBe(index.beforeConfigDigest);
-		expect(index.beforeConfigDigest).toBe(
+		// The receipt pins the config the backfill ran under. A later deliberate
+		// config change is legal only when a human records the new digest on the
+		// same audit trail (kind: knowledge-surface-backfill-amendment); an
+		// unrecorded change still trips this wire.
+		const amendedConfigDigests = await recordedConfigAmendments(REPO_ROOT);
+		expect([index.beforeConfigDigest, ...amendedConfigDigests]).toContain(
 			sha256(await readFile(join(REPO_ROOT, ".cosmonauts", "config.json"))),
 		);
 
-		// A proposal exits the proposals area only by human promotion or deletion.
-		// Promotions are recorded, so an indexed proposal must still be readable at
-		// its original path OR at its recorded promoted path — with the same digest,
-		// which also proves promotion moved bytes unchanged.
+		// A proposal exits the proposals area only by a recorded human act:
+		// promotion (byte-identical move, still readable at its recorded curated
+		// path with the same digest) or rejection (file gone, digest and reason
+		// preserved in the ledger). An indexed proposal with neither record must
+		// still be readable at its original path, bytes unchanged.
 		const promoted = await recordedPromotions(REPO_ROOT);
+		const rejected = await recordedRejections(REPO_ROOT);
+		for (const path of promoted.keys()) {
+			expect(rejected.has(path), `${path} both promoted and rejected`).toBe(
+				false,
+			);
+		}
 		const counts = new Map<string, number>();
 		for (const proposal of index.proposals) {
 			expect(proposal.path).toMatch(
 				new RegExp(`^memory/agent/proposals/${proposal.planSlug}/[^/]+\\.md$`),
 			);
-			const livePath = promoted.get(proposal.path) ?? proposal.path;
-			expect(sha256(await readFile(join(REPO_ROOT, livePath))), livePath).toBe(
-				proposal.sha256,
-			);
+			if (rejected.has(proposal.path)) {
+				await expectMissing(join(REPO_ROOT, proposal.path));
+			} else {
+				const livePath = promoted.get(proposal.path) ?? proposal.path;
+				expect(
+					sha256(await readFile(join(REPO_ROOT, livePath))),
+					livePath,
+				).toBe(proposal.sha256);
+			}
 			counts.set(proposal.planSlug, (counts.get(proposal.planSlug) ?? 0) + 1);
 		}
 		for (const slug of EXPECTED_MISSING_SLUGS) {
 			expect(counts.get(slug), slug).toBeGreaterThanOrEqual(3);
 			expect(counts.get(slug), slug).toBeLessThanOrEqual(15);
 		}
+		// Completeness is scoped to the receipt's own batch (its missingSlugs):
+		// proposals distilled later through the live gate (e.g. harness-adapters)
+		// are outside this receipt and carry their own promotion records.
+		const receiptSlugs = new Set<string>(index.missingSlugs);
+		const inReceipt = (path: string) =>
+			receiptSlugs.has(path.split("/")[3] ?? "");
 		expect(index.proposals.map(({ path }) => path).sort()).toEqual(
-			[...(await proposalFiles(REPO_ROOT)), ...promoted.keys()].sort(),
+			[
+				...(await proposalFiles(REPO_ROOT)).filter(inReceipt),
+				...[...promoted.keys()].filter(inReceipt),
+				...[...rejected.keys()].filter(inReceipt),
+			].sort(),
 		);
 		expect(index.aggregateProposalDigest).toBe(
 			aggregateDigest(index.proposals),
@@ -578,6 +605,73 @@ async function recordedPromotions(
 		}
 	}
 	return moves;
+}
+
+/**
+ * Deliberate post-receipt config changes recorded under `missions/reviews/`
+ * (kind: knowledge-surface-backfill-amendment, `configDigest`). The receipt's
+ * config pin stays a tripwire: only digests a human recorded here are legal.
+ */
+async function recordedConfigAmendments(
+	projectRoot: string,
+): Promise<string[]> {
+	const reviews = join(projectRoot, "missions", "reviews");
+	const digests: string[] = [];
+	let entries: string[];
+	try {
+		entries = await readdir(reviews);
+	} catch {
+		return digests;
+	}
+	for (const entry of entries.sort()) {
+		if (!entry.endsWith(".md")) continue;
+		const data = matter(await readFile(join(reviews, entry), "utf-8")).data as {
+			kind?: unknown;
+			configDigest?: unknown;
+		};
+		if (data.kind !== "knowledge-surface-backfill-amendment") continue;
+		if (typeof data.configDigest === "string") digests.push(data.configDigest);
+	}
+	return digests;
+}
+
+/**
+ * Human rejection records under `missions/reviews/`, as proposal path ->
+ * digest recorded at rejection. Rejections ride in the same
+ * `knowledge-surface-promotion` ledger docs as promotions (a reviewed round
+ * may do both); a rejected proposal must be gone from disk, and the ledger
+ * keeps what was dropped attributable.
+ */
+async function recordedRejections(
+	projectRoot: string,
+): Promise<Map<string, string>> {
+	const reviews = join(projectRoot, "missions", "reviews");
+	const drops = new Map<string, string>();
+	let entries: string[];
+	try {
+		entries = await readdir(reviews);
+	} catch {
+		return drops;
+	}
+	for (const entry of entries.sort()) {
+		if (!entry.endsWith(".md")) continue;
+		const data = matter(await readFile(join(reviews, entry), "utf-8")).data as {
+			kind?: unknown;
+			rejections?: unknown;
+		};
+		if (data.kind !== "knowledge-surface-promotion") continue;
+		if (!Array.isArray(data.rejections)) continue;
+		for (const drop of data.rejections) {
+			const { path, sha256: digest } = drop as {
+				path?: unknown;
+				sha256?: unknown;
+			};
+			if (typeof path === "string" && typeof digest === "string") {
+				drops.set(path, digest);
+			}
+		}
+	}
+	return drops;
 }
 
 async function curatedDistillerFiles(projectRoot: string): Promise<string[]> {
