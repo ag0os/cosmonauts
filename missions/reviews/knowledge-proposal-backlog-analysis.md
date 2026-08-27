@@ -3,9 +3,30 @@
 Date: 2026-08-27
 **Ratified 2026-08-27 by the project owner** — the disposition table in
 `knowledge-proposal-backlog-dispositions.md` (88 promote / 38 merge / 33 drop /
-9 rulings) is approved as the plan of record. The 9 rulings remain individual
-curator decisions at round 4; the rejected-proposal exit path (§6.2) remains
-open.
+9 rulings) is approved as the plan of record.
+
+**Executed 2026-08-27, same session, on the owner's explicit direction** —
+all rounds complete; `memory/agent/proposals/` is empty. Final tallies (the 9
+ruling files resolved per-ruling with owner approval: 2 more promotions, 6
+merges, 1 superseded rejection): **90 promoted byte-identical · 44 merged by
+recorded direct edit · 34 rejected on record.** Audit trail:
+`knowledge-surface-promotion-{2..7}.md` + `knowledge-surface-backfill-amendment-1.md`.
+The rejected-proposal exit path was ruled: rejections ride in promotion
+ledgers (`rejections: [{path, sha256, reason}]`), test-enforced. Two further
+mechanisms were added along the way, both amendment-pattern extensions the
+execution surfaced as necessary: recorded config/inventory amendments
+(`knowledge-surface-backfill-amendment` kind) and recorded post-migration
+curation (`curatedRecords` in promotion ledgers — the migration audit pins
+every migrated body byte-for-byte, so the sanctioned direct-edit path must be
+ledger-recorded). Note for future curation: **promoted receipt records are
+byte-pinned permanently** by the manifest/ledger digest checks — corrections
+to promoted atomics must land as recorded edits to *editable* records or as
+new promotion rounds, never as in-place edits.
+
+Post-consolidation measurements: 236 knowledge records; index section 16,742
+bytes (untruncated, inside the 24,000-byte envelope); 15 curated root
+narratives remain among the 50 index slots; retrieval scan 236 files /
+~553 KB / ~53 ms per turn. Full suite green: 2970/2970.
 Scope: ROADMAP `knowledge-adoption` bullet 4 — "Revisit the 155 approved-but-unpromoted
 proposals once index contents matter to a live consumer." The gate is now ON
 (2026-08-26), so the precondition holds.

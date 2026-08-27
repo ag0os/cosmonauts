@@ -71,7 +71,7 @@ Every memory/knowledge feature shipped so far is gated OFF and unconsumed; all r
 - ✅ **Done 2026-08-26**: `knowledgeSurface.enabled: true` set in `.cosmonauts/config.json` — a deliberate dogfooding decision for this repository only; shipped defaults stay OFF. Triggered by the `harness-adapters` archive, whose distillation was blocked because `propose_knowledge` is gated behind it.
 - Deliberately run internal cosmonauts coordinators and agents: recent usage has been external-coordinator-only, so internal agents are the unobserved population
 - Record what retrieval actually does — recall usage, index cost against the 24,000-byte combined budget, observed behavior changes — as evidence for the consolidation and budget decisions
-- Revisit the 155 approved-but-unpromoted proposals once index contents matter to a live consumer
+- ✅ **Done 2026-08-27**: the proposal backlog (168 on disk: the 155 backfill survivors + 13 live harness-adapters) was fully surveyed, ratified, and discharged — 90 promoted byte-identical, 44 merged into curated records, 34 rejected on record; `memory/agent/proposals/` is empty. Analysis + per-file dispositions: `missions/reviews/knowledge-proposal-backlog-{analysis,dispositions}.md`; execution audit trail: `knowledge-surface-promotion-{2..7}.md` + `knowledge-surface-backfill-amendment-1.md`.
 
 ### `factory-evals` (thread): Stop Driving Blind — Instrumentation First
 
