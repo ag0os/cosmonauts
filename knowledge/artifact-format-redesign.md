@@ -39,6 +39,8 @@ Cosmonauts now has a canonical work-artifact system centered on `/skill:work-art
 - Review/verification prompts should load `work-artifacts` only when artifact conformance or plan context is in scope, and verifiers should validate explicit claims rather than expanding the scope.
 - Prompt/skill tests should assert stable contract phrases and negative rules, not snapshot whole markdown files.
 
+- **Manual criteria are explicit human obligations (from quality-contracts).** Work is not merge-ready while any non-manual contract criterion is unresolved or failing — and manual criteria are reported separately as requiring human verification, never inferred from automated passes or omitted from the final summary.
+
 ## Files Changed
 - `domains/shared/skills/work-artifacts/SKILL.md` and `domains/shared/skills/work-artifacts/references/*.md` — new canonical shared artifact dispatcher and references for workflow tiers, artifact formats, behavior spine, gate contracts, visual primitives, and examples.
 - `domains/shared/skills/architecture/SKILL.md` — new dispatcher for active architecture records and architecture usefulness rules.

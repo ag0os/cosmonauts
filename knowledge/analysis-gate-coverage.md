@@ -83,6 +83,8 @@ and 7 — works for the first time in this design.
   halt, not a unilateral rewrite. The replacement is stronger than anything
   amend-on-record would have produced.
 
+- **Scope is validated before invocation, not just derived after (from analysis-capabilities).** Validate scope values at runtime even when a schema exists — bases, paths, and trace targets trimmed and nonempty — and when a bound provider does not advertise the requested scope kind, return a structured unsupported-scope outcome *before* any subprocess spawns, naming both requested and supported kinds. Never drop a filter, substitute project-wide analysis, or reuse a wider verdict.
+
 ## Files Changed
 
 - `lib/analysis/types.ts` — `AnalysisGateCoverage` as a non-empty readonly tuple,

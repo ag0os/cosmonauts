@@ -40,6 +40,8 @@ Moved `spawn_agent` from blocking RPC semantics to non-blocking fire-and-forget.
 
 - **Semaphore FIFO queuing**: `acquire()` pushes a resolve callback onto a queue when all slots are taken; `release()` shifts the next waiter and calls it directly (slot stays consumed, no extra tick). This pattern is in `semaphore.ts` and should be reused for any future rate-limiting primitive.
 
+- **Long-running tools return a run handle immediately (from driver-primitives)**: a tool that starts a potentially long fleet run must not await completion. Return a handle containing stable run identity, artifact paths, cancellation, and a result promise, with progress delivered through scoped notifications or a cursor-based event reader — the interactive agent stays responsive without sacrificing durable observability.
+
 ## Files Changed
 
 - `lib/orchestration/message-bus.ts` *(new)* — Typed EventEmitter with `publish()`, `subscribe()`, `waitFor()`, `unsubscribe()`. Foundation for all inter-agent events; initial types are spawn lifecycle events.
@@ -55,6 +57,8 @@ Moved `spawn_agent` from blocking RPC semantics to non-blocking fire-and-forget.
 ## Gotchas & Lessons
 
 - **LLMs default to blocking semantics**: Without explicit prompt instructions, a coordinator treats `{ status: "accepted" }` as the child's outcome and doesn't wait for completions. `coordinator.md` and `spawning.md` are the guardrails — keep the non-blocking contract language intact when editing these files.
+
+- **Function-level disjointness is not parallel-safety evidence (from fallow-temp-exceptions-cleanup)**: if two tasks edit the same file, make their order explicit even when the functions are logically independent — the first refactor changes imports, helper placement, local types, and surrounding structure the second depends on. Parallelize only tasks with disjoint file ownership or a pre-agreed integration seam; same-file serialization prevents merge conflicts and independently invented local architectures.
 
 - **Parent must outlive all children**: The multi-turn loop must run until `activeCount() == 0`. If the coordinator session exits early (exception, early return), all running background children become orphaned — their completions fire into the bus but no one reads them. `removeTracker()` must be in a `finally` block, but it does not cancel running children.
 

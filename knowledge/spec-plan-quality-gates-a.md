@@ -38,6 +38,9 @@ Added prompt-only quality gates at the human→spec→plan boundary: a three-rou
 - **Phase cadence in persona prompt, not in a skill:** If a skill explicitly excludes a behavior (e.g., `design-dialogue/SKILL.md:98-100` excludes requirements capture), encode that behavior in the agent's persona prompt, not in the skill. `spec-writer.md` owns the Frame→Shape→Detail cadence; the skill is conceptual precedent only.
 - **Readiness blocks are pre-tool-call conversational output, never persisted sections.** A reviewer-verified QC criterion (not auto-tested) must inspect that the persisted output format sections are unchanged.
 
+- **Fuzzy ideas diverge before converging (from dialogic-planner).** When the product idea is not yet well formed, broaden the option space before hardening the first interpretation: present materially different directions, compare their user-visible consequences, and only then converge on the behavior to specify. Once product intent settles, engineering choices hand to the planning role.
+- **Interactive planning surfaces alternatives and seeks incremental approval (from dialogic-planner).** In an interactive session the planner offers two or three meaningful alternatives per major engineering decision, records the selection, and seeks approval before moving on; in an automated stage it decides and documents autonomously so the chain never blocks on unavailable input. One plan format serves both modes — the decision log preserves the reasoning either way.
+
 ## Files Changed
 
 - `bundled/coding/coding/prompts/cosmo.md` — three-route decision tree replacing four-bullet routing heuristic; route-announcement template; planner-bypass and direct-planner suggestion preserved

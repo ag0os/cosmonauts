@@ -67,6 +67,13 @@ already shipped.
 - **Windows keeps direct-child-only behaviour** (D-005), mirroring the split
   `project-tools` already makes. Recorded as a gap rather than silently implied.
 
+- **Launcher exit is not run completion — say so in the output contract.**
+  Returning from a detached launcher proves only that background execution
+  started. Print the durable run identity and an exact observation command at
+  launch, and describe the distinction in help text. Flag-processing layers
+  must also recognize command-local options before warning about unsupported
+  global flags, or valid detached invocations appear erroneous.
+
 ## Files Changed
 
 - `lib/process/process-group.ts` — new; POSIX group primitives plus bounded

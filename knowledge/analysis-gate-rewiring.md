@@ -83,6 +83,8 @@ direction but not a working gate.
   checked that `` `completed` ``/`` `unbound` ``/… appear; that passes on any
   prompt merely mentioning them. Pin each outcome's operative sentence.
 
+- **The remediation rerun exists because structured results cannot cross an agent boundary losslessly (from analysis-capabilities).** Do not depend on model-authored summaries or cross-session deterministic finding IDs: route the exact capability request (kind, base, scope, metric) plus human-readable designations, and let the remediator rerun it before editing, using the fresh complete result as ground truth. A finding that no longer reproduces — or a failed rerun — goes back for re-analysis rather than receiving a fix from stale advice.
+
 ## Files Changed
 
 - `bundled/coding/prompts/{quality-manager,verifier,fixer,worker}.md` — gate

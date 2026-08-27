@@ -72,6 +72,15 @@ tests in `tests/prompts/` and `tests/docs/`.
   amended, why, and what it replaced. An amendment that survived to ship is
   precisely what the next plan in the area needs.
 
+- **Centralized design intent outranks a narrow single-site criterion**
+  (implementation-side corollary, from orchestration-hardening): a named
+  cross-cutting rule gets one implementation authority — a shared helper —
+  with every design-named seam routed through it. When a task criterion can
+  be read more narrowly than the ratified design, follow the broader
+  centralization intent and record the discrepancy, instead of duplicating
+  or partially applying the rule; locally correct patches otherwise leave
+  sibling paths inconsistent.
+
 ## Files Changed
 
 - `domains/shared/skills/work-artifacts/references/deviation-protocol.md` — new;

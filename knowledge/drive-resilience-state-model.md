@@ -35,6 +35,10 @@ Drive now distinguishes implementation/verification failures from driver finaliz
 - Final state commits stage only the run’s task markdown files under `missions/tasks/`; they must not stage source files, sessions, archives, reviews, or `memory/`.
 - Finalization observability is additive: preserve existing Drive events and add `finalize`, `task_finalization_failed`, `run_finalization_failed`, and `plan_completion_candidate` for phase-specific routing.
 
+- Partial work is committed progress, not completion: when an agent reports a partial outcome and verification passes, retain and commit the useful changes, keep the task in progress with structured progress notes, and emit a blocked-style progress event; stop the run by default unless the caller explicitly chose to continue. A task may legitimately have a commit without being complete.
+- Contradicted missing-path blocks retry once, structurally: when a worker reports blockage on a missing input path, compare the cited path against the driver's authoritative project root; if a conservatively extracted path resolves inside that root and exists, annotate the event as contradicted and retry once with the verified absolute location. Never retry when the path is absent, ambiguous, outside the project, or already retried.
+- Backend execution root and artifact storage are distinct invocation fields: spawn repository-aware workers with the project root as cwd (so relative file and VCS operations describe the real project) while directing summaries, logs, and run artifacts to explicit run-workspace paths. Never overload one working-directory field with both roles.
+
 ## Files Changed
 - `lib/driver/types.ts`, `lib/driver/run-state.ts` — finalization result types, pending-state contract, state commit policy, and new event vocabulary.
 - `lib/driver/run-one-task.ts` — task-level commit/status finalization, no-change evidence, title fallback commit subjects, and project-root commit locking.

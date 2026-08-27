@@ -42,6 +42,8 @@ Added two visible domain override tiers to package discovery: `~/.cosmonauts/dom
 - **CLI guidance should reflect source scope.** Eject output includes uninstall advice for the original package, with `--local` when the winning source package came from project scope.
 - **Package API additions stay surfaced from `lib/packages/index.ts`.** New package operations are exported through the package barrel alongside their types.
 
+- **Three install modes with an explicit portability trade-off (from package-system):** store-backed copies or clones for normal installation and deterministic reuse; links for live local editing; explicit plugin directories for one session with no store mutation. The latter two are deliberately less portable and may inherit platform-specific filesystem constraints — the price of fast package development without repeated install cycles.
+
 ## Files Changed
 
 - `lib/packages/scanner.ts` — added user-domain and project-domain discovery tiers, plus directory-existence guards.

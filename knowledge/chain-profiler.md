@@ -35,6 +35,8 @@ Chain runs invoked through `--workflow` can now be profiled with `--profile`, pr
 - For event-stream features, key durable correlation off stable IDs already present in events (`toolCallId`, `sessionId`) rather than stage names or display labels.
 - Test event-driven modules with synthetic `ChainEvent` sequences and real temp-directory file IO. That gives stable coverage for timing, scope tagging, JSONL output, and partial flush behavior.
 
+- **Usage aggregates at stage-iteration granularity (from observability).** Each spawned stage iteration produces one usage record carrying stage identity, iteration, agent identity, token categories, monetary cost, elapsed time, and turn count; chain totals are derived by accumulating these records, and both stage and final totals are emitted as lifecycle events. Retries and coordinator loops stay visible instead of hiding inside a single chain total.
+
 ## Files Changed
 - `lib/orchestration/chain-profiler.ts` — Added the profiler module, trace-entry/tool-span types, tool start/end pairing, parallel scope tracking, JSONL writing, and summary generation.
 - `cli/main.ts` — Registered `--profile`, resolved output directories from existing plan/session helpers, composed logger + profiler event handlers, and flushed output in `finally`.

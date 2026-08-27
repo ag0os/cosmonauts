@@ -41,6 +41,10 @@ Added plan-scoped session capture for chain and workflow execution. When a spawn
 - **Transcript-first distillation order**: planner reasoning first, then worker implementation sessions, then reviewer/quality sessions so later distillation preserves design intent before implementation detail.
 - **Per-record knowledge shape**: each knowledge record is one concept with explicit `type`, `files`, `tags`, provenance, and standalone `content` suitable for semantic search.
 
+- **A green run does not prove which agent executed (from coding-agnostic-framework).** When existing artifacts cannot expose routing, emit a minimal informational observation at the existing resolution seam carrying both the requested role and the resolved qualified agent id, and map it into durable run activity without adding a second resolution path. Listener failures stay isolated; resolution behavior stays unchanged.
+- **Observe spawned sessions at their boundary (from observability).** The spawned-session boundary is the integration seam: subscribe before execution begins, normalize only the lifecycle signals orchestration needs (turns, tool activity, message progress, completion), forward through the runner's existing event channel, and always unsubscribe before disposing the session. One event path for consumers; session-specific payloads and cleanup stay inside the spawner.
+- **Capture session statistics before disposal, behind a typed helper (from observability).** Session-owned statistics may be inaccessible after cleanup, so the spawner captures final stats immediately after execution and before dispose. Pi's direct statistics API varies across pinned versions — isolate extraction behind a typed helper and be ready to accumulate usage from turn-completion events when no reliable final getter exists.
+
 ## Files Changed
 
 - `lib/sessions/types.ts`, `lib/sessions/knowledge.ts`, `lib/sessions/manifest.ts`, `lib/sessions/session-store.ts`, `lib/sessions/index.ts` — new leaf module for session lineage types, transcript generation, manifest persistence, and knowledge-bundle JSONL I/O.

@@ -115,6 +115,8 @@ Surfaces:
   mirrors `listTasks()` but skips `ensureInitialized()`, so a viewer request can
   never scaffold `missions/tasks/config.json` or directories.
 
+- **Decoupling ledgers are executable, regenerated, and rationale-per-row (from coding-agnostic-framework).** Generate the ledger from a fresh repository search; assign every matching test or helper an allowed disposition (retained domain-content coverage, synthetic explicit-domain behavior, intentional compatibility/catalog coverage, or false positive); have the validator compare current matches to the ledger, require a rationale for every row, and assert deferred content still uses the real asset until its owning wave. This stops both hidden coupling and premature migration from hiding behind reclassification.
+
 ## Files Changed
 
 - Core (new): `lib/architecture-map/{types,config,freshness,analyzer,narrative,okf,render,store,generator,index}.ts`.

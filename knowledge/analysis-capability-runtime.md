@@ -84,6 +84,9 @@ deletes it in the same stage it swaps its consumers.
   reliably, surface provenance and record the boundary; don't ship a partial
   check that implies a guarantee.
 
+- **Subprocess runners preserve termination evidence (from analysis-capabilities).** The shell-free runner's outcome type distinguishes numeric exit, signal termination, spawn failure, cancellation, and timeout; the host tool's cancellation signal propagates through every adapter layer; every invocation carries a finite timeout with graceful-then-force-kill retaining the initiating reason. Only explicitly documented exit codes plus classifiable output may become completed analysis — null or signal exits never become success.
+- **Detection is not permission (from analysis-capabilities).** File-based detection and executable introspection are separate acts: a repository-controlled binary must not run until per-project execution consent is recorded *outside* that repository — implicit trust in unrelated project resources is insufficient. Without consent, status names the detected provider and explains that execution is withheld while spawning zero subprocesses. Shell-free invocation and read-only flags constrain a legitimate binary; they do nothing for a replaced one.
+
 ## Files Changed
 
 - `lib/analysis/{types,binding-resolver,index}.ts` (new) — the stable contract;

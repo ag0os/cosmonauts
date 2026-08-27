@@ -41,6 +41,8 @@ Introduced `CosmonautsRuntime` (`lib/runtime.ts`) as a single immutable bootstra
 - **Widen function signatures to `readonly T[]` when accepting runtime properties.** `runtime.workflows` and similar fields are `readonly`. Functions that receive them must accept `readonly WorkflowDefinition[]`, not `WorkflowDefinition[]`.
 - **Migration order for scattered-bootstrap consolidation**: utilities → validator → runtime → spawner → runner/parser → CLI → extension → cleanup. Doing utilities before consumers and runtime before CLI avoids circular migration issues.
 
+- **Domain resources resolve through one runtime abstraction (from package-system; supersedes raw `domainsDir` path-passing).** Construct one resolver after domain discovery and pass it to prompt assembly, extension resolution, session creation, and agent spawning. The resolver owns domain locations, merged roots, portability, fallback order, and fixed shared resources; consumers ask for semantic resources instead of constructing filesystem paths, so source or precedence changes stay localized.
+
 ## Files Changed
 
 - `lib/runtime.ts` *(new)* — `CosmonautsRuntime` class with static `create()` factory; the single bootstrap entry point
