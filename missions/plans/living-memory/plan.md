@@ -2,7 +2,7 @@
 title: 'Living memory: sources, two outlets, and the corpus regulator'
 status: active
 createdAt: '2026-07-17T13:42:06.390Z'
-updatedAt: '2026-09-01T19:12:43.264Z'
+updatedAt: '2026-09-01T19:46:07.000Z'
 ---
 
 ## Overview
@@ -13,7 +13,7 @@ The implementation is architecture-linked planned work. It preserves the authori
 
 Included: the receipt/ledger floor; proposal variants and lifecycle; project retired-area retrieval semantics; a native corpus Observer→Reflector→Dropper; conservative retirement authority and power-loss recovery; the configured `consolidate()` seam; manual consolidate/improve-resolution/restoration-annotation CLI surfaces; the autonomy payload adapter; corpus and episodic sources; documentation. Excluded: a retired-area TTL, a live run against this repository's `knowledge/`, scheduling/trigger execution, L1 or OM adoption/forking, user-scope L4 mutation, embeddings, new OKF knowledge types, and changes to explicit-save semantics.
 
-This plan intentionally has 20 behaviors, above the normal 12-behavior guidance, because the authoritative spec has 18 ratified ACs and AC-012/AC-014 cross independent seams that need separate executable proof. `## Implementation Order` defines five mandatory task/release units with four hard dependency boundaries; no task may span two units, and shared contracts must land before later parallel work.
+This plan intentionally has 21 behaviors, above the normal 12-behavior guidance, because the authoritative spec has 18 ratified ACs and AC-012/AC-014 cross independent seams that need separate executable proof. `## Implementation Order` defines five mandatory task/release units with four hard dependency boundaries; no task may span two units, and shared contracts must land before later parallel work.
 
 ## Architecture Context
 
@@ -38,6 +38,7 @@ Current code evidence:
 - `lib/memory/knowledge-records.ts` validates the four knowledge types but currently discards the ratified `retire-when` custom key.
 - `lib/extensions/knowledge-surface/combined-context.ts` owns the current 24,000-byte combined budget and 50-row knowledge limit; `knowledge-tools.ts` owns `recall` and has no retired opt-in.
 - `tests/memory/interface.test.ts` contains the frozen B-003 seed audit and recognizes only `curatedRecords`; it does not recognize relocation manifests or `retiredRecords`. Its existing field/body comparison is not an exact destination-byte receipt.
+- `tests/memory/interface.test.ts` also pins the full-source SHA-256 of `lib/memory/types.ts` and `lib/architecture-map/retrieval.ts` (the profile-playbooks B-002 seam-stability test). The §1 contract change re-pins the `types.ts` hash in the same commit — the established precedent from memory-hardening, episodic-log, and knowledge-surface; `lib/architecture-map/retrieval.ts` stays byte-identical and its pin unchanged.
 - The existing proposal path writer provides canonical identity, exclusive creation, symlink refusal, and retry convergence, but not file-and-directory sync durability. Living-memory must reuse its path checks while upgrading durable-before-remove writes.
 - `lib/entity-file-lock.ts` is the reusable cross-process lock, but omitting `waitTimeoutMs` waits forever and release failures require `onReleaseUnconfirmed` ownership.
 - `cli/main.ts` dispatches dedicated Commander subprograms; `cli/architecture/subcommand.ts` and `cli/architecture/narrative-provider.ts` are the local patterns for an injectable CLI operation and a no-tools in-memory Pi provider.
@@ -156,6 +157,8 @@ Capability evidence: runtime structural-analysis bindings for complexity, duplic
   - Alternatives: include model prose in the identity and assume byte-repeatability; call the model again after every restart; key only by title.
   - Why: a fresh in-memory model session cannot guarantee byte-identical wording, while episode pruning and immediate convergence depend on reusing the first durable output (`review.md` (round 1) PR-007).
   - Decided by: planner-proposed, 2026-09-01
+
+  *(convergence implication superseded by D-020, 2026-09-01; the batch keying itself stands)*
 - **D-017 - Citation authority uses a healthy canonical live inventory**
   - Decision: scan valid live project/user knowledge records excluding every reserved `index.md` and `retired/`; root `AGENTS.md`, `CLAUDE.md`, `README.md`, `ROADMAP.md` when present; `docs/**/*.md`; active `missions/plans/**/*.md`; and `missions/architecture/**/*.md`. Exclude archived missions, sessions, promotion/retirement receipts, and generated indexes. Normalize relative links against the citing file, strip anchors/query, and equate physical-relative and `knowledge/...` resource forms. Any unreadable, escaping, malformed, or incomplete relevant inventory blocks every auto-retirement for that pass.
   - Alternatives: scan every markdown receipt/history file; scan only knowledge/docs; ignore partial discovery; compare raw link strings.
@@ -171,6 +174,37 @@ Capability evidence: runtime structural-analysis bindings for complexity, duplic
   - Alternatives: one 20-behavior task; parallelize before shared types/persistence contracts exist.
   - Why: the authoritative spec remains whole while workers receive bounded ownership and explicit contracts (`review.md` (round 1) PR-010).
   - Decided by: planner-proposed, 2026-09-01
+- **D-020 - Post-completion convergence uses represented-evidence recognition** *(Added 2026-09-01 after review)*
+  - Decision: batch-key rehydration serves only same-batch crash retries. A rerun after a committed pass recognizes prior work through durable evidence — a selected record/observation is represented when its current digest appears in a materialized receipt, written proposal, or manifest event; judgment runs only over unrepresented work; an all-represented pass is a no-model `noop`; a model-invoking zero-write pass is `ran` with empty write sets.
+  - Alternatives: re-key and re-call the model on every rerun (duplicate proposals, no convergence); include model wording in identity (already rejected by D-016).
+  - Why: AC-014's second-run-finds-nothing half and QC assertion 7 were unimplementable under pure batch-key mechanics — the key self-invalidates after the very pass it proves (adversarial review, three lenses converged).
+  - Decided by: planner, amend-on-record, 2026-09-01
+  - Supersedes: the implication in D-016/§2 that receipt rehydration alone yields rerun convergence.
+- **D-021 - Manifest-state guards make the human veto durable** *(Added 2026-09-01 after review)*
+  - Decision: a live path with an active `retired` event is a restoration-in-progress conflict (never retire; `restore` can still complete); a path whose latest event is `restored` is suppressed from auto-retirement while its bytes match the restoration digest — only a `retire` proposal may target it; changed bytes clear the suppression.
+  - Alternatives: no manifest-state axis (a vetoed record re-retires next pass; the git-mv window races a concurrent pass and strands `restore`); permanent suppression regardless of byte changes.
+  - Why: without these rules the human veto is not durable and AC-004's restoration flow can be raced into an unrecoverable state (adversarial review).
+  - Decided by: planner, amend-on-record, 2026-09-01
+- **D-022 - `ratifiedBaselines` is the human act that pins destination bytes** *(Added 2026-09-01 after review)*
+  - Decision: ledger rounds gain optional `ratifiedBaselines` rows (original path + destination SHA-256) parsed fail-closed in Slice 0; writing them is a human ledger act; a dry-run report may supply candidate paths/digests as evidence but no machine writes a ledger round.
+  - Alternatives: leave D-013's third baseline row undesigned (the seed-migration corpus — most of the prototype's high-confidence payload — stays auto-retire-unreachable forever); machine-generated baselines called ratified (violates INV-001's spirit and D-013's letter).
+  - Why: D-013 names this baseline but no artifact, act, or parser existed; the plan's own declared first live payload was unreachable (adversarial review).
+  - Decided by: planner, amend-on-record, 2026-09-01
+- **D-023 - Materialized receipts discharge when fully stale** *(Added 2026-09-01 after review)*
+  - Decision: at mutating-pass start, under the lock, a materialized receipt none of whose consumed digests matches any current source record is durably removed; partially matching receipts persist (they represent unchanged records for D-020 recognition); `accepted` receipts are never removed.
+  - Alternatives: no exit state (unbounded growth with pass count once scheduled); aggressive discharge after materialization (destroys the negative-result memory D-020's recognition depends on).
+  - Why: `materialized` was the only durable state with no discharge; growth was linear in passes inside the tracked `memory/` tree (adversarial review).
+  - Decided by: planner-proposed, 2026-09-01
+- **D-024 - v1 retire-when checks are path-exists/path-absent only** *(Added 2026-09-01 after review)*
+  - Decision: the checkable predicate union ships as `path-exists | path-absent` over contained scope-relative paths; version thresholds and test names from the brief's §3.4 examples stay free text (reviewable, never alone authorizing) and are deferred.
+  - Alternatives: execute version probes or named tests per pass (violates the no-command-execution safety rule in §4 and D-005's no-tools stance); an open predicate vocabulary implementers extend silently.
+  - Why: records the narrowing the design already made and its expected coverage cost against the prototype's 14/16 already-true predicates, instead of leaving it an unrecorded shrink of AC-008's force (adversarial review).
+  - Decided by: planner-proposed, 2026-09-01
+- **D-025 - The episodic inlet lives behind the knowledge store's consolidator** *(Added 2026-09-01 after review)*
+  - Decision: episode reading, folding, and safe pruning run inside the configured knowledge-store pipeline via the episodic source adapter; `markdown-store.consolidate()` remains an exact noop. This records the disposition of the brief §7.2 sketch sentence "the markdown store keeps its episode-pruning meaning": the meaning is delivered at the source seam, the store method stays inert.
+  - Alternatives: implement a second pipeline inside the markdown store (duplicate durable-write/lock/receipt machinery for one inlet).
+  - Why: one pipeline, one lock, one receipt story; the brief self-describes §7.2 as a sketch whose precise types are the re-spec's job, and the authoritative spec routes all consolidation through the knowledge store seam (adversarial review, recorded for the record).
+  - Decided by: planner-proposed, 2026-09-01
 
 ## Behaviors
 
@@ -178,8 +212,8 @@ Capability evidence: runtime structural-analysis bindings for complexity, duplic
 
 - Source: AC-001
 - Context: a seed fixture with an exact pre-move byte snapshot is (a) live, (b) present byte-identically at `knowledge/retired/<original-relative-path>`, or (c) absent from both locations
-- Action: the B-003 migration audit folds healthy promotion ledgers, ordered `kind: knowledge-retirement-round` manifests, and ledger `retiredRecords`
-- Expected: a matching active manifest accepts case (b), case (b) without it fails, and case (c) is accepted only when a human ledger names the original path in `retiredRecords`; metadata, body, full-byte serialization, path, digest, malformed/duplicate round, unknown restoration, invalid order, and malformed ledger mutations fail closed
+- Action: the B-003 migration audit folds healthy promotion ledgers (including `retiredRecords` and destination-pinning `ratifiedBaselines` rows), and ordered `kind: knowledge-retirement-round` manifests
+- Expected: a matching active manifest accepts case (b), case (b) without it fails, and case (c) is accepted only when a human ledger names the original path in `retiredRecords`; metadata, body, full-byte serialization, path, digest, malformed/duplicate round, unknown restoration, invalid order, malformed `ratifiedBaselines` rows, and malformed ledger mutations fail closed
 - Seam: `tests/memory/interface.test.ts` frozen seed audit + `lib/memory/retirement-receipts.ts`
 - Test: `tests/memory/interface.test.ts` > `accepts only manifest-backed relocation and ledger-backed hard deletion`
 - Marker: `@cosmo-behavior plan:living-memory#B-001`
@@ -209,7 +243,7 @@ Capability evidence: runtime structural-analysis bindings for complexity, duplic
 - Source: AC-004
 - Context: one record has an active retirement manifest event
 - Action: a human `git mv`s it back and invokes `cosmonauts memory restore <original-path> --reason <text>`, then a separate fixture is hard-deleted under a human ledger `retiredRecords` entry
-- Expected: restore validates live bytes against the active digest, refuses while the retired file still exists, appends a synced later restoration round under the finite lock, and re-enters default retrieval/injection; hard deletion remains absent and passes the frozen audit only through the human ledger
+- Expected: restore validates live bytes against the active digest, refuses while the retired file still exists, appends a synced later restoration round under the finite lock, and re-enters default retrieval/injection; hard deletion remains absent and passes the frozen audit only through the human ledger; a subsequent pass neither re-retires the restored record while its bytes match the restoration digest nor retires a live record whose latest manifest event is still `retired`
 - Seam: `cli/memory/subcommand.ts` + `lib/memory/retirement-receipts.ts` manifest fold + knowledge retrieval
 - Test: `tests/memory/living-memory.test.ts` > `annotates a human restoration and reserves hard deletion for the ledger`
 - Marker: `@cosmo-behavior plan:living-memory#B-004`
@@ -329,7 +363,7 @@ Capability evidence: runtime structural-analysis bindings for complexity, duplic
 - Source: AC-014
 - Context: one pass accepted model judgment and committed proposals, retirements, and eligible episode pruning
 - Action: a fresh configured store reruns immediately twice
-- Expected: it reads the accepted-judgment receipt before model invocation, reuses recorded proposal paths/output, rebuilds manifest state, never rediscovers retired records or prunes episodes twice, completes pending durable recovery, and reaches an honest immediate noop
+- Expected: a same-batch crash retry rehydrates the accepted receipt by exact batch key and reuses recorded proposal paths/output without a second model call; a post-completion immediate rerun computes a changed batch key yet recognizes every selected record and observation as represented through materialized receipts, written proposals, and manifest events, invokes no model, discharges only fully stale materialized receipts, never rediscovers retired records or prunes episodes twice, completes pending durable recovery, and returns an honest immediate noop
 - Seam: `lib/memory/consolidation-receipts.ts` + `lib/memory/living-memory.ts`
 - Test: `tests/memory/living-memory.test.ts` > `rehydrates accepted judgment and persisted evidence then converges to noop`
 - Marker: `@cosmo-behavior plan:living-memory#B-016`
@@ -373,6 +407,16 @@ Capability evidence: runtime structural-analysis bindings for complexity, duplic
 - Seam: `docs/memory.md` paired with memory/CLI documentation pins
 - Test: `tests/memory/interface.test.ts` > `documents living-memory trust outlets invocation durability and recovery`
 - Marker: `@cosmo-behavior plan:living-memory#B-020`
+
+### B-021 - Index pressure derives from the exact injection renderer
+
+- Source: AC-010
+- Context: live project and user records exist whose complete index either fits or exceeds the 50-row/guaranteed-share budget, and combined-context injection is assembled before and after the policy extraction
+- Action: `lib/extensions/knowledge-surface/index-policy.ts` measures pressure through the extracted renderer via the core `KnowledgeIndexPressurePolicy` interface
+- Expected: pressure is exactly `records > 50 OR renderedIndexBytes + oneRowHeadroom > guaranteedKnowledgeShare`, with the guaranteed share computed by the existing fair allocator and headroom equal to the largest current row plus exact truncation/footer framing; combined-context injection bytes are identical before and after the extraction; exhausted safe project candidates report `target-unmet`; user records are measured but never become mutation candidates
+- Seam: `lib/extensions/knowledge-surface/index-policy.ts` + `lib/extensions/knowledge-surface/combined-context.ts`
+- Test: `tests/extensions/architecture-memory.test.ts` > `measures index pressure with the exact injection renderer and budget`
+- Marker: `@cosmo-behavior plan:living-memory#B-021`
 
 ## Design
 
@@ -442,14 +486,14 @@ interface MemoryConsolidateDetails {
 }
 
 type MemoryConsolidateResult =
-  | { readonly kind: "noop"; readonly reason: string; readonly details: MemoryConsolidateDetails }
+  | { readonly kind: "noop"; readonly reason: string; readonly details?: MemoryConsolidateDetails }
   | { readonly kind: "ran"; readonly details: MemoryConsolidateDetails }
-  | { readonly kind: "failed"; readonly reason: string; readonly details: MemoryConsolidateDetails };
+  | { readonly kind: "failed"; readonly reason: string; readonly details?: MemoryConsolidateDetails };
 
 type KnowledgeConsolidator = (options?: MemoryConsolidateOptions) => Promise<MemoryConsolidateResult>;
 ```
 
-`KnowledgeMemoryStoreOptions` gains `consolidator?: KnowledgeConsolidator`; its method delegates only when configured, otherwise returns an exact no-runtime noop. Markdown and architecture stores accept optional arguments and retain their current exact noops.
+`KnowledgeMemoryStoreOptions` gains `consolidator?: KnowledgeConsolidator`; its method delegates only when configured, otherwise returns an exact no-runtime noop. Markdown and architecture stores accept optional arguments and retain their current exact noops. `details` is optional on `noop` and `failed` precisely so the existing two-field noop objects remain members of the published union; every configured living-memory outcome populates `details`.
 
 Judgment and target contracts are also exported from `lib/memory/`:
 
@@ -518,6 +562,10 @@ The pipeline rejects over-limit return arrays, duplicate `(sourceId,id)`, record
 
 For a full model batch, compute `batchKey` from schema version, model mode/model identity, sorted source scope+path+digest, and deterministic observations—never model wording. Before calling a model, read `memory/agent/consolidations/<batch-key>.json`. A healthy accepted receipt contains exact inputs, normalized output, stable output slots, and target proposal paths. If absent, make one bounded call, validate known ids/kinds/caps/lossiness, then durable-write the accepted receipt before materializing proposals. If present, rehydrate it and make no call. State is `accepted → materialized`; both are durable machine receipts and are never injected/indexed. Changed source digest yields a new key.
 
+**Recognition and convergence (added 2026-09-01 after review).** Rehydration by exact batch key serves only same-batch crash retries. A committed mutating pass changes its own sources (retired records leave the live set; pruned episodes are unlinked), so the next pass computes a different batch key and must not blindly re-judge. A selected record or deterministic observation is *represented* when its current digest appears in the consumed evidence of a materialized accepted receipt, a written proposal, or a manifest event. Judgment is invoked only when unrepresented selected records or observations exist; a pass in which everything selected is represented returns `noop` without a model call, keeping B-010's noop rule intact. A pass that invokes the model and commits no write is `ran` with empty write sets, never `noop`.
+
+**Receipt discharge.** `materialized` has an exit: at the start of a mutating pass, under the lock, a materialized receipt none of whose consumed digests matches any current source record (fully stale) is durably removed — machine-written state within LM-D-001 authority. Partially matching receipts persist because they still represent their unchanged records; `accepted` (unmaterialized) receipts are never removed. `memory/agent/consolidations/` is therefore bounded by live work, not pass count.
+
 The CLI judgment provider uses `DefaultResourceLoader` with no extensions, skills, prompts, themes, context files, or tools; `SessionManager.inMemory()`; `FALLBACK_MODEL` unless overridden; and the caller AbortSignal. It makes at most one request only after deterministic checks. Invalid/cancelled output fails before mutation. Explicit manual invocation or autonomy-host consent is consent to send the bounded selected content to the configured provider; no project-controlled command is executed.
 
 ### 3. Index-bound target
@@ -563,7 +611,7 @@ Existing Drive improvement artifacts stay under `missions/reviews/improvements/`
 
 `retirement-receipts.ts` lands read-only in Slice 0. It returns `healthy` or an explicit fail-closed inventory error and parses:
 
-- `knowledge-surface-promotion` ledgers (`promotions`, `curatedRecords`, new `retiredRecords`);
+- `knowledge-surface-promotion` ledgers (`promotions`, `curatedRecords`, new `retiredRecords`, new `ratifiedBaselines` rows pinning original path plus destination SHA-256 — all parsed fail-closed);
 - ordered `memory/agent/retirements/round-<n>.md` with frontmatter `kind: knowledge-retirement-round`;
 - `retired` events carrying id, original path, digest, allowed reason, evidence refs/reason, and date;
 - later `restored` events referencing a known retirement id/path/digest/date/reason.
@@ -576,9 +624,11 @@ Exact baseline outcomes:
 |---|---|
 | Promotion destination bytes equal recorded SHA-256; no later curation | eligible exact baseline |
 | Current frozen migration inventory only | remain live; it proves semantic migration, not exact destination serialization |
-| Separate human-ratified full-destination digest exists | eligible exact baseline |
+| A healthy ledger round pins current destination bytes in `ratifiedBaselines` (original path + destination SHA-256) | eligible exact baseline |
 | Later path-only `curatedRecords` | remain live; baseline unknown |
 | Unknown origin or current/run digest mismatch | remain live; baseline/digest conflict |
+
+Writing `ratifiedBaselines` is a human ledger act — the sanctioned discharge path for the seed-migration corpus, which otherwise stays baseline-unknown forever (its frozen inventory digests the legacy source, not the destination). A dry-run report may list candidate paths and current destination digests as evidence for the owner, but no machine writes or edits a ledger round. Malformed, duplicate, or unsafe `ratifiedBaselines` rows make the fold unhealthy.
 
 The B-001 synthetic move begins from an exact raw byte snapshot, so relocation tests full bytes and a serialization-only mutation fails. The existing frozen audit's metadata/body/index checks remain; no machine-generated baseline is called ratified. Absence from both locations is forgiven only by healthy human `retiredRecords`.
 
@@ -597,7 +647,7 @@ Mutating passes call `withEntityFileLock(".cosmonauts/living-memory.lock", actio
 
 Retirement batch sequence:
 
-1. Under finite lock, recover prior journal and revalidate exact bytes, baseline, healthy citation inventory, paths, and round allocation.
+1. Under finite lock, recover prior journal and revalidate exact bytes, baseline, healthy citation inventory, manifest-state guards, paths, and round allocation.
 2. Durable-replace `prepared` journal with canonical original/derived paths, digests, and prospective manifest bytes/path.
 3. Durable-link live files to retired destinations while live remains authoritative.
 4. Durable-exclusive-write immutable manifest round; after file+parent sync, commit intent exists.
@@ -619,11 +669,13 @@ Candidate outcomes:
 | yes | yes | healthy + none | cap full | cap-deferred; no candidate write |
 | yes at observation, changed at commit | any | any | actual | digest conflict; remain live |
 
+**Manifest-state guards (added 2026-09-01 after review).** Two fail-closed rules precede candidate evaluation: (a) a live path whose latest manifest event is an active `retired` (a human has `git mv`ed the record back but not yet run `restore`) is a restoration-in-progress conflict — never retire it, report it, and `cosmonauts memory restore` remains able to complete; (b) a path whose latest manifest event is `restored` is suppressed from auto-retirement while its current bytes match the digest recorded at restoration — the human veto is durable. A suppressed record may only be the subject of a `retire` proposal; changed bytes (a new digest) clear the suppression.
+
 State exits:
 
 - journal `prepared → rolled-back | committed → rolled-forward`, then durable removal;
-- accepted judgment `absent → accepted → materialized`, rehydrated by batch key;
-- manifest `live → retired → restored`; hard deletion is separate `retiredRecords`;
+- accepted judgment `absent → accepted → materialized → discharged-when-fully-stale`, rehydrated by batch key;
+- manifest `live → retired → restored` (a restored path re-enters auto-retirement candidacy only on changed bytes); hard deletion is separate `retiredRecords`;
 - improve `open → actioned|rejected → closed` through owner CLI;
 - create/merge/retire proposals exit through existing human promotion/curation/rejection ledger process.
 
@@ -657,13 +709,13 @@ cosmonauts memory restore <knowledge/path> --reason <text> [--json|--plain]
 ## Files to Change
 
 - `tests/memory/interface.test.ts` ↔ `lib/memory/retirement-receipts.ts` (new): B-001 read-only receipt/ledger extension; lands alone before relocation-capable code.
-- `tests/memory/interface.test.ts` ↔ `lib/memory/types.ts`, `lib/memory/index.ts`: B-012 exact public source/judgment/index/consolidator/result contracts and existing noop compatibility.
+- `tests/memory/interface.test.ts` ↔ `lib/memory/types.ts`, `lib/memory/index.ts`: B-012 exact public source/judgment/index/consolidator/result contracts and existing noop compatibility; re-pins the full-source `types.ts` SHA-256 in the profile-playbooks seam test in the same commit.
 - `tests/memory/living-memory.test.ts` (new) ↔ `lib/memory/living-memory.ts` (new), `lib/memory/consolidation-sources.ts` (new): B-005, B-008..B-011, B-016, B-018 pipeline, healthy citation inventory, bounds, dry-run, and convergence.
 - `tests/memory/living-memory.test.ts` (new) ↔ `lib/memory/consolidation-receipts.ts` (new): B-016/B-019 accepted model-output persistence and rehydration.
 - `tests/memory/living-memory.test.ts` (new) ↔ `lib/memory/consolidation-proposals.ts` (new), `lib/memory/proposal-files.ts` (new), `lib/memory/knowledge-store.ts`, `lib/memory/knowledge-records.ts`: B-006..B-009 variants, evidence, owner lifecycle, existing path-safety reuse, and `retire-when`.
 - `tests/memory/living-memory.test.ts` (new) ↔ `lib/memory/durable-files.ts` (new), `lib/memory/retirement-store.ts` (new), `lib/entity-file-lock.ts` options: B-002/B-004/B-015/B-017 synced manifest/transaction/recovery/byte authority and bounded liveness.
 - `tests/extensions/agent-memory.test.ts` ↔ `lib/memory/knowledge-store.ts`, `lib/extensions/knowledge-surface/knowledge-tools.ts`: B-003 opt-in retired recall and default exclusion.
-- `tests/extensions/architecture-memory.test.ts` ↔ `lib/extensions/knowledge-surface/index-policy.ts` (new), `lib/extensions/knowledge-surface/combined-context.ts`: B-010 shared renderer/budget policy implementing the core interface.
+- `tests/extensions/architecture-memory.test.ts` ↔ `lib/extensions/knowledge-surface/index-policy.ts` (new), `lib/extensions/knowledge-surface/combined-context.ts`: B-021 shared renderer/budget policy implementing the core interface.
 - `tests/memory/interface.test.ts` ↔ `lib/memory/markdown-store.ts` and existing architecture adapters: optional consolidate arguments compile while exact noops remain.
 - `tests/memory/living-memory.test.ts` (new) ↔ `lib/memory/consolidation-job.ts` (new): B-014 closed autonomy payload and shared factory invocation.
 - `tests/cli/memory/subcommand.test.ts` (new) ↔ `cli/memory/subcommand.ts` (new), `cli/memory/judgment-provider.ts` (new): B-004/B-007/B-013 owner commands, pointer validation, output modes, model isolation, conflicts, cancellation, and exit codes.
@@ -694,7 +746,7 @@ Plan-specific assertions:
 4. Dry-run/healthy noop leave all stores byte-identical and read-only observe pending recovery/concurrency instead of performing it.
 5. Merge/edit/improve/note outputs stay in machine proposal/receipt areas; prescriptive content/replacement bodies never enter `knowledge/` automatically.
 6. Target measurement uses the exact injection renderer/constants; source/cap/lossy validation rejects over-limit, duplicate-id, and one-output-per-input batches.
-7. Fresh retries rehydrate accepted model output and manifest/proposal evidence, complete safe recovery/prune, and converge without another model call.
+7. Fresh retries rehydrate accepted model output and manifest/proposal evidence, complete safe recovery/prune, and converge without another model call — same-batch retries by exact batch key, post-completion reruns by represented-evidence recognition (§2).
 8. Consolidate, improve action/reject, restore, and payload adapters use the exact core contracts; `lib/memory` imports no Pi/CLI/task/domain/extension implementation.
 
 Current plan-time artifact-conformance evidence is **not yet passing**: three named test files and all living-memory markers are RED-step deliverables. The binding exists, but completion is blocked until each referenced file resolves and carries its exact marker.
@@ -702,7 +754,7 @@ Current plan-time artifact-conformance evidence is **not yet passing**: three na
 | Order | Gate kind | Tier | Binding state | Threshold | Protocol | Degradation / notes |
 |---:|---|---|---|---|---|---|
 | 1 | `correctness` | universal | bound | Project-native unit, integration, type, and lint evidence passes after every commit; Slice 0 receipt evidence stays green at every later commit | project-discovered | hard fail; no relocation-capable commit while receipt evidence is red |
-| 2 | `artifact-conformance` | universal | bound | all B-001..B-020 fields, resolving root-relative test files, and exact test markers are present | artifact evidence | currently failing/pending RED homes; hard fail at completion |
+| 2 | `artifact-conformance` | universal | bound | all B-001..B-021 fields, resolving root-relative test files, and exact test markers are present | artifact evidence | currently failing/pending RED homes; hard fail at completion |
 | 3 | `mutation` | bindable | unbound | receipt, serialization, dry-run, citation inventory, baseline, proposal boundary, lock, sync, and crash-recovery mutations are killed | pending | unbound, not enforced; verifier runs named negatives and reviewer judgment is required |
 | 4 | `duplication` | bindable | unbound | no second path-safety/durable writer or index renderer remains | pending | unbound (`execution-not-consented`); manual review required |
 | 5 | `complexity` | bindable | unbound | durable and pipeline state transitions match the specified tables with no implementer-decided cells | pending | unbound; manual state-table review required |
@@ -711,7 +763,7 @@ Current plan-time artifact-conformance evidence is **not yet passing**: three na
 
 ## Implementation Order
 
-Every behavior uses one-agent RED → GREEN → REFACTOR. Universal correctness evidence runs after each commit, and B-001 runs at every commit from Slice 0 onward. Task management must create 5-12 linked tasks with at least one task for each Slice 0..4, preserve the dependency chain, and forbid tasks spanning slices. If a slice is decomposed, its shared-contract task lands before parallel workers.
+Every behavior uses one-agent RED → GREEN → REFACTOR. Behavior→slice ownership (the slice where the behavior's named Test goes green and its marker lands): Slice 0 owns B-001; Slice 1 owns B-003, B-008, B-009, B-010, B-018, B-021; Slice 2 owns B-002, B-005, B-006, B-011, B-015, B-016, B-017; Slice 3 owns B-004, B-007, B-013, B-014, B-019; Slice 4 owns B-012, B-020. Earlier slices deliver only contracts, skeletons, or partial RED work for behaviors owned later and never claim them green; the owning slice's task carries the behavior's acceptance. Universal correctness evidence runs after each commit, and B-001 runs at every commit from Slice 0 onward. Task management must create 5-12 linked tasks with at least one task for each Slice 0..4, preserve the dependency chain, and forbid tasks spanning slices. If a slice is decomposed, its shared-contract task lands before parallel workers.
 
 ### Slice 0 - Receipt floor task/release unit (must ship first)
 
@@ -724,7 +776,7 @@ Every behavior uses one-agent RED → GREEN → REFACTOR. Universal correctness 
 4. RED/GREEN exact exported contracts and `createLivingMemoryConsolidator()` factory skeleton (B-012/B-014/B-018); configured store delegation; existing noops.
 5. RED/GREEN retired default/opt-in retrieval and logical-resource parsing (B-003); no movement code.
 6. RED/GREEN durable-file primitives with non-destructive temp fixtures only, proposal path extraction, accepted-judgment receipt/store, variants, N=1/sub-record rule, and improve state machine (B-006/B-007/B-016 contracts). No source removal.
-7. RED/GREEN `retire-when`, canonical healthy citation inventory, deterministic stale edit, index policy, source validation, caps/lossiness (B-005/B-008..B-010/B-018). Include root/index/relative-link/anchor/incomplete-inventory negatives and exact 9608b54 temp fixture.
+7. RED/GREEN `retire-when`, canonical healthy citation inventory, deterministic stale edit, index policy, source validation, caps/lossiness (B-005/B-008..B-010/B-018/B-021). Include root/index/relative-link/anchor/incomplete-inventory negatives and exact 9608b54 temp fixture.
 
 **Boundary:** contracts and all proposal/read-only behavior are independently green; no live knowledge/episode path can be removed.
 
