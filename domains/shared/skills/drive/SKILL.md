@@ -92,6 +92,10 @@ With `commitPolicy: "driver-commits"`, Drive defaults `stateCommitPolicy` to `fi
 
 Verification-only tasks may produce no source changes. Treat explicit no-source-change finalization evidence as a successful source-commit skip for verification-only work, then route any later `task_status` or `state_commit` failure through resume recovery. When Drive emits `plan_completion_candidate`, it is only a signal that all `plan:<slug>` tasks are `Done`; an operator still decides whether to complete, archive, or distill the plan. If `partialMode=continue` leaves any task not Done, Drive skips the final state commit and completion candidate with `not_all_tasks_done` evidence.
 
+## Improvement Pass (post-run)
+
+After a run reaches a terminal state and its verification is settled, the coordinator (not Drive) runs a read-only improvement pass (living-memory LM-D-008): re-read the run's `events.jsonl` and task notes — open Tier-2 transcripts only where something needs explaining — and extract *prescriptive* observations: friction, dead ends, driver or tooling defects, anything that should change. If (and only if) there is signal, write `missions/reviews/improvements/<runId>.md` with frontmatter `kind: drive-improvement-observations`, `status: open`, plan and run ids, and a four-column body (*observed problem → what happened in this run → suggested improvement → why it helps*) plus ranked follow-ups and explicit non-goals. Bounded and lossy by default: cap rows around 8, and an empty pass writes nothing. Lifecycle is `open → actioned|rejected → closed`; closing records a pointer to what each item became (roadmap item, task, or prompt/skill edit). These artifacts feed the living-memory pump's prescriptive outlet — never `knowledge/`.
+
 ## Bounded Non-Goals
 
 Drive does not provide live-follow UI beyond event/status/list summaries, generated final summary artifacts, artifact-conformance enforcement in Drive, or automatic plan completion. It also does not automate archive, memory, push, or PR lifecycle steps.

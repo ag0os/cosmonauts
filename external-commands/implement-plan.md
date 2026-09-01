@@ -60,6 +60,7 @@ You are coordinating the implementation of an **existing** cosmonauts plan and d
 
 ## Phase 4 — Report & stop
 
+- **Improvement pass (living-memory LM-D-008).** Before reporting, run a read-only distiller-style pass over the run: re-read `events.jsonl` and the task notes — open Tier-2 transcripts only where something needs explaining — and extract *prescriptive* observations: friction, dead ends, driver/tooling defects, anything that should change. If (and only if) there is signal, write `missions/reviews/improvements/<runId>.md` with frontmatter `kind: drive-improvement-observations`, `status: open`, plan and run ids, and a four-column body (*observed problem → what happened in this run → suggested improvement → why it helps*) plus ranked follow-ups and explicit non-goals. Bounded and lossy by default: cap it around 8 rows, and an empty pass writes nothing. Commit it with the other artifacts.
 - **Stop at a clean, fully-verified `feature/$1` branch. Do NOT push, merge, or open a PR** unless the user explicitly asks. (If they do, prefer a fast-forward onto `BASE`; report exactly what will be published — check `git rev-list --count origin/$BASE..$BASE` first.)
 - Report: all tasks Done; gate results; the no-churn / plan-specific guarantees you verified; QM verdict; codex findings + dispositions; and anything still open.
 - Offer, as an explicit follow-up (do **not** do it unattended): archive the plan (`cosmonauts plan archive $1`) and distill a `memory/$1.md` per the archive skill.
