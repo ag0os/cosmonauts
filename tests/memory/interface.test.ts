@@ -37,6 +37,10 @@ import {
 	type MemoryStore,
 	type RetrievedMemoryRecord,
 } from "../../lib/memory/index.ts";
+import {
+	type RetirementReceiptInventoryResult,
+	readRetirementReceiptInventory,
+} from "../../lib/memory/retirement-receipts.ts";
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("memory-interface-");
@@ -1639,13 +1643,16 @@ describe("frozen knowledge seed migration", () => {
 		) as SeedInventory;
 		const files = await readKnowledgeCorpus(projectRoot);
 		const activeLegacyPaths = await findActiveLegacyKnowledgePaths(projectRoot);
+		const receipts = await readRetirementReceiptInventory({ projectRoot });
 
 		// Bodies migrated byte-for-byte (Design §6). After migration, a body may
 		// legally drift only through the sanctioned curation path — a direct edit
 		// recorded in a promotion-ledger round's `curatedRecords` list
 		// (docs/memory.md). The filter forgives exactly those recorded paths;
 		// metadata, destination, and index checks stay fully enforced.
-		const curatedBodies = await recordedCuratedBodies(projectRoot);
+		const curatedBodies = new Set(
+			receipts.kind === "healthy" ? receipts.inventory.curatedRecords : [],
+		);
 		const withoutRecordedCuration = (issues: readonly string[]) =>
 			issues.filter(
 				(issue) =>
@@ -1657,7 +1664,7 @@ describe("frozen knowledge seed migration", () => {
 
 		expect(
 			withoutRecordedCuration(
-				auditMigratedSeed(inventory, files, activeLegacyPaths),
+				auditMigratedSeed(inventory, files, activeLegacyPaths, receipts),
 			),
 		).toEqual([]);
 
@@ -1726,6 +1733,308 @@ describe("frozen knowledge seed migration", () => {
 				auditMigratedSeed(inventory, bodyMutation, activeLegacyPaths),
 			),
 		).toContain(`body:${markdownDestination}`);
+	});
+
+	// @cosmo-behavior plan:living-memory#B-001
+	test("accepts only manifest-backed relocation and ledger-backed hard deletion", async () => {
+		const projectRoot = process.cwd();
+		const inventory = JSON.parse(
+			await readFile(
+				join(projectRoot, "tests", "fixtures", "knowledge-seed-inventory.json"),
+				"utf-8",
+			),
+		) as SeedInventory;
+		const files = await readKnowledgeCorpus(projectRoot);
+		const liveReceipts = await readRetirementReceiptInventory({ projectRoot });
+		const curatedBodies = new Set(
+			liveReceipts.kind === "healthy"
+				? liveReceipts.inventory.curatedRecords
+				: [],
+		);
+		const destinations = inventory.markdown
+			.map((entry) => entry.path.replace(/^memory\//u, "knowledge/"))
+			.filter((path) => !curatedBodies.has(path));
+		const [relocatedPath, deletedPath, baselinePath, restoredPath] =
+			destinations;
+		if (!relocatedPath || !deletedPath || !baselinePath || !restoredPath) {
+			throw new Error("Frozen inventory must contain four markdown records.");
+		}
+		const selectedPaths = new Set(destinations.slice(0, 4));
+		const fixtureInventory: SeedInventory = {
+			migrationTimestamp: inventory.migrationTimestamp,
+			markdown: inventory.markdown.filter((entry) =>
+				selectedPaths.has(entry.path.replace(/^memory\//u, "knowledge/")),
+			),
+			bundles: [],
+		};
+		const fixtureFiles = new Map<string, string>();
+		for (const path of ["knowledge/index.md", ...selectedPaths]) {
+			const raw = files.get(path);
+			if (raw !== undefined) fixtureFiles.set(path, raw);
+		}
+		const relocatedBytes = fixtureFiles.get(relocatedPath);
+		const baselineBytes = fixtureFiles.get(baselinePath);
+		const restoredBytes = fixtureFiles.get(restoredPath);
+		if (!relocatedBytes || !baselineBytes || !restoredBytes) {
+			throw new Error(
+				"Frozen destinations must exist before fixture relocation.",
+			);
+		}
+		const relocatedDigest = sha256(relocatedBytes);
+		const baselineDigest = sha256(baselineBytes);
+		const restoredDigest = sha256(restoredBytes);
+		const evidenceDigest = sha256("fixture evidence");
+		const audit = (
+			fixtureFiles: ReadonlyMap<string, string>,
+			fixtureReceipts: RetirementReceiptInventoryResult,
+		) =>
+			auditMigratedSeed(
+				fixtureInventory,
+				fixtureFiles,
+				[],
+				fixtureReceipts,
+			).filter(
+				(issue) =>
+					!issue.startsWith("body:") ||
+					!curatedBodies.has(issue.slice("body:".length)),
+			);
+		const fixtureRoot = join(tmp.path, "receipt-floor");
+		const ledger = promotionLedger({
+			relocatedPath,
+			relocatedDigest,
+			deletedPath,
+			baselinePath,
+			baselineDigest,
+		});
+		const retired = retiredManifest({
+			round: 1,
+			id: "retirement-relocated",
+			path: relocatedPath,
+			digest: relocatedDigest,
+			evidenceDigest,
+		});
+		const restoredRetirement = retiredManifest({
+			round: 2,
+			id: "retirement-restored",
+			path: restoredPath,
+			digest: restoredDigest,
+			evidenceDigest,
+		});
+		const restored = restoredManifest({
+			round: 3,
+			id: "retirement-restored",
+			path: restoredPath,
+			digest: restoredDigest,
+		});
+		await writeReceiptFixture(fixtureRoot, {
+			ledgers: [ledger],
+			manifests: [retired, restoredRetirement, restored],
+		});
+
+		const receipts = await readRetirementReceiptInventory({
+			projectRoot: fixtureRoot,
+		});
+		expect(receipts).toMatchObject({
+			kind: "healthy",
+			inventory: {
+				promotionRounds: [1],
+				curatedRecords: [],
+				retiredRecords: [deletedPath],
+				activeBaselines: expect.arrayContaining([
+					expect.objectContaining({
+						path: relocatedPath,
+						sha256: relocatedDigest,
+						source: "promotion",
+					}),
+					expect.objectContaining({
+						path: baselinePath,
+						sha256: baselineDigest,
+						source: "ratified-baseline",
+					}),
+				]),
+				retirementStates: expect.arrayContaining([
+					expect.objectContaining({
+						id: "retirement-relocated",
+						path: relocatedPath,
+						status: "retired",
+					}),
+					expect.objectContaining({
+						id: "retirement-restored",
+						path: restoredPath,
+						status: "restored",
+					}),
+				]),
+			},
+		});
+
+		const relocatedFiles = new Map(fixtureFiles);
+		relocatedFiles.delete(relocatedPath);
+		relocatedFiles.set(retiredPath(relocatedPath), relocatedBytes);
+		expect(audit(relocatedFiles, receipts)).toEqual([]);
+
+		const withoutManifestRoot = join(tmp.path, "receipt-floor-no-manifest");
+		await writeReceiptFixture(withoutManifestRoot, { ledgers: [ledger] });
+		const withoutManifest = await readRetirementReceiptInventory({
+			projectRoot: withoutManifestRoot,
+		});
+		expect(audit(relocatedFiles, withoutManifest)).toContain(
+			`destination:${relocatedPath}`,
+		);
+
+		const serializationMutation = new Map(relocatedFiles);
+		serializationMutation.set(
+			retiredPath(relocatedPath),
+			relocatedBytes.replace(/^---\n/u, "---\n# serialization-only mutation\n"),
+		);
+		expect(audit(serializationMutation, receipts)).toContain(
+			`serialization:${relocatedPath}`,
+		);
+
+		const bodyMutation = new Map(relocatedFiles);
+		bodyMutation.set(
+			retiredPath(relocatedPath),
+			`${relocatedBytes}\nmutated retired body`,
+		);
+		expect(audit(bodyMutation, receipts)).toEqual(
+			expect.arrayContaining([
+				`body:${relocatedPath}`,
+				`serialization:${relocatedPath}`,
+			]),
+		);
+
+		const deletedFiles = new Map(fixtureFiles);
+		deletedFiles.delete(deletedPath);
+		expect(audit(deletedFiles, receipts)).toEqual([]);
+		const withoutLedgerRoot = join(tmp.path, "receipt-floor-no-ledger");
+		await writeReceiptFixture(withoutLedgerRoot, { ledgers: [] });
+		const withoutLedger = await readRetirementReceiptInventory({
+			projectRoot: withoutLedgerRoot,
+		});
+		expect(audit(deletedFiles, withoutLedger)).toContain(
+			`destination:${deletedPath}`,
+		);
+
+		const wrongDigestRoot = join(tmp.path, "receipt-floor-wrong-digest");
+		await writeReceiptFixture(wrongDigestRoot, {
+			ledgers: [ledger],
+			manifests: [
+				retiredManifest({
+					round: 1,
+					id: "retirement-relocated",
+					path: relocatedPath,
+					digest: sha256("wrong"),
+					evidenceDigest,
+				}),
+			],
+		});
+		const wrongDigest = await readRetirementReceiptInventory({
+			projectRoot: wrongDigestRoot,
+		});
+		expect(audit(relocatedFiles, wrongDigest)).toContain(
+			`serialization:${relocatedPath}`,
+		);
+		const wrongPathRoot = join(tmp.path, "receipt-floor-wrong-path");
+		await writeReceiptFixture(wrongPathRoot, {
+			ledgers: [ledger],
+			manifests: [
+				retiredManifest({
+					round: 1,
+					id: "retirement-relocated",
+					path: baselinePath,
+					digest: baselineDigest,
+					evidenceDigest,
+				}),
+			],
+		});
+		const wrongPath = await readRetirementReceiptInventory({
+			projectRoot: wrongPathRoot,
+		});
+		expect(audit(relocatedFiles, wrongPath)).toContain(
+			`destination:${relocatedPath}`,
+		);
+
+		const unhealthyCases = [
+			{
+				name: "malformed-ledger-row",
+				ledgers: [ledger.replace(`  - ${deletedPath}`, "  - 42")],
+				manifests: [retired],
+			},
+			{
+				name: "malformed-ratified-baseline",
+				ledgers: [ledger.replace(baselineDigest, "not-a-digest")],
+				manifests: [retired],
+			},
+			{
+				name: "duplicate-ledger-round",
+				ledgers: [ledger, ledger],
+				manifests: [retired],
+			},
+			{
+				name: "noncontiguous-manifest-round",
+				ledgers: [ledger],
+				manifests: [retired, restored.replace("round: 3", "round: 3")],
+				manifestRounds: [1, 3],
+			},
+			{
+				name: "unknown-restoration",
+				ledgers: [ledger],
+				manifests: [
+					restoredManifest({
+						round: 1,
+						id: "unknown-retirement",
+						path: restoredPath,
+						digest: restoredDigest,
+					}),
+				],
+			},
+			{
+				name: "unsafe-path",
+				ledgers: [ledger.replace(baselinePath, "knowledge/../escape.md")],
+				manifests: [retired],
+			},
+			{
+				name: "unknown-event",
+				ledgers: [ledger],
+				manifests: [retired.replace("kind: retired", "kind: erased")],
+			},
+			{
+				name: "duplicate-retirement-id",
+				ledgers: [ledger],
+				manifests: [
+					retired,
+					retiredManifest({
+						round: 2,
+						id: "retirement-relocated",
+						path: baselinePath,
+						digest: baselineDigest,
+						evidenceDigest,
+					}),
+				],
+			},
+		] as const;
+		for (const fixture of unhealthyCases) {
+			const root = join(tmp.path, fixture.name);
+			await writeReceiptFixture(root, fixture);
+			const result = await readRetirementReceiptInventory({
+				projectRoot: root,
+			});
+			expect(result, fixture.name).toMatchObject({ kind: "unhealthy" });
+			expect(audit(relocatedFiles, result), fixture.name).toContain(
+				`destination:${relocatedPath}`,
+			);
+		}
+
+		const unreadableRoot = join(tmp.path, "unreadable-state");
+		await writeReceiptFixture(unreadableRoot, {
+			ledgers: [ledger],
+			manifests: [retired],
+		});
+		await mkdir(
+			join(unreadableRoot, "memory", "agent", "retirements", "round-2.md"),
+		);
+		await expect(
+			readRetirementReceiptInventory({ projectRoot: unreadableRoot }),
+		).resolves.toMatchObject({ kind: "unhealthy" });
 	});
 
 	test("records a passing 20-turn recurring scan-cost gate against the migrated corpus", async () => {
@@ -1871,16 +2180,65 @@ function auditMigratedSeed(
 	inventory: SeedInventory,
 	files: ReadonlyMap<string, string>,
 	activeLegacyPaths: readonly string[],
+	receipts?: RetirementReceiptInventoryResult,
 ): string[] {
 	const issues: string[] = [];
 	const expectedPaths = new Set<string>(["knowledge/index.md"]);
+	const authorizedRetiredPaths = new Set<string>();
+	const receiptInventory =
+		receipts?.kind === "healthy" ? receipts.inventory : undefined;
+	const activeBaselines = new Map(
+		receiptInventory?.activeBaselines.map((baseline) => [
+			baseline.path,
+			baseline.sha256,
+		]) ?? [],
+	);
+	const retirementStates = new Map(
+		receiptInventory?.retirementStates.map((state) => [state.path, state]) ??
+			[],
+	);
+	const hardDeletedPaths = new Set(receiptInventory?.retiredRecords ?? []);
+	const locateDestination = (path: string): string | undefined => {
+		const retired = retiredPath(path);
+		const liveRaw = files.get(path);
+		const retiredRaw = files.get(retired);
+		if (liveRaw !== undefined && retiredRaw !== undefined) {
+			issues.push(`path:${path}`);
+			return path;
+		}
+		if (liveRaw !== undefined) return path;
+		if (retiredRaw === undefined) {
+			if (!hardDeletedPaths.has(path)) issues.push(`destination:${path}`);
+			return undefined;
+		}
+
+		const state = retirementStates.get(path);
+		const baseline = activeBaselines.get(path);
+		const digest = sha256(retiredRaw);
+		if (
+			state?.status !== "retired" ||
+			state.digest !== digest ||
+			baseline !== digest
+		) {
+			if (state?.status === "retired" && baseline !== undefined) {
+				issues.push(`serialization:${path}`);
+			} else {
+				issues.push(`destination:${path}`);
+			}
+			return retired;
+		}
+		authorizedRetiredPaths.add(retired);
+		return retired;
+	};
 
 	for (const frozen of inventory.markdown) {
 		const destination = frozen.path.replace(/^memory\//u, "knowledge/");
 		expectedPaths.add(destination);
+		const physicalPath = locateDestination(destination);
 		checkDestination({
 			files,
 			path: destination,
+			physicalPath,
 			expectedMetadata: {
 				type: "decision",
 				title: frozen.title,
@@ -1908,9 +2266,11 @@ function auditMigratedSeed(
 			const mappedType = mapLegacyKnowledgeType(record.fields.type);
 			const destination = `knowledge/${bundle.header.planSlug}/${record.id}.md`;
 			expectedPaths.add(destination);
+			const physicalPath = locateDestination(destination);
 			checkDestination({
 				files,
 				path: destination,
+				physicalPath,
 				expectedMetadata: {
 					type: mappedType,
 					title: `${bundle.header.planTitle} — ${mappedType} ${record.ordinal}`,
@@ -1944,12 +2304,8 @@ function auditMigratedSeed(
 	}
 
 	const actualPaths = [...files.keys()].sort();
-	const expectedSorted = [...expectedPaths].sort();
-	for (const path of expectedSorted) {
-		if (!files.has(path)) issues.push(`destination:${path}`);
-	}
 	for (const path of actualPaths) {
-		if (expectedPaths.has(path)) continue;
+		if (expectedPaths.has(path) || authorizedRetiredPaths.has(path)) continue;
 		if (!path.endsWith(".md")) {
 			issues.push(`unexpected:${path}`);
 			continue;
@@ -2013,47 +2369,16 @@ function auditMigratedSeed(
 	return [...new Set(issues)].sort();
 }
 
-/**
- * Curated-record paths whose bodies were legally edited after migration, as
- * recorded in `missions/reviews/` promotion-ledger rounds
- * (kind: knowledge-surface-promotion, `curatedRecords`). Direct edits are the
- * promotion path docs/memory.md sanctions; the ledger keeps them attributable
- * and lets the byte-for-byte migration audit forgive exactly those paths.
- */
-async function recordedCuratedBodies(
-	projectRoot: string,
-): Promise<Set<string>> {
-	const reviews = join(projectRoot, "missions", "reviews");
-	const recorded = new Set<string>();
-	let entries: string[];
-	try {
-		entries = await readdir(reviews);
-	} catch {
-		return recorded;
-	}
-	for (const entry of entries.sort()) {
-		if (!entry.endsWith(".md")) continue;
-		const data = matter(await readFile(join(reviews, entry), "utf-8")).data as {
-			kind?: unknown;
-			curatedRecords?: unknown;
-		};
-		if (data.kind !== "knowledge-surface-promotion") continue;
-		if (!Array.isArray(data.curatedRecords)) continue;
-		for (const path of data.curatedRecords) {
-			if (typeof path === "string") recorded.add(path);
-		}
-	}
-	return recorded;
-}
-
 function checkDestination(options: {
 	readonly files: ReadonlyMap<string, string>;
 	readonly path: string;
+	readonly physicalPath?: string;
 	readonly expectedMetadata: Record<string, unknown>;
 	readonly expectedBody: string;
 	readonly issues: string[];
 }): void {
-	const raw = options.files.get(options.path);
+	if (options.physicalPath === undefined) return;
+	const raw = options.files.get(options.physicalPath);
 	if (raw === undefined) return;
 	const parsed = matter(raw);
 	if (stableJson(parsed.data) !== stableJson(options.expectedMetadata)) {
@@ -2143,6 +2468,132 @@ async function listFiles(root: string, prefix: string): Promise<string[]> {
 		}
 	}
 	return paths.sort();
+}
+
+async function writeReceiptFixture(
+	projectRoot: string,
+	options: {
+		readonly ledgers: readonly string[];
+		readonly manifests?: readonly string[];
+		readonly manifestRounds?: readonly number[];
+	},
+): Promise<void> {
+	const reviews = join(projectRoot, "missions", "reviews");
+	const retirements = join(projectRoot, "memory", "agent", "retirements");
+	await Promise.all([
+		mkdir(reviews, { recursive: true }),
+		mkdir(retirements, { recursive: true }),
+	]);
+	await Promise.all([
+		...options.ledgers.map((raw, index) =>
+			writeFile(
+				join(reviews, `knowledge-surface-promotion-${index + 1}.md`),
+				raw,
+				"utf-8",
+			),
+		),
+		...(options.manifests ?? []).map((raw, index) =>
+			writeFile(
+				join(
+					retirements,
+					`round-${options.manifestRounds?.[index] ?? index + 1}.md`,
+				),
+				raw,
+				"utf-8",
+			),
+		),
+	]);
+}
+
+function promotionLedger(options: {
+	readonly relocatedPath: string;
+	readonly relocatedDigest: string;
+	readonly deletedPath: string;
+	readonly baselinePath: string;
+	readonly baselineDigest: string;
+}): string {
+	return [
+		"---",
+		"kind: knowledge-surface-promotion",
+		"round: 1",
+		"promotedCount: 1",
+		"promotions:",
+		"  - from: memory/agent/proposals/fixture/record.md",
+		`    to: ${options.relocatedPath}`,
+		`    sha256: ${options.relocatedDigest}`,
+		"curatedRecords: []",
+		"retiredRecords:",
+		`  - ${options.deletedPath}`,
+		"ratifiedBaselines:",
+		`  - path: ${options.baselinePath}`,
+		`    sha256: ${options.baselineDigest}`,
+		"---",
+		"",
+		"# Human promotion ledger fixture",
+		"",
+	].join("\n");
+}
+
+function retiredManifest(options: {
+	readonly round: number;
+	readonly id: string;
+	readonly path: string;
+	readonly digest: string;
+	readonly evidenceDigest: string;
+}): string {
+	return [
+		"---",
+		"kind: knowledge-retirement-round",
+		`round: ${options.round}`,
+		"events:",
+		"  - kind: retired",
+		`    id: ${options.id}`,
+		`    path: ${options.path}`,
+		`    digest: ${options.digest}`,
+		"    reason: obsolete",
+		"    evidence:",
+		"      - scope: project",
+		"        path: docs/memory.md",
+		`        digest: ${options.evidenceDigest}`,
+		"    evidenceReason: Synthetic fixture proves the cause is obsolete.",
+		"    date: '2026-09-01T12:00:00.000Z'",
+		"---",
+		"",
+		"# Retirement receipt fixture",
+		"",
+	].join("\n");
+}
+
+function restoredManifest(options: {
+	readonly round: number;
+	readonly id: string;
+	readonly path: string;
+	readonly digest: string;
+}): string {
+	return [
+		"---",
+		"kind: knowledge-retirement-round",
+		`round: ${options.round}`,
+		"events:",
+		"  - kind: restored",
+		`    retirementId: ${options.id}`,
+		`    path: ${options.path}`,
+		`    digest: ${options.digest}`,
+		"    reason: Human veto restored the record.",
+		"    date: '2026-09-01T13:00:00.000Z'",
+		"---",
+		"",
+		"# Restoration receipt fixture",
+		"",
+	].join("\n");
+}
+
+function retiredPath(path: string): string {
+	return `knowledge/retired/${path.slice("knowledge/".length)}`;
+}
+
+function sha256(value: string): string {
+	return createHash("sha256").update(value).digest("hex");
 }
 
 function mutateFrontmatter(

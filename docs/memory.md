@@ -266,13 +266,37 @@ seed corpus is a one-to-one conversion rather than consolidation; the retired
 root markdown distillations and JSONL knowledge bundles have no live read/write
 path.
 
-Ratified forward amendment, not yet implemented (2026-09-01,
-`missions/architecture/living-memory.md`): the machine will additionally be
-able to *retire* live curated records — relocation, bytes unchanged, to
-`knowledge/retired/` under an evidence-carrying manifest — with hard deletion
-remaining a human ledger act; ledger rounds gain `retiredRecords`, and
-proposal kinds extend to `retire`, `merge`, and `improve`. Until that ships,
-the shipped contract above is unchanged.
+The first living-memory release unit is a read-only receipt floor. Promotion
+ledgers (`kind: knowledge-surface-promotion`) are folded in numeric round order.
+Their `promotions`, `curatedRecords`, `retiredRecords`, and
+`ratifiedBaselines` fields are authority-bearing and therefore parse
+fail-closed. `retiredRecords` is the human ledger act that authorizes hard
+deletion. A `ratifiedBaselines` row contains an original `knowledge/...md` path
+and the SHA-256 of its complete destination serialization; writing that row is
+also a human act. The frozen migration inventory proves semantic field/body
+conversion, not exact destination bytes, so it is never treated as an exact
+retirement baseline by itself. No machine-generated digest is called ratified.
+
+Retirement history is read from ordered
+`memory/agent/retirements/round-<n>.md` manifests with
+`kind: knowledge-retirement-round`. A `retired` event records a stable id,
+original live path, exact digest, allowed reason, evidence references and
+reason, and canonical date. A later `restored` event must reference that known
+id and the same path and digest. Retired destinations are derived as
+`knowledge/retired/<original-relative-path>`; persisted destination strings are
+never authority. The frozen receipt audit accepts a relocated seed record only
+when an active manifest event and a human/promotion exact-byte baseline both
+match its complete bytes. Absence from both live and retired paths is accepted
+only through `retiredRecords`. Malformed rows, unsafe paths, unreadable files,
+duplicate or noncontiguous rounds, duplicate retirement ids, unknown restores,
+and conflicting history make the whole inventory unhealthy and authorize
+nothing.
+
+This release unit contains no relocation operation and does not run a retirement
+round. The later ratified living-memory units will add byte-identical soft
+retirement and proposal kinds `retire`, `merge`, and `improve`; until those ship,
+the existing knowledge write, retrieval, index, gate, and explicit-save
+contracts remain unchanged.
 
 When enabled, every Cosmonauts-assembled agent receives the compact knowledge
 index and the shared `recall` tool. Dedicated knowledge and memory tools, plus
