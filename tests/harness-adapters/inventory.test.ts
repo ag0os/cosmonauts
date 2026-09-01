@@ -91,7 +91,7 @@ const LIVE_COMMAND_BASELINES = [
 		assetId: "command:implement-plan",
 		path: "/Users/cosmos/.claude/commands/implement-plan.md",
 		byteSha256:
-			"b73abe6e6a7d24a43c92cd1d06f95027b645630c289854978faae777d33f037b",
+			"d81caaec48616ccad2c0d73a7034d44c258165524c9bcf4c8249ba4908e1e603",
 	},
 ] as const;
 
