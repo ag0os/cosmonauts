@@ -404,11 +404,17 @@ signal (L1) is the increment, not the whole. Ruled order (LM-D-006,
    owner's four-column schema. Tests whether prescriptive extraction has
    value with machinery that exists, and produces the corpus needed to judge
    an in-session worker. The 31 existing `missions/reviews/` artifacts are
-   the retroactive seed.
+   the retroactive seed. *(Executed 2026-09-01 — policy landed in
+   `/implement-plan` Phase 4 and the drive skill; first artifact due at the
+   next Drive run.)*
 2. **L4 prototype against a copy of the corpus** (never live; gate stays
    on): one Observer+Dropper pass over the 47 gotchas + obvious
    supersessions, output = proposals + a would-retire manifest. This is the
-   evidence for ruling Q1 with real numbers instead of theory.
+   evidence for ruling Q1 with real numbers instead of theory. *(Executed
+   2026-09-01 — `missions/reviews/living-memory-l4-prototype.md`: 47 gotchas
+   verified, 16 retire candidates, 5 stale-reference; 110-record rollup
+   duplication found; one keep/retire conflict caught — the confirm-round
+   case made concrete.)*
 3. **Retirement machinery per the Q1 ruling** — receipts first (A-4), then
    authority.
 4. **The spike-§5 A/B long-run experiment**, feeding `knowledge-adoption`'s
