@@ -648,7 +648,7 @@ describe("memory interface", () => {
 			"`writer:cosmonauts` is editable provenance only.",
 			"no SHA-256 integrity envelope, edit detection, trust decision, or",
 			"safe-prune guarantee",
-			"`memory-consolidation` plan owns the machine-vs-human",
+			"`living-memory` plan owns the machine-vs-human",
 			"persisted `source`, subject, required payload, outcome, and timestamp",
 			"persisted `completedAt` supplies the terminal episode timestamp",
 			"never derives identity from the completion file's mtime",

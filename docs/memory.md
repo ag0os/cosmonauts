@@ -473,7 +473,7 @@ remove records.
 `writer:cosmonauts` is editable provenance only. A human can add, remove, or
 copy it. The short filename hash is for naming/deduplication, not authentication;
 W3 supplies no SHA-256 integrity envelope, edit detection, trust decision, or
-safe-prune guarantee. The `memory-consolidation` plan owns the machine-vs-human
+safe-prune guarantee. The `living-memory` plan owns the machine-vs-human
 trust predicate, including how it combines provenance with its own consumed
 watermark.
 

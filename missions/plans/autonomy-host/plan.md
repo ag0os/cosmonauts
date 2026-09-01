@@ -15,11 +15,11 @@ memory dreaming, periodic result-checks, and — on later rungs — the executiv
 and ambient assistants; it also delivers the orchestration runtime's deferred
 scheduler seam from the always-on side. Ships config-gated **off** by default
 per the 2026-07-17 ◆reassess decision; the demonstration payload is the
-`memory-consolidation` job. In-process host only — the daemon (survives
+`living-memory` job. In-process host only — the daemon (survives
 restarts) is autonomy W2, explicitly out.
 
 This plan is spec-ready and awaits planner design. Depends on `episodic-log`
-(the wake-state store); `memory-consolidation` provides its first payload.
+(the wake-state store); `living-memory` provides its first payload.
 
 ## Scope
 

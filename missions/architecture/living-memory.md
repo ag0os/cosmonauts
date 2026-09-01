@@ -640,6 +640,34 @@ re-spec's job.
     provenance.
   - Decided by: user-chose-among-options
 
+- **LM-D-009 — Re-spec slug mechanics — RULED 2026-09-01**
+  - Decision: `git mv missions/plans/memory-consolidation` →
+    `missions/plans/living-memory`; live references updated in the same
+    change; archived/historical references stand.
+  - Alternatives: fresh directory + superseded stub; keep the directory,
+    retitle only.
+  - Why: A-7 says the re-spec *is* living-memory; one slug everywhere beats
+    a ghost directory.
+  - Decided by: user-chose-among-options
+- **LM-D-010 — Rollup↔sub-record fold direction — RULED 2026-09-01**
+  - Decision: sub-records win — typed sub-records stay the
+    retrieval/retirement unit; parent rollups fold to thin overviews that
+    link, not restate.
+  - Alternatives: parents win (retire contained sub-records); defer to the
+    first L4 round with per-cluster evidence.
+  - Why: matches OKF typing, record-level `retire-when`, and retrieval
+    granularity; addresses the 110-record duplication at its cause.
+  - Decided by: user-chose-among-options
+- **LM-D-011 — The 9608b54 keep/retire conflict — RULED 2026-09-01**
+  - Decision: edit, not retire — an edit-narrow proposal keeps the
+    across-run claim the OM spike cites and drops the fixed within-run
+    half; it seeds the first ratified round.
+  - Alternatives: retire on the code evidence; leave untouched.
+  - Why: the prototype's flagship conflict — cause-fixed evidence vs
+    inbound citations — resolves by narrowing; keeps the spike's citation
+    valid and validates the inbound-reference-check requirement.
+  - Decided by: user-chose-among-options
+
 ---
 
 ## Cross-links

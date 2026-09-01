@@ -8,7 +8,7 @@ Re-assessed and reordered **2026-08-25** in a human-led re-planning session, rep
 
 Agreed spine: **portable harness** (`harness-adapters`, `drive-envelope`, `vendored-skills` — added 2026-08-26 — `coordinator-packages` — added 2026-08-25 — `external-session-capture`) → **factory quality** (`factory-modes`, `architecture-aware-planning`, `worker-inloop-analysis`) → **knowledge-and-memory continuation** (per the §10.1/§10.2 amendments in `missions/architecture/knowledge-and-memory.md`) → **`agent-interaction`** → **`domains`**. Items marked **(thread)** are deliberately small and run alongside whatever is on top — start them at the first opportunity; they block nothing.
 
-Active plans are not roadmap items: `harness-adapters` (picked up 2026-08-25 — was the top of this queue), `memory-consolidation` (re-spec as `living-memory` before tasks — see §10.2 and `missions/architecture/living-memory.md`), `autonomy-host`, `coding-extraction`, and `superplanning-integration` (plus the deferred `web-research` spec) live under `missions/plans/`.
+Active plans are not roadmap items: `harness-adapters` (picked up 2026-08-25 — was the top of this queue), `living-memory` (re-specced 2026-09-01 from `memory-consolidation` per §10.2 — see `missions/architecture/living-memory.md`), `autonomy-host`, `coding-extraction`, and `superplanning-integration` (plus the deferred `web-research` spec) live under `missions/plans/`.
 
 ### `chain-stage-context` (thread): Later Chain Stages Run Blind
 
@@ -61,7 +61,7 @@ Work coordinated from outside (Claude Code, Codex, …) currently leaves nothing
 
 - Specify what an externally-coordinated run leaves behind — transcript tier, episode pointers, artifacts — and where it lands
 - Adapter-side hook: the `harness-adapters` exports carry the capture instructions/mechanism, so capture is part of using cosmonauts from outside, not a separate chore
-- The contract becomes a source behind `memory-consolidation`'s pluggable-sources seam (§10.1: the re-spec consumes this)
+- The contract becomes a source behind `living-memory`'s pluggable-sources seam (§10.1: the re-spec consumes this)
 - Cross-links: `harness-adapters` · `missions/architecture/knowledge-and-memory.md` §5
 
 ### `knowledge-adoption` (thread): Turn On What We Built, In This Repo
@@ -150,7 +150,7 @@ Bump all four `@earendil-works/pi-*` packages (lockstep) from 0.80.6 toward curr
 
 ### `autonomy`: Autonomy / Always-On Substrate
 
-The base that lets a domain or agent run on a schedule, wake periodically, react to events, or stay always-on — plus the governance that makes autonomous action safe. **W1 (Layer A) is the active `autonomy-host` plan** (in-process host + triggers + durable wake-state, config-gated off); **the daemon (W2), governance (W3), EA (W4), ambient (W5), and `channels` remain here, unprioritized.** The host now has two named consumers: the `memory-consolidation` dreaming loop and `factory-modes`' `ask-and-continue` escalation (event-wait trigger). Full model in the source-of-truth doc.
+The base that lets a domain or agent run on a schedule, wake periodically, react to events, or stay always-on — plus the governance that makes autonomous action safe. **W1 (Layer A) is the active `autonomy-host` plan** (in-process host + triggers + durable wake-state, config-gated off); **the daemon (W2), governance (W3), EA (W4), ambient (W5), and `channels` remain here, unprioritized.** The host now has two named consumers: the `living-memory` dreaming loop and `factory-modes`' `ask-and-continue` escalation (event-wait trigger). Full model in the source-of-truth doc.
 
 - Layer A (base): triggers (interval / one-shot / event-wait / always-on) · lifecycle host (in-process → child → daemon) · durable wake-state · cost-efficient wake handler
 - Layer B (acting agents): trust tiers + audit log + caps + escalate-to-human + a steering channel

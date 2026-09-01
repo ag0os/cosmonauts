@@ -14,7 +14,7 @@ Per the 2026-07-17 ◆reassess decision this ships as infrastructure,
 **in-process only** (wakes live and die with a running cosmonauts process)
 and **off by default**: with the gate closed, no timer is ever armed. The
 proof target is the dreaming loop: a declared trigger firing the
-`memory-consolidation` payload end-to-end.
+`living-memory` payload end-to-end.
 
 ## Users
 
@@ -70,7 +70,7 @@ next rung, not this plan.)
   declared number of times in a long-running process, and each firing leaves
   an episode record naming trigger, payload, and outcome.
 - The dreaming loop demonstrably works end-to-end: a declared trigger fires
-  the `memory-consolidation` payload against a store with episodes, and the
+  the `living-memory` payload against a store with episodes, and the
   consolidation report/results are observable afterwards.
 - An empty wake cycle (nothing to do) produces no user-visible output and no
   episode record.

@@ -76,6 +76,9 @@ the always-on angle. Two daemons would be the duplication to avoid.
 > `knowledge-and-memory.md` §10): the host now queues behind the
 > knowledge-surface plan and the reframed `memory-consolidation` — by the time
 > it runs, it has a payload worth scheduling.
+> **Re-specced 2026-09-01** (ratified slate, `knowledge-and-memory.md` §10.2
+> A-7): `memory-consolidation` is now the `living-memory` plan — same queue
+> position, wider scope (pump + two outlets + L4 corpus regulator).
 
 - **W1 — Scheduling/lifecycle substrate (Layer A)** *(active slice → `autonomy`)*.
   Trigger types + in-process host + durable wake-state (episodic) + cost-efficient
