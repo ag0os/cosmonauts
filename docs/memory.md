@@ -266,6 +266,14 @@ seed corpus is a one-to-one conversion rather than consolidation; the retired
 root markdown distillations and JSONL knowledge bundles have no live read/write
 path.
 
+Ratified forward amendment, not yet implemented (2026-09-01,
+`missions/architecture/living-memory.md`): the machine will additionally be
+able to *retire* live curated records — relocation, bytes unchanged, to
+`knowledge/retired/` under an evidence-carrying manifest — with hard deletion
+remaining a human ledger act; ledger rounds gain `retiredRecords`, and
+proposal kinds extend to `retire`, `merge`, and `improve`. Until that ships,
+the shipped contract above is unchanged.
+
 When enabled, every Cosmonauts-assembled agent receives the compact knowledge
 index and the shared `recall` tool. Dedicated knowledge and memory tools, plus
 framework retrieval and injection paths, use `MemoryStore`; no second

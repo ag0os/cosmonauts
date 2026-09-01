@@ -1,7 +1,9 @@
 # Knowledge & Memory — Unified Forward Architecture
 
 **Status: RATIFIED 2026-08-18 (drafted by agent; every ruling Decided-by:
-human). §10 amended on record 2026-08-25 — see §10.1.** Forward source of
+human). §10 amended on record 2026-08-25 — see §10.1. §4, §7, §9 and §10
+amended on record 2026-09-01 — the ratified living-memory slate; see §10.2
+and `missions/architecture/living-memory.md`.** Forward source of
 truth for cosmonauts' knowledge & memory system.
 Supersedes `agent-memory.md` (absorbed whole) and `architectural-memory.md`
 (curated facets absorbed; the derived code-structure map carved out to
@@ -142,7 +144,10 @@ frontmatter (`type` required; `title`, `description`, `resource`, `tags`,
 `timestamp` recommended), reserved `index.md`/`log.md`, relative links as
 untyped relationship edges, with a project-defined `type` vocabulary and custom
 keys on top. For knowledge records the `type` vocabulary absorbs
-`KnowledgeRecord`'s: `decision | trade-off | gotcha | convention`. The
+`KnowledgeRecord`'s: `decision | trade-off | gotcha | convention`. Amended
+2026-09-01: `gotcha` records may carry an optional `retire-when` frontmatter
+key — the condition whose fulfillment retires the record (living-memory
+LM-D-005); no new type. The
 `.knowledge.jsonl` format is **retired** — the 10 existing bundles migrate to
 OKF records, and `lib/sessions/knowledge.ts`'s JSONL path goes with them (zero
 production consumers, so retirement costs nothing). OKF is serialization only;
@@ -251,17 +256,26 @@ adding a source later is not a rewrite.
 this repo already has. A single unreviewed model pass writing into a git-tracked
 knowledge base is the wrong shape.
 
-**Trust and prune authority.** It never writes the profile. It never modifies or
-deletes human-authored or human-curated records. Name collisions surface as
-proposals, mirroring W2's confirm-update semantics. Deletion authority extends
-only to machine-written episodes it has consumed.
+**Trust and prune authority (amended on record 2026-09-01, living-memory
+LM-D-001).** It never writes the profile. It never alters or destroys the
+bytes of human-authored or human-curated records — content edits and merges
+are proposals only. It may **retire** a live record: relocate it, bytes
+unchanged, to `knowledge/retired/` with a manifest entry carrying evidence
+(superseded-by, merged-into, or retire-condition met), provided its bytes are
+unchanged since ratification beyond recorded curation. Hard deletion of
+curated material is a human ledger act. Unassisted deletion authority extends
+only to machine-written episodes it has consumed. Name collisions surface as
+proposals, mirroring W2's confirm-update semantics.
 
 **Ratified 2026-08-18: consolidation writes to a proposals area on the machine
 side of the path boundary** (`memory/agent/proposals/`), never inside
 `knowledge/`. Promotion into `knowledge/` is a human act — or Cosmo with
 explicit assent. This keeps C-1 enforceable by path rather than by frontmatter
 promise, and answers the `memory-consolidation` spec's open question on where
-candidates live.
+candidates live. Amended 2026-09-01: proposal kinds extend beyond record
+creation to `retire`, `merge`, and `improve` (prescriptive); an `improve`
+proposal promotes by *conversion* — it becomes a ROADMAP item, task, or
+prompt/skill edit and closes — and never enters `knowledge/`.
 
 **The safe-prune predicate, stated honestly.** W3 established that
 `writer:cosmonauts` is provenance, not proof, and that a content digest cannot
@@ -328,11 +342,16 @@ defaulting off; Tier-2-not-Tier-1 for transcripts.
 Drafted for the `## Intent` sections of the plans that derive from this. Not yet
 ratified; IDs are provisional and deliberately not `INV-###`.
 
-- **C-1 — Human-authored and human-curated records are never modified or
-  deleted by a machine.** Machine authority covers what the machine wrote.
+- **C-1 — Human-authored and human-curated bytes are never altered or
+  destroyed by a machine.** Machine authority covers what the machine wrote,
+  plus relocation of live records to the retired area under a manifest.
+  *(Amended 2026-09-01, living-memory LM-D-001.)*
 - **C-2 — The profile is never machine-written by consolidation.**
-- **C-3 — Nothing is pruned that is not already durably represented**, and only
-  when its bytes are unchanged since the run read them.
+- **C-3 — Nothing leaves the live set unless durably represented (superseded
+  or merged) or its retire-condition is met, with evidence** — and only when
+  its bytes are unchanged since the run read them (episodes) or since
+  ratification beyond recorded curation (corpus records). *(Amended
+  2026-09-01.)*
 - **C-4 — Every machine write is visible and attributable** — provenance in the
   record, project-scope results reviewable as a diff. *(Promoted →
   `knowledge-surface` INV-6, human-ratified 2026-08-18.)*
@@ -405,20 +424,64 @@ infrastructure-first stance stands; the queue changes as follows:
      mandated API re-audit), and design of its seams with this system: its
      `recall` tool vs ours, Reflector output as a live consolidation source,
      and whether a continuously-maintained observation log subsumes working
-     state. *(ROADMAP: `observational-memory`.)*
+     state. *(ROADMAP: `observational-memory`.)* *(Completed 2026-08-28 —
+     spike `missions/architecture/spikes/observational-memory.md`; all seven
+     dispositions ratified 2026-09-01; see §10.2.)*
 3. **② Working state — parked pending the OM investigation.** *Supersedes
    "small; could ride with 1":* an observation log may provide "where we left
    off" for free; build the singleton only if the investigation says
-   otherwise.
+   otherwise. *(Resolved 2026-09-01: un-parked as its own small item — the
+   investigation says otherwise; see §10.2.)*
 4. **③ `memory-consolidation` — position unchanged, re-spec before any
    tasks.** The sources contract must admit OM reflections and
    externally-coordinated session data (ROADMAP: `external-session-capture`)
    behind the pluggable-sources seam, and the spec's stale open question on
    where candidates live must be reconciled with §11's proposals-area ruling
-   rather than re-litigated by a planner.
+   rather than re-litigated by a planner. *(Amended 2026-09-01: the re-spec
+   is `living-memory` — see §10.2.)*
 5. **④ `autonomy-host` — unchanged in shape, still last.** It gains a second
    named consumer beside the dreaming loop: `factory-modes`'
    `ask-and-continue` escalation resumes on the host's event-wait trigger.
+
+### §10.2 Amendment — 2026-09-01 (Decided-by: human)
+
+Ratified as a slate ("ratify all") in the living-memory design dialogue;
+full wording, alternatives, and Decision Log in
+`missions/architecture/living-memory.md` (§7.1, LM-D-001..008). Effects:
+
+- **§7 trust-and-prune replaced (A-1).** The machine may **soft-retire** live
+  records — relocation, bytes unchanged, to `knowledge/retired/` under an
+  evidence-carrying manifest; content edits and merges stay propose-only;
+  hard deletion of curated material stays a human ledger act. C-1/C-3
+  reworded to match (A-2/A-3). Deferred extension on record: age-based
+  auto-removal from the retired area (TTL) — its own ruling later, once
+  confirm-round cadence is observed.
+- **Receipt contract extended (A-4).** Ledger rounds gain `retiredRecords`;
+  a machine retirement manifest (`memory/agent/retirements/`) forgives
+  relocation in the B-003 byte-pin audit. The test extension lands before
+  any code that moves a file.
+- **Proposal kinds extended (A-5)** to `retire`, `merge`, `improve`;
+  prescriptive `improve` proposals promote by conversion to the backlog and
+  close — never into `knowledge/`.
+- **`gotcha` lifecycle (A-6):** optional `retire-when` frontmatter.
+- **Queue item ③ (A-7):** the `memory-consolidation` re-spec becomes
+  **`living-memory`** — pluggable sources unchanged, two outlets
+  (descriptive → knowledge, prescriptive → backlog), plus the L4 corpus
+  regulator (corpus-scope Observer→Reflector→Dropper) with the retirement
+  authority above. Target size binds the injected index, not disk
+  (LM-D-002). A routine per-Drive-run improvement pass (LM-D-008) and an L4
+  prototype against a corpus *copy* precede any exercised authority
+  (LM-D-006).
+- **Queue item ② (A-8):** working state un-parked as its own small item
+  (spike D-4 — an observation log has the wrong lifetime, cardinality, and
+  shape to subsume it).
+- **OM dispositions D-1..D-7 ratified (A-9/A-10):** the ROADMAP item closes
+  (no Pi bump was required — `agent_settled` shipped in 0.80.4); a separate
+  `pi-lockstep-bump` item is created; `recall` disambiguation = adapter-side
+  rename to `recall_evidence`; OM reflections are one pluggable source
+  (proposals-only, INV-1); session persistence is prerequisite for
+  across-run continuity only; no OM adoption yet — re-decide after the
+  spike-§5 A/B. The fork decision is deferred to L1 adoption (LM-D-003).
 
 ---
 
@@ -471,6 +534,9 @@ verifiable criterion).
 
 ## Cross-links
 
+- `missions/architecture/living-memory.md` — the living-memory design brief
+  (slate ratified 2026-09-01) amending §4/§7/§9/§10 above; input for the
+  `living-memory` re-spec.
 - `missions/architecture/code-structure-map.md` — the derived code-structure
   map, reuse-scan, and the deferred presentation/health layer (carved out
   2026-08-18; the other half of the drift signal).

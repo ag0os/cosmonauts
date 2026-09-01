@@ -6,9 +6,9 @@ Work backlog in two sections. **Prioritized** items at the top are ordered — p
 
 Re-assessed and reordered **2026-08-25** in a human-led re-planning session, replacing the 2026-06 capability-track ordering (that queue's history — `task-id-system` through `knowledge-surface`, all shipped — lives in `knowledge/` and git history). The organizing thesis: **cosmonauts as a harness-agnostic software factory.** Factory assets — agents, skills, workflows, knowledge, the architecture picture — are defined once, in cosmonauts; any harness (cosmonauts itself, Claude Code, Codex, Gemini, …) can play coordinator or worker; and the factory improves itself from its own session data.
 
-Agreed spine: **portable harness** (`harness-adapters`, `drive-envelope`, `vendored-skills` — added 2026-08-26 — `coordinator-packages` — added 2026-08-25 — `external-session-capture`) → **factory quality** (`factory-modes`, `architecture-aware-planning`, `worker-inloop-analysis`) → **knowledge-and-memory continuation** (per the §10.1 amendment in `missions/architecture/knowledge-and-memory.md`) → **`agent-interaction`** → **`domains`**. Items marked **(thread)** are deliberately small and run alongside whatever is on top — start them at the first opportunity; they block nothing.
+Agreed spine: **portable harness** (`harness-adapters`, `drive-envelope`, `vendored-skills` — added 2026-08-26 — `coordinator-packages` — added 2026-08-25 — `external-session-capture`) → **factory quality** (`factory-modes`, `architecture-aware-planning`, `worker-inloop-analysis`) → **knowledge-and-memory continuation** (per the §10.1/§10.2 amendments in `missions/architecture/knowledge-and-memory.md`) → **`agent-interaction`** → **`domains`**. Items marked **(thread)** are deliberately small and run alongside whatever is on top — start them at the first opportunity; they block nothing.
 
-Active plans are not roadmap items: `harness-adapters` (picked up 2026-08-25 — was the top of this queue), `memory-consolidation` (re-spec required before tasks — see §10.1), `autonomy-host`, `coding-extraction`, and `superplanning-integration` (plus the deferred `web-research` spec) live under `missions/plans/`.
+Active plans are not roadmap items: `harness-adapters` (picked up 2026-08-25 — was the top of this queue), `memory-consolidation` (re-spec as `living-memory` before tasks — see §10.2 and `missions/architecture/living-memory.md`), `autonomy-host`, `coding-extraction`, and `superplanning-integration` (plus the deferred `web-research` spec) live under `missions/plans/`.
 
 ### `chain-stage-context` (thread): Later Chain Stages Run Blind
 
@@ -18,7 +18,7 @@ Only the first stage of a chain receives the user prompt; every later stage fall
 - **Observed 2026-08-25** on `planner -> plan-reviewer -> planner`: the reviewer wrote `review-4.md` (1 high, 4 medium — a self-deadlocking owner-lock re-acquisition, and transaction artifacts left untracked at the repo root), then the terminal planner ran **24 seconds doing only reads** and revised nothing. The agent was correct — it was told to design a plan and found a finished one. The findings had to be applied by hand. Blast radius: `plan-and-build` (`bundled/coding/chains.ts:6`) ships as `planner -> plan-reviewer -> planner -> task-manager -> ...`, so it can decompose a plan whose final review round was never addressed, with `task-manager` proceeding on no signal.
 - **Minimal fix**: make the default planner stage prompt revision-aware — if review artifacts exist for the active plan, this is a revision pass; address the highest-numbered round. The planner persona already carries exactly that contract (`bundled/coding/prompts/planner.md:71`) and honors it unprompted when it runs first; the default stage prompt simply never puts it in that mode.
 - **The real decision**: how much prior-stage context later stages should receive. Step-0-only injection is plausibly deliberate (context bloat on long chains) — decide and record it rather than patching past it. Pair the outcome with a guard so a chain that advances past an unaddressed review round is detectable rather than silent.
-- Cross-links: `drive-envelope` (same orchestration seam) · `factory-evals` (review-round counts are already a named scoreboard signal) · evidence in `missions/plans/harness-adapters/review-4.md`
+- Cross-links: `drive-envelope` (same orchestration seam) · `factory-evals` (review-round counts are already a named scoreboard signal) · evidence in `missions/archive/plans/harness-adapters/review-4.md`
 
 ### `drive-envelope`: Drive as a Free Envelope
 
@@ -108,15 +108,6 @@ Static-analysis feedback inside the worker's write loop, not only at end-of-task
 - Policy and prompts, not new infrastructure — the capability runtime shipped 2026-08; SwarmForge's per-language engineering article is the inspiration, our provider-neutral contract is the mechanism
 - Quality gates unchanged; this is earlier, self-directed feedback, not a gate replacement
 
-### `observational-memory`: Investigate OM and Design Its Seam
-
-Pi-First investigation of Mastra-style observational memory via the existing Pi port, before the consolidation pump is re-specced.
-
-- Audit and trial `pi-observational-memory` (github.com/elpapi42/pi-observational-memory): Observer/Reflector/Dropper background workers, threshold-driven, compaction-as-rendering
-- Requires the Pi lockstep bump to ≥0.81.0 (`agent_settled` event) — with the mandated full API re-audit that accompanies any bump
-- Design the seams: its `recall` tool vs ours (name collision); Reflector output as a live source for the consolidation pump; whether a continuously-maintained observation log subsumes the working-state singleton
-- Findings resolve two §10.1 dispositions: working state (parked pending this) and the `memory-consolidation` re-spec
-
 ### `agent-interaction`: The Live Coordinator Triangle
 
 Real-time coordinator↔worker↔verifier interaction — reframed 2026-08-25 from `agent-swarms` breadth: the live triangle is the value; N-agent parallelism is not a goal until it proves value.
@@ -140,6 +131,14 @@ Domains are composable agentic bundles (agents, prompts, capabilities, skills, t
 ## Ideas
 
 Unordered candidates — pick only when directed. Several are full capability tracks with their own source-of-truth doc under `missions/architecture/`; the entry links to it.
+
+### `pi-lockstep-bump`: Pi Lockstep Bump Toward Current
+
+*Added 2026-09-01 (ratified with the living-memory slate — OM spike D-2). Deliberately not a rider on memory work: nothing in the memory queue needs it (`agent_settled` shipped in 0.80.4; OM verified working at the pinned 0.80.6).*
+
+Bump all four `@earendil-works/pi-*` packages (lockstep) from 0.80.6 toward current — a migration project sized at three breaking clusters (spike §1.3): auth (`modelRuntime` replaces `authStorage`/`modelRegistry`; 61 references across 6 files), the bundled TypeBox major, and the 0.84 lane-based session API that removes the JSONL/in-memory repository APIs our session factory is built on. The mandated full API re-audit and the `domains/shared/skills/pi/SKILL.md` update ride in the same change.
+
+- Source of truth: `missions/architecture/spikes/observational-memory.md` §1.3
 
 ### `agent-tools`: Native Agent Tools (Web Research + Browser) — ⏸ PARKED
 
