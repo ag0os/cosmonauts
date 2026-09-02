@@ -7,6 +7,20 @@ export {
 	PROFILE_WRITE_MAX_BYTES,
 } from "./authored-records.ts";
 export {
+	CONSOLIDATION_SOURCE_KINDS,
+	CONSOLIDATION_SOURCE_SCOPES,
+	type CollectedConsolidationSources,
+	type ConsolidationFinalizedRecord,
+	type ConsolidationSource,
+	type ConsolidationSourceCollectOptions,
+	ConsolidationSourceContractError,
+	type ConsolidationSourceKind,
+	type ConsolidationSourceRecord,
+	type ConsolidationSourceScope,
+	type ConsolidationSourceSnapshot,
+	collectConsolidationSources,
+} from "./consolidation-sources.ts";
+export {
 	type EpisodeCaptureDependencies,
 	type EpisodeCaptureResult,
 	type EpisodeStoreFactoryOptions,
@@ -43,6 +57,10 @@ export {
 	createKnowledgeMemoryStore,
 	type KnowledgeMemoryStoreOptions,
 } from "./knowledge-store.ts";
+export {
+	createLivingMemoryConsolidator,
+	DEFAULT_LIVING_MEMORY_LIMITS,
+} from "./living-memory.ts";
 export type { MarkdownMemoryStoreOptions } from "./markdown-store.ts";
 export { createMarkdownMemoryStore } from "./markdown-store.ts";
 export {
@@ -51,9 +69,33 @@ export {
 	type MemoryRetrievalRequest,
 } from "./multi-store-retrieval.ts";
 export {
+	type AcceptedJudgmentReceipt,
+	type AcceptedJudgmentReceiptStore,
+	type ConsolidationEvidenceRef,
+	type ConsolidationModelMode,
+	type ConsolidationObservation,
+	type ConsolidationObservationKind,
+	type ConsolidationProposalStore,
+	type ConsolidationProposalView,
+	type ConsolidationRecovery,
+	type CorpusJudgmentInput,
+	type CorpusJudgmentOutput,
+	type CorpusJudgmentProvider,
+	type JudgedProposal,
+	type KnowledgeConsolidator,
+	type KnowledgeIndexPressurePolicy,
+	type KnowledgeIndexPressureResult,
 	type KnowledgeProposalIdentity,
+	type LivingMemoryConsolidatorDependencies,
+	type LivingMemoryDurableFiles,
+	type LivingMemoryLimits,
+	type LivingMemoryLockOptions,
+	type LivingMemoryRetirementInspection,
+	type LivingMemoryRetirementStore,
 	MEMORY_KINDS,
 	MEMORY_SCOPES,
+	type MemoryConsolidateDetails,
+	type MemoryConsolidateOptions,
 	type MemoryConsolidateResult,
 	type MemoryKind,
 	type MemoryQuery,
@@ -66,5 +108,6 @@ export {
 	type MemoryStore,
 	type MemoryWarning,
 	type MemoryWriteResult,
+	type ProposedMemoryRecord,
 	type RetrievedMemoryRecord,
 } from "./types.ts";

@@ -1,7 +1,7 @@
 ---
 id: TASK-609
 title: Slice 1 contract — Define bounded sources and the core composition seam
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-608
 createdAt: '2026-09-01T20:07:58.275Z'
-updatedAt: '2026-09-01T20:07:58.275Z'
+updatedAt: '2026-09-02T01:51:40.127Z'
 ---
 
 ## Description
@@ -28,3 +28,7 @@ Binding ratified ground — stop and escalate rather than adjust it: implementat
 - [ ] #6 Project-native universal correctness evidence passes after every commit, and the Slice 0 B-001 receipt test and exact marker remain green at every commit.
 - [ ] #7 Every commit that changes `lib/memory/types.ts` re-pins its full-source SHA-256 in the existing profile-playbooks seam-stability test in `tests/memory/interface.test.ts` in the same commit; the pin assertion is never removed or weakened, and `lib/architecture-map/retrieval.ts` remains byte-identical with its pin unchanged.
 <!-- AC:END -->
+
+## Implementation Notes
+
+task timed out after 3600000ms

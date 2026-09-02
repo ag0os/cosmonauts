@@ -30,7 +30,9 @@ import {
 } from "./knowledge-records.ts";
 import { assertBoundProjectRoot } from "./paths.ts";
 import type {
+	KnowledgeConsolidator,
 	KnowledgeProposalIdentity,
+	MemoryConsolidateOptions,
 	MemoryQuery,
 	MemoryRecordDraft,
 	MemoryRetrieveResult,
@@ -53,6 +55,7 @@ export interface KnowledgeMemoryStoreOptions {
 	readonly projectRoot: string;
 	readonly userCosmonautsRoot?: string;
 	readonly now?: () => Date;
+	readonly consolidator?: KnowledgeConsolidator;
 }
 
 interface KnowledgeStoreContext {
@@ -95,8 +98,10 @@ export function createKnowledgeMemoryStore(
 			return retrieveKnowledge({ context, scope, query });
 		},
 
-		async consolidate() {
-			return { kind: "noop", reason: NOOP_REASON };
+		async consolidate(consolidateOptions?: MemoryConsolidateOptions) {
+			return options.consolidator
+				? options.consolidator(consolidateOptions)
+				: { kind: "noop", reason: NOOP_REASON };
 		},
 	};
 }
