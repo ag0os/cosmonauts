@@ -1356,6 +1356,7 @@ function citationReferences(
 	record: ConsolidationSourceRecord,
 ): readonly CitationReference[] {
 	const references: CitationReference[] = [];
+	const citationContent = citationScanningContent(record.content);
 	const files = record.metadata.files;
 	if (Array.isArray(files)) {
 		for (const value of files) {
@@ -1368,7 +1369,7 @@ function citationReferences(
 			if (canonical !== undefined) references.push({ raw: value, canonical });
 		}
 	}
-	for (const match of record.content.matchAll(
+	for (const match of citationContent.markdownLinks.matchAll(
 		/\[[^\]]*\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/gu,
 	)) {
 		const raw = match[1];
@@ -1380,7 +1381,7 @@ function citationReferences(
 		});
 		if (canonical !== undefined) references.push({ raw, canonical });
 	}
-	for (const match of record.content.matchAll(/`([^`\n]+)`/gu)) {
+	for (const match of citationContent.backtickPaths.matchAll(/`([^`\n]+)`/gu)) {
 		const raw = match[1];
 		if (raw === undefined || !isPathShaped(raw)) continue;
 		const canonical = canonicalCitation({
@@ -1395,6 +1396,83 @@ function citationReferences(
 		unique.set(`${reference.raw}\0${reference.canonical}`, reference);
 	}
 	return Object.freeze([...unique.values()]);
+}
+
+function citationScanningContent(content: string): {
+	readonly markdownLinks: string;
+	readonly backtickPaths: string;
+} {
+	const backtickPaths = maskFencedCodeBlocks(content);
+	return {
+		markdownLinks: maskInlineCodeSpans(backtickPaths),
+		backtickPaths,
+	};
+}
+
+function maskFencedCodeBlocks(content: string): string {
+	let fence: { readonly marker: string; readonly length: number } | undefined;
+	return content
+		.split("\n")
+		.map((line) => {
+			if (fence === undefined) {
+				const opening = line.match(/^ {0,3}(`{3,}|~{3,})/u)?.[1];
+				if (opening === undefined) return line;
+				fence = { marker: opening[0] ?? "", length: opening.length };
+				return maskCodeRegion(line);
+			}
+			const closing = line.match(/^ {0,3}(`+|~+)[\t ]*$/u)?.[1];
+			const masked = maskCodeRegion(line);
+			if (
+				closing?.startsWith(fence.marker) === true &&
+				closing.length >= fence.length
+			) {
+				fence = undefined;
+			}
+			return masked;
+		})
+		.join("\n");
+}
+
+function maskInlineCodeSpans(content: string): string {
+	let masked = "";
+	let cursor = 0;
+	while (cursor < content.length) {
+		const openingStart = content.indexOf("`", cursor);
+		if (openingStart === -1) return masked + content.slice(cursor);
+		masked += content.slice(cursor, openingStart);
+		const openingEnd = endOfBacktickRun(content, openingStart);
+		const openingLength = openingEnd - openingStart;
+		let searchFrom = openingEnd;
+		let closingEnd: number | undefined;
+		while (searchFrom < content.length) {
+			const candidateStart = content.indexOf("`", searchFrom);
+			if (candidateStart === -1) break;
+			const candidateEnd = endOfBacktickRun(content, candidateStart);
+			if (candidateEnd - candidateStart === openingLength) {
+				closingEnd = candidateEnd;
+				break;
+			}
+			searchFrom = candidateEnd;
+		}
+		if (closingEnd === undefined) {
+			masked += content.slice(openingStart, openingEnd);
+			cursor = openingEnd;
+			continue;
+		}
+		masked += maskCodeRegion(content.slice(openingStart, closingEnd));
+		cursor = closingEnd;
+	}
+	return masked;
+}
+
+function endOfBacktickRun(content: string, start: number): number {
+	let end = start;
+	while (content[end] === "`") end += 1;
+	return end;
+}
+
+function maskCodeRegion(content: string): string {
+	return content.replace(/[^\n]/gu, " ");
 }
 
 function canonicalCitation(options: {

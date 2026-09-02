@@ -1386,6 +1386,12 @@ describe("living memory", () => {
 			"lib/missing-backtick.ts",
 			"memory/episodic-log.md",
 		] as const;
+		const codeRegionOnlyCitations = [
+			"docs/missing-inline-example.md",
+			"lib/missing-inline-example.ts",
+			"docs/missing-fenced-example.md",
+			"lib/missing-fenced-example.ts",
+		] as const;
 		const projectRoot = join(tmp.path, "stale-citation-project");
 		const knowledgePath = join(projectRoot, "knowledge", "stale.md");
 		await mkdir(join(projectRoot, "knowledge"), { recursive: true });
@@ -1403,9 +1409,16 @@ describe("living memory", () => {
 			"",
 			"# Stale paths",
 			"",
-			`Keep [the current doc](../docs/current.md#stable), mark [the missing doc](../docs/missing-link.md?view=1#old), and mark ${acceptedBacktickCitations.map((path) => `\`${path}\``).join(" plus ")} while preserving this sentence.`,
+			`Keep [the current doc](../docs/current.md#stable), mark [the missing doc](../docs/missing-link.md?view=1#old), mark [the ordinary prose example](../docs/missing-prose-example.md), and mark ${acceptedBacktickCitations.map((path) => `\`${path}\``).join(" plus ")} while preserving this sentence.`,
 			"",
 			`These code and pattern tokens are not citations: ${rejectedTokens.map((token) => `\`${token}\``).join(", ")}.`,
+			"",
+			"Inline examples are documentation: `[text](../docs/missing-inline-example.md)` and `` `lib/missing-inline-example.ts` ``.",
+			"",
+			"```markdown",
+			"[text](../docs/missing-fenced-example.md)",
+			"`lib/missing-fenced-example.ts`",
+			"```",
 			"",
 		].join("\n");
 		await writeFile(knowledgePath, raw, "utf-8");
@@ -1447,7 +1460,7 @@ describe("living memory", () => {
 					{
 						kind: "stale-reference",
 						inputs: [{ id: "stale-record", digest: input.digest }],
-						reason: expect.stringContaining("4 unresolved citations"),
+						reason: expect.stringContaining("5 unresolved citations"),
 					},
 				],
 				proposals: [{ proposalKind: "merge", status: "written" }],
@@ -1468,9 +1481,13 @@ describe("living memory", () => {
 		for (const path of [
 			"docs/missing-from-files.md",
 			"docs/missing-link.md",
+			"docs/missing-prose-example.md",
 			...acceptedBacktickCitations,
 		]) {
 			expect(proposalRaw).toContain(`stale reference: ${path}`);
+		}
+		for (const path of codeRegionOnlyCitations) {
+			expect(proposalRaw).not.toContain(`stale reference: ${path}`);
 		}
 		const observation = result.details.observations.find(
 			(item) => item.kind === "stale-reference",
