@@ -3036,6 +3036,70 @@ describe("living memory", () => {
 		expect(empty.dependencies.durableFiles.writeText).not.toHaveBeenCalled();
 	});
 
+	test("bounds deterministic proposal and observation findings lossily in stable order", async () => {
+		const projectRoot = join(tmp.path, "bounded-deterministic-project");
+		await mkdir(projectRoot, { recursive: true });
+		const records = Array.from({ length: 26 }, (_, index) => {
+			const suffix = String(index).padStart(2, "0");
+			return record({
+				id: `stale-${suffix}`,
+				sourceId: "corpus",
+				path: `knowledge/stale-${suffix}.md`,
+				kind: "knowledge",
+				content: `# Stale ${suffix}\n\n[Missing](../docs/missing-${suffix}.md)\n`,
+				metadata: {
+					type: "gotcha",
+					title: `Stale ${suffix}`,
+					description: `Deterministic stale-reference fixture ${suffix}.`,
+					tags: ["memory"],
+					scopeRoot: projectRoot,
+				},
+			});
+		});
+		const run = async () => {
+			const harness = createHarness([source("corpus", records)]);
+			const result = await harness.consolidator({
+				modelMode: "deterministic-only",
+			});
+			if (result.kind !== "ran") {
+				throw new Error(
+					`expected bounded deterministic pass to run: ${result.reason}`,
+				);
+			}
+			return result.details;
+		};
+
+		const first = await run();
+		const second = await run();
+		const proposalPaths = (details: typeof first) =>
+			details.proposals.map((proposal) => proposal.inputs[0]?.path);
+		const capDeclines = (details: typeof first) =>
+			details.declines
+				.filter((decline) => decline.code.endsWith("-cap-deferred"))
+				.map(({ code, path }) => ({ code, path }));
+
+		expect(first.observations).toHaveLength(25);
+		expect(first.proposals).toHaveLength(10);
+		expect(proposalPaths(first)).toEqual(
+			Array.from(
+				{ length: 10 },
+				(_, index) => `knowledge/stale-${String(index).padStart(2, "0")}.md`,
+			),
+		);
+		expect(capDeclines(first)).toEqual([
+			...Array.from({ length: 15 }, (_, offset) => ({
+				code: "proposal-cap-deferred",
+				path: `knowledge/stale-${String(offset + 10).padStart(2, "0")}.md`,
+			})),
+			{
+				code: "observation-cap-deferred",
+				path: "knowledge/stale-25.md",
+			},
+		]);
+		expect(proposalPaths(second)).toEqual(proposalPaths(first));
+		expect(capDeclines(second)).toEqual(capDeclines(first));
+	});
+
 	test("delegates configured knowledge consolidation and preserves exact store noops", async () => {
 		const configuredResult = {
 			kind: "noop" as const,

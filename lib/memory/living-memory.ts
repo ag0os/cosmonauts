@@ -247,9 +247,16 @@ export function createLivingMemoryConsolidator(
 					]),
 				};
 			}
-			const deterministic = await observeDeterministicRecords(
+			const observedDeterministic = await observeDeterministicRecords(
 				selectedRecords,
 				inventory,
+			);
+			const deterministic = observedDeterministic.slice(
+				0,
+				dependencies.limits.maxObservations,
+			);
+			const observationCapDeferred = observedDeterministic.slice(
+				dependencies.limits.maxObservations,
 			);
 			const pressure = dependencies.indexPressure.measure(
 				toIndexRecords(collected.records),
@@ -261,14 +268,16 @@ export function createLivingMemoryConsolidator(
 						finding.retirement !== undefined && finding.proposal === undefined,
 				);
 			if (deterministic.length > 0 && !needsJudgment) {
-				const proposalFindings = deterministic.filter(
+				const observedProposalFindings = deterministic.filter(
 					(finding) => finding.proposal !== undefined,
 				);
-				if (proposalFindings.length > dependencies.limits.maxProposals) {
-					throw new Error(
-						`Deterministic observation exceeds the proposal cap (${proposalFindings.length} > ${dependencies.limits.maxProposals}).`,
-					);
-				}
+				const proposalFindings = observedProposalFindings.slice(
+					0,
+					dependencies.limits.maxProposals,
+				);
+				const proposalCapDeferred = observedProposalFindings.slice(
+					dependencies.limits.maxProposals,
+				);
 				const proposals = [];
 				for (const finding of proposalFindings) {
 					if (finding.proposal === undefined || finding.key === undefined)
@@ -349,6 +358,8 @@ export function createLivingMemoryConsolidator(
 					proposals: Object.freeze(proposals),
 					declines: Object.freeze([
 						...details.declines,
+						...deterministicCapDeclines(proposalCapDeferred, "proposal"),
+						...deterministicCapDeclines(observationCapDeferred, "observation"),
 						...(retirementRun?.details.declines ?? []),
 						...capDeferredRetirements.map((retirement) => ({
 							code: "retirement-cap-deferred",
@@ -387,6 +398,7 @@ export function createLivingMemoryConsolidator(
 					...details,
 					declines: Object.freeze([
 						...details.declines,
+						...deterministicCapDeclines(observationCapDeferred, "observation"),
 						...targetUnmetDeclines({ pressure, retirements: [] }),
 					]),
 				};
@@ -625,6 +637,7 @@ export function createLivingMemoryConsolidator(
 				retirements: Object.freeze(reportedRetirements),
 				declines: Object.freeze([
 					...details.declines,
+					...deterministicCapDeclines(observationCapDeferred, "observation"),
 					...(retirementRun?.details.declines ?? []),
 					...modelOnlyRetirements.map((retirement) => ({
 						code: "retirement-authority-deferred",
@@ -842,6 +855,21 @@ interface DeterministicFinding {
 	readonly retirement?: MemoryConsolidateDetails["retirements"][number];
 	readonly proposal?: JudgedProposal;
 	readonly key?: string;
+}
+
+function deterministicCapDeclines(
+	findings: readonly DeterministicFinding[],
+	kind: "observation" | "proposal",
+): MemoryConsolidateDetails["declines"] {
+	return Object.freeze(
+		findings.map((finding) => ({
+			code: `${kind}-cap-deferred`,
+			...(finding.observation.inputs[0]?.path === undefined
+				? {}
+				: { path: finding.observation.inputs[0].path }),
+			reason: `The bounded ${kind} cap deferred this deterministic finding.`,
+		})),
+	);
 }
 
 async function observeDeterministicRecords(
