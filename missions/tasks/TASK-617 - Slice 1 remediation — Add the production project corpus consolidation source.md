@@ -1,7 +1,7 @@
 ---
 id: TASK-617
 title: Slice 1 remediation — Add the production project corpus consolidation source
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-616
 createdAt: '2026-09-02T17:47:54.260Z'
-updatedAt: '2026-09-02T17:47:54.260Z'
+updatedAt: '2026-09-02T18:00:22.843Z'
 ---
 
 ## Description
@@ -28,9 +28,9 @@ Bounds per D-010: admit at most `limit` project bodies (the caller passes the 50
 Binding ratified ground — stop and escalate rather than adjust it: tests use temporary fixture copies only and never move, edit, or delete anything under this repository's live `knowledge/`; `knowledgeSurface` stays on; no live-corpus retirement round is run; no TTL, OM adoption/fork, scheduling, user-scope L4 mutation, embeddings, new OKF type, or explicit-save change enters scope. This task adds a READ-ONLY source adapter and one composition-root registration; it introduces no new retirement, removal, or mutation authority whatsoever.
 
 <!-- AC:BEGIN -->
-- [ ] #1 A production `createProjectCorpusConsolidationSource` exists in `lib/memory/consolidation-sources.ts`, reuses the existing knowledge read path rather than adding a second corpus reader, and emits capped immutable snapshots whose id/path are scope-relative, whose digest is the SHA-256 of the exact raw bytes, and whose metadata carries type/title/description/resource/timestamp/tags/scopeRoot plus retire-when and files when present.
-- [ ] #2 The source is registered in the `cli/memory/subcommand.ts` composition root ahead of the episode source, and `cosmonauts memory consolidate --dry-run --no-model --json` against a temp fixture project reports a corpus source with a non-zero admitted count and surfaces deterministic corpus observations.
-- [ ] #3 Bounds hold per D-010: at most the passed limit of project bodies is admitted and the remainder is reported as omitted; user-scope records are measured for index/citation purposes but never become mutation candidates; every reserved index.md and the entire retired/ subtree are excluded, and retired records are never opted into.
-- [ ] #4 The adapter is read-only: it exports no remove, unlink, rename, or write operation, adds no retirement or mutation authority, and a dry run against a temp fixture leaves every store byte-identical.
-- [ ] #5 Project-native universal correctness evidence passes after every commit; the Slice 0 B-001 receipt test and every existing living-memory behavior marker B-001..B-021 remain green and unmodified, and no existing behavior is re-owned or weakened to accommodate the new source.
+- [x] #1 A production `createProjectCorpusConsolidationSource` exists in `lib/memory/consolidation-sources.ts`, reuses the existing knowledge read path rather than adding a second corpus reader, and emits capped immutable snapshots whose id/path are scope-relative, whose digest is the SHA-256 of the exact raw bytes, and whose metadata carries type/title/description/resource/timestamp/tags/scopeRoot plus retire-when and files when present.
+- [x] #2 The source is registered in the `cli/memory/subcommand.ts` composition root ahead of the episode source, and `cosmonauts memory consolidate --dry-run --no-model --json` against a temp fixture project reports a corpus source with a non-zero admitted count and surfaces deterministic corpus observations.
+- [x] #3 Bounds hold per D-010: at most the passed limit of project bodies is admitted and the remainder is reported as omitted; user-scope records are measured for index/citation purposes but never become mutation candidates; every reserved index.md and the entire retired/ subtree are excluded, and retired records are never opted into.
+- [x] #4 The adapter is read-only: it exports no remove, unlink, rename, or write operation, adds no retirement or mutation authority, and a dry run against a temp fixture leaves every store byte-identical.
+- [x] #5 Project-native universal correctness evidence passes after every commit; the Slice 0 B-001 receipt test and every existing living-memory behavior marker B-001..B-021 remain green and unmodified, and no existing behavior is re-owned or weakened to accommodate the new source.
 <!-- AC:END -->
