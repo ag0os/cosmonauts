@@ -1,0 +1,1094 @@
+import { createHash } from "node:crypto";
+import { constants } from "node:fs";
+import {
+	lstat,
+	open,
+	readdir,
+	readFile,
+	realpath,
+	stat,
+} from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import {
+	EntityFileLockTimeoutError,
+	withEntityFileLock,
+} from "../entity-file-lock.ts";
+import {
+	createDurableRetirementFiles,
+	DurableRemovalUnsupportedError,
+	type DurableRetirementFiles,
+} from "./durable-files.ts";
+import { isSafePosixRelativePath } from "./knowledge-records.ts";
+import {
+	type RetirementReceiptInventory,
+	readRetirementReceiptInventory,
+} from "./retirement-receipts.ts";
+import type {
+	ConsolidationEvidenceRef,
+	LivingMemoryRetirementCandidate,
+	LivingMemoryRetirementRunDetails,
+	LivingMemoryRetirementRunResult,
+	LivingMemoryRetirementStore,
+	MemoryWarning,
+} from "./types.ts";
+
+const LOCK_PATH = ".cosmonauts/living-memory.lock";
+const JOURNAL_PATH = ".cosmonauts/living-memory-retirement.json";
+const RETIREMENTS_PATH = "memory/agent/retirements";
+
+export const LIVING_MEMORY_RETIREMENT_FAILPOINTS = [
+	"after-journal-sync",
+	"after-retired-link-sync",
+	"after-manifest-sync",
+	"after-live-unlink-sync",
+	"before-journal-remove",
+] as const;
+
+export type LivingMemoryRetirementFailpoint =
+	(typeof LIVING_MEMORY_RETIREMENT_FAILPOINTS)[number];
+
+interface CitationInventory {
+	readonly healthy: boolean;
+	readonly entries: readonly {
+		readonly scope: "project" | "user";
+		readonly path: string;
+		readonly digest: string;
+		readonly targets: readonly string[];
+	}[];
+	readonly warnings: readonly MemoryWarning[];
+}
+
+interface RetirementStoreOptions {
+	readonly projectRoot: string;
+	readonly userCosmonautsRoot?: string;
+	readonly durableFiles?: DurableRetirementFiles;
+	readonly inspectCitations?: () => Promise<CitationInventory>;
+	readonly withLock?: typeof withEntityFileLock;
+	readonly failpoint?: (
+		point: LivingMemoryRetirementFailpoint,
+	) => void | Promise<void>;
+}
+
+interface PreparedRetirement {
+	readonly id: string;
+	readonly originalPath: string;
+	readonly retiredPath: string;
+	readonly digest: string;
+	readonly reason: LivingMemoryRetirementCandidate["reason"];
+	readonly evidence: readonly ConsolidationEvidenceRef[];
+	readonly evidenceReason: string;
+	readonly date: string;
+}
+
+interface RetirementJournal {
+	readonly schemaVersion: 1;
+	readonly state: "prepared";
+	readonly round: number;
+	readonly manifestPath: string;
+	readonly manifestContent: string;
+	readonly entries: readonly PreparedRetirement[];
+}
+
+export function createLivingMemoryRetirementStore(
+	options: RetirementStoreOptions,
+): LivingMemoryRetirementStore {
+	const projectRoot = resolve(options.projectRoot);
+	const durableFiles = options.durableFiles ?? createDurableRetirementFiles();
+	const lock = options.withLock ?? withEntityFileLock;
+	const inspectCitations =
+		options.inspectCitations ??
+		(async () => {
+			const { inspectLivingMemoryCitationInventory } = await import(
+				"./living-memory.ts"
+			);
+			return inspectLivingMemoryCitationInventory({
+				projectRoot,
+				...(options.userCosmonautsRoot === undefined
+					? {}
+					: { userCosmonautsRoot: options.userCosmonautsRoot }),
+			});
+		});
+
+	return {
+		async inspect(records) {
+			return inspectRetirementState({ projectRoot, records });
+		},
+		async apply(input) {
+			if (input.dryRun) {
+				return previewRetirements({
+					projectRoot,
+					candidates: input.candidates,
+					inspectCitations,
+				});
+			}
+
+			let releaseReported = false;
+			let releaseUnconfirmed: unknown;
+			let result: LivingMemoryRetirementRunResult;
+			try {
+				await durableFiles.ensureDirectory(join(projectRoot, ".cosmonauts"));
+				result = await lock(
+					join(projectRoot, ...LOCK_PATH.split("/")),
+					async () =>
+						applyUnderLock({
+							projectRoot,
+							durableFiles,
+							candidates: input.candidates,
+							date: canonicalDate(input.date),
+							maxRetirements: input.maxRetirements,
+							inspectCitations,
+							...(input.signal === undefined ? {} : { signal: input.signal }),
+							...(options.failpoint === undefined
+								? {}
+								: { failpoint: options.failpoint }),
+						}),
+					{
+						retryDelayMs: input.lockOptions.retryMs,
+						waitTimeoutMs: input.lockOptions.timeoutMs,
+						onReleaseUnconfirmed(error) {
+							releaseReported = true;
+							releaseUnconfirmed = error;
+							input.lockOptions.onReleaseUnconfirmed(error);
+						},
+					},
+				);
+			} catch (error: unknown) {
+				return failedResult({
+					reason: error instanceof Error ? error.message : String(error),
+					recovery:
+						error instanceof EntityFileLockTimeoutError
+							? "concurrent-mutation"
+							: "none",
+					warnings: [],
+				});
+			}
+			if (releaseReported) {
+				return {
+					kind: "failed",
+					reason: `Living-memory lock release could not be confirmed: ${
+						releaseUnconfirmed instanceof Error
+							? releaseUnconfirmed.message
+							: String(releaseUnconfirmed)
+					}.`,
+					details: {
+						...result.details,
+						recovery: "release-unconfirmed",
+					},
+				};
+			}
+			return result;
+		},
+	};
+}
+
+async function previewRetirements(options: {
+	readonly projectRoot: string;
+	readonly candidates: readonly LivingMemoryRetirementCandidate[];
+	readonly inspectCitations: () => Promise<CitationInventory>;
+}): Promise<LivingMemoryRetirementRunResult> {
+	const records = options.candidates.map((candidate) => candidate.record);
+	const before = await inspectRetirementState({
+		projectRoot: options.projectRoot,
+		records,
+	});
+	if (before.recovery !== "none") {
+		return {
+			kind: "failed",
+			reason:
+				"Dry-run observes retirement state but never acquires a lock or performs recovery.",
+			details: {
+				retirements: [],
+				declines: [
+					{
+						code:
+							before.recovery === "pending"
+								? "recovery-pending"
+								: "concurrent-mutation",
+						reason:
+							"Dry-run observes retirement state but never acquires a lock or performs recovery.",
+					},
+				],
+				warnings: before.warnings,
+				recovery: before.recovery,
+				writesCommitted: false,
+			},
+		};
+	}
+	const [citationsBefore, receiptsBefore] = await Promise.all([
+		options.inspectCitations(),
+		readRetirementReceiptInventory({ projectRoot: options.projectRoot }),
+	]);
+	const authorized = await authorizeCandidates({
+		projectRoot: options.projectRoot,
+		candidates: options.candidates,
+		inspectCitations: options.inspectCitations,
+		citations: citationsBefore,
+		receipts: receiptsBefore,
+	});
+	const [after, citationsAfter, receiptsAfter] = await Promise.all([
+		inspectRetirementState({ projectRoot: options.projectRoot, records }),
+		options.inspectCitations(),
+		readRetirementReceiptInventory({ projectRoot: options.projectRoot }),
+	]);
+	if (
+		after.recovery !== "none" ||
+		before.snapshot === undefined ||
+		before.snapshot !== after.snapshot ||
+		JSON.stringify(citationsBefore) !== JSON.stringify(citationsAfter) ||
+		JSON.stringify(receiptsBefore) !== JSON.stringify(receiptsAfter)
+	) {
+		return failedResult({
+			reason: "Dry-run snapshot changed during observation.",
+			recovery: "concurrent-mutation",
+			warnings: after.warnings,
+		});
+	}
+	return completedResult({
+		retirements: authorized.authorized.map((candidate) => ({
+			path: candidate.record.path,
+			digest: candidate.record.digest,
+			status: "preview",
+			reason: candidate.reason,
+		})),
+		declines: authorized.declines,
+		warnings: authorized.warnings,
+	});
+}
+
+async function applyUnderLock(options: {
+	readonly projectRoot: string;
+	readonly durableFiles: DurableRetirementFiles;
+	readonly candidates: readonly LivingMemoryRetirementCandidate[];
+	readonly date: string;
+	readonly maxRetirements: number;
+	readonly inspectCitations: () => Promise<CitationInventory>;
+	readonly signal?: AbortSignal;
+	readonly failpoint?: (
+		point: LivingMemoryRetirementFailpoint,
+	) => void | Promise<void>;
+}): Promise<LivingMemoryRetirementRunResult> {
+	let recovered: "none" | "rolled-back" | "rolled-forward" = "none";
+	let committed = false;
+	try {
+		recovered = await recoverJournal(options);
+		throwIfAborted(options.signal);
+		if (
+			!Number.isSafeInteger(options.maxRetirements) ||
+			options.maxRetirements < 1 ||
+			options.candidates.length > options.maxRetirements
+		) {
+			throw new Error(
+				`Retirement candidates exceed the bounded cap (${options.candidates.length} > ${options.maxRetirements}).`,
+			);
+		}
+		const authorized = await authorizeCandidates(options);
+		if (authorized.authorized.length === 0) {
+			return completedResult({
+				declines: authorized.declines,
+				warnings: authorized.warnings,
+				recovery: recovered,
+				writesCommitted: recovered === "rolled-forward",
+			});
+		}
+		const receiptInventory = await readRetirementReceiptInventory({
+			projectRoot: options.projectRoot,
+		});
+		if (receiptInventory.kind !== "healthy") {
+			throw new Error(
+				`Retirement receipt inventory became unhealthy: ${receiptInventory.issues.join(", ")}.`,
+			);
+		}
+		const round = nextRound(receiptInventory.inventory);
+		const entries = authorized.authorized.map((candidate, index) =>
+			prepareRetirement({ candidate, round, index, date: options.date }),
+		);
+		const manifestPath = `${RETIREMENTS_PATH}/round-${round}.md`;
+		const manifestContent = renderManifest({ round, entries });
+		const journal = {
+			schemaVersion: 1,
+			state: "prepared",
+			round,
+			manifestPath,
+			manifestContent,
+			entries,
+		} satisfies RetirementJournal;
+
+		await prepareCapabilities({
+			projectRoot: options.projectRoot,
+			durableFiles: options.durableFiles,
+			entries,
+		});
+		await options.durableFiles.replaceText({
+			path: absolutePath(options.projectRoot, JOURNAL_PATH),
+			content: `${JSON.stringify(journal, null, 2)}\n`,
+			...(options.signal === undefined ? {} : { signal: options.signal }),
+		});
+		await options.failpoint?.("after-journal-sync");
+		for (const entry of entries) {
+			await options.durableFiles.linkFile({
+				sourcePath: absolutePath(options.projectRoot, entry.originalPath),
+				destinationPath: absolutePath(options.projectRoot, entry.retiredPath),
+			});
+		}
+		await options.failpoint?.("after-retired-link-sync");
+		await options.durableFiles.writeText({
+			path: absolutePath(options.projectRoot, manifestPath),
+			content: manifestContent,
+			...(options.signal === undefined ? {} : { signal: options.signal }),
+		});
+		committed = true;
+		await options.failpoint?.("after-manifest-sync");
+		for (const entry of entries) {
+			await options.durableFiles.removeFile(
+				absolutePath(options.projectRoot, entry.originalPath),
+			);
+		}
+		await options.failpoint?.("after-live-unlink-sync");
+		await options.failpoint?.("before-journal-remove");
+		await options.durableFiles.removeFile(
+			absolutePath(options.projectRoot, JOURNAL_PATH),
+		);
+		return completedResult({
+			retirements: entries.map((entry) => ({
+				path: entry.originalPath,
+				digest: entry.digest,
+				status: "applied",
+				reason: entry.reason,
+			})),
+			declines: authorized.declines,
+			warnings: authorized.warnings,
+			recovery: recovered,
+			writesCommitted: true,
+			manifestPath: absolutePath(options.projectRoot, manifestPath),
+		});
+	} catch (error: unknown) {
+		const recoveryAttempt = await recoverJournal(options).catch(
+			() => recovered,
+		);
+		const recovery =
+			committed && recoveryAttempt === "none" ? "pending" : recoveryAttempt;
+		return failedResult({
+			reason: error instanceof Error ? error.message : String(error),
+			recovery,
+			warnings: [],
+			writesCommitted: committed || recovery === "rolled-forward",
+		});
+	}
+}
+
+async function authorizeCandidates(options: {
+	readonly projectRoot: string;
+	readonly candidates: readonly LivingMemoryRetirementCandidate[];
+	readonly inspectCitations: () => Promise<CitationInventory>;
+	readonly citations?: CitationInventory;
+	readonly receipts?: Awaited<
+		ReturnType<typeof readRetirementReceiptInventory>
+	>;
+}): Promise<{
+	readonly authorized: readonly LivingMemoryRetirementCandidate[];
+	readonly declines: LivingMemoryRetirementRunDetails["declines"];
+	readonly warnings: readonly MemoryWarning[];
+}> {
+	const receipts =
+		options.receipts ??
+		(await readRetirementReceiptInventory({
+			projectRoot: options.projectRoot,
+		}));
+	if (receipts.kind !== "healthy") {
+		return {
+			authorized: [],
+			declines: options.candidates.map((candidate) => ({
+				code: "receipt-inventory-unhealthy",
+				path: candidate.record.path,
+				reason: receipts.issues.join(", "),
+			})),
+			warnings: [],
+		};
+	}
+	const citations = options.citations ?? (await options.inspectCitations());
+	if (!citations.healthy) {
+		return {
+			authorized: [],
+			declines: options.candidates.map((candidate) => ({
+				code: "citation-inventory-incomplete",
+				path: candidate.record.path,
+				reason: "Relevant citation discovery is incomplete.",
+			})),
+			warnings: citations.warnings,
+		};
+	}
+
+	const authorized: LivingMemoryRetirementCandidate[] = [];
+	const declines: Array<LivingMemoryRetirementRunDetails["declines"][number]> =
+		[];
+	for (const candidate of options.candidates) {
+		const conflict = await candidateConflict({
+			projectRoot: options.projectRoot,
+			candidate,
+			receipts: receipts.inventory,
+			citations,
+		});
+		if (conflict === undefined) authorized.push(candidate);
+		else declines.push(conflict);
+	}
+	return { authorized, declines, warnings: citations.warnings };
+}
+
+async function candidateConflict(options: {
+	readonly projectRoot: string;
+	readonly candidate: LivingMemoryRetirementCandidate;
+	readonly receipts: RetirementReceiptInventory;
+	readonly citations: CitationInventory;
+}): Promise<LivingMemoryRetirementRunDetails["declines"][number] | undefined> {
+	const { candidate } = options;
+	const path = candidate.record.path;
+	const blocked = (code: string, reason: string) => ({ code, path, reason });
+	if (
+		candidate.record.scope !== "project" ||
+		candidate.record.kind !== "knowledge" ||
+		!isSafeKnowledgePath(path) ||
+		candidate.record.metadata.scopeRoot !== options.projectRoot
+	) {
+		return blocked(
+			"retirement-path-conflict",
+			"Retirement requires a contained project knowledge source.",
+		);
+	}
+	if (
+		candidate.evidence.length === 0 ||
+		!candidate.evidence.every(validEvidence) ||
+		!candidate.evidence.some(
+			(evidence) =>
+				evidence.scope === candidate.record.scope &&
+				evidence.path === path &&
+				evidence.digest === candidate.record.digest,
+		) ||
+		candidate.evidenceReason.trim().length === 0
+	) {
+		return blocked(
+			"retirement-evidence-incomplete",
+			"Retirement evidence must completely name the consumed scope, path, digest, and reason.",
+		);
+	}
+	const current = await readRegularBytes(
+		absolutePath(options.projectRoot, path),
+		options.projectRoot,
+	);
+	if (current === undefined || sha256(current) !== candidate.record.digest) {
+		return blocked(
+			"retirement-digest-conflict",
+			"Current source bytes do not match the observed digest.",
+		);
+	}
+	const baseline = options.receipts.activeBaselines.find(
+		(item) => item.path === path,
+	);
+	if (baseline === undefined || baseline.sha256 !== candidate.record.digest) {
+		return blocked(
+			"retirement-baseline-conflict",
+			"No exact active promotion or human-ratified destination baseline matches the current bytes.",
+		);
+	}
+	const state = latestStateForPath(options.receipts, path);
+	if (state?.status === "retired") {
+		return blocked(
+			"restoration-in-progress",
+			"The live path has an active retired event and must complete human restoration first.",
+		);
+	}
+	if (
+		state?.status === "restored" &&
+		state.digest === candidate.record.digest
+	) {
+		return blocked(
+			"restoration-suppressed",
+			"The unchanged restored bytes remain under the human retirement veto.",
+		);
+	}
+	const retiredPath = absolutePath(
+		options.projectRoot,
+		deriveRetiredPath(path),
+	);
+	if (
+		(await readRegularBytes(retiredPath, options.projectRoot)) !== undefined
+	) {
+		return blocked(
+			"retirement-destination-conflict",
+			"The derived retired destination is already occupied.",
+		);
+	}
+	const inbound = options.citations.entries.filter(
+		(entry) =>
+			entry.scope === "project" &&
+			entry.path !== path &&
+			entry.targets.includes(path),
+	);
+	if (inbound.length > 0) {
+		return blocked(
+			"retirement-inbound-citation",
+			`Live inbound citations still target this record: ${inbound
+				.map((entry) => entry.path)
+				.join(", ")}.`,
+		);
+	}
+	return undefined;
+}
+
+function prepareRetirement(options: {
+	readonly candidate: LivingMemoryRetirementCandidate;
+	readonly round: number;
+	readonly index: number;
+	readonly date: string;
+}): PreparedRetirement {
+	const path = options.candidate.record.path;
+	return {
+		id: `retirement-${options.round}-${options.index + 1}-${options.candidate.record.digest.slice(0, 12)}`,
+		originalPath: path,
+		retiredPath: deriveRetiredPath(path),
+		digest: options.candidate.record.digest,
+		reason: options.candidate.reason,
+		evidence: options.candidate.evidence,
+		evidenceReason: options.candidate.evidenceReason,
+		date: options.date,
+	};
+}
+
+async function prepareCapabilities(options: {
+	readonly projectRoot: string;
+	readonly durableFiles: DurableRetirementFiles;
+	readonly entries: readonly PreparedRetirement[];
+}): Promise<void> {
+	await options.durableFiles.ensureDirectory(
+		absolutePath(options.projectRoot, RETIREMENTS_PATH),
+	);
+	await assertRealContainedDirectory(
+		options.projectRoot,
+		absolutePath(options.projectRoot, RETIREMENTS_PATH),
+	);
+	for (const entry of options.entries) {
+		const destinationDirectory = dirname(
+			absolutePath(options.projectRoot, entry.retiredPath),
+		);
+		await options.durableFiles.ensureDirectory(destinationDirectory);
+		await assertRealContainedDirectory(
+			options.projectRoot,
+			destinationDirectory,
+		);
+		await options.durableFiles.assertRemovalSupported({
+			sourcePath: absolutePath(options.projectRoot, entry.originalPath),
+			destinationDirectory,
+		});
+	}
+}
+
+async function recoverJournal(options: {
+	readonly projectRoot: string;
+	readonly durableFiles: DurableRetirementFiles;
+}): Promise<"none" | "rolled-back" | "rolled-forward"> {
+	const journal = await readJournal(options.projectRoot);
+	if (journal === undefined) return "none";
+	const manifestCommitted = await regularFileEquals(
+		absolutePath(options.projectRoot, journal.manifestPath),
+		journal.manifestContent,
+	);
+	if (manifestCommitted) {
+		for (const entry of journal.entries) {
+			const retired = await readRegularBytes(
+				absolutePath(options.projectRoot, entry.retiredPath),
+				options.projectRoot,
+			);
+			if (retired === undefined || sha256(retired) !== entry.digest) {
+				throw new Error(
+					`Committed retirement is missing its byte-identical destination: ${entry.originalPath}.`,
+				);
+			}
+			const livePath = absolutePath(options.projectRoot, entry.originalPath);
+			const live = await readRegularBytes(livePath, options.projectRoot);
+			if (live !== undefined) {
+				if (sha256(live) !== entry.digest) {
+					throw new Error(
+						`Committed retirement live path changed during recovery: ${entry.originalPath}.`,
+					);
+				}
+				await options.durableFiles.removeFile(livePath);
+			}
+		}
+		await options.durableFiles.removeFile(
+			absolutePath(options.projectRoot, JOURNAL_PATH),
+		);
+		return "rolled-forward";
+	}
+	for (const entry of journal.entries) {
+		const live = await readRegularBytes(
+			absolutePath(options.projectRoot, entry.originalPath),
+			options.projectRoot,
+		);
+		if (live === undefined || sha256(live) !== entry.digest) {
+			throw new Error(
+				`Uncommitted retirement cannot prove its live source: ${entry.originalPath}.`,
+			);
+		}
+		const retiredPath = absolutePath(options.projectRoot, entry.retiredPath);
+		const retired = await readRegularBytes(retiredPath, options.projectRoot);
+		if (retired !== undefined) {
+			if (
+				sha256(retired) !== entry.digest ||
+				!(await sameFileIdentity(
+					absolutePath(options.projectRoot, entry.originalPath),
+					retiredPath,
+				))
+			) {
+				throw new Error(
+					`Uncommitted retirement destination is not the prepared hard link: ${entry.originalPath}.`,
+				);
+			}
+			await options.durableFiles.removeFile(retiredPath);
+		}
+	}
+	await options.durableFiles.removeFile(
+		absolutePath(options.projectRoot, JOURNAL_PATH),
+	);
+	return "rolled-back";
+}
+
+async function inspectRetirementState(options: {
+	readonly projectRoot: string;
+	readonly records: readonly {
+		readonly path: string;
+		readonly digest: string;
+	}[];
+}): Promise<{
+	readonly recovery: "none" | "pending" | "concurrent-mutation";
+	readonly warnings: readonly MemoryWarning[];
+	readonly snapshot: string;
+}> {
+	const journalPresent = await pathExists(
+		absolutePath(options.projectRoot, JOURNAL_PATH),
+	);
+	const lockPresent = await pathExists(
+		absolutePath(options.projectRoot, LOCK_PATH),
+	);
+	const state: Array<unknown> = [journalPresent, lockPresent];
+	for (const record of [...options.records].sort((a, b) =>
+		a.path.localeCompare(b.path),
+	)) {
+		const bytes = isSafeKnowledgePath(record.path)
+			? await readRegularBytes(
+					absolutePath(options.projectRoot, record.path),
+					options.projectRoot,
+				).catch(() => undefined)
+			: undefined;
+		state.push([record.path, bytes === undefined ? null : sha256(bytes)]);
+	}
+	state.push(await manifestFingerprint(options.projectRoot));
+	return {
+		recovery: journalPresent
+			? "pending"
+			: lockPresent
+				? "concurrent-mutation"
+				: "none",
+		warnings: [],
+		snapshot: sha256(JSON.stringify(state)),
+	};
+}
+
+async function manifestFingerprint(
+	projectRoot: string,
+): Promise<readonly string[]> {
+	try {
+		return (await readdir(absolutePath(projectRoot, RETIREMENTS_PATH))).sort();
+	} catch (error: unknown) {
+		if (errorCode(error) === "ENOENT") return [];
+		throw error;
+	}
+}
+
+async function readJournal(
+	projectRoot: string,
+): Promise<RetirementJournal | undefined> {
+	let raw: string;
+	try {
+		raw = await readFile(absolutePath(projectRoot, JOURNAL_PATH), "utf-8");
+	} catch (error: unknown) {
+		if (errorCode(error) === "ENOENT") return undefined;
+		throw error;
+	}
+	let value: unknown;
+	try {
+		value = JSON.parse(raw);
+	} catch (error: unknown) {
+		throw new Error("Living-memory retirement journal is malformed.", {
+			cause: error,
+		});
+	}
+	if (!isRetirementJournal(value)) {
+		throw new Error("Living-memory retirement journal has an invalid shape.");
+	}
+	return value;
+}
+
+function isRetirementJournal(value: unknown): value is RetirementJournal {
+	if (!isRecord(value)) return false;
+	if (
+		!hasExactKeys(value, [
+			"schemaVersion",
+			"state",
+			"round",
+			"manifestPath",
+			"manifestContent",
+			"entries",
+		]) ||
+		value.schemaVersion !== 1 ||
+		value.state !== "prepared" ||
+		!Number.isSafeInteger(value.round) ||
+		Number(value.round) < 1 ||
+		!isManifestPath(value.manifestPath) ||
+		value.manifestPath !== `${RETIREMENTS_PATH}/round-${value.round}.md` ||
+		typeof value.manifestContent !== "string" ||
+		!Array.isArray(value.entries) ||
+		value.entries.length === 0
+	) {
+		return false;
+	}
+	return (
+		value.entries.every((entry) => {
+			if (!isRecord(entry)) return false;
+			return (
+				hasExactKeys(entry, [
+					"id",
+					"originalPath",
+					"retiredPath",
+					"digest",
+					"reason",
+					"evidence",
+					"evidenceReason",
+					"date",
+				]) &&
+				typeof entry.id === "string" &&
+				/^[a-z0-9][a-z0-9._-]*$/u.test(entry.id) &&
+				isSafeKnowledgePath(entry.originalPath) &&
+				entry.retiredPath === deriveRetiredPath(entry.originalPath) &&
+				isSha256(entry.digest) &&
+				isRetirementReason(entry.reason) &&
+				Array.isArray(entry.evidence) &&
+				entry.evidence.length > 0 &&
+				entry.evidence.every(
+					(evidence) =>
+						isRecord(evidence) &&
+						hasExactKeys(evidence, [
+							"id",
+							"sourceId",
+							"scope",
+							"path",
+							"digest",
+						]) &&
+						validEvidence(evidence),
+				) &&
+				typeof entry.evidenceReason === "string" &&
+				entry.evidenceReason.trim().length > 0 &&
+				isCanonicalDate(entry.date)
+			);
+		}) &&
+		value.manifestContent ===
+			renderManifest({
+				round: Number(value.round),
+				entries: value.entries as unknown as readonly PreparedRetirement[],
+			})
+	);
+}
+
+function renderManifest(options: {
+	readonly round: number;
+	readonly entries: readonly PreparedRetirement[];
+}): string {
+	const lines = [
+		"---",
+		"kind: knowledge-retirement-round",
+		`round: ${options.round}`,
+		"events:",
+	];
+	for (const entry of options.entries) {
+		lines.push(
+			"  - kind: retired",
+			`    id: ${entry.id}`,
+			`    path: ${entry.originalPath}`,
+			`    digest: ${entry.digest}`,
+			`    reason: ${entry.reason}`,
+			"    evidence:",
+		);
+		for (const evidence of entry.evidence) {
+			lines.push(
+				`      - scope: ${evidence.scope}`,
+				`        path: ${evidence.path}`,
+				`        digest: ${evidence.digest}`,
+			);
+		}
+		lines.push(
+			`    evidenceReason: ${JSON.stringify(entry.evidenceReason)}`,
+			`    date: ${JSON.stringify(entry.date)}`,
+		);
+	}
+	lines.push("---", "", "# Living-memory retirement round", "");
+	return lines.join("\n");
+}
+
+function nextRound(inventory: RetirementReceiptInventory): number {
+	return (
+		inventory.retirementEvents.reduce(
+			(maximum, event) => Math.max(maximum, event.round),
+			0,
+		) + 1
+	);
+}
+
+function latestStateForPath(
+	inventory: RetirementReceiptInventory,
+	path: string,
+): RetirementReceiptInventory["retirementStates"][number] | undefined {
+	return inventory.retirementStates
+		.filter((state) => state.path === path)
+		.toSorted((left, right) => right.round - left.round)[0];
+}
+
+function deriveRetiredPath(path: string): string {
+	if (!isSafeKnowledgePath(path)) {
+		throw new Error(`Unsafe retirement source path: ${path}.`);
+	}
+	return `knowledge/retired/${path.slice("knowledge/".length)}`;
+}
+
+function isSafeKnowledgePath(value: unknown): value is string {
+	return (
+		typeof value === "string" &&
+		isSafePosixRelativePath(value) &&
+		value.startsWith("knowledge/") &&
+		!value.startsWith("knowledge/retired/") &&
+		value !== "knowledge/retired.md" &&
+		value.endsWith(".md")
+	);
+}
+
+function isManifestPath(value: unknown): value is string {
+	return (
+		typeof value === "string" &&
+		/^memory\/agent\/retirements\/round-[1-9]\d*\.md$/u.test(value)
+	);
+}
+
+function validEvidence(value: unknown): value is ConsolidationEvidenceRef {
+	return (
+		isRecord(value) &&
+		typeof value.id === "string" &&
+		typeof value.sourceId === "string" &&
+		(value.scope === "project" || value.scope === "user") &&
+		typeof value.path === "string" &&
+		isSafePosixRelativePath(value.path) &&
+		isSha256(value.digest)
+	);
+}
+
+async function readRegularBytes(
+	path: string,
+	projectRoot: string,
+): Promise<Buffer | undefined> {
+	try {
+		const [realRoot, realPath] = await Promise.all([
+			realpath(projectRoot),
+			realpath(path),
+		]);
+		if (!isContained(realRoot, realPath)) {
+			throw new Error(`Retirement path escapes the project root: ${path}.`);
+		}
+		const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+		try {
+			const metadata = await handle.stat();
+			if (!metadata.isFile()) {
+				throw new Error(`Retirement path is not a regular file: ${path}.`);
+			}
+			return await handle.readFile();
+		} finally {
+			await handle.close();
+		}
+	} catch (error: unknown) {
+		if (errorCode(error) === "ENOENT") return undefined;
+		throw error;
+	}
+}
+
+async function regularFileEquals(
+	path: string,
+	expected: string,
+): Promise<boolean> {
+	try {
+		const metadata = await lstat(path);
+		if (metadata.isSymbolicLink() || !metadata.isFile()) return false;
+		return (await readFile(path, "utf-8")) === expected;
+	} catch (error: unknown) {
+		if (errorCode(error) === "ENOENT") return false;
+		throw error;
+	}
+}
+
+async function sameFileIdentity(left: string, right: string): Promise<boolean> {
+	const [leftMetadata, rightMetadata] = await Promise.all([
+		stat(left),
+		stat(right),
+	]);
+	return (
+		leftMetadata.dev === rightMetadata.dev &&
+		leftMetadata.ino === rightMetadata.ino
+	);
+}
+
+async function assertRealContainedDirectory(
+	projectRoot: string,
+	directory: string,
+): Promise<void> {
+	const [realRoot, realDirectory] = await Promise.all([
+		realpath(projectRoot),
+		realpath(directory),
+	]);
+	if (!isContained(realRoot, realDirectory)) {
+		throw new Error(
+			`Durable retirement directory escapes the project: ${directory}.`,
+		);
+	}
+}
+
+async function pathExists(path: string): Promise<boolean> {
+	try {
+		await lstat(path);
+		return true;
+	} catch (error: unknown) {
+		if (errorCode(error) === "ENOENT") return false;
+		throw error;
+	}
+}
+
+function completedResult(
+	options: Partial<LivingMemoryRetirementRunDetails> = {},
+): LivingMemoryRetirementRunResult {
+	return {
+		kind: "completed",
+		details: {
+			retirements: options.retirements ?? [],
+			declines: options.declines ?? [],
+			warnings: options.warnings ?? [],
+			recovery: options.recovery ?? "none",
+			writesCommitted: options.writesCommitted ?? false,
+			...(options.manifestPath === undefined
+				? {}
+				: { manifestPath: options.manifestPath }),
+		},
+	};
+}
+
+function failedResult(options: {
+	readonly reason: string;
+	readonly recovery: LivingMemoryRetirementRunDetails["recovery"];
+	readonly warnings: readonly MemoryWarning[];
+	readonly writesCommitted?: boolean;
+}): LivingMemoryRetirementRunResult {
+	return {
+		kind: "failed",
+		reason: options.reason,
+		details: {
+			retirements: [],
+			declines: [],
+			warnings: options.warnings,
+			recovery: options.recovery,
+			writesCommitted: options.writesCommitted ?? false,
+		},
+	};
+}
+
+function absolutePath(projectRoot: string, relativePath: string): string {
+	if (!isSafePosixRelativePath(relativePath)) {
+		throw new Error(`Living-memory path is unsafe: ${relativePath}.`);
+	}
+	const path = resolve(projectRoot, ...relativePath.split("/"));
+	if (!isContainedOrEqual(projectRoot, path)) {
+		throw new Error(
+			`Living-memory path escapes its project root: ${relativePath}.`,
+		);
+	}
+	return path;
+}
+
+function isContained(parent: string, child: string): boolean {
+	const path = relative(parent, child);
+	return (
+		path.length > 0 &&
+		!path.startsWith(`..${sep}`) &&
+		path !== ".." &&
+		!isAbsolute(path)
+	);
+}
+
+function isContainedOrEqual(parent: string, child: string): boolean {
+	return parent === child || isContained(parent, child);
+}
+
+function sha256(value: string | Buffer): string {
+	return createHash("sha256").update(value).digest("hex");
+}
+
+function canonicalDate(value: Date): string {
+	const date = value.toISOString();
+	if (!isCanonicalDate(date)) throw new Error("Retirement date is invalid.");
+	return date;
+}
+
+function isCanonicalDate(value: unknown): value is string {
+	if (typeof value !== "string") return false;
+	try {
+		return new Date(value).toISOString() === value;
+	} catch {
+		return false;
+	}
+}
+
+function isRetirementReason(
+	value: unknown,
+): value is LivingMemoryRetirementCandidate["reason"] {
+	return (
+		typeof value === "string" &&
+		["superseded", "merged", "obsolete", "retire-when-met"].includes(value)
+	);
+}
+
+function isSha256(value: unknown): value is string {
+	return typeof value === "string" && /^[a-f0-9]{64}$/u.test(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(
+	value: Record<string, unknown>,
+	keys: readonly string[],
+): boolean {
+	const actual = Object.keys(value).sort();
+	const expected = [...keys].sort();
+	return (
+		actual.length === expected.length &&
+		actual.every((key, index) => key === expected[index])
+	);
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+	if (signal?.aborted) {
+		throw signal.reason instanceof Error
+			? signal.reason
+			: new Error("Living-memory retirement was cancelled.");
+	}
+}
+
+function errorCode(error: unknown): string | undefined {
+	return isRecord(error) && typeof error.code === "string"
+		? error.code
+		: error instanceof DurableRemovalUnsupportedError
+			? "UNSUPPORTED"
+			: undefined;
+}

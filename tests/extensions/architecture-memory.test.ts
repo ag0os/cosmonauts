@@ -177,6 +177,16 @@ describe("architecture-memory extension", () => {
 			},
 			retirementStore: {
 				inspect: async () => ({ recovery: "none", warnings: [] }),
+				apply: async () => ({
+					kind: "completed" as const,
+					details: {
+						retirements: [],
+						declines: [],
+						warnings: [],
+						recovery: "none" as const,
+						writesCommitted: false,
+					},
+				}),
 			},
 			durableFiles: {
 				writeText: async () => {

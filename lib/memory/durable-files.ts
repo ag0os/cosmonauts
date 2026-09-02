@@ -1,7 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { link, lstat, open, rename, unlink } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import {
+	link,
+	lstat,
+	mkdir,
+	open,
+	rename,
+	stat,
+	unlink,
+} from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 import type { LivingMemoryDurableFiles } from "./types.ts";
 
 export interface DurableMachineFiles extends LivingMemoryDurableFiles {
@@ -12,12 +20,141 @@ export interface DurableMachineFiles extends LivingMemoryDurableFiles {
 	}): Promise<{ readonly path: string; readonly digest: string }>;
 }
 
+export interface DurableRetirementFiles extends DurableMachineFiles {
+	ensureDirectory(path: string): Promise<void>;
+	assertRemovalSupported(options: {
+		readonly sourcePath: string;
+		readonly destinationDirectory: string;
+	}): Promise<void>;
+	linkFile(options: {
+		readonly sourcePath: string;
+		readonly destinationPath: string;
+	}): Promise<void>;
+	removeFile(path: string): Promise<void>;
+}
+
+export class DurableRemovalUnsupportedError extends Error {
+	constructor(message: string, options?: ErrorOptions) {
+		super(message, options);
+		this.name = "DurableRemovalUnsupportedError";
+	}
+}
+
 /** Durable machine-state writes only. Source removal authority is intentionally absent. */
 export function createDurableMachineFiles(): DurableMachineFiles {
 	return {
 		writeText: writeTextExclusive,
 		replaceText,
 	};
+}
+
+/**
+ * Source-removal primitives for the retirement transaction. Capability probing
+ * is explicit so hard-link and directory-sync failures happen while the live
+ * source is still authoritative.
+ */
+export function createDurableRetirementFiles(): DurableRetirementFiles {
+	return {
+		...createDurableMachineFiles(),
+		ensureDirectory,
+		assertRemovalSupported,
+		linkFile: durableLink,
+		removeFile: durableRemove,
+	};
+}
+
+async function ensureDirectory(path: string): Promise<void> {
+	const absolute = resolve(path);
+	await mkdir(absolute, { recursive: true });
+	const metadata = await lstat(absolute);
+	if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
+		throw new Error(`Durable directory is not a real directory: ${absolute}`);
+	}
+	await syncDirectory(dirname(absolute));
+	await syncDirectory(absolute);
+}
+
+async function assertRemovalSupported(options: {
+	readonly sourcePath: string;
+	readonly destinationDirectory: string;
+}): Promise<void> {
+	const probePath = join(
+		options.destinationDirectory,
+		`.living-memory-probe.${process.pid}.${randomUUID()}.tmp`,
+	);
+	let probeExists = false;
+	try {
+		const source = await open(
+			options.sourcePath,
+			constants.O_RDONLY | constants.O_NOFOLLOW,
+		);
+		try {
+			const metadata = await source.stat();
+			if (!metadata.isFile()) {
+				throw new Error("source is not a regular file");
+			}
+			await source.sync();
+		} finally {
+			await source.close();
+		}
+		const [sourceMetadata, destinationMetadata] = await Promise.all([
+			stat(options.sourcePath),
+			stat(options.destinationDirectory),
+		]);
+		if (sourceMetadata.dev !== destinationMetadata.dev) {
+			throw new Error(
+				"source and retired destination are on different filesystems",
+			);
+		}
+		await syncDirectory(dirname(options.sourcePath));
+		await syncDirectory(options.destinationDirectory);
+		await link(options.sourcePath, probePath);
+		probeExists = true;
+		await syncDirectory(options.destinationDirectory);
+		await unlink(probePath);
+		probeExists = false;
+		await syncDirectory(options.destinationDirectory);
+	} catch (error: unknown) {
+		throw new DurableRemovalUnsupportedError(
+			`Durable retirement is unsupported for ${options.sourcePath}: ${
+				error instanceof Error ? error.message : String(error)
+			}.`,
+			{ cause: error },
+		);
+	} finally {
+		if (probeExists) {
+			await unlink(probePath).catch(() => undefined);
+			await syncDirectory(options.destinationDirectory).catch(() => undefined);
+		}
+	}
+}
+
+async function durableLink(options: {
+	readonly sourcePath: string;
+	readonly destinationPath: string;
+}): Promise<void> {
+	try {
+		await link(options.sourcePath, options.destinationPath);
+	} catch (error: unknown) {
+		if (errorCode(error) !== "EEXIST") throw error;
+		const [source, destination] = await Promise.all([
+			stat(options.sourcePath),
+			stat(options.destinationPath),
+		]);
+		if (source.dev !== destination.dev || source.ino !== destination.ino) {
+			throw new Error(
+				`Durable retirement destination conflict at ${options.destinationPath}.`,
+			);
+		}
+	}
+	await syncDirectory(dirname(options.destinationPath));
+}
+
+async function durableRemove(path: string): Promise<void> {
+	await unlink(path).catch((error: unknown) => {
+		if (errorCode(error) !== "ENOENT") throw error;
+	});
+	await syncDirectory(dirname(path));
 }
 
 async function writeTextExclusive(options: {

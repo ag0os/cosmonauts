@@ -30,7 +30,10 @@ export {
 } from "./consolidation-sources.ts";
 export {
 	createDurableMachineFiles,
+	createDurableRetirementFiles,
 	type DurableMachineFiles,
+	DurableRemovalUnsupportedError,
+	type DurableRetirementFiles,
 } from "./durable-files.ts";
 export {
 	type EpisodeCaptureDependencies,
@@ -84,6 +87,11 @@ export {
 	type MemoryRetrievalRequest,
 } from "./multi-store-retrieval.ts";
 export {
+	createLivingMemoryRetirementStore,
+	LIVING_MEMORY_RETIREMENT_FAILPOINTS,
+	type LivingMemoryRetirementFailpoint,
+} from "./retirement-store.ts";
+export {
 	type AcceptedJudgmentReceipt,
 	type AcceptedJudgmentReceiptStore,
 	type ConsolidationEvidenceRef,
@@ -105,7 +113,11 @@ export {
 	type LivingMemoryDurableFiles,
 	type LivingMemoryLimits,
 	type LivingMemoryLockOptions,
+	type LivingMemoryRetirementCandidate,
 	type LivingMemoryRetirementInspection,
+	type LivingMemoryRetirementReason,
+	type LivingMemoryRetirementRunDetails,
+	type LivingMemoryRetirementRunResult,
 	type LivingMemoryRetirementStore,
 	MEMORY_KINDS,
 	MEMORY_SCOPES,

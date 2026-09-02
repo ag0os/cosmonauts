@@ -153,21 +153,99 @@ export function createLivingMemoryConsolidator(
 						}),
 					);
 				}
+				const observedRetirementCandidates = deterministic.flatMap(
+					(finding) => {
+						if (finding.retirement === undefined) return [];
+						const evidence = finding.observation.inputs[0];
+						if (evidence === undefined) return [];
+						const record = collected.records.find(
+							(item) =>
+								item.id === evidence.id && item.sourceId === evidence.sourceId,
+						);
+						if (record === undefined) return [];
+						return [
+							{
+								record,
+								reason: finding.retirement.reason as
+									| "superseded"
+									| "merged"
+									| "obsolete"
+									| "retire-when-met",
+								evidence: finding.observation.inputs,
+								evidenceReason: finding.observation.reason,
+							},
+						];
+					},
+				);
+				const retirementCandidates = observedRetirementCandidates.slice(
+					0,
+					dependencies.limits.maxRetirements,
+				);
+				const capDeferredRetirements = observedRetirementCandidates
+					.slice(dependencies.limits.maxRetirements)
+					.map((candidate) => ({
+						path: candidate.record.path,
+						digest: candidate.record.digest,
+						status: "deferred" as const,
+						reason: candidate.reason,
+					}));
+				const retirementRun =
+					retirementCandidates.length === 0
+						? undefined
+						: await dependencies.retirementStore.apply({
+								candidates: retirementCandidates,
+								dryRun,
+								date: dependencies.clock(),
+								maxRetirements: dependencies.limits.maxRetirements,
+								lockOptions: dependencies.lockOptions,
+								...(options.signal === undefined
+									? {}
+									: { signal: options.signal }),
+							});
 				details = {
 					...details,
 					observations: Object.freeze(
 						deterministic.map((finding) => finding.observation),
 					),
 					retirements: Object.freeze(
-						deterministic.flatMap((finding) =>
-							finding.retirement === undefined ? [] : [finding.retirement],
-						),
+						retirementRun === undefined
+							? deterministic.flatMap((finding) =>
+									finding.retirement === undefined ? [] : [finding.retirement],
+								)
+							: [
+									...retirementRun.details.retirements,
+									...capDeferredRetirements,
+								],
 					),
 					proposals: Object.freeze(proposals),
-					writesCommitted: proposals.some(
-						(proposal) => proposal.status === "written",
-					),
+					declines: Object.freeze([
+						...details.declines,
+						...(retirementRun?.details.declines ?? []),
+						...capDeferredRetirements.map((retirement) => ({
+							code: "retirement-cap-deferred",
+							path: retirement.path,
+							reason: "The bounded retirement cap deferred this candidate.",
+						})),
+					]),
+					warnings: Object.freeze([
+						...details.warnings,
+						...(retirementRun?.details.warnings ?? []),
+					]),
+					recovery: retirementRun?.details.recovery ?? details.recovery,
+					writesCommitted:
+						proposals.some((proposal) => proposal.status === "written") ||
+						(retirementRun?.details.writesCommitted ?? false),
+					...(retirementRun?.details.manifestPath === undefined
+						? {}
+						: { manifestPath: retirementRun.details.manifestPath }),
 				};
+				if (retirementRun?.kind === "failed") {
+					return {
+						kind: "failed" as const,
+						reason: retirementRun.reason,
+						details,
+					};
+				}
 				return { kind: "ran" as const, details };
 			}
 			if (modelMode === "deterministic-only") {

@@ -310,13 +310,54 @@ export interface AcceptedJudgmentReceiptStore {
 export interface LivingMemoryRetirementInspection {
 	readonly recovery: ConsolidationRecovery;
 	readonly warnings: readonly MemoryWarning[];
+	readonly snapshot?: string;
 }
 
-/** Slice 1 is inspection-only; retirement mutation authority is added later. */
+export type LivingMemoryRetirementReason =
+	| "superseded"
+	| "merged"
+	| "obsolete"
+	| "retire-when-met";
+
+export interface LivingMemoryRetirementCandidate {
+	readonly record: ConsolidationSourceRecord;
+	readonly reason: LivingMemoryRetirementReason;
+	readonly evidence: readonly ConsolidationEvidenceRef[];
+	readonly evidenceReason: string;
+}
+
+export interface LivingMemoryRetirementRunDetails {
+	readonly retirements: MemoryConsolidateDetails["retirements"];
+	readonly declines: MemoryConsolidateDetails["declines"];
+	readonly warnings: readonly MemoryWarning[];
+	readonly recovery: ConsolidationRecovery;
+	readonly writesCommitted: boolean;
+	readonly manifestPath?: string;
+}
+
+export type LivingMemoryRetirementRunResult =
+	| {
+			readonly kind: "completed";
+			readonly details: LivingMemoryRetirementRunDetails;
+	  }
+	| {
+			readonly kind: "failed";
+			readonly reason: string;
+			readonly details: LivingMemoryRetirementRunDetails;
+	  };
+
 export interface LivingMemoryRetirementStore {
 	inspect(
 		records: readonly ConsolidationSourceRecord[],
 	): Promise<LivingMemoryRetirementInspection>;
+	apply(options: {
+		readonly candidates: readonly LivingMemoryRetirementCandidate[];
+		readonly dryRun: boolean;
+		readonly date: Date;
+		readonly maxRetirements: number;
+		readonly signal?: AbortSignal;
+		readonly lockOptions: LivingMemoryLockOptions;
+	}): Promise<LivingMemoryRetirementRunResult>;
 }
 
 /** Slice 1 deliberately exposes durable writes but no source removal operation. */
@@ -331,7 +372,7 @@ export interface LivingMemoryDurableFiles {
 export interface LivingMemoryLockOptions {
 	readonly retryMs: number;
 	readonly timeoutMs: number;
-	readonly onReleaseUnconfirmed: () => void;
+	readonly onReleaseUnconfirmed: (error: unknown) => void;
 }
 
 export interface LivingMemoryConsolidatorDependencies {
