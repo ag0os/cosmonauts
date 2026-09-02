@@ -79,7 +79,7 @@ import type {
 	TargetObservation,
 } from "./types.ts";
 
-interface SyncHarnessAssetOptions {
+export interface SyncHarnessAssetOptions {
 	readonly projectRoot: string;
 	readonly asset: HarnessAsset;
 	readonly target: ResolvedHarnessAssetTarget;
@@ -97,12 +97,12 @@ interface SyncHarnessAssetOptions {
 	) => void | Promise<void>;
 }
 
-interface HarnessAssetCheckObservation {
+export interface HarnessAssetCheckObservation {
 	readonly manifest: HarnessProvenanceManifest;
 	readonly target: TargetObservation;
 }
 
-interface SyncHarnessAssetResult {
+export interface SyncHarnessAssetResult {
 	readonly recordedMode?: SyncMode;
 	readonly requestedMode: SyncMode;
 	readonly beforeStatus:
@@ -926,16 +926,16 @@ export type HarnessManifestSnapshot =
 			readonly contents: string;
 	  };
 
-type OwnerRootTransactionPhase =
+export type OwnerRootTransactionPhase =
 	| "prepared"
 	| "installing"
 	| "commit-ready"
 	| "committed"
 	| "rolling-back";
 
-type OwnerRootCleanupPolicy = "after-commit" | "after-evidence";
+export type OwnerRootCleanupPolicy = "after-commit" | "after-evidence";
 
-interface OwnerRootJournalMember {
+export interface OwnerRootJournalMember {
 	readonly targetPath: string;
 	readonly stagePath: string;
 	readonly backupPath: string;
@@ -958,7 +958,7 @@ export interface OwnerRootTransactionJournal {
 }
 
 /** Opaque proof that the canonical owner-root sibling lock is currently held. */
-interface OwnerRootTransaction {
+export interface OwnerRootTransaction {
 	readonly canonicalOwnerRoot: string;
 	readonly lockPath: string;
 	readonly journalPath: string;
@@ -1039,7 +1039,7 @@ export interface WithOwnerRootTransactionOptions {
 	readonly lockRunner?: EntityLockRunner;
 }
 
-type ClaudeCommandBootstrapStop =
+export type ClaudeCommandBootstrapStop =
 	| "prepared"
 	| "installing"
 	| "commit-ready"
@@ -1048,7 +1048,7 @@ type ClaudeCommandBootstrapStop =
 	| "checked"
 	| "backup-cleanup";
 
-interface RunClaudeCommandPairBootstrapOptions {
+export interface RunClaudeCommandPairBootstrapOptions {
 	readonly projectRoot: string;
 	readonly homeRoot: string;
 	readonly now?: () => Date;
@@ -1110,7 +1110,7 @@ interface ClaudeCommandCheckRow {
 	readonly reason: SyncHarnessAssetResult["reason"];
 }
 
-interface ClaudeCommandMigrationEvidence {
+export interface ClaudeCommandMigrationEvidence {
 	readonly schemaVersion: 1;
 	readonly authorizationKind: "ratified-live-bootstrap";
 	readonly phase: ClaudeCommandEvidencePhase;
@@ -2187,14 +2187,14 @@ export async function withOwnerRootTransaction<T>(
 	}
 }
 
-interface OwnerRootTransactionMemberPlan {
+export interface OwnerRootTransactionMemberPlan {
 	readonly targetPath: string;
 	readonly oldState: HarnessNodeSnapshot;
 	readonly newState: HarnessNodeSnapshot;
 	readonly writeStage: (stagePath: string) => Promise<void>;
 }
 
-interface ApplySyncPlanInTransactionOptions {
+export interface ApplySyncPlanInTransactionOptions {
 	readonly oldManifest: HarnessManifestSnapshot;
 	readonly newManifestContents: string;
 	readonly members: readonly OwnerRootTransactionMemberPlan[];
@@ -3329,7 +3329,7 @@ function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
-interface PlanHarnessSyncOptions {
+export interface PlanHarnessSyncOptions {
 	readonly projectRoot: string;
 	readonly request: SyncRequest;
 	readonly inventory: readonly HarnessSyncInventoryRow[];
@@ -3342,7 +3342,7 @@ interface PlanHarnessSyncOptions {
 	readonly pendingJournalOwnerIds?: readonly string[];
 }
 
-type HarnessDriftReason =
+export type HarnessDriftReason =
 	| SyncPlanReason
 	| "foreign-or-untraceable"
 	| "concurrent-change"
@@ -3364,12 +3364,12 @@ export interface ClassifiedHarnessSyncPlanRow
 	readonly conflict?: HarnessConflictReport;
 }
 
-interface HarnessConflictGuidance {
+export interface HarnessConflictGuidance {
 	readonly action: "port" | "preserve" | "safe-transfer";
 	readonly message: string;
 }
 
-interface HarnessConflictReport {
+export interface HarnessConflictReport {
 	readonly sourcePath: string;
 	readonly targetPath: string;
 	readonly owner: OwnerIdentity;
@@ -3378,7 +3378,8 @@ interface HarnessConflictReport {
 	readonly guidance: readonly HarnessConflictGuidance[];
 }
 
-interface ClassifiedHarnessSyncPlan extends Omit<HarnessSyncPlan, "rows"> {
+export interface ClassifiedHarnessSyncPlan
+	extends Omit<HarnessSyncPlan, "rows"> {
 	readonly rows: readonly ClassifiedHarnessSyncPlanRow[];
 	readonly exitCode: 0 | 1;
 }
@@ -3931,7 +3932,7 @@ function makeConflictReport(
 }
 
 /** Explicit request, then sticky recorded mode, then copy for new assets. */
-function resolveHarnessSyncMode(
+export function resolveHarnessSyncMode(
 	requestedMode: SyncMode | undefined,
 	recordedMode: SyncMode | undefined,
 ): SyncMode {

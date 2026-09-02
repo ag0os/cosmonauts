@@ -18,7 +18,7 @@ export const COSMONAUTS_BUNDLE_RESERVED_NAMES = [
 	"cosmonauts-tasks",
 ] as const;
 
-const COSMONAUTS_GENERATED_INVENTORY_PATH =
+export const COSMONAUTS_GENERATED_INVENTORY_PATH =
 	"references/generated-inventory.md" as const;
 
 const MATERIALIZED_PATH_KEYS = [
@@ -187,25 +187,25 @@ function compareText(left: string, right: string): number {
 	return left < right ? -1 : left > right ? 1 : 0;
 }
 
-interface PreparedSkillAsset extends HarnessAsset {
+export interface PreparedSkillAsset extends HarnessAsset {
 	readonly domain?: string;
 	readonly flatteningRule?: "frontmatter-name";
 	readonly targetShape?: SkillCandidateShape;
 }
 
-interface SkillOutputClaim {
+export interface SkillOutputClaim {
 	readonly assetId: string;
 	readonly domain?: string;
 	readonly logicalPath: string;
 	readonly claimKind: "output" | "reserved-name";
 }
 
-interface SkillOutputCollision {
+export interface SkillOutputCollision {
 	readonly outputIdentity: string;
 	readonly claims: readonly SkillOutputClaim[];
 }
 
-interface PrepareSkillExportAssetsOptions {
+export interface PrepareSkillExportAssetsOptions {
 	readonly candidates: readonly SkillCandidate[];
 	readonly sourceHealth: readonly Pick<
 		SourceHealthRow,
@@ -214,7 +214,7 @@ interface PrepareSkillExportAssetsOptions {
 	readonly staticAssets?: readonly HarnessAsset[];
 }
 
-interface PreparedSkillExportInventory {
+export interface PreparedSkillExportInventory {
 	readonly assets: readonly PreparedSkillAsset[];
 	readonly collisions: readonly SkillOutputCollision[];
 	readonly sourceHealth: PrepareSkillExportAssetsOptions["sourceHealth"];

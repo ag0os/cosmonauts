@@ -70,7 +70,7 @@ export type PendingFinalizationState =
 			headBeforeFinalization: string;
 	  });
 
-function createInlineRunState(now = new Date()): InlineRunState {
+export function createInlineRunState(now = new Date()): InlineRunState {
 	return {
 		mode: "inline",
 		pid: process.pid,

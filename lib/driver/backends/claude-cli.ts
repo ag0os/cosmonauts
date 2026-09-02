@@ -7,8 +7,9 @@ interface ClaudeCliBackendDeps {
 	args?: readonly string[];
 }
 
-const CLAUDE_ARGS_ENV = "COSMONAUTS_DRIVER_CLAUDE_ARGS";
-const CLAUDE_SKIP_PERMISSIONS_ENV = "COSMONAUTS_DRIVER_CLAUDE_SKIP_PERMISSIONS";
+export const CLAUDE_ARGS_ENV = "COSMONAUTS_DRIVER_CLAUDE_ARGS";
+export const CLAUDE_SKIP_PERMISSIONS_ENV =
+	"COSMONAUTS_DRIVER_CLAUDE_SKIP_PERMISSIONS";
 const CLAUDE_SKIP_PERMISSIONS_ARG = "--dangerously-skip-permissions";
 
 export function createClaudeCliBackend(

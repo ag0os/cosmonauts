@@ -37,9 +37,10 @@ export const PENDING_FINALIZATION_ARTIFACT: ArtifactRef = {
 	kind: "pending-finalization",
 };
 export const DRIVE_PARTIAL_CONTINUE_ARTIFACT_KIND = "drive-partial-continue";
-const DRIVE_TASK_STATUS_PARTIAL_ARTIFACT_KIND = "drive-task-status-partial";
+export const DRIVE_TASK_STATUS_PARTIAL_ARTIFACT_KIND =
+	"drive-task-status-partial";
 
-interface DriveFinalizationCtx {
+export interface DriveFinalizationCtx {
 	taskManager: TaskManager;
 	eventSink: EventSink;
 	abortSignal: AbortSignal;
@@ -51,14 +52,14 @@ type DriverEventInput = DriverEvent extends infer Event
 		: never
 	: never;
 
-type DriveSourceCommitResult =
+export type DriveSourceCommitResult =
 	| { status: "not_applicable" }
 	| { status: "skipped"; reason: "no_changes"; subject: string }
 	| { status: "committed"; sha: string; subject: string }
 	| { status: "blocked"; reason: string }
 	| { status: "finalization_failed"; outcome: TaskOutcome; reason: string };
 
-interface DriveSourceCommitOptions {
+export interface DriveSourceCommitOptions {
 	spec: DriverRunSpec;
 	ctx: DriveFinalizationCtx;
 	taskId: string;
@@ -154,7 +155,7 @@ export async function finalizeDriveSourceCommit({
 	return { status: "committed", sha: commitSha, subject };
 }
 
-interface TransitionDriveTaskStatusOptions {
+export interface TransitionDriveTaskStatusOptions {
 	spec: DriverRunSpec;
 	ctx: DriveFinalizationCtx;
 	taskId: string;
@@ -250,7 +251,7 @@ export async function transitionDriveTaskStatus({
 	}
 }
 
-async function recordCommitFinalizationFailure({
+export async function recordCommitFinalizationFailure({
 	spec,
 	ctx,
 	taskId,
@@ -305,7 +306,7 @@ async function recordCommitFinalizationFailure({
 	};
 }
 
-async function recordTaskStatusFinalizationFailure({
+export async function recordTaskStatusFinalizationFailure({
 	spec,
 	ctx,
 	taskId,
@@ -480,7 +481,7 @@ export async function commitDriveFinalState(
 	}
 }
 
-interface RetryableDriveFinalizerFailureMapping {
+export interface RetryableDriveFinalizerFailureMapping {
 	outcome: "finalization_failed";
 	finalizationPhase: "commit" | "task_status" | "state_commit";
 	finalizationReason: string;
@@ -695,7 +696,7 @@ function isPartialTaskStatusResult(
 	);
 }
 
-function partialReason(report: ParsedReport): string {
+export function partialReason(report: ParsedReport): string {
 	if (report.outcome === "partial") {
 		const progress = progressText(report);
 		const notes = report.notes ? `: ${report.notes}` : "";

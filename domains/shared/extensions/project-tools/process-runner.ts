@@ -11,7 +11,7 @@ import {
 
 export const DEFAULT_PROVIDER_TIMEOUT_MS = 30_000;
 export const DEFAULT_TERMINATION_GRACE_MS = 250;
-const DEFAULT_FORCE_KILL_WAIT_MS = 1_000;
+export const DEFAULT_FORCE_KILL_WAIT_MS = 1_000;
 const PROVIDER_STDOUT_SPOOL = "provider-stdout.log";
 const PROVIDER_STDERR_SPOOL = "provider-stderr.log";
 const OUTPUT_CAPTURE_FAILED_CODE = "OUTPUT_CAPTURE_FAILED";
@@ -22,7 +22,7 @@ export interface ProviderProcessInvocation {
 	readonly cwd: string;
 }
 
-interface ProviderProcessRunOptions {
+export interface ProviderProcessRunOptions {
 	readonly timeoutMs?: number;
 	readonly terminationGraceMs?: number;
 	/**
@@ -86,7 +86,7 @@ type InitiatedTermination =
 const PROCESS_TREE_CLEANUP_FAILED_CODE = "PROCESS_TREE_CLEANUP_FAILED";
 const PROCESS_TREE_POLL_MS = 10;
 
-type TaskkillExitOutcome =
+export type TaskkillExitOutcome =
 	| { readonly kind: "terminated" }
 	| { readonly kind: "unverified"; readonly error: Error };
 

@@ -65,7 +65,7 @@ function renderEventsText(events: DriverEvent[], cursor: number): string {
 	return lines.join("\n");
 }
 
-function summarizeDriverEvent(event: DriverEvent): string {
+export function summarizeDriverEvent(event: DriverEvent): string {
 	return clip(`${event.type}: ${describeDriverEvent(event)}`);
 }
 

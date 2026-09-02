@@ -296,6 +296,21 @@ export function stampDriveEpisodeResult<Result extends DriverResult>(
 	return driveEpisodeIdentity(spec) ? stampDriverResult(result) : result;
 }
 
+export function buildDriveTerminalEpisode(
+	spec: DriverRunSpec,
+	result: DriverResult,
+): EpisodeEvent | undefined {
+	const identity = driveEpisodeIdentity(spec);
+	if (!identity || !result.completedAt) return undefined;
+	return buildClaimedDriveTerminalEpisode(spec, identity, {
+		version: 1,
+		attemptId: identity.attemptId,
+		outcome: result.outcome,
+		timestamp: result.completedAt,
+		state: "intended",
+	});
+}
+
 export async function recordDriveTerminalEpisode(
 	spec: DriverRunSpec,
 	result: DriverResult,

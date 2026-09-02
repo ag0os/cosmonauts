@@ -43,16 +43,16 @@ export function signalPosixProcessGroup(
 	}
 }
 
-const DEFAULT_REAP_TERM_GRACE_MS = 2_000;
-const DEFAULT_REAP_KILL_GRACE_MS = 1_000;
+export const DEFAULT_REAP_TERM_GRACE_MS = 2_000;
+export const DEFAULT_REAP_KILL_GRACE_MS = 1_000;
 const REAP_POLL_MS = 25;
 
-interface ReapProcessGroupOptions {
+export interface ReapProcessGroupOptions {
 	readonly termGraceMs?: number;
 	readonly killGraceMs?: number;
 }
 
-type ReapProcessGroupOutcome =
+export type ReapProcessGroupOutcome =
 	/** Nothing was left to reap: the tree had already exited on its own. */
 	| { readonly kind: "already-exited" }
 	/** Survivors existed and are now gone. `signal` is the one that ended them. */

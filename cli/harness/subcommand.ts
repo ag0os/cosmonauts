@@ -243,7 +243,7 @@ export function parseSyncRequest(options: HarnessSyncCliOptions): SyncRequest {
 	};
 }
 
-function renderHarnessReport(
+export function renderHarnessReport(
 	report: HarnessSyncReport,
 	mode: "json" | "plain" | "human",
 ): void {
