@@ -1,7 +1,7 @@
 ---
 id: TASK-624
 title: Review remediation — Close the retirement byte-safety and cap findings
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-620
 createdAt: '2026-09-02T19:09:58.094Z'
-updatedAt: '2026-09-02T19:09:58.094Z'
+updatedAt: '2026-09-02T19:41:15.927Z'
 ---
 
 ## Description
@@ -45,12 +45,12 @@ VERIFY FIRST — LOW 8: 23 dead-code findings in changed scope (5 unused value e
 Binding ratified ground — stop and escalate rather than adjust it: never move, edit, or delete anything under this repository's live `knowledge/`; temp fixtures only; `knowledgeSurface` stays on; no live retirement round; no TTL, OM adoption/fork, scheduling, user-scope L4 mutation, embeddings, new OKF type, or explicit-save change. Byte authority outranks size pressure. Do not weaken the receipt floor, the frozen byte/doc/source pins, model-output fail-closed validation, or any existing behavior marker to make a fix land.
 
 <!-- AC:BEGIN -->
-- [ ] #1 Every live unlink — in both the main retirement path and the recovery path — is immediately preceded, under the same lock, by proof that the live path is still the linked and manifested object: same device+inode as its retired destination via a no-follow stat, AND a fresh read whose digest still equals the manifested digest. Any mismatch fails closed for that entry and reports a conflict instead of unlinking, and a regression test simulates a concurrent atomic replace and an in-place edit between manifest commit and unlink, proving no live bytes are destroyed.
-- [ ] #2 Rollforward confirms durability rather than visibility: recovery re-syncs the manifest file and its parent directory before any unlink and refuses to roll forward when that sync fails, satisfying D-014; a regression test covers a manifest that is visible but whose directory sync failed, proving recovery does not unlink on visibility alone.
-- [ ] #3 Per-pass outlet caps hold across a full model pass: combined deterministic-plus-model observations never exceed `maxObservations`, deterministic retirement candidates are bounded lossily at `maxRetirements` with the excess reported as deferred rather than thrown, and model-output validation still fails closed on over-cap or invalid batches.
-- [ ] #4 Index pressure is measured over the complete current project+user metadata set independent of the per-pass admission cap, per Design section 3 and D-008, and a bounded pass can neither permanently starve unadmitted records nor permanently suppress a deferred deterministic finding.
-- [ ] #5 Episode pruning carries the same immediately-before-unlink identity and digest proof as retirement; the whole mutating pass is serialized under one lock hold so two passes cannot overlap on receipts or model work; and no result reports `writesCommitted: false` when writes actually occurred.
-- [ ] #6 Represented evidence is keyed on at least scope+path+digest so byte-identical records at different paths or scopes no longer suppress one another.
-- [ ] #7 Dead code introduced by this branch is removed or wired to a consumer and duplicated safe-relative-path helpers are consolidated, with the already-centralized index renderer left intact; every new export has a consumer.
-- [ ] #8 Project-native universal correctness evidence passes after every commit; the Slice 0 B-001 receipt test and every marker B-001..B-021 remain green under their exact existing names and owners; live `knowledge/` and `memory/` stay byte-identical; and a live `bun bin/cosmonauts memory consolidate --dry-run --no-model --json` still completes as `ran` or `noop` writing nothing.
+- [x] #1 Every live unlink — in both the main retirement path and the recovery path — is immediately preceded, under the same lock, by proof that the live path is still the linked and manifested object: same device+inode as its retired destination via a no-follow stat, AND a fresh read whose digest still equals the manifested digest. Any mismatch fails closed for that entry and reports a conflict instead of unlinking, and a regression test simulates a concurrent atomic replace and an in-place edit between manifest commit and unlink, proving no live bytes are destroyed.
+- [x] #2 Rollforward confirms durability rather than visibility: recovery re-syncs the manifest file and its parent directory before any unlink and refuses to roll forward when that sync fails, satisfying D-014; a regression test covers a manifest that is visible but whose directory sync failed, proving recovery does not unlink on visibility alone.
+- [x] #3 Per-pass outlet caps hold across a full model pass: combined deterministic-plus-model observations never exceed `maxObservations`, deterministic retirement candidates are bounded lossily at `maxRetirements` with the excess reported as deferred rather than thrown, and model-output validation still fails closed on over-cap or invalid batches.
+- [x] #4 Index pressure is measured over the complete current project+user metadata set independent of the per-pass admission cap, per Design section 3 and D-008, and a bounded pass can neither permanently starve unadmitted records nor permanently suppress a deferred deterministic finding.
+- [x] #5 Episode pruning carries the same immediately-before-unlink identity and digest proof as retirement; the whole mutating pass is serialized under one lock hold so two passes cannot overlap on receipts or model work; and no result reports `writesCommitted: false` when writes actually occurred.
+- [x] #6 Represented evidence is keyed on at least scope+path+digest so byte-identical records at different paths or scopes no longer suppress one another.
+- [x] #7 Dead code introduced by this branch is removed or wired to a consumer and duplicated safe-relative-path helpers are consolidated, with the already-centralized index renderer left intact; every new export has a consumer.
+- [x] #8 Project-native universal correctness evidence passes after every commit; the Slice 0 B-001 receipt test and every marker B-001..B-021 remain green under their exact existing names and owners; live `knowledge/` and `memory/` stay byte-identical; and a live `bun bin/cosmonauts memory consolidate --dry-run --no-model --json` still completes as `ran` or `noop` writing nothing.
 <!-- AC:END -->
