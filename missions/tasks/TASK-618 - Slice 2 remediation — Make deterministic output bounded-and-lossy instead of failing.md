@@ -3,7 +3,7 @@ id: TASK-618
 title: >-
   Slice 2 remediation — Make deterministic output bounded-and-lossy instead of
   failing
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -12,7 +12,7 @@ labels:
 dependencies:
   - TASK-617
 createdAt: '2026-09-02T18:01:39.408Z'
-updatedAt: '2026-09-02T18:01:39.408Z'
+updatedAt: '2026-09-02T18:09:49.833Z'
 ---
 
 ## Description
@@ -30,9 +30,9 @@ Then iterate against the real corpus until it is clean: run `bun bin/cosmonauts 
 Binding ratified ground — stop and escalate rather than adjust it: dry-run must remain byte-identical and must create no lock, proposal, receipt, manifest, journal, retired file, or episode deletion; never move, edit, or delete anything under this repository's live `knowledge/`; `knowledgeSurface` stays on; no live retirement round; no TTL, OM, scheduling, user-scope L4 mutation, embeddings, new OKF type, or explicit-save change. Do not raise any cap to dodge the bug, and do not weaken retirement authority, byte authority, or the receipt floor.
 
 <!-- AC:BEGIN -->
-- [ ] #1 Deterministic proposal findings over `limits.maxProposals` are bounded lossily rather than thrown: the first N are persisted in a stable deterministic order and every deferred finding is reported as a decline mirroring the existing `retirement-cap-deferred` shape; the same treatment covers the deterministic observation cap if it can trip identically.
-- [ ] #2 Model-output validation still fails closed: the over-limit observation, proposal, and retirement checks on judgment output are unchanged and still reject invalid or over-cap model batches before any mutation.
-- [ ] #3 A regression test proves a deterministic corpus fixture producing more proposal findings than `maxProposals` yields a bounded non-failed result whose declines name the deferred work, and that per-pass caps are still never exceeded.
-- [ ] #4 `bun bin/cosmonauts memory consolidate --dry-run --no-model --json` run from the repository root against the real corpus completes as `ran` or `noop` (never `failed`), reports deferred work honestly, and leaves `knowledge/` and `memory/` byte-identical with a clean worktree.
-- [ ] #5 Project-native universal correctness evidence passes after every commit; the Slice 0 B-001 receipt test and every existing marker B-001..B-021 remain green, unmodified, and owned by their original tasks; no cap is raised and no retirement, byte, or receipt authority is weakened.
+- [x] #1 Deterministic proposal findings over `limits.maxProposals` are bounded lossily rather than thrown: the first N are persisted in a stable deterministic order and every deferred finding is reported as a decline mirroring the existing `retirement-cap-deferred` shape; the same treatment covers the deterministic observation cap if it can trip identically.
+- [x] #2 Model-output validation still fails closed: the over-limit observation, proposal, and retirement checks on judgment output are unchanged and still reject invalid or over-cap model batches before any mutation.
+- [x] #3 A regression test proves a deterministic corpus fixture producing more proposal findings than `maxProposals` yields a bounded non-failed result whose declines name the deferred work, and that per-pass caps are still never exceeded.
+- [x] #4 `bun bin/cosmonauts memory consolidate --dry-run --no-model --json` run from the repository root against the real corpus completes as `ran` or `noop` (never `failed`), reports deferred work honestly, and leaves `knowledge/` and `memory/` byte-identical with a clean worktree.
+- [x] #5 Project-native universal correctness evidence passes after every commit; the Slice 0 B-001 receipt test and every existing marker B-001..B-021 remain green, unmodified, and owned by their original tasks; no cap is raised and no retirement, byte, or receipt authority is weakened.
 <!-- AC:END -->
