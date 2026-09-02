@@ -1421,9 +1421,26 @@ function canonicalCitation(options: {
 }
 
 function isPathShaped(value: string): boolean {
+	const path = value.split(/[?#]/u, 1)[0];
+	if (path === undefined || !path || /\s/u.test(value)) return false;
+
+	const hasPathSeparator = path.includes("/");
+	const hasFileExtension = /\.[A-Za-z0-9]{1,12}$/u.test(path);
+	const hasExpansionOrGlob = /[{}[\]*]/u.test(path);
+	const hasPlaceholder =
+		/[<>$]/u.test(path) ||
+		path.startsWith("~/") ||
+		/(?:^|[-_.])N(?=[-_.]|$)/u.test(path);
+	const hasRevisionRangeOrElision = path.includes("..");
+	const hasSourceLocationSuffix = /:\d+(?::\d+)?$/u.test(path);
+
 	return (
-		!value.includes(" ") &&
-		(value.includes("/") || /\.[A-Za-z0-9]{1,12}(?:[?#].*)?$/u.test(value))
+		hasPathSeparator &&
+		hasFileExtension &&
+		!hasExpansionOrGlob &&
+		!hasPlaceholder &&
+		!hasRevisionRangeOrElision &&
+		!hasSourceLocationSuffix
 	);
 }
 

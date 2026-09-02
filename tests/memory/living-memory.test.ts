@@ -1299,6 +1299,93 @@ describe("living memory", () => {
 
 	// @cosmo-behavior plan:living-memory#B-009
 	test("turns stale citations into deterministic N=1 edits without a model call", async () => {
+		const rejectedBacktickCitations = [
+			{
+				class: "dotted code identifiers",
+				values: [
+					"Bun.spawn",
+					"Promise.race",
+					"JSON.parse",
+					"Type.Object",
+					"Type.Union",
+					"pi.exec",
+					"analysis.provider",
+					"options.client",
+					"query.recordTypes",
+					"scope.projectRoot",
+					"MemoryQuery.recordTypes",
+					"episodicLog.enabled",
+					"drive.run",
+					"autonomy.wake",
+					"MemoryWriteResult.failed",
+					"RetrievedMemoryRecord.source",
+				],
+			},
+			{
+				class: "slash-namespaced identifiers without file extensions",
+				values: [
+					"cod" + "ing/worker",
+					"main/cosmo",
+					"cod" + "ing/quality-manager",
+					"example/worker",
+					"cosmonauts/cli",
+					"knowledge/url",
+				],
+			},
+			{
+				class: "brace expansions, globs, and placeholders",
+				values: [
+					"lib/config/{types,loader}.ts",
+					"lib/memory/{types,okf,paths,markdown-store,index}.ts",
+					"bundled/cod" + "ing/prompts/{spec-writer,planner}.md",
+					"tests/driver/*",
+					"memory/**",
+					"missions/**",
+					".cosmonauts/*.lock",
+					"docs/fallow*.md",
+					"node_modules/.bin/<tool>",
+					"@fallow-cli/<platform>/fallow",
+					`\${role}-<uuid>.jsonl`,
+					"<userRoot>/memory/agent/profile.md",
+					"review-<n>.md",
+					"review-round-N.md",
+					"missions/reviews/review-round-N.md",
+					"~/.cosmonauts",
+				],
+			},
+			{
+				class: "git rev ranges and elided paths",
+				values: [
+					"main..HEAD",
+					"51ef662..HEAD",
+					"round-1..3",
+					".../references/plan-format.md",
+				],
+			},
+			{
+				class: "separator-less names and bare extensions",
+				values: [
+					"types.ts",
+					"index.md",
+					"config.json",
+					"qm.md",
+					"store.ts",
+					"generator.ts",
+					".md",
+				],
+			},
+			{
+				class: "line-suffixed source locations",
+				values: ["lib/tasks/file-system.ts:105"],
+			},
+		] as const;
+		const rejectedTokens = rejectedBacktickCitations.flatMap(
+			(entry) => entry.values,
+		);
+		const acceptedBacktickCitations = [
+			"lib/missing-backtick.ts",
+			"memory/episodic-log.md",
+		] as const;
 		const projectRoot = join(tmp.path, "stale-citation-project");
 		const knowledgePath = join(projectRoot, "knowledge", "stale.md");
 		await mkdir(join(projectRoot, "knowledge"), { recursive: true });
@@ -1316,7 +1403,9 @@ describe("living memory", () => {
 			"",
 			"# Stale paths",
 			"",
-			"Keep [the current doc](../docs/current.md#stable), mark [the missing doc](../docs/missing-link.md?view=1#old), and mark `lib/missing-backtick.ts` while preserving this sentence.",
+			`Keep [the current doc](../docs/current.md#stable), mark [the missing doc](../docs/missing-link.md?view=1#old), and mark ${acceptedBacktickCitations.map((path) => `\`${path}\``).join(" plus ")} while preserving this sentence.`,
+			"",
+			`These code and pattern tokens are not citations: ${rejectedTokens.map((token) => `\`${token}\``).join(", ")}.`,
 			"",
 		].join("\n");
 		await writeFile(knowledgePath, raw, "utf-8");
@@ -1358,7 +1447,7 @@ describe("living memory", () => {
 					{
 						kind: "stale-reference",
 						inputs: [{ id: "stale-record", digest: input.digest }],
-						reason: expect.stringContaining("3 unresolved citation"),
+						reason: expect.stringContaining("4 unresolved citations"),
 					},
 				],
 				proposals: [{ proposalKind: "merge", status: "written" }],
@@ -1379,9 +1468,24 @@ describe("living memory", () => {
 		for (const path of [
 			"docs/missing-from-files.md",
 			"docs/missing-link.md",
-			"lib/missing-backtick.ts",
+			...acceptedBacktickCitations,
 		]) {
 			expect(proposalRaw).toContain(`stale reference: ${path}`);
+		}
+		const observation = result.details.observations.find(
+			(item) => item.kind === "stale-reference",
+		);
+		expect(observation).toBeDefined();
+		const reason = observation?.reason;
+		if (reason === undefined)
+			throw new Error("expected stale-reference reason");
+		for (const { class: rejectionClass, values } of rejectedBacktickCitations) {
+			for (const value of values) {
+				const escapedValue = value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+				expect(reason, rejectionClass).not.toMatch(
+					new RegExp(`(?:citations?: |, )${escapedValue}(?:, |\\.$)`, "u"),
+				);
+			}
 		}
 		expect(proposalRaw).toContain("while preserving this sentence");
 		expect(proposalRaw).toContain("../docs/current.md#stable");
