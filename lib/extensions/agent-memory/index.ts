@@ -139,6 +139,7 @@ type ParseRememberResult =
 interface RecallParams {
 	readonly query?: unknown;
 	readonly limit?: unknown;
+	readonly includeRetired?: unknown;
 }
 
 interface RenderedRecallRecord {
@@ -256,22 +257,39 @@ export function createAgentMemoryExtension(
 			label: "Recall",
 			description:
 				"Search authored agent-memory records: notes, the user profile, and playbooks.",
-			parameters: Type.Object({
-				query: Type.String({ description: "Text to search for." }),
-				limit: Type.Optional(
-					Type.Integer({
-						description: "Maximum notes to return; capped at 20.",
-						minimum: 1,
-					}),
-				),
-			}),
+			parameters: Type.Object(
+				{
+					query: Type.String({ description: "Text to search for." }),
+					limit: Type.Optional(
+						Type.Integer({
+							description: "Maximum notes to return; capped at 20.",
+							minimum: 1,
+						}),
+					),
+					...(deps.knowledgeRecall
+						? {
+								includeRetired: Type.Optional(
+									Type.Boolean({
+										description:
+											"Include retired knowledge records in this recall.",
+									}),
+								),
+							}
+						: {}),
+				},
+				deps.knowledgeRecall ? { additionalProperties: false } : {},
+			),
 			execute: async (_toolCallId, params, _signal, _onUpdate, ctx) => {
 				const projectRoot = getCwd(ctx);
 				if (deps.knowledgeRecall) {
+					const recallParams = params as RecallParams;
 					return deps.knowledgeRecall({
-						query: normalizeString((params as RecallParams).query) ?? "",
-						limit: normalizeLimit((params as RecallParams).limit),
+						query: normalizeString(recallParams.query) ?? "",
+						limit: normalizeLimit(recallParams.limit),
 						projectRoot,
+						...(recallParams.includeRetired === true
+							? { includeRetired: true }
+							: {}),
 					});
 				}
 				if (!auth.authorized) return unauthorizedResult(authorizedAgentId);

@@ -29,6 +29,7 @@ export interface KnowledgeRecallRequest {
 	readonly query: string;
 	readonly limit: number;
 	readonly projectRoot: string;
+	readonly includeRetired?: boolean;
 }
 
 /** Stage 4 supplies the MemoryStore-backed implementation of this seam. */
@@ -85,7 +86,11 @@ export function createKnowledgeRecallHandler(
 					projectRoot: request.projectRoot,
 					scopes: ["project", "user"] as const,
 				},
-				query: { text: query, recordTypes: KNOWLEDGE_RECORD_TYPES },
+				query: {
+					text: query,
+					recordTypes: KNOWLEDGE_RECORD_TYPES,
+					...(request.includeRetired === true ? { includeRetired: true } : {}),
+				},
 			},
 		];
 		if (options.createAuthoredStore) {
@@ -117,21 +122,25 @@ export function createKnowledgeRecallHandler(
 			requests,
 			limit: request.limit,
 		});
-		const records = result.records.map((record) => ({
-			type: record.type,
-			title: record.title,
-			description: record.description,
-			scope: record.scope,
-			kind: record.kind,
-			tags: record.tags,
-			timestamp: record.timestamp,
-			resource: record.resource,
-			path: record.path,
-			content: record.content,
-			...(record.writer ? { writer: record.writer } : {}),
-			...(record.source ? { source: record.source } : {}),
-			...(record.date ? { date: record.date } : {}),
-		}));
+		const records = result.records.map((record) => {
+			const retired = "retired" in record && record.retired === true;
+			return {
+				type: record.type,
+				title: record.title,
+				description: record.description,
+				scope: record.scope,
+				kind: record.kind,
+				tags: record.tags,
+				timestamp: record.timestamp,
+				resource: record.resource,
+				path: record.path,
+				content: record.content,
+				...(record.writer ? { writer: record.writer } : {}),
+				...(record.source ? { source: record.source } : {}),
+				...(record.date ? { date: record.date } : {}),
+				...(retired ? { retired: true as const } : {}),
+			};
+		});
 		const details = {
 			status: records.length > 0 ? "matched" : "no_match",
 			query,
@@ -155,6 +164,9 @@ export function createKnowledgeRecallHandler(
 						`scope: ${record.scope}`,
 						`timestamp: ${record.timestamp}`,
 						`resource: ${record.resource}`,
+						...(record.retired === true
+							? ["state: retired", `path: ${record.path}`]
+							: []),
 						"",
 						record.content,
 					].join("\n"),
@@ -173,20 +185,31 @@ export function registerKnowledgeRecallTool(
 		name: "recall",
 		label: "Recall",
 		description: "Search durable project and user knowledge records.",
-		parameters: Type.Object({
-			query: Type.String({ description: "Text to search for." }),
-			limit: Type.Optional(
-				Type.Integer({
-					description: "Maximum records to return; capped at 20.",
-					minimum: 1,
-				}),
-			),
-		}),
+		parameters: Type.Object(
+			{
+				query: Type.String({ description: "Text to search for." }),
+				limit: Type.Optional(
+					Type.Integer({
+						description: "Maximum records to return; capped at 20.",
+						minimum: 1,
+					}),
+				),
+				includeRetired: Type.Optional(
+					Type.Boolean({
+						description: "Include retired knowledge records in this recall.",
+					}),
+				),
+			},
+			{ additionalProperties: false },
+		),
 		execute: async (_toolCallId, params, _signal, _onUpdate, ctx) =>
 			recallKnowledge({
 				query: normalizeQuery((params as { query?: unknown }).query),
 				limit: normalizeLimit((params as { limit?: unknown }).limit),
 				projectRoot: ctx.cwd,
+				...((params as { includeRetired?: unknown }).includeRetired === true
+					? { includeRetired: true }
+					: {}),
 			}),
 	});
 }

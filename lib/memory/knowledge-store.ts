@@ -125,16 +125,25 @@ async function retrieveKnowledge(options: {
 		}
 		searchedScopes.push(scope);
 		const root = knowledgeRoot(options.context, scope);
-		const paths = await listKnowledgeFiles(root, warnings);
+		const paths = await listKnowledgeFiles(
+			root,
+			warnings,
+			options.query.includeRetired === true,
+		);
 		for (const path of paths) {
 			const scanned = await scanKnowledgeFile(path, warnings);
 			if (!scanned) continue;
 			tally.filesScanned += 1;
 			tally.bytesRead += Buffer.byteLength(scanned.raw, "utf-8");
 			try {
+				const physicalResource = toPosixRelative(root, path);
+				const retired = physicalResource.startsWith("retired/");
+				const logicalResource = retired
+					? physicalResource.slice("retired/".length)
+					: physicalResource;
 				const parsed = parseHumanKnowledgeRecord({
 					raw: scanned.raw,
-					physicalResource: toPosixRelative(root, path),
+					physicalResource: logicalResource,
 					physicalScope: scope,
 					mtime: scanned.mtime,
 				});
@@ -146,7 +155,9 @@ async function retrieveKnowledge(options: {
 					record: parsed.record,
 					path,
 				});
-				if (matchesQuery(record, options.query)) records.push(record);
+				if (matchesQuery(record, options.query)) {
+					records.push({ ...record, ...(retired ? { retired: true } : {}) });
+				}
 			} catch (error: unknown) {
 				warnings.push({
 					path,
@@ -349,6 +360,7 @@ async function writeAtomicExclusive(options: {
 async function listKnowledgeFiles(
 	root: string,
 	warnings: MemoryWarning[],
+	includeRetired: boolean,
 ): Promise<string[]> {
 	try {
 		const metadata = await lstat(root);
@@ -363,14 +375,22 @@ async function listKnowledgeFiles(
 	}
 
 	const files: string[] = [];
-	await collectKnowledgeFiles({ directory: root, files, warnings });
+	await collectKnowledgeFiles({
+		root,
+		directory: root,
+		files,
+		warnings,
+		includeRetired,
+	});
 	return files.sort();
 }
 
 async function collectKnowledgeFiles(options: {
+	readonly root: string;
 	readonly directory: string;
 	readonly files: string[];
 	readonly warnings: MemoryWarning[];
+	readonly includeRetired: boolean;
 }): Promise<void> {
 	let entries: Dirent[];
 	try {
@@ -389,6 +409,13 @@ async function collectKnowledgeFiles(options: {
 	for (const entry of entries) {
 		const path = join(options.directory, entry.name);
 		if (entry.isDirectory()) {
+			if (
+				!options.includeRetired &&
+				options.directory === options.root &&
+				entry.name === "retired"
+			) {
+				continue;
+			}
 			await collectKnowledgeFiles({ ...options, directory: path });
 		} else if (
 			entry.isFile() &&

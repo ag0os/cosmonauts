@@ -576,6 +576,184 @@ describe("agent-memory extension", () => {
 		expect(withIndex).not.toContain("�");
 	});
 
+	// @cosmo-behavior plan:living-memory#B-003
+	test("excludes retired knowledge until recall explicitly opts in", async () => {
+		const projectRoot = join(tmp.path, "retired-retrieval-project");
+		const userRoot = join(tmp.path, "retired-retrieval-user");
+		const retiredPath = join(
+			projectRoot,
+			"knowledge",
+			"retired",
+			"history",
+			"retired-decision.md",
+		);
+		await Promise.all([
+			mkdir(join(projectRoot, "knowledge", "retired", "history"), {
+				recursive: true,
+			}),
+			mkdir(join(userRoot, "knowledge"), { recursive: true }),
+		]);
+		await Promise.all([
+			writeFile(
+				join(projectRoot, "knowledge", "live-decision.md"),
+				matter.stringify("LIVE_KNOWLEDGE_BODY", {
+					type: "decision",
+					title: "Live retrieval decision",
+					description: "retired-opt-in-shared",
+					resource: "knowledge/live-decision.md",
+					tags: ["retrieval"],
+					timestamp: "2026-09-02T10:00:00.000Z",
+					scope: "project",
+					kind: "semantic",
+				}),
+				"utf-8",
+			),
+			writeFile(
+				retiredPath,
+				matter.stringify("RETIRED_KNOWLEDGE_BODY", {
+					type: "gotcha",
+					title: "Retired retrieval gotcha",
+					description: "retired-opt-in-shared",
+					resource: "knowledge/history/retired-decision.md",
+					tags: ["retrieval"],
+					timestamp: "2026-09-02T11:00:00.000Z",
+					scope: "project",
+					kind: "semantic",
+				}),
+				"utf-8",
+			),
+			writeFile(
+				join(projectRoot, "knowledge", "retired", "forged.md"),
+				matter.stringify("FORGED_RETIRED_BODY", {
+					type: "convention",
+					title: "Forged retired destination",
+					description: "retired-opt-in-shared",
+					resource: "knowledge/trusted-persisted-destination.md",
+					tags: ["retrieval"],
+					timestamp: "2026-09-02T12:00:00.000Z",
+					scope: "project",
+					kind: "semantic",
+				}),
+				"utf-8",
+			),
+			writeFile(
+				join(userRoot, "knowledge", "user-convention.md"),
+				matter.stringify("USER_KNOWLEDGE_BODY", {
+					type: "convention",
+					title: "User retrieval convention",
+					description: "retired-opt-in-shared",
+					resource: "knowledge/user-convention.md",
+					tags: ["retrieval"],
+					timestamp: "2026-09-02T09:00:00.000Z",
+					scope: "user",
+					kind: "semantic",
+				}),
+				"utf-8",
+			),
+		]);
+		const beforeProject = await fileSnapshot(projectRoot, "knowledge");
+		const beforeUser = await fileSnapshot(userRoot, "knowledge");
+		const store = createKnowledgeMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+		});
+		const pi = createMockPi({ cwd: projectRoot });
+		installKnowledgeSurface(pi, {
+			agentId: "main/cosmo",
+			registerAgentMemoryTools: true,
+			authorizeAuthoredMemory: true,
+			registerArchitectureTool: false,
+			authorizeArchitecture: false,
+			recallOwner: "agent-memory",
+			canPropose: false,
+			userCosmonautsRoot: userRoot,
+			createKnowledgeStore: () => store,
+		});
+
+		const injected = await injectionFor(pi, projectRoot);
+		expect(injected).toContain("Live retrieval decision");
+		expect(injected).toContain("User retrieval convention");
+		expect(injected).not.toContain("Retired retrieval gotcha");
+		expect(injected).not.toContain("Forged retired destination");
+
+		const boundaryDefault = await store.retrieve(
+			{ projectRoot, scopes: ["project", "user"] },
+			{
+				text: "retired-opt-in-shared",
+				recordTypes: ["decision", "gotcha", "convention"],
+			},
+		);
+		expect(boundaryDefault.records.map((record) => record.title)).toEqual([
+			"Live retrieval decision",
+			"User retrieval convention",
+		]);
+		expect(boundaryDefault.stats).toMatchObject({
+			filesScanned: 2,
+		});
+		expect(boundaryDefault.warnings).toEqual([]);
+
+		const defaultRecall = (await pi.callTool("recall", {
+			query: "retired-opt-in-shared",
+			limit: 20,
+		})) as ToolResult;
+		expect(records(defaultRecall.details)).toEqual([
+			expect.objectContaining({
+				title: "Live retrieval decision",
+				resource: "knowledge/live-decision.md",
+			}),
+			expect.objectContaining({
+				title: "User retrieval convention",
+				scope: "user",
+				resource: "knowledge/user-convention.md",
+			}),
+		]);
+
+		const optedInRecall = (await pi.callTool("recall", {
+			query: "retired-opt-in-shared",
+			limit: 20,
+			includeRetired: true,
+		})) as ToolResult;
+		expect(records(optedInRecall.details)).toEqual([
+			expect.objectContaining({
+				title: "Retired retrieval gotcha",
+				resource: "knowledge/history/retired-decision.md",
+				path: retiredPath,
+				retired: true,
+			}),
+			expect.objectContaining({ title: "Live retrieval decision" }),
+			expect.objectContaining({
+				title: "User retrieval convention",
+				scope: "user",
+			}),
+		]);
+		expect(warnings(optedInRecall.details)).toEqual([
+			expect.objectContaining({
+				path: join(projectRoot, "knowledge", "retired", "forged.md"),
+				message: expect.stringContaining("safe physical path"),
+			}),
+		]);
+		expect(records(optedInRecall.details)).not.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ title: "Forged retired destination" }),
+			]),
+		);
+		const recallSchema = fullToolContract(pi, "recall").parameters as {
+			readonly properties: Record<string, unknown>;
+			readonly additionalProperties?: unknown;
+		};
+		expect(recallSchema.additionalProperties).toBe(false);
+		expect(Object.keys(recallSchema.properties)).toEqual([
+			"query",
+			"limit",
+			"includeRetired",
+		]);
+		expect(recallSchema.properties.includeRetired).toMatchObject({
+			type: "boolean",
+		});
+		expect(await fileSnapshot(projectRoot, "knowledge")).toEqual(beforeProject);
+		expect(await fileSnapshot(userRoot, "knowledge")).toEqual(beforeUser);
+	});
+
 	test("injects recalls and protects oversized human profiles honestly @cosmo-behavior plan:profile-playbooks#B-022", async () => {
 		const projectRoot = join(tmp.path, "oversized-profile-project");
 		const userRoot = join(tmp.path, "oversized-profile-user");
