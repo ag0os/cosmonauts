@@ -13,6 +13,7 @@
  *   cosmonauts init                               → agent-driven AGENTS.md bootstrap
  *   cosmonauts task <command>                     → task management subcommands
  *   cosmonauts plan <command>                     → plan management subcommands
+ *   cosmonauts memory <command>                   → living-memory owner commands
  *   cosmonauts serve                             → local read-only artifact viewer
  *   cosmonauts export ...                         → export packaged agents as binaries
  *
@@ -51,6 +52,7 @@ import { createCreateProgram } from "./create/subcommand.ts";
 import { createEjectProgram } from "./eject/subcommand.ts";
 import { createExportProgram } from "./export/subcommand.ts";
 import { createHarnessProgram } from "./harness/subcommand.ts";
+import { createMemoryProgram } from "./memory/subcommand.ts";
 import {
 	createInstallProgram,
 	createPackagesProgram,
@@ -719,11 +721,13 @@ if (runInvocation) {
 	subcommand === "serve" ||
 	subcommand === "session" ||
 	subcommand === "architecture" ||
-	subcommand === "arch"
+	subcommand === "arch" ||
+	subcommand === "memory"
 ) {
 	const programs: Record<string, () => Command> = {
 		architecture: createArchitectureProgram,
 		arch: createArchitectureProgram,
+		memory: createMemoryProgram,
 		task: createTaskProgram,
 		plan: createPlanProgram,
 		scaffold: createScaffoldProgram,

@@ -1,6 +1,13 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, symlink, writeFile } from "node:fs/promises";
+import {
+	mkdir,
+	readdir,
+	readFile,
+	rename,
+	symlink,
+	writeFile,
+} from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { createArchitectureMapMemoryStore } from "../../lib/architecture-map/index.ts";
@@ -98,6 +105,315 @@ describe("living memory", () => {
 					},
 				],
 			},
+		});
+	});
+
+	// @cosmo-behavior plan:living-memory#B-004
+	test("annotates a human restoration and reserves hard deletion for the ledger", async () => {
+		const fixture = await createRetirementFixture("restoration-project");
+		await expect(applyRetirementFixture(fixture)).resolves.toMatchObject({
+			kind: "completed",
+			details: { retirements: [{ status: "applied" }] },
+		});
+		const retiredPath = join(
+			fixture.projectRoot,
+			"knowledge",
+			"retired",
+			"eligible.md",
+		);
+		await rename(retiredPath, fixture.livePath);
+		const realDurable = createDurableRetirementFiles();
+		const durableFiles = {
+			...realDurable,
+			linkFile: vi.fn(realDurable.linkFile),
+			removeFile: vi.fn(realDurable.removeFile),
+		} satisfies DurableRetirementFiles;
+		const store = createLivingMemoryRetirementStore({
+			projectRoot: fixture.projectRoot,
+			durableFiles,
+		});
+
+		const restored = await store.restore({
+			path: "knowledge/eligible.md",
+			reason: "The owner vetoed this retirement.",
+			date: new Date("2026-09-01T13:00:00.000Z"),
+			lockOptions: exactLockOptions(),
+		});
+
+		expect(restored).toMatchObject({
+			kind: "completed",
+			details: {
+				path: "knowledge/eligible.md",
+				digest: fixture.digest,
+				status: "restored",
+				manifestPath: expect.stringContaining(
+					"memory/agent/retirements/round-2.md",
+				),
+				recovery: "none",
+				writesCommitted: true,
+			},
+		});
+		await expect(readFile(fixture.livePath, "utf-8")).resolves.toBe(
+			fixture.raw,
+		);
+		await expect(readFile(retiredPath)).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+		expect(durableFiles.linkFile).not.toHaveBeenCalled();
+		expect(durableFiles.removeFile).not.toHaveBeenCalled();
+		await expect(
+			readRetirementReceiptInventory({ projectRoot: fixture.projectRoot }),
+		).resolves.toMatchObject({
+			kind: "healthy",
+			inventory: {
+				retirementStates: [
+					expect.objectContaining({
+						path: "knowledge/eligible.md",
+						status: "restored",
+						digest: fixture.digest,
+					}),
+				],
+			},
+		});
+		const retrieved = await createKnowledgeMemoryStore({
+			projectRoot: fixture.projectRoot,
+		}).retrieve({ projectRoot: fixture.projectRoot, scopes: ["project"] }, {});
+		expect(retrieved.records).toEqual([
+			expect.objectContaining({
+				resource: "eligible.md",
+				content: expect.stringContaining("# Inventory fixture"),
+			}),
+		]);
+		await expect(applyRetirementFixture(fixture)).resolves.toMatchObject({
+			kind: "completed",
+			details: {
+				retirements: [],
+				declines: [expect.objectContaining({ code: "restoration-suppressed" })],
+			},
+		});
+
+		await expect(
+			store.restore({
+				path: "knowledge/eligible.md",
+				reason: "The owner vetoed this retirement.",
+				date: new Date("2026-09-01T14:00:00.000Z"),
+				lockOptions: exactLockOptions(),
+			}),
+		).resolves.toMatchObject({
+			kind: "completed",
+			details: { status: "existing", writesCommitted: false },
+		});
+		await expect(
+			store.restore({
+				path: "knowledge/eligible.md",
+				reason: "A conflicting retry reason.",
+				date: new Date("2026-09-01T14:00:00.000Z"),
+				lockOptions: exactLockOptions(),
+			}),
+		).resolves.toMatchObject({
+			kind: "failed",
+			reason: expect.stringContaining("conflict"),
+		});
+		expect(
+			await readdir(
+				join(fixture.projectRoot, "memory", "agent", "retirements"),
+			),
+		).toEqual(["round-1.md", "round-2.md"]);
+
+		const notMoved = await createRetirementFixture("restoration-not-moved");
+		await applyRetirementFixture(notMoved);
+		await expect(
+			createLivingMemoryRetirementStore({
+				projectRoot: notMoved.projectRoot,
+			}).restore({
+				path: "knowledge/eligible.md",
+				reason: "The bytes were not moved back.",
+				date: new Date("2026-09-01T13:00:00.000Z"),
+				lockOptions: exactLockOptions(),
+			}),
+		).resolves.toMatchObject({ kind: "failed" });
+
+		const mismatched = await createRetirementFixture("restoration-mismatch");
+		await applyRetirementFixture(mismatched);
+		const mismatchedRetired = join(
+			mismatched.projectRoot,
+			"knowledge",
+			"retired",
+			"eligible.md",
+		);
+		await rename(mismatchedRetired, mismatched.livePath);
+		await writeFile(mismatched.livePath, `${mismatched.raw}changed\n`);
+		await expect(
+			createLivingMemoryRetirementStore({
+				projectRoot: mismatched.projectRoot,
+			}).restore({
+				path: "knowledge/eligible.md",
+				reason: "Mismatched bytes must fail.",
+				date: new Date("2026-09-01T13:00:00.000Z"),
+				lockOptions: exactLockOptions(),
+			}),
+		).resolves.toMatchObject({
+			kind: "failed",
+			reason: expect.stringContaining("digest"),
+		});
+
+		const raced = await createRetirementFixture("restoration-race");
+		await applyRetirementFixture(raced);
+		await rename(
+			join(raced.projectRoot, "knowledge", "retired", "eligible.md"),
+			raced.livePath,
+		);
+		const raceDurable = createDurableRetirementFiles();
+		let mutateBeforeCommit = true;
+		const racedResult = await createLivingMemoryRetirementStore({
+			projectRoot: raced.projectRoot,
+			durableFiles: {
+				...raceDurable,
+				async ensureDirectory(path) {
+					await raceDurable.ensureDirectory(path);
+					if (path.endsWith("memory/agent/retirements") && mutateBeforeCommit) {
+						mutateBeforeCommit = false;
+						await writeFile(
+							raced.livePath,
+							`${raced.raw}changed during restore\n`,
+						);
+					}
+				},
+			},
+		}).restore({
+			path: "knowledge/eligible.md",
+			reason: "A concurrent edit must not receive a restoration receipt.",
+			date: new Date("2026-09-01T13:00:00.000Z"),
+			lockOptions: exactLockOptions(),
+		});
+		expect(racedResult).toMatchObject({
+			kind: "failed",
+			reason: expect.stringContaining("race"),
+			details: { writesCommitted: false },
+		});
+		expect(
+			await readdir(join(raced.projectRoot, "memory", "agent", "retirements")),
+		).toEqual(["round-1.md"]);
+
+		const timedOut = await createRetirementFixture("restoration-timeout");
+		await applyRetirementFixture(timedOut);
+		await rename(
+			join(timedOut.projectRoot, "knowledge", "retired", "eligible.md"),
+			timedOut.livePath,
+		);
+		const timeoutResult = await createLivingMemoryRetirementStore({
+			projectRoot: timedOut.projectRoot,
+			async withLock(lockPath, _action, options = {}) {
+				expect(options).toMatchObject({
+					retryDelayMs: 50,
+					waitTimeoutMs: 10_000,
+				});
+				throw new EntityFileLockTimeoutError(lockPath, 10_000);
+			},
+		}).restore({
+			path: "knowledge/eligible.md",
+			reason: "A timed-out command must fail closed.",
+			date: new Date("2026-09-01T13:00:00.000Z"),
+			lockOptions: exactLockOptions(),
+		});
+		expect(timeoutResult).toMatchObject({
+			kind: "failed",
+			details: { recovery: "concurrent-mutation", writesCommitted: false },
+		});
+
+		const cancelled = await createRetirementFixture("restoration-cancelled");
+		await applyRetirementFixture(cancelled);
+		await rename(
+			join(cancelled.projectRoot, "knowledge", "retired", "eligible.md"),
+			cancelled.livePath,
+		);
+		const cancelledLock = vi.fn();
+		const controller = new AbortController();
+		controller.abort();
+		await expect(
+			createLivingMemoryRetirementStore({
+				projectRoot: cancelled.projectRoot,
+				withLock: cancelledLock,
+			}).restore({
+				path: "knowledge/eligible.md",
+				reason: "Cancellation must happen before mutation.",
+				date: new Date("2026-09-01T13:00:00.000Z"),
+				signal: controller.signal,
+				lockOptions: exactLockOptions(),
+			}),
+		).resolves.toMatchObject({
+			kind: "failed",
+			details: { writesCommitted: false },
+		});
+		expect(cancelledLock).not.toHaveBeenCalled();
+
+		const release = await createRetirementFixture("restoration-release");
+		await applyRetirementFixture(release);
+		await rename(
+			join(release.projectRoot, "knowledge", "retired", "eligible.md"),
+			release.livePath,
+		);
+		const releaseResult = await createLivingMemoryRetirementStore({
+			projectRoot: release.projectRoot,
+			async withLock(_lockPath, action, options = {}) {
+				const result = await action();
+				options.onReleaseUnconfirmed?.(new Error("fixture release failure"));
+				return result;
+			},
+		}).restore({
+			path: "knowledge/eligible.md",
+			reason: "The owner restored this record.",
+			date: new Date("2026-09-01T13:00:00.000Z"),
+			lockOptions: exactLockOptions(),
+		});
+		expect(releaseResult).toMatchObject({
+			kind: "failed",
+			reason: expect.stringContaining("release could not be confirmed"),
+			details: { recovery: "release-unconfirmed", writesCommitted: true },
+		});
+		await expect(
+			readFile(
+				join(
+					release.projectRoot,
+					"memory",
+					"agent",
+					"retirements",
+					"round-2.md",
+				),
+				"utf-8",
+			),
+		).resolves.toContain("kind: restored");
+
+		const hardDeleteRoot = join(tmp.path, "human-hard-delete-project");
+		await mkdir(join(hardDeleteRoot, "missions", "reviews"), {
+			recursive: true,
+		});
+		await writeFile(
+			join(
+				hardDeleteRoot,
+				"missions",
+				"reviews",
+				"knowledge-surface-promotion-1.md",
+			),
+			[
+				"---",
+				"kind: knowledge-surface-promotion",
+				"round: 1",
+				"promotedCount: 0",
+				"promotions: []",
+				"curatedRecords: []",
+				"retiredRecords:",
+				"  - knowledge/deleted.md",
+				"ratifiedBaselines: []",
+				"---",
+				"",
+			].join("\n"),
+		);
+		await expect(
+			readRetirementReceiptInventory({ projectRoot: hardDeleteRoot }),
+		).resolves.toMatchObject({
+			kind: "healthy",
+			inventory: { retiredRecords: ["knowledge/deleted.md"] },
 		});
 	});
 

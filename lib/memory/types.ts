@@ -293,6 +293,34 @@ export interface ConsolidationProposalStore {
 	}): Promise<ConsolidationProposalView>;
 }
 
+export type ImprovementActionPointer =
+	| { readonly kind: "roadmap"; readonly value: string }
+	| { readonly kind: "task"; readonly value: string }
+	| { readonly kind: "prompt"; readonly value: string }
+	| { readonly kind: "skill"; readonly value: string };
+
+export type ImproveProposalResolution =
+	| { readonly kind: "actioned"; readonly pointer: ImprovementActionPointer }
+	| { readonly kind: "rejected"; readonly reason: string };
+
+export interface ImproveProposalResolutionResult {
+	readonly kind: "actioned" | "rejected";
+	readonly status: "closed";
+	readonly proposalPath: string;
+	readonly historyPath: string;
+	readonly existing: boolean;
+}
+
+export interface ImproveProposalResolver {
+	resolve(options: {
+		readonly proposalPath: string;
+		readonly resolution: ImproveProposalResolution;
+		readonly date: Date;
+		readonly lockOptions: LivingMemoryLockOptions;
+		readonly signal?: AbortSignal;
+	}): Promise<ImproveProposalResolutionResult>;
+}
+
 export interface AcceptedJudgmentReceipt {
 	readonly schemaVersion: 1;
 	readonly batchKey: string;
@@ -367,6 +395,36 @@ export interface LivingMemoryRetirementStore {
 		readonly lockOptions: LivingMemoryLockOptions;
 	}): Promise<LivingMemoryRetirementRunResult>;
 }
+
+export interface LivingMemoryRestorationStore {
+	restore(options: {
+		readonly path: string;
+		readonly reason: string;
+		readonly date: Date;
+		readonly signal?: AbortSignal;
+		readonly lockOptions: LivingMemoryLockOptions;
+	}): Promise<LivingMemoryRestorationResult>;
+}
+
+export interface LivingMemoryRestorationDetails {
+	readonly path: string;
+	readonly digest?: string;
+	readonly status?: "restored" | "existing";
+	readonly manifestPath?: string;
+	readonly recovery: ConsolidationRecovery;
+	readonly writesCommitted: boolean;
+}
+
+export type LivingMemoryRestorationResult =
+	| {
+			readonly kind: "completed";
+			readonly details: LivingMemoryRestorationDetails;
+	  }
+	| {
+			readonly kind: "failed";
+			readonly reason: string;
+			readonly details: LivingMemoryRestorationDetails;
+	  };
 
 /** Slice 1 deliberately exposes durable writes but no source removal operation. */
 export interface LivingMemoryDurableFiles {

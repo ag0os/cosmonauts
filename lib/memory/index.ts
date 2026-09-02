@@ -16,6 +16,7 @@ export {
 	type ConsolidationProposalMaterialization,
 	type ConsolidationProposalStoreWithMaterializations,
 	createConsolidationProposalStore,
+	createImproveProposalResolver,
 	renderConsolidationProposal,
 } from "./consolidation-proposals.ts";
 export {
@@ -113,6 +114,10 @@ export {
 	type CorpusJudgmentInput,
 	type CorpusJudgmentOutput,
 	type CorpusJudgmentProvider,
+	type ImprovementActionPointer,
+	type ImproveProposalResolution,
+	type ImproveProposalResolutionResult,
+	type ImproveProposalResolver,
 	type JudgedProposal,
 	type KnowledgeConsolidator,
 	type KnowledgeIndexPressurePolicy,
@@ -122,6 +127,9 @@ export {
 	type LivingMemoryDurableFiles,
 	type LivingMemoryLimits,
 	type LivingMemoryLockOptions,
+	type LivingMemoryRestorationDetails,
+	type LivingMemoryRestorationResult,
+	type LivingMemoryRestorationStore,
 	type LivingMemoryRetirementCandidate,
 	type LivingMemoryRetirementInspection,
 	type LivingMemoryRetirementReason,

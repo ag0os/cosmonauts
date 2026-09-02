@@ -720,7 +720,7 @@ describe("memory interface", () => {
 		// Knowledge proposals extend the shared seam only with optional fields, so
 		// existing stores and minimal human records remain source-compatible.
 		expect(createHash("sha256").update(typesSource).digest("hex")).toBe(
-			"6fcd2b27ae7b7271fda707723d445962364606d5565a6e5347bbfc37743f897c",
+			"103242b1196d6c401a0ab8602ecf467578ee20509608b0062b2a3659e9090368",
 		);
 		expect(
 			createHash("sha256").update(architectureAdapterSource).digest("hex"),

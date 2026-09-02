@@ -25,6 +25,8 @@ import {
 } from "./retirement-receipts.ts";
 import type {
 	ConsolidationEvidenceRef,
+	LivingMemoryRestorationResult,
+	LivingMemoryRestorationStore,
 	LivingMemoryRetirementCandidate,
 	LivingMemoryRetirementRunDetails,
 	LivingMemoryRetirementRunResult,
@@ -91,7 +93,7 @@ interface RetirementJournal {
 
 export function createLivingMemoryRetirementStore(
 	options: RetirementStoreOptions,
-): LivingMemoryRetirementStore {
+): LivingMemoryRetirementStore & LivingMemoryRestorationStore {
 	const projectRoot = resolve(options.projectRoot);
 	const durableFiles = options.durableFiles ?? createDurableRetirementFiles();
 	const lock = options.withLock ?? withEntityFileLock;
@@ -177,6 +179,254 @@ export function createLivingMemoryRetirementStore(
 				};
 			}
 			return result;
+		},
+		async restore(input) {
+			let releaseUnconfirmed: unknown;
+			let result: LivingMemoryRestorationResult;
+			try {
+				if (
+					!Number.isFinite(input.lockOptions.retryMs) ||
+					input.lockOptions.retryMs <= 0 ||
+					!Number.isFinite(input.lockOptions.timeoutMs) ||
+					input.lockOptions.timeoutMs <= 0
+				) {
+					throw new Error("Living-memory restoration requires a finite lock.");
+				}
+				if (!isSafeKnowledgePath(input.path)) {
+					throw new Error(`Unsafe restoration path: ${input.path}.`);
+				}
+				if (input.reason.trim() !== input.reason || input.reason.length === 0) {
+					throw new Error(
+						"Living-memory restoration reason must be non-empty.",
+					);
+				}
+				const date = canonicalDate(input.date);
+				throwIfAborted(input.signal);
+				await durableFiles.ensureDirectory(join(projectRoot, ".cosmonauts"));
+				result = await lock(
+					join(projectRoot, ...LOCK_PATH.split("/")),
+					async () =>
+						restoreUnderLock({
+							projectRoot,
+							durableFiles,
+							path: input.path,
+							reason: input.reason,
+							date,
+							...(input.signal === undefined ? {} : { signal: input.signal }),
+						}),
+					{
+						retryDelayMs: input.lockOptions.retryMs,
+						waitTimeoutMs: input.lockOptions.timeoutMs,
+						onReleaseUnconfirmed(error) {
+							releaseUnconfirmed = error;
+							input.lockOptions.onReleaseUnconfirmed(error);
+						},
+					},
+				);
+			} catch (error: unknown) {
+				return restorationFailed({
+					path: input.path,
+					reason: error instanceof Error ? error.message : String(error),
+					recovery:
+						error instanceof EntityFileLockTimeoutError
+							? "concurrent-mutation"
+							: "none",
+				});
+			}
+			if (releaseUnconfirmed !== undefined) {
+				return restorationFailed({
+					path: input.path,
+					reason: `Living-memory lock release could not be confirmed after restoration: ${
+						releaseUnconfirmed instanceof Error
+							? releaseUnconfirmed.message
+							: String(releaseUnconfirmed)
+					}.`,
+					recovery: "release-unconfirmed",
+					writesCommitted: result.details.writesCommitted,
+					...(result.details.digest === undefined
+						? {}
+						: { digest: result.details.digest }),
+					...(result.details.manifestPath === undefined
+						? {}
+						: { manifestPath: result.details.manifestPath }),
+				});
+			}
+			return result;
+		},
+	};
+}
+
+async function restoreUnderLock(options: {
+	readonly projectRoot: string;
+	readonly durableFiles: DurableRetirementFiles;
+	readonly path: string;
+	readonly reason: string;
+	readonly date: string;
+	readonly signal?: AbortSignal;
+}): Promise<LivingMemoryRestorationResult> {
+	throwIfAborted(options.signal);
+	const receipts = await readRetirementReceiptInventory({
+		projectRoot: options.projectRoot,
+	});
+	if (receipts.kind !== "healthy") {
+		throw new Error(
+			`Retirement receipt inventory is unhealthy: ${receipts.issues.join(", ")}.`,
+		);
+	}
+	const state = latestStateForPath(receipts.inventory, options.path);
+	if (state === undefined) {
+		throw new Error(
+			`No retirement history exists for restoration path: ${options.path}.`,
+		);
+	}
+	const livePath = absolutePath(options.projectRoot, options.path);
+	const retiredPath = absolutePath(
+		options.projectRoot,
+		deriveRetiredPath(options.path),
+	);
+	const [live, retired] = await Promise.all([
+		readRegularBytes(livePath, options.projectRoot),
+		readRegularBytes(retiredPath, options.projectRoot),
+	]);
+	if (live === undefined) {
+		throw new Error(
+			`Restoration requires the human-moved live path: ${options.path}.`,
+		);
+	}
+	if (sha256(live) !== state.digest) {
+		throw new Error(
+			`Restoration digest conflict for ${options.path}; live bytes do not match the active retirement digest.`,
+		);
+	}
+	if (retired !== undefined) {
+		throw new Error(
+			`Restoration destination conflict for ${options.path}; the retired path must be absent after the human move.`,
+		);
+	}
+
+	if (state.status === "restored") {
+		const event = receipts.inventory.retirementEvents.find(
+			(candidate) =>
+				candidate.kind === "restored" &&
+				candidate.round === state.round &&
+				candidate.retirementId === state.id,
+		);
+		if (event?.kind !== "restored" || event.reason !== options.reason) {
+			throw new Error(
+				`Living-memory restoration conflict for ${options.path}.`,
+			);
+		}
+		return {
+			kind: "completed",
+			details: {
+				path: options.path,
+				digest: state.digest,
+				status: "existing",
+				manifestPath: absolutePath(
+					options.projectRoot,
+					`${RETIREMENTS_PATH}/round-${state.round}.md`,
+				),
+				recovery: "none",
+				writesCommitted: false,
+			},
+		};
+	}
+
+	const round = nextRound(receipts.inventory);
+	const manifestRelativePath = `${RETIREMENTS_PATH}/round-${round}.md`;
+	const manifestPath = absolutePath(options.projectRoot, manifestRelativePath);
+	await options.durableFiles.ensureDirectory(
+		absolutePath(options.projectRoot, RETIREMENTS_PATH),
+	);
+	await assertRealContainedDirectory(
+		options.projectRoot,
+		absolutePath(options.projectRoot, RETIREMENTS_PATH),
+	);
+	throwIfAborted(options.signal);
+	const [confirmedLive, confirmedRetired] = await Promise.all([
+		readRegularBytes(livePath, options.projectRoot),
+		readRegularBytes(retiredPath, options.projectRoot),
+	]);
+	if (confirmedLive === undefined || sha256(confirmedLive) !== state.digest) {
+		throw new Error(
+			`Restoration race detected for ${options.path}; live bytes changed before the receipt commit.`,
+		);
+	}
+	if (confirmedRetired !== undefined) {
+		throw new Error(
+			`Restoration race detected for ${options.path}; the retired path reappeared before the receipt commit.`,
+		);
+	}
+	await options.durableFiles.writeText({
+		path: manifestPath,
+		content: renderRestorationManifest({
+			round,
+			retirementId: state.id,
+			path: options.path,
+			digest: state.digest,
+			reason: options.reason,
+			date: options.date,
+		}),
+		...(options.signal === undefined ? {} : { signal: options.signal }),
+	});
+	return {
+		kind: "completed",
+		details: {
+			path: options.path,
+			digest: state.digest,
+			status: "restored",
+			manifestPath,
+			recovery: "none",
+			writesCommitted: true,
+		},
+	};
+}
+
+function renderRestorationManifest(options: {
+	readonly round: number;
+	readonly retirementId: string;
+	readonly path: string;
+	readonly digest: string;
+	readonly reason: string;
+	readonly date: string;
+}): string {
+	return [
+		"---",
+		"kind: knowledge-retirement-round",
+		`round: ${options.round}`,
+		"events:",
+		"  - kind: restored",
+		`    retirementId: ${options.retirementId}`,
+		`    path: ${options.path}`,
+		`    digest: ${options.digest}`,
+		`    reason: ${JSON.stringify(options.reason)}`,
+		`    date: ${JSON.stringify(options.date)}`,
+		"---",
+		"",
+		"# Living-memory restoration round",
+		"",
+	].join("\n");
+}
+
+function restorationFailed(options: {
+	readonly path: string;
+	readonly reason: string;
+	readonly recovery: "none" | "release-unconfirmed" | "concurrent-mutation";
+	readonly writesCommitted?: boolean;
+	readonly digest?: string;
+	readonly manifestPath?: string;
+}): LivingMemoryRestorationResult {
+	return {
+		kind: "failed",
+		reason: options.reason,
+		details: {
+			path: options.path,
+			...(options.digest === undefined ? {} : { digest: options.digest }),
+			...(options.manifestPath === undefined
+				? {}
+				: { manifestPath: options.manifestPath }),
+			recovery: options.recovery,
+			writesCommitted: options.writesCommitted ?? false,
 		},
 	};
 }
