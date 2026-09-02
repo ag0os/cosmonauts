@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { isAbsolute, posix } from "node:path";
+import { constants } from "node:fs";
+import { open, realpath } from "node:fs/promises";
+import { isAbsolute, posix, relative, resolve, sep } from "node:path";
+import {
+	createDurableMachineFiles,
+	type DurableMachineFiles,
+} from "./durable-files.ts";
+import { createMarkdownMemoryStore } from "./markdown-store.ts";
 
 export const CONSOLIDATION_SOURCE_SCOPES = ["project", "user"] as const;
 export type ConsolidationSourceScope =
@@ -65,6 +72,101 @@ export class ConsolidationSourceContractError extends Error {
 		super(message);
 		this.name = "ConsolidationSourceContractError";
 	}
+}
+
+const PROJECT_EPISODE_SOURCE_ID = "project-episodes";
+const PROJECT_EPISODE_DIRECTORY = "memory/agent/episodes";
+const PROPOSAL_DIRECTORY = "memory/agent/proposals";
+
+/** Project episodes enter only through a configured knowledge consolidator. */
+export function createProjectEpisodeConsolidationSource(options: {
+	readonly projectRoot: string;
+	readonly durableFiles?: DurableMachineFiles;
+}): ConsolidationSource {
+	const projectRoot = resolve(options.projectRoot);
+	const durableFiles = options.durableFiles ?? createDurableMachineFiles();
+	const store = createMarkdownMemoryStore({
+		projectRoot,
+		userCosmonautsRoot: projectRoot,
+	});
+	return {
+		id: PROJECT_EPISODE_SOURCE_ID,
+		async collect(input) {
+			throwIfAborted(input.signal);
+			const retrieved = await store.retrieve(
+				{ projectRoot, scopes: ["project"] },
+				{ recordTypes: ["episode"] },
+			);
+			const candidates = retrieved.records.toSorted((left, right) =>
+				left.path.localeCompare(right.path),
+			);
+			const admitted = candidates.slice(0, input.limit);
+			const records: ConsolidationSourceRecord[] = [];
+			for (const record of admitted) {
+				throwIfAborted(input.signal);
+				const path = relativeProjectPath(projectRoot, record.path);
+				assertDirectProjectEpisodePath(path);
+				const content = await readRegularText(record.path);
+				records.push({
+					id: path,
+					sourceId: PROJECT_EPISODE_SOURCE_ID,
+					scope: "project",
+					path,
+					digest: sha256(content),
+					kind: "episode",
+					content,
+					metadata: Object.freeze({
+						type: record.type,
+						title: record.title,
+						description: record.description,
+						timestamp: record.timestamp,
+						tags: Object.freeze([...record.tags]),
+						...(record.source === undefined ? {} : { source: record.source }),
+					}),
+				});
+			}
+			return Object.freeze({
+				records: Object.freeze(records),
+				omitted: candidates.length - admitted.length,
+			});
+		},
+		async finalize(represented) {
+			const pruned: string[] = [];
+			for (const item of represented) {
+				assertDirectProjectEpisodePath(item.id);
+				if (!/^[a-f0-9]{64}$/u.test(item.digest)) {
+					throw new ConsolidationSourceContractError(
+						`Episode ${item.id} has an invalid finalization digest.`,
+					);
+				}
+				if (item.proposalPaths.length === 0) {
+					throw new ConsolidationSourceContractError(
+						`Episode ${item.id} has no durable proposal representation.`,
+					);
+				}
+				for (const proposalPath of new Set(item.proposalPaths)) {
+					await assertContainedProposalPath(projectRoot, proposalPath);
+					const proposal = await readRegularText(proposalPath);
+					await durableFiles.writeText({
+						path: proposalPath,
+						content: proposal,
+					});
+					if ((await readRegularText(proposalPath)) !== proposal) {
+						throw new ConsolidationSourceContractError(
+							`Episode proposal representation changed during durability confirmation: ${proposalPath}.`,
+						);
+					}
+				}
+
+				const episodePath = resolve(projectRoot, ...item.id.split("/"));
+				const content = await readRegularTextIfExists(episodePath);
+				if (content === undefined || sha256(content) !== item.digest) continue;
+				await durableFiles.removeFile(episodePath);
+				pruned.push(item.id);
+			}
+			return Object.freeze(pruned);
+		},
+	};
 }
 
 export async function collectConsolidationSources(options: {
@@ -236,6 +338,92 @@ function isSafeScopeRelativePath(value: string): boolean {
 	);
 }
 
+function relativeProjectPath(projectRoot: string, path: string): string {
+	const value = relative(projectRoot, resolve(path)).split(sep).join("/");
+	if (!isSafeScopeRelativePath(value)) {
+		throw new ConsolidationSourceContractError(
+			`Episode path escapes the project scope: ${path}.`,
+		);
+	}
+	return value;
+}
+
+function assertDirectProjectEpisodePath(path: string): void {
+	if (
+		!isSafeScopeRelativePath(path) ||
+		posix.dirname(path) !== PROJECT_EPISODE_DIRECTORY ||
+		!posix.basename(path).endsWith(".md")
+	) {
+		throw new ConsolidationSourceContractError(
+			`Episode path is not a direct project episode: ${path}.`,
+		);
+	}
+}
+
+async function assertContainedProposalPath(
+	projectRoot: string,
+	path: string,
+): Promise<void> {
+	const proposalRoot = resolve(projectRoot, ...PROPOSAL_DIRECTORY.split("/"));
+	const candidate = resolve(path);
+	if (!isContained(proposalRoot, candidate)) {
+		throw new ConsolidationSourceContractError(
+			`Episode proposal representation is outside the project proposal root: ${path}.`,
+		);
+	}
+	const [realProposalRoot, realCandidate] = await Promise.all([
+		realpath(proposalRoot),
+		realpath(candidate),
+	]);
+	if (!isContained(realProposalRoot, realCandidate)) {
+		throw new ConsolidationSourceContractError(
+			`Episode proposal representation escapes its real root: ${path}.`,
+		);
+	}
+}
+
+function isContained(root: string, candidate: string): boolean {
+	const path = relative(root, candidate);
+	return (
+		path.length > 0 &&
+		!path.startsWith(`..${sep}`) &&
+		path !== ".." &&
+		!isAbsolute(path)
+	);
+}
+
+async function readRegularText(path: string): Promise<string> {
+	const content = await readRegularTextIfExists(path);
+	if (content === undefined) {
+		throw new ConsolidationSourceContractError(
+			`Episode disappeared while collecting: ${path}.`,
+		);
+	}
+	return content;
+}
+
+async function readRegularTextIfExists(
+	path: string,
+): Promise<string | undefined> {
+	try {
+		const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+		try {
+			const metadata = await handle.stat();
+			if (!metadata.isFile()) {
+				throw new ConsolidationSourceContractError(
+					`Episode is not a regular no-follow file: ${path}.`,
+				);
+			}
+			return await handle.readFile("utf-8");
+		} finally {
+			await handle.close();
+		}
+	} catch (error: unknown) {
+		if (errorCode(error) === "ENOENT") return undefined;
+		throw error;
+	}
+}
+
 function assertNonEmptyString(value: string, label: string): void {
 	if (typeof value !== "string" || value.trim().length === 0) {
 		throw new ConsolidationSourceContractError(`${label} must be non-empty.`);
@@ -261,4 +449,10 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
 			? signal.reason
 			: new Error("Living-memory consolidation was cancelled.");
 	}
+}
+
+function errorCode(error: unknown): string | undefined {
+	return error !== null && typeof error === "object" && "code" in error
+		? String((error as NodeJS.ErrnoException).code)
+		: undefined;
 }

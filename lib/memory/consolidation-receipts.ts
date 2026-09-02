@@ -124,14 +124,25 @@ export function createAcceptedJudgmentReceiptStore(options: {
 		},
 		async read(batchKey) {
 			const key = validateBatchKey(batchKey);
+			const relativePath = `${RECEIPT_ROOT}/${key}.json`;
 			const raw = await readSafeRegularText({
 				root: options.projectRoot,
-				relativePath: `${RECEIPT_ROOT}/${key}.json`,
+				relativePath,
 				label: "Accepted judgment receipt",
 			});
-			return raw === undefined
-				? undefined
-				: parseReceipt(raw, pathFor(key), key);
+			if (raw === undefined) return undefined;
+			await durableFiles.writeText({ path: pathFor(key), content: raw });
+			const confirmed = await readSafeRegularText({
+				root: options.projectRoot,
+				relativePath,
+				label: "Accepted judgment receipt",
+			});
+			if (confirmed !== raw) {
+				throw new Error(
+					`Accepted judgment receipt changed while confirming durability: ${pathFor(key)}.`,
+				);
+			}
+			return parseReceipt(raw, pathFor(key), key);
 		},
 		async write(receipt) {
 			const normalized = normalizeReceipt(receipt, pathFor(receipt.batchKey));

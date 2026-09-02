@@ -171,6 +171,7 @@ async function writeTextExclusive(options: {
 		if (existing !== options.content) {
 			throw new Error(`Durable file identity conflict at ${options.path}.`);
 		}
+		await syncRegularFile(options.path);
 		return { path: options.path, digest };
 	}
 
@@ -202,6 +203,20 @@ async function writeTextExclusive(options: {
 			await syncDirectory(dirname(options.path));
 		}
 	}
+}
+
+async function syncRegularFile(path: string): Promise<void> {
+	const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+	try {
+		const metadata = await handle.stat();
+		if (!metadata.isFile()) {
+			throw new Error(`Durable file occupant is not a regular file: ${path}`);
+		}
+		await handle.sync();
+	} finally {
+		await handle.close();
+	}
+	await syncDirectory(dirname(path));
 }
 
 async function replaceText(options: {

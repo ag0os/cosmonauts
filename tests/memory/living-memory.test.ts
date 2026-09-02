@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, symlink, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { createArchitectureMapMemoryStore } from "../../lib/architecture-map/index.ts";
 import type { EntityFileLockOptions } from "../../lib/entity-file-lock.ts";
@@ -17,11 +17,14 @@ import {
 	createAcceptedJudgmentReceiptStore,
 	createConsolidationProposalStore,
 	createDurableMachineFiles,
+	createEpisodeRecord,
 	createKnowledgeMemoryStore,
 	createLivingMemoryConsolidator,
 	createLivingMemoryRetirementStore,
 	createMarkdownMemoryStore,
+	createProjectEpisodeConsolidationSource,
 	DEFAULT_LIVING_MEMORY_LIMITS,
+	executeLivingMemoryConsolidationJob,
 	inspectLivingMemoryCitationInventory,
 	type KnowledgeConsolidator,
 	type LivingMemoryConsolidatorDependencies,
@@ -1978,6 +1981,380 @@ describe("living memory", () => {
 		).resolves.toMatchObject({ kind: "noop" });
 	});
 
+	// @cosmo-behavior plan:living-memory#B-019
+	test("syncs accepted folded note proposals before pruning unchanged episodes", async () => {
+		const projectRoot = join(tmp.path, "episode-fold-project");
+		const episodePaths = await writeEpisodeFixtures(projectRoot, [
+			["First completed task", "2026-09-01T10:00:00.000Z"],
+			["Second completed task", "2026-09-01T11:00:00.000Z"],
+		]);
+		const trace: string[] = [];
+		const baseDurableFiles = createDurableMachineFiles();
+		const durableFiles = {
+			...baseDurableFiles,
+			async writeText(options) {
+				const existed = await fileExists(options.path);
+				const written = await baseDurableFiles.writeText(options);
+				trace.push(
+					`${existed ? "sync" : "write"}:${relativeFixturePath(projectRoot, options.path)}`,
+				);
+				return written;
+			},
+			async replaceText(options) {
+				const written = await baseDurableFiles.replaceText(options);
+				trace.push(`replace:${relativeFixturePath(projectRoot, options.path)}`);
+				return written;
+			},
+			async removeFile(path) {
+				trace.push(`remove:${relativeFixturePath(projectRoot, path)}`);
+				await baseDurableFiles.removeFile(path);
+			},
+		} satisfies ReturnType<typeof createDurableMachineFiles>;
+		const receiptStore = createAcceptedJudgmentReceiptStore({
+			projectRoot,
+			durableFiles,
+		});
+		const proposalStore = createConsolidationProposalStore({
+			projectRoot,
+			durableFiles,
+		});
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async (input) => ({
+			schemaVersion: 1,
+			observations: [
+				{
+					kind: "merge-candidate",
+					inputIds: input.records.map((record) => record.id),
+					reason: "Fold the bounded task episodes into one durable note.",
+					proposal: {
+						proposalKind: "create",
+						record: {
+							type: "note",
+							title: "Completed task summary",
+							description: "Two task episodes folded lossily.",
+							content:
+								"# Completed task summary\n\nTwo tasks completed successfully.\n",
+							tags: ["tasks", "summary"],
+						},
+					},
+				},
+			],
+		}));
+		const episodeSource = createProjectEpisodeConsolidationSource({
+			projectRoot,
+			durableFiles,
+		});
+		const finalize = episodeSource.finalize;
+		expect(finalize).toBeTypeOf("function");
+		if (finalize === undefined) return;
+		let hardStop = true;
+		const interruptedSource: ConsolidationSource = {
+			...episodeSource,
+			async finalize(represented) {
+				if (hardStop) {
+					hardStop = false;
+					const first = represented[0];
+					if (first === undefined)
+						throw new Error("missing represented episode");
+					await finalize([first]);
+					throw new Error("simulated hard stop during episode prune");
+				}
+				return finalize(represented);
+			},
+		};
+		const first = await createHarness(
+			[interruptedSource],
+			{ id: "fake/no-tools", judge },
+			{
+				acceptedJudgmentReceiptStore: receiptStore,
+				proposalStore,
+			},
+		).consolidator();
+		expect(first).toMatchObject({
+			kind: "failed",
+			reason: "simulated hard stop during episode prune",
+			details: { writesCommitted: true, episodePrunes: [] },
+		});
+		await expect(fileExists(episodePaths[0] as string)).resolves.toBe(false);
+		await expect(fileExists(episodePaths[1] as string)).resolves.toBe(true);
+		const accepted = (await receiptStore.list()).find(
+			(receipt) => receipt.state === "accepted",
+		);
+		expect(accepted).toBeDefined();
+		expect(judge).toHaveBeenCalledOnce();
+		const proposalDirectory = join(
+			projectRoot,
+			"memory",
+			"agent",
+			"proposals",
+			"living-memory",
+		);
+		expect(await readdir(proposalDirectory)).toHaveLength(1);
+
+		const retried = await createHarness(
+			[createProjectEpisodeConsolidationSource({ projectRoot, durableFiles })],
+			{ id: "fake/no-tools", judge },
+			{
+				acceptedJudgmentReceiptStore: createAcceptedJudgmentReceiptStore({
+					projectRoot,
+					durableFiles,
+				}),
+				proposalStore: createConsolidationProposalStore({
+					projectRoot,
+					durableFiles,
+				}),
+			},
+		).consolidator();
+		expect(retried).toMatchObject({
+			kind: "ran",
+			details: {
+				episodePrunes: [
+					relativeFixturePath(projectRoot, episodePaths[1] as string),
+				],
+				proposals: [{ proposalKind: "create", status: "existing" }],
+			},
+		});
+		expect(judge).toHaveBeenCalledOnce();
+		for (const path of episodePaths) {
+			await expect(fileExists(path)).resolves.toBe(false);
+		}
+		await expect(
+			createAcceptedJudgmentReceiptStore({ projectRoot }).read(
+				accepted?.batchKey ?? "missing",
+			),
+		).resolves.toMatchObject({ state: "materialized" });
+		const firstReceiptWrite = trace.findIndex((entry) =>
+			entry.startsWith("write:memory/agent/consolidations/"),
+		);
+		const firstProposalWrite = trace.findIndex((entry) =>
+			entry.startsWith("write:memory/agent/proposals/living-memory/"),
+		);
+		const firstProposalSync = trace.findIndex((entry) =>
+			entry.startsWith("sync:memory/agent/proposals/living-memory/"),
+		);
+		const firstEpisodeRemove = trace.findIndex((entry) =>
+			entry.startsWith("remove:memory/agent/episodes/"),
+		);
+		expect(firstReceiptWrite).toBeGreaterThanOrEqual(0);
+		expect(firstProposalWrite).toBeGreaterThan(firstReceiptWrite);
+		expect(firstProposalSync).toBeGreaterThan(firstProposalWrite);
+		expect(firstEpisodeRemove).toBeGreaterThan(firstProposalSync);
+
+		const changedRoot = join(tmp.path, "changed-episode-project");
+		const changedPaths = await writeEpisodeFixtures(changedRoot, [
+			["Episode changed during folding", "2026-09-01T12:00:00.000Z"],
+			["Episode unchanged during folding", "2026-09-01T13:00:00.000Z"],
+		]);
+		const changedSource = createProjectEpisodeConsolidationSource({
+			projectRoot: changedRoot,
+		});
+		const changedJudge = vi.fn<CorpusJudgmentProvider["judge"]>(
+			async (input) => {
+				const original = await readFile(changedPaths[0] as string, "utf-8");
+				await writeFile(
+					changedPaths[0] as string,
+					`${original}\nHuman edit.\n`,
+				);
+				return foldedEpisodeOutput(input.records.map((record) => record.id));
+			},
+		);
+		const changedResult = await createHarness(
+			[changedSource],
+			{ id: "fake/no-tools", judge: changedJudge },
+			{
+				acceptedJudgmentReceiptStore: createAcceptedJudgmentReceiptStore({
+					projectRoot: changedRoot,
+				}),
+				proposalStore: createConsolidationProposalStore({
+					projectRoot: changedRoot,
+				}),
+			},
+		).consolidator();
+		expect(changedResult).toMatchObject({
+			kind: "ran",
+			details: {
+				episodePrunes: [
+					relativeFixturePath(changedRoot, changedPaths[1] as string),
+				],
+			},
+		});
+		await expect(fileExists(changedPaths[0] as string)).resolves.toBe(true);
+		await expect(fileExists(changedPaths[1] as string)).resolves.toBe(false);
+
+		const failedRoot = join(tmp.path, "failed-episode-proposal-project");
+		const failedPaths = await writeEpisodeFixtures(failedRoot, [
+			["First write-failure episode", "2026-09-01T14:00:00.000Z"],
+			["Second write-failure episode", "2026-09-01T15:00:00.000Z"],
+		]);
+		const failingFiles = {
+			...createDurableMachineFiles(),
+			async writeText(
+				options: Parameters<
+					ReturnType<typeof createDurableMachineFiles>["writeText"]
+				>[0],
+			) {
+				if (options.path.includes("/proposals/living-memory/")) {
+					throw new Error("simulated proposal file sync failure");
+				}
+				return createDurableMachineFiles().writeText(options);
+			},
+		};
+		const failedJudge = vi.fn<CorpusJudgmentProvider["judge"]>((input) =>
+			Promise.resolve(
+				foldedEpisodeOutput(input.records.map((record) => record.id)),
+			),
+		);
+		await expect(
+			createHarness(
+				[
+					createProjectEpisodeConsolidationSource({
+						projectRoot: failedRoot,
+					}),
+				],
+				{ id: "fake/no-tools", judge: failedJudge },
+				{
+					acceptedJudgmentReceiptStore: createAcceptedJudgmentReceiptStore({
+						projectRoot: failedRoot,
+					}),
+					proposalStore: createConsolidationProposalStore({
+						projectRoot: failedRoot,
+						durableFiles: failingFiles,
+					}),
+				},
+			).consolidator(),
+		).resolves.toMatchObject({
+			kind: "failed",
+			reason: "simulated proposal file sync failure",
+			details: { episodePrunes: [] },
+		});
+		for (const path of failedPaths) {
+			await expect(fileExists(path)).resolves.toBe(true);
+		}
+	});
+
+	// @cosmo-behavior plan:living-memory#B-014
+	test("executes the versioned project payload through the shared factory and store seam", async () => {
+		type JobContext = {
+			readonly projectRoot: string;
+			readonly dependencies: LivingMemoryConsolidatorDependencies;
+			readonly createConsolidator?: typeof createLivingMemoryConsolidator;
+			readonly createKnowledgeStore?: typeof createKnowledgeMemoryStore;
+		};
+		const dependencyAccesses: string[] = [];
+		const inaccessibleContext = Object.defineProperties(
+			{},
+			{
+				projectRoot: {
+					get() {
+						dependencyAccesses.push("projectRoot");
+						throw new Error("invalid payload accessed project root");
+					},
+				},
+				dependencies: {
+					get() {
+						dependencyAccesses.push("dependencies");
+						throw new Error("invalid payload accessed dependencies");
+					},
+				},
+			},
+		) as JobContext;
+		const invalidPayloads = [
+			null,
+			{},
+			{
+				kind: "other.job",
+				version: 1,
+				scope: "project",
+				dryRun: false,
+				modelMode: "full",
+			},
+			{
+				kind: "living-memory.consolidate",
+				version: 2,
+				scope: "project",
+				dryRun: false,
+				modelMode: "full",
+			},
+			{
+				kind: "living-memory.consolidate",
+				version: 1,
+				scope: "user",
+				dryRun: false,
+				modelMode: "full",
+			},
+			{
+				kind: "living-memory.consolidate",
+				version: 1,
+				scope: "project",
+				dryRun: false,
+				modelMode: "full",
+				schedule: "hourly",
+			},
+			{
+				kind: "living-memory.consolidate",
+				version: 1,
+				scope: "project",
+				dryRun: false,
+				modelMode: "full",
+				projectRoot: "/embedded/absolute/root",
+			},
+		];
+		for (const payload of invalidPayloads) {
+			await expect(
+				executeLivingMemoryConsolidationJob(payload, inaccessibleContext),
+			).rejects.toThrow(/living-memory payload/i);
+		}
+		expect(dependencyAccesses).toEqual([]);
+
+		const projectRoot = join(tmp.path, "payload-project");
+		const collect = vi.fn(async () => ({ records: [], omitted: 0 }));
+		const harness = createHarness([{ id: "corpus", collect }]);
+		const createConsolidator = vi.fn(createLivingMemoryConsolidator);
+		let storeConsolidate:
+			| ReturnType<typeof vi.fn<MemoryStore["consolidate"]>>
+			| undefined;
+		const createKnowledgeStore = vi.fn(
+			(options: Parameters<typeof createKnowledgeMemoryStore>[0]) => {
+				const store = createKnowledgeMemoryStore(options);
+				storeConsolidate = vi.fn((input) => store.consolidate(input));
+				return { ...store, consolidate: storeConsolidate };
+			},
+		);
+		const payload = {
+			kind: "living-memory.consolidate",
+			version: 1,
+			scope: "project",
+			dryRun: true,
+			modelMode: "deterministic-only",
+		} as const;
+		await expect(
+			executeLivingMemoryConsolidationJob(payload, {
+				projectRoot,
+				dependencies: harness.dependencies,
+				createConsolidator,
+				createKnowledgeStore,
+			}),
+		).resolves.toMatchObject({
+			kind: "noop",
+			details: {
+				dryRun: true,
+				modelMode: "deterministic-only",
+			},
+		});
+		expect(createConsolidator).toHaveBeenCalledOnce();
+		expect(createConsolidator).toHaveBeenCalledWith(harness.dependencies);
+		expect(createKnowledgeStore).toHaveBeenCalledOnce();
+		expect(createKnowledgeStore).toHaveBeenCalledWith({
+			projectRoot,
+			consolidator: expect.any(Function),
+		});
+		expect(storeConsolidate).toHaveBeenCalledWith({
+			dryRun: true,
+			modelMode: "deterministic-only",
+		});
+		expect(collect).toHaveBeenCalledOnce();
+		expect(JSON.stringify(payload)).not.toContain(projectRoot);
+	});
+
 	// @cosmo-behavior plan:living-memory#B-018
 	test("accepts valid fake source snapshots and rejects contract violations", async () => {
 		const content =
@@ -2811,6 +3188,62 @@ async function runRetirementChild(
 		child.once("error", reject);
 		child.once("exit", (code, signal) => resolve({ code, signal }));
 	});
+}
+
+async function writeEpisodeFixtures(
+	projectRoot: string,
+	fixtures: readonly (readonly [summary: string, timestamp: string])[],
+): Promise<readonly string[]> {
+	const store = createMarkdownMemoryStore({
+		projectRoot,
+		userCosmonautsRoot: join(projectRoot, "user-memory"),
+	});
+	const paths: string[] = [];
+	for (const [index, [summary, timestamp]] of fixtures.entries()) {
+		const result = await store.write(
+			createEpisodeRecord({
+				scope: "project",
+				source: "example/worker",
+				action: "task.status-changed",
+				outcome: "done",
+				subject: { kind: "task", id: `TASK-FOLD-${index + 1}` },
+				summary,
+				timestamp,
+			}),
+		);
+		if (result.kind !== "written") {
+			throw new Error(`failed to create episode fixture: ${result.reason}`);
+		}
+		paths.push(result.path);
+	}
+	return Object.freeze(paths);
+}
+
+function foldedEpisodeOutput(inputIds: readonly string[]) {
+	return {
+		schemaVersion: 1 as const,
+		observations: [
+			{
+				kind: "merge-candidate" as const,
+				inputIds,
+				reason: "Fold the bounded episodes into one durable note.",
+				proposal: {
+					proposalKind: "create" as const,
+					record: {
+						type: "note" as const,
+						title: "Episode summary",
+						description: "A bounded lossy episode fold.",
+						content: "# Episode summary\n\nCompleted work was retained.\n",
+						tags: ["episodes", "summary"],
+					},
+				},
+			},
+		],
+	};
+}
+
+function relativeFixturePath(root: string, path: string): string {
+	return relative(root, path).split(sep).join("/");
 }
 
 function source(

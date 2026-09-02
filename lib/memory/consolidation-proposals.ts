@@ -14,18 +14,40 @@ import type {
 	ConsolidationProposalStore,
 	ConsolidationProposalView,
 	JudgedProposal,
+	ProposedMemoryRecord,
 } from "./types.ts";
 
 const PROPOSAL_ROOT = "memory/agent/proposals/living-memory";
 
+export interface ConsolidationProposalMaterialization
+	extends ConsolidationProposalView {
+	readonly path: string;
+	readonly status: "existing";
+	readonly outputType?: ProposedMemoryRecord["type"];
+}
+
+export interface ConsolidationProposalStoreWithMaterializations
+	extends ConsolidationProposalStore {
+	readMaterializations(): Promise<
+		readonly ConsolidationProposalMaterialization[]
+	>;
+}
+
 export function createConsolidationProposalStore(options: {
 	readonly projectRoot: string;
 	readonly durableFiles?: ReturnType<typeof createDurableMachineFiles>;
-}): ConsolidationProposalStore {
+}): ConsolidationProposalStoreWithMaterializations {
 	const durableFiles = options.durableFiles ?? createDurableMachineFiles();
 	return {
 		async readEvidence() {
-			return readProposalEvidence(options.projectRoot);
+			return Object.freeze(
+				(await readProposalMaterializations(options.projectRoot)).flatMap(
+					(proposal) => proposal.inputs,
+				),
+			);
+		},
+		async readMaterializations() {
+			return readProposalMaterializations(options.projectRoot);
 		},
 		async persist(input) {
 			validateProposalInput(input.observation, input.proposal);
@@ -62,10 +84,22 @@ export function createConsolidationProposalStore(options: {
 						`Living-memory proposal identity conflict at ${relativePath}.`,
 					);
 				}
+				const path = absolutePath(options.projectRoot, relativePath);
+				await durableFiles.writeText({ path, content: rendered });
+				const confirmed = await readSafeRegularText({
+					root: options.projectRoot,
+					relativePath,
+					label: "Living-memory proposal",
+				});
+				if (confirmed !== rendered) {
+					throw new Error(
+						`Living-memory proposal changed while confirming durability: ${relativePath}.`,
+					);
+				}
 				return view({
 					proposalKind: input.proposal.proposalKind,
 					key,
-					path: absolutePath(options.projectRoot, relativePath),
+					path,
 					inputs: input.observation.inputs,
 					contentDigest,
 					status: "existing",
@@ -91,9 +125,9 @@ export function createConsolidationProposalStore(options: {
 	};
 }
 
-async function readProposalEvidence(
+async function readProposalMaterializations(
 	projectRoot: string,
-): Promise<readonly ConsolidationEvidenceRef[]> {
+): Promise<readonly ConsolidationProposalMaterialization[]> {
 	const directory = absolutePath(projectRoot, PROPOSAL_ROOT);
 	let entries: Dirent[];
 	try {
@@ -109,7 +143,7 @@ async function readProposalEvidence(
 		throw error;
 	}
 
-	const evidence: ConsolidationEvidenceRef[] = [];
+	const proposals: ConsolidationProposalMaterialization[] = [];
 	for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
 		if (entry.name.startsWith(".") || !entry.name.endsWith(".md")) continue;
 		if (entry.isSymbolicLink() || !entry.isFile()) {
@@ -130,20 +164,39 @@ async function readProposalEvidence(
 		if (
 			data.kind !== "living-memory-proposal" ||
 			data.schemaVersion !== 1 ||
+			data.status !== "open" ||
+			!isProposalKind(data.proposalKind) ||
+			typeof data.key !== "string" ||
+			!/^[a-f0-9]{64}$/u.test(data.key) ||
 			!Array.isArray(data.inputs)
 		) {
 			throw new Error(`Living-memory proposal is malformed: ${relativePath}.`);
 		}
+		const inputs: ConsolidationEvidenceRef[] = [];
 		for (const input of data.inputs) {
 			if (!isEvidenceRef(input)) {
 				throw new Error(
 					`Living-memory proposal has invalid evidence: ${relativePath}.`,
 				);
 			}
-			evidence.push(Object.freeze({ ...input }));
+			inputs.push(Object.freeze({ ...input }));
 		}
+		const outputType = isProposedMemoryRecordType(data.outputType)
+			? data.outputType
+			: undefined;
+		proposals.push(
+			Object.freeze({
+				proposalKind: data.proposalKind,
+				key: data.key,
+				path: absolutePath(projectRoot, relativePath),
+				inputs: Object.freeze(inputs),
+				contentDigest: sha256(raw),
+				status: "existing",
+				...(outputType === undefined ? {} : { outputType }),
+			}),
+		);
 	}
-	return Object.freeze(evidence);
+	return Object.freeze(proposals);
 }
 
 export function renderConsolidationProposal(options: {
@@ -152,10 +205,12 @@ export function renderConsolidationProposal(options: {
 	readonly proposal: JudgedProposal;
 }): string {
 	const body = proposalBody(options.proposal);
+	const outputType = proposalOutputType(options.proposal);
 	return matter.stringify(body, {
 		kind: "living-memory-proposal",
 		schemaVersion: 1,
 		proposalKind: options.proposal.proposalKind,
+		...(outputType === undefined ? {} : { outputType }),
 		status: "open",
 		key: options.key,
 		observation: {
@@ -165,6 +220,30 @@ export function renderConsolidationProposal(options: {
 		},
 		inputs: options.observation.inputs.map((input) => ({ ...input })),
 	});
+}
+
+function proposalOutputType(
+	proposal: JudgedProposal,
+): ProposedMemoryRecord["type"] | undefined {
+	return proposal.proposalKind === "create"
+		? proposal.record.type
+		: proposal.proposalKind === "merge"
+			? proposal.replacement.type
+			: undefined;
+}
+
+function isProposalKind(
+	value: unknown,
+): value is ConsolidationProposalView["proposalKind"] {
+	return ["create", "merge", "retire", "improve"].includes(String(value));
+}
+
+function isProposedMemoryRecordType(
+	value: unknown,
+): value is ProposedMemoryRecord["type"] {
+	return ["decision", "trade-off", "gotcha", "convention", "note"].includes(
+		String(value),
+	);
 }
 
 function proposalBody(proposal: JudgedProposal): string {

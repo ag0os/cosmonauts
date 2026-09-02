@@ -4,12 +4,17 @@ import { constants } from "node:fs";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import matter from "gray-matter";
+import type {
+	ConsolidationProposalMaterialization,
+	ConsolidationProposalStoreWithMaterializations,
+} from "./consolidation-proposals.ts";
 import {
 	type ConsolidationSourceRecord,
 	collectConsolidationSources,
 } from "./consolidation-sources.ts";
 import { parseHumanKnowledgeRecord } from "./knowledge-records.ts";
 import type {
+	AcceptedJudgmentReceipt,
 	ConsolidationEvidenceRef,
 	ConsolidationObservation,
 	ConsolidationObservationKind,
@@ -107,12 +112,24 @@ export function createLivingMemoryConsolidator(
 						),
 						lockOptions: dependencies.lockOptions,
 					});
-			const [receipts, proposalEvidence, retirementInspection] =
-				await Promise.all([
-					dependencies.acceptedJudgmentReceiptStore.list(),
-					dependencies.proposalStore.readEvidence(),
-					dependencies.retirementStore.inspect(collected.records),
-				]);
+			const [
+				receipts,
+				proposalEvidence,
+				proposalMaterializations,
+				retirementInspection,
+			] = await Promise.all([
+				dependencies.acceptedJudgmentReceiptStore.list(),
+				dependencies.proposalStore.readEvidence(),
+				(
+					dependencies.proposalStore as Partial<ConsolidationProposalStoreWithMaterializations>
+				).readMaterializations?.() ??
+					Promise.resolve(
+						Object.freeze(
+							[],
+						) as readonly ConsolidationProposalMaterialization[],
+					),
+				dependencies.retirementStore.inspect(collected.records),
+			]);
 			if (dryRun && retirementInspection.recovery !== "none") {
 				details = {
 					...details,
@@ -125,6 +142,29 @@ export function createLivingMemoryConsolidator(
 						"Dry-run observes retirement state but never acquires a lock or performs recovery.",
 					details,
 				};
+			}
+			const episodeRecovery = dryRun
+				? undefined
+				: await recoverAcceptedEpisodeFinalization({
+						records: collected.records,
+						receipts,
+						proposals: proposalMaterializations,
+						dependencies,
+					});
+			if (episodeRecovery !== undefined) {
+				details = {
+					...details,
+					proposals: episodeRecovery.proposals,
+					episodePrunes: episodeRecovery.episodePrunes,
+					writesCommitted:
+						details.writesCommitted || episodeRecovery.writesCommitted,
+					...(episodeRecovery.receiptPath === undefined
+						? {}
+						: {
+								acceptedJudgmentReceiptPath: episodeRecovery.receiptPath,
+							}),
+				};
+				return { kind: "ran" as const, details };
 			}
 			const representedDigests = new Set([
 				...receipts.flatMap((receipt) =>
@@ -416,17 +456,54 @@ export function createLivingMemoryConsolidator(
 				};
 			}
 			const proposals = [];
+			const representedEpisodes = new Map<
+				string,
+				Map<
+					string,
+					{
+						readonly id: string;
+						readonly digest: string;
+						readonly proposalPaths: Set<string>;
+					}
+				>
+			>();
 			for (const item of normalized) {
 				if (item.proposal === undefined) continue;
-				proposals.push(
-					await dependencies.proposalStore.persist({
-						batchKey: input.batchKey,
-						observation: item.observation,
-						proposal: item.proposal,
-						dryRun,
-						...(options.signal === undefined ? {} : { signal: options.signal }),
-					}),
-				);
+				const proposal = await dependencies.proposalStore.persist({
+					batchKey: input.batchKey,
+					observation: item.observation,
+					proposal: item.proposal,
+					dryRun,
+					...(options.signal === undefined ? {} : { signal: options.signal }),
+				});
+				proposals.push(proposal);
+				if (
+					item.proposal.proposalKind === "create" &&
+					item.proposal.record.type === "note" &&
+					proposal.path !== undefined
+				) {
+					for (const evidence of item.observation.inputs) {
+						const record = selectedRecords.find(
+							(candidate) =>
+								candidate.sourceId === evidence.sourceId &&
+								candidate.id === evidence.id &&
+								candidate.digest === evidence.digest &&
+								candidate.kind === "episode" &&
+								candidate.scope === "project",
+						);
+						if (record === undefined) continue;
+						const sourceRecords =
+							representedEpisodes.get(record.sourceId) ?? new Map();
+						const represented = sourceRecords.get(record.id) ?? {
+							id: record.id,
+							digest: record.digest,
+							proposalPaths: new Set<string>(),
+						};
+						represented.proposalPaths.add(proposal.path);
+						sourceRecords.set(record.id, represented);
+						representedEpisodes.set(record.sourceId, sourceRecords);
+					}
+				}
 			}
 			const retirementCandidates = deterministic.flatMap((finding) => {
 				if (finding.retirement === undefined) return [];
@@ -490,6 +567,31 @@ export function createLivingMemoryConsolidator(
 					},
 				];
 			});
+			const episodePrunes: string[] = [];
+			if (!dryRun && retirementRun?.kind !== "failed") {
+				for (const source of dependencies.sources) {
+					const represented = representedEpisodes.get(source.id);
+					if (represented === undefined || represented.size === 0) continue;
+					if (source.finalize === undefined) {
+						throw new Error(
+							`Episode source ${source.id} cannot finalize represented records.`,
+						);
+					}
+					episodePrunes.push(
+						...(await source.finalize(
+							Object.freeze(
+								[...represented.values()].map((record) =>
+									Object.freeze({
+										id: record.id,
+										digest: record.digest,
+										proposalPaths: Object.freeze([...record.proposalPaths]),
+									}),
+								),
+							),
+						)),
+					);
+				}
+			}
 			const shouldMaterializeReceipt =
 				acceptedReceipt?.state === "accepted" &&
 				retirementRun?.kind !== "failed";
@@ -510,6 +612,7 @@ export function createLivingMemoryConsolidator(
 					...normalized.map((item) => item.observation),
 				]),
 				proposals: Object.freeze(proposals),
+				episodePrunes: Object.freeze(episodePrunes),
 				retirements: Object.freeze(reportedRetirements),
 				declines: Object.freeze([
 					...details.declines,
@@ -532,6 +635,7 @@ export function createLivingMemoryConsolidator(
 				writesCommitted:
 					acceptedReceipt !== undefined ||
 					proposals.some((proposal) => proposal.status === "written") ||
+					episodePrunes.length > 0 ||
 					(retirementRun?.details.writesCommitted ?? false),
 				...(acceptedReceipt === undefined
 					? {}
@@ -556,6 +660,132 @@ export function createLivingMemoryConsolidator(
 			};
 		}
 	};
+}
+
+interface AcceptedEpisodeRecovery {
+	readonly proposals: readonly ConsolidationProposalMaterialization[];
+	readonly episodePrunes: readonly string[];
+	readonly receiptPath?: string;
+	readonly writesCommitted: boolean;
+}
+
+async function recoverAcceptedEpisodeFinalization(options: {
+	readonly records: readonly ConsolidationSourceRecord[];
+	readonly receipts: readonly AcceptedJudgmentReceipt[];
+	readonly proposals: readonly ConsolidationProposalMaterialization[];
+	readonly dependencies: LivingMemoryConsolidatorDependencies;
+}): Promise<AcceptedEpisodeRecovery | undefined> {
+	const acceptedReceipts = new Map(
+		options.receipts
+			.filter((receipt) => receipt.state === "accepted")
+			.map((receipt) => [receipt.batchKey, receipt] as const),
+	);
+	const recoverable = new Map<
+		string,
+		Map<
+			string,
+			{
+				readonly id: string;
+				readonly digest: string;
+				readonly proposalPaths: Set<string>;
+				readonly receiptKeys: Set<string>;
+			}
+		>
+	>();
+	const materializations: ConsolidationProposalMaterialization[] = [];
+	for (const proposal of options.proposals) {
+		const receipt = acceptedReceipts.get(proposal.key);
+		if (
+			receipt === undefined ||
+			proposal.proposalKind !== "create" ||
+			proposal.outputType !== "note"
+		) {
+			continue;
+		}
+		let matched = false;
+		for (const evidence of proposal.inputs) {
+			if (!receipt.inputDigests.includes(evidence.digest)) continue;
+			const record = options.records.find(
+				(candidate) =>
+					candidate.sourceId === evidence.sourceId &&
+					candidate.id === evidence.id &&
+					candidate.digest === evidence.digest &&
+					candidate.kind === "episode" &&
+					candidate.scope === "project",
+			);
+			if (record === undefined) continue;
+			matched = true;
+			const sourceRecords = recoverable.get(record.sourceId) ?? new Map();
+			const represented = sourceRecords.get(record.id) ?? {
+				id: record.id,
+				digest: record.digest,
+				proposalPaths: new Set<string>(),
+				receiptKeys: new Set<string>(),
+			};
+			represented.proposalPaths.add(proposal.path);
+			represented.receiptKeys.add(receipt.batchKey);
+			sourceRecords.set(record.id, represented);
+			recoverable.set(record.sourceId, sourceRecords);
+		}
+		if (matched) materializations.push(proposal);
+	}
+	if (recoverable.size === 0) return undefined;
+
+	const episodePrunes: string[] = [];
+	const completedIds = new Set<string>();
+	for (const source of options.dependencies.sources) {
+		const records = recoverable.get(source.id);
+		if (records === undefined || records.size === 0) continue;
+		if (source.finalize === undefined) {
+			throw new Error(
+				`Episode source ${source.id} cannot finalize represented records.`,
+			);
+		}
+		const pruned = await source.finalize(
+			Object.freeze(
+				[...records.values()].map((record) =>
+					Object.freeze({
+						id: record.id,
+						digest: record.digest,
+						proposalPaths: Object.freeze([...record.proposalPaths]),
+					}),
+				),
+			),
+		);
+		episodePrunes.push(...pruned);
+		for (const id of pruned) completedIds.add(`${source.id}\0${id}`);
+	}
+
+	const recoverableReceiptKeys = new Set<string>();
+	for (const records of recoverable.values()) {
+		for (const record of records.values()) {
+			for (const key of record.receiptKeys) recoverableReceiptKeys.add(key);
+		}
+	}
+	const completedReceiptKeys = new Set<string>();
+	for (const key of recoverableReceiptKeys) {
+		const everyMatchingRecordPruned = [...recoverable].every(
+			([sourceId, records]) =>
+				[...records.values()].every(
+					(record) =>
+						!record.receiptKeys.has(key) ||
+						completedIds.has(`${sourceId}\0${record.id}`),
+				),
+		);
+		if (everyMatchingRecordPruned) completedReceiptKeys.add(key);
+	}
+	for (const key of completedReceiptKeys) {
+		await options.dependencies.acceptedJudgmentReceiptStore.markMaterialized(
+			key,
+		);
+	}
+	const receipt = acceptedReceipts.get([...completedReceiptKeys][0] ?? "");
+	return Object.freeze({
+		proposals: Object.freeze(materializations),
+		episodePrunes: Object.freeze(episodePrunes),
+		...(receipt === undefined ? {} : { receiptPath: receipt.path }),
+		writesCommitted: episodePrunes.length > 0 || completedReceiptKeys.size > 0,
+	});
 }
 
 function toIndexRecords(

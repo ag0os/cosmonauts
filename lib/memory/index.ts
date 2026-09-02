@@ -7,6 +7,14 @@ export {
 	PROFILE_WRITE_MAX_BYTES,
 } from "./authored-records.ts";
 export {
+	executeLivingMemoryConsolidationJob,
+	type LivingMemoryConsolidationJobContext,
+	type LivingMemoryPayloadV1,
+	parseLivingMemoryPayloadV1,
+} from "./consolidation-job.ts";
+export {
+	type ConsolidationProposalMaterialization,
+	type ConsolidationProposalStoreWithMaterializations,
 	createConsolidationProposalStore,
 	renderConsolidationProposal,
 } from "./consolidation-proposals.ts";
@@ -27,6 +35,7 @@ export {
 	type ConsolidationSourceScope,
 	type ConsolidationSourceSnapshot,
 	collectConsolidationSources,
+	createProjectEpisodeConsolidationSource,
 } from "./consolidation-sources.ts";
 export {
 	createDurableMachineFiles,
