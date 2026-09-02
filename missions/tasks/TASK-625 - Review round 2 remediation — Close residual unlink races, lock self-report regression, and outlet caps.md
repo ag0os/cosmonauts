@@ -3,7 +3,7 @@ id: TASK-625
 title: >-
   Review round 2 remediation — Close residual unlink races, lock self-report
   regression, and outlet caps
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -12,7 +12,7 @@ labels:
 dependencies:
   - TASK-624
 createdAt: '2026-09-02T19:55:02.242Z'
-updatedAt: '2026-09-02T19:55:02.242Z'
+updatedAt: '2026-09-02T20:15:32.119Z'
 ---
 
 ## Description
@@ -41,11 +41,11 @@ MEDIUM 6 — committed episode-recovery writes can be reported as absent: accept
 Binding ratified ground — stop and escalate rather than adjust it: never move, edit, or delete anything under this repository's live `knowledge/`; temp fixtures only; `knowledgeSurface` stays on; no live retirement round; no TTL, OM, scheduling, user-scope L4 mutation, embeddings, new OKF type, or explicit-save change. Byte authority outranks size pressure. Do not weaken the receipt floor, the frozen pins, model-output fail-closed validation, or any existing marker. Confine all changes to lib/memory, lib/extensions/knowledge-surface, cli/memory, and their tests — the previous round's repo-wide export cleanup outside those directories was reverted as out of scope and must not return.
 
 <!-- AC:BEGIN -->
-- [ ] #1 No live retirement unlink can destroy bytes that were not the manifested object: the live path is atomically renamed to a journal-recorded tombstone after manifest commit, verified by device+inode against the retired link AND by digest, then removed only on match and atomically restored to the live path on mismatch with a reported conflict; recovery completes or reverses a tombstone rather than deleting it unverified. A regression test mutates the live path in the window AFTER the pre-unlink verification (not merely at an earlier failpoint) via both an atomic replace and an in-place edit, and proves in both cases that no bytes are lost and the record remains live.
-- [ ] #2 Episode pruning uses the same tombstone-verify-or-restore protocol, proven by a regression test that rewrites an episode in the window between snapshot and removal and asserts the rewritten bytes survive and the episode is not pruned.
-- [ ] #3 A successful non-dry pass no longer reports concurrency against its own held lock: inspection distinguishes the pass's own lock ownership from a foreign holder, a successful pass reports `recovery: "none"` and exits zero, an outer-lock acquisition timeout does not report `recovery: "none"`, and a release-unconfirmed outcome reports `recovery: "release-unconfirmed"`.
-- [ ] #4 The production episode adapter honours `representedKeys` exactly as the corpus adapter does, so already-represented episodes no longer permanently starve later ones; a test proves a second pass admits previously unadmitted episodes.
-- [ ] #5 The reported retirements array never exceeds `maxRetirements`; cap-deferred items are reported through `declines`; and the test that expected six retirement rows under a limit of five is corrected to assert the cap rather than encode the violation.
-- [ ] #6 Any pass or recovery path that has already removed bytes reports `writesCommitted: true`, including when it subsequently throws an ordinary source or durable-file error mid-prune.
-- [ ] #7 Project-native universal correctness evidence passes after every commit; the Slice 0 B-001 receipt test and every marker B-001..B-021 remain green under their exact existing names and owners; live `knowledge/` and `memory/` stay byte-identical; a live `bun bin/cosmonauts memory consolidate --dry-run --no-model --json` still completes as `ran` or `noop` writing nothing; and no file outside lib/memory, lib/extensions/knowledge-surface, cli/memory and their tests is modified.
+- [x] #1 No live retirement unlink can destroy bytes that were not the manifested object: the live path is atomically renamed to a journal-recorded tombstone after manifest commit, verified by device+inode against the retired link AND by digest, then removed only on match and atomically restored to the live path on mismatch with a reported conflict; recovery completes or reverses a tombstone rather than deleting it unverified. A regression test mutates the live path in the window AFTER the pre-unlink verification (not merely at an earlier failpoint) via both an atomic replace and an in-place edit, and proves in both cases that no bytes are lost and the record remains live.
+- [x] #2 Episode pruning uses the same tombstone-verify-or-restore protocol, proven by a regression test that rewrites an episode in the window between snapshot and removal and asserts the rewritten bytes survive and the episode is not pruned.
+- [x] #3 A successful non-dry pass no longer reports concurrency against its own held lock: inspection distinguishes the pass's own lock ownership from a foreign holder, a successful pass reports `recovery: "none"` and exits zero, an outer-lock acquisition timeout does not report `recovery: "none"`, and a release-unconfirmed outcome reports `recovery: "release-unconfirmed"`.
+- [x] #4 The production episode adapter honours `representedKeys` exactly as the corpus adapter does, so already-represented episodes no longer permanently starve later ones; a test proves a second pass admits previously unadmitted episodes.
+- [x] #5 The reported retirements array never exceeds `maxRetirements`; cap-deferred items are reported through `declines`; and the test that expected six retirement rows under a limit of five is corrected to assert the cap rather than encode the violation.
+- [x] #6 Any pass or recovery path that has already removed bytes reports `writesCommitted: true`, including when it subsequently throws an ordinary source or durable-file error mid-prune.
+- [x] #7 Project-native universal correctness evidence passes after every commit; the Slice 0 B-001 receipt test and every marker B-001..B-021 remain green under their exact existing names and owners; live `knowledge/` and `memory/` stay byte-identical; a live `bun bin/cosmonauts memory consolidate --dry-run --no-model --json` still completes as `ran` or `noop` writing nothing; and no file outside lib/memory, lib/extensions/knowledge-surface, cli/memory and their tests is modified.
 <!-- AC:END -->
