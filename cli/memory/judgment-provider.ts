@@ -56,7 +56,7 @@ export interface PiJudgmentSession {
 	dispose(): void;
 }
 
-export interface PiCorpusJudgmentProviderOptions {
+interface PiCorpusJudgmentProviderOptions {
 	readonly projectRoot: string;
 	readonly model?: string;
 	readonly createSession?: () => Promise<PiJudgmentSession>;

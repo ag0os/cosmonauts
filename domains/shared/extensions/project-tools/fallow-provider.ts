@@ -59,7 +59,7 @@ import {
 
 const FALLOW_PROVIDER_ID = "fallow";
 export const FALLOW_VALIDATED_ENGINE_VERSION = "2.54.2";
-export const FALLOW_MAX_CONCURRENT_ANALYSES = 1;
+const FALLOW_MAX_CONCURRENT_ANALYSES = 1;
 
 const FALLOW_VALIDATED_SCHEMA_VERSIONS = {
 	"dead-code": [4],
@@ -434,7 +434,7 @@ export async function resolveInstalledFallowExecutable(
 		: null;
 }
 
-export async function detectFallowSignal(
+async function detectFallowSignal(
 	projectRoot: string,
 ): Promise<FallowDetectionSignal | null> {
 	for (const signal of FALLOW_CANONICAL_SIGNALS) {

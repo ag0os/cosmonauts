@@ -55,12 +55,12 @@ export interface HarnessProvenanceManifest {
 	readonly entries: Readonly<Record<string, MaterializedHarnessManifestEntry>>;
 }
 
-export const EMPTY_HARNESS_MANIFEST = {
+const EMPTY_HARNESS_MANIFEST = {
 	schemaVersion: 1,
 	entries: {},
 } as const satisfies HarnessProvenanceManifest;
 
-export interface HarnessTransactionPaths {
+interface HarnessTransactionPaths {
 	readonly lockPath: string;
 	readonly journalPath: string;
 }
@@ -70,7 +70,7 @@ export interface LegacyCopiedNodeShape {
 	readonly nodeType: "directory" | "file";
 }
 
-export interface LegacyMigrationExpectation {
+interface LegacyMigrationExpectation {
 	readonly revision: string;
 	readonly sourceRelativePath: string;
 	readonly owner: OwnerIdentity;
@@ -84,7 +84,7 @@ export interface LegacyMigrationExpectation {
  * named git object and observed the live target. The inward core deliberately
  * receives bytes-derived facts only and has no git or target-reading callback.
  */
-export interface LegacyMigrationProof {
+interface LegacyMigrationProof {
 	readonly revision: string;
 	readonly sourceRelativePath: string;
 	readonly owner: OwnerIdentity;
@@ -112,7 +112,7 @@ const LEGACY_MIGRATION_ASSET_IDS = new Set([
 	"external-skill:cosmonauts",
 ]);
 
-export interface StableHarnessStateObservation<T> {
+interface StableHarnessStateObservation<T> {
 	readonly manifest: HarnessProvenanceManifest;
 	readonly manifestFile: StableHarnessFileObservation;
 	readonly journalPresent: boolean;
@@ -123,7 +123,7 @@ export interface StableHarnessStateObservation<T> {
 	readonly reason?: "concurrent-change" | "pending-journal";
 }
 
-export type StableHarnessFileObservation =
+type StableHarnessFileObservation =
 	| { readonly exists: false }
 	| {
 			readonly exists: true;

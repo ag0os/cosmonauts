@@ -23,6 +23,7 @@ export interface DurableMachineFiles extends LivingMemoryDurableFiles {
 
 export interface DurableRetirementFiles extends DurableMachineFiles {
 	ensureDirectory(path: string): Promise<void>;
+	confirmFileDurability(path: string): Promise<void>;
 	assertRemovalSupported(options: {
 		readonly sourcePath: string;
 		readonly destinationDirectory: string;
@@ -59,6 +60,7 @@ export function createDurableRetirementFiles(): DurableRetirementFiles {
 	return {
 		...createDurableMachineFiles(),
 		ensureDirectory,
+		confirmFileDurability: syncRegularFile,
 		assertRemovalSupported,
 		linkFile: durableLink,
 		removeFile: durableRemove,

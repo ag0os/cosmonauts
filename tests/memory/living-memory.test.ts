@@ -111,6 +111,123 @@ describe("living memory", () => {
 		});
 	});
 
+	test("preserves live bytes when a retirement source changes after manifest commit", async () => {
+		for (const race of ["atomic-replace", "in-place-edit"] as const) {
+			const fixture = await createRetirementFixture(`retirement-${race}`);
+			const changed = `${fixture.raw}human change during retirement\n`;
+			const retiredPath = join(
+				fixture.projectRoot,
+				"knowledge",
+				"retired",
+				"eligible.md",
+			);
+			const result = await createLivingMemoryRetirementStore({
+				projectRoot: fixture.projectRoot,
+				async failpoint(point) {
+					if (point !== "after-manifest-sync") return;
+					if (race === "atomic-replace") {
+						const replacementPath = join(
+							fixture.projectRoot,
+							"knowledge",
+							"replacement.tmp",
+						);
+						await writeFile(replacementPath, changed);
+						await rename(replacementPath, fixture.livePath);
+					} else {
+						await writeFile(fixture.livePath, changed);
+					}
+				},
+			}).apply({
+				candidates: [retirementCandidate(fixture.input)],
+				dryRun: false,
+				date: new Date("2026-09-01T12:00:00.000Z"),
+				maxRetirements: 5,
+				lockOptions: exactLockOptions(),
+			});
+
+			expect(result).toMatchObject({
+				kind: "failed",
+				reason: expect.stringContaining("unlink conflict"),
+				details: {
+					declines: [
+						expect.objectContaining({ code: "retirement-unlink-conflict" }),
+					],
+					writesCommitted: true,
+				},
+			});
+			await expect(readFile(fixture.livePath, "utf-8")).resolves.toBe(changed);
+			await expect(readFile(retiredPath, "utf-8")).resolves.toBe(
+				race === "atomic-replace" ? fixture.raw : changed,
+			);
+		}
+	});
+
+	test("recovery proves manifest durability and linked live identity before unlink", async () => {
+		const unsynced = await createRetirementFixture(
+			"recovery-visible-unsynced-manifest",
+		);
+		await expect(
+			runRetirementChild(unsynced.projectRoot, "after-manifest-sync"),
+		).resolves.toMatchObject({ code: 86, signal: null });
+		const durableFiles = createDurableRetirementFiles();
+		const unsyncedResult = await createLivingMemoryRetirementStore({
+			projectRoot: unsynced.projectRoot,
+			durableFiles: {
+				...durableFiles,
+				async confirmFileDurability(path) {
+					if (path.endsWith("memory/agent/retirements/round-1.md")) {
+						throw new Error("simulated manifest directory sync failure");
+					}
+					await durableFiles.confirmFileDurability(path);
+				},
+			},
+		}).apply({
+			candidates: [],
+			dryRun: false,
+			date: new Date("2026-09-01T12:00:00.000Z"),
+			maxRetirements: 5,
+			lockOptions: exactLockOptions(),
+		});
+		expect(unsyncedResult).toMatchObject({
+			kind: "failed",
+			reason: expect.stringContaining("manifest directory sync failure"),
+			details: { recovery: "pending", writesCommitted: true },
+		});
+		await expect(readFile(unsynced.livePath, "utf-8")).resolves.toBe(
+			unsynced.raw,
+		);
+
+		const replaced = await createRetirementFixture(
+			"recovery-atomic-replaced-live",
+		);
+		await expect(
+			runRetirementChild(replaced.projectRoot, "after-manifest-sync"),
+		).resolves.toMatchObject({ code: 86, signal: null });
+		const changed = `${replaced.raw}human atomic replacement\n`;
+		const replacementPath = join(
+			replaced.projectRoot,
+			"knowledge",
+			"replacement.tmp",
+		);
+		await writeFile(replacementPath, changed);
+		await rename(replacementPath, replaced.livePath);
+		const replacedResult = await createLivingMemoryRetirementStore({
+			projectRoot: replaced.projectRoot,
+		}).apply({
+			candidates: [],
+			dryRun: false,
+			date: new Date("2026-09-01T12:00:00.000Z"),
+			maxRetirements: 5,
+			lockOptions: exactLockOptions(),
+		});
+		expect(replacedResult).toMatchObject({
+			kind: "failed",
+			reason: expect.stringContaining("unlink conflict"),
+			details: { recovery: "pending", writesCommitted: true },
+		});
+		await expect(readFile(replaced.livePath, "utf-8")).resolves.toBe(changed);
+	});
+
 	// @cosmo-behavior plan:living-memory#B-004
 	test("annotates a human restoration and reserves hard deletion for the ledger", async () => {
 		const fixture = await createRetirementFixture("restoration-project");
@@ -1641,6 +1758,52 @@ describe("living memory", () => {
 		).rejects.toThrow(/symlink/u);
 	});
 
+	test("reports committed receipt removals when a later discharge fails", async () => {
+		const projectRoot = join(tmp.path, "partial-receipt-discharge");
+		const baseDurableFiles = createDurableMachineFiles();
+		let removalCount = 0;
+		const durableFiles = {
+			...baseDurableFiles,
+			async removeFile(path: string) {
+				removalCount += 1;
+				if (removalCount === 2) {
+					throw new Error("simulated second receipt removal failure");
+				}
+				await baseDurableFiles.removeFile(path);
+			},
+		};
+		const receiptStore = createAcceptedJudgmentReceiptStore({
+			projectRoot,
+			durableFiles,
+		});
+		for (const suffix of ["first", "second"]) {
+			const batchKey = createHash("sha256").update(suffix).digest("hex");
+			await receiptStore.write({
+				schemaVersion: 1,
+				batchKey,
+				state: "accepted",
+				inputDigests: [
+					createHash("sha256").update(`${suffix}-input`).digest("hex"),
+				],
+				output: { schemaVersion: 1, observations: [] },
+				path: receiptStore.pathFor(batchKey),
+			});
+			await receiptStore.markMaterialized(batchKey);
+		}
+
+		const result = await createHarness([source("empty", [])], undefined, {
+			acceptedJudgmentReceiptStore: receiptStore,
+		}).consolidator();
+
+		expect(result).toMatchObject({
+			kind: "failed",
+			reason: expect.stringContaining(
+				"simulated second receipt removal failure",
+			),
+			details: { writesCommitted: true },
+		});
+	});
+
 	test("builds the exact live citation inventory and blocks retirement on incomplete discovery", async () => {
 		const projectRoot = join(tmp.path, "citation-inventory-project");
 		const userRoot = join(tmp.path, "citation-inventory-user");
@@ -2161,7 +2324,7 @@ describe("living memory", () => {
 		const manifestOnlyRecord = record({
 			id: "manifest-only-record",
 			sourceId: "corpus",
-			path: "memory/manifest-only.md",
+			path: "knowledge/manifest-only.md",
 			kind: "reflection",
 			content: "# Manifest-only evidence\n",
 		});
@@ -2335,7 +2498,7 @@ describe("living memory", () => {
 			retiredManifest({
 				round: 2,
 				id: "manifest-only-representation",
-				path: "knowledge/synthetic-retired.md",
+				path: manifestOnlyRecord.path,
 				digest: manifestOnlyRecord.digest,
 			}),
 		);
@@ -2619,6 +2782,43 @@ describe("living memory", () => {
 		});
 		await expect(fileExists(changedPaths[0] as string)).resolves.toBe(true);
 		await expect(fileExists(changedPaths[1] as string)).resolves.toBe(false);
+
+		const replacedRoot = join(tmp.path, "replaced-episode-project");
+		const replacedPaths = await writeEpisodeFixtures(replacedRoot, [
+			["Episode atomically replaced", "2026-09-01T13:10:00.000Z"],
+			["Episode identity unchanged", "2026-09-01T13:20:00.000Z"],
+		]);
+		const replacedJudge = vi.fn<CorpusJudgmentProvider["judge"]>(
+			async (input) => {
+				const livePath = replacedPaths[0] as string;
+				const replacementPath = `${livePath}.replacement`;
+				await writeFile(replacementPath, await readFile(livePath));
+				await rename(replacementPath, livePath);
+				return foldedEpisodeOutput(input.records.map((record) => record.id));
+			},
+		);
+		const replacedResult = await createHarness(
+			[createProjectEpisodeConsolidationSource({ projectRoot: replacedRoot })],
+			{ id: "fake/no-tools", judge: replacedJudge },
+			{
+				acceptedJudgmentReceiptStore: createAcceptedJudgmentReceiptStore({
+					projectRoot: replacedRoot,
+				}),
+				proposalStore: createConsolidationProposalStore({
+					projectRoot: replacedRoot,
+				}),
+			},
+		).consolidator();
+		expect(replacedResult).toMatchObject({
+			kind: "ran",
+			details: {
+				episodePrunes: [
+					relativeFixturePath(replacedRoot, replacedPaths[1] as string),
+				],
+			},
+		});
+		await expect(fileExists(replacedPaths[0] as string)).resolves.toBe(true);
+		await expect(fileExists(replacedPaths[1] as string)).resolves.toBe(false);
 
 		const failedRoot = join(tmp.path, "failed-episode-proposal-project");
 		const failedPaths = await writeEpisodeFixtures(failedRoot, [
@@ -3428,9 +3628,10 @@ describe("living memory", () => {
 			({ content: _content, ...metadata }) => metadata,
 		);
 		const collect = vi.fn<ConsolidationSource["collect"]>(async (options) => {
-			const represented = new Set(options.representedDigests);
+			const represented = new Set(options.representedKeys);
 			const candidates = allRecords.filter(
-				(record) => !represented.has(record.digest),
+				(record) =>
+					!represented.has(`${record.scope}\0${record.path}\0${record.digest}`),
 			);
 			return {
 				records: candidates.slice(0, options.limit),
@@ -3439,27 +3640,7 @@ describe("living memory", () => {
 			};
 		});
 		const receipts: AcceptedJudgmentReceipt[] = [];
-		const receiptStore = {
-			pathFor: (batchKey: string) => `/tmp/${batchKey}.json`,
-			list: async () => Object.freeze([...receipts]),
-			dischargeStale: async () => [],
-			read: async (batchKey: string) =>
-				receipts.find((receipt) => receipt.batchKey === batchKey),
-			write: async (receipt: AcceptedJudgmentReceipt) => {
-				receipts.push(receipt);
-				return receipt;
-			},
-			markMaterialized: async (batchKey: string) => {
-				const index = receipts.findIndex(
-					(receipt) => receipt.batchKey === batchKey,
-				);
-				const current = receipts[index];
-				if (current === undefined) throw new Error("missing accepted receipt");
-				const materialized = { ...current, state: "materialized" as const };
-				receipts[index] = materialized;
-				return materialized;
-			},
-		};
+		const receiptStore = inMemoryReceiptStore(receipts);
 		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
 			schemaVersion: 1,
 			observations: [],
@@ -3483,9 +3664,290 @@ describe("living memory", () => {
 		]);
 		expect(
 			collect.mock.calls.map(
-				([options]) => options.representedDigests?.length ?? 0,
+				([options]) => options.representedKeys?.length ?? 0,
 			),
 		).toEqual([0, 50, 51]);
+	});
+
+	test("keys represented records by scope path and digest", async () => {
+		const content = "# Byte-identical evidence\n";
+		const records = ["first", "second"].map((name) =>
+			record({
+				id: name,
+				sourceId: "identity-corpus",
+				path: `knowledge/${name}.md`,
+				kind: "knowledge",
+				content,
+			}),
+		);
+		const collect = vi.fn<ConsolidationSource["collect"]>(async (options) => {
+			const represented = new Set(options.representedKeys);
+			const admitted = records.find(
+				(item) =>
+					!represented.has(`${item.scope}\0${item.path}\0${item.digest}`),
+			);
+			return {
+				records: admitted === undefined ? [] : [admitted],
+				omitted: admitted === undefined ? 0 : records.length - 1,
+			};
+		});
+		const receipts: AcceptedJudgmentReceipt[] = [];
+		const receiptStore = inMemoryReceiptStore(receipts);
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [],
+		}));
+		const harness = createHarness(
+			[{ id: "identity-corpus", collect }],
+			{ id: "fake/no-tools", judge },
+			{ acceptedJudgmentReceiptStore: receiptStore },
+		);
+
+		await expect(harness.consolidator()).resolves.toMatchObject({
+			kind: "ran",
+		});
+		await expect(harness.consolidator()).resolves.toMatchObject({
+			kind: "ran",
+		});
+
+		expect(judge.mock.calls.map(([input]) => input.records[0]?.path)).toEqual([
+			"knowledge/first.md",
+			"knowledge/second.md",
+		]);
+	});
+
+	test("serializes each mutating pass under one living-memory lock", async () => {
+		let collectCount = 0;
+		let activeJudgments = 0;
+		let maximumActiveJudgments = 0;
+		let lockTail = Promise.resolve();
+		const withLock: LivingMemoryConsolidatorDependencies["withLock"] = async (
+			_path,
+			action,
+		) => {
+			const predecessor = lockTail;
+			let release: () => void = () => undefined;
+			lockTail = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			await predecessor;
+			try {
+				return await action();
+			} finally {
+				release();
+			}
+		};
+		const collect = vi.fn<ConsolidationSource["collect"]>(async () => {
+			const index = collectCount++;
+			return {
+				records: [
+					record({
+						id: `serialized-${index}`,
+						sourceId: "serialized-corpus",
+						path: `memory/serialized-${index}.md`,
+						kind: "artifact",
+						content: `# Serialized ${index}\n`,
+					}),
+				],
+				omitted: 0,
+			};
+		});
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => {
+			activeJudgments += 1;
+			maximumActiveJudgments = Math.max(
+				maximumActiveJudgments,
+				activeJudgments,
+			);
+			await new Promise<void>((resolve) => setTimeout(resolve, 10));
+			activeJudgments -= 1;
+			return { schemaVersion: 1, observations: [] };
+		});
+		const receiptStore = inMemoryReceiptStore([]);
+		const harness = createHarness(
+			[{ id: "serialized-corpus", collect }],
+			{ id: "fake/no-tools", judge },
+			{ acceptedJudgmentReceiptStore: receiptStore, withLock },
+		);
+
+		const results = await Promise.all([
+			harness.consolidator(),
+			harness.consolidator(),
+		]);
+
+		expect(results.map((result) => result.kind)).toEqual(["ran", "ran"]);
+		expect(judge).toHaveBeenCalledTimes(2);
+		expect(maximumActiveJudgments).toBe(1);
+	});
+
+	test("bounds combined model outlets and defers excess deterministic retirements", async () => {
+		const projectRoot = join(tmp.path, "combined-outlet-caps");
+		await mkdir(projectRoot, { recursive: true });
+		await writeFile(join(projectRoot, "fixed.txt"), "fixed\n");
+		const retirements = Array.from({ length: 6 }, (_, index) =>
+			record({
+				id: `retire-${index}`,
+				sourceId: "retirement-corpus",
+				path: `knowledge/retire-${index}.md`,
+				kind: "knowledge",
+				content: `# Retire ${index}\n`,
+				metadata: {
+					type: "gotcha",
+					retireWhen: {
+						condition: "The replacement exists.",
+						check: { kind: "path-exists", path: "fixed.txt" },
+					},
+					scopeRoot: projectRoot,
+				},
+			}),
+		);
+		let remaining = [...retirements];
+		const collect = vi.fn<ConsolidationSource["collect"]>(async (options) => {
+			const represented = new Set(options.representedKeys);
+			const candidates = remaining.filter(
+				(item) =>
+					!represented.has(`${item.scope}\0${item.path}\0${item.digest}`),
+			);
+			return { records: candidates, omitted: 0 };
+		});
+		const apply = vi.fn<LivingMemoryRetirementStore["apply"]>(async (input) => {
+			if (input.candidates.length > input.maxRetirements) {
+				throw new Error("retirement store received over-cap candidates");
+			}
+			const appliedPaths = new Set(
+				input.candidates.map((candidate) => candidate.record.path),
+			);
+			remaining = remaining.filter((item) => !appliedPaths.has(item.path));
+			return {
+				kind: "completed" as const,
+				details: {
+					retirements: input.candidates.map((candidate) => ({
+						path: candidate.record.path,
+						digest: candidate.record.digest,
+						status: "applied" as const,
+						reason: candidate.reason,
+					})),
+					declines: [],
+					warnings: [],
+					recovery: "none" as const,
+					writesCommitted: input.candidates.length > 0,
+				},
+			};
+		});
+		const receiptStore = inMemoryReceiptStore([]);
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [],
+		}));
+		const harness = createHarness(
+			[{ id: "retirement-corpus", collect }],
+			{ id: "fake/no-tools", judge },
+			{
+				acceptedJudgmentReceiptStore: receiptStore,
+				retirementStore: {
+					inspect: vi.fn(async () => ({
+						recovery: "none" as const,
+						warnings: [],
+						representedKeys: [],
+					})),
+					apply,
+				},
+			},
+		);
+
+		const first = await harness.consolidator();
+		expect(first).toMatchObject({
+			kind: "ran",
+			details: {
+				retirements: [
+					expect.objectContaining({ path: "knowledge/retire-0.md" }),
+					expect.objectContaining({ path: "knowledge/retire-1.md" }),
+					expect.objectContaining({ path: "knowledge/retire-2.md" }),
+					expect.objectContaining({ path: "knowledge/retire-3.md" }),
+					expect.objectContaining({ path: "knowledge/retire-4.md" }),
+					expect.objectContaining({
+						path: "knowledge/retire-5.md",
+						status: "deferred",
+					}),
+				],
+				declines: expect.arrayContaining([
+					expect.objectContaining({ code: "retirement-cap-deferred" }),
+				]),
+			},
+		});
+		await expect(harness.consolidator()).resolves.toMatchObject({
+			kind: "ran",
+			details: {
+				retirements: [
+					expect.objectContaining({
+						path: "knowledge/retire-5.md",
+						status: "applied",
+					}),
+				],
+			},
+		});
+		expect(
+			apply.mock.calls
+				.map(([input]) => input.candidates.length)
+				.filter((length) => length > 0),
+		).toEqual([5, 1]);
+
+		const combinedJudge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: Array.from({ length: 20 }, (_, index) => ({
+				kind: "duplicate" as const,
+				inputIds: [`context-${index}`],
+				reason: `Model observation ${index}.`,
+			})),
+		}));
+		const context = Array.from({ length: 21 }, (_, index) =>
+			record({
+				id: `context-${index}`,
+				sourceId: "combined-corpus",
+				path: `memory/context-${index}.md`,
+				kind: "artifact",
+				content: `# Context ${index}\n`,
+			}),
+		);
+		const deterministic = retirements[0];
+		if (deterministic === undefined)
+			throw new Error("missing retirement fixture");
+		await expect(
+			createHarness(
+				[
+					source("combined-corpus", [
+						{ ...deterministic, sourceId: "combined-corpus" },
+						...context,
+					]),
+				],
+				{ id: "fake/no-tools", judge: combinedJudge },
+			).consolidator(),
+		).resolves.toMatchObject({
+			kind: "ran",
+			details: { observations: expect.any(Array) },
+		});
+		const combinedResult = await createHarness(
+			[
+				source("combined-corpus", [
+					{ ...deterministic, sourceId: "combined-corpus" },
+					...context,
+				]),
+			],
+			{
+				id: "fake/no-tools",
+				judge: async () => ({
+					schemaVersion: 1,
+					observations: Array.from({ length: 25 }, (_, index) => ({
+						kind: "duplicate" as const,
+						inputIds: [`context-${index % 21}`],
+						reason: `Over-cap combined observation ${index}.`,
+					})),
+				}),
+			},
+		).consolidator();
+		expect(combinedResult).toMatchObject({
+			kind: "failed",
+			reason: expect.stringMatching(/observation cap/i),
+		});
 	});
 
 	test("bounds deterministic proposal and observation findings lossily in stable order", async () => {
@@ -3606,6 +4068,30 @@ function createConsolidator(
 	return createHarness(sources, judgmentProvider).consolidator;
 }
 
+function inMemoryReceiptStore(receipts: AcceptedJudgmentReceipt[]) {
+	return {
+		pathFor: (batchKey: string) => `/tmp/${batchKey}.json`,
+		list: async () => Object.freeze([...receipts]),
+		dischargeStale: async () => [],
+		read: async (batchKey: string) =>
+			receipts.find((receipt) => receipt.batchKey === batchKey),
+		write: async (receipt: AcceptedJudgmentReceipt) => {
+			receipts.push(receipt);
+			return receipt;
+		},
+		markMaterialized: async (batchKey: string) => {
+			const index = receipts.findIndex(
+				(receipt) => receipt.batchKey === batchKey,
+			);
+			const current = receipts[index];
+			if (current === undefined) throw new Error("missing accepted receipt");
+			const materialized = { ...current, state: "materialized" as const };
+			receipts[index] = materialized;
+			return materialized;
+		},
+	};
+}
+
 function createHarness(
 	sources: readonly ConsolidationSource[],
 	judgmentProvider?: CorpusJudgmentProvider,
@@ -3616,6 +4102,8 @@ function createHarness(
 			| "indexPressure"
 			| "proposalStore"
 			| "retirementStore"
+			| "withLock"
+			| "lockPath"
 		>
 	> = {},
 ): {
@@ -3623,6 +4111,10 @@ function createHarness(
 	readonly dependencies: LivingMemoryConsolidatorDependencies;
 } {
 	const dependencies = {
+		lockPath: overrides.lockPath ?? "/tmp/living-memory.lock",
+		withLock:
+			overrides.withLock ??
+			(async <T>(_path: string, action: () => Promise<T>) => action()),
 		sources,
 		judgmentProvider,
 		proposalStore: overrides.proposalStore ?? {
@@ -3658,7 +4150,7 @@ function createHarness(
 			inspect: vi.fn(async () => ({
 				recovery: "none" as const,
 				warnings: [],
-				representedDigests: [],
+				representedKeys: [],
 			})),
 			apply: vi.fn(
 				async (input: Parameters<LivingMemoryRetirementStore["apply"]>[0]) => ({

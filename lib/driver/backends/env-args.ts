@@ -14,10 +14,6 @@ export function parseBackendArgsEnv(
 	return splitShellWords(value, envName);
 }
 
-export function isEnabledEnv(value: string | undefined): boolean {
-	return value === "1" || value?.toLowerCase() === "true";
-}
-
 export function isDisabledEnv(value: string | undefined): boolean {
 	return value === "0" || value?.toLowerCase() === "false";
 }

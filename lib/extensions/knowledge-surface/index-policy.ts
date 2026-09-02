@@ -13,7 +13,7 @@ export const COMBINED_CONTEXT_MAX_BYTES = 24_000;
 export const KNOWLEDGE_INDEX_LIMIT = 50;
 export const COMBINED_CONTEXT_PREFIX =
 	"Combined durable context for the current turn.\n\n";
-export const COMBINED_CONTEXT_SEPARATOR = "\n\n";
+const COMBINED_CONTEXT_SEPARATOR = "\n\n";
 
 export function renderKnowledgeIndex(
 	records: readonly RetrievedMemoryRecord[],
@@ -72,7 +72,7 @@ export function createKnowledgeIndexPressurePolicy(): KnowledgeIndexPressurePoli
 	};
 }
 
-export function renderKnowledgeIndexRow(record: RetrievedMemoryRecord): string {
+function renderKnowledgeIndexRow(record: RetrievedMemoryRecord): string {
 	return [
 		`- type: ${record.type}`,
 		`  title: ${record.title}`,
@@ -83,7 +83,7 @@ export function renderKnowledgeIndexRow(record: RetrievedMemoryRecord): string {
 	].join("\n");
 }
 
-export function guaranteedKnowledgeShareBytes(): number {
+function guaranteedKnowledgeShareBytes(): number {
 	const framingBytes =
 		utf8ByteLength(COMBINED_CONTEXT_PREFIX) +
 		utf8ByteLength(COMBINED_CONTEXT_SEPARATOR) * 2;

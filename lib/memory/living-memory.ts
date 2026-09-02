@@ -4,6 +4,7 @@ import { constants } from "node:fs";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import { isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import matter from "gray-matter";
+import { EntityFileLockTimeoutError } from "../entity-file-lock.ts";
 import type {
 	ConsolidationProposalMaterialization,
 	ConsolidationProposalStoreWithMaterializations,
@@ -14,6 +15,10 @@ import {
 	collectConsolidationSources,
 } from "./consolidation-sources.ts";
 import { parseHumanKnowledgeRecord } from "./knowledge-records.ts";
+import {
+	consolidationEvidenceKey,
+	isSafePosixRelativePath,
+} from "./path-safety.ts";
 import type {
 	AcceptedJudgmentReceipt,
 	ConsolidationEvidenceRef,
@@ -25,6 +30,7 @@ import type {
 	KnowledgeIndexPressureResult,
 	LivingMemoryConsolidatorDependencies,
 	LivingMemoryLimits,
+	LivingMemoryRetirementCandidate,
 	MemoryConsolidateDetails,
 	MemoryConsolidateOptions,
 	MemoryWarning,
@@ -60,7 +66,10 @@ export function createLivingMemoryConsolidator(
 	assertLimits(dependencies.limits);
 	assertLockOptions(dependencies.lockOptions);
 
-	return async (options: MemoryConsolidateOptions = {}) => {
+	const runPass = async (
+		options: MemoryConsolidateOptions = {},
+		lockHeld = false,
+	): Promise<Awaited<ReturnType<KnowledgeConsolidator>>> => {
 		const dryRun = options.dryRun ?? false;
 		const modelMode = options.modelMode ?? "full";
 		let details = emptyDetails({ dryRun, modelMode });
@@ -75,6 +84,7 @@ export function createLivingMemoryConsolidator(
 						date: dependencies.clock(),
 						maxRetirements: dependencies.limits.maxRetirements,
 						lockOptions: dependencies.lockOptions,
+						lockHeld,
 						...(options.signal === undefined ? {} : { signal: options.signal }),
 					});
 			if (recoveryRun !== undefined) {
@@ -112,9 +122,11 @@ export function createLivingMemoryConsolidator(
 				]);
 			const representedBeforeCollection = Object.freeze([
 				...initialReceipts.flatMap((receipt) =>
-					receipt.state === "materialized" ? receipt.inputDigests : [],
+					receipt.state === "materialized"
+						? (receipt.inputs ?? []).map(consolidationEvidenceKey)
+						: [],
 				),
-				...proposalEvidence.map((evidence) => evidence.digest),
+				...proposalEvidence.map(consolidationEvidenceKey),
 			]);
 			const collected = await collectConsolidationSources({
 				sources: dependencies.sources,
@@ -124,7 +136,7 @@ export function createLivingMemoryConsolidator(
 				maxEpisodeRecords: dependencies.limits.maxEpisodeRecords,
 				maxEpisodeRecordBytes: dependencies.limits.maxEpisodeRecordBytes,
 				maxEpisodeBytes: dependencies.limits.maxEpisodeBytes,
-				representedDigests: representedBeforeCollection,
+				representedKeys: representedBeforeCollection,
 				...(options.signal === undefined ? {} : { signal: options.signal }),
 			});
 			details = {
@@ -146,10 +158,11 @@ export function createLivingMemoryConsolidator(
 			const dischargedReceipts = dryRun
 				? Object.freeze([])
 				: await dependencies.acceptedJudgmentReceiptStore.dischargeStale({
-						currentDigests: Object.freeze(
-							collected.inventory.map((record) => record.digest),
+						currentKeys: Object.freeze(
+							collected.inventory.map(consolidationEvidenceKey),
 						),
 						lockOptions: dependencies.lockOptions,
+						lockHeld,
 					});
 			const dischargedPaths = new Set(dischargedReceipts);
 			const receipts = initialReceipts.filter(
@@ -194,29 +207,40 @@ export function createLivingMemoryConsolidator(
 				};
 				return { kind: "ran" as const, details };
 			}
-			const representedDigests = new Set([
+			const representedKeys = new Set([
 				...receipts.flatMap((receipt) =>
-					receipt.state === "materialized" ? receipt.inputDigests : [],
+					receipt.state === "materialized"
+						? (receipt.inputs ?? []).map(consolidationEvidenceKey)
+						: [],
 				),
-				...proposalEvidence.map((evidence) => evidence.digest),
-				...retirementInspection.representedDigests,
+				...proposalEvidence.map(consolidationEvidenceKey),
+				...retirementInspection.representedKeys,
 			]);
 			const mutationCandidates = collected.records.filter(
 				(record) => record.scope === "project",
 			);
-			const currentDigests = mutationCandidates
-				.map((record) => record.digest)
+			const currentKeys = mutationCandidates
+				.map(consolidationEvidenceKey)
 				.sort();
 			const acceptedCurrentBatch = receipts.some(
 				(receipt) =>
 					receipt.state === "accepted" &&
-					sameStrings([...receipt.inputDigests].sort(), currentDigests),
+					(receipt.inputs === undefined
+						? sameStrings(
+								[...receipt.inputDigests].sort(),
+								mutationCandidates.map((record) => record.digest).sort(),
+							)
+						: sameStrings(
+								receipt.inputs.map(consolidationEvidenceKey).sort(),
+								currentKeys,
+							)),
 			);
 			const selectedRecords = Object.freeze(
 				acceptedCurrentBatch
 					? mutationCandidates
 					: mutationCandidates.filter(
-							(record) => !representedDigests.has(record.digest),
+							(record) =>
+								!representedKeys.has(consolidationEvidenceKey(record)),
 						),
 			);
 			const maintenanceCommitted =
@@ -323,29 +347,9 @@ export function createLivingMemoryConsolidator(
 						}),
 					);
 				}
-				const observedRetirementCandidates = deterministic.flatMap(
-					(finding) => {
-						if (finding.retirement === undefined) return [];
-						const evidence = finding.observation.inputs[0];
-						if (evidence === undefined) return [];
-						const record = selectedRecords.find(
-							(item) =>
-								item.id === evidence.id && item.sourceId === evidence.sourceId,
-						);
-						if (record === undefined) return [];
-						return [
-							{
-								record,
-								reason: finding.retirement.reason as
-									| "superseded"
-									| "merged"
-									| "obsolete"
-									| "retire-when-met",
-								evidence: finding.observation.inputs,
-								evidenceReason: finding.observation.reason,
-							},
-						];
-					},
+				const observedRetirementCandidates = retirementCandidatesForFindings(
+					deterministic,
+					selectedRecords,
 				);
 				const retirementCandidates = observedRetirementCandidates.slice(
 					0,
@@ -368,6 +372,7 @@ export function createLivingMemoryConsolidator(
 								date: dependencies.clock(),
 								maxRetirements: dependencies.limits.maxRetirements,
 								lockOptions: dependencies.lockOptions,
+								lockHeld,
 								...(options.signal === undefined
 									? {}
 									: { signal: options.signal }),
@@ -445,6 +450,13 @@ export function createLivingMemoryConsolidator(
 					details,
 				};
 			}
+			const deterministicProposalFindings = deterministic.filter(
+				(finding) => finding.proposal !== undefined,
+			);
+			const observedRetirementCandidates = retirementCandidatesForFindings(
+				deterministic,
+				selectedRecords,
+			);
 
 			const input = Object.freeze({
 				schemaVersion: 1 as const,
@@ -474,7 +486,48 @@ export function createLivingMemoryConsolidator(
 				output,
 				records: selectedRecords,
 				limits: dependencies.limits,
+				reservedObservations: deterministic.length,
+				reservedProposals: Math.min(
+					deterministicProposalFindings.length,
+					dependencies.limits.maxProposals,
+				),
 			});
+			const modelProposalCount = normalized.filter(
+				(item) => item.proposal !== undefined,
+			).length;
+			const deterministicProposalFindingsToPersist =
+				deterministicProposalFindings.slice(
+					0,
+					dependencies.limits.maxProposals - modelProposalCount,
+				);
+			const proposalCapDeferred = deterministicProposalFindings.slice(
+				deterministicProposalFindingsToPersist.length,
+			);
+			const retirementCandidates = observedRetirementCandidates.slice(
+				0,
+				dependencies.limits.maxRetirements,
+			);
+			const capDeferredRetirements = observedRetirementCandidates
+				.slice(dependencies.limits.maxRetirements)
+				.map((candidate) => ({
+					path: candidate.record.path,
+					digest: candidate.record.digest,
+					status: "deferred" as const,
+					reason: candidate.reason,
+				}));
+			const deferredEvidenceKeys = new Set([
+				...observationCapDeferred.flatMap((finding) =>
+					finding.observation.inputs.map(consolidationEvidenceKey),
+				),
+				...proposalCapDeferred.flatMap((finding) =>
+					finding.observation.inputs.map(consolidationEvidenceKey),
+				),
+				...observedRetirementCandidates
+					.slice(dependencies.limits.maxRetirements)
+					.flatMap((candidate) =>
+						candidate.evidence.map(consolidationEvidenceKey),
+					),
+			]);
 			let acceptedReceipt = existingReceipt;
 			const receiptAcceptedThisPass = !dryRun && acceptedReceipt === undefined;
 			if (!dryRun && acceptedReceipt === undefined) {
@@ -485,6 +538,14 @@ export function createLivingMemoryConsolidator(
 						state: "accepted",
 						inputDigests: Object.freeze(
 							selectedRecords.map((record) => record.digest),
+						),
+						inputs: Object.freeze(
+							selectedRecords
+								.filter(
+									(record) =>
+										!deferredEvidenceKeys.has(consolidationEvidenceKey(record)),
+								)
+								.map(evidenceRef),
 						),
 						output: normalizedJudgmentOutput(output),
 						path: dependencies.acceptedJudgmentReceiptStore.pathFor(
@@ -498,6 +559,11 @@ export function createLivingMemoryConsolidator(
 					output: acceptedReceipt.output,
 					records: selectedRecords,
 					limits: dependencies.limits,
+					reservedObservations: deterministic.length,
+					reservedProposals: Math.min(
+						deterministicProposalFindings.length,
+						dependencies.limits.maxProposals,
+					),
 				});
 				details = {
 					...details,
@@ -506,6 +572,19 @@ export function createLivingMemoryConsolidator(
 				};
 			}
 			const proposals = [];
+			for (const finding of deterministicProposalFindingsToPersist) {
+				if (finding.proposal === undefined || finding.key === undefined)
+					continue;
+				proposals.push(
+					await dependencies.proposalStore.persist({
+						batchKey: finding.key,
+						observation: finding.observation,
+						proposal: finding.proposal,
+						dryRun,
+						...(options.signal === undefined ? {} : { signal: options.signal }),
+					}),
+				);
+			}
 			const representedEpisodes = new Map<
 				string,
 				Map<
@@ -513,12 +592,20 @@ export function createLivingMemoryConsolidator(
 					{
 						readonly id: string;
 						readonly digest: string;
+						readonly fileIdentity?: ConsolidationSourceRecord["fileIdentity"];
 						readonly proposalPaths: Set<string>;
 					}
 				>
 			>();
 			for (const item of normalized) {
 				if (item.proposal === undefined) continue;
+				if (
+					item.observation.inputs.some((evidence) =>
+						deferredEvidenceKeys.has(consolidationEvidenceKey(evidence)),
+					)
+				) {
+					continue;
+				}
 				const proposal = await dependencies.proposalStore.persist({
 					batchKey: input.batchKey,
 					observation: item.observation,
@@ -547,6 +634,9 @@ export function createLivingMemoryConsolidator(
 						const represented = sourceRecords.get(record.id) ?? {
 							id: record.id,
 							digest: record.digest,
+							...(record.fileIdentity === undefined
+								? {}
+								: { fileIdentity: record.fileIdentity }),
 							proposalPaths: new Set<string>(),
 						};
 						represented.proposalPaths.add(proposal.path);
@@ -555,28 +645,6 @@ export function createLivingMemoryConsolidator(
 					}
 				}
 			}
-			const retirementCandidates = deterministic.flatMap((finding) => {
-				if (finding.retirement === undefined) return [];
-				const evidence = finding.observation.inputs[0];
-				if (evidence === undefined) return [];
-				const record = selectedRecords.find(
-					(item) =>
-						item.id === evidence.id && item.sourceId === evidence.sourceId,
-				);
-				if (record === undefined) return [];
-				return [
-					{
-						record,
-						reason: finding.retirement.reason as
-							| "superseded"
-							| "merged"
-							| "obsolete"
-							| "retire-when-met",
-						evidence: finding.observation.inputs,
-						evidenceReason: finding.observation.reason,
-					},
-				];
-			});
 			const retirementRun =
 				retirementCandidates.length === 0
 					? undefined
@@ -586,6 +654,7 @@ export function createLivingMemoryConsolidator(
 							date: dependencies.clock(),
 							maxRetirements: dependencies.limits.maxRetirements,
 							lockOptions: dependencies.lockOptions,
+							lockHeld,
 							...(options.signal === undefined
 								? {}
 								: { signal: options.signal }),
@@ -634,6 +703,9 @@ export function createLivingMemoryConsolidator(
 									Object.freeze({
 										id: record.id,
 										digest: record.digest,
+										...(record.fileIdentity === undefined
+											? {}
+											: { fileIdentity: record.fileIdentity }),
 										proposalPaths: Object.freeze([...record.proposalPaths]),
 									}),
 								),
@@ -644,7 +716,20 @@ export function createLivingMemoryConsolidator(
 			}
 			const shouldMaterializeReceipt =
 				acceptedReceipt?.state === "accepted" &&
-				retirementRun?.kind !== "failed";
+				retirementRun?.kind !== "failed" &&
+				retirementCandidates.every((candidate) =>
+					retirementRun?.details.retirements.some(
+						(retirement) =>
+							retirement.path === candidate.record.path &&
+							retirement.digest === candidate.record.digest &&
+							retirement.status === "applied",
+					),
+				) &&
+				[...representedEpisodes.values()].every((records) =>
+					[...records.values()].every((record) =>
+						episodePrunes.includes(record.id),
+					),
+				);
 			if (shouldMaterializeReceipt) {
 				acceptedReceipt =
 					await dependencies.acceptedJudgmentReceiptStore.markMaterialized(
@@ -653,6 +738,7 @@ export function createLivingMemoryConsolidator(
 			}
 			const reportedRetirements = [
 				...(retirementRun?.details.retirements ?? []),
+				...capDeferredRetirements,
 				...modelOnlyRetirements,
 			];
 			details = {
@@ -667,7 +753,13 @@ export function createLivingMemoryConsolidator(
 				declines: Object.freeze([
 					...details.declines,
 					...deterministicCapDeclines(observationCapDeferred, "observation"),
+					...deterministicCapDeclines(proposalCapDeferred, "proposal"),
 					...(retirementRun?.details.declines ?? []),
+					...capDeferredRetirements.map((retirement) => ({
+						code: "retirement-cap-deferred",
+						path: retirement.path,
+						reason: "The bounded retirement cap deferred this candidate.",
+					})),
 					...modelOnlyRetirements.map((retirement) => ({
 						code: "retirement-authority-deferred",
 						path: retirement.path,
@@ -684,7 +776,8 @@ export function createLivingMemoryConsolidator(
 				]),
 				recovery: retirementRun?.details.recovery ?? details.recovery,
 				writesCommitted:
-					acceptedReceipt !== undefined ||
+					details.writesCommitted ||
+					receiptAcceptedThisPass ||
 					proposals.some((proposal) => proposal.status === "written") ||
 					episodePrunes.length > 0 ||
 					(retirementRun?.details.writesCommitted ?? false),
@@ -707,7 +800,47 @@ export function createLivingMemoryConsolidator(
 			return {
 				kind: "failed" as const,
 				reason: error instanceof Error ? error.message : String(error),
-				details,
+				details:
+					hasCommittedWrites(error) && !details.writesCommitted
+						? { ...details, writesCommitted: true }
+						: details,
+			};
+		}
+	};
+
+	return async (options: MemoryConsolidateOptions = {}) => {
+		if (options.dryRun ?? false) return runPass(options);
+		let releaseUnconfirmed: unknown;
+		try {
+			const result = await dependencies.withLock(
+				dependencies.lockPath,
+				() => runPass(options, true),
+				{
+					retryDelayMs: dependencies.lockOptions.retryMs,
+					waitTimeoutMs: dependencies.lockOptions.timeoutMs,
+					onReleaseUnconfirmed(error) {
+						releaseUnconfirmed = error;
+						dependencies.lockOptions.onReleaseUnconfirmed(error);
+					},
+				},
+			);
+			if (releaseUnconfirmed === undefined) return result;
+			return {
+				kind: "failed" as const,
+				reason: `Living-memory lock release could not be confirmed: ${errorMessage(releaseUnconfirmed)}.`,
+				details: result.details,
+			};
+		} catch (error: unknown) {
+			return {
+				kind: "failed" as const,
+				reason:
+					error instanceof EntityFileLockTimeoutError
+						? error.message
+						: errorMessage(error),
+				details: emptyDetails({
+					dryRun: false,
+					modelMode: options.modelMode ?? "full",
+				}),
 			};
 		}
 	};
@@ -738,6 +871,7 @@ async function recoverAcceptedEpisodeFinalization(options: {
 			{
 				readonly id: string;
 				readonly digest: string;
+				readonly fileIdentity?: ConsolidationSourceRecord["fileIdentity"];
 				readonly proposalPaths: Set<string>;
 				readonly receiptKeys: Set<string>;
 			}
@@ -770,6 +904,9 @@ async function recoverAcceptedEpisodeFinalization(options: {
 			const represented = sourceRecords.get(record.id) ?? {
 				id: record.id,
 				digest: record.digest,
+				...(record.fileIdentity === undefined
+					? {}
+					: { fileIdentity: record.fileIdentity }),
 				proposalPaths: new Set<string>(),
 				receiptKeys: new Set<string>(),
 			};
@@ -798,6 +935,9 @@ async function recoverAcceptedEpisodeFinalization(options: {
 					Object.freeze({
 						id: record.id,
 						digest: record.digest,
+						...(record.fileIdentity === undefined
+							? {}
+							: { fileIdentity: record.fileIdentity }),
 						proposalPaths: Object.freeze([...record.proposalPaths]),
 					}),
 				),
@@ -884,6 +1024,34 @@ interface DeterministicFinding {
 	readonly retirement?: MemoryConsolidateDetails["retirements"][number];
 	readonly proposal?: JudgedProposal;
 	readonly key?: string;
+}
+
+function retirementCandidatesForFindings(
+	findings: readonly DeterministicFinding[],
+	records: readonly ConsolidationSourceRecord[],
+): readonly LivingMemoryRetirementCandidate[] {
+	return Object.freeze(
+		findings.flatMap((finding) => {
+			if (finding.retirement === undefined) return [];
+			const evidence = finding.observation.inputs[0];
+			if (evidence === undefined) return [];
+			const record = records.find(
+				(candidate) =>
+					candidate.sourceId === evidence.sourceId &&
+					candidate.id === evidence.id &&
+					candidate.digest === evidence.digest,
+			);
+			if (record === undefined) return [];
+			return [
+				Object.freeze({
+					record,
+					reason: "retire-when-met" as const,
+					evidence: finding.observation.inputs,
+					evidenceReason: finding.observation.reason,
+				}),
+			];
+		}),
+	);
 }
 
 function deterministicCapDeclines(
@@ -1524,7 +1692,7 @@ function canonicalCitation(options: {
 			? value.replace(/^\.\//u, "")
 			: posix.join(posix.dirname(options.citingPath), value);
 	const normalized = posix.normalize(projectRelative);
-	return isSafeRelativePath(normalized) ? normalized : undefined;
+	return isSafePosixRelativePath(normalized) ? normalized : undefined;
 }
 
 function isPathShaped(value: string): boolean {
@@ -1616,7 +1784,7 @@ function retireWhenFromMetadata(metadata: Readonly<Record<string, unknown>>):
 	if (
 		(check.kind !== "path-exists" && check.kind !== "path-absent") ||
 		typeof check.path !== "string" ||
-		!isSafeRelativePath(check.path)
+		!isSafePosixRelativePath(check.path)
 	) {
 		return undefined;
 	}
@@ -1630,7 +1798,9 @@ async function observeContainedPath(options: {
 	readonly root: string;
 	readonly path: string;
 }): Promise<{ readonly safe: boolean; readonly exists: boolean }> {
-	if (!isSafeRelativePath(options.path)) return { safe: false, exists: false };
+	if (!isSafePosixRelativePath(options.path)) {
+		return { safe: false, exists: false };
+	}
 	const root = resolve(options.root);
 	try {
 		const rootMetadata = await lstat(root);
@@ -1659,21 +1829,6 @@ async function observeContainedPath(options: {
 	}
 }
 
-function isSafeRelativePath(value: string): boolean {
-	return (
-		value.length > 0 &&
-		!value.includes("\\") &&
-		!value.includes("\0") &&
-		!isAbsolute(value) &&
-		!value
-			.split("/")
-			.some(
-				(segment) =>
-					segment.length === 0 || segment === "." || segment === "..",
-			)
-	);
-}
-
 function isContainedOrEqual(root: string, candidate: string): boolean {
 	const path = relative(root, candidate);
 	return (
@@ -1686,6 +1841,19 @@ function errorCode(error: unknown): string | undefined {
 	return error !== null && typeof error === "object" && "code" in error
 		? String((error as NodeJS.ErrnoException).code)
 		: undefined;
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+function hasCommittedWrites(error: unknown): boolean {
+	return (
+		error !== null &&
+		typeof error === "object" &&
+		"writesCommitted" in error &&
+		(error as { readonly writesCommitted?: unknown }).writesCommitted === true
+	);
 }
 
 function sameStrings(
@@ -1718,6 +1886,8 @@ function validateJudgmentOutput(options: {
 	readonly output: CorpusJudgmentOutput;
 	readonly records: readonly ConsolidationSourceRecord[];
 	readonly limits: LivingMemoryLimits;
+	readonly reservedObservations: number;
+	readonly reservedProposals: number;
 }): readonly {
 	readonly observation: ConsolidationObservation;
 	readonly proposal?: JudgedProposal;
@@ -1728,17 +1898,20 @@ function validateJudgmentOutput(options: {
 	) {
 		throw new Error("Judgment output has an unsupported schema.");
 	}
-	if (options.output.observations.length > options.limits.maxObservations) {
+	const combinedObservationCount =
+		options.reservedObservations + options.output.observations.length;
+	if (combinedObservationCount > options.limits.maxObservations) {
 		throw new Error(
-			`Judgment output exceeds the observation cap (${options.output.observations.length} > ${options.limits.maxObservations}).`,
+			`Judgment output exceeds the observation cap (${combinedObservationCount} > ${options.limits.maxObservations}).`,
 		);
 	}
 	const proposalCount = options.output.observations.filter(
 		(observation) => observation.proposal !== undefined,
 	).length;
-	if (proposalCount > options.limits.maxProposals) {
+	const combinedProposalCount = options.reservedProposals + proposalCount;
+	if (combinedProposalCount > options.limits.maxProposals) {
 		throw new Error(
-			`Judgment output exceeds the proposal cap (${proposalCount} > ${options.limits.maxProposals}).`,
+			`Judgment output exceeds the proposal cap (${combinedProposalCount} > ${options.limits.maxProposals}).`,
 		);
 	}
 	const retirementCount = options.output.observations.filter(

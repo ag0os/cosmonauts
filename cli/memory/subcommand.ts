@@ -2,6 +2,7 @@ import { lstat, readFile, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { Command } from "commander";
+import { withEntityFileLock } from "../../lib/entity-file-lock.ts";
 import { createKnowledgeIndexPressurePolicy } from "../../lib/extensions/knowledge-surface/index-policy.ts";
 import {
 	createAcceptedJudgmentReceiptStore,
@@ -40,7 +41,7 @@ export interface MemoryConsolidationStoreOptions {
 	readonly model?: string;
 }
 
-export interface MemoryProgramOptions {
+interface MemoryProgramOptions {
 	readonly projectRoot?: string;
 	readonly createConsolidationStore?: (
 		options: MemoryConsolidationStoreOptions,
@@ -50,7 +51,7 @@ export interface MemoryProgramOptions {
 	readonly now?: () => Date;
 }
 
-export interface ExecuteMemoryConsolidateOptions extends MemoryProgramOptions {
+interface ExecuteMemoryConsolidateOptions extends MemoryProgramOptions {
 	readonly projectRoot: string;
 	readonly dryRun: boolean;
 	readonly noModel: boolean;
@@ -59,7 +60,7 @@ export interface ExecuteMemoryConsolidateOptions extends MemoryProgramOptions {
 	readonly signal?: AbortSignal;
 }
 
-export interface MemoryConsolidateCommandResult {
+interface MemoryConsolidateCommandResult {
 	readonly result: MemoryConsolidateResult;
 	readonly rendered: RenderedMemoryResult<MemoryConsolidateResult>;
 	readonly exitCode: number;
@@ -247,7 +248,7 @@ export async function executeMemoryConsolidate(
 	};
 }
 
-export function renderMemoryConsolidateResult(
+function renderMemoryConsolidateResult(
 	result: MemoryConsolidateResult,
 	mode: CliOutputMode,
 ): Pick<MemoryConsolidateCommandResult, "rendered" | "exitCode"> {
@@ -424,6 +425,8 @@ function createDefaultConsolidationStore(
 				})
 			: undefined;
 	const consolidator = createLivingMemoryConsolidator({
+		lockPath: join(options.projectRoot, ".cosmonauts", "living-memory.lock"),
+		withLock: withEntityFileLock,
 		sources: [
 			createProjectCorpusConsolidationSource({
 				projectRoot: options.projectRoot,

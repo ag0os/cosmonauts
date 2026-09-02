@@ -6,6 +6,12 @@ import * as consolidationSources from "../../lib/memory/consolidation-sources.ts
 import { useTempDir } from "../helpers/fs.ts";
 
 const tmp = useTempDir("project-corpus-source-");
+const COLLECT_LIMITS = Object.freeze({
+	maxCorpusRecordBytes: 64 * 1024,
+	maxCorpusBytes: 256 * 1024,
+	maxEpisodeRecordBytes: 64 * 1024,
+	maxEpisodeBytes: 256 * 1024,
+});
 
 describe("project corpus consolidation source", () => {
 	test("exports the production project corpus adapter", () => {
@@ -76,7 +82,7 @@ describe("project corpus consolidation source", () => {
 			projectRoot,
 			userCosmonautsRoot,
 		});
-		const snapshot = await source.collect({ limit: 10 });
+		const snapshot = await source.collect({ limit: 10, ...COLLECT_LIMITS });
 		const project = snapshot.records.find(
 			(record) => record.scope === "project",
 		);
@@ -163,7 +169,7 @@ describe("project corpus consolidation source", () => {
 			userCosmonautsRoot,
 		});
 
-		const snapshot = await source.collect({ limit: 50 });
+		const snapshot = await source.collect({ limit: 50, ...COLLECT_LIMITS });
 		const inventory = snapshot.inventory;
 		if (inventory === undefined) throw new Error("missing complete inventory");
 
@@ -202,10 +208,13 @@ describe("project corpus consolidation source", () => {
 			projectRoot,
 			userCosmonautsRoot,
 		});
-		const first = await source.collect({ limit: 50 });
+		const first = await source.collect({ limit: 50, ...COLLECT_LIMITS });
 		const second = await source.collect({
 			limit: 50,
-			representedDigests: first.records.map((record) => record.digest),
+			...COLLECT_LIMITS,
+			representedKeys: first.records.map(
+				(record) => `${record.scope}\0${record.path}\0${record.digest}`,
+			),
 		});
 
 		expect(first.records).toHaveLength(50);
@@ -284,8 +293,8 @@ describe("project corpus consolidation source", () => {
 			userCosmonautsRoot,
 		});
 
-		const complete = await source.collect({ limit: 10 });
-		const bounded = await source.collect({ limit: 2 });
+		const complete = await source.collect({ limit: 10, ...COLLECT_LIMITS });
+		const bounded = await source.collect({ limit: 2, ...COLLECT_LIMITS });
 
 		expect(
 			complete.inventory?.map((record) => [record.scope, record.path]),

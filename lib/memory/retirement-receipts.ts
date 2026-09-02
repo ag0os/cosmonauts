@@ -1,24 +1,24 @@
-export interface PromotionReceipt {
+interface PromotionReceipt {
 	readonly round: number;
 	readonly from: string;
 	readonly to: string;
 	readonly sha256: string;
 }
 
-export interface RatifiedBaselineReceipt {
+interface RatifiedBaselineReceipt {
 	readonly round: number;
 	readonly path: string;
 	readonly sha256: string;
 	readonly source: "promotion" | "ratified-baseline";
 }
 
-export interface RetirementEvidenceReceipt {
+interface RetirementEvidenceReceipt {
 	readonly scope: "project" | "user";
 	readonly path: string;
 	readonly digest: string;
 }
 
-export interface RetiredReceiptEvent {
+interface RetiredReceiptEvent {
 	readonly kind: "retired";
 	readonly round: number;
 	readonly id: string;
@@ -30,7 +30,7 @@ export interface RetiredReceiptEvent {
 	readonly date: string;
 }
 
-export interface RestoredReceiptEvent {
+interface RestoredReceiptEvent {
 	readonly kind: "restored";
 	readonly round: number;
 	readonly retirementId: string;
@@ -40,9 +40,9 @@ export interface RestoredReceiptEvent {
 	readonly date: string;
 }
 
-export type RetirementReceiptEvent = RetiredReceiptEvent | RestoredReceiptEvent;
+type RetirementReceiptEvent = RetiredReceiptEvent | RestoredReceiptEvent;
 
-export interface RetirementReceiptState {
+interface RetirementReceiptState {
 	readonly id: string;
 	readonly path: string;
 	readonly digest: string;
@@ -476,7 +476,7 @@ function parseRetiredEvent(
 		if (
 			!isExactObject(row, ["scope", "path", "digest"]) ||
 			(row.scope !== "project" && row.scope !== "user") ||
-			!isSafeRelativePath(row.path) ||
+			!isSafePosixRelativePath(row.path) ||
 			!isSha256(row.digest)
 		) {
 			issues.push(`${context}:evidence:${index}`);
@@ -535,7 +535,7 @@ function parseRestoredEvent(
 
 function isSafeProposalPath(value: unknown): value is string {
 	return (
-		isSafeRelativePath(value) &&
+		isSafePosixRelativePath(value) &&
 		value.startsWith("memory/agent/proposals/") &&
 		value.endsWith(".md")
 	);
@@ -543,24 +543,11 @@ function isSafeProposalPath(value: unknown): value is string {
 
 function isSafeKnowledgePath(value: unknown): value is string {
 	return (
-		isSafeRelativePath(value) &&
+		isSafePosixRelativePath(value) &&
 		value.startsWith("knowledge/") &&
 		!value.startsWith("knowledge/retired/") &&
 		value !== "knowledge/retired.md" &&
 		value.endsWith(".md")
-	);
-}
-
-function isSafeRelativePath(value: unknown): value is string {
-	return (
-		typeof value === "string" &&
-		value.length > 0 &&
-		value.trim() === value &&
-		!value.startsWith("/") &&
-		!value.includes("\\") &&
-		!value.includes("\0") &&
-		posix.normalize(value) === value &&
-		value.split("/").every((segment) => segment !== "." && segment !== "..")
 	);
 }
 
@@ -638,5 +625,6 @@ function errorCode(error: unknown): string | undefined {
 
 import type { Dirent } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { join, posix } from "node:path";
+import { join } from "node:path";
 import matter from "gray-matter";
+import { isSafePosixRelativePath } from "./path-safety.ts";

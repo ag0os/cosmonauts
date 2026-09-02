@@ -25,7 +25,7 @@ const KnowledgeTypeLiterals = KNOWLEDGE_RECORD_TYPES.map((type) =>
 	Type.Literal(type),
 );
 
-export interface KnowledgeRecallRequest {
+interface KnowledgeRecallRequest {
 	readonly query: string;
 	readonly limit: number;
 	readonly projectRoot: string;
@@ -37,12 +37,12 @@ export type KnowledgeRecallHandler = (
 	request: KnowledgeRecallRequest,
 ) => Promise<AgentToolResult<Record<string, unknown>>>;
 
-export interface AuthoredRecallStoreOptions {
+interface AuthoredRecallStoreOptions {
 	readonly projectRoot: string;
 	readonly episodeWarningThreshold?: number;
 }
 
-export interface KnowledgeRecallOptions {
+interface KnowledgeRecallOptions {
 	readonly createKnowledgeStore: (projectRoot: string) => MemoryStore;
 	readonly createAuthoredStore?: (
 		options: AuthoredRecallStoreOptions,

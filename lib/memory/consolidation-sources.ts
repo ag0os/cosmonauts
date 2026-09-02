@@ -8,6 +8,10 @@ import {
 } from "./durable-files.ts";
 import { createKnowledgeMemoryStore } from "./knowledge-store.ts";
 import { createMarkdownMemoryStore } from "./markdown-store.ts";
+import {
+	consolidationEvidenceKey,
+	isSafePosixRelativePath,
+} from "./path-safety.ts";
 import type { RetrievedMemoryRecord } from "./types.ts";
 
 export const CONSOLIDATION_SOURCE_SCOPES = ["project", "user"] as const;
@@ -32,6 +36,10 @@ export interface ConsolidationSourceRecord {
 	readonly kind: ConsolidationSourceKind;
 	readonly content: string;
 	readonly metadata: Readonly<Record<string, unknown>>;
+	readonly fileIdentity?: {
+		readonly device: string;
+		readonly inode: string;
+	};
 }
 
 export interface ConsolidationSourceInventoryRecord {
@@ -50,12 +58,14 @@ export interface ConsolidationSourceCollectOptions {
 	readonly maxCorpusBytes: number;
 	readonly maxEpisodeRecordBytes: number;
 	readonly maxEpisodeBytes: number;
-	readonly representedDigests?: readonly string[];
+	readonly representedKeys?: readonly string[];
 	readonly signal?: AbortSignal;
 }
 
-export interface ConsolidationSourceDecline {
-	readonly code: "source-record-bytes-deferred" | "source-aggregate-bytes-deferred";
+interface ConsolidationSourceDecline {
+	readonly code:
+		| "source-record-bytes-deferred"
+		| "source-aggregate-bytes-deferred";
 	readonly path: string;
 	readonly reason: string;
 }
@@ -71,6 +81,10 @@ export interface ConsolidationFinalizedRecord {
 	readonly id: string;
 	readonly digest: string;
 	readonly proposalPaths: readonly string[];
+	readonly fileIdentity?: {
+		readonly device: string;
+		readonly inode: string;
+	};
 }
 
 export interface ConsolidationSource {
@@ -156,7 +170,7 @@ export function createProjectCorpusConsolidationSource(options: {
 			const records: ConsolidationSourceRecord[] = [];
 			const inventory: ConsolidationSourceInventoryRecord[] = [];
 			const declines: ConsolidationSourceDecline[] = [];
-			const representedDigests = new Set(input.representedDigests);
+			const representedKeys = new Set(input.representedKeys);
 			let projectCandidates = 0;
 			let admittedBytes = 0;
 			for (const candidate of candidates) {
@@ -178,7 +192,7 @@ export function createProjectCorpusConsolidationSource(options: {
 				inventory.push(common);
 				if (
 					candidate.scope !== "project" ||
-					representedDigests.has(common.digest)
+					representedKeys.has(consolidationEvidenceKey(common))
 				) {
 					continue;
 				}
@@ -242,7 +256,8 @@ export function createProjectEpisodeConsolidationSource(options: {
 				throwIfAborted(input.signal);
 				const path = relativeProjectPath(projectRoot, record.path);
 				assertDirectProjectEpisodePath(path);
-				const content = await readRegularText(record.path);
+				const snapshot = await readRegularTextSnapshot(record.path);
+				const content = snapshot.content;
 				records.push({
 					id: path,
 					sourceId: PROJECT_EPISODE_SOURCE_ID,
@@ -251,6 +266,7 @@ export function createProjectEpisodeConsolidationSource(options: {
 					digest: sha256(content),
 					kind: "episode",
 					content,
+					fileIdentity: snapshot.identity,
 					metadata: Object.freeze({
 						type: record.type,
 						title: record.title,
@@ -280,6 +296,11 @@ export function createProjectEpisodeConsolidationSource(options: {
 						`Episode ${item.id} has no durable proposal representation.`,
 					);
 				}
+				if (item.fileIdentity === undefined) {
+					throw new ConsolidationSourceContractError(
+						`Episode ${item.id} has no collected file identity.`,
+					);
+				}
 				for (const proposalPath of new Set(item.proposalPaths)) {
 					await assertContainedProposalPath(projectRoot, proposalPath);
 					const proposal = await readRegularText(proposalPath);
@@ -295,8 +316,14 @@ export function createProjectEpisodeConsolidationSource(options: {
 				}
 
 				const episodePath = resolve(projectRoot, ...item.id.split("/"));
-				const content = await readRegularTextIfExists(episodePath);
-				if (content === undefined || sha256(content) !== item.digest) continue;
+				const snapshot = await readRegularTextSnapshotIfExists(episodePath);
+				if (
+					snapshot === undefined ||
+					!sameFileIdentity(snapshot.identity, item.fileIdentity) ||
+					sha256(snapshot.content) !== item.digest
+				) {
+					continue;
+				}
 				await durableFiles.removeFile(episodePath);
 				pruned.push(item.id);
 			}
@@ -313,7 +340,7 @@ export async function collectConsolidationSources(options: {
 	readonly maxEpisodeRecords: number;
 	readonly maxEpisodeRecordBytes: number;
 	readonly maxEpisodeBytes: number;
-	readonly representedDigests?: readonly string[];
+	readonly representedKeys?: readonly string[];
 	readonly signal?: AbortSignal;
 }): Promise<CollectedConsolidationSources> {
 	const records: ConsolidationSourceRecord[] = [];
@@ -351,9 +378,9 @@ export async function collectConsolidationSources(options: {
 			maxCorpusBytes: options.maxCorpusBytes,
 			maxEpisodeRecordBytes: options.maxEpisodeRecordBytes,
 			maxEpisodeBytes: options.maxEpisodeBytes,
-			...(options.representedDigests === undefined
+			...(options.representedKeys === undefined
 				? {}
-				: { representedDigests: options.representedDigests }),
+				: { representedKeys: options.representedKeys }),
 			...(options.signal === undefined ? {} : { signal: options.signal }),
 		});
 		if (!Number.isSafeInteger(snapshot.omitted) || snapshot.omitted < 0) {
@@ -471,7 +498,7 @@ function immutableValidatedInventoryRecord(
 			`Inventory record ${candidate.id} has an unsupported kind: ${String(candidate.kind)}.`,
 		);
 	}
-	if (!isSafeScopeRelativePath(candidate.path)) {
+	if (!isSafePosixRelativePath(candidate.path)) {
 		throw new ConsolidationSourceContractError(
 			`Inventory record ${candidate.id} has unsafe paths data: ${candidate.path}.`,
 		);
@@ -516,7 +543,7 @@ function immutableValidatedRecord(
 			`Record ${candidate.id} has an unsupported kind: ${String(candidate.kind)}.`,
 		);
 	}
-	if (!isSafeScopeRelativePath(candidate.path)) {
+	if (!isSafePosixRelativePath(candidate.path)) {
 		throw new ConsolidationSourceContractError(
 			`Record ${candidate.id} has unsafe paths data: ${candidate.path}.`,
 		);
@@ -557,25 +584,27 @@ function immutableValidatedRecord(
 		kind: candidate.kind,
 		content: candidate.content,
 		metadata,
+		...(candidate.fileIdentity === undefined
+			? {}
+			: {
+					fileIdentity: validatedFileIdentity(
+						candidate.fileIdentity,
+						candidate.id,
+					),
+				}),
 	});
 }
 
-function isSafeScopeRelativePath(value: string): boolean {
-	if (
-		value.length === 0 ||
-		value.includes("\\") ||
-		value.includes("\0") ||
-		isAbsolute(value) ||
-		/^[A-Za-z]:/.test(value)
-	) {
-		return false;
+function validatedFileIdentity(
+	identity: { readonly device: string; readonly inode: string },
+	recordId: string,
+): { readonly device: string; readonly inode: string } {
+	if (identity.device.length === 0 || identity.inode.length === 0) {
+		throw new ConsolidationSourceContractError(
+			`Record ${recordId} has an invalid file identity.`,
+		);
 	}
-	const segments = value.split("/");
-	return (
-		segments.every(
-			(segment) => segment !== "" && segment !== "." && segment !== "..",
-		) && posix.normalize(value) === value
-	);
+	return Object.freeze({ ...identity });
 }
 
 function relativeProjectPath(projectRoot: string, path: string): string {
@@ -585,7 +614,7 @@ function relativeProjectPath(projectRoot: string, path: string): string {
 
 function relativeScopePath(scopeRoot: string, path: string): string {
 	const value = relative(scopeRoot, resolve(path)).split(sep).join("/");
-	if (!isSafeScopeRelativePath(value)) {
+	if (!isSafePosixRelativePath(value)) {
 		throw new ConsolidationSourceContractError(
 			`Source path escapes its scope: ${path}.`,
 		);
@@ -618,7 +647,7 @@ function corpusMetadata(
 
 function assertDirectProjectEpisodePath(path: string): void {
 	if (
-		!isSafeScopeRelativePath(path) ||
+		!isSafePosixRelativePath(path) ||
 		posix.dirname(path) !== PROJECT_EPISODE_DIRECTORY ||
 		!posix.basename(path).endsWith(".md")
 	) {
@@ -661,28 +690,51 @@ function isContained(root: string, candidate: string): boolean {
 }
 
 async function readRegularText(path: string): Promise<string> {
-	const content = await readRegularTextIfExists(path);
-	if (content === undefined) {
+	const snapshot = await readRegularTextSnapshotIfExists(path);
+	if (snapshot === undefined) {
 		throw new ConsolidationSourceContractError(
 			`Episode disappeared while collecting: ${path}.`,
 		);
 	}
-	return content;
+	return snapshot.content;
 }
 
-async function readRegularTextIfExists(
-	path: string,
-): Promise<string | undefined> {
+async function readRegularTextSnapshot(path: string): Promise<{
+	readonly content: string;
+	readonly identity: { readonly device: string; readonly inode: string };
+}> {
+	const snapshot = await readRegularTextSnapshotIfExists(path);
+	if (snapshot === undefined) {
+		throw new ConsolidationSourceContractError(
+			`Episode disappeared while collecting: ${path}.`,
+		);
+	}
+	return snapshot;
+}
+
+async function readRegularTextSnapshotIfExists(path: string): Promise<
+	| {
+			readonly content: string;
+			readonly identity: { readonly device: string; readonly inode: string };
+	  }
+	| undefined
+> {
 	try {
 		const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
 		try {
-			const metadata = await handle.stat();
+			const metadata = await handle.stat({ bigint: true });
 			if (!metadata.isFile()) {
 				throw new ConsolidationSourceContractError(
 					`Episode is not a regular no-follow file: ${path}.`,
 				);
 			}
-			return await handle.readFile("utf-8");
+			return Object.freeze({
+				content: await handle.readFile("utf-8"),
+				identity: Object.freeze({
+					device: String(metadata.dev),
+					inode: String(metadata.ino),
+				}),
+			});
 		} finally {
 			await handle.close();
 		}
@@ -690,6 +742,13 @@ async function readRegularTextIfExists(
 		if (errorCode(error) === "ENOENT") return undefined;
 		throw error;
 	}
+}
+
+function sameFileIdentity(
+	left: { readonly device: string; readonly inode: string },
+	right: { readonly device: string; readonly inode: string },
+): boolean {
+	return left.device === right.device && left.inode === right.inode;
 }
 
 function assertNonEmptyString(value: string, label: string): void {

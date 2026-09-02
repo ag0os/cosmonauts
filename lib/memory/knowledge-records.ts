@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import matter from "gray-matter";
+import { isSafePosixRelativePath } from "./path-safety.ts";
 import type {
 	KnowledgeProposalIdentity,
 	MemoryRecordDraft,
@@ -22,11 +23,11 @@ export interface KnowledgeProvenance {
 	readonly date: string;
 }
 
-export type KnowledgeRetireWhenCheck =
+type KnowledgeRetireWhenCheck =
 	| { readonly kind: "path-exists"; readonly path: string }
 	| { readonly kind: "path-absent"; readonly path: string };
 
-export type KnowledgeRetireWhen =
+type KnowledgeRetireWhen =
 	| string
 	| {
 			readonly condition: string;
@@ -86,9 +87,7 @@ type NormalizeKnowledgeProposalResult =
 	  }
 	| { readonly ok: false; readonly message: string };
 
-export function isKnowledgeRecordType(
-	value: unknown,
-): value is KnowledgeRecordType {
+function isKnowledgeRecordType(value: unknown): value is KnowledgeRecordType {
 	return KNOWLEDGE_RECORD_TYPES.includes(value as KnowledgeRecordType);
 }
 
@@ -498,14 +497,6 @@ export function toRetrievedKnowledgeRecord(options: {
 	readonly path: string;
 }): RetrievedMemoryRecord {
 	return { ...options.record, path: options.path };
-}
-
-export function isSafePosixRelativePath(value: string): boolean {
-	if (!value || value.startsWith("/") || value.includes("\\")) return false;
-	const segments = value.split("/");
-	return segments.every(
-		(segment) => segment.length > 0 && segment !== "." && segment !== "..",
-	);
 }
 
 function invalidField(field: string): ParseKnowledgeRecordResult {

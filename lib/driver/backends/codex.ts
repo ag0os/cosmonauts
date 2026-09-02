@@ -10,9 +10,9 @@ interface CodexBackendDeps {
 	extraArgs?: readonly string[];
 }
 
-export const CODEX_ARGS_ENV = "COSMONAUTS_DRIVER_CODEX_ARGS";
-export const CODEX_EXEC_ARGS_ENV = "COSMONAUTS_DRIVER_CODEX_EXEC_ARGS";
-export const CODEX_YOLO_ENV = "COSMONAUTS_DRIVER_CODEX_YOLO";
+const CODEX_ARGS_ENV = "COSMONAUTS_DRIVER_CODEX_ARGS";
+const CODEX_EXEC_ARGS_ENV = "COSMONAUTS_DRIVER_CODEX_EXEC_ARGS";
+const CODEX_YOLO_ENV = "COSMONAUTS_DRIVER_CODEX_YOLO";
 const CODEX_YOLO_ARG = "--yolo";
 
 export function createCodexBackend(deps: CodexBackendDeps = {}): Backend {

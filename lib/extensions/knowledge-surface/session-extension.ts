@@ -26,9 +26,7 @@ import {
 	registerKnowledgeRecallTool,
 } from "./knowledge-tools.ts";
 
-export { KNOWLEDGE_SURFACE_EXTENSION_NAME } from "./constants.ts";
-
-export interface KnowledgeSurfaceSessionOptions {
+interface KnowledgeSurfaceSessionOptions {
 	readonly agentId: string;
 	readonly registerAgentMemoryTools: boolean;
 	readonly authorizeAuthoredMemory: boolean;

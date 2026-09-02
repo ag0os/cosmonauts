@@ -1,17 +1,11 @@
 import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { lstat, mkdir, readdir } from "node:fs/promises";
-import {
-	basename,
-	isAbsolute,
-	join,
-	posix,
-	relative,
-	resolve,
-} from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import matter from "gray-matter";
 import { withEntityFileLock } from "../entity-file-lock.ts";
 import { createDurableMachineFiles } from "./durable-files.ts";
+import { isSafePosixRelativePath } from "./path-safety.ts";
 import {
 	ensureSafeContainedDirectory,
 	readSafeRegularText,
@@ -428,7 +422,7 @@ function normalizeImproveProposalPath(options: {
 
 function toProjectRelative(projectRoot: string, path: string): string {
 	const relativePath = relative(projectRoot, path).split("\\").join("/");
-	if (!isSafeRelativePath(relativePath)) {
+	if (!isSafePosixRelativePath(relativePath)) {
 		throw new Error(`Living-memory path escapes the project root: ${path}.`);
 	}
 	return relativePath;
@@ -746,22 +740,9 @@ function isEvidenceRef(value: unknown): value is ConsolidationEvidenceRef {
 		candidate.sourceId.length > 0 &&
 		(candidate.scope === "project" || candidate.scope === "user") &&
 		typeof candidate.path === "string" &&
-		isSafeRelativePath(candidate.path) &&
+		isSafePosixRelativePath(candidate.path) &&
 		typeof candidate.digest === "string" &&
 		/^[a-f0-9]{64}$/u.test(candidate.digest)
-	);
-}
-
-function isSafeRelativePath(value: string): boolean {
-	return (
-		value.length > 0 &&
-		!value.includes("\\") &&
-		!value.includes("\0") &&
-		!isAbsolute(value) &&
-		posix.normalize(value) === value &&
-		!value
-			.split("/")
-			.some((segment) => !segment || segment === "." || segment === "..")
 	);
 }
 

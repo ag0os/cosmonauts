@@ -787,7 +787,7 @@ describe("memory interface", () => {
 		);
 		expect(driveSkill).toContain("never `knowledge/`");
 		expect(createHash("sha256").update(typesSource).digest("hex")).toBe(
-			"103242b1196d6c401a0ab8602ecf467578ee20509608b0062b2a3659e9090368",
+			"68faded827aca50ebea0bfdeb340e358f6c49777d1af6f8c7d20c386b5cdd3f6",
 		);
 		expect(
 			createHash("sha256").update(architectureAdapterSource).digest("hex"),
@@ -819,7 +819,7 @@ describe("memory interface", () => {
 		// Knowledge proposals extend the shared seam only with optional fields, so
 		// existing stores and minimal human records remain source-compatible.
 		expect(createHash("sha256").update(typesSource).digest("hex")).toBe(
-			"103242b1196d6c401a0ab8602ecf467578ee20509608b0062b2a3659e9090368",
+			"68faded827aca50ebea0bfdeb340e358f6c49777d1af6f8c7d20c386b5cdd3f6",
 		);
 		expect(
 			createHash("sha256").update(architectureAdapterSource).digest("hex"),
@@ -1331,7 +1331,7 @@ describe("memory interface", () => {
 				inspect: vi.fn(async () => ({
 					recovery: "none" as const,
 					warnings: [],
-					representedDigests: [],
+					representedKeys: [],
 				})),
 				apply: vi.fn(async () => ({
 					kind: "failed" as const,
@@ -2184,7 +2184,7 @@ function livingMemoryDependencies(options: {
 				return {
 					recovery: "none",
 					warnings: [],
-					representedDigests: [],
+					representedKeys: [],
 				};
 			},
 			async apply() {
@@ -2201,6 +2201,8 @@ function livingMemoryDependencies(options: {
 			},
 		};
 	return {
+		lockPath: join(options.projectRoot, ".cosmonauts", "living-memory.lock"),
+		withLock: async (_path, action) => action(),
 		sources: options.sources,
 		...(options.judgmentProvider === undefined
 			? {}

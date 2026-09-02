@@ -797,7 +797,11 @@ function judgmentInput() {
 		deterministicObservations: [],
 		limits: {
 			maxCorpusRecords: 50,
+			maxCorpusRecordBytes: 64 * 1024,
+			maxCorpusBytes: 256 * 1024,
 			maxEpisodeRecords: 50,
+			maxEpisodeRecordBytes: 64 * 1024,
+			maxEpisodeBytes: 256 * 1024,
 			maxObservations: 25,
 			maxProposals: 10,
 			maxRetirements: 5,

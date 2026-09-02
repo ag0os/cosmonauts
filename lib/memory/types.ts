@@ -1,3 +1,4 @@
+import type { withEntityFileLock } from "../entity-file-lock.ts";
 import type {
 	ConsolidationSource,
 	ConsolidationSourceRecord,
@@ -334,6 +335,7 @@ export interface AcceptedJudgmentReceipt {
 	readonly batchKey: string;
 	readonly state: "accepted" | "materialized";
 	readonly inputDigests: readonly string[];
+	readonly inputs?: readonly ConsolidationEvidenceRef[];
 	readonly output: CorpusJudgmentOutput;
 	readonly path: string;
 }
@@ -342,8 +344,9 @@ export interface AcceptedJudgmentReceiptStore {
 	pathFor(batchKey: string): string;
 	list(): Promise<readonly AcceptedJudgmentReceipt[]>;
 	dischargeStale(options: {
-		readonly currentDigests: readonly string[];
+		readonly currentKeys: readonly string[];
 		readonly lockOptions: LivingMemoryLockOptions;
+		readonly lockHeld?: boolean;
 	}): Promise<readonly string[]>;
 	read(batchKey: string): Promise<AcceptedJudgmentReceipt | undefined>;
 	write(receipt: AcceptedJudgmentReceipt): Promise<AcceptedJudgmentReceipt>;
@@ -353,7 +356,7 @@ export interface AcceptedJudgmentReceiptStore {
 export interface LivingMemoryRetirementInspection {
 	readonly recovery: ConsolidationRecovery;
 	readonly warnings: readonly MemoryWarning[];
-	readonly representedDigests: readonly string[];
+	readonly representedKeys: readonly string[];
 	readonly snapshot?: string;
 }
 
@@ -401,6 +404,7 @@ export interface LivingMemoryRetirementStore {
 		readonly maxRetirements: number;
 		readonly signal?: AbortSignal;
 		readonly lockOptions: LivingMemoryLockOptions;
+		readonly lockHeld?: boolean;
 	}): Promise<LivingMemoryRetirementRunResult>;
 }
 
@@ -450,6 +454,8 @@ export interface LivingMemoryLockOptions {
 }
 
 export interface LivingMemoryConsolidatorDependencies {
+	readonly lockPath: string;
+	readonly withLock: typeof withEntityFileLock;
 	readonly sources: readonly ConsolidationSource[];
 	readonly judgmentProvider?: CorpusJudgmentProvider;
 	readonly proposalStore: ConsolidationProposalStore;

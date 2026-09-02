@@ -27,7 +27,7 @@ const LEGACY_CONTEXT_TYPES = new Set([
 	"architecture-map-context",
 ]);
 
-export interface CombinedContextOptions {
+interface CombinedContextOptions {
 	readonly agentId: string;
 	readonly authorizeAuthoredMemory: boolean;
 	readonly authorizeArchitecture: boolean;

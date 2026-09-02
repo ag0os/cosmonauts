@@ -4,6 +4,10 @@ import { join } from "node:path";
 import { withEntityFileLock } from "../entity-file-lock.ts";
 import { createDurableMachineFiles } from "./durable-files.ts";
 import {
+	consolidationEvidenceKey,
+	isSafePosixRelativePath,
+} from "./path-safety.ts";
+import {
 	ensureSafeContainedDirectory,
 	readSafeRegularText,
 	writeSafeExclusiveText,
@@ -16,6 +20,18 @@ import type {
 
 const RECEIPT_ROOT = "memory/agent/consolidations";
 const LOCK_PATH = ".cosmonauts/living-memory.lock";
+
+class ReceiptDischargeError extends Error {
+	readonly writesCommitted: boolean;
+
+	constructor(error: unknown, writesCommitted: boolean) {
+		super(
+			`Accepted judgment receipt discharge failed: ${error instanceof Error ? error.message : String(error)}.`,
+		);
+		this.name = "ReceiptDischargeError";
+		this.writesCommitted = writesCommitted;
+	}
+}
 
 export interface AcceptedJudgmentReceiptStoreWithPaths
 	extends AcceptedJudgmentReceiptStore {
@@ -82,35 +98,50 @@ export function createAcceptedJudgmentReceiptStore(options: {
 		pathFor,
 		list,
 		async dischargeStale(input) {
-			const current = new Set(input.currentDigests);
-			if (![...current].every((digest) => /^[a-f0-9]{64}$/u.test(digest))) {
+			const current = new Set(input.currentKeys);
+			if (![...current].every(isEvidenceKey)) {
 				throw new Error(
-					"Accepted judgment receipt discharge requires SHA-256 digests.",
+					"Accepted judgment receipt discharge requires scope-path-digest keys.",
 				);
 			}
-			let releaseUnconfirmed: unknown;
-			const removed = await lock(
-				join(options.projectRoot, LOCK_PATH),
-				async () => {
-					const stale = (await list()).filter(
-						(receipt) =>
-							receipt.state === "materialized" &&
-							receipt.inputDigests.every((digest) => !current.has(digest)),
-					);
-					for (const receipt of stale) {
-						await durableFiles.removeFile(receipt.path);
-					}
-					return Object.freeze(stale.map((receipt) => receipt.path));
-				},
-				{
-					retryDelayMs: input.lockOptions.retryMs,
-					waitTimeoutMs: input.lockOptions.timeoutMs,
-					onReleaseUnconfirmed(error) {
-						releaseUnconfirmed = error;
-						input.lockOptions.onReleaseUnconfirmed(error);
-					},
-				},
+			const currentDigests = new Set(
+				[...current].map((key) => key.split("\0")[2]),
 			);
+			let releaseUnconfirmed: unknown;
+			const action = async () => {
+				const stale = (await list()).filter(
+					(receipt) =>
+						receipt.state === "materialized" &&
+						(receipt.inputs === undefined
+							? receipt.inputDigests.every(
+									(digest) => !currentDigests.has(digest),
+								)
+							: receipt.inputs.every(
+									(evidence) =>
+										!current.has(consolidationEvidenceKey(evidence)),
+								)),
+				);
+				const removed: string[] = [];
+				for (const receipt of stale) {
+					try {
+						await durableFiles.removeFile(receipt.path);
+						removed.push(receipt.path);
+					} catch (error: unknown) {
+						throw new ReceiptDischargeError(error, removed.length > 0);
+					}
+				}
+				return Object.freeze(removed);
+			};
+			const removed = input.lockHeld
+				? await action()
+				: await lock(join(options.projectRoot, LOCK_PATH), action, {
+						retryDelayMs: input.lockOptions.retryMs,
+						waitTimeoutMs: input.lockOptions.timeoutMs,
+						onReleaseUnconfirmed(error) {
+							releaseUnconfirmed = error;
+							input.lockOptions.onReleaseUnconfirmed(error);
+						},
+					});
 			if (releaseUnconfirmed !== undefined) {
 				throw new Error(
 					`Living-memory lock release could not be confirmed after receipt discharge: ${
@@ -220,12 +251,25 @@ function normalizeReceipt(
 	) {
 		throw new Error("Accepted judgment receipt has invalid input digests.");
 	}
+	if (
+		receipt.inputs !== undefined &&
+		(!Array.isArray(receipt.inputs) || !receipt.inputs.every(isEvidenceRef))
+	) {
+		throw new Error("Accepted judgment receipt has invalid input evidence.");
+	}
 	validateOutput(receipt.output);
 	return Object.freeze({
 		schemaVersion: 1,
 		batchKey: key,
 		state: receipt.state,
 		inputDigests: Object.freeze([...receipt.inputDigests]),
+		...(receipt.inputs === undefined
+			? {}
+			: {
+					inputs: Object.freeze(
+						receipt.inputs.map((evidence) => Object.freeze({ ...evidence })),
+					),
+				}),
 		output: Object.freeze(structuredClone(receipt.output)),
 		path: expectedPath,
 	});
@@ -262,6 +306,9 @@ function parseReceipt(
 			batchKey,
 			state: candidate.state,
 			inputDigests: candidate.inputDigests as string[],
+			...(candidate.inputs === undefined
+				? {}
+				: { inputs: candidate.inputs as AcceptedJudgmentReceipt["inputs"] }),
 			output: candidate.output as CorpusJudgmentOutput,
 			path,
 		},
@@ -276,6 +323,9 @@ function renderReceipt(receipt: AcceptedJudgmentReceipt): string {
 			batchKey: receipt.batchKey,
 			state: receipt.state,
 			inputDigests: [...receipt.inputDigests],
+			...(receipt.inputs === undefined
+				? {}
+				: { inputs: receipt.inputs.map((evidence) => ({ ...evidence })) }),
 			output: receipt.output,
 		},
 		null,
@@ -296,6 +346,37 @@ function validateBatchKey(value: string): string {
 		);
 	}
 	return value;
+}
+
+function isEvidenceRef(
+	value: unknown,
+): value is NonNullable<AcceptedJudgmentReceipt["inputs"]>[number] {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return false;
+	}
+	const candidate = value as Record<string, unknown>;
+	return (
+		Object.keys(candidate).sort().join("\0") ===
+			["digest", "id", "path", "scope", "sourceId"].join("\0") &&
+		typeof candidate.id === "string" &&
+		candidate.id.length > 0 &&
+		typeof candidate.sourceId === "string" &&
+		candidate.sourceId.length > 0 &&
+		(candidate.scope === "project" || candidate.scope === "user") &&
+		isSafePosixRelativePath(candidate.path) &&
+		typeof candidate.digest === "string" &&
+		/^[a-f0-9]{64}$/u.test(candidate.digest)
+	);
+}
+
+function isEvidenceKey(value: string): boolean {
+	const [scope, path, digest, ...rest] = value.split("\0");
+	return (
+		rest.length === 0 &&
+		(scope === "project" || scope === "user") &&
+		isSafePosixRelativePath(path) &&
+		/^[a-f0-9]{64}$/u.test(digest ?? "")
+	);
 }
 
 function errorCode(error: unknown): string | undefined {

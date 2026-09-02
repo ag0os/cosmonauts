@@ -11,16 +11,16 @@ import type {
 } from "../durable-runtime/index.ts";
 import { type DriverRunSpec, resolveStateCommitPolicy } from "./types.ts";
 
-export const DRIVE_FINALIZER_RETRY_POLICY = {
+const DRIVE_FINALIZER_RETRY_POLICY = {
 	maxAttempts: Number.MAX_SAFE_INTEGER,
 } as const;
 
-export interface CompileDriveRunToGraphOptions {
+interface CompileDriveRunToGraphOptions {
 	spec: DriverRunSpec;
 	store: RunStore;
 }
 
-export interface CompiledDriveGraph {
+interface CompiledDriveGraph {
 	run: RunRecord;
 	graph: RunGraph;
 	steps: StepRecord[];
@@ -28,7 +28,7 @@ export interface CompiledDriveGraph {
 	finalizerSteps: RunGraphStep[];
 }
 
-export interface CompiledDriveRunStart {
+interface CompiledDriveRunStart {
 	ref: RunRef;
 	createRun: Omit<CreateRunInput, "scope" | "runId">;
 	graph: RunGraph;

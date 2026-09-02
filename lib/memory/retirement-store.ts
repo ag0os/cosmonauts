@@ -1,13 +1,6 @@
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import {
-	lstat,
-	open,
-	readdir,
-	readFile,
-	realpath,
-	stat,
-} from "node:fs/promises";
+import { lstat, open, readdir, readFile, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
 	EntityFileLockTimeoutError,
@@ -18,7 +11,10 @@ import {
 	DurableRemovalUnsupportedError,
 	type DurableRetirementFiles,
 } from "./durable-files.ts";
-import { isSafePosixRelativePath } from "./knowledge-records.ts";
+import {
+	consolidationEvidenceKey,
+	isSafePosixRelativePath,
+} from "./path-safety.ts";
 import {
 	type RetirementReceiptInventory,
 	readRetirementReceiptInventory,
@@ -91,6 +87,16 @@ interface RetirementJournal {
 	readonly entries: readonly PreparedRetirement[];
 }
 
+class RetirementUnlinkConflictError extends Error {
+	readonly path: string;
+
+	constructor(path: string, reason: string) {
+		super(`Retirement unlink conflict for ${path}: ${reason}.`);
+		this.name = "RetirementUnlinkConflictError";
+		this.path = path;
+	}
+}
+
 export function createLivingMemoryRetirementStore(
 	options: RetirementStoreOptions,
 ): LivingMemoryRetirementStore & LivingMemoryRestorationStore {
@@ -129,31 +135,30 @@ export function createLivingMemoryRetirementStore(
 			let result: LivingMemoryRetirementRunResult;
 			try {
 				await durableFiles.ensureDirectory(join(projectRoot, ".cosmonauts"));
-				result = await lock(
-					join(projectRoot, ...LOCK_PATH.split("/")),
-					async () =>
-						applyUnderLock({
-							projectRoot,
-							durableFiles,
-							candidates: input.candidates,
-							date: canonicalDate(input.date),
-							maxRetirements: input.maxRetirements,
-							inspectCitations,
-							...(input.signal === undefined ? {} : { signal: input.signal }),
-							...(options.failpoint === undefined
-								? {}
-								: { failpoint: options.failpoint }),
-						}),
-					{
-						retryDelayMs: input.lockOptions.retryMs,
-						waitTimeoutMs: input.lockOptions.timeoutMs,
-						onReleaseUnconfirmed(error) {
-							releaseReported = true;
-							releaseUnconfirmed = error;
-							input.lockOptions.onReleaseUnconfirmed(error);
-						},
-					},
-				);
+				const action = () =>
+					applyUnderLock({
+						projectRoot,
+						durableFiles,
+						candidates: input.candidates,
+						date: canonicalDate(input.date),
+						maxRetirements: input.maxRetirements,
+						inspectCitations,
+						...(input.signal === undefined ? {} : { signal: input.signal }),
+						...(options.failpoint === undefined
+							? {}
+							: { failpoint: options.failpoint }),
+					});
+				result = input.lockHeld
+					? await action()
+					: await lock(join(projectRoot, ...LOCK_PATH.split("/")), action, {
+							retryDelayMs: input.lockOptions.retryMs,
+							waitTimeoutMs: input.lockOptions.timeoutMs,
+							onReleaseUnconfirmed(error) {
+								releaseReported = true;
+								releaseUnconfirmed = error;
+								input.lockOptions.onReleaseUnconfirmed(error);
+							},
+						});
 			} catch (error: unknown) {
 				return failedResult({
 					reason: error instanceof Error ? error.message : String(error),
@@ -589,6 +594,10 @@ async function applyUnderLock(options: {
 		committed = true;
 		await options.failpoint?.("after-manifest-sync");
 		for (const entry of entries) {
+			await assertManifestedLinkBeforeUnlink({
+				projectRoot: options.projectRoot,
+				entry,
+			});
 			await options.durableFiles.removeFile(
 				absolutePath(options.projectRoot, entry.originalPath),
 			);
@@ -615,13 +624,31 @@ async function applyUnderLock(options: {
 		const recoveryAttempt = await recoverJournal(options).catch(
 			() => recovered,
 		);
-		const recovery =
-			committed && recoveryAttempt === "none" ? "pending" : recoveryAttempt;
+		const journalPending = await pathExists(
+			absolutePath(options.projectRoot, JOURNAL_PATH),
+		).catch(() => false);
+		const recovery = journalPending
+			? "pending"
+			: committed && recoveryAttempt === "none"
+				? "pending"
+				: recoveryAttempt;
 		return failedResult({
 			reason: error instanceof Error ? error.message : String(error),
 			recovery,
 			warnings: [],
-			writesCommitted: committed || recovery === "rolled-forward",
+			writesCommitted:
+				committed || journalPending || recovery === "rolled-forward",
+			...(error instanceof RetirementUnlinkConflictError
+				? {
+						declines: [
+							{
+								code: "retirement-unlink-conflict",
+								path: error.path,
+								reason: error.message,
+							},
+						],
+					}
+				: {}),
 		});
 	}
 }
@@ -842,6 +869,16 @@ async function recoverJournal(options: {
 		journal.manifestContent,
 	);
 	if (manifestCommitted) {
+		const manifestPath = absolutePath(
+			options.projectRoot,
+			journal.manifestPath,
+		);
+		await options.durableFiles.confirmFileDurability(manifestPath);
+		if (!(await regularFileEquals(manifestPath, journal.manifestContent))) {
+			throw new Error(
+				`Committed retirement manifest changed during durability confirmation: ${journal.manifestPath}.`,
+			);
+		}
 		for (const entry of journal.entries) {
 			const retired = await readRegularBytes(
 				absolutePath(options.projectRoot, entry.retiredPath),
@@ -855,11 +892,10 @@ async function recoverJournal(options: {
 			const livePath = absolutePath(options.projectRoot, entry.originalPath);
 			const live = await readRegularBytes(livePath, options.projectRoot);
 			if (live !== undefined) {
-				if (sha256(live) !== entry.digest) {
-					throw new Error(
-						`Committed retirement live path changed during recovery: ${entry.originalPath}.`,
-					);
-				}
+				await assertManifestedLinkBeforeUnlink({
+					projectRoot: options.projectRoot,
+					entry,
+				});
 				await options.durableFiles.removeFile(livePath);
 			}
 		}
@@ -910,7 +946,7 @@ async function inspectRetirementState(options: {
 }): Promise<{
 	readonly recovery: "none" | "pending" | "concurrent-mutation";
 	readonly warnings: readonly MemoryWarning[];
-	readonly representedDigests: readonly string[];
+	readonly representedKeys: readonly string[];
 	readonly snapshot: string;
 }> {
 	const receipts = await readRetirementReceiptInventory({
@@ -947,12 +983,16 @@ async function inspectRetirementState(options: {
 				? "concurrent-mutation"
 				: "none",
 		warnings: [],
-		representedDigests: Object.freeze([
+		representedKeys: Object.freeze([
 			...new Set(
 				receipts.inventory.retirementEvents.flatMap((event) => [
-					event.digest,
+					consolidationEvidenceKey({
+						scope: "project",
+						path: event.path,
+						digest: event.digest,
+					}),
 					...(event.kind === "retired"
-						? event.evidence.map((evidence) => evidence.digest)
+						? event.evidence.map(consolidationEvidenceKey)
 						: []),
 				]),
 			),
@@ -1200,13 +1240,44 @@ async function regularFileEquals(
 
 async function sameFileIdentity(left: string, right: string): Promise<boolean> {
 	const [leftMetadata, rightMetadata] = await Promise.all([
-		stat(left),
-		stat(right),
+		lstat(left),
+		lstat(right),
 	]);
 	return (
+		!leftMetadata.isSymbolicLink() &&
+		leftMetadata.isFile() &&
+		!rightMetadata.isSymbolicLink() &&
+		rightMetadata.isFile() &&
 		leftMetadata.dev === rightMetadata.dev &&
 		leftMetadata.ino === rightMetadata.ino
 	);
+}
+
+async function assertManifestedLinkBeforeUnlink(options: {
+	readonly projectRoot: string;
+	readonly entry: PreparedRetirement;
+}): Promise<void> {
+	const livePath = absolutePath(
+		options.projectRoot,
+		options.entry.originalPath,
+	);
+	const retiredPath = absolutePath(
+		options.projectRoot,
+		options.entry.retiredPath,
+	);
+	if (!(await sameFileIdentity(livePath, retiredPath).catch(() => false))) {
+		throw new RetirementUnlinkConflictError(
+			options.entry.originalPath,
+			"the live and retired paths no longer identify the same no-follow file",
+		);
+	}
+	const live = await readRegularBytes(livePath, options.projectRoot);
+	if (live === undefined || sha256(live) !== options.entry.digest) {
+		throw new RetirementUnlinkConflictError(
+			options.entry.originalPath,
+			"the live bytes no longer match the manifested digest",
+		);
+	}
 }
 
 async function assertRealContainedDirectory(
@@ -1257,13 +1328,14 @@ function failedResult(options: {
 	readonly recovery: LivingMemoryRetirementRunDetails["recovery"];
 	readonly warnings: readonly MemoryWarning[];
 	readonly writesCommitted?: boolean;
+	readonly declines?: LivingMemoryRetirementRunDetails["declines"];
 }): LivingMemoryRetirementRunResult {
 	return {
 		kind: "failed",
 		reason: options.reason,
 		details: {
 			retirements: [],
-			declines: [],
+			declines: options.declines ?? [],
 			warnings: options.warnings,
 			recovery: options.recovery,
 			writesCommitted: options.writesCommitted ?? false,

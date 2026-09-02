@@ -157,6 +157,8 @@ describe("architecture-memory extension", () => {
 			} satisfies ConsolidationSourceRecord;
 		});
 		const consolidator = createLivingMemoryConsolidator({
+			lockPath: join(projectRoot, ".cosmonauts", "living-memory.lock"),
+			withLock: async (_path, action) => action(),
 			sources: [
 				{
 					id: "user-knowledge",
@@ -190,7 +192,7 @@ describe("architecture-memory extension", () => {
 				inspect: async () => ({
 					recovery: "none",
 					warnings: [],
-					representedDigests: [],
+					representedKeys: [],
 				}),
 				apply: async () => ({
 					kind: "completed" as const,

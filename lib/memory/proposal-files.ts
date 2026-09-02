@@ -2,7 +2,7 @@ import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { DurableMachineFiles } from "./durable-files.ts";
-import { isSafePosixRelativePath } from "./knowledge-records.ts";
+import { isSafePosixRelativePath } from "./path-safety.ts";
 
 export async function ensureSafeContainedDirectory(options: {
 	readonly root: string;
