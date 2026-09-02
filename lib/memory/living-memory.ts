@@ -16,6 +16,7 @@ import type {
 	CorpusJudgmentOutput,
 	JudgedProposal,
 	KnowledgeConsolidator,
+	KnowledgeIndexPressureResult,
 	LivingMemoryConsolidatorDependencies,
 	LivingMemoryLimits,
 	MemoryConsolidateDetails,
@@ -56,6 +57,30 @@ export function createLivingMemoryConsolidator(
 
 		try {
 			throwIfAborted(options.signal);
+			const recoveryRun = dryRun
+				? undefined
+				: await dependencies.retirementStore.apply({
+						candidates: [],
+						dryRun: false,
+						date: dependencies.clock(),
+						maxRetirements: dependencies.limits.maxRetirements,
+						lockOptions: dependencies.lockOptions,
+						...(options.signal === undefined ? {} : { signal: options.signal }),
+					});
+			if (recoveryRun?.kind === "failed") {
+				details = {
+					...details,
+					declines: recoveryRun.details.declines,
+					warnings: recoveryRun.details.warnings,
+					recovery: recoveryRun.details.recovery,
+					writesCommitted: recoveryRun.details.writesCommitted,
+				};
+				return {
+					kind: "failed" as const,
+					reason: recoveryRun.reason,
+					details,
+				};
+			}
 			const collected = await collectConsolidationSources({
 				sources: dependencies.sources,
 				maxCorpusRecords: dependencies.limits.maxCorpusRecords,
@@ -71,37 +96,86 @@ export function createLivingMemoryConsolidator(
 						code: "source-deferred",
 						reason: `${source.omitted} record(s) from ${source.sourceId} were deferred by the bounded source pass.`,
 					})),
+				recovery: recoveryRun?.details.recovery ?? "none",
+				writesCommitted: recoveryRun?.details.writesCommitted ?? false,
 			};
-			const indexRecords = toIndexRecords(collected.records);
-			const pressure = dependencies.indexPressure.measure(indexRecords);
-			if (
-				!pressure.targetSatisfied &&
-				!collected.records.some(
-					(record) => record.scope === "project" && record.kind === "knowledge",
-				)
-			) {
+			const dischargedReceipts = dryRun
+				? Object.freeze([])
+				: await dependencies.acceptedJudgmentReceiptStore.dischargeStale({
+						currentDigests: Object.freeze(
+							collected.records.map((record) => record.digest),
+						),
+						lockOptions: dependencies.lockOptions,
+					});
+			const [receipts, proposalEvidence, retirementInspection] =
+				await Promise.all([
+					dependencies.acceptedJudgmentReceiptStore.list(),
+					dependencies.proposalStore.readEvidence(),
+					dependencies.retirementStore.inspect(collected.records),
+				]);
+			if (dryRun && retirementInspection.recovery !== "none") {
 				details = {
 					...details,
-					declines: Object.freeze([
-						...details.declines,
-						{
-							code: "target-unmet",
-							reason:
-								"Knowledge index pressure remains after safe project candidates are exhausted; user records are measurement-only.",
-						},
-					]),
+					warnings: retirementInspection.warnings,
+					recovery: retirementInspection.recovery,
 				};
-			}
-
-			if (collected.records.length === 0) {
 				return {
-					kind: "noop" as const,
-					reason: "No consolidation work was admitted from healthy sources.",
+					kind: "failed" as const,
+					reason:
+						"Dry-run observes retirement state but never acquires a lock or performs recovery.",
 					details,
 				};
 			}
-			const inventoryRoot = deterministicInventoryRoot(collected.records);
-			const needsRetirementInventory = collected.records.some(
+			const representedDigests = new Set([
+				...receipts.flatMap((receipt) =>
+					receipt.state === "materialized" ? receipt.inputDigests : [],
+				),
+				...proposalEvidence.map((evidence) => evidence.digest),
+				...retirementInspection.representedDigests,
+			]);
+			const currentDigests = collected.records
+				.map((record) => record.digest)
+				.sort();
+			const acceptedCurrentBatch = receipts.some(
+				(receipt) =>
+					receipt.state === "accepted" &&
+					sameStrings([...receipt.inputDigests].sort(), currentDigests),
+			);
+			const selectedRecords = Object.freeze(
+				acceptedCurrentBatch
+					? [...collected.records]
+					: collected.records.filter(
+							(record) => !representedDigests.has(record.digest),
+						),
+			);
+			const maintenanceCommitted =
+				details.writesCommitted || dischargedReceipts.length > 0;
+			details = {
+				...details,
+				warnings: Object.freeze([
+					...details.warnings,
+					...retirementInspection.warnings,
+				]),
+				recovery:
+					details.recovery === "none"
+						? retirementInspection.recovery
+						: details.recovery,
+				writesCommitted: maintenanceCommitted,
+			};
+			if (selectedRecords.length === 0) {
+				return maintenanceCommitted
+					? { kind: "ran" as const, details }
+					: {
+							kind: "noop" as const,
+							reason:
+								collected.records.length === 0
+									? "No consolidation work was admitted from healthy sources."
+									: "All admitted consolidation evidence is already represented.",
+							details,
+						};
+			}
+			const inventoryRoot = deterministicInventoryRoot(selectedRecords);
+			const needsRetirementInventory = selectedRecords.some(
 				(record) => structuredRetireWhen(record.metadata) !== undefined,
 			);
 			const inventory =
@@ -125,10 +199,19 @@ export function createLivingMemoryConsolidator(
 				};
 			}
 			const deterministic = await observeDeterministicRecords(
-				collected.records,
-				inventory?.healthy ?? true,
+				selectedRecords,
+				inventory,
 			);
-			if (deterministic.length > 0) {
+			const pressure = dependencies.indexPressure.measure(
+				toIndexRecords(collected.records),
+			);
+			const needsJudgment =
+				modelMode === "full" &&
+				deterministic.some(
+					(finding) =>
+						finding.retirement !== undefined && finding.proposal === undefined,
+				);
+			if (deterministic.length > 0 && !needsJudgment) {
 				const proposalFindings = deterministic.filter(
 					(finding) => finding.proposal !== undefined,
 				);
@@ -158,7 +241,7 @@ export function createLivingMemoryConsolidator(
 						if (finding.retirement === undefined) return [];
 						const evidence = finding.observation.inputs[0];
 						if (evidence === undefined) return [];
-						const record = collected.records.find(
+						const record = selectedRecords.find(
 							(item) =>
 								item.id === evidence.id && item.sourceId === evidence.sourceId,
 						);
@@ -202,21 +285,18 @@ export function createLivingMemoryConsolidator(
 									? {}
 									: { signal: options.signal }),
 							});
+				const reportedRetirements =
+					retirementRun === undefined
+						? deterministic.flatMap((finding) =>
+								finding.retirement === undefined ? [] : [finding.retirement],
+							)
+						: [...retirementRun.details.retirements, ...capDeferredRetirements];
 				details = {
 					...details,
 					observations: Object.freeze(
 						deterministic.map((finding) => finding.observation),
 					),
-					retirements: Object.freeze(
-						retirementRun === undefined
-							? deterministic.flatMap((finding) =>
-									finding.retirement === undefined ? [] : [finding.retirement],
-								)
-							: [
-									...retirementRun.details.retirements,
-									...capDeferredRetirements,
-								],
-					),
+					retirements: Object.freeze(reportedRetirements),
 					proposals: Object.freeze(proposals),
 					declines: Object.freeze([
 						...details.declines,
@@ -226,6 +306,10 @@ export function createLivingMemoryConsolidator(
 							path: retirement.path,
 							reason: "The bounded retirement cap deferred this candidate.",
 						})),
+						...targetUnmetDeclines({
+							pressure,
+							retirements: reportedRetirements,
+						}),
 					]),
 					warnings: Object.freeze([
 						...details.warnings,
@@ -233,6 +317,7 @@ export function createLivingMemoryConsolidator(
 					]),
 					recovery: retirementRun?.details.recovery ?? details.recovery,
 					writesCommitted:
+						details.writesCommitted ||
 						proposals.some((proposal) => proposal.status === "written") ||
 						(retirementRun?.details.writesCommitted ?? false),
 					...(retirementRun?.details.manifestPath === undefined
@@ -249,6 +334,13 @@ export function createLivingMemoryConsolidator(
 				return { kind: "ran" as const, details };
 			}
 			if (modelMode === "deterministic-only") {
+				details = {
+					...details,
+					declines: Object.freeze([
+						...details.declines,
+						...targetUnmetDeclines({ pressure, retirements: [] }),
+					]),
+				};
 				return {
 					kind: "noop" as const,
 					reason: "No deterministic consolidation observations were found.",
@@ -268,48 +360,193 @@ export function createLivingMemoryConsolidator(
 				schemaVersion: 1 as const,
 				batchKey: batchKey({
 					providerId: dependencies.judgmentProvider.id,
-					records: collected.records,
+					records: selectedRecords,
+					deterministicObservations: deterministic.map(
+						(finding) => finding.observation,
+					),
 				}),
-				records: collected.records,
-				deterministicObservations: Object.freeze([]),
+				records: selectedRecords,
+				deterministicObservations: Object.freeze(
+					deterministic.map((finding) => finding.observation),
+				),
 				limits: Object.freeze({ ...dependencies.limits }),
 			});
-			const output = await dependencies.judgmentProvider.judge(input, {
-				...(options.signal === undefined ? {} : { signal: options.signal }),
-			});
+			const existingReceipt = dryRun
+				? undefined
+				: await dependencies.acceptedJudgmentReceiptStore.read(input.batchKey);
+			const output =
+				existingReceipt?.output ??
+				(await dependencies.judgmentProvider.judge(input, {
+					...(options.signal === undefined ? {} : { signal: options.signal }),
+				}));
 			throwIfAborted(options.signal);
-			const normalized = validateJudgmentOutput({
+			let normalized = validateJudgmentOutput({
 				output,
-				records: collected.records,
+				records: selectedRecords,
 				limits: dependencies.limits,
 			});
-			const retirements = normalized.flatMap((item) => {
-				if (item.proposal?.proposalKind !== "retire") return [];
-				const inputRecord = item.observation.inputs[0];
-				if (!inputRecord) return [];
+			let acceptedReceipt = existingReceipt;
+			const receiptAcceptedThisPass = !dryRun && acceptedReceipt === undefined;
+			if (!dryRun && acceptedReceipt === undefined) {
+				acceptedReceipt = await dependencies.acceptedJudgmentReceiptStore.write(
+					{
+						schemaVersion: 1,
+						batchKey: input.batchKey,
+						state: "accepted",
+						inputDigests: Object.freeze(
+							selectedRecords.map((record) => record.digest),
+						),
+						output: normalizedJudgmentOutput(output),
+						path: dependencies.acceptedJudgmentReceiptStore.pathFor(
+							input.batchKey,
+						),
+					},
+				);
+			}
+			if (acceptedReceipt !== undefined) {
+				normalized = validateJudgmentOutput({
+					output: acceptedReceipt.output,
+					records: selectedRecords,
+					limits: dependencies.limits,
+				});
+				details = {
+					...details,
+					acceptedJudgmentReceiptPath: acceptedReceipt.path,
+					writesCommitted: details.writesCommitted || receiptAcceptedThisPass,
+				};
+			}
+			const proposals = [];
+			for (const item of normalized) {
+				if (item.proposal === undefined) continue;
+				proposals.push(
+					await dependencies.proposalStore.persist({
+						batchKey: input.batchKey,
+						observation: item.observation,
+						proposal: item.proposal,
+						dryRun,
+						...(options.signal === undefined ? {} : { signal: options.signal }),
+					}),
+				);
+			}
+			const retirementCandidates = deterministic.flatMap((finding) => {
+				if (finding.retirement === undefined) return [];
+				const evidence = finding.observation.inputs[0];
+				if (evidence === undefined) return [];
+				const record = selectedRecords.find(
+					(item) =>
+						item.id === evidence.id && item.sourceId === evidence.sourceId,
+				);
+				if (record === undefined) return [];
 				return [
 					{
-						path: inputRecord.path,
-						digest: inputRecord.digest,
+						record,
+						reason: finding.retirement.reason as
+							| "superseded"
+							| "merged"
+							| "obsolete"
+							| "retire-when-met",
+						evidence: finding.observation.inputs,
+						evidenceReason: finding.observation.reason,
+					},
+				];
+			});
+			const retirementRun =
+				retirementCandidates.length === 0
+					? undefined
+					: await dependencies.retirementStore.apply({
+							candidates: retirementCandidates,
+							dryRun,
+							date: dependencies.clock(),
+							maxRetirements: dependencies.limits.maxRetirements,
+							lockOptions: dependencies.lockOptions,
+							...(options.signal === undefined
+								? {}
+								: { signal: options.signal }),
+						});
+			const modelOnlyRetirements = normalized.flatMap((item) => {
+				if (item.proposal?.proposalKind !== "retire") return [];
+				const evidence = item.observation.inputs[0];
+				if (
+					evidence === undefined ||
+					deterministic.some(
+						(finding) =>
+							finding.retirement !== undefined &&
+							finding.observation.inputs.some(
+								(input) =>
+									input.sourceId === evidence.sourceId &&
+									input.id === evidence.id &&
+									input.digest === evidence.digest,
+							),
+					)
+				) {
+					return [];
+				}
+				return [
+					{
+						path: evidence.path,
+						digest: evidence.digest,
 						status: "deferred" as const,
 						reason: item.proposal.reason,
 					},
 				];
 			});
-			const proposalDeclines = normalized
-				.filter((item) => item.proposal !== undefined)
-				.map((item) => ({
-					code: "proposal-deferred",
-					path: item.observation.inputs[0]?.path,
-					reason:
-						"Validated judgment is deferred until proposal persistence is configured by its owning slice.",
-				}));
+			const shouldMaterializeReceipt =
+				acceptedReceipt?.state === "accepted" &&
+				retirementRun?.kind !== "failed";
+			if (shouldMaterializeReceipt) {
+				acceptedReceipt =
+					await dependencies.acceptedJudgmentReceiptStore.markMaterialized(
+						input.batchKey,
+					);
+			}
+			const reportedRetirements = [
+				...(retirementRun?.details.retirements ?? []),
+				...modelOnlyRetirements,
+			];
 			details = {
 				...details,
-				observations: Object.freeze(normalized.map((item) => item.observation)),
-				retirements: Object.freeze(retirements),
-				declines: Object.freeze([...details.declines, ...proposalDeclines]),
+				observations: Object.freeze([
+					...deterministic.map((finding) => finding.observation),
+					...normalized.map((item) => item.observation),
+				]),
+				proposals: Object.freeze(proposals),
+				retirements: Object.freeze(reportedRetirements),
+				declines: Object.freeze([
+					...details.declines,
+					...(retirementRun?.details.declines ?? []),
+					...modelOnlyRetirements.map((retirement) => ({
+						code: "retirement-authority-deferred",
+						path: retirement.path,
+						reason: "Model judgment alone cannot grant retirement authority.",
+					})),
+					...targetUnmetDeclines({
+						pressure,
+						retirements: reportedRetirements,
+					}),
+				]),
+				warnings: Object.freeze([
+					...details.warnings,
+					...(retirementRun?.details.warnings ?? []),
+				]),
+				recovery: retirementRun?.details.recovery ?? details.recovery,
+				writesCommitted:
+					acceptedReceipt !== undefined ||
+					proposals.some((proposal) => proposal.status === "written") ||
+					(retirementRun?.details.writesCommitted ?? false),
+				...(acceptedReceipt === undefined
+					? {}
+					: { acceptedJudgmentReceiptPath: acceptedReceipt.path }),
+				...(retirementRun?.details.manifestPath === undefined
+					? {}
+					: { manifestPath: retirementRun.details.manifestPath }),
 			};
+			if (retirementRun?.kind === "failed") {
+				return {
+					kind: "failed" as const,
+					reason: retirementRun.reason,
+					details,
+				};
+			}
 			return { kind: "ran" as const, details };
 		} catch (error: unknown) {
 			return {
@@ -370,7 +607,7 @@ interface DeterministicFinding {
 
 async function observeDeterministicRecords(
 	records: readonly ConsolidationSourceRecord[],
-	retirementAllowed: boolean,
+	inventory: LivingMemoryCitationInventory | undefined,
 ): Promise<readonly DeterministicFinding[]> {
 	const findings: DeterministicFinding[] = [];
 	for (const record of records) {
@@ -393,6 +630,17 @@ async function observeDeterministicRecords(
 		if (!met) continue;
 		const predicate = `${retireWhen.check.kind} ${retireWhen.check.path} observed ${String(met)}`;
 		const input = evidenceRef(record);
+		const inbound =
+			inventory?.healthy === true
+				? inventory.entries
+						.filter(
+							(entry) =>
+								entry.scope === record.scope &&
+								entry.path !== record.path &&
+								entry.targets.includes(record.path),
+						)
+						.map(citationEvidenceRef)
+				: [];
 		findings.push(
 			Object.freeze({
 				observation: Object.freeze({
@@ -401,10 +649,10 @@ async function observeDeterministicRecords(
 						.digest("hex")
 						.slice(0, 16)}`,
 					kind: "retire-condition-met",
-					inputs: Object.freeze([input]),
+					inputs: Object.freeze([input, ...inbound]),
 					reason: `${retireWhen.condition} (${predicate}).`,
 				}),
-				...(retirementAllowed
+				...(inventory?.healthy !== false
 					? {
 							retirement: Object.freeze({
 								path: record.path,
@@ -418,6 +666,21 @@ async function observeDeterministicRecords(
 		);
 	}
 	return Object.freeze(findings);
+}
+
+function citationEvidenceRef(
+	entry: LivingMemoryCitationInventoryEntry,
+): ConsolidationEvidenceRef {
+	return Object.freeze({
+		id: `citation-${createHash("sha256")
+			.update(`${entry.scope}\0${entry.path}\0${entry.digest}`)
+			.digest("hex")
+			.slice(0, 16)}`,
+		sourceId: "citation-inventory",
+		scope: entry.scope,
+		path: entry.path,
+		digest: entry.digest,
+	});
 }
 
 export interface LivingMemoryCitationInventoryEntry {
@@ -1034,6 +1297,32 @@ function errorCode(error: unknown): string | undefined {
 		: undefined;
 }
 
+function sameStrings(
+	left: readonly string[],
+	right: readonly string[],
+): boolean {
+	return (
+		left.length === right.length &&
+		left.every((value, index) => value === right[index])
+	);
+}
+
+function targetUnmetDeclines(options: {
+	readonly pressure: KnowledgeIndexPressureResult;
+	readonly retirements: MemoryConsolidateDetails["retirements"];
+}): MemoryConsolidateDetails["declines"] {
+	return !options.pressure.targetSatisfied &&
+		!options.retirements.some((retirement) => retirement.status === "applied")
+		? Object.freeze([
+				{
+					code: "target-unmet",
+					reason:
+						"Knowledge index pressure remains after authority-safe project candidates are exhausted.",
+				},
+			])
+		: Object.freeze([]);
+}
+
 function validateJudgmentOutput(options: {
 	readonly output: CorpusJudgmentOutput;
 	readonly records: readonly ConsolidationSourceRecord[];
@@ -1087,6 +1376,11 @@ function validateJudgmentOutput(options: {
 	const consumed = new Set<string>();
 	return Object.freeze(
 		options.output.observations.map((output, index) => {
+			assertExactKeys(
+				output,
+				["kind", "inputIds", "reason", "proposal"],
+				index,
+			);
 			if (!OBSERVATION_KINDS.has(output.kind)) {
 				throw new Error(
 					`Judgment output ${index} has an unsupported observation kind.`,
@@ -1136,6 +1430,28 @@ function validateJudgmentOutput(options: {
 			});
 		}),
 	);
+}
+
+function normalizedJudgmentOutput(
+	output: CorpusJudgmentOutput,
+): CorpusJudgmentOutput {
+	return Object.freeze({
+		schemaVersion: 1,
+		observations: Object.freeze(
+			output.observations.map((observation) =>
+				Object.freeze({
+					kind: observation.kind,
+					inputIds: Object.freeze([...observation.inputIds]),
+					reason: observation.reason.trim(),
+					...(observation.proposal === undefined
+						? {}
+						: {
+								proposal: Object.freeze(structuredClone(observation.proposal)),
+							}),
+				}),
+			),
+		),
+	});
 }
 
 function validateProposal(proposal: JudgedProposal, index: number): void {
@@ -1257,6 +1573,7 @@ function evidenceRef(
 function batchKey(options: {
 	readonly providerId: string;
 	readonly records: readonly ConsolidationSourceRecord[];
+	readonly deterministicObservations: readonly ConsolidationObservation[];
 }): string {
 	const evidence = options.records
 		.map((record) => ({
@@ -1277,7 +1594,7 @@ function batchKey(options: {
 				modelMode: "full",
 				providerId: options.providerId,
 				records: evidence,
-				deterministicObservations: [],
+				deterministicObservations: options.deterministicObservations,
 			}),
 		)
 		.digest("hex");

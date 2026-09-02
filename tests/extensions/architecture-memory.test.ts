@@ -164,11 +164,22 @@ describe("architecture-memory extension", () => {
 				},
 			],
 			proposalStore: {
+				readEvidence: async () => [],
 				persist: async () => {
 					throw new Error("user records must not become proposals");
 				},
 			},
 			acceptedJudgmentReceiptStore: {
+				pathFor: (batchKey) =>
+					join(
+						projectRoot,
+						"memory",
+						"agent",
+						"consolidations",
+						`${batchKey}.json`,
+					),
+				list: async () => [],
+				dischargeStale: async () => [],
 				read: async () => undefined,
 				write: async (receipt) => receipt,
 				markMaterialized: async () => {
@@ -176,7 +187,11 @@ describe("architecture-memory extension", () => {
 				},
 			},
 			retirementStore: {
-				inspect: async () => ({ recovery: "none", warnings: [] }),
+				inspect: async () => ({
+					recovery: "none",
+					warnings: [],
+					representedDigests: [],
+				}),
 				apply: async () => ({
 					kind: "completed" as const,
 					details: {

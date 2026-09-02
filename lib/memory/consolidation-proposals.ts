@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import type { Dirent } from "node:fs";
+import { lstat, readdir } from "node:fs/promises";
+import { isAbsolute, posix } from "node:path";
 import matter from "gray-matter";
 import { createDurableMachineFiles } from "./durable-files.ts";
 import {
@@ -21,6 +24,9 @@ export function createConsolidationProposalStore(options: {
 }): ConsolidationProposalStore {
 	const durableFiles = options.durableFiles ?? createDurableMachineFiles();
 	return {
+		async readEvidence() {
+			return readProposalEvidence(options.projectRoot);
+		},
 		async persist(input) {
 			validateProposalInput(input.observation, input.proposal);
 			const key = validateKey(input.batchKey);
@@ -83,6 +89,61 @@ export function createConsolidationProposalStore(options: {
 			});
 		},
 	};
+}
+
+async function readProposalEvidence(
+	projectRoot: string,
+): Promise<readonly ConsolidationEvidenceRef[]> {
+	const directory = absolutePath(projectRoot, PROPOSAL_ROOT);
+	let entries: Dirent[];
+	try {
+		const metadata = await lstat(directory);
+		if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
+			throw new Error(
+				`Living-memory proposal root is not a regular directory: ${directory}.`,
+			);
+		}
+		entries = await readdir(directory, { withFileTypes: true });
+	} catch (error: unknown) {
+		if (errorCode(error) === "ENOENT") return Object.freeze([]);
+		throw error;
+	}
+
+	const evidence: ConsolidationEvidenceRef[] = [];
+	for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+		if (entry.name.startsWith(".") || !entry.name.endsWith(".md")) continue;
+		if (entry.isSymbolicLink() || !entry.isFile()) {
+			throw new Error(
+				`Living-memory proposal occupant is not a regular file: ${entry.name}.`,
+			);
+		}
+		const relativePath = `${PROPOSAL_ROOT}/${entry.name}`;
+		const raw = await readSafeRegularText({
+			root: projectRoot,
+			relativePath,
+			label: "Living-memory proposal",
+		});
+		if (raw === undefined) {
+			throw new Error(`Living-memory proposal disappeared: ${relativePath}.`);
+		}
+		const data = matter(raw).data;
+		if (
+			data.kind !== "living-memory-proposal" ||
+			data.schemaVersion !== 1 ||
+			!Array.isArray(data.inputs)
+		) {
+			throw new Error(`Living-memory proposal is malformed: ${relativePath}.`);
+		}
+		for (const input of data.inputs) {
+			if (!isEvidenceRef(input)) {
+				throw new Error(
+					`Living-memory proposal has invalid evidence: ${relativePath}.`,
+				);
+			}
+			evidence.push(Object.freeze({ ...input }));
+		}
+	}
+	return Object.freeze(evidence);
 }
 
 export function renderConsolidationProposal(options: {
@@ -169,6 +230,43 @@ function validateProposalInput(
 	}
 }
 
+function isEvidenceRef(value: unknown): value is ConsolidationEvidenceRef {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return false;
+	}
+	const candidate = value as Record<string, unknown>;
+	const keys = Object.keys(candidate).sort();
+	if (
+		keys.join("\0") !== ["digest", "id", "path", "scope", "sourceId"].join("\0")
+	) {
+		return false;
+	}
+	return (
+		typeof candidate.id === "string" &&
+		candidate.id.length > 0 &&
+		typeof candidate.sourceId === "string" &&
+		candidate.sourceId.length > 0 &&
+		(candidate.scope === "project" || candidate.scope === "user") &&
+		typeof candidate.path === "string" &&
+		isSafeRelativePath(candidate.path) &&
+		typeof candidate.digest === "string" &&
+		/^[a-f0-9]{64}$/u.test(candidate.digest)
+	);
+}
+
+function isSafeRelativePath(value: string): boolean {
+	return (
+		value.length > 0 &&
+		!value.includes("\\") &&
+		!value.includes("\0") &&
+		!isAbsolute(value) &&
+		posix.normalize(value) === value &&
+		!value
+			.split("/")
+			.some((segment) => !segment || segment === "." || segment === "..")
+	);
+}
+
 function validateKey(value: string): string {
 	if (!/^[a-f0-9]{64}$/u.test(value)) {
 		throw new Error("Living-memory proposal keys must be SHA-256 digests.");
@@ -206,4 +304,10 @@ function tableCell(value: string): string {
 
 function sha256(value: string): string {
 	return createHash("sha256").update(value).digest("hex");
+}
+
+function errorCode(error: unknown): string | undefined {
+	return error !== null && typeof error === "object" && "code" in error
+		? String((error as NodeJS.ErrnoException).code)
+		: undefined;
 }

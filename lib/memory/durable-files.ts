@@ -18,6 +18,7 @@ export interface DurableMachineFiles extends LivingMemoryDurableFiles {
 		readonly content: string;
 		readonly signal?: AbortSignal;
 	}): Promise<{ readonly path: string; readonly digest: string }>;
+	removeFile(path: string): Promise<void>;
 }
 
 export interface DurableRetirementFiles extends DurableMachineFiles {
@@ -40,11 +41,12 @@ export class DurableRemovalUnsupportedError extends Error {
 	}
 }
 
-/** Durable machine-state writes only. Source removal authority is intentionally absent. */
+/** Durable machine-state mutation only. Source removal authority is absent. */
 export function createDurableMachineFiles(): DurableMachineFiles {
 	return {
 		writeText: writeTextExclusive,
 		replaceText,
+		removeFile: durableRemove,
 	};
 }
 

@@ -283,6 +283,7 @@ export interface KnowledgeIndexPressurePolicy {
 }
 
 export interface ConsolidationProposalStore {
+	readEvidence(): Promise<readonly ConsolidationEvidenceRef[]>;
 	persist(options: {
 		readonly batchKey: string;
 		readonly observation: ConsolidationObservation;
@@ -302,6 +303,12 @@ export interface AcceptedJudgmentReceipt {
 }
 
 export interface AcceptedJudgmentReceiptStore {
+	pathFor(batchKey: string): string;
+	list(): Promise<readonly AcceptedJudgmentReceipt[]>;
+	dischargeStale(options: {
+		readonly currentDigests: readonly string[];
+		readonly lockOptions: LivingMemoryLockOptions;
+	}): Promise<readonly string[]>;
 	read(batchKey: string): Promise<AcceptedJudgmentReceipt | undefined>;
 	write(receipt: AcceptedJudgmentReceipt): Promise<AcceptedJudgmentReceipt>;
 	markMaterialized(batchKey: string): Promise<AcceptedJudgmentReceipt>;
@@ -310,6 +317,7 @@ export interface AcceptedJudgmentReceiptStore {
 export interface LivingMemoryRetirementInspection {
 	readonly recovery: ConsolidationRecovery;
 	readonly warnings: readonly MemoryWarning[];
+	readonly representedDigests: readonly string[];
 	readonly snapshot?: string;
 }
 

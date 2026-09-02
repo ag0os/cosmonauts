@@ -1,4 +1,7 @@
+import type { Dirent } from "node:fs";
+import { lstat, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import { withEntityFileLock } from "../entity-file-lock.ts";
 import { createDurableMachineFiles } from "./durable-files.ts";
 import {
 	ensureSafeContainedDirectory,
@@ -12,6 +15,7 @@ import type {
 } from "./types.ts";
 
 const RECEIPT_ROOT = "memory/agent/consolidations";
+const LOCK_PATH = ".cosmonauts/living-memory.lock";
 
 export interface AcceptedJudgmentReceiptStoreWithPaths
 	extends AcceptedJudgmentReceiptStore {
@@ -21,16 +25,103 @@ export interface AcceptedJudgmentReceiptStoreWithPaths
 export function createAcceptedJudgmentReceiptStore(options: {
 	readonly projectRoot: string;
 	readonly durableFiles?: ReturnType<typeof createDurableMachineFiles>;
+	readonly withLock?: typeof withEntityFileLock;
 }): AcceptedJudgmentReceiptStoreWithPaths {
 	const durableFiles = options.durableFiles ?? createDurableMachineFiles();
+	const lock = options.withLock ?? withEntityFileLock;
 	const pathFor = (batchKey: string) =>
 		join(
 			options.projectRoot,
 			RECEIPT_ROOT,
 			`${validateBatchKey(batchKey)}.json`,
 		);
+	const list = async (): Promise<readonly AcceptedJudgmentReceipt[]> => {
+		const directory = join(options.projectRoot, RECEIPT_ROOT);
+		let entries: Dirent[];
+		try {
+			const metadata = await lstat(directory);
+			if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
+				throw new Error(
+					`Accepted judgment receipt root is not a regular directory: ${directory}.`,
+				);
+			}
+			entries = await readdir(directory, { withFileTypes: true });
+		} catch (error: unknown) {
+			if (errorCode(error) === "ENOENT") return Object.freeze([]);
+			throw error;
+		}
+		const receipts: AcceptedJudgmentReceipt[] = [];
+		for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+			if (entry.name.startsWith(".")) continue;
+			if (!/^[a-f0-9]{64}\.json$/u.test(entry.name)) {
+				throw new Error(
+					`Accepted judgment receipt has an invalid filename: ${entry.name}.`,
+				);
+			}
+			if (entry.isSymbolicLink() || !entry.isFile()) {
+				throw new Error(
+					`Accepted judgment receipt occupant is not a regular file: ${entry.name}.`,
+				);
+			}
+			const batchKey = entry.name.slice(0, -".json".length);
+			const raw = await readSafeRegularText({
+				root: options.projectRoot,
+				relativePath: `${RECEIPT_ROOT}/${entry.name}`,
+				label: "Accepted judgment receipt",
+			});
+			if (raw === undefined) {
+				throw new Error(
+					`Accepted judgment receipt disappeared: ${entry.name}.`,
+				);
+			}
+			receipts.push(parseReceipt(raw, pathFor(batchKey), batchKey));
+		}
+		return Object.freeze(receipts);
+	};
 	return {
 		pathFor,
+		list,
+		async dischargeStale(input) {
+			const current = new Set(input.currentDigests);
+			if (![...current].every((digest) => /^[a-f0-9]{64}$/u.test(digest))) {
+				throw new Error(
+					"Accepted judgment receipt discharge requires SHA-256 digests.",
+				);
+			}
+			let releaseUnconfirmed: unknown;
+			const removed = await lock(
+				join(options.projectRoot, LOCK_PATH),
+				async () => {
+					const stale = (await list()).filter(
+						(receipt) =>
+							receipt.state === "materialized" &&
+							receipt.inputDigests.every((digest) => !current.has(digest)),
+					);
+					for (const receipt of stale) {
+						await durableFiles.removeFile(receipt.path);
+					}
+					return Object.freeze(stale.map((receipt) => receipt.path));
+				},
+				{
+					retryDelayMs: input.lockOptions.retryMs,
+					waitTimeoutMs: input.lockOptions.timeoutMs,
+					onReleaseUnconfirmed(error) {
+						releaseUnconfirmed = error;
+						input.lockOptions.onReleaseUnconfirmed(error);
+					},
+				},
+			);
+			if (releaseUnconfirmed !== undefined) {
+				throw new Error(
+					`Living-memory lock release could not be confirmed after receipt discharge: ${
+						releaseUnconfirmed instanceof Error
+							? releaseUnconfirmed.message
+							: String(releaseUnconfirmed)
+					}.`,
+				);
+			}
+			return removed;
+		},
 		async read(batchKey) {
 			const key = validateBatchKey(batchKey);
 			const raw = await readSafeRegularText({
@@ -194,4 +285,10 @@ function validateBatchKey(value: string): string {
 		);
 	}
 	return value;
+}
+
+function errorCode(error: unknown): string | undefined {
+	return error !== null && typeof error === "object" && "code" in error
+		? String((error as NodeJS.ErrnoException).code)
+		: undefined;
 }

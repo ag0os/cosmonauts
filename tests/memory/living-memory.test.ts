@@ -1073,6 +1073,7 @@ describe("living memory", () => {
 		await mkdir(projectRoot, { recursive: true });
 		const durableFiles = createDurableMachineFiles();
 		expect(Object.keys(durableFiles).sort()).toEqual([
+			"removeFile",
 			"replaceText",
 			"writeText",
 		]);
@@ -1323,6 +1324,660 @@ describe("living memory", () => {
 		});
 	});
 
+	// @cosmo-behavior plan:living-memory#B-005
+	test("keeps cited 9608b54 live and emits the ruled edit-narrow proposal", async () => {
+		const projectRoot = join(tmp.path, "cited-gotcha-project");
+		const relativePath = "knowledge/cited-gotcha.md";
+		const livePath = join(projectRoot, relativePath);
+		const raw = [
+			"---",
+			"type: gotcha",
+			"title: Ephemeral session compaction",
+			"description: Session compaction has different within-run and across-run guarantees.",
+			"resource: cited-gotcha.md",
+			"tags:",
+			"  - memory",
+			"timestamp: '2026-09-01T12:00:00.000Z'",
+			"scope: project",
+			"kind: semantic",
+			"retire-when:",
+			"  condition: Within-run compaction is now fixed.",
+			"  check:",
+			"    kind: path-exists",
+			"    path: fixed-within-run.txt",
+			"---",
+			"",
+			"# Ephemeral session compaction",
+			"",
+			"Across-run persistence still requires an external durable episode store.",
+			"",
+			"Within-run compaction is not automatic for ephemeral sessions.",
+			"",
+		].join("\n");
+		const input = record({
+			id: "cited-gotcha",
+			sourceId: "corpus",
+			path: relativePath,
+			kind: "knowledge",
+			content: raw,
+			metadata: {
+				type: "gotcha",
+				title: "Ephemeral session compaction",
+				description:
+					"Session compaction has different within-run and across-run guarantees.",
+				resource: "cited-gotcha.md",
+				tags: ["memory"],
+				timestamp: "2026-09-01T12:00:00.000Z",
+				retireWhen: {
+					condition: "Within-run compaction is now fixed.",
+					check: { kind: "path-exists", path: "fixed-within-run.txt" },
+				},
+				scopeRoot: projectRoot,
+			},
+		});
+		await mkdir(join(projectRoot, "knowledge"), { recursive: true });
+		await mkdir(join(projectRoot, "missions", "architecture"), {
+			recursive: true,
+		});
+		await mkdir(join(projectRoot, "missions", "reviews"), {
+			recursive: true,
+		});
+		await writeFile(livePath, raw);
+		await writeFile(join(projectRoot, "fixed-within-run.txt"), "fixed\n");
+		await writeFile(
+			join(projectRoot, "missions", "architecture", "consumer.md"),
+			"# Consumer\n\nKeep the [across-run warning](../../knowledge/cited-gotcha.md).\n",
+		);
+		await writeFile(
+			join(
+				projectRoot,
+				"missions",
+				"reviews",
+				"knowledge-surface-promotion-1.md",
+			),
+			promotionLedger({ path: relativePath, digest: input.digest }),
+		);
+		const replacement = {
+			type: "gotcha" as const,
+			title: "Ephemeral session compaction",
+			description:
+				"Across-run persistence still requires an external durable episode store.",
+			content:
+				"# Ephemeral session compaction\n\nAcross-run persistence still requires an external durable episode store.\n",
+			tags: ["memory"],
+		};
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async (request) => {
+			expect(request.deterministicObservations).toEqual([
+				expect.objectContaining({
+					kind: "retire-condition-met",
+					inputs: expect.arrayContaining([
+						expect.objectContaining({
+							scope: "project",
+							path: relativePath,
+							digest: input.digest,
+						}),
+						expect.objectContaining({
+							scope: "project",
+							path: "missions/architecture/consumer.md",
+							digest: expect.stringMatching(/^[a-f0-9]{64}$/u),
+						}),
+					]),
+				}),
+			]);
+			return {
+				schemaVersion: 1,
+				observations: [
+					{
+						kind: "obsolete-cause",
+						inputIds: [input.id],
+						reason:
+							"The within-run cause is fixed, but the cited across-run warning remains current.",
+						proposal: { proposalKind: "merge", replacement },
+					},
+				],
+			};
+		});
+		const indexPressure = {
+			measure: vi.fn(() => ({
+				targetSatisfied: false,
+				recordCount: 51,
+				maxRecords: 50,
+				renderedBytes: 8_001,
+				guaranteedBytes: 8_000,
+				headroomBytes: 512,
+			})),
+		};
+		const result = await createHarness(
+			[
+				source("corpus", [
+					input,
+					record({
+						id: "unselected-context",
+						sourceId: "corpus",
+						path: "memory/context.md",
+						kind: "artifact",
+						content: "# Unselected context\n",
+					}),
+				]),
+			],
+			{ id: "fake/no-tools", judge },
+			{
+				proposalStore: createConsolidationProposalStore({ projectRoot }),
+				retirementStore: createLivingMemoryRetirementStore({ projectRoot }),
+				indexPressure,
+			},
+		).consolidator();
+		if (result.kind === "failed") throw new Error(result.reason);
+
+		expect(result).toMatchObject({
+			kind: "ran",
+			details: {
+				proposals: [
+					{
+						proposalKind: "merge",
+						status: "written",
+						inputs: [{ path: relativePath, digest: input.digest }],
+					},
+				],
+				retirements: [],
+				declines: expect.arrayContaining([
+					expect.objectContaining({
+						code: "retirement-inbound-citation",
+						path: relativePath,
+					}),
+					expect.objectContaining({ code: "target-unmet" }),
+				]),
+			},
+		});
+		expect(judge).toHaveBeenCalledOnce();
+		expect(indexPressure.measure).toHaveBeenCalledOnce();
+		await expect(readFile(livePath, "utf-8")).resolves.toBe(raw);
+		if (
+			result.kind !== "ran" ||
+			result.details.proposals[0]?.path === undefined
+		) {
+			throw new Error("expected one persisted edit-narrow proposal");
+		}
+		const proposal = await readFile(result.details.proposals[0].path, "utf-8");
+		expect(proposal).toContain(
+			"Across-run persistence still requires an external durable episode store.",
+		);
+		expect(proposal).not.toContain(
+			"Within-run compaction is not automatic for ephemeral sessions.",
+		);
+	});
+
+	// @cosmo-behavior plan:living-memory#B-006
+	test("writes evidence-bound merge and parent-edit proposals without changing knowledge", async () => {
+		const projectRoot = join(tmp.path, "reflector-project");
+		const fixtures = [
+			{
+				id: "duplicate-a",
+				path: "knowledge/duplicate-a.md",
+				content: "# Retry boundary\n\nRetry only idempotent operations.\n",
+			},
+			{
+				id: "duplicate-b",
+				path: "knowledge/duplicate-b.md",
+				content: "# Retry boundary copy\n\nRetry only idempotent operations.\n",
+			},
+			{
+				id: "memory-parent",
+				path: "knowledge/memory-parent.md",
+				content:
+					"# Memory operations\n\nRetries require idempotency. Timeouts must be bounded.\n",
+			},
+			{
+				id: "retry-detail",
+				path: "knowledge/details/retry.md",
+				content: "# Retry policy\n\nRetries require idempotency.\n",
+			},
+			{
+				id: "timeout-detail",
+				path: "knowledge/details/timeouts.md",
+				content: "# Timeout policy\n\nTimeouts must be bounded.\n",
+			},
+		] as const;
+		const records = fixtures.map((fixture) =>
+			record({
+				...fixture,
+				sourceId: "corpus",
+				kind: "knowledge",
+			}),
+		);
+		for (const fixture of fixtures) {
+			const path = join(projectRoot, fixture.path);
+			await mkdir(dirname(path), { recursive: true });
+			await writeFile(path, fixture.content);
+		}
+		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [
+				{
+					kind: "duplicate",
+					inputIds: ["duplicate-a", "duplicate-b"],
+					reason: "Both records encode the same retry boundary.",
+					proposal: {
+						proposalKind: "merge",
+						replacement: {
+							type: "gotcha",
+							title: "Retry boundary",
+							description: "Retry only idempotent operations.",
+							content:
+								"# Retry boundary\n\nRetry only idempotent operations.\n",
+							tags: ["retries", "memory"],
+						},
+					},
+				},
+				{
+					kind: "merge-candidate",
+					inputIds: ["memory-parent"],
+					reason:
+						"The typed detail records are authoritative and the parent should only link them.",
+					proposal: {
+						proposalKind: "merge",
+						replacement: {
+							type: "decision",
+							title: "Memory operations",
+							description: "Overview of the typed operational records.",
+							content: [
+								"# Memory operations",
+								"",
+								"See [Retry policy](details/retry.md) and [Timeout policy](details/timeouts.md).",
+								"",
+							].join("\n"),
+							tags: ["memory", "overview"],
+						},
+					},
+				},
+			],
+		}));
+		const result = await createHarness(
+			[source("corpus", records)],
+			{ id: "fake/no-tools", judge },
+			{
+				proposalStore: createConsolidationProposalStore({ projectRoot }),
+				acceptedJudgmentReceiptStore: receiptStore,
+			},
+		).consolidator();
+		if (result.kind === "failed") throw new Error(result.reason);
+
+		expect(result).toMatchObject({
+			kind: "ran",
+			details: {
+				proposals: [
+					{
+						proposalKind: "merge",
+						status: "written",
+						inputs: [
+							{
+								scope: "project",
+								path: "knowledge/duplicate-a.md",
+								digest: records[0]?.digest,
+							},
+							{
+								scope: "project",
+								path: "knowledge/duplicate-b.md",
+								digest: records[1]?.digest,
+							},
+						],
+					},
+					{
+						proposalKind: "merge",
+						status: "written",
+						inputs: [
+							{
+								scope: "project",
+								path: "knowledge/memory-parent.md",
+								digest: records[2]?.digest,
+							},
+						],
+					},
+				],
+			},
+		});
+		if (result.kind !== "ran") throw new Error("expected Reflector to run");
+		const receipt = await receiptStore.read(
+			result.details.proposals[0]?.key ?? "missing",
+		);
+		expect(receipt).toMatchObject({ state: "materialized" });
+		const proposalFiles = await Promise.all(
+			result.details.proposals.map(async (proposal) => {
+				if (proposal.path === undefined)
+					throw new Error("missing proposal path");
+				return readFile(proposal.path, "utf-8");
+			}),
+		);
+		expect(proposalFiles[0]).toContain('"title": "Retry boundary"');
+		expect(proposalFiles[0]).toContain(
+			'"content": "# Retry boundary\\n\\nRetry only idempotent operations.\\n"',
+		);
+		expect(proposalFiles[1]).toContain("[Retry policy](details/retry.md)");
+		expect(proposalFiles[1]).toContain("[Timeout policy](details/timeouts.md)");
+		expect(proposalFiles[1]).not.toContain(
+			"Retries require idempotency. Timeouts must be bounded.",
+		);
+		for (const fixture of fixtures) {
+			await expect(
+				readFile(join(projectRoot, fixture.path), "utf-8"),
+			).resolves.toBe(fixture.content);
+		}
+	});
+
+	// @cosmo-behavior plan:living-memory#B-016
+	test("rehydrates accepted judgment and persisted evidence then converges to noop", async () => {
+		const projectRoot = join(tmp.path, "convergence-project");
+		const proposalRaw = knowledgeFixture({ resource: "proposal.md" });
+		const retirementRaw = knowledgeFixture({ resource: "retire.md" });
+		const proposalPath = join(projectRoot, "knowledge", "proposal.md");
+		const retirementPath = join(projectRoot, "knowledge", "retire.md");
+		await mkdir(join(projectRoot, "knowledge"), { recursive: true });
+		await mkdir(join(projectRoot, "missions", "reviews"), {
+			recursive: true,
+		});
+		await writeFile(proposalPath, proposalRaw);
+		await writeFile(retirementPath, retirementRaw);
+		await writeFile(join(projectRoot, "fixed.txt"), "fixed\n");
+		const proposalRecord = record({
+			id: "proposal-record",
+			sourceId: "corpus",
+			path: "knowledge/proposal.md",
+			kind: "knowledge",
+			content: proposalRaw,
+		});
+		const retirementRecord = record({
+			id: "retirement-record",
+			sourceId: "corpus",
+			path: "knowledge/retire.md",
+			kind: "knowledge",
+			content: retirementRaw,
+			metadata: {
+				type: "gotcha",
+				retireWhen: {
+					condition: "The replacement exists.",
+					check: { kind: "path-exists", path: "fixed.txt" },
+				},
+				scopeRoot: projectRoot,
+			},
+		});
+		const contextRecord = record({
+			id: "context-record",
+			sourceId: "corpus",
+			path: "memory/context.md",
+			kind: "artifact",
+			content: "# Context\n",
+		});
+		const proposalOnlyRecord = record({
+			id: "proposal-only-record",
+			sourceId: "corpus",
+			path: "memory/proposal-only.md",
+			kind: "artifact",
+			content: "# Proposal-only evidence\n",
+		});
+		const manifestOnlyRecord = record({
+			id: "manifest-only-record",
+			sourceId: "corpus",
+			path: "memory/manifest-only.md",
+			kind: "reflection",
+			content: "# Manifest-only evidence\n",
+		});
+		await writeFile(
+			join(
+				projectRoot,
+				"missions",
+				"reviews",
+				"knowledge-surface-promotion-1.md",
+			),
+			promotionLedger({
+				path: retirementRecord.path,
+				digest: retirementRecord.digest,
+			}),
+		);
+		let lastCollectedIds: readonly string[] = [];
+		let includeRepresentedFixtures = false;
+		const corpus: ConsolidationSource = {
+			id: "corpus",
+			async collect() {
+				const records = [proposalRecord, contextRecord];
+				if (await fileExists(retirementPath)) records.push(retirementRecord);
+				if (includeRepresentedFixtures) {
+					records.push(proposalOnlyRecord, manifestOnlyRecord);
+				}
+				lastCollectedIds = records.map((item) => item.id);
+				return { records, omitted: 0 };
+			},
+		};
+		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
+		const staleMaterializedKey = createHash("sha256")
+			.update("stale-materialized")
+			.digest("hex");
+		const staleAcceptedKey = createHash("sha256")
+			.update("stale-accepted")
+			.digest("hex");
+		for (const [batchKey, state] of [
+			[staleMaterializedKey, "materialized"],
+			[staleAcceptedKey, "accepted"],
+		] as const) {
+			await receiptStore.write({
+				schemaVersion: 1,
+				batchKey,
+				state: "accepted",
+				inputDigests: [
+					createHash("sha256").update(`stale-${state}`).digest("hex"),
+				],
+				output: { schemaVersion: 1, observations: [] },
+				path: receiptStore.pathFor(batchKey),
+			});
+			if (state === "materialized") {
+				await receiptStore.markMaterialized(batchKey);
+			}
+		}
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [
+				{
+					kind: "merge-candidate",
+					inputIds: [proposalRecord.id],
+					reason: "  The record should become a concise canonical decision.  ",
+					proposal: {
+						proposalKind: "merge",
+						replacement: proposed("Canonical proposal"),
+					},
+				},
+			],
+		}));
+		const durableProposalStore = createConsolidationProposalStore({
+			projectRoot,
+		});
+		let crashProposalPath: string | undefined;
+		const crashed = await createHarness(
+			[corpus],
+			{ id: "fake/no-tools", judge },
+			{
+				acceptedJudgmentReceiptStore: receiptStore,
+				proposalStore: {
+					readEvidence: () => durableProposalStore.readEvidence(),
+					async persist(input) {
+						const accepted = await receiptStore.read(input.batchKey);
+						expect(accepted).toMatchObject({ state: "accepted" });
+						const written = await durableProposalStore.persist(input);
+						crashProposalPath = written.path;
+						throw new Error("simulated crash after durable proposal");
+					},
+				},
+				retirementStore: createLivingMemoryRetirementStore({ projectRoot }),
+			},
+		).consolidator();
+		expect(crashed).toMatchObject({
+			kind: "failed",
+			reason: "simulated crash after durable proposal",
+			details: { writesCommitted: true },
+		});
+		expect(crashProposalPath).toBeDefined();
+		expect(judge).toHaveBeenCalledOnce();
+		const acceptedBatchKey = judge.mock.calls[0]?.[0].batchKey;
+		if (acceptedBatchKey === undefined) throw new Error("missing accepted key");
+		const acceptedReceipt = await receiptStore.read(acceptedBatchKey);
+		expect(acceptedReceipt).toMatchObject({
+			state: "accepted",
+		});
+		expect(acceptedReceipt?.output.observations[0]?.reason).toBe(
+			"The record should become a concise canonical decision.",
+		);
+
+		const completed = await createHarness(
+			[corpus],
+			{ id: "fake/no-tools", judge },
+			{
+				acceptedJudgmentReceiptStore: createAcceptedJudgmentReceiptStore({
+					projectRoot,
+				}),
+				proposalStore: createConsolidationProposalStore({ projectRoot }),
+				retirementStore: createLivingMemoryRetirementStore({ projectRoot }),
+			},
+		).consolidator();
+		if (completed.kind === "failed") throw new Error(completed.reason);
+		expect(completed).toMatchObject({
+			kind: "ran",
+			details: {
+				proposals: [
+					{
+						path: crashProposalPath,
+						status: "existing",
+					},
+				],
+				retirements: [
+					{
+						path: retirementRecord.path,
+						status: "applied",
+					},
+				],
+			},
+		});
+		expect(judge).toHaveBeenCalledOnce();
+		await expect(fileExists(retirementPath)).resolves.toBe(false);
+		await expect(
+			createAcceptedJudgmentReceiptStore({ projectRoot }).read(
+				acceptedBatchKey,
+			),
+		).resolves.toMatchObject({ state: "materialized" });
+		includeRepresentedFixtures = true;
+		await durableProposalStore.persist({
+			batchKey: createHash("sha256")
+				.update("proposal-only-representation")
+				.digest("hex"),
+			observation: {
+				id: "proposal-only-1",
+				kind: "merge-candidate",
+				inputs: [
+					{
+						id: proposalOnlyRecord.id,
+						sourceId: proposalOnlyRecord.sourceId,
+						scope: proposalOnlyRecord.scope,
+						path: proposalOnlyRecord.path,
+						digest: proposalOnlyRecord.digest,
+					},
+				],
+				reason: "Fixture proposal representation.",
+			},
+			proposal: {
+				proposalKind: "merge",
+				replacement: proposed("Proposal-only representation"),
+			},
+			dryRun: false,
+		});
+		await writeFile(
+			join(projectRoot, "memory", "agent", "retirements", "round-2.md"),
+			retiredManifest({
+				round: 2,
+				id: "manifest-only-representation",
+				path: "knowledge/synthetic-retired.md",
+				digest: manifestOnlyRecord.digest,
+			}),
+		);
+
+		const converged = await createHarness(
+			[corpus],
+			{ id: "fake/no-tools", judge },
+			{
+				acceptedJudgmentReceiptStore: createAcceptedJudgmentReceiptStore({
+					projectRoot,
+				}),
+				proposalStore: createConsolidationProposalStore({ projectRoot }),
+				retirementStore: createLivingMemoryRetirementStore({ projectRoot }),
+			},
+		).consolidator();
+		expect(converged).toMatchObject({
+			kind: "noop",
+			details: {
+				proposals: [],
+				retirements: [],
+				writesCommitted: false,
+			},
+		});
+		expect(judge).toHaveBeenCalledOnce();
+		expect(lastCollectedIds).not.toContain(retirementRecord.id);
+		expect(lastCollectedIds).toEqual(
+			expect.arrayContaining([
+				contextRecord.id,
+				proposalOnlyRecord.id,
+				manifestOnlyRecord.id,
+			]),
+		);
+		await expect(
+			fileExists(receiptStore.pathFor(staleMaterializedKey)),
+		).resolves.toBe(false);
+		await expect(
+			fileExists(receiptStore.pathFor(staleAcceptedKey)),
+		).resolves.toBe(true);
+		await expect(
+			fileExists(receiptStore.pathFor(acceptedBatchKey)),
+		).resolves.toBe(true);
+
+		const recoveryFixture = await createRetirementFixture(
+			"pipeline-recovery-project",
+		);
+		const child = await runRetirementChild(
+			recoveryFixture.projectRoot,
+			"after-manifest-sync",
+		);
+		expect(child).toMatchObject({ code: 86, signal: null });
+		const recoveringSource: ConsolidationSource = {
+			id: "corpus",
+			async collect() {
+				return {
+					records: (await fileExists(recoveryFixture.livePath))
+						? [recoveryFixture.input]
+						: [],
+					omitted: 0,
+				};
+			},
+		};
+		const recoveryOverrides = {
+			retirementStore: createLivingMemoryRetirementStore({
+				projectRoot: recoveryFixture.projectRoot,
+			}),
+		};
+		const recovered = await createHarness(
+			[recoveringSource],
+			undefined,
+			recoveryOverrides,
+		).consolidator({ modelMode: "deterministic-only" });
+		expect(recovered).toMatchObject({
+			kind: "ran",
+			details: { recovery: "rolled-forward", writesCommitted: true },
+		});
+		await expect(fileExists(recoveryFixture.livePath)).resolves.toBe(false);
+		await expect(
+			createHarness(
+				[recoveringSource],
+				undefined,
+				recoveryOverrides,
+			).consolidator({ modelMode: "deterministic-only" }),
+		).resolves.toMatchObject({ kind: "noop" });
+	});
+
 	// @cosmo-behavior plan:living-memory#B-018
 	test("accepts valid fake source snapshots and rejects contract violations", async () => {
 		const content =
@@ -1347,7 +2002,15 @@ describe("living memory", () => {
 				id: "fake/no-tools",
 				judge,
 			})(),
-		).resolves.toMatchObject({ kind: "ran" });
+		).resolves.toMatchObject({
+			kind: "ran",
+			details: {
+				observations: [],
+				proposals: [],
+				retirements: [],
+				writesCommitted: true,
+			},
+		});
 		expect(judge).toHaveBeenCalledOnce();
 
 		const duplicate = record({
@@ -1501,13 +2164,14 @@ describe("living memory", () => {
 				],
 				declines: expect.arrayContaining([
 					expect.objectContaining({ code: "source-deferred" }),
-					expect.objectContaining({ code: "proposal-deferred" }),
+					expect.objectContaining({ code: "retirement-authority-deferred" }),
 				]),
-				writesCommitted: false,
+				writesCommitted: true,
 			},
 		});
 		if (ran.kind !== "ran") throw new Error("expected bounded pass to run");
 		expect(ran.details.observations).toHaveLength(25);
+		expect(ran.details.proposals).toHaveLength(10);
 		expect(ran.details.retirements).toHaveLength(5);
 		expect(judge).toHaveBeenCalledOnce();
 
@@ -1585,6 +2249,56 @@ describe("living memory", () => {
 								proposalKind: "retire" as const,
 								reason: "superseded" as const,
 								path: "knowledge/model-chosen.md",
+							},
+						},
+					],
+				},
+			},
+			{
+				label: "unknown input id",
+				output: {
+					schemaVersion: 1 as const,
+					observations: [
+						{
+							kind: "duplicate" as const,
+							inputIds: ["not-admitted"],
+							reason: "Unknown evidence must fail closed.",
+						},
+					],
+				},
+			},
+			{
+				label: "unsupported proposal fields",
+				output: {
+					schemaVersion: 1 as const,
+					observations: [
+						{
+							kind: "duplicate" as const,
+							inputIds: ["corpus-0"],
+							reason: "Open output shapes must fail closed.",
+							confidence: 1,
+						},
+					],
+				},
+			},
+			{
+				label: "incomplete replacement",
+				output: {
+					schemaVersion: 1 as const,
+					observations: [
+						{
+							kind: "merge-candidate" as const,
+							inputIds: ["corpus-0"],
+							reason: "Replacement bytes must be complete.",
+							proposal: {
+								proposalKind: "merge" as const,
+								replacement: {
+									type: "decision" as const,
+									title: "Incomplete replacement",
+									description: "Missing complete body bytes.",
+									content: "",
+									tags: ["memory"],
+								},
 							},
 						},
 					],
@@ -1689,7 +2403,10 @@ function createHarness(
 	overrides: Partial<
 		Pick<
 			LivingMemoryConsolidatorDependencies,
-			"proposalStore" | "retirementStore"
+			| "acceptedJudgmentReceiptStore"
+			| "indexPressure"
+			| "proposalStore"
+			| "retirementStore"
 		>
 	> = {},
 ): {
@@ -1700,19 +2417,40 @@ function createHarness(
 		sources,
 		judgmentProvider,
 		proposalStore: overrides.proposalStore ?? {
-			persist: vi.fn(async () => {
-				throw new Error("proposal persistence is not expected");
-			}),
+			readEvidence: vi.fn(async () => []),
+			persist: vi.fn(async (input) => ({
+				proposalKind: input.proposal.proposalKind,
+				key: input.batchKey,
+				inputs: input.observation.inputs,
+				contentDigest: createHash("sha256")
+					.update(JSON.stringify(input.proposal))
+					.digest("hex"),
+				status: input.dryRun ? ("preview" as const) : ("written" as const),
+			})),
 		},
-		acceptedJudgmentReceiptStore: {
+		acceptedJudgmentReceiptStore: overrides.acceptedJudgmentReceiptStore ?? {
+			pathFor: vi.fn(
+				(batchKey) => `/tmp/living-memory-consolidations/${batchKey}.json`,
+			),
+			list: vi.fn(async () => []),
+			dischargeStale: vi.fn(async () => []),
 			read: vi.fn(async () => undefined),
 			write: vi.fn(async (receipt) => receipt),
-			markMaterialized: vi.fn(async () => {
-				throw new Error("receipt materialization is not expected");
-			}),
+			markMaterialized: vi.fn(async (batchKey) => ({
+				schemaVersion: 1 as const,
+				batchKey,
+				state: "materialized" as const,
+				inputDigests: [],
+				output: { schemaVersion: 1 as const, observations: [] },
+				path: `/tmp/living-memory-consolidations/${batchKey}.json`,
+			})),
 		},
 		retirementStore: overrides.retirementStore ?? {
-			inspect: vi.fn(async () => ({ recovery: "none" as const, warnings: [] })),
+			inspect: vi.fn(async () => ({
+				recovery: "none" as const,
+				warnings: [],
+				representedDigests: [],
+			})),
 			apply: vi.fn(
 				async (input: Parameters<LivingMemoryRetirementStore["apply"]>[0]) => ({
 					kind: "completed" as const,
@@ -1738,7 +2476,7 @@ function createHarness(
 				throw new Error("durable writes are not expected");
 			}),
 		},
-		indexPressure: {
+		indexPressure: overrides.indexPressure ?? {
 			measure: vi.fn(() => ({
 				targetSatisfied: true,
 				recordCount: 0,

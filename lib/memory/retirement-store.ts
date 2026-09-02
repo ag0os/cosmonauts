@@ -660,8 +660,17 @@ async function inspectRetirementState(options: {
 }): Promise<{
 	readonly recovery: "none" | "pending" | "concurrent-mutation";
 	readonly warnings: readonly MemoryWarning[];
+	readonly representedDigests: readonly string[];
 	readonly snapshot: string;
 }> {
+	const receipts = await readRetirementReceiptInventory({
+		projectRoot: options.projectRoot,
+	});
+	if (receipts.kind !== "healthy") {
+		throw new Error(
+			`Retirement receipt inventory is unhealthy: ${receipts.issues.join(", ")}.`,
+		);
+	}
 	const journalPresent = await pathExists(
 		absolutePath(options.projectRoot, JOURNAL_PATH),
 	);
@@ -688,6 +697,16 @@ async function inspectRetirementState(options: {
 				? "concurrent-mutation"
 				: "none",
 		warnings: [],
+		representedDigests: Object.freeze([
+			...new Set(
+				receipts.inventory.retirementEvents.flatMap((event) => [
+					event.digest,
+					...(event.kind === "retired"
+						? event.evidence.map((evidence) => evidence.digest)
+						: []),
+				]),
+			),
+		]),
 		snapshot: sha256(JSON.stringify(state)),
 	};
 }
