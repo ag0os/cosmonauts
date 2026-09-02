@@ -1,7 +1,7 @@
 ---
 id: TASK-620
 title: B-009 follow-up — Ignore citations inside code spans and fenced blocks
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-619
 createdAt: '2026-09-02T18:22:08.586Z'
-updatedAt: '2026-09-02T18:22:08.586Z'
+updatedAt: '2026-09-02T18:28:15.446Z'
 ---
 
 ## Description
@@ -26,9 +26,9 @@ Fix: exclude inline code spans and fenced code blocks from markdown-link and pat
 Binding ratified ground — stop and escalate rather than adjust it: never move, edit, or delete anything under this repository's live `knowledge/`; temp fixtures only; `knowledgeSurface` stays on; no live retirement round; no TTL, OM, scheduling, user-scope L4 mutation, embeddings, new OKF type, or explicit-save change. Do not suppress the finding by lowering caps or disabling a channel — genuine citations outside code regions must still be found.
 
 <!-- AC:BEGIN -->
-- [ ] #1 Markdown links and path-shaped backtick tokens appearing inside inline code spans or fenced code blocks are not treated as citations: the live corpus no longer reports `knowledge/url` from `knowledge/code-structure-map.md`, satisfying the TASK-619 AC#1 case that remained unmet.
-- [ ] #2 Citations outside code regions are unaffected: the existing B-009 fixture still yields its stale findings for its markdown link, its `files:` frontmatter entry, and its path-shaped backtick token, and `files:` frontmatter extraction is untouched.
-- [ ] #3 B-009 remains green under its exact existing name and marker, extended with cases proving a link inside an inline code span and a link inside a fenced block are both ignored while an equivalent link in ordinary prose is still detected.
-- [ ] #4 A live `bun bin/cosmonauts memory consolidate --dry-run --no-model --json` from the repository root completes as `ran` or `noop` and every remaining unresolved-citation token genuinely fails to resolve on disk, with no example-only or code-quoted token among them.
-- [ ] #5 Project-native universal correctness evidence passes after every commit; the Slice 0 B-001 receipt test and every marker B-001..B-021 remain green and owned by their original tasks; live `knowledge/` and `memory/` stay byte-identical with a clean worktree.
+- [x] #1 Markdown links and path-shaped backtick tokens appearing inside inline code spans or fenced code blocks are not treated as citations: the live corpus no longer reports `knowledge/url` from `knowledge/code-structure-map.md`, satisfying the TASK-619 AC#1 case that remained unmet.
+- [x] #2 Citations outside code regions are unaffected: the existing B-009 fixture still yields its stale findings for its markdown link, its `files:` frontmatter entry, and its path-shaped backtick token, and `files:` frontmatter extraction is untouched.
+- [x] #3 B-009 remains green under its exact existing name and marker, extended with cases proving a link inside an inline code span and a link inside a fenced block are both ignored while an equivalent link in ordinary prose is still detected.
+- [x] #4 A live `bun bin/cosmonauts memory consolidate --dry-run --no-model --json` from the repository root completes as `ran` or `noop` and every remaining unresolved-citation token genuinely fails to resolve on disk, with no example-only or code-quoted token among them.
+- [x] #5 Project-native universal correctness evidence passes after every commit; the Slice 0 B-001 receipt test and every marker B-001..B-021 remain green and owned by their original tasks; live `knowledge/` and `memory/` stay byte-identical with a clean worktree.
 <!-- AC:END -->
