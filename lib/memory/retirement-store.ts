@@ -1,7 +1,15 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open, readdir, readFile, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import {
+	basename,
+	dirname,
+	isAbsolute,
+	join,
+	relative,
+	resolve,
+	sep,
+} from "node:path";
 import {
 	EntityFileLockTimeoutError,
 	withEntityFileLock,
@@ -38,6 +46,7 @@ export const LIVING_MEMORY_RETIREMENT_FAILPOINTS = [
 	"after-journal-sync",
 	"after-retired-link-sync",
 	"after-manifest-sync",
+	"after-live-tombstone-sync",
 	"after-live-unlink-sync",
 	"before-journal-remove",
 ] as const;
@@ -71,6 +80,7 @@ interface PreparedRetirement {
 	readonly id: string;
 	readonly originalPath: string;
 	readonly retiredPath: string;
+	readonly tombstonePath: string;
 	readonly digest: string;
 	readonly reason: LivingMemoryRetirementCandidate["reason"];
 	readonly evidence: readonly ConsolidationEvidenceRef[];
@@ -118,8 +128,12 @@ export function createLivingMemoryRetirementStore(
 		});
 
 	return {
-		async inspect(records) {
-			return inspectRetirementState({ projectRoot, records });
+		async inspect(records, inspectOptions = {}) {
+			return inspectRetirementState({
+				projectRoot,
+				records,
+				lockHeld: inspectOptions.lockHeld ?? false,
+			});
 		},
 		async apply(input) {
 			if (input.dryRun) {
@@ -525,7 +539,23 @@ async function applyUnderLock(options: {
 	let recovered: "none" | "rolled-back" | "rolled-forward" = "none";
 	let committed = false;
 	try {
-		recovered = await recoverJournal(options);
+		const initialRecovery = await recoverJournal(options);
+		recovered = initialRecovery.recovery;
+		if (initialRecovery.conflicts.length > 0) {
+			const conflict = initialRecovery
+				.conflicts[0] as RetirementUnlinkConflictError;
+			return failedResult({
+				reason: conflict.message,
+				recovery: recovered,
+				writesCommitted: recovered === "rolled-forward",
+				declines: initialRecovery.conflicts.map((item) => ({
+					code: "retirement-unlink-conflict",
+					path: item.path,
+					reason: item.message,
+				})),
+				warnings: [],
+			});
+		}
 		throwIfAborted(options.signal);
 		if (
 			!Number.isSafeInteger(options.maxRetirements) ||
@@ -594,13 +624,14 @@ async function applyUnderLock(options: {
 		committed = true;
 		await options.failpoint?.("after-manifest-sync");
 		for (const entry of entries) {
-			await assertManifestedLinkBeforeUnlink({
+			await removeManifestedLiveThroughTombstone({
 				projectRoot: options.projectRoot,
+				durableFiles: options.durableFiles,
 				entry,
+				...(options.failpoint === undefined
+					? {}
+					: { failpoint: options.failpoint }),
 			});
-			await options.durableFiles.removeFile(
-				absolutePath(options.projectRoot, entry.originalPath),
-			);
 		}
 		await options.failpoint?.("after-live-unlink-sync");
 		await options.failpoint?.("before-journal-remove");
@@ -621,17 +652,18 @@ async function applyUnderLock(options: {
 			manifestPath: absolutePath(options.projectRoot, manifestPath),
 		});
 	} catch (error: unknown) {
-		const recoveryAttempt = await recoverJournal(options).catch(
-			() => recovered,
-		);
+		const recoveryAttempt = await recoverJournal(options).catch(() => ({
+			recovery: recovered,
+			conflicts: Object.freeze([]),
+		}));
 		const journalPending = await pathExists(
 			absolutePath(options.projectRoot, JOURNAL_PATH),
 		).catch(() => false);
 		const recovery = journalPending
 			? "pending"
-			: committed && recoveryAttempt === "none"
+			: committed && recoveryAttempt.recovery === "none"
 				? "pending"
-				: recoveryAttempt;
+				: recoveryAttempt.recovery;
 		return failedResult({
 			reason: error instanceof Error ? error.message : String(error),
 			recovery,
@@ -818,10 +850,12 @@ function prepareRetirement(options: {
 	readonly date: string;
 }): PreparedRetirement {
 	const path = options.candidate.record.path;
+	const id = `retirement-${options.round}-${options.index + 1}-${options.candidate.record.digest.slice(0, 12)}`;
 	return {
-		id: `retirement-${options.round}-${options.index + 1}-${options.candidate.record.digest.slice(0, 12)}`,
+		id,
 		originalPath: path,
 		retiredPath: deriveRetiredPath(path),
+		tombstonePath: deriveTombstonePath(path, id, randomUUID()),
 		digest: options.candidate.record.digest,
 		reason: options.candidate.reason,
 		evidence: options.candidate.evidence,
@@ -861,14 +895,20 @@ async function prepareCapabilities(options: {
 async function recoverJournal(options: {
 	readonly projectRoot: string;
 	readonly durableFiles: DurableRetirementFiles;
-}): Promise<"none" | "rolled-back" | "rolled-forward"> {
+}): Promise<{
+	readonly recovery: "none" | "rolled-back" | "rolled-forward";
+	readonly conflicts: readonly RetirementUnlinkConflictError[];
+}> {
 	const journal = await readJournal(options.projectRoot);
-	if (journal === undefined) return "none";
+	if (journal === undefined) {
+		return { recovery: "none", conflicts: Object.freeze([]) };
+	}
 	const manifestCommitted = await regularFileEquals(
 		absolutePath(options.projectRoot, journal.manifestPath),
 		journal.manifestContent,
 	);
 	if (manifestCommitted) {
+		const conflicts: RetirementUnlinkConflictError[] = [];
 		const manifestPath = absolutePath(
 			options.projectRoot,
 			journal.manifestPath,
@@ -880,35 +920,39 @@ async function recoverJournal(options: {
 			);
 		}
 		for (const entry of journal.entries) {
-			const retired = await readRegularBytes(
-				absolutePath(options.projectRoot, entry.retiredPath),
-				options.projectRoot,
-			);
-			if (retired === undefined || sha256(retired) !== entry.digest) {
-				throw new Error(
-					`Committed retirement is missing its byte-identical destination: ${entry.originalPath}.`,
-				);
-			}
-			const livePath = absolutePath(options.projectRoot, entry.originalPath);
-			const live = await readRegularBytes(livePath, options.projectRoot);
-			if (live !== undefined) {
-				await assertManifestedLinkBeforeUnlink({
-					projectRoot: options.projectRoot,
-					entry,
-				});
-				await options.durableFiles.removeFile(livePath);
-			}
+			const conflict = await recoverCommittedEntry({
+				projectRoot: options.projectRoot,
+				durableFiles: options.durableFiles,
+				entry,
+			});
+			if (conflict !== undefined) conflicts.push(conflict);
 		}
 		await options.durableFiles.removeFile(
 			absolutePath(options.projectRoot, JOURNAL_PATH),
 		);
-		return "rolled-forward";
+		return {
+			recovery: "rolled-forward",
+			conflicts: Object.freeze(conflicts),
+		};
 	}
 	for (const entry of journal.entries) {
-		const live = await readRegularBytes(
-			absolutePath(options.projectRoot, entry.originalPath),
+		const livePath = absolutePath(options.projectRoot, entry.originalPath);
+		const tombstonePath = absolutePath(
 			options.projectRoot,
+			entry.tombstonePath,
 		);
+		if (await pathExists(tombstonePath)) {
+			if (await pathExists(livePath)) {
+				throw new Error(
+					`Uncommitted retirement has both live and tombstone paths: ${entry.originalPath}.`,
+				);
+			}
+			await options.durableFiles.renameFile({
+				sourcePath: tombstonePath,
+				destinationPath: livePath,
+			});
+		}
+		const live = await readRegularBytes(livePath, options.projectRoot);
 		if (live === undefined || sha256(live) !== entry.digest) {
 			throw new Error(
 				`Uncommitted retirement cannot prove its live source: ${entry.originalPath}.`,
@@ -919,10 +963,7 @@ async function recoverJournal(options: {
 		if (retired !== undefined) {
 			if (
 				sha256(retired) !== entry.digest ||
-				!(await sameFileIdentity(
-					absolutePath(options.projectRoot, entry.originalPath),
-					retiredPath,
-				))
+				!(await sameFileIdentity(livePath, retiredPath))
 			) {
 				throw new Error(
 					`Uncommitted retirement destination is not the prepared hard link: ${entry.originalPath}.`,
@@ -934,11 +975,112 @@ async function recoverJournal(options: {
 	await options.durableFiles.removeFile(
 		absolutePath(options.projectRoot, JOURNAL_PATH),
 	);
-	return "rolled-back";
+	return { recovery: "rolled-back", conflicts: Object.freeze([]) };
+}
+
+async function recoverCommittedEntry(options: {
+	readonly projectRoot: string;
+	readonly durableFiles: DurableRetirementFiles;
+	readonly entry: PreparedRetirement;
+}): Promise<RetirementUnlinkConflictError | undefined> {
+	const livePath = absolutePath(
+		options.projectRoot,
+		options.entry.originalPath,
+	);
+	const retiredPath = absolutePath(
+		options.projectRoot,
+		options.entry.retiredPath,
+	);
+	const tombstonePath = absolutePath(
+		options.projectRoot,
+		options.entry.tombstonePath,
+	);
+	if (await pathExists(tombstonePath)) {
+		if (
+			await manifestedTombstoneMatches({
+				projectRoot: options.projectRoot,
+				entry: options.entry,
+			})
+		) {
+			await options.durableFiles.removeFile(tombstonePath);
+			return undefined;
+		}
+		if (await pathExists(livePath)) {
+			throw new Error(
+				`Committed retirement cannot restore its tombstone because the live path is occupied: ${options.entry.originalPath}.`,
+			);
+		}
+		await options.durableFiles.renameFile({
+			sourcePath: tombstonePath,
+			destinationPath: livePath,
+		});
+		await removeChangedRetiredDuplicate({
+			livePath,
+			retiredPath,
+			digest: options.entry.digest,
+			durableFiles: options.durableFiles,
+		});
+		return new RetirementUnlinkConflictError(
+			options.entry.originalPath,
+			"the transaction tombstone did not match the manifested retired object and was restored",
+		);
+	}
+
+	const live = await readRegularBytes(livePath, options.projectRoot);
+	if (live !== undefined) {
+		if (
+			(await sameFileIdentity(livePath, retiredPath).catch(() => false)) &&
+			sha256(live) === options.entry.digest
+		) {
+			await removeManifestedLiveThroughTombstone(options);
+			return undefined;
+		}
+		await removeChangedRetiredDuplicate({
+			livePath,
+			retiredPath,
+			digest: options.entry.digest,
+			durableFiles: options.durableFiles,
+		});
+		return new RetirementUnlinkConflictError(
+			options.entry.originalPath,
+			"the live path contains bytes other than the manifested retired object and remains live",
+		);
+	}
+
+	const retired = await readRegularBytes(retiredPath, options.projectRoot);
+	if (retired === undefined || sha256(retired) !== options.entry.digest) {
+		throw new Error(
+			`Committed retirement is missing its byte-identical destination: ${options.entry.originalPath}.`,
+		);
+	}
+	return undefined;
+}
+
+async function removeChangedRetiredDuplicate(options: {
+	readonly livePath: string;
+	readonly retiredPath: string;
+	readonly digest: string;
+	readonly durableFiles: DurableRetirementFiles;
+}): Promise<void> {
+	if (
+		!(await sameFileIdentity(options.livePath, options.retiredPath).catch(
+			() => false,
+		))
+	) {
+		return;
+	}
+	const live = await readRegularBytes(
+		options.livePath,
+		dirname(options.livePath),
+	);
+	if (live !== undefined && sha256(live) !== options.digest) {
+		await options.durableFiles.removeFile(options.retiredPath);
+	}
 }
 
 async function inspectRetirementState(options: {
 	readonly projectRoot: string;
+	readonly lockHeld?: boolean;
 	readonly records: readonly {
 		readonly path: string;
 		readonly digest: string;
@@ -963,7 +1105,8 @@ async function inspectRetirementState(options: {
 	const lockPresent = await pathExists(
 		absolutePath(options.projectRoot, LOCK_PATH),
 	);
-	const state: Array<unknown> = [journalPresent, lockPresent];
+	const foreignLockPresent = lockPresent && !options.lockHeld;
+	const state: Array<unknown> = [journalPresent, foreignLockPresent];
 	for (const record of [...options.records].sort((a, b) =>
 		a.path.localeCompare(b.path),
 	)) {
@@ -979,7 +1122,7 @@ async function inspectRetirementState(options: {
 	return {
 		recovery: journalPresent
 			? "pending"
-			: lockPresent
+			: foreignLockPresent
 				? "concurrent-mutation"
 				: "none",
 		warnings: [],
@@ -1067,6 +1210,7 @@ function isRetirementJournal(value: unknown): value is RetirementJournal {
 					"id",
 					"originalPath",
 					"retiredPath",
+					"tombstonePath",
 					"digest",
 					"reason",
 					"evidence",
@@ -1077,6 +1221,11 @@ function isRetirementJournal(value: unknown): value is RetirementJournal {
 				/^[a-z0-9][a-z0-9._-]*$/u.test(entry.id) &&
 				isSafeKnowledgePath(entry.originalPath) &&
 				entry.retiredPath === deriveRetiredPath(entry.originalPath) &&
+				isRetirementTombstonePath({
+					originalPath: entry.originalPath,
+					id: entry.id,
+					tombstonePath: entry.tombstonePath,
+				}) &&
 				isSha256(entry.digest) &&
 				isRetirementReason(entry.reason) &&
 				Array.isArray(entry.evidence) &&
@@ -1166,6 +1315,30 @@ function deriveRetiredPath(path: string): string {
 	return `knowledge/retired/${path.slice("knowledge/".length)}`;
 }
 
+function deriveTombstonePath(
+	originalPath: string,
+	id: string,
+	nonce: string,
+): string {
+	return `${dirname(originalPath)}/.${basename(originalPath)}.${id}.${nonce}.tombstone`;
+}
+
+function isRetirementTombstonePath(options: {
+	readonly originalPath: string;
+	readonly id: string;
+	readonly tombstonePath: unknown;
+}): boolean {
+	return (
+		typeof options.tombstonePath === "string" &&
+		isSafePosixRelativePath(options.tombstonePath) &&
+		dirname(options.tombstonePath) === dirname(options.originalPath) &&
+		basename(options.tombstonePath).startsWith(
+			`.${basename(options.originalPath)}.${options.id}.`,
+		) &&
+		basename(options.tombstonePath).endsWith(".tombstone")
+	);
+}
+
 function isSafeKnowledgePath(value: unknown): value is string {
 	return (
 		typeof value === "string" &&
@@ -1253,7 +1426,7 @@ async function sameFileIdentity(left: string, right: string): Promise<boolean> {
 	);
 }
 
-async function assertManifestedLinkBeforeUnlink(options: {
+async function assertManifestedLinkBeforeTombstone(options: {
 	readonly projectRoot: string;
 	readonly entry: PreparedRetirement;
 }): Promise<void> {
@@ -1278,6 +1451,69 @@ async function assertManifestedLinkBeforeUnlink(options: {
 			"the live bytes no longer match the manifested digest",
 		);
 	}
+}
+
+async function manifestedTombstoneMatches(options: {
+	readonly projectRoot: string;
+	readonly entry: PreparedRetirement;
+}): Promise<boolean> {
+	const tombstonePath = absolutePath(
+		options.projectRoot,
+		options.entry.tombstonePath,
+	);
+	const retiredPath = absolutePath(
+		options.projectRoot,
+		options.entry.retiredPath,
+	);
+	if (
+		!(await sameFileIdentity(tombstonePath, retiredPath).catch(() => false))
+	) {
+		return false;
+	}
+	const tombstone = await readRegularBytes(tombstonePath, options.projectRoot);
+	return tombstone !== undefined && sha256(tombstone) === options.entry.digest;
+}
+
+async function removeManifestedLiveThroughTombstone(options: {
+	readonly projectRoot: string;
+	readonly durableFiles: DurableRetirementFiles;
+	readonly entry: PreparedRetirement;
+	readonly failpoint?: (
+		point: LivingMemoryRetirementFailpoint,
+	) => void | Promise<void>;
+}): Promise<void> {
+	await assertManifestedLinkBeforeTombstone(options);
+	const livePath = absolutePath(
+		options.projectRoot,
+		options.entry.originalPath,
+	);
+	const tombstonePath = absolutePath(
+		options.projectRoot,
+		options.entry.tombstonePath,
+	);
+	await options.durableFiles.renameFile({
+		sourcePath: livePath,
+		destinationPath: tombstonePath,
+	});
+	await options.failpoint?.("after-live-tombstone-sync");
+	if (await manifestedTombstoneMatches(options)) {
+		await options.durableFiles.removeFile(tombstonePath);
+		return;
+	}
+	if (await pathExists(livePath)) {
+		throw new RetirementUnlinkConflictError(
+			options.entry.originalPath,
+			"the transaction tombstone could not be restored because the live path is occupied",
+		);
+	}
+	await options.durableFiles.renameFile({
+		sourcePath: tombstonePath,
+		destinationPath: livePath,
+	});
+	throw new RetirementUnlinkConflictError(
+		options.entry.originalPath,
+		"the transaction tombstone did not match the manifested retired object and was restored",
+	);
 }
 
 async function assertRealContainedDirectory(

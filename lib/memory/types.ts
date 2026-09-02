@@ -396,6 +396,7 @@ export type LivingMemoryRetirementRunResult =
 export interface LivingMemoryRetirementStore {
 	inspect(
 		records: readonly ConsolidationSourceRecord[],
+		options?: { readonly lockHeld?: boolean },
 	): Promise<LivingMemoryRetirementInspection>;
 	apply(options: {
 		readonly candidates: readonly LivingMemoryRetirementCandidate[];

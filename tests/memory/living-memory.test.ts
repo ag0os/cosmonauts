@@ -121,21 +121,54 @@ describe("living memory", () => {
 				"retired",
 				"eligible.md",
 			);
+			const realDurable =
+				createDurableRetirementFiles() as DurableRetirementFiles & {
+					renameFile(options: {
+						readonly sourcePath: string;
+						readonly destinationPath: string;
+					}): Promise<void>;
+				};
+			let racedAtTombstoneRename = false;
 			const result = await createLivingMemoryRetirementStore({
 				projectRoot: fixture.projectRoot,
-				async failpoint(point) {
-					if (point !== "after-manifest-sync") return;
-					if (race === "atomic-replace") {
-						const replacementPath = join(
-							fixture.projectRoot,
-							"knowledge",
-							"replacement.tmp",
-						);
-						await writeFile(replacementPath, changed);
-						await rename(replacementPath, fixture.livePath);
-					} else {
-						await writeFile(fixture.livePath, changed);
-					}
+				durableFiles: {
+					...realDurable,
+					async renameFile(options) {
+						if (
+							options.sourcePath === fixture.livePath &&
+							!racedAtTombstoneRename
+						) {
+							racedAtTombstoneRename = true;
+							const journal = JSON.parse(
+								await readFile(
+									join(
+										fixture.projectRoot,
+										".cosmonauts",
+										"living-memory-retirement.json",
+									),
+									"utf-8",
+								),
+							) as { entries: Array<{ tombstonePath: string }> };
+							expect(
+								relativeFixturePath(
+									fixture.projectRoot,
+									options.destinationPath,
+								),
+							).toBe(journal.entries[0]?.tombstonePath);
+							if (race === "atomic-replace") {
+								const replacementPath = join(
+									fixture.projectRoot,
+									"knowledge",
+									"replacement.tmp",
+								);
+								await writeFile(replacementPath, changed);
+								await rename(replacementPath, fixture.livePath);
+							} else {
+								await writeFile(fixture.livePath, changed);
+							}
+						}
+						await realDurable.renameFile(options);
+					},
 				},
 			}).apply({
 				candidates: [retirementCandidate(fixture.input)],
@@ -145,6 +178,7 @@ describe("living memory", () => {
 				lockOptions: exactLockOptions(),
 			});
 
+			expect(racedAtTombstoneRename).toBe(true);
 			expect(result).toMatchObject({
 				kind: "failed",
 				reason: expect.stringContaining("unlink conflict"),
@@ -156,9 +190,23 @@ describe("living memory", () => {
 				},
 			});
 			await expect(readFile(fixture.livePath, "utf-8")).resolves.toBe(changed);
-			await expect(readFile(retiredPath, "utf-8")).resolves.toBe(
-				race === "atomic-replace" ? fixture.raw : changed,
-			);
+			if (race === "atomic-replace") {
+				await expect(readFile(retiredPath, "utf-8")).resolves.toBe(fixture.raw);
+			}
+			await expect(
+				readFile(
+					join(
+						fixture.projectRoot,
+						".cosmonauts",
+						"living-memory-retirement.json",
+					),
+				),
+			).rejects.toMatchObject({ code: "ENOENT" });
+			expect(
+				(await readdir(join(fixture.projectRoot, "knowledge"))).filter((path) =>
+					path.endsWith(".tombstone"),
+				),
+			).toEqual([]);
 		}
 	});
 
@@ -223,9 +271,64 @@ describe("living memory", () => {
 		expect(replacedResult).toMatchObject({
 			kind: "failed",
 			reason: expect.stringContaining("unlink conflict"),
-			details: { recovery: "pending", writesCommitted: true },
+			details: { recovery: "rolled-forward", writesCommitted: true },
 		});
 		await expect(readFile(replaced.livePath, "utf-8")).resolves.toBe(changed);
+	});
+
+	test("recovery restores an unverified transaction tombstone", async () => {
+		const fixture = await createRetirementFixture(
+			"recovery-unverified-retirement-tombstone",
+		);
+		await expect(
+			runRetirementChild(fixture.projectRoot, "after-live-tombstone-sync"),
+		).resolves.toMatchObject({ code: 86, signal: null });
+		await expect(fileExists(fixture.livePath)).resolves.toBe(false);
+		const knowledgeEntries = await readdir(
+			join(fixture.projectRoot, "knowledge"),
+		);
+		const tombstoneName = knowledgeEntries.find((path) =>
+			path.endsWith(".tombstone"),
+		);
+		if (tombstoneName === undefined) {
+			throw new Error("missing transaction tombstone");
+		}
+		const tombstonePath = join(fixture.projectRoot, "knowledge", tombstoneName);
+		const changed = `${fixture.raw}human edit of captured bytes\n`;
+		await writeFile(tombstonePath, changed);
+
+		const recovered = await createLivingMemoryRetirementStore({
+			projectRoot: fixture.projectRoot,
+		}).apply({
+			candidates: [],
+			dryRun: false,
+			date: new Date("2026-09-01T12:00:00.000Z"),
+			maxRetirements: 5,
+			lockOptions: exactLockOptions(),
+		});
+
+		expect(recovered).toMatchObject({
+			kind: "failed",
+			reason: expect.stringContaining("unlink conflict"),
+			details: {
+				recovery: "rolled-forward",
+				writesCommitted: true,
+				declines: [
+					expect.objectContaining({ code: "retirement-unlink-conflict" }),
+				],
+			},
+		});
+		await expect(readFile(fixture.livePath, "utf-8")).resolves.toBe(changed);
+		await expect(fileExists(tombstonePath)).resolves.toBe(false);
+		await expect(
+			fileExists(
+				join(
+					fixture.projectRoot,
+					".cosmonauts",
+					"living-memory-retirement.json",
+				),
+			),
+		).resolves.toBe(false);
 	});
 
 	// @cosmo-behavior plan:living-memory#B-004
@@ -688,6 +791,7 @@ describe("living memory", () => {
 			["after-journal-sync", "rolled-back", true, false],
 			["after-retired-link-sync", "rolled-back", true, false],
 			["after-manifest-sync", "rolled-forward", false, true],
+			["after-live-tombstone-sync", "rolled-forward", false, true],
 			["after-live-unlink-sync", "rolled-forward", false, true],
 			["before-journal-remove", "rolled-forward", false, true],
 		] as const;
@@ -783,12 +887,15 @@ describe("living memory", () => {
 			projectRoot: ordinaryPostCommit.projectRoot,
 			durableFiles: {
 				...postCommitDurable,
-				async removeFile(path) {
-					if (path === ordinaryPostCommit.livePath && failLiveRemoval) {
+				async renameFile(options) {
+					await postCommitDurable.renameFile(options);
+					if (
+						options.sourcePath === ordinaryPostCommit.livePath &&
+						failLiveRemoval
+					) {
 						failLiveRemoval = false;
-						throw new Error("ordinary post-commit unlink failure");
+						throw new Error("ordinary post-commit tombstone failure");
 					}
-					await postCommitDurable.removeFile(path);
 				},
 			},
 		}).apply({
@@ -980,7 +1087,9 @@ describe("living memory", () => {
 			},
 			async removeFile(path) {
 				await realDurable.removeFile(path);
-				if (path === fixture.livePath) syncEvents.push("live-removed");
+				if (path.endsWith(".tombstone")) {
+					syncEvents.push("tombstone-removed");
+				}
 			},
 		} satisfies DurableRetirementFiles;
 		const proposalStore = createConsolidationProposalStore({
@@ -1036,7 +1145,7 @@ describe("living memory", () => {
 				join(fixture.projectRoot, "knowledge", "retired", "eligible.md"),
 			),
 		).resolves.toEqual(Buffer.from(fixture.raw));
-		expect(syncEvents).toEqual(["manifest-synced", "live-removed"]);
+		expect(syncEvents).toEqual(["manifest-synced", "tombstone-removed"]);
 		if (
 			result.kind !== "ran" ||
 			result.details.proposals[0]?.path === undefined
@@ -1634,6 +1743,7 @@ describe("living memory", () => {
 		const durableFiles = createDurableMachineFiles();
 		expect(Object.keys(durableFiles).sort()).toEqual([
 			"removeFile",
+			"renameFile",
 			"replaceText",
 			"writeText",
 		]);
@@ -2871,6 +2981,200 @@ describe("living memory", () => {
 		}
 	});
 
+	test("restores an episode rewritten at the tombstone boundary", async () => {
+		for (const race of ["atomic-replace", "in-place-edit"] as const) {
+			const projectRoot = join(tmp.path, `episode-tombstone-${race}`);
+			const [episodePath] = await writeEpisodeFixtures(projectRoot, [
+				["Episode rewritten during prune", "2026-09-01T16:00:00.000Z"],
+			]);
+			if (episodePath === undefined) throw new Error("missing episode fixture");
+			const changed = `${await readFile(episodePath, "utf-8")}Human rewrite.\n`;
+			const baseFiles = createDurableMachineFiles() as ReturnType<
+				typeof createDurableMachineFiles
+			> & {
+				renameFile(options: {
+					readonly sourcePath: string;
+					readonly destinationPath: string;
+				}): Promise<void>;
+			};
+			let racedAtTombstoneRename = false;
+			const source = createProjectEpisodeConsolidationSource({
+				projectRoot,
+				durableFiles: {
+					...baseFiles,
+					async renameFile(options) {
+						if (options.sourcePath === episodePath && !racedAtTombstoneRename) {
+							racedAtTombstoneRename = true;
+							const journalPath = join(
+								dirname(episodePath),
+								".living-memory-episode-prune.json",
+							);
+							const journal = JSON.parse(
+								await readFile(journalPath, "utf-8"),
+							) as { tombstonePath: string };
+							expect(
+								relativeFixturePath(projectRoot, options.destinationPath),
+							).toBe(journal.tombstonePath);
+							if (race === "atomic-replace") {
+								const replacementPath = `${episodePath}.replacement`;
+								await writeFile(replacementPath, changed);
+								await rename(replacementPath, episodePath);
+							} else {
+								await writeFile(episodePath, changed);
+							}
+						}
+						await baseFiles.renameFile(options);
+					},
+				},
+			});
+			const snapshot = await source.collect({
+				limit: 1,
+				maxCorpusRecordBytes: 64 * 1024,
+				maxCorpusBytes: 256 * 1024,
+				maxEpisodeRecordBytes: 64 * 1024,
+				maxEpisodeBytes: 256 * 1024,
+			});
+			const episode = snapshot.records[0];
+			if (episode === undefined) throw new Error("missing collected episode");
+			const proposalPath = join(
+				projectRoot,
+				"memory",
+				"agent",
+				"proposals",
+				"living-memory",
+				"episode-note.md",
+			);
+			await mkdir(dirname(proposalPath), { recursive: true });
+			await baseFiles.writeText({ path: proposalPath, content: "proposal\n" });
+
+			await expect(
+				source.finalize?.([
+					{
+						id: episode.id,
+						digest: episode.digest,
+						fileIdentity: episode.fileIdentity,
+						proposalPaths: [proposalPath],
+					},
+				]),
+			).resolves.toEqual([]);
+			expect(racedAtTombstoneRename).toBe(true);
+			await expect(readFile(episodePath, "utf-8")).resolves.toBe(changed);
+			expect(
+				(await readdir(dirname(episodePath))).filter((path) =>
+					path.endsWith(".tombstone"),
+				),
+			).toEqual([]);
+			await expect(
+				readFile(
+					join(dirname(episodePath), ".living-memory-episode-prune.json"),
+				),
+			).rejects.toMatchObject({ code: "ENOENT" });
+		}
+	});
+
+	test("pages past represented episodes in the production adapter", async () => {
+		const projectRoot = join(tmp.path, "paged-episode-project");
+		await writeEpisodeFixtures(projectRoot, [
+			["First page episode", "2026-09-01T10:00:00.000Z"],
+			["Second page episode", "2026-09-01T11:00:00.000Z"],
+			["Later page episode", "2026-09-01T12:00:00.000Z"],
+		]);
+		const source = createProjectEpisodeConsolidationSource({ projectRoot });
+		const limits = {
+			limit: 2,
+			maxCorpusRecordBytes: 64 * 1024,
+			maxCorpusBytes: 256 * 1024,
+			maxEpisodeRecordBytes: 64 * 1024,
+			maxEpisodeBytes: 256 * 1024,
+		};
+		const first = await source.collect(limits);
+		const second = await source.collect({
+			...limits,
+			representedKeys: first.records.map(
+				(record) => `${record.scope}\0${record.path}\0${record.digest}`,
+			),
+		});
+
+		expect(first.records).toHaveLength(2);
+		expect(first.omitted).toBe(1);
+		expect(second.records).toHaveLength(1);
+		expect(second.omitted).toBe(0);
+		expect(first.records.map((record) => record.id)).not.toContain(
+			second.records[0]?.id,
+		);
+	});
+
+	test("reports committed episode bytes when a later durable prune fails", async () => {
+		const projectRoot = join(tmp.path, "episode-recovery-write-reporting");
+		const episodePaths = await writeEpisodeFixtures(projectRoot, [
+			["First recovery episode", "2026-09-01T17:00:00.000Z"],
+			["Second recovery episode", "2026-09-01T18:00:00.000Z"],
+		]);
+		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
+		const proposalStore = createConsolidationProposalStore({ projectRoot });
+		const baseSource = createProjectEpisodeConsolidationSource({ projectRoot });
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>((input) =>
+			Promise.resolve(
+				foldedEpisodeOutput(input.records.map((record) => record.id)),
+			),
+		);
+		const interrupted = await createHarness(
+			[
+				{
+					...baseSource,
+					async finalize() {
+						throw new Error("stop after accepted output before prune");
+					},
+				},
+			],
+			{ id: "fake/no-tools", judge },
+			{ acceptedJudgmentReceiptStore: receiptStore, proposalStore },
+		).consolidator();
+		expect(interrupted.kind).toBe("failed");
+
+		const baseFiles = createDurableMachineFiles();
+		let tombstoneRemovals = 0;
+		const recoverySource = createProjectEpisodeConsolidationSource({
+			projectRoot,
+			durableFiles: {
+				...baseFiles,
+				async removeFile(path) {
+					if (path.endsWith(".tombstone")) {
+						tombstoneRemovals += 1;
+						if (tombstoneRemovals === 2) {
+							throw new Error("ordinary second episode removal failure");
+						}
+					}
+					await baseFiles.removeFile(path);
+				},
+			},
+		});
+		const recovered = await createHarness(
+			[recoverySource],
+			{ id: "fake/no-tools", judge },
+			{
+				acceptedJudgmentReceiptStore: createAcceptedJudgmentReceiptStore({
+					projectRoot,
+				}),
+				proposalStore: createConsolidationProposalStore({ projectRoot }),
+			},
+		).consolidator();
+
+		expect(recovered).toMatchObject({
+			kind: "failed",
+			reason: "ordinary second episode removal failure",
+			details: { writesCommitted: true },
+		});
+		expect(
+			await Promise.all(episodePaths.map((path) => fileExists(path))),
+		).toEqual([false, false]);
+		expect(
+			(await readdir(join(projectRoot, "memory", "agent", "episodes"))).filter(
+				(path) => path.endsWith(".tombstone"),
+			),
+		).toHaveLength(1);
+	});
+
 	// @cosmo-behavior plan:living-memory#B-014
 	test("executes the versioned project payload through the shared factory and store seam", async () => {
 		type JobContext = {
@@ -3779,6 +4083,39 @@ describe("living memory", () => {
 		expect(maximumActiveJudgments).toBe(1);
 	});
 
+	test("reports outer-lock timeout and release uncertainty as recovery failures", async () => {
+		const timeoutHarness = createHarness([], undefined, {
+			async withLock(path) {
+				throw new EntityFileLockTimeoutError(path, 10_000);
+			},
+		});
+		await expect(timeoutHarness.consolidator()).resolves.toMatchObject({
+			kind: "failed",
+			details: {
+				recovery: "concurrent-mutation",
+				writesCommitted: false,
+			},
+		});
+
+		const releaseHarness = createHarness([], undefined, {
+			async withLock(_path, action, options = {}) {
+				const result = await action();
+				options.onReleaseUnconfirmed?.(
+					new Error("fixture release uncertainty"),
+				);
+				return result;
+			},
+		});
+		await expect(releaseHarness.consolidator()).resolves.toMatchObject({
+			kind: "failed",
+			reason: expect.stringContaining("release could not be confirmed"),
+			details: {
+				recovery: "release-unconfirmed",
+				writesCommitted: false,
+			},
+		});
+	});
+
 	test("bounds combined model outlets and defers excess deterministic retirements", async () => {
 		const projectRoot = join(tmp.path, "combined-outlet-caps");
 		await mkdir(projectRoot, { recursive: true });
@@ -3864,16 +4201,14 @@ describe("living memory", () => {
 					expect.objectContaining({ path: "knowledge/retire-2.md" }),
 					expect.objectContaining({ path: "knowledge/retire-3.md" }),
 					expect.objectContaining({ path: "knowledge/retire-4.md" }),
-					expect.objectContaining({
-						path: "knowledge/retire-5.md",
-						status: "deferred",
-					}),
 				],
 				declines: expect.arrayContaining([
 					expect.objectContaining({ code: "retirement-cap-deferred" }),
 				]),
 			},
 		});
+		if (first.kind !== "ran") throw new Error("expected bounded pass to run");
+		expect(first.details.retirements).toHaveLength(5);
 		await expect(harness.consolidator()).resolves.toMatchObject({
 			kind: "ran",
 			details: {

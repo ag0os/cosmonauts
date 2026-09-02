@@ -52,6 +52,36 @@ const tmp = useTempDir("memory-cli-");
 const execFileAsync = promisify(execFile);
 
 describe("memory owner CLI", () => {
+	test("a successful non-dry pass ignores its own lock and exits zero", async () => {
+		const projectRoot = join(tmp.path, "healthy-non-dry-project");
+		const home = join(tmp.path, "healthy-non-dry-home");
+		await mkdir(projectRoot, { recursive: true });
+
+		const { stdout } = await execFileAsync(
+			"bun",
+			[
+				join(process.cwd(), "bin", "cosmonauts"),
+				"memory",
+				"consolidate",
+				"--no-model",
+				"--json",
+			],
+			{
+				cwd: projectRoot,
+				env: { ...process.env, HOME: home },
+			},
+		);
+		const result = JSON.parse(stdout);
+
+		expect(result).toMatchObject({
+			kind: "noop",
+			details: {
+				recovery: "none",
+				writesCommitted: false,
+			},
+		});
+	});
+
 	test("runs the production corpus source before episodes in a deterministic dry run", async () => {
 		const projectRoot = join(tmp.path, "corpus-cli-project");
 		const home = join(tmp.path, "corpus-cli-home");

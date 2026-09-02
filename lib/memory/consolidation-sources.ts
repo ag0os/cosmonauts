@@ -1,7 +1,15 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
-import { isAbsolute, posix, relative, resolve, sep } from "node:path";
+import {
+	basename,
+	dirname,
+	isAbsolute,
+	posix,
+	relative,
+	resolve,
+	sep,
+} from "node:path";
 import {
 	createDurableMachineFiles,
 	type DurableMachineFiles,
@@ -95,6 +103,10 @@ export interface ConsolidationSource {
 	finalize?(
 		represented: readonly ConsolidationFinalizedRecord[],
 	): Promise<readonly string[]>;
+	recover?(): Promise<{
+		readonly episodePrunes: readonly string[];
+		readonly writesCommitted: boolean;
+	}>;
 }
 
 export interface CollectedConsolidationSources {
@@ -119,6 +131,29 @@ const PROJECT_EPISODE_SOURCE_ID = "project-episodes";
 const PROJECT_CORPUS_SOURCE_ID = "project-corpus";
 const PROJECT_EPISODE_DIRECTORY = "memory/agent/episodes";
 const PROPOSAL_DIRECTORY = "memory/agent/proposals";
+const EPISODE_PRUNE_JOURNAL = ".living-memory-episode-prune.json";
+
+interface EpisodePruneJournal {
+	readonly schemaVersion: 1;
+	readonly originalPath: string;
+	readonly tombstonePath: string;
+	readonly digest: string;
+	readonly fileIdentity: {
+		readonly device: string;
+		readonly inode: string;
+	};
+}
+
+class ConsolidationSourceCommittedError extends Error {
+	readonly writesCommitted = true;
+
+	constructor(error: unknown) {
+		super(error instanceof Error ? error.message : String(error), {
+			cause: error,
+		});
+		this.name = "ConsolidationSourceCommittedError";
+	}
+}
 
 /** Project and user knowledge enter consolidation through the knowledge store. */
 export function createProjectCorpusConsolidationSource(options: {
@@ -250,21 +285,22 @@ export function createProjectEpisodeConsolidationSource(options: {
 			const candidates = retrieved.records.toSorted((left, right) =>
 				left.path.localeCompare(right.path),
 			);
-			const admitted = candidates.slice(0, input.limit);
+			const representedKeys = new Set(input.representedKeys);
 			const records: ConsolidationSourceRecord[] = [];
-			for (const record of admitted) {
+			let unrepresented = 0;
+			for (const record of candidates) {
 				throwIfAborted(input.signal);
 				const path = relativeProjectPath(projectRoot, record.path);
 				assertDirectProjectEpisodePath(path);
 				const snapshot = await readRegularTextSnapshot(record.path);
 				const content = snapshot.content;
-				records.push({
+				const candidate = {
 					id: path,
 					sourceId: PROJECT_EPISODE_SOURCE_ID,
-					scope: "project",
+					scope: "project" as const,
 					path,
 					digest: sha256(content),
-					kind: "episode",
+					kind: "episode" as const,
 					content,
 					fileIdentity: snapshot.identity,
 					metadata: Object.freeze({
@@ -275,61 +311,270 @@ export function createProjectEpisodeConsolidationSource(options: {
 						tags: Object.freeze([...record.tags]),
 						...(record.source === undefined ? {} : { source: record.source }),
 					}),
-				});
+				};
+				if (representedKeys.has(consolidationEvidenceKey(candidate))) continue;
+				unrepresented += 1;
+				if (records.length < input.limit) records.push(candidate);
 			}
 			return Object.freeze({
 				records: Object.freeze(records),
-				omitted: candidates.length - admitted.length,
+				omitted: unrepresented - records.length,
 			});
+		},
+		async recover() {
+			return recoverEpisodePruneJournal({ projectRoot, durableFiles });
 		},
 		async finalize(represented) {
 			const pruned: string[] = [];
-			for (const item of represented) {
-				assertDirectProjectEpisodePath(item.id);
-				if (!/^[a-f0-9]{64}$/u.test(item.digest)) {
-					throw new ConsolidationSourceContractError(
-						`Episode ${item.id} has an invalid finalization digest.`,
-					);
-				}
-				if (item.proposalPaths.length === 0) {
-					throw new ConsolidationSourceContractError(
-						`Episode ${item.id} has no durable proposal representation.`,
-					);
-				}
-				if (item.fileIdentity === undefined) {
-					throw new ConsolidationSourceContractError(
-						`Episode ${item.id} has no collected file identity.`,
-					);
-				}
-				for (const proposalPath of new Set(item.proposalPaths)) {
-					await assertContainedProposalPath(projectRoot, proposalPath);
-					const proposal = await readRegularText(proposalPath);
-					await durableFiles.writeText({
-						path: proposalPath,
-						content: proposal,
-					});
-					if ((await readRegularText(proposalPath)) !== proposal) {
+			let writesCommitted = false;
+			try {
+				const recovered = await recoverEpisodePruneJournal({
+					projectRoot,
+					durableFiles,
+				});
+				pruned.push(...recovered.episodePrunes);
+				writesCommitted = recovered.writesCommitted;
+				for (const item of represented) {
+					assertDirectProjectEpisodePath(item.id);
+					if (!/^[a-f0-9]{64}$/u.test(item.digest)) {
 						throw new ConsolidationSourceContractError(
-							`Episode proposal representation changed during durability confirmation: ${proposalPath}.`,
+							`Episode ${item.id} has an invalid finalization digest.`,
 						);
 					}
-				}
+					if (item.proposalPaths.length === 0) {
+						throw new ConsolidationSourceContractError(
+							`Episode ${item.id} has no durable proposal representation.`,
+						);
+					}
+					if (item.fileIdentity === undefined) {
+						throw new ConsolidationSourceContractError(
+							`Episode ${item.id} has no collected file identity.`,
+						);
+					}
+					for (const proposalPath of new Set(item.proposalPaths)) {
+						await assertContainedProposalPath(projectRoot, proposalPath);
+						const proposal = await readRegularText(proposalPath);
+						await durableFiles.writeText({
+							path: proposalPath,
+							content: proposal,
+						});
+						if ((await readRegularText(proposalPath)) !== proposal) {
+							throw new ConsolidationSourceContractError(
+								`Episode proposal representation changed during durability confirmation: ${proposalPath}.`,
+							);
+						}
+					}
 
-				const episodePath = resolve(projectRoot, ...item.id.split("/"));
-				const snapshot = await readRegularTextSnapshotIfExists(episodePath);
-				if (
-					snapshot === undefined ||
-					!sameFileIdentity(snapshot.identity, item.fileIdentity) ||
-					sha256(snapshot.content) !== item.digest
-				) {
-					continue;
+					const episodePath = resolve(projectRoot, ...item.id.split("/"));
+					const snapshot = await readRegularTextSnapshotIfExists(episodePath);
+					if (
+						snapshot === undefined ||
+						!sameFileIdentity(snapshot.identity, item.fileIdentity) ||
+						sha256(snapshot.content) !== item.digest
+					) {
+						continue;
+					}
+					const tombstonePath = episodeTombstonePath(episodePath);
+					const journal = {
+						schemaVersion: 1,
+						originalPath: item.id,
+						tombstonePath: relativeProjectPath(projectRoot, tombstonePath),
+						digest: item.digest,
+						fileIdentity: item.fileIdentity,
+					} satisfies EpisodePruneJournal;
+					await durableFiles.replaceText({
+						path: episodePruneJournalPath(projectRoot),
+						content: `${JSON.stringify(journal, null, 2)}\n`,
+					});
+					await durableFiles.renameFile({
+						sourcePath: episodePath,
+						destinationPath: tombstonePath,
+					});
+					const tombstone =
+						await readRegularTextSnapshotIfExists(tombstonePath);
+					if (
+						tombstone !== undefined &&
+						sameFileIdentity(tombstone.identity, item.fileIdentity) &&
+						sha256(tombstone.content) === item.digest
+					) {
+						await durableFiles.removeFile(tombstonePath);
+						writesCommitted = true;
+						pruned.push(item.id);
+					} else {
+						if (
+							(await readRegularTextSnapshotIfExists(episodePath)) !== undefined
+						) {
+							throw new ConsolidationSourceContractError(
+								`Episode ${item.id} changed during tombstone verification and the live path is occupied.`,
+							);
+						}
+						await durableFiles.renameFile({
+							sourcePath: tombstonePath,
+							destinationPath: episodePath,
+						});
+					}
+					await durableFiles.removeFile(episodePruneJournalPath(projectRoot));
 				}
-				await durableFiles.removeFile(episodePath);
-				pruned.push(item.id);
+			} catch (error: unknown) {
+				if (writesCommitted || pruned.length > 0) {
+					throw new ConsolidationSourceCommittedError(error);
+				}
+				throw error;
 			}
 			return Object.freeze(pruned);
 		},
 	};
+}
+
+function episodePruneJournalPath(projectRoot: string): string {
+	return resolve(
+		projectRoot,
+		...PROJECT_EPISODE_DIRECTORY.split("/"),
+		EPISODE_PRUNE_JOURNAL,
+	);
+}
+
+function episodeTombstonePath(episodePath: string): string {
+	return resolve(
+		dirname(episodePath),
+		`.${basename(episodePath)}.${randomUUID()}.tombstone`,
+	);
+}
+
+async function recoverEpisodePruneJournal(options: {
+	readonly projectRoot: string;
+	readonly durableFiles: DurableMachineFiles;
+}): Promise<{
+	readonly episodePrunes: readonly string[];
+	readonly writesCommitted: boolean;
+}> {
+	const journal = await readEpisodePruneJournal(options.projectRoot);
+	if (journal === undefined) {
+		return { episodePrunes: Object.freeze([]), writesCommitted: false };
+	}
+	const livePath = resolve(
+		options.projectRoot,
+		...journal.originalPath.split("/"),
+	);
+	const tombstonePath = resolve(
+		options.projectRoot,
+		...journal.tombstonePath.split("/"),
+	);
+	let removedEpisodeBytes = false;
+	try {
+		const [live, tombstone] = await Promise.all([
+			readRegularTextSnapshotIfExists(livePath),
+			readRegularTextSnapshotIfExists(tombstonePath),
+		]);
+		if (tombstone !== undefined) {
+			const verified =
+				sameFileIdentity(tombstone.identity, journal.fileIdentity) &&
+				sha256(tombstone.content) === journal.digest;
+			if (verified) {
+				await options.durableFiles.removeFile(tombstonePath);
+				removedEpisodeBytes = true;
+			} else {
+				if (live !== undefined) {
+					throw new ConsolidationSourceContractError(
+						`Episode ${journal.originalPath} has an unverified tombstone and an occupied live path.`,
+					);
+				}
+				await options.durableFiles.renameFile({
+					sourcePath: tombstonePath,
+					destinationPath: livePath,
+				});
+			}
+		}
+		await options.durableFiles.removeFile(
+			episodePruneJournalPath(options.projectRoot),
+		);
+		const liveAfter = await readRegularTextSnapshotIfExists(livePath);
+		return {
+			episodePrunes:
+				removedEpisodeBytes || liveAfter === undefined
+					? Object.freeze([journal.originalPath])
+					: Object.freeze([]),
+			writesCommitted: removedEpisodeBytes || liveAfter === undefined,
+		};
+	} catch (error: unknown) {
+		if (removedEpisodeBytes) throw new ConsolidationSourceCommittedError(error);
+		throw error;
+	}
+}
+
+async function readEpisodePruneJournal(
+	projectRoot: string,
+): Promise<EpisodePruneJournal | undefined> {
+	const snapshot = await readRegularTextSnapshotIfExists(
+		episodePruneJournalPath(projectRoot),
+	);
+	if (snapshot === undefined) return undefined;
+	let value: unknown;
+	try {
+		value = JSON.parse(snapshot.content);
+	} catch (error: unknown) {
+		throw new ConsolidationSourceContractError(
+			`Episode prune journal is malformed: ${error instanceof Error ? error.message : String(error)}.`,
+		);
+	}
+	if (!isEpisodePruneJournal(value)) {
+		throw new ConsolidationSourceContractError(
+			"Episode prune journal has an invalid shape.",
+		);
+	}
+	return value;
+}
+
+function isEpisodePruneJournal(value: unknown): value is EpisodePruneJournal {
+	if (value === null || typeof value !== "object" || Array.isArray(value)) {
+		return false;
+	}
+	const journal = value as Record<string, unknown>;
+	if (
+		Object.keys(journal).sort().join("\0") !==
+			[
+				"digest",
+				"fileIdentity",
+				"originalPath",
+				"schemaVersion",
+				"tombstonePath",
+			]
+				.sort()
+				.join("\0") ||
+		journal.schemaVersion !== 1 ||
+		typeof journal.originalPath !== "string" ||
+		typeof journal.tombstonePath !== "string" ||
+		typeof journal.digest !== "string" ||
+		!/^[a-f0-9]{64}$/u.test(journal.digest) ||
+		journal.fileIdentity === null ||
+		typeof journal.fileIdentity !== "object" ||
+		Array.isArray(journal.fileIdentity)
+	) {
+		return false;
+	}
+	const identity = journal.fileIdentity as Record<string, unknown>;
+	if (
+		Object.keys(identity).sort().join("\0") !== "device\0inode" ||
+		typeof identity.device !== "string" ||
+		identity.device.length === 0 ||
+		typeof identity.inode !== "string" ||
+		identity.inode.length === 0
+	) {
+		return false;
+	}
+	try {
+		assertDirectProjectEpisodePath(journal.originalPath);
+	} catch {
+		return false;
+	}
+	return (
+		isSafePosixRelativePath(journal.tombstonePath) &&
+		posix.dirname(journal.tombstonePath) === PROJECT_EPISODE_DIRECTORY &&
+		posix
+			.basename(journal.tombstonePath)
+			.startsWith(`.${posix.basename(journal.originalPath)}.`) &&
+		posix.basename(journal.tombstonePath).endsWith(".tombstone")
+	);
 }
 
 export async function collectConsolidationSources(options: {

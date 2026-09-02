@@ -107,6 +107,21 @@ export function createLivingMemoryConsolidator(
 					details,
 				};
 			}
+			if (!dryRun) {
+				for (const source of dependencies.sources) {
+					const sourceRecovery = await source.recover?.();
+					if (sourceRecovery === undefined) continue;
+					details = {
+						...details,
+						episodePrunes: Object.freeze([
+							...details.episodePrunes,
+							...sourceRecovery.episodePrunes,
+						]),
+						writesCommitted:
+							details.writesCommitted || sourceRecovery.writesCommitted,
+					};
+				}
+			}
 			const [initialReceipts, proposalEvidence, proposalMaterializations] =
 				await Promise.all([
 					dependencies.acceptedJudgmentReceiptStore.list(),
@@ -126,7 +141,23 @@ export function createLivingMemoryConsolidator(
 						? (receipt.inputs ?? []).map(consolidationEvidenceKey)
 						: [],
 				),
-				...proposalEvidence.map(consolidationEvidenceKey),
+				...proposalEvidence
+					.filter((evidence) => {
+						if (!evidence.path.startsWith("memory/agent/episodes/")) {
+							return true;
+						}
+						return !initialReceipts.some(
+							(receipt) =>
+								receipt.state === "accepted" &&
+								((receipt.inputs ?? []).some(
+									(input) =>
+										consolidationEvidenceKey(input) ===
+										consolidationEvidenceKey(evidence),
+								) ||
+									receipt.inputDigests.includes(evidence.digest)),
+						);
+					})
+					.map(consolidationEvidenceKey),
 			]);
 			const collected = await collectConsolidationSources({
 				sources: dependencies.sources,
@@ -170,6 +201,7 @@ export function createLivingMemoryConsolidator(
 			);
 			const retirementInspection = await dependencies.retirementStore.inspect(
 				collected.records,
+				{ lockHeld },
 			);
 			if (dryRun && retirementInspection.recovery !== "none") {
 				details = {
@@ -196,7 +228,10 @@ export function createLivingMemoryConsolidator(
 				details = {
 					...details,
 					proposals: episodeRecovery.proposals,
-					episodePrunes: episodeRecovery.episodePrunes,
+					episodePrunes: Object.freeze([
+						...details.episodePrunes,
+						...episodeRecovery.episodePrunes,
+					]),
 					writesCommitted:
 						details.writesCommitted || episodeRecovery.writesCommitted,
 					...(episodeRecovery.receiptPath === undefined
@@ -377,12 +412,13 @@ export function createLivingMemoryConsolidator(
 									? {}
 									: { signal: options.signal }),
 							});
-				const reportedRetirements =
+				const reportedRetirements = (
 					retirementRun === undefined
 						? deterministic.flatMap((finding) =>
 								finding.retirement === undefined ? [] : [finding.retirement],
 							)
-						: [...retirementRun.details.retirements, ...capDeferredRetirements];
+						: [...retirementRun.details.retirements, ...capDeferredRetirements]
+				).slice(0, dependencies.limits.maxRetirements);
 				details = {
 					...details,
 					observations: Object.freeze(
@@ -696,22 +732,31 @@ export function createLivingMemoryConsolidator(
 							`Episode source ${source.id} cannot finalize represented records.`,
 						);
 					}
-					episodePrunes.push(
-						...(await source.finalize(
-							Object.freeze(
-								[...represented.values()].map((record) =>
-									Object.freeze({
-										id: record.id,
-										digest: record.digest,
-										...(record.fileIdentity === undefined
-											? {}
-											: { fileIdentity: record.fileIdentity }),
-										proposalPaths: Object.freeze([...record.proposalPaths]),
-									}),
-								),
+					const finalized = await source.finalize(
+						Object.freeze(
+							[...represented.values()].map((record) =>
+								Object.freeze({
+									id: record.id,
+									digest: record.digest,
+									...(record.fileIdentity === undefined
+										? {}
+										: { fileIdentity: record.fileIdentity }),
+									proposalPaths: Object.freeze([...record.proposalPaths]),
+								}),
 							),
-						)),
+						),
 					);
+					episodePrunes.push(...finalized);
+					if (finalized.length > 0) {
+						details = {
+							...details,
+							episodePrunes: Object.freeze([
+								...details.episodePrunes,
+								...finalized,
+							]),
+							writesCommitted: true,
+						};
+					}
 				}
 			}
 			const shouldMaterializeReceipt =
@@ -740,7 +785,7 @@ export function createLivingMemoryConsolidator(
 				...(retirementRun?.details.retirements ?? []),
 				...capDeferredRetirements,
 				...modelOnlyRetirements,
-			];
+			].slice(0, dependencies.limits.maxRetirements);
 			details = {
 				...details,
 				observations: Object.freeze([
@@ -748,7 +793,7 @@ export function createLivingMemoryConsolidator(
 					...normalized.map((item) => item.observation),
 				]),
 				proposals: Object.freeze(proposals),
-				episodePrunes: Object.freeze(episodePrunes),
+				episodePrunes: details.episodePrunes,
 				retirements: Object.freeze(reportedRetirements),
 				declines: Object.freeze([
 					...details.declines,
@@ -825,10 +870,19 @@ export function createLivingMemoryConsolidator(
 				},
 			);
 			if (releaseUnconfirmed === undefined) return result;
+			const resultDetails =
+				result.details ??
+				emptyDetails({
+					dryRun: false,
+					modelMode: options.modelMode ?? "full",
+				});
 			return {
 				kind: "failed" as const,
 				reason: `Living-memory lock release could not be confirmed: ${errorMessage(releaseUnconfirmed)}.`,
-				details: result.details,
+				details: {
+					...resultDetails,
+					recovery: "release-unconfirmed" as const,
+				},
 			};
 		} catch (error: unknown) {
 			return {
@@ -837,10 +891,16 @@ export function createLivingMemoryConsolidator(
 					error instanceof EntityFileLockTimeoutError
 						? error.message
 						: errorMessage(error),
-				details: emptyDetails({
-					dryRun: false,
-					modelMode: options.modelMode ?? "full",
-				}),
+				details: {
+					...emptyDetails({
+						dryRun: false,
+						modelMode: options.modelMode ?? "full",
+					}),
+					recovery:
+						error instanceof EntityFileLockTimeoutError
+							? ("concurrent-mutation" as const)
+							: ("none" as const),
+				},
 			};
 		}
 	};
@@ -921,30 +981,42 @@ async function recoverAcceptedEpisodeFinalization(options: {
 
 	const episodePrunes: string[] = [];
 	const completedIds = new Set<string>();
-	for (const source of options.dependencies.sources) {
-		const records = recoverable.get(source.id);
-		if (records === undefined || records.size === 0) continue;
-		if (source.finalize === undefined) {
-			throw new Error(
-				`Episode source ${source.id} cannot finalize represented records.`,
+	try {
+		for (const source of options.dependencies.sources) {
+			const records = recoverable.get(source.id);
+			if (records === undefined || records.size === 0) continue;
+			if (source.finalize === undefined) {
+				throw new Error(
+					`Episode source ${source.id} cannot finalize represented records.`,
+				);
+			}
+			const pruned = await source.finalize(
+				Object.freeze(
+					[...records.values()].map((record) =>
+						Object.freeze({
+							id: record.id,
+							digest: record.digest,
+							...(record.fileIdentity === undefined
+								? {}
+								: { fileIdentity: record.fileIdentity }),
+							proposalPaths: Object.freeze([...record.proposalPaths]),
+						}),
+					),
+				),
+			);
+			episodePrunes.push(...pruned);
+			for (const id of pruned) completedIds.add(`${source.id}\0${id}`);
+		}
+	} catch (error: unknown) {
+		if (episodePrunes.length > 0 && !hasCommittedWrites(error)) {
+			throw Object.assign(
+				new Error(error instanceof Error ? error.message : String(error), {
+					cause: error,
+				}),
+				{ writesCommitted: true },
 			);
 		}
-		const pruned = await source.finalize(
-			Object.freeze(
-				[...records.values()].map((record) =>
-					Object.freeze({
-						id: record.id,
-						digest: record.digest,
-						...(record.fileIdentity === undefined
-							? {}
-							: { fileIdentity: record.fileIdentity }),
-						proposalPaths: Object.freeze([...record.proposalPaths]),
-					}),
-				),
-			),
-		);
-		episodePrunes.push(...pruned);
-		for (const id of pruned) completedIds.add(`${source.id}\0${id}`);
+		throw error;
 	}
 
 	const recoverableReceiptKeys = new Set<string>();

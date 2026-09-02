@@ -19,6 +19,10 @@ export interface DurableMachineFiles extends LivingMemoryDurableFiles {
 		readonly signal?: AbortSignal;
 	}): Promise<{ readonly path: string; readonly digest: string }>;
 	removeFile(path: string): Promise<void>;
+	renameFile(options: {
+		readonly sourcePath: string;
+		readonly destinationPath: string;
+	}): Promise<void>;
 }
 
 export interface DurableRetirementFiles extends DurableMachineFiles {
@@ -48,6 +52,7 @@ export function createDurableMachineFiles(): DurableMachineFiles {
 		writeText: writeTextExclusive,
 		replaceText,
 		removeFile: durableRemove,
+		renameFile: durableRename,
 	};
 }
 
@@ -159,6 +164,30 @@ async function durableRemove(path: string): Promise<void> {
 		if (errorCode(error) !== "ENOENT") throw error;
 	});
 	await syncDirectory(dirname(path));
+}
+
+async function durableRename(options: {
+	readonly sourcePath: string;
+	readonly destinationPath: string;
+}): Promise<void> {
+	const sourceDirectory = resolve(dirname(options.sourcePath));
+	const destinationDirectory = resolve(dirname(options.destinationPath));
+	if (sourceDirectory !== destinationDirectory) {
+		throw new Error("Durable tombstone rename requires one directory.");
+	}
+	const destination = await lstat(options.destinationPath).catch(
+		(error: unknown) => {
+			if (errorCode(error) === "ENOENT") return undefined;
+			throw error;
+		},
+	);
+	if (destination !== undefined) {
+		throw new Error(
+			`Durable tombstone destination is already occupied: ${options.destinationPath}.`,
+		);
+	}
+	await rename(options.sourcePath, options.destinationPath);
+	await syncDirectory(sourceDirectory);
 }
 
 async function writeTextExclusive(options: {
