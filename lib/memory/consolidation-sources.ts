@@ -6,7 +6,9 @@ import {
 	createDurableMachineFiles,
 	type DurableMachineFiles,
 } from "./durable-files.ts";
+import { createKnowledgeMemoryStore } from "./knowledge-store.ts";
 import { createMarkdownMemoryStore } from "./markdown-store.ts";
+import type { RetrievedMemoryRecord } from "./types.ts";
 
 export const CONSOLIDATION_SOURCE_SCOPES = ["project", "user"] as const;
 export type ConsolidationSourceScope =
@@ -75,8 +77,86 @@ export class ConsolidationSourceContractError extends Error {
 }
 
 const PROJECT_EPISODE_SOURCE_ID = "project-episodes";
+const PROJECT_CORPUS_SOURCE_ID = "project-corpus";
 const PROJECT_EPISODE_DIRECTORY = "memory/agent/episodes";
 const PROPOSAL_DIRECTORY = "memory/agent/proposals";
+
+/** Project and user knowledge enter consolidation through the knowledge store. */
+export function createProjectCorpusConsolidationSource(options: {
+	readonly projectRoot: string;
+	readonly userCosmonautsRoot: string;
+}): ConsolidationSource {
+	const projectRoot = resolve(options.projectRoot);
+	const userCosmonautsRoot = resolve(options.userCosmonautsRoot);
+	const store = createKnowledgeMemoryStore({
+		projectRoot,
+		userCosmonautsRoot,
+	});
+	return {
+		id: PROJECT_CORPUS_SOURCE_ID,
+		async collect(input) {
+			throwIfAborted(input.signal);
+			const retrieved = await store.retrieve(
+				{ projectRoot, scopes: ["project", "user"] },
+				{},
+			);
+			const candidates = retrieved.records
+				.flatMap((record) =>
+					record.scope === "project" || record.scope === "user"
+						? [
+								{
+									record,
+									scope: record.scope,
+									scopeRoot:
+										record.scope === "project"
+											? projectRoot
+											: userCosmonautsRoot,
+								},
+							]
+						: [],
+				)
+				.toSorted((left, right) => {
+					const leftPath = relativeScopePath(left.scopeRoot, left.record.path);
+					const rightPath = relativeScopePath(
+						right.scopeRoot,
+						right.record.path,
+					);
+					return (
+						right.record.timestamp.localeCompare(left.record.timestamp) ||
+						`${left.scope}\0${leftPath}`.localeCompare(
+							`${right.scope}\0${rightPath}`,
+						)
+					);
+				});
+			const admitted = candidates.slice(0, input.limit);
+			const records: ConsolidationSourceRecord[] = [];
+			for (const candidate of admitted) {
+				throwIfAborted(input.signal);
+				const path = relativeScopePath(
+					candidate.scopeRoot,
+					candidate.record.path,
+				);
+				const content = await readRegularText(candidate.record.path);
+				records.push(
+					Object.freeze({
+						id: path,
+						sourceId: PROJECT_CORPUS_SOURCE_ID,
+						scope: candidate.scope,
+						path,
+						digest: sha256(content),
+						kind: "knowledge",
+						content,
+						metadata: corpusMetadata(candidate.record, candidate.scopeRoot),
+					}),
+				);
+			}
+			return Object.freeze({
+				records: Object.freeze(records),
+				omitted: candidates.length - admitted.length,
+			});
+		},
+	};
+}
 
 /** Project episodes enter only through a configured knowledge consolidator. */
 export function createProjectEpisodeConsolidationSource(options: {
@@ -339,13 +419,41 @@ function isSafeScopeRelativePath(value: string): boolean {
 }
 
 function relativeProjectPath(projectRoot: string, path: string): string {
-	const value = relative(projectRoot, resolve(path)).split(sep).join("/");
+	const value = relativeScopePath(projectRoot, path);
+	return value;
+}
+
+function relativeScopePath(scopeRoot: string, path: string): string {
+	const value = relative(scopeRoot, resolve(path)).split(sep).join("/");
 	if (!isSafeScopeRelativePath(value)) {
 		throw new ConsolidationSourceContractError(
-			`Episode path escapes the project scope: ${path}.`,
+			`Source path escapes its scope: ${path}.`,
 		);
 	}
 	return value;
+}
+
+function corpusMetadata(
+	record: RetrievedMemoryRecord,
+	scopeRoot: string,
+): Readonly<Record<string, unknown>> {
+	const optional = record as RetrievedMemoryRecord & {
+		readonly retireWhen?: unknown;
+		readonly files?: unknown;
+	};
+	return deepFreeze({
+		type: record.type,
+		title: record.title,
+		description: record.description,
+		resource: record.resource,
+		timestamp: record.timestamp,
+		tags: [...record.tags],
+		scopeRoot,
+		...(optional.retireWhen === undefined
+			? {}
+			: { retireWhen: optional.retireWhen }),
+		...(optional.files === undefined ? {} : { files: optional.files }),
+	});
 }
 
 function assertDirectProjectEpisodePath(path: string): void {

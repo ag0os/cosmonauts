@@ -36,6 +36,7 @@ export {
 	type ConsolidationSourceScope,
 	type ConsolidationSourceSnapshot,
 	collectConsolidationSources,
+	createProjectCorpusConsolidationSource,
 	createProjectEpisodeConsolidationSource,
 } from "./consolidation-sources.ts";
 export {

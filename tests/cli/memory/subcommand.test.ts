@@ -1,6 +1,8 @@
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, test, vi } from "vitest";
 
 const piMocks = vi.hoisted(() => ({
@@ -47,8 +49,101 @@ import { captureCliOutput } from "../../helpers/cli.ts";
 import { useTempDir } from "../../helpers/fs.ts";
 
 const tmp = useTempDir("memory-cli-");
+const execFileAsync = promisify(execFile);
 
 describe("memory owner CLI", () => {
+	test("runs the production corpus source before episodes in a deterministic dry run", async () => {
+		const projectRoot = join(tmp.path, "corpus-cli-project");
+		const home = join(tmp.path, "corpus-cli-home");
+		const knowledgePath = join(projectRoot, "knowledge", "retirable.md");
+		const userKnowledgePath = join(
+			home,
+			".cosmonauts",
+			"knowledge",
+			"user-retirable.md",
+		);
+		const raw = [
+			"---",
+			"type: gotcha",
+			"title: Retirable fixture",
+			"description: A deterministic corpus observation fixture.",
+			"resource: retirable.md",
+			"timestamp: 2026-09-02T12:00:00.000Z",
+			"scope: project",
+			"kind: semantic",
+			"tags: [fixture]",
+			"retire-when:",
+			"  condition: Remove after the legacy path disappears.",
+			"  check:",
+			"    kind: path-absent",
+			"    path: docs/legacy.md",
+			"---",
+			"",
+			"# Retirable fixture",
+			"",
+			"The legacy path is gone.",
+			"",
+		].join("\n");
+		const userRaw = raw
+			.replace("title: Retirable fixture", "title: User retirable fixture")
+			.replace(
+				"description: A deterministic corpus observation fixture.",
+				"description: A measured user-scope fixture.",
+			)
+			.replace("resource: retirable.md", "resource: user-retirable.md")
+			.replace("scope: project", "scope: user")
+			.replace("# Retirable fixture", "# User retirable fixture");
+		await Promise.all([
+			mkdir(join(projectRoot, "knowledge"), { recursive: true }),
+			mkdir(join(home, ".cosmonauts", "knowledge"), { recursive: true }),
+		]);
+		await Promise.all([
+			writeFile(knowledgePath, raw),
+			writeFile(userKnowledgePath, userRaw),
+		]);
+
+		const { stdout } = await execFileAsync(
+			"bun",
+			[
+				join(process.cwd(), "bin", "cosmonauts"),
+				"memory",
+				"consolidate",
+				"--dry-run",
+				"--no-model",
+				"--json",
+			],
+			{
+				cwd: projectRoot,
+				env: { ...process.env, HOME: home },
+			},
+		);
+		const result = JSON.parse(stdout);
+
+		expect(result).toMatchObject({
+			kind: "ran",
+			details: {
+				dryRun: true,
+				modelMode: "deterministic-only",
+				sources: [
+					{ sourceId: "project-corpus", admitted: 2, omitted: 0 },
+					{ sourceId: "project-episodes", admitted: 0, omitted: 0 },
+				],
+				observations: [
+					expect.objectContaining({ kind: "retire-condition-met" }),
+				],
+				writesCommitted: false,
+			},
+		});
+		expect(
+			await Promise.all([
+				readFile(knowledgePath, "utf-8"),
+				readFile(userKnowledgePath, "utf-8"),
+			]),
+		).toEqual([raw, userRaw]);
+		expect(await readdir(projectRoot)).toEqual(["knowledge"]);
+		expect(await readdir(join(home, ".cosmonauts"))).toEqual(["knowledge"]);
+	});
+
 	// @cosmo-behavior plan:living-memory#B-007
 	test("actions or rejects improve proposals through a reachable closed lifecycle", async () => {
 		const projectRoot = join(tmp.path, "improve-project");

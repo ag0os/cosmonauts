@@ -11,6 +11,7 @@ import {
 	createKnowledgeMemoryStore,
 	createLivingMemoryConsolidator,
 	createLivingMemoryRetirementStore,
+	createProjectCorpusConsolidationSource,
 	createProjectEpisodeConsolidationSource,
 	DEFAULT_LIVING_MEMORY_LIMITS,
 	type ImprovementActionPointer,
@@ -424,6 +425,10 @@ function createDefaultConsolidationStore(
 			: undefined;
 	const consolidator = createLivingMemoryConsolidator({
 		sources: [
+			createProjectCorpusConsolidationSource({
+				projectRoot: options.projectRoot,
+				userCosmonautsRoot,
+			}),
 			createProjectEpisodeConsolidationSource({
 				projectRoot: options.projectRoot,
 				durableFiles,

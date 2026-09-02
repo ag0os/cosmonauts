@@ -46,6 +46,7 @@ export interface KnowledgeRecordFields {
 	readonly source?: string;
 	readonly date?: string;
 	readonly retireWhen?: KnowledgeRetireWhen;
+	readonly files?: readonly string[];
 	readonly content: string;
 }
 
@@ -135,6 +136,8 @@ export function parseHumanKnowledgeRecord(options: {
 
 	const tags = normalizeOptionalTags(data.tags);
 	if (!tags.ok) return invalidField("tags");
+	const files = normalizeOptionalFiles(data.files);
+	if (!files.ok) return invalidField("files");
 	const timestamp = normalizeOptionalDate(data.timestamp);
 	if (!timestamp.ok) return invalidField("timestamp");
 	if (data.scope !== undefined && data.scope !== options.physicalScope) {
@@ -178,6 +181,7 @@ export function parseHumanKnowledgeRecord(options: {
 			...(retireWhen.value === undefined
 				? {}
 				: { retireWhen: retireWhen.value }),
+			...(files.value === undefined ? {} : { files: files.value }),
 			content,
 		},
 	};
@@ -537,6 +541,21 @@ function normalizeOptionalTags(
 	} catch {
 		return { ok: false };
 	}
+}
+
+function normalizeOptionalFiles(
+	value: unknown,
+):
+	| { readonly ok: true; readonly value?: readonly string[] }
+	| { readonly ok: false } {
+	if (value === undefined) return { ok: true };
+	if (
+		!Array.isArray(value) ||
+		!value.every((path) => typeof path === "string")
+	) {
+		return { ok: false };
+	}
+	return { ok: true, value: [...value] };
 }
 
 function normalizeOptionalDate(
