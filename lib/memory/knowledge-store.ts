@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { constants } from "node:fs";
 import { lstat, open, readdir } from "node:fs/promises";
@@ -40,6 +41,19 @@ export interface KnowledgeMemoryStoreOptions {
 	readonly userCosmonautsRoot?: string;
 	readonly now?: () => Date;
 	readonly consolidator?: KnowledgeConsolidator;
+}
+
+export interface KnowledgeConsolidationInventoryEntry {
+	readonly record: RetrievedMemoryRecord;
+	readonly digest: string;
+	readonly bytes: number;
+	readonly bodyAvailable: boolean;
+}
+
+export interface KnowledgeConsolidationInventory {
+	readonly entries: readonly KnowledgeConsolidationInventoryEntry[];
+	readonly warnings: readonly MemoryWarning[];
+	readonly unrepresentableOversizedPaths: readonly string[];
 }
 
 interface KnowledgeStoreContext {

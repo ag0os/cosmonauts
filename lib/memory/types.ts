@@ -205,7 +205,15 @@ export type KnowledgeConsolidator = (
 
 export interface LivingMemoryLimits {
 	readonly maxCorpusRecords: number;
+	/** Maximum UTF-8 bytes admitted for one corpus record (64 KiB). */
+	readonly maxCorpusRecordBytes: number;
+	/** Maximum aggregate UTF-8 corpus body bytes admitted per pass (256 KiB). */
+	readonly maxCorpusBytes: number;
 	readonly maxEpisodeRecords: number;
+	/** Maximum UTF-8 bytes admitted for one episode (64 KiB). */
+	readonly maxEpisodeRecordBytes: number;
+	/** Maximum aggregate UTF-8 episode body bytes admitted per pass (256 KiB). */
+	readonly maxEpisodeBytes: number;
 	readonly maxObservations: number;
 	readonly maxProposals: number;
 	readonly maxRetirements: number;

@@ -30,6 +30,7 @@ import {
 	createLivingMemoryConsolidator,
 	createLivingMemoryRetirementStore,
 	createMarkdownMemoryStore,
+	createProjectCorpusConsolidationSource,
 	createProjectEpisodeConsolidationSource,
 	DEFAULT_LIVING_MEMORY_LIMITS,
 	executeLivingMemoryConsolidationJob,
@@ -2914,6 +2915,148 @@ describe("living memory", () => {
 	});
 
 	// @cosmo-behavior plan:living-memory#B-010
+	test("rejects an oversized source record before model judgment", async () => {
+		const oversized = record({
+			id: "oversized-corpus",
+			sourceId: "corpus",
+			path: "knowledge/oversized.md",
+			kind: "knowledge",
+			content: "x".repeat(64 * 1024 + 1),
+		});
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [],
+		}));
+
+		await expect(
+			createHarness([source("corpus", [oversized])], {
+				id: "fake/no-tools",
+				judge,
+			}).consolidator(),
+		).resolves.toMatchObject({
+			kind: "failed",
+			reason: expect.stringMatching(/oversized-corpus.*65,536.*bytes/iu),
+		});
+		expect(judge).not.toHaveBeenCalled();
+	});
+
+	test("rejects aggregate source body overflow before model judgment", async () => {
+		const records = Array.from({ length: 5 }, (_, index) =>
+			record({
+				id: `aggregate-${index}`,
+				sourceId: "corpus",
+				path: `knowledge/aggregate-${index}.md`,
+				kind: "knowledge",
+				content: "x".repeat(60 * 1024),
+			}),
+		);
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [],
+		}));
+
+		await expect(
+			createHarness([source("corpus", records)], {
+				id: "fake/no-tools",
+				judge,
+			}).consolidator(),
+		).resolves.toMatchObject({
+			kind: "failed",
+			reason: expect.stringMatching(/corpus.*aggregate.*262,144.*bytes/iu),
+		});
+		expect(judge).not.toHaveBeenCalled();
+	});
+
+	test("rejects an oversized episode before model judgment", async () => {
+		const oversized = record({
+			id: "oversized-episode",
+			sourceId: "episodes",
+			path: "memory/agent/episodes/oversized.md",
+			kind: "episode",
+			content: "x".repeat(64 * 1024 + 1),
+		});
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [],
+		}));
+
+		await expect(
+			createHarness([source("episodes", [oversized])], {
+				id: "fake/no-tools",
+				judge,
+			}).consolidator(),
+		).resolves.toMatchObject({
+			kind: "failed",
+			reason: expect.stringMatching(/oversized-episode.*65,536.*bytes/iu),
+		});
+		expect(judge).not.toHaveBeenCalled();
+	});
+
+	test("rejects aggregate episode body overflow before model judgment", async () => {
+		const episodes = Array.from({ length: 5 }, (_, index) =>
+			record({
+				id: `aggregate-episode-${index}`,
+				sourceId: "episodes",
+				path: `memory/agent/episodes/aggregate-${index}.md`,
+				kind: "episode",
+				content: "x".repeat(60 * 1024),
+			}),
+		);
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [],
+		}));
+
+		await expect(
+			createHarness([source("episodes", episodes)], {
+				id: "fake/no-tools",
+				judge,
+			}).consolidator(),
+		).resolves.toMatchObject({
+			kind: "failed",
+			reason: expect.stringMatching(/episode.*aggregate.*262,144.*bytes/iu),
+		});
+		expect(judge).not.toHaveBeenCalled();
+	});
+
+	test("defers oversized production corpus bodies with explicit evidence", async () => {
+		const projectRoot = join(tmp.path, "oversized-production-corpus");
+		const userRoot = join(tmp.path, "oversized-production-user");
+		await mkdir(join(projectRoot, "knowledge"), { recursive: true });
+		await mkdir(join(userRoot, "knowledge"), { recursive: true });
+		await writeFile(
+			join(projectRoot, "knowledge", "oversized.md"),
+			`${knowledgeFixture({ resource: "oversized.md" })}${"x".repeat(64 * 1024)}`,
+		);
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [],
+		}));
+		const harness = createHarness(
+			[
+				createProjectCorpusConsolidationSource({
+					projectRoot,
+					userCosmonautsRoot: userRoot,
+				}),
+			],
+			{ id: "fake/no-tools", judge },
+		);
+
+		await expect(harness.consolidator()).resolves.toMatchObject({
+			kind: "noop",
+			details: {
+				sources: [{ sourceId: "project-corpus", admitted: 0, omitted: 1 }],
+				declines: expect.arrayContaining([
+					expect.objectContaining({
+						code: "source-record-bytes-deferred",
+						path: "knowledge/oversized.md",
+					}),
+				]),
+			},
+		});
+		expect(judge).not.toHaveBeenCalled();
+	});
+
 	test("rejects source contract violations and enforces bounded lossy passes", async () => {
 		const corpus = Array.from({ length: 50 }, (_, index) =>
 			record({

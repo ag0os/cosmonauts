@@ -46,14 +46,25 @@ export interface ConsolidationSourceInventoryRecord {
 
 export interface ConsolidationSourceCollectOptions {
 	readonly limit: number;
+	readonly maxCorpusRecordBytes: number;
+	readonly maxCorpusBytes: number;
+	readonly maxEpisodeRecordBytes: number;
+	readonly maxEpisodeBytes: number;
 	readonly representedDigests?: readonly string[];
 	readonly signal?: AbortSignal;
+}
+
+export interface ConsolidationSourceDecline {
+	readonly code: "source-record-bytes-deferred" | "source-aggregate-bytes-deferred";
+	readonly path: string;
+	readonly reason: string;
 }
 
 export interface ConsolidationSourceSnapshot {
 	readonly records: readonly ConsolidationSourceRecord[];
 	readonly inventory?: readonly ConsolidationSourceInventoryRecord[];
 	readonly omitted: number;
+	readonly declines?: readonly ConsolidationSourceDecline[];
 }
 
 export interface ConsolidationFinalizedRecord {
@@ -80,6 +91,7 @@ export interface CollectedConsolidationSources {
 		readonly admitted: number;
 		readonly omitted: number;
 	}[];
+	readonly declines: readonly ConsolidationSourceDecline[];
 }
 
 export class ConsolidationSourceContractError extends Error {
@@ -143,8 +155,10 @@ export function createProjectCorpusConsolidationSource(options: {
 				});
 			const records: ConsolidationSourceRecord[] = [];
 			const inventory: ConsolidationSourceInventoryRecord[] = [];
+			const declines: ConsolidationSourceDecline[] = [];
 			const representedDigests = new Set(input.representedDigests);
 			let projectCandidates = 0;
+			let admittedBytes = 0;
 			for (const candidate of candidates) {
 				throwIfAborted(input.signal);
 				const path = relativeScopePath(
@@ -169,13 +183,32 @@ export function createProjectCorpusConsolidationSource(options: {
 					continue;
 				}
 				projectCandidates += 1;
+				const contentBytes = Buffer.byteLength(content, "utf-8");
+				if (contentBytes > input.maxCorpusRecordBytes) {
+					declines.push({
+						code: "source-record-bytes-deferred",
+						path,
+						reason: `Corpus record requires ${contentBytes.toLocaleString("en-US")} bytes; the per-record ceiling is ${input.maxCorpusRecordBytes.toLocaleString("en-US")} bytes.`,
+					});
+					continue;
+				}
 				if (records.length >= input.limit) continue;
+				if (admittedBytes + contentBytes > input.maxCorpusBytes) {
+					declines.push({
+						code: "source-aggregate-bytes-deferred",
+						path,
+						reason: `Corpus aggregate body ceiling is ${input.maxCorpusBytes.toLocaleString("en-US")} bytes.`,
+					});
+					continue;
+				}
+				admittedBytes += contentBytes;
 				records.push(Object.freeze({ ...common, content }));
 			}
 			return Object.freeze({
 				records: Object.freeze(records),
 				inventory: Object.freeze(inventory),
 				omitted: projectCandidates - records.length,
+				declines: Object.freeze(declines),
 			});
 		},
 	};
@@ -275,7 +308,11 @@ export function createProjectEpisodeConsolidationSource(options: {
 export async function collectConsolidationSources(options: {
 	readonly sources: readonly ConsolidationSource[];
 	readonly maxCorpusRecords: number;
+	readonly maxCorpusRecordBytes: number;
+	readonly maxCorpusBytes: number;
 	readonly maxEpisodeRecords: number;
+	readonly maxEpisodeRecordBytes: number;
+	readonly maxEpisodeBytes: number;
 	readonly representedDigests?: readonly string[];
 	readonly signal?: AbortSignal;
 }): Promise<CollectedConsolidationSources> {
@@ -286,10 +323,13 @@ export async function collectConsolidationSources(options: {
 		admitted: number;
 		omitted: number;
 	}> = [];
+	const declines: ConsolidationSourceDecline[] = [];
 	const sourceIds = new Set<string>();
 	const recordKeys = new Set<string>();
 	let admittedCorpus = 0;
+	let admittedCorpusBytes = 0;
 	let admittedEpisodes = 0;
+	let admittedEpisodeBytes = 0;
 	const requestedLimit = Math.max(
 		options.maxCorpusRecords,
 		options.maxEpisodeRecords,
@@ -307,6 +347,10 @@ export async function collectConsolidationSources(options: {
 
 		const snapshot = await source.collect({
 			limit: requestedLimit,
+			maxCorpusRecordBytes: options.maxCorpusRecordBytes,
+			maxCorpusBytes: options.maxCorpusBytes,
+			maxEpisodeRecordBytes: options.maxEpisodeRecordBytes,
+			maxEpisodeBytes: options.maxEpisodeBytes,
 			...(options.representedDigests === undefined
 				? {}
 				: { representedDigests: options.representedDigests }),
@@ -331,6 +375,29 @@ export async function collectConsolidationSources(options: {
 		const validatedSourceRecords: ConsolidationSourceRecord[] = [];
 		for (const candidate of snapshot.records) {
 			const record = immutableValidatedRecord(candidate, source.id);
+			const contentBytes = Buffer.byteLength(record.content, "utf-8");
+			const recordByteLimit =
+				record.kind === "episode"
+					? options.maxEpisodeRecordBytes
+					: options.maxCorpusRecordBytes;
+			if (contentBytes > recordByteLimit) {
+				throw new ConsolidationSourceContractError(
+					`Record ${record.id} exceeds the ${record.kind === "episode" ? "episode" : "corpus"} record ceiling (${recordByteLimit.toLocaleString("en-US")} bytes).`,
+				);
+			}
+			const aggregateBytes =
+				record.kind === "episode"
+					? admittedEpisodeBytes + contentBytes
+					: admittedCorpusBytes + contentBytes;
+			const aggregateByteLimit =
+				record.kind === "episode"
+					? options.maxEpisodeBytes
+					: options.maxCorpusBytes;
+			if (aggregateBytes > aggregateByteLimit) {
+				throw new ConsolidationSourceContractError(
+					`${record.kind === "episode" ? "Episode" : "Corpus"} aggregate body bytes exceed the per-pass ceiling (${aggregateByteLimit.toLocaleString("en-US")} bytes).`,
+				);
+			}
 			validatedSourceRecords.push(record);
 			const key = `${record.sourceId}\0${record.id}`;
 			if (recordKeys.has(key)) {
@@ -349,8 +416,13 @@ export async function collectConsolidationSources(options: {
 				deferred += 1;
 				continue;
 			}
-			if (isEpisode) admittedEpisodes += 1;
-			else admittedCorpus += 1;
+			if (isEpisode) {
+				admittedEpisodes += 1;
+				admittedEpisodeBytes += contentBytes;
+			} else {
+				admittedCorpus += 1;
+				admittedCorpusBytes += contentBytes;
+			}
 			records.push(record);
 			admitted += 1;
 		}
@@ -361,6 +433,7 @@ export async function collectConsolidationSources(options: {
 					({ content: _content, ...record }) => record,
 				)),
 		);
+		declines.push(...(snapshot.declines ?? []));
 		summaries.push(
 			Object.freeze({
 				sourceId: source.id,
@@ -374,6 +447,7 @@ export async function collectConsolidationSources(options: {
 		records: Object.freeze(records),
 		inventory: Object.freeze(inventory),
 		sources: Object.freeze(summaries),
+		declines: Object.freeze(declines),
 	});
 }
 

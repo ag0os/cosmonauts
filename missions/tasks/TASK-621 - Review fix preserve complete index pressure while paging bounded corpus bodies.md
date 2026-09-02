@@ -3,7 +3,7 @@ id: TASK-621
 title: >-
   Review fix: preserve complete index pressure while paging bounded corpus
   bodies
-status: In Progress
+status: Done
 priority: high
 assignee: worker
 labels:
@@ -14,7 +14,7 @@ labels:
   - 'plan:living-memory'
 dependencies: []
 createdAt: '2026-09-02T18:48:12.415Z'
-updatedAt: '2026-09-02T18:59:40.941Z'
+updatedAt: '2026-09-02T19:00:17.101Z'
 ---
 
 ## Description
@@ -31,4 +31,4 @@ Remediate performance finding PF-001 from quality round 1. The production corpus
 
 ## Implementation Notes
 
-Implemented PF-001 by separating complete source inventory metadata from bounded project body snapshots, paging production corpus collection past represented digests, measuring pressure and stale-receipt liveness against the complete inventory, and excluding user-scope bodies from judgment/mutation. Added 51-row, user-authority, and multi-pass starvation regressions. Verified `bun run test` (3009 tests), `bun run lint`, and `bun run typecheck`. Changed-scope audit at base `888771f7cec2ae58a43f7eb5ca1cfbc6a3889142` was unavailable (`unbound`, `execution-not-consented`); this is unavailable evidence, not a clean result.
+Separated complete body-free corpus inventory from bounded project judgment records; complete inventory now drives index pressure and stale-receipt retention, while represented digests page later project records and user records are excluded from mutation candidates. Regression coverage includes 51-row pressure input, user-scope exclusion, production source bounds, and three-pass starvation/convergence. Verified `bun run test` (3009 tests), `bun run lint`, and `bun run typecheck`. Changed-scope audit at base 888771f7cec2ae58a43f7eb5ca1cfbc6a3889142 was unavailable (`unbound`: execution-not-consented), not treated as clean evidence.

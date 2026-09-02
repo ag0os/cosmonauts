@@ -33,7 +33,11 @@ import type {
 
 export const DEFAULT_LIVING_MEMORY_LIMITS = Object.freeze({
 	maxCorpusRecords: 50,
+	maxCorpusRecordBytes: 64 * 1024,
+	maxCorpusBytes: 256 * 1024,
 	maxEpisodeRecords: 50,
+	maxEpisodeRecordBytes: 64 * 1024,
+	maxEpisodeBytes: 256 * 1024,
 	maxObservations: 25,
 	maxProposals: 10,
 	maxRetirements: 5,
@@ -115,7 +119,11 @@ export function createLivingMemoryConsolidator(
 			const collected = await collectConsolidationSources({
 				sources: dependencies.sources,
 				maxCorpusRecords: dependencies.limits.maxCorpusRecords,
+				maxCorpusRecordBytes: dependencies.limits.maxCorpusRecordBytes,
+				maxCorpusBytes: dependencies.limits.maxCorpusBytes,
 				maxEpisodeRecords: dependencies.limits.maxEpisodeRecords,
+				maxEpisodeRecordBytes: dependencies.limits.maxEpisodeRecordBytes,
+				maxEpisodeBytes: dependencies.limits.maxEpisodeBytes,
 				representedDigests: representedBeforeCollection,
 				...(options.signal === undefined ? {} : { signal: options.signal }),
 			});
@@ -124,6 +132,7 @@ export function createLivingMemoryConsolidator(
 				sources: collected.sources,
 				declines: Object.freeze([
 					...details.declines,
+					...collected.declines,
 					...collected.sources
 						.filter((source) => source.omitted > 0)
 						.map((source) => ({
