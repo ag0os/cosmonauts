@@ -7,6 +7,14 @@ export {
 	PROFILE_WRITE_MAX_BYTES,
 } from "./authored-records.ts";
 export {
+	createConsolidationProposalStore,
+	renderConsolidationProposal,
+} from "./consolidation-proposals.ts";
+export {
+	type AcceptedJudgmentReceiptStoreWithPaths,
+	createAcceptedJudgmentReceiptStore,
+} from "./consolidation-receipts.ts";
+export {
 	CONSOLIDATION_SOURCE_KINDS,
 	CONSOLIDATION_SOURCE_SCOPES,
 	type CollectedConsolidationSources,
@@ -20,6 +28,10 @@ export {
 	type ConsolidationSourceSnapshot,
 	collectConsolidationSources,
 } from "./consolidation-sources.ts";
+export {
+	createDurableMachineFiles,
+	type DurableMachineFiles,
+} from "./durable-files.ts";
 export {
 	type EpisodeCaptureDependencies,
 	type EpisodeCaptureResult,
@@ -60,6 +72,9 @@ export {
 export {
 	createLivingMemoryConsolidator,
 	DEFAULT_LIVING_MEMORY_LIMITS,
+	inspectLivingMemoryCitationInventory,
+	type LivingMemoryCitationInventory,
+	type LivingMemoryCitationInventoryEntry,
 } from "./living-memory.ts";
 export type { MarkdownMemoryStoreOptions } from "./markdown-store.ts";
 export { createMarkdownMemoryStore } from "./markdown-store.ts";

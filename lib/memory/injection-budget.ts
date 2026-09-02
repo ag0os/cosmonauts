@@ -30,31 +30,31 @@ export function allocateInjectionBudget(options: {
 	const prefix = options.prefix ?? "";
 	const separator = options.separator ?? "\n\n";
 	const framingBytes =
-		byteLength(prefix) +
-		byteLength(separator) * Math.max(0, sections.length - 1);
+		utf8ByteLength(prefix) +
+		utf8ByteLength(separator) * Math.max(0, sections.length - 1);
 	const available = Math.max(0, options.maxBytes - framingBytes);
 	const caps = fairCaps(
-		sections.map((section) => byteLength(section.content)),
+		sections.map((section) => utf8ByteLength(section.content)),
 		available,
 	);
 	const allocations: Record<string, InjectionAllocation> = {};
 	const rendered = sections.map((section, index) => {
-		const originalBytes = byteLength(section.content);
+		const originalBytes = utf8ByteLength(section.content);
 		const content = renderSectionWithin({
 			section,
 			maxBytes: caps[index] ?? 0,
 		});
 		allocations[section.id] = {
 			originalBytes,
-			renderedBytes: byteLength(content),
-			truncated: originalBytes > byteLength(content),
+			renderedBytes: utf8ByteLength(content),
+			truncated: originalBytes > utf8ByteLength(content),
 		};
 		return content;
 	});
 	const combined = `${prefix}${rendered.join(separator)}`;
 	return {
 		content:
-			byteLength(combined) <= options.maxBytes
+			utf8ByteLength(combined) <= options.maxBytes
 				? combined
 				: truncateUtf8(combined, options.maxBytes),
 		allocations,
@@ -95,16 +95,23 @@ function renderSectionWithin(options: {
 	readonly section: InjectionSection;
 	readonly maxBytes: number;
 }): string {
-	const originalBytes = byteLength(options.section.content);
+	const originalBytes = utf8ByteLength(options.section.content);
 	if (originalBytes <= options.maxBytes) return options.section.content;
 
 	let included = 0;
-	let footer = truncationFooter(options.section, originalBytes, included);
+	let footer = renderInjectionTruncationFooter(
+		options.section,
+		originalBytes,
+		included,
+	);
 	for (let attempt = 0; attempt < 10; attempt += 1) {
-		const contentBudget = Math.max(0, options.maxBytes - byteLength(footer));
+		const contentBudget = Math.max(
+			0,
+			options.maxBytes - utf8ByteLength(footer),
+		);
 		const excerpt = truncateUtf8(options.section.content, contentBudget);
-		const nextIncluded = byteLength(excerpt);
-		const nextFooter = truncationFooter(
+		const nextIncluded = utf8ByteLength(excerpt);
+		const nextFooter = renderInjectionTruncationFooter(
 			options.section,
 			originalBytes,
 			nextIncluded,
@@ -117,12 +124,12 @@ function renderSectionWithin(options: {
 	}
 	const excerpt = truncateUtf8(
 		options.section.content,
-		Math.max(0, options.maxBytes - byteLength(footer)),
+		Math.max(0, options.maxBytes - utf8ByteLength(footer)),
 	);
 	return truncateUtf8(`${excerpt}${footer}`, options.maxBytes);
 }
 
-function truncationFooter(
+export function renderInjectionTruncationFooter(
 	section: InjectionSection,
 	originalBytes: number,
 	includedBytes: number,
@@ -130,17 +137,17 @@ function truncationFooter(
 	return `\n[${section.id} truncated from ${originalBytes} UTF-8 bytes to ${includedBytes} bytes. Use \`${section.detailTool}\` for complete details.]`;
 }
 
-function byteLength(value: string): number {
+export function utf8ByteLength(value: string): number {
 	return Buffer.byteLength(value, "utf-8");
 }
 
 function truncateUtf8(value: string, maxBytes: number): string {
 	if (maxBytes <= 0) return "";
-	if (byteLength(value) <= maxBytes) return value;
+	if (utf8ByteLength(value) <= maxBytes) return value;
 	let result = "";
 	let used = 0;
 	for (const character of value) {
-		const bytes = byteLength(character);
+		const bytes = utf8ByteLength(character);
 		if (used + bytes > maxBytes) break;
 		result += character;
 		used += bytes;

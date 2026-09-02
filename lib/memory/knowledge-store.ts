@@ -1,26 +1,9 @@
-import { randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { constants } from "node:fs";
-import {
-	link,
-	lstat,
-	mkdir,
-	open,
-	readdir,
-	realpath,
-	unlink,
-	writeFile,
-} from "node:fs/promises";
+import { lstat, open, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import {
-	basename,
-	dirname,
-	isAbsolute,
-	join,
-	relative,
-	resolve,
-	sep,
-} from "node:path";
+import { basename, join, relative, resolve, sep } from "node:path";
+import { createDurableMachineFiles } from "./durable-files.ts";
 import {
 	normalizeKnowledgeProposal,
 	parseHumanKnowledgeRecord,
@@ -29,6 +12,7 @@ import {
 	toRetrievedKnowledgeRecord,
 } from "./knowledge-records.ts";
 import { assertBoundProjectRoot } from "./paths.ts";
+import { ensureSafeContainedDirectory } from "./proposal-files.ts";
 import type {
 	KnowledgeConsolidator,
 	KnowledgeProposalIdentity,
@@ -195,18 +179,15 @@ async function writeKnowledgeProposal(options: {
 	if (!normalized.ok) {
 		return { kind: "unsupported", reason: normalized.message };
 	}
-	const proposalRoot = join(options.context.projectRoot, PROPOSAL_DIRECTORY);
-	const planDirectory = join(
-		proposalRoot,
-		normalized.proposalIdentity.planSlug,
-	);
+	const relativeDirectory = `${PROPOSAL_DIRECTORY.split(sep).join("/")}/${normalized.proposalIdentity.planSlug}`;
+	const planDirectory = join(options.context.projectRoot, relativeDirectory);
 	const path = join(planDirectory, basename(normalized.record.resource));
 
 	try {
-		await ensureSafeProposalDirectory({
-			projectRoot: options.context.projectRoot,
-			proposalRoot,
-			planDirectory,
+		await ensureSafeContainedDirectory({
+			root: options.context.projectRoot,
+			relativeDirectory,
+			label: "Knowledge proposal",
 		});
 		const existing = await readExistingRegularFile(path);
 		if (existing !== undefined) {
@@ -219,12 +200,12 @@ async function writeKnowledgeProposal(options: {
 		}
 
 		const rendered = renderKnowledgeProposal(normalized.record);
-		const created = await writeAtomicExclusive({ path, content: rendered });
-		if (!created) {
+		try {
+			await createDurableMachineFiles().writeText({ path, content: rendered });
+		} catch (error: unknown) {
+			if (!isDurableIdentityConflict(error)) throw error;
 			const winner = await readExistingRegularFile(path);
-			if (winner === undefined) {
-				throw new Error("Proposal creation race ended without an occupant.");
-			}
+			if (winner === undefined) throw error;
 			return existingProposalResult({
 				raw: winner.raw,
 				path,
@@ -272,88 +253,6 @@ function existingProposalResult(options: {
 		};
 	} catch (error: unknown) {
 		return failedProposalWrite({ path: options.path, error });
-	}
-}
-
-async function ensureSafeProposalDirectory(options: {
-	readonly projectRoot: string;
-	readonly proposalRoot: string;
-	readonly planDirectory: string;
-}): Promise<void> {
-	await ensureRealDirectory(options.projectRoot, true);
-	let current = options.projectRoot;
-	for (const segment of ["memory", "agent", "proposals"]) {
-		current = join(current, segment);
-		await ensureRealDirectory(current, false);
-	}
-	await ensureRealDirectory(options.planDirectory, false);
-
-	const [projectRealPath, proposalRealPath, planRealPath] = await Promise.all([
-		realpath(options.projectRoot),
-		realpath(options.proposalRoot),
-		realpath(options.planDirectory),
-	]);
-	if (
-		!isContained(projectRealPath, proposalRealPath) ||
-		!isContained(proposalRealPath, planRealPath)
-	) {
-		throw new Error("Knowledge proposal path escapes its real project root.");
-	}
-}
-
-async function ensureRealDirectory(
-	path: string,
-	recursive: boolean,
-): Promise<void> {
-	try {
-		const metadata = await lstat(path);
-		if (metadata.isSymbolicLink()) {
-			throw new Error(`Knowledge proposal directory is a symlink: ${path}`);
-		}
-		if (!metadata.isDirectory()) {
-			throw new Error(`Knowledge proposal path is not a directory: ${path}`);
-		}
-		return;
-	} catch (error: unknown) {
-		if (!isMissingPath(error)) throw error;
-	}
-
-	try {
-		await mkdir(path, { recursive });
-	} catch (error: unknown) {
-		if (!isExistingPath(error)) throw error;
-	}
-	const created = await lstat(path);
-	if (created.isSymbolicLink()) {
-		throw new Error(`Knowledge proposal directory is a symlink: ${path}`);
-	}
-	if (!created.isDirectory()) {
-		throw new Error(`Knowledge proposal path is not a directory: ${path}`);
-	}
-}
-
-async function writeAtomicExclusive(options: {
-	readonly path: string;
-	readonly content: string;
-}): Promise<boolean> {
-	const tempPath = join(
-		dirname(options.path),
-		`.${basename(options.path)}.${process.pid}.${randomUUID()}.tmp`,
-	);
-	try {
-		await writeFile(tempPath, options.content, {
-			encoding: "utf-8",
-			flag: "wx",
-		});
-		try {
-			await link(tempPath, options.path);
-			return true;
-		} catch (error: unknown) {
-			if (isExistingPath(error)) return false;
-			throw error;
-		}
-	} finally {
-		await unlink(tempPath).catch(() => undefined);
 	}
 }
 
@@ -510,16 +409,6 @@ function toPosixRelative(root: string, path: string): string {
 	return relative(root, path).split(sep).join("/");
 }
 
-function isContained(parent: string, child: string): boolean {
-	const relativePath = relative(parent, child);
-	return (
-		relativePath.length > 0 &&
-		!relativePath.startsWith(`..${sep}`) &&
-		relativePath !== ".." &&
-		!isAbsolute(relativePath)
-	);
-}
-
 function failedProposalWrite(options: {
 	readonly path: string;
 	readonly error: unknown;
@@ -539,12 +428,15 @@ function isMissingPath(error: unknown): boolean {
 	return errorCode(error) === "ENOENT";
 }
 
-function isExistingPath(error: unknown): boolean {
-	return errorCode(error) === "EEXIST";
-}
-
 function isSymlinkPath(error: unknown): boolean {
 	return errorCode(error) === "ELOOP";
+}
+
+function isDurableIdentityConflict(error: unknown): boolean {
+	return (
+		error instanceof Error &&
+		error.message.startsWith("Durable file identity conflict at ")
+	);
 }
 
 function errorCode(error: unknown): string | undefined {

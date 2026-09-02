@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -15,11 +16,22 @@ import {
 	type ArchitectureMapFreshness,
 	type ArchitectureMapMemoryStoreOptions,
 } from "../../lib/architecture-map/index.ts";
+import {
+	COMBINED_CONTEXT_PREFIX,
+	createKnowledgeIndexPressurePolicy,
+	KNOWLEDGE_INDEX_LIMIT,
+	renderKnowledgeIndex,
+} from "../../lib/extensions/knowledge-surface/index-policy.ts";
 import { createKnowledgeSurfaceSessionExtension } from "../../lib/extensions/knowledge-surface/session-extension.ts";
 import type {
+	ConsolidationSourceRecord,
 	MemoryRetrieveResult,
 	MemoryStore,
 	RetrievedMemoryRecord,
+} from "../../lib/memory/index.ts";
+import {
+	createLivingMemoryConsolidator,
+	DEFAULT_LIVING_MEMORY_LIMITS,
 } from "../../lib/memory/index.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import { createMockPi } from "../helpers/mocks/index.ts";
@@ -38,6 +50,159 @@ const BASE_CONFIG: ArchitectureMapConfig = {
 };
 
 describe("architecture-memory extension", () => {
+	// @cosmo-behavior plan:living-memory#B-021
+	test("measures index pressure with the exact injection renderer and budget", async () => {
+		const projectRoot = join(tmp.path, "index-pressure-project");
+		const userRoot = join(tmp.path, "index-pressure-user");
+		const records = Array.from({ length: KNOWLEDGE_INDEX_LIMIT }, (_, index) =>
+			contextRecord({
+				type: "decision",
+				scope: index % 2 === 0 ? "project" : "user",
+				title: `Pressure row ${index.toString().padStart(2, "0")}`,
+				description: `Metadata ${index}`,
+				resource: `knowledge/${index}.md`,
+				path:
+					index % 2 === 0
+						? join(projectRoot, "knowledge", `${index}.md`)
+						: join(userRoot, "knowledge", `${index}.md`),
+				timestamp: new Date(Date.UTC(2026, 8, 1, 0, 0, index)).toISOString(),
+			}),
+		);
+		const before = structuredClone(records);
+		const expectedRenderer = legacyKnowledgeIndex(records);
+		expect(renderKnowledgeIndex(records)).toBe(expectedRenderer);
+
+		const pi = createMockPi({ cwd: projectRoot });
+		installKnowledgeSurface(pi, {
+			agentId: "coding/worker",
+			registerAgentMemoryTools: false,
+			authorizeAuthoredMemory: false,
+			registerArchitectureTool: false,
+			authorizeArchitecture: false,
+			recallOwner: "knowledge",
+			canPropose: false,
+			userCosmonautsRoot: userRoot,
+			createKnowledgeStore: () =>
+				memoryStore({ retrieve: async () => contextResult(records) }),
+			createAuthoredStore: () =>
+				memoryStore({ retrieve: async () => contextResult([]) }),
+			createArchitectureStore: () =>
+				memoryStore({ retrieve: async () => contextResult([]) }),
+		});
+		const injected = (await pi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: buildAgentIdentityMarker("coding/worker") },
+			{ cwd: projectRoot },
+		)) as { message: { content: string } };
+		expect(injected.message.content).toBe(
+			`${COMBINED_CONTEXT_PREFIX}${expectedRenderer}`,
+		);
+
+		const policy = createKnowledgeIndexPressurePolicy();
+		const fitting = policy.measure(records);
+		expect(fitting).toMatchObject({
+			targetSatisfied: true,
+			recordCount: 50,
+			maxRecords: 50,
+			guaranteedBytes: expect.any(Number),
+			headroomBytes: expect.any(Number),
+		});
+		expect(fitting.renderedBytes + fitting.headroomBytes).toBeLessThanOrEqual(
+			fitting.guaranteedBytes,
+		);
+		const overRows = policy.measure([
+			...records,
+			contextRecord({
+				type: "decision",
+				title: "Pressure row 51",
+				resource: "knowledge/51.md",
+			}),
+		]);
+		expect(overRows).toMatchObject({
+			targetSatisfied: false,
+			recordCount: 51,
+		});
+		const overBytes = policy.measure(
+			records.map((record) => ({
+				...record,
+				description: "large ".repeat(300),
+			})),
+		);
+		expect(overBytes.recordCount).toBe(50);
+		expect(overBytes.renderedBytes + overBytes.headroomBytes).toBeGreaterThan(
+			overBytes.guaranteedBytes,
+		);
+		expect(overBytes.targetSatisfied).toBe(false);
+		expect(records).toEqual(before);
+
+		const userSourceRecords = records.map((record, index) => {
+			const content = `# User pressure ${index}\n`;
+			return {
+				id: `user-${index}`,
+				sourceId: "user-knowledge",
+				scope: "user" as const,
+				path: `knowledge/${index}.md`,
+				digest: createHash("sha256").update(content).digest("hex"),
+				kind: "knowledge" as const,
+				content,
+				metadata: {
+					type: "decision",
+					title: record.title,
+					description: "large ".repeat(300),
+					resource: record.resource,
+					tags: [],
+					timestamp: record.timestamp,
+					scopeRoot: userRoot,
+				},
+			} satisfies ConsolidationSourceRecord;
+		});
+		const consolidator = createLivingMemoryConsolidator({
+			sources: [
+				{
+					id: "user-knowledge",
+					collect: async () => ({ records: userSourceRecords, omitted: 0 }),
+				},
+			],
+			proposalStore: {
+				persist: async () => {
+					throw new Error("user records must not become proposals");
+				},
+			},
+			acceptedJudgmentReceiptStore: {
+				read: async () => undefined,
+				write: async (receipt) => receipt,
+				markMaterialized: async () => {
+					throw new Error("receipt materialization is not expected");
+				},
+			},
+			retirementStore: {
+				inspect: async () => ({ recovery: "none", warnings: [] }),
+			},
+			durableFiles: {
+				writeText: async () => {
+					throw new Error("durable writes are not expected");
+				},
+			},
+			indexPressure: policy,
+			clock: () => new Date("2026-09-02T12:00:00.000Z"),
+			limits: DEFAULT_LIVING_MEMORY_LIMITS,
+			lockOptions: {
+				retryMs: 50,
+				timeoutMs: 10_000,
+				onReleaseUnconfirmed: () => undefined,
+			},
+		});
+		await expect(
+			consolidator({ modelMode: "deterministic-only" }),
+		).resolves.toMatchObject({
+			kind: "noop",
+			details: {
+				declines: [expect.objectContaining({ code: "target-unmet" })],
+				proposals: [],
+				retirements: [],
+			},
+		});
+	});
 	test("delegates mapped index injection and tool reads through an injectable MemoryStore @cosmo-behavior plan:memory-interface#B-003", async () => {
 		await mkdir(join(tmp.path, "memory", "architecture"), { recursive: true });
 		const retrieve = vi.fn(
@@ -804,6 +969,36 @@ function contextResult(
 		warnings: [],
 		stats,
 	};
+}
+
+function legacyKnowledgeIndex(
+	records: readonly RetrievedMemoryRecord[],
+): string | undefined {
+	const visible = records
+		.toSorted(
+			(left, right) =>
+				right.timestamp.localeCompare(left.timestamp) ||
+				left.path.localeCompare(right.path),
+		)
+		.slice(0, KNOWLEDGE_INDEX_LIMIT);
+	if (visible.length === 0) return undefined;
+	return [
+		"Knowledge index",
+		`Up to ${KNOWLEDGE_INDEX_LIMIT} current project/user knowledge records, ordered by timestamp then path.`,
+		"This section contains compact metadata only, not record bodies.",
+		"Use recall(query) for complete knowledge record details.",
+		"",
+		...visible.map((record) =>
+			[
+				`- type: ${record.type}`,
+				`  title: ${record.title}`,
+				`  scope: ${record.scope}`,
+				`  timestamp: ${record.timestamp}`,
+				`  description: ${record.description}`,
+				`  resource: ${record.resource}`,
+			].join("\n"),
+		),
+	].join("\n");
 }
 
 interface ToolResult {

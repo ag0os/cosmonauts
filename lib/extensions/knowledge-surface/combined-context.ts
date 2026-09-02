@@ -15,14 +15,17 @@ import {
 	type ArchitectureMemoryAuthorizationState,
 	renderArchitectureContext,
 } from "../architecture-memory/index.ts";
+import {
+	COMBINED_CONTEXT_MAX_BYTES,
+	COMBINED_CONTEXT_PREFIX,
+	renderKnowledgeIndex,
+} from "./index-policy.ts";
 
 const COMBINED_CONTEXT_TYPE = "cosmonauts-combined-context";
 const LEGACY_CONTEXT_TYPES = new Set([
 	"agent-memory-context",
 	"architecture-map-context",
 ]);
-const COMBINED_CONTEXT_MAX_BYTES = 24_000;
-const INDEX_LIMIT = 50;
 
 export interface CombinedContextOptions {
 	readonly agentId: string;
@@ -120,7 +123,7 @@ export function registerCombinedContextHandler(
 		const allocated = allocateInjectionBudget({
 			sections,
 			maxBytes: COMBINED_CONTEXT_MAX_BYTES,
-			prefix: "Combined durable context for the current turn.\n\n",
+			prefix: COMBINED_CONTEXT_PREFIX,
 		});
 		if (!allocated.content) return;
 
@@ -199,38 +202,7 @@ function renderKnowledgeContext(
 	result: MemoryRetrieveResult | undefined,
 ): string | undefined {
 	if (!result) return undefined;
-	const records = result.records
-		.toSorted(
-			(left, right) =>
-				right.timestamp.localeCompare(left.timestamp) ||
-				left.path.localeCompare(right.path),
-		)
-		.slice(0, INDEX_LIMIT);
-	if (records.length === 0 && result.warnings.length === 0) return undefined;
-	return [
-		"Knowledge index",
-		`Up to ${INDEX_LIMIT} current project/user knowledge records, ordered by timestamp then path.`,
-		"This section contains compact metadata only, not record bodies.",
-		"Use recall(query) for complete knowledge record details.",
-		...(result.warnings.length > 0
-			? [
-					"",
-					"Knowledge warnings:",
-					...result.warnings.map((warning) => `- ${warning.message}`),
-				]
-			: []),
-		"",
-		...records.map((record) =>
-			[
-				`- type: ${record.type}`,
-				`  title: ${record.title}`,
-				`  scope: ${record.scope}`,
-				`  timestamp: ${record.timestamp}`,
-				`  description: ${record.description}`,
-				`  resource: ${record.resource}`,
-			].join("\n"),
-		),
-	].join("\n");
+	return renderKnowledgeIndex(result.records, result.warnings);
 }
 
 function section(

@@ -22,6 +22,17 @@ export interface KnowledgeProvenance {
 	readonly date: string;
 }
 
+export type KnowledgeRetireWhenCheck =
+	| { readonly kind: "path-exists"; readonly path: string }
+	| { readonly kind: "path-absent"; readonly path: string };
+
+export type KnowledgeRetireWhen =
+	| string
+	| {
+			readonly condition: string;
+			readonly check: KnowledgeRetireWhenCheck;
+	  };
+
 export interface KnowledgeRecordFields {
 	readonly type: KnowledgeRecordType;
 	readonly title: string;
@@ -34,6 +45,7 @@ export interface KnowledgeRecordFields {
 	readonly writer?: string;
 	readonly source?: string;
 	readonly date?: string;
+	readonly retireWhen?: KnowledgeRetireWhen;
 	readonly content: string;
 }
 
@@ -91,6 +103,14 @@ export function parseHumanKnowledgeRecord(options: {
 		return {
 			ok: false,
 			message: `Knowledge record type ${JSON.stringify(data.type)} is not one of decision, trade-off, gotcha, or convention.`,
+		};
+	}
+	const retireWhen = normalizeRetireWhen(data["retire-when"]);
+	if (!retireWhen.ok) return invalidField("retire-when");
+	if (retireWhen.value !== undefined && data.type !== "gotcha") {
+		return {
+			ok: false,
+			message: "Only gotcha knowledge records may define retire-when metadata.",
 		};
 	}
 
@@ -155,9 +175,63 @@ export function parseHumanKnowledgeRecord(options: {
 			...(writer.value === undefined ? {} : { writer: writer.value }),
 			...(source.value === undefined ? {} : { source: source.value }),
 			...(date.value === undefined ? {} : { date: date.value }),
+			...(retireWhen.value === undefined
+				? {}
+				: { retireWhen: retireWhen.value }),
 			content,
 		},
 	};
+}
+
+function normalizeRetireWhen(
+	value: unknown,
+):
+	| { readonly ok: true; readonly value?: KnowledgeRetireWhen }
+	| { readonly ok: false } {
+	if (value === undefined) return { ok: true };
+	if (typeof value === "string") {
+		const condition = value.trim();
+		return condition ? { ok: true, value: condition } : { ok: false };
+	}
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return { ok: false };
+	}
+	const candidate = value as Record<string, unknown>;
+	if (
+		!hasExactKeys(candidate, ["condition", "check"]) ||
+		typeof candidate.condition !== "string" ||
+		!candidate.condition.trim() ||
+		typeof candidate.check !== "object" ||
+		candidate.check === null ||
+		Array.isArray(candidate.check)
+	) {
+		return { ok: false };
+	}
+	const check = candidate.check as Record<string, unknown>;
+	if (
+		!hasExactKeys(check, ["kind", "path"]) ||
+		(check.kind !== "path-exists" && check.kind !== "path-absent") ||
+		typeof check.path !== "string" ||
+		!isSafePosixRelativePath(check.path)
+	) {
+		return { ok: false };
+	}
+	return {
+		ok: true,
+		value: {
+			condition: candidate.condition.trim(),
+			check: { kind: check.kind, path: check.path },
+		},
+	};
+}
+
+function hasExactKeys(
+	value: Readonly<Record<string, unknown>>,
+	keys: readonly string[],
+): boolean {
+	const actual = Object.keys(value).sort();
+	const expected = [...keys].sort();
+	return sameStrings(actual, expected);
 }
 
 export function deriveKnowledgeProposalIdentity(

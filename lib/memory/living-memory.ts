@@ -1,8 +1,14 @@
 import { createHash } from "node:crypto";
+import type { Dirent } from "node:fs";
+import { constants } from "node:fs";
+import { lstat, open, readdir, realpath } from "node:fs/promises";
+import { isAbsolute, join, posix, relative, resolve, sep } from "node:path";
+import matter from "gray-matter";
 import {
 	type ConsolidationSourceRecord,
 	collectConsolidationSources,
 } from "./consolidation-sources.ts";
+import { parseHumanKnowledgeRecord } from "./knowledge-records.ts";
 import type {
 	ConsolidationEvidenceRef,
 	ConsolidationObservation,
@@ -14,6 +20,8 @@ import type {
 	LivingMemoryLimits,
 	MemoryConsolidateDetails,
 	MemoryConsolidateOptions,
+	MemoryWarning,
+	ProposedMemoryRecord,
 } from "./types.ts";
 
 export const DEFAULT_LIVING_MEMORY_LIMITS = Object.freeze({
@@ -64,6 +72,26 @@ export function createLivingMemoryConsolidator(
 						reason: `${source.omitted} record(s) from ${source.sourceId} were deferred by the bounded source pass.`,
 					})),
 			};
+			const indexRecords = toIndexRecords(collected.records);
+			const pressure = dependencies.indexPressure.measure(indexRecords);
+			if (
+				!pressure.targetSatisfied &&
+				!collected.records.some(
+					(record) => record.scope === "project" && record.kind === "knowledge",
+				)
+			) {
+				details = {
+					...details,
+					declines: Object.freeze([
+						...details.declines,
+						{
+							code: "target-unmet",
+							reason:
+								"Knowledge index pressure remains after safe project candidates are exhausted; user records are measurement-only.",
+						},
+					]),
+				};
+			}
 
 			if (collected.records.length === 0) {
 				return {
@@ -71,6 +99,76 @@ export function createLivingMemoryConsolidator(
 					reason: "No consolidation work was admitted from healthy sources.",
 					details,
 				};
+			}
+			const inventoryRoot = deterministicInventoryRoot(collected.records);
+			const needsRetirementInventory = collected.records.some(
+				(record) => structuredRetireWhen(record.metadata) !== undefined,
+			);
+			const inventory =
+				needsRetirementInventory && inventoryRoot !== undefined
+					? await inspectLivingMemoryCitationInventory({
+							projectRoot: inventoryRoot,
+						})
+					: undefined;
+			if (inventory !== undefined && !inventory.healthy) {
+				details = {
+					...details,
+					warnings: inventory.warnings,
+					declines: Object.freeze([
+						...details.declines,
+						{
+							code: "citation-inventory-incomplete",
+							reason:
+								"Relevant citation discovery was incomplete; every retirement is blocked.",
+						},
+					]),
+				};
+			}
+			const deterministic = await observeDeterministicRecords(
+				collected.records,
+				inventory?.healthy ?? true,
+			);
+			if (deterministic.length > 0) {
+				const proposalFindings = deterministic.filter(
+					(finding) => finding.proposal !== undefined,
+				);
+				if (proposalFindings.length > dependencies.limits.maxProposals) {
+					throw new Error(
+						`Deterministic observation exceeds the proposal cap (${proposalFindings.length} > ${dependencies.limits.maxProposals}).`,
+					);
+				}
+				const proposals = [];
+				for (const finding of proposalFindings) {
+					if (finding.proposal === undefined || finding.key === undefined)
+						continue;
+					proposals.push(
+						await dependencies.proposalStore.persist({
+							batchKey: finding.key,
+							observation: finding.observation,
+							proposal: finding.proposal,
+							dryRun,
+							...(options.signal === undefined
+								? {}
+								: { signal: options.signal }),
+						}),
+					);
+				}
+				details = {
+					...details,
+					observations: Object.freeze(
+						deterministic.map((finding) => finding.observation),
+					),
+					retirements: Object.freeze(
+						deterministic.flatMap((finding) =>
+							finding.retirement === undefined ? [] : [finding.retirement],
+						),
+					),
+					proposals: Object.freeze(proposals),
+					writesCommitted: proposals.some(
+						(proposal) => proposal.status === "written",
+					),
+				};
+				return { kind: "ran" as const, details };
 			}
 			if (modelMode === "deterministic-only") {
 				return {
@@ -143,6 +241,719 @@ export function createLivingMemoryConsolidator(
 			};
 		}
 	};
+}
+
+function toIndexRecords(
+	records: readonly ConsolidationSourceRecord[],
+): readonly import("./types.ts").RetrievedMemoryRecord[] {
+	return Object.freeze(
+		records.flatMap((record) => {
+			if (record.kind !== "knowledge") return [];
+			const metadata = record.metadata;
+			if (
+				typeof metadata.type !== "string" ||
+				typeof metadata.title !== "string" ||
+				typeof metadata.description !== "string" ||
+				typeof metadata.resource !== "string" ||
+				typeof metadata.timestamp !== "string" ||
+				!Array.isArray(metadata.tags) ||
+				!metadata.tags.every((tag) => typeof tag === "string")
+			) {
+				return [];
+			}
+			const scopeRoot = metadata.scopeRoot;
+			return [
+				Object.freeze({
+					type: metadata.type,
+					scope: record.scope,
+					kind: "semantic" as const,
+					title: metadata.title,
+					description: metadata.description,
+					resource: metadata.resource,
+					tags: Object.freeze(metadata.tags.map((tag) => String(tag))),
+					timestamp: metadata.timestamp,
+					content: record.content,
+					path:
+						typeof scopeRoot === "string" && isAbsolute(scopeRoot)
+							? join(scopeRoot, ...record.path.split("/"))
+							: record.path,
+				}),
+			];
+		}),
+	);
+}
+
+interface DeterministicFinding {
+	readonly observation: ConsolidationObservation;
+	readonly retirement?: MemoryConsolidateDetails["retirements"][number];
+	readonly proposal?: JudgedProposal;
+	readonly key?: string;
+}
+
+async function observeDeterministicRecords(
+	records: readonly ConsolidationSourceRecord[],
+	retirementAllowed: boolean,
+): Promise<readonly DeterministicFinding[]> {
+	const findings: DeterministicFinding[] = [];
+	for (const record of records) {
+		if (record.kind !== "knowledge" || record.scope !== "project") continue;
+		const stale = await staleCitationFinding(record);
+		if (stale !== undefined) findings.push(stale);
+		const retireWhen = retireWhenFromMetadata(record.metadata);
+		if (retireWhen === undefined || typeof retireWhen === "string") continue;
+		const scopeRoot = record.metadata.scopeRoot;
+		if (typeof scopeRoot !== "string" || !isAbsolute(scopeRoot)) continue;
+		const observed = await observeContainedPath({
+			root: scopeRoot,
+			path: retireWhen.check.path,
+		});
+		if (!observed.safe) continue;
+		const met =
+			retireWhen.check.kind === "path-exists"
+				? observed.exists
+				: !observed.exists;
+		if (!met) continue;
+		const predicate = `${retireWhen.check.kind} ${retireWhen.check.path} observed ${String(met)}`;
+		const input = evidenceRef(record);
+		findings.push(
+			Object.freeze({
+				observation: Object.freeze({
+					id: `retire-condition-${createHash("sha256")
+						.update(`${record.digest}\0${predicate}`)
+						.digest("hex")
+						.slice(0, 16)}`,
+					kind: "retire-condition-met",
+					inputs: Object.freeze([input]),
+					reason: `${retireWhen.condition} (${predicate}).`,
+				}),
+				...(retirementAllowed
+					? {
+							retirement: Object.freeze({
+								path: record.path,
+								digest: record.digest,
+								status: "deferred" as const,
+								reason: "retire-when-met",
+							}),
+						}
+					: {}),
+			}),
+		);
+	}
+	return Object.freeze(findings);
+}
+
+export interface LivingMemoryCitationInventoryEntry {
+	readonly scope: "project" | "user";
+	readonly path: string;
+	readonly digest: string;
+	readonly targets: readonly string[];
+}
+
+export interface LivingMemoryCitationInventory {
+	readonly healthy: boolean;
+	readonly entries: readonly LivingMemoryCitationInventoryEntry[];
+	readonly warnings: readonly MemoryWarning[];
+}
+
+/** Complete, read-only inventory used as retirement authority evidence. */
+export async function inspectLivingMemoryCitationInventory(options: {
+	readonly projectRoot: string;
+	readonly userCosmonautsRoot?: string;
+}): Promise<LivingMemoryCitationInventory> {
+	const projectRoot = resolve(options.projectRoot);
+	const warnings: MemoryWarning[] = [];
+	const candidates: Array<{
+		scope: "project" | "user";
+		root: string;
+		path: string;
+		knowledgeRoot?: string;
+	}> = [];
+	for (const name of ["AGENTS.md", "CLAUDE.md", "README.md", "ROADMAP.md"]) {
+		await addOptionalInventoryFile({
+			absolutePath: join(projectRoot, name),
+			scope: "project",
+			root: projectRoot,
+			candidates,
+			warnings,
+		});
+	}
+	for (const relativeDirectory of [
+		"docs",
+		"missions/plans",
+		"missions/architecture",
+	]) {
+		await collectInventoryMarkdown({
+			directory: join(projectRoot, relativeDirectory),
+			scope: "project",
+			root: projectRoot,
+			candidates,
+			warnings,
+			excludeKnowledgeInternals: false,
+		});
+	}
+	const projectKnowledgeRoot = join(projectRoot, "knowledge");
+	await collectInventoryMarkdown({
+		directory: projectKnowledgeRoot,
+		scope: "project",
+		root: projectRoot,
+		knowledgeRoot: projectKnowledgeRoot,
+		candidates,
+		warnings,
+		excludeKnowledgeInternals: true,
+	});
+	if (options.userCosmonautsRoot !== undefined) {
+		const userRoot = resolve(options.userCosmonautsRoot);
+		const userKnowledgeRoot = join(userRoot, "knowledge");
+		await collectInventoryMarkdown({
+			directory: userKnowledgeRoot,
+			scope: "user",
+			root: userRoot,
+			knowledgeRoot: userKnowledgeRoot,
+			candidates,
+			warnings,
+			excludeKnowledgeInternals: true,
+		});
+	}
+
+	const entries: LivingMemoryCitationInventoryEntry[] = [];
+	for (const candidate of candidates.toSorted((a, b) =>
+		`${a.scope}\0${a.path}`.localeCompare(`${b.scope}\0${b.path}`),
+	)) {
+		const read = await readInventoryFile(candidate.path);
+		if (!read.ok) {
+			warnings.push({ path: candidate.path, message: read.message });
+			continue;
+		}
+		let files: unknown;
+		if (candidate.knowledgeRoot !== undefined) {
+			const physicalResource = toPosixPath(
+				relative(candidate.knowledgeRoot, candidate.path),
+			);
+			try {
+				const parsed = parseHumanKnowledgeRecord({
+					raw: read.raw,
+					physicalResource,
+					physicalScope: candidate.scope,
+					mtime: read.mtime,
+				});
+				if (!parsed.ok) {
+					warnings.push({ path: candidate.path, message: parsed.message });
+					continue;
+				}
+				files = matter(read.raw).data.files;
+				if (
+					files !== undefined &&
+					(!Array.isArray(files) ||
+						!files.every((value: unknown) => typeof value === "string"))
+				) {
+					warnings.push({
+						path: candidate.path,
+						message: "Knowledge record has malformed files citation metadata.",
+					});
+					continue;
+				}
+			} catch (error: unknown) {
+				warnings.push({
+					path: candidate.path,
+					message: error instanceof Error ? error.message : String(error),
+				});
+				continue;
+			}
+		}
+		const extracted = extractInventoryTargets({
+			raw: read.raw,
+			path: toPosixPath(relative(candidate.root, candidate.path)),
+			files,
+		});
+		if (!extracted.ok) {
+			warnings.push({ path: candidate.path, message: extracted.message });
+			continue;
+		}
+		entries.push(
+			Object.freeze({
+				scope: candidate.scope,
+				path: toPosixPath(relative(candidate.root, candidate.path)),
+				digest: createHash("sha256").update(read.raw).digest("hex"),
+				targets: Object.freeze(extracted.targets),
+			}),
+		);
+	}
+	return Object.freeze({
+		healthy: warnings.length === 0,
+		entries: Object.freeze(entries),
+		warnings: Object.freeze(warnings),
+	});
+}
+
+function deterministicInventoryRoot(
+	records: readonly ConsolidationSourceRecord[],
+): string | undefined {
+	const roots = new Set(
+		records
+			.filter((record) => record.scope === "project")
+			.map((record) => record.metadata.scopeRoot)
+			.filter(
+				(value): value is string =>
+					typeof value === "string" && isAbsolute(value),
+			),
+	);
+	return roots.size === 1 ? [...roots][0] : undefined;
+}
+
+function structuredRetireWhen(
+	metadata: Readonly<Record<string, unknown>>,
+): object | undefined {
+	const value = metadata.retireWhen;
+	return typeof value === "object" && value !== null && !Array.isArray(value)
+		? value
+		: undefined;
+}
+
+async function addOptionalInventoryFile(options: {
+	readonly absolutePath: string;
+	readonly scope: "project" | "user";
+	readonly root: string;
+	readonly candidates: Array<{
+		scope: "project" | "user";
+		root: string;
+		path: string;
+		knowledgeRoot?: string;
+	}>;
+	readonly warnings: MemoryWarning[];
+}): Promise<void> {
+	try {
+		const metadata = await lstat(options.absolutePath);
+		if (metadata.isSymbolicLink() || !metadata.isFile()) {
+			options.warnings.push({
+				path: options.absolutePath,
+				message: "Relevant citation source is not a regular no-follow file.",
+			});
+			return;
+		}
+		options.candidates.push({
+			scope: options.scope,
+			root: options.root,
+			path: options.absolutePath,
+		});
+	} catch (error: unknown) {
+		if (errorCode(error) !== "ENOENT") {
+			options.warnings.push({
+				path: options.absolutePath,
+				message: error instanceof Error ? error.message : String(error),
+			});
+		}
+	}
+}
+
+async function collectInventoryMarkdown(options: {
+	readonly directory: string;
+	readonly scope: "project" | "user";
+	readonly root: string;
+	readonly knowledgeRoot?: string;
+	readonly candidates: Array<{
+		scope: "project" | "user";
+		root: string;
+		path: string;
+		knowledgeRoot?: string;
+	}>;
+	readonly warnings: MemoryWarning[];
+	readonly excludeKnowledgeInternals: boolean;
+}): Promise<void> {
+	let entries: Dirent[];
+	try {
+		const metadata = await lstat(options.directory);
+		if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
+			options.warnings.push({
+				path: options.directory,
+				message:
+					"Relevant citation directory is not a regular no-follow directory.",
+			});
+			return;
+		}
+		entries = await readdir(options.directory, { withFileTypes: true });
+	} catch (error: unknown) {
+		if (errorCode(error) !== "ENOENT") {
+			options.warnings.push({
+				path: options.directory,
+				message: error instanceof Error ? error.message : String(error),
+			});
+		}
+		return;
+	}
+	for (const entry of entries) {
+		if (
+			options.excludeKnowledgeInternals &&
+			options.directory === options.knowledgeRoot &&
+			entry.name === "retired"
+		) {
+			continue;
+		}
+		const path = join(options.directory, entry.name);
+		if (entry.isSymbolicLink()) {
+			options.warnings.push({
+				path,
+				message: "Relevant citation discovery encountered a symlink.",
+			});
+		} else if (entry.isDirectory()) {
+			await collectInventoryMarkdown({ ...options, directory: path });
+		} else if (
+			entry.isFile() &&
+			entry.name.endsWith(".md") &&
+			!(options.excludeKnowledgeInternals && entry.name === "index.md")
+		) {
+			options.candidates.push({
+				scope: options.scope,
+				root: options.root,
+				path,
+				...(options.knowledgeRoot === undefined
+					? {}
+					: { knowledgeRoot: options.knowledgeRoot }),
+			});
+		}
+	}
+}
+
+async function readInventoryFile(
+	path: string,
+): Promise<
+	| { readonly ok: true; readonly raw: string; readonly mtime: Date }
+	| { readonly ok: false; readonly message: string }
+> {
+	try {
+		const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+		try {
+			const metadata = await handle.stat();
+			if (!metadata.isFile()) {
+				return { ok: false, message: "Citation source is not a regular file." };
+			}
+			return {
+				ok: true,
+				raw: await handle.readFile("utf-8"),
+				mtime: metadata.mtime,
+			};
+		} finally {
+			await handle.close();
+		}
+	} catch (error: unknown) {
+		return {
+			ok: false,
+			message: error instanceof Error ? error.message : String(error),
+		};
+	}
+}
+
+function extractInventoryTargets(options: {
+	readonly raw: string;
+	readonly path: string;
+	readonly files: unknown;
+}):
+	| { readonly ok: true; readonly targets: readonly string[] }
+	| { readonly ok: false; readonly message: string } {
+	const rawTargets: Array<{ value: string; rootRelative: boolean }> = [];
+	if (Array.isArray(options.files)) {
+		for (const value of options.files) {
+			rawTargets.push({ value: String(value), rootRelative: true });
+		}
+	}
+	for (const match of options.raw.matchAll(
+		/\[[^\]]*\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/gu,
+	)) {
+		if (match[1] !== undefined) {
+			rawTargets.push({ value: match[1], rootRelative: false });
+		}
+	}
+	for (const match of options.raw.matchAll(/`([^`\n]+)`/gu)) {
+		if (match[1] !== undefined && isPathShaped(match[1])) {
+			rawTargets.push({ value: match[1], rootRelative: true });
+		}
+	}
+	const targets = new Set<string>();
+	for (const target of rawTargets) {
+		if (isExternalOrAnchor(target.value)) continue;
+		const canonical = canonicalCitation({
+			value: target.value,
+			citingPath: options.path,
+			rootRelative: target.rootRelative,
+		});
+		if (canonical === undefined) {
+			return {
+				ok: false,
+				message: `Citation target is malformed or escapes its scope: ${target.value}`,
+			};
+		}
+		targets.add(canonical);
+	}
+	return { ok: true, targets: Object.freeze([...targets].sort()) };
+}
+
+function isExternalOrAnchor(value: string): boolean {
+	const trimmed = value.trim();
+	return trimmed.startsWith("#") || /^[a-z][a-z0-9+.-]*:/iu.test(trimmed);
+}
+
+function toPosixPath(value: string): string {
+	return value.split(sep).join("/");
+}
+
+interface CitationReference {
+	readonly raw: string;
+	readonly canonical: string;
+}
+
+async function staleCitationFinding(
+	record: ConsolidationSourceRecord,
+): Promise<DeterministicFinding | undefined> {
+	const scopeRoot = record.metadata.scopeRoot;
+	if (typeof scopeRoot !== "string" || !isAbsolute(scopeRoot)) return undefined;
+	const references = citationReferences(record);
+	const stale: CitationReference[] = [];
+	for (const reference of references) {
+		const observed = await observeContainedPath({
+			root: scopeRoot,
+			path: reference.canonical,
+		});
+		if (observed.safe && !observed.exists) stale.push(reference);
+	}
+	if (stale.length === 0) return undefined;
+	const replacement = proposedReplacement(record, stale);
+	if (replacement === undefined) return undefined;
+	const input = evidenceRef(record);
+	const canonicalPaths = [
+		...new Set(stale.map((item) => item.canonical)),
+	].sort();
+	const key = createHash("sha256")
+		.update(
+			JSON.stringify({
+				digest: record.digest,
+				paths: canonicalPaths,
+			}),
+		)
+		.digest("hex");
+	return Object.freeze({
+		key,
+		observation: Object.freeze({
+			id: `stale-reference-${key.slice(0, 16)}`,
+			kind: "stale-reference",
+			inputs: Object.freeze([input]),
+			reason: `${canonicalPaths.length} unresolved citation${canonicalPaths.length === 1 ? "" : "s"}: ${canonicalPaths.join(", ")}.`,
+		}),
+		proposal: Object.freeze({
+			proposalKind: "merge",
+			replacement,
+		}),
+	});
+}
+
+function citationReferences(
+	record: ConsolidationSourceRecord,
+): readonly CitationReference[] {
+	const references: CitationReference[] = [];
+	const files = record.metadata.files;
+	if (Array.isArray(files)) {
+		for (const value of files) {
+			if (typeof value !== "string") continue;
+			const canonical = canonicalCitation({
+				value,
+				citingPath: record.path,
+				rootRelative: true,
+			});
+			if (canonical !== undefined) references.push({ raw: value, canonical });
+		}
+	}
+	for (const match of record.content.matchAll(
+		/\[[^\]]*\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/gu,
+	)) {
+		const raw = match[1];
+		if (raw === undefined) continue;
+		const canonical = canonicalCitation({
+			value: raw,
+			citingPath: record.path,
+			rootRelative: false,
+		});
+		if (canonical !== undefined) references.push({ raw, canonical });
+	}
+	for (const match of record.content.matchAll(/`([^`\n]+)`/gu)) {
+		const raw = match[1];
+		if (raw === undefined || !isPathShaped(raw)) continue;
+		const canonical = canonicalCitation({
+			value: raw,
+			citingPath: record.path,
+			rootRelative: true,
+		});
+		if (canonical !== undefined) references.push({ raw, canonical });
+	}
+	const unique = new Map<string, CitationReference>();
+	for (const reference of references) {
+		unique.set(`${reference.raw}\0${reference.canonical}`, reference);
+	}
+	return Object.freeze([...unique.values()]);
+}
+
+function canonicalCitation(options: {
+	readonly value: string;
+	readonly citingPath: string;
+	readonly rootRelative: boolean;
+}): string | undefined {
+	let value = options.value.trim();
+	if (!value || /^[a-z][a-z0-9+.-]*:/iu.test(value) || value.startsWith("#")) {
+		return undefined;
+	}
+	value = value.split(/[?#]/u, 1)[0] ?? "";
+	try {
+		value = decodeURIComponent(value);
+	} catch {
+		return undefined;
+	}
+	const projectRelative =
+		options.rootRelative || /^(?:knowledge|docs|missions)\//u.test(value)
+			? value.replace(/^\.\//u, "")
+			: posix.join(posix.dirname(options.citingPath), value);
+	const normalized = posix.normalize(projectRelative);
+	return isSafeRelativePath(normalized) ? normalized : undefined;
+}
+
+function isPathShaped(value: string): boolean {
+	return (
+		!value.includes(" ") &&
+		(value.includes("/") || /\.[A-Za-z0-9]{1,12}(?:[?#].*)?$/u.test(value))
+	);
+}
+
+function proposedReplacement(
+	record: ConsolidationSourceRecord,
+	stale: readonly CitationReference[],
+): ProposedMemoryRecord | undefined {
+	const metadata = record.metadata;
+	if (
+		!["decision", "trade-off", "gotcha", "convention", "note"].includes(
+			String(metadata.type),
+		) ||
+		typeof metadata.title !== "string" ||
+		!metadata.title.trim() ||
+		typeof metadata.description !== "string" ||
+		!metadata.description.trim() ||
+		!Array.isArray(metadata.tags) ||
+		!metadata.tags.every((tag) => typeof tag === "string")
+	) {
+		return undefined;
+	}
+	const markers = [...new Set(stale.map((item) => item.canonical))]
+		.sort()
+		.map((path) => `<!-- stale reference: ${path} -->`)
+		.join("\n");
+	return {
+		type: metadata.type as
+			| "decision"
+			| "trade-off"
+			| "gotcha"
+			| "convention"
+			| "note",
+		title: metadata.title.trim(),
+		description: metadata.description.trim(),
+		content: `${record.content.trimEnd()}\n\n${markers}\n`,
+		tags: Object.freeze(metadata.tags.map((tag) => String(tag))),
+	};
+}
+
+function retireWhenFromMetadata(metadata: Readonly<Record<string, unknown>>):
+	| string
+	| {
+			readonly condition: string;
+			readonly check: {
+				readonly kind: "path-exists" | "path-absent";
+				readonly path: string;
+			};
+	  }
+	| undefined {
+	const value = metadata.retireWhen;
+	if (typeof value === "string" && value.trim()) return value.trim();
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return undefined;
+	}
+	const candidate = value as Record<string, unknown>;
+	if (
+		typeof candidate.condition !== "string" ||
+		!candidate.condition.trim() ||
+		typeof candidate.check !== "object" ||
+		candidate.check === null ||
+		Array.isArray(candidate.check)
+	) {
+		return undefined;
+	}
+	const check = candidate.check as Record<string, unknown>;
+	if (
+		(check.kind !== "path-exists" && check.kind !== "path-absent") ||
+		typeof check.path !== "string" ||
+		!isSafeRelativePath(check.path)
+	) {
+		return undefined;
+	}
+	return {
+		condition: candidate.condition.trim(),
+		check: { kind: check.kind, path: check.path },
+	};
+}
+
+async function observeContainedPath(options: {
+	readonly root: string;
+	readonly path: string;
+}): Promise<{ readonly safe: boolean; readonly exists: boolean }> {
+	if (!isSafeRelativePath(options.path)) return { safe: false, exists: false };
+	const root = resolve(options.root);
+	try {
+		const rootMetadata = await lstat(root);
+		if (rootMetadata.isSymbolicLink() || !rootMetadata.isDirectory()) {
+			return { safe: false, exists: false };
+		}
+		const realRoot = await realpath(root);
+		let current = root;
+		for (const segment of options.path.split("/")) {
+			current = join(current, segment);
+			try {
+				const metadata = await lstat(current);
+				if (metadata.isSymbolicLink()) return { safe: false, exists: false };
+			} catch (error: unknown) {
+				if (errorCode(error) === "ENOENT") return { safe: true, exists: false };
+				return { safe: false, exists: false };
+			}
+		}
+		const realCandidate = await realpath(current);
+		return {
+			safe: isContainedOrEqual(realRoot, realCandidate),
+			exists: isContainedOrEqual(realRoot, realCandidate),
+		};
+	} catch {
+		return { safe: false, exists: false };
+	}
+}
+
+function isSafeRelativePath(value: string): boolean {
+	return (
+		value.length > 0 &&
+		!value.includes("\\") &&
+		!value.includes("\0") &&
+		!isAbsolute(value) &&
+		!value
+			.split("/")
+			.some(
+				(segment) =>
+					segment.length === 0 || segment === "." || segment === "..",
+			)
+	);
+}
+
+function isContainedOrEqual(root: string, candidate: string): boolean {
+	const path = relative(root, candidate);
+	return (
+		path === "" ||
+		(!path.startsWith(`..${sep}`) && path !== ".." && !isAbsolute(path))
+	);
+}
+
+function errorCode(error: unknown): string | undefined {
+	return error !== null && typeof error === "object" && "code" in error
+		? String((error as NodeJS.ErrnoException).code)
+		: undefined;
 }
 
 function validateJudgmentOutput(options: {
