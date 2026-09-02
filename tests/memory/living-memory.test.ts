@@ -18,6 +18,7 @@ import {
 	type DurableRetirementFiles,
 } from "../../lib/memory/durable-files.ts";
 import {
+	type AcceptedJudgmentReceipt,
 	type ConsolidationSource,
 	type ConsolidationSourceRecord,
 	type CorpusJudgmentProvider,
@@ -34,6 +35,7 @@ import {
 	executeLivingMemoryConsolidationJob,
 	inspectLivingMemoryCitationInventory,
 	type KnowledgeConsolidator,
+	type KnowledgeIndexPressurePolicy,
 	type LivingMemoryConsolidatorDependencies,
 	type LivingMemoryRetirementStore,
 	type MemoryStore,
@@ -3157,6 +3159,192 @@ describe("living memory", () => {
 		expect(empty.dependencies.durableFiles.writeText).not.toHaveBeenCalled();
 	});
 
+	test("measures complete project and user index metadata outside the bounded body batch", async () => {
+		const projectRecords = Array.from({ length: 50 }, (_, index) =>
+			record({
+				id: `project-${index}`,
+				sourceId: "corpus",
+				path: `knowledge/project-${index}.md`,
+				kind: "knowledge",
+				content: `# Project ${index}\n`,
+				metadata: indexMetadata(`Project ${index}`, `project-${index}.md`),
+			}),
+		);
+		const userRecord = {
+			...record({
+				id: "user-record",
+				sourceId: "corpus",
+				path: "knowledge/user-record.md",
+				kind: "knowledge",
+				content: "# User record\n",
+				metadata: indexMetadata("User record", "user-record.md"),
+			}),
+			scope: "user" as const,
+		};
+		const inventory = [...projectRecords, userRecord].map(
+			({ content: _content, ...metadata }) => metadata,
+		);
+		const measure = vi.fn<KnowledgeIndexPressurePolicy["measure"]>(() => ({
+			targetSatisfied: false,
+			recordCount: 51,
+			maxRecords: 50,
+			renderedBytes: 1,
+			guaranteedBytes: 8_000,
+			headroomBytes: 1,
+		}));
+		const harness = createHarness(
+			[
+				{
+					id: "corpus",
+					async collect() {
+						return { records: projectRecords, inventory, omitted: 0 };
+					},
+				},
+			],
+			undefined,
+			{ indexPressure: { measure } },
+		);
+
+		const result = await harness.consolidator({
+			modelMode: "deterministic-only",
+		});
+
+		expect(result).toMatchObject({
+			kind: "noop",
+			details: {
+				sources: [{ sourceId: "corpus", admitted: 50, omitted: 0 }],
+				declines: [expect.objectContaining({ code: "target-unmet" })],
+			},
+		});
+		expect(measure).toHaveBeenCalledOnce();
+		expect(measure.mock.calls[0]?.[0]).toHaveLength(51);
+		expect(
+			measure.mock.calls[0]?.[0].filter((item) => item.scope === "user"),
+		).toHaveLength(1);
+	});
+
+	test("measures user metadata without admitting user mutation candidates", async () => {
+		const project = record({
+			id: "project-record",
+			sourceId: "mixed-corpus",
+			path: "knowledge/project.md",
+			kind: "knowledge",
+			content: "# Project\n",
+			metadata: indexMetadata("Project", "project.md"),
+		});
+		const user = {
+			...record({
+				id: "user-record",
+				sourceId: "mixed-corpus",
+				path: "knowledge/user.md",
+				kind: "knowledge",
+				content: "# User\n",
+				metadata: indexMetadata("User", "user.md"),
+			}),
+			scope: "user" as const,
+		};
+		const measure = vi.fn<KnowledgeIndexPressurePolicy["measure"]>(() => ({
+			targetSatisfied: true,
+			recordCount: 2,
+			maxRecords: 50,
+			renderedBytes: 1,
+			guaranteedBytes: 8_000,
+			headroomBytes: 1,
+		}));
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [],
+		}));
+		const harness = createHarness(
+			[source("mixed-corpus", [project, user])],
+			{ id: "fake/no-tools", judge },
+			{ indexPressure: { measure } },
+		);
+
+		await expect(harness.consolidator()).resolves.toMatchObject({
+			kind: "ran",
+		});
+
+		expect(measure.mock.calls[0]?.[0]).toHaveLength(2);
+		expect(judge).toHaveBeenCalledOnce();
+		expect(judge.mock.calls[0]?.[0].records).toEqual([project]);
+	});
+
+	test("admits later unrepresented project records across bounded passes", async () => {
+		const allRecords = Array.from({ length: 51 }, (_, index) =>
+			record({
+				id: `project-${index}`,
+				sourceId: "paged-corpus",
+				path: `knowledge/project-${index}.md`,
+				kind: "knowledge",
+				content: `# Project ${index}\n`,
+				metadata: indexMetadata(`Project ${index}`, `project-${index}.md`),
+			}),
+		);
+		const inventory = allRecords.map(
+			({ content: _content, ...metadata }) => metadata,
+		);
+		const collect = vi.fn<ConsolidationSource["collect"]>(async (options) => {
+			const represented = new Set(options.representedDigests);
+			const candidates = allRecords.filter(
+				(record) => !represented.has(record.digest),
+			);
+			return {
+				records: candidates.slice(0, options.limit),
+				inventory,
+				omitted: Math.max(0, candidates.length - options.limit),
+			};
+		});
+		const receipts: AcceptedJudgmentReceipt[] = [];
+		const receiptStore = {
+			pathFor: (batchKey: string) => `/tmp/${batchKey}.json`,
+			list: async () => Object.freeze([...receipts]),
+			dischargeStale: async () => [],
+			read: async (batchKey: string) =>
+				receipts.find((receipt) => receipt.batchKey === batchKey),
+			write: async (receipt: AcceptedJudgmentReceipt) => {
+				receipts.push(receipt);
+				return receipt;
+			},
+			markMaterialized: async (batchKey: string) => {
+				const index = receipts.findIndex(
+					(receipt) => receipt.batchKey === batchKey,
+				);
+				const current = receipts[index];
+				if (current === undefined) throw new Error("missing accepted receipt");
+				const materialized = { ...current, state: "materialized" as const };
+				receipts[index] = materialized;
+				return materialized;
+			},
+		};
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [],
+		}));
+		const harness = createHarness(
+			[{ id: "paged-corpus", collect }],
+			{ id: "fake/no-tools", judge },
+			{ acceptedJudgmentReceiptStore: receiptStore },
+		);
+
+		const first = await harness.consolidator();
+		const second = await harness.consolidator();
+		const third = await harness.consolidator();
+
+		expect(first.kind).toBe("ran");
+		expect(second.kind).toBe("ran");
+		expect(third.kind).toBe("noop");
+		expect(judge).toHaveBeenCalledTimes(2);
+		expect(judge.mock.calls.map(([input]) => input.records.length)).toEqual([
+			50, 1,
+		]);
+		expect(
+			collect.mock.calls.map(
+				([options]) => options.representedDigests?.length ?? 0,
+			),
+		).toEqual([0, 50, 51]);
+	});
+
 	test("bounds deterministic proposal and observation findings lossily in stable order", async () => {
 		const projectRoot = join(tmp.path, "bounded-deterministic-project");
 		await mkdir(projectRoot, { recursive: true });
@@ -3757,6 +3945,17 @@ function source(
 		async collect() {
 			return { records, omitted };
 		},
+	};
+}
+
+function indexMetadata(title: string, resource: string) {
+	return {
+		type: "decision",
+		title,
+		description: `${title} description.`,
+		resource,
+		timestamp: "2026-09-02T12:00:00.000Z",
+		tags: ["memory"],
 	};
 }
 

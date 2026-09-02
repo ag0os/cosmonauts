@@ -125,7 +125,7 @@ describe("memory owner CLI", () => {
 				dryRun: true,
 				modelMode: "deterministic-only",
 				sources: [
-					{ sourceId: "project-corpus", admitted: 2, omitted: 0 },
+					{ sourceId: "project-corpus", admitted: 1, omitted: 0 },
 					{ sourceId: "project-episodes", admitted: 0, omitted: 0 },
 				],
 				observations: [

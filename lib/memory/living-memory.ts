@@ -9,6 +9,7 @@ import type {
 	ConsolidationProposalStoreWithMaterializations,
 } from "./consolidation-proposals.ts";
 import {
+	type ConsolidationSourceInventoryRecord,
 	type ConsolidationSourceRecord,
 	collectConsolidationSources,
 } from "./consolidation-sources.ts";
@@ -92,10 +93,30 @@ export function createLivingMemoryConsolidator(
 					details,
 				};
 			}
+			const [initialReceipts, proposalEvidence, proposalMaterializations] =
+				await Promise.all([
+					dependencies.acceptedJudgmentReceiptStore.list(),
+					dependencies.proposalStore.readEvidence(),
+					(
+						dependencies.proposalStore as Partial<ConsolidationProposalStoreWithMaterializations>
+					).readMaterializations?.() ??
+						Promise.resolve(
+							Object.freeze(
+								[],
+							) as readonly ConsolidationProposalMaterialization[],
+						),
+				]);
+			const representedBeforeCollection = Object.freeze([
+				...initialReceipts.flatMap((receipt) =>
+					receipt.state === "materialized" ? receipt.inputDigests : [],
+				),
+				...proposalEvidence.map((evidence) => evidence.digest),
+			]);
 			const collected = await collectConsolidationSources({
 				sources: dependencies.sources,
 				maxCorpusRecords: dependencies.limits.maxCorpusRecords,
 				maxEpisodeRecords: dependencies.limits.maxEpisodeRecords,
+				representedDigests: representedBeforeCollection,
 				...(options.signal === undefined ? {} : { signal: options.signal }),
 			});
 			details = {
@@ -117,28 +138,17 @@ export function createLivingMemoryConsolidator(
 				? Object.freeze([])
 				: await dependencies.acceptedJudgmentReceiptStore.dischargeStale({
 						currentDigests: Object.freeze(
-							collected.records.map((record) => record.digest),
+							collected.inventory.map((record) => record.digest),
 						),
 						lockOptions: dependencies.lockOptions,
 					});
-			const [
-				receipts,
-				proposalEvidence,
-				proposalMaterializations,
-				retirementInspection,
-			] = await Promise.all([
-				dependencies.acceptedJudgmentReceiptStore.list(),
-				dependencies.proposalStore.readEvidence(),
-				(
-					dependencies.proposalStore as Partial<ConsolidationProposalStoreWithMaterializations>
-				).readMaterializations?.() ??
-					Promise.resolve(
-						Object.freeze(
-							[],
-						) as readonly ConsolidationProposalMaterialization[],
-					),
-				dependencies.retirementStore.inspect(collected.records),
-			]);
+			const dischargedPaths = new Set(dischargedReceipts);
+			const receipts = initialReceipts.filter(
+				(receipt) => !dischargedPaths.has(receipt.path),
+			);
+			const retirementInspection = await dependencies.retirementStore.inspect(
+				collected.records,
+			);
 			if (dryRun && retirementInspection.recovery !== "none") {
 				details = {
 					...details,
@@ -182,7 +192,10 @@ export function createLivingMemoryConsolidator(
 				...proposalEvidence.map((evidence) => evidence.digest),
 				...retirementInspection.representedDigests,
 			]);
-			const currentDigests = collected.records
+			const mutationCandidates = collected.records.filter(
+				(record) => record.scope === "project",
+			);
+			const currentDigests = mutationCandidates
 				.map((record) => record.digest)
 				.sort();
 			const acceptedCurrentBatch = receipts.some(
@@ -192,8 +205,8 @@ export function createLivingMemoryConsolidator(
 			);
 			const selectedRecords = Object.freeze(
 				acceptedCurrentBatch
-					? [...collected.records]
-					: collected.records.filter(
+					? mutationCandidates
+					: mutationCandidates.filter(
 							(record) => !representedDigests.has(record.digest),
 						),
 			);
@@ -211,7 +224,17 @@ export function createLivingMemoryConsolidator(
 						: details.recovery,
 				writesCommitted: maintenanceCommitted,
 			};
+			const pressure = dependencies.indexPressure.measure(
+				toIndexRecords(collected.inventory),
+			);
 			if (selectedRecords.length === 0) {
+				details = {
+					...details,
+					declines: Object.freeze([
+						...details.declines,
+						...targetUnmetDeclines({ pressure, retirements: [] }),
+					]),
+				};
 				return maintenanceCommitted
 					? { kind: "ran" as const, details }
 					: {
@@ -257,9 +280,6 @@ export function createLivingMemoryConsolidator(
 			);
 			const observationCapDeferred = observedDeterministic.slice(
 				dependencies.limits.maxObservations,
-			);
-			const pressure = dependencies.indexPressure.measure(
-				toIndexRecords(collected.records),
 			);
 			const needsJudgment =
 				modelMode === "full" &&
@@ -811,7 +831,7 @@ async function recoverAcceptedEpisodeFinalization(options: {
 }
 
 function toIndexRecords(
-	records: readonly ConsolidationSourceRecord[],
+	records: readonly ConsolidationSourceInventoryRecord[],
 ): readonly import("./types.ts").RetrievedMemoryRecord[] {
 	return Object.freeze(
 		records.flatMap((record) => {
@@ -839,7 +859,7 @@ function toIndexRecords(
 					resource: metadata.resource,
 					tags: Object.freeze(metadata.tags.map((tag) => String(tag))),
 					timestamp: metadata.timestamp,
-					content: record.content,
+					content: "",
 					path:
 						typeof scopeRoot === "string" && isAbsolute(scopeRoot)
 							? join(scopeRoot, ...record.path.split("/"))

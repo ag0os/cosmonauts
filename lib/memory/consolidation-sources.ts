@@ -34,13 +34,25 @@ export interface ConsolidationSourceRecord {
 	readonly metadata: Readonly<Record<string, unknown>>;
 }
 
+export interface ConsolidationSourceInventoryRecord {
+	readonly id: string;
+	readonly sourceId: string;
+	readonly scope: ConsolidationSourceScope;
+	readonly path: string;
+	readonly digest: string;
+	readonly kind: ConsolidationSourceKind;
+	readonly metadata: Readonly<Record<string, unknown>>;
+}
+
 export interface ConsolidationSourceCollectOptions {
 	readonly limit: number;
+	readonly representedDigests?: readonly string[];
 	readonly signal?: AbortSignal;
 }
 
 export interface ConsolidationSourceSnapshot {
 	readonly records: readonly ConsolidationSourceRecord[];
+	readonly inventory?: readonly ConsolidationSourceInventoryRecord[];
 	readonly omitted: number;
 }
 
@@ -62,6 +74,7 @@ export interface ConsolidationSource {
 
 export interface CollectedConsolidationSources {
 	readonly records: readonly ConsolidationSourceRecord[];
+	readonly inventory: readonly ConsolidationSourceInventoryRecord[];
 	readonly sources: readonly {
 		readonly sourceId: string;
 		readonly admitted: number;
@@ -128,31 +141,41 @@ export function createProjectCorpusConsolidationSource(options: {
 						)
 					);
 				});
-			const admitted = candidates.slice(0, input.limit);
 			const records: ConsolidationSourceRecord[] = [];
-			for (const candidate of admitted) {
+			const inventory: ConsolidationSourceInventoryRecord[] = [];
+			const representedDigests = new Set(input.representedDigests);
+			let projectCandidates = 0;
+			for (const candidate of candidates) {
 				throwIfAborted(input.signal);
 				const path = relativeScopePath(
 					candidate.scopeRoot,
 					candidate.record.path,
 				);
 				const content = await readRegularText(candidate.record.path);
-				records.push(
-					Object.freeze({
-						id: path,
-						sourceId: PROJECT_CORPUS_SOURCE_ID,
-						scope: candidate.scope,
-						path,
-						digest: sha256(content),
-						kind: "knowledge",
-						content,
-						metadata: corpusMetadata(candidate.record, candidate.scopeRoot),
-					}),
-				);
+				const common = Object.freeze({
+					id: path,
+					sourceId: PROJECT_CORPUS_SOURCE_ID,
+					scope: candidate.scope,
+					path,
+					digest: sha256(content),
+					kind: "knowledge" as const,
+					metadata: corpusMetadata(candidate.record, candidate.scopeRoot),
+				});
+				inventory.push(common);
+				if (
+					candidate.scope !== "project" ||
+					representedDigests.has(common.digest)
+				) {
+					continue;
+				}
+				projectCandidates += 1;
+				if (records.length >= input.limit) continue;
+				records.push(Object.freeze({ ...common, content }));
 			}
 			return Object.freeze({
 				records: Object.freeze(records),
-				omitted: candidates.length - admitted.length,
+				inventory: Object.freeze(inventory),
+				omitted: projectCandidates - records.length,
 			});
 		},
 	};
@@ -253,9 +276,11 @@ export async function collectConsolidationSources(options: {
 	readonly sources: readonly ConsolidationSource[];
 	readonly maxCorpusRecords: number;
 	readonly maxEpisodeRecords: number;
+	readonly representedDigests?: readonly string[];
 	readonly signal?: AbortSignal;
 }): Promise<CollectedConsolidationSources> {
 	const records: ConsolidationSourceRecord[] = [];
+	const inventory: ConsolidationSourceInventoryRecord[] = [];
 	const summaries: Array<{
 		sourceId: string;
 		admitted: number;
@@ -282,6 +307,9 @@ export async function collectConsolidationSources(options: {
 
 		const snapshot = await source.collect({
 			limit: requestedLimit,
+			...(options.representedDigests === undefined
+				? {}
+				: { representedDigests: options.representedDigests }),
 			...(options.signal === undefined ? {} : { signal: options.signal }),
 		});
 		if (!Number.isSafeInteger(snapshot.omitted) || snapshot.omitted < 0) {
@@ -294,11 +322,16 @@ export async function collectConsolidationSources(options: {
 				`Source ${source.id} returned over-limit output (${snapshot.records.length} > ${requestedLimit}).`,
 			);
 		}
+		const sourceInventory = snapshot.inventory?.map((candidate) =>
+			immutableValidatedInventoryRecord(candidate, source.id),
+		);
 
 		let admitted = 0;
 		let deferred = 0;
+		const validatedSourceRecords: ConsolidationSourceRecord[] = [];
 		for (const candidate of snapshot.records) {
 			const record = immutableValidatedRecord(candidate, source.id);
+			validatedSourceRecords.push(record);
 			const key = `${record.sourceId}\0${record.id}`;
 			if (recordKeys.has(key)) {
 				throw new ConsolidationSourceContractError(
@@ -307,6 +340,7 @@ export async function collectConsolidationSources(options: {
 			}
 			recordKeys.add(key);
 
+			if (record.scope !== "project") continue;
 			const isEpisode = record.kind === "episode";
 			const hasCapacity = isEpisode
 				? admittedEpisodes < options.maxEpisodeRecords
@@ -321,6 +355,12 @@ export async function collectConsolidationSources(options: {
 			admitted += 1;
 		}
 
+		inventory.push(
+			...(sourceInventory ??
+				validatedSourceRecords.map(
+					({ content: _content, ...record }) => record,
+				)),
+		);
 		summaries.push(
 			Object.freeze({
 				sourceId: source.id,
@@ -332,7 +372,53 @@ export async function collectConsolidationSources(options: {
 
 	return Object.freeze({
 		records: Object.freeze(records),
+		inventory: Object.freeze(inventory),
 		sources: Object.freeze(summaries),
+	});
+}
+
+function immutableValidatedInventoryRecord(
+	candidate: ConsolidationSourceInventoryRecord,
+	sourceId: string,
+): ConsolidationSourceInventoryRecord {
+	assertNonEmptyString(candidate.id, "Inventory record id");
+	if (candidate.sourceId !== sourceId) {
+		throw new ConsolidationSourceContractError(
+			`Inventory record ${candidate.id} source-id mismatch: expected ${sourceId}.`,
+		);
+	}
+	if (!CONSOLIDATION_SOURCE_SCOPES.includes(candidate.scope)) {
+		throw new ConsolidationSourceContractError(
+			`Inventory record ${candidate.id} has unsupported scopes data: ${String(candidate.scope)}.`,
+		);
+	}
+	if (!CONSOLIDATION_SOURCE_KINDS.includes(candidate.kind)) {
+		throw new ConsolidationSourceContractError(
+			`Inventory record ${candidate.id} has an unsupported kind: ${String(candidate.kind)}.`,
+		);
+	}
+	if (!isSafeScopeRelativePath(candidate.path)) {
+		throw new ConsolidationSourceContractError(
+			`Inventory record ${candidate.id} has unsafe paths data: ${candidate.path}.`,
+		);
+	}
+	if (!/^[a-f0-9]{64}$/.test(candidate.digest)) {
+		throw new ConsolidationSourceContractError(
+			`Inventory record ${candidate.id} has invalid digests data.`,
+		);
+	}
+	if (
+		typeof candidate.metadata !== "object" ||
+		candidate.metadata === null ||
+		Array.isArray(candidate.metadata)
+	) {
+		throw new ConsolidationSourceContractError(
+			`Inventory record ${candidate.id} has invalid metadata.`,
+		);
+	}
+	return Object.freeze({
+		...candidate,
+		metadata: deepFreeze(structuredClone(candidate.metadata)),
 	});
 }
 
