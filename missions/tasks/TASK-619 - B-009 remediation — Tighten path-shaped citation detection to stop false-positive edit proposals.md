@@ -3,7 +3,7 @@ id: TASK-619
 title: >-
   B-009 remediation — Tighten path-shaped citation detection to stop
   false-positive edit proposals
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -12,7 +12,7 @@ labels:
 dependencies:
   - TASK-618
 createdAt: '2026-09-02T18:12:30.518Z'
-updatedAt: '2026-09-02T18:12:30.518Z'
+updatedAt: '2026-09-02T18:21:01.116Z'
 ---
 
 ## Description
@@ -28,9 +28,9 @@ Tighten the heuristic so a backtick token counts as a citation only when it is g
 Binding ratified ground — stop and escalate rather than adjust it: never move, edit, or delete anything under this repository's live `knowledge/`; use temp fixtures only; `knowledgeSurface` stays on; no live retirement round; no TTL, OM, scheduling, user-scope L4 mutation, embeddings, new OKF type, or explicit-save change. Do not silence findings by lowering caps, disabling the detector, or dropping the backtick channel entirely — the true positives below must still be found.
 
 <!-- AC:BEGIN -->
-- [ ] #1 Backtick tokens in these classes are NOT treated as citations: dotted code identifiers with no path separator (`Bun.spawn`, `Promise.race`, `JSON.parse`, `Type.Object`, `MemoryQuery.recordTypes`, `episodicLog.enabled`); slash-namespaced identifiers carrying no file extension (`coding/worker`, `main/cosmo`, `cosmonauts/cli`, `knowledge/url`); brace expansions, globs and placeholders (`lib/config/{types,loader}.ts`, `tests/driver/*`, `memory/**`, `docs/fallow*.md`, `node_modules/.bin/<tool>`, `${role}-<uuid>.jsonl`, `review-<n>.md`); git rev ranges and elided paths (`main..HEAD`, `51ef662..HEAD`, `round-1..3`, `.../references/plan-format.md`); and separator-less bare names or bare extensions (`types.ts`, `index.md`, `config.json`, `.md`).
-- [ ] #2 Genuine path-shaped citations are still detected: the existing B-009 fixture `lib/missing-backtick.ts` still yields its stale finding, and a real-corpus reference such as `memory/episodic-log.md` (which does not resolve) is still reported; markdown-link and `files:` frontmatter extraction behave exactly as before, including the anchor/query canonicalization already covered.
-- [ ] #3 B-009 remains green under its exact existing name and marker in `tests/memory/living-memory.test.ts`, extended with table-driven positive and negative cases covering every rejection class above so the heuristic cannot silently loosen again.
-- [ ] #4 A live `bun bin/cosmonauts memory consolidate --dry-run --no-model --json` from the repository root completes as `ran` or `noop`, and every remaining stale-reference observation names only tokens that genuinely fail to resolve — no dotted identifier, glob, brace expansion, placeholder, rev range, or bare filename appears in any reason string.
-- [ ] #5 Project-native universal correctness evidence passes after every commit; the Slice 0 B-001 receipt test and every marker B-001..B-021 remain green and owned by their original tasks; live `knowledge/` and `memory/` stay byte-identical with a clean worktree.
+- [x] #1 Backtick tokens in these classes are NOT treated as citations: dotted code identifiers with no path separator (`Bun.spawn`, `Promise.race`, `JSON.parse`, `Type.Object`, `MemoryQuery.recordTypes`, `episodicLog.enabled`); slash-namespaced identifiers carrying no file extension (`coding/worker`, `main/cosmo`, `cosmonauts/cli`, `knowledge/url`); brace expansions, globs and placeholders (`lib/config/{types,loader}.ts`, `tests/driver/*`, `memory/**`, `docs/fallow*.md`, `node_modules/.bin/<tool>`, `${role}-<uuid>.jsonl`, `review-<n>.md`); git rev ranges and elided paths (`main..HEAD`, `51ef662..HEAD`, `round-1..3`, `.../references/plan-format.md`); and separator-less bare names or bare extensions (`types.ts`, `index.md`, `config.json`, `.md`).
+- [x] #2 Genuine path-shaped citations are still detected: the existing B-009 fixture `lib/missing-backtick.ts` still yields its stale finding, and a real-corpus reference such as `memory/episodic-log.md` (which does not resolve) is still reported; markdown-link and `files:` frontmatter extraction behave exactly as before, including the anchor/query canonicalization already covered.
+- [x] #3 B-009 remains green under its exact existing name and marker in `tests/memory/living-memory.test.ts`, extended with table-driven positive and negative cases covering every rejection class above so the heuristic cannot silently loosen again.
+- [x] #4 A live `bun bin/cosmonauts memory consolidate --dry-run --no-model --json` from the repository root completes as `ran` or `noop`, and every remaining stale-reference observation names only tokens that genuinely fail to resolve — no dotted identifier, glob, brace expansion, placeholder, rev range, or bare filename appears in any reason string.
+- [x] #5 Project-native universal correctness evidence passes after every commit; the Slice 0 B-001 receipt test and every marker B-001..B-021 remain green and owned by their original tasks; live `knowledge/` and `memory/` stay byte-identical with a clean worktree.
 <!-- AC:END -->
