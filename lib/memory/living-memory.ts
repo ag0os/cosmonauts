@@ -72,14 +72,20 @@ export function createLivingMemoryConsolidator(
 						lockOptions: dependencies.lockOptions,
 						...(options.signal === undefined ? {} : { signal: options.signal }),
 					});
-			if (recoveryRun?.kind === "failed") {
+			if (recoveryRun !== undefined) {
 				details = {
 					...details,
+					retirements: recoveryRun.details.retirements,
 					declines: recoveryRun.details.declines,
 					warnings: recoveryRun.details.warnings,
 					recovery: recoveryRun.details.recovery,
 					writesCommitted: recoveryRun.details.writesCommitted,
+					...(recoveryRun.details.manifestPath === undefined
+						? {}
+						: { manifestPath: recoveryRun.details.manifestPath }),
 				};
+			}
+			if (recoveryRun?.kind === "failed") {
 				return {
 					kind: "failed" as const,
 					reason: recoveryRun.reason,
@@ -95,12 +101,15 @@ export function createLivingMemoryConsolidator(
 			details = {
 				...details,
 				sources: collected.sources,
-				declines: collected.sources
-					.filter((source) => source.omitted > 0)
-					.map((source) => ({
-						code: "source-deferred",
-						reason: `${source.omitted} record(s) from ${source.sourceId} were deferred by the bounded source pass.`,
-					})),
+				declines: Object.freeze([
+					...details.declines,
+					...collected.sources
+						.filter((source) => source.omitted > 0)
+						.map((source) => ({
+							code: "source-deferred",
+							reason: `${source.omitted} record(s) from ${source.sourceId} were deferred by the bounded source pass.`,
+						})),
+				]),
 				recovery: recoveryRun?.details.recovery ?? "none",
 				writesCommitted: recoveryRun?.details.writesCommitted ?? false,
 			};

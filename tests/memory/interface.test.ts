@@ -28,9 +28,19 @@ import {
 	parseEpisodeRecord,
 } from "../../lib/memory/episodic-records.ts";
 import {
+	type ConsolidationSource,
+	type ConsolidationSourceRecord,
+	type CorpusJudgmentProvider,
+	createAcceptedJudgmentReceiptStore,
+	createConsolidationProposalStore,
 	createKnowledgeMemoryStore,
+	createLivingMemoryConsolidator,
 	createMarkdownMemoryStore,
+	createProjectEpisodeConsolidationSource,
+	DEFAULT_LIVING_MEMORY_LIMITS,
 	deriveKnowledgeProposalIdentity,
+	type LivingMemoryConsolidatorDependencies,
+	type LivingMemoryRetirementStore,
 	MEMORY_KINDS,
 	MEMORY_SCOPES,
 	type MemoryRecordDraft,
@@ -695,6 +705,95 @@ describe("memory interface", () => {
 		);
 	});
 
+	// @cosmo-behavior plan:living-memory#B-020
+	test("documents living-memory trust outlets invocation durability and recovery", async () => {
+		const [documentation, driveSkill, typesSource, architectureAdapterSource] =
+			await Promise.all([
+				readFile(join(process.cwd(), "docs", "memory.md"), "utf-8"),
+				readFile(
+					join(
+						process.cwd(),
+						"domains",
+						"shared",
+						"skills",
+						"drive",
+						"SKILL.md",
+					),
+					"utf-8",
+				),
+				readFile(join(process.cwd(), "lib", "memory", "types.ts"), "utf-8"),
+				readFile(
+					join(process.cwd(), "lib", "architecture-map", "retrieval.ts"),
+					"utf-8",
+				),
+			]);
+		const normalized = documentation.replace(/\s+/gu, " ");
+		for (const requiredText of [
+			"## Living-Memory Consolidation",
+			"`ConsolidationSource`",
+			"`CorpusJudgmentProvider`",
+			"`KnowledgeIndexPressurePolicy`",
+			"`createLivingMemoryConsolidator()`",
+			"live project and user knowledge metadata",
+			"project episodes",
+			"Observer → Reflector → Dropper",
+			"50 corpus bodies",
+			"50 project episodes",
+			"25 observations",
+			"10 proposals",
+			"5 retirements",
+			"one model request",
+			"50 rows",
+			"guaranteed knowledge share",
+			"one-row headroom",
+			"`create | merge | retire | improve`",
+			"A one-input merge is an edit",
+			"`missions/reviews/improvements/<runId>.md`",
+			"observed problem → what happened in this run → suggested improvement → why it helps",
+			"`open → actioned|rejected → closed`",
+			"`cosmonauts memory improve action`",
+			"`cosmonauts memory improve reject`",
+			"`cosmonauts memory restore`",
+			"complete destination serialization",
+			"healthy canonical citation inventory",
+			"`knowledge/retired/<original-relative-path>`",
+			"`retiredRecords`",
+			"file and its parent directory",
+			"10-second lock-acquisition timeout",
+			"`release-unconfirmed`",
+			"`includeRetired: true`",
+			"`cosmonauts memory consolidate [--dry-run] [--no-model] [--model <provider/model>] [--json|--plain]`",
+			"no lock, proposal, accepted-judgment receipt, manifest, journal, retired file, or episode deletion",
+			'`kind: "memory.consolidate"`',
+			"`version: 1`",
+			'`scope: "project"`',
+			"configured knowledge store",
+			"unconfigured knowledge store",
+			"markdown and architecture stores remain exact noops",
+			"Profile and explicit-save authority are unchanged",
+		]) {
+			expect(normalized, requiredText).toContain(requiredText);
+		}
+		expect(normalized).not.toContain(
+			"The later ratified living-memory units will add byte-identical soft retirement",
+		);
+		expect(normalized).not.toContain("consolidate() remains an explicit no-op");
+		expect(driveSkill).toContain("`missions/reviews/improvements/<runId>.md`");
+		expect(driveSkill).toContain(
+			"*observed problem → what happened in this run → suggested improvement → why it helps*",
+		);
+		expect(driveSkill).toContain(
+			"Lifecycle is `open → actioned|rejected → closed`",
+		);
+		expect(driveSkill).toContain("never `knowledge/`");
+		expect(createHash("sha256").update(typesSource).digest("hex")).toBe(
+			"103242b1196d6c401a0ab8602ecf467578ee20509608b0062b2a3659e9090368",
+		);
+		expect(
+			createHash("sha256").update(architectureAdapterSource).digest("hex"),
+		).toBe("ab64b61e95f6393db8e1edeec56e3d9994cb4e8d3a2fc525962f1b7ff04454d7");
+	});
+
 	test("supports note profile and playbook through the unchanged MemoryStore contract @cosmo-behavior plan:profile-playbooks#B-002", async () => {
 		const projectRoot = join(tmp.path, "authored-types-project");
 		const userRoot = join(tmp.path, "authored-types-user");
@@ -850,6 +949,446 @@ describe("memory interface", () => {
 				join(tmp.path, "memory", "architecture", "modules", "lib", "agents.md"),
 			]),
 		).resolves.toEqual(before);
+	});
+
+	// @cosmo-behavior plan:living-memory#B-012
+	test("exposes exact living-memory outcomes through configured knowledge consolidate only", async () => {
+		const fullRoot = join(tmp.path, "public-consolidate-full");
+		const corpusContents = [
+			"# Retry policy\n\nRetry only idempotent work.\n",
+			"# Superseded note\n\nThis note needs owner review.\n",
+			"# Retry context\n\nRetries require a bounded attempt count.\n",
+		] as const;
+		const corpusRecords = corpusContents.map((content, index) =>
+			livingMemorySourceRecord({
+				id: `corpus-${index + 1}`,
+				path: `knowledge/corpus-${index + 1}.md`,
+				content,
+			}),
+		);
+		await mkdir(join(fullRoot, ".cosmonauts"), { recursive: true });
+		await mkdir(join(fullRoot, "knowledge"), { recursive: true });
+		for (const record of corpusRecords) {
+			await writeFile(join(fullRoot, record.path), record.content);
+		}
+		const authored = createMarkdownMemoryStore({ projectRoot: fullRoot });
+		const episodeWrite = await authored.write(
+			createEpisodeRecord(
+				{
+					...episodeEvent(),
+					outcome: "completed",
+					summary: "Completed verification.",
+					details: "The verification run completed with all checks green.",
+				},
+				"2026-09-02T12:00:00.000Z",
+			),
+		);
+		if (episodeWrite.kind !== "written") {
+			throw new Error("expected temporary episode fixture write");
+		}
+		const corpusPaths = corpusRecords.map((record) =>
+			join(fullRoot, record.path),
+		);
+		const beforeCorpus = await readTrackedFiles(corpusPaths);
+		const corpusSource = livingMemoryCorpusSource(corpusRecords, 2);
+		const episodeSource = createProjectEpisodeConsolidationSource({
+			projectRoot: fullRoot,
+		});
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async (input) => {
+			const episode = input.records.find((record) => record.kind === "episode");
+			if (episode === undefined) throw new Error("missing admitted episode");
+			return {
+				schemaVersion: 1,
+				observations: [
+					{
+						kind: "merge-candidate",
+						inputIds: ["corpus-1", "corpus-3"],
+						reason: "The retry rule should become a concise proposal.",
+						proposal: {
+							proposalKind: "merge",
+							replacement: {
+								type: "gotcha",
+								title: "Retry only idempotent work",
+								description: "The bounded retry rule.",
+								content:
+									"# Retry only idempotent work\n\nRetry only idempotent work.\n",
+								tags: ["retries"],
+							},
+						},
+					},
+					{
+						kind: "superseded",
+						inputIds: ["corpus-2"],
+						reason: "Human retirement authority is still required.",
+						proposal: {
+							proposalKind: "retire",
+							reason: "superseded",
+						},
+					},
+					{
+						kind: "merge-candidate",
+						inputIds: [episode.id],
+						reason: "Fold the episode into one lossy authored-note proposal.",
+						proposal: {
+							proposalKind: "create",
+							record: {
+								type: "note",
+								title: "Verification summary",
+								description: "A lossy summary of completed verification.",
+								content:
+									"# Verification summary\n\nThe verification run completed successfully.\n",
+								tags: ["verification"],
+							},
+						},
+					},
+				],
+			};
+		});
+		const indexPressure = {
+			measure: vi.fn(() => ({
+				targetSatisfied: false,
+				recordCount: 53,
+				maxRecords: 50,
+				renderedBytes: 8_200,
+				guaranteedBytes: 8_000,
+				headroomBytes: 512,
+			})),
+		};
+		const dependencies = livingMemoryDependencies({
+			projectRoot: fullRoot,
+			sources: [corpusSource, episodeSource],
+			judgmentProvider: { id: "fixture/no-tools", judge },
+			indexPressure,
+		});
+		const fullStore = createKnowledgeMemoryStore({
+			projectRoot: fullRoot,
+			consolidator: createLivingMemoryConsolidator(dependencies),
+		});
+		const full = await fullStore.consolidate({ modelMode: "full" });
+		if (full.kind === "failed") throw new Error(full.reason);
+		expect(full).toMatchObject({
+			kind: "ran",
+			details: {
+				dryRun: false,
+				modelMode: "full",
+				sources: [
+					{ sourceId: "corpus", admitted: 3, omitted: 2 },
+					{ sourceId: "project-episodes", admitted: 1, omitted: 0 },
+				],
+				observations: expect.arrayContaining([
+					expect.objectContaining({ kind: "merge-candidate" }),
+					expect.objectContaining({ kind: "superseded" }),
+				]),
+				proposals: expect.arrayContaining([
+					expect.objectContaining({ proposalKind: "merge", status: "written" }),
+					expect.objectContaining({
+						proposalKind: "retire",
+						status: "written",
+					}),
+					expect.objectContaining({
+						proposalKind: "create",
+						status: "written",
+					}),
+				]),
+				retirements: [
+					expect.objectContaining({
+						path: "knowledge/corpus-2.md",
+						status: "deferred",
+						reason: "superseded",
+					}),
+				],
+				episodePrunes: [expect.stringContaining("memory/agent/episodes/")],
+				acceptedJudgmentReceiptPath: expect.stringContaining(
+					"memory/agent/consolidations/",
+				),
+				declines: expect.arrayContaining([
+					expect.objectContaining({ code: "source-deferred" }),
+					expect.objectContaining({ code: "retirement-authority-deferred" }),
+					expect.objectContaining({ code: "target-unmet" }),
+				]),
+				warnings: [],
+				recovery: "none",
+				writesCommitted: true,
+			},
+		});
+		if (full.kind !== "ran") throw new Error("expected full pass to run");
+		expect(Object.keys(full.details).sort()).toEqual([
+			"acceptedJudgmentReceiptPath",
+			"declines",
+			"dryRun",
+			"episodePrunes",
+			"modelMode",
+			"observations",
+			"proposals",
+			"recovery",
+			"retirements",
+			"sources",
+			"warnings",
+			"writesCommitted",
+		]);
+		expect(judge).toHaveBeenCalledOnce();
+		expect(indexPressure.measure).toHaveBeenCalledOnce();
+		await expect(readTrackedFiles(corpusPaths)).resolves.toEqual(beforeCorpus);
+		await expect(access(episodeWrite.path)).rejects.toMatchObject({
+			code: "ENOENT",
+		});
+
+		const freshStore = createKnowledgeMemoryStore({
+			projectRoot: fullRoot,
+			consolidator: createLivingMemoryConsolidator(
+				livingMemoryDependencies({
+					projectRoot: fullRoot,
+					sources: [
+						livingMemoryCorpusSource(corpusRecords, 2),
+						createProjectEpisodeConsolidationSource({ projectRoot: fullRoot }),
+					],
+					judgmentProvider: { id: "fixture/no-tools", judge },
+					indexPressure,
+				}),
+			),
+		});
+		await expect(freshStore.consolidate()).resolves.toMatchObject({
+			kind: "noop",
+			details: { writesCommitted: false },
+		});
+		expect(judge).toHaveBeenCalledOnce();
+
+		const deterministicRoot = join(tmp.path, "public-consolidate-no-model");
+		await mkdir(join(deterministicRoot, ".cosmonauts"), { recursive: true });
+		const deterministicEpisode = createMarkdownMemoryStore({
+			projectRoot: deterministicRoot,
+		});
+		const deterministicWrite = await deterministicEpisode.write(
+			createEpisodeRecord(
+				{
+					...episodeEvent(),
+					summary: "No-model fixture.",
+					details: "No model should be called.",
+				},
+				"2026-09-02T13:00:00.000Z",
+			),
+		);
+		if (deterministicWrite.kind !== "written") {
+			throw new Error("expected deterministic episode fixture write");
+		}
+		const deterministicCorpus = livingMemorySourceRecord({
+			id: "deterministic-corpus",
+			path: "knowledge/deterministic.md",
+			content: "# Deterministic fixture\n",
+		});
+		const deterministicJudge = vi.fn<CorpusJudgmentProvider["judge"]>();
+		const deterministicStore = createKnowledgeMemoryStore({
+			projectRoot: deterministicRoot,
+			consolidator: createLivingMemoryConsolidator(
+				livingMemoryDependencies({
+					projectRoot: deterministicRoot,
+					sources: [
+						livingMemoryCorpusSource([deterministicCorpus]),
+						createProjectEpisodeConsolidationSource({
+							projectRoot: deterministicRoot,
+						}),
+					],
+					judgmentProvider: {
+						id: "fixture/must-not-run",
+						judge: deterministicJudge,
+					},
+				}),
+			),
+		});
+		await expect(
+			deterministicStore.consolidate({ modelMode: "deterministic-only" }),
+		).resolves.toMatchObject({
+			kind: "noop",
+			details: {
+				dryRun: false,
+				modelMode: "deterministic-only",
+				sources: [
+					{ sourceId: "corpus", admitted: 1, omitted: 0 },
+					{ sourceId: "project-episodes", admitted: 1, omitted: 0 },
+				],
+				writesCommitted: false,
+			},
+		});
+		expect(deterministicJudge).not.toHaveBeenCalled();
+		await expect(access(deterministicWrite.path)).resolves.toBeUndefined();
+
+		const dryRoot = join(tmp.path, "public-consolidate-dry");
+		await mkdir(join(dryRoot, ".cosmonauts"), { recursive: true });
+		const dryEpisodeStore = createMarkdownMemoryStore({ projectRoot: dryRoot });
+		const dryEpisode = await dryEpisodeStore.write(
+			createEpisodeRecord(
+				{
+					...episodeEvent(),
+					summary: "Dry-run fixture.",
+					details: "Preview this episode without writing machine state.",
+				},
+				"2026-09-02T14:00:00.000Z",
+			),
+		);
+		if (dryEpisode.kind !== "written") {
+			throw new Error("expected dry-run episode fixture write");
+		}
+		const dryCorpus = livingMemorySourceRecord({
+			id: "dry-corpus",
+			path: "knowledge/dry.md",
+			content: "# Dry-run corpus\n",
+		});
+		await mkdir(join(dryRoot, "knowledge"), { recursive: true });
+		await writeFile(join(dryRoot, dryCorpus.path), dryCorpus.content);
+		const dryBefore = await readTrackedFiles([
+			join(dryRoot, dryCorpus.path),
+			dryEpisode.path,
+		]);
+		const dryJudge = vi.fn<CorpusJudgmentProvider["judge"]>(async (input) => ({
+			schemaVersion: 1,
+			observations: [
+				{
+					kind: "merge-candidate",
+					inputIds: input.records.map((record) => record.id),
+					reason: "Preview one lossy note across the bounded inputs.",
+					proposal: {
+						proposalKind: "create",
+						record: {
+							type: "note",
+							title: "Dry consolidation summary",
+							description: "A preview only.",
+							content: "# Dry consolidation summary\n",
+							tags: [],
+						},
+					},
+				},
+			],
+		}));
+		const dryStore = createKnowledgeMemoryStore({
+			projectRoot: dryRoot,
+			consolidator: createLivingMemoryConsolidator(
+				livingMemoryDependencies({
+					projectRoot: dryRoot,
+					sources: [
+						livingMemoryCorpusSource([dryCorpus]),
+						createProjectEpisodeConsolidationSource({ projectRoot: dryRoot }),
+					],
+					judgmentProvider: { id: "fixture/no-tools", judge: dryJudge },
+				}),
+			),
+		});
+		await expect(
+			dryStore.consolidate({ dryRun: true, modelMode: "full" }),
+		).resolves.toMatchObject({
+			kind: "ran",
+			details: {
+				dryRun: true,
+				modelMode: "full",
+				proposals: [expect.objectContaining({ status: "preview" })],
+				episodePrunes: [],
+				writesCommitted: false,
+			},
+		});
+		await expect(
+			readTrackedFiles([join(dryRoot, dryCorpus.path), dryEpisode.path]),
+		).resolves.toEqual(dryBefore);
+		for (const path of [
+			join(dryRoot, "memory", "agent", "consolidations"),
+			join(dryRoot, "memory", "agent", "proposals", "living-memory"),
+			join(dryRoot, "memory", "agent", "retirements"),
+			join(dryRoot, ".cosmonauts", "living-memory.lock"),
+		]) {
+			await expect(access(path)).rejects.toMatchObject({ code: "ENOENT" });
+		}
+
+		const abortController = new AbortController();
+		abortController.abort(new Error("owner cancelled consolidation"));
+		await expect(
+			fullStore.consolidate({ signal: abortController.signal }),
+		).resolves.toMatchObject({
+			kind: "failed",
+			reason: "owner cancelled consolidation",
+			details: { writesCommitted: false, recovery: "none" },
+		});
+
+		for (const failure of [
+			{
+				name: "pre-commit timeout",
+				reason: "Living-memory lock acquisition timed out.",
+				recovery: "concurrent-mutation" as const,
+				writesCommitted: false,
+			},
+			{
+				name: "release unconfirmed",
+				reason: "Living-memory lock release could not be confirmed.",
+				recovery: "release-unconfirmed" as const,
+				writesCommitted: true,
+				manifestPath: join(
+					fullRoot,
+					"memory",
+					"agent",
+					"retirements",
+					"round-1.md",
+				),
+			},
+		] as const) {
+			const failedRetirementStore: LivingMemoryRetirementStore = {
+				inspect: vi.fn(async () => ({
+					recovery: "none" as const,
+					warnings: [],
+					representedDigests: [],
+				})),
+				apply: vi.fn(async () => ({
+					kind: "failed" as const,
+					reason: failure.reason,
+					details: {
+						retirements: [],
+						declines: [],
+						warnings: [{ message: failure.name }],
+						recovery: failure.recovery,
+						writesCommitted: failure.writesCommitted,
+						...(failure.manifestPath === undefined
+							? {}
+							: { manifestPath: failure.manifestPath }),
+					},
+				})),
+			};
+			const failedStore = createKnowledgeMemoryStore({
+				projectRoot: fullRoot,
+				consolidator: createLivingMemoryConsolidator(
+					livingMemoryDependencies({
+						projectRoot: fullRoot,
+						sources: [livingMemoryCorpusSource([])],
+						retirementStore: failedRetirementStore,
+					}),
+				),
+			});
+			await expect(failedStore.consolidate()).resolves.toMatchObject({
+				kind: "failed",
+				reason: failure.reason,
+				details: {
+					warnings: [{ message: failure.name }],
+					recovery: failure.recovery,
+					writesCommitted: failure.writesCommitted,
+					...(failure.manifestPath === undefined
+						? {}
+						: { manifestPath: failure.manifestPath }),
+				},
+			});
+		}
+
+		const options = { dryRun: true, modelMode: "deterministic-only" as const };
+		const unconfigured = createKnowledgeMemoryStore({ projectRoot: fullRoot });
+		await expect(unconfigured.consolidate(options)).resolves.toEqual({
+			kind: "noop",
+			reason:
+				"The knowledge store does not consolidate, promote, retain, or prune records.",
+		});
+		for (const store of [
+			createMarkdownMemoryStore({ projectRoot: fullRoot }),
+			createArchitectureMapMemoryStore({ projectRoot: fullRoot }),
+		]) {
+			await expect(store.consolidate(options)).resolves.toEqual({
+				kind: "noop",
+				reason:
+					"W1 performs no background memory consolidation, pruning, decay, or dreaming.",
+			});
+		}
 	});
 
 	test("exposes W1 taxonomy and honest write outcomes without speculative consolidation variants", async () => {
@@ -1594,6 +2133,110 @@ async function readTrackedFiles(
 		paths.map(async (path) => [path, await readFile(path, "utf-8")] as const),
 	);
 	return Object.fromEntries(entries);
+}
+
+function livingMemorySourceRecord(options: {
+	readonly id: string;
+	readonly path: string;
+	readonly content: string;
+}): ConsolidationSourceRecord {
+	return {
+		id: options.id,
+		sourceId: "corpus",
+		scope: "project",
+		path: options.path,
+		digest: sha256(options.content),
+		kind: "knowledge",
+		content: options.content,
+		metadata: {
+			type: "decision",
+			title: options.id,
+			description: `${options.id} fixture.`,
+			resource: options.path.slice("knowledge/".length),
+			tags: ["fixture"],
+			timestamp: "2026-09-02T12:00:00.000Z",
+		},
+	};
+}
+
+function livingMemoryCorpusSource(
+	records: readonly ConsolidationSourceRecord[],
+	omitted = 0,
+): ConsolidationSource {
+	return {
+		id: "corpus",
+		async collect() {
+			return { records, omitted };
+		},
+	};
+}
+
+function livingMemoryDependencies(options: {
+	readonly projectRoot: string;
+	readonly sources: readonly ConsolidationSource[];
+	readonly judgmentProvider?: CorpusJudgmentProvider;
+	readonly indexPressure?: LivingMemoryConsolidatorDependencies["indexPressure"];
+	readonly retirementStore?: LivingMemoryRetirementStore;
+}): LivingMemoryConsolidatorDependencies {
+	const retirementStore: LivingMemoryRetirementStore =
+		options.retirementStore ?? {
+			async inspect() {
+				return {
+					recovery: "none",
+					warnings: [],
+					representedDigests: [],
+				};
+			},
+			async apply() {
+				return {
+					kind: "completed",
+					details: {
+						retirements: [],
+						declines: [],
+						warnings: [],
+						recovery: "none",
+						writesCommitted: false,
+					},
+				};
+			},
+		};
+	return {
+		sources: options.sources,
+		...(options.judgmentProvider === undefined
+			? {}
+			: { judgmentProvider: options.judgmentProvider }),
+		proposalStore: createConsolidationProposalStore({
+			projectRoot: options.projectRoot,
+		}),
+		acceptedJudgmentReceiptStore: createAcceptedJudgmentReceiptStore({
+			projectRoot: options.projectRoot,
+		}),
+		retirementStore,
+		durableFiles: {
+			async writeText() {
+				throw new Error("unexpected direct durable write");
+			},
+		},
+		indexPressure: options.indexPressure ?? {
+			measure() {
+				return {
+					targetSatisfied: true,
+					recordCount: 0,
+					maxRecords: 50,
+					renderedBytes: 0,
+					guaranteedBytes: 8_000,
+					headroomBytes: 0,
+				};
+			},
+		},
+		clock: () => new Date("2026-09-02T12:00:00.000Z"),
+		limits: DEFAULT_LIVING_MEMORY_LIMITS,
+		lockOptions: {
+			retryMs: 50,
+			timeoutMs: 10_000,
+			onReleaseUnconfirmed: () => undefined,
+		},
+	};
 }
 
 async function writeArchitectureMap(projectRoot: string): Promise<void> {

@@ -266,7 +266,7 @@ seed corpus is a one-to-one conversion rather than consolidation; the retired
 root markdown distillations and JSONL knowledge bundles have no live read/write
 path.
 
-The first living-memory release unit is a read-only receipt floor. Promotion
+The living-memory trust floor starts with read-only receipt evidence. Promotion
 ledgers (`kind: knowledge-surface-promotion`) are folded in numeric round order.
 Their `promotions`, `curatedRecords`, `retiredRecords`, and
 `ratifiedBaselines` fields are authority-bearing and therefore parse
@@ -292,11 +292,11 @@ duplicate or noncontiguous rounds, duplicate retirement ids, unknown restores,
 and conflicting history make the whole inventory unhealthy and authorize
 nothing.
 
-This release unit contains no relocation operation and does not run a retirement
-round. The later ratified living-memory units will add byte-identical soft
-retirement and proposal kinds `retire`, `merge`, and `improve`; until those ship,
-the existing knowledge write, retrieval, index, gate, and explicit-save
-contracts remain unchanged.
+Living-memory may now perform byte-identical soft retirement through the
+configured knowledge-store pipeline described below. It never turns a machine
+digest into ratification, edits knowledge bytes, or treats a proposal as human
+promotion. Existing knowledge write, retrieval, index, gate, profile, and
+explicit-save contracts remain authoritative.
 
 When enabled, every Cosmonauts-assembled agent receives the compact knowledge
 index and the shared `recall` tool. Dedicated knowledge and memory tools, plus
@@ -346,12 +346,146 @@ unsandboxed project-file capabilities. They are outside the dedicated
 knowledge/memory authority boundary; this feature adds no sandbox, disabled
 tool promise, or path guard.
 
-The knowledge surface deliberately makes no change to consolidation, working
-state, the episode or episodic log, explicit save / explicit-save behavior,
-embeddings, a similarity backend, retention, raw-session deletion,
-autonomy-host behavior, enabled bare-host behavior, cache behavior, or registry
-correctness state. It adds no cache or alternate correctness registry, changes
-no existing narrow authorization, and enables no feature by default.
+The knowledge-surface gate continues to govern retrieval and injection only.
+Living-memory consolidation is a separately composed operation through the
+configured knowledge store; it does not toggle `knowledgeSurface`, change
+working state or the episodic log, change explicit save / explicit-save
+behavior, add embeddings or a similarity backend, perform raw-session deletion,
+change autonomy-host behavior or the enabled bare-host promise, or add cache
+behavior or registry correctness state.
+
+## Living-Memory Consolidation
+
+### Public Composition And V1 Inputs
+
+`createLivingMemoryConsolidator()` is the sole core factory. It accepts inward
+dependencies for `ConsolidationSource`, the optional `CorpusJudgmentProvider`,
+proposal and accepted-judgment receipt stores, retirement authority, durable
+files, `KnowledgeIndexPressurePolicy`, clock, finite lock options, and limits.
+`lib/memory` imports no Pi, CLI, task, domain, autonomy-host, or knowledge-surface
+implementation. The CLI supplies the no-tools model adapter, and the knowledge
+surface supplies only the injected index-pressure implementation.
+
+V1 reads two bounded source families through that contract:
+
+- live project and user knowledge metadata plus selected project corpus bodies;
+  user records contribute to index and citation safety but are never mutation
+  candidates; and
+- project episodes from `memory/agent/episodes/`; episode reading, folding, and
+  safe pruning happen behind the configured knowledge store, while the markdown
+  store itself stays inert.
+
+Future OM output can enter through another source adapter, but v1 has no OM
+dependency or fork. It adds no scheduler, trigger execution, TTL, embeddings,
+user-scope L4 mutation, new OKF knowledge type, or command execution.
+
+The pass order is Observer → Reflector → Dropper. Deterministic observation and
+receipt/citation checks happen before the one optional model judgment; durable
+proposal or manifest evidence exists before any source finalization. One pass
+admits at most 50 corpus bodies and 50 project episodes, emits at most 25
+observations, 10 proposals, and 5 retirements, and makes at most one model
+request. Source ids, record ids, paths, scopes, kinds, SHA-256 digests, and caps
+are validated fail-closed. Over-limit arrays, duplicate ids, unsafe paths, and a
+one-output-per-input model batch are rejected rather than silently truncated.
+
+Target pressure comes only from `KnowledgeIndexPressurePolicy`, which uses the
+same knowledge-row renderer and constants as provider-visible injection. The
+target is under 50 rows and within the guaranteed knowledge share with one-row
+headroom for the largest current row plus framing. Pressure ranks already-safe
+project candidates; it never creates retirement authority. If safe candidates
+are exhausted, the result reports `target-unmet` and leaves user records alone.
+
+### Descriptive And Prescriptive Outlets
+
+Machine output is the closed proposal-kind union
+`create | merge | retire | improve`. Create and merge proposals contain complete
+replacement bytes plus evidence references. A one-input merge is an edit, not a
+retirement. Retire proposals express reviewable judgment but cannot override
+exact-byte, citation, or human-ledger authority. All proposal and accepted-output
+files stay under `memory/agent/`; no edit, merge, replacement body, or
+prescriptive observation enters `knowledge/` automatically.
+
+Drive's post-run prescriptive outlet stays at
+`missions/reviews/improvements/<runId>.md`. Its body has the four columns
+observed problem → what happened in this run → suggested improvement → why it helps,
+is bounded to roughly eight ranked rows, and uses the lifecycle
+`open → actioned|rejected → closed`. The coordinator writes nothing when there
+is no signal and never moves this artifact into knowledge. Closing records the
+human-selected roadmap item, task, prompt edit, or skill edit that each row
+became. Living-memory `improve` proposals use the same four-column judgment and
+remain open until a human runs `cosmonauts memory improve action` with an
+existing pointer or `cosmonauts memory improve reject` with a reason. Neither
+command performs the product edit or creates knowledge.
+
+### Exact-Byte Retirement, Restoration, And Retrieval
+
+Soft retirement requires all of the following under the finite lock: a human
+ratified SHA-256 of the complete destination serialization; unchanged current
+bytes; an allowed deterministic reason; healthy receipt and manifest history;
+and a healthy canonical citation inventory with no inbound reference. The
+citation inventory covers valid live project/user knowledge, root guidance and
+roadmap files, docs, active plans, and architecture records while excluding
+reserved indexes, retired records, sessions, archives, and receipt/history
+files. Incomplete discovery, an unknown baseline, a changed digest, a citation,
+or an unsafe path keeps the record live with an explicit decline.
+
+The machine derives the retired location as
+`knowledge/retired/<original-relative-path>` and writes an immutable numbered
+manifest under `memory/agent/retirements/`. A retirement event records the live
+path, exact digest, reason, evidence, and date. `cosmonauts memory restore`
+validates a prior human `git mv` back to the live path and appends a later
+restoration event; it never moves bytes itself. Hard deletion is never a machine
+operation: only a human `retiredRecords` row in a promotion ledger authorizes
+absence from both live and retired paths.
+
+Normal knowledge retrieval excludes `knowledge/retired/`. An owner or audit may
+opt in with `includeRetired: true`; returned records are marked retired while
+retaining their logical original resource. Restoration therefore re-enters
+ordinary retrieval without an alias or registry update.
+
+### Durability, Recovery, And Invocation
+
+Every durable representation syncs the file and its parent directory before
+source removal. Retirement writes and syncs a prepared journal, creates and
+syncs the retired hard link, writes and syncs the immutable manifest as the
+commit point, removes and syncs the live link, then removes and syncs the
+journal. Episode proposals and accepted-output receipts are likewise synced
+before an unchanged episode is removed and its parent synced. A fresh process
+rolls pre-commit work back or post-commit work forward and reuses an accepted
+batch by exact source digest; represented evidence converges to noop without a
+second model call.
+
+Mutating paths use a 10-second lock-acquisition timeout with 50 ms retries and
+never continue unlocked. Timeout, cancellation, and pre-commit errors return
+`failed` with `writesCommitted: false`. If release cannot be confirmed after a
+commit, the result is `failed` with `writesCommitted: true`, recovery
+`release-unconfirmed`, warnings, and any committed manifest path so the caller
+cannot mistake durable uncertainty for success.
+
+Manual invocation is exactly
+`cosmonauts memory consolidate [--dry-run] [--no-model] [--model <provider/model>] [--json|--plain]`.
+The default full pass may make one bounded no-tools in-memory model request;
+`--no-model` runs deterministic checks only. `--dry-run` reads and validates the
+same stable snapshot and returns proposal/retirement previews, but creates no
+lock, proposal, accepted-judgment receipt, manifest, journal, retired file, or
+episode deletion. It reports pending recovery or concurrent mutation instead
+of repairing either. JSON output remains stdout-clean, conflicting flags fail
+before store access, and cancellation propagates through `AbortSignal`.
+
+Only a configured knowledge store delegates to living-memory and returns
+truthful `ran`, `noop`, or `failed` details. An unconfigured knowledge store
+keeps its exact two-field noop, and markdown and architecture stores remain
+exact noops even when optional consolidate arguments are supplied. Profile and
+explicit-save authority are unchanged: the authored markdown store still owns
+visible note/profile/playbook writes, and no inferred save bypasses human
+assent.
+
+The data-only autonomy adapter accepts a closed payload with
+`kind: "memory.consolidate"`, `version: 1`, `scope: "project"`, `dryRun`, and
+`modelMode`. Project root and dependencies are execution context, not payload.
+Validation occurs before dependency access, then the adapter invokes the same
+factory and public knowledge-store seam. The payload contains no absolute root,
+timer, trigger, retry policy, gate, host state, or scheduling behavior.
 
 ## W3 Episodic Log
 
@@ -482,11 +616,13 @@ back to stderr; capture and warning delivery are both non-load-bearing.
 
 ### Append-Forever Cost And Provenance
 
-W3 is append-forever until a human deletes files or a later consolidation design
-acts. Every episode-touching retrieval performs a full, current-disk rescan and
+W3 is append-forever at its capture-store API. There is no episode
+cache, retention window, write cap, automatic pruning, or delete API. A separately
+configured living-memory knowledge-store pass may fold bounded project episodes
+into a durable note proposal and remove only unchanged, represented episode bytes.
+Every episode-touching retrieval performs a full, current-disk rescan and
 reads every eligible episode file again. Its `stats` report `filesScanned`,
-`bytesRead`, and `durationMs`, including malformed files. There is no episode
-cache, retention window, write cap, automatic pruning, or delete API.
+`bytesRead`, and `durationMs`, including malformed files.
 
 The large-log guard is evaluated separately for each physical project/user
 scope. When, and only when, that scope's file count is strictly greater than the
@@ -553,20 +689,22 @@ trigger; W2 does not add a cache, registry, or alternative backend in advance.
 
 ## Boundaries
 
-W3 preserves these limits:
+The combined memory system preserves these limits:
 
 - Only main/cosmo declares the agent-memory extension. Factory registration
   keeps remember and recall host-visible, but both reject non-Cosmo execution
   before store access.
-- The shared MemoryStore write, retrieve, and consolidate signatures remain
-  unchanged. Retrieved records add only optional actor provenance through
-  `source`.
-- consolidate() remains an explicit no-op. There is no pruning, decay,
-  playbook mining, or dreaming.
-- There is no persisted proposal/approval workflow, record/backend registry,
-  relevance gate, embeddings/vector search, SQLite backend, autonomy host,
-  user-config loader, session store, trust engine, pruning API, W4 machinery, or
-  additional agent wiring.
+- The shared `MemoryStore` remains the public write, retrieve, and consolidate
+  seam. Only configured knowledge consolidation runs living-memory; unconfigured
+  knowledge, markdown, and architecture consolidation preserve their exact
+  noops.
+- Living-memory proposals and receipts are persisted machine evidence, not an
+  approval workflow or permission to edit curated knowledge. Improve closes
+  only through a human conversion or rejection, and hard deletion only through
+  the human ledger.
+- There is no decay/TTL, playbook mining, embeddings/vector search, SQLite
+  backend, autonomy host, user-config loader, session store, OM fork, scheduling
+  behavior, new knowledge type, or additional agent wiring.
 
 Drive runs may exclude missions/** and memory/** artifacts when preparing
 commits or diffs. Always check git status when memory files are expected to be
