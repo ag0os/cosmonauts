@@ -3,7 +3,7 @@ id: TASK-626
 title: >-
   Review round 3 remediation — Atomic no-clobber restore, repairable conflict
   state, and remaining bounds
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -12,7 +12,7 @@ labels:
 dependencies:
   - TASK-625
 createdAt: '2026-09-03T16:43:22.573Z'
-updatedAt: '2026-09-03T16:43:22.573Z'
+updatedAt: '2026-09-03T16:59:08.271Z'
 ---
 
 ## Description
@@ -43,11 +43,11 @@ The residual race in which a process holding an ALREADY-OPEN file descriptor wri
 Binding ratified ground — stop and escalate rather than adjust it: never move, edit, or delete anything under this repository's live `knowledge/`; temp fixtures only; `knowledgeSurface` stays on; no live retirement round; no TTL, OM, scheduling, user-scope L4 mutation, embeddings, new OKF type, or explicit-save change. Confine every change to lib/memory, lib/extensions/knowledge-surface, cli/memory and their tests.
 
 <!-- AC:BEGIN -->
-- [ ] #1 Restore is atomic and no-clobber: the tombstone-to-live direction uses exclusive `link` plus `unlink` (never plain `rename`), an EEXIST destination is reported as a conflict with BOTH files left intact, and a regression test recreates the live path concurrently before restore and proves the recreated bytes are not destroyed. Both episode rename paths get the same treatment; the forward live-to-tombstone direction may keep `rename`.
-- [ ] #2 No transaction can finalize into a state that is neither live-with-original-bytes nor retired-with-manifested-bytes: a collected conflict never discharges the journal, the transaction stays repairable, and the outcome is reported explicitly. A regression test drives the in-place-edit conflict through recovery and asserts the journal survives and the state is reported, not silently finalized.
-- [ ] #3 Any path that has already removed bytes reports `writesCommitted: true`, including when the unlink succeeded but the subsequent parent-directory sync threw.
-- [ ] #4 The exported retirement store bounds its dry-run preview at `maxRetirements` and reports the remainder as deferred, so the store contract cannot report more retirements than its cap even when called directly rather than through the consolidator.
-- [ ] #5 Inlet byte ceilings are enforced where the bytes are read: the episode adapter and the citation inventory respect their configured byte limits and decline or skip oversized inputs explicitly, instead of reading unbounded file bodies and checking limits only afterwards.
-- [ ] #6 No fourth verification layer or additional tombstone machinery is added for the open-file-descriptor race, which is deliberately left to an owner ruling; nothing else is weakened to compensate.
-- [ ] #7 Project-native universal correctness evidence passes after every commit; the Slice 0 B-001 receipt test and every marker B-001..B-021 remain green under their exact existing names and owners; live `knowledge/` and `memory/` stay byte-identical; a live dry run still completes as `ran` or `noop` writing nothing; and no file outside lib/memory, lib/extensions/knowledge-surface, cli/memory and their tests is modified.
+- [x] #1 Restore is atomic and no-clobber: the tombstone-to-live direction uses exclusive `link` plus `unlink` (never plain `rename`), an EEXIST destination is reported as a conflict with BOTH files left intact, and a regression test recreates the live path concurrently before restore and proves the recreated bytes are not destroyed. Both episode rename paths get the same treatment; the forward live-to-tombstone direction may keep `rename`.
+- [x] #2 No transaction can finalize into a state that is neither live-with-original-bytes nor retired-with-manifested-bytes: a collected conflict never discharges the journal, the transaction stays repairable, and the outcome is reported explicitly. A regression test drives the in-place-edit conflict through recovery and asserts the journal survives and the state is reported, not silently finalized.
+- [x] #3 Any path that has already removed bytes reports `writesCommitted: true`, including when the unlink succeeded but the subsequent parent-directory sync threw.
+- [x] #4 The exported retirement store bounds its dry-run preview at `maxRetirements` and reports the remainder as deferred, so the store contract cannot report more retirements than its cap even when called directly rather than through the consolidator.
+- [x] #5 Inlet byte ceilings are enforced where the bytes are read: the episode adapter and the citation inventory respect their configured byte limits and decline or skip oversized inputs explicitly, instead of reading unbounded file bodies and checking limits only afterwards.
+- [x] #6 No fourth verification layer or additional tombstone machinery is added for the open-file-descriptor race, which is deliberately left to an owner ruling; nothing else is weakened to compensate.
+- [x] #7 Project-native universal correctness evidence passes after every commit; the Slice 0 B-001 receipt test and every marker B-001..B-021 remain green under their exact existing names and owners; live `knowledge/` and `memory/` stay byte-identical; a live dry run still completes as `ran` or `noop` writing nothing; and no file outside lib/memory, lib/extensions/knowledge-surface, cli/memory and their tests is modified.
 <!-- AC:END -->
