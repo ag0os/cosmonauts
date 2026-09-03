@@ -1,7 +1,7 @@
 ---
 id: TASK-627
 title: Review round 4 remediation — Make a half-completed restore recoverable
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-626
 createdAt: '2026-09-03T18:29:44.255Z'
-updatedAt: '2026-09-03T18:29:44.255Z'
+updatedAt: '2026-09-03T18:38:45.658Z'
 ---
 
 ## Description
@@ -30,9 +30,9 @@ The remaining check-then-destructive-pathname races the reviewer named (replacin
 Binding ratified ground — stop and escalate rather than adjust it: never move, edit, or delete anything under this repository's live `knowledge/`; temp fixtures only; `knowledgeSurface` stays on; no live retirement round; no TTL, OM, scheduling, user-scope L4 mutation, embeddings, new OKF type, or explicit-save change. Confine every change to lib/memory, lib/extensions/knowledge-surface, cli/memory and their tests.
 
 <!-- AC:BEGIN -->
-- [ ] #1 A half-completed restore is recognised and finished rather than rejected: when the live and tombstone paths both exist AND are the same file by no-follow device+inode comparison, recovery completes the restore by durably removing the tombstone; only genuinely different files at those paths are reported as a conflict. This is applied at the uncommitted-retirement, committed-retirement, and episode recovery sites.
-- [ ] #2 `durableRestore` is idempotent under re-invocation after a crash at any of its internal steps, converging to the restored state rather than erroring.
-- [ ] #3 Regression tests hard-stop between the restore link and the tombstone removal and prove the next recovery completes cleanly, a second consecutive recovery is also clean, and the record ends live with its original bytes intact — for both the retirement and the episode journals.
-- [ ] #4 No fifth verification layer or additional pathname-race machinery is added; the ratified unclosable class is left to D-026 and nothing else is weakened to compensate.
-- [ ] #5 Project-native universal correctness evidence passes after every commit; the Slice 0 B-001 receipt test and every marker B-001..B-021 remain green under their exact existing names and owners; live `knowledge/` and `memory/` stay byte-identical; a live dry run still completes as `ran` or `noop` writing nothing; and no file outside lib/memory, lib/extensions/knowledge-surface, cli/memory and their tests is modified.
+- [x] #1 A half-completed restore is recognised and finished rather than rejected: when the live and tombstone paths both exist AND are the same file by no-follow device+inode comparison, recovery completes the restore by durably removing the tombstone; only genuinely different files at those paths are reported as a conflict. This is applied at the uncommitted-retirement, committed-retirement, and episode recovery sites.
+- [x] #2 `durableRestore` is idempotent under re-invocation after a crash at any of its internal steps, converging to the restored state rather than erroring.
+- [x] #3 Regression tests hard-stop between the restore link and the tombstone removal and prove the next recovery completes cleanly, a second consecutive recovery is also clean, and the record ends live with its original bytes intact — for both the retirement and the episode journals.
+- [x] #4 No fifth verification layer or additional pathname-race machinery is added; the ratified unclosable class is left to D-026 and nothing else is weakened to compensate.
+- [x] #5 Project-native universal correctness evidence passes after every commit; the Slice 0 B-001 receipt test and every marker B-001..B-021 remain green under their exact existing names and owners; live `knowledge/` and `memory/` stay byte-identical; a live dry run still completes as `ran` or `noop` writing nothing; and no file outside lib/memory, lib/extensions/knowledge-surface, cli/memory and their tests is modified.
 <!-- AC:END -->
