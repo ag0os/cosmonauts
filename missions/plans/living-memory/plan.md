@@ -229,10 +229,29 @@ Capability evidence: runtime structural-analysis bindings for complexity, duplic
     git-tracked, so a lost concurrent edit is recoverable for any committed
     file. This matches the precedent already recorded in `memory/` for the
     accepted lock race that no portable Node primitive closes.
-  - Scope of the acceptance: this covers ONLY the open-descriptor write between
-    verification and unlink. Every other identified race — check-then-rename
-    clobber on restore, unrepairable conflict states, cap and byte bounds — is
-    fixed, not accepted.
+  - Scope of the acceptance *(broadened 2026-09-03 after review round 4)*: the
+    ratified class is **check-then-destructive-pathname races that no portable
+    primitive can close**. Four review rounds each closed the previously-named
+    instance and surfaced the next one syscall further in, which is the
+    signature of an unclosable check-then-act. Concretely this covers: a write
+    through an already-open descriptor between verification and unlink; a
+    replacement of a transaction-internal tombstone pathname between its
+    verification and its unlink; the forward rename's absent-destination check
+    followed by an atomic but overwriting rename; and a save replacing the live
+    destination between the restore link and the tombstone unlink. The original
+    entry named only the first instance — that wording was written before the
+    class was understood and is corrected here rather than silently stretched.
+    Mitigations of record: the pass holds an exclusive lock so no other
+    cosmonauts pass can race it; tombstone pathnames carry a random UUID, so
+    targeting one requires deliberate adversarial action rather than ordinary
+    concurrent editing; the retired hard link holds the manifested bytes; and
+    `knowledge/` is git-tracked, so a lost concurrent edit is recoverable for
+    any committed file.
+  - NOT accepted, and fixed rather than ratified: the destination-clobber at
+    restore (closed with exclusive `link`), unrepairable conflict states
+    (journal retained on conflict), a half-completed restore left permanently
+    unrecoverable (recovery now completes it), cap bounds, inlet byte bounds,
+    and committed-write reporting.
   - Decided by: human, 2026-09-03 (ratified after review round 3)
 
 ## Behaviors
