@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { open, realpath } from "node:fs/promises";
+import { lstat, open, readdir, realpath } from "node:fs/promises";
 import {
 	basename,
 	dirname,
@@ -15,7 +15,7 @@ import {
 	type DurableMachineFiles,
 } from "./durable-files.ts";
 import { createKnowledgeMemoryStore } from "./knowledge-store.ts";
-import { createMarkdownMemoryStore } from "./markdown-store.ts";
+import { parseEpisodeOkfRecord } from "./okf.ts";
 import {
 	consolidationEvidenceKey,
 	isSafePosixRelativePath,
@@ -270,30 +270,43 @@ export function createProjectEpisodeConsolidationSource(options: {
 }): ConsolidationSource {
 	const projectRoot = resolve(options.projectRoot);
 	const durableFiles = options.durableFiles ?? createDurableMachineFiles();
-	const store = createMarkdownMemoryStore({
-		projectRoot,
-		userCosmonautsRoot: projectRoot,
-	});
 	return {
 		id: PROJECT_EPISODE_SOURCE_ID,
 		async collect(input) {
 			throwIfAborted(input.signal);
-			const retrieved = await store.retrieve(
-				{ projectRoot, scopes: ["project"] },
-				{ recordTypes: ["episode"] },
-			);
-			const candidates = retrieved.records.toSorted((left, right) =>
-				left.path.localeCompare(right.path),
-			);
+			const candidates = await directEpisodePaths(projectRoot);
 			const representedKeys = new Set(input.representedKeys);
 			const records: ConsolidationSourceRecord[] = [];
-			let unrepresented = 0;
-			for (const record of candidates) {
+			const declines: ConsolidationSourceDecline[] = [];
+			let omitted = 0;
+			let inletBytes = 0;
+			for (const episodePath of candidates) {
 				throwIfAborted(input.signal);
-				const path = relativeProjectPath(projectRoot, record.path);
+				const path = relativeProjectPath(projectRoot, episodePath);
 				assertDirectProjectEpisodePath(path);
-				const snapshot = await readRegularTextSnapshot(record.path);
+				if (records.length >= input.limit) {
+					omitted += 1;
+					continue;
+				}
+				const bounded = await readBoundedEpisodeSnapshot({
+					path: episodePath,
+					maxRecordBytes: input.maxEpisodeRecordBytes,
+					remainingBytes: Math.max(0, input.maxEpisodeBytes - inletBytes),
+				});
+				if (!bounded.ok) {
+					omitted += 1;
+					declines.push({ code: bounded.code, path, reason: bounded.reason });
+					continue;
+				}
+				const snapshot = bounded.snapshot;
+				inletBytes += bounded.bytesRead;
 				const content = snapshot.content;
+				const parsed = parseEpisodeOkfRecord({
+					raw: content,
+					expectedScope: "project",
+				});
+				if (!parsed.ok) continue;
+				const record = parsed.record;
 				const candidate = {
 					id: path,
 					sourceId: PROJECT_EPISODE_SOURCE_ID,
@@ -313,12 +326,12 @@ export function createProjectEpisodeConsolidationSource(options: {
 					}),
 				};
 				if (representedKeys.has(consolidationEvidenceKey(candidate))) continue;
-				unrepresented += 1;
-				if (records.length < input.limit) records.push(candidate);
+				records.push(candidate);
 			}
 			return Object.freeze({
 				records: Object.freeze(records),
-				omitted: unrepresented - records.length,
+				omitted,
+				declines: Object.freeze(declines),
 			});
 		},
 		async recover() {
@@ -397,7 +410,10 @@ export function createProjectEpisodeConsolidationSource(options: {
 						sameFileIdentity(tombstone.identity, item.fileIdentity) &&
 						sha256(tombstone.content) === item.digest
 					) {
-						await durableFiles.removeFile(tombstonePath);
+						await removeEpisodeFile({
+							path: tombstonePath,
+							durableFiles,
+						});
 						writesCommitted = true;
 						pruned.push(item.id);
 					} else {
@@ -408,7 +424,7 @@ export function createProjectEpisodeConsolidationSource(options: {
 								`Episode ${item.id} changed during tombstone verification and the live path is occupied.`,
 							);
 						}
-						await durableFiles.renameFile({
+						await durableFiles.restoreFile({
 							sourcePath: tombstonePath,
 							destinationPath: episodePath,
 						});
@@ -471,7 +487,10 @@ async function recoverEpisodePruneJournal(options: {
 				sameFileIdentity(tombstone.identity, journal.fileIdentity) &&
 				sha256(tombstone.content) === journal.digest;
 			if (verified) {
-				await options.durableFiles.removeFile(tombstonePath);
+				await removeEpisodeFile({
+					path: tombstonePath,
+					durableFiles: options.durableFiles,
+				});
 				removedEpisodeBytes = true;
 			} else {
 				if (live !== undefined) {
@@ -479,7 +498,7 @@ async function recoverEpisodePruneJournal(options: {
 						`Episode ${journal.originalPath} has an unverified tombstone and an occupied live path.`,
 					);
 				}
-				await options.durableFiles.renameFile({
+				await options.durableFiles.restoreFile({
 					sourcePath: tombstonePath,
 					destinationPath: livePath,
 				});
@@ -523,6 +542,25 @@ async function readEpisodePruneJournal(
 		);
 	}
 	return value;
+}
+
+async function removeEpisodeFile(options: {
+	readonly path: string;
+	readonly durableFiles: DurableMachineFiles;
+}): Promise<void> {
+	try {
+		await options.durableFiles.removeFile(options.path);
+	} catch (error: unknown) {
+		const remains = await lstat(options.path).then(
+			() => true,
+			(statError: unknown) => {
+				if (errorCode(statError) === "ENOENT") return false;
+				throw statError;
+			},
+		);
+		if (!remains) throw new ConsolidationSourceCommittedError(error);
+		throw error;
+	}
 }
 
 function isEpisodePruneJournal(value: unknown): value is EpisodePruneJournal {
@@ -934,6 +972,98 @@ function isContained(root: string, candidate: string): boolean {
 	);
 }
 
+async function directEpisodePaths(
+	projectRoot: string,
+): Promise<readonly string[]> {
+	const directory = resolve(
+		projectRoot,
+		...PROJECT_EPISODE_DIRECTORY.split("/"),
+	);
+	try {
+		return (await readdir(directory, { withFileTypes: true }))
+			.filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
+			.map((entry) => resolve(directory, entry.name))
+			.sort();
+	} catch (error: unknown) {
+		if (errorCode(error) === "ENOENT") return Object.freeze([]);
+		throw error;
+	}
+}
+
+async function readBoundedEpisodeSnapshot(options: {
+	readonly path: string;
+	readonly maxRecordBytes: number;
+	readonly remainingBytes: number;
+}): Promise<
+	| {
+			readonly ok: true;
+			readonly bytesRead: number;
+			readonly snapshot: {
+				readonly content: string;
+				readonly identity: { readonly device: string; readonly inode: string };
+			};
+	  }
+	| {
+			readonly ok: false;
+			readonly code: ConsolidationSourceDecline["code"];
+			readonly reason: string;
+	  }
+> {
+	const handle = await open(
+		options.path,
+		constants.O_RDONLY | constants.O_NOFOLLOW,
+	);
+	try {
+		const before = await handle.stat({ bigint: true });
+		if (!before.isFile()) {
+			throw new ConsolidationSourceContractError(
+				`Episode is not a regular no-follow file: ${options.path}.`,
+			);
+		}
+		if (before.size > BigInt(options.maxRecordBytes)) {
+			return {
+				ok: false,
+				code: "source-record-bytes-deferred",
+				reason: `Episode exceeds the per-record inlet ceiling of ${options.maxRecordBytes.toLocaleString("en-US")} bytes.`,
+			};
+		}
+		if (before.size > BigInt(options.remainingBytes)) {
+			return {
+				ok: false,
+				code: "source-aggregate-bytes-deferred",
+				reason: `Episode exceeds the remaining aggregate inlet allowance of ${options.remainingBytes.toLocaleString("en-US")} bytes.`,
+			};
+		}
+		const size = Number(before.size);
+		const buffer = Buffer.alloc(size);
+		let offset = 0;
+		while (offset < size) {
+			const read = await handle.read(buffer, offset, size - offset, offset);
+			if (read.bytesRead === 0) break;
+			offset += read.bytesRead;
+		}
+		const after = await handle.stat({ bigint: true });
+		if (offset !== size || after.size !== before.size) {
+			throw new ConsolidationSourceContractError(
+				`Episode changed during its bounded read: ${options.path}.`,
+			);
+		}
+		return {
+			ok: true,
+			bytesRead: size,
+			snapshot: Object.freeze({
+				content: buffer.toString("utf-8"),
+				identity: Object.freeze({
+					device: String(before.dev),
+					inode: String(before.ino),
+				}),
+			}),
+		};
+	} finally {
+		await handle.close();
+	}
+}
+
 async function readRegularText(path: string): Promise<string> {
 	const snapshot = await readRegularTextSnapshotIfExists(path);
 	if (snapshot === undefined) {
@@ -942,19 +1072,6 @@ async function readRegularText(path: string): Promise<string> {
 		);
 	}
 	return snapshot.content;
-}
-
-async function readRegularTextSnapshot(path: string): Promise<{
-	readonly content: string;
-	readonly identity: { readonly device: string; readonly inode: string };
-}> {
-	const snapshot = await readRegularTextSnapshotIfExists(path);
-	if (snapshot === undefined) {
-		throw new ConsolidationSourceContractError(
-			`Episode disappeared while collecting: ${path}.`,
-		);
-	}
-	return snapshot;
 }
 
 async function readRegularTextSnapshotIfExists(path: string): Promise<

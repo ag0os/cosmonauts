@@ -186,6 +186,7 @@ describe("living memory", () => {
 					declines: [
 						expect.objectContaining({ code: "retirement-unlink-conflict" }),
 					],
+					recovery: "pending",
 					writesCommitted: true,
 				},
 			});
@@ -194,14 +195,14 @@ describe("living memory", () => {
 				await expect(readFile(retiredPath, "utf-8")).resolves.toBe(fixture.raw);
 			}
 			await expect(
-				readFile(
+				fileExists(
 					join(
 						fixture.projectRoot,
 						".cosmonauts",
 						"living-memory-retirement.json",
 					),
 				),
-			).rejects.toMatchObject({ code: "ENOENT" });
+			).resolves.toBe(true);
 			expect(
 				(await readdir(join(fixture.projectRoot, "knowledge"))).filter((path) =>
 					path.endsWith(".tombstone"),
@@ -271,7 +272,7 @@ describe("living memory", () => {
 		expect(replacedResult).toMatchObject({
 			kind: "failed",
 			reason: expect.stringContaining("unlink conflict"),
-			details: { recovery: "rolled-forward", writesCommitted: true },
+			details: { recovery: "pending", writesCommitted: true },
 		});
 		await expect(readFile(replaced.livePath, "utf-8")).resolves.toBe(changed);
 	});
@@ -311,7 +312,7 @@ describe("living memory", () => {
 			kind: "failed",
 			reason: expect.stringContaining("unlink conflict"),
 			details: {
-				recovery: "rolled-forward",
+				recovery: "pending",
 				writesCommitted: true,
 				declines: [
 					expect.objectContaining({ code: "retirement-unlink-conflict" }),
@@ -328,7 +329,72 @@ describe("living memory", () => {
 					"living-memory-retirement.json",
 				),
 			),
-		).resolves.toBe(false);
+		).resolves.toBe(true);
+	});
+
+	test("does not clobber a concurrently recreated live path during retirement restore", async () => {
+		const fixture = await createRetirementFixture(
+			"recovery-no-clobber-retirement-tombstone",
+		);
+		await expect(
+			runRetirementChild(fixture.projectRoot, "after-live-tombstone-sync"),
+		).resolves.toMatchObject({ code: 86, signal: null });
+		const knowledgeDirectory = join(fixture.projectRoot, "knowledge");
+		const tombstoneName = (await readdir(knowledgeDirectory)).find((path) =>
+			path.endsWith(".tombstone"),
+		);
+		if (tombstoneName === undefined)
+			throw new Error("missing transaction tombstone");
+		const tombstonePath = join(knowledgeDirectory, tombstoneName);
+		const changedTombstone = `${fixture.raw}changed captured bytes\n`;
+		const replacementPath = `${tombstonePath}.replacement`;
+		await writeFile(replacementPath, changedTombstone);
+		await rename(replacementPath, tombstonePath);
+		const concurrentLive = `${fixture.raw}concurrently recreated live bytes\n`;
+		const realDurable = createDurableRetirementFiles();
+		let racedAtRestore = false;
+
+		const recovered = await createLivingMemoryRetirementStore({
+			projectRoot: fixture.projectRoot,
+			durableFiles: {
+				...realDurable,
+				async restoreFile(options) {
+					if (!racedAtRestore) {
+						racedAtRestore = true;
+						await writeFile(options.destinationPath, concurrentLive);
+					}
+					await realDurable.restoreFile(options);
+				},
+			},
+		}).apply({
+			candidates: [],
+			dryRun: false,
+			date: new Date("2026-09-01T12:00:00.000Z"),
+			maxRetirements: 5,
+			lockOptions: exactLockOptions(),
+		});
+
+		expect(racedAtRestore).toBe(true);
+		expect(recovered).toMatchObject({
+			kind: "failed",
+			reason: expect.stringMatching(/restore conflict|occupied/u),
+			details: { recovery: "pending", writesCommitted: true },
+		});
+		await expect(readFile(fixture.livePath, "utf-8")).resolves.toBe(
+			concurrentLive,
+		);
+		await expect(readFile(tombstonePath, "utf-8")).resolves.toBe(
+			changedTombstone,
+		);
+		await expect(
+			fileExists(
+				join(
+					fixture.projectRoot,
+					".cosmonauts",
+					"living-memory-retirement.json",
+				),
+			),
+		).resolves.toBe(true);
 	});
 
 	// @cosmo-behavior plan:living-memory#B-004
@@ -783,6 +849,35 @@ describe("living memory", () => {
 			details: { recovery: "concurrent-mutation", writesCommitted: false },
 		});
 		expect(judge).not.toHaveBeenCalled();
+	});
+
+	test("bounds direct retirement-store dry-run previews and defers the remainder", async () => {
+		const fixture = await createRetirementFixture("direct-store-dry-run-cap");
+		const candidate = retirementCandidate(fixture.input);
+
+		const result = await createLivingMemoryRetirementStore({
+			projectRoot: fixture.projectRoot,
+		}).apply({
+			candidates: [candidate, candidate],
+			dryRun: true,
+			date: new Date("2026-09-01T12:00:00.000Z"),
+			maxRetirements: 1,
+			lockOptions: exactLockOptions(),
+		});
+
+		expect(result).toMatchObject({
+			kind: "completed",
+			details: {
+				retirements: [{ status: "preview" }],
+				declines: [
+					expect.objectContaining({
+						code: "retirement-cap-deferred",
+						path: "knowledge/eligible.md",
+					}),
+				],
+				writesCommitted: false,
+			},
+		});
 	});
 
 	// @cosmo-behavior plan:living-memory#B-015
@@ -1745,6 +1840,7 @@ describe("living memory", () => {
 			"removeFile",
 			"renameFile",
 			"replaceText",
+			"restoreFile",
 			"writeText",
 		]);
 		const proposalStore = createConsolidationProposalStore({
@@ -2038,6 +2134,58 @@ describe("living memory", () => {
 				],
 			},
 		});
+	});
+
+	test("declines oversized citation files at the inventory read boundary", async () => {
+		const projectRoot = join(tmp.path, "bounded-citation-inventory");
+		const oversizedPath = join(projectRoot, "docs", "oversized.md");
+		await mkdir(dirname(oversizedPath), { recursive: true });
+		await writeFile(oversizedPath, "x".repeat(1_024));
+
+		const inventory = await inspectLivingMemoryCitationInventory({
+			projectRoot,
+			maxRecordBytes: 128,
+			maxBytes: 512,
+		} as Parameters<typeof inspectLivingMemoryCitationInventory>[0] & {
+			maxRecordBytes: number;
+			maxBytes: number;
+		});
+
+		expect(inventory).toMatchObject({
+			healthy: false,
+			entries: [],
+			warnings: [
+				expect.objectContaining({
+					path: oversizedPath,
+					message: expect.stringContaining("per-record inlet ceiling"),
+				}),
+			],
+		});
+	});
+
+	test("declines citation files beyond the inventory aggregate read boundary", async () => {
+		const projectRoot = join(tmp.path, "bounded-citation-inventory-aggregate");
+		const docsDirectory = join(projectRoot, "docs");
+		await mkdir(docsDirectory, { recursive: true });
+		const first = "[first](knowledge/first.md)\n";
+		const secondPath = join(docsDirectory, "b.md");
+		await writeFile(join(docsDirectory, "a.md"), first);
+		await writeFile(secondPath, "[second](knowledge/second.md)\n");
+
+		const inventory = await inspectLivingMemoryCitationInventory({
+			projectRoot,
+			maxRecordBytes: 1_024,
+			maxBytes: Buffer.byteLength(first, "utf-8"),
+		});
+
+		expect(inventory.healthy).toBe(false);
+		expect(inventory.entries.map((entry) => entry.path)).toEqual(["docs/a.md"]);
+		expect(inventory.warnings).toEqual([
+			expect.objectContaining({
+				path: secondPath,
+				message: expect.stringContaining("aggregate inlet allowance"),
+			}),
+		]);
 	});
 
 	// @cosmo-behavior plan:living-memory#B-005
@@ -3072,6 +3220,165 @@ describe("living memory", () => {
 		}
 	});
 
+	test("does not clobber a concurrently recreated episode during finalize restore", async () => {
+		const projectRoot = join(tmp.path, "episode-finalize-restore-no-clobber");
+		const [episodePath] = await writeEpisodeFixtures(projectRoot, [
+			["Episode finalize restore race", "2026-09-01T16:30:00.000Z"],
+		]);
+		if (episodePath === undefined) throw new Error("missing episode fixture");
+		const baseFiles = createDurableMachineFiles();
+		const capturedBytes = `${await readFile(episodePath, "utf-8")}captured rewrite\n`;
+		const concurrentLive = `${await readFile(episodePath, "utf-8")}concurrent live\n`;
+		let racedAtRestore = false;
+		const source = createProjectEpisodeConsolidationSource({
+			projectRoot,
+			durableFiles: {
+				...baseFiles,
+				async renameFile(options) {
+					await baseFiles.renameFile(options);
+					if (options.sourcePath === episodePath) {
+						const replacementPath = `${options.destinationPath}.replacement`;
+						await writeFile(replacementPath, capturedBytes);
+						await rename(replacementPath, options.destinationPath);
+					}
+				},
+				async restoreFile(options) {
+					racedAtRestore = true;
+					await writeFile(options.destinationPath, concurrentLive);
+					await baseFiles.restoreFile(options);
+				},
+			},
+		});
+		const snapshot = await source.collect({
+			limit: 1,
+			maxCorpusRecordBytes: 64 * 1024,
+			maxCorpusBytes: 256 * 1024,
+			maxEpisodeRecordBytes: 64 * 1024,
+			maxEpisodeBytes: 256 * 1024,
+		});
+		const episode = snapshot.records[0];
+		if (episode === undefined) throw new Error("missing collected episode");
+		const proposalPath = join(
+			projectRoot,
+			"memory",
+			"agent",
+			"proposals",
+			"living-memory",
+			"episode-note.md",
+		);
+		await mkdir(dirname(proposalPath), { recursive: true });
+		await baseFiles.writeText({ path: proposalPath, content: "proposal\n" });
+
+		await expect(
+			source.finalize?.([
+				{
+					id: episode.id,
+					digest: episode.digest,
+					fileIdentity: episode.fileIdentity,
+					proposalPaths: [proposalPath],
+				},
+			]),
+		).rejects.toThrow(/restore conflict/u);
+		expect(racedAtRestore).toBe(true);
+		await expect(readFile(episodePath, "utf-8")).resolves.toBe(concurrentLive);
+		const tombstonePath = (await readdir(dirname(episodePath)))
+			.filter((path) => path.endsWith(".tombstone"))
+			.map((path) => join(dirname(episodePath), path))[0];
+		if (tombstonePath === undefined)
+			throw new Error("missing episode tombstone");
+		await expect(readFile(tombstonePath, "utf-8")).resolves.toBe(capturedBytes);
+		await expect(
+			fileExists(
+				join(dirname(episodePath), ".living-memory-episode-prune.json"),
+			),
+		).resolves.toBe(true);
+	});
+
+	test("does not clobber a concurrently recreated episode during journal recovery", async () => {
+		const projectRoot = join(tmp.path, "episode-recovery-restore-no-clobber");
+		const [episodePath] = await writeEpisodeFixtures(projectRoot, [
+			["Episode recovery restore race", "2026-09-01T16:45:00.000Z"],
+		]);
+		if (episodePath === undefined) throw new Error("missing episode fixture");
+		const original = await readFile(episodePath, "utf-8");
+		const baseFiles = createDurableMachineFiles();
+		const interruptedSource = createProjectEpisodeConsolidationSource({
+			projectRoot,
+			durableFiles: {
+				...baseFiles,
+				async renameFile(options) {
+					await baseFiles.renameFile(options);
+					if (options.sourcePath === episodePath) {
+						throw new Error("stop after episode tombstone rename");
+					}
+				},
+			},
+		});
+		const snapshot = await interruptedSource.collect({
+			limit: 1,
+			maxCorpusRecordBytes: 64 * 1024,
+			maxCorpusBytes: 256 * 1024,
+			maxEpisodeRecordBytes: 64 * 1024,
+			maxEpisodeBytes: 256 * 1024,
+		});
+		const episode = snapshot.records[0];
+		if (episode === undefined) throw new Error("missing collected episode");
+		const proposalPath = join(
+			projectRoot,
+			"memory",
+			"agent",
+			"proposals",
+			"living-memory",
+			"episode-note.md",
+		);
+		await mkdir(dirname(proposalPath), { recursive: true });
+		await baseFiles.writeText({ path: proposalPath, content: "proposal\n" });
+		await expect(
+			interruptedSource.finalize?.([
+				{
+					id: episode.id,
+					digest: episode.digest,
+					fileIdentity: episode.fileIdentity,
+					proposalPaths: [proposalPath],
+				},
+			]),
+		).rejects.toThrow("stop after episode tombstone rename");
+		const tombstonePath = (await readdir(dirname(episodePath)))
+			.filter((path) => path.endsWith(".tombstone"))
+			.map((path) => join(dirname(episodePath), path))[0];
+		if (tombstonePath === undefined)
+			throw new Error("missing episode tombstone");
+		const capturedBytes = `${original}captured recovery rewrite\n`;
+		const replacementPath = `${tombstonePath}.replacement`;
+		await writeFile(replacementPath, capturedBytes);
+		await rename(replacementPath, tombstonePath);
+		const concurrentLive = `${original}concurrent recovery live\n`;
+		let racedAtRestore = false;
+		const recoverySource = createProjectEpisodeConsolidationSource({
+			projectRoot,
+			durableFiles: {
+				...baseFiles,
+				async restoreFile(options) {
+					racedAtRestore = true;
+					await writeFile(options.destinationPath, concurrentLive);
+					await baseFiles.restoreFile(options);
+				},
+			},
+		});
+
+		await expect(recoverySource.recover?.()).rejects.toThrow(
+			/restore conflict/u,
+		);
+		expect(racedAtRestore).toBe(true);
+		await expect(readFile(episodePath, "utf-8")).resolves.toBe(concurrentLive);
+		await expect(readFile(tombstonePath, "utf-8")).resolves.toBe(capturedBytes);
+		await expect(
+			fileExists(
+				join(dirname(episodePath), ".living-memory-episode-prune.json"),
+			),
+		).resolves.toBe(true);
+	});
+
 	test("pages past represented episodes in the production adapter", async () => {
 		const projectRoot = join(tmp.path, "paged-episode-project");
 		await writeEpisodeFixtures(projectRoot, [
@@ -3102,6 +3409,69 @@ describe("living memory", () => {
 		expect(first.records.map((record) => record.id)).not.toContain(
 			second.records[0]?.id,
 		);
+	});
+
+	test("declines oversized episode files at the production adapter read boundary", async () => {
+		const projectRoot = join(tmp.path, "bounded-episode-adapter-record");
+		const [episodePath] = await writeEpisodeFixtures(projectRoot, [
+			["Oversized adapter episode", "2026-09-01T12:00:00.000Z"],
+		]);
+		if (episodePath === undefined) throw new Error("missing episode fixture");
+		await writeFile(
+			episodePath,
+			`${await readFile(episodePath, "utf-8")}${"x".repeat(2_048)}`,
+		);
+
+		const snapshot = await createProjectEpisodeConsolidationSource({
+			projectRoot,
+		}).collect({
+			limit: 5,
+			maxCorpusRecordBytes: 64 * 1024,
+			maxCorpusBytes: 256 * 1024,
+			maxEpisodeRecordBytes: 512,
+			maxEpisodeBytes: 4_096,
+		});
+
+		expect(snapshot).toMatchObject({
+			records: [],
+			omitted: 1,
+			declines: [
+				expect.objectContaining({
+					code: "source-record-bytes-deferred",
+					path: relativeFixturePath(projectRoot, episodePath),
+				}),
+			],
+		});
+	});
+
+	test("declines episode files beyond the production adapter aggregate read boundary", async () => {
+		const projectRoot = join(tmp.path, "bounded-episode-adapter-aggregate");
+		const episodePaths = await writeEpisodeFixtures(projectRoot, [
+			["First bounded adapter episode", "2026-09-01T12:00:00.000Z"],
+			["Second bounded adapter episode", "2026-09-01T13:00:00.000Z"],
+		]);
+		const firstPath = episodePaths[0];
+		if (firstPath === undefined) throw new Error("missing episode fixture");
+		const aggregateLimit = Buffer.byteLength(
+			await readFile(firstPath, "utf-8"),
+			"utf-8",
+		);
+
+		const snapshot = await createProjectEpisodeConsolidationSource({
+			projectRoot,
+		}).collect({
+			limit: 5,
+			maxCorpusRecordBytes: 64 * 1024,
+			maxCorpusBytes: 256 * 1024,
+			maxEpisodeRecordBytes: 4_096,
+			maxEpisodeBytes: aggregateLimit,
+		});
+
+		expect(snapshot.records).toHaveLength(1);
+		expect(snapshot.omitted).toBe(1);
+		expect(snapshot.declines).toEqual([
+			expect.objectContaining({ code: "source-aggregate-bytes-deferred" }),
+		]);
 	});
 
 	test("reports committed episode bytes when a later durable prune fails", async () => {
@@ -3173,6 +3543,61 @@ describe("living memory", () => {
 				(path) => path.endsWith(".tombstone"),
 			),
 		).toHaveLength(1);
+	});
+
+	test("reports committed episode bytes when removal fails after unlink", async () => {
+		const projectRoot = join(tmp.path, "episode-post-unlink-sync-failure");
+		const [episodePath] = await writeEpisodeFixtures(projectRoot, [
+			["Episode removed before sync failure", "2026-09-01T19:00:00.000Z"],
+		]);
+		if (episodePath === undefined) throw new Error("missing episode fixture");
+		const baseFiles = createDurableMachineFiles();
+		const source = createProjectEpisodeConsolidationSource({
+			projectRoot,
+			durableFiles: {
+				...baseFiles,
+				async removeFile(path) {
+					await baseFiles.removeFile(path);
+					if (path.endsWith(".tombstone")) {
+						throw new Error("simulated post-unlink directory sync failure");
+					}
+				},
+			},
+		});
+		const snapshot = await source.collect({
+			limit: 1,
+			maxCorpusRecordBytes: 64 * 1024,
+			maxCorpusBytes: 256 * 1024,
+			maxEpisodeRecordBytes: 64 * 1024,
+			maxEpisodeBytes: 256 * 1024,
+		});
+		const episode = snapshot.records[0];
+		if (episode === undefined) throw new Error("missing collected episode");
+		const proposalPath = join(
+			projectRoot,
+			"memory",
+			"agent",
+			"proposals",
+			"living-memory",
+			"episode-note.md",
+		);
+		await mkdir(dirname(proposalPath), { recursive: true });
+		await baseFiles.writeText({ path: proposalPath, content: "proposal\n" });
+
+		await expect(
+			source.finalize?.([
+				{
+					id: episode.id,
+					digest: episode.digest,
+					fileIdentity: episode.fileIdentity,
+					proposalPaths: [proposalPath],
+				},
+			]),
+		).rejects.toMatchObject({
+			message: "simulated post-unlink directory sync failure",
+			writesCommitted: true,
+		});
+		await expect(fileExists(episodePath)).resolves.toBe(false);
 	});
 
 	// @cosmo-behavior plan:living-memory#B-014

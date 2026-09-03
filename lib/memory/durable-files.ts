@@ -23,6 +23,10 @@ export interface DurableMachineFiles extends LivingMemoryDurableFiles {
 		readonly sourcePath: string;
 		readonly destinationPath: string;
 	}): Promise<void>;
+	restoreFile(options: {
+		readonly sourcePath: string;
+		readonly destinationPath: string;
+	}): Promise<void>;
 }
 
 export interface DurableRetirementFiles extends DurableMachineFiles {
@@ -46,6 +50,17 @@ export class DurableRemovalUnsupportedError extends Error {
 	}
 }
 
+export class DurableFileCommittedError extends Error {
+	readonly writesCommitted = true;
+
+	constructor(error: unknown) {
+		super(error instanceof Error ? error.message : String(error), {
+			cause: error,
+		});
+		this.name = "DurableFileCommittedError";
+	}
+}
+
 /** Durable machine-state mutation only. Source removal authority is absent. */
 export function createDurableMachineFiles(): DurableMachineFiles {
 	return {
@@ -53,6 +68,7 @@ export function createDurableMachineFiles(): DurableMachineFiles {
 		replaceText,
 		removeFile: durableRemove,
 		renameFile: durableRename,
+		restoreFile: durableRestore,
 	};
 }
 
@@ -160,10 +176,19 @@ async function durableLink(options: {
 }
 
 async function durableRemove(path: string): Promise<void> {
-	await unlink(path).catch((error: unknown) => {
+	let removed = false;
+	try {
+		await unlink(path);
+		removed = true;
+	} catch (error: unknown) {
 		if (errorCode(error) !== "ENOENT") throw error;
-	});
-	await syncDirectory(dirname(path));
+	}
+	try {
+		await syncDirectory(dirname(path));
+	} catch (error: unknown) {
+		if (removed) throw new DurableFileCommittedError(error);
+		throw error;
+	}
 }
 
 async function durableRename(options: {
@@ -188,6 +213,28 @@ async function durableRename(options: {
 	}
 	await rename(options.sourcePath, options.destinationPath);
 	await syncDirectory(sourceDirectory);
+}
+
+async function durableRestore(options: {
+	readonly sourcePath: string;
+	readonly destinationPath: string;
+}): Promise<void> {
+	const sourceDirectory = resolve(dirname(options.sourcePath));
+	const destinationDirectory = resolve(dirname(options.destinationPath));
+	if (sourceDirectory !== destinationDirectory) {
+		throw new Error("Durable tombstone restore requires one directory.");
+	}
+	try {
+		await link(options.sourcePath, options.destinationPath);
+	} catch (error: unknown) {
+		if (errorCode(error) !== "EEXIST") throw error;
+		throw new Error(
+			`Durable tombstone restore conflict at ${options.destinationPath}; both paths remain intact.`,
+			{ cause: error },
+		);
+	}
+	await syncDirectory(destinationDirectory);
+	await durableRemove(options.sourcePath);
 }
 
 async function writeTextExclusive(options: {

@@ -322,6 +322,8 @@ export function createLivingMemoryConsolidator(
 				needsRetirementInventory && inventoryRoot !== undefined
 					? await inspectLivingMemoryCitationInventory({
 							projectRoot: inventoryRoot,
+							maxRecordBytes: dependencies.limits.maxCorpusRecordBytes,
+							maxBytes: dependencies.limits.maxCorpusBytes,
 						})
 					: undefined;
 			if (inventory !== undefined && !inventory.healthy) {
@@ -1236,8 +1238,24 @@ export interface LivingMemoryCitationInventory {
 export async function inspectLivingMemoryCitationInventory(options: {
 	readonly projectRoot: string;
 	readonly userCosmonautsRoot?: string;
+	readonly maxRecordBytes?: number;
+	readonly maxBytes?: number;
 }): Promise<LivingMemoryCitationInventory> {
 	const projectRoot = resolve(options.projectRoot);
+	const maxRecordBytes =
+		options.maxRecordBytes ?? DEFAULT_LIVING_MEMORY_LIMITS.maxCorpusRecordBytes;
+	const maxBytes =
+		options.maxBytes ?? DEFAULT_LIVING_MEMORY_LIMITS.maxCorpusBytes;
+	if (
+		!Number.isSafeInteger(maxRecordBytes) ||
+		maxRecordBytes < 1 ||
+		!Number.isSafeInteger(maxBytes) ||
+		maxBytes < 1
+	) {
+		throw new Error(
+			"Citation inventory requires positive integer byte limits.",
+		);
+	}
 	const warnings: MemoryWarning[] = [];
 	const candidates: Array<{
 		scope: "project" | "user";
@@ -1293,14 +1311,19 @@ export async function inspectLivingMemoryCitationInventory(options: {
 	}
 
 	const entries: LivingMemoryCitationInventoryEntry[] = [];
+	let bytesRead = 0;
 	for (const candidate of candidates.toSorted((a, b) =>
 		`${a.scope}\0${a.path}`.localeCompare(`${b.scope}\0${b.path}`),
 	)) {
-		const read = await readInventoryFile(candidate.path);
+		const read = await readInventoryFile(candidate.path, {
+			maxRecordBytes,
+			remainingBytes: Math.max(0, maxBytes - bytesRead),
+		});
 		if (!read.ok) {
 			warnings.push({ path: candidate.path, message: read.message });
 			continue;
 		}
+		bytesRead += read.bytesRead;
 		let files: unknown;
 		if (candidate.knowledgeRoot !== undefined) {
 			const physicalResource = toPosixPath(
@@ -1492,21 +1515,55 @@ async function collectInventoryMarkdown(options: {
 
 async function readInventoryFile(
 	path: string,
+	limits: { readonly maxRecordBytes: number; readonly remainingBytes: number },
 ): Promise<
-	| { readonly ok: true; readonly raw: string; readonly mtime: Date }
+	| {
+			readonly ok: true;
+			readonly raw: string;
+			readonly mtime: Date;
+			readonly bytesRead: number;
+	  }
 	| { readonly ok: false; readonly message: string }
 > {
 	try {
 		const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
 		try {
-			const metadata = await handle.stat();
+			const metadata = await handle.stat({ bigint: true });
 			if (!metadata.isFile()) {
 				return { ok: false, message: "Citation source is not a regular file." };
 			}
+			if (metadata.size > BigInt(limits.maxRecordBytes)) {
+				return {
+					ok: false,
+					message: `Citation source exceeds the per-record inlet ceiling of ${limits.maxRecordBytes.toLocaleString("en-US")} bytes.`,
+				};
+			}
+			if (metadata.size > BigInt(limits.remainingBytes)) {
+				return {
+					ok: false,
+					message: `Citation source exceeds the remaining aggregate inlet allowance of ${limits.remainingBytes.toLocaleString("en-US")} bytes.`,
+				};
+			}
+			const size = Number(metadata.size);
+			const buffer = Buffer.alloc(size);
+			let offset = 0;
+			while (offset < size) {
+				const read = await handle.read(buffer, offset, size - offset, offset);
+				if (read.bytesRead === 0) break;
+				offset += read.bytesRead;
+			}
+			const confirmed = await handle.stat({ bigint: true });
+			if (offset !== size || confirmed.size !== metadata.size) {
+				return {
+					ok: false,
+					message: "Citation source changed during its bounded read.",
+				};
+			}
 			return {
 				ok: true,
-				raw: await handle.readFile("utf-8"),
+				raw: buffer.toString("utf-8"),
 				mtime: metadata.mtime,
+				bytesRead: size,
 			};
 		} finally {
 			await handle.close();

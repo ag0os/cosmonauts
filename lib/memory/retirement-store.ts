@@ -140,6 +140,7 @@ export function createLivingMemoryRetirementStore(
 				return previewRetirements({
 					projectRoot,
 					candidates: input.candidates,
+					maxRetirements: input.maxRetirements,
 					inspectCitations,
 				});
 			}
@@ -453,9 +454,22 @@ function restorationFailed(options: {
 async function previewRetirements(options: {
 	readonly projectRoot: string;
 	readonly candidates: readonly LivingMemoryRetirementCandidate[];
+	readonly maxRetirements: number;
 	readonly inspectCitations: () => Promise<CitationInventory>;
 }): Promise<LivingMemoryRetirementRunResult> {
-	const records = options.candidates.map((candidate) => candidate.record);
+	if (
+		!Number.isSafeInteger(options.maxRetirements) ||
+		options.maxRetirements < 1
+	) {
+		return failedResult({
+			reason: "Retirement preview requires a positive bounded cap.",
+			recovery: "none",
+			warnings: [],
+		});
+	}
+	const candidates = options.candidates.slice(0, options.maxRetirements);
+	const deferred = options.candidates.slice(options.maxRetirements);
+	const records = candidates.map((candidate) => candidate.record);
 	const before = await inspectRetirementState({
 		projectRoot: options.projectRoot,
 		records,
@@ -489,7 +503,7 @@ async function previewRetirements(options: {
 	]);
 	const authorized = await authorizeCandidates({
 		projectRoot: options.projectRoot,
-		candidates: options.candidates,
+		candidates,
 		inspectCitations: options.inspectCitations,
 		citations: citationsBefore,
 		receipts: receiptsBefore,
@@ -519,7 +533,14 @@ async function previewRetirements(options: {
 			status: "preview",
 			reason: candidate.reason,
 		})),
-		declines: authorized.declines,
+		declines: [
+			...authorized.declines,
+			...deferred.map((candidate) => ({
+				code: "retirement-cap-deferred",
+				path: candidate.record.path,
+				reason: `Retirement preview cap is ${options.maxRetirements.toLocaleString("en-US")}; this candidate is deferred.`,
+			})),
+		],
 		warnings: authorized.warnings,
 	});
 }
@@ -536,7 +557,7 @@ async function applyUnderLock(options: {
 		point: LivingMemoryRetirementFailpoint,
 	) => void | Promise<void>;
 }): Promise<LivingMemoryRetirementRunResult> {
-	let recovered: "none" | "rolled-back" | "rolled-forward" = "none";
+	let recovered: "none" | "pending" | "rolled-back" | "rolled-forward" = "none";
 	let committed = false;
 	try {
 		const initialRecovery = await recoverJournal(options);
@@ -546,8 +567,8 @@ async function applyUnderLock(options: {
 				.conflicts[0] as RetirementUnlinkConflictError;
 			return failedResult({
 				reason: conflict.message,
-				recovery: recovered,
-				writesCommitted: recovered === "rolled-forward",
+				recovery: "pending",
+				writesCommitted: true,
 				declines: initialRecovery.conflicts.map((item) => ({
 					code: "retirement-unlink-conflict",
 					path: item.path,
@@ -896,7 +917,7 @@ async function recoverJournal(options: {
 	readonly projectRoot: string;
 	readonly durableFiles: DurableRetirementFiles;
 }): Promise<{
-	readonly recovery: "none" | "rolled-back" | "rolled-forward";
+	readonly recovery: "none" | "pending" | "rolled-back" | "rolled-forward";
 	readonly conflicts: readonly RetirementUnlinkConflictError[];
 }> {
 	const journal = await readJournal(options.projectRoot);
@@ -927,11 +948,13 @@ async function recoverJournal(options: {
 			});
 			if (conflict !== undefined) conflicts.push(conflict);
 		}
-		await options.durableFiles.removeFile(
-			absolutePath(options.projectRoot, JOURNAL_PATH),
-		);
+		if (conflicts.length === 0) {
+			await options.durableFiles.removeFile(
+				absolutePath(options.projectRoot, JOURNAL_PATH),
+			);
+		}
 		return {
-			recovery: "rolled-forward",
+			recovery: conflicts.length === 0 ? "rolled-forward" : "pending",
 			conflicts: Object.freeze(conflicts),
 		};
 	}
@@ -947,7 +970,7 @@ async function recoverJournal(options: {
 					`Uncommitted retirement has both live and tombstone paths: ${entry.originalPath}.`,
 				);
 			}
-			await options.durableFiles.renameFile({
+			await options.durableFiles.restoreFile({
 				sourcePath: tombstonePath,
 				destinationPath: livePath,
 			});
@@ -1010,7 +1033,7 @@ async function recoverCommittedEntry(options: {
 				`Committed retirement cannot restore its tombstone because the live path is occupied: ${options.entry.originalPath}.`,
 			);
 		}
-		await options.durableFiles.renameFile({
+		await options.durableFiles.restoreFile({
 			sourcePath: tombstonePath,
 			destinationPath: livePath,
 		});
@@ -1506,7 +1529,7 @@ async function removeManifestedLiveThroughTombstone(options: {
 			"the transaction tombstone could not be restored because the live path is occupied",
 		);
 	}
-	await options.durableFiles.renameFile({
+	await options.durableFiles.restoreFile({
 		sourcePath: tombstonePath,
 		destinationPath: livePath,
 	});
