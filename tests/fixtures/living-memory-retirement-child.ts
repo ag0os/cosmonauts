@@ -1,12 +1,39 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { link, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ConsolidationSourceRecord } from "../../lib/memory/consolidation-sources.ts";
+import { createDurableRetirementFiles } from "../../lib/memory/durable-files.ts";
 import { createLivingMemoryRetirementStore } from "../../lib/memory/retirement-store.ts";
 
 const [projectRoot, selectedFailpoint] = process.argv.slice(2);
 if (projectRoot === undefined || selectedFailpoint === undefined) {
 	process.exit(2);
+}
+
+if (selectedFailpoint === "after-restore-link") {
+	const durableFiles = createDurableRetirementFiles();
+	const store = createLivingMemoryRetirementStore({
+		projectRoot,
+		durableFiles: {
+			...durableFiles,
+			async restoreFile(options) {
+				await link(options.sourcePath, options.destinationPath);
+				process.exit(86);
+			},
+		},
+	});
+	const result = await store.apply({
+		candidates: [],
+		dryRun: false,
+		date: new Date("2026-09-01T12:00:00.000Z"),
+		maxRetirements: 5,
+		lockOptions: {
+			retryMs: 50,
+			timeoutMs: 10_000,
+			onReleaseUnconfirmed: () => undefined,
+		},
+	});
+	process.exit(result.kind === "completed" ? 0 : 1);
 }
 
 const path = "knowledge/eligible.md";

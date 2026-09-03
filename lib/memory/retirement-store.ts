@@ -965,11 +965,6 @@ async function recoverJournal(options: {
 			entry.tombstonePath,
 		);
 		if (await pathExists(tombstonePath)) {
-			if (await pathExists(livePath)) {
-				throw new Error(
-					`Uncommitted retirement has both live and tombstone paths: ${entry.originalPath}.`,
-				);
-			}
 			await options.durableFiles.restoreFile({
 				sourcePath: tombstonePath,
 				destinationPath: livePath,
@@ -1027,11 +1022,6 @@ async function recoverCommittedEntry(options: {
 		) {
 			await options.durableFiles.removeFile(tombstonePath);
 			return undefined;
-		}
-		if (await pathExists(livePath)) {
-			throw new Error(
-				`Committed retirement cannot restore its tombstone because the live path is occupied: ${options.entry.originalPath}.`,
-			);
 		}
 		await options.durableFiles.restoreFile({
 			sourcePath: tombstonePath,

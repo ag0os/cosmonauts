@@ -219,6 +219,9 @@ async function durableRestore(options: {
 	readonly sourcePath: string;
 	readonly destinationPath: string;
 }): Promise<void> {
+	if (resolve(options.sourcePath) === resolve(options.destinationPath)) {
+		throw new Error("Durable tombstone restore requires distinct paths.");
+	}
 	const sourceDirectory = resolve(dirname(options.sourcePath));
 	const destinationDirectory = resolve(dirname(options.destinationPath));
 	if (sourceDirectory !== destinationDirectory) {
@@ -227,14 +230,69 @@ async function durableRestore(options: {
 	try {
 		await link(options.sourcePath, options.destinationPath);
 	} catch (error: unknown) {
-		if (errorCode(error) !== "EEXIST") throw error;
-		throw new Error(
-			`Durable tombstone restore conflict at ${options.destinationPath}; both paths remain intact.`,
-			{ cause: error },
-		);
+		if (errorCode(error) === "EEXIST") {
+			if (
+				!(await sameNoFollowRegularFile(
+					options.sourcePath,
+					options.destinationPath,
+				))
+			) {
+				throw new Error(
+					`Durable tombstone restore conflict at ${options.destinationPath}; both paths remain intact.`,
+					{ cause: error },
+				);
+			}
+			await syncDirectory(destinationDirectory);
+			await durableRemove(options.sourcePath);
+			return;
+		}
+		if (errorCode(error) === "ENOENT") {
+			const [source, destination] = await Promise.all([
+				readNoFollowRegularFileIdentity(options.sourcePath),
+				readNoFollowRegularFileIdentity(options.destinationPath),
+			]);
+			if (source === undefined && destination !== undefined) {
+				await syncDirectory(destinationDirectory);
+				return;
+			}
+		}
+		throw error;
 	}
 	await syncDirectory(destinationDirectory);
 	await durableRemove(options.sourcePath);
+}
+
+async function sameNoFollowRegularFile(
+	leftPath: string,
+	rightPath: string,
+): Promise<boolean> {
+	const [left, right] = await Promise.all([
+		readNoFollowRegularFileIdentity(leftPath),
+		readNoFollowRegularFileIdentity(rightPath),
+	]);
+	return (
+		left !== undefined &&
+		right !== undefined &&
+		left.device === right.device &&
+		left.inode === right.inode
+	);
+}
+
+async function readNoFollowRegularFileIdentity(path: string): Promise<
+	| {
+			readonly device: bigint;
+			readonly inode: bigint;
+	  }
+	| undefined
+> {
+	try {
+		const metadata = await lstat(path, { bigint: true });
+		if (metadata.isSymbolicLink() || !metadata.isFile()) return undefined;
+		return { device: metadata.dev, inode: metadata.ino };
+	} catch (error: unknown) {
+		if (errorCode(error) === "ENOENT") return undefined;
+		throw error;
+	}
 }
 
 async function writeTextExclusive(options: {

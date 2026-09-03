@@ -478,10 +478,7 @@ async function recoverEpisodePruneJournal(options: {
 	);
 	let removedEpisodeBytes = false;
 	try {
-		const [live, tombstone] = await Promise.all([
-			readRegularTextSnapshotIfExists(livePath),
-			readRegularTextSnapshotIfExists(tombstonePath),
-		]);
+		const tombstone = await readRegularTextSnapshotIfExists(tombstonePath);
 		if (tombstone !== undefined) {
 			const verified =
 				sameFileIdentity(tombstone.identity, journal.fileIdentity) &&
@@ -493,11 +490,6 @@ async function recoverEpisodePruneJournal(options: {
 				});
 				removedEpisodeBytes = true;
 			} else {
-				if (live !== undefined) {
-					throw new ConsolidationSourceContractError(
-						`Episode ${journal.originalPath} has an unverified tombstone and an occupied live path.`,
-					);
-				}
 				await options.durableFiles.restoreFile({
 					sourcePath: tombstonePath,
 					destinationPath: livePath,
