@@ -205,6 +205,35 @@ Capability evidence: runtime structural-analysis bindings for complexity, duplic
   - Alternatives: implement a second pipeline inside the markdown store (duplicate durable-write/lock/receipt machinery for one inlet).
   - Why: one pipeline, one lock, one receipt story; the brief self-describes §7.2 as a sketch whose precise types are the re-spec's job, and the authoritative spec routes all consolidation through the knowledge store seam (adversarial review, recorded for the record).
   - Decided by: planner-proposed, 2026-09-01
+- **D-026 - The open-descriptor write race is an accepted limitation** *(Added 2026-09-03 after review round 3)*
+  - Decision: retirement and episode pruning verify the target immediately
+    before removal (device+inode identity against the retired hard link, plus a
+    fresh digest match), move the live path aside by atomic rename to a
+    journal-recorded tombstone so a concurrent replacement is preserved rather
+    than destroyed, and restore by exclusive `link` so a restore can never
+    clobber a recreated path. The residual window in which a process holding an
+    ALREADY-OPEN file descriptor writes to the inode between verification and
+    unlink is accepted and recorded, not closed.
+  - Alternatives: further verification layers (three review rounds each found
+    the window one syscall further in — the signature of an unclosable
+    check-then-act against an uncooperative writer); a refuse-if-recently-
+    modified heuristic (narrows, does not close, and blocks legitimate work);
+    abandoning soft retirement entirely.
+  - Why: no portable primitive closes it. POSIX `rename` does not invalidate a
+    foreign descriptor, Node exposes neither `renameat2(RENAME_NOREPLACE)` nor
+    `renamex_np(RENAME_EXCL)`, and there is no inode-predicated `unlink`.
+    Threat model: the mutating pass holds an exclusive lock, so no other
+    cosmonauts pass can race it; the only racer is a human editing a knowledge
+    record by hand during a pass they themselves invoked. Recovery paths exist
+    — the retired hard link holds the manifested bytes, and `knowledge/` is
+    git-tracked, so a lost concurrent edit is recoverable for any committed
+    file. This matches the precedent already recorded in `memory/` for the
+    accepted lock race that no portable Node primitive closes.
+  - Scope of the acceptance: this covers ONLY the open-descriptor write between
+    verification and unlink. Every other identified race — check-then-rename
+    clobber on restore, unrepairable conflict states, cap and byte bounds — is
+    fixed, not accepted.
+  - Decided by: human, 2026-09-03 (ratified after review round 3)
 
 ## Behaviors
 
