@@ -3,7 +3,7 @@ id: TASK-629
 title: >-
   Review round 6 remediation — Pressure/inventory completeness and truthful
   discharge reporting
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -12,7 +12,7 @@ labels:
 dependencies:
   - TASK-628
 createdAt: '2026-09-04T20:29:46.022Z'
-updatedAt: '2026-09-04T20:29:46.022Z'
+updatedAt: '2026-09-04T20:53:28.655Z'
 ---
 
 ## Description
@@ -36,8 +36,8 @@ Every commit that changes `lib/memory/types.ts` must re-pin its full-source SHA-
 Binding ratified ground — stop and escalate rather than adjust it: never move, edit, or delete anything under this repository's live `knowledge/`; temp fixtures only; `knowledgeSurface` stays on; no live retirement round; no TTL, OM, scheduling, user-scope L4 mutation, embeddings, new OKF type, or explicit-save change. Do not weaken the receipt floor, the frozen pins, retirement/byte authority, the judgment byte ceilings just added, or any existing marker. Do not reopen the D-026 ratified pathname-race class. Confine every change to lib/memory, lib/extensions/knowledge-surface, cli/memory and their tests.
 
 <!-- AC:BEGIN -->
-- [ ] #1 Index pressure is measured over exactly the dataset combined-context injection would include: a valid record that exceeds the per-record content ceiling, or is deferred by the aggregate read allowance, still contributes its row and rendered bytes to pressure, while its body is still never fully materialized for judgment. A regression test places an oversized-but-valid record in the corpus and proves pressure counts it and that the measured index matches what the injection renderer sees.
-- [ ] #2 Receipt discharge distinguishes genuine absence from non-admission: cap-skipped, byte-deferred, and represented-but-filtered inputs all preserve their representation, and only inputs whose digests genuinely no longer exist can discharge a receipt. A regression test exhausts a pass's record or byte limits and proves an unchanged live input is neither discharged nor re-judged on a later pass.
-- [ ] #3 Any pass in which a receipt discharge has durably completed reports `writesCommitted: true`, including when a later step such as retirement inspection throws afterwards.
-- [ ] #4 Project-native universal correctness evidence passes after every commit; the Slice 0 B-001 receipt test and every marker B-001..B-021 remain green under their exact existing names and owners; any commit touching `lib/memory/types.ts` re-pins its SHA-256 in the same commit with `lib/architecture-map/retrieval.ts` byte-identical; live `knowledge/` and `memory/` stay byte-identical; a live dry run still completes as `ran` or `noop` writing nothing; and no file outside lib/memory, lib/extensions/knowledge-surface, cli/memory and their tests is modified.
+- [x] #1 Index pressure is measured over exactly the dataset combined-context injection would include: a valid record that exceeds the per-record content ceiling, or is deferred by the aggregate read allowance, still contributes its row and rendered bytes to pressure, while its body is still never fully materialized for judgment. A regression test places an oversized-but-valid record in the corpus and proves pressure counts it and that the measured index matches what the injection renderer sees.
+- [x] #2 Receipt discharge distinguishes genuine absence from non-admission: cap-skipped, byte-deferred, and represented-but-filtered inputs all preserve their representation, and only inputs whose digests genuinely no longer exist can discharge a receipt. A regression test exhausts a pass's record or byte limits and proves an unchanged live input is neither discharged nor re-judged on a later pass.
+- [x] #3 Any pass in which a receipt discharge has durably completed reports `writesCommitted: true`, including when a later step such as retirement inspection throws afterwards.
+- [x] #4 Project-native universal correctness evidence passes after every commit; the Slice 0 B-001 receipt test and every marker B-001..B-021 remain green under their exact existing names and owners; any commit touching `lib/memory/types.ts` re-pins its SHA-256 in the same commit with `lib/architecture-map/retrieval.ts` byte-identical; live `knowledge/` and `memory/` stay byte-identical; a live dry run still completes as `ran` or `noop` writing nothing; and no file outside lib/memory, lib/extensions/knowledge-surface, cli/memory and their tests is modified.
 <!-- AC:END -->
