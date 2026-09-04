@@ -188,15 +188,19 @@ export function createLivingMemoryConsolidator(
 				recovery: recoveryRun?.details.recovery ?? "none",
 				writesCommitted: recoveryRun?.details.writesCommitted ?? false,
 			};
-			const dischargedReceipts = dryRun
-				? Object.freeze([])
-				: await dependencies.acceptedJudgmentReceiptStore.dischargeStale({
-						currentKeys: Object.freeze(
-							collected.inventory.map(consolidationEvidenceKey),
-						),
-						lockOptions: dependencies.lockOptions,
-						lockHeld,
-					});
+			const dischargedReceipts =
+				dryRun || !collected.inventoryComplete
+					? Object.freeze([])
+					: await dependencies.acceptedJudgmentReceiptStore.dischargeStale({
+							currentKeys: Object.freeze(
+								collected.inventory.map(consolidationEvidenceKey),
+							),
+							lockOptions: dependencies.lockOptions,
+							lockHeld,
+						});
+			if (dischargedReceipts.length > 0) {
+				details = { ...details, writesCommitted: true };
+			}
 			const dischargedPaths = new Set(dischargedReceipts);
 			const receipts = initialReceipts.filter(
 				(receipt) => !dischargedPaths.has(receipt.path),

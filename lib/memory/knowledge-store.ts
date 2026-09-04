@@ -1,8 +1,11 @@
+import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { constants } from "node:fs";
-import { lstat, open, readdir } from "node:fs/promises";
+import { type FileHandle, lstat, open, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, relative, resolve, sep } from "node:path";
+import { StringDecoder } from "node:string_decoder";
+import matter from "gray-matter";
 import { createDurableMachineFiles } from "./durable-files.ts";
 import {
 	normalizeKnowledgeProposal,
@@ -54,6 +57,15 @@ interface ScannedFile {
 	readonly mtime: Date;
 }
 
+interface KnowledgeScannedFile extends ScannedFile {
+	readonly digest: string;
+	readonly bytesRead: number;
+	readonly contentMetadata?: {
+		readonly firstH1?: string;
+		readonly firstBodyParagraph?: string;
+	};
+}
+
 interface KnowledgeReadOptions {
 	readonly byteLimits?: {
 		readonly maxRecordBytes: number;
@@ -76,6 +88,10 @@ interface KnowledgeReadDecline {
 interface KnowledgeRetrieveResult extends MemoryRetrieveResult {
 	readonly records: readonly KnowledgeRetrievedMemoryRecord[];
 	readonly readDeclines?: readonly KnowledgeReadDecline[];
+	readonly inventoryRecords?: readonly {
+		readonly record: RetrievedMemoryRecord;
+		readonly digest: string;
+	}[];
 }
 
 interface KnowledgeMemoryStore extends MemoryStore {
@@ -87,13 +103,17 @@ interface KnowledgeMemoryStore extends MemoryStore {
 }
 
 type KnowledgeScanResult =
-	| { readonly kind: "read"; readonly file: ScannedFile }
-	| { readonly kind: "declined"; readonly decline: KnowledgeReadDecline }
+	| {
+			readonly kind: "read";
+			readonly file: KnowledgeScannedFile;
+			readonly decline?: KnowledgeReadDecline;
+	  }
 	| { readonly kind: "skipped" };
 
 interface ScanTally {
 	filesScanned: number;
 	bytesRead: number;
+	bodyBytesAdmitted: number;
 }
 
 export function createKnowledgeMemoryStore(
@@ -139,7 +159,15 @@ async function retrieveKnowledge(options: {
 	const warnings: MemoryWarning[] = [];
 	const records: KnowledgeRetrievedMemoryRecord[] = [];
 	const readDeclines: KnowledgeReadDecline[] = [];
-	const tally: ScanTally = { filesScanned: 0, bytesRead: 0 };
+	const inventoryRecords: Array<{
+		record: RetrievedMemoryRecord;
+		digest: string;
+	}> = [];
+	const tally: ScanTally = {
+		filesScanned: 0,
+		bytesRead: 0,
+		bodyBytesAdmitted: 0,
+	};
 	assertReadOptions(options.readOptions);
 
 	for (const scope of options.scope.scopes) {
@@ -167,19 +195,19 @@ async function retrieveKnowledge(options: {
 								remainingBytes: Math.max(
 									0,
 									options.readOptions.byteLimits.maxAggregateBytes -
-										tally.bytesRead,
+										tally.bodyBytesAdmitted,
 								),
 							},
 						}),
 			});
-			if (scan.kind === "declined") {
-				readDeclines.push(scan.decline);
-				continue;
-			}
 			if (scan.kind === "skipped") continue;
+			if (scan.decline !== undefined) readDeclines.push(scan.decline);
 			const scanned = scan.file;
 			tally.filesScanned += 1;
-			tally.bytesRead += Buffer.byteLength(scanned.raw, "utf-8");
+			tally.bytesRead += scanned.bytesRead;
+			if (scan.decline === undefined) {
+				tally.bodyBytesAdmitted += scanned.bytesRead;
+			}
 			try {
 				const physicalResource = toPosixRelative(root, path);
 				const retired = physicalResource.startsWith("retired/");
@@ -191,6 +219,9 @@ async function retrieveKnowledge(options: {
 					physicalResource: logicalResource,
 					physicalScope: scope,
 					mtime: scanned.mtime,
+					...(scanned.contentMetadata === undefined
+						? {}
+						: { contentMetadata: scanned.contentMetadata }),
 				});
 				if (!parsed.ok) {
 					warnings.push({ path, message: parsed.message });
@@ -201,6 +232,10 @@ async function retrieveKnowledge(options: {
 					path,
 				});
 				if (matchesQuery(record, options.query)) {
+					if (options.readOptions?.byteLimits !== undefined) {
+						inventoryRecords.push({ record, digest: scanned.digest });
+					}
+					if (scan.decline !== undefined) continue;
 					records.push({
 						...record,
 						...(options.readOptions?.includeRawContent
@@ -222,6 +257,11 @@ async function retrieveKnowledge(options: {
 		(a, b) =>
 			b.timestamp.localeCompare(a.timestamp) || a.path.localeCompare(b.path),
 	);
+	inventoryRecords.sort(
+		(a, b) =>
+			b.record.timestamp.localeCompare(a.record.timestamp) ||
+			a.record.path.localeCompare(b.record.path),
+	);
 	return {
 		records:
 			options.query.limit === undefined
@@ -232,7 +272,12 @@ async function retrieveKnowledge(options: {
 		warnings,
 		...(options.readOptions?.byteLimits === undefined
 			? {}
-			: { readDeclines: Object.freeze(readDeclines) }),
+			: {
+					readDeclines: Object.freeze(readDeclines),
+					inventoryRecords: Object.freeze(
+						inventoryRecords.map((entry) => Object.freeze(entry)),
+					),
+				}),
 		stats: {
 			filesScanned: tally.filesScanned,
 			bytesRead: tally.bytesRead,
@@ -414,32 +459,56 @@ async function scanKnowledgeFile(options: {
 			if (options.limits === undefined) {
 				const metadata = await handle.stat();
 				if (!metadata.isFile()) return { kind: "skipped" };
+				const raw = await handle.readFile("utf-8");
 				return {
 					kind: "read",
-					file: { raw: await handle.readFile("utf-8"), mtime: metadata.mtime },
-				};
-			}
-			const before = await handle.stat({ bigint: true });
-			if (!before.isFile()) return { kind: "skipped" };
-			if (before.size > BigInt(options.limits.maxRecordBytes)) {
-				return {
-					kind: "declined",
-					decline: {
-						code: "record-byte-limit",
-						scope: options.scope,
-						path: options.path,
-						reason: `Knowledge record requires ${before.size.toLocaleString("en-US")} bytes; the read-time per-record ceiling is ${options.limits.maxRecordBytes.toLocaleString("en-US")} bytes.`,
+					file: {
+						raw,
+						mtime: metadata.mtime,
+						digest: sha256(raw),
+						bytesRead: Buffer.byteLength(raw, "utf-8"),
 					},
 				};
 			}
-			if (before.size > BigInt(options.limits.remainingBytes)) {
+			const fileMetadata = await handle.stat();
+			const before = await handle.stat({ bigint: true });
+			if (!before.isFile()) return { kind: "skipped" };
+			const decline =
+				before.size > BigInt(options.limits.maxRecordBytes)
+					? ({
+							code: "record-byte-limit",
+							scope: options.scope,
+							path: options.path,
+							reason: `Knowledge record requires ${before.size.toLocaleString("en-US")} bytes; the read-time per-record ceiling is ${options.limits.maxRecordBytes.toLocaleString("en-US")} bytes.`,
+						} satisfies KnowledgeReadDecline)
+					: before.size > BigInt(options.limits.remainingBytes)
+						? ({
+								code: "aggregate-byte-limit",
+								scope: options.scope,
+								path: options.path,
+								reason: `Knowledge record requires ${before.size.toLocaleString("en-US")} bytes; the remaining aggregate read-time allowance is ${options.limits.remainingBytes.toLocaleString("en-US")} bytes.`,
+							} satisfies KnowledgeReadDecline)
+						: undefined;
+			if (decline !== undefined) {
+				const metadata = await readKnowledgeMetadata({
+					handle,
+					size: Number(before.size),
+				});
+				const after = await handle.stat({ bigint: true });
+				if (after.size !== before.size) {
+					throw new Error(
+						`Knowledge record changed during metadata read: ${options.path}`,
+					);
+				}
 				return {
-					kind: "declined",
-					decline: {
-						code: "aggregate-byte-limit",
-						scope: options.scope,
-						path: options.path,
-						reason: `Knowledge record requires ${before.size.toLocaleString("en-US")} bytes; the remaining aggregate read-time allowance is ${options.limits.remainingBytes.toLocaleString("en-US")} bytes.`,
+					kind: "read",
+					decline,
+					file: {
+						raw: metadata.frontmatter,
+						mtime: fileMetadata.mtime,
+						digest: metadata.digest,
+						bytesRead: Number(before.size),
+						contentMetadata: metadata.contentMetadata,
 					},
 				};
 			}
@@ -461,7 +530,9 @@ async function scanKnowledgeFile(options: {
 				kind: "read",
 				file: {
 					raw: buffer.toString("utf-8"),
-					mtime: new Date(Number(before.mtimeMs)),
+					mtime: fileMetadata.mtime,
+					digest: createHash("sha256").update(buffer).digest("hex"),
+					bytesRead: size,
 				},
 			};
 		} finally {
@@ -477,6 +548,182 @@ async function scanKnowledgeFile(options: {
 		});
 		return { kind: "skipped" };
 	}
+}
+
+async function readKnowledgeMetadata(options: {
+	readonly handle: FileHandle;
+	readonly size: number;
+}): Promise<{
+	readonly frontmatter: string;
+	readonly digest: string;
+	readonly contentMetadata: {
+		readonly firstH1?: string;
+		readonly firstBodyParagraph?: string;
+	};
+}> {
+	const digest = createHash("sha256");
+	const decoder = new StringDecoder("utf8");
+	const accumulator = createKnowledgeMetadataAccumulator();
+	const buffer = Buffer.alloc(Math.max(1, Math.min(64 * 1024, options.size)));
+	let offset = 0;
+	while (offset < options.size) {
+		const length = Math.min(buffer.length, options.size - offset);
+		const read = await options.handle.read(buffer, 0, length, offset);
+		if (read.bytesRead === 0) break;
+		const bytes = buffer.subarray(0, read.bytesRead);
+		digest.update(bytes);
+		accumulator.push(decoder.write(bytes));
+		offset += read.bytesRead;
+	}
+	accumulator.push(decoder.end());
+	if (offset !== options.size) {
+		throw new Error("Knowledge record changed during metadata read.");
+	}
+	return {
+		...accumulator.finish(),
+		digest: digest.digest("hex"),
+	};
+}
+
+function createKnowledgeMetadataAccumulator(): {
+	readonly push: (value: string) => void;
+	readonly finish: () => {
+		readonly frontmatter: string;
+		readonly contentMetadata: {
+			readonly firstH1?: string;
+			readonly firstBodyParagraph?: string;
+		};
+	};
+} {
+	let pendingFrontmatter = "";
+	let frontmatter: string | undefined;
+	let pendingBodyLine = "";
+	let firstH1: string | undefined;
+	let firstBodyParagraph: string | undefined;
+	let paragraphParts: string[] = [];
+	let paragraphRejected = false;
+	let needsH1 = true;
+	let needsParagraph = true;
+
+	const finishParagraph = () => {
+		if (
+			firstBodyParagraph === undefined &&
+			!paragraphRejected &&
+			paragraphParts.length > 0
+		) {
+			firstBodyParagraph = paragraphParts.join(" ");
+		}
+		paragraphParts = [];
+		paragraphRejected = false;
+	};
+	const acceptBodyLine = (line: string) => {
+		if (needsH1 && firstH1 === undefined) {
+			const match = /^#\s+(.+?)\s*$/u.exec(line);
+			if (match?.[1]) firstH1 = match[1].trim();
+		}
+		if (!needsParagraph || firstBodyParagraph !== undefined) return;
+		const normalized = line.trim();
+		if (!normalized) {
+			finishParagraph();
+			return;
+		}
+		if (paragraphParts.length === 0 && !paragraphRejected) {
+			if (normalized.startsWith("#")) paragraphRejected = true;
+			else paragraphParts.push(normalized);
+			return;
+		}
+		if (!paragraphRejected) paragraphParts.push(normalized);
+	};
+	const acceptBody = (value: string) => {
+		if (
+			(!needsH1 || firstH1 !== undefined) &&
+			(!needsParagraph || firstBodyParagraph !== undefined)
+		) {
+			return;
+		}
+		pendingBodyLine += value;
+		for (;;) {
+			const newline = pendingBodyLine.indexOf("\n");
+			if (newline < 0) break;
+			const line = pendingBodyLine.slice(0, newline).replace(/\r$/u, "");
+			pendingBodyLine = pendingBodyLine.slice(newline + 1);
+			acceptBodyLine(line);
+			if (
+				(!needsH1 || firstH1 !== undefined) &&
+				(!needsParagraph || firstBodyParagraph !== undefined)
+			) {
+				pendingBodyLine = "";
+				break;
+			}
+		}
+	};
+	const beginBody = (value: string) => {
+		if (!frontmatter?.startsWith("---")) {
+			needsH1 = false;
+			needsParagraph = false;
+			return;
+		}
+		try {
+			const data = matter(frontmatter ?? "").data;
+			needsH1 = data.title === undefined;
+			needsParagraph = data.description === undefined;
+		} catch {
+			needsH1 = false;
+			needsParagraph = false;
+		}
+		acceptBody(value);
+	};
+	const push = (value: string) => {
+		if (!value) return;
+		if (frontmatter !== undefined) {
+			acceptBody(value);
+			return;
+		}
+		pendingFrontmatter += value;
+		const end = knowledgeFrontmatterEnd(pendingFrontmatter);
+		if (end === undefined) return;
+		frontmatter = pendingFrontmatter.slice(0, end);
+		const body = pendingFrontmatter.slice(end);
+		pendingFrontmatter = "";
+		beginBody(body);
+	};
+	return {
+		push,
+		finish() {
+			if (frontmatter === undefined) {
+				frontmatter = pendingFrontmatter;
+				pendingFrontmatter = "";
+				beginBody("");
+			}
+			if (pendingBodyLine) acceptBodyLine(pendingBodyLine.replace(/\r$/u, ""));
+			finishParagraph();
+			return {
+				frontmatter,
+				contentMetadata: {
+					...(firstH1 === undefined ? {} : { firstH1 }),
+					...(firstBodyParagraph === undefined ? {} : { firstBodyParagraph }),
+				},
+			};
+		},
+	};
+}
+
+function knowledgeFrontmatterEnd(value: string): number | undefined {
+	if (value.length < 3) return undefined;
+	if (!value.startsWith("---")) return 0;
+	if (value.length === 3) return undefined;
+	if (value[3] !== "\n" && value[3] !== "\r") return 0;
+	if (value[3] === "\r" && value.length === 4) return undefined;
+	if (value[3] === "\r" && value[4] !== "\n") return 0;
+	const openingEnd = value.indexOf("\n") + 1;
+	const closing = /(?:^|\r?\n)---(?:\r?\n|$)/gu;
+	closing.lastIndex = openingEnd;
+	const match = closing.exec(value);
+	return match === null ? undefined : match.index + match[0].length;
+}
+
+function sha256(value: string): string {
+	return createHash("sha256").update(value).digest("hex");
 }
 
 function assertReadOptions(options: KnowledgeReadOptions | undefined): void {

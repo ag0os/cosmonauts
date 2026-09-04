@@ -16,6 +16,10 @@ import { createArchitectureMapMemoryStore } from "../../lib/architecture-map/ind
 import type { EntityFileLockOptions } from "../../lib/entity-file-lock.ts";
 import { EntityFileLockTimeoutError } from "../../lib/entity-file-lock.ts";
 import {
+	createKnowledgeIndexPressurePolicy,
+	renderKnowledgeIndex,
+} from "../../lib/extensions/knowledge-surface/index-policy.ts";
+import {
 	createDurableRetirementFiles,
 	type DurableRetirementFiles,
 } from "../../lib/memory/durable-files.ts";
@@ -2160,6 +2164,53 @@ describe("living memory", () => {
 		});
 	});
 
+	test("reports a completed receipt discharge when retirement inspection fails", async () => {
+		const projectRoot = join(tmp.path, "completed-receipt-discharge");
+		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
+		const batchKey = createHash("sha256")
+			.update("completed-before-inspection")
+			.digest("hex");
+		await receiptStore.write({
+			schemaVersion: 1,
+			batchKey,
+			state: "accepted",
+			inputDigests: [createHash("sha256").update("absent-input").digest("hex")],
+			output: { schemaVersion: 1, observations: [] },
+			path: receiptStore.pathFor(batchKey),
+		});
+		await receiptStore.markMaterialized(batchKey);
+
+		const result = await createHarness([source("empty", [])], undefined, {
+			acceptedJudgmentReceiptStore: receiptStore,
+			retirementStore: {
+				async inspect() {
+					throw new Error("simulated post-discharge inspection failure");
+				},
+				async apply() {
+					return {
+						kind: "completed" as const,
+						details: {
+							retirements: [],
+							declines: [],
+							warnings: [],
+							recovery: "none" as const,
+							writesCommitted: false,
+						},
+					};
+				},
+			},
+		}).consolidator();
+
+		expect(result).toMatchObject({
+			kind: "failed",
+			reason: "simulated post-discharge inspection failure",
+			details: { writesCommitted: true },
+		});
+		await expect(fileExists(receiptStore.pathFor(batchKey))).resolves.toBe(
+			false,
+		);
+	});
+
 	test("builds the exact live citation inventory and blocks retirement on incomplete discovery", async () => {
 		const projectRoot = join(tmp.path, "citation-inventory-project");
 		const userRoot = join(tmp.path, "citation-inventory-user");
@@ -3030,6 +3081,119 @@ describe("living memory", () => {
 
 		expect(judge).toHaveBeenCalledOnce();
 		await expect(fileExists(episodePath)).resolves.toBe(true);
+	});
+
+	// @cosmo-behavior plan:living-memory#B-016
+	test("retains a live receipt when a later pass exhausts its record limit", async () => {
+		const projectRoot = join(tmp.path, "cap-deferred-episode-convergence");
+		const [laterPath] = await writeEpisodeFixtures(projectRoot, [
+			["Later unchanged episode", "2026-09-01T12:00:00.000Z"],
+		]);
+		if (laterPath === undefined)
+			throw new Error("missing later episode fixture");
+		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [],
+		}));
+		const harness = createHarness(
+			[createProjectEpisodeConsolidationSource({ projectRoot })],
+			{ id: "fake/no-tools", judge },
+			{
+				acceptedJudgmentReceiptStore: receiptStore,
+				limits: {
+					...DEFAULT_LIVING_MEMORY_LIMITS,
+					maxCorpusRecords: 1,
+					maxEpisodeRecords: 1,
+				},
+			},
+		);
+
+		const first = await harness.consolidator();
+		if (first.kind !== "ran") throw new Error("expected first pass to run");
+		const laterReceiptKey = judge.mock.calls[0]?.[0].batchKey;
+		if (laterReceiptKey === undefined)
+			throw new Error("missing later receipt key");
+
+		const [earlierPath] = await writeEpisodeFixtures(projectRoot, [
+			["Earlier new episode", "2026-09-01T11:00:00.000Z"],
+		]);
+		if (earlierPath === undefined)
+			throw new Error("missing earlier episode fixture");
+		await expect(harness.consolidator()).resolves.toMatchObject({
+			kind: "ran",
+		});
+		await expect(receiptStore.read(laterReceiptKey)).resolves.toMatchObject({
+			state: "materialized",
+		});
+
+		await expect(harness.consolidator()).resolves.toMatchObject({
+			kind: "noop",
+			details: { writesCommitted: false },
+		});
+		expect(judge).toHaveBeenCalledTimes(2);
+		await expect(fileExists(laterPath)).resolves.toBe(true);
+		await expect(fileExists(earlierPath)).resolves.toBe(true);
+	});
+
+	// @cosmo-behavior plan:living-memory#B-016
+	test("retains a live receipt when a later pass exhausts its byte allowance", async () => {
+		const projectRoot = join(tmp.path, "byte-deferred-episode-convergence");
+		const [laterPath] = await writeEpisodeFixtures(projectRoot, [
+			["Later unchanged episode", "2026-09-01T12:00:00.000Z"],
+		]);
+		if (laterPath === undefined)
+			throw new Error("missing later episode fixture");
+		const laterBytes = (await lstat(laterPath)).size;
+		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [],
+		}));
+		const harness = createHarness(
+			[createProjectEpisodeConsolidationSource({ projectRoot })],
+			{ id: "fake/no-tools", judge },
+			{
+				acceptedJudgmentReceiptStore: receiptStore,
+				limits: {
+					...DEFAULT_LIVING_MEMORY_LIMITS,
+					maxEpisodeBytes: laterBytes,
+				},
+			},
+		);
+
+		const first = await harness.consolidator();
+		if (first.kind !== "ran") throw new Error("expected first pass to run");
+		const laterReceiptKey = judge.mock.calls[0]?.[0].batchKey;
+		if (laterReceiptKey === undefined)
+			throw new Error("missing later receipt key");
+
+		const [earlierPath] = await writeEpisodeFixtures(projectRoot, [
+			["Earlier new episode", "2026-09-01T11:00:00.000Z"],
+		]);
+		if (earlierPath === undefined)
+			throw new Error("missing earlier episode fixture");
+		await expect(harness.consolidator()).resolves.toMatchObject({
+			kind: "ran",
+			details: {
+				declines: expect.arrayContaining([
+					expect.objectContaining({
+						code: "source-aggregate-bytes-deferred",
+					}),
+				]),
+			},
+		});
+		await expect(receiptStore.read(laterReceiptKey)).resolves.toMatchObject({
+			state: "materialized",
+		});
+
+		await expect(harness.consolidator()).resolves.toMatchObject({
+			kind: "noop",
+			details: { writesCommitted: false },
+		});
+		expect(judge).toHaveBeenCalledTimes(2);
+		await expect(fileExists(laterPath)).resolves.toBe(true);
+		await expect(fileExists(earlierPath)).resolves.toBe(true);
 	});
 
 	// @cosmo-behavior plan:living-memory#B-019
@@ -4342,6 +4506,77 @@ describe("living memory", () => {
 				]),
 			},
 		});
+		expect(judge).not.toHaveBeenCalled();
+	});
+
+	// @cosmo-behavior plan:living-memory#B-021
+	test("measures oversized corpus metadata exactly as combined-context injection", async () => {
+		const projectRoot = join(tmp.path, "oversized-index-pressure-corpus");
+		const userRoot = join(tmp.path, "oversized-index-pressure-user");
+		const raw = [
+			"---",
+			"type: decision",
+			"resource: oversized.md",
+			"scope: project",
+			"kind: semantic",
+			"tags: [memory]",
+			"---",
+			"",
+			"# Derived oversized title",
+			"",
+			"Derived oversized description.",
+			"",
+			"x".repeat(64 * 1024),
+		].join("\n");
+		await mkdir(join(projectRoot, "knowledge"), { recursive: true });
+		await writeFile(join(projectRoot, "knowledge", "oversized.md"), raw);
+		const store = createKnowledgeMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+		});
+		const injected = await store.retrieve(
+			{ projectRoot, scopes: ["project", "user"] },
+			{},
+		);
+		const source = createProjectCorpusConsolidationSource({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+		});
+		const bounded = await source.collect({
+			limit: DEFAULT_LIVING_MEMORY_LIMITS.maxCorpusRecords,
+			maxCorpusRecordBytes: DEFAULT_LIVING_MEMORY_LIMITS.maxCorpusRecordBytes,
+			maxCorpusBytes: DEFAULT_LIVING_MEMORY_LIMITS.maxCorpusBytes,
+			maxEpisodeRecordBytes: DEFAULT_LIVING_MEMORY_LIMITS.maxEpisodeRecordBytes,
+			maxEpisodeBytes: DEFAULT_LIVING_MEMORY_LIMITS.maxEpisodeBytes,
+		});
+		expect(bounded.records).toEqual([]);
+		expect(bounded.inventory).toHaveLength(1);
+		expect(bounded.inventory?.[0]).not.toHaveProperty("content");
+
+		const policy = createKnowledgeIndexPressurePolicy();
+		let measuredRecords: readonly import("../../lib/memory/index.ts").RetrievedMemoryRecord[] =
+			[];
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [],
+		}));
+		await createHarness(
+			[source],
+			{ id: "fake/no-tools", judge },
+			{
+				indexPressure: {
+					measure(records) {
+						measuredRecords = records;
+						return policy.measure(records);
+					},
+				},
+			},
+		).consolidator();
+
+		expect(measuredRecords).toHaveLength(1);
+		expect(renderKnowledgeIndex(measuredRecords)).toBe(
+			renderKnowledgeIndex(injected.records),
+		);
 		expect(judge).not.toHaveBeenCalled();
 	});
 

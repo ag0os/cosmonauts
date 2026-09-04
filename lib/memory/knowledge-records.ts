@@ -96,6 +96,10 @@ export function parseHumanKnowledgeRecord(options: {
 	readonly physicalResource: string;
 	readonly physicalScope: Exclude<MemoryScopeName, "session">;
 	readonly mtime: Date;
+	readonly contentMetadata?: {
+		readonly firstH1?: string;
+		readonly firstBodyParagraph?: string;
+	};
 }): ParseKnowledgeRecordResult {
 	const parsed = matter(options.raw);
 	const data = parsed.data;
@@ -160,7 +164,11 @@ export function parseHumanKnowledgeRecord(options: {
 	if (!date.ok) return invalidField("date");
 	const content = parsed.content.trim();
 	const normalizedTitle =
-		title.value ?? firstH1(content) ?? filenameStem(options.physicalResource);
+		title.value ??
+		(options.contentMetadata === undefined
+			? firstH1(content)
+			: options.contentMetadata.firstH1) ??
+		filenameStem(options.physicalResource);
 
 	return {
 		ok: true,
@@ -168,7 +176,11 @@ export function parseHumanKnowledgeRecord(options: {
 			type: data.type,
 			title: normalizedTitle,
 			description:
-				description.value ?? firstBodyParagraph(content) ?? normalizedTitle,
+				description.value ??
+				(options.contentMetadata === undefined
+					? firstBodyParagraph(content)
+					: options.contentMetadata.firstBodyParagraph) ??
+				normalizedTitle,
 			resource: resource.value ?? options.physicalResource,
 			tags: tags.value ?? [],
 			timestamp: timestamp.value ?? options.mtime.toISOString(),

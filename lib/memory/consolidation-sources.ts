@@ -1,6 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, open, readdir, realpath } from "node:fs/promises";
+import {
+	type FileHandle,
+	lstat,
+	open,
+	readdir,
+	realpath,
+} from "node:fs/promises";
 import {
 	basename,
 	dirname,
@@ -80,6 +86,7 @@ interface ConsolidationSourceDecline {
 
 export interface ConsolidationSourceSnapshot {
 	readonly records: readonly ConsolidationSourceRecord[];
+	/** Complete liveness inventory when admission omits otherwise-current inputs. */
 	readonly inventory?: readonly ConsolidationSourceInventoryRecord[];
 	readonly omitted: number;
 	readonly declines?: readonly ConsolidationSourceDecline[];
@@ -112,6 +119,8 @@ export interface ConsolidationSource {
 export interface CollectedConsolidationSources {
 	readonly records: readonly ConsolidationSourceRecord[];
 	readonly inventory: readonly ConsolidationSourceInventoryRecord[];
+	/** False when at least one source omitted inputs without inventorying them. */
+	readonly inventoryComplete: boolean;
 	readonly sources: readonly {
 		readonly sourceId: string;
 		readonly admitted: number;
@@ -181,12 +190,13 @@ export function createProjectCorpusConsolidationSource(options: {
 					includeRawContent: true,
 				},
 			);
-			const candidates = retrieved.records
-				.flatMap((record) =>
+			const candidates = (retrieved.inventoryRecords ?? [])
+				.flatMap(({ record, digest }) =>
 					record.scope === "project" || record.scope === "user"
 						? [
 								{
 									record,
+									digest,
 									scope: record.scope,
 									scopeRoot:
 										record.scope === "project"
@@ -209,6 +219,13 @@ export function createProjectCorpusConsolidationSource(options: {
 						)
 					);
 				});
+			const admittedBodies = new Map(
+				retrieved.records.flatMap((record) =>
+					record.scope === "project" || record.scope === "user"
+						? [[`${record.scope}\0${record.path}`, record.rawContent] as const]
+						: [],
+				),
+			);
 			const records: ConsolidationSourceRecord[] = [];
 			const inventory: ConsolidationSourceInventoryRecord[] = [];
 			const readDeclines = (retrieved.readDeclines ?? []).map((decline) => ({
@@ -227,8 +244,16 @@ export function createProjectCorpusConsolidationSource(options: {
 				({ scope: _scope, ...decline }) => decline,
 			);
 			const representedKeys = new Set(input.representedKeys);
+			const inventoriedPaths = new Set(
+				candidates.map(
+					(candidate) =>
+						`${candidate.scope}\0${relativeScopePath(candidate.scopeRoot, candidate.record.path)}`,
+				),
+			);
 			let projectCandidates = readDeclines.filter(
-				(decline) => decline.scope === "project",
+				(decline) =>
+					decline.scope === "project" &&
+					!inventoriedPaths.has(`${decline.scope}\0${decline.path}`),
 			).length;
 			let admittedBytes = 0;
 			for (const candidate of candidates) {
@@ -237,18 +262,12 @@ export function createProjectCorpusConsolidationSource(options: {
 					candidate.scopeRoot,
 					candidate.record.path,
 				);
-				const content = candidate.record.rawContent;
-				if (content === undefined) {
-					throw new ConsolidationSourceContractError(
-						`Knowledge source content is missing for ${path}.`,
-					);
-				}
 				const common = Object.freeze({
 					id: path,
 					sourceId: PROJECT_CORPUS_SOURCE_ID,
 					scope: candidate.scope,
 					path,
-					digest: sha256(content),
+					digest: candidate.digest,
 					kind: "knowledge" as const,
 					metadata: corpusMetadata(candidate.record, candidate.scopeRoot),
 				});
@@ -260,6 +279,10 @@ export function createProjectCorpusConsolidationSource(options: {
 					continue;
 				}
 				projectCandidates += 1;
+				const content = admittedBodies.get(
+					`${candidate.scope}\0${candidate.record.path}`,
+				);
+				if (content === undefined) continue;
 				const contentBytes = Buffer.byteLength(content, "utf-8");
 				if (contentBytes > input.maxCorpusRecordBytes) {
 					declines.push({
@@ -314,6 +337,12 @@ export function createProjectEpisodeConsolidationSource(options: {
 				const path = relativeProjectPath(projectRoot, episodePath);
 				assertDirectProjectEpisodePath(path);
 				if (records.length >= input.limit) {
+					inventory.push(
+						episodeInventoryRecord(
+							path,
+							await readRegularTextDigest(episodePath),
+						),
+					);
 					omitted += 1;
 					continue;
 				}
@@ -323,6 +352,7 @@ export function createProjectEpisodeConsolidationSource(options: {
 					remainingBytes: Math.max(0, input.maxEpisodeBytes - inletBytes),
 				});
 				if (!bounded.ok) {
+					inventory.push(episodeInventoryRecord(path, bounded.digest));
 					omitted += 1;
 					declines.push({ code: bounded.code, path, reason: bounded.reason });
 					continue;
@@ -668,6 +698,7 @@ export async function collectConsolidationSources(options: {
 	let admittedCorpusBytes = 0;
 	let admittedEpisodes = 0;
 	let admittedEpisodeBytes = 0;
+	let inventoryComplete = true;
 	const requestedLimit = Math.max(
 		options.maxCorpusRecords,
 		options.maxEpisodeRecords,
@@ -707,6 +738,9 @@ export async function collectConsolidationSources(options: {
 		const sourceInventory = snapshot.inventory?.map((candidate) =>
 			immutableValidatedInventoryRecord(candidate, source.id),
 		);
+		if (sourceInventory === undefined && snapshot.omitted > 0) {
+			inventoryComplete = false;
+		}
 
 		let admitted = 0;
 		let deferred = 0;
@@ -784,6 +818,7 @@ export async function collectConsolidationSources(options: {
 	return Object.freeze({
 		records: Object.freeze(records),
 		inventory: Object.freeze(inventory),
+		inventoryComplete,
 		sources: Object.freeze(summaries),
 		declines: Object.freeze(declines),
 	});
@@ -1035,6 +1070,7 @@ async function readBoundedEpisodeSnapshot(options: {
 			readonly ok: false;
 			readonly code: ConsolidationSourceDecline["code"];
 			readonly reason: string;
+			readonly digest: string;
 	  }
 > {
 	const handle = await open(
@@ -1049,17 +1085,23 @@ async function readBoundedEpisodeSnapshot(options: {
 			);
 		}
 		if (before.size > BigInt(options.maxRecordBytes)) {
+			const digest = await digestOpenedFile(handle, Number(before.size));
+			await assertUnchangedSize(handle, before.size, options.path);
 			return {
 				ok: false,
 				code: "source-record-bytes-deferred",
 				reason: `Episode exceeds the per-record inlet ceiling of ${options.maxRecordBytes.toLocaleString("en-US")} bytes.`,
+				digest,
 			};
 		}
 		if (before.size > BigInt(options.remainingBytes)) {
+			const digest = await digestOpenedFile(handle, Number(before.size));
+			await assertUnchangedSize(handle, before.size, options.path);
 			return {
 				ok: false,
 				code: "source-aggregate-bytes-deferred",
 				reason: `Episode exceeds the remaining aggregate inlet allowance of ${options.remainingBytes.toLocaleString("en-US")} bytes.`,
+				digest,
 			};
 		}
 		const size = Number(before.size);
@@ -1089,6 +1131,72 @@ async function readBoundedEpisodeSnapshot(options: {
 		};
 	} finally {
 		await handle.close();
+	}
+}
+
+function episodeInventoryRecord(
+	path: string,
+	digest: string,
+): ConsolidationSourceInventoryRecord {
+	return Object.freeze({
+		id: path,
+		sourceId: PROJECT_EPISODE_SOURCE_ID,
+		scope: "project",
+		path,
+		digest,
+		kind: "episode",
+		metadata: Object.freeze({}),
+	});
+}
+
+async function readRegularTextDigest(path: string): Promise<string> {
+	const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+	try {
+		const before = await handle.stat({ bigint: true });
+		if (!before.isFile()) {
+			throw new ConsolidationSourceContractError(
+				`Episode is not a regular no-follow file: ${path}.`,
+			);
+		}
+		const digest = await digestOpenedFile(handle, Number(before.size));
+		await assertUnchangedSize(handle, before.size, path);
+		return digest;
+	} finally {
+		await handle.close();
+	}
+}
+
+async function digestOpenedFile(
+	handle: FileHandle,
+	size: number,
+): Promise<string> {
+	const digest = createHash("sha256");
+	const buffer = Buffer.alloc(Math.max(1, Math.min(64 * 1024, size)));
+	let offset = 0;
+	while (offset < size) {
+		const length = Math.min(buffer.length, size - offset);
+		const read = await handle.read(buffer, 0, length, offset);
+		if (read.bytesRead === 0) break;
+		digest.update(buffer.subarray(0, read.bytesRead));
+		offset += read.bytesRead;
+	}
+	if (offset !== size) {
+		throw new ConsolidationSourceContractError(
+			"Episode changed during its bounded inventory read.",
+		);
+	}
+	return digest.digest("hex");
+}
+
+async function assertUnchangedSize(
+	handle: FileHandle,
+	size: bigint,
+	path: string,
+): Promise<void> {
+	if ((await handle.stat({ bigint: true })).size !== size) {
+		throw new ConsolidationSourceContractError(
+			`Episode changed during its bounded inventory read: ${path}.`,
+		);
 	}
 }
 
