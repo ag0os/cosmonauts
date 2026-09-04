@@ -1,7 +1,7 @@
 ---
 id: TASK-628
 title: Review round 5 remediation — Episode convergence and INV-005 byte bounds
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-627
 createdAt: '2026-09-04T14:06:17.537Z'
-updatedAt: '2026-09-04T14:06:17.537Z'
+updatedAt: '2026-09-04T14:25:32.447Z'
 ---
 
 ## Description
@@ -36,9 +36,9 @@ Every commit that changes `lib/memory/types.ts` must re-pin its full-source SHA-
 Binding ratified ground — stop and escalate rather than adjust it: never move, edit, or delete anything under this repository's live `knowledge/`; temp fixtures only; `knowledgeSurface` stays on; no live retirement round; no TTL, OM, scheduling, user-scope L4 mutation, embeddings, new OKF type, or explicit-save change. Do not weaken the receipt floor, the frozen pins, retirement/byte authority, or any existing marker. Do not reopen the D-026 ratified pathname-race class or add verification layers for it. Confine every change to lib/memory, lib/extensions/knowledge-surface, cli/memory and their tests.
 
 <!-- AC:BEGIN -->
-- [ ] #1 A negative judgment is durable and convergent: a full model pass that yields no proposal for its selected episodes retains its materialized receipt, an immediate rerun is an honest no-model `noop`, and a third run still does not re-admit or re-judge the unchanged episode. Receipt discharge only removes a receipt whose consumed digests genuinely no longer exist, never one whose inputs were merely filtered as already-represented.
-- [ ] #2 The corpus inlet enforces its byte ceilings at read time rather than after full materialization, achieved by parameterizing the shared knowledge read path with an optional ceiling rather than adding a second corpus reader; oversized files are skipped or truncated with an explicit decline, and every existing caller that passes no ceiling behaves exactly as before.
-- [ ] #3 `LivingMemoryLimits` gains explicit serialized request and output byte ceilings with sensible defaults; the serialized judgment request is measured and fails closed before dispatch when it exceeds its ceiling; and over-ceiling model output is rejected during validation before any receipt or proposal is written, failing closed rather than being truncated.
-- [ ] #4 `DurableFileCommittedError` either has a real consumer or is no longer exported, and the changed scope contains no exported symbol without a consumer.
-- [ ] #5 Project-native universal correctness evidence passes after every commit; the Slice 0 B-001 receipt test and every marker B-001..B-021 remain green under their exact existing names and owners; any commit touching `lib/memory/types.ts` re-pins its SHA-256 in the same commit with `lib/architecture-map/retrieval.ts` byte-identical; live `knowledge/` and `memory/` stay byte-identical; a live dry run still completes as `ran` or `noop` writing nothing; and no file outside lib/memory, lib/extensions/knowledge-surface, cli/memory and their tests is modified.
+- [x] #1 A negative judgment is durable and convergent: a full model pass that yields no proposal for its selected episodes retains its materialized receipt, an immediate rerun is an honest no-model `noop`, and a third run still does not re-admit or re-judge the unchanged episode. Receipt discharge only removes a receipt whose consumed digests genuinely no longer exist, never one whose inputs were merely filtered as already-represented.
+- [x] #2 The corpus inlet enforces its byte ceilings at read time rather than after full materialization, achieved by parameterizing the shared knowledge read path with an optional ceiling rather than adding a second corpus reader; oversized files are skipped or truncated with an explicit decline, and every existing caller that passes no ceiling behaves exactly as before.
+- [x] #3 `LivingMemoryLimits` gains explicit serialized request and output byte ceilings with sensible defaults; the serialized judgment request is measured and fails closed before dispatch when it exceeds its ceiling; and over-ceiling model output is rejected during validation before any receipt or proposal is written, failing closed rather than being truncated.
+- [x] #4 `DurableFileCommittedError` either has a real consumer or is no longer exported, and the changed scope contains no exported symbol without a consumer.
+- [x] #5 Project-native universal correctness evidence passes after every commit; the Slice 0 B-001 receipt test and every marker B-001..B-021 remain green under their exact existing names and owners; any commit touching `lib/memory/types.ts` re-pins its SHA-256 in the same commit with `lib/architecture-map/retrieval.ts` byte-identical; live `knowledge/` and `memory/` stay byte-identical; a live dry run still completes as `ran` or `noop` writing nothing; and no file outside lib/memory, lib/extensions/knowledge-surface, cli/memory and their tests is modified.
 <!-- AC:END -->
