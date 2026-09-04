@@ -173,6 +173,13 @@ export function createProjectCorpusConsolidationSource(options: {
 			const retrieved = await store.retrieve(
 				{ projectRoot, scopes: ["project", "user"] },
 				{},
+				{
+					byteLimits: {
+						maxRecordBytes: input.maxCorpusRecordBytes,
+						maxAggregateBytes: input.maxCorpusBytes,
+					},
+					includeRawContent: true,
+				},
 			);
 			const candidates = retrieved.records
 				.flatMap((record) =>
@@ -204,9 +211,25 @@ export function createProjectCorpusConsolidationSource(options: {
 				});
 			const records: ConsolidationSourceRecord[] = [];
 			const inventory: ConsolidationSourceInventoryRecord[] = [];
-			const declines: ConsolidationSourceDecline[] = [];
+			const readDeclines = (retrieved.readDeclines ?? []).map((decline) => ({
+				scope: decline.scope,
+				code:
+					decline.code === "record-byte-limit"
+						? ("source-record-bytes-deferred" as const)
+						: ("source-aggregate-bytes-deferred" as const),
+				path: relativeScopePath(
+					decline.scope === "project" ? projectRoot : userCosmonautsRoot,
+					decline.path,
+				),
+				reason: decline.reason,
+			}));
+			const declines: ConsolidationSourceDecline[] = readDeclines.map(
+				({ scope: _scope, ...decline }) => decline,
+			);
 			const representedKeys = new Set(input.representedKeys);
-			let projectCandidates = 0;
+			let projectCandidates = readDeclines.filter(
+				(decline) => decline.scope === "project",
+			).length;
 			let admittedBytes = 0;
 			for (const candidate of candidates) {
 				throwIfAborted(input.signal);
@@ -214,7 +237,12 @@ export function createProjectCorpusConsolidationSource(options: {
 					candidate.scopeRoot,
 					candidate.record.path,
 				);
-				const content = await readRegularText(candidate.record.path);
+				const content = candidate.record.rawContent;
+				if (content === undefined) {
+					throw new ConsolidationSourceContractError(
+						`Knowledge source content is missing for ${path}.`,
+					);
+				}
 				const common = Object.freeze({
 					id: path,
 					sourceId: PROJECT_CORPUS_SOURCE_ID,
@@ -277,6 +305,7 @@ export function createProjectEpisodeConsolidationSource(options: {
 			const candidates = await directEpisodePaths(projectRoot);
 			const representedKeys = new Set(input.representedKeys);
 			const records: ConsolidationSourceRecord[] = [];
+			const inventory: ConsolidationSourceInventoryRecord[] = [];
 			const declines: ConsolidationSourceDecline[] = [];
 			let omitted = 0;
 			let inletBytes = 0;
@@ -325,11 +354,18 @@ export function createProjectEpisodeConsolidationSource(options: {
 						...(record.source === undefined ? {} : { source: record.source }),
 					}),
 				};
+				const {
+					content: _content,
+					fileIdentity: _fileIdentity,
+					...inventoryRecord
+				} = candidate;
+				inventory.push(inventoryRecord);
 				if (representedKeys.has(consolidationEvidenceKey(candidate))) continue;
 				records.push(candidate);
 			}
 			return Object.freeze({
 				records: Object.freeze(records),
+				inventory: Object.freeze(inventory),
 				omitted,
 				declines: Object.freeze(declines),
 			});

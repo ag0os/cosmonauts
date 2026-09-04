@@ -219,6 +219,10 @@ export interface LivingMemoryLimits {
 	readonly maxProposals: number;
 	readonly maxRetirements: number;
 	readonly maxModelRequests: number;
+	/** Maximum UTF-8 bytes in one serialized judgment request (1 MiB). */
+	readonly maxJudgmentRequestBytes: number;
+	/** Maximum UTF-8 bytes in one serialized judgment response (256 KiB). */
+	readonly maxJudgmentOutputBytes: number;
 }
 
 export interface ProposedMemoryRecord {

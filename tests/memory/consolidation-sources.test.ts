@@ -129,6 +129,69 @@ describe("project corpus consolidation source", () => {
 		expect(Object.isFrozen(project?.metadata.tags)).toBe(true);
 	});
 
+	test("declines oversized corpus files at the shared knowledge read boundary", async () => {
+		const projectRoot = join(tmp.path, "read-bounded-project");
+		const userCosmonautsRoot = join(tmp.path, "read-bounded-user");
+		const oversizedPath = join(projectRoot, "knowledge", "oversized.md");
+		await mkdir(join(projectRoot, "knowledge"), { recursive: true });
+		await writeFile(oversizedPath, "x".repeat(1_024));
+		const source = consolidationSources.createProjectCorpusConsolidationSource({
+			projectRoot,
+			userCosmonautsRoot,
+		});
+
+		const snapshot = await source.collect({
+			limit: 10,
+			...COLLECT_LIMITS,
+			maxCorpusRecordBytes: 128,
+		});
+
+		expect(snapshot.records).toEqual([]);
+		expect(snapshot.inventory).toEqual([]);
+		expect(snapshot.omitted).toBe(1);
+		expect(snapshot.declines).toEqual([
+			expect.objectContaining({
+				code: "source-record-bytes-deferred",
+				path: "knowledge/oversized.md",
+			}),
+		]);
+	});
+
+	test("declines aggregate corpus overflow inside the shared knowledge reader", async () => {
+		const projectRoot = join(tmp.path, "aggregate-read-bounded-project");
+		const userCosmonautsRoot = join(tmp.path, "aggregate-read-bounded-user");
+		const first = knowledgeRecord({
+			resource: "a.md",
+			title: "First bounded record",
+			scope: "project",
+		});
+		await mkdir(join(projectRoot, "knowledge"), { recursive: true });
+		await Promise.all([
+			writeFile(join(projectRoot, "knowledge", "a.md"), first),
+			writeFile(join(projectRoot, "knowledge", "b.md"), "x".repeat(128)),
+		]);
+		const source = consolidationSources.createProjectCorpusConsolidationSource({
+			projectRoot,
+			userCosmonautsRoot,
+		});
+
+		const snapshot = await source.collect({
+			limit: 10,
+			...COLLECT_LIMITS,
+			maxCorpusBytes: Buffer.byteLength(first, "utf-8") + 16,
+		});
+
+		expect(snapshot.records).toHaveLength(1);
+		expect(snapshot.inventory).toHaveLength(1);
+		expect(snapshot.omitted).toBe(1);
+		expect(snapshot.declines).toEqual([
+			expect.objectContaining({
+				code: "source-aggregate-bytes-deferred",
+				path: "knowledge/b.md",
+			}),
+		]);
+	});
+
 	test("keeps complete index metadata while admitting only bounded project bodies", async () => {
 		const projectRoot = join(tmp.path, "complete-inventory-project");
 		const userCosmonautsRoot = join(tmp.path, "complete-inventory-user");

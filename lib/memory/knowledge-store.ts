@@ -54,6 +54,43 @@ interface ScannedFile {
 	readonly mtime: Date;
 }
 
+interface KnowledgeReadOptions {
+	readonly byteLimits?: {
+		readonly maxRecordBytes: number;
+		readonly maxAggregateBytes: number;
+	};
+	readonly includeRawContent?: boolean;
+}
+
+interface KnowledgeRetrievedMemoryRecord extends RetrievedMemoryRecord {
+	readonly rawContent?: string;
+}
+
+interface KnowledgeReadDecline {
+	readonly code: "record-byte-limit" | "aggregate-byte-limit";
+	readonly scope: "project" | "user";
+	readonly path: string;
+	readonly reason: string;
+}
+
+interface KnowledgeRetrieveResult extends MemoryRetrieveResult {
+	readonly records: readonly KnowledgeRetrievedMemoryRecord[];
+	readonly readDeclines?: readonly KnowledgeReadDecline[];
+}
+
+interface KnowledgeMemoryStore extends MemoryStore {
+	retrieve(
+		scope: MemoryScopeContext,
+		query: MemoryQuery,
+		readOptions?: KnowledgeReadOptions,
+	): Promise<KnowledgeRetrieveResult>;
+}
+
+type KnowledgeScanResult =
+	| { readonly kind: "read"; readonly file: ScannedFile }
+	| { readonly kind: "declined"; readonly decline: KnowledgeReadDecline }
+	| { readonly kind: "skipped" };
+
 interface ScanTally {
 	filesScanned: number;
 	bytesRead: number;
@@ -61,7 +98,7 @@ interface ScanTally {
 
 export function createKnowledgeMemoryStore(
 	options: KnowledgeMemoryStoreOptions,
-): MemoryStore {
+): KnowledgeMemoryStore {
 	const context: KnowledgeStoreContext = {
 		projectRoot: resolve(options.projectRoot),
 		userCosmonautsRoot: resolve(
@@ -74,12 +111,12 @@ export function createKnowledgeMemoryStore(
 			return writeKnowledgeProposal({ context, draft: record });
 		},
 
-		async retrieve(scope, query) {
+		async retrieve(scope, query, readOptions) {
 			assertBoundProjectRoot({
 				boundProjectRoot: context.projectRoot,
 				requestedProjectRoot: scope.projectRoot,
 			});
-			return retrieveKnowledge({ context, scope, query });
+			return retrieveKnowledge({ context, scope, query, readOptions });
 		},
 
 		async consolidate(consolidateOptions?: MemoryConsolidateOptions) {
@@ -94,13 +131,16 @@ async function retrieveKnowledge(options: {
 	readonly context: KnowledgeStoreContext;
 	readonly scope: MemoryScopeContext;
 	readonly query: MemoryQuery;
-}): Promise<MemoryRetrieveResult> {
+	readonly readOptions?: KnowledgeReadOptions;
+}): Promise<KnowledgeRetrieveResult> {
 	const startedAt = performance.now();
 	const searchedScopes: MemoryScopeName[] = [];
 	const skippedScopes = [];
 	const warnings: MemoryWarning[] = [];
-	const records: RetrievedMemoryRecord[] = [];
+	const records: KnowledgeRetrievedMemoryRecord[] = [];
+	const readDeclines: KnowledgeReadDecline[] = [];
 	const tally: ScanTally = { filesScanned: 0, bytesRead: 0 };
+	assertReadOptions(options.readOptions);
 
 	for (const scope of options.scope.scopes) {
 		if (scope === "session") {
@@ -115,8 +155,29 @@ async function retrieveKnowledge(options: {
 			options.query.includeRetired === true,
 		);
 		for (const path of paths) {
-			const scanned = await scanKnowledgeFile(path, warnings);
-			if (!scanned) continue;
+			const scan = await scanKnowledgeFile({
+				path,
+				scope,
+				warnings,
+				...(options.readOptions?.byteLimits === undefined
+					? {}
+					: {
+							limits: {
+								maxRecordBytes: options.readOptions.byteLimits.maxRecordBytes,
+								remainingBytes: Math.max(
+									0,
+									options.readOptions.byteLimits.maxAggregateBytes -
+										tally.bytesRead,
+								),
+							},
+						}),
+			});
+			if (scan.kind === "declined") {
+				readDeclines.push(scan.decline);
+				continue;
+			}
+			if (scan.kind === "skipped") continue;
+			const scanned = scan.file;
 			tally.filesScanned += 1;
 			tally.bytesRead += Buffer.byteLength(scanned.raw, "utf-8");
 			try {
@@ -140,7 +201,13 @@ async function retrieveKnowledge(options: {
 					path,
 				});
 				if (matchesQuery(record, options.query)) {
-					records.push({ ...record, ...(retired ? { retired: true } : {}) });
+					records.push({
+						...record,
+						...(options.readOptions?.includeRawContent
+							? { rawContent: scanned.raw }
+							: {}),
+						...(retired ? { retired: true } : {}),
+					});
 				}
 			} catch (error: unknown) {
 				warnings.push({
@@ -163,6 +230,9 @@ async function retrieveKnowledge(options: {
 		searchedScopes,
 		skippedScopes,
 		warnings,
+		...(options.readOptions?.byteLimits === undefined
+			? {}
+			: { readDeclines: Object.freeze(readDeclines) }),
 		stats: {
 			filesScanned: tally.filesScanned,
 			bytesRead: tally.bytesRead,
@@ -326,26 +396,100 @@ async function collectKnowledgeFiles(options: {
 	}
 }
 
-async function scanKnowledgeFile(
-	path: string,
-	warnings: MemoryWarning[],
-): Promise<ScannedFile | undefined> {
+async function scanKnowledgeFile(options: {
+	readonly path: string;
+	readonly scope: "project" | "user";
+	readonly warnings: MemoryWarning[];
+	readonly limits?: {
+		readonly maxRecordBytes: number;
+		readonly remainingBytes: number;
+	};
+}): Promise<KnowledgeScanResult> {
 	try {
-		const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+		const handle = await open(
+			options.path,
+			constants.O_RDONLY | constants.O_NOFOLLOW,
+		);
 		try {
-			const metadata = await handle.stat();
-			if (!metadata.isFile()) return undefined;
-			return { raw: await handle.readFile("utf-8"), mtime: metadata.mtime };
+			if (options.limits === undefined) {
+				const metadata = await handle.stat();
+				if (!metadata.isFile()) return { kind: "skipped" };
+				return {
+					kind: "read",
+					file: { raw: await handle.readFile("utf-8"), mtime: metadata.mtime },
+				};
+			}
+			const before = await handle.stat({ bigint: true });
+			if (!before.isFile()) return { kind: "skipped" };
+			if (before.size > BigInt(options.limits.maxRecordBytes)) {
+				return {
+					kind: "declined",
+					decline: {
+						code: "record-byte-limit",
+						scope: options.scope,
+						path: options.path,
+						reason: `Knowledge record requires ${before.size.toLocaleString("en-US")} bytes; the read-time per-record ceiling is ${options.limits.maxRecordBytes.toLocaleString("en-US")} bytes.`,
+					},
+				};
+			}
+			if (before.size > BigInt(options.limits.remainingBytes)) {
+				return {
+					kind: "declined",
+					decline: {
+						code: "aggregate-byte-limit",
+						scope: options.scope,
+						path: options.path,
+						reason: `Knowledge record requires ${before.size.toLocaleString("en-US")} bytes; the remaining aggregate read-time allowance is ${options.limits.remainingBytes.toLocaleString("en-US")} bytes.`,
+					},
+				};
+			}
+			const size = Number(before.size);
+			const buffer = Buffer.alloc(size);
+			let offset = 0;
+			while (offset < size) {
+				const read = await handle.read(buffer, offset, size - offset, offset);
+				if (read.bytesRead === 0) break;
+				offset += read.bytesRead;
+			}
+			const after = await handle.stat({ bigint: true });
+			if (offset !== size || after.size !== before.size) {
+				throw new Error(
+					`Knowledge record changed during bounded read: ${options.path}`,
+				);
+			}
+			return {
+				kind: "read",
+				file: {
+					raw: buffer.toString("utf-8"),
+					mtime: new Date(Number(before.mtimeMs)),
+				},
+			};
 		} finally {
 			await handle.close();
 		}
 	} catch (error: unknown) {
-		if (isMissingPath(error) || isSymlinkPath(error)) return undefined;
-		warnings.push({
-			path,
+		if (isMissingPath(error) || isSymlinkPath(error)) {
+			return { kind: "skipped" };
+		}
+		options.warnings.push({
+			path: options.path,
 			message: error instanceof Error ? error.message : String(error),
 		});
-		return undefined;
+		return { kind: "skipped" };
+	}
+}
+
+function assertReadOptions(options: KnowledgeReadOptions | undefined): void {
+	if (options?.includeRawContent && options.byteLimits === undefined) {
+		throw new Error(
+			"Raw knowledge content requires explicit read byte limits.",
+		);
+	}
+	if (options?.byteLimits === undefined) return;
+	for (const [name, value] of Object.entries(options.byteLimits)) {
+		if (!Number.isSafeInteger(value) || value < 1) {
+			throw new Error(`Knowledge ${name} must be a positive integer.`);
+		}
 	}
 }
 

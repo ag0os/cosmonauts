@@ -42,6 +42,7 @@ import {
 } from "../../../cli/memory/subcommand.ts";
 import {
 	createConsolidationProposalStore,
+	type LivingMemoryLimits,
 	type MemoryConsolidateOptions,
 	type MemoryConsolidateResult,
 } from "../../../lib/memory/index.ts";
@@ -798,6 +799,48 @@ describe("memory owner CLI", () => {
 		);
 		expect(realAdapterSession.dispose).toHaveBeenCalledTimes(1);
 	});
+
+	test("fails closed on oversized serialized judgment prompts and responses", async () => {
+		const createSession = vi.fn<() => Promise<PiJudgmentSession>>();
+		await expect(
+			createPiCorpusJudgmentProvider({
+				projectRoot: tmp.path,
+				createSession,
+			}).judge(judgmentInput({ maxJudgmentRequestBytes: 1 }), {}),
+		).rejects.toThrow(/judgment request.*1 byte/iu);
+		expect(createSession).not.toHaveBeenCalled();
+
+		const messages: unknown[] = [];
+		const prompt = vi.fn(async () => {
+			messages.push({
+				role: "assistant",
+				content: [
+					{
+						type: "text",
+						text: JSON.stringify({
+							schemaVersion: 1,
+							observations: [],
+							padding: "x".repeat(1_024),
+						}),
+					},
+				],
+			});
+		});
+		const session = {
+			messages,
+			prompt,
+			abort: vi.fn(async () => undefined),
+			dispose: vi.fn(),
+		} satisfies PiJudgmentSession;
+		await expect(
+			createPiCorpusJudgmentProvider({
+				projectRoot: tmp.path,
+				createSession: async () => session,
+			}).judge(judgmentInput({ maxJudgmentOutputBytes: 128 }), {}),
+		).rejects.toThrow(/judgment output.*128 bytes/iu);
+		expect(prompt).toHaveBeenCalledOnce();
+		expect(session.dispose).toHaveBeenCalledOnce();
+	});
 });
 
 function details(options: {
@@ -819,7 +862,7 @@ function details(options: {
 	};
 }
 
-function judgmentInput() {
+function judgmentInput(limitOverrides: Partial<LivingMemoryLimits> = {}) {
 	return {
 		schemaVersion: 1 as const,
 		batchKey: "a".repeat(64),
@@ -836,6 +879,9 @@ function judgmentInput() {
 			maxProposals: 10,
 			maxRetirements: 5,
 			maxModelRequests: 1,
+			maxJudgmentRequestBytes: 1024 * 1024,
+			maxJudgmentOutputBytes: 256 * 1024,
+			...limitOverrides,
 		},
 	};
 }

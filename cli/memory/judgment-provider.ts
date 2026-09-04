@@ -79,6 +79,12 @@ export function createPiCorpusJudgmentProvider(
 				);
 			}
 			throwIfAborted(requestOptions.signal);
+			const prompt = buildJudgmentPrompt(input);
+			assertTextByteCeiling({
+				label: "Pi corpus judgment request",
+				value: prompt,
+				ceiling: input.limits.maxJudgmentRequestBytes,
+			});
 			requested = true;
 			const session = await (options.createSession
 				? options.createSession()
@@ -91,7 +97,7 @@ export function createPiCorpusJudgmentProvider(
 			requestOptions.signal?.addEventListener("abort", abort, { once: true });
 			try {
 				if (requestOptions.signal?.aborted) abort();
-				await session.prompt(buildJudgmentPrompt(input));
+				await session.prompt(prompt);
 				if (requestOptions.signal?.aborted) {
 					await abortPromise;
 					throw abortError();
@@ -99,6 +105,7 @@ export function createPiCorpusJudgmentProvider(
 				const response = extractLatestAssistantText(
 					session.messages,
 					beforeCount,
+					input.limits.maxJudgmentOutputBytes,
 				);
 				return (options.parseOutput ?? parseCorpusJudgmentOutput)(
 					response,
@@ -174,23 +181,31 @@ function buildJudgmentPrompt(input: CorpusJudgmentInput): string {
 function extractLatestAssistantText(
 	messages: readonly unknown[],
 	beforeCount: number,
+	maxBytes: number,
 ): string {
 	for (let index = messages.length - 1; index >= beforeCount; index -= 1) {
 		const message = messages[index];
 		if (!isRecord(message) || message.role !== "assistant") continue;
 		if (!Array.isArray(message.content)) continue;
-		const text = message.content
-			.filter(
-				(
-					content,
-				): content is { readonly type: "text"; readonly text: string } =>
-					isRecord(content) &&
-					content.type === "text" &&
-					typeof content.text === "string",
-			)
-			.map((content) => content.text)
-			.join("")
-			.trim();
+		const chunks: string[] = [];
+		let bytes = 0;
+		for (const content of message.content) {
+			if (
+				!isRecord(content) ||
+				content.type !== "text" ||
+				typeof content.text !== "string"
+			) {
+				continue;
+			}
+			bytes += Buffer.byteLength(content.text, "utf-8");
+			if (bytes > maxBytes) {
+				throw new Error(
+					`Pi corpus judgment output exceeds the serialized byte ceiling (${bytes.toLocaleString("en-US")} > ${formatBytes(maxBytes)}).`,
+				);
+			}
+			chunks.push(content.text);
+		}
+		const text = chunks.join("").trim();
 		if (text.length > 0) return text;
 	}
 	throw new Error("Pi corpus judgment returned no assistant text.");
@@ -200,6 +215,11 @@ function parseCorpusJudgmentOutput(
 	response: string,
 	input: CorpusJudgmentInput,
 ): CorpusJudgmentOutput {
+	assertTextByteCeiling({
+		label: "Pi corpus judgment output",
+		value: response,
+		ceiling: input.limits.maxJudgmentOutputBytes,
+	});
 	let value: unknown;
 	try {
 		value = JSON.parse(response);
@@ -312,6 +332,23 @@ function throwIfAborted(signal: AbortSignal | undefined): void {
 
 function abortError(): DOMException {
 	return new DOMException("Pi corpus judgment was cancelled.", "AbortError");
+}
+
+function assertTextByteCeiling(options: {
+	readonly label: string;
+	readonly value: string;
+	readonly ceiling: number;
+}): void {
+	const bytes = Buffer.byteLength(options.value, "utf-8");
+	if (bytes > options.ceiling) {
+		throw new Error(
+			`${options.label} exceeds the serialized byte ceiling (${bytes.toLocaleString("en-US")} > ${formatBytes(options.ceiling)}).`,
+		);
+	}
+}
+
+function formatBytes(value: number): string {
+	return `${value.toLocaleString("en-US")} ${value === 1 ? "byte" : "bytes"}`;
 }
 
 function isNonEmpty(value: unknown): value is string {

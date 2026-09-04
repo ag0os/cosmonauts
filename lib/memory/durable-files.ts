@@ -50,7 +50,7 @@ export class DurableRemovalUnsupportedError extends Error {
 	}
 }
 
-export class DurableFileCommittedError extends Error {
+class DurableFileCommittedError extends Error {
 	readonly writesCommitted = true;
 
 	constructor(error: unknown) {

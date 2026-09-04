@@ -48,6 +48,8 @@ export const DEFAULT_LIVING_MEMORY_LIMITS = Object.freeze({
 	maxProposals: 10,
 	maxRetirements: 5,
 	maxModelRequests: 1,
+	maxJudgmentRequestBytes: 1024 * 1024,
+	maxJudgmentOutputBytes: 256 * 1024,
 }) satisfies LivingMemoryLimits;
 
 const OBSERVATION_KINDS = new Set<ConsolidationObservationKind>([
@@ -510,6 +512,11 @@ export function createLivingMemoryConsolidator(
 					deterministic.map((finding) => finding.observation),
 				),
 				limits: Object.freeze({ ...dependencies.limits }),
+			});
+			assertSerializedByteCeiling({
+				label: "Judgment request",
+				value: input,
+				ceiling: dependencies.limits.maxJudgmentRequestBytes,
 			});
 			const existingReceipt = dryRun
 				? undefined
@@ -2021,6 +2028,11 @@ function validateJudgmentOutput(options: {
 	readonly observation: ConsolidationObservation;
 	readonly proposal?: JudgedProposal;
 }[] {
+	assertSerializedByteCeiling({
+		label: "Judgment output",
+		value: options.output,
+		ceiling: options.limits.maxJudgmentOutputBytes,
+	});
 	if (
 		options.output.schemaVersion !== 1 ||
 		!Array.isArray(options.output.observations)
@@ -2123,6 +2135,34 @@ function validateJudgmentOutput(options: {
 			});
 		}),
 	);
+}
+
+function assertSerializedByteCeiling(options: {
+	readonly label: string;
+	readonly value: unknown;
+	readonly ceiling: number;
+}): void {
+	let serialized: string | undefined;
+	try {
+		serialized = JSON.stringify(options.value);
+	} catch (error: unknown) {
+		throw new Error(`${options.label} could not be serialized.`, {
+			cause: error,
+		});
+	}
+	if (serialized === undefined) {
+		throw new Error(`${options.label} could not be serialized.`);
+	}
+	const bytes = Buffer.byteLength(serialized, "utf-8");
+	if (bytes > options.ceiling) {
+		throw new Error(
+			`${options.label} exceeds the serialized byte ceiling (${bytes.toLocaleString("en-US")} > ${formatBytes(options.ceiling)}).`,
+		);
+	}
+}
+
+function formatBytes(value: number): string {
+	return `${value.toLocaleString("en-US")} ${value === 1 ? "byte" : "bytes"}`;
 }
 
 function normalizedJudgmentOutput(

@@ -2992,6 +2992,46 @@ describe("living memory", () => {
 		).resolves.toMatchObject({ kind: "noop" });
 	});
 
+	test("retains negative episode judgments across repeated production passes", async () => {
+		const projectRoot = join(tmp.path, "negative-episode-convergence");
+		const [episodePath] = await writeEpisodeFixtures(projectRoot, [
+			["No durable proposal needed", "2026-09-01T11:30:00.000Z"],
+		]);
+		if (episodePath === undefined) throw new Error("missing episode fixture");
+		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [],
+		}));
+		const harness = createHarness(
+			[createProjectEpisodeConsolidationSource({ projectRoot })],
+			{ id: "fake/no-tools", judge },
+			{ acceptedJudgmentReceiptStore: receiptStore },
+		);
+
+		const first = await harness.consolidator();
+		if (first.kind !== "ran") throw new Error("expected first pass to run");
+		const batchKey = judge.mock.calls[0]?.[0].batchKey;
+		if (batchKey === undefined) throw new Error("missing judgment batch key");
+		expect(first.details.proposals).toEqual([]);
+		await expect(receiptStore.read(batchKey)).resolves.toMatchObject({
+			state: "materialized",
+		});
+
+		for (let rerun = 0; rerun < 2; rerun += 1) {
+			await expect(harness.consolidator()).resolves.toMatchObject({
+				kind: "noop",
+				details: { writesCommitted: false },
+			});
+			await expect(receiptStore.read(batchKey)).resolves.toMatchObject({
+				state: "materialized",
+			});
+		}
+
+		expect(judge).toHaveBeenCalledOnce();
+		await expect(fileExists(episodePath)).resolves.toBe(true);
+	});
+
 	// @cosmo-behavior plan:living-memory#B-019
 	test("syncs accepted folded note proposals before pruning unchanged episodes", async () => {
 		const projectRoot = join(tmp.path, "episode-fold-project");
@@ -4189,6 +4229,84 @@ describe("living memory", () => {
 		expect(judge).not.toHaveBeenCalled();
 	});
 
+	test("rejects an oversized serialized judgment request before dispatch", async () => {
+		const input = record({
+			id: "request-bound",
+			sourceId: "corpus",
+			path: "knowledge/request-bound.md",
+			kind: "knowledge",
+			content: "# Request bound\n",
+		});
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [],
+		}));
+		const harness = createHarness(
+			[source("corpus", [input])],
+			{ id: "fake/no-tools", judge },
+			{
+				limits: {
+					...DEFAULT_LIVING_MEMORY_LIMITS,
+					maxJudgmentRequestBytes: 1,
+				},
+			},
+		);
+
+		await expect(harness.consolidator()).resolves.toMatchObject({
+			kind: "failed",
+			reason: expect.stringMatching(/judgment request.*1 byte/iu),
+			details: { writesCommitted: false },
+		});
+		expect(judge).not.toHaveBeenCalled();
+		expect(
+			harness.dependencies.acceptedJudgmentReceiptStore.write,
+		).not.toHaveBeenCalled();
+		expect(harness.dependencies.proposalStore.persist).not.toHaveBeenCalled();
+	});
+
+	test("rejects oversized model output before writing a receipt or proposal", async () => {
+		const inputs = ["first", "second"].map((id) =>
+			record({
+				id,
+				sourceId: "corpus",
+				path: `knowledge/${id}.md`,
+				kind: "knowledge",
+				content: `# ${id}\n`,
+			}),
+		);
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [
+				{
+					kind: "duplicate",
+					inputIds: ["first"],
+					reason: "x".repeat(1_024),
+				},
+			],
+		}));
+		const harness = createHarness(
+			[source("corpus", inputs)],
+			{ id: "fake/no-tools", judge },
+			{
+				limits: {
+					...DEFAULT_LIVING_MEMORY_LIMITS,
+					maxJudgmentOutputBytes: 128,
+				},
+			},
+		);
+
+		await expect(harness.consolidator()).resolves.toMatchObject({
+			kind: "failed",
+			reason: expect.stringMatching(/judgment output.*128 bytes/iu),
+			details: { writesCommitted: false },
+		});
+		expect(judge).toHaveBeenCalledOnce();
+		expect(
+			harness.dependencies.acceptedJudgmentReceiptStore.write,
+		).not.toHaveBeenCalled();
+		expect(harness.dependencies.proposalStore.persist).not.toHaveBeenCalled();
+	});
+
 	test("defers oversized production corpus bodies with explicit evidence", async () => {
 		const projectRoot = join(tmp.path, "oversized-production-corpus");
 		const userRoot = join(tmp.path, "oversized-production-user");
@@ -5015,6 +5133,11 @@ describe("living memory", () => {
 		expect(capDeclines(second)).toEqual(capDeclines(first));
 	});
 
+	test("keeps committed-write errors internal to durable files", async () => {
+		const durableFiles = await import("../../lib/memory/durable-files.ts");
+		expect(durableFiles).not.toHaveProperty("DurableFileCommittedError");
+	});
+
 	test("delegates configured knowledge consolidation and preserves exact store noops", async () => {
 		const configuredResult = {
 			kind: "noop" as const,
@@ -5105,6 +5228,7 @@ function createHarness(
 			| "retirementStore"
 			| "withLock"
 			| "lockPath"
+			| "limits"
 		>
 	> = {},
 ): {
@@ -5189,7 +5313,7 @@ function createHarness(
 			})),
 		},
 		clock: () => new Date("2026-09-01T12:00:00.000Z"),
-		limits: DEFAULT_LIVING_MEMORY_LIMITS,
+		limits: overrides.limits ?? DEFAULT_LIVING_MEMORY_LIMITS,
 		lockOptions: {
 			retryMs: 50,
 			timeoutMs: 10_000,
