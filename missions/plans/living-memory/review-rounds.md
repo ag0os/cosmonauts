@@ -81,6 +81,25 @@ INV-004, INV-005 and INV-006 hold outside the D-026 class.
 - Full suite 3050/3050, lint, typecheck, `git diff --check` all pass; worktree
   clean; live `knowledge/` byte-identical throughout.
 
+## Also open: one inherited performance task
+
+A Quality-Manager round created three remediation tasks before its chain died.
+`TASK-621` and `TASK-622` (bound source and judgment bytes, PF-002) are closed —
+`TASK-622`'s six criteria were independently satisfied by the later `TASK-626`
+and `TASK-628` work: per-record and aggregate corpus/episode byte ceilings and a
+serialized judgment request ceiling now exist in the core limits contract, the
+citation inventory enforces both a per-record and a remaining-aggregate ceiling,
+and 23 regression assertions cover them.
+
+`TASK-623` (remove duplicate living-memory evidence scans, PF-003) remains **To
+Do** and is a genuine open item. It is a performance concern, not correctness: a
+non-dry pass invokes retirement apply with an empty candidate list yet still
+folds receipts and scans citations, proposal evidence and materializations parse
+the same directory independently, and receipt histories are folded repeatedly.
+Its own acceptance criteria require preserving mandatory fresh under-lock
+revalidation, so it must not be treated as a licence to cache across mutation
+boundaries.
+
 ## Suggested disposition
 
 The four open findings are well-localised and independently fixable. Because

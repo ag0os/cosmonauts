@@ -1,7 +1,7 @@
 ---
 id: TASK-622
 title: 'Review fix: bound living-memory source and judgment bytes'
-status: In Progress
+status: Done
 priority: high
 assignee: worker
 labels:
@@ -13,7 +13,7 @@ labels:
 dependencies:
   - TASK-621
 createdAt: '2026-09-02T18:48:19.736Z'
-updatedAt: '2026-09-02T19:06:22.100Z'
+updatedAt: '2026-09-04T21:21:58.543Z'
 ---
 
 ## Description
