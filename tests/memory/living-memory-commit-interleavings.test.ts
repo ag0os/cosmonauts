@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type {
@@ -13,6 +13,8 @@ import {
 	type CorpusJudgmentProvider,
 	createAcceptedJudgmentReceiptStore,
 	createConsolidationProposalStore,
+	createDurableMachineFiles,
+	createDurableRetirementFiles,
 	createLivingMemoryConsolidator,
 	DEFAULT_LIVING_MEMORY_LIMITS,
 	type LivingMemoryConsolidatorDependencies,
@@ -22,7 +24,12 @@ import { useTempDir } from "../helpers/fs.ts";
 type FsOperation = (...args: never[]) => Promise<unknown>;
 
 const fsFault = vi.hoisted(() => ({
+	conflictContent: undefined as string | undefined,
+	conflictLinkDestinationPath: undefined as string | undefined,
 	failDirectory: undefined as string | undefined,
+	failLinkDestinationRoot: undefined as string | undefined,
+	failLinkMode: undefined as "directory-sync" | "temporary-unlink" | undefined,
+	failUnlinkPath: undefined as string | undefined,
 	receiptPath: undefined as string | undefined,
 }));
 
@@ -30,6 +37,28 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("node:fs/promises")>();
 	return {
 		...actual,
+		async link(...args: never[]) {
+			const destinationPath = String(args[1]);
+			if (destinationPath === fsFault.conflictLinkDestinationPath) {
+				await actual.writeFile(
+					destinationPath,
+					fsFault.conflictContent ?? "conflicting bytes\n",
+					"utf-8",
+				);
+			}
+			const result = await (actual.link as unknown as FsOperation)(...args);
+			if (
+				fsFault.failLinkDestinationRoot !== undefined &&
+				destinationPath.startsWith(fsFault.failLinkDestinationRoot)
+			) {
+				if (fsFault.failLinkMode === "directory-sync") {
+					fsFault.failDirectory = dirname(destinationPath);
+				} else if (fsFault.failLinkMode === "temporary-unlink") {
+					fsFault.failUnlinkPath = String(args[0]);
+				}
+			}
+			return result;
+		},
 		async rename(...args: never[]) {
 			const result = await (actual.rename as unknown as FsOperation)(...args);
 			if (String(args[1]) === fsFault.receiptPath) {
@@ -55,17 +84,285 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 				},
 			});
 		},
+		async unlink(...args: never[]) {
+			if (String(args[0]) === fsFault.failUnlinkPath) {
+				fsFault.failUnlinkPath = undefined;
+				throw new Error("simulated temporary unlink failure");
+			}
+			return (actual.unlink as unknown as FsOperation)(...args);
+		},
 	};
 });
 
 const tmp = useTempDir("living-memory-commit-interleavings-");
 
 afterEach(() => {
+	fsFault.conflictContent = undefined;
+	fsFault.conflictLinkDestinationPath = undefined;
 	fsFault.failDirectory = undefined;
+	fsFault.failLinkDestinationRoot = undefined;
+	fsFault.failLinkMode = undefined;
+	fsFault.failUnlinkPath = undefined;
 	fsFault.receiptPath = undefined;
 });
 
 describe("living-memory committed-write interleavings", () => {
+	test("does not tag an exclusive-write EEXIST identity conflict as committed", async () => {
+		const directory = join(tmp.path, "exclusive-write-identity-conflict");
+		const destinationPath = join(directory, "destination.md");
+		await mkdir(directory, { recursive: true });
+		fsFault.conflictContent = "racing winner bytes\n";
+		fsFault.conflictLinkDestinationPath = destinationPath;
+		let thrown: unknown;
+
+		try {
+			await createDurableMachineFiles().writeText({
+				path: destinationPath,
+				content: "losing writer bytes\n",
+			});
+		} catch (error: unknown) {
+			thrown = error;
+		}
+
+		await expect(readFile(destinationPath, "utf-8")).resolves.toBe(
+			"racing winner bytes\n",
+		);
+		expect(thrown).toMatchObject({
+			message: `Durable file identity conflict at ${destinationPath}.`,
+		});
+		expect(thrown).not.toHaveProperty("writesCommitted", true);
+	});
+
+	test("tags a restored destination when its directory sync fails", async () => {
+		const directory = join(tmp.path, "durable-restore-sync-failure");
+		const sourcePath = join(directory, "source.tombstone");
+		const destinationPath = join(directory, "destination.md");
+		await mkdir(directory, { recursive: true });
+		await writeFile(sourcePath, "restored bytes\n", "utf-8");
+		fsFault.failLinkDestinationRoot = destinationPath;
+		fsFault.failLinkMode = "directory-sync";
+		let thrown: unknown;
+
+		try {
+			await createDurableMachineFiles().restoreFile({
+				sourcePath,
+				destinationPath,
+			});
+		} catch (error: unknown) {
+			thrown = error;
+		}
+
+		await expect(readFile(sourcePath, "utf-8")).resolves.toBe(
+			"restored bytes\n",
+		);
+		await expect(readFile(destinationPath, "utf-8")).resolves.toBe(
+			"restored bytes\n",
+		);
+		expect(thrown).toMatchObject({
+			message: "simulated receipt parent-directory sync failure",
+			writesCommitted: true,
+		});
+	});
+
+	test("tags a renamed destination when its directory sync fails", async () => {
+		const directory = join(tmp.path, "durable-rename-sync-failure");
+		const sourcePath = join(directory, "source.md");
+		const destinationPath = join(directory, "destination.md");
+		await mkdir(directory, { recursive: true });
+		await writeFile(sourcePath, "renamed bytes\n", "utf-8");
+		fsFault.receiptPath = destinationPath;
+		let thrown: unknown;
+
+		try {
+			await createDurableMachineFiles().renameFile({
+				sourcePath,
+				destinationPath,
+			});
+		} catch (error: unknown) {
+			thrown = error;
+		}
+
+		await expect(readFile(destinationPath, "utf-8")).resolves.toBe(
+			"renamed bytes\n",
+		);
+		expect(thrown).toMatchObject({
+			message: "simulated receipt parent-directory sync failure",
+			writesCommitted: true,
+		});
+	});
+
+	test("tags a linked destination when its directory sync fails", async () => {
+		const directory = join(tmp.path, "durable-link-sync-failure");
+		const sourcePath = join(directory, "source.md");
+		const destinationPath = join(directory, "destination.md");
+		await mkdir(directory, { recursive: true });
+		await writeFile(sourcePath, "linked bytes\n", "utf-8");
+		fsFault.failLinkDestinationRoot = destinationPath;
+		fsFault.failLinkMode = "directory-sync";
+		let thrown: unknown;
+
+		try {
+			await createDurableRetirementFiles().linkFile({
+				sourcePath,
+				destinationPath,
+			});
+		} catch (error: unknown) {
+			thrown = error;
+		}
+
+		await expect(readFile(destinationPath, "utf-8")).resolves.toBe(
+			"linked bytes\n",
+		);
+		expect(thrown).toMatchObject({
+			message: "simulated receipt parent-directory sync failure",
+			writesCommitted: true,
+		});
+	});
+
+	test("reports an accepted receipt when its destination-directory sync fails", async () => {
+		const projectRoot = join(tmp.path, "receipt-link-sync-failure");
+		const records = [
+			record({
+				id: "receipt-link-input",
+				sourceId: "corpus",
+				path: "knowledge/receipt-link-input.md",
+				kind: "knowledge",
+				content: "# Receipt link input\n",
+			}),
+			record({
+				id: "receipt-link-context",
+				sourceId: "corpus",
+				path: "knowledge/receipt-link-context.md",
+				kind: "knowledge",
+				content: "# Receipt link context\n",
+			}),
+		];
+		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
+		fsFault.failLinkDestinationRoot = join(
+			projectRoot,
+			"memory/agent/consolidations",
+		);
+		fsFault.failLinkMode = "directory-sync";
+		const judgmentProvider = {
+			id: "fake/no-tools",
+			judge: vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+				schemaVersion: 1,
+				observations: [],
+			})),
+		};
+
+		const result = await createHarness(
+			[source("corpus", records)],
+			judgmentProvider,
+			{ acceptedJudgmentReceiptStore: receiptStore },
+		)();
+
+		const receipts = await receiptStore.list();
+		expect(receipts).toHaveLength(1);
+		expect(receipts[0]).toMatchObject({ state: "accepted" });
+		expect(result).toMatchObject({
+			kind: "failed",
+			reason: "simulated receipt parent-directory sync failure",
+			details: { writesCommitted: true },
+		});
+	});
+
+	test("reports a deterministic proposal when temporary cleanup fails after linking", async () => {
+		const projectRoot = join(tmp.path, "proposal-link-cleanup-failure");
+		await mkdir(projectRoot, { recursive: true });
+		const proposalRoot = join(
+			projectRoot,
+			"memory/agent/proposals/living-memory",
+		);
+		fsFault.failLinkDestinationRoot = proposalRoot;
+		fsFault.failLinkMode = "temporary-unlink";
+		const proposalStore = createConsolidationProposalStore({ projectRoot });
+		const stale = ["first", "second"].map((suffix) =>
+			record({
+				id: `cleanup-stale-${suffix}`,
+				sourceId: "corpus",
+				path: `knowledge/cleanup-stale-${suffix}.md`,
+				kind: "knowledge",
+				content: `# Cleanup stale ${suffix}\n\n[Missing](../docs/missing-cleanup-${suffix}.md)\n`,
+				metadata: {
+					type: "gotcha",
+					title: `Cleanup stale ${suffix}`,
+					description: `Stale citation ${suffix} for cleanup failure.`,
+					tags: ["memory"],
+					scopeRoot: projectRoot,
+				},
+			}),
+		);
+
+		const result = await createHarness([source("corpus", stale)], undefined, {
+			proposalStore,
+		})({ modelMode: "deterministic-only" });
+
+		const proposalFiles = (await readdir(proposalRoot)).filter(
+			(entry) => !entry.startsWith(".") && entry.endsWith(".md"),
+		);
+		expect(proposalFiles).toHaveLength(1);
+		await expect(
+			readFile(join(proposalRoot, proposalFiles[0] ?? "missing"), "utf-8"),
+		).resolves.toContain("proposalKind: merge");
+		expect(result).toMatchObject({
+			kind: "failed",
+			reason: "simulated temporary unlink failure",
+			details: { writesCommitted: true },
+		});
+	});
+
+	test("retains the receipt commit when fail-closed validation rejects the written output", async () => {
+		const records = ["input", "context"].map((suffix) =>
+			record({
+				id: `validation-${suffix}`,
+				sourceId: "corpus",
+				path: `knowledge/validation-${suffix}.md`,
+				kind: "knowledge",
+				content: `# Validation ${suffix}\n`,
+			}),
+		);
+		const baseReceiptStore = inMemoryReceiptStore();
+		const write = vi.fn<
+			LivingMemoryConsolidatorDependencies["acceptedJudgmentReceiptStore"]["write"]
+		>(async (receipt) => ({
+			...receipt,
+			output: {
+				schemaVersion: 1,
+				observations: [
+					{
+						kind: "duplicate",
+						inputIds: ["missing-after-write"],
+						reason: "Exercise fail-closed validation after receipt acceptance.",
+					},
+				],
+			},
+		}));
+		const judgmentProvider = {
+			id: "fake/no-tools",
+			judge: vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+				schemaVersion: 1,
+				observations: [],
+			})),
+		};
+
+		const result = await createHarness(
+			[source("corpus", records)],
+			judgmentProvider,
+			{
+				acceptedJudgmentReceiptStore: { ...baseReceiptStore, write },
+			},
+		)();
+
+		expect(write).toHaveBeenCalledOnce();
+		expect(result).toMatchObject({
+			kind: "failed",
+			reason:
+				"Judgment output references unknown input id missing-after-write.",
+			details: { writesCommitted: true },
+		});
+	});
+
 	test("reports receipt materialization when its parent-directory sync fails", async () => {
 		const projectRoot = join(tmp.path, "materialization-sync-failure");
 		const input = record({

@@ -158,8 +158,10 @@ async function durableLink(options: {
 	readonly sourcePath: string;
 	readonly destinationPath: string;
 }): Promise<void> {
+	let linked = false;
 	try {
 		await link(options.sourcePath, options.destinationPath);
+		linked = true;
 	} catch (error: unknown) {
 		if (errorCode(error) !== "EEXIST") throw error;
 		const [source, destination] = await Promise.all([
@@ -172,7 +174,12 @@ async function durableLink(options: {
 			);
 		}
 	}
-	await syncDirectory(dirname(options.destinationPath));
+	try {
+		await syncDirectory(dirname(options.destinationPath));
+	} catch (error: unknown) {
+		if (linked) throw new DurableFileCommittedError(error);
+		throw error;
+	}
 }
 
 async function durableRemove(path: string): Promise<void> {
@@ -212,7 +219,11 @@ async function durableRename(options: {
 		);
 	}
 	await rename(options.sourcePath, options.destinationPath);
-	await syncDirectory(sourceDirectory);
+	try {
+		await syncDirectory(sourceDirectory);
+	} catch (error: unknown) {
+		throw new DurableFileCommittedError(error);
+	}
 }
 
 async function durableRestore(options: {
@@ -227,8 +238,10 @@ async function durableRestore(options: {
 	if (sourceDirectory !== destinationDirectory) {
 		throw new Error("Durable tombstone restore requires one directory.");
 	}
+	let linked = false;
 	try {
 		await link(options.sourcePath, options.destinationPath);
+		linked = true;
 	} catch (error: unknown) {
 		if (errorCode(error) === "EEXIST") {
 			if (
@@ -258,8 +271,13 @@ async function durableRestore(options: {
 		}
 		throw error;
 	}
-	await syncDirectory(destinationDirectory);
-	await durableRemove(options.sourcePath);
+	try {
+		await syncDirectory(destinationDirectory);
+		await durableRemove(options.sourcePath);
+	} catch (error: unknown) {
+		if (linked) throw new DurableFileCommittedError(error);
+		throw error;
+	}
 }
 
 async function sameNoFollowRegularFile(
@@ -313,6 +331,7 @@ async function writeTextExclusive(options: {
 
 	const tempPath = temporaryPath(options.path);
 	let tempExists = false;
+	let destinationLinked = false;
 	try {
 		await writeSyncedTemp({
 			path: tempPath,
@@ -322,9 +341,13 @@ async function writeTextExclusive(options: {
 		tempExists = true;
 		try {
 			await link(tempPath, options.path);
+			destinationLinked = true;
 			await syncDirectory(dirname(options.path));
 		} catch (error: unknown) {
-			if (errorCode(error) !== "EEXIST") throw error;
+			if (errorCode(error) !== "EEXIST") {
+				if (destinationLinked) throw new DurableFileCommittedError(error);
+				throw error;
+			}
 			const winner = await readRegularFile(options.path);
 			if (winner !== options.content) {
 				throw new Error(`Durable file identity conflict at ${options.path}.`);
@@ -333,12 +356,24 @@ async function writeTextExclusive(options: {
 		return { path: options.path, digest };
 	} finally {
 		if (tempExists) {
-			await unlink(tempPath).catch((error: unknown) => {
-				if (errorCode(error) !== "ENOENT") throw error;
-			});
-			await syncDirectory(dirname(options.path));
+			try {
+				await unlink(tempPath).catch((error: unknown) => {
+					if (errorCode(error) !== "ENOENT") throw error;
+				});
+				await syncDirectory(dirname(options.path));
+			} catch (error: unknown) {
+				rethrowExclusiveCleanupError(error, destinationLinked);
+			}
 		}
 	}
+}
+
+function rethrowExclusiveCleanupError(
+	error: unknown,
+	destinationLinked: boolean,
+): never {
+	if (destinationLinked) throw new DurableFileCommittedError(error);
+	throw error;
 }
 
 async function syncRegularFile(path: string): Promise<void> {
