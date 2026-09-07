@@ -123,6 +123,7 @@ export function createLivingMemoryConsolidator(
 					};
 				}
 			}
+			const writesCommittedBeforeCollection = details.writesCommitted;
 			const [initialReceipts, proposalPhase] = await Promise.all([
 				dependencies.acceptedJudgmentReceiptStore.list(),
 				readProposalPhase(dependencies.proposalStore),
@@ -179,6 +180,7 @@ export function createLivingMemoryConsolidator(
 							reason: `${source.omitted} record(s) from ${source.sourceId} were deferred by the bounded source pass.`,
 						})),
 				]),
+				warnings: Object.freeze([...details.warnings, ...collected.warnings]),
 				recovery: recoveryRun?.details.recovery ?? "none",
 				writesCommitted: recoveryRun?.details.writesCommitted ?? false,
 			};
@@ -206,16 +208,35 @@ export function createLivingMemoryConsolidator(
 							]),
 						}),
 			};
-			const dischargedReceipts =
-				dryRun || !collected.inventoryComplete
-					? Object.freeze([])
-					: await dependencies.acceptedJudgmentReceiptStore.dischargeStale({
-							currentKeys: Object.freeze(
-								collected.inventory.map(consolidationEvidenceKey),
-							),
-							lockOptions: dependencies.lockOptions,
-							lockHeld,
-						});
+			if (!collected.inventoryComplete) {
+				details = {
+					...details,
+					writesCommitted:
+						details.writesCommitted || writesCommittedBeforeCollection,
+					declines: Object.freeze([
+						...details.declines,
+						{
+							code: "source-inventory-incomplete",
+							reason:
+								"Consolidation source inventory is incomplete; absence-dependent work is blocked.",
+						},
+					]),
+				};
+				return {
+					kind: "failed" as const,
+					reason: "Consolidation source inventory is incomplete.",
+					details,
+				};
+			}
+			const dischargedReceipts = dryRun
+				? Object.freeze([])
+				: await dependencies.acceptedJudgmentReceiptStore.dischargeStale({
+						currentKeys: Object.freeze(
+							collected.inventory.map(consolidationEvidenceKey),
+						),
+						lockOptions: dependencies.lockOptions,
+						lockHeld,
+					});
 			if (dischargedReceipts.length > 0) {
 				details = { ...details, writesCommitted: true };
 			}

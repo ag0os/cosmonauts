@@ -29,6 +29,7 @@ import {
 } from "./path-safety.ts";
 import type {
 	KnowledgeIndexRenderInput,
+	MemoryWarning,
 	RetrievedMemoryRecord,
 } from "./types.ts";
 
@@ -92,10 +93,12 @@ export interface ConsolidationSourceSnapshot {
 	readonly records: readonly ConsolidationSourceRecord[];
 	/** Complete liveness inventory when admission omits otherwise-current inputs. */
 	readonly inventory?: readonly ConsolidationSourceInventoryRecord[];
+	readonly inventoryComplete: boolean;
 	/** Exact warning-aware input for the shared knowledge index renderer. */
 	readonly knowledgeIndex?: KnowledgeIndexRenderInput;
 	readonly omitted: number;
 	readonly declines?: readonly ConsolidationSourceDecline[];
+	readonly warnings?: readonly MemoryWarning[];
 }
 
 export interface ConsolidationFinalizedRecord {
@@ -133,6 +136,7 @@ export interface CollectedConsolidationSources {
 		readonly omitted: number;
 	}[];
 	readonly declines: readonly ConsolidationSourceDecline[];
+	readonly warnings: readonly MemoryWarning[];
 	readonly knowledgeIndex?: KnowledgeIndexRenderInput;
 }
 
@@ -253,6 +257,8 @@ export function createProjectCorpusConsolidationSource(options: {
 			const declines: ConsolidationSourceDecline[] = readDeclines.map(
 				({ scope: _scope, ...decline }) => decline,
 			);
+			const knowledgeIndex = KNOWLEDGE_INDEX_RETRIEVAL.toRenderInput(retrieved);
+			const warnings = knowledgeIndex.warnings;
 			const representedKeys = new Set(input.representedKeys);
 			const inventoriedPaths = new Set(
 				candidates.map(
@@ -260,11 +266,23 @@ export function createProjectCorpusConsolidationSource(options: {
 						`${candidate.scope}\0${relativeScopePath(candidate.scopeRoot, candidate.record.path)}`,
 				),
 			);
-			let projectCandidates = readDeclines.filter(
-				(decline) =>
-					decline.scope === "project" &&
-					!inventoriedPaths.has(`${decline.scope}\0${decline.path}`),
-			).length;
+			const uninventoriedDeclines = readDeclines.filter(
+				(decline) => !inventoriedPaths.has(`${decline.scope}\0${decline.path}`),
+			);
+			const omittedProjectPaths = new Set(
+				uninventoriedDeclines
+					.filter((decline) => decline.scope === "project")
+					.map((decline) => decline.path),
+			);
+			for (const warning of warnings) {
+				if (
+					warning.path !== undefined &&
+					isWithinScopeRoot(projectRoot, warning.path)
+				) {
+					omittedProjectPaths.add(relativeScopePath(projectRoot, warning.path));
+				}
+			}
+			let projectCandidates = omittedProjectPaths.size;
 			let admittedBytes = 0;
 			for (const candidate of candidates) {
 				throwIfAborted(input.signal);
@@ -317,9 +335,12 @@ export function createProjectCorpusConsolidationSource(options: {
 			return Object.freeze({
 				records: Object.freeze(records),
 				inventory: Object.freeze(inventory),
-				knowledgeIndex: KNOWLEDGE_INDEX_RETRIEVAL.toRenderInput(retrieved),
+				inventoryComplete:
+					warnings.length === 0 && uninventoriedDeclines.length === 0,
+				knowledgeIndex,
 				omitted: projectCandidates - records.length,
 				declines: Object.freeze(declines),
+				warnings,
 			});
 		},
 	};
@@ -341,6 +362,8 @@ export function createProjectEpisodeConsolidationSource(options: {
 			const records: ConsolidationSourceRecord[] = [];
 			const inventory: ConsolidationSourceInventoryRecord[] = [];
 			const declines: ConsolidationSourceDecline[] = [];
+			const warnings: MemoryWarning[] = [];
+			let inventoryComplete = true;
 			let omitted = 0;
 			let inletBytes = 0;
 			for (const episodePath of candidates) {
@@ -375,7 +398,13 @@ export function createProjectEpisodeConsolidationSource(options: {
 					raw: content,
 					expectedScope: "project",
 				});
-				if (!parsed.ok) continue;
+				if (!parsed.ok) {
+					inventory.push(episodeInventoryRecord(path, sha256(content)));
+					omitted += 1;
+					inventoryComplete = false;
+					warnings.push(Object.freeze({ path, message: parsed.message }));
+					continue;
+				}
 				const record = parsed.record;
 				const candidate = {
 					id: path,
@@ -407,8 +436,10 @@ export function createProjectEpisodeConsolidationSource(options: {
 			return Object.freeze({
 				records: Object.freeze(records),
 				inventory: Object.freeze(inventory),
+				inventoryComplete,
 				omitted,
 				declines: Object.freeze(declines),
+				warnings: Object.freeze(warnings),
 			});
 		},
 		async recover() {
@@ -703,6 +734,7 @@ export async function collectConsolidationSources(options: {
 		omitted: number;
 	}> = [];
 	const declines: ConsolidationSourceDecline[] = [];
+	const warnings: MemoryWarning[] = [];
 	const sourceIds = new Set<string>();
 	const recordKeys = new Set<string>();
 	let admittedCorpus = 0;
@@ -737,6 +769,11 @@ export async function collectConsolidationSources(options: {
 				: { representedKeys: options.representedKeys }),
 			...(options.signal === undefined ? {} : { signal: options.signal }),
 		});
+		if (typeof snapshot.inventoryComplete !== "boolean") {
+			throw new ConsolidationSourceContractError(
+				`Source ${source.id} must declare inventory completeness.`,
+			);
+		}
 		if (!Number.isSafeInteger(snapshot.omitted) || snapshot.omitted < 0) {
 			throw new ConsolidationSourceContractError(
 				`Source ${source.id} returned an invalid omitted count.`,
@@ -750,9 +787,18 @@ export async function collectConsolidationSources(options: {
 		const sourceInventory = snapshot.inventory?.map((candidate) =>
 			immutableValidatedInventoryRecord(candidate, source.id),
 		);
-		if (sourceInventory === undefined && snapshot.omitted > 0) {
-			inventoryComplete = false;
+		if (
+			snapshot.inventoryComplete &&
+			snapshot.omitted > 0 &&
+			(sourceInventory === undefined ||
+				sourceInventory.length < snapshot.records.length + snapshot.omitted)
+		) {
+			throw new ConsolidationSourceContractError(
+				`Source ${source.id} claimed complete inventory without inventorying omitted records.`,
+			);
 		}
+		inventoryComplete = inventoryComplete && snapshot.inventoryComplete;
+		warnings.push(...immutableSourceWarnings(snapshot.warnings, source.id));
 		if (snapshot.knowledgeIndex !== undefined) {
 			if (knowledgeIndex !== undefined) {
 				throw new ConsolidationSourceContractError(
@@ -841,6 +887,7 @@ export async function collectConsolidationSources(options: {
 		inventoryComplete,
 		sources: Object.freeze(summaries),
 		declines: Object.freeze(declines),
+		warnings: Object.freeze(warnings),
 		...(knowledgeIndex === undefined ? {} : { knowledgeIndex }),
 	});
 }
@@ -855,8 +902,50 @@ function immutableKnowledgeIndexInput(
 	}
 	return Object.freeze({
 		records: Object.freeze([...input.records]),
-		warnings: Object.freeze([...input.warnings]),
+		warnings: immutableSourceWarnings(
+			input.warnings,
+			"Knowledge-index provider",
+		),
 	});
+}
+
+function immutableSourceWarnings(
+	input: unknown,
+	sourceId: string,
+): readonly MemoryWarning[] {
+	if (input === undefined) return Object.freeze([]);
+	if (!Array.isArray(input)) {
+		throw new ConsolidationSourceContractError(
+			`Source ${sourceId} returned invalid warnings.`,
+		);
+	}
+	return Object.freeze(
+		input.map((candidate: unknown) => {
+			if (
+				candidate === null ||
+				typeof candidate !== "object" ||
+				Array.isArray(candidate)
+			) {
+				throw new ConsolidationSourceContractError(
+					`Source ${sourceId} returned an invalid warning.`,
+				);
+			}
+			const warning = candidate as Record<string, unknown>;
+			if (
+				typeof warning.message !== "string" ||
+				warning.message.length === 0 ||
+				(warning.path !== undefined && typeof warning.path !== "string")
+			) {
+				throw new ConsolidationSourceContractError(
+					`Source ${sourceId} returned an invalid warning.`,
+				);
+			}
+			return Object.freeze({
+				...(warning.path === undefined ? {} : { path: warning.path }),
+				message: warning.message,
+			});
+		}),
+	);
 }
 
 function immutableValidatedInventoryRecord(
@@ -1001,6 +1090,11 @@ function relativeScopePath(scopeRoot: string, path: string): string {
 		);
 	}
 	return value;
+}
+
+function isWithinScopeRoot(scopeRoot: string, path: string): boolean {
+	const value = relative(scopeRoot, resolve(path)).split(sep).join("/");
+	return value.length === 0 || isSafePosixRelativePath(value);
 }
 
 function corpusMetadata(

@@ -2352,11 +2352,28 @@ function livingMemoryCorpusSource(
 	records: readonly ConsolidationSourceRecord[],
 	omitted = 0,
 ): ConsolidationSource {
+	const inventory =
+		omitted === 0
+			? undefined
+			: [
+					...records.map(({ content: _content, ...record }) => record),
+					...Array.from({ length: omitted }, (_, index) => ({
+						id: `inventoried-omission-${index}`,
+						sourceId: "corpus",
+						scope: "project" as const,
+						path: `memory/inventoried-omission-${index}.md`,
+						digest: sha256(`inventoried-omission-${index}`),
+						kind: "artifact" as const,
+						metadata: {},
+					})),
+				];
 	return {
 		id: "corpus",
 		async collect() {
 			return {
 				records,
+				...(inventory === undefined ? {} : { inventory }),
+				inventoryComplete: true,
 				knowledgeIndex: {
 					records: records.map((record) => ({
 						type: String(record.metadata.type),

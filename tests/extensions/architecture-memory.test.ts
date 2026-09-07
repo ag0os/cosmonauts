@@ -172,6 +172,7 @@ describe("architecture-memory extension", () => {
 					id: "user-knowledge",
 					collect: async () => ({
 						records: userSourceRecords,
+						inventoryComplete: true,
 						knowledgeIndex: {
 							records: records.map((record) => ({
 								...record,

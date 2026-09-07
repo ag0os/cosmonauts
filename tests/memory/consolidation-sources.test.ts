@@ -90,6 +90,8 @@ describe("project corpus consolidation source", () => {
 
 		expect(source.id).toBe("project-corpus");
 		expect(source).not.toHaveProperty("finalize");
+		expect(snapshot.inventoryComplete).toBe(true);
+		expect(snapshot.warnings).toEqual([]);
 		expect(snapshot.omitted).toBe(0);
 		expect(project).toEqual({
 			id: "knowledge/guides/gotcha.md",
@@ -127,6 +129,54 @@ describe("project corpus consolidation source", () => {
 		expect(Object.isFrozen(project)).toBe(true);
 		expect(Object.isFrozen(project?.metadata)).toBe(true);
 		expect(Object.isFrozen(project?.metadata.tags)).toBe(true);
+	});
+
+	// @cosmo-behavior plan:living-memory-fidelity#B-004
+	test("marks corpus inventory incomplete when retrieval omits a warned record", async () => {
+		const projectRoot = join(tmp.path, "warned-omission-project");
+		const userCosmonautsRoot = join(tmp.path, "warned-omission-user");
+		const malformedPath = join(projectRoot, "knowledge", "malformed.md");
+		const healthy = knowledgeRecord({
+			resource: "healthy.md",
+			title: "Healthy",
+			scope: "project",
+		});
+		await mkdir(join(projectRoot, "knowledge"), { recursive: true });
+		await Promise.all([
+			writeFile(join(projectRoot, "knowledge", "healthy.md"), healthy),
+			writeFile(malformedPath, "not an OKF knowledge record\n"),
+		]);
+		const source = consolidationSources.createProjectCorpusConsolidationSource({
+			projectRoot,
+			userCosmonautsRoot,
+		});
+		const warning = {
+			path: malformedPath,
+			message:
+				"Knowledge record type undefined is not one of decision, trade-off, gotcha, or convention.",
+		};
+
+		const snapshot = await source.collect({ limit: 10, ...COLLECT_LIMITS });
+		const aggregate = await consolidationSources.collectConsolidationSources({
+			sources: [source],
+			maxCorpusRecords: 10,
+			maxEpisodeRecords: 10,
+			...COLLECT_LIMITS,
+		});
+
+		expect(snapshot).toMatchObject({
+			omitted: 1,
+			inventoryComplete: false,
+			warnings: [warning],
+		});
+		expect(snapshot.knowledgeIndex?.warnings).toEqual([warning]);
+		expect(Object.isFrozen(snapshot.warnings)).toBe(true);
+		expect(aggregate).toMatchObject({
+			inventoryComplete: false,
+			warnings: [warning],
+		});
+		expect(Object.isFrozen(aggregate.warnings)).toBe(true);
+		expect(Object.isFrozen(aggregate.warnings[0])).toBe(true);
 	});
 
 	test("declines oversized corpus files at the shared knowledge read boundary", async () => {
@@ -241,6 +291,7 @@ describe("project corpus consolidation source", () => {
 			1,
 		);
 		expect(snapshot.records).toHaveLength(50);
+		expect(snapshot.inventoryComplete).toBe(true);
 		expect(snapshot.records.every((record) => record.scope === "project")).toBe(
 			true,
 		);
@@ -381,6 +432,56 @@ describe("project corpus consolidation source", () => {
 		);
 		expect(bounded.omitted).toBe(1);
 		expect(await readFixtureFiles(fixtureFiles.keys())).toEqual(before);
+	});
+});
+
+describe("project episode consolidation source", () => {
+	// @cosmo-behavior plan:living-memory-fidelity#B-006
+	test("counts malformed episodes as omitted incomplete inventory", async () => {
+		const projectRoot = join(tmp.path, "malformed-episode-project");
+		const malformed = "not an OKF episode\n";
+		const relativePath = "memory/agent/episodes/malformed.md";
+		const malformedPath = join(projectRoot, relativePath);
+		await mkdir(join(projectRoot, "memory", "agent", "episodes"), {
+			recursive: true,
+		});
+		await writeFile(malformedPath, malformed);
+		const source = consolidationSources.createProjectEpisodeConsolidationSource(
+			{
+				projectRoot,
+			},
+		);
+		const warning = {
+			path: relativePath,
+			message: "Memory record is missing required OKF frontmatter.",
+		};
+
+		const snapshot = await source.collect({ limit: 10, ...COLLECT_LIMITS });
+		const aggregate = await consolidationSources.collectConsolidationSources({
+			sources: [source],
+			maxCorpusRecords: 10,
+			maxEpisodeRecords: 10,
+			...COLLECT_LIMITS,
+		});
+
+		expect(snapshot).toMatchObject({
+			records: [],
+			inventory: [
+				{
+					id: relativePath,
+					path: relativePath,
+					digest: sha256(malformed),
+					kind: "episode",
+				},
+			],
+			omitted: 1,
+			inventoryComplete: false,
+			warnings: [warning],
+		});
+		expect(aggregate).toMatchObject({
+			inventoryComplete: false,
+			warnings: [warning],
+		});
 	});
 });
 

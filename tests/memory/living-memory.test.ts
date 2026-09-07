@@ -2972,6 +2972,7 @@ describe("living memory", () => {
 				lastCollectedIds = records.map((item) => item.id);
 				return {
 					records,
+					inventoryComplete: true,
 					knowledgeIndex: knowledgeIndexFixture(records),
 					omitted: 0,
 				};
@@ -3179,6 +3180,7 @@ describe("living memory", () => {
 					records: (await fileExists(recoveryFixture.livePath))
 						? [recoveryFixture.input]
 						: [],
+					inventoryComplete: true,
 					omitted: 0,
 				};
 			},
@@ -4284,7 +4286,11 @@ describe("living memory", () => {
 		expect(dependencyAccesses).toEqual([]);
 
 		const projectRoot = join(tmp.path, "payload-project");
-		const collect = vi.fn(async () => ({ records: [], omitted: 0 }));
+		const collect = vi.fn(async () => ({
+			records: [],
+			inventoryComplete: true,
+			omitted: 0,
+		}));
 		const harness = createHarness([{ id: "corpus", collect }]);
 		const createConsolidator = vi.fn(createLivingMemoryConsolidator);
 		let storeConsolidate:
@@ -4377,6 +4383,19 @@ describe("living memory", () => {
 		});
 		const invalidSources = [
 			{
+				label: "complete inventory",
+				source: {
+					id: "future-reflections",
+					async collect() {
+						return {
+							records: [],
+							inventoryComplete: true,
+							omitted: 1,
+						};
+					},
+				},
+			},
+			{
 				label: "over-limit output",
 				source: source(
 					"future-reflections",
@@ -4458,6 +4477,7 @@ describe("living memory", () => {
 					async collect() {
 						return {
 							records: [],
+							inventoryComplete: true,
 							knowledgeIndex: { records: [], warnings: [] },
 							omitted: 0,
 						};
@@ -4691,6 +4711,121 @@ describe("living memory", () => {
 		expect(judge).not.toHaveBeenCalled();
 	});
 
+	// @cosmo-behavior plan:living-memory-fidelity#B-005
+	test("keeps receipts and blocks dependent work when corpus inventory is incomplete", async () => {
+		const projectRoot = join(tmp.path, "incomplete-corpus-barrier");
+		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
+		const receiptDigest = createHash("sha256")
+			.update("temporarily unreadable record")
+			.digest("hex");
+		const batchKey = createHash("sha256")
+			.update("incomplete corpus receipt")
+			.digest("hex");
+		const receiptPath = receiptStore.pathFor(batchKey);
+		await receiptStore.write({
+			schemaVersion: 1,
+			batchKey,
+			state: "accepted",
+			inputDigests: [receiptDigest],
+			inputs: [
+				{
+					id: "knowledge/temporarily-unreadable.md",
+					sourceId: "project-corpus",
+					scope: "project",
+					path: "knowledge/temporarily-unreadable.md",
+					digest: receiptDigest,
+				},
+			],
+			output: { schemaVersion: 1, observations: [] },
+			path: receiptPath,
+		});
+		await receiptStore.markMaterialized(batchKey);
+		const dischargeStale = vi.spyOn(receiptStore, "dischargeStale");
+		const markMaterialized = vi.spyOn(receiptStore, "markMaterialized");
+		const warning = {
+			path: join(projectRoot, "knowledge", "temporarily-unreadable.md"),
+			message: "simulated unreadable knowledge record",
+		};
+		const recover = vi.fn<NonNullable<ConsolidationSource["recover"]>>(
+			async () => ({
+				episodePrunes: ["memory/agent/episodes/recovered.md"],
+				writesCommitted: true,
+			}),
+		);
+		const incompleteSource: ConsolidationSource = {
+			id: "project-corpus",
+			recover,
+			async collect() {
+				return {
+					records: [],
+					inventory: [],
+					inventoryComplete: false,
+					knowledgeIndex: { records: [], warnings: [warning] },
+					omitted: 1,
+					warnings: [warning],
+				};
+			},
+		};
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [],
+		}));
+		const persist = vi.fn(async () => {
+			throw new Error("proposal materialization must stay blocked");
+		});
+		const inspect = vi.fn<LivingMemoryRetirementStore["inspect"]>(async () => ({
+			recovery: "none",
+			warnings: [],
+			representedKeys: [],
+		}));
+		const apply = vi.fn<LivingMemoryRetirementStore["apply"]>(async () => ({
+			kind: "completed",
+			details: {
+				retirements: [],
+				declines: [],
+				warnings: [],
+				recovery: "none",
+				writesCommitted: false,
+			},
+		}));
+		const harness = createHarness(
+			[incompleteSource],
+			{ id: "fake/no-tools", judge },
+			{
+				acceptedJudgmentReceiptStore: receiptStore,
+				proposalStore: { readEvidence: vi.fn(async () => []), persist },
+				retirementStore: { inspect, apply },
+			},
+		);
+
+		const result = await harness.consolidator();
+
+		expect(result).toMatchObject({
+			kind: "failed",
+			reason: "Consolidation source inventory is incomplete.",
+			details: {
+				sources: [{ sourceId: "project-corpus", admitted: 0, omitted: 1 }],
+				episodePrunes: ["memory/agent/episodes/recovered.md"],
+				warnings: [warning],
+				declines: expect.arrayContaining([
+					expect.objectContaining({ code: "source-inventory-incomplete" }),
+				]),
+				writesCommitted: true,
+			},
+		});
+		await expect(fileExists(receiptPath)).resolves.toBe(true);
+		expect(recover).toHaveBeenCalledOnce();
+		expect(dischargeStale).not.toHaveBeenCalled();
+		expect(markMaterialized).not.toHaveBeenCalled();
+		expect(inspect).not.toHaveBeenCalled();
+		expect(judge).not.toHaveBeenCalled();
+		expect(persist).not.toHaveBeenCalled();
+		expect(apply).toHaveBeenCalledOnce();
+		expect(
+			apply.mock.calls.every(([input]) => input.candidates.length === 0),
+		).toBe(true);
+	});
+
 	// @cosmo-behavior plan:living-memory-fidelity#B-001
 	test("matches pressure to injection for both round-7 divergence directions", async () => {
 		const smallIndex = [
@@ -4774,6 +4909,7 @@ describe("living memory", () => {
 					return {
 						records: [],
 						inventory,
+						inventoryComplete: true,
 						omitted: 0,
 						knowledgeIndex: renderInput,
 					};
@@ -4853,6 +4989,7 @@ describe("living memory", () => {
 				const snapshot = {
 					records,
 					inventory: [{ ...inventory, metadata: { type: "gotcha" } }],
+					inventoryComplete: true,
 					omitted: 0,
 				};
 				return pass === 1
@@ -4995,6 +5132,7 @@ describe("living memory", () => {
 		expect(bounded.records).toEqual([]);
 		expect(bounded.inventory).toHaveLength(1);
 		expect(bounded.inventory?.[0]).not.toHaveProperty("content");
+		expect(bounded.inventoryComplete).toBe(true);
 
 		const policy = createKnowledgeIndexPressurePolicy();
 		let measuredInput: KnowledgeIndexRenderInput | undefined;
@@ -5326,6 +5464,7 @@ describe("living memory", () => {
 						return {
 							records: projectRecords,
 							inventory,
+							inventoryComplete: true,
 							knowledgeIndex,
 							omitted: 0,
 						};
@@ -5396,6 +5535,7 @@ describe("living memory", () => {
 					async collect() {
 						return {
 							records: [project, user],
+							inventoryComplete: true,
 							knowledgeIndex: {
 								records: [
 									indexRecord({ title: "Project", resource: "project.md" }),
@@ -5448,6 +5588,7 @@ describe("living memory", () => {
 			return {
 				records: candidates.slice(0, options.limit),
 				inventory,
+				inventoryComplete: true,
 				omitted: Math.max(0, candidates.length - options.limit),
 			};
 		});
@@ -5500,6 +5641,8 @@ describe("living memory", () => {
 			);
 			return {
 				records: admitted === undefined ? [] : [admitted],
+				inventory: records.map(({ content: _content, ...item }) => item),
+				inventoryComplete: true,
 				omitted: admitted === undefined ? 0 : records.length - 1,
 			};
 		});
@@ -5561,6 +5704,7 @@ describe("living memory", () => {
 						content: `# Serialized ${index}\n`,
 					}),
 				],
+				inventoryComplete: true,
 				omitted: 0,
 			};
 		});
@@ -5654,6 +5798,7 @@ describe("living memory", () => {
 			);
 			return {
 				records: candidates,
+				inventoryComplete: true,
 				knowledgeIndex: knowledgeIndexFixture(candidates),
 				omitted: 0,
 			};
@@ -6455,11 +6600,30 @@ function source(
 	const knowledgeRecords = records.filter(
 		(record) => record.kind === "knowledge",
 	);
+	const inventory =
+		omitted === 0
+			? undefined
+			: [
+					...records.map(({ content: _content, ...record }) => record),
+					...Array.from({ length: omitted }, (_, index) => ({
+						id: `inventoried-omission-${index}`,
+						sourceId: id,
+						scope: "project" as const,
+						path: `memory/inventoried-omission-${index}.md`,
+						digest: createHash("sha256")
+							.update(`${id}\0${index}`)
+							.digest("hex"),
+						kind: "artifact" as const,
+						metadata: {},
+					})),
+				];
 	return {
 		id,
 		async collect() {
 			return {
 				records,
+				...(inventory === undefined ? {} : { inventory }),
+				inventoryComplete: true,
 				...(knowledgeRecords.length === 0
 					? {}
 					: { knowledgeIndex: knowledgeIndexFixture(knowledgeRecords) }),
