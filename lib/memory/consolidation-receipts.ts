@@ -127,7 +127,10 @@ export function createAcceptedJudgmentReceiptStore(options: {
 						await durableFiles.removeFile(receipt.path);
 						removed.push(receipt.path);
 					} catch (error: unknown) {
-						throw new ReceiptDischargeError(error, removed.length > 0);
+						throw new ReceiptDischargeError(
+							error,
+							removed.length > 0 || hasCommittedWrites(error),
+						);
 					}
 				}
 				return Object.freeze(removed);
@@ -229,6 +232,15 @@ export function createAcceptedJudgmentReceiptStore(options: {
 			return next;
 		},
 	};
+}
+
+function hasCommittedWrites(error: unknown): boolean {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"writesCommitted" in error &&
+		(error as { readonly writesCommitted?: unknown }).writesCommitted === true
+	);
 }
 
 function normalizeReceipt(

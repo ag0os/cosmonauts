@@ -95,7 +95,8 @@ export function createLivingMemoryConsolidator(
 					declines: recoveryRun.details.declines,
 					warnings: recoveryRun.details.warnings,
 					recovery: recoveryRun.details.recovery,
-					writesCommitted: recoveryRun.details.writesCommitted,
+					writesCommitted:
+						details.writesCommitted || recoveryRun.details.writesCommitted,
 					...(recoveryRun.details.manifestPath === undefined
 						? {}
 						: { manifestPath: recoveryRun.details.manifestPath }),
@@ -123,7 +124,6 @@ export function createLivingMemoryConsolidator(
 					};
 				}
 			}
-			const writesCommittedBeforeCollection = details.writesCommitted;
 			const [initialReceipts, proposalPhase] = await Promise.all([
 				dependencies.acceptedJudgmentReceiptStore.list(),
 				readProposalPhase(dependencies.proposalStore),
@@ -182,7 +182,9 @@ export function createLivingMemoryConsolidator(
 				]),
 				warnings: Object.freeze([...details.warnings, ...collected.warnings]),
 				recovery: recoveryRun?.details.recovery ?? "none",
-				writesCommitted: recoveryRun?.details.writesCommitted ?? false,
+				writesCommitted:
+					details.writesCommitted ||
+					(recoveryRun?.details.writesCommitted ?? false),
 			};
 			const pressure: KnowledgeIndexPressureResult =
 				collected.knowledgeIndex === undefined
@@ -211,8 +213,6 @@ export function createLivingMemoryConsolidator(
 			if (!collected.inventoryComplete) {
 				details = {
 					...details,
-					writesCommitted:
-						details.writesCommitted || writesCommittedBeforeCollection,
 					declines: Object.freeze([
 						...details.declines,
 						{
@@ -851,6 +851,7 @@ export function createLivingMemoryConsolidator(
 					await dependencies.acceptedJudgmentReceiptStore.markMaterialized(
 						input.batchKey,
 					);
+				details = { ...details, writesCommitted: true };
 			}
 			const reportedRetirements = [
 				...(retirementRun?.details.retirements ?? []),

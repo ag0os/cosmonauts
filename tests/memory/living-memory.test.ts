@@ -2323,6 +2323,52 @@ describe("living memory", () => {
 		});
 	});
 
+	// @cosmo-behavior plan:living-memory-fidelity#B-007
+	test("reports a committed first receipt removal when its directory sync fails", async () => {
+		const projectRoot = join(tmp.path, "first-receipt-discharge-sync-failure");
+		const baseDurableFiles = createDurableMachineFiles();
+		const durableFiles = {
+			...baseDurableFiles,
+			async removeFile(path: string) {
+				await baseDurableFiles.removeFile(path);
+				throw Object.assign(
+					new Error("simulated first receipt directory sync failure"),
+					{ writesCommitted: true },
+				);
+			},
+		};
+		const receiptStore = createAcceptedJudgmentReceiptStore({
+			projectRoot,
+			durableFiles,
+		});
+		const batchKey = createHash("sha256")
+			.update("first receipt removal")
+			.digest("hex");
+		const receiptPath = receiptStore.pathFor(batchKey);
+		await receiptStore.write({
+			schemaVersion: 1,
+			batchKey,
+			state: "accepted",
+			inputDigests: [createHash("sha256").update("absent input").digest("hex")],
+			output: { schemaVersion: 1, observations: [] },
+			path: receiptPath,
+		});
+		await receiptStore.markMaterialized(batchKey);
+
+		const result = await createHarness([source("empty", [])], undefined, {
+			acceptedJudgmentReceiptStore: receiptStore,
+		}).consolidator();
+
+		expect(result).toMatchObject({
+			kind: "failed",
+			reason: expect.stringContaining(
+				"simulated first receipt directory sync failure",
+			),
+			details: { writesCommitted: true },
+		});
+		await expect(fileExists(receiptPath)).resolves.toBe(false);
+	});
+
 	test("reports a completed receipt discharge when retirement inspection fails", async () => {
 		const projectRoot = join(tmp.path, "completed-receipt-discharge");
 		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
@@ -2909,6 +2955,92 @@ describe("living memory", () => {
 				readFile(join(projectRoot, fixture.path), "utf-8"),
 			).resolves.toBe(fixture.content);
 		}
+	});
+
+	// @cosmo-behavior plan:living-memory-fidelity#B-012
+	test("reports committed writes for a materialization-only retry pass", async () => {
+		const projectRoot = join(tmp.path, "materialization-only-retry");
+		const inputs = [
+			record({
+				id: "materialization-only-evidence",
+				sourceId: "corpus",
+				path: "knowledge/materialization-only.md",
+				kind: "knowledge",
+				content: "# Materialization-only evidence\n",
+			}),
+			record({
+				id: "materialization-only-context",
+				sourceId: "corpus",
+				path: "knowledge/materialization-context.md",
+				kind: "knowledge",
+				content: "# Materialization-only context\n",
+			}),
+		];
+		const input = inputs[0];
+		if (input === undefined) throw new Error("missing materialization input");
+		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
+		const proposalStore = createConsolidationProposalStore({ projectRoot });
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [
+				{
+					kind: "merge-candidate",
+					inputIds: [input.id],
+					reason: "Materialize an already-written proposal.",
+					proposal: {
+						proposalKind: "create",
+						record: proposed("Materialization-only retry"),
+					},
+				},
+			],
+		}));
+		const interrupted = await createHarness(
+			[source("corpus", inputs)],
+			{ id: "fake/no-tools", judge },
+			{
+				acceptedJudgmentReceiptStore: receiptStore,
+				proposalStore: {
+					...proposalStore,
+					async persist(proposalInput) {
+						await proposalStore.persist(proposalInput);
+						throw new Error("simulated crash after durable proposal write");
+					},
+				},
+			},
+		).consolidator();
+		expect(interrupted).toMatchObject({
+			kind: "failed",
+			reason: "simulated crash after durable proposal write",
+			details: { writesCommitted: true },
+		});
+		const accepted = (await receiptStore.list()).find(
+			(receipt) => receipt.state === "accepted",
+		);
+		expect(accepted).toBeDefined();
+		const markMaterialized = vi.spyOn(receiptStore, "markMaterialized");
+
+		const retried = await createHarness(
+			[source("corpus", inputs)],
+			{ id: "fake/no-tools", judge },
+			{
+				acceptedJudgmentReceiptStore: receiptStore,
+				proposalStore,
+			},
+		).consolidator();
+
+		expect(retried).toMatchObject({
+			kind: "ran",
+			details: {
+				proposals: [{ status: "existing" }],
+				episodePrunes: [],
+				writesCommitted: true,
+			},
+		});
+		expect(markMaterialized).toHaveBeenCalledOnce();
+		expect(judge).toHaveBeenCalledOnce();
+		await expect(
+			receiptStore.read(accepted?.batchKey ?? "missing"),
+		).resolves.toMatchObject({ state: "materialized" });
 	});
 
 	// @cosmo-behavior plan:living-memory#B-016
@@ -4845,6 +4977,39 @@ describe("living memory", () => {
 		expect(
 			apply.mock.calls.every(([input]) => input.candidates.length === 0),
 		).toBe(true);
+	});
+
+	// @cosmo-behavior plan:living-memory-fidelity#B-008
+	test("preserves source-recovery episode prunes and committed writes in the final result", async () => {
+		const recoveredEpisode = "memory/agent/episodes/recovered-only.md";
+		const recoveryOnlySource: ConsolidationSource = {
+			id: "episodes",
+			async recover() {
+				return {
+					episodePrunes: [recoveredEpisode],
+					writesCommitted: true,
+				};
+			},
+			async collect() {
+				return {
+					records: [],
+					inventory: [],
+					inventoryComplete: true,
+					knowledgeIndex: { records: [], warnings: [] },
+					omitted: 0,
+				};
+			},
+		};
+
+		const result = await createHarness([recoveryOnlySource]).consolidator();
+
+		expect(result).toMatchObject({
+			kind: "ran",
+			details: {
+				episodePrunes: [recoveredEpisode],
+				writesCommitted: true,
+			},
+		});
 	});
 
 	test("rejects a complete inventory claim that omits an admitted current record", async () => {
