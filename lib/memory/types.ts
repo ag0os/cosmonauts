@@ -68,6 +68,11 @@ export interface MemoryWarning {
 	readonly message: string;
 }
 
+export interface KnowledgeIndexRenderInput {
+	readonly records: readonly RetrievedMemoryRecord[];
+	readonly warnings: readonly MemoryWarning[];
+}
+
 export interface MemorySkippedScope {
 	readonly scope: MemoryScopeName;
 	readonly reason: string;
@@ -183,6 +188,8 @@ export interface MemoryConsolidateDetails {
 		readonly reason: string;
 	}[];
 	readonly warnings: readonly MemoryWarning[];
+	/** Present for every result produced after consolidation source collection. */
+	readonly indexPressure?: KnowledgeIndexPressureResult;
 	readonly recovery: ConsolidationRecovery;
 	readonly writesCommitted: boolean;
 }
@@ -280,19 +287,26 @@ export interface CorpusJudgmentProvider {
 	): Promise<CorpusJudgmentOutput>;
 }
 
-export interface KnowledgeIndexPressureResult {
-	readonly targetSatisfied: boolean;
-	readonly recordCount: number;
-	readonly maxRecords: number;
-	readonly renderedBytes: number;
-	readonly guaranteedBytes: number;
-	readonly headroomBytes: number;
-}
+export type KnowledgeIndexPressureResult =
+	| {
+			readonly kind: "measured";
+			readonly targetSatisfied: boolean;
+			readonly recordCount: number;
+			readonly maxRecords: number;
+			readonly renderedBytes: number;
+			readonly guaranteedBytes: number;
+			readonly headroomBytes: number;
+	  }
+	| {
+			readonly kind: "unusable";
+			readonly targetSatisfied: false;
+			readonly reason: string;
+	  };
 
 export interface KnowledgeIndexPressurePolicy {
 	measure(
-		records: readonly RetrievedMemoryRecord[],
-	): KnowledgeIndexPressureResult;
+		input: KnowledgeIndexRenderInput,
+	): Extract<KnowledgeIndexPressureResult, { readonly kind: "measured" }>;
 }
 
 export interface ConsolidationProposalStore {

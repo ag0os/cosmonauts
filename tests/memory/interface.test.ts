@@ -787,7 +787,7 @@ describe("memory interface", () => {
 		);
 		expect(driveSkill).toContain("never `knowledge/`");
 		expect(createHash("sha256").update(typesSource).digest("hex")).toBe(
-			"99948f6c7596682251ec9fb46487c488abfa93d425659b720d2cd4085681cbe1",
+			"d65ff19c00d28a5b8d03e697b235a19d7e6eca26cfa73bc3c97a0364ff103aea",
 		);
 		expect(
 			createHash("sha256").update(architectureAdapterSource).digest("hex"),
@@ -819,7 +819,7 @@ describe("memory interface", () => {
 		// Knowledge proposals extend the shared seam only with optional fields, so
 		// existing stores and minimal human records remain source-compatible.
 		expect(createHash("sha256").update(typesSource).digest("hex")).toBe(
-			"99948f6c7596682251ec9fb46487c488abfa93d425659b720d2cd4085681cbe1",
+			"d65ff19c00d28a5b8d03e697b235a19d7e6eca26cfa73bc3c97a0364ff103aea",
 		);
 		expect(
 			createHash("sha256").update(architectureAdapterSource).digest("hex"),
@@ -986,7 +986,7 @@ describe("memory interface", () => {
 				),
 			]);
 		const typesHash =
-			"99948f6c7596682251ec9fb46487c488abfa93d425659b720d2cd4085681cbe1";
+			"d65ff19c00d28a5b8d03e697b235a19d7e6eca26cfa73bc3c97a0364ff103aea";
 
 		expect(createHash("sha256").update(typesSource).digest("hex")).toBe(
 			typesHash,
@@ -1228,6 +1228,7 @@ describe("memory interface", () => {
 		});
 		const indexPressure = {
 			measure: vi.fn(() => ({
+				kind: "measured" as const,
 				targetSatisfied: false,
 				recordCount: 53,
 				maxRecords: 50,
@@ -1289,6 +1290,11 @@ describe("memory interface", () => {
 					expect.objectContaining({ code: "target-unmet" }),
 				]),
 				warnings: [],
+				indexPressure: {
+					kind: "measured",
+					targetSatisfied: false,
+					renderedBytes: 8_200,
+				},
 				recovery: "none",
 				writesCommitted: true,
 			},
@@ -1299,6 +1305,7 @@ describe("memory interface", () => {
 			"declines",
 			"dryRun",
 			"episodePrunes",
+			"indexPressure",
 			"modelMode",
 			"observations",
 			"proposals",
@@ -2348,7 +2355,27 @@ function livingMemoryCorpusSource(
 	return {
 		id: "corpus",
 		async collect() {
-			return { records, omitted };
+			return {
+				records,
+				knowledgeIndex: {
+					records: records.map((record) => ({
+						type: String(record.metadata.type),
+						scope: record.scope,
+						kind: "semantic" as const,
+						title: String(record.metadata.title),
+						description: String(record.metadata.description),
+						resource: String(record.metadata.resource),
+						tags: Array.isArray(record.metadata.tags)
+							? record.metadata.tags.map(String)
+							: [],
+						timestamp: String(record.metadata.timestamp),
+						content: "",
+						path: record.path,
+					})),
+					warnings: [],
+				},
+				omitted,
+			};
 		},
 	};
 }
@@ -2404,6 +2431,7 @@ function livingMemoryDependencies(options: {
 		indexPressure: options.indexPressure ?? {
 			measure() {
 				return {
+					kind: "measured" as const,
 					targetSatisfied: true,
 					recordCount: 0,
 					maxRecords: 50,

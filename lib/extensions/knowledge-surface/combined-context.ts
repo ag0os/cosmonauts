@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { extractAgentIdFromSystemPrompt } from "../../agents/runtime-identity.ts";
 import {
 	allocateInjectionBudget,
-	KNOWLEDGE_RECORD_TYPES,
+	KNOWLEDGE_INDEX_RETRIEVAL,
 	type MemoryRetrieveResult,
 	type MemoryRetrieveStats,
 	type MemoryStore,
@@ -54,15 +54,16 @@ export function registerCombinedContextHandler(
 		if (!eligible) return;
 
 		const projectRoot = cwd(ctx);
+		const knowledgeScope = {
+			projectRoot,
+			scopes: KNOWLEDGE_INDEX_RETRIEVAL.scopes,
+		};
 		const pending: Array<
 			Promise<{ key: ContextSectionKey; result: MemoryRetrieveResult }>
 		> = [
 			options
 				.createKnowledgeStore(projectRoot)
-				.retrieve(
-					{ projectRoot, scopes: ["project", "user"] },
-					{ text: "", recordTypes: KNOWLEDGE_RECORD_TYPES },
-				)
+				.retrieve(knowledgeScope, KNOWLEDGE_INDEX_RETRIEVAL.query)
 				.then((result) => ({ key: "knowledge", result })),
 		];
 		if (options.authoredAuthorization.authorized) {
@@ -202,7 +203,7 @@ function renderKnowledgeContext(
 	result: MemoryRetrieveResult | undefined,
 ): string | undefined {
 	if (!result) return undefined;
-	return renderKnowledgeIndex(result.records, result.warnings);
+	return renderKnowledgeIndex(KNOWLEDGE_INDEX_RETRIEVAL.toRenderInput(result));
 }
 
 function section(

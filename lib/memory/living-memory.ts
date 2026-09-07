@@ -10,7 +10,6 @@ import type {
 	ConsolidationProposalStoreWithMaterializations,
 } from "./consolidation-proposals.ts";
 import {
-	type ConsolidationSourceInventoryRecord,
 	type ConsolidationSourceRecord,
 	collectConsolidationSources,
 } from "./consolidation-sources.ts";
@@ -183,6 +182,30 @@ export function createLivingMemoryConsolidator(
 				recovery: recoveryRun?.details.recovery ?? "none",
 				writesCommitted: recoveryRun?.details.writesCommitted ?? false,
 			};
+			const pressure: KnowledgeIndexPressureResult =
+				collected.knowledgeIndex === undefined
+					? {
+							kind: "unusable",
+							targetSatisfied: false,
+							reason:
+								"No exact knowledge-index render input was supplied by consolidation sources.",
+						}
+					: dependencies.indexPressure.measure(collected.knowledgeIndex);
+			details = {
+				...details,
+				indexPressure: pressure,
+				...(pressure.kind === "measured"
+					? {}
+					: {
+							declines: Object.freeze([
+								...details.declines,
+								{
+									code: "index-pressure-unusable",
+									reason: pressure.reason,
+								},
+							]),
+						}),
+			};
 			const dischargedReceipts =
 				dryRun || !collected.inventoryComplete
 					? Object.freeze([])
@@ -293,9 +316,6 @@ export function createLivingMemoryConsolidator(
 						: details.recovery,
 				writesCommitted: maintenanceCommitted,
 			};
-			const pressure = dependencies.indexPressure.measure(
-				toIndexRecords(collected.inventory),
-			);
 			if (selectedRecords.length === 0) {
 				details = {
 					...details,
@@ -389,12 +409,19 @@ export function createLivingMemoryConsolidator(
 					deterministic,
 					selectedRecords,
 				);
-				const retirementCandidates = observedRetirementCandidates.slice(
-					0,
-					dependencies.limits.maxRetirements,
-				);
+				const retirementCandidates =
+					pressure.kind === "measured"
+						? observedRetirementCandidates.slice(
+								0,
+								dependencies.limits.maxRetirements,
+							)
+						: [];
 				const capDeferredRetirements = observedRetirementCandidates
-					.slice(dependencies.limits.maxRetirements)
+					.slice(
+						pressure.kind === "measured"
+							? dependencies.limits.maxRetirements
+							: observedRetirementCandidates.length,
+					)
 					.map((candidate) => ({
 						path: candidate.record.path,
 						digest: candidate.record.digest,
@@ -547,12 +574,19 @@ export function createLivingMemoryConsolidator(
 			const proposalCapDeferred = deterministicProposalFindings.slice(
 				deterministicProposalFindingsToPersist.length,
 			);
-			const retirementCandidates = observedRetirementCandidates.slice(
-				0,
-				dependencies.limits.maxRetirements,
-			);
+			const retirementCandidates =
+				pressure.kind === "measured"
+					? observedRetirementCandidates.slice(
+							0,
+							dependencies.limits.maxRetirements,
+						)
+					: [];
 			const capDeferredRetirements = observedRetirementCandidates
-				.slice(dependencies.limits.maxRetirements)
+				.slice(
+					pressure.kind === "measured"
+						? dependencies.limits.maxRetirements
+						: observedRetirementCandidates.length,
+				)
 				.map((candidate) => ({
 					path: candidate.record.path,
 					digest: candidate.record.digest,
@@ -1080,46 +1114,6 @@ async function recoverAcceptedEpisodeFinalization(options: {
 		...(receipt === undefined ? {} : { receiptPath: receipt.path }),
 		writesCommitted: episodePrunes.length > 0 || completedReceiptKeys.size > 0,
 	});
-}
-
-function toIndexRecords(
-	records: readonly ConsolidationSourceInventoryRecord[],
-): readonly import("./types.ts").RetrievedMemoryRecord[] {
-	return Object.freeze(
-		records.flatMap((record) => {
-			if (record.kind !== "knowledge") return [];
-			const metadata = record.metadata;
-			if (
-				typeof metadata.type !== "string" ||
-				typeof metadata.title !== "string" ||
-				typeof metadata.description !== "string" ||
-				typeof metadata.resource !== "string" ||
-				typeof metadata.timestamp !== "string" ||
-				!Array.isArray(metadata.tags) ||
-				!metadata.tags.every((tag) => typeof tag === "string")
-			) {
-				return [];
-			}
-			const scopeRoot = metadata.scopeRoot;
-			return [
-				Object.freeze({
-					type: metadata.type,
-					scope: record.scope,
-					kind: "semantic" as const,
-					title: metadata.title,
-					description: metadata.description,
-					resource: metadata.resource,
-					tags: Object.freeze(metadata.tags.map((tag) => String(tag))),
-					timestamp: metadata.timestamp,
-					content: "",
-					path:
-						typeof scopeRoot === "string" && isAbsolute(scopeRoot)
-							? join(scopeRoot, ...record.path.split("/"))
-							: record.path,
-				}),
-			];
-		}),
-	);
 }
 
 interface DeterministicFinding {
@@ -2028,6 +2022,7 @@ function targetUnmetDeclines(options: {
 	readonly pressure: KnowledgeIndexPressureResult;
 	readonly retirements: MemoryConsolidateDetails["retirements"];
 }): MemoryConsolidateDetails["declines"] {
+	if (options.pressure.kind === "unusable") return Object.freeze([]);
 	return !options.pressure.targetSatisfied &&
 		!options.retirements.some((retirement) => retirement.status === "applied")
 		? Object.freeze([

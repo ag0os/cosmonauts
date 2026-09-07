@@ -10,7 +10,7 @@ import {
 	symlink,
 	writeFile,
 } from "node:fs/promises";
-import { dirname, join, relative, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { createArchitectureMapMemoryStore } from "../../lib/architecture-map/index.ts";
 import type { EntityFileLockOptions } from "../../lib/entity-file-lock.ts";
@@ -41,11 +41,14 @@ import {
 	DEFAULT_LIVING_MEMORY_LIMITS,
 	executeLivingMemoryConsolidationJob,
 	inspectLivingMemoryCitationInventory,
+	KNOWLEDGE_INDEX_RETRIEVAL,
 	type KnowledgeConsolidator,
 	type KnowledgeIndexPressurePolicy,
+	type KnowledgeIndexRenderInput,
 	type LivingMemoryConsolidatorDependencies,
 	type LivingMemoryRetirementStore,
 	type MemoryStore,
+	type RetrievedMemoryRecord,
 } from "../../lib/memory/index.ts";
 import { parseHumanKnowledgeRecord } from "../../lib/memory/knowledge-records.ts";
 import { readRetirementReceiptInventory } from "../../lib/memory/retirement-receipts.ts";
@@ -2660,6 +2663,7 @@ describe("living memory", () => {
 		});
 		const indexPressure = {
 			measure: vi.fn(() => ({
+				kind: "measured" as const,
 				targetSatisfied: false,
 				recordCount: 51,
 				maxRecords: 50,
@@ -2966,7 +2970,11 @@ describe("living memory", () => {
 					records.push(proposalOnlyRecord, manifestOnlyRecord);
 				}
 				lastCollectedIds = records.map((item) => item.id);
-				return { records, omitted: 0 };
+				return {
+					records,
+					knowledgeIndex: knowledgeIndexFixture(records),
+					omitted: 0,
+				};
 			},
 		};
 		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
@@ -4442,6 +4450,24 @@ describe("living memory", () => {
 				reason: expect.stringMatching(new RegExp(invalid.label, "i")),
 			});
 		}
+
+		await expect(
+			createConsolidator(
+				["first-index", "second-index"].map((id) => ({
+					id,
+					async collect() {
+						return {
+							records: [],
+							knowledgeIndex: { records: [], warnings: [] },
+							omitted: 0,
+						};
+					},
+				})),
+			)(),
+		).resolves.toMatchObject({
+			kind: "failed",
+			reason: expect.stringMatching(/multiple knowledge-index/iu),
+		});
 	});
 
 	// @cosmo-behavior plan:living-memory#B-010
@@ -4665,6 +4691,180 @@ describe("living memory", () => {
 		expect(judge).not.toHaveBeenCalled();
 	});
 
+	// @cosmo-behavior plan:living-memory-fidelity#B-001
+	test("matches pressure to injection for both round-7 divergence directions", async () => {
+		const smallIndex = [
+			indexRecord({
+				title: "One",
+				description: "Small injection.",
+				resource: "knowledge/small.md",
+			}),
+		];
+		const largeIndex = Array.from({ length: 50 }, (_, index) =>
+			indexRecord({
+				title: `Large injected record ${index}`,
+				description: `Large metadata ${"x".repeat(72)}`,
+				resource: `knowledge/large-${index}.md`,
+				timestamp: new Date(Date.UTC(2026, 8, 2, 12, 0, index)).toISOString(),
+			}),
+		);
+		const descriptorWarning = { message: "One malformed record was omitted." };
+		const projected = KNOWLEDGE_INDEX_RETRIEVAL.toRenderInput({
+			records: smallIndex,
+			inventoryRecords: largeIndex.map((record) => ({ record })),
+			warnings: [descriptorWarning],
+		});
+		expect(Object.isFrozen(KNOWLEDGE_INDEX_RETRIEVAL)).toBe(true);
+		expect(Object.isFrozen(KNOWLEDGE_INDEX_RETRIEVAL.scopes)).toBe(true);
+		expect(Object.isFrozen(KNOWLEDGE_INDEX_RETRIEVAL.query)).toBe(true);
+		expect(KNOWLEDGE_INDEX_RETRIEVAL.scopes).toEqual(["project", "user"]);
+		expect(KNOWLEDGE_INDEX_RETRIEVAL.query).toEqual({
+			text: "",
+			recordTypes: ["decision", "trade-off", "gotcha", "convention"],
+		});
+		expect(projected.records).toHaveLength(50);
+		expect(projected.records.every((record) => record.content === "")).toBe(
+			true,
+		);
+		expect(projected.warnings).toEqual([descriptorWarning]);
+		expect(
+			KNOWLEDGE_INDEX_RETRIEVAL.resolveUserCosmonautsRoot(
+				join(tmp.path, "canonical-user", "..", "user"),
+			),
+		).toBe(resolve(tmp.path, "user"));
+		const cases = [
+			{
+				name: "over-measured",
+				injected: smallIndex,
+				inventory: largeIndex,
+			},
+			{
+				name: "false-fit",
+				injected: largeIndex,
+				inventory: smallIndex,
+			},
+		] as const;
+
+		for (const fixture of cases) {
+			const renderInput = Object.freeze({
+				records: Object.freeze(fixture.injected),
+				warnings: Object.freeze([]),
+			});
+			const inventory = fixture.inventory.map((item, index) => ({
+				id: `${fixture.name}-${index}`,
+				sourceId: fixture.name,
+				scope: item.scope === "user" ? ("user" as const) : ("project" as const),
+				path: item.resource,
+				digest: createHash("sha256")
+					.update(`${fixture.name}-${index}`)
+					.digest("hex"),
+				kind: "knowledge" as const,
+				metadata: {
+					type: item.type,
+					title: item.title,
+					description: item.description,
+					resource: item.resource,
+					tags: item.tags,
+					timestamp: item.timestamp,
+				},
+			}));
+			const sourceWithExactIndex: ConsolidationSource = {
+				id: fixture.name,
+				async collect() {
+					return {
+						records: [],
+						inventory,
+						omitted: 0,
+						knowledgeIndex: renderInput,
+					};
+				},
+			};
+			const policy = createKnowledgeIndexPressurePolicy();
+			const harness = createHarness([sourceWithExactIndex], undefined, {
+				indexPressure: policy,
+			});
+
+			const result = await harness.consolidator({
+				modelMode: "deterministic-only",
+			});
+			const rendered = renderKnowledgeIndex(renderInput);
+			const injectedBytes = Buffer.byteLength(rendered ?? "", "utf-8");
+			if (fixture.name === "over-measured") {
+				expect(injectedBytes).toBeGreaterThan(350);
+				expect(injectedBytes).toBeLessThan(400);
+			} else {
+				expect(injectedBytes).toBeGreaterThan(12_000);
+				expect(injectedBytes).toBeLessThan(12_500);
+			}
+			expect.soft(result.details?.indexPressure, fixture.name).toMatchObject({
+				kind: "measured",
+				renderedBytes: injectedBytes,
+			});
+		}
+	});
+
+	// @cosmo-behavior plan:living-memory-fidelity#B-002
+	test("marks pressure unusable instead of reporting a false fit without an exact render input", async () => {
+		const projectRoot = join(tmp.path, "unusable-index-pressure");
+		await mkdir(projectRoot, { recursive: true });
+		await writeFile(join(projectRoot, "fixed.txt"), "fixed\n");
+		const candidate = record({
+			id: "unusable-pressure-retirement",
+			sourceId: "lossy-knowledge",
+			path: "knowledge/unusable.md",
+			kind: "knowledge",
+			content: "# Unusable pressure\n",
+			metadata: {
+				type: "gotcha",
+				title: "Unusable pressure",
+				description: "Exact index metadata is unavailable.",
+				resource: "knowledge/unusable.md",
+				tags: ["memory"],
+				timestamp: "2026-09-02T12:00:00.000Z",
+				retireWhen: {
+					condition: "The replacement exists.",
+					check: { kind: "path-exists", path: "fixed.txt" },
+				},
+				scopeRoot: projectRoot,
+			},
+		});
+		const { content: _content, ...inventory } = candidate;
+		const sourceWithoutExactIndex: ConsolidationSource = {
+			id: candidate.sourceId,
+			async collect() {
+				return {
+					records: [candidate],
+					inventory: [{ ...inventory, metadata: { type: "gotcha" } }],
+					omitted: 0,
+				};
+			},
+		};
+		const harness = createHarness([sourceWithoutExactIndex]);
+
+		const result = await harness.consolidator({
+			dryRun: true,
+			modelMode: "deterministic-only",
+		});
+
+		expect.soft(result).toMatchObject({
+			details: {
+				indexPressure: {
+					kind: "unusable",
+					targetSatisfied: false,
+					reason: expect.stringContaining("exact knowledge-index render input"),
+				},
+				declines: expect.arrayContaining([
+					expect.objectContaining({ code: "index-pressure-unusable" }),
+				]),
+			},
+		});
+		expect(
+			vi
+				.mocked(harness.dependencies.retirementStore.apply)
+				.mock.calls.some(([input]) => input.candidates.length > 0),
+		).toBe(false);
+	});
+
 	// @cosmo-behavior plan:living-memory#B-021
 	test("measures oversized corpus metadata exactly as combined-context injection", async () => {
 		const projectRoot = join(tmp.path, "oversized-index-pressure-corpus");
@@ -4691,8 +4891,8 @@ describe("living memory", () => {
 			userCosmonautsRoot: userRoot,
 		});
 		const injected = await store.retrieve(
-			{ projectRoot, scopes: ["project", "user"] },
-			{},
+			{ projectRoot, scopes: KNOWLEDGE_INDEX_RETRIEVAL.scopes },
+			KNOWLEDGE_INDEX_RETRIEVAL.query,
 		);
 		const source = createProjectCorpusConsolidationSource({
 			projectRoot,
@@ -4710,8 +4910,7 @@ describe("living memory", () => {
 		expect(bounded.inventory?.[0]).not.toHaveProperty("content");
 
 		const policy = createKnowledgeIndexPressurePolicy();
-		let measuredRecords: readonly import("../../lib/memory/index.ts").RetrievedMemoryRecord[] =
-			[];
+		let measuredInput: KnowledgeIndexRenderInput | undefined;
 		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
 			schemaVersion: 1,
 			observations: [],
@@ -4721,17 +4920,18 @@ describe("living memory", () => {
 			{ id: "fake/no-tools", judge },
 			{
 				indexPressure: {
-					measure(records) {
-						measuredRecords = records;
-						return policy.measure(records);
+					measure(input) {
+						measuredInput = input;
+						return policy.measure(input);
 					},
 				},
 			},
 		).consolidator();
 
-		expect(measuredRecords).toHaveLength(1);
-		expect(renderKnowledgeIndex(measuredRecords)).toBe(
-			renderKnowledgeIndex(injected.records),
+		if (measuredInput === undefined) throw new Error("expected measured input");
+		expect(measuredInput.records).toHaveLength(1);
+		expect(renderKnowledgeIndex(measuredInput)).toBe(
+			renderKnowledgeIndex(KNOWLEDGE_INDEX_RETRIEVAL.toRenderInput(injected)),
 		);
 		expect(judge).not.toHaveBeenCalled();
 	});
@@ -5006,7 +5206,24 @@ describe("living memory", () => {
 		const inventory = [...projectRecords, userRecord].map(
 			({ content: _content, ...metadata }) => metadata,
 		);
+		const knowledgeIndex = {
+			records: [
+				...projectRecords.map((_, index) =>
+					indexRecord({
+						title: `Project ${index}`,
+						resource: `project-${index}.md`,
+					}),
+				),
+				indexRecord({
+					scope: "user",
+					title: "User record",
+					resource: "user-record.md",
+				}),
+			],
+			warnings: [],
+		};
 		const measure = vi.fn<KnowledgeIndexPressurePolicy["measure"]>(() => ({
+			kind: "measured",
 			targetSatisfied: false,
 			recordCount: 51,
 			maxRecords: 50,
@@ -5019,7 +5236,12 @@ describe("living memory", () => {
 				{
 					id: "corpus",
 					async collect() {
-						return { records: projectRecords, inventory, omitted: 0 };
+						return {
+							records: projectRecords,
+							inventory,
+							knowledgeIndex,
+							omitted: 0,
+						};
 					},
 				},
 			],
@@ -5039,9 +5261,11 @@ describe("living memory", () => {
 			},
 		});
 		expect(measure).toHaveBeenCalledOnce();
-		expect(measure.mock.calls[0]?.[0]).toHaveLength(51);
+		expect(measure.mock.calls[0]?.[0].records).toHaveLength(51);
 		expect(
-			measure.mock.calls[0]?.[0].filter((item) => item.scope === "user"),
+			measure.mock.calls[0]?.[0].records.filter(
+				(item) => item.scope === "user",
+			),
 		).toHaveLength(1);
 	});
 
@@ -5066,6 +5290,7 @@ describe("living memory", () => {
 			scope: "user" as const,
 		};
 		const measure = vi.fn<KnowledgeIndexPressurePolicy["measure"]>(() => ({
+			kind: "measured",
 			targetSatisfied: true,
 			recordCount: 2,
 			maxRecords: 50,
@@ -5078,7 +5303,28 @@ describe("living memory", () => {
 			observations: [],
 		}));
 		const harness = createHarness(
-			[source("mixed-corpus", [project, user])],
+			[
+				{
+					id: "mixed-corpus",
+					async collect() {
+						return {
+							records: [project, user],
+							knowledgeIndex: {
+								records: [
+									indexRecord({ title: "Project", resource: "project.md" }),
+									indexRecord({
+										scope: "user",
+										title: "User",
+										resource: "user.md",
+									}),
+								],
+								warnings: [],
+							},
+							omitted: 0,
+						};
+					},
+				},
+			],
 			{ id: "fake/no-tools", judge },
 			{ indexPressure: { measure } },
 		);
@@ -5087,7 +5333,7 @@ describe("living memory", () => {
 			kind: "ran",
 		});
 
-		expect(measure.mock.calls[0]?.[0]).toHaveLength(2);
+		expect(measure.mock.calls[0]?.[0].records).toHaveLength(2);
 		expect(judge).toHaveBeenCalledOnce();
 		expect(judge.mock.calls[0]?.[0].records).toEqual([project]);
 	});
@@ -5319,7 +5565,11 @@ describe("living memory", () => {
 				(item) =>
 					!represented.has(`${item.scope}\0${item.path}\0${item.digest}`),
 			);
-			return { records: candidates, omitted: 0 };
+			return {
+				records: candidates,
+				knowledgeIndex: knowledgeIndexFixture(candidates),
+				omitted: 0,
+			};
 		});
 		const apply = vi.fn<LivingMemoryRetirementStore["apply"]>(async (input) => {
 			if (input.candidates.length > input.maxRetirements) {
@@ -5695,6 +5945,7 @@ function createHarness(
 		},
 		indexPressure: overrides.indexPressure ?? {
 			measure: vi.fn(() => ({
+				kind: "measured" as const,
 				targetSatisfied: true,
 				recordCount: 0,
 				maxRecords: 50,
@@ -6114,10 +6365,19 @@ function source(
 	records: readonly ConsolidationSourceRecord[],
 	omitted = 0,
 ): ConsolidationSource {
+	const knowledgeRecords = records.filter(
+		(record) => record.kind === "knowledge",
+	);
 	return {
 		id,
 		async collect() {
-			return { records, omitted };
+			return {
+				records,
+				...(knowledgeRecords.length === 0
+					? {}
+					: { knowledgeIndex: knowledgeIndexFixture(knowledgeRecords) }),
+				omitted,
+			};
 		},
 	};
 }
@@ -6130,6 +6390,47 @@ function indexMetadata(title: string, resource: string) {
 		resource,
 		timestamp: "2026-09-02T12:00:00.000Z",
 		tags: ["memory"],
+	};
+}
+
+function indexRecord(
+	overrides: Partial<RetrievedMemoryRecord>,
+): RetrievedMemoryRecord {
+	return {
+		type: "decision",
+		scope: "project",
+		kind: "semantic",
+		title: "Index record",
+		description: "Index metadata.",
+		resource: "knowledge/index-record.md",
+		tags: ["memory"],
+		timestamp: "2026-09-02T12:00:00.000Z",
+		content: "",
+		path: "/tmp/index-record.md",
+		...overrides,
+	};
+}
+
+function knowledgeIndexFixture(
+	records: readonly ConsolidationSourceRecord[],
+): KnowledgeIndexRenderInput {
+	return {
+		records: records
+			.filter((record) => record.kind === "knowledge")
+			.map((record) =>
+				indexRecord({
+					scope: record.scope,
+					title:
+						typeof record.metadata.title === "string"
+							? record.metadata.title
+							: record.id,
+					resource:
+						typeof record.metadata.resource === "string"
+							? record.metadata.resource
+							: record.path,
+				}),
+			),
+		warnings: [],
 	};
 }
 

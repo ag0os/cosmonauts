@@ -2,12 +2,12 @@ import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { constants } from "node:fs";
 import { type FileHandle, lstat, open, readdir } from "node:fs/promises";
-import { homedir } from "node:os";
 import { basename, join, relative, resolve, sep } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import matter from "gray-matter";
 import { createDurableMachineFiles } from "./durable-files.ts";
 import {
+	KNOWLEDGE_INDEX_RETRIEVAL,
 	normalizeKnowledgeProposal,
 	parseHumanKnowledgeRecord,
 	parseKnowledgeProposalOccupant,
@@ -121,8 +121,8 @@ export function createKnowledgeMemoryStore(
 ): KnowledgeMemoryStore {
 	const context: KnowledgeStoreContext = {
 		projectRoot: resolve(options.projectRoot),
-		userCosmonautsRoot: resolve(
-			options.userCosmonautsRoot ?? join(homedir(), ".cosmonauts"),
+		userCosmonautsRoot: KNOWLEDGE_INDEX_RETRIEVAL.resolveUserCosmonautsRoot(
+			options.userCosmonautsRoot,
 		),
 	};
 

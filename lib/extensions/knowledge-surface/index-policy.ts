@@ -1,7 +1,6 @@
 import type {
 	KnowledgeIndexPressurePolicy,
-	KnowledgeIndexPressureResult,
-	MemoryWarning,
+	KnowledgeIndexRenderInput,
 	RetrievedMemoryRecord,
 } from "../../memory/index.ts";
 import {
@@ -16,21 +15,20 @@ export const COMBINED_CONTEXT_PREFIX =
 const COMBINED_CONTEXT_SEPARATOR = "\n\n";
 
 export function renderKnowledgeIndex(
-	records: readonly RetrievedMemoryRecord[],
-	warnings: readonly MemoryWarning[] = [],
+	input: KnowledgeIndexRenderInput,
 ): string | undefined {
-	const visible = sortedVisibleRecords(records);
-	if (visible.length === 0 && warnings.length === 0) return undefined;
+	const visible = sortedVisibleRecords(input.records);
+	if (visible.length === 0 && input.warnings.length === 0) return undefined;
 	return [
 		"Knowledge index",
 		`Up to ${KNOWLEDGE_INDEX_LIMIT} current project/user knowledge records, ordered by timestamp then path.`,
 		"This section contains compact metadata only, not record bodies.",
 		"Use recall(query) for complete knowledge record details.",
-		...(warnings.length > 0
+		...(input.warnings.length > 0
 			? [
 					"",
 					"Knowledge warnings:",
-					...warnings.map((warning) => `- ${warning.message}`),
+					...input.warnings.map((warning) => `- ${warning.message}`),
 				]
 			: []),
 		"",
@@ -40,11 +38,13 @@ export function renderKnowledgeIndex(
 
 export function createKnowledgeIndexPressurePolicy(): KnowledgeIndexPressurePolicy {
 	return {
-		measure(records): KnowledgeIndexPressureResult {
-			const rendered = renderKnowledgeIndex(records) ?? "";
+		measure(input) {
+			const rendered = renderKnowledgeIndex(input) ?? "";
 			const renderedBytes = utf8ByteLength(rendered);
 			const guaranteedBytes = guaranteedKnowledgeShareBytes();
-			const rows = sortedVisibleRecords(records).map(renderKnowledgeIndexRow);
+			const rows = sortedVisibleRecords(input.records).map(
+				renderKnowledgeIndexRow,
+			);
 			const largestRowBytes = rows.reduce(
 				(maximum, row) => Math.max(maximum, utf8ByteLength(row)),
 				0,
@@ -59,10 +59,11 @@ export function createKnowledgeIndexPressurePolicy(): KnowledgeIndexPressurePoli
 							guaranteedBytes,
 						});
 			return {
+				kind: "measured",
 				targetSatisfied:
-					records.length <= KNOWLEDGE_INDEX_LIMIT &&
+					input.records.length <= KNOWLEDGE_INDEX_LIMIT &&
 					renderedBytes + headroomBytes <= guaranteedBytes,
-				recordCount: records.length,
+				recordCount: input.records.length,
 				maxRecords: KNOWLEDGE_INDEX_LIMIT,
 				renderedBytes,
 				guaranteedBytes,

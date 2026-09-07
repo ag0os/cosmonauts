@@ -30,8 +30,10 @@ import type {
 	RetrievedMemoryRecord,
 } from "../../lib/memory/index.ts";
 import {
+	createKnowledgeMemoryStore,
 	createLivingMemoryConsolidator,
 	DEFAULT_LIVING_MEMORY_LIMITS,
+	KNOWLEDGE_INDEX_RETRIEVAL,
 } from "../../lib/memory/index.ts";
 import { useTempDir } from "../helpers/fs.ts";
 import { createMockPi } from "../helpers/mocks/index.ts";
@@ -70,7 +72,8 @@ describe("architecture-memory extension", () => {
 		);
 		const before = structuredClone(records);
 		const expectedRenderer = legacyKnowledgeIndex(records);
-		expect(renderKnowledgeIndex(records)).toBe(expectedRenderer);
+		const renderInput = { records, warnings: [] };
+		expect(renderKnowledgeIndex(renderInput)).toBe(expectedRenderer);
 
 		const pi = createMockPi({ cwd: projectRoot });
 		installKnowledgeSurface(pi, {
@@ -99,8 +102,9 @@ describe("architecture-memory extension", () => {
 		);
 
 		const policy = createKnowledgeIndexPressurePolicy();
-		const fitting = policy.measure(records);
+		const fitting = policy.measure(renderInput);
 		expect(fitting).toMatchObject({
+			kind: "measured",
 			targetSatisfied: true,
 			recordCount: 50,
 			maxRecords: 50,
@@ -110,24 +114,28 @@ describe("architecture-memory extension", () => {
 		expect(fitting.renderedBytes + fitting.headroomBytes).toBeLessThanOrEqual(
 			fitting.guaranteedBytes,
 		);
-		const overRows = policy.measure([
-			...records,
-			contextRecord({
-				type: "decision",
-				title: "Pressure row 51",
-				resource: "knowledge/51.md",
-			}),
-		]);
+		const overRows = policy.measure({
+			records: [
+				...records,
+				contextRecord({
+					type: "decision",
+					title: "Pressure row 51",
+					resource: "knowledge/51.md",
+				}),
+			],
+			warnings: [],
+		});
 		expect(overRows).toMatchObject({
 			targetSatisfied: false,
 			recordCount: 51,
 		});
-		const overBytes = policy.measure(
-			records.map((record) => ({
+		const overBytes = policy.measure({
+			records: records.map((record) => ({
 				...record,
 				description: "large ".repeat(300),
 			})),
-		);
+			warnings: [],
+		});
 		expect(overBytes.recordCount).toBe(50);
 		expect(overBytes.renderedBytes + overBytes.headroomBytes).toBeGreaterThan(
 			overBytes.guaranteedBytes,
@@ -162,7 +170,17 @@ describe("architecture-memory extension", () => {
 			sources: [
 				{
 					id: "user-knowledge",
-					collect: async () => ({ records: userSourceRecords, omitted: 0 }),
+					collect: async () => ({
+						records: userSourceRecords,
+						knowledgeIndex: {
+							records: records.map((record) => ({
+								...record,
+								description: "large ".repeat(300),
+							})),
+							warnings: [],
+						},
+						omitted: 0,
+					}),
 				},
 			],
 			proposalStore: {
@@ -229,6 +247,61 @@ describe("architecture-memory extension", () => {
 				retirements: [],
 			},
 		});
+	});
+
+	// @cosmo-behavior plan:living-memory-fidelity#B-003
+	test("counts injected knowledge warnings in measured index bytes", async () => {
+		const projectRoot = join(tmp.path, "warning-index-pressure-project");
+		const userRoot = join(tmp.path, "warning-index-pressure-user");
+		await mkdir(join(projectRoot, "knowledge"), { recursive: true });
+		await writeFile(
+			join(projectRoot, "knowledge", "malformed.md"),
+			"---\ntype: malformed\n---\n\n# Malformed knowledge\n",
+		);
+		const store = createKnowledgeMemoryStore({
+			projectRoot,
+			userCosmonautsRoot: userRoot,
+		});
+		const retrieved = await store.retrieve(
+			{ projectRoot, scopes: KNOWLEDGE_INDEX_RETRIEVAL.scopes },
+			KNOWLEDGE_INDEX_RETRIEVAL.query,
+		);
+		const renderInput = KNOWLEDGE_INDEX_RETRIEVAL.toRenderInput(retrieved);
+		const rendered = renderKnowledgeIndex(renderInput);
+		if (rendered === undefined)
+			throw new Error("expected warning-bearing index");
+
+		const pi = createMockPi({ cwd: projectRoot });
+		installKnowledgeSurface(pi, {
+			agentId: "coding/worker",
+			registerAgentMemoryTools: false,
+			authorizeAuthoredMemory: false,
+			registerArchitectureTool: false,
+			authorizeArchitecture: false,
+			recallOwner: "knowledge",
+			canPropose: false,
+			userCosmonautsRoot: userRoot,
+			createKnowledgeStore: () => store,
+			createAuthoredStore: () =>
+				memoryStore({ retrieve: async () => contextResult([]) }),
+			createArchitectureStore: () =>
+				memoryStore({ retrieve: async () => contextResult([]) }),
+		});
+		const injected = (await pi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: buildAgentIdentityMarker("coding/worker") },
+			{ cwd: projectRoot },
+		)) as { message: { content: string } };
+		const pressure = createKnowledgeIndexPressurePolicy().measure(renderInput);
+
+		expect(retrieved.records).toEqual([]);
+		expect(retrieved.warnings).toHaveLength(1);
+		expect(injected.message.content).toBe(
+			`${COMBINED_CONTEXT_PREFIX}${rendered}`,
+		);
+		expect(Buffer.byteLength(rendered, "utf-8")).toBeGreaterThan(300);
+		expect(Buffer.byteLength(rendered, "utf-8")).toBeLessThan(400);
+		expect(pressure.renderedBytes).toBe(Buffer.byteLength(rendered, "utf-8"));
 	});
 	test("delegates mapped index injection and tool reads through an injectable MemoryStore @cosmo-behavior plan:memory-interface#B-003", async () => {
 		await mkdir(join(tmp.path, "memory", "architecture"), { recursive: true });

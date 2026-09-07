@@ -20,13 +20,17 @@ import {
 	createDurableMachineFiles,
 	type DurableMachineFiles,
 } from "./durable-files.ts";
+import { KNOWLEDGE_INDEX_RETRIEVAL } from "./knowledge-records.ts";
 import { createKnowledgeMemoryStore } from "./knowledge-store.ts";
 import { parseEpisodeOkfRecord } from "./okf.ts";
 import {
 	consolidationEvidenceKey,
 	isSafePosixRelativePath,
 } from "./path-safety.ts";
-import type { RetrievedMemoryRecord } from "./types.ts";
+import type {
+	KnowledgeIndexRenderInput,
+	RetrievedMemoryRecord,
+} from "./types.ts";
 
 export const CONSOLIDATION_SOURCE_SCOPES = ["project", "user"] as const;
 export type ConsolidationSourceScope =
@@ -88,6 +92,8 @@ export interface ConsolidationSourceSnapshot {
 	readonly records: readonly ConsolidationSourceRecord[];
 	/** Complete liveness inventory when admission omits otherwise-current inputs. */
 	readonly inventory?: readonly ConsolidationSourceInventoryRecord[];
+	/** Exact warning-aware input for the shared knowledge index renderer. */
+	readonly knowledgeIndex?: KnowledgeIndexRenderInput;
 	readonly omitted: number;
 	readonly declines?: readonly ConsolidationSourceDecline[];
 }
@@ -127,6 +133,7 @@ export interface CollectedConsolidationSources {
 		readonly omitted: number;
 	}[];
 	readonly declines: readonly ConsolidationSourceDecline[];
+	readonly knowledgeIndex?: KnowledgeIndexRenderInput;
 }
 
 export class ConsolidationSourceContractError extends Error {
@@ -167,10 +174,13 @@ class ConsolidationSourceCommittedError extends Error {
 /** Project and user knowledge enter consolidation through the knowledge store. */
 export function createProjectCorpusConsolidationSource(options: {
 	readonly projectRoot: string;
-	readonly userCosmonautsRoot: string;
+	readonly userCosmonautsRoot?: string;
 }): ConsolidationSource {
 	const projectRoot = resolve(options.projectRoot);
-	const userCosmonautsRoot = resolve(options.userCosmonautsRoot);
+	const userCosmonautsRoot =
+		KNOWLEDGE_INDEX_RETRIEVAL.resolveUserCosmonautsRoot(
+			options.userCosmonautsRoot,
+		);
 	const store = createKnowledgeMemoryStore({
 		projectRoot,
 		userCosmonautsRoot,
@@ -180,8 +190,8 @@ export function createProjectCorpusConsolidationSource(options: {
 		async collect(input) {
 			throwIfAborted(input.signal);
 			const retrieved = await store.retrieve(
-				{ projectRoot, scopes: ["project", "user"] },
-				{},
+				{ projectRoot, scopes: KNOWLEDGE_INDEX_RETRIEVAL.scopes },
+				KNOWLEDGE_INDEX_RETRIEVAL.query,
 				{
 					byteLimits: {
 						maxRecordBytes: input.maxCorpusRecordBytes,
@@ -307,6 +317,7 @@ export function createProjectCorpusConsolidationSource(options: {
 			return Object.freeze({
 				records: Object.freeze(records),
 				inventory: Object.freeze(inventory),
+				knowledgeIndex: KNOWLEDGE_INDEX_RETRIEVAL.toRenderInput(retrieved),
 				omitted: projectCandidates - records.length,
 				declines: Object.freeze(declines),
 			});
@@ -699,6 +710,7 @@ export async function collectConsolidationSources(options: {
 	let admittedEpisodes = 0;
 	let admittedEpisodeBytes = 0;
 	let inventoryComplete = true;
+	let knowledgeIndex: KnowledgeIndexRenderInput | undefined;
 	const requestedLimit = Math.max(
 		options.maxCorpusRecords,
 		options.maxEpisodeRecords,
@@ -740,6 +752,14 @@ export async function collectConsolidationSources(options: {
 		);
 		if (sourceInventory === undefined && snapshot.omitted > 0) {
 			inventoryComplete = false;
+		}
+		if (snapshot.knowledgeIndex !== undefined) {
+			if (knowledgeIndex !== undefined) {
+				throw new ConsolidationSourceContractError(
+					"Multiple knowledge-index render-input providers are not supported.",
+				);
+			}
+			knowledgeIndex = immutableKnowledgeIndexInput(snapshot.knowledgeIndex);
 		}
 
 		let admitted = 0;
@@ -821,6 +841,21 @@ export async function collectConsolidationSources(options: {
 		inventoryComplete,
 		sources: Object.freeze(summaries),
 		declines: Object.freeze(declines),
+		...(knowledgeIndex === undefined ? {} : { knowledgeIndex }),
+	});
+}
+
+function immutableKnowledgeIndexInput(
+	input: KnowledgeIndexRenderInput,
+): KnowledgeIndexRenderInput {
+	if (!Array.isArray(input.records) || !Array.isArray(input.warnings)) {
+		throw new ConsolidationSourceContractError(
+			"Knowledge-index render input requires records and warnings arrays.",
+		);
+	}
+	return Object.freeze({
+		records: Object.freeze([...input.records]),
+		warnings: Object.freeze([...input.warnings]),
 	});
 }
 

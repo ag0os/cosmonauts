@@ -1,21 +1,68 @@
 import { createHash } from "node:crypto";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import matter from "gray-matter";
 import { isSafePosixRelativePath } from "./path-safety.ts";
 import type {
+	KnowledgeIndexRenderInput,
 	KnowledgeProposalIdentity,
 	MemoryRecordDraft,
 	MemoryScopeName,
+	MemoryWarning,
 	RetrievedMemoryRecord,
 } from "./types.ts";
 
-export const KNOWLEDGE_RECORD_TYPES = [
+export const KNOWLEDGE_RECORD_TYPES = Object.freeze([
 	"decision",
 	"trade-off",
 	"gotcha",
 	"convention",
-] as const;
+] as const);
 
 export type KnowledgeRecordType = (typeof KNOWLEDGE_RECORD_TYPES)[number];
+
+interface KnowledgeIndexRetrievalResult {
+	readonly records: readonly RetrievedMemoryRecord[];
+	readonly warnings: readonly MemoryWarning[];
+	readonly inventoryRecords?: readonly {
+		readonly record: RetrievedMemoryRecord;
+	}[];
+}
+
+const KNOWLEDGE_INDEX_SCOPES = Object.freeze(["project", "user"] as const);
+const KNOWLEDGE_INDEX_QUERY = Object.freeze({
+	text: "",
+	recordTypes: KNOWLEDGE_RECORD_TYPES,
+});
+
+/** Canonical retrieval and projection contract shared by injection and pressure. */
+export const KNOWLEDGE_INDEX_RETRIEVAL = Object.freeze({
+	scopes: KNOWLEDGE_INDEX_SCOPES,
+	query: KNOWLEDGE_INDEX_QUERY,
+	resolveUserCosmonautsRoot(userCosmonautsRoot?: string): string {
+		return resolve(userCosmonautsRoot ?? join(homedir(), ".cosmonauts"));
+	},
+	toRenderInput(
+		result: KnowledgeIndexRetrievalResult,
+	): KnowledgeIndexRenderInput {
+		const records =
+			result.inventoryRecords?.map(({ record }) => record) ?? result.records;
+		return Object.freeze({
+			records: Object.freeze(
+				records.map((record) =>
+					Object.freeze({
+						...record,
+						tags: Object.freeze([...record.tags]),
+						content: "",
+					}),
+				),
+			),
+			warnings: Object.freeze(
+				result.warnings.map((warning) => Object.freeze({ ...warning })),
+			),
+		});
+	},
+});
 
 export interface KnowledgeProvenance {
 	readonly writer: string;

@@ -75,6 +75,7 @@ export {
 export {
 	type DerivedKnowledgeProposalIdentity,
 	deriveKnowledgeProposalIdentity,
+	KNOWLEDGE_INDEX_RETRIEVAL,
 	KNOWLEDGE_RECORD_TYPES,
 	type KnowledgeProposalIdentityInput,
 	type KnowledgeProvenance,
@@ -124,6 +125,7 @@ export {
 	type KnowledgeConsolidator,
 	type KnowledgeIndexPressurePolicy,
 	type KnowledgeIndexPressureResult,
+	type KnowledgeIndexRenderInput,
 	type KnowledgeProposalIdentity,
 	type LivingMemoryConsolidatorDependencies,
 	type LivingMemoryDurableFiles,
