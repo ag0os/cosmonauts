@@ -296,6 +296,11 @@ Excluded:
   extension stays planner-derived and amendable on record; its recorded cost is
   D-009 (one malformed episode also suspends pruning of unrelated,
   fully-represented episodes).
-- Is the first live retirement round gated on this plan alone, or also on the
-  confirm-round cadence ruling that the deferred retired-area TTL waits on?
-  (Owner.)
+- ~~Is the first live retirement round gated on this plan alone, or also on the
+  confirm-round cadence ruling that the deferred retired-area TTL waits on?~~
+  **Settled 2026-09-07 by the owner: finding 1 does not gate a live retirement
+  round.** The round-7 reviewer's recommendation to treat it as a gate was
+  advisory, and its stated mechanism did not hold in any case (see Purpose,
+  "What a wrong number can and cannot do today"). A live round remains a
+  separate owner-triggered act and stays excluded from this plan's scope; what
+  is settled is that it does not have to wait on this plan.

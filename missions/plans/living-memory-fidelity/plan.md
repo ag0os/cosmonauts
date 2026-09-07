@@ -2,7 +2,7 @@
 title: 'Living memory: honest measurement, discharge, and reporting'
 status: active
 createdAt: '2026-09-07T14:06:12.817Z'
-updatedAt: '2026-09-07T16:10:00.000Z'
+updatedAt: '2026-09-07T16:45:00.000Z'
 ---
 
 ## Overview
@@ -160,7 +160,9 @@ this plan.
     renumber the parent behaviors here; place both plan markers on each new test.
   - Why: the parent behaviors are durable parent-plan contracts; this plan adds
     proof without changing ownership (AC-009, `living-memory-fidelity` INV-004).
-  - Decided by: user-directed, 2026-09-07
+  - Decided by: restates spec AC-009 *(provenance corrected 2026-09-07 — this
+    entry previously read `user-directed`; see D-011)*. Ratified by inheritance
+    from that acceptance criterion's letter, not by a separate human decision.
 
 - **D-006 - Every remediation stage has a fresh structural re-review**
   - Decision: measurement, completeness, and commit-reporting each form a
@@ -174,7 +176,12 @@ this plan.
   - Why: six of seven prior fixes regressed behavior, and rounds 6 and 7 each
     broke the pressure measurement the preceding round addressed. Review is part
     of the implementation structure, not a terminal ceremony.
-  - Decided by: user-directed, 2026-09-07
+  - Decided by: handoff-recommended (a previous session's agent), plan-adopted
+    *(provenance corrected 2026-09-07 — this entry previously read
+    `user-directed`; see D-011)*. **Derived**, and therefore amendable on record
+    by an implementing agent that preserves the Intent. The regression rate it
+    responds to is real; the specific one-review-per-stage cadence is a
+    proposal, not human ground.
 
 - **D-007 - Scope and live-data prohibitions are hard stops**
   - Decision: no live retirement round, no write-capable command against live
@@ -185,7 +192,12 @@ this plan.
     retirement smoke test; another pathname verification layer.
   - Why: these exclusions are human-ratified ground and protect the already
     closed safety story (`living-memory-fidelity` INV-004).
-  - Decided by: user-directed, 2026-09-07
+  - Decided by: derived from ratified ground *(provenance corrected 2026-09-07 —
+    this entry previously read `user-directed`; see D-011)*. Its components trace
+    to this spec's Scope exclusions and the parent `living-memory` spec's
+    exclusion of a live retirement round (scope exclusions are ratified by the
+    artifact contract), and to the parent plan's human-ratified D-026 — not to a
+    separate instruction. Ratified by inheritance from those sources.
 
 - **D-026 - The parent's ratified pathname-race acceptance is inherited verbatim** *(Recorded 2026-09-07 after review; not re-decided here)*
   - Decision: `missions/plans/living-memory/plan.md` D-026 — check-then-
@@ -265,20 +277,27 @@ this plan.
   - Decided by: review-synthesis (independent scope/sequencing lens), amend-on-record
 
 - **D-011 - This plan's ratified ground, and where it came from** *(Added 2026-09-07 after review; ratified by the owner the same day)*
-  - Decision: D-005, D-006 and D-007 are marked `user-directed` because their
-    substance comes from the owner's handoff constraints (preserve every
-    existing behavior marker; do not weaken any frozen pin, receipt floor,
-    retirement/byte authority or fail-closed validation; do not run a live
-    retirement round; do not expand scope; re-review after every remediation
-    round). The spec's `## Intent` invariants INV-001..INV-004 are ratified
+  - Decision *(materially corrected 2026-09-07)*: D-005, D-006 and D-007 were
+    originally marked `user-directed` on the belief that their substance came
+    from the owner. It did not. It came from the session-opening handoff prompt,
+    which the owner has since confirmed was **written by a previous session's
+    agent using the handoff skill** — a recommendation, not human ground. Their
+    provenance is corrected in place: D-005 inherits ratification from spec
+    AC-009, D-007 from this spec's and the parent spec's scope exclusions plus
+    the parent's human-ratified D-026, and **D-006 is derived**, with no ratified
+    source behind its specific cadence. Treat no other constraint as human ground
+    merely because the handoff stated it. The spec's `## Intent` invariants
+    INV-001..INV-004 are ratified
     ground by definition of the artifact contract. They were drafted by an agent
     and **the owner ratified them explicitly on 2026-09-07**, after being shown
     the derivation: INV-001, INV-002 and INV-003 are generalizations of the four
     recorded findings (INV-002's concept is the round-7 reviewer's wording,
     though its three-seam blast radius was the drafting agent's choice, and
     INV-001's "same scope set" clause was added with no finding behind it — the
-    divergence that produced D-008); INV-004 is a restatement of the owner's own
-    handoff constraints. Both facts are recorded here rather than left to
+    divergence that produced D-008); INV-004 restates the handoff's do-not list,
+    which is agent-authored and carries no independent authority. All four are
+    human ground **by that explicit ratification alone**, not by anything the
+    handoff asserted. Both facts are recorded here rather than left to
     provenance defaults.
   - Alternatives: relabel D-005..D-007 as `planner-proposed` (understates the
     owner's actual instruction); leave the spec's ratification status implicit
