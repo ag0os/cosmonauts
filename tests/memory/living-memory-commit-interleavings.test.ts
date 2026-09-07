@@ -1,0 +1,521 @@
+import { createHash } from "node:crypto";
+import { mkdir, readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import type {
+	ConsolidationProposalMaterialization,
+	ConsolidationProposalStoreWithMaterializations,
+} from "../../lib/memory/consolidation-proposals.ts";
+import type { ConsolidationSourceRecord } from "../../lib/memory/consolidation-sources.ts";
+import {
+	type AcceptedJudgmentReceipt,
+	type ConsolidationSource,
+	type CorpusJudgmentProvider,
+	createAcceptedJudgmentReceiptStore,
+	createConsolidationProposalStore,
+	createLivingMemoryConsolidator,
+	DEFAULT_LIVING_MEMORY_LIMITS,
+	type LivingMemoryConsolidatorDependencies,
+} from "../../lib/memory/index.ts";
+import { useTempDir } from "../helpers/fs.ts";
+
+type FsOperation = (...args: never[]) => Promise<unknown>;
+
+const fsFault = vi.hoisted(() => ({
+	failDirectory: undefined as string | undefined,
+	receiptPath: undefined as string | undefined,
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:fs/promises")>();
+	return {
+		...actual,
+		async rename(...args: never[]) {
+			const result = await (actual.rename as unknown as FsOperation)(...args);
+			if (String(args[1]) === fsFault.receiptPath) {
+				fsFault.failDirectory = dirname(String(args[1]));
+			}
+			return result;
+		},
+		async open(...args: never[]) {
+			const handle = await (actual.open as unknown as FsOperation)(...args);
+			if (String(args[0]) !== fsFault.failDirectory) return handle;
+			fsFault.failDirectory = undefined;
+			return new Proxy(handle as object, {
+				get(target, property) {
+					if (property === "sync") {
+						return async () => {
+							throw new Error(
+								"simulated receipt parent-directory sync failure",
+							);
+						};
+					}
+					const value = Reflect.get(target, property, target);
+					return typeof value === "function" ? value.bind(target) : value;
+				},
+			});
+		},
+	};
+});
+
+const tmp = useTempDir("living-memory-commit-interleavings-");
+
+afterEach(() => {
+	fsFault.failDirectory = undefined;
+	fsFault.receiptPath = undefined;
+});
+
+describe("living-memory committed-write interleavings", () => {
+	test("reports receipt materialization when its parent-directory sync fails", async () => {
+		const projectRoot = join(tmp.path, "materialization-sync-failure");
+		const input = record({
+			id: "materialization-evidence",
+			sourceId: "corpus",
+			path: "knowledge/materialization.md",
+			kind: "knowledge",
+			content: "# Materialization evidence\n",
+		});
+		const context = record({
+			id: "materialization-context",
+			sourceId: "corpus",
+			path: "knowledge/materialization-context.md",
+			kind: "knowledge",
+			content: "# Materialization context\n",
+		});
+		const records = [input, context];
+		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
+		const proposalStore = createConsolidationProposalStore({ projectRoot });
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [
+				{
+					kind: "merge-candidate",
+					inputIds: [input.id],
+					reason: "Materialize the durable proposal.",
+					proposal: {
+						proposalKind: "create",
+						record: proposed("Materialization sync failure"),
+					},
+				},
+			],
+		}));
+		const judgmentProvider = { id: "fake/no-tools", judge };
+		const interrupted = await createHarness(
+			[source("corpus", records)],
+			judgmentProvider,
+			{
+				acceptedJudgmentReceiptStore: receiptStore,
+				proposalStore: {
+					...proposalStore,
+					async persist(proposalInput) {
+						await proposalStore.persist(proposalInput);
+						throw new Error("interrupt after proposal write");
+					},
+				},
+			},
+		)();
+		const accepted = (await receiptStore.list()).find(
+			(receipt) => receipt.state === "accepted",
+		);
+		if (accepted === undefined) {
+			throw new Error(
+				`missing accepted receipt fixture: ${JSON.stringify(interrupted)}`,
+			);
+		}
+		fsFault.receiptPath = accepted.path;
+
+		const result = await createHarness(
+			[source("corpus", records)],
+			judgmentProvider,
+			{
+				acceptedJudgmentReceiptStore: receiptStore,
+				proposalStore,
+			},
+		)();
+
+		expect(JSON.parse(await readFile(accepted.path, "utf-8"))).toMatchObject({
+			state: "materialized",
+		});
+		expect(result).toMatchObject({
+			kind: "failed",
+			reason: "simulated receipt parent-directory sync failure",
+			details: { writesCommitted: true },
+		});
+	});
+
+	test("reports an earlier deterministic proposal when the next persist fails", async () => {
+		const projectRoot = join(tmp.path, "deterministic-proposal-failure");
+		await mkdir(projectRoot, { recursive: true });
+		const records = ["first", "second"].map((suffix) =>
+			record({
+				id: `stale-${suffix}`,
+				sourceId: "corpus",
+				path: `knowledge/stale-${suffix}.md`,
+				kind: "knowledge",
+				content: `# Stale ${suffix}\n\n[Missing](../docs/missing-${suffix}.md)\n`,
+				metadata: {
+					type: "gotcha",
+					title: `Stale ${suffix}`,
+					description: `Stale citation ${suffix}.`,
+					tags: ["memory"],
+					scopeRoot: projectRoot,
+				},
+			}),
+		);
+		const proposalStore = createConsolidationProposalStore({ projectRoot });
+		let persistCount = 0;
+		let firstProposalPath: string | undefined;
+
+		const result = await createHarness([source("corpus", records)], undefined, {
+			proposalStore: {
+				...proposalStore,
+				async persist(input) {
+					persistCount += 1;
+					if (persistCount === 2) {
+						throw new Error("simulated second deterministic proposal conflict");
+					}
+					const persisted = await proposalStore.persist(input);
+					firstProposalPath = persisted.path;
+					expect(persisted.status).toBe("written");
+					return persisted;
+				},
+			},
+		})({ modelMode: "deterministic-only" });
+
+		if (firstProposalPath === undefined) {
+			throw new Error(
+				`missing first deterministic proposal path: ${JSON.stringify(result)}`,
+			);
+		}
+		await expect(readFile(firstProposalPath, "utf-8")).resolves.toContain(
+			"proposalKind: merge",
+		);
+		expect(result).toMatchObject({
+			kind: "failed",
+			reason: "simulated second deterministic proposal conflict",
+			details: { writesCommitted: true },
+		});
+	});
+
+	test("reports an earlier model proposal when the next persist fails", async () => {
+		const projectRoot = join(tmp.path, "model-proposal-failure");
+		const records = ["first", "second", "context"].map((suffix) =>
+			record({
+				id: `model-${suffix}`,
+				sourceId: "corpus",
+				path: `knowledge/model-${suffix}.md`,
+				kind: "knowledge",
+				content: `# Model ${suffix}\n`,
+			}),
+		);
+		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
+		const proposalStore = createConsolidationProposalStore({ projectRoot });
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: records.slice(0, 2).map((input, index) => ({
+				kind: "merge-candidate" as const,
+				inputIds: [input.id],
+				reason: `Persist model proposal ${index + 1}.`,
+				proposal: {
+					proposalKind: "create" as const,
+					record: proposed(`Model proposal ${index + 1}`),
+				},
+			})),
+		}));
+		const judgmentProvider = { id: "fake/no-tools", judge };
+		const seeded = await createHarness(
+			[source("corpus", records)],
+			judgmentProvider,
+			{
+				acceptedJudgmentReceiptStore: receiptStore,
+				proposalStore: {
+					...proposalStore,
+					async persist() {
+						throw new Error("interrupt after accepted receipt");
+					},
+				},
+			},
+		)();
+		expect(seeded).toMatchObject({
+			kind: "failed",
+			reason: "interrupt after accepted receipt",
+			details: { writesCommitted: true },
+		});
+
+		let persistCount = 0;
+		let firstProposalPath: string | undefined;
+		const result = await createHarness(
+			[source("corpus", records)],
+			judgmentProvider,
+			{
+				acceptedJudgmentReceiptStore: receiptStore,
+				proposalStore: {
+					...proposalStore,
+					async persist(input) {
+						persistCount += 1;
+						if (persistCount === 2) {
+							throw new Error("simulated second model proposal conflict");
+						}
+						const persisted = await proposalStore.persist(input);
+						firstProposalPath = persisted.path;
+						expect(persisted.status).toBe("written");
+						return persisted;
+					},
+				},
+			},
+		)();
+
+		if (firstProposalPath === undefined) {
+			throw new Error(
+				`missing first model proposal path: ${JSON.stringify(result)}`,
+			);
+		}
+		await expect(readFile(firstProposalPath, "utf-8")).resolves.toContain(
+			"proposalKind: create",
+		);
+		expect(result).toMatchObject({
+			kind: "failed",
+			reason: "simulated second model proposal conflict",
+			details: { writesCommitted: true },
+		});
+		expect(judge).toHaveBeenCalledOnce();
+	});
+
+	test("reports a recovered episode prune when receipt materialization fails", async () => {
+		const episode = record({
+			id: "recovered-episode",
+			sourceId: "episodes",
+			path: "memory/agent/episodes/recovered-episode.md",
+			kind: "episode",
+			content: "# Recovered episode\n",
+		});
+		const batchKey = createHash("sha256")
+			.update("recovered episode receipt")
+			.digest("hex");
+		const evidence = {
+			id: episode.id,
+			sourceId: episode.sourceId,
+			scope: episode.scope,
+			path: episode.path,
+			digest: episode.digest,
+		};
+		const receipt: AcceptedJudgmentReceipt = {
+			schemaVersion: 1,
+			batchKey,
+			state: "accepted",
+			inputDigests: [episode.digest],
+			inputs: [evidence],
+			output: { schemaVersion: 1, observations: [] },
+			path: `/tmp/${batchKey}.json`,
+		};
+		const proposal: ConsolidationProposalMaterialization = {
+			proposalKind: "create",
+			key: batchKey,
+			path: "/tmp/recovered-proposal.md",
+			inputs: [evidence],
+			contentDigest: createHash("sha256").update("proposal").digest("hex"),
+			status: "existing",
+			outputType: "note",
+		};
+		const finalize = vi.fn(async () => [episode.id]);
+		const markMaterialized = vi.fn(async () => {
+			throw new Error("simulated recovery receipt materialization failure");
+		});
+		const receiptStore = {
+			pathFor: (key: string) => `/tmp/${key}.json`,
+			list: async () => [receipt],
+			dischargeStale: async () => [],
+			read: async () => receipt,
+			write: async (input: AcceptedJudgmentReceipt) => input,
+			markMaterialized,
+		};
+		const episodeSource: ConsolidationSource = {
+			id: "episodes",
+			async collect() {
+				return {
+					records: [episode],
+					inventoryComplete: true,
+					omitted: 0,
+				};
+			},
+			finalize,
+		};
+		const recoveryProposalStore: ConsolidationProposalStoreWithMaterializations =
+			{
+				readEvidence: async () => proposal.inputs,
+				readMaterializations: async () => [proposal],
+				persist: async () => {
+					throw new Error("unexpected proposal persist");
+				},
+			};
+
+		const result = await createHarness([episodeSource], undefined, {
+			acceptedJudgmentReceiptStore: receiptStore,
+			proposalStore: recoveryProposalStore,
+		})();
+
+		expect(finalize).toHaveBeenCalledOnce();
+		expect(markMaterialized).toHaveBeenCalledOnce();
+		expect(result).toMatchObject({
+			kind: "failed",
+			reason: "simulated recovery receipt materialization failure",
+			details: {
+				episodePrunes: [episode.id],
+				writesCommitted: true,
+			},
+		});
+	});
+});
+
+function createHarness(
+	sources: readonly ConsolidationSource[],
+	judgmentProvider?: CorpusJudgmentProvider,
+	overrides: Partial<
+		Pick<
+			LivingMemoryConsolidatorDependencies,
+			"acceptedJudgmentReceiptStore" | "proposalStore"
+		>
+	> = {},
+) {
+	return createLivingMemoryConsolidator({
+		lockPath: "/tmp/living-memory-commit-interleavings.lock",
+		withLock: async <T>(_path: string, action: () => Promise<T>) => action(),
+		sources,
+		judgmentProvider,
+		proposalStore: overrides.proposalStore ?? {
+			readEvidence: async () => [],
+			persist: async (input) => ({
+				proposalKind: input.proposal.proposalKind,
+				key: input.batchKey,
+				inputs: input.observation.inputs,
+				contentDigest: createHash("sha256")
+					.update(JSON.stringify(input.proposal))
+					.digest("hex"),
+				status: input.dryRun ? ("preview" as const) : ("written" as const),
+			}),
+		},
+		acceptedJudgmentReceiptStore:
+			overrides.acceptedJudgmentReceiptStore ?? inMemoryReceiptStore(),
+		retirementStore: {
+			inspect: async () => ({
+				recovery: "none",
+				warnings: [],
+				representedKeys: [],
+			}),
+			apply: async () => ({
+				kind: "completed",
+				details: {
+					retirements: [],
+					declines: [],
+					warnings: [],
+					recovery: "none",
+					writesCommitted: false,
+				},
+			}),
+		},
+		durableFiles: {
+			writeText: async () => {
+				throw new Error("unexpected direct durable write");
+			},
+		},
+		indexPressure: {
+			measure: () => ({
+				kind: "measured",
+				targetSatisfied: true,
+				recordCount: 1,
+				maxRecords: 50,
+				renderedBytes: 1,
+				guaranteedBytes: 8_000,
+				headroomBytes: 7_999,
+			}),
+		},
+		clock: () => new Date("2026-09-01T12:00:00.000Z"),
+		limits: DEFAULT_LIVING_MEMORY_LIMITS,
+		lockOptions: {
+			retryMs: 50,
+			timeoutMs: 10_000,
+			onReleaseUnconfirmed: () => undefined,
+		},
+	});
+}
+
+function inMemoryReceiptStore() {
+	return {
+		pathFor: (batchKey: string) => `/tmp/${batchKey}.json`,
+		list: async () => [],
+		dischargeStale: async () => [],
+		read: async () => undefined,
+		write: async (
+			receipt: Parameters<
+				LivingMemoryConsolidatorDependencies["acceptedJudgmentReceiptStore"]["write"]
+			>[0],
+		) => receipt,
+		markMaterialized: async (batchKey: string) => ({
+			schemaVersion: 1 as const,
+			batchKey,
+			state: "materialized" as const,
+			inputDigests: [],
+			output: { schemaVersion: 1 as const, observations: [] },
+			path: `/tmp/${batchKey}.json`,
+		}),
+	};
+}
+
+function source(
+	id: string,
+	records: readonly ConsolidationSourceRecord[],
+): ConsolidationSource {
+	return {
+		id,
+		async collect() {
+			return {
+				records,
+				inventoryComplete: true,
+				knowledgeIndex: {
+					records: records
+						.filter((record) => record.kind === "knowledge")
+						.map((record) => ({
+							type: "decision" as const,
+							scope: record.scope,
+							kind: "semantic" as const,
+							title: record.id,
+							description: `${record.id} description.`,
+							resource: record.path,
+							tags: ["memory"],
+							timestamp: "2026-09-01T12:00:00.000Z",
+							content: "",
+							path: record.path,
+						})),
+					warnings: [],
+				},
+				omitted: 0,
+			};
+		},
+	};
+}
+
+function record(options: {
+	readonly id: string;
+	readonly sourceId: string;
+	readonly path: string;
+	readonly kind: ConsolidationSourceRecord["kind"];
+	readonly content: string;
+	readonly metadata?: Readonly<Record<string, unknown>>;
+}): ConsolidationSourceRecord {
+	return {
+		...options,
+		scope: "project",
+		digest: createHash("sha256").update(options.content).digest("hex"),
+		metadata: options.metadata ?? {},
+	};
+}
+
+function proposed(title: string) {
+	return {
+		type: "decision" as const,
+		title,
+		description: `${title} description.`,
+		content: `# ${title}\n\nComplete replacement.\n`,
+		tags: ["memory"],
+	};
+}

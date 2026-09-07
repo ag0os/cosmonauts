@@ -379,7 +379,11 @@ async function replaceText(options: {
 		tempExists = true;
 		await rename(tempPath, options.path);
 		tempExists = false;
-		await syncDirectory(dirname(options.path));
+		try {
+			await syncDirectory(dirname(options.path));
+		} catch (error: unknown) {
+			throw new DurableFileCommittedError(error);
+		}
 		return { path: options.path, digest: sha256(options.content) };
 	} finally {
 		if (tempExists) {

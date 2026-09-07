@@ -61,6 +61,11 @@ const OBSERVATION_KINDS = new Set<ConsolidationObservationKind>([
 	"improvement",
 ]);
 
+interface CommittedWriteState {
+	readonly writesCommitted: boolean;
+	readonly episodePrunes?: readonly string[];
+}
+
 export function createLivingMemoryConsolidator(
 	dependencies: LivingMemoryConsolidatorDependencies,
 ): KnowledgeConsolidator {
@@ -74,12 +79,59 @@ export function createLivingMemoryConsolidator(
 		const dryRun = options.dryRun ?? false;
 		const modelMode = options.modelMode ?? "full";
 		let details = emptyDetails({ dryRun, modelMode });
+		// Durable mutation reporting is write-through: every mutating seam records
+		// its committed state before later work can fail; result assembly never
+		// reconstructs the bit from phase-local arrays or status values.
+		const reportCommittedState = (state: CommittedWriteState): void => {
+			const episodePrunes = state.episodePrunes ?? [];
+			if (episodePrunes.length === 0 && !state.writesCommitted) return;
+			details = {
+				...details,
+				...(episodePrunes.length === 0
+					? {}
+					: {
+							episodePrunes: Object.freeze([
+								...details.episodePrunes,
+								...episodePrunes,
+							]),
+						}),
+				writesCommitted: details.writesCommitted || state.writesCommitted,
+			};
+		};
+		const applyRetirements: LivingMemoryConsolidatorDependencies["retirementStore"]["apply"] =
+			async (input) => {
+				const result = await dependencies.retirementStore.apply(input);
+				reportCommittedState(result.details);
+				return result;
+			};
+		const persistProposal: LivingMemoryConsolidatorDependencies["proposalStore"]["persist"] =
+			async (input) => {
+				const proposal = await dependencies.proposalStore.persist(input);
+				reportCommittedState({
+					writesCommitted: proposal.status === "written",
+				});
+				return proposal;
+			};
+		const markReceiptMaterialized: LivingMemoryConsolidatorDependencies["acceptedJudgmentReceiptStore"]["markMaterialized"] =
+			async (batchKey) => {
+				try {
+					const receipt =
+						await dependencies.acceptedJudgmentReceiptStore.markMaterialized(
+							batchKey,
+						);
+					reportCommittedState({ writesCommitted: true });
+					return receipt;
+				} catch (error: unknown) {
+					reportCommittedState({ writesCommitted: hasCommittedWrites(error) });
+					throw error;
+				}
+			};
 
 		try {
 			throwIfAborted(options.signal);
 			const recoveryRun = dryRun
 				? undefined
-				: await dependencies.retirementStore.apply({
+				: await applyRetirements({
 						candidates: [],
 						dryRun: false,
 						date: dependencies.clock(),
@@ -95,8 +147,6 @@ export function createLivingMemoryConsolidator(
 					declines: recoveryRun.details.declines,
 					warnings: recoveryRun.details.warnings,
 					recovery: recoveryRun.details.recovery,
-					writesCommitted:
-						details.writesCommitted || recoveryRun.details.writesCommitted,
 					...(recoveryRun.details.manifestPath === undefined
 						? {}
 						: { manifestPath: recoveryRun.details.manifestPath }),
@@ -113,15 +163,7 @@ export function createLivingMemoryConsolidator(
 				for (const source of dependencies.sources) {
 					const sourceRecovery = await source.recover?.();
 					if (sourceRecovery === undefined) continue;
-					details = {
-						...details,
-						episodePrunes: Object.freeze([
-							...details.episodePrunes,
-							...sourceRecovery.episodePrunes,
-						]),
-						writesCommitted:
-							details.writesCommitted || sourceRecovery.writesCommitted,
-					};
+					reportCommittedState(sourceRecovery);
 				}
 			}
 			const [initialReceipts, proposalPhase] = await Promise.all([
@@ -182,9 +224,6 @@ export function createLivingMemoryConsolidator(
 				]),
 				warnings: Object.freeze([...details.warnings, ...collected.warnings]),
 				recovery: recoveryRun?.details.recovery ?? "none",
-				writesCommitted:
-					details.writesCommitted ||
-					(recoveryRun?.details.writesCommitted ?? false),
 			};
 			const pressure: KnowledgeIndexPressureResult =
 				collected.knowledgeIndex === undefined
@@ -237,9 +276,9 @@ export function createLivingMemoryConsolidator(
 						lockOptions: dependencies.lockOptions,
 						lockHeld,
 					});
-			if (dischargedReceipts.length > 0) {
-				details = { ...details, writesCommitted: true };
-			}
+			reportCommittedState({
+				writesCommitted: dischargedReceipts.length > 0,
+			});
 			const dischargedPaths = new Set(dischargedReceipts);
 			const receipts = initialReceipts.filter(
 				(receipt) => !dischargedPaths.has(receipt.path),
@@ -271,17 +310,13 @@ export function createLivingMemoryConsolidator(
 						receipts,
 						proposals: proposalMaterializations,
 						dependencies,
+						markReceiptMaterialized,
+						reportCommittedState,
 					});
 			if (episodeRecovery !== undefined) {
 				details = {
 					...details,
 					proposals: episodeRecovery.proposals,
-					episodePrunes: Object.freeze([
-						...details.episodePrunes,
-						...episodeRecovery.episodePrunes,
-					]),
-					writesCommitted:
-						details.writesCommitted || episodeRecovery.writesCommitted,
 					...(episodeRecovery.receiptPath === undefined
 						? {}
 						: {
@@ -326,8 +361,6 @@ export function createLivingMemoryConsolidator(
 								!representedKeys.has(consolidationEvidenceKey(record)),
 						),
 			);
-			const maintenanceCommitted =
-				details.writesCommitted || dischargedReceipts.length > 0;
 			details = {
 				...details,
 				warnings: Object.freeze([
@@ -338,7 +371,6 @@ export function createLivingMemoryConsolidator(
 					details.recovery === "none"
 						? retirementInspection.recovery
 						: details.recovery,
-				writesCommitted: maintenanceCommitted,
 			};
 			if (selectedRecords.length === 0) {
 				details = {
@@ -348,7 +380,7 @@ export function createLivingMemoryConsolidator(
 						...targetUnmetDeclines({ pressure, retirements: [] }),
 					]),
 				};
-				return maintenanceCommitted
+				return details.writesCommitted
 					? { kind: "ran" as const, details }
 					: {
 							kind: "noop" as const,
@@ -418,7 +450,7 @@ export function createLivingMemoryConsolidator(
 					if (finding.proposal === undefined || finding.key === undefined)
 						continue;
 					proposals.push(
-						await dependencies.proposalStore.persist({
+						await persistProposal({
 							batchKey: finding.key,
 							observation: finding.observation,
 							proposal: finding.proposal,
@@ -455,7 +487,7 @@ export function createLivingMemoryConsolidator(
 				const retirementRun =
 					retirementCandidates.length === 0
 						? undefined
-						: await dependencies.retirementStore.apply({
+						: await applyRetirements({
 								candidates: retirementCandidates,
 								dryRun,
 								date: dependencies.clock(),
@@ -500,10 +532,6 @@ export function createLivingMemoryConsolidator(
 						...(retirementRun?.details.warnings ?? []),
 					]),
 					recovery: retirementRun?.details.recovery ?? details.recovery,
-					writesCommitted:
-						details.writesCommitted ||
-						proposals.some((proposal) => proposal.status === "written") ||
-						(retirementRun?.details.writesCommitted ?? false),
 					...(retirementRun?.details.manifestPath === undefined
 						? {}
 						: { manifestPath: retirementRun.details.manifestPath }),
@@ -635,7 +663,6 @@ export function createLivingMemoryConsolidator(
 					),
 			]);
 			let acceptedReceipt = existingReceipt;
-			const receiptAcceptedThisPass = !dryRun && acceptedReceipt === undefined;
 			if (!dryRun && acceptedReceipt === undefined) {
 				acceptedReceipt = await dependencies.acceptedJudgmentReceiptStore.write(
 					{
@@ -659,6 +686,7 @@ export function createLivingMemoryConsolidator(
 						),
 					},
 				);
+				reportCommittedState({ writesCommitted: true });
 			}
 			if (acceptedReceipt !== undefined) {
 				normalized = validateJudgmentOutput({
@@ -674,7 +702,6 @@ export function createLivingMemoryConsolidator(
 				details = {
 					...details,
 					acceptedJudgmentReceiptPath: acceptedReceipt.path,
-					writesCommitted: details.writesCommitted || receiptAcceptedThisPass,
 				};
 			}
 			const proposals = [];
@@ -682,7 +709,7 @@ export function createLivingMemoryConsolidator(
 				if (finding.proposal === undefined || finding.key === undefined)
 					continue;
 				proposals.push(
-					await dependencies.proposalStore.persist({
+					await persistProposal({
 						batchKey: finding.key,
 						observation: finding.observation,
 						proposal: finding.proposal,
@@ -712,7 +739,7 @@ export function createLivingMemoryConsolidator(
 				) {
 					continue;
 				}
-				const proposal = await dependencies.proposalStore.persist({
+				const proposal = await persistProposal({
 					batchKey: input.batchKey,
 					observation: item.observation,
 					proposal: item.proposal,
@@ -754,7 +781,7 @@ export function createLivingMemoryConsolidator(
 			const retirementRun =
 				retirementCandidates.length === 0
 					? undefined
-					: await dependencies.retirementStore.apply({
+					: await applyRetirements({
 							candidates: retirementCandidates,
 							dryRun,
 							date: dependencies.clock(),
@@ -816,17 +843,11 @@ export function createLivingMemoryConsolidator(
 							),
 						),
 					);
+					reportCommittedState({
+						episodePrunes: finalized,
+						writesCommitted: finalized.length > 0,
+					});
 					episodePrunes.push(...finalized);
-					if (finalized.length > 0) {
-						details = {
-							...details,
-							episodePrunes: Object.freeze([
-								...details.episodePrunes,
-								...finalized,
-							]),
-							writesCommitted: true,
-						};
-					}
 				}
 			}
 			const shouldMaterializeReceipt =
@@ -847,11 +868,7 @@ export function createLivingMemoryConsolidator(
 					),
 				);
 			if (shouldMaterializeReceipt) {
-				acceptedReceipt =
-					await dependencies.acceptedJudgmentReceiptStore.markMaterialized(
-						input.batchKey,
-					);
-				details = { ...details, writesCommitted: true };
+				acceptedReceipt = await markReceiptMaterialized(input.batchKey);
 			}
 			const reportedRetirements = [
 				...(retirementRun?.details.retirements ?? []),
@@ -899,12 +916,6 @@ export function createLivingMemoryConsolidator(
 					...(retirementRun?.details.warnings ?? []),
 				]),
 				recovery: retirementRun?.details.recovery ?? details.recovery,
-				writesCommitted:
-					details.writesCommitted ||
-					receiptAcceptedThisPass ||
-					proposals.some((proposal) => proposal.status === "written") ||
-					episodePrunes.length > 0 ||
-					(retirementRun?.details.writesCommitted ?? false),
 				...(acceptedReceipt === undefined
 					? {}
 					: { acceptedJudgmentReceiptPath: acceptedReceipt.path }),
@@ -921,13 +932,11 @@ export function createLivingMemoryConsolidator(
 			}
 			return { kind: "ran" as const, details };
 		} catch (error: unknown) {
+			reportCommittedState({ writesCommitted: hasCommittedWrites(error) });
 			return {
 				kind: "failed" as const,
 				reason: error instanceof Error ? error.message : String(error),
-				details:
-					hasCommittedWrites(error) && !details.writesCommitted
-						? { ...details, writesCommitted: true }
-						: details,
+				details,
 			};
 		}
 	};
@@ -1010,9 +1019,7 @@ async function readProposalPhase(
 
 interface AcceptedEpisodeRecovery {
 	readonly proposals: readonly ConsolidationProposalMaterialization[];
-	readonly episodePrunes: readonly string[];
 	readonly receiptPath?: string;
-	readonly writesCommitted: boolean;
 }
 
 async function recoverAcceptedEpisodeFinalization(options: {
@@ -1020,6 +1027,10 @@ async function recoverAcceptedEpisodeFinalization(options: {
 	readonly receipts: readonly AcceptedJudgmentReceipt[];
 	readonly proposals: readonly ConsolidationProposalMaterialization[];
 	readonly dependencies: LivingMemoryConsolidatorDependencies;
+	readonly markReceiptMaterialized: (
+		batchKey: string,
+	) => Promise<AcceptedJudgmentReceipt>;
+	readonly reportCommittedState: (state: CommittedWriteState) => void;
 }): Promise<AcceptedEpisodeRecovery | undefined> {
 	const acceptedReceipts = new Map(
 		options.receipts
@@ -1081,44 +1092,34 @@ async function recoverAcceptedEpisodeFinalization(options: {
 	}
 	if (recoverable.size === 0) return undefined;
 
-	const episodePrunes: string[] = [];
 	const completedIds = new Set<string>();
-	try {
-		for (const source of options.dependencies.sources) {
-			const records = recoverable.get(source.id);
-			if (records === undefined || records.size === 0) continue;
-			if (source.finalize === undefined) {
-				throw new Error(
-					`Episode source ${source.id} cannot finalize represented records.`,
-				);
-			}
-			const pruned = await source.finalize(
-				Object.freeze(
-					[...records.values()].map((record) =>
-						Object.freeze({
-							id: record.id,
-							digest: record.digest,
-							...(record.fileIdentity === undefined
-								? {}
-								: { fileIdentity: record.fileIdentity }),
-							proposalPaths: Object.freeze([...record.proposalPaths]),
-						}),
-					),
+	for (const source of options.dependencies.sources) {
+		const records = recoverable.get(source.id);
+		if (records === undefined || records.size === 0) continue;
+		if (source.finalize === undefined) {
+			throw new Error(
+				`Episode source ${source.id} cannot finalize represented records.`,
+			);
+		}
+		const pruned = await source.finalize(
+			Object.freeze(
+				[...records.values()].map((record) =>
+					Object.freeze({
+						id: record.id,
+						digest: record.digest,
+						...(record.fileIdentity === undefined
+							? {}
+							: { fileIdentity: record.fileIdentity }),
+						proposalPaths: Object.freeze([...record.proposalPaths]),
+					}),
 				),
-			);
-			episodePrunes.push(...pruned);
-			for (const id of pruned) completedIds.add(`${source.id}\0${id}`);
-		}
-	} catch (error: unknown) {
-		if (episodePrunes.length > 0 && !hasCommittedWrites(error)) {
-			throw Object.assign(
-				new Error(error instanceof Error ? error.message : String(error), {
-					cause: error,
-				}),
-				{ writesCommitted: true },
-			);
-		}
-		throw error;
+			),
+		);
+		options.reportCommittedState({
+			episodePrunes: pruned,
+			writesCommitted: pruned.length > 0,
+		});
+		for (const id of pruned) completedIds.add(`${source.id}\0${id}`);
 	}
 
 	const recoverableReceiptKeys = new Set<string>();
@@ -1140,16 +1141,12 @@ async function recoverAcceptedEpisodeFinalization(options: {
 		if (everyMatchingRecordPruned) completedReceiptKeys.add(key);
 	}
 	for (const key of completedReceiptKeys) {
-		await options.dependencies.acceptedJudgmentReceiptStore.markMaterialized(
-			key,
-		);
+		await options.markReceiptMaterialized(key);
 	}
 	const receipt = acceptedReceipts.get([...completedReceiptKeys][0] ?? "");
 	return Object.freeze({
 		proposals: Object.freeze(materializations),
-		episodePrunes: Object.freeze(episodePrunes),
 		...(receipt === undefined ? {} : { receiptPath: receipt.path }),
-		writesCommitted: episodePrunes.length > 0 || completedReceiptKeys.size > 0,
 	});
 }
 
