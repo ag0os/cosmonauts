@@ -790,6 +790,20 @@ Plan-specific assertions:
     carrying an already-committed bit out of a failed write, and only if the fix
     cannot be made at the call site. It is not authorized for any change to
     retirement pathname sequencing, which D-026 closes.
+  - Third amendment *(added 2026-09-07 after Stage 3 round 2)*:
+    `tests/memory/living-memory-commit-interleavings.test.ts` is a new test file
+    created by TASK-646 to hold the commit-interleaving harness, and no
+    Files-to-Change row names it. Recorded rather than reverted: a separate file
+    for a 521-line interleaving harness is reasonable, it lives in the permitted
+    `tests/memory/` directory, and the behaviour markers it relates to remain on
+    their plan-declared owner tests in `tests/memory/living-memory.test.ts`, so
+    no marker ownership moves.
+  - Fourth amendment, same round: `lib/memory/durable-files.ts` was changed by
+    TASK-646 under the second amendment above and is changed again by the SR-007
+    remediation. Its authorization remains narrow and unchanged — carrying an
+    already-committed bit out of a failed write, by error tagging only. It
+    authorizes no change to operation ordering anywhere in that file, and none to
+    retirement pathname sequencing, which D-026 closes as ratified ground.
   - Decided by: derived (coordinator, during implementation). Amendable on
     record. This entry widens no invariant: INV-001..INV-004 and the D-026
     exclusion are untouched, and `lib/memory/retirement-store.ts` remains out of
