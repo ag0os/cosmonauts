@@ -1001,6 +1001,99 @@ describe("living memory", () => {
 		});
 	});
 
+	test("skips candidate authorization during a clean empty retirement recovery", async () => {
+		const projectRoot = join(tmp.path, "empty-retirement-recovery");
+		const inspectCitations = vi.fn(async () => ({
+			healthy: true,
+			entries: [],
+			warnings: [],
+		}));
+		const result = await createLivingMemoryRetirementStore({
+			projectRoot,
+			inspectCitations,
+		}).apply({
+			candidates: [],
+			dryRun: false,
+			date: new Date("2026-09-01T12:00:00.000Z"),
+			maxRetirements: 5,
+			lockOptions: exactLockOptions(),
+		});
+
+		expect(result).toMatchObject({
+			kind: "completed",
+			details: {
+				retirements: [],
+				declines: [],
+				warnings: [],
+				recovery: "none",
+				writesCommitted: false,
+			},
+		});
+		expect(inspectCitations).not.toHaveBeenCalled();
+	});
+
+	test("freshly revalidates retirement receipts and citations under the lock", async () => {
+		const fixture = await createRetirementFixture(
+			"fresh-under-lock-retirement-evidence",
+		);
+		let lockHeld = false;
+		async function withLock<T>(
+			_lockPath: string,
+			action: () => Promise<T>,
+			_options: EntityFileLockOptions = {},
+		): Promise<T> {
+			lockHeld = true;
+			try {
+				return await action();
+			} finally {
+				lockHeld = false;
+			}
+		}
+		const inspectCitations = vi.fn(async () => {
+			expect(lockHeld).toBe(true);
+			return { healthy: true, entries: [], warnings: [] };
+		});
+		const store = createLivingMemoryRetirementStore({
+			projectRoot: fixture.projectRoot,
+			inspectCitations,
+			withLock,
+		});
+
+		await expect(store.inspect([fixture.input])).resolves.toMatchObject({
+			recovery: "none",
+		});
+		await writeFile(
+			join(
+				fixture.projectRoot,
+				"missions",
+				"reviews",
+				"knowledge-surface-promotion-2.md",
+			),
+			curationLedger(fixture.input.path),
+		);
+
+		await expect(
+			store.apply({
+				candidates: [retirementCandidate(fixture.input)],
+				dryRun: false,
+				date: new Date("2026-09-01T12:00:00.000Z"),
+				maxRetirements: 5,
+				lockOptions: exactLockOptions(),
+			}),
+		).resolves.toMatchObject({
+			kind: "completed",
+			details: {
+				retirements: [],
+				declines: [
+					expect.objectContaining({
+						code: "retirement-baseline-conflict",
+					}),
+				],
+			},
+		});
+		expect(inspectCitations).toHaveBeenCalledOnce();
+	});
+
 	// @cosmo-behavior plan:living-memory#B-015
 	test("recovers hard-stopped retirement at every durable commit boundary", async () => {
 		const cases = [
@@ -2083,6 +2176,69 @@ describe("living memory", () => {
 				},
 			),
 		).rejects.toThrow(/symlink/u);
+	});
+
+	test("derives represented proposal evidence from one materialization read per pass", async () => {
+		const projectRoot = join(tmp.path, "single-proposal-read-project");
+		const input = record({
+			id: "represented",
+			sourceId: "corpus",
+			path: "memory/represented.md",
+			kind: "artifact",
+			content: "# Represented evidence\n",
+		});
+		const durableStore = createConsolidationProposalStore({ projectRoot });
+		await durableStore.persist({
+			batchKey: createHash("sha256")
+				.update("single-proposal-read")
+				.digest("hex"),
+			observation: {
+				id: "represented-1",
+				kind: "merge-candidate",
+				inputs: [
+					{
+						id: input.id,
+						sourceId: input.sourceId,
+						scope: input.scope,
+						path: input.path,
+						digest: input.digest,
+					},
+				],
+				reason: "The evidence is already represented by a proposal.",
+			},
+			proposal: {
+				proposalKind: "merge",
+				replacement: proposed("Represented evidence"),
+			},
+			dryRun: false,
+		});
+		const readEvidence = vi.fn(() => durableStore.readEvidence());
+		const readMaterializations = vi.fn(() =>
+			durableStore.readMaterializations(),
+		);
+		const proposalStore = {
+			readEvidence,
+			readMaterializations,
+			persist: durableStore.persist,
+		};
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [],
+		}));
+
+		await expect(
+			createHarness(
+				[source("corpus", [input])],
+				{ id: "fake/no-tools", judge },
+				{ proposalStore },
+			).consolidator(),
+		).resolves.toMatchObject({
+			kind: "noop",
+			reason: "All admitted consolidation evidence is already represented.",
+		});
+		expect(readMaterializations).toHaveBeenCalledOnce();
+		expect(readEvidence).not.toHaveBeenCalled();
+		expect(judge).not.toHaveBeenCalled();
 	});
 
 	test("makes durable restore idempotent across every persisted internal state", async () => {

@@ -470,10 +470,11 @@ async function previewRetirements(options: {
 	const candidates = options.candidates.slice(0, options.maxRetirements);
 	const deferred = options.candidates.slice(options.maxRetirements);
 	const records = candidates.map((candidate) => candidate.record);
-	const before = await inspectRetirementState({
+	const beforePhase = await inspectRetirementStatePhase({
 		projectRoot: options.projectRoot,
 		records,
 	});
+	const before = beforePhase.state;
 	if (before.recovery !== "none") {
 		return {
 			kind: "failed",
@@ -497,28 +498,25 @@ async function previewRetirements(options: {
 			},
 		};
 	}
-	const [citationsBefore, receiptsBefore] = await Promise.all([
-		options.inspectCitations(),
-		readRetirementReceiptInventory({ projectRoot: options.projectRoot }),
-	]);
+	const citationsBefore = await options.inspectCitations();
 	const authorized = await authorizeCandidates({
 		projectRoot: options.projectRoot,
 		candidates,
 		inspectCitations: options.inspectCitations,
 		citations: citationsBefore,
-		receipts: receiptsBefore,
+		receipts: beforePhase.receipts,
 	});
-	const [after, citationsAfter, receiptsAfter] = await Promise.all([
-		inspectRetirementState({ projectRoot: options.projectRoot, records }),
+	const [afterPhase, citationsAfter] = await Promise.all([
+		inspectRetirementStatePhase({ projectRoot: options.projectRoot, records }),
 		options.inspectCitations(),
-		readRetirementReceiptInventory({ projectRoot: options.projectRoot }),
 	]);
+	const after = afterPhase.state;
 	if (
 		after.recovery !== "none" ||
 		before.snapshot === undefined ||
 		before.snapshot !== after.snapshot ||
 		JSON.stringify(citationsBefore) !== JSON.stringify(citationsAfter) ||
-		JSON.stringify(receiptsBefore) !== JSON.stringify(receiptsAfter)
+		JSON.stringify(beforePhase.receipts) !== JSON.stringify(afterPhase.receipts)
 	) {
 		return failedResult({
 			reason: "Dry-run snapshot changed during observation.",
@@ -587,6 +585,12 @@ async function applyUnderLock(options: {
 				`Retirement candidates exceed the bounded cap (${options.candidates.length} > ${options.maxRetirements}).`,
 			);
 		}
+		if (options.candidates.length === 0) {
+			return completedResult({
+				recovery: recovered,
+				writesCommitted: recovered === "rolled-forward",
+			});
+		}
 		const authorized = await authorizeCandidates(options);
 		if (authorized.authorized.length === 0) {
 			return completedResult({
@@ -596,9 +600,7 @@ async function applyUnderLock(options: {
 				writesCommitted: recovered === "rolled-forward",
 			});
 		}
-		const receiptInventory = await readRetirementReceiptInventory({
-			projectRoot: options.projectRoot,
-		});
+		const receiptInventory = authorized.receipts;
 		if (receiptInventory.kind !== "healthy") {
 			throw new Error(
 				`Retirement receipt inventory became unhealthy: ${receiptInventory.issues.join(", ")}.`,
@@ -718,6 +720,7 @@ async function authorizeCandidates(options: {
 	readonly authorized: readonly LivingMemoryRetirementCandidate[];
 	readonly declines: LivingMemoryRetirementRunDetails["declines"];
 	readonly warnings: readonly MemoryWarning[];
+	readonly receipts: Awaited<ReturnType<typeof readRetirementReceiptInventory>>;
 }> {
 	const receipts =
 		options.receipts ??
@@ -733,6 +736,7 @@ async function authorizeCandidates(options: {
 				reason: receipts.issues.join(", "),
 			})),
 			warnings: [],
+			receipts,
 		};
 	}
 	const citations = options.citations ?? (await options.inspectCitations());
@@ -745,6 +749,7 @@ async function authorizeCandidates(options: {
 				reason: "Relevant citation discovery is incomplete.",
 			})),
 			warnings: citations.warnings,
+			receipts,
 		};
 	}
 
@@ -761,7 +766,7 @@ async function authorizeCandidates(options: {
 		if (conflict === undefined) authorized.push(candidate);
 		else declines.push(conflict);
 	}
-	return { authorized, declines, warnings: citations.warnings };
+	return { authorized, declines, warnings: citations.warnings, receipts };
 }
 
 async function candidateConflict(options: {
@@ -1091,6 +1096,13 @@ async function removeChangedRetiredDuplicate(options: {
 	}
 }
 
+interface RetirementStateSnapshot {
+	readonly recovery: "none" | "pending" | "concurrent-mutation";
+	readonly warnings: readonly MemoryWarning[];
+	readonly representedKeys: readonly string[];
+	readonly snapshot: string;
+}
+
 async function inspectRetirementState(options: {
 	readonly projectRoot: string;
 	readonly lockHeld?: boolean;
@@ -1098,15 +1110,40 @@ async function inspectRetirementState(options: {
 		readonly path: string;
 		readonly digest: string;
 	}[];
+}): Promise<RetirementStateSnapshot> {
+	return (await inspectRetirementStatePhase(options)).state;
+}
+
+async function inspectRetirementStatePhase(options: {
+	readonly projectRoot: string;
+	readonly lockHeld?: boolean;
+	readonly records: readonly {
+		readonly path: string;
+		readonly digest: string;
+	}[];
 }): Promise<{
-	readonly recovery: "none" | "pending" | "concurrent-mutation";
-	readonly warnings: readonly MemoryWarning[];
-	readonly representedKeys: readonly string[];
-	readonly snapshot: string;
+	readonly state: RetirementStateSnapshot;
+	readonly receipts: Awaited<ReturnType<typeof readRetirementReceiptInventory>>;
 }> {
 	const receipts = await readRetirementReceiptInventory({
 		projectRoot: options.projectRoot,
 	});
+	return {
+		state: await inspectRetirementStateFromReceipts({ ...options, receipts }),
+		receipts,
+	};
+}
+
+async function inspectRetirementStateFromReceipts(options: {
+	readonly projectRoot: string;
+	readonly lockHeld?: boolean;
+	readonly records: readonly {
+		readonly path: string;
+		readonly digest: string;
+	}[];
+	readonly receipts: Awaited<ReturnType<typeof readRetirementReceiptInventory>>;
+}): Promise<RetirementStateSnapshot> {
+	const { receipts } = options;
 	if (receipts.kind !== "healthy") {
 		throw new Error(
 			`Retirement receipt inventory is unhealthy: ${receipts.issues.join(", ")}.`,

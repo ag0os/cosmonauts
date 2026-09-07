@@ -124,19 +124,14 @@ export function createLivingMemoryConsolidator(
 					};
 				}
 			}
-			const [initialReceipts, proposalEvidence, proposalMaterializations] =
-				await Promise.all([
-					dependencies.acceptedJudgmentReceiptStore.list(),
-					dependencies.proposalStore.readEvidence(),
-					(
-						dependencies.proposalStore as Partial<ConsolidationProposalStoreWithMaterializations>
-					).readMaterializations?.() ??
-						Promise.resolve(
-							Object.freeze(
-								[],
-							) as readonly ConsolidationProposalMaterialization[],
-						),
-				]);
+			const [initialReceipts, proposalPhase] = await Promise.all([
+				dependencies.acceptedJudgmentReceiptStore.list(),
+				readProposalPhase(dependencies.proposalStore),
+			]);
+			const {
+				evidence: proposalEvidence,
+				materializations: proposalMaterializations,
+			} = proposalPhase;
 			const representedBeforeCollection = Object.freeze([
 				...initialReceipts.flatMap((receipt) =>
 					receipt.state === "materialized"
@@ -916,6 +911,29 @@ export function createLivingMemoryConsolidator(
 				},
 			};
 		}
+	};
+}
+
+async function readProposalPhase(
+	proposalStore: LivingMemoryConsolidatorDependencies["proposalStore"],
+): Promise<{
+	readonly evidence: readonly ConsolidationEvidenceRef[];
+	readonly materializations: readonly ConsolidationProposalMaterialization[];
+}> {
+	const materializationStore =
+		proposalStore as Partial<ConsolidationProposalStoreWithMaterializations>;
+	if (materializationStore.readMaterializations === undefined) {
+		return {
+			evidence: await proposalStore.readEvidence(),
+			materializations: Object.freeze([]),
+		};
+	}
+	const materializations = await materializationStore.readMaterializations();
+	return {
+		evidence: Object.freeze(
+			materializations.flatMap((proposal) => proposal.inputs),
+		),
+		materializations,
 	};
 }
 
