@@ -661,6 +661,11 @@ as degraded.
 - `tests/memory/interface.test.ts` ↔ `lib/memory/types.ts`, `lib/memory/index.ts`: B-009/B-011 public render/pressure/source/result contracts, exact parent ownership checks, exact result keys, and same-commit full-source SHA-256 re-pin; preserve the parent B-012 marker/name.
 - `tests/cli/memory/subcommand.test.ts` ↔ `cli/memory/subcommand.ts`: B-010 real binary composition on the copied corpus and JSON pressure reporting. Production CLI code changes only if needed to expose the public details already serialized; no parallel measurement path is allowed.
 
+- `lib/memory/knowledge-store.ts` *(added on record 2026-09-07 during Stage 1; see
+  D-012)*: user-root resolution routed through `KNOWLEDGE_INDEX_RETRIEVAL` so the
+  store resolves the same root as injection and measurement. Required by AC-001's
+  scope-set parity per D-008; the original file list did not anticipate it.
+
 No other file is planned. In particular `lib/memory/retirement-store.ts`, all
 documentation, architecture records, domains, configuration, `knowledge/`, and
 parent plan/spec files are outside implementation scope.
@@ -764,6 +769,31 @@ Plan-specific assertions:
 | 5 | `complexity` | bindable | unbound | The completeness barrier and commit fold remain explicit, with no new cross-cutting state machine | pending | unbound, not enforced; structural reviewer inspection required |
 | 6 | `boundary-conformance` | bindable | unbound | `lib/memory` owns data contracts, the extension depends inward and owns rendering, and CLI only composes; no edit leaves the permitted directories/tests | pending | unbound, not enforced; diff/import inspection required |
 | 7 | `dead-code` | bindable | unbound | Removed `toIndexRecords` and superseded call forms have no remaining use; no unrelated exports are demoted | pending | unbound, not enforced; scoped reviewer judgment only, no repo-wide sweep |
+
+- **D-012 - Two file-scope amendments, recorded rather than absorbed** *(Added 2026-09-07 during implementation; derived, amendable on record)*
+  - Context: Implementation Order step 21 audits that "only the five
+    Files-to-Change rows may differ". Stage 1 changed a sixth production file,
+    `lib/memory/knowledge-store.ts`, which no Files-to-Change row names. Three
+    fresh reviews passed it because the tasks' directory-boundary criterion
+    permits `lib/memory/`; the stricter final audit would not.
+  - Decision: amend the file list on record rather than revert the change or let
+    the final audit fail. The change is load-bearing — it routes user-root
+    resolution through the canonical descriptor so the store cannot resolve a
+    different user root than the injection and measurement paths, which is what
+    AC-001's scope-set dimension and D-008 require. Reverting it would reopen
+    the parity D-008 exists to close.
+  - Second amendment, conditional: closing SR-004 may require tagging a
+    committed-write error inside `lib/memory/durable-files.ts`, where the
+    rename-then-sync sequence lives and where `DurableFileCommittedError` is
+    already defined. That file is likewise unnamed by any row. It is
+    pre-authorized for the SR-004 remediation **only** for the purpose of
+    carrying an already-committed bit out of a failed write, and only if the fix
+    cannot be made at the call site. It is not authorized for any change to
+    retirement pathname sequencing, which D-026 closes.
+  - Decided by: derived (coordinator, during implementation). Amendable on
+    record. This entry widens no invariant: INV-001..INV-004 and the D-026
+    exclusion are untouched, and `lib/memory/retirement-store.ts` remains out of
+    scope.
 
 ## Implementation Order
 
