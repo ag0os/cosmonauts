@@ -28,20 +28,39 @@ Two calibration measurements taken 2026-09-07, before any design:
   `targetSatisfied: true`.
 
 The divergence therefore appears exactly when something is already wrong with
-the corpus — which is precisely when a false "the index fits" reading is most
-dangerous, and precisely the state in which the Dropper would otherwise be
-authorized to act. Note the live corpus currently reports the index target
-**unmet** (16,742 rendered + 536 headroom against a 7,982-byte guaranteed
-share), so the first live round will see real pressure.
+the corpus. Note the live corpus currently reports the index target **unmet**
+(16,742 rendered + 536 headroom against a 7,982-byte guaranteed share).
+
+**What a wrong number can and cannot do today** *(corrected 2026-09-07; an
+earlier draft of this section overstated it).* Index pressure is
+**reporting-only** in the current implementation: `targetUnmetDeclines`
+(`lib/memory/living-memory.ts:2027`) emits a `target-unmet` decline and nothing
+else, and retirement candidates are selected from `retire-when` predicates on
+the records themselves (`lib/memory/living-memory.ts:319-321`,
+`structuredRetireWhen`), never from pressure. A wrong measurement therefore
+corrupts a *report*, not a decision. The two directions are also not
+symmetrical in consequence: over-measurement reports `target-unmet` pressure
+that is not real, while under-measurement — the false fit the 331-versus-0-byte
+probe shows — reports a fit that is not real and is, for retirement, the
+conservative direction, since nothing in the pass acts on a satisfied target.
+
+This matters for sequencing rather than for safety, and this plan is what
+changes it: AC-002 makes an unusable measurement unable to report a fit or
+authorize retirement, and INV-001 states that pressure that cannot be trusted
+does not authorize retirement at all. The plan is what gives the measurement
+authority it does not yet have, which is the reason to make it faithful first.
 
 Two facts set this plan's shape:
 
-- **Finding 1 is the recommended gate on the first live retirement round.** A
-  wrong pressure reading is exactly what would drive the Dropper to act, so the
-  regulator should not act on a number that can diverge — in either direction —
-  from the injection it stands for. Whether that gate is binding is an owner
-  call, recorded in Open Questions; the plan is written so that closing finding
-  1 is what lifts it.
+- **Finding 1 is the recommended ordering gate on the first live retirement
+  round** *(rationale corrected 2026-09-07).* Not because a wrong number could
+  destroy something today — it cannot, per the paragraph above — but because
+  this plan is what turns the measurement into an authorizer, and because the
+  reported figure is what an owner would read to judge whether a first live
+  round did the right thing. Make the number faithful before it decides
+  anything, and before it is the evidence for a decision. Whether that ordering
+  is binding is an owner call, recorded in Open Questions; the plan is written
+  so that closing finding 1 is what lifts it.
 - **Iterating on the parent branch stopped converging.** Six of the seven review
   rounds' fixes introduced a fresh defect; rounds 6 and 7 each regressed the
   pressure measurement the previous round had just fixed. The round-7 reviewer's
@@ -93,9 +112,12 @@ reinterpret them without another human decision.
 
 ## Users
 
-- **The corpus Dropper (machine)** — reads index pressure to decide whether the
-  index target is met and therefore whether any record may be retired. It is the
-  only consumer that converts a measurement into a mutation.
+- **The corpus Dropper (machine)** — reads index pressure to judge whether the
+  index target is met. Today that judgement is reporting-only: it produces a
+  `target-unmet` decline, while retirement candidates come from `retire-when`
+  predicates on records. Under this plan pressure gains real authority — an
+  unusable measurement blocks retirement (AC-002, INV-001) — which is what makes
+  it the consumer whose correctness governs a mutation.
 - **The owner running `cosmonauts memory consolidate`** — reads the result to
   decide whether the tree changed and whether to intervene. Reporting that
   understates committed writes sends them to inspect the wrong state.
