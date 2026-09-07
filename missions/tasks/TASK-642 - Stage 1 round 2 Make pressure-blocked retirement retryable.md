@@ -1,7 +1,7 @@
 ---
 id: TASK-642
 title: 'Stage 1 round 2: Make pressure-blocked retirement retryable'
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-631
 createdAt: '2026-09-07T21:08:03.789Z'
-updatedAt: '2026-09-07T21:08:03.789Z'
+updatedAt: '2026-09-07T21:20:39.035Z'
 ---
 
 ## Description
@@ -51,16 +51,15 @@ ground under the deviation protocol. Classify the precise fix against that groun
 closing SR-001 would require narrowing, widening or reinterpreting an invariant, halt
 and escalate rather than worker-adjusting it.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 (Quality Contract assertion 7; Implementation Order steps 2 and 21) Directory boundary: the task's working diff touches only `lib/memory/`, `lib/extensions/knowledge-surface/`, `cli/memory/` and their mirrored tests under `tests/`. No repo-wide dead-code sweep, no export demotion, no unrelated API cleanup, no documentation, configuration, architecture-record or parent-plan edit. A prior remediation task without this criterion went 18 files wide and was fully reverted.
-- [ ] #2 (Quality Contract assertion 6; Implementation Order step 1) Live corpus guard: before and after the task, `find knowledge -type f | sort | xargs shasum -a 256 | shasum -a 256` run from the repository root reports `adc3ef70a5e75cad8813db9a3ab954d4da84ebfeafbb75703529048007469932` and `find knowledge -type f | wc -l` reports 237. The relative `knowledge` root is load-bearing. No task may modify, move or delete anything under live `knowledge/`, and no task may run a live retirement round or any non-dry-run write-capable memory command against it.
-- [ ] #3 (Quality Contract assertions 5 and 7; Implementation Order step 2) Parent ownership: the parent markers `@cosmo-behavior plan:living-memory#B-012|B-016|B-021` and their plan-declared test names remain exact and parent-owned across all six carrier tests enumerated in the plan's Architecture Context. No frozen pin, receipt floor, retirement/byte authority, fail-closed model-output validation or existing behaviour marker is weakened or removed. Any commit changing `lib/memory/types.ts` re-pins its full-source SHA-256 in the profile-playbooks seam test in the same commit.
-- [ ] #4 (Quality Contract assertion 7; Implementation Order steps 4-7) Gates: `bun run test`, `bun run lint`, `bun run typecheck` and `git diff --check` all pass at the task's commit boundary. No test is committed red.
-- [ ] #5 (Quality Contract assertions 7-8; Implementation Order step 21) D-026 is not reopened, re-litigated, or given another verification layer, and retirement pathname sequencing in `lib/memory/retirement-store.ts` is not touched.
-- [ ] #6 (SR-001; Implementation Order steps 4-6) A RED counterexample reproduces SR-001 through the full non-dry consolidate path across two passes before any production edit: pass one measures unusable pressure and blocks retirement; pass two supplies a measured exact render input. The test is retained permanently, carries the `living-memory-fidelity#B-002` marker's stage-owned pack, and is recorded to have failed for the intended lifecycle reason rather than a setup or type error.
-- [ ] #7 (SR-001) After the fix, a pass whose pressure is unusable does not materialize the accepted judgment receipt for a retirement it blocked. `markMaterialized` is not called on the vacuous-truth path, and a subsequent pass that measures pressure successfully still observes the blocked candidate and retries it rather than returning `noop`.
-- [ ] #8 (SR-001; Quality Contract assertion 2) Pressure-blocked retirement candidates are represented truthfully in the reported outcome rather than silently dropped: they are not reported as applied, and the reported result distinguishes them from candidates that were genuinely absent. No candidate observed before the pressure gate disappears from the reported details without a status.
-- [ ] #9 (Quality Contract assertions 1-2; INV-001) The Stage-1 measurement contract is preserved unweakened: one canonical `KNOWLEDGE_INDEX_RETRIEVAL` descriptor across scope, query, admission projection and renderer input; one required records-plus-warnings `KnowledgeIndexRenderInput`; one one-argument renderer; `toIndexRecords` still absent; no second corpus retrieval, no local render-input reconstruction, and no judgment-body-ceiling coupling introduced.
-- [ ] #10 (Implementation Order step 6) The permanent measurement pack — B-001, B-002, B-003 and both exact parent B-021 carrier tests — is rerun and passes after the fix, together with the exact parent B-012 and B-016 carrier tests.
+- [x] #1 (Quality Contract assertion 7; Implementation Order steps 2 and 21) Directory boundary: the task's working diff touches only `lib/memory/`, `lib/extensions/knowledge-surface/`, `cli/memory/` and their mirrored tests under `tests/`. No repo-wide dead-code sweep, no export demotion, no unrelated API cleanup, no documentation, configuration, architecture-record or parent-plan edit. A prior remediation task without this criterion went 18 files wide and was fully reverted.
+- [x] #2 (Quality Contract assertion 6; Implementation Order step 1) Live corpus guard: before and after the task, `find knowledge -type f | sort | xargs shasum -a 256 | shasum -a 256` run from the repository root reports `adc3ef70a5e75cad8813db9a3ab954d4da84ebfeafbb75703529048007469932` and `find knowledge -type f | wc -l` reports 237. The relative `knowledge` root is load-bearing. No task may modify, move or delete anything under live `knowledge/`, and no task may run a live retirement round or any non-dry-run write-capable memory command against it.
+- [x] #3 (Quality Contract assertions 5 and 7; Implementation Order step 2) Parent ownership: the parent markers `@cosmo-behavior plan:living-memory#B-012|B-016|B-021` and their plan-declared test names remain exact and parent-owned across all six carrier tests enumerated in the plan's Architecture Context. No frozen pin, receipt floor, retirement/byte authority, fail-closed model-output validation or existing behaviour marker is weakened or removed. Any commit changing `lib/memory/types.ts` re-pins its full-source SHA-256 in the profile-playbooks seam test in the same commit.
+- [x] #4 (Quality Contract assertion 7; Implementation Order steps 4-7) Gates: `bun run test`, `bun run lint`, `bun run typecheck` and `git diff --check` all pass at the task's commit boundary. No test is committed red.
+- [x] #5 (Quality Contract assertions 7-8; Implementation Order step 21) D-026 is not reopened, re-litigated, or given another verification layer, and retirement pathname sequencing in `lib/memory/retirement-store.ts` is not touched.
+- [x] #6 (SR-001; Implementation Order steps 4-6) A RED counterexample reproduces SR-001 through the full non-dry consolidate path across two passes before any production edit: pass one measures unusable pressure and blocks retirement; pass two supplies a measured exact render input. The test is retained permanently, carries the `living-memory-fidelity#B-002` marker's stage-owned pack, and is recorded to have failed for the intended lifecycle reason rather than a setup or type error.
+- [x] #7 (SR-001) After the fix, a pass whose pressure is unusable does not materialize the accepted judgment receipt for a retirement it blocked. `markMaterialized` is not called on the vacuous-truth path, and a subsequent pass that measures pressure successfully still observes the blocked candidate and retries it rather than returning `noop`.
+- [x] #8 (SR-001; Quality Contract assertion 2) Pressure-blocked retirement candidates are represented truthfully in the reported outcome rather than silently dropped: they are not reported as applied, and the reported result distinguishes them from candidates that were genuinely absent. No candidate observed before the pressure gate disappears from the reported details without a status.
+- [x] #9 (Quality Contract assertions 1-2; INV-001) The Stage-1 measurement contract is preserved unweakened: one canonical `KNOWLEDGE_INDEX_RETRIEVAL` descriptor across scope, query, admission projection and renderer input; one required records-plus-warnings `KnowledgeIndexRenderInput`; one one-argument renderer; `toIndexRecords` still absent; no second corpus retrieval, no local render-input reconstruction, and no judgment-body-ceiling coupling introduced.
+- [x] #10 (Implementation Order step 6) The permanent measurement pack — B-001, B-002, B-003 and both exact parent B-021 carrier tests — is rerun and passes after the fix, together with the exact parent B-012 and B-016 carrier tests.
 <!-- AC:END -->
