@@ -108,3 +108,33 @@ recommendation is to address them as a separate, narrowly-scoped plan with its
 own review budget rather than by continuing to iterate on this branch — and to
 treat any live retirement round as gated on finding 1 in particular, since a
 wrong pressure reading is what would drive the Dropper to act.
+
+## Note added 2026-09-07 — the disposition's mechanism claim, checked
+
+The recommendation above stands and was acted on: the four findings became plan
+`living-memory-fidelity` with its own review budget, backlog `TASK-630..641`.
+
+Its closing clause — "a wrong pressure reading is what would drive the Dropper
+to act" — was checked against the implementation while writing that plan's spec,
+and does not hold for the code as it stands. Index pressure is reporting-only:
+`targetUnmetDeclines` (`lib/memory/living-memory.ts:2027`) emits a `target-unmet`
+decline and nothing else, and retirement candidates are selected from
+`retire-when` predicates on the records themselves
+(`lib/memory/living-memory.ts:319-321`, `structuredRetireWhen`), never from
+pressure. A wrong measurement corrupts a report, not a decision.
+
+The two divergence directions are also not symmetrical. Over-measurement reports
+`target-unmet` pressure that is not real; under-measurement — finding 1's false
+fit — reports a fit that is not real, which for retirement is the conservative
+direction, because nothing in the pass acts on a satisfied target.
+
+The gate on a first live retirement round is therefore an **ordering** argument
+rather than a safety one: `living-memory-fidelity` is what turns the measurement
+into an authorizer (its AC-002 and INV-001), and the reported figure is what an
+owner would read to judge whether a first live round did the right thing. The
+corrected analysis lives in `missions/plans/living-memory-fidelity/spec.md`
+(Purpose, "What a wrong number can and cannot do today").
+
+The round-7 text above is left unaltered: it records what that review round
+found and recommended, and its four findings are unaffected — this note corrects
+one mechanism claim in the disposition, not the findings.
