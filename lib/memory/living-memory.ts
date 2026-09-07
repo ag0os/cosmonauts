@@ -574,19 +574,23 @@ export function createLivingMemoryConsolidator(
 			const proposalCapDeferred = deterministicProposalFindings.slice(
 				deterministicProposalFindingsToPersist.length,
 			);
+			const boundedRetirementCandidates = observedRetirementCandidates.slice(
+				0,
+				dependencies.limits.maxRetirements,
+			);
 			const retirementCandidates =
-				pressure.kind === "measured"
-					? observedRetirementCandidates.slice(
-							0,
-							dependencies.limits.maxRetirements,
-						)
+				pressure.kind === "measured" ? boundedRetirementCandidates : [];
+			const pressureDeferredRetirements =
+				pressure.kind === "unusable"
+					? boundedRetirementCandidates.map((candidate) => ({
+							path: candidate.record.path,
+							digest: candidate.record.digest,
+							status: "deferred" as const,
+							reason: candidate.reason,
+						}))
 					: [];
 			const capDeferredRetirements = observedRetirementCandidates
-				.slice(
-					pressure.kind === "measured"
-						? dependencies.limits.maxRetirements
-						: observedRetirementCandidates.length,
-				)
+				.slice(dependencies.limits.maxRetirements)
 				.map((candidate) => ({
 					path: candidate.record.path,
 					digest: candidate.record.digest,
@@ -804,6 +808,7 @@ export function createLivingMemoryConsolidator(
 			const shouldMaterializeReceipt =
 				acceptedReceipt?.state === "accepted" &&
 				retirementRun?.kind !== "failed" &&
+				pressureDeferredRetirements.length === 0 &&
 				retirementCandidates.every((candidate) =>
 					retirementRun?.details.retirements.some(
 						(retirement) =>
@@ -825,6 +830,7 @@ export function createLivingMemoryConsolidator(
 			}
 			const reportedRetirements = [
 				...(retirementRun?.details.retirements ?? []),
+				...pressureDeferredRetirements,
 				...capDeferredRetirements,
 				...modelOnlyRetirements,
 			].slice(0, dependencies.limits.maxRetirements);
@@ -842,6 +848,12 @@ export function createLivingMemoryConsolidator(
 					...deterministicCapDeclines(observationCapDeferred, "observation"),
 					...deterministicCapDeclines(proposalCapDeferred, "proposal"),
 					...(retirementRun?.details.declines ?? []),
+					...pressureDeferredRetirements.map((retirement) => ({
+						code: "retirement-pressure-deferred",
+						path: retirement.path,
+						reason:
+							"Retirement was deferred because knowledge index pressure is unusable.",
+					})),
 					...capDeferredRetirements.map((retirement) => ({
 						code: "retirement-cap-deferred",
 						path: retirement.path,

@@ -4829,24 +4829,83 @@ describe("living memory", () => {
 			},
 		});
 		const { content: _content, ...inventory } = candidate;
+		const exactRenderInput: KnowledgeIndexRenderInput = Object.freeze({
+			records: Object.freeze([
+				indexRecord({
+					title: "Unusable pressure",
+					description: "Exact index metadata is available again.",
+					resource: candidate.path,
+				}),
+			]),
+			warnings: Object.freeze([]),
+		});
+		let pass = 0;
 		const sourceWithoutExactIndex: ConsolidationSource = {
 			id: candidate.sourceId,
-			async collect() {
-				return {
-					records: [candidate],
+			async collect(options) {
+				pass += 1;
+				const represented = new Set(options.representedKeys);
+				const records = represented.has(
+					`${candidate.scope}\0${candidate.path}\0${candidate.digest}`,
+				)
+					? []
+					: [candidate];
+				const snapshot = {
+					records,
 					inventory: [{ ...inventory, metadata: { type: "gotcha" } }],
 					omitted: 0,
 				};
+				return pass === 1
+					? snapshot
+					: { ...snapshot, knowledgeIndex: exactRenderInput };
 			},
 		};
-		const harness = createHarness([sourceWithoutExactIndex]);
+		const receipts: AcceptedJudgmentReceipt[] = [];
+		const receiptStore = inMemoryReceiptStore(receipts);
+		const markMaterialized = vi.spyOn(receiptStore, "markMaterialized");
+		const apply = vi.fn<LivingMemoryRetirementStore["apply"]>(
+			async (input) => ({
+				kind: "completed" as const,
+				details: {
+					retirements: input.candidates.map((retirement) => ({
+						path: retirement.record.path,
+						digest: retirement.record.digest,
+						status: "applied" as const,
+						reason: retirement.reason,
+					})),
+					declines: [],
+					warnings: [],
+					recovery: "none" as const,
+					writesCommitted: input.candidates.length > 0,
+				},
+			}),
+		);
+		const harness = createHarness(
+			[sourceWithoutExactIndex],
+			{
+				id: "fake/no-tools",
+				judge: vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+					schemaVersion: 1,
+					observations: [],
+				})),
+			},
+			{
+				acceptedJudgmentReceiptStore: receiptStore,
+				retirementStore: {
+					inspect: vi.fn(async () => ({
+						recovery: "none" as const,
+						warnings: [],
+						representedKeys: [],
+					})),
+					apply,
+				},
+			},
+		);
 
-		const result = await harness.consolidator({
-			dryRun: true,
-			modelMode: "deterministic-only",
-		});
+		const blocked = await harness.consolidator();
 
-		expect.soft(result).toMatchObject({
+		expect.soft(blocked).toMatchObject({
+			kind: "ran",
 			details: {
 				indexPressure: {
 					kind: "unusable",
@@ -4855,14 +4914,42 @@ describe("living memory", () => {
 				},
 				declines: expect.arrayContaining([
 					expect.objectContaining({ code: "index-pressure-unusable" }),
+					expect.objectContaining({ code: "retirement-pressure-deferred" }),
 				]),
+				retirements: [
+					{
+						path: candidate.path,
+						digest: candidate.digest,
+						status: "deferred",
+						reason: "retire-when-met",
+					},
+				],
 			},
 		});
-		expect(
-			vi
-				.mocked(harness.dependencies.retirementStore.apply)
-				.mock.calls.some(([input]) => input.candidates.length > 0),
-		).toBe(false);
+		expect(markMaterialized).not.toHaveBeenCalled();
+		expect(receipts).toMatchObject([{ state: "accepted" }]);
+
+		const retried = await harness.consolidator();
+
+		expect.soft(retried).toMatchObject({
+			kind: "ran",
+			details: {
+				indexPressure: { kind: "measured" },
+				retirements: [
+					{
+						path: candidate.path,
+						digest: candidate.digest,
+						status: "applied",
+						reason: "retire-when-met",
+					},
+				],
+			},
+		});
+		expect(apply.mock.calls.map(([input]) => input.candidates.length)).toEqual([
+			0, 0, 1,
+		]);
+		expect(markMaterialized).toHaveBeenCalledOnce();
+		expect(receipts).toMatchObject([{ state: "materialized" }]);
 	});
 
 	// @cosmo-behavior plan:living-memory#B-021
