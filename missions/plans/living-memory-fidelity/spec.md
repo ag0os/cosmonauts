@@ -67,7 +67,10 @@ the inherited invariant wins.
 ground: no fifth verification layer, no reopening, no re-litigation. Nothing in
 this plan touches retirement's pathname sequencing.
 
-Invariants — mechanism yields to these:
+Invariants — mechanism yields to these. **Ratified by the owner 2026-09-07**;
+drafted by an agent in the same session, from the sources traced in the plan's
+D-011. They are now human ground: an implementing agent may not narrow, widen or
+reinterpret them without another human decision.
 
 - INV-001 - Any number that authorizes a mutation is derived from the exact
   artifact it claims to measure. Index pressure is computed over the same record
@@ -263,9 +266,14 @@ Excluded:
 - When a measurement is unusable (AC-002), is `target-unmet` the right decline,
   or does it need a distinct decline code so the owner can tell "the index does
   not fit" from "I could not tell"? (Planner.)
-- Does an incomplete inventory block discharge only, or also retirement
-  candidate authorization and the represented-evidence conclusion? INV-002 reads
-  as all three; confirm the blast radius before designing. (Owner/planner.)
+- ~~Does an incomplete inventory block discharge only, or also retirement
+  candidate authorization and the represented-evidence conclusion?~~ **Settled
+  2026-09-07** by the owner's ratification of INV-002 as written: all three.
+  Note this does *not* settle the plan's D-003, which additionally blocks
+  judgment and proposal materialization — two seams INV-002 does not name. That
+  extension stays planner-derived and amendable on record; its recorded cost is
+  D-009 (one malformed episode also suspends pruning of unrelated,
+  fully-represented episodes).
 - Is the first live retirement round gated on this plan alone, or also on the
   confirm-round cadence ruling that the deferred retired-area TTL waits on?
   (Owner.)

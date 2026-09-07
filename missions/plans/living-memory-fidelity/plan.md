@@ -2,7 +2,7 @@
 title: 'Living memory: honest measurement, discharge, and reporting'
 status: active
 createdAt: '2026-09-07T14:06:12.817Z'
-updatedAt: '2026-09-07T15:35:00.000Z'
+updatedAt: '2026-09-07T16:10:00.000Z'
 ---
 
 ## Overview
@@ -264,16 +264,22 @@ this plan.
     unfalsifiable after the fact.
   - Decided by: review-synthesis (independent scope/sequencing lens), amend-on-record
 
-- **D-011 - This plan's ratified ground is drafted, not yet ratified** *(Added 2026-09-07 after review)*
+- **D-011 - This plan's ratified ground, and where it came from** *(Added 2026-09-07 after review; ratified by the owner the same day)*
   - Decision: D-005, D-006 and D-007 are marked `user-directed` because their
     substance comes from the owner's handoff constraints (preserve every
     existing behavior marker; do not weaken any frozen pin, receipt floor,
     retirement/byte authority or fail-closed validation; do not run a live
     retirement round; do not expand scope; re-review after every remediation
     round). The spec's `## Intent` invariants INV-001..INV-004 are ratified
-    ground by definition of the artifact contract, but were drafted by an agent
-    and have not been explicitly ratified by the owner. Both facts are recorded
-    here rather than left to provenance defaults.
+    ground by definition of the artifact contract. They were drafted by an agent
+    and **the owner ratified them explicitly on 2026-09-07**, after being shown
+    the derivation: INV-001, INV-002 and INV-003 are generalizations of the four
+    recorded findings (INV-002's concept is the round-7 reviewer's wording,
+    though its three-seam blast radius was the drafting agent's choice, and
+    INV-001's "same scope set" clause was added with no finding behind it — the
+    divergence that produced D-008); INV-004 is a restatement of the owner's own
+    handoff constraints. Both facts are recorded here rather than left to
+    provenance defaults.
   - Alternatives: relabel D-005..D-007 as `planner-proposed` (understates the
     owner's actual instruction); leave the spec's ratification status implicit
     (the deviation protocol would then treat agent-drafted text as human ground
