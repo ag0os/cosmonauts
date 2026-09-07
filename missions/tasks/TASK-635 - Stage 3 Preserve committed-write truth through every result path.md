@@ -1,7 +1,7 @@
 ---
 id: TASK-635
 title: 'Stage 3: Preserve committed-write truth through every result path'
-status: To Do
+status: In Progress
 priority: high
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-645
 createdAt: '2026-09-07T15:38:07.280Z'
-updatedAt: '2026-09-07T22:07:12.864Z'
+updatedAt: '2026-09-07T22:28:08.931Z'
 ---
 
 ## Description
