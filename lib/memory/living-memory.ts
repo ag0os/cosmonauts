@@ -251,7 +251,10 @@ export function createLivingMemoryConsolidator(
 			if (dryRun && retirementInspection.recovery !== "none") {
 				details = {
 					...details,
-					warnings: retirementInspection.warnings,
+					warnings: Object.freeze([
+						...details.warnings,
+						...retirementInspection.warnings,
+					]),
 					recovery: retirementInspection.recovery,
 				};
 				return {
@@ -371,7 +374,7 @@ export function createLivingMemoryConsolidator(
 			if (inventory !== undefined && !inventory.healthy) {
 				details = {
 					...details,
-					warnings: inventory.warnings,
+					warnings: Object.freeze([...details.warnings, ...inventory.warnings]),
 					declines: Object.freeze([
 						...details.declines,
 						{

@@ -787,16 +787,6 @@ export async function collectConsolidationSources(options: {
 		const sourceInventory = snapshot.inventory?.map((candidate) =>
 			immutableValidatedInventoryRecord(candidate, source.id),
 		);
-		if (
-			snapshot.inventoryComplete &&
-			snapshot.omitted > 0 &&
-			(sourceInventory === undefined ||
-				sourceInventory.length < snapshot.records.length + snapshot.omitted)
-		) {
-			throw new ConsolidationSourceContractError(
-				`Source ${source.id} claimed complete inventory without inventorying omitted records.`,
-			);
-		}
 		inventoryComplete = inventoryComplete && snapshot.inventoryComplete;
 		warnings.push(...immutableSourceWarnings(snapshot.warnings, source.id));
 		if (snapshot.knowledgeIndex !== undefined) {
@@ -863,6 +853,37 @@ export async function collectConsolidationSources(options: {
 			}
 			records.push(record);
 			admitted += 1;
+		}
+
+		if (snapshot.inventoryComplete) {
+			if (sourceInventory === undefined) {
+				if (snapshot.omitted > 0) {
+					throw new ConsolidationSourceContractError(
+						`Source ${source.id} claimed complete inventory without inventorying omitted records.`,
+					);
+				}
+			} else {
+				const inventoryKeys = new Set(
+					sourceInventory.map(consolidationEvidenceKey),
+				);
+				if (
+					validatedSourceRecords.some(
+						(record) => !inventoryKeys.has(consolidationEvidenceKey(record)),
+					)
+				) {
+					throw new ConsolidationSourceContractError(
+						`Source ${source.id} claimed complete inventory without inventorying admitted records.`,
+					);
+				}
+				if (
+					inventoryKeys.size <
+					validatedSourceRecords.length + snapshot.omitted
+				) {
+					throw new ConsolidationSourceContractError(
+						`Source ${source.id} claimed complete inventory without inventorying omitted records.`,
+					);
+				}
+			}
 		}
 
 		inventory.push(

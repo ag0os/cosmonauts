@@ -2454,6 +2454,10 @@ describe("living memory", () => {
 			projectRoot,
 			userCosmonautsRoot: userRoot,
 		});
+		const citationWarning = incomplete.warnings[0];
+		if (citationWarning === undefined) {
+			throw new Error("missing incomplete citation warning");
+		}
 		expect(incomplete).toMatchObject({
 			healthy: false,
 			warnings: [
@@ -2480,8 +2484,24 @@ describe("living memory", () => {
 				scopeRoot: projectRoot,
 			},
 		});
+		const sourceWarning = {
+			path: "knowledge/source-warning.md",
+			message: "Source warning before citation discovery",
+		};
+		const sourceWithWarning: ConsolidationSource = {
+			id: "corpus",
+			async collect() {
+				return {
+					records: [checked],
+					inventoryComplete: true,
+					knowledgeIndex: knowledgeIndexFixture([checked]),
+					omitted: 0,
+					warnings: [sourceWarning],
+				};
+			},
+		};
 		await expect(
-			createHarness([source("corpus", [checked])]).consolidator({
+			createHarness([sourceWithWarning]).consolidator({
 				modelMode: "deterministic-only",
 			}),
 		).resolves.toMatchObject({
@@ -2492,6 +2512,7 @@ describe("living memory", () => {
 				declines: [
 					expect.objectContaining({ code: "citation-inventory-incomplete" }),
 				],
+				warnings: [sourceWarning, citationWarning],
 			},
 		});
 	});
@@ -4824,6 +4845,115 @@ describe("living memory", () => {
 		expect(
 			apply.mock.calls.every(([input]) => input.candidates.length === 0),
 		).toBe(true);
+	});
+
+	test("rejects a complete inventory claim that omits an admitted current record", async () => {
+		const projectRoot = join(tmp.path, "incomplete-custom-inventory");
+		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
+		const current = record({
+			id: "live-record",
+			sourceId: "custom",
+			path: "knowledge/live-record.md",
+			kind: "knowledge",
+			content: "# Still live\n",
+		});
+		const batchKey = createHash("sha256")
+			.update("incomplete custom inventory receipt")
+			.digest("hex");
+		const receiptPath = receiptStore.pathFor(batchKey);
+		await receiptStore.write({
+			schemaVersion: 1,
+			batchKey,
+			state: "accepted",
+			inputDigests: [current.digest],
+			inputs: [
+				{
+					id: current.id,
+					sourceId: current.sourceId,
+					scope: current.scope,
+					path: current.path,
+					digest: current.digest,
+				},
+			],
+			output: { schemaVersion: 1, observations: [] },
+			path: receiptPath,
+		});
+		await receiptStore.markMaterialized(batchKey);
+		const dischargeStale = vi.spyOn(receiptStore, "dischargeStale");
+		const lyingSource: ConsolidationSource = {
+			id: "custom",
+			async collect() {
+				return {
+					records: [current],
+					inventory: [],
+					inventoryComplete: true,
+					omitted: 0,
+				};
+			},
+		};
+		const harness = createHarness([lyingSource], undefined, {
+			acceptedJudgmentReceiptStore: receiptStore,
+		});
+
+		const result = await harness.consolidator({
+			modelMode: "deterministic-only",
+		});
+
+		expect.soft(result).toMatchObject({
+			kind: "failed",
+			reason: expect.stringMatching(/complete inventory.*admitted records/iu),
+		});
+		expect.soft(dischargeStale).not.toHaveBeenCalled();
+		await expect.soft(fileExists(receiptPath)).resolves.toBe(true);
+	});
+
+	test("preserves source warnings when dry-run retirement recovery blocks the pass", async () => {
+		const sourceWarning = {
+			path: "memory/agent/episodes/broken.md",
+			message: "Source warning",
+		};
+		const retirementWarning = {
+			path: "memory/agent/retirements/pending.md",
+			message: "Retirement warning",
+		};
+		const inspect = vi.fn<LivingMemoryRetirementStore["inspect"]>(async () => ({
+			recovery: "pending",
+			warnings: [retirementWarning],
+			representedKeys: [],
+		}));
+		const harness = createHarness(
+			[
+				{
+					id: "warning-source",
+					async collect() {
+						return {
+							records: [],
+							inventory: [],
+							inventoryComplete: true,
+							omitted: 0,
+							warnings: [sourceWarning],
+						};
+					},
+				},
+			],
+			undefined,
+			{ retirementStore: { inspect, apply: vi.fn() } },
+		);
+
+		const result = await harness.consolidator({
+			dryRun: true,
+			modelMode: "deterministic-only",
+		});
+
+		expect(result).toMatchObject({
+			kind: "failed",
+			reason:
+				"Dry-run observes retirement state but never acquires a lock or performs recovery.",
+			details: {
+				warnings: [sourceWarning, retirementWarning],
+				recovery: "pending",
+			},
+		});
 	});
 
 	// @cosmo-behavior plan:living-memory-fidelity#B-001

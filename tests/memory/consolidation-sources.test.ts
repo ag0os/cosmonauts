@@ -485,6 +485,35 @@ describe("project episode consolidation source", () => {
 	});
 });
 
+describe("consolidation source inventory contract", () => {
+	test("accepts an explicitly empty inventory from a genuinely empty healthy source", async () => {
+		const aggregate = await consolidationSources.collectConsolidationSources({
+			sources: [
+				{
+					id: "empty-custom",
+					async collect() {
+						return {
+							records: [],
+							inventory: [],
+							inventoryComplete: true,
+							omitted: 0,
+						};
+					},
+				},
+			],
+			maxCorpusRecords: 10,
+			maxEpisodeRecords: 10,
+			...COLLECT_LIMITS,
+		});
+
+		expect(aggregate).toMatchObject({
+			inventory: [],
+			inventoryComplete: true,
+			sources: [{ sourceId: "empty-custom", admitted: 0, omitted: 0 }],
+		});
+	});
+});
+
 function sha256(value: string): string {
 	return createHash("sha256").update(value).digest("hex");
 }
