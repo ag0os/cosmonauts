@@ -8,9 +8,9 @@ labels:
   - testing
   - 'plan:living-memory-fidelity'
 dependencies:
-  - TASK-634
+  - TASK-645
 createdAt: '2026-09-07T15:38:07.280Z'
-updatedAt: '2026-09-07T15:38:07.280Z'
+updatedAt: '2026-09-07T22:07:12.864Z'
 ---
 
 ## Description
