@@ -898,6 +898,188 @@ describe("memory interface", () => {
 			.toEqual(["profile", "playbook", "note"]);
 	});
 
+	test("keeps living-memory behavior ownership while fidelity regressions use fidelity markers", async () => {
+		const [interfaceSource, livingMemorySource, architectureMemorySource] =
+			await Promise.all([
+				readFile(
+					join(process.cwd(), "tests", "memory", "interface.test.ts"),
+					"utf-8",
+				),
+				readFile(
+					join(process.cwd(), "tests", "memory", "living-memory.test.ts"),
+					"utf-8",
+				),
+				readFile(
+					join(
+						process.cwd(),
+						"tests",
+						"extensions",
+						"architecture-memory.test.ts",
+					),
+					"utf-8",
+				),
+			]);
+
+		for (const carrier of [
+			{
+				source: interfaceSource,
+				behavior: "plan:living-memory#B-012",
+				testName:
+					"exposes exact living-memory outcomes through configured knowledge consolidate only",
+			},
+			{
+				source: livingMemorySource,
+				behavior: "plan:living-memory#B-016",
+				testName:
+					"rehydrates accepted judgment and persisted evidence then converges to noop",
+			},
+			{
+				source: livingMemorySource,
+				behavior: "plan:living-memory#B-016",
+				testName:
+					"retains a live receipt when a later pass exhausts its record limit",
+			},
+			{
+				source: livingMemorySource,
+				behavior: "plan:living-memory#B-016",
+				testName:
+					"retains a live receipt when a later pass exhausts its byte allowance",
+			},
+			{
+				source: architectureMemorySource,
+				behavior: "plan:living-memory#B-021",
+				testName:
+					"measures index pressure with the exact injection renderer and budget",
+			},
+			{
+				source: livingMemorySource,
+				behavior: "plan:living-memory#B-021",
+				testName:
+					"measures oversized corpus metadata exactly as combined-context injection",
+			},
+		] as const) {
+			expectBehaviorCarrier(carrier);
+		}
+
+		const parentCarrierPattern = new RegExp(
+			`^\\t// ${["@cosmo-behavior", "plan:living-memory#B-(?:012|016|021)"].join(" ")}$`,
+			"gmu",
+		);
+		expect(
+			[interfaceSource, livingMemorySource, architectureMemorySource].flatMap(
+				(source) => source.match(parentCarrierPattern) ?? [],
+			),
+		).toHaveLength(6);
+	});
+
+	test("re-pins the memory contract without weakening living-memory authority", async () => {
+		const [typesSource, interfaceSource, livingMemorySource] =
+			await Promise.all([
+				readFile(join(process.cwd(), "lib", "memory", "types.ts"), "utf-8"),
+				readFile(
+					join(process.cwd(), "tests", "memory", "interface.test.ts"),
+					"utf-8",
+				),
+				readFile(
+					join(process.cwd(), "tests", "memory", "living-memory.test.ts"),
+					"utf-8",
+				),
+			]);
+		const typesHash =
+			"99948f6c7596682251ec9fb46487c488abfa93d425659b720d2cd4085681cbe1";
+
+		expect(createHash("sha256").update(typesSource).digest("hex")).toBe(
+			typesHash,
+		);
+		for (const pinnedTest of [
+			"documents living-memory trust outlets invocation durability and recovery",
+			"supports note profile and playbook through the unchanged MemoryStore contract @cosmo-behavior plan:profile-playbooks#B-002",
+		]) {
+			expect(sourceTestBlock(interfaceSource, pinnedTest)).toContain(typesHash);
+		}
+		expect(
+			sourceTestBlock(
+				interfaceSource,
+				"documents living-memory trust outlets invocation durability and recovery",
+			),
+		).toContain("Profile and explicit-save authority are unchanged");
+
+		expectBehaviorCarrier({
+			source: interfaceSource,
+			behavior: "plan:living-memory#B-001",
+			testName:
+				"accepts only manifest-backed relocation and ledger-backed hard deletion",
+		});
+		const receiptFloor = sourceTestBlock(
+			interfaceSource,
+			"accepts only manifest-backed relocation and ledger-backed hard deletion",
+		);
+		for (const assertion of [
+			"audit(relocatedFiles, withoutManifest)",
+			"audit(serializationMutation, receipts)",
+			"audit(deletedFiles, withoutLedger)",
+			'kind: "unhealthy"',
+		]) {
+			expect(receiptFloor, assertion).toContain(assertion);
+		}
+
+		expectBehaviorCarrier({
+			source: livingMemorySource,
+			behavior: "plan:living-memory#B-002",
+			testName:
+				"soft-retires an eligible record with a complete durable manifest entry",
+		});
+		const retirementAuthority = sourceTestBlock(
+			livingMemorySource,
+			"revalidates exact baselines citations digests and manifest-state guards under the lock",
+		);
+		for (const assertion of [
+			"retirement-baseline-conflict",
+			"retirement-inbound-citation",
+			"citation-inventory-incomplete",
+			"retirement-digest-conflict",
+			"retirement-evidence-incomplete",
+			"restoration-in-progress",
+			"restoration-suppressed",
+		]) {
+			expect(retirementAuthority, assertion).toContain(assertion);
+		}
+
+		expectBehaviorCarrier({
+			source: livingMemorySource,
+			behavior: "plan:living-memory#B-017",
+			testName:
+				"preserves profile authored memory and curated bytes across a full pass",
+		});
+		const byteAuthority = sourceTestBlock(
+			livingMemorySource,
+			"preserves profile authored memory and curated bytes across a full pass",
+		);
+		expect(byteAuthority).toContain(
+			"await expect(readFile(path)).resolves.toEqual(bytes)",
+		);
+		expect(byteAuthority).toContain(
+			".resolves.toEqual(Buffer.from(fixture.raw))",
+		);
+
+		const modelValidation = sourceTestBlock(
+			livingMemorySource,
+			"rejects source contract violations and enforces bounded lossy passes",
+		);
+		for (const assertion of [
+			'label: "observation cap"',
+			'label: "proposal cap"',
+			'label: "retirement cap"',
+			'label: "model-supplied paths"',
+			'label: "unknown input id"',
+			'label: "unsupported proposal fields"',
+			'label: "incomplete replacement"',
+			'kind: "failed"',
+		]) {
+			expect(modelValidation, assertion).toContain(assertion);
+		}
+	});
+
 	test("consolidate reports an honest W1 no-op for markdown and architecture stores @cosmo-behavior plan:memory-interface#B-011", async () => {
 		const userRoot = join(tmp.path, "user-cosmonauts");
 		const markdown = createMarkdownMemoryStore({
@@ -3239,6 +3421,25 @@ function retiredPath(path: string): string {
 
 function sha256(value: string): string {
 	return createHash("sha256").update(value).digest("hex");
+}
+
+function sourceTestBlock(source: string, testName: string): string {
+	const startNeedle = `\ttest(${JSON.stringify(testName)},`;
+	const start = source.indexOf(startNeedle);
+	if (start === -1) throw new Error(`Missing test: ${testName}`);
+	const nextTest = source.indexOf("\n\ttest(", start + startNeedle.length);
+	return source.slice(start, nextTest === -1 ? undefined : nextTest);
+}
+
+function expectBehaviorCarrier(options: {
+	readonly source: string;
+	readonly behavior: string;
+	readonly testName: string;
+}): void {
+	const marker = ["@cosmo-behavior", options.behavior].join(" ");
+	expect(options.source).toContain(
+		`\t// ${marker}\n\ttest(${JSON.stringify(options.testName)},`,
+	);
 }
 
 function mutateFrontmatter(
