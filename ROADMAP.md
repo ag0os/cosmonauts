@@ -274,3 +274,24 @@ A specialized domain for product work — idea validation, product planning, pro
 - `product-researcher` is gated on web research (`agent-tools`); until then it documents methodology
 - Detailed design exists: `missions/plans/superplanning-integration/{plan.md,spec.md}` (the product-domain sections)
 - Cross-links: `domains` · `agent-tools` · `factory-modes`
+
+### `drive-timeout-semantics`: Timeouts That Know Whether Work Is Happening
+
+Drive's `--task-timeout` is pure wall-clock, and a timeout discards everything the worker did. Both cost real work on the `living-memory` run (14 Drive runs, 20 tasks) and both make long detached runs unsafe to leave unattended on a laptop.
+
+- **Heartbeat-aware timeout.** `TASK-609` (60 min) and `TASK-610` (120 min) both failed as "timed out" while the machine was asleep. `TASK-610`'s heartbeat never advanced past `spawn_started` and it produced zero file changes in two hours; it then finished in ~10 minutes once the machine was awake. The failure presents as a task or backend fault, so the operator diagnoses the wrong thing. Treat a non-advancing heartbeat as distinct from elapsed wall-clock: pause the clock, or report "no heartbeat progress" as its own outcome
+- **Salvage on timeout.** `TASK-609`'s worker had every substantive AC green but died before the mandatory `types.ts` re-pin and formatting. Drive committed nothing, so a rerun would have redone ~1160 correct lines; the coordinator salvaged it by hand. Commit worker output as WIP on timeout, or grant a finalization grace window, so a resume can complete rather than restart — finalization is cheap and mechanical, and discarding a whole task for missing it is the most expensive possible failure mode
+- Same family as the shipped-but-open `verified_commit_failed` / resume-finalize gap in `missions/reviews/drive-improvement-observations-artifact-format-redesign.md`: work that succeeded is lost because finalization did not
+- Evidence: `missions/reviews/improvements/living-memory-implementation.md` (14 run IDs)
+- Cross-links: `drive-envelope` (same orchestration seam) · `autonomy` (unattended runs are exactly where a wall-clock lie is unrecoverable) · `factory-evals` (timeout and heartbeat outcomes are scoreboard signals)
+
+### `deliverable-completeness-gates`: Gates That Notice What The Backlog Never Named
+
+Four cheap gate additions from one observation: a behaviour-complete backlog with a fully green suite can still ship a deliverable-incomplete system, and the entire gate ladder is blind to it.
+
+- **Real composition root against real data.** All 21 `living-memory` behaviours reached green with exact markers while the production corpus source did not exist at all — every behaviour test injects fixture sources into `createLivingMemoryConsolidator()`, so the pipeline was complete, correct, and disconnected from `knowledge/`. Found only by running the real CLI against the real 237-record corpus. For plans shipping a user-invokable surface, require one AC that exercises the real composition root against real project data
+- **Adapter/source ownership in the coverage matrix.** The backlog decomposed by *behaviour*; the corpus adapter is infrastructure every behaviour assumes and none names (`TASK-614` named only the episodic source). `/spec-to-backlog` Phase 5 should verify each declared v1 source/adapter has an owning task, not only each behaviour
+- **Directory-boundary AC on every remediation task.** `TASK-624` read "23 dead-code findings in the changed scope" as licence to go repo-wide, deleting and demoting exports across `lib/driver`, `lib/harness-adapters`, `lib/process`, orchestration and two CLIs — 18 files, all reverted. Every later remediation task carried an explicit boundary AC and stayed in scope; make it a standing template line in `/skill:task`
+- **Review discipline for transaction/recovery code.** Six of seven `living-memory` review rounds' fixes introduced a fresh defect, and naming the previous round's regression to the next reviewer measurably sharpened it. Two riders: when a review finds a contract violation, check whether a test asserts the wrong side of it (one did — six rows under a limit of five, pinning the violation as expected behaviour); and when a round closes an instance and names a structurally identical successor, escalate the *class* for ratification rather than fixing the instance and re-reviewing (four rounds of pathname races ended only at the human ruling D-026)
+- Evidence: `missions/reviews/improvements/living-memory-implementation.md` · `missions/plans/living-memory/review-rounds.md`
+- Cross-links: `spec-to-backlog` (owns two of the four) · `behavioral-regression` (same "tests passing ≠ behaviour preserved" thesis) · `factory-evals` (review-round counts are already a named signal)

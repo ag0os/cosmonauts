@@ -1,6 +1,6 @@
 ---
 kind: drive-improvement-observations
-status: open
+status: closed
 plan: living-memory
 runs:
   - run-8ac3fb66-8341-406b-a221-f90189bbad74
@@ -48,3 +48,29 @@ independent review rounds. Bounded and lossy by design; ranked by expected value
 - Not proposing changes to the living-memory design itself; the ratified brief held up under five review rounds.
 - Not proposing weaker review gates: the reviews found genuine byte-safety defects a 3035-test green suite did not.
 - Not proposing automated remediation-scope enforcement; an explicit AC proved sufficient.
+
+## Dispositions — closed 2026-09-07
+
+Every observation above is converted and closed, per LM-D-008 and INV-006:
+prescriptive output promotes to a ROADMAP item, task, or prompt/skill edit and
+then closes with a pointer to what it became. **Nothing here entered
+`knowledge/`.**
+
+| # | Observation | Promoted to | Pointer |
+|---|---|---|---|
+| 1 | Green behaviour suite proved nothing about real input | ROADMAP item + applied AC | `ROADMAP.md` → `deliverable-completeness-gates` (bullet 1); applied as AC-010 of `missions/plans/living-memory-fidelity/spec.md` |
+| 2 | No task owned the production corpus adapter | ROADMAP item | `ROADMAP.md` → `deliverable-completeness-gates` (bullet 2) |
+| 3 | `--task-timeout` is wall-clock, so machine sleep burns it | ROADMAP item | `ROADMAP.md` → `drive-timeout-semantics` (bullet 1) |
+| 4 | A timeout mid-finalization discards completed work | ROADMAP item | `ROADMAP.md` → `drive-timeout-semantics` (bullet 2) |
+| 5 | Remediation workers over-apply narrowly-scoped findings | ROADMAP item + applied constraint | `ROADMAP.md` → `deliverable-completeness-gates` (bullet 3); applied as the directory-boundary Scope exclusion and standing task AC in `missions/plans/living-memory-fidelity/spec.md` |
+| 6 | Fixes to concurrent/durable code reliably introduce new defects | ROADMAP item + applied assumption | `ROADMAP.md` → `deliverable-completeness-gates` (bullet 4); applied as the re-review-every-round assumption in `missions/plans/living-memory-fidelity/spec.md` |
+| 7 | A test can encode the bug it should catch | ROADMAP item | `ROADMAP.md` → `deliverable-completeness-gates` (bullet 4, first rider) |
+| 8 | Unbounded check-then-act chasing has no natural stopping point | ROADMAP item | `ROADMAP.md` → `deliverable-completeness-gates` (bullet 4, second rider) |
+
+The two ROADMAP entries land in the **Ideas** section, unprioritized. The four
+prompt/skill edits named inside `deliverable-completeness-gates` (`/skill:task`
+remediation template, `/spec-to-backlog` Phase 5 adapter check, the
+real-composition-root AC, the reviewer-briefing rider) are deliberately *not*
+applied on this branch: editing shipped skills here would inflate a byte-safety
+diff with unrelated changes, which is the failure mode observation 5 records.
+They are one small plan once `feature/living-memory` merges.
