@@ -112,20 +112,23 @@ export function createLivingMemoryConsolidator(
 				});
 				return proposal;
 			};
-		const markReceiptMaterialized: LivingMemoryConsolidatorDependencies["acceptedJudgmentReceiptStore"]["markMaterialized"] =
-			async (batchKey) => {
-				try {
-					const receipt =
-						await dependencies.acceptedJudgmentReceiptStore.markMaterialized(
-							batchKey,
-						);
-					reportCommittedState({ writesCommitted: true });
-					return receipt;
-				} catch (error: unknown) {
-					reportCommittedState({ writesCommitted: hasCommittedWrites(error) });
-					throw error;
-				}
-			};
+		const markReceiptMaterialized = async (
+			batchKey: string,
+		): Promise<AcceptedJudgmentReceipt> => {
+			try {
+				const materialization =
+					await dependencies.acceptedJudgmentReceiptStore.markMaterialized(
+						batchKey,
+					);
+				reportCommittedState({
+					writesCommitted: materialization.writesCommitted,
+				});
+				return materialization.receipt;
+			} catch (error: unknown) {
+				reportCommittedState({ writesCommitted: hasCommittedWrites(error) });
+				throw error;
+			}
+		};
 
 		try {
 			throwIfAborted(options.signal);

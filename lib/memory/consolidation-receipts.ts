@@ -218,7 +218,9 @@ export function createAcceptedJudgmentReceiptStore(options: {
 			if (current === undefined) {
 				throw new Error(`Accepted judgment receipt does not exist: ${key}.`);
 			}
-			if (current.state === "materialized") return current;
+			if (current.state === "materialized") {
+				return Object.freeze({ receipt: current, writesCommitted: false });
+			}
 			const next = Object.freeze({
 				...current,
 				state: "materialized" as const,
@@ -232,7 +234,7 @@ export function createAcceptedJudgmentReceiptStore(options: {
 				path: next.path,
 				content: renderReceipt(next),
 			});
-			return next;
+			return Object.freeze({ receipt: next, writesCommitted: true });
 		},
 	};
 }

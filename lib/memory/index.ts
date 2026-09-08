@@ -31,6 +31,7 @@ export {
 	type ConsolidationSource,
 	type ConsolidationSourceCollectOptions,
 	ConsolidationSourceContractError,
+	type ConsolidationSourceFinalization,
 	type ConsolidationSourceInventoryRecord,
 	type ConsolidationSourceKind,
 	type ConsolidationSourceRecord,

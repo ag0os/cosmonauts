@@ -752,12 +752,15 @@ function inMemoryReceiptStore() {
 			>[0],
 		) => receipt,
 		markMaterialized: async (batchKey: string) => ({
-			schemaVersion: 1 as const,
-			batchKey,
-			state: "materialized" as const,
-			inputDigests: [],
-			output: { schemaVersion: 1 as const, observations: [] },
-			path: `/tmp/${batchKey}.json`,
+			receipt: {
+				schemaVersion: 1 as const,
+				batchKey,
+				state: "materialized" as const,
+				inputDigests: [],
+				output: { schemaVersion: 1 as const, observations: [] },
+				path: `/tmp/${batchKey}.json`,
+			},
+			writesCommitted: true,
 		}),
 	};
 }

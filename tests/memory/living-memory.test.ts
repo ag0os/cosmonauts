@@ -2146,7 +2146,14 @@ describe("living memory", () => {
 		await expect(
 			receiptStore.markMaterialized(batchKey),
 		).resolves.toMatchObject({
-			state: "materialized",
+			receipt: { state: "materialized" },
+			writesCommitted: true,
+		});
+		await expect(
+			receiptStore.markMaterialized(batchKey),
+		).resolves.toMatchObject({
+			receipt: { state: "materialized" },
+			writesCommitted: false,
 		});
 		await expect(receiptStore.read(batchKey)).resolves.toMatchObject({
 			state: "materialized",
@@ -3086,6 +3093,91 @@ describe("living memory", () => {
 		await expect(
 			receiptStore.read(accepted?.batchKey ?? "missing"),
 		).resolves.toMatchObject({ state: "materialized" });
+	});
+
+	test("does not report a competing receipt materialization as its own committed write", async () => {
+		const projectRoot = join(tmp.path, "competing-receipt-materialization");
+		const inputs = [
+			record({
+				id: "competing-materialization-evidence",
+				sourceId: "corpus",
+				path: "knowledge/competing-materialization.md",
+				kind: "knowledge",
+				content: "# Competing materialization evidence\n",
+			}),
+			record({
+				id: "competing-materialization-context",
+				sourceId: "corpus",
+				path: "knowledge/competing-materialization-context.md",
+				kind: "knowledge",
+				content: "# Competing materialization context\n",
+			}),
+		];
+		const input = inputs[0];
+		if (input === undefined) throw new Error("missing materialization input");
+		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
+		const proposalStore = createConsolidationProposalStore({ projectRoot });
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+			schemaVersion: 1,
+			observations: [
+				{
+					kind: "merge-candidate",
+					inputIds: [input.id],
+					reason: "Materialize an already-written proposal.",
+					proposal: {
+						proposalKind: "create",
+						record: proposed("Competing materialization"),
+					},
+				},
+			],
+		}));
+		await createHarness(
+			[source("corpus", inputs)],
+			{ id: "fake/no-tools", judge },
+			{
+				acceptedJudgmentReceiptStore: receiptStore,
+				proposalStore: {
+					...proposalStore,
+					async persist(proposalInput) {
+						await proposalStore.persist(proposalInput);
+						throw new Error("simulated crash after durable proposal write");
+					},
+				},
+			},
+		).consolidator();
+
+		const accepted = (await receiptStore.list()).find(
+			(receipt) => receipt.state === "accepted",
+		);
+		if (accepted === undefined) throw new Error("missing accepted receipt");
+		const passMarkMaterialized = vi.fn(async (batchKey: string) => {
+			await receiptStore.markMaterialized(batchKey);
+			return receiptStore.markMaterialized(batchKey);
+		});
+
+		const retried = await createHarness(
+			[source("corpus", inputs)],
+			{ id: "fake/no-tools", judge },
+			{
+				acceptedJudgmentReceiptStore: {
+					...receiptStore,
+					markMaterialized: passMarkMaterialized,
+				},
+				proposalStore,
+			},
+		).consolidator();
+
+		expect(retried).toMatchObject({
+			kind: "ran",
+			details: {
+				proposals: [{ status: "existing" }],
+				writesCommitted: false,
+			},
+		});
+		expect(passMarkMaterialized).toHaveBeenCalledOnce();
+		await expect(receiptStore.read(accepted.batchKey)).resolves.toMatchObject({
+			state: "materialized",
+		});
 	});
 
 	// @cosmo-behavior plan:living-memory#B-016
@@ -7171,9 +7263,12 @@ function inMemoryReceiptStore(receipts: AcceptedJudgmentReceipt[]) {
 			);
 			const current = receipts[index];
 			if (current === undefined) throw new Error("missing accepted receipt");
+			if (current.state === "materialized") {
+				return { receipt: current, writesCommitted: false };
+			}
 			const materialized = { ...current, state: "materialized" as const };
 			receipts[index] = materialized;
-			return materialized;
+			return { receipt: materialized, writesCommitted: true };
 		},
 	};
 }
@@ -7225,12 +7320,15 @@ function createHarness(
 			read: vi.fn(async () => undefined),
 			write: vi.fn(async (receipt) => receipt),
 			markMaterialized: vi.fn(async (batchKey) => ({
-				schemaVersion: 1 as const,
-				batchKey,
-				state: "materialized" as const,
-				inputDigests: [],
-				output: { schemaVersion: 1 as const, observations: [] },
-				path: `/tmp/living-memory-consolidations/${batchKey}.json`,
+				receipt: {
+					schemaVersion: 1 as const,
+					batchKey,
+					state: "materialized" as const,
+					inputDigests: [],
+					output: { schemaVersion: 1 as const, observations: [] },
+					path: `/tmp/living-memory-consolidations/${batchKey}.json`,
+				},
+				writesCommitted: true,
 			})),
 		},
 		retirementStore: overrides.retirementStore ?? {

@@ -374,7 +374,10 @@ export interface AcceptedJudgmentReceiptStore {
 	}): Promise<readonly string[]>;
 	read(batchKey: string): Promise<AcceptedJudgmentReceipt | undefined>;
 	write(receipt: AcceptedJudgmentReceipt): Promise<AcceptedJudgmentReceipt>;
-	markMaterialized(batchKey: string): Promise<AcceptedJudgmentReceipt>;
+	markMaterialized(batchKey: string): Promise<{
+		readonly receipt: AcceptedJudgmentReceipt;
+		readonly writesCommitted: boolean;
+	}>;
 }
 
 export interface LivingMemoryRetirementInspection {

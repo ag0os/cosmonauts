@@ -29,6 +29,7 @@ import {
 } from "../../lib/memory/episodic-records.ts";
 import {
 	type ConsolidationSource,
+	type ConsolidationSourceFinalization,
 	type ConsolidationSourceRecord,
 	type CorpusJudgmentProvider,
 	createAcceptedJudgmentReceiptStore,
@@ -787,7 +788,7 @@ describe("memory interface", () => {
 		);
 		expect(driveSkill).toContain("never `knowledge/`");
 		expect(createHash("sha256").update(typesSource).digest("hex")).toBe(
-			"e99b985dc29a5c739189f5744661740d33afb76b0b6e4b786df9e9f8ff62cede",
+			"149163921b7a6079d09c8592f464d7e7d969432e7028c2a3486cc3b05cd53c01",
 		);
 		expect(
 			createHash("sha256").update(architectureAdapterSource).digest("hex"),
@@ -819,7 +820,7 @@ describe("memory interface", () => {
 		// Knowledge proposals extend the shared seam only with optional fields, so
 		// existing stores and minimal human records remain source-compatible.
 		expect(createHash("sha256").update(typesSource).digest("hex")).toBe(
-			"e99b985dc29a5c739189f5744661740d33afb76b0b6e4b786df9e9f8ff62cede",
+			"149163921b7a6079d09c8592f464d7e7d969432e7028c2a3486cc3b05cd53c01",
 		);
 		expect(
 			createHash("sha256").update(architectureAdapterSource).digest("hex"),
@@ -1105,7 +1106,7 @@ describe("memory interface", () => {
 				),
 			]);
 		const typesHash =
-			"e99b985dc29a5c739189f5744661740d33afb76b0b6e4b786df9e9f8ff62cede";
+			"149163921b7a6079d09c8592f464d7e7d969432e7028c2a3486cc3b05cd53c01";
 
 		expect(createHash("sha256").update(typesSource).digest("hex")).toBe(
 			typesHash,
@@ -1796,6 +1797,25 @@ describe("memory interface", () => {
 		expect(indexSource).not.toContain("config");
 		expect(indexSource).not.toContain("session-store");
 		expect(indexSource).not.toContain("consolidated");
+	});
+
+	test("exports the source finalization result from the public memory barrel", async () => {
+		const finalization = {
+			episodePrunes: [],
+			writesCommitted: false,
+		} satisfies ConsolidationSourceFinalization;
+		const indexSource = await readFile(
+			join(process.cwd(), "lib", "memory", "index.ts"),
+			"utf-8",
+		);
+		const sourceContractExport = indexSource.match(
+			/export \{[\s\S]*?\} from "\.\/consolidation-sources\.ts";/u,
+		)?.[0];
+
+		expect(sourceContractExport).toContain(
+			"type ConsolidationSourceFinalization,",
+		);
+		expect(finalization.writesCommitted).toBe(false);
 	});
 
 	test("retrieves markdown notes and architecture maps through the shared MemoryStore interface @cosmo-behavior plan:memory-interface#B-002", async () => {
