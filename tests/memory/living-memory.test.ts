@@ -2369,6 +2369,50 @@ describe("living memory", () => {
 		await expect(fileExists(receiptPath)).resolves.toBe(false);
 	});
 
+	test("reports a committed receipt removal when lock release is unconfirmed", async () => {
+		const projectRoot = join(tmp.path, "receipt-discharge-release-unconfirmed");
+		const initialStore = createAcceptedJudgmentReceiptStore({ projectRoot });
+		const batchKey = createHash("sha256")
+			.update("receipt removed before unconfirmed release")
+			.digest("hex");
+		const receiptPath = initialStore.pathFor(batchKey);
+		await initialStore.write({
+			schemaVersion: 1,
+			batchKey,
+			state: "accepted",
+			inputDigests: [createHash("sha256").update("stale input").digest("hex")],
+			output: { schemaVersion: 1, observations: [] },
+			path: receiptPath,
+		});
+		await initialStore.markMaterialized(batchKey);
+		const receiptStore = createAcceptedJudgmentReceiptStore({
+			projectRoot,
+			async withLock<T>(
+				_lockPath: string,
+				action: () => Promise<T>,
+				options: EntityFileLockOptions = {},
+			): Promise<T> {
+				const result = await action();
+				options.onReleaseUnconfirmed?.(
+					new Error("simulated receipt lock release failure"),
+				);
+				return result;
+			},
+		});
+
+		await expect(
+			receiptStore.dischargeStale({
+				currentKeys: [],
+				lockHeld: false,
+				lockOptions: exactLockOptions(),
+			}),
+		).rejects.toMatchObject({
+			message: expect.stringContaining("receipt lock release failure"),
+			writesCommitted: true,
+		});
+		await expect(fileExists(receiptPath)).resolves.toBe(false);
+	});
+
 	test("reports a completed receipt discharge when retirement inspection fails", async () => {
 		const projectRoot = join(tmp.path, "completed-receipt-discharge");
 		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
@@ -4128,7 +4172,7 @@ describe("living memory", () => {
 		});
 		await expect(recoverySource.recover?.()).resolves.toEqual({
 			episodePrunes: [],
-			writesCommitted: false,
+			writesCommitted: true,
 		});
 		await expect(recoverySource.recover?.()).resolves.toEqual({
 			episodePrunes: [],
@@ -4307,6 +4351,167 @@ describe("living memory", () => {
 				(path) => path.endsWith(".tombstone"),
 			),
 		).toHaveLength(1);
+	});
+
+	test("reports a committed episode prune journal when rename fails before mutation", async () => {
+		const projectRoot = join(tmp.path, "episode-prune-journal-write-reporting");
+		const [episodePath] = await writeEpisodeFixtures(projectRoot, [
+			["Episode awaiting prune rename", "2026-09-01T18:30:00.000Z"],
+			["Episode represented in the same fold", "2026-09-01T18:45:00.000Z"],
+		]);
+		if (episodePath === undefined) throw new Error("missing episode fixture");
+		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
+		const proposalStore = createConsolidationProposalStore({ projectRoot });
+		const baseSource = createProjectEpisodeConsolidationSource({ projectRoot });
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>((input) =>
+			Promise.resolve(
+				foldedEpisodeOutput(input.records.map((record) => record.id)),
+			),
+		);
+		const interrupted = await createHarness(
+			[
+				{
+					...baseSource,
+					async finalize() {
+						throw new Error("stop after accepted output before prune");
+					},
+				},
+			],
+			{ id: "fake/no-tools", judge },
+			{ acceptedJudgmentReceiptStore: receiptStore, proposalStore },
+		).consolidator();
+		expect(interrupted.kind).toBe("failed");
+
+		const baseFiles = createDurableMachineFiles();
+		const recoverySource = createProjectEpisodeConsolidationSource({
+			projectRoot,
+			durableFiles: {
+				...baseFiles,
+				async renameFile(options) {
+					if (options.sourcePath === episodePath) {
+						throw new Error("ordinary pre-rename failure after journal commit");
+					}
+					await baseFiles.renameFile(options);
+				},
+			},
+		});
+		const recovered = await createHarness(
+			[recoverySource],
+			{ id: "fake/no-tools", judge },
+			{
+				acceptedJudgmentReceiptStore: createAcceptedJudgmentReceiptStore({
+					projectRoot,
+				}),
+				proposalStore: createConsolidationProposalStore({ projectRoot }),
+			},
+		).consolidator();
+
+		await expect(
+			fileExists(
+				join(
+					projectRoot,
+					"memory",
+					"agent",
+					"episodes",
+					".living-memory-episode-prune.json",
+				),
+			),
+		).resolves.toBe(true);
+		await expect(fileExists(episodePath)).resolves.toBe(true);
+		expect(recovered).toMatchObject({
+			kind: "failed",
+			reason: "ordinary pre-rename failure after journal commit",
+			details: { writesCommitted: true },
+		});
+	});
+
+	test("reports a restored episode when prune journal removal fails before mutation", async () => {
+		const projectRoot = join(tmp.path, "episode-prune-restore-write-reporting");
+		const [episodePath] = await writeEpisodeFixtures(projectRoot, [
+			["Episode awaiting prune recovery", "2026-09-01T18:50:00.000Z"],
+		]);
+		if (episodePath === undefined) throw new Error("missing episode fixture");
+		const baseFiles = createDurableMachineFiles();
+		const interruptedSource = createProjectEpisodeConsolidationSource({
+			projectRoot,
+			durableFiles: {
+				...baseFiles,
+				async renameFile(options) {
+					await baseFiles.renameFile(options);
+					if (options.sourcePath === episodePath) {
+						throw new Error("stop after episode tombstone rename");
+					}
+				},
+			},
+		});
+		const snapshot = await interruptedSource.collect({
+			limit: 1,
+			maxCorpusRecordBytes: 64 * 1024,
+			maxCorpusBytes: 256 * 1024,
+			maxEpisodeRecordBytes: 64 * 1024,
+			maxEpisodeBytes: 256 * 1024,
+		});
+		const episode = snapshot.records[0];
+		if (episode === undefined) throw new Error("missing collected episode");
+		const proposalPath = join(
+			projectRoot,
+			"memory",
+			"agent",
+			"proposals",
+			"living-memory",
+			"episode-note.md",
+		);
+		await mkdir(dirname(proposalPath), { recursive: true });
+		await baseFiles.writeText({ path: proposalPath, content: "proposal\n" });
+		await expect(
+			interruptedSource.finalize?.([
+				{
+					id: episode.id,
+					digest: episode.digest,
+					fileIdentity: episode.fileIdentity,
+					proposalPaths: [proposalPath],
+				},
+			]),
+		).rejects.toThrow("stop after episode tombstone rename");
+		const tombstonePath = (await readdir(dirname(episodePath)))
+			.filter((path) => path.endsWith(".tombstone"))
+			.map((path) => join(dirname(episodePath), path))[0];
+		if (tombstonePath === undefined)
+			throw new Error("missing episode tombstone");
+		const restoredBytes = "changed tombstone bytes requiring recovery\n";
+		await writeFile(tombstonePath, restoredBytes);
+		const journalPath = join(
+			projectRoot,
+			"memory",
+			"agent",
+			"episodes",
+			".living-memory-episode-prune.json",
+		);
+		const recoverySource = createProjectEpisodeConsolidationSource({
+			projectRoot,
+			durableFiles: {
+				...baseFiles,
+				async removeFile(path) {
+					if (path === journalPath) {
+						throw new Error(
+							"ordinary pre-remove failure after episode restore",
+						);
+					}
+					await baseFiles.removeFile(path);
+				},
+			},
+		});
+
+		const recovered = await createHarness([recoverySource]).consolidator();
+
+		await expect(readFile(episodePath, "utf-8")).resolves.toBe(restoredBytes);
+		await expect(fileExists(tombstonePath)).resolves.toBe(false);
+		await expect(fileExists(journalPath)).resolves.toBe(true);
+		expect(recovered).toMatchObject({
+			kind: "failed",
+			reason: "ordinary pre-remove failure after episode restore",
+			details: { writesCommitted: true },
+		});
 	});
 
 	test("reports committed episode bytes when removal fails after unlink", async () => {

@@ -507,6 +507,7 @@ export function createProjectEpisodeConsolidationSource(options: {
 						path: episodePruneJournalPath(projectRoot),
 						content: `${JSON.stringify(journal, null, 2)}\n`,
 					});
+					writesCommitted = true;
 					await durableFiles.renameFile({
 						sourcePath: episodePath,
 						destinationPath: tombstonePath,
@@ -585,6 +586,7 @@ async function recoverEpisodePruneJournal(options: {
 		...journal.tombstonePath.split("/"),
 	);
 	let removedEpisodeBytes = false;
+	let writesCommitted = false;
 	try {
 		const tombstone = await readRegularTextSnapshotIfExists(tombstonePath);
 		if (tombstone !== undefined) {
@@ -597,26 +599,29 @@ async function recoverEpisodePruneJournal(options: {
 					durableFiles: options.durableFiles,
 				});
 				removedEpisodeBytes = true;
+				writesCommitted = true;
 			} else {
 				await options.durableFiles.restoreFile({
 					sourcePath: tombstonePath,
 					destinationPath: livePath,
 				});
+				writesCommitted = true;
 			}
 		}
 		await options.durableFiles.removeFile(
 			episodePruneJournalPath(options.projectRoot),
 		);
+		writesCommitted = true;
 		const liveAfter = await readRegularTextSnapshotIfExists(livePath);
 		return {
 			episodePrunes:
 				removedEpisodeBytes || liveAfter === undefined
 					? Object.freeze([journal.originalPath])
 					: Object.freeze([]),
-			writesCommitted: removedEpisodeBytes || liveAfter === undefined,
+			writesCommitted,
 		};
 	} catch (error: unknown) {
-		if (removedEpisodeBytes) throw new ConsolidationSourceCommittedError(error);
+		if (writesCommitted) throw new ConsolidationSourceCommittedError(error);
 		throw error;
 	}
 }

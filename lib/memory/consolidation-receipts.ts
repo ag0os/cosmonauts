@@ -146,12 +146,15 @@ export function createAcceptedJudgmentReceiptStore(options: {
 						},
 					});
 			if (releaseUnconfirmed !== undefined) {
-				throw new Error(
-					`Living-memory lock release could not be confirmed after receipt discharge: ${
-						releaseUnconfirmed instanceof Error
-							? releaseUnconfirmed.message
-							: String(releaseUnconfirmed)
-					}.`,
+				throw new ReceiptDischargeError(
+					new Error(
+						`Living-memory lock release could not be confirmed after receipt discharge: ${
+							releaseUnconfirmed instanceof Error
+								? releaseUnconfirmed.message
+								: String(releaseUnconfirmed)
+						}.`,
+					),
+					removed.length > 0,
 				);
 			}
 			return removed;
