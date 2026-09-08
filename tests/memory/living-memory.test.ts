@@ -5432,6 +5432,22 @@ describe("living memory", () => {
 			throw new Error("expected incomplete source inventory to fail the pass");
 		}
 
+		expect(result.details.sources).toEqual([
+			{
+				sourceId: "integrity-source",
+				admitted: 0,
+				omitted: 1,
+				deferred: 0,
+				inventoryComplete: false,
+			},
+			{
+				sourceId: "bounded-source",
+				admitted: 0,
+				omitted: 1,
+				deferred: 1,
+				inventoryComplete: true,
+			},
+		]);
 		expect(
 			result.details.declines.filter(
 				(decline) => decline.code === "source-deferred",
@@ -5439,18 +5455,93 @@ describe("living memory", () => {
 		).toEqual([
 			{
 				code: "source-deferred",
+				count: 1,
 				reason:
 					"1 record(s) from bounded-source were deferred by the bounded source pass.",
 			},
 		]);
-		expect(result.details.declines).toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({
-					code: "source-inventory-incomplete",
-					sourceId: "integrity-source",
-				}),
-			]),
-		);
+		expect(
+			result.details.declines.filter(
+				(decline) => decline.code === "source-inventory-incomplete",
+			),
+		).toEqual([
+			{
+				code: "source-inventory-incomplete",
+				count: 1,
+				sourceId: "integrity-source",
+				reason:
+					"Consolidation source integrity-source reported incomplete inventory; absence-dependent work is blocked.",
+			},
+		]);
+	});
+
+	test("reports cap deferrals and integrity omissions for the same source", async () => {
+		const firstRecord = record({
+			id: "mixed-first",
+			sourceId: "mixed-source",
+			path: "knowledge/mixed-first.md",
+			kind: "knowledge",
+			content: "# Mixed first\n",
+		});
+		const secondRecord = record({
+			id: "mixed-second",
+			sourceId: "mixed-source",
+			path: "knowledge/mixed-second.md",
+			kind: "knowledge",
+			content: "# Mixed second\n",
+		});
+		const mixedSource: ConsolidationSource = {
+			id: "mixed-source",
+			async collect() {
+				return {
+					records: [firstRecord, secondRecord],
+					inventoryComplete: false,
+					knowledgeIndex: { records: [], warnings: [] },
+					omitted: 1,
+				};
+			},
+		};
+
+		const result = await createHarness([mixedSource], undefined, {
+			limits: {
+				...DEFAULT_LIVING_MEMORY_LIMITS,
+				maxCorpusRecords: 1,
+			},
+		}).consolidator();
+		if (result.kind !== "failed" || result.details === undefined) {
+			throw new Error("expected incomplete source inventory to fail the pass");
+		}
+
+		expect(
+			result.details.declines.filter(
+				(decline) =>
+					decline.code === "source-deferred" ||
+					decline.code === "source-inventory-incomplete",
+			),
+		).toEqual([
+			{
+				code: "source-deferred",
+				count: 1,
+				reason:
+					"1 record(s) from mixed-source were deferred by the bounded source pass.",
+			},
+			{
+				code: "source-inventory-incomplete",
+				count: 1,
+				sourceId: "mixed-source",
+				reason:
+					"Consolidation source mixed-source reported incomplete inventory; absence-dependent work is blocked.",
+			},
+		]);
+		expect(result.details.sources).toEqual([
+			{
+				sourceId: "mixed-source",
+				admitted: 1,
+				omitted: 2,
+				deferred: 1,
+				inventoryComplete: false,
+			},
+		]);
 	});
 
 	test("identifies an incomplete source with no omissions or warnings", async () => {
@@ -5477,6 +5568,7 @@ describe("living memory", () => {
 				sourceId: "silent-incomplete-source",
 				admitted: 0,
 				omitted: 0,
+				deferred: 0,
 				inventoryComplete: false,
 			},
 		]);

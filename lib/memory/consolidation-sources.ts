@@ -139,6 +139,8 @@ export interface CollectedConsolidationSources {
 		readonly sourceId: string;
 		readonly admitted: number;
 		readonly omitted: number;
+		/** Known bounded deferrals; excludes incomplete-inventory omissions. */
+		readonly deferred: number;
 		readonly inventoryComplete: boolean;
 	}[];
 	readonly declines: readonly ConsolidationSourceDecline[];
@@ -746,6 +748,7 @@ export async function collectConsolidationSources(options: {
 		sourceId: string;
 		admitted: number;
 		omitted: number;
+		deferred: number;
 		inventoryComplete: boolean;
 	}> = [];
 	const declines: ConsolidationSourceDecline[] = [];
@@ -913,6 +916,8 @@ export async function collectConsolidationSources(options: {
 				sourceId: source.id,
 				admitted,
 				omitted: snapshot.omitted + deferred,
+				deferred:
+					deferred + (snapshot.inventoryComplete ? snapshot.omitted : 0),
 				inventoryComplete: snapshot.inventoryComplete,
 			}),
 		);

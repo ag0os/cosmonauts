@@ -787,7 +787,7 @@ describe("memory interface", () => {
 		);
 		expect(driveSkill).toContain("never `knowledge/`");
 		expect(createHash("sha256").update(typesSource).digest("hex")).toBe(
-			"af3253f2bb0f9c2e06511db527cc122444955144701f5bc43463bb2db92777be",
+			"e99b985dc29a5c739189f5744661740d33afb76b0b6e4b786df9e9f8ff62cede",
 		);
 		expect(
 			createHash("sha256").update(architectureAdapterSource).digest("hex"),
@@ -819,7 +819,7 @@ describe("memory interface", () => {
 		// Knowledge proposals extend the shared seam only with optional fields, so
 		// existing stores and minimal human records remain source-compatible.
 		expect(createHash("sha256").update(typesSource).digest("hex")).toBe(
-			"af3253f2bb0f9c2e06511db527cc122444955144701f5bc43463bb2db92777be",
+			"e99b985dc29a5c739189f5744661740d33afb76b0b6e4b786df9e9f8ff62cede",
 		);
 		expect(
 			createHash("sha256").update(architectureAdapterSource).digest("hex"),
@@ -1105,7 +1105,7 @@ describe("memory interface", () => {
 				),
 			]);
 		const typesHash =
-			"af3253f2bb0f9c2e06511db527cc122444955144701f5bc43463bb2db92777be";
+			"e99b985dc29a5c739189f5744661740d33afb76b0b6e4b786df9e9f8ff62cede";
 
 		expect(createHash("sha256").update(typesSource).digest("hex")).toBe(
 			typesHash,

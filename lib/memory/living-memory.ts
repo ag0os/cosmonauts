@@ -216,10 +216,11 @@ export function createLivingMemoryConsolidator(
 					...details.declines,
 					...collected.declines,
 					...collected.sources
-						.filter((source) => source.inventoryComplete && source.omitted > 0)
+						.filter((source) => source.deferred > 0)
 						.map((source) => ({
 							code: "source-deferred",
-							reason: `${source.omitted} record(s) from ${source.sourceId} were deferred by the bounded source pass.`,
+							count: source.deferred,
+							reason: `${source.deferred} record(s) from ${source.sourceId} were deferred by the bounded source pass.`,
 						})),
 				]),
 				warnings: Object.freeze([...details.warnings, ...collected.warnings]),
@@ -254,6 +255,7 @@ export function createLivingMemoryConsolidator(
 					.filter((source) => !source.inventoryComplete)
 					.map((source) => ({
 						code: "source-inventory-incomplete",
+						count: source.omitted - source.deferred,
 						sourceId: source.sourceId,
 						reason: `Consolidation source ${source.sourceId} reported incomplete inventory; absence-dependent work is blocked.`,
 					}));

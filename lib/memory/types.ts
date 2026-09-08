@@ -170,6 +170,8 @@ export interface MemoryConsolidateDetails {
 		readonly sourceId: string;
 		readonly admitted: number;
 		readonly omitted: number;
+		/** Known bounded deferrals; excludes incomplete-inventory omissions. */
+		readonly deferred: number;
 		readonly inventoryComplete: boolean;
 	}[];
 	readonly observations: readonly ConsolidationObservation[];
@@ -185,6 +187,8 @@ export interface MemoryConsolidateDetails {
 	readonly manifestPath?: string;
 	readonly declines: readonly {
 		readonly code: string;
+		/** Cause-specific record count when applicable. */
+		readonly count?: number;
 		readonly sourceId?: string;
 		readonly path?: string;
 		readonly reason: string;
