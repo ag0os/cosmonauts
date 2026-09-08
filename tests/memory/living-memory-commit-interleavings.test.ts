@@ -614,7 +614,10 @@ describe("living-memory committed-write interleavings", () => {
 			status: "existing",
 			outputType: "note",
 		};
-		const finalize = vi.fn(async () => [episode.id]);
+		const finalize = vi.fn(async () => ({
+			episodePrunes: [episode.id],
+			writesCommitted: true,
+		}));
 		const markMaterialized = vi.fn(async () => {
 			throw new Error("simulated recovery receipt materialization failure");
 		});

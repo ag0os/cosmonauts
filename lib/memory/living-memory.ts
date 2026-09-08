@@ -844,10 +844,10 @@ export function createLivingMemoryConsolidator(
 						),
 					);
 					reportCommittedState({
-						episodePrunes: finalized,
-						writesCommitted: finalized.length > 0,
+						episodePrunes: finalized.episodePrunes,
+						writesCommitted: finalized.writesCommitted,
 					});
-					episodePrunes.push(...finalized);
+					episodePrunes.push(...finalized.episodePrunes);
 				}
 			}
 			const shouldMaterializeReceipt =
@@ -1101,7 +1101,7 @@ async function recoverAcceptedEpisodeFinalization(options: {
 				`Episode source ${source.id} cannot finalize represented records.`,
 			);
 		}
-		const pruned = await source.finalize(
+		const finalized = await source.finalize(
 			Object.freeze(
 				[...records.values()].map((record) =>
 					Object.freeze({
@@ -1116,10 +1116,12 @@ async function recoverAcceptedEpisodeFinalization(options: {
 			),
 		);
 		options.reportCommittedState({
-			episodePrunes: pruned,
-			writesCommitted: pruned.length > 0,
+			episodePrunes: finalized.episodePrunes,
+			writesCommitted: finalized.writesCommitted,
 		});
-		for (const id of pruned) completedIds.add(`${source.id}\0${id}`);
+		for (const id of finalized.episodePrunes) {
+			completedIds.add(`${source.id}\0${id}`);
+		}
 	}
 
 	const recoverableReceiptKeys = new Set<string>();

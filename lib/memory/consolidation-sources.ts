@@ -111,6 +111,11 @@ export interface ConsolidationFinalizedRecord {
 	};
 }
 
+export interface ConsolidationSourceFinalization {
+	readonly episodePrunes: readonly string[];
+	readonly writesCommitted: boolean;
+}
+
 export interface ConsolidationSource {
 	readonly id: string;
 	collect(
@@ -118,7 +123,7 @@ export interface ConsolidationSource {
 	): Promise<ConsolidationSourceSnapshot>;
 	finalize?(
 		represented: readonly ConsolidationFinalizedRecord[],
-	): Promise<readonly string[]>;
+	): Promise<ConsolidationSourceFinalization>;
 	recover?(): Promise<{
 		readonly episodePrunes: readonly string[];
 		readonly writesCommitted: boolean;
@@ -546,7 +551,10 @@ export function createProjectEpisodeConsolidationSource(options: {
 				}
 				throw error;
 			}
-			return Object.freeze(pruned);
+			return Object.freeze({
+				episodePrunes: Object.freeze(pruned),
+				writesCommitted,
+			});
 		},
 	};
 }

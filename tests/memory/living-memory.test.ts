@@ -3921,7 +3921,7 @@ describe("living memory", () => {
 						proposalPaths: [proposalPath],
 					},
 				]),
-			).resolves.toEqual([]);
+			).resolves.toEqual({ episodePrunes: [], writesCommitted: true });
 			expect(racedAtTombstoneRename).toBe(true);
 			await expect(readFile(episodePath, "utf-8")).resolves.toBe(changed);
 			expect(
@@ -3935,6 +3935,207 @@ describe("living memory", () => {
 				),
 			).rejects.toMatchObject({ code: "ENOENT" });
 		}
+	});
+
+	test("reports committed journal and restore writes when finalization prunes no episodes", async () => {
+		const projectRoot = join(tmp.path, "episode-empty-prune-write-reporting");
+		const episodePaths = await writeEpisodeFixtures(projectRoot, [
+			["Episode rewritten during committed prune", "2026-09-01T16:15:00.000Z"],
+			["Second rewritten committed prune", "2026-09-01T16:20:00.000Z"],
+		]);
+		const proposalPath = join(
+			projectRoot,
+			"memory",
+			"agent",
+			"proposals",
+			"living-memory",
+			"episode-note.md",
+		);
+		await mkdir(dirname(proposalPath), { recursive: true });
+		await writeFile(proposalPath, "proposal\n");
+		const race = await createEpisodeRestoreRaceSource(
+			projectRoot,
+			episodePaths,
+		);
+		const episodeSource = race.source;
+		const snapshot = await episodeSource.collect({
+			limit: 2,
+			maxCorpusRecordBytes: 64 * 1024,
+			maxCorpusBytes: 256 * 1024,
+			maxEpisodeRecordBytes: 64 * 1024,
+			maxEpisodeBytes: 256 * 1024,
+		});
+		const output = foldedEpisodeOutput(
+			snapshot.records.map((record) => record.id),
+		);
+		const result = await createHarness(
+			[episodeSource],
+			{
+				id: "fake/no-tools",
+				judge: async () => {
+					throw new Error("existing receipt should bypass judgment");
+				},
+			},
+			{
+				acceptedJudgmentReceiptStore: {
+					pathFor: (batchKey) => `/tmp/${batchKey}.json`,
+					list: async () => [],
+					dischargeStale: async () => [],
+					read: async (batchKey) => ({
+						schemaVersion: 1,
+						batchKey,
+						state: "accepted",
+						inputDigests: snapshot.records.map((record) => record.digest),
+						output,
+						path: `/tmp/${batchKey}.json`,
+					}),
+					write: async () => {
+						throw new Error("existing receipt should not be rewritten");
+					},
+					markMaterialized: async () => {
+						throw new Error("empty prune should not materialize receipt");
+					},
+				},
+				proposalStore: {
+					readEvidence: async () => [],
+					persist: async (input) => ({
+						proposalKind: input.proposal.proposalKind,
+						key: input.batchKey,
+						path: proposalPath,
+						inputs: input.observation.inputs,
+						contentDigest: createHash("sha256")
+							.update("proposal\n")
+							.digest("hex"),
+						status: "existing",
+					}),
+				},
+			},
+		).consolidator();
+		if (result.kind === "failed") throw new Error(result.reason);
+
+		expect(result).toMatchObject({
+			kind: "ran",
+			details: { episodePrunes: [], writesCommitted: true },
+		});
+		expect(race.commits).toEqual({
+			journalWrites: 2,
+			restores: 2,
+			journalRemovals: 2,
+		});
+		for (const [episodePath, changedBytes] of race.changedBytes) {
+			await expect(readFile(episodePath, "utf-8")).resolves.toBe(changedBytes);
+		}
+		await expect(fileExists(race.journalPath)).resolves.toBe(false);
+		expect(
+			(await readdir(dirname(episodePaths[0] as string))).filter((path) =>
+				path.endsWith(".tombstone"),
+			),
+		).toEqual([]);
+	});
+
+	test("reports committed empty-prune finalization while recovering accepted episodes", async () => {
+		const projectRoot = join(
+			tmp.path,
+			"accepted-episode-empty-prune-reporting",
+		);
+		const episodePaths = await writeEpisodeFixtures(projectRoot, [
+			["First accepted episode rewrite", "2026-09-01T16:25:00.000Z"],
+			["Second accepted episode rewrite", "2026-09-01T16:30:00.000Z"],
+		]);
+		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
+		const proposalStore = createConsolidationProposalStore({ projectRoot });
+		const judge = vi.fn<CorpusJudgmentProvider["judge"]>((input) =>
+			Promise.resolve(
+				foldedEpisodeOutput(input.records.map((record) => record.id)),
+			),
+		);
+		const baseSource = createProjectEpisodeConsolidationSource({ projectRoot });
+		const interrupted = await createHarness(
+			[
+				{
+					...baseSource,
+					async finalize() {
+						throw new Error("stop after accepted output before finalization");
+					},
+				},
+			],
+			{ id: "fake/no-tools", judge },
+			{ acceptedJudgmentReceiptStore: receiptStore, proposalStore },
+		).consolidator();
+		expect(interrupted).toMatchObject({
+			kind: "failed",
+			reason: "stop after accepted output before finalization",
+		});
+
+		const race = await createEpisodeRestoreRaceSource(
+			projectRoot,
+			episodePaths,
+		);
+		const recovered = await createHarness(
+			[race.source],
+			{ id: "fake/no-tools", judge },
+			{ acceptedJudgmentReceiptStore: receiptStore, proposalStore },
+		).consolidator();
+
+		expect(recovered).toMatchObject({
+			kind: "ran",
+			details: { episodePrunes: [], writesCommitted: true },
+		});
+		expect(judge).toHaveBeenCalledOnce();
+		for (const [episodePath, changedBytes] of race.changedBytes) {
+			await expect(readFile(episodePath, "utf-8")).resolves.toBe(changedBytes);
+		}
+		expect(
+			(await readdir(dirname(episodePaths[0] as string))).filter((path) =>
+				path.endsWith(".tombstone"),
+			),
+		).toEqual([]);
+		await expect(fileExists(race.journalPath)).resolves.toBe(false);
+	});
+
+	test("reports no committed write when finalization skips a changed episode", async () => {
+		const projectRoot = join(
+			tmp.path,
+			"episode-skipped-finalization-reporting",
+		);
+		const [episodePath] = await writeEpisodeFixtures(projectRoot, [
+			["Episode changed before finalization", "2026-09-01T16:35:00.000Z"],
+		]);
+		if (episodePath === undefined) throw new Error("missing episode fixture");
+		const source = createProjectEpisodeConsolidationSource({ projectRoot });
+		const snapshot = await source.collect({
+			limit: 1,
+			maxCorpusRecordBytes: 64 * 1024,
+			maxCorpusBytes: 256 * 1024,
+			maxEpisodeRecordBytes: 64 * 1024,
+			maxEpisodeBytes: 256 * 1024,
+		});
+		const episode = snapshot.records[0];
+		if (episode === undefined) throw new Error("missing collected episode");
+		const proposalPath = join(
+			projectRoot,
+			"memory",
+			"agent",
+			"proposals",
+			"living-memory",
+			"episode-note.md",
+		);
+		await mkdir(dirname(proposalPath), { recursive: true });
+		await writeFile(proposalPath, "proposal\n");
+		const replacementPath = `${episodePath}.replacement`;
+		await writeFile(replacementPath, `${await readFile(episodePath)}changed\n`);
+		await rename(replacementPath, episodePath);
+
+		await expect(
+			source.finalize?.([
+				{
+					id: episode.id,
+					digest: episode.digest,
+					fileIdentity: episode.fileIdentity,
+					proposalPaths: [proposalPath],
+				},
+			]),
+		).resolves.toEqual({ episodePrunes: [], writesCommitted: false });
 	});
 
 	test("does not clobber a concurrently recreated episode during finalize restore", async () => {
@@ -7034,6 +7235,51 @@ async function runEpisodeRestoreChild(projectRoot: string): Promise<{
 		child.once("error", reject);
 		child.once("exit", (code, signal) => resolve({ code, signal }));
 	});
+}
+
+async function createEpisodeRestoreRaceSource(
+	projectRoot: string,
+	episodePaths: readonly string[],
+) {
+	const changedBytes = new Map(
+		await Promise.all(
+			episodePaths.map(
+				async (path) =>
+					[path, `${await readFile(path, "utf-8")}Human rewrite.\n`] as const,
+			),
+		),
+	);
+	const journalPath = join(
+		dirname(episodePaths[0] as string),
+		".living-memory-episode-prune.json",
+	);
+	const commits = { journalWrites: 0, restores: 0, journalRemovals: 0 };
+	const baseFiles = createDurableMachineFiles();
+	const source = createProjectEpisodeConsolidationSource({
+		projectRoot,
+		durableFiles: {
+			...baseFiles,
+			async replaceText(options) {
+				const replaced = await baseFiles.replaceText(options);
+				if (options.path === journalPath) commits.journalWrites += 1;
+				return replaced;
+			},
+			async renameFile(options) {
+				const changed = changedBytes.get(options.sourcePath);
+				if (changed !== undefined) await writeFile(options.sourcePath, changed);
+				await baseFiles.renameFile(options);
+			},
+			async restoreFile(options) {
+				await baseFiles.restoreFile(options);
+				if (changedBytes.has(options.destinationPath)) commits.restores += 1;
+			},
+			async removeFile(path) {
+				await baseFiles.removeFile(path);
+				if (path === journalPath) commits.journalRemovals += 1;
+			},
+		},
+	});
+	return { changedBytes, commits, journalPath, source };
 }
 
 async function writeEpisodeFixtures(
