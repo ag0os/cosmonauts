@@ -1,0 +1,400 @@
+tests/memory/living-memory-commit-interleavings.test.ts-658-		expect(finalize).toHaveBeenCalledOnce();
+tests/memory/living-memory-commit-interleavings.test.ts:659:		expect(markMaterialized).toHaveBeenCalledOnce();
+tests/memory/living-memory-commit-interleavings.test.ts-660-		expect(result).toMatchObject({
+tests/memory/living-memory-commit-interleavings.test.ts-661-			kind: "failed",
+tests/memory/living-memory-commit-interleavings.test.ts-662-			reason: "simulated recovery receipt materialization failure",
+tests/memory/living-memory-commit-interleavings.test.ts-663-			details: {
+tests/memory/living-memory-commit-interleavings.test.ts-664-				episodePrunes: [episode.id],
+tests/memory/living-memory-commit-interleavings.test.ts-665-				writesCommitted: true,
+tests/memory/living-memory-commit-interleavings.test.ts-666-			},
+tests/memory/living-memory-commit-interleavings.test.ts-667-		});
+--
+tests/memory/living-memory-commit-interleavings.test.ts-746-		list: async () => [],
+tests/memory/living-memory-commit-interleavings.test.ts-747-		dischargeStale: async () => [],
+tests/memory/living-memory-commit-interleavings.test.ts-748-		read: async () => undefined,
+tests/memory/living-memory-commit-interleavings.test.ts-749-		write: async (
+tests/memory/living-memory-commit-interleavings.test.ts-750-			receipt: Parameters<
+tests/memory/living-memory-commit-interleavings.test.ts-751-				LivingMemoryConsolidatorDependencies["acceptedJudgmentReceiptStore"]["write"]
+tests/memory/living-memory-commit-interleavings.test.ts-752-			>[0],
+tests/memory/living-memory-commit-interleavings.test.ts-753-		) => receipt,
+tests/memory/living-memory-commit-interleavings.test.ts:754:		markMaterialized: async (batchKey: string) => ({
+tests/memory/living-memory-commit-interleavings.test.ts-755-			schemaVersion: 1 as const,
+tests/memory/living-memory-commit-interleavings.test.ts-756-			batchKey,
+tests/memory/living-memory-commit-interleavings.test.ts-757-			state: "materialized" as const,
+tests/memory/living-memory-commit-interleavings.test.ts-758-			inputDigests: [],
+tests/memory/living-memory-commit-interleavings.test.ts-759-			output: { schemaVersion: 1 as const, observations: [] },
+tests/memory/living-memory-commit-interleavings.test.ts-760-			path: `/tmp/${batchKey}.json`,
+tests/memory/living-memory-commit-interleavings.test.ts-761-		}),
+tests/memory/living-memory-commit-interleavings.test.ts-762-	};
+--
+tests/memory/living-memory.test.ts-2139-			state: "accepted" as const,
+tests/memory/living-memory.test.ts-2140-			inputDigests: [input.digest],
+tests/memory/living-memory.test.ts-2141-			output: { schemaVersion: 1 as const, observations: [] },
+tests/memory/living-memory.test.ts-2142-			path: receiptStore.pathFor(batchKey),
+tests/memory/living-memory.test.ts-2143-		};
+tests/memory/living-memory.test.ts-2144-		await expect(receiptStore.write(receipt)).resolves.toEqual(receipt);
+tests/memory/living-memory.test.ts-2145-		await expect(receiptStore.write(receipt)).resolves.toEqual(receipt);
+tests/memory/living-memory.test.ts-2146-		await expect(
+tests/memory/living-memory.test.ts:2147:			receiptStore.markMaterialized(batchKey),
+tests/memory/living-memory.test.ts-2148-		).resolves.toMatchObject({
+tests/memory/living-memory.test.ts-2149-			state: "materialized",
+tests/memory/living-memory.test.ts-2150-		});
+tests/memory/living-memory.test.ts-2151-		await expect(receiptStore.read(batchKey)).resolves.toMatchObject({
+tests/memory/living-memory.test.ts-2152-			state: "materialized",
+tests/memory/living-memory.test.ts-2153-			inputDigests: [input.digest],
+tests/memory/living-memory.test.ts-2154-		});
+tests/memory/living-memory.test.ts-2155-		expect(
+--
+tests/memory/living-memory.test.ts-2302-				batchKey,
+tests/memory/living-memory.test.ts-2303-				state: "accepted",
+tests/memory/living-memory.test.ts-2304-				inputDigests: [
+tests/memory/living-memory.test.ts-2305-					createHash("sha256").update(`${suffix}-input`).digest("hex"),
+tests/memory/living-memory.test.ts-2306-				],
+tests/memory/living-memory.test.ts-2307-				output: { schemaVersion: 1, observations: [] },
+tests/memory/living-memory.test.ts-2308-				path: receiptStore.pathFor(batchKey),
+tests/memory/living-memory.test.ts-2309-			});
+tests/memory/living-memory.test.ts:2310:			await receiptStore.markMaterialized(batchKey);
+tests/memory/living-memory.test.ts-2311-		}
+tests/memory/living-memory.test.ts-2312-
+tests/memory/living-memory.test.ts-2313-		const result = await createHarness([source("empty", [])], undefined, {
+tests/memory/living-memory.test.ts-2314-			acceptedJudgmentReceiptStore: receiptStore,
+tests/memory/living-memory.test.ts-2315-		}).consolidator();
+tests/memory/living-memory.test.ts-2316-
+tests/memory/living-memory.test.ts-2317-		expect(result).toMatchObject({
+tests/memory/living-memory.test.ts-2318-			kind: "failed",
+--
+tests/memory/living-memory.test.ts-2348-		await receiptStore.write({
+tests/memory/living-memory.test.ts-2349-			schemaVersion: 1,
+tests/memory/living-memory.test.ts-2350-			batchKey,
+tests/memory/living-memory.test.ts-2351-			state: "accepted",
+tests/memory/living-memory.test.ts-2352-			inputDigests: [createHash("sha256").update("absent input").digest("hex")],
+tests/memory/living-memory.test.ts-2353-			output: { schemaVersion: 1, observations: [] },
+tests/memory/living-memory.test.ts-2354-			path: receiptPath,
+tests/memory/living-memory.test.ts-2355-		});
+tests/memory/living-memory.test.ts:2356:		await receiptStore.markMaterialized(batchKey);
+tests/memory/living-memory.test.ts-2357-
+tests/memory/living-memory.test.ts-2358-		const result = await createHarness([source("empty", [])], undefined, {
+tests/memory/living-memory.test.ts-2359-			acceptedJudgmentReceiptStore: receiptStore,
+tests/memory/living-memory.test.ts-2360-		}).consolidator();
+tests/memory/living-memory.test.ts-2361-
+tests/memory/living-memory.test.ts-2362-		expect(result).toMatchObject({
+tests/memory/living-memory.test.ts-2363-			kind: "failed",
+tests/memory/living-memory.test.ts-2364-			reason: expect.stringContaining(
+--
+tests/memory/living-memory.test.ts-2379-		await initialStore.write({
+tests/memory/living-memory.test.ts-2380-			schemaVersion: 1,
+tests/memory/living-memory.test.ts-2381-			batchKey,
+tests/memory/living-memory.test.ts-2382-			state: "accepted",
+tests/memory/living-memory.test.ts-2383-			inputDigests: [createHash("sha256").update("stale input").digest("hex")],
+tests/memory/living-memory.test.ts-2384-			output: { schemaVersion: 1, observations: [] },
+tests/memory/living-memory.test.ts-2385-			path: receiptPath,
+tests/memory/living-memory.test.ts-2386-		});
+tests/memory/living-memory.test.ts:2387:		await initialStore.markMaterialized(batchKey);
+tests/memory/living-memory.test.ts-2388-		const receiptStore = createAcceptedJudgmentReceiptStore({
+tests/memory/living-memory.test.ts-2389-			projectRoot,
+tests/memory/living-memory.test.ts-2390-			async withLock<T>(
+tests/memory/living-memory.test.ts-2391-				_lockPath: string,
+tests/memory/living-memory.test.ts-2392-				action: () => Promise<T>,
+tests/memory/living-memory.test.ts-2393-				options: EntityFileLockOptions = {},
+tests/memory/living-memory.test.ts-2394-			): Promise<T> {
+tests/memory/living-memory.test.ts-2395-				const result = await action();
+--
+tests/memory/living-memory.test.ts-2422-		await receiptStore.write({
+tests/memory/living-memory.test.ts-2423-			schemaVersion: 1,
+tests/memory/living-memory.test.ts-2424-			batchKey,
+tests/memory/living-memory.test.ts-2425-			state: "accepted",
+tests/memory/living-memory.test.ts-2426-			inputDigests: [createHash("sha256").update("absent-input").digest("hex")],
+tests/memory/living-memory.test.ts-2427-			output: { schemaVersion: 1, observations: [] },
+tests/memory/living-memory.test.ts-2428-			path: receiptStore.pathFor(batchKey),
+tests/memory/living-memory.test.ts-2429-		});
+tests/memory/living-memory.test.ts:2430:		await receiptStore.markMaterialized(batchKey);
+tests/memory/living-memory.test.ts-2431-
+tests/memory/living-memory.test.ts-2432-		const result = await createHarness([source("empty", [])], undefined, {
+tests/memory/living-memory.test.ts-2433-			acceptedJudgmentReceiptStore: receiptStore,
+tests/memory/living-memory.test.ts-2434-			retirementStore: {
+tests/memory/living-memory.test.ts-2435-				async inspect() {
+tests/memory/living-memory.test.ts-2436-					throw new Error("simulated post-discharge inspection failure");
+tests/memory/living-memory.test.ts-2437-				},
+tests/memory/living-memory.test.ts-2438-				async apply() {
+--
+tests/memory/living-memory.test.ts-2998-		for (const fixture of fixtures) {
+tests/memory/living-memory.test.ts-2999-			await expect(
+tests/memory/living-memory.test.ts-3000-				readFile(join(projectRoot, fixture.path), "utf-8"),
+tests/memory/living-memory.test.ts-3001-			).resolves.toBe(fixture.content);
+tests/memory/living-memory.test.ts-3002-		}
+tests/memory/living-memory.test.ts-3003-	});
+tests/memory/living-memory.test.ts-3004-
+tests/memory/living-memory.test.ts-3005-	// @cosmo-behavior plan:living-memory-fidelity#B-012
+tests/memory/living-memory.test.ts:3006:	test("reports committed writes for a materialization-only retry pass", async () => {
+tests/memory/living-memory.test.ts:3007:		const projectRoot = join(tmp.path, "materialization-only-retry");
+tests/memory/living-memory.test.ts-3008-		const inputs = [
+tests/memory/living-memory.test.ts-3009-			record({
+tests/memory/living-memory.test.ts:3010:				id: "materialization-only-evidence",
+tests/memory/living-memory.test.ts-3011-				sourceId: "corpus",
+tests/memory/living-memory.test.ts:3012:				path: "knowledge/materialization-only.md",
+tests/memory/living-memory.test.ts-3013-				kind: "knowledge",
+tests/memory/living-memory.test.ts-3014-				content: "# Materialization-only evidence\n",
+tests/memory/living-memory.test.ts-3015-			}),
+tests/memory/living-memory.test.ts-3016-			record({
+tests/memory/living-memory.test.ts:3017:				id: "materialization-only-context",
+tests/memory/living-memory.test.ts-3018-				sourceId: "corpus",
+tests/memory/living-memory.test.ts-3019-				path: "knowledge/materialization-context.md",
+tests/memory/living-memory.test.ts-3020-				kind: "knowledge",
+tests/memory/living-memory.test.ts-3021-				content: "# Materialization-only context\n",
+tests/memory/living-memory.test.ts-3022-			}),
+tests/memory/living-memory.test.ts-3023-		];
+tests/memory/living-memory.test.ts-3024-		const input = inputs[0];
+tests/memory/living-memory.test.ts-3025-		if (input === undefined) throw new Error("missing materialization input");
+--
+tests/memory/living-memory.test.ts-3057-			kind: "failed",
+tests/memory/living-memory.test.ts-3058-			reason: "simulated crash after durable proposal write",
+tests/memory/living-memory.test.ts-3059-			details: { writesCommitted: true },
+tests/memory/living-memory.test.ts-3060-		});
+tests/memory/living-memory.test.ts-3061-		const accepted = (await receiptStore.list()).find(
+tests/memory/living-memory.test.ts-3062-			(receipt) => receipt.state === "accepted",
+tests/memory/living-memory.test.ts-3063-		);
+tests/memory/living-memory.test.ts-3064-		expect(accepted).toBeDefined();
+tests/memory/living-memory.test.ts:3065:		const markMaterialized = vi.spyOn(receiptStore, "markMaterialized");
+tests/memory/living-memory.test.ts-3066-
+tests/memory/living-memory.test.ts-3067-		const retried = await createHarness(
+tests/memory/living-memory.test.ts-3068-			[source("corpus", inputs)],
+tests/memory/living-memory.test.ts-3069-			{ id: "fake/no-tools", judge },
+tests/memory/living-memory.test.ts-3070-			{
+tests/memory/living-memory.test.ts-3071-				acceptedJudgmentReceiptStore: receiptStore,
+tests/memory/living-memory.test.ts-3072-				proposalStore,
+tests/memory/living-memory.test.ts-3073-			},
+--
+tests/memory/living-memory.test.ts-3076-		expect(retried).toMatchObject({
+tests/memory/living-memory.test.ts-3077-			kind: "ran",
+tests/memory/living-memory.test.ts-3078-			details: {
+tests/memory/living-memory.test.ts-3079-				proposals: [{ status: "existing" }],
+tests/memory/living-memory.test.ts-3080-				episodePrunes: [],
+tests/memory/living-memory.test.ts-3081-				writesCommitted: true,
+tests/memory/living-memory.test.ts-3082-			},
+tests/memory/living-memory.test.ts-3083-		});
+tests/memory/living-memory.test.ts:3084:		expect(markMaterialized).toHaveBeenCalledOnce();
+tests/memory/living-memory.test.ts-3085-		expect(judge).toHaveBeenCalledOnce();
+tests/memory/living-memory.test.ts-3086-		await expect(
+tests/memory/living-memory.test.ts-3087-			receiptStore.read(accepted?.batchKey ?? "missing"),
+tests/memory/living-memory.test.ts-3088-		).resolves.toMatchObject({ state: "materialized" });
+tests/memory/living-memory.test.ts-3089-	});
+tests/memory/living-memory.test.ts-3090-
+tests/memory/living-memory.test.ts-3091-	// @cosmo-behavior plan:living-memory#B-016
+tests/memory/living-memory.test.ts-3092-	test("rehydrates accepted judgment and persisted evidence then converges to noop", async () => {
+--
+tests/memory/living-memory.test.ts-3194-				state: "accepted",
+tests/memory/living-memory.test.ts-3195-				inputDigests: [
+tests/memory/living-memory.test.ts-3196-					createHash("sha256").update(`stale-${state}`).digest("hex"),
+tests/memory/living-memory.test.ts-3197-				],
+tests/memory/living-memory.test.ts-3198-				output: { schemaVersion: 1, observations: [] },
+tests/memory/living-memory.test.ts-3199-				path: receiptStore.pathFor(batchKey),
+tests/memory/living-memory.test.ts-3200-			});
+tests/memory/living-memory.test.ts-3201-			if (state === "materialized") {
+tests/memory/living-memory.test.ts:3202:				await receiptStore.markMaterialized(batchKey);
+tests/memory/living-memory.test.ts-3203-			}
+tests/memory/living-memory.test.ts-3204-		}
+tests/memory/living-memory.test.ts-3205-		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => ({
+tests/memory/living-memory.test.ts-3206-			schemaVersion: 1,
+tests/memory/living-memory.test.ts-3207-			observations: [
+tests/memory/living-memory.test.ts-3208-				{
+tests/memory/living-memory.test.ts-3209-					kind: "merge-candidate",
+tests/memory/living-memory.test.ts-3210-					inputIds: [proposalRecord.id],
+--
+tests/memory/living-memory.test.ts-3990-						state: "accepted",
+tests/memory/living-memory.test.ts-3991-						inputDigests: snapshot.records.map((record) => record.digest),
+tests/memory/living-memory.test.ts-3992-						output,
+tests/memory/living-memory.test.ts-3993-						path: `/tmp/${batchKey}.json`,
+lib/memory/types.ts:367:export interface AcceptedJudgmentReceiptStore {
+lib/memory/types.ts:377:	markMaterialized(batchKey: string): Promise<AcceptedJudgmentReceipt>;
+lib/memory/consolidation-receipts.ts:36:export interface AcceptedJudgmentReceiptStoreWithPaths
+lib/memory/consolidation-receipts.ts:215:		async markMaterialized(batchKey) {
+
+exec
+/bin/zsh -lc "nl -ba lib/memory/types.ts | sed -n '350,382p'
+git diff --unified=8 main...HEAD -- lib/memory/living-memory.ts | sed -n '70,145p;680,735p'
+git diff --name-only main...HEAD -- lib/memory/retirement-store.ts
+rg -n \"ConsolidationSourceFinalization\" lib/memory/index.ts tests/memory/interface.test.ts || true" in /Users/cosmos/Projects/cosmonauts
+ succeeded in 0ms:
+   350			readonly resolution: ImproveProposalResolution;
+   351			readonly date: Date;
+   352			readonly lockOptions: LivingMemoryLockOptions;
+   353			readonly signal?: AbortSignal;
+   354		}): Promise<ImproveProposalResolutionResult>;
+   355	}
+   356	
+   357	export interface AcceptedJudgmentReceipt {
+   358		readonly schemaVersion: 1;
+   359		readonly batchKey: string;
+   360		readonly state: "accepted" | "materialized";
+   361		readonly inputDigests: readonly string[];
+   362		readonly inputs?: readonly ConsolidationEvidenceRef[];
+   363		readonly output: CorpusJudgmentOutput;
+   364		readonly path: string;
+   365	}
+   366	
+   367	export interface AcceptedJudgmentReceiptStore {
+   368		pathFor(batchKey: string): string;
+   369		list(): Promise<readonly AcceptedJudgmentReceipt[]>;
+   370		dischargeStale(options: {
+   371			readonly currentKeys: readonly string[];
+   372			readonly lockOptions: LivingMemoryLockOptions;
+   373			readonly lockHeld?: boolean;
+   374		}): Promise<readonly string[]>;
+   375		read(batchKey: string): Promise<AcceptedJudgmentReceipt | undefined>;
+   376		write(receipt: AcceptedJudgmentReceipt): Promise<AcceptedJudgmentReceipt>;
+   377		markMaterialized(batchKey: string): Promise<AcceptedJudgmentReceipt>;
+   378	}
+   379	
+   380	export interface LivingMemoryRetirementInspection {
+   381		readonly recovery: ConsolidationRecovery;
+   382		readonly warnings: readonly MemoryWarning[];
++			async (input) => {
++				const result = await dependencies.retirementStore.apply(input);
++				reportCommittedState(result.details);
++				return result;
++			};
++		const persistProposal: LivingMemoryConsolidatorDependencies["proposalStore"]["persist"] =
++			async (input) => {
++				const proposal = await dependencies.proposalStore.persist(input);
++				reportCommittedState({
++					writesCommitted: proposal.status === "written",
++				});
++				return proposal;
++			};
++		const markReceiptMaterialized: LivingMemoryConsolidatorDependencies["acceptedJudgmentReceiptStore"]["markMaterialized"] =
++			async (batchKey) => {
++				try {
++					const receipt =
++						await dependencies.acceptedJudgmentReceiptStore.markMaterialized(
++							batchKey,
++						);
++					reportCommittedState({ writesCommitted: true });
++					return receipt;
++				} catch (error: unknown) {
++					reportCommittedState({ writesCommitted: hasCommittedWrites(error) });
++					throw error;
++				}
++			};
+ 
+ 		try {
+ 			throwIfAborted(options.signal);
+ 			const recoveryRun = dryRun
+ 				? undefined
+-				: await dependencies.retirementStore.apply({
++				: await applyRetirements({
+ 						candidates: [],
+ 						dryRun: false,
+ 						date: dependencies.clock(),
+ 						maxRetirements: dependencies.limits.maxRetirements,
+ 						lockOptions: dependencies.lockOptions,
+ 						lockHeld,
+ 						...(options.signal === undefined ? {} : { signal: options.signal }),
+ 					});
+ 			if (recoveryRun !== undefined) {
+ 				details = {
+ 					...details,
+ 					retirements: recoveryRun.details.retirements,
+ 					declines: recoveryRun.details.declines,
+ 					warnings: recoveryRun.details.warnings,
+ 					recovery: recoveryRun.details.recovery,
+-					writesCommitted: recoveryRun.details.writesCommitted,
+ 					...(recoveryRun.details.manifestPath === undefined
+ 						? {}
+ 						: { manifestPath: recoveryRun.details.manifestPath }),
+ 				};
+ 			}
+ 			if (recoveryRun?.kind === "failed") {
+ 				return {
+ 					kind: "failed" as const,
+ 					reason: recoveryRun.reason,
+ 					details,
+ 				};
+ 			}
+ 			if (!dryRun) {
+ 				for (const source of dependencies.sources) {
+ 					const sourceRecovery = await source.recover?.();
+ 					if (sourceRecovery === undefined) continue;
+-					details = {
+-						...details,
+-						episodePrunes: Object.freeze([
+-							...details.episodePrunes,
+-							...sourceRecovery.episodePrunes,
+-						]),
+-						writesCommitted:
+-							details.writesCommitted || sourceRecovery.writesCommitted,
+-					};
++					reportCommittedState(sourceRecovery);
+ 				observations: Object.freeze([
+ 					...deterministic.map((finding) => finding.observation),
+ 					...normalized.map((item) => item.observation),
+@@ -803,16 +901,22 @@ export function createLivingMemoryConsolidator(
+ 				proposals: Object.freeze(proposals),
+ 				episodePrunes: details.episodePrunes,
+ 				retirements: Object.freeze(reportedRetirements),
+ 				declines: Object.freeze([
+ 					...details.declines,
+ 					...deterministicCapDeclines(observationCapDeferred, "observation"),
+ 					...deterministicCapDeclines(proposalCapDeferred, "proposal"),
+ 					...(retirementRun?.details.declines ?? []),
++					...pressureDeferredRetirements.map((retirement) => ({
++						code: "retirement-pressure-deferred",
++						path: retirement.path,
++						reason:
++							"Retirement was deferred because knowledge index pressure is unusable.",
++					})),
+ 					...capDeferredRetirements.map((retirement) => ({
+ 						code: "retirement-cap-deferred",
+ 						path: retirement.path,
+ 						reason: "The bounded retirement cap deferred this candidate.",
+ 					})),
+ 					...modelOnlyRetirements.map((retirement) => ({
+ 						code: "retirement-authority-deferred",
+ 						path: retirement.path,
+@@ -823,45 +927,37 @@ export function createLivingMemoryConsolidator(
+ 						retirements: reportedRetirements,
+ 					}),
+ 				]),
+ 				warnings: Object.freeze([
+ 					...details.warnings,
+ 					...(retirementRun?.details.warnings ?? []),
+ 				]),
+ 				recovery: retirementRun?.details.recovery ?? details.recovery,
+-				writesCommitted:
+-					details.writesCommitted ||
+-					receiptAcceptedThisPass ||
+-					proposals.some((proposal) => proposal.status === "written") ||
+-					episodePrunes.length > 0 ||
+-					(retirementRun?.details.writesCommitted ?? false),
+ 				...(acceptedReceipt === undefined
+ 					? {}
+ 					: { acceptedJudgmentReceiptPath: acceptedReceipt.path }),
+ 				...(retirementRun?.details.manifestPath === undefined
+ 					? {}
+ 					: { manifestPath: retirementRun.details.manifestPath }),
+ 			};
+ 			if (retirementRun?.kind === "failed") {
+ 				return {
+ 					kind: "failed" as const,
+ 					reason: retirementRun.reason,
+ 					details,
+ 				};
+ 			}
+ 			return { kind: "ran" as const, details };
+
+codex
+1. **Medium — idempotent receipt materialization can falsely report a committed write.** [living-memory.ts:122](/Users/cosmos/Projects/cosmonauts/lib/memory/living-memory.ts:122) unconditionally records `writesCommitted: true` whenever `markMaterialized` succeeds, but the production store returns without writing when the receipt is already materialized at [consolidation-receipts.ts:221](/Users/cosmos/Projects/cosmonauts/lib/memory/consolidation-receipts.ts:221). In a materialization-only retry, if another actor materializes the receipt after the initial `list()` but before this call, this pass performs no durable mutation yet reports `true`. The result contract needs the store operation’s actual committed bit rather than inferring it from successful return.
+
+2. **Low — the new finalization result is missing from the public memory barrel.** `ConsolidationSourceFinalization` is declared at [consolidation-sources.ts:116](/Users/cosmos/Projects/cosmonauts/lib/memory/consolidation-sources.ts:116), but the source-contract export block at [index.ts:26](/Users/cosmos/Projects/cosmonauts/lib/memory/index.ts:26) omits it. A consumer importing public memory contracts from `lib/memory/index.ts` cannot name the new required `finalize()` result without a deep import. The changed-scope dead-code audit also identifies this as the sole unused type export.
+
+All repository gates passed: 3,090 tests, lint, typecheck, diff check, and 12-behavior artifact conformance.
+
+**DO-NOT-SHIP**
+tokens used
+376,489
+1. **Medium — idempotent receipt materialization can falsely report a committed write.** [living-memory.ts:122](/Users/cosmos/Projects/cosmonauts/lib/memory/living-memory.ts:122) unconditionally records `writesCommitted: true` whenever `markMaterialized` succeeds, but the production store returns without writing when the receipt is already materialized at [consolidation-receipts.ts:221](/Users/cosmos/Projects/cosmonauts/lib/memory/consolidation-receipts.ts:221). In a materialization-only retry, if another actor materializes the receipt after the initial `list()` but before this call, this pass performs no durable mutation yet reports `true`. The result contract needs the store operation’s actual committed bit rather than inferring it from successful return.
+
+2. **Low — the new finalization result is missing from the public memory barrel.** `ConsolidationSourceFinalization` is declared at [consolidation-sources.ts:116](/Users/cosmos/Projects/cosmonauts/lib/memory/consolidation-sources.ts:116), but the source-contract export block at [index.ts:26](/Users/cosmos/Projects/cosmonauts/lib/memory/index.ts:26) omits it. A consumer importing public memory contracts from `lib/memory/index.ts` cannot name the new required `finalize()` result without a deep import. The changed-scope dead-code audit also identifies this as the sole unused type export.
+
+All repository gates passed: 3,090 tests, lint, typecheck, diff check, and 12-behavior artifact conformance.
+
+**DO-NOT-SHIP**
