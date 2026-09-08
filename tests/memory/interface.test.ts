@@ -898,27 +898,48 @@ describe("memory interface", () => {
 			.toEqual(["profile", "playbook", "note"]);
 	});
 
+	// @cosmo-behavior plan:living-memory-fidelity#B-009
 	test("keeps living-memory behavior ownership while fidelity regressions use fidelity markers", async () => {
-		const [interfaceSource, livingMemorySource, architectureMemorySource] =
-			await Promise.all([
-				readFile(
-					join(process.cwd(), "tests", "memory", "interface.test.ts"),
-					"utf-8",
+		const [
+			interfaceSource,
+			livingMemorySource,
+			architectureMemorySource,
+			consolidationSourcesSource,
+			memorySubcommandSource,
+		] = await Promise.all([
+			readFile(
+				join(process.cwd(), "tests", "memory", "interface.test.ts"),
+				"utf-8",
+			),
+			readFile(
+				join(process.cwd(), "tests", "memory", "living-memory.test.ts"),
+				"utf-8",
+			),
+			readFile(
+				join(
+					process.cwd(),
+					"tests",
+					"extensions",
+					"architecture-memory.test.ts",
 				),
-				readFile(
-					join(process.cwd(), "tests", "memory", "living-memory.test.ts"),
-					"utf-8",
+				"utf-8",
+			),
+			readFile(
+				join(process.cwd(), "tests", "memory", "consolidation-sources.test.ts"),
+				"utf-8",
+			),
+			readFile(
+				join(process.cwd(), "tests", "cli", "memory", "subcommand.test.ts"),
+				"utf-8",
+			),
+		]);
+		const allTestSources = await Promise.all(
+			(await listFiles(join(process.cwd(), "tests"), "tests"))
+				.filter((path) => path.endsWith(".test.ts"))
+				.map((path) =>
+					readFile(join(process.cwd(), ...path.split("/")), "utf-8"),
 				),
-				readFile(
-					join(
-						process.cwd(),
-						"tests",
-						"extensions",
-						"architecture-memory.test.ts",
-					),
-					"utf-8",
-				),
-			]);
+		);
 
 		for (const carrier of [
 			{
@@ -966,16 +987,114 @@ describe("memory interface", () => {
 			"gmu",
 		);
 		expect(
-			[interfaceSource, livingMemorySource, architectureMemorySource].flatMap(
+			allTestSources.flatMap(
 				(source) => source.match(parentCarrierPattern) ?? [],
 			),
 		).toHaveLength(6);
+
+		const fidelityCarriers = [
+			{
+				source: livingMemorySource,
+				behavior: "plan:living-memory-fidelity#B-001",
+				testName:
+					"matches pressure to injection for both round-7 divergence directions",
+			},
+			{
+				source: livingMemorySource,
+				behavior: "plan:living-memory-fidelity#B-002",
+				testName:
+					"marks pressure unusable instead of reporting a false fit without an exact render input",
+			},
+			{
+				source: architectureMemorySource,
+				behavior: "plan:living-memory-fidelity#B-003",
+				testName: "counts injected knowledge warnings in measured index bytes",
+			},
+			{
+				source: consolidationSourcesSource,
+				behavior: "plan:living-memory-fidelity#B-004",
+				testName:
+					"marks corpus inventory incomplete when retrieval omits a warned record",
+			},
+			{
+				source: livingMemorySource,
+				behavior: "plan:living-memory-fidelity#B-005",
+				testName:
+					"keeps receipts and blocks dependent work when corpus inventory is incomplete",
+			},
+			{
+				source: consolidationSourcesSource,
+				behavior: "plan:living-memory-fidelity#B-006",
+				testName: "counts malformed episodes as omitted incomplete inventory",
+			},
+			{
+				source: livingMemorySource,
+				behavior: "plan:living-memory-fidelity#B-007",
+				testName:
+					"reports a committed first receipt removal when its directory sync fails",
+			},
+			{
+				source: livingMemorySource,
+				behavior: "plan:living-memory-fidelity#B-008",
+				testName:
+					"preserves source-recovery episode prunes and committed writes in the final result",
+			},
+			{
+				source: interfaceSource,
+				behavior: "plan:living-memory-fidelity#B-009",
+				testName:
+					"keeps living-memory behavior ownership while fidelity regressions use fidelity markers",
+			},
+			{
+				source: memorySubcommandSource,
+				behavior: "plan:living-memory-fidelity#B-010",
+				testName:
+					"matches real-corpus injection pressure through the CLI composition root on a copy",
+			},
+			{
+				source: interfaceSource,
+				behavior: "plan:living-memory-fidelity#B-011",
+				testName:
+					"re-pins the memory contract without weakening living-memory authority",
+			},
+			{
+				source: livingMemorySource,
+				behavior: "plan:living-memory-fidelity#B-012",
+				testName:
+					"reports committed writes for a materialization-only retry pass",
+			},
+		] as const;
+		for (const carrier of fidelityCarriers) {
+			expectBehaviorCarrier(carrier);
+		}
+
+		const fidelityMarkerPattern = new RegExp(
+			`^\\t// ${[
+				"@cosmo-behavior",
+				"plan:living-memory-fidelity#B-(?:00[1-9]|01[0-2])",
+			].join(" ")}$`,
+			"gmu",
+		);
+		expect(
+			allTestSources
+				.flatMap((source) => source.match(fidelityMarkerPattern) ?? [])
+				.toSorted(),
+		).toEqual(
+			fidelityCarriers
+				.map(
+					(carrier) =>
+						`\t// ${["@cosmo-behavior", carrier.behavior].join(" ")}`,
+				)
+				.toSorted(),
+		);
 	});
 
+	// @cosmo-behavior plan:living-memory-fidelity#B-011
 	test("re-pins the memory contract without weakening living-memory authority", async () => {
-		const [typesSource, interfaceSource, livingMemorySource] =
+		const [typesSource, indexSource, interfaceSource, livingMemorySource] =
 			await Promise.all([
 				readFile(join(process.cwd(), "lib", "memory", "types.ts"), "utf-8"),
+				readFile(join(process.cwd(), "lib", "memory", "index.ts"), "utf-8"),
 				readFile(
 					join(process.cwd(), "tests", "memory", "interface.test.ts"),
 					"utf-8",
@@ -1003,6 +1122,23 @@ describe("memory interface", () => {
 				"documents living-memory trust outlets invocation durability and recovery",
 			),
 		).toContain("Profile and explicit-save authority are unchanged");
+		for (const contract of [
+			"readonly indexPressure?: KnowledgeIndexPressureResult;",
+			'readonly kind: "measured";',
+			'readonly kind: "unusable";',
+			"readonly targetSatisfied: false;",
+		]) {
+			expect(typesSource, contract).toContain(contract);
+		}
+		expect(indexSource).toContain("type KnowledgeIndexPressureResult,");
+		const publicResultContract = sourceTestBlock(
+			interfaceSource,
+			"exposes exact living-memory outcomes through configured knowledge consolidate only",
+		);
+		expect(publicResultContract).toContain(
+			"expect(Object.keys(full.details).sort()).toEqual([",
+		);
+		expect(publicResultContract).toContain('"indexPressure",');
 
 		expectBehaviorCarrier({
 			source: interfaceSource,

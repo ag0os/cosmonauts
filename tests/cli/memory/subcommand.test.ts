@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, test, vi } from "vitest";
@@ -40,6 +40,9 @@ import {
 	executeMemoryConsolidate,
 	type MemoryConsolidationStoreOptions,
 } from "../../../cli/memory/subcommand.ts";
+import { buildAgentIdentityMarker } from "../../../lib/agents/runtime-identity.ts";
+import { COMBINED_CONTEXT_PREFIX } from "../../../lib/extensions/knowledge-surface/index-policy.ts";
+import { createKnowledgeSurfaceSessionExtension } from "../../../lib/extensions/knowledge-surface/session-extension.ts";
 import {
 	createConsolidationProposalStore,
 	type LivingMemoryLimits,
@@ -48,6 +51,7 @@ import {
 } from "../../../lib/memory/index.ts";
 import { captureCliOutput } from "../../helpers/cli.ts";
 import { useTempDir } from "../../helpers/fs.ts";
+import { createMockPi } from "../../helpers/mocks/index.ts";
 
 const tmp = useTempDir("memory-cli-");
 const execFileAsync = promisify(execFile);
@@ -173,6 +177,91 @@ describe("memory owner CLI", () => {
 		).toEqual([raw, userRaw]);
 		expect(await readdir(projectRoot)).toEqual(["knowledge"]);
 		expect(await readdir(join(home, ".cosmonauts"))).toEqual(["knowledge"]);
+	});
+
+	// @cosmo-behavior plan:living-memory-fidelity#B-010
+	test("matches real-corpus injection pressure through the CLI composition root on a copy", async () => {
+		const repositoryRoot = process.cwd();
+		const sourceKnowledgeRoot = join(repositoryRoot, "knowledge");
+		const projectRoot = join(tmp.path, "real-corpus-copy-project");
+		const copiedKnowledgeRoot = join(projectRoot, "knowledge");
+		const home = join(tmp.path, "real-corpus-copy-home");
+		const userCosmonautsRoot = join(home, ".cosmonauts");
+		const expectedCorpusDigest =
+			"adc3ef70a5e75cad8813db9a3ab954d4da84ebfeafbb75703529048007469932";
+
+		const sourceBefore = await corpusSnapshot(sourceKnowledgeRoot);
+		expect(sourceBefore).toMatchObject({
+			fileCount: 237,
+			digest: expectedCorpusDigest,
+		});
+		await cp(sourceKnowledgeRoot, copiedKnowledgeRoot, { recursive: true });
+		await mkdir(join(projectRoot, ".cosmonauts"), { recursive: true });
+		await writeFile(
+			join(projectRoot, ".cosmonauts", "config.json"),
+			`${JSON.stringify({ knowledgeSurface: { enabled: true } })}\n`,
+			"utf-8",
+		);
+		const copyBefore = await corpusSnapshot(copiedKnowledgeRoot);
+		expect(copyBefore).toEqual(sourceBefore);
+
+		const { stdout } = await execFileAsync(
+			"bun",
+			[
+				join(repositoryRoot, "bin", "cosmonauts"),
+				"memory",
+				"consolidate",
+				"--dry-run",
+				"--no-model",
+				"--json",
+			],
+			{
+				cwd: projectRoot,
+				env: { ...process.env, HOME: home },
+			},
+		);
+		const result = JSON.parse(stdout);
+		expect(["ran", "noop"]).toContain(result.kind);
+		expect(result.details).toMatchObject({
+			dryRun: true,
+			modelMode: "deterministic-only",
+			indexPressure: { kind: "measured" },
+			recovery: "none",
+			writesCommitted: false,
+		});
+
+		const pi = createMockPi({ cwd: projectRoot });
+		installKnowledgeSurface(pi, {
+			agentId: "example/worker",
+			registerAgentMemoryTools: false,
+			authorizeAuthoredMemory: false,
+			registerArchitectureTool: false,
+			authorizeArchitecture: false,
+			recallOwner: "knowledge",
+			canPropose: false,
+			userCosmonautsRoot,
+		});
+		const injected = (await pi.fireEvent(
+			"before_agent_start",
+			{ systemPrompt: buildAgentIdentityMarker("example/worker") },
+			{ cwd: projectRoot },
+		)) as { message: { content: string } };
+		expect(injected.message.content.startsWith(COMBINED_CONTEXT_PREFIX)).toBe(
+			true,
+		);
+		const renderedKnowledge = injected.message.content.slice(
+			Buffer.byteLength(COMBINED_CONTEXT_PREFIX, "utf-8"),
+		);
+		expect(result.details.indexPressure.renderedBytes).toBe(
+			Buffer.byteLength(renderedKnowledge, "utf-8"),
+		);
+
+		await expect(corpusSnapshot(sourceKnowledgeRoot)).resolves.toEqual(
+			sourceBefore,
+		);
+		await expect(corpusSnapshot(copiedKnowledgeRoot)).resolves.toEqual(
+			copyBefore,
+		);
 	});
 
 	// @cosmo-behavior plan:living-memory#B-007
@@ -884,4 +973,56 @@ function judgmentInput(limitOverrides: Partial<LivingMemoryLimits> = {}) {
 			...limitOverrides,
 		},
 	};
+}
+
+function installKnowledgeSurface(
+	pi: ReturnType<typeof createMockPi>,
+	options: Parameters<typeof createKnowledgeSurfaceSessionExtension>[0],
+): void {
+	const extension = createKnowledgeSurfaceSessionExtension(options);
+	if (typeof extension === "function") {
+		extension(pi as never);
+		return;
+	}
+	extension.factory(pi as never);
+}
+
+async function corpusSnapshot(knowledgeRoot: string): Promise<{
+	readonly fileCount: number;
+	readonly digest: string;
+	readonly entries: readonly string[];
+}> {
+	const paths = await listRegularFiles(knowledgeRoot);
+	const entries = await Promise.all(
+		paths.map(async (path) => {
+			const bytes = await readFile(join(knowledgeRoot, ...path.split("/")));
+			return `${createHash("sha256").update(bytes).digest("hex")}  knowledge/${path}`;
+		}),
+	);
+	return {
+		fileCount: paths.length,
+		digest: createHash("sha256")
+			.update(`${entries.join("\n")}\n`)
+			.digest("hex"),
+		entries,
+	};
+}
+
+async function listRegularFiles(root: string, prefix = ""): Promise<string[]> {
+	const entries = await readdir(
+		join(root, ...prefix.split("/").filter(Boolean)),
+		{
+			withFileTypes: true,
+		},
+	);
+	const paths: string[] = [];
+	for (const entry of entries) {
+		const path = prefix ? `${prefix}/${entry.name}` : entry.name;
+		if (entry.isDirectory()) {
+			paths.push(...(await listRegularFiles(root, path)));
+		} else if (entry.isFile()) {
+			paths.push(path);
+		}
+	}
+	return paths.sort();
 }

@@ -307,6 +307,45 @@ this plan.
     able to tell which constraints trace to a human and which are awaiting one.
   - Decided by: review-synthesis, amend-on-record
 
+- **D-012 - Two file-scope amendments, recorded rather than absorbed** *(Added 2026-09-07 during implementation; derived, amendable on record)*
+  - Context: Implementation Order step 21 audits that "only the five
+    Files-to-Change rows may differ". Stage 1 changed a sixth production file,
+    `lib/memory/knowledge-store.ts`, which no Files-to-Change row names. Three
+    fresh reviews passed it because the tasks' directory-boundary criterion
+    permits `lib/memory/`; the stricter final audit would not.
+  - Decision: amend the file list on record rather than revert the change or let
+    the final audit fail. The change is load-bearing — it routes user-root
+    resolution through the canonical descriptor so the store cannot resolve a
+    different user root than the injection and measurement paths, which is what
+    AC-001's scope-set dimension and D-008 require. Reverting it would reopen
+    the parity D-008 exists to close.
+  - Second amendment, conditional: closing SR-004 may require tagging a
+    committed-write error inside `lib/memory/durable-files.ts`, where the
+    rename-then-sync sequence lives and where `DurableFileCommittedError` is
+    already defined. That file is likewise unnamed by any row. It is
+    pre-authorized for the SR-004 remediation **only** for the purpose of
+    carrying an already-committed bit out of a failed write, and only if the fix
+    cannot be made at the call site. It is not authorized for any change to
+    retirement pathname sequencing, which D-026 closes.
+  - Third amendment *(added 2026-09-07 after Stage 3 round 2)*:
+    `tests/memory/living-memory-commit-interleavings.test.ts` is a new test file
+    created by TASK-646 to hold the commit-interleaving harness, and no
+    Files-to-Change row names it. Recorded rather than reverted: a separate file
+    for a 521-line interleaving harness is reasonable, it lives in the permitted
+    `tests/memory/` directory, and the behaviour markers it relates to remain on
+    their plan-declared owner tests in `tests/memory/living-memory.test.ts`, so
+    no marker ownership moves.
+  - Fourth amendment, same round: `lib/memory/durable-files.ts` was changed by
+    TASK-646 under the second amendment above and is changed again by the SR-007
+    remediation. Its authorization remains narrow and unchanged — carrying an
+    already-committed bit out of a failed write, by error tagging only. It
+    authorizes no change to operation ordering anywhere in that file, and none to
+    retirement pathname sequencing, which D-026 closes as ratified ground.
+  - Decided by: derived (coordinator, during implementation). Amendable on
+    record. This entry widens no invariant: INV-001..INV-004 and the D-026
+    exclusion are untouched, and `lib/memory/retirement-store.ts` remains out of
+    scope.
+
 ## Assumptions
 
 - Ratified ground is consumed, not re-litigated: D-026 (including its 2026-09-03
@@ -769,45 +808,6 @@ Plan-specific assertions:
 | 5 | `complexity` | bindable | unbound | The completeness barrier and commit fold remain explicit, with no new cross-cutting state machine | pending | unbound, not enforced; structural reviewer inspection required |
 | 6 | `boundary-conformance` | bindable | unbound | `lib/memory` owns data contracts, the extension depends inward and owns rendering, and CLI only composes; no edit leaves the permitted directories/tests | pending | unbound, not enforced; diff/import inspection required |
 | 7 | `dead-code` | bindable | unbound | Removed `toIndexRecords` and superseded call forms have no remaining use; no unrelated exports are demoted | pending | unbound, not enforced; scoped reviewer judgment only, no repo-wide sweep |
-
-- **D-012 - Two file-scope amendments, recorded rather than absorbed** *(Added 2026-09-07 during implementation; derived, amendable on record)*
-  - Context: Implementation Order step 21 audits that "only the five
-    Files-to-Change rows may differ". Stage 1 changed a sixth production file,
-    `lib/memory/knowledge-store.ts`, which no Files-to-Change row names. Three
-    fresh reviews passed it because the tasks' directory-boundary criterion
-    permits `lib/memory/`; the stricter final audit would not.
-  - Decision: amend the file list on record rather than revert the change or let
-    the final audit fail. The change is load-bearing — it routes user-root
-    resolution through the canonical descriptor so the store cannot resolve a
-    different user root than the injection and measurement paths, which is what
-    AC-001's scope-set dimension and D-008 require. Reverting it would reopen
-    the parity D-008 exists to close.
-  - Second amendment, conditional: closing SR-004 may require tagging a
-    committed-write error inside `lib/memory/durable-files.ts`, where the
-    rename-then-sync sequence lives and where `DurableFileCommittedError` is
-    already defined. That file is likewise unnamed by any row. It is
-    pre-authorized for the SR-004 remediation **only** for the purpose of
-    carrying an already-committed bit out of a failed write, and only if the fix
-    cannot be made at the call site. It is not authorized for any change to
-    retirement pathname sequencing, which D-026 closes.
-  - Third amendment *(added 2026-09-07 after Stage 3 round 2)*:
-    `tests/memory/living-memory-commit-interleavings.test.ts` is a new test file
-    created by TASK-646 to hold the commit-interleaving harness, and no
-    Files-to-Change row names it. Recorded rather than reverted: a separate file
-    for a 521-line interleaving harness is reasonable, it lives in the permitted
-    `tests/memory/` directory, and the behaviour markers it relates to remain on
-    their plan-declared owner tests in `tests/memory/living-memory.test.ts`, so
-    no marker ownership moves.
-  - Fourth amendment, same round: `lib/memory/durable-files.ts` was changed by
-    TASK-646 under the second amendment above and is changed again by the SR-007
-    remediation. Its authorization remains narrow and unchanged — carrying an
-    already-committed bit out of a failed write, by error tagging only. It
-    authorizes no change to operation ordering anywhere in that file, and none to
-    retirement pathname sequencing, which D-026 closes as ratified ground.
-  - Decided by: derived (coordinator, during implementation). Amendable on
-    record. This entry widens no invariant: INV-001..INV-004 and the D-026
-    exclusion are untouched, and `lib/memory/retirement-store.ts` remains out of
-    scope.
 
 ## Implementation Order
 
