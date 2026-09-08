@@ -1,7 +1,7 @@
 ---
 id: TASK-652
 title: 'Stage 4 round 3: Return committed state instead of inferring it from a proxy'
-status: To Do
+status: Done
 priority: high
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-650
 createdAt: '2026-09-08T01:29:32.136Z'
-updatedAt: '2026-09-08T01:29:32.136Z'
+updatedAt: '2026-09-08T01:45:18.341Z'
 ---
 
 ## Description
@@ -55,16 +55,19 @@ Ratified-ground handling: the five common constraints below and the spec Intent
 invariants INV-001..INV-004 are stop-and-escalate ground. INV-003 is the invariant
 SR-009 violates.
 
-
 <!-- AC:BEGIN -->
-- [ ] #1 (Quality Contract assertion 7; Implementation Order steps 2 and 21) Directory boundary: the task's working diff touches only `lib/memory/`, `lib/extensions/knowledge-surface/`, `cli/memory/` and their mirrored tests under `tests/`. No repo-wide dead-code sweep, no export demotion, no unrelated API cleanup, no documentation, configuration, architecture-record or parent-plan edit.
-- [ ] #2 (Quality Contract assertion 6; Implementation Order step 1) Live corpus guard: before and after the task, `find knowledge -type f | sort | xargs shasum -a 256 | shasum -a 256` run from the repository root reports `adc3ef70a5e75cad8813db9a3ab954d4da84ebfeafbb75703529048007469932` and `find knowledge -type f | wc -l` reports 237. No live `knowledge/` change and no non-dry-run write-capable memory command.
-- [ ] #3 (Quality Contract assertions 5 and 7) Parent ownership: all six exact parent B-012/B-016/B-021 marker/name carriers remain exact and parent-owned; no frozen pin, receipt floor, retirement/byte authority, fail-closed validation or existing marker is weakened. Any commit changing `lib/memory/types.ts` re-pins its full-source SHA-256 in the same commit.
-- [ ] #4 (Quality Contract assertion 7) Gates: `bun run test`, `bun run lint`, `bun run typecheck`, `git diff --check` and `bun bin/cosmonauts plan check-artifacts living-memory-fidelity` all pass, with artifact conformance GREEN. No test is committed red.
-- [ ] #5 (Quality Contract assertions 7-8; D-026) D-026 is not reopened or given another verification layer, retirement pathname sequencing is untouched, and no operation is reordered.
-- [ ] #6 (SR-009; INV-003) A RED counterexample reproduces SR-009 before any production edit: episode finalization durably writes the prune journal and takes the restore branch so it prunes nothing, returning an empty array. The result is shown to report `writesCommitted: false` despite the committed journal and restore writes. After the fix it reports `writesCommitted: true`. The counterexample covers the `:848` call site.
-- [ ] #7 (SR-009, second call site) An equivalent counterexample or assertion covers the `:1120` call site, so the fix is proven at both places the inference occurred rather than only the one the finding named.
-- [ ] #8 (axis closure) No caller in `lib/memory/` infers `writesCommitted` from a proxy value — an array length, a defined path, a set size — where the callee performed durable writes the proxy does not represent. The three enumerated inference sites are each either converted to receive a real committed bit or justified in the task notes with the reason the proxy is exactly equivalent.
-- [ ] #9 (INV-003, inverse direction) The fix does not make `writesCommitted` true where nothing was durably written — dry-run paths, failures before any write, the no-work/noop path, and a finalization that legitimately performs no durable write at all.
-- [ ] #10 (Quality Contract assertions 1-4) The Stage-1 measurement contract, the Stage-2 completeness barrier, warning append-only monotonicity and the Stage-3/4 commit recording are all preserved unweakened. After the fix the full fidelity pack B-001..B-012, the commit-interleaving tests and the exact parent B-012/B-016/B-021 carrier tests all pass.
+- [x] #1 (Quality Contract assertion 7; Implementation Order steps 2 and 21) Directory boundary: the task's working diff touches only `lib/memory/`, `lib/extensions/knowledge-surface/`, `cli/memory/` and their mirrored tests under `tests/`. No repo-wide dead-code sweep, no export demotion, no unrelated API cleanup, no documentation, configuration, architecture-record or parent-plan edit.
+- [x] #2 (Quality Contract assertion 6; Implementation Order step 1) Live corpus guard: before and after the task, `find knowledge -type f | sort | xargs shasum -a 256 | shasum -a 256` run from the repository root reports `adc3ef70a5e75cad8813db9a3ab954d4da84ebfeafbb75703529048007469932` and `find knowledge -type f | wc -l` reports 237. No live `knowledge/` change and no non-dry-run write-capable memory command.
+- [x] #3 (Quality Contract assertions 5 and 7) Parent ownership: all six exact parent B-012/B-016/B-021 marker/name carriers remain exact and parent-owned; no frozen pin, receipt floor, retirement/byte authority, fail-closed validation or existing marker is weakened. Any commit changing `lib/memory/types.ts` re-pins its full-source SHA-256 in the same commit.
+- [x] #4 (Quality Contract assertion 7) Gates: `bun run test`, `bun run lint`, `bun run typecheck`, `git diff --check` and `bun bin/cosmonauts plan check-artifacts living-memory-fidelity` all pass, with artifact conformance GREEN. No test is committed red.
+- [x] #5 (Quality Contract assertions 7-8; D-026) D-026 is not reopened or given another verification layer, retirement pathname sequencing is untouched, and no operation is reordered.
+- [x] #6 (SR-009; INV-003) A RED counterexample reproduces SR-009 before any production edit: episode finalization durably writes the prune journal and takes the restore branch so it prunes nothing, returning an empty array. The result is shown to report `writesCommitted: false` despite the committed journal and restore writes. After the fix it reports `writesCommitted: true`. The counterexample covers the `:848` call site.
+- [x] #7 (SR-009, second call site) An equivalent counterexample or assertion covers the `:1120` call site, so the fix is proven at both places the inference occurred rather than only the one the finding named.
+- [x] #8 (axis closure) No caller in `lib/memory/` infers `writesCommitted` from a proxy value — an array length, a defined path, a set size — where the callee performed durable writes the proxy does not represent. The three enumerated inference sites are each either converted to receive a real committed bit or justified in the task notes with the reason the proxy is exactly equivalent.
+- [x] #9 (INV-003, inverse direction) The fix does not make `writesCommitted` true where nothing was durably written — dry-run paths, failures before any write, the no-work/noop path, and a finalization that legitimately performs no durable write at all.
+- [x] #10 (Quality Contract assertions 1-4) The Stage-1 measurement contract, the Stage-2 completeness barrier, warning append-only monotonicity and the Stage-3/4 commit recording are all preserved unweakened. After the fix the full fidelity pack B-001..B-012, the commit-interleaving tests and the exact parent B-012/B-016/B-021 carrier tests all pass.
 <!-- AC:END -->
+
+## Implementation Notes
+
+SR-009 axis closure: ConsolidationSource.finalize now returns episodePrunes and writesCommitted together, and both the normal finalization and accepted-episode recovery consumers fold that committed bit directly. The RED normal-path production counterexample completed journal write, tombstone rename, restore, and journal cleanup with no prunes and observed writesCommitted false before the fix; it and the equivalent accepted-recovery counterexample now observe true. Inverse coverage returns false when a changed episode is skipped before any finalization write. The remaining dischargedReceipts.length > 0 fold is exact: dischargeStale removal is its only durable act, each path is appended immediately after confirmed removal, and mutation-then-error committed state is propagated structurally rather than through the success array. lib/memory/types.ts and lib/memory/retirement-store.ts are unchanged; no operation was reordered.
