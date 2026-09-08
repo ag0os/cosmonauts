@@ -1,7 +1,7 @@
 ---
 id: TASK-637
 title: 'Stage 4: Prove real CLI composition and complete public contracts'
-status: To Do
+status: In Progress
 priority: high
 labels:
   - backend
@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-649
 createdAt: '2026-09-07T15:39:20.544Z'
-updatedAt: '2026-09-07T23:35:52.502Z'
+updatedAt: '2026-09-08T00:03:13.615Z'
 ---
 
 ## Description
