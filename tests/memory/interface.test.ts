@@ -2528,6 +2528,7 @@ function livingMemoryCorpusSource(
 					warnings: [],
 				},
 				omitted,
+				deferred: omitted,
 			};
 		},
 	};

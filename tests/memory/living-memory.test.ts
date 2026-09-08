@@ -2586,6 +2586,7 @@ describe("living memory", () => {
 					inventoryComplete: true,
 					knowledgeIndex: knowledgeIndexFixture([checked]),
 					omitted: 0,
+					deferred: 0,
 					warnings: [sourceWarning],
 				};
 			},
@@ -3172,6 +3173,7 @@ describe("living memory", () => {
 					inventoryComplete: true,
 					knowledgeIndex: knowledgeIndexFixture(records),
 					omitted: 0,
+					deferred: 0,
 				};
 			},
 		};
@@ -3379,6 +3381,7 @@ describe("living memory", () => {
 						: [],
 					inventoryComplete: true,
 					omitted: 0,
+					deferred: 0,
 				};
 			},
 		};
@@ -4413,11 +4416,71 @@ describe("living memory", () => {
 
 		expect(first.records).toHaveLength(2);
 		expect(first.omitted).toBe(1);
+		expect(first.deferred).toBe(1);
 		expect(second.records).toHaveLength(1);
 		expect(second.omitted).toBe(0);
+		expect(second.deferred).toBe(0);
 		expect(first.records.map((record) => record.id)).not.toContain(
 			second.records[0]?.id,
 		);
+	});
+
+	test("reports episode cap deferrals separately from integrity omissions", async () => {
+		const projectRoot = join(tmp.path, "mixed-episode-source-causes");
+		await writeEpisodeFixtures(projectRoot, [
+			["First mixed episode", "2026-09-01T10:00:00.000Z"],
+			["Second mixed episode", "2026-09-01T11:00:00.000Z"],
+		]);
+		await writeFile(
+			join(projectRoot, "memory", "agent", "episodes", "000-malformed.md"),
+			"not an OKF episode\n",
+		);
+
+		const result = await createHarness(
+			[createProjectEpisodeConsolidationSource({ projectRoot })],
+			undefined,
+			{
+				limits: {
+					...DEFAULT_LIVING_MEMORY_LIMITS,
+					maxCorpusRecords: 1,
+					maxEpisodeRecords: 1,
+				},
+			},
+		).consolidator();
+		if (result.kind !== "failed" || result.details === undefined) {
+			throw new Error("expected incomplete episode inventory to fail the pass");
+		}
+
+		expect(result.details.sources).toEqual([
+			{
+				sourceId: "project-episodes",
+				admitted: 1,
+				omitted: 2,
+				deferred: 1,
+				inventoryComplete: false,
+			},
+		]);
+		expect(
+			result.details.declines.filter(
+				(decline) =>
+					decline.code === "source-deferred" ||
+					decline.code === "source-inventory-incomplete",
+			),
+		).toEqual([
+			{
+				code: "source-deferred",
+				count: 1,
+				reason:
+					"1 record(s) from project-episodes were deferred by the bounded source pass.",
+			},
+			{
+				code: "source-inventory-incomplete",
+				count: 1,
+				sourceId: "project-episodes",
+				reason:
+					"Consolidation source project-episodes reported incomplete inventory; absence-dependent work is blocked.",
+			},
+		]);
 	});
 
 	test("declines oversized episode files at the production adapter read boundary", async () => {
@@ -4444,6 +4507,7 @@ describe("living memory", () => {
 		expect(snapshot).toMatchObject({
 			records: [],
 			omitted: 1,
+			deferred: 1,
 			declines: [
 				expect.objectContaining({
 					code: "source-record-bytes-deferred",
@@ -4478,6 +4542,7 @@ describe("living memory", () => {
 
 		expect(snapshot.records).toHaveLength(1);
 		expect(snapshot.omitted).toBe(1);
+		expect(snapshot.deferred).toBe(1);
 		expect(snapshot.declines).toEqual([
 			expect.objectContaining({ code: "source-aggregate-bytes-deferred" }),
 		]);
@@ -4849,6 +4914,7 @@ describe("living memory", () => {
 			records: [],
 			inventoryComplete: true,
 			omitted: 0,
+			deferred: 0,
 		}));
 		const harness = createHarness([{ id: "corpus", collect }]);
 		const createConsolidator = vi.fn(createLivingMemoryConsolidator);
@@ -4950,6 +5016,21 @@ describe("living memory", () => {
 							records: [],
 							inventoryComplete: true,
 							omitted: 1,
+							deferred: 1,
+						};
+					},
+				},
+			},
+			{
+				label: "deferred count",
+				source: {
+					id: "future-reflections",
+					async collect() {
+						return {
+							records: [],
+							inventoryComplete: true,
+							omitted: 0,
+							deferred: 1,
 						};
 					},
 				},
@@ -5039,6 +5120,7 @@ describe("living memory", () => {
 							inventoryComplete: true,
 							knowledgeIndex: { records: [], warnings: [] },
 							omitted: 0,
+							deferred: 0,
 						};
 					},
 				})),
@@ -5321,6 +5403,7 @@ describe("living memory", () => {
 					inventoryComplete: false,
 					knowledgeIndex: { records: [], warnings: [warning] },
 					omitted: 1,
+					deferred: 0,
 					warnings: [warning],
 				};
 			},
@@ -5386,70 +5469,78 @@ describe("living memory", () => {
 	});
 
 	test("distinguishes integrity omissions from bounded source deferrals", async () => {
-		const boundedRecord = record({
-			id: "bounded-omission",
-			sourceId: "bounded-source",
-			path: "knowledge/bounded-omission.md",
-			kind: "knowledge",
-			content: "# Bounded omission\n",
-		});
-		const { content: _content, ...boundedInventory } = boundedRecord;
-		const integritySource: ConsolidationSource = {
-			id: "integrity-source",
-			async collect() {
-				return {
-					records: [],
-					inventory: [],
-					inventoryComplete: false,
-					knowledgeIndex: { records: [], warnings: [] },
-					omitted: 1,
-					warnings: [
-						{
-							path: "memory/agent/episodes/malformed.md",
-							message: "Malformed episode record.",
-						},
-					],
-				};
-			},
-		};
-		const boundedSource: ConsolidationSource = {
-			id: "bounded-source",
-			async collect() {
-				return {
-					records: [],
-					inventory: [boundedInventory],
-					inventoryComplete: true,
-					omitted: 1,
-				};
-			},
-		};
-
-		const result = await createHarness([
-			integritySource,
-			boundedSource,
+		const integrityRoot = join(tmp.path, "integrity-only-source");
+		const boundedRoot = join(tmp.path, "bounded-only-source");
+		await Promise.all([
+			mkdir(join(integrityRoot, "knowledge"), { recursive: true }),
+			mkdir(join(boundedRoot, "knowledge"), { recursive: true }),
+		]);
+		await Promise.all([
+			writeFile(
+				join(integrityRoot, "knowledge", "malformed.md"),
+				"not an OKF knowledge record\n",
+			),
+			writeFile(
+				join(boundedRoot, "knowledge", "first.md"),
+				knowledgeFixture({ resource: "first.md" }),
+			),
+			writeFile(
+				join(boundedRoot, "knowledge", "second.md"),
+				knowledgeFixture({ resource: "second.md" }),
+			),
+		]);
+		const integrityResult = await createHarness([
+			createProjectCorpusConsolidationSource({
+				projectRoot: integrityRoot,
+				userCosmonautsRoot: join(tmp.path, "integrity-only-user"),
+			}),
 		]).consolidator();
-		if (result.kind !== "failed" || result.details === undefined) {
+		const boundedResult = await createHarness(
+			[
+				createProjectCorpusConsolidationSource({
+					projectRoot: boundedRoot,
+					userCosmonautsRoot: join(tmp.path, "bounded-only-user"),
+				}),
+			],
+			undefined,
+			{
+				limits: {
+					...DEFAULT_LIVING_MEMORY_LIMITS,
+					maxCorpusRecords: 1,
+					maxEpisodeRecords: 1,
+				},
+			},
+		).consolidator();
+		if (
+			integrityResult.kind !== "failed" ||
+			integrityResult.details === undefined
+		) {
 			throw new Error("expected incomplete source inventory to fail the pass");
 		}
+		if (boundedResult.details === undefined) {
+			throw new Error("expected bounded source details");
+		}
 
-		expect(result.details.sources).toEqual([
+		expect(integrityResult.details.sources).toEqual([
 			{
-				sourceId: "integrity-source",
+				sourceId: "project-corpus",
 				admitted: 0,
 				omitted: 1,
 				deferred: 0,
 				inventoryComplete: false,
 			},
+		]);
+		expect(boundedResult.details.sources).toEqual([
 			{
-				sourceId: "bounded-source",
-				admitted: 0,
+				sourceId: "project-corpus",
+				admitted: 1,
 				omitted: 1,
 				deferred: 1,
 				inventoryComplete: true,
 			},
 		]);
 		expect(
-			result.details.declines.filter(
+			boundedResult.details.declines.filter(
 				(decline) => decline.code === "source-deferred",
 			),
 		).toEqual([
@@ -5457,55 +5548,62 @@ describe("living memory", () => {
 				code: "source-deferred",
 				count: 1,
 				reason:
-					"1 record(s) from bounded-source were deferred by the bounded source pass.",
+					"1 record(s) from project-corpus were deferred by the bounded source pass.",
 			},
 		]);
 		expect(
-			result.details.declines.filter(
+			integrityResult.details.declines.filter(
 				(decline) => decline.code === "source-inventory-incomplete",
 			),
 		).toEqual([
 			{
 				code: "source-inventory-incomplete",
 				count: 1,
-				sourceId: "integrity-source",
+				sourceId: "project-corpus",
 				reason:
-					"Consolidation source integrity-source reported incomplete inventory; absence-dependent work is blocked.",
+					"Consolidation source project-corpus reported incomplete inventory; absence-dependent work is blocked.",
 			},
 		]);
+		expect(
+			integrityResult.details.declines.some(
+				(decline) => decline.code === "source-deferred",
+			),
+		).toBe(false);
+		expect(
+			boundedResult.details.declines.some(
+				(decline) => decline.code === "source-inventory-incomplete",
+			),
+		).toBe(false);
 	});
 
 	test("reports cap deferrals and integrity omissions for the same source", async () => {
-		const firstRecord = record({
-			id: "mixed-first",
-			sourceId: "mixed-source",
-			path: "knowledge/mixed-first.md",
-			kind: "knowledge",
-			content: "# Mixed first\n",
+		const projectRoot = join(tmp.path, "mixed-source-causes");
+		const userCosmonautsRoot = join(tmp.path, "mixed-source-causes-user");
+		await mkdir(join(projectRoot, "knowledge"), { recursive: true });
+		await Promise.all([
+			writeFile(
+				join(projectRoot, "knowledge", "first.md"),
+				knowledgeFixture({ resource: "first.md" }),
+			),
+			writeFile(
+				join(projectRoot, "knowledge", "second.md"),
+				knowledgeFixture({ resource: "second.md" }),
+			),
+			writeFile(
+				join(projectRoot, "knowledge", "malformed.md"),
+				"not an OKF knowledge record\n",
+			),
+		]);
+		const mixedSource = createProjectCorpusConsolidationSource({
+			projectRoot,
+			userCosmonautsRoot,
 		});
-		const secondRecord = record({
-			id: "mixed-second",
-			sourceId: "mixed-source",
-			path: "knowledge/mixed-second.md",
-			kind: "knowledge",
-			content: "# Mixed second\n",
-		});
-		const mixedSource: ConsolidationSource = {
-			id: "mixed-source",
-			async collect() {
-				return {
-					records: [firstRecord, secondRecord],
-					inventoryComplete: false,
-					knowledgeIndex: { records: [], warnings: [] },
-					omitted: 1,
-				};
-			},
-		};
 
 		const result = await createHarness([mixedSource], undefined, {
 			limits: {
 				...DEFAULT_LIVING_MEMORY_LIMITS,
 				maxCorpusRecords: 1,
+				maxEpisodeRecords: 1,
 			},
 		}).consolidator();
 		if (result.kind !== "failed" || result.details === undefined) {
@@ -5523,19 +5621,19 @@ describe("living memory", () => {
 				code: "source-deferred",
 				count: 1,
 				reason:
-					"1 record(s) from mixed-source were deferred by the bounded source pass.",
+					"1 record(s) from project-corpus were deferred by the bounded source pass.",
 			},
 			{
 				code: "source-inventory-incomplete",
 				count: 1,
-				sourceId: "mixed-source",
+				sourceId: "project-corpus",
 				reason:
-					"Consolidation source mixed-source reported incomplete inventory; absence-dependent work is blocked.",
+					"Consolidation source project-corpus reported incomplete inventory; absence-dependent work is blocked.",
 			},
 		]);
 		expect(result.details.sources).toEqual([
 			{
-				sourceId: "mixed-source",
+				sourceId: "project-corpus",
 				admitted: 1,
 				omitted: 2,
 				deferred: 1,
@@ -5554,6 +5652,7 @@ describe("living memory", () => {
 					inventoryComplete: false,
 					knowledgeIndex: { records: [], warnings: [] },
 					omitted: 0,
+					deferred: 0,
 				};
 			},
 		};
@@ -5600,6 +5699,7 @@ describe("living memory", () => {
 					inventoryComplete: true,
 					knowledgeIndex: { records: [], warnings: [] },
 					omitted: 0,
+					deferred: 0,
 				};
 			},
 		};
@@ -5656,6 +5756,7 @@ describe("living memory", () => {
 					inventory: [],
 					inventoryComplete: true,
 					omitted: 0,
+					deferred: 0,
 				};
 			},
 		};
@@ -5699,6 +5800,7 @@ describe("living memory", () => {
 							inventory: [],
 							inventoryComplete: true,
 							omitted: 0,
+							deferred: 0,
 							warnings: [sourceWarning],
 						};
 					},
@@ -5809,6 +5911,7 @@ describe("living memory", () => {
 						inventory,
 						inventoryComplete: true,
 						omitted: 0,
+						deferred: 0,
 						knowledgeIndex: renderInput,
 					};
 				},
@@ -5889,6 +5992,7 @@ describe("living memory", () => {
 					inventory: [{ ...inventory, metadata: { type: "gotcha" } }],
 					inventoryComplete: true,
 					omitted: 0,
+					deferred: 0,
 				};
 				return pass === 1
 					? snapshot
@@ -6020,6 +6124,7 @@ describe("living memory", () => {
 					inventory: [inventory],
 					inventoryComplete: true,
 					omitted: 0,
+					deferred: 0,
 				};
 			},
 		});
@@ -6445,6 +6550,7 @@ describe("living memory", () => {
 							inventoryComplete: true,
 							knowledgeIndex,
 							omitted: 0,
+							deferred: 0,
 						};
 					},
 				},
@@ -6526,6 +6632,7 @@ describe("living memory", () => {
 								warnings: [],
 							},
 							omitted: 0,
+							deferred: 0,
 						};
 					},
 				},
@@ -6568,6 +6675,7 @@ describe("living memory", () => {
 				inventory,
 				inventoryComplete: true,
 				omitted: Math.max(0, candidates.length - options.limit),
+				deferred: Math.max(0, candidates.length - options.limit),
 			};
 		});
 		const receipts: AcceptedJudgmentReceipt[] = [];
@@ -6622,6 +6730,7 @@ describe("living memory", () => {
 				inventory: records.map(({ content: _content, ...item }) => item),
 				inventoryComplete: true,
 				omitted: admitted === undefined ? 0 : records.length - 1,
+				deferred: admitted === undefined ? 0 : records.length - 1,
 			};
 		});
 		const receipts: AcceptedJudgmentReceipt[] = [];
@@ -6684,6 +6793,7 @@ describe("living memory", () => {
 				],
 				inventoryComplete: true,
 				omitted: 0,
+				deferred: 0,
 			};
 		});
 		const judge = vi.fn<CorpusJudgmentProvider["judge"]>(async () => {
@@ -6779,6 +6889,7 @@ describe("living memory", () => {
 				inventoryComplete: true,
 				knowledgeIndex: knowledgeIndexFixture(candidates),
 				omitted: 0,
+				deferred: 0,
 			};
 		});
 		const apply = vi.fn<LivingMemoryRetirementStore["apply"]>(async (input) => {
@@ -7651,6 +7762,7 @@ function source(
 					? {}
 					: { knowledgeIndex: knowledgeIndexFixture(knowledgeRecords) }),
 				omitted,
+				deferred: omitted,
 			};
 		},
 	};

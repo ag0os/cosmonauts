@@ -97,6 +97,8 @@ export interface ConsolidationSourceSnapshot {
 	/** Exact warning-aware input for the shared knowledge index renderer. */
 	readonly knowledgeIndex?: KnowledgeIndexRenderInput;
 	readonly omitted: number;
+	/** Source-local bounded deferrals included in omitted. */
+	readonly deferred: number;
 	readonly declines?: readonly ConsolidationSourceDecline[];
 	readonly warnings?: readonly MemoryWarning[];
 }
@@ -277,6 +279,11 @@ export function createProjectCorpusConsolidationSource(options: {
 			const uninventoriedDeclines = readDeclines.filter(
 				(decline) => !inventoriedPaths.has(`${decline.scope}\0${decline.path}`),
 			);
+			const boundedProjectPaths = new Set(
+				readDeclines
+					.filter((decline) => decline.scope === "project")
+					.map((decline) => decline.path),
+			);
 			const omittedProjectPaths = new Set(
 				uninventoriedDeclines
 					.filter((decline) => decline.scope === "project")
@@ -291,6 +298,9 @@ export function createProjectCorpusConsolidationSource(options: {
 				}
 			}
 			let projectCandidates = omittedProjectPaths.size;
+			let deferred = [...boundedProjectPaths].filter((path) =>
+				omittedProjectPaths.has(path),
+			).length;
 			let admittedBytes = 0;
 			for (const candidate of candidates) {
 				throwIfAborted(input.signal);
@@ -318,9 +328,13 @@ export function createProjectCorpusConsolidationSource(options: {
 				const content = admittedBodies.get(
 					`${candidate.scope}\0${candidate.record.path}`,
 				);
-				if (content === undefined) continue;
+				if (content === undefined) {
+					if (boundedProjectPaths.has(path)) deferred += 1;
+					continue;
+				}
 				const contentBytes = Buffer.byteLength(content, "utf-8");
 				if (contentBytes > input.maxCorpusRecordBytes) {
+					deferred += 1;
 					declines.push({
 						code: "source-record-bytes-deferred",
 						path,
@@ -328,8 +342,12 @@ export function createProjectCorpusConsolidationSource(options: {
 					});
 					continue;
 				}
-				if (records.length >= input.limit) continue;
+				if (records.length >= input.limit) {
+					deferred += 1;
+					continue;
+				}
 				if (admittedBytes + contentBytes > input.maxCorpusBytes) {
+					deferred += 1;
 					declines.push({
 						code: "source-aggregate-bytes-deferred",
 						path,
@@ -347,6 +365,7 @@ export function createProjectCorpusConsolidationSource(options: {
 					warnings.length === 0 && uninventoriedDeclines.length === 0,
 				knowledgeIndex,
 				omitted: projectCandidates - records.length,
+				deferred,
 				declines: Object.freeze(declines),
 				warnings,
 			});
@@ -373,6 +392,7 @@ export function createProjectEpisodeConsolidationSource(options: {
 			const warnings: MemoryWarning[] = [];
 			let inventoryComplete = true;
 			let omitted = 0;
+			let deferred = 0;
 			let inletBytes = 0;
 			for (const episodePath of candidates) {
 				throwIfAborted(input.signal);
@@ -386,6 +406,7 @@ export function createProjectEpisodeConsolidationSource(options: {
 						),
 					);
 					omitted += 1;
+					deferred += 1;
 					continue;
 				}
 				const bounded = await readBoundedEpisodeSnapshot({
@@ -396,6 +417,7 @@ export function createProjectEpisodeConsolidationSource(options: {
 				if (!bounded.ok) {
 					inventory.push(episodeInventoryRecord(path, bounded.digest));
 					omitted += 1;
+					deferred += 1;
 					declines.push({ code: bounded.code, path, reason: bounded.reason });
 					continue;
 				}
@@ -446,6 +468,7 @@ export function createProjectEpisodeConsolidationSource(options: {
 				inventory: Object.freeze(inventory),
 				inventoryComplete,
 				omitted,
+				deferred,
 				declines: Object.freeze(declines),
 				warnings: Object.freeze(warnings),
 			});
@@ -797,6 +820,15 @@ export async function collectConsolidationSources(options: {
 				`Source ${source.id} returned an invalid omitted count.`,
 			);
 		}
+		if (
+			!Number.isSafeInteger(snapshot.deferred) ||
+			snapshot.deferred < 0 ||
+			snapshot.deferred > snapshot.omitted
+		) {
+			throw new ConsolidationSourceContractError(
+				`Source ${source.id} returned an invalid deferred count.`,
+			);
+		}
 		if (snapshot.records.length > requestedLimit) {
 			throw new ConsolidationSourceContractError(
 				`Source ${source.id} returned over-limit output (${snapshot.records.length} > ${requestedLimit}).`,
@@ -817,7 +849,7 @@ export async function collectConsolidationSources(options: {
 		}
 
 		let admitted = 0;
-		let deferred = 0;
+		let collectorDeferred = 0;
 		const validatedSourceRecords: ConsolidationSourceRecord[] = [];
 		for (const candidate of snapshot.records) {
 			const record = immutableValidatedRecord(candidate, source.id);
@@ -859,7 +891,7 @@ export async function collectConsolidationSources(options: {
 				? admittedEpisodes < options.maxEpisodeRecords
 				: admittedCorpus < options.maxCorpusRecords;
 			if (!hasCapacity) {
-				deferred += 1;
+				collectorDeferred += 1;
 				continue;
 			}
 			if (isEpisode) {
@@ -915,9 +947,8 @@ export async function collectConsolidationSources(options: {
 			Object.freeze({
 				sourceId: source.id,
 				admitted,
-				omitted: snapshot.omitted + deferred,
-				deferred:
-					deferred + (snapshot.inventoryComplete ? snapshot.omitted : 0),
+				omitted: snapshot.omitted + collectorDeferred,
+				deferred: snapshot.deferred + collectorDeferred,
 				inventoryComplete: snapshot.inventoryComplete,
 			}),
 		);

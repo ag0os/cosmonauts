@@ -636,6 +636,7 @@ describe("living-memory committed-write interleavings", () => {
 					records: [episode],
 					inventoryComplete: true,
 					omitted: 0,
+					deferred: 0,
 				};
 			},
 			finalize,
@@ -789,6 +790,7 @@ function source(
 					warnings: [],
 				},
 				omitted: 0,
+				deferred: 0,
 			};
 		},
 	};

@@ -166,6 +166,7 @@ describe("project corpus consolidation source", () => {
 
 		expect(snapshot).toMatchObject({
 			omitted: 1,
+			deferred: 0,
 			inventoryComplete: false,
 			warnings: [warning],
 		});
@@ -199,6 +200,7 @@ describe("project corpus consolidation source", () => {
 		expect(snapshot.records).toEqual([]);
 		expect(snapshot.inventory).toEqual([]);
 		expect(snapshot.omitted).toBe(1);
+		expect(snapshot.deferred).toBe(1);
 		expect(snapshot.declines).toEqual([
 			expect.objectContaining({
 				code: "source-record-bytes-deferred",
@@ -234,6 +236,7 @@ describe("project corpus consolidation source", () => {
 		expect(snapshot.records).toHaveLength(1);
 		expect(snapshot.inventory).toHaveLength(1);
 		expect(snapshot.omitted).toBe(1);
+		expect(snapshot.deferred).toBe(1);
 		expect(snapshot.declines).toEqual([
 			expect.objectContaining({
 				code: "source-aggregate-bytes-deferred",
@@ -296,6 +299,7 @@ describe("project corpus consolidation source", () => {
 			true,
 		);
 		expect(snapshot.omitted).toBe(1);
+		expect(snapshot.deferred).toBe(1);
 	});
 
 	test("pages past represented project records on a subsequent bounded pass", async () => {
@@ -431,6 +435,7 @@ describe("project corpus consolidation source", () => {
 			true,
 		);
 		expect(bounded.omitted).toBe(1);
+		expect(bounded.deferred).toBe(1);
 		expect(await readFixtureFiles(fixtureFiles.keys())).toEqual(before);
 	});
 });
@@ -475,6 +480,7 @@ describe("project episode consolidation source", () => {
 				},
 			],
 			omitted: 1,
+			deferred: 0,
 			inventoryComplete: false,
 			warnings: [warning],
 		});
@@ -497,6 +503,7 @@ describe("consolidation source inventory contract", () => {
 							inventory: [],
 							inventoryComplete: true,
 							omitted: 0,
+							deferred: 0,
 						};
 					},
 				},

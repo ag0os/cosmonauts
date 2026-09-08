@@ -181,6 +181,7 @@ describe("architecture-memory extension", () => {
 							warnings: [],
 						},
 						omitted: 0,
+						deferred: 0,
 					}),
 				},
 			],
