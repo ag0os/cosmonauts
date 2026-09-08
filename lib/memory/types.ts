@@ -170,6 +170,7 @@ export interface MemoryConsolidateDetails {
 		readonly sourceId: string;
 		readonly admitted: number;
 		readonly omitted: number;
+		readonly inventoryComplete: boolean;
 	}[];
 	readonly observations: readonly ConsolidationObservation[];
 	readonly proposals: readonly ConsolidationProposalView[];
@@ -184,6 +185,7 @@ export interface MemoryConsolidateDetails {
 	readonly manifestPath?: string;
 	readonly declines: readonly {
 		readonly code: string;
+		readonly sourceId?: string;
 		readonly path?: string;
 		readonly reason: string;
 	}[];

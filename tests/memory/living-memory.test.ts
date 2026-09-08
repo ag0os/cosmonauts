@@ -5385,6 +5385,111 @@ describe("living memory", () => {
 		).toBe(true);
 	});
 
+	test("distinguishes integrity omissions from bounded source deferrals", async () => {
+		const boundedRecord = record({
+			id: "bounded-omission",
+			sourceId: "bounded-source",
+			path: "knowledge/bounded-omission.md",
+			kind: "knowledge",
+			content: "# Bounded omission\n",
+		});
+		const { content: _content, ...boundedInventory } = boundedRecord;
+		const integritySource: ConsolidationSource = {
+			id: "integrity-source",
+			async collect() {
+				return {
+					records: [],
+					inventory: [],
+					inventoryComplete: false,
+					knowledgeIndex: { records: [], warnings: [] },
+					omitted: 1,
+					warnings: [
+						{
+							path: "memory/agent/episodes/malformed.md",
+							message: "Malformed episode record.",
+						},
+					],
+				};
+			},
+		};
+		const boundedSource: ConsolidationSource = {
+			id: "bounded-source",
+			async collect() {
+				return {
+					records: [],
+					inventory: [boundedInventory],
+					inventoryComplete: true,
+					omitted: 1,
+				};
+			},
+		};
+
+		const result = await createHarness([
+			integritySource,
+			boundedSource,
+		]).consolidator();
+		if (result.kind !== "failed" || result.details === undefined) {
+			throw new Error("expected incomplete source inventory to fail the pass");
+		}
+
+		expect(
+			result.details.declines.filter(
+				(decline) => decline.code === "source-deferred",
+			),
+		).toEqual([
+			{
+				code: "source-deferred",
+				reason:
+					"1 record(s) from bounded-source were deferred by the bounded source pass.",
+			},
+		]);
+		expect(result.details.declines).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					code: "source-inventory-incomplete",
+					sourceId: "integrity-source",
+				}),
+			]),
+		);
+	});
+
+	test("identifies an incomplete source with no omissions or warnings", async () => {
+		const incompleteSource: ConsolidationSource = {
+			id: "silent-incomplete-source",
+			async collect() {
+				return {
+					records: [],
+					inventory: [],
+					inventoryComplete: false,
+					knowledgeIndex: { records: [], warnings: [] },
+					omitted: 0,
+				};
+			},
+		};
+
+		const result = await createHarness([incompleteSource]).consolidator();
+		if (result.kind !== "failed" || result.details === undefined) {
+			throw new Error("expected incomplete source inventory to fail the pass");
+		}
+
+		expect(result.details.sources).toEqual([
+			{
+				sourceId: "silent-incomplete-source",
+				admitted: 0,
+				omitted: 0,
+				inventoryComplete: false,
+			},
+		]);
+		expect(result.details.declines).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					code: "source-inventory-incomplete",
+					sourceId: "silent-incomplete-source",
+				}),
+			]),
+		);
+	});
+
 	// @cosmo-behavior plan:living-memory-fidelity#B-008
 	test("preserves source-recovery episode prunes and committed writes in the final result", async () => {
 		const recoveredEpisode = "memory/agent/episodes/recovered-only.md";
@@ -5788,6 +5893,86 @@ describe("living memory", () => {
 		]);
 		expect(markMaterialized).toHaveBeenCalledOnce();
 		expect(receipts).toMatchObject([{ state: "materialized" }]);
+	});
+
+	test("reports pressure-blocked retirements identically with and without model judgment", async () => {
+		const projectRoot = join(tmp.path, "pressure-deferred-path-parity");
+		await mkdir(projectRoot, { recursive: true });
+		await writeFile(join(projectRoot, "fixed.txt"), "fixed\n");
+		const candidate = record({
+			id: "pressure-deferred-retirement",
+			sourceId: "pressure-deferred-source",
+			path: "knowledge/pressure-deferred.md",
+			kind: "knowledge",
+			content: "# Pressure deferred\n",
+			metadata: {
+				type: "gotcha",
+				title: "Pressure deferred",
+				description: "The exact index input is unavailable.",
+				resource: "knowledge/pressure-deferred.md",
+				tags: ["memory"],
+				timestamp: "2026-09-02T12:00:00.000Z",
+				retireWhen: {
+					condition: "The replacement exists.",
+					check: { kind: "path-exists", path: "fixed.txt" },
+				},
+				scopeRoot: projectRoot,
+			},
+		});
+		const { content: _content, ...inventory } = candidate;
+		const pressureBlockedSource = (): ConsolidationSource => ({
+			id: candidate.sourceId,
+			async collect() {
+				return {
+					records: [candidate],
+					inventory: [inventory],
+					inventoryComplete: true,
+					omitted: 0,
+				};
+			},
+		});
+		const full = await createHarness([pressureBlockedSource()], {
+			id: "fake/no-tools",
+			judge: vi.fn(async () => ({
+				schemaVersion: 1 as const,
+				observations: [],
+			})),
+		}).consolidator();
+		const deterministicOnly = await createHarness([
+			pressureBlockedSource(),
+		]).consolidator({ modelMode: "deterministic-only" });
+		if (full.kind !== "ran" || deterministicOnly.kind !== "ran") {
+			throw new Error("expected both pressure-blocked passes to run");
+		}
+
+		expect(full.details).toMatchObject({
+			retirements: [
+				{
+					path: candidate.path,
+					digest: candidate.digest,
+					status: "deferred",
+					reason: "retire-when-met",
+				},
+			],
+			declines: expect.arrayContaining([
+				expect.objectContaining({
+					code: "retirement-pressure-deferred",
+					path: candidate.path,
+				}),
+			]),
+		});
+		expect(deterministicOnly.details.retirements).toEqual(
+			full.details.retirements,
+		);
+		expect(
+			deterministicOnly.details.declines.filter(
+				(decline) => decline.code === "retirement-pressure-deferred",
+			),
+		).toEqual(
+			full.details.declines.filter(
+				(decline) => decline.code === "retirement-pressure-deferred",
+			),
+		);
 	});
 
 	// @cosmo-behavior plan:living-memory#B-021

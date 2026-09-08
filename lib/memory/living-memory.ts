@@ -216,7 +216,7 @@ export function createLivingMemoryConsolidator(
 					...details.declines,
 					...collected.declines,
 					...collected.sources
-						.filter((source) => source.omitted > 0)
+						.filter((source) => source.inventoryComplete && source.omitted > 0)
 						.map((source) => ({
 							code: "source-deferred",
 							reason: `${source.omitted} record(s) from ${source.sourceId} were deferred by the bounded source pass.`,
@@ -250,15 +250,18 @@ export function createLivingMemoryConsolidator(
 						}),
 			};
 			if (!collected.inventoryComplete) {
+				const incompleteSourceDeclines = collected.sources
+					.filter((source) => !source.inventoryComplete)
+					.map((source) => ({
+						code: "source-inventory-incomplete",
+						sourceId: source.sourceId,
+						reason: `Consolidation source ${source.sourceId} reported incomplete inventory; absence-dependent work is blocked.`,
+					}));
 				details = {
 					...details,
 					declines: Object.freeze([
 						...details.declines,
-						{
-							code: "source-inventory-incomplete",
-							reason:
-								"Consolidation source inventory is incomplete; absence-dependent work is blocked.",
-						},
+						...incompleteSourceDeclines,
 					]),
 				};
 				return {
@@ -472,12 +475,19 @@ export function createLivingMemoryConsolidator(
 								dependencies.limits.maxRetirements,
 							)
 						: [];
+				const pressureDeferredRetirements =
+					pressure.kind === "unusable"
+						? observedRetirementCandidates
+								.slice(0, dependencies.limits.maxRetirements)
+								.map((candidate) => ({
+									path: candidate.record.path,
+									digest: candidate.record.digest,
+									status: "deferred" as const,
+									reason: candidate.reason,
+								}))
+						: [];
 				const capDeferredRetirements = observedRetirementCandidates
-					.slice(
-						pressure.kind === "measured"
-							? dependencies.limits.maxRetirements
-							: observedRetirementCandidates.length,
-					)
+					.slice(dependencies.limits.maxRetirements)
 					.map((candidate) => ({
 						path: candidate.record.path,
 						digest: candidate.record.digest,
@@ -498,13 +508,11 @@ export function createLivingMemoryConsolidator(
 									? {}
 									: { signal: options.signal }),
 							});
-				const reportedRetirements = (
-					retirementRun === undefined
-						? deterministic.flatMap((finding) =>
-								finding.retirement === undefined ? [] : [finding.retirement],
-							)
-						: [...retirementRun.details.retirements, ...capDeferredRetirements]
-				).slice(0, dependencies.limits.maxRetirements);
+				const reportedRetirements = [
+					...(retirementRun?.details.retirements ?? []),
+					...pressureDeferredRetirements,
+					...capDeferredRetirements,
+				].slice(0, dependencies.limits.maxRetirements);
 				details = {
 					...details,
 					observations: Object.freeze(
@@ -517,6 +525,12 @@ export function createLivingMemoryConsolidator(
 						...deterministicCapDeclines(proposalCapDeferred, "proposal"),
 						...deterministicCapDeclines(observationCapDeferred, "observation"),
 						...(retirementRun?.details.declines ?? []),
+						...pressureDeferredRetirements.map((retirement) => ({
+							code: "retirement-pressure-deferred",
+							path: retirement.path,
+							reason:
+								"Retirement was deferred because knowledge index pressure is unusable.",
+						})),
 						...capDeferredRetirements.map((retirement) => ({
 							code: "retirement-cap-deferred",
 							path: retirement.path,

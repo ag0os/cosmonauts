@@ -139,6 +139,7 @@ export interface CollectedConsolidationSources {
 		readonly sourceId: string;
 		readonly admitted: number;
 		readonly omitted: number;
+		readonly inventoryComplete: boolean;
 	}[];
 	readonly declines: readonly ConsolidationSourceDecline[];
 	readonly warnings: readonly MemoryWarning[];
@@ -745,6 +746,7 @@ export async function collectConsolidationSources(options: {
 		sourceId: string;
 		admitted: number;
 		omitted: number;
+		inventoryComplete: boolean;
 	}> = [];
 	const declines: ConsolidationSourceDecline[] = [];
 	const warnings: MemoryWarning[] = [];
@@ -911,6 +913,7 @@ export async function collectConsolidationSources(options: {
 				sourceId: source.id,
 				admitted,
 				omitted: snapshot.omitted + deferred,
+				inventoryComplete: snapshot.inventoryComplete,
 			}),
 		);
 	}
