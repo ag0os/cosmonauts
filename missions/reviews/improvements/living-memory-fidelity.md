@@ -1,0 +1,55 @@
+---
+kind: drive-improvement-observations
+status: open
+plan: living-memory-fidelity
+runs:
+  - run-4a7dda69-1e77-45a3-a225-571969a4b289
+  - run-cb1ef397-4f4a-45cf-902c-e29435214367
+  - run-b3f5782d-2a10-4bb5-92b5-9e274b17311c
+  - run-7544c2a0-adc9-44d4-9c6f-81d68f9a4866
+  - run-cf0eb953-beaf-41ec-8abe-591bbf337af7
+  - run-1ecc88e0-05d3-44b7-9d5b-d9cb6df68014
+  - run-6f705192-8408-4994-9c2e-5f31a5078cad
+  - run-4e2f28c5-fb15-4e63-8c44-626c53aed56f
+  - run-905f9a24-7f1c-4beb-9ea4-66d92405e5aa
+  - run-367aa6cb-557c-497a-8f48-cf7d37ce23b2
+  - run-1b5a57e6-cf93-499a-9ee8-b7ac8d38cbca
+date: 2026-09-08
+---
+
+# Drive improvement observations — living-memory-fidelity
+
+Eleven Drive runs, thirteen fresh structural review rounds, thirteen findings
+(SR-001..SR-013). Observations are prescriptive and ranked; the first is the most
+valuable thing learned.
+
+| Observed problem | What happened in this run | Suggested improvement | Why it helps |
+|---|---|---|---|
+| **Reviews read the diff, so a defect in an unchanged sibling path is invisible** | `living-memory.ts` has two near-duplicate flows: a deterministic fast path (`deterministic.length > 0 && !needsJudgment`) and a judgment path. TASK-642's SR-001 fix landed only in the judgment path. Ten fresh structural reviews passed before the post-implementation QM found the identical pre-SR-001 slice still live in the deterministic path — reachable via the `--no-model` invocation the owner actually runs. | Where a file contains near-duplicate control paths, review instructions must ask for **path parity** explicitly: for each behaviour, does path A match path B? TASK-655 was scoped that way and confirmed twelve behaviours across both paths in one round. | Diff-scoped review has a structural blind spot that no amount of reviewer diligence closes. Naming the parity question converts an invisible class into a checkable list. |
+| **A cross-cutting property maintained by convention will be violated again** | `writesCommitted` correctness was closed in four components across five rounds (SR-004..SR-009), on two axes: error paths (a write commits, a later throw loses the bit) and success paths (a caller infers the bit from an array length). Nothing prevents the next durable write from repeating it. | Make it structural: a commit token returned from every durable write that the caller must thread into the result, so omission is a type error. A lint/AST rule that any `await durableFiles.<mutator>` is followed by a commit record before the next `await` would have caught all instances mechanically. | Thirteen findings cost eleven Drive runs. A bound gate of that shape is cheaper than one review round. |
+| **A correct local fix can change the safety of a distant call site** | TASK-648 made `durableRemove` tag committed writes only when it actually removed — correct in itself — which is precisely what made the `restoreFile(:601)` → `removeFile(:607)` recovery sequence newly losable, surfacing as SR-008 two rounds later. | When a change alters when an error is tagged or what a helper guarantees, the review round must enumerate that helper's callers, not only the diff. | This class of regression is invisible to both the changed file's tests and the diff, and appeared twice in this run. |
+| **Scoping a task at the reported instances leaves the class open** | Rounds scoped at the *class* consistently closed more than was reported: TASK-646 closed a fourth site nobody named, TASK-648 closed three (`durableLink`, `durableRename`, `durableRestore`), TASK-650 closed a receipts site the coordinator's own enumeration had missed. Rounds scoped at instances did not. | Remediation tasks should require an enumeration of every site of the class with per-site fix-or-justification, and the review should check the enumeration against the file rather than accept it. | Turns "fix these three" into "close this class", which is what actually terminates the loop. |
+| **A review verdict of "no findings" is compatible with not having looked** | Requiring TASK-653 and TASK-655 to state positively whether the class was closed *across both axes and every module* produced a specific, checkable claim and an explicit "no third axis or fifth component remains". | For final/closing review rounds, require a positive coverage statement naming what was checked, and declare a bare "no findings" insufficient evidence for handoff. | Makes the absence of findings falsifiable instead of ambiguous. |
+| **Drive re-runs Blocked tasks, and a blocked review verdict looks like a crash** | Relaunching after a blocked review re-queued the blocked review task, which would have re-reviewed unchanged code and aborted again before the remediation ran; worked around with `--task-ids`. Separately, a review that did its job perfectly is indistinguishable in `events.jsonl` from a crashed worker — both are `spawn_completed … outcome: failure` then `run_aborted`. | Skip tasks whose last outcome was a review verdict of blocked unless explicitly requested, and add a terminal state distinguishing "task succeeded, verdict negative" from "task failed". | Prevents a wasted ~17-minute spawn per remediation cycle and makes the event log readable without opening summaries. |
+| **Drive skips the commit phase for tasks that produce no source change** | Every review-only task (TASK-643, 645, 649, 653, 655) left its required `review-<n>.md` untracked. On a branch where workers run `codex --yolo`, an untracked required artifact is at risk; each had to be committed by the coordinator. | Commit a task's declared output files even when no source path changed. | The review record is a required plan artifact under D-010, not a byproduct. |
+| **A coordinator's mid-run plan edit can block a worker that cannot fix it** | D-012 was added to `plan.md` anchored on the wrong heading, landing outside the Decision Log; the citation failed to resolve and `check-artifacts` failed TASK-637's AC #9 although its implementation was complete. The worker correctly refused both workarounds (editing the plan, changing the checker) and halted. The same happened again when TASK-641's scope-audit ACs, written before D-012, flagged the files D-012 authorises. | After any coordinator edit to `plan.md` mid-run, run `plan check-artifacts <slug>` before dispatching the next task, and check whether any pending task's ACs enumerate what was just amended. | Cost two full task spawns and two relaunches; both were avoidable with one command. |
+| **The Quality Manager chain overwrote unrelated review records** | It wrote its findings into `missions/reviews/{performance,security,ux}-review-round-1.md` — the *parent* plan's records — replacing their content (158 insertions, 298 deletions). Recovered by preserving the new content, restoring the tracked files, and relocating findings to `missions/reviews/qm/`. | Give the QM chain an explicit output path, or have it refuse to modify a file it did not create. | It silently destroyed prior work product on an unrelated plan. |
+| **QM findings need triage against the diff base before any is acted on** | Four of eight QM findings described pre-existing behaviour — `directEpisodePaths` and the `admittedBodies`/`representedKeys` ordering are byte-identical between `main` and HEAD — and one was the residue the plan's own Risks section records as knowingly open pending a human ruling. | Triage each QM finding with `diff <(git show main:file) <(cat file)` on the named symbol before scoping remediation. | Acting on all eight would have been scope creep presented as diligence, and would have closed a deferred item that requires a ruling. |
+| **Running the QM chain and codex review concurrently exhausts memory** | Both were launched in background together; the OS killed both. QM produced zero output; codex produced 1.1 MB then died. | Run them sequentially, as the implement-plan skill specifies. | The sequential ordering is load-bearing on this machine, not stylistic. Cost: one full QM run and one codex run. |
+
+## Ranked follow-ups
+
+1. **Collapse or parity-test the deterministic/judgment duplication in `lib/memory/living-memory.ts`.** SR-010 is the second-order cost of that duplication; a third path would multiply it again.
+2. **Make committed-write reporting structural** (commit token or bound AST gate) rather than conventional.
+3. **Bind the `duplication` gate.** It already names "no second commit accumulator"; two near-duplicate retirement-gating flows are exactly that, and binding it would have caught SR-010 mechanically.
+4. **Close the over-claim direction of committed-write reporting.** Findings SR-015..SR-018 and the codex review's CDX-001 are one pre-existing class: commitment inferred from an operation that can succeed *without* writing. `durableRemove` swallows ENOENT, `receiptStore.write()` returns an identical existing receipt, `markMaterialized()` returns an already-materialized receipt, and `proposalStore.persist()` can report `written` without writing. The plan's ratified INV-003 covers only *understating* a committed write, so this direction was out of scope here — but it is the mirror image of what took five rounds to close, and the fix pattern is identical: have each store report whether it actually wrote instead of letting callers infer it from a successful return. CDX-001 shows the fix is small once the contract carries the bit.
+5. **Pre-existing defects surfaced but deliberately not fixed here** — each needs its own scoped decision:
+   - the episode source follows an escaping directory symlink and can prune a file outside the project (QM SRQ-001, medium, `directEpisodePaths` unchanged since before this plan);
+   - corpus body admission spends its byte allowance before excluding represented evidence, so progress stalls on a corpus above the allowance (QM PRF-001; probe on this repo's 236-record corpus: 50, 40, 0, 0, 0 with 146 still omitted);
+   - rejected/unscannable knowledge directories are reported as a healthy complete inventory (QM SRQ-002 — this is the residue the plan's Risks section records with an explicit "do not close this by widening the rule without a ruling").
+
+## Non-goals
+
+- Not a proposal to change D-006's per-stage review cadence. Thirteen findings across four stages, one of them capable of discharging a live receipt, is evidence the cadence was correctly calibrated even though D-006 is `derived` rather than ratified.
+- Not a proposal to relax any gate, pin, or invariant. Every finding here argues for more mechanical enforcement, not less.
+- Not a change to D-026 or retirement pathname sequencing, which remain ratified closed ground.
