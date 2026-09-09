@@ -1,6 +1,6 @@
 ---
 title: 'Living memory: sources, two outlets, and the corpus regulator'
-status: active
+status: completed
 createdAt: '2026-07-17T13:42:06.390Z'
 updatedAt: '2026-09-01T19:46:07.000Z'
 ---

@@ -1,6 +1,6 @@
 ---
 title: 'Living memory: honest measurement, discharge, and reporting'
-status: active
+status: completed
 createdAt: '2026-09-07T14:06:12.817Z'
 updatedAt: '2026-09-07T16:45:00.000Z'
 ---
