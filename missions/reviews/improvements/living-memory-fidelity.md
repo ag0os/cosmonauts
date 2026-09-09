@@ -1,6 +1,6 @@
 ---
 kind: drive-improvement-observations
-status: open
+status: closed
 plan: living-memory-fidelity
 runs:
   - run-4a7dda69-1e77-45a3-a225-571969a4b289
@@ -65,3 +65,47 @@ Follow-up 4 is now done.
 - Not a proposal to change D-006's per-stage review cadence. Thirteen findings across four stages, one of them capable of discharging a live receipt, is evidence the cadence was correctly calibrated even though D-006 is `derived` rather than ratified.
 - Not a proposal to relax any gate, pin, or invariant. Every finding here argues for more mechanical enforcement, not less.
 - Not a change to D-026 or retirement pathname sequencing, which remain ratified closed ground.
+
+
+## Dispositions — closed 2026-09-09
+
+Every observation and follow-up leaves this record with a pointer to what it
+became. **Nothing here entered `knowledge/`** — the prescriptive outlet converts
+to product and backlog work, never to durable knowledge (LM-D-004/LM-D-008,
+INV-006). The ten OKF proposals this plan produced are a separate, descriptive
+artefact and await human promotion.
+
+| # | Observed problem | What it became | Pointer |
+|---|---|---|---|
+| 1 | Diff-scoped review misses an unchanged sibling path | ROADMAP rider | `ROADMAP.md` → `deliverable-completeness-gates`, review-discipline riders (path parity) |
+| 2 | A cross-cutting property maintained by convention will be violated again | Plan | `missions/plans/living-memory-structural-hardening/` (spec-ready; follow-up 2) |
+| 3 | A correct local fix changes the safety of a distant call site | ROADMAP rider | `ROADMAP.md` → `deliverable-completeness-gates`, review-discipline riders (caller enumeration) |
+| 4 | Scoping at the reported instances leaves the class open | ROADMAP rider | `ROADMAP.md` → `deliverable-completeness-gates`, review-discipline riders (class enumeration) |
+| 5 | "No findings" is compatible with not having looked | ROADMAP rider + applied | `ROADMAP.md` → `deliverable-completeness-gates` (positive coverage statement); applied in `review-16`/`17`/`18`, which each carry one |
+| 6 | Drive re-runs Blocked tasks; a negative verdict looks like a crash | ROADMAP item | `ROADMAP.md` → `drive-task-outcomes` (bullets 1-2) |
+| 7 | Drive skips the commit phase for tasks with no source change | ROADMAP item | `ROADMAP.md` → `drive-task-outcomes` (bullet 3) |
+| 8 | A coordinator's mid-run plan edit blocks a worker that cannot fix it | Applied as practice | Ran `plan check-artifacts` after every mid-run plan edit this session (D-013 insertion, Files-to-Change amendment); no skill edit made — the durable fix is still owed to `/skill:plan` |
+| 9 | The QM chain overwrote unrelated plans' review records | ROADMAP item | `ROADMAP.md` → `qm-chain-safety` (bullet 1) |
+| 10 | QM findings need triage against the diff base | ROADMAP item | `ROADMAP.md` → `qm-chain-safety` (bullet 3) |
+| 11 | A defect class has more axes than the rounds that closed it found | ROADMAP rider + proposal | `ROADMAP.md` → `deliverable-completeness-gates` (name the axis, not the class); `memory/agent/proposals/living-memory-fidelity/gotcha-commit-reporting-defects-have-multiple-independently-discoverable-axes-*.md` |
+| 12 | A test that pins a producer does not pin its consumer | ROADMAP rider + proposal | `ROADMAP.md` → `deliverable-completeness-gates` (consumer-seam regressions); `…/gotcha-producer-regressions-do-not-pin-consumer-propagation-*.md` |
+| 13 | `git checkout -- <file>` destroys uncommitted work during a mutation probe | **Rejected** as a product change | An agent-behaviour rule, not a cosmonauts feature: restore mutation probes from a `cp` backup. Recorded in the session's agent memory and in `…/gotcha-blended-test-doubles-can-mask-the-value-under-test-*.md`. No roadmap item — nothing in cosmonauts can prevent it |
+| 14 | QM chain and codex review concurrently exhaust memory | ROADMAP item | `ROADMAP.md` → `qm-chain-safety` (bullet 2) |
+
+### Follow-ups
+
+| # | Follow-up | What it became | Pointer |
+|---|---|---|---|
+| 1 | Collapse or parity-test the deterministic/judgment duplication | Plan | `missions/plans/living-memory-structural-hardening/` |
+| 2 | Make committed-write reporting structural | Plan | same — and D-013 already did its first half: the primitives now *return* the mutation fact; what remains is forcing callers to thread it |
+| 3 | Bind the `duplication` gate | Plan | same |
+| 4 | Close the over-claim direction of committed-write reporting | **Done** | `TASK-662` under D-013, verified by `review-16`. The entry's own framing was wrong in an instructive way: it called the class *over*-claiming, and the review of the fix then found three high *under*-statements of the same class in a third place — see row 11 |
+| 5 | Structural remedies (duplicate of 1-3) | Plan | `missions/plans/living-memory-structural-hardening/` |
+| 6 | Three pre-existing defects, each needing its own ruling | ROADMAP item + escalation | `ROADMAP.md` → `living-memory-corpus-findings`; the symlink escape has a four-option escalation at `missions/reviews/living-memory-episode-symlink-escape-escalation.md` |
+
+### Still owed to a human, not to the backlog
+
+- Ratify or reverse `missions/reviews/knowledge-surface-backfill-amendment-2.md`.
+- Rule on the three `living-memory-corpus-findings`.
+- Promote, merge or reject the ten proposals under `memory/agent/proposals/living-memory-fidelity/`.
+- Decide whether to run a first live retirement round — the retirement outlet has still never operated on real data.
