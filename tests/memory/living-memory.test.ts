@@ -2163,7 +2163,7 @@ describe("living memory", () => {
 			receipt: { state: "materialized" },
 			writesCommitted: false,
 		});
-		await expect(receiptStore.read(batchKey)).resolves.toMatchObject({
+		expect((await receiptStore.read(batchKey)).receipt).toMatchObject({
 			state: "materialized",
 			inputDigests: [input.digest],
 		});
@@ -2990,7 +2990,7 @@ describe("living memory", () => {
 			},
 		});
 		if (result.kind !== "ran") throw new Error("expected Reflector to run");
-		const receipt = await receiptStore.read(
+		const { receipt } = await receiptStore.read(
 			result.details.proposals[0]?.key ?? "missing",
 		);
 		expect(receipt).toMatchObject({ state: "materialized" });
@@ -3098,9 +3098,9 @@ describe("living memory", () => {
 		});
 		expect(markMaterialized).toHaveBeenCalledOnce();
 		expect(judge).toHaveBeenCalledOnce();
-		await expect(
-			receiptStore.read(accepted?.batchKey ?? "missing"),
-		).resolves.toMatchObject({ state: "materialized" });
+		expect(
+			(await receiptStore.read(accepted?.batchKey ?? "missing")).receipt,
+		).toMatchObject({ state: "materialized" });
 	});
 
 	test("does not report a competing receipt materialization as its own committed write", async () => {
@@ -3183,7 +3183,7 @@ describe("living memory", () => {
 			},
 		});
 		expect(passMarkMaterialized).toHaveBeenCalledOnce();
-		await expect(receiptStore.read(accepted.batchKey)).resolves.toMatchObject({
+		expect((await receiptStore.read(accepted.batchKey)).receipt).toMatchObject({
 			state: "materialized",
 		});
 	});
@@ -3328,7 +3328,9 @@ describe("living memory", () => {
 				proposalStore: {
 					readEvidence: () => durableProposalStore.readEvidence(),
 					async persist(input) {
-						const accepted = await receiptStore.read(input.batchKey);
+						const { receipt: accepted } = await receiptStore.read(
+							input.batchKey,
+						);
 						expect(accepted).toMatchObject({ state: "accepted" });
 						const written = await durableProposalStore.persist(input);
 						crashProposalPath = written.path;
@@ -3347,7 +3349,8 @@ describe("living memory", () => {
 		expect(judge).toHaveBeenCalledOnce();
 		const acceptedBatchKey = judge.mock.calls[0]?.[0].batchKey;
 		if (acceptedBatchKey === undefined) throw new Error("missing accepted key");
-		const acceptedReceipt = await receiptStore.read(acceptedBatchKey);
+		const { receipt: acceptedReceipt } =
+			await receiptStore.read(acceptedBatchKey);
 		expect(acceptedReceipt).toMatchObject({
 			state: "accepted",
 		});
@@ -3386,11 +3389,13 @@ describe("living memory", () => {
 		});
 		expect(judge).toHaveBeenCalledOnce();
 		await expect(fileExists(retirementPath)).resolves.toBe(false);
-		await expect(
-			createAcceptedJudgmentReceiptStore({ projectRoot }).read(
-				acceptedBatchKey,
-			),
-		).resolves.toMatchObject({ state: "materialized" });
+		expect(
+			(
+				await createAcceptedJudgmentReceiptStore({ projectRoot }).read(
+					acceptedBatchKey,
+				)
+			).receipt,
+		).toMatchObject({ state: "materialized" });
 		includeRepresentedFixtures = true;
 		await durableProposalStore.persist({
 			batchKey: createHash("sha256")
@@ -3531,7 +3536,7 @@ describe("living memory", () => {
 		const batchKey = judge.mock.calls[0]?.[0].batchKey;
 		if (batchKey === undefined) throw new Error("missing judgment batch key");
 		expect(first.details.proposals).toEqual([]);
-		await expect(receiptStore.read(batchKey)).resolves.toMatchObject({
+		expect((await receiptStore.read(batchKey)).receipt).toMatchObject({
 			state: "materialized",
 		});
 
@@ -3540,7 +3545,7 @@ describe("living memory", () => {
 				kind: "noop",
 				details: { writesCommitted: false },
 			});
-			await expect(receiptStore.read(batchKey)).resolves.toMatchObject({
+			expect((await receiptStore.read(batchKey)).receipt).toMatchObject({
 				state: "materialized",
 			});
 		}
@@ -3589,7 +3594,7 @@ describe("living memory", () => {
 		await expect(harness.consolidator()).resolves.toMatchObject({
 			kind: "ran",
 		});
-		await expect(receiptStore.read(laterReceiptKey)).resolves.toMatchObject({
+		expect((await receiptStore.read(laterReceiptKey)).receipt).toMatchObject({
 			state: "materialized",
 		});
 
@@ -3649,7 +3654,7 @@ describe("living memory", () => {
 				]),
 			},
 		});
-		await expect(receiptStore.read(laterReceiptKey)).resolves.toMatchObject({
+		expect((await receiptStore.read(laterReceiptKey)).receipt).toMatchObject({
 			state: "materialized",
 		});
 
@@ -3798,11 +3803,13 @@ describe("living memory", () => {
 		for (const path of episodePaths) {
 			await expect(fileExists(path)).resolves.toBe(false);
 		}
-		await expect(
-			createAcceptedJudgmentReceiptStore({ projectRoot }).read(
-				accepted?.batchKey ?? "missing",
-			),
-		).resolves.toMatchObject({ state: "materialized" });
+		expect(
+			(
+				await createAcceptedJudgmentReceiptStore({ projectRoot }).read(
+					accepted?.batchKey ?? "missing",
+				)
+			).receipt,
+		).toMatchObject({ state: "materialized" });
 		const firstReceiptWrite = trace.findIndex((entry) =>
 			entry.startsWith("write:memory/agent/consolidations/"),
 		);
@@ -4088,12 +4095,15 @@ describe("living memory", () => {
 						writesCommitted: false,
 					}),
 					read: async (batchKey) => ({
-						schemaVersion: 1,
-						batchKey,
-						state: "accepted",
-						inputDigests: snapshot.records.map((record) => record.digest),
-						output,
-						path: `/tmp/${batchKey}.json`,
+						receipt: {
+							schemaVersion: 1,
+							batchKey,
+							state: "accepted",
+							inputDigests: snapshot.records.map((record) => record.digest),
+							output,
+							path: `/tmp/${batchKey}.json`,
+						},
+						writesCommitted: false,
 					}),
 					write: async () => {
 						throw new Error("existing receipt should not be rewritten");
@@ -7264,8 +7274,10 @@ function inMemoryReceiptStore(receipts: AcceptedJudgmentReceipt[]) {
 		pathFor: (batchKey: string) => `/tmp/${batchKey}.json`,
 		list: async () => Object.freeze([...receipts]),
 		dischargeStale: async () => ({ paths: [], writesCommitted: false }),
-		read: async (batchKey: string) =>
-			receipts.find((receipt) => receipt.batchKey === batchKey),
+		read: async (batchKey: string) => ({
+			receipt: receipts.find((receipt) => receipt.batchKey === batchKey),
+			writesCommitted: false,
+		}),
 		write: async (receipt: AcceptedJudgmentReceipt) => {
 			receipts.push(receipt);
 			return { receipt, writesCommitted: true };
@@ -7334,7 +7346,10 @@ function createHarness(
 				paths: [],
 				writesCommitted: false,
 			})),
-			read: vi.fn(async () => undefined),
+			read: vi.fn(async () => ({
+				receipt: undefined,
+				writesCommitted: false,
+			})),
 			write: vi.fn(async (receipt) => ({ receipt, writesCommitted: true })),
 			markMaterialized: vi.fn(async (batchKey) => ({
 				receipt: {

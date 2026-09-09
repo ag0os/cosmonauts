@@ -385,7 +385,15 @@ export interface AcceptedJudgmentReceiptStore {
 		readonly paths: readonly string[];
 		readonly writesCommitted: boolean;
 	}>;
-	read(batchKey: string): Promise<AcceptedJudgmentReceipt | undefined>;
+	/**
+	 * `read` performs a durability-confirmation write, so it can republish a
+	 * receipt that vanished after its own read. It reports that like every other
+	 * operation here rather than leaving the caller unable to see it.
+	 */
+	read(batchKey: string): Promise<{
+		readonly receipt: AcceptedJudgmentReceipt | undefined;
+		readonly writesCommitted: boolean;
+	}>;
 	write(receipt: AcceptedJudgmentReceipt): Promise<{
 		readonly receipt: AcceptedJudgmentReceipt;
 		readonly writesCommitted: boolean;

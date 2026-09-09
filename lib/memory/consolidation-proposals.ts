@@ -96,7 +96,13 @@ export function createConsolidationProposalStore(options: {
 					);
 				}
 				const path = absolutePath(options.projectRoot, relativePath);
-				await durableFiles.writeText({ path, content: rendered });
+				// The confirmation write exists to fsync an existing proposal, but if
+				// the file vanished after the read it republishes instead. That is a
+				// real publication by this pass and must not be reported as none.
+				const confirmation = await durableFiles.writeText({
+					path,
+					content: rendered,
+				});
 				const confirmed = await readSafeRegularText({
 					root: options.projectRoot,
 					relativePath,
@@ -114,7 +120,7 @@ export function createConsolidationProposalStore(options: {
 					inputs: input.observation.inputs,
 					contentDigest,
 					status: "existing",
-					writesCommitted: false,
+					writesCommitted: confirmation.destinationLinked,
 				});
 			}
 			const written = await writeSafeExclusiveText({

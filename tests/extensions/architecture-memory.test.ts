@@ -202,7 +202,7 @@ describe("architecture-memory extension", () => {
 					),
 				list: async () => [],
 				dischargeStale: async () => ({ paths: [], writesCommitted: false }),
-				read: async () => undefined,
+				read: async () => ({ receipt: undefined, writesCommitted: false }),
 				write: async (receipt) => ({ receipt, writesCommitted: true }),
 				markMaterialized: async () => {
 					throw new Error("receipt materialization is not expected");

@@ -613,9 +613,11 @@ export function createLivingMemoryConsolidator(
 				value: input,
 				ceiling: dependencies.limits.maxJudgmentRequestBytes,
 			});
-			const existingReceipt = dryRun
-				? undefined
+			const existing = dryRun
+				? { receipt: undefined, writesCommitted: false }
 				: await dependencies.acceptedJudgmentReceiptStore.read(input.batchKey);
+			reportCommittedState({ writesCommitted: existing.writesCommitted });
+			const existingReceipt = existing.receipt;
 			const output =
 				existingReceipt?.output ??
 				(await dependencies.judgmentProvider.judge(input, {

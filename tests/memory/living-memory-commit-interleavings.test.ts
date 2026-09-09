@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type {
@@ -630,7 +630,7 @@ describe("living-memory committed-write interleavings", () => {
 			pathFor: (key: string) => `/tmp/${key}.json`,
 			list: async () => [receipt],
 			dischargeStale: async () => ({ paths: [], writesCommitted: false }),
-			read: async () => receipt,
+			read: async () => ({ receipt, writesCommitted: false }),
 			write: async (input: AcceptedJudgmentReceipt) => ({
 				receipt: input,
 				writesCommitted: true,
@@ -754,7 +754,7 @@ function inMemoryReceiptStore() {
 		pathFor: (batchKey: string) => `/tmp/${batchKey}.json`,
 		list: async () => [],
 		dischargeStale: async () => ({ paths: [], writesCommitted: false }),
-		read: async () => undefined,
+		read: async () => ({ receipt: undefined, writesCommitted: false }),
 		write: async (
 			receipt: Parameters<
 				LivingMemoryConsolidatorDependencies["acceptedJudgmentReceiptStore"]["write"]
@@ -1074,4 +1074,290 @@ async function overstatementEpisodeFixture(
 		"utf-8",
 	);
 	return projectRoot;
+}
+
+describe("living-memory committed-write confirmation republication", () => {
+	test("reports an existing proposal this pass had to republish", async () => {
+		const projectRoot = join(tmp.path, "proposal-confirmation-republish");
+		const input = overstatementProposalInput();
+		await createConsolidationProposalStore({ projectRoot }).persist(input);
+
+		const baseFiles = createDurableMachineFiles();
+		let removedBeforeConfirmation = false;
+		const republishing = createConsolidationProposalStore({
+			projectRoot,
+			durableFiles: {
+				...baseFiles,
+				async writeText(options) {
+					if (!removedBeforeConfirmation) {
+						removedBeforeConfirmation = true;
+						await rm(options.path);
+					}
+					return baseFiles.writeText(options);
+				},
+			},
+		});
+
+		const persisted = await republishing.persist(input);
+
+		expect(removedBeforeConfirmation).toBe(true);
+		expect(persisted.status).toBe("existing");
+		expect(persisted.writesCommitted).toBe(true);
+	});
+
+	test("reports an accepted receipt this pass had to republish while reading", async () => {
+		const projectRoot = join(tmp.path, "receipt-read-republish");
+		const batchKey = overstatementBatchKey("receipt-read");
+		const seed = createAcceptedJudgmentReceiptStore({ projectRoot });
+		await seed.write(
+			overstatementReceiptDraft(batchKey, seed.pathFor(batchKey)),
+		);
+
+		const baseFiles = createDurableMachineFiles();
+		let removedBeforeConfirmation = false;
+		const republishing = createAcceptedJudgmentReceiptStore({
+			projectRoot,
+			durableFiles: {
+				...baseFiles,
+				async writeText(options) {
+					if (!removedBeforeConfirmation) {
+						removedBeforeConfirmation = true;
+						await rm(options.path);
+					}
+					return baseFiles.writeText(options);
+				},
+			},
+		});
+
+		const read = await republishing.read(batchKey);
+
+		expect(removedBeforeConfirmation).toBe(true);
+		expect(read.receipt).toMatchObject({ batchKey, state: "accepted" });
+		expect(read.writesCommitted).toBe(true);
+	});
+
+	test("reports an episode proposal republished before the episode-changed skip", async () => {
+		const projectRoot = join(tmp.path, "episode-proposal-republish");
+		const proposalPath = join(
+			projectRoot,
+			"memory/agent/proposals/living-memory/represented.md",
+		);
+		await mkdir(join(projectRoot, "memory/agent/episodes"), {
+			recursive: true,
+		});
+		await mkdir(join(projectRoot, "memory/agent/proposals/living-memory"), {
+			recursive: true,
+		});
+		await writeFile(proposalPath, "# Durable representation\n", "utf-8");
+
+		const baseFiles = createDurableMachineFiles();
+		let removedBeforeConfirmation = false;
+		const source = createProjectEpisodeConsolidationSource({
+			projectRoot,
+			durableFiles: {
+				...baseFiles,
+				async writeText(options) {
+					if (!removedBeforeConfirmation) {
+						removedBeforeConfirmation = true;
+						await rm(options.path);
+					}
+					return baseFiles.writeText(options);
+				},
+			},
+		});
+
+		// The episode itself is already gone, so finalization skips its journal and
+		// prune work — which is exactly the path that used to return false having
+		// just republished the proposal.
+		const finalized = await source.finalize?.([
+			{
+				id: "memory/agent/episodes/vanished.md",
+				digest: "c".repeat(64),
+				fileIdentity: { device: "1", inode: "2" },
+				proposalPaths: [proposalPath],
+			},
+		]);
+
+		expect(removedBeforeConfirmation).toBe(true);
+		expect(finalized).toEqual({ episodePrunes: [], writesCommitted: true });
+	});
+});
+
+describe("living-memory consolidator carries the store-owned commit bit", () => {
+	test("does not report a proposal the store persisted without committing", async () => {
+		const projectRoot = join(tmp.path, "consumer-proposal-bit");
+		await mkdir(projectRoot, { recursive: true });
+		const persist = vi.fn(async (input: ProposalPersistInput) => ({
+			proposalKind: input.proposal.proposalKind,
+			key: input.batchKey,
+			path: "/tmp/already-published.md",
+			inputs: input.observation.inputs,
+			contentDigest: createHash("sha256").update("body").digest("hex"),
+			// The proposal exists and this pass published none of it.
+			status: "written" as const,
+			writesCommitted: false,
+		}));
+
+		const result = await createHarness(
+			[
+				source(
+					"corpus",
+					["first", "second"].map((suffix) =>
+						staleCitationRecord(`consumer-proposal-${suffix}`, projectRoot),
+					),
+				),
+			],
+			undefined,
+			{ proposalStore: { readEvidence: async () => [], persist } },
+		)({ modelMode: "deterministic-only" });
+
+		expect(persist).toHaveBeenCalled();
+		expect(result).toMatchObject({ details: { writesCommitted: false } });
+	});
+
+	test("does not report a discharge that returned paths without removing them", async () => {
+		const result = await createHarness(
+			[source("corpus", [staleCitationRecord("consumer-discharge", tmp.path)])],
+			undefined,
+			{
+				acceptedJudgmentReceiptStore: {
+					...inMemoryReceiptStore(),
+					dischargeStale: async () => ({
+						paths: ["/tmp/already-removed.json"],
+						writesCommitted: false,
+					}),
+				},
+				proposalStore: {
+					readEvidence: async () => [],
+					persist: async (input) => ({
+						proposalKind: input.proposal.proposalKind,
+						key: input.batchKey,
+						inputs: input.observation.inputs,
+						contentDigest: createHash("sha256").update("body").digest("hex"),
+						status: "preview" as const,
+						writesCommitted: false,
+					}),
+				},
+			},
+		)({ modelMode: "deterministic-only", dryRun: false });
+
+		expect(result).toMatchObject({ details: { writesCommitted: false } });
+	});
+
+	test("reports a receipt read that had to republish nothing else committed", async () => {
+		const result = await createHarness(
+			[source("corpus", judgedRecords("read-bit"))],
+			acceptingJudge(),
+			{
+				acceptedJudgmentReceiptStore: {
+					...nonCommittingReceiptStore(),
+					read: async () => ({ receipt: undefined, writesCommitted: true }),
+				},
+				proposalStore: nonCommittingProposalStore(),
+			},
+		)();
+
+		// The only committed write in this pass is the read's republication, so
+		// dropping that bit at the consumer turns the result false.
+		expect(result).toMatchObject({ details: { writesCommitted: true } });
+	});
+
+	test("does not report an accepted receipt the store returned without writing", async () => {
+		const result = await createHarness(
+			[source("corpus", judgedRecords("write-bit"))],
+			acceptingJudge(),
+			{
+				acceptedJudgmentReceiptStore: nonCommittingReceiptStore(),
+				proposalStore: nonCommittingProposalStore(),
+			},
+		)();
+
+		// Every store operation reports false, so any consumer that asserts a
+		// commit from a successful return turns the result true.
+		expect(result).toMatchObject({ details: { writesCommitted: false } });
+	});
+});
+
+function acceptingJudge(): CorpusJudgmentProvider {
+	return {
+		id: "fake/no-tools",
+		judge: async () => ({ schemaVersion: 1, observations: [] }),
+	};
+}
+
+/** No stale citation, so nothing is deterministic and the judgment path runs. */
+function judgedRecords(suffix: string): readonly ConsolidationSourceRecord[] {
+	return ["evidence", "context"].map((part) =>
+		record({
+			id: `consumer-${suffix}-${part}`,
+			sourceId: "corpus",
+			path: `knowledge/consumer-${suffix}-${part}.md`,
+			kind: "knowledge",
+			content: `# Consumer ${suffix} ${part}\n`,
+		}),
+	);
+}
+
+function nonCommittingProposalStore() {
+	return {
+		readEvidence: async () => [],
+		persist: async (input: ProposalPersistInput) => ({
+			proposalKind: input.proposal.proposalKind,
+			key: input.batchKey,
+			path: `/tmp/${input.batchKey}.md`,
+			inputs: input.observation.inputs,
+			contentDigest: createHash("sha256").update("body").digest("hex"),
+			status: "existing" as const,
+			writesCommitted: false,
+		}),
+	};
+}
+
+/** Every operation reports that it wrote nothing, so any inferred commit shows. */
+function nonCommittingReceiptStore() {
+	const base = inMemoryReceiptStore();
+	return {
+		...base,
+		read: async () => ({ receipt: undefined, writesCommitted: false }),
+		write: async (
+			receipt: Parameters<
+				LivingMemoryConsolidatorDependencies["acceptedJudgmentReceiptStore"]["write"]
+			>[0],
+		) => ({ receipt, writesCommitted: false }),
+		markMaterialized: async (batchKey: string) => ({
+			receipt: {
+				schemaVersion: 1 as const,
+				batchKey,
+				state: "materialized" as const,
+				inputDigests: [],
+				output: { schemaVersion: 1 as const, observations: [] },
+				path: `/tmp/${batchKey}.json`,
+			},
+			writesCommitted: false,
+		}),
+	};
+}
+
+type ProposalPersistInput = Parameters<
+	LivingMemoryConsolidatorDependencies["proposalStore"]["persist"]
+>[0];
+
+function staleCitationRecord(
+	id: string,
+	scopeRoot: string,
+): ConsolidationSourceRecord {
+	return record({
+		id,
+		sourceId: "corpus",
+		path: `knowledge/${id}.md`,
+		kind: "knowledge",
+		content: `# ${id}\n\n[Missing](../docs/missing-${id}.md)\n`,
+		metadata: {
+			type: "gotcha",
+			title: id,
+			description: `Stale citation for ${id}.`,
+			tags: ["memory"],
+			scopeRoot,
+		},
+	});
 }

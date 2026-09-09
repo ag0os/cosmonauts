@@ -506,10 +506,14 @@ export function createProjectEpisodeConsolidationSource(options: {
 					for (const proposalPath of new Set(item.proposalPaths)) {
 						await assertContainedProposalPath(projectRoot, proposalPath);
 						const proposal = await readRegularText(proposalPath);
-						await durableFiles.writeText({
+						// Republication after a concurrent unlink is a real write, and
+						// the episode-changed `continue` below would otherwise return
+						// writesCommitted: false having just published bytes.
+						const confirmation = await durableFiles.writeText({
 							path: proposalPath,
 							content: proposal,
 						});
+						writesCommitted ||= confirmation.destinationLinked;
 						if ((await readRegularText(proposalPath)) !== proposal) {
 							throw new ConsolidationSourceContractError(
 								`Episode proposal representation changed during durability confirmation: ${proposalPath}.`,

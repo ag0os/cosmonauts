@@ -21,6 +21,17 @@ import type {
 const RECEIPT_ROOT = "memory/agent/consolidations";
 const LOCK_PATH = ".cosmonauts/living-memory.lock";
 
+class ReceiptCommittedError extends Error {
+	readonly writesCommitted = true;
+
+	constructor(error: unknown) {
+		super(error instanceof Error ? error.message : String(error), {
+			cause: error,
+		});
+		this.name = "ReceiptCommittedError";
+	}
+}
+
 class ReceiptDischargeError extends Error {
 	readonly writesCommitted: boolean;
 
@@ -172,19 +183,31 @@ export function createAcceptedJudgmentReceiptStore(options: {
 				relativePath,
 				label: "Accepted judgment receipt",
 			});
-			if (raw === undefined) return undefined;
-			await durableFiles.writeText({ path: pathFor(key), content: raw });
+			if (raw === undefined) {
+				return { receipt: undefined, writesCommitted: false };
+			}
+			const confirmation = await durableFiles.writeText({
+				path: pathFor(key),
+				content: raw,
+			});
 			const confirmed = await readSafeRegularText({
 				root: options.projectRoot,
 				relativePath,
 				label: "Accepted judgment receipt",
 			});
 			if (confirmed !== raw) {
-				throw new Error(
+				const changed = new Error(
 					`Accepted judgment receipt changed while confirming durability: ${pathFor(key)}.`,
 				);
+				if (confirmation.destinationLinked) {
+					throw new ReceiptCommittedError(changed);
+				}
+				throw changed;
 			}
-			return parseReceipt(raw, pathFor(key), key);
+			return {
+				receipt: parseReceipt(raw, pathFor(key), key),
+				writesCommitted: confirmation.destinationLinked,
+			};
 		},
 		async write(receipt) {
 			const normalized = normalizeReceipt(receipt, pathFor(receipt.batchKey));
@@ -222,12 +245,16 @@ export function createAcceptedJudgmentReceiptStore(options: {
 		},
 		async markMaterialized(batchKey) {
 			const key = validateBatchKey(batchKey);
-			const current = await this.read(key);
+			const { receipt: current, writesCommitted: confirmedByRead } =
+				await this.read(key);
 			if (current === undefined) {
 				throw new Error(`Accepted judgment receipt does not exist: ${key}.`);
 			}
 			if (current.state === "materialized") {
-				return Object.freeze({ receipt: current, writesCommitted: false });
+				return Object.freeze({
+					receipt: current,
+					writesCommitted: confirmedByRead,
+				});
 			}
 			const next = Object.freeze({
 				...current,
