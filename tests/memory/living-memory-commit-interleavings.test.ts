@@ -1361,3 +1361,151 @@ function staleCitationRecord(
 		},
 	});
 }
+
+describe("living-memory committed-write republication error paths", () => {
+	test("tags a proposal republication whose confirmation read then fails", async () => {
+		const projectRoot = join(tmp.path, "proposal-confirmation-failure");
+		const input = overstatementProposalInput();
+		await createConsolidationProposalStore({ projectRoot }).persist(input);
+
+		const baseFiles = createDurableMachineFiles();
+		let republished = false;
+		const store = createConsolidationProposalStore({
+			projectRoot,
+			durableFiles: {
+				...baseFiles,
+				async writeText(options) {
+					if (republished) return baseFiles.writeText(options);
+					republished = true;
+					await rm(options.path);
+					const result = await baseFiles.writeText(options);
+					// Another actor changes it again before the confirmation read.
+					await writeFile(options.path, "changed after republication\n");
+					return result;
+				},
+			},
+		});
+
+		const thrown = await store.persist(input).catch((error: unknown) => error);
+
+		expect(republished).toBe(true);
+		expect(thrown).toHaveProperty("writesCommitted", true);
+	});
+
+	test("tags a receipt republication whose confirmation read then fails", async () => {
+		const projectRoot = join(tmp.path, "receipt-confirmation-failure");
+		const batchKey = overstatementBatchKey("receipt-confirm-fail");
+		const seed = createAcceptedJudgmentReceiptStore({ projectRoot });
+		await seed.write(
+			overstatementReceiptDraft(batchKey, seed.pathFor(batchKey)),
+		);
+
+		const baseFiles = createDurableMachineFiles();
+		let republished = false;
+		const store = createAcceptedJudgmentReceiptStore({
+			projectRoot,
+			durableFiles: {
+				...baseFiles,
+				async writeText(options) {
+					if (republished) return baseFiles.writeText(options);
+					republished = true;
+					await rm(options.path);
+					const result = await baseFiles.writeText(options);
+					await rm(options.path);
+					return result;
+				},
+			},
+		});
+
+		const thrown = await store.read(batchKey).catch((error: unknown) => error);
+
+		expect(republished).toBe(true);
+		expect(thrown).toHaveProperty("writesCommitted", true);
+	});
+
+	test("keeps a read republication when materialization then fails", async () => {
+		const projectRoot = join(tmp.path, "materialize-after-republication");
+		const batchKey = overstatementBatchKey("materialize-fail");
+		const seed = createAcceptedJudgmentReceiptStore({ projectRoot });
+		await seed.write(
+			overstatementReceiptDraft(batchKey, seed.pathFor(batchKey)),
+		);
+
+		const baseFiles = createDurableMachineFiles();
+		let republished = false;
+		const store = createAcceptedJudgmentReceiptStore({
+			projectRoot,
+			durableFiles: {
+				...baseFiles,
+				async writeText(options) {
+					if (republished) return baseFiles.writeText(options);
+					republished = true;
+					await rm(options.path);
+					return baseFiles.writeText(options);
+				},
+				async replaceText() {
+					throw new Error("materialization failed before any write");
+				},
+			},
+		});
+
+		const thrown = await store
+			.markMaterialized(batchKey)
+			.catch((error: unknown) => error);
+
+		expect(republished).toBe(true);
+		expect(thrown).toHaveProperty("writesCommitted", true);
+	});
+
+	test("does not tag a finalization failure from a prune this pass did not make", async () => {
+		const projectRoot = join(tmp.path, "prune-outcome-not-a-commit");
+		const episodeDirectory = join(projectRoot, "memory", "agent", "episodes");
+		await mkdir(episodeDirectory, { recursive: true });
+		// A journal for an episode that is already gone: recovery reports the prune
+		// as a domain outcome while committing nothing, because the journal removal
+		// takes its ENOENT no-op branch.
+		const journalPath = join(
+			episodeDirectory,
+			".living-memory-episode-prune.json",
+		);
+		await writeFile(
+			journalPath,
+			`${JSON.stringify({
+				schemaVersion: 1,
+				originalPath: "memory/agent/episodes/gone.md",
+				tombstonePath:
+					"memory/agent/episodes/.gone.md.4f1d0f2e-0000-4000-8000-000000000000.tombstone",
+				digest: "d".repeat(64),
+				fileIdentity: { device: "1", inode: "2" },
+			})}\n`,
+			"utf-8",
+		);
+
+		const baseFiles = createDurableMachineFiles();
+		const source = createProjectEpisodeConsolidationSource({
+			projectRoot,
+			durableFiles: {
+				...baseFiles,
+				async removeFile(path) {
+					await baseFiles.removeFile(path);
+					return baseFiles.removeFile(path);
+				},
+			},
+		});
+
+		// Finalization then fails its own validation before writing anything.
+		const thrown = await source
+			.finalize?.([
+				{
+					id: "memory/agent/episodes/other.md",
+					digest: "e".repeat(64),
+					fileIdentity: { device: "1", inode: "2" },
+					proposalPaths: [],
+				},
+			])
+			.catch((error: unknown) => error);
+
+		expect(thrown).toBeInstanceOf(Error);
+		expect(thrown).not.toHaveProperty("writesCommitted", true);
+	});
+});

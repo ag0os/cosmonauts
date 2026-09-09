@@ -576,7 +576,10 @@ export function createProjectEpisodeConsolidationSource(options: {
 					await durableFiles.removeFile(episodePruneJournalPath(projectRoot));
 				}
 			} catch (error: unknown) {
-				if (writesCommitted || pruned.length > 0) {
+				// `pruned` is a domain outcome, not a write receipt: recovery can
+				// report a prune another actor performed. Only the carried bit says
+				// whether this pass committed.
+				if (writesCommitted) {
 					throw new ConsolidationSourceCommittedError(error);
 				}
 				throw error;

@@ -190,24 +190,29 @@ export function createAcceptedJudgmentReceiptStore(options: {
 				path: pathFor(key),
 				content: raw,
 			});
-			const confirmed = await readSafeRegularText({
-				root: options.projectRoot,
-				relativePath,
-				label: "Accepted judgment receipt",
-			});
-			if (confirmed !== raw) {
-				const changed = new Error(
-					`Accepted judgment receipt changed while confirming durability: ${pathFor(key)}.`,
-				);
-				if (confirmation.destinationLinked) {
-					throw new ReceiptCommittedError(changed);
+			// The confirmation read and the parse can both throw. Everything after
+			// a republication has to carry it, not just the changed-bytes branch.
+			try {
+				const confirmed = await readSafeRegularText({
+					root: options.projectRoot,
+					relativePath,
+					label: "Accepted judgment receipt",
+				});
+				if (confirmed !== raw) {
+					throw new Error(
+						`Accepted judgment receipt changed while confirming durability: ${pathFor(key)}.`,
+					);
 				}
-				throw changed;
+				return {
+					receipt: parseReceipt(raw, pathFor(key), key),
+					writesCommitted: confirmation.destinationLinked,
+				};
+			} catch (error: unknown) {
+				if (confirmation.destinationLinked) {
+					throw new ReceiptCommittedError(error);
+				}
+				throw error;
 			}
-			return {
-				receipt: parseReceipt(raw, pathFor(key), key),
-				writesCommitted: confirmation.destinationLinked,
-			};
 		},
 		async write(receipt) {
 			const normalized = normalizeReceipt(receipt, pathFor(receipt.batchKey));
@@ -260,15 +265,24 @@ export function createAcceptedJudgmentReceiptStore(options: {
 				...current,
 				state: "materialized" as const,
 			});
-			await ensureSafeContainedDirectory({
-				root: options.projectRoot,
-				relativeDirectory: RECEIPT_ROOT,
-				label: "Accepted judgment receipt",
-			});
-			await durableFiles.replaceText({
-				path: next.path,
-				content: renderReceipt(next),
-			});
+			try {
+				await ensureSafeContainedDirectory({
+					root: options.projectRoot,
+					relativeDirectory: RECEIPT_ROOT,
+					label: "Accepted judgment receipt",
+				});
+				await durableFiles.replaceText({
+					path: next.path,
+					content: renderReceipt(next),
+				});
+			} catch (error: unknown) {
+				// A republication inside the read above is already committed; failing
+				// to materialize afterwards must not erase it.
+				if (confirmedByRead && !hasCommittedWrites(error)) {
+					throw new ReceiptCommittedError(error);
+				}
+				throw error;
+			}
 			return Object.freeze({ receipt: next, writesCommitted: true });
 		},
 	};

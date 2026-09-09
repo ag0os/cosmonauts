@@ -25,6 +25,17 @@ import type {
 	ProposedMemoryRecord,
 } from "./types.ts";
 
+class ProposalCommittedError extends Error {
+	readonly writesCommitted = true;
+
+	constructor(error: unknown) {
+		super(error instanceof Error ? error.message : String(error), {
+			cause: error,
+		});
+		this.name = "ProposalCommittedError";
+	}
+}
+
 const PROPOSAL_ROOT = "memory/agent/proposals/living-memory";
 const RESOLUTION_ROOT = `${PROPOSAL_ROOT}/resolutions`;
 const LOCK_PATH = ".cosmonauts/living-memory.lock";
@@ -103,15 +114,24 @@ export function createConsolidationProposalStore(options: {
 					path,
 					content: rendered,
 				});
-				const confirmed = await readSafeRegularText({
-					root: options.projectRoot,
-					relativePath,
-					label: "Living-memory proposal",
-				});
-				if (confirmed !== rendered) {
-					throw new Error(
-						`Living-memory proposal changed while confirming durability: ${relativePath}.`,
-					);
+				try {
+					const confirmed = await readSafeRegularText({
+						root: options.projectRoot,
+						relativePath,
+						label: "Living-memory proposal",
+					});
+					if (confirmed !== rendered) {
+						throw new Error(
+							`Living-memory proposal changed while confirming durability: ${relativePath}.`,
+						);
+					}
+				} catch (error: unknown) {
+					// Anything after a republication must carry it out, or the pass
+					// reports no write having just published the proposal.
+					if (confirmation.destinationLinked) {
+						throw new ProposalCommittedError(error);
+					}
+					throw error;
 				}
 				return view({
 					proposalKind: input.proposal.proposalKind,
