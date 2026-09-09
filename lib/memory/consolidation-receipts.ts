@@ -122,20 +122,25 @@ export function createAcceptedJudgmentReceiptStore(options: {
 								)),
 				);
 				const removed: string[] = [];
+				let writesCommitted = false;
 				for (const receipt of stale) {
 					try {
-						await durableFiles.removeFile(receipt.path);
+						const removal = await durableFiles.removeFile(receipt.path);
+						writesCommitted ||= removal.removed;
 						removed.push(receipt.path);
 					} catch (error: unknown) {
 						throw new ReceiptDischargeError(
 							error,
-							removed.length > 0 || hasCommittedWrites(error),
+							writesCommitted || hasCommittedWrites(error),
 						);
 					}
 				}
-				return Object.freeze(removed);
+				return {
+					paths: Object.freeze(removed),
+					writesCommitted,
+				};
 			};
-			const removed = input.lockHeld
+			const discharged = input.lockHeld
 				? await action()
 				: await lock(join(options.projectRoot, LOCK_PATH), action, {
 						retryDelayMs: input.lockOptions.retryMs,
@@ -154,10 +159,10 @@ export function createAcceptedJudgmentReceiptStore(options: {
 								: String(releaseUnconfirmed)
 						}.`,
 					),
-					removed.length > 0,
+					discharged.writesCommitted,
 				);
 			}
-			return removed;
+			return discharged;
 		},
 		async read(batchKey) {
 			const key = validateBatchKey(batchKey);
@@ -201,16 +206,19 @@ export function createAcceptedJudgmentReceiptStore(options: {
 						`Accepted judgment receipt identity conflict at ${normalized.path}.`,
 					);
 				}
-				return parsed;
+				return { receipt: parsed, writesCommitted: false };
 			}
-			await writeSafeExclusiveText({
+			const written = await writeSafeExclusiveText({
 				root: options.projectRoot,
 				relativePath,
 				content,
 				durableFiles,
 				label: "Accepted judgment receipt",
 			});
-			return normalized;
+			return {
+				receipt: normalized,
+				writesCommitted: written.destinationLinked,
+			};
 		},
 		async markMaterialized(batchKey) {
 			const key = validateBatchKey(batchKey);

@@ -628,24 +628,27 @@ async function recoverEpisodePruneJournal(options: {
 				sameFileIdentity(tombstone.identity, journal.fileIdentity) &&
 				sha256(tombstone.content) === journal.digest;
 			if (verified) {
-				await removeEpisodeFile({
+				// The tombstone was the last copy of the episode bytes, so the prune
+				// is a domain fact either way; only this pass's commit bit turns on
+				// whether this call is what unlinked it.
+				const removal = await removeEpisodeFile({
 					path: tombstonePath,
 					durableFiles: options.durableFiles,
 				});
 				removedEpisodeBytes = true;
-				writesCommitted = true;
+				writesCommitted ||= removal.removed;
 			} else {
-				await options.durableFiles.restoreFile({
+				const restoration = await options.durableFiles.restoreFile({
 					sourcePath: tombstonePath,
 					destinationPath: livePath,
 				});
-				writesCommitted = true;
+				writesCommitted ||= restoration.restored;
 			}
 		}
-		await options.durableFiles.removeFile(
+		const journalRemoval = await options.durableFiles.removeFile(
 			episodePruneJournalPath(options.projectRoot),
 		);
-		writesCommitted = true;
+		writesCommitted ||= journalRemoval.removed;
 		const liveAfter = await readRegularTextSnapshotIfExists(livePath);
 		return {
 			episodePrunes:
@@ -686,9 +689,9 @@ async function readEpisodePruneJournal(
 async function removeEpisodeFile(options: {
 	readonly path: string;
 	readonly durableFiles: DurableMachineFiles;
-}): Promise<void> {
+}): Promise<{ readonly removed: boolean }> {
 	try {
-		await options.durableFiles.removeFile(options.path);
+		return await options.durableFiles.removeFile(options.path);
 	} catch (error: unknown) {
 		const remains = await lstat(options.path).then(
 			() => true,

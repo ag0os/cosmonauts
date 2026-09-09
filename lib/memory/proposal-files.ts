@@ -47,7 +47,11 @@ export async function writeSafeExclusiveText(options: {
 	readonly durableFiles: DurableMachineFiles;
 	readonly label: string;
 	readonly signal?: AbortSignal;
-}): Promise<{ readonly path: string; readonly digest: string }> {
+}): Promise<{
+	readonly path: string;
+	readonly digest: string;
+	readonly destinationLinked: boolean;
+}> {
 	if (!isSafePosixRelativePath(options.relativePath)) {
 		throw new Error(`${options.label} path must be a safe relative path.`);
 	}

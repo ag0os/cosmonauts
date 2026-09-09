@@ -108,7 +108,7 @@ export function createLivingMemoryConsolidator(
 			async (input) => {
 				const proposal = await dependencies.proposalStore.persist(input);
 				reportCommittedState({
-					writesCommitted: proposal.status === "written",
+					writesCommitted: proposal.writesCommitted,
 				});
 				return proposal;
 			};
@@ -275,8 +275,8 @@ export function createLivingMemoryConsolidator(
 					details,
 				};
 			}
-			const dischargedReceipts = dryRun
-				? Object.freeze([])
+			const discharge = dryRun
+				? { paths: Object.freeze([]), writesCommitted: false }
 				: await dependencies.acceptedJudgmentReceiptStore.dischargeStale({
 						currentKeys: Object.freeze(
 							collected.inventory.map(consolidationEvidenceKey),
@@ -284,10 +284,8 @@ export function createLivingMemoryConsolidator(
 						lockOptions: dependencies.lockOptions,
 						lockHeld,
 					});
-			reportCommittedState({
-				writesCommitted: dischargedReceipts.length > 0,
-			});
-			const dischargedPaths = new Set(dischargedReceipts);
+			reportCommittedState({ writesCommitted: discharge.writesCommitted });
+			const dischargedPaths = new Set(discharge.paths);
 			const receipts = initialReceipts.filter(
 				(receipt) => !dischargedPaths.has(receipt.path),
 			);
@@ -683,29 +681,28 @@ export function createLivingMemoryConsolidator(
 			]);
 			let acceptedReceipt = existingReceipt;
 			if (!dryRun && acceptedReceipt === undefined) {
-				acceptedReceipt = await dependencies.acceptedJudgmentReceiptStore.write(
-					{
-						schemaVersion: 1,
-						batchKey: input.batchKey,
-						state: "accepted",
-						inputDigests: Object.freeze(
-							selectedRecords.map((record) => record.digest),
-						),
-						inputs: Object.freeze(
-							selectedRecords
-								.filter(
-									(record) =>
-										!deferredEvidenceKeys.has(consolidationEvidenceKey(record)),
-								)
-								.map(evidenceRef),
-						),
-						output: normalizedJudgmentOutput(output),
-						path: dependencies.acceptedJudgmentReceiptStore.pathFor(
-							input.batchKey,
-						),
-					},
-				);
-				reportCommittedState({ writesCommitted: true });
+				const accepted = await dependencies.acceptedJudgmentReceiptStore.write({
+					schemaVersion: 1,
+					batchKey: input.batchKey,
+					state: "accepted",
+					inputDigests: Object.freeze(
+						selectedRecords.map((record) => record.digest),
+					),
+					inputs: Object.freeze(
+						selectedRecords
+							.filter(
+								(record) =>
+									!deferredEvidenceKeys.has(consolidationEvidenceKey(record)),
+							)
+							.map(evidenceRef),
+					),
+					output: normalizedJudgmentOutput(output),
+					path: dependencies.acceptedJudgmentReceiptStore.pathFor(
+						input.batchKey,
+					),
+				});
+				acceptedReceipt = accepted.receipt;
+				reportCommittedState({ writesCommitted: accepted.writesCommitted });
 			}
 			if (acceptedReceipt !== undefined) {
 				normalized = validateJudgmentOutput({

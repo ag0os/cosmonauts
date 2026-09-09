@@ -372,7 +372,7 @@ describe("living memory", () => {
 						racedAtRestore = true;
 						await writeFile(options.destinationPath, concurrentLive);
 					}
-					await realDurable.restoreFile(options);
+					return realDurable.restoreFile(options);
 				},
 			},
 		}).apply({
@@ -1233,7 +1233,7 @@ describe("living memory", () => {
 			durableFiles: {
 				...terminalDurable,
 				async removeFile(path) {
-					await terminalDurable.removeFile(path);
+					const removal = await terminalDurable.removeFile(path);
 					if (
 						path.endsWith("living-memory-retirement.json") &&
 						failTerminalCleanup
@@ -1241,6 +1241,7 @@ describe("living memory", () => {
 						failTerminalCleanup = false;
 						throw new Error("terminal journal directory sync is unconfirmed");
 					}
+					return removal;
 				},
 			},
 		}).apply({
@@ -1398,10 +1399,11 @@ describe("living memory", () => {
 				return result;
 			},
 			async removeFile(path) {
-				await realDurable.removeFile(path);
+				const removal = await realDurable.removeFile(path);
 				if (path.endsWith(".tombstone")) {
 					syncEvents.push("tombstone-removed");
 				}
+				return removal;
 			},
 		} satisfies DurableRetirementFiles;
 		const proposalStore = createConsolidationProposalStore({
@@ -1680,7 +1682,7 @@ describe("living memory", () => {
 				},
 				async removeFile(path) {
 					operations.push(`remove:${path}`);
-					await realDurable.removeFile(path);
+					return realDurable.removeFile(path);
 				},
 			} satisfies DurableRetirementFiles;
 			const result = await createLivingMemoryRetirementStore({
@@ -2141,8 +2143,14 @@ describe("living memory", () => {
 			output: { schemaVersion: 1 as const, observations: [] },
 			path: receiptStore.pathFor(batchKey),
 		};
-		await expect(receiptStore.write(receipt)).resolves.toEqual(receipt);
-		await expect(receiptStore.write(receipt)).resolves.toEqual(receipt);
+		await expect(receiptStore.write(receipt)).resolves.toEqual({
+			receipt,
+			writesCommitted: true,
+		});
+		await expect(receiptStore.write(receipt)).resolves.toEqual({
+			receipt,
+			writesCommitted: false,
+		});
 		await expect(
 			receiptStore.markMaterialized(batchKey),
 		).resolves.toMatchObject({
@@ -2295,7 +2303,7 @@ describe("living memory", () => {
 				if (removalCount === 2) {
 					throw new Error("simulated second receipt removal failure");
 				}
-				await baseDurableFiles.removeFile(path);
+				return baseDurableFiles.removeFile(path);
 			},
 		};
 		const receiptStore = createAcceptedJudgmentReceiptStore({
@@ -3680,7 +3688,7 @@ describe("living memory", () => {
 			},
 			async removeFile(path) {
 				trace.push(`remove:${relativeFixturePath(projectRoot, path)}`);
-				await baseDurableFiles.removeFile(path);
+				return baseDurableFiles.removeFile(path);
 			},
 		} satisfies ReturnType<typeof createDurableMachineFiles>;
 		const receiptStore = createAcceptedJudgmentReceiptStore({
@@ -4075,7 +4083,10 @@ describe("living memory", () => {
 				acceptedJudgmentReceiptStore: {
 					pathFor: (batchKey) => `/tmp/${batchKey}.json`,
 					list: async () => [],
-					dischargeStale: async () => [],
+					dischargeStale: async () => ({
+						paths: [],
+						writesCommitted: false,
+					}),
 					read: async (batchKey) => ({
 						schemaVersion: 1,
 						batchKey,
@@ -4102,6 +4113,7 @@ describe("living memory", () => {
 							.update("proposal\n")
 							.digest("hex"),
 						status: "existing",
+						writesCommitted: false,
 					}),
 				},
 			},
@@ -4258,7 +4270,7 @@ describe("living memory", () => {
 				async restoreFile(options) {
 					racedAtRestore = true;
 					await writeFile(options.destinationPath, concurrentLive);
-					await baseFiles.restoreFile(options);
+					return baseFiles.restoreFile(options);
 				},
 			},
 		});
@@ -4374,7 +4386,7 @@ describe("living memory", () => {
 				async restoreFile(options) {
 					racedAtRestore = true;
 					await writeFile(options.destinationPath, concurrentLive);
-					await baseFiles.restoreFile(options);
+					return baseFiles.restoreFile(options);
 				},
 			},
 		});
@@ -4681,7 +4693,7 @@ describe("living memory", () => {
 							throw new Error("ordinary second episode removal failure");
 						}
 					}
-					await baseFiles.removeFile(path);
+					return baseFiles.removeFile(path);
 				},
 			},
 		});
@@ -4855,7 +4867,7 @@ describe("living memory", () => {
 							"ordinary pre-remove failure after episode restore",
 						);
 					}
-					await baseFiles.removeFile(path);
+					return baseFiles.removeFile(path);
 				},
 			},
 		});
@@ -4884,10 +4896,11 @@ describe("living memory", () => {
 			durableFiles: {
 				...baseFiles,
 				async removeFile(path) {
-					await baseFiles.removeFile(path);
+					const removal = await baseFiles.removeFile(path);
 					if (path.endsWith(".tombstone")) {
 						throw new Error("simulated post-unlink directory sync failure");
 					}
+					return removal;
 				},
 			},
 		});
@@ -7250,12 +7263,12 @@ function inMemoryReceiptStore(receipts: AcceptedJudgmentReceipt[]) {
 	return {
 		pathFor: (batchKey: string) => `/tmp/${batchKey}.json`,
 		list: async () => Object.freeze([...receipts]),
-		dischargeStale: async () => [],
+		dischargeStale: async () => ({ paths: [], writesCommitted: false }),
 		read: async (batchKey: string) =>
 			receipts.find((receipt) => receipt.batchKey === batchKey),
 		write: async (receipt: AcceptedJudgmentReceipt) => {
 			receipts.push(receipt);
-			return receipt;
+			return { receipt, writesCommitted: true };
 		},
 		markMaterialized: async (batchKey: string) => {
 			const index = receipts.findIndex(
@@ -7309,6 +7322,7 @@ function createHarness(
 					.update(JSON.stringify(input.proposal))
 					.digest("hex"),
 				status: input.dryRun ? ("preview" as const) : ("written" as const),
+				writesCommitted: !input.dryRun,
 			})),
 		},
 		acceptedJudgmentReceiptStore: overrides.acceptedJudgmentReceiptStore ?? {
@@ -7316,9 +7330,12 @@ function createHarness(
 				(batchKey) => `/tmp/living-memory-consolidations/${batchKey}.json`,
 			),
 			list: vi.fn(async () => []),
-			dischargeStale: vi.fn(async () => []),
+			dischargeStale: vi.fn(async () => ({
+				paths: [],
+				writesCommitted: false,
+			})),
 			read: vi.fn(async () => undefined),
-			write: vi.fn(async (receipt) => receipt),
+			write: vi.fn(async (receipt) => ({ receipt, writesCommitted: true })),
 			markMaterialized: vi.fn(async (batchKey) => ({
 				receipt: {
 					schemaVersion: 1 as const,
@@ -7756,12 +7773,14 @@ async function createEpisodeRestoreRaceSource(
 				await baseFiles.renameFile(options);
 			},
 			async restoreFile(options) {
-				await baseFiles.restoreFile(options);
+				const restoration = await baseFiles.restoreFile(options);
 				if (changedBytes.has(options.destinationPath)) commits.restores += 1;
+				return restoration;
 			},
 			async removeFile(path) {
-				await baseFiles.removeFile(path);
+				const removal = await baseFiles.removeFile(path);
 				if (path === journalPath) commits.journalRemovals += 1;
+				return removal;
 			},
 		},
 	});

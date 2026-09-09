@@ -16,6 +16,7 @@ import {
 	createDurableMachineFiles,
 	createDurableRetirementFiles,
 	createLivingMemoryConsolidator,
+	createProjectEpisodeConsolidationSource,
 	DEFAULT_LIVING_MEMORY_LIMITS,
 	type LivingMemoryConsolidatorDependencies,
 } from "../../lib/memory/index.ts";
@@ -326,17 +327,21 @@ describe("living-memory committed-write interleavings", () => {
 		const write = vi.fn<
 			LivingMemoryConsolidatorDependencies["acceptedJudgmentReceiptStore"]["write"]
 		>(async (receipt) => ({
-			...receipt,
-			output: {
-				schemaVersion: 1,
-				observations: [
-					{
-						kind: "duplicate",
-						inputIds: ["missing-after-write"],
-						reason: "Exercise fail-closed validation after receipt acceptance.",
-					},
-				],
+			receipt: {
+				...receipt,
+				output: {
+					schemaVersion: 1,
+					observations: [
+						{
+							kind: "duplicate",
+							inputIds: ["missing-after-write"],
+							reason:
+								"Exercise fail-closed validation after receipt acceptance.",
+						},
+					],
+				},
 			},
+			writesCommitted: true,
 		}));
 		const judgmentProvider = {
 			id: "fake/no-tools",
@@ -624,9 +629,12 @@ describe("living-memory committed-write interleavings", () => {
 		const receiptStore = {
 			pathFor: (key: string) => `/tmp/${key}.json`,
 			list: async () => [receipt],
-			dischargeStale: async () => [],
+			dischargeStale: async () => ({ paths: [], writesCommitted: false }),
 			read: async () => receipt,
-			write: async (input: AcceptedJudgmentReceipt) => input,
+			write: async (input: AcceptedJudgmentReceipt) => ({
+				receipt: input,
+				writesCommitted: true,
+			}),
 			markMaterialized,
 		};
 		const episodeSource: ConsolidationSource = {
@@ -693,6 +701,7 @@ function createHarness(
 					.update(JSON.stringify(input.proposal))
 					.digest("hex"),
 				status: input.dryRun ? ("preview" as const) : ("written" as const),
+				writesCommitted: !input.dryRun,
 			}),
 		},
 		acceptedJudgmentReceiptStore:
@@ -744,13 +753,13 @@ function inMemoryReceiptStore() {
 	return {
 		pathFor: (batchKey: string) => `/tmp/${batchKey}.json`,
 		list: async () => [],
-		dischargeStale: async () => [],
+		dischargeStale: async () => ({ paths: [], writesCommitted: false }),
 		read: async () => undefined,
 		write: async (
 			receipt: Parameters<
 				LivingMemoryConsolidatorDependencies["acceptedJudgmentReceiptStore"]["write"]
 			>[0],
-		) => receipt,
+		) => ({ receipt, writesCommitted: true }),
 		markMaterialized: async (batchKey: string) => ({
 			receipt: {
 				schemaVersion: 1 as const,
@@ -823,4 +832,246 @@ function proposed(title: string) {
 		content: `# ${title}\n\nComplete replacement.\n`,
 		tags: ["memory"],
 	};
+}
+
+describe("living-memory committed-write overstatement", () => {
+	test("does not report a proposal publication this pass lost to an identical winner", async () => {
+		const projectRoot = join(tmp.path, "proposal-identical-winner");
+		const baseFiles = createDurableMachineFiles();
+		let installedWinner = false;
+		const proposalStore = createConsolidationProposalStore({
+			projectRoot,
+			durableFiles: {
+				...baseFiles,
+				async writeText(options) {
+					if (!installedWinner) {
+						installedWinner = true;
+						await mkdir(dirname(options.path), { recursive: true });
+						await writeFile(options.path, options.content, "utf-8");
+					}
+					return baseFiles.writeText(options);
+				},
+			},
+		});
+
+		const persisted = await proposalStore.persist(overstatementProposalInput());
+
+		expect(installedWinner).toBe(true);
+		expect(persisted.writesCommitted).toBe(false);
+	});
+
+	test("reports a proposal publication this pass actually linked", async () => {
+		const projectRoot = join(tmp.path, "proposal-first-publication");
+		const proposalStore = createConsolidationProposalStore({ projectRoot });
+
+		const persisted = await proposalStore.persist(overstatementProposalInput());
+
+		expect(persisted.status).toBe("written");
+		expect(persisted.writesCommitted).toBe(true);
+	});
+
+	test("does not report an accepted receipt returned by the store's own pre-read", async () => {
+		const projectRoot = join(tmp.path, "receipt-existing-pre-read");
+		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
+		const batchKey = overstatementBatchKey("receipt-pre-read");
+		const draft = overstatementReceiptDraft(
+			batchKey,
+			receiptStore.pathFor(batchKey),
+		);
+
+		const first = await receiptStore.write(draft);
+		const second = await receiptStore.write(draft);
+
+		expect(first.writesCommitted).toBe(true);
+		expect(second.writesCommitted).toBe(false);
+		expect(second.receipt).toEqual(first.receipt);
+	});
+
+	test("does not report an accepted receipt this pass lost to an identical winner", async () => {
+		const projectRoot = join(tmp.path, "receipt-identical-winner");
+		const baseFiles = createDurableMachineFiles();
+		let installedWinner = false;
+		const receiptStore = createAcceptedJudgmentReceiptStore({
+			projectRoot,
+			durableFiles: {
+				...baseFiles,
+				async writeText(options) {
+					if (!installedWinner) {
+						installedWinner = true;
+						await mkdir(dirname(options.path), { recursive: true });
+						await writeFile(options.path, options.content, "utf-8");
+					}
+					return baseFiles.writeText(options);
+				},
+			},
+		});
+		const batchKey = overstatementBatchKey("receipt-race");
+
+		const written = await receiptStore.write(
+			overstatementReceiptDraft(batchKey, receiptStore.pathFor(batchKey)),
+		);
+
+		expect(installedWinner).toBe(true);
+		expect(written.writesCommitted).toBe(false);
+	});
+
+	test("does not report a stale discharge whose every removal was a no-op", async () => {
+		const projectRoot = join(tmp.path, "discharge-already-removed");
+		const batchKey = overstatementBatchKey("discharge-noop");
+		const seedStore = createAcceptedJudgmentReceiptStore({ projectRoot });
+		const stalePath = seedStore.pathFor(batchKey);
+		await seedStore.write(overstatementReceiptDraft(batchKey, stalePath));
+		await seedStore.markMaterialized(batchKey);
+
+		const baseFiles = createDurableMachineFiles();
+		const dischargeStore = createAcceptedJudgmentReceiptStore({
+			projectRoot,
+			durableFiles: {
+				...baseFiles,
+				async removeFile(path) {
+					await baseFiles.removeFile(path);
+					return baseFiles.removeFile(path);
+				},
+			},
+		});
+
+		const discharged = await dischargeStore.dischargeStale(
+			overstatementDischargeInput(),
+		);
+
+		expect(discharged.paths).toEqual([stalePath]);
+		expect(discharged.writesCommitted).toBe(false);
+	});
+
+	test("reports a stale discharge that actually removed the receipt", async () => {
+		const projectRoot = join(tmp.path, "discharge-real-removal");
+		const batchKey = overstatementBatchKey("discharge-real");
+		const receiptStore = createAcceptedJudgmentReceiptStore({ projectRoot });
+		const stalePath = receiptStore.pathFor(batchKey);
+		await receiptStore.write(overstatementReceiptDraft(batchKey, stalePath));
+		await receiptStore.markMaterialized(batchKey);
+
+		const discharged = await receiptStore.dischargeStale(
+			overstatementDischargeInput(),
+		);
+
+		expect(discharged.paths).toEqual([stalePath]);
+		expect(discharged.writesCommitted).toBe(true);
+	});
+
+	test("does not report episode recovery whose journal removal was a no-op", async () => {
+		const projectRoot = await overstatementEpisodeFixture(
+			join(tmp.path, "episode-recovery-already-removed"),
+		);
+		const baseFiles = createDurableMachineFiles();
+		const source = createProjectEpisodeConsolidationSource({
+			projectRoot,
+			durableFiles: {
+				...baseFiles,
+				async removeFile(path) {
+					await baseFiles.removeFile(path);
+					return baseFiles.removeFile(path);
+				},
+			},
+		});
+
+		const recovered = await source.recover?.();
+
+		expect(recovered).toEqual({ episodePrunes: [], writesCommitted: false });
+	});
+
+	test("reports episode recovery that actually removed the journal", async () => {
+		const projectRoot = await overstatementEpisodeFixture(
+			join(tmp.path, "episode-recovery-real-removal"),
+		);
+		const source = createProjectEpisodeConsolidationSource({ projectRoot });
+
+		const recovered = await source.recover?.();
+
+		expect(recovered).toEqual({ episodePrunes: [], writesCommitted: true });
+	});
+});
+
+function overstatementBatchKey(seed: string): string {
+	return createHash("sha256").update(seed).digest("hex");
+}
+
+function overstatementProposalInput(): Parameters<
+	ConsolidationProposalStoreWithMaterializations["persist"]
+>[0] {
+	const evidence = {
+		id: "knowledge/overstatement.md",
+		sourceId: "corpus",
+		scope: "project" as const,
+		path: "knowledge/overstatement.md",
+		digest: "a".repeat(64),
+	};
+	return {
+		batchKey: overstatementBatchKey("proposal-overstatement"),
+		observation: {
+			id: "deterministic-1",
+			kind: "stale-reference" as const,
+			inputs: [evidence],
+			reason: "Fixture evidence.",
+		},
+		proposal: {
+			proposalKind: "create" as const,
+			record: {
+				type: "decision" as const,
+				title: "Overstatement probe",
+				description: "Overstatement probe description.",
+				content: "# Overstatement probe\n\nComplete replacement.\n",
+				tags: ["memory"],
+			},
+		},
+		dryRun: false,
+	};
+}
+
+function overstatementReceiptDraft(
+	batchKey: string,
+	path: string,
+): AcceptedJudgmentReceipt {
+	return {
+		schemaVersion: 1,
+		batchKey,
+		state: "accepted",
+		inputDigests: Object.freeze(["b".repeat(64)]),
+		output: { schemaVersion: 1, observations: [] },
+		path,
+	};
+}
+
+function overstatementDischargeInput() {
+	return {
+		currentKeys: Object.freeze([]),
+		lockOptions: {
+			retryMs: 50,
+			timeoutMs: 10_000,
+			onReleaseUnconfirmed: () => undefined,
+		},
+		lockHeld: true,
+	};
+}
+
+async function overstatementEpisodeFixture(
+	projectRoot: string,
+): Promise<string> {
+	const episodeDirectory = join(projectRoot, "memory", "agent", "episodes");
+	await mkdir(episodeDirectory, { recursive: true });
+	const content = "# Episode one\n";
+	await writeFile(join(episodeDirectory, "episode-one.md"), content, "utf-8");
+	await writeFile(
+		join(episodeDirectory, ".living-memory-episode-prune.json"),
+		`${JSON.stringify({
+			schemaVersion: 1,
+			originalPath: "memory/agent/episodes/episode-one.md",
+			tombstonePath:
+				"memory/agent/episodes/.episode-one.md.4f1d0f2e-0000-4000-8000-000000000000.tombstone",
+			digest: createHash("sha256").update(content).digest("hex"),
+			fileIdentity: { device: "1", inode: "2" },
+		})}\n`,
+		"utf-8",
+	);
+	return projectRoot;
 }

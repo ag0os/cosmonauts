@@ -201,9 +201,9 @@ describe("architecture-memory extension", () => {
 						`${batchKey}.json`,
 					),
 				list: async () => [],
-				dischargeStale: async () => [],
+				dischargeStale: async () => ({ paths: [], writesCommitted: false }),
 				read: async () => undefined,
-				write: async (receipt) => receipt,
+				write: async (receipt) => ({ receipt, writesCommitted: true }),
 				markMaterialized: async () => {
 					throw new Error("receipt materialization is not expected");
 				},

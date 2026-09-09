@@ -14,6 +14,7 @@ import {
 import type {
 	ConsolidationEvidenceRef,
 	ConsolidationObservation,
+	ConsolidationProposalPersistResult,
 	ConsolidationProposalStore,
 	ConsolidationProposalView,
 	ImproveProposalResolution,
@@ -79,6 +80,7 @@ export function createConsolidationProposalStore(options: {
 					inputs: input.observation.inputs,
 					contentDigest,
 					status: "preview",
+					writesCommitted: false,
 				});
 			}
 
@@ -112,6 +114,7 @@ export function createConsolidationProposalStore(options: {
 					inputs: input.observation.inputs,
 					contentDigest,
 					status: "existing",
+					writesCommitted: false,
 				});
 			}
 			const written = await writeSafeExclusiveText({
@@ -129,6 +132,7 @@ export function createConsolidationProposalStore(options: {
 				inputs: input.observation.inputs,
 				contentDigest,
 				status: "written",
+				writesCommitted: written.destinationLinked,
 			});
 		},
 	};
@@ -760,7 +764,8 @@ function view(options: {
 	readonly inputs: readonly ConsolidationEvidenceRef[];
 	readonly contentDigest: string;
 	readonly status: ConsolidationProposalView["status"];
-}): ConsolidationProposalView {
+	readonly writesCommitted: boolean;
+}): ConsolidationProposalPersistResult {
 	return Object.freeze({
 		proposalKind: options.proposalKind,
 		key: options.key,
@@ -770,6 +775,7 @@ function view(options: {
 		),
 		contentDigest: options.contentDigest,
 		status: options.status,
+		writesCommitted: options.writesCommitted,
 	});
 }
 

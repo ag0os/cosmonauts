@@ -346,6 +346,49 @@ this plan.
     exclusion are untouched, and `lib/memory/retirement-store.ts` remains out of
     scope.
 
+- **D-013 - The committed bit is carried by the primitive, in both directions** *(Added 2026-09-09 during implementation; derived, amendable on record)*
+  - Context: `review-15` closed CDX-001 at its named seam and then, under the
+    class-level enumeration that AC required, found four more producers where a
+    successful return is treated as proof that this pass wrote durable bytes:
+    SR-015 (proposal publication), SR-016 (accepted-receipt creation), SR-017
+    (stale-receipt discharge), SR-018 (episode-journal recovery). Its verdict is
+    that the plan cannot close with them open.
+  - Prior disposition, superseded: the 2026-09-08 coordinator recorded them as
+    pre-existing and therefore out of scope, reading INV-003 as covering the
+    understating direction only. The pre-existence is real and was verified
+    against the pre-branch base `03c1f52` at `living-memory.ts:283`, `:454`,
+    `:834` and `consolidation-sources.ts:483`. The scope conclusion was not
+    ratified, and the owner reopened it on 2026-09-09.
+  - Decision: remediate all four, inside this plan, by the shape Design §3
+    already prescribes and CDX-001 already shipped — the operation that performs
+    the write returns whether it wrote, and every caller ORs the carried bit
+    instead of reconstructing it from a status string, an array length, or a
+    successful return. Three primitives already track the fact internally and
+    merely discard it: `writeTextExclusive` (`destinationLinked`),
+    `durableRemove` (`removed`), `durableRestore` (`linked`). They now return it.
+  - Why this is remediation and not a widening: Design §3 already says "no phase
+    assigns from only its local subsystem", and INV-003's subject is whether
+    reported commitment matches what the pass committed. An overstatement fails
+    that test in the same way an understatement does. Nothing here reopens
+    D-026, reorders any operation, or touches
+    `lib/memory/retirement-store.ts`, whose callers ignore the new return values.
+  - Fifth file-scope amendment, extending D-012: `lib/memory/durable-files.ts`
+    is authorized for one further purpose — returning the mutation fact that
+    each primitive already computes. Its prior narrow authorization (error
+    tagging only) is widened to this and nothing else: no operation may be
+    added, removed, or reordered inside that file.
+    `lib/memory/proposal-files.ts` is added to the file list as the pass-through
+    that carries `destinationLinked` from the primitive to the proposal and
+    receipt stores.
+  - Cost accepted: `LivingMemoryDurableFiles.writeText`,
+    `DurableMachineFiles.removeFile` and `restoreFile` change their return
+    types, so every test double implementing them is updated. That churn is the
+    point — a double that silently returned `void` is exactly how the class
+    stayed invisible to fourteen reviews.
+  - Decided by: derived (coordinator, during implementation), on the owner's
+    2026-09-09 instruction to fix rather than carry forward. Amendable on record.
+    Widens no invariant.
+
 ## Assumptions
 
 - Ratified ground is consumed, not re-litigated: D-026 (including its 2026-09-03
@@ -704,6 +747,18 @@ as degraded.
   D-012)*: user-root resolution routed through `KNOWLEDGE_INDEX_RETRIEVAL` so the
   store resolves the same root as injection and measurement. Required by AC-001's
   scope-set parity per D-008; the original file list did not anticipate it.
+
+- `lib/memory/durable-files.ts`, `lib/memory/proposal-files.ts`,
+  `lib/memory/consolidation-proposals.ts` *(added on record 2026-09-09 during the
+  SR-015..SR-018 remediation; see D-013)*: the three primitives return the
+  mutation fact they already compute, the safe-write wrapper passes it through,
+  and the proposal store reports its own publication instead of labelling an
+  identical race winner `written`. `lib/memory/durable-files.ts` was already
+  narrowly authorized by D-012; D-013 widens that authorization to returning the
+  fact and to nothing else. Test doubles for these primitives are updated across
+  `tests/memory/`, `tests/extensions/architecture-memory.test.ts` and
+  `tests/fixtures/`, which the return-type change makes a type error rather than
+  a silent divergence.
 
 No other file is planned. In particular `lib/memory/retirement-store.ts`, all
 documentation, architecture records, domains, configuration, `knowledge/`, and

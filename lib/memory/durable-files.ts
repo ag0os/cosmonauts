@@ -18,7 +18,7 @@ export interface DurableMachineFiles extends LivingMemoryDurableFiles {
 		readonly content: string;
 		readonly signal?: AbortSignal;
 	}): Promise<{ readonly path: string; readonly digest: string }>;
-	removeFile(path: string): Promise<void>;
+	removeFile(path: string): Promise<{ readonly removed: boolean }>;
 	renameFile(options: {
 		readonly sourcePath: string;
 		readonly destinationPath: string;
@@ -26,7 +26,7 @@ export interface DurableMachineFiles extends LivingMemoryDurableFiles {
 	restoreFile(options: {
 		readonly sourcePath: string;
 		readonly destinationPath: string;
-	}): Promise<void>;
+	}): Promise<{ readonly restored: boolean }>;
 }
 
 export interface DurableRetirementFiles extends DurableMachineFiles {
@@ -40,7 +40,7 @@ export interface DurableRetirementFiles extends DurableMachineFiles {
 		readonly sourcePath: string;
 		readonly destinationPath: string;
 	}): Promise<void>;
-	removeFile(path: string): Promise<void>;
+	removeFile(path: string): Promise<{ readonly removed: boolean }>;
 }
 
 export class DurableRemovalUnsupportedError extends Error {
@@ -182,7 +182,9 @@ async function durableLink(options: {
 	}
 }
 
-async function durableRemove(path: string): Promise<void> {
+async function durableRemove(
+	path: string,
+): Promise<{ readonly removed: boolean }> {
 	let removed = false;
 	try {
 		await unlink(path);
@@ -196,6 +198,7 @@ async function durableRemove(path: string): Promise<void> {
 		if (removed) throw new DurableFileCommittedError(error);
 		throw error;
 	}
+	return { removed };
 }
 
 async function durableRename(options: {
@@ -229,7 +232,7 @@ async function durableRename(options: {
 async function durableRestore(options: {
 	readonly sourcePath: string;
 	readonly destinationPath: string;
-}): Promise<void> {
+}): Promise<{ readonly restored: boolean }> {
 	if (resolve(options.sourcePath) === resolve(options.destinationPath)) {
 		throw new Error("Durable tombstone restore requires distinct paths.");
 	}
@@ -256,8 +259,8 @@ async function durableRestore(options: {
 				);
 			}
 			await syncDirectory(destinationDirectory);
-			await durableRemove(options.sourcePath);
-			return;
+			const { removed } = await durableRemove(options.sourcePath);
+			return { restored: removed };
 		}
 		if (errorCode(error) === "ENOENT") {
 			const [source, destination] = await Promise.all([
@@ -266,7 +269,7 @@ async function durableRestore(options: {
 			]);
 			if (source === undefined && destination !== undefined) {
 				await syncDirectory(destinationDirectory);
-				return;
+				return { restored: false };
 			}
 		}
 		throw error;
@@ -278,6 +281,7 @@ async function durableRestore(options: {
 		if (linked) throw new DurableFileCommittedError(error);
 		throw error;
 	}
+	return { restored: linked };
 }
 
 async function sameNoFollowRegularFile(
@@ -317,7 +321,11 @@ async function writeTextExclusive(options: {
 	readonly path: string;
 	readonly content: string;
 	readonly signal?: AbortSignal;
-}): Promise<{ readonly path: string; readonly digest: string }> {
+}): Promise<{
+	readonly path: string;
+	readonly digest: string;
+	readonly destinationLinked: boolean;
+}> {
 	throwIfAborted(options.signal);
 	const digest = sha256(options.content);
 	const existing = await readRegularFile(options.path);
@@ -326,7 +334,7 @@ async function writeTextExclusive(options: {
 			throw new Error(`Durable file identity conflict at ${options.path}.`);
 		}
 		await syncRegularFile(options.path);
-		return { path: options.path, digest };
+		return { path: options.path, digest, destinationLinked: false };
 	}
 
 	const tempPath = temporaryPath(options.path);
@@ -353,7 +361,7 @@ async function writeTextExclusive(options: {
 				throw new Error(`Durable file identity conflict at ${options.path}.`);
 			}
 		}
-		return { path: options.path, digest };
+		return { path: options.path, digest, destinationLinked };
 	} finally {
 		if (tempExists) {
 			try {

@@ -163,6 +163,16 @@ export interface ConsolidationProposalView {
 	readonly status: "preview" | "written" | "existing";
 }
 
+/**
+ * `status` describes the proposal; `writesCommitted` describes this pass. They
+ * differ when an identical winner published the destination first, which the
+ * status alone cannot express.
+ */
+export interface ConsolidationProposalPersistResult
+	extends ConsolidationProposalView {
+	readonly writesCommitted: boolean;
+}
+
 export interface MemoryConsolidateDetails {
 	readonly dryRun: boolean;
 	readonly modelMode: ConsolidationModelMode;
@@ -323,7 +333,7 @@ export interface ConsolidationProposalStore {
 		readonly proposal: JudgedProposal;
 		readonly dryRun: boolean;
 		readonly signal?: AbortSignal;
-	}): Promise<ConsolidationProposalView>;
+	}): Promise<ConsolidationProposalPersistResult>;
 }
 
 export type ImprovementActionPointer =
@@ -371,9 +381,15 @@ export interface AcceptedJudgmentReceiptStore {
 		readonly currentKeys: readonly string[];
 		readonly lockOptions: LivingMemoryLockOptions;
 		readonly lockHeld?: boolean;
-	}): Promise<readonly string[]>;
+	}): Promise<{
+		readonly paths: readonly string[];
+		readonly writesCommitted: boolean;
+	}>;
 	read(batchKey: string): Promise<AcceptedJudgmentReceipt | undefined>;
-	write(receipt: AcceptedJudgmentReceipt): Promise<AcceptedJudgmentReceipt>;
+	write(receipt: AcceptedJudgmentReceipt): Promise<{
+		readonly receipt: AcceptedJudgmentReceipt;
+		readonly writesCommitted: boolean;
+	}>;
 	markMaterialized(batchKey: string): Promise<{
 		readonly receipt: AcceptedJudgmentReceipt;
 		readonly writesCommitted: boolean;
@@ -468,11 +484,21 @@ export type LivingMemoryRestorationResult =
 
 /** Slice 1 deliberately exposes durable writes but no source removal operation. */
 export interface LivingMemoryDurableFiles {
+	/**
+	 * `destinationLinked` is false whenever this call returned without
+	 * publishing the destination — an already-identical occupant, or an
+	 * identical winner that took the path first. Callers must not infer
+	 * commitment from a successful return.
+	 */
 	writeText(options: {
 		readonly path: string;
 		readonly content: string;
 		readonly signal?: AbortSignal;
-	}): Promise<{ readonly path: string; readonly digest: string }>;
+	}): Promise<{
+		readonly path: string;
+		readonly digest: string;
+		readonly destinationLinked: boolean;
+	}>;
 }
 
 export interface LivingMemoryLockOptions {
