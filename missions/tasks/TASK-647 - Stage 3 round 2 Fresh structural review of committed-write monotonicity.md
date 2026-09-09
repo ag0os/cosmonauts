@@ -1,7 +1,7 @@
 ---
 id: TASK-647
 title: 'Stage 3 round 2: Fresh structural review of committed-write monotonicity'
-status: Blocked
+status: Done
 priority: high
 labels:
   - testing
@@ -9,7 +9,7 @@ labels:
 dependencies:
   - TASK-646
 createdAt: '2026-09-07T22:58:16.959Z'
-updatedAt: '2026-09-07T23:33:26.523Z'
+updatedAt: '2026-09-09T15:43:21.963Z'
 ---
 
 ## Description
@@ -58,3 +58,17 @@ closes, and Stage 4 may begin, only with zero unresolved high or medium findings
 ## Implementation Notes
 
 task failed
+
+
+
+--- Closed 2026-09-09 ---
+review-7 recorded SR-007. Remediated by TASK-648, then re-reviewed by TASK-649 at review-8, which passed and closed Stage 3.
+
+The round's own criterion is: zero unresolved high or medium findings to close,
+and any such finding starts a new bounded remediation and another fresh review.
+Both halves happened. The findings are closed, the prescribed re-review ran, and
+the chain terminates in review-18's SHIP verdict — zero unresolved high or medium
+findings, with a positive coverage statement and an independent enumeration
+across all three axes of the class. Closing here asserts the criterion is met, not
+that the round found nothing; the round's verdict and findings stand on record in
+its review file.

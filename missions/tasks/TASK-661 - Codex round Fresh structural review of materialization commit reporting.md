@@ -1,7 +1,7 @@
 ---
 id: TASK-661
 title: 'Codex round: Fresh structural review of materialization commit reporting'
-status: Blocked
+status: Done
 priority: high
 labels:
   - testing
@@ -9,7 +9,7 @@ labels:
 dependencies:
   - TASK-660
 createdAt: '2026-09-08T20:11:37.192Z'
-updatedAt: '2026-09-08T20:41:29.918Z'
+updatedAt: '2026-09-09T15:43:24.327Z'
 ---
 
 ## Description
@@ -58,3 +58,17 @@ Record the verdict at `missions/plans/living-memory-fidelity/review-15.md`.
 ## Implementation Notes
 
 task failed
+
+
+
+--- Closed 2026-09-09 ---
+review-15 recorded SR-015..SR-018 and concluded the plan could not close. A prior coordinator dispositioned them as pre-existing and out of scope; the owner reopened that on 2026-09-09 (D-013). Remediated by TASK-662, then re-reviewed by TASK-663 at review-16.
+
+The round's own criterion is: zero unresolved high or medium findings to close,
+and any such finding starts a new bounded remediation and another fresh review.
+Both halves happened. The findings are closed, the prescribed re-review ran, and
+the chain terminates in review-18's SHIP verdict — zero unresolved high or medium
+findings, with a positive coverage statement and an independent enumeration
+across all three axes of the class. Closing here asserts the criterion is met, not
+that the round found nothing; the round's verdict and findings stand on record in
+its review file.

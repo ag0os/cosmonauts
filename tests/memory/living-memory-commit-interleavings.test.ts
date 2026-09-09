@@ -1509,3 +1509,41 @@ describe("living-memory committed-write republication error paths", () => {
 		expect(thrown).not.toHaveProperty("writesCommitted", true);
 	});
 });
+
+describe("living-memory committed-write republication parse failure", () => {
+	test("tags a receipt republication whose parse then fails", async () => {
+		const projectRoot = join(tmp.path, "receipt-parse-failure");
+		const batchKey = overstatementBatchKey("receipt-parse-fail");
+		const receiptPath = join(
+			projectRoot,
+			"memory",
+			"agent",
+			"consolidations",
+			`${batchKey}.json`,
+		);
+		await mkdir(dirname(receiptPath), { recursive: true });
+		// Malformed bytes, so the confirmation read matches and `parseReceipt`
+		// is what throws — the branch the broad guard added over the narrow one.
+		await writeFile(receiptPath, '{"schemaVersion":1}\n', "utf-8");
+
+		const baseFiles = createDurableMachineFiles();
+		let republished = false;
+		const store = createAcceptedJudgmentReceiptStore({
+			projectRoot,
+			durableFiles: {
+				...baseFiles,
+				async writeText(options) {
+					if (republished) return baseFiles.writeText(options);
+					republished = true;
+					await rm(options.path);
+					return baseFiles.writeText(options);
+				},
+			},
+		});
+
+		const thrown = await store.read(batchKey).catch((error: unknown) => error);
+
+		expect(republished).toBe(true);
+		expect(thrown).toHaveProperty("writesCommitted", true);
+	});
+});

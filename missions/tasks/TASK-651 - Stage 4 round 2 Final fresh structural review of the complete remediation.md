@@ -1,7 +1,7 @@
 ---
 id: TASK-651
 title: 'Stage 4 round 2: Final fresh structural review of the complete remediation'
-status: Blocked
+status: Done
 priority: high
 labels:
   - testing
@@ -9,7 +9,7 @@ labels:
 dependencies:
   - TASK-650
 createdAt: '2026-09-08T00:50:15.258Z'
-updatedAt: '2026-09-08T01:27:40.337Z'
+updatedAt: '2026-09-09T15:43:22.901Z'
 ---
 
 ## Description
@@ -61,3 +61,17 @@ scope audit and handoff proceed only with zero unresolved high or medium finding
 ## Implementation Notes
 
 task failed
+
+
+
+--- Closed 2026-09-09 ---
+review-10 recorded SR-009. Remediated, then re-reviewed by TASK-653 at review-11, which passed with zero high or medium findings. All of this task's own acceptance criteria were already checked; only its verdict-threshold status remained.
+
+The round's own criterion is: zero unresolved high or medium findings to close,
+and any such finding starts a new bounded remediation and another fresh review.
+Both halves happened. The findings are closed, the prescribed re-review ran, and
+the chain terminates in review-18's SHIP verdict — zero unresolved high or medium
+findings, with a positive coverage statement and an independent enumeration
+across all three axes of the class. Closing here asserts the criterion is met, not
+that the round found nothing; the round's verdict and findings stand on record in
+its review file.

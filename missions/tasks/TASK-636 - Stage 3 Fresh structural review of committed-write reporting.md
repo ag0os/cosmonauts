@@ -1,7 +1,7 @@
 ---
 id: TASK-636
 title: 'Stage 3: Fresh structural review of committed-write reporting'
-status: Blocked
+status: Done
 priority: high
 labels:
   - testing
@@ -9,7 +9,7 @@ labels:
 dependencies:
   - TASK-635
 createdAt: '2026-09-07T15:38:39.227Z'
-updatedAt: '2026-09-07T22:55:30.258Z'
+updatedAt: '2026-09-09T15:43:21.467Z'
 ---
 
 ## Description
@@ -33,3 +33,17 @@ Ratified-ground handling: the common constraints and fresh-review threshold are 
 ## Implementation Notes
 
 task failed
+
+
+
+--- Closed 2026-09-09 ---
+review-6 recorded SR-004, SR-005 and SR-006. Remediated by TASK-646, then re-reviewed by TASK-647 at review-7.
+
+The round's own criterion is: zero unresolved high or medium findings to close,
+and any such finding starts a new bounded remediation and another fresh review.
+Both halves happened. The findings are closed, the prescribed re-review ran, and
+the chain terminates in review-18's SHIP verdict — zero unresolved high or medium
+findings, with a positive coverage statement and an independent enumeration
+across all three axes of the class. Closing here asserts the criterion is met, not
+that the round found nothing; the round's verdict and findings stand on record in
+its review file.
