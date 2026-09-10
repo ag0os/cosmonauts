@@ -9,7 +9,7 @@ labels:
   - 'plan:chain-stage-context'
 dependencies: []
 createdAt: '2026-09-10T02:12:28.907Z'
-updatedAt: '2026-09-10T02:12:28.907Z'
+updatedAt: '2026-09-10T18:00:00.000Z'
 ---
 
 ## Description
@@ -25,4 +25,5 @@ Recorded ground: D-001 through D-003 and D-008 are derived and may change only t
 - [ ] #4 User-request injection remains step-0-only and byte-identical: later stages receive neither another request copy nor prior-stage prose.
 - [ ] #5 Plan-review participation is derived purely from topology when `plan-reviewer` strictly intervenes before a repeated author or has a `task-manager` at the same or a later top-level index; generic reviewers create no plan-review gate state.
 - [ ] #6 The purpose contract remains a narrow discriminated runtime value rather than stamped `ChainStage` state or filesystem-derived state, and explicit prompt overrides cannot remove selected safety instructions while existing coordinator label suffix behavior remains intact.
+- [ ] #7 D-013.5 precedence is proven: where an exact unqualified `plan-reviewer` and a `-reviewer` suffix reviewer both fall strictly between a repeated author pair, the exact `plan-reviewer` wins and the repeated author receives plan-specialized revision purpose rather than generic. A test covers both orderings of the two reviewers so precedence cannot be satisfied by incidental iteration order.
 <!-- AC:END -->

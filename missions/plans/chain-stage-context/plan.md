@@ -2,7 +2,7 @@
 title: Later chain stages know what came before them
 status: active
 createdAt: '2026-09-09T18:36:28.733Z'
-updatedAt: '2026-09-10T16:35:00.000Z'
+updatedAt: '2026-09-10T18:00:00.000Z'
 ---
 
 ## Overview
@@ -227,14 +227,14 @@ exclusions remain ratified ground; every Decision Log entry below is derived.
     preserve durable block evidence across partial result persistence.
   - Alternatives: retain the original self-attested-slug, maximum-with-gaps,
     unqualified-role, unmasked-reference, and generic-I/O-failure design.
-  - Why: addresses `review.md (round 1) PR-001`, `review.md (round 1) PR-002`,
-    `review.md (round 1) PR-003`, `review.md (round 1) PR-004`, and
-    `review.md (round 1) PR-005` without changing ratified acceptance/scope.
+  - Why: addresses `review.md` (round 1) PR-001, `review.md` (round 1) PR-002,
+    `review.md` (round 1) PR-003, `review.md` (round 1) PR-004, and
+    `review.md` (round 1) PR-005 without changing ratified acceptance/scope.
   - Decided-by: derived
 
 - **D-010 - Round-2 review adds task-boundary domination and exact runtime contracts**
   - Decision: preserve the identity binding already added for
-    `review-2.md PR-001`; use existing `run_activity` (present in
+    `review-2.md` PR-001; use existing `run_activity` (present in
     `lib/durable-runtime/types.ts`) and add its chain-adapter consumer rather than
     adopting `step_tool_activity`; make every review block populate
     `StageResult.error`; guard sequential/parallel task-manager entry on matching
@@ -242,16 +242,16 @@ exclusions remain ratified ground; every Decision Log entry below is derived.
     with a same-or-later task-manager participate even when no repeated reviser
     exists; and distinguish zero-based `topologyIndex` from one-based persisted
     `stepIndex`.
-  - Alternatives: `review-2.md PR-002` recommends `step_tool_activity`, but that
+  - Alternatives: `review-2.md` PR-002 recommends `step_tool_activity`, but that
     is agent tool/session evidence while current generic code already exposes
     run-level `run_activity`; retaining reviser-only enforcement leaves
-    `review-2.md PR-003`, `review-2.md PR-004`, and `review-2.md PR-005` open;
+    `review-2.md` PR-003, `review-2.md` PR-004, and `review-2.md` PR-005 open;
     accepting same-index proof leaves the parallel race; implicit index units
-    preserve `review-2.md PR-006`.
-  - Why: addresses `review-2.md PR-001`, rejects `review-2.md PR-002` on verified
-    current-code evidence, and addresses `review-2.md PR-003`,
-    `review-2.md PR-004`, `review-2.md PR-005`, and
-    `review-2.md PR-006` without changing generic durable contracts.
+    preserve `review-2.md` PR-006.
+  - Why: addresses `review-2.md` PR-001, rejects `review-2.md` PR-002 on verified
+    current-code evidence, and addresses `review-2.md` PR-003,
+    `review-2.md` PR-004, `review-2.md` PR-005, and
+    `review-2.md` PR-006 without changing generic durable contracts.
   - Decided-by: derived
 
 - **D-011 - A looping revision stage is gated once, after its final iteration** *(Added 2026-09-09 from the independent review channel)*
@@ -288,6 +288,64 @@ exclusions remain ratified ground; every Decision Log entry below is derived.
     unenforced ones when each is a cheap, deterministic test.
   - Decided-by: derived
 
+- **D-013 - Round-3 review binds the runtime target, refreshes the task guard, correlates durable producers, and proves plan status** *(Added 2026-09-10; `review-3.md` was written after D-010 and left undispositioned)*
+  - Decision: five amendments, all to derived mechanism, none narrowing ratified
+    acceptance or scope.
+    1. **Bound target reaches the stages that act on it.** A bound
+       `PlanReviewTarget` is appended to a plan-revision or guarded
+       task-decomposition stage's initial user message at *step start* as one
+       bounded machine-derived line naming the slug and round — never reviewer
+       prose, never prior-stage output. Inline reads run-local state; durable
+       reads the persisted `plan_review_target` activity. When no target is bound
+       the appended text is empty, so every prompt asserted byte-identical
+       elsewhere stays byte-identical. Topology-derived purpose remains pure and
+       compile-time; only this suffix is runtime-resolved, and both paths share
+       one composer so parity is asserted over purpose text and suffix separately.
+    2. **The task guard re-assesses rather than trusting its cache.** Before
+       spawning, a guarded task-manager recomputes the safe latest assessable
+       round for the bound slug and requires it to equal the addressed round.
+       A newer assessable round appearing after revision finalization is a typed
+       `stale-addressed-evidence` block, not an authorized spawn.
+    3. **Durable addressed evidence is producer-correlated and closed-shape.**
+       `plan_review_addressed` details carry the producing step id and resolved
+       role alongside target and zero-based topology index; the guard validates
+       the detail shape explicitly and confirms the named producer is the graph
+       step at that index, carries plan-revision purpose, and completed
+       successfully. Self-reported indexes alone never authorize a spawn.
+    4. **Plan status is proven, not inferred.** `lib/plans/review-rounds.ts` reads
+       the plan's frontmatter `status` strictly and requires the literal `active`;
+       absent, unknown, or unparseable status is a typed
+       `plan-status-indeterminate` block. `lib/plans/file-system.ts` `parseStatus`
+       normalizes both falsy and unrecognized values to `active`, so the public
+       reader cannot express this distinction and is deliberately left unchanged.
+    5. **Missing-coverage closures.** An exact unqualified `plan-reviewer` between
+       a repeated author pair outranks a co-occurring suffix reviewer and selects
+       plan specialization; two participating reviewers at one topology index
+       reporting different targets are a typed `ambiguous-review-target` block;
+       and the resolved plan directory must remain inside `missions/plans/`, so a
+       symlinked plan directory blocks exactly as a symlinked round entry does.
+  - Alternatives: require a public completion label so an expected slug always
+    exists (rejected in D-005 — breaks plans created inside a chain and changes
+    UX, and `plan-and-build` creates its plan mid-run so no slug can be supplied
+    in advance); bake the target into the compiled prompt (impossible durably,
+    since compilation precedes the reviewer); let the reviser rediscover the plan
+    from the filesystem alone (fails closed on mismatch but leaves the spec's
+    ratified "told... which round it is answering" promise unmet and false-blocks
+    repositories with several active plans); keep the cached-only task guard
+    (leaves the AC-004 promise, which is stated *at* the task-decomposition
+    boundary, provable only at an earlier moment); trust the self-reported durable
+    index (malformed or misproduced activity then authorizes decomposition);
+    duplicate or loosen `parseStatus` at the shared plan reader (compatibility-
+    sensitive surface outside Files to Change).
+  - Why: addresses `review-3.md` PR-001, `review-3.md` PR-002, `review-3.md`
+    PR-003, and `review-3.md` PR-004, plus all four Missing Coverage items.
+    `review-3.md` PR-005 is acknowledged and **not** resolved here: adding
+    `## Intent`, ranked `INV-###`, or stable `AC-###` labels to `spec.md` creates
+    or edits ratified ground and is a human ratification act, which this plan must
+    not manufacture as another derived entry. The local AC aliases and their
+    fragility under spec reordering therefore stand as a recorded, escalated gap.
+  - Decided-by: derived
+
 ## Behaviors
 
 ### B-001 - Inline plan-review cycle receives distinct jobs
@@ -295,7 +353,7 @@ exclusions remain ratified ground; every Decision Log entry below is derived.
 - Source: AC-001
 - Context: inline `planner -> plan-reviewer -> planner` with an injected user request
 - Action: all three stage prompts are resolved
-- Expected: the first planner prompt is exactly today's default plus `User request:`; the reviewer adds only its terminal target-report contract; the terminal planner prompt differs, orders revision from the highest round rather than fresh design, and states its addressed-report contract
+- Expected: the first planner prompt is exactly today's default plus `User request:`; the reviewer adds only its terminal target-report contract; the terminal planner prompt differs, orders revision from the highest round rather than fresh design, states its addressed-report contract, and — once a target is bound — carries the single bounded slug/round line of D-013.1, which is absent when no target is bound
 - Seam: `lib/orchestration/chain-runner.ts`
 - Test: `tests/orchestration/chain-runner.test.ts` > `gives a plan-review cycle distinct jobs while preserving the first planner prompt`
 - Marker: `@cosmo-behavior plan:chain-stage-context#B-001`
@@ -303,9 +361,9 @@ exclusions remain ratified ground; every Decision Log entry below is derived.
 ### B-002 - Purpose is identity-aware, strictly positional, and unit-safe
 
 - Source: AC-002, AC-005
-- Context: first/middle/terminal indices; prefixed/qualified chains; same/different resolved identities; exact, suffix, and substring reviewer names; same-step fan-out; and a prior parallel group containing author plus reviewer
+- Context: first/middle/terminal indices; prefixed/qualified chains; same/different resolved identities; exact, suffix, and substring reviewer names; same-step fan-out; a prior parallel group containing author plus reviewer; and an exact `plan-reviewer` co-occurring with a suffix reviewer between one repeated author pair
 - Action: purpose is derived with a zero-based topology index
-- Expected: only the same resolved identity across a reviewer at a strictly intervening top-level index becomes revision; cross-domain same-name agents, lookalikes, and unordered siblings stay default; exact plan-reviewer selects plan specialization
+- Expected: only the same resolved identity across a reviewer at a strictly intervening top-level index becomes revision; cross-domain same-name agents, lookalikes, and unordered siblings stay default; exact plan-reviewer selects plan specialization and outranks a co-occurring suffix reviewer (D-013.5)
 - Seam: `lib/orchestration/stage-prompts.ts`
 - Test: `tests/orchestration/chain-steps.test.ts` > `derives review purpose from resolved identity and zero-based strict topology order`
 - Marker: `@cosmo-behavior plan:chain-stage-context#B-002`
@@ -315,7 +373,7 @@ exclusions remain ratified ground; every Decision Log entry below is derived.
 - Source: AC-003
 - Context: the durable compiler receives the B-001 chain and injected request
 - Action: it derives purpose before creating one-based persisted step metadata
-- Expected: first/reviewer/reviser prompts equal inline strings; zero-based first/middle/terminal purpose selection is unchanged by one-based step IDs; purpose and expected plan identity live only in chain backend metadata
+- Expected: first/reviewer/reviser prompts equal inline strings; zero-based first/middle/terminal purpose selection is unchanged by one-based step IDs; purpose and expected plan identity live only in chain backend metadata; parity is asserted separately over compile-time purpose text and over the runtime bound-target suffix, which resolves from persisted `plan_review_target` activity and is empty when no target is bound
 - Seam: `lib/orchestration/durable-chain-compiler.ts`
 - Test: `tests/orchestration/chain-compiler.test.ts` > `compiles inline-equivalent purposes before converting to persisted step indexes`
 - Marker: `@cosmo-behavior plan:chain-stage-context#B-003`
@@ -333,9 +391,9 @@ exclusions remain ratified ground; every Decision Log entry below is derived.
 ### B-005 - Artifacts yield one safe latest round and real references
 
 - Source: AC-004
-- Context: active/completed plans with legacy/numbered contiguous or gapped rounds, round-1 collision, symlink/non-file entries, I/O failure, malformed findings, quoted/fenced mentions, complete/incomplete references, and — separating the allocation set from the assessable set — a directory of non-findings-bearing `review-<n>.md` files topped by one conforming round (the `living-memory-fidelity` shape), plus a non-findings file numbered *above* the latest assessable round
+- Context: active/completed plans with legacy/numbered contiguous or gapped rounds, round-1 collision, symlink/non-file entries, a plan directory that is itself a symlink pointing outside `missions/plans/`, plans whose frontmatter status is absent, unrecognized, or unparseable, I/O failure, malformed findings, quoted/fenced mentions, complete/incomplete references, and — separating the allocation set from the assessable set — a directory of non-findings-bearing `review-<n>.md` files topped by one conforming round (the `living-memory-fidelity` shape), plus a non-findings file numbered *above* the latest assessable round
 - Action: reviewer target or addressed claim is assessed
-- Expected: contiguity is judged over the allocation set (every name-matching regular file, content irrelevant) while eligibility is judged over the assessable subset (those carrying `## Findings`), so a non-findings file occupies its number without being assessed and without creating a gap; the latest assessable round of an active plan is eligible and the `living-memory-fidelity` shape passes rather than blocking; non-findings files numbered above the latest assessable round are ignored, not blocking; every other state yields a typed reason; quoted/fenced mentions do not count; low-only/empty rounds require reports but no edit
+- Expected: contiguity is judged over the allocation set (every name-matching regular file, content irrelevant) while eligibility is judged over the assessable subset (those carrying `## Findings`), so a non-findings file occupies its number without being assessed and without creating a gap; the latest assessable round of an active plan is eligible and the `living-memory-fidelity` shape passes rather than blocking; non-findings files numbered above the latest assessable round are ignored, not blocking; a plan directory resolving outside `missions/plans/` blocks before enumeration; status is proven by a strict frontmatter read requiring the literal `active`, so absent/unknown/unparseable status is `plan-status-indeterminate` rather than the `active` the shared `parseStatus` would report (D-013.4); every other state yields a typed reason; quoted/fenced mentions do not count; low-only/empty rounds require reports but no edit
 - Seam: `lib/plans/review-rounds.ts`
 - Test: `tests/plans/file-system.test.ts` > `derives a safe latest review round and ignores quoted or fenced references`
 - Marker: `@cosmo-behavior plan:chain-stage-context#B-005`
@@ -343,9 +401,9 @@ exclusions remain ratified ground; every Decision Log entry below is derived.
 ### B-006 - Reviewer binds one active plan and round
 
 - Source: AC-004
-- Context: a participating reviewer with expected slug present/absent and reports that are missing, malformed, multiple, nonterminal, inactive, mismatched, unsafe, or valid
+- Context: a participating reviewer with expected slug present/absent and reports that are missing, malformed, multiple, nonterminal, inactive, mismatched, unsafe, or valid; plus two participating reviewers at one topology index reporting identical targets in one case and differing targets in another
 - Action: the reviewer stage's last nonblank line is validated
-- Expected: expected identity must match; otherwise one valid active reviewer report establishes the run target; invalid states emit a typed block and stop; the reviser/task guard can use only that target
+- Expected: expected identity must match; otherwise one valid active reviewer report establishes the run target; invalid states emit a typed block and stop; the reviser/task guard can use only that target; same-index reviewers reporting differing targets emit `ambiguous-review-target` rather than resolving by completion order, while identical reports are accepted (D-013.5)
 - Seam: `lib/orchestration/chain-runner.ts`
 - Test: `tests/orchestration/chain-runner.test.ts` > `binds plan review to the expected or reviewer-established active target`
 - Marker: `@cosmo-behavior plan:chain-stage-context#B-006`
@@ -363,9 +421,9 @@ exclusions remain ratified ground; every Decision Log entry below is derived.
 ### B-008 - Task decomposition is dominated in sequential and parallel shapes
 
 - Source: AC-004
-- Context: `planner -> plan-reviewer -> task-manager`, `plan-reviewer -> planner -> task-manager`, `planner -> plan-reviewer -> [planner, task-manager]`, and a group containing plan-reviewer plus task-manager
+- Context: `planner -> plan-reviewer -> task-manager`, `plan-reviewer -> planner -> task-manager`, `planner -> plan-reviewer -> [planner, task-manager]`, a group containing plan-reviewer plus task-manager, and a chain where a valid higher assessable round appears in the plan directory after revision finalization but before the guard runs
 - Action: task-manager reaches its runtime pre-spawn guard without matching addressed evidence from a strictly earlier topology index
-- Expected: task-manager has zero agent spawn calls, emits a typed block, and makes its step/group/chain unsuccessful; same-index evidence never authorizes it regardless of sibling execution order
+- Expected: task-manager has zero agent spawn calls, emits a typed block, and makes its step/group/chain unsuccessful; same-index evidence never authorizes it regardless of sibling execution order; the guard re-assesses the bound slug immediately before spawning and treats a newer safe latest assessable round as `stale-addressed-evidence`, so cached addressed state alone never authorizes decomposition (D-013.2)
 - Seam: `lib/orchestration/chain-runner.ts`
 - Test: `tests/orchestration/chain-runner.test.ts` > `blocks sequential and parallel task decomposition until earlier plan review is addressed`
 - Marker: `@cosmo-behavior plan:chain-stage-context#B-008`
@@ -383,9 +441,9 @@ exclusions remain ratified ground; every Decision Log entry below is derived.
 ### B-010 - Durable target, addressed, and block evidence gate dependents
 
 - Source: AC-003, AC-004
-- Context: loop-free durable sequential and parallel review/task shapes, including either sibling scheduling order and interruption after activity evidence but before terminal step result persistence
+- Context: loop-free durable sequential and parallel review/task shapes, including either sibling scheduling order, interruption after activity evidence but before terminal step result persistence, addressed activity whose `producerStepId` names a step at a different topology index or one that did not complete successfully or does not carry revision purpose, structurally malformed activity details, and a newer assessable round written before the guard runs
 - Action: chain backends validate reports and task-manager pre-spawn guard reconstructs evidence plus source topology index
-- Expected: existing `run_activity` persists target/addressed/block details; task-manager starts only with matching addressed evidence from a lower topology index and satisfied dependencies; same-index and partial-persistence states cannot authorize it; adapter projects the typed block and unaddressed run ends blocked
+- Expected: existing `run_activity` persists target/addressed/block details; task-manager starts only with matching addressed evidence from a lower topology index and satisfied dependencies; same-index and partial-persistence states cannot authorize it; adapter projects the typed block and unaddressed run ends blocked; the guard validates the detail shape explicitly rather than trusting `unknown`, correlates `producerStepId`/`producerRole` to the completed revision step at the claimed index, and re-assesses the bound slug so a superseded round blocks (D-013.2, D-013.3)
 - Seam: `lib/orchestration/durable-chain-runner.ts`
 - Test: `tests/orchestration/run-start-chain-characterization.test.ts` > `gates durable task decomposition on earlier reviewer-bound addressed activity`
 - Marker: `@cosmo-behavior plan:chain-stage-context#B-010`
@@ -455,6 +513,30 @@ Inline derives purpose from `runChainStep`'s zero-based index. Durable
 `persistedStepIndex = topologyIndex + 1`. Both pass the same narrow options; no
 filesystem I/O selects purpose.
 
+Purpose derivation stays pure and compile-time, but the *bound target* cannot be
+(D-013.1): durable compilation completes before the reviewer runs, and
+`plan-and-build` creates its plan mid-run, so no expected slug exists in advance.
+One shared composer therefore appends a single bounded line at step start:
+
+```ts
+function appendBoundReviewTarget(
+  prompt: string,
+  target: PlanReviewTarget | undefined,
+): string; // returns `prompt` unchanged when target is undefined
+```
+
+Inline supplies the target from run-local state; durable supplies it from the
+persisted `plan_review_target` activity. It names only slug and round — never
+reviewer prose or prior-stage output — and applies to plan-revision and guarded
+task-decomposition stages. Because an absent target returns the prompt unchanged,
+every prompt asserted byte-identical in B-004 stays byte-identical, and B-003
+parity is asserted twice: once over compile-time purpose text and once over the
+runtime suffix.
+
+Where an exact unqualified `plan-reviewer` and a suffix reviewer both fall between
+a repeated author pair, the exact `plan-reviewer` wins and selects plan
+specialization (D-013.5).
+
 ### 2. Two terminal reports bind target and addressability (B-005, B-006, B-009)
 
 `lib/orchestration/review-revision.ts` parses full assistant text before summary
@@ -473,7 +555,12 @@ type ReviewCheck =
 Expected `resolvePlanSlug(config)` identity wins when available. Otherwise the
 reviewer establishes fallback identity only after validating an active plan and
 safe latest round. Revision must match the accepted target. It never receives the
-reviewer's prose or report; it discovers files per the spec assumption.
+reviewer's prose or report; it discovers files per the spec assumption, and the
+bounded slug/round line of D-013.1 tells it which target it is answering.
+
+Two participating reviewers at the same topology index that report different
+targets are an `ambiguous-review-target` block rather than a completion-order
+race; identical reports from both are accepted (D-013.5).
 
 ### 3. Plan artifacts own round truth and shared citation masking (B-005)
 
@@ -486,6 +573,18 @@ Valid names are one regular round-1 representation (`review.md` or
 symlinks/non-files, collisions, gaps, stale claims, and I/O failures block.
 Finding parsing is limited to `## Findings`; duplicate IDs, unknown severities,
 and partial records are malformed.
+
+Active status is proven here, not inherited (D-013.4). `parseStatus` in
+`lib/plans/file-system.ts` normalizes both falsy *and* unrecognized frontmatter
+values to `"active"`, so the shared reader cannot distinguish an explicitly active
+plan from a malformed one. `review-rounds.ts` therefore reads the frontmatter
+`status` strictly and requires the literal `active` after case-normalization and
+trimming; absent, unknown, or unparseable status is a `plan-status-indeterminate`
+block. The shared reader keeps its compatibility-sensitive behavior unchanged.
+
+Containment is checked before enumeration: the resolved plan directory must stay
+inside `missions/plans/`, so a symlinked plan directory blocks exactly as a
+symlinked round entry does.
 
 Extract current fence/inline-code masking from
 `lib/artifacts/behavior-conformance.ts` to internal
@@ -506,13 +605,23 @@ interface ActivePlanReview {
 ```
 
 A newly accepted participating reviewer replaces prior state and clears
-`addressedAtTopologyIndex`; a matching valid reviser records its zero-based index.
-A task-manager is guarded when a plan-reviewer appears at or before its top-level
-index. It may spawn only when state exists and
+`addressedAtTopologyIndex`; a matching valid reviser records its zero-based index
+and the round it addressed. A task-manager is guarded when a plan-reviewer appears
+at or before its top-level index. It may spawn only when state exists and
 `addressedAtTopologyIndex < taskManagerTopologyIndex`. Therefore shipped
 sequential cycles proceed; no-reviser chains block; and same-group task-manager
 blocks whether the sibling reviser finishes before or after its guard. `implement`
 has no plan-reviewer in topology and remains unchanged.
+
+Cached state is necessary but not sufficient (D-013.2). AC-004 is a promise about
+the moment the chain *reaches* task decomposition, whereas the addressed index
+proves something about an earlier moment. The guard therefore re-runs the §3
+assessment for the bound slug immediately before spawning and requires the safe
+latest assessable round to still equal the addressed round. A valid higher round
+written by any process in that window is a `stale-addressed-evidence` block, so a
+concurrently-reviewed plan cannot be decomposed on the strength of a superseded
+round. Re-assessment reads only artifacts already read elsewhere; no lock or
+version token spans the two operations, and none is introduced.
 
 `ReviewRoundBlock` provides stable report, identity, ordering, activity, artifact,
 round, parse, and reference reasons. `StageResult` carries the block plus a
@@ -535,7 +644,8 @@ Current `lib/durable-runtime/types.ts` already includes
 
 ```ts
 { source: "chain", kind: "plan_review_target", target }
-{ source: "chain", kind: "plan_review_addressed", target, topologyIndex }
+{ source: "chain", kind: "plan_review_addressed",
+  target, topologyIndex, producerStepId, producerRole }
 { source: "chain", kind: "unaddressed_review_round", role, block }
 ```
 
@@ -549,6 +659,20 @@ persisted events before invoking its spawner and requires the current target plu
 matching addressed evidence whose topology index is strictly lower than its own.
 Same-frontier/same-group task-manager therefore blocks in either scheduler order;
 no dependency rewrite changes ordinary parallel semantics.
+
+Because `run_activity` is typed `{ runId, details: unknown }` and carries no
+`stepId`, and `FileRunStore.isStoredEvent` validates only the envelope, a
+self-reported `topologyIndex` is an unverified claim (D-013.3). The guard
+therefore validates the detail shape explicitly — no `unknown` passthrough — and
+correlates the producer: `producerStepId` must name the graph step at
+`topologyIndex`, that step must carry plan-revision purpose in its chain-local
+metadata, and it must have completed successfully. Malformed, corrupted, or
+misproduced activity fails correlation and blocks rather than authorizing a spawn.
+Both correlation fields live in chain-local details; the generic event union is
+still unchanged. A negative wrong-producer/wrong-index case is mandatory evidence.
+
+The guard also re-runs the §3 assessment before spawning (D-013.2), so durable and
+inline share one freshness rule.
 
 Unaddressed paths append block activity and return existing
 `StepResult { outcome:"blocked", nextAction:"wait_for_human" }`. Step status is
@@ -644,7 +768,13 @@ reachable rather than assumed:
 | task-manager with no earlier/same plan-reviewer | unchanged (`implement`) |
 | guarded sequential task-manager, no addressed index | typed block before spawn |
 | guarded task-manager, addressed index equal/greater | typed ordering block before spawn |
-| guarded task-manager, matching lower addressed index and satisfied dependencies | spawn allowed |
+| guarded task-manager, matching lower addressed index and satisfied dependencies | re-assess bound slug; spawn allowed only if latest assessable round still equals the addressed round |
+| newer assessable round appears between revision and guard | `stale-addressed-evidence` block before spawn |
+| plan frontmatter status absent/unknown/unparseable | `plan-status-indeterminate` block (never inferred `active`) |
+| plan directory resolves outside `missions/plans/` | typed block before enumeration |
+| two same-index participating reviewers, differing targets | `ambiguous-review-target` block |
+| two same-index participating reviewers, identical targets | target recorded |
+| durable addressed activity fails producer correlation or shape validation | typed block before spawn |
 | durable crash after activity but before result | unresolved step cannot authorize dependents; activity remains evidence |
 
 ## Files to Change
@@ -695,6 +825,16 @@ prompt assembly, `/spec-to-backlog`, and all generic `lib/durable-runtime/*`.
   judgment. Reviewer judgment substitutes no fake verdict for either. A bound
   gate that fails to execute during implementation is blocking, not silently
   unbound.
+- **Only the latest assessable round is adjudicated.** If a reviewer writes
+  `review-N.md` and dies before emitting its report line, a later run allocates
+  `N+1`, and round `N`'s unresolved high/medium findings are then never required
+  to be cited. This follows from the latest-round rule rather than contradicting
+  it, and is recorded rather than fixed: detecting orphaned rounds needs a
+  per-round completion marker, which is new artifact surface this slice excludes.
+- **The spec still has no `## Intent` or ranked `INV-###`,** so the AC-001..AC-007
+  aliases remain local and would silently change meaning if the spec's bullets
+  were reordered. Creating that ratified ground is a human act
+  (`review-3.md` PR-005); it is escalated, not manufactured here.
 - **Scope expansion stop:** halt if correctness needs arbitrary prior prose,
   persona changes, a public CLI field, factory-mode system layer, project code
   execution, or generic durable contract changes.
@@ -704,18 +844,28 @@ prompt assembly, `/spec-to-backlog`, and all generic `lib/durable-runtime/*`.
 Plan-specific criteria:
 
 1. **Prompt/index parity:** inline and durable exact strings agree at
-   first/middle/terminal positions while the first planner remains current.
+   first/middle/terminal positions while the first planner remains current;
+   parity holds separately for compile-time purpose text and the runtime
+   bound-target suffix, and an unbound target leaves prompts byte-identical.
 2. **Negative topology/identity:** cross-domain same names, reviewer lookalikes,
-   unordered siblings, non-review chains, and every single stage remain unchanged.
+   unordered siblings, non-review chains, and every single stage remain unchanged;
+   an exact `plan-reviewer` outranks a co-occurring suffix reviewer.
 3. **Bound identity/artifacts:** expected/fallback identity, active status,
    terminal report grammar, safe contiguous rounds, real non-code references,
-   unsafe entries, and I/O failures follow D-005/D-006.
+   unsafe entries, and I/O failures follow D-005/D-006; active status is proven by
+   a strict frontmatter read rather than the shared reader's normalization, the
+   plan directory is proven contained, and same-index reviewers with differing
+   targets block as ambiguous.
 4. **Task-boundary fail-closed:** sequential no-reviser and both scheduler orders
    for parallel review/revision task-manager shapes make zero task-manager spawns
-   and return unsuccessful results with typed errors.
+   and return unsuccessful results with typed errors; a newer assessable round
+   written after revision finalization blocks the guard as stale.
 5. **Durable/visible evidence:** target/addressed-index/block activity gates
    backend starts, survives partial persistence without authorizing dependents,
-   projects to chain events, and renders on CLI/tool surfaces.
+   projects to chain events, and renders on CLI/tool surfaces; addressed activity
+   is shape-validated and producer-correlated, with a negative
+   wrong-producer/wrong-index case proving self-reported indexes cannot authorize
+   a spawn.
 6. **Boundary preservation:** no diff touches personas, named chains,
    `behaviorsReviewPending`, prompt assembly, `/spec-to-backlog`, `runStart`,
    scheduler, or generic durable types; no project code is executed.

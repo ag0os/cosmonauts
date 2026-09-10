@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-671
 createdAt: '2026-09-10T02:14:09.356Z'
-updatedAt: '2026-09-10T02:14:09.356Z'
+updatedAt: '2026-09-10T18:00:00.000Z'
 ---
 
 ## Description
@@ -26,4 +26,6 @@ Recorded ground: D-004, D-005, D-007, D-009, D-010, and D-011 are derived and ma
 - [ ] #4 Addressed state is accepted only for the reviewer-bound active safe highest round after TASK-670 confirms every high/medium finding reference; mismatched or self-attested revision identity cannot authorize continuation.
 - [ ] #5 B-013 is proven by `tests/orchestration/chain-runner.test.ts` > `gates a looping revision stage once after its final iteration`, carrying `@cosmo-behavior plan:chain-stage-context#B-013`: validation occurs exactly once after the final iteration, never between iterations; addressed output authorizes a later task-manager and omitted output creates the typed nonempty-error unsuccessful result.
 - [ ] #6 Inline review evidence remains run-local and non-resumable: a fresh process cannot fabricate addressed state and must rerun review.
+- [ ] #7 A valid reviser records both its zero-based topology index and the review round it addressed, because the task guard's D-013.2 freshness check compares the addressed round against a re-assessment at spawn time. Recording the index alone is insufficient.
+- [ ] #8 The bound target reaches the revision stage through the D-013.1 composer, so a revision stage is told which slug and round it is answering rather than inferring it from the filesystem alone.
 <!-- AC:END -->

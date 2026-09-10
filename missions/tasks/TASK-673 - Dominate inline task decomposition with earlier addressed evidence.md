@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-672
 createdAt: '2026-09-10T02:14:31.591Z'
-updatedAt: '2026-09-10T02:14:31.591Z'
+updatedAt: '2026-09-10T18:00:00.000Z'
 ---
 
 ## Description
@@ -28,4 +28,6 @@ Recorded ground: D-004 and D-010 are derived and may change only through amend-o
 - [ ] #6 Task-managers with no plan-reviewer at or before their topology index remain unchanged, preserving shipped `implement`, `adapt`, and every single-stage chain; no attended/unattended policy switch is introduced.
 - [ ] #7 Task-manager recognition is pinned to the same identity discipline TASK-668 uses for reviewers: compare the **unqualified** role of `stage.agentReference?.resolved.qualifiedId ?? stage.name`, never a bare `stage.name === "task-manager"` equality. A guard keyed to the wrong identity form fires on nothing while every other AC still passes green, so this is asserted directly rather than left implicit.
 - [ ] #8 AC #1's test contexts additionally cover a DSL-qualified `coding/task-manager` stage following a `coding/plan-reviewer`, and a project-bound task-manager whose stage carries an `agentReference`. Both are guarded identically to the bare `task-manager` form used by the shipped chains.
+- [ ] #9 D-013.2: the guard re-assesses rather than trusting its cache. Immediately before spawning, a guarded task-manager re-runs the TASK-670 assessment for the bound slug and requires the safe latest assessable round to still equal the addressed round. A valid higher assessable round written after revision finalization yields a typed `stale-addressed-evidence` block and zero spawns. A test writes a newer round between revision finalization and the guard and asserts the block; passing AC #2 alone with cached state does not satisfy this.
+- [ ] #10 The revision-time bound target reaches the guarded task-manager prompt through the D-013.1 composer, so a guarded task-manager that does spawn names the slug and round it was authorized against.
 <!-- AC:END -->

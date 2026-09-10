@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-670
 createdAt: '2026-09-10T02:13:40.729Z'
-updatedAt: '2026-09-10T02:13:40.729Z'
+updatedAt: '2026-09-10T18:00:00.000Z'
 ---
 
 ## Description
@@ -27,4 +27,6 @@ Recorded ground: D-004, D-005, D-007, D-009, and D-010 are derived and may chang
 - [ ] #5 A newly accepted participating reviewer replaces prior run-local review state and clears any addressed topology index; generic reviewers and nonparticipating plan-reviewers do not create plan-gate state.
 - [ ] #6 Report parsing occurs on full assistant text before summary truncation, passes no reviewer prose/report to later stages, and leaves `Plan.behaviorsReviewPending`, serialization, `plan_edit`, and all other plan persistence unchanged.
 - [ ] #7 Adding the `unaddressed_review_round` variant to the `ChainEvent` union leaves the tree green: `cli/chain-event-logger.ts` declares `CHAIN_EVENT_FORMATTERS` as a mapped type over the closed union, so a new variant makes that object literal miss a required key and `tsc --noEmit` fails. This task therefore lands a minimal formatter entry for the variant in the same commit that adds it. TASK-675 replaces that entry with the full B-011 rendering; it does not introduce the key. Every intermediate commit from here through TASK-674 passes the project's type-check step.
+- [ ] #8 D-013.5: two participating reviewers at the same top-level topology index that report different targets produce a typed `ambiguous-review-target` block rather than resolving by completion or event order; identical reports from both are accepted. A test exercises both completion orders for the differing-target case and asserts the same block either way.
+- [ ] #9 The active-plan check in AC #3 is satisfied only through the strict frontmatter read delivered by TASK-670, not through `PlanManager.getPlan`. A reviewer report naming a plan whose frontmatter status is absent or unrecognized blocks as `plan-status-indeterminate` instead of binding a target that the shared reader would have called `active`.
 <!-- AC:END -->

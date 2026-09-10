@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-669
 createdAt: '2026-09-10T02:13:15.300Z'
-updatedAt: '2026-09-10T02:13:15.300Z'
+updatedAt: '2026-09-10T18:00:00.000Z'
 ---
 
 ## Description
@@ -29,4 +29,6 @@ Recorded ground: D-005, D-006, D-009, and D-012 are derived and may change only 
 - [ ] #7 Filesystem handling is total and no-follow for recognized review entries, and assessment executes no project-controlled code.
 - [ ] #8 A regression fixture reproduces the `living-memory-fidelity` shape — `review-1.md` through `review-18.md` with no `PR-###` block, topped by a conforming `review-19.md` — and asserts it **passes**: allocation set `1..19` is contiguous, the assessable set is `{19}`, and round 19 is assessed. A fixture that instead treats skipped files as absent (allocation set `{19}`, gap `1..18`) must fail this test, since that inversion blocks the case permanently.
 - [ ] #9 A non-findings-bearing file numbered *above* the latest assessable round is ignored rather than blocking; a revision report naming a round *below* the latest assessable round is a typed block. Both are covered by named cases in AC #1's test.
+- [ ] #10 D-013.4: active status is proven, never inferred. `lib/plans/review-rounds.ts` reads the plan frontmatter `status` strictly and requires the literal `active` after case-normalization and trimming; absent, unrecognized, or unparseable status yields a typed `plan-status-indeterminate` block. Tests cover missing `status`, an unrecognized value, and unparseable frontmatter, and assert each blocks. `parseStatus` in `lib/plans/file-system.ts` normalizes both falsy and unrecognized values to `active`, so an implementation routed through `PlanManager.getPlan` fails these cases; that shared reader stays unchanged.
+- [ ] #11 D-013.5: the resolved plan directory is proven to remain inside `missions/plans/` before any enumeration, so a plan directory that is itself a symlink pointing outside the plans root blocks exactly as a symlinked round entry does. A test creates such a directory symlink and asserts the typed block.
 <!-- AC:END -->

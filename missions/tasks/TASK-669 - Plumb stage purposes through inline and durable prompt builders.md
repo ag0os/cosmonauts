@@ -10,7 +10,7 @@ labels:
 dependencies:
   - TASK-668
 createdAt: '2026-09-10T02:12:51.850Z'
-updatedAt: '2026-09-10T02:12:51.850Z'
+updatedAt: '2026-09-10T18:00:00.000Z'
 ---
 
 ## Description
@@ -28,4 +28,7 @@ Recorded ground: D-001, D-002, D-008, and D-012 are derived and may change only 
 - [ ] #6 Step-0-only request injection remains intact and neither call site transports arbitrary prior-stage prose or adds filesystem I/O to purpose derivation.
 - [ ] #7 The two wire tokens fixed by D-005 — `COSMO_PLAN_REVIEW` for the reviewer target report and `COSMO_REVIEW_REVISION` for the reviser addressed report — are declared once as shared exported constants, and the instruction text this task emits references those constants rather than restating the tokens as prose. The literal strings appear in exactly one source location each.
 - [ ] #8 A round-trip test proves the producer and the consumer cannot drift: for each token, the instruction text emitted here is parsed by the same grammar `lib/orchestration/review-revision.ts` will accept (TASK-671/TASK-672), and a mutation to either the emitted token or the accepted token fails the test. Emitting an instruction naming a token no parser accepts is a defect, not a documentation gap.
+- [ ] #9 D-013.1 is implemented as one shared composer, `appendBoundReviewTarget(prompt, target)`, which appends a single bounded line naming only the plan slug and review round to plan-revision and guarded task-decomposition stages, and returns the prompt unchanged when no target is bound. It transports no reviewer prose and no prior-stage output.
+- [ ] #10 The bound-target suffix is resolved at step start, not at compile time: inline supplies it from run-local state and durable supplies it from the persisted `plan_review_target` activity, because durable compilation completes before the reviewer runs and `plan-and-build` creates its plan mid-run. A test proves a durable stage whose prompt was compiled before any target existed still receives the correct suffix at step start.
+- [ ] #11 B-003 parity is asserted twice and separately — once over compile-time purpose text and once over the runtime bound-target suffix — and AC #3's byte-identity assertion continues to hold for the unbound case, so every prompt asserted byte-identical under B-004 stays byte-identical.
 <!-- AC:END -->
