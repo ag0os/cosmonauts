@@ -16,6 +16,11 @@ import { createMarkdownMemoryStore } from "../../lib/memory/markdown-store.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import { runChain } from "../../lib/orchestration/chain-runner.ts";
 import { runDurableChain } from "../../lib/orchestration/durable-chain-runner.ts";
+import {
+	appendBoundReviewTarget,
+	buildStagePrompt,
+	deriveStagePromptPurpose,
+} from "../../lib/orchestration/stage-prompts.ts";
 import type {
 	ChainEvent,
 	ChainResult,
@@ -47,6 +52,8 @@ vi.mock("../../lib/orchestration/agent-spawner.ts", () => ({
 const temp = useTempDir("run-start-chain-characterization-");
 const registry = new AgentRegistry([
 	agent("planner"),
+	agent("plan-reviewer"),
+	agent("task-manager"),
 	agent("reviewer"),
 	agent("quality-manager"),
 ]);
@@ -170,6 +177,73 @@ describe("runStart durable chain characterization", () => {
 		await expect(stat(join(projectRoot, "memory"))).rejects.toMatchObject({
 			code: "ENOENT",
 		});
+	});
+
+	test("resolves a reviewer-established target at durable step start after prompt compilation", async () => {
+		const projectRoot = join(temp.path, "runtime-bound-target");
+		const runId = "chain-00000000-0000-4000-8000-000000000001";
+		const target = {
+			planSlug: "runtime-bound-target",
+			reviewRound: 4,
+		} as const;
+		const steps = parseChain(
+			"planner -> plan-reviewer -> planner -> task-manager",
+			registry,
+		);
+		const prompts: string[] = [];
+		configureSpawner(async (config) => {
+			prompts.push(config.prompt);
+			if (config.role === "plan-reviewer") {
+				const store = new FileRunStore({
+					rootDir: join(projectRoot, "missions", "sessions"),
+				});
+				await store.appendEvent(
+					{ scope: "chain", runId },
+					{
+						type: "run_activity",
+						runId,
+						details: {
+							source: "chain",
+							kind: "plan_review_target",
+							target,
+						},
+					},
+				);
+			}
+			return {
+				success: true,
+				sessionId: `session-${config.role}`,
+				messages: [],
+			};
+		});
+
+		const result = await runDurableChain({
+			steps,
+			projectRoot,
+			registry,
+		});
+
+		expect(result.success).toBe(true);
+		expect(prompts).toHaveLength(4);
+		expect(prompts[0]).not.toContain("Bound plan-review target:");
+		expect(prompts[1]).not.toContain("Bound plan-review target:");
+		const revisionStage = steps[2];
+		if (!revisionStage || "kind" in revisionStage) {
+			throw new Error("Expected a terminal revision stage.");
+		}
+		const inlinePurposePrompt = buildStagePrompt(revisionStage, {
+			completionLabel: undefined,
+			purpose: deriveStagePromptPurpose(steps, 2, revisionStage),
+		});
+		expect(prompts[2]).toBe(
+			appendBoundReviewTarget(inlinePurposePrompt, target),
+		);
+		expect(prompts[3]).toBe(
+			appendBoundReviewTarget(
+				"Review the plan and create atomic implementation tasks.",
+				target,
+			),
+		);
 	});
 
 	test("records durable chain episodes with the persisted run id and unchanged reconstruction @cosmo-behavior plan:episodic-log#B-016", async () => {

@@ -33,6 +33,15 @@ import {
 	type DurableChainStageSpawnOptions,
 	shouldRunChainInline,
 } from "./durable-chain-compiler.ts";
+import {
+	type PlanReviewTarget,
+	parsePlanReviewTarget,
+} from "./review-revision.ts";
+import type { StagePromptPurpose } from "./stage-prompts.ts";
+import {
+	appendBoundReviewTarget,
+	shouldAppendBoundReviewTarget,
+} from "./stage-prompts.ts";
 import type {
 	AgentSpawner,
 	ChainConfig,
@@ -247,8 +256,19 @@ async function executeChainStep({
 	signal?: AbortSignal;
 }): Promise<StepResult> {
 	const spawn = readSpawnOptions(prepared.input.backendOptions);
+	const promptMetadata = readPromptMetadata(prepared.input.backendOptions);
+	const target = shouldAppendBoundReviewTarget(
+		promptMetadata.purpose,
+		promptMetadata.requiresPlanReviewTarget,
+	)
+		? await readPersistedPlanReviewTarget(store, ref)
+		: undefined;
+	const materializedSpawn = {
+		...spawn,
+		prompt: appendBoundReviewTarget(spawn.prompt, target),
+	};
 	const stage = readStageOptions(prepared.input.backendOptions);
-	const role = spawn.role;
+	const role = materializedSpawn.role;
 	let eventWrite = Promise.resolve();
 	const enqueueAgentEvent = (
 		chainEvent: ChainAgentEvidenceDetails["chainEvent"],
@@ -275,7 +295,7 @@ async function executeChainStep({
 	};
 
 	const spawnResult = await spawner.spawn({
-		...spawn,
+		...materializedSpawn,
 		signal,
 		onEvent: (event) => {
 			const chainEvent = chainAgentEventType(event);
@@ -409,16 +429,94 @@ function metadataFromPersistedGraph(
 	return graph.steps.flatMap((step) => {
 		const options = isRecord(step.backend.options) ? step.backend.options : {};
 		const stage = readStageOptions(options);
+		const promptMetadata = readPromptMetadata(options);
 		const stepIndex =
 			numberOption(options.stepIndex) ?? inferStepIndex(step.id);
 		return {
 			stepId: step.id,
 			stage,
+			...promptMetadata,
 			stepIndex,
 			...withDefined("memberIndex", numberOption(options.memberIndex)),
 			...withDefined("syntax", readSyntax(options.syntax)),
 		};
 	});
+}
+
+interface DurablePromptMetadata {
+	topologyIndex: number;
+	purpose: StagePromptPurpose;
+	requiresPlanReviewTarget: boolean;
+	expectedPlanSlug?: string;
+}
+
+function readPromptMetadata(options: unknown): DurablePromptMetadata {
+	if (!isRecord(options)) {
+		throw new Error("Durable chain step is missing prompt metadata.");
+	}
+	const topologyIndex = numberOption(options.topologyIndex);
+	const purpose = stagePromptPurposeOption(options.purpose);
+	if (
+		topologyIndex === undefined ||
+		!Number.isInteger(topologyIndex) ||
+		topologyIndex < 0 ||
+		purpose === undefined ||
+		typeof options.requiresPlanReviewTarget !== "boolean"
+	) {
+		throw new Error("Durable chain step has invalid prompt metadata.");
+	}
+	return {
+		topologyIndex,
+		purpose,
+		requiresPlanReviewTarget: options.requiresPlanReviewTarget,
+		...withDefined("expectedPlanSlug", stringOption(options.expectedPlanSlug)),
+	};
+}
+
+function stagePromptPurposeOption(
+	value: unknown,
+): StagePromptPurpose | undefined {
+	if (!isRecord(value) || typeof value.kind !== "string") return undefined;
+	if (value.kind === "default") return { kind: "default" };
+	if (value.kind === "plan-review") {
+		const authorIdentity = stringOption(value.authorIdentity);
+		return {
+			kind: "plan-review",
+			...withDefined("authorIdentity", authorIdentity),
+		};
+	}
+	if (
+		value.kind === "revision" &&
+		(value.reviewKind === "generic" || value.reviewKind === "plan") &&
+		typeof value.authorIdentity === "string"
+	) {
+		return {
+			kind: "revision",
+			reviewKind: value.reviewKind,
+			authorIdentity: value.authorIdentity,
+		};
+	}
+	return undefined;
+}
+
+async function readPersistedPlanReviewTarget(
+	store: RunStore,
+	ref: RunRef,
+): Promise<PlanReviewTarget | undefined> {
+	const { events } = await store.readEvents(ref);
+	for (let index = events.length - 1; index >= 0; index--) {
+		const event = events[index]?.event;
+		if (event?.type !== "run_activity" || !isRecord(event.details)) continue;
+		if (
+			event.details.source !== "chain" ||
+			event.details.kind !== "plan_review_target"
+		) {
+			continue;
+		}
+		const target = parsePlanReviewTarget(event.details.target);
+		return target;
+	}
+	return undefined;
 }
 
 function readSpawnOptions(options: unknown): DurableChainStageSpawnOptions {

@@ -4,12 +4,18 @@ import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import { injectUserPrompt } from "../../lib/orchestration/chain-steps.ts";
 import { compileChainToGraph } from "../../lib/orchestration/durable-chain-compiler.ts";
+import {
+	appendBoundReviewTarget,
+	buildStagePrompt,
+	deriveStagePromptPurpose,
+} from "../../lib/orchestration/stage-prompts.ts";
 
 const registry = new AgentRegistry([
 	agent("planner"),
 	agent("task-manager"),
 	agent("quality-manager"),
 	agent("reviewer"),
+	agent("plan-reviewer"),
 ]);
 
 describe("compileChainToGraph", () => {
@@ -228,6 +234,118 @@ describe("compileChainToGraph", () => {
 			userPrompt,
 		);
 	});
+
+	// @cosmo-behavior plan:chain-stage-context#B-003
+	test("compiles inline-equivalent purposes before converting to persisted step indexes", () => {
+		const steps = parseChain("planner -> plan-reviewer -> planner", registry);
+		injectUserPrompt(steps, "strengthen the active plan");
+		const expectedPlanSlug = "chain-stage-context";
+		const completionLabel = `plan:${expectedPlanSlug}`;
+		const inlinePrompts = steps.map((step, topologyIndex) => {
+			if ("kind" in step) throw new Error("Expected sequential test stages");
+			return buildStagePrompt(step, {
+				completionLabel,
+				purpose: deriveStagePromptPurpose(steps, topologyIndex, step),
+			});
+		});
+
+		const compiled = compileChainToGraph({
+			runId: "run-chain-stage-purpose-parity",
+			steps,
+			projectRoot: "/tmp/cosmonauts/project",
+			registry,
+			completionLabel,
+		});
+
+		expect(
+			compiled.graph.steps.map((step) =>
+				spawnOptionsPrompt(step.backend.options),
+			),
+		).toEqual(inlinePrompts);
+		expect(
+			compiled.steps.map(
+				({
+					topologyIndex,
+					stepIndex,
+					purpose,
+					requiresPlanReviewTarget,
+					expectedPlanSlug,
+				}) => ({
+					topologyIndex,
+					stepIndex,
+					purpose,
+					requiresPlanReviewTarget,
+					expectedPlanSlug,
+				}),
+			),
+		).toEqual([
+			{
+				topologyIndex: 0,
+				stepIndex: 1,
+				purpose: { kind: "default" },
+				requiresPlanReviewTarget: false,
+				expectedPlanSlug,
+			},
+			{
+				topologyIndex: 1,
+				stepIndex: 2,
+				purpose: {
+					kind: "plan-review",
+					authorIdentity: "planner",
+				},
+				requiresPlanReviewTarget: false,
+				expectedPlanSlug,
+			},
+			{
+				topologyIndex: 2,
+				stepIndex: 3,
+				purpose: {
+					kind: "revision",
+					reviewKind: "plan",
+					authorIdentity: "planner",
+				},
+				requiresPlanReviewTarget: false,
+				expectedPlanSlug,
+			},
+		]);
+		expect(
+			compiled.graph.steps.map((step) => promptMetadata(step.backend.options)),
+		).toEqual(
+			compiled.steps.map(
+				({
+					topologyIndex,
+					purpose,
+					requiresPlanReviewTarget,
+					expectedPlanSlug,
+				}) => ({
+					topologyIndex,
+					purpose,
+					requiresPlanReviewTarget,
+					expectedPlanSlug,
+				}),
+			),
+		);
+
+		const target = { planSlug: expectedPlanSlug, reviewRound: 3 } as const;
+		expect(
+			inlinePrompts.map((prompt) => appendBoundReviewTarget(prompt)),
+		).toEqual(inlinePrompts);
+		expect(appendBoundReviewTarget(inlinePrompts[2] ?? "", target)).toBe(
+			`${inlinePrompts[2]}\n\nBound plan-review target: {"planSlug":"chain-stage-context","reviewRound":3}.`,
+		);
+
+		const guarded = compileChainToGraph({
+			runId: "run-chain-stage-guarded-task",
+			steps: parseChain("planner -> plan-reviewer -> task-manager", registry),
+			projectRoot: "/tmp/cosmonauts/project",
+			registry,
+		});
+		expect(guarded.steps.map((step) => step.requiresPlanReviewTarget)).toEqual([
+			false,
+			false,
+			true,
+		]);
+	});
 });
 
 function bindingResolver(bindings: Record<string, string>) {
@@ -316,6 +434,28 @@ function spawnOptionsPrompt(options: unknown): string | undefined {
 	const spawn = options.spawn;
 	if (!isRecord(spawn)) return undefined;
 	return typeof spawn.prompt === "string" ? spawn.prompt : undefined;
+}
+
+function promptMetadata(options: unknown): {
+	topologyIndex: unknown;
+	purpose: unknown;
+	requiresPlanReviewTarget: unknown;
+	expectedPlanSlug: unknown;
+} {
+	if (!isRecord(options)) {
+		return {
+			topologyIndex: undefined,
+			purpose: undefined,
+			requiresPlanReviewTarget: undefined,
+			expectedPlanSlug: undefined,
+		};
+	}
+	return {
+		topologyIndex: options.topologyIndex,
+		purpose: options.purpose,
+		requiresPlanReviewTarget: options.requiresPlanReviewTarget,
+		expectedPlanSlug: options.expectedPlanSlug,
+	};
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

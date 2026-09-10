@@ -1,6 +1,11 @@
 import { unqualifyRole } from "../agents/qualified-role.ts";
 import { validateSlug } from "../plans/plan-manager.ts";
 import { isParallelGroupStep, resolveStagePrompt } from "./chain-steps.ts";
+import type { PlanReviewTarget } from "./review-revision.ts";
+import {
+	PLAN_REVIEW_REPORT_TOKEN,
+	REVIEW_REVISION_REPORT_TOKEN,
+} from "./review-revision.ts";
 import type { ChainStage, ChainStep } from "./types.ts";
 
 /** Default operational prompts for chain stages (not agent identity prompts). */
@@ -29,7 +34,7 @@ export interface StagePromptOptions {
 	purpose?: StagePromptPurpose;
 }
 
-type StagePromptPurpose =
+export type StagePromptPurpose =
 	| { kind: "default" }
 	| { kind: "plan-review"; authorIdentity?: string }
 	| {
@@ -75,6 +80,21 @@ export function deriveStagePromptPurpose(
 		reviewKind: reviewers.includes("plan-reviewer") ? "plan" : "generic",
 		authorIdentity,
 	};
+}
+
+export function requiresPlanReviewTarget(
+	steps: readonly ChainStep[],
+	topologyIndex: number,
+	stage: ChainStage,
+): boolean {
+	if (unqualifyRole(stageIdentity(stage)) !== "task-manager") return false;
+	return steps
+		.slice(0, topologyIndex + 1)
+		.flatMap(stagesInStep)
+		.some(
+			(candidate) =>
+				unqualifyRole(stageIdentity(candidate)) === "plan-reviewer",
+		);
 }
 
 function stageIdentity(stage: ChainStage): string {
@@ -194,10 +214,32 @@ function appendPurposeInstruction(
 		case "default":
 			return prompt;
 		case "plan-review":
-			return `${prompt}\n\nPlan-review purpose: End with exactly one report line: COSMO_PLAN_REVIEW: {"planSlug":"<slug>","reviewRound":<positive integer>}.`;
+			return `${prompt}\n\nPlan-review purpose: End with exactly one report line: ${PLAN_REVIEW_REPORT_TOKEN}: {"planSlug":"<slug>","reviewRound":<positive integer>}.`;
 		case "revision":
 			return purpose.reviewKind === "plan"
-				? `${prompt}\n\nRevision purpose: Revise the active plan produced by the earlier "${purpose.authorIdentity}" stage. Read the highest-numbered plan-review round, address every high- and medium-severity finding, and do not start a new plan. End with exactly one report line: COSMO_REVIEW_REVISION: {"planSlug":"<slug>","reviewRound":<positive integer>,"status":"addressed"}, or report status "unaddressed" with a nonempty reason.`
+				? `${prompt}\n\nRevision purpose: Revise the active plan produced by the earlier "${purpose.authorIdentity}" stage. Read the highest-numbered plan-review round, address every high- and medium-severity finding, and do not start a new plan. End with exactly one report line: ${REVIEW_REVISION_REPORT_TOKEN}: {"planSlug":"<slug>","reviewRound":<positive integer>,"status":"addressed"}, or report status "unaddressed" with a nonempty reason.`
 				: `${prompt}\n\nRevision purpose: Revise the work produced by the earlier "${purpose.authorIdentity}" stage in response to the intervening review. Do not start the work again from scratch.`;
 	}
+}
+
+export function appendBoundReviewTarget(
+	prompt: string,
+	target?: PlanReviewTarget,
+): string {
+	if (!target) return prompt;
+	const boundedTarget = {
+		planSlug: target.planSlug,
+		reviewRound: target.reviewRound,
+	};
+	return `${prompt}\n\nBound plan-review target: ${JSON.stringify(boundedTarget)}.`;
+}
+
+export function shouldAppendBoundReviewTarget(
+	purpose: StagePromptPurpose,
+	requiresReviewTarget: boolean,
+): boolean {
+	return (
+		(purpose.kind === "revision" && purpose.reviewKind === "plan") ||
+		requiresReviewTarget
+	);
 }

@@ -21,6 +21,11 @@ import {
 	runChain,
 	runStage,
 } from "../../lib/orchestration/chain-runner.ts";
+import {
+	PLAN_REVIEW_REPORT_TOKEN,
+	parseReviewReportLine,
+	REVIEW_REVISION_REPORT_TOKEN,
+} from "../../lib/orchestration/review-revision.ts";
 import type {
 	AgentSpawner,
 	ChainConfig,
@@ -109,6 +114,7 @@ const defaultRegistry = new AgentRegistry([
 	makeCodingDef("worker", false),
 	makeCodingDef("quality-manager", false),
 	makeCodingDef("reviewer", false),
+	makeCodingDef("plan-reviewer", false),
 	makeCodingDef("fixer", false),
 ]);
 
@@ -145,6 +151,17 @@ function makeConfig(
 		registry: defaultRegistry,
 		...overrides,
 	};
+}
+
+function materializeInstructionReport(prompt: string, token: string): string {
+	const reportStart = prompt.indexOf(`${token}: `);
+	if (reportStart < 0) throw new Error(`Missing report token ${token}`);
+	const reportEnd = prompt.indexOf("}", reportStart);
+	if (reportEnd < 0) throw new Error(`Missing report payload for ${token}`);
+	return prompt
+		.slice(reportStart, reportEnd + 1)
+		.replace("<slug>", "example-plan")
+		.replace("<positive integer>", "1");
 }
 
 async function writeEpisodicConfig(
@@ -1485,6 +1502,69 @@ describe("runChain", () => {
 					"Analyze the project and design an implementation plan.\n\nUser request: build auth",
 			}),
 		);
+	});
+
+	// @cosmo-behavior plan:chain-stage-context#B-001
+	test("gives a plan-review cycle distinct jobs while preserving the first planner prompt", async () => {
+		const steps = parseChain(
+			"planner -> plan-reviewer -> planner",
+			defaultRegistry,
+		);
+		injectUserPrompt(steps, "strengthen the active plan");
+
+		await runChain(makeConfig(steps));
+
+		const spawnMock = spawnerRef.current?.spawn;
+		expect(spawnMock).toBeDefined();
+		if (!spawnMock) return;
+		const prompts = vi
+			.mocked(spawnMock)
+			.mock.calls.map(([spawn]) => spawn.prompt);
+		const expectedPlanReviewToken = ["COSMO", "PLAN", "REVIEW"].join("_");
+		const expectedRevisionToken = ["COSMO", "REVIEW", "REVISION"].join("_");
+
+		expect(PLAN_REVIEW_REPORT_TOKEN).toBe(expectedPlanReviewToken);
+		expect(REVIEW_REVISION_REPORT_TOKEN).toBe(expectedRevisionToken);
+		expect(prompts).toEqual([
+			"Analyze the project and design an implementation plan.\n\nUser request: strengthen the active plan",
+			`Review the active plan and verify its claims against the codebase. Write structured findings.\n\nPlan-review purpose: End with exactly one report line: ${PLAN_REVIEW_REPORT_TOKEN}: {"planSlug":"<slug>","reviewRound":<positive integer>}.`,
+			`Analyze the project and design an implementation plan.\n\nRevision purpose: Revise the active plan produced by the earlier "planner" stage. Read the highest-numbered plan-review round, address every high- and medium-severity finding, and do not start a new plan. End with exactly one report line: ${REVIEW_REVISION_REPORT_TOKEN}: {"planSlug":"<slug>","reviewRound":<positive integer>,"status":"addressed"}, or report status "unaddressed" with a nonempty reason.`,
+		]);
+		expect(prompts[2]).not.toBe(prompts[0]);
+
+		const reviewerLine = materializeInstructionReport(
+			prompts[1] ?? "",
+			PLAN_REVIEW_REPORT_TOKEN,
+		);
+		const revisionLine = materializeInstructionReport(
+			prompts[2] ?? "",
+			REVIEW_REVISION_REPORT_TOKEN,
+		);
+		expect(parseReviewReportLine(reviewerLine)).toEqual({
+			kind: "plan-review",
+			target: { planSlug: "example-plan", reviewRound: 1 },
+		});
+		expect(parseReviewReportLine(revisionLine)).toEqual({
+			kind: "review-revision",
+			target: { planSlug: "example-plan", reviewRound: 1 },
+			status: "addressed",
+		});
+		expect(
+			parseReviewReportLine(
+				reviewerLine.replace(
+					PLAN_REVIEW_REPORT_TOKEN,
+					`${PLAN_REVIEW_REPORT_TOKEN}_MUTATED`,
+				),
+			),
+		).toBeUndefined();
+		expect(
+			parseReviewReportLine(
+				revisionLine.replace(
+					REVIEW_REVISION_REPORT_TOKEN,
+					`${REVIEW_REVISION_REPORT_TOKEN}_MUTATED`,
+				),
+			),
+		).toBeUndefined();
 	});
 
 	test("parallel first-stage members preserve role prompts with injected user request", async () => {

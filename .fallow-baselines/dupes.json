@@ -80,7 +80,7 @@
     "lib/memory/markdown-store.ts:949-961|lib/memory/markdown-store.ts:978-990",
     "lib/memory/proposal-files.ts:131-149|lib/memory/retirement-store.ts:1645-1661",
     "lib/memory/retirement-receipts.ts:594-614|lib/memory/retirement-store.ts:1692-1713",
-    "lib/orchestration/chain-runner.ts:411-451|lib/orchestration/durable-chain-runner.ts:77-181",
+    "lib/orchestration/chain-runner.ts:436-476|lib/orchestration/durable-chain-runner.ts:86-190",
     "lib/skills/exporter.ts:467-475|lib/skills/exporter.ts:484-492",
     "scripts/validate-harness-exports.ts:370-384|scripts/validate-harness-exports.ts:702-716",
     "scripts/validate-harness-exports.ts:401-416|scripts/validate-harness-exports.ts:733-748",

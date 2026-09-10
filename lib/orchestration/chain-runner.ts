@@ -19,7 +19,16 @@ import {
 } from "./chain-episodes.ts";
 import { isParallelGroupStep } from "./chain-steps.ts";
 import { getModelForRole, getThinkingForRole } from "./model-resolution.ts";
-import { buildStagePrompt, resolvePlanSlug } from "./stage-prompts.ts";
+import type { PlanReviewTarget } from "./review-revision.ts";
+import type { StagePromptPurpose } from "./stage-prompts.ts";
+import {
+	appendBoundReviewTarget,
+	buildStagePrompt,
+	deriveStagePromptPurpose,
+	requiresPlanReviewTarget,
+	resolvePlanSlug,
+	shouldAppendBoundReviewTarget,
+} from "./stage-prompts.ts";
 import type {
 	AgentSpawner,
 	ChainConfig,
@@ -265,6 +274,7 @@ interface ChainExecutionState {
 	errors: string[];
 	totalIterations: number;
 	statsDurationMs: number;
+	planReviewTarget?: PlanReviewTarget;
 }
 
 interface ChainStepOutcome {
@@ -318,6 +328,7 @@ async function runChainStep(
 			config,
 			spawner,
 			constraints,
+			state,
 		);
 
 		return {
@@ -331,12 +342,19 @@ async function runChainStep(
 	}
 
 	const stage = step;
+	const promptContext = stagePromptContext(
+		config.steps,
+		stepIndex,
+		stage,
+		state.planReviewTarget,
+	);
 	const result = await runObservedStage(
 		stage,
 		stepIndex,
 		config,
 		spawner,
 		constraints,
+		promptContext,
 	);
 
 	return {
@@ -354,10 +372,17 @@ async function runObservedStage(
 	config: ChainConfig,
 	spawner: AgentSpawner,
 	constraints: StageConstraints,
+	promptContext: StagePromptContext,
 ): Promise<StageResult> {
 	emit(config, { type: "stage_start", stage, stageIndex });
 
-	const result = await runStage(stage, config, spawner, constraints);
+	const result = await runStageWithPromptContext(
+		stage,
+		config,
+		spawner,
+		constraints,
+		promptContext,
+	);
 
 	if (result.stats) {
 		emit(config, { type: "stage_stats", stage, stats: result.stats });
@@ -477,12 +502,25 @@ async function runParallelGroup(
 	config: ChainConfig,
 	spawner: AgentSpawner,
 	constraints: StageConstraints,
+	state: ChainExecutionState,
 ): Promise<ParallelGroupOutcome> {
 	emit(config, { type: "parallel_start", step, stepIndex });
 
 	// Launch all members concurrently; emit per-member events in completion order.
 	const memberPromises = step.stages.map(async (stage) => {
-		return runObservedStage(stage, stepIndex, config, spawner, constraints);
+		return runObservedStage(
+			stage,
+			stepIndex,
+			config,
+			spawner,
+			constraints,
+			stagePromptContext(
+				config.steps,
+				stepIndex,
+				stage,
+				state.planReviewTarget,
+			),
+		);
 	});
 
 	// Collect results in declaration order.
@@ -538,6 +576,29 @@ interface StageConstraints {
 	deadlineMs: number;
 }
 
+interface StagePromptContext {
+	purpose: StagePromptPurpose;
+	requiresPlanReviewTarget: boolean;
+	target?: PlanReviewTarget;
+}
+
+function stagePromptContext(
+	steps: readonly ChainStep[],
+	topologyIndex: number,
+	stage: ChainStage,
+	target?: PlanReviewTarget,
+): StagePromptContext {
+	return {
+		purpose: deriveStagePromptPurpose(steps, topologyIndex, stage),
+		requiresPlanReviewTarget: requiresPlanReviewTarget(
+			steps,
+			topologyIndex,
+			stage,
+		),
+		...(target !== undefined && { target }),
+	};
+}
+
 interface PreparedStageExecutionContext {
 	stage: ChainStage;
 	config: ChainConfig;
@@ -579,11 +640,24 @@ export async function runStage(
 	spawner: AgentSpawner,
 	constraints?: StageConstraints,
 ): Promise<StageResult> {
+	return runStageWithPromptContext(stage, config, spawner, constraints, {
+		purpose: { kind: "default" },
+		requiresPlanReviewTarget: false,
+	});
+}
+
+async function runStageWithPromptContext(
+	stage: ChainStage,
+	config: ChainConfig,
+	spawner: AgentSpawner,
+	constraints: StageConstraints | undefined,
+	promptContext: StagePromptContext,
+): Promise<StageResult> {
 	const stageStart = Date.now();
 	let context: StageExecutionContext | undefined;
 
 	try {
-		const prepared = prepareStageExecution(stage, config);
+		const prepared = prepareStageExecution(stage, config, promptContext);
 		if (isStageResult(prepared)) return prepared;
 
 		context = { ...prepared, spawner };
@@ -607,6 +681,7 @@ export async function runStage(
 function prepareStageExecution(
 	stage: ChainStage,
 	config: ChainConfig,
+	promptContext: StagePromptContext,
 ): PreparedStageExecutionContext | StageResult {
 	const stageStart = Date.now();
 	const stageReference =
@@ -642,6 +717,17 @@ function prepareStageExecution(
 			? { ...stage, agentReference: stageReference }
 			: stage;
 
+	const purposePrompt = buildStagePrompt(stage, {
+		completionLabel: config.completionLabel,
+		purpose: promptContext.purpose,
+	});
+	const prompt = shouldAppendBoundReviewTarget(
+		promptContext.purpose,
+		promptContext.requiresPlanReviewTarget,
+	)
+		? appendBoundReviewTarget(purposePrompt, promptContext.target)
+		: purposePrompt;
+
 	return {
 		stage: resolvedStage,
 		config,
@@ -658,7 +744,7 @@ function prepareStageExecution(
 			config.registry,
 			config.domainContext,
 		),
-		prompt: buildStagePrompt(stage, config),
+		prompt,
 		planSlug: resolvePlanSlug(config),
 		iterations: 0,
 		aggregatedStats: emptySpawnStats(),

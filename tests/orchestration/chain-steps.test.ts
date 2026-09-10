@@ -18,6 +18,10 @@ import {
 	resolveStagePrompt,
 } from "../../lib/orchestration/chain-steps.ts";
 import {
+	PLAN_REVIEW_REPORT_TOKEN,
+	REVIEW_REVISION_REPORT_TOKEN,
+} from "../../lib/orchestration/review-revision.ts";
+import {
 	buildStagePrompt,
 	deriveStagePromptPurpose,
 } from "../../lib/orchestration/stage-prompts.ts";
@@ -373,7 +377,7 @@ describe("deriveStagePromptPurpose", () => {
 				},
 			}),
 		).toBe(
-			'Follow the custom workflow.\n\nRevision purpose: Revise the active plan produced by the earlier "coding/planner" stage. Read the highest-numbered plan-review round, address every high- and medium-severity finding, and do not start a new plan. End with exactly one report line: COSMO_REVIEW_REVISION: {"planSlug":"<slug>","reviewRound":<positive integer>,"status":"addressed"}, or report status "unaddressed" with a nonempty reason.',
+			`Follow the custom workflow.\n\nRevision purpose: Revise the active plan produced by the earlier "coding/planner" stage. Read the highest-numbered plan-review round, address every high- and medium-severity finding, and do not start a new plan. End with exactly one report line: ${REVIEW_REVISION_REPORT_TOKEN}: {"planSlug":"<slug>","reviewRound":<positive integer>,"status":"addressed"}, or report status "unaddressed" with a nonempty reason.`,
 		);
 		expect(
 			buildStagePrompt(stage("worker", "Follow the custom workflow."), {
@@ -391,7 +395,7 @@ describe("deriveStagePromptPurpose", () => {
 				purpose: { kind: "plan-review", authorIdentity: "coding/planner" },
 			}),
 		).toBe(
-			'Follow the custom workflow.\n\nPlan-review purpose: End with exactly one report line: COSMO_PLAN_REVIEW: {"planSlug":"<slug>","reviewRound":<positive integer>}.',
+			`Follow the custom workflow.\n\nPlan-review purpose: End with exactly one report line: ${PLAN_REVIEW_REPORT_TOKEN}: {"planSlug":"<slug>","reviewRound":<positive integer>}.`,
 		);
 
 		expect(
