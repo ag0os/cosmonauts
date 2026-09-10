@@ -568,6 +568,50 @@ describe("runStart durable chain characterization", () => {
 				}),
 			]),
 		);
+
+		// A loop-free durable step executes once, so it may authorize once.
+		// Re-presenting a completed revision step's identity against a target it
+		// never addressed satisfies producer correlation on its own, so the spent
+		// producer is what blocks it.
+		const replayedRoot = join(temp.path, "replayed-addressed-producer");
+		const replayedSlug = "replayed-addressed-producer";
+		await writePlanReviewFixture(replayedRoot, replayedSlug);
+		const replayedSpawns: string[] = [];
+		configureSpawner(async (config) => {
+			replayedSpawns.push(config.role);
+			return reviewGateSpawn(config, replayedSlug);
+		});
+		const replayed = await runWithActivityHook({
+			projectRoot: replayedRoot,
+			expression: "planner -> plan-reviewer -> planner -> task-manager",
+			activityKind: "plan_review_addressed",
+			afterActivity: async ({ store, ref }) => {
+				await store.appendEvent(ref, {
+					type: "run_activity",
+					runId: ref.runId,
+					details: {
+						source: "chain",
+						kind: "plan_review_addressed",
+						target: { planSlug: replayedSlug, reviewRound: 1 },
+						topologyIndex: 2,
+						producerStepId: "chain-3-planner",
+						producerRole: "coding/planner",
+					},
+				});
+			},
+		});
+		expect(replayed.success).toBe(false);
+		expect(replayedSpawns).not.toContain("task-manager");
+		expect(await readRunActivity(replayedRoot)).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: "unaddressed_review_round",
+					block: expect.objectContaining({
+						reason: "mismatched-addressed-evidence",
+					}),
+				}),
+			]),
+		);
 	});
 
 	test("validates a terminal plan-review report from full text before summary truncation", async () => {

@@ -429,6 +429,11 @@ async function readPersistedPlanReview(
 ): Promise<PersistedPlanReview> {
 	const { events } = await store.readEvents(ref);
 	const state: PersistedPlanReview = { addressedState: "missing" };
+	// A loop-free durable step executes once, so it may authorize once. Tracking
+	// spent producers stops a later epoch from re-presenting an earlier step's
+	// identity against a target that step never addressed.
+	const spentProducers = new Set<string>();
+
 	for (const { event } of events) {
 		if (event.type !== "run_activity" || !isRecord(event.details)) continue;
 		if (
@@ -442,13 +447,25 @@ async function readPersistedPlanReview(
 			continue;
 		}
 		if (
-			event.details.source === "chain" &&
-			event.details.kind === "plan_review_addressed"
+			event.details.source !== "chain" ||
+			event.details.kind !== "plan_review_addressed"
 		) {
-			const details = parsePlanReviewAddressedActivityDetails(event.details);
-			state.addressed = details;
-			state.addressedState = details ? "valid" : "invalid";
+			continue;
 		}
+		const details = parsePlanReviewAddressedActivityDetails(event.details);
+		if (!details) {
+			state.addressed = undefined;
+			state.addressedState = "invalid";
+			continue;
+		}
+		if (spentProducers.has(details.producerStepId)) {
+			state.addressed = undefined;
+			state.addressedState = "invalid";
+			continue;
+		}
+		spentProducers.add(details.producerStepId);
+		state.addressed = details;
+		state.addressedState = "valid";
 	}
 	return state;
 }
