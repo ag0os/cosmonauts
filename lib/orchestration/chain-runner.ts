@@ -317,6 +317,20 @@ function shouldStopBeforeStep(
 	);
 }
 
+/** Wrap a single stage's result as this step's outcome. */
+function singleStageOutcome(
+	stage: ChainStage,
+	result: StageResult,
+): ChainStepOutcome {
+	return {
+		results: [result],
+		success: result.success,
+		error: result.error,
+		loopIterations: stage.loop ? result.iterations : 0,
+		statsDurationMs: result.stats?.durationMs ?? 0,
+	};
+}
+
 async function runChainStep(
 	step: ChainStep,
 	stepIndex: number,
@@ -372,13 +386,7 @@ async function runChainStep(
 			state,
 		);
 		if (!result) throw new Error("Missing participating reviewer result.");
-		return {
-			results: [result],
-			success: result.success,
-			error: result.error,
-			loopIterations: stage.loop ? result.iterations : 0,
-			statsDurationMs: result.stats?.durationMs ?? 0,
-		};
+		return singleStageOutcome(stage, result);
 	}
 	if (
 		promptContext.purpose.kind === "revision" &&
@@ -393,13 +401,7 @@ async function runChainStep(
 			promptContext,
 			state,
 		);
-		return {
-			results: [result],
-			success: result.success,
-			error: result.error,
-			loopIterations: stage.loop ? result.iterations : 0,
-			statsDurationMs: result.stats?.durationMs ?? 0,
-		};
+		return singleStageOutcome(stage, result);
 	}
 	if (promptContext.requiresPlanReviewTarget) {
 		const result = await runGuardedTaskManagerStage(
@@ -411,13 +413,7 @@ async function runChainStep(
 			promptContext,
 			state,
 		);
-		return {
-			results: [result],
-			success: result.success,
-			error: result.error,
-			loopIterations: stage.loop ? result.iterations : 0,
-			statsDurationMs: result.stats?.durationMs ?? 0,
-		};
+		return singleStageOutcome(stage, result);
 	}
 	const result = await runObservedStage(
 		stage,
@@ -428,13 +424,7 @@ async function runChainStep(
 		promptContext,
 	);
 
-	return {
-		results: [result],
-		success: result.success,
-		error: result.error,
-		loopIterations: stage.loop ? result.iterations : 0,
-		statsDurationMs: result.stats?.durationMs ?? 0,
-	};
+	return singleStageOutcome(stage, result);
 }
 
 async function runPlanRevisionStage(

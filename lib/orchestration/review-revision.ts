@@ -4,6 +4,7 @@ import {
 	type PlanReviewRoundBlockReason,
 } from "../plans/index.ts";
 import { validateSlug } from "../plans/plan-manager.ts";
+import { hasExactKeys, isRecord } from "./record-shape.ts";
 
 export const PLAN_REVIEW_REPORT_TOKEN = "COSMO_PLAN_REVIEW";
 export const REVIEW_REVISION_REPORT_TOKEN = "COSMO_REVIEW_REVISION";
@@ -13,7 +14,7 @@ export interface PlanReviewTarget {
 	reviewRound: number;
 }
 
-export type ReviewRoundBlockReason =
+type ReviewRoundBlockReason =
 	| "missing-review-report"
 	| "malformed-review-report"
 	| "multiple-review-reports"
@@ -41,7 +42,7 @@ export interface ReviewRoundBlock {
 	reportedReason?: string;
 }
 
-export interface TaskManagerReviewEvidence {
+interface TaskManagerReviewEvidence {
 	target: PlanReviewTarget;
 	addressedAtTopologyIndex?: number;
 	addressedReviewRound?: number;
@@ -367,57 +368,70 @@ const REVIEW_ROUND_BLOCK_REASONS = new Set<ReviewRoundBlockReason>([
 ]);
 
 /** Narrow persisted chain-local block payloads before projecting them. */
+const BLOCK_ALLOWED_KEYS = new Set([
+	"reason",
+	"planSlug",
+	"reviewRound",
+	"expectedPlanSlug",
+	"latestReviewRound",
+	"addressedReviewRound",
+	"addressedAtTopologyIndex",
+	"taskManagerTopologyIndex",
+	"findingIds",
+	"reportedReason",
+]);
+
+const BLOCK_ROUND_KEYS = [
+	"reviewRound",
+	"latestReviewRound",
+	"addressedReviewRound",
+] as const;
+
+const BLOCK_INDEX_KEYS = [
+	"addressedAtTopologyIndex",
+	"taskManagerTopologyIndex",
+] as const;
+
+/** Every optional round and topology-index field holds a well-formed number. */
+function hasValidBlockNumbers(value: Record<string, unknown>): boolean {
+	return (
+		BLOCK_ROUND_KEYS.every((key) => optionalPositiveInteger(value[key])) &&
+		BLOCK_INDEX_KEYS.every((key) => optionalTopologyIndex(value[key]))
+	);
+}
+
+/** Absent, or an array of nonempty finding ids. */
+function isValidFindingIds(value: unknown): boolean {
+	if (value === undefined) return true;
+	return (
+		Array.isArray(value) &&
+		value.every(
+			(findingId) => typeof findingId === "string" && findingId.length > 0,
+		)
+	);
+}
+
+/** Absent, or a nonblank reported reason. */
+function isValidReportedReason(value: unknown): boolean {
+	if (value === undefined) return true;
+	return typeof value === "string" && value.trim().length > 0;
+}
+
 export function parseReviewRoundBlock(
 	value: unknown,
 ): ReviewRoundBlock | undefined {
 	if (!isRecord(value) || !isReviewRoundBlockReason(value.reason)) {
 		return undefined;
 	}
-	const allowedKeys = new Set([
-		"reason",
-		"planSlug",
-		"reviewRound",
-		"expectedPlanSlug",
-		"latestReviewRound",
-		"addressedReviewRound",
-		"addressedAtTopologyIndex",
-		"taskManagerTopologyIndex",
-		"findingIds",
-		"reportedReason",
-	]);
-	if (Object.keys(value).some((key) => !allowedKeys.has(key))) return undefined;
+	if (Object.keys(value).some((key) => !BLOCK_ALLOWED_KEYS.has(key))) {
+		return undefined;
+	}
 	if (!optionalSlug(value.planSlug) || !optionalSlug(value.expectedPlanSlug)) {
 		return undefined;
 	}
-	for (const key of [
-		"reviewRound",
-		"latestReviewRound",
-		"addressedReviewRound",
-	] as const) {
-		if (!optionalPositiveInteger(value[key])) return undefined;
-	}
-	for (const key of [
-		"addressedAtTopologyIndex",
-		"taskManagerTopologyIndex",
-	] as const) {
-		if (!optionalTopologyIndex(value[key])) return undefined;
-	}
-	if (
-		value.findingIds !== undefined &&
-		(!Array.isArray(value.findingIds) ||
-			value.findingIds.some(
-				(findingId) => typeof findingId !== "string" || findingId.length === 0,
-			))
-	) {
-		return undefined;
-	}
-	if (
-		value.reportedReason !== undefined &&
-		(typeof value.reportedReason !== "string" ||
-			value.reportedReason.trim().length === 0)
-	) {
-		return undefined;
-	}
+	if (!hasValidBlockNumbers(value)) return undefined;
+	if (!isValidFindingIds(value.findingIds)) return undefined;
+	if (!isValidReportedReason(value.reportedReason)) return undefined;
 	return value as unknown as ReviewRoundBlock;
 }
 
@@ -521,20 +535,4 @@ function parseTarget(
 		return undefined;
 	}
 	return { planSlug: value.planSlug, reviewRound: value.reviewRound };
-}
-
-function hasExactKeys(
-	value: Record<string, unknown>,
-	expectedKeys: readonly string[],
-): boolean {
-	const actualKeys = Object.keys(value).sort();
-	const sortedExpectedKeys = [...expectedKeys].sort();
-	return (
-		actualKeys.length === sortedExpectedKeys.length &&
-		actualKeys.every((key, index) => key === sortedExpectedKeys[index])
-	);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
 }

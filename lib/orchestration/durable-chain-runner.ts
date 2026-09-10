@@ -42,6 +42,7 @@ import {
 	assessTaskManagerReviewGate,
 	formatReviewRoundBlockError,
 	type PlanReviewTarget,
+	type ReviewCheck,
 	type ReviewRoundBlock,
 	validatePlanReviewReport,
 	validateReviewRevisionReport,
@@ -362,23 +363,18 @@ async function executeChainStep({
 			projectRoot: spawn.cwd,
 			expectedPlanSlug: promptMetadata.expectedPlanSlug,
 		});
-		if (check.status === "unaddressed") {
-			return persistDurableReviewBlock({
-				store,
-				ref,
-				role,
-				block: check.block,
-			});
-		}
-		await store.appendEvent(ref, {
-			type: "run_activity",
-			runId: ref.runId,
-			details: {
+		const blocked = await recordReviewCheck({
+			check,
+			store,
+			ref,
+			role,
+			details: (target) => ({
 				source: "chain",
 				kind: "plan_review_target",
-				target: check.target,
-			} satisfies ChainPlanReviewTargetActivityDetails,
+				target,
+			}),
 		});
+		if (blocked) return blocked;
 	}
 	if (
 		promptMetadata.purpose.kind === "revision" &&
@@ -389,26 +385,21 @@ async function executeChainStep({
 			projectRoot: spawn.cwd,
 			expectedTarget: persistedReview?.target,
 		});
-		if (check.status === "unaddressed") {
-			return persistDurableReviewBlock({
-				store,
-				ref,
-				role,
-				block: check.block,
-			});
-		}
-		await store.appendEvent(ref, {
-			type: "run_activity",
-			runId: ref.runId,
-			details: {
+		const blocked = await recordReviewCheck({
+			check,
+			store,
+			ref,
+			role,
+			details: (target) => ({
 				source: "chain",
 				kind: "plan_review_addressed",
-				target: check.target,
+				target,
 				topologyIndex: promptMetadata.topologyIndex,
 				producerStepId: prepared.step.id,
 				producerRole: resolvedProducerRole(stage, spawn),
-			} satisfies ChainPlanReviewAddressedActivityDetails,
+			}),
 		});
+		if (blocked) return blocked;
 	}
 
 	return {
@@ -571,6 +562,33 @@ function sameReviewTarget(
 	return (
 		left.planSlug === right.planSlug && left.reviewRound === right.reviewRound
 	);
+}
+
+/**
+ * Persist a durable block when a review check came back unaddressed, otherwise
+ * record its accepted target as chain-local run activity.
+ */
+async function recordReviewCheck(options: {
+	check: ReviewCheck;
+	store: RunStore;
+	ref: RunRef;
+	role: string;
+	details: (
+		target: PlanReviewTarget,
+	) =>
+		| ChainPlanReviewTargetActivityDetails
+		| ChainPlanReviewAddressedActivityDetails;
+}): Promise<StepResult | undefined> {
+	const { check, store, ref, role } = options;
+	if (check.status === "unaddressed") {
+		return persistDurableReviewBlock({ store, ref, role, block: check.block });
+	}
+	await store.appendEvent(ref, {
+		type: "run_activity",
+		runId: ref.runId,
+		details: options.details(check.target),
+	});
+	return undefined;
 }
 
 async function persistDurableReviewBlock(options: {

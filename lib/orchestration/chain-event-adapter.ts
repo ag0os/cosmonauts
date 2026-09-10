@@ -5,6 +5,7 @@ import type {
 	StoredOrchestrationEvent,
 } from "../durable-runtime/index.ts";
 import type { ChainCompilerStepMetadata } from "./durable-chain-compiler.ts";
+import { hasExactKeys, isRecord } from "./record-shape.ts";
 import {
 	formatReviewRoundBlockError,
 	type PlanReviewTarget,
@@ -332,7 +333,7 @@ export function parsePlanReviewAddressedActivityDetails(
 	};
 }
 
-export function parsePlanReviewBlockActivityDetails(
+function parsePlanReviewBlockActivityDetails(
 	value: unknown,
 ): ChainPlanReviewBlockActivityDetails | undefined {
 	if (
@@ -790,20 +791,4 @@ function addError(state: AdapterState, message: string): void {
 	if (!state.errors.includes(message)) {
 		state.errors.push(message);
 	}
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function hasExactKeys(
-	value: Record<string, unknown>,
-	expectedKeys: readonly string[],
-): boolean {
-	const actualKeys = Object.keys(value).sort();
-	const sortedExpectedKeys = [...expectedKeys].sort();
-	return (
-		actualKeys.length === sortedExpectedKeys.length &&
-		actualKeys.every((key, index) => key === sortedExpectedKeys[index])
-	);
 }
