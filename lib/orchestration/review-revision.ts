@@ -22,6 +22,10 @@ type ReviewRoundBlockReason =
 	| "mismatched-review-target"
 	| "ambiguous-review-target"
 	| "revision-reported-unaddressed"
+	| "missing-addressed-evidence"
+	| "mismatched-addressed-evidence"
+	| "nonpreceding-addressed-evidence"
+	| "stale-addressed-evidence"
 	| PlanReviewRoundBlockReason;
 
 export interface ReviewRoundBlock {
@@ -30,6 +34,9 @@ export interface ReviewRoundBlock {
 	reviewRound?: number;
 	expectedPlanSlug?: string;
 	latestReviewRound?: number;
+	addressedReviewRound?: number;
+	addressedAtTopologyIndex?: number;
+	taskManagerTopologyIndex?: number;
 	findingIds?: readonly string[];
 	reportedReason?: string;
 }

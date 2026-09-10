@@ -238,7 +238,7 @@ export interface StageResult {
 	stats?: SpawnStats;
 	/** Condensed text from the stage agent's final message (last iteration for loops) */
 	summary?: string;
-	/** Typed plan-review gate failure, when this stage could not establish safe state. */
+	/** Typed plan-review gate failure, including a pre-spawn task-decomposition block. */
 	reviewRoundBlock?: ReviewRoundBlock;
 }
 
@@ -331,6 +331,7 @@ export type ChainEvent =
 	  }
 	| { type: "error"; message: string; stage?: ChainStage }
 	| {
+			/** Emitted for reviewer, revision, and task-decomposition gate failures. */
 			type: "unaddressed_review_round";
 			stage: ChainStage;
 			block: ReviewRoundBlock;

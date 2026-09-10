@@ -6,6 +6,7 @@
 
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assessPlanReviewRound } from "../plans/index.ts";
 import { TaskManager } from "../tasks/task-manager.ts";
 import { createPiSpawner } from "./agent-spawner.ts";
 import {
@@ -399,6 +400,24 @@ async function runChainStep(
 			statsDurationMs: result.stats?.durationMs ?? 0,
 		};
 	}
+	if (promptContext.requiresPlanReviewTarget) {
+		const result = await runGuardedTaskManagerStage(
+			stage,
+			stepIndex,
+			config,
+			spawner,
+			constraints,
+			promptContext,
+			state,
+		);
+		return {
+			results: [result],
+			success: result.success,
+			error: result.error,
+			loopIterations: stage.loop ? result.iterations : 0,
+			statsDurationMs: result.stats?.durationMs ?? 0,
+		};
+	}
 	const result = await runObservedStage(
 		stage,
 		stepIndex,
@@ -462,6 +481,112 @@ async function runPlanRevisionStage(
 
 	emitStageCompletion(config, stage, finalized);
 	return finalized;
+}
+
+async function runGuardedTaskManagerStage(
+	stage: ChainStage,
+	stageIndex: number,
+	config: ChainConfig,
+	spawner: AgentSpawner,
+	constraints: StageConstraints,
+	promptContext: StagePromptContext,
+	state: ChainExecutionState,
+): Promise<StageResult> {
+	emit(config, { type: "stage_start", stage, stageIndex });
+	const stageStart = Date.now();
+	const block = await assessTaskManagerEntry(
+		state.activePlanReview,
+		stageIndex,
+		config,
+	);
+	if (block) {
+		const result = blockPlanReviewStage(
+			{
+				stage,
+				success: false,
+				iterations: 0,
+				durationMs: Date.now() - stageStart,
+			},
+			block,
+			config,
+		);
+		emitStageCompletion(config, stage, result);
+		return result;
+	}
+
+	const result = await runStageWithPromptContext(
+		stage,
+		config,
+		spawner,
+		constraints,
+		promptContext,
+	);
+	emitStageCompletion(config, stage, result);
+	return result;
+}
+
+async function assessTaskManagerEntry(
+	activePlanReview: InlinePlanReviewState | undefined,
+	taskManagerTopologyIndex: number,
+	config: ChainConfig,
+): Promise<ReviewRoundBlock | undefined> {
+	if (!activePlanReview) {
+		return { reason: "missing-review-target", taskManagerTopologyIndex };
+	}
+	if (activePlanReview.addressedAtTopologyIndex === undefined) {
+		return {
+			reason: "missing-addressed-evidence",
+			...activePlanReview.target,
+			taskManagerTopologyIndex,
+		};
+	}
+	if (
+		activePlanReview.addressedReviewRound !==
+		activePlanReview.target.reviewRound
+	) {
+		return {
+			reason: "mismatched-addressed-evidence",
+			...activePlanReview.target,
+			addressedReviewRound: activePlanReview.addressedReviewRound,
+			addressedAtTopologyIndex: activePlanReview.addressedAtTopologyIndex,
+			taskManagerTopologyIndex,
+		};
+	}
+	if (activePlanReview.addressedAtTopologyIndex >= taskManagerTopologyIndex) {
+		return {
+			reason: "nonpreceding-addressed-evidence",
+			...activePlanReview.target,
+			addressedReviewRound: activePlanReview.addressedReviewRound,
+			addressedAtTopologyIndex: activePlanReview.addressedAtTopologyIndex,
+			taskManagerTopologyIndex,
+		};
+	}
+
+	const assessment = await assessPlanReviewRound({
+		projectRoot: config.projectRoot,
+		planSlug: activePlanReview.target.planSlug,
+		reviewRound: activePlanReview.addressedReviewRound,
+		assessment: "addressed",
+	});
+	if (assessment.status === "accepted") return undefined;
+
+	return {
+		reason:
+			assessment.reason === "stale-review-round"
+				? "stale-addressed-evidence"
+				: assessment.reason,
+		planSlug: assessment.planSlug,
+		reviewRound: activePlanReview.target.reviewRound,
+		addressedReviewRound: activePlanReview.addressedReviewRound,
+		addressedAtTopologyIndex: activePlanReview.addressedAtTopologyIndex,
+		taskManagerTopologyIndex,
+		...(assessment.latestReviewRound !== undefined && {
+			latestReviewRound: assessment.latestReviewRound,
+		}),
+		...(assessment.findingIds !== undefined && {
+			findingIds: assessment.findingIds,
+		}),
+	};
 }
 
 async function runObservedStage(
@@ -759,6 +884,13 @@ async function runParallelGroup(
 			stage,
 			state.activePlanReview?.target,
 		);
+		if (promptContext.requiresPlanReviewTarget) {
+			return {
+				kind: "guarded-task-manager" as const,
+				stage,
+				promptContext,
+			};
+		}
 		if (promptContext.purpose.kind === "plan-review") {
 			return {
 				kind: "participating-reviewer" as const,
@@ -769,6 +901,23 @@ async function runParallelGroup(
 					spawner,
 					constraints,
 					promptContext,
+				),
+			};
+		}
+		if (
+			promptContext.purpose.kind === "revision" &&
+			promptContext.purpose.reviewKind === "plan"
+		) {
+			return {
+				kind: "ordinary" as const,
+				result: await runPlanRevisionStage(
+					stage,
+					stepIndex,
+					config,
+					spawner,
+					constraints,
+					promptContext,
+					state,
 				),
 			};
 		}
@@ -792,10 +941,21 @@ async function runParallelGroup(
 		index: number;
 		observation: ParticipatingPlanReviewerObservation;
 	}> = [];
+	const guardedTaskManagers: Array<{
+		index: number;
+		stage: ChainStage;
+		promptContext: StagePromptContext;
+	}> = [];
 
 	for (const [idx, outcome] of settled.entries()) {
 		if (outcome.status === "fulfilled") {
-			if (outcome.value.kind === "participating-reviewer") {
+			if (outcome.value.kind === "guarded-task-manager") {
+				guardedTaskManagers.push({
+					index: idx,
+					stage: outcome.value.stage,
+					promptContext: outcome.value.promptContext,
+				});
+			} else if (outcome.value.kind === "participating-reviewer") {
 				participating.push({
 					index: idx,
 					observation: outcome.value.observation,
@@ -829,6 +989,29 @@ async function runParallelGroup(
 			const member = participating[reviewerIndex];
 			if (member) results[member.index] = result;
 		}
+	}
+
+	const guardedResults = await Promise.all(
+		guardedTaskManagers.map((member) =>
+			runGuardedTaskManagerStage(
+				member.stage,
+				stepIndex,
+				config,
+				spawner,
+				constraints,
+				{
+					...member.promptContext,
+					...(state.activePlanReview?.target !== undefined && {
+						target: state.activePlanReview.target,
+					}),
+				},
+				state,
+			),
+		),
+	);
+	for (const [guardedIndex, result] of guardedResults.entries()) {
+		const member = guardedTaskManagers[guardedIndex];
+		if (member) results[member.index] = result;
 	}
 
 	const completeResults = results.filter(

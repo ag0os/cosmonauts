@@ -4,6 +4,7 @@
  * createDefaultCompletionCheck (with real task system), and event emission.
  */
 
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import {
 	mkdir,
 	mkdtemp,
@@ -42,6 +43,7 @@ import type {
 	ParallelGroupStep,
 	SpawnResult,
 	SpawnStats,
+	StageResult,
 } from "../../lib/orchestration/types.ts";
 import { TaskManager } from "../../lib/tasks/task-manager.ts";
 
@@ -2132,6 +2134,353 @@ Review incomplete.
 			} finally {
 				await rm(projectRoot, { recursive: true, force: true });
 			}
+		}
+	});
+
+	// @cosmo-behavior plan:chain-stage-context#B-008
+	test("blocks sequential and parallel task decomposition until earlier plan review is addressed", async () => {
+		const codingDefinitions = [
+			"planner",
+			"task-manager",
+			"worker",
+			"reviewer",
+			"plan-reviewer",
+		].map((id) => makeCodingDef(id, false));
+		const boundRegistry = new AgentRegistry(codingDefinitions, {
+			bindingResolver: bindingResolver({ project: "coding" }) as never,
+		});
+		const projectBoundSteps = parseChain(
+			"plan-reviewer -> project/task-manager",
+			boundRegistry,
+		);
+		const projectBoundTaskManager = projectBoundSteps[1];
+		if (!projectBoundTaskManager || "kind" in projectBoundTaskManager) {
+			expect.unreachable("Expected a project-bound task-manager stage");
+		}
+		expect(projectBoundTaskManager.agentReference?.resolved.qualifiedId).toBe(
+			"coding/task-manager",
+		);
+		projectBoundTaskManager.name = "project-backlog";
+		const cases = [
+			{
+				name: "no reviser sequential chain",
+				steps: parseChain(
+					"planner -> plan-reviewer -> task-manager",
+					defaultRegistry,
+				),
+				registry: defaultRegistry,
+			},
+			{
+				name: "intervening nonreviser chain",
+				steps: parseChain(
+					"planner -> plan-reviewer -> worker -> task-manager",
+					defaultRegistry,
+				),
+				registry: defaultRegistry,
+			},
+			{
+				name: "qualified stages",
+				steps: parseChain(
+					"coding/plan-reviewer -> coding/task-manager",
+					defaultRegistry,
+				),
+				registry: defaultRegistry,
+			},
+			{
+				name: "project-bound task manager",
+				steps: projectBoundSteps,
+				registry: boundRegistry,
+			},
+			...["[planner, task-manager]", "[task-manager, planner]"].map(
+				(group) => ({
+					name: `same-index reviser ${group}`,
+					steps: parseChain(
+						`planner -> plan-reviewer -> ${group}`,
+						defaultRegistry,
+					),
+					registry: defaultRegistry,
+				}),
+			),
+			...["[plan-reviewer, task-manager]", "[task-manager, plan-reviewer]"].map(
+				(group) => ({
+					name: `same-index reviewer ${group}`,
+					steps: parseChain(group, defaultRegistry),
+					registry: defaultRegistry,
+				}),
+			),
+		] as const;
+
+		for (const testCase of cases) {
+			const projectRoot = await mkdtemp(
+				join(
+					tmpdir(),
+					`chain-task-guard-${testCase.name.replaceAll(" ", "-")}-`,
+				),
+			);
+			try {
+				await writePlanReviewTarget({
+					projectRoot,
+					planSlug: "review-target",
+				});
+				const events: ChainEvent[] = [];
+				spawnerRef.current = {
+					spawn: vi.fn(async (config) => {
+						const resolvedRole =
+							config.agentReference?.resolved.qualifiedId ?? config.role;
+						const role = resolvedRole.split("/").at(-1);
+						if (role === "plan-reviewer") {
+							return successfulTestSpawn(
+								config.role,
+								planReviewReport("review-target", 1),
+							);
+						}
+						if (
+							role === "planner" &&
+							config.prompt.includes("Revision purpose:")
+						) {
+							return successfulTestSpawn(
+								config.role,
+								reviewRevisionReport("review-target", 1),
+							);
+						}
+						return successfulTestSpawn(config.role);
+					}),
+					dispose: vi.fn(),
+				};
+				const result = await runChain(
+					makeConfig(testCase.steps, {
+						projectRoot,
+						registry: testCase.registry,
+						onEvent: (event) => events.push(event),
+					}),
+				);
+				const spawnRoles = vi
+					.mocked(spawnerRef.current.spawn)
+					.mock.calls.map(([config]) =>
+						(config.agentReference?.resolved.qualifiedId ?? config.role)
+							.split("/")
+							.at(-1),
+					);
+				const taskResult = result.stageResults.find(
+					(stageResult) =>
+						(
+							stageResult.stage.agentReference?.resolved.qualifiedId ??
+							stageResult.stage.name
+						)
+							.split("/")
+							.at(-1) === "task-manager",
+				);
+
+				expect(spawnRoles, testCase.name).not.toContain("task-manager");
+				expect(result.success, testCase.name).toBe(false);
+				expect(result.errors[0], testCase.name).toBeTruthy();
+				expect(taskResult, testCase.name).toMatchObject({
+					success: false,
+					iterations: 0,
+					reviewRoundBlock: expect.objectContaining({
+						reason: expect.any(String),
+					}),
+				});
+				expect(taskResult?.error, testCase.name).toBeTruthy();
+				if (testCase.name.startsWith("same-index reviser")) {
+					expect(taskResult?.reviewRoundBlock, testCase.name).toMatchObject({
+						reason: "nonpreceding-addressed-evidence",
+						addressedAtTopologyIndex: 2,
+						taskManagerTopologyIndex: 2,
+					});
+				}
+				if (testCase.name.startsWith("same-index reviewer")) {
+					expect(taskResult?.reviewRoundBlock, testCase.name).toMatchObject({
+						reason: "missing-addressed-evidence",
+						taskManagerTopologyIndex: 0,
+					});
+				}
+				expect(
+					events.some(
+						(event) =>
+							event.type === "unaddressed_review_round" &&
+							event.stage === taskResult?.stage,
+					),
+					testCase.name,
+				).toBe(true);
+
+				const parallelEnd = events.find(
+					(event) => event.type === "parallel_end",
+				);
+				if (parallelEnd?.type === "parallel_end") {
+					expect(parallelEnd.success, testCase.name).toBe(false);
+					expect(parallelEnd.error, testCase.name).toBeTruthy();
+					expect(
+						parallelEnd.results.filter(
+							(stageResult) => !stageResult.stage.name.endsWith("task-manager"),
+						),
+						testCase.name,
+					).toSatisfy((results: StageResult[]) =>
+						results.every((stageResult) => stageResult.success),
+					);
+				}
+			} finally {
+				await rm(projectRoot, { recursive: true, force: true });
+			}
+		}
+
+		for (const mutation of [
+			{
+				name: "newer assessable round",
+				reason: "stale-addressed-evidence",
+				apply(projectRoot: string) {
+					writeFileSync(
+						join(
+							projectRoot,
+							"missions",
+							"plans",
+							"review-target",
+							"review-2.md",
+						),
+						"# Plan Review\n\n## Findings\n\n## Assessment\n\nReview complete.\n",
+						"utf-8",
+					);
+				},
+			},
+			{
+				name: "unreadable plan artifact",
+				reason: "plan-artifact-io",
+				apply(projectRoot: string) {
+					const planPath = join(
+						projectRoot,
+						"missions",
+						"plans",
+						"review-target",
+						"plan.md",
+					);
+					rmSync(planPath);
+					mkdirSync(planPath);
+				},
+			},
+			{
+				name: "unsafe review artifact",
+				reason: "unsafe-review-entry",
+				apply(projectRoot: string) {
+					const reviewPath = join(
+						projectRoot,
+						"missions",
+						"plans",
+						"review-target",
+						"review.md",
+					);
+					rmSync(reviewPath);
+					mkdirSync(reviewPath);
+				},
+			},
+		] as const) {
+			const projectRoot = await mkdtemp(
+				join(
+					tmpdir(),
+					`chain-task-guard-${mutation.name.replaceAll(" ", "-")}-`,
+				),
+			);
+			try {
+				await writePlanReviewTarget({
+					projectRoot,
+					planSlug: "review-target",
+				});
+				let plannerEnds = 0;
+				const events: ChainEvent[] = [];
+				spawnerRef.current = reviewReportSpawner(
+					planReviewReport("review-target", 1),
+				);
+				const result = await runChain(
+					makeConfig(
+						parseChain(
+							"planner -> plan-reviewer -> planner -> task-manager",
+							defaultRegistry,
+						),
+						{
+							projectRoot,
+							onEvent: (event) => {
+								events.push(event);
+								if (
+									event.type === "stage_end" &&
+									event.stage.name === "planner" &&
+									event.result.success &&
+									++plannerEnds === 2
+								) {
+									mutation.apply(projectRoot);
+								}
+							},
+						},
+					),
+				);
+				const taskResult = result.stageResults.at(-1);
+				expect(result.success, mutation.name).toBe(false);
+				expect(taskResult, mutation.name).toMatchObject({
+					success: false,
+					iterations: 0,
+					reviewRoundBlock: { reason: mutation.reason },
+				});
+				expect(taskResult?.error, mutation.name).toBeTruthy();
+				expect(result.errors, mutation.name).toEqual([taskResult?.error]);
+				expect(
+					vi
+						.mocked(spawnerRef.current.spawn)
+						.mock.calls.map(([config]) => config.role),
+					mutation.name,
+				).toEqual(["planner", "plan-reviewer", "planner"]);
+				expect(events, mutation.name).toContainEqual(
+					expect.objectContaining({
+						type: "unaddressed_review_round",
+						block: expect.objectContaining({ reason: mutation.reason }),
+					}),
+				);
+			} finally {
+				await rm(projectRoot, { recursive: true, force: true });
+			}
+		}
+
+		const unchangedShapes = [
+			[makeStage("task-manager", false)],
+			parseChain("planner -> task-manager", defaultRegistry),
+			parseChain("planner -> reviewer -> task-manager", defaultRegistry),
+			...defaultRegistry
+				.listAll()
+				.map((definition) => [makeStage(definition.id, false)]),
+		];
+		for (const steps of unchangedShapes) {
+			spawnerRef.current = createMockSpawner();
+			const result = await runChain(makeConfig(steps));
+			expect(result.success, `unchanged ${steps.length}-step shape`).toBe(true);
+			expect(spawnerRef.current.spawn).toHaveBeenCalledTimes(steps.length);
+		}
+
+		const projectRoot = await mkdtemp(
+			join(tmpdir(), "chain-task-guard-prompt-"),
+		);
+		try {
+			await writePlanReviewTarget({
+				projectRoot,
+				planSlug: "review-target",
+			});
+			spawnerRef.current = reviewReportSpawner(
+				planReviewReport("review-target", 1),
+			);
+			const result = await runChain(
+				makeConfig(
+					parseChain(
+						"planner -> plan-reviewer -> planner -> task-manager",
+						defaultRegistry,
+					),
+					{ projectRoot },
+				),
+			);
+			const taskSpawn = vi
+				.mocked(spawnerRef.current.spawn)
+				.mock.calls.find(([config]) => config.role === "task-manager")?.[0];
+			expect(result.success).toBe(true);
+			expect(taskSpawn?.prompt).toContain(
+				'Bound plan-review target: {"planSlug":"review-target","reviewRound":1}.',
+			);
+		} finally {
+			await rm(projectRoot, { recursive: true, force: true });
 		}
 	});
 
