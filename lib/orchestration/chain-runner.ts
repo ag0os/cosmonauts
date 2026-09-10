@@ -595,12 +595,11 @@ async function runParticipatingPlanReviewer(
 	return { stage, result, reviewCheck };
 }
 
-async function finalizeParticipatingPlanReviewers(
+/** Resolve each reviewer's report; a silent reviewer yields a missing-report block. */
+async function resolveReviewChecks(
 	observations: readonly ParticipatingPlanReviewerObservation[],
-	config: ChainConfig,
-	state: ChainExecutionState,
-): Promise<StageResult[]> {
-	const checks = await Promise.all(
+): Promise<Array<ReviewCheck | undefined>> {
+	return Promise.all(
 		observations.map(async (observation): Promise<ReviewCheck | undefined> => {
 			if (!observation.result.success) return undefined;
 			return (
@@ -611,49 +610,59 @@ async function finalizeParticipatingPlanReviewers(
 			);
 		}),
 	);
-	const results = observations.map((observation) => observation.result);
+}
 
-	for (const [index, check] of checks.entries()) {
-		if (check?.status === "unaddressed") {
-			const observation = observations[index];
-			if (observation) {
-				results[index] = blockPlanReviewStage(
-					observation.result,
-					check.block,
-					config,
-				);
-			}
-		}
-	}
-
-	const accepted = checks.flatMap((check, index) =>
-		check?.status === "accepted" ? [{ index, target: check.target }] : [],
-	);
-	const reportedTargets = checks.flatMap((check, index) => {
+/** Every target a reviewer named, whether its report was accepted or blocked. */
+function reportedReviewTargets(
+	checks: readonly (ReviewCheck | undefined)[],
+): Array<{ index: number; target: PlanReviewTarget }> {
+	return checks.flatMap((check, index) => {
 		if (check?.status === "accepted") return [{ index, target: check.target }];
 		if (
-			check?.block.planSlug !== undefined &&
-			check.block.reviewRound !== undefined
+			check?.block.planSlug === undefined ||
+			check.block.reviewRound === undefined
 		) {
-			return [
-				{
-					index,
-					target: {
-						planSlug: check.block.planSlug,
-						reviewRound: check.block.reviewRound,
-					},
-				},
-			];
+			return [];
 		}
-		return [];
+		return [
+			{
+				index,
+				target: {
+					planSlug: check.block.planSlug,
+					reviewRound: check.block.reviewRound,
+				},
+			},
+		];
 	});
-	const targetKeys = new Set(
-		reportedTargets.map(
+}
+
+/** Distinct (slug, round) pairs among the reported targets. */
+function distinctTargetCount(
+	targets: readonly { target: PlanReviewTarget }[],
+): number {
+	return new Set(
+		targets.map(
 			({ target }) =>
 				`${target.planSlug}\u0000${target.reviewRound.toString()}`,
 		),
-	);
-	if (targetKeys.size > 1) {
+	).size;
+}
+
+/**
+ * Settle the group's shared review target: siblings naming different targets are
+ * unordered and block as ambiguous, and only a unanimously accepted group binds.
+ */
+function reconcileReviewTargets(args: {
+	checks: readonly (ReviewCheck | undefined)[];
+	observations: readonly ParticipatingPlanReviewerObservation[];
+	results: StageResult[];
+	config: ChainConfig;
+	state: ChainExecutionState;
+}): void {
+	const { checks, observations, results, config, state } = args;
+	const reportedTargets = reportedReviewTargets(checks);
+
+	if (distinctTargetCount(reportedTargets) > 1) {
 		const first = reportedTargets[0];
 		const observation = first ? observations[first.index] : undefined;
 		if (first && observation) {
@@ -663,15 +672,38 @@ async function finalizeParticipatingPlanReviewers(
 				config,
 			);
 		}
-	} else if (
-		accepted.length === observations.length &&
-		results.every((result) => result.success)
-	) {
-		const target = accepted[0]?.target;
-		if (target) {
-			state.activePlanReview = { target };
-		}
+		return;
 	}
+
+	const accepted = checks.flatMap((check, index) =>
+		check?.status === "accepted" ? [{ index, target: check.target }] : [],
+	);
+	if (accepted.length !== observations.length) return;
+	if (!results.every((result) => result.success)) return;
+
+	const target = accepted[0]?.target;
+	if (target) state.activePlanReview = { target };
+}
+
+async function finalizeParticipatingPlanReviewers(
+	observations: readonly ParticipatingPlanReviewerObservation[],
+	config: ChainConfig,
+	state: ChainExecutionState,
+): Promise<StageResult[]> {
+	const checks = await resolveReviewChecks(observations);
+	const results = observations.map((observation) => observation.result);
+
+	for (const [index, check] of checks.entries()) {
+		const observation = observations[index];
+		if (check?.status !== "unaddressed" || !observation) continue;
+		results[index] = blockPlanReviewStage(
+			observation.result,
+			check.block,
+			config,
+		);
+	}
+
+	reconcileReviewTargets({ checks, observations, results, config, state });
 
 	for (const [index, observation] of observations.entries()) {
 		emitStageCompletion(
@@ -801,6 +833,139 @@ interface ParallelGroupOutcome {
  * stage_end / stage_stats for each member as it completes. After all members
  * have settled, emits parallel_end with results in declaration order.
  */
+type ParallelMemberOutcome =
+	| {
+			kind: "guarded-task-manager";
+			stage: ChainStage;
+			promptContext: StagePromptContext;
+	  }
+	| {
+			kind: "participating-reviewer";
+			observation: ParticipatingPlanReviewerObservation;
+	  }
+	| { kind: "ordinary"; result: StageResult };
+
+/**
+ * Run one member of a parallel group. Guarded task-managers are deferred so the
+ * group can reconcile same-index review targets before any of them spawns.
+ */
+async function runParallelMember(
+	stage: ChainStage,
+	stepIndex: number,
+	config: ChainConfig,
+	spawner: AgentSpawner,
+	constraints: StageConstraints,
+	state: ChainExecutionState,
+): Promise<ParallelMemberOutcome> {
+	const promptContext = stagePromptContext(
+		config.steps,
+		stepIndex,
+		stage,
+		state.activePlanReview?.target,
+	);
+	if (promptContext.requiresPlanReviewTarget) {
+		return { kind: "guarded-task-manager", stage, promptContext };
+	}
+	if (promptContext.purpose.kind === "plan-review") {
+		return {
+			kind: "participating-reviewer",
+			observation: await runParticipatingPlanReviewer(
+				stage,
+				stepIndex,
+				config,
+				spawner,
+				constraints,
+				promptContext,
+			),
+		};
+	}
+	if (
+		promptContext.purpose.kind === "revision" &&
+		promptContext.purpose.reviewKind === "plan"
+	) {
+		return {
+			kind: "ordinary",
+			result: await runPlanRevisionStage(
+				stage,
+				stepIndex,
+				config,
+				spawner,
+				constraints,
+				promptContext,
+				state,
+			),
+		};
+	}
+	return {
+		kind: "ordinary",
+		result: await runObservedStage(
+			stage,
+			stepIndex,
+			config,
+			spawner,
+			constraints,
+			promptContext,
+		),
+	};
+}
+
+interface ParallelMemberCollection {
+	results: StageResult[];
+	participating: Array<{
+		index: number;
+		observation: ParticipatingPlanReviewerObservation;
+	}>;
+	guardedTaskManagers: Array<{
+		index: number;
+		stage: ChainStage;
+		promptContext: StagePromptContext;
+	}>;
+}
+
+/** Await every member and sort the outcomes into declaration-ordered buckets. */
+async function collectParallelMembers(
+	memberPromises: readonly Promise<ParallelMemberOutcome>[],
+	step: ParallelGroupStep,
+): Promise<ParallelMemberCollection> {
+	const settled = await Promise.allSettled(memberPromises);
+	const collection: ParallelMemberCollection = {
+		results: new Array(settled.length),
+		participating: [],
+		guardedTaskManagers: [],
+	};
+
+	for (const [index, outcome] of settled.entries()) {
+		if (outcome.status === "rejected") {
+			// runStage never throws — its catch block always returns a StageResult.
+			// This branch guards against unexpected rejections.
+			collection.results[index] = {
+				stage: step.stages[index] ?? step.stages[0],
+				success: false,
+				iterations: 0,
+				durationMs: 0,
+				error: String(outcome.reason),
+			} as StageResult;
+			continue;
+		}
+		const member = outcome.value;
+		if (member.kind === "guarded-task-manager") {
+			collection.guardedTaskManagers.push({
+				index,
+				stage: member.stage,
+				promptContext: member.promptContext,
+			});
+			continue;
+		}
+		if (member.kind === "participating-reviewer") {
+			collection.participating.push({ index, observation: member.observation });
+			collection.results[index] = member.observation.result;
+			continue;
+		}
+		collection.results[index] = member.result;
+	}
+	return collection;
+}
+
 async function runParallelGroup(
 	step: ParallelGroupStep,
 	stepIndex: number,
@@ -813,107 +978,13 @@ async function runParallelGroup(
 
 	// Launch all members concurrently. Participating reviewer completion waits for
 	// same-index target reconciliation; ordinary member events remain immediate.
-	const memberPromises = step.stages.map(async (stage) => {
-		const promptContext = stagePromptContext(
-			config.steps,
-			stepIndex,
-			stage,
-			state.activePlanReview?.target,
-		);
-		if (promptContext.requiresPlanReviewTarget) {
-			return {
-				kind: "guarded-task-manager" as const,
-				stage,
-				promptContext,
-			};
-		}
-		if (promptContext.purpose.kind === "plan-review") {
-			return {
-				kind: "participating-reviewer" as const,
-				observation: await runParticipatingPlanReviewer(
-					stage,
-					stepIndex,
-					config,
-					spawner,
-					constraints,
-					promptContext,
-				),
-			};
-		}
-		if (
-			promptContext.purpose.kind === "revision" &&
-			promptContext.purpose.reviewKind === "plan"
-		) {
-			return {
-				kind: "ordinary" as const,
-				result: await runPlanRevisionStage(
-					stage,
-					stepIndex,
-					config,
-					spawner,
-					constraints,
-					promptContext,
-					state,
-				),
-			};
-		}
-		return {
-			kind: "ordinary" as const,
-			result: await runObservedStage(
-				stage,
-				stepIndex,
-				config,
-				spawner,
-				constraints,
-				promptContext,
-			),
-		};
-	});
+	const memberPromises = step.stages.map((stage) =>
+		runParallelMember(stage, stepIndex, config, spawner, constraints, state),
+	);
 
 	// Collect results in declaration order.
-	const settled = await Promise.allSettled(memberPromises);
-	const results: StageResult[] = new Array(settled.length);
-	const participating: Array<{
-		index: number;
-		observation: ParticipatingPlanReviewerObservation;
-	}> = [];
-	const guardedTaskManagers: Array<{
-		index: number;
-		stage: ChainStage;
-		promptContext: StagePromptContext;
-	}> = [];
-
-	for (const [idx, outcome] of settled.entries()) {
-		if (outcome.status === "fulfilled") {
-			if (outcome.value.kind === "guarded-task-manager") {
-				guardedTaskManagers.push({
-					index: idx,
-					stage: outcome.value.stage,
-					promptContext: outcome.value.promptContext,
-				});
-			} else if (outcome.value.kind === "participating-reviewer") {
-				participating.push({
-					index: idx,
-					observation: outcome.value.observation,
-				});
-				results[idx] = outcome.value.observation.result;
-			} else {
-				results[idx] = outcome.value.result;
-			}
-		} else {
-			// runStage never throws — its catch block always returns a StageResult.
-			// This branch guards against unexpected rejections.
-			const message = String(outcome.reason);
-			const fallbackStage = step.stages[idx] ?? step.stages[0];
-			results[idx] = {
-				stage: fallbackStage,
-				success: false,
-				iterations: 0,
-				durationMs: 0,
-				error: message,
-			};
-		}
-	}
+	const { results, participating, guardedTaskManagers } =
+		await collectParallelMembers(memberPromises, step);
 
 	if (participating.length > 0) {
 		const finalized = await finalizeParticipatingPlanReviewers(

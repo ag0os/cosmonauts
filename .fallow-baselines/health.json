@@ -210,19 +210,6 @@
         "count": 1
       }
     },
-    "lib/orchestration/chain-runner.ts": {
-      "complexity_moderate": {
-        "count": 2
-      }
-    },
-    "lib/plans/review-rounds.ts": {
-      "complexity_high": {
-        "count": 1
-      },
-      "complexity_moderate": {
-        "count": 1
-      }
-    },
     "lib/skills/exporter.ts": {
       "complexity_critical": {
         "count": 2

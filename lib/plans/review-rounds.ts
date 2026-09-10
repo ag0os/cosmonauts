@@ -95,42 +95,90 @@ const REVIEW_DIMENSIONS = new Set([
 	"scope-size",
 ]);
 
-export async function assessPlanReviewRound(
+/** Slug and explicit-round shape must be well formed before any I/O. */
+function invalidAssessmentInput(
 	options: AssessPlanReviewRoundOptions,
-): Promise<PlanReviewRoundAssessment> {
-	if (!isValidSlug(options.planSlug)) {
-		return block(options, "invalid-plan-slug");
-	}
+): PlanReviewRoundBlockReason | undefined {
+	if (!isValidSlug(options.planSlug)) return "invalid-plan-slug";
 	if (
 		options.reviewRound !== undefined &&
 		(!Number.isSafeInteger(options.reviewRound) || options.reviewRound <= 0)
 	) {
-		return block(options, "invalid-review-name");
+		return "invalid-review-name";
 	}
+	return undefined;
+}
 
-	const plansRoot = join(options.projectRoot, "missions", "plans");
-	const planDirectory = join(plansRoot, options.planSlug);
+/**
+ * Prove the plan directory is contained, readable, and explicitly `active`.
+ * Status is read strictly here rather than through the shared plan reader,
+ * whose parseStatus normalizes missing and unknown values to "active".
+ */
+async function readActivePlanMarkdown(
+	plansRoot: string,
+	planDirectory: string,
+): Promise<{ content: string } | { reason: PlanReviewRoundBlockReason }> {
 	const containment = await assessPlanDirectory(plansRoot, planDirectory);
-	if (containment !== "safe") {
-		return block(options, containment);
-	}
+	if (containment !== "safe") return { reason: containment };
 
 	const planRead = await readRegularFile(join(planDirectory, "plan.md"));
-	if (planRead.status === "missing") {
-		return block(options, "plan-not-found");
-	}
-	if (planRead.status !== "read") {
-		return block(options, "plan-artifact-io");
-	}
+	if (planRead.status === "missing") return { reason: "plan-not-found" };
+	if (planRead.status !== "read") return { reason: "plan-artifact-io" };
+
 	const planStatus = parseStrictPlanStatus(planRead.content);
 	if (planStatus === "indeterminate") {
-		return block(options, "plan-status-indeterminate");
+		return { reason: "plan-status-indeterminate" };
 	}
-	if (planStatus !== "active") {
-		return block(options, "inactive-plan");
-	}
+	if (planStatus !== "active") return { reason: "inactive-plan" };
+	return { content: planRead.content };
+}
 
-	const reviewEntries = await readReviewEntries(planDirectory);
+/** True when the allocation set skips a number below its maximum. */
+function hasAllocationGap(allocationRounds: readonly number[]): boolean {
+	const maximumAllocationRound = allocationRounds.at(-1) ?? 0;
+	for (let round = 1; round <= maximumAllocationRound; round += 1) {
+		if (allocationRounds[round - 1] !== round) return true;
+	}
+	return false;
+}
+
+type AssessableEntry = ReviewEntry & { findings: ReviewFinding[] };
+
+/**
+ * Narrow the allocation set to the rounds carrying a parseable `## Findings`
+ * section. Entries without one belong to other reviewers: they keep their
+ * number for contiguity but are never assessed.
+ */
+function collectAssessableEntries(
+	entries: readonly ReviewEntry[],
+): { assessable: AssessableEntry[] } | { malformedRound: number } {
+	const assessable: AssessableEntry[] = [];
+	for (const entry of entries) {
+		const parsed = parseFindings(entry.content);
+		if (parsed.status === "malformed") return { malformedRound: entry.round };
+		if (parsed.status === "parsed") {
+			assessable.push({ ...entry, findings: parsed.findings });
+		}
+	}
+	return { assessable };
+}
+
+export async function assessPlanReviewRound(
+	options: AssessPlanReviewRoundOptions,
+): Promise<PlanReviewRoundAssessment> {
+	const invalidInput = invalidAssessmentInput(options);
+	if (invalidInput) return block(options, invalidInput);
+
+	const plansRoot = join(options.projectRoot, "missions", "plans");
+	const planRead = await readActivePlanMarkdown(
+		plansRoot,
+		join(plansRoot, options.planSlug),
+	);
+	if ("reason" in planRead) return block(options, planRead.reason);
+
+	const reviewEntries = await readReviewEntries(
+		join(plansRoot, options.planSlug),
+	);
 	if (reviewEntries.status === "blocked") {
 		return block(options, reviewEntries.reason);
 	}
@@ -138,30 +186,18 @@ export async function assessPlanReviewRound(
 	if (allocationRounds.length === 0) {
 		return block(options, "no-assessable-review-round");
 	}
-	const maximumAllocationRound = allocationRounds.at(-1) ?? 0;
-	for (let round = 1; round <= maximumAllocationRound; round += 1) {
-		if (allocationRounds[round - 1] !== round) {
-			return block(options, "review-round-gap");
-		}
+	if (hasAllocationGap(allocationRounds)) {
+		return block(options, "review-round-gap");
 	}
 
-	const assessable: Array<ReviewEntry & { findings: ReviewFinding[] }> = [];
-	for (const entry of reviewEntries.entries) {
-		const parsed = parseFindings(entry.content);
-		if (parsed.status === "malformed") {
-			return block(options, "malformed-review", {
-				reviewRound: entry.round,
-			});
-		}
-		if (parsed.status === "parsed") {
-			assessable.push({ ...entry, findings: parsed.findings });
-		}
+	const collected = collectAssessableEntries(reviewEntries.entries);
+	if ("malformedRound" in collected) {
+		return block(options, "malformed-review", {
+			reviewRound: collected.malformedRound,
+		});
 	}
-
-	const latest = assessable.at(-1);
-	if (!latest) {
-		return block(options, "no-assessable-review-round");
-	}
+	const latest = collected.assessable.at(-1);
+	if (!latest) return block(options, "no-assessable-review-round");
 	if (
 		options.reviewRound !== undefined &&
 		options.reviewRound !== latest.round
@@ -196,7 +232,7 @@ export async function assessPlanReviewRound(
 		reviewRound: latest.round,
 		reviewFile: latest.name,
 		allocationRounds,
-		assessableRounds: assessable.map((entry) => entry.round),
+		assessableRounds: collected.assessable.map((entry) => entry.round),
 		blockingFindingIds,
 		requiresRevision: blockingFindingIds.length > 0,
 	};
@@ -395,64 +431,92 @@ function parseFindings(content: string): FindingsParse {
 	});
 }
 
+interface FindingScanState {
+	findings: ReviewFinding[];
+	fields?: Map<string, string>;
+	descriptionLines: string[];
+	malformed: boolean;
+}
+
+/** Close the finding under construction, recording it or marking malformed. */
+function finishFinding(state: FindingScanState): void {
+	if (!state.fields) return;
+	const finding = parseFinding(state.fields, state.descriptionLines);
+	if (finding) state.findings.push(finding);
+	else state.malformed = true;
+	state.fields = undefined;
+	state.descriptionLines = [];
+}
+
+/** Record one `  name: value` line; false when unknown, repeated, or unnamed. */
+function recordFindingField(
+	fields: Map<string, string>,
+	fieldMatch: RegExpMatchArray,
+): boolean {
+	const name = fieldMatch[1];
+	if (!name || fields.has(name) || !FINDING_FIELDS.includes(name as never)) {
+		return false;
+	}
+	fields.set(name, fieldMatch[2] ?? "");
+	return true;
+}
+
+/** Advance the scanner by one line of a `## Findings` block. */
+function scanFindingLine(
+	state: FindingScanState,
+	line: string,
+	rawLine: string,
+): void {
+	if (line.trim() === "") return;
+
+	const id = line.match(/^- id:\s*(\S.*?)\s*$/)?.[1];
+	if (id) {
+		finishFinding(state);
+		state.fields = new Map([["id", id]]);
+		return;
+	}
+	if (!state.fields) {
+		state.malformed = true;
+		return;
+	}
+
+	const fieldMatch = line.match(/^ {2}([a-z_]+):\s*(.*?)\s*$/);
+	if (fieldMatch) {
+		if (!recordFindingField(state.fields, fieldMatch)) state.malformed = true;
+		return;
+	}
+	if (state.fields.has("description") && /^ {4}\S/.test(rawLine)) {
+		state.descriptionLines.push(rawLine.trim());
+		return;
+	}
+	state.malformed = true;
+}
+
+/** Two findings sharing an id make the whole block malformed. */
+function hasDuplicateFindingIds(findings: readonly ReviewFinding[]): boolean {
+	return (
+		new Set(findings.map((finding) => finding.id)).size !== findings.length
+	);
+}
+
 function parseFindingLines(options: {
 	lines: readonly string[];
 	fenceMaskedLines: readonly string[];
 }): FindingsParse {
-	const findings: ReviewFinding[] = [];
-	let fields: Map<string, string> | undefined;
-	let descriptionLines: string[] = [];
-	let malformed = false;
-
-	const finish = () => {
-		if (!fields) return;
-		const finding = parseFinding(fields, descriptionLines);
-		if (!finding) malformed = true;
-		else findings.push(finding);
-		fields = undefined;
-		descriptionLines = [];
+	const state: FindingScanState = {
+		findings: [],
+		descriptionLines: [],
+		malformed: false,
 	};
-
 	for (const [index, rawLine] of options.lines.entries()) {
-		const line = options.fenceMaskedLines[index] ?? "";
-		if (line.trim() === "") continue;
-		const id = line.match(/^- id:\s*(\S.*?)\s*$/)?.[1];
-		if (id) {
-			finish();
-			fields = new Map([["id", id]]);
-			continue;
-		}
-		if (!fields) {
-			malformed = true;
-			continue;
-		}
-		const fieldMatch = line.match(/^ {2}([a-z_]+):\s*(.*?)\s*$/);
-		if (fieldMatch) {
-			const name = fieldMatch[1];
-			const value = fieldMatch[2] ?? "";
-			if (
-				!name ||
-				fields.has(name) ||
-				!FINDING_FIELDS.includes(name as never)
-			) {
-				malformed = true;
-				continue;
-			}
-			fields.set(name, value);
-			continue;
-		}
-		if (fields.has("description") && /^ {4}\S/.test(rawLine)) {
-			descriptionLines.push(rawLine.trim());
-			continue;
-		}
-		malformed = true;
+		scanFindingLine(state, options.fenceMaskedLines[index] ?? "", rawLine);
 	}
-	finish();
-	if (malformed) return { status: "malformed" };
-	if (new Set(findings.map((finding) => finding.id)).size !== findings.length) {
+	finishFinding(state);
+
+	if (state.malformed || hasDuplicateFindingIds(state.findings)) {
 		return { status: "malformed" };
 	}
-	return { status: "parsed", findings };
+	return { status: "parsed", findings: state.findings };
 }
 
 function parseFinding(
