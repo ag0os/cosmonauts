@@ -61,3 +61,20 @@ A fix that preserved both determinism and concurrency would have to make the
 guard wait only on review-relevant same-index siblings. That is real design work
 beyond this slice; the plan's recorded remedy is to place `task-manager` in a
 later step.
+
+## Confirming pass on the CDX-001 fix
+
+Re-reviewed after remediation, because fixes in this repo have a recorded habit
+of introducing new defects. Scope: `git show f21af17` plus
+`readPersistedPlanReview`.
+
+**No findings. Verdict: SHIP.**
+
+- Legitimate runs stay valid: distinct revision stages carry distinct producer
+  ids; a resumed replay rebuilds the spent set from the log; and
+  reviewer → reviser → reviewer → reviser succeeds because each reviser has its
+  own id.
+- The invalid state is recoverable: any later well-formed, unspent producer
+  overwrites it with `valid`, and malformed evidence never spends an id.
+- Ordering preserves prior semantics: target events still reset addressed state
+  first, and malformed addressed details still yield `invalid`.
