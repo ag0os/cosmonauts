@@ -23,3 +23,11 @@ export type {
 	PlanSummary,
 	PlanUpdateInput,
 } from "./plan-types.ts";
+export type {
+	AcceptedPlanReviewRound,
+	AssessPlanReviewRoundOptions,
+	BlockedPlanReviewRound,
+	PlanReviewRoundAssessment,
+	PlanReviewRoundBlockReason,
+} from "./review-rounds.ts";
+export { assessPlanReviewRound } from "./review-rounds.ts";
