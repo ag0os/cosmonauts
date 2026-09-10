@@ -60,6 +60,8 @@ const CHAIN_EVENT_FORMATTERS: {
 		const stage = event.stage ? `[${event.stage.name}] ` : "";
 		return `${stage}Error: ${event.message}`;
 	},
+	unaddressed_review_round: (event) =>
+		`[${event.stage.name}] Plan review blocked: ${event.block.reason}`,
 	spawn_completion: (event) => {
 		const status = event.outcome === "success" ? "Completed" : "Failed";
 		return `[${event.role}] Spawn ${event.spawnId} ${status}: ${event.summary}`;

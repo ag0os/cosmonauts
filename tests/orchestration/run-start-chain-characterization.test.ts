@@ -13,9 +13,16 @@ import type { AgentDefinition } from "../../lib/agents/types.ts";
 import { FileRunStore } from "../../lib/durable-runtime/index.ts";
 import { parseEpisodeRecord } from "../../lib/memory/episodic-records.ts";
 import { createMarkdownMemoryStore } from "../../lib/memory/markdown-store.ts";
+import { summarizeAssistantText } from "../../lib/orchestration/assistant-text.ts";
 import { parseChain } from "../../lib/orchestration/chain-parser.ts";
 import { runChain } from "../../lib/orchestration/chain-runner.ts";
 import { runDurableChain } from "../../lib/orchestration/durable-chain-runner.ts";
+import {
+	PLAN_REVIEW_REPORT_TOKEN,
+	parseTerminalReviewReport,
+	REVIEW_REVISION_REPORT_TOKEN,
+	validatePlanReviewReport,
+} from "../../lib/orchestration/review-revision.ts";
 import {
 	appendBoundReviewTarget,
 	buildStagePrompt,
@@ -244,6 +251,73 @@ describe("runStart durable chain characterization", () => {
 				target,
 			),
 		);
+	});
+
+	test("validates a terminal plan-review report from full text before summary truncation", async () => {
+		const projectRoot = join(temp.path, "full-review-text");
+		const planDirectory = join(
+			projectRoot,
+			"missions",
+			"plans",
+			"full-review-text",
+		);
+		await mkdir(planDirectory, { recursive: true });
+		await Promise.all([
+			writeFile(
+				join(planDirectory, "plan.md"),
+				"---\ntitle: Full review text\nstatus: active\n---\n\n## Decision Log\n",
+				"utf-8",
+			),
+			writeFile(
+				join(planDirectory, "review.md"),
+				"# Plan Review\n\n## Findings\n\n## Assessment\n\nComplete.\n",
+				"utf-8",
+			),
+		]);
+		const report = `${PLAN_REVIEW_REPORT_TOKEN}: {"planSlug":"full-review-text","reviewRound":1}`;
+		const assistantText = `${"Review evidence. ".repeat(30)}\n${report}\n\n`;
+
+		const validation = await validatePlanReviewReport({
+			assistantText,
+			projectRoot,
+		});
+		const summary = summarizeAssistantText(assistantText, "plan-reviewer");
+
+		expect(validation).toEqual({
+			status: "accepted",
+			target: { planSlug: "full-review-text", reviewRound: 1 },
+		});
+		expect(summary).not.toContain(report);
+		expect(
+			parseTerminalReviewReport(
+				`Revision complete.\n${REVIEW_REVISION_REPORT_TOKEN}: {"planSlug":"full-review-text","reviewRound":1,"status":"addressed"}\n`,
+				"review-revision",
+			),
+		).toEqual({
+			status: "accepted",
+			report: {
+				kind: "review-revision",
+				target: { planSlug: "full-review-text", reviewRound: 1 },
+				status: "addressed",
+			},
+		});
+
+		for (const malformed of [
+			`${PLAN_REVIEW_REPORT_TOKEN}: {"planSlug":"../escape","reviewRound":1}`,
+			`${PLAN_REVIEW_REPORT_TOKEN}: {"planSlug":"full-review-text","reviewRound":0}`,
+			`${PLAN_REVIEW_REPORT_TOKEN}: {"planSlug":"full-review-text","reviewRound":1.5}`,
+			`${PLAN_REVIEW_REPORT_TOKEN}: {"planSlug":"full-review-text","reviewRound":1,"extra":true}`,
+		]) {
+			expect(
+				await validatePlanReviewReport({
+					assistantText: malformed,
+					projectRoot,
+				}),
+			).toEqual({
+				status: "unaddressed",
+				block: { reason: "malformed-review-report" },
+			});
+		}
 	});
 
 	test("records durable chain episodes with the persisted run id and unchanged reconstruction @cosmo-behavior plan:episodic-log#B-016", async () => {

@@ -1,3 +1,7 @@
+import {
+	assessPlanReviewRound,
+	type PlanReviewRoundBlockReason,
+} from "../plans/index.ts";
 import { validateSlug } from "../plans/plan-manager.ts";
 
 export const PLAN_REVIEW_REPORT_TOKEN = "COSMO_PLAN_REVIEW";
@@ -8,7 +12,35 @@ export interface PlanReviewTarget {
 	reviewRound: number;
 }
 
-type ReviewReport =
+export type ReviewRoundBlockReason =
+	| "missing-review-report"
+	| "malformed-review-report"
+	| "multiple-review-reports"
+	| "nonterminal-review-report"
+	| "mismatched-review-target"
+	| "ambiguous-review-target"
+	| PlanReviewRoundBlockReason;
+
+export interface ReviewRoundBlock {
+	reason: ReviewRoundBlockReason;
+	planSlug?: string;
+	reviewRound?: number;
+	expectedPlanSlug?: string;
+	latestReviewRound?: number;
+	findingIds?: readonly string[];
+}
+
+export type ReviewCheck =
+	| { status: "accepted"; target: PlanReviewTarget }
+	| { status: "unaddressed"; block: ReviewRoundBlock };
+
+export interface ValidatePlanReviewReportOptions {
+	assistantText: string;
+	projectRoot: string;
+	expectedPlanSlug?: string;
+}
+
+export type ReviewReport =
 	| { kind: "plan-review"; target: PlanReviewTarget }
 	| {
 			kind: "review-revision";
@@ -62,6 +94,120 @@ export function parseReviewReportLine(line: string): ReviewReport | undefined {
 	return target && reason
 		? { kind: "review-revision", target, status: "unaddressed", reason }
 		: undefined;
+}
+
+export type TerminalReviewReportCheck =
+	| { status: "accepted"; report: ReviewReport }
+	| { status: "unaddressed"; block: ReviewRoundBlock };
+
+/** Parse one sole report of the requested kind from the last nonblank line. */
+export function parseTerminalReviewReport(
+	assistantText: string,
+	expectedKind: ReviewReport["kind"],
+): TerminalReviewReportCheck {
+	const token =
+		expectedKind === "plan-review"
+			? PLAN_REVIEW_REPORT_TOKEN
+			: REVIEW_REVISION_REPORT_TOKEN;
+	const lines = assistantText.split(/\r?\n/u);
+	const reportIndexes = lines.flatMap((line, index) =>
+		line.startsWith(`${token}:`) ? [index] : [],
+	);
+	if (reportIndexes.length === 0) {
+		return blockReport("missing-review-report");
+	}
+	if (reportIndexes.length > 1) {
+		return blockReport("multiple-review-reports");
+	}
+
+	const reportIndex = reportIndexes[0];
+	const reportLine = reportIndex === undefined ? undefined : lines[reportIndex];
+	if (reportLine === undefined) {
+		return blockReport("missing-review-report");
+	}
+	const report = parseReviewReportLine(reportLine);
+	if (report?.kind !== expectedKind) {
+		return blockReport("malformed-review-report");
+	}
+
+	const lastNonblankIndex = lines.findLastIndex(
+		(line) => line.trim().length > 0,
+	);
+	if (reportIndex !== lastNonblankIndex) {
+		return blockReport("nonterminal-review-report", report.target);
+	}
+
+	return { status: "accepted", report };
+}
+
+/** Validate one terminal plan-review report against current plan artifacts. */
+export async function validatePlanReviewReport(
+	options: ValidatePlanReviewReportOptions,
+): Promise<ReviewCheck> {
+	const parsed = parseTerminalReviewReport(
+		options.assistantText,
+		"plan-review",
+	);
+	if (parsed.status === "unaddressed") return parsed;
+	const target = parsed.report.target;
+
+	const assessment = await assessPlanReviewRound({
+		projectRoot: options.projectRoot,
+		planSlug: target.planSlug,
+		reviewRound: target.reviewRound,
+		assessment: "target",
+	});
+	if (assessment.status === "blocked") {
+		return {
+			status: "unaddressed",
+			block: {
+				reason: assessment.reason,
+				planSlug: assessment.planSlug,
+				...(assessment.reviewRound !== undefined && {
+					reviewRound: assessment.reviewRound,
+				}),
+				...(assessment.latestReviewRound !== undefined && {
+					latestReviewRound: assessment.latestReviewRound,
+				}),
+				...(assessment.findingIds !== undefined && {
+					findingIds: assessment.findingIds,
+				}),
+			},
+		};
+	}
+
+	if (
+		options.expectedPlanSlug !== undefined &&
+		target.planSlug !== options.expectedPlanSlug
+	) {
+		return {
+			status: "unaddressed",
+			block: {
+				reason: "mismatched-review-target",
+				planSlug: target.planSlug,
+				reviewRound: target.reviewRound,
+				expectedPlanSlug: options.expectedPlanSlug,
+			},
+		};
+	}
+
+	return { status: "accepted", target };
+}
+
+function blockReport(
+	reason: ReviewRoundBlockReason,
+	target?: PlanReviewTarget,
+): Extract<TerminalReviewReportCheck, { status: "unaddressed" }> {
+	return {
+		status: "unaddressed",
+		block: {
+			reason,
+			...(target !== undefined && {
+				planSlug: target.planSlug,
+				reviewRound: target.reviewRound,
+			}),
+		},
+	};
 }
 
 function parseTokenPayload(line: string, token: string): unknown {

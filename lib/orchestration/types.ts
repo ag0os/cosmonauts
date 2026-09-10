@@ -6,6 +6,7 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { AgentRegistry } from "../agents/resolver.ts";
 import type { ResolvedAgentReference } from "../domains/bindings.ts";
 import type { EpisodeWarningReporter } from "../memory/episode.ts";
+import type { ReviewRoundBlock } from "./review-revision.ts";
 
 // ============================================================================
 // Agent Roles
@@ -224,6 +225,8 @@ export interface StageResult {
 	stats?: SpawnStats;
 	/** Condensed text from the stage agent's final message (last iteration for loops) */
 	summary?: string;
+	/** Typed plan-review gate failure, when this stage could not establish safe state. */
+	reviewRoundBlock?: ReviewRoundBlock;
 }
 
 /** Result of executing a full chain */
@@ -314,6 +317,11 @@ export type ChainEvent =
 			event: SpawnEvent;
 	  }
 	| { type: "error"; message: string; stage?: ChainStage }
+	| {
+			type: "unaddressed_review_round";
+			stage: ChainStage;
+			block: ReviewRoundBlock;
+	  }
 	| {
 			type: "spawn_completion";
 			spawnId: string;

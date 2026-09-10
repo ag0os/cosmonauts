@@ -19,7 +19,12 @@ import {
 } from "./chain-episodes.ts";
 import { isParallelGroupStep } from "./chain-steps.ts";
 import { getModelForRole, getThinkingForRole } from "./model-resolution.ts";
-import type { PlanReviewTarget } from "./review-revision.ts";
+import {
+	type PlanReviewTarget,
+	type ReviewCheck,
+	type ReviewRoundBlock,
+	validatePlanReviewReport,
+} from "./review-revision.ts";
 import type { StagePromptPurpose } from "./stage-prompts.ts";
 import {
 	appendBoundReviewTarget,
@@ -274,7 +279,12 @@ interface ChainExecutionState {
 	errors: string[];
 	totalIterations: number;
 	statsDurationMs: number;
-	planReviewTarget?: PlanReviewTarget;
+	activePlanReview?: ActivePlanReview;
+}
+
+interface ActivePlanReview {
+	target: PlanReviewTarget;
+	addressedAtTopologyIndex?: number;
 }
 
 interface ChainStepOutcome {
@@ -346,8 +356,31 @@ async function runChainStep(
 		config.steps,
 		stepIndex,
 		stage,
-		state.planReviewTarget,
+		state.activePlanReview?.target,
 	);
+	if (promptContext.purpose.kind === "plan-review") {
+		const observation = await runParticipatingPlanReviewer(
+			stage,
+			stepIndex,
+			config,
+			spawner,
+			constraints,
+			promptContext,
+		);
+		const [result] = await finalizeParticipatingPlanReviewers(
+			[observation],
+			config,
+			state,
+		);
+		if (!result) throw new Error("Missing participating reviewer result.");
+		return {
+			results: [result],
+			success: result.success,
+			error: result.error,
+			loopIterations: stage.loop ? result.iterations : 0,
+			statsDurationMs: result.stats?.durationMs ?? 0,
+		};
+	}
 	const result = await runObservedStage(
 		stage,
 		stepIndex,
@@ -384,12 +417,158 @@ async function runObservedStage(
 		promptContext,
 	);
 
+	emitStageCompletion(config, stage, result);
+
+	return result;
+}
+
+function emitStageCompletion(
+	config: ChainConfig,
+	stage: ChainStage,
+	result: StageResult,
+): void {
 	if (result.stats) {
 		emit(config, { type: "stage_stats", stage, stats: result.stats });
 	}
 	emit(config, { type: "stage_end", stage, result });
+}
 
-	return result;
+interface ParticipatingPlanReviewerObservation {
+	stage: ChainStage;
+	result: StageResult;
+	reviewCheck?: Promise<ReviewCheck>;
+}
+
+async function runParticipatingPlanReviewer(
+	stage: ChainStage,
+	stageIndex: number,
+	config: ChainConfig,
+	spawner: AgentSpawner,
+	constraints: StageConstraints,
+	promptContext: StagePromptContext,
+): Promise<ParticipatingPlanReviewerObservation> {
+	emit(config, { type: "stage_start", stage, stageIndex });
+	let reviewCheck: Promise<ReviewCheck> | undefined;
+	const result = await runStageWithPromptContext(
+		stage,
+		config,
+		spawner,
+		constraints,
+		promptContext,
+		(assistantText) => {
+			reviewCheck = validatePlanReviewReport({
+				assistantText,
+				projectRoot: config.projectRoot,
+				expectedPlanSlug: resolvePlanSlug(config),
+			});
+		},
+	);
+	return { stage, result, reviewCheck };
+}
+
+async function finalizeParticipatingPlanReviewers(
+	observations: readonly ParticipatingPlanReviewerObservation[],
+	config: ChainConfig,
+	state: ChainExecutionState,
+): Promise<StageResult[]> {
+	const checks = await Promise.all(
+		observations.map(async (observation): Promise<ReviewCheck | undefined> => {
+			if (!observation.result.success) return undefined;
+			return (
+				(await observation.reviewCheck) ?? {
+					status: "unaddressed",
+					block: { reason: "missing-review-report" },
+				}
+			);
+		}),
+	);
+	const results = observations.map((observation) => observation.result);
+
+	for (const [index, check] of checks.entries()) {
+		if (check?.status === "unaddressed") {
+			const observation = observations[index];
+			if (observation) {
+				results[index] = blockPlanReviewStage(
+					observation.result,
+					check.block,
+					config,
+				);
+			}
+		}
+	}
+
+	const accepted = checks.flatMap((check, index) =>
+		check?.status === "accepted" ? [{ index, target: check.target }] : [],
+	);
+	const reportedTargets = checks.flatMap((check, index) => {
+		if (check?.status === "accepted") return [{ index, target: check.target }];
+		if (
+			check?.block.planSlug !== undefined &&
+			check.block.reviewRound !== undefined
+		) {
+			return [
+				{
+					index,
+					target: {
+						planSlug: check.block.planSlug,
+						reviewRound: check.block.reviewRound,
+					},
+				},
+			];
+		}
+		return [];
+	});
+	const targetKeys = new Set(
+		reportedTargets.map(
+			({ target }) =>
+				`${target.planSlug}\u0000${target.reviewRound.toString()}`,
+		),
+	);
+	if (targetKeys.size > 1) {
+		const first = reportedTargets[0];
+		const observation = first ? observations[first.index] : undefined;
+		if (first && observation) {
+			results[first.index] = blockPlanReviewStage(
+				observation.result,
+				{ reason: "ambiguous-review-target" },
+				config,
+			);
+		}
+	} else if (
+		accepted.length === observations.length &&
+		results.every((result) => result.success)
+	) {
+		const target = accepted[0]?.target;
+		if (target) {
+			state.activePlanReview = { target };
+		}
+	}
+
+	for (const [index, observation] of observations.entries()) {
+		emitStageCompletion(
+			config,
+			observation.stage,
+			results[index] ?? observation.result,
+		);
+	}
+	return results;
+}
+
+function blockPlanReviewStage(
+	result: StageResult,
+	block: ReviewRoundBlock,
+	config: ChainConfig,
+): StageResult {
+	const identity = block.planSlug
+		? ` for ${block.planSlug}${block.reviewRound ? ` round ${block.reviewRound}` : ""}`
+		: "";
+	const error = `Plan review target${identity} blocked: ${block.reason}`;
+	emit(config, {
+		type: "unaddressed_review_round",
+		stage: result.stage,
+		block,
+	});
+	return { ...result, success: false, error, reviewRoundBlock: block };
 }
 
 function recordChainStepOutcome(
@@ -506,63 +685,107 @@ async function runParallelGroup(
 ): Promise<ParallelGroupOutcome> {
 	emit(config, { type: "parallel_start", step, stepIndex });
 
-	// Launch all members concurrently; emit per-member events in completion order.
+	// Launch all members concurrently. Participating reviewer completion waits for
+	// same-index target reconciliation; ordinary member events remain immediate.
 	const memberPromises = step.stages.map(async (stage) => {
-		return runObservedStage(
-			stage,
+		const promptContext = stagePromptContext(
+			config.steps,
 			stepIndex,
-			config,
-			spawner,
-			constraints,
-			stagePromptContext(
-				config.steps,
-				stepIndex,
-				stage,
-				state.planReviewTarget,
-			),
+			stage,
+			state.activePlanReview?.target,
 		);
+		if (promptContext.purpose.kind === "plan-review") {
+			return {
+				kind: "participating-reviewer" as const,
+				observation: await runParticipatingPlanReviewer(
+					stage,
+					stepIndex,
+					config,
+					spawner,
+					constraints,
+					promptContext,
+				),
+			};
+		}
+		return {
+			kind: "ordinary" as const,
+			result: await runObservedStage(
+				stage,
+				stepIndex,
+				config,
+				spawner,
+				constraints,
+				promptContext,
+			),
+		};
 	});
 
 	// Collect results in declaration order.
 	const settled = await Promise.allSettled(memberPromises);
-	const results: StageResult[] = [];
-	const errors: string[] = [];
+	const results: StageResult[] = new Array(settled.length);
+	const participating: Array<{
+		index: number;
+		observation: ParticipatingPlanReviewerObservation;
+	}> = [];
 
 	for (const [idx, outcome] of settled.entries()) {
 		if (outcome.status === "fulfilled") {
-			results.push(outcome.value);
-			if (!outcome.value.success && outcome.value.error) {
-				errors.push(outcome.value.error);
+			if (outcome.value.kind === "participating-reviewer") {
+				participating.push({
+					index: idx,
+					observation: outcome.value.observation,
+				});
+				results[idx] = outcome.value.observation.result;
+			} else {
+				results[idx] = outcome.value.result;
 			}
 		} else {
 			// runStage never throws — its catch block always returns a StageResult.
 			// This branch guards against unexpected rejections.
 			const message = String(outcome.reason);
 			const fallbackStage = step.stages[idx] ?? step.stages[0];
-			errors.push(message);
-			results.push({
+			results[idx] = {
 				stage: fallbackStage,
 				success: false,
 				iterations: 0,
 				durationMs: 0,
 				error: message,
-			});
+			};
 		}
 	}
 
-	const success = results.every((r) => r.success);
+	if (participating.length > 0) {
+		const finalized = await finalizeParticipatingPlanReviewers(
+			participating.map((member) => member.observation),
+			config,
+			state,
+		);
+		for (const [reviewerIndex, result] of finalized.entries()) {
+			const member = participating[reviewerIndex];
+			if (member) results[member.index] = result;
+		}
+	}
+
+	const completeResults = results.filter(
+		(result): result is StageResult => result !== undefined,
+	);
+	const errors = completeResults.flatMap((result) =>
+		!result.success && result.error ? [result.error] : [],
+	);
+
+	const success = completeResults.every((result) => result.success);
 	const error = errors.length > 0 ? errors.join("; ") : undefined;
 
 	emit(config, {
 		type: "parallel_end",
 		step,
 		stepIndex,
-		results,
+		results: completeResults,
 		success,
 		...(error !== undefined && { error }),
 	});
 
-	return { results, success, error };
+	return { results: completeResults, success, error };
 }
 
 // ============================================================================
@@ -612,6 +835,8 @@ interface PreparedStageExecutionContext {
 	hasStats: boolean;
 	/** Condensed final-message text from the most recent spawn in this stage */
 	lastSummary: string | undefined;
+	/** Receives full assistant text before it is condensed for StageResult. */
+	onAssistantText?: (assistantText: string) => void;
 }
 
 interface StageExecutionContext extends PreparedStageExecutionContext {
@@ -652,12 +877,18 @@ async function runStageWithPromptContext(
 	spawner: AgentSpawner,
 	constraints: StageConstraints | undefined,
 	promptContext: StagePromptContext,
+	onAssistantText?: (assistantText: string) => void,
 ): Promise<StageResult> {
 	const stageStart = Date.now();
 	let context: StageExecutionContext | undefined;
 
 	try {
-		const prepared = prepareStageExecution(stage, config, promptContext);
+		const prepared = prepareStageExecution(
+			stage,
+			config,
+			promptContext,
+			onAssistantText,
+		);
 		if (isStageResult(prepared)) return prepared;
 
 		context = { ...prepared, spawner };
@@ -682,6 +913,7 @@ function prepareStageExecution(
 	stage: ChainStage,
 	config: ChainConfig,
 	promptContext: StagePromptContext,
+	onAssistantText?: (assistantText: string) => void,
 ): PreparedStageExecutionContext | StageResult {
 	const stageStart = Date.now();
 	const stageReference =
@@ -750,6 +982,7 @@ function prepareStageExecution(
 		aggregatedStats: emptySpawnStats(),
 		hasStats: false,
 		lastSummary: undefined,
+		...(onAssistantText !== undefined && { onAssistantText }),
 	};
 }
 
@@ -807,12 +1040,14 @@ async function runOneShotStage(
 	};
 }
 
-function recordStageSummary(
+function recordStageOutput(
 	context: StageExecutionContext,
 	messages: unknown[],
 ): void {
+	const assistantText = extractAssistantText(messages, context.stage.name);
+	context.onAssistantText?.(assistantText);
 	context.lastSummary = summarizeAssistantText(
-		extractAssistantText(messages, context.stage.name),
+		assistantText,
 		context.stage.name,
 	);
 }
@@ -969,7 +1204,7 @@ function recordSuccessfulSpawn(
 	if (!spawnResult.success) return;
 
 	emitSpawned(spawnResult.sessionId);
-	recordStageSummary(context, spawnResult.messages);
+	recordStageOutput(context, spawnResult.messages);
 	emit(context.config, {
 		type: "agent_completed",
 		role: context.stage.name,

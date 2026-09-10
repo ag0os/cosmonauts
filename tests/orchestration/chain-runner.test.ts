@@ -164,6 +164,73 @@ function materializeInstructionReport(prompt: string, token: string): string {
 		.replace("<positive integer>", "1");
 }
 
+function planReviewReport(planSlug: string, reviewRound: number): string {
+	return `${PLAN_REVIEW_REPORT_TOKEN}: ${JSON.stringify({ planSlug, reviewRound })}`;
+}
+
+async function writePlanReviewTarget(options: {
+	projectRoot: string;
+	planSlug: string;
+	statusLine?: string;
+	rounds?: readonly number[];
+	unsafeReviewEntry?: boolean;
+}): Promise<void> {
+	const planDirectory = join(
+		options.projectRoot,
+		"missions",
+		"plans",
+		options.planSlug,
+	);
+	await mkdir(planDirectory, { recursive: true });
+	await writeFile(
+		join(planDirectory, "plan.md"),
+		`---\ntitle: Review target\n${options.statusLine ?? "status: active"}\n---\n\n## Decision Log\n`,
+		"utf-8",
+	);
+	if (options.unsafeReviewEntry) {
+		await mkdir(join(planDirectory, "review.md"));
+		return;
+	}
+	for (const round of options.rounds ?? [1]) {
+		const fileName = round === 1 ? "review.md" : `review-${round}.md`;
+		await writeFile(
+			join(planDirectory, fileName),
+			"# Plan Review\n\n## Findings\n\n## Assessment\n\nReview complete.\n",
+			"utf-8",
+		);
+	}
+}
+
+function successfulTestSpawn(
+	role: string,
+	text = `${role} completed`,
+): SpawnResult {
+	return {
+		success: true,
+		sessionId: `session-${role}`,
+		messages: [
+			{
+				role: "assistant",
+				content: [{ type: "text", text }],
+			},
+		],
+	};
+}
+
+function reviewReportSpawner(assistantText: string): AgentSpawner {
+	return {
+		spawn: vi.fn(async (config) =>
+			successfulTestSpawn(
+				config.role,
+				config.role === "plan-reviewer"
+					? assistantText
+					: `${config.role} completed`,
+			),
+		),
+		dispose: vi.fn(),
+	};
+}
+
 async function writeEpisodicConfig(
 	projectRoot: string,
 	enabled: boolean,
@@ -1511,8 +1578,15 @@ describe("runChain", () => {
 			defaultRegistry,
 		);
 		injectUserPrompt(steps, "strengthen the active plan");
+		const projectRoot = await mkdtemp(join(tmpdir(), "chain-review-prompts-"));
+		await writePlanReviewTarget({ projectRoot, planSlug: "example-plan" });
+		spawnerRef.current = reviewReportSpawner(
+			planReviewReport("example-plan", 1),
+		);
 
-		await runChain(makeConfig(steps));
+		await runChain(
+			makeConfig(steps, { projectRoot, planSlug: "example-plan" }),
+		);
 
 		const spawnMock = spawnerRef.current?.spawn;
 		expect(spawnMock).toBeDefined();
@@ -1528,7 +1602,7 @@ describe("runChain", () => {
 		expect(prompts).toEqual([
 			"Analyze the project and design an implementation plan.\n\nUser request: strengthen the active plan",
 			`Review the active plan and verify its claims against the codebase. Write structured findings.\n\nPlan-review purpose: End with exactly one report line: ${PLAN_REVIEW_REPORT_TOKEN}: {"planSlug":"<slug>","reviewRound":<positive integer>}.`,
-			`Analyze the project and design an implementation plan.\n\nRevision purpose: Revise the active plan produced by the earlier "planner" stage. Read the highest-numbered plan-review round, address every high- and medium-severity finding, and do not start a new plan. End with exactly one report line: ${REVIEW_REVISION_REPORT_TOKEN}: {"planSlug":"<slug>","reviewRound":<positive integer>,"status":"addressed"}, or report status "unaddressed" with a nonempty reason.`,
+			`Analyze the project and design an implementation plan.\n\nRevision purpose: Revise the active plan produced by the earlier "planner" stage. Read the highest-numbered plan-review round, address every high- and medium-severity finding, and do not start a new plan. End with exactly one report line: ${REVIEW_REVISION_REPORT_TOKEN}: {"planSlug":"<slug>","reviewRound":<positive integer>,"status":"addressed"}, or report status "unaddressed" with a nonempty reason.\n\nBound plan-review target: {"planSlug":"example-plan","reviewRound":1}.`,
 		]);
 		expect(prompts[2]).not.toBe(prompts[0]);
 
@@ -1565,6 +1639,399 @@ describe("runChain", () => {
 				),
 			),
 		).toBeUndefined();
+		await rm(projectRoot, { recursive: true, force: true });
+	});
+
+	// @cosmo-behavior plan:chain-stage-context#B-006
+	test("binds plan review to the expected or reviewer-established active target", async () => {
+		const terminal = planReviewReport("review-target", 1);
+		const cases = [
+			{
+				name: "missing",
+				assistantText: "Review completed without a machine report.",
+				reason: "missing-review-report",
+			},
+			{
+				name: "malformed",
+				assistantText: `${PLAN_REVIEW_REPORT_TOKEN}: {not-json}`,
+				reason: "malformed-review-report",
+			},
+			{
+				name: "multiple",
+				assistantText: `${terminal}\n${terminal}`,
+				reason: "multiple-review-reports",
+			},
+			{
+				name: "nonterminal",
+				assistantText: `${terminal}\nTrailing reviewer prose.`,
+				reason: "nonterminal-review-report",
+			},
+			{
+				name: "inactive",
+				assistantText: terminal,
+				statusLine: "status: completed",
+				reason: "inactive-plan",
+			},
+			{
+				name: "mismatched",
+				assistantText: terminal,
+				rounds: [1, 2],
+				reason: "stale-review-round",
+			},
+			{
+				name: "unsafe",
+				assistantText: terminal,
+				unsafeReviewEntry: true,
+				reason: "unsafe-review-entry",
+			},
+			{
+				name: "valid",
+				assistantText: `${"Detailed review prose. ".repeat(20)}\n${terminal}`,
+			},
+		] as const;
+
+		for (const expectedSlugPresent of [true, false]) {
+			for (const testCase of cases) {
+				const projectRoot = await mkdtemp(
+					join(
+						tmpdir(),
+						`chain-review-${expectedSlugPresent ? "expected" : "fallback"}-${testCase.name}-`,
+					),
+				);
+				try {
+					if (
+						testCase.name === "inactive" ||
+						testCase.name === "mismatched" ||
+						testCase.name === "unsafe" ||
+						testCase.name === "valid"
+					) {
+						await writePlanReviewTarget({
+							projectRoot,
+							planSlug: "review-target",
+							...(testCase.name === "inactive" && {
+								statusLine: testCase.statusLine,
+							}),
+							...(testCase.name === "mismatched" && {
+								rounds: testCase.rounds,
+							}),
+							...(testCase.name === "unsafe" && {
+								unsafeReviewEntry: testCase.unsafeReviewEntry,
+							}),
+						});
+					}
+
+					const events: ChainEvent[] = [];
+					spawnerRef.current = {
+						spawn: vi.fn(async (config) => ({
+							success: true,
+							sessionId: `session-${config.role}`,
+							messages: [
+								{
+									role: "assistant",
+									content: [
+										{
+											type: "text",
+											text:
+												config.role === "plan-reviewer"
+													? testCase.assistantText
+													: `${config.role} completed`,
+										},
+									],
+								},
+							],
+						})),
+						dispose: vi.fn(),
+					};
+					const steps = parseChain(
+						"planner -> plan-reviewer -> planner",
+						defaultRegistry,
+					);
+					const result = await runChain(
+						makeConfig(steps, {
+							projectRoot,
+							...(expectedSlugPresent && { planSlug: "review-target" }),
+							onEvent: (event) => events.push(event),
+						}),
+					);
+
+					if (testCase.name === "valid") {
+						expect(result.success, testCase.name).toBe(true);
+						expect(spawnerRef.current.spawn).toHaveBeenCalledTimes(3);
+						const reviserPrompt = vi
+							.mocked(spawnerRef.current.spawn)
+							.mock.calls.at(-1)?.[0].prompt;
+						expect(reviserPrompt).toContain(
+							'Bound plan-review target: {"planSlug":"review-target","reviewRound":1}.',
+						);
+						expect(reviserPrompt).not.toContain("Detailed review prose.");
+						expect(reviserPrompt).not.toContain(terminal);
+						expect(result.stageResults[1]?.summary).not.toContain(terminal);
+						expect(
+							events.some((event) => event.type === "unaddressed_review_round"),
+						).toBe(false);
+					} else {
+						expect(result.success, testCase.name).toBe(false);
+						expect(result.errors[0], testCase.name).toBeTruthy();
+						expect(spawnerRef.current.spawn).toHaveBeenCalledTimes(2);
+						expect(result.stageResults[1]).toMatchObject({
+							success: false,
+							reviewRoundBlock: { reason: testCase.reason },
+						});
+						expect(events).toContainEqual(
+							expect.objectContaining({
+								type: "unaddressed_review_round",
+								block: expect.objectContaining({ reason: testCase.reason }),
+							}),
+						);
+					}
+				} finally {
+					await rm(projectRoot, { recursive: true, force: true });
+				}
+			}
+		}
+
+		for (const expectedSlugPresent of [true, false]) {
+			const projectRoot = await mkdtemp(
+				join(tmpdir(), "chain-review-identity-"),
+			);
+			try {
+				await Promise.all([
+					writePlanReviewTarget({
+						projectRoot,
+						planSlug: "expected-target",
+					}),
+					writePlanReviewTarget({
+						projectRoot,
+						planSlug: "reported-target",
+					}),
+				]);
+				spawnerRef.current = reviewReportSpawner(
+					planReviewReport("reported-target", 1),
+				);
+				const result = await runChain(
+					makeConfig(
+						parseChain("planner -> plan-reviewer -> planner", defaultRegistry),
+						{
+							projectRoot,
+							...(expectedSlugPresent && { planSlug: "expected-target" }),
+						},
+					),
+				);
+				expect(result.success).toBe(!expectedSlugPresent);
+				if (expectedSlugPresent) {
+					expect(result.stageResults[1]?.reviewRoundBlock).toMatchObject({
+						reason: "mismatched-review-target",
+						expectedPlanSlug: "expected-target",
+						planSlug: "reported-target",
+					});
+				} else {
+					const reviserPrompt = vi
+						.mocked(spawnerRef.current.spawn)
+						.mock.calls.at(-1)?.[0].prompt;
+					expect(reviserPrompt).toContain('"planSlug":"reported-target"');
+				}
+			} finally {
+				await rm(projectRoot, { recursive: true, force: true });
+			}
+		}
+
+		for (const statusLine of ["", "status: unknown"] as const) {
+			for (const expectedSlugPresent of [true, false]) {
+				const projectRoot = await mkdtemp(
+					join(tmpdir(), "chain-review-indeterminate-status-"),
+				);
+				try {
+					await writePlanReviewTarget({
+						projectRoot,
+						planSlug: "review-target",
+						statusLine,
+					});
+					spawnerRef.current = reviewReportSpawner(terminal);
+					const result = await runChain(
+						makeConfig(
+							parseChain(
+								"planner -> plan-reviewer -> planner",
+								defaultRegistry,
+							),
+							{
+								projectRoot,
+								...(expectedSlugPresent && { planSlug: "review-target" }),
+							},
+						),
+					);
+					expect(result.stageResults[1]?.reviewRoundBlock).toMatchObject({
+						reason: "plan-status-indeterminate",
+					});
+				} finally {
+					await rm(projectRoot, { recursive: true, force: true });
+				}
+			}
+		}
+	});
+
+	test("replaces prior review state and ignores nonparticipating reviewers", async () => {
+		const projectRoot = await mkdtemp(join(tmpdir(), "chain-review-replace-"));
+		try {
+			await Promise.all(
+				["target-a", "target-b"].map((planSlug) =>
+					writePlanReviewTarget({ projectRoot, planSlug }),
+				),
+			);
+			let participatingReviewer = 0;
+			spawnerRef.current = {
+				spawn: vi.fn(async (config) => {
+					if (config.role !== "plan-reviewer") {
+						return successfulTestSpawn(config.role);
+					}
+					participatingReviewer += 1;
+					return successfulTestSpawn(
+						config.role,
+						planReviewReport(
+							`target-${participatingReviewer === 1 ? "a" : "b"}`,
+							1,
+						),
+					);
+				}),
+				dispose: vi.fn(),
+			};
+			const result = await runChain(
+				makeConfig(
+					parseChain(
+						"planner -> plan-reviewer -> planner -> plan-reviewer -> planner",
+						defaultRegistry,
+					),
+					{ projectRoot },
+				),
+			);
+			const plannerPrompts = vi
+				.mocked(spawnerRef.current.spawn)
+				.mock.calls.filter(([config]) => config.role === "planner")
+				.map(([config]) => config.prompt);
+
+			expect(result.success).toBe(true);
+			expect(plannerPrompts[1]).toContain('"planSlug":"target-a"');
+			expect(plannerPrompts[2]).toContain('"planSlug":"target-b"');
+			expect(plannerPrompts[2]).not.toContain('"planSlug":"target-a"');
+		} finally {
+			await rm(projectRoot, { recursive: true, force: true });
+		}
+
+		spawnerRef.current = {
+			spawn: vi.fn(async (config) =>
+				successfulTestSpawn(
+					config.role,
+					config.role === "reviewer"
+						? planReviewReport("ignored-target", 1)
+						: `${config.role} completed`,
+				),
+			),
+			dispose: vi.fn(),
+		};
+		const genericSteps = parseChain(
+			"planner -> reviewer -> planner",
+			defaultRegistry,
+		);
+		const genericResult = await runChain(makeConfig(genericSteps));
+		const genericReviserPrompt = vi
+			.mocked(spawnerRef.current.spawn)
+			.mock.calls.at(-1)?.[0].prompt;
+		expect(genericResult.success).toBe(true);
+		expect(genericReviserPrompt).not.toContain("Bound plan-review target:");
+
+		spawnerRef.current = createMockSpawner();
+		const nonparticipatingResult = await runChain(
+			makeConfig([makeStage("plan-reviewer", false)]),
+		);
+		expect(nonparticipatingResult.success).toBe(true);
+		expect(
+			nonparticipatingResult.stageResults[0]?.reviewRoundBlock,
+		).toBeUndefined();
+	});
+
+	test("blocks ambiguous same-index review targets in either completion order", async () => {
+		for (const delayedReviewer of [1, 2]) {
+			const projectRoot = await mkdtemp(
+				join(tmpdir(), "chain-review-ambiguous-"),
+			);
+			try {
+				await Promise.all(
+					["target-a", "target-b"].map((planSlug) =>
+						writePlanReviewTarget({ projectRoot, planSlug }),
+					),
+				);
+				let reviewerCount = 0;
+				const completionOrder: number[] = [];
+				spawnerRef.current = {
+					spawn: vi.fn(async (config) => {
+						if (config.role !== "plan-reviewer") {
+							return successfulTestSpawn(config.role);
+						}
+						reviewerCount += 1;
+						const reviewer = reviewerCount;
+						if (reviewer === delayedReviewer) {
+							await new Promise<void>((resolve) => setTimeout(resolve, 1));
+						}
+						completionOrder.push(reviewer);
+						return successfulTestSpawn(
+							`reviewer-${reviewer}`,
+							planReviewReport(`target-${reviewer === 1 ? "a" : "b"}`, 1),
+						);
+					}),
+					dispose: vi.fn(),
+				};
+				const result = await runChain(
+					makeConfig(
+						parseChain(
+							"planner -> plan-reviewer[2] -> planner",
+							defaultRegistry,
+						),
+						{ projectRoot },
+					),
+				);
+
+				expect(completionOrder).toEqual(
+					delayedReviewer === 1 ? [2, 1] : [1, 2],
+				);
+				expect(result.success).toBe(false);
+				expect(result.stageResults).toHaveLength(3);
+				expect(
+					result.stageResults.find(
+						(stage) =>
+							stage.reviewRoundBlock?.reason === "ambiguous-review-target",
+					),
+				).toBeDefined();
+				expect(spawnerRef.current.spawn).toHaveBeenCalledTimes(3);
+			} finally {
+				await rm(projectRoot, { recursive: true, force: true });
+			}
+		}
+	});
+
+	test("accepts identical same-index review targets", async () => {
+		const projectRoot = await mkdtemp(
+			join(tmpdir(), "chain-review-identical-"),
+		);
+		try {
+			await writePlanReviewTarget({ projectRoot, planSlug: "shared-target" });
+			spawnerRef.current = reviewReportSpawner(
+				planReviewReport("shared-target", 1),
+			);
+			const result = await runChain(
+				makeConfig(
+					parseChain("planner -> plan-reviewer[2] -> planner", defaultRegistry),
+					{ projectRoot },
+				),
+			);
+
+			expect(result.success).toBe(true);
+			expect(spawnerRef.current.spawn).toHaveBeenCalledTimes(4);
+			const reviserPrompt = vi
+				.mocked(spawnerRef.current.spawn)
+				.mock.calls.at(-1)?.[0].prompt;
+			expect(reviserPrompt).toContain('"planSlug":"shared-target"');
+		} finally {
+			await rm(projectRoot, { recursive: true, force: true });
+		}
 	});
 
 	test("parallel first-stage members preserve role prompts with injected user request", async () => {
