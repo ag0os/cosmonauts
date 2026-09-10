@@ -205,6 +205,32 @@ describe("chainEventToProgressLine — parallel events", () => {
 	});
 });
 
+describe("chainEventToProgressLine — review halt", () => {
+	test("renders an unaddressed review-round halt in chain progress @cosmo-behavior plan:chain-stage-context#B-012", () => {
+		const identifiedEvent: ChainEvent = {
+			type: "unaddressed_review_round",
+			stage: { name: "task-manager", loop: false },
+			block: {
+				reason: "missing-addressed-evidence",
+				planSlug: "safe-plan",
+				reviewRound: 2,
+			},
+		};
+		const unidentifiedEvent: ChainEvent = {
+			type: "unaddressed_review_round",
+			stage: { name: "plan-reviewer", loop: false },
+			block: { reason: "missing-review-report" },
+		};
+
+		expect(chainEventToProgressLine(identifiedEvent)).toBe(
+			"✗ Task decomposition halted: Plan review target for safe-plan round 2 blocked: missing-addressed-evidence",
+		);
+		expect(chainEventToProgressLine(unidentifiedEvent)).toBe(
+			"✗ Task decomposition halted: Plan review target blocked: missing-review-report",
+		);
+	});
+});
+
 describe("chainEventToProgressLine — agent_tool_use", () => {
 	test("renders tool_execution_start with summary", () => {
 		const event: ChainEvent = {

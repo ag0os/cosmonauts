@@ -2,6 +2,7 @@ import { Text } from "@earendil-works/pi-tui";
 import { unqualifyRole } from "../../../../lib/agents/qualified-role.ts";
 import { formatChainSteps } from "../../../../lib/orchestration/chain-steps.ts";
 import { formatDuration } from "../../../../lib/orchestration/duration.ts";
+import { formatReviewRoundBlockError } from "../../../../lib/orchestration/review-revision.ts";
 import { summarizeToolCall } from "../../../../lib/orchestration/tool-call-summary.ts";
 import type {
 	ChainEvent,
@@ -58,6 +59,8 @@ export function chainEventToProgressLine(
 			return `✗ ${roleLabel(event.stage.name)} failed: ${event.result.error ?? "unknown error"}`;
 		case "error":
 			return `✗ Error${event.stage ? ` in ${roleLabel(event.stage.name)}` : ""}: ${event.message}`;
+		case "unaddressed_review_round":
+			return `✗ Task decomposition halted: ${formatReviewRoundBlockError(event.block)}`;
 		case "stage_stats":
 			return `  💰 ${roleLabel(event.stage.name)}: $${event.stats.cost.toFixed(4)}, ${event.stats.tokens.total} tokens`;
 		case "agent_tool_use":
@@ -72,13 +75,19 @@ export function chainEventToProgressLine(
 		case "parallel_start":
 			return `▶ Parallel ${formatChainSteps([event.step])} starting...`;
 		case "parallel_end":
-			if (event.success) {
-				return `● Parallel ${formatChainSteps([event.step])} done`;
-			}
-			return `✗ Parallel ${formatChainSteps([event.step])} failed${event.error ? `: ${event.error}` : ""}`;
+			return formatParallelEndProgress(event);
 		case "chain_end":
 			return undefined; // Final result handled by execute return
 	}
+}
+
+function formatParallelEndProgress(
+	event: Extract<ChainEvent, { type: "parallel_end" }>,
+): string {
+	if (event.success) {
+		return `● Parallel ${formatChainSteps([event.step])} done`;
+	}
+	return `✗ Parallel ${formatChainSteps([event.step])} failed${event.error ? `: ${event.error}` : ""}`;
 }
 
 /** Build a full summary from accumulated progress lines. */

@@ -85,6 +85,63 @@ Every design-driven default includes `plan-reviewer` as a mandatory adversarial 
 
 Run `cosmonauts run chain list` for the live list, including any project-level overrides.
 
+### Plan-review revision and halt contract
+
+Revision work is derived from chain topology, not selected by a CLI flag. When
+the same resolved agent identity appears on both sides of a reviewer at a
+strictly intervening top-level step, the later stage is told to revise the
+earlier stage's work instead of starting fresh. An intervening exact
+`plan-reviewer` selects the plan-review contract; other exact `reviewer` roles or
+roles ending in `-reviewer` select the generic revision contract. Roles in the
+same bracket group are unordered and do not count as intervening. The first
+stage remains the only stage that receives the user's request.
+
+For a participating plan-review cycle, the reviewer writes its review artifact
+and must finish with exactly one report as its last nonblank line:
+
+```text
+COSMO_PLAN_REVIEW: {"planSlug":"<slug>","reviewRound":<positive integer>}
+```
+
+The report binds the run to one active plan and its safe latest assessable review
+round. If the chain already supplies an expected plan slug, the report must name
+that slug. The revising stage receives that bound slug and round, addresses every
+high- and medium-severity finding with an exact round-qualified reference in a
+parseable Decision Log entry that has a `Decision:` field, and must finish with
+exactly one of these reports as its last nonblank line:
+
+```text
+COSMO_REVIEW_REVISION: {"planSlug":"<same slug>","reviewRound":<same positive integer>,"status":"addressed"}
+COSMO_REVIEW_REVISION: {"planSlug":"<same slug>","reviewRound":<same positive integer>,"status":"unaddressed","reason":"<nonempty reason>"}
+```
+
+Task decomposition fails closed. Immediately before a guarded `task-manager`
+can spawn, the runtime rechecks the bound plan and requires matching addressed
+evidence produced at a strictly lower top-level topology index. Missing,
+mismatched, stale, unreadable, or same-index evidence emits the typed
+`unaddressed_review_round` event, makes the step and chain unsuccessful, and
+does not spawn the task-manager.
+
+The safe shape is sequential, so revision finishes before task decomposition:
+
+```text
+planner -> plan-reviewer -> planner -> task-manager
+```
+
+Putting the reviser and task-manager in the same bracket group is unsafe because
+siblings have no declared order. It halts regardless of which sibling happens to
+finish first:
+
+```text
+planner -> plan-reviewer -> [planner, task-manager]
+```
+
+After a halt, correct the reported artifact or references and rerun the chain.
+For a same-index halt, move `task-manager` to a later sequential step, then
+rerun. There is no warning-only or bypass option, and no automatic continuation
+from an inline halt. This contract adds no command, option, or public field; the
+planner persona and the external `/spec-to-backlog` flow remain unchanged.
+
 ## Drive
 
 `cosmonauts run drive` is the CLI verb for driver runs: inline mode runs inside the host assistant session, while detached mode writes a frozen run directory and continues independently. A detached launcher returning is not the run completing; use the printed `runId` with `cosmonauts run status <runId>` to poll. When mode is omitted, both the CLI and `run_driver` default to detached for 4 or more tasks and inline for smaller task sets. The driver tools (`run_driver`, `run_status`, `run_watch`, and deprecated `watch_events` compatibility) are exposed via the `drive` capability, loaded by `main/cosmo` and `coding/cody`. The detailed run knowledge (backends, modes, commit policy, resume) lives in `/skill:drive`.

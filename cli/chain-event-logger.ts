@@ -5,6 +5,7 @@
 
 import { formatChainSteps } from "../lib/orchestration/chain-steps.ts";
 import { formatDuration } from "../lib/orchestration/duration.ts";
+import { formatReviewRoundBlockError } from "../lib/orchestration/review-revision.ts";
 import type { ChainEvent } from "../lib/orchestration/types.ts";
 
 export { formatDuration } from "../lib/orchestration/duration.ts";
@@ -61,7 +62,7 @@ const CHAIN_EVENT_FORMATTERS: {
 		return `${stage}Error: ${event.message}`;
 	},
 	unaddressed_review_round: (event) =>
-		`[${event.stage.name}] Plan review blocked: ${event.block.reason}`,
+		`[${event.stage.name}] Plan review halted: ${formatReviewRoundBlockError(event.block)}`,
 	spawn_completion: (event) => {
 		const status = event.outcome === "success" ? "Completed" : "Failed";
 		return `[${event.role}] Spawn ${event.spawnId} ${status}: ${event.summary}`;

@@ -341,6 +341,36 @@ describe("formatChainEvent", () => {
 });
 
 describe("createChainEventLogger", () => {
+	test("renders an unaddressed review-round event with available identity @cosmo-behavior plan:chain-stage-context#B-011", () => {
+		const output = captureCliOutput();
+		try {
+			const logger = createChainEventLogger();
+
+			logger({
+				type: "unaddressed_review_round",
+				stage: { name: "task-manager", loop: false },
+				block: {
+					reason: "missing-addressed-evidence",
+					planSlug: "safe-plan",
+					reviewRound: 2,
+				},
+			});
+			logger({
+				type: "unaddressed_review_round",
+				stage: { name: "plan-reviewer", loop: false },
+				block: { reason: "missing-review-report" },
+			});
+
+			expect(output.stdout()).toBe("");
+			expect(output.stderr()).toBe(
+				"[task-manager] Plan review halted: Plan review target for safe-plan round 2 blocked: missing-addressed-evidence\n" +
+					"[plan-reviewer] Plan review halted: Plan review target blocked: missing-review-report\n",
+			);
+		} finally {
+			output.restore();
+		}
+	});
+
 	test("writes one formatted event line to stderr", () => {
 		const output = captureCliOutput();
 		try {
