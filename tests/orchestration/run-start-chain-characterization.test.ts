@@ -6,7 +6,7 @@ import {
 	stat,
 	writeFile,
 } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AgentRegistry } from "../../lib/agents/resolver.ts";
 import type { AgentDefinition } from "../../lib/agents/types.ts";
@@ -189,11 +189,11 @@ describe("runStart durable chain characterization", () => {
 
 	test("resolves a reviewer-established target at durable step start after prompt compilation", async () => {
 		const projectRoot = join(temp.path, "runtime-bound-target");
-		const runId = "chain-00000000-0000-4000-8000-000000000001";
 		const target = {
 			planSlug: "runtime-bound-target",
-			reviewRound: 4,
+			reviewRound: 1,
 		} as const;
+		await writePlanReviewFixture(projectRoot, target.planSlug);
 		const steps = parseChain(
 			"planner -> plan-reviewer -> planner -> task-manager",
 			registry,
@@ -201,28 +201,7 @@ describe("runStart durable chain characterization", () => {
 		const prompts: string[] = [];
 		configureSpawner(async (config) => {
 			prompts.push(config.prompt);
-			if (config.role === "plan-reviewer") {
-				const store = new FileRunStore({
-					rootDir: join(projectRoot, "missions", "sessions"),
-				});
-				await store.appendEvent(
-					{ scope: "chain", runId },
-					{
-						type: "run_activity",
-						runId,
-						details: {
-							source: "chain",
-							kind: "plan_review_target",
-							target,
-						},
-					},
-				);
-			}
-			return {
-				success: true,
-				sessionId: `session-${config.role}`,
-				messages: [],
-			};
+			return reviewGateSpawn(config, target.planSlug);
 		});
 
 		const result = await runDurableChain({
@@ -251,6 +230,343 @@ describe("runStart durable chain characterization", () => {
 				"Review the plan and create atomic implementation tasks.",
 				target,
 			),
+		);
+	});
+
+	// @cosmo-behavior plan:chain-stage-context#B-010
+	test("gates durable task decomposition on earlier reviewer-bound addressed activity", async () => {
+		const successfulRoot = join(temp.path, "durable-review-gate-success");
+		await writePlanReviewFixture(successfulRoot, "durable-review-gate-success");
+		const successfulSpawns: string[] = [];
+		configureSpawner(async (config) => {
+			successfulSpawns.push(config.role);
+			return reviewGateSpawn(config, "durable-review-gate-success");
+		});
+
+		const successful = await runDurableChain({
+			steps: parseChain(
+				"planner -> plan-reviewer -> planner -> task-manager",
+				registry,
+			),
+			projectRoot: successfulRoot,
+			planSlug: "durable-review-gate-success",
+			registry,
+		});
+
+		expect(successful.success).toBe(true);
+		expect(successfulSpawns).toEqual([
+			"planner",
+			"plan-reviewer",
+			"planner",
+			"task-manager",
+		]);
+		const successfulActivity = await readRunActivity(successfulRoot);
+		expect(successfulActivity).toEqual(
+			expect.arrayContaining([
+				{
+					source: "chain",
+					kind: "plan_review_target",
+					target: {
+						planSlug: "durable-review-gate-success",
+						reviewRound: 1,
+					},
+				},
+				{
+					source: "chain",
+					kind: "plan_review_addressed",
+					target: {
+						planSlug: "durable-review-gate-success",
+						reviewRound: 1,
+					},
+					topologyIndex: 2,
+					producerStepId: "chain-3-planner",
+					producerRole: "coding/planner",
+				},
+			]),
+		);
+		const successfulStore = await latestChainStore(successfulRoot);
+		const successfulEvents = (
+			await successfulStore.store.readEvents(successfulStore.run)
+		).events;
+		const targetActivityIndex = successfulEvents.findIndex(
+			({ event }) =>
+				event.type === "run_activity" &&
+				activityKind(event.details) === "plan_review_target",
+		);
+		const reviewerSuccessIndex = successfulEvents.findIndex(
+			({ event }) =>
+				event.type === "step_completed" &&
+				event.stepId === "chain-2-plan-reviewer",
+		);
+		const addressedActivityIndex = successfulEvents.findIndex(
+			({ event }) =>
+				event.type === "run_activity" &&
+				activityKind(event.details) === "plan_review_addressed",
+		);
+		const revisionSuccessIndex = successfulEvents.findIndex(
+			({ event }) =>
+				event.type === "step_completed" && event.stepId === "chain-3-planner",
+		);
+		expect(targetActivityIndex).toBeGreaterThan(-1);
+		expect(targetActivityIndex).toBeLessThan(reviewerSuccessIndex);
+		expect(addressedActivityIndex).toBeGreaterThan(-1);
+		expect(addressedActivityIndex).toBeLessThan(revisionSuccessIndex);
+		expect(
+			successfulEvents.some(
+				({ event }) =>
+					event.type === "step_tool_activity" &&
+					activityKind(event.details)?.startsWith("plan_review") === true,
+			),
+		).toBe(false);
+
+		for (const [name, expression] of [
+			["sequential", "planner -> plan-reviewer -> task-manager"],
+			["missing-target", "planner -> [task-manager, plan-reviewer]"],
+			["revision-first", "planner -> plan-reviewer -> [planner, task-manager]"],
+			["task-first", "planner -> plan-reviewer -> [task-manager, planner]"],
+		] as const) {
+			const projectRoot = join(temp.path, `durable-review-gate-${name}`);
+			const slug = `durable-review-gate-${name}`;
+			await writePlanReviewFixture(projectRoot, slug);
+			const spawns: string[] = [];
+			configureSpawner(async (config) => {
+				spawns.push(config.role);
+				return reviewGateSpawn(config, slug);
+			});
+
+			const result = await runDurableChain({
+				steps: parseChain(expression, registry),
+				projectRoot,
+				planSlug: slug,
+				registry,
+			});
+
+			expect(result.success, name).toBe(false);
+			expect(result.errors[0], name).toMatch(/Plan review target/u);
+			expect(spawns, name).not.toContain("task-manager");
+			const expectedReason = {
+				sequential: "missing-addressed-evidence",
+				"missing-target": "missing-review-target",
+				"revision-first": "nonpreceding-addressed-evidence",
+				"task-first": "missing-addressed-evidence",
+			}[name];
+			expect(await readRunActivity(projectRoot), name).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						source: "chain",
+						kind: "unaddressed_review_round",
+						role: "task-manager",
+						block: expect.objectContaining({
+							reason: expectedReason,
+							taskManagerTopologyIndex: name === "missing-target" ? 1 : 2,
+						}),
+					}),
+				]),
+			);
+			const persisted = await latestChainStore(projectRoot);
+			expect(persisted.run.status, name).toBe("blocked");
+		}
+
+		for (const unaddressed of ["reviewer", "revision"] as const) {
+			const slug = `durable-unaddressed-${unaddressed}`;
+			const projectRoot = join(temp.path, slug);
+			await writePlanReviewFixture(projectRoot, slug);
+			const spawns: string[] = [];
+			configureSpawner(async (config) => {
+				spawns.push(config.role);
+				if (unaddressed === "reviewer" && config.role === "plan-reviewer") {
+					return spawnWithText(config, "review saved without a report");
+				}
+				if (
+					unaddressed === "revision" &&
+					config.prompt.includes("Revision purpose:")
+				) {
+					return spawnWithText(
+						config,
+						`${REVIEW_REVISION_REPORT_TOKEN}: {"planSlug":"${slug}","reviewRound":1,"status":"unaddressed","reason":"still open"}`,
+					);
+				}
+				return reviewGateSpawn(config, slug);
+			});
+			const result = await runDurableChain({
+				steps: parseChain(
+					"planner -> plan-reviewer -> planner -> task-manager",
+					registry,
+				),
+				projectRoot,
+				planSlug: slug,
+				registry,
+			});
+			expect(result.success, unaddressed).toBe(false);
+			expect(spawns, unaddressed).not.toContain("task-manager");
+			const persisted = await latestChainStore(projectRoot);
+			const records = await persisted.store.listStepRecords(persisted.run);
+			const blocked = records.find((record) => record.status === "blocked");
+			expect(blocked?.result, unaddressed).toEqual(
+				expect.objectContaining({
+					outcome: "blocked",
+					nextAction: "wait_for_human",
+					summary: expect.stringContaining("Plan review target"),
+				}),
+			);
+			expect(await readRunActivity(projectRoot), unaddressed).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						kind: "unaddressed_review_round",
+						role: unaddressed === "reviewer" ? "plan-reviewer" : "planner",
+					}),
+				]),
+			);
+		}
+
+		for (const negative of [
+			{
+				name: "wrong-producer-step-id",
+				expression: "planner -> plan-reviewer -> task-manager",
+				details: {
+					source: "chain",
+					kind: "plan_review_addressed",
+					target: { planSlug: "placeholder", reviewRound: 1 },
+					topologyIndex: 0,
+					producerStepId: "chain-1-not-the-planner",
+					producerRole: "coding/planner",
+				},
+			},
+			{
+				name: "wrong-producer-index",
+				expression: "planner -> plan-reviewer -> task-manager",
+				details: {
+					source: "chain",
+					kind: "plan_review_addressed",
+					target: { planSlug: "placeholder", reviewRound: 1 },
+					topologyIndex: 1,
+					producerStepId: "chain-1-planner",
+					producerRole: "coding/planner",
+				},
+			},
+			{
+				name: "wrong-producer-purpose",
+				expression: "planner -> plan-reviewer -> task-manager",
+				details: {
+					source: "chain",
+					kind: "plan_review_addressed",
+					target: { planSlug: "placeholder", reviewRound: 1 },
+					topologyIndex: 0,
+					producerStepId: "chain-1-planner",
+					producerRole: "coding/planner",
+				},
+			},
+			{
+				name: "activity-before-producer-terminal-result",
+				expression: "planner -> plan-reviewer -> [task-manager, planner]",
+				details: {
+					source: "chain",
+					kind: "plan_review_addressed",
+					target: { planSlug: "placeholder", reviewRound: 1 },
+					topologyIndex: 2,
+					producerStepId: "chain-3-2-planner",
+					producerRole: "coding/planner",
+				},
+			},
+			{
+				name: "malformed-addressed-details",
+				expression: "planner -> plan-reviewer -> task-manager",
+				details: {
+					source: "chain",
+					kind: "plan_review_addressed",
+					target: { planSlug: "placeholder", reviewRound: 1 },
+					topologyIndex: 0,
+					producerStepId: "chain-1-planner",
+				},
+			},
+		] as const) {
+			const projectRoot = join(temp.path, negative.name);
+			const slug = negative.name;
+			await writePlanReviewFixture(projectRoot, slug);
+			const details = {
+				...negative.details,
+				target: { planSlug: slug, reviewRound: 1 },
+			};
+			const spawns: string[] = [];
+			configureSpawner(async (config) => {
+				spawns.push(config.role);
+				return reviewGateSpawn(config, slug);
+			});
+
+			const result = await runWithActivityAfterTarget({
+				projectRoot,
+				expression: negative.expression,
+				details,
+			});
+
+			expect(result.success, negative.name).toBe(false);
+			expect(spawns, negative.name).not.toContain("task-manager");
+			const activity = await readRunActivity(projectRoot);
+			expect(activity, negative.name).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						kind: "unaddressed_review_round",
+						block: expect.objectContaining({
+							reason: "mismatched-addressed-evidence",
+						}),
+					}),
+				]),
+			);
+			if (negative.name === "activity-before-producer-terminal-result") {
+				const store = await latestChainStore(projectRoot);
+				const { events } = await store.store.readEvents(store.run);
+				const addressedIndex = events.findIndex(
+					({ event }) =>
+						event.type === "run_activity" &&
+						activityKind(event.details) === "plan_review_addressed",
+				);
+				const producerTerminalIndex = events.findIndex(
+					({ event }) =>
+						(event.type === "step_completed" ||
+							event.type === "step_failed" ||
+							event.type === "step_blocked") &&
+						event.stepId === "chain-3-2-planner",
+				);
+				expect(addressedIndex).toBeGreaterThan(-1);
+				expect(
+					producerTerminalIndex === -1 ||
+						addressedIndex < producerTerminalIndex,
+				).toBe(true);
+			}
+		}
+
+		const staleRoot = join(temp.path, "stale-addressed-evidence");
+		const staleSlug = "stale-addressed-evidence";
+		await writePlanReviewFixture(staleRoot, staleSlug);
+		const staleSpawns: string[] = [];
+		configureSpawner(async (config) => {
+			staleSpawns.push(config.role);
+			return reviewGateSpawn(config, staleSlug);
+		});
+		const stale = await runWithActivityHook({
+			projectRoot: staleRoot,
+			expression: "planner -> plan-reviewer -> planner -> task-manager",
+			activityKind: "plan_review_addressed",
+			afterActivity: async () => {
+				await writeFile(
+					join(staleRoot, "missions", "plans", staleSlug, "review-2.md"),
+					"# Plan Review\n\n## Findings\n\n## Assessment\n\nNew round.\n",
+					"utf-8",
+				);
+			},
+		});
+		expect(stale.success).toBe(false);
+		expect(staleSpawns).not.toContain("task-manager");
+		expect(await readRunActivity(staleRoot)).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: "unaddressed_review_round",
+					block: expect.objectContaining({
+						reason: "stale-addressed-evidence",
+						latestReviewRound: 2,
+					}),
+				}),
+			]),
 		);
 	});
 
@@ -583,6 +899,128 @@ async function successfulSpawn(config: SpawnConfig) {
 			},
 		],
 	};
+}
+
+async function reviewGateSpawn(
+	config: SpawnConfig,
+	planSlug: string,
+): Promise<SpawnResult> {
+	const text =
+		config.role === "plan-reviewer"
+			? `${PLAN_REVIEW_REPORT_TOKEN}: {"planSlug":"${planSlug}","reviewRound":1}`
+			: config.prompt.includes("Revision purpose:")
+				? `${REVIEW_REVISION_REPORT_TOKEN}: {"planSlug":"${planSlug}","reviewRound":1,"status":"addressed"}`
+				: `${config.role} durable summary`;
+	return spawnWithText(config, text);
+}
+
+function spawnWithText(config: SpawnConfig, text: string): SpawnResult {
+	return {
+		success: true,
+		sessionId: `session-${config.role}`,
+		messages: [{ role: "assistant", content: [{ type: "text", text }] }],
+	};
+}
+
+async function writePlanReviewFixture(
+	projectRoot: string,
+	planSlug: string,
+): Promise<void> {
+	const planDirectory = join(projectRoot, "missions", "plans", planSlug);
+	await mkdir(planDirectory, { recursive: true });
+	await Promise.all([
+		writeFile(
+			join(planDirectory, "plan.md"),
+			"---\ntitle: Durable review gate\nstatus: active\n---\n\n## Decision Log\n",
+			"utf-8",
+		),
+		writeFile(
+			join(planDirectory, "review.md"),
+			"# Plan Review\n\n## Findings\n\n## Assessment\n\nComplete.\n",
+			"utf-8",
+		),
+	]);
+}
+
+async function readRunActivity(projectRoot: string): Promise<unknown[]> {
+	const latest = await latestChainStore(projectRoot);
+	const { events } = await latest.store.readEvents(latest.run);
+	return events.flatMap(({ event }) =>
+		event.type === "run_activity" ? [event.details] : [],
+	);
+}
+
+async function latestChainStore(projectRoot: string) {
+	const store = new FileRunStore({
+		rootDir: join(projectRoot, "missions", "sessions"),
+	});
+	const [run] = await store.listRecentRuns({ scope: "chain", limit: 1 });
+	if (!run) throw new Error("Expected a persisted chain run.");
+	return { store, run };
+}
+
+async function runWithActivityAfterTarget(options: {
+	projectRoot: string;
+	expression: string;
+	details: unknown;
+}): Promise<ChainResult> {
+	return runWithActivityHook({
+		...options,
+		activityKind: "plan_review_target",
+		afterActivity: async ({ store, ref }) => {
+			await store.appendEvent(ref, {
+				type: "run_activity",
+				runId: ref.runId,
+				details: options.details,
+			});
+		},
+	});
+}
+
+async function runWithActivityHook(options: {
+	projectRoot: string;
+	expression: string;
+	activityKind: string;
+	afterActivity: (context: {
+		store: FileRunStore;
+		ref: { scope: string; runId: string };
+	}) => Promise<void>;
+}): Promise<ChainResult> {
+	const originalAppendEvent = FileRunStore.prototype.appendEvent;
+	let injected = false;
+	const appendSpy = vi
+		.spyOn(FileRunStore.prototype, "appendEvent")
+		.mockImplementation(async function (this: FileRunStore, ref, event) {
+			const stored = await originalAppendEvent.call(this, ref, event);
+			if (
+				!injected &&
+				event.type === "run_activity" &&
+				activityKind(event.details) === options.activityKind
+			) {
+				injected = true;
+				await options.afterActivity({ store: this, ref });
+			}
+			return stored;
+		});
+	try {
+		return await runDurableChain({
+			steps: parseChain(options.expression, registry),
+			projectRoot: options.projectRoot,
+			planSlug: basename(options.projectRoot),
+			registry,
+		});
+	} finally {
+		appendSpy.mockRestore();
+	}
+}
+
+function activityKind(details: unknown): string | undefined {
+	return typeof details === "object" &&
+		details !== null &&
+		"kind" in details &&
+		typeof details.kind === "string"
+		? details.kind
+		: undefined;
 }
 
 async function writeEpisodicConfig(

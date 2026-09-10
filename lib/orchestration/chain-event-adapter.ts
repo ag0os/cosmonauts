@@ -5,6 +5,13 @@ import type {
 	StoredOrchestrationEvent,
 } from "../durable-runtime/index.ts";
 import type { ChainCompilerStepMetadata } from "./durable-chain-compiler.ts";
+import {
+	formatReviewRoundBlockError,
+	type PlanReviewTarget,
+	parsePlanReviewTarget,
+	parseReviewRoundBlock,
+	type ReviewRoundBlock,
+} from "./review-revision.ts";
 import type {
 	ChainEvent,
 	ChainResult,
@@ -28,6 +35,28 @@ export interface ChainAgentEvidenceDetails {
 	role: string;
 	sessionId: string;
 	event: SpawnEvent;
+}
+
+export interface ChainPlanReviewTargetActivityDetails {
+	source: "chain";
+	kind: "plan_review_target";
+	target: PlanReviewTarget;
+}
+
+export interface ChainPlanReviewAddressedActivityDetails {
+	source: "chain";
+	kind: "plan_review_addressed";
+	target: PlanReviewTarget;
+	topologyIndex: number;
+	producerStepId: string;
+	producerRole: string;
+}
+
+export interface ChainPlanReviewBlockActivityDetails {
+	source: "chain";
+	kind: "unaddressed_review_round";
+	role: string;
+	block: ReviewRoundBlock;
 }
 
 export interface DurableChainEventAdapterOptions {
@@ -113,6 +142,9 @@ function adaptStoredEvent(
 		case "step_tool_activity":
 			adaptStepToolActivity(state, event);
 			break;
+		case "run_activity":
+			adaptRunActivity(state, event);
+			break;
 		case "step_completed":
 			adaptStepTerminal(
 				state,
@@ -188,6 +220,140 @@ function adaptStoredEvent(
 		case "child_run_started":
 			break;
 	}
+}
+
+function adaptRunActivity(
+	state: AdapterState,
+	event: Extract<OrchestrationEvent, { type: "run_activity" }>,
+): void {
+	if (!isRecord(event.details)) return;
+	if (
+		event.details.source !== "chain" ||
+		event.details.kind !== "unaddressed_review_round"
+	) {
+		return;
+	}
+	const details = parsePlanReviewBlockActivityDetails(event.details);
+	if (!details) {
+		state.diagnostics.push({
+			code: "invalid_chain_review_block_evidence",
+			message: "Durable chain review block evidence is invalid.",
+		});
+		return;
+	}
+	const metadata = reviewBlockMetadata(state.topology, details);
+	if (!metadata) {
+		state.diagnostics.push({
+			code: "invalid_chain_review_block_evidence",
+			message: "Durable chain review block role does not match chain metadata.",
+			details: { role: details.role },
+		});
+		return;
+	}
+
+	const error = formatReviewRoundBlockError(details.block);
+	addError(state, error);
+	state.events.push({
+		type: "unaddressed_review_round",
+		stage: chainStage(metadata.stage),
+		block: details.block,
+	});
+}
+
+function reviewBlockMetadata(
+	topology: ChainTopology,
+	details: ChainPlanReviewBlockActivityDetails,
+): ChainCompilerStepMetadata | undefined {
+	const candidates = [...topology.stepById.values()].filter((metadata) => {
+		if (metadata.stage.name !== details.role) return false;
+		return (
+			details.block.taskManagerTopologyIndex === undefined ||
+			metadata.topologyIndex === details.block.taskManagerTopologyIndex
+		);
+	});
+	return candidates[0];
+}
+
+export function parsePlanReviewTargetActivityDetails(
+	value: unknown,
+): ChainPlanReviewTargetActivityDetails | undefined {
+	if (!isRecord(value) || !hasExactKeys(value, ["source", "kind", "target"])) {
+		return undefined;
+	}
+	const target = parsePlanReviewTarget(value.target);
+	if (
+		value.source !== "chain" ||
+		value.kind !== "plan_review_target" ||
+		!target
+	) {
+		return undefined;
+	}
+	return { source: "chain", kind: "plan_review_target", target };
+}
+
+export function parsePlanReviewAddressedActivityDetails(
+	value: unknown,
+): ChainPlanReviewAddressedActivityDetails | undefined {
+	if (
+		!isRecord(value) ||
+		!hasExactKeys(value, [
+			"source",
+			"kind",
+			"target",
+			"topologyIndex",
+			"producerStepId",
+			"producerRole",
+		])
+	) {
+		return undefined;
+	}
+	const target = parsePlanReviewTarget(value.target);
+	if (
+		value.source !== "chain" ||
+		value.kind !== "plan_review_addressed" ||
+		!target ||
+		typeof value.topologyIndex !== "number" ||
+		!Number.isInteger(value.topologyIndex) ||
+		value.topologyIndex < 0 ||
+		typeof value.producerStepId !== "string" ||
+		value.producerStepId.length === 0 ||
+		typeof value.producerRole !== "string" ||
+		value.producerRole.length === 0
+	) {
+		return undefined;
+	}
+	return {
+		source: "chain",
+		kind: "plan_review_addressed",
+		target,
+		topologyIndex: value.topologyIndex,
+		producerStepId: value.producerStepId,
+		producerRole: value.producerRole,
+	};
+}
+
+export function parsePlanReviewBlockActivityDetails(
+	value: unknown,
+): ChainPlanReviewBlockActivityDetails | undefined {
+	if (
+		!isRecord(value) ||
+		!hasExactKeys(value, ["source", "kind", "role", "block"]) ||
+		value.source !== "chain" ||
+		value.kind !== "unaddressed_review_round" ||
+		typeof value.role !== "string" ||
+		value.role.length === 0
+	) {
+		return undefined;
+	}
+	const block = parseReviewRoundBlock(value.block);
+	return block
+		? {
+				source: "chain",
+				kind: "unaddressed_review_round",
+				role: value.role,
+				block,
+			}
+		: undefined;
 }
 
 function adaptStepStarted(
@@ -627,5 +793,17 @@ function addError(state: AdapterState, message: string): void {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null;
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasExactKeys(
+	value: Record<string, unknown>,
+	expectedKeys: readonly string[],
+): boolean {
+	const actualKeys = Object.keys(value).sort();
+	const sortedExpectedKeys = [...expectedKeys].sort();
+	return (
+		actualKeys.length === sortedExpectedKeys.length &&
+		actualKeys.every((key, index) => key === sortedExpectedKeys[index])
+	);
 }

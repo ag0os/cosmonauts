@@ -6,7 +6,6 @@
 
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assessPlanReviewRound } from "../plans/index.ts";
 import { TaskManager } from "../tasks/task-manager.ts";
 import { createPiSpawner } from "./agent-spawner.ts";
 import {
@@ -21,6 +20,8 @@ import {
 import { isParallelGroupStep } from "./chain-steps.ts";
 import { getModelForRole, getThinkingForRole } from "./model-resolution.ts";
 import {
+	assessTaskManagerReviewGate,
+	formatReviewRoundBlockError,
 	type PlanReviewTarget,
 	type ReviewCheck,
 	type ReviewRoundBlock,
@@ -530,63 +531,11 @@ async function assessTaskManagerEntry(
 	taskManagerTopologyIndex: number,
 	config: ChainConfig,
 ): Promise<ReviewRoundBlock | undefined> {
-	if (!activePlanReview) {
-		return { reason: "missing-review-target", taskManagerTopologyIndex };
-	}
-	if (activePlanReview.addressedAtTopologyIndex === undefined) {
-		return {
-			reason: "missing-addressed-evidence",
-			...activePlanReview.target,
-			taskManagerTopologyIndex,
-		};
-	}
-	if (
-		activePlanReview.addressedReviewRound !==
-		activePlanReview.target.reviewRound
-	) {
-		return {
-			reason: "mismatched-addressed-evidence",
-			...activePlanReview.target,
-			addressedReviewRound: activePlanReview.addressedReviewRound,
-			addressedAtTopologyIndex: activePlanReview.addressedAtTopologyIndex,
-			taskManagerTopologyIndex,
-		};
-	}
-	if (activePlanReview.addressedAtTopologyIndex >= taskManagerTopologyIndex) {
-		return {
-			reason: "nonpreceding-addressed-evidence",
-			...activePlanReview.target,
-			addressedReviewRound: activePlanReview.addressedReviewRound,
-			addressedAtTopologyIndex: activePlanReview.addressedAtTopologyIndex,
-			taskManagerTopologyIndex,
-		};
-	}
-
-	const assessment = await assessPlanReviewRound({
-		projectRoot: config.projectRoot,
-		planSlug: activePlanReview.target.planSlug,
-		reviewRound: activePlanReview.addressedReviewRound,
-		assessment: "addressed",
-	});
-	if (assessment.status === "accepted") return undefined;
-
-	return {
-		reason:
-			assessment.reason === "stale-review-round"
-				? "stale-addressed-evidence"
-				: assessment.reason,
-		planSlug: assessment.planSlug,
-		reviewRound: activePlanReview.target.reviewRound,
-		addressedReviewRound: activePlanReview.addressedReviewRound,
-		addressedAtTopologyIndex: activePlanReview.addressedAtTopologyIndex,
+	return assessTaskManagerReviewGate({
+		activePlanReview,
 		taskManagerTopologyIndex,
-		...(assessment.latestReviewRound !== undefined && {
-			latestReviewRound: assessment.latestReviewRound,
-		}),
-		...(assessment.findingIds !== undefined && {
-			findingIds: assessment.findingIds,
-		}),
-	};
+		projectRoot: config.projectRoot,
+	});
 }
 
 async function runObservedStage(
@@ -749,10 +698,7 @@ function blockPlanReviewStage(
 	block: ReviewRoundBlock,
 	config: ChainConfig,
 ): StageResult {
-	const identity = block.planSlug
-		? ` for ${block.planSlug}${block.reviewRound ? ` round ${block.reviewRound}` : ""}`
-		: "";
-	const error = `Plan review target${identity} blocked: ${block.reason}`;
+	const error = formatReviewRoundBlockError(block);
 	emit(config, {
 		type: "unaddressed_review_round",
 		stage: result.stage,

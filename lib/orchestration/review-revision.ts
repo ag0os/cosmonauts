@@ -13,7 +13,7 @@ export interface PlanReviewTarget {
 	reviewRound: number;
 }
 
-type ReviewRoundBlockReason =
+export type ReviewRoundBlockReason =
 	| "missing-review-report"
 	| "malformed-review-report"
 	| "multiple-review-reports"
@@ -39,6 +39,12 @@ export interface ReviewRoundBlock {
 	taskManagerTopologyIndex?: number;
 	findingIds?: readonly string[];
 	reportedReason?: string;
+}
+
+export interface TaskManagerReviewEvidence {
+	target: PlanReviewTarget;
+	addressedAtTopologyIndex?: number;
+	addressedReviewRound?: number;
 }
 
 export type ReviewCheck =
@@ -252,6 +258,201 @@ export async function validateReviewRevisionReport(
 	}
 
 	return { status: "accepted", target };
+}
+
+/** Apply the task-decomposition freshness rule shared by inline and durable runs. */
+export async function assessTaskManagerReviewGate(options: {
+	activePlanReview?: TaskManagerReviewEvidence;
+	taskManagerTopologyIndex: number;
+	projectRoot: string;
+}): Promise<ReviewRoundBlock | undefined> {
+	const { activePlanReview, taskManagerTopologyIndex } = options;
+	if (!activePlanReview) {
+		return { reason: "missing-review-target", taskManagerTopologyIndex };
+	}
+	if (
+		activePlanReview.addressedAtTopologyIndex === undefined ||
+		activePlanReview.addressedReviewRound === undefined
+	) {
+		return {
+			reason: "missing-addressed-evidence",
+			...activePlanReview.target,
+			taskManagerTopologyIndex,
+		};
+	}
+	if (
+		activePlanReview.addressedReviewRound !==
+		activePlanReview.target.reviewRound
+	) {
+		return {
+			reason: "mismatched-addressed-evidence",
+			...activePlanReview.target,
+			addressedReviewRound: activePlanReview.addressedReviewRound,
+			addressedAtTopologyIndex: activePlanReview.addressedAtTopologyIndex,
+			taskManagerTopologyIndex,
+		};
+	}
+	if (activePlanReview.addressedAtTopologyIndex >= taskManagerTopologyIndex) {
+		return {
+			reason: "nonpreceding-addressed-evidence",
+			...activePlanReview.target,
+			addressedReviewRound: activePlanReview.addressedReviewRound,
+			addressedAtTopologyIndex: activePlanReview.addressedAtTopologyIndex,
+			taskManagerTopologyIndex,
+		};
+	}
+
+	const assessment = await assessPlanReviewRound({
+		projectRoot: options.projectRoot,
+		planSlug: activePlanReview.target.planSlug,
+		reviewRound: activePlanReview.addressedReviewRound,
+		assessment: "addressed",
+	});
+	if (assessment.status === "accepted") return undefined;
+
+	return {
+		reason:
+			assessment.reason === "stale-review-round"
+				? "stale-addressed-evidence"
+				: assessment.reason,
+		planSlug: assessment.planSlug,
+		reviewRound: activePlanReview.target.reviewRound,
+		addressedReviewRound: activePlanReview.addressedReviewRound,
+		addressedAtTopologyIndex: activePlanReview.addressedAtTopologyIndex,
+		taskManagerTopologyIndex,
+		...(assessment.latestReviewRound !== undefined && {
+			latestReviewRound: assessment.latestReviewRound,
+		}),
+		...(assessment.findingIds !== undefined && {
+			findingIds: assessment.findingIds,
+		}),
+	};
+}
+
+export function formatReviewRoundBlockError(block: ReviewRoundBlock): string {
+	const identity = block.planSlug
+		? ` for ${block.planSlug}${block.reviewRound ? ` round ${block.reviewRound}` : ""}`
+		: "";
+	return `Plan review target${identity} blocked: ${block.reason}`;
+}
+
+const REVIEW_ROUND_BLOCK_REASONS = new Set<ReviewRoundBlockReason>([
+	"missing-review-report",
+	"malformed-review-report",
+	"multiple-review-reports",
+	"nonterminal-review-report",
+	"missing-review-target",
+	"mismatched-review-target",
+	"ambiguous-review-target",
+	"revision-reported-unaddressed",
+	"missing-addressed-evidence",
+	"mismatched-addressed-evidence",
+	"nonpreceding-addressed-evidence",
+	"stale-addressed-evidence",
+	"invalid-plan-slug",
+	"plan-not-found",
+	"unsafe-plan-directory",
+	"plan-artifact-io",
+	"plan-status-indeterminate",
+	"inactive-plan",
+	"review-artifact-io",
+	"unsafe-review-entry",
+	"invalid-review-name",
+	"duplicate-review-round",
+	"review-round-gap",
+	"no-assessable-review-round",
+	"malformed-review",
+	"stale-review-round",
+	"missing-review-reference",
+]);
+
+/** Narrow persisted chain-local block payloads before projecting them. */
+export function parseReviewRoundBlock(
+	value: unknown,
+): ReviewRoundBlock | undefined {
+	if (!isRecord(value) || !isReviewRoundBlockReason(value.reason)) {
+		return undefined;
+	}
+	const allowedKeys = new Set([
+		"reason",
+		"planSlug",
+		"reviewRound",
+		"expectedPlanSlug",
+		"latestReviewRound",
+		"addressedReviewRound",
+		"addressedAtTopologyIndex",
+		"taskManagerTopologyIndex",
+		"findingIds",
+		"reportedReason",
+	]);
+	if (Object.keys(value).some((key) => !allowedKeys.has(key))) return undefined;
+	if (!optionalSlug(value.planSlug) || !optionalSlug(value.expectedPlanSlug)) {
+		return undefined;
+	}
+	for (const key of [
+		"reviewRound",
+		"latestReviewRound",
+		"addressedReviewRound",
+	] as const) {
+		if (!optionalPositiveInteger(value[key])) return undefined;
+	}
+	for (const key of [
+		"addressedAtTopologyIndex",
+		"taskManagerTopologyIndex",
+	] as const) {
+		if (!optionalTopologyIndex(value[key])) return undefined;
+	}
+	if (
+		value.findingIds !== undefined &&
+		(!Array.isArray(value.findingIds) ||
+			value.findingIds.some(
+				(findingId) => typeof findingId !== "string" || findingId.length === 0,
+			))
+	) {
+		return undefined;
+	}
+	if (
+		value.reportedReason !== undefined &&
+		(typeof value.reportedReason !== "string" ||
+			value.reportedReason.trim().length === 0)
+	) {
+		return undefined;
+	}
+	return value as unknown as ReviewRoundBlock;
+}
+
+function isReviewRoundBlockReason(
+	value: unknown,
+): value is ReviewRoundBlockReason {
+	return (
+		typeof value === "string" &&
+		REVIEW_ROUND_BLOCK_REASONS.has(value as ReviewRoundBlockReason)
+	);
+}
+
+function optionalSlug(value: unknown): boolean {
+	if (value === undefined) return true;
+	if (typeof value !== "string") return false;
+	try {
+		validateSlug(value);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function optionalPositiveInteger(value: unknown): boolean {
+	return (
+		value === undefined ||
+		(typeof value === "number" && Number.isInteger(value) && value > 0)
+	);
+}
+
+function optionalTopologyIndex(value: unknown): boolean {
+	return (
+		value === undefined ||
+		(typeof value === "number" && Number.isInteger(value) && value >= 0)
+	);
 }
 
 function blockAssessment(

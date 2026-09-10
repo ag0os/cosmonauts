@@ -316,6 +316,88 @@ describe("chain-event-adapter", () => {
 			),
 		).toBe(false);
 	});
+
+	test("projects structurally valid durable review blocks with stable error evidence across partial result persistence", () => {
+		const block = {
+			reason: "missing-addressed-evidence",
+			planSlug: "durable-review-gate",
+			reviewRound: 1,
+			taskManagerTopologyIndex: 2,
+		} as const;
+		const adapted = adaptDurableChainEvents({
+			runId: "run-durable-chain",
+			steps: [
+				{
+					stepId: "chain-3-task-manager",
+					topologyIndex: 2,
+					stepIndex: 3,
+					purpose: { kind: "default" },
+					requiresPlanReviewTarget: true,
+					stage: { name: "task-manager", loop: false },
+				},
+			],
+			events: [
+				stored(1, { type: "run_started", runId: "run-durable-chain" }),
+				stored(2, {
+					type: "step_started",
+					runId: "run-durable-chain",
+					stepId: "chain-3-task-manager",
+					backend: "cosmonauts-subagent",
+				}),
+				stored(3, {
+					type: "run_activity",
+					runId: "run-durable-chain",
+					details: {
+						source: "chain",
+						kind: "unaddressed_review_round",
+						role: "task-manager",
+						block,
+						extra: true,
+					},
+				}),
+				stored(4, {
+					type: "run_activity",
+					runId: "run-durable-chain",
+					details: {
+						source: "chain",
+						kind: "unaddressed_review_round",
+						role: "task-manager",
+						block,
+					},
+				}),
+				stored(5, {
+					type: "run_blocked",
+					runId: "run-durable-chain",
+					reason:
+						"Plan review target for durable-review-gate round 1 blocked: missing-addressed-evidence",
+				}),
+			],
+		});
+
+		expect(
+			adapted.events.find((event) => event.type === "unaddressed_review_round"),
+		).toEqual({
+			type: "unaddressed_review_round",
+			stage: { name: "task-manager", loop: false },
+			block,
+		});
+		expect(adapted.events.at(-1)).toEqual(
+			expect.objectContaining({
+				type: "chain_end",
+				result: expect.objectContaining({
+					success: false,
+					errors: [
+						"Plan review target for durable-review-gate round 1 blocked: missing-addressed-evidence",
+					],
+				}),
+			}),
+		);
+		expect(adapted.diagnostics).toEqual([
+			expect.objectContaining({
+				code: "invalid_chain_review_block_evidence",
+			}),
+		]);
+	});
 });
 
 function chainAgentEvent(options: {

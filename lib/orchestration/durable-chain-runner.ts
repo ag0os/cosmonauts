@@ -25,6 +25,11 @@ import {
 import {
 	adaptDurableChainEvents,
 	type ChainAgentEvidenceDetails,
+	type ChainPlanReviewAddressedActivityDetails,
+	type ChainPlanReviewBlockActivityDetails,
+	type ChainPlanReviewTargetActivityDetails,
+	parsePlanReviewAddressedActivityDetails,
+	parsePlanReviewTargetActivityDetails,
 } from "./chain-event-adapter.ts";
 import {
 	type ChainCompilerStepMetadata,
@@ -34,8 +39,12 @@ import {
 	shouldRunChainInline,
 } from "./durable-chain-compiler.ts";
 import {
+	assessTaskManagerReviewGate,
+	formatReviewRoundBlockError,
 	type PlanReviewTarget,
-	parsePlanReviewTarget,
+	type ReviewRoundBlock,
+	validatePlanReviewReport,
+	validateReviewRevisionReport,
 } from "./review-revision.ts";
 import type { StagePromptPurpose } from "./stage-prompts.ts";
 import {
@@ -257,11 +266,31 @@ async function executeChainStep({
 }): Promise<StepResult> {
 	const spawn = readSpawnOptions(prepared.input.backendOptions);
 	const promptMetadata = readPromptMetadata(prepared.input.backendOptions);
+	const persistedReview = shouldReadPersistedReview(promptMetadata)
+		? await readPersistedPlanReview(store, ref)
+		: undefined;
+	if (promptMetadata.requiresPlanReviewTarget) {
+		const block = await assessDurableTaskManagerEntry({
+			store,
+			ref,
+			persistedReview,
+			taskManagerTopologyIndex: promptMetadata.topologyIndex,
+			projectRoot: spawn.cwd,
+		});
+		if (block) {
+			return persistDurableReviewBlock({
+				store,
+				ref,
+				role: spawn.role,
+				block,
+			});
+		}
+	}
 	const target = shouldAppendBoundReviewTarget(
 		promptMetadata.purpose,
 		promptMetadata.requiresPlanReviewTarget,
 	)
-		? await readPersistedPlanReviewTarget(store, ref)
+		? persistedReview?.target
 		: undefined;
 	const materializedSpawn = {
 		...spawn,
@@ -326,13 +355,245 @@ async function executeChainStep({
 		};
 	}
 
+	const assistantText = extractAssistantText(spawnResult.messages, stage.name);
+	if (promptMetadata.purpose.kind === "plan-review") {
+		const check = await validatePlanReviewReport({
+			assistantText,
+			projectRoot: spawn.cwd,
+			expectedPlanSlug: promptMetadata.expectedPlanSlug,
+		});
+		if (check.status === "unaddressed") {
+			return persistDurableReviewBlock({
+				store,
+				ref,
+				role,
+				block: check.block,
+			});
+		}
+		await store.appendEvent(ref, {
+			type: "run_activity",
+			runId: ref.runId,
+			details: {
+				source: "chain",
+				kind: "plan_review_target",
+				target: check.target,
+			} satisfies ChainPlanReviewTargetActivityDetails,
+		});
+	}
+	if (
+		promptMetadata.purpose.kind === "revision" &&
+		promptMetadata.purpose.reviewKind === "plan"
+	) {
+		const check = await validateReviewRevisionReport({
+			assistantText,
+			projectRoot: spawn.cwd,
+			expectedTarget: persistedReview?.target,
+		});
+		if (check.status === "unaddressed") {
+			return persistDurableReviewBlock({
+				store,
+				ref,
+				role,
+				block: check.block,
+			});
+		}
+		await store.appendEvent(ref, {
+			type: "run_activity",
+			runId: ref.runId,
+			details: {
+				source: "chain",
+				kind: "plan_review_addressed",
+				target: check.target,
+				topologyIndex: promptMetadata.topologyIndex,
+				producerStepId: prepared.step.id,
+				producerRole: resolvedProducerRole(stage, spawn),
+			} satisfies ChainPlanReviewAddressedActivityDetails,
+		});
+	}
+
 	return {
 		outcome: "success",
-		summary: summarizeAssistantText(
-			extractAssistantText(spawnResult.messages, stage.name),
-			stage.name,
-		),
+		summary: summarizeAssistantText(assistantText, stage.name),
 		artifacts: [],
+	};
+}
+
+function shouldReadPersistedReview(metadata: DurablePromptMetadata): boolean {
+	return (
+		metadata.requiresPlanReviewTarget ||
+		(metadata.purpose.kind === "revision" &&
+			metadata.purpose.reviewKind === "plan")
+	);
+}
+
+interface PersistedPlanReview {
+	target?: PlanReviewTarget;
+	addressed?: ChainPlanReviewAddressedActivityDetails;
+	addressedState: "missing" | "valid" | "invalid";
+}
+
+async function readPersistedPlanReview(
+	store: RunStore,
+	ref: RunRef,
+): Promise<PersistedPlanReview> {
+	const { events } = await store.readEvents(ref);
+	const state: PersistedPlanReview = { addressedState: "missing" };
+	for (const { event } of events) {
+		if (event.type !== "run_activity" || !isRecord(event.details)) continue;
+		if (
+			event.details.source === "chain" &&
+			event.details.kind === "plan_review_target"
+		) {
+			const details = parsePlanReviewTargetActivityDetails(event.details);
+			state.target = details?.target;
+			state.addressed = undefined;
+			state.addressedState = "missing";
+			continue;
+		}
+		if (
+			event.details.source === "chain" &&
+			event.details.kind === "plan_review_addressed"
+		) {
+			const details = parsePlanReviewAddressedActivityDetails(event.details);
+			state.addressed = details;
+			state.addressedState = details ? "valid" : "invalid";
+		}
+	}
+	return state;
+}
+
+async function assessDurableTaskManagerEntry(options: {
+	store: RunStore;
+	ref: RunRef;
+	persistedReview?: PersistedPlanReview;
+	taskManagerTopologyIndex: number;
+	projectRoot: string;
+}): Promise<ReviewRoundBlock | undefined> {
+	const { persistedReview, taskManagerTopologyIndex } = options;
+	if (!persistedReview?.target) {
+		return assessTaskManagerReviewGate({
+			taskManagerTopologyIndex,
+			projectRoot: options.projectRoot,
+		});
+	}
+	if (
+		persistedReview.addressedState !== "valid" ||
+		!persistedReview.addressed
+	) {
+		return {
+			reason:
+				persistedReview.addressedState === "invalid"
+					? "mismatched-addressed-evidence"
+					: "missing-addressed-evidence",
+			...persistedReview.target,
+			taskManagerTopologyIndex,
+		};
+	}
+
+	const addressed = persistedReview.addressed;
+	if (!sameReviewTarget(addressed.target, persistedReview.target)) {
+		return {
+			reason: "mismatched-addressed-evidence",
+			...persistedReview.target,
+			addressedReviewRound: addressed.target.reviewRound,
+			addressedAtTopologyIndex: addressed.topologyIndex,
+			taskManagerTopologyIndex,
+		};
+	}
+	if (
+		!(await isCorrelatedAddressedProducer(
+			options.store,
+			options.ref,
+			addressed,
+		))
+	) {
+		return {
+			reason: "mismatched-addressed-evidence",
+			...persistedReview.target,
+			addressedReviewRound: addressed.target.reviewRound,
+			addressedAtTopologyIndex: addressed.topologyIndex,
+			taskManagerTopologyIndex,
+		};
+	}
+
+	return assessTaskManagerReviewGate({
+		activePlanReview: {
+			target: persistedReview.target,
+			addressedAtTopologyIndex: addressed.topologyIndex,
+			addressedReviewRound: addressed.target.reviewRound,
+		},
+		taskManagerTopologyIndex,
+		projectRoot: options.projectRoot,
+	});
+}
+
+async function isCorrelatedAddressedProducer(
+	store: RunStore,
+	ref: RunRef,
+	addressed: ChainPlanReviewAddressedActivityDetails,
+): Promise<boolean> {
+	const [{ graph }, record] = await Promise.all([
+		store.readRunGraph(ref),
+		store.readStepRecord({ ...ref, stepId: addressed.producerStepId }),
+	]);
+	const producer = graph.steps.find(
+		(step) => step.id === addressed.producerStepId,
+	);
+	if (!producer || !record) return false;
+	const metadata = readPromptMetadata(producer.backend.options);
+	const spawn = readSpawnOptions(producer.backend.options);
+	const stage = readStageOptions(producer.backend.options);
+	return (
+		metadata.topologyIndex === addressed.topologyIndex &&
+		metadata.purpose.kind === "revision" &&
+		metadata.purpose.reviewKind === "plan" &&
+		resolvedProducerRole(stage, spawn) === addressed.producerRole &&
+		record.status === "completed" &&
+		record.result?.outcome === "success"
+	);
+}
+
+function resolvedProducerRole(
+	stage: DurableChainStageOptions,
+	spawn: DurableChainStageSpawnOptions,
+): string {
+	return (
+		spawn.agentReference?.resolved.qualifiedId ??
+		stage.agentReference?.resolved.qualifiedId ??
+		stage.name
+	);
+}
+
+function sameReviewTarget(
+	left: PlanReviewTarget,
+	right: PlanReviewTarget,
+): boolean {
+	return (
+		left.planSlug === right.planSlug && left.reviewRound === right.reviewRound
+	);
+}
+
+async function persistDurableReviewBlock(options: {
+	store: RunStore;
+	ref: RunRef;
+	role: string;
+	block: ReviewRoundBlock;
+}): Promise<StepResult> {
+	await options.store.appendEvent(options.ref, {
+		type: "run_activity",
+		runId: options.ref.runId,
+		details: {
+			source: "chain",
+			kind: "unaddressed_review_round",
+			role: options.role,
+			block: options.block,
+		} satisfies ChainPlanReviewBlockActivityDetails,
+	});
+	return {
+		outcome: "blocked",
+		summary: formatReviewRoundBlockError(options.block),
+		artifacts: [],
+		nextAction: "wait_for_human",
 	};
 }
 
@@ -495,26 +756,6 @@ function stagePromptPurposeOption(
 			reviewKind: value.reviewKind,
 			authorIdentity: value.authorIdentity,
 		};
-	}
-	return undefined;
-}
-
-async function readPersistedPlanReviewTarget(
-	store: RunStore,
-	ref: RunRef,
-): Promise<PlanReviewTarget | undefined> {
-	const { events } = await store.readEvents(ref);
-	for (let index = events.length - 1; index >= 0; index--) {
-		const event = events[index]?.event;
-		if (event?.type !== "run_activity" || !isRecord(event.details)) continue;
-		if (
-			event.details.source !== "chain" ||
-			event.details.kind !== "plan_review_target"
-		) {
-			continue;
-		}
-		const target = parsePlanReviewTarget(event.details.target);
-		return target;
 	}
 	return undefined;
 }
