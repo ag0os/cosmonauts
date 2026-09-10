@@ -18,6 +18,7 @@ You are coordinating the design-and-decomposition half of a cosmonauts plan: fro
 
 **Key facts about cosmonauts chains**
 - Chains write artifacts to disk and log to **stderr only**; run them in the background with stderr redirected to a log file. The detached shell returning is not the chain finishing.
+- **Never edit an artifact a running chain owns.** A `planner -> plan-reviewer` chain does not only write review files: the planner stage stays live and can rewrite `plan.md` late in the run, silently discarding concurrent edits. Wait for the process to exit before revising, and take a backup copy first. Phase 2 is safe to run concurrently because it only reads.
 - A stalled stage (0% CPU mid-turn) usually means the stage's model is out of usage — check the agent's model before blaming the runner.
 - Launch multi-agent review workflows **from the repo root** — a `cd` elsewhere poisons relative paths for every subagent.
 
@@ -26,8 +27,8 @@ You are coordinating the design-and-decomposition half of a cosmonauts plan: fro
 ## Phase 1 — Plan design (cosmonauts chain)
 
 1. `cosmonauts run chain "planner -> plan-reviewer" "<prompt>" 2> <scratchpad>/chain-plan.log` in the background (expect 30–60 min).
-2. Prompt must state: design the EXISTING plan slug `$1`; update `missions/plans/$1/plan.md` in place (preserve `createdAt`, do NOT create a new slug); the spec at `missions/plans/$1/spec.md` is authoritative; honor every ratified decision in the spec's Assumptions verbatim; name the relevant `missions/architecture/*.md` source-of-truth docs; design only, no implementation; plan-reviewer writes `missions/plans/$1/review.md`.
-3. On completion confirm `plan.md` gained the design (behaviors `B-###`, Design, Files to Change, Quality Contract, Implementation Order) and `review.md` exists.
+2. Prompt must state: design the EXISTING plan slug `$1`; update `missions/plans/$1/plan.md` in place (preserve `createdAt`, do NOT create a new slug); the spec at `missions/plans/$1/spec.md` is authoritative; honor every ratified decision in the spec's Assumptions verbatim; name the relevant `missions/architecture/*.md` source-of-truth docs; design only, no implementation; plan-reviewer writes its findings to the next free `missions/plans/$1/review-<n>.md`, per the shipped convention (`planning-system-hardening` D-002: lowest unused number, legacy `review.md` counts as round 1). Do not tell it to write `review.md` — that name is reserved for pre-convention rounds, and pinning it can collide with an existing round 1.
+3. On completion confirm `plan.md` gained the design (behaviors `B-###`, Design, Files to Change, Quality Contract, Implementation Order) and at least one review round exists. **Expect more than one.** The planner's own persona (step 8) may spawn a `plan-reviewer` sidecar and then revise against it, so a two-stage chain can legitimately produce `review.md` *and* `review-2.md` and rewrite `plan.md` afterwards. Read every round, not just the first.
 
 ## Phase 2 — Independent adversarial review (your channel)
 

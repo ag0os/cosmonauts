@@ -2,7 +2,7 @@
 title: Later chain stages know what came before them
 status: active
 createdAt: '2026-09-09T18:36:28.733Z'
-updatedAt: '2026-09-09T20:35:00.000Z'
+updatedAt: '2026-09-10T14:05:00.000Z'
 ---
 
 ## Overview
@@ -154,25 +154,44 @@ exclusions remain ratified ground; every Decision Log entry below is derived.
   - Decided-by: derived
 
 - **D-006 - Review-round sequences fail closed on gaps, collisions, and unsafe entries**
-  - Decision: recognize only regular, non-symlink `review.md` (legacy round 1)
-    and regular, non-symlink `review-<positive integer>.md` **that carry a
-    `## Findings` section**. A name-matching file with no findings section is
-    another reviewer's artifact and is skipped entirely — it is neither a round
-    nor `malformed-review`, and it does not create a gap. A file that has a
-    findings section which will not parse is still `malformed-review`. A valid sequence has
-    exactly one round-1 representation and every number through its maximum. A
-    collision, gap, recognized-name symlink/directory, duplicate logical round,
-    or report below the maximum is a typed block. In a historical `1,3` set, a
-    lowest-free reviewer may create round 2, but round 2 cannot authorize
-    continuation while round 3 remains highest; repair is explicit, never mtime
-    or automatic renumbering.
-  - Alternatives: permit gaps and select maximum (newly written lower round may
-    be ignored); mtime latest (reverses shipped reader); auto-renumber (rewrites
-    evidence/citations); treat every `review-<n>.md` as a plan-review round
-    (`missions/archive/plans/living-memory-fidelity/` holds 17 `review-<n>.md`
-    files written by other reviewers with no `PR-###` block — under that rule the
-    highest round is permanently `malformed-review` and the gate can never pass
-    for such a plan).
+  - Decision: two sets are derived from the plan directory, and they are **not**
+    the same set. Conflating them is the defect this entry exists to prevent.
+    - The **allocation set** is every regular, non-symlink `review.md` (legacy
+      round 1) or `review-<positive integer>.md`, *regardless of content*. It
+      governs collision and contiguity, because `bundled/coding/prompts/plan-reviewer.md`
+      allocates the lowest unused number across all of them. A valid allocation
+      set has exactly one round-1 representation and every number through its
+      maximum; a collision, gap, recognized-name symlink or directory, or
+      duplicate logical round is a typed block.
+    - The **assessable rounds** are the allocation-set members carrying a
+      `## Findings` section. A member without one is another reviewer's artifact:
+      it still occupies its number for contiguity, but it is never assessed and
+      is never `malformed-review`. A member whose findings section will not parse
+      is `malformed-review`.
+    - **Latest** is the highest assessable round. Non-assessable members numbered
+      *above* it are ignored rather than blocking — they are other tools' output,
+      not plan-review rounds this gate can adjudicate. A revision report below the
+      latest assessable round is a typed block.
+    In a historical `1,3` allocation set a lowest-free reviewer may create round 2,
+    but round 2 cannot authorize continuation while round 3 remains the highest
+    assessable round; repair is explicit, never mtime or automatic renumbering.
+  - Worked example (the case that falsified the first attempt at this rule):
+    `missions/archive/plans/living-memory-fidelity/` holds `review-1.md` through
+    `review-18.md`, written by other reviewers with no `PR-###` block. A
+    `plan-and-build` run there writes `review-19.md` in the plan-reviewer format,
+    because allocation is lowest-unused. Allocation set `1..19` is contiguous;
+    assessable set is `{19}`; latest is 19 and the gate assesses it and can pass.
+    Treating skipped files as *absent* instead of *occupied* would make the
+    allocation set `{19}` with a `1..18` gap and block permanently — the exact
+    inverse of the intended behaviour.
+  - Alternatives: permit gaps and select maximum (a newly written lower round may
+    be ignored); mtime latest (reverses the shipped reader); auto-renumber
+    (rewrites evidence and citations); one combined set that skips non-findings
+    files entirely (breaks contiguity, as the worked example shows); treat every
+    name-matching file as assessable (a non-conforming latest round then blocks
+    with no correction path — measured exposure is 5 of 31 archived plan
+    directories, 4 of them legacy pre-convention `review.md` files, so this is a
+    real but narrow case rather than the widespread breakage first claimed).
   - Why: safely reconciles the historical lowest-free allocator with the
     highest-numbered reader under malformed state.
   - Decided-by: derived
@@ -258,10 +277,13 @@ exclusions remain ratified ground; every Decision Log entry below is derived.
     `../orchestration` or `../durable-runtime`, and an assertion that both paths
     produce byte-identical prompts for the same `(steps, zero-based index, stage)`
     triple.
-  - Alternatives: leave both to the unbound rows (five of seven gates here are
-    unbound, and this repo has a recorded history of shipping structural remedies
-    unbound); bind `fallow` (blocked by `execution-not-consented`, and consenting
-    to project-controlled execution is outside this slice).
+  - Alternatives: leave both to the unbound rows (this repo has a recorded history
+    of shipping structural remedies unbound and regretting it). Superseded in part
+    on 2026-09-10: `fallow` consent was granted, so `duplication`, `complexity`
+    and `dead-code` are now bound. D-012 still stands, because the one rule this
+    plan most depends on — that plan-side review assessment imports no
+    orchestration or durable-runtime code — maps to `boundary-conformance`, which
+    remains unbound for `provider-not-configured`.
   - Why: the two rules the design actually leans on should not be among the
     unenforced ones when each is a cheap, deterministic test.
   - Decided-by: derived
@@ -311,9 +333,9 @@ exclusions remain ratified ground; every Decision Log entry below is derived.
 ### B-005 - Artifacts yield one safe latest round and real references
 
 - Source: AC-004
-- Context: active/completed plans with legacy/numbered contiguous or gapped rounds, round-1 collision, symlink/non-file entries, I/O failure, malformed findings, quoted/fenced mentions, and complete/incomplete references
+- Context: active/completed plans with legacy/numbered contiguous or gapped rounds, round-1 collision, symlink/non-file entries, I/O failure, malformed findings, quoted/fenced mentions, complete/incomplete references, and — separating the allocation set from the assessable set — a directory of non-findings-bearing `review-<n>.md` files topped by one conforming round (the `living-memory-fidelity` shape), plus a non-findings file numbered *above* the latest assessable round
 - Action: reviewer target or addressed claim is assessed
-- Expected: only an active plan's unique regular contiguous highest round is eligible; every other state yields a typed reason; quoted/fenced mentions do not count; low-only/empty rounds require reports but no edit
+- Expected: contiguity is judged over the allocation set (every name-matching regular file, content irrelevant) while eligibility is judged over the assessable subset (those carrying `## Findings`), so a non-findings file occupies its number without being assessed and without creating a gap; the latest assessable round of an active plan is eligible and the `living-memory-fidelity` shape passes rather than blocking; non-findings files numbered above the latest assessable round are ignored, not blocking; every other state yields a typed reason; quoted/fenced mentions do not count; low-only/empty rounds require reports but no edit
 - Seam: `lib/plans/review-rounds.ts`
 - Test: `tests/plans/file-system.test.ts` > `derives a safe latest review round and ignores quoted or fenced references`
 - Marker: `@cosmo-behavior plan:chain-stage-context#B-005`
@@ -555,11 +577,18 @@ Plan assessment imports no orchestration/runtime code; shared masking has no pla
 semantics; generic durable runtime imports no review semantics. Both paths share
 purpose/report/assessment logic.
 
-Runtime analysis bindings were inspected. Cognitive complexity, duplication,
-boundary-conformance, and symbol trace returned no evidence because provider
-`fallow` is unbound with `execution-not-consented`. Direct reading plus
-`review.md` and `review-2.md` supplied interface/state evidence. Missing analysis
-is uncertainty, not a clean baseline; bindable gates remain degraded.
+Runtime analysis bindings were inspected, and then re-resolved on 2026-09-10
+after per-project `fallow` execution consent was granted in user-owned state
+(`~/.cosmonauts/analysis-execution-consent.json`; the repository cannot grant
+itself this permission). Measured result with provider `fallow` 2.54.2 detected:
+`duplication`, `complexity`, and `dead-code` resolve **bound**;
+`boundary-conformance` resolves **unbound** with reason `provider-not-configured`
+— boundary rules are absent, which consent does not supply; and `mutation` is not
+a `fallow` capability at all, so no provider can bind it here. The earlier
+`execution-not-consented` attribution was correct only for the first three.
+Direct reading plus `review.md` and `review-2.md` supplied interface and state
+evidence. Three bindable gates are now enforced rather than degraded; the two
+that remain unbound carry their true reasons.
 
 ### 8. Complete state-space outcomes
 
@@ -619,8 +648,13 @@ prompt assembly, `/spec-to-backlog`, and all generic `lib/durable-runtime/*`.
 - **Filesystem attacks/read failures must be total.** Symlinks, non-files,
   permission errors, and races become typed blocks under a validated slug; no
   project-controlled code executes.
-- **Structural-analysis evidence is absent.** Relevant bindings are unbound due
-  `execution-not-consented`; reviewer judgment substitutes no fake verdict.
+- **Structural-analysis evidence is now partial rather than absent.**
+  `duplication`, `complexity` and `dead-code` are bound and must pass;
+  `boundary-conformance` is unbound for `provider-not-configured` and `mutation`
+  has no provider, so both rest on D-012's static assertions plus reviewer
+  judgment. Reviewer judgment substitutes no fake verdict for either. A bound
+  gate that fails to execute during implementation is blocking, not silently
+  unbound.
 - **Scope expansion stop:** halt if correctness needs arbitrary prior prose,
   persona changes, a public CLI field, factory-mode system layer, project code
   execution, or generic durable contract changes.
@@ -650,11 +684,11 @@ Plan-specific criteria:
 |---:|---|---|---|---|---|---|
 | 1 | `correctness` | universal | bound | B-001 through B-013 focused evidence and project-native full correctness/static checks pass; criteria 2-5 negatives are mandatory; D-012's two structural assertions (review-round import direction, inline/durable prompt parity) pass here rather than awaiting reviewer judgement | project-discovered | hard fail |
 | 2 | `artifact-conformance` | universal | bound | Required behavior fields resolve and exact markers exist in named evidence files | artifact evidence | hard fail |
-| 3 | `mutation` | bindable | unbound | Mutants erasing purpose, identity, index conversion, strict-lower task guard, error aggregation, round safety, masking, or durable proof fail tests | pending | unbound; reviewer inspects strength |
-| 4 | `duplication` | bindable | unbound | One purpose, report, round, and masking implementation serves both paths | pending | unbound (`execution-not-consented`); reviewer judgment |
-| 5 | `complexity` | bindable | unbound | Parsing/assessment stay outside runner/compiler control flow | pending | unbound (`execution-not-consented`); reviewer judgment |
-| 6 | `boundary-conformance` | bindable | unbound | Plan logic imports no orchestration; shared masking has no plan semantics; generic runtime imports no review semantics | pending | unbound (`execution-not-consented`); reviewer judgment |
-| 7 | `dead-code` | bindable | unbound | Every purpose/report/block/activity/event variant has producer and consumer evidence | pending | unbound (`execution-not-consented`); reviewer judgment |
+| 3 | `mutation` | bindable | unbound | Mutants erasing purpose, identity, index conversion, strict-lower task guard, error aggregation, round safety, masking, or durable proof fail tests | pending | unbound — `mutation` is not a capability any configured provider supplies; reviewer inspects test strength |
+| 4 | `duplication` | bindable | **bound** | One purpose, report, round, and masking implementation serves both paths | `fallow` 2.54.2 | hard fail |
+| 5 | `complexity` | bindable | **bound** | Parsing/assessment stay outside runner/compiler control flow | `fallow` 2.54.2 | hard fail |
+| 6 | `boundary-conformance` | bindable | unbound | Plan logic imports no orchestration; shared masking has no plan semantics; generic runtime imports no review semantics | pending | unbound — reason `provider-not-configured` (no boundary rules configured), which consent does not fix; D-012's bound static import assertion covers the one rule this plan depends on |
+| 7 | `dead-code` | bindable | **bound** | Every purpose/report/block/activity/event variant has producer and consumer evidence | `fallow` 2.54.2 | hard fail |
 
 ## Implementation Order
 

@@ -13,6 +13,18 @@ root), and the terminal planner then ran for **24 seconds doing only reads and
 revised nothing**. The agent behaved correctly: it was told to design a plan and
 found a finished one. The findings were applied by hand.
 
+**The failure is intermittent, not deterministic** (recorded 2026-09-10). A
+`planner -> plan-reviewer` run on this very plan produced the opposite outcome:
+the planner wrote a review round and then substantively revised its own plan
+against it, honouring the persona's step-8 revision contract unprompted. Both
+observations are real. The contradiction is what makes the outcome unstable — the
+persona says "when review artifacts exist, this is a revision pass" while the
+stage default orders a fresh design, so which one wins is not something a caller
+can predict or a run can be trusted on. That instability, rather than a guaranteed
+no-op, is what this item removes; it is also why the machine-readable signal in
+AC-004 matters independently of the prompt fix, since a prompt that usually works
+still needs a gate for the times it does not.
+
 Blast radius is two shipped chains, not one: `plan-and-build` and `spec-and-build`
 both carry `planner -> plan-reviewer -> planner`, and both continue into
 `task-manager -> coordinator`. So a chain can decompose into tasks a plan whose
