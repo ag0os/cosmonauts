@@ -1,7 +1,7 @@
 import { unqualifyRole } from "../agents/qualified-role.ts";
 import { validateSlug } from "../plans/plan-manager.ts";
-import { resolveStagePrompt } from "./chain-steps.ts";
-import type { ChainStage } from "./types.ts";
+import { isParallelGroupStep, resolveStagePrompt } from "./chain-steps.ts";
+import type { ChainStage, ChainStep } from "./types.ts";
 
 /** Default operational prompts for chain stages (not agent identity prompts). */
 const DEFAULT_STAGE_PROMPTS: Record<string, string> = {
@@ -26,6 +26,112 @@ const DEFAULT_PROMPT = "Execute your assigned role.";
 
 export interface StagePromptOptions {
 	completionLabel?: string;
+	purpose?: StagePromptPurpose;
+}
+
+type StagePromptPurpose =
+	| { kind: "default" }
+	| { kind: "plan-review"; authorIdentity?: string }
+	| {
+			kind: "revision";
+			reviewKind: "generic" | "plan";
+			authorIdentity: string;
+	  };
+
+export function deriveStagePromptPurpose(
+	steps: readonly ChainStep[],
+	topologyIndex: number,
+	stage: ChainStage,
+): StagePromptPurpose {
+	const role = unqualifyRole(stageIdentity(stage));
+	if (role === "plan-reviewer") {
+		const authorIdentity = findRepeatedAuthorAcrossIndex(steps, topologyIndex);
+		if (authorIdentity !== undefined) {
+			return { kind: "plan-review", authorIdentity };
+		}
+		if (hasTaskManagerAtOrAfter(steps, topologyIndex)) {
+			return { kind: "plan-review" };
+		}
+		return { kind: "default" };
+	}
+
+	const authorIdentity = stageIdentity(stage);
+	const priorAuthorIndex = findPriorIdentityIndex(
+		steps,
+		topologyIndex,
+		authorIdentity,
+	);
+	if (priorAuthorIndex === undefined) return { kind: "default" };
+
+	const reviewers = steps
+		.slice(priorAuthorIndex + 1, topologyIndex)
+		.flatMap(stagesInStep)
+		.map((candidate) => unqualifyRole(stageIdentity(candidate)))
+		.filter(isReviewerRole);
+	if (reviewers.length === 0) return { kind: "default" };
+
+	return {
+		kind: "revision",
+		reviewKind: reviewers.includes("plan-reviewer") ? "plan" : "generic",
+		authorIdentity,
+	};
+}
+
+function stageIdentity(stage: ChainStage): string {
+	return stage.agentReference?.resolved.qualifiedId ?? stage.name;
+}
+
+function stagesInStep(step: ChainStep): readonly ChainStage[] {
+	return isParallelGroupStep(step) ? step.stages : [step];
+}
+
+function findPriorIdentityIndex(
+	steps: readonly ChainStep[],
+	topologyIndex: number,
+	identity: string,
+): number | undefined {
+	for (let index = topologyIndex - 1; index >= 0; index--) {
+		const step = steps[index];
+		if (
+			step &&
+			stagesInStep(step).some((item) => stageIdentity(item) === identity)
+		) {
+			return index;
+		}
+	}
+	return undefined;
+}
+
+function findRepeatedAuthorAcrossIndex(
+	steps: readonly ChainStep[],
+	topologyIndex: number,
+): string | undefined {
+	const priorIdentities = new Set(
+		steps.slice(0, topologyIndex).flatMap(stagesInStep).map(stageIdentity),
+	);
+	for (const step of steps.slice(topologyIndex + 1)) {
+		for (const candidate of stagesInStep(step)) {
+			const identity = stageIdentity(candidate);
+			if (priorIdentities.has(identity)) return identity;
+		}
+	}
+	return undefined;
+}
+
+function hasTaskManagerAtOrAfter(
+	steps: readonly ChainStep[],
+	topologyIndex: number,
+): boolean {
+	return steps
+		.slice(topologyIndex)
+		.flatMap(stagesInStep)
+		.some(
+			(candidate) => unqualifyRole(stageIdentity(candidate)) === "task-manager",
+		);
+}
+
+function isReviewerRole(role: string): boolean {
+	return role === "reviewer" || role.endsWith("-reviewer");
 }
 
 export interface PlanSlugOptions {
@@ -66,12 +172,32 @@ export function buildStagePrompt(
 		stage.prompt,
 		getDefaultStagePrompt(stage.name),
 	);
+	const purposePrompt = appendPurposeInstruction(
+		basePrompt,
+		options.purpose ?? { kind: "default" },
+	);
 
 	// When loop completion is label-scoped, loop coordinators must process only
 	// that subset to avoid touching unrelated ready tasks.
 	if (unqualifyRole(stage.name) === "coordinator" && options.completionLabel) {
-		return `${basePrompt}\n\nScope constraint: Operate only on tasks labeled "${options.completionLabel}". Filter all task selection to this label and do not modify tasks without it.`;
+		return `${purposePrompt}\n\nScope constraint: Operate only on tasks labeled "${options.completionLabel}". Filter all task selection to this label and do not modify tasks without it.`;
 	}
 
-	return basePrompt;
+	return purposePrompt;
+}
+
+function appendPurposeInstruction(
+	prompt: string,
+	purpose: StagePromptPurpose,
+): string {
+	switch (purpose.kind) {
+		case "default":
+			return prompt;
+		case "plan-review":
+			return `${prompt}\n\nPlan-review purpose: End with exactly one report line: COSMO_PLAN_REVIEW: {"planSlug":"<slug>","reviewRound":<positive integer>}.`;
+		case "revision":
+			return purpose.reviewKind === "plan"
+				? `${prompt}\n\nRevision purpose: Revise the active plan produced by the earlier "${purpose.authorIdentity}" stage. Read the highest-numbered plan-review round, address every high- and medium-severity finding, and do not start a new plan. End with exactly one report line: COSMO_REVIEW_REVISION: {"planSlug":"<slug>","reviewRound":<positive integer>,"status":"addressed"}, or report status "unaddressed" with a nonempty reason.`
+				: `${prompt}\n\nRevision purpose: Revise the work produced by the earlier "${purpose.authorIdentity}" stage in response to the intervening review. Do not start the work again from scratch.`;
+	}
 }
