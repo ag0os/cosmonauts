@@ -5,7 +5,7 @@
 		"useIgnoreFile": true
 	},
 	"files": {
-		"includes": ["**", "!missions/tasks/config.json"]
+		"includes": ["**", "!missions/tasks/config.json", "!.fallow-baselines"]
 	},
 	"formatter": {
 		"enabled": true

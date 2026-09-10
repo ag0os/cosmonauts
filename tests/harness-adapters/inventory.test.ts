@@ -84,8 +84,13 @@ const LIVE_COMMAND_BASELINES = [
 	{
 		assetId: "command:spec-to-backlog",
 		path: "/Users/cosmos/.claude/commands/spec-to-backlog.md",
+		// Amended 2026-09-10: external-commands/spec-to-backlog.md was corrected
+		// (review-<n>.md naming per planning-system-hardening D-002, expect more
+		// than one review round, and a guardrail against editing artifacts a
+		// running chain owns) and re-exported via `cosmonauts harness sync`.
+		// Previous baseline: 1981c27f3c5ffb4f448bd4741a9700f38f013ada366f739f93c38ab8cb588cc7
 		byteSha256:
-			"1981c27f3c5ffb4f448bd4741a9700f38f013ada366f739f93c38ab8cb588cc7",
+			"c64297bde335767b7b37b141ba16ff54975bc4a43bf76c56b957ff2a65bda8ce",
 	},
 	{
 		assetId: "command:implement-plan",

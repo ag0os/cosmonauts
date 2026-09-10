@@ -2,7 +2,7 @@
 title: Later chain stages know what came before them
 status: active
 createdAt: '2026-09-09T18:36:28.733Z'
-updatedAt: '2026-09-10T14:05:00.000Z'
+updatedAt: '2026-09-10T16:35:00.000Z'
 ---
 
 ## Overview
@@ -590,6 +590,46 @@ Direct reading plus `review.md` and `review-2.md` supplied interface and state
 evidence. Three bindable gates are now enforced rather than degraded; the two
 that remain unbound carry their true reasons.
 
+### 7a. How the bound analysis gates are actually invoked
+
+Measured on 2026-09-10, before implementation, so the thresholds are known to be
+reachable rather than assumed:
+
+- Whole-repo invocation **cannot** be the gate. `fallow dead-code` exits 1
+  (26 unused exports, 102 unused types, 2 duplicate-export pairs) and
+  `fallow health` exits 1 (74 functions above threshold, maintainability 90.9).
+  `fallow dupes` reports 3,288 duplicated lines (3.9% across 50 files). None of
+  that is this plan's doing, and several findings sit in files this plan must
+  touch — `lib/orchestration/chain-runner.ts` (complexity 18.1),
+  `lib/artifacts/behavior-conformance.ts` (13.7 and rising, the very file
+  TASK-670 extracts masking from), `durable-chain-runner.ts`,
+  `chain-event-adapter.ts`, `durable-chain-compiler.ts`. A whole-repo hard-fail
+  row would be red on day one for reasons unrelated to the change.
+- The gate is therefore `fallow audit`, which scopes dead-code, complexity and
+  duplication to files changed against the base branch and returns one verdict,
+  compared against baselines committed at `.fallow-baselines/`:
+
+  ```
+  fallow audit \
+    --dead-code-baseline .fallow-baselines/dead-code.json \
+    --health-baseline    .fallow-baselines/health.json \
+    --dupes-baseline     .fallow-baselines/dupes.json
+  ```
+
+  Verified on a clean tree at `b02917b`: `Audit scope: 3 changed files vs main`,
+  `No issues in 3 changed files`, exit 0. The same three analyses run whole-repo
+  exit 1, which is exactly the difference these rows encode.
+- The baselines record pre-existing debt as of 2026-09-10. They are a regression
+  floor, not a target: this plan must not add findings, and is not asked to
+  remove existing ones. If an implementer's change legitimately alters a baselined
+  file's findings, the baseline is re-saved in the same commit with the reason
+  stated — never silently.
+- `boundary-conformance` stays unbound: `fallow.toml` configures entry points but
+  declares no boundary rules, which is what `provider-not-configured` reports.
+  Adding those rules is real work with repo-wide consequences and is not this
+  slice; D-012's static import assertion covers the one boundary rule this plan
+  depends on.
+
 ### 8. Complete state-space outcomes
 
 | State | Outcome |
@@ -685,10 +725,10 @@ Plan-specific criteria:
 | 1 | `correctness` | universal | bound | B-001 through B-013 focused evidence and project-native full correctness/static checks pass; criteria 2-5 negatives are mandatory; D-012's two structural assertions (review-round import direction, inline/durable prompt parity) pass here rather than awaiting reviewer judgement | project-discovered | hard fail |
 | 2 | `artifact-conformance` | universal | bound | Required behavior fields resolve and exact markers exist in named evidence files | artifact evidence | hard fail |
 | 3 | `mutation` | bindable | unbound | Mutants erasing purpose, identity, index conversion, strict-lower task guard, error aggregation, round safety, masking, or durable proof fail tests | pending | unbound — `mutation` is not a capability any configured provider supplies; reviewer inspects test strength |
-| 4 | `duplication` | bindable | **bound** | One purpose, report, round, and masking implementation serves both paths | `fallow` 2.54.2 | hard fail |
-| 5 | `complexity` | bindable | **bound** | Parsing/assessment stay outside runner/compiler control flow | `fallow` 2.54.2 | hard fail |
+| 4 | `duplication` | bindable | **bound** | No clone group in the changed scope that is absent from `.fallow-baselines/dupes.json`; one purpose, report, round, and masking implementation serves both paths | `fallow audit` 2.54.2, changed-scope + baseline | hard fail on regression |
+| 5 | `complexity` | bindable | **bound** | No function in the changed scope above threshold that is absent from `.fallow-baselines/health.json`; parsing/assessment stay outside runner/compiler control flow | `fallow audit` 2.54.2, changed-scope + baseline | hard fail on regression |
 | 6 | `boundary-conformance` | bindable | unbound | Plan logic imports no orchestration; shared masking has no plan semantics; generic runtime imports no review semantics | pending | unbound — reason `provider-not-configured` (no boundary rules configured), which consent does not fix; D-012's bound static import assertion covers the one rule this plan depends on |
-| 7 | `dead-code` | bindable | **bound** | Every purpose/report/block/activity/event variant has producer and consumer evidence | `fallow` 2.54.2 | hard fail |
+| 7 | `dead-code` | bindable | **bound** | No unused export/type or duplicate-export pair in the changed scope that is absent from `.fallow-baselines/dead-code.json`; every purpose/report/block/activity/event variant has producer and consumer evidence | `fallow audit` 2.54.2, changed-scope + baseline | hard fail on regression |
 
 ## Implementation Order
 

@@ -1,0 +1,288 @@
+{
+  "finding_counts": {
+    "cli/drive/subcommand.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "cli/harness/subcommand.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "cli/memory/judgment-provider.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "cli/tasks/commands/create.ts": {
+      "complexity_high": {
+        "count": 1
+      }
+    },
+    "domains/shared/extensions/orchestration/driver-tool.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "domains/shared/extensions/orchestration/watch-events-tool.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "domains/shared/extensions/project-tools/fallow-provider.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "lib/agent-packages/codex-cli.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "lib/analysis/binding-resolver.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "lib/driver/backends/env-args.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "lib/driver/drive-finalization.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "lib/driver/drive-graph-runner.ts": {
+      "complexity_moderate": {
+        "count": 2
+      }
+    },
+    "lib/driver/event-stream.ts": {
+      "complexity_high": {
+        "count": 1
+      }
+    },
+    "lib/driver/run-run-loop.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "lib/durable-runtime/controller.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "lib/durable-runtime/scheduler.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "lib/extensions/agent-memory/index.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "lib/harness-adapters/provenance.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "lib/harness-adapters/sync.ts": {
+      "complexity_high": {
+        "count": 5
+      },
+      "complexity_moderate": {
+        "count": 6
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "lib/memory/consolidation-proposals.ts": {
+      "complexity_high": {
+        "count": 1
+      }
+    },
+    "lib/memory/consolidation-sources.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "complexity_high": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 2
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "lib/memory/durable-files.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "lib/memory/injection-budget.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "lib/memory/knowledge-records.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "lib/memory/knowledge-store.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 2
+      }
+    },
+    "lib/memory/living-memory.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "complexity_high": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 3
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "lib/memory/markdown-store.ts": {
+      "complexity_moderate": {
+        "count": 2
+      }
+    },
+    "lib/memory/retirement-receipts.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "lib/memory/retirement-store.ts": {
+      "complexity_high": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 2
+      }
+    },
+    "lib/orchestration/chain-event-adapter.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "lib/skills/exporter.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "complexity_high": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 2
+      }
+    },
+    "scripts/knowledge-surface-backfill.ts": {
+      "complexity_moderate": {
+        "count": 2
+      }
+    },
+    "scripts/validate-harness-exports.ts": {
+      "complexity_critical": {
+        "count": 2
+      },
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      }
+    },
+    "tests/episodic/pre-w3-disabled-baselines.test.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "tests/harness-adapters/sync.test.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "tests/memory/interface.test.ts": {
+      "complexity_high": {
+        "count": 1
+      }
+    },
+    "tests/memory/markdown-store.test.ts": {
+      "complexity_high": {
+        "count": 1
+      }
+    }
+  },
+  "runtime_coverage_findings": [],
+  "target_keys": [
+    "lib/driver/backends/claude-cli.ts:dead code",
+    "lib/harness-adapters/sync.ts:complexity",
+    "cli/drive/subcommand.ts:complexity",
+    "lib/memory/living-memory.ts:complexity",
+    "lib/config/loader.ts:complexity",
+    "lib/driver/event-stream.ts:complexity",
+    "domains/shared/extensions/project-tools/fallow-provider.ts:complexity",
+    "lib/memory/consolidation-sources.ts:complexity",
+    "lib/memory/knowledge-records.ts:complexity",
+    "lib/skills/exporter.ts:complexity",
+    "lib/memory/knowledge-store.ts:complexity",
+    "scripts/validate-harness-exports.ts:complexity",
+    "tests/memory/interface.test.ts:complexity",
+    "lib/extensions/agent-memory/index.ts:complexity",
+    "lib/durable-runtime/scheduler.ts:complexity",
+    "lib/memory/retirement-receipts.ts:complexity",
+    "tests/harness-adapters/sync.test.ts:complexity",
+    "tests/memory/markdown-store.test.ts:complexity"
+  ]
+}
