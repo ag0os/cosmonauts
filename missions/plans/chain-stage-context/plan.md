@@ -670,8 +670,10 @@ Plan-specific criteria:
 4. **RED/GREEN/REFACTOR B-006:** test terminal reviewer grammar and
    expected/fallback active binding; implement report adapter and inline target
    state. Missing target blocks.
-5. **RED/GREEN/REFACTOR B-007/B-009:** test invalid/valid revision evidence;
-   implement typed error aggregation and addressed source-index transition.
+5. **RED/GREEN/REFACTOR B-007/B-009/B-013:** test invalid/valid revision
+   evidence; implement typed error aggregation and addressed source-index
+   transition. Add the looping-stage case (D-011): the check runs exactly once
+   after the final iteration, never on an intermediate one.
 6. **RED/GREEN/REFACTOR B-008:** add sequential/parallel custom topology tests;
    implement pre-spawn task-manager guard requiring strictly lower addressed
    index. Assert both sibling orders, stage/group/errors/final success, and zero
@@ -683,7 +685,9 @@ Plan-specific criteria:
    docs with safe topology and rerun guidance.
 9. **Integration:** run focused evidence, project-native full correctness,
    lint/static, type, and artifact-conformance checks; inspect forbidden files and
-   record degraded analysis gates.
+   record degraded analysis gates. D-012's two structural assertions — review-round
+   import direction and inline/durable prompt parity — must pass as bound
+   correctness tests here, not as reviewer judgement.
 
 After each stage, apply the deviation classifier. If two bounded reports plus
 artifacts cannot identify one active round, or enforcement needs excluded
